@@ -1,74 +1,125 @@
-# PROJECT KRONOS
+# 🚀 PROJECT KRONOS
 
-## KRONOS FUTURES
-
-Version: 0.5.0
-
-Build: 0004
-
-Codename: FOUNDATION
+> A modular Decision Support System (DSS) for professional Futures and Options traders.
 
 ---
 
 ## Overview
 
-Project-Kronos is a comprehensive project designed to [describe your project's main purpose].
+PROJECT KRONOS is an engineering-first trading platform being developed in Pine Script for TradingView.
 
-## Features
-
-- Feature 1
-- Feature 2
-- Feature 3
-
-## Getting Started
-
-### Prerequisites
-
-- List any prerequisites needed to run this project
-
-### Installation
-
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/emiali-jason/Project-Kronos.git
-   ```
-
-2. Navigate to the project directory:
-   ```bash
-   cd Project-Kronos
-   ```
-
-3. Install dependencies:
-   ```bash
-   [installation command]
-   ```
-
-### Usage
-
-```bash
-[usage example]
-```
-
-## Project Structure
-
-```
-Project-Kronos/
-├── [directory/file structure]
-└── ...
-```
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit pull requests or open issues to improve the project.
-
-## License
-
-This project is licensed under the [LICENSE NAME] - see the LICENSE file for details.
-
-## Contact
-
-For questions or inquiries, please contact [your contact information].
+The goal is to provide transparent, explainable trading decisions through a modular architecture that can grow across multiple markets and asset classes.
 
 ---
 
-*Last updated: July 4, 2026*
+## Current Status
+
+- **Version:** 0.5.0
+- **Release:** Alpha 1
+- **Build:** 0004
+- **Status:** Active Development
+
+---
+
+## Product Roadmap
+
+- KRONOS CORE
+- KRONOS FUTURES
+  - MCX Futures
+  - NSE Futures
+- KRONOS OPTIONS
+  - MCX Options
+  - NSE Index Options
+  - NSE Stock Options
+
+---
+
+## Architecture
+
+```
+Configuration
+      ↓
+Market Identification
+      ↓
+Asset Intelligence
+      ↓
+Global Data
+      ↓
+Trend Analysis
+      ↓
+Setup Qualification
+      ↓
+Decision Engine
+      ↓
+Risk Management
+      ↓
+Dashboard
+      ↓
+Alerts
+```
+
+---
+
+## Build 0004 Progress
+
+| Engine | Status |
+|--------|:------:|
+| KR-100 Configuration | ✅ |
+| KR-150 Indicator | ✅ |
+| KR-200 Market Identification | ✅ |
+| KR-250 Asset Intelligence | ✅ |
+| KR-260 Global Data | 🚧 |
+| KR-300 Local Trend | ⏳ |
+| KR-350 Trend Alignment | ⏳ |
+| KR-400 Trend Quality | ⏳ |
+| KR-450 Setup Qualification | ⏳ |
+| KR-500 Decision | ⏳ |
+| KR-550 Decision Explanation | ⏳ |
+| KR-600 Risk Management | ⏳ |
+| KR-700 Dashboard | ⏳ |
+| KR-800 Alerts | ⏳ |
+
+---
+
+## Development Workflow
+
+```
+Design
+   ↓
+Implement
+   ↓
+Compile
+   ↓
+Test
+   ↓
+Commit
+   ↓
+Push
+```
+
+Development happens on the **develop** branch.
+
+Stable releases are published from the **main** branch.
+
+---
+
+## Technology
+
+- Pine Script v6
+- TradingView
+- GitHub
+- GitHub Desktop
+
+---
+
+## Vision
+
+KRONOS is designed as a professional decision-support platform rather than an automated trading system.
+
+Every recommendation should be transparent, explainable, and backed by clearly defined trading logic.
+
+---
+
+**Designed and developed by Imran Ali**
+
+Software architecture developed collaboratively with ChatGPT.
