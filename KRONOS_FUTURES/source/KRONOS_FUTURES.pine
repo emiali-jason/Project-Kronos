@@ -1,40 +1,179 @@
-// KRONOS_FUTURES - Trading Strategy for TradingView
-// ============================================================
-// 
-// Project: Project Kronos
-// Purpose: [Add strategy description]
-// 
-// ============================================================
+//@version=6
+indicator("KRONOS FUTURES", overlay=true, max_labels_count=500)
 
-//@version=5
-strategy("KRONOS_FUTURES", overlay=true)
+//==================================================
+// PROJECT KRONOS
+//==================================================
+//
+// Product      : KRONOS FUTURES
+// Version      : 0.5.0
+// Build        : 0004
+// Codename     : FOUNDATION
+//
+//==================================================
 
-// ============================================================
-// INPUT PARAMETERS
-// ============================================================
 
-// [Add input parameters here]
 
-// ============================================================
-// STRATEGY LOGIC
-// ============================================================
+//==================================================
+// KR-100 CONFIGURATION ENGINE
+//==================================================
 
-// [Add strategy implementation here]
+//------------------------------
+// Product Information
+//------------------------------
 
-// ============================================================
-// SIGNALS & ENTRIES
-// ============================================================
+const string KR_PRODUCT   = "KRONOS FUTURES"
+const string KR_VERSION   = "0.5.0"
+const string KR_BUILD     = "0004"
+const string KR_CODENAME  = "FOUNDATION"
 
-// [Add signal generation and entry logic here]
+//------------------------------
+// Moving Average Settings
+//------------------------------
 
-// ============================================================
-// EXITS & EXITS
-// ============================================================
+const int KR_SMA_FAST = 20
+const int KR_SMA_MID  = 50
+const int KR_SMA_SLOW = 200
 
-// [Add exit logic here]
+//------------------------------
+// Input Groups
+//------------------------------
 
-// ============================================================
-// PLOTTING & VISUALIZATION
-// ============================================================
+const string GRP_MA = "Moving Averages"
 
-// [Add visualization code here]
+//------------------------------
+// User Inputs
+//------------------------------
+
+inpShowFastSMA = input.bool(true, "Show 20 SMA", group=GRP_MA)
+inpShowMidSMA  = input.bool(true, "Show 50 SMA", group=GRP_MA)
+inpShowSlowSMA = input.bool(true, "Show 200 SMA", group=GRP_MA)
+
+
+
+//==================================================
+// KR-150 INDICATOR ENGINE
+//==================================================
+
+//------------------------------
+// Simple Moving Averages
+//------------------------------
+
+maFast = ta.sma(close, KR_SMA_FAST)
+maMid  = ta.sma(close, KR_SMA_MID)
+maSlow = ta.sma(close, KR_SMA_SLOW)
+
+//------------------------------
+// Plot
+//------------------------------
+
+plot(inpShowFastSMA ? maFast : na, title="20 SMA", color=color.lime, linewidth=2)
+plot(inpShowMidSMA  ? maMid  : na, title="50 SMA", color=color.red, linewidth=2)
+plot(inpShowSlowSMA ? maSlow : na, title="200 SMA", color=color.white, linewidth=2)
+
+
+
+//==================================================
+// KR-200 MARKET IDENTIFICATION ENGINE
+//==================================================
+
+//------------------------------
+// Exchange Detection
+//------------------------------
+
+string krExchange = syminfo.prefix
+
+//------------------------------
+// Symbol Detection
+//------------------------------
+
+string krTicker = syminfo.ticker
+
+//------------------------------
+// Instrument Name
+//------------------------------
+
+string krDescription = syminfo.description
+
+//------------------------------
+// Market Identification
+//------------------------------
+
+bool isMCX      = krExchange == "MCX"
+bool isNSE      = krExchange == "NSE"
+bool isCOMEX    = krExchange == "COMEX"
+bool isNYMEX    = krExchange == "NYMEX"
+bool isFOREX    = krExchange == "OANDA"
+
+//------------------------------
+// Current Market
+//------------------------------
+
+string krMarket = "UNKNOWN"
+
+if isMCX
+    krMarket := "MCX"
+
+else if isNSE
+    krMarket := "NSE"
+
+else if isCOMEX
+    krMarket := "COMEX"
+
+else if isNYMEX
+    krMarket := "NYMEX"
+
+else if isFOREX
+    krMarket := "FOREX"
+
+//==================================================
+// END OF KR-200
+//==================================================
+
+//==================================================
+// KR-250 ASSET INTELLIGENCE ENGINE
+//==================================================
+//
+// Purpose
+// --------
+// Identify the current asset and map it to its
+// corresponding global benchmark.
+//
+//==================================================
+
+//------------------------------
+// Asset Variables
+//------------------------------
+
+string krAssetName    = "UNKNOWN"
+string krGlobalSymbol = "UNKNOWN"
+string krAssetClass   = "UNKNOWN"
+
+//------------------------------
+// MCX Assets
+//------------------------------
+
+if str.contains(krTicker, "GOLD")
+    krAssetName    := "Gold"
+    krGlobalSymbol := "OANDA:XAUUSD"
+    krAssetClass   := "Precious Metal"
+
+else if str.contains(krTicker, "SILVER")
+    krAssetName    := "Silver"
+    krGlobalSymbol := "OANDA:XAGUSD"
+    krAssetClass   := "Precious Metal"
+
+else if str.contains(krTicker, "COPPER")
+    krAssetName    := "Copper"
+    krGlobalSymbol := "COMEX:HG1!"
+    krAssetClass   := "Base Metal"
+
+else if str.contains(krTicker, "CRUDE")
+    krAssetName    := "Crude Oil"
+    krGlobalSymbol := "NYMEX:CL1!"
+    krAssetClass   := "Energy"
+
+else if str.contains(krTicker, "NATURALGAS")
+    krAssetName    := "Natural Gas"
+    krGlobalSymbol := "NYMEX:NG1!"
+    krAssetClass   := "Energy"
