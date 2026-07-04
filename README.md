@@ -1,6 +1,14 @@
-# Project-Kronos
+# PROJECT KRONOS
 
-Welcome to Project-Kronos! This project aims to deliver innovative solutions and robust functionality.
+## KRONOS FUTURES
+
+Version: 0.5.0
+
+Build: 0004
+
+Codename: FOUNDATION
+
+---
 
 ## Overview
 
