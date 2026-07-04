@@ -1,46 +1,130 @@
-# Architectural Decision Records (ADRs)
+# PROJECT KRONOS – ENGINEERING DECISIONS
 
-This document records major architectural and technical decisions made in Project Kronos.
+This document records the major engineering and architectural decisions made during the development of PROJECT KRONOS.
 
-## Format
-
-Each decision should include:
-- **Decision ID**: ADR-001, ADR-002, etc.
-- **Title**: Brief title of the decision
-- **Status**: Proposed, Accepted, Deprecated, Superseded
-- **Context**: Why this decision was needed
-- **Decision**: What was decided
-- **Consequences**: Positive and negative impacts
-- **Alternatives Considered**: Other options explored
+It explains **why** decisions were made so they remain clear as the project evolves.
 
 ---
 
-## Template
+# Decision Log
 
-### ADR-XXX: [Decision Title]
+---
 
-**Status**: [Proposed | Accepted | Deprecated | Superseded]
+## KD-001
 
-**Context**
-[Explain the issue or problem that led to this decision]
+**Date:** 2026-07-04
 
 **Decision**
-[Describe the decision that was made]
 
-**Consequences**
-- Positive:
-  - [Benefit 1]
-  - [Benefit 2]
-- Negative:
-  - [Trade-off 1]
-  - [Trade-off 2]
+PROJECT KRONOS will use a modular engine architecture.
 
-**Alternatives Considered**
-- [Alternative 1]: Why rejected
-- [Alternative 2]: Why rejected
+**Reason**
+
+Each engine has a single responsibility, making the code easier to develop, test, maintain, and extend.
+
+**Status**
+
+Approved
 
 ---
 
-## Decisions
+## KD-002
 
-[Add your ADRs here using the template above]
+**Date:** 2026-07-04
+
+**Decision**
+
+Development will occur on the `develop` branch.
+
+Stable releases will be maintained on the `main` branch.
+
+**Reason**
+
+This protects the stable version while allowing active development.
+
+**Status**
+
+Approved
+
+---
+
+## KD-003
+
+**Date:** 2026-07-04
+
+**Decision**
+
+One engine will be completed before starting the next engine.
+
+**Reason**
+
+Every engine should compile successfully before additional functionality is added.
+
+**Status**
+
+Approved
+
+---
+
+## KD-004
+
+**Date:** 2026-07-04
+
+**Decision**
+
+KRONOS will operate as a Decision Support System (DSS) rather than an automated trading system.
+
+**Reason**
+
+The objective is to assist traders with transparent, explainable decisions while leaving execution under the trader's control.
+
+**Status**
+
+Approved
+
+---
+
+## KD-005
+
+**Date:** 2026-07-04
+
+**Decision**
+
+Global market data will be used to guide local market analysis whenever applicable.
+
+Examples:
+
+- COMEX → MCX Metals
+- NYMEX → MCX Energy
+
+**Reason**
+
+Global markets often establish the broader trend before local markets react.
+
+**Status**
+
+Approved
+
+---
+
+## KD-006
+
+**Date:** 2026-07-04
+
+**Decision**
+
+The GitHub repository will contain complete project documentation alongside the source code.
+
+**Reason**
+
+Documentation should evolve together with the software to keep the project understandable and maintainable.
+
+**Status**
+
+Approved
+
+---
+
+# Future Decisions
+
+All significant architectural decisions should be recorded here before implementation.
