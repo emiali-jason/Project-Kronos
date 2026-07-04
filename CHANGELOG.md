@@ -1,22 +1,66 @@
-# Changelog
+# CHANGELOG
 
-All notable changes to this project will be documented in this file.
+All notable changes to PROJECT KRONOS will be documented in this file.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+This project follows a milestone-based development approach.
 
-## [Unreleased]
+---
 
-### Added
-- Initial project structure
-- Documentation framework
+# [0.5.0-alpha.1] - 2026-07-04
 
-### Changed
+## Added
 
-### Deprecated
+### Repository
+- Created Project-Kronos repository
+- Added project documentation
+- Created `develop` branch
+- Established GitHub workflow
 
-### Removed
+### Documentation
+- Updated README with project overview
+- Added project roadmap
+- Added changelog
 
-### Fixed
+### KRONOS FUTURES
 
-### Security
+Completed Engines
+
+- ✅ KR-100 Configuration Engine
+- ✅ KR-150 Indicator Engine
+- ✅ KR-200 Market Identification Engine
+- ✅ KR-250 Asset Intelligence Engine
+
+### Status
+
+- Pine Script compiles successfully
+- Foundation architecture established
+- Ready to begin KR-260 Global Data Engine
+
+---
+
+# Upcoming
+
+## 0.5.0-alpha.2
+
+Planned
+
+- KR-260 Global Data Engine
+- KR-300 Local Trend Engine
+- KR-350 Trend Alignment Engine
+
+---
+
+## 0.5.0-beta.1
+
+Planned
+
+- Decision Engine
+- Risk Engine
+- Dashboard
+- Alerts
+
+---
+
+## 0.5.0
+
+Initial public foundation release.
