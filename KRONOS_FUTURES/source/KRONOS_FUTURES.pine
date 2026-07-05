@@ -408,21 +408,16 @@ else
 // NOTE:
 // KR-270 never retrieves market data directly.
 //==================================================================
-
 //==================================================================
-// KR-270.05 SHARED INDICATOR HELPERS
-//==================================================================
-
-//--------------------------------------------------
-// Returns SMA20, SMA50 and SMA200
-//--------------------------------------------------
-//==================================================================
-// KR-270.10 MOVING AVERAGES
+// KR-270.01 INDICATOR PARAMETERS
 //==================================================================
 
-const int SMA_FAST = 20
-const int SMA_SLOW = 50
-const int SMA_LONG = 200
+const int SMA_FAST   = 20
+const int SMA_SLOW   = 50
+const int SMA_LONG   = 200
+
+const int RSI_PERIOD = 14
+
 
 //------------------------------
 // Primary Trend
@@ -444,18 +439,14 @@ float indReferenceTrendSMA200 = ta.sma(mdReferenceTrendC, SMA_LONG)
 // KR-270.20 MOMENTUM
 //==================================================================
 
-const int RSI_PERIOD = 14
+// Primary
+float indPrimaryTrendRSI = ta.rsi(mdPrimaryTrendC, RSI_PERIOD)
 
-float indPrimaryTrendRSI   = ta.rsi(mdPrimaryTrendC, RSI_PERIOD)
+// Reference
 float indReferenceTrendRSI = ta.rsi(mdReferenceTrendC, RSI_PERIOD)
 
 //==================================================================
 // KR-270.30 VOLATILITY
 //==================================================================
-
-const int ATR_PERIOD = 14
-
-float indPrimaryTrendATR   = ta.atr(ATR_PERIOD)
-float indReferenceTrendATR = ta.atr(ATR_PERIOD)
 
 
