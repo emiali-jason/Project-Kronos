@@ -446,7 +446,126 @@ float indPrimaryTrendRSI = ta.rsi(mdPrimaryTrendC, RSI_PERIOD)
 float indReferenceTrendRSI = ta.rsi(mdReferenceTrendC, RSI_PERIOD)
 
 //==================================================================
+// KR-271 : MATHEMATICAL LIBRARY
+//==================================================================
+//
+// Purpose:
+// Provides reusable mathematical functions for KRONOS.
+//
+// NOTE:
+// This section contains mathematical primitives used by
+// multiple indicator engines.
+//
+// No trading logic is permitted here.
+//==================================================================
+
+//==================================================================
+// KR-271.10 TRUE RANGE
+//==================================================================
+
+calcTrueRange(float highPrice, float lowPrice, float previousClose) =>
+
+    math.max(
+        highPrice - lowPrice,
+        math.max(
+            math.abs(highPrice - previousClose),
+            math.abs(lowPrice - previousClose)
+        )
+    )
+
+//==================================================================
+// KR-271.20 AVERAGE TRUE RANGE
+//==================================================================
+
+calcATR(series float trueRange, int period) =>
+    ta.rma(trueRange, period)
+
+const int ATR_PERIOD = 14
+
+//==================================================================
+// KR-271.30 TRUE RANGE SERIES
+//==================================================================
+
+// Primary
+float indPrimaryTrueRange = calcTrueRange(
+    mdPrimaryTrendH,
+    mdPrimaryTrendL,
+    mdPrimaryTrendC[1]
+)
+
+// Reference
+float indReferenceTrueRange = calcTrueRange(
+    mdReferenceTrendH,
+    mdReferenceTrendL,
+    mdReferenceTrendC[1]
+)
+
+//==================================================================
 // KR-270.30 VOLATILITY
 //==================================================================
 
 
+float indPrimaryTrendATR = calcATR(indPrimaryTrueRange, ATR_PERIOD)
+
+float indReferenceTrendATR = calcATR(indReferenceTrueRange, ATR_PERIOD)
+
+
+//==================================================================
+// KR-271.30 POSITIVE DIRECTIONAL MOVEMENT
+//==================================================================
+
+calcPositiveDM(
+    float currentHigh,
+    float previousHigh,
+    float currentLow,
+    float previousLow) =>
+
+    float upMove   = currentHigh - previousHigh
+    float downMove = previousLow - currentLow
+
+    (upMove > downMove and upMove > 0.0) ? upMove : 0.0
+
+//==================================================================
+// KR-271.31 NEGATIVE DIRECTIONAL MOVEMENT
+//==================================================================
+
+calcNegativeDM(
+    float currentHigh,
+    float previousHigh,
+    float currentLow,
+    float previousLow) =>
+
+    float upMove   = currentHigh - previousHigh
+    float downMove = previousLow - currentLow
+
+    (downMove > upMove and downMove > 0.0) ? downMove : 0.0
+
+//==================================================================
+// KR-271.32 DIRECTIONAL MOVEMENT SERIES
+//==================================================================
+
+// Primary
+float indPrimaryPositiveDM = calcPositiveDM(
+    mdPrimaryTrendH,
+    mdPrimaryTrendH[1],
+    mdPrimaryTrendL,
+    mdPrimaryTrendL[1])
+
+float indPrimaryNegativeDM = calcNegativeDM(
+    mdPrimaryTrendH,
+    mdPrimaryTrendH[1],
+    mdPrimaryTrendL,
+    mdPrimaryTrendL[1])
+
+// Reference
+float indReferencePositiveDM = calcPositiveDM(
+    mdReferenceTrendH,
+    mdReferenceTrendH[1],
+    mdReferenceTrendL,
+    mdReferenceTrendL[1])
+
+float indReferenceNegativeDM = calcNegativeDM(
+    mdReferenceTrendH,
+    mdReferenceTrendH[1],
+    mdReferenceTrendL,
+    mdReferenceTrendL[1])
