@@ -394,3 +394,68 @@ else
 //==================================================================
 
 [mdReferenceExecutionO, mdReferenceExecutionH, mdReferenceExecutionL, mdReferenceExecutionC, mdReferenceExecutionV] = getOHLCV(mdReferenceSymbol, mdExecutionTF)
+
+
+//==================================================================
+// KR-270 : MARKET INDICATOR ENGINE
+// Version : 0.5.0-alpha
+// Build   : 0007
+//
+// Purpose:
+// Calculates all derived technical indicators from KR-260 market
+// data.
+//
+// NOTE:
+// KR-270 never retrieves market data directly.
+//==================================================================
+
+//==================================================================
+// KR-270.05 SHARED INDICATOR HELPERS
+//==================================================================
+
+//--------------------------------------------------
+// Returns SMA20, SMA50 and SMA200
+//--------------------------------------------------
+//==================================================================
+// KR-270.10 MOVING AVERAGES
+//==================================================================
+
+const int SMA_FAST = 20
+const int SMA_SLOW = 50
+const int SMA_LONG = 200
+
+//------------------------------
+// Primary Trend
+//------------------------------
+
+float indPrimaryTrendSMA20  = ta.sma(mdPrimaryTrendC, SMA_FAST)
+float indPrimaryTrendSMA50  = ta.sma(mdPrimaryTrendC, SMA_SLOW)
+float indPrimaryTrendSMA200 = ta.sma(mdPrimaryTrendC, SMA_LONG)
+
+//------------------------------
+// Reference Trend
+//------------------------------
+
+float indReferenceTrendSMA20  = ta.sma(mdReferenceTrendC, SMA_FAST)
+float indReferenceTrendSMA50  = ta.sma(mdReferenceTrendC, SMA_SLOW)
+float indReferenceTrendSMA200 = ta.sma(mdReferenceTrendC, SMA_LONG)
+
+//==================================================================
+// KR-270.20 MOMENTUM
+//==================================================================
+
+const int RSI_PERIOD = 14
+
+float indPrimaryTrendRSI   = ta.rsi(mdPrimaryTrendC, RSI_PERIOD)
+float indReferenceTrendRSI = ta.rsi(mdReferenceTrendC, RSI_PERIOD)
+
+//==================================================================
+// KR-270.30 VOLATILITY
+//==================================================================
+
+const int ATR_PERIOD = 14
+
+float indPrimaryTrendATR   = ta.atr(ATR_PERIOD)
+float indReferenceTrendATR = ta.atr(ATR_PERIOD)
+
+
