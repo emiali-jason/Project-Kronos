@@ -226,3 +226,77 @@ else if str.contains(krTicker, "BANKNIFTY")
 else if krMarket == "NSE"
     assetDependencyProfile := "LocalDominant"
     assetTradingProfile    := "NSE Swing"
+
+//==================================================================
+// KR-260 : MARKET DATA ENGINE
+// Version : 0.5.0-alpha
+// Build   : 0006
+//
+// Purpose:
+// Acquire, validate and standardize market data for downstream
+// KRONOS engines.
+//
+// Inputs
+// - KR-100 Configuration
+// - KR-250 Asset Intelligence
+//
+// Outputs
+// - Market Data Interface
+// - Status Interface
+//
+// NOTE:
+// KR-260A only builds the engine foundation.
+// Market data retrieval begins in KR-260B.
+//==================================================================
+
+//==================================================================
+// KR-260.10 CONFIGURATION INTERFACE
+//==================================================================
+
+// Timeframes supplied by KR-100.
+// Temporary placeholders until KR-100 is profile-driven.
+
+string mdStrategicTF = "W"
+string mdTrendTF     = "D"
+string mdStructureTF = "240"
+string mdExecutionTF = "60"
+
+//==================================================================
+// KR-260.20 ASSET INTERFACE
+//==================================================================
+
+// Public interface received from KR-250
+
+string mdPrimarySymbol     = assetPrimarySymbol
+string mdReferenceSymbol   = assetReferenceSymbol
+string mdDependencyProfile = assetDependencyProfile
+
+//==================================================================
+// KR-260.30 ENGINE STATUS
+//==================================================================
+
+bool mdPrimaryAvailable   = false
+bool mdReferenceAvailable = false
+
+string mdStatus       = "INITIALIZING"
+string mdErrorMessage = ""
+
+//==================================================================
+// KR-260.40 PUBLIC MARKET DATA INTERFACE
+//==================================================================
+
+// Strategic
+float mdPrimaryStrategicClose   = na
+float mdReferenceStrategicClose = na
+
+// Trend
+float mdPrimaryTrendClose       = na
+float mdReferenceTrendClose     = na
+
+// Structure
+float mdPrimaryStructureClose   = na
+float mdReferenceStructureClose = na
+
+// Execution
+float mdPrimaryExecutionClose   = na
+float mdReferenceExecutionClose = na
