@@ -511,10 +511,14 @@ float indReferenceTrendATR = calcATR(indReferenceTrueRange, ATR_PERIOD)
 
 
 //==================================================================
-// KR-271.30 POSITIVE DIRECTIONAL MOVEMENT
+// KR-271.30 DIRECTIONAL MOVEMENT
 //==================================================================
 
-calcPositiveDM(
+//--------------------------------------------------
+// Positive Directional Movement (+DM)
+//--------------------------------------------------
+
+calcPlusDM(
     float currentHigh,
     float previousHigh,
     float currentLow,
@@ -525,11 +529,12 @@ calcPositiveDM(
 
     (upMove > downMove and upMove > 0.0) ? upMove : 0.0
 
-//==================================================================
-// KR-271.31 NEGATIVE DIRECTIONAL MOVEMENT
-//==================================================================
 
-calcNegativeDM(
+//--------------------------------------------------
+// Negative Directional Movement (-DM)
+//--------------------------------------------------
+
+calcMinusDM(
     float currentHigh,
     float previousHigh,
     float currentLow,
@@ -540,32 +545,88 @@ calcNegativeDM(
 
     (downMove > upMove and downMove > 0.0) ? downMove : 0.0
 
+
+//--------------------------------------------------
+// Positive Directional Index (+DI)
+//--------------------------------------------------
+
+calcPlusDI(series float plusDM, series float atr, int period) =>
+    atr == 0.0 ? 0.0 : 100.0 * ta.rma(plusDM, period) / atr
+
+
+//--------------------------------------------------
+// Negative Directional Index (-DI)
+//--------------------------------------------------
+
+calcMinusDI(series float minusDM, series float atr, int period) =>
+    atr == 0.0 ? 0.0 : 100.0 * ta.rma(minusDM, period) / atr
+
+
 //==================================================================
-// KR-271.32 DIRECTIONAL MOVEMENT SERIES
+// KR-271.30 DIRECTIONAL MOVEMENT
 //==================================================================
 
-// Primary
-float indPrimaryPositiveDM = calcPositiveDM(
-    mdPrimaryTrendH,
-    mdPrimaryTrendH[1],
-    mdPrimaryTrendL,
-    mdPrimaryTrendL[1])
+//--------------------------------------------------
+// Positive Directional Movement (+DM)
+//--------------------------------------------------
 
-float indPrimaryNegativeDM = calcNegativeDM(
-    mdPrimaryTrendH,
-    mdPrimaryTrendH[1],
-    mdPrimaryTrendL,
-    mdPrimaryTrendL[1])
+calcPlusDM(float currentHigh, float previousHigh, float currentLow, float previousLow) =>
+    float upMove = currentHigh - previousHigh
+    float downMove = previousLow - currentLow
+    (upMove > downMove and upMove > 0.0) ? upMove : 0.0
 
-// Reference
-float indReferencePositiveDM = calcPositiveDM(
-    mdReferenceTrendH,
-    mdReferenceTrendH[1],
-    mdReferenceTrendL,
-    mdReferenceTrendL[1])
 
-float indReferenceNegativeDM = calcNegativeDM(
-    mdReferenceTrendH,
-    mdReferenceTrendH[1],
-    mdReferenceTrendL,
-    mdReferenceTrendL[1])
+//--------------------------------------------------
+// Negative Directional Movement (-DM)
+//--------------------------------------------------
+
+calcMinusDM(float currentHigh, float previousHigh, float currentLow, float previousLow) =>
+    float upMove = currentHigh - previousHigh
+    float downMove = previousLow - currentLow
+    (downMove > upMove and downMove > 0.0) ? downMove : 0.0
+
+
+//--------------------------------------------------
+// Positive Directional Index (+DI)
+//--------------------------------------------------
+
+calcPlusDI(series float plusDM, series float atr, int period) =>
+    atr == 0.0 ? 0.0 : 100.0 * ta.rma(plusDM, period) / atr
+
+
+//--------------------------------------------------
+// Negative Directional Index (-DI)
+//--------------------------------------------------
+
+calcMinusDI(series float minusDM, series float atr, int period) =>
+    atr == 0.0 ? 0.0 : 100.0 * ta.rma(minusDM, period) / atr
+
+
+//==================================================================
+// KR-271.31 DIRECTIONAL MOVEMENT SERIES
+//==================================================================
+
+//------------------------------
+// Primary Trend Dataset
+//------------------------------
+
+float indPrimaryTrendPlusDM = calcPlusDM(mdPrimaryTrendH, mdPrimaryTrendH[1], mdPrimaryTrendL, mdPrimaryTrendL[1])
+
+float indPrimaryTrendMinusDM = calcMinusDM(mdPrimaryTrendH, mdPrimaryTrendH[1], mdPrimaryTrendL, mdPrimaryTrendL[1])
+
+float indPrimaryTrendPlusDI = calcPlusDI(indPrimaryTrendPlusDM, indPrimaryTrendATR, ATR_PERIOD)
+
+float indPrimaryTrendMinusDI = calcMinusDI(indPrimaryTrendMinusDM, indPrimaryTrendATR, ATR_PERIOD)
+
+
+//------------------------------
+// Reference Trend Dataset
+//------------------------------
+
+float indReferenceTrendPlusDM = calcPlusDM(mdReferenceTrendH, mdReferenceTrendH[1], mdReferenceTrendL, mdReferenceTrendL[1])
+
+float indReferenceTrendMinusDM = calcMinusDM(mdReferenceTrendH, mdReferenceTrendH[1], mdReferenceTrendL, mdReferenceTrendL[1])
+
+float indReferenceTrendPlusDI = calcPlusDI(indReferenceTrendPlusDM, indReferenceTrendATR, ATR_PERIOD)
+
+float indReferenceTrendMinusDI = calcMinusDI(indReferenceTrendMinusDM, indReferenceTrendATR, ATR_PERIOD)
