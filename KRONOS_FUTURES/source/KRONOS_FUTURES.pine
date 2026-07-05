@@ -227,6 +227,25 @@ else if krMarket == "NSE"
     assetDependencyProfile := "LocalDominant"
     assetTradingProfile    := "NSE Swing"
 
+
+//==================================================================
+// KRONOS SHARED HELPERS
+//==================================================================
+
+//--------------------------------------------------
+// KR-001
+// Returns OHLCV dataset for any symbol/timeframe
+//--------------------------------------------------
+
+getOHLCV(string symbol, string timeframe) =>
+    request.security(
+         symbol,
+         timeframe,
+         [open, high, low, close, volume],
+         gaps = barmerge.gaps_off,
+         lookahead = barmerge.lookahead_off
+     )
+
 //==================================================================
 // KR-260 : MARKET DATA ENGINE
 // Version : 0.5.0-alpha
@@ -300,3 +319,78 @@ float mdReferenceStructureClose = na
 // Execution
 float mdPrimaryExecutionClose   = na
 float mdReferenceExecutionClose = na
+
+//==================================================================
+// KR-260.31 PRIMARY - STRATEGIC DATASET
+//==================================================================
+
+[mdPrimaryStrategicO, mdPrimaryStrategicH, mdPrimaryStrategicL, mdPrimaryStrategicC, mdPrimaryStrategicV] = getOHLCV(mdPrimarySymbol, mdStrategicTF)
+
+//==================================================================
+// KR-260.32 PRIMARY - TREND DATASET
+//==================================================================
+
+[mdPrimaryTrendO, mdPrimaryTrendH, mdPrimaryTrendL, mdPrimaryTrendC, mdPrimaryTrendV] = getOHLCV(mdPrimarySymbol, mdTrendTF)
+
+//==================================================================
+// KR-260.33 PRIMARY - STRUCTURE DATASET
+//==================================================================
+
+[mdPrimaryStructureO, mdPrimaryStructureH, mdPrimaryStructureL, mdPrimaryStructureC, mdPrimaryStructureV] = getOHLCV(mdPrimarySymbol, mdStructureTF)
+
+//==================================================================
+// KR-260.34 PRIMARY - EXECUTION DATASET
+//==================================================================
+
+[mdPrimaryExecutionO, mdPrimaryExecutionH, mdPrimaryExecutionL, mdPrimaryExecutionC, mdPrimaryExecutionV] = getOHLCV(mdPrimarySymbol, mdExecutionTF)
+
+
+//==================================================================
+// KR-260.35 PRIMARY DATA VALIDATION
+//==================================================================
+
+bool mdStrategicAvailable = not na(mdPrimaryStrategicC)
+bool mdTrendAvailable     = not na(mdPrimaryTrendC)
+bool mdStructureAvailable = not na(mdPrimaryStructureC)
+bool mdExecutionAvailable = not na(mdPrimaryExecutionC)
+
+mdPrimaryAvailable := mdStrategicAvailable and
+                      mdTrendAvailable and
+                      mdStructureAvailable and
+                      mdExecutionAvailable
+
+//==================================================================
+// KR-260.35 PRIMARY DATA STATUS
+//==================================================================
+
+mdPrimaryAvailable := not na(mdPrimaryExecutionC)
+
+if mdPrimaryAvailable
+    mdStatus := "PRIMARY DATA READY"
+else
+    mdStatus := "PRIMARY DATA UNAVAILABLE"
+
+
+//==================================================================
+// KR-260.41 REFERENCE - STRATEGIC DATASET
+//==================================================================
+
+[mdReferenceStrategicO, mdReferenceStrategicH, mdReferenceStrategicL, mdReferenceStrategicC, mdReferenceStrategicV] = getOHLCV(mdReferenceSymbol, mdStrategicTF)
+
+//==================================================================
+// KR-260.42 REFERENCE - TREND DATASET
+//==================================================================
+
+[mdReferenceTrendO, mdReferenceTrendH, mdReferenceTrendL, mdReferenceTrendC, mdReferenceTrendV] = getOHLCV(mdReferenceSymbol, mdTrendTF)
+
+//==================================================================
+// KR-260.43 REFERENCE - STRUCTURE DATASET
+//==================================================================
+
+[mdReferenceStructureO, mdReferenceStructureH, mdReferenceStructureL, mdReferenceStructureC, mdReferenceStructureV] = getOHLCV(mdReferenceSymbol, mdStructureTF)
+
+//==================================================================
+// KR-260.44 REFERENCE - EXECUTION DATASET
+//==================================================================
+
+[mdReferenceExecutionO, mdReferenceExecutionH, mdReferenceExecutionL, mdReferenceExecutionC, mdReferenceExecutionV] = getOHLCV(mdReferenceSymbol, mdExecutionTF)

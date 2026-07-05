@@ -64,3 +64,18 @@ Planned
 ## 0.5.0
 
 Initial public foundation release.
+
+# KRONOS Change Log
+
+## Build 0006
+Date: 28-Jun-2026
+
+### KR-260 Market Data Engine
+- Added reusable getOHLCV() helper
+- Added Primary OHLCV datasets
+- Added Reference OHLCV datasets
+- Added Market Data validation
+- Standardized Market Data interface
+
+Status:
+Production Ready
