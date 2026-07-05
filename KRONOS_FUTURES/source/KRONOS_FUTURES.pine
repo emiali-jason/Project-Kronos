@@ -149,6 +149,25 @@ string krAssetName    = "UNKNOWN"
 string krGlobalSymbol = "UNKNOWN"
 string krAssetClass   = "UNKNOWN"
 
+//==================================================
+// KRONOS Asset Interface v2
+//==================================================
+
+// These variables are the public interface exposed
+// by KR-250 to all downstream engines.
+
+string assetName              = ""
+string assetType              = ""
+
+string assetMarket            = krMarket
+string assetExchange          = krExchange
+
+string assetPrimarySymbol     = syminfo.tickerid
+string assetReferenceSymbol   = ""
+
+string assetDependencyProfile = "Unknown"
+string assetTradingProfile    = "Unknown"
+
 //------------------------------
 // MCX Assets
 //------------------------------
@@ -177,3 +196,33 @@ else if str.contains(krTicker, "NATURALGAS")
     krAssetName    := "Natural Gas"
     krGlobalSymbol := "NYMEX:NG1!"
     krAssetClass   := "Energy"
+
+//==================================================
+// KRONOS Asset Interface Mapping
+//==================================================
+
+// Copy legacy KR-250 values into the new interface.
+
+assetName            := krAssetName
+assetType            := krAssetClass
+assetReferenceSymbol := krGlobalSymbol
+
+//------------------------------
+// Dependency Profiles
+//------------------------------
+
+if krMarket == "MCX"
+    assetDependencyProfile := "GlobalDominant"
+    assetTradingProfile    := "MCX Swing"
+
+else if krTicker == "NIFTY" or str.contains(krTicker, "NIFTY")
+    assetDependencyProfile := "LocalDominant"
+    assetTradingProfile    := "NSE Swing"
+
+else if str.contains(krTicker, "BANKNIFTY")
+    assetDependencyProfile := "LocalDominant"
+    assetTradingProfile    := "NSE Swing"
+
+else if krMarket == "NSE"
+    assetDependencyProfile := "LocalDominant"
+    assetTradingProfile    := "NSE Swing"
