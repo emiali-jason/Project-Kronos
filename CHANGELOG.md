@@ -97,3 +97,25 @@ Trend Strength
 Status
 
 Frozen
+
+## Build 0010 — KR-280 CPR Intelligence Engine
+
+### Added
+- KR-280 CPR Intelligence Engine
+- Classic CPR calculations
+- R1–R4 and S1–S4 pivot calculations
+- Professional CPR renderer with shaded value zone
+- CPR width analysis
+- CPR width classification
+- CPR relationship engine
+- Price position analysis
+- Virgin CPR detection
+- Complete public interface
+
+### Changed
+- Adopted KRONOS CPR visual standard
+- CPR rendered as a value zone instead of independent lines
+
+### Design Decisions
+- DD-0002: CPR is a value zone
+- DD-0005: CPR Relationship Engine

@@ -567,7 +567,7 @@ float indReferenceTrendADX = calcADX(indReferenceTrendDX, ATR_PERIOD)
 //
 // Version : 1.0.0
 // Build   : 0009
-// Status  : Development
+// Status  : Release
 //
 // Purpose
 // -------
@@ -780,3 +780,452 @@ bool outBearishCHoCH = strBearishCHoCH
 
 bool outLastBullishBOS = strLastBullishBOS
 bool outLastBearishBOS = strLastBearishBOS
+
+//==================================================================
+// KR-280 : CPR INTELLIGENCE ENGINE
+//==================================================================
+//
+// Version : 1.0.0
+// Build   : 0010
+// Status  : Development
+//
+// Purpose
+// -------
+// Calculate Central Pivot Range (CPR),
+// Support/Resistance Levels,
+// and CPR Intelligence.
+//
+// Dependencies
+// ------------
+// KR-260 Market Data Engine
+//
+// Consumes
+// --------
+// Previous Day OHLC
+//
+// Produces
+// --------
+// CPR
+// Support
+// Resistance
+// CPR Intelligence
+//
+// NOTE
+// ----
+// KR-280 performs no trading decisions.
+//==================================================================
+
+//==================================================================
+// KR-280.10 CONFIGURATION
+//==================================================================
+
+const string GRP_CPR = "CPR"
+
+inpShowCPR = input.bool(true, "Show CPR", group=GRP_CPR)
+
+inpShowResistance = input.bool(true, "Show Resistance", group=GRP_CPR)
+
+inpShowSupport = input.bool(true, "Show Support", group=GRP_CPR)
+
+inpShowPreviousDay = input.bool(true, "Show PDH / PDL", group=GRP_CPR)
+
+//==================================================================
+// KR-280.20 PREVIOUS DAY MARKET DATA
+//==================================================================
+
+//--------------------------------------------------
+// Previous Day OHLC
+//--------------------------------------------------
+
+float cprPreviousDayHigh = request.security(
+    mdPrimarySymbol,
+    "D",
+    high[1],
+    gaps = barmerge.gaps_off,
+    lookahead = barmerge.lookahead_off)
+
+float cprPreviousDayLow = request.security(
+    mdPrimarySymbol,
+    "D",
+    low[1],
+    gaps = barmerge.gaps_off,
+    lookahead = barmerge.lookahead_off)
+
+float cprPreviousDayClose = request.security(
+    mdPrimarySymbol,
+    "D",
+    close[1],
+    gaps = barmerge.gaps_off,
+    lookahead = barmerge.lookahead_off)
+
+//==================================================================
+// KR-280.30 CPR CALCULATION
+//==================================================================
+
+//--------------------------------------------------
+// Central Pivot
+//--------------------------------------------------
+
+float cprCentralPivot = (cprPreviousDayHigh + cprPreviousDayLow + cprPreviousDayClose) / 3.0
+
+//--------------------------------------------------
+// Bottom Central
+//--------------------------------------------------
+
+float cprBottomCentral = (cprPreviousDayHigh + cprPreviousDayLow) / 2.0
+
+//--------------------------------------------------
+// Top Central
+//--------------------------------------------------
+
+float cprTopCentral = (2.0 * cprCentralPivot) - cprBottomCentral
+
+//--------------------------------------------------
+// Safety Normalization
+//--------------------------------------------------
+
+if cprTopCentral < cprBottomCentral
+    float temp = cprTopCentral
+    cprTopCentral := cprBottomCentral
+    cprBottomCentral := temp
+
+
+//==================================================================
+// KR-280.40 SUPPORT & RESISTANCE
+//==================================================================
+
+//--------------------------------------------------
+// Resistance Levels
+//--------------------------------------------------
+
+float cprResistance1 = (2.0 * cprCentralPivot) - cprPreviousDayLow
+
+float cprResistance2 = cprCentralPivot + (cprPreviousDayHigh - cprPreviousDayLow)
+
+float cprResistance3 = cprPreviousDayHigh + 2.0 * (cprCentralPivot - cprPreviousDayLow)
+
+float cprResistance4 = cprResistance3 + (cprResistance2 - cprResistance1)
+
+//--------------------------------------------------
+// Support Levels
+//--------------------------------------------------
+
+float cprSupport1 = (2.0 * cprCentralPivot) - cprPreviousDayHigh
+
+float cprSupport2 = cprCentralPivot - (cprPreviousDayHigh - cprPreviousDayLow)
+
+float cprSupport3 = cprPreviousDayLow - 2.0 * (cprPreviousDayHigh - cprCentralPivot)
+
+float cprSupport4 = cprSupport3 - (cprResistance1 - cprSupport1)
+
+
+//==================================================================
+// KR-280.50 PROFESSIONAL CHART RENDERER
+//==================================================================
+
+//--------------------------------------------------
+// Resistance
+//--------------------------------------------------
+
+plot(inpShowResistance ? cprResistance1 : na, title="R1", color=color.red, linewidth=2)
+
+plot(inpShowResistance ? cprResistance2 : na, title="R2", color=color.red, linewidth=1, display=display.none)
+
+plot(inpShowResistance ? cprResistance3 : na, title="R3", color=color.red, linewidth=1, display=display.none)
+
+plot(inpShowResistance ? cprResistance4 : na, title="R4", color=color.red, linewidth=1, display=display.none)
+
+
+//--------------------------------------------------
+// CPR Zone
+//--------------------------------------------------
+
+plotTC = plot(
+    inpShowCPR ? cprTopCentral : na,
+    title="TC",
+    color=color.blue,
+    linewidth=1)
+
+plotCP = plot(
+    inpShowCPR ? cprCentralPivot : na,
+    title="CP",
+    color=color.blue,
+    linewidth=3)
+
+plotBC = plot(
+    inpShowCPR ? cprBottomCentral : na,
+    title="BC",
+    color=color.blue,
+    linewidth=1)
+
+fill(
+    plotTC,
+    plotBC,
+    color=color.new(color.blue, 93),
+    title="CPR Zone")
+
+
+//--------------------------------------------------
+// Support
+//--------------------------------------------------
+
+plot(inpShowSupport ? cprSupport1 : na, title="S1", color=color.green, linewidth=2)
+
+plot(inpShowSupport ? cprSupport2 : na, title="S2", color=color.green, linewidth=1, display=display.none)
+
+plot(inpShowSupport ? cprSupport3 : na, title="S3", color=color.green, linewidth=1, display=display.none)
+
+plot(inpShowSupport ? cprSupport4 : na, title="S4", color=color.green, linewidth=1, display=display.none)
+
+
+//--------------------------------------------------
+// Previous Day Levels
+//--------------------------------------------------
+
+plot(
+    inpShowPreviousDay ? cprPreviousDayHigh : na,
+    title="PDH",
+    color=color.white,
+    linewidth=2)
+
+plot(
+    inpShowPreviousDay ? cprPreviousDayLow : na,
+    title="PDL",
+    color=color.white,
+    linewidth=2)
+
+//==================================================================
+// KR-280.60 CPR INTELLIGENCE
+//==================================================================
+
+//--------------------------------------------------
+// CPR Width
+//--------------------------------------------------
+
+float cprWidth = math.abs(cprTopCentral - cprBottomCentral)
+
+float cprWidthPercent = cprCentralPivot != 0.0 ? (cprWidth / cprCentralPivot) * 100.0 : 0.0
+
+//--------------------------------------------------
+// CPR Width Classification
+//--------------------------------------------------
+
+const int CPR_WIDTH_VERY_NARROW = 1
+const int CPR_WIDTH_NARROW = 2
+const int CPR_WIDTH_NORMAL = 3
+const int CPR_WIDTH_WIDE = 4
+const int CPR_WIDTH_VERY_WIDE = 5
+
+var int cprWidthState = CPR_WIDTH_NORMAL
+
+if cprWidthPercent < 0.15
+    cprWidthState := CPR_WIDTH_VERY_NARROW
+else if cprWidthPercent < 0.30
+    cprWidthState := CPR_WIDTH_NARROW
+else if cprWidthPercent < 0.60
+    cprWidthState := CPR_WIDTH_NORMAL
+else if cprWidthPercent < 1.00
+    cprWidthState := CPR_WIDTH_WIDE
+else
+    cprWidthState := CPR_WIDTH_VERY_WIDE
+
+//--------------------------------------------------
+// Width Description
+//--------------------------------------------------
+
+string cprWidthText = ""
+
+switch cprWidthState
+    CPR_WIDTH_VERY_NARROW => cprWidthText := "Very Narrow"
+    CPR_WIDTH_NARROW      => cprWidthText := "Narrow"
+    CPR_WIDTH_NORMAL      => cprWidthText := "Normal"
+    CPR_WIDTH_WIDE        => cprWidthText := "Wide"
+    CPR_WIDTH_VERY_WIDE   => cprWidthText := "Very Wide"
+
+
+//--------------------------------------------------
+// Previous CPR
+//--------------------------------------------------
+
+float cprPreviousCentralPivot = request.security(mdPrimarySymbol, "D", (high[2] + low[2] + close[2]) / 3.0, gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
+
+float cprPreviousBottomCentral = request.security(mdPrimarySymbol, "D", (high[2] + low[2]) / 2.0, gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
+
+float cprPreviousTopCentral = (2.0 * cprPreviousCentralPivot) - cprPreviousBottomCentral
+
+if cprPreviousTopCentral < cprPreviousBottomCentral
+    float tmp = cprPreviousTopCentral
+    cprPreviousTopCentral := cprPreviousBottomCentral
+    cprPreviousBottomCentral := tmp
+
+//--------------------------------------------------
+// CPR Relationship States
+//--------------------------------------------------
+
+const int CPR_REL_UNKNOWN = 0
+const int CPR_REL_INSIDE = 1
+const int CPR_REL_OUTSIDE = 2
+const int CPR_REL_OVERLAP_HIGHER = 3
+const int CPR_REL_OVERLAP_LOWER = 4
+const int CPR_REL_UNCHANGED = 5
+
+var int cprRelationshipState = CPR_REL_UNKNOWN
+
+//--------------------------------------------------
+// CPR Relationship Detection
+//--------------------------------------------------
+
+float cprTolerance = cprCentralPivot * 0.0001
+
+bool cprUnchanged = math.abs(cprCentralPivot - cprPreviousCentralPivot) <= cprTolerance
+
+bool cprInside = cprTopCentral <= cprPreviousTopCentral and cprBottomCentral >= cprPreviousBottomCentral
+
+bool cprOutside = cprTopCentral >= cprPreviousTopCentral and cprBottomCentral <= cprPreviousBottomCentral
+
+if cprUnchanged
+    cprRelationshipState := CPR_REL_UNCHANGED
+else if cprInside
+    cprRelationshipState := CPR_REL_INSIDE
+else if cprOutside
+    cprRelationshipState := CPR_REL_OUTSIDE
+else if cprCentralPivot > cprPreviousCentralPivot
+    cprRelationshipState := CPR_REL_OVERLAP_HIGHER
+else
+    cprRelationshipState := CPR_REL_OVERLAP_LOWER
+
+//--------------------------------------------------
+// CPR Relationship Text
+//--------------------------------------------------
+
+string cprRelationshipText = ""
+
+switch cprRelationshipState
+    CPR_REL_INSIDE           => cprRelationshipText := "Inside CPR"
+    CPR_REL_OUTSIDE          => cprRelationshipText := "Outside CPR"
+    CPR_REL_OVERLAP_HIGHER   => cprRelationshipText := "Overlapping Higher"
+    CPR_REL_OVERLAP_LOWER    => cprRelationshipText := "Overlapping Lower"
+    CPR_REL_UNCHANGED        => cprRelationshipText := "Unchanged"
+    => cprRelationshipText := "Unknown"
+
+//--------------------------------------------------
+// Price Position
+//--------------------------------------------------
+
+const int CPR_PRICE_BELOW = 1
+const int CPR_PRICE_INSIDE = 2
+const int CPR_PRICE_ABOVE = 3
+
+var int cprPriceState = CPR_PRICE_INSIDE
+
+if close > cprTopCentral
+    cprPriceState := CPR_PRICE_ABOVE
+else if close < cprBottomCentral
+    cprPriceState := CPR_PRICE_BELOW
+else
+    cprPriceState := CPR_PRICE_INSIDE
+
+bool cprPriceAbove = cprPriceState == CPR_PRICE_ABOVE
+bool cprPriceInside = cprPriceState == CPR_PRICE_INSIDE
+bool cprPriceBelow = cprPriceState == CPR_PRICE_BELOW
+
+string cprPriceText = ""
+
+switch cprPriceState
+    CPR_PRICE_ABOVE => cprPriceText := "Above CPR"
+    CPR_PRICE_INSIDE => cprPriceText := "Inside CPR"
+    CPR_PRICE_BELOW => cprPriceText := "Below CPR"
+
+
+//--------------------------------------------------
+// Virgin CPR
+//--------------------------------------------------
+
+bool cprVirgin = low > cprTopCentral or high < cprBottomCentral
+
+
+//==================================================================
+// KR-280.70 PUBLIC INTERFACE
+//==================================================================
+
+//--------------------------------------------------
+// CPR Values
+//--------------------------------------------------
+
+float outCentralPivot = cprCentralPivot
+float outTopCentral = cprTopCentral
+float outBottomCentral = cprBottomCentral
+
+//--------------------------------------------------
+// Resistance
+//--------------------------------------------------
+
+float outResistance1 = cprResistance1
+float outResistance2 = cprResistance2
+float outResistance3 = cprResistance3
+float outResistance4 = cprResistance4
+
+//--------------------------------------------------
+// Support
+//--------------------------------------------------
+
+float outSupport1 = cprSupport1
+float outSupport2 = cprSupport2
+float outSupport3 = cprSupport3
+float outSupport4 = cprSupport4
+
+//--------------------------------------------------
+// Previous Day
+//--------------------------------------------------
+
+float outPreviousDayHigh = cprPreviousDayHigh
+float outPreviousDayLow = cprPreviousDayLow
+float outPreviousDayClose = cprPreviousDayClose
+
+//--------------------------------------------------
+// CPR Width
+//--------------------------------------------------
+
+float outCPRWidth = cprWidth
+float outCPRWidthPercent = cprWidthPercent
+
+int outCPRWidthState = cprWidthState
+
+string outCPRWidthText = cprWidthText
+
+//--------------------------------------------------
+// CPR Relationship
+//--------------------------------------------------
+
+int outCPRRelationshipState = cprRelationshipState
+
+string outCPRRelationshipText = cprRelationshipText
+
+bool outInsideCPR = cprRelationshipState == CPR_REL_INSIDE
+bool outOutsideCPR = cprRelationshipState == CPR_REL_OUTSIDE
+bool outOverlappingHigherCPR = cprRelationshipState == CPR_REL_OVERLAP_HIGHER
+bool outOverlappingLowerCPR = cprRelationshipState == CPR_REL_OVERLAP_LOWER
+bool outUnchangedCPR = cprRelationshipState == CPR_REL_UNCHANGED
+
+//--------------------------------------------------
+// Price Position
+//--------------------------------------------------
+
+int outPriceState = cprPriceState
+
+string outPriceText = cprPriceText
+
+bool outPriceAboveCPR = cprPriceAbove
+bool outPriceInsideCPR = cprPriceInside
+bool outPriceBelowCPR = cprPriceBelow
+
+//--------------------------------------------------
+// Virgin CPR
+//--------------------------------------------------
+
+bool outVirginCPR = cprVirgin
+
+
+//==================================================================
+// END OF KR-280
+//==================================================================

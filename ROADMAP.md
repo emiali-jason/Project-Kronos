@@ -71,3 +71,31 @@ This roadmap outlines the planned development of PROJECT KRONOS.
 ## Version 1.0.0
 
 First stable production release of PROJECT KRONOS.
+
+# KRONOS Roadmap
+
+## Foundation Phase ✅
+
+- [x] KR-100 Configuration Engine
+- [x] KR-150 Indicator Engine
+- [x] KR-200 Market Identification Engine
+- [x] KR-250 Asset Intelligence Engine
+- [x] KR-260 Market Data Engine
+- [x] KR-271 Mathematical Library
+- [x] KR-275 Market Structure Intelligence Engine
+- [x] KR-280 CPR Intelligence Engine
+
+---
+
+## Intelligence Phase 🚧
+
+- [ ] KR-300 Trend Intelligence Engine
+- [ ] KR-350 Signal Intelligence Engine
+- [ ] KR-400 Decision Intelligence Engine
+- [ ] KR-500 Composite Scoring Engine
+
+---
+
+## Platform Phase
+
+- [ ] KR-900 Rendering Engine
