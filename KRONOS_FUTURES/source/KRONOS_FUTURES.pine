@@ -560,3 +560,223 @@ float indPrimaryTrendADX = calcADX(indPrimaryTrendDX, ATR_PERIOD)
 // Reference
 float indReferenceTrendDX = calcDX(indReferenceTrendPlusDI, indReferenceTrendMinusDI)
 float indReferenceTrendADX = calcADX(indReferenceTrendDX, ATR_PERIOD)
+
+//==================================================================
+// KR-275 : MARKET STRUCTURE INTELLIGENCE ENGINE
+//==================================================================
+//
+// Version : 1.0.0
+// Build   : 0009
+// Status  : Development
+//
+// Purpose
+// -------
+// Detect, classify and maintain market structure.
+//
+// Dependencies
+// ------------
+// KR-260 Market Data Engine
+// KR-271 Mathematical Library
+//
+// Consumes
+// --------
+// Primary Trend OHLC
+//
+// Produces
+// --------
+// Swing High
+// Swing Low
+//
+// Higher High
+// Higher Low
+//
+// Lower High
+// Lower Low
+//
+// Bullish Structure
+// Bearish Structure
+//
+// Bullish BOS
+// Bearish BOS
+//
+// Bullish CHoCH
+// Bearish CHoCH
+//
+// NOTE
+// ----
+// KR-275 performs no trading decisions.
+//==================================================================
+
+//==================================================================
+// KR-275.10 CONFIGURATION
+//==================================================================
+
+const string GRP_STRUCTURE = "Market Structure"
+
+inpStructureLeftBars = input.int(2, "Pivot Left", minval=1, maxval=10, group=GRP_STRUCTURE)
+
+inpStructureRightBars = input.int(2, "Pivot Right", minval=1, maxval=10, group=GRP_STRUCTURE)
+
+//==================================================================
+// KR-275.20 PIVOT DETECTION
+//==================================================================
+
+float strPivotHigh = ta.pivothigh(mdPrimaryTrendH, inpStructureLeftBars, inpStructureRightBars)
+
+float strPivotLow = ta.pivotlow(mdPrimaryTrendL, inpStructureLeftBars, inpStructureRightBars)
+
+//==================================================================
+// KR-275.30 SWING MEMORY
+//==================================================================
+
+var float strPreviousSwingHigh = na
+var float strCurrentSwingHigh = na
+
+var float strPreviousSwingLow = na
+var float strCurrentSwingLow = na
+
+if not na(strPivotHigh)
+    strPreviousSwingHigh := strCurrentSwingHigh
+    strCurrentSwingHigh := strPivotHigh
+
+if not na(strPivotLow)
+    strPreviousSwingLow := strCurrentSwingLow
+    strCurrentSwingLow := strPivotLow
+
+//==================================================================
+// KR-275.40 SWING CLASSIFICATION
+//==================================================================
+
+//--------------------------------------------------
+// Higher High / Lower High
+//--------------------------------------------------
+
+bool strHigherHigh = false
+bool strLowerHigh  = false
+
+if not na(strCurrentSwingHigh) and not na(strPreviousSwingHigh)
+    strHigherHigh := strCurrentSwingHigh > strPreviousSwingHigh
+    strLowerHigh  := strCurrentSwingHigh < strPreviousSwingHigh
+
+
+//--------------------------------------------------
+// Higher Low / Lower Low
+//--------------------------------------------------
+
+bool strHigherLow = false
+bool strLowerLow  = false
+
+if not na(strCurrentSwingLow) and not na(strPreviousSwingLow)
+    strHigherLow := strCurrentSwingLow > strPreviousSwingLow
+    strLowerLow  := strCurrentSwingLow < strPreviousSwingLow
+
+//==================================================================
+// KR-275.50 STRUCTURE CLASSIFICATION
+//==================================================================
+
+//--------------------------------------------------
+// Structure States
+//--------------------------------------------------
+
+const int STR_BEARISH = -1
+const int STR_NEUTRAL = 0
+const int STR_BULLISH = 1
+
+//--------------------------------------------------
+// Persistent Structure State
+//--------------------------------------------------
+
+var int strStructureState = STR_NEUTRAL
+
+if strHigherHigh and strHigherLow
+    strStructureState := STR_BULLISH
+
+if strLowerHigh and strLowerLow
+    strStructureState := STR_BEARISH
+
+//--------------------------------------------------
+// Public Structure
+//--------------------------------------------------
+
+bool strBullishStructure = strStructureState == STR_BULLISH
+bool strBearishStructure = strStructureState == STR_BEARISH
+bool strNeutralStructure = strStructureState == STR_NEUTRAL
+
+//==================================================================
+// KR-275.60 BREAK OF STRUCTURE
+//==================================================================
+
+bool strBullishBOS = false
+bool strBearishBOS = false
+
+var bool strLastBullishBOS = false
+var bool strLastBearishBOS = false
+
+if not na(strCurrentSwingHigh)
+    strBullishBOS := ta.crossover(mdPrimaryTrendC, strCurrentSwingHigh)
+
+if strBullishBOS
+    strLastBullishBOS := true
+    strLastBearishBOS := false
+
+if not na(strCurrentSwingLow)
+    strBearishBOS := ta.crossunder(mdPrimaryTrendC, strCurrentSwingLow)
+
+if strBearishBOS
+    strLastBearishBOS := true
+    strLastBullishBOS := false
+
+//==================================================================
+// KR-275.70 CHANGE OF CHARACTER
+//==================================================================
+
+bool strBullishCHoCH = false
+bool strBearishCHoCH = false
+
+strBullishCHoCH := strBearishStructure and strBullishBOS
+strBearishCHoCH := strBullishStructure and strBearishBOS
+
+//==================================================================
+// KR-275.80 PUBLIC INTERFACE
+//==================================================================
+
+//--------------------------------------------------
+// Structure
+//--------------------------------------------------
+
+int outStructureState = strStructureState
+
+bool outBullishStructure = strBullishStructure
+bool outBearishStructure = strBearishStructure
+bool outNeutralStructure = strNeutralStructure
+
+//--------------------------------------------------
+// Swing Classification
+//--------------------------------------------------
+
+bool outHigherHigh = strHigherHigh
+bool outHigherLow = strHigherLow
+
+bool outLowerHigh = strLowerHigh
+bool outLowerLow = strLowerLow
+
+//--------------------------------------------------
+// BOS
+//--------------------------------------------------
+
+bool outBullishBOS = strBullishBOS
+bool outBearishBOS = strBearishBOS
+
+//--------------------------------------------------
+// CHoCH
+//--------------------------------------------------
+
+bool outBullishCHoCH = strBullishCHoCH
+bool outBearishCHoCH = strBearishCHoCH
+
+//--------------------------------------------------
+// Persistent BOS
+//--------------------------------------------------
+
+bool outLastBullishBOS = strLastBullishBOS
+bool outLastBearishBOS = strLastBearishBOS
