@@ -79,3 +79,21 @@ Date: 28-Jun-2026
 
 Status:
 Production Ready
+
+Build 0008
+
+Completed
+
+KR-271 Mathematical Library
+
+Added
+
+True Range
+ATR
+Directional Movement
+Directional Index
+Trend Strength
+
+Status
+
+Frozen
