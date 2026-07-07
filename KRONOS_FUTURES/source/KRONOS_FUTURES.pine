@@ -892,13 +892,13 @@ string outReferencePeriod = cprReferencePeriod
 // Central Pivot
 //--------------------------------------------------
 
-float cprCentralPivot = (cprPreviousDayHigh + cprPreviousDayLow + cprPreviousDayClose) / 3.0
+float cprCentralPivot = (cprReferenceHigh + cprReferenceLow + cprReferenceClose) / 3.0
 
 //--------------------------------------------------
 // Bottom Central
 //--------------------------------------------------
 
-float cprBottomCentral = (cprPreviousDayHigh + cprPreviousDayLow) / 2.0
+float cprBottomCentral = (cprReferenceHigh + cprReferenceLow) / 2.0
 
 //--------------------------------------------------
 // Top Central
@@ -924,11 +924,11 @@ if cprTopCentral < cprBottomCentral
 // Resistance Levels
 //--------------------------------------------------
 
-float cprResistance1 = (2.0 * cprCentralPivot) - cprPreviousDayLow
+float cprResistance1 = (2.0 * cprCentralPivot) - cprReferenceLow
 
-float cprResistance2 = cprCentralPivot + (cprPreviousDayHigh - cprPreviousDayLow)
+float cprResistance2 = cprCentralPivot + (cprReferenceHigh - cprReferenceLow)
 
-float cprResistance3 = cprPreviousDayHigh + 2.0 * (cprCentralPivot - cprPreviousDayLow)
+float cprResistance3 = cprReferenceHigh + 2.0 * (cprCentralPivot - cprReferenceLow)
 
 float cprResistance4 = cprResistance3 + (cprResistance2 - cprResistance1)
 
@@ -936,17 +936,24 @@ float cprResistance4 = cprResistance3 + (cprResistance2 - cprResistance1)
 // Support Levels
 //--------------------------------------------------
 
-float cprSupport1 = (2.0 * cprCentralPivot) - cprPreviousDayHigh
+float cprSupport1 = (2.0 * cprCentralPivot) - cprReferenceHigh
 
-float cprSupport2 = cprCentralPivot - (cprPreviousDayHigh - cprPreviousDayLow)
+float cprSupport2 = cprCentralPivot - (cprReferenceHigh - cprReferenceLow)
 
-float cprSupport3 = cprPreviousDayLow - 2.0 * (cprPreviousDayHigh - cprCentralPivot)
+float cprSupport3 = cprReferenceLow - 2.0 * (cprReferenceHigh - cprCentralPivot)
 
 float cprSupport4 = cprSupport3 - (cprResistance1 - cprSupport1)
 
 
 //==================================================================
 // KR-280.50 PROFESSIONAL CHART RENDERER
+//==================================================================
+//
+// Rendering only.
+// No trading logic or calculations are performed here.
+//
+// All plots consume values produced by KR-280.30 and KR-280.60.
+//
 //==================================================================
 
 //--------------------------------------------------
@@ -1005,23 +1012,37 @@ plot(inpShowSupport ? cprSupport4 : na, title="S4", color=color.green, linewidth
 
 
 //--------------------------------------------------
-// Previous Day Levels
+// Reference High / Low Levels
 //--------------------------------------------------
 
 plot(
-    inpShowPreviousDay ? cprPreviousDayHigh : na,
-    title="PDH",
+    inpShowPreviousDay ? cprReferenceHigh : na,
+    title="Reference High",
     color=color.white,
     linewidth=2)
 
 plot(
-    inpShowPreviousDay ? cprPreviousDayLow : na,
-    title="PDL",
+    inpShowPreviousDay ? cprReferenceLow : na,
+    title="Reference Low",
     color=color.white,
     linewidth=2)
 
 //==================================================================
 // KR-280.60 CPR INTELLIGENCE
+//==================================================================
+//
+// This section derives contextual intelligence from the calculated
+// CPR values. No rendering is performed here.
+//
+// Processing Order
+// 1. CPR Width
+// 2. Width Classification
+// 3. Previous Reference CPR
+// 4. CPR Relationship
+// 5. Price Position
+// 6. Virgin CPR
+//
+
 //==================================================================
 
 //--------------------------------------------------
@@ -1204,9 +1225,9 @@ float outSupport4 = cprSupport4
 // Previous Day
 //--------------------------------------------------
 
-float outPreviousDayHigh = cprPreviousDayHigh
-float outPreviousDayLow = cprPreviousDayLow
-float outPreviousDayClose = cprPreviousDayClose
+float outPreviousDayHigh = cprReferenceHigh
+float outPreviousDayLow = cprReferenceLow
+float outPreviousDayClose = cprReferenceClose
 
 //--------------------------------------------------
 // CPR Width
@@ -1251,6 +1272,25 @@ bool outPriceBelowCPR = cprPriceBelow
 
 bool outVirginCPR = cprVirgin
 
+
+
+//==================================================================
+// ENGINE STATUS
+//==================================================================
+//
+// Engine  : KR-280 CPR Intelligence
+// Version : 1.1.0
+// Build   : 0015
+// Status  : FROZEN
+//
+// Notes
+// -----
+// * Reference Period architecture implemented.
+// * Public interface stabilized.
+// * Future changes should be limited to renderer enhancements
+//   or additive outputs that do not break compatibility.
+//
+//==================================================================
 
 //==================================================================
 // END OF KR-280
