@@ -821,42 +821,68 @@ bool outLastBearishBOS = strLastBearishBOS
 
 const string GRP_CPR = "CPR"
 
-inpShowCPR = input.bool(true, "Show CPR", group=GRP_CPR)
-
-inpShowResistance = input.bool(true, "Show Resistance", group=GRP_CPR)
-
-inpShowSupport = input.bool(true, "Show Support", group=GRP_CPR)
-
-inpShowPreviousDay = input.bool(true, "Show PDH / PDL", group=GRP_CPR)
+inpShowCPR         = input.bool(true, "Show CPR", group = GRP_CPR)
+inpShowResistance  = input.bool(true, "Show Resistance", group = GRP_CPR)
+inpShowSupport     = input.bool(true, "Show Support", group = GRP_CPR)
+inpShowPreviousDay = input.bool(true, "Show PDH / PDL", group = GRP_CPR)
 
 //==================================================================
-// KR-280.20 PREVIOUS DAY MARKET DATA
+// KR-280.15 REFERENCE PERIOD RESOLUTION
 //==================================================================
 
-//--------------------------------------------------
-// Previous Day OHLC
-//--------------------------------------------------
+string cprSourceTF = "D"
+string cprReferencePeriod = "Daily"
 
-float cprPreviousDayHigh = request.security(
+if timeframe.isintraday
+    if timeframe.multiplier <= 60
+        cprSourceTF := "D"
+        cprReferencePeriod := "Daily"
+    else
+        cprSourceTF := "W"
+        cprReferencePeriod := "Weekly"
+else if timeframe.isdaily
+    cprSourceTF := "W"
+    cprReferencePeriod := "Weekly"
+else if timeframe.isweekly
+    cprSourceTF := "M"
+    cprReferencePeriod := "Monthly"
+else
+    cprSourceTF := "12M"
+    cprReferencePeriod := "Yearly"
+
+//==================================================================
+// KR-280.20 REFERENCE MARKET DATA
+//==================================================================
+
+float cprReferenceHigh = request.security(
     mdPrimarySymbol,
-    "D",
+    cprSourceTF,
     high[1],
     gaps = barmerge.gaps_off,
     lookahead = barmerge.lookahead_off)
 
-float cprPreviousDayLow = request.security(
+float cprReferenceLow = request.security(
     mdPrimarySymbol,
-    "D",
+    cprSourceTF,
     low[1],
     gaps = barmerge.gaps_off,
     lookahead = barmerge.lookahead_off)
 
-float cprPreviousDayClose = request.security(
+float cprReferenceClose = request.security(
     mdPrimarySymbol,
-    "D",
+    cprSourceTF,
     close[1],
     gaps = barmerge.gaps_off,
     lookahead = barmerge.lookahead_off)
+
+// Temporary compatibility aliases.
+// KR-280.30+ continues to work unchanged.
+
+float cprPreviousDayHigh  = cprReferenceHigh
+float cprPreviousDayLow   = cprReferenceLow
+float cprPreviousDayClose = cprReferenceClose
+
+string outReferencePeriod = cprReferencePeriod
 
 //==================================================================
 // KR-280.30 CPR CALCULATION
@@ -1047,9 +1073,9 @@ switch cprWidthState
 // Previous CPR
 //--------------------------------------------------
 
-float cprPreviousCentralPivot = request.security(mdPrimarySymbol, "D", (high[2] + low[2] + close[2]) / 3.0, gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
+float cprPreviousCentralPivot = request.security(mdPrimarySymbol, cprSourceTF, (high[2] + low[2] + close[2]) / 3.0, gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
 
-float cprPreviousBottomCentral = request.security(mdPrimarySymbol, "D", (high[2] + low[2]) / 2.0, gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
+float cprPreviousBottomCentral = request.security(mdPrimarySymbol, cprSourceTF, (high[2] + low[2]) / 2.0, gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
 
 float cprPreviousTopCentral = (2.0 * cprPreviousCentralPivot) - cprPreviousBottomCentral
 
