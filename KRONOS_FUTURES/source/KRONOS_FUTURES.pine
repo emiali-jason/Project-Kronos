@@ -2091,3 +2091,119 @@ bool outNoOpportunityContext = opportunityNone
 //==================================================================
 // END OF KR-350
 //==================================================================
+
+
+
+//==================================================================
+// KR-705 : DEVELOPER DEBUG PANEL
+//==================================================================
+//
+// Version : 0.1.2
+// Build   : 0026
+// Status  : Developer Tool
+//
+// Purpose
+// -------
+// Display current engine states for developer validation.
+//
+// Dependencies
+// ------------
+// KR-300 Trend Foundation Engine
+// KR-310 Trend Quality Engine
+// KR-320 Market Acceptance Engine
+// KR-350 Opportunity Foundation Engine
+//
+// NOTE
+// ----
+// KR-705 performs no alerts, signals or trading decisions.
+//==================================================================
+
+//==================================================================
+// KR-705.10 CONFIGURATION
+//==================================================================
+
+showDeveloperDebugPanel = input.bool(false, "Show Developer Debug Panel", group="KR-700 Developer Tools")
+
+//==================================================================
+// KR-705.20 DISPLAY VALUES
+//==================================================================
+
+bool kr705TrendAvailable = outTrendDataReady
+bool kr705TrendQualityAvailable = outEvidenceReady
+bool kr705AcceptanceAvailable = outBarrierReady
+bool kr705MomentumAvailable = false
+bool kr705OpportunityAvailable = outOpportunityInputReady
+bool kr705ConfidenceAvailable = false
+bool kr705RequiredDataReady = kr705TrendAvailable and kr705TrendQualityAvailable and kr705AcceptanceAvailable and kr705OpportunityAvailable
+
+string kr705UnavailableText = "—"
+string kr705TrendText = kr705TrendAvailable ? outBullishTrend ? "Bullish" : outBearishTrend ? "Bearish" : "Neutral" : kr705UnavailableText
+string kr705TrendQualityText = kr705TrendQualityAvailable ? outTrendQualityExcellent ? "Excellent" : outTrendQualityHealthy ? "Healthy" : outTrendQualityWeak ? "Weak" : outTrendQualityExtended ? "Extended" : "Neutral" : kr705UnavailableText
+string kr705AcceptanceText = kr705AcceptanceAvailable ? outAcceptanceStrong ? "Strong Acceptance" : outAcceptanceAccepted ? "Accepted" : outAcceptanceTesting ? "Testing" : outAcceptanceRejected ? "Rejected" : "Neutral" : kr705UnavailableText
+string kr705MomentumText = kr705MomentumAvailable ? "Normal" : kr705UnavailableText
+string kr705OpportunityText = kr705OpportunityAvailable ? outBullishOpportunityContext or outBearishOpportunityContext ? "Good" : "Limited" : kr705UnavailableText
+string kr705ConfidenceText = kr705ConfidenceAvailable ? "" : kr705UnavailableText
+string kr705StatusText = kr705RequiredDataReady ? "DATA OK" : "WAITING"
+
+//==================================================================
+// KR-705.30 DISPLAY COLOURS
+//==================================================================
+
+color kr705PanelBG = color.rgb(10, 10, 10)
+color kr705HeaderBG = color.rgb(20, 20, 20)
+color kr705BorderColor = color.rgb(230, 230, 230)
+color kr705LabelText = color.rgb(220, 220, 220)
+color kr705TitleText = color.rgb(0, 229, 255)
+color kr705MutedText = color.rgb(180, 180, 180)
+color kr705BrightGreen = color.lime
+color kr705Green = color.rgb(0, 200, 83)
+color kr705White = color.white
+color kr705Yellow = color.yellow
+color kr705Orange = color.orange
+color kr705Red = color.red
+
+color kr705TrendColor = not kr705TrendAvailable ? kr705MutedText : outBullishTrend ? kr705Green : outBearishTrend ? kr705Red : kr705White
+color kr705TrendQualityColor = not kr705TrendQualityAvailable ? kr705MutedText : outTrendQualityExcellent ? kr705BrightGreen : outTrendQualityHealthy ? kr705Green : outTrendQualityWeak ? kr705Yellow : outTrendQualityExtended ? kr705Orange : kr705White
+color kr705AcceptanceColor = not kr705AcceptanceAvailable ? kr705MutedText : outAcceptanceStrong ? kr705BrightGreen : outAcceptanceAccepted ? kr705Green : outAcceptanceTesting ? kr705Yellow : outAcceptanceRejected ? kr705Red : kr705White
+color kr705MomentumColor = kr705MomentumAvailable ? kr705White : kr705MutedText
+color kr705OpportunityColor = not kr705OpportunityAvailable ? kr705MutedText : outBullishOpportunityContext or outBearishOpportunityContext ? kr705Green : kr705Yellow
+color kr705ConfidenceColor = kr705ConfidenceAvailable ? kr705White : kr705MutedText
+color kr705StatusColor = kr705RequiredDataReady ? kr705BrightGreen : kr705Yellow
+
+//==================================================================
+// KR-705.40 TABLE RENDERER
+//==================================================================
+
+var table kr705DeveloperDebugTable = table.new(position.top_right, 2, 8, border_width=1, border_color=kr705BorderColor, frame_width=1, frame_color=kr705BorderColor)
+
+if barstate.islast
+    if showDeveloperDebugPanel
+        table.cell(kr705DeveloperDebugTable, 0, 0, "KRONOS DEV PANEL", width=12, text_color=kr705TitleText, bgcolor=kr705HeaderBG, text_size=size.small, text_halign=text.align_left)
+        table.cell(kr705DeveloperDebugTable, 1, 0, "", width=14, text_color=kr705TitleText, bgcolor=kr705HeaderBG, text_size=size.small, text_halign=text.align_right)
+
+        table.cell(kr705DeveloperDebugTable, 0, 1, "Trend", width=12, text_color=kr705LabelText, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_left)
+        table.cell(kr705DeveloperDebugTable, 1, 1, kr705TrendText, width=14, text_color=kr705TrendColor, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_right)
+
+        table.cell(kr705DeveloperDebugTable, 0, 2, "Quality", width=12, text_color=kr705LabelText, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_left)
+        table.cell(kr705DeveloperDebugTable, 1, 2, kr705TrendQualityText, width=14, text_color=kr705TrendQualityColor, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_right)
+
+        table.cell(kr705DeveloperDebugTable, 0, 3, "Accept", width=12, text_color=kr705LabelText, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_left)
+        table.cell(kr705DeveloperDebugTable, 1, 3, kr705AcceptanceText, width=14, text_color=kr705AcceptanceColor, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_right)
+
+        table.cell(kr705DeveloperDebugTable, 0, 4, "Momentum", width=12, text_color=kr705LabelText, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_left)
+        table.cell(kr705DeveloperDebugTable, 1, 4, kr705MomentumText, width=14, text_color=kr705MomentumColor, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_right)
+
+        table.cell(kr705DeveloperDebugTable, 0, 5, "Opportunity", width=12, text_color=kr705LabelText, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_left)
+        table.cell(kr705DeveloperDebugTable, 1, 5, kr705OpportunityText, width=14, text_color=kr705OpportunityColor, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_right)
+
+        table.cell(kr705DeveloperDebugTable, 0, 6, "Confidence", width=12, text_color=kr705LabelText, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_left)
+        table.cell(kr705DeveloperDebugTable, 1, 6, kr705ConfidenceText, width=14, text_color=kr705ConfidenceColor, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_right)
+
+        table.cell(kr705DeveloperDebugTable, 0, 7, "Status", width=12, text_color=kr705LabelText, bgcolor=kr705HeaderBG, text_size=size.small, text_halign=text.align_left)
+        table.cell(kr705DeveloperDebugTable, 1, 7, kr705StatusText, width=14, text_color=kr705StatusColor, bgcolor=kr705HeaderBG, text_size=size.small, text_halign=text.align_right)
+    else
+        table.clear(kr705DeveloperDebugTable, 0, 0, 1, 7)
+
+//==================================================================
+// END OF KR-705
+//==================================================================
