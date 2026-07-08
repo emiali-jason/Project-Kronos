@@ -1495,3 +1495,386 @@ bool outTrendPriceBelowSMAStack = trendPriceBelowSMAStack
 //==================================================================
 // END OF KR-300
 //==================================================================
+
+
+
+//==================================================================
+// KR-310 : EVIDENCE FOUNDATION ENGINE
+//==================================================================
+//
+// Version : 0.1.0
+// Build   : 0017
+// Status  : Skeleton
+//
+// Question
+// --------
+// Does KR-300 provide directional trend evidence?
+//
+// Dependencies
+// ------------
+// KR-300 Trend Foundation Engine
+//
+// NOTE
+// ----
+// KR-310 performs no rendering, alerts, signals or trading decisions.
+//==================================================================
+
+//==================================================================
+// KR-310.10 EVIDENCE STATE CONSTANTS
+//==================================================================
+
+const int KR310_EVIDENCE_BEARISH = -1
+const int KR310_EVIDENCE_NEUTRAL = 0
+const int KR310_EVIDENCE_BULLISH = 1
+
+//==================================================================
+// KR-310.20 EVIDENCE CLASSIFICATION
+//==================================================================
+
+bool evidenceReady = outTrendDataReady
+
+bool evidenceBullish = evidenceReady and outBullishTrend and outBullishSMAAlignment and outTrendPriceAboveSMAStack
+bool evidenceBearish = evidenceReady and outBearishTrend and outBearishSMAAlignment and outTrendPriceBelowSMAStack
+bool evidenceNeutral = evidenceReady and not evidenceBullish and not evidenceBearish
+
+int evidenceState = KR310_EVIDENCE_NEUTRAL
+
+if evidenceBullish
+    evidenceState := KR310_EVIDENCE_BULLISH
+else if evidenceBearish
+    evidenceState := KR310_EVIDENCE_BEARISH
+else
+    evidenceState := KR310_EVIDENCE_NEUTRAL
+
+string evidenceText = ""
+
+switch evidenceState
+    KR310_EVIDENCE_BULLISH => evidenceText := "Bullish Evidence"
+    KR310_EVIDENCE_BEARISH => evidenceText := "Bearish Evidence"
+    => evidenceText := "Neutral Evidence"
+
+//==================================================================
+// KR-310.30 PUBLIC INTERFACE
+//==================================================================
+
+bool outEvidenceReady = evidenceReady
+
+int outEvidenceState = evidenceState
+
+string outEvidenceText = evidenceText
+
+bool outBullishEvidence = evidenceBullish
+bool outBearishEvidence = evidenceBearish
+bool outNeutralEvidence = evidenceNeutral
+
+//==================================================================
+// END OF KR-310
+//==================================================================
+
+
+
+//==================================================================
+// KR-320 : BARRIER INTERACTION ENGINE
+//==================================================================
+//
+// Version : 0.1.0
+// Build   : 0018
+// Status  : Skeleton
+//
+// Question
+// --------
+// Is price interacting with the CPR barrier zone?
+//
+// Dependencies
+// ------------
+// KR-280 CPR Intelligence Engine
+// KR-300 Trend Foundation Engine
+//
+// NOTE
+// ----
+// KR-320 performs no rendering, alerts, signals or trading decisions.
+//==================================================================
+
+//==================================================================
+// KR-320.10 BARRIER STATE CONSTANTS
+//==================================================================
+
+const int KR320_BARRIER_BELOW = -1
+const int KR320_BARRIER_INSIDE = 0
+const int KR320_BARRIER_ABOVE = 1
+
+//==================================================================
+// KR-320.20 CPR BARRIER POSITION
+//==================================================================
+
+bool barrierReady = outTrendDataReady and not na(outCentralPivot) and not na(outTopCentral) and not na(outBottomCentral)
+
+bool barrierAboveCPR = barrierReady and outPriceAboveCPR
+bool barrierInsideCPR = barrierReady and outPriceInsideCPR
+bool barrierBelowCPR = barrierReady and outPriceBelowCPR
+
+bool barrierInteraction = barrierInsideCPR
+
+int barrierState = KR320_BARRIER_INSIDE
+
+if barrierAboveCPR
+    barrierState := KR320_BARRIER_ABOVE
+else if barrierBelowCPR
+    barrierState := KR320_BARRIER_BELOW
+else
+    barrierState := KR320_BARRIER_INSIDE
+
+string barrierText = ""
+
+switch barrierState
+    KR320_BARRIER_ABOVE => barrierText := "Above CPR Barrier"
+    KR320_BARRIER_BELOW => barrierText := "Below CPR Barrier"
+    => barrierText := "Inside CPR Barrier"
+
+//==================================================================
+// KR-320.30 PUBLIC INTERFACE
+//==================================================================
+
+bool outBarrierReady = barrierReady
+
+int outBarrierState = barrierState
+
+string outBarrierText = barrierText
+
+bool outBarrierAboveCPR = barrierAboveCPR
+bool outBarrierInsideCPR = barrierInsideCPR
+bool outBarrierBelowCPR = barrierBelowCPR
+
+bool outBarrierInteraction = barrierInteraction
+
+//==================================================================
+// END OF KR-320
+//==================================================================
+
+
+
+//==================================================================
+// KR-330 : CONTEXT FOUNDATION ENGINE
+//==================================================================
+//
+// Version : 0.1.0
+// Build   : 0019
+// Status  : Skeleton
+//
+// Question
+// --------
+// Are trend evidence and CPR position aligned?
+//
+// Dependencies
+// ------------
+// KR-310 Evidence Foundation Engine
+// KR-320 Barrier Interaction Engine
+//
+// NOTE
+// ----
+// KR-330 performs no rendering, alerts, signals or trading decisions.
+//==================================================================
+
+//==================================================================
+// KR-330.10 CONTEXT STATE CONSTANTS
+//==================================================================
+
+const int KR330_CONTEXT_BEARISH = -1
+const int KR330_CONTEXT_NEUTRAL = 0
+const int KR330_CONTEXT_BULLISH = 1
+
+//==================================================================
+// KR-330.20 CONTEXT ALIGNMENT
+//==================================================================
+
+bool contextReady = outEvidenceReady and outBarrierReady
+
+bool contextBullish = contextReady and outBullishEvidence and outBarrierAboveCPR
+bool contextBearish = contextReady and outBearishEvidence and outBarrierBelowCPR
+bool contextNeutral = contextReady and not contextBullish and not contextBearish
+
+int contextState = KR330_CONTEXT_NEUTRAL
+
+if contextBullish
+    contextState := KR330_CONTEXT_BULLISH
+else if contextBearish
+    contextState := KR330_CONTEXT_BEARISH
+else
+    contextState := KR330_CONTEXT_NEUTRAL
+
+string contextText = ""
+
+switch contextState
+    KR330_CONTEXT_BULLISH => contextText := "Bullish Context"
+    KR330_CONTEXT_BEARISH => contextText := "Bearish Context"
+    => contextText := "Neutral Context"
+
+//==================================================================
+// KR-330.30 PUBLIC INTERFACE
+//==================================================================
+
+bool outContextReady = contextReady
+
+int outContextState = contextState
+
+string outContextText = contextText
+
+bool outBullishContext = contextBullish
+bool outBearishContext = contextBearish
+bool outNeutralContext = contextNeutral
+
+//==================================================================
+// END OF KR-330
+//==================================================================
+
+
+
+//==================================================================
+// KR-340 : REVIEW READINESS ENGINE
+//==================================================================
+//
+// Version : 0.1.0
+// Build   : 0020
+// Status  : Skeleton
+//
+// Question
+// --------
+// Is the context ready for downstream review?
+//
+// Dependencies
+// ------------
+// KR-320 Barrier Interaction Engine
+// KR-330 Context Foundation Engine
+//
+// NOTE
+// ----
+// KR-340 performs no rendering, alerts, signals or trading decisions.
+//==================================================================
+
+//==================================================================
+// KR-340.10 READINESS STATE CONSTANTS
+//==================================================================
+
+const int KR340_REVIEW_BLOCKED = -1
+const int KR340_REVIEW_WAIT = 0
+const int KR340_REVIEW_READY = 1
+
+//==================================================================
+// KR-340.20 READINESS CLASSIFICATION
+//==================================================================
+
+bool reviewInputReady = outContextReady and outBarrierReady
+
+bool reviewReady = reviewInputReady and not outNeutralContext and not outBarrierInteraction
+bool reviewBlocked = reviewInputReady and outBarrierInteraction
+bool reviewWait = reviewInputReady and not reviewReady and not reviewBlocked
+
+int reviewState = KR340_REVIEW_WAIT
+
+if reviewReady
+    reviewState := KR340_REVIEW_READY
+else if reviewBlocked
+    reviewState := KR340_REVIEW_BLOCKED
+else
+    reviewState := KR340_REVIEW_WAIT
+
+string reviewText = ""
+
+switch reviewState
+    KR340_REVIEW_READY => reviewText := "Review Ready"
+    KR340_REVIEW_BLOCKED => reviewText := "Review Blocked"
+    => reviewText := "Review Waiting"
+
+//==================================================================
+// KR-340.30 PUBLIC INTERFACE
+//==================================================================
+
+bool outReviewInputReady = reviewInputReady
+
+int outReviewState = reviewState
+
+string outReviewText = reviewText
+
+bool outReviewReady = reviewReady
+bool outReviewBlocked = reviewBlocked
+bool outReviewWait = reviewWait
+
+//==================================================================
+// END OF KR-340
+//==================================================================
+
+
+
+//==================================================================
+// KR-350 : OPPORTUNITY FOUNDATION ENGINE
+//==================================================================
+//
+// Version : 0.1.0
+// Build   : 0021
+// Status  : Skeleton
+//
+// Question
+// --------
+// Is there a directional opportunity context for downstream engines?
+//
+// Dependencies
+// ------------
+// KR-330 Context Foundation Engine
+// KR-340 Review Readiness Engine
+//
+// NOTE
+// ----
+// KR-350 performs no rendering, alerts, signals or trading decisions.
+//==================================================================
+
+//==================================================================
+// KR-350.10 OPPORTUNITY STATE CONSTANTS
+//==================================================================
+
+const int KR350_OPPORTUNITY_BEARISH = -1
+const int KR350_OPPORTUNITY_NONE = 0
+const int KR350_OPPORTUNITY_BULLISH = 1
+
+//==================================================================
+// KR-350.20 OPPORTUNITY CONTEXT
+//==================================================================
+
+bool opportunityInputReady = outContextReady and outReviewInputReady
+
+bool opportunityBullish = opportunityInputReady and outReviewReady and outBullishContext
+bool opportunityBearish = opportunityInputReady and outReviewReady and outBearishContext
+bool opportunityNone = opportunityInputReady and not opportunityBullish and not opportunityBearish
+
+int opportunityState = KR350_OPPORTUNITY_NONE
+
+if opportunityBullish
+    opportunityState := KR350_OPPORTUNITY_BULLISH
+else if opportunityBearish
+    opportunityState := KR350_OPPORTUNITY_BEARISH
+else
+    opportunityState := KR350_OPPORTUNITY_NONE
+
+string opportunityText = ""
+
+switch opportunityState
+    KR350_OPPORTUNITY_BULLISH => opportunityText := "Bullish Opportunity Context"
+    KR350_OPPORTUNITY_BEARISH => opportunityText := "Bearish Opportunity Context"
+    => opportunityText := "No Opportunity Context"
+
+//==================================================================
+// KR-350.30 PUBLIC INTERFACE
+//==================================================================
+
+bool outOpportunityInputReady = opportunityInputReady
+
+int outOpportunityState = opportunityState
+
+string outOpportunityText = opportunityText
+
+bool outBullishOpportunityContext = opportunityBullish
+bool outBearishOpportunityContext = opportunityBearish
+bool outNoOpportunityContext = opportunityNone
+
+//==================================================================
+// END OF KR-350
+//==================================================================
