@@ -1499,73 +1499,177 @@ bool outTrendPriceBelowSMAStack = trendPriceBelowSMAStack
 
 
 //==================================================================
-// KR-310 : EVIDENCE FOUNDATION ENGINE
+// KR-310 : TREND QUALITY ENGINE
 //==================================================================
 //
-// Version : 0.1.0
-// Build   : 0017
-// Status  : Skeleton
+// Version : 1.0.0
+// Build   : 0022
+// Status  : Foundation
 //
-// Question
-// --------
-// Does KR-300 provide directional trend evidence?
+// Purpose
+// -------
+// Evaluate the quality of the KR-300 trend foundation without
+// changing or reversing the trend direction.
 //
 // Dependencies
 // ------------
 // KR-300 Trend Foundation Engine
+// KR-270 Market Indicator Engine
+// KR-271 Mathematical Library
+//
+// Consumes
+// --------
+// KR-300 Trend Direction
+// Primary Trend SMA20
+// Primary Trend SMA50
+// Primary Trend RSI
+// Primary Trend ATR
+//
+// Produces
+// --------
+// Trend Quality State
+// Trend Quality Score
 //
 // NOTE
 // ----
 // KR-310 performs no rendering, alerts, signals or trading decisions.
+// KR-310 never changes trend direction produced by KR-300.
 //==================================================================
 
 //==================================================================
-// KR-310.10 EVIDENCE STATE CONSTANTS
+// KR-310.10 TREND QUALITY STATE CONSTANTS
 //==================================================================
 
-const int KR310_EVIDENCE_BEARISH = -1
-const int KR310_EVIDENCE_NEUTRAL = 0
-const int KR310_EVIDENCE_BULLISH = 1
+const int KR310_TREND_QUALITY_EXTENDED  = -1
+const int KR310_TREND_QUALITY_NEUTRAL   = 0
+const int KR310_TREND_QUALITY_WEAK      = 1
+const int KR310_TREND_QUALITY_HEALTHY   = 2
+const int KR310_TREND_QUALITY_EXCELLENT = 3
 
 //==================================================================
-// KR-310.20 EVIDENCE CLASSIFICATION
+// KR-310.20 INPUT READINESS
 //==================================================================
 
-bool evidenceReady = outTrendDataReady
+bool trendQualityInputReady = outTrendDataReady and not outNeutralTrend and not na(mdPrimaryTrendC) and not na(mdPrimaryTrendH) and not na(mdPrimaryTrendL) and not na(indPrimaryTrendSMA20) and not na(indPrimaryTrendSMA50) and not na(indPrimaryTrendRSI) and not na(indPrimaryTrendATR)
 
-bool evidenceBullish = evidenceReady and outBullishTrend and outBullishSMAAlignment and outTrendPriceAboveSMAStack
-bool evidenceBearish = evidenceReady and outBearishTrend and outBearishSMAAlignment and outTrendPriceBelowSMAStack
-bool evidenceNeutral = evidenceReady and not evidenceBullish and not evidenceBearish
+bool trendQualityBullishDirection = trendQualityInputReady and outBullishTrend
+bool trendQualityBearishDirection = trendQualityInputReady and outBearishTrend
 
-int evidenceState = KR310_EVIDENCE_NEUTRAL
+//==================================================================
+// KR-310.30 SMA SLOPE QUALITY
+//==================================================================
 
-if evidenceBullish
-    evidenceState := KR310_EVIDENCE_BULLISH
-else if evidenceBearish
-    evidenceState := KR310_EVIDENCE_BEARISH
+bool trendQualitySMA20SlopeUp = trendQualityInputReady and indPrimaryTrendSMA20 > indPrimaryTrendSMA20[1]
+bool trendQualitySMA50SlopeUp = trendQualityInputReady and indPrimaryTrendSMA50 > indPrimaryTrendSMA50[1]
+bool trendQualitySMA20SlopeDown = trendQualityInputReady and indPrimaryTrendSMA20 < indPrimaryTrendSMA20[1]
+bool trendQualitySMA50SlopeDown = trendQualityInputReady and indPrimaryTrendSMA50 < indPrimaryTrendSMA50[1]
+
+bool trendQualitySlopeAligned = (trendQualityBullishDirection and trendQualitySMA20SlopeUp and trendQualitySMA50SlopeUp) or (trendQualityBearishDirection and trendQualitySMA20SlopeDown and trendQualitySMA50SlopeDown)
+
+//==================================================================
+// KR-310.40 RAILWAY TRACK QUALITY
+//==================================================================
+
+float trendQualitySMA20SMA50Spread = math.abs(indPrimaryTrendSMA20 - indPrimaryTrendSMA50)
+float trendQualityPreviousSMA20SMA50Spread = math.abs(indPrimaryTrendSMA20[1] - indPrimaryTrendSMA50[1])
+float trendQualityRailwayDrift = math.abs(trendQualitySMA20SMA50Spread - trendQualityPreviousSMA20SMA50Spread)
+
+bool trendQualityRailwayOrdered = (trendQualityBullishDirection and indPrimaryTrendSMA20 > indPrimaryTrendSMA50) or (trendQualityBearishDirection and indPrimaryTrendSMA20 < indPrimaryTrendSMA50)
+bool trendQualityRailwaySeparated = trendQualityInputReady and trendQualitySMA20SMA50Spread >= indPrimaryTrendATR * 0.10
+bool trendQualityRailwayStable = trendQualityInputReady and trendQualityRailwayDrift <= indPrimaryTrendATR * 0.35
+bool trendQualityRailwayTrack = trendQualityRailwayOrdered and trendQualityRailwaySeparated and trendQualityRailwayStable
+
+//==================================================================
+// KR-310.50 EXTENSION QUALITY
+//==================================================================
+
+float trendQualityDistanceFromSMA20 = math.abs(mdPrimaryTrendC - indPrimaryTrendSMA20)
+
+bool trendQualityPriceExtended = trendQualityInputReady and trendQualityDistanceFromSMA20 > indPrimaryTrendATR * 2.00
+bool trendQualityRSIExtended = (trendQualityBullishDirection and indPrimaryTrendRSI >= 70.0) or (trendQualityBearishDirection and indPrimaryTrendRSI <= 30.0)
+bool trendQualityExtended = trendQualityPriceExtended or trendQualityRSIExtended
+
+//==================================================================
+// KR-310.60 PULLBACK RESPECT
+//==================================================================
+
+float trendQualityPullbackTolerance = indPrimaryTrendATR * 0.25
+
+bool trendQualityBullishSMA20Respect = trendQualityBullishDirection and mdPrimaryTrendL <= indPrimaryTrendSMA20 + trendQualityPullbackTolerance and mdPrimaryTrendC > indPrimaryTrendSMA20
+bool trendQualityBullishSMA50Respect = trendQualityBullishDirection and mdPrimaryTrendL <= indPrimaryTrendSMA50 + trendQualityPullbackTolerance and mdPrimaryTrendC > indPrimaryTrendSMA50
+bool trendQualityBearishSMA20Respect = trendQualityBearishDirection and mdPrimaryTrendH >= indPrimaryTrendSMA20 - trendQualityPullbackTolerance and mdPrimaryTrendC < indPrimaryTrendSMA20
+bool trendQualityBearishSMA50Respect = trendQualityBearishDirection and mdPrimaryTrendH >= indPrimaryTrendSMA50 - trendQualityPullbackTolerance and mdPrimaryTrendC < indPrimaryTrendSMA50
+bool trendQualityPullbackRespect = trendQualityBullishSMA20Respect or trendQualityBullishSMA50Respect or trendQualityBearishSMA20Respect or trendQualityBearishSMA50Respect
+
+//==================================================================
+// KR-310.70 TREND QUALITY SCORE
+//==================================================================
+
+int trendQualityScore = 0
+
+if trendQualityInputReady and trendQualitySlopeAligned
+    trendQualityScore += 1
+
+if trendQualityInputReady and trendQualityRailwayTrack
+    trendQualityScore += 1
+
+if trendQualityInputReady and trendQualityPullbackRespect
+    trendQualityScore += 1
+
+//==================================================================
+// KR-310.80 TREND QUALITY CLASSIFICATION
+//==================================================================
+
+int trendQualityState = KR310_TREND_QUALITY_NEUTRAL
+
+if not trendQualityInputReady
+    trendQualityState := KR310_TREND_QUALITY_NEUTRAL
+else if trendQualityExtended
+    trendQualityState := KR310_TREND_QUALITY_EXTENDED
+else if trendQualityScore >= 3
+    trendQualityState := KR310_TREND_QUALITY_EXCELLENT
+else if trendQualityScore == 2
+    trendQualityState := KR310_TREND_QUALITY_HEALTHY
 else
-    evidenceState := KR310_EVIDENCE_NEUTRAL
+    trendQualityState := KR310_TREND_QUALITY_WEAK
 
-string evidenceText = ""
+string trendQualityText = ""
 
-switch evidenceState
-    KR310_EVIDENCE_BULLISH => evidenceText := "Bullish Evidence"
-    KR310_EVIDENCE_BEARISH => evidenceText := "Bearish Evidence"
-    => evidenceText := "Neutral Evidence"
+switch trendQualityState
+    KR310_TREND_QUALITY_EXCELLENT => trendQualityText := "Excellent Trend Quality"
+    KR310_TREND_QUALITY_HEALTHY => trendQualityText := "Healthy Trend Quality"
+    KR310_TREND_QUALITY_WEAK => trendQualityText := "Weak Trend Quality"
+    KR310_TREND_QUALITY_EXTENDED => trendQualityText := "Extended / Wait for Pullback"
+    => trendQualityText := "Neutral / Not Applicable"
 
 //==================================================================
-// KR-310.30 PUBLIC INTERFACE
+// KR-310.90 PUBLIC INTERFACE
 //==================================================================
 
-bool outEvidenceReady = evidenceReady
+int outTrendQualityState = trendQualityState
 
-int outEvidenceState = evidenceState
+string outTrendQualityText = trendQualityText
 
-string outEvidenceText = evidenceText
+int outTrendQualityScore = trendQualityScore
 
-bool outBullishEvidence = evidenceBullish
-bool outBearishEvidence = evidenceBearish
-bool outNeutralEvidence = evidenceNeutral
+bool outTrendQualityExcellent = trendQualityState == KR310_TREND_QUALITY_EXCELLENT
+bool outTrendQualityHealthy = trendQualityState == KR310_TREND_QUALITY_HEALTHY
+bool outTrendQualityWeak = trendQualityState == KR310_TREND_QUALITY_WEAK
+bool outTrendQualityExtended = trendQualityState == KR310_TREND_QUALITY_EXTENDED
+
+//--------------------------------------------------
+// Compatibility Interface
+//--------------------------------------------------
+
+bool outEvidenceReady = trendQualityInputReady
+
+int outEvidenceState = trendQualityState > KR310_TREND_QUALITY_NEUTRAL ? outLocalTrendState : TREND_NEUTRAL
+
+string outEvidenceText = trendQualityText
+
+bool outBullishEvidence = trendQualityInputReady and outBullishTrend and trendQualityState > KR310_TREND_QUALITY_NEUTRAL
+bool outBearishEvidence = trendQualityInputReady and outBearishTrend and trendQualityState > KR310_TREND_QUALITY_NEUTRAL
+bool outNeutralEvidence = not outBullishEvidence and not outBearishEvidence
 
 //==================================================================
 // END OF KR-310
