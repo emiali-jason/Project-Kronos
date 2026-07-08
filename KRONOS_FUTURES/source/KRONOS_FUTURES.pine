@@ -1295,3 +1295,203 @@ bool outVirginCPR = cprVirgin
 //==================================================================
 // END OF KR-280
 //==================================================================
+
+
+
+//==================================================================
+// KR-300 : TREND FOUNDATION ENGINE
+//==================================================================
+//
+// Version : 1.0.0
+// Build   : 0016
+// Status  : Foundation
+//
+// Purpose
+// -------
+// Classify the local trend foundation using primary trend moving
+// average alignment and price position.
+//
+// Dependencies
+// ------------
+// KR-260 Market Data Engine
+// KR-270 Market Indicator Engine
+//
+// Consumes
+// --------
+// Primary Trend Close
+// Primary Trend SMA 20
+// Primary Trend SMA 50
+// Primary Trend SMA 200
+//
+// Produces
+// --------
+// Local Trend State
+// SMA Alignment
+// Price Position
+//
+// NOTE
+// ----
+// KR-300 performs no trading decisions.
+//==================================================================
+
+//==================================================================
+// KR-300.10 TREND STATE CONSTANTS
+//==================================================================
+
+const int TREND_BEARISH = -1
+const int TREND_NEUTRAL = 0
+const int TREND_BULLISH = 1
+
+const int TREND_ALIGNMENT_BEARISH = -1
+const int TREND_ALIGNMENT_MIXED = 0
+const int TREND_ALIGNMENT_BULLISH = 1
+
+const int TREND_PRICE_BELOW = -1
+const int TREND_PRICE_INSIDE = 0
+const int TREND_PRICE_ABOVE = 1
+
+//==================================================================
+// KR-300.20 SMA ALIGNMENT ENGINE
+//==================================================================
+
+bool trendDataReady = not na(mdPrimaryTrendC) and not na(indPrimaryTrendSMA20) and not na(indPrimaryTrendSMA50) and not na(indPrimaryTrendSMA200)
+
+bool trendBullishSMAAlignment = trendDataReady and indPrimaryTrendSMA20 > indPrimaryTrendSMA50 and indPrimaryTrendSMA50 > indPrimaryTrendSMA200
+
+bool trendBearishSMAAlignment = trendDataReady and indPrimaryTrendSMA20 < indPrimaryTrendSMA50 and indPrimaryTrendSMA50 < indPrimaryTrendSMA200
+
+bool trendMixedSMAAlignment = trendDataReady and not trendBullishSMAAlignment and not trendBearishSMAAlignment
+
+int trendSMAAlignmentState = TREND_ALIGNMENT_MIXED
+
+if trendBullishSMAAlignment
+    trendSMAAlignmentState := TREND_ALIGNMENT_BULLISH
+else if trendBearishSMAAlignment
+    trendSMAAlignmentState := TREND_ALIGNMENT_BEARISH
+else
+    trendSMAAlignmentState := TREND_ALIGNMENT_MIXED
+
+string trendSMAAlignmentText = ""
+
+switch trendSMAAlignmentState
+    TREND_ALIGNMENT_BULLISH => trendSMAAlignmentText := "Bullish SMA Alignment"
+    TREND_ALIGNMENT_BEARISH => trendSMAAlignmentText := "Bearish SMA Alignment"
+    => trendSMAAlignmentText := "Mixed SMA Alignment"
+
+//==================================================================
+// KR-300.30 PRICE POSITION ENGINE
+//==================================================================
+
+bool trendPriceAboveSMA20 = trendDataReady and mdPrimaryTrendC > indPrimaryTrendSMA20
+bool trendPriceAboveSMA50 = trendDataReady and mdPrimaryTrendC > indPrimaryTrendSMA50
+bool trendPriceAboveSMA200 = trendDataReady and mdPrimaryTrendC > indPrimaryTrendSMA200
+
+bool trendPriceBelowSMA20 = trendDataReady and mdPrimaryTrendC < indPrimaryTrendSMA20
+bool trendPriceBelowSMA50 = trendDataReady and mdPrimaryTrendC < indPrimaryTrendSMA50
+bool trendPriceBelowSMA200 = trendDataReady and mdPrimaryTrendC < indPrimaryTrendSMA200
+
+bool trendPriceAboveSMAStack = trendPriceAboveSMA20 and trendPriceAboveSMA50 and trendPriceAboveSMA200
+
+bool trendPriceBelowSMAStack = trendPriceBelowSMA20 and trendPriceBelowSMA50 and trendPriceBelowSMA200
+
+bool trendPriceInsideSMAStack = trendDataReady and not trendPriceAboveSMAStack and not trendPriceBelowSMAStack
+
+int trendPricePositionState = TREND_PRICE_INSIDE
+
+if trendPriceAboveSMAStack
+    trendPricePositionState := TREND_PRICE_ABOVE
+else if trendPriceBelowSMAStack
+    trendPricePositionState := TREND_PRICE_BELOW
+else
+    trendPricePositionState := TREND_PRICE_INSIDE
+
+string trendPricePositionText = ""
+
+switch trendPricePositionState
+    TREND_PRICE_ABOVE => trendPricePositionText := "Above SMA Stack"
+    TREND_PRICE_BELOW => trendPricePositionText := "Below SMA Stack"
+    => trendPricePositionText := "Inside SMA Stack"
+
+//==================================================================
+// KR-300.40 LOCAL TREND CLASSIFICATION
+//==================================================================
+
+bool trendBullishFoundation = trendBullishSMAAlignment and trendPriceAboveSMAStack
+
+bool trendBearishFoundation = trendBearishSMAAlignment and trendPriceBelowSMAStack
+
+bool trendNeutralFoundation = trendDataReady and not trendBullishFoundation and not trendBearishFoundation
+
+int trendLocalState = TREND_NEUTRAL
+
+if trendBullishFoundation
+    trendLocalState := TREND_BULLISH
+else if trendBearishFoundation
+    trendLocalState := TREND_BEARISH
+else
+    trendLocalState := TREND_NEUTRAL
+
+string trendLocalText = ""
+
+switch trendLocalState
+    TREND_BULLISH => trendLocalText := "Bullish Trend Foundation"
+    TREND_BEARISH => trendLocalText := "Bearish Trend Foundation"
+    => trendLocalText := "Neutral Trend Foundation"
+
+//==================================================================
+// KR-300.50 PUBLIC INTERFACE
+//==================================================================
+
+//--------------------------------------------------
+// Availability
+//--------------------------------------------------
+
+bool outTrendDataReady = trendDataReady
+
+//--------------------------------------------------
+// Local Trend
+//--------------------------------------------------
+
+int outLocalTrendState = trendLocalState
+
+string outLocalTrendText = trendLocalText
+
+bool outBullishTrend = trendLocalState == TREND_BULLISH
+bool outBearishTrend = trendLocalState == TREND_BEARISH
+bool outNeutralTrend = trendLocalState == TREND_NEUTRAL
+
+//--------------------------------------------------
+// SMA Alignment
+//--------------------------------------------------
+
+int outTrendSMAAlignmentState = trendSMAAlignmentState
+
+string outTrendSMAAlignmentText = trendSMAAlignmentText
+
+bool outBullishSMAAlignment = trendBullishSMAAlignment
+bool outBearishSMAAlignment = trendBearishSMAAlignment
+bool outMixedSMAAlignment = trendMixedSMAAlignment
+
+//--------------------------------------------------
+// Price Position
+//--------------------------------------------------
+
+int outTrendPricePositionState = trendPricePositionState
+
+string outTrendPricePositionText = trendPricePositionText
+
+bool outTrendPriceAboveSMA20 = trendPriceAboveSMA20
+bool outTrendPriceAboveSMA50 = trendPriceAboveSMA50
+bool outTrendPriceAboveSMA200 = trendPriceAboveSMA200
+
+bool outTrendPriceBelowSMA20 = trendPriceBelowSMA20
+bool outTrendPriceBelowSMA50 = trendPriceBelowSMA50
+bool outTrendPriceBelowSMA200 = trendPriceBelowSMA200
+
+bool outTrendPriceAboveSMAStack = trendPriceAboveSMAStack
+bool outTrendPriceInsideSMAStack = trendPriceInsideSMAStack
+bool outTrendPriceBelowSMAStack = trendPriceBelowSMAStack
+
+//==================================================================
+// END OF KR-300
+//==================================================================
