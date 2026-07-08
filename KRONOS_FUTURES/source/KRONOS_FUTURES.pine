@@ -1678,21 +1678,35 @@ bool outNeutralEvidence = not outBullishEvidence and not outBearishEvidence
 
 
 //==================================================================
-// KR-320 : BARRIER INTERACTION ENGINE
+// KR-320 : MARKET ACCEPTANCE ENGINE
 //==================================================================
 //
 // Version : 0.1.0
-// Build   : 0018
-// Status  : Skeleton
+// Build   : 0023
+// Status  : Foundation
 //
-// Question
-// --------
-// Is price interacting with the CPR barrier zone?
+// Purpose
+// -------
+// Evaluate whether the market is accepting price beyond the CPR
+// area in the direction of the KR-300 trend foundation.
 //
 // Dependencies
 // ------------
 // KR-280 CPR Intelligence Engine
 // KR-300 Trend Foundation Engine
+//
+// Consumes
+// --------
+// KR-300 Trend Direction
+// CPR Levels
+// Previous Reference High / Low
+// Primary Trend OHLC
+// Primary Trend ATR
+//
+// Produces
+// --------
+// Market Acceptance State
+// Market Acceptance Score
 //
 // NOTE
 // ----
@@ -1700,56 +1714,151 @@ bool outNeutralEvidence = not outBullishEvidence and not outBearishEvidence
 //==================================================================
 
 //==================================================================
-// KR-320.10 BARRIER STATE CONSTANTS
+// KR-320.10 ACCEPTANCE STATE CONSTANTS
 //==================================================================
+
+const int KR320_ACCEPTANCE_REJECTED = -1
+const int KR320_ACCEPTANCE_NEUTRAL = 0
+const int KR320_ACCEPTANCE_TESTING = 1
+const int KR320_ACCEPTANCE_ACCEPTED = 2
+const int KR320_ACCEPTANCE_STRONG = 3
 
 const int KR320_BARRIER_BELOW = -1
 const int KR320_BARRIER_INSIDE = 0
 const int KR320_BARRIER_ABOVE = 1
 
 //==================================================================
-// KR-320.20 CPR BARRIER POSITION
+// KR-320.20 INPUT READINESS
 //==================================================================
 
-bool barrierReady = outTrendDataReady and not na(outCentralPivot) and not na(outTopCentral) and not na(outBottomCentral)
+bool acceptanceInputReady = outTrendDataReady and not na(outCentralPivot) and not na(outTopCentral) and not na(outBottomCentral) and not na(outPreviousDayHigh) and not na(outPreviousDayLow) and not na(mdPrimaryTrendO) and not na(mdPrimaryTrendH) and not na(mdPrimaryTrendL) and not na(mdPrimaryTrendC) and not na(indPrimaryTrendATR)
 
-bool barrierAboveCPR = barrierReady and outPriceAboveCPR
-bool barrierInsideCPR = barrierReady and outPriceInsideCPR
-bool barrierBelowCPR = barrierReady and outPriceBelowCPR
+bool acceptanceBullishDirection = acceptanceInputReady and outBullishTrend
+bool acceptanceBearishDirection = acceptanceInputReady and outBearishTrend
+bool acceptanceDirectional = acceptanceBullishDirection or acceptanceBearishDirection
 
-bool barrierInteraction = barrierInsideCPR
+//==================================================================
+// KR-320.30 CPR ACCEPTANCE
+//==================================================================
 
-int barrierState = KR320_BARRIER_INSIDE
+bool acceptanceAboveCPR = acceptanceInputReady and outPriceAboveCPR
+bool acceptanceInsideCPR = acceptanceInputReady and outPriceInsideCPR
+bool acceptanceBelowCPR = acceptanceInputReady and outPriceBelowCPR
 
-if barrierAboveCPR
-    barrierState := KR320_BARRIER_ABOVE
-else if barrierBelowCPR
-    barrierState := KR320_BARRIER_BELOW
+bool acceptanceCPRBullish = acceptanceBullishDirection and acceptanceAboveCPR
+bool acceptanceCPRBearish = acceptanceBearishDirection and acceptanceBelowCPR
+bool acceptanceCPRAccepted = acceptanceCPRBullish or acceptanceCPRBearish
+bool acceptanceCPRTesting = acceptanceInputReady and acceptanceDirectional and acceptanceInsideCPR
+bool acceptanceCPRRejected = (acceptanceBullishDirection and acceptanceBelowCPR) or (acceptanceBearishDirection and acceptanceAboveCPR)
+
+//==================================================================
+// KR-320.40 BREAKOUT ACCEPTANCE
+//==================================================================
+
+bool acceptanceBullishBreakout = acceptanceBullishDirection and mdPrimaryTrendC > outPreviousDayHigh
+bool acceptanceBearishBreakout = acceptanceBearishDirection and mdPrimaryTrendC < outPreviousDayLow
+bool acceptanceBreakoutAccepted = acceptanceBullishBreakout or acceptanceBearishBreakout
+
+//==================================================================
+// KR-320.50 PULLBACK RESPECT
+//==================================================================
+
+float acceptancePullbackTolerance = indPrimaryTrendATR * 0.25
+
+bool acceptanceBullishCPRRespect = acceptanceBullishDirection and mdPrimaryTrendL <= outTopCentral + acceptancePullbackTolerance and mdPrimaryTrendC > outTopCentral
+bool acceptanceBullishSMA20Respect = acceptanceBullishDirection and mdPrimaryTrendL <= indPrimaryTrendSMA20 + acceptancePullbackTolerance and mdPrimaryTrendC > indPrimaryTrendSMA20
+bool acceptanceBearishCPRRespect = acceptanceBearishDirection and mdPrimaryTrendH >= outBottomCentral - acceptancePullbackTolerance and mdPrimaryTrendC < outBottomCentral
+bool acceptanceBearishSMA20Respect = acceptanceBearishDirection and mdPrimaryTrendH >= indPrimaryTrendSMA20 - acceptancePullbackTolerance and mdPrimaryTrendC < indPrimaryTrendSMA20
+bool acceptancePullbackRespect = acceptanceBullishCPRRespect or acceptanceBullishSMA20Respect or acceptanceBearishCPRRespect or acceptanceBearishSMA20Respect
+
+//==================================================================
+// KR-320.60 CANDLE CLOSING STRENGTH
+//==================================================================
+
+float acceptanceCandleRange = mdPrimaryTrendH - mdPrimaryTrendL
+float acceptanceClosePosition = acceptanceCandleRange > 0.0 ? (mdPrimaryTrendC - mdPrimaryTrendL) / acceptanceCandleRange : 0.50
+
+bool acceptanceBullishCloseStrength = acceptanceBullishDirection and acceptanceClosePosition >= 0.65
+bool acceptanceBearishCloseStrength = acceptanceBearishDirection and acceptanceClosePosition <= 0.35
+bool acceptanceCandleCloseStrong = acceptanceBullishCloseStrength or acceptanceBearishCloseStrength
+
+//==================================================================
+// KR-320.70 ACCEPTANCE SCORE
+//==================================================================
+
+int acceptanceScore = 0
+
+if acceptanceInputReady and acceptanceCPRAccepted
+    acceptanceScore += 1
+
+if acceptanceInputReady and acceptanceBreakoutAccepted
+    acceptanceScore += 1
+
+if acceptanceInputReady and acceptancePullbackRespect
+    acceptanceScore += 1
+
+if acceptanceInputReady and acceptanceCandleCloseStrong
+    acceptanceScore += 1
+
+//==================================================================
+// KR-320.80 ACCEPTANCE CLASSIFICATION
+//==================================================================
+
+int acceptanceState = KR320_ACCEPTANCE_NEUTRAL
+
+if not acceptanceInputReady or not acceptanceDirectional
+    acceptanceState := KR320_ACCEPTANCE_NEUTRAL
+else if acceptanceCPRRejected
+    acceptanceState := KR320_ACCEPTANCE_REJECTED
+else if acceptanceCPRTesting
+    acceptanceState := KR320_ACCEPTANCE_TESTING
+else if acceptanceScore >= 3
+    acceptanceState := KR320_ACCEPTANCE_STRONG
+else if acceptanceScore >= 2
+    acceptanceState := KR320_ACCEPTANCE_ACCEPTED
 else
-    barrierState := KR320_BARRIER_INSIDE
+    acceptanceState := KR320_ACCEPTANCE_NEUTRAL
 
-string barrierText = ""
+string acceptanceText = ""
 
-switch barrierState
-    KR320_BARRIER_ABOVE => barrierText := "Above CPR Barrier"
-    KR320_BARRIER_BELOW => barrierText := "Below CPR Barrier"
-    => barrierText := "Inside CPR Barrier"
+switch acceptanceState
+    KR320_ACCEPTANCE_STRONG => acceptanceText := "Strong Acceptance"
+    KR320_ACCEPTANCE_ACCEPTED => acceptanceText := "Accepted"
+    KR320_ACCEPTANCE_TESTING => acceptanceText := "Testing"
+    KR320_ACCEPTANCE_REJECTED => acceptanceText := "Rejected"
+    => acceptanceText := "Neutral"
 
 //==================================================================
-// KR-320.30 PUBLIC INTERFACE
+// KR-320.90 PUBLIC INTERFACE
 //==================================================================
 
-bool outBarrierReady = barrierReady
+int outAcceptanceState = acceptanceState
 
-int outBarrierState = barrierState
+string outAcceptanceText = acceptanceText
 
-string outBarrierText = barrierText
+int outAcceptanceScore = acceptanceScore
 
-bool outBarrierAboveCPR = barrierAboveCPR
-bool outBarrierInsideCPR = barrierInsideCPR
-bool outBarrierBelowCPR = barrierBelowCPR
+bool outAcceptanceStrong = acceptanceState == KR320_ACCEPTANCE_STRONG
+bool outAcceptanceAccepted = acceptanceState == KR320_ACCEPTANCE_ACCEPTED
+bool outAcceptanceTesting = acceptanceState == KR320_ACCEPTANCE_TESTING
+bool outAcceptanceNeutral = acceptanceState == KR320_ACCEPTANCE_NEUTRAL
+bool outAcceptanceRejected = acceptanceState == KR320_ACCEPTANCE_REJECTED
 
-bool outBarrierInteraction = barrierInteraction
+//--------------------------------------------------
+// Compatibility Interface
+//--------------------------------------------------
+
+bool outBarrierReady = acceptanceInputReady
+
+int outBarrierState = acceptanceAboveCPR ? KR320_BARRIER_ABOVE : acceptanceBelowCPR ? KR320_BARRIER_BELOW : KR320_BARRIER_INSIDE
+
+string outBarrierText = acceptanceText
+
+bool outBarrierAboveCPR = acceptanceAboveCPR
+bool outBarrierInsideCPR = acceptanceInsideCPR
+bool outBarrierBelowCPR = acceptanceBelowCPR
+
+bool outBarrierInteraction = acceptanceCPRTesting
 
 //==================================================================
 // END OF KR-320
