@@ -19,7 +19,8 @@
 9. [KRONOS Architecture](#9-kronos-architecture)
 10. [Engine Specification Template](#10-engine-specification-template)
 11. [Current Engine Status](#11-current-engine-status)
-12. [Long Term Philosophy](#12-long-term-philosophy)
+12. [Design Decisions](#12-design-decisions)
+13. [Long Term Philosophy](#13-long-term-philosophy)
 
 ---
 
@@ -519,7 +520,26 @@ Direction comes from KR-300. Quality comes from KR-310. Acceptance comes from KR
 
 ---
 
-## 12. Long Term Philosophy
+## 12. Design Decisions
+
+This section records permanent architectural decisions that guide future implementation.
+
+### DD-004: KR-705 Must Become Timeframe-Aware
+
+KR-300 remains the Daily Trend Foundation.
+
+KR-705 must not show the same dashboard on every chart. A fixed dashboard across all chart timeframes would make the multi-chart workflow misleading because each chart is expected to answer a different class of question.
+
+- Daily charts show trend intelligence.
+- 4H charts should eventually show structure intelligence.
+- 1H charts should eventually show execution intelligence.
+- Until 4H and 1H engines exist, KR-705 may display unavailable or coming states.
+
+This decision preserves the intended multi-chart workflow and prevents KR-705 from implying that Daily trend intelligence is equally valid on every chart.
+
+---
+
+## 13. Long Term Philosophy
 
 KRONOS should grow slowly, deliberately, and with strong interface discipline. The system should become more useful by improving the quality of its reasoning, not by accumulating indicators.
 
