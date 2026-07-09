@@ -1761,6 +1761,240 @@ bool outNeutralEvidence = not outBullishEvidence and not outBearishEvidence
 
 
 //==================================================================
+// KR-315 : COMPRESSION INTELLIGENCE ENGINE
+//==================================================================
+//
+// Version : 1.0.0
+// Build   : 0024
+// Status  : Frozen
+//
+// Purpose
+// -------
+// Detect whether the market is storing energy before a breakout or
+// breakdown.
+//
+// Dependencies
+// ------------
+// KR-270 Market Indicator Engine
+// KR-280 CPR Intelligence Engine
+// KR-310 Trend Quality Engine
+//
+// Produces
+// --------
+// Compression State
+// Compression Score
+// Compression Reason
+//
+// NOTE
+// ----
+// KR-315 detects compression and expansion release only.
+// It does not predict direction or generate trade signals.
+// It performs no request.security calls and consumes only existing
+// KRONOS current-symbol data interfaces.
+//==================================================================
+
+//==================================================================
+// KR-315.10 COMPRESSION STATE CONSTANTS
+//==================================================================
+
+const int KR315_COMPRESSION_NONE = 0
+const int KR315_COMPRESSION_BUILDING = 1
+const int KR315_COMPRESSION_STRONG = 2
+const int KR315_COMPRESSION_CRITICAL = 3
+const int KR315_EXPANSION_STARTED = 4
+
+//==================================================================
+// KR-315.20 INPUT READINESS
+//==================================================================
+
+float compressionATRAverage = ta.sma(indPrimaryTrendATR, 20)
+float compressionVolumeAverage = ta.sma(mdPrimaryTrendV, 20)
+float compressionRecentHigh = ta.highest(mdPrimaryTrendH[1], 10)
+float compressionRecentLow = ta.lowest(mdPrimaryTrendL[1], 10)
+float compressionCurrentRangeHigh = ta.highest(mdPrimaryTrendH, 10)
+float compressionCurrentRangeLow = ta.lowest(mdPrimaryTrendL, 10)
+float compressionPriorRangeHigh = ta.highest(mdPrimaryTrendH[10], 10)
+float compressionPriorRangeLow = ta.lowest(mdPrimaryTrendL[10], 10)
+
+bool compressionInputReady = not na(mdPrimaryTrendO) and not na(mdPrimaryTrendH) and not na(mdPrimaryTrendL) and not na(mdPrimaryTrendC) and not na(indPrimaryTrendATR) and not na(compressionATRAverage) and not na(indPrimaryTrendSMA20) and not na(indPrimaryTrendSMA50) and not na(indPrimaryTrendSMA200) and not na(indPrimaryTrendRSI) and not na(outCPRWidthPercent) and not na(outCPRWidthState) and indPrimaryTrendATR > 0.0
+bool compressionVolumeReady = compressionInputReady and not na(mdPrimaryTrendV) and not na(compressionVolumeAverage) and compressionVolumeAverage > 0.0
+bool compressionStructureReady = compressionInputReady and not na(compressionRecentHigh) and not na(compressionRecentLow) and not na(compressionCurrentRangeHigh) and not na(compressionCurrentRangeLow) and not na(compressionPriorRangeHigh) and not na(compressionPriorRangeLow)
+
+//==================================================================
+// KR-315.30 EVIDENCE SCORES
+//==================================================================
+
+int compressionCPRScore = 0
+
+if compressionInputReady and outCPRWidthState == CPR_WIDTH_VERY_NARROW
+    compressionCPRScore := 25
+else if compressionInputReady and outCPRWidthState == CPR_WIDTH_NARROW
+    compressionCPRScore := 18
+else if compressionInputReady and outCPRWidthState == CPR_WIDTH_NORMAL
+    compressionCPRScore := 8
+else
+    compressionCPRScore := 0
+
+int compressionATRScore = 0
+
+if compressionInputReady and indPrimaryTrendATR <= compressionATRAverage * 0.80
+    compressionATRScore := 20
+else if compressionInputReady and indPrimaryTrendATR < compressionATRAverage
+    compressionATRScore := 12
+else
+    compressionATRScore := 0
+
+float compressionSMAMax = math.max(indPrimaryTrendSMA20, math.max(indPrimaryTrendSMA50, indPrimaryTrendSMA200))
+float compressionSMAMin = math.min(indPrimaryTrendSMA20, math.min(indPrimaryTrendSMA50, indPrimaryTrendSMA200))
+float compressionSMASpread = compressionSMAMax - compressionSMAMin
+
+int compressionSMAScore = 0
+
+if compressionInputReady and compressionSMASpread < indPrimaryTrendATR * 1.50
+    compressionSMAScore := 20
+else if compressionInputReady and compressionSMASpread < indPrimaryTrendATR * 2.50
+    compressionSMAScore := 12
+else
+    compressionSMAScore := 0
+
+int compressionVolumeScore = 0
+
+if compressionVolumeReady and mdPrimaryTrendV <= compressionVolumeAverage * 0.80
+    compressionVolumeScore := 15
+else if compressionVolumeReady and mdPrimaryTrendV < compressionVolumeAverage
+    compressionVolumeScore := 8
+else
+    compressionVolumeScore := 0
+
+float compressionCurrentStructureRange = compressionCurrentRangeHigh - compressionCurrentRangeLow
+float compressionPriorStructureRange = compressionPriorRangeHigh - compressionPriorRangeLow
+
+int compressionStructureScore = 0
+
+if compressionStructureReady and compressionCurrentStructureRange < compressionPriorStructureRange
+    compressionStructureScore := 10
+else
+    compressionStructureScore := 0
+
+int compressionRSIScore = 0
+
+if compressionInputReady and indPrimaryTrendRSI >= 45.0 and indPrimaryTrendRSI <= 55.0
+    compressionRSIScore := 10
+else if compressionInputReady and indPrimaryTrendRSI >= 40.0 and indPrimaryTrendRSI <= 60.0
+    compressionRSIScore := 5
+else
+    compressionRSIScore := 0
+
+//==================================================================
+// KR-315.40 SCORE AND EXPANSION RELEASE
+//==================================================================
+
+int compressionRawScore = compressionCPRScore + compressionATRScore + compressionSMAScore + compressionVolumeScore + compressionStructureScore + compressionRSIScore
+int compressionScore = math.max(0, math.min(100, compressionRawScore))
+
+float compressionCandleRange = mdPrimaryTrendH - mdPrimaryTrendL
+float compressionCandleBody = math.abs(mdPrimaryTrendC - mdPrimaryTrendO)
+float compressionBodyRatio = compressionCandleRange > 0.0 ? compressionCandleBody / compressionCandleRange : 0.0
+
+bool compressionPriorStrong = compressionInputReady and not na(compressionScore[1]) and compressionScore[1] >= 55
+bool compressionRangeExpansion = compressionInputReady and compressionCandleRange > indPrimaryTrendATR * 1.25
+bool compressionBreakout = compressionStructureReady and (mdPrimaryTrendC > compressionRecentHigh or mdPrimaryTrendC < compressionRecentLow)
+bool compressionVolumeExpansion = compressionVolumeReady and mdPrimaryTrendV > compressionVolumeAverage * 1.20
+bool compressionStrongCandle = compressionInputReady and compressionBodyRatio >= 0.50
+bool compressionExpansionSupport = compressionVolumeReady ? compressionVolumeExpansion or compressionStrongCandle : compressionStrongCandle
+bool compressionExpansionTrigger = barstate.isconfirmed and compressionPriorStrong and compressionRangeExpansion and compressionBreakout and compressionExpansionSupport
+
+// Keep expansion release visible for exactly three confirmed bars.
+var int compressionExpansionMemoryBars = 0
+
+if compressionExpansionTrigger
+    compressionExpansionMemoryBars := 3
+else if barstate.isconfirmed and compressionExpansionMemoryBars > 0
+    compressionExpansionMemoryBars -= 1
+
+bool compressionExpansionMemoryActive = compressionExpansionMemoryBars > 0
+
+//==================================================================
+// KR-315.50 COMPRESSION CLASSIFICATION
+//==================================================================
+
+int compressionState = KR315_COMPRESSION_NONE
+
+if not compressionInputReady
+    compressionState := KR315_COMPRESSION_NONE
+else if compressionExpansionMemoryActive
+    compressionState := KR315_EXPANSION_STARTED
+else if compressionScore >= 75
+    compressionState := KR315_COMPRESSION_CRITICAL
+else if compressionScore >= 55
+    compressionState := KR315_COMPRESSION_STRONG
+else if compressionScore >= 35
+    compressionState := KR315_COMPRESSION_BUILDING
+else
+    compressionState := KR315_COMPRESSION_NONE
+
+string compressionText = ""
+
+switch compressionState
+    KR315_EXPANSION_STARTED => compressionText := "Expansion Started"
+    KR315_COMPRESSION_CRITICAL => compressionText := "Critical"
+    KR315_COMPRESSION_STRONG => compressionText := "Strong"
+    KR315_COMPRESSION_BUILDING => compressionText := "Building"
+    => compressionText := "No Compression"
+
+string compressionReasonText = ""
+
+if compressionExpansionMemoryActive
+    compressionReasonText := "Expansion Started"
+else if compressionScore >= 75
+    compressionReasonText := "Critical Compression"
+else if compressionScore >= 55
+    compressionReasonText := "Strong Compression"
+else if compressionScore >= 35
+    compressionReasonText := "Building Energy"
+else
+    compressionReasonText := "No Compression"
+
+//==================================================================
+// KR-315.60 PUBLIC INTERFACE
+//==================================================================
+//
+// Public outputs are intentionally stable and additive. Downstream
+// engines must consume these values instead of KR-315 internals.
+//
+// outCompressionReady         : KR-315 has enough data to score.
+// outCompressionScore         : Clamped 0-100 compression score.
+// outCompressionState         : Numeric compression state.
+// outCompressionText          : Short display state.
+// outCompressionReasonText    : Explainable reason label.
+// outCompressionBuilding      : Building compression flag.
+// outCompressionStrong        : Strong compression flag.
+// outCompressionCritical      : Critical compression flag.
+// outExpansionStarted         : Three-bar expansion release memory.
+// outCompressionNoCompression : No compression flag.
+//==================================================================
+
+bool outCompressionReady = compressionInputReady
+
+int outCompressionScore = compressionScore
+int outCompressionState = compressionState
+
+string outCompressionText = compressionText
+string outCompressionReasonText = compressionReasonText
+
+bool outCompressionBuilding = compressionState == KR315_COMPRESSION_BUILDING
+bool outCompressionStrong = compressionState == KR315_COMPRESSION_STRONG
+bool outCompressionCritical = compressionState == KR315_COMPRESSION_CRITICAL
+bool outExpansionStarted = compressionExpansionMemoryActive
+bool outCompressionNoCompression = compressionState == KR315_COMPRESSION_NONE
+
+//==================================================================
+// END OF KR-315
+//==================================================================
+
+
+
+//==================================================================
 // KR-320 : MARKET ACCEPTANCE ENGINE
 //==================================================================
 //
@@ -2547,6 +2781,7 @@ bool outConfidenceVeryLow = confidenceScore < 40
 // ------------
 // KR-300 Trend Foundation Engine
 // KR-310 Trend Quality Engine
+// KR-315 Compression Intelligence Engine
 // KR-320 Market Acceptance Engine
 // KR-330 Momentum Confirmation Engine
 // KR-350 Opportunity Foundation Engine
@@ -2571,6 +2806,7 @@ bool kr705TrendAvailable = outTrendDataReady
 bool kr705TrendQualityAvailable = outEvidenceReady
 bool kr705AcceptanceAvailable = outBarrierReady
 bool kr705MomentumAvailable = outMomentumReady
+bool kr705CompressionAvailable = outCompressionReady
 bool kr705OpportunityAvailable = outOpportunityInputReady
 bool kr705ConfidenceAvailable = outConfidenceReady
 bool kr705CoreDataReady = kr705TrendAvailable and kr705TrendQualityAvailable and kr705AcceptanceAvailable and kr705MomentumAvailable
@@ -2580,6 +2816,7 @@ string kr705TrendText = kr705TrendAvailable ? outBullishTrend ? "Bullish" : outB
 string kr705TrendQualityText = kr705TrendQualityAvailable ? outTrendQualityExcellent ? "Excellent" : outTrendQualityHealthy ? "Healthy" : outTrendQualityWeak ? "Weak" : outTrendQualityExtended ? "Extended" : "Neutral" : kr705UnavailableText
 string kr705AcceptanceText = kr705AcceptanceAvailable ? outAcceptanceStrong ? "Strong Acceptance" : outAcceptanceAccepted ? "Accepted" : outAcceptanceTesting ? "Testing" : outAcceptanceRejected ? "Rejected" : "Neutral" : kr705UnavailableText
 string kr705MomentumText = kr705MomentumAvailable ? outMomentumBuilding ? "Building" : outMomentumStrong ? "Strong" : outMomentumNormal ? "Normal" : outMomentumWeakening ? "Weakening" : outMomentumExhausted ? "Exhausted" : kr705UnavailableText : kr705UnavailableText
+string kr705CompressionText = kr705CompressionAvailable ? outExpansionStarted ? "Expansion Started" : str.tostring(outCompressionScore) + " - " + outCompressionText : kr705UnavailableText
 string kr705OpportunityText = kr705OpportunityAvailable ? outBullishOpportunityContext or outBearishOpportunityContext ? "Good" : "Limited" : kr705UnavailableText
 string kr705ConfidenceText = kr705ConfidenceAvailable ? str.tostring(outConfidenceScore) + " - " + outConfidenceReasonText : kr705UnavailableText
 string kr705RiskText = kr705UnavailableText
@@ -2608,6 +2845,7 @@ color kr705TrendColor = not kr705TrendAvailable ? kr705MutedText : outBullishTre
 color kr705TrendQualityColor = not kr705TrendQualityAvailable ? kr705MutedText : outTrendQualityExcellent ? kr705BrightGreen : outTrendQualityHealthy ? kr705Green : outTrendQualityWeak ? kr705Yellow : outTrendQualityExtended ? kr705Orange : kr705White
 color kr705AcceptanceColor = not kr705AcceptanceAvailable ? kr705MutedText : outAcceptanceStrong ? kr705BrightGreen : outAcceptanceAccepted ? kr705Green : outAcceptanceTesting ? kr705Yellow : outAcceptanceRejected ? kr705Red : kr705White
 color kr705MomentumColor = not kr705MomentumAvailable ? kr705MutedText : outMomentumBuilding ? kr705BrightGreen : outMomentumStrong ? kr705Green : outMomentumNormal ? kr705White : outMomentumWeakening ? kr705Yellow : outMomentumExhausted ? kr705Red : kr705MutedText
+color kr705CompressionColor = not kr705CompressionAvailable ? kr705MutedText : outExpansionStarted ? kr705BrightGreen : outCompressionCritical ? kr705Orange : outCompressionStrong ? kr705Yellow : outCompressionBuilding ? kr705White : kr705MutedText
 color kr705OpportunityColor = not kr705OpportunityAvailable ? kr705MutedText : outBullishOpportunityContext or outBearishOpportunityContext ? kr705Green : kr705Yellow
 color kr705ConfidenceColor = not kr705ConfidenceAvailable ? kr705MutedText : outConfidenceVeryHigh ? kr705BrightGreen : outConfidenceHigh ? kr705Green : outConfidenceMedium ? kr705White : outConfidenceLow ? kr705Yellow : kr705Red
 color kr705PlaceholderColor = kr705MutedText
@@ -2617,7 +2855,7 @@ color kr705StatusColor = kr705CoreDataReady ? kr705BrightGreen : kr705Yellow
 // KR-705.40 TABLE RENDERER
 //==================================================================
 
-var table kr705DeveloperDebugTable = table.new(position.top_right, 2, 11, border_width=1, border_color=kr705BorderColor, frame_width=1, frame_color=kr705BorderColor)
+var table kr705DeveloperDebugTable = table.new(position.top_right, 2, 12, border_width=1, border_color=kr705BorderColor, frame_width=1, frame_color=kr705BorderColor)
 
 if showDeveloperDebugPanel
     table.cell(kr705DeveloperDebugTable, 0, 0, "KRONOS ENGINE STATUS", width=12, text_color=kr705TitleText, bgcolor=kr705HeaderBG, text_size=size.small, text_halign=text.align_left)
@@ -2635,25 +2873,28 @@ if showDeveloperDebugPanel
     table.cell(kr705DeveloperDebugTable, 0, 4, "Momentum", width=12, text_color=kr705LabelText, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_left)
     table.cell(kr705DeveloperDebugTable, 1, 4, kr705MomentumText, width=14, text_color=kr705MomentumColor, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_right)
 
-    table.cell(kr705DeveloperDebugTable, 0, 5, "Opportunity", width=12, text_color=kr705LabelText, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_left)
-    table.cell(kr705DeveloperDebugTable, 1, 5, kr705OpportunityText, width=14, text_color=kr705OpportunityColor, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_right)
+    table.cell(kr705DeveloperDebugTable, 0, 5, "Compression", width=12, text_color=kr705LabelText, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_left)
+    table.cell(kr705DeveloperDebugTable, 1, 5, kr705CompressionText, width=14, text_color=kr705CompressionColor, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_right)
 
-    table.cell(kr705DeveloperDebugTable, 0, 6, "Confidence", width=12, text_color=kr705LabelText, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_left)
-    table.cell(kr705DeveloperDebugTable, 1, 6, kr705ConfidenceText, width=14, text_color=kr705ConfidenceColor, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_right)
+    table.cell(kr705DeveloperDebugTable, 0, 6, "Opportunity", width=12, text_color=kr705LabelText, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_left)
+    table.cell(kr705DeveloperDebugTable, 1, 6, kr705OpportunityText, width=14, text_color=kr705OpportunityColor, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_right)
 
-    table.cell(kr705DeveloperDebugTable, 0, 7, "Risk", width=12, text_color=kr705LabelText, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_left)
-    table.cell(kr705DeveloperDebugTable, 1, 7, kr705RiskText, width=14, text_color=kr705PlaceholderColor, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_right)
+    table.cell(kr705DeveloperDebugTable, 0, 7, "Confidence", width=12, text_color=kr705LabelText, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_left)
+    table.cell(kr705DeveloperDebugTable, 1, 7, kr705ConfidenceText, width=14, text_color=kr705ConfidenceColor, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_right)
 
-    table.cell(kr705DeveloperDebugTable, 0, 8, "Entry", width=12, text_color=kr705LabelText, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_left)
-    table.cell(kr705DeveloperDebugTable, 1, 8, kr705EntryText, width=14, text_color=kr705PlaceholderColor, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_right)
+    table.cell(kr705DeveloperDebugTable, 0, 8, "Risk", width=12, text_color=kr705LabelText, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_left)
+    table.cell(kr705DeveloperDebugTable, 1, 8, kr705RiskText, width=14, text_color=kr705PlaceholderColor, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_right)
 
-    table.cell(kr705DeveloperDebugTable, 0, 9, "Decision", width=12, text_color=kr705LabelText, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_left)
-    table.cell(kr705DeveloperDebugTable, 1, 9, kr705DecisionText, width=14, text_color=kr705PlaceholderColor, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_right)
+    table.cell(kr705DeveloperDebugTable, 0, 9, "Entry", width=12, text_color=kr705LabelText, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_left)
+    table.cell(kr705DeveloperDebugTable, 1, 9, kr705EntryText, width=14, text_color=kr705PlaceholderColor, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_right)
 
-    table.cell(kr705DeveloperDebugTable, 0, 10, "Status", width=12, text_color=kr705LabelText, bgcolor=kr705HeaderBG, text_size=size.small, text_halign=text.align_left)
-    table.cell(kr705DeveloperDebugTable, 1, 10, kr705StatusText, width=14, text_color=kr705StatusColor, bgcolor=kr705HeaderBG, text_size=size.small, text_halign=text.align_right)
+    table.cell(kr705DeveloperDebugTable, 0, 10, "Decision", width=12, text_color=kr705LabelText, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_left)
+    table.cell(kr705DeveloperDebugTable, 1, 10, kr705DecisionText, width=14, text_color=kr705PlaceholderColor, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_right)
+
+    table.cell(kr705DeveloperDebugTable, 0, 11, "Status", width=12, text_color=kr705LabelText, bgcolor=kr705HeaderBG, text_size=size.small, text_halign=text.align_left)
+    table.cell(kr705DeveloperDebugTable, 1, 11, kr705StatusText, width=14, text_color=kr705StatusColor, bgcolor=kr705HeaderBG, text_size=size.small, text_halign=text.align_right)
 else
-    table.clear(kr705DeveloperDebugTable, 0, 0, 1, 10)
+    table.clear(kr705DeveloperDebugTable, 0, 0, 1, 11)
 
 //==================================================================
 // END OF KR-705
