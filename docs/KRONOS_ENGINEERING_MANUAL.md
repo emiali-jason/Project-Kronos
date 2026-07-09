@@ -49,6 +49,10 @@ Every engine must serve one or more of these mission areas:
 - Decision quality
 - Trader clarity
 
+KRONOS decision flow summary:
+
+**Direction. Quality. Acceptance. Energy. Opportunity. Confidence.**
+
 ---
 
 ## 3. Version 1.0 Scope
@@ -420,6 +424,88 @@ This section documents key active and frozen engines in the current KRONOS imple
 | Why it Exists | Trend direction is not enough. KRONOS must know whether price is being accepted beyond meaningful market levels. |
 | Current Boundary | KR-320 evaluates acceptance only. It does not validate trades or produce alerts. |
 | Future Direction | Expand acceptance reasons and refine breakout/pullback validation. |
+
+### KR-330 Momentum Confirmation Engine
+
+| Field | Status |
+|-------|--------|
+| Engine Status | Foundation |
+| Current Role | Measures whether the current trend still has enough energy to justify a new swing trade. |
+| Why it Exists | KRONOS must separate direction from usable trend energy. A trend can be directionally correct but too weak, exhausted, or fading for a fresh entry. |
+| Current Boundary | KR-330 measures energy only. It does not determine direction, override KR-300, generate signals, calculate stops or targets, or decide opportunity. |
+| Future Direction | Expand reason outputs and refine momentum persistence validation after live symbol testing. |
+
+#### Purpose
+
+Measure whether the current trend still has enough energy to justify a new swing trade.
+
+#### Trading Question
+
+Does this trend still have enough energy to reward a fresh entry?
+
+#### Core Concept
+
+KR-330 measures **Energy**, not Direction.
+
+Direction comes from KR-300. Quality comes from KR-310. Acceptance comes from KR-320.
+
+#### Evidence Pillars
+
+1. **Momentum Persistence**
+
+   Expanding impulse legs indicate building energy. Shrinking impulse legs indicate weakening energy.
+
+2. **RSI Behaviour**
+
+   Rising RSI supports energy. Falling RSI warns of weakening. Flat RSI suggests normal or fading momentum.
+
+3. **ADX Behaviour**
+
+   Rising ADX supports strengthening trend energy. Falling ADX warns of fading trend strength.
+
+4. **Volume Participation**
+
+   Expanding volume supports participation. Declining volume reduces confidence.
+
+5. **Candle Strength**
+
+   Strong bodies and strong closes support energy. Small bodies, overlap, and rejection wicks weaken energy.
+
+#### States
+
+| State | Meaning |
+|-------|---------|
+| 4 | Building |
+| 3 | Strong |
+| 2 | Normal |
+| 1 | Weakening |
+| 0 | Exhausted |
+
+#### Outputs
+
+- `outMomentumState`
+- `outMomentumText`
+- `outMomentumReady`
+- `outMomentumScore`
+- `outMomentumBuilding`
+- `outMomentumStrong`
+- `outMomentumNormal`
+- `outMomentumWeakening`
+- `outMomentumExhausted`
+
+#### What KR-330 Does
+
+- Measures trend energy.
+- Helps determine whether a fresh entry still has momentum support.
+- Supports KR-340 and KR-350.
+
+#### What KR-330 Does NOT Do
+
+- Does not determine trend direction.
+- Does not override KR-300.
+- Does not generate buy/sell signals.
+- Does not calculate stop-loss or targets.
+- Does not decide opportunity.
 
 ### KR-705 Developer Debug Panel
 
