@@ -1302,14 +1302,14 @@ bool outVirginCPR = cprVirgin
 // KR-300 : TREND FOUNDATION ENGINE
 //==================================================================
 //
-// Version : 1.0.0
-// Build   : 0016
+// Version : 1.1.0
+// Build   : 0028
 // Status  : Foundation
 //
 // Purpose
 // -------
-// Classify the local trend foundation using primary trend moving
-// average alignment and price position.
+// Classify the local trend foundation using staged moving average
+// alignment and price position.
 //
 // Dependencies
 // ------------
@@ -1326,6 +1326,7 @@ bool outVirginCPR = cprVirgin
 // Produces
 // --------
 // Local Trend State
+// Trend Stage
 // SMA Alignment
 // Price Position
 //
@@ -1349,6 +1350,12 @@ const int TREND_ALIGNMENT_BULLISH = 1
 const int TREND_PRICE_BELOW = -1
 const int TREND_PRICE_INSIDE = 0
 const int TREND_PRICE_ABOVE = 1
+
+const int TREND_STAGE_CONFIRMED_BEARISH = -2
+const int TREND_STAGE_DEVELOPING_BEARISH = -1
+const int TREND_STAGE_NEUTRAL = 0
+const int TREND_STAGE_DEVELOPING_BULLISH = 1
+const int TREND_STAGE_CONFIRMED_BULLISH = 2
 
 //==================================================================
 // KR-300.20 SMA ALIGNMENT ENGINE
@@ -1413,13 +1420,49 @@ switch trendPricePositionState
     => trendPricePositionText := "Inside SMA Stack"
 
 //==================================================================
-// KR-300.40 LOCAL TREND CLASSIFICATION
+// KR-300.40 STAGED TREND CLASSIFICATION
 //==================================================================
 
-bool trendBullishFoundation = trendBullishSMAAlignment and trendPriceAboveSMAStack
+bool trendConfirmedBullishFoundation = trendBullishSMAAlignment and trendPriceAboveSMAStack
+bool trendConfirmedBearishFoundation = trendBearishSMAAlignment and trendPriceBelowSMAStack
 
-bool trendBearishFoundation = trendBearishSMAAlignment and trendPriceBelowSMAStack
+bool trendBullishSMA20SMA50Pressure = trendDataReady and indPrimaryTrendSMA20 > indPrimaryTrendSMA50
+bool trendBearishSMA20SMA50Pressure = trendDataReady and indPrimaryTrendSMA20 < indPrimaryTrendSMA50
 
+bool trendBullishPricePressure = trendPriceAboveSMA20 and trendPriceAboveSMA50
+bool trendBearishPricePressure = trendPriceBelowSMA20 and trendPriceBelowSMA50
+
+bool trendDevelopingBullishFoundation = trendDataReady and not trendConfirmedBullishFoundation and trendBullishSMA20SMA50Pressure and (trendBullishPricePressure or trendPriceAboveSMAStack or trendBullishSMAAlignment)
+bool trendDevelopingBearishFoundation = trendDataReady and not trendConfirmedBearishFoundation and trendBearishSMA20SMA50Pressure and (trendBearishPricePressure or trendPriceBelowSMAStack or trendBearishSMAAlignment)
+
+int trendStageState = TREND_STAGE_NEUTRAL
+
+if trendConfirmedBullishFoundation
+    trendStageState := TREND_STAGE_CONFIRMED_BULLISH
+else if trendConfirmedBearishFoundation
+    trendStageState := TREND_STAGE_CONFIRMED_BEARISH
+else if trendDevelopingBullishFoundation
+    trendStageState := TREND_STAGE_DEVELOPING_BULLISH
+else if trendDevelopingBearishFoundation
+    trendStageState := TREND_STAGE_DEVELOPING_BEARISH
+else
+    trendStageState := TREND_STAGE_NEUTRAL
+
+string trendStageText = ""
+
+switch trendStageState
+    TREND_STAGE_CONFIRMED_BULLISH => trendStageText := "Confirmed Bullish"
+    TREND_STAGE_DEVELOPING_BULLISH => trendStageText := "Developing Bullish"
+    TREND_STAGE_DEVELOPING_BEARISH => trendStageText := "Developing Bearish"
+    TREND_STAGE_CONFIRMED_BEARISH => trendStageText := "Confirmed Bearish"
+    => trendStageText := "Neutral"
+
+//==================================================================
+// KR-300.50 LOCAL TREND CLASSIFICATION
+//==================================================================
+
+bool trendBullishFoundation = trendStageState == TREND_STAGE_CONFIRMED_BULLISH or trendStageState == TREND_STAGE_DEVELOPING_BULLISH
+bool trendBearishFoundation = trendStageState == TREND_STAGE_CONFIRMED_BEARISH or trendStageState == TREND_STAGE_DEVELOPING_BEARISH
 bool trendNeutralFoundation = trendDataReady and not trendBullishFoundation and not trendBearishFoundation
 
 int trendLocalState = TREND_NEUTRAL
@@ -1434,12 +1477,12 @@ else
 string trendLocalText = ""
 
 switch trendLocalState
-    TREND_BULLISH => trendLocalText := "Bullish Trend Foundation"
-    TREND_BEARISH => trendLocalText := "Bearish Trend Foundation"
+    TREND_BULLISH => trendLocalText := trendStageText
+    TREND_BEARISH => trendLocalText := trendStageText
     => trendLocalText := "Neutral Trend Foundation"
 
 //==================================================================
-// KR-300.50 PUBLIC INTERFACE
+// KR-300.60 PUBLIC INTERFACE
 //==================================================================
 
 //--------------------------------------------------
@@ -1459,6 +1502,17 @@ string outLocalTrendText = trendLocalText
 bool outBullishTrend = trendLocalState == TREND_BULLISH
 bool outBearishTrend = trendLocalState == TREND_BEARISH
 bool outNeutralTrend = trendLocalState == TREND_NEUTRAL
+
+//--------------------------------------------------
+// Trend Stage
+//--------------------------------------------------
+
+string outTrendStageText = trendStageText
+
+bool outDevelopingBullishTrend = trendStageState == TREND_STAGE_DEVELOPING_BULLISH
+bool outConfirmedBullishTrend = trendStageState == TREND_STAGE_CONFIRMED_BULLISH
+bool outDevelopingBearishTrend = trendStageState == TREND_STAGE_DEVELOPING_BEARISH
+bool outConfirmedBearishTrend = trendStageState == TREND_STAGE_CONFIRMED_BEARISH
 
 //--------------------------------------------------
 // SMA Alignment
@@ -2305,16 +2359,16 @@ showDeveloperDebugPanel = input.bool(false, "Show Developer Debug Panel", group=
 bool kr705TrendAvailable = outTrendDataReady
 bool kr705TrendQualityAvailable = outEvidenceReady
 bool kr705AcceptanceAvailable = outBarrierReady
-bool kr705MomentumAvailable = false
+bool kr705MomentumAvailable = outMomentumReady
 bool kr705OpportunityAvailable = outOpportunityInputReady
 bool kr705ConfidenceAvailable = false
-bool kr705RequiredDataReady = kr705TrendAvailable and kr705TrendQualityAvailable and kr705AcceptanceAvailable and kr705OpportunityAvailable
+bool kr705RequiredDataReady = kr705TrendAvailable and kr705TrendQualityAvailable and kr705AcceptanceAvailable and kr705MomentumAvailable and kr705OpportunityAvailable
 
 string kr705UnavailableText = "—"
 string kr705TrendText = kr705TrendAvailable ? outBullishTrend ? "Bullish" : outBearishTrend ? "Bearish" : "Neutral" : kr705UnavailableText
 string kr705TrendQualityText = kr705TrendQualityAvailable ? outTrendQualityExcellent ? "Excellent" : outTrendQualityHealthy ? "Healthy" : outTrendQualityWeak ? "Weak" : outTrendQualityExtended ? "Extended" : "Neutral" : kr705UnavailableText
 string kr705AcceptanceText = kr705AcceptanceAvailable ? outAcceptanceStrong ? "Strong Acceptance" : outAcceptanceAccepted ? "Accepted" : outAcceptanceTesting ? "Testing" : outAcceptanceRejected ? "Rejected" : "Neutral" : kr705UnavailableText
-string kr705MomentumText = kr705MomentumAvailable ? "Normal" : kr705UnavailableText
+string kr705MomentumText = kr705MomentumAvailable ? outMomentumBuilding ? "Building" : outMomentumStrong ? "Strong" : outMomentumNormal ? "Normal" : outMomentumWeakening ? "Weakening" : outMomentumExhausted ? "Exhausted" : kr705UnavailableText : kr705UnavailableText
 string kr705OpportunityText = kr705OpportunityAvailable ? outBullishOpportunityContext or outBearishOpportunityContext ? "Good" : "Limited" : kr705UnavailableText
 string kr705ConfidenceText = kr705ConfidenceAvailable ? "" : kr705UnavailableText
 string kr705StatusText = kr705RequiredDataReady ? "DATA OK" : "WAITING"
@@ -2339,7 +2393,7 @@ color kr705Red = color.red
 color kr705TrendColor = not kr705TrendAvailable ? kr705MutedText : outBullishTrend ? kr705Green : outBearishTrend ? kr705Red : kr705White
 color kr705TrendQualityColor = not kr705TrendQualityAvailable ? kr705MutedText : outTrendQualityExcellent ? kr705BrightGreen : outTrendQualityHealthy ? kr705Green : outTrendQualityWeak ? kr705Yellow : outTrendQualityExtended ? kr705Orange : kr705White
 color kr705AcceptanceColor = not kr705AcceptanceAvailable ? kr705MutedText : outAcceptanceStrong ? kr705BrightGreen : outAcceptanceAccepted ? kr705Green : outAcceptanceTesting ? kr705Yellow : outAcceptanceRejected ? kr705Red : kr705White
-color kr705MomentumColor = kr705MomentumAvailable ? kr705White : kr705MutedText
+color kr705MomentumColor = not kr705MomentumAvailable ? kr705MutedText : outMomentumBuilding ? kr705BrightGreen : outMomentumStrong ? kr705Green : outMomentumNormal ? kr705White : outMomentumWeakening ? kr705Yellow : outMomentumExhausted ? kr705Red : kr705MutedText
 color kr705OpportunityColor = not kr705OpportunityAvailable ? kr705MutedText : outBullishOpportunityContext or outBearishOpportunityContext ? kr705Green : kr705Yellow
 color kr705ConfidenceColor = kr705ConfidenceAvailable ? kr705White : kr705MutedText
 color kr705StatusColor = kr705RequiredDataReady ? kr705BrightGreen : kr705Yellow
@@ -2354,7 +2408,7 @@ if showDeveloperDebugPanel
     table.cell(kr705DeveloperDebugTable, 0, 0, "KRONOS DEV PANEL", width=12, text_color=kr705TitleText, bgcolor=kr705HeaderBG, text_size=size.small, text_halign=text.align_left)
     table.cell(kr705DeveloperDebugTable, 1, 0, "", width=14, text_color=kr705TitleText, bgcolor=kr705HeaderBG, text_size=size.small, text_halign=text.align_right)
 
-    table.cell(kr705DeveloperDebugTable, 0, 1, "Trend", width=12, text_color=kr705LabelText, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_left)
+    table.cell(kr705DeveloperDebugTable, 0, 1, "D Trend", width=12, text_color=kr705LabelText, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_left)
     table.cell(kr705DeveloperDebugTable, 1, 1, kr705TrendText, width=14, text_color=kr705TrendColor, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_right)
 
     table.cell(kr705DeveloperDebugTable, 0, 2, "Quality", width=12, text_color=kr705LabelText, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_left)
