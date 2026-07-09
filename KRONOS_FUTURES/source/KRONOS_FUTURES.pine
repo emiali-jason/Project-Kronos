@@ -782,12 +782,18 @@ bool outLastBullishBOS = strLastBullishBOS
 bool outLastBearishBOS = strLastBearishBOS
 
 //==================================================================
-// KR-280 : CPR INTELLIGENCE ENGINE
-//==================================================================
-//
+// KR-280 : CPR Intelligence Engine
 // Version : 1.0.0
-// Build   : 0010
-// Status  : Development
+// Status  : FROZEN
+// Last Updated : 2026-07-09
+//
+// Frozen Contract:
+// - Core behavior is validated and should not be changed casually.
+// - Future changes must be additive, compatibility-safe, or bug fixes.
+// - No trading decisions/signals should be added inside this engine
+//   unless that is the engine's explicit responsibility.
+// - CPR reference behavior is validated against KGS Auto mode.
+//==================================================================
 //
 // Purpose
 // -------
@@ -1761,12 +1767,18 @@ bool outNeutralEvidence = not outBullishEvidence and not outBearishEvidence
 
 
 //==================================================================
-// KR-315 : COMPRESSION INTELLIGENCE ENGINE
-//==================================================================
-//
+// KR-315 : Compression Intelligence Engine
 // Version : 1.0.0
-// Build   : 0024
-// Status  : Frozen
+// Status  : FROZEN
+// Last Updated : 2026-07-09
+//
+// Frozen Contract:
+// - Core behavior is validated and should not be changed casually.
+// - Future changes must be additive, compatibility-safe, or bug fixes.
+// - No trading decisions/signals should be added inside this engine
+//   unless that is the engine's explicit responsibility.
+// - Detects compression and expansion release only; does not predict direction.
+//==================================================================
 //
 // Purpose
 // -------
@@ -2766,12 +2778,19 @@ bool outConfidenceVeryLow = confidenceScore < 40
 
 
 //==================================================================
-// KR-705 : DEVELOPER DEBUG PANEL
-//==================================================================
-//
+// KR-705 : Engine Status Panel
 // Version : 0.1.2
-// Build   : 0026
-// Status  : Developer Tool
+// Status  : FROZEN
+// Last Updated : 2026-07-09
+//
+// Frozen Contract:
+// - Core behavior is validated and should not be changed casually.
+// - Future changes must be additive, compatibility-safe, or bug fixes.
+// - No trading decisions/signals should be added inside this engine
+//   unless that is the engine's explicit responsibility.
+// - Displays engine status only; should not expose internal diagnostic
+//   variables unless temporarily debugging.
+//==================================================================
 //
 // Purpose
 // -------
