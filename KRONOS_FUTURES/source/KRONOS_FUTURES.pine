@@ -2352,6 +2352,186 @@ bool outNoOpportunityContext = opportunityNone
 
 
 //==================================================================
+// KR-360 : CONFIDENCE ENGINE
+//==================================================================
+//
+// Version : 0.2.0
+// Build   : 0023
+// Status  : Foundation
+//
+// Purpose
+// -------
+// Calculate an explainable confidence score from existing engine
+// outputs.
+//
+// Dependencies
+// ------------
+// KR-300 Trend Foundation Engine
+// KR-310 Trend Quality Engine
+// KR-320 Market Acceptance Engine
+// KR-330 Momentum Confirmation Engine
+// KR-350 Opportunity Foundation Engine
+//
+// NOTE
+// ----
+// KR-360 performs no alerts, entries, exits, targets, stops,
+// signals or trading decisions.
+//==================================================================
+
+//==================================================================
+// KR-360.10 INPUT READINESS
+//==================================================================
+
+bool confidenceTrendReady = outTrendDataReady
+bool confidenceQualityReady = outEvidenceReady
+bool confidenceAcceptanceReady = outBarrierReady
+bool confidenceMomentumReady = outMomentumReady
+bool confidenceOpportunityReady = outOpportunityInputReady
+
+bool confidenceReady = confidenceTrendReady and confidenceQualityReady and confidenceAcceptanceReady and confidenceMomentumReady and confidenceOpportunityReady
+
+//==================================================================
+// KR-360.20 COMPONENT SCORES
+//==================================================================
+
+int confidenceTrendScore = 0
+
+if outConfirmedBullishTrend or outConfirmedBearishTrend
+    confidenceTrendScore := 35
+else if outDevelopingBullishTrend or outDevelopingBearishTrend
+    confidenceTrendScore := 25
+else
+    confidenceTrendScore := 0
+
+int confidenceAcceptanceScore = 0
+
+if confidenceAcceptanceReady and outAcceptanceStrong
+    confidenceAcceptanceScore := 25
+else if confidenceAcceptanceReady and outAcceptanceAccepted
+    confidenceAcceptanceScore := 18
+else if confidenceAcceptanceReady and outAcceptanceTesting
+    confidenceAcceptanceScore := 10
+else if confidenceAcceptanceReady and outAcceptanceNeutral
+    confidenceAcceptanceScore := 5
+else
+    confidenceAcceptanceScore := 0
+
+int confidenceQualityScore = 0
+
+if confidenceQualityReady and outTrendQualityExcellent
+    confidenceQualityScore := 20
+else if confidenceQualityReady and outTrendQualityHealthy
+    confidenceQualityScore := 15
+else if confidenceQualityReady and outTrendQualityWeak
+    confidenceQualityScore := 7
+else if confidenceQualityReady and outTrendQualityExtended
+    confidenceQualityScore := 3
+else
+    confidenceQualityScore := 0
+
+int confidenceMomentumScore = 0
+
+if confidenceMomentumReady and outMomentumBuilding
+    confidenceMomentumScore := 10
+else if confidenceMomentumReady and outMomentumStrong
+    confidenceMomentumScore := 8
+else if confidenceMomentumReady and outMomentumNormal
+    confidenceMomentumScore := 6
+else if confidenceMomentumReady and outMomentumWeakening
+    confidenceMomentumScore := 3
+else
+    confidenceMomentumScore := 0
+
+int confidenceOpportunityScore = 0
+
+if confidenceOpportunityReady and (outBullishOpportunityContext or outBearishOpportunityContext)
+    confidenceOpportunityScore := 10
+else if confidenceOpportunityReady
+    confidenceOpportunityScore := 4
+else
+    confidenceOpportunityScore := 0
+
+//==================================================================
+// KR-360.30 PENALTIES
+//==================================================================
+
+bool confidenceRejectedCPR = confidenceAcceptanceReady and outAcceptanceRejected
+bool confidenceExhaustedMomentum = confidenceMomentumReady and outMomentumExhausted
+bool confidenceNeutralTrend = confidenceTrendReady and outNeutralTrend
+bool confidenceWeakQuality = confidenceQualityReady and outTrendQualityWeak
+bool confidenceExtendedQuality = confidenceQualityReady and outTrendQualityExtended
+bool confidenceQualityReason = confidenceWeakQuality or confidenceExtendedQuality
+bool confidenceLimitedOpportunity = confidenceOpportunityReady and outNoOpportunityContext
+
+int confidenceAcceptancePenalty = confidenceRejectedCPR ? -20 : 0
+int confidenceMomentumPenalty = confidenceExhaustedMomentum ? -10 : 0
+int confidenceTrendPenalty = confidenceNeutralTrend ? -15 : 0
+int confidenceWeakQualityPenalty = confidenceWeakQuality ? -8 : 0
+int confidenceExtendedQualityPenalty = confidenceExtendedQuality ? -5 : 0
+int confidenceOpportunityPenalty = confidenceLimitedOpportunity ? -5 : 0
+
+int confidencePenaltyScore = confidenceAcceptancePenalty + confidenceMomentumPenalty + confidenceTrendPenalty + confidenceWeakQualityPenalty + confidenceExtendedQualityPenalty + confidenceOpportunityPenalty
+
+//==================================================================
+// KR-360.40 CONFIDENCE CLASSIFICATION
+//==================================================================
+
+int confidenceBaseScore = confidenceTrendScore + confidenceAcceptanceScore + confidenceQualityScore + confidenceMomentumScore + confidenceOpportunityScore
+int confidenceRawScore = confidenceBaseScore + confidencePenaltyScore
+int confidenceScore = math.max(0, math.min(100, confidenceRawScore))
+
+string confidenceText = ""
+
+if confidenceScore >= 85
+    confidenceText := "Very High Confidence"
+else if confidenceScore >= 70
+    confidenceText := "High Confidence"
+else if confidenceScore >= 55
+    confidenceText := "Medium Confidence"
+else if confidenceScore >= 40
+    confidenceText := "Low Confidence"
+else
+    confidenceText := "Very Low Confidence"
+
+string confidenceReasonText = ""
+
+if confidenceRejectedCPR
+    confidenceReasonText := "Rejected CPR"
+else if confidenceExhaustedMomentum
+    confidenceReasonText := "Exhausted Momentum"
+else if confidenceNeutralTrend
+    confidenceReasonText := "Neutral Trend"
+else if confidenceQualityReason
+    confidenceReasonText := "Weak Quality"
+else if confidenceLimitedOpportunity
+    confidenceReasonText := "Limited Opportunity"
+else
+    confidenceReasonText := "Aligned"
+
+//==================================================================
+// KR-360.50 PUBLIC INTERFACE
+//==================================================================
+
+bool outConfidenceReady = confidenceReady
+
+int outConfidenceScore = confidenceScore
+
+string outConfidenceText = confidenceText
+string outConfidenceReasonText = confidenceReasonText
+
+bool outConfidenceVeryHigh = confidenceScore >= 85
+bool outConfidenceHigh = confidenceScore >= 70 and confidenceScore < 85
+bool outConfidenceMedium = confidenceScore >= 55 and confidenceScore < 70
+bool outConfidenceLow = confidenceScore >= 40 and confidenceScore < 55
+bool outConfidenceVeryLow = confidenceScore < 40
+
+//==================================================================
+// END OF KR-360
+//==================================================================
+
+
+
+//==================================================================
 // KR-705 : DEVELOPER DEBUG PANEL
 //==================================================================
 //
@@ -2368,7 +2548,9 @@ bool outNoOpportunityContext = opportunityNone
 // KR-300 Trend Foundation Engine
 // KR-310 Trend Quality Engine
 // KR-320 Market Acceptance Engine
+// KR-330 Momentum Confirmation Engine
 // KR-350 Opportunity Foundation Engine
+// KR-360 Confidence Engine
 //
 // NOTE
 // ----
@@ -2390,6 +2572,7 @@ bool kr705TrendQualityAvailable = outEvidenceReady
 bool kr705AcceptanceAvailable = outBarrierReady
 bool kr705MomentumAvailable = outMomentumReady
 bool kr705OpportunityAvailable = outOpportunityInputReady
+bool kr705ConfidenceAvailable = outConfidenceReady
 bool kr705CoreDataReady = kr705TrendAvailable and kr705TrendQualityAvailable and kr705AcceptanceAvailable and kr705MomentumAvailable
 
 string kr705UnavailableText = "—"
@@ -2398,7 +2581,7 @@ string kr705TrendQualityText = kr705TrendQualityAvailable ? outTrendQualityExcel
 string kr705AcceptanceText = kr705AcceptanceAvailable ? outAcceptanceStrong ? "Strong Acceptance" : outAcceptanceAccepted ? "Accepted" : outAcceptanceTesting ? "Testing" : outAcceptanceRejected ? "Rejected" : "Neutral" : kr705UnavailableText
 string kr705MomentumText = kr705MomentumAvailable ? outMomentumBuilding ? "Building" : outMomentumStrong ? "Strong" : outMomentumNormal ? "Normal" : outMomentumWeakening ? "Weakening" : outMomentumExhausted ? "Exhausted" : kr705UnavailableText : kr705UnavailableText
 string kr705OpportunityText = kr705OpportunityAvailable ? outBullishOpportunityContext or outBearishOpportunityContext ? "Good" : "Limited" : kr705UnavailableText
-string kr705ConfidenceText = kr705UnavailableText
+string kr705ConfidenceText = kr705ConfidenceAvailable ? str.tostring(outConfidenceScore) + " - " + outConfidenceReasonText : kr705UnavailableText
 string kr705RiskText = kr705UnavailableText
 string kr705EntryText = kr705UnavailableText
 string kr705DecisionText = kr705UnavailableText
@@ -2426,6 +2609,7 @@ color kr705TrendQualityColor = not kr705TrendQualityAvailable ? kr705MutedText :
 color kr705AcceptanceColor = not kr705AcceptanceAvailable ? kr705MutedText : outAcceptanceStrong ? kr705BrightGreen : outAcceptanceAccepted ? kr705Green : outAcceptanceTesting ? kr705Yellow : outAcceptanceRejected ? kr705Red : kr705White
 color kr705MomentumColor = not kr705MomentumAvailable ? kr705MutedText : outMomentumBuilding ? kr705BrightGreen : outMomentumStrong ? kr705Green : outMomentumNormal ? kr705White : outMomentumWeakening ? kr705Yellow : outMomentumExhausted ? kr705Red : kr705MutedText
 color kr705OpportunityColor = not kr705OpportunityAvailable ? kr705MutedText : outBullishOpportunityContext or outBearishOpportunityContext ? kr705Green : kr705Yellow
+color kr705ConfidenceColor = not kr705ConfidenceAvailable ? kr705MutedText : outConfidenceVeryHigh ? kr705BrightGreen : outConfidenceHigh ? kr705Green : outConfidenceMedium ? kr705White : outConfidenceLow ? kr705Yellow : kr705Red
 color kr705PlaceholderColor = kr705MutedText
 color kr705StatusColor = kr705CoreDataReady ? kr705BrightGreen : kr705Yellow
 
@@ -2455,7 +2639,7 @@ if showDeveloperDebugPanel
     table.cell(kr705DeveloperDebugTable, 1, 5, kr705OpportunityText, width=14, text_color=kr705OpportunityColor, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_right)
 
     table.cell(kr705DeveloperDebugTable, 0, 6, "Confidence", width=12, text_color=kr705LabelText, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_left)
-    table.cell(kr705DeveloperDebugTable, 1, 6, kr705ConfidenceText, width=14, text_color=kr705PlaceholderColor, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_right)
+    table.cell(kr705DeveloperDebugTable, 1, 6, kr705ConfidenceText, width=14, text_color=kr705ConfidenceColor, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_right)
 
     table.cell(kr705DeveloperDebugTable, 0, 7, "Risk", width=12, text_color=kr705LabelText, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_left)
     table.cell(kr705DeveloperDebugTable, 1, 7, kr705RiskText, width=14, text_color=kr705PlaceholderColor, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_right)
