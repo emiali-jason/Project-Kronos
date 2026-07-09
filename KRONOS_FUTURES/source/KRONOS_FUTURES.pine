@@ -1867,21 +1867,36 @@ bool outBarrierInteraction = acceptanceCPRTesting
 
 
 //==================================================================
-// KR-330 : CONTEXT FOUNDATION ENGINE
+// KR-330 : MOMENTUM CONFIRMATION ENGINE
 //==================================================================
 //
 // Version : 0.1.0
-// Build   : 0019
-// Status  : Skeleton
+// Build   : 0027
+// Status  : Foundation
 //
-// Question
-// --------
-// Are trend evidence and CPR position aligned?
+// Purpose
+// -------
+// Confirm whether momentum is building, stable, weakening or
+// exhausted in the direction of the KR-300 trend foundation.
 //
 // Dependencies
 // ------------
-// KR-310 Evidence Foundation Engine
-// KR-320 Barrier Interaction Engine
+// KR-300 Trend Foundation Engine
+// KR-310 Trend Quality Engine
+// KR-320 Market Acceptance Engine
+//
+// Consumes
+// --------
+// KR-300 Public Trend Outputs
+// KR-310 Public Trend Quality Outputs
+// KR-320 Public Acceptance Outputs
+//
+// Produces
+// --------
+// Momentum State
+// Momentum Text
+// Momentum Ready
+// Momentum Score
 //
 // NOTE
 // ----
@@ -1889,21 +1904,184 @@ bool outBarrierInteraction = acceptanceCPRTesting
 //==================================================================
 
 //==================================================================
-// KR-330.10 CONTEXT STATE CONSTANTS
+// KR-330.10 MOMENTUM STATE CONSTANTS
 //==================================================================
+
+const int KR330_MOMENTUM_EXHAUSTED = 0
+const int KR330_MOMENTUM_WEAKENING = 1
+const int KR330_MOMENTUM_NORMAL = 2
+const int KR330_MOMENTUM_STRONG = 3
+const int KR330_MOMENTUM_BUILDING = 4
 
 const int KR330_CONTEXT_BEARISH = -1
 const int KR330_CONTEXT_NEUTRAL = 0
 const int KR330_CONTEXT_BULLISH = 1
 
 //==================================================================
-// KR-330.20 CONTEXT ALIGNMENT
+// KR-330.20 INPUT READINESS
 //==================================================================
 
-bool contextReady = outEvidenceReady and outBarrierReady
+bool momentumPublicInputReady = outTrendDataReady and outEvidenceReady and outBarrierReady
+bool momentumDataReady = momentumPublicInputReady and not na(mdPrimaryTrendO) and not na(mdPrimaryTrendH) and not na(mdPrimaryTrendL) and not na(mdPrimaryTrendC) and not na(mdPrimaryTrendC[1]) and not na(mdPrimaryTrendC[2]) and not na(indPrimaryTrendRSI) and not na(indPrimaryTrendRSI[1]) and not na(indPrimaryTrendADX) and not na(indPrimaryTrendADX[1]) and not na(indPrimaryTrendATR)
+bool momentumBullishDirection = momentumDataReady and outBullishTrend
+bool momentumBearishDirection = momentumDataReady and outBearishTrend
+bool momentumDirectional = momentumBullishDirection or momentumBearishDirection
+bool momentumReady = momentumDataReady and momentumDirectional
 
-bool contextBullish = contextReady and outBullishEvidence and outBarrierAboveCPR
-bool contextBearish = contextReady and outBearishEvidence and outBarrierBelowCPR
+//==================================================================
+// KR-330.30 MOMENTUM PERSISTENCE
+//==================================================================
+
+float momentumCurrentImpulse = momentumBullishDirection ? mdPrimaryTrendC - mdPrimaryTrendC[1] : momentumBearishDirection ? mdPrimaryTrendC[1] - mdPrimaryTrendC : 0.0
+float momentumPreviousImpulse = momentumBullishDirection ? mdPrimaryTrendC[1] - mdPrimaryTrendC[2] : momentumBearishDirection ? mdPrimaryTrendC[2] - mdPrimaryTrendC[1] : 0.0
+float momentumImpulseThreshold = indPrimaryTrendATR * 0.10
+
+bool momentumPositiveImpulse = momentumReady and momentumCurrentImpulse > momentumImpulseThreshold
+bool momentumExpandingImpulse = momentumReady and momentumCurrentImpulse > momentumPreviousImpulse and momentumCurrentImpulse > momentumImpulseThreshold
+bool momentumShrinkingImpulse = momentumReady and momentumCurrentImpulse > 0.0 and momentumCurrentImpulse < momentumPreviousImpulse
+bool momentumAdverseImpulse = momentumReady and momentumCurrentImpulse <= 0.0
+
+//==================================================================
+// KR-330.40 RSI BEHAVIOUR
+//==================================================================
+
+float momentumRSIChange = indPrimaryTrendRSI - indPrimaryTrendRSI[1]
+
+bool momentumRSIRising = momentumReady and momentumRSIChange > 0.50
+bool momentumRSIFalling = momentumReady and momentumRSIChange < -0.50
+bool momentumRSIFlattening = momentumReady and math.abs(momentumRSIChange) <= 0.50
+bool momentumRSIAligned = (momentumBullishDirection and momentumRSIRising) or (momentumBearishDirection and momentumRSIFalling)
+bool momentumRSIDiverging = (momentumBullishDirection and mdPrimaryTrendC > mdPrimaryTrendC[1] and indPrimaryTrendRSI < indPrimaryTrendRSI[1]) or (momentumBearishDirection and mdPrimaryTrendC < mdPrimaryTrendC[1] and indPrimaryTrendRSI > indPrimaryTrendRSI[1])
+
+//==================================================================
+// KR-330.50 ADX TREND
+//==================================================================
+
+float momentumADXChange = indPrimaryTrendADX - indPrimaryTrendADX[1]
+
+bool momentumADXRising = momentumReady and momentumADXChange > 0.25
+bool momentumADXStable = momentumReady and math.abs(momentumADXChange) <= 0.25
+bool momentumADXFalling = momentumReady and momentumADXChange < -0.25
+bool momentumADXSupportive = momentumADXRising or momentumADXStable
+
+//==================================================================
+// KR-330.60 VOLUME PARTICIPATION
+//==================================================================
+
+float momentumAverageVolume = ta.sma(mdPrimaryTrendV, 20)
+
+bool momentumVolumeAvailable = momentumReady and not na(momentumAverageVolume) and momentumAverageVolume > 0.0
+bool momentumDirectionalCandle = (momentumBullishDirection and mdPrimaryTrendC > mdPrimaryTrendO) or (momentumBearishDirection and mdPrimaryTrendC < mdPrimaryTrendO)
+bool momentumVolumeParticipating = momentumVolumeAvailable and momentumDirectionalCandle and mdPrimaryTrendV >= momentumAverageVolume
+
+//==================================================================
+// KR-330.70 CANDLE STRENGTH
+//==================================================================
+
+float momentumCandleRange = mdPrimaryTrendH - mdPrimaryTrendL
+float momentumCandleBody = math.abs(mdPrimaryTrendC - mdPrimaryTrendO)
+float momentumBodyRatio = momentumCandleRange > 0.0 ? momentumCandleBody / momentumCandleRange : 0.0
+float momentumClosePosition = momentumCandleRange > 0.0 ? (mdPrimaryTrendC - mdPrimaryTrendL) / momentumCandleRange : 0.50
+float momentumUpperWick = mdPrimaryTrendH - math.max(mdPrimaryTrendO, mdPrimaryTrendC)
+float momentumLowerWick = math.min(mdPrimaryTrendO, mdPrimaryTrendC) - mdPrimaryTrendL
+
+bool momentumBullishStrongClose = momentumBullishDirection and momentumClosePosition >= 0.65 and momentumBodyRatio >= 0.45 and momentumUpperWick <= momentumCandleRange * 0.35
+bool momentumBearishStrongClose = momentumBearishDirection and momentumClosePosition <= 0.35 and momentumBodyRatio >= 0.45 and momentumLowerWick <= momentumCandleRange * 0.35
+bool momentumStrongCandle = momentumBullishStrongClose or momentumBearishStrongClose
+bool momentumWeakCandle = momentumReady and momentumBodyRatio <= 0.25
+
+//==================================================================
+// KR-330.80 MOMENTUM SCORE
+//==================================================================
+
+int momentumScore = 0
+
+if momentumReady and momentumExpandingImpulse
+    momentumScore += 2
+
+if momentumReady and momentumPositiveImpulse and not momentumExpandingImpulse
+    momentumScore += 1
+
+if momentumReady and momentumRSIAligned
+    momentumScore += 1
+
+if momentumReady and momentumADXSupportive
+    momentumScore += 1
+
+if momentumReady and momentumVolumeParticipating
+    momentumScore += 1
+
+if momentumReady and momentumStrongCandle
+    momentumScore += 1
+
+if momentumReady and momentumShrinkingImpulse
+    momentumScore -= 1
+
+if momentumReady and momentumADXFalling
+    momentumScore -= 1
+
+if momentumReady and momentumWeakCandle
+    momentumScore -= 1
+
+if momentumReady and momentumRSIDiverging
+    momentumScore -= 2
+
+momentumScore := math.max(0, math.min(momentumScore, 6))
+
+//==================================================================
+// KR-330.90 MOMENTUM CLASSIFICATION
+//==================================================================
+
+int momentumState = KR330_MOMENTUM_EXHAUSTED
+
+if not momentumReady
+    momentumState := KR330_MOMENTUM_EXHAUSTED
+else if momentumAdverseImpulse or momentumRSIDiverging or momentumScore <= 1
+    momentumState := KR330_MOMENTUM_EXHAUSTED
+else if momentumShrinkingImpulse or momentumScore == 2
+    momentumState := KR330_MOMENTUM_WEAKENING
+else if momentumExpandingImpulse and momentumScore >= 5
+    momentumState := KR330_MOMENTUM_BUILDING
+else if momentumScore >= 4
+    momentumState := KR330_MOMENTUM_STRONG
+else
+    momentumState := KR330_MOMENTUM_NORMAL
+
+string momentumText = ""
+
+switch momentumState
+    KR330_MOMENTUM_BUILDING => momentumText := "Building Momentum"
+    KR330_MOMENTUM_STRONG => momentumText := "Strong Momentum"
+    KR330_MOMENTUM_NORMAL => momentumText := "Normal Momentum"
+    KR330_MOMENTUM_WEAKENING => momentumText := "Weakening Momentum"
+    => momentumText := "Exhausted Momentum"
+
+//==================================================================
+// KR-330.100 PUBLIC INTERFACE
+//==================================================================
+
+bool outMomentumReady = momentumReady
+
+int outMomentumState = momentumState
+
+string outMomentumText = momentumText
+
+int outMomentumScore = momentumScore
+
+bool outMomentumBuilding = momentumState == KR330_MOMENTUM_BUILDING
+bool outMomentumStrong = momentumState == KR330_MOMENTUM_STRONG
+bool outMomentumNormal = momentumState == KR330_MOMENTUM_NORMAL
+bool outMomentumWeakening = momentumState == KR330_MOMENTUM_WEAKENING
+bool outMomentumExhausted = momentumState == KR330_MOMENTUM_EXHAUSTED
+
+//--------------------------------------------------
+// Compatibility Interface
+//--------------------------------------------------
+
+bool contextReady = outMomentumReady
+
+bool contextBullish = contextReady and outBullishTrend and (outMomentumBuilding or outMomentumStrong or outMomentumNormal) and (outAcceptanceStrong or outAcceptanceAccepted)
+bool contextBearish = contextReady and outBearishTrend and (outMomentumBuilding or outMomentumStrong or outMomentumNormal) and (outAcceptanceStrong or outAcceptanceAccepted)
 bool contextNeutral = contextReady and not contextBullish and not contextBearish
 
 int contextState = KR330_CONTEXT_NEUTRAL
@@ -1918,13 +2096,9 @@ else
 string contextText = ""
 
 switch contextState
-    KR330_CONTEXT_BULLISH => contextText := "Bullish Context"
-    KR330_CONTEXT_BEARISH => contextText := "Bearish Context"
-    => contextText := "Neutral Context"
-
-//==================================================================
-// KR-330.30 PUBLIC INTERFACE
-//==================================================================
+    KR330_CONTEXT_BULLISH => contextText := "Bullish Momentum Context"
+    KR330_CONTEXT_BEARISH => contextText := "Bearish Momentum Context"
+    => contextText := "Neutral Momentum Context"
 
 bool outContextReady = contextReady
 
@@ -2176,33 +2350,32 @@ color kr705StatusColor = kr705RequiredDataReady ? kr705BrightGreen : kr705Yellow
 
 var table kr705DeveloperDebugTable = table.new(position.top_right, 2, 8, border_width=1, border_color=kr705BorderColor, frame_width=1, frame_color=kr705BorderColor)
 
-if barstate.islast
-    if showDeveloperDebugPanel
-        table.cell(kr705DeveloperDebugTable, 0, 0, "KRONOS DEV PANEL", width=12, text_color=kr705TitleText, bgcolor=kr705HeaderBG, text_size=size.small, text_halign=text.align_left)
-        table.cell(kr705DeveloperDebugTable, 1, 0, "", width=14, text_color=kr705TitleText, bgcolor=kr705HeaderBG, text_size=size.small, text_halign=text.align_right)
+if showDeveloperDebugPanel
+    table.cell(kr705DeveloperDebugTable, 0, 0, "KRONOS DEV PANEL", width=12, text_color=kr705TitleText, bgcolor=kr705HeaderBG, text_size=size.small, text_halign=text.align_left)
+    table.cell(kr705DeveloperDebugTable, 1, 0, "", width=14, text_color=kr705TitleText, bgcolor=kr705HeaderBG, text_size=size.small, text_halign=text.align_right)
 
-        table.cell(kr705DeveloperDebugTable, 0, 1, "Trend", width=12, text_color=kr705LabelText, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_left)
-        table.cell(kr705DeveloperDebugTable, 1, 1, kr705TrendText, width=14, text_color=kr705TrendColor, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_right)
+    table.cell(kr705DeveloperDebugTable, 0, 1, "Trend", width=12, text_color=kr705LabelText, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_left)
+    table.cell(kr705DeveloperDebugTable, 1, 1, kr705TrendText, width=14, text_color=kr705TrendColor, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_right)
 
-        table.cell(kr705DeveloperDebugTable, 0, 2, "Quality", width=12, text_color=kr705LabelText, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_left)
-        table.cell(kr705DeveloperDebugTable, 1, 2, kr705TrendQualityText, width=14, text_color=kr705TrendQualityColor, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_right)
+    table.cell(kr705DeveloperDebugTable, 0, 2, "Quality", width=12, text_color=kr705LabelText, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_left)
+    table.cell(kr705DeveloperDebugTable, 1, 2, kr705TrendQualityText, width=14, text_color=kr705TrendQualityColor, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_right)
 
-        table.cell(kr705DeveloperDebugTable, 0, 3, "Accept", width=12, text_color=kr705LabelText, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_left)
-        table.cell(kr705DeveloperDebugTable, 1, 3, kr705AcceptanceText, width=14, text_color=kr705AcceptanceColor, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_right)
+    table.cell(kr705DeveloperDebugTable, 0, 3, "Accept", width=12, text_color=kr705LabelText, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_left)
+    table.cell(kr705DeveloperDebugTable, 1, 3, kr705AcceptanceText, width=14, text_color=kr705AcceptanceColor, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_right)
 
-        table.cell(kr705DeveloperDebugTable, 0, 4, "Momentum", width=12, text_color=kr705LabelText, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_left)
-        table.cell(kr705DeveloperDebugTable, 1, 4, kr705MomentumText, width=14, text_color=kr705MomentumColor, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_right)
+    table.cell(kr705DeveloperDebugTable, 0, 4, "Momentum", width=12, text_color=kr705LabelText, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_left)
+    table.cell(kr705DeveloperDebugTable, 1, 4, kr705MomentumText, width=14, text_color=kr705MomentumColor, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_right)
 
-        table.cell(kr705DeveloperDebugTable, 0, 5, "Opportunity", width=12, text_color=kr705LabelText, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_left)
-        table.cell(kr705DeveloperDebugTable, 1, 5, kr705OpportunityText, width=14, text_color=kr705OpportunityColor, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_right)
+    table.cell(kr705DeveloperDebugTable, 0, 5, "Opportunity", width=12, text_color=kr705LabelText, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_left)
+    table.cell(kr705DeveloperDebugTable, 1, 5, kr705OpportunityText, width=14, text_color=kr705OpportunityColor, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_right)
 
-        table.cell(kr705DeveloperDebugTable, 0, 6, "Confidence", width=12, text_color=kr705LabelText, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_left)
-        table.cell(kr705DeveloperDebugTable, 1, 6, kr705ConfidenceText, width=14, text_color=kr705ConfidenceColor, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_right)
+    table.cell(kr705DeveloperDebugTable, 0, 6, "Confidence", width=12, text_color=kr705LabelText, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_left)
+    table.cell(kr705DeveloperDebugTable, 1, 6, kr705ConfidenceText, width=14, text_color=kr705ConfidenceColor, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_right)
 
-        table.cell(kr705DeveloperDebugTable, 0, 7, "Status", width=12, text_color=kr705LabelText, bgcolor=kr705HeaderBG, text_size=size.small, text_halign=text.align_left)
-        table.cell(kr705DeveloperDebugTable, 1, 7, kr705StatusText, width=14, text_color=kr705StatusColor, bgcolor=kr705HeaderBG, text_size=size.small, text_halign=text.align_right)
-    else
-        table.clear(kr705DeveloperDebugTable, 0, 0, 1, 7)
+    table.cell(kr705DeveloperDebugTable, 0, 7, "Status", width=12, text_color=kr705LabelText, bgcolor=kr705HeaderBG, text_size=size.small, text_halign=text.align_left)
+    table.cell(kr705DeveloperDebugTable, 1, 7, kr705StatusText, width=14, text_color=kr705StatusColor, bgcolor=kr705HeaderBG, text_size=size.small, text_halign=text.align_right)
+else
+    table.clear(kr705DeveloperDebugTable, 0, 0, 1, 7)
 
 //==================================================================
 // END OF KR-705
