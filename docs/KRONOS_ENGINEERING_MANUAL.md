@@ -298,6 +298,8 @@ KR-300 Trend Foundation
   ↓
 KR-310 Trend Quality
   ↓
+KR-315 Compression Intelligence
+  ↓
 KR-320 Market Acceptance
   ↓
 KR-330 Context Foundation
@@ -415,6 +417,102 @@ This section documents key active and frozen engines in the current KRONOS imple
 | Why it Exists | A trend can exist but be weak, extended, or healthy. KR-310 separates direction from quality. |
 | Current Boundary | KR-310 never flips KR-300 direction and never produces trade signals. |
 | Future Direction | Add confidence and reason outputs when the quality model matures. |
+
+### KR-315 Compression Intelligence Engine
+
+| Field | Status |
+|-------|--------|
+| Engine Status | Planned |
+| Current Role | Detects when the market is storing energy before a major breakout or breakdown. |
+| Why it Exists | Markets often compress before expanding. KRONOS should recognize coiling, energy build-up, and release without predicting direction. |
+| Current Boundary | KR-315 identifies compression only. It does not generate signals, override trend, calculate targets or stops, or decide entries. |
+| Future Direction | Feed compression and release context into KR-370 decision preparation once confirmation engines are mature. |
+
+#### Purpose
+
+Detect when the market is storing energy before a major breakout or breakdown.
+
+#### Trading Question
+
+Is the market compressing and preparing for expansion?
+
+#### Core Principle
+
+KR-315 does not predict direction. It identifies compression, energy build-up, and expansion release.
+
+#### Inputs
+
+- OHLC price data
+- Volume
+- ATR
+- SMA20 / SMA50 / SMA200
+- CPR width from KR-280
+- Market structure range from KR-275
+- RSI behavior if available
+
+#### Evidence Pillars
+
+1. CPR Narrowness
+2. ATR Compression
+3. SMA Compression
+4. Volume Dry-up
+5. Structure Tightening
+6. RSI Compression
+
+#### Scoring Model
+
+| Evidence Pillar | Score |
+|-----------------|------:|
+| CPR Narrowness | 25 |
+| ATR Compression | 20 |
+| SMA Compression | 20 |
+| Volume Dry-up | 15 |
+| Structure Tightening | 10 |
+| RSI Compression | 10 |
+| Total | 100 |
+
+#### States
+
+| State | Meaning |
+|------:|---------|
+| 0 | No Compression |
+| 1 | Building Compression |
+| 2 | Strong Compression |
+| 3 | Critical Compression |
+| 4 | Expansion Started |
+
+#### Outputs
+
+- outCompressionReady
+- outCompressionScore
+- outCompressionState
+- outCompressionText
+- outCompressionBuilding
+- outCompressionStrong
+- outCompressionCritical
+- outExpansionStarted
+
+#### What KR-315 Does
+
+- Detects market coiling
+- Warns that a major move may be preparing
+- Detects when compression has started releasing
+
+#### What KR-315 Does NOT Do
+
+- Does not predict breakout direction
+- Does not generate buy/sell signals
+- Does not override trend
+- Does not calculate targets or stops
+- Does not decide entries
+
+#### Decision Usage
+
+KR-370 will later use KR-315 like this:
+
+- Strong compression + no breakout = WAIT
+- Compression released upward + acceptance + momentum = BUY WATCH
+- Compression released downward + acceptance + momentum = SELL WATCH
 
 ### KR-320 Market Acceptance
 
@@ -542,6 +640,8 @@ This decision preserves the intended multi-chart workflow and prevents KR-705 fr
 ## 13. Long Term Philosophy
 
 KRONOS should grow slowly, deliberately, and with strong interface discipline. The system should become more useful by improving the quality of its reasoning, not by accumulating indicators.
+
+KRONOS should warn early, but signal only after confirmation.
 
 Every future engine should earn its place by improving the trader's understanding of direction, quality, acceptance, opportunity, position management, or decision confidence.
 
