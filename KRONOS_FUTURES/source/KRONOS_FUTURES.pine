@@ -821,10 +821,14 @@ bool outLastBearishBOS = strLastBearishBOS
 
 const string GRP_CPR = "CPR"
 
-inpShowCPR         = input.bool(true, "Show CPR", group = GRP_CPR)
-inpShowResistance  = input.bool(true, "Show Resistance", group = GRP_CPR)
-inpShowSupport     = input.bool(true, "Show Support", group = GRP_CPR)
-inpShowPreviousDay = input.bool(true, "Show PDH / PDL", group = GRP_CPR)
+inpShowCPR          = input.bool(true, "Show CPR", group = GRP_CPR)
+inpShowResistance   = input.bool(true, "Show Resistance", group = GRP_CPR)
+inpShowSupport      = input.bool(true, "Show Support", group = GRP_CPR)
+inpShowPreviousDay  = input.bool(true, "Show PDH / PDL", group = GRP_CPR)
+
+// Auto KGS is the validated CPR reference standard for KRONOS.
+// Manual modes remain available for comparison and diagnostics.
+inpCPRReferenceMode = input.string("Auto KGS", "CPR Reference Mode", options = ["Auto KRONOS", "Auto KGS", "Daily", "Weekly", "Monthly"], group = GRP_CPR)
 
 //==================================================================
 // KR-280.15 REFERENCE PERIOD RESOLUTION
@@ -833,22 +837,47 @@ inpShowPreviousDay = input.bool(true, "Show PDH / PDL", group = GRP_CPR)
 string cprSourceTF = "D"
 string cprReferencePeriod = "Daily"
 
-if timeframe.isintraday
-    if timeframe.multiplier <= 60
-        cprSourceTF := "D"
-        cprReferencePeriod := "Daily"
-    else
-        cprSourceTF := "W"
-        cprReferencePeriod := "Weekly"
-else if timeframe.isdaily
+if inpCPRReferenceMode == "Daily"
+    cprSourceTF := "D"
+    cprReferencePeriod := "Daily"
+else if inpCPRReferenceMode == "Weekly"
     cprSourceTF := "W"
     cprReferencePeriod := "Weekly"
-else if timeframe.isweekly
+else if inpCPRReferenceMode == "Monthly"
     cprSourceTF := "M"
     cprReferencePeriod := "Monthly"
+else if inpCPRReferenceMode == "Auto KGS"
+    // Validated KGS-compatible CPR reference routing.
+    if timeframe.isintraday
+        if timeframe.multiplier <= 15
+            cprSourceTF := "D"
+            cprReferencePeriod := "Daily"
+        else if timeframe.multiplier <= 75
+            cprSourceTF := "W"
+            cprReferencePeriod := "Weekly"
+        else
+            cprSourceTF := "M"
+            cprReferencePeriod := "Monthly"
+    else
+        cprSourceTF := "M"
+        cprReferencePeriod := "Monthly"
 else
-    cprSourceTF := "12M"
-    cprReferencePeriod := "Yearly"
+    if timeframe.isintraday
+        if timeframe.multiplier <= 60
+            cprSourceTF := "D"
+            cprReferencePeriod := "Daily"
+        else
+            cprSourceTF := "W"
+            cprReferencePeriod := "Weekly"
+    else if timeframe.isdaily
+        cprSourceTF := "D"
+        cprReferencePeriod := "Daily"
+    else if timeframe.isweekly
+        cprSourceTF := "W"
+        cprReferencePeriod := "Weekly"
+    else
+        cprSourceTF := "M"
+        cprReferencePeriod := "Monthly"
 
 //==================================================================
 // KR-280.20 REFERENCE MARKET DATA
@@ -859,21 +888,21 @@ float cprReferenceHigh = request.security(
     cprSourceTF,
     high[1],
     gaps = barmerge.gaps_off,
-    lookahead = barmerge.lookahead_off)
+    lookahead = barmerge.lookahead_on)
 
 float cprReferenceLow = request.security(
     mdPrimarySymbol,
     cprSourceTF,
     low[1],
     gaps = barmerge.gaps_off,
-    lookahead = barmerge.lookahead_off)
+    lookahead = barmerge.lookahead_on)
 
 float cprReferenceClose = request.security(
     mdPrimarySymbol,
     cprSourceTF,
     close[1],
     gaps = barmerge.gaps_off,
-    lookahead = barmerge.lookahead_off)
+    lookahead = barmerge.lookahead_on)
 
 // Temporary compatibility aliases.
 // KR-280.30+ continues to work unchanged.
@@ -1094,9 +1123,9 @@ switch cprWidthState
 // Previous CPR
 //--------------------------------------------------
 
-float cprPreviousCentralPivot = request.security(mdPrimarySymbol, cprSourceTF, (high[2] + low[2] + close[2]) / 3.0, gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
+float cprPreviousCentralPivot = request.security(mdPrimarySymbol, cprSourceTF, (high + low + close) / 3.0, gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)[2]
 
-float cprPreviousBottomCentral = request.security(mdPrimarySymbol, cprSourceTF, (high[2] + low[2]) / 2.0, gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
+float cprPreviousBottomCentral = request.security(mdPrimarySymbol, cprSourceTF, (high + low) / 2.0, gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)[2]
 
 float cprPreviousTopCentral = (2.0 * cprPreviousCentralPivot) - cprPreviousBottomCentral
 
@@ -2361,8 +2390,7 @@ bool kr705TrendQualityAvailable = outEvidenceReady
 bool kr705AcceptanceAvailable = outBarrierReady
 bool kr705MomentumAvailable = outMomentumReady
 bool kr705OpportunityAvailable = outOpportunityInputReady
-bool kr705ConfidenceAvailable = false
-bool kr705RequiredDataReady = kr705TrendAvailable and kr705TrendQualityAvailable and kr705AcceptanceAvailable and kr705MomentumAvailable and kr705OpportunityAvailable
+bool kr705CoreDataReady = kr705TrendAvailable and kr705TrendQualityAvailable and kr705AcceptanceAvailable and kr705MomentumAvailable
 
 string kr705UnavailableText = "—"
 string kr705TrendText = kr705TrendAvailable ? outBullishTrend ? "Bullish" : outBearishTrend ? "Bearish" : "Neutral" : kr705UnavailableText
@@ -2370,8 +2398,11 @@ string kr705TrendQualityText = kr705TrendQualityAvailable ? outTrendQualityExcel
 string kr705AcceptanceText = kr705AcceptanceAvailable ? outAcceptanceStrong ? "Strong Acceptance" : outAcceptanceAccepted ? "Accepted" : outAcceptanceTesting ? "Testing" : outAcceptanceRejected ? "Rejected" : "Neutral" : kr705UnavailableText
 string kr705MomentumText = kr705MomentumAvailable ? outMomentumBuilding ? "Building" : outMomentumStrong ? "Strong" : outMomentumNormal ? "Normal" : outMomentumWeakening ? "Weakening" : outMomentumExhausted ? "Exhausted" : kr705UnavailableText : kr705UnavailableText
 string kr705OpportunityText = kr705OpportunityAvailable ? outBullishOpportunityContext or outBearishOpportunityContext ? "Good" : "Limited" : kr705UnavailableText
-string kr705ConfidenceText = kr705ConfidenceAvailable ? "" : kr705UnavailableText
-string kr705StatusText = kr705RequiredDataReady ? "DATA OK" : "WAITING"
+string kr705ConfidenceText = kr705UnavailableText
+string kr705RiskText = kr705UnavailableText
+string kr705EntryText = kr705UnavailableText
+string kr705DecisionText = kr705UnavailableText
+string kr705StatusText = kr705CoreDataReady ? "DATA OK" : "WAITING"
 
 //==================================================================
 // KR-705.30 DISPLAY COLOURS
@@ -2395,17 +2426,17 @@ color kr705TrendQualityColor = not kr705TrendQualityAvailable ? kr705MutedText :
 color kr705AcceptanceColor = not kr705AcceptanceAvailable ? kr705MutedText : outAcceptanceStrong ? kr705BrightGreen : outAcceptanceAccepted ? kr705Green : outAcceptanceTesting ? kr705Yellow : outAcceptanceRejected ? kr705Red : kr705White
 color kr705MomentumColor = not kr705MomentumAvailable ? kr705MutedText : outMomentumBuilding ? kr705BrightGreen : outMomentumStrong ? kr705Green : outMomentumNormal ? kr705White : outMomentumWeakening ? kr705Yellow : outMomentumExhausted ? kr705Red : kr705MutedText
 color kr705OpportunityColor = not kr705OpportunityAvailable ? kr705MutedText : outBullishOpportunityContext or outBearishOpportunityContext ? kr705Green : kr705Yellow
-color kr705ConfidenceColor = kr705ConfidenceAvailable ? kr705White : kr705MutedText
-color kr705StatusColor = kr705RequiredDataReady ? kr705BrightGreen : kr705Yellow
+color kr705PlaceholderColor = kr705MutedText
+color kr705StatusColor = kr705CoreDataReady ? kr705BrightGreen : kr705Yellow
 
 //==================================================================
 // KR-705.40 TABLE RENDERER
 //==================================================================
 
-var table kr705DeveloperDebugTable = table.new(position.top_right, 2, 8, border_width=1, border_color=kr705BorderColor, frame_width=1, frame_color=kr705BorderColor)
+var table kr705DeveloperDebugTable = table.new(position.top_right, 2, 11, border_width=1, border_color=kr705BorderColor, frame_width=1, frame_color=kr705BorderColor)
 
 if showDeveloperDebugPanel
-    table.cell(kr705DeveloperDebugTable, 0, 0, "KRONOS DEV PANEL", width=12, text_color=kr705TitleText, bgcolor=kr705HeaderBG, text_size=size.small, text_halign=text.align_left)
+    table.cell(kr705DeveloperDebugTable, 0, 0, "KRONOS ENGINE STATUS", width=12, text_color=kr705TitleText, bgcolor=kr705HeaderBG, text_size=size.small, text_halign=text.align_left)
     table.cell(kr705DeveloperDebugTable, 1, 0, "", width=14, text_color=kr705TitleText, bgcolor=kr705HeaderBG, text_size=size.small, text_halign=text.align_right)
 
     table.cell(kr705DeveloperDebugTable, 0, 1, "D Trend", width=12, text_color=kr705LabelText, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_left)
@@ -2414,7 +2445,7 @@ if showDeveloperDebugPanel
     table.cell(kr705DeveloperDebugTable, 0, 2, "Quality", width=12, text_color=kr705LabelText, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_left)
     table.cell(kr705DeveloperDebugTable, 1, 2, kr705TrendQualityText, width=14, text_color=kr705TrendQualityColor, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_right)
 
-    table.cell(kr705DeveloperDebugTable, 0, 3, "Accept", width=12, text_color=kr705LabelText, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_left)
+    table.cell(kr705DeveloperDebugTable, 0, 3, "Acceptance", width=12, text_color=kr705LabelText, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_left)
     table.cell(kr705DeveloperDebugTable, 1, 3, kr705AcceptanceText, width=14, text_color=kr705AcceptanceColor, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_right)
 
     table.cell(kr705DeveloperDebugTable, 0, 4, "Momentum", width=12, text_color=kr705LabelText, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_left)
@@ -2424,12 +2455,21 @@ if showDeveloperDebugPanel
     table.cell(kr705DeveloperDebugTable, 1, 5, kr705OpportunityText, width=14, text_color=kr705OpportunityColor, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_right)
 
     table.cell(kr705DeveloperDebugTable, 0, 6, "Confidence", width=12, text_color=kr705LabelText, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_left)
-    table.cell(kr705DeveloperDebugTable, 1, 6, kr705ConfidenceText, width=14, text_color=kr705ConfidenceColor, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_right)
+    table.cell(kr705DeveloperDebugTable, 1, 6, kr705ConfidenceText, width=14, text_color=kr705PlaceholderColor, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_right)
 
-    table.cell(kr705DeveloperDebugTable, 0, 7, "Status", width=12, text_color=kr705LabelText, bgcolor=kr705HeaderBG, text_size=size.small, text_halign=text.align_left)
-    table.cell(kr705DeveloperDebugTable, 1, 7, kr705StatusText, width=14, text_color=kr705StatusColor, bgcolor=kr705HeaderBG, text_size=size.small, text_halign=text.align_right)
+    table.cell(kr705DeveloperDebugTable, 0, 7, "Risk", width=12, text_color=kr705LabelText, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_left)
+    table.cell(kr705DeveloperDebugTable, 1, 7, kr705RiskText, width=14, text_color=kr705PlaceholderColor, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_right)
+
+    table.cell(kr705DeveloperDebugTable, 0, 8, "Entry", width=12, text_color=kr705LabelText, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_left)
+    table.cell(kr705DeveloperDebugTable, 1, 8, kr705EntryText, width=14, text_color=kr705PlaceholderColor, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_right)
+
+    table.cell(kr705DeveloperDebugTable, 0, 9, "Decision", width=12, text_color=kr705LabelText, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_left)
+    table.cell(kr705DeveloperDebugTable, 1, 9, kr705DecisionText, width=14, text_color=kr705PlaceholderColor, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_right)
+
+    table.cell(kr705DeveloperDebugTable, 0, 10, "Status", width=12, text_color=kr705LabelText, bgcolor=kr705HeaderBG, text_size=size.small, text_halign=text.align_left)
+    table.cell(kr705DeveloperDebugTable, 1, 10, kr705StatusText, width=14, text_color=kr705StatusColor, bgcolor=kr705HeaderBG, text_size=size.small, text_halign=text.align_right)
 else
-    table.clear(kr705DeveloperDebugTable, 0, 0, 1, 7)
+    table.clear(kr705DeveloperDebugTable, 0, 0, 1, 10)
 
 //==================================================================
 // END OF KR-705
