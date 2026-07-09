@@ -2598,178 +2598,196 @@ bool outNoOpportunityContext = opportunityNone
 
 
 //==================================================================
-// KR-360 : CONFIDENCE ENGINE
-//==================================================================
+// KR-360 : Confidence Engine
+// Version : 1.0.0
+// Status  : FROZEN
+// Last Updated : 2026-07-09
 //
-// Version : 0.2.0
-// Build   : 0023
-// Status  : Foundation
+// Purpose:
+// Synthesizes completed KRONOS engines into a single confidence
+// assessment. Does not generate trading decisions.
 //
-// Purpose
-// -------
-// Calculate an explainable confidence score from existing engine
-// outputs.
-//
-// Dependencies
-// ------------
-// KR-300 Trend Foundation Engine
-// KR-310 Trend Quality Engine
-// KR-320 Market Acceptance Engine
-// KR-330 Momentum Confirmation Engine
-// KR-350 Opportunity Foundation Engine
-//
-// NOTE
-// ----
-// KR-360 performs no alerts, entries, exits, targets, stops,
-// signals or trading decisions.
+// Frozen Contract:
+// - Uses ONLY public outputs from prior engines.
+// - No direct market calculations.
+// - No alerts.
+// - No buy/sell decisions.
 //==================================================================
 
 //==================================================================
-// KR-360.10 INPUT READINESS
+// KR-360.10 CONFIDENCE STATE CONSTANTS
+//==================================================================
+
+const int KR360_CONFIDENCE_AVOID = 0
+const int KR360_CONFIDENCE_LOW = 1
+const int KR360_CONFIDENCE_DEVELOPING = 2
+const int KR360_CONFIDENCE_HIGH = 3
+const int KR360_CONFIDENCE_EXCEPTIONAL = 4
+
+//==================================================================
+// KR-360.20 INPUT READINESS
 //==================================================================
 
 bool confidenceTrendReady = outTrendDataReady
 bool confidenceQualityReady = outEvidenceReady
+bool confidenceCompressionReady = outCompressionReady
 bool confidenceAcceptanceReady = outBarrierReady
 bool confidenceMomentumReady = outMomentumReady
+bool confidenceReviewReady = outReviewInputReady
 bool confidenceOpportunityReady = outOpportunityInputReady
 
-bool confidenceReady = confidenceTrendReady and confidenceQualityReady and confidenceAcceptanceReady and confidenceMomentumReady and confidenceOpportunityReady
+bool confidenceReady = confidenceTrendReady and confidenceCompressionReady and confidenceAcceptanceReady and confidenceReviewReady and confidenceOpportunityReady
 
 //==================================================================
-// KR-360.20 COMPONENT SCORES
+// KR-360.30 PUBLIC CONDITION MAP
 //==================================================================
 
-int confidenceTrendScore = 0
-
-if outConfirmedBullishTrend or outConfirmedBearishTrend
-    confidenceTrendScore := 35
-else if outDevelopingBullishTrend or outDevelopingBearishTrend
-    confidenceTrendScore := 25
-else
-    confidenceTrendScore := 0
-
-int confidenceAcceptanceScore = 0
-
-if confidenceAcceptanceReady and outAcceptanceStrong
-    confidenceAcceptanceScore := 25
-else if confidenceAcceptanceReady and outAcceptanceAccepted
-    confidenceAcceptanceScore := 18
-else if confidenceAcceptanceReady and outAcceptanceTesting
-    confidenceAcceptanceScore := 10
-else if confidenceAcceptanceReady and outAcceptanceNeutral
-    confidenceAcceptanceScore := 5
-else
-    confidenceAcceptanceScore := 0
-
-int confidenceQualityScore = 0
-
-if confidenceQualityReady and outTrendQualityExcellent
-    confidenceQualityScore := 20
-else if confidenceQualityReady and outTrendQualityHealthy
-    confidenceQualityScore := 15
-else if confidenceQualityReady and outTrendQualityWeak
-    confidenceQualityScore := 7
-else if confidenceQualityReady and outTrendQualityExtended
-    confidenceQualityScore := 3
-else
-    confidenceQualityScore := 0
-
-int confidenceMomentumScore = 0
-
-if confidenceMomentumReady and outMomentumBuilding
-    confidenceMomentumScore := 10
-else if confidenceMomentumReady and outMomentumStrong
-    confidenceMomentumScore := 8
-else if confidenceMomentumReady and outMomentumNormal
-    confidenceMomentumScore := 6
-else if confidenceMomentumReady and outMomentumWeakening
-    confidenceMomentumScore := 3
-else
-    confidenceMomentumScore := 0
-
-int confidenceOpportunityScore = 0
-
-if confidenceOpportunityReady and (outBullishOpportunityContext or outBearishOpportunityContext)
-    confidenceOpportunityScore := 10
-else if confidenceOpportunityReady
-    confidenceOpportunityScore := 4
-else
-    confidenceOpportunityScore := 0
-
-//==================================================================
-// KR-360.30 PENALTIES
-//==================================================================
-
-bool confidenceRejectedCPR = confidenceAcceptanceReady and outAcceptanceRejected
-bool confidenceExhaustedMomentum = confidenceMomentumReady and outMomentumExhausted
+bool confidenceDirectionalTrend = confidenceTrendReady and (outBullishTrend or outBearishTrend)
+bool confidenceConfirmedTrend = confidenceTrendReady and (outConfirmedBullishTrend or outConfirmedBearishTrend)
+bool confidenceDevelopingTrend = confidenceTrendReady and (outDevelopingBullishTrend or outDevelopingBearishTrend)
 bool confidenceNeutralTrend = confidenceTrendReady and outNeutralTrend
+
+bool confidenceHealthyQuality = confidenceQualityReady and (outTrendQualityHealthy or outTrendQualityExcellent)
 bool confidenceWeakQuality = confidenceQualityReady and outTrendQualityWeak
 bool confidenceExtendedQuality = confidenceQualityReady and outTrendQualityExtended
-bool confidenceQualityReason = confidenceWeakQuality or confidenceExtendedQuality
+
+bool confidenceRejectedAcceptance = confidenceAcceptanceReady and outAcceptanceRejected
+bool confidenceAccepted = confidenceAcceptanceReady and outAcceptanceAccepted
+bool confidenceStrongAcceptance = confidenceAcceptanceReady and outAcceptanceStrong
+bool confidenceTestingAcceptance = confidenceAcceptanceReady and outAcceptanceTesting
+
+bool confidenceCompressionBuilding = confidenceCompressionReady and outCompressionBuilding and not outExpansionStarted
+bool confidenceExpansionRelease = confidenceCompressionReady and outExpansionStarted
+
+bool confidenceStrongMomentum = confidenceMomentumReady and (outMomentumStrong or outMomentumBuilding)
+bool confidenceNormalMomentum = confidenceMomentumReady and outMomentumNormal
+bool confidenceExhaustedMomentum = confidenceMomentumReady and outMomentumExhausted
+
+bool confidenceHighOpportunity = confidenceOpportunityReady and (outBullishOpportunityContext or outBearishOpportunityContext)
 bool confidenceLimitedOpportunity = confidenceOpportunityReady and outNoOpportunityContext
 
-int confidenceAcceptancePenalty = confidenceRejectedCPR ? -20 : 0
-int confidenceMomentumPenalty = confidenceExhaustedMomentum ? -10 : 0
-int confidenceTrendPenalty = confidenceNeutralTrend ? -15 : 0
-int confidenceWeakQualityPenalty = confidenceWeakQuality ? -8 : 0
-int confidenceExtendedQualityPenalty = confidenceExtendedQuality ? -5 : 0
-int confidenceOpportunityPenalty = confidenceLimitedOpportunity ? -5 : 0
-
-int confidencePenaltyScore = confidenceAcceptancePenalty + confidenceMomentumPenalty + confidenceTrendPenalty + confidenceWeakQualityPenalty + confidenceExtendedQualityPenalty + confidenceOpportunityPenalty
+bool confidenceHighRisk = confidenceReviewReady and outReviewBlocked
+bool confidenceLowRisk = confidenceReviewReady and outReviewReady
 
 //==================================================================
-// KR-360.40 CONFIDENCE CLASSIFICATION
+// KR-360.40 BOOSTERS AND PENALTIES
 //==================================================================
 
-int confidenceBaseScore = confidenceTrendScore + confidenceAcceptanceScore + confidenceQualityScore + confidenceMomentumScore + confidenceOpportunityScore
-int confidenceRawScore = confidenceBaseScore + confidencePenaltyScore
-int confidenceScore = math.max(0, math.min(100, confidenceRawScore))
+int confidenceTrendBoost = confidenceConfirmedTrend ? 18 : confidenceDevelopingTrend or confidenceDirectionalTrend ? 10 : 0
+int confidenceQualityBoost = confidenceHealthyQuality ? 12 : 0
+int confidenceAcceptanceBoost = confidenceStrongAcceptance ? 18 : confidenceAccepted ? 14 : confidenceTestingAcceptance ? 6 : 0
+int confidenceCompressionBoost = confidenceExpansionRelease ? 12 : 0
+int confidenceMomentumBoost = confidenceStrongMomentum ? 12 : confidenceNormalMomentum ? 5 : 0
+int confidenceOpportunityBoost = confidenceHighOpportunity ? 12 : 0
+int confidenceRiskBoost = confidenceLowRisk ? 8 : 0
 
-string confidenceText = ""
+int confidenceTrendPenalty = confidenceNeutralTrend ? -25 : 0
+int confidenceQualityPenalty = confidenceWeakQuality ? -12 : confidenceExtendedQuality ? -8 : 0
+int confidenceAcceptancePenalty = confidenceRejectedAcceptance ? -25 : 0
+int confidenceCompressionPenalty = confidenceCompressionBuilding ? -10 : 0
+int confidenceMomentumPenalty = confidenceExhaustedMomentum ? -18 : 0
+int confidenceOpportunityPenalty = confidenceLimitedOpportunity ? -12 : 0
+int confidenceRiskPenalty = confidenceHighRisk ? -25 : 0
 
-if confidenceScore >= 85
-    confidenceText := "Very High Confidence"
-else if confidenceScore >= 70
-    confidenceText := "High Confidence"
-else if confidenceScore >= 55
-    confidenceText := "Medium Confidence"
-else if confidenceScore >= 40
-    confidenceText := "Low Confidence"
+int confidenceBoostScore = confidenceTrendBoost + confidenceQualityBoost + confidenceAcceptanceBoost + confidenceCompressionBoost + confidenceMomentumBoost + confidenceOpportunityBoost + confidenceRiskBoost
+int confidencePenaltyScore = confidenceTrendPenalty + confidenceQualityPenalty + confidenceAcceptancePenalty + confidenceCompressionPenalty + confidenceMomentumPenalty + confidenceOpportunityPenalty + confidenceRiskPenalty
+
+//==================================================================
+// KR-360.50 CONFIDENCE GATES
+//==================================================================
+
+int confidenceRawScore = 30 + confidenceBoostScore + confidencePenaltyScore
+int confidenceGatedScore = confidenceRawScore
+
+if confidenceNeutralTrend
+    confidenceGatedScore := math.min(confidenceGatedScore, 20)
+
+if confidenceRejectedAcceptance
+    confidenceGatedScore := math.min(confidenceGatedScore, 30)
+
+if confidenceHighRisk
+    confidenceGatedScore := math.min(confidenceGatedScore, 40)
+
+if confidenceCompressionBuilding
+    confidenceGatedScore := math.min(confidenceGatedScore, 60)
+
+if confidenceWeakQuality
+    confidenceGatedScore := math.min(confidenceGatedScore, 55)
+
+if confidenceLimitedOpportunity
+    confidenceGatedScore := math.min(confidenceGatedScore, 60)
+
+int confidenceScore = math.max(0, math.min(100, confidenceGatedScore))
+
+//==================================================================
+// KR-360.60 CONFIDENCE STATE AND REASON
+//==================================================================
+
+int confidenceState = KR360_CONFIDENCE_AVOID
+
+if confidenceScore <= 20
+    confidenceState := KR360_CONFIDENCE_AVOID
+else if confidenceScore <= 40
+    confidenceState := KR360_CONFIDENCE_LOW
+else if confidenceScore <= 60
+    confidenceState := KR360_CONFIDENCE_DEVELOPING
+else if confidenceScore <= 80
+    confidenceState := KR360_CONFIDENCE_HIGH
 else
-    confidenceText := "Very Low Confidence"
+    confidenceState := KR360_CONFIDENCE_EXCEPTIONAL
 
-string confidenceReasonText = ""
+string confidenceStateText = ""
 
-if confidenceRejectedCPR
-    confidenceReasonText := "Rejected CPR"
+switch confidenceState
+    KR360_CONFIDENCE_EXCEPTIONAL => confidenceStateText := "Exceptional"
+    KR360_CONFIDENCE_HIGH => confidenceStateText := "High Confidence"
+    KR360_CONFIDENCE_DEVELOPING => confidenceStateText := "Developing"
+    KR360_CONFIDENCE_LOW => confidenceStateText := "Low Confidence"
+    => confidenceStateText := "Avoid"
+
+string confidenceReason = ""
+
+if confidenceNeutralTrend
+    confidenceReason := "Neutral Trend"
+else if confidenceRejectedAcceptance
+    confidenceReason := "Rejected CPR"
+else if confidenceHighRisk
+    confidenceReason := "High Risk"
+else if confidenceCompressionBuilding
+    confidenceReason := "Building Compression"
+else if confidenceWeakQuality
+    confidenceReason := "Weak Quality"
 else if confidenceExhaustedMomentum
-    confidenceReasonText := "Exhausted Momentum"
-else if confidenceNeutralTrend
-    confidenceReasonText := "Neutral Trend"
-else if confidenceQualityReason
-    confidenceReasonText := "Weak Quality"
+    confidenceReason := "Exhausted Momentum"
 else if confidenceLimitedOpportunity
-    confidenceReasonText := "Limited Opportunity"
+    confidenceReason := "Limited Opportunity"
+else if confidenceExpansionRelease
+    confidenceReason := "Expansion Released"
+else if confidenceHighOpportunity and confidenceStrongMomentum and confidenceLowRisk
+    confidenceReason := "Aligned Opportunity"
 else
-    confidenceReasonText := "Aligned"
+    confidenceReason := "Aligned"
 
 //==================================================================
-// KR-360.50 PUBLIC INTERFACE
+// KR-360.70 PUBLIC INTERFACE
 //==================================================================
 
 bool outConfidenceReady = confidenceReady
 
 int outConfidenceScore = confidenceScore
+int outConfidenceState = confidenceState
 
-string outConfidenceText = confidenceText
-string outConfidenceReasonText = confidenceReasonText
+string outConfidenceReason = confidenceReason
 
-bool outConfidenceVeryHigh = confidenceScore >= 85
-bool outConfidenceHigh = confidenceScore >= 70 and confidenceScore < 85
-bool outConfidenceMedium = confidenceScore >= 55 and confidenceScore < 70
-bool outConfidenceLow = confidenceScore >= 40 and confidenceScore < 55
-bool outConfidenceVeryLow = confidenceScore < 40
+// Compatibility outputs retained for KR-705 and downstream consumers.
+string outConfidenceText = confidenceStateText
+string outConfidenceReasonText = confidenceReason
+
+bool outConfidenceVeryHigh = confidenceState == KR360_CONFIDENCE_EXCEPTIONAL
+bool outConfidenceHigh = confidenceState == KR360_CONFIDENCE_HIGH
+bool outConfidenceMedium = confidenceState == KR360_CONFIDENCE_DEVELOPING
+bool outConfidenceLow = confidenceState == KR360_CONFIDENCE_LOW
+bool outConfidenceVeryLow = confidenceState == KR360_CONFIDENCE_AVOID
 
 //==================================================================
 // END OF KR-360
@@ -2837,7 +2855,7 @@ string kr705AcceptanceText = kr705AcceptanceAvailable ? outAcceptanceStrong ? "S
 string kr705MomentumText = kr705MomentumAvailable ? outMomentumBuilding ? "Building" : outMomentumStrong ? "Strong" : outMomentumNormal ? "Normal" : outMomentumWeakening ? "Weakening" : outMomentumExhausted ? "Exhausted" : kr705UnavailableText : kr705UnavailableText
 string kr705CompressionText = kr705CompressionAvailable ? outExpansionStarted ? "Expansion Started" : str.tostring(outCompressionScore) + " - " + outCompressionText : kr705UnavailableText
 string kr705OpportunityText = kr705OpportunityAvailable ? outBullishOpportunityContext or outBearishOpportunityContext ? "Good" : "Limited" : kr705UnavailableText
-string kr705ConfidenceText = kr705ConfidenceAvailable ? str.tostring(outConfidenceScore) + " - " + outConfidenceReasonText : kr705UnavailableText
+string kr705ConfidenceText = kr705ConfidenceAvailable ? str.tostring(outConfidenceScore) + " - " + outConfidenceText : kr705UnavailableText
 string kr705RiskText = kr705UnavailableText
 string kr705EntryText = kr705UnavailableText
 string kr705DecisionText = kr705UnavailableText
