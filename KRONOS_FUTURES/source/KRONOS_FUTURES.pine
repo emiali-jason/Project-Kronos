@@ -2796,37 +2796,23 @@ bool outConfidenceVeryLow = confidenceState == KR360_CONFIDENCE_AVOID
 
 
 //==================================================================
-// KR-370 : DECISION ENGINE
-//==================================================================
+// KR-370 : Decision Engine
+// Version : 1.0.0
+// Status  : FROZEN
+// Last Updated : 2026-07-10
 //
-// Version : 0.1.0
-// Status  : Foundation
+// Validation:
+// - Copper
+// - Silver
+// - Gold
 //
-// Purpose
-// -------
-// Convert existing KRONOS intelligence outputs into a clear,
-// explainable trading decision.
-//
-// Core Question
-// -------------
-// What should the trader do now?
-//
-// Dependencies
-// ------------
-// KR-300 Trend Foundation Engine
-// KR-310 Trend Quality Engine
-// KR-315 Compression Intelligence Engine
-// KR-320 Market Acceptance Engine
-// KR-330 Momentum Confirmation Engine
-// KR-340 Review Readiness Engine
-// KR-350 Opportunity Foundation Engine
-// KR-360 Confidence Engine
-//
-// NOTE
-// ----
-// KR-370 decides readiness and direction only. It does not trigger
-// entries, alerts, plots, labels, exits, stops, targets or trade
-// management. KR-370 consumes public out... outputs only.
+// Frozen Contract:
+// - Uses only public outputs from prior KRONOS engines.
+// - Produces explainable decision and checklist outputs.
+// - No direct market calculations.
+// - No alerts.
+// - No entry triggers.
+// - No trade-management logic.
 //==================================================================
 
 //==================================================================
