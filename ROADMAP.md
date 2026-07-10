@@ -1,101 +1,83 @@
-# PROJECT KRONOS ROADMAP
+# Project KRONOS Roadmap
 
-This roadmap outlines the planned development of PROJECT KRONOS.
+**Status:** Canonical roadmap
+**Date:** 2026-07-10
 
----
+This roadmap describes the current path for KRONOS Futures. Detailed engine status lives in [Engine Status](docs/ENGINE_STATUS.md), and supported-model evidence lives in [MCX Metals Validation](docs/validation/MCX-METALS-VALIDATION.md).
 
-# Version 0.5.0 — FOUNDATION
+## Current Completed Foundation
 
-**Status:** In Development
+Current supported model:
 
-## Phase 1 — Foundation ✅
+- MCX Metals: Gold, Silver, Copper.
+- Reference mappings: Gold -> `COMEX:GC1!`, Silver -> `COMEX:SI1!`, Copper -> `COMEX:HG1!`.
+- Execution context: MCX 1H.
 
-| Engine | Status |
-|---------|:------:|
-| KR-100 Configuration Engine | ✅ Complete |
-| KR-150 Indicator Engine | ✅ Complete |
-| KR-200 Market Identification Engine | ✅ Complete |
-| KR-250 Asset Intelligence Engine | ✅ Complete |
+Completed architecture foundation:
 
----
+- MCX Metals futures-to-futures reference model.
+- One-engine-one-responsibility architecture.
+- Public-output contracts between engines.
+- Narrow adapter pattern for execution and trade-management context.
+- MCX self-contained execution rule.
+- Frozen intelligence, decision, and execution core through KR-380.
+- KR-390 Trade Management Foundation.
+- KR-400 Alert Foundation.
+- KR-705 frozen trader-facing display layer.
 
-## Phase 2 — Analysis 🚧
+## Immediate Next Milestones
 
-| Engine | Status |
-|---------|:------:|
-| KR-260 Global Data Engine | 🔄 Next |
-| KR-270 Global Indicator Engine | ⏳ Planned |
-| KR-300 Local Trend Engine | ⏳ Planned |
-| KR-350 Trend Alignment Engine | ⏳ Planned |
-| KR-400 Trend Quality Engine | ⏳ Planned |
+1. Complete and live-validate KR-390 Trade Management.
+2. Complete and live-validate KR-400 Execution Alerts.
+3. Extend the Futures Model to MCX Energy:
+   - Crude Oil;
+   - Natural Gas.
+4. Extend the Futures Model to NSE Stock Futures.
 
----
+Validation must follow the [Testing Protocol](docs/validation/TESTING.md). Current MCX Metals evidence is tracked in [MCX Metals Validation](docs/validation/MCX-METALS-VALIDATION.md).
 
-## Phase 3 — Decision
+## Model-Parity Milestone
 
-| Engine | Status |
-|---------|:------:|
-| KR-450 Setup Qualification Engine | ⏳ Planned |
-| KR-500 Decision Engine | ⏳ Planned |
-| KR-550 Decision Explanation Engine | ⏳ Planned |
+Before expanding into broader platform capabilities, the supported futures models should reach comparable maturity through KR-390 and KR-400 where applicable:
 
----
+- MCX Metals;
+- MCX Energy;
+- NSE Stock Futures.
 
-## Phase 4 — Execution
+Model parity means each market model has documented reference dependencies, execution constraints, validation scope, and known limitations. It does not require identical thresholds or identical market behavior.
 
-| Engine | Status |
-|---------|:------:|
-| KR-600 Risk Management Engine | ⏳ Planned |
-| KR-700 Dashboard Engine | ⏳ Planned |
-| KR-800 Alert Engine | ⏳ Planned |
+## Later Capability Layers
 
----
+After model parity, KRONOS may expand into:
 
-# Future Versions
+- position management for actual user trades;
+- risk and sizing;
+- visualization and dashboard improvements;
+- scanner workflows;
+- trade journal support;
+- analytics;
+- AI explanation;
+- platform services.
 
-## Version 0.6.0
+These are later capability layers. They should not be assigned engine numbers until their ownership and architecture are documented.
 
-- Performance improvements
-- Additional filters
-- Dashboard enhancements
+## Aspirational Work
 
-## Version 0.7.0
+Longer-term possibilities include richer cross-market intelligence, portfolio-level insight, user workflow automation, and deeper analytics. These remain aspirational until formally designed.
 
-- NSE Futures support
-- Multi-market enhancements
+## Current Non-Goals
 
-## Version 0.8.0
+For the current phase, KRONOS does not target:
 
-- KRONOS Options framework
+- options;
+- broker automation;
+- portfolio automation;
+- a full AI layer.
 
-## Version 1.0.0
+## Architecture References
 
-First stable production release of PROJECT KRONOS.
-
-# KRONOS Roadmap
-
-## Foundation Phase ✅
-
-- [x] KR-100 Configuration Engine
-- [x] KR-150 Indicator Engine
-- [x] KR-200 Market Identification Engine
-- [x] KR-250 Asset Intelligence Engine
-- [x] KR-260 Market Data Engine
-- [x] KR-271 Mathematical Library
-- [x] KR-275 Market Structure Intelligence Engine
-- [x] KR-280 CPR Intelligence Engine
-
----
-
-## Intelligence Phase 🚧
-
-- [ ] KR-300 Trend Intelligence Engine
-- [ ] KR-350 Signal Intelligence Engine
-- [ ] KR-400 Decision Intelligence Engine
-- [ ] KR-500 Composite Scoring Engine
-
----
-
-## Platform Phase
-
-- [ ] KR-900 Rendering Engine
+- [Architecture Overview](docs/architecture/OVERVIEW.md)
+- [Engine Ownership](docs/architecture/ENGINE_OWNERSHIP.md)
+- [Data Flow](docs/architecture/DATA_FLOW.md)
+- [Futures Model ADL](docs/architecture/ADL-001-Futures-Model.md)
+- [MCX Self-Contained Execution ADL](docs/architecture/ADL-002-MCX-Self-Contained-Execution.md)

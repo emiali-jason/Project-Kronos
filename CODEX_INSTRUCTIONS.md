@@ -1,339 +1,63 @@
-# Project KRONOS
-# CODEX ENGINEERING INSTRUCTIONS
+# Project KRONOS Codex Instructions
 
-Version: 1.1
-Last Updated: 2026-07-07
+**Status:** Operational policy for AI-assisted changes
+**Date:** 2026-07-10
 
----
+These instructions govern Codex work in Project KRONOS. They are intentionally short and defer volatile engine status to the canonical documents.
 
-# Mission
+## Read Before Changing Code
 
-Project KRONOS is an institutional trend-following trading framework.
+Before implementation, read the relevant canonical docs:
 
-The objective is NOT to predict tops or bottoms.
+- [Engine Status](docs/ENGINE_STATUS.md)
+- [Engine Ownership](docs/architecture/ENGINE_OWNERSHIP.md)
+- [Architecture Overview](docs/architecture/OVERVIEW.md)
+- [Data Flow](docs/architecture/DATA_FLOW.md)
+- [Testing Protocol](docs/validation/TESTING.md)
+- [Architecture Decision Logs](docs/architecture/ADL-001-Futures-Model.md)
 
-The objective is to identify high-probability institutional trends, remain with the trend while the evidence remains strong, and exit only when the evidence weakens.
+Use [Coding Standards](docs/CodingStandards.md) if a coding-style question is not answered by the current source.
 
-Every implementation must support this philosophy.
+## Architecture Rules
 
----
+- One engine, one responsibility.
+- Preserve frozen contracts.
+- Use public outputs between engines wherever possible.
+- Adapter exceptions must be narrow, documented, and justified by a missing formal public fact.
+- No backward dependency from lower layers into higher layers.
+- No changes to frozen logic without explicit bug-fix scope or a declared version change.
+- KR-370 owns decision and readiness.
+- KR-380 owns execution timing.
+- KR-390 owns objective model-trade management.
+- KR-400 owns BUY NOW / SELL NOW alert events.
+- KR-705 owns trader-facing display only.
 
-# Core Engineering Principles
+## Pine Safety Rules
 
-- Preserve the existing architecture.
-- Extend the framework instead of rewriting it.
-- One engine = One responsibility.
-- Simplicity is preferred over clever code.
-- Readability is preferred over shorter code.
-- Never sacrifice maintainability for fewer lines.
+- TradingView is the final Pine compiler and runtime authority.
+- Run `git diff --check` before finishing.
+- Confirm symbol and timeframe safety for every market-data change.
+- Never allow `UNKNOWN` or an empty placeholder into `request.security()`.
+- Keep stateful functions such as `ta.rma`, `ta.ema`, `ta.sma`, `ta.highest`, and `ta.lowest` executing consistently on every bar.
+- Use confirmed-bar gates for actionable states, model-trade starts, exits, and alert events.
+- Keep boolean assignments on one line whenever practical and Pine-compatible.
 
----
+## Metadata and Documentation Rules
 
-# Engine Architecture
+- Keep comments and metadata truthful.
+- Do not invent release versions, build numbers, validation claims, or supported models.
+- Product metadata remains unresolved unless an authoritative release decision exists.
+- Preserve existing historical decision records unless the task explicitly allows an additive note.
+- Documentation should link to canonical registries rather than duplicate volatile tables.
 
-Each engine must perform ONE major responsibility.
+## Completion Report
 
-Example:
+Every implementation summary should state:
 
-KR-100 Configuration
+- changed files;
+- assumptions;
+- compile/runtime risks;
+- validation performed;
+- validation still required.
 
-KR-150 Display
-
-KR-200 Market Detection
-
-KR-250 Asset Mapping
-
-KR-260 Market Data
-
-KR-270 Indicators
-
-KR-271 Mathematical Functions
-
-KR-275 Market Structure
-
-KR-280 CPR Intelligence
-
-KR-300 Trend Intelligence
-
-KR-310 Evidence Engine
-
-KR-320 Barrier Interaction
-
-KR-350 Opportunity Engine
-
-KR-400 Position Management
-
-KR-500 Decision Engine
-
-Never merge engine responsibilities.
-
----
-
-# Engine Dependency Rules
-
-Higher engines consume ONLY public outputs from lower engines.
-
-Never consume internal variables.
-
-Every mature engine should expose a clean public interface.
-
-Loose coupling is mandatory.
-
----
-
-# Frozen Modules
-
-Frozen engines must never be modified unless specifically requested.
-
-Currently Frozen
-
-KR-280 CPR Intelligence
-
-Bug fixes are allowed.
-
-Feature changes require approval.
-
----
-
-# Coding Standards
-
-Use Pine Script Version 6.
-
-Follow the existing naming conventions.
-
-Keep functions modular.
-
-Avoid duplicated calculations.
-
-Reuse helper functions whenever possible.
-
-Comment all major sections.
-
-Preserve existing comments.
-
-Never remove comments without approval.
-
----
-
-# Code Formatting
-
-Readability is more important than compact code.
-
-Preferred:
-
-- One logical statement per line.
-- Use multiline expressions when they improve clarity.
-- Group related calculations together.
-- Use blank lines between logical sections.
-- Keep indentation consistent.
-- Align assignments where practical.
-
-Avoid:
-
-- Long compressed one-line calculations.
-- Nested ternary operators unless unavoidable.
-- Extremely long function calls on one line.
-
-Exception:
-
-If Pine Script parsing requires a single-line expression,
-use a single line and add a short explanatory comment if helpful.
-
----
-
-# Engine Section Format
-
-Every engine must begin with a banner.
-
-Example
-
-//=============================================================================
-// KR-300.20 - SMA ALIGNMENT ENGINE
-//=============================================================================
-
-This format must remain consistent throughout the project.
-
----
-
-# Function Style
-
-Prefer small reusable functions.
-
-Good example
-
-f_example() =>
-    value = ...
-    result = ...
-    result
-
-Avoid huge anonymous calculations inside the main body.
-
----
-
-# Public Interfaces
-
-Expose only what downstream engines require.
-
-Do not expose unnecessary internal calculations.
-
-Public variables should have clear names.
-
----
-
-# Performance
-
-Avoid unnecessary request.security() calls.
-
-Avoid duplicated indicator calculations.
-
-Reuse previously calculated values.
-
-Keep execution efficient.
-
----
-
-# Trading Philosophy
-
-Indicators never generate trades.
-
-Indicators contribute evidence.
-
-No single indicator is sufficient.
-
-Confluence is required.
-
-Trend is more important than prediction.
-
-Follow institutional participation.
-
-Never introduce trading rules that have not been approved.
-
-Never invent trading logic.
-
-When uncertain, ask instead of assuming.
-
----
-
-# Development Workflow
-
-Before implementation
-
-1. Understand the architecture.
-
-2. Identify affected engines.
-
-3. Preserve compatibility.
-
-Implementation
-
-1. Implement only the requested feature.
-
-2. Preserve existing interfaces.
-
-3. Keep code modular.
-
-After implementation
-
-1. Review your own work.
-
-2. Check for duplicated logic.
-
-3. Check public interfaces.
-
-4. Report assumptions.
-
----
-
-# Before Modifying Existing Code
-
-Always determine
-
-- Which engine is changing.
-- Which engines consume it.
-- Whether public interfaces change.
-
-If interfaces change,
-
-EXPLAIN WHY
-
-before implementing.
-
----
-
-# Validation Checklist
-
-Before considering a task complete
-
-✓ Compiles successfully
-
-✓ No duplicated logic
-
-✓ No interface conflicts
-
-✓ Existing functionality preserved
-
-✓ Existing architecture preserved
-
-✓ Comments updated
-
-✓ Public outputs documented
-
----
-
-# Never Do
-
-Never redesign the architecture without approval.
-
-Never move engine boundaries.
-
-Never rename public interface variables without approval.
-
-Never delete working functionality.
-
-Never modify frozen engines unless requested.
-
-Never introduce trading rules based on assumptions.
-
-Never optimize code at the expense of readability.
-
-Never compress code simply to reduce line count.
-
----
-
-# Preferred Response Format
-
-After every implementation provide:
-
-Summary
-
-Files Modified
-
-Engine Modified
-
-Public Interface Changes
-
-Compile Risks
-
-Trading Logic Assumptions
-
-Recommended Next Step
-
----
-
-# Project Philosophy
-
-KRONOS is NOT an indicator.
-
-KRONOS is a modular institutional trend-following framework.
-
-Every new feature must improve one of these:
-
-- Trend Understanding
-- Market Context
-- Evidence Quality
-- Opportunity Recognition
-- Position Management
-- Decision Quality
-
-If a feature does not improve one of these areas,
-it probably does not belong in KRONOS.
+For documentation-only tasks, explicitly confirm that Pine code was not modified.
