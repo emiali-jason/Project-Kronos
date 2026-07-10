@@ -88,12 +88,16 @@ string krExchange = syminfo.prefix
 //------------------------------
 
 string krTicker = syminfo.ticker
+string krRoot = syminfo.root
 
 //------------------------------
 // Instrument Name
 //------------------------------
 
 string krDescription = syminfo.description
+string krTickerUpper = str.upper(krTicker)
+string krRootUpper = str.upper(krRoot)
+string krDescriptionUpper = str.upper(krDescription)
 
 //------------------------------
 // Market Identification
@@ -169,30 +173,36 @@ string assetDependencyProfile = "Unknown"
 string assetTradingProfile    = "Unknown"
 
 //------------------------------
-// MCX Assets
+// Asset Identification
 //------------------------------
 
-if str.contains(krTicker, "GOLD")
+bool krIsGold       = (isCOMEX and krRootUpper == "GC") or str.contains(krTickerUpper, "GOLD") or str.contains(krDescriptionUpper, "GOLD")
+bool krIsSilver     = (isCOMEX and krRootUpper == "SI") or str.contains(krTickerUpper, "SILVER") or str.contains(krDescriptionUpper, "SILVER")
+bool krIsCopper     = (isCOMEX and krRootUpper == "HG") or str.contains(krTickerUpper, "COPPER") or str.contains(krDescriptionUpper, "COPPER")
+bool krIsCrudeOil   = (isNYMEX and krRootUpper == "CL") or str.contains(krTickerUpper, "CRUDE") or str.contains(krDescriptionUpper, "CRUDE")
+bool krIsNaturalGas = (isNYMEX and krRootUpper == "NG") or str.contains(krTickerUpper, "NATURALGAS") or str.contains(krDescriptionUpper, "NATURAL GAS")
+
+if krIsGold
     krAssetName    := "Gold"
-    krGlobalSymbol := "OANDA:XAUUSD"
+    krGlobalSymbol := "COMEX:GC1!"
     krAssetClass   := "Precious Metal"
 
-else if str.contains(krTicker, "SILVER")
+else if krIsSilver
     krAssetName    := "Silver"
-    krGlobalSymbol := "OANDA:XAGUSD"
+    krGlobalSymbol := "COMEX:SI1!"
     krAssetClass   := "Precious Metal"
 
-else if str.contains(krTicker, "COPPER")
+else if krIsCopper
     krAssetName    := "Copper"
     krGlobalSymbol := "COMEX:HG1!"
     krAssetClass   := "Base Metal"
 
-else if str.contains(krTicker, "CRUDE")
+else if krIsCrudeOil
     krAssetName    := "Crude Oil"
     krGlobalSymbol := "NYMEX:CL1!"
     krAssetClass   := "Energy"
 
-else if str.contains(krTicker, "NATURALGAS")
+else if krIsNaturalGas
     krAssetName    := "Natural Gas"
     krGlobalSymbol := "NYMEX:NG1!"
     krAssetClass   := "Energy"
@@ -289,6 +299,13 @@ string mdExecutionTF = "60"
 string mdPrimarySymbol     = assetPrimarySymbol
 string mdReferenceSymbol   = assetReferenceSymbol
 string mdDependencyProfile = assetDependencyProfile
+bool mdReferenceSymbolValid = mdReferenceSymbol != "" and mdReferenceSymbol != "UNKNOWN"
+bool mdReferenceChart = assetMarket == "COMEX" or assetMarket == "NYMEX"
+bool mdReferenceRequestEnabled = mdReferenceSymbolValid or mdReferenceChart
+string mdReferenceRequestSymbol = mdReferenceSymbolValid ? mdReferenceSymbol : syminfo.tickerid
+
+if mdReferenceChart
+    mdReferenceRequestSymbol := syminfo.tickerid
 
 //==================================================================
 // KR-260.30 ENGINE STATUS
@@ -375,25 +392,60 @@ else
 // KR-260.41 REFERENCE - STRATEGIC DATASET
 //==================================================================
 
-[mdReferenceStrategicO, mdReferenceStrategicH, mdReferenceStrategicL, mdReferenceStrategicC, mdReferenceStrategicV] = getOHLCV(mdReferenceSymbol, mdStrategicTF)
+[mdReferenceStrategicRawO, mdReferenceStrategicRawH, mdReferenceStrategicRawL, mdReferenceStrategicRawC, mdReferenceStrategicRawV] = getOHLCV(mdReferenceRequestSymbol, mdStrategicTF)
+
+float mdReferenceStrategicO = mdReferenceRequestEnabled ? mdReferenceStrategicRawO : na
+float mdReferenceStrategicH = mdReferenceRequestEnabled ? mdReferenceStrategicRawH : na
+float mdReferenceStrategicL = mdReferenceRequestEnabled ? mdReferenceStrategicRawL : na
+float mdReferenceStrategicC = mdReferenceRequestEnabled ? mdReferenceStrategicRawC : na
+float mdReferenceStrategicV = mdReferenceRequestEnabled ? mdReferenceStrategicRawV : na
 
 //==================================================================
 // KR-260.42 REFERENCE - TREND DATASET
 //==================================================================
 
-[mdReferenceTrendO, mdReferenceTrendH, mdReferenceTrendL, mdReferenceTrendC, mdReferenceTrendV] = getOHLCV(mdReferenceSymbol, mdTrendTF)
+[mdReferenceTrendRawO, mdReferenceTrendRawH, mdReferenceTrendRawL, mdReferenceTrendRawC, mdReferenceTrendRawV] = getOHLCV(mdReferenceRequestSymbol, mdTrendTF)
+
+float mdReferenceTrendO = mdReferenceRequestEnabled ? mdReferenceTrendRawO : na
+float mdReferenceTrendH = mdReferenceRequestEnabled ? mdReferenceTrendRawH : na
+float mdReferenceTrendL = mdReferenceRequestEnabled ? mdReferenceTrendRawL : na
+float mdReferenceTrendC = mdReferenceRequestEnabled ? mdReferenceTrendRawC : na
+float mdReferenceTrendV = mdReferenceRequestEnabled ? mdReferenceTrendRawV : na
 
 //==================================================================
 // KR-260.43 REFERENCE - STRUCTURE DATASET
 //==================================================================
 
-[mdReferenceStructureO, mdReferenceStructureH, mdReferenceStructureL, mdReferenceStructureC, mdReferenceStructureV] = getOHLCV(mdReferenceSymbol, mdStructureTF)
+[mdReferenceStructureRawO, mdReferenceStructureRawH, mdReferenceStructureRawL, mdReferenceStructureRawC, mdReferenceStructureRawV] = getOHLCV(mdReferenceRequestSymbol, mdStructureTF)
+
+float mdReferenceStructureO = mdReferenceRequestEnabled ? mdReferenceStructureRawO : na
+float mdReferenceStructureH = mdReferenceRequestEnabled ? mdReferenceStructureRawH : na
+float mdReferenceStructureL = mdReferenceRequestEnabled ? mdReferenceStructureRawL : na
+float mdReferenceStructureC = mdReferenceRequestEnabled ? mdReferenceStructureRawC : na
+float mdReferenceStructureV = mdReferenceRequestEnabled ? mdReferenceStructureRawV : na
 
 //==================================================================
 // KR-260.44 REFERENCE - EXECUTION DATASET
 //==================================================================
 
-[mdReferenceExecutionO, mdReferenceExecutionH, mdReferenceExecutionL, mdReferenceExecutionC, mdReferenceExecutionV] = getOHLCV(mdReferenceSymbol, mdExecutionTF)
+[mdReferenceExecutionRawO, mdReferenceExecutionRawH, mdReferenceExecutionRawL, mdReferenceExecutionRawC, mdReferenceExecutionRawV] = getOHLCV(mdReferenceRequestSymbol, mdExecutionTF)
+
+float mdReferenceExecutionO = mdReferenceRequestEnabled ? mdReferenceExecutionRawO : na
+float mdReferenceExecutionH = mdReferenceRequestEnabled ? mdReferenceExecutionRawH : na
+float mdReferenceExecutionL = mdReferenceRequestEnabled ? mdReferenceExecutionRawL : na
+float mdReferenceExecutionC = mdReferenceRequestEnabled ? mdReferenceExecutionRawC : na
+float mdReferenceExecutionV = mdReferenceRequestEnabled ? mdReferenceExecutionRawV : na
+
+bool mdReferenceStrategicAvailable = mdReferenceRequestEnabled and not na(mdReferenceStrategicC)
+bool mdReferenceTrendAvailable     = mdReferenceRequestEnabled and not na(mdReferenceTrendC)
+bool mdReferenceStructureAvailable = mdReferenceRequestEnabled and not na(mdReferenceStructureC)
+bool mdReferenceExecutionAvailable = mdReferenceRequestEnabled and not na(mdReferenceExecutionC)
+
+mdReferenceAvailable := mdReferenceStrategicAvailable and mdReferenceTrendAvailable and mdReferenceStructureAvailable and mdReferenceExecutionAvailable
+
+if not mdReferenceRequestEnabled
+    mdStatus := "Reference Data Unavailable"
+    mdErrorMessage := "Reference Data Unavailable"
 
 
 //==================================================================
@@ -473,9 +525,6 @@ calcTrueRange(float highPrice, float lowPrice, float previousClose) =>
 // KR-271.20 AVERAGE TRUE RANGE
 //==================================================================
 
-calcATR(series float trueRange, int period) =>
-    ta.rma(trueRange, period)
-
 const int ATR_PERIOD = 14
 
 //==================================================================
@@ -493,10 +542,10 @@ float indReferenceTrueRange = calcTrueRange(mdReferenceTrendH, mdReferenceTrendL
 //==================================================================
 
 // Primary
-float indPrimaryTrendATR = calcATR(indPrimaryTrueRange, ATR_PERIOD)
+float indPrimaryTrendATR = ta.rma(indPrimaryTrueRange, ATR_PERIOD)
 
 // Reference
-float indReferenceTrendATR = calcATR(indReferenceTrueRange, ATR_PERIOD)
+float indReferenceTrendATR = ta.rma(indReferenceTrueRange, ATR_PERIOD)
 
 //==================================================================
 // KR-271.30 DIRECTIONAL MOVEMENT
@@ -528,19 +577,24 @@ float indReferenceTrendMinusDM = calcMinusDM(mdReferenceTrendH, mdReferenceTrend
 // KR-271.40 DIRECTIONAL INDEX
 //==================================================================
 
-calcPlusDI(series float plusDM, series float atr, int period) =>
-    atr <= 0.0 ? 0.0 : 100.0 * ta.rma(plusDM, period) / atr
+calcPlusDI(series float smoothedPlusDM, series float atr) =>
+    atr <= 0.0 ? 0.0 : 100.0 * smoothedPlusDM / atr
 
-calcMinusDI(series float minusDM, series float atr, int period) =>
-    atr <= 0.0 ? 0.0 : 100.0 * ta.rma(minusDM, period) / atr
+calcMinusDI(series float smoothedMinusDM, series float atr) =>
+    atr <= 0.0 ? 0.0 : 100.0 * smoothedMinusDM / atr
+
+float indPrimaryTrendPlusDMSmoothed = ta.rma(indPrimaryTrendPlusDM, ATR_PERIOD)
+float indPrimaryTrendMinusDMSmoothed = ta.rma(indPrimaryTrendMinusDM, ATR_PERIOD)
+float indReferenceTrendPlusDMSmoothed = ta.rma(indReferenceTrendPlusDM, ATR_PERIOD)
+float indReferenceTrendMinusDMSmoothed = ta.rma(indReferenceTrendMinusDM, ATR_PERIOD)
 
 // Primary
-float indPrimaryTrendPlusDI = calcPlusDI(indPrimaryTrendPlusDM, indPrimaryTrendATR, ATR_PERIOD)
-float indPrimaryTrendMinusDI = calcMinusDI(indPrimaryTrendMinusDM, indPrimaryTrendATR, ATR_PERIOD)
+float indPrimaryTrendPlusDI = calcPlusDI(indPrimaryTrendPlusDMSmoothed, indPrimaryTrendATR)
+float indPrimaryTrendMinusDI = calcMinusDI(indPrimaryTrendMinusDMSmoothed, indPrimaryTrendATR)
 
 // Reference
-float indReferenceTrendPlusDI = calcPlusDI(indReferenceTrendPlusDM, indReferenceTrendATR, ATR_PERIOD)
-float indReferenceTrendMinusDI = calcMinusDI(indReferenceTrendMinusDM, indReferenceTrendATR, ATR_PERIOD)
+float indReferenceTrendPlusDI = calcPlusDI(indReferenceTrendPlusDMSmoothed, indReferenceTrendATR)
+float indReferenceTrendMinusDI = calcMinusDI(indReferenceTrendMinusDMSmoothed, indReferenceTrendATR)
 
 //==================================================================
 // KR-271.50 TREND STRENGTH
@@ -550,16 +604,13 @@ calcDX(series float plusDI, series float minusDI) =>
     float diSum = plusDI + minusDI
     diSum == 0.0 ? 0.0 : 100.0 * math.abs(plusDI - minusDI) / diSum
 
-calcADX(series float dx, int period) =>
-    ta.rma(dx, period)
-
 // Primary
 float indPrimaryTrendDX = calcDX(indPrimaryTrendPlusDI, indPrimaryTrendMinusDI)
-float indPrimaryTrendADX = calcADX(indPrimaryTrendDX, ATR_PERIOD)
+float indPrimaryTrendADX = ta.rma(indPrimaryTrendDX, ATR_PERIOD)
 
 // Reference
 float indReferenceTrendDX = calcDX(indReferenceTrendPlusDI, indReferenceTrendMinusDI)
-float indReferenceTrendADX = calcADX(indReferenceTrendDX, ATR_PERIOD)
+float indReferenceTrendADX = ta.rma(indReferenceTrendDX, ATR_PERIOD)
 
 //==================================================================
 // KR-275 : MARKET STRUCTURE INTELLIGENCE ENGINE
@@ -3165,6 +3216,385 @@ bool outDecisionSellReady = decisionState == KR370_DECISION_SELL_READY
 
 
 //==================================================================
+// KR-380 : Execution Trigger Engine
+// Version : 0.1.0
+// Status  : FOUNDATION
+//
+// Purpose:
+// Transforms BUY READY / SELL READY into executable entry triggers.
+// KR-380 is a timing engine only. It does not decide direction.
+// KR-370 decides BUY READY or SELL READY; KR-380 only asks whether
+// entry can occur now. If KR-370 is not BUY READY or SELL READY,
+// KR-380 returns NO TRIGGER. It calculates no stops, targets or
+// trade management, and it performs no alerts, labels, plots or orders.
+//==================================================================
+
+//==================================================================
+// KR-380.10 TRIGGER STATE CONSTANTS
+//==================================================================
+
+const int KR380_TRIGGER_NONE = 0
+const int KR380_TRIGGER_FORMING_LONG = 1
+const int KR380_TRIGGER_FORMING_SHORT = 2
+const int KR380_TRIGGER_BUY = 3
+const int KR380_TRIGGER_SELL = 4
+const int KR380_TRIGGER_FAILED = 5
+const int KR380_TRIGGER_EXTENDED = 6
+
+//==================================================================
+// KR-380.20 INPUT READINESS
+//==================================================================
+
+bool triggerDecisionReady = outDecisionReady
+bool triggerAcceptanceReady = outBarrierReady
+bool triggerConfidenceReady = outConfidenceReady
+bool triggerCompressionReady = outCompressionReady
+bool triggerMomentumReady = outMomentumReady
+bool triggerOpportunityReady = outOpportunityInputReady
+bool triggerQualityReady = outEvidenceReady
+
+bool triggerBaseReady = triggerDecisionReady and triggerAcceptanceReady and triggerConfidenceReady and triggerCompressionReady and triggerMomentumReady and triggerOpportunityReady and triggerQualityReady
+
+//==================================================================
+// KR-380.25 MCX EXECUTION-CONTEXT ADAPTER
+//==================================================================
+
+bool triggerMCXChart = assetMarket == "MCX"
+bool triggerMCX1HChart = triggerMCXChart and timeframe.isintraday and timeframe.multiplier == 60
+bool triggerLongIntent = outDecisionBuyReady or outDecisionWatchLong
+bool triggerShortIntent = outDecisionSellReady or outDecisionWatchShort
+bool triggerDirectionalIntent = triggerLongIntent or triggerShortIntent
+
+// Consume existing KR-260/KR-270 reference datasets instead of
+// duplicating retrieval or recreating the full intelligence stack.
+float triggerRef4HRange = mdReferenceStructureH - mdReferenceStructureL
+float triggerRef4HPrevRange = mdReferenceStructureH[1] - mdReferenceStructureL[1]
+
+bool triggerRefDailyDataReady = not na(mdReferenceTrendC) and not na(indReferenceTrendSMA50)
+bool triggerRef4HDataReady = not na(mdReferenceStructureC) and not na(mdReferenceStructureH[1]) and not na(mdReferenceStructureL[1]) and not na(triggerRef4HRange) and not na(triggerRef4HPrevRange)
+bool triggerRef1HDataReady = not na(mdReferenceExecutionC) and not na(mdReferenceExecutionC[1])
+
+bool triggerRefDailyLongPermission = triggerRefDailyDataReady and triggerLongIntent and mdReferenceTrendC > indReferenceTrendSMA50
+bool triggerRefDailyShortPermission = triggerRefDailyDataReady and triggerShortIntent and mdReferenceTrendC < indReferenceTrendSMA50
+bool triggerRefDailyReady = (triggerLongIntent and triggerRefDailyLongPermission) or (triggerShortIntent and triggerRefDailyShortPermission)
+
+bool triggerRef4HCompressionBlocking = triggerRef4HDataReady and triggerRef4HRange <= triggerRef4HPrevRange * 0.80
+bool triggerRef4HLongAccepted = triggerRef4HDataReady and triggerLongIntent and mdReferenceStructureC > mdReferenceStructureH[1]
+bool triggerRef4HShortAccepted = triggerRef4HDataReady and triggerShortIntent and mdReferenceStructureC < mdReferenceStructureL[1]
+bool triggerRef4HReady = not triggerRef4HCompressionBlocking and ((triggerLongIntent and triggerRef4HLongAccepted) or (triggerShortIntent and triggerRef4HShortAccepted))
+
+bool triggerRef1HLongSupport = triggerRef1HDataReady and triggerLongIntent and mdReferenceExecutionC >= mdReferenceExecutionC[1]
+bool triggerRef1HShortSupport = triggerRef1HDataReady and triggerShortIntent and mdReferenceExecutionC <= mdReferenceExecutionC[1]
+bool triggerRef1HReady = (triggerLongIntent and triggerRef1HLongSupport) or (triggerShortIntent and triggerRef1HShortSupport)
+
+string triggerRefDailyBlocker = ""
+
+if not triggerDirectionalIntent
+    triggerRefDailyBlocker := "KR-370 Direction Pending"
+else if not triggerRefDailyDataReady
+    triggerRefDailyBlocker := "COMEX D Data Pending"
+else if triggerLongIntent and not triggerRefDailyLongPermission
+    triggerRefDailyBlocker := "COMEX D Opposes Long"
+else if triggerShortIntent and not triggerRefDailyShortPermission
+    triggerRefDailyBlocker := "COMEX D Opposes Short"
+
+string triggerRef4HBlocker = ""
+
+if not triggerRef4HDataReady
+    triggerRef4HBlocker := "COMEX 4H Data Pending"
+else if triggerRef4HCompressionBlocking
+    triggerRef4HBlocker := "COMEX 4H Compression"
+else if triggerLongIntent and not triggerRef4HLongAccepted
+    triggerRef4HBlocker := "COMEX 4H Acceptance"
+else if triggerShortIntent and not triggerRef4HShortAccepted
+    triggerRef4HBlocker := "COMEX 4H Acceptance"
+
+string triggerRef1HBlocker = ""
+
+if not triggerRef1HDataReady
+    triggerRef1HBlocker := "COMEX 1H Data Pending"
+else if triggerLongIntent and not triggerRef1HLongSupport
+    triggerRef1HBlocker := "COMEX 1H Momentum"
+else if triggerShortIntent and not triggerRef1HShortSupport
+    triggerRef1HBlocker := "COMEX 1H Momentum"
+
+//==================================================================
+// KR-380.30 PUBLIC CONDITION MAP
+//==================================================================
+
+bool triggerBuyReady = triggerBaseReady and triggerMCX1HChart and outDecisionBuyReady
+bool triggerSellReady = triggerBaseReady and triggerMCX1HChart and outDecisionSellReady
+bool triggerReadySetup = triggerBuyReady or triggerSellReady
+
+bool triggerAcceptanceConfirmed = triggerAcceptanceReady and (outAcceptanceAccepted or outAcceptanceStrong)
+bool triggerAcceptanceRejected = triggerAcceptanceReady and outAcceptanceRejected
+
+bool triggerConfidenceConfirmed = triggerConfidenceReady and outConfidenceScore > 60
+bool triggerConfidenceFell = triggerConfidenceReady and outConfidenceScore <= 40
+
+bool triggerCompressionBlocking = triggerCompressionReady and not outExpansionStarted and (outCompressionBuilding or outCompressionStrong or outCompressionCritical)
+bool triggerCompressionClear = triggerCompressionReady and (outExpansionStarted or not triggerCompressionBlocking)
+
+bool triggerMomentumConfirmed = triggerMomentumReady and (outMomentumNormal or outMomentumStrong or outMomentumBuilding)
+
+bool triggerOpportunityPresent = triggerOpportunityReady and not outNoOpportunityContext
+bool triggerOpportunityMissing = triggerOpportunityReady and outNoOpportunityContext
+
+bool triggerExtended = triggerBaseReady and triggerReadySetup and outTrendQualityExtended
+bool triggerFailed = triggerBaseReady and triggerReadySetup and (triggerAcceptanceRejected or triggerConfidenceFell or triggerOpportunityMissing)
+bool triggerMCXExecutionReady = triggerMCX1HChart and triggerAcceptanceConfirmed and triggerConfidenceConfirmed and triggerCompressionClear and triggerMomentumConfirmed and triggerOpportunityPresent
+
+string triggerMCXExecutionBlocker = ""
+
+if triggerFailed
+    triggerMCXExecutionBlocker := "MCX 1H Trigger Failed"
+else if triggerExtended
+    triggerMCXExecutionBlocker := "MCX 1H Extended"
+else if triggerMCXChart and not triggerMCX1HChart
+    triggerMCXExecutionBlocker := "MCX 1H Chart Required"
+else if not triggerAcceptanceConfirmed
+    triggerMCXExecutionBlocker := "MCX 1H Acceptance"
+else if not triggerConfidenceConfirmed
+    triggerMCXExecutionBlocker := "MCX 1H Confidence > 60"
+else if not triggerCompressionClear
+    triggerMCXExecutionBlocker := "MCX 1H Compression"
+else if not triggerMomentumConfirmed
+    triggerMCXExecutionBlocker := "MCX 1H Momentum"
+else if not triggerOpportunityPresent
+    triggerMCXExecutionBlocker := "MCX 1H Opportunity"
+else if not triggerMCXExecutionReady
+    triggerMCXExecutionBlocker := "MCX 1H Breakout"
+
+bool triggerExecutionContextReady = triggerRefDailyReady and triggerRef4HReady and triggerRef1HReady and triggerMCXExecutionReady
+
+bool triggerBuyNow = triggerBuyReady and triggerRefDailyReady and triggerRef4HReady and triggerRef1HReady and triggerMCXExecutionReady and not triggerExtended and not triggerFailed
+bool triggerSellNow = triggerSellReady and triggerRefDailyReady and triggerRef4HReady and triggerRef1HReady and triggerMCXExecutionReady and not triggerExtended and not triggerFailed
+
+bool triggerLongForming = triggerBuyReady and not triggerBuyNow and not triggerExtended and not triggerFailed
+bool triggerShortForming = triggerSellReady and not triggerSellNow and not triggerExtended and not triggerFailed
+
+//==================================================================
+// KR-380.35 EXECUTION NEEDS
+//==================================================================
+
+translateExecutionNeed(string blocker) =>
+    string translated = blocker
+
+    switch blocker
+        "KR Data Pending" => translated := "Waiting for market data"
+        "KR Review Blocked" => translated := "Review gate blocked"
+        "KR-370 Not Ready" => translated := "Waiting for setup readiness"
+        "KR-370 Direction Pending" => translated := "Waiting for trend confirmation"
+        "COMEX D Data Pending" => translated := "Waiting for reference data"
+        "COMEX D Opposes Long" => translated := "Waiting for trend alignment"
+        "COMEX D Opposes Short" => translated := "Waiting for trend alignment"
+        "COMEX 4H Data Pending" => translated := "Waiting for reference data"
+        "COMEX 4H Compression" => translated := "Waiting for breakout"
+        "COMEX 4H Acceptance" => translated := "Waiting for price acceptance"
+        "COMEX 1H Data Pending" => translated := "Waiting for reference data"
+        "COMEX 1H Momentum" => translated := "Momentum needs to strengthen"
+        "MCX 1H Trigger Failed" => translated := "Execution setup failed"
+        "MCX 1H Extended" => translated := "Price is extended"
+        "MCX 1H Chart Required" => translated := "Switch to MCX 1H chart"
+        "MCX 1H Acceptance" => translated := "Waiting for price acceptance"
+        "MCX 1H Confidence > 60" => translated := "Momentum needs to strengthen"
+        "MCX 1H Compression" => translated := "Waiting for breakout"
+        "MCX 1H Momentum" => translated := "Momentum needs to strengthen"
+        "MCX 1H Opportunity" => translated := "Waiting for opportunity"
+        "MCX 1H Breakout" => translated := "Waiting for breakout"
+
+    translated
+
+string triggerExecutionNeed1 = ""
+string triggerExecutionNeed2 = ""
+string triggerExecutionNeed3 = ""
+int triggerExecutionNeedCount = 0
+bool triggerExecutionQueueActive = not triggerBuyNow and not triggerSellNow
+string triggerExecutionNeedCandidate = ""
+
+if triggerExecutionQueueActive and not triggerBaseReady and triggerExecutionNeedCount < 3
+    triggerExecutionNeedCandidate := translateExecutionNeed("KR Data Pending")
+    if triggerExecutionNeedCandidate != "" and triggerExecutionNeedCandidate != triggerExecutionNeed1 and triggerExecutionNeedCandidate != triggerExecutionNeed2 and triggerExecutionNeedCandidate != triggerExecutionNeed3
+        triggerExecutionNeedCount += 1
+        if triggerExecutionNeedCount == 1
+            triggerExecutionNeed1 := triggerExecutionNeedCandidate
+        else if triggerExecutionNeedCount == 2
+            triggerExecutionNeed2 := triggerExecutionNeedCandidate
+        else
+            triggerExecutionNeed3 := triggerExecutionNeedCandidate
+
+if triggerExecutionQueueActive and triggerBaseReady and outDecisionAvoid and outPrimaryBlocker == "Review Blocked" and triggerExecutionNeedCount < 3
+    triggerExecutionNeedCandidate := translateExecutionNeed("KR Review Blocked")
+    if triggerExecutionNeedCandidate != "" and triggerExecutionNeedCandidate != triggerExecutionNeed1 and triggerExecutionNeedCandidate != triggerExecutionNeed2 and triggerExecutionNeedCandidate != triggerExecutionNeed3
+        triggerExecutionNeedCount += 1
+        if triggerExecutionNeedCount == 1
+            triggerExecutionNeed1 := triggerExecutionNeedCandidate
+        else if triggerExecutionNeedCount == 2
+            triggerExecutionNeed2 := triggerExecutionNeedCandidate
+        else
+            triggerExecutionNeed3 := triggerExecutionNeedCandidate
+
+if triggerExecutionQueueActive and triggerBaseReady and not triggerDirectionalIntent and triggerExecutionNeedCount < 3
+    triggerExecutionNeedCandidate := translateExecutionNeed("KR-370 Not Ready")
+    if triggerExecutionNeedCandidate != "" and triggerExecutionNeedCandidate != triggerExecutionNeed1 and triggerExecutionNeedCandidate != triggerExecutionNeed2 and triggerExecutionNeedCandidate != triggerExecutionNeed3
+        triggerExecutionNeedCount += 1
+        if triggerExecutionNeedCount == 1
+            triggerExecutionNeed1 := triggerExecutionNeedCandidate
+        else if triggerExecutionNeedCount == 2
+            triggerExecutionNeed2 := triggerExecutionNeedCandidate
+        else
+            triggerExecutionNeed3 := triggerExecutionNeedCandidate
+
+if triggerExecutionQueueActive and (triggerFailed or triggerExtended) and triggerMCXExecutionBlocker != "" and triggerExecutionNeedCount < 3
+    triggerExecutionNeedCandidate := translateExecutionNeed(triggerMCXExecutionBlocker)
+    if triggerExecutionNeedCandidate != "" and triggerExecutionNeedCandidate != triggerExecutionNeed1 and triggerExecutionNeedCandidate != triggerExecutionNeed2 and triggerExecutionNeedCandidate != triggerExecutionNeed3
+        triggerExecutionNeedCount += 1
+        if triggerExecutionNeedCount == 1
+            triggerExecutionNeed1 := triggerExecutionNeedCandidate
+        else if triggerExecutionNeedCount == 2
+            triggerExecutionNeed2 := triggerExecutionNeedCandidate
+        else
+            triggerExecutionNeed3 := triggerExecutionNeedCandidate
+
+if triggerExecutionQueueActive and triggerRefDailyBlocker != "" and triggerExecutionNeedCount < 3
+    triggerExecutionNeedCandidate := translateExecutionNeed(triggerRefDailyBlocker)
+    if triggerExecutionNeedCandidate != "" and triggerExecutionNeedCandidate != triggerExecutionNeed1 and triggerExecutionNeedCandidate != triggerExecutionNeed2 and triggerExecutionNeedCandidate != triggerExecutionNeed3
+        triggerExecutionNeedCount += 1
+        if triggerExecutionNeedCount == 1
+            triggerExecutionNeed1 := triggerExecutionNeedCandidate
+        else if triggerExecutionNeedCount == 2
+            triggerExecutionNeed2 := triggerExecutionNeedCandidate
+        else
+            triggerExecutionNeed3 := triggerExecutionNeedCandidate
+
+if triggerExecutionQueueActive and triggerRef4HBlocker != "" and triggerExecutionNeedCount < 3
+    triggerExecutionNeedCandidate := translateExecutionNeed(triggerRef4HBlocker)
+    if triggerExecutionNeedCandidate != "" and triggerExecutionNeedCandidate != triggerExecutionNeed1 and triggerExecutionNeedCandidate != triggerExecutionNeed2 and triggerExecutionNeedCandidate != triggerExecutionNeed3
+        triggerExecutionNeedCount += 1
+        if triggerExecutionNeedCount == 1
+            triggerExecutionNeed1 := triggerExecutionNeedCandidate
+        else if triggerExecutionNeedCount == 2
+            triggerExecutionNeed2 := triggerExecutionNeedCandidate
+        else
+            triggerExecutionNeed3 := triggerExecutionNeedCandidate
+
+if triggerExecutionQueueActive and triggerRef1HBlocker != "" and triggerExecutionNeedCount < 3
+    triggerExecutionNeedCandidate := translateExecutionNeed(triggerRef1HBlocker)
+    if triggerExecutionNeedCandidate != "" and triggerExecutionNeedCandidate != triggerExecutionNeed1 and triggerExecutionNeedCandidate != triggerExecutionNeed2 and triggerExecutionNeedCandidate != triggerExecutionNeed3
+        triggerExecutionNeedCount += 1
+        if triggerExecutionNeedCount == 1
+            triggerExecutionNeed1 := triggerExecutionNeedCandidate
+        else if triggerExecutionNeedCount == 2
+            triggerExecutionNeed2 := triggerExecutionNeedCandidate
+        else
+            triggerExecutionNeed3 := triggerExecutionNeedCandidate
+
+if triggerExecutionQueueActive and not triggerFailed and not triggerExtended and triggerMCXExecutionBlocker != "" and triggerExecutionNeedCount < 3
+    triggerExecutionNeedCandidate := translateExecutionNeed(triggerMCXExecutionBlocker)
+    if triggerExecutionNeedCandidate != "" and triggerExecutionNeedCandidate != triggerExecutionNeed1 and triggerExecutionNeedCandidate != triggerExecutionNeed2 and triggerExecutionNeedCandidate != triggerExecutionNeed3
+        triggerExecutionNeedCount += 1
+        if triggerExecutionNeedCount == 1
+            triggerExecutionNeed1 := triggerExecutionNeedCandidate
+        else if triggerExecutionNeedCount == 2
+            triggerExecutionNeed2 := triggerExecutionNeedCandidate
+        else
+            triggerExecutionNeed3 := triggerExecutionNeedCandidate
+
+string triggerExecutionPrimaryBlocker = triggerExecutionNeed1
+string triggerExecutionReason = triggerExecutionPrimaryBlocker == "" ? "Execution timing complete" : triggerExecutionPrimaryBlocker
+
+//==================================================================
+// KR-380.40 TRIGGER CLASSIFICATION
+//==================================================================
+
+int triggerState = KR380_TRIGGER_NONE
+string triggerReason = ""
+
+if not triggerBaseReady
+    triggerState := KR380_TRIGGER_NONE
+    triggerReason := "Waiting for market data"
+else if not triggerReadySetup
+    triggerState := KR380_TRIGGER_NONE
+    triggerReason := triggerExecutionReason
+else if triggerFailed
+    triggerState := KR380_TRIGGER_FAILED
+    triggerReason := triggerExecutionReason
+else if triggerExtended
+    triggerState := KR380_TRIGGER_EXTENDED
+    triggerReason := triggerExecutionReason
+else if triggerBuyNow
+    triggerState := KR380_TRIGGER_BUY
+    triggerReason := "Entry timing confirmed"
+else if triggerSellNow
+    triggerState := KR380_TRIGGER_SELL
+    triggerReason := "Entry timing confirmed"
+else if triggerLongForming
+    triggerState := KR380_TRIGGER_FORMING_LONG
+    triggerReason := triggerExecutionReason
+else if triggerShortForming
+    triggerState := KR380_TRIGGER_FORMING_SHORT
+    triggerReason := triggerExecutionReason
+else
+    triggerState := KR380_TRIGGER_NONE
+    triggerReason := triggerExecutionReason
+
+string triggerText = ""
+
+switch triggerState
+    KR380_TRIGGER_FORMING_LONG => triggerText := "FORMING"
+    KR380_TRIGGER_FORMING_SHORT => triggerText := "FORMING"
+    KR380_TRIGGER_BUY => triggerText := "BUY NOW"
+    KR380_TRIGGER_SELL => triggerText := "SELL NOW"
+    KR380_TRIGGER_FAILED => triggerText := "FAILED"
+    KR380_TRIGGER_EXTENDED => triggerText := "EXTENDED"
+    => triggerText := "NO TRIGGER"
+
+//==================================================================
+// KR-380.50 PUBLIC INTERFACE
+//==================================================================
+
+bool outTriggerReady = triggerBaseReady
+
+int outTriggerState = triggerState
+
+string outTriggerText = triggerText
+string outTriggerReason = triggerReason
+
+bool outTriggerNone = triggerState == KR380_TRIGGER_NONE
+bool outTriggerFormingLong = triggerState == KR380_TRIGGER_FORMING_LONG
+bool outTriggerFormingShort = triggerState == KR380_TRIGGER_FORMING_SHORT
+bool outTriggerBuy = triggerState == KR380_TRIGGER_BUY
+bool outTriggerSell = triggerState == KR380_TRIGGER_SELL
+bool outTriggerFailed = triggerState == KR380_TRIGGER_FAILED
+bool outTriggerExtended = triggerState == KR380_TRIGGER_EXTENDED
+
+bool outExecutionContextReady = triggerExecutionContextReady
+
+bool outRefDailyReady = triggerRefDailyReady
+string outRefDailyBlocker = triggerRefDailyBlocker
+
+bool outRef4HReady = triggerRef4HReady
+string outRef4HBlocker = triggerRef4HBlocker
+
+bool outRef1HReady = triggerRef1HReady
+string outRef1HBlocker = triggerRef1HBlocker
+
+bool outMCXExecutionReady = triggerMCXExecutionReady
+string outMCXExecutionBlocker = triggerMCXExecutionBlocker
+
+string outExecutionNeed1 = triggerExecutionNeed1
+string outExecutionNeed2 = triggerExecutionNeed2
+string outExecutionNeed3 = triggerExecutionNeed3
+string outExecutionPrimaryBlocker = triggerExecutionPrimaryBlocker
+string outExecutionReason = triggerExecutionReason
+
+//==================================================================
+// END OF KR-380
+//==================================================================
+
+
+
+//==================================================================
 // KR-705 : Engine Status Panel
 // Version : 0.1.2
 // Status  : FROZEN
@@ -3226,11 +3656,15 @@ string kr705CompressionText = kr705CompressionAvailable ? outExpansionStarted ? 
 string kr705OpportunityText = kr705OpportunityAvailable ? outBullishOpportunityContext or outBearishOpportunityContext ? "Good" : "Limited" : kr705UnavailableText
 string kr705ConfidenceText = kr705ConfidenceAvailable ? str.tostring(outConfidenceScore) + " - " + outConfidenceText : kr705UnavailableText
 string kr705RiskText = kr705UnavailableText
-string kr705EntryText = kr705UnavailableText
-string kr705DecisionText = outDecisionText
-string kr705Need1Text = outNeed1 == "" ? kr705UnavailableText : outNeed1
-string kr705Need2Text = outNeed2 == "" ? kr705UnavailableText : outNeed2
-string kr705Need3Text = outNeed3 == "" ? kr705UnavailableText : outNeed3
+bool kr705MCXExecutionPanel = assetMarket == "MCX"
+string kr705EntryText = outTriggerReady ? outTriggerText : kr705UnavailableText
+string kr705DecisionText = kr705MCXExecutionPanel ? outTriggerText : outDecisionText
+string kr705Need1Source = kr705MCXExecutionPanel ? outExecutionNeed1 : outNeed1
+string kr705Need2Source = kr705MCXExecutionPanel ? outExecutionNeed2 : outNeed2
+string kr705Need3Source = kr705MCXExecutionPanel ? outExecutionNeed3 : outNeed3
+string kr705Need1Text = kr705Need1Source == "" ? kr705UnavailableText : kr705Need1Source
+string kr705Need2Text = kr705Need2Source == "" ? kr705UnavailableText : kr705Need2Source
+string kr705Need3Text = kr705Need3Source == "" ? kr705UnavailableText : kr705Need3Source
 string kr705StatusText = kr705CoreDataReady ? "DATA OK" : "WAITING"
 
 //==================================================================
@@ -3258,15 +3692,15 @@ color kr705CompressionColor = not kr705CompressionAvailable ? kr705MutedText : o
 color kr705OpportunityColor = not kr705OpportunityAvailable ? kr705MutedText : outBullishOpportunityContext or outBearishOpportunityContext ? kr705Green : kr705Yellow
 color kr705ConfidenceColor = not kr705ConfidenceAvailable ? kr705MutedText : outConfidenceVeryHigh ? kr705BrightGreen : outConfidenceHigh ? kr705Green : outConfidenceMedium ? kr705White : outConfidenceLow ? kr705Yellow : kr705Red
 color kr705PlaceholderColor = kr705MutedText
-bool kr705Need1Unchecked = str.startswith(outNeed1, "☐")
-bool kr705Need2Unchecked = str.startswith(outNeed2, "☐")
-bool kr705Need3Unchecked = str.startswith(outNeed3, "☐")
-bool kr705Need1Checked = str.startswith(outNeed1, "✓") or str.startswith(outNeed1, "☑")
-bool kr705Need2Checked = str.startswith(outNeed2, "✓") or str.startswith(outNeed2, "☑")
-bool kr705Need3Checked = str.startswith(outNeed3, "✓") or str.startswith(outNeed3, "☑")
-color kr705Need1Color = outNeed1 == "" ? kr705MutedText : kr705Need1Unchecked ? kr705Yellow : kr705Need1Checked ? kr705Green : kr705MutedText
-color kr705Need2Color = outNeed2 == "" ? kr705MutedText : kr705Need2Unchecked ? kr705Yellow : kr705Need2Checked ? kr705Green : kr705MutedText
-color kr705Need3Color = outNeed3 == "" ? kr705MutedText : kr705Need3Unchecked ? kr705Yellow : kr705Need3Checked ? kr705Green : kr705MutedText
+bool kr705Need1Unchecked = str.startswith(kr705Need1Source, "☐") or (kr705MCXExecutionPanel and kr705Need1Source != "")
+bool kr705Need2Unchecked = str.startswith(kr705Need2Source, "☐") or (kr705MCXExecutionPanel and kr705Need2Source != "")
+bool kr705Need3Unchecked = str.startswith(kr705Need3Source, "☐") or (kr705MCXExecutionPanel and kr705Need3Source != "")
+bool kr705Need1Checked = str.startswith(kr705Need1Source, "✓") or str.startswith(kr705Need1Source, "☑")
+bool kr705Need2Checked = str.startswith(kr705Need2Source, "✓") or str.startswith(kr705Need2Source, "☑")
+bool kr705Need3Checked = str.startswith(kr705Need3Source, "✓") or str.startswith(kr705Need3Source, "☑")
+color kr705Need1Color = kr705Need1Source == "" ? kr705MutedText : kr705Need1Checked ? kr705Green : kr705Need1Unchecked ? kr705Yellow : kr705MutedText
+color kr705Need2Color = kr705Need2Source == "" ? kr705MutedText : kr705Need2Checked ? kr705Green : kr705Need2Unchecked ? kr705Yellow : kr705MutedText
+color kr705Need3Color = kr705Need3Source == "" ? kr705MutedText : kr705Need3Checked ? kr705Green : kr705Need3Unchecked ? kr705Yellow : kr705MutedText
 color kr705StatusColor = kr705CoreDataReady ? kr705BrightGreen : kr705Yellow
 
 //==================================================================
