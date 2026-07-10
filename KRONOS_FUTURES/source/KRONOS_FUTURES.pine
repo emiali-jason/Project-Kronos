@@ -3216,17 +3216,120 @@ bool outDecisionSellReady = decisionState == KR370_DECISION_SELL_READY
 
 
 //==================================================================
+// KR-380A : Execution Context Adapter
+// Version : 0.1.0
+// Status  : FOUNDATION
+//
+// Purpose:
+// Provides the formal execution-context interface consumed by KR-380.
+// This adapter is the approved exception that may read KR-260/KR-270
+// reference datasets for timing context. KR-380 classification must
+// consume these public adapter outputs instead of scattered raw
+// reference variables.
+//
+// Contract:
+// - Does not duplicate KR-300 through KR-370 intelligence.
+// - Exposes only the minimum facts required by KR-380 timing.
+// - Produces no alerts, orders, stops, targets, plots or labels.
+//==================================================================
+
+bool execContextMCXChart = assetMarket == "MCX"
+bool execContextMCX1HChart = execContextMCXChart and timeframe.isintraday and timeframe.multiplier == 60
+bool execContextLongIntent = outDecisionBuyReady or outDecisionWatchLong
+bool execContextShortIntent = outDecisionSellReady or outDecisionWatchShort
+bool execContextDirectionalIntent = execContextLongIntent or execContextShortIntent
+
+float execContextRef4HRange = mdReferenceStructureH - mdReferenceStructureL
+float execContextRef4HPrevRange = mdReferenceStructureH[1] - mdReferenceStructureL[1]
+
+bool execContextRefDailyDataReady = not na(mdReferenceTrendC) and not na(indReferenceTrendSMA50)
+bool execContextRef4HDataReady = not na(mdReferenceStructureC) and not na(mdReferenceStructureH[1]) and not na(mdReferenceStructureL[1]) and not na(execContextRef4HRange) and not na(execContextRef4HPrevRange)
+bool execContextRef1HDataReady = not na(mdReferenceExecutionC) and not na(mdReferenceExecutionC[1])
+
+bool execContextRefDailyBullishPermission = execContextRefDailyDataReady and mdReferenceTrendC > indReferenceTrendSMA50
+bool execContextRefDailyBearishPermission = execContextRefDailyDataReady and mdReferenceTrendC < indReferenceTrendSMA50
+
+bool execContextRef4HCompressionReady = execContextRef4HDataReady and execContextRef4HRange > execContextRef4HPrevRange * 0.80
+bool execContextRef4HBullishPermission = execContextRef4HDataReady and mdReferenceStructureC > mdReferenceStructureH[1]
+bool execContextRef4HBearishPermission = execContextRef4HDataReady and mdReferenceStructureC < mdReferenceStructureL[1]
+bool execContextRef4HAcceptanceReady = execContextRef4HCompressionReady and ((execContextLongIntent and execContextRef4HBullishPermission) or (execContextShortIntent and execContextRef4HBearishPermission))
+
+bool execContextRef1HBullishSupport = execContextRef1HDataReady and mdReferenceExecutionC >= mdReferenceExecutionC[1]
+bool execContextRef1HBearishSupport = execContextRef1HDataReady and mdReferenceExecutionC <= mdReferenceExecutionC[1]
+bool execContextRef1HMomentumReady = (execContextLongIntent and execContextRef1HBullishSupport) or (execContextShortIntent and execContextRef1HBearishSupport)
+
+string execContextRefDailyBlockerText = ""
+
+if not execContextDirectionalIntent
+    execContextRefDailyBlockerText := "KR-370 Direction Pending"
+else if not execContextRefDailyDataReady
+    execContextRefDailyBlockerText := "COMEX D Data Pending"
+else if execContextLongIntent and not execContextRefDailyBullishPermission
+    execContextRefDailyBlockerText := "COMEX D Opposes Long"
+else if execContextShortIntent and not execContextRefDailyBearishPermission
+    execContextRefDailyBlockerText := "COMEX D Opposes Short"
+
+string execContextRef4HBlockerText = ""
+
+if not execContextRef4HDataReady
+    execContextRef4HBlockerText := "COMEX 4H Data Pending"
+else if not execContextRef4HCompressionReady
+    execContextRef4HBlockerText := "COMEX 4H Compression"
+else if execContextLongIntent and not execContextRef4HBullishPermission
+    execContextRef4HBlockerText := "COMEX 4H Acceptance"
+else if execContextShortIntent and not execContextRef4HBearishPermission
+    execContextRef4HBlockerText := "COMEX 4H Acceptance"
+
+string execContextRef1HBlockerText = ""
+
+if not execContextRef1HDataReady
+    execContextRef1HBlockerText := "COMEX 1H Data Pending"
+else if execContextLongIntent and not execContextRef1HBullishSupport
+    execContextRef1HBlockerText := "COMEX 1H Momentum"
+else if execContextShortIntent and not execContextRef1HBearishSupport
+    execContextRef1HBlockerText := "COMEX 1H Momentum"
+
+string execContextMCX1HBlockerText = execContextMCX1HChart ? "" : "MCX 1H Chart Required"
+
+bool outExecRefDailyBullishPermission = execContextRefDailyBullishPermission
+bool outExecRefDailyBearishPermission = execContextRefDailyBearishPermission
+string outExecRefDailyBlockerText = execContextRefDailyBlockerText
+
+bool outExecRef4HBullishPermission = execContextRef4HBullishPermission
+bool outExecRef4HBearishPermission = execContextRef4HBearishPermission
+bool outExecRef4HAcceptanceReady = execContextRef4HAcceptanceReady
+bool outExecRef4HCompressionReady = execContextRef4HCompressionReady
+string outExecRef4HBlockerText = execContextRef4HBlockerText
+
+bool outExecRef1HBullishSupport = execContextRef1HBullishSupport
+bool outExecRef1HBearishSupport = execContextRef1HBearishSupport
+bool outExecRef1HMomentumReady = execContextRef1HMomentumReady
+string outExecRef1HBlockerText = execContextRef1HBlockerText
+
+bool outExecMCX1HContextReady = execContextMCX1HChart
+string outExecMCX1HBlockerText = execContextMCX1HBlockerText
+
+bool outExecContextReady = outExecMCX1HContextReady and (outExecRefDailyBlockerText == "") and (outExecRef4HBlockerText == "") and (outExecRef1HBlockerText == "")
+
+
+
+//==================================================================
 // KR-380 : Execution Trigger Engine
 // Version : 0.1.0
 // Status  : FOUNDATION
 //
 // Purpose:
 // Transforms BUY READY / SELL READY into executable entry triggers.
-// KR-380 is a timing engine only. It does not decide direction.
-// KR-370 decides BUY READY or SELL READY; KR-380 only asks whether
-// entry can occur now. If KR-370 is not BUY READY or SELL READY,
-// KR-380 returns NO TRIGGER. It calculates no stops, targets or
-// trade management, and it performs no alerts, labels, plots or orders.
+//
+// Contract:
+// - KR-370 owns direction and readiness.
+// - KR-380 owns execution timing only.
+// - KR-380 may consume the formal Execution Context Adapter.
+// - Intrabar state may be FORMING.
+// - BUY NOW, SELL NOW, FAILED and EXTENDED require a confirmed
+//   MCX 1H bar.
+// - No alerts, trade management, stops, targets, labels, plots or
+//   orders belong in KR-380.
 //==================================================================
 
 //==================================================================
@@ -3256,67 +3359,22 @@ bool triggerQualityReady = outEvidenceReady
 bool triggerBaseReady = triggerDecisionReady and triggerAcceptanceReady and triggerConfidenceReady and triggerCompressionReady and triggerMomentumReady and triggerOpportunityReady and triggerQualityReady
 
 //==================================================================
-// KR-380.25 MCX EXECUTION-CONTEXT ADAPTER
+// KR-380.25 EXECUTION CONTEXT INPUT MAP
 //==================================================================
 
-bool triggerMCXChart = assetMarket == "MCX"
-bool triggerMCX1HChart = triggerMCXChart and timeframe.isintraday and timeframe.multiplier == 60
+bool triggerMCX1HChart = outExecMCX1HContextReady
 bool triggerLongIntent = outDecisionBuyReady or outDecisionWatchLong
 bool triggerShortIntent = outDecisionSellReady or outDecisionWatchShort
 bool triggerDirectionalIntent = triggerLongIntent or triggerShortIntent
+bool triggerBarConfirmed = triggerMCX1HChart and barstate.isconfirmed
 
-// Consume existing KR-260/KR-270 reference datasets instead of
-// duplicating retrieval or recreating the full intelligence stack.
-float triggerRef4HRange = mdReferenceStructureH - mdReferenceStructureL
-float triggerRef4HPrevRange = mdReferenceStructureH[1] - mdReferenceStructureL[1]
+bool triggerRefDailyReady = (triggerLongIntent and outExecRefDailyBullishPermission) or (triggerShortIntent and outExecRefDailyBearishPermission)
+bool triggerRef4HReady = outExecRef4HAcceptanceReady
+bool triggerRef1HReady = outExecRef1HMomentumReady
 
-bool triggerRefDailyDataReady = not na(mdReferenceTrendC) and not na(indReferenceTrendSMA50)
-bool triggerRef4HDataReady = not na(mdReferenceStructureC) and not na(mdReferenceStructureH[1]) and not na(mdReferenceStructureL[1]) and not na(triggerRef4HRange) and not na(triggerRef4HPrevRange)
-bool triggerRef1HDataReady = not na(mdReferenceExecutionC) and not na(mdReferenceExecutionC[1])
-
-bool triggerRefDailyLongPermission = triggerRefDailyDataReady and triggerLongIntent and mdReferenceTrendC > indReferenceTrendSMA50
-bool triggerRefDailyShortPermission = triggerRefDailyDataReady and triggerShortIntent and mdReferenceTrendC < indReferenceTrendSMA50
-bool triggerRefDailyReady = (triggerLongIntent and triggerRefDailyLongPermission) or (triggerShortIntent and triggerRefDailyShortPermission)
-
-bool triggerRef4HCompressionBlocking = triggerRef4HDataReady and triggerRef4HRange <= triggerRef4HPrevRange * 0.80
-bool triggerRef4HLongAccepted = triggerRef4HDataReady and triggerLongIntent and mdReferenceStructureC > mdReferenceStructureH[1]
-bool triggerRef4HShortAccepted = triggerRef4HDataReady and triggerShortIntent and mdReferenceStructureC < mdReferenceStructureL[1]
-bool triggerRef4HReady = not triggerRef4HCompressionBlocking and ((triggerLongIntent and triggerRef4HLongAccepted) or (triggerShortIntent and triggerRef4HShortAccepted))
-
-bool triggerRef1HLongSupport = triggerRef1HDataReady and triggerLongIntent and mdReferenceExecutionC >= mdReferenceExecutionC[1]
-bool triggerRef1HShortSupport = triggerRef1HDataReady and triggerShortIntent and mdReferenceExecutionC <= mdReferenceExecutionC[1]
-bool triggerRef1HReady = (triggerLongIntent and triggerRef1HLongSupport) or (triggerShortIntent and triggerRef1HShortSupport)
-
-string triggerRefDailyBlocker = ""
-
-if not triggerDirectionalIntent
-    triggerRefDailyBlocker := "KR-370 Direction Pending"
-else if not triggerRefDailyDataReady
-    triggerRefDailyBlocker := "COMEX D Data Pending"
-else if triggerLongIntent and not triggerRefDailyLongPermission
-    triggerRefDailyBlocker := "COMEX D Opposes Long"
-else if triggerShortIntent and not triggerRefDailyShortPermission
-    triggerRefDailyBlocker := "COMEX D Opposes Short"
-
-string triggerRef4HBlocker = ""
-
-if not triggerRef4HDataReady
-    triggerRef4HBlocker := "COMEX 4H Data Pending"
-else if triggerRef4HCompressionBlocking
-    triggerRef4HBlocker := "COMEX 4H Compression"
-else if triggerLongIntent and not triggerRef4HLongAccepted
-    triggerRef4HBlocker := "COMEX 4H Acceptance"
-else if triggerShortIntent and not triggerRef4HShortAccepted
-    triggerRef4HBlocker := "COMEX 4H Acceptance"
-
-string triggerRef1HBlocker = ""
-
-if not triggerRef1HDataReady
-    triggerRef1HBlocker := "COMEX 1H Data Pending"
-else if triggerLongIntent and not triggerRef1HLongSupport
-    triggerRef1HBlocker := "COMEX 1H Momentum"
-else if triggerShortIntent and not triggerRef1HShortSupport
-    triggerRef1HBlocker := "COMEX 1H Momentum"
+string triggerRefDailyBlocker = outExecRefDailyBlockerText
+string triggerRef4HBlocker = outExecRef4HBlockerText
+string triggerRef1HBlocker = outExecRef1HBlockerText
 
 //==================================================================
 // KR-380.30 PUBLIC CONDITION MAP
@@ -3342,6 +3400,9 @@ bool triggerOpportunityMissing = triggerOpportunityReady and outNoOpportunityCon
 
 bool triggerExtended = triggerBaseReady and triggerReadySetup and outTrendQualityExtended
 bool triggerFailed = triggerBaseReady and triggerReadySetup and (triggerAcceptanceRejected or triggerConfidenceFell or triggerOpportunityMissing)
+bool triggerFinalStateAllowed = triggerBarConfirmed
+bool triggerExtendedFinal = triggerExtended and triggerFinalStateAllowed
+bool triggerFailedFinal = triggerFailed and triggerFinalStateAllowed
 bool triggerMCXExecutionReady = triggerMCX1HChart and triggerAcceptanceConfirmed and triggerConfidenceConfirmed and triggerCompressionClear and triggerMomentumConfirmed and triggerOpportunityPresent
 
 string triggerMCXExecutionBlocker = ""
@@ -3350,8 +3411,8 @@ if triggerFailed
     triggerMCXExecutionBlocker := "MCX 1H Trigger Failed"
 else if triggerExtended
     triggerMCXExecutionBlocker := "MCX 1H Extended"
-else if triggerMCXChart and not triggerMCX1HChart
-    triggerMCXExecutionBlocker := "MCX 1H Chart Required"
+else if outExecMCX1HBlockerText != ""
+    triggerMCXExecutionBlocker := outExecMCX1HBlockerText
 else if not triggerAcceptanceConfirmed
     triggerMCXExecutionBlocker := "MCX 1H Acceptance"
 else if not triggerConfidenceConfirmed
@@ -3367,11 +3428,11 @@ else if not triggerMCXExecutionReady
 
 bool triggerExecutionContextReady = triggerRefDailyReady and triggerRef4HReady and triggerRef1HReady and triggerMCXExecutionReady
 
-bool triggerBuyNow = triggerBuyReady and triggerRefDailyReady and triggerRef4HReady and triggerRef1HReady and triggerMCXExecutionReady and not triggerExtended and not triggerFailed
-bool triggerSellNow = triggerSellReady and triggerRefDailyReady and triggerRef4HReady and triggerRef1HReady and triggerMCXExecutionReady and not triggerExtended and not triggerFailed
+bool triggerBuyNow = triggerBuyReady and triggerFinalStateAllowed and triggerRefDailyReady and triggerRef4HReady and triggerRef1HReady and triggerMCXExecutionReady and not triggerExtended and not triggerFailed
+bool triggerSellNow = triggerSellReady and triggerFinalStateAllowed and triggerRefDailyReady and triggerRef4HReady and triggerRef1HReady and triggerMCXExecutionReady and not triggerExtended and not triggerFailed
 
-bool triggerLongForming = triggerBuyReady and not triggerBuyNow and not triggerExtended and not triggerFailed
-bool triggerShortForming = triggerSellReady and not triggerSellNow and not triggerExtended and not triggerFailed
+bool triggerLongForming = triggerBuyReady and not triggerBuyNow and not triggerExtendedFinal and not triggerFailedFinal
+bool triggerShortForming = triggerSellReady and not triggerSellNow and not triggerExtendedFinal and not triggerFailedFinal
 
 //==================================================================
 // KR-380.35 EXECUTION NEEDS
@@ -3385,23 +3446,23 @@ translateExecutionNeed(string blocker) =>
         "KR Review Blocked" => translated := "Review gate blocked"
         "KR-370 Not Ready" => translated := "Waiting for setup readiness"
         "KR-370 Direction Pending" => translated := "Waiting for trend confirmation"
-        "COMEX D Data Pending" => translated := "Waiting for reference data"
-        "COMEX D Opposes Long" => translated := "Waiting for trend alignment"
-        "COMEX D Opposes Short" => translated := "Waiting for trend alignment"
-        "COMEX 4H Data Pending" => translated := "Waiting for reference data"
-        "COMEX 4H Compression" => translated := "Waiting for breakout"
-        "COMEX 4H Acceptance" => translated := "Waiting for price acceptance"
-        "COMEX 1H Data Pending" => translated := "Waiting for reference data"
-        "COMEX 1H Momentum" => translated := "Momentum needs to strengthen"
+        "COMEX D Data Pending" => translated := "Waiting for COMEX Daily data"
+        "COMEX D Opposes Long" => translated := "Waiting for COMEX Daily trend alignment"
+        "COMEX D Opposes Short" => translated := "Waiting for COMEX Daily trend alignment"
+        "COMEX 4H Data Pending" => translated := "Waiting for COMEX 4H data"
+        "COMEX 4H Compression" => translated := "Waiting for COMEX 4H breakout"
+        "COMEX 4H Acceptance" => translated := "Waiting for COMEX 4H price acceptance"
+        "COMEX 1H Data Pending" => translated := "Waiting for COMEX 1H data"
+        "COMEX 1H Momentum" => translated := "Waiting for COMEX 1H momentum"
         "MCX 1H Trigger Failed" => translated := "Execution setup failed"
         "MCX 1H Extended" => translated := "Price is extended"
         "MCX 1H Chart Required" => translated := "Switch to MCX 1H chart"
-        "MCX 1H Acceptance" => translated := "Waiting for price acceptance"
-        "MCX 1H Confidence > 60" => translated := "Momentum needs to strengthen"
-        "MCX 1H Compression" => translated := "Waiting for breakout"
-        "MCX 1H Momentum" => translated := "Momentum needs to strengthen"
+        "MCX 1H Acceptance" => translated := "Waiting for MCX 1H price acceptance"
+        "MCX 1H Confidence > 60" => translated := "Waiting for MCX 1H confidence"
+        "MCX 1H Compression" => translated := "Waiting for MCX 1H breakout"
+        "MCX 1H Momentum" => translated := "Waiting for MCX 1H momentum"
         "MCX 1H Opportunity" => translated := "Waiting for opportunity"
-        "MCX 1H Breakout" => translated := "Waiting for breakout"
+        "MCX 1H Breakout" => translated := "Waiting for MCX 1H confirmation"
 
     translated
 
@@ -3445,7 +3506,7 @@ if triggerExecutionQueueActive and triggerBaseReady and not triggerDirectionalIn
         else
             triggerExecutionNeed3 := triggerExecutionNeedCandidate
 
-if triggerExecutionQueueActive and (triggerFailed or triggerExtended) and triggerMCXExecutionBlocker != "" and triggerExecutionNeedCount < 3
+if triggerExecutionQueueActive and (triggerFailedFinal or triggerExtendedFinal) and triggerMCXExecutionBlocker != "" and triggerExecutionNeedCount < 3
     triggerExecutionNeedCandidate := translateExecutionNeed(triggerMCXExecutionBlocker)
     if triggerExecutionNeedCandidate != "" and triggerExecutionNeedCandidate != triggerExecutionNeed1 and triggerExecutionNeedCandidate != triggerExecutionNeed2 and triggerExecutionNeedCandidate != triggerExecutionNeed3
         triggerExecutionNeedCount += 1
@@ -3489,7 +3550,7 @@ if triggerExecutionQueueActive and triggerRef1HBlocker != "" and triggerExecutio
         else
             triggerExecutionNeed3 := triggerExecutionNeedCandidate
 
-if triggerExecutionQueueActive and not triggerFailed and not triggerExtended and triggerMCXExecutionBlocker != "" and triggerExecutionNeedCount < 3
+if triggerExecutionQueueActive and not triggerFailedFinal and not triggerExtendedFinal and triggerMCXExecutionBlocker != "" and triggerExecutionNeedCount < 3
     triggerExecutionNeedCandidate := translateExecutionNeed(triggerMCXExecutionBlocker)
     if triggerExecutionNeedCandidate != "" and triggerExecutionNeedCandidate != triggerExecutionNeed1 and triggerExecutionNeedCandidate != triggerExecutionNeed2 and triggerExecutionNeedCandidate != triggerExecutionNeed3
         triggerExecutionNeedCount += 1
@@ -3516,10 +3577,10 @@ if not triggerBaseReady
 else if not triggerReadySetup
     triggerState := KR380_TRIGGER_NONE
     triggerReason := triggerExecutionReason
-else if triggerFailed
+else if triggerFailedFinal
     triggerState := KR380_TRIGGER_FAILED
     triggerReason := triggerExecutionReason
-else if triggerExtended
+else if triggerExtendedFinal
     triggerState := KR380_TRIGGER_EXTENDED
     triggerReason := triggerExecutionReason
 else if triggerBuyNow
@@ -3554,6 +3615,7 @@ switch triggerState
 //==================================================================
 
 bool outTriggerReady = triggerBaseReady
+bool outTriggerBarConfirmed = triggerBarConfirmed
 
 int outTriggerState = triggerState
 
@@ -3622,6 +3684,8 @@ string outExecutionReason = triggerExecutionReason
 // KR-330 Momentum Confirmation Engine
 // KR-350 Opportunity Foundation Engine
 // KR-360 Confidence Engine
+// KR-370 Decision Engine
+// KR-380 Execution Trigger Engine
 //
 // NOTE
 // ----
@@ -3656,9 +3720,9 @@ string kr705CompressionText = kr705CompressionAvailable ? outExpansionStarted ? 
 string kr705OpportunityText = kr705OpportunityAvailable ? outBullishOpportunityContext or outBearishOpportunityContext ? "Good" : "Limited" : kr705UnavailableText
 string kr705ConfidenceText = kr705ConfidenceAvailable ? str.tostring(outConfidenceScore) + " - " + outConfidenceText : kr705UnavailableText
 string kr705RiskText = kr705UnavailableText
-bool kr705MCXExecutionPanel = assetMarket == "MCX"
+bool kr705MCXExecutionPanel = outExecMCX1HContextReady
 string kr705EntryText = outTriggerReady ? outTriggerText : kr705UnavailableText
-string kr705DecisionText = kr705MCXExecutionPanel ? outTriggerText : outDecisionText
+string kr705DecisionText = outDecisionText
 string kr705Need1Source = kr705MCXExecutionPanel ? outExecutionNeed1 : outNeed1
 string kr705Need2Source = kr705MCXExecutionPanel ? outExecutionNeed2 : outNeed2
 string kr705Need3Source = kr705MCXExecutionPanel ? outExecutionNeed3 : outNeed3
