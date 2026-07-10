@@ -3657,6 +3657,281 @@ string outExecutionReason = triggerExecutionReason
 
 
 //==================================================================
+// KR-390A : Trade Management Execution Adapter
+// Version : 0.1.0
+// Status  : FOUNDATION
+//
+// Purpose:
+// Provides the narrow confirmed execution-timeframe structure facts
+// required by KR-390. This adapter is intentionally small and does
+// not duplicate KR-275 or create a new structure engine.
+//
+// Stop Source:
+// - Long stop uses the lowest completed MCX 1H low from the prior
+//   five execution bars.
+// - Short stop uses the highest completed MCX 1H high from the prior
+//   five execution bars.
+// - These are model stop references, not broker instructions.
+//==================================================================
+
+const int KR390_EXECUTION_SWING_LOOKBACK = 5
+
+float tradeExecutionConfirmedSwingLow = ta.lowest(mdPrimaryExecutionL[1], KR390_EXECUTION_SWING_LOOKBACK)
+float tradeExecutionConfirmedSwingHigh = ta.highest(mdPrimaryExecutionH[1], KR390_EXECUTION_SWING_LOOKBACK)
+
+bool outTradeExecutionContextReady = outExecMCX1HContextReady and not na(mdPrimaryExecutionC)
+bool outTradeExecutionStopReady = outTradeExecutionContextReady and not na(tradeExecutionConfirmedSwingLow) and not na(tradeExecutionConfirmedSwingHigh)
+
+float outTradeExecutionClose = mdPrimaryExecutionC
+float outTradeExecutionSwingLow = tradeExecutionConfirmedSwingLow
+float outTradeExecutionSwingHigh = tradeExecutionConfirmedSwingHigh
+
+
+
+//==================================================================
+// KR-390 : Trade Management Engine
+// Version : 0.1.0
+// Status  : FOUNDATION
+//
+// Purpose:
+// Manages a persistent model trade after a confirmed KR-380 BUY NOW
+// or SELL NOW trigger.
+//
+// Contract:
+// - KR-370 owns direction/readiness.
+// - KR-380 owns entry timing.
+// - KR-390 owns post-trigger model trade state and protection.
+// - No alerts, broker orders, position sizing, partial exits, stops
+//   sent to broker, targets sent to broker, plots or labels.
+// - Model entry price is the confirmed MCX 1H trigger-bar close and
+//   is not the user's broker fill.
+//==================================================================
+
+//==================================================================
+// KR-390.10 TRADE STATE CONSTANTS
+//==================================================================
+
+const int KR390_TRADE_NONE = 0
+const int KR390_TRADE_ACTIVE = 1
+const int KR390_TRADE_HOLD = 2
+const int KR390_TRADE_PROTECT = 3
+const int KR390_TRADE_TRAIL = 4
+const int KR390_TRADE_EXIT = 5
+const int KR390_TRADE_INVALIDATED = 6
+
+const int KR390_DIRECTION_SHORT = -1
+const int KR390_DIRECTION_NONE = 0
+const int KR390_DIRECTION_LONG = 1
+
+//==================================================================
+// KR-390.20 PERSISTENT MODEL TRADE MEMORY
+//==================================================================
+
+var bool tradeModelActive = false
+var int tradeModelDirection = KR390_DIRECTION_NONE
+var int tradeModelState = KR390_TRADE_NONE
+var int tradeModelEntryBarIndex = na
+
+var float tradeModelEntryPrice = na
+var float tradeInitialStopPrice = na
+var float tradeManagedStopPrice = na
+var float tradeTarget1Price = na
+var float tradeTarget2Price = na
+var float tradeInitialRisk = na
+
+var string tradeModelReason = "No confirmed trigger"
+
+//==================================================================
+// KR-390.30 START CONDITIONS
+//==================================================================
+
+bool tradeStartLongSignal = outTriggerBuy and outTriggerBarConfirmed and outExecMCX1HContextReady
+bool tradeStartShortSignal = outTriggerSell and outTriggerBarConfirmed and outExecMCX1HContextReady
+bool tradeStartSignal = tradeStartLongSignal or tradeStartShortSignal
+
+float tradeCandidateEntryPrice = outTradeExecutionClose
+float tradeCandidateInitialStop = tradeStartLongSignal ? outTradeExecutionSwingLow : tradeStartShortSignal ? outTradeExecutionSwingHigh : na
+float tradeCandidateRisk = math.abs(tradeCandidateEntryPrice - tradeCandidateInitialStop)
+
+bool tradeCandidateDataReady = outTradeExecutionContextReady and outTradeExecutionStopReady and not na(tradeCandidateEntryPrice) and not na(tradeCandidateInitialStop)
+bool tradeCandidateLongValid = tradeStartLongSignal and tradeCandidateDataReady and tradeCandidateInitialStop < tradeCandidateEntryPrice and tradeCandidateRisk > 0.0
+bool tradeCandidateShortValid = tradeStartShortSignal and tradeCandidateDataReady and tradeCandidateInitialStop > tradeCandidateEntryPrice and tradeCandidateRisk > 0.0
+bool tradeCandidateValid = tradeCandidateLongValid or tradeCandidateShortValid
+
+//==================================================================
+// KR-390.40 ACTIVE TRADE MANAGEMENT
+//==================================================================
+
+bool tradeConfirmedManagementBar = outExecMCX1HContextReady and barstate.isconfirmed
+bool tradeLongActive = tradeModelActive and tradeModelDirection == KR390_DIRECTION_LONG
+bool tradeShortActive = tradeModelActive and tradeModelDirection == KR390_DIRECTION_SHORT
+
+if tradeModelActive and tradeConfirmedManagementBar
+    bool tradeLongStopBreached = tradeLongActive and outTradeExecutionClose <= tradeManagedStopPrice
+    bool tradeShortStopBreached = tradeShortActive and outTradeExecutionClose >= tradeManagedStopPrice
+
+    if tradeLongStopBreached or tradeShortStopBreached
+        tradeModelActive := false
+        tradeModelState := KR390_TRADE_EXIT
+        tradeModelReason := "Managed stop breached on confirmed MCX 1H close"
+    else
+        float tradeProgress = tradeLongActive ? outTradeExecutionClose - tradeModelEntryPrice : tradeShortActive ? tradeModelEntryPrice - outTradeExecutionClose : 0.0
+        float tradeRMultiple = tradeInitialRisk > 0.0 ? tradeProgress / tradeInitialRisk : 0.0
+
+        if tradeRMultiple >= 2.0 and outTradeExecutionStopReady
+            if tradeLongActive
+                tradeManagedStopPrice := math.max(tradeManagedStopPrice, math.max(tradeModelEntryPrice, outTradeExecutionSwingLow))
+            else if tradeShortActive
+                tradeManagedStopPrice := math.min(tradeManagedStopPrice, math.min(tradeModelEntryPrice, outTradeExecutionSwingHigh))
+
+            tradeModelState := KR390_TRADE_TRAIL
+            tradeModelReason := "Trailing stop from confirmed execution structure"
+        else if tradeRMultiple >= 1.0
+            if tradeLongActive
+                tradeManagedStopPrice := math.max(tradeManagedStopPrice, tradeModelEntryPrice)
+            else if tradeShortActive
+                tradeManagedStopPrice := math.min(tradeManagedStopPrice, tradeModelEntryPrice)
+
+            tradeModelState := KR390_TRADE_PROTECT
+            tradeModelReason := "Initial risk protected at 1R progress"
+        else
+            tradeModelState := KR390_TRADE_HOLD
+            tradeModelReason := "Model trade active"
+
+//==================================================================
+// KR-390.50 TRADE START / INVALIDATION
+//==================================================================
+
+if not tradeModelActive and tradeStartSignal
+    if tradeCandidateValid
+        tradeModelActive := true
+        tradeModelDirection := tradeStartLongSignal ? KR390_DIRECTION_LONG : KR390_DIRECTION_SHORT
+        tradeModelEntryPrice := tradeCandidateEntryPrice
+        tradeInitialStopPrice := tradeCandidateInitialStop
+        tradeManagedStopPrice := tradeCandidateInitialStop
+        tradeInitialRisk := tradeCandidateRisk
+        tradeModelEntryBarIndex := bar_index
+
+        if tradeStartLongSignal
+            tradeTarget1Price := tradeModelEntryPrice + tradeInitialRisk
+            tradeTarget2Price := tradeModelEntryPrice + tradeInitialRisk * 2.0
+        else
+            tradeTarget1Price := tradeModelEntryPrice - tradeInitialRisk
+            tradeTarget2Price := tradeModelEntryPrice - tradeInitialRisk * 2.0
+
+        tradeModelState := KR390_TRADE_ACTIVE
+        tradeModelReason := "Confirmed KR-380 trigger started model trade"
+    else
+        tradeModelActive := false
+        tradeModelState := KR390_TRADE_INVALIDATED
+        tradeModelReason := "Entry or initial stop unavailable"
+
+else if tradeModelActive and tradeStartSignal
+    tradeModelReason := "Active model trade; new trigger ignored"
+
+else if not tradeModelActive and tradeModelState != KR390_TRADE_EXIT and tradeModelState != KR390_TRADE_INVALIDATED
+    tradeModelState := KR390_TRADE_NONE
+    tradeModelReason := "No confirmed trigger"
+
+//==================================================================
+// KR-390.60 PUBLIC CLASSIFICATION
+//==================================================================
+
+string tradeModelText = ""
+
+switch tradeModelState
+    KR390_TRADE_ACTIVE => tradeModelText := "HOLD"
+    KR390_TRADE_HOLD => tradeModelText := "HOLD"
+    KR390_TRADE_PROTECT => tradeModelText := "PROTECT"
+    KR390_TRADE_TRAIL => tradeModelText := "TRAIL"
+    KR390_TRADE_EXIT => tradeModelText := "EXIT"
+    KR390_TRADE_INVALIDATED => tradeModelText := "INVALIDATED"
+    => tradeModelText := "NO TRADE"
+
+//==================================================================
+// KR-390.70 PUBLIC INTERFACE
+//==================================================================
+
+bool outTradeManagementReady = outTradeExecutionContextReady
+
+bool outTradeActive = tradeModelActive
+int outTradeDirection = tradeModelDirection
+int outTradeState = tradeModelState
+
+string outTradeText = tradeModelText
+string outTradeReason = tradeModelReason
+
+float outModelEntryPrice = tradeModelEntryPrice
+float outInitialStopPrice = tradeInitialStopPrice
+float outManagedStopPrice = tradeManagedStopPrice
+float outTarget1Price = tradeTarget1Price
+float outTarget2Price = tradeTarget2Price
+
+bool outTradeHold = tradeModelState == KR390_TRADE_ACTIVE or tradeModelState == KR390_TRADE_HOLD
+bool outTradeProtect = tradeModelState == KR390_TRADE_PROTECT
+bool outTradeTrail = tradeModelState == KR390_TRADE_TRAIL
+bool outTradeExit = tradeModelState == KR390_TRADE_EXIT
+bool outTradeInvalidated = tradeModelState == KR390_TRADE_INVALIDATED
+
+//==================================================================
+// END OF KR-390
+//==================================================================
+
+
+
+//==================================================================
+// KR-400 : Execution Alert Engine
+// Version : 0.1.0
+// Status  : FOUNDATION
+//
+// Purpose:
+// Creates TradingView alerts only when a new confirmed KR-380 BUY NOW
+// or SELL NOW event occurs.
+//
+// Contract:
+// - KR-380 owns execution timing.
+// - KR-400 consumes KR-380 public outputs only.
+// - Alerts fire only for new confirmed BUY NOW / SELL NOW events.
+// - Alerts are TradingView alerts.
+// - Mobile delivery depends on the user enabling push notifications
+//   in TradingView.
+// - No broker order is placed.
+// - No automated trade execution occurs.
+//==================================================================
+
+//==================================================================
+// KR-400.10 ALERT CONTEXT
+//==================================================================
+
+bool alertContextValid = outTriggerReady and outTriggerBarConfirmed and barstate.isconfirmed
+bool alertBuyEvent = alertContextValid and outTriggerBuy and not (outTriggerBuy[1] == true)
+bool alertSellEvent = alertContextValid and outTriggerSell and not (outTriggerSell[1] == true)
+
+//==================================================================
+// KR-400.20 TRADINGVIEW ALERT CONDITIONS
+//==================================================================
+
+alertcondition(alertBuyEvent, title="KRONOS BUY NOW", message="KRONOS BUY NOW | {{ticker}} | {{interval}} | Price: {{close}}")
+
+alertcondition(alertSellEvent, title="KRONOS SELL NOW", message="KRONOS SELL NOW | {{ticker}} | {{interval}} | Price: {{close}}")
+
+//==================================================================
+// KR-400.30 PUBLIC INTERFACE
+//==================================================================
+
+bool outAlertBuyEvent = alertBuyEvent
+bool outAlertSellEvent = alertSellEvent
+bool outAlertReady = outTriggerReady
+
+string outAlertStatusText = outAlertBuyEvent ? "BUY ALERT FIRED" : outAlertSellEvent ? "SELL ALERT FIRED" : outAlertReady ? "READY" : "INVALID CONTEXT"
+
+//==================================================================
+// END OF KR-400
+//==================================================================
+
+
+
+//==================================================================
 // KR-705 : Engine Status Panel
 // Version : 0.1.2
 // Status  : FROZEN
@@ -3686,6 +3961,7 @@ string outExecutionReason = triggerExecutionReason
 // KR-360 Confidence Engine
 // KR-370 Decision Engine
 // KR-380 Execution Trigger Engine
+// KR-390 Trade Management Engine
 //
 // NOTE
 // ----
@@ -3719,7 +3995,7 @@ string kr705MomentumText = kr705MomentumAvailable ? outMomentumBuilding ? "Build
 string kr705CompressionText = kr705CompressionAvailable ? outExpansionStarted ? "Expansion Started" : str.tostring(outCompressionScore) + " - " + outCompressionText : kr705UnavailableText
 string kr705OpportunityText = kr705OpportunityAvailable ? outBullishOpportunityContext or outBearishOpportunityContext ? "Good" : "Limited" : kr705UnavailableText
 string kr705ConfidenceText = kr705ConfidenceAvailable ? str.tostring(outConfidenceScore) + " - " + outConfidenceText : kr705UnavailableText
-string kr705RiskText = kr705UnavailableText
+string kr705RiskText = outTradeManagementReady ? outTradeText : kr705UnavailableText
 bool kr705MCXExecutionPanel = outExecMCX1HContextReady
 string kr705EntryText = outTriggerReady ? outTriggerText : kr705UnavailableText
 string kr705DecisionText = outDecisionText
