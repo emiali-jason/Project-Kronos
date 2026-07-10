@@ -72,3 +72,44 @@ NSE Stock Futures are primarily local-market-relative instruments. KRONOS should
 The Futures Model selector is a configuration layer, not a separate engine family. It must not split KRONOS into separate codebases for metals, energy, and stock futures. Each model should adapt how the same generic KRONOS engines interpret market dependencies.
 
 Auto detection may be added later, but manual model override must remain available for validation, edge cases, and trader preference.
+
+## Amendment - 2026-07-10
+
+This amendment updates implementation status and current dependency mappings without replacing the original decision.
+
+### Current MCX Metals References
+
+The current validated futures-to-futures mappings are:
+
+| MCX execution asset | Current reference symbol |
+|---|---|
+| Gold | `COMEX:GC1!` |
+| Silver | `COMEX:SI1!` |
+| Copper | `COMEX:HG1!` |
+
+For the current implementation, these mappings supersede the original MCX Metals dependency references to XAUUSD and XAGUSD. The original text remains above as historical design context.
+
+### Implementation Status
+
+- **MCX Metals:** Currently supported for Gold, Silver, and Copper.
+- **MCX Energy:** Planned. Existing Crude Oil and Natural Gas symbol-recognition scaffolding is not a completed model.
+- **NSE Stock Futures:** Planned.
+- **Futures Model selector:** Planned and not yet implemented.
+
+The current absence of the selector does not change the architecture decision. Market-specific configuration must remain a profile layer over common engines.
+
+### Self-Contained Execution
+
+The MCX 1H execution chart must be self-contained. Reference Daily, 4H, and 1H markets provide supporting context, but they do not execute MCX trades. Confirmed BUY NOW and SELL NOW events may occur only on the MCX 1H execution chart.
+
+The panel must translate all remaining reference and execution blockers into trader-readable requirements on that chart. See [ADL-002](ADL-002-MCX-Self-Contained-Execution.md).
+
+### Adapter-Based Dependency Translation
+
+Market-model dependencies must be translated through narrow, documented adapters where a safe public interface does not yet exist. An adapter may expose minimum execution facts; it must not duplicate complete Daily, 4H, or 1H intelligence stacks.
+
+KR-380A and KR-390A are the current formal adapter examples. See [ADL-003](ADL-003-Execution-Context-Adapters.md).
+
+### Manual Override
+
+When the Futures Model selector is implemented, manual override remains required for validation, edge cases, symbol-recognition failures, contract changes, and trader preference. Auto detection must never be the only route to a model profile.

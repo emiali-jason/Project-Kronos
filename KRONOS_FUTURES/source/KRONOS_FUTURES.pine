@@ -9,6 +9,10 @@ indicator("KRONOS FUTURES", overlay=true, max_labels_count=500)
 // Version      : 0.5.0
 // Build        : 0004
 // Codename     : FOUNDATION
+// Release Note : Product release metadata is pending formal
+//                versioning reconciliation. Executable constants
+//                remain unchanged until an authoritative release
+//                decision is recorded.
 //
 //==================================================
 
@@ -26,6 +30,8 @@ const string KR_PRODUCT   = "KRONOS FUTURES"
 const string KR_VERSION   = "0.5.0"
 const string KR_BUILD     = "0004"
 const string KR_CODENAME  = "FOUNDATION"
+// Product release metadata above is intentionally unchanged pending
+// formal version/build reconciliation.
 
 //------------------------------
 // Moving Average Settings
@@ -834,16 +840,22 @@ bool outLastBearishBOS = strLastBearishBOS
 
 //==================================================================
 // KR-280 : CPR Intelligence Engine
-// Version : 1.0.0
+// Version : 1.1.0
 // Status  : FROZEN
-// Last Updated : 2026-07-09
+// Last Updated : 2026-07-10
 //
 // Frozen Contract:
 // - Core behavior is validated and should not be changed casually.
 // - Future changes must be additive, compatibility-safe, or bug fixes.
 // - No trading decisions/signals should be added inside this engine
 //   unless that is the engine's explicit responsibility.
-// - CPR reference behavior is validated against KGS Auto mode.
+// - CPR reference behavior is validated against KGS-compatible
+//   Auto mode.
+//
+// Validation Scope:
+// - KGS-compatible CPR reference behavior.
+// - Previous completed reference OHLC feeds CPR, pivots, and
+//   reference high/low/close outputs.
 //==================================================================
 //
 // Purpose
@@ -1361,20 +1373,13 @@ bool outVirginCPR = cprVirgin
 
 
 //==================================================================
-// ENGINE STATUS
+// KR-280 Closing Metadata
 //==================================================================
 //
-// Engine  : KR-280 CPR Intelligence
-// Version : 1.1.0
-// Build   : 0015
-// Status  : FROZEN
-//
-// Notes
-// -----
-// * Reference Period architecture implemented.
-// * Public interface stabilized.
-// * Future changes should be limited to renderer enhancements
-//   or additive outputs that do not break compatibility.
+// Canonical module version/status is declared in the KR-280 banner.
+// Historical duplicate version comments were removed during source
+// metadata reconciliation. KR-280 v1.1.0 remains the production
+// freeze baseline with KGS-compatible CPR reference behavior.
 //
 //==================================================================
 
@@ -1385,12 +1390,20 @@ bool outVirginCPR = cprVirgin
 
 
 //==================================================================
-// KR-300 : TREND FOUNDATION ENGINE
-//==================================================================
-//
+// KR-300 : Trend Foundation Engine
 // Version : 1.1.0
-// Build   : 0028
-// Status  : Foundation
+// Status  : FROZEN
+// Last Updated : 2026-07-10
+//
+// Validation Scope:
+// - Intelligence core freeze validation on Copper, Gold, and Silver.
+//
+// Frozen Contract:
+// - Owns trend direction and stage only.
+// - Uses existing market-data and SMA interfaces.
+// - No trend quality, acceptance, execution timing, alerts, or
+//   trade-management logic.
+//==================================================================
 //
 // Purpose
 // -------
@@ -1639,12 +1652,20 @@ bool outTrendPriceBelowSMAStack = trendPriceBelowSMAStack
 
 
 //==================================================================
-// KR-310 : TREND QUALITY ENGINE
-//==================================================================
-//
+// KR-310 : Trend Quality Engine
 // Version : 1.0.0
-// Build   : 0022
-// Status  : Foundation
+// Status  : FROZEN
+// Last Updated : 2026-07-10
+//
+// Validation Scope:
+// - Intelligence core freeze validation on Copper, Gold, and Silver.
+//
+// Frozen Contract:
+// - Owns trend quality and extension only.
+// - Consumes KR-300 direction without reversing it.
+// - No opportunity, execution timing, alerts, or trade-management
+//   logic.
+//==================================================================
 //
 // Purpose
 // -------
@@ -1829,6 +1850,10 @@ bool outNeutralEvidence = not outBullishEvidence and not outBearishEvidence
 // - No trading decisions/signals should be added inside this engine
 //   unless that is the engine's explicit responsibility.
 // - Detects compression and expansion release only; does not predict direction.
+//
+// Validation Scope:
+// - Compression core freeze validation on Copper, Gold, and Silver.
+// - Non-repainting confirmed-bar expansion memory.
 //==================================================================
 //
 // Purpose
@@ -2058,12 +2083,20 @@ bool outCompressionNoCompression = compressionState == KR315_COMPRESSION_NONE
 
 
 //==================================================================
-// KR-320 : MARKET ACCEPTANCE ENGINE
-//==================================================================
+// KR-320 : Market Acceptance Engine
+// Version : 1.0.0
+// Status  : FROZEN
+// Last Updated : 2026-07-10
 //
-// Version : 0.1.0
-// Build   : 0023
-// Status  : Foundation
+// Validation Scope:
+// - Intelligence core freeze validation on Copper, Gold, and Silver.
+//
+// Frozen Contract:
+// - Owns CPR acceptance/rejection context only.
+// - Consumes KR-280 CPR and KR-300 trend direction.
+// - No trend decision, execution timing, alerts, or trade-management
+//   logic.
+//==================================================================
 //
 // Purpose
 // -------
@@ -2247,12 +2280,20 @@ bool outBarrierInteraction = acceptanceCPRTesting
 
 
 //==================================================================
-// KR-330 : MOMENTUM CONFIRMATION ENGINE
-//==================================================================
+// KR-330 : Momentum Confirmation Engine
+// Version : 1.0.0
+// Status  : FROZEN
+// Last Updated : 2026-07-10
 //
-// Version : 0.1.0
-// Build   : 0027
-// Status  : Foundation
+// Validation Scope:
+// - Intelligence core freeze validation on Copper, Gold, and Silver.
+//
+// Frozen Contract:
+// - Owns momentum energy and persistence only.
+// - Consumes public trend, quality, and acceptance outputs.
+// - No direction decision, execution timing, alerts, or
+//   trade-management logic.
+//==================================================================
 //
 // Purpose
 // -------
@@ -2497,12 +2538,20 @@ bool outNeutralContext = contextNeutral
 
 
 //==================================================================
-// KR-340 : REVIEW READINESS ENGINE
-//==================================================================
+// KR-340 : Review Readiness Engine
+// Version : 1.0.0
+// Status  : FROZEN
+// Last Updated : 2026-07-10
 //
-// Version : 0.1.0
-// Build   : 0020
-// Status  : Skeleton
+// Validation Scope:
+// - Intelligence core freeze validation on Copper, Gold, and Silver.
+//
+// Frozen Contract:
+// - Owns review readiness, wait, and blocked states only.
+// - Consumes prior public context and barrier outputs.
+// - No direction decision, execution timing, alerts, or
+//   trade-management logic.
+//==================================================================
 //
 // Question
 // --------
@@ -2573,12 +2622,19 @@ bool outReviewWait = reviewWait
 
 
 //==================================================================
-// KR-350 : OPPORTUNITY FOUNDATION ENGINE
-//==================================================================
+// KR-350 : Opportunity Foundation Engine
+// Version : 1.0.0
+// Status  : FROZEN
+// Last Updated : 2026-07-10
 //
-// Version : 0.1.0
-// Build   : 0021
-// Status  : Skeleton
+// Validation Scope:
+// - Intelligence core freeze validation on Copper, Gold, and Silver.
+//
+// Frozen Contract:
+// - Owns bullish, bearish, or absent opportunity context only.
+// - Consumes public context and review-readiness outputs.
+// - No execution timing, alerts, entries, or trade-management logic.
+//==================================================================
 //
 // Question
 // --------
@@ -2657,6 +2713,10 @@ bool outNoOpportunityContext = opportunityNone
 // Purpose:
 // Synthesizes completed KRONOS engines into a single confidence
 // assessment. Does not generate trading decisions.
+//
+// Validation Scope:
+// - Confidence architecture and scoring freeze on Copper, Gold, and
+//   Silver.
 //
 // Frozen Contract:
 // - Uses ONLY public outputs from prior engines.
@@ -3217,8 +3277,9 @@ bool outDecisionSellReady = decisionState == KR370_DECISION_SELL_READY
 
 //==================================================================
 // KR-380A : Execution Context Adapter
-// Version : 0.1.0
-// Status  : FOUNDATION
+// Version : 1.0.0
+// Status  : FROZEN
+// Last Updated : 2026-07-10
 //
 // Purpose:
 // Provides the formal execution-context interface consumed by KR-380.
@@ -3227,7 +3288,12 @@ bool outDecisionSellReady = decisionState == KR370_DECISION_SELL_READY
 // consume these public adapter outputs instead of scattered raw
 // reference variables.
 //
-// Contract:
+// Validation Scope:
+// - MCX self-contained execution support validated on Copper, Gold,
+//   and Silver as part of the KR-380 timing freeze.
+//
+// Frozen Contract:
+// - Approved narrow adapter exception for KR-380 timing.
 // - Does not duplicate KR-300 through KR-370 intelligence.
 // - Exposes only the minimum facts required by KR-380 timing.
 // - Produces no alerts, orders, stops, targets, plots or labels.
@@ -3315,21 +3381,29 @@ bool outExecContextReady = outExecMCX1HContextReady and (outExecRefDailyBlockerT
 
 //==================================================================
 // KR-380 : Execution Trigger Engine
-// Version : 0.1.0
-// Status  : FOUNDATION
+// Version : 1.0.0
+// Status  : FROZEN
+// Last Updated : 2026-07-10
 //
 // Purpose:
-// Transforms BUY READY / SELL READY into executable entry triggers.
+// Transforms KR-370 BUY READY / SELL READY decisions into executable
+// timing states.
 //
-// Contract:
+// Validation Scope:
+// - Execution timing validation on Copper, Gold, and Silver.
+// - Confirmed MCX 1H finality for BUY NOW, SELL NOW, FAILED, and
+//   EXTENDED.
+//
+// Frozen Contract:
 // - KR-370 owns direction and readiness.
 // - KR-380 owns execution timing only.
-// - KR-380 may consume the formal Execution Context Adapter.
+// - KR-380 depends on the formal Execution Context Adapter.
 // - Intrabar state may be FORMING.
 // - BUY NOW, SELL NOW, FAILED and EXTENDED require a confirmed
 //   MCX 1H bar.
-// - No alerts, trade management, stops, targets, labels, plots or
-//   orders belong in KR-380.
+// - No alerts.
+// - No trade management.
+// - No stops, targets, labels, plots or orders.
 //==================================================================
 
 //==================================================================
@@ -3660,6 +3734,7 @@ string outExecutionReason = triggerExecutionReason
 // KR-390A : Trade Management Execution Adapter
 // Version : 0.1.0
 // Status  : FOUNDATION
+// Last Updated : 2026-07-10
 //
 // Purpose:
 // Provides the narrow confirmed execution-timeframe structure facts
@@ -3692,6 +3767,7 @@ float outTradeExecutionSwingHigh = tradeExecutionConfirmedSwingHigh
 // KR-390 : Trade Management Engine
 // Version : 0.1.0
 // Status  : FOUNDATION
+// Last Updated : 2026-07-10
 //
 // Purpose:
 // Manages a persistent model trade after a confirmed KR-380 BUY NOW
@@ -3883,6 +3959,7 @@ bool outTradeInvalidated = tradeModelState == KR390_TRADE_INVALIDATED
 // KR-400 : Execution Alert Engine
 // Version : 0.1.0
 // Status  : FOUNDATION
+// Last Updated : 2026-07-10
 //
 // Purpose:
 // Creates TradingView alerts only when a new confirmed KR-380 BUY NOW
@@ -3935,20 +4012,22 @@ string outAlertStatusText = outAlertBuyEvent ? "BUY ALERT FIRED" : outAlertSellE
 // KR-705 : Engine Status Panel
 // Version : 0.1.2
 // Status  : FROZEN
-// Last Updated : 2026-07-09
+// Last Updated : 2026-07-10
 //
 // Frozen Contract:
 // - Core behavior is validated and should not be changed casually.
 // - Future changes must be additive, compatibility-safe, or bug fixes.
 // - No trading decisions/signals should be added inside this engine
 //   unless that is the engine's explicit responsibility.
-// - Displays engine status only; should not expose internal diagnostic
-//   variables unless temporarily debugging.
+// - Trader-facing intelligence/display layer only.
+// - Displays public engine outputs and concise trader-readable status.
+// - Should not expose internal diagnostic variables unless temporarily
+//   debugging.
 //==================================================================
 //
 // Purpose
 // -------
-// Display current engine states for developer validation.
+// Display current KRONOS engine states for trader review.
 //
 // Dependencies
 // ------------
@@ -3962,10 +4041,13 @@ string outAlertStatusText = outAlertBuyEvent ? "BUY ALERT FIRED" : outAlertSellE
 // KR-370 Decision Engine
 // KR-380 Execution Trigger Engine
 // KR-390 Trade Management Engine
+// KR-400 Execution Alert Engine, where alert status is applicable
 //
 // NOTE
 // ----
-// KR-705 performs no alerts, signals or trading decisions.
+// KR-705 performs no calculations, alerts, signals or trading
+// decisions. Decision, entry, trade-management, and alert ownership
+// remain with KR-370, KR-380, KR-390, and KR-400 respectively.
 //==================================================================
 
 //==================================================================
