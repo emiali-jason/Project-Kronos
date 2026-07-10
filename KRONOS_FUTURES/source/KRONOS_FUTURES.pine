@@ -2796,6 +2796,389 @@ bool outConfidenceVeryLow = confidenceState == KR360_CONFIDENCE_AVOID
 
 
 //==================================================================
+// KR-370 : DECISION ENGINE
+//==================================================================
+//
+// Version : 0.1.0
+// Status  : Foundation
+//
+// Purpose
+// -------
+// Convert existing KRONOS intelligence outputs into a clear,
+// explainable trading decision.
+//
+// Core Question
+// -------------
+// What should the trader do now?
+//
+// Dependencies
+// ------------
+// KR-300 Trend Foundation Engine
+// KR-310 Trend Quality Engine
+// KR-315 Compression Intelligence Engine
+// KR-320 Market Acceptance Engine
+// KR-330 Momentum Confirmation Engine
+// KR-340 Review Readiness Engine
+// KR-350 Opportunity Foundation Engine
+// KR-360 Confidence Engine
+//
+// NOTE
+// ----
+// KR-370 decides readiness and direction only. It does not trigger
+// entries, alerts, plots, labels, exits, stops, targets or trade
+// management. KR-370 consumes public out... outputs only.
+//==================================================================
+
+//==================================================================
+// KR-370.10 DECISION STATE CONSTANTS
+//==================================================================
+
+const int KR370_DECISION_AVOID = 0
+const int KR370_DECISION_WAIT = 1
+const int KR370_DECISION_WATCH_LONG = 2
+const int KR370_DECISION_WATCH_SHORT = 3
+const int KR370_DECISION_BUY_READY = 4
+const int KR370_DECISION_SELL_READY = 5
+
+//==================================================================
+// KR-370.20 INPUT READINESS
+//==================================================================
+
+bool decisionTrendReady = outTrendDataReady
+bool decisionCompressionReady = outCompressionReady
+bool decisionAcceptanceReady = outBarrierReady
+bool decisionMomentumReadyInput = outMomentumReady
+bool decisionReviewReadyInput = outReviewInputReady
+bool decisionOpportunityReady = outOpportunityInputReady
+bool decisionConfidenceReady = outConfidenceReady
+
+bool decisionExecutionInputsReady = decisionCompressionReady and decisionAcceptanceReady and decisionMomentumReadyInput and decisionReviewReadyInput and decisionOpportunityReady and decisionConfidenceReady
+bool decisionReady = decisionTrendReady and (decisionExecutionInputsReady or outBullishTrend or outBearishTrend)
+
+//==================================================================
+// KR-370.30 PUBLIC CONDITION MAP
+//==================================================================
+
+bool decisionBullishTrend = decisionTrendReady and outBullishTrend
+bool decisionBearishTrend = decisionTrendReady and outBearishTrend
+bool decisionNeutralTrend = decisionTrendReady and outNeutralTrend
+
+bool decisionHigherTimeframeBullishBias = decisionBullishTrend
+bool decisionHigherTimeframeBearishBias = decisionBearishTrend
+bool decisionHigherTimeframeBiasAligned = decisionHigherTimeframeBullishBias or decisionHigherTimeframeBearishBias
+
+bool decisionBullishContext = decisionHigherTimeframeBullishBias or outBullishContext or outBullishOpportunityContext
+bool decisionBearishContext = decisionHigherTimeframeBearishBias or outBearishContext or outBearishOpportunityContext
+bool decisionDirectionalContext = decisionBullishContext or decisionBearishContext
+
+bool decisionCompressionBlocking = decisionCompressionReady and not outExpansionStarted and (outCompressionBuilding or outCompressionStrong or outCompressionCritical)
+bool decisionCompressionClear = decisionCompressionReady and (outExpansionStarted or not decisionCompressionBlocking)
+
+bool decisionAcceptanceConfirmed = decisionAcceptanceReady and (outAcceptanceAccepted or outAcceptanceStrong)
+bool decisionAcceptanceTesting = decisionAcceptanceReady and outAcceptanceTesting
+bool decisionAcceptanceRejected = decisionAcceptanceReady and outAcceptanceRejected
+
+bool decisionConfidenceExtremelyLow = decisionConfidenceReady and outConfidenceScore <= 20
+bool decisionConfidenceLowDeveloping = decisionConfidenceReady and outConfidenceScore > 20 and outConfidenceScore <= 40
+bool decisionConfidenceDeveloping = decisionConfidenceReady and outConfidenceScore > 40 and outConfidenceScore <= 60
+bool decisionConfidenceInvalidatesThesis = decisionConfidenceExtremelyLow and not decisionHigherTimeframeBiasAligned
+bool decisionConfidenceBelowReady = decisionConfidenceLowDeveloping or decisionConfidenceDeveloping
+bool decisionConfidenceReadyThreshold = decisionConfidenceReady and outConfidenceScore > 60
+
+bool decisionMomentumReady = decisionMomentumReadyInput and (outMomentumNormal or outMomentumStrong or outMomentumBuilding)
+bool decisionMomentumNotReady = decisionMomentumReadyInput and (outMomentumExhausted or outMomentumWeakening)
+
+bool decisionReviewReady = decisionReviewReadyInput and outReviewReady
+bool decisionReviewBlocked = decisionReviewReadyInput and outReviewBlocked
+
+bool decisionBullishOpportunity = decisionOpportunityReady and outBullishOpportunityContext
+bool decisionBearishOpportunity = decisionOpportunityReady and outBearishOpportunityContext
+bool decisionOpportunityAbsent = decisionOpportunityReady and outNoOpportunityContext
+bool decisionNoDirectionalOpportunity = decisionOpportunityAbsent and not decisionDirectionalContext
+
+bool decisionBuyReadySetup = decisionBullishTrend and decisionBullishContext and decisionAcceptanceConfirmed and decisionConfidenceReadyThreshold and decisionMomentumReady and decisionCompressionClear and decisionReviewReady and decisionBullishOpportunity
+bool decisionSellReadySetup = decisionBearishTrend and decisionBearishContext and decisionAcceptanceConfirmed and decisionConfidenceReadyThreshold and decisionMomentumReady and decisionCompressionClear and decisionReviewReady and decisionBearishOpportunity
+
+//==================================================================
+// KR-370.40 DECISION CLASSIFICATION
+//==================================================================
+
+int decisionState = KR370_DECISION_WAIT
+string decisionReason = ""
+string decisionPrimaryBlocker = ""
+string decisionNextReview = ""
+
+if not decisionReady
+    decisionState := KR370_DECISION_AVOID
+    decisionReason := "Required engine inputs unavailable"
+    decisionPrimaryBlocker := "Engine Data Unavailable"
+    decisionNextReview := "After Engine Data Loads"
+else if decisionReviewBlocked
+    decisionState := KR370_DECISION_AVOID
+    decisionReason := "Review blocked"
+    decisionPrimaryBlocker := "Review Blocked"
+    decisionNextReview := "After Blocker Clears"
+else if decisionConfidenceInvalidatesThesis
+    decisionState := KR370_DECISION_AVOID
+    decisionReason := "Confidence too low"
+    decisionPrimaryBlocker := "Confidence Too Low"
+    decisionNextReview := "After Conditions Improve"
+else if decisionBuyReadySetup
+    decisionState := KR370_DECISION_BUY_READY
+    decisionReason := "Bullish conditions aligned"
+    decisionPrimaryBlocker := "None"
+    decisionNextReview := "Wait for KR-380 Trigger"
+else if decisionSellReadySetup
+    decisionState := KR370_DECISION_SELL_READY
+    decisionReason := "Bearish conditions aligned"
+    decisionPrimaryBlocker := "None"
+    decisionNextReview := "Wait for KR-380 Trigger"
+else if decisionBullishContext
+    decisionState := KR370_DECISION_WATCH_LONG
+    if not decisionExecutionInputsReady
+        decisionReason := "Bullish higher-timeframe thesis; execution confirmation pending"
+        decisionPrimaryBlocker := "Execution Confirmation Pending"
+        decisionNextReview := "After Execution Confirmation"
+    else if decisionCompressionBlocking
+        decisionReason := "Bullish context; compression release pending"
+        decisionPrimaryBlocker := "Compression Not Released"
+        decisionNextReview := "After Compression Release"
+    else if not decisionAcceptanceConfirmed
+        decisionReason := "Bullish context; higher-timeframe confirmation pending"
+        decisionPrimaryBlocker := decisionAcceptanceTesting ? "Acceptance Pending" : decisionAcceptanceRejected ? "Acceptance Not Confirmed" : "Higher-Timeframe Acceptance Pending"
+        decisionNextReview := decisionAcceptanceRejected ? "Next Reference Candle Close" : "After Acceptance Confirmation"
+    else if decisionConfidenceLowDeveloping
+        decisionReason := "Bullish context; confidence developing"
+        decisionPrimaryBlocker := "Developing Confidence"
+        decisionNextReview := "After Confidence Exceeds 60"
+    else if not decisionConfidenceReadyThreshold
+        decisionReason := "Bullish context; confidence below ready threshold"
+        decisionPrimaryBlocker := "Confidence Below Ready Threshold"
+        decisionNextReview := "After Confidence Exceeds 60"
+    else if not decisionMomentumReady
+        decisionReason := "Bullish context; momentum not ready"
+        decisionPrimaryBlocker := "Momentum Not Ready"
+        decisionNextReview := "After Momentum Improves"
+    else if not decisionBullishOpportunity
+        decisionReason := "Bullish context; opportunity not confirmed"
+        decisionPrimaryBlocker := "Opportunity Pending"
+        decisionNextReview := "After Opportunity Improves"
+    else if not decisionReviewReady
+        decisionReason := "Bullish context; review not ready"
+        decisionPrimaryBlocker := "Review Pending"
+        decisionNextReview := "After Review Readiness"
+    else
+        decisionReason := "Bullish context; setup incomplete"
+        decisionPrimaryBlocker := "Readiness Not Complete"
+        decisionNextReview := "After Missing Conditions Confirm"
+else if decisionBearishContext
+    decisionState := KR370_DECISION_WATCH_SHORT
+    if not decisionExecutionInputsReady
+        decisionReason := "Bearish higher-timeframe thesis; execution confirmation pending"
+        decisionPrimaryBlocker := "Execution Confirmation Pending"
+        decisionNextReview := "After Execution Confirmation"
+    else if decisionCompressionBlocking
+        decisionReason := "Bearish context; compression release pending"
+        decisionPrimaryBlocker := "Compression Not Released"
+        decisionNextReview := "After Compression Release"
+    else if not decisionAcceptanceConfirmed
+        decisionReason := "Bearish context; acceptance pending"
+        decisionPrimaryBlocker := decisionAcceptanceTesting ? "Acceptance Pending" : decisionAcceptanceRejected ? "Acceptance Not Confirmed" : "Higher-Timeframe Acceptance Pending"
+        decisionNextReview := decisionAcceptanceRejected ? "Next Reference Candle Close" : "After Acceptance Confirmation"
+    else if decisionConfidenceLowDeveloping
+        decisionReason := "Bearish context; confidence developing"
+        decisionPrimaryBlocker := "Developing Confidence"
+        decisionNextReview := "After Confidence Exceeds 60"
+    else if not decisionConfidenceReadyThreshold
+        decisionReason := "Bearish context; confidence below ready threshold"
+        decisionPrimaryBlocker := "Confidence Below Ready Threshold"
+        decisionNextReview := "After Confidence Exceeds 60"
+    else if not decisionMomentumReady
+        decisionReason := "Bearish context; momentum not ready"
+        decisionPrimaryBlocker := "Momentum Not Ready"
+        decisionNextReview := "After Momentum Improves"
+    else if not decisionBearishOpportunity
+        decisionReason := "Bearish context; opportunity not confirmed"
+        decisionPrimaryBlocker := "Opportunity Pending"
+        decisionNextReview := "After Opportunity Improves"
+    else if not decisionReviewReady
+        decisionReason := "Bearish context; review not ready"
+        decisionPrimaryBlocker := "Review Pending"
+        decisionNextReview := "After Review Readiness"
+    else
+        decisionReason := "Bearish context; setup incomplete"
+        decisionPrimaryBlocker := "Readiness Not Complete"
+        decisionNextReview := "After Missing Conditions Confirm"
+else if decisionNeutralTrend
+    decisionState := KR370_DECISION_WAIT
+    decisionReason := "Trend direction not established"
+    decisionPrimaryBlocker := "Neutral Trend"
+    decisionNextReview := "After Trend Confirmation"
+else if decisionCompressionBlocking
+    decisionState := KR370_DECISION_WAIT
+    decisionReason := "Compression building; breakout not confirmed"
+    decisionPrimaryBlocker := "Compression Not Released"
+    decisionNextReview := "After Compression Release"
+else if decisionNoDirectionalOpportunity
+    decisionState := KR370_DECISION_AVOID
+    decisionReason := "No directional opportunity context"
+    decisionPrimaryBlocker := "No Opportunity"
+    decisionNextReview := "After New Context Forms"
+else if decisionConfidenceLowDeveloping
+    decisionState := KR370_DECISION_WAIT
+    decisionReason := "Developing setup; confidence still building"
+    decisionPrimaryBlocker := "Developing Confidence"
+    decisionNextReview := "After Confidence Exceeds 60"
+else if decisionConfidenceBelowReady
+    decisionState := KR370_DECISION_WAIT
+    decisionReason := outConfidenceReason
+    decisionPrimaryBlocker := "Confidence Below Ready Threshold"
+    decisionNextReview := "After Confidence Exceeds 60"
+else
+    decisionState := KR370_DECISION_WAIT
+    decisionReason := "Wait for Higher-Timeframe Confirmation"
+    decisionPrimaryBlocker := "Readiness Not Complete"
+    decisionNextReview := "After Missing Conditions Confirm"
+
+string decisionText = ""
+
+switch decisionState
+    KR370_DECISION_AVOID => decisionText := "AVOID"
+    KR370_DECISION_WAIT => decisionText := "WAIT"
+    KR370_DECISION_WATCH_LONG => decisionText := "WATCH LONG"
+    KR370_DECISION_WATCH_SHORT => decisionText := "WATCH SHORT"
+    KR370_DECISION_BUY_READY => decisionText := "BUY READY"
+    KR370_DECISION_SELL_READY => decisionText := "SELL READY"
+
+//==================================================================
+// KR-370.50 DYNAMIC NEED CHECKLIST
+//==================================================================
+
+string decisionNeed1 = ""
+string decisionNeed2 = ""
+string decisionNeed3 = ""
+int decisionNeedCount = 0
+
+if not decisionDirectionalContext and decisionNeedCount < 3
+    decisionNeedCount += 1
+    if decisionNeedCount == 1
+        decisionNeed1 := "☐ Trend Confirmation"
+    else if decisionNeedCount == 2
+        decisionNeed2 := "☐ Trend Confirmation"
+    else
+        decisionNeed3 := "☐ Trend Confirmation"
+
+if decisionCompressionBlocking and decisionNeedCount < 3
+    decisionNeedCount += 1
+    if decisionNeedCount == 1
+        decisionNeed1 := "☐ Compression Release"
+    else if decisionNeedCount == 2
+        decisionNeed2 := "☐ Compression Release"
+    else
+        decisionNeed3 := "☐ Compression Release"
+
+if not decisionAcceptanceConfirmed and decisionNeedCount < 3
+    decisionNeedCount += 1
+    if decisionNeedCount == 1
+        decisionNeed1 := "☐ Higher-Timeframe Acceptance Pending"
+    else if decisionNeedCount == 2
+        decisionNeed2 := "☐ Higher-Timeframe Acceptance Pending"
+    else
+        decisionNeed3 := "☐ Higher-Timeframe Acceptance Pending"
+
+if not decisionConfidenceReadyThreshold and decisionNeedCount < 3
+    decisionNeedCount += 1
+    if decisionNeedCount == 1
+        decisionNeed1 := "☐ Confidence > 60"
+    else if decisionNeedCount == 2
+        decisionNeed2 := "☐ Confidence > 60"
+    else
+        decisionNeed3 := "☐ Confidence > 60"
+
+if not decisionMomentumReady and decisionNeedCount < 3
+    decisionNeedCount += 1
+    if decisionNeedCount == 1
+        decisionNeed1 := "☐ Momentum Improves"
+    else if decisionNeedCount == 2
+        decisionNeed2 := "☐ Momentum Improves"
+    else
+        decisionNeed3 := "☐ Momentum Improves"
+
+if ((decisionBullishContext and not decisionBullishOpportunity) or (decisionBearishContext and not decisionBearishOpportunity)) and decisionNeedCount < 3
+    decisionNeedCount += 1
+    if decisionNeedCount == 1
+        decisionNeed1 := "☐ Opportunity Improves"
+    else if decisionNeedCount == 2
+        decisionNeed2 := "☐ Opportunity Improves"
+    else
+        decisionNeed3 := "☐ Opportunity Improves"
+
+if not decisionReviewReady and decisionNeedCount < 3
+    decisionNeedCount += 1
+    if decisionNeedCount == 1
+        decisionNeed1 := "☐ Review Gate Clears"
+    else if decisionNeedCount == 2
+        decisionNeed2 := "☐ Review Gate Clears"
+    else
+        decisionNeed3 := "☐ Review Gate Clears"
+
+if (decisionState == KR370_DECISION_BUY_READY or decisionState == KR370_DECISION_SELL_READY) and decisionNeedCount < 3
+    decisionNeedCount += 1
+    if decisionNeedCount == 1
+        decisionNeed1 := "✓ Trend Aligned"
+    else if decisionNeedCount == 2
+        decisionNeed2 := "✓ Trend Aligned"
+    else
+        decisionNeed3 := "✓ Trend Aligned"
+
+if (decisionState == KR370_DECISION_BUY_READY or decisionState == KR370_DECISION_SELL_READY) and decisionNeedCount < 3
+    decisionNeedCount += 1
+    if decisionNeedCount == 1
+        decisionNeed1 := "✓ Acceptance Confirmed"
+    else if decisionNeedCount == 2
+        decisionNeed2 := "✓ Acceptance Confirmed"
+    else
+        decisionNeed3 := "✓ Acceptance Confirmed"
+
+if (decisionState == KR370_DECISION_BUY_READY or decisionState == KR370_DECISION_SELL_READY) and decisionNeedCount < 3
+    decisionNeedCount += 1
+    if decisionNeedCount == 1
+        decisionNeed1 := "✓ Confidence > 60"
+    else if decisionNeedCount == 2
+        decisionNeed2 := "✓ Confidence > 60"
+    else
+        decisionNeed3 := "✓ Confidence > 60"
+
+//==================================================================
+// KR-370.60 PUBLIC INTERFACE
+//==================================================================
+
+bool outDecisionReady = decisionReady
+
+int outDecisionState = decisionState
+
+string outDecisionText = decisionText
+string outDecisionReason = decisionReason
+string outPrimaryBlocker = decisionPrimaryBlocker
+string outNextReview = decisionNextReview
+string outNeed1 = decisionNeed1
+string outNeed2 = decisionNeed2
+string outNeed3 = decisionNeed3
+
+bool outDecisionAvoid = decisionState == KR370_DECISION_AVOID
+bool outDecisionWait = decisionState == KR370_DECISION_WAIT
+bool outDecisionWatchLong = decisionState == KR370_DECISION_WATCH_LONG
+bool outDecisionWatchShort = decisionState == KR370_DECISION_WATCH_SHORT
+bool outDecisionBuyReady = decisionState == KR370_DECISION_BUY_READY
+bool outDecisionSellReady = decisionState == KR370_DECISION_SELL_READY
+
+//==================================================================
+// END OF KR-370
+//==================================================================
+
+
+
+//==================================================================
 // KR-705 : Engine Status Panel
 // Version : 0.1.2
 // Status  : FROZEN
@@ -2858,7 +3241,10 @@ string kr705OpportunityText = kr705OpportunityAvailable ? outBullishOpportunityC
 string kr705ConfidenceText = kr705ConfidenceAvailable ? str.tostring(outConfidenceScore) + " - " + outConfidenceText : kr705UnavailableText
 string kr705RiskText = kr705UnavailableText
 string kr705EntryText = kr705UnavailableText
-string kr705DecisionText = kr705UnavailableText
+string kr705DecisionText = outDecisionText
+string kr705Need1Text = outNeed1 == "" ? kr705UnavailableText : outNeed1
+string kr705Need2Text = outNeed2 == "" ? kr705UnavailableText : outNeed2
+string kr705Need3Text = outNeed3 == "" ? kr705UnavailableText : outNeed3
 string kr705StatusText = kr705CoreDataReady ? "DATA OK" : "WAITING"
 
 //==================================================================
@@ -2886,13 +3272,22 @@ color kr705CompressionColor = not kr705CompressionAvailable ? kr705MutedText : o
 color kr705OpportunityColor = not kr705OpportunityAvailable ? kr705MutedText : outBullishOpportunityContext or outBearishOpportunityContext ? kr705Green : kr705Yellow
 color kr705ConfidenceColor = not kr705ConfidenceAvailable ? kr705MutedText : outConfidenceVeryHigh ? kr705BrightGreen : outConfidenceHigh ? kr705Green : outConfidenceMedium ? kr705White : outConfidenceLow ? kr705Yellow : kr705Red
 color kr705PlaceholderColor = kr705MutedText
+bool kr705Need1Unchecked = str.startswith(outNeed1, "☐")
+bool kr705Need2Unchecked = str.startswith(outNeed2, "☐")
+bool kr705Need3Unchecked = str.startswith(outNeed3, "☐")
+bool kr705Need1Checked = str.startswith(outNeed1, "✓") or str.startswith(outNeed1, "☑")
+bool kr705Need2Checked = str.startswith(outNeed2, "✓") or str.startswith(outNeed2, "☑")
+bool kr705Need3Checked = str.startswith(outNeed3, "✓") or str.startswith(outNeed3, "☑")
+color kr705Need1Color = outNeed1 == "" ? kr705MutedText : kr705Need1Unchecked ? kr705Yellow : kr705Need1Checked ? kr705Green : kr705MutedText
+color kr705Need2Color = outNeed2 == "" ? kr705MutedText : kr705Need2Unchecked ? kr705Yellow : kr705Need2Checked ? kr705Green : kr705MutedText
+color kr705Need3Color = outNeed3 == "" ? kr705MutedText : kr705Need3Unchecked ? kr705Yellow : kr705Need3Checked ? kr705Green : kr705MutedText
 color kr705StatusColor = kr705CoreDataReady ? kr705BrightGreen : kr705Yellow
 
 //==================================================================
 // KR-705.40 TABLE RENDERER
 //==================================================================
 
-var table kr705DeveloperDebugTable = table.new(position.top_right, 2, 12, border_width=1, border_color=kr705BorderColor, frame_width=1, frame_color=kr705BorderColor)
+var table kr705DeveloperDebugTable = table.new(position.top_right, 2, 15, border_width=1, border_color=kr705BorderColor, frame_width=1, frame_color=kr705BorderColor)
 
 if showDeveloperDebugPanel
     table.cell(kr705DeveloperDebugTable, 0, 0, "KRONOS ENGINE STATUS", width=12, text_color=kr705TitleText, bgcolor=kr705HeaderBG, text_size=size.small, text_halign=text.align_left)
@@ -2928,10 +3323,19 @@ if showDeveloperDebugPanel
     table.cell(kr705DeveloperDebugTable, 0, 10, "Decision", width=12, text_color=kr705LabelText, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_left)
     table.cell(kr705DeveloperDebugTable, 1, 10, kr705DecisionText, width=14, text_color=kr705PlaceholderColor, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_right)
 
-    table.cell(kr705DeveloperDebugTable, 0, 11, "Status", width=12, text_color=kr705LabelText, bgcolor=kr705HeaderBG, text_size=size.small, text_halign=text.align_left)
-    table.cell(kr705DeveloperDebugTable, 1, 11, kr705StatusText, width=14, text_color=kr705StatusColor, bgcolor=kr705HeaderBG, text_size=size.small, text_halign=text.align_right)
+    table.cell(kr705DeveloperDebugTable, 0, 11, "Need", width=12, text_color=kr705LabelText, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_left)
+    table.cell(kr705DeveloperDebugTable, 1, 11, kr705Need1Text, width=14, text_color=kr705Need1Color, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_right)
+
+    table.cell(kr705DeveloperDebugTable, 0, 12, "Next", width=12, text_color=kr705LabelText, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_left)
+    table.cell(kr705DeveloperDebugTable, 1, 12, kr705Need2Text, width=14, text_color=kr705Need2Color, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_right)
+
+    table.cell(kr705DeveloperDebugTable, 0, 13, "Then", width=12, text_color=kr705LabelText, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_left)
+    table.cell(kr705DeveloperDebugTable, 1, 13, kr705Need3Text, width=14, text_color=kr705Need3Color, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_right)
+
+    table.cell(kr705DeveloperDebugTable, 0, 14, "Status", width=12, text_color=kr705LabelText, bgcolor=kr705HeaderBG, text_size=size.small, text_halign=text.align_left)
+    table.cell(kr705DeveloperDebugTable, 1, 14, kr705StatusText, width=14, text_color=kr705StatusColor, bgcolor=kr705HeaderBG, text_size=size.small, text_halign=text.align_right)
 else
-    table.clear(kr705DeveloperDebugTable, 0, 0, 1, 11)
+    table.clear(kr705DeveloperDebugTable, 0, 0, 1, 14)
 
 //==================================================================
 // END OF KR-705
