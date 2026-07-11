@@ -18,7 +18,8 @@ KRONOS analytical engines remain generic. Market-specific behavior is controlled
 - Auto
 - MCX Metals
 - MCX Energy
-- NSE Stock Futures
+- NSE Equity Swing
+- NSE Index Swing
 
 ## Model: MCX Metals
 
@@ -52,9 +53,9 @@ MCX Metals are globally driven markets where international reference pricing, cu
 
 MCX Energy markets are highly sensitive to global event flow, inventory data, geopolitical developments, and international benchmark movement. KRONOS should allow this model to weight global event-driven references more heavily than local-only behavior.
 
-## Model: NSE Stock Futures
+## Model: NSE Equity Swing and NSE Index Swing
 
-**Markets:** NIFTY, BANKNIFTY, FINNIFTY, MIDCPNIFTY, individual stock futures
+**Markets:** Approved 91-stock NSE cash universe, NIFTY, BANKNIFTY
 
 **Dependencies:**
 
@@ -65,7 +66,7 @@ MCX Energy markets are highly sensitive to global event flow, inventory data, ge
 
 **Profile:** LocalMarketRelative
 
-NSE Stock Futures are primarily local-market-relative instruments. KRONOS should evaluate them through the relationship between the futures contract, underlying cash instrument, benchmark index, sector context, and relative strength.
+NSE Swing instruments are primarily local-market-relative. KRONOS should evaluate NSE Equity Swing through the relationship between the cash stock, intended stock-futures execution instrument, benchmark index, sector context, and relative strength. KRONOS should evaluate NSE Index Swing through the cash index and intended index-futures execution instrument.
 
 ## Design Decision
 
@@ -92,9 +93,10 @@ For the current implementation, these mappings supersede the original MCX Metals
 ### Implementation Status
 
 - **MCX Metals:** Currently supported for Gold, Silver, and Copper.
-- **MCX Energy:** Planned. Existing Crude Oil and Natural Gas symbol-recognition scaffolding is not a completed model.
-- **NSE Stock Futures:** Planned.
-- **Futures Model selector:** Planned and not yet implemented.
+- **MCX Energy:** Configuration supported for Crude Oil and Natural Gas Swing; market-data integration remains pending.
+- **NSE Equity Swing:** Configuration supported for the approved 91-stock cash universe; market-data integration remains pending.
+- **NSE Index Swing:** Configuration supported for `NSE:NIFTY` and `NSE:BANKNIFTY`; market-data integration remains pending.
+- **Futures Model selector:** Planned and not yet implemented as a user-facing selector.
 
 The current absence of the selector does not change the architecture decision. Market-specific configuration must remain a profile layer over common engines.
 
@@ -113,3 +115,13 @@ KR-380A and KR-390A are the current formal adapter examples. See [ADL-003](ADL-0
 ### Manual Override
 
 When the Futures Model selector is implemented, manual override remains required for validation, edge cases, symbol-recognition failures, contract changes, and trader preference. Auto detection must never be the only route to a model profile.
+
+### Execution Semantics
+
+The configuration layer distinguishes analysis symbols from intended execution instruments:
+
+- MCX Metals and MCX Energy analyse futures and execute futures.
+- NSE Equity Swing analyses the cash stock and describes execution as the corresponding stock future, such as `RELIANCE FUT`. No expiring monthly futures symbol is generated.
+- NSE Index Swing analyses the cash index (`NSE:NIFTY` or `NSE:BANKNIFTY`) and describes execution as `NIFTY FUT` or `BANKNIFTY FUT`. No expiring monthly futures symbol is generated.
+
+This closes configuration semantics only. KR-260A must still connect market-data retrieval before NSE Swing can be considered operational.

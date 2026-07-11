@@ -103,7 +103,7 @@ def generate_block(rows: list[dict[str, str]]) -> str:
         f"// REVIEW count: {status_counts['REVIEW']}",
         "// Generation method: scripts/generate_nse_relationship_mapping.py",
         "// This block is generated configuration only. Do not add trading logic here.",
-        "if relationshipIsNSEFuture",
+        "if relationshipIsNSEEquity",
     ]
 
     for index, row in enumerate(rows):

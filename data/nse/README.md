@@ -58,3 +58,14 @@ Current generated status:
 ## Pine Generation
 
 Pine mappings will later be generated from this CSV into KR-252. The CSV is the source of truth; KR-252 should not hand-maintain the full NSE relationship map once generation begins.
+
+## Configuration Layer Closure
+
+KR-250, KR-251, and KR-252 now complete the configuration layer for current Swing market models:
+
+- MCX Metals Swing: analyse futures, execute futures.
+- MCX Energy Swing: analyse futures, execute futures.
+- NSE Equity Swing: analyse the approved NSE cash stock universe and describe the corresponding stock-futures execution instrument.
+- NSE Index Swing: analyse `NSE:NIFTY` or `NSE:BANKNIFTY` and describe the corresponding index-futures execution instrument.
+
+NSE market-data retrieval is not yet connected, and NSE Swing is not declared complete for live execution. `KAYNES` remains the only REVIEW equity relationship because its benchmark is still a temporary proxy.

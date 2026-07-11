@@ -267,7 +267,8 @@ else if krMarket == "NSE"
 // Scope:
 // - MCX Metals
 // - MCX Energy
-// - NSE Futures foundation interface
+// - NSE Equity Swing
+// - NSE Index Swing
 //
 // Contract:
 // - Configuration layer only.
@@ -277,54 +278,96 @@ else if krMarket == "NSE"
 //   outSupportedInstrument = false.
 //==================================================================
 
+
 //==================================================================
 // KR-251.10 MARKET MODEL DETECTION
 //==================================================================
 
+const string KR251_NSE_EQUITY_SYMBOLS = "|IOC|HINDPETRO|BPCL|BEL|SHRIRAMFIN|BHEL|BDL|COALINDIA|POWERINDIA|SBICARD|SAIL|RVNL|MAZDOCK|YESBANK|TATAPOWER|MAXHEALTH|JUBLFOOD|LUPIN|CONCOR|INFY|DRREDDY|TRENT|DIXON|NAUKRI|ALKEM|LICI|HAL|INDHOTEL|HDFCAMC|POWERGRID|BHARTIARTL|NTPC|TCS|ICICIBANK|MUTHOOTFIN|FEDERALBNK|MARUTI|WIPRO|ASIANPAINT|PERSISTENT|INDIANB|MCX|ETERNAL|SUNPHARMA|MOTHERSON|AXISBANK|TMPV|CANBK|SRF|PNB|BAJAJFINSV|DIVISLAB|HCLTECH|HDFCLIFE|CDSL|RBLBANK|ADANIGREEN|TECHM|M&M|ADANIENT|CIPLA|COFORGE|HINDUNILVR|CUMMINSIND|RELIANCE|BSE|TITAN|KOTAKBANK|RECLTD|APOLLOHOSP|JIOFIN|EICHERMOT|LT|ADANIPORTS|VEDL|BHARATFORG|ITC|POLICYBZR|SBIN|BAJFINANCE|HDFCBANK|TATASTEEL|PAYTM|HEROMOTOCO|INDIGO|KAYNES|UPL|BAJAJ_AUTO|HINDALCO|IDEA|VBL|"
+
+modelSymbolInApprovedNSEUniverse(string symbol) =>
+    symbol != "" and str.contains(KR251_NSE_EQUITY_SYMBOLS, "|" + symbol + "|")
+
 bool modelMCXMetals = assetMarket == "MCX" and (assetName == "Gold" or assetName == "Silver" or assetName == "Copper")
 bool modelMCXEnergy = assetMarket == "MCX" and (assetName == "Crude Oil" or assetName == "Natural Gas")
-bool modelNSEIndexFuture = assetMarket == "NSE" and (str.contains(krTickerUpper, "NIFTY") or str.contains(krTickerUpper, "BANKNIFTY") or str.contains(krTickerUpper, "FINNIFTY") or str.contains(krTickerUpper, "MIDCPNIFTY"))
-bool modelNSEStockFuture = assetMarket == "NSE" and not modelNSEIndexFuture and krRootUpper != ""
-bool modelNSEFuture = modelNSEIndexFuture or modelNSEStockFuture
+bool modelNSEIndexNifty = assetMarket == "NSE" and (krRootUpper == "NIFTY" or krTickerUpper == "NIFTY")
+bool modelNSEIndexBankNifty = assetMarket == "NSE" and (krRootUpper == "BANKNIFTY" or krTickerUpper == "BANKNIFTY")
+bool modelNSEIndexSwing = modelNSEIndexNifty or modelNSEIndexBankNifty
+bool modelNSEEquityRootSupported = assetMarket == "NSE" and modelSymbolInApprovedNSEUniverse(krRootUpper)
+bool modelNSEEquityTickerSupported = assetMarket == "NSE" and modelSymbolInApprovedNSEUniverse(krTickerUpper)
+bool modelNSEEquitySwing = not modelNSEIndexSwing and (modelNSEEquityRootSupported or modelNSEEquityTickerSupported)
+string modelDetectedNSESymbol = modelNSEEquityRootSupported ? krRootUpper : modelNSEEquityTickerSupported ? krTickerUpper : ""
+string modelDetectedNSEIndexSymbol = modelNSEIndexBankNifty ? "BANKNIFTY" : modelNSEIndexNifty ? "NIFTY" : ""
 
 string modelName = "Unsupported"
+string modelAssetName = assetName
 string modelExecutionVenue = assetMarket
+string modelAnalysisSymbol = syminfo.tickerid
+string modelExecutionInstrumentText = ""
+string modelExecutionInstrumentType = "Unsupported"
 string modelCashSymbol = ""
 string modelFuturesSymbol = syminfo.tickerid
 string modelPrimaryReferenceSymbol = ""
 string modelSecondaryReferenceSymbol = ""
 string modelParentIndex = ""
-string modelExecutionProfile = "Swing"
+string modelExecutionProfile = "UNKNOWN"
 bool modelSupportedInstrument = false
 
 if modelMCXMetals
-    modelName := "MCX Metals"
+    modelName := "MCX Metals Swing"
+    modelExecutionVenue := "MCX"
+    modelAnalysisSymbol := syminfo.tickerid
+    modelExecutionInstrumentText := assetName + " FUT"
+    modelExecutionInstrumentType := "Commodity Futures"
     modelPrimaryReferenceSymbol := assetReferenceSymbol
+    modelExecutionProfile := "SWING"
     modelSupportedInstrument := assetReferenceSymbol != "" and assetReferenceSymbol != "UNKNOWN"
 else if modelMCXEnergy
-    modelName := "MCX Energy"
+    modelName := "MCX Energy Swing"
+    modelExecutionVenue := "MCX"
+    modelAnalysisSymbol := syminfo.tickerid
+    modelExecutionInstrumentText := assetName + " FUT"
+    modelExecutionInstrumentType := "Commodity Futures"
     modelPrimaryReferenceSymbol := assetReferenceSymbol
+    modelExecutionProfile := "SWING"
     modelSupportedInstrument := assetReferenceSymbol != "" and assetReferenceSymbol != "UNKNOWN"
-else if modelNSEFuture
-    modelName := "NSE Stock Futures"
-    modelCashSymbol := "NSE:" + krRootUpper
-    modelPrimaryReferenceSymbol := modelCashSymbol
-    modelParentIndex := str.contains(krTickerUpper, "BANKNIFTY") ? "NSE:BANKNIFTY" : "NSE:NIFTY"
-    modelSupportedInstrument := modelCashSymbol != "NSE:"
+else if modelNSEEquitySwing
+    modelName := "NSE Equity Swing"
+    modelAssetName := modelDetectedNSESymbol
+    modelExecutionVenue := "NSE"
+    modelCashSymbol := "NSE:" + modelDetectedNSESymbol
+    modelAnalysisSymbol := modelCashSymbol
+    modelFuturesSymbol := ""
+    modelExecutionInstrumentText := modelDetectedNSESymbol + " FUT"
+    modelExecutionInstrumentType := "Stock Futures"
+    modelExecutionProfile := "SWING"
+    modelSupportedInstrument := true
+else if modelNSEIndexSwing
+    modelName := "NSE Index Swing"
+    modelAssetName := modelDetectedNSEIndexSymbol
+    modelExecutionVenue := "NSE"
+    modelAnalysisSymbol := "NSE:" + modelDetectedNSEIndexSymbol
+    modelFuturesSymbol := ""
+    modelExecutionInstrumentText := modelDetectedNSEIndexSymbol + " FUT"
+    modelExecutionInstrumentType := "Index Futures"
+    modelExecutionProfile := "SWING"
+    modelSupportedInstrument := true
 
-// KRONOS_NSE_UNIVERSE.csv is the planned source of truth for NSE
-// cash, sector and parent-index mappings. Pine cannot read local CSV
-// files directly, so KR-251 exposes the foundation interface while
-// keeping unresolved NSE sector references empty until the universe is
-// converted into Pine-compatible configuration data.
+// KRONOS_NSE_RELATIONSHIPS.csv is the source of truth for NSE
+// equity cash, sector-index and parent-index mappings. Pine cannot
+// read local CSV files directly, so the generated KR-252 map exposes
+// those relationships while KR-251 owns model and execution semantics.
 
 //==================================================================
 // KR-251.20 PUBLIC INTERFACE
 //==================================================================
 
 string outModelName = modelName
-string outAssetName = assetName
+string outAssetName = modelAssetName
 string outExecutionVenue = modelExecutionVenue
+string outAnalysisSymbol = modelAnalysisSymbol
+string outExecutionInstrumentText = modelExecutionInstrumentText
+string outExecutionInstrumentType = modelExecutionInstrumentType
 string outCashSymbol = modelCashSymbol
 string outFuturesSymbol = modelFuturesSymbol
 string outPrimaryReferenceSymbol = modelPrimaryReferenceSymbol
@@ -368,9 +411,10 @@ const string KR252_STATUS_UNSUPPORTED = "UNSUPPORTED"
 // KR-252.20 RELATIONSHIP CONFIGURATION
 //==================================================================
 
-bool relationshipIsMCXMetals = outModelName == "MCX Metals"
-bool relationshipIsMCXEnergy = outModelName == "MCX Energy"
-bool relationshipIsNSEFuture = outModelName == "NSE Stock Futures"
+bool relationshipIsMCXMetals = outModelName == "MCX Metals Swing"
+bool relationshipIsMCXEnergy = outModelName == "MCX Energy Swing"
+bool relationshipIsNSEEquity = outModelName == "NSE Equity Swing"
+bool relationshipIsNSEIndex = outModelName == "NSE Index Swing"
 
 string relationshipCashSymbol = ""
 string relationshipPrimaryReferenceSymbol = ""
@@ -392,6 +436,9 @@ if relationshipIsMCXMetals
     relationshipPrimaryReferenceSymbol := outAssetName == "Gold" ? "COMEX:GC1!" : outAssetName == "Silver" ? "COMEX:SI1!" : outAssetName == "Copper" ? "COMEX:HG1!" : ""
 else if relationshipIsMCXEnergy
     relationshipPrimaryReferenceSymbol := outAssetName == "Crude Oil" ? "NYMEX:CL1!" : outAssetName == "Natural Gas" ? "NYMEX:NG1!" : ""
+else if relationshipIsNSEIndex
+    relationshipDatasetStatus := KR252_STATUS_READY
+    relationshipDatasetReason := "NSE Index Relationship Ready"
 
 // BEGIN GENERATED NSE RELATIONSHIP MAPPING
 // Source: data/nse/KRONOS_NSE_RELATIONSHIPS.csv
@@ -401,7 +448,7 @@ else if relationshipIsMCXEnergy
 // REVIEW count: 1
 // Generation method: scripts/generate_nse_relationship_mapping.py
 // This block is generated configuration only. Do not add trading logic here.
-if relationshipIsNSEFuture
+if relationshipIsNSEEquity
     if relationshipSymbolMatches("IOC", "INDIAN OIL CORP. LTD.", relationshipSymbolRoot, relationshipSymbolTicker, relationshipSymbolDescription)
         relationshipNormalizedNSESymbol := "IOC"
         relationshipNSEMapped := true
@@ -1315,9 +1362,9 @@ if relationshipIsNSEFuture
 // END GENERATED NSE RELATIONSHIP MAPPING
 
 bool relationshipPrimaryReferenceValid = relationshipPrimaryReferenceSymbol != "" and relationshipPrimaryReferenceSymbol != "UNKNOWN"
-bool relationshipCashRequired = relationshipIsNSEFuture
-bool relationshipSectorRequired = relationshipIsNSEFuture
-bool relationshipParentRequired = relationshipIsNSEFuture
+bool relationshipCashRequired = relationshipIsNSEEquity
+bool relationshipSectorRequired = relationshipIsNSEEquity and relationshipDatasetStatus != KR252_STATUS_REVIEW
+bool relationshipParentRequired = relationshipIsNSEEquity
 bool relationshipCashReady = not relationshipCashRequired or relationshipCashSymbol != ""
 bool relationshipSectorReady = not relationshipSectorRequired or relationshipSectorIndexSymbol != ""
 bool relationshipParentReady = not relationshipParentRequired or relationshipParentIndexSymbol != ""
@@ -1334,7 +1381,7 @@ if outSupportedInstrument
         relationshipReady := relationshipPrimaryReferenceValid
         relationshipStatus := relationshipReady ? KR252_STATUS_READY : KR252_STATUS_REVIEW
         relationshipReason := relationshipReady ? "Global Reference Ready" : "Missing Global Reference"
-    else if relationshipIsNSEFuture
+    else if relationshipIsNSEEquity
         if relationshipNSEMapped
             relationshipReady := relationshipDatasetStatus == KR252_STATUS_READY and relationshipCashReady and relationshipSectorReady and relationshipParentReady
             relationshipStatus := relationshipDatasetStatus
@@ -1343,6 +1390,10 @@ if outSupportedInstrument
             relationshipReady := false
             relationshipStatus := KR252_STATUS_UNSUPPORTED
             relationshipReason := "Symbol Not In KRONOS Universe"
+    else if relationshipIsNSEIndex
+        relationshipReady := true
+        relationshipStatus := KR252_STATUS_READY
+        relationshipReason := "NSE Index Relationship Ready"
 
 //==================================================================
 // KR-252.30 PUBLIC INTERFACE
@@ -1359,6 +1410,10 @@ string outRelationshipParentIndexSymbol = relationshipParentIndexSymbol
 bool outRelationshipHasSectorContext = relationshipHasSectorContext
 bool outRelationshipHasParentIndexContext = relationshipHasParentIndexContext
 bool outRelationshipHasGlobalReference = relationshipHasGlobalReference
+string outSectorIndexSymbol = outRelationshipSectorIndexSymbol
+string outParentIndexSymbol = outRelationshipParentIndexSymbol
+outPrimaryReferenceSymbol := outRelationshipPrimaryReferenceSymbol
+outSecondaryReferenceSymbol := outRelationshipSecondaryReferenceSymbol
 
 //==================================================================
 // END OF KR-252
