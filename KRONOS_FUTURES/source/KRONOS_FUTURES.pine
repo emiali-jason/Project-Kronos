@@ -255,6 +255,187 @@ else if krMarket == "NSE"
 
 
 //==================================================================
+// KR-251 : Market Model Configuration Engine
+// Version : 0.1.0
+// Status  : FOUNDATION
+//
+// Purpose:
+// Identifies the active market model and exposes standardized
+// configuration outputs for future downstream integration. KR-251
+// performs no trading intelligence and is not consumed by KR-260 yet.
+//
+// Scope:
+// - MCX Metals
+// - MCX Energy
+// - NSE Futures foundation interface
+//
+// Contract:
+// - Configuration layer only.
+// - No request.security calls.
+// - No trading decisions, alerts, entries, exits, stops or targets.
+// - Unsupported instruments expose empty reference fields and
+//   outSupportedInstrument = false.
+//==================================================================
+
+//==================================================================
+// KR-251.10 MARKET MODEL DETECTION
+//==================================================================
+
+bool modelMCXMetals = assetMarket == "MCX" and (assetName == "Gold" or assetName == "Silver" or assetName == "Copper")
+bool modelMCXEnergy = assetMarket == "MCX" and (assetName == "Crude Oil" or assetName == "Natural Gas")
+bool modelNSEIndexFuture = assetMarket == "NSE" and (str.contains(krTickerUpper, "NIFTY") or str.contains(krTickerUpper, "BANKNIFTY") or str.contains(krTickerUpper, "FINNIFTY") or str.contains(krTickerUpper, "MIDCPNIFTY"))
+bool modelNSEStockFuture = assetMarket == "NSE" and not modelNSEIndexFuture and krRootUpper != ""
+bool modelNSEFuture = modelNSEIndexFuture or modelNSEStockFuture
+
+string modelName = "Unsupported"
+string modelExecutionVenue = assetMarket
+string modelCashSymbol = ""
+string modelFuturesSymbol = syminfo.tickerid
+string modelPrimaryReferenceSymbol = ""
+string modelSecondaryReferenceSymbol = ""
+string modelParentIndex = ""
+string modelExecutionProfile = "Swing"
+bool modelSupportedInstrument = false
+
+if modelMCXMetals
+    modelName := "MCX Metals"
+    modelPrimaryReferenceSymbol := assetReferenceSymbol
+    modelSupportedInstrument := assetReferenceSymbol != "" and assetReferenceSymbol != "UNKNOWN"
+else if modelMCXEnergy
+    modelName := "MCX Energy"
+    modelPrimaryReferenceSymbol := assetReferenceSymbol
+    modelSupportedInstrument := assetReferenceSymbol != "" and assetReferenceSymbol != "UNKNOWN"
+else if modelNSEFuture
+    modelName := "NSE Stock Futures"
+    modelCashSymbol := "NSE:" + krRootUpper
+    modelPrimaryReferenceSymbol := modelCashSymbol
+    modelParentIndex := str.contains(krTickerUpper, "BANKNIFTY") ? "NSE:BANKNIFTY" : "NSE:NIFTY"
+    modelSupportedInstrument := modelCashSymbol != "NSE:"
+
+// KRONOS_NSE_UNIVERSE.csv is the planned source of truth for NSE
+// cash, sector and parent-index mappings. Pine cannot read local CSV
+// files directly, so KR-251 exposes the foundation interface while
+// keeping unresolved NSE sector references empty until the universe is
+// converted into Pine-compatible configuration data.
+
+//==================================================================
+// KR-251.20 PUBLIC INTERFACE
+//==================================================================
+
+string outModelName = modelName
+string outAssetName = assetName
+string outExecutionVenue = modelExecutionVenue
+string outCashSymbol = modelCashSymbol
+string outFuturesSymbol = modelFuturesSymbol
+string outPrimaryReferenceSymbol = modelPrimaryReferenceSymbol
+string outSecondaryReferenceSymbol = modelSecondaryReferenceSymbol
+string outParentIndex = modelParentIndex
+string outExecutionProfile = modelExecutionProfile
+bool outSupportedInstrument = modelSupportedInstrument
+
+//==================================================================
+// END OF KR-251
+//==================================================================
+
+
+//==================================================================
+// KR-252 : Market Relationship Engine
+// Version : 0.1.0
+// Status  : FOUNDATION
+//
+// Purpose:
+// Exposes the cash, sector, parent-index and global-reference
+// relationships required by supported instruments. KR-252 performs
+// relationship configuration only and is not consumed by KR-260 yet.
+//
+// Contract:
+// - Relationship configuration only.
+// - Consumes KR-251 support/model classification.
+// - No request.security calls.
+// - No trend, relative-strength, decision, alert, entry, exit, stop
+//   or target logic.
+//==================================================================
+
+//==================================================================
+// KR-252.10 RELATIONSHIP CONSTANTS
+//==================================================================
+
+const string KR252_STATUS_READY = "READY"
+const string KR252_STATUS_REVIEW = "REVIEW"
+const string KR252_STATUS_UNSUPPORTED = "UNSUPPORTED"
+
+//==================================================================
+// KR-252.20 RELATIONSHIP CONFIGURATION
+//==================================================================
+
+bool relationshipIsMCXMetals = outModelName == "MCX Metals"
+bool relationshipIsMCXEnergy = outModelName == "MCX Energy"
+bool relationshipIsNSEFuture = outModelName == "NSE Stock Futures"
+
+string relationshipCashSymbol = relationshipIsNSEFuture ? outCashSymbol : ""
+string relationshipPrimaryReferenceSymbol = ""
+string relationshipSecondaryReferenceSymbol = ""
+string relationshipSectorIndexSymbol = ""
+string relationshipParentIndexSymbol = relationshipIsNSEFuture ? outParentIndex : ""
+
+if relationshipIsMCXMetals
+    relationshipPrimaryReferenceSymbol := outAssetName == "Gold" ? "COMEX:GC1!" : outAssetName == "Silver" ? "COMEX:SI1!" : outAssetName == "Copper" ? "COMEX:HG1!" : ""
+else if relationshipIsMCXEnergy
+    relationshipPrimaryReferenceSymbol := outAssetName == "Crude Oil" ? "NYMEX:CL1!" : outAssetName == "Natural Gas" ? "NYMEX:NG1!" : ""
+else if relationshipIsNSEFuture
+    relationshipPrimaryReferenceSymbol := relationshipCashSymbol
+
+// BEGIN GENERATED NSE RELATIONSHIP MAPPING
+// Curated NSE cash, sector-index and parent-index relationships will
+// be generated here after KRONOS_NSE_UNIVERSE.csv is verified.
+// END GENERATED NSE RELATIONSHIP MAPPING
+
+bool relationshipPrimaryReferenceValid = relationshipPrimaryReferenceSymbol != "" and relationshipPrimaryReferenceSymbol != "UNKNOWN"
+bool relationshipCashRequired = relationshipIsNSEFuture
+bool relationshipSectorRequired = relationshipIsNSEFuture
+bool relationshipParentRequired = relationshipIsNSEFuture
+bool relationshipCashReady = not relationshipCashRequired or relationshipCashSymbol != ""
+bool relationshipSectorReady = not relationshipSectorRequired or relationshipSectorIndexSymbol != ""
+bool relationshipParentReady = not relationshipParentRequired or relationshipParentIndexSymbol != ""
+bool relationshipHasGlobalReference = (relationshipIsMCXMetals or relationshipIsMCXEnergy) and relationshipPrimaryReferenceValid
+bool relationshipHasSectorContext = relationshipSectorIndexSymbol != ""
+bool relationshipHasParentIndexContext = relationshipParentIndexSymbol != ""
+
+string relationshipStatus = KR252_STATUS_UNSUPPORTED
+string relationshipReason = "Symbol Not In KRONOS Universe"
+bool relationshipReady = false
+
+if outSupportedInstrument
+    if relationshipIsMCXMetals or relationshipIsMCXEnergy
+        relationshipReady := relationshipPrimaryReferenceValid
+        relationshipStatus := relationshipReady ? KR252_STATUS_READY : KR252_STATUS_REVIEW
+        relationshipReason := relationshipReady ? "Global Reference Ready" : "Missing Global Reference"
+    else if relationshipIsNSEFuture
+        relationshipReady := relationshipCashReady and relationshipSectorReady and relationshipParentReady
+        relationshipStatus := relationshipReady ? KR252_STATUS_READY : KR252_STATUS_REVIEW
+        relationshipReason := not relationshipCashReady ? "Missing NSE Cash Symbol" : not relationshipSectorReady ? "Missing NSE Sector Index" : not relationshipParentReady ? "Missing NSE Parent Index" : "NSE Relationship Ready"
+
+//==================================================================
+// KR-252.30 PUBLIC INTERFACE
+//==================================================================
+
+bool outRelationshipReady = relationshipReady
+string outRelationshipStatus = relationshipStatus
+string outRelationshipReason = relationshipReason
+string outRelationshipCashSymbol = relationshipCashSymbol
+string outRelationshipPrimaryReferenceSymbol = relationshipPrimaryReferenceSymbol
+string outRelationshipSecondaryReferenceSymbol = relationshipSecondaryReferenceSymbol
+string outRelationshipSectorIndexSymbol = relationshipSectorIndexSymbol
+string outRelationshipParentIndexSymbol = relationshipParentIndexSymbol
+bool outRelationshipHasSectorContext = relationshipHasSectorContext
+bool outRelationshipHasParentIndexContext = relationshipHasParentIndexContext
+bool outRelationshipHasGlobalReference = relationshipHasGlobalReference
+
+//==================================================================
+// END OF KR-252
+//==================================================================
+
+//==================================================================
 // KRONOS SHARED HELPERS
 //==================================================================
 
