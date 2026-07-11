@@ -1420,11 +1420,12 @@ outSecondaryReferenceSymbol := outRelationshipSecondaryReferenceSymbol
 //==================================================================
 
 //==================================================================
-// KR-260A : Market Data Adapter
+// KR-260A : Market Data Routing Engine
 // Version : 0.1.0
 // Status  : FOUNDATION
 //
 // Purpose:
+// Answers: "What symbols should KRONOS use?"
 // Translates KR-251/KR-252 configuration outputs into a standardized
 // market-data routing contract. KR-260A performs symbol routing only.
 //
@@ -1582,6 +1583,36 @@ bool outMarketDataUsesFuturesAnalysis = marketDataRouteUsesFuturesAnalysis
 //==================================================================
 
 //==================================================================
+// KR-260B : Market Data Retrieval Engine
+// Version : 0.1.0
+// Status  : FOUNDATION
+//
+// Purpose:
+// Answers: "Retrieve market data from those symbols."
+// Will retrieve standardized market data from the public routing
+// outputs exposed by KR-260A.
+//
+// Ownership:
+// - Consumes KR-260A route readiness, status, capability flags, and
+//   selected analysis, execution, reference, sector, and parent symbols.
+// - Will own request.security calls and standardized OHLCV retrieval.
+// - Will expose retrieved datasets, availability flags, status, and
+//   retrieval reasons for KR-260 normalization.
+// - Does not own routing, normalization, indicators, intelligence,
+//   decisions, execution timing, alerts, or trade management.
+//
+// Foundation Contract:
+// - No retrieval logic is implemented in v0.1.0.
+// - No request.security calls are present in this engine.
+// - Future public outputs are intentionally deferred until retrieval
+//   data contracts and timeframe requirements are formally defined.
+//==================================================================
+
+//==================================================================
+// END OF KR-260B
+//==================================================================
+
+//==================================================================
 // KRONOS SHARED HELPERS
 //==================================================================
 
@@ -1600,25 +1631,31 @@ getOHLCV(string symbol, string timeframe) =>
      )
 
 //==================================================================
-// KR-260 : MARKET DATA ENGINE
+// KR-260 : MARKET DATA NORMALIZATION ENGINE
 // Version : 0.5.0-alpha
 // Build   : 0006
 //
 // Purpose:
-// Acquire, validate and standardize market data for downstream
+// Answers: "Normalize retrieved market data for the Intelligence Layer."
+// Owns the normalized market-data interface consumed by downstream
 // KRONOS engines.
 //
 // Inputs
-// - KR-100 Configuration
-// - KR-250 Asset Intelligence
+// - Future KR-260B Retrieval Interface
+// - Current legacy KR-100/KR-250 data path pending migration
 //
 // Outputs
-// - Market Data Interface
+// - Normalized Market Data Interface
 // - Status Interface
 //
-// NOTE:
-// KR-260A only builds the engine foundation.
-// Market data retrieval begins in KR-260B.
+// Target Ownership:
+// - Consumes retrieved market data from KR-260B.
+// - Does not own symbol routing.
+// - Does not own TradingView request.security calls.
+//
+// Migration Note:
+// Existing executable market-data logic remains unchanged in this
+// architecture-only pass. KR-260B retrieval wiring is not implemented.
 //==================================================================
 
 //==================================================================
