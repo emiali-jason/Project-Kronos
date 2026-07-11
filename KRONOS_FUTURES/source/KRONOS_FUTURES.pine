@@ -372,22 +372,946 @@ bool relationshipIsMCXMetals = outModelName == "MCX Metals"
 bool relationshipIsMCXEnergy = outModelName == "MCX Energy"
 bool relationshipIsNSEFuture = outModelName == "NSE Stock Futures"
 
-string relationshipCashSymbol = relationshipIsNSEFuture ? outCashSymbol : ""
+string relationshipCashSymbol = ""
 string relationshipPrimaryReferenceSymbol = ""
 string relationshipSecondaryReferenceSymbol = ""
 string relationshipSectorIndexSymbol = ""
-string relationshipParentIndexSymbol = relationshipIsNSEFuture ? outParentIndex : ""
+string relationshipParentIndexSymbol = ""
+string relationshipSymbolRoot = str.upper(syminfo.root)
+string relationshipSymbolTicker = str.upper(syminfo.ticker)
+string relationshipSymbolDescription = str.upper(syminfo.description)
+string relationshipNormalizedNSESymbol = ""
+string relationshipDatasetStatus = ""
+string relationshipDatasetReason = ""
+bool relationshipNSEMapped = false
+
+relationshipSymbolMatches(string expectedSymbol, string expectedDescription, string currentRoot, string currentTicker, string currentDescription) =>
+    currentRoot == expectedSymbol or currentTicker == expectedSymbol or currentDescription == expectedDescription
 
 if relationshipIsMCXMetals
     relationshipPrimaryReferenceSymbol := outAssetName == "Gold" ? "COMEX:GC1!" : outAssetName == "Silver" ? "COMEX:SI1!" : outAssetName == "Copper" ? "COMEX:HG1!" : ""
 else if relationshipIsMCXEnergy
     relationshipPrimaryReferenceSymbol := outAssetName == "Crude Oil" ? "NYMEX:CL1!" : outAssetName == "Natural Gas" ? "NYMEX:NG1!" : ""
-else if relationshipIsNSEFuture
-    relationshipPrimaryReferenceSymbol := relationshipCashSymbol
 
 // BEGIN GENERATED NSE RELATIONSHIP MAPPING
-// Curated NSE cash, sector-index and parent-index relationships will
-// be generated here after KRONOS_NSE_UNIVERSE.csv is verified.
+// Source: data/nse/KRONOS_NSE_RELATIONSHIPS.csv
+// Dataset version/date: Curated 2026-07-11
+// Generated row count: 91
+// READY count: 90
+// REVIEW count: 1
+// Generation method: scripts/generate_nse_relationship_mapping.py
+// This block is generated configuration only. Do not add trading logic here.
+if relationshipIsNSEFuture
+    if relationshipSymbolMatches("IOC", "INDIAN OIL CORP. LTD.", relationshipSymbolRoot, relationshipSymbolTicker, relationshipSymbolDescription)
+        relationshipNormalizedNSESymbol := "IOC"
+        relationshipNSEMapped := true
+        relationshipCashSymbol := "NSE:IOC"
+        relationshipPrimaryReferenceSymbol := "NSE:CNXENERGY"
+        relationshipSecondaryReferenceSymbol := "NSE:NIFTY"
+        relationshipSectorIndexSymbol := "NSE:CNXENERGY"
+        relationshipParentIndexSymbol := "NSE:NIFTY"
+        relationshipDatasetStatus := KR252_STATUS_READY
+        relationshipDatasetReason := "Primary listed sector membership is Nifty Energy."
+    else if relationshipSymbolMatches("HINDPETRO", "HINDUSTAN PETROLEUM CORPORATION LIMITED", relationshipSymbolRoot, relationshipSymbolTicker, relationshipSymbolDescription)
+        relationshipNormalizedNSESymbol := "HINDPETRO"
+        relationshipNSEMapped := true
+        relationshipCashSymbol := "NSE:HINDPETRO"
+        relationshipPrimaryReferenceSymbol := "NSE:CNXENERGY"
+        relationshipSecondaryReferenceSymbol := "NSE:NIFTY"
+        relationshipSectorIndexSymbol := "NSE:CNXENERGY"
+        relationshipParentIndexSymbol := "NSE:NIFTY"
+        relationshipDatasetStatus := KR252_STATUS_READY
+        relationshipDatasetReason := "Primary listed sector membership is Nifty Energy."
+    else if relationshipSymbolMatches("BPCL", "BHARAT PETROLEUM CORPORATION LIMITED", relationshipSymbolRoot, relationshipSymbolTicker, relationshipSymbolDescription)
+        relationshipNormalizedNSESymbol := "BPCL"
+        relationshipNSEMapped := true
+        relationshipCashSymbol := "NSE:BPCL"
+        relationshipPrimaryReferenceSymbol := "NSE:CNXENERGY"
+        relationshipSecondaryReferenceSymbol := "NSE:NIFTY"
+        relationshipSectorIndexSymbol := "NSE:CNXENERGY"
+        relationshipParentIndexSymbol := "NSE:NIFTY"
+        relationshipDatasetStatus := KR252_STATUS_READY
+        relationshipDatasetReason := "Primary listed sector membership is Nifty Energy."
+    else if relationshipSymbolMatches("BEL", "BHARAT ELECTRONICS LIMITED", relationshipSymbolRoot, relationshipSymbolTicker, relationshipSymbolDescription)
+        relationshipNormalizedNSESymbol := "BEL"
+        relationshipNSEMapped := true
+        relationshipCashSymbol := "NSE:BEL"
+        relationshipPrimaryReferenceSymbol := "NSE:CNXPSE"
+        relationshipSecondaryReferenceSymbol := "NSE:NIFTY"
+        relationshipSectorIndexSymbol := "NSE:CNXPSE"
+        relationshipParentIndexSymbol := "NSE:NIFTY"
+        relationshipDatasetStatus := KR252_STATUS_READY
+        relationshipDatasetReason := "Defence PSU; CNXPSE is the closest verified benchmark."
+    else if relationshipSymbolMatches("SHRIRAMFIN", "SHRIRAM FINANCE LIMITED", relationshipSymbolRoot, relationshipSymbolTicker, relationshipSymbolDescription)
+        relationshipNormalizedNSESymbol := "SHRIRAMFIN"
+        relationshipNSEMapped := true
+        relationshipCashSymbol := "NSE:SHRIRAMFIN"
+        relationshipPrimaryReferenceSymbol := "NSE:CNXFINANCE"
+        relationshipSecondaryReferenceSymbol := "NSE:NIFTY"
+        relationshipSectorIndexSymbol := "NSE:CNXFINANCE"
+        relationshipParentIndexSymbol := "NSE:NIFTY"
+        relationshipDatasetStatus := KR252_STATUS_READY
+        relationshipDatasetReason := "Primary listed sector membership is Nifty Financial Services."
+    else if relationshipSymbolMatches("BHEL", "BHARAT HEAVY ELECTRICALS LIMITED", relationshipSymbolRoot, relationshipSymbolTicker, relationshipSymbolDescription)
+        relationshipNormalizedNSESymbol := "BHEL"
+        relationshipNSEMapped := true
+        relationshipCashSymbol := "NSE:BHEL"
+        relationshipPrimaryReferenceSymbol := "NSE:CNXENERGY"
+        relationshipSecondaryReferenceSymbol := "NSE:NIFTY"
+        relationshipSectorIndexSymbol := "NSE:CNXENERGY"
+        relationshipParentIndexSymbol := "NSE:NIFTY"
+        relationshipDatasetStatus := KR252_STATUS_READY
+        relationshipDatasetReason := "Primary listed sector membership includes Nifty Energy."
+    else if relationshipSymbolMatches("BDL", "BHARAT DYNAMICS LTD.", relationshipSymbolRoot, relationshipSymbolTicker, relationshipSymbolDescription)
+        relationshipNormalizedNSESymbol := "BDL"
+        relationshipNSEMapped := true
+        relationshipCashSymbol := "NSE:BDL"
+        relationshipPrimaryReferenceSymbol := "NSE:CNXPSE"
+        relationshipSecondaryReferenceSymbol := "NSE:NIFTY"
+        relationshipSectorIndexSymbol := "NSE:CNXPSE"
+        relationshipParentIndexSymbol := "NSE:NIFTY"
+        relationshipDatasetStatus := KR252_STATUS_READY
+        relationshipDatasetReason := "Defence PSU; CNXPSE is the closest verified benchmark."
+    else if relationshipSymbolMatches("COALINDIA", "COAL INDIA LTD.", relationshipSymbolRoot, relationshipSymbolTicker, relationshipSymbolDescription)
+        relationshipNormalizedNSESymbol := "COALINDIA"
+        relationshipNSEMapped := true
+        relationshipCashSymbol := "NSE:COALINDIA"
+        relationshipPrimaryReferenceSymbol := "NSE:CNXENERGY"
+        relationshipSecondaryReferenceSymbol := "NSE:NIFTY"
+        relationshipSectorIndexSymbol := "NSE:CNXENERGY"
+        relationshipParentIndexSymbol := "NSE:NIFTY"
+        relationshipDatasetStatus := KR252_STATUS_READY
+        relationshipDatasetReason := "Primary listed sector membership is Nifty Energy."
+    else if relationshipSymbolMatches("POWERINDIA", "HITACHI ENERGY INDIA LIMITED", relationshipSymbolRoot, relationshipSymbolTicker, relationshipSymbolDescription)
+        relationshipNormalizedNSESymbol := "POWERINDIA"
+        relationshipNSEMapped := true
+        relationshipCashSymbol := "NSE:POWERINDIA"
+        relationshipPrimaryReferenceSymbol := "NSE:CNXENERGY"
+        relationshipSecondaryReferenceSymbol := "NSE:NIFTY"
+        relationshipSectorIndexSymbol := "NSE:CNXENERGY"
+        relationshipParentIndexSymbol := "NSE:NIFTY"
+        relationshipDatasetStatus := KR252_STATUS_READY
+        relationshipDatasetReason := "Primary listed sector membership is Nifty Energy."
+    else if relationshipSymbolMatches("SBICARD", "SBI CARDS & PAYMENT SERVICES LTD", relationshipSymbolRoot, relationshipSymbolTicker, relationshipSymbolDescription)
+        relationshipNormalizedNSESymbol := "SBICARD"
+        relationshipNSEMapped := true
+        relationshipCashSymbol := "NSE:SBICARD"
+        relationshipPrimaryReferenceSymbol := "NSE:CNXFINANCE"
+        relationshipSecondaryReferenceSymbol := "NSE:NIFTY"
+        relationshipSectorIndexSymbol := "NSE:CNXFINANCE"
+        relationshipParentIndexSymbol := "NSE:NIFTY"
+        relationshipDatasetStatus := KR252_STATUS_READY
+        relationshipDatasetReason := "Primary listed sector membership is Nifty Financial Services."
+    else if relationshipSymbolMatches("SAIL", "STEEL AUTHORITY OF INDIA LIMITED", relationshipSymbolRoot, relationshipSymbolTicker, relationshipSymbolDescription)
+        relationshipNormalizedNSESymbol := "SAIL"
+        relationshipNSEMapped := true
+        relationshipCashSymbol := "NSE:SAIL"
+        relationshipPrimaryReferenceSymbol := "NSE:CNXMETAL"
+        relationshipSecondaryReferenceSymbol := "NSE:NIFTY"
+        relationshipSectorIndexSymbol := "NSE:CNXMETAL"
+        relationshipParentIndexSymbol := "NSE:NIFTY"
+        relationshipDatasetStatus := KR252_STATUS_READY
+        relationshipDatasetReason := "Primary listed sector membership is Nifty Metal."
+    else if relationshipSymbolMatches("RVNL", "RAIL VIKAS NIGAM LTD.", relationshipSymbolRoot, relationshipSymbolTicker, relationshipSymbolDescription)
+        relationshipNormalizedNSESymbol := "RVNL"
+        relationshipNSEMapped := true
+        relationshipCashSymbol := "NSE:RVNL"
+        relationshipPrimaryReferenceSymbol := "NSE:CNXINFRA"
+        relationshipSecondaryReferenceSymbol := "NSE:NIFTY"
+        relationshipSectorIndexSymbol := "NSE:CNXINFRA"
+        relationshipParentIndexSymbol := "NSE:NIFTY"
+        relationshipDatasetStatus := KR252_STATUS_READY
+        relationshipDatasetReason := "Railway infrastructure and project execution exposure."
+    else if relationshipSymbolMatches("MAZDOCK", "MAZAGON DOCK SHIPBUILDERS LTD.", relationshipSymbolRoot, relationshipSymbolTicker, relationshipSymbolDescription)
+        relationshipNormalizedNSESymbol := "MAZDOCK"
+        relationshipNSEMapped := true
+        relationshipCashSymbol := "NSE:MAZDOCK"
+        relationshipPrimaryReferenceSymbol := "NSE:CNXPSE"
+        relationshipSecondaryReferenceSymbol := "NSE:NIFTY"
+        relationshipSectorIndexSymbol := "NSE:CNXPSE"
+        relationshipParentIndexSymbol := "NSE:NIFTY"
+        relationshipDatasetStatus := KR252_STATUS_READY
+        relationshipDatasetReason := "Defence shipbuilder; no dedicated verified defence benchmark."
+    else if relationshipSymbolMatches("YESBANK", "YES BANK LIMITED", relationshipSymbolRoot, relationshipSymbolTicker, relationshipSymbolDescription)
+        relationshipNormalizedNSESymbol := "YESBANK"
+        relationshipNSEMapped := true
+        relationshipCashSymbol := "NSE:YESBANK"
+        relationshipPrimaryReferenceSymbol := "NSE:BANKNIFTY"
+        relationshipSecondaryReferenceSymbol := "NSE:BANKNIFTY"
+        relationshipSectorIndexSymbol := "NSE:BANKNIFTY"
+        relationshipParentIndexSymbol := "NSE:BANKNIFTY"
+        relationshipDatasetStatus := KR252_STATUS_READY
+        relationshipDatasetReason := "Bank-led context; BANKNIFTY is the primary verified benchmark."
+    else if relationshipSymbolMatches("TATAPOWER", "TATA POWER COMPANY LIMITED", relationshipSymbolRoot, relationshipSymbolTicker, relationshipSymbolDescription)
+        relationshipNormalizedNSESymbol := "TATAPOWER"
+        relationshipNSEMapped := true
+        relationshipCashSymbol := "NSE:TATAPOWER"
+        relationshipPrimaryReferenceSymbol := "NSE:CNXENERGY"
+        relationshipSecondaryReferenceSymbol := "NSE:NIFTY"
+        relationshipSectorIndexSymbol := "NSE:CNXENERGY"
+        relationshipParentIndexSymbol := "NSE:NIFTY"
+        relationshipDatasetStatus := KR252_STATUS_READY
+        relationshipDatasetReason := "Primary listed sector membership is Nifty Energy."
+    else if relationshipSymbolMatches("MAXHEALTH", "MAX HEALTHCARE INSTITUTE LTD", relationshipSymbolRoot, relationshipSymbolTicker, relationshipSymbolDescription)
+        relationshipNormalizedNSESymbol := "MAXHEALTH"
+        relationshipNSEMapped := true
+        relationshipCashSymbol := "NSE:MAXHEALTH"
+        relationshipPrimaryReferenceSymbol := "NSE:CNXPHARMA"
+        relationshipSecondaryReferenceSymbol := "NSE:NIFTY"
+        relationshipSectorIndexSymbol := "NSE:CNXPHARMA"
+        relationshipParentIndexSymbol := "NSE:NIFTY"
+        relationshipDatasetStatus := KR252_STATUS_READY
+        relationshipDatasetReason := "Hospital operator; Pharma is the closest verified healthcare proxy."
+    else if relationshipSymbolMatches("JUBLFOOD", "JUBILANT FOODWORKS LIMITED", relationshipSymbolRoot, relationshipSymbolTicker, relationshipSymbolDescription)
+        relationshipNormalizedNSESymbol := "JUBLFOOD"
+        relationshipNSEMapped := true
+        relationshipCashSymbol := "NSE:JUBLFOOD"
+        relationshipPrimaryReferenceSymbol := "NSE:CNXCONSUMPTION"
+        relationshipSecondaryReferenceSymbol := "NSE:NIFTY"
+        relationshipSectorIndexSymbol := "NSE:CNXCONSUMPTION"
+        relationshipParentIndexSymbol := "NSE:NIFTY"
+        relationshipDatasetStatus := KR252_STATUS_READY
+        relationshipDatasetReason := "Consumer discretionary business."
+    else if relationshipSymbolMatches("LUPIN", "LUPIN LIMITED", relationshipSymbolRoot, relationshipSymbolTicker, relationshipSymbolDescription)
+        relationshipNormalizedNSESymbol := "LUPIN"
+        relationshipNSEMapped := true
+        relationshipCashSymbol := "NSE:LUPIN"
+        relationshipPrimaryReferenceSymbol := "NSE:CNXPHARMA"
+        relationshipSecondaryReferenceSymbol := "NSE:NIFTY"
+        relationshipSectorIndexSymbol := "NSE:CNXPHARMA"
+        relationshipParentIndexSymbol := "NSE:NIFTY"
+        relationshipDatasetStatus := KR252_STATUS_READY
+        relationshipDatasetReason := "Primary listed sector membership is Nifty Pharma."
+    else if relationshipSymbolMatches("CONCOR", "CONTAINER CORPORATION OF INDIA LIMITED", relationshipSymbolRoot, relationshipSymbolTicker, relationshipSymbolDescription)
+        relationshipNormalizedNSESymbol := "CONCOR"
+        relationshipNSEMapped := true
+        relationshipCashSymbol := "NSE:CONCOR"
+        relationshipPrimaryReferenceSymbol := "NSE:CNXSERVICE"
+        relationshipSecondaryReferenceSymbol := "NSE:NIFTY"
+        relationshipSectorIndexSymbol := "NSE:CNXSERVICE"
+        relationshipParentIndexSymbol := "NSE:NIFTY"
+        relationshipDatasetStatus := KR252_STATUS_READY
+        relationshipDatasetReason := "Logistics and transport service business."
+    else if relationshipSymbolMatches("INFY", "INFOSYS LIMITED", relationshipSymbolRoot, relationshipSymbolTicker, relationshipSymbolDescription)
+        relationshipNormalizedNSESymbol := "INFY"
+        relationshipNSEMapped := true
+        relationshipCashSymbol := "NSE:INFY"
+        relationshipPrimaryReferenceSymbol := "NSE:CNXIT"
+        relationshipSecondaryReferenceSymbol := "NSE:NIFTY"
+        relationshipSectorIndexSymbol := "NSE:CNXIT"
+        relationshipParentIndexSymbol := "NSE:NIFTY"
+        relationshipDatasetStatus := KR252_STATUS_READY
+        relationshipDatasetReason := "Primary listed sector membership is Nifty IT."
+    else if relationshipSymbolMatches("DRREDDY", "DR. REDDY'S LABORATORIES LTD.", relationshipSymbolRoot, relationshipSymbolTicker, relationshipSymbolDescription)
+        relationshipNormalizedNSESymbol := "DRREDDY"
+        relationshipNSEMapped := true
+        relationshipCashSymbol := "NSE:DRREDDY"
+        relationshipPrimaryReferenceSymbol := "NSE:CNXPHARMA"
+        relationshipSecondaryReferenceSymbol := "NSE:NIFTY"
+        relationshipSectorIndexSymbol := "NSE:CNXPHARMA"
+        relationshipParentIndexSymbol := "NSE:NIFTY"
+        relationshipDatasetStatus := KR252_STATUS_READY
+        relationshipDatasetReason := "Primary listed sector membership is Nifty Pharma."
+    else if relationshipSymbolMatches("TRENT", "TRENT LIMITED", relationshipSymbolRoot, relationshipSymbolTicker, relationshipSymbolDescription)
+        relationshipNormalizedNSESymbol := "TRENT"
+        relationshipNSEMapped := true
+        relationshipCashSymbol := "NSE:TRENT"
+        relationshipPrimaryReferenceSymbol := "NSE:CNXCONSUMPTION"
+        relationshipSecondaryReferenceSymbol := "NSE:NIFTY"
+        relationshipSectorIndexSymbol := "NSE:CNXCONSUMPTION"
+        relationshipParentIndexSymbol := "NSE:NIFTY"
+        relationshipDatasetStatus := KR252_STATUS_READY
+        relationshipDatasetReason := "Primary listed sector membership is Nifty India Consumption."
+    else if relationshipSymbolMatches("DIXON", "DIXON TECHNOLOGIES (INDIA) LTD.", relationshipSymbolRoot, relationshipSymbolTicker, relationshipSymbolDescription)
+        relationshipNormalizedNSESymbol := "DIXON"
+        relationshipNSEMapped := true
+        relationshipCashSymbol := "NSE:DIXON"
+        relationshipPrimaryReferenceSymbol := "NSE:CNXCONSUMPTION"
+        relationshipSecondaryReferenceSymbol := "NSE:NIFTY"
+        relationshipSectorIndexSymbol := "NSE:CNXCONSUMPTION"
+        relationshipParentIndexSymbol := "NSE:NIFTY"
+        relationshipDatasetStatus := KR252_STATUS_READY
+        relationshipDatasetReason := "Consumer electronics manufacturing exposure."
+    else if relationshipSymbolMatches("NAUKRI", "INFO EDGE INDIA LTD.", relationshipSymbolRoot, relationshipSymbolTicker, relationshipSymbolDescription)
+        relationshipNormalizedNSESymbol := "NAUKRI"
+        relationshipNSEMapped := true
+        relationshipCashSymbol := "NSE:NAUKRI"
+        relationshipPrimaryReferenceSymbol := "NSE:CNXSERVICE"
+        relationshipSecondaryReferenceSymbol := "NSE:NIFTY"
+        relationshipSectorIndexSymbol := "NSE:CNXSERVICE"
+        relationshipParentIndexSymbol := "NSE:NIFTY"
+        relationshipDatasetStatus := KR252_STATUS_READY
+        relationshipDatasetReason := "Internet services and digital platform business."
+    else if relationshipSymbolMatches("ALKEM", "ALKEM LABORATORIES LTD.", relationshipSymbolRoot, relationshipSymbolTicker, relationshipSymbolDescription)
+        relationshipNormalizedNSESymbol := "ALKEM"
+        relationshipNSEMapped := true
+        relationshipCashSymbol := "NSE:ALKEM"
+        relationshipPrimaryReferenceSymbol := "NSE:CNXPHARMA"
+        relationshipSecondaryReferenceSymbol := "NSE:NIFTY"
+        relationshipSectorIndexSymbol := "NSE:CNXPHARMA"
+        relationshipParentIndexSymbol := "NSE:NIFTY"
+        relationshipDatasetStatus := KR252_STATUS_READY
+        relationshipDatasetReason := "Primary listed sector membership is Nifty Pharma."
+    else if relationshipSymbolMatches("LICI", "LIFE INSURANCE CORP. OF INDIA", relationshipSymbolRoot, relationshipSymbolTicker, relationshipSymbolDescription)
+        relationshipNormalizedNSESymbol := "LICI"
+        relationshipNSEMapped := true
+        relationshipCashSymbol := "NSE:LICI"
+        relationshipPrimaryReferenceSymbol := "NSE:CNXFINANCE"
+        relationshipSecondaryReferenceSymbol := "NSE:NIFTY"
+        relationshipSectorIndexSymbol := "NSE:CNXFINANCE"
+        relationshipParentIndexSymbol := "NSE:NIFTY"
+        relationshipDatasetStatus := KR252_STATUS_READY
+        relationshipDatasetReason := "Primary listed sector membership is Nifty Financial Services."
+    else if relationshipSymbolMatches("HAL", "HINDUSTAN AERONAUTICS LIMITED", relationshipSymbolRoot, relationshipSymbolTicker, relationshipSymbolDescription)
+        relationshipNormalizedNSESymbol := "HAL"
+        relationshipNSEMapped := true
+        relationshipCashSymbol := "NSE:HAL"
+        relationshipPrimaryReferenceSymbol := "NSE:CNXPSE"
+        relationshipSecondaryReferenceSymbol := "NSE:NIFTY"
+        relationshipSectorIndexSymbol := "NSE:CNXPSE"
+        relationshipParentIndexSymbol := "NSE:NIFTY"
+        relationshipDatasetStatus := KR252_STATUS_READY
+        relationshipDatasetReason := "Defence PSU; CNXPSE is the closest verified benchmark."
+    else if relationshipSymbolMatches("INDHOTEL", "INDIAN HOTELS CO. LTD.", relationshipSymbolRoot, relationshipSymbolTicker, relationshipSymbolDescription)
+        relationshipNormalizedNSESymbol := "INDHOTEL"
+        relationshipNSEMapped := true
+        relationshipCashSymbol := "NSE:INDHOTEL"
+        relationshipPrimaryReferenceSymbol := "NSE:CNXCONSUMPTION"
+        relationshipSecondaryReferenceSymbol := "NSE:NIFTY"
+        relationshipSectorIndexSymbol := "NSE:CNXCONSUMPTION"
+        relationshipParentIndexSymbol := "NSE:NIFTY"
+        relationshipDatasetStatus := KR252_STATUS_READY
+        relationshipDatasetReason := "Primary listed sector membership is Nifty India Consumption."
+    else if relationshipSymbolMatches("HDFCAMC", "HDFC ASSET MANAGEMENT CO. LTD.", relationshipSymbolRoot, relationshipSymbolTicker, relationshipSymbolDescription)
+        relationshipNormalizedNSESymbol := "HDFCAMC"
+        relationshipNSEMapped := true
+        relationshipCashSymbol := "NSE:HDFCAMC"
+        relationshipPrimaryReferenceSymbol := "NSE:CNXFINANCE"
+        relationshipSecondaryReferenceSymbol := "NSE:NIFTY"
+        relationshipSectorIndexSymbol := "NSE:CNXFINANCE"
+        relationshipParentIndexSymbol := "NSE:NIFTY"
+        relationshipDatasetStatus := KR252_STATUS_READY
+        relationshipDatasetReason := "Primary listed sector membership is Nifty Financial Services."
+    else if relationshipSymbolMatches("POWERGRID", "POWER GRID CORPORATION OF INDIA LIMITED", relationshipSymbolRoot, relationshipSymbolTicker, relationshipSymbolDescription)
+        relationshipNormalizedNSESymbol := "POWERGRID"
+        relationshipNSEMapped := true
+        relationshipCashSymbol := "NSE:POWERGRID"
+        relationshipPrimaryReferenceSymbol := "NSE:CNXENERGY"
+        relationshipSecondaryReferenceSymbol := "NSE:NIFTY"
+        relationshipSectorIndexSymbol := "NSE:CNXENERGY"
+        relationshipParentIndexSymbol := "NSE:NIFTY"
+        relationshipDatasetStatus := KR252_STATUS_READY
+        relationshipDatasetReason := "Primary listed sector membership is Nifty Energy."
+    else if relationshipSymbolMatches("BHARTIARTL", "BHARTI AIRTEL LIMITED", relationshipSymbolRoot, relationshipSymbolTicker, relationshipSymbolDescription)
+        relationshipNormalizedNSESymbol := "BHARTIARTL"
+        relationshipNSEMapped := true
+        relationshipCashSymbol := "NSE:BHARTIARTL"
+        relationshipPrimaryReferenceSymbol := "NSE:CNXSERVICE"
+        relationshipSecondaryReferenceSymbol := "NSE:NIFTY"
+        relationshipSectorIndexSymbol := "NSE:CNXSERVICE"
+        relationshipParentIndexSymbol := "NSE:NIFTY"
+        relationshipDatasetStatus := KR252_STATUS_READY
+        relationshipDatasetReason := "Telecom services; Services is the closest verified benchmark."
+    else if relationshipSymbolMatches("NTPC", "NTPC LIMITED", relationshipSymbolRoot, relationshipSymbolTicker, relationshipSymbolDescription)
+        relationshipNormalizedNSESymbol := "NTPC"
+        relationshipNSEMapped := true
+        relationshipCashSymbol := "NSE:NTPC"
+        relationshipPrimaryReferenceSymbol := "NSE:CNXENERGY"
+        relationshipSecondaryReferenceSymbol := "NSE:NIFTY"
+        relationshipSectorIndexSymbol := "NSE:CNXENERGY"
+        relationshipParentIndexSymbol := "NSE:NIFTY"
+        relationshipDatasetStatus := KR252_STATUS_READY
+        relationshipDatasetReason := "Primary listed sector membership is Nifty Energy."
+    else if relationshipSymbolMatches("TCS", "TATA CONSULTANCY SERVICES LIMITED", relationshipSymbolRoot, relationshipSymbolTicker, relationshipSymbolDescription)
+        relationshipNormalizedNSESymbol := "TCS"
+        relationshipNSEMapped := true
+        relationshipCashSymbol := "NSE:TCS"
+        relationshipPrimaryReferenceSymbol := "NSE:CNXIT"
+        relationshipSecondaryReferenceSymbol := "NSE:NIFTY"
+        relationshipSectorIndexSymbol := "NSE:CNXIT"
+        relationshipParentIndexSymbol := "NSE:NIFTY"
+        relationshipDatasetStatus := KR252_STATUS_READY
+        relationshipDatasetReason := "Primary listed sector membership is Nifty IT."
+    else if relationshipSymbolMatches("ICICIBANK", "ICICI BANK LIMITED", relationshipSymbolRoot, relationshipSymbolTicker, relationshipSymbolDescription)
+        relationshipNormalizedNSESymbol := "ICICIBANK"
+        relationshipNSEMapped := true
+        relationshipCashSymbol := "NSE:ICICIBANK"
+        relationshipPrimaryReferenceSymbol := "NSE:BANKNIFTY"
+        relationshipSecondaryReferenceSymbol := "NSE:BANKNIFTY"
+        relationshipSectorIndexSymbol := "NSE:BANKNIFTY"
+        relationshipParentIndexSymbol := "NSE:BANKNIFTY"
+        relationshipDatasetStatus := KR252_STATUS_READY
+        relationshipDatasetReason := "Bank-led context; BANKNIFTY is the primary verified benchmark."
+    else if relationshipSymbolMatches("MUTHOOTFIN", "MUTHOOT FINANCE LTD", relationshipSymbolRoot, relationshipSymbolTicker, relationshipSymbolDescription)
+        relationshipNormalizedNSESymbol := "MUTHOOTFIN"
+        relationshipNSEMapped := true
+        relationshipCashSymbol := "NSE:MUTHOOTFIN"
+        relationshipPrimaryReferenceSymbol := "NSE:CNXFINANCE"
+        relationshipSecondaryReferenceSymbol := "NSE:NIFTY"
+        relationshipSectorIndexSymbol := "NSE:CNXFINANCE"
+        relationshipParentIndexSymbol := "NSE:NIFTY"
+        relationshipDatasetStatus := KR252_STATUS_READY
+        relationshipDatasetReason := "Primary listed sector membership is Nifty Financial Services."
+    else if relationshipSymbolMatches("FEDERALBNK", "FEDERAL BANK LTD. (INDIA)", relationshipSymbolRoot, relationshipSymbolTicker, relationshipSymbolDescription)
+        relationshipNormalizedNSESymbol := "FEDERALBNK"
+        relationshipNSEMapped := true
+        relationshipCashSymbol := "NSE:FEDERALBNK"
+        relationshipPrimaryReferenceSymbol := "NSE:BANKNIFTY"
+        relationshipSecondaryReferenceSymbol := "NSE:BANKNIFTY"
+        relationshipSectorIndexSymbol := "NSE:BANKNIFTY"
+        relationshipParentIndexSymbol := "NSE:BANKNIFTY"
+        relationshipDatasetStatus := KR252_STATUS_READY
+        relationshipDatasetReason := "Bank-led context; BANKNIFTY is the primary verified benchmark."
+    else if relationshipSymbolMatches("MARUTI", "MARUTI SUZUKI INDIA LIMITED", relationshipSymbolRoot, relationshipSymbolTicker, relationshipSymbolDescription)
+        relationshipNormalizedNSESymbol := "MARUTI"
+        relationshipNSEMapped := true
+        relationshipCashSymbol := "NSE:MARUTI"
+        relationshipPrimaryReferenceSymbol := "NSE:CNXAUTO"
+        relationshipSecondaryReferenceSymbol := "NSE:NIFTY"
+        relationshipSectorIndexSymbol := "NSE:CNXAUTO"
+        relationshipParentIndexSymbol := "NSE:NIFTY"
+        relationshipDatasetStatus := KR252_STATUS_READY
+        relationshipDatasetReason := "Primary listed sector membership is Nifty Auto."
+    else if relationshipSymbolMatches("WIPRO", "WIPRO LIMITED", relationshipSymbolRoot, relationshipSymbolTicker, relationshipSymbolDescription)
+        relationshipNormalizedNSESymbol := "WIPRO"
+        relationshipNSEMapped := true
+        relationshipCashSymbol := "NSE:WIPRO"
+        relationshipPrimaryReferenceSymbol := "NSE:CNXIT"
+        relationshipSecondaryReferenceSymbol := "NSE:NIFTY"
+        relationshipSectorIndexSymbol := "NSE:CNXIT"
+        relationshipParentIndexSymbol := "NSE:NIFTY"
+        relationshipDatasetStatus := KR252_STATUS_READY
+        relationshipDatasetReason := "Primary listed sector membership is Nifty IT."
+    else if relationshipSymbolMatches("ASIANPAINT", "ASIAN PAINTS LTD.", relationshipSymbolRoot, relationshipSymbolTicker, relationshipSymbolDescription)
+        relationshipNormalizedNSESymbol := "ASIANPAINT"
+        relationshipNSEMapped := true
+        relationshipCashSymbol := "NSE:ASIANPAINT"
+        relationshipPrimaryReferenceSymbol := "NSE:CNXCONSUMPTION"
+        relationshipSecondaryReferenceSymbol := "NSE:NIFTY"
+        relationshipSectorIndexSymbol := "NSE:CNXCONSUMPTION"
+        relationshipParentIndexSymbol := "NSE:NIFTY"
+        relationshipDatasetStatus := KR252_STATUS_READY
+        relationshipDatasetReason := "Primary listed sector membership is Nifty India Consumption."
+    else if relationshipSymbolMatches("PERSISTENT", "PERSISTENT SYSTEMS LIMITED", relationshipSymbolRoot, relationshipSymbolTicker, relationshipSymbolDescription)
+        relationshipNormalizedNSESymbol := "PERSISTENT"
+        relationshipNSEMapped := true
+        relationshipCashSymbol := "NSE:PERSISTENT"
+        relationshipPrimaryReferenceSymbol := "NSE:CNXIT"
+        relationshipSecondaryReferenceSymbol := "NSE:NIFTY"
+        relationshipSectorIndexSymbol := "NSE:CNXIT"
+        relationshipParentIndexSymbol := "NSE:NIFTY"
+        relationshipDatasetStatus := KR252_STATUS_READY
+        relationshipDatasetReason := "Primary listed sector membership is Nifty IT."
+    else if relationshipSymbolMatches("INDIANB", "INDIAN BANK", relationshipSymbolRoot, relationshipSymbolTicker, relationshipSymbolDescription)
+        relationshipNormalizedNSESymbol := "INDIANB"
+        relationshipNSEMapped := true
+        relationshipCashSymbol := "NSE:INDIANB"
+        relationshipPrimaryReferenceSymbol := "NSE:CNXPSUBANK"
+        relationshipSecondaryReferenceSymbol := "NSE:BANKNIFTY"
+        relationshipSectorIndexSymbol := "NSE:CNXPSUBANK"
+        relationshipParentIndexSymbol := "NSE:BANKNIFTY"
+        relationshipDatasetStatus := KR252_STATUS_READY
+        relationshipDatasetReason := "Primary listed sector membership is Nifty PSU Bank; BANKNIFTY remains the parent banking context."
+    else if relationshipSymbolMatches("MCX", "MULTI COMMODITY EXCHANGE OF INDIA LIMITED", relationshipSymbolRoot, relationshipSymbolTicker, relationshipSymbolDescription)
+        relationshipNormalizedNSESymbol := "MCX"
+        relationshipNSEMapped := true
+        relationshipCashSymbol := "NSE:MCX"
+        relationshipPrimaryReferenceSymbol := "NSE:CNXFINANCE"
+        relationshipSecondaryReferenceSymbol := "NSE:NIFTY"
+        relationshipSectorIndexSymbol := "NSE:CNXFINANCE"
+        relationshipParentIndexSymbol := "NSE:NIFTY"
+        relationshipDatasetStatus := KR252_STATUS_READY
+        relationshipDatasetReason := "Primary listed sector membership is Nifty Financial Services."
+    else if relationshipSymbolMatches("ETERNAL", "ETERNAL LIMITED", relationshipSymbolRoot, relationshipSymbolTicker, relationshipSymbolDescription)
+        relationshipNormalizedNSESymbol := "ETERNAL"
+        relationshipNSEMapped := true
+        relationshipCashSymbol := "NSE:ETERNAL"
+        relationshipPrimaryReferenceSymbol := "NSE:CNXSERVICE"
+        relationshipSecondaryReferenceSymbol := "NSE:NIFTY"
+        relationshipSectorIndexSymbol := "NSE:CNXSERVICE"
+        relationshipParentIndexSymbol := "NSE:NIFTY"
+        relationshipDatasetStatus := KR252_STATUS_READY
+        relationshipDatasetReason := "Digital services and platform business."
+    else if relationshipSymbolMatches("SUNPHARMA", "SUN PHARMACEUTICAL INDUSTRIES LIMITED", relationshipSymbolRoot, relationshipSymbolTicker, relationshipSymbolDescription)
+        relationshipNormalizedNSESymbol := "SUNPHARMA"
+        relationshipNSEMapped := true
+        relationshipCashSymbol := "NSE:SUNPHARMA"
+        relationshipPrimaryReferenceSymbol := "NSE:CNXPHARMA"
+        relationshipSecondaryReferenceSymbol := "NSE:NIFTY"
+        relationshipSectorIndexSymbol := "NSE:CNXPHARMA"
+        relationshipParentIndexSymbol := "NSE:NIFTY"
+        relationshipDatasetStatus := KR252_STATUS_READY
+        relationshipDatasetReason := "Primary listed sector membership is Nifty Pharma."
+    else if relationshipSymbolMatches("MOTHERSON", "SAMVARDHANA MOTHERSON INTERNATIONAL LIMITED", relationshipSymbolRoot, relationshipSymbolTicker, relationshipSymbolDescription)
+        relationshipNormalizedNSESymbol := "MOTHERSON"
+        relationshipNSEMapped := true
+        relationshipCashSymbol := "NSE:MOTHERSON"
+        relationshipPrimaryReferenceSymbol := "NSE:CNXAUTO"
+        relationshipSecondaryReferenceSymbol := "NSE:NIFTY"
+        relationshipSectorIndexSymbol := "NSE:CNXAUTO"
+        relationshipParentIndexSymbol := "NSE:NIFTY"
+        relationshipDatasetStatus := KR252_STATUS_READY
+        relationshipDatasetReason := "Primary listed sector membership is Nifty Auto."
+    else if relationshipSymbolMatches("AXISBANK", "AXIS BANK LIMITED", relationshipSymbolRoot, relationshipSymbolTicker, relationshipSymbolDescription)
+        relationshipNormalizedNSESymbol := "AXISBANK"
+        relationshipNSEMapped := true
+        relationshipCashSymbol := "NSE:AXISBANK"
+        relationshipPrimaryReferenceSymbol := "NSE:BANKNIFTY"
+        relationshipSecondaryReferenceSymbol := "NSE:BANKNIFTY"
+        relationshipSectorIndexSymbol := "NSE:BANKNIFTY"
+        relationshipParentIndexSymbol := "NSE:BANKNIFTY"
+        relationshipDatasetStatus := KR252_STATUS_READY
+        relationshipDatasetReason := "Bank-led context; BANKNIFTY is the primary verified benchmark."
+    else if relationshipSymbolMatches("TMPV", "TATA MOTORS PASSENGER VEHICLES LTD", relationshipSymbolRoot, relationshipSymbolTicker, relationshipSymbolDescription)
+        relationshipNormalizedNSESymbol := "TMPV"
+        relationshipNSEMapped := true
+        relationshipCashSymbol := "NSE:TMPV"
+        relationshipPrimaryReferenceSymbol := "NSE:CNXAUTO"
+        relationshipSecondaryReferenceSymbol := "NSE:NIFTY"
+        relationshipSectorIndexSymbol := "NSE:CNXAUTO"
+        relationshipParentIndexSymbol := "NSE:NIFTY"
+        relationshipDatasetStatus := KR252_STATUS_READY
+        relationshipDatasetReason := "Primary listed sector membership is Nifty Auto."
+    else if relationshipSymbolMatches("CANBK", "CANARA BANK", relationshipSymbolRoot, relationshipSymbolTicker, relationshipSymbolDescription)
+        relationshipNormalizedNSESymbol := "CANBK"
+        relationshipNSEMapped := true
+        relationshipCashSymbol := "NSE:CANBK"
+        relationshipPrimaryReferenceSymbol := "NSE:CNXPSUBANK"
+        relationshipSecondaryReferenceSymbol := "NSE:BANKNIFTY"
+        relationshipSectorIndexSymbol := "NSE:CNXPSUBANK"
+        relationshipParentIndexSymbol := "NSE:BANKNIFTY"
+        relationshipDatasetStatus := KR252_STATUS_READY
+        relationshipDatasetReason := "Primary listed sector membership is Nifty PSU Bank; BANKNIFTY remains the parent banking context."
+    else if relationshipSymbolMatches("SRF", "SRF LIMITED", relationshipSymbolRoot, relationshipSymbolTicker, relationshipSymbolDescription)
+        relationshipNormalizedNSESymbol := "SRF"
+        relationshipNSEMapped := true
+        relationshipCashSymbol := "NSE:SRF"
+        relationshipPrimaryReferenceSymbol := "NSE:CNXCOMMODITIES"
+        relationshipSecondaryReferenceSymbol := "NSE:NIFTY"
+        relationshipSectorIndexSymbol := "NSE:CNXCOMMODITIES"
+        relationshipParentIndexSymbol := "NSE:NIFTY"
+        relationshipDatasetStatus := KR252_STATUS_READY
+        relationshipDatasetReason := "Primary listed sector membership is Nifty Commodities."
+    else if relationshipSymbolMatches("PNB", "PUNJAB NATIONAL BANK", relationshipSymbolRoot, relationshipSymbolTicker, relationshipSymbolDescription)
+        relationshipNormalizedNSESymbol := "PNB"
+        relationshipNSEMapped := true
+        relationshipCashSymbol := "NSE:PNB"
+        relationshipPrimaryReferenceSymbol := "NSE:CNXPSUBANK"
+        relationshipSecondaryReferenceSymbol := "NSE:BANKNIFTY"
+        relationshipSectorIndexSymbol := "NSE:CNXPSUBANK"
+        relationshipParentIndexSymbol := "NSE:BANKNIFTY"
+        relationshipDatasetStatus := KR252_STATUS_READY
+        relationshipDatasetReason := "Primary listed sector membership is Nifty PSU Bank; BANKNIFTY remains the parent banking context."
+    else if relationshipSymbolMatches("BAJAJFINSV", "BAJAJ FINSERV LIMITED", relationshipSymbolRoot, relationshipSymbolTicker, relationshipSymbolDescription)
+        relationshipNormalizedNSESymbol := "BAJAJFINSV"
+        relationshipNSEMapped := true
+        relationshipCashSymbol := "NSE:BAJAJFINSV"
+        relationshipPrimaryReferenceSymbol := "NSE:CNXFINANCE"
+        relationshipSecondaryReferenceSymbol := "NSE:NIFTY"
+        relationshipSectorIndexSymbol := "NSE:CNXFINANCE"
+        relationshipParentIndexSymbol := "NSE:NIFTY"
+        relationshipDatasetStatus := KR252_STATUS_READY
+        relationshipDatasetReason := "Primary listed sector membership is Nifty Financial Services."
+    else if relationshipSymbolMatches("DIVISLAB", "DIVI'S LABORATORIES LIMITED", relationshipSymbolRoot, relationshipSymbolTicker, relationshipSymbolDescription)
+        relationshipNormalizedNSESymbol := "DIVISLAB"
+        relationshipNSEMapped := true
+        relationshipCashSymbol := "NSE:DIVISLAB"
+        relationshipPrimaryReferenceSymbol := "NSE:CNXPHARMA"
+        relationshipSecondaryReferenceSymbol := "NSE:NIFTY"
+        relationshipSectorIndexSymbol := "NSE:CNXPHARMA"
+        relationshipParentIndexSymbol := "NSE:NIFTY"
+        relationshipDatasetStatus := KR252_STATUS_READY
+        relationshipDatasetReason := "Primary listed sector membership is Nifty Pharma."
+    else if relationshipSymbolMatches("HCLTECH", "HCL TECHNOLOGIES LIMITED", relationshipSymbolRoot, relationshipSymbolTicker, relationshipSymbolDescription)
+        relationshipNormalizedNSESymbol := "HCLTECH"
+        relationshipNSEMapped := true
+        relationshipCashSymbol := "NSE:HCLTECH"
+        relationshipPrimaryReferenceSymbol := "NSE:CNXIT"
+        relationshipSecondaryReferenceSymbol := "NSE:NIFTY"
+        relationshipSectorIndexSymbol := "NSE:CNXIT"
+        relationshipParentIndexSymbol := "NSE:NIFTY"
+        relationshipDatasetStatus := KR252_STATUS_READY
+        relationshipDatasetReason := "Primary listed sector membership is Nifty IT."
+    else if relationshipSymbolMatches("HDFCLIFE", "HDFC LIFE INSURANCE CO. LTD.", relationshipSymbolRoot, relationshipSymbolTicker, relationshipSymbolDescription)
+        relationshipNormalizedNSESymbol := "HDFCLIFE"
+        relationshipNSEMapped := true
+        relationshipCashSymbol := "NSE:HDFCLIFE"
+        relationshipPrimaryReferenceSymbol := "NSE:CNXFINANCE"
+        relationshipSecondaryReferenceSymbol := "NSE:NIFTY"
+        relationshipSectorIndexSymbol := "NSE:CNXFINANCE"
+        relationshipParentIndexSymbol := "NSE:NIFTY"
+        relationshipDatasetStatus := KR252_STATUS_READY
+        relationshipDatasetReason := "Primary listed sector membership is Nifty Financial Services."
+    else if relationshipSymbolMatches("CDSL", "CENTRAL DEPOSITORY SERVICES (INDIA) LIMITED", relationshipSymbolRoot, relationshipSymbolTicker, relationshipSymbolDescription)
+        relationshipNormalizedNSESymbol := "CDSL"
+        relationshipNSEMapped := true
+        relationshipCashSymbol := "NSE:CDSL"
+        relationshipPrimaryReferenceSymbol := "NSE:CNXFINANCE"
+        relationshipSecondaryReferenceSymbol := "NSE:NIFTY"
+        relationshipSectorIndexSymbol := "NSE:CNXFINANCE"
+        relationshipParentIndexSymbol := "NSE:NIFTY"
+        relationshipDatasetStatus := KR252_STATUS_READY
+        relationshipDatasetReason := "Primary listed sector membership is Nifty Financial Services."
+    else if relationshipSymbolMatches("RBLBANK", "RBL BANK LTD.", relationshipSymbolRoot, relationshipSymbolTicker, relationshipSymbolDescription)
+        relationshipNormalizedNSESymbol := "RBLBANK"
+        relationshipNSEMapped := true
+        relationshipCashSymbol := "NSE:RBLBANK"
+        relationshipPrimaryReferenceSymbol := "NSE:BANKNIFTY"
+        relationshipSecondaryReferenceSymbol := "NSE:BANKNIFTY"
+        relationshipSectorIndexSymbol := "NSE:BANKNIFTY"
+        relationshipParentIndexSymbol := "NSE:BANKNIFTY"
+        relationshipDatasetStatus := KR252_STATUS_READY
+        relationshipDatasetReason := "Commercial bank; Bank Nifty is the appropriate primary benchmark."
+    else if relationshipSymbolMatches("ADANIGREEN", "ADANI GREEN ENERGY LIMITED", relationshipSymbolRoot, relationshipSymbolTicker, relationshipSymbolDescription)
+        relationshipNormalizedNSESymbol := "ADANIGREEN"
+        relationshipNSEMapped := true
+        relationshipCashSymbol := "NSE:ADANIGREEN"
+        relationshipPrimaryReferenceSymbol := "NSE:CNXENERGY"
+        relationshipSecondaryReferenceSymbol := "NSE:NIFTY"
+        relationshipSectorIndexSymbol := "NSE:CNXENERGY"
+        relationshipParentIndexSymbol := "NSE:NIFTY"
+        relationshipDatasetStatus := KR252_STATUS_READY
+        relationshipDatasetReason := "Primary listed sector membership is Nifty Energy."
+    else if relationshipSymbolMatches("TECHM", "TECH MAHINDRA LIMITED", relationshipSymbolRoot, relationshipSymbolTicker, relationshipSymbolDescription)
+        relationshipNormalizedNSESymbol := "TECHM"
+        relationshipNSEMapped := true
+        relationshipCashSymbol := "NSE:TECHM"
+        relationshipPrimaryReferenceSymbol := "NSE:CNXIT"
+        relationshipSecondaryReferenceSymbol := "NSE:NIFTY"
+        relationshipSectorIndexSymbol := "NSE:CNXIT"
+        relationshipParentIndexSymbol := "NSE:NIFTY"
+        relationshipDatasetStatus := KR252_STATUS_READY
+        relationshipDatasetReason := "Primary listed sector membership is Nifty IT."
+    else if relationshipSymbolMatches("M&M", "MAHINDRA & MAHINDRA LTD.", relationshipSymbolRoot, relationshipSymbolTicker, relationshipSymbolDescription)
+        relationshipNormalizedNSESymbol := "M&M"
+        relationshipNSEMapped := true
+        relationshipCashSymbol := "NSE:M&M"
+        relationshipPrimaryReferenceSymbol := "NSE:CNXAUTO"
+        relationshipSecondaryReferenceSymbol := "NSE:NIFTY"
+        relationshipSectorIndexSymbol := "NSE:CNXAUTO"
+        relationshipParentIndexSymbol := "NSE:NIFTY"
+        relationshipDatasetStatus := KR252_STATUS_READY
+        relationshipDatasetReason := "Primary listed sector membership is Nifty Auto."
+    else if relationshipSymbolMatches("ADANIENT", "ADANI ENTERPRISES LIMITED", relationshipSymbolRoot, relationshipSymbolTicker, relationshipSymbolDescription)
+        relationshipNormalizedNSESymbol := "ADANIENT"
+        relationshipNSEMapped := true
+        relationshipCashSymbol := "NSE:ADANIENT"
+        relationshipPrimaryReferenceSymbol := "NSE:CNXMETAL"
+        relationshipSecondaryReferenceSymbol := "NSE:NIFTY"
+        relationshipSectorIndexSymbol := "NSE:CNXMETAL"
+        relationshipParentIndexSymbol := "NSE:NIFTY"
+        relationshipDatasetStatus := KR252_STATUS_READY
+        relationshipDatasetReason := "Primary listed sector membership is Nifty Metal."
+    else if relationshipSymbolMatches("CIPLA", "CIPLA LTD", relationshipSymbolRoot, relationshipSymbolTicker, relationshipSymbolDescription)
+        relationshipNormalizedNSESymbol := "CIPLA"
+        relationshipNSEMapped := true
+        relationshipCashSymbol := "NSE:CIPLA"
+        relationshipPrimaryReferenceSymbol := "NSE:CNXPHARMA"
+        relationshipSecondaryReferenceSymbol := "NSE:NIFTY"
+        relationshipSectorIndexSymbol := "NSE:CNXPHARMA"
+        relationshipParentIndexSymbol := "NSE:NIFTY"
+        relationshipDatasetStatus := KR252_STATUS_READY
+        relationshipDatasetReason := "Primary listed sector membership is Nifty Pharma."
+    else if relationshipSymbolMatches("COFORGE", "COFORGE LIMITED", relationshipSymbolRoot, relationshipSymbolTicker, relationshipSymbolDescription)
+        relationshipNormalizedNSESymbol := "COFORGE"
+        relationshipNSEMapped := true
+        relationshipCashSymbol := "NSE:COFORGE"
+        relationshipPrimaryReferenceSymbol := "NSE:CNXIT"
+        relationshipSecondaryReferenceSymbol := "NSE:NIFTY"
+        relationshipSectorIndexSymbol := "NSE:CNXIT"
+        relationshipParentIndexSymbol := "NSE:NIFTY"
+        relationshipDatasetStatus := KR252_STATUS_READY
+        relationshipDatasetReason := "Primary listed sector membership is Nifty IT."
+    else if relationshipSymbolMatches("HINDUNILVR", "HINDUSTAN UNILEVER LIMITED", relationshipSymbolRoot, relationshipSymbolTicker, relationshipSymbolDescription)
+        relationshipNormalizedNSESymbol := "HINDUNILVR"
+        relationshipNSEMapped := true
+        relationshipCashSymbol := "NSE:HINDUNILVR"
+        relationshipPrimaryReferenceSymbol := "NSE:CNXFMCG"
+        relationshipSecondaryReferenceSymbol := "NSE:NIFTY"
+        relationshipSectorIndexSymbol := "NSE:CNXFMCG"
+        relationshipParentIndexSymbol := "NSE:NIFTY"
+        relationshipDatasetStatus := KR252_STATUS_READY
+        relationshipDatasetReason := "Primary listed sector membership is Nifty FMCG."
+    else if relationshipSymbolMatches("CUMMINSIND", "CUMMINS INDIA LIMITED", relationshipSymbolRoot, relationshipSymbolTicker, relationshipSymbolDescription)
+        relationshipNormalizedNSESymbol := "CUMMINSIND"
+        relationshipNSEMapped := true
+        relationshipCashSymbol := "NSE:CUMMINSIND"
+        relationshipPrimaryReferenceSymbol := "NSE:CNXINFRA"
+        relationshipSecondaryReferenceSymbol := "NSE:NIFTY"
+        relationshipSectorIndexSymbol := "NSE:CNXINFRA"
+        relationshipParentIndexSymbol := "NSE:NIFTY"
+        relationshipDatasetStatus := KR252_STATUS_READY
+        relationshipDatasetReason := "Primary listed sector membership is Nifty Infrastructure."
+    else if relationshipSymbolMatches("RELIANCE", "RELIANCE INDUSTRIES LIMITED", relationshipSymbolRoot, relationshipSymbolTicker, relationshipSymbolDescription)
+        relationshipNormalizedNSESymbol := "RELIANCE"
+        relationshipNSEMapped := true
+        relationshipCashSymbol := "NSE:RELIANCE"
+        relationshipPrimaryReferenceSymbol := "NSE:CNXENERGY"
+        relationshipSecondaryReferenceSymbol := "NSE:NIFTY"
+        relationshipSectorIndexSymbol := "NSE:CNXENERGY"
+        relationshipParentIndexSymbol := "NSE:NIFTY"
+        relationshipDatasetStatus := KR252_STATUS_READY
+        relationshipDatasetReason := "Primary listed sector membership is Nifty Energy."
+    else if relationshipSymbolMatches("BSE", "BSE LTD.", relationshipSymbolRoot, relationshipSymbolTicker, relationshipSymbolDescription)
+        relationshipNormalizedNSESymbol := "BSE"
+        relationshipNSEMapped := true
+        relationshipCashSymbol := "NSE:BSE"
+        relationshipPrimaryReferenceSymbol := "NSE:CNXFINANCE"
+        relationshipSecondaryReferenceSymbol := "NSE:NIFTY"
+        relationshipSectorIndexSymbol := "NSE:CNXFINANCE"
+        relationshipParentIndexSymbol := "NSE:NIFTY"
+        relationshipDatasetStatus := KR252_STATUS_READY
+        relationshipDatasetReason := "Primary listed sector membership is Nifty Financial Services."
+    else if relationshipSymbolMatches("TITAN", "TITAN COMPANY LIMITED", relationshipSymbolRoot, relationshipSymbolTicker, relationshipSymbolDescription)
+        relationshipNormalizedNSESymbol := "TITAN"
+        relationshipNSEMapped := true
+        relationshipCashSymbol := "NSE:TITAN"
+        relationshipPrimaryReferenceSymbol := "NSE:CNXCONSUMPTION"
+        relationshipSecondaryReferenceSymbol := "NSE:NIFTY"
+        relationshipSectorIndexSymbol := "NSE:CNXCONSUMPTION"
+        relationshipParentIndexSymbol := "NSE:NIFTY"
+        relationshipDatasetStatus := KR252_STATUS_READY
+        relationshipDatasetReason := "Primary listed sector membership is Nifty India Consumption."
+    else if relationshipSymbolMatches("KOTAKBANK", "KOTAK MAHINDRA BANK LIMITED", relationshipSymbolRoot, relationshipSymbolTicker, relationshipSymbolDescription)
+        relationshipNormalizedNSESymbol := "KOTAKBANK"
+        relationshipNSEMapped := true
+        relationshipCashSymbol := "NSE:KOTAKBANK"
+        relationshipPrimaryReferenceSymbol := "NSE:BANKNIFTY"
+        relationshipSecondaryReferenceSymbol := "NSE:BANKNIFTY"
+        relationshipSectorIndexSymbol := "NSE:BANKNIFTY"
+        relationshipParentIndexSymbol := "NSE:BANKNIFTY"
+        relationshipDatasetStatus := KR252_STATUS_READY
+        relationshipDatasetReason := "Bank-led context; BANKNIFTY is the primary verified benchmark."
+    else if relationshipSymbolMatches("RECLTD", "REC LIMITED", relationshipSymbolRoot, relationshipSymbolTicker, relationshipSymbolDescription)
+        relationshipNormalizedNSESymbol := "RECLTD"
+        relationshipNSEMapped := true
+        relationshipCashSymbol := "NSE:RECLTD"
+        relationshipPrimaryReferenceSymbol := "NSE:CNXFINANCE"
+        relationshipSecondaryReferenceSymbol := "NSE:NIFTY"
+        relationshipSectorIndexSymbol := "NSE:CNXFINANCE"
+        relationshipParentIndexSymbol := "NSE:NIFTY"
+        relationshipDatasetStatus := KR252_STATUS_READY
+        relationshipDatasetReason := "Primary listed sector membership is Nifty Financial Services."
+    else if relationshipSymbolMatches("APOLLOHOSP", "APOLLO HOSPITALS ENTERPRISE LIMITED", relationshipSymbolRoot, relationshipSymbolTicker, relationshipSymbolDescription)
+        relationshipNormalizedNSESymbol := "APOLLOHOSP"
+        relationshipNSEMapped := true
+        relationshipCashSymbol := "NSE:APOLLOHOSP"
+        relationshipPrimaryReferenceSymbol := "NSE:CNXPHARMA"
+        relationshipSecondaryReferenceSymbol := "NSE:NIFTY"
+        relationshipSectorIndexSymbol := "NSE:CNXPHARMA"
+        relationshipParentIndexSymbol := "NSE:NIFTY"
+        relationshipDatasetStatus := KR252_STATUS_READY
+        relationshipDatasetReason := "Hospital operator; Pharma is the closest verified healthcare proxy."
+    else if relationshipSymbolMatches("JIOFIN", "JIO FINANCIAL SERVICES LIMITED", relationshipSymbolRoot, relationshipSymbolTicker, relationshipSymbolDescription)
+        relationshipNormalizedNSESymbol := "JIOFIN"
+        relationshipNSEMapped := true
+        relationshipCashSymbol := "NSE:JIOFIN"
+        relationshipPrimaryReferenceSymbol := "NSE:CNXFINANCE"
+        relationshipSecondaryReferenceSymbol := "NSE:NIFTY"
+        relationshipSectorIndexSymbol := "NSE:CNXFINANCE"
+        relationshipParentIndexSymbol := "NSE:NIFTY"
+        relationshipDatasetStatus := KR252_STATUS_READY
+        relationshipDatasetReason := "Primary listed sector membership is Nifty Financial Services."
+    else if relationshipSymbolMatches("EICHERMOT", "EICHER MOTORS LIMITED", relationshipSymbolRoot, relationshipSymbolTicker, relationshipSymbolDescription)
+        relationshipNormalizedNSESymbol := "EICHERMOT"
+        relationshipNSEMapped := true
+        relationshipCashSymbol := "NSE:EICHERMOT"
+        relationshipPrimaryReferenceSymbol := "NSE:CNXAUTO"
+        relationshipSecondaryReferenceSymbol := "NSE:NIFTY"
+        relationshipSectorIndexSymbol := "NSE:CNXAUTO"
+        relationshipParentIndexSymbol := "NSE:NIFTY"
+        relationshipDatasetStatus := KR252_STATUS_READY
+        relationshipDatasetReason := "Primary listed sector membership is Nifty Auto."
+    else if relationshipSymbolMatches("LT", "LARSEN & TOUBRO LIMITED", relationshipSymbolRoot, relationshipSymbolTicker, relationshipSymbolDescription)
+        relationshipNormalizedNSESymbol := "LT"
+        relationshipNSEMapped := true
+        relationshipCashSymbol := "NSE:LT"
+        relationshipPrimaryReferenceSymbol := "NSE:CNXINFRA"
+        relationshipSecondaryReferenceSymbol := "NSE:NIFTY"
+        relationshipSectorIndexSymbol := "NSE:CNXINFRA"
+        relationshipParentIndexSymbol := "NSE:NIFTY"
+        relationshipDatasetStatus := KR252_STATUS_READY
+        relationshipDatasetReason := "Primary listed sector membership is Nifty Infrastructure."
+    else if relationshipSymbolMatches("ADANIPORTS", "ADANI PORTS & SPECIAL ECONOMIC ZONE LTD", relationshipSymbolRoot, relationshipSymbolTicker, relationshipSymbolDescription)
+        relationshipNormalizedNSESymbol := "ADANIPORTS"
+        relationshipNSEMapped := true
+        relationshipCashSymbol := "NSE:ADANIPORTS"
+        relationshipPrimaryReferenceSymbol := "NSE:CNXINFRA"
+        relationshipSecondaryReferenceSymbol := "NSE:NIFTY"
+        relationshipSectorIndexSymbol := "NSE:CNXINFRA"
+        relationshipParentIndexSymbol := "NSE:NIFTY"
+        relationshipDatasetStatus := KR252_STATUS_READY
+        relationshipDatasetReason := "Primary listed sector membership is Nifty Infrastructure."
+    else if relationshipSymbolMatches("VEDL", "VEDANTA LIMITED", relationshipSymbolRoot, relationshipSymbolTicker, relationshipSymbolDescription)
+        relationshipNormalizedNSESymbol := "VEDL"
+        relationshipNSEMapped := true
+        relationshipCashSymbol := "NSE:VEDL"
+        relationshipPrimaryReferenceSymbol := "NSE:CNXMETAL"
+        relationshipSecondaryReferenceSymbol := "NSE:NIFTY"
+        relationshipSectorIndexSymbol := "NSE:CNXMETAL"
+        relationshipParentIndexSymbol := "NSE:NIFTY"
+        relationshipDatasetStatus := KR252_STATUS_READY
+        relationshipDatasetReason := "Primary listed sector membership is Nifty Metal."
+    else if relationshipSymbolMatches("BHARATFORG", "BHARAT FORGE LTD", relationshipSymbolRoot, relationshipSymbolTicker, relationshipSymbolDescription)
+        relationshipNormalizedNSESymbol := "BHARATFORG"
+        relationshipNSEMapped := true
+        relationshipCashSymbol := "NSE:BHARATFORG"
+        relationshipPrimaryReferenceSymbol := "NSE:CNXAUTO"
+        relationshipSecondaryReferenceSymbol := "NSE:NIFTY"
+        relationshipSectorIndexSymbol := "NSE:CNXAUTO"
+        relationshipParentIndexSymbol := "NSE:NIFTY"
+        relationshipDatasetStatus := KR252_STATUS_READY
+        relationshipDatasetReason := "Primary listed sector membership is Nifty Auto."
+    else if relationshipSymbolMatches("ITC", "ITC LIMITED", relationshipSymbolRoot, relationshipSymbolTicker, relationshipSymbolDescription)
+        relationshipNormalizedNSESymbol := "ITC"
+        relationshipNSEMapped := true
+        relationshipCashSymbol := "NSE:ITC"
+        relationshipPrimaryReferenceSymbol := "NSE:CNXFMCG"
+        relationshipSecondaryReferenceSymbol := "NSE:NIFTY"
+        relationshipSectorIndexSymbol := "NSE:CNXFMCG"
+        relationshipParentIndexSymbol := "NSE:NIFTY"
+        relationshipDatasetStatus := KR252_STATUS_READY
+        relationshipDatasetReason := "Primary listed sector membership is Nifty FMCG."
+    else if relationshipSymbolMatches("POLICYBZR", "PB FINTECH LIMITED", relationshipSymbolRoot, relationshipSymbolTicker, relationshipSymbolDescription)
+        relationshipNormalizedNSESymbol := "POLICYBZR"
+        relationshipNSEMapped := true
+        relationshipCashSymbol := "NSE:POLICYBZR"
+        relationshipPrimaryReferenceSymbol := "NSE:CNXFINANCE"
+        relationshipSecondaryReferenceSymbol := "NSE:NIFTY"
+        relationshipSectorIndexSymbol := "NSE:CNXFINANCE"
+        relationshipParentIndexSymbol := "NSE:NIFTY"
+        relationshipDatasetStatus := KR252_STATUS_READY
+        relationshipDatasetReason := "Primary listed sector membership is Nifty Financial Services."
+    else if relationshipSymbolMatches("SBIN", "STATE BANK OF INDIA", relationshipSymbolRoot, relationshipSymbolTicker, relationshipSymbolDescription)
+        relationshipNormalizedNSESymbol := "SBIN"
+        relationshipNSEMapped := true
+        relationshipCashSymbol := "NSE:SBIN"
+        relationshipPrimaryReferenceSymbol := "NSE:CNXPSUBANK"
+        relationshipSecondaryReferenceSymbol := "NSE:BANKNIFTY"
+        relationshipSectorIndexSymbol := "NSE:CNXPSUBANK"
+        relationshipParentIndexSymbol := "NSE:BANKNIFTY"
+        relationshipDatasetStatus := KR252_STATUS_READY
+        relationshipDatasetReason := "Primary listed sector membership is Nifty PSU Bank; BANKNIFTY remains the parent banking context."
+    else if relationshipSymbolMatches("BAJFINANCE", "BAJAJ FINANCE LIMITED", relationshipSymbolRoot, relationshipSymbolTicker, relationshipSymbolDescription)
+        relationshipNormalizedNSESymbol := "BAJFINANCE"
+        relationshipNSEMapped := true
+        relationshipCashSymbol := "NSE:BAJFINANCE"
+        relationshipPrimaryReferenceSymbol := "NSE:CNXFINANCE"
+        relationshipSecondaryReferenceSymbol := "NSE:NIFTY"
+        relationshipSectorIndexSymbol := "NSE:CNXFINANCE"
+        relationshipParentIndexSymbol := "NSE:NIFTY"
+        relationshipDatasetStatus := KR252_STATUS_READY
+        relationshipDatasetReason := "Primary listed sector membership is Nifty Financial Services."
+    else if relationshipSymbolMatches("HDFCBANK", "HDFC BANK LIMITED", relationshipSymbolRoot, relationshipSymbolTicker, relationshipSymbolDescription)
+        relationshipNormalizedNSESymbol := "HDFCBANK"
+        relationshipNSEMapped := true
+        relationshipCashSymbol := "NSE:HDFCBANK"
+        relationshipPrimaryReferenceSymbol := "NSE:BANKNIFTY"
+        relationshipSecondaryReferenceSymbol := "NSE:BANKNIFTY"
+        relationshipSectorIndexSymbol := "NSE:BANKNIFTY"
+        relationshipParentIndexSymbol := "NSE:BANKNIFTY"
+        relationshipDatasetStatus := KR252_STATUS_READY
+        relationshipDatasetReason := "Bank-led context; BANKNIFTY is the primary verified benchmark."
+    else if relationshipSymbolMatches("TATASTEEL", "TATA STEEL LIMITED", relationshipSymbolRoot, relationshipSymbolTicker, relationshipSymbolDescription)
+        relationshipNormalizedNSESymbol := "TATASTEEL"
+        relationshipNSEMapped := true
+        relationshipCashSymbol := "NSE:TATASTEEL"
+        relationshipPrimaryReferenceSymbol := "NSE:CNXMETAL"
+        relationshipSecondaryReferenceSymbol := "NSE:NIFTY"
+        relationshipSectorIndexSymbol := "NSE:CNXMETAL"
+        relationshipParentIndexSymbol := "NSE:NIFTY"
+        relationshipDatasetStatus := KR252_STATUS_READY
+        relationshipDatasetReason := "Primary listed sector membership is Nifty Metal."
+    else if relationshipSymbolMatches("PAYTM", "ONE 97 COMMUNICATIONS LTD.", relationshipSymbolRoot, relationshipSymbolTicker, relationshipSymbolDescription)
+        relationshipNormalizedNSESymbol := "PAYTM"
+        relationshipNSEMapped := true
+        relationshipCashSymbol := "NSE:PAYTM"
+        relationshipPrimaryReferenceSymbol := "NSE:CNXFINANCE"
+        relationshipSecondaryReferenceSymbol := "NSE:NIFTY"
+        relationshipSectorIndexSymbol := "NSE:CNXFINANCE"
+        relationshipParentIndexSymbol := "NSE:NIFTY"
+        relationshipDatasetStatus := KR252_STATUS_READY
+        relationshipDatasetReason := "Primary listed sector membership is Nifty Financial Services."
+    else if relationshipSymbolMatches("HEROMOTOCO", "HERO MOTOCORP LIMITED", relationshipSymbolRoot, relationshipSymbolTicker, relationshipSymbolDescription)
+        relationshipNormalizedNSESymbol := "HEROMOTOCO"
+        relationshipNSEMapped := true
+        relationshipCashSymbol := "NSE:HEROMOTOCO"
+        relationshipPrimaryReferenceSymbol := "NSE:CNXAUTO"
+        relationshipSecondaryReferenceSymbol := "NSE:NIFTY"
+        relationshipSectorIndexSymbol := "NSE:CNXAUTO"
+        relationshipParentIndexSymbol := "NSE:NIFTY"
+        relationshipDatasetStatus := KR252_STATUS_READY
+        relationshipDatasetReason := "Primary listed sector membership is Nifty Auto."
+    else if relationshipSymbolMatches("INDIGO", "INTERGLOBE AVIATION LTD", relationshipSymbolRoot, relationshipSymbolTicker, relationshipSymbolDescription)
+        relationshipNormalizedNSESymbol := "INDIGO"
+        relationshipNSEMapped := true
+        relationshipCashSymbol := "NSE:INDIGO"
+        relationshipPrimaryReferenceSymbol := "NSE:CNXINFRA"
+        relationshipSecondaryReferenceSymbol := "NSE:NIFTY"
+        relationshipSectorIndexSymbol := "NSE:CNXINFRA"
+        relationshipParentIndexSymbol := "NSE:NIFTY"
+        relationshipDatasetStatus := KR252_STATUS_READY
+        relationshipDatasetReason := "Primary listed sector membership includes Nifty Infrastructure."
+    else if relationshipSymbolMatches("KAYNES", "KAYNES TECHNOLOGY INDIA LTD.", relationshipSymbolRoot, relationshipSymbolTicker, relationshipSymbolDescription)
+        relationshipNormalizedNSESymbol := "KAYNES"
+        relationshipNSEMapped := true
+        relationshipCashSymbol := "NSE:KAYNES"
+        relationshipPrimaryReferenceSymbol := "NSE:CNXCOMMODITIES"
+        relationshipSecondaryReferenceSymbol := "NSE:NIFTY"
+        relationshipSectorIndexSymbol := "NSE:CNXCOMMODITIES"
+        relationshipParentIndexSymbol := "NSE:NIFTY"
+        relationshipDatasetStatus := KR252_STATUS_REVIEW
+        relationshipDatasetReason := "Electronics manufacturing lacks a dedicated verified benchmark; provisional proxy only."
+    else if relationshipSymbolMatches("UPL", "UPL LIMITED", relationshipSymbolRoot, relationshipSymbolTicker, relationshipSymbolDescription)
+        relationshipNormalizedNSESymbol := "UPL"
+        relationshipNSEMapped := true
+        relationshipCashSymbol := "NSE:UPL"
+        relationshipPrimaryReferenceSymbol := "NSE:CNXCOMMODITIES"
+        relationshipSecondaryReferenceSymbol := "NSE:NIFTY"
+        relationshipSectorIndexSymbol := "NSE:CNXCOMMODITIES"
+        relationshipParentIndexSymbol := "NSE:NIFTY"
+        relationshipDatasetStatus := KR252_STATUS_READY
+        relationshipDatasetReason := "Primary listed sector membership is Nifty Commodities."
+    else if relationshipSymbolMatches("BAJAJ_AUTO", "BAJAJ AUTO LIMITED", relationshipSymbolRoot, relationshipSymbolTicker, relationshipSymbolDescription)
+        relationshipNormalizedNSESymbol := "BAJAJ_AUTO"
+        relationshipNSEMapped := true
+        relationshipCashSymbol := "NSE:BAJAJ_AUTO"
+        relationshipPrimaryReferenceSymbol := "NSE:CNXAUTO"
+        relationshipSecondaryReferenceSymbol := "NSE:NIFTY"
+        relationshipSectorIndexSymbol := "NSE:CNXAUTO"
+        relationshipParentIndexSymbol := "NSE:NIFTY"
+        relationshipDatasetStatus := KR252_STATUS_READY
+        relationshipDatasetReason := "Primary listed sector membership is Nifty Auto."
+    else if relationshipSymbolMatches("HINDALCO", "HINDALCO INDUSTRIES LIMITED", relationshipSymbolRoot, relationshipSymbolTicker, relationshipSymbolDescription)
+        relationshipNormalizedNSESymbol := "HINDALCO"
+        relationshipNSEMapped := true
+        relationshipCashSymbol := "NSE:HINDALCO"
+        relationshipPrimaryReferenceSymbol := "NSE:CNXMETAL"
+        relationshipSecondaryReferenceSymbol := "NSE:NIFTY"
+        relationshipSectorIndexSymbol := "NSE:CNXMETAL"
+        relationshipParentIndexSymbol := "NSE:NIFTY"
+        relationshipDatasetStatus := KR252_STATUS_READY
+        relationshipDatasetReason := "Primary listed sector membership is Nifty Metal."
+    else if relationshipSymbolMatches("IDEA", "VODAFONE IDEA LTD", relationshipSymbolRoot, relationshipSymbolTicker, relationshipSymbolDescription)
+        relationshipNormalizedNSESymbol := "IDEA"
+        relationshipNSEMapped := true
+        relationshipCashSymbol := "NSE:IDEA"
+        relationshipPrimaryReferenceSymbol := "NSE:CNXSERVICE"
+        relationshipSecondaryReferenceSymbol := "NSE:NIFTY"
+        relationshipSectorIndexSymbol := "NSE:CNXSERVICE"
+        relationshipParentIndexSymbol := "NSE:NIFTY"
+        relationshipDatasetStatus := KR252_STATUS_READY
+        relationshipDatasetReason := "Telecom service provider; Services is the closest verified benchmark."
+    else if relationshipSymbolMatches("VBL", "VARUN BEVERAGES LTD.", relationshipSymbolRoot, relationshipSymbolTicker, relationshipSymbolDescription)
+        relationshipNormalizedNSESymbol := "VBL"
+        relationshipNSEMapped := true
+        relationshipCashSymbol := "NSE:VBL"
+        relationshipPrimaryReferenceSymbol := "NSE:CNXFMCG"
+        relationshipSecondaryReferenceSymbol := "NSE:NIFTY"
+        relationshipSectorIndexSymbol := "NSE:CNXFMCG"
+        relationshipParentIndexSymbol := "NSE:NIFTY"
+        relationshipDatasetStatus := KR252_STATUS_READY
+        relationshipDatasetReason := "Primary listed sector membership is Nifty FMCG."
 // END GENERATED NSE RELATIONSHIP MAPPING
 
 bool relationshipPrimaryReferenceValid = relationshipPrimaryReferenceSymbol != "" and relationshipPrimaryReferenceSymbol != "UNKNOWN"
@@ -411,9 +1335,14 @@ if outSupportedInstrument
         relationshipStatus := relationshipReady ? KR252_STATUS_READY : KR252_STATUS_REVIEW
         relationshipReason := relationshipReady ? "Global Reference Ready" : "Missing Global Reference"
     else if relationshipIsNSEFuture
-        relationshipReady := relationshipCashReady and relationshipSectorReady and relationshipParentReady
-        relationshipStatus := relationshipReady ? KR252_STATUS_READY : KR252_STATUS_REVIEW
-        relationshipReason := not relationshipCashReady ? "Missing NSE Cash Symbol" : not relationshipSectorReady ? "Missing NSE Sector Index" : not relationshipParentReady ? "Missing NSE Parent Index" : "NSE Relationship Ready"
+        if relationshipNSEMapped
+            relationshipReady := relationshipDatasetStatus == KR252_STATUS_READY and relationshipCashReady and relationshipSectorReady and relationshipParentReady
+            relationshipStatus := relationshipDatasetStatus
+            relationshipReason := relationshipReady ? "NSE Relationship Ready" : relationshipDatasetReason
+        else
+            relationshipReady := false
+            relationshipStatus := KR252_STATUS_UNSUPPORTED
+            relationshipReason := "Symbol Not In KRONOS Universe"
 
 //==================================================================
 // KR-252.30 PUBLIC INTERFACE

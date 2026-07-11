@@ -43,6 +43,18 @@ Rows marked `READY` have a clear primary benchmark from verified watchlist indic
 
 KRONOS uses one primary sector benchmark per stock so downstream engines receive a stable dependency relationship. Factor indices, equal-weight variants, broad-market indices, and multi-index memberships are not used as primary sector benchmarks.
 
+## Generated Pine Mapping
+
+KR-252 now contains a generated 91-stock NSE relationship map produced from this CSV. The CSV remains the source of truth, and `scripts/generate_nse_relationship_mapping.py` rewrites only the generated marker block inside KR-252.
+
+Current generated status:
+
+- 91 NSE stock relationship rows
+- 90 READY rows
+- 1 REVIEW row: `KAYNES`
+- NSE market-data retrieval is not yet connected
+- NSE Swing remains under development and is not declared complete for live execution
+
 ## Pine Generation
 
 Pine mappings will later be generated from this CSV into KR-252. The CSV is the source of truth; KR-252 should not hand-maintain the full NSE relationship map once generation begins.
