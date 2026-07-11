@@ -182,11 +182,21 @@ string assetTradingProfile    = "Unknown"
 // Asset Identification
 //------------------------------
 
-bool krIsGold       = (isCOMEX and krRootUpper == "GC") or str.contains(krTickerUpper, "GOLD") or str.contains(krDescriptionUpper, "GOLD")
-bool krIsSilver     = (isCOMEX and krRootUpper == "SI") or str.contains(krTickerUpper, "SILVER") or str.contains(krDescriptionUpper, "SILVER")
-bool krIsCopper     = (isCOMEX and krRootUpper == "HG") or str.contains(krTickerUpper, "COPPER") or str.contains(krDescriptionUpper, "COPPER")
-bool krIsCrudeOil   = (isNYMEX and krRootUpper == "CL") or str.contains(krTickerUpper, "CRUDE") or str.contains(krDescriptionUpper, "CRUDE")
-bool krIsNaturalGas = (isNYMEX and krRootUpper == "NG") or str.contains(krTickerUpper, "NATURALGAS") or str.contains(krDescriptionUpper, "NATURAL GAS")
+bool krRootGold = isCOMEX and krRootUpper == "GC"
+bool krRootSilver = isCOMEX and krRootUpper == "SI"
+bool krRootCopper = isCOMEX and krRootUpper == "HG"
+bool krRootCrudeOil = (isNYMEX and krRootUpper == "CL") or (isMCX and str.contains(krRootUpper, "CRUDE"))
+bool krRootNaturalGas = (isNYMEX and krRootUpper == "NG") or (isMCX and (krRootUpper == "NG" or str.contains(krRootUpper, "NATGAS") or str.contains(krRootUpper, "NATURALGAS") or str.contains(krRootUpper, "NATURAL_GAS")))
+bool krTickerCrudeOil = str.contains(krTickerUpper, "CRUDE") or str.contains(krTickerUpper, "CRUDEOIL")
+bool krTickerNaturalGas = str.contains(krTickerUpper, "NATGAS") or str.contains(krTickerUpper, "NATURALGAS") or str.contains(krTickerUpper, "NATURAL_GAS")
+bool krDescriptionCrudeOil = str.contains(krDescriptionUpper, "CRUDE") or str.contains(krDescriptionUpper, "CRUDE OIL")
+bool krDescriptionNaturalGas = str.contains(krDescriptionUpper, "NATGAS") or str.contains(krDescriptionUpper, "NATURAL GAS") or str.contains(krDescriptionUpper, "NATURALGAS") or str.contains(krDescriptionUpper, "NATURAL_GAS")
+
+bool krIsGold = krRootGold or str.contains(krTickerUpper, "GOLD") or str.contains(krDescriptionUpper, "GOLD")
+bool krIsSilver = krRootSilver or str.contains(krTickerUpper, "SILVER") or str.contains(krDescriptionUpper, "SILVER")
+bool krIsCopper = krRootCopper or str.contains(krTickerUpper, "COPPER") or str.contains(krDescriptionUpper, "COPPER")
+bool krIsCrudeOil = krRootCrudeOil or krTickerCrudeOil or krDescriptionCrudeOil
+bool krIsNaturalGas = krRootNaturalGas or krTickerNaturalGas or krDescriptionNaturalGas
 
 if krIsGold
     krAssetName    := "Gold"
