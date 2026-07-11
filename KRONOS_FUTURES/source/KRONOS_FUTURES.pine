@@ -1420,6 +1420,168 @@ outSecondaryReferenceSymbol := outRelationshipSecondaryReferenceSymbol
 //==================================================================
 
 //==================================================================
+// KR-260A : Market Data Adapter
+// Version : 0.1.0
+// Status  : FOUNDATION
+//
+// Purpose:
+// Translates KR-251/KR-252 configuration outputs into a standardized
+// market-data routing contract. KR-260A performs symbol routing only.
+//
+// Contract:
+// - Consumes only public outputs from KR-251 and KR-252.
+// - No request.security calls.
+// - No OHLCV retrieval or normalization.
+// - No indicators, relative strength, decisions, alerts, entries,
+//   exits, stops, targets or trade management.
+// - KR-260 integration is pending.
+//==================================================================
+
+//==================================================================
+// KR-260A.10 ROUTE CONSTANTS
+//==================================================================
+
+const string KR260A_STATUS_READY = "READY"
+const string KR260A_STATUS_REVIEW = "REVIEW"
+const string KR260A_STATUS_UNSUPPORTED = "UNSUPPORTED"
+const string KR260A_STATUS_INVALID_CONFIG = "INVALID CONFIG"
+
+//==================================================================
+// KR-260A.20 ROUTE INPUT CLASSIFICATION
+//==================================================================
+
+marketDataRouteSymbolValid(string symbol) =>
+    symbol != "" and symbol != "UNKNOWN"
+
+bool marketDataRouteIsMCXMetals = outModelName == "MCX Metals Swing"
+bool marketDataRouteIsMCXEnergy = outModelName == "MCX Energy Swing"
+bool marketDataRouteIsNSEEquity = outModelName == "NSE Equity Swing"
+bool marketDataRouteIsNSEIndex = outModelName == "NSE Index Swing"
+bool marketDataRouteIsSupportedModel = marketDataRouteIsMCXMetals or marketDataRouteIsMCXEnergy or marketDataRouteIsNSEEquity or marketDataRouteIsNSEIndex
+
+//==================================================================
+// KR-260A.30 ROUTE SYMBOLS
+//==================================================================
+
+string marketDataRouteAnalysisSymbol = outAnalysisSymbol
+string marketDataRouteExecutionInstrumentText = outExecutionInstrumentText
+string marketDataRoutePrimaryReferenceSymbol = ""
+string marketDataRouteSecondaryReferenceSymbol = ""
+string marketDataRouteSectorSymbol = ""
+string marketDataRouteParentIndexSymbol = ""
+bool marketDataRouteUsesCashAnalysis = false
+bool marketDataRouteUsesIndexAnalysis = false
+bool marketDataRouteUsesFuturesAnalysis = false
+
+if marketDataRouteIsMCXMetals or marketDataRouteIsMCXEnergy
+    marketDataRoutePrimaryReferenceSymbol := outRelationshipPrimaryReferenceSymbol
+    marketDataRouteUsesFuturesAnalysis := true
+else if marketDataRouteIsNSEEquity
+    marketDataRoutePrimaryReferenceSymbol := outRelationshipPrimaryReferenceSymbol
+    marketDataRouteSecondaryReferenceSymbol := outRelationshipSecondaryReferenceSymbol
+    marketDataRouteSectorSymbol := outRelationshipSectorIndexSymbol
+    marketDataRouteParentIndexSymbol := outRelationshipParentIndexSymbol
+    marketDataRouteUsesCashAnalysis := true
+else if marketDataRouteIsNSEIndex
+    marketDataRouteUsesIndexAnalysis := true
+
+bool marketDataRouteHasPrimaryReference = marketDataRouteSymbolValid(marketDataRoutePrimaryReferenceSymbol)
+bool marketDataRouteHasSecondaryReference = marketDataRouteSymbolValid(marketDataRouteSecondaryReferenceSymbol)
+bool marketDataRouteHasSectorContext = marketDataRouteSymbolValid(marketDataRouteSectorSymbol) and outRelationshipHasSectorContext
+bool marketDataRouteHasParentIndexContext = marketDataRouteSymbolValid(marketDataRouteParentIndexSymbol) and outRelationshipHasParentIndexContext
+bool marketDataRouteAnalysisValid = marketDataRouteSymbolValid(marketDataRouteAnalysisSymbol)
+bool marketDataRouteExecutionInstrumentValid = marketDataRouteExecutionInstrumentText != ""
+
+//==================================================================
+// KR-260A.40 ROUTE READINESS
+//==================================================================
+
+string marketDataRouteStatus = KR260A_STATUS_UNSUPPORTED
+string marketDataRouteReason = "Unsupported Market Data Route"
+bool marketDataRouteReady = false
+
+if not outSupportedInstrument or not marketDataRouteIsSupportedModel
+    marketDataRouteReady := false
+    marketDataRouteStatus := KR260A_STATUS_UNSUPPORTED
+    marketDataRouteReason := "Unsupported Market Data Route"
+else if marketDataRouteIsMCXMetals or marketDataRouteIsMCXEnergy
+    if not marketDataRouteAnalysisValid
+        marketDataRouteStatus := KR260A_STATUS_INVALID_CONFIG
+        marketDataRouteReason := "Missing Analysis Symbol"
+    else if outRelationshipStatus == KR260A_STATUS_REVIEW
+        marketDataRouteStatus := KR260A_STATUS_REVIEW
+        marketDataRouteReason := outRelationshipReason
+    else if not outRelationshipReady or not marketDataRouteHasPrimaryReference
+        marketDataRouteStatus := KR260A_STATUS_INVALID_CONFIG
+        marketDataRouteReason := "Missing Primary Reference"
+    else
+        marketDataRouteReady := true
+        marketDataRouteStatus := KR260A_STATUS_READY
+        marketDataRouteReason := "Market Data Route Ready"
+else if marketDataRouteIsNSEEquity
+    if outRelationshipStatus == KR260A_STATUS_REVIEW
+        marketDataRouteStatus := KR260A_STATUS_REVIEW
+        marketDataRouteReason := "NSE Relationship Review Required - " + outRelationshipReason
+    else if not marketDataRouteAnalysisValid
+        marketDataRouteStatus := KR260A_STATUS_INVALID_CONFIG
+        marketDataRouteReason := "Missing Analysis Symbol"
+    else if not marketDataRouteExecutionInstrumentValid
+        marketDataRouteStatus := KR260A_STATUS_INVALID_CONFIG
+        marketDataRouteReason := "Missing Execution Instrument"
+    else if not outRelationshipReady
+        marketDataRouteStatus := KR260A_STATUS_INVALID_CONFIG
+        marketDataRouteReason := outRelationshipReason
+    else if not marketDataRouteHasSectorContext
+        marketDataRouteStatus := KR260A_STATUS_INVALID_CONFIG
+        marketDataRouteReason := "Missing Sector Context"
+    else if not marketDataRouteHasParentIndexContext
+        marketDataRouteStatus := KR260A_STATUS_INVALID_CONFIG
+        marketDataRouteReason := "Missing Parent Index Context"
+    else
+        marketDataRouteReady := true
+        marketDataRouteStatus := KR260A_STATUS_READY
+        marketDataRouteReason := "Market Data Route Ready"
+else if marketDataRouteIsNSEIndex
+    if not marketDataRouteAnalysisValid
+        marketDataRouteStatus := KR260A_STATUS_INVALID_CONFIG
+        marketDataRouteReason := "Missing Analysis Symbol"
+    else if not marketDataRouteExecutionInstrumentValid
+        marketDataRouteStatus := KR260A_STATUS_INVALID_CONFIG
+        marketDataRouteReason := "Missing Execution Instrument"
+    else if not outRelationshipReady
+        marketDataRouteStatus := KR260A_STATUS_INVALID_CONFIG
+        marketDataRouteReason := outRelationshipReason
+    else
+        marketDataRouteReady := true
+        marketDataRouteStatus := KR260A_STATUS_READY
+        marketDataRouteReason := "Market Data Route Ready"
+
+//==================================================================
+// KR-260A.50 PUBLIC INTERFACE
+//==================================================================
+
+bool outMarketDataRouteReady = marketDataRouteReady
+string outMarketDataRouteStatus = marketDataRouteStatus
+string outMarketDataRouteReason = marketDataRouteReason
+string outMarketDataAnalysisSymbol = marketDataRouteAnalysisSymbol
+string outMarketDataExecutionInstrumentText = marketDataRouteExecutionInstrumentText
+string outMarketDataPrimaryReferenceSymbol = marketDataRoutePrimaryReferenceSymbol
+string outMarketDataSecondaryReferenceSymbol = marketDataRouteSecondaryReferenceSymbol
+string outMarketDataSectorSymbol = marketDataRouteSectorSymbol
+string outMarketDataParentIndexSymbol = marketDataRouteParentIndexSymbol
+bool outMarketDataHasPrimaryReference = marketDataRouteHasPrimaryReference
+bool outMarketDataHasSecondaryReference = marketDataRouteHasSecondaryReference
+bool outMarketDataHasSectorContext = marketDataRouteHasSectorContext
+bool outMarketDataHasParentIndexContext = marketDataRouteHasParentIndexContext
+bool outMarketDataUsesCashAnalysis = marketDataRouteUsesCashAnalysis
+bool outMarketDataUsesIndexAnalysis = marketDataRouteUsesIndexAnalysis
+bool outMarketDataUsesFuturesAnalysis = marketDataRouteUsesFuturesAnalysis
+
+//==================================================================
+// END OF KR-260A
+//==================================================================
+
+//==================================================================
 // KRONOS SHARED HELPERS
 //==================================================================
 
