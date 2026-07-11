@@ -1,0 +1,92 @@
+symbol,company_name,cash_symbol,primary_sector_group,sector_index_symbol,parent_index_symbol,market_model,execution_profile,benchmark_type,relationship_status,mapping_confidence,mapping_reason
+IOC,Indian Oil Corp. Ltd.,NSE:IOC,Energy,NSE:CNXENERGY,NSE:NIFTY,NSE_FUTURES,SWING,DIRECT,READY,HIGH,Primary listed sector membership is Nifty Energy.
+HINDPETRO,Hindustan Petroleum Corporation Limited,NSE:HINDPETRO,Energy,NSE:CNXENERGY,NSE:NIFTY,NSE_FUTURES,SWING,DIRECT,READY,HIGH,Primary listed sector membership is Nifty Energy.
+BPCL,Bharat Petroleum Corporation Limited,NSE:BPCL,Energy,NSE:CNXENERGY,NSE:NIFTY,NSE_FUTURES,SWING,DIRECT,READY,HIGH,Primary listed sector membership is Nifty Energy.
+BEL,Bharat Electronics Limited,NSE:BEL,PSE / Defense,NSE:CNXPSE,NSE:NIFTY,NSE_FUTURES,SWING,LOGICAL_PROXY,READY,HIGH,Defence PSU; CNXPSE is the closest verified benchmark.
+SHRIRAMFIN,Shriram Finance Limited,NSE:SHRIRAMFIN,Financial Services,NSE:CNXFINANCE,NSE:NIFTY,NSE_FUTURES,SWING,DIRECT,READY,HIGH,Primary listed sector membership is Nifty Financial Services.
+BHEL,Bharat Heavy Electricals Limited,NSE:BHEL,Energy,NSE:CNXENERGY,NSE:NIFTY,NSE_FUTURES,SWING,DIRECT,READY,HIGH,Primary listed sector membership includes Nifty Energy.
+BDL,Bharat Dynamics Ltd.,NSE:BDL,PSE / Defense,NSE:CNXPSE,NSE:NIFTY,NSE_FUTURES,SWING,LOGICAL_PROXY,READY,HIGH,Defence PSU; CNXPSE is the closest verified benchmark.
+COALINDIA,Coal India Ltd.,NSE:COALINDIA,Energy,NSE:CNXENERGY,NSE:NIFTY,NSE_FUTURES,SWING,DIRECT,READY,HIGH,Primary listed sector membership is Nifty Energy.
+POWERINDIA,Hitachi Energy India Limited,NSE:POWERINDIA,Energy,NSE:CNXENERGY,NSE:NIFTY,NSE_FUTURES,SWING,DIRECT,READY,HIGH,Primary listed sector membership is Nifty Energy.
+SBICARD,SBI Cards & Payment Services Ltd,NSE:SBICARD,Financial Services,NSE:CNXFINANCE,NSE:NIFTY,NSE_FUTURES,SWING,DIRECT,READY,HIGH,Primary listed sector membership is Nifty Financial Services.
+SAIL,Steel Authority of India Limited,NSE:SAIL,Metals,NSE:CNXMETAL,NSE:NIFTY,NSE_FUTURES,SWING,DIRECT,READY,HIGH,Primary listed sector membership is Nifty Metal.
+RVNL,Rail Vikas Nigam Ltd.,NSE:RVNL,Infrastructure,NSE:CNXINFRA,NSE:NIFTY,NSE_FUTURES,SWING,DIRECT,READY,HIGH,Railway infrastructure and project execution exposure.
+MAZDOCK,Mazagon Dock Shipbuilders Ltd.,NSE:MAZDOCK,Infrastructure,NSE:CNXPSE,NSE:NIFTY,NSE_FUTURES,SWING,LOGICAL_PROXY,READY,MEDIUM,Defence shipbuilder; no dedicated verified defence benchmark.
+YESBANK,Yes Bank Limited,NSE:YESBANK,Banking,NSE:BANKNIFTY,NSE:BANKNIFTY,NSE_FUTURES,SWING,DIRECT,READY,HIGH,Bank-led context; BANKNIFTY is the primary verified benchmark.
+TATAPOWER,Tata Power Company Limited,NSE:TATAPOWER,Energy,NSE:CNXENERGY,NSE:NIFTY,NSE_FUTURES,SWING,DIRECT,READY,HIGH,Primary listed sector membership is Nifty Energy.
+MAXHEALTH,Max Healthcare Institute Ltd,NSE:MAXHEALTH,Healthcare,NSE:CNXPHARMA,NSE:NIFTY,NSE_FUTURES,SWING,LOGICAL_PROXY,READY,MEDIUM,Hospital operator; Pharma is the closest verified healthcare proxy.
+JUBLFOOD,Jubilant Foodworks Limited,NSE:JUBLFOOD,Consumption,NSE:CNXCONSUMPTION,NSE:NIFTY,NSE_FUTURES,SWING,DIRECT,READY,HIGH,Consumer discretionary business.
+LUPIN,Lupin Limited,NSE:LUPIN,Pharma,NSE:CNXPHARMA,NSE:NIFTY,NSE_FUTURES,SWING,DIRECT,READY,HIGH,Primary listed sector membership is Nifty Pharma.
+CONCOR,Container Corporation of India Limited,NSE:CONCOR,Infrastructure,NSE:CNXSERVICE,NSE:NIFTY,NSE_FUTURES,SWING,LOGICAL_PROXY,READY,HIGH,Logistics and transport service business.
+INFY,Infosys Limited,NSE:INFY,IT,NSE:CNXIT,NSE:NIFTY,NSE_FUTURES,SWING,DIRECT,READY,HIGH,Primary listed sector membership is Nifty IT.
+DRREDDY,Dr. Reddy's Laboratories Ltd.,NSE:DRREDDY,Pharma,NSE:CNXPHARMA,NSE:NIFTY,NSE_FUTURES,SWING,DIRECT,READY,HIGH,Primary listed sector membership is Nifty Pharma.
+TRENT,Trent Limited,NSE:TRENT,Consumption,NSE:CNXCONSUMPTION,NSE:NIFTY,NSE_FUTURES,SWING,DIRECT,READY,HIGH,Primary listed sector membership is Nifty India Consumption.
+DIXON,Dixon Technologies (India) Ltd.,NSE:DIXON,Consumption,NSE:CNXCONSUMPTION,NSE:NIFTY,NSE_FUTURES,SWING,LOGICAL_PROXY,READY,HIGH,Consumer electronics manufacturing exposure.
+NAUKRI,Info Edge India Ltd.,NSE:NAUKRI,Services,NSE:CNXSERVICE,NSE:NIFTY,NSE_FUTURES,SWING,DIRECT,READY,HIGH,Internet services and digital platform business.
+ALKEM,Alkem Laboratories Ltd.,NSE:ALKEM,Pharma,NSE:CNXPHARMA,NSE:NIFTY,NSE_FUTURES,SWING,DIRECT,READY,HIGH,Primary listed sector membership is Nifty Pharma.
+LICI,Life Insurance Corp. of India,NSE:LICI,Financial Services,NSE:CNXFINANCE,NSE:NIFTY,NSE_FUTURES,SWING,DIRECT,READY,HIGH,Primary listed sector membership is Nifty Financial Services.
+HAL,Hindustan Aeronautics Limited,NSE:HAL,PSE / Defense,NSE:CNXPSE,NSE:NIFTY,NSE_FUTURES,SWING,LOGICAL_PROXY,READY,HIGH,Defence PSU; CNXPSE is the closest verified benchmark.
+INDHOTEL,Indian Hotels Co. Ltd.,NSE:INDHOTEL,Consumption,NSE:CNXCONSUMPTION,NSE:NIFTY,NSE_FUTURES,SWING,DIRECT,READY,HIGH,Primary listed sector membership is Nifty India Consumption.
+HDFCAMC,HDFC Asset Management Co. Ltd.,NSE:HDFCAMC,Financial Services,NSE:CNXFINANCE,NSE:NIFTY,NSE_FUTURES,SWING,DIRECT,READY,HIGH,Primary listed sector membership is Nifty Financial Services.
+POWERGRID,Power Grid Corporation of India Limited,NSE:POWERGRID,Energy,NSE:CNXENERGY,NSE:NIFTY,NSE_FUTURES,SWING,DIRECT,READY,HIGH,Primary listed sector membership is Nifty Energy.
+BHARTIARTL,Bharti Airtel Limited,NSE:BHARTIARTL,Services,NSE:CNXSERVICE,NSE:NIFTY,NSE_FUTURES,SWING,LOGICAL_PROXY,READY,MEDIUM,Telecom services; Services is the closest verified benchmark.
+NTPC,NTPC Limited,NSE:NTPC,Energy,NSE:CNXENERGY,NSE:NIFTY,NSE_FUTURES,SWING,DIRECT,READY,HIGH,Primary listed sector membership is Nifty Energy.
+TCS,Tata Consultancy Services Limited,NSE:TCS,IT,NSE:CNXIT,NSE:NIFTY,NSE_FUTURES,SWING,DIRECT,READY,HIGH,Primary listed sector membership is Nifty IT.
+ICICIBANK,ICICI Bank Limited,NSE:ICICIBANK,Banking,NSE:BANKNIFTY,NSE:BANKNIFTY,NSE_FUTURES,SWING,DIRECT,READY,HIGH,Bank-led context; BANKNIFTY is the primary verified benchmark.
+MUTHOOTFIN,Muthoot Finance Ltd,NSE:MUTHOOTFIN,Financial Services,NSE:CNXFINANCE,NSE:NIFTY,NSE_FUTURES,SWING,DIRECT,READY,HIGH,Primary listed sector membership is Nifty Financial Services.
+FEDERALBNK,Federal Bank Ltd. (India),NSE:FEDERALBNK,Banking,NSE:BANKNIFTY,NSE:BANKNIFTY,NSE_FUTURES,SWING,DIRECT,READY,HIGH,Bank-led context; BANKNIFTY is the primary verified benchmark.
+MARUTI,Maruti Suzuki India Limited,NSE:MARUTI,Auto,NSE:CNXAUTO,NSE:NIFTY,NSE_FUTURES,SWING,DIRECT,READY,HIGH,Primary listed sector membership is Nifty Auto.
+WIPRO,Wipro Limited,NSE:WIPRO,IT,NSE:CNXIT,NSE:NIFTY,NSE_FUTURES,SWING,DIRECT,READY,HIGH,Primary listed sector membership is Nifty IT.
+ASIANPAINT,Asian Paints Ltd.,NSE:ASIANPAINT,Consumption,NSE:CNXCONSUMPTION,NSE:NIFTY,NSE_FUTURES,SWING,DIRECT,READY,HIGH,Primary listed sector membership is Nifty India Consumption.
+PERSISTENT,Persistent Systems Limited,NSE:PERSISTENT,IT,NSE:CNXIT,NSE:NIFTY,NSE_FUTURES,SWING,DIRECT,READY,HIGH,Primary listed sector membership is Nifty IT.
+INDIANB,Indian Bank,NSE:INDIANB,PSU Banking,NSE:CNXPSUBANK,NSE:BANKNIFTY,NSE_FUTURES,SWING,DIRECT,READY,HIGH,Primary listed sector membership is Nifty PSU Bank; BANKNIFTY remains the parent banking context.
+MCX,Multi Commodity Exchange of India Limited,NSE:MCX,Financial Services,NSE:CNXFINANCE,NSE:NIFTY,NSE_FUTURES,SWING,DIRECT,READY,HIGH,Primary listed sector membership is Nifty Financial Services.
+ETERNAL,Eternal Limited,NSE:ETERNAL,Consumption,NSE:CNXSERVICE,NSE:NIFTY,NSE_FUTURES,SWING,DIRECT,READY,HIGH,Digital services and platform business.
+SUNPHARMA,Sun Pharmaceutical Industries Limited,NSE:SUNPHARMA,Pharma,NSE:CNXPHARMA,NSE:NIFTY,NSE_FUTURES,SWING,DIRECT,READY,HIGH,Primary listed sector membership is Nifty Pharma.
+MOTHERSON,Samvardhana Motherson International Limited,NSE:MOTHERSON,Auto,NSE:CNXAUTO,NSE:NIFTY,NSE_FUTURES,SWING,DIRECT,READY,HIGH,Primary listed sector membership is Nifty Auto.
+AXISBANK,Axis Bank Limited,NSE:AXISBANK,Banking,NSE:BANKNIFTY,NSE:BANKNIFTY,NSE_FUTURES,SWING,DIRECT,READY,HIGH,Bank-led context; BANKNIFTY is the primary verified benchmark.
+TMPV,Tata Motors Passenger Vehicles Ltd,NSE:TMPV,Auto,NSE:CNXAUTO,NSE:NIFTY,NSE_FUTURES,SWING,DIRECT,READY,HIGH,Primary listed sector membership is Nifty Auto.
+CANBK,Canara Bank,NSE:CANBK,PSU Banking,NSE:CNXPSUBANK,NSE:BANKNIFTY,NSE_FUTURES,SWING,DIRECT,READY,HIGH,Primary listed sector membership is Nifty PSU Bank; BANKNIFTY remains the parent banking context.
+SRF,Srf Limited,NSE:SRF,Commodities,NSE:CNXCOMMODITIES,NSE:NIFTY,NSE_FUTURES,SWING,DIRECT,READY,HIGH,Primary listed sector membership is Nifty Commodities.
+PNB,Punjab National Bank,NSE:PNB,PSU Banking,NSE:CNXPSUBANK,NSE:BANKNIFTY,NSE_FUTURES,SWING,DIRECT,READY,HIGH,Primary listed sector membership is Nifty PSU Bank; BANKNIFTY remains the parent banking context.
+BAJAJFINSV,Bajaj Finserv Limited,NSE:BAJAJFINSV,Financial Services,NSE:CNXFINANCE,NSE:NIFTY,NSE_FUTURES,SWING,DIRECT,READY,HIGH,Primary listed sector membership is Nifty Financial Services.
+DIVISLAB,Divi's Laboratories Limited,NSE:DIVISLAB,Pharma,NSE:CNXPHARMA,NSE:NIFTY,NSE_FUTURES,SWING,DIRECT,READY,HIGH,Primary listed sector membership is Nifty Pharma.
+HCLTECH,HCL Technologies Limited,NSE:HCLTECH,IT,NSE:CNXIT,NSE:NIFTY,NSE_FUTURES,SWING,DIRECT,READY,HIGH,Primary listed sector membership is Nifty IT.
+HDFCLIFE,HDFC Life Insurance Co. Ltd.,NSE:HDFCLIFE,Financial Services,NSE:CNXFINANCE,NSE:NIFTY,NSE_FUTURES,SWING,DIRECT,READY,HIGH,Primary listed sector membership is Nifty Financial Services.
+CDSL,Central Depository Services (India) Limited,NSE:CDSL,Financial Services,NSE:CNXFINANCE,NSE:NIFTY,NSE_FUTURES,SWING,DIRECT,READY,HIGH,Primary listed sector membership is Nifty Financial Services.
+RBLBANK,RBL Bank Ltd.,NSE:RBLBANK,Banking,NSE:BANKNIFTY,NSE:BANKNIFTY,NSE_FUTURES,SWING,DIRECT,READY,HIGH,Commercial bank; Bank Nifty is the appropriate primary benchmark.
+ADANIGREEN,Adani Green Energy Limited,NSE:ADANIGREEN,Energy,NSE:CNXENERGY,NSE:NIFTY,NSE_FUTURES,SWING,DIRECT,READY,HIGH,Primary listed sector membership is Nifty Energy.
+TECHM,Tech Mahindra Limited,NSE:TECHM,IT,NSE:CNXIT,NSE:NIFTY,NSE_FUTURES,SWING,DIRECT,READY,HIGH,Primary listed sector membership is Nifty IT.
+M&M,Mahindra & Mahindra Ltd.,NSE:M&M,Auto,NSE:CNXAUTO,NSE:NIFTY,NSE_FUTURES,SWING,DIRECT,READY,HIGH,Primary listed sector membership is Nifty Auto.
+ADANIENT,Adani Enterprises Limited,NSE:ADANIENT,Metals,NSE:CNXMETAL,NSE:NIFTY,NSE_FUTURES,SWING,DIRECT,READY,HIGH,Primary listed sector membership is Nifty Metal.
+CIPLA,Cipla Ltd,NSE:CIPLA,Pharma,NSE:CNXPHARMA,NSE:NIFTY,NSE_FUTURES,SWING,DIRECT,READY,HIGH,Primary listed sector membership is Nifty Pharma.
+COFORGE,Coforge Limited,NSE:COFORGE,IT,NSE:CNXIT,NSE:NIFTY,NSE_FUTURES,SWING,DIRECT,READY,HIGH,Primary listed sector membership is Nifty IT.
+HINDUNILVR,Hindustan Unilever Limited,NSE:HINDUNILVR,FMCG,NSE:CNXFMCG,NSE:NIFTY,NSE_FUTURES,SWING,DIRECT,READY,HIGH,Primary listed sector membership is Nifty FMCG.
+CUMMINSIND,Cummins India Limited,NSE:CUMMINSIND,Infrastructure,NSE:CNXINFRA,NSE:NIFTY,NSE_FUTURES,SWING,DIRECT,READY,HIGH,Primary listed sector membership is Nifty Infrastructure.
+RELIANCE,Reliance Industries Limited,NSE:RELIANCE,Energy,NSE:CNXENERGY,NSE:NIFTY,NSE_FUTURES,SWING,DIRECT,READY,HIGH,Primary listed sector membership is Nifty Energy.
+BSE,BSE Ltd.,NSE:BSE,Financial Services,NSE:CNXFINANCE,NSE:NIFTY,NSE_FUTURES,SWING,DIRECT,READY,HIGH,Primary listed sector membership is Nifty Financial Services.
+TITAN,Titan Company Limited,NSE:TITAN,Consumption,NSE:CNXCONSUMPTION,NSE:NIFTY,NSE_FUTURES,SWING,DIRECT,READY,HIGH,Primary listed sector membership is Nifty India Consumption.
+KOTAKBANK,Kotak Mahindra Bank Limited,NSE:KOTAKBANK,Banking,NSE:BANKNIFTY,NSE:BANKNIFTY,NSE_FUTURES,SWING,DIRECT,READY,HIGH,Bank-led context; BANKNIFTY is the primary verified benchmark.
+RECLTD,REC Limited,NSE:RECLTD,Financial Services,NSE:CNXFINANCE,NSE:NIFTY,NSE_FUTURES,SWING,DIRECT,READY,HIGH,Primary listed sector membership is Nifty Financial Services.
+APOLLOHOSP,Apollo Hospitals Enterprise Limited,NSE:APOLLOHOSP,Healthcare,NSE:CNXPHARMA,NSE:NIFTY,NSE_FUTURES,SWING,LOGICAL_PROXY,READY,MEDIUM,Hospital operator; Pharma is the closest verified healthcare proxy.
+JIOFIN,Jio Financial Services Limited,NSE:JIOFIN,Financial Services,NSE:CNXFINANCE,NSE:NIFTY,NSE_FUTURES,SWING,DIRECT,READY,HIGH,Primary listed sector membership is Nifty Financial Services.
+EICHERMOT,Eicher Motors Limited,NSE:EICHERMOT,Auto,NSE:CNXAUTO,NSE:NIFTY,NSE_FUTURES,SWING,DIRECT,READY,HIGH,Primary listed sector membership is Nifty Auto.
+LT,Larsen & Toubro Limited,NSE:LT,Infrastructure,NSE:CNXINFRA,NSE:NIFTY,NSE_FUTURES,SWING,DIRECT,READY,HIGH,Primary listed sector membership is Nifty Infrastructure.
+ADANIPORTS,Adani Ports & Special Economic Zone Ltd,NSE:ADANIPORTS,Infrastructure,NSE:CNXINFRA,NSE:NIFTY,NSE_FUTURES,SWING,DIRECT,READY,HIGH,Primary listed sector membership is Nifty Infrastructure.
+VEDL,Vedanta Limited,NSE:VEDL,Metals,NSE:CNXMETAL,NSE:NIFTY,NSE_FUTURES,SWING,DIRECT,READY,HIGH,Primary listed sector membership is Nifty Metal.
+BHARATFORG,Bharat Forge Ltd,NSE:BHARATFORG,Auto,NSE:CNXAUTO,NSE:NIFTY,NSE_FUTURES,SWING,DIRECT,READY,HIGH,Primary listed sector membership is Nifty Auto.
+ITC,ITC Limited,NSE:ITC,FMCG,NSE:CNXFMCG,NSE:NIFTY,NSE_FUTURES,SWING,DIRECT,READY,HIGH,Primary listed sector membership is Nifty FMCG.
+POLICYBZR,PB Fintech Limited,NSE:POLICYBZR,Financial Services,NSE:CNXFINANCE,NSE:NIFTY,NSE_FUTURES,SWING,DIRECT,READY,HIGH,Primary listed sector membership is Nifty Financial Services.
+SBIN,State Bank of India,NSE:SBIN,PSU Banking,NSE:CNXPSUBANK,NSE:BANKNIFTY,NSE_FUTURES,SWING,DIRECT,READY,HIGH,Primary listed sector membership is Nifty PSU Bank; BANKNIFTY remains the parent banking context.
+BAJFINANCE,Bajaj Finance Limited,NSE:BAJFINANCE,Financial Services,NSE:CNXFINANCE,NSE:NIFTY,NSE_FUTURES,SWING,DIRECT,READY,HIGH,Primary listed sector membership is Nifty Financial Services.
+HDFCBANK,HDFC Bank Limited,NSE:HDFCBANK,Banking,NSE:BANKNIFTY,NSE:BANKNIFTY,NSE_FUTURES,SWING,DIRECT,READY,HIGH,Bank-led context; BANKNIFTY is the primary verified benchmark.
+TATASTEEL,Tata Steel Limited,NSE:TATASTEEL,Metals,NSE:CNXMETAL,NSE:NIFTY,NSE_FUTURES,SWING,DIRECT,READY,HIGH,Primary listed sector membership is Nifty Metal.
+PAYTM,One 97 Communications Ltd.,NSE:PAYTM,Financial Services,NSE:CNXFINANCE,NSE:NIFTY,NSE_FUTURES,SWING,DIRECT,READY,HIGH,Primary listed sector membership is Nifty Financial Services.
+HEROMOTOCO,Hero Motocorp Limited,NSE:HEROMOTOCO,Auto,NSE:CNXAUTO,NSE:NIFTY,NSE_FUTURES,SWING,DIRECT,READY,HIGH,Primary listed sector membership is Nifty Auto.
+INDIGO,InterGlobe Aviation Ltd,NSE:INDIGO,Infrastructure,NSE:CNXINFRA,NSE:NIFTY,NSE_FUTURES,SWING,DIRECT,READY,HIGH,Primary listed sector membership includes Nifty Infrastructure.
+KAYNES,Kaynes Technology India Ltd.,NSE:KAYNES,Consumption,NSE:CNXCOMMODITIES,NSE:NIFTY,NSE_FUTURES,SWING,TEMPORARY_PROXY,REVIEW,LOW,Electronics manufacturing lacks a dedicated verified benchmark; provisional proxy only.
+UPL,UPL Limited,NSE:UPL,Commodities,NSE:CNXCOMMODITIES,NSE:NIFTY,NSE_FUTURES,SWING,DIRECT,READY,HIGH,Primary listed sector membership is Nifty Commodities.
+BAJAJ_AUTO,Bajaj Auto Limited,NSE:BAJAJ_AUTO,Auto,NSE:CNXAUTO,NSE:NIFTY,NSE_FUTURES,SWING,DIRECT,READY,HIGH,Primary listed sector membership is Nifty Auto.
+HINDALCO,Hindalco Industries Limited,NSE:HINDALCO,Metals,NSE:CNXMETAL,NSE:NIFTY,NSE_FUTURES,SWING,DIRECT,READY,HIGH,Primary listed sector membership is Nifty Metal.
+IDEA,Vodafone Idea Ltd,NSE:IDEA,Services,NSE:CNXSERVICE,NSE:NIFTY,NSE_FUTURES,SWING,LOGICAL_PROXY,READY,MEDIUM,Telecom service provider; Services is the closest verified benchmark.
+VBL,Varun Beverages Ltd.,NSE:VBL,FMCG,NSE:CNXFMCG,NSE:NIFTY,NSE_FUTURES,SWING,DIRECT,READY,HIGH,Primary listed sector membership is Nifty FMCG.
