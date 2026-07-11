@@ -1584,29 +1584,157 @@ bool outMarketDataUsesFuturesAnalysis = marketDataRouteUsesFuturesAnalysis
 
 //==================================================================
 // KR-260B : Market Data Retrieval Engine
-// Version : 0.1.0
-// Status  : FOUNDATION
+// Version : 1.0.0
+// Status  : Implemented
 //
 // Purpose:
 // Answers: "Retrieve market data from those symbols."
-// Will retrieve standardized market data from the public routing
-// outputs exposed by KR-260A.
+// Retrieves current-chart-timeframe OHLCV for valid symbols selected
+// by the public KR-260A routing interface.
 //
 // Ownership:
-// - Consumes KR-260A route readiness, status, capability flags, and
-//   selected analysis, execution, reference, sector, and parent symbols.
-// - Will own request.security calls and standardized OHLCV retrieval.
-// - Will expose retrieved datasets, availability flags, status, and
-//   retrieval reasons for KR-260 normalization.
-// - Does not own routing, normalization, indicators, intelligence,
-//   decisions, execution timing, alerts, or trade management.
-//
-// Foundation Contract:
-// - No retrieval logic is implemented in v0.1.0.
-// - No request.security calls are present in this engine.
-// - Future public outputs are intentionally deferred until retrieval
-//   data contracts and timeframe requirements are formally defined.
+// - Consumes only public routing outputs from KR-260A.
+// - Owns guarded request.security calls and raw OHLCV retrieval.
+// - Exposes raw datasets and per-context data-readiness flags.
+// - Does not own routing, calculations, normalization, indicators,
+//   intelligence, decisions, rendering, alerts, or trade management.
 //==================================================================
+
+//==================================================================
+// KR-260B.10 REQUEST READINESS
+//==================================================================
+
+bool marketDataAnalysisRequestReady = outMarketDataRouteReady and outMarketDataAnalysisSymbol != "" and outMarketDataAnalysisSymbol != "UNKNOWN"
+bool marketDataPrimaryRequestReady = outMarketDataRouteReady and outMarketDataHasPrimaryReference and outMarketDataPrimaryReferenceSymbol != "" and outMarketDataPrimaryReferenceSymbol != "UNKNOWN"
+bool marketDataSecondaryRequestReady = outMarketDataRouteReady and outMarketDataHasSecondaryReference and outMarketDataSecondaryReferenceSymbol != "" and outMarketDataSecondaryReferenceSymbol != "UNKNOWN"
+bool marketDataSectorRequestReady = outMarketDataRouteReady and outMarketDataHasSectorContext and outMarketDataSectorSymbol != "" and outMarketDataSectorSymbol != "UNKNOWN"
+bool marketDataParentRequestReady = outMarketDataRouteReady and outMarketDataHasParentIndexContext and outMarketDataParentIndexSymbol != "" and outMarketDataParentIndexSymbol != "UNKNOWN"
+
+//==================================================================
+// KR-260B.20 ANALYSIS RETRIEVAL
+//==================================================================
+
+float marketDataAnalysisOpen = na
+float marketDataAnalysisHigh = na
+float marketDataAnalysisLow = na
+float marketDataAnalysisClose = na
+float marketDataAnalysisVolume = na
+
+if marketDataAnalysisRequestReady
+    [requestedAnalysisOpen, requestedAnalysisHigh, requestedAnalysisLow, requestedAnalysisClose, requestedAnalysisVolume] = request.security(outMarketDataAnalysisSymbol, timeframe.period, [open, high, low, close, volume], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)
+    marketDataAnalysisOpen := requestedAnalysisOpen
+    marketDataAnalysisHigh := requestedAnalysisHigh
+    marketDataAnalysisLow := requestedAnalysisLow
+    marketDataAnalysisClose := requestedAnalysisClose
+    marketDataAnalysisVolume := requestedAnalysisVolume
+
+//==================================================================
+// KR-260B.30 PRIMARY REFERENCE RETRIEVAL
+//==================================================================
+
+float marketDataPrimaryOpen = na
+float marketDataPrimaryHigh = na
+float marketDataPrimaryLow = na
+float marketDataPrimaryClose = na
+float marketDataPrimaryVolume = na
+
+if marketDataPrimaryRequestReady
+    [requestedPrimaryOpen, requestedPrimaryHigh, requestedPrimaryLow, requestedPrimaryClose, requestedPrimaryVolume] = request.security(outMarketDataPrimaryReferenceSymbol, timeframe.period, [open, high, low, close, volume], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)
+    marketDataPrimaryOpen := requestedPrimaryOpen
+    marketDataPrimaryHigh := requestedPrimaryHigh
+    marketDataPrimaryLow := requestedPrimaryLow
+    marketDataPrimaryClose := requestedPrimaryClose
+    marketDataPrimaryVolume := requestedPrimaryVolume
+
+//==================================================================
+// KR-260B.40 SECONDARY REFERENCE RETRIEVAL
+//==================================================================
+
+float marketDataSecondaryOpen = na
+float marketDataSecondaryHigh = na
+float marketDataSecondaryLow = na
+float marketDataSecondaryClose = na
+float marketDataSecondaryVolume = na
+
+if marketDataSecondaryRequestReady
+    [requestedSecondaryOpen, requestedSecondaryHigh, requestedSecondaryLow, requestedSecondaryClose, requestedSecondaryVolume] = request.security(outMarketDataSecondaryReferenceSymbol, timeframe.period, [open, high, low, close, volume], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)
+    marketDataSecondaryOpen := requestedSecondaryOpen
+    marketDataSecondaryHigh := requestedSecondaryHigh
+    marketDataSecondaryLow := requestedSecondaryLow
+    marketDataSecondaryClose := requestedSecondaryClose
+    marketDataSecondaryVolume := requestedSecondaryVolume
+
+//==================================================================
+// KR-260B.50 SECTOR RETRIEVAL
+//==================================================================
+
+float marketDataSectorOpen = na
+float marketDataSectorHigh = na
+float marketDataSectorLow = na
+float marketDataSectorClose = na
+float marketDataSectorVolume = na
+
+if marketDataSectorRequestReady
+    [requestedSectorOpen, requestedSectorHigh, requestedSectorLow, requestedSectorClose, requestedSectorVolume] = request.security(outMarketDataSectorSymbol, timeframe.period, [open, high, low, close, volume], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)
+    marketDataSectorOpen := requestedSectorOpen
+    marketDataSectorHigh := requestedSectorHigh
+    marketDataSectorLow := requestedSectorLow
+    marketDataSectorClose := requestedSectorClose
+    marketDataSectorVolume := requestedSectorVolume
+
+//==================================================================
+// KR-260B.60 PARENT INDEX RETRIEVAL
+//==================================================================
+
+float marketDataParentOpen = na
+float marketDataParentHigh = na
+float marketDataParentLow = na
+float marketDataParentClose = na
+float marketDataParentVolume = na
+
+if marketDataParentRequestReady
+    [requestedParentOpen, requestedParentHigh, requestedParentLow, requestedParentClose, requestedParentVolume] = request.security(outMarketDataParentIndexSymbol, timeframe.period, [open, high, low, close, volume], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)
+    marketDataParentOpen := requestedParentOpen
+    marketDataParentHigh := requestedParentHigh
+    marketDataParentLow := requestedParentLow
+    marketDataParentClose := requestedParentClose
+    marketDataParentVolume := requestedParentVolume
+
+//==================================================================
+// KR-260B.70 PUBLIC INTERFACE
+//==================================================================
+
+float outAnalysisOpen = marketDataAnalysisOpen
+float outAnalysisHigh = marketDataAnalysisHigh
+float outAnalysisLow = marketDataAnalysisLow
+float outAnalysisClose = marketDataAnalysisClose
+float outAnalysisVolume = marketDataAnalysisVolume
+float outPrimaryOpen = marketDataPrimaryOpen
+float outPrimaryHigh = marketDataPrimaryHigh
+float outPrimaryLow = marketDataPrimaryLow
+float outPrimaryClose = marketDataPrimaryClose
+float outPrimaryVolume = marketDataPrimaryVolume
+float outSecondaryOpen = marketDataSecondaryOpen
+float outSecondaryHigh = marketDataSecondaryHigh
+float outSecondaryLow = marketDataSecondaryLow
+float outSecondaryClose = marketDataSecondaryClose
+float outSecondaryVolume = marketDataSecondaryVolume
+float outSectorOpen = marketDataSectorOpen
+float outSectorHigh = marketDataSectorHigh
+float outSectorLow = marketDataSectorLow
+float outSectorClose = marketDataSectorClose
+float outSectorVolume = marketDataSectorVolume
+float outParentOpen = marketDataParentOpen
+float outParentHigh = marketDataParentHigh
+float outParentLow = marketDataParentLow
+float outParentClose = marketDataParentClose
+float outParentVolume = marketDataParentVolume
+
+bool outAnalysisDataReady = marketDataAnalysisRequestReady and not na(outAnalysisClose)
+bool outPrimaryDataReady = marketDataPrimaryRequestReady and not na(outPrimaryClose)
+bool outSecondaryDataReady = marketDataSecondaryRequestReady and not na(outSecondaryClose)
+bool outSectorDataReady = marketDataSectorRequestReady and not na(outSectorClose)
+bool outParentDataReady = marketDataParentRequestReady and not na(outParentClose)
 
 //==================================================================
 // END OF KR-260B
