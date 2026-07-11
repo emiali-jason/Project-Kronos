@@ -7,7 +7,7 @@ Read this document before starting any future KRONOS development chat. It is the
 
 ## 1. Current Platform Status
 
-KRONOS Futures is a modular futures intelligence and decision-support platform built in Pine Script for TradingView. It analyzes execution and reference markets, produces explainable decisions, confirms execution timing, manages objective model trades, and creates confirmed BUY NOW / SELL NOW TradingView alert events.
+KRONOS is a modular market-intelligence and decision-support platform built in Pine Script for TradingView. It analyzes execution and reference markets, produces explainable decisions, confirms execution timing, manages objective model trades, and creates confirmed BUY NOW / SELL NOW TradingView alert events.
 
 It is not broker automation, not a black-box AI, and not a personal-position tracker yet.
 
@@ -19,7 +19,32 @@ Current platform state:
 - KR-390 and KR-400 remain Foundation until live validation matures.
 - KR-705 is the frozen trader-facing display layer.
 
-## 2. Current Market Models
+## 2. Major Architectural Discovery
+
+During NSE implementation, KRONOS evolved from a Futures-only platform into a unified Intelligence Platform.
+
+The engine now separates:
+
+```text
+Analysis
+  -> Intelligence
+  -> Execution
+```
+
+Execution modules can vary while the intelligence engine remains unchanged.
+
+Current execution modules:
+
+- Cash
+- Futures
+
+Future execution modules:
+
+- Options
+
+This discovery is considered one of the major architectural milestones of Project KRONOS.
+
+## 3. Current Market Models
 
 Current:
 
@@ -43,7 +68,7 @@ Current MCX Metals references:
 
 See [ADL-001](../architecture/ADL-001-Futures-Model.md) and [MCX Metals Validation](../validation/MCX-METALS-VALIDATION.md).
 
-## 3. Current Execution Profile
+## 4. Current Execution Profile
 
 Current execution profile:
 
@@ -55,7 +80,7 @@ Future execution profile:
 
 Intraday execution profiles are deferred until after Platform v1.0. They should not be mixed into current Swing logic without a formal architecture decision.
 
-## 4. Current Engine Status
+## 5. Current Engine Status
 
 Brief status only:
 
@@ -68,7 +93,7 @@ Brief status only:
 
 Do not duplicate the full engine registry here. Read [Engine Status](../ENGINE_STATUS.md) and [Engine Ownership](../architecture/ENGINE_OWNERSHIP.md) before changing code.
 
-## 5. Current Documentation Status
+## 6. Current Documentation Status
 
 Architecture:
 
@@ -88,7 +113,7 @@ Product:
 - [KRONOS Vision & Roadmap](KRONOS_VISION_AND_ROADMAP.md) is the CEO-level product document.
 - This file is the permanent project briefing for future sessions.
 
-## 6. Current Priorities
+## 7. Current Priorities
 
 1. MCX Energy
 2. NSE Swing
@@ -99,7 +124,7 @@ Product:
 7. Analytics
 8. AI
 
-## 7. Deferred Decisions
+## 8. Deferred Decisions
 
 Deferred decisions are summarized in [KRONOS Vision & Roadmap](KRONOS_VISION_AND_ROADMAP.md):
 
@@ -110,7 +135,7 @@ Deferred decisions are summarized in [KRONOS Vision & Roadmap](KRONOS_VISION_AND
 
 These should become formal ADLs before implementation.
 
-## 8. Important Engineering Principles
+## 9. Important Engineering Principles
 
 - One Engine One Responsibility: each engine owns one question.
 - Public Outputs: downstream engines should consume public `out...` contracts.
@@ -119,7 +144,7 @@ These should become formal ADLs before implementation.
 - Explainable Intelligence: decisions, timing, blockers, model trade state, and alerts must remain inspectable.
 - MCX Self-contained Execution: the MCX 1H panel must explain execution blockers without requiring reference-chart inspection.
 
-## 9. How to Start a New KRONOS Development Session
+## 10. How to Start a New KRONOS Development Session
 
 For every future KRONOS development chat:
 
