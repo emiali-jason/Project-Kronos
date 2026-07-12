@@ -4044,6 +4044,201 @@ bool outNeutralContext = contextNeutral
 
 
 //==================================================================
+// KR-335 : Price Action Evidence Engine
+// Version : 1.0.0
+// Status  : FOUNDATION
+// Category: Evidence Engine
+// Last Updated : 2026-07-12
+//
+// Purpose
+// -------
+// Converts objective price action into standardized evidence.
+//
+// Ownership
+// ---------
+// - Objective candle quality
+// - Closing pressure
+// - Expansion / contraction
+// - Public evidence outputs
+//
+// Boundaries
+// ----------
+// - No trend, structure, momentum, relative, confidence, decision,
+//   execution, trade-management, alert, or presentation ownership.
+// - No request.security() calls.
+// - No routing or configuration.
+//==================================================================
+
+//==================================================================
+// KR-335.10 STATE CONSTANTS
+//==================================================================
+
+const int KR335_PRESSURE_STRONG_BEARISH = -2
+const int KR335_PRESSURE_BEARISH = -1
+const int KR335_PRESSURE_NEUTRAL = 0
+const int KR335_PRESSURE_BULLISH = 1
+const int KR335_PRESSURE_STRONG_BULLISH = 2
+
+const int KR335_EXPANSION_CONTRACTION = -1
+const int KR335_EXPANSION_NORMAL = 0
+const int KR335_EXPANSION_EXPANSION = 1
+
+const int KR335_PRICE_ACTION_UNAVAILABLE = 0
+const int KR335_PRICE_ACTION_CONTRACTION = 1
+const int KR335_PRICE_ACTION_NORMAL = 2
+const int KR335_PRICE_ACTION_EXPANSION = 3
+const int KR335_PRICE_ACTION_HIGH_QUALITY = 4
+
+const int KR335_ATR_NORMALIZATION_PERIOD = 14
+
+//==================================================================
+// KR-335.20 INPUT READINESS
+//==================================================================
+
+bool priceActionPublicInputReady = outTrendDataReady and outEvidenceReady and outBarrierReady and outMomentumReady
+bool priceActionDataReady = priceActionPublicInputReady and not na(mdPrimaryTrendO) and not na(mdPrimaryTrendH) and not na(mdPrimaryTrendL) and not na(mdPrimaryTrendC) and not na(mdPrimaryTrendC[1])
+
+//==================================================================
+// KR-335.30 CANDLE QUALITY
+//==================================================================
+
+float priceActionRange = priceActionDataReady ? mdPrimaryTrendH - mdPrimaryTrendL : na
+float priceActionBody = priceActionDataReady ? math.abs(mdPrimaryTrendC - mdPrimaryTrendO) : na
+float priceActionUpperWick = priceActionDataReady ? mdPrimaryTrendH - math.max(mdPrimaryTrendO, mdPrimaryTrendC) : na
+float priceActionLowerWick = priceActionDataReady ? math.min(mdPrimaryTrendO, mdPrimaryTrendC) - mdPrimaryTrendL : na
+
+bool priceActionValidRange = priceActionDataReady and not na(priceActionRange) and priceActionRange > 0.0
+
+float priceActionBodyRatio = priceActionValidRange ? priceActionBody / priceActionRange : na
+float priceActionUpperWickRatio = priceActionValidRange ? priceActionUpperWick / priceActionRange : na
+float priceActionLowerWickRatio = priceActionValidRange ? priceActionLowerWick / priceActionRange : na
+float priceActionCloseLocation = priceActionValidRange ? (mdPrimaryTrendC - mdPrimaryTrendL) / priceActionRange : na
+
+//==================================================================
+// KR-335.40 CLOSING PRESSURE
+//==================================================================
+
+int priceActionClosingPressureState = KR335_PRESSURE_NEUTRAL
+
+if priceActionValidRange and priceActionCloseLocation >= 0.80
+    priceActionClosingPressureState := KR335_PRESSURE_STRONG_BULLISH
+else if priceActionValidRange and priceActionCloseLocation >= 0.60
+    priceActionClosingPressureState := KR335_PRESSURE_BULLISH
+else if priceActionValidRange and priceActionCloseLocation <= 0.20
+    priceActionClosingPressureState := KR335_PRESSURE_STRONG_BEARISH
+else if priceActionValidRange and priceActionCloseLocation <= 0.40
+    priceActionClosingPressureState := KR335_PRESSURE_BEARISH
+else
+    priceActionClosingPressureState := KR335_PRESSURE_NEUTRAL
+
+string priceActionClosingPressureText = ""
+
+switch priceActionClosingPressureState
+    KR335_PRESSURE_STRONG_BULLISH => priceActionClosingPressureText := "Strong Bullish Close"
+    KR335_PRESSURE_BULLISH => priceActionClosingPressureText := "Bullish Close"
+    KR335_PRESSURE_BEARISH => priceActionClosingPressureText := "Bearish Close"
+    KR335_PRESSURE_STRONG_BEARISH => priceActionClosingPressureText := "Strong Bearish Close"
+    => priceActionClosingPressureText := "Neutral"
+
+//==================================================================
+// KR-335.50 EXPANSION / CONTRACTION
+//==================================================================
+
+float priceActionTrueRange = priceActionDataReady ? math.max(priceActionRange, math.max(math.abs(mdPrimaryTrendH - mdPrimaryTrendC[1]), math.abs(mdPrimaryTrendL - mdPrimaryTrendC[1]))) : na
+float priceActionATR = ta.rma(priceActionTrueRange, KR335_ATR_NORMALIZATION_PERIOD)
+float priceActionNormalizedRange = priceActionDataReady and not na(priceActionATR) and priceActionATR > 0.0 ? priceActionRange / priceActionATR : na
+bool priceActionReady = priceActionValidRange and not na(priceActionNormalizedRange)
+
+int priceActionExpansionState = KR335_EXPANSION_NORMAL
+
+if not priceActionReady
+    priceActionExpansionState := KR335_EXPANSION_NORMAL
+else if priceActionNormalizedRange >= 1.25
+    priceActionExpansionState := KR335_EXPANSION_EXPANSION
+else if priceActionNormalizedRange <= 0.75
+    priceActionExpansionState := KR335_EXPANSION_CONTRACTION
+else
+    priceActionExpansionState := KR335_EXPANSION_NORMAL
+
+string priceActionExpansionText = ""
+
+switch priceActionExpansionState
+    KR335_EXPANSION_EXPANSION => priceActionExpansionText := "Expansion"
+    KR335_EXPANSION_CONTRACTION => priceActionExpansionText := "Contraction"
+    => priceActionExpansionText := "Normal"
+
+//==================================================================
+// KR-335.60 SCORE AND CLASSIFICATION
+//==================================================================
+
+int priceActionBodyScore = not priceActionValidRange ? 0 : priceActionBodyRatio >= 0.60 ? 40 : priceActionBodyRatio >= 0.45 ? 30 : priceActionBodyRatio >= 0.25 ? 15 : 5
+int priceActionCloseScore = not priceActionValidRange ? 0 : int(math.round(math.abs(priceActionCloseLocation - 0.50) * 70.0))
+int priceActionExpansionScore = priceActionExpansionState == KR335_EXPANSION_EXPANSION ? 25 : priceActionExpansionState == KR335_EXPANSION_NORMAL ? 15 : 5
+int priceActionRawScore = priceActionBodyScore + priceActionCloseScore + priceActionExpansionScore
+int priceActionScore = priceActionReady ? math.max(0, math.min(100, priceActionRawScore)) : 0
+
+int priceActionState = KR335_PRICE_ACTION_UNAVAILABLE
+
+if not priceActionReady
+    priceActionState := KR335_PRICE_ACTION_UNAVAILABLE
+else if priceActionExpansionState == KR335_EXPANSION_CONTRACTION
+    priceActionState := KR335_PRICE_ACTION_CONTRACTION
+else if priceActionScore >= 75
+    priceActionState := KR335_PRICE_ACTION_HIGH_QUALITY
+else if priceActionExpansionState == KR335_EXPANSION_EXPANSION
+    priceActionState := KR335_PRICE_ACTION_EXPANSION
+else
+    priceActionState := KR335_PRICE_ACTION_NORMAL
+
+string priceActionStatus = priceActionReady ? "READY" : "WAITING"
+string priceActionReason = not priceActionPublicInputReady ? "Waiting for public evidence inputs" : not priceActionValidRange ? "Waiting for valid candle range" : not priceActionReady ? "Waiting for normalized range" : priceActionExpansionText + " / " + priceActionClosingPressureText
+string priceActionSummary = priceActionReady ? priceActionExpansionText + " / " + priceActionClosingPressureText : "Price Action Waiting"
+
+//==================================================================
+// KR-335.70 PUBLIC INTERFACE
+//==================================================================
+
+bool outPriceActionReady = priceActionReady
+string outPriceActionStatus = priceActionStatus
+string outPriceActionReason = priceActionReason
+int outPriceActionScore = priceActionScore
+int outPriceActionState = priceActionState
+string outPriceActionSummary = priceActionSummary
+
+float outPriceActionBodyRatio = priceActionBodyRatio
+float outPriceActionUpperWickRatio = priceActionUpperWickRatio
+float outPriceActionLowerWickRatio = priceActionLowerWickRatio
+float outPriceActionCloseLocation = priceActionCloseLocation
+float outPriceActionNormalizedRange = priceActionNormalizedRange
+int outPriceActionClosingPressureState = priceActionClosingPressureState
+int outPriceActionExpansionState = priceActionExpansionState
+string outPriceActionClosingPressureText = priceActionClosingPressureText
+string outPriceActionExpansionText = priceActionExpansionText
+
+bool outPriceActionStrongBullishClose = priceActionClosingPressureState == KR335_PRESSURE_STRONG_BULLISH
+bool outPriceActionBullishClose = priceActionClosingPressureState == KR335_PRESSURE_BULLISH
+bool outPriceActionNeutralClose = priceActionClosingPressureState == KR335_PRESSURE_NEUTRAL
+bool outPriceActionBearishClose = priceActionClosingPressureState == KR335_PRESSURE_BEARISH
+bool outPriceActionStrongBearishClose = priceActionClosingPressureState == KR335_PRESSURE_STRONG_BEARISH
+bool outPriceActionExpansion = priceActionExpansionState == KR335_EXPANSION_EXPANSION
+bool outPriceActionNormalRange = priceActionExpansionState == KR335_EXPANSION_NORMAL
+bool outPriceActionContraction = priceActionExpansionState == KR335_EXPANSION_CONTRACTION
+
+//==================================================================
+// KR-335.80 RESERVED PLACEHOLDERS
+//==================================================================
+// Impulse vs Correction : Placeholder only.
+// Market Regime         : Placeholder only.
+// Anti-Chase            : Placeholder only.
+// State Machines        : Placeholder only.
+
+//==================================================================
+// END OF KR-335
+//==================================================================
+
+
+
+//==================================================================
 // KR-340 : Review Readiness Engine
 // Version : 1.0.0
 // Status  : FROZEN
