@@ -82,6 +82,7 @@ BUY NOW and SELL NOW are confirmed execution-timing states. They are not broker 
 - [Engine Status](docs/ENGINE_STATUS.md)
 - [Roadmap](ROADMAP.md)
 - [Testing Protocol](docs/validation/TESTING.md)
+- [Validation and Research Workflow](docs/validation/README.md)
 - [MCX Metals Validation](docs/validation/MCX-METALS-VALIDATION.md)
 - [Engineering Manual](docs/KRONOS_ENGINEERING_MANUAL.md)
 - [Design Decisions](docs/Decisions.md)
