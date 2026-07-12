@@ -56,7 +56,7 @@ KES is an unnumbered architectural boundary over existing public evidence contra
 | KR-390A | Which confirmed MCX 1H structure reference can protect a model trade? | Narrow completed-bar swing stop references | A full structure engine, trade direction, or management policy | Execution H/L/C and MCX 1H context | Execution close, confirmed swing low/high, readiness | KR-390 |
 | KR-390 | What is the state of the objective KRONOS model trade? | Persistent model-trade entry, stop, targets, HOLD, PROTECT, TRAIL, EXIT, INVALIDATED | Personal-position tracking, broker orders, alerts, or new direction | Confirmed KR-380 BUY/SELL event; KR-390A | Trade state, direction, model prices, reasons, lifecycle flags | KR-705; future management interfaces |
 | KR-400 | Did a new confirmed BUY NOW or SELL NOW event occur? | Exactly two TradingView alert event types | Trading intelligence, entry timing, trade management, or broker automation | KR-380 public BUY/SELL and confirmation outputs | Buy/sell alert event, readiness, status text | TradingView alerts |
-| KR-705 | What intelligence should the trader see? | Trader-facing display, concise translation, and status presentation, including KR-335 and KR-345 observation rows | Trading calculations, confidence weighting, decisions, timing, management, or alerts | Public outputs from upstream engines and adapters | Visual table only | Trader |
+| KR-705 | What intelligence should the trader see? | Trader-facing display, concise translation, status presentation, Hidden/Trader/Developer panel modes, and optional Developer diagnostic sections | Trading calculations, confidence weighting, decisions, timing, management, or alerts | Public outputs from upstream engines and adapters | Visual table only | Trader |
 
 ## Non-Negotiable Boundaries
 
@@ -85,6 +85,7 @@ KES is an unnumbered architectural boundary over existing public evidence contra
 - KR-705 owns display and trader-readable translation.
 - It consumes public outputs and does not calculate decisions.
 - KR-705 may display KR-335 and KR-345 evidence for observation, but it must not consume those outputs for confidence, decision, execution, trade-management, or alert logic.
+- KR-705 supports Hidden, Trader, and Developer modes. Developer diagnostic sections are optional and remain presentation-only.
 
 ## Adapter Exception
 

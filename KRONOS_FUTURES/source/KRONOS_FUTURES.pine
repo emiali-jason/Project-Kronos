@@ -5952,7 +5952,15 @@ string outAlertStatusText = outAlertBuyEvent ? "BUY ALERT FIRED" : outAlertSellE
 // KR-705.10 CONFIGURATION
 //==================================================================
 
-showDeveloperDebugPanel = input.bool(false, "Show Developer Debug Panel", group="KR-700 Developer Tools")
+inpKR705PanelMode = input.string("Hidden", "Panel Mode", options=["Hidden", "Trader", "Developer"], group="KR-700 Developer Tools")
+inpKR705ShowPriceActionDetails = input.bool(true, "Show Price Action Details", group="KR-700 Developer Tools")
+inpKR705ShowRelativeDetails = input.bool(true, "Show Relative Details", group="KR-700 Developer Tools")
+inpKR705ShowCompressionDetails = input.bool(false, "Show Compression Details", group="KR-700 Developer Tools")
+inpKR705ShowRiskDetails = input.bool(false, "Show Risk Details", group="KR-700 Developer Tools")
+
+bool kr705PanelHidden = inpKR705PanelMode == "Hidden"
+bool kr705PanelTrader = inpKR705PanelMode == "Trader"
+bool kr705PanelDeveloper = inpKR705PanelMode == "Developer"
 
 //==================================================================
 // KR-705.20 DISPLAY VALUES
@@ -5976,6 +5984,8 @@ string kr705TrendQualityText = kr705TrendQualityAvailable ? outTrendQualityExcel
 string kr705AcceptanceText = kr705AcceptanceAvailable ? outAcceptanceStrong ? "Strong Acceptance" : outAcceptanceAccepted ? "Accepted" : outAcceptanceTesting ? "Testing" : outAcceptanceRejected ? "Rejected" : "Neutral" : kr705UnavailableText
 string kr705MomentumText = kr705MomentumAvailable ? outMomentumBuilding ? "Building" : outMomentumStrong ? "Strong" : outMomentumNormal ? "Normal" : outMomentumWeakening ? "Weakening" : outMomentumExhausted ? "Exhausted" : kr705UnavailableText : kr705UnavailableText
 string kr705CompressionText = kr705CompressionAvailable ? outExpansionStarted ? "Expansion Started" : str.tostring(outCompressionScore) + " - " + outCompressionText : kr705UnavailableText
+string kr705CompressionScoreText = kr705CompressionAvailable ? str.tostring(outCompressionScore) : kr705UnavailableText
+string kr705CompressionReasonText = kr705CompressionAvailable ? outCompressionReasonText : kr705UnavailableText
 string kr705OpportunityText = kr705OpportunityAvailable ? outBullishOpportunityContext or outBearishOpportunityContext ? "Good" : "Limited" : kr705UnavailableText
 string kr705PriceActionStateText = outPriceActionState == KR335_PRICE_ACTION_HIGH_QUALITY ? "High Quality" : outPriceActionState == KR335_PRICE_ACTION_EXPANSION ? "Expansion" : outPriceActionState == KR335_PRICE_ACTION_CONTRACTION ? "Contraction" : outPriceActionState == KR335_PRICE_ACTION_NORMAL ? "Normal" : "Unavailable"
 string kr705PriceActionText = kr705PriceActionAvailable ? kr705PriceActionStateText : outPriceActionStatus
@@ -5992,6 +6002,7 @@ string kr705SectorRelativeText = outSectorRelativeReady ? kr705SectorRelativeSta
 string kr705RelativeBenchmarkText = outRelativeBenchmarkSymbol == "" ? kr705NotAvailableText : outRelativeBenchmarkSymbol
 string kr705ConfidenceText = kr705ConfidenceAvailable ? str.tostring(outConfidenceScore) + " - " + outConfidenceText : kr705UnavailableText
 string kr705RiskText = outTradeManagementReady ? outTradeText : kr705UnavailableText
+string kr705RiskReasonText = outTradeManagementReady ? outTradeReason : kr705UnavailableText
 bool kr705MCXExecutionPanel = outExecMCX1HContextReady
 string kr705EntryText = outTriggerReady ? outTriggerText : kr705UnavailableText
 string kr705DecisionText = outDecisionText
@@ -6047,82 +6058,126 @@ color kr705StatusColor = kr705CoreDataReady ? kr705BrightGreen : kr705Yellow
 // KR-705.40 TABLE RENDERER
 //==================================================================
 
-var table kr705DeveloperDebugTable = table.new(position.top_right, 2, 24, border_width=1, border_color=kr705BorderColor, frame_width=1, frame_color=kr705BorderColor)
+var table kr705DeveloperDebugTable = table.new(position.top_right, 2, 32, border_width=1, border_color=kr705BorderColor, frame_width=1, frame_color=kr705BorderColor)
 
-if showDeveloperDebugPanel
-    table.cell(kr705DeveloperDebugTable, 0, 0, "KRONOS ENGINE STATUS", width=12, text_color=kr705TitleText, bgcolor=kr705HeaderBG, text_size=size.small, text_halign=text.align_left)
-    table.cell(kr705DeveloperDebugTable, 1, 0, "", width=14, text_color=kr705TitleText, bgcolor=kr705HeaderBG, text_size=size.small, text_halign=text.align_right)
+table.clear(kr705DeveloperDebugTable, 0, 0, 1, 31)
 
-    table.cell(kr705DeveloperDebugTable, 0, 1, "D Trend", width=12, text_color=kr705LabelText, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_left)
-    table.cell(kr705DeveloperDebugTable, 1, 1, kr705TrendText, width=14, text_color=kr705TrendColor, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_right)
+if not kr705PanelHidden
+    int kr705Row = 0
 
-    table.cell(kr705DeveloperDebugTable, 0, 2, "Quality", width=12, text_color=kr705LabelText, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_left)
-    table.cell(kr705DeveloperDebugTable, 1, 2, kr705TrendQualityText, width=14, text_color=kr705TrendQualityColor, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_right)
+    table.cell(kr705DeveloperDebugTable, 0, kr705Row, "KRONOS ENGINE STATUS", width=12, text_color=kr705TitleText, bgcolor=kr705HeaderBG, text_size=size.small, text_halign=text.align_left)
+    table.cell(kr705DeveloperDebugTable, 1, kr705Row, kr705PanelTrader ? "TRADER" : "DEVELOPER", width=14, text_color=kr705TitleText, bgcolor=kr705HeaderBG, text_size=size.small, text_halign=text.align_right)
+    kr705Row += 1
 
-    table.cell(kr705DeveloperDebugTable, 0, 3, "Acceptance", width=12, text_color=kr705LabelText, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_left)
-    table.cell(kr705DeveloperDebugTable, 1, 3, kr705AcceptanceText, width=14, text_color=kr705AcceptanceColor, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_right)
+    table.cell(kr705DeveloperDebugTable, 0, kr705Row, "D Trend", width=12, text_color=kr705LabelText, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_left)
+    table.cell(kr705DeveloperDebugTable, 1, kr705Row, kr705TrendText, width=14, text_color=kr705TrendColor, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_right)
+    kr705Row += 1
 
-    table.cell(kr705DeveloperDebugTable, 0, 4, "Momentum", width=12, text_color=kr705LabelText, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_left)
-    table.cell(kr705DeveloperDebugTable, 1, 4, kr705MomentumText, width=14, text_color=kr705MomentumColor, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_right)
+    table.cell(kr705DeveloperDebugTable, 0, kr705Row, "Quality", width=12, text_color=kr705LabelText, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_left)
+    table.cell(kr705DeveloperDebugTable, 1, kr705Row, kr705TrendQualityText, width=14, text_color=kr705TrendQualityColor, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_right)
+    kr705Row += 1
 
-    table.cell(kr705DeveloperDebugTable, 0, 5, "Compression", width=12, text_color=kr705LabelText, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_left)
-    table.cell(kr705DeveloperDebugTable, 1, 5, kr705CompressionText, width=14, text_color=kr705CompressionColor, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_right)
+    table.cell(kr705DeveloperDebugTable, 0, kr705Row, "Acceptance", width=12, text_color=kr705LabelText, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_left)
+    table.cell(kr705DeveloperDebugTable, 1, kr705Row, kr705AcceptanceText, width=14, text_color=kr705AcceptanceColor, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_right)
+    kr705Row += 1
 
-    table.cell(kr705DeveloperDebugTable, 0, 6, "Opportunity", width=12, text_color=kr705LabelText, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_left)
-    table.cell(kr705DeveloperDebugTable, 1, 6, kr705OpportunityText, width=14, text_color=kr705OpportunityColor, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_right)
+    table.cell(kr705DeveloperDebugTable, 0, kr705Row, "Momentum", width=12, text_color=kr705LabelText, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_left)
+    table.cell(kr705DeveloperDebugTable, 1, kr705Row, kr705MomentumText, width=14, text_color=kr705MomentumColor, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_right)
+    kr705Row += 1
 
-    table.cell(kr705DeveloperDebugTable, 0, 7, "Price Action", width=12, text_color=kr705LabelText, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_left)
-    table.cell(kr705DeveloperDebugTable, 1, 7, kr705PriceActionText, width=14, text_color=kr705PriceActionColor, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_right)
+    if kr705PanelDeveloper
+        table.cell(kr705DeveloperDebugTable, 0, kr705Row, "Compression", width=12, text_color=kr705LabelText, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_left)
+        table.cell(kr705DeveloperDebugTable, 1, kr705Row, kr705CompressionText, width=14, text_color=kr705CompressionColor, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_right)
+        kr705Row += 1
 
-    table.cell(kr705DeveloperDebugTable, 0, 8, "PA Score", width=12, text_color=kr705LabelText, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_left)
-    table.cell(kr705DeveloperDebugTable, 1, 8, kr705PriceActionScoreText, width=14, text_color=kr705PriceActionColor, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_right)
+        if inpKR705ShowCompressionDetails
+            table.cell(kr705DeveloperDebugTable, 0, kr705Row, "Comp Score", width=12, text_color=kr705LabelText, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_left)
+            table.cell(kr705DeveloperDebugTable, 1, kr705Row, kr705CompressionScoreText, width=14, text_color=kr705CompressionColor, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_right)
+            kr705Row += 1
 
-    table.cell(kr705DeveloperDebugTable, 0, 9, "Pressure", width=12, text_color=kr705LabelText, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_left)
-    table.cell(kr705DeveloperDebugTable, 1, 9, kr705PriceActionPressureText, width=14, text_color=kr705PriceActionColor, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_right)
+            table.cell(kr705DeveloperDebugTable, 0, kr705Row, "Comp Why", width=12, text_color=kr705LabelText, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_left)
+            table.cell(kr705DeveloperDebugTable, 1, kr705Row, kr705CompressionReasonText, width=14, text_color=kr705CompressionColor, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_right)
+            kr705Row += 1
 
-    table.cell(kr705DeveloperDebugTable, 0, 10, "Range", width=12, text_color=kr705LabelText, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_left)
-    table.cell(kr705DeveloperDebugTable, 1, 10, kr705PriceActionRangeText, width=14, text_color=kr705PriceActionColor, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_right)
+    table.cell(kr705DeveloperDebugTable, 0, kr705Row, "Opportunity", width=12, text_color=kr705LabelText, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_left)
+    table.cell(kr705DeveloperDebugTable, 1, kr705Row, kr705OpportunityText, width=14, text_color=kr705OpportunityColor, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_right)
+    kr705Row += 1
 
-    table.cell(kr705DeveloperDebugTable, 0, 11, "Relative", width=12, text_color=kr705LabelText, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_left)
-    table.cell(kr705DeveloperDebugTable, 1, 11, kr705RelativeText, width=14, text_color=kr705RelativeColor, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_right)
+    if kr705PanelDeveloper
+        table.cell(kr705DeveloperDebugTable, 0, kr705Row, "Price Action", width=12, text_color=kr705LabelText, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_left)
+        table.cell(kr705DeveloperDebugTable, 1, kr705Row, kr705PriceActionText, width=14, text_color=kr705PriceActionColor, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_right)
+        kr705Row += 1
 
-    table.cell(kr705DeveloperDebugTable, 0, 12, "RS Score", width=12, text_color=kr705LabelText, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_left)
-    table.cell(kr705DeveloperDebugTable, 1, 12, kr705RelativeScoreText, width=14, text_color=kr705RelativeColor, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_right)
+        if inpKR705ShowPriceActionDetails
+            table.cell(kr705DeveloperDebugTable, 0, kr705Row, "PA Score", width=12, text_color=kr705LabelText, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_left)
+            table.cell(kr705DeveloperDebugTable, 1, kr705Row, kr705PriceActionScoreText, width=14, text_color=kr705PriceActionColor, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_right)
+            kr705Row += 1
 
-    table.cell(kr705DeveloperDebugTable, 0, 13, "Vs Market", width=12, text_color=kr705LabelText, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_left)
-    table.cell(kr705DeveloperDebugTable, 1, 13, kr705MarketRelativeText, width=14, text_color=kr705MarketRelativeColor, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_right)
+            table.cell(kr705DeveloperDebugTable, 0, kr705Row, "Pressure", width=12, text_color=kr705LabelText, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_left)
+            table.cell(kr705DeveloperDebugTable, 1, kr705Row, kr705PriceActionPressureText, width=14, text_color=kr705PriceActionColor, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_right)
+            kr705Row += 1
 
-    table.cell(kr705DeveloperDebugTable, 0, 14, "Vs Sector", width=12, text_color=kr705LabelText, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_left)
-    table.cell(kr705DeveloperDebugTable, 1, 14, kr705SectorRelativeText, width=14, text_color=kr705SectorRelativeColor, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_right)
+            table.cell(kr705DeveloperDebugTable, 0, kr705Row, "Range", width=12, text_color=kr705LabelText, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_left)
+            table.cell(kr705DeveloperDebugTable, 1, kr705Row, kr705PriceActionRangeText, width=14, text_color=kr705PriceActionColor, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_right)
+            kr705Row += 1
 
-    table.cell(kr705DeveloperDebugTable, 0, 15, "Benchmark", width=12, text_color=kr705LabelText, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_left)
-    table.cell(kr705DeveloperDebugTable, 1, 15, kr705RelativeBenchmarkText, width=14, text_color=kr705PlaceholderColor, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_right)
+        table.cell(kr705DeveloperDebugTable, 0, kr705Row, "Relative", width=12, text_color=kr705LabelText, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_left)
+        table.cell(kr705DeveloperDebugTable, 1, kr705Row, kr705RelativeText, width=14, text_color=kr705RelativeColor, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_right)
+        kr705Row += 1
 
-    table.cell(kr705DeveloperDebugTable, 0, 16, "Confidence", width=12, text_color=kr705LabelText, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_left)
-    table.cell(kr705DeveloperDebugTable, 1, 16, kr705ConfidenceText, width=14, text_color=kr705ConfidenceColor, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_right)
+        if inpKR705ShowRelativeDetails
+            table.cell(kr705DeveloperDebugTable, 0, kr705Row, "RS Score", width=12, text_color=kr705LabelText, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_left)
+            table.cell(kr705DeveloperDebugTable, 1, kr705Row, kr705RelativeScoreText, width=14, text_color=kr705RelativeColor, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_right)
+            kr705Row += 1
 
-    table.cell(kr705DeveloperDebugTable, 0, 17, "Risk", width=12, text_color=kr705LabelText, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_left)
-    table.cell(kr705DeveloperDebugTable, 1, 17, kr705RiskText, width=14, text_color=kr705PlaceholderColor, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_right)
+            table.cell(kr705DeveloperDebugTable, 0, kr705Row, "Vs Market", width=12, text_color=kr705LabelText, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_left)
+            table.cell(kr705DeveloperDebugTable, 1, kr705Row, kr705MarketRelativeText, width=14, text_color=kr705MarketRelativeColor, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_right)
+            kr705Row += 1
 
-    table.cell(kr705DeveloperDebugTable, 0, 18, "Entry", width=12, text_color=kr705LabelText, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_left)
-    table.cell(kr705DeveloperDebugTable, 1, 18, kr705EntryText, width=14, text_color=kr705PlaceholderColor, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_right)
+            table.cell(kr705DeveloperDebugTable, 0, kr705Row, "Vs Sector", width=12, text_color=kr705LabelText, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_left)
+            table.cell(kr705DeveloperDebugTable, 1, kr705Row, kr705SectorRelativeText, width=14, text_color=kr705SectorRelativeColor, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_right)
+            kr705Row += 1
 
-    table.cell(kr705DeveloperDebugTable, 0, 19, "Decision", width=12, text_color=kr705LabelText, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_left)
-    table.cell(kr705DeveloperDebugTable, 1, 19, kr705DecisionText, width=14, text_color=kr705PlaceholderColor, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_right)
+            table.cell(kr705DeveloperDebugTable, 0, kr705Row, "Benchmark", width=12, text_color=kr705LabelText, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_left)
+            table.cell(kr705DeveloperDebugTable, 1, kr705Row, kr705RelativeBenchmarkText, width=14, text_color=kr705PlaceholderColor, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_right)
+            kr705Row += 1
 
-    table.cell(kr705DeveloperDebugTable, 0, 20, "Need", width=12, text_color=kr705LabelText, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_left)
-    table.cell(kr705DeveloperDebugTable, 1, 20, kr705Need1Text, width=14, text_color=kr705Need1Color, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_right)
+    table.cell(kr705DeveloperDebugTable, 0, kr705Row, "Confidence", width=12, text_color=kr705LabelText, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_left)
+    table.cell(kr705DeveloperDebugTable, 1, kr705Row, kr705ConfidenceText, width=14, text_color=kr705ConfidenceColor, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_right)
+    kr705Row += 1
 
-    table.cell(kr705DeveloperDebugTable, 0, 21, "Next", width=12, text_color=kr705LabelText, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_left)
-    table.cell(kr705DeveloperDebugTable, 1, 21, kr705Need2Text, width=14, text_color=kr705Need2Color, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_right)
+    table.cell(kr705DeveloperDebugTable, 0, kr705Row, "Risk", width=12, text_color=kr705LabelText, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_left)
+    table.cell(kr705DeveloperDebugTable, 1, kr705Row, kr705RiskText, width=14, text_color=kr705PlaceholderColor, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_right)
+    kr705Row += 1
 
-    table.cell(kr705DeveloperDebugTable, 0, 22, "Then", width=12, text_color=kr705LabelText, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_left)
-    table.cell(kr705DeveloperDebugTable, 1, 22, kr705Need3Text, width=14, text_color=kr705Need3Color, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_right)
+    if kr705PanelDeveloper and inpKR705ShowRiskDetails
+        table.cell(kr705DeveloperDebugTable, 0, kr705Row, "Risk Why", width=12, text_color=kr705LabelText, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_left)
+        table.cell(kr705DeveloperDebugTable, 1, kr705Row, kr705RiskReasonText, width=14, text_color=kr705PlaceholderColor, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_right)
+        kr705Row += 1
 
-    table.cell(kr705DeveloperDebugTable, 0, 23, "Status", width=12, text_color=kr705LabelText, bgcolor=kr705HeaderBG, text_size=size.small, text_halign=text.align_left)
-    table.cell(kr705DeveloperDebugTable, 1, 23, kr705StatusText, width=14, text_color=kr705StatusColor, bgcolor=kr705HeaderBG, text_size=size.small, text_halign=text.align_right)
-else
-    table.clear(kr705DeveloperDebugTable, 0, 0, 1, 23)
+    table.cell(kr705DeveloperDebugTable, 0, kr705Row, "Entry", width=12, text_color=kr705LabelText, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_left)
+    table.cell(kr705DeveloperDebugTable, 1, kr705Row, kr705EntryText, width=14, text_color=kr705PlaceholderColor, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_right)
+    kr705Row += 1
+
+    table.cell(kr705DeveloperDebugTable, 0, kr705Row, "Decision", width=12, text_color=kr705LabelText, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_left)
+    table.cell(kr705DeveloperDebugTable, 1, kr705Row, kr705DecisionText, width=14, text_color=kr705PlaceholderColor, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_right)
+    kr705Row += 1
+
+    table.cell(kr705DeveloperDebugTable, 0, kr705Row, "Need", width=12, text_color=kr705LabelText, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_left)
+    table.cell(kr705DeveloperDebugTable, 1, kr705Row, kr705Need1Text, width=14, text_color=kr705Need1Color, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_right)
+    kr705Row += 1
+
+    if kr705PanelDeveloper
+        table.cell(kr705DeveloperDebugTable, 0, kr705Row, "Next", width=12, text_color=kr705LabelText, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_left)
+        table.cell(kr705DeveloperDebugTable, 1, kr705Row, kr705Need2Text, width=14, text_color=kr705Need2Color, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_right)
+        kr705Row += 1
+
+        table.cell(kr705DeveloperDebugTable, 0, kr705Row, "Then", width=12, text_color=kr705LabelText, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_left)
+        table.cell(kr705DeveloperDebugTable, 1, kr705Row, kr705Need3Text, width=14, text_color=kr705Need3Color, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_right)
+        kr705Row += 1
+
+    table.cell(kr705DeveloperDebugTable, 0, kr705Row, "Status", width=12, text_color=kr705LabelText, bgcolor=kr705HeaderBG, text_size=size.small, text_halign=text.align_left)
+    table.cell(kr705DeveloperDebugTable, 1, kr705Row, kr705StatusText, width=14, text_color=kr705StatusColor, bgcolor=kr705HeaderBG, text_size=size.small, text_halign=text.align_right)
 
 //==================================================================
 // END OF KR-705
