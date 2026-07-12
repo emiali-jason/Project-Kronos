@@ -1,6 +1,8 @@
 # Project KRONOS
 
-KRONOS Futures is a modular futures intelligence and decision-support platform built in Pine Script for TradingView.
+KRONOS is an evidence-based trading intelligence platform. KRONOS Core is the current shared intelligence product, built in Pine Script for TradingView.
+
+Cash and Futures are the current execution paths. Options are future execution support and are not currently implemented.
 
 It:
 
@@ -38,6 +40,10 @@ Reference markets support the execution decision. The MCX 1H chart is the self-c
 
 KRONOS follows the principle: **One Engine. Multiple Market Models.** Market-specific behavior should be handled through dependency profiles, reference symbols, weights, and thresholds rather than separate codebases.
 
+## Compatibility Naming
+
+The repository and Pine filename retain the historical `KRONOS_FUTURES` name for compatibility. Runtime identifiers, indicator titles, and other public names also remain unchanged until a separately approved migration. Historical references are preserved when they accurately describe the project at that time.
+
 ## Architecture Summary
 
 The current trader-facing flow is:
@@ -66,7 +72,7 @@ Ownership is strict:
 - KR-390 Trade Management: Foundation.
 - KR-400 Execution Alerts: Foundation.
 - KR-705 Trader Intelligence Panel: Frozen display layer.
-- Top-level product metadata remains `0.5.0 / 0004 / FOUNDATION` pending formal release-version reconciliation.
+- Approved product metadata is `KRONOS Core / 0.6.0 / 0005 / FOUNDATION`; executable compatibility constants remain unchanged pending a separately approved migration.
 
 BUY NOW and SELL NOW are confirmed execution-timing states. They are not broker orders, and no automated trade is placed.
 
@@ -84,6 +90,10 @@ BUY NOW and SELL NOW are confirmed execution-timing states. They are not broker 
 - [Execution Context Adapters](docs/architecture/ADL-003-Execution-Context-Adapters.md)
 - [Model Trade Ownership](docs/architecture/ADL-004-Model-Trade-Ownership.md)
 - [Alert Architecture](docs/architecture/ADL-005-Alert-Architecture.md)
+- [Platform Architecture](docs/product/KRONOS_PLATFORM_ARCHITECTURE.md)
+- [Versioning Policy](docs/product/VERSIONING_POLICY.md)
+- [Release Policy](docs/product/RELEASE_POLICY.md)
+- [Platform Governance](docs/product/PLATFORM_GOVERNANCE.md)
 
 ## Technology
 

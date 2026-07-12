@@ -125,6 +125,30 @@ Approved
 
 ---
 
+## KD-007
+
+**Date:** 2026-07-12
+
+**Decision**
+
+Adopt the Platform/Product identity:
+
+- Platform = KRONOS.
+- Current product = KRONOS Core.
+- Historical product-specific filenames and runtime identifiers remain compatible until separately migrated.
+- Product identity is broader than the current Cash and Futures execution modules.
+- Product metadata changes require release-governance approval.
+
+**Reason**
+
+Separating platform identity, product identity, execution paths, and compatibility names allows KRONOS to evolve without breaking current Pine integrations or rewriting accurate project history.
+
+**Status**
+
+Approved
+
+---
+
 # Future Decisions
 
 All significant architectural decisions should be recorded here before implementation.

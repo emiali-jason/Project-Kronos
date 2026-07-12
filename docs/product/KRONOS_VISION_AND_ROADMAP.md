@@ -5,7 +5,7 @@
 
 ## 1. Vision
 
-KRONOS is a market-intelligence platform with multiple execution modules. It began as KRONOS Futures, but NSE implementation clarified a larger architecture: one intelligence engine can analyze markets, produce explainable BUY/SELL decisions, and route those decisions through different execution vehicles.
+KRONOS is a market-intelligence platform with multiple execution modules. KRONOS Core is its current shared intelligence product. It began as KRONOS Futures, but NSE implementation clarified a larger architecture: one intelligence engine can analyze markets, produce explainable BUY/SELL decisions, and route those decisions through different execution vehicles.
 
 KRONOS is not:
 
@@ -136,7 +136,7 @@ The BUY/SELL signal never changes. Only the execution vehicle changes.
 ## 6. Platform Architecture
 
 ```text
-KRONOS Core Intelligence
+KRONOS Core
   -> Execution Modules
        - Cash
        - Futures
@@ -152,6 +152,8 @@ Market Models define what market is being analyzed and what reference dependenci
 ### Execution Modules
 
 Execution Modules define how a decision can be expressed. Current modules are Cash and Futures. Options are a future module, not active development.
+
+The repository and Pine filename may retain historical `KRONOS_FUTURES` naming until a separately approved migration. Runtime and public compatibility identifiers remain unchanged. Historical references remain valid when they accurately describe the project at that time.
 
 ### Shared Intelligence Engines
 
@@ -191,7 +193,7 @@ Current detailed status remains in [Engine Status](../ENGINE_STATUS.md). Validat
 ## 8. 2026 Roadmap
 
 ```text
-KRONOS Core Intelligence
+KRONOS Core
   -> MCX Metals Swing (Futures)
   -> MCX Energy Swing (Futures)
   -> NSE Equity Swing (Cash + Futures)
@@ -285,3 +287,6 @@ Platform v2.0 should be considered successful when:
 - [Execution Context Adapter ADL](../architecture/ADL-003-Execution-Context-Adapters.md)
 - [Model Trade Ownership ADL](../architecture/ADL-004-Model-Trade-Ownership.md)
 - [Alert Architecture ADL](../architecture/ADL-005-Alert-Architecture.md)
+- [Versioning Policy](VERSIONING_POLICY.md)
+- [Release Policy](RELEASE_POLICY.md)
+- [Platform Governance](PLATFORM_GOVERNANCE.md)

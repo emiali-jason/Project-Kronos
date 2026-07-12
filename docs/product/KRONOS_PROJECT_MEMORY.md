@@ -7,7 +7,7 @@ Read this document before starting any future KRONOS development chat. It is the
 
 ## 1. Current Platform Status
 
-KRONOS is a modular market-intelligence and decision-support platform built in Pine Script for TradingView. It analyzes execution and reference markets, produces explainable decisions, confirms execution timing, manages objective model trades, and creates confirmed BUY NOW / SELL NOW TradingView alert events.
+KRONOS is a modular market-intelligence and decision-support platform built in Pine Script for TradingView. KRONOS Core is the current shared intelligence product. It analyzes execution and reference markets, produces explainable decisions, confirms execution timing, manages objective model trades, and creates confirmed BUY NOW / SELL NOW TradingView alert events.
 
 It is not broker automation, not a black-box AI, and not a personal-position tracker yet.
 
@@ -41,6 +41,8 @@ Current execution modules:
 Future execution modules:
 
 - Options
+
+Options are not currently implemented. The repository and Pine filename may retain historical `KRONOS_FUTURES` naming until a separately approved migration. Runtime and public compatibility identifiers remain unchanged, and accurate historical references should be preserved.
 
 This discovery is considered one of the major architectural milestones of Project KRONOS.
 
@@ -112,6 +114,7 @@ Product:
 
 - [KRONOS Vision & Roadmap](KRONOS_VISION_AND_ROADMAP.md) is the CEO-level product document.
 - This file is the permanent project briefing for future sessions.
+- [Versioning Policy](VERSIONING_POLICY.md), [Release Policy](RELEASE_POLICY.md), and [Platform Governance](PLATFORM_GOVERNANCE.md) define product identity and release controls.
 
 ## 7. Current Priorities
 
@@ -166,3 +169,7 @@ For every future KRONOS development chat:
 - [Data Flow](../architecture/DATA_FLOW.md)
 - [Testing Protocol](../validation/TESTING.md)
 - [Roadmap](../../ROADMAP.md)
+- [Platform Architecture](KRONOS_PLATFORM_ARCHITECTURE.md)
+- [Versioning Policy](VERSIONING_POLICY.md)
+- [Release Policy](RELEASE_POLICY.md)
+- [Platform Governance](PLATFORM_GOVERNANCE.md)

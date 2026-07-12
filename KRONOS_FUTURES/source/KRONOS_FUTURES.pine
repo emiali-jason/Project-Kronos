@@ -1,20 +1,24 @@
 //@version=6
 indicator("KRONOS FUTURES", overlay=true, max_labels_count=500)
 
-//==================================================
+//============================================================
 // PROJECT KRONOS
-//==================================================
+//============================================================
 //
-// Product      : KRONOS FUTURES
-// Version      : 0.5.0
-// Build        : 0004
-// Codename     : FOUNDATION
-// Release Note : Product release metadata is pending formal
-//                versioning reconciliation. Executable constants
-//                remain unchanged until an authoritative release
-//                decision is recorded.
+// Platform      : KRONOS
+// Product       : KRONOS Core
 //
-//==================================================
+// Version       : 0.6.0
+// Build         : 0005
+// Codename      : FOUNDATION
+//
+// Architecture  : Evidence-Based Trading Intelligence Platform
+// Philosophy    : Evidence -> Confidence -> Decision -> Execution
+//
+// Status        : Active Development
+//
+// Copyright     : Project KRONOS
+//============================================================
 
 
 
