@@ -4323,6 +4323,188 @@ bool outReviewWait = reviewWait
 
 
 //==================================================================
+// KR-345 : Relative Intelligence Engine
+// Version : 1.0.0
+// Status  : FOUNDATION
+// Category: Evidence Engine
+// Last Updated : 2026-07-12
+//
+// Purpose
+// -------
+// Measures relative strength against the appropriate market
+// benchmark and produces standardized evidence.
+//
+// Ownership
+// ---------
+// - Market Relative
+// - Sector Relative
+// - Relative evidence scoring
+// - Relative state classification
+//
+// Boundaries
+// ----------
+// - No trend, trend-quality, compression, acceptance, momentum,
+//   price-action, opportunity, confidence, decision, execution,
+//   trade-management, alert, or presentation ownership.
+// - No request.security() calls.
+// - No routing, configuration, or symbol mapping.
+//==================================================================
+
+//==================================================================
+// KR-345.10 STATE CONSTANTS
+//==================================================================
+
+const int KR345_RELATIVE_LAGGARD = -2
+const int KR345_RELATIVE_WEAK = -1
+const int KR345_RELATIVE_NEUTRAL = 0
+const int KR345_RELATIVE_STRONG = 1
+const int KR345_RELATIVE_LEADER = 2
+
+const int KR345_TREND_FALLING = -1
+const int KR345_TREND_FLAT = 0
+const int KR345_TREND_RISING = 1
+
+const int KR345_RELATIVE_LOOKBACK = 123
+
+//==================================================================
+// KR-345.20 RELATIVE FUNCTIONS
+//==================================================================
+
+relativeStrengthValue(series float instrumentClose, series float benchmarkClose, int lookback) =>
+    bool relativeInputsReady = not na(instrumentClose) and not na(benchmarkClose) and not na(instrumentClose[lookback]) and not na(benchmarkClose[lookback]) and instrumentClose[lookback] != 0.0 and benchmarkClose[lookback] != 0.0
+    float instrumentReturn = relativeInputsReady ? instrumentClose / instrumentClose[lookback] : na
+    float benchmarkReturn = relativeInputsReady ? benchmarkClose / benchmarkClose[lookback] : na
+    relativeInputsReady and benchmarkReturn != 0.0 ? (instrumentReturn / benchmarkReturn) - 1.0 : na
+
+relativeStateFromValue(series float relativeValue) =>
+    int state = KR345_RELATIVE_NEUTRAL
+    if na(relativeValue)
+        state := KR345_RELATIVE_NEUTRAL
+    else if relativeValue >= 0.05
+        state := KR345_RELATIVE_LEADER
+    else if relativeValue >= 0.02
+        state := KR345_RELATIVE_STRONG
+    else if relativeValue <= -0.05
+        state := KR345_RELATIVE_LAGGARD
+    else if relativeValue <= -0.02
+        state := KR345_RELATIVE_WEAK
+    else
+        state := KR345_RELATIVE_NEUTRAL
+    state
+
+relativeTrendFromValue(series float relativeValue) =>
+    int trend = KR345_TREND_FLAT
+    if not na(relativeValue) and not na(relativeValue[1])
+        if relativeValue > relativeValue[1]
+            trend := KR345_TREND_RISING
+        else if relativeValue < relativeValue[1]
+            trend := KR345_TREND_FALLING
+        else
+            trend := KR345_TREND_FLAT
+    trend
+
+relativeScoreFromState(int relativeState) =>
+    relativeState == KR345_RELATIVE_LEADER ? 100 : relativeState == KR345_RELATIVE_STRONG ? 75 : relativeState == KR345_RELATIVE_NEUTRAL ? 50 : relativeState == KR345_RELATIVE_WEAK ? 25 : 0
+
+relativeStateText(int relativeState) =>
+    string stateText = "NEUTRAL"
+    switch relativeState
+        KR345_RELATIVE_LEADER => stateText := "LEADER"
+        KR345_RELATIVE_STRONG => stateText := "STRONG"
+        KR345_RELATIVE_WEAK => stateText := "WEAK"
+        KR345_RELATIVE_LAGGARD => stateText := "LAGGARD"
+        => stateText := "NEUTRAL"
+    stateText
+
+//==================================================================
+// KR-345.30 INPUT READINESS
+//==================================================================
+
+bool relativeNSEEquityContext = outMarketDataUsesCashAnalysis
+bool relativeNSEIndexContext = outMarketDataUsesIndexAnalysis
+bool relativeMCXContext = outMarketDataUsesFuturesAnalysis
+bool relativeNotApplicable = relativeNSEIndexContext or relativeMCXContext or not relativeNSEEquityContext
+
+bool marketRelativeContextReady = relativeNSEEquityContext and outMarketDataHasParentIndexContext and outAnalysisDataReady and outParentDataReady
+bool sectorRelativeContextReady = relativeNSEEquityContext and outRelationshipReady and outRelationshipHasSectorContext and outMarketDataHasSectorContext and outAnalysisDataReady and outSectorDataReady
+
+//==================================================================
+// KR-345.40 MARKET RELATIVE
+//==================================================================
+
+float marketRelativeValue = marketRelativeContextReady ? relativeStrengthValue(outAnalysisClose, outParentClose, KR345_RELATIVE_LOOKBACK) : na
+bool marketRelativeReady = marketRelativeContextReady and not na(marketRelativeValue)
+int marketRelativeState = relativeStateFromValue(marketRelativeValue)
+int marketRelativeTrend = relativeTrendFromValue(marketRelativeValue)
+
+//==================================================================
+// KR-345.50 SECTOR RELATIVE
+//==================================================================
+
+float sectorRelativeValue = sectorRelativeContextReady ? relativeStrengthValue(outAnalysisClose, outSectorClose, KR345_RELATIVE_LOOKBACK) : na
+bool sectorRelativeReady = sectorRelativeContextReady and not na(sectorRelativeValue)
+int sectorRelativeState = relativeStateFromValue(sectorRelativeValue)
+int sectorRelativeTrend = relativeTrendFromValue(sectorRelativeValue)
+
+//==================================================================
+// KR-345.60 SCORE AND CLASSIFICATION
+//==================================================================
+
+bool relativeReady = marketRelativeReady
+int relativeScore = 0
+
+if marketRelativeReady and sectorRelativeReady
+    relativeScore := int(math.round((relativeScoreFromState(marketRelativeState) + relativeScoreFromState(sectorRelativeState)) / 2.0))
+else if marketRelativeReady
+    relativeScore := relativeScoreFromState(marketRelativeState)
+else
+    relativeScore := 0
+
+float relativeCompositeValue = marketRelativeReady and sectorRelativeReady ? (marketRelativeValue + sectorRelativeValue) / 2.0 : marketRelativeReady ? marketRelativeValue : na
+int relativeState = relativeStateFromValue(relativeCompositeValue)
+string relativeStatus = relativeReady ? "READY" : relativeNotApplicable ? "NOT APPLICABLE" : "WAITING"
+string relativeReason = relativeNotApplicable ? "Relative not applicable for this market model" : marketRelativeReady and sectorRelativeReady ? "Market and sector relative ready" : marketRelativeReady ? "Market relative ready; sector relative unavailable" : "Waiting for market relative data"
+string relativeSummary = relativeReady ? "Market " + relativeStateText(marketRelativeState) + (sectorRelativeReady ? " / Sector " + relativeStateText(sectorRelativeState) : " / Sector Unavailable") : relativeStatus
+
+//==================================================================
+// KR-345.70 PUBLIC INTERFACE
+//==================================================================
+
+bool outRelativeReady = relativeReady
+string outRelativeStatus = relativeStatus
+string outRelativeReason = relativeReason
+int outRelativeScore = relativeScore
+int outRelativeState = relativeState
+string outRelativeSummary = relativeSummary
+
+bool outMarketRelativeReady = marketRelativeReady
+float outMarketRelativeValue = marketRelativeValue
+int outMarketRelativeState = marketRelativeState
+int outMarketRelativeTrend = marketRelativeTrend
+
+bool outSectorRelativeReady = sectorRelativeReady
+float outSectorRelativeValue = sectorRelativeValue
+int outSectorRelativeState = sectorRelativeState
+int outSectorRelativeTrend = sectorRelativeTrend
+
+string outRelativeBenchmarkSymbol = outMarketDataParentIndexSymbol
+int outRelativeLookback = KR345_RELATIVE_LOOKBACK
+
+//==================================================================
+// KR-345.80 RESERVED PLACEHOLDERS
+//==================================================================
+// Sector vs NIFTY          : Not implemented.
+// Leadership               : Not implemented.
+// Multi-timeframe Relative : Not implemented.
+// Acceleration             : Not implemented.
+
+//==================================================================
+// END OF KR-345
+//==================================================================
+
+
+
+//==================================================================
 // KR-350 : Opportunity Foundation Engine
 // Version : 1.0.0
 // Status  : FROZEN
