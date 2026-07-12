@@ -63,7 +63,7 @@ Test both continuous reference symbols and representative dated reference contra
 | Daily | Trend/reference support | No | Stable trend/reference behavior and no executable trigger |
 | Weekly | Strategic/reference support | No | Data availability and no executable trigger |
 
-For Auto KGS CPR routing, explicitly check the selected reference timeframe on 15m, 1H, 4H, Daily, and Weekly charts against the approved KR-280 contract.
+For legacy Auto CPR routing, explicitly check the selected reference timeframe on 15m, 1H, 4H, Daily, and Weekly charts against the approved KR-280 contract.
 
 ## Reference-Symbol and Runtime Safety
 

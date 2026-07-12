@@ -7,6 +7,22 @@ This matrix defines which question each engine owns. Ownership is exclusive: dow
 
 See also [Architecture Overview](OVERVIEW.md), [Data Flow](DATA_FLOW.md), and the [Engine Status Registry](../ENGINE_STATUS.md).
 
+## Evidence Synthesis Boundary
+
+KES (KRONOS Evidence Synthesis) collects, validates, standardizes, and packages evidence before KR-360 Confidence.
+
+KES does not own:
+
+- evidence generation;
+- confidence calculation;
+- decisions;
+- execution;
+- trade management;
+- alerts;
+- presentation.
+
+KES is an unnumbered architectural boundary over existing public evidence contracts. It does not replace an engine, change engine numbering, or alter any runtime contract.
+
 ## Ownership Matrix
 
 | Engine | Question answered | Owns | Must not own | Primary inputs | Primary outputs | Downstream consumers |

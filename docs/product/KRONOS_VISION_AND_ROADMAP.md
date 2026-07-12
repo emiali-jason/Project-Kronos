@@ -234,7 +234,7 @@ A portfolio-level intelligence layer for exposure, correlation, concentration, a
 
 Deferred decisions should be resolved through explicit ADLs before implementation changes begin.
 
-- DD-001: Rename Auto KGS to Market Structure Engine after NSE Swing.
+- DD-001: Reconcile the preserved legacy Auto CPR mode name after NSE Swing; KES (KRONOS Evidence Synthesis) remains the evidence synthesis boundary.
 - DD-002: Execution Profiles from Swing to Intraday after Platform v1.0.
 - DD-003: VWAP Evaluation deferred.
 - DD-004: Macro Event Engine deferred.

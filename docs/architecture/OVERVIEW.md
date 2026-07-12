@@ -31,7 +31,7 @@ BUY NOW and SELL NOW are explicit, confirmed execution-timing states. They are n
 |---|---|---|
 | Configuration and identity | Product settings, market recognition, asset/reference mapping | KR-100, KR-200, KR-250 |
 | Market data and mathematical foundation | Multi-timeframe OHLCV, indicators, math, and structure | KR-260, KR-270, KR-271, KR-275, KR-280 |
-| Intelligence Core | Trend, quality, compression, acceptance, momentum, review, opportunity, confidence | KR-300 through KR-360 |
+| Intelligence Core | Trend, quality, compression, acceptance, momentum, review, opportunity, evidence synthesis, confidence | KR-300 through KR-360 plus KES (KRONOS Evidence Synthesis) |
 | Decision | Direction and readiness | KR-370 |
 | Execution context | Narrow translation of reference and MCX execution facts | KR-380A |
 | Execution timing | Confirmed NO TRIGGER/FORMING/BUY NOW/SELL NOW/EXTENDED/FAILED state | KR-380 |
@@ -48,7 +48,9 @@ Reference and execution market identity
   -> KR-250 Asset Mapping
   -> KR-260 Market Data
   -> KR-270 / KR-271 / KR-275 / KR-280 Foundation
-  -> KR-300 through KR-360 Intelligence Core
+  -> KR-300 through KR-350 Evidence Generation
+  -> KES Evidence Synthesis
+  -> KR-360 Confidence
   -> KR-370 Decision and Readiness
   -> KR-380A Execution Context Adapter
   -> KR-380 Execution Timing
@@ -61,6 +63,12 @@ Reference and execution market identity
 The exact source-file declaration order may differ from this conceptual diagram. Ownership remains one-way: later engines consume established public contracts, and adapters may bridge only the narrow facts authorized by [ADL-003](ADL-003-Execution-Context-Adapters.md).
 
 See [Data Flow](DATA_FLOW.md) for the detailed paths.
+
+## Evidence Synthesis Boundary
+
+KES collects, validates, standardizes, and packages evidence before KR-360 Confidence.
+
+KES does not own evidence generation, confidence calculation, decisions, execution, trade management, alerts, or presentation. It is an unnumbered architectural boundary over existing public evidence contracts; it does not add or renumber an engine.
 
 ## Current Supported Futures Model
 

@@ -36,10 +36,13 @@ KR-200 Market Identification
   -> KR-330 Momentum
   -> KR-340 Review Readiness
   -> KR-350 Opportunity
+  -> KES (KRONOS Evidence Synthesis)
   -> KR-360 Confidence
 ```
 
 Each intelligence engine answers one question and exposes public outputs. No individual indicator creates a trade.
+
+KES collects, validates, standardizes, and packages that evidence before KR-360 Confidence. KES does not own evidence generation, confidence calculation, decisions, execution, trade management, alerts, or presentation.
 
 ## 2. Decision
 

@@ -2351,11 +2351,11 @@ bool outLastBearishBOS = strLastBearishBOS
 // - Future changes must be additive, compatibility-safe, or bug fixes.
 // - No trading decisions/signals should be added inside this engine
 //   unless that is the engine's explicit responsibility.
-// - CPR reference behavior is validated against KGS-compatible
-//   Auto mode.
+// - CPR reference behavior is validated against the preserved
+//   legacy Auto mode.
 //
 // Validation Scope:
-// - KGS-compatible CPR reference behavior.
+// - Legacy Auto-mode CPR reference behavior.
 // - Previous completed reference OHLC feeds CPR, pivots, and
 //   reference high/low/close outputs.
 //==================================================================
@@ -2397,7 +2397,7 @@ inpShowResistance   = input.bool(true, "Show Resistance", group = GRP_CPR)
 inpShowSupport      = input.bool(true, "Show Support", group = GRP_CPR)
 inpShowPreviousDay  = input.bool(true, "Show PDH / PDL", group = GRP_CPR)
 
-// Auto KGS is the validated CPR reference standard for KRONOS.
+// The preserved legacy Auto mode is the validated CPR reference standard.
 // Manual modes remain available for comparison and diagnostics.
 inpCPRReferenceMode = input.string("Auto KGS", "CPR Reference Mode", options = ["Auto KRONOS", "Auto KGS", "Daily", "Weekly", "Monthly"], group = GRP_CPR)
 
@@ -2418,7 +2418,7 @@ else if inpCPRReferenceMode == "Monthly"
     cprSourceTF := "M"
     cprReferencePeriod := "Monthly"
 else if inpCPRReferenceMode == "Auto KGS"
-    // Validated KGS-compatible CPR reference routing.
+    // Validated legacy Auto-mode CPR reference routing.
     if timeframe.isintraday
         if timeframe.multiplier <= 15
             cprSourceTF := "D"
@@ -2881,7 +2881,7 @@ bool outVirginCPR = cprVirgin
 // Canonical module version/status is declared in the KR-280 banner.
 // Historical duplicate version comments were removed during source
 // metadata reconciliation. KR-280 v1.1.0 remains the production
-// freeze baseline with KGS-compatible CPR reference behavior.
+// freeze baseline with legacy Auto-mode CPR reference behavior.
 //
 //==================================================================
 
