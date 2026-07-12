@@ -278,6 +278,8 @@ else if krMarket == "NSE"
 // - Configuration layer only.
 // - No request.security calls.
 // - No trading decisions, alerts, entries, exits, stops or targets.
+// - General NSE cash equities are supported as Cash Only with NIFTY
+//   parent context and no sector context.
 // - Unsupported instruments expose empty reference fields and
 //   outSupportedInstrument = false.
 //==================================================================
@@ -299,8 +301,11 @@ bool modelNSEIndexBankNifty = assetMarket == "NSE" and (krRootUpper == "BANKNIFT
 bool modelNSEIndexSwing = modelNSEIndexNifty or modelNSEIndexBankNifty
 bool modelNSEEquityRootSupported = assetMarket == "NSE" and modelSymbolInApprovedNSEUniverse(krRootUpper)
 bool modelNSEEquityTickerSupported = assetMarket == "NSE" and modelSymbolInApprovedNSEUniverse(krTickerUpper)
-bool modelNSEEquitySwing = not modelNSEIndexSwing and (modelNSEEquityRootSupported or modelNSEEquityTickerSupported)
-string modelDetectedNSESymbol = modelNSEEquityRootSupported ? krRootUpper : modelNSEEquityTickerSupported ? krTickerUpper : ""
+bool modelNSEEquityCurated = modelNSEEquityRootSupported or modelNSEEquityTickerSupported
+string modelGeneralNSESymbol = krRootUpper != "" ? krRootUpper : krTickerUpper
+bool modelNSEGeneralCashEquity = assetMarket == "NSE" and not modelNSEIndexSwing and not modelNSEEquityCurated and modelGeneralNSESymbol != ""
+bool modelNSEEquitySwing = not modelNSEIndexSwing and (modelNSEEquityCurated or modelNSEGeneralCashEquity)
+string modelDetectedNSESymbol = modelNSEEquityRootSupported ? krRootUpper : modelNSEEquityTickerSupported ? krTickerUpper : modelNSEGeneralCashEquity ? modelGeneralNSESymbol : ""
 string modelDetectedNSEIndexSymbol = modelNSEIndexBankNifty ? "BANKNIFTY" : modelNSEIndexNifty ? "NIFTY" : ""
 
 string modelName = "Unsupported"
@@ -342,9 +347,9 @@ else if modelNSEEquitySwing
     modelCashSymbol := "NSE:" + modelDetectedNSESymbol
     modelAnalysisSymbol := modelCashSymbol
     modelFuturesSymbol := ""
-    modelExecutionInstrumentText := modelDetectedNSESymbol + " FUT"
-    modelExecutionInstrumentType := "Stock Futures"
-    modelExecutionProfile := "SWING"
+    modelExecutionInstrumentText := modelNSEEquityCurated ? modelDetectedNSESymbol + " FUT" : modelDetectedNSESymbol + " CASH"
+    modelExecutionInstrumentType := modelNSEEquityCurated ? "Stock Futures" : "Cash Equity"
+    modelExecutionProfile := modelNSEEquityCurated ? "SWING" : "CASH ONLY"
     modelSupportedInstrument := true
 else if modelNSEIndexSwing
     modelName := "NSE Index Swing"
@@ -1366,8 +1371,16 @@ if relationshipIsNSEEquity
 // END GENERATED NSE RELATIONSHIP MAPPING
 
 bool relationshipPrimaryReferenceValid = relationshipPrimaryReferenceSymbol != "" and relationshipPrimaryReferenceSymbol != "UNKNOWN"
+bool relationshipGeneralNSEEquity = relationshipIsNSEEquity and not relationshipNSEMapped
+
+if relationshipGeneralNSEEquity
+    relationshipCashSymbol := outCashSymbol
+    relationshipParentIndexSymbol := "NSE:NIFTY"
+    relationshipDatasetStatus := KR252_STATUS_READY
+    relationshipDatasetReason := "General NSE cash equity; sector unavailable."
+
 bool relationshipCashRequired = relationshipIsNSEEquity
-bool relationshipSectorRequired = relationshipIsNSEEquity and relationshipDatasetStatus != KR252_STATUS_REVIEW
+bool relationshipSectorRequired = relationshipIsNSEEquity and relationshipNSEMapped and relationshipDatasetStatus != KR252_STATUS_REVIEW
 bool relationshipParentRequired = relationshipIsNSEEquity
 bool relationshipCashReady = not relationshipCashRequired or relationshipCashSymbol != ""
 bool relationshipSectorReady = not relationshipSectorRequired or relationshipSectorIndexSymbol != ""
@@ -1391,9 +1404,9 @@ if outSupportedInstrument
             relationshipStatus := relationshipDatasetStatus
             relationshipReason := relationshipReady ? "NSE Relationship Ready" : relationshipDatasetReason
         else
-            relationshipReady := false
-            relationshipStatus := KR252_STATUS_UNSUPPORTED
-            relationshipReason := "Symbol Not In KRONOS Universe"
+            relationshipReady := relationshipCashReady and relationshipParentReady
+            relationshipStatus := relationshipReady ? KR252_STATUS_READY : KR252_STATUS_UNSUPPORTED
+            relationshipReason := relationshipReady ? "General NSE Cash Relationship Ready" : "General NSE Cash Relationship Missing"
     else if relationshipIsNSEIndex
         relationshipReady := true
         relationshipStatus := KR252_STATUS_READY
@@ -1536,7 +1549,7 @@ else if marketDataRouteIsNSEEquity
     else if not outRelationshipReady
         marketDataRouteStatus := KR260A_STATUS_INVALID_CONFIG
         marketDataRouteReason := outRelationshipReason
-    else if not marketDataRouteHasSectorContext
+    else if outRelationshipHasSectorContext and not marketDataRouteHasSectorContext
         marketDataRouteStatus := KR260A_STATUS_INVALID_CONFIG
         marketDataRouteReason := "Missing Sector Context"
     else if not marketDataRouteHasParentIndexContext
