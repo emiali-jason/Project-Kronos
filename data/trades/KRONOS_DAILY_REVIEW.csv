@@ -1,0 +1,1 @@
+schema_version,review_id,review_date,market_session,instruments_reviewed,observations_created,trades_created,open_trades_reviewed,closed_trades_reviewed,key_lessons,follow_up_required,created_at,updated_at
