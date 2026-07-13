@@ -31,7 +31,7 @@ BUY NOW and SELL NOW are explicit, confirmed execution-timing states. They are n
 |---|---|---|
 | Configuration and identity | Product settings, market recognition, asset/reference mapping | KR-100, KR-200, KR-250 |
 | Market data and mathematical foundation | Multi-timeframe OHLCV, indicators, math, and structure | KR-260, KR-270, KR-271, KR-275, KR-280 |
-| Intelligence Core | Trend, quality, compression, acceptance, momentum, review, opportunity, evidence synthesis, confidence | KR-300 through KR-360 plus KES (KRONOS Evidence Synthesis) |
+| Intelligence Core | Trend, quality, compression, acceptance, momentum, review, consolidated directional bias, opportunity, evidence synthesis, confidence | KR-300 through KR-360 plus KES (KRONOS Evidence Synthesis) |
 | Decision | Direction and readiness | KR-370 |
 | Execution context | Narrow translation of reference and MCX execution facts | KR-380A |
 | Execution timing | Confirmed NO TRIGGER/FORMING/BUY NOW/SELL NOW/EXTENDED/FAILED state | KR-380 |
@@ -41,6 +41,8 @@ BUY NOW and SELL NOW are explicit, confirmed execution-timing states. They are n
 
 Detailed boundaries are defined in [Engine Ownership](ENGINE_OWNERSHIP.md).
 
+KR-341 provides the swing-trading directional contract inside the Intelligence Core. Weekly Neutral is permissive, Confirmed Daily direction is mandatory for READY permission, Developing Daily supports WATCH only, and Neutral and Conflicted are distinct consolidation states.
+
 ## Current Conceptual Data Flow
 
 ```text
@@ -49,6 +51,7 @@ Reference and execution market identity
   -> KR-260 Market Data
   -> KR-270 / KR-271 / KR-275 / KR-280 Foundation
   -> KR-300 through KR-350 Evidence Generation
+  -> KR-341 Consolidated Directional Bias
   -> KES Evidence Synthesis
   -> KR-360 Confidence
   -> KR-370 Decision and Readiness

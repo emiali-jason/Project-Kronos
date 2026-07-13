@@ -4336,6 +4336,156 @@ bool outReviewWait = reviewWait
 
 
 //==================================================================
+// KR-341 : Consolidated Directional Bias Engine
+// Version : 0.1.0
+// Status  : FOUNDATION
+// Last Updated : 2026-07-13
+//
+// Purpose
+// -------
+// Produces the authoritative multi-timeframe directional bias for
+// swing-trading decisions.
+//
+// Ownership
+// ---------
+// - Weekly / Daily / 4H directional bias consolidation
+// - Consolidated bullish, bearish, neutral, conflicted, and not-ready states
+//
+// Non-Ownership
+// -------------
+// - Confidence
+// - Entries or execution triggers
+// - Trade management
+// - Alerts
+// - Presentation
+//
+// Dependencies
+// ------------
+// - KR-260 existing Weekly, Daily, and 4H datasets
+// - KR-300 public Daily trend foundation outputs
+//
+// NOTE
+// ----
+// KR-341 adds no request.security() calls and preserves all existing
+// KR-300, KR-310, KR-360, and KR-370 public contracts.
+//==================================================================
+
+//==================================================================
+// KR-341.10 STATE CONSTANTS
+//==================================================================
+
+const int KR341_BIAS_NOT_READY = -2
+const int KR341_BIAS_BEARISH = -1
+const int KR341_BIAS_NEUTRAL = 0
+const int KR341_BIAS_BULLISH = 1
+const int KR341_BIAS_CONFLICTED = 2
+const int KR341_BIAS_NEUTRAL_CONFLICTED = 0
+
+//==================================================================
+// KR-341.20 TIMEFRAME EVIDENCE
+//==================================================================
+
+float kr341StrategicSMA20 = ta.sma(mdPrimaryStrategicC, SMA_FAST)
+float kr341StrategicSMA50 = ta.sma(mdPrimaryStrategicC, SMA_SLOW)
+
+float kr341StructureSMA20 = ta.sma(mdPrimaryStructureC, SMA_FAST)
+float kr341StructureSMA50 = ta.sma(mdPrimaryStructureC, SMA_SLOW)
+
+bool kr341WeeklyReady = not na(mdPrimaryStrategicC) and not na(kr341StrategicSMA20) and not na(kr341StrategicSMA50)
+bool kr341DailyReady = outTrendDataReady
+bool kr341StructureReady = not na(mdPrimaryStructureC) and not na(kr341StructureSMA20) and not na(kr341StructureSMA50)
+bool kr341InputReady = kr341WeeklyReady and kr341DailyReady and kr341StructureReady
+
+bool kr341WeeklyBullish = kr341WeeklyReady and kr341StrategicSMA20 > kr341StrategicSMA50 and mdPrimaryStrategicC > kr341StrategicSMA20
+bool kr341WeeklyBearish = kr341WeeklyReady and kr341StrategicSMA20 < kr341StrategicSMA50 and mdPrimaryStrategicC < kr341StrategicSMA20
+bool kr341WeeklyNeutral = kr341WeeklyReady and not kr341WeeklyBullish and not kr341WeeklyBearish
+bool kr341DailyConfirmedBullish = kr341DailyReady and outConfirmedBullishTrend
+bool kr341DailyConfirmedBearish = kr341DailyReady and outConfirmedBearishTrend
+bool kr341DailyDevelopingBullish = kr341DailyReady and outDevelopingBullishTrend
+bool kr341DailyDevelopingBearish = kr341DailyReady and outDevelopingBearishTrend
+bool kr341StructureBullish = kr341StructureReady and kr341StructureSMA20 > kr341StructureSMA50 and mdPrimaryStructureC > kr341StructureSMA20
+bool kr341StructureBearish = kr341StructureReady and kr341StructureSMA20 < kr341StructureSMA50 and mdPrimaryStructureC < kr341StructureSMA20
+bool kr341StructureNeutral = kr341StructureReady and not kr341StructureBullish and not kr341StructureBearish
+
+//==================================================================
+// KR-341.30 CONSOLIDATED CLASSIFICATION
+//==================================================================
+
+bool kr341BullishBlockedByWeekly = kr341InputReady and kr341DailyConfirmedBullish and kr341WeeklyBearish
+bool kr341BullishBlockedByStructure = kr341InputReady and kr341DailyConfirmedBullish and kr341StructureBearish
+bool kr341BearishBlockedByWeekly = kr341InputReady and kr341DailyConfirmedBearish and kr341WeeklyBullish
+bool kr341BearishBlockedByStructure = kr341InputReady and kr341DailyConfirmedBearish and kr341StructureBullish
+
+bool kr341ConsolidatedBullish = kr341InputReady and kr341DailyConfirmedBullish and kr341StructureBullish and not kr341WeeklyBearish
+bool kr341ConsolidatedBearish = kr341InputReady and kr341DailyConfirmedBearish and kr341StructureBearish and not kr341WeeklyBullish
+bool kr341ConsolidatedConflict = kr341BullishBlockedByWeekly or kr341BullishBlockedByStructure or kr341BearishBlockedByWeekly or kr341BearishBlockedByStructure
+bool kr341ConsolidatedNeutral = kr341InputReady and not kr341ConsolidatedBullish and not kr341ConsolidatedBearish and not kr341ConsolidatedConflict
+bool kr341ConsolidatedNeutralConflicted = kr341ConsolidatedNeutral or kr341ConsolidatedConflict
+
+int kr341ConsolidatedState = KR341_BIAS_NOT_READY
+
+if not kr341InputReady
+    kr341ConsolidatedState := KR341_BIAS_NOT_READY
+else if kr341ConsolidatedBullish
+    kr341ConsolidatedState := KR341_BIAS_BULLISH
+else if kr341ConsolidatedBearish
+    kr341ConsolidatedState := KR341_BIAS_BEARISH
+else if kr341ConsolidatedConflict
+    kr341ConsolidatedState := KR341_BIAS_CONFLICTED
+else
+    kr341ConsolidatedState := KR341_BIAS_NEUTRAL
+
+string kr341WeeklyText = kr341WeeklyBullish ? "Weekly Bullish" : kr341WeeklyBearish ? "Weekly Bearish" : "Weekly Neutral"
+string kr341DailyText = kr341DailyConfirmedBullish ? "Daily Confirmed Bullish" : kr341DailyConfirmedBearish ? "Daily Confirmed Bearish" : kr341DailyDevelopingBullish ? "Daily Developing Bullish" : kr341DailyDevelopingBearish ? "Daily Developing Bearish" : "Daily Neutral"
+string kr341StructureText = kr341StructureBullish ? "4H Bullish" : kr341StructureBearish ? "4H Bearish" : "4H Neutral"
+
+string kr341ConsolidatedReason = ""
+string kr341ConsolidatedText = ""
+
+if not kr341InputReady
+    kr341ConsolidatedReason := "Waiting for Weekly/Daily/4H directional data"
+    kr341ConsolidatedText := "WAITING"
+else if kr341ConsolidatedBullish
+    kr341ConsolidatedReason := "Confirmed Daily bullish with aligned 4H; Weekly not bearish"
+    kr341ConsolidatedText := "CONSOLIDATED BULLISH"
+else if kr341ConsolidatedBearish
+    kr341ConsolidatedReason := "Confirmed Daily bearish with aligned 4H; Weekly not bullish"
+    kr341ConsolidatedText := "CONSOLIDATED BEARISH"
+else if kr341ConsolidatedConflict
+    kr341ConsolidatedReason := "Weekly or 4H direction conflicts with confirmed Daily direction"
+    kr341ConsolidatedText := "CONFLICTED"
+else
+    kr341ConsolidatedReason := "Directional evidence incomplete without direct timeframe conflict"
+    kr341ConsolidatedText := "NEUTRAL"
+
+string kr341ConsolidatedSummary = kr341WeeklyText + " | " + kr341DailyText + " | " + kr341StructureText
+
+//==================================================================
+// KR-341.40 PUBLIC INTERFACE
+//==================================================================
+
+bool outConsolidatedDirectionalReady = kr341InputReady
+
+int outConsolidatedDirectionalState = kr341ConsolidatedState
+
+string outConsolidatedDirectionalReason = kr341ConsolidatedReason
+string outConsolidatedDirectionalSummary = kr341ConsolidatedSummary
+string outConsolidatedDirectionalText = kr341ConsolidatedText
+
+bool outConsolidatedBullishBias = kr341ConsolidatedBullish
+bool outConsolidatedBearishBias = kr341ConsolidatedBearish
+bool outConsolidatedNeutralConflictedBias = kr341ConsolidatedNeutralConflicted
+bool outConsolidatedNeutralBias = kr341ConsolidatedNeutralConflicted
+bool outConsolidatedDirectionalConflict = kr341ConsolidatedConflict
+bool outConsolidatedDirectionalNeutral = kr341ConsolidatedNeutral
+
+//==================================================================
+// END OF KR-341
+//==================================================================
+
+
+
+//==================================================================
 // KR-345 : Relative Intelligence Engine
 // Version : 1.0.0
 // Status  : FOUNDATION
@@ -4635,7 +4785,7 @@ const int KR360_CONFIDENCE_EXCEPTIONAL = 4
 // KR-360.20 INPUT READINESS
 //==================================================================
 
-bool confidenceTrendReady = outTrendDataReady
+bool confidenceTrendReady = outConsolidatedDirectionalReady
 bool confidenceQualityReady = outEvidenceReady
 bool confidenceCompressionReady = outCompressionReady
 bool confidenceAcceptanceReady = outBarrierReady
@@ -4649,10 +4799,10 @@ bool confidenceReady = confidenceTrendReady and confidenceCompressionReady and c
 // KR-360.30 PUBLIC CONDITION MAP
 //==================================================================
 
-bool confidenceDirectionalTrend = confidenceTrendReady and (outBullishTrend or outBearishTrend)
-bool confidenceConfirmedTrend = confidenceTrendReady and (outConfirmedBullishTrend or outConfirmedBearishTrend)
-bool confidenceDevelopingTrend = confidenceTrendReady and (outDevelopingBullishTrend or outDevelopingBearishTrend)
-bool confidenceNeutralTrend = confidenceTrendReady and outNeutralTrend
+bool confidenceDirectionalTrend = confidenceTrendReady and (outConsolidatedBullishBias or outConsolidatedBearishBias)
+bool confidenceConfirmedTrend = confidenceDirectionalTrend and (outConfirmedBullishTrend or outConfirmedBearishTrend)
+bool confidenceDevelopingTrend = confidenceDirectionalTrend and (outDevelopingBullishTrend or outDevelopingBearishTrend)
+bool confidenceNeutralTrend = confidenceTrendReady and outConsolidatedNeutralConflictedBias
 
 bool confidenceHealthyQuality = confidenceQualityReady and (outTrendQualityHealthy or outTrendQualityExcellent)
 bool confidenceWeakQuality = confidenceQualityReady and outTrendQualityWeak
@@ -4837,7 +4987,7 @@ const int KR370_DECISION_SELL_READY = 5
 // KR-370.20 INPUT READINESS
 //==================================================================
 
-bool decisionTrendReady = outTrendDataReady
+bool decisionTrendReady = outConsolidatedDirectionalReady
 bool decisionCompressionReady = outCompressionReady
 bool decisionAcceptanceReady = outBarrierReady
 bool decisionMomentumReadyInput = outMomentumReady
@@ -4846,15 +4996,15 @@ bool decisionOpportunityReady = outOpportunityInputReady
 bool decisionConfidenceReady = outConfidenceReady
 
 bool decisionExecutionInputsReady = decisionCompressionReady and decisionAcceptanceReady and decisionMomentumReadyInput and decisionReviewReadyInput and decisionOpportunityReady and decisionConfidenceReady
-bool decisionReady = decisionTrendReady and (decisionExecutionInputsReady or outBullishTrend or outBearishTrend)
+bool decisionReady = decisionTrendReady and (decisionExecutionInputsReady or outConsolidatedBullishBias or outConsolidatedBearishBias)
 
 //==================================================================
 // KR-370.30 PUBLIC CONDITION MAP
 //==================================================================
 
-bool decisionBullishTrend = decisionTrendReady and outBullishTrend
-bool decisionBearishTrend = decisionTrendReady and outBearishTrend
-bool decisionNeutralTrend = decisionTrendReady and outNeutralTrend
+bool decisionBullishTrend = decisionTrendReady and outConsolidatedBullishBias
+bool decisionBearishTrend = decisionTrendReady and outConsolidatedBearishBias
+bool decisionNeutralTrend = decisionTrendReady and outConsolidatedNeutralConflictedBias
 
 bool decisionHigherTimeframeBullishBias = decisionBullishTrend
 bool decisionHigherTimeframeBearishBias = decisionBearishTrend

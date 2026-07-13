@@ -25,6 +25,8 @@ KRONOS Core
 
 KRONOS Core is the shared intelligence product. It analyzes market evidence and produces explainable BUY/SELL decisions, readiness states, blockers, timing states, model-trade state, and alert events.
 
+The execution chart is the trader's primary interface, but BUY READY and SELL READY are reserved for the final consolidated multi-timeframe KRONOS decision. Local execution-timeframe evidence may support WATCH LONG, WATCH SHORT, SETUP BUILDING, WAIT, or AVOID, but final READY states require the consolidated directional contract.
+
 The core intelligence engine should remain reusable across market models and execution modules.
 
 ## Execution Modules
@@ -50,6 +52,12 @@ Examples:
 | MCX GOLD | MCX Futures | Futures |
 
 The BUY/SELL signal does not change because the execution vehicle changes.
+
+## Consolidated Directional Contract
+
+KR-341 owns the authoritative Weekly/Daily/4H directional bias for swing-trading decisions. KR-300 remains the Daily trend foundation engine; it does not attempt to represent the complete multi-timeframe decision. KR-360 and KR-370 consume KR-341 where directional authority is required, while KR-380 continues to own execution timing only.
+
+Weekly Neutral is permissive in this contract. READY permission requires Confirmed Daily direction and aligned 4H structure; Developing Daily may support WATCH behaviour but must not authorize BUY READY or SELL READY. Neutral and Conflicted are separate states so the trader and future review tools can distinguish incomplete alignment from direct timeframe contradiction.
 
 ## KRONOS Discover
 

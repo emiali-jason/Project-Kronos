@@ -35,6 +35,7 @@ KR-200 Market Identification
   -> KR-320 Acceptance
   -> KR-330 Momentum
   -> KR-340 Review Readiness
+  -> KR-341 Consolidated Directional Bias
   -> KR-350 Opportunity
   -> KES (KRONOS Evidence Synthesis)
   -> KR-360 Confidence
@@ -46,7 +47,7 @@ KES collects, validates, standardizes, and packages that evidence before KR-360 
 
 ## 2. Decision
 
-KR-370 consumes prior public intelligence outputs and produces one progressive decision state:
+KR-370 consumes prior public intelligence outputs and uses KR-341 as the authoritative consolidated directional contract before producing one progressive decision state:
 
 - AVOID;
 - WAIT;
@@ -55,10 +56,11 @@ KR-370 consumes prior public intelligence outputs and produces one progressive d
 - BUY READY;
 - SELL READY.
 
-KR-370 owns direction and readiness. It does not issue BUY NOW or SELL NOW and does not access raw Daily/4H/1H market data.
+KR-370 owns direction and readiness. It does not issue BUY NOW or SELL NOW and does not access raw Daily/4H/1H market data. Final BUY READY and SELL READY states require KR-341's consolidated directional bias rather than KR-300's local Daily trend direction alone. KR-341 treats Weekly Neutral as permissive, requires Confirmed Daily direction for READY permission, allows Developing Daily to support WATCH only, and separates Neutral from Conflicted evidence.
 
 ```text
 Intelligence public outputs
+  -> KR-341 consolidated directional bias
   -> KR-370 direction/readiness
   -> decision reason, blocker, review point, and checklist
 ```

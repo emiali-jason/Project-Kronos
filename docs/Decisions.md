@@ -149,6 +149,28 @@ Approved
 
 ---
 
+## KD-008
+
+**Date:** 2026-07-13
+
+**Decision**
+
+KRONOS will separate local Daily trend foundation from the final consolidated multi-timeframe directional bias.
+
+KR-300 remains the owner of Daily trend foundation. KR-341 owns the authoritative Weekly/Daily/4H directional bias for swing-trading decisions. KR-360 and KR-370 consume KR-341 where directional authority is required, while preserving their existing public contracts. KR-705 continues to display the public Decision output published by KR-370.
+
+KR-341's swing contract treats Weekly Neutral as permissive, requires Confirmed Daily direction for READY permission, limits Developing Daily to WATCH support, and distinguishes Neutral from Conflicted evidence.
+
+**Reason**
+
+Live validation showed that an execution chart could display BUY READY or SELL READY while visible higher-timeframe context had not reached an equivalent consolidated decision. The audit confirmed this was an architectural gap: KR-370 was using KR-300 Daily direction directly because no dedicated multi-timeframe directional contract existed.
+
+**Status**
+
+Approved
+
+---
+
 # Future Decisions
 
 All significant architectural decisions should be recorded here before implementation.
