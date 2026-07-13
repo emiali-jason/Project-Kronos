@@ -111,6 +111,28 @@ The script validates the CSV files and rebuilds:
 data/trades/KRONOS_TRADE_LEDGER.xlsx
 ```
 
+## End-Of-Day Validation Report
+
+Run from the repository root:
+
+```bash
+python3 data/trades/scripts/end_of_day_review.py
+```
+
+The script reads the trade, observation, and daily-review CSV files and writes:
+
+```text
+docs/validation/DAILY_REPORT_YYYYMMDD.md
+```
+
+To generate a report for a specific date:
+
+```bash
+python3 data/trades/scripts/end_of_day_review.py --date 2026-07-13
+```
+
+The report summarizes charts reviewed, observations, paper trades, open/closed trades, validation categories, and repository statistics. It does not create trade or observation records.
+
 ## Git Rules
 
 - Commit CSV changes as the durable record.
