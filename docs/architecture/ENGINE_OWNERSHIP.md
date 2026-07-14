@@ -58,6 +58,8 @@ KES is an unnumbered architectural boundary over existing public evidence contra
 | KR-390 | What is the state of the objective KRONOS model trade? | Persistent model-trade entry, stop, targets, HOLD, PROTECT, TRAIL, EXIT, INVALIDATED | Personal-position tracking, broker orders, alerts, or new direction | Confirmed KR-380 BUY/SELL event; KR-390A | Trade state, direction, model prices, reasons, lifecycle flags | KR-705; future management interfaces |
 | KR-400 | Did a new confirmed BUY NOW or SELL NOW event occur? | Exactly two TradingView alert event types | Trading intelligence, entry timing, trade management, or broker automation | KR-380 public BUY/SELL and confirmation outputs | Buy/sell alert event, readiness, status text | TradingView alerts |
 | KR-705 | What intelligence should the trader see? | Trader-facing display, concise translation, status presentation, Hidden/Trader/Developer panel modes, and optional Developer diagnostic sections | Trading calculations, confidence weighting, decisions, timing, management, or alerts | Public outputs from upstream engines and adapters | Visual table only | Trader |
+| KR-710 | Why is the current active blocker active? | Deterministic blocker evidence contract: owner, severity, category, metric, current, required, comparator, pass/fail, clear condition | Decisions, thresholds, scoring, raw market calculations, presentation, or trader wording | Public source-engine outputs only | Active Blocker explainability contract | KR-711; KR-705 Developer Mode; validation records |
+| KR-711 | How should the active blocker be worded for Trader Mode? | Action-oriented Trader Mode wording from KR-710 | Raw market inspection, condition calculation, thresholds, decisions, or diagnostics | KR-710 public blocker contract | Concise trader Need text and category | KR-705 Trader Mode |
 
 ## Non-Negotiable Boundaries
 
@@ -87,6 +89,13 @@ KES is an unnumbered architectural boundary over existing public evidence contra
 - It consumes public outputs and does not calculate decisions.
 - KR-705 may display KR-335 and KR-345 evidence for observation, but it must not consume those outputs for confidence, decision, execution, trade-management, or alert logic.
 - KR-705 supports Hidden, Trader, and Developer modes. Trader Mode may translate Need wording into actionable next-step language. Developer diagnostic sections are optional and remain presentation-only.
+
+### KR-710 and KR-711
+
+- KR-710 owns deterministic explanation assembly and does not own any trading condition.
+- KR-711 owns action-oriented wording and does not inspect raw market data.
+- Every KRONOS permission, blocker and state transition must map to a deterministic evidence contract.
+- Narrative text may summarize the rule, but may not replace the underlying measurable contract.
 
 ## Adapter Exception
 

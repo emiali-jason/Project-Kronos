@@ -70,6 +70,15 @@ KES (KRONOS Evidence Synthesis) is the unnumbered architectural boundary that co
 | KR-400 | Execution Alert Engine | Emits TradingView alert events for new confirmed KR-380 BUY NOW/SELL NOW transitions. | `0.1.0` | `FOUNDATION` | Foundation | KR-380 public trigger readiness, confirmation, BUY and SELL outputs | Buy/sell alert-event flags, readiness, status text; exactly two `alertcondition()` definitions | TradingView alert subsystem; no intelligence consumer | Static review confirms edge detection and inherited MCX 1H restriction. Live push-delivery evidence is not stored. |
 | KR-705 | Engine Status Panel | Displays and translates trader-facing engine intelligence without owning decisions. | `0.1.2` | `FROZEN` | Developer/Trader Tool | Public outputs from KR-300 through KR-390, including KR-335 and KR-345 evidence outputs, plus KR-380A execution context | Table presentation only; no downstream public contract | Trader | Supports Hidden, Trader, and Developer panel modes. Trader Mode presents actionable Need wording while Developer Mode preserves diagnostic wording and metrics. Displays KR-335 and KR-345 for live observation only and does not consume them for confidence, decisions, execution, trade management, alerts, or any trading logic. Source comments/input still use developer-validation terminology while current architecture assigns trader-facing display ownership. **Source metadata requires reconciliation.** |
 
+## Approved Explainability Contracts
+
+Every KRONOS permission, blocker and state transition must map to a deterministic evidence contract. Narrative text may summarize the rule, but may not replace the underlying measurable contract.
+
+| Engine | Name | Status | Responsibility | Primary consumers | Reference |
+|---|---|---|---|---|---|
+| KR-710 | Deterministic Explainability Framework | Approved architecture; not implemented | Publish owner, severity, category, metric, current, required, comparator, pass/fail, clear condition, and blocker summary for the active blocker | KR-711; KR-705 Developer Mode; validation records | [KR-710 Spec](architecture/KR710_DETERMINISTIC_EXPLAINABILITY_SPEC.md) |
+| KR-711 | Action-Oriented Trader Messaging | Approved architecture; not implemented | Translate KR-710 active blocker into concise Trader Mode wording without inspecting raw data or calculating conditions | KR-705 Trader Mode | [KR-711 Spec](architecture/KR711_ACTION_ORIENTED_MESSAGING_SPEC.md) |
+
 ## Futures Model Status
 
 ### Validated Futures Model

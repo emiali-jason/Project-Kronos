@@ -171,6 +171,30 @@ Approved
 
 ---
 
+## KD-009
+
+**Date:** 2026-07-14
+
+**Decision**
+
+Adopt deterministic explainability as a KRONOS architecture principle.
+
+Every KRONOS permission, blocker and state transition must map to a deterministic evidence contract. Narrative text may summarize the rule, but may not replace the underlying measurable contract.
+
+KR-710 is the approved owner of deterministic Active Blocker evidence contracts. KR-711 is the approved owner of action-oriented Trader Mode wording derived from KR-710. Neither engine may change trading logic, thresholds, Decision states, Confidence calculations, Execution behavior, or Presentation ownership.
+
+The approved refinements require Active Blocker terminology, severity, category, and owner format containing both engine ID and engine name.
+
+**Reason**
+
+Live validation across NSE, MCX, COMEX, and US equities showed that trader-facing blocker summaries are useful but insufficient for independent reproduction. KRONOS needs a standard way to expose owner, severity, category, metric, current value/state, required value/state, comparator/rule, pass/fail result, and clear condition for each Active Blocker.
+
+**Status**
+
+Approved with minor refinements; implementation still requires a separate coding task
+
+---
+
 # Future Decisions
 
 All significant architectural decisions should be recorded here before implementation.
