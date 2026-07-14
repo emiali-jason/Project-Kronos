@@ -86,7 +86,7 @@ KES is an unnumbered architectural boundary over existing public evidence contra
 - KR-705 owns display and trader-readable translation.
 - It consumes public outputs and does not calculate decisions.
 - KR-705 may display KR-335 and KR-345 evidence for observation, but it must not consume those outputs for confidence, decision, execution, trade-management, or alert logic.
-- KR-705 supports Hidden, Trader, and Developer modes. Developer diagnostic sections are optional and remain presentation-only.
+- KR-705 supports Hidden, Trader, and Developer modes. Trader Mode may translate Need wording into actionable next-step language. Developer diagnostic sections are optional and remain presentation-only.
 
 ## Adapter Exception
 

@@ -6113,6 +6113,52 @@ bool kr705PanelTrader = inpKR705PanelMode == "Trader"
 bool kr705PanelDeveloper = inpKR705PanelMode == "Developer"
 
 //==================================================================
+// KR-705.15 TRADER WORDING
+//==================================================================
+
+translateTraderNeed(string needText) =>
+    string cleanedNeed = str.replace_all(needText, "☐ ", "")
+    cleanedNeed := str.replace_all(cleanedNeed, "✓ ", "")
+    cleanedNeed := str.replace_all(cleanedNeed, "☑ ", "")
+
+    string traderNeed = cleanedNeed
+
+    switch cleanedNeed
+        "Price is extended" => traderNeed := "Wait for Pullback"
+        "Price is Extended" => traderNeed := "Wait for Pullback"
+        "Trend Confirmation" => traderNeed := "Higher TF Confirmation"
+        "Waiting for trend confirmation" => traderNeed := "Higher TF Confirmation"
+        "Compression Release" => traderNeed := "Breakout from Compression"
+        "Waiting for setup readiness" => traderNeed := "Setup Readiness"
+        "Waiting for market data" => traderNeed := "Market Data"
+        "Waiting for COMEX Daily data" => traderNeed := "COMEX Daily Data"
+        "Waiting for COMEX Daily trend alignment" => traderNeed := "COMEX Daily Trend Alignment"
+        "Waiting for COMEX 4H data" => traderNeed := "COMEX 4H Data"
+        "Waiting for COMEX 4H breakout" => traderNeed := "Wait for COMEX 4H Breakout"
+        "Waiting for COMEX 4H price acceptance" => traderNeed := "COMEX 4H Price Acceptance"
+        "Waiting for COMEX 1H data" => traderNeed := "COMEX 1H Data"
+        "Waiting for COMEX 1H momentum" => traderNeed := "COMEX 1H Momentum"
+        "Switch to MCX 1H chart" => traderNeed := "Switch to MCX 1H Chart"
+        "Waiting for MCX 1H price acceptance" => traderNeed := "MCX 1H Price Acceptance"
+        "Waiting for MCX 1H confidence" => traderNeed := "MCX 1H Confidence Building"
+        "Waiting for MCX 1H breakout" => traderNeed := "MCX 1H Breakout"
+        "Waiting for MCX 1H momentum" => traderNeed := "MCX 1H Momentum"
+        "Waiting for MCX 1H confirmation" => traderNeed := "MCX 1H Confirmation"
+        "Waiting for opportunity" => traderNeed := "Opportunity Building"
+        "Review gate blocked" => traderNeed := "Review Gate Clears"
+        "Higher-Timeframe Acceptance Pending" => traderNeed := "Price Acceptance"
+        "Acceptance Pending" => traderNeed := "Price Acceptance"
+        "Acceptance Not Confirmed" => traderNeed := "Price Acceptance"
+        "Confidence > 60" => traderNeed := "Confidence Building"
+        "Momentum Improves" => traderNeed := "Momentum Improves"
+        "Opportunity Improves" => traderNeed := "Opportunity Improves"
+        "Review Gate Clears" => traderNeed := "Review Gate Clears"
+        "Trend Aligned" => traderNeed := "Trend Aligned"
+        "Acceptance Confirmed" => traderNeed := "Acceptance Confirmed"
+
+    traderNeed
+
+//==================================================================
 // KR-705.20 DISPLAY VALUES
 //==================================================================
 
@@ -6162,6 +6208,9 @@ string kr705Need3Source = kr705MCXExecutionPanel ? outExecutionNeed3 : outNeed3
 string kr705Need1Text = kr705Need1Source == "" ? kr705UnavailableText : kr705Need1Source
 string kr705Need2Text = kr705Need2Source == "" ? kr705UnavailableText : kr705Need2Source
 string kr705Need3Text = kr705Need3Source == "" ? kr705UnavailableText : kr705Need3Source
+string kr705TraderNeed1Text = kr705Need1Source == "" ? kr705UnavailableText : translateTraderNeed(kr705Need1Source)
+string kr705TraderNeed2Text = kr705Need2Source == "" ? kr705UnavailableText : translateTraderNeed(kr705Need2Source)
+string kr705TraderNeed3Text = kr705Need3Source == "" ? kr705UnavailableText : translateTraderNeed(kr705Need3Source)
 string kr705StatusText = kr705CoreDataReady ? "DATA OK" : "WAITING"
 
 //==================================================================
@@ -6314,7 +6363,7 @@ if not kr705PanelHidden
     kr705Row += 1
 
     table.cell(kr705DeveloperDebugTable, 0, kr705Row, "Need", width=12, text_color=kr705LabelText, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_left)
-    table.cell(kr705DeveloperDebugTable, 1, kr705Row, kr705Need1Text, width=14, text_color=kr705Need1Color, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_right)
+    table.cell(kr705DeveloperDebugTable, 1, kr705Row, kr705PanelTrader ? kr705TraderNeed1Text : kr705Need1Text, width=14, text_color=kr705Need1Color, bgcolor=kr705PanelBG, text_size=size.small, text_halign=text.align_right)
     kr705Row += 1
 
     if kr705PanelDeveloper
