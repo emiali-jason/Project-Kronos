@@ -21,6 +21,50 @@ The core rule is simple: one observation does not justify one code change. A cha
 - [Pine and TradingView Validation Protocol](TESTING.md) — defines static, compile, visual, and replay/live validation evidence.
 - [MCX Metals Validation Record](MCX-METALS-VALIDATION.md) — records current MCX Metals validation evidence and remaining work.
 
+## Decision Frequency Analysis
+
+Use the decision-frequency log when KRONOS appears to produce unusually few BUY READY or SELL READY decisions across a broad chart review.
+
+The CSV source of truth is:
+
+```text
+data/validation/decision_frequency/KRONOS_DECISION_FREQUENCY_LOG.csv
+```
+
+For each evaluated chart, record the current decision, first unmet requirement, confidence score, trend state, acceptance state, momentum state, and execution state when visible.
+
+Validate the log:
+
+```bash
+python3 data/validation/decision_frequency/scripts/analyze_decision_frequency.py --date 2026-07-14 --check
+```
+
+Generate the aggregate report:
+
+```bash
+python3 data/validation/decision_frequency/scripts/analyze_decision_frequency.py --date 2026-07-14
+```
+
+The report ranks WAIT/WATCH/READY outcomes and blocker frequency without changing Pine logic or thresholds.
+
+## WATCH Conversion Analysis
+
+Use the WATCH conversion log when KRONOS remains in WATCH LONG or WATCH SHORT while price continues to move in the expected direction.
+
+The CSV source of truth is:
+
+```text
+data/validation/watch_conversion/KRONOS_WATCH_CONVERSION_LOG.csv
+```
+
+This dataset measures WATCH-to-execution conversion rate, time spent in WATCH, favourable movement before execution, and setups that reverse or expire without execution. It is evidence collection only; one observation must not produce a trading-logic change.
+
+Validate the log:
+
+```bash
+python3 data/validation/watch_conversion/scripts/validate_watch_conversion.py
+```
+
 ## Screenshot References
 
 Screenshots may remain outside Git if they are large. The Markdown documents should store a stable filename or repository path when screenshots are committed.
