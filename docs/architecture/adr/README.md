@@ -11,6 +11,7 @@ This directory is the canonical location for new KRONOS Architecture Decision Re
 ## Rules
 
 - Create new ADRs from [`ADR_TEMPLATE.md`](ADR_TEMPLATE.md).
+- Follow the lifecycle, numbering, ownership, index, and authority rules in [`ADR_GOVERNANCE.md`](ADR_GOVERNANCE.md).
 - Assign a stable ADR number; never reuse a number.
 - Do not rewrite the historical decision in an approved ADR.
 - A changed decision requires a new ADR that references the prior record.

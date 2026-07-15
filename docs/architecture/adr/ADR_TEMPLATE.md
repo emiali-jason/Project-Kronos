@@ -6,11 +6,16 @@
 
 - **ADR Number:** ADR-[Number]
 - **Title:** [Title]
-- **Status:** [Draft / Proposed / Approved / Rejected / Superseded / Deprecated]
+- **Status:** [DRAFT / PROPOSED / UNDER REVIEW / APPROVED / REJECTED / SUPERSEDED / DEPRECATED]
 - **Date:** [YYYY-MM-DD]
 - **Decision Owner:** [TBD]
 - **Proposed By:** [TBD]
+- **Reviewers:** [TBD]
 - **Approved By:** [TBD]
+- **Decision Scope:** [Platform / Product / Interface / Engineering]
+- **Authority Level:** [Chief Architect / Product Master Architect / Other approved authority]
+- **Repository Approval:** [Not approved / Approved in repository]
+- **Engineering Status:** [Not started / Planned / Implemented / Not applicable]
 
 ## Context
 
@@ -51,6 +56,10 @@
 ## Validation Requirements
 
 [TBD]
+
+## Validation Evidence
+
+[Repository-relative links or `None`]
 
 ## Supersedes
 

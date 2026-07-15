@@ -57,11 +57,12 @@ The Architecture Librarian does not make, infer, reinterpret, or approve archite
 
 ## ADR Lifecycle
 
+Detailed ADR lifecycle, numbering, ownership, template, index, repository relationship, and authority-flow rules are defined in [`../adr/ADR_GOVERNANCE.md`](../adr/ADR_GOVERNANCE.md).
+
 ```text
-Draft -> Proposed -> Approved
-                  -> Rejected
-Approved -> Superseded
-Approved -> Deprecated
+DRAFT -> PROPOSED -> UNDER REVIEW -> APPROVED -> SUPERSEDED
+DRAFT / PROPOSED / UNDER REVIEW -> REJECTED
+APPROVED -> DEPRECATED
 ```
 
 - Approved ADRs are preserved as historical records.
@@ -82,13 +83,15 @@ When repository documents conflict:
 
 Architecture documents must state a status such as:
 
-- Draft
-- Proposed
-- Approved
-- Superseded
-- Deprecated
+- DRAFT
+- PROPOSED
+- UNDER REVIEW
+- APPROVED
+- REJECTED
+- SUPERSEDED
+- DEPRECATED
 
-Draft and Proposed documents are not authoritative.
+DRAFT, PROPOSED, UNDER REVIEW, and REJECTED documents are not authoritative.
 
 ## Versioning
 
