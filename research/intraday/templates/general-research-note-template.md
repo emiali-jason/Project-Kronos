@@ -1,0 +1,103 @@
+# Intraday Research Note
+
+## Metadata
+
+- Research ID:
+- Source Type:
+- Title:
+- Author or Institution:
+- Published Date:
+- URL or Citation:
+- Date Collected:
+- Source Artefact Status:
+- Review Status:
+- Evidence Strength:
+- Tags: #Topic
+
+## Source Summary
+
+Neutral description of the source and its scope.
+
+## Verified Facts
+
+-
+
+## Observed Behaviour
+
+-
+
+## Speaker Interpretation
+
+For written sources, treat this as author interpretation.
+
+-
+
+## Personal Opinion
+
+-
+
+## Main Claims
+
+### Claim 1
+
+- Claim:
+- Supporting explanation:
+- Evidence presented:
+- Evidence type: market mechanics / empirical data / academic evidence / institutional practice / personal experience / anecdotal / unsupported opinion
+- Scope and limitations:
+
+## Important Concepts
+
+-
+
+## Observable Market Principles
+
+- Observation:
+  - Provenance:
+  - Scope:
+  - Limitations:
+
+## Potential KRONOS Relevance
+
+- Possible affected area:
+- Relevance hypothesis:
+- Reason review may be warranted:
+
+## Extracted Principles
+
+Reference standalone `EP-*` records; do not duplicate their content.
+
+-
+
+## Architecture Candidates
+
+- Candidate ID:
+- Candidate statement:
+- Underlying problem:
+- Evidence strength:
+- Validation required:
+- Status: Unreviewed
+
+## Non-Architectural Content
+
+Preserve implementation-oriented material only for traceability. Do not recommend indicators, patterns, thresholds, parameters, entries, exits, stop-loss rules, targets, TradingView instructions, or Pine Script.
+
+## Conflicting Evidence
+
+-
+
+## Open Questions
+
+-
+
+## Final Research Assessment
+
+- Source credibility:
+- Architectural usefulness:
+- Evidence quality:
+- Main contribution:
+- Main limitation:
+
+## Related Research
+
+-

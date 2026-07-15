@@ -103,3 +103,15 @@ BUY NOW and SELL NOW are confirmed execution-timing states. They are not broker 
 - Git and GitHub
 
 Designed and developed by Imran Ali. Software architecture developed collaboratively with ChatGPT/Codex.
+
+## Repository Structure
+
+KRONOS separates research, architecture, validation, and implementation so that evidence and design govern engineering rather than the reverse.
+
+- [`research/`](research/) — external sources, evidence, summaries, and hypotheses; not approved architecture
+- [`architecture/`](architecture/) — reviewed system design, boundaries, constitutions, and decisions
+- [`validation/`](validation/) — observations, experiments, evidence, and validation reports
+- [`implementation/`](implementation/) — engineering artefacts governed by approved architecture
+- [`docs/`](docs/) — project documentation, guides, navigation, and onboarding
+- [`assets/`](assets/) — diagrams, screenshots, images, and supporting visuals
+- [`archive/`](archive/) — superseded material retained for traceability
