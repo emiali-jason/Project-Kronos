@@ -13,7 +13,7 @@
 - Date Collected: 2026-07-15
 - Transcript Status: Hindi auto-generated captions with mixed-language content are available from the source. Full third-party text is not reproduced; a source manifest is preserved. Accuracy unverified.
 - Review Status: COLLECTED
-- Evidence Strength: UNASSESSED
+- Evidence Profile: [YT-003 profile](../../evidence-profiles/SOURCES.md#yt-003) — `Basis=UNREVIEWED+OPINION; P2 M0 E0 I0 R0 A0 T0; Status=PROVISIONAL`
 - Tags: #Validation #TechnicalAnalysis #PatternRecognition #Unreviewed
 
 ## Source Description
@@ -86,7 +86,7 @@ Not recorded. Timestamps require content review and caption verification.
 
 - Source credibility: Not assessed.
 - Architectural usefulness: Not assessed.
-- Evidence quality: Not assessed; auto-caption quality is a material limitation.
+- Evidence quality: Provisional and unassessed; auto-caption quality and the absence of a completed language review are material limitations.
 - Main contribution: Potentially relevant question about the evidential status of technical analysis.
 - Main limitation: No verified transcript or completed language review.
 

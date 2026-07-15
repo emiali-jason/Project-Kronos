@@ -11,6 +11,10 @@
 - Lifecycle Status: VALIDATION REQUIRED
 - Validation Queue: [VQ-002](../validation-queue/VQ-002-normal-adverse-sequences.md)
 
+## Supporting Extracted Principles
+
+- [EP-009 — Adverse Sequences Can Occur Without Decision Failure](../extracted-principles/EP-009-adverse-sequences-can-occur-without-decision-failure.md)
+
 ## Underlying Problem
 
 An adverse sequence can be misclassified as system failure, while genuine non-compliance, regime mismatch, or architecture failure can be excused as ordinary uncertainty.

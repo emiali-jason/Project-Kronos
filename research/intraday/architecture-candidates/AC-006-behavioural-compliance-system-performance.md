@@ -10,6 +10,10 @@
 - Created Date: 2026-07-15
 - Lifecycle Status: ARCHITECTURE REVIEW
 
+## Supporting Extracted Principles
+
+- [EP-006 — Rule Compliance Affects Realised System Performance](../extracted-principles/EP-006-rule-compliance-affects-realised-system-performance.md)
+
 ## Underlying Problem
 
 A defined decision process cannot be evaluated solely from stated rules if actual actions deviate from their authorisation.

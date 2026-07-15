@@ -2,7 +2,7 @@
 
 ## Entry Criteria
 
-An architecture candidate may enter review only when it references at least one extracted principle, all originating research notes, evidence strength, assumptions, limitations, and validation questions.
+An architecture candidate may enter review only when it references at least one extracted principle, all originating research notes, the relevant evidence profiles and convergence record, assumptions, limitations, and validation questions.
 
 ## Review Questions
 

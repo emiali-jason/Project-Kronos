@@ -11,7 +11,7 @@
 - Date Collected:
 - Source Artefact Status:
 - Review Status:
-- Evidence Strength:
+- Evidence Profile: `Basis=<codes>; P<n> M<n> E<n> I<n> R<n> A<n> T<n>; Status=<status>` with a link to the profile rationale
 - Tags: #Topic
 
 ## Source Summary
@@ -74,7 +74,7 @@ Reference standalone `EP-*` records; do not duplicate their content.
 - Candidate ID:
 - Candidate statement:
 - Underlying problem:
-- Evidence strength:
+- Evidence profile:
 - Validation required:
 - Status: Unreviewed
 

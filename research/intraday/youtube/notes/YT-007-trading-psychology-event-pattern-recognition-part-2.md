@@ -13,7 +13,7 @@
 - Date Collected: 2026-07-15
 - Transcript Status: English auto-generated captions are available from the source. Full third-party text is not reproduced; a source manifest and Codex-generated digest are preserved. Accuracy unverified.
 - Review Status: STRUCTURED
-- Evidence Strength: ★★★☆☆ overall practitioner source; individual anecdotes and universal claims are rated lower
+- Evidence Profile: [YT-007 profile](../../evidence-profiles/SOURCES.md#yt-007) — `Basis=PRACTITIONER+ANECDOTE+OPINION; P2 M1 E1 I1 R1 A1 T1; Status=ASSESSED`
 - Tags: #Psychology #Execution #DecisionMaking #Validation #Bias #PatternRecognition #PositionManagement
 
 ## Source Description

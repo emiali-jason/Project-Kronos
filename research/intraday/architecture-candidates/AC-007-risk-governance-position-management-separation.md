@@ -10,6 +10,10 @@
 - Created Date: 2026-07-15
 - Lifecycle Status: ARCHITECTURE REVIEW
 
+## Supporting Extracted Principles
+
+- [EP-007 — Loss Authority and Profit Management Address Different Problems](../extracted-principles/EP-007-loss-authority-and-profit-management-address-different-problems.md)
+
 ## Underlying Problem
 
 Loss authority and continuation management address different decision problems and may be obscured if treated as a single responsibility.

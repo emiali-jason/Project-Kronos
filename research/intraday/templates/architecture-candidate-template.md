@@ -8,11 +8,17 @@
 - Title:
 - Originating Research IDs:
 - Extracted Principle ID:
+- Extracted Principle Convergence Reference:
 - Created Date:
 - Owner:
 - Lifecycle Status: ARCHITECTURE REVIEW
 - Independent Reviewer:
 - Validation Queue ID:
+
+## Supporting Extracted Principles
+
+- EP ID:
+- Relationship to candidate:
 
 ## Underlying Problem
 
@@ -35,7 +41,7 @@ State a technology-neutral, parameter-free candidate principle.
 
 ## Supporting Evidence
 
-| Research ID | Evidence type | Observation or claim | Strength | Limitation |
+| Research ID | Evidence type | Observation or claim | Evidence profile | Limitation |
 | --- | --- | --- | --- | --- |
 | | | | | |
 

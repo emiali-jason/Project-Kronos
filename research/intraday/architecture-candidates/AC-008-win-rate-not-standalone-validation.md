@@ -10,6 +10,10 @@
 - Created Date: 2026-07-15
 - Lifecycle Status: ARCHITECTURE REVIEW
 
+## Supporting Extracted Principles
+
+- [EP-008 — Win Rate Alone Is an Incomplete Performance Description](../extracted-principles/EP-008-win-rate-alone-is-an-incomplete-performance-description.md)
+
 ## Underlying Problem
 
 Win rate omits the magnitude, sequence, costs, risk, and context of outcomes and can therefore misrepresent performance.

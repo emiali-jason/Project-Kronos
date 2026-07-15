@@ -13,7 +13,7 @@
 - Date Collected: 2026-07-15
 - Transcript Status: Unavailable via current extraction path; the response reported no auto-generated captions.
 - Review Status: COLLECTED
-- Evidence Strength: UNASSESSED
+- Evidence Profile: [YT-001 profile](../../evidence-profiles/SOURCES.md#yt-001) — `Basis=UNREVIEWED+MARKETING; P2 M0 E0 I0 R0 A0 T0; Status=PROVISIONAL`
 - Tags: #OpeningProcess #MarketContext #CPR #Unreviewed
 
 ## Source Description
@@ -87,7 +87,7 @@ Unavailable because no transcript was retrieved.
 
 - Source credibility: Not assessed.
 - Architectural usefulness: Not assessed.
-- Evidence quality: Not assessed.
+- Evidence quality: Provisional and unassessed; no substantive claims have been reviewed, and only promotional metadata is currently reviewable.
 - Main contribution: Pending review.
 - Main limitation: No transcript was available through the current extraction path.
 

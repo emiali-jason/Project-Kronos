@@ -13,7 +13,7 @@
 - Date Collected:
 - Transcript Status:
 - Review Status:
-- Evidence Strength:
+- Evidence Profile: `Basis=<codes>; P<n> M<n> E<n> I<n> R<n> A<n> T<n>; Status=<status>` with a link to the profile rationale
 - Tags: #Topic
 
 ## Source Description
@@ -123,7 +123,7 @@ Reference standalone `EP-*` records. Do not duplicate their full content.
 
 ### Assumptions
 
-### Evidence Strength
+### Evidence Profile
 
 ### Conflicting Evidence
 

@@ -13,7 +13,7 @@
 - Source Artefact Status: External copyrighted scanned PDF inspected; not copied into Git
 - Source Manifest: [BOOK-003](../source-manifests/BOOK-003-source-manifest.md)
 - Review Status: STRUCTURED
-- Evidence Strength: ★★★☆☆ experienced technical-analysis practitioner reference; individual predictive claims are lower
+- Evidence Profile: [BOOK-003 profile](../../evidence-profiles/SOURCES.md#book-003) — `Basis=PRACTITIONER+ANECDOTE+MIXED; P3 M2 E1 I1 R2 A1 T1; Status=ASSESSED`
 - Tags: #Momentum #MarketRegime #Volume #RelativeStrength #DecisionMaking #Confirmation #Validation #Trend
 
 ## Source Summary

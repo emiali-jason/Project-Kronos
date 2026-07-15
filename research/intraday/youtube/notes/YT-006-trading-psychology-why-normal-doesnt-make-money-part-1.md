@@ -13,7 +13,7 @@
 - Date Collected: 2026-07-15
 - Transcript Status: English auto-generated captions are available from the source. Full third-party text is not reproduced; a source manifest and Codex-generated digest are preserved. Accuracy unverified.
 - Review Status: STRUCTURED
-- Evidence Strength: ★★★☆☆ overall practitioner source; individual universal and anecdotal claims are rated lower
+- Evidence Profile: [YT-006 profile](../../evidence-profiles/SOURCES.md#yt-006) — `Basis=PRACTITIONER+ANECDOTE+OPINION; P2 M1 E1 I1 R1 A1 T1; Status=ASSESSED`
 - Tags: #Psychology #Risk #Execution #DecisionMaking #MarketState #Validation #Bias
 
 ## Source Description

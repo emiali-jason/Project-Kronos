@@ -10,6 +10,10 @@
 - Created Date: 2026-07-15
 - Lifecycle Status: ARCHITECTURE REVIEW
 
+## Supporting Extracted Principles
+
+- [EP-001 — Decision Quality and Outcome Are Distinct](../extracted-principles/EP-001-decision-quality-and-outcome-are-distinct.md)
+
 ## Underlying Problem
 
 A profitable outcome can follow an invalid decision, while a losing outcome can follow a valid decision made under uncertainty. Outcome alone cannot establish decision quality.

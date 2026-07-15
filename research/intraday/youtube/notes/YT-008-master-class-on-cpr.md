@@ -13,7 +13,7 @@
 - Date Collected: 2026-07-15
 - Transcript Status: Complete English auto-generated captions were available in YouTube's transcript panel. A source manifest and Codex-generated chronological digest are preserved; the full third-party transcript is not reproduced. Caption accuracy is unverified.
 - Review Status: STRUCTURED
-- Evidence Strength: ★★☆☆☆ overall; mixed practitioner instruction, personal experience, retrospective chart examples, unsupported statistics, and promotional claims
+- Evidence Profile: [YT-008 profile](../../evidence-profiles/SOURCES.md#yt-008) — `Basis=PRACTITIONER+ANECDOTE+OPINION+MARKETING; P2 M1 E1 I1 R1 A1 T0; Status=ASSESSED`
 - Tags: #CPR #MarketRegime #OpeningProcess #Execution #Risk #PositionManagement #Psychology #DecisionMaking #Validation #Options #MovingAverages #PatternRecognition
 
 ## Source Description
@@ -269,4 +269,3 @@ The complete timestamp-free third-party transcript is not stored in the reposito
 - [Architecture Candidate Index](../../architecture-candidates/INDEX.md)
 - [Validation Queue](../../validation-queue/INDEX.md)
 - Topics: [Decision Making](../../topics/decision-making/README.md), [Execution](../../topics/execution/README.md), [Market Regime](../../topics/market-regime/README.md), [Opening Auction](../../topics/opening-auction/README.md), [Position Management](../../topics/position-management/README.md), [Psychology](../../topics/psychology/README.md), [Risk](../../topics/risk/README.md), [Session Management](../../topics/session-management/README.md), [Microstructure](../../topics/microstructure/README.md)
-

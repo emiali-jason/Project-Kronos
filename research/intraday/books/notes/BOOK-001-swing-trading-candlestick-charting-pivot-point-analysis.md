@@ -12,7 +12,7 @@
 - Source Artefact Status: External copyrighted PDF inspected; not copied into Git
 - Source Manifest: [BOOK-001](../source-manifests/BOOK-001-source-manifest.md)
 - Review Status: STRUCTURED
-- Evidence Strength: ★★☆☆☆ practitioner booklet using selected retrospective examples
+- Evidence Profile: [BOOK-001 profile](../../evidence-profiles/SOURCES.md#book-001) — `Basis=PRACTITIONER+ANECDOTE; P3 M1 E1 I1 R1 A1 T1; Status=ASSESSED`
 - Tags: #PivotPoints #Candlesticks #Execution #DecisionMaking #Confirmation #Validation #PatternRecognition #Risk
 
 ## Source Summary

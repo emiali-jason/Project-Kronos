@@ -13,6 +13,7 @@ Every architecture candidate must have a validation-queue record before it can b
 - Known conflicts and limitations
 - Risks of false acceptance and false rejection
 - Independence requirements
+- Current convergence level and the evidence needed to change it
 - Status and review owner when assigned
 
 ## Validation Standards
@@ -22,6 +23,7 @@ Every architecture candidate must have a validation-queue record before it can b
 - Separate decision quality from realised outcome where applicable.
 - Use evidence proportionate to the candidate's scope and consequence.
 - Distinguish source repetition from independent corroboration.
+- Treat convergence as evidence metadata, not as candidate acceptance or a substitute for validation.
 - Record negative, ambiguous, and conflicting results.
 - Do not select trading metrics, formulas, parameters, or thresholds in this governance document.
 

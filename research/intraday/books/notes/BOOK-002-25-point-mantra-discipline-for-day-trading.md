@@ -12,7 +12,7 @@
 - Source Artefact Status: External copyrighted PDF inspected; not copied into Git
 - Source Manifest: [BOOK-002](../source-manifests/BOOK-002-source-manifest.md)
 - Review Status: STRUCTURED
-- Evidence Strength: ★★☆☆☆ practitioner rules, autobiography, anecdotes, and unsupported universal claims
+- Evidence Profile: [BOOK-002 profile](../../evidence-profiles/SOURCES.md#book-002) — `Basis=PRACTITIONER+ANECDOTE+OPINION; P3 M1 E1 I1 R1 A1 T1; Status=ASSESSED`
 - Tags: #Discipline #Risk #Execution #PositionManagement #Psychology #DecisionMaking #SessionManagement #Validation
 
 ## Source Summary

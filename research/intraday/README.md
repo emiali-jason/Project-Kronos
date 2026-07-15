@@ -42,11 +42,15 @@ No stage may be skipped. In particular, a source or research note cannot become 
 
 Source credibility and architectural usefulness are evaluated separately. A credible source may have no KRONOS relevance, while a useful hypothesis may still have weak evidence and require extensive validation.
 
+Evidence is described through independent profile dimensions rather than a composite score. Convergence records proposition-specific agreement and independence separately from source quality, validation, and acceptance.
+
 ## Evidence Vocabulary
 
 - **Source claim:** A statement made by the source. Recording it does not endorse it.
 - **Observation:** A directly inspectable occurrence in source material or validation data. It should state its scope and provenance.
 - **Interpretation:** A reviewer-created explanation of what a claim or observation may mean. It must be labelled and may be wrong.
+- **Evidence profile:** Separate provenance, method, empirical, independence, reproducibility, applicability, and conflict-transparency metadata. Dimensions are never combined into a score.
+- **Convergence:** A C0–C5 proposition-specific record of repeated, independent, triangulated, or validated support. It is not acceptance.
 - **Extracted principle:** A source-faithful proposition recorded between a research note and architecture candidate. Extraction is not endorsement.
 - **Accepted principle:** A principle accepted only after architecture review, independent validation, and explicit approval. Research notes cannot create accepted principles.
 
@@ -79,7 +83,10 @@ COLLECTED
 - [`governance/`](governance/): binding research constitution.
 - [`templates/`](templates/): research-note and candidate templates.
 - [`topics/`](topics/): cross-source topic graph.
+- [`evidence-profiles/`](evidence-profiles/): multidimensional source and EP support metadata.
 - [`extracted-principles/`](extracted-principles/): source-faithful propositions awaiting architectural translation or rejection.
+- [`consensus/`](consensus/): source-agreement, conflict, and unresolved-question records for existing extracted principles.
+- [`convergence/`](convergence/): C0–C5 convergence assignments for existing extracted principles.
 - [`architecture-candidates/`](architecture-candidates/): unapproved candidate principles.
 - [`validation-queue/`](validation-queue/): candidate validation intake and status.
 - [`accepted-principles/`](accepted-principles/): explicitly approved principles; currently empty.
@@ -94,7 +101,7 @@ COLLECTED
 
 ## Governance
 
-The files in [`governance/`](governance/) define the research lifecycle, evidence strength, source-quality review, architecture-review gate, and validation policy. They are the constitution of this library and must be updated intentionally when governance changes.
+The files in [`governance/`](governance/) define the research lifecycle, multidimensional evidence profile, convergence model, source-quality review, architecture-review gate, and validation policy. They are the constitution of this library and must be updated intentionally when governance changes.
 
 ## Naming and Stable IDs
 

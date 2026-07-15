@@ -12,7 +12,7 @@
 - Source Artefact Status: External copyrighted PDF inspected; not copied into Git
 - Source Manifest: [BOOK-004](../source-manifests/BOOK-004-source-manifest.md)
 - Review Status: STRUCTURED
-- Evidence Strength: ★★★☆☆ experienced practitioner framework; psychological and universal claims are generally ★★☆☆☆
+- Evidence Profile: [BOOK-004 profile](../../evidence-profiles/SOURCES.md#book-004) — `Basis=PRACTITIONER+ANECDOTE+OPINION; P3 M1 E1 I1 R1 A1 T1; Status=ASSESSED`
 - Tags: #Psychology #DecisionMaking #Risk #Execution #PositionManagement #Uncertainty #Validation #Bias #Discipline
 
 ## Source Summary

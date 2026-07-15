@@ -10,6 +10,10 @@
 - Created Date: 2026-07-15
 - Lifecycle Status: ARCHITECTURE REVIEW
 
+## Supporting Extracted Principles
+
+- [EP-010 — Lifecycle Provenance Is Needed to Attribute Failure](../extracted-principles/EP-010-lifecycle-provenance-is-needed-to-attribute-failure.md)
+
 ## Underlying Problem
 
 Outcome-only records cannot reveal whether failure arose from information, classification, decision, authority, execution, or position management.

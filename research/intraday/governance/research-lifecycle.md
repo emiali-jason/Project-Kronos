@@ -22,11 +22,11 @@ Preserve provenance, availability, publication context, and source artefact stat
 
 ### Research Note
 
-Separate verified facts, observed behaviour, speaker interpretation, personal opinion, claims, evidence classifications, non-architectural content, and open questions. A note may link to many topics and extracted principles.
+Separate verified facts, observed behaviour, speaker interpretation, personal opinion, claims, multidimensional evidence profiles, non-architectural content, and open questions. A note may link to many topics and extracted principles.
 
 ### Extracted Principle
 
-State one concise, source-faithful proposition that may describe market behaviour, a decision problem, or a governance concern. Extraction is not endorsement. Each principle must retain source traceability, evidence strength, limitations, and disconfirming questions.
+State one concise, source-faithful proposition that may describe market behaviour, a decision problem, or a governance concern. Extraction is not endorsement. Each principle must retain source traceability, a proposition-level evidence profile, convergence, limitations, and disconfirming questions.
 
 ### Architecture Candidate
 

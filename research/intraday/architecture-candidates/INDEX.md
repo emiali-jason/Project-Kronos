@@ -2,7 +2,7 @@
 
 These records are unapproved research objects. They do not alter KRONOS architecture or authorise implementation.
 
-| Candidate ID | Title | Lifecycle status | Extracted principle | Originating research |
+| Candidate ID | Title | Lifecycle status | Supporting extracted principles | Originating research |
 | --- | --- | --- | --- | --- |
 | [AC-001](AC-001-decision-quality-separate-from-outcome.md) | Decision Quality Must Be Separate From Outcome | ARCHITECTURE REVIEW | EP-001 | YT-006; YT-007 |
 | [AC-002](AC-002-market-state-position-independent.md) | Market State Must Remain Position Independent | ARCHITECTURE REVIEW | EP-002 | YT-006; YT-007 |

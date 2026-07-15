@@ -10,6 +10,10 @@
 - Created Date: 2026-07-15
 - Lifecycle Status: ARCHITECTURE REVIEW
 
+## Supporting Extracted Principles
+
+- [EP-003 — Decisions Operate Under Uncertainty](../extracted-principles/EP-003-decisions-operate-under-uncertainty.md)
+
 ## Underlying Problem
 
 Claims of directional certainty can obscure uncertainty, authorisation boundaries, and invalidation responsibilities.

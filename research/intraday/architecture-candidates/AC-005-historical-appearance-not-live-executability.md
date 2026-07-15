@@ -10,6 +10,10 @@
 - Created Date: 2026-07-15
 - Lifecycle Status: ARCHITECTURE REVIEW
 
+## Supporting Extracted Principles
+
+- [EP-005 — Retrospective Visibility Does Not Prove Live Executability](../extracted-principles/EP-005-retrospective-visibility-does-not-prove-live-executability.md)
+
 ## Underlying Problem
 
 A concept may appear clear after the event while depending on hindsight, selective examples, or information that was not usable at decision time.

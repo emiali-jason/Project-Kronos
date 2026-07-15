@@ -10,6 +10,10 @@
 - Created Date: 2026-07-15
 - Lifecycle Status: ARCHITECTURE REVIEW
 
+## Supporting Extracted Principles
+
+- [EP-002 — Position Can Bias Market Interpretation](../extracted-principles/EP-002-position-can-bias-market-interpretation.md)
+
 ## Underlying Problem
 
 An existing position can create pressure to reinterpret ambiguous evidence in the direction that protects the position or its unrealised result.

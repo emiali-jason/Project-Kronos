@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Source quality evaluates whether a source can be responsibly used for research extraction. It is separate from claim-level evidence strength and architecture relevance.
+Source quality evaluates whether a source can be responsibly used for research extraction. It is separate from the multidimensional evidence profile, convergence, and architecture relevance.
 
 ## Review Dimensions
 

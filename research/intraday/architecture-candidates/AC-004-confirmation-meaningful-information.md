@@ -11,6 +11,10 @@
 - Lifecycle Status: VALIDATION REQUIRED
 - Validation Queue: [VQ-001](../validation-queue/VQ-001-meaningful-information-confirmation.md)
 
+## Supporting Extracted Principles
+
+- [EP-004 — Shared Data Is Not Independent Confirmation](../extracted-principles/EP-004-shared-data-is-not-independent-confirmation.md)
+
 ## Underlying Problem
 
 Multiple transformations or descriptions of the same underlying price data can appear to provide independent confirmation even when they contain substantially overlapping information.
