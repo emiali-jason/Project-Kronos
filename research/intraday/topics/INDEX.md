@@ -8,7 +8,7 @@
 | [Volume](volume/README.md) | 1 | 0 | 0 |
 | [Opening Auction](opening-auction/README.md) | 2 structured + 2 unreviewed | 0 | 0 |
 | [VWAP](vwap/README.md) | 0 | 0 | 0 |
-| [Market Regime](market-regime/README.md) | 5 | 2 | 2 |
+| [Market Regime](market-regime/README.md) | 5 structured + 1 unreviewed | 2 | 2 |
 | [Session Management](session-management/README.md) | 2 | 0 | 0 |
 | [Psychology](psychology/README.md) | 5 | 2 | 2 |
 | [Execution](execution/README.md) | 6 | 4 | 4 |

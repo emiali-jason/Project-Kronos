@@ -14,6 +14,7 @@ Dimension definitions: [Multidimensional Evidence Profile](../governance/evidenc
 | [YT-006](#yt-006) | PRACTITIONER; ANECDOTE; OPINION | P2 | M1 | E1 | I1 | R1 | A1 | T1 | ASSESSED |
 | [YT-007](#yt-007) | PRACTITIONER; ANECDOTE; OPINION | P2 | M1 | E1 | I1 | R1 | A1 | T1 | ASSESSED |
 | [YT-008](#yt-008) | PRACTITIONER; ANECDOTE; OPINION; MARKETING | P2 | M1 | E1 | I1 | R1 | A1 | T0 | ASSESSED |
+| [YT-009](#yt-009) | UNREVIEWED; MARKETING | P2 | M0 | E0 | I0 | R0 | A0 | T0 | PROVISIONAL |
 | [BOOK-001](#book-001) | PRACTITIONER; ANECDOTE | P3 | M1 | E1 | I1 | R1 | A1 | T1 | ASSESSED |
 | [BOOK-002](#book-002) | PRACTITIONER; ANECDOTE; OPINION | P3 | M1 | E1 | I1 | R1 | A1 | T1 | ASSESSED |
 | [BOOK-003](#book-003) | PRACTITIONER; ANECDOTE; MIXED | P3 | M2 | E1 | I1 | R2 | A1 | T1 | ASSESSED |
@@ -66,6 +67,12 @@ Dimension definitions: [Multidimensional Evidence Profile](../governance/evidenc
 - Research note: [YT-008](../youtube/notes/YT-008-master-class-on-cpr.md)
 - Compact profile: `Basis=PRACTITIONER+ANECDOTE+OPINION+MARKETING; P2 M1 E1 I1 R1 A1 T0; Status=ASSESSED`
 - Rationale: The webinar is identifiable and extensively reviewed, but relies on retrospective examples, unsupported statistics, audience interaction, and commercial promotion without a reproducible validation protocol.
+
+## YT-009
+
+- Research note: [YT-009](../youtube/notes/YT-009-trend-reversal-cpr-for-day-trading-scalping.md)
+- Compact profile: `Basis=UNREVIEWED+MARKETING; P2 M0 E0 I0 R0 A0 T0; Status=PROVISIONAL`
+- Rationale: Public source identity, publication metadata, and description are traceable, but captions were unavailable and substantive content was not reviewed. The available description includes promotional material.
 
 ## BOOK-001
 

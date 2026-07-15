@@ -20,25 +20,23 @@ It is not an implementation workspace. Research stored here must not be treated 
 ## Governing Flow
 
 ```text
-Source
-  -> Research Note
-  -> Extracted Principle
-  -> Architecture Candidate
-  -> Architecture Review
-  -> Validation
-  -> Accepted Principle
+Source Review: COLLECTED -> REVIEWED -> STRUCTURED
+Research Synthesis: STRUCTURED source(s) -> Extracted Principle
+Architecture Governance: Reviewed EP(s) -> Architecture Candidate -> Review -> Validation -> Approval
+External Delivery: Approved Architecture -> Engineering -> Live Validation -> Production
 ```
 
-No stage may be skipped. In particular, a source or research note cannot become an architecture candidate or accepted principle directly. See the binding [Research Lifecycle](governance/research-lifecycle.md).
+These are linked lifecycles, not one status chain. A source or research note cannot become an architecture candidate or accepted principle directly, and delivery status is not research maturity. See the binding [Research Lifecycle](governance/research-lifecycle.md).
 
 ## Evidence-Driven Review
 
 1. **Collect** the source and record provenance without filling unavailable fields by inference.
-2. **Structure** the source into verified facts, observed behaviour, speaker interpretation, personal opinion, claims, evidence types, assumptions, and open questions.
-3. **Extract** source-faithful propositions without endorsing them.
-4. **Review** a technology-neutral, parameter-free architecture candidate derived from an extracted principle.
-5. **Validate** the candidate independently through the validation queue using evidence not limited to the originating source.
-6. **Accept** only the exact reviewed and validated principle through explicit approval. Acceptance does not authorise implementation.
+2. **Review** the usable source to a declared boundary and inventory its claims, limitations, and unavailable material.
+3. **Structure** the review into verified facts, observed behaviour, speaker interpretation, personal opinion, claims, evidence types, assumptions, and open questions.
+4. **Extract** source-faithful propositions without endorsing them.
+5. **Review** a technology-neutral, parameter-free architecture candidate derived from a reviewed extracted principle.
+6. **Validate** the candidate independently through the validation queue using evidence not limited to the originating source.
+7. **Accept** only the exact reviewed and validated principle through explicit approval. Acceptance does not authorise implementation.
 
 Source credibility and architectural usefulness are evaluated separately. A credible source may have no KRONOS relevance, while a useful hypothesis may still have weak evidence and require extensive validation.
 
@@ -54,27 +52,17 @@ Evidence is described through independent profile dimensions rather than a compo
 - **Extracted principle:** A source-faithful proposition recorded between a research note and architecture candidate. Extraction is not endorsement.
 - **Accepted principle:** A principle accepted only after architecture review, independent validation, and explicit approval. Research notes cannot create accepted principles.
 
-## Status Lifecycle
+## Status Separation
 
 ```text
-COLLECTED
-  -> STRUCTURED
-  -> ARCHITECTURE REVIEW
-  -> VALIDATION REQUIRED
-  -> ACCEPTED
-  -> REJECTED
+Source Status: ACTIVE | SUPERSEDED | WITHDRAWN | UNAVAILABLE
+Review Status: COLLECTED -> REVIEWED -> STRUCTURED
+               \-> REVIEW_BLOCKED -> REVIEWED
 ```
 
-| Status | Meaning |
-| --- | --- |
-| `COLLECTED` | Provenance and available source artefacts are recorded. |
-| `STRUCTURED` | Claims, evidence, concepts, assumptions, and questions have been separated. |
-| `ARCHITECTURE REVIEW` | A candidate is being assessed for relevance; it is not approved. |
-| `VALIDATION REQUIRED` | The candidate has a defined validation need and remains unapproved. |
-| `ACCEPTED` | Independent review, validation, and explicit approval are complete. |
-| `REJECTED` | The concept has been rejected with reasons retained for institutional memory. |
+Source Status records whether a registered source is current and available. Review Status records work performed on it. `STRUCTURED` is the terminal source-review status; it does not imply architectural relevance or approval. `REVIEW_BLOCKED` makes access, language, rights, or completeness blockers explicit.
 
-`ACCEPTED` does not mean implemented. Implementation authority and production change control remain outside this research library.
+Extracted principles, architecture candidates, validation items, and accepted principles retain their own statuses. `ENGINEERING`, `LIVE VALIDATION`, and `PRODUCTION` are external delivery states and must never appear as source-review statuses. `ACCEPTED` does not mean implemented.
 
 ## Library Map
 

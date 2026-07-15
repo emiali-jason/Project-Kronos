@@ -11,8 +11,11 @@
 - Duration:
 - URL:
 - Date Collected:
+- Source Status: `ACTIVE` / `SUPERSEDED` / `WITHDRAWN` / `UNAVAILABLE`
 - Transcript Status:
-- Review Status:
+- Review Status: `COLLECTED` / `REVIEW_BLOCKED` / `REVIEWED` / `STRUCTURED`
+- Status Updated:
+- Reviewer:
 - Evidence Profile: `Basis=<codes>; P<n> M<n> E<n> I<n> R<n> A<n> T<n>; Status=<status>` with a link to the profile rationale
 - Tags: #Topic
 
@@ -113,28 +116,10 @@ Reference standalone `EP-*` records. Do not duplicate their full content.
 
 ## Architecture Candidates
 
-### Candidate
+Reference existing `AC-*` records only after the required `EP-*` review and candidate-creation process. A source note may not create, approve, or duplicate an architecture candidate.
 
-### Underlying Problem
-
-### Proposed Principle
-
-### Why It May Matter
-
-### Assumptions
-
-### Evidence Profile
-
-### Conflicting Evidence
-
-### Validation Required
-
-### Status
-
-- Unreviewed
-- Validate
-- Accept
-- Reject
+- Candidate ID:
+- Relationship to source: originates / supports / conflicts / validation evidence
 
 ## Non-Architectural Content
 
