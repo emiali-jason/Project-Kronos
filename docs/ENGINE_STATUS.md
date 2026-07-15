@@ -12,6 +12,7 @@ Related documents:
 - [Engine Ownership](architecture/ENGINE_OWNERSHIP.md)
 - [Data Flow](architecture/DATA_FLOW.md)
 - [MCX Metals Validation](validation/MCX-METALS-VALIDATION.md)
+- [KR-315 Compression Validation](validation/KR315_COMPRESSION_VALIDATION.md)
 
 ## Status Semantics
 
@@ -78,6 +79,12 @@ Every KRONOS permission, blocker and state transition must map to a deterministi
 |---|---|---|---|---|---|
 | KR-710 | Deterministic Explainability Framework | Approved architecture; not implemented | Publish owner, severity, category, metric, current, required, comparator, pass/fail, clear condition, and blocker summary for the active blocker | KR-711; KR-705 Developer Mode; validation records | [KR-710 Spec](architecture/KR710_DETERMINISTIC_EXPLAINABILITY_SPEC.md) |
 | KR-711 | Action-Oriented Trader Messaging | Approved architecture; not implemented | Translate KR-710 active blocker into concise Trader Mode wording without inspecting raw data or calculating conditions | KR-705 Trader Mode | [KR-711 Spec](architecture/KR711_ACTION_ORIENTED_MESSAGING_SPEC.md) |
+
+## Active Validation Programmes
+
+| Programme | Scope | Status | Reference |
+|---|---|---|---|
+| KR-315 Compression Validation | Measures whether Compression is operating as a quality filter or creating execution latency. Evidence only; no calibration conclusion. | Active | [KR-315 Compression Validation](validation/KR315_COMPRESSION_VALIDATION.md) |
 
 ## Futures Model Status
 
