@@ -85,6 +85,7 @@ Every KRONOS permission, blocker and state transition must map to a deterministi
 | Programme | Scope | Status | Reference |
 |---|---|---|---|
 | KR-315 Compression Validation | Measures whether Compression is operating as a quality filter or creating execution latency. Evidence only; no calibration conclusion. | Active | [KR-315 Compression Validation](validation/KR315_COMPRESSION_VALIDATION.md) |
+| KR-340 Decision Pipeline Metrics | Records daily decision inventory and transition-flow metrics. Validation programme only; does not rename or modify the KR-340 Review Readiness Engine. | Active | [KR-340 Decision Pipeline Metrics](../research/intraday/validation/KR-340-decision-pipeline-metrics.md) |
 
 ## Futures Model Status
 

@@ -47,6 +47,29 @@ python3 data/validation/decision_frequency/scripts/analyze_decision_frequency.py
 
 The report ranks WAIT/WATCH/READY outcomes and blocker frequency without changing Pine logic or thresholds.
 
+## Decision Pipeline Metrics
+
+Use the decision-pipeline ledgers to separate end-of-session decision inventory from intraday decision flow.
+
+The CSV sources of truth are:
+
+```text
+data/validation/decision_pipeline/KRONOS_DECISION_PIPELINE_SUMMARY.csv
+data/validation/decision_pipeline/KRONOS_DECISION_PIPELINE_TRANSITIONS.csv
+```
+
+The summary ledger records, for each review universe, the date, session, markets reviewed, number of instruments reviewed, and final counts for WATCH LONG, WATCH SHORT, BUY READY, SELL READY, BUY NOW, SELL NOW, AVOID, and WAIT.
+
+The transition ledger records daily counts for WAIT -> WATCH, WATCH -> READY, READY -> NOW, READY -> WAIT, and WATCH -> WAIT transitions.
+
+Validate the ledgers:
+
+```bash
+python3 data/validation/decision_pipeline/scripts/validate_decision_pipeline.py --check
+```
+
+These metrics are evidence only. They do not authorize architecture changes, Pine changes, threshold changes, confidence changes, decision changes, execution changes, or implementation changes.
+
 ## WATCH Conversion Analysis
 
 Use the WATCH conversion log when KRONOS remains in WATCH LONG or WATCH SHORT while price continues to move in the expected direction.

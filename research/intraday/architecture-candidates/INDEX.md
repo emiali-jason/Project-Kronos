@@ -14,5 +14,6 @@ These records are unapproved research objects. They do not alter KRONOS architec
 | [AC-008](AC-008-win-rate-not-standalone-validation.md) | Win Rate Is Not a Standalone Validation Measure | ARCHITECTURE REVIEW | EP-008 | YT-006; YT-007 |
 | [AC-009](AC-009-losing-sequences-may-be-normal.md) | Losing Sequences May Be Normal | VALIDATION REQUIRED | EP-009 | YT-006; YT-007 |
 | [AC-010](AC-010-validation-preserves-decision-lifecycle.md) | Validation Must Preserve the Entire Decision Lifecycle | ARCHITECTURE REVIEW | EP-010 | YT-006; YT-007 |
+| [AC-011](AC-011-observation-batch-8-decision-behaviour-proposals.md) | Observation Batch 8 Decision Behaviour Proposals | DRAFT | None | Observation Batch 8 |
 
 Related synthesis: [Provisional Engine Responsibilities](PROVISIONAL-engine-responsibilities.md).
