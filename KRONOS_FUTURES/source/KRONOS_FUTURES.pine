@@ -5441,8 +5441,6 @@ else if execContextLongIntent and not execContextRef1HBullishSupport
 else if execContextShortIntent and not execContextRef1HBearishSupport
     execContextRef1HBlockerText := "COMEX 1H Momentum"
 
-string execContextMCX1HBlockerText = execContextMCX1HChart ? "" : "MCX 1H Chart Required"
-
 bool execContextDataReady = execContextRefDailyDataReady and execContextRef4HDataReady and execContextRef1HDataReady and execContextBaseReady
 bool execContextAvailable = execContextMCX1HChart and execContextDataReady
 bool execContextExtended = execContextAvailable and execContextReadySetup and outTrendQualityExtended
@@ -5593,26 +5591,6 @@ if execContextAvailable and execContextOutcome == ECPC_CONTEXT_OUTCOME_PENDING
 
     if execContextBlockerCount == 0
         execContextBlocker1 := ECPC_CONTEXT_BLOCKER_EXECUTION_CONFIRMATION
-
-bool outExecRefDailyBullishPermission = execContextRefDailyBullishPermission
-bool outExecRefDailyBearishPermission = execContextRefDailyBearishPermission
-string outExecRefDailyBlockerText = execContextRefDailyBlockerText
-
-bool outExecRef4HBullishPermission = execContextRef4HBullishPermission
-bool outExecRef4HBearishPermission = execContextRef4HBearishPermission
-bool outExecRef4HAcceptanceReady = execContextRef4HAcceptanceReady
-bool outExecRef4HCompressionReady = execContextRef4HCompressionReady
-string outExecRef4HBlockerText = execContextRef4HBlockerText
-
-bool outExecRef1HBullishSupport = execContextRef1HBullishSupport
-bool outExecRef1HBearishSupport = execContextRef1HBearishSupport
-bool outExecRef1HMomentumReady = execContextRef1HMomentumReady
-string outExecRef1HBlockerText = execContextRef1HBlockerText
-
-bool outExecMCX1HContextReady = execContextMCX1HChart
-string outExecMCX1HBlockerText = execContextMCX1HBlockerText
-
-bool outExecContextReady = outExecMCX1HContextReady and (outExecRefDailyBlockerText == "") and (outExecRef4HBlockerText == "") and (outExecRef1HBlockerText == "")
 
 string outExecContextVersion = "2.0"
 bool outExecContextAvailable = execContextAvailable
@@ -5943,7 +5921,9 @@ const int KR390_EXECUTION_SWING_LOOKBACK = 5
 float tradeExecutionConfirmedSwingLow = ta.lowest(mdPrimaryExecutionL[1], KR390_EXECUTION_SWING_LOOKBACK)
 float tradeExecutionConfirmedSwingHigh = ta.highest(mdPrimaryExecutionH[1], KR390_EXECUTION_SWING_LOOKBACK)
 
-bool outTradeExecutionContextReady = outExecMCX1HContextReady and not na(mdPrimaryExecutionC)
+bool tradeExecutionContextReady = assetMarket == "MCX" and timeframe.isintraday and timeframe.multiplier == 60 and not na(mdPrimaryExecutionC)
+
+bool outTradeExecutionContextReady = tradeExecutionContextReady
 bool outTradeExecutionStopReady = outTradeExecutionContextReady and not na(tradeExecutionConfirmedSwingLow) and not na(tradeExecutionConfirmedSwingHigh)
 
 float outTradeExecutionClose = mdPrimaryExecutionC
@@ -6010,8 +5990,8 @@ var string tradeModelReason = "No confirmed trigger"
 // KR-390.30 START CONDITIONS
 //==================================================================
 
-bool tradeStartLongSignal = outTriggerBuy and outTriggerBarConfirmed and outExecMCX1HContextReady
-bool tradeStartShortSignal = outTriggerSell and outTriggerBarConfirmed and outExecMCX1HContextReady
+bool tradeStartLongSignal = outTriggerBuy and outTriggerBarConfirmed and outTradeExecutionContextReady
+bool tradeStartShortSignal = outTriggerSell and outTriggerBarConfirmed and outTradeExecutionContextReady
 bool tradeStartSignal = tradeStartLongSignal or tradeStartShortSignal
 
 float tradeCandidateEntryPrice = outTradeExecutionClose
@@ -6027,7 +6007,7 @@ bool tradeCandidateValid = tradeCandidateLongValid or tradeCandidateShortValid
 // KR-390.40 ACTIVE TRADE MANAGEMENT
 //==================================================================
 
-bool tradeConfirmedManagementBar = outExecMCX1HContextReady and barstate.isconfirmed
+bool tradeConfirmedManagementBar = outTradeExecutionContextReady and barstate.isconfirmed
 bool tradeLongActive = tradeModelActive and tradeModelDirection == KR390_DIRECTION_LONG
 bool tradeShortActive = tradeModelActive and tradeModelDirection == KR390_DIRECTION_SHORT
 
@@ -6342,12 +6322,12 @@ string kr705RelativeBenchmarkText = outRelativeBenchmarkSymbol == "" ? kr705NotA
 string kr705ConfidenceText = kr705ConfidenceAvailable ? str.tostring(outConfidenceScore) + " - " + outConfidenceText : kr705UnavailableText
 string kr705RiskText = outTradeManagementReady ? outTradeText : kr705UnavailableText
 string kr705RiskReasonText = outTradeManagementReady ? outTradeReason : kr705UnavailableText
-bool kr705MCXExecutionPanel = outExecMCX1HContextReady
+bool kr705EntryQueueActive = outTriggerState != KR380_TRIGGER_NONE or outExecutionNeed1 != "" or outExecutionNeed2 != "" or outExecutionNeed3 != ""
 string kr705EntryText = outTriggerReady ? outTriggerText : kr705UnavailableText
 string kr705DecisionText = outDecisionText
-string kr705Need1Source = kr705MCXExecutionPanel ? outExecutionNeed1 : outNeed1
-string kr705Need2Source = kr705MCXExecutionPanel ? outExecutionNeed2 : outNeed2
-string kr705Need3Source = kr705MCXExecutionPanel ? outExecutionNeed3 : outNeed3
+string kr705Need1Source = kr705EntryQueueActive ? outExecutionNeed1 : outNeed1
+string kr705Need2Source = kr705EntryQueueActive ? outExecutionNeed2 : outNeed2
+string kr705Need3Source = kr705EntryQueueActive ? outExecutionNeed3 : outNeed3
 string kr705Need1Text = kr705Need1Source == "" ? kr705UnavailableText : kr705Need1Source
 string kr705Need2Text = kr705Need2Source == "" ? kr705UnavailableText : kr705Need2Source
 string kr705Need3Text = kr705Need3Source == "" ? kr705UnavailableText : kr705Need3Source
@@ -6385,9 +6365,9 @@ color kr705MarketRelativeColor = not outMarketRelativeReady ? kr705MutedText : o
 color kr705SectorRelativeColor = not outSectorRelativeReady ? kr705MutedText : outSectorRelativeState == KR345_RELATIVE_LEADER ? kr705BrightGreen : outSectorRelativeState == KR345_RELATIVE_STRONG ? kr705Green : outSectorRelativeState == KR345_RELATIVE_NEUTRAL ? kr705White : outSectorRelativeState == KR345_RELATIVE_WEAK ? kr705Yellow : kr705Red
 color kr705ConfidenceColor = not kr705ConfidenceAvailable ? kr705MutedText : outConfidenceVeryHigh ? kr705BrightGreen : outConfidenceHigh ? kr705Green : outConfidenceMedium ? kr705White : outConfidenceLow ? kr705Yellow : kr705Red
 color kr705PlaceholderColor = kr705MutedText
-bool kr705Need1Unchecked = str.startswith(kr705Need1Source, "☐") or (kr705MCXExecutionPanel and kr705Need1Source != "")
-bool kr705Need2Unchecked = str.startswith(kr705Need2Source, "☐") or (kr705MCXExecutionPanel and kr705Need2Source != "")
-bool kr705Need3Unchecked = str.startswith(kr705Need3Source, "☐") or (kr705MCXExecutionPanel and kr705Need3Source != "")
+bool kr705Need1Unchecked = str.startswith(kr705Need1Source, "☐") or (kr705EntryQueueActive and kr705Need1Source != "")
+bool kr705Need2Unchecked = str.startswith(kr705Need2Source, "☐") or (kr705EntryQueueActive and kr705Need2Source != "")
+bool kr705Need3Unchecked = str.startswith(kr705Need3Source, "☐") or (kr705EntryQueueActive and kr705Need3Source != "")
 bool kr705Need1Checked = str.startswith(kr705Need1Source, "✓") or str.startswith(kr705Need1Source, "☑")
 bool kr705Need2Checked = str.startswith(kr705Need2Source, "✓") or str.startswith(kr705Need2Source, "☑")
 bool kr705Need3Checked = str.startswith(kr705Need3Source, "✓") or str.startswith(kr705Need3Source, "☑")
