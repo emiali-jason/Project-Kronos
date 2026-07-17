@@ -247,7 +247,7 @@ The semantics of Version 1 shall remain backward compatible for all Version 1 co
 
 ## 14. Version 2 Public Contract
 
-Version 2 is the active approved Execution Context contract architecture. It supersedes Version 1 for future implementation while preserving Version 1 as a superseded-before-implementation contract record. Version 2 defines conceptual public information only; Pine identifiers, Pine types, encodings, and implementation-specific representations require separate approval before implementation.
+Version 2 is the active approved Execution Context implementation contract. It supersedes Version 1 for future implementation while preserving Version 1 as a superseded-before-implementation contract record.
 
 ### Conceptual public contract
 
@@ -288,7 +288,51 @@ A `QUALIFIED` outcome carries no Execution Context blocker. `PENDING`, `EXTENDED
 
 An unavailable public-contract outcome may carry ordered availability blockers in the public contract envelope. Those blockers explain unavailability only; they do not constitute or permit inference of a valid Execution Context payload or Execution Context Outcome.
 
-The blocker taxonomy and its Pine representation require explicit approval before implementation.
+### Minimum market-neutral blocker taxonomy
+
+Version 2 defines the following complete public blocker taxonomy:
+
+| Code | Classification | Meaning |
+|---:|---|---|
+| 0 | No blocker | No blocker is present in this slot. |
+| 1 | Required data pending | Required provider input data is not available for a valid context. |
+| 2 | Eligible execution context pending | A valid context cannot yet be produced for the current evaluation point. |
+| 3 | Directional alignment pending | Provider-owned alignment is pending without exposing market-specific internals. |
+| 4 | Price acceptance pending | Provider-owned price acceptance is pending. |
+| 5 | Expansion pending | Provider-owned expansion or release condition is pending. |
+| 6 | Momentum pending | Provider-owned momentum confirmation is pending. |
+| 7 | Confidence pending | Provider-owned confidence confirmation is pending. |
+| 8 | Opportunity pending | Provider-owned opportunity confirmation is pending. |
+| 9 | Execution confirmation pending | Provider-owned final execution-context confirmation is pending. |
+| 10 | Price extended | Provider has classified the context as extended. |
+| 11 | Execution setup failed | Provider has classified the context as failed. |
+
+The taxonomy is market-neutral and shall not expose timeframe, exchange, indicator, threshold, provider-internal, diagnostic, or debug detail.
+
+### Concrete Pine schema
+
+Version 2 contains exactly these public Pine fields:
+
+| Concept | Pine Identifier | Pine Type | Permitted Values |
+|---|---|---|---|
+| Execution Context Version | `outExecContextVersion` | `string` | `"2.0"` |
+| Execution Context Available | `outExecContextAvailable` | `bool` | `true`, `false` |
+| Execution Context Outcome | `outExecContextOutcome` | `int` | `0`, `1`, `2`, `3`, `4` |
+| Execution Context Blocker 1 | `outExecContextBlocker1` | `int` | `0` through `11` |
+| Execution Context Blocker 2 | `outExecContextBlocker2` | `int` | `0` through `11` |
+| Execution Context Blocker 3 | `outExecContextBlocker3` | `int` | `0` through `11` |
+
+Execution Context Outcome values are:
+
+| Value | Outcome |
+|---:|---|
+| 0 | No valid outcome |
+| 1 | `PENDING` |
+| 2 | `QUALIFIED` |
+| 3 | `EXTENDED` |
+| 4 | `FAILED` |
+
+Blocker slots are fixed-width, left-packed, ordered by provider priority, and use `0` as the no-blocker sentinel. Version 2 does not define a separate blocker-count field.
 
 ### Responsibility boundaries
 
@@ -341,8 +385,48 @@ The existing execution-chart readiness dependency used outside KR-380 requires a
 
 This migration shall not broaden ECPC-001's consumer boundary or make trade-management and presentation components entry Execution Context consumers.
 
+### Provider validation rules
+
+KR-380A shall validate the Version 2 public contract before publication:
+
+- `outExecContextVersion` must equal `"2.0"`.
+- The published contract must be deterministic and immutable for the evaluation cycle.
+- When `outExecContextAvailable = false`, `outExecContextOutcome` must be `0`, and blocker slots may contain only `0`, `1`, or `2`.
+- When `outExecContextAvailable = true`, `outExecContextOutcome` must be `1`, `2`, `3`, or `4`.
+- When `outExecContextOutcome = 2`, all blocker slots must be `0`.
+- When `outExecContextOutcome = 1`, at least one blocker slot must contain a non-zero blocker, and no blocker slot may contain `10` or `11`.
+- When `outExecContextOutcome = 3`, `outExecContextBlocker1` must be `10`.
+- When `outExecContextOutcome = 4`, `outExecContextBlocker1` must be `11`.
+- Non-zero blockers must be left-packed, ordered by provider priority, unique, and within the approved taxonomy.
+- The provider must not publish timeframe, exchange, indicator, threshold, provider-internal, diagnostic, or debug detail through the public contract.
+
+### Consumer validation rules
+
+KR-380 shall validate the Version 2 public contract before consumption:
+
+- Unsupported or invalid contract versions shall be rejected as unavailable.
+- Invalid outcome or blocker combinations shall be rejected as unavailable.
+- When `outExecContextAvailable = false`, KR-380 shall stop Execution Context processing, shall not interpret `outExecContextOutcome`, and shall not proceed with execution.
+- When `outExecContextAvailable = true`, KR-380 shall treat `outExecContextOutcome` and ordered blockers as authoritative for Execution Context.
+- KR-380 shall not reconstruct, supplement, reorder, or replace provider-owned Execution Context outcome or provider-owned blocker priority.
+- KR-380 may combine separate KR-370 readiness blockers with provider-owned Execution Context blockers only for its own existing ordered execution blocker queue.
+- `BUY NOW` and `SELL NOW` require a `QUALIFIED` Execution Context outcome, corresponding KR-370 READY state, and KR-380 final timing.
+- `PENDING` maps to `FORMING` while KR-370 READY is present.
+- `EXTENDED` and `FAILED` remain non-final until KR-380 final timing permits the corresponding public final state.
+- The Execution Context Outcome shall never authorize trade execution by itself.
+
+### Migration boundary for KR-390A, KR-390, and KR-705
+
+The dependent readiness migration is approved as follows:
+
+- KR-380 remains the sole authorized consumer of the entry Execution Context.
+- KR-390A remains responsible for post-entry context eligibility under ADL-003 and shall not consume the entry Execution Context.
+- KR-390 consumes KR-390A post-entry readiness and KR-380 confirmed execution outputs, not the entry Execution Context.
+- KR-705 consumes KR-380 and KR-390 presentation outputs, not the entry Execution Context.
+- Existing shared execution-chart readiness outputs may be removed only when KR-390A, KR-390, and KR-705 have migrated to the approved public outputs in the same reviewed implementation change.
+
 ### Version 2 governance
 
 Version 2 is required because Version 1 cannot preserve the approved `PENDING`, `EXTENDED`, `FAILED`, and ordered-blocker responsibilities without consumer-side reconstruction of provider logic.
 
-Version 1 is Superseded Before Implementation. Version 2 is the active contract for future implementation. No Version 2 Pine implementation may begin until the blocker taxonomy, concrete Pine schema, validation rules, and dependent readiness migration are explicitly approved and recorded.
+Version 1 is Superseded Before Implementation. Version 2 is the active contract for implementation.
