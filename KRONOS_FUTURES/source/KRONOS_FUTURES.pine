@@ -5345,11 +5345,40 @@ bool outDecisionSellReady = decisionState == KR370_DECISION_SELL_READY
 // - Produces no alerts, orders, stops, targets, plots or labels.
 //==================================================================
 
+const int ECPC_CONTEXT_OUTCOME_NONE = 0
+const int ECPC_CONTEXT_OUTCOME_PENDING = 1
+const int ECPC_CONTEXT_OUTCOME_QUALIFIED = 2
+const int ECPC_CONTEXT_OUTCOME_EXTENDED = 3
+const int ECPC_CONTEXT_OUTCOME_FAILED = 4
+
+const int ECPC_CONTEXT_BLOCKER_NONE = 0
+const int ECPC_CONTEXT_BLOCKER_DATA_PENDING = 1
+const int ECPC_CONTEXT_BLOCKER_CONTEXT_PENDING = 2
+const int ECPC_CONTEXT_BLOCKER_DIRECTIONAL_ALIGNMENT = 3
+const int ECPC_CONTEXT_BLOCKER_PRICE_ACCEPTANCE = 4
+const int ECPC_CONTEXT_BLOCKER_EXPANSION = 5
+const int ECPC_CONTEXT_BLOCKER_MOMENTUM = 6
+const int ECPC_CONTEXT_BLOCKER_CONFIDENCE = 7
+const int ECPC_CONTEXT_BLOCKER_OPPORTUNITY = 8
+const int ECPC_CONTEXT_BLOCKER_EXECUTION_CONFIRMATION = 9
+const int ECPC_CONTEXT_BLOCKER_PRICE_EXTENDED = 10
+const int ECPC_CONTEXT_BLOCKER_SETUP_FAILED = 11
+
 bool execContextMCXChart = assetMarket == "MCX"
 bool execContextMCX1HChart = execContextMCXChart and timeframe.isintraday and timeframe.multiplier == 60
 bool execContextLongIntent = outDecisionBuyReady or outDecisionWatchLong
 bool execContextShortIntent = outDecisionSellReady or outDecisionWatchShort
 bool execContextDirectionalIntent = execContextLongIntent or execContextShortIntent
+bool execContextReadySetup = outDecisionBuyReady or outDecisionSellReady
+
+bool execContextDecisionReady = outDecisionReady
+bool execContextAcceptanceReady = outBarrierReady
+bool execContextConfidenceReady = outConfidenceReady
+bool execContextCompressionReady = outCompressionReady
+bool execContextMomentumInputReady = outMomentumReady
+bool execContextOpportunityReady = outOpportunityInputReady
+bool execContextQualityReady = outEvidenceReady
+bool execContextBaseReady = execContextDecisionReady and execContextAcceptanceReady and execContextConfidenceReady and execContextCompressionReady and execContextMomentumInputReady and execContextOpportunityReady and execContextQualityReady
 
 float execContextRef4HRange = mdReferenceStructureH - mdReferenceStructureL
 float execContextRef4HPrevRange = mdReferenceStructureH[1] - mdReferenceStructureL[1]
@@ -5369,6 +5398,17 @@ bool execContextRef4HAcceptanceReady = execContextRef4HCompressionReady and ((ex
 bool execContextRef1HBullishSupport = execContextRef1HDataReady and mdReferenceExecutionC >= mdReferenceExecutionC[1]
 bool execContextRef1HBearishSupport = execContextRef1HDataReady and mdReferenceExecutionC <= mdReferenceExecutionC[1]
 bool execContextRef1HMomentumReady = (execContextLongIntent and execContextRef1HBullishSupport) or (execContextShortIntent and execContextRef1HBearishSupport)
+
+bool execContextAcceptanceConfirmed = execContextAcceptanceReady and (outAcceptanceAccepted or outAcceptanceStrong)
+bool execContextAcceptanceRejected = execContextAcceptanceReady and outAcceptanceRejected
+bool execContextConfidenceConfirmed = execContextConfidenceReady and outConfidenceScore > 60
+bool execContextConfidenceFell = execContextConfidenceReady and outConfidenceScore <= 40
+bool execContextCompressionBlocking = execContextCompressionReady and not outExpansionStarted and (outCompressionBuilding or outCompressionStrong or outCompressionCritical)
+bool execContextCompressionClear = execContextCompressionReady and (outExpansionStarted or not execContextCompressionBlocking)
+bool execContextMomentumConfirmed = execContextMomentumInputReady and (outMomentumNormal or outMomentumStrong or outMomentumBuilding)
+bool execContextOpportunityPresent = execContextOpportunityReady and not outNoOpportunityContext
+bool execContextOpportunityMissing = execContextOpportunityReady and outNoOpportunityContext
+bool execContextLocalExecutionReady = execContextMCX1HChart and execContextAcceptanceConfirmed and execContextConfidenceConfirmed and execContextCompressionClear and execContextMomentumConfirmed and execContextOpportunityPresent
 
 string execContextRefDailyBlockerText = ""
 
@@ -5403,6 +5443,157 @@ else if execContextShortIntent and not execContextRef1HBearishSupport
 
 string execContextMCX1HBlockerText = execContextMCX1HChart ? "" : "MCX 1H Chart Required"
 
+bool execContextDataReady = execContextRefDailyDataReady and execContextRef4HDataReady and execContextRef1HDataReady and execContextBaseReady
+bool execContextAvailable = execContextMCX1HChart and execContextDataReady
+bool execContextExtended = execContextAvailable and execContextReadySetup and outTrendQualityExtended
+bool execContextFailed = execContextAvailable and execContextReadySetup and (execContextAcceptanceRejected or execContextConfidenceFell or execContextOpportunityMissing)
+bool execContextQualified = execContextAvailable and execContextDirectionalIntent and execContextRefDailyBlockerText == "" and execContextRef4HBlockerText == "" and execContextRef1HBlockerText == "" and execContextLocalExecutionReady and not execContextExtended and not execContextFailed
+
+int execContextOutcome = ECPC_CONTEXT_OUTCOME_NONE
+
+if execContextAvailable
+    if execContextFailed
+        execContextOutcome := ECPC_CONTEXT_OUTCOME_FAILED
+    else if execContextExtended
+        execContextOutcome := ECPC_CONTEXT_OUTCOME_EXTENDED
+    else if execContextQualified
+        execContextOutcome := ECPC_CONTEXT_OUTCOME_QUALIFIED
+    else
+        execContextOutcome := ECPC_CONTEXT_OUTCOME_PENDING
+
+int execContextBlocker1 = ECPC_CONTEXT_BLOCKER_NONE
+int execContextBlocker2 = ECPC_CONTEXT_BLOCKER_NONE
+int execContextBlocker3 = ECPC_CONTEXT_BLOCKER_NONE
+int execContextBlockerCount = 0
+int execContextBlockerCandidate = ECPC_CONTEXT_BLOCKER_NONE
+
+if not execContextAvailable
+    execContextBlockerCandidate := execContextMCX1HChart ? ECPC_CONTEXT_BLOCKER_DATA_PENDING : ECPC_CONTEXT_BLOCKER_CONTEXT_PENDING
+    execContextBlockerCount += 1
+    execContextBlocker1 := execContextBlockerCandidate
+
+if execContextAvailable and execContextOutcome == ECPC_CONTEXT_OUTCOME_FAILED
+    execContextBlockerCount += 1
+    execContextBlocker1 := ECPC_CONTEXT_BLOCKER_SETUP_FAILED
+
+if execContextAvailable and execContextOutcome == ECPC_CONTEXT_OUTCOME_EXTENDED
+    execContextBlockerCount += 1
+    execContextBlocker1 := ECPC_CONTEXT_BLOCKER_PRICE_EXTENDED
+
+if execContextAvailable and execContextOutcome == ECPC_CONTEXT_OUTCOME_PENDING
+    if not execContextDirectionalIntent and execContextBlockerCount < 3
+        execContextBlockerCandidate := ECPC_CONTEXT_BLOCKER_DIRECTIONAL_ALIGNMENT
+        if execContextBlockerCandidate != execContextBlocker1 and execContextBlockerCandidate != execContextBlocker2 and execContextBlockerCandidate != execContextBlocker3
+            execContextBlockerCount += 1
+            if execContextBlockerCount == 1
+                execContextBlocker1 := execContextBlockerCandidate
+            else if execContextBlockerCount == 2
+                execContextBlocker2 := execContextBlockerCandidate
+            else
+                execContextBlocker3 := execContextBlockerCandidate
+
+    if execContextDirectionalIntent and execContextRefDailyBlockerText != "" and execContextBlockerCount < 3
+        execContextBlockerCandidate := ECPC_CONTEXT_BLOCKER_DIRECTIONAL_ALIGNMENT
+        if execContextBlockerCandidate != execContextBlocker1 and execContextBlockerCandidate != execContextBlocker2 and execContextBlockerCandidate != execContextBlocker3
+            execContextBlockerCount += 1
+            if execContextBlockerCount == 1
+                execContextBlocker1 := execContextBlockerCandidate
+            else if execContextBlockerCount == 2
+                execContextBlocker2 := execContextBlockerCandidate
+            else
+                execContextBlocker3 := execContextBlockerCandidate
+
+    if execContextRef4HBlockerText == "COMEX 4H Compression" and execContextBlockerCount < 3
+        execContextBlockerCandidate := ECPC_CONTEXT_BLOCKER_EXPANSION
+        if execContextBlockerCandidate != execContextBlocker1 and execContextBlockerCandidate != execContextBlocker2 and execContextBlockerCandidate != execContextBlocker3
+            execContextBlockerCount += 1
+            if execContextBlockerCount == 1
+                execContextBlocker1 := execContextBlockerCandidate
+            else if execContextBlockerCount == 2
+                execContextBlocker2 := execContextBlockerCandidate
+            else
+                execContextBlocker3 := execContextBlockerCandidate
+
+    if execContextRef4HBlockerText == "COMEX 4H Acceptance" and execContextBlockerCount < 3
+        execContextBlockerCandidate := ECPC_CONTEXT_BLOCKER_PRICE_ACCEPTANCE
+        if execContextBlockerCandidate != execContextBlocker1 and execContextBlockerCandidate != execContextBlocker2 and execContextBlockerCandidate != execContextBlocker3
+            execContextBlockerCount += 1
+            if execContextBlockerCount == 1
+                execContextBlocker1 := execContextBlockerCandidate
+            else if execContextBlockerCount == 2
+                execContextBlocker2 := execContextBlockerCandidate
+            else
+                execContextBlocker3 := execContextBlockerCandidate
+
+    if execContextRef1HBlockerText != "" and execContextBlockerCount < 3
+        execContextBlockerCandidate := ECPC_CONTEXT_BLOCKER_MOMENTUM
+        if execContextBlockerCandidate != execContextBlocker1 and execContextBlockerCandidate != execContextBlocker2 and execContextBlockerCandidate != execContextBlocker3
+            execContextBlockerCount += 1
+            if execContextBlockerCount == 1
+                execContextBlocker1 := execContextBlockerCandidate
+            else if execContextBlockerCount == 2
+                execContextBlocker2 := execContextBlockerCandidate
+            else
+                execContextBlocker3 := execContextBlockerCandidate
+
+    if not execContextAcceptanceConfirmed and execContextBlockerCount < 3
+        execContextBlockerCandidate := ECPC_CONTEXT_BLOCKER_PRICE_ACCEPTANCE
+        if execContextBlockerCandidate != execContextBlocker1 and execContextBlockerCandidate != execContextBlocker2 and execContextBlockerCandidate != execContextBlocker3
+            execContextBlockerCount += 1
+            if execContextBlockerCount == 1
+                execContextBlocker1 := execContextBlockerCandidate
+            else if execContextBlockerCount == 2
+                execContextBlocker2 := execContextBlockerCandidate
+            else
+                execContextBlocker3 := execContextBlockerCandidate
+
+    if not execContextConfidenceConfirmed and execContextBlockerCount < 3
+        execContextBlockerCandidate := ECPC_CONTEXT_BLOCKER_CONFIDENCE
+        if execContextBlockerCandidate != execContextBlocker1 and execContextBlockerCandidate != execContextBlocker2 and execContextBlockerCandidate != execContextBlocker3
+            execContextBlockerCount += 1
+            if execContextBlockerCount == 1
+                execContextBlocker1 := execContextBlockerCandidate
+            else if execContextBlockerCount == 2
+                execContextBlocker2 := execContextBlockerCandidate
+            else
+                execContextBlocker3 := execContextBlockerCandidate
+
+    if not execContextCompressionClear and execContextBlockerCount < 3
+        execContextBlockerCandidate := ECPC_CONTEXT_BLOCKER_EXPANSION
+        if execContextBlockerCandidate != execContextBlocker1 and execContextBlockerCandidate != execContextBlocker2 and execContextBlockerCandidate != execContextBlocker3
+            execContextBlockerCount += 1
+            if execContextBlockerCount == 1
+                execContextBlocker1 := execContextBlockerCandidate
+            else if execContextBlockerCount == 2
+                execContextBlocker2 := execContextBlockerCandidate
+            else
+                execContextBlocker3 := execContextBlockerCandidate
+
+    if not execContextMomentumConfirmed and execContextBlockerCount < 3
+        execContextBlockerCandidate := ECPC_CONTEXT_BLOCKER_MOMENTUM
+        if execContextBlockerCandidate != execContextBlocker1 and execContextBlockerCandidate != execContextBlocker2 and execContextBlockerCandidate != execContextBlocker3
+            execContextBlockerCount += 1
+            if execContextBlockerCount == 1
+                execContextBlocker1 := execContextBlockerCandidate
+            else if execContextBlockerCount == 2
+                execContextBlocker2 := execContextBlockerCandidate
+            else
+                execContextBlocker3 := execContextBlockerCandidate
+
+    if not execContextOpportunityPresent and execContextBlockerCount < 3
+        execContextBlockerCandidate := ECPC_CONTEXT_BLOCKER_OPPORTUNITY
+        if execContextBlockerCandidate != execContextBlocker1 and execContextBlockerCandidate != execContextBlocker2 and execContextBlockerCandidate != execContextBlocker3
+            execContextBlockerCount += 1
+            if execContextBlockerCount == 1
+                execContextBlocker1 := execContextBlockerCandidate
+            else if execContextBlockerCount == 2
+                execContextBlocker2 := execContextBlockerCandidate
+            else
+                execContextBlocker3 := execContextBlockerCandidate
+
+    if execContextBlockerCount == 0
+        execContextBlocker1 := ECPC_CONTEXT_BLOCKER_EXECUTION_CONFIRMATION
+
 bool outExecRefDailyBullishPermission = execContextRefDailyBullishPermission
 bool outExecRefDailyBearishPermission = execContextRefDailyBearishPermission
 string outExecRefDailyBlockerText = execContextRefDailyBlockerText
@@ -5422,6 +5613,13 @@ bool outExecMCX1HContextReady = execContextMCX1HChart
 string outExecMCX1HBlockerText = execContextMCX1HBlockerText
 
 bool outExecContextReady = outExecMCX1HContextReady and (outExecRefDailyBlockerText == "") and (outExecRef4HBlockerText == "") and (outExecRef1HBlockerText == "")
+
+string outExecContextVersion = "2.0"
+bool outExecContextAvailable = execContextAvailable
+int outExecContextOutcome = execContextOutcome
+int outExecContextBlocker1 = execContextBlocker1
+int outExecContextBlocker2 = execContextBlocker2
+int outExecContextBlocker3 = execContextBlocker3
 
 
 
