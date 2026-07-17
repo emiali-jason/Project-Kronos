@@ -25,6 +25,7 @@ Reference markets provide evidence. The MCX 1H chart owns the executable context
 
 ```text
 KR-200 Market Identification
+  -> EAIC-001 Exchange Availability when explicitly publishable
   -> KR-250 Asset and Reference Mapping
   -> KR-260 Primary/Reference OHLCV
   -> KR-270 Indicators + KR-271 Math
@@ -141,6 +142,7 @@ TradingView handles alert creation, mobile push, and delivery. KRONOS places no 
 
 KR-705 consumes public outputs and presents:
 
+- explicit Exchange Availability from EAIC-001 when available;
 - trend, quality, acceptance, momentum, compression, opportunity, and confidence;
 - KR-390 model-trade status in the Risk row;
 - KR-380 execution state in the Entry row;
@@ -149,6 +151,8 @@ KR-705 consumes public outputs and presents:
 - core data status.
 
 KR-705 translates and displays. It does not calculate trading intelligence.
+
+EAIC-001 Exchange Availability flows from KR-200 to KR-705 for presentation only. KR-705 must not infer exchange availability from market-data availability, stale bars, readiness failures, Execution Context availability, or missing confirmed candles. Exchange Availability does not alter KR-370 decisions, KR-380 execution timing, KR-380A Execution Context production, ECPC payloads, alerts, trade management, or market-data readiness.
 
 ## Reference Charts Versus Execution Chart
 
