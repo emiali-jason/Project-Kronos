@@ -5680,74 +5680,53 @@ bool triggerBaseReady = triggerDecisionReady and triggerAcceptanceReady and trig
 // KR-380.25 EXECUTION CONTEXT INPUT MAP
 //==================================================================
 
-bool triggerMCX1HChart = outExecMCX1HContextReady
 bool triggerLongIntent = outDecisionBuyReady or outDecisionWatchLong
 bool triggerShortIntent = outDecisionSellReady or outDecisionWatchShort
 bool triggerDirectionalIntent = triggerLongIntent or triggerShortIntent
-bool triggerBarConfirmed = triggerMCX1HChart and barstate.isconfirmed
 
-bool triggerRefDailyReady = (triggerLongIntent and outExecRefDailyBullishPermission) or (triggerShortIntent and outExecRefDailyBearishPermission)
-bool triggerRef4HReady = outExecRef4HAcceptanceReady
-bool triggerRef1HReady = outExecRef1HMomentumReady
+bool triggerContextVersionValid = outExecContextVersion == "2.0"
+bool triggerContextBlocker1Valid = outExecContextBlocker1 >= ECPC_CONTEXT_BLOCKER_NONE and outExecContextBlocker1 <= ECPC_CONTEXT_BLOCKER_SETUP_FAILED
+bool triggerContextBlocker2Valid = outExecContextBlocker2 >= ECPC_CONTEXT_BLOCKER_NONE and outExecContextBlocker2 <= ECPC_CONTEXT_BLOCKER_SETUP_FAILED
+bool triggerContextBlocker3Valid = outExecContextBlocker3 >= ECPC_CONTEXT_BLOCKER_NONE and outExecContextBlocker3 <= ECPC_CONTEXT_BLOCKER_SETUP_FAILED
+bool triggerContextBlockersLeftPacked = not (outExecContextBlocker1 == ECPC_CONTEXT_BLOCKER_NONE and (outExecContextBlocker2 != ECPC_CONTEXT_BLOCKER_NONE or outExecContextBlocker3 != ECPC_CONTEXT_BLOCKER_NONE)) and not (outExecContextBlocker2 == ECPC_CONTEXT_BLOCKER_NONE and outExecContextBlocker3 != ECPC_CONTEXT_BLOCKER_NONE)
+bool triggerContextBlockersUnique = (outExecContextBlocker1 == ECPC_CONTEXT_BLOCKER_NONE or (outExecContextBlocker1 != outExecContextBlocker2 and outExecContextBlocker1 != outExecContextBlocker3)) and (outExecContextBlocker2 == ECPC_CONTEXT_BLOCKER_NONE or outExecContextBlocker2 != outExecContextBlocker3)
+bool triggerContextBlockersValid = triggerContextBlocker1Valid and triggerContextBlocker2Valid and triggerContextBlocker3Valid and triggerContextBlockersLeftPacked and triggerContextBlockersUnique
 
-string triggerRefDailyBlocker = outExecRefDailyBlockerText
-string triggerRef4HBlocker = outExecRef4HBlockerText
-string triggerRef1HBlocker = outExecRef1HBlockerText
+bool triggerContextUnavailableValid = not outExecContextAvailable and outExecContextOutcome == ECPC_CONTEXT_OUTCOME_NONE and outExecContextBlocker1 <= ECPC_CONTEXT_BLOCKER_CONTEXT_PENDING and outExecContextBlocker2 <= ECPC_CONTEXT_BLOCKER_CONTEXT_PENDING and outExecContextBlocker3 <= ECPC_CONTEXT_BLOCKER_CONTEXT_PENDING
+bool triggerContextPendingValid = outExecContextAvailable and outExecContextOutcome == ECPC_CONTEXT_OUTCOME_PENDING and outExecContextBlocker1 != ECPC_CONTEXT_BLOCKER_NONE and outExecContextBlocker1 != ECPC_CONTEXT_BLOCKER_PRICE_EXTENDED and outExecContextBlocker1 != ECPC_CONTEXT_BLOCKER_SETUP_FAILED and outExecContextBlocker2 != ECPC_CONTEXT_BLOCKER_PRICE_EXTENDED and outExecContextBlocker2 != ECPC_CONTEXT_BLOCKER_SETUP_FAILED and outExecContextBlocker3 != ECPC_CONTEXT_BLOCKER_PRICE_EXTENDED and outExecContextBlocker3 != ECPC_CONTEXT_BLOCKER_SETUP_FAILED
+bool triggerContextQualifiedValid = outExecContextAvailable and outExecContextOutcome == ECPC_CONTEXT_OUTCOME_QUALIFIED and outExecContextBlocker1 == ECPC_CONTEXT_BLOCKER_NONE and outExecContextBlocker2 == ECPC_CONTEXT_BLOCKER_NONE and outExecContextBlocker3 == ECPC_CONTEXT_BLOCKER_NONE
+bool triggerContextExtendedValid = outExecContextAvailable and outExecContextOutcome == ECPC_CONTEXT_OUTCOME_EXTENDED and outExecContextBlocker1 == ECPC_CONTEXT_BLOCKER_PRICE_EXTENDED
+bool triggerContextFailedValid = outExecContextAvailable and outExecContextOutcome == ECPC_CONTEXT_OUTCOME_FAILED and outExecContextBlocker1 == ECPC_CONTEXT_BLOCKER_SETUP_FAILED
+bool triggerContextAvailableValid = triggerContextPendingValid or triggerContextQualifiedValid or triggerContextExtendedValid or triggerContextFailedValid
+bool triggerContextValid = triggerContextVersionValid and triggerContextBlockersValid and (triggerContextUnavailableValid or triggerContextAvailableValid)
+bool triggerContextConsumable = triggerContextValid and outExecContextAvailable
+bool triggerContextQualified = triggerContextConsumable and outExecContextOutcome == ECPC_CONTEXT_OUTCOME_QUALIFIED
+bool triggerContextExtended = triggerContextConsumable and outExecContextOutcome == ECPC_CONTEXT_OUTCOME_EXTENDED
+bool triggerContextFailed = triggerContextConsumable and outExecContextOutcome == ECPC_CONTEXT_OUTCOME_FAILED
+
+int triggerContextBlocker1 = triggerContextValid ? outExecContextBlocker1 : ECPC_CONTEXT_BLOCKER_CONTEXT_PENDING
+int triggerContextBlocker2 = triggerContextValid ? outExecContextBlocker2 : ECPC_CONTEXT_BLOCKER_NONE
+int triggerContextBlocker3 = triggerContextValid ? outExecContextBlocker3 : ECPC_CONTEXT_BLOCKER_NONE
+bool triggerBarConfirmed = triggerContextConsumable and barstate.isconfirmed
 
 //==================================================================
 // KR-380.30 PUBLIC CONDITION MAP
 //==================================================================
 
-bool triggerBuyReady = triggerBaseReady and triggerMCX1HChart and outDecisionBuyReady
-bool triggerSellReady = triggerBaseReady and triggerMCX1HChart and outDecisionSellReady
+bool triggerBuyReady = triggerBaseReady and triggerContextConsumable and outDecisionBuyReady
+bool triggerSellReady = triggerBaseReady and triggerContextConsumable and outDecisionSellReady
 bool triggerReadySetup = triggerBuyReady or triggerSellReady
 
-bool triggerAcceptanceConfirmed = triggerAcceptanceReady and (outAcceptanceAccepted or outAcceptanceStrong)
-bool triggerAcceptanceRejected = triggerAcceptanceReady and outAcceptanceRejected
-
-bool triggerConfidenceConfirmed = triggerConfidenceReady and outConfidenceScore > 60
-bool triggerConfidenceFell = triggerConfidenceReady and outConfidenceScore <= 40
-
-bool triggerCompressionBlocking = triggerCompressionReady and not outExpansionStarted and (outCompressionBuilding or outCompressionStrong or outCompressionCritical)
-bool triggerCompressionClear = triggerCompressionReady and (outExpansionStarted or not triggerCompressionBlocking)
-
-bool triggerMomentumConfirmed = triggerMomentumReady and (outMomentumNormal or outMomentumStrong or outMomentumBuilding)
-
-bool triggerOpportunityPresent = triggerOpportunityReady and not outNoOpportunityContext
-bool triggerOpportunityMissing = triggerOpportunityReady and outNoOpportunityContext
-
-bool triggerExtended = triggerBaseReady and triggerReadySetup and outTrendQualityExtended
-bool triggerFailed = triggerBaseReady and triggerReadySetup and (triggerAcceptanceRejected or triggerConfidenceFell or triggerOpportunityMissing)
+bool triggerExtended = triggerReadySetup and triggerContextExtended
+bool triggerFailed = triggerReadySetup and triggerContextFailed
 bool triggerFinalStateAllowed = triggerBarConfirmed
 bool triggerExtendedFinal = triggerExtended and triggerFinalStateAllowed
 bool triggerFailedFinal = triggerFailed and triggerFinalStateAllowed
-bool triggerMCXExecutionReady = triggerMCX1HChart and triggerAcceptanceConfirmed and triggerConfidenceConfirmed and triggerCompressionClear and triggerMomentumConfirmed and triggerOpportunityPresent
 
-string triggerMCXExecutionBlocker = ""
+bool triggerExecutionContextReady = triggerContextQualified
 
-if triggerFailed
-    triggerMCXExecutionBlocker := "MCX 1H Trigger Failed"
-else if triggerExtended
-    triggerMCXExecutionBlocker := "MCX 1H Extended"
-else if outExecMCX1HBlockerText != ""
-    triggerMCXExecutionBlocker := outExecMCX1HBlockerText
-else if not triggerAcceptanceConfirmed
-    triggerMCXExecutionBlocker := "MCX 1H Acceptance"
-else if not triggerConfidenceConfirmed
-    triggerMCXExecutionBlocker := "MCX 1H Confidence > 60"
-else if not triggerCompressionClear
-    triggerMCXExecutionBlocker := "MCX 1H Compression"
-else if not triggerMomentumConfirmed
-    triggerMCXExecutionBlocker := "MCX 1H Momentum"
-else if not triggerOpportunityPresent
-    triggerMCXExecutionBlocker := "MCX 1H Opportunity"
-else if not triggerMCXExecutionReady
-    triggerMCXExecutionBlocker := "MCX 1H Breakout"
-
-bool triggerExecutionContextReady = triggerRefDailyReady and triggerRef4HReady and triggerRef1HReady and triggerMCXExecutionReady
-
-bool triggerBuyNow = triggerBuyReady and triggerFinalStateAllowed and triggerRefDailyReady and triggerRef4HReady and triggerRef1HReady and triggerMCXExecutionReady and not triggerExtended and not triggerFailed
-bool triggerSellNow = triggerSellReady and triggerFinalStateAllowed and triggerRefDailyReady and triggerRef4HReady and triggerRef1HReady and triggerMCXExecutionReady and not triggerExtended and not triggerFailed
+bool triggerBuyNow = triggerBuyReady and triggerFinalStateAllowed and triggerContextQualified
+bool triggerSellNow = triggerSellReady and triggerFinalStateAllowed and triggerContextQualified
 
 bool triggerLongForming = triggerBuyReady and not triggerBuyNow and not triggerExtendedFinal and not triggerFailedFinal
 bool triggerShortForming = triggerSellReady and not triggerSellNow and not triggerExtendedFinal and not triggerFailedFinal
@@ -5763,24 +5742,24 @@ translateExecutionNeed(string blocker) =>
         "KR Data Pending" => translated := "Waiting for market data"
         "KR Review Blocked" => translated := "Review gate blocked"
         "KR-370 Not Ready" => translated := "Waiting for setup readiness"
-        "KR-370 Direction Pending" => translated := "Waiting for trend confirmation"
-        "COMEX D Data Pending" => translated := "Waiting for COMEX Daily data"
-        "COMEX D Opposes Long" => translated := "Waiting for COMEX Daily trend alignment"
-        "COMEX D Opposes Short" => translated := "Waiting for COMEX Daily trend alignment"
-        "COMEX 4H Data Pending" => translated := "Waiting for COMEX 4H data"
-        "COMEX 4H Compression" => translated := "Waiting for COMEX 4H breakout"
-        "COMEX 4H Acceptance" => translated := "Waiting for COMEX 4H price acceptance"
-        "COMEX 1H Data Pending" => translated := "Waiting for COMEX 1H data"
-        "COMEX 1H Momentum" => translated := "Waiting for COMEX 1H momentum"
-        "MCX 1H Trigger Failed" => translated := "Execution setup failed"
-        "MCX 1H Extended" => translated := "Price is extended"
-        "MCX 1H Chart Required" => translated := "Switch to MCX 1H chart"
-        "MCX 1H Acceptance" => translated := "Waiting for MCX 1H price acceptance"
-        "MCX 1H Confidence > 60" => translated := "Waiting for MCX 1H confidence"
-        "MCX 1H Compression" => translated := "Waiting for MCX 1H breakout"
-        "MCX 1H Momentum" => translated := "Waiting for MCX 1H momentum"
-        "MCX 1H Opportunity" => translated := "Waiting for opportunity"
-        "MCX 1H Breakout" => translated := "Waiting for MCX 1H confirmation"
+
+    translated
+
+translateExecutionContextNeed(int blocker) =>
+    string translated = ""
+
+    switch blocker
+        ECPC_CONTEXT_BLOCKER_DATA_PENDING => translated := "Waiting for market data"
+        ECPC_CONTEXT_BLOCKER_CONTEXT_PENDING => translated := "Waiting for execution context"
+        ECPC_CONTEXT_BLOCKER_DIRECTIONAL_ALIGNMENT => translated := "Waiting for trend confirmation"
+        ECPC_CONTEXT_BLOCKER_PRICE_ACCEPTANCE => translated := "Waiting for price acceptance"
+        ECPC_CONTEXT_BLOCKER_EXPANSION => translated := "Waiting for breakout"
+        ECPC_CONTEXT_BLOCKER_MOMENTUM => translated := "Waiting for momentum"
+        ECPC_CONTEXT_BLOCKER_CONFIDENCE => translated := "Waiting for confidence"
+        ECPC_CONTEXT_BLOCKER_OPPORTUNITY => translated := "Waiting for opportunity"
+        ECPC_CONTEXT_BLOCKER_EXECUTION_CONFIRMATION => translated := "Waiting for confirmation"
+        ECPC_CONTEXT_BLOCKER_PRICE_EXTENDED => translated := "Price is extended"
+        ECPC_CONTEXT_BLOCKER_SETUP_FAILED => translated := "Execution setup failed"
 
     translated
 
@@ -5824,8 +5803,8 @@ if triggerExecutionQueueActive and triggerBaseReady and not triggerDirectionalIn
         else
             triggerExecutionNeed3 := triggerExecutionNeedCandidate
 
-if triggerExecutionQueueActive and (triggerFailedFinal or triggerExtendedFinal) and triggerMCXExecutionBlocker != "" and triggerExecutionNeedCount < 3
-    triggerExecutionNeedCandidate := translateExecutionNeed(triggerMCXExecutionBlocker)
+if triggerExecutionQueueActive and triggerContextBlocker1 != ECPC_CONTEXT_BLOCKER_NONE and triggerExecutionNeedCount < 3
+    triggerExecutionNeedCandidate := translateExecutionContextNeed(triggerContextBlocker1)
     if triggerExecutionNeedCandidate != "" and triggerExecutionNeedCandidate != triggerExecutionNeed1 and triggerExecutionNeedCandidate != triggerExecutionNeed2 and triggerExecutionNeedCandidate != triggerExecutionNeed3
         triggerExecutionNeedCount += 1
         if triggerExecutionNeedCount == 1
@@ -5835,8 +5814,8 @@ if triggerExecutionQueueActive and (triggerFailedFinal or triggerExtendedFinal) 
         else
             triggerExecutionNeed3 := triggerExecutionNeedCandidate
 
-if triggerExecutionQueueActive and triggerRefDailyBlocker != "" and triggerExecutionNeedCount < 3
-    triggerExecutionNeedCandidate := translateExecutionNeed(triggerRefDailyBlocker)
+if triggerExecutionQueueActive and triggerContextBlocker2 != ECPC_CONTEXT_BLOCKER_NONE and triggerExecutionNeedCount < 3
+    triggerExecutionNeedCandidate := translateExecutionContextNeed(triggerContextBlocker2)
     if triggerExecutionNeedCandidate != "" and triggerExecutionNeedCandidate != triggerExecutionNeed1 and triggerExecutionNeedCandidate != triggerExecutionNeed2 and triggerExecutionNeedCandidate != triggerExecutionNeed3
         triggerExecutionNeedCount += 1
         if triggerExecutionNeedCount == 1
@@ -5846,30 +5825,8 @@ if triggerExecutionQueueActive and triggerRefDailyBlocker != "" and triggerExecu
         else
             triggerExecutionNeed3 := triggerExecutionNeedCandidate
 
-if triggerExecutionQueueActive and triggerRef4HBlocker != "" and triggerExecutionNeedCount < 3
-    triggerExecutionNeedCandidate := translateExecutionNeed(triggerRef4HBlocker)
-    if triggerExecutionNeedCandidate != "" and triggerExecutionNeedCandidate != triggerExecutionNeed1 and triggerExecutionNeedCandidate != triggerExecutionNeed2 and triggerExecutionNeedCandidate != triggerExecutionNeed3
-        triggerExecutionNeedCount += 1
-        if triggerExecutionNeedCount == 1
-            triggerExecutionNeed1 := triggerExecutionNeedCandidate
-        else if triggerExecutionNeedCount == 2
-            triggerExecutionNeed2 := triggerExecutionNeedCandidate
-        else
-            triggerExecutionNeed3 := triggerExecutionNeedCandidate
-
-if triggerExecutionQueueActive and triggerRef1HBlocker != "" and triggerExecutionNeedCount < 3
-    triggerExecutionNeedCandidate := translateExecutionNeed(triggerRef1HBlocker)
-    if triggerExecutionNeedCandidate != "" and triggerExecutionNeedCandidate != triggerExecutionNeed1 and triggerExecutionNeedCandidate != triggerExecutionNeed2 and triggerExecutionNeedCandidate != triggerExecutionNeed3
-        triggerExecutionNeedCount += 1
-        if triggerExecutionNeedCount == 1
-            triggerExecutionNeed1 := triggerExecutionNeedCandidate
-        else if triggerExecutionNeedCount == 2
-            triggerExecutionNeed2 := triggerExecutionNeedCandidate
-        else
-            triggerExecutionNeed3 := triggerExecutionNeedCandidate
-
-if triggerExecutionQueueActive and not triggerFailedFinal and not triggerExtendedFinal and triggerMCXExecutionBlocker != "" and triggerExecutionNeedCount < 3
-    triggerExecutionNeedCandidate := translateExecutionNeed(triggerMCXExecutionBlocker)
+if triggerExecutionQueueActive and triggerContextBlocker3 != ECPC_CONTEXT_BLOCKER_NONE and triggerExecutionNeedCount < 3
+    triggerExecutionNeedCandidate := translateExecutionContextNeed(triggerContextBlocker3)
     if triggerExecutionNeedCandidate != "" and triggerExecutionNeedCandidate != triggerExecutionNeed1 and triggerExecutionNeedCandidate != triggerExecutionNeed2 and triggerExecutionNeedCandidate != triggerExecutionNeed3
         triggerExecutionNeedCount += 1
         if triggerExecutionNeedCount == 1
@@ -5949,18 +5906,6 @@ bool outTriggerFailed = triggerState == KR380_TRIGGER_FAILED
 bool outTriggerExtended = triggerState == KR380_TRIGGER_EXTENDED
 
 bool outExecutionContextReady = triggerExecutionContextReady
-
-bool outRefDailyReady = triggerRefDailyReady
-string outRefDailyBlocker = triggerRefDailyBlocker
-
-bool outRef4HReady = triggerRef4HReady
-string outRef4HBlocker = triggerRef4HBlocker
-
-bool outRef1HReady = triggerRef1HReady
-string outRef1HBlocker = triggerRef1HBlocker
-
-bool outMCXExecutionReady = triggerMCXExecutionReady
-string outMCXExecutionBlocker = triggerMCXExecutionBlocker
 
 string outExecutionNeed1 = triggerExecutionNeed1
 string outExecutionNeed2 = triggerExecutionNeed2
