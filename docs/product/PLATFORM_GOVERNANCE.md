@@ -16,6 +16,14 @@
 9. Market-specific routing belongs in configuration or adapters, not intelligence engines.
 10. The market is the final reviewer.
 
+## Consumer Responsibility Preservation
+
+Before simplifying, reducing, or redesigning any public contract, architecture must verify that every approved consumer responsibility can still be fulfilled without reconstructing provider logic.
+
+If an approved consumer responsibility cannot be fulfilled under the proposed contract, the contract shall be revised before implementation proceeds. Responsibilities shall not be removed implicitly by simplifying the contract.
+
+This rule applies to all provider/consumer contracts within Project KRONOS.
+
 ## Canonical Flow
 
 ```text

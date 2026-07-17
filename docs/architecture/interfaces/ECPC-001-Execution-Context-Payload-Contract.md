@@ -2,6 +2,8 @@
 
 **Status:** Approved
 
+**Version:** 2.0
+
 ## 1. Purpose
 
 Define governance for the structure, contents, evolution, and validation of the Execution Context payload assigned to ECPC-001 by [ECIC-001](ECIC-001-Execution-Context-Interface-Contract.md).
@@ -196,3 +198,151 @@ This contract does not define or approve:
 - execution, trade-management, alert, or presentation logic;
 - implementation sequencing or code changes;
 - approval of any other architecture document.
+
+## 13. Version 1 Implementation Schema — Superseded Before Implementation
+
+**Version 1 Status:** Superseded Before Implementation
+
+Version 1 was superseded before implementation because it could not satisfy all approved consumer responsibilities while preserving provider/consumer separation. Its technical content is retained unchanged below as a superseded contract record.
+
+This section records the concrete Pine implementation schema defined for Version 1. It is a narrowly scoped exception to, and supersedes for Version 1 only, earlier statements in this document that limit ECPC-001 to conceptual governance or state that it defines no field names, concrete data types, permitted values, or implementation-specific schema. Those limitations continue to apply to every field and representation not defined in this section and to any future contract version unless separately approved.
+
+Version 1 contains exactly these three public fields:
+
+| Concept | Pine Identifier | Pine Type | Permitted Values |
+|---|---|---|---|
+| Execution Context Version | `outExecContextVersion` | `string` | `"1.0"` |
+| Execution Context Available | `outExecContextAvailable` | `bool` | `true`, `false` |
+| Execution Context Qualified | `outExecContextQualified` | `bool` | `true`, `false` |
+
+The following rules govern the Version 1 public contract:
+
+- `outExecContextVersion` must always equal `"1.0"`.
+- `outExecContextAvailable = true` means the provider produced a complete and valid Execution Context.
+- `outExecContextAvailable = false` means no valid Execution Context exists.
+- When `outExecContextAvailable = false`, the consumer must not read, interpret, or act on `outExecContextQualified`.
+- When `outExecContextAvailable = false`, Execution Context processing must stop and execution must not proceed.
+- When `outExecContextAvailable = true`, `outExecContextQualified` is authoritative.
+- The consumer must not reconstruct qualification from provider internals, timeframe states, market-specific conditions, or any other signals.
+- `outExecContextAvailable` is part of the public Version 1 contract and is the authoritative mechanism by which a provider indicates whether a valid Execution Context payload exists. When `outExecContextAvailable = false`, no valid Execution Context payload exists and consumers shall terminate processing without interpreting qualification.
+
+The Version 1 public schema explicitly excludes:
+
+- Daily, 4H, and 1H states;
+- acceptance;
+- compression;
+- momentum;
+- breakout;
+- blockers or reasons;
+- MCX- or NSE-specific states;
+- diagnostics and debug fields.
+
+### Versioning Policy
+
+Version 1 defines the complete public Execution Context contract.
+
+Additional public fields shall only be introduced through a new approved contract version (for example, Version 2.0).
+
+The semantics of Version 1 shall remain backward compatible for all Version 1 consumers.
+
+## 14. Version 2 Public Contract
+
+Version 2 is the active approved Execution Context contract architecture. It supersedes Version 1 for future implementation while preserving Version 1 as a superseded-before-implementation contract record. Version 2 defines conceptual public information only; Pine identifiers, Pine types, encodings, and implementation-specific representations require separate approval before implementation.
+
+### Conceptual public contract
+
+Version 2 contains the smallest conceptual public contract required to preserve approved provider and consumer responsibilities:
+
+| Concept | Contract meaning |
+|---|---|
+| Contract version identification | Identifies the approved Execution Context contract version under which the public contract was produced. |
+| Execution Context availability | Indicates whether one complete and valid Execution Context payload exists. |
+| Execution Context Outcome | Communicates one authoritative provider-owned Execution Context result: `PENDING`, `QUALIFIED`, `EXTENDED`, or `FAILED`. |
+| Ordered Execution Context blockers | Communicates an ordered sequence of zero to three authoritative, market-neutral blocker classifications. |
+
+The contract shall not expose timeframe, exchange, indicator, market-specific, provider-internal, diagnostic, debug, or implementation-specific state.
+
+### Execution Context Outcome semantics
+
+- `PENDING` means a complete and valid Execution Context exists, but provider-owned execution-context prerequisites are not yet satisfied and the context is neither `EXTENDED` nor `FAILED`.
+- `QUALIFIED` means a complete and valid Execution Context exists and all provider-owned execution-context prerequisites are satisfied.
+- `EXTENDED` means a complete and valid Execution Context exists and the provider has authoritatively classified the current context as extended for the evaluation cycle.
+- `FAILED` means a complete and valid Execution Context exists and the provider has authoritatively classified the current context as failed for the evaluation cycle.
+
+The Execution Context Outcome is authoritative for Execution Context only. It shall not authorize trade execution. Final execution authorization remains the responsibility of KR-380 after evaluating its own responsibilities and upstream contracts.
+
+When Execution Context availability is false, no valid Execution Context payload exists. The consumer shall stop Execution Context processing, shall not interpret the Execution Context Outcome, and shall not proceed with execution.
+
+### Ordered blocker contract
+
+KR-380A owns selection and priority ordering of Execution Context blockers. The ordered blocker contract shall:
+
+- contain no more than the three highest-priority blockers;
+- use a stable market-neutral taxonomy;
+- expose no provider-internal conditions or calculations;
+- expose no timeframe, exchange, indicator, threshold, diagnostic, debug, or implementation-specific state;
+- remain immutable for the evaluation cycle;
+- permit KR-380 to consume and publish blocker information without reconstructing provider logic.
+
+A `QUALIFIED` outcome carries no Execution Context blocker. `PENDING`, `EXTENDED`, and `FAILED` carry at least one authoritative Execution Context blocker.
+
+An unavailable public-contract outcome may carry ordered availability blockers in the public contract envelope. Those blockers explain unavailability only; they do not constitute or permit inference of a valid Execution Context payload or Execution Context Outcome.
+
+The blocker taxonomy and its Pine representation require explicit approval before implementation.
+
+### Responsibility boundaries
+
+KR-380A owns:
+
+- provider-specific market and product interpretation;
+- Execution Context availability;
+- the authoritative Execution Context Outcome;
+- selection and priority ordering of Execution Context blockers;
+- translation of provider-internal conditions into approved market-neutral blocker classifications.
+
+KR-380 owns:
+
+- consuming KR-370 direction and BUY READY / SELL READY through their separate upstream contract;
+- consuming the standardized Execution Context without reconstructing provider logic;
+- final execution timing;
+- mapping the authoritative Execution Context Outcome into its existing public execution states;
+- final execution authorization and BUY NOW / SELL NOW;
+- publishing its existing ordered execution blocker queue.
+
+KR-380A shall not own or establish direction, BUY READY, SELL READY, final execution authorization, BUY NOW, SELL NOW, or trade management. KR-380 shall not inspect provider internals, reproduce provider interpretation, or derive a replacement Execution Context Outcome.
+
+### KR-380 behavior mapping
+
+| KR-370 input | Execution Context | KR-380 final timing | KR-380 public result |
+|---|---|---|---|
+| No BUY READY or SELL READY | Any available outcome | Any | `NO TRIGGER` |
+| BUY READY or SELL READY | `PENDING` | Any | `FORMING` |
+| BUY READY | `QUALIFIED` | Not final | `FORMING` |
+| SELL READY | `QUALIFIED` | Not final | `FORMING` |
+| BUY READY | `QUALIFIED` | Final | `BUY NOW` |
+| SELL READY | `QUALIFIED` | Final | `SELL NOW` |
+| BUY READY or SELL READY | `EXTENDED` | Not final | `FORMING` |
+| BUY READY or SELL READY | `EXTENDED` | Final | `EXTENDED` |
+| BUY READY or SELL READY | `FAILED` | Not final | `FORMING` |
+| BUY READY or SELL READY | `FAILED` | Final | `FAILED` |
+| Any | Unavailable | Any | Stop Execution Context processing; execution does not proceed. |
+
+KR-380 retains direction-specific FORMING behavior through the separate KR-370 direction/readiness contract. The Execution Context neither supplies nor infers direction.
+
+### Consumer boundary and dependent migration
+
+KR-380 remains the sole authorized consumer of the entry Execution Context. Version 2 does not authorize KR-390A, KR-390, KR-705, or any other component to consume the entry Execution Context.
+
+The existing execution-chart readiness dependency used outside KR-380 requires a separately approved migration outside the entry Execution Context contract:
+
+- KR-390A remains responsible for its narrow post-entry context eligibility under ADL-003;
+- KR-390 consumes the applicable KR-390A post-entry public contract;
+- KR-705 consumes authorized KR-380 or KR-390 presentation outputs rather than the entry Execution Context.
+
+This migration shall not broaden ECPC-001's consumer boundary or make trade-management and presentation components entry Execution Context consumers.
+
+### Version 2 governance
+
+Version 2 is required because Version 1 cannot preserve the approved `PENDING`, `EXTENDED`, `FAILED`, and ordered-blocker responsibilities without consumer-side reconstruction of provider logic.
+
+Version 1 is Superseded Before Implementation. Version 2 is the active contract for future implementation. No Version 2 Pine implementation may begin until the blocker taxonomy, concrete Pine schema, validation rules, and dependent readiness migration are explicitly approved and recorded.
