@@ -12,6 +12,9 @@ Product communication must be documented through an interface contract. A Draft 
 
 ## Interface Index
 
-No product interface contract is currently registered in this new directory.
+| Interface | Title | Status | Version | Owner | Producer | Consumer | Related documents |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| [ECIC-001](ECIC-001-Execution-Context-Interface-Contract.md) | Execution Context Interface Contract | Approved | 1.0 | Chief Architect | Execution Context Provider | Defined by product architecture | [PP-007](../principles/PP-007-Execution-Semantics-Across-Markets.md); [ADR-006](../adr/ADR-006-Execution-Context-Provider-Architecture.md); [ECPC-001](ECPC-001-Execution-Context-Payload-Contract.md); [ECM-001](../models/ECM-001-Execution-Context-Model.md); [ADL-003](../ADL-003-Execution-Context-Adapters.md) |
+| [ECPC-001](ECPC-001-Execution-Context-Payload-Contract.md) | Execution Context Payload Contract | Approved | Not stated | Not stated | Execution Context Provider | Defined by product architecture | [ECIC-001](ECIC-001-Execution-Context-Interface-Contract.md); [ECM-001](../models/ECM-001-Execution-Context-Model.md); [ADR-006](../adr/ADR-006-Execution-Context-Provider-Architecture.md); [ADL-003](../ADL-003-Execution-Context-Adapters.md); [PP-007](../principles/PP-007-Execution-Semantics-Across-Markets.md) |
 
 Create proposed contracts from [`INTERFACE_TEMPLATE.md`](INTERFACE_TEMPLATE.md). Do not infer interface fields, dependencies, or ownership from product names.

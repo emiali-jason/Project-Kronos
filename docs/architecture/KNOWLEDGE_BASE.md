@@ -39,6 +39,11 @@ Status values in this index reproduce the source document where one is stated. `
 | Project KRONOS Architecture Overview | Existing architecture overview | Canonical | Not stated | [`OVERVIEW.md`](OVERVIEW.md) |
 | Project KRONOS Data Flow | Existing information-flow architecture | Canonical | Not stated | [`DATA_FLOW.md`](DATA_FLOW.md) |
 | KRONOS Engine Ownership | Existing engine responsibility matrix | Canonical | Not stated | [`ENGINE_OWNERSHIP.md`](ENGINE_OWNERSHIP.md) |
+| ADR-006 — Execution Context Provider Architecture | Execution Context Provider architecture decision record | Approved | Chief Architect | [`adr/ADR-006-Execution-Context-Provider-Architecture.md`](adr/ADR-006-Execution-Context-Provider-Architecture.md) |
+| ECIC-001 — Execution Context Interface Contract | Execution Context public interface contract | Approved | Chief Architect | [`interfaces/ECIC-001-Execution-Context-Interface-Contract.md`](interfaces/ECIC-001-Execution-Context-Interface-Contract.md) |
+| ECM-001 — Execution Context Model | Execution Context behavioral model | Approved | Not stated | [`models/ECM-001-Execution-Context-Model.md`](models/ECM-001-Execution-Context-Model.md) |
+| ECPC-001 — Execution Context Payload Contract | Conceptual Execution Context payload-governance contract | Approved | Not stated | [`interfaces/ECPC-001-Execution-Context-Payload-Contract.md`](interfaces/ECPC-001-Execution-Context-Payload-Contract.md) |
+| PP-007 — Execution Semantics Across Markets | Market-neutral execution-semantics principle | Approved | Chief Architect | [`principles/PP-007-Execution-Semantics-Across-Markets.md`](principles/PP-007-Execution-Semantics-Across-Markets.md) |
 | ADL-001 — Futures Model Architecture | Existing futures-model decision record | Approved for Version 1.x; not required for initial MVP | Not stated | [`ADL-001-Futures-Model.md`](ADL-001-Futures-Model.md) |
 | ADL-002 — MCX Self-Contained Execution | Existing execution decision record | Approved | Not stated | [`ADL-002-MCX-Self-Contained-Execution.md`](ADL-002-MCX-Self-Contained-Execution.md) |
 | ADL-003 — Execution Context Adapters | Existing adapter decision record | Approved | Not stated | [`ADL-003-Execution-Context-Adapters.md`](ADL-003-Execution-Context-Adapters.md) |

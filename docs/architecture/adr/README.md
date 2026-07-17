@@ -21,6 +21,8 @@ This directory is the canonical location for new KRONOS Architecture Decision Re
 
 ## ADR Index
 
-No ADRs are currently registered in this new directory.
+| ADR | Title | Status | Date | Owner | Supersedes | Superseded by | Related documents |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| [ADR-006](ADR-006-Execution-Context-Provider-Architecture.md) | Execution Context Provider Architecture | Approved | Not stated | Chief Architect | None | None | [PP-007](../principles/PP-007-Execution-Semantics-Across-Markets.md); [ECIC-001](../interfaces/ECIC-001-Execution-Context-Interface-Contract.md); [ECPC-001](../interfaces/ECPC-001-Execution-Context-Payload-Contract.md); [ECM-001](../models/ECM-001-Execution-Context-Model.md); [ADL-003](../ADL-003-Execution-Context-Adapters.md) |
 
 The existing approved `ADL-*` records remain at their established paths under [`../`](../) and are indexed in [`../KNOWLEDGE_BASE.md`](../KNOWLEDGE_BASE.md). They have not been converted, renumbered, or moved.
