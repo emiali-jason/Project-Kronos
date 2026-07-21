@@ -1,51 +1,97 @@
 # PLATFORM-000 — KRONOS Platform Constitution
-Status: Draft
+Status: Approved
 Owner: Chief Architect
+Version: 1.0
 
 ## Purpose
 
-Define the proposed constitutional baseline for KRONOS Platform architecture without replacing or reinterpreting existing approved repository documents.
+Establish the constitutional decisions that govern KRONOS Platform domains, responsibilities, dependencies, communication, human workflow, and architectural change.
 
-This document remains non-authoritative until formal review and approval by the Chief Architect.
+This constitution preserves the approved responsibilities of KR-370, KR-380, the Execution Context Provider architecture, PP-007, ENGINE_OWNERSHIP, and DATA_FLOW.
 
-## Authority Boundary
+## CA-013 — Domain Identity
 
-- Existing approved Architecture Decision Records, approved interface contracts, approved platform governance, and canonical ownership and data-flow documents remain authoritative within their recorded scope.
-- This Draft does not approve PP-001 through PP-006, assign implementation authority, or supersede an existing approved decision.
-- A conflict between this Draft and an approved repository document must be resolved in favor of the approved document until a new decision is formally approved.
+Each domain has one stable identifier, one name, and one explicit architectural boundary.
 
-## Platform Constraints
+A domain groups semantically related responsibilities. Domain identity does not merge existing engine responsibilities, permit duplicate ownership, or allow one domain to reinterpret another domain's published meaning.
 
-1. Each architectural responsibility has one explicit owner.
-2. Evidence production, observation, validation, confidence, decision, execution, trade management, alerts, and presentation remain distinct responsibilities.
-3. Evidence engines do not make trading decisions.
-4. KR-370 retains ownership of direction and BUY READY / SELL READY.
-5. KR-380 retains ownership of final execution timing and BUY NOW / SELL NOW.
-6. Market-specific execution interpretation remains encapsulated by the applicable Execution Context Provider and does not move into execution authorization components.
-7. Execution Context communication remains standardized, deterministic, immutable for an evaluation cycle, and independent of provider implementation.
-8. Consumers do not reconstruct provider logic, infer missing context, or bypass approved public contracts.
-9. Analysis instruments, reference instruments, and execution instruments remain architecturally distinct where existing approved records distinguish them.
-10. Observation and validation precede any approved integration into confidence or decision responsibilities.
-11. Architecture changes require a recorded architectural decision and must preserve approved consumer responsibilities.
+The approved domains are:
 
-## Domain Boundary Rule
+- DOMAIN-001 — Instrument
+- DOMAIN-002 — Observation
+- DOMAIN-003 — Validation
+- DOMAIN-004 — Execution
+- DOMAIN-005 — Portfolio
+- DOMAIN-006 — Provider
+- DOMAIN-007 — Risk
+- DOMAIN-008 — Market
+- DOMAIN-009 — Event
+- DOMAIN-010 — Configuration
+- DOMAIN-011 — Audit
 
-Platform domains organize related architectural responsibilities. A domain document does not transfer, merge, or replace engine ownership recorded in ENGINE_OWNERSHIP or information flow recorded in DATA_FLOW.
+## CA-014 — Responsibility Classes
 
-Cross-domain communication must preserve the producing owner's authority and the consuming owner's responsibility. A shared concept does not create shared ownership.
+KRONOS Platform responsibilities are divided into three classes:
 
-## Change Control
+- Business responsibilities: Instrument, Observation, Validation, Risk, Execution, and Portfolio.
+- Platform responsibilities: Provider, Market, Event, and Configuration.
+- Oversight responsibility: Audit.
 
-Changes to an approved platform constraint, ownership boundary, or cross-domain contract require formal architectural review and an approved decision record.
+Business domains answer the approved business questions in PLATFORM_BUSINESS_PIPELINE. Platform domains support business operation without acquiring business judgment. Audit observes all domains read-only and does not participate in business decisions.
 
-Draft domain documents may identify open questions and TODOs but must not create implementation authority.
+## CA-015 — Contract-Based Dependencies
 
-## Open Items
+A domain may depend on another domain only through an explicitly published and consumed semantic contract.
 
-- TODO: Formal review of this constitutional baseline.
-- TODO: Formal review of domain ownership and cross-domain dependencies.
-- TODO: Formal review of PP-001 through PP-006.
-- TODO: Definition and approval of platform Information Objects and their lifecycle.
+Consumers depend on the contract's meaning, not on the producer's internal reasoning or implementation. A dependency does not transfer ownership from producer to consumer.
+
+Allowed business dependencies are recorded in DOMAIN_DEPENDENCY_MATRIX. Any new dependency requires Chief Architect approval and an architectural decision.
+
+## CA-016 — Single Semantic Ownership
+
+Every platform responsibility and every published semantic meaning has exactly one owning domain.
+
+A consumer may use an owned meaning but must not recreate, reinterpret, supplement, or replace it. Multiple current engines may contribute facts within their existing ENGINE_OWNERSHIP boundaries, but the same platform semantic responsibility must not be assigned to multiple domains.
+
+DOMAIN_OWNERSHIP_MATRIX is the authoritative platform-level ownership map.
+
+## CA-017 — Domain Communication (Platform Only)
+
+The mechanism by which domains communicate is a platform responsibility and is not business logic.
+
+Business domains declare semantic dependencies and exchange only approved contracts. They do not own communication mechanisms and do not depend on a particular transport, storage model, or runtime technology.
+
+Platform support must not alter contract meaning, create business judgment, or introduce a second path around an approved dependency.
+
+## CA-018 — Human Workflow Independence
+
+Completion of a domain responsibility must not depend on an undocumented manual interpretation or hidden human handoff.
+
+Human review, presentation, approval, and action may consume platform outputs where explicitly authorized, but they do not silently replace domain ownership or contract completion.
+
+Current BUY NOW and SELL NOW remain confirmed KR-380 execution-timing states and are not broker orders. Human or broker action remains outside the current execution contract unless separately approved.
+
+## CA-019 — Architecture Freeze
+
+Version 1.0 of the following approved documents is frozen after approval:
+
+- PLATFORM-000 — KRONOS Platform Constitution
+- PLATFORM_OVERVIEW
+- PLATFORM_BUSINESS_PIPELINE
+- DOMAIN_DEPENDENCY_MATRIX
+- DOMAIN_OWNERSHIP_MATRIX
+- DOMAIN-001 through DOMAIN-011 architecture documents
+
+A frozen responsibility, dependency, ownership assignment, or constitutional decision may change only through a new Architecture Decision Record approved by the Chief Architect. Engineering, implementation convenience, or an undocumented workflow must not alter frozen architecture.
+
+## Existing Authority Preserved
+
+- KR-370 retains direction and BUY READY / SELL READY ownership.
+- KR-380 retains final execution timing and BUY NOW / SELL NOW ownership.
+- KR-380 remains the sole currently authorized consumer of the entry Execution Context.
+- Execution Context Providers do not own direction, readiness, final execution authorization, BUY NOW, SELL NOW, or trade management.
+- Execution semantics remain market-neutral under PP-007.
+- Existing engine ownership and information flow remain governed by ENGINE_OWNERSHIP and DATA_FLOW.
 
 ## Related Approved Documents
 

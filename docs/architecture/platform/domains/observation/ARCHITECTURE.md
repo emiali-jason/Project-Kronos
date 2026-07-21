@@ -1,50 +1,58 @@
 # DOMAIN-002 — Observation Domain
-Status: Draft
+Status: Approved
 Owner: Chief Architect
+Version: 1.0
 
 ## Purpose
 
-Define the proposed platform boundary for observing repository-authorized evidence without granting observation any decision, execution, or approval authority.
+Own the authoritative publication of market facts that answer what happened, without creating business judgment, risk permission, or execution authority.
 
-## Scope
+## Responsibilities
 
-The Observation Domain organizes the review of evidence made available by its existing owners. Observation preserves the distinction between evidence that is visible for assessment and evidence that has been approved for downstream influence.
+- Own Market Facts as the single platform semantic responsibility.
+- Publish observations derived by the existing evidence owners without transferring or duplicating their engine responsibilities.
+- Preserve the distinction between observed evidence and evidence approved for downstream influence.
+- Make market facts available to Validation through the approved contract boundary.
 
-Observation precedes validation in the approved platform evolution flow. Observed evidence does not gain confidence, decision, or execution authority merely because it is recorded or displayed.
+## Non-Responsibilities
 
-## Existing Ownership Preserved
+- Instrument identity.
+- Business judgment, confidence ownership, direction, or BUY READY / SELL READY.
+- Risk approval.
+- Execution timing, BUY NOW / SELL NOW, or orders.
+- Positions, provider integration, market schedules, runtime configuration, or audit conclusions.
 
-- Source engines retain ownership of the evidence they produce.
-- KR-705 retains presentation ownership and may display only repository-authorized outputs.
-- Existing restrictions on observational KR-335 and KR-345 evidence remain unchanged: display or review does not authorize confidence, decision, execution, trade-management, or alert influence.
+## Published Contracts
 
-## Boundaries
+- Market Facts Contract — authoritative observed facts available for business interpretation.
 
-The Observation Domain does not own:
+## Consumed Contracts
 
-- source evidence generation or recalculation;
-- validation conclusions;
-- confidence scoring;
-- KR-370 direction or readiness;
-- Execution Context qualification or KR-380 timing;
-- trade management, alerts, or presentation calculations;
-- architectural approval.
+- Instrument Identity Contract.
 
-## Relationship to Validation
+## Architectural Constraints
 
-Observation may make authorized evidence available for validation. It does not validate itself and does not authorize downstream integration.
+- Observation answers what happened and must not answer what it means.
+- Source engines retain their existing ENGINE_OWNERSHIP responsibilities.
+- Observational evidence must not influence KR-370 or KR-380 unless an approved downstream contract authorizes that influence.
+- Human display or review does not change the authority of an observation.
 
-Any proposed influence on confidence, decision, or execution requires separate formal review and an approved architectural decision.
+## Approved Constitutional References
 
-## Open Items
+- CA-013 — Domain Identity
+- CA-014 — Responsibility Classes
+- CA-015 — Contract-Based Dependencies
+- CA-016 — Single Semantic Ownership
+- CA-017 — Domain Communication (Platform Only)
+- CA-018 — Human Workflow Independence
+- CA-019 — Architecture Freeze
+- [PLATFORM-000 — KRONOS Platform Constitution](../../PLATFORM-000-CONSTITUTION.md)
+- [Platform Business Pipeline](../../PLATFORM_BUSINESS_PIPELINE.md)
+- [Domain Dependency Matrix](../../DOMAIN_DEPENDENCY_MATRIX.md)
+- [Domain Ownership Matrix](../../DOMAIN_OWNERSHIP_MATRIX.md)
 
-- TODO: Define the approved meaning and lifecycle of an observation.
-- TODO: Define ownership of observation records without introducing a schema.
-- TODO: Define the approved handoff from observation to validation.
-
-## Related Approved Documents
+## Related Approved Repository Documents
 
 - [KRONOS Platform Governance](../../../../product/PLATFORM_GOVERNANCE.md)
 - [KRONOS Engine Ownership](../../../ENGINE_OWNERSHIP.md)
 - [Project KRONOS Data Flow](../../../DATA_FLOW.md)
-- [PLATFORM-000 — KRONOS Platform Constitution](../../PLATFORM-000-CONSTITUTION.md)

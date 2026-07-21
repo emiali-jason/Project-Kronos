@@ -1,47 +1,59 @@
 # DOMAIN-003 — Validation Domain
-Status: Draft
+Status: Approved
 Owner: Chief Architect
+Version: 1.0
 
 ## Purpose
 
-Define the proposed platform boundary for evaluating observed evidence before any approved integration into confidence, decision, or execution responsibilities.
+Own Business Judgment by interpreting approved Market Facts and answering what those facts mean for KRONOS business decisions.
 
-## Scope
+## Responsibilities
 
-The Validation Domain organizes assessment of repository-authorized evidence against explicitly approved expectations. Validation follows observation and precedes any approved confidence or decision integration.
+- Own Business Judgment as the single platform semantic responsibility.
+- Consume Market Facts without recreating Observation.
+- Publish authoritative business judgment for downstream Risk and Execution consumption.
+- Preserve KR-370 ownership of direction and BUY READY / SELL READY within the current KRONOS architecture.
 
-Validation records may support architectural or release review. Validation evidence does not by itself approve architecture, transfer ownership, or authorize implementation.
+## Non-Responsibilities
 
-## Existing Ownership Preserved
+- Instrument identity or market-fact production.
+- Risk approval.
+- Final execution timing, BUY NOW / SELL NOW, or orders.
+- Positions or model-trade state.
+- Provider integration, market schedules, event transport, runtime configuration, or audit.
 
-- Source engines retain ownership of the behavior and outputs being validated.
-- KR-370 retains direction and readiness ownership.
-- KR-380 retains final execution timing ownership.
-- Existing contract owners retain responsibility for defining conformance within their approved scope.
+## Published Contracts
 
-## Boundaries
+- Business Judgment Contract — the authoritative business meaning derived from approved Market Facts, including current KR-370 direction and readiness where applicable.
 
-The Validation Domain does not own:
+## Consumed Contracts
 
-- source evidence or observation production;
-- architectural approval;
-- product or engine ownership changes;
-- confidence scoring, direction, or readiness;
-- Execution Context production or execution timing;
-- trade management, alerts, or presentation.
+- Market Facts Contract.
 
-A validation result must not directly change KR-370, KR-380, or another engine's behavior without a separately approved architectural and engineering change.
+## Architectural Constraints
 
-## Open Items
+- Validation answers what the facts mean and must not answer whether risk permits action or whether execution has occurred.
+- Validation is the domain-level owner of Business Judgment; existing KR-360 confidence and KR-370 decision responsibilities remain distinct within that domain boundary.
+- KR-370 remains the sole current owner of direction and BUY READY / SELL READY.
+- Validation must not create BUY NOW / SELL NOW or reinterpret Execution Context.
+- Validation evidence does not by itself alter architecture or implementation.
 
-- TODO: Define approved validation categories and lifecycle.
-- TODO: Define ownership of validation records without introducing a schema.
-- TODO: Define approval boundaries between validation evidence, architectural review, and release review.
+## Approved Constitutional References
 
-## Related Approved Documents
+- CA-013 — Domain Identity
+- CA-014 — Responsibility Classes
+- CA-015 — Contract-Based Dependencies
+- CA-016 — Single Semantic Ownership
+- CA-017 — Domain Communication (Platform Only)
+- CA-018 — Human Workflow Independence
+- CA-019 — Architecture Freeze
+- [PLATFORM-000 — KRONOS Platform Constitution](../../PLATFORM-000-CONSTITUTION.md)
+- [Platform Business Pipeline](../../PLATFORM_BUSINESS_PIPELINE.md)
+- [Domain Dependency Matrix](../../DOMAIN_DEPENDENCY_MATRIX.md)
+- [Domain Ownership Matrix](../../DOMAIN_OWNERSHIP_MATRIX.md)
+
+## Related Approved Repository Documents
 
 - [KRONOS Platform Governance](../../../../product/PLATFORM_GOVERNANCE.md)
 - [KRONOS Engine Ownership](../../../ENGINE_OWNERSHIP.md)
 - [Project KRONOS Data Flow](../../../DATA_FLOW.md)
-- [ADL-005 — Alert Architecture](../../../ADL-005-Alert-Architecture.md)
-- [PLATFORM-000 — KRONOS Platform Constitution](../../PLATFORM-000-CONSTITUTION.md)
