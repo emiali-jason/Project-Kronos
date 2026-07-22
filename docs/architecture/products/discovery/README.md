@@ -16,6 +16,8 @@ The folder name does not establish product responsibility, authority, interfaces
 - [Interfaces](INTERFACES.md)
 - [Constraints](CONSTRAINTS.md)
 - [Future](FUTURE.md)
+- [Research-First Architecture Impact Assessment](RESEARCH_FIRST_ARCHITECTURE_IMPACT_ASSESSMENT.md) — Draft assessment
+- [Research-First Engineering Roadmap](RESEARCH_FIRST_ENGINEERING_ROADMAP.md) — Draft proposal
 
 ## Approved Architecture
 
