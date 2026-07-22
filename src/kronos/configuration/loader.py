@@ -18,6 +18,7 @@ def load_settings() -> Settings:
         provider=os.getenv("KRONOS_PROVIDER", DEFAULT_PROVIDER).strip(),
         kite_api_key=os.getenv("KRONOS_KITE_API_KEY", ""),
         kite_api_secret=os.getenv("KRONOS_KITE_API_SECRET", ""),
+        kite_access_token=os.getenv("KRONOS_KITE_ACCESS_TOKEN", ""),
         kite_redirect_url=os.getenv(
             "KRONOS_KITE_REDIRECT_URL",
             DEFAULT_KITE_REDIRECT_URL,

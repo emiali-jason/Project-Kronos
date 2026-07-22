@@ -1,19 +1,20 @@
 # EP-004 — Minimum Read-Only Kite Connectivity
 
-**Status:** Draft
+**Status:** Approved
 **Owner:** Engineering Architect
 **Architecture authority:** Existing approved Provider and Configuration boundaries
-**Approval:** Not approved for implementation until Engineering Architect review
+**Approval:** Approved for EP-004 implementation by Engineering Architect
 **Date:** 2026-07-22
 
 ## Authority and Design Boundary
 
-This Engineering Design Document (EDD) translates the currently permitted EP-004 scope into an implementation proposal. It does not approve architecture, interfaces, dependencies, runtime behavior, or implementation.
+This Engineering Design Document (EDD) authorizes EP-004 implementation within the recorded scope. It does not alter or approve architecture, cross-domain interfaces, dependencies, or behavior beyond EP-004.
 
 The approved [Provider Domain](../../architecture/platform/domains/provider/ARCHITECTURE.md) owns Provider Integration. The approved [Configuration Domain](../../architecture/platform/domains/configuration/ARCHITECTURE.md) owns Runtime Configuration. Their `CONTRACTS.md` files are Draft placeholders and define no concrete approved interface. Consequently:
 
 - this design may describe Provider-internal implementation mechanics;
-- this design may consume the existing EP-003 configuration implementation only after Engineering Architect review confirms that use remains inside the approved Runtime Configuration boundary;
+- EP-004 may consume the existing immutable EP-003 `Settings` object as the Runtime Configuration implementation;
+- Configuration remains the only environment and `.env` reader, and Provider must not read either directly;
 - this design does not create or approve a Configuration-to-Provider contract;
 - no Provider result may cross into Observation or another domain under EP-004; and
 - the Draft research-first assessment, roadmap, and ADR-0001 are constraints supplied by the task, not implementation authority.
@@ -84,8 +85,8 @@ EP-004 does not modify KR-370, KR-380, KR-390, KR-400, ADR-006, PP-007, Pine beh
 | --- | --- | --- |
 | `pyproject.toml` | Python 3.13 project; `kiteconnect>=5.2.0` and `python-dotenv>=1.2.2` are declared. | No dependency change is required for the design. |
 | `uv.lock` | Resolves `kiteconnect` 5.2.0 and `python-dotenv` 1.2.2. | SDK behavior in this EDD was inspected against locked version 5.2.0. |
-| `.env.example` | Declares provider, Kite API key, API secret, and redirect URL; no access token. | An access-token input is required before an authenticated runtime probe is implementable. |
-| `src/kronos/configuration/settings.py` | Immutable slotted `Settings`; API key and secret are excluded from `repr`; no access token or timeout. | Extend only after review of the Configuration-to-Provider boundary. |
+| `.env.example` | Declares provider, Kite API key, API secret, and redirect URL; no access token. | Add the approved secret `KRONOS_KITE_ACCESS_TOKEN` with an empty example value. |
+| `src/kronos/configuration/settings.py` | Immutable slotted `Settings`; API key and secret are excluded from `repr`; no access token or timeout. | Add the approved non-repr access token; do not add a timeout field. |
 | `src/kronos/configuration/loader.py` | Loads environment values and optional `.env`; no provider call. | Remains the configuration source; must not authenticate. |
 | `src/kronos/configuration/exceptions.py` | Defines `ConfigurationError`. | Reuse for invalid or missing configuration at the Configuration boundary. |
 | `src/kronos/provider/adapters/kite/__init__.py` | Empty Kite adapter package created by EP-002. | Correct location for SDK-specific implementation. |
@@ -93,7 +94,7 @@ EP-004 does not modify KR-370, KR-380, KR-390, KR-400, ADR-006, PP-007, Pine beh
 | `src/kronos/provider/models/__init__.py` | Empty Provider model package. | May hold Provider-internal availability values free of SDK types. |
 | `src/kronos/provider/services/__init__.py` | Empty Provider service package. | May hold Provider-internal lifecycle orchestration. |
 | `src/kronos/provider/contracts/__init__.py` | Empty package. | Must remain unchanged; EP-004 creates no published domain contract. |
-| `tests/` | No Python test directory exists. | Test location and runner are engineering decisions requiring review. |
+| `tests/` | No Python test directory exists. | Use the approved minimal pytest layout for Configuration, Provider, and boundary tests. |
 | Composition and commands | No composition root, dependency-injection framework, CLI command, or application bootstrap exists. | EP-004 must not invent an application framework or command merely to host the probe. |
 
 EP-001 through EP-003 are evidenced by commits `bfc1cc3`, `e6631cf`, and `1efac39` and by the current files above. No separate EP engineering-design documents were found.
@@ -104,7 +105,7 @@ These are proposed implementation paths, not changes made by this EDD.
 
 | Proposed path | Responsibility | Reason | Governing precedent |
 | --- | --- | --- | --- |
-| `.env.example` | Add an empty, clearly secret access-token variable after its name is reviewed. | The installed SDK requires an access token for authenticated `profile()` use. | EP-003 environment configuration; Configuration ownership. |
+| `.env.example` | Add empty `KRONOS_KITE_ACCESS_TOKEN=`. | The installed SDK requires an access token for authenticated `profile()` use. | EP-003 environment configuration; Configuration ownership. |
 | `src/kronos/configuration/settings.py` | Represent the access token as a non-repr secret and validate the minimum Kite session inputs at the approved startup boundary. | Current `Settings` cannot construct an authenticated session. | Existing immutable `Settings`; Configuration owns secrets. |
 | `src/kronos/configuration/loader.py` | Load the reviewed access-token variable without logging or transforming its value. | Preserve EP-003 as the only environment-loading boundary. | EP-003 loader. |
 | `src/kronos/provider/models/availability.py` | Define Provider-internal availability state and result with no provider payload. | Keep technical availability deterministic and separate from Market Schedule. | Provider owns capability and availability. |
@@ -115,14 +116,13 @@ These are proposed implementation paths, not changes made by this EDD.
 | `tests/unit/configuration/test_kite_connectivity_settings.py` | Verify required values, missing-value behavior, and redaction. | Protect Configuration ownership and secret safety. | Proposed first Python test convention. |
 | `tests/unit/provider/test_kite_connectivity.py` | Verify factory, probe, mappings, lifecycle, and no-retry behavior with fakes. | Exercise the Provider boundary without network access. | Existing requirement to mock external dependencies. |
 | `tests/boundary/provider/test_provider_boundary.py` | Verify no SDK types, order capability, Market Facts, or cross-domain publication escape Provider. | Make the architecture boundary testable. | CA-015 through CA-017. |
-| `tests/integration/provider/test_kite_connectivity_live.py` | Optional, opt-in live smoke test of the same profile probe. | Validate real connectivity without making CI depend on secrets. | Repository evidence-level discipline. |
 
-The proposed test paths establish the smallest clear Python test layout, but the repository has no Python test-runner precedent. The Engineering Architect must approve the runner before implementation; this EDD adds no dependency.
+The proposed test paths establish the smallest clear Python test layout. Pytest is the approved Python test runner and is added as a development-only dependency using the repository's uv configuration.
 
-### 4.3 Optional changes requiring review
+### 4.3 Reviewed implementation constraints
 
-- A reviewed `KRONOS_KITE_TIMEOUT_SECONDS` setting may replace reliance on the SDK's implicit seven-second default.
-- A static source rule may reject direct Kite order-method references in active EP-004 modules if it can distinguish implementation from tests and documentation without brittle false positives.
+- EP-004 relies on the locked Kite SDK 5.2.0 default timeout of seven seconds. It must not add `KRONOS_KITE_TIMEOUT_SECONDS`; a configurable timeout requires a later reviewed engineering change.
+- Boundary tests and scoped code review are sufficient; EP-004 does not add a static source-analysis framework.
 - A later application composition root may invoke the Provider service, but EP-004 must not create one without an approved application entry point.
 
 ### 4.4 Future changes prohibited in EP-004
@@ -214,10 +214,10 @@ The official SDK itself includes order methods. Dependency installation therefor
 | `KRONOS_KITE_API_KEY` | Existing; currently may be empty. | Required to construct the authenticated SDK client. | Treat as sensitive credential; redact. |
 | `KRONOS_KITE_API_SECRET` | Existing; currently may be empty. | Not consumed by EP-004 runtime because token exchange is out of scope. | Secret; never pass to the probe. |
 | `KRONOS_KITE_REDIRECT_URL` | Existing. | Not consumed by EP-004 runtime because interactive login is out of scope. | Configuration value; do not include in routine logs. |
-| Access-token environment variable | Missing; proposed name requires review. | Required existing valid session input. | Secret; non-repr, non-loggable, non-persistent. |
-| Timeout setting | Missing. | Optional reviewed input; otherwise the effective SDK 5.2.0 default is seven seconds. | Non-secret; exact policy requires review. |
+| `KRONOS_KITE_ACCESS_TOKEN` | Approved for EP-004. | Required existing valid session input. | Secret; non-repr, non-loggable, non-persistent. |
+| Timeout setting | None in EP-004. | Use the locked SDK 5.2.0 default of seven seconds. | Do not add a KRONOS timeout setting. |
 
-Validation occurs before SDK construction. Missing provider name, API key, access token, or an invalid timeout produces `CONFIGURATION_INVALID` and no network call. API secret and redirect URL are not required for the runtime probe.
+Validation occurs before SDK construction. A missing or unsupported provider name, missing API key, or missing access token produces `CONFIGURATION_INVALID` and no network call. API secret and redirect URL are not required for the runtime probe.
 
 Secrets may originate only from Configuration-supported sources. Provider may use secret values transiently to construct the SDK client but does not become their semantic owner. Credentials must not appear in:
 
@@ -254,14 +254,14 @@ Any change to these assumptions requires a separately reviewed engineering scope
 
 1. Configuration loads an existing API key and valid access token.
 2. Configuration validates presence and safe shape without logging values.
-3. The Provider factory constructs `KiteConnect(api_key=..., access_token=..., debug=False, timeout=...)`.
+3. The Provider factory constructs `KiteConnect(api_key=..., access_token=..., debug=False)` and relies on the reviewed locked-SDK timeout default.
 4. The adapter invokes `profile()` once.
 5. On success, the returned profile payload is discarded immediately and state becomes `AVAILABLE`.
 6. A Kite `TokenException` becomes `ACCESS_TOKEN_INVALID_OR_EXPIRED`; no refresh is attempted.
 7. A distinct permission/authentication rejection, when the SDK exposes one without message parsing, becomes `AUTHENTICATION_REJECTED`.
 8. Shutdown closes the Provider-owned client handle and transitions to `NOT_INITIALIZED`.
 
-The SDK 5.2.0 client has no public `close()` method. Its internal HTTP session exposes `close()`. Deterministic cleanup therefore requires one reviewed, SDK-isolated compatibility operation in the factory-owned handle. No other module may rely on that SDK internal. An SDK upgrade test must detect if this cleanup path changes.
+The SDK 5.2.0 client has no public `close()` method. Its internal HTTP session exposes `close()`. The Engineering Architect approves one SDK-isolated compatibility operation in the factory-owned handle to close that session. The operation must be idempotent, remain inside the Kite adapter, expose neither client nor session, and be revalidated when the SDK version changes.
 
 The design must not parse provider exception messages to infer token expiry, because wording is not a stable contract and may contain sensitive context.
 
@@ -394,12 +394,7 @@ EP-004 performs one network attempt for each explicit probe invocation. It has n
 - Unexpected responses and adapter defects require review before retry.
 - Tests use fakes and do not sleep in real time.
 
-The installed SDK default timeout is seven seconds, but reliance on an implicit dependency default is not a durable KRONOS policy. Before implementation approval, the Engineering Architect must either:
-
-1. approve an explicit Configuration-owned timeout value and validation rule; or
-2. explicitly accept the locked SDK default for EP-004 and record its upgrade implications.
-
-No timeout or retry count is invented by this Draft.
+EP-004 explicitly accepts the locked Kite SDK 5.2.0 default timeout of seven seconds. The factory does not pass a timeout override, Configuration has no timeout field, and `KRONOS_KITE_TIMEOUT_SECONDS` must not be added. A configurable timeout requires a later reviewed engineering change and SDK upgrade review must revalidate this reliance.
 
 ## 13. Logging, Observability, and Audit Boundary
 
@@ -432,7 +427,7 @@ EP-004 logs are operational observability. They are not Platform Events or an Au
 
 - Official dependency: `kiteconnect>=5.2.0` in `pyproject.toml`.
 - Locked version inspected: `kiteconnect` 5.2.0 in `uv.lock`.
-- EP-004 does not add or upgrade dependencies.
+- EP-004 does not add or upgrade runtime dependencies; pytest is added only to the approved development dependency group.
 - Any SDK upgrade requires review of the manifest and lock diff, release notes, profile behavior, exception mapping, debug behavior, timeout behavior, and cleanup compatibility.
 - Only `src/kronos/provider/adapters/kite/` imports `kiteconnect` or SDK exception types.
 - Provider services, Provider models, Configuration, other domains, and tests outside adapter-specific tests use KRONOS-owned technical types or fakes.
@@ -459,7 +454,7 @@ The current `>=5.2.0` declaration permits a newer resolution if the lock is deli
 - Developers use `.env` or another Configuration-supported local source; `.env` is already ignored.
 - `.env.example` contains names and empty values only.
 - Test fixtures use obvious fake values and never copy real credentials.
-- Live tests are opt-in, skip when secrets are absent, and run only in an approved secure environment.
+- Any separately approved future live test must be opt-in, skip when secrets are absent, and run only in an approved secure environment.
 - Reviewers inspect log calls, exception chaining, snapshots, and test failure output for secret exposure.
 - Dependency changes are reviewed through `pyproject.toml` and `uv.lock` together.
 - A scoped prohibited-method search supplements, but does not replace, API-surface tests and review.
@@ -468,12 +463,12 @@ The design does not claim that Zerodha credentials are read-only. KRONOS limits 
 
 ## 16. Test Strategy
 
-The repository has no Python test framework, Python test directory, or CI convention. `docs/validation/TESTING.md` is canonical for Pine/TradingView evidence and is not a Python test-runner specification. The Engineering Architect must approve the Python runner before implementation. No test dependency is selected by this Draft.
+The repository previously had no Python test framework, Python test directory, or CI convention. `docs/validation/TESTING.md` remains canonical for Pine/TradingView evidence and is not a Python test-runner specification. The Engineering Architect approves pytest as the EP-004 Python runner and a development-only dependency. No broad test framework is introduced.
 
 ### Unit tests
 
 - valid reviewed configuration produces safe session inputs;
-- missing provider, API key, access token, or invalid timeout fails before SDK construction;
+- missing or unsupported provider, missing API key, or missing access token fails before SDK construction;
 - `Settings` and all errors redact secrets;
 - factory construction uses `debug=False` and the reviewed timeout;
 - fake-factory construction succeeds without importing SDK types into service tests;
@@ -505,15 +500,7 @@ The repository has no Python test framework, Python test directory, or CI conven
 
 ### Live integration test
 
-The live smoke test is explicitly opt-in and excluded from normal CI unless a secure secret facility and policy are later approved. It:
-
-- runs only when an explicit opt-in flag and required credentials are present;
-- otherwise skips safely without printing which secret was absent;
-- performs only `profile()`;
-- discards the response;
-- never invokes orders, holdings, positions, margins, instruments, quotes, historical data, or streaming;
-- prints only pass/fail and a redacted category; and
-- distinguishes Provider rejection from test-harness failure.
+EP-004 does not add a live Kite smoke test. Unit and boundary tests are the approved evidence for this implementation scope.
 
 ### Static and repository checks
 
@@ -530,7 +517,7 @@ An automated prohibited-method check should be added only if it parses the relev
 
 EP-004 implementation is complete only when:
 
-- Engineering Architect has approved the design and resolved the Configuration boundary, access-token input name, timeout policy, cleanup approach, and Python test runner;
+- Engineering Architect has approved the design, existing `Settings` consumption, `KRONOS_KITE_ACCESS_TOKEN`, the locked seven-second SDK default, isolated cleanup operation, and pytest runner;
 - approved configuration can construct the Provider adapter without Provider reading environment variables;
 - a valid Kite session completes exactly one `profile()` probe;
 - profile data is discarded inside the Kite adapter;
@@ -542,7 +529,7 @@ EP-004 implementation is complete only when:
 - no persistent dataset is created;
 - no Observation, Validation, Discovery, Risk, Execution, Portfolio, or TradingView path is activated;
 - no order operation is reachable through the EP-004 surface;
-- unit, boundary, and approved opt-in integration tests pass at their truthful evidence levels;
+- unit and boundary tests pass at their truthful evidence levels;
 - documentation matches the implemented behavior;
 - no approved architecture file is changed; and
 - dependency manifests remain unchanged unless a separately reviewed test-runner decision requires an explicit addition.
@@ -553,15 +540,15 @@ Session refresh is not an acceptance criterion.
 
 Each slice must be independently reviewable.
 
-1. Confirm the Configuration-to-Provider use of existing `Settings`, approve the access-token setting name, timeout policy, test runner, and client cleanup approach.
-2. Extend Configuration with the reviewed, redacted access-token input and pre-construction validation; add tests.
+1. Consume the approved existing immutable `Settings` object without Provider environment access.
+2. Extend Configuration with `KRONOS_KITE_ACCESS_TOKEN` and pre-construction validation; add tests.
 3. Add the narrow Kite client factory/handle with `debug=False`; test that no generic SDK client escapes.
 4. Add the profile-only adapter and successful probe path; discard the payload.
 5. Add Provider-internal availability state and service lifecycle.
-6. Add deterministic error mapping with original causes retained internally and messages redacted.
+6. Add deterministic error mapping with provider messages and exception chains prevented from escaping the adapter.
 7. Add structured technical logging with secret-leak tests.
 8. Add unit and boundary tests for prohibited capabilities and domain imports.
-9. Add the opt-in live profile smoke test only after secure operational setup is approved.
+9. Do not add a live profile smoke test within EP-004; any future live test requires separate approval and secure operational setup.
 10. Run dependency, link, diff, architecture-scope, and prohibited-capability checks; reconcile documentation with actual behavior.
 
 No slice may introduce an application framework, automatic retry loop, token acquisition, market data, published contract, or order capability.
@@ -587,20 +574,19 @@ No slice may introduce an application framework, automatic retry loop, token acq
 
 ### Architecture blockers
 
-- The approved domain documents name Provider Integration and Runtime Configuration contracts, but both domain `CONTRACTS.md` files are Draft placeholders. Engineering needs confirmation that EP-004 may consume the existing `Settings` implementation without creating an unapproved cross-domain contract.
+- EP-004 consumption of the existing immutable `Settings` object is approved as use of the Runtime Configuration implementation, not creation of a published cross-domain contract. The Provider and Configuration `CONTRACTS.md` files remain unchanged.
 - Publishing Provider availability beyond Provider is blocked until an approved consumer and concrete interface exist. This EDD keeps it internal.
 - Provider-to-Observation acquisition, Market Facts publication, persistence, provenance, replay, and all EP-006-plus work remain blocked by the gaps recorded in the Draft impact assessment and roadmap.
 
-### Engineering decisions requiring review
+### Engineering decisions
 
-- Exact environment-variable name for the existing valid Kite access token; `KRONOS_KITE_ACCESS_TOKEN` is a naming candidate, not approved by this Draft.
-- Whether EP-004 uses an explicit Configuration-owned timeout or explicitly accepts the locked SDK's seven-second default.
-- Python test runner and the first repository-wide Python test-location convention.
-- Whether deterministic cleanup may use the isolated SDK 5.2.0 HTTP-session compatibility path, given the lack of a public SDK `close()` method.
-- Whether the optional live smoke test belongs in this EP or in a separate operational validation task.
-- Whether a robust static source check provides enough value beyond API-surface tests and scoped review.
+- Access-token environment variable: `KRONOS_KITE_ACCESS_TOKEN`.
+- Timeout: locked Kite SDK 5.2.0 default of seven seconds; no KRONOS timeout setting.
+- Python test runner: pytest as a development-only dependency.
+- Cleanup: one idempotent SDK-session compatibility operation isolated inside the Kite adapter.
+- Optional live smoke test and static source-analysis framework: not included in EP-004.
 
-The unresolved access-token environment-variable name and timeout value are engineering review decisions, not architecture decisions. Their selection must preserve the approved Configuration and Provider ownership boundaries.
+These are Engineering Architect implementation decisions, not architecture changes. They preserve the approved Configuration and Provider ownership boundaries.
 
 ### Operational setup requirements
 
@@ -614,15 +600,15 @@ Successful EP-004 connectivity does not unblock later acquisition or research wo
 
 ## 21. Definition of Done
 
-- [ ] Engineering Architect review completed; EDD remains Draft until explicitly approved.
+- [x] Engineering Architect review completed; EDD approved for EP-004 implementation.
 - [ ] Architecture and engineering blockers are resolved or the implementation is constrained around them.
-- [ ] Existing valid-token input and timeout behavior are explicitly reviewed.
+- [x] Existing valid-token input and timeout behavior are explicitly reviewed.
 - [ ] SDK is isolated to `provider.adapters.kite`.
 - [ ] Only the profile probe is reachable.
 - [ ] Provider-internal availability and technical errors are deterministic and redacted.
 - [ ] No automatic retry, login automation, refresh, market data, persistence, contract publication, or order operation exists.
 - [ ] Unit and boundary tests pass under the approved Python test convention.
-- [ ] Optional live smoke evidence is reported separately and truthfully.
+- [x] Optional live smoke test is excluded from EP-004.
 - [ ] Secrets and profile data do not appear in logs, exceptions, snapshots, fixtures, or diffs.
 - [ ] `git diff --check`, Markdown-link validation, dependency review, and prohibited-capability checks pass.
 - [ ] No approved architecture, Pine, unrelated runtime, or EP-005 through EP-010 file changed.
