@@ -17,10 +17,12 @@ The folder name does not establish product responsibility, authority, interfaces
 - [Constraints](CONSTRAINTS.md)
 - [Future](FUTURE.md)
 - [ADP-001A — Swing Phase 1 Market Data Inventory](SWING-PHASE-1-MARKET-DATA-INVENTORY.md) — Approved canonical architecture
+- [ADP-001B — KRONOS Swing Instrument Identity Architecture](SWING-PHASE-1-INSTRUMENT-IDENTITY-ARCHITECTURE.md) — Approved canonical architecture
 
 ## Approved Architecture
 
 - [ADP-001A — Swing Phase 1 Market Data Inventory](SWING-PHASE-1-MARKET-DATA-INVENTORY.md) — Canonical architecture for Phase 1 — Market Data Foundation
+- [ADP-001B — KRONOS Swing Instrument Identity Architecture](SWING-PHASE-1-INSTRUMENT-IDENTITY-ARCHITECTURE.md) — Canonical Instrument Identity architecture for Phase 1 — Market Data Foundation
 
 ## Governing ADRs
 
