@@ -16,10 +16,11 @@ The folder name does not establish product responsibility, authority, interfaces
 - [Interfaces](INTERFACES.md)
 - [Constraints](CONSTRAINTS.md)
 - [Future](FUTURE.md)
+- [ADP-001A — Swing Phase 1 Market Data Inventory](SWING-PHASE-1-MARKET-DATA-INVENTORY.md) — Approved canonical architecture
 
 ## Approved Architecture
 
-[TBD — no approved content is recorded in this Draft scaffold.]
+- [ADP-001A — Swing Phase 1 Market Data Inventory](SWING-PHASE-1-MARKET-DATA-INVENTORY.md) — Canonical architecture for Phase 1 — Market Data Foundation
 
 ## Governing ADRs
 
