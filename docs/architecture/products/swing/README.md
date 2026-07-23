@@ -19,12 +19,14 @@ The folder name does not establish product responsibility, authority, interfaces
 - [ADP-001A — Swing Phase 1 Market Data Inventory](SWING-PHASE-1-MARKET-DATA-INVENTORY.md) — Approved canonical architecture
 - [ADP-001B — KRONOS Swing Instrument Identity Architecture](SWING-PHASE-1-INSTRUMENT-IDENTITY-ARCHITECTURE.md) — Approved canonical architecture
 - [ADP-001C — Provider → Instrument Contract](SWING-PHASE-1-PROVIDER-INSTRUMENT-CONTRACT.md) — Approved canonical architecture
+- [ADP-001D — Instrument → Observation Contract](SWING-PHASE-1-INSTRUMENT-OBSERVATION-CONTRACT.md) — Approved canonical architecture
 
 ## Approved Architecture
 
 - [ADP-001A — Swing Phase 1 Market Data Inventory](SWING-PHASE-1-MARKET-DATA-INVENTORY.md) — Canonical architecture for Phase 1 — Market Data Foundation
 - [ADP-001B — KRONOS Swing Instrument Identity Architecture](SWING-PHASE-1-INSTRUMENT-IDENTITY-ARCHITECTURE.md) — Canonical Instrument Identity architecture for Phase 1 — Market Data Foundation
 - [ADP-001C — Provider → Instrument Contract](SWING-PHASE-1-PROVIDER-INSTRUMENT-CONTRACT.md) — Canonical governed semantic boundary for Provider information eligibility before Instrument interpretation
+- [ADP-001D — Instrument → Observation Contract](SWING-PHASE-1-INSTRUMENT-OBSERVATION-CONTRACT.md) — Canonical governed attribution boundary for factual market information and approved canonical Instrument identity
 
 ## Governing ADRs
 
