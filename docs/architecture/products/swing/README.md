@@ -28,6 +28,7 @@ The folder name does not establish product responsibility, authority, interfaces
 - [ADP-001B — KRONOS Swing Instrument Identity Architecture](SWING-PHASE-1-INSTRUMENT-IDENTITY-ARCHITECTURE.md) — Canonical Instrument Identity architecture for Phase 1 — Market Data Foundation
 - [ADP-001C — Provider → Instrument Contract](SWING-PHASE-1-PROVIDER-INSTRUMENT-CONTRACT.md) — Canonical governed semantic boundary for Provider information eligibility before Instrument interpretation
 - [ADP-001D — Instrument → Observation Contract](SWING-PHASE-1-INSTRUMENT-OBSERVATION-CONTRACT.md) — Canonical governed attribution boundary for factual market information and approved canonical Instrument identity
+- [ADP-001E — Observation Domain Architecture](SWING-PHASE-1-OBSERVATION-DOMAIN-ARCHITECTURE.md) — Canonical KRONOS Swing architecture for governed factual Observation ownership and semantics
 
 ## Governing ADRs
 
