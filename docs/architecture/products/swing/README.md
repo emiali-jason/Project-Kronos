@@ -21,6 +21,7 @@ The folder name does not establish product responsibility, authority, interfaces
 - [ADP-001C — Provider → Instrument Contract](SWING-PHASE-1-PROVIDER-INSTRUMENT-CONTRACT.md) — Approved canonical architecture
 - [ADP-001D — Instrument → Observation Contract](SWING-PHASE-1-INSTRUMENT-OBSERVATION-CONTRACT.md) — Approved canonical architecture
 - [ADP-001E — Observation Domain Architecture](SWING-PHASE-1-OBSERVATION-DOMAIN-ARCHITECTURE.md) — Approved canonical architecture
+- [ADP-001F — Configuration → Provider Runtime Configuration Boundary](SWING-PHASE-1-CONFIGURATION-PROVIDER-RUNTIME-CONFIGURATION-BOUNDARY.md) — Approved Canonical Architecture
 
 ## Approved Architecture
 
@@ -29,6 +30,7 @@ The folder name does not establish product responsibility, authority, interfaces
 - [ADP-001C — Provider → Instrument Contract](SWING-PHASE-1-PROVIDER-INSTRUMENT-CONTRACT.md) — Canonical governed semantic boundary for Provider information eligibility before Instrument interpretation
 - [ADP-001D — Instrument → Observation Contract](SWING-PHASE-1-INSTRUMENT-OBSERVATION-CONTRACT.md) — Canonical governed attribution boundary for factual market information and approved canonical Instrument identity
 - [ADP-001E — Observation Domain Architecture](SWING-PHASE-1-OBSERVATION-DOMAIN-ARCHITECTURE.md) — Canonical KRONOS Swing architecture for governed factual Observation ownership and semantics
+- [ADP-001F — Configuration → Provider Runtime Configuration Boundary](SWING-PHASE-1-CONFIGURATION-PROVIDER-RUNTIME-CONFIGURATION-BOUNDARY.md) — Canonical Version 1.0 Configuration-owned Provider runtime-configuration boundary
 
 ## Governing ADRs
 
