@@ -23,6 +23,7 @@ The folder name does not establish product responsibility, authority, interfaces
 - [ADP-001E — Observation Domain Architecture](SWING-PHASE-1-OBSERVATION-DOMAIN-ARCHITECTURE.md) — Approved canonical architecture
 - [ADP-001F — Configuration → Provider Runtime Configuration Boundary](SWING-PHASE-1-CONFIGURATION-PROVIDER-RUNTIME-CONFIGURATION-BOUNDARY.md) — Approved Canonical Architecture
 - [ADP-001G — Configuration → Provider Authentication Boundary](SWING-PHASE-1-CONFIGURATION-PROVIDER-AUTHENTICATION-BOUNDARY.md) — Approved canonical architecture
+- [ADP-001H — Provider Instrument Master Acquisition Capability and Contract](SWING-PHASE-1-PROVIDER-INSTRUMENT-MASTER-ACQUISITION-CAPABILITY-AND-CONTRACT.md) — Approved canonical architecture
 
 ## Approved Architecture
 
@@ -33,6 +34,7 @@ The folder name does not establish product responsibility, authority, interfaces
 - [ADP-001E — Observation Domain Architecture](SWING-PHASE-1-OBSERVATION-DOMAIN-ARCHITECTURE.md) — Canonical KRONOS Swing architecture for governed factual Observation ownership and semantics
 - [ADP-001F — Configuration → Provider Runtime Configuration Boundary](SWING-PHASE-1-CONFIGURATION-PROVIDER-RUNTIME-CONFIGURATION-BOUNDARY.md) — Canonical Version 1.0 Configuration-owned Provider runtime-configuration boundary
 - [ADP-001G — Configuration → Provider Authentication Boundary](SWING-PHASE-1-CONFIGURATION-PROVIDER-AUTHENTICATION-BOUNDARY.md) — Canonical Version 1.0 boundary for Configuration-owned authentication material and Provider-owned authenticated context
+- [ADP-001H — Provider Instrument Master Acquisition Capability and Contract](SWING-PHASE-1-PROVIDER-INSTRUMENT-MASTER-ACQUISITION-CAPABILITY-AND-CONTRACT.md) — Canonical Version 1.0 Provider-owned Instrument Master acquisition capability and contract
 
 ## Governing ADRs
 
