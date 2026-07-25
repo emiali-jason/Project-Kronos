@@ -2,8 +2,9 @@
 
 **Document ID:** EAS-001
 **Title:** Engineering Architecture Framework
-**Version:** 0.1 Draft
-**Status:** Draft
+**Version:** 1.0
+**Status:** Approved
+**Canonical Status:** Canonical
 **Classification:** Engineering Architecture Standard
 **Owner:** Engineering Architect
 **Prepared By:** Engineering Architect
@@ -52,7 +53,7 @@ This framework applies to every engineering component within Project KRONOS, inc
 - validation tooling;
 - engineering utilities.
 
-No engineering activity is exempt from this framework.
+All engineering activities are governed by this framework unless an explicitly approved exception exists through the defined governance process.
 
 ---
 
@@ -110,13 +111,15 @@ Unrelated responsibilities shall not be combined.
 
 ## 4.7 Repository Driven Development
 
-The repository is the authoritative source for:
+The approved and canonical repository documents are the authoritative source for:
 
 - architecture;
 - engineering standards;
 - interfaces;
 - implementation contracts;
 - governance documentation.
+
+Draft documents are working material and shall not be treated as repository authority.
 
 Engineering shall not rely upon undocumented assumptions.
 
@@ -160,6 +163,8 @@ The engineering layers include:
 - Interface
 - Infrastructure
 - Validation
+
+These are Engineering Organization Layers only. They shall not create architectural domains, redefine ownership, redefine dependencies, or redefine responsibilities. Architectural ownership and dependency direction remain governed by approved repository architecture.
 
 Layer responsibilities shall not overlap.
 
@@ -221,6 +226,8 @@ Engineering shall avoid:
 - cross-domain implementation leakage.
 
 All external dependencies shall be explicitly managed.
+
+Dependency direction shall be inherited from the approved Domain Dependency Matrix, and ownership shall be inherited from the approved Domain Ownership Matrix. This framework shall not create, alter, or bypass either authority.
 
 ---
 
@@ -366,7 +373,19 @@ This framework shall be read together with:
 
 - GOV-001 — Governance Constitution
 - GOV-002 — Governance Lifecycle
+- PLATFORM-000 — KRONOS Platform Constitution
+- DOC-001 — Document Identification, Classification & Metadata Standard
+- Domain Ownership Matrix
+- Domain Dependency Matrix
+- ENGINE_OWNERSHIP
+- DATA_FLOW
 - IDX-001 — Document Register
+- EAP-001 — Configuration-to-Provider Authenticated Context Engineering Architecture
+- EAP-002 — Provider Instrument Master Acquisition Engineering Architecture
+- EAP-003 — Provider-to-Instrument Architectural Admissibility Engineering Architecture
+- EAP-004 — Instrument Interpretation and Canonical Identity Establishment Engineering Architecture
+- EAP-005 — Instrument-to-Observation Attribution Eligibility Engineering Architecture
+- EAP-006 — Observation Acceptance and Governed Observation Establishment Engineering Architecture
 - EAS-002 — Repository Engineering Standards
 - EAS-003 — Interface & Dependency Standards
 - EAS-004 — Domain Engineering Standards
@@ -398,6 +417,10 @@ Approved
 ↓
 
 Canonical
+
+## Canonical Approval
+
+This document is approved as the canonical repository Engineering Architecture Framework governing engineering architecture within Project KRONOS.
 
 ---
 
