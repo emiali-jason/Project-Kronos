@@ -1,12 +1,14 @@
 """Kite provider skeleton."""
 
-from typing import Optional
-
 from kronos.provider.contracts import Provider
+from kronos.provider.contracts import AuthenticationProvider
 
 
 class KiteProvider(Provider):
-    """Kite implementation placeholder for the base provider contract."""
+    """Kite provider boundary that delegates authentication."""
 
-    def __init__(self, dependencies: Optional[object] = None) -> None:
-        self._dependencies = dependencies
+    def __init__(self, authentication: AuthenticationProvider) -> None:
+        self._authentication = authentication
+
+    def authenticate(self) -> None:
+        self._authentication.authenticate()
