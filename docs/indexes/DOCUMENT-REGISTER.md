@@ -67,7 +67,7 @@ Every controlled document shall appear in this register.
 | DOC-001 | Document Identification, Classification & Metadata Standard | Governance | P0 | Approved | Chief Architect | `docs/governance/documentation/DOC-001-DOCUMENT-IDENTIFICATION-CLASSIFICATION-METADATA-STANDARD.md` | Version 1.0; Canonical; EG-001 complete; EDD recognition included |
 | EAS-001 | Engineering Architecture Framework | Engineering | P0 | Approved | Engineering Architect | `docs/engineering/eap/EAS-001-ENGINEERING-ARCHITECTURE-FRAMEWORK.md` | Version 1.0; Canonical; completion and review authorized; EAS-001 canonicalized |
 | EAS-002 | Repository Engineering Standards | Engineering | P0 | Approved | Engineering Architect | `docs/engineering/eap/EAS-002-REPOSITORY-ENGINEERING-STANDARDS.md` | Version 1.0; Canonical |
-| EAS-003 | Interface & Dependency Standards | Engineering | P0 | Planned | Engineering Architect | `docs/engineering/eap/` | Drafting/completion authorized; not approved; not canonical |
+| EAS-003 | Engineering Package and Dependency Standards | Engineering | P0 | Approved | Engineering Architect | `docs/engineering/eap/EAS-003-ENGINEERING-PACKAGE-AND-DEPENDENCY-STANDARDS.md` | Version 1.0; Canonical |
 | EAS-004 | Domain Engineering Standards | Engineering | P0 | Planned | Engineering Architect | `docs/engineering/eap/` | Drafting/completion authorized; not approved; not canonical |
 | EAS-005 | Engineering Verification & Conformance | Engineering | P0 | Planned | Engineering Architect | `docs/engineering/eap/` | Drafting/completion authorized; not approved; not canonical |
 | EAS-006 | Engineering Delivery Workflow | Engineering | P0 | Planned | Engineering Architect | `docs/engineering/eap/` | Drafting/completion authorized; not approved; not canonical |
