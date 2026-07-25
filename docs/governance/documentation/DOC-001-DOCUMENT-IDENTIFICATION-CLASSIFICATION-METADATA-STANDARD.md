@@ -2,8 +2,9 @@
 
 **Document ID:** DOC-001
 **Title:** Document Identification, Classification & Metadata Standard
-**Version:** 0.1 Draft
-**Status:** Draft
+**Version:** 1.0
+**Status:** Approved
+**Canonical Status:** Canonical
 **Classification:** Governance Standard
 **Owner:** Chief Architect
 **Prepared By:** Engineering Architect
@@ -94,6 +95,7 @@ Current approved families include:
 | ECM | Architecture Model |
 | EAS | Engineering Architecture Standard |
 | EAP | Engineering Architecture Package |
+| EDD | Engineering Design Document |
 | EP | Engineering Package |
 | VAL | Validation *(reserved)* |
 | RES | Research *(reserved)* |
@@ -151,6 +153,7 @@ Approved classifications include:
 - Interface Contract
 - Engineering Architecture Standard
 - Engineering Architecture Package
+- Engineering Design Document
 - Engineering Package
 - Validation Standard
 - Validation Report
@@ -183,6 +186,18 @@ Approved status values are:
 Status values shall be applied consistently throughout the repository.
 
 No alternative lifecycle vocabulary shall be introduced without Chief Architect approval.
+
+### Engineering Design Document Lifecycle
+
+Engineering Design Documents shall:
+
+- require Chief Architect draft authorization;
+- follow the controlled lifecycle defined by GOV-002;
+- require Engineering Verification;
+- require Chief Architect review;
+- require approval and canonicalization;
+- not authorize implementation merely by being approved or canonical; and
+- require separate explicit implementation authorization unless a future canonical standard states otherwise.
 
 ---
 
@@ -219,6 +234,8 @@ Repository filenames shall:
 Example:
 
 `EAS-002-REPOSITORY-ENGINEERING-STANDARDS.md`
+
+`EDD-001-KITE-AUTHENTICATION-AND-SESSION-MANAGEMENT-ENGINEERING-DESIGN.md`
 
 ---
 
@@ -318,12 +335,19 @@ Documents shall reference related controlled documents where appropriate.
 Traceability may include references to:
 
 - Governance documents;
+- applicable Constitutions and governance standards;
+- Product Architecture;
 - Architecture Decision Records;
 - Platform Principles;
+- Domain Architecture;
+- EAS documents;
+- the governing EAP;
 - Engineering Standards;
 - Interface Contracts;
 - Validation documents;
 - Review Packages.
+
+An Engineering Design Document shall maintain backward traceability to applicable approved governance, architecture and engineering authority. Forward traceability to implementation, tests, validation and verification evidence shall be established progressively as those artifacts are created. The absence of future downstream artifacts shall not prevent EDD approval or canonicalization.
 
 Traceability shall improve repository navigation without introducing unnecessary duplication.
 
@@ -396,6 +420,10 @@ Approved
 ↓
 
 Canonical
+
+## Canonical Approval
+
+This document is approved as the canonical repository standard governing document identification, classification, metadata and Engineering Design Document recognition within Project KRONOS.
 
 ---
 
