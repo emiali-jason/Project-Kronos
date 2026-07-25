@@ -71,9 +71,10 @@ Every controlled document shall appear in this register.
 | EAS-004 | Domain Engineering Standards | Engineering | P0 | Planned | Engineering Architect | `docs/engineering/eap/` | |
 | EAS-005 | Engineering Verification & Conformance | Engineering | P0 | Planned | Engineering Architect | `docs/engineering/eap/` | |
 | EAS-006 | Engineering Delivery Workflow | Engineering | P0 | Planned | Engineering Architect | `docs/engineering/eap/` | |
-| EAP-001 | Configuration-to-Provider Authenticated Context | Engineering | P0 | Approved | Engineering Architect | `docs/engineering/eap/EAP-001-CONFIGURATION-TO-PROVIDER-AUTHENTICATED-CONTEXT.md` | Canonical Version 1.0 |
-| EAP-002 | Provider Instrument Master Acquisition | Engineering | P0 | Draft | Engineering Architect | `docs/engineering/eap/EAP-002-PROVIDER-INSTRUMENT-MASTER-ACQUISITION.md` | Draft v0.1 |
-| EAP-003 | Provider-to-Instrument Architectural Admissibility | Engineering | P0 | Approved | Engineering Architect | `docs/engineering/eap/EAP-003-PROVIDER-TO-INSTRUMENT-ARCHITECTURAL-ADMISSIBILITY.md` | Approved Canonical Engineering Architecture Version 1.0 |
+| EAP-001 | Configuration-to-Provider Authenticated Context | Engineering | P0 | Approved | Engineering Architect | `docs/engineering/eap/EAP-001-CONFIGURATION-TO-PROVIDER-AUTHENTICATED-CONTEXT.md` | Version 1.0; Approved Canonical Engineering Architecture; ADR Required: No |
+| EAP-002 | Provider Instrument Master Acquisition | Engineering | P0 | Approved | Engineering Architect | `docs/engineering/eap/EAP-002-PROVIDER-INSTRUMENT-MASTER-ACQUISITION.md` | Version 1.0; Approved Canonical Engineering Architecture; ADR Required: No |
+| EAP-003 | Provider-to-Instrument Architectural Admissibility | Engineering | P0 | Approved | Engineering Architect | `docs/engineering/eap/EAP-003-PROVIDER-TO-INSTRUMENT-ARCHITECTURAL-ADMISSIBILITY.md` | Version 1.0; Approved Canonical Engineering Architecture; ADR Required: No; Governing ADP: ADP-001C; Supporting ADPs: ADP-001A, ADP-001B, ADP-001H, ADP-001I; Engineering Impact: None; Runtime Impact: None; Implementation Authorization: None; EDD Authorization: None |
+| ADP-001J | Instrument Interpretation and Canonical Identity Establishment Architecture | Product Architecture | P0 | Approved | Chief Architect | `docs/architecture/products/swing/SWING-PHASE-1-INSTRUMENT-INTERPRETATION-AND-CANONICAL-IDENTITY-ESTABLISHMENT-ARCHITECTURE.md` | Version 1.0; Approved Canonical Architecture; Approved By: Chief Architect; ADR Required: No; Implementation Authority: None; Engineering Architecture Authority: None; EDD Authority: None; Runtime Authority: None |
 
 ---
 
