@@ -2,8 +2,9 @@
 
 **Document ID:** EAS-002
 **Title:** Repository Engineering Standards
-**Version:** 0.1 Draft
-**Status:** Draft
+**Version:** 1.0
+**Status:** Approved
+**Canonical Status:** Canonical
 **Classification:** Engineering Architecture Standard
 **Owner:** Engineering Architect
 **Prepared By:** Engineering Architect
@@ -77,6 +78,8 @@ Engineering convenience shall never override architectural organisation.
 
 The repository structure shall reflect approved architecture rather than implementation convenience.
 
+The repository areas described by this document are Engineering Repository Organization structures only. Repository organization does not create architectural domains, redefine ownership, redefine dependencies, or redefine responsibilities. Architectural authority continues to derive from the approved Platform Architecture and associated repository governance.
+
 Major repository areas include:
 
 - Governance
@@ -92,7 +95,7 @@ Major repository areas include:
 - Tests
 - Infrastructure
 
-Each top-level area shall have clearly defined ownership and responsibility.
+Each top-level area shall have clearly defined engineering stewardship and responsibility within the repository organization. This does not assign or alter canonical semantic ownership.
 
 ---
 
@@ -115,7 +118,7 @@ Engineering modules shall avoid ambiguous abbreviations.
 
 # 7. Ownership
 
-Every repository artefact shall have an identified owner.
+Every repository artefact shall have an identified engineering owner or repository steward responsible for its maintenance and lifecycle. Repository artefact stewardship shall not create, replace, or modify architectural, domain, data, decision, or runtime ownership defined by canonical repository architecture.
 
 Ownership shall define responsibility for:
 
@@ -142,7 +145,7 @@ The repository shall avoid:
 - mixed architectural concerns;
 - technology-driven organisation where it obscures business responsibility.
 
-Repository organisation shall remain stable as the platform evolves.
+Repository organisation stability is the default expectation as the platform evolves. Approved, governed, and traceable repository reorganisation remains permitted through the established governance process.
 
 ---
 
@@ -188,7 +191,7 @@ Configuration shall be:
 
 Configuration values shall never encode business logic.
 
-Secrets, credentials and environment-specific values shall never be committed to the repository.
+Configuration schemas, templates, non-sensitive defaults and reproducibility instructions shall be version controlled where applicable. Approved environment-sourced configuration is permitted. Secrets, credentials and environment-specific runtime values shall remain externally supplied and shall not be committed to the repository. Repository reproducibility remains the governing engineering objective.
 
 ---
 
@@ -216,8 +219,6 @@ Repository consistency shall be maintained through:
 - engineering verification.
 
 Repository changes shall improve consistency rather than introduce divergence.
-
----
 
 ---
 
@@ -310,7 +311,22 @@ Approved exceptions shall:
 
 This document complements:
 
+- PLATFORM-000 — KRONOS Platform Constitution;
+- GOV-001 — Governance Constitution;
+- GOV-002 — Governance Lifecycle;
+- DOC-001 — Document Identification, Classification & Metadata Standard;
+- Domain Ownership Matrix;
+- Domain Dependency Matrix;
+- ENGINE_OWNERSHIP;
+- DATA_FLOW;
+- IDX-001 — Document Register;
 - EAS-001 — Engineering Architecture Framework;
+- EAP-001 — Configuration-to-Provider Authenticated Context Engineering Architecture;
+- EAP-002 — Provider Instrument Master Acquisition Engineering Architecture;
+- EAP-003 — Provider-to-Instrument Architectural Admissibility Engineering Architecture;
+- EAP-004 — Instrument Interpretation and Canonical Identity Establishment Engineering Architecture;
+- EAP-005 — Instrument-to-Observation Attribution Eligibility Engineering Architecture;
+- EAP-006 — Observation Acceptance and Governed Observation Establishment Engineering Architecture;
 - EAS-003 — Interface & Dependency Standards;
 - EAS-004 — Domain Engineering Standards;
 - EAS-005 — Engineering Verification & Conformance;
@@ -323,6 +339,8 @@ This document shall be interpreted consistently with the governance documents GO
 # 20. Review and Approval
 
 This document shall follow the governance lifecycle defined in GOV-002.
+
+This document is approved as the canonical Repository Engineering Standards governing repository engineering organization, consistency, stewardship, configuration, documentation, verification and change management within Project KRONOS.
 
 Lifecycle:
 
