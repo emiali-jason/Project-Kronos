@@ -73,6 +73,7 @@ Every controlled document shall appear in this register.
 | EAS-006 | Engineering Delivery Workflow | Engineering | P0 | Planned | Engineering Architect | `docs/engineering/eap/` | |
 | EAP-001 | Configuration-to-Provider Authenticated Context | Engineering | P0 | Approved | Engineering Architect | `docs/engineering/eap/EAP-001-CONFIGURATION-TO-PROVIDER-AUTHENTICATED-CONTEXT.md` | Canonical Version 1.0 |
 | EAP-002 | Provider Instrument Master Acquisition | Engineering | P0 | Draft | Engineering Architect | `docs/engineering/eap/EAP-002-PROVIDER-INSTRUMENT-MASTER-ACQUISITION.md` | Draft v0.1 |
+| EAP-003 | Provider-to-Instrument Architectural Admissibility | Engineering | P0 | Approved | Engineering Architect | `docs/engineering/eap/EAP-003-PROVIDER-TO-INSTRUMENT-ARCHITECTURAL-ADMISSIBILITY.md` | Approved Canonical Engineering Architecture Version 1.0 |
 
 ---
 
