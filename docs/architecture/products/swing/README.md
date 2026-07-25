@@ -1,7 +1,7 @@
 # Swing Product Architecture
 
-**Status:** Draft  
-**Owner:** TBD  
+**Status:** Draft
+**Owner:** TBD
 **Approved By:** Not approved
 
 ## Purpose
@@ -25,6 +25,7 @@ The folder name does not establish product responsibility, authority, interfaces
 - [ADP-001G — Configuration → Provider Authentication Boundary](SWING-PHASE-1-CONFIGURATION-PROVIDER-AUTHENTICATION-BOUNDARY.md) — Approved canonical architecture
 - [ADP-001H — Provider Instrument Master Acquisition Capability and Contract](SWING-PHASE-1-PROVIDER-INSTRUMENT-MASTER-ACQUISITION-CAPABILITY-AND-CONTRACT.md) — Approved canonical architecture
 - [ADP-001I — Swing Phase 1 Approved Instrument Universe and Reference Semantics Architecture](SWING-PHASE-1-APPROVED-INSTRUMENT-UNIVERSE-AND-REFERENCE-SEMANTICS-ARCHITECTURE.md) — Approved canonical architecture
+- [ADP-001J — Instrument Interpretation and Canonical Identity Establishment Architecture](SWING-PHASE-1-INSTRUMENT-INTERPRETATION-AND-CANONICAL-IDENTITY-ESTABLISHMENT-ARCHITECTURE.md) — Approved canonical architecture
 
 ## Approved Architecture
 
@@ -37,6 +38,7 @@ The folder name does not establish product responsibility, authority, interfaces
 - [ADP-001G — Configuration → Provider Authentication Boundary](SWING-PHASE-1-CONFIGURATION-PROVIDER-AUTHENTICATION-BOUNDARY.md) — Canonical Version 1.0 boundary for Configuration-owned authentication material and Provider-owned authenticated context
 - [ADP-001H — Provider Instrument Master Acquisition Capability and Contract](SWING-PHASE-1-PROVIDER-INSTRUMENT-MASTER-ACQUISITION-CAPABILITY-AND-CONTRACT.md) — Canonical Version 1.0 Provider-owned Instrument Master acquisition capability and contract
 - [ADP-001I — Swing Phase 1 Approved Instrument Universe and Reference Semantics Architecture](SWING-PHASE-1-APPROVED-INSTRUMENT-UNIVERSE-AND-REFERENCE-SEMANTICS-ARCHITECTURE.md) — Approved canonical architecture defining the KRONOS Swing Phase 1 semantic Instrument universe, MCX Analysis and Intended Execution roles, COMEX Reference roles, and provider-neutral reference semantics
+- [ADP-001J — Instrument Interpretation and Canonical Identity Establishment Architecture](SWING-PHASE-1-INSTRUMENT-INTERPRETATION-AND-CANONICAL-IDENTITY-ESTABLISHMENT-ARCHITECTURE.md) — Approved canonical architecture for Instrument-owned interpretation and canonical identity establishment
 
 ## Governing ADRs
 

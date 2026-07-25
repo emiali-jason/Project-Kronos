@@ -1,7 +1,7 @@
 # KRONOS Architecture Knowledge Base
 
-**Status:** Draft  
-**Owner:** Architecture Librarian  
+**Status:** Draft
+**Owner:** Architecture Librarian
 **Approved By:** Not approved
 
 ## Purpose
@@ -48,6 +48,7 @@ Status values in this index reproduce the source document where one is stated. `
 | ADP-001G — Configuration → Provider Authentication Boundary | Canonical Version 1.0 boundary for Configuration-owned authentication material and Provider-owned authenticated context | Approved | Chief Architect | [`products/swing/SWING-PHASE-1-CONFIGURATION-PROVIDER-AUTHENTICATION-BOUNDARY.md`](products/swing/SWING-PHASE-1-CONFIGURATION-PROVIDER-AUTHENTICATION-BOUNDARY.md) |
 | ADP-001H — Provider Instrument Master Acquisition Capability and Contract | Canonical Version 1.0 Provider-owned Instrument Master acquisition capability and contract | Approved | Chief Architect | [`products/swing/SWING-PHASE-1-PROVIDER-INSTRUMENT-MASTER-ACQUISITION-CAPABILITY-AND-CONTRACT.md`](products/swing/SWING-PHASE-1-PROVIDER-INSTRUMENT-MASTER-ACQUISITION-CAPABILITY-AND-CONTRACT.md) |
 | ADP-001I — Swing Phase 1 Approved Instrument Universe and Reference Semantics Architecture | Approved canonical architecture defining the KRONOS Swing Phase 1 semantic Instrument universe, MCX Analysis and Intended Execution roles, COMEX Reference roles, and provider-neutral reference semantics | Approved | Chief Architect | [`products/swing/SWING-PHASE-1-APPROVED-INSTRUMENT-UNIVERSE-AND-REFERENCE-SEMANTICS-ARCHITECTURE.md`](products/swing/SWING-PHASE-1-APPROVED-INSTRUMENT-UNIVERSE-AND-REFERENCE-SEMANTICS-ARCHITECTURE.md) |
+| ADP-001J — Instrument Interpretation and Canonical Identity Establishment Architecture | Approved canonical architecture for Instrument-owned interpretation and canonical identity establishment | Approved | Chief Architect | [`products/swing/SWING-PHASE-1-INSTRUMENT-INTERPRETATION-AND-CANONICAL-IDENTITY-ESTABLISHMENT-ARCHITECTURE.md`](products/swing/SWING-PHASE-1-INSTRUMENT-INTERPRETATION-AND-CANONICAL-IDENTITY-ESTABLISHMENT-ARCHITECTURE.md) |
 | EAP-001 — Configuration-to-Provider Authenticated Context Engineering Architecture | Approved Canonical Engineering Architecture Version 1.0 for Configuration-to-Provider authenticated-context engineering contracts | Approved | Chief Architect | [`../engineering/eap/EAP-001-CONFIGURATION-TO-PROVIDER-AUTHENTICATED-CONTEXT.md`](../engineering/eap/EAP-001-CONFIGURATION-TO-PROVIDER-AUTHENTICATED-CONTEXT.md) |
 | ADR-006 — Execution Context Provider Architecture | Execution Context Provider architecture decision record | Approved | Chief Architect | [`adr/ADR-006-Execution-Context-Provider-Architecture.md`](adr/ADR-006-Execution-Context-Provider-Architecture.md) |
 | ECIC-001 — Execution Context Interface Contract | Execution Context public interface contract | Approved | Chief Architect | [`interfaces/ECIC-001-Execution-Context-Interface-Contract.md`](interfaces/ECIC-001-Execution-Context-Interface-Contract.md) |
