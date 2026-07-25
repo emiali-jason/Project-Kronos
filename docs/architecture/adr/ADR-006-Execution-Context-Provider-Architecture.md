@@ -1,10 +1,19 @@
 # ADR-006 — Execution Context Provider Architecture
 
+**Document ID:** ADR-006
+**Title:** Execution Context Provider Architecture
 **Status:** Approved
+
+**Canonical Status:** Not stated
 
 **Owner:** Chief Architect
 
 **Version:** 1.0
+
+**Classification:** Architecture Decision Record
+**Prepared By:** Not stated
+**Review Authority:** Not stated
+**Repository Location:** `docs/architecture/adr/ADR-006-Execution-Context-Provider-Architecture.md`
 
 ---
 

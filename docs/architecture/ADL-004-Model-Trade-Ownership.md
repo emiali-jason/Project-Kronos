@@ -1,6 +1,16 @@
 # ADL-004 - Model Trade Ownership
 
+**Document ID:** ADL-004
+**Title:** Model Trade Ownership
+**Document Family:** Legacy Architecture Decision Log
+**Version:** Not stated
 **Status:** Approved
+**Canonical Status:** Not stated
+**Classification:** Legacy Architecture Decision Log
+**Owner:** Not stated
+**Prepared By:** Not stated
+**Review Authority:** Not stated
+**Repository Location:** `docs/architecture/ADL-004-Model-Trade-Ownership.md`
 **Date:** 2026-07-10
 
 ## Context

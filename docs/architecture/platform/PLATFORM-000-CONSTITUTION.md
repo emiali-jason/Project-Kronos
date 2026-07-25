@@ -1,7 +1,15 @@
 # PLATFORM-000 — KRONOS Platform Constitution
-Status: Approved
-Owner: Chief Architect
-Version: 1.0
+
+**Document ID:** PLATFORM-000
+**Title:** KRONOS Platform Constitution
+**Version:** 1.0
+**Status:** Approved
+**Canonical Status:** Not stated
+**Classification:** Constitution
+**Owner:** Chief Architect
+**Prepared By:** Not stated
+**Review Authority:** Not stated
+**Repository Location:** `docs/architecture/platform/PLATFORM-000-CONSTITUTION.md`
 
 ## Purpose
 

@@ -4,6 +4,7 @@
 **Title:** Governance Foundation Closure Review
 **Version:** 0.1 Draft
 **Status:** Engineering Verification
+**Canonical Status:** Draft
 **Classification:** Review Package
 **Owner:** Chief Architect
 **Prepared By:** Engineering Architect

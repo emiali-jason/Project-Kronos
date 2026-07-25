@@ -1,5 +1,7 @@
 # ADP-001J — Instrument Interpretation and Canonical Identity Establishment Architecture
 
+**Document ID:** ADP-001J
+**Title:** Instrument Interpretation and Canonical Identity Establishment Architecture
 **Version:** 1.0
 
 **Status:** Approved
@@ -21,6 +23,8 @@
 **Approved By:** Chief Architect
 
 **ADR Required:** No
+
+**Repository Location:** `docs/architecture/products/swing/SWING-PHASE-1-INSTRUMENT-INTERPRETATION-AND-CANONICAL-IDENTITY-ESTABLISHMENT-ARCHITECTURE.md`
 
 **EAP Authorization:** None
 

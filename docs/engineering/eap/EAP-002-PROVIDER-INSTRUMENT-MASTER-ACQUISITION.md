@@ -1,5 +1,7 @@
 # EAP-002 — Provider Instrument Master Acquisition Engineering Architecture
 
+**Document ID:** EAP-002
+**Title:** Provider Instrument Master Acquisition Engineering Architecture
 **Version:** 1.0
 
 **Status:** Approved
@@ -9,6 +11,9 @@
 **Classification:** Engineering Architecture Package
 
 **Owner:** Engineering Architect
+**Prepared By:** Not stated
+**Review Authority:** Not stated
+**Repository Location:** `docs/engineering/eap/EAP-002-PROVIDER-INSTRUMENT-MASTER-ACQUISITION.md`
 
 **Approved By:** Chief Architect
 

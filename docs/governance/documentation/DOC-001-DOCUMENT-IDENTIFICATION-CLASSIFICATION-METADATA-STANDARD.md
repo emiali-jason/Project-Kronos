@@ -88,7 +88,7 @@ Current approved families include:
 | ADR | Architecture Decision Record |
 | PP | Platform Principle |
 | ADP | Product Architecture |
-| ADL | Architecture Library / Legacy Architecture |
+| ADL | Legacy Architecture Decision Log |
 | EAIC | Architecture Interface Contract |
 | ECIC | Execution Context Interface Contract |
 | ECPC | Execution Context Payload Contract |
@@ -101,6 +101,8 @@ Current approved families include:
 | RES | Research *(reserved)* |
 
 Additional document families require Chief Architect approval.
+
+ADLs are retained for historical and architectural traceability. ADLs are not automatically equivalent to ADRs. Future architectural decisions shall use the approved ADR family unless explicitly authorized otherwise. Migration of an ADL into an ADR requires a separate controlled decision. Existing ADL identifiers shall not change.
 
 ---
 
@@ -147,6 +149,7 @@ Approved classifications include:
 - Repository Index
 - Architecture Standard
 - Architecture Decision Record
+- Legacy Architecture Decision Log
 - Architecture Principle
 - Product Architecture
 - Architecture Model
@@ -165,27 +168,63 @@ A document shall have only one primary classification.
 
 ---
 
-# 9. Lifecycle Status
+# 9. Governance State Vocabulary
 
-Every controlled document shall define its current lifecycle status.
+Every controlled document shall distinguish Lifecycle Status, Workflow Stage, Register Disposition and Authorization State.
 
-Approved status values are:
+### 9.1 Lifecycle Status
 
-- Planned
+Approved lifecycle status values are:
+
 - Draft
-- Engineering Verification
-- Chief Architect Review
-- Amendment Required
-- Active
-- Under Review
 - Approved
 - Canonical
 - Superseded
 - Retired
+- Deferred
 
-Status values shall be applied consistently throughout the repository.
+Lifecycle Status describes the authority and maturity of an existing controlled document. Planned is not a lifecycle status for an existing document.
 
-No alternative lifecycle vocabulary shall be introduced without Chief Architect approval.
+### 9.2 Workflow Stage
+
+Approved workflow stages are:
+
+- Draft Authorization
+- Draft Preparation
+- Engineering Verification
+- Chief Architect Review
+- Amendment Required
+- Engineering Reverification
+- Chief Architect Re-review
+- Canonicalization
+- Repository Publication
+- None
+
+Workflow Stage describes the current governance activity and does not itself grant document authority.
+
+### 9.3 Register Disposition
+
+Approved register dispositions are:
+
+- Planned
+- Reserved
+- Unassigned Controlled Authority
+- Cancelled
+- None
+
+Planned means identified for future consideration and does not authorize drafting. Reserved protects an identifier or intended responsibility and does not authorize creation. Unassigned Controlled Authority identifies an existing controlled authority awaiting governed identity allocation. Cancelled identifies a proposed entry that will not proceed. None applies where no special register disposition exists.
+
+### 9.4 Authorization State
+
+Approved authorization states are:
+
+- None
+- Draft Authorized
+- Implementation Authorized
+- Suspended
+- Completed
+
+Where relevant, Draft Authorization and Implementation Authorization shall be recorded independently. EDD approval or canonicalization does not authorize implementation. Draft Authorization is required before creating a specific EDD. Implementation Authorization requires a separate explicit decision.
 
 ### Engineering Design Document Lifecycle
 

@@ -4,9 +4,11 @@
 **Title:** Governance Foundation Review
 **Version:** 0.1 Draft
 **Status:** Chief Architect Review
+**Canonical Status:** Draft
 **Classification:** Review Package
 **Owner:** Chief Architect
 **Prepared By:** Engineering Architect
+**Review Authority:** Not stated
 **Repository Location:** `docs/governance/reviews/CAR-001-GOVERNANCE-FOUNDATION-REVIEW.md`
 
 ---

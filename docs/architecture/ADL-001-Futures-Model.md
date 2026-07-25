@@ -1,6 +1,16 @@
 # ADL-001 — Futures Model Architecture
 
+**Document ID:** ADL-001
+**Title:** Futures Model Architecture
+**Document Family:** Legacy Architecture Decision Log
+**Version:** Not stated
 **Status:** Approved for Version 1.x, not required for initial MVP  
+**Canonical Status:** Not stated
+**Classification:** Legacy Architecture Decision Log
+**Owner:** Not stated
+**Prepared By:** Not stated
+**Review Authority:** Not stated
+**Repository Location:** `docs/architecture/ADL-001-Futures-Model.md`
 **Date:** 2026-07-09
 
 ## Context

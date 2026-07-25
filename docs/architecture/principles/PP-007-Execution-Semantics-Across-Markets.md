@@ -1,10 +1,18 @@
 # PP-007 — Execution Semantics Across Markets
 
+**Document ID:** PP-007
+**Title:** Execution Semantics Across Markets
 **Status:** Approved
 
 **Owner:** Chief Architect
 
 **Version:** 1.0
+
+**Canonical Status:** Not stated
+**Classification:** Architecture Principle
+**Prepared By:** Not stated
+**Review Authority:** Not stated
+**Repository Location:** `docs/architecture/principles/PP-007-Execution-Semantics-Across-Markets.md`
 
 ---
 

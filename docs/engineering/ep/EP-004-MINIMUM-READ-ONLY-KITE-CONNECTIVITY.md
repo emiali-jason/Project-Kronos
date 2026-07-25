@@ -1,7 +1,15 @@
 # EP-004 — Minimum Read-Only Kite Connectivity
 
+**Document ID:** EP-004
+**Title:** Minimum Read-Only Kite Connectivity
+**Version:** Not stated
 **Status:** Approved
+**Canonical Status:** Not stated
+**Classification:** Engineering Package
 **Owner:** Engineering Architect
+**Prepared By:** Not stated
+**Review Authority:** Not stated
+**Repository Location:** `docs/engineering/ep/EP-004-MINIMUM-READ-ONLY-KITE-CONNECTIVITY.md`
 **Architecture authority:** Existing approved Provider and Configuration boundaries
 **Approval:** Approved for EP-004 implementation by Engineering Architect
 **Date:** 2026-07-22

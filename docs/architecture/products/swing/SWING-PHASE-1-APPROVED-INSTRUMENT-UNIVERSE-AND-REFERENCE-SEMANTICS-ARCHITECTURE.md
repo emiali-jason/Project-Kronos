@@ -1,5 +1,7 @@
 # ADP-001I — Swing Phase 1 Approved Instrument Universe and Reference Semantics Architecture
 
+**Document ID:** ADP-001I
+**Title:** Swing Phase 1 Approved Instrument Universe and Reference Semantics Architecture
 **Version:** 1.0
 
 **Status:** Approved
@@ -15,6 +17,10 @@
 **Prepared By:** Engineering Architect
 
 **Approved By:** Chief Architect
+
+**Review Authority:** Not stated
+
+**Repository Location:** `docs/architecture/products/swing/SWING-PHASE-1-APPROVED-INSTRUMENT-UNIVERSE-AND-REFERENCE-SEMANTICS-ARCHITECTURE.md`
 
 **Classification:** Architecture Documentation Package
 

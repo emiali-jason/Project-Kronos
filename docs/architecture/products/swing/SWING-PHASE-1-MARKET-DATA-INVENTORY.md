@@ -1,14 +1,19 @@
 # Swing Phase 1 — Market Data Inventory
 
+**Document ID:** ADP-001A
+**Title:** Swing Phase 1 — Market Data Inventory
+**Version:** 1.0
 **Status:** Approved
+**Canonical Status:** Not stated
+**Classification:** Architecture Documentation Package
 
 **Owner:** Chief Architect
-
-**Version:** 1.0
 
 **Prepared By:** Engineering Architect
 
 **Approved By:** Chief Architect
+**Review Authority:** Not stated
+**Repository Location:** `docs/architecture/products/swing/SWING-PHASE-1-MARKET-DATA-INVENTORY.md`
 
 **Product:** KRONOS Swing
 

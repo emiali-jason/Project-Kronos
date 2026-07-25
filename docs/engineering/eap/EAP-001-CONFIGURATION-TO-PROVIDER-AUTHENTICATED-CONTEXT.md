@@ -1,5 +1,7 @@
 # EAP-001 — Configuration-to-Provider Authenticated Context Engineering Architecture
 
+**Document ID:** EAP-001
+**Title:** Configuration-to-Provider Authenticated Context Engineering Architecture
 **Version:** 1.0
 
 **Status:** Approved
@@ -9,6 +11,9 @@
 **Classification:** Engineering Architecture Package
 
 **Owner:** Engineering Architect
+**Prepared By:** Not stated
+**Review Authority:** Not stated
+**Repository Location:** `docs/engineering/eap/EAP-001-CONFIGURATION-TO-PROVIDER-AUTHENTICATED-CONTEXT.md`
 
 **Approved By:** Chief Architect
 

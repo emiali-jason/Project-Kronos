@@ -1,6 +1,16 @@
 # ADL-003 - Execution Context Adapters
 
+**Document ID:** ADL-003
+**Title:** Execution Context Adapters
+**Document Family:** Legacy Architecture Decision Log
+**Version:** Not stated
 **Status:** Approved
+**Canonical Status:** Not stated
+**Classification:** Legacy Architecture Decision Log
+**Owner:** Not stated
+**Prepared By:** Not stated
+**Review Authority:** Not stated
+**Repository Location:** `docs/architecture/ADL-003-Execution-Context-Adapters.md`
 **Date:** 2026-07-10
 
 ## Context

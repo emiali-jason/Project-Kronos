@@ -1,5 +1,7 @@
 # EAP-006 — Observation Acceptance and Governed Observation Establishment Engineering Architecture
 
+**Document ID:** EAP-006
+**Title:** Observation Acceptance and Governed Observation Establishment Engineering Architecture
 **Version:** 1.0
 
 **Status:** Approved
@@ -13,6 +15,7 @@
 **Prepared By:** Engineering Architect
 
 **Review Authority:** Chief Architect
+**Repository Location:** `docs/engineering/eap/EAP-006-OBSERVATION-ACCEPTANCE-AND-GOVERNED-OBSERVATION-ESTABLISHMENT.md`
 
 **Approved By:** Chief Architect
 

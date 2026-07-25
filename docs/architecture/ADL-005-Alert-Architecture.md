@@ -1,6 +1,16 @@
 # ADL-005 - Alert Architecture
 
+**Document ID:** ADL-005
+**Title:** Alert Architecture
+**Document Family:** Legacy Architecture Decision Log
+**Version:** Not stated
 **Status:** Approved
+**Canonical Status:** Not stated
+**Classification:** Legacy Architecture Decision Log
+**Owner:** Not stated
+**Prepared By:** Not stated
+**Review Authority:** Not stated
+**Repository Location:** `docs/architecture/ADL-005-Alert-Architecture.md`
 **Date:** 2026-07-10
 
 ## Context

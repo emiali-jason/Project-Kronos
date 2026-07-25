@@ -1,6 +1,10 @@
 # ADP-001D — Instrument → Observation Contract
 
+**Document ID:** ADP-001D
+**Title:** Instrument → Observation Contract
+**Version:** 1.0
 **Status:** Approved
+**Canonical Status:** Approved Canonical Architecture
 
 **Product:** KRONOS Swing
 
@@ -11,6 +15,8 @@
 **Prepared By:** Codex Engineering Team
 
 **Approved By:** Chief Architect
+**Review Authority:** Not stated
+**Repository Location:** `docs/architecture/products/swing/SWING-PHASE-1-INSTRUMENT-OBSERVATION-CONTRACT.md`
 
 **Classification:** Architecture Documentation Package
 

@@ -1,5 +1,7 @@
 # EAP-004 — Instrument Interpretation and Canonical Identity Establishment Engineering Architecture
 
+**Document ID:** EAP-004
+**Title:** Instrument Interpretation and Canonical Identity Establishment Engineering Architecture
 **Version:** 1.0
 
 **Status:** Approved
@@ -13,6 +15,7 @@
 **Prepared By:** Engineering Architect
 
 **Review Authority:** Chief Architect
+**Repository Location:** `docs/engineering/eap/EAP-004-INSTRUMENT-INTERPRETATION-AND-CANONICAL-IDENTITY-ESTABLISHMENT.md`
 
 **Approved By:** Chief Architect
 

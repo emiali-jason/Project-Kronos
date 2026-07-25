@@ -1,5 +1,7 @@
 # ADP-001H — Provider Instrument Master Acquisition Capability and Contract
 
+**Document ID:** ADP-001H
+**Title:** Provider Instrument Master Acquisition Capability and Contract
 **Version:** 1.0
 
 **Status:** Approved
@@ -15,6 +17,10 @@
 **Prepared By:** Codex Engineering Team
 
 **Approved By:** Chief Architect
+
+**Review Authority:** Not stated
+
+**Repository Location:** `docs/architecture/products/swing/SWING-PHASE-1-PROVIDER-INSTRUMENT-MASTER-ACQUISITION-CAPABILITY-AND-CONTRACT.md`
 
 **Classification:** Architecture Documentation Package
 

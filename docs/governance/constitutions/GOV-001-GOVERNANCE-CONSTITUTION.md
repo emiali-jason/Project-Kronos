@@ -4,6 +4,7 @@
 **Title:** KRONOS Governance Constitution
 **Version:** 0.1 Draft
 **Status:** Draft
+**Canonical Status:** Draft
 **Classification:** Constitution
 **Owner:** Chief Architect
 **Prepared By:** Engineering Architect

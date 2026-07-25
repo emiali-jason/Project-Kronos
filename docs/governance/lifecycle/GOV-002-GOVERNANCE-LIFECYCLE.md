@@ -4,6 +4,7 @@
 **Title:** KRONOS Governance Lifecycle
 **Version:** 0.1 Draft
 **Status:** Draft
+**Canonical Status:** Draft
 **Classification:** Governance Standard
 **Owner:** Chief Architect
 **Prepared By:** Engineering Architect
@@ -94,6 +95,36 @@ Commit and push operations do not constitute architectural approval.
 ## GLP-005 — Amendment Control
 
 Approved documents may only be modified through controlled amendments.
+
+## 4.1 — Governance State Vocabulary
+
+Lifecycle Status and Workflow Stage are separate governance concepts.
+
+Lifecycle Status values are:
+
+- Draft
+- Approved
+- Canonical
+- Superseded
+- Retired
+- Deferred
+
+Workflow Stage values are:
+
+- Draft Authorization
+- Draft Preparation
+- Engineering Verification
+- Chief Architect Review
+- Amendment Required
+- Engineering Reverification
+- Chief Architect Re-review
+- Canonicalization
+- Repository Publication
+- None
+
+Register Disposition values are Planned, Reserved, Unassigned Controlled Authority, Cancelled and None. Authorization State values are None, Draft Authorized, Implementation Authorized, Suspended and Completed.
+
+Workflow Stage records the current governance activity and does not itself grant document authority. The sequential governance process and approval gates defined in this document remain mandatory.
 
 ---
 
@@ -313,7 +344,7 @@ Approved
 
 Canonical
 
-No lifecycle stage may be skipped.
+No lifecycle stage may be skipped. Workflow Stage does not itself grant document authority; authority derives from the applicable Lifecycle Status and explicit authorization record.
 
 ---
 

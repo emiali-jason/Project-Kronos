@@ -1,5 +1,7 @@
 # EAP-003 — Provider-to-Instrument Architectural Admissibility Engineering Architecture
 
+**Document ID:** EAP-003
+**Title:** Provider-to-Instrument Architectural Admissibility Engineering Architecture
 **Version:** 1.0
 
 **Status:** Approved
@@ -13,6 +15,7 @@
 **Prepared By:** Engineering Architect
 
 **Review Authority:** Chief Architect
+**Repository Location:** `docs/engineering/eap/EAP-003-PROVIDER-TO-INSTRUMENT-ARCHITECTURAL-ADMISSIBILITY.md`
 
 **Approved By:** Chief Architect
 

@@ -1,8 +1,18 @@
 # ECPC-001 — Execution Context Payload Contract
 
+**Document ID:** ECPC-001
+**Title:** Execution Context Payload Contract
 **Status:** Approved
 
+**Canonical Status:** Not stated
+
 **Version:** 2.0
+
+**Classification:** Interface Contract
+**Owner:** Not stated
+**Prepared By:** Not stated
+**Review Authority:** Not stated
+**Repository Location:** `docs/architecture/interfaces/ECPC-001-Execution-Context-Payload-Contract.md`
 
 ## 1. Purpose
 

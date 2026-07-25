@@ -1,8 +1,12 @@
 # ADP-001F — Configuration → Provider Runtime Configuration Boundary
 
+**Document ID:** ADP-001F
+**Title:** Configuration → Provider Runtime Configuration Boundary
 **Status:** Approved
 
 **Version:** 1.0
+
+**Canonical Status:** Approved Canonical Architecture
 
 **Product:** KRONOS Swing
 
@@ -13,6 +17,10 @@
 **Prepared By:** Codex Engineering Team
 
 **Approved By:** Chief Architect
+
+**Review Authority:** Not stated
+
+**Repository Location:** `docs/architecture/products/swing/SWING-PHASE-1-CONFIGURATION-PROVIDER-RUNTIME-CONFIGURATION-BOUNDARY.md`
 
 **Classification:** Architecture Documentation Package
 

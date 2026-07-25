@@ -1,10 +1,19 @@
 # EAIC-001 — Exchange Availability Interface Contract
 
+**Document ID:** EAIC-001
+**Title:** Exchange Availability Interface Contract
 **Status:** Approved
+
+**Canonical Status:** Not stated
 
 **Owner:** Chief Architect
 
 **Version:** 1.0
+
+**Classification:** Interface Contract
+**Prepared By:** Not stated
+**Review Authority:** Not stated
+**Repository Location:** `docs/architecture/interfaces/EAIC-001-Exchange-Availability-Interface-Contract.md`
 
 ---
 

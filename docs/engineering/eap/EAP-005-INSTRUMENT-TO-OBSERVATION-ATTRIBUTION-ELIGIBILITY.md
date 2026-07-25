@@ -1,5 +1,7 @@
 # EAP-005 — Instrument-to-Observation Attribution Eligibility Engineering Architecture
 
+**Document ID:** EAP-005
+**Title:** Instrument-to-Observation Attribution Eligibility Engineering Architecture
 **Version:** 1.0
 
 **Status:** Approved
@@ -13,6 +15,7 @@
 **Prepared By:** Engineering Architect
 
 **Review Authority:** Chief Architect
+**Repository Location:** `docs/engineering/eap/EAP-005-INSTRUMENT-TO-OBSERVATION-ATTRIBUTION-ELIGIBILITY.md`
 
 **Approved By:** Chief Architect
 

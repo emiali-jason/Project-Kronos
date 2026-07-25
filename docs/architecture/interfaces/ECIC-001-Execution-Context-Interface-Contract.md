@@ -1,10 +1,19 @@
 # ECIC-001 — Execution Context Interface Contract
 
+**Document ID:** ECIC-001
+**Title:** Execution Context Interface Contract
 **Status:** Approved
+
+**Canonical Status:** Not stated
 
 **Owner:** Chief Architect
 
 **Version:** 1.0
+
+**Classification:** Interface Contract
+**Prepared By:** Not stated
+**Review Authority:** Not stated
+**Repository Location:** `docs/architecture/interfaces/ECIC-001-Execution-Context-Interface-Contract.md`
 
 ---
 

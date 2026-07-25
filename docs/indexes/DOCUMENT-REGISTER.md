@@ -2,8 +2,9 @@
 
 **Document ID:** IDX-001
 **Title:** KRONOS Document Register
-**Version:** 0.1 Draft
-**Status:** Active
+**Version:** 0.1
+**Status:** Draft
+**Canonical Status:** Draft
 **Classification:** Repository Index
 **Owner:** Chief Architect Office
 **Prepared By:** Engineering Architect
@@ -30,21 +31,18 @@ Every controlled document shall appear in this register.
 
 ---
 
-# 2. Status Definitions
+# 2. Governance State Definitions
 
-| Status | Meaning |
-|---------|---------|
-| Planned | Approved for creation but not started |
-| Draft | Under preparation |
-| Engineering Verification | Under Engineering Architect review |
-| Chief Architect Review | Under independent review |
-| Amendment Required | Changes requested |
-| Approved | Architecturally approved |
-| Canonical | Official repository version |
-| Deferred | Intentionally postponed |
-| Retired | No longer active |
+Lifecycle Status, Workflow Stage, Register Disposition and Authorization State are distinct fields.
 
----
+| Concept | Approved values |
+|---|---|
+| Lifecycle Status | Draft; Approved; Canonical; Superseded; Retired; Deferred |
+| Workflow Stage | Draft Authorization; Draft Preparation; Engineering Verification; Chief Architect Review; Amendment Required; Engineering Reverification; Chief Architect Re-review; Canonicalization; Repository Publication; None |
+| Register Disposition | Planned; Reserved; Unassigned Controlled Authority; Cancelled; None |
+| Authorization State | None; Draft Authorized; Implementation Authorized; Suspended; Completed |
+
+Lifecycle Status describes document authority and maturity. Planned is not a lifecycle status for an existing document. Workflow Stage describes governance activity and does not itself grant authority. Draft Authorization and Implementation Authorization are independent.
 
 # 3. Priority Definitions
 
@@ -56,81 +54,87 @@ Every controlled document shall appear in this register.
 
 ---
 
-# 4. P0 — Engineering Blocking Documents
+# 4. Authoritative Document Inventory
 
-| ID | Document | Category | Priority | Status | Owner | Repository Location | Remarks |
-|----|----------|----------|----------|--------|-------|---------------------|---------|
-| GOV-001 | Governance Constitution | Governance | P0 | Chief Architect Review | Chief Architect | `docs/governance/constitutions/` | Draft v0.1 Complete |
-| GOV-002 | Governance Lifecycle | Governance | P0 | Draft | Engineering Architect | `docs/governance/lifecycle/` | In Progress |
-| CAR-001 | Governance Foundation Review | Review | P0 | Chief Architect Review | Chief Architect | `docs/governance/reviews/CAR-001-GOVERNANCE-FOUNDATION-REVIEW.md` | Draft v0.1 |
-| CAR-002 | Governance Foundation Closure Review | Review | P0 | Engineering Verification | Chief Architect | `docs/governance/reviews/CAR-002-GOVERNANCE-FOUNDATION-CLOSURE-REVIEW.md` | Draft v0.1 |
-| DOC-001 | Document Identification, Classification & Metadata Standard | Governance | P0 | Approved | Chief Architect | `docs/governance/documentation/DOC-001-DOCUMENT-IDENTIFICATION-CLASSIFICATION-METADATA-STANDARD.md` | Version 1.0; Canonical; EG-001 complete; EDD recognition included |
-| EAS-001 | Engineering Architecture Framework | Engineering | P0 | Approved | Engineering Architect | `docs/engineering/eap/EAS-001-ENGINEERING-ARCHITECTURE-FRAMEWORK.md` | Version 1.0; Canonical; completion and review authorized; EAS-001 canonicalized |
-| EAS-002 | Repository Engineering Standards | Engineering | P0 | Approved | Engineering Architect | `docs/engineering/eap/EAS-002-REPOSITORY-ENGINEERING-STANDARDS.md` | Version 1.0; Canonical |
-| EAS-003 | Engineering Package and Dependency Standards | Engineering | P0 | Approved | Engineering Architect | `docs/engineering/eap/EAS-003-ENGINEERING-PACKAGE-AND-DEPENDENCY-STANDARDS.md` | Version 1.0; Canonical |
-| EAS-004 | Engineering Module Interaction Standards | Engineering | P0 | Approved | Engineering Architect | `docs/engineering/eap/EAS-004-ENGINEERING-MODULE-INTERACTION-STANDARDS.md` | Version 1.0; Canonical |
-| EAS-005 | Engineering Verification & Conformance Standards | Engineering | P0 | Approved | Engineering Architect | `docs/engineering/eap/EAS-005-ENGINEERING-VERIFICATION-AND-CONFORMANCE-STANDARDS.md` | Version 1.0; Canonical |
-| EAS-006 | Engineering Delivery & Change Control Standards | Engineering | P0 | Approved | Engineering Architect | `docs/engineering/eap/EAS-006-ENGINEERING-DELIVERY-AND-CHANGE-CONTROL-STANDARDS.md` | Version 1.0; Canonical |
-| EAS-007 | Engineering Design Document Governance Standard | Engineering | P0 | Approved | Engineering Architect | `docs/engineering/eap/EAS-007-ENGINEERING-DESIGN-DOCUMENT-GOVERNANCE-STANDARD.md` | Version 1.0; Canonical |
-| EAP-001 | Configuration-to-Provider Authenticated Context | Engineering | P0 | Approved | Engineering Architect | `docs/engineering/eap/EAP-001-CONFIGURATION-TO-PROVIDER-AUTHENTICATED-CONTEXT.md` | Version 1.0; Approved Canonical Engineering Architecture; ADR Required: No |
-| EAP-002 | Provider Instrument Master Acquisition | Engineering | P0 | Approved | Engineering Architect | `docs/engineering/eap/EAP-002-PROVIDER-INSTRUMENT-MASTER-ACQUISITION.md` | Version 1.0; Approved Canonical Engineering Architecture; ADR Required: No |
-| EAP-003 | Provider-to-Instrument Architectural Admissibility | Engineering | P0 | Approved | Engineering Architect | `docs/engineering/eap/EAP-003-PROVIDER-TO-INSTRUMENT-ARCHITECTURAL-ADMISSIBILITY.md` | Version 1.0; Approved Canonical Engineering Architecture; ADR Required: No; Governing ADP: ADP-001C; Supporting ADPs: ADP-001A, ADP-001B, ADP-001H, ADP-001I; Engineering Impact: None; Runtime Impact: None; Implementation Authorization: None; EDD Authorization: None |
-| EAP-004 | Instrument Interpretation and Canonical Identity Establishment Engineering Architecture | Engineering | P0 | Approved | Engineering Architect | `docs/engineering/eap/EAP-004-INSTRUMENT-INTERPRETATION-AND-CANONICAL-IDENTITY-ESTABLISHMENT.md` | Version 1.0; Approved Canonical Engineering Architecture; Governing ADP: ADP-001J Version 1.0; Supporting ADPs: ADP-001A, ADP-001B, ADP-001C, ADP-001D, ADP-001E, ADP-001H, ADP-001I; Upstream EAP: EAP-003 Version 1.0; ADR Required: No; Engineering Impact: None; Runtime Impact: None; EDD Authorization: None; Implementation Authorization: None |
-| EAP-005 | Instrument-to-Observation Attribution Eligibility Engineering Architecture | Engineering | P0 | Approved | Engineering Architect | `docs/engineering/eap/EAP-005-INSTRUMENT-TO-OBSERVATION-ATTRIBUTION-ELIGIBILITY.md` | Version 1.0; Approved Canonical Engineering Architecture; Governing ADP: ADP-001D Version 1.0; Supporting ADPs: ADP-001A, ADP-001B, ADP-001C, ADP-001E, ADP-001H, ADP-001I, ADP-001J; Upstream EAP: EAP-004 Version 1.0; ADR Required: No; Engineering Impact: None; Runtime Impact: None; EDD Authorization: None; Implementation Authorization: None |
-| EAP-006 | Observation Acceptance and Governed Observation Establishment Engineering Architecture | Engineering | P0 | Approved | Engineering Architect | `docs/engineering/eap/EAP-006-OBSERVATION-ACCEPTANCE-AND-GOVERNED-OBSERVATION-ESTABLISHMENT.md` | Version 1.0; Approved Canonical Engineering Architecture; Governing ADP: ADP-001E Version 1.0; Immediate Upstream EAP: EAP-005 Version 1.0; ADR Required: No; EDD Authorization: None; Implementation Authorization: None |
-| EDD-001 | Kite Authentication and Session Management Engineering Design | Engineering | P0 | Planned | Engineering Architect | `docs/engineering/edd/EDD-001-KITE-AUTHENTICATION-AND-SESSION-MANAGEMENT-ENGINEERING-DESIGN.md` | Reserved; Drafting Not Yet Authorized; Governing EAP: EAP-001; Implementation Authority: None; file not created |
-| ADP-001J | Instrument Interpretation and Canonical Identity Establishment Architecture | Product Architecture | P0 | Approved | Chief Architect | `docs/architecture/products/swing/SWING-PHASE-1-INSTRUMENT-INTERPRETATION-AND-CANONICAL-IDENTITY-ESTABLISHMENT-ARCHITECTURE.md` | Version 1.0; Approved Canonical Architecture; Approved By: Chief Architect; ADR Required: No; Implementation Authority: None; Engineering Architecture Authority: None; EDD Authority: None; Runtime Authority: None |
+Every ID-bearing controlled document shall appear exactly once. Unassigned Controlled Authorities are keyed by exact repository path and do not receive a Document ID.
+
+| Document ID | Document | Classification | Priority | Lifecycle Status | Workflow Stage | Register Disposition | Draft Authorization | Implementation Authorization | Owner | Review Authority | Repository Location | Remarks |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| GOV-001 | KRONOS Governance Constitution | Constitution | P0 | Draft | None | None | None | None | Chief Architect | Chief Architect | `docs/governance/constitutions/GOV-001-GOVERNANCE-CONSTITUTION.md` | Version: 0.1 Draft; Canonical Status: Draft |
+| GOV-002 | KRONOS Governance Lifecycle | Governance Standard | P0 | Draft | None | None | None | None | Chief Architect | Chief Architect | `docs/governance/lifecycle/GOV-002-GOVERNANCE-LIFECYCLE.md` | Version: 0.1 Draft; Canonical Status: Draft |
+| CAR-001 | Governance Foundation Review | Review Package | P0 | Draft | Chief Architect Review | None | None | None | Chief Architect | Not stated | `docs/governance/reviews/CAR-001-GOVERNANCE-FOUNDATION-REVIEW.md` | Version: 0.1 Draft; Canonical Status: Draft |
+| CAR-002 | Governance Foundation Closure Review | Review Package | P0 | Draft | Engineering Verification | None | None | None | Chief Architect | Chief Architect | `docs/governance/reviews/CAR-002-GOVERNANCE-FOUNDATION-CLOSURE-REVIEW.md` | Version: 0.1 Draft; Canonical Status: Draft |
+| DOC-001 | Document Identification, Classification & Metadata Standard | Governance Standard | P0 | Approved | None | None | None | None | Chief Architect | Chief Architect | `docs/governance/documentation/DOC-001-DOCUMENT-IDENTIFICATION-CLASSIFICATION-METADATA-STANDARD.md` | Version: 1.0; Canonical Status: Canonical |
+| IDX-001 | KRONOS Document Register | Repository Index | P0 | Draft | None | None | None | None | Chief Architect Office | Chief Architect | `docs/indexes/DOCUMENT-REGISTER.md` | Version: 0.1; Canonical Status: Draft |
+| EAS-001 | Engineering Architecture Framework | Engineering Architecture Standard | P0 | Approved | None | None | None | None | Engineering Architect | Chief Architect | `docs/engineering/eap/EAS-001-ENGINEERING-ARCHITECTURE-FRAMEWORK.md` | Version: 1.0; Canonical Status: Canonical |
+| EAS-002 | Repository Engineering Standards | Engineering Architecture Standard | P0 | Approved | None | None | None | None | Engineering Architect | Chief Architect | `docs/engineering/eap/EAS-002-REPOSITORY-ENGINEERING-STANDARDS.md` | Version: 1.0; Canonical Status: Canonical |
+| EAS-003 | Engineering Package and Dependency Standards | Engineering Architecture Standard | P0 | Approved | None | None | None | None | Engineering Architect | Chief Architect | `docs/engineering/eap/EAS-003-ENGINEERING-PACKAGE-AND-DEPENDENCY-STANDARDS.md` | Version: 1.0; Canonical Status: Canonical |
+| EAS-004 | Engineering Module Interaction Standards | Engineering Architecture Standard | P0 | Approved | None | None | None | None | Engineering Architect | Chief Architect | `docs/engineering/eap/EAS-004-ENGINEERING-MODULE-INTERACTION-STANDARDS.md` | Version: 1.0; Canonical Status: Canonical |
+| EAS-005 | Engineering Verification and Conformance Standards | Engineering Architecture Standard | P0 | Approved | None | None | None | None | Engineering Architect | Chief Architect | `docs/engineering/eap/EAS-005-ENGINEERING-VERIFICATION-AND-CONFORMANCE-STANDARDS.md` | Version: 1.0; Canonical Status: Canonical |
+| EAS-006 | Engineering Delivery & Change Control Standards | Engineering Architecture Standard | P0 | Approved | None | None | None | None | Engineering Architect | Chief Architect | `docs/engineering/eap/EAS-006-ENGINEERING-DELIVERY-AND-CHANGE-CONTROL-STANDARDS.md` | Version: 1.0; Canonical Status: Canonical |
+| EAS-007 | Engineering Design Document (EDD) Governance Standard | Engineering Architecture Standard | P0 | Approved | None | None | None | None | Engineering Architect | Chief Architect | `docs/engineering/eap/EAS-007-ENGINEERING-DESIGN-DOCUMENT-GOVERNANCE-STANDARD.md` | Version: 1.0; Canonical Status: Canonical |
+| EAP-001 | Configuration-to-Provider Authenticated Context Engineering Architecture | Engineering Architecture Package | P0 | Approved | None | None | None | None | Engineering Architect | Not stated | `docs/engineering/eap/EAP-001-CONFIGURATION-TO-PROVIDER-AUTHENTICATED-CONTEXT.md` | Version: 1.0; Canonical Status: Approved Canonical Engineering Architecture |
+| EAP-002 | Provider Instrument Master Acquisition Engineering Architecture | Engineering Architecture Package | P0 | Approved | None | None | None | None | Engineering Architect | Not stated | `docs/engineering/eap/EAP-002-PROVIDER-INSTRUMENT-MASTER-ACQUISITION.md` | Version: 1.0; Canonical Status: Approved Canonical Engineering Architecture |
+| EAP-003 | Provider-to-Instrument Architectural Admissibility Engineering Architecture | Engineering Architecture Package | P0 | Approved | None | None | None | None | Engineering Architect | Chief Architect | `docs/engineering/eap/EAP-003-PROVIDER-TO-INSTRUMENT-ARCHITECTURAL-ADMISSIBILITY.md` | Version: 1.0; Canonical Status: Approved Canonical Engineering Architecture |
+| EAP-004 | Instrument Interpretation and Canonical Identity Establishment Engineering Architecture | Engineering Architecture Package | P0 | Approved | None | None | None | None | Engineering Architect | Chief Architect | `docs/engineering/eap/EAP-004-INSTRUMENT-INTERPRETATION-AND-CANONICAL-IDENTITY-ESTABLISHMENT.md` | Version: 1.0; Canonical Status: Approved Canonical Engineering Architecture |
+| EAP-005 | Instrument-to-Observation Attribution Eligibility Engineering Architecture | Engineering Architecture Package | P0 | Approved | None | None | None | None | Engineering Architect | Chief Architect | `docs/engineering/eap/EAP-005-INSTRUMENT-TO-OBSERVATION-ATTRIBUTION-ELIGIBILITY.md` | Version: 1.0; Canonical Status: Approved Canonical Engineering Architecture |
+| EAP-006 | Observation Acceptance and Governed Observation Establishment Engineering Architecture | Engineering Architecture Package | P0 | Approved | None | None | None | None | Engineering Architect | Chief Architect | `docs/engineering/eap/EAP-006-OBSERVATION-ACCEPTANCE-AND-GOVERNED-OBSERVATION-ESTABLISHMENT.md` | Version: 1.0; Canonical Status: Approved Canonical Engineering Architecture |
+| EDD-001 | Kite Authentication and Session Management Engineering Design | Engineering Design Document | P0 | Not applicable | None | Reserved | None | None | Engineering Architect | Chief Architect | `docs/engineering/edd/EDD-001-KITE-AUTHENTICATION-AND-SESSION-MANAGEMENT-ENGINEERING-DESIGN.md` | Document existence: Not created; Draft Authorization: None; Implementation Authorization: None; Reservation of EDD-001 does not authorize creation, drafting, engineering design, implementation or runtime activity. |
+| ADP-001A | Swing Phase 1 — Market Data Inventory | Architecture Documentation Package | P0 | Approved | None | None | None | None | Chief Architect | Not stated | `docs/architecture/products/swing/SWING-PHASE-1-MARKET-DATA-INVENTORY.md` | Version: 1.0; Canonical Status: Not stated |
+| ADP-001B | KRONOS Swing Instrument Identity Architecture | Architecture Documentation Package | P0 | Approved | None | None | None | None | Chief Architect | Not stated | `docs/architecture/products/swing/SWING-PHASE-1-INSTRUMENT-IDENTITY-ARCHITECTURE.md` | Version: 1.0; Canonical Status: Approved Canonical Architecture |
+| ADP-001C | Provider → Instrument Contract | Architecture Documentation Package | P0 | Approved | None | None | None | None | Chief Architect | Not stated | `docs/architecture/products/swing/SWING-PHASE-1-PROVIDER-INSTRUMENT-CONTRACT.md` | Version: 1.0; Canonical Status: Approved Canonical Architecture |
+| ADP-001D | Instrument → Observation Contract | Architecture Documentation Package | P0 | Approved | None | None | None | None | Chief Architect | Not stated | `docs/architecture/products/swing/SWING-PHASE-1-INSTRUMENT-OBSERVATION-CONTRACT.md` | Version: 1.0; Canonical Status: Approved Canonical Architecture |
+| ADP-001E | Observation Domain Architecture | Architecture Documentation Package | P0 | Approved | None | None | None | None | Chief Architect | Not stated | `docs/architecture/products/swing/SWING-PHASE-1-OBSERVATION-DOMAIN-ARCHITECTURE.md` | Version: 1.0; Canonical Status: Approved Canonical Architecture |
+| ADP-001F | Configuration → Provider Runtime Configuration Boundary | Architecture Documentation Package | P0 | Approved | None | None | None | None | Chief Architect | Not stated | `docs/architecture/products/swing/SWING-PHASE-1-CONFIGURATION-PROVIDER-RUNTIME-CONFIGURATION-BOUNDARY.md` | Version: 1.0; Canonical Status: Approved Canonical Architecture |
+| ADP-001G | Configuration → Provider Authentication Boundary | Architecture Documentation Package | P0 | Approved | None | None | None | None | Chief Architect | Not stated | `docs/architecture/products/swing/SWING-PHASE-1-CONFIGURATION-PROVIDER-AUTHENTICATION-BOUNDARY.md` | Version: 1.0; Canonical Status: Approved Canonical Architecture |
+| ADP-001H | Provider Instrument Master Acquisition Capability and Contract | Architecture Documentation Package | P0 | Approved | None | None | None | None | Chief Architect | Not stated | `docs/architecture/products/swing/SWING-PHASE-1-PROVIDER-INSTRUMENT-MASTER-ACQUISITION-CAPABILITY-AND-CONTRACT.md` | Version: 1.0; Canonical Status: Approved Canonical Architecture |
+| ADP-001I | Swing Phase 1 Approved Instrument Universe and Reference Semantics Architecture | Architecture Documentation Package | P0 | Approved | None | None | None | None | Chief Architect | Not stated | `docs/architecture/products/swing/SWING-PHASE-1-APPROVED-INSTRUMENT-UNIVERSE-AND-REFERENCE-SEMANTICS-ARCHITECTURE.md` | Version: 1.0; Canonical Status: Approved Canonical Architecture |
+| ADP-001J | Instrument Interpretation and Canonical Identity Establishment Architecture | Architecture Documentation Package | P0 | Approved | None | None | None | None | Chief Architect | Chief Architect | `docs/architecture/products/swing/SWING-PHASE-1-INSTRUMENT-INTERPRETATION-AND-CANONICAL-IDENTITY-ESTABLISHMENT-ARCHITECTURE.md` | Version: 1.0; Canonical Status: Approved Canonical Architecture |
+| ADR-0001 | Research-First Product Mandate and Execution Deferral | Architecture Decision Record | P1 | Draft | None | None | None | None | Chief Architect | Not stated | `docs/architecture/adr/ADR-0001-research-first-product-mandate.md` | Version: Not stated; Canonical Status: Draft |
+| PLATFORM-000 | KRONOS Platform Constitution | Constitution | P0 | Approved | None | None | None | None | Chief Architect | Not stated | `docs/architecture/platform/PLATFORM-000-CONSTITUTION.md` | Version: 1.0; Canonical Status: Not stated |
+| ADR-006 | Execution Context Provider Architecture | Architecture Decision Record | P1 | Approved | None | None | None | None | Chief Architect | Not stated | `docs/architecture/adr/ADR-006-Execution-Context-Provider-Architecture.md` | Version: 1.0; Canonical Status: Not stated |
+| EAIC-001 | Exchange Availability Interface Contract | Interface Contract | P1 | Approved | None | None | None | None | Chief Architect | Not stated | `docs/architecture/interfaces/EAIC-001-Exchange-Availability-Interface-Contract.md` | Version: 1.0; Canonical Status: Not stated |
+| ECIC-001 | Execution Context Interface Contract | Interface Contract | P1 | Approved | None | None | None | None | Chief Architect | Not stated | `docs/architecture/interfaces/ECIC-001-Execution-Context-Interface-Contract.md` | Version: 1.0; Canonical Status: Not stated |
+| ECPC-001 | Execution Context Payload Contract | Interface Contract | P1 | Approved | None | None | None | None | Not stated | Not stated | `docs/architecture/interfaces/ECPC-001-Execution-Context-Payload-Contract.md` | Version: 2.0; Canonical Status: Not stated |
+| ECM-001 | Execution Context Model | Architecture Model | P1 | Approved | None | None | None | None | Not stated | Not stated | `docs/architecture/models/ECM-001-Execution-Context-Model.md` | Version: Not stated; Canonical Status: Not stated |
+| PP-007 | Execution Semantics Across Markets | Architecture Principle | P1 | Approved | None | None | None | None | Chief Architect | Not stated | `docs/architecture/principles/PP-007-Execution-Semantics-Across-Markets.md` | Version: 1.0; Canonical Status: Not stated |
+| ADL-001 | Futures Model Architecture | Legacy Architecture Decision Log | P1 | Approved | None | None | None | None | Not stated | Not stated | `docs/architecture/ADL-001-Futures-Model.md` | Version: Not stated; Canonical Status: Not stated |
+| ADL-002 | MCX Self-Contained Execution | Legacy Architecture Decision Log | P1 | Approved | None | None | None | None | Not stated | Not stated | `docs/architecture/ADL-002-MCX-Self-Contained-Execution.md` | Version: Not stated; Canonical Status: Not stated |
+| ADL-003 | Execution Context Adapters | Legacy Architecture Decision Log | P1 | Approved | None | None | None | None | Not stated | Not stated | `docs/architecture/ADL-003-Execution-Context-Adapters.md` | Version: Not stated; Canonical Status: Not stated |
+| ADL-004 | Model Trade Ownership | Legacy Architecture Decision Log | P1 | Approved | None | None | None | None | Not stated | Not stated | `docs/architecture/ADL-004-Model-Trade-Ownership.md` | Version: Not stated; Canonical Status: Not stated |
+| ADL-005 | Alert Architecture | Legacy Architecture Decision Log | P1 | Approved | None | None | None | None | Not stated | Not stated | `docs/architecture/ADL-005-Alert-Architecture.md` | Version: Not stated; Canonical Status: Not stated |
+| EP-004 | Minimum Read-Only Kite Connectivity | Engineering Package | P1 | Approved | None | None | None | None | Engineering Architect | Not stated | `docs/engineering/ep/EP-004-MINIMUM-READ-ONLY-KITE-CONNECTIVITY.md` | Version: Not stated; Canonical Status: Not stated |
+| Unassigned | KRONOS Domain Dependency Matrix | Architecture Standard | P0 | Approved | None | Unassigned Controlled Authority | None | None | Chief Architect | Not stated | `docs/architecture/platform/DOMAIN_DEPENDENCY_MATRIX.md` | Identity allocation requires a separate Chief Architect-authorized work unit. |
+| Unassigned | KRONOS Domain Ownership Matrix | Architecture Standard | P0 | Approved | None | Unassigned Controlled Authority | None | None | Chief Architect | Not stated | `docs/architecture/platform/DOMAIN_OWNERSHIP_MATRIX.md` | Identity allocation requires a separate Chief Architect-authorized work unit. |
+| Unassigned | KRONOS Platform Architecture Overview | Architecture Standard | P0 | Approved | None | Unassigned Controlled Authority | None | None | Chief Architect | Not stated | `docs/architecture/platform/PLATFORM_OVERVIEW.md` | Identity allocation requires a separate Chief Architect-authorized work unit. |
+| Unassigned | KRONOS Platform Business Pipeline | Architecture Standard | P0 | Approved | None | Unassigned Controlled Authority | None | None | Chief Architect | Not stated | `docs/architecture/platform/PLATFORM_BUSINESS_PIPELINE.md` | Identity allocation requires a separate Chief Architect-authorized work unit. |
+| Unassigned | DOMAIN-011 — Audit Domain | Architecture Standard | P0 | Approved | None | Unassigned Controlled Authority | None | None | Chief Architect | Not stated | `docs/architecture/platform/domains/audit/ARCHITECTURE.md` | Identity allocation requires a separate Chief Architect-authorized work unit. |
+| Unassigned | DOMAIN-010 — Configuration Domain | Architecture Standard | P0 | Approved | None | Unassigned Controlled Authority | None | None | Chief Architect | Not stated | `docs/architecture/platform/domains/configuration/ARCHITECTURE.md` | Identity allocation requires a separate Chief Architect-authorized work unit. |
+| Unassigned | DOMAIN-009 — Event Domain | Architecture Standard | P0 | Approved | None | Unassigned Controlled Authority | None | None | Chief Architect | Not stated | `docs/architecture/platform/domains/event/ARCHITECTURE.md` | Identity allocation requires a separate Chief Architect-authorized work unit. |
+| Unassigned | DOMAIN-004 — Execution Domain | Architecture Standard | P0 | Approved | None | Unassigned Controlled Authority | None | None | Chief Architect | Not stated | `docs/architecture/platform/domains/execution/ARCHITECTURE.md` | Identity allocation requires a separate Chief Architect-authorized work unit. |
+| Unassigned | DOMAIN-001 — Instrument Domain | Architecture Standard | P0 | Approved | None | Unassigned Controlled Authority | None | None | Chief Architect | Not stated | `docs/architecture/platform/domains/instrument/ARCHITECTURE.md` | Identity allocation requires a separate Chief Architect-authorized work unit. |
+| Unassigned | DOMAIN-008 — Market Domain | Architecture Standard | P0 | Approved | None | Unassigned Controlled Authority | None | None | Chief Architect | Not stated | `docs/architecture/platform/domains/market/ARCHITECTURE.md` | Identity allocation requires a separate Chief Architect-authorized work unit. |
+| Unassigned | DOMAIN-002 — Observation Domain | Architecture Standard | P0 | Approved | None | Unassigned Controlled Authority | None | None | Chief Architect | Not stated | `docs/architecture/platform/domains/observation/ARCHITECTURE.md` | Identity allocation requires a separate Chief Architect-authorized work unit. |
+| Unassigned | DOMAIN-005 — Portfolio Domain | Architecture Standard | P0 | Approved | None | Unassigned Controlled Authority | None | None | Chief Architect | Not stated | `docs/architecture/platform/domains/portfolio/ARCHITECTURE.md` | Identity allocation requires a separate Chief Architect-authorized work unit. |
+| Unassigned | DOMAIN-006 — Provider Domain | Architecture Standard | P0 | Approved | None | Unassigned Controlled Authority | None | None | Chief Architect | Not stated | `docs/architecture/platform/domains/provider/ARCHITECTURE.md` | Identity allocation requires a separate Chief Architect-authorized work unit. |
+| Unassigned | DOMAIN-007 — Risk Domain | Architecture Standard | P0 | Approved | None | Unassigned Controlled Authority | None | None | Chief Architect | Not stated | `docs/architecture/platform/domains/risk/ARCHITECTURE.md` | Identity allocation requires a separate Chief Architect-authorized work unit. |
+| Unassigned | DOMAIN-003 — Validation Domain | Architecture Standard | P0 | Approved | None | Unassigned Controlled Authority | None | None | Chief Architect | Not stated | `docs/architecture/platform/domains/validation/ARCHITECTURE.md` | Identity allocation requires a separate Chief Architect-authorized work unit. |
 
 ---
 
-# 5. P1 — Engineering Supporting Documents
+# 5. Register Maintenance Rules
 
-| ID | Document | Category | Priority | Status | Owner | Repository Location | Remarks |
-|----|----------|----------|----------|--------|-------|---------------------|---------|
-
----
-
-# 6. P2 — Future Documentation
-
-| ID | Document | Category | Priority | Status | Owner | Repository Location | Remarks |
-|----|----------|----------|----------|--------|-------|---------------------|---------|
-
----
-
-# 7. Completed Documents
-
-Move documents here only after they become **Canonical**.
-
-| ID | Document | Version | Canonical Date | Remarks |
-|----|----------|---------|----------------|---------|
-
----
-
-# 8. Deferred Documents
-
-| ID | Document | Reason | Review Date |
-|----|----------|--------|-------------|
-
----
-
-# 9. Retired Documents
-
-| ID | Document | Superseded By | Retirement Date |
-|----|----------|---------------|-----------------|
-
----
-
-# 10. Register Maintenance Rules
-
-1. Every controlled document shall have a unique Document ID.
-2. Every controlled document shall be entered into this register when created.
-3. Document status shall be updated whenever its lifecycle changes.
-4. Documents shall only move to **Completed** after Canonical status.
-5. Deferred and Retired documents shall remain permanently listed for traceability.
-6. No controlled document shall exist outside this register.
-7. The Engineering Architect is responsible for updating this register during document creation.
-8. The Lead Engineer shall ensure repository consistency.
-9. The Chief Architect remains the approval authority for document lifecycle transitions.
+1. Every controlled document shall have a unique assigned Document ID unless it is explicitly recorded as an Unassigned Controlled Authority.
+2. Every controlled document shall be entered in this register when created or identified.
+3. Lifecycle Status, Workflow Stage, Register Disposition and Authorization State shall be maintained separately.
+4. Planned identifies future consideration and does not authorize drafting.
+5. Reserved protects an identifier or intended responsibility and does not authorize creation.
+6. Unassigned Controlled Authority identifies an existing authority awaiting governed identity allocation.
+7. EDD approval or canonicalization does not authorize implementation.
+8. No controlled document shall exist outside this register.
+9. The Engineering Architect is responsible for updating this register during document creation.
+10. The Lead Engineer shall ensure repository consistency.
+11. The Chief Architect remains the approval authority for document lifecycle transitions and identity allocation.
 
 ---
 

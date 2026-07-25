@@ -1,6 +1,15 @@
 # ECM-001 — Execution Context Model
 
+**Document ID:** ECM-001
+**Title:** Execution Context Model
+**Version:** Not stated
 **Status:** Approved
+**Canonical Status:** Not stated
+**Classification:** Architecture Model
+**Owner:** Not stated
+**Prepared By:** Not stated
+**Review Authority:** Not stated
+**Repository Location:** `docs/architecture/models/ECM-001-Execution-Context-Model.md`
 
 ## 1. Purpose
 

@@ -1,6 +1,10 @@
 # ADP-001B — KRONOS Swing Instrument Identity Architecture
 
+**Document ID:** ADP-001B
+**Title:** KRONOS Swing Instrument Identity Architecture
+**Version:** 1.0
 **Status:** Approved
+**Canonical Status:** Approved Canonical Architecture
 
 **Product:** KRONOS Swing
 
@@ -11,6 +15,8 @@
 **Prepared By:** Engineering Architect
 
 **Approved By:** Chief Architect
+**Review Authority:** Not stated
+**Repository Location:** `docs/architecture/products/swing/SWING-PHASE-1-INSTRUMENT-IDENTITY-ARCHITECTURE.md`
 
 **Classification:** Architecture Documentation Package
 

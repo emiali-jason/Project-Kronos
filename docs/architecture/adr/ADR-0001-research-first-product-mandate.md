@@ -1,5 +1,15 @@
 # ADR-0001 — Research-First Product Mandate and Execution Deferral
 
+**Document ID:** ADR-0001
+**Title:** Research-First Product Mandate and Execution Deferral
+**Version:** Not stated
+**Status:** Draft
+**Canonical Status:** Draft
+**Classification:** Architecture Decision Record
+**Owner:** Chief Architect
+**Prepared By:** Engineering Architect
+**Review Authority:** Not stated
+**Repository Location:** `docs/architecture/adr/ADR-0001-research-first-product-mandate.md`
 **Document Status:** Draft
 
 ## Metadata
