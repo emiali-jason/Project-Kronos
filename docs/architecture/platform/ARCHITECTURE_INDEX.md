@@ -28,6 +28,10 @@ Provide navigation to the approved KRONOS Platform Architecture v1.0 documents a
 - [DOMAIN-010 — Configuration](domains/configuration/ARCHITECTURE.md)
 - [DOMAIN-011 — Audit](domains/audit/ARCHITECTURE.md)
 
+## Approved Provider Architecture
+
+- [ADR-007 — Provider Capability Assessment Architecture](domains/provider/ADR-007-PROVIDER-CAPABILITY-ASSESSMENT-ARCHITECTURE.md)
+
 ## Platform Principles
 
 - [PP-001 — Information First](principles/PP-001-Information-First.md) — Draft
