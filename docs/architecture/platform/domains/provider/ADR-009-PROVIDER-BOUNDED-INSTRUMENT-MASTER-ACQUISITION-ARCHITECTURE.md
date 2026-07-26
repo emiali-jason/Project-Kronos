@@ -48,7 +48,7 @@ That candidate:
 
 This document establishes approved platform architecture whose Activation State remains Pending Coordinated Migration.
 
-If approved, ADR-009 shall remain activation-pending until the coordinated canonical migration in Section 36 is complete.
+ADR-009 shall remain activation-pending until the coordinated canonical migration in Section 36 is complete.
 
 This architecture authorizes no:
 
@@ -1837,7 +1837,7 @@ The following authorities are separate:
 
 | Authority | Meaning | Current canonical state |
 |---|---|---|
-| Architecture approval | Approval of ADR-009 decisions | Pending |
+| Architecture approval | Approval of ADR-009 decisions | Approved |
 | Coordinated migration approval | Approval of the canonical change set required to activate ADR-009 | None |
 | EDD-004 Draft Authorization | Authority to prepare engineering design | None |
 | EDD-004 canonicalization | Approval of a verified EDD-004 | None |

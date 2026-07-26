@@ -10,7 +10,7 @@
 **Prepared By:** Codex Engineering Team
 **Review Authority:** Chief Architect
 **Repository Location:** `docs/architecture/migrations/MIG-001-ADR-009-COORDINATED-ARCHITECTURE-MIGRATION-PACKAGE.md`
-**Workflow Stage:** Draft Preparation
+**Workflow Stage:** Repository Publication
 **Governing Architecture:** ADR-009 Version 1.0
 **Activation State:** Planning Only
 **Migration Execution Authorization:** None
@@ -98,11 +98,11 @@ MIG-001 depends on:
 - repository governance under GOV-001, GOV-002, and DOC-001; and
 - separate Chief Architect authorization for each migration execution stage.
 
-The unresolved platform Provider-to-Instrument Submission Contract is the first new architectural dependency.
+[EAIC-002 — Provider → Instrument Submission Contract](../interfaces/EAIC-002-PROVIDER-TO-INSTRUMENT-SUBMISSION-CONTRACT.md) is the first architectural dependency established under this migration package.
 
-The planned identifier for that contract is PIC-001.
+`PIC-001` was a pre-classification planning label and is not a governed document identifier.
 
-MIG-001 governs the coordinated migration dependency on PIC-001 but does not create, draft, approve, or authorize PIC-001.
+MIG-001 governs the coordinated migration dependency on EAIC-002. EAIC-002 is approved and canonical but remains inactive pending coordinated migration and separate activation authorization.
 
 ## 1.6 Related ADRs
 
@@ -131,11 +131,9 @@ No domain ownership transfers through MIG-001.
 
 ## 1.8 Governance Observations
 
-The MIG document family is not currently recognised by DOC-001.
+DOC-001 recognises MIG as the permanent governed Migration Package document family.
 
-Coordinated migration should introduce MIG as a permanent governed architecture document family instead of using a one-time exception.
-
-No DOC-001 amendment is authorised in this work unit.
+MIG-001 is governed under that document family and remains a governance artefact rather than architectural, engineering-design, implementation, or runtime authority.
 
 # 2. Executive Summary
 
@@ -286,18 +284,20 @@ Architecture approval, migration execution, canonical publication, activation, E
 
 | Classification | Documents |
 |---|---|
-| New | PIC-001 — Platform Provider-to-Instrument Submission Contract |
+| New | EAIC-002 — Provider → Instrument Submission Contract |
 | Major Amendment | ADP-001A, ADP-001B, ADP-001I, ADP-001J, Provider Domain Architecture, Instrument Domain Architecture, Domain Ownership Matrix, Domain Dependency Matrix, DATA_FLOW, EAP-003, EAP-004 |
 | Minor Amendment | ADP-001D, ADP-001E, Observation Domain Architecture, Market Domain Architecture, Validation Domain Architecture, Risk Domain Architecture, EAP-005, EAP-006 |
-| Editorial | Document Register and active repository navigation affected by coordinated publication |
-| No Change | ADP-001F, ADP-001G, ADR-007, ADR-008, EAP-001, EDD-001, EDD-002, EDD-003 |
+| Editorial | MIG-001, Document Register, and active repository navigation affected by coordinated publication |
+| No Change | ADR-009, ADP-001F, ADP-001G, ADR-007, ADR-008, EAP-001, EDD-001, EDD-002, EDD-003 |
 | Superseded | ADP-001C, ADP-001H, EAP-002 |
 
 No classification authorizes the associated amendment or supersession.
 
 ## 6.3 Inventory Control
 
-Every item in the detailed Migration Register in Section 13 shall remain `Not Started` until separately authorized.
+Every item in the detailed Migration Register in Section 13 shall remain `Not Started` until separately authorized to progress.
+
+A `Published` state records only a separately authorized and completed repository publication.
 
 An item may become `Candidate Complete` only after:
 
@@ -312,7 +312,7 @@ An item may become `Candidate Complete` only after:
 flowchart TD
     ADR009["ADR-009 Canonical Architecture"]
     MIG001["MIG-001 Coordinated Architecture Migration Package"]
-    PIC001["PIC-001 Provider-to-Instrument Submission Contract"]
+    EAIC002["EAIC-002 Provider → Instrument Submission Contract"]
     MIGRATION["Repository Migration"]
     PROVIDER["Provider Domain Amendment"]
     INSTRUMENT["Instrument Domain Amendment"]
@@ -326,8 +326,8 @@ flowchart TD
     EDD004["Separate EDD-004 Authorisation"]
 
     ADR009 --> MIG001
-    MIG001 -->|"governs"| PIC001
-    PIC001 --> MIGRATION
+    MIG001 -->|"governs"| EAIC002
+    EAIC002 --> MIGRATION
     MIGRATION --> VERIFY
     VERIFY --> PUBLISH
     PUBLISH -->|"after separate activation authorization"| EDD004
@@ -345,7 +345,7 @@ The graph represents required sequencing only.
 
 It grants no execution, publication, activation, or EDD authority.
 
-PIC-001 is governed by MIG-001 and remains uncreated and unauthorized under this migration package.
+EAIC-002 is governed by MIG-001, approved, and canonical; it remains inactive pending coordinated migration and separate activation authorization.
 
 # 8. Migration Workstreams
 
@@ -550,13 +550,15 @@ Completion states are:
 - `Published`; and
 - `Verified No Change`.
 
-All entries are `Not Started` under this migration package.
+Completion state records only objectively established progress under separately authorized work units.
 
 | ID / Authority | Document | Classification | Owner | Rationale | Dependency | Priority | Verification requirement | Completion state |
 |---|---|---|---|---|---|---|---|---|
-| PIC-001 | Platform Provider-to-Instrument Submission Contract | New | Chief Architect | Establish product-neutral eligible Provider submission boundary before Instrument interpretation | ADR-009 and MIG-001 | P0 | Eligibility, ownership, provenance, exclusions, and boundary termination | Not Started |
-| DOMAIN-006 | Provider Domain Architecture | Major Amendment | Chief Architect | Add Provider-wide acquisition, Provider Catalogue, dispositions, partitions, continuity, and product neutrality | New submission contract | P0 | Provider ownership and product-independence review | Not Started |
-| DOMAIN-001 | Instrument Domain Architecture | Major Amendment | Chief Architect | Establish product-neutral interpretation, canonical catalogue, identity decision, and mapping ownership | New submission contract | P0 | Instrument ownership and dimensional-model review | Not Started |
+| ADR-009 | Provider-Bounded Instrument Master Acquisition Architecture | No Change | Chief Architect | Establish the governing canonical migration direction | None | P0 | Canonical metadata and publication-state verification | Published |
+| MIG-001 | ADR-009 Coordinated Architecture Migration Package | Editorial | Chief Architect | Govern migration planning, sequencing, verification, and publication | ADR-009 | P0 | Governance-family, metadata, and publication-state verification | Published |
+| EAIC-002 | Provider → Instrument Submission Contract | New | Chief Architect | Establish product-neutral eligible Provider submission boundary before Instrument interpretation | ADR-009 and MIG-001 | P0 | Eligibility, ownership, provenance, exclusions, and boundary termination | Published |
+| DOMAIN-006 | Provider Domain Architecture | Major Amendment | Chief Architect | Add Provider-wide acquisition, Provider Catalogue, dispositions, partitions, continuity, and product neutrality | EAIC-002 | P0 | Provider ownership and product-independence review | Published |
+| DOMAIN-001 | Instrument Domain Architecture | Major Amendment | Chief Architect | Establish product-neutral interpretation, canonical catalogue, identity decision, and mapping ownership | EAIC-002 | P0 | Instrument ownership and dimensional-model review | Published |
 | DOMAIN-002 | Observation Domain Architecture | Minor Amendment | Chief Architect | Clarify that product requirements do not change Observation-owned facts | Instrument Domain candidate | P1 | Observation ownership review | Not Started |
 | DOMAIN-008 | Market Domain Architecture | Minor Amendment | Chief Architect | Clarify product-supported markets versus Market-owned schedules and state | Product architecture candidates | P1 | Market ownership review | Not Started |
 | DOMAIN-003 | Validation Domain Architecture | Minor Amendment | Chief Architect | Preserve Validation-owned Business Judgment | Product architecture candidates | P1 | Validation ownership review | Not Started |

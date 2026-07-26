@@ -10,10 +10,10 @@
 **Prepared By:** Codex Engineering Team
 **Review Authority:** Chief Architect
 **Repository Location:** `docs/architecture/interfaces/EAIC-002-PROVIDER-TO-INSTRUMENT-SUBMISSION-CONTRACT.md`
-**Workflow Stage:** Draft Preparation
+**Workflow Stage:** Repository Publication
 **Governing Architecture:** ADR-009 Version 1.0
 **Governing Migration:** MIG-001 Version 0.1
-**Activation State:** Inactive / Draft Only
+**Activation State:** Inactive — Pending Coordinated Migration and Separate Activation Authorization
 **Migration Execution Authority:** None
 **Implementation Authority:** None
 **Runtime Authority:** None
@@ -1142,7 +1142,7 @@ Provider mapping does not imply product eligibility.
 
 # 19. Activation and Migration Constraints
 
-This Version 0.1 Draft is inactive.
+This Version 0.1 approved canonical Interface Contract is inactive pending coordinated migration and separate activation authorization.
 
 It shall not activate until:
 
@@ -1242,7 +1242,7 @@ The following are intentionally deferred implementation or governance matters, n
 - EDD-004 authorization; and
 - implementation authorization.
 
-The MIG-001 planning label `PIC-001` requires later governance-only traceability alignment to EAIC-002. It does not require architectural redesign.
+The MIG-001 pre-classification planning label `PIC-001` has been aligned to the governed identifier EAIC-002. It remains historical traceability only and does not identify a separate governed document.
 
 # 22. ADR-009 Correction Traceability
 
@@ -1290,13 +1290,13 @@ The MIG-001 planning label `PIC-001` requires later governance-only traceability
 
 **Chief Architect Draft Authorization:** Approved
 
-**Chief Architect Decision:** Pending
+**Chief Architect Decision:** Approved
 
-**Architecture Verification:** Pending
+**Architecture Verification:** Complete
 
 **Canonical Status:** Canonical
 
-**Activation State:** Inactive / Draft Only
+**Activation State:** Inactive — Pending Coordinated Migration and Separate Activation Authorization
 
 **Migration Execution Authority:** None
 
@@ -1316,7 +1316,7 @@ The MIG-001 planning label `PIC-001` requires later governance-only traceability
 
 **Push Authority:** None
 
-**Next Authorized Capability:** Architecture Verification of EAIC-002 Version 0.1 only
+**Next Authorized Capability:** None
 
 # 26. Governance Statement
 
