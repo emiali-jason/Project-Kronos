@@ -5,7 +5,293 @@
 
 This document describes how information moves through KRONOS. It complements the [Architecture Overview](OVERVIEW.md) and [Engine Ownership Matrix](ENGINE_OWNERSHIP.md).
 
-## End-to-End Flow
+## Canonical Flow Classes
+
+KRONOS distinguishes:
+
+- platform-support flow;
+- the canonical business pipeline;
+- explicit product-consumption flow; and
+- attributable evidence and feedback flow.
+
+A support, evidence, or feedback flow does not become a business-pipeline stage, transfer semantic ownership, or create runtime authority.
+
+## Canonical Business Pipeline
+
+The approved business pipeline remains unchanged:
+
+```text
+Instrument
+    ↓
+Observation
+    ↓
+Validation
+    ↓
+Risk
+    ↓
+Execution
+    ↓
+Portfolio
+```
+
+Provider supports Instrument through an approved contract boundary but does not join this pipeline.
+
+Market supplies Market-owned schedule and availability meaning as platform support. It does not become an additional business-pipeline stage.
+
+## Platform Support Flow — Instrument Master
+
+The canonical Instrument Master support flow is:
+
+```text
+Authorized Provider Dataset
+        ↓
+Provider Acquisition                                      [Provider-owned]
+        ↓
+Provider-and-Dataset Catalogue Partition                  [Provider-owned]
+        ↓
+Provider Snapshot and Provider Records                    [Provider-owned]
+        ↓
+Provider Dispositions                                     [Provider-owned]
+        ↓
+Submission Eligibility                                    [Provider-owned]
+        ↓
+EAIC-002 — Provider → Instrument Submission Contract      [sole governed boundary]
+        ↓
+Instrument Contract Receipt and Validation                [Instrument-side handling]
+        ↓
+Instrument Interpretation Admission                       [Instrument-side handling]
+        ↓
+Instrument Interpretation Processing                      [Instrument-owned]
+        ↓
+Interpretation Outcome                                    [Instrument-owned]
+        ↓
+Canonical Identity Decision                               [Instrument-owned]
+        ↓
+Provider Mapping Decision / Provider Mapping Status       [Instrument-owned]
+        ↓
+Cross-Provider Reconciliation, where applicable           [Instrument-owned]
+        ↓
+Canonical Instrument Catalogue Publication                [Instrument-owned]
+```
+
+This support flow applies only to the Instrument Master dataset governed by [ADR-009](platform/domains/provider/ADR-009-PROVIDER-BOUNDED-INSTRUMENT-MASTER-ACQUISITION-ARCHITECTURE.md) and [EAIC-002](interfaces/EAIC-002-PROVIDER-TO-INSTRUMENT-SUBMISSION-CONTRACT.md).
+
+[EAIC-002](interfaces/EAIC-002-PROVIDER-TO-INSTRUMENT-SUBMISSION-CONTRACT.md) is the sole governed Provider-to-Instrument boundary for this dataset.
+
+Provider shall not write directly to Instrument state.
+
+Instrument shall not access or mutate Provider Catalogue internals.
+
+An arrow across EAIC-002 represents contract-governed presentation and receipt. It does not represent ownership transfer or direct state mutation.
+
+## Ownership Through the Support Flow
+
+| Flow stage or meaning | Semantic owner |
+|---|---|
+| Provider acquisition | Provider |
+| Provider-and-Dataset Catalogue Partition | Provider |
+| Provider Snapshot and Provider Records | Provider |
+| Provider Record Identity | Provider |
+| Provider Dispositions | Provider |
+| Submission Eligibility | Provider |
+| Provider provenance | Provider |
+| Provider acquisition provenance | Provider |
+| EAIC-002 contract boundary | Ownership preserved on each side |
+| Contract receipt and validation handling | Instrument |
+| Interpretation admission | Instrument |
+| Interpretation processing status | Instrument |
+| Interpretation outcome | Instrument |
+| Canonical identity decision | Instrument |
+| Provider mapping status | Instrument |
+| Cross-Provider reconciliation | Instrument |
+| Canonical Instrument Catalogue publication | Instrument |
+
+Technical receipt does not imply contract validity.
+
+Contract validation does not imply interpretation admission or interpretation success.
+
+Interpretation admission does not imply canonical identity.
+
+Canonical identity does not automatically imply Provider mapping.
+
+Canonical Instrument Catalogue publication does not imply product membership or product eligibility.
+
+## Provider Catalogue Currentness and Supersession
+
+Provider Catalogue currentness is scoped independently within each Provider-and-Dataset Catalogue Partition.
+
+Provider Snapshot Identity is unique only within one Provider-and-Dataset Catalogue Partition.
+
+Provider Record Identity is unique only within one Provider Snapshot.
+
+Currentness and supersession shall preserve:
+
+- partition-scoped currentness;
+- non-destructive supersession;
+- no cross-partition supersession;
+- explicit stale or superseded state;
+- protection against a stale snapshot masquerading as current; and
+- historical Provider evidence after supersession.
+
+Provider tokens, exchange tokens, symbols, and row positions shall not establish globally permanent Provider Record Identity or canonical Instrument identity.
+
+Submission Unit identity shall not create canonical Instrument identity, cross-partition permanence, cross-snapshot permanence, or cross-Provider identity equivalence.
+
+Cross-Provider reconciliation remains Instrument-owned.
+
+Kite, IBKR, and any future Provider shall remain isolated through separate Provider-and-Dataset Catalogue Partitions and may participate through the same governed EAIC contract family only where separately approved.
+
+No direct Provider-to-Provider flow is created.
+
+## Provenance and Evidence Flow
+
+The flow preserves distinct evidence and provenance meanings:
+
+| Evidence or provenance | Owner | Meaning |
+|---|---|---|
+| Provider acquisition provenance | Provider | Which Provider acquisition, operation, scope, result, snapshot, and records produced the Provider evidence. |
+| EAIC-002 submission provenance | Provider at submission; preserved across the contract | Which eligible Submission Unit, contract version, authority, and Provider evidence were presented. |
+| Instrument interpretation evidence | Instrument | Which admitted evidence supported the interpretation processing status and outcome. |
+| Canonical identity evidence | Instrument | Which approved semantic evidence supported the canonical identity decision. |
+| Provider mapping evidence | Instrument | Which evidence supported the Provider mapping status and any cross-Provider reconciliation. |
+
+Acquisition request time, response receipt time, snapshot closure time, submission time, contract receipt time, contract validation time, interpretation admission time, interpretation processing time, canonical identity decision time, and Provider mapping decision time remain distinct.
+
+Evidence may flow to Audit through approved read-only contracts without transferring ownership of the recorded meaning.
+
+## Failure, Rejection, and Deferral Paths
+
+The Instrument Master support flow is not a single success-or-failure path.
+
+| Condition | Architectural path | Non-implication |
+|---|---|---|
+| Acquisition failure | Provider records the technical result and Acquisition Outcome; no success is invented. | Does not establish Submission Eligibility or Instrument failure. |
+| Partial acquisition | Provider preserves Requested and Received Acquisition Scope and a Partial Acquisition Outcome. | Does not silently become complete acquisition; independently eligible records may remain separately assessable. |
+| Structural invalidity | Provider records the applicable Provider Record Disposition. | Does not become Instrument invalidity. |
+| Quarantine | Provider retains the Provider Record and quarantine meaning inside its Catalogue Partition. | Does not cross EAIC-002 while ineligible. |
+| Submission Ineligibility | Provider records the exact ineligibility disposition and does not submit the affected unit. | Does not become contract rejection or Instrument interpretation outcome. |
+| Contract rejection | Instrument-side contract handling records the bounded EAIC-002 result. | Does not begin Instrument interpretation or alter Provider meaning. |
+| Interpretation rejection | Instrument records the applicable processing status and outcome after admission. | Does not retroactively invalidate receipt or Provider evidence. |
+| Ambiguity | Instrument preserves ambiguity in the applicable interpretation, identity, or mapping dimension. | Does not invent canonical identity or equivalence. |
+| Unsupported Provider vocabulary | Provider preserves the vocabulary and applicable disposition; Instrument may record a bounded unsupported outcome after admission. | Does not authorize inference from symbols, tokens, or product demand. |
+| Canonical identity deferral | Instrument records the applicable non-establishment or not-evaluated meaning. | Does not imply Instrument non-existence or product ineligibility. |
+| Provider mapping deferral | Instrument records Provider Mapping Status as `NOT_EVALUATED` or `MAPPING_PENDING`, as governed. | Does not invalidate canonical identity or create another Provider's mapping. |
+
+## Explicit Product-Consumption Flow
+
+Products consume only approved canonical Instrument outputs after Canonical Instrument Catalogue publication.
+
+Swing consumption remains separate:
+
+```text
+Canonical Instrument Catalogue
+        ↓
+Swing Product-Consumption Contract
+        ↓
+Swing Universe and Swing Product Eligibility
+        ↓
+Swing Evidence, Validation Requirements, Decision Semantics, and Risk Interpretation
+```
+
+Intraday consumption remains separate:
+
+```text
+Canonical Instrument Catalogue
+        ↓
+Intraday Product-Consumption Contract
+        ↓
+Intraday Universe and Intraday Product Eligibility
+        ↓
+Intraday Evidence, Validation Requirements, Decision Semantics, and Risk Interpretation
+```
+
+Each future product requires its own explicit product-consumption boundary:
+
+```text
+Canonical Instrument Catalogue
+        ↓
+Future Product-Consumption Contract
+        ↓
+That Product's Universe and Product Eligibility
+        ↓
+That Product's Evidence, Validation Requirements, Decision Semantics, and Risk Interpretation
+```
+
+No product may consume Provider Catalogue records, Provider Snapshots, Provider Records, or EAIC-002 envelopes directly.
+
+No product owns or writes canonical Instrument identity, canonical classification, Provider mapping, cross-Provider reconciliation, or Canonical Instrument Catalogue state.
+
+Provider acquisition does not depend on Swing, Intraday, or future-product membership or demand.
+
+## Instrument-to-Observation and Downstream Flow
+
+Observation consumes canonical Instrument identity through the separately governed Instrument-to-Observation attribution boundary.
+
+Observation does not consume Provider-native records, Provider Catalogue content, Provider Snapshots, or EAIC-002 envelopes.
+
+Provider acquisition and EAIC-002 submission do not create Observation authority.
+
+Downstream ownership remains:
+
+- Observation owns Observations, Observation History, Observation Evidence, and factual Market Facts;
+- Market owns Market Schedule and approved exchange-availability meaning;
+- Validation owns Validation Programmes, Validation Outcomes, and Business Judgment;
+- Risk owns Risk Approval and Risk semantics;
+- products own their bounded decision semantics and risk interpretation without acquiring Validation or Risk ownership; and
+- Execution and Portfolio retain their existing approved responsibilities.
+
+ADR-009 and EAIC-002 do not establish automatic Validation approval, Risk approval, execution authority, or a trading recommendation.
+
+## Dataset Separation
+
+EAIC-002 and the Provider-to-Instrument support flow in this document govern Instrument Master only.
+
+They do not govern:
+
+- Futures OI;
+- Options OI;
+- quotes;
+- historical data;
+- streaming;
+- market depth;
+- option-chain data; or
+- any separately governed dataset.
+
+Other market-data and product flows in this document remain separately governed and shall not be interpreted as extensions of the Instrument Master contract.
+
+## Prohibited Direct-Write Paths
+
+The following paths are prohibited:
+
+- Provider → Instrument database;
+- Provider → canonical Instrument record;
+- Product → canonical Instrument identity;
+- Observation → Provider Catalogue;
+- Provider → product universe; and
+- Provider → trading decision.
+
+All cross-domain movement shall use an approved governed contract.
+
+## Activation and Authority
+
+This migrated DATA_FLOW document describes canonical architecture.
+
+It does not:
+
+- activate ADR-009 or EAIC-002;
+- authorize runtime Provider-to-Instrument submission;
+- authorize Provider endpoint invocation;
+- authorize persistence;
+- authorize implementation;
+- authorize EDD-004;
+- authorize product activation; or
+- execute coordinated migration.
+
+The Instrument Master support path remains subject to [MIG-001](migrations/MIG-001-ADR-009-COORDINATED-ARCHITECTURE-MIGRATION-PACKAGE.md) completion and separate Chief Architect activation authorization.
+
+## Existing Swing Product-Consumption and Decision Flow
+
+This is a downstream Swing product-consumption and decision flow. It does not define Provider acquisition scope or a prerequisite for Instrument interpretation or canonical identity.
 
 ```text
 MCX execution symbol + reference-market identity
@@ -21,7 +307,7 @@ MCX execution symbol + reference-market identity
 
 Reference markets provide evidence. The MCX 1H chart owns the executable context.
 
-## 1. Market Intelligence
+### 1. Market Intelligence
 
 ```text
 KR-200 Market Identification
@@ -46,7 +332,7 @@ Each intelligence engine answers one question and exposes public outputs. No ind
 
 KES collects, validates, standardizes, and packages that evidence before KR-360 Confidence. KES does not own evidence generation, confidence calculation, decisions, execution, trade management, alerts, or presentation.
 
-## 2. Decision
+### 2. Decision
 
 KR-370 consumes prior public intelligence outputs and uses KR-341 as the authoritative consolidated directional contract before producing one progressive decision state:
 
@@ -66,7 +352,7 @@ Intelligence public outputs
   -> decision reason, blocker, review point, and checklist
 ```
 
-## 3. Execution Context
+### 3. Execution Context
 
 KR-380A is a narrow adapter. It translates the minimum reference and execution facts needed by KR-380:
 
@@ -85,7 +371,7 @@ KR-260/270 narrow reference datasets
 
 KR-380A does not create separate Daily, 4H, and 1H copies of the intelligence core. The exception is governed by [ADL-003](ADL-003-Execution-Context-Adapters.md).
 
-## 4. Execution Timing
+### 4. Execution Timing
 
 KR-380 acts only when KR-370 says BUY READY or SELL READY.
 
@@ -99,7 +385,7 @@ Final BUY NOW, SELL NOW, EXTENDED, and FAILED outcomes require confirmed MCX 1H 
 
 KR-380 also publishes an ordered blocker queue. KR-705 translates that queue into trader-readable Need, Next, and Then rows.
 
-## 5. Model Trade Management
+### 5. Model Trade Management
 
 KR-390A supplies the narrow confirmed structure reference required for the initial and managed model stop. It uses completed MCX 1H execution bars and does not duplicate KR-275.
 
@@ -121,7 +407,7 @@ The model trade persists after KR-380 returns to NO TRIGGER. New triggers are ig
 
 KR-390 tracks the objective KRONOS model trade whether or not the user personally entered. See [ADL-004](ADL-004-Model-Trade-Ownership.md).
 
-## 6. Alerts
+### 6. Alerts
 
 KR-400 consumes KR-380 public outputs only and defines two alert types:
 
@@ -138,7 +424,7 @@ all other states                  -> no alert
 
 TradingView handles alert creation, mobile push, and delivery. KRONOS places no broker order. See [ADL-005](ADL-005-Alert-Architecture.md).
 
-## 7. Trader Display
+### 7. Trader Display
 
 KR-705 consumes public outputs and presents:
 
@@ -154,7 +440,7 @@ KR-705 translates and displays. It does not calculate trading intelligence.
 
 EAIC-001 Exchange Availability flows from KR-200 to KR-705 for presentation only. KR-705 must not infer exchange availability from market-data availability, stale bars, readiness failures, Execution Context availability, or missing confirmed candles. Exchange Availability does not alter KR-370 decisions, KR-380 execution timing, KR-380A Execution Context production, ECPC payloads, alerts, trade management, or market-data readiness.
 
-## Reference Charts Versus Execution Chart
+### Reference Charts Versus Execution Chart
 
 | Context | Role | May issue executable MCX BUY NOW/SELL NOW? |
 |---|---|---:|
@@ -165,7 +451,7 @@ EAIC-001 Exchange Availability flows from KR-200 to KR-705 for presentation only
 
 Reference charts may expose their own analytical states for diagnostics, but they cannot issue an MCX executable trigger.
 
-## Self-Contained MCX Execution Rule
+### Self-Contained MCX Execution Rule
 
 On MCX 1H, every remaining blocker must be available in the same panel in trader language. The trader should not need to open COMEX merely to discover why execution is pending.
 
