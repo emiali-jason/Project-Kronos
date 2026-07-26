@@ -2,7 +2,7 @@
 
 from typing import Optional
 
-from kronos.provider.contracts import MarketDataProvider
+from kronos.provider.contracts.market_data import MarketDataProvider
 
 
 class KiteMarketDataProvider(MarketDataProvider):

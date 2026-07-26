@@ -15,7 +15,6 @@ _FORBIDDEN_KITE_CALLS = {
     "convert_position",
     "delete_gtt",
     "exit_order",
-    "generate_session",
     "get_gtt",
     "get_gtts",
     "historical_data",
@@ -34,7 +33,6 @@ _FORBIDDEN_KITE_CALLS = {
     "positions",
     "quote",
     "renew_access_token",
-    "set_access_token",
     "trades",
 }
 
@@ -73,7 +71,7 @@ def test_kite_sdk_imports_are_adapter_local_and_client_import_is_isolated() -> N
     assert client_importers == [_KITE_CLIENT_MODULE]
 
 
-def test_kite_adapter_invokes_profile_only() -> None:
+def test_kite_adapter_sdk_calls_remain_within_authorized_provider_scope() -> None:
     invoked: list[str] = []
     for source in sorted(_KITE_ADAPTER_ROOT.rglob("*.py")):
         tree = ast.parse(source.read_text())
@@ -83,7 +81,11 @@ def test_kite_adapter_invokes_profile_only() -> None:
             if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
         )
 
-    assert invoked.count("profile") == 1
+    assert invoked.count("profile") == 2
+    assert invoked.count("login_url") == 2
+    assert invoked.count("generate_session") == 1
+    assert invoked.count("set_session_expiry_hook") == 2
+    assert invoked.count("invalidate_access_token") == 1
     assert _FORBIDDEN_KITE_CALLS.isdisjoint(invoked)
 
 
@@ -115,12 +117,13 @@ def test_provider_does_not_read_environment_or_import_business_domains() -> None
             assert forbidden_imports.isdisjoint(names)
 
 
-def test_provider_availability_has_exactly_five_internal_states() -> None:
+def test_provider_availability_has_only_authorized_internal_states() -> None:
     assert set(ProviderAvailabilityState) == {
         ProviderAvailabilityState.NOT_INITIALIZED,
         ProviderAvailabilityState.AVAILABLE,
         ProviderAvailabilityState.CONFIGURATION_INVALID,
         ProviderAvailabilityState.AUTHENTICATION_REJECTED,
+        ProviderAvailabilityState.CONTEXT_INVALID,
         ProviderAvailabilityState.TEMPORARILY_UNAVAILABLE,
     }
 

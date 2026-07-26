@@ -2,13 +2,13 @@
 
 from typing import Optional, Protocol
 
-from kronos.provider.models.context import AuthenticatedProviderContext
+from kronos.provider.models.context import AuthenticatedProviderContext, AuthenticationOutcome
 
 
 class ProviderContext(Protocol):
     """Contract for ownership of an Authenticated Provider Context."""
 
-    def establish(self) -> AuthenticatedProviderContext:
+    def establish(self, outcome: AuthenticationOutcome) -> AuthenticatedProviderContext:
         """Establish exactly one bounded provider context."""
 
     def current(self) -> Optional[AuthenticatedProviderContext]:

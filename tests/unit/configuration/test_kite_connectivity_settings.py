@@ -51,6 +51,74 @@ def test_ep004_does_not_require_api_secret_or_redirect_url() -> None:
     settings.validate_kite_connectivity()
 
 
+def test_edd001_authentication_requires_configuration_owned_material() -> None:
+    settings = Settings(
+        provider="KITE",
+        kite_api_key="unit-api-key",
+        kite_api_secret="unit-api-secret",
+        kite_access_token="",
+        kite_redirect_url="https://local.test/kite/callback",
+    )
+
+    settings.validate_kite_authentication()
+
+
+@pytest.mark.parametrize(
+    ("provider", "api_key", "api_secret", "redirect_url", "expected_name"),
+    [
+        (
+            "OTHER",
+            "unit-api-key",
+            "unit-api-secret",
+            "https://local.test/kite/callback",
+            "KRONOS_PROVIDER",
+        ),
+        (
+            "KITE",
+            "",
+            "unit-api-secret",
+            "https://local.test/kite/callback",
+            "KRONOS_KITE_API_KEY",
+        ),
+        (
+            "KITE",
+            "unit-api-key",
+            "",
+            "https://local.test/kite/callback",
+            "KRONOS_KITE_API_SECRET",
+        ),
+        (
+            "KITE",
+            "unit-api-key",
+            "unit-api-secret",
+            "",
+            "KRONOS_KITE_REDIRECT_URL",
+        ),
+    ],
+)
+def test_kite_authentication_validation_is_stable_and_redacted(
+    provider: str,
+    api_key: str,
+    api_secret: str,
+    redirect_url: str,
+    expected_name: str,
+) -> None:
+    settings = Settings(
+        provider=provider,
+        kite_api_key=api_key,
+        kite_api_secret=api_secret,
+        kite_access_token="",
+        kite_redirect_url=redirect_url,
+    )
+
+    with pytest.raises(ConfigurationError) as captured:
+        settings.validate_kite_authentication()
+
+    assert expected_name in str(captured.value)
+    assert "unit-api-key" not in str(captured.value)
+    assert "unit-api-secret" not in str(captured.value)
+
+
 @pytest.mark.parametrize(
     ("provider", "api_key", "access_token", "expected_name"),
     [

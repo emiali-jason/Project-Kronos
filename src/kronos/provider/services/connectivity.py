@@ -15,25 +15,35 @@ from kronos.provider.models.availability import (
     ProviderAvailability,
     ProviderAvailabilityState,
 )
+from kronos.provider.models.context import ContextLifecycleReason
 
 
 _LOGGER = logging.getLogger(__name__)
 _AdapterFactory = Callable[[str, str], KiteConnectivityAdapter]
+_ContextInvalidator = Callable[[ContextLifecycleReason], object]
 
 
 class KiteConnectivityService:
     """Orchestrate one explicit Provider-internal connectivity probe."""
 
-    __slots__ = ("__adapter", "__adapter_factory", "__settings", "__state")
+    __slots__ = (
+        "__adapter",
+        "__adapter_factory",
+        "__context_invalidator",
+        "__settings",
+        "__state",
+    )
 
     def __init__(
         self,
         settings: Settings,
         adapter_factory: _AdapterFactory = create_kite_connectivity_adapter,
+        context_invalidator: _ContextInvalidator | None = None,
     ) -> None:
         self.__settings = settings
         self.__adapter_factory = adapter_factory
         self.__adapter: KiteConnectivityAdapter | None = None
+        self.__context_invalidator = context_invalidator
         self.__state = ProviderAvailabilityState.NOT_INITIALIZED
 
     @property
@@ -125,11 +135,14 @@ class KiteConnectivityService:
     def __failure(self, code: ProviderErrorCode) -> ProviderAvailability:
         if code is ProviderErrorCode.CONFIGURATION_INVALID:
             state = ProviderAvailabilityState.CONFIGURATION_INVALID
-        elif code in {
-            ProviderErrorCode.AUTHENTICATION_REJECTED,
-            ProviderErrorCode.ACCESS_TOKEN_INVALID_OR_EXPIRED,
-        }:
+        elif code is ProviderErrorCode.AUTHENTICATION_REJECTED:
             state = ProviderAvailabilityState.AUTHENTICATION_REJECTED
+        elif code is ProviderErrorCode.ACCESS_TOKEN_INVALID_OR_EXPIRED:
+            state = ProviderAvailabilityState.CONTEXT_INVALID
+            if self.__context_invalidator is not None:
+                self.__context_invalidator(
+                    ContextLifecycleReason.INVALID_PROVIDER_TOKEN
+                )
         else:
             state = ProviderAvailabilityState.TEMPORARILY_UNAVAILABLE
 

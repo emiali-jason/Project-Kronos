@@ -4,6 +4,7 @@ from typing import Optional
 
 from kronos.provider.models.context import (
     AuthenticatedProviderContext,
+    AuthenticationOutcome,
     ContextReuseEligibility,
     ContextValidity,
 )
@@ -15,10 +16,16 @@ class KiteProviderContext:
     def __init__(self) -> None:
         self._current: Optional[AuthenticatedProviderContext] = None
 
-    def establish(self) -> AuthenticatedProviderContext:
+    def establish(self, outcome: AuthenticationOutcome) -> AuthenticatedProviderContext:
+        if not outcome.succeeded:
+            raise ValueError("only Authentication Success may establish context")
         context = AuthenticatedProviderContext(
             validity=ContextValidity.VALID,
             reuse_eligibility=ContextReuseEligibility.ELIGIBLE,
+            provider=outcome.provenance.provider,
+            context_id=outcome.provenance.activity_id,
+            provenance=outcome.provenance,
+            valid_until=outcome.valid_until,
         )
         self._current = context
         return context
@@ -32,6 +39,10 @@ class KiteProviderContext:
         self._current = AuthenticatedProviderContext(
             validity=ContextValidity.INVALID,
             reuse_eligibility=ContextReuseEligibility.INELIGIBLE,
+            provider=self._current.provider,
+            context_id=self._current.context_id,
+            provenance=self._current.provenance,
+            valid_until=self._current.valid_until,
         )
 
     def terminate(self) -> None:
@@ -40,6 +51,10 @@ class KiteProviderContext:
         self._current = AuthenticatedProviderContext(
             validity=ContextValidity.TERMINATED,
             reuse_eligibility=ContextReuseEligibility.INELIGIBLE,
+            provider=self._current.provider,
+            context_id=self._current.context_id,
+            provenance=self._current.provenance,
+            valid_until=self._current.valid_until,
         )
 
     def reuse_eligible(self) -> bool:

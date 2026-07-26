@@ -2,7 +2,7 @@
 
 from typing import Optional
 
-from kronos.provider.contracts import InstrumentProvider
+from kronos.provider.contracts.instrument import InstrumentProvider
 
 
 class KiteInstrumentProvider(InstrumentProvider):

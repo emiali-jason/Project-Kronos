@@ -12,6 +12,7 @@ from requests.exceptions import (
 
 from kronos.provider.adapters.kite.client import (
     _KiteClientHandle,
+    _KiteSessionInvalidated,
     _UnexpectedProfileResponse,
     _create_kite_client,
 )
@@ -65,7 +66,7 @@ def create_kite_connectivity_adapter(
 
 
 def _map_probe_error_code(error: Exception) -> ProviderErrorCode:
-    if isinstance(error, _TokenException):
+    if isinstance(error, (_KiteSessionInvalidated, _TokenException)):
         code = ProviderErrorCode.ACCESS_TOKEN_INVALID_OR_EXPIRED
     elif isinstance(error, _PermissionException):
         code = ProviderErrorCode.AUTHENTICATION_REJECTED

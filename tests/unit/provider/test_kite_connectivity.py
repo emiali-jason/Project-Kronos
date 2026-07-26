@@ -15,6 +15,7 @@ from kronos.provider.exceptions.connectivity import (
     ProviderErrorCode,
 )
 from kronos.provider.models.availability import ProviderAvailabilityState
+from kronos.provider.models.context import ContextLifecycleReason
 from kronos.provider.services.connectivity import KiteConnectivityService
 
 
@@ -34,7 +35,11 @@ class _FakeKiteClient:
         self.arguments = arguments
         self.reqsession = _FakeSession()
         self.profile_count = 0
+        self.session_expiry_hook: object = None
         type(self).instances.append(self)
+
+    def set_session_expiry_hook(self, hook: object) -> None:
+        self.session_expiry_hook = hook
 
     def profile(self) -> object:
         self.profile_count += 1
@@ -42,6 +47,10 @@ class _FakeKiteClient:
         if isinstance(effect, BaseException):
             raise effect
         return effect
+
+    def expire_session(self) -> None:
+        assert callable(self.session_expiry_hook)
+        self.session_expiry_hook()
 
 
 class _FakeAdapter:
@@ -279,6 +288,22 @@ def test_unexpected_profile_shape_is_rejected_and_discarded(
     assert captured.value.code is ProviderErrorCode.UNEXPECTED_RESPONSE
 
 
+def test_session_expiry_hook_maps_to_invalid_context(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_fake_sdk_client(monkeypatch)
+    adapter = create_kite_connectivity_adapter(
+        "unit-api-key",
+        "unit-access-token",
+    )
+    _FakeKiteClient.instances[0].expire_session()
+
+    with pytest.raises(ProviderConnectivityError) as captured:
+        adapter.probe()
+
+    assert captured.value.code is ProviderErrorCode.ACCESS_TOKEN_INVALID_OR_EXPIRED
+
+
 def test_service_performs_one_attempt_and_discards_profile(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
@@ -328,7 +353,7 @@ def test_service_rejects_invalid_configuration_without_factory_call() -> None:
         ),
         (
             ProviderErrorCode.ACCESS_TOKEN_INVALID_OR_EXPIRED,
-            ProviderAvailabilityState.AUTHENTICATION_REJECTED,
+            ProviderAvailabilityState.CONTEXT_INVALID,
         ),
         (
             ProviderErrorCode.NETWORK_TIMEOUT,
@@ -344,7 +369,7 @@ def test_service_rejects_invalid_configuration_without_factory_call() -> None:
         ),
     ],
 )
-def test_service_maps_errors_to_five_state_model(
+def test_service_maps_errors_to_distinct_provider_states(
     error_code: ProviderErrorCode,
     expected_state: ProviderAvailabilityState,
 ) -> None:
@@ -359,6 +384,25 @@ def test_service_maps_errors_to_five_state_model(
     assert result.state is expected_state
     assert result.error_code is error_code
     assert fake_adapter.probe_count == 1
+
+
+def test_invalid_token_evidence_invokes_context_invalidation() -> None:
+    reasons: list[ContextLifecycleReason] = []
+    fake_adapter = _FakeAdapter(
+        ProviderConnectivityError(
+            ProviderErrorCode.ACCESS_TOKEN_INVALID_OR_EXPIRED
+        )
+    )
+    service = KiteConnectivityService(
+        _settings(),
+        adapter_factory=lambda _api_key, _access_token: fake_adapter,
+        context_invalidator=reasons.append,
+    )
+
+    result = service.probe()
+
+    assert result.state is ProviderAvailabilityState.CONTEXT_INVALID
+    assert reasons == [ContextLifecycleReason.INVALID_PROVIDER_TOKEN]
 
 
 def test_service_shutdown_is_idempotent() -> None:

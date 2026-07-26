@@ -26,3 +26,15 @@ class Settings:
             raise ConfigurationError("KRONOS_KITE_API_KEY must not be empty")
         if not self.kite_access_token:
             raise ConfigurationError("KRONOS_KITE_ACCESS_TOKEN must not be empty")
+
+    def validate_kite_authentication(self) -> None:
+        """Validate Configuration-owned inputs required for Kite login."""
+
+        if self.provider.upper() != "KITE":
+            raise ConfigurationError("KRONOS_PROVIDER must be KITE for EDD-001")
+        if not self.kite_api_key:
+            raise ConfigurationError("KRONOS_KITE_API_KEY must not be empty")
+        if not self.kite_api_secret:
+            raise ConfigurationError("KRONOS_KITE_API_SECRET must not be empty")
+        if not self.kite_redirect_url:
+            raise ConfigurationError("KRONOS_KITE_REDIRECT_URL must not be empty")
