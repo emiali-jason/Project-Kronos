@@ -1320,9 +1320,13 @@ The MIG-001 planning label `PIC-001` requires later governance-only traceability
 
 # 26. Governance Statement
 
-This Version 0.1 document is a controlled Interface Contract Draft.
+This Version 0.1 document is an approved canonical Interface Contract.
 
-It is inactive and not canonical.
+Architectural contract publication is complete.
+
+Its Activation State remains inactive pending coordinated migration and separate Chief Architect activation authority.
+
+Canonical publication does not constitute runtime activation.
 
 It establishes no migration execution, implementation, runtime, endpoint, acquisition, persistence, submission, interpretation, product-consumption, EDD-004, commit, or push authority.
 

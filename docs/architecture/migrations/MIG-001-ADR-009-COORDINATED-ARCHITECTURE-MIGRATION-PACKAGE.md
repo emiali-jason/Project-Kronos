@@ -59,9 +59,15 @@ MIG-001 shall not reinterpret ADR-009, create replacement architecture, or resol
 
 ## 1.4 Status
 
-This Version 0.1 document is a controlled Draft.
+This Version 0.1 document is an approved canonical Migration Package.
 
 Its Activation State is Planning Only.
+
+Canonical publication establishes governance authority for migration planning only.
+
+Migration Execution Authorization remains None.
+
+EDD-004 Drafting Authorization remains None.
 
 It grants no:
 
@@ -339,7 +345,7 @@ The graph represents required sequencing only.
 
 It grants no execution, publication, activation, or EDD authority.
 
-PIC-001 is governed by MIG-001 and remains uncreated and unauthorized under this Draft.
+PIC-001 is governed by MIG-001 and remains uncreated and unauthorized under this migration package.
 
 # 8. Migration Workstreams
 
@@ -544,7 +550,7 @@ Completion states are:
 - `Published`; and
 - `Verified No Change`.
 
-All entries are `Not Started` under this Draft.
+All entries are `Not Started` under this migration package.
 
 | ID / Authority | Document | Classification | Owner | Rationale | Dependency | Priority | Verification requirement | Completion state |
 |---|---|---|---|---|---|---|---|---|
