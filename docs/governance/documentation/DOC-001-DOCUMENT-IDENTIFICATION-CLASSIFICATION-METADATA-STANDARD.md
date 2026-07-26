@@ -50,6 +50,7 @@ This standard applies to every controlled document maintained within the Project
 - architecture models;
 - validation documents;
 - research documents;
+- migration packages;
 - review packages;
 - repository indexes.
 
@@ -97,10 +98,60 @@ Current approved families include:
 | EAP | Engineering Architecture Package |
 | EDD | Engineering Design Document |
 | EP | Engineering Package |
+| MIG | Migration Package |
 | VAL | Validation *(reserved)* |
 | RES | Research *(reserved)* |
 
 Additional document families require Chief Architect approval.
+
+## 5.1 Migration Packages
+
+Migration Packages govern coordinated migration of approved repository architecture while preserving repository consistency.
+
+They coordinate:
+
+- migration planning;
+- migration sequencing;
+- migration validation;
+- migration publication; and
+- migration rollback planning.
+
+Migration Packages are governance artefacts.
+
+They are not architecture documents.
+
+They are not Engineering Design Documents.
+
+They do not authorize implementation.
+
+Migration Packages:
+
+- are initiated following approved architectural change;
+- coordinate migration of canonical architecture;
+- may reference ADRs, Domains, ADPs, EAPs, and EDDs;
+- do not replace architectural authority; and
+- do not supersede ADRs.
+
+Migration Packages may govern migration planning, migration sequencing, migration validation, migration publication, and migration rollback planning.
+
+Migration Packages do not authorize:
+
+- implementation;
+- runtime behaviour;
+- endpoint invocation;
+- persistence implementation;
+- engineering work; or
+- EDD execution.
+
+The Chief Architect owns Migration Packages.
+
+Migration Packages follow the existing repository lifecycle model:
+
+- Draft;
+- Approved; and
+- Canonical.
+
+They introduce no unique lifecycle.
 
 ADLs are retained for historical and architectural traceability. ADLs are not automatically equivalent to ADRs. Future architectural decisions shall use the approved ADR family unless explicitly authorized otherwise. Migration of an ADL into an ADR requires a separate controlled decision. Existing ADL identifiers shall not change.
 
@@ -116,6 +167,12 @@ Each Document ID shall:
 - never be reassigned to a different document.
 
 Reserved identifiers shall remain reserved until released through governance.
+
+Migration Package identifiers shall use the governed family prefix followed by a three-digit sequence:
+
+- `MIG-001`;
+- `MIG-002`; and
+- subsequent identifiers in the same format.
 
 ---
 
@@ -158,6 +215,7 @@ Approved classifications include:
 - Engineering Architecture Package
 - Engineering Design Document
 - Engineering Package
+- Migration Package
 - Validation Standard
 - Validation Report
 - Research Standard
