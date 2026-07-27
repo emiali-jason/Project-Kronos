@@ -2,7 +2,7 @@
 
 **Document ID:** EDD-004
 **Title:** Provider Instrument Master Acquisition Engineering Design
-**Version:** 0.3
+**Version:** 0.4
 **Status:** Draft
 **Canonical Status:** Draft
 **Classification:** Engineering Design Document
@@ -11,7 +11,7 @@
 **Review Authority:** Chief Architect
 **Repository Location:** `docs/engineering/edd/EDD-004-PROVIDER-INSTRUMENT-MASTER-ACQUISITION-ENGINEERING-DESIGN.md`
 **Workflow Stage:** Draft Preparation
-**Engineering Stage:** Engineering Building Block Architecture
+**Engineering Stage:** Engineering Interface Architecture
 **Engineering Authority:** Draft Preparation
 **Draft Authorization:** Approved with Constraints — RC-04
 **Governing Architecture:** ADR-009 Version 1.0
@@ -1384,5 +1384,386 @@ Engineering Review shall confirm:
 29. The architecture remains Provider-neutral, product-neutral, Instrument-Master-specific, Kite-first-adapter compatible, future-Provider compatible, retention-aware, and provenance-preserving.
 
 Traceability and dependency validation passed: all 43 responsibilities and 30 internal capability statements map exactly once, C1–C11 are fully covered, and the 14-block dependency model is acyclic.
+
+# ES-04 — Engineering Interface Architecture
+
+## 1. Executive Summary
+
+EDD-004 defines exactly 14 conceptual engineering interfaces:
+
+- eight primary building-block interfaces;
+- five cross-cutting interfaces; and
+- one terminal external engineering boundary with EAIC-002.
+
+Together, these interfaces exchange Provider-owned engineering meaning across all 14 approved building blocks without transferring ownership, authority, canonical status, or Instrument-domain meaning.
+
+The interface architecture:
+
+- covers BB-01–BB-10 and XBB-01–XBB-04;
+- preserves the acyclic ES-03 dependency model;
+- keeps Approved, Requested, and Received scope distinct;
+- keeps technical result and Acquisition Outcome distinct;
+- preserves evidence, provenance, security constraints, and non-destructive continuity;
+- ends with Provider-side submission eligibility; and
+- stops before EAIC-002 presentation, delivery, technical receipt, contract validation, or interpretation admission.
+
+No API, message, payload, schema, protocol, transport, persistence, runtime, scheduling, retry, deployment, GUI, or implementation design is introduced.
+
+## Engineering Interface Principle
+
+Every engineering interface in EDD-004 transfers established engineering meaning only.
+
+Interfaces do not transfer ownership, authority, execution responsibility, implementation behaviour, runtime behaviour, or technology choices.
+
+Interfaces preserve semantic boundaries rather than operational behaviour.
+
+This principle is normative for every interface in EDD-004.
+
+## 2. Engineering Interface Model
+
+### EI-001 — Qualified Acquisition Boundary
+
+- **Interface Classification:** Primary.
+- **Source Building Block:** BB-01 Acquisition Boundary Qualification.
+- **Target Building Block:** BB-02 Acquisition Scope Definition and Reconciliation.
+- **Engineering Purpose:** Provide the qualified boundary within which acquisition scope may be defined.
+- **Information Meaning:** The Provider, dataset, operation, context, environment, and qualification disposition applicable to the acquisition boundary.
+- **Preconditions:** The boundary has been identified and its eligibility, ineligibility, or unmet prerequisites have been established.
+- **Postconditions:** BB-02 can define and reconcile scope only within that qualified boundary.
+- **Constraints:** The interface does not authorize acquisition, endpoint use, execution, scheduling, or runtime activity.
+
+### EI-002 — Bounded Result Context
+
+- **Interface Classification:** Primary.
+- **Source Building Blocks:** BB-01 Acquisition Boundary Qualification and BB-02 Acquisition Scope Definition and Reconciliation.
+- **Target Building Block:** BB-03 Acquisition Result and Outcome Characterization.
+- **Engineering Purpose:** Establish the context in which technical result and Acquisition Outcome may be characterized.
+- **Information Meaning:** Qualified acquisition identity together with the separately maintained Approved, Requested, and Received scopes.
+- **Preconditions:** Boundary qualification and scope meanings are independently established.
+- **Postconditions:** BB-03 can characterize the technical result and Acquisition Outcome without redefining scope.
+- **Constraints:** The interface does not infer completeness, usability, canonical status, or Instrument meaning.
+
+### EI-003 — Received Scope for Normalization
+
+- **Interface Classification:** Primary.
+- **Source Building Block:** BB-02 Acquisition Scope Definition and Reconciliation.
+- **Target Building Block:** BB-04 Provider Record Normalization.
+- **Engineering Purpose:** Bound normalization to evidence actually returned within the Received scope.
+- **Information Meaning:** The Received scope and its relationship to the Approved and Requested scopes.
+- **Preconditions:** All three scope meanings exist and remain distinct.
+- **Postconditions:** Provider record normalization is bounded to the returned Provider evidence.
+- **Constraints:** The interface does not authorize product filtering, invent missing records, redefine outcome, or assign canonical meaning.
+
+### EI-004 — Normalized Provider Evidence
+
+- **Interface Classification:** Primary.
+- **Source Building Block:** BB-04 Provider Record Normalization.
+- **Target Building Block:** BB-05 Complete Returned-Record Preservation.
+- **Engineering Purpose:** Make safely normalized Provider evidence available for complete returned-record preservation.
+- **Information Meaning:** Provider-owned record evidence whose representation has been normalized without altering its Provider meaning.
+- **Preconditions:** Normalization has preserved source meaning and complied with protected-information constraints.
+- **Postconditions:** BB-05 can preserve the complete safely preservable returned record set.
+- **Constraints:** Normalization does not establish dataset completeness, persistence, correctness, or Instrument validity.
+
+### EI-005 — Snapshot Establishment Evidence
+
+- **Interface Classification:** Primary.
+- **Source Building Blocks:** BB-02 Acquisition Scope Definition and Reconciliation, BB-03 Acquisition Result and Outcome Characterization, and BB-05 Complete Returned-Record Preservation.
+- **Target Building Block:** BB-06 Provider Snapshot, Catalogue Partition, and Record Identity.
+- **Engineering Purpose:** Supply the scope, result, outcome, and preserved evidence needed to establish a Provider snapshot.
+- **Information Meaning:** The acquisition scopes, characterized outcome, and complete safely preservable returned Provider record set.
+- **Preconditions:** The contributing meanings are independently established and remain attributable.
+- **Postconditions:** BB-06 can establish snapshot boundary, Provider partition, membership, and snapshot-bounded record identity.
+- **Constraints:** The interface does not establish persistence design, canonical identity, cross-Provider identity, or Instrument identity.
+
+### EI-006 — Snapshot-Bounded Evidence Quality
+
+- **Interface Classification:** Primary.
+- **Source Building Block:** BB-06 Provider Snapshot, Catalogue Partition, and Record Identity.
+- **Target Building Block:** BB-08 Provider Evidence Quality and Anomaly Preservation.
+- **Engineering Purpose:** Bound evidence-quality assessment to a specific immutable Provider snapshot and its record identities.
+- **Information Meaning:** Snapshot membership, Provider partition, snapshot-bounded identities, and attributable Provider evidence.
+- **Preconditions:** The snapshot boundary, membership, and partition isolation are established.
+- **Postconditions:** Evidence-quality conditions and anomalies can be preserved against the proper snapshot evidence.
+- **Constraints:** The interface does not determine final disposition or assert Instrument invalidity.
+
+### EI-007 — Disposition Determination
+
+- **Interface Classification:** Primary.
+- **Source Building Blocks:** BB-06 Provider Snapshot, Catalogue Partition, and Record Identity and BB-08 Provider Evidence Quality and Anomaly Preservation.
+- **Target Building Block:** BB-07 Provider Record Disposition Determination.
+- **Engineering Purpose:** Provide the identity and adverse-evidence context required for Provider record disposition.
+- **Information Meaning:** Snapshot-bounded record identity together with applicable evidence-quality conditions and anomaly relationships.
+- **Preconditions:** Record identity and relevant evidence conditions are established without silent repair or loss.
+- **Postconditions:** BB-07 can assign the required Provider-side disposition while preserving precedence and cardinality.
+- **Constraints:** The interface does not decide semantic correctness, canonical identity, Instrument lifecycle, or product eligibility.
+
+### EI-008 — Comparable Snapshot Continuity
+
+- **Interface Classification:** Primary.
+- **Source Building Blocks:** BB-03 Acquisition Result and Outcome Characterization and BB-06 Provider Snapshot, Catalogue Partition, and Record Identity.
+- **Target Building Block:** BB-09 Catalogue Continuity and Non-Destructive Supersession.
+- **Engineering Purpose:** Supply comparable snapshot and outcome meaning for Provider catalogue continuity.
+- **Information Meaning:** Acquisition Outcome together with immutable, Provider-partitioned snapshots and their snapshot-bounded identities.
+- **Preconditions:** Comparability is established without treating a failed or partial acquisition as a complete replacement.
+- **Postconditions:** BB-09 can characterize Provider-side currentness, difference, continuity, and supersession evidence.
+- **Constraints:** The interface does not destructively mutate earlier evidence or create Instrument lifecycle meaning.
+
+### EI-009 — Protected Information Constraint
+
+- **Interface Classification:** Cross-cutting.
+- **Source Building Block:** XBB-01 Protected Information Containment.
+- **Target Building Blocks:** Applicable information-handling blocks BB-04–BB-10, XBB-03 Provider and Acquisition Provenance, and XBB-04 Non-Sensitive Engineering Observability.
+- **Engineering Purpose:** Apply protected-information containment to Provider evidence and derived engineering meaning.
+- **Information Meaning:** The classification and exclusion constraints governing sensitive, secret, SDK-private, transport-private, or otherwise protected information.
+- **Preconditions:** Applicable information classifications and exclusions are authoritative.
+- **Postconditions:** Target-block meaning remains safely representable without exposing protected information.
+- **Constraints:** The interface transfers constraints, not protected material, security mechanisms, or security authority.
+
+### EI-010 — Retention, Licensing, and Authority Constraint
+
+- **Interface Classification:** Cross-cutting.
+- **Source Building Block:** XBB-02 Retention, Licensing, Security-Classification, and Authority Separation.
+- **Target Building Blocks:** Applicable preservation and evidence blocks BB-04–BB-10, XBB-03 Provider and Acquisition Provenance, and XBB-04 Non-Sensitive Engineering Observability.
+- **Engineering Purpose:** Preserve external obligations and authority separation throughout evidence handling.
+- **Information Meaning:** Applicable retention, licensing, security-classification, deletion, and authority limitations.
+- **Preconditions:** The governing constraints originate from an authorized source.
+- **Postconditions:** Target-block outputs retain the applicable obligations and do not imply ungranted authority.
+- **Constraints:** The interface does not design or authorize storage, deletion, persistence, retention execution, or security enforcement.
+
+### EI-011 — Provenance Source
+
+- **Interface Classification:** Cross-cutting.
+- **Source Building Blocks:** BB-01–BB-09.
+- **Target Building Block:** XBB-03 Provider and Acquisition Provenance.
+- **Engineering Purpose:** Preserve non-sensitive attribution for established Provider and acquisition meaning.
+- **Information Meaning:** Attributable facts concerning Provider source, acquisition context, scopes, outcomes, evidence, identity, disposition, and continuity.
+- **Preconditions:** Source meaning has been established by its owning block and is safe for provenance use.
+- **Postconditions:** XBB-03 can preserve attributable, non-sensitive provenance without changing the source meaning.
+- **Constraints:** Provenance cannot create facts, transfer ownership, grant authority, or confer canonical status.
+
+### EI-012 — Submission Eligibility Evidence
+
+- **Interface Classification:** Cross-cutting.
+- **Source Building Blocks:** BB-02 Acquisition Scope Definition and Reconciliation, BB-06 Provider Snapshot, Catalogue Partition, and Record Identity, BB-07 Provider Record Disposition Determination, BB-09 Catalogue Continuity and Non-Destructive Supersession, XBB-01 Protected Information Containment, XBB-02 Retention, Licensing, Security-Classification, and Authority Separation, and XBB-03 Provider and Acquisition Provenance.
+- **Target Building Block:** BB-10 Submission Eligibility and EAIC-002 Boundary Preparation.
+- **Engineering Purpose:** Assemble the independently established Provider-side meanings required to determine submission eligibility.
+- **Information Meaning:** Scope reconciliation, fixed snapshot membership and identity, dispositions, continuity, protected-information compliance, authority constraints, and provenance sufficiency.
+- **Preconditions:** Every mandatory Provider-side condition is established or explicitly determined absent.
+- **Postconditions:** BB-10 can determine a deterministic `SUBMISSION_ELIGIBLE` or ineligible Provider-side meaning.
+- **Constraints:** Eligibility is not Submission Authority and does not authorize presentation, delivery, receipt, validation, or Instrument interpretation.
+
+### EI-013 — Non-Sensitive Observability
+
+- **Interface Classification:** Cross-cutting.
+- **Source Building Blocks:** BB-01–BB-10 and XBB-01–XBB-03.
+- **Target Building Block:** XBB-04 Non-Sensitive Engineering Observability.
+- **Engineering Purpose:** Make established, non-sensitive engineering meaning available for explainability and review.
+- **Information Meaning:** Non-sensitive status, conformance, constraint, and provenance meaning already established elsewhere.
+- **Preconditions:** The producing block has established the meaning and XBB-01 permits its observability.
+- **Postconditions:** XBB-04 can expose conceptual engineering observability without affecting the observed meaning.
+- **Constraints:** Observability is read-only in meaning and creates no semantic feedback, control, authority, or lifecycle transition.
+
+### EI-014 — Terminal Provider Submission Meaning
+
+- **Interface Classification:** EAIC-002 terminal boundary.
+- **Source Building Block:** BB-10 Submission Eligibility and EAIC-002 Boundary Preparation.
+- **Target:** EAIC-002 architectural boundary.
+- **Engineering Purpose:** Establish the terminal Provider-side meaning that may later be presented under separate authority.
+- **Information Meaning:** One deterministic, fixed-membership, Provider-owned Submission Unit determined to be submission-eligible.
+- **Preconditions:** Provider-side eligibility, safe information handling, provenance, identity, membership, disposition, continuity, and applicable constraints are established.
+- **Postconditions:** The Provider-side meaning is ready for separately authorized presentation; no presentation has occurred.
+- **Constraints:** The interface ends before EAIC-002 presentation or delivery. It defines no envelope, message, payload, API, transport, technical receipt, contract validation, admission, or logical response.
+
+## 3. Interface Taxonomy
+
+| Interface | Primary Classification | Repository Justification |
+|---|---|---|
+| EI-001 | Qualification | Establishes the qualified acquisition boundary. |
+| EI-002 | Context | Supplies the bounded context for result and outcome characterization. |
+| EI-003 | Scope | Transfers Received-scope meaning while preserving all three scope states. |
+| EI-004 | Evidence | Transfers normalized Provider-owned evidence. |
+| EI-005 | Snapshot | Supplies the meanings required to establish an immutable snapshot. |
+| EI-006 | Evidence | Binds evidence-quality meaning to snapshot evidence. |
+| EI-007 | Disposition | Supports Provider record disposition determination. |
+| EI-008 | Snapshot | Supports comparison, continuity, and non-destructive supersession between snapshots. |
+| EI-009 | Constraint | Applies protected-information restrictions. |
+| EI-010 | Constraint | Applies retention, licensing, classification, and authority restrictions. |
+| EI-011 | Provenance | Preserves source and acquisition attribution. |
+| EI-012 | Eligibility | Supports deterministic Provider-side submission eligibility. |
+| EI-013 | Evidence | Exposes non-sensitive evidence of established engineering state. |
+| EI-014 | Eligibility | Carries terminal eligible Provider meaning to the edge of EAIC-002. |
+
+The classifications describe engineering meaning only. They do not imply different technical interface forms.
+
+## 4. Interface Contracts
+
+| Interface | Meaning Transferred | Meaning Never Transferred | Preservation Contract |
+|---|---|---|---|
+| EI-001 | Qualified acquisition boundary. | Execution or endpoint authority. | Provider ownership and acquisition-authority separation remain intact. |
+| EI-002 | Bound identity and scope context. | Completeness, usability, or canonicality. | Scope and outcome lifecycles remain separate. |
+| EI-003 | Received-scope meaning. | Product selection or invented records. | Approved, Requested, and Received scopes remain distinct. |
+| EI-004 | Normalized Provider evidence. | Dataset completeness or Instrument semantics. | Records remain Provider-owned and non-canonical. |
+| EI-005 | Evidence needed for snapshot establishment. | Persistence or canonical identity. | Snapshot membership becomes fixed without changing evidence ownership. |
+| EI-006 | Snapshot-bounded evidence context. | Final disposition or Instrument invalidity. | Evidence remains attributable to its original snapshot. |
+| EI-007 | Identity and adverse-evidence meaning. | Instrument lifecycle or semantic truth. | Provider-side disposition precedence and cardinality are preserved. |
+| EI-008 | Comparable snapshot and outcome meaning. | Destructive replacement or Instrument lifecycle. | Earlier snapshots and their evidence remain intact. |
+| EI-009 | Information-handling restrictions. | Protected information itself. | Security authority and information ownership remain external to the interface. |
+| EI-010 | Retention, licensing, and authority restrictions. | Storage, deletion, or execution authority. | Obligations persist without initiating lifecycle action. |
+| EI-011 | Non-sensitive attributable facts. | New facts, ownership, authority, or canonicality. | Provenance remains traceable to the originating block. |
+| EI-012 | Evidence supporting eligibility. | Submission Authority or Instrument admission. | Provider lifecycle ends at eligible or ineligible determination. |
+| EI-013 | Non-sensitive established engineering state. | Control, mutation, or decision authority. | Observation cannot change the observed lifecycle. |
+| EI-014 | Terminal eligible Provider meaning. | Delivery, receipt, validation, admission, or interpretation. | Provider ownership remains unchanged and the EAIC-002 lifecycle has not begun. |
+
+## 5. Interface Boundaries
+
+| Interface | Begins | Ends | Outside the Interface |
+|---|---|---|---|
+| EI-001 | After BB-01 establishes qualification meaning. | When BB-02 receives that meaning as a scope constraint. | Qualification mechanics and acquisition execution. |
+| EI-002 | At established boundary and scope context. | At BB-03's responsibility boundary. | Result-detection mechanics and later evidence handling. |
+| EI-003 | At established Received scope. | At BB-04's normalization boundary. | Scope discovery and normalization mechanics. |
+| EI-004 | At safely normalized Provider evidence. | At BB-05's preservation responsibility. | Persistence and completeness inference. |
+| EI-005 | At established scopes, outcome, and preserved record set. | At BB-06's snapshot-establishment boundary. | Snapshot-storage technology and canonical identity. |
+| EI-006 | At established snapshot membership and identity. | At BB-08's evidence-quality boundary. | Anomaly-detection mechanics and disposition. |
+| EI-007 | At established identities and evidence conditions. | At BB-07's disposition responsibility. | Instrument validation and lifecycle decisions. |
+| EI-008 | At comparable snapshots and outcomes. | At BB-09's continuity responsibility. | Destructive replacement and Instrument lifecycle. |
+| EI-009 | At authoritative protection constraints. | At each target block's safe-handling boundary. | Secret material and security implementation. |
+| EI-010 | At authoritative obligation and authority constraints. | At each target block's compliance boundary. | Persistence, deletion, enforcement, and operational authorization. |
+| EI-011 | At source-block-established facts. | At XBB-03's attribution responsibility. | Fact creation and semantic reinterpretation. |
+| EI-012 | At independently established eligibility evidence. | At BB-10's eligibility responsibility. | Presentation, transport, receipt, and Instrument interpretation. |
+| EI-013 | At established safe engineering meaning. | At XBB-04's explainability boundary. | Feedback, control, mutation, and operational monitoring design. |
+| EI-014 | At BB-10's deterministic eligible Provider meaning. | At the Provider side of the EAIC-002 boundary. | EAIC-002 presentation, delivery, receipt, validation, admission, and response. |
+
+## 6. Cross-Cutting Interface Rules
+
+Every interface shall obey these rules:
+
+1. **Provider ownership:** Provider records, snapshots, dispositions, continuity evidence, provenance, and submission meaning remain Provider-owned.
+2. **Source-authority ownership:** Architectural, governance, security, licensing, and retention inputs remain owned by their originating authorities.
+3. **No authority transfer:** An interface can carry constraints or eligibility meaning but cannot grant acquisition, implementation, endpoint, persistence, deletion, submission, runtime, or interpretation authority.
+4. **Product neutrality:** No interface may introduce product filtering, product eligibility, product consumption, or product-specific semantics.
+5. **Provider neutrality:** Platform meaning cannot depend on Kite-specific mechanics, and one Provider's evidence cannot alter another Provider's partition or identity.
+6. **Instrument Master scope:** Interfaces remain restricted to the Provider Instrument Master acquisition subsystem.
+7. **Identity separation:** Provider-native and snapshot-bounded identities never become permanent, cross-Provider, canonical, or Instrument identities.
+8. **Scope separation:** Approved, Requested, and Received scopes must remain independently identifiable.
+9. **Result separation:** Technical result and Acquisition Outcome must remain distinct.
+10. **Evidence preservation:** Interfaces cannot silently repair, select, merge, discard, or suppress duplicate or adverse Provider evidence.
+11. **Snapshot integrity:** Snapshot membership and identity remain immutable once established.
+12. **Non-destructive continuity:** Currentness or supersession meaning cannot erase or rewrite earlier snapshot evidence.
+13. **Protected-information containment:** Sensitive or private material cannot pass merely because a conceptual interface exists.
+14. **Provenance preservation:** Derived meaning remains attributable to its Provider and acquisition context.
+15. **Observability non-interference:** Observability cannot feed back into qualification, evidence, identity, disposition, continuity, or eligibility.
+16. **EAIC-002 termination:** EDD-004 interfaces end before presentation or delivery into EAIC-002.
+
+## 7. Interface Invariants
+
+### 7.1 Universal Interface Invariants
+
+Every interface preserves:
+
+- Provider ownership;
+- external authority ownership;
+- authority separation;
+- product neutrality;
+- Provider partition isolation;
+- non-canonical Provider evidence status;
+- snapshot and acquisition attribution;
+- protected-information restrictions;
+- retention and licensing constraints;
+- the distinction between eligibility and authority;
+- the distinction between Provider evidence and Instrument meaning;
+- the acyclic ES-03 semantic dependency model; and
+- implementation, technology, transport, and runtime neutrality.
+
+### 7.2 Interface-Specific Invariants
+
+| Interface | Invariant |
+|---|---|
+| EI-001 | Scope cannot exceed or redefine the qualified acquisition boundary. |
+| EI-002 | Result characterization cannot collapse scope, technical result, and Acquisition Outcome into one meaning. |
+| EI-003 | Received scope cannot be rewritten to equal Approved or Requested scope. |
+| EI-004 | Normalization cannot change the Provider meaning of a returned record. |
+| EI-005 | Snapshot establishment cannot omit safely preservable returned records or create canonical identity. |
+| EI-006 | Evidence quality remains bound to the snapshot in which the evidence occurred. |
+| EI-007 | Every applicable record receives disposition meaning without silent evidence loss or Instrument interpretation. |
+| EI-008 | Continuity and supersession remain evidence-preserving and non-destructive. |
+| EI-009 | Protected information remains excluded wherever its handling is not explicitly permitted. |
+| EI-010 | Constraints remain effective without being mistaken for operational authority. |
+| EI-011 | Provenance cannot invent or reinterpret its source facts. |
+| EI-012 | Submission eligibility requires deterministic fixed membership and complete Provider-side evidence. |
+| EI-013 | Observability cannot alter the meaning or lifecycle of what it observes. |
+| EI-014 | No EAIC-002 presentation, receipt, validation, admission, or Instrument interpretation has begun. |
+
+## 8. Future Interface Readiness
+
+| Interface | Readiness Classification |
+|---|---|
+| EI-001 | Internal module interface. |
+| EI-002 | Internal module interface. |
+| EI-003 | Internal module interface. |
+| EI-004 | Internal module interface. |
+| EI-005 | Internal module interface. |
+| EI-006 | Internal module interface. |
+| EI-007 | Internal module interface. |
+| EI-008 | Internal module interface. |
+| EI-009 | Cross-cutting interface. |
+| EI-010 | Cross-cutting interface. |
+| EI-011 | Cross-cutting interface. |
+| EI-012 | Internal module interface. |
+| EI-013 | Conceptual-only interface. |
+| EI-014 | External engineering boundary. |
+
+These classifications express likely future realization only. They do not establish modules or prescribe interface technology.
+
+## 9. Engineering Risks
+
+1. **Ownership leakage:** Treating transferred meaning as transferred ownership could move Provider responsibility into Instrument or product domains.
+2. **Authority leakage:** Qualification or eligibility could be incorrectly interpreted as permission to acquire, persist, submit, or interpret.
+3. **Scope collapse:** Combining Approved, Requested, and Received scope would hide missing, excessive, or unexpected Provider evidence.
+4. **Result and outcome conflation:** Treating technical success as a successful Acquisition Outcome would corrupt completeness and continuity meaning.
+5. **Evidence loss:** Combining normalization, preservation, quality assessment, and disposition could permit silent repair, selection, or removal.
+6. **Snapshot leakage:** Weak boundaries could allow identities, evidence, or dispositions to cross Provider partitions or snapshots.
+7. **Instrument leakage:** Provider identifiers, dispositions, or continuity could be mistaken for canonical Instrument identity, validity, or lifecycle.
+8. **Product coupling:** Interfaces could acquire unapproved product filtering or consumption concerns.
+9. **Provider coupling:** Kite-specific behaviour could become a supposedly universal interface requirement.
+10. **Security leakage:** Observability, provenance, or normalization could expose protected Provider or transport-private information.
+11. **Persistence leakage:** Retention and preservation concepts could be mistaken for database, storage, or deletion design.
+12. **Provenance distortion:** Provenance could become a source of new semantic conclusions instead of an attribution mechanism.
+13. **Observability feedback:** Observability could become a control or decision path, introducing an unapproved semantic cycle.
+14. **EAIC-002 leakage:** BB-10 or EI-014 could absorb presentation, delivery, validation, admission, or Instrument interpretation.
+15. **Premature interface concretization:** Conceptual exchanges could be prematurely treated as APIs, messages, schemas, or runtime calls.
+16. **Composite-interface ambiguity:** Multi-source interfaces could obscure which building block owns each contributing meaning.
+17. **Dependency cycles:** Cross-cutting constraints or observability could be incorrectly modelled as semantic feedback dependencies.
+
+## 10. Verification Criteria
+
+Engineering Review shall confirm:
+
+1. ES-01, ES-02, and ES-03 remain unchanged.
+2. Exactly 14 conceptual interfaces are defined.
+3. Exactly eight interfaces are classified as primary.
+4. Exactly five interfaces are classified as cross-cutting.
+5. Exactly one interface is classified as the EAIC-002 terminal boundary.
+6. Each interface is traceable to one approved ES-03 conceptual interface.
+7. BB-01–BB-10 and XBB-01–XBB-04 are all represented.
+8. Every interface identifies its source, target, purpose, information meaning, preconditions, postconditions, and constraints.
+9. Every interface has one repository-justified primary taxonomy classification.
+10. Every interface contract identifies the meaning transferred, the meaning never transferred, and the applicable preservation contract.
+11. Composite interfaces preserve the individual ownership of each contributing meaning.
+12. Approved, Requested, and Received scope remain distinct.
+13. Technical result and Acquisition Outcome remain distinct.
+14. Provider ownership, partition isolation, snapshot immutability, and non-canonical identity remain intact.
+15. Evidence-quality, disposition, and continuity interfaces introduce no Instrument-domain meaning.
+16. Protected-information, retention, licensing, provenance, and observability rules apply consistently.
+17. Observability has no semantic feedback path.
+18. The semantic dependency model remains acyclic.
+19. EI-012 determines eligibility without granting Submission Authority.
+20. EI-014 is the sole terminal external engineering boundary.
+21. EI-014 ends before EAIC-002 presentation or delivery.
+22. No interface defines fields, payloads, methods, messages, protocols, schemas, APIs, transports, database design, persistence design, or runtime behaviour.
+23. The model introduces no new responsibility, ownership, authority, lifecycle, or subsystem scope.
+24. The Engineering Interface Principle is normative for every EDD-004 interface.
+
+Interface coverage and dependency validation passed: all 14 approved building blocks are represented, the semantic dependency model is acyclic, and EI-014 is the sole terminal EAIC-002 boundary.
 
 # End of Document
