@@ -2,7 +2,7 @@
 
 **Document ID:** EAP-006
 **Title:** Observation Acceptance and Governed Observation Establishment Engineering Architecture
-**Version:** 1.0
+**Version:** 1.1
 
 **Status:** Approved
 
@@ -19,25 +19,23 @@
 
 **Approved By:** Chief Architect
 
-**Product:** KRONOS Swing
-
-**Phase:** Phase 1 — Market Data Foundation
-
 **Governing ADP:** ADP-001E Version 1.0
 
-**Immediate Upstream EAP:** EAP-005 Version 1.0
+**Governing Architecture:** ADR-009 Version 1.0; DOMAIN-002 Observation Domain
+
+**Governing Migration:** MIG-001 Version 0.1
+
+**Immediate Upstream EAP:** EAP-005 Version 1.1
+
+**Workflow Stage:** Repository Publication
+
+**Activation State:** Inactive — Pending RC-03 Repository Synchronization and RC-04 Activation Governance
 
 **ADR Required:** No
 
-**EDD Authorization:** None
+**EDD-004 Drafting Authorization:** None
 
 **Implementation Authorization:** None
-
-**Commit Authorization:** None
-
-**Push Authorization:** None
-
-**Next Authorized Capability:** None
 
 ## 1. Purpose
 
@@ -51,7 +49,9 @@ EAP-006 defines engineering architecture for Candidate Observation establishment
 
 ## 3. Engineering Governance
 
-This Draft is the engineering translation authorized by the Chief Architect for ADP-001E. It introduces no new domain, semantic owner, dependency, runtime behavior, communication authority or implementation decision. Canonical repository architecture and the repository authorization artefact remain authoritative.
+This Version 1.1 amendment is the approved engineering translation of migrated ADP-001E and the product-neutral EAP-005 Version 1.1 attribution boundary. It introduces no new domain, semantic owner, dependency, runtime behavior, communication authority or implementation decision. Canonical repository architecture remains authoritative.
+
+Observation Acceptance consumes only EAP-005 Observation Participation Eligibility for an instrument-specific candidate. It shall not consume Provider Records, Provider Catalogue content, Provider Snapshots, Provider-native identities, Provider dispositions, Submission Units, EAIC-002 envelopes or another product’s eligibility. Applicable products remain separately authorized downstream consumers and shall not alter Observation ownership or governed factual meaning.
 
 ## 4. Engineering Boundary
 
@@ -104,12 +104,13 @@ EAP-006 preserves that eligibility is not acceptance; acceptance is not ownershi
 | Instrument identity and lifecycle meaning | Instrument |
 | Market Schedule and session meaning | Market |
 | Validation and evidentiary judgment | Validation |
+| Product universe, Product Eligibility and explicit consumption | Each applicable product, outside EAP-006 |
 
 Publication and persistence remain outside EAP-006. The boundary creates no third owner.
 
 ## 7. Upstream Dependencies
 
-The immediate engineering input is the EAP-005 Version 1.0 Observation Participation Eligibility Contract and its associated eligible candidate factual information context. EAP-006 consumes that contract without reopening Attribution Evaluation, changing the canonical subject, resolving Provider Mapping, changing Instrument identity, reinterpreting provenance, adding acquisition authority or inferring factual correctness.
+The immediate engineering input is the EAP-005 Version 1.1 Observation Participation Eligibility Contract and its associated eligible candidate factual information context. The identity association is product-neutral. EAP-006 consumes that contract without reopening Attribution Evaluation, changing the canonical subject, resolving Provider Mapping, changing Instrument identity, reinterpreting provenance, applying product membership, adding acquisition authority or inferring factual correctness.
 
 The associated context may preserve factual assertion, approved subject attribution, factual category, source attribution, provenance, temporal context, factual lineage, partiality, failure or unavailability distinction, uncertainty, Retained Factual Ambiguity, known limitations and applicable effective identity context. It grants no Provider communication, acquisition, mapping, lifecycle, publication, persistence or implementation authority.
 
@@ -118,6 +119,8 @@ The associated context may preserve factual assertion, approved subject attribut
 The only positive downstream output authorized is the Governed Observation Establishment Contract. It may represent that Observation accepted the Candidate Observation, Observation owns the accepted factual record, the record is authoritative within KRONOS’s governed factual architecture, attributable subject and temporal meaning remain explicit, provenance and lineage are preserved, factual limits remain explicit and interpretation and downstream judgment are absent.
 
 The negative terminal output is the Observation Non-Acceptance Contract. It preserves non-acceptance meaning and reasons but creates no Observation, ownership, Market Fact authority, publication authority or downstream-use authority.
+
+Applicable products may consume only a separately published Governed Observation Establishment Contract through separately approved product-consumption authority. A product requirement or consumption decision shall not modify the governed Observation, transfer factual ownership, turn non-acceptance into acceptance, or turn acceptance into Product Eligibility.
 
 ## 9. Explicit Exclusions
 
@@ -487,6 +490,14 @@ EAP-006 defines semantic contracts, representations and obligations only. It int
 55. **No EDD or implementation authority shall be inferred from EAP-006.**
 56. **EAP-006 shall terminate at governed Observation establishment or preserved non-acceptance.**
 
+57. **Observation Acceptance shall consume only EAP-005 Observation Participation Eligibility for an instrument-specific candidate and shall never consume Provider or EAIC-002 artefacts directly.**
+
+58. **Product membership and Product Eligibility shall not establish Observation Acceptance or alter governed factual meaning.**
+
+59. **Applicable products shall remain separately authorized downstream consumers and shall not acquire Observation ownership.**
+
+60. **EAP-006 publication shall not activate Observation processing, product consumption, runtime behavior, implementation or EDD-004.**
+
 ## 14. Engineering Observability
 
 Observability shall expose only non-sensitive readiness, Candidate Observation establishment, exactly one acceptance outcome, ownership establishment, governed Observation establishment, non-acceptance reason, factual assertion, subject, temporal meaning, provenance, lineage, limits, uncertainty, ambiguity, partiality, missingness, factual-purpose conformance, interpretation absence, downstream-judgment absence and boundary conformance or violation.
@@ -495,7 +506,7 @@ It shall not expose raw Provider payloads, sensitive values, implementation deta
 
 ## 15. Engineering Verification Obligations
 
-Engineering shall verify the 24 contracts, 32 representations, 40 questions and 56 invariants against the repository authorization and canonical ADP-001E boundary. Verification shall confirm ownership separation, EAP-005 eligibility consumption without reinterpretation, readiness/outcome distinction, exactly two outcomes, acceptance/ownership separation, governed Observation prerequisites, non-acceptance reason preservation, factual limits, provenance, lineage, temporal meaning, interpretation absence, downstream-judgment absence and all explicit exclusions.
+Engineering shall verify the 24 contracts, 32 representations, 40 questions, original 56 invariants and four migration invariants against the repository authorization and canonical ADP-001E boundary. Verification shall confirm ownership separation, EAP-005 Version 1.1 eligibility consumption without reinterpretation, product-neutral identity association, Provider and EAIC-002 isolation, readiness/outcome distinction, exactly two outcomes, acceptance/ownership separation, governed Observation prerequisites, explicit downstream product-consumption separation, non-acceptance reason preservation, factual limits, provenance, lineage, temporal meaning, interpretation absence, downstream-judgment absence and all explicit exclusions.
 
 ## 16. Mandatory Review Criteria
 
@@ -512,7 +523,10 @@ Chief Architect review shall verify:
 - subject, temporal, provenance, lineage and factual limits remain explicit;
 - interpretation and downstream judgment are absent;
 - publication, persistence, retrieval, Mapping, Lifecycle, Validation and implementation remain excluded;
-- the exact 24 contracts, 32 representations, 40 questions and 56 invariants are present;
+- the exact 24 contracts, 32 representations and 40 questions are present, and the original 56 invariants plus four migration invariants are preserved;
+- Provider and EAIC-002 artefacts never bypass EAP-005;
+- product membership and Product Eligibility do not affect Observation Acceptance;
+- products remain separately authorized downstream consumers without Observation ownership;
 - provider neutrality and implementation neutrality are preserved.
 
 ## 17. ADR Determination
@@ -528,20 +542,19 @@ EAP-006 translates ADP-001E through the existing Observation dependency and crea
 | Document ID | EAP-006 |
 | Title | Observation Acceptance and Governed Observation Establishment Engineering Architecture |
 | Classification | Engineering Architecture Package |
-| Product | KRONOS Swing |
-| Phase | Phase 1 — Market Data Foundation |
 | Owner | Engineering Architect |
 | Governing ADP | ADP-001E Version 1.0 |
-| Immediate Upstream EAP | EAP-005 Version 1.0 |
-| Version | 1.0 |
+| Governing Architecture | ADR-009 Version 1.0; DOMAIN-002 |
+| Governing Migration | MIG-001 Version 0.1 |
+| Immediate Upstream EAP | EAP-005 Version 1.1 |
+| Version | 1.1 |
 | Status | Approved |
 | Canonical Status | Approved Canonical Engineering Architecture |
+| Workflow Stage | Repository Publication |
+| Activation State | Inactive — Pending RC-03 Repository Synchronization and RC-04 Activation Governance |
 | ADR Required | No |
-| EDD Authorization | None |
+| EDD-004 Drafting Authorization | None |
 | Implementation Authorization | None |
-| Commit Authorization | None |
-| Push Authorization | None |
-| Next Authorized Capability | None |
 | Repository location | `docs/engineering/eap/EAP-006-OBSERVATION-ACCEPTANCE-AND-GOVERNED-OBSERVATION-ESTABLISHMENT.md` |
 
 ## 19. Authorization Boundaries
@@ -549,20 +562,21 @@ EAP-006 translates ADP-001E through the existing Observation dependency and crea
 | Item | Decision |
 | --- | --- |
 | EAP-006 Draft Version 0.1 | Reviewed and amended |
-| Canonical EAP-006 Version 1.0 | Approved Canonical Engineering Architecture |
+| Canonical EAP-006 Version 1.0 | Approved historical canonical baseline |
+| Canonical EAP-006 Version 1.1 | Approved Canonical Engineering Architecture under RC-02 |
 | Engineering verification | Complete |
 | Canonicalization | Authorized |
 | EDD | Not authorized |
 | Implementation | Not authorized |
 | Runtime behaviour | Not authorized |
-| Publication | Not authorized |
+| Product consumption | Not authorized |
 | Persistence | Not authorized |
-| EAP-007 | Not authorized |
-| Commit or push | Not authorized by this authorization |
 
 ## 20. Review History
 
-EAP-006 Draft Version 0.1 was prepared under the repository-preserved Chief Architect Draft Authorization. Engineering verification was completed. The Chief Architect Final Review authorized governance-only canonicalization through CA-006-001 and CA-006-002. EAP-006 Version 1.0 is the Approved Canonical Engineering Architecture.
+EAP-006 Draft Version 0.1 was prepared under the repository-preserved Chief Architect Draft Authorization. Engineering verification was completed. The Chief Architect Final Review authorized governance-only canonicalization through CA-006-001 and CA-006-002. Version 1.0 became the approved canonical baseline.
+
+Version 1.1 applies the approved MIG-001 minor amendment: EAP-005 Version 1.1 product-neutral attribution eligibility is the sole instrument-specific input; Provider and EAIC-002 artefacts remain isolated upstream; and applicable products remain separately authorized downstream consumers that cannot alter Observation ownership or governed factual meaning. Version 1.1 is published under RC-02 and remains inactive pending RC-03 and RC-04.
 
 ## 21. Approval Record
 
@@ -574,26 +588,26 @@ EAP-006 Draft Version 0.1 was prepared under the repository-preserved Chief Arch
 
 **ADR Required:** No
 
-**EDD Authorization:** None
+**Activation State:** Inactive — Pending RC-03 Repository Synchronization and RC-04 Activation Governance
+
+**EDD-004 Drafting Authorization:** None
 
 **Implementation Authorization:** None
 
-**Commit Authorization:** None
-
-**Push Authorization:** None
-
-**Next Authorized Capability:** None
+**Runtime Authority:** None
 
 ## Related Approved Authority
 
 - [Platform Constitution](../../architecture/platform/PLATFORM-000-CONSTITUTION.md)
 - [ADP-001D — Instrument → Observation Contract](../../architecture/products/swing/SWING-PHASE-1-INSTRUMENT-OBSERVATION-CONTRACT.md)
 - [ADP-001E — Observation Domain Architecture](../../architecture/products/swing/SWING-PHASE-1-OBSERVATION-DOMAIN-ARCHITECTURE.md)
-- [EAP-001 Version 1.0](EAP-001-CONFIGURATION-TO-PROVIDER-AUTHENTICATED-CONTEXT.md)
-- [EAP-002 Version 1.0](EAP-002-PROVIDER-INSTRUMENT-MASTER-ACQUISITION.md)
-- [EAP-003 Version 1.0](EAP-003-PROVIDER-TO-INSTRUMENT-ARCHITECTURAL-ADMISSIBILITY.md)
-- [EAP-004 Version 1.0](EAP-004-INSTRUMENT-INTERPRETATION-AND-CANONICAL-IDENTITY-ESTABLISHMENT.md)
-- [EAP-005 Version 1.0](EAP-005-INSTRUMENT-TO-OBSERVATION-ATTRIBUTION-ELIGIBILITY.md)
+- [ADR-009 — Provider-Bounded Instrument Master Acquisition Architecture](../../architecture/platform/domains/provider/ADR-009-PROVIDER-BOUNDED-INSTRUMENT-MASTER-ACQUISITION-ARCHITECTURE.md)
+- [MIG-001 — ADR-009 Coordinated Architecture Migration Package](../../architecture/migrations/MIG-001-ADR-009-COORDINATED-ARCHITECTURE-MIGRATION-PACKAGE.md)
+- [EAIC-002 — Provider → Instrument Submission Contract](../../architecture/interfaces/EAIC-002-PROVIDER-TO-INSTRUMENT-SUBMISSION-CONTRACT.md)
+- [EAP-002 Version 2.0](EAP-002-PROVIDER-INSTRUMENT-MASTER-ACQUISITION.md)
+- [EAP-003 Version 2.0](EAP-003-PROVIDER-TO-INSTRUMENT-ARCHITECTURAL-ADMISSIBILITY.md)
+- [EAP-004 Version 2.0](EAP-004-INSTRUMENT-INTERPRETATION-AND-CANONICAL-IDENTITY-ESTABLISHMENT.md)
+- [EAP-005 Version 1.1](EAP-005-INSTRUMENT-TO-OBSERVATION-ATTRIBUTION-ELIGIBILITY.md)
 - [Instrument Domain Architecture](../../architecture/platform/domains/instrument/ARCHITECTURE.md)
 - [Observation Domain Architecture](../../architecture/platform/domains/observation/ARCHITECTURE.md)
 - [Provider Domain Architecture](../../architecture/platform/domains/provider/ARCHITECTURE.md)
