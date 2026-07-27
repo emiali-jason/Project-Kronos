@@ -2,17 +2,17 @@
 
 **Document ID:** EDD-005
 **Title:** Provider-to-Instrument Submission Validation and Interpretation Admission Engineering Design
-**Version:** 0.4
-**Status:** Draft
-**Canonical Status:** Draft
+**Version:** 1.0
+**Status:** Approved
+**Canonical Status:** Canonical
 **Classification:** Engineering Design Document
 **Owner:** Engineering Architect
 **Prepared By:** Engineering Design Team
 **Review Authority:** Chief Architect
 **Repository Location:** `docs/engineering/edd/EDD-005-PROVIDER-TO-INSTRUMENT-SUBMISSION-VALIDATION-AND-INTERPRETATION-ADMISSION-ENGINEERING-DESIGN.md`
-**Workflow Stage:** Draft Preparation
-**Engineering Stage:** Engineering Interface Architecture
-**Engineering Authority:** Draft Preparation
+**Workflow Stage:** Repository Publication
+**Engineering Stage:** Engineering Complete
+**Engineering Authority:** Chief Architect Approved
 **Draft Authorization:** Approved with Constraints — CAR-004
 **Governing Architecture:** ADR-009 Version 1.0
 **Governing Interface:** EAIC-002 Version 0.1
@@ -20,7 +20,7 @@
 **Immediate Upstream EDD:** EDD-004 Version 1.0
 **Downstream Engineering Architecture:** EAP-004 Version 2.0 after accepted Interpretation Admission
 **Authorization Decision:** CAR-004 Version 1.0
-**Approval State:** Not Approved
+**Approval State:** Approved
 **Implementation Authorization:** None
 **Runtime Authority:** None
 **Provider-to-Instrument Submission Authority:** None
