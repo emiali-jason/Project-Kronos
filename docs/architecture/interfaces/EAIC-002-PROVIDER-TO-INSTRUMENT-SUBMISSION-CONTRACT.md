@@ -42,7 +42,7 @@ This identity:
 - creates no new document family;
 - preserves MIG-001 traceability;
 - does not create or authorize a separate PIC-001 document; and
-- requires a later governance-only MIG-001 traceability alignment during the coordinated migration.
+- is aligned in MIG-001 as historical pre-classification planning traceability only.
 
 ## 1.2 Architectural Purpose
 
