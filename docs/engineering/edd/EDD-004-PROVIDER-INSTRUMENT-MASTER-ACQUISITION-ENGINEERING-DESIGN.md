@@ -2,7 +2,7 @@
 
 **Document ID:** EDD-004
 **Title:** Provider Instrument Master Acquisition Engineering Design
-**Version:** 0.2
+**Version:** 0.3
 **Status:** Draft
 **Canonical Status:** Draft
 **Classification:** Engineering Design Document
@@ -11,7 +11,7 @@
 **Review Authority:** Chief Architect
 **Repository Location:** `docs/engineering/edd/EDD-004-PROVIDER-INSTRUMENT-MASTER-ACQUISITION-ENGINEERING-DESIGN.md`
 **Workflow Stage:** Draft Preparation
-**Engineering Stage:** Engineering Capability Decomposition
+**Engineering Stage:** Engineering Building Block Architecture
 **Engineering Authority:** Draft Preparation
 **Draft Authorization:** Approved with Constraints — RC-04
 **Governing Architecture:** ADR-009 Version 1.0
@@ -1013,5 +1013,376 @@ Engineering Review shall confirm:
 25. The model remains Provider-neutral, product-neutral, Instrument-Master-specific, Kite-first-adapter compatible, future-Provider compatible, retention-aware, and provenance-preserving.
 
 Successful review of these criteria verifies the completeness, internal consistency, ownership clarity, boundary conformance, and frozen-scope traceability of the Engineering Capability Decomposition only. It does not constitute module design, implementation authorization, runtime authority, EDD-004 approval, or canonicalization.
+
+# ES-03 — Engineering Building Block Architecture
+
+## 1. Executive Summary
+
+The authoritative EDD-004 Version 0.2 Draft supports 14 engineering building blocks:
+
+- 10 primary Provider-owned building blocks; and
+- four Provider-owned cross-cutting building blocks.
+
+The model maps all 43 ES-01 responsibilities and all 30 ES-01 internal capability statements exactly once. It fully covers C1–C11, introduces no new scope or ownership, has no circular semantic dependencies, and terminates before EAIC-002 presentation or delivery.
+
+These are design responsibilities—not modules, services, classes, packages, APIs, processes, databases, or runtime components.
+
+## 2. Building Block Model
+
+### BB-01 — Acquisition Boundary Qualification
+
+- **Identifier:** BB-01
+- **Engineering Purpose:** Qualify one exact Provider Instrument Master acquisition boundary without establishing its prerequisites or creating authority.
+- **Capability Coverage:** C1.
+- **Responsibilities:** ES-01 Responsibilities 1–5; Internal Capabilities 1–3.
+- **Inputs:** Provider, dataset, operation, context, environment, capability, permission, entitlement, Configuration, Provider Context, availability, usability, authority, security, licensing, retention, and blocking-dependency evidence.
+- **Outputs:** Bounded acquisition identity; Acquisition Eligibility or preserved ineligibility; attributable prerequisite status.
+- **Dependencies:** Approved external prerequisite and authority meanings.
+- **Constraints:** Instrument Master only; no prerequisite inference; no endpoint, acquisition, or runtime authority.
+- **Invariants:** Every prerequisite remains independent; eligibility never becomes authority or technical activity.
+
+### BB-02 — Acquisition Scope Definition and Reconciliation
+
+- **Identifier:** BB-02
+- **Engineering Purpose:** Preserve the authorized, requested, and received extent of one bounded acquisition.
+- **Capability Coverage:** C2.
+- **Responsibilities:** Responsibilities 6–10; Internal Capabilities 4–7.
+- **Inputs:** BB-01 bounded acquisition identity; approved scope authority; intended complete dataset scope; received coverage evidence.
+- **Outputs:** Approved, Requested, and Received Acquisition Scope; scope-comparison evidence.
+- **Dependencies:** BB-01.
+- **Constraints:** Requested scope is not product-filtered; Received scope remains factual; scope does not establish success or completeness.
+- **Invariants:** All three scopes remain independent; product membership cannot alter any acquisition scope.
+
+### BB-03 — Acquisition Result and Outcome Characterization
+
+- **Identifier:** BB-03
+- **Engineering Purpose:** Establish technical result and Provider-owned Acquisition Outcome as independent meanings.
+- **Capability Coverage:** C3.
+- **Responsibilities:** Responsibilities 11–13; Internal Capabilities 8–9.
+- **Inputs:** BB-01 boundary meaning; BB-02 scopes; bounded technical evidence; availability and usability references.
+- **Outputs:** Exactly one technical result and exactly one Acquisition Outcome.
+- **Dependencies:** BB-01 and BB-02.
+- **Constraints:** Outcome is Complete, Partial, Empty, Missing, Unsupported, or Failed; no availability, usability, Instrument, or product inference.
+- **Invariants:** Technical success never establishes completeness; Empty or Missing never establishes Instrument non-existence.
+
+### BB-04 — Provider Record Normalization
+
+- **Identifier:** BB-04
+- **Engineering Purpose:** Establish safe, Provider-owned, product-neutral, non-canonical record evidence from returned Instrument Master information.
+- **Capability Coverage:** Partial C4.
+- **Responsibilities:** Responsibilities 14 and 24; Internal Capability 10.
+- **Inputs:** Returned Provider information; BB-02 scope; Provider assertions, vocabulary, identities, limitations, and permitted metadata; XBB-01 and XBB-02 constraints.
+- **Outputs:** Safely normalized Provider Record evidence with preserved Provider assertions and limitations.
+- **Dependencies:** BB-02, XBB-01, and XBB-02.
+- **Constraints:** No canonicalization, Instrument interpretation, silent repair, product filtering, or physical representation design.
+- **Invariants:** Provider meaning remains Provider-owned; unsafe and adapter-private material never enters normalized evidence.
+
+### BB-05 — Complete Returned-Record Preservation
+
+- **Identifier:** BB-05
+- **Engineering Purpose:** Ensure every safely preservable returned Instrument Master record remains represented regardless of current product use.
+- **Capability Coverage:** Remaining C4.
+- **Responsibilities:** Responsibilities 15–16; Internal Capability 11.
+- **Inputs:** BB-04 normalized evidence; complete returned-record coverage; safe-preservability, licensing, and security constraints.
+- **Outputs:** Complete safely preservable Provider Record set, including returned Options references and permitted auxiliary metadata.
+- **Dependencies:** BB-04, XBB-01, and XBB-02.
+- **Constraints:** No product filtering, storage design, or inference of Options, Observation, Market, strategy, or execution meaning.
+- **Invariants:** Every safely preservable returned record is retained conceptually; preservation never implies Submission Eligibility.
+
+### BB-06 — Provider Snapshot, Catalogue Partition, and Record Identity
+
+- **Identifier:** BB-06
+- **Engineering Purpose:** Establish immutable snapshot context, catalogue isolation, and correctly scoped Provider Record identities.
+- **Capability Coverage:** C5.
+- **Responsibilities:** Responsibilities 17–23; Internal Capabilities 12–14.
+- **Inputs:** BB-02 scopes; BB-03 result and outcome; BB-05 complete Provider Record set; timing, authority, limitation, retention, licensing, and provenance references.
+- **Outputs:** Immutable Provider Snapshot; distinct timing meanings; Provider-and-Dataset Catalogue Partition membership; snapshot-bounded Provider Record identities.
+- **Dependencies:** BB-02, BB-03, BB-05, XBB-01, and XBB-02.
+- **Constraints:** No persistence technology; strict Provider/dataset partition isolation; Provider-native identifiers remain non-canonical.
+- **Invariants:** Closed snapshots are immutable; records and identities cannot cross partitions; tokens, symbols, and row positions cannot become permanent identity.
+
+### BB-07 — Provider Record Disposition Determination
+
+- **Identifier:** BB-07
+- **Engineering Purpose:** Establish the cardinality, precedence, and coexistence of Provider record dispositions.
+- **Capability Coverage:** Partial C6.
+- **Responsibilities:** Responsibilities 25–26 and 28–31; Internal Capabilities 15 and 17–19.
+- **Inputs:** BB-06 snapshot-bounded records; BB-08 evidence-quality flags and evidence relationships.
+- **Outputs:** Preservation fact; structural, quarantine, interpretation-support, and submission dispositions; precedence evidence.
+- **Dependencies:** BB-06 and BB-08.
+- **Constraints:** Structural validity is not semantic correctness; quarantine preserves evidence; dispositions are not Instrument lifecycle.
+- **Invariants:** `STRUCTURALLY_INVALID` requires quarantine, no interpretation support, and submission ineligibility; quarantine always requires submission ineligibility.
+
+### BB-08 — Provider Evidence Quality and Anomaly Preservation
+
+- **Identifier:** BB-08
+- **Engineering Purpose:** Preserve and classify ambiguity, duplication, inconsistency, missingness, unrecognized vocabulary, and Provider limitations.
+- **Capability Coverage:** Remaining C6.
+- **Responsibilities:** Responsibilities 27 and 32–33; Internal Capabilities 16 and 20.
+- **Inputs:** BB-06 snapshot-bounded Provider Records and their source evidence.
+- **Outputs:** Evidence-quality flags; duplicate relationships; preserved ambiguity, inconsistency, missingness, vocabulary, and limitation evidence.
+- **Dependencies:** BB-06.
+- **Constraints:** No silent selection, merge, repair, discard, or canonical interpretation.
+- **Invariants:** Every duplicate occurrence remains preserved; adverse Provider evidence cannot become Instrument invalidity automatically.
+
+### BB-09 — Catalogue Continuity and Non-Destructive Supersession
+
+- **Identifier:** BB-09
+- **Engineering Purpose:** Preserve Provider-owned continuity across comparable immutable snapshots.
+- **Capability Coverage:** C7.
+- **Responsibilities:** Responsibilities 34–36; Internal Capabilities 21–23.
+- **Inputs:** BB-03 Acquisition Outcomes; BB-06 comparable snapshots and record identities.
+- **Outputs:** Snapshot currentness; non-destructive supersession; record-added, record-absent, record-changed, token-reuse, and symbol-change evidence.
+- **Dependencies:** BB-03 and BB-06.
+- **Constraints:** No Instrument lifecycle, identity continuity, product eligibility, or destructive replacement.
+- **Invariants:** Earlier snapshots remain unchanged; absence does not establish non-existence; token reuse does not establish identity continuity.
+
+### BB-10 — Submission Eligibility and EAIC-002 Boundary Preparation
+
+- **Identifier:** BB-10
+- **Engineering Purpose:** Produce the terminal Provider-owned EAIC-002-conforming submission meaning.
+- **Capability Coverage:** C11.
+- **Responsibilities:** Responsibility 43; Internal Capabilities 29–30.
+- **Inputs:** BB-02 scope; BB-06 identities and membership; BB-07 dispositions; BB-09 lineage where applicable; XBB-01, XBB-02, and XBB-03 evidence.
+- **Outputs:** `SUBMISSION_INELIGIBLE` with preserved reason evidence, or one deterministically bounded `SUBMISSION_ELIGIBLE` Provider submission meaning.
+- **Dependencies:** BB-02, BB-06, BB-07, BB-09, XBB-01, XBB-02, and XBB-03.
+- **Constraints:** One Provider, dataset, partition, and snapshot; fixed membership; no product condition; no Submission Authority.
+- **Invariants:** Eligibility never implies submission, receipt, validation, admission, interpretation, identity, mapping, or product meaning; the block ends before EAIC-002 presentation.
+
+### XBB-01 — Protected Information Containment
+
+- **Identifier:** XBB-01
+- **Engineering Purpose:** Prevent sensitive and adapter-private information from entering governed EDD-004 meanings.
+- **Capability Coverage:** Partial C8.
+- **Responsibilities:** Responsibility 39; Internal Capability 26.
+- **Inputs:** Protected-content classifications and applicable security restrictions.
+- **Outputs:** Sensitive-content exclusions and containment-conformance evidence.
+- **Dependencies:** Approved security authority only.
+- **Constraints:** No security technology, secret storage, transport, logging, or implementation design.
+- **Invariants:** Credentials, Authentication Material, raw payloads, SDK objects, exceptions, and transport-private state never enter governed records, provenance, observability, or submission meaning.
+
+### XBB-02 — Retention, Licensing, Security-Classification, and Authority Separation
+
+- **Identifier:** XBB-02
+- **Engineering Purpose:** Constrain evidence treatment according to retention, licensing, redistribution, security-classification, deletion, and authority boundaries.
+- **Capability Coverage:** Remaining C8.
+- **Responsibilities:** Responsibilities 37–38; Internal Capability 27.
+- **Inputs:** Approved restriction and authority references.
+- **Outputs:** Conservative retention obligations; licensing, redistribution, and security restrictions; authority-separation evidence.
+- **Dependencies:** Governing retention, licensing, security, deletion, and Audit authorities.
+- **Constraints:** No storage, archival, deletion, or retention mechanism; no authority creation.
+- **Invariants:** Acquisition, preservation, persistence, retention, deletion, submission, interpretation, and Audit authorities remain separate.
+
+### XBB-03 — Provider and Acquisition Provenance
+
+- **Identifier:** XBB-03
+- **Engineering Purpose:** Preserve attributable, non-sensitive Provider and acquisition evidence across primary building-block meanings.
+- **Capability Coverage:** C9.
+- **Responsibilities:** Responsibilities 40–41; Internal Capabilities 24–25.
+- **Inputs:** Attributable outputs from BB-01 through BB-09 and constraints from XBB-01 and XBB-02.
+- **Outputs:** Provider provenance; acquisition provenance; snapshot and record lineage; distinct timing evidence.
+- **Dependencies:** BB-01–BB-09, XBB-01, and XBB-02 as applicable.
+- **Constraints:** No sensitive content, authority inference, Instrument interpretation provenance, or product-consumption provenance.
+- **Invariants:** Provenance types and timing meanings remain distinct; provenance never creates canonical or product meaning.
+
+### XBB-04 — Non-Sensitive Engineering Observability
+
+- **Identifier:** XBB-04
+- **Engineering Purpose:** Make established building-block meanings and conformance explainable without changing them.
+- **Capability Coverage:** C10.
+- **Responsibilities:** Responsibility 42; Internal Capability 28.
+- **Inputs:** Non-sensitive outputs from BB-01–BB-10 and XBB-01–XBB-03.
+- **Outputs:** Non-sensitive scope, result, outcome, preservation, disposition, continuity, provenance, authority-reference, and boundary-conformance observability.
+- **Dependencies:** Every block whose established meaning is observed.
+- **Constraints:** No monitoring technology, telemetry design, runtime behavior, or alternate semantic production.
+- **Invariants:** Observability is read-only in meaning; it cannot imply downstream acceptance, canonical identity, product exclusion, or authority.
+
+## 3. Capability-to-Building-Block Traceability
+
+| Capability | Building Blocks | ES-01 Responsibility Coverage | Internal Capability Coverage |
+|---|---|---|---|
+| C1 | BB-01 | 1–5 | 1–3 |
+| C2 | BB-02 | 6–10 | 4–7 |
+| C3 | BB-03 | 11–13 | 8–9 |
+| C4 | BB-04, BB-05 | 14–16, 24 | 10–11 |
+| C5 | BB-06 | 17–23 | 12–14 |
+| C6 | BB-07, BB-08 | 25–33 | 15–20 |
+| C7 | BB-09 | 34–36 | 21–23 |
+| C8 | XBB-01, XBB-02 | 37–39 | 26–27 |
+| C9 | XBB-03 | 40–41 | 24–25 |
+| C10 | XBB-04 | 42 | 28 |
+| C11 | BB-10 | 43 | 29–30 |
+
+Coverage confirmation:
+
+- C1–C11 are fully covered.
+- Responsibilities 1–43 are each assigned exactly once.
+- Internal capability statements 1–30 are each assigned exactly once.
+- No building block introduces additional responsibility.
+- Every building block remains Provider-owned.
+- Cross-cutting classification changes no ownership or authority.
+
+## 4. Building Block Boundaries
+
+| Building Block | Begins With | Ends With | Explicitly Excludes |
+|---|---|---|---|
+| BB-01 | Independently established entry evidence | Eligibility or ineligibility and bounded identity | Prerequisite creation and acquisition activity |
+| BB-02 | Bounded acquisition identity and scope authority | Three scopes and comparison evidence | Result, outcome, and product filtering |
+| BB-03 | Scope and technical-result evidence | One technical result and one outcome | Availability redefinition and Instrument meaning |
+| BB-04 | Returned Provider information | Safely normalized Provider evidence | Complete-set assurance, interpretation, and persistence |
+| BB-05 | Normalized evidence and returned-set coverage | Complete safely preservable record set | Storage design and product selection |
+| BB-06 | Complete record set and acquisition context | Immutable snapshot, partition membership, and record identity | Persistence technology and canonical identity |
+| BB-07 | Snapshot-bounded records and evidence flags | Complete disposition set | Evidence repair and Instrument lifecycle |
+| BB-08 | Snapshot-bounded source evidence | Quality flags and adverse-evidence relationships | Disposition precedence and semantic correction |
+| BB-09 | Comparable immutable snapshots | Currentness, supersession, and difference evidence | Instrument lifecycle and destructive replacement |
+| BB-10 | Fully bounded eligible/ineligible evidence | Terminal EAIC-002-conforming Provider meaning | Presentation, delivery, receipt, validation, and Instrument processing |
+| XBB-01 | Protected-content classification | Containment requirements and evidence | Security implementation |
+| XBB-02 | Restriction and authority references | Obligations and authority separation | Persistence and deletion mechanisms |
+| XBB-03 | Attributable Provider-owned facts | Non-sensitive provenance | Instrument or product provenance |
+| XBB-04 | Established non-sensitive meanings | Explainable observability | New semantic decisions and monitoring technology |
+
+Every boundary is cohesive, independently reviewable, non-overlapping in semantic ownership, and bounded before EAIC-002 execution.
+
+## 5. Building Block Relationships
+
+The dependency model is semantic and engineering-only:
+
+- BB-02 depends on the bounded identity produced by BB-01.
+- BB-03 depends on BB-01 and BB-02.
+- BB-04 depends on BB-02 and the constraints of XBB-01 and XBB-02.
+- BB-05 depends on BB-04 and the same preservation constraints.
+- BB-06 depends on BB-02, BB-03, and BB-05.
+- BB-08 depends on BB-06.
+- BB-07 depends on BB-06 and BB-08.
+- BB-09 depends on BB-03 and BB-06.
+- XBB-03 consumes attributable meaning from BB-01–BB-09.
+- BB-10 depends on BB-02, BB-06, BB-07, BB-09, XBB-01, XBB-02, and XBB-03.
+- XBB-04 observes established non-sensitive meanings, including the terminal BB-10 result, without providing semantic feedback.
+
+The dependency graph is acyclic. These relationships do not define calls, execution order, orchestration, control flow, scheduling, concurrency, or runtime behavior.
+
+## 6. Cross-Cutting Building Blocks
+
+Four responsibilities remain cross-cutting:
+
+- **XBB-01 Protected Information Containment** constrains every block that handles Provider information. Making it a primary acquisition block would risk conflating security restrictions with acquisition ownership.
+- **XBB-02 Retention, Licensing, Security-Classification, and Authority Separation** constrains preservation, snapshots, dispositions, continuity, provenance, observability, and eligibility without owning those meanings.
+- **XBB-03 Provider and Acquisition Provenance** associates attributable evidence with primary outputs without becoming an alternate producer of scope, result, disposition, identity, or eligibility.
+- **XBB-04 Non-Sensitive Engineering Observability** exposes already-established meaning without producing or modifying that meaning.
+
+Cross-cutting status does not mean shared ownership. All four remain Provider-owned within EDD-004, while the external authorities they consume retain their own canonical ownership.
+
+## 7. Conceptual Interfaces
+
+1. BB-01 → BB-02: qualified acquisition-boundary interface.
+2. BB-01/BB-02 → BB-03: bounded result-context interface.
+3. BB-02 → BB-04: received-scope normalization interface.
+4. BB-04 → BB-05: normalized Provider-evidence interface.
+5. BB-02/BB-03/BB-05 → BB-06: snapshot-establishment interface.
+6. BB-06 → BB-08: snapshot-bounded evidence-quality interface.
+7. BB-06/BB-08 → BB-07: disposition-determination interface.
+8. BB-03/BB-06 → BB-09: comparable-snapshot continuity interface.
+9. XBB-01 → information-handling blocks: protected-information constraint interface.
+10. XBB-02 → preservation and evidence blocks: retention, licensing, and authority-constraint interface.
+11. BB-01–BB-09 → XBB-03: provenance-source interface.
+12. BB-02/BB-06/BB-07/BB-09/XBB-01/XBB-02/XBB-03 → BB-10: submission-eligibility evidence interface.
+13. All established blocks → XBB-04: non-sensitive observability interface.
+14. BB-10 → EAIC-002: terminal Provider submission-meaning interface.
+
+No fields, payloads, methods, protocols, schemas, APIs, transports, or physical interaction mechanisms are defined.
+
+## 8. Building Block Invariants
+
+- **BB-01:** Entry meanings remain independent; eligibility creates no authority.
+- **BB-02:** Approved, Requested, and Received scopes never collapse; product membership remains irrelevant.
+- **BB-03:** Technical result and Acquisition Outcome remain independent.
+- **BB-04:** Normalized evidence remains Provider-owned and non-canonical.
+- **BB-05:** Every safely preservable returned record remains included.
+- **BB-06:** Snapshots remain immutable; partitions remain isolated; identities remain snapshot-bounded.
+- **BB-07:** Disposition cardinality and mandatory precedence remain intact.
+- **BB-08:** Duplicate and adverse evidence remains explicit and unrepaired.
+- **BB-09:** Supersession remains non-destructive and creates no Instrument lifecycle.
+- **BB-10:** Eligibility remains distinct from Submission Authority and stops before EAIC-002 presentation.
+- **XBB-01:** Sensitive and adapter-private content never enters governed outputs.
+- **XBB-02:** Restrictions never create the authority they constrain.
+- **XBB-03:** Provenance remains non-sensitive, attributable, and semantically non-creative.
+- **XBB-04:** Observability never changes or supplements observed meaning.
+
+All invariants remain independent of later technology, module, persistence, or runtime choices.
+
+## 9. Future Module Readiness
+
+| Building Block | Readiness Classification |
+|---|---|
+| BB-01 | One module |
+| BB-02 | One module |
+| BB-03 | One module |
+| BB-04 | Multiple modules |
+| BB-05 | One module |
+| BB-06 | Multiple modules |
+| BB-07 | One module |
+| BB-08 | Multiple modules |
+| BB-09 | One module |
+| BB-10 | One module |
+| XBB-01 | Cross-cutting concern |
+| XBB-02 | Cross-cutting concern |
+| XBB-03 | Cross-cutting concern |
+| XBB-04 | Conceptual-only responsibility |
+
+These classifications express likely decomposition pressure only. They do not define module count, boundaries, names, interactions, technologies, or implementation.
+
+## 10. Engineering Risks
+
+1. **Responsibility overlap:** Normalization, preservation, snapshotting, and dispositions could acquire duplicate ownership.
+2. **Authority conflation:** BB-01 or BB-10 could be misread as endpoint, acquisition, or submission authority.
+3. **Scope collapse:** Approved, Requested, and Received scopes could be combined or product-filtered.
+4. **Result/outcome collapse:** Technical success could be mistaken for completeness.
+5. **Product coupling:** Current Swing, Intraday, or Options needs could narrow preservation or eligibility.
+6. **Instrument leakage:** Provider tokens, dispositions, changes, or eligibility could become canonical identity or lifecycle meaning.
+7. **Partition erosion:** Provider or dataset evidence could cross catalogue partitions.
+8. **Evidence loss:** Duplicates, ambiguity, inconsistency, missingness, or limitations could be silently repaired or discarded.
+9. **Cross-cutting ownership drift:** Security, retention, provenance, or observability could become alternate semantic owners.
+10. **EAIC-002 leakage:** BB-10 could absorb delivery, receipt, validation, replay, ordering, admission, or response responsibilities.
+11. **Premature technology coupling:** Building blocks could be expressed as frameworks, storage products, payloads, or deployment units.
+12. **Persistence assumptions:** Snapshot and catalogue meaning could be mistaken for database design or persistence authority.
+13. **Runtime assumptions:** Dependency relationships could be mistaken for calls, execution order, scheduling, or orchestration.
+14. **Hidden cycles:** Provenance or observability could feed back into primary semantic decisions.
+15. **Future-Provider coupling:** Kite-specific vocabulary or mechanics could become platform building-block meaning.
+
+## 11. Verification Criteria
+
+Engineering Review shall confirm:
+
+1. ES-01 and ES-02 remain unchanged.
+2. Exactly 10 primary and four cross-cutting building blocks are defined.
+3. Every building block contains all required descriptive fields.
+4. C1–C11 are fully covered.
+5. Responsibilities 1–43 are mapped exactly once.
+6. Internal capability statements 1–30 are mapped exactly once.
+7. No building block creates a new responsibility.
+8. All building blocks remain Provider-owned.
+9. External authority ownership remains unchanged.
+10. Building-block boundaries are cohesive and non-overlapping.
+11. Each block is independently reviewable.
+12. Engineering dependencies are directional and acyclic.
+13. Dependency descriptions contain no runtime sequence or control-flow meaning.
+14. Cross-cutting blocks constrain or evidence primary meanings without becoming alternate semantic owners.
+15. Approved, Requested, and Received scopes remain distinct.
+16. Technical result and Acquisition Outcome remain distinct.
+17. Complete safely preservable returned-record preservation remains explicit.
+18. Snapshot immutability and partition isolation remain explicit.
+19. Provider-native identity remains non-canonical.
+20. Disposition cardinality, precedence, and adverse-evidence preservation remain intact.
+21. Continuity and supersession create no Instrument lifecycle meaning.
+22. Security, licensing, retention, deletion, and authority separation remain explicit.
+23. Provenance and observability remain non-sensitive and non-authoritative.
+24. Submission Eligibility remains distinct from Submission Authority.
+25. BB-10 terminates before EAIC-002 presentation or delivery.
+26. No Instrument interpretation, canonical identity, Provider mapping, Instrument lifecycle, or product meaning is introduced.
+27. No module, service, class, package, namespace, API, persistence, schema, runtime, scheduling, retry, deployment, or GUI design appears.
+28. No implementation, endpoint, acquisition, persistence, submission, interpretation, or runtime authority is implied.
+29. The architecture remains Provider-neutral, product-neutral, Instrument-Master-specific, Kite-first-adapter compatible, future-Provider compatible, retention-aware, and provenance-preserving.
+
+Traceability and dependency validation passed: all 43 responsibilities and 30 internal capability statements map exactly once, C1–C11 are fully covered, and the 14-block dependency model is acyclic.
 
 # End of Document
