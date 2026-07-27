@@ -3,8 +3,8 @@
 **Document ID:** ADP-001C
 **Title:** Provider → Instrument Contract
 **Version:** 1.0
-**Status:** Approved
-**Canonical Status:** Approved Canonical Architecture
+**Status:** Superseded
+**Canonical Status:** Superseded
 
 **Product:** KRONOS Swing
 
@@ -17,10 +17,17 @@
 **Approved By:** Chief Architect
 **Review Authority:** Not stated
 **Repository Location:** `docs/architecture/products/swing/SWING-PHASE-1-PROVIDER-INSTRUMENT-CONTRACT.md`
+**Workflow Stage:** Repository Publication
+**Superseded By:** EAIC-002 Version 0.1
+**Activation State:** Inactive — Superseded
+**Current Architecture Authority:** None
+**Implementation Authority:** None
+**Runtime Authority:** None
+**EDD-004 Drafting Authority:** None
 
 **Classification:** Architecture Documentation Package
 
-**Architecture Impact:** Approved canonical governed semantic boundary between Provider and Instrument
+**Architecture Impact:** Historical predecessor to the canonical EAIC-002 Provider → Instrument Submission Contract
 
 **Engineering Impact:** None
 
@@ -28,15 +35,30 @@
 
 ## 1. Status and Governance
 
-This document is the approved canonical Version 1.0 Architecture Documentation Package. It does not authorize implementation, retrieval, runtime Provider-to-Instrument communication, an interface, an Engineering Design Document, an Engineering Package, or any runtime change.
+ADP-001C Version 1.0 is superseded.
 
-The following labels govern this document:
+[EAIC-002 — Provider → Instrument Submission Contract](../../interfaces/EAIC-002-PROVIDER-TO-INSTRUMENT-SUBMISSION-CONTRACT.md) Version 0.1 is the sole current canonical architectural authority for Provider → Instrument submission.
 
-- **Approved base** identifies architecture already approved in ADP-001A, ADP-001B, or another approved repository document.
-- **Approved principle** identifies normative wording approved through ADP-001C.
-- **Unresolved** identifies a matter this document does not decide.
+EAIC-002 remains operationally inactive pending completion of coordinated migration and separate activation authorization. Supersession of ADP-001C does not activate EAIC-002 or grant submission, implementation, runtime, endpoint, persistence, product, or EDD-004 authority.
 
-ADP-001B authorized ADP-001C as architecture documentation. The Chief Architect approved the governed semantic boundary, and the Engineering Architect authorized canonicalization. ADP-001C is canonical Version 1.0.
+ADP-001C is retained only as the historical Swing-specific predecessor and for decision, terminology, and repository traceability. Sections 2 through 27 preserve the former Version 1.0 contract text as historical content. Their descriptions, principles, responsibilities, invariants, permissions, prohibitions, diagrams, and uses of normative language have no current architectural force.
+
+The former ADP-001C model shall not be used as authority for:
+
+- Provider acquisition scope;
+- Submission Eligibility;
+- technical receipt or boundary validation;
+- Architectural Admissibility or Interpretation Admission;
+- Instrument interpretation;
+- implementation;
+- runtime behavior; or
+- any Provider → Instrument interaction.
+
+Historical ADP-001C terminology remains only for predecessor traceability. It shall not be interpreted as EAIC-002 terminology, reproduced as a parallel contract, or used to redefine the successor.
+
+No duplicate or parallel Provider → Instrument boundary contract remains active.
+
+Version 1.0 is retained because it identifies the historical canonical release that EAIC-002 supersedes. This lifecycle update does not create a new architectural revision of ADP-001C.
 
 ## 2. Purpose
 
@@ -434,24 +456,39 @@ This section creates no sequence, roadmap commitment, contract, ADR, EDD, Engine
 
 ## 28. Approval Record
 
-**Chief Architect Decision:** Approved
+**Historical Chief Architect Decision:** Approved
 
-**Engineering Architect Verification:** Complete
+**Historical Engineering Architect Verification:** Complete
 
 **ADR Required:** No
 
-**Canonical Status:** Version 1.0
+**Lifecycle Status:** Superseded
+
+**Canonical Status:** Superseded
+
+**Superseded By:** EAIC-002 Version 0.1
+
+**Current Architecture Authority:** None
+
+**Activation State:** Inactive — Superseded
 
 **Implementation Authorization:** None
 
-**Next Authorized Capability:** None assigned by this document
+**Runtime Authorization:** None
 
-**Review History:** The Chief Architect approved ADP-001C after Engineering Architect review. The Engineering Architect authorized canonicalization, and repository metadata and indexes were updated for Version 1.0.
+**EDD-004 Drafting Authorization:** None
 
-ADP-001A, ADP-001B, ADP-001C, and the approved Platform architecture retain authority within their respective scopes. Approval of ADP-001C does not independently authorize implementation.
+**Next Authorized Capability:** None
+
+**Review History:** The Chief Architect approved ADP-001C after Engineering Architect review. The Engineering Architect authorized canonicalization, and repository metadata and indexes were updated for Version 1.0. Under ADR-009 and MIG-001, EAIC-002 Version 0.1 subsequently established the product-neutral Provider → Instrument Submission Contract. WP-B2R superseded ADP-001C and retained Version 1.0 only for historical predecessor traceability.
+
+ADP-001C retains no current architectural authority. EAIC-002 is the sole current canonical Provider → Instrument submission contract and remains subject to its own activation and authorization controls.
 
 ## Related Approved Authority
 
+- [ADR-009 — Provider-Bounded Instrument Master Acquisition Architecture](../../platform/domains/provider/ADR-009-PROVIDER-BOUNDED-INSTRUMENT-MASTER-ACQUISITION-ARCHITECTURE.md)
+- [MIG-001 — ADR-009 Coordinated Architecture Migration Package](../../migrations/MIG-001-ADR-009-COORDINATED-ARCHITECTURE-MIGRATION-PACKAGE.md)
+- [EAIC-002 — Provider → Instrument Submission Contract](../../interfaces/EAIC-002-PROVIDER-TO-INSTRUMENT-SUBMISSION-CONTRACT.md)
 - [ADP-001A — Swing Phase 1 Market Data Inventory](SWING-PHASE-1-MARKET-DATA-INVENTORY.md)
 - [ADP-001B — KRONOS Swing Instrument Identity Architecture](SWING-PHASE-1-INSTRUMENT-IDENTITY-ARCHITECTURE.md)
 - [PLATFORM-000 — KRONOS Platform Constitution](../../platform/PLATFORM-000-CONSTITUTION.md)
