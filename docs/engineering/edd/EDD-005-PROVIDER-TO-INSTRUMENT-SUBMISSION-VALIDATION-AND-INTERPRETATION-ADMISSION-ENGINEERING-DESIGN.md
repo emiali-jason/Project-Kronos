@@ -2,7 +2,7 @@
 
 **Document ID:** EDD-005
 **Title:** Provider-to-Instrument Submission Validation and Interpretation Admission Engineering Design
-**Version:** 0.3
+**Version:** 0.4
 **Status:** Draft
 **Canonical Status:** Draft
 **Classification:** Engineering Design Document
@@ -11,7 +11,7 @@
 **Review Authority:** Chief Architect
 **Repository Location:** `docs/engineering/edd/EDD-005-PROVIDER-TO-INSTRUMENT-SUBMISSION-VALIDATION-AND-INTERPRETATION-ADMISSION-ENGINEERING-DESIGN.md`
 **Workflow Stage:** Draft Preparation
-**Engineering Stage:** Engineering Building Block Architecture
+**Engineering Stage:** Engineering Interface Architecture
 **Engineering Authority:** Draft Preparation
 **Draft Authorization:** Approved with Constraints — CAR-004
 **Governing Architecture:** ADR-009 Version 1.0
@@ -1323,3 +1323,668 @@ Engineering Review shall accept ES-03 only when:
 44. ES-04 can begin without redefining capability or Building Block ownership.
 
 **Engineering readiness determination:** ES-03 is complete, internally consistent, fully traceable, implementation-independent, and ready for Engineering Review and subsequent controlled ES-04 preparation.
+
+# ES-04 — Engineering Interface Architecture
+
+## 1. Executive Summary
+
+EDD-005 ES-04 defines 19 conceptual Engineering Interfaces:
+
+- 15 internal Building Block interfaces; and
+- four justified external or cross-cutting interfaces.
+
+The architecture:
+
+- represents all 16 Building Blocks;
+- preserves every approved ES-03 dependency;
+- preserves all 22 capabilities, 52 responsibilities, and 66 invariants;
+- distinguishes structural dependencies from semantic preconditions;
+- preserves independent receipt, validation, admission, rejection, continuity, response, observability, and reconstruction meanings;
+- contains no orphan or unjustified interface;
+- has an acyclic semantic dependency graph;
+- transfers no ownership, authority, execution responsibility, or technology choice; and
+- terminates before Instrument interpretation.
+
+## 2. Repository Review
+
+| Authority | ES-04 effect |
+|---|---|
+| CAR-004 Version 1.0 | Authorizes implementation-independent Interface Architecture within EDD-005’s bounded mission. |
+| EDD-005 Version 0.3 Draft | Supplies the frozen scope, capability model, Building Blocks, dependencies, preconditions, and invariants. |
+| EAP-003 Version 2.0 | Governs receipt, validation, admission, rejection, response, continuity, evidence, and security meanings. |
+| EAP-004 Version 2.0 | Establishes the external interpretation boundary after accepted admission. |
+| EAIC-002 Version 0.1 | Remains the sole governed Provider-to-Instrument submission boundary. |
+| ADR-009 Version 1.0 | Preserves Provider-bounded acquisition and Provider/Instrument separation. |
+| Provider Domain | Retains Provider evidence, identity, snapshot, partition, disposition, eligibility, and provenance ownership. |
+| Instrument Domain | Owns contract validation, admission, and later interpretation and canonical meaning within their respective boundaries. |
+| Domain Ownership Matrix | Prohibits ownership transfer through an interface. |
+| Domain Dependency Matrix | Permits the Provider-to-Instrument dependency only through EAIC-002. |
+| DATA_FLOW | Prohibits direct Provider-to-Instrument state mutation and semantic feedback. |
+| EAS-001–EAS-007 | Govern interface decomposition, traceability, verification, and change control. |
+
+Repository baseline:
+
+- Current `develop`: `eb43038d7d9c704fedca86fe3a00f2443885b0a6`
+- EDD-005 Version: 0.3 Draft
+- Engineering Stage: Engineering Building Block Architecture
+- EDD-005 SHA-256: `7606a0230f08e82d65589794e1b15b155fa693479b32b4edce9997c45b9e0225`
+- Working tree: clean
+- Local and recorded remote HEAD: synchronized
+
+## 3. Scope Validation
+
+| Validation | Result |
+|---|---|
+| ES-01 published and frozen | Confirmed. |
+| ES-02 published and frozen | Confirmed. |
+| ES-03 published and frozen | Confirmed. |
+| Exactly 16 Building Blocks exist | Confirmed. |
+| All 22 capabilities remain allocated | Confirmed. |
+| All 52 responsibilities remain allocated | Confirmed. |
+| All 66 invariants remain present | Confirmed. |
+| Repository remains authoritative | Confirmed. |
+| No upstream authority invalidates ES-03 | Confirmed. |
+| Interface Architecture may begin | Confirmed. |
+| Implementation Authority | None. |
+| Runtime Authority | None. |
+| Instrument Interpretation Authority | None. |
+
+## 4. Engineering Interface Model
+
+### Engineering Interface Principle
+
+Every EDD-005 Engineering Interface transfers established engineering meaning only.
+
+No interface transfers semantic ownership, authority, execution responsibility, implementation behaviour, runtime behaviour, persistence responsibility, or technology choice.
+
+### IF-01 — Governed Submission Presentation Boundary
+
+- **Source:** Separately authorized Provider-side EAIC-002 presentation boundary.
+- **Target:** BB-01 Submission Boundary Preservation.
+- **Engineering Purpose:** Admit presented meaning for boundary qualification without recreating presentation or submission authority.
+- **Engineering Meaning Produced:** One presented submission attempt with attributable Provider, dataset, partition, snapshot, unit, version, authority, provenance, and evidence associations.
+- **Engineering Meaning Consumed:** The same presented meaning as qualification input.
+- **Preconditions:** Separately authorized presentation reached EAIC-002 sufficiently for qualification.
+- **Postconditions:** Presented meaning is available to BB-01 without ownership or authority inference.
+- **Dependencies:** CAR-004, EDD-004, EAIC-002, EAP-003.
+- **Constraints:** No direct state mutation, raw Provider access, transport design, or implicit receipt.
+- **Ownership Preservation:** Provider retains submitted semantic meaning.
+- **Authority Preservation:** Presentation and Submission Authority remain external.
+- **Lifecycle Preservation:** Submission eligibility, presentation, and receipt remain distinct.
+- **Invariants Preserved:** BB-01 invariants; `INV-C01-*` and `INV-C02-*`.
+
+### IF-02 — Qualified Submission to Receipt Assessment
+
+- **Source:** BB-01.
+- **Target:** BB-02 Technical Receipt Determination.
+- **Engineering Purpose:** Make qualified, preserved submission meaning available for receipt assessment.
+- **Engineering Meaning Produced:** Qualified boundary-entry and preserved submission-unit meaning.
+- **Engineering Meaning Consumed:** The same meaning solely as the basis for receipt assessment.
+- **Preconditions:** BB-01 has preserved identity, membership, atomicity, and authority distinctions.
+- **Postconditions:** BB-02 may establish receipt; no other meaning is established.
+- **Dependencies:** BB-01 → BB-02.
+- **Constraints:** Qualification is not receipt.
+- **Ownership Preservation:** Provider ownership remains unchanged.
+- **Authority Preservation:** No authority is created or consumed beyond attributable evidence.
+- **Lifecycle Preservation:** Presentation remains distinct from receipt.
+- **Invariants Preserved:** BB-01 and BB-02 invariants; `INV-C01-*`–`INV-C03-*`.
+
+### IF-03 — Received Contract Representation Basis
+
+- **Sources:** BB-01 and BB-02.
+- **Target:** BB-03 Contract Representation Conformance.
+- **Engineering Purpose:** Combine preserved submission meaning with established receipt for contract representation assessment.
+- **Engineering Meaning Produced:** Preserved unit meaning plus technical receipt result.
+- **Engineering Meaning Consumed:** Contract version, unit structure, identity, membership, partition, snapshot, and receipt meaning.
+- **Preconditions:** `RECEIPT_ESTABLISHED`; unit identity and membership remain fixed.
+- **Postconditions:** BB-03 may establish compatibility and structural conformance.
+- **Dependencies:** BB-01 and BB-02 → BB-03.
+- **Constraints:** Receipt cannot substitute for compatibility or structural validity.
+- **Ownership Preservation:** Each source retains ownership of its established meaning.
+- **Authority Preservation:** No compatibility authority or interpretation authority is transferred.
+- **Lifecycle Preservation:** Receipt precedes conceptual conformance eligibility without becoming conformance.
+- **Invariants Preserved:** BB-01–BB-03 inherited invariants.
+
+### IF-04 — Received Provider Evidence Conformance Basis
+
+- **Sources:** BB-01 and BB-02.
+- **Target:** BB-04 Provider Evidence and Boundary Constraint Conformance.
+- **Engineering Purpose:** Make attributable Provider evidence and receipt meaning available for conformance assessment.
+- **Engineering Meaning Produced:** Preserved disposition, eligibility, authority, security, provenance, and evidence associations with receipt status.
+- **Engineering Meaning Consumed:** The same associations solely for conformance assessment.
+- **Preconditions:** Receipt is established and evidence remains attributable.
+- **Postconditions:** BB-04 may establish evidence, constraint, safe-content, and provenance conformance.
+- **Dependencies:** BB-01 and BB-02 → BB-04.
+- **Constraints:** No Provider evidence is recreated, repaired, or re-owned.
+- **Ownership Preservation:** Provider retains evidence and disposition ownership.
+- **Authority Preservation:** Eligibility and Submission Authority remain externally established.
+- **Lifecycle Preservation:** Evidence production remains separate from evidence assessment.
+- **Invariants Preserved:** BB-01, BB-02, and BB-04 inherited invariants.
+
+### IF-05 — Continuity Evidence Qualification Basis
+
+- **Sources:** BB-01, BB-02, and BB-04.
+- **Target:** BB-05 Submission-Continuity Evidence Qualification.
+- **Engineering Purpose:** Combine preserved identity, receipt, and evidence conformance for continuity-evidence qualification.
+- **Engineering Meaning Produced:** Attributable identity, lineage, relationship, provenance, and evidence-availability meanings.
+- **Engineering Meaning Consumed:** Those meanings solely to determine continuity-evidence sufficiency.
+- **Preconditions:** Receipt is established; evidence is safe, attributable, and available.
+- **Postconditions:** BB-05 may establish continuity-evidence conformance.
+- **Dependencies:** BB-01, BB-02, and BB-04 → BB-05.
+- **Constraints:** Does not classify duplicate, replay, ordering, concurrency, or stale meaning.
+- **Ownership Preservation:** Source evidence retains its original owner.
+- **Authority Preservation:** No continuity decision authority is implied by evidence availability.
+- **Lifecycle Preservation:** Evidence qualification remains distinct from continuity classification.
+- **Invariants Preserved:** BB-01, BB-02, BB-04, and BB-05 inherited invariants.
+
+### IF-06 — Duplicate Classification Basis
+
+- **Sources:** BB-01 and BB-05.
+- **Target:** BB-06 Duplicate Meaning Characterization.
+- **Engineering Purpose:** Support exact-duplicate and conflicting-duplicate classification.
+- **Engineering Meaning Produced:** Immutable submission identity and qualified comparison evidence.
+- **Engineering Meaning Consumed:** The same meaning for duplicate characterization.
+- **Preconditions:** Comparison evidence is sufficient and attributable.
+- **Postconditions:** BB-06 may establish exact, conflicting, or non-duplicate meaning.
+- **Dependencies:** BB-01 and BB-05 → BB-06.
+- **Constraints:** No persistence, lookup, key, or idempotency mechanism.
+- **Ownership Preservation:** Submission meaning remains Provider-owned where applicable.
+- **Authority Preservation:** Classification creates no retry or admission authority.
+- **Lifecycle Preservation:** Duplicate relationship remains separate from submission identity and admission.
+- **Invariants Preserved:** BB-01, BB-05, and BB-06 inherited invariants.
+
+### IF-07 — Replay and Safe-Retry Classification Basis
+
+- **Sources:** BB-01 and BB-05.
+- **Target:** BB-07 Replay and Safe-Retry Meaning.
+- **Engineering Purpose:** Support governed replay and safe-retry characterization.
+- **Engineering Meaning Produced:** Immutable identity, original-submission relationship, eligibility, authority, and qualified evidence.
+- **Engineering Meaning Consumed:** Those meanings solely for replay classification.
+- **Preconditions:** The claimed original relationship is attributable.
+- **Postconditions:** BB-07 may establish replay relationship and safe-retry meaning.
+- **Dependencies:** BB-01 and BB-05 → BB-07.
+- **Constraints:** No runtime retry, backoff, count, scheduling, or transport policy.
+- **Ownership Preservation:** Original and replayed submission meanings retain their owners.
+- **Authority Preservation:** Replay never refreshes eligibility or authority.
+- **Lifecycle Preservation:** Replay remains related to, but distinct from, the original submission.
+- **Invariants Preserved:** BB-01, BB-05, and BB-07 inherited invariants.
+
+### IF-08 — Partition Ordering Assessment Basis
+
+- **Sources:** BB-01 and BB-05.
+- **Target:** BB-08 Provider-Partition Ordering Meaning.
+- **Engineering Purpose:** Support partition-bounded ordering assessment.
+- **Engineering Meaning Produced:** Qualified partition, snapshot, lineage, and ordering evidence.
+- **Engineering Meaning Consumed:** The same meaning for ordering conformance.
+- **Preconditions:** Partition identity and snapshot lineage are established.
+- **Postconditions:** BB-08 may establish partition-bounded ordering meaning.
+- **Dependencies:** BB-01 and BB-05 → BB-08.
+- **Constraints:** No global order, scheduling, queue, or orchestration.
+- **Ownership Preservation:** Provider partition and lineage ownership remain unchanged.
+- **Authority Preservation:** Ordering evidence grants no execution authority.
+- **Lifecycle Preservation:** Arrival order remains distinct from snapshot lineage.
+- **Invariants Preserved:** BB-01, BB-05, and BB-08 inherited invariants.
+
+### IF-09 — Concurrency Assessment Basis
+
+- **Sources:** BB-01 and BB-05.
+- **Target:** BB-09 Submission Concurrency Meaning.
+- **Engineering Purpose:** Support semantic concurrency assessment.
+- **Engineering Meaning Produced:** Qualified identities, memberships, partitions, snapshots, and bounded relationships.
+- **Engineering Meaning Consumed:** Those meanings for concurrency characterization.
+- **Preconditions:** Concurrent units remain independently attributable.
+- **Postconditions:** BB-09 may establish concurrency-conformance meaning.
+- **Dependencies:** BB-01 and BB-05 → BB-09.
+- **Constraints:** No locks, threads, queues, transactions, or synchronization.
+- **Ownership Preservation:** Each concurrent unit retains independent ownership and identity.
+- **Authority Preservation:** Concurrency creates no orchestration authority.
+- **Lifecycle Preservation:** Concurrent assessment does not merge submission lifecycles.
+- **Invariants Preserved:** BB-01, BB-05, and BB-09 inherited invariants.
+
+### IF-10 — Lineage and Stale Assessment Basis
+
+- **Sources:** BB-01 and BB-05.
+- **Target:** BB-10 Lineage and Stale-Submission Meaning.
+- **Engineering Purpose:** Support non-destructive lineage, supersession, and stale assessment.
+- **Engineering Meaning Produced:** Qualified partition, snapshot, lineage, supersession, and currentness evidence.
+- **Engineering Meaning Consumed:** Those meanings for stale classification.
+- **Preconditions:** Applicable lineage and supersession evidence is attributable.
+- **Postconditions:** BB-10 may establish current, superseded, or stale relationship meaning.
+- **Dependencies:** BB-01 and BB-05 → BB-10.
+- **Constraints:** No deletion, overwrite, mutation, or currentness mechanism.
+- **Ownership Preservation:** Provider retains snapshot and lineage ownership.
+- **Authority Preservation:** Stale classification creates no deletion or mutation authority.
+- **Lifecycle Preservation:** Supersession remains non-destructive.
+- **Invariants Preserved:** BB-01, BB-05, and BB-10 inherited invariants.
+
+### IF-11 — Composite Contract Validation Basis
+
+- **Sources:** BB-03–BB-10.
+- **Target:** BB-11 Contract Validation Determination.
+- **Engineering Purpose:** Combine all required conformance and continuity determinations for contract validation.
+- **Engineering Meaning Produced:** Compatibility, structure, evidence, constraint, provenance, continuity, duplicate, replay, ordering, concurrency, and stale determinations.
+- **Engineering Meaning Consumed:** Each determination independently as part of the complete validation basis.
+- **Preconditions:** Every applicable source determination is complete and attributable.
+- **Postconditions:** BB-11 may establish exactly one contract-valid or contract-invalid result.
+- **Dependencies:** BB-03–BB-10 → BB-11.
+- **Constraints:** Composite meaning creates no new scope and cannot erase a source distinction.
+- **Ownership Preservation:** Every contributing source retains ownership of its determination.
+- **Authority Preservation:** Validation authority remains bounded to BB-11; interpretation authority remains absent.
+- **Lifecycle Preservation:** Source conformance remains distinct from aggregate validation.
+- **Invariants Preserved:** All BB-03–BB-11 inherited invariants.
+
+### IF-12 — Validated Submission Admission Basis
+
+- **Source:** BB-11.
+- **Target:** BB-12 Interpretation Admission Determination.
+- **Engineering Purpose:** Make completed validation meaning available for admission.
+- **Engineering Meaning Produced:** Contract-valid or contract-invalid result with governed basis.
+- **Engineering Meaning Consumed:** Validation result plus applicable admission eligibility meaning.
+- **Preconditions:** Contract validation is complete.
+- **Postconditions:** BB-12 may establish one admission disposition.
+- **Dependencies:** BB-11 → BB-12.
+- **Constraints:** Contract validity does not itself imply acceptance.
+- **Ownership Preservation:** BB-11 retains validation-result ownership.
+- **Authority Preservation:** Validation transfers no Interpretation Authority.
+- **Lifecycle Preservation:** Validation remains distinct from admission.
+- **Invariants Preserved:** BB-11 and BB-12 inherited invariants.
+
+### IF-13 — Composite Rejection Characterization Basis
+
+- **Sources:** BB-06–BB-12.
+- **Target:** BB-13 Deterministic Rejection Characterization.
+- **Engineering Purpose:** Supply the governed basis for rejection before interpretation.
+- **Engineering Meaning Produced:** Relevant continuity classifications, validation result, admission result, and trusted evidence.
+- **Engineering Meaning Consumed:** Each contributing meaning solely to characterize rejection.
+- **Preconditions:** A governed validation or admission condition requires rejection.
+- **Postconditions:** BB-13 may establish deterministic rejection classification and evidence.
+- **Dependencies:** BB-06–BB-12 → BB-13.
+- **Constraints:** No source meaning is merged away or reinterpreted.
+- **Ownership Preservation:** Each source retains its decision ownership; Provider evidence remains Provider-owned.
+- **Authority Preservation:** Rejection creates no Provider mutation or Instrument interpretation authority.
+- **Lifecycle Preservation:** Rejection remains pre-interpretation.
+- **Invariants Preserved:** All BB-06–BB-13 inherited invariants.
+
+### IF-14 — Boundary Outcome Response-Evidence Basis
+
+- **Sources:** BB-02 and BB-06–BB-13.
+- **Target:** BB-14 Boundary Outcome and Logical Response Evidence.
+- **Engineering Purpose:** Supply established boundary meanings for error, time, and logical-response evidence.
+- **Engineering Meaning Produced:** Receipt, continuity, validation, admission, rejection, error-domain, and time-domain meanings.
+- **Engineering Meaning Consumed:** Those meanings without changing their semantics.
+- **Preconditions:** The applicable boundary result and trusted evidence are established.
+- **Postconditions:** BB-14 may establish distinct error/time meaning and logical response evidence.
+- **Dependencies:** BB-02 and BB-06–BB-13 → BB-14.
+- **Constraints:** No transport acknowledgement, delivery result, retry behaviour, or runtime response.
+- **Ownership Preservation:** Every contributing meaning retains its owner.
+- **Authority Preservation:** Response evidence grants no delivery, retry, or execution authority.
+- **Lifecycle Preservation:** Response evidence records but does not replace the underlying lifecycle result.
+- **Invariants Preserved:** All BB-02 and BB-06–BB-14 inherited invariants.
+
+### IF-15 — Composite Observability and Reconstruction Basis
+
+- **Sources:** BB-01–BB-14 as applicable.
+- **Target:** BB-15 Boundary Observability and Reconstruction Evidence.
+- **Engineering Purpose:** Combine governed subsystem evidence for non-sensitive observability and audit-safe reconstruction.
+- **Engineering Meaning Produced:** Attributable status, classification, provenance, timing, and evidence-completeness meanings.
+- **Engineering Meaning Consumed:** Each meaning according to its classification and intended observability or reconstruction purpose.
+- **Preconditions:** Evidence is governed, attributable, and classified for safe use.
+- **Postconditions:** BB-15 may establish safe observability and reconstruction evidence as distinct outputs.
+- **Dependencies:** BB-01–BB-14 → BB-15.
+- **Constraints:** No monitoring control, persistence design, or sensitive disclosure.
+- **Ownership Preservation:** Source semantic ownership remains unchanged.
+- **Authority Preservation:** Observability and reconstruction grant no decision or control authority.
+- **Lifecycle Preservation:** Observation of a lifecycle state cannot alter it.
+- **Invariants Preserved:** All applicable `INV-C01-*`–`INV-C21-*`.
+
+### IF-16 — Terminal Boundary Closure Basis
+
+- **Sources:** BB-12–BB-14.
+- **Target:** BB-16 Terminal Boundary and Interpretation Handoff.
+- **Engineering Purpose:** Supply terminal disposition and response evidence for EDD-005 boundary closure.
+- **Engineering Meaning Produced:** Admission disposition, rejection meaning where applicable, and logical response evidence.
+- **Engineering Meaning Consumed:** Those meanings solely to close EDD-005 and determine whether an accepted handoff exists.
+- **Preconditions:** Exactly one admission disposition and governed response evidence exist.
+- **Postconditions:** EDD-005 is closed; only acceptance makes the IF-17 handoff eligible.
+- **Dependencies:** BB-12–BB-14 → BB-16.
+- **Constraints:** No Instrument interpretation or runtime initiation.
+- **Ownership Preservation:** Admission, rejection, and response ownership remain unchanged.
+- **Authority Preservation:** Boundary closure creates no Interpretation Authority.
+- **Lifecycle Preservation:** Accepted and rejected terminal meanings remain distinct.
+- **Invariants Preserved:** BB-12–BB-14 and BB-16 inherited invariants.
+
+### IF-17 — Accepted-Admission Interpretation Handoff
+
+- **Source:** BB-16.
+- **Target:** Separately authorized EAP-004 interpretation boundary.
+- **Engineering Purpose:** Expose accepted-admission evidence suitable for possible Instrument interpretation.
+- **Engineering Meaning Produced:** `ACCEPTED_FOR_INTERPRETATION` with attributable accepted-submission and governed response evidence.
+- **Engineering Meaning Consumed:** The same accepted-admission meaning as a prerequisite for separately authorized EAP-004 work.
+- **Preconditions:** BB-16 is closed with `ACCEPTED_FOR_INTERPRETATION`.
+- **Postconditions:** Accepted evidence is available at the EAP-004 boundary; interpretation has not begun.
+- **Dependencies:** BB-16; EAP-004.
+- **Constraints:** No rejected submission crosses; no interpretation, identity, mapping, product, or runtime meaning.
+- **Ownership Preservation:** Provider evidence remains Provider-owned; downstream Instrument semantics remain Instrument-owned.
+- **Authority Preservation:** Instrument Interpretation Authority remains separately governed.
+- **Lifecycle Preservation:** Admission remains distinct from interpretation processing.
+- **Invariants Preserved:** BB-16 invariants and the EAP-004 entry boundary.
+- **Terminal Status:** Sole downstream terminal external interface.
+
+### IF-18 — Audit Reconstruction Evidence Boundary
+
+- **Source:** BB-15.
+- **Target:** Approved read-only Audit evidence boundary.
+- **Engineering Purpose:** Make governed reconstruction evidence available for non-owning Audit use.
+- **Engineering Meaning Produced:** Audit-safe reconstruction evidence and permitted non-sensitive references.
+- **Engineering Meaning Consumed:** Evidence only for recording or reconstruction.
+- **Preconditions:** Evidence is attributable, safe, and approved for Audit use.
+- **Postconditions:** Audit may record or examine evidence without acquiring its semantics.
+- **Dependencies:** BB-15; approved Audit governance.
+- **Constraints:** No semantic feedback, mutation, control, or persistence design.
+- **Ownership Preservation:** Provider and Instrument owners retain recorded meaning.
+- **Authority Preservation:** Audit Authority remains limited to the Audit Trail.
+- **Lifecycle Preservation:** Audit observation does not change lifecycle state.
+- **Invariants Preserved:** BB-15 invariants and Audit non-ownership.
+- **Pipeline Status:** Cross-cutting read-only boundary, not a downstream business-stage terminal.
+
+### IF-19 — Governing Constraint Preservation Interface
+
+- **Source:** CAR-004, ADR-009, EAIC-002, EAP-003, EAP-004, domain architecture, matrices, DATA_FLOW, and EAS-001–EAS-007.
+- **Targets:** BB-01–BB-16.
+- **Engineering Purpose:** Apply governing constraints without transferring governance ownership into a Building Block.
+- **Engineering Meaning Produced:** Approved ownership, authority, lifecycle, boundary, security, neutrality, and prohibition constraints.
+- **Engineering Meaning Consumed:** Constraints only as normative limits.
+- **Preconditions:** Governing authority is current and applicable.
+- **Postconditions:** Every Building Block remains subordinate to repository authority.
+- **Dependencies:** Current repository governance.
+- **Constraints:** No Building Block may amend governing meaning through this interface.
+- **Ownership Preservation:** Architectural and governance owners retain their authority.
+- **Authority Preservation:** Constraint consumption grants no implementation or runtime authority.
+- **Lifecycle Preservation:** Governance lifecycle remains external to engineering lifecycle.
+- **Invariants Preserved:** All 66 ES-02 invariants and all ES-03 boundary rules.
+- **Pipeline Status:** Cross-cutting normative interface, not operational flow.
+
+## 5. Interface Taxonomy
+
+| Interface | Classification |
+|---|---|
+| IF-01 | Boundary; Qualification; External Engineering Boundary |
+| IF-02 | Qualification; Receipt |
+| IF-03 | Receipt; Conformance; Composite |
+| IF-04 | Evidence; Conformance; Constraint; Composite |
+| IF-05 | Evidence; Continuity; Qualification; Composite |
+| IF-06 | Continuity; Classification |
+| IF-07 | Continuity; Classification |
+| IF-08 | Continuity; Classification |
+| IF-09 | Continuity; Classification |
+| IF-10 | Continuity; Classification |
+| IF-11 | Conformance; Validation; Composite |
+| IF-12 | Validation; Admission |
+| IF-13 | Classification; Rejection; Composite |
+| IF-14 | Response; Evidence; Composite |
+| IF-15 | Observability; Reconstruction; Evidence; Composite |
+| IF-16 | Admission; Response; Boundary Closure; Composite |
+| IF-17 | Terminal Handoff; External Engineering Boundary |
+| IF-18 | Reconstruction; Evidence; Cross-Cutting |
+| IF-19 | Constraint; Cross-Cutting |
+
+## 6. Interface Contracts
+
+| Interface | Meaning transferred | Meaning never transferred | Target may establish | Target may not infer |
+|---|---|---|---|---|
+| IF-01 | Presented, attributable submission meaning | Receipt, validity, admission, authority | Boundary qualification | Receipt or authority from presentation |
+| IF-02 | Qualified preserved unit | Contract validity or admission | Technical receipt | Validity from qualification |
+| IF-03 | Preserved unit plus receipt | Semantic correctness or interpretation | Compatibility and structural conformance | Conformance from receipt alone |
+| IF-04 | Provider evidence plus receipt | Provider ownership or recreated authority | Evidence and constraint conformance | Authority from evidence presence |
+| IF-05 | Qualified continuity evidence basis | Duplicate, replay, ordering, concurrency, or stale result | Evidence sufficiency | Classification from availability |
+| IF-06 | Duplicate-comparison basis | Persistence identity or admission | Duplicate classification | Exactness from identity alone |
+| IF-07 | Replay relationship basis | Runtime retry policy | Replay and safe-retry meaning | Refreshed eligibility or authority |
+| IF-08 | Partition and lineage basis | Global ordering or orchestration | Partition ordering meaning | Global order |
+| IF-09 | Concurrent relationship basis | Synchronization behaviour | Concurrency meaning | Merger or runtime coordination |
+| IF-10 | Lineage and supersession basis | Deletion or mutation authority | Stale relationship meaning | Destructive currentness |
+| IF-11 | Independent conformance determinations | Source ownership or interpretation | Contract validation | Admission from validity |
+| IF-12 | Completed validation result | Interpretation or downstream success | Admission disposition | Acceptance from validity alone |
+| IF-13 | Rejection basis and trusted evidence | Instrument invalidity or Provider mutation | Rejection classification | Canonical or product meaning |
+| IF-14 | Boundary results, errors, and times | Transport acknowledgement or delivery | Logical response evidence | Runtime success |
+| IF-15 | Governed status and evidence | Control authority or sensitive unrestricted content | Observability and reconstruction evidence | Authority from observability |
+| IF-16 | Terminal admission and response evidence | Interpretation behaviour | Boundary closure | Interpretation start or success |
+| IF-17 | Accepted-admission evidence | Interpretation outcome, identity, mapping, product meaning | Separately authorized interpretation eligibility | Interpretation success |
+| IF-18 | Audit-safe evidence | Source semantic ownership | Audit record or reconstruction | Decision ownership |
+| IF-19 | Governing constraints | Governance ownership or operational authority | Constrained engineering meaning | Authority beyond the governing decision |
+
+For every contract, the source owner retains source meaning, external authorities remain external, and lifecycle distinctions remain unchanged.
+
+## 7. Interface Boundaries
+
+| Interface | Begins | Ends | Outside the interface |
+|---|---|---|---|
+| IF-01 | Separately authorized EAIC-002 presentation | Meaning is available to BB-01 | Presentation mechanism, receipt, validation |
+| IF-02 | BB-01 qualification is established | BB-02 receives preserved meaning | Receipt result and later conformance |
+| IF-03 | Receipt and preserved unit are established | BB-03 receives the assessment basis | Validation, admission, interpretation |
+| IF-04 | Receipt and attributable evidence are established | BB-04 receives evidence basis | Provider evidence production and validation |
+| IF-05 | Safe attributable continuity evidence exists | BB-05 receives qualification basis | Continuity classifications |
+| IF-06 | Duplicate-comparison basis exists | BB-06 receives it | Persistence and idempotency mechanisms |
+| IF-07 | Replay relationship basis exists | BB-07 receives it | Retry mechanisms |
+| IF-08 | Partition-lineage basis exists | BB-08 receives it | Runtime sequencing |
+| IF-09 | Concurrent relationship basis exists | BB-09 receives it | Synchronization |
+| IF-10 | Lineage/supersession basis exists | BB-10 receives it | Mutation and deletion |
+| IF-11 | All applicable conformance meanings exist | BB-11 receives the complete validation basis | Admission and interpretation |
+| IF-12 | Validation is complete | BB-12 receives validation meaning | Admission result and interpretation |
+| IF-13 | A rejection condition exists | BB-13 receives trusted rejection basis | Instrument invalidity and Provider mutation |
+| IF-14 | Boundary result meanings exist | BB-14 receives response-evidence basis | Transport acknowledgement and delivery |
+| IF-15 | Governed evidence is classified | BB-15 receives safe evidence basis | Monitoring control and storage design |
+| IF-16 | Admission and response evidence exist | BB-16 receives closure basis | Interpretation |
+| IF-17 | Accepted boundary closure exists | Accepted evidence reaches EAP-004 boundary | Interpretation processing and outcome |
+| IF-18 | Audit-safe reconstruction evidence exists | Evidence reaches approved read-only Audit boundary | Semantic feedback and ownership transfer |
+| IF-19 | Governing authority is applicable | Constraints bind each Building Block | Architecture amendment and operational execution |
+
+## 8. Cross-Cutting Interface Rules
+
+1. Interfaces transfer established meaning only.
+2. Provider semantic ownership never transfers.
+3. Instrument semantic ownership never transfers outside its approved boundary.
+4. Consuming evidence does not confer ownership.
+5. Eligibility, authority, presentation, receipt, validation, admission, and interpretation remain distinct.
+6. No authority implies another.
+7. No interface creates implementation, runtime, persistence, or deployment authority.
+8. Provider and product neutrality are mandatory.
+9. Provider-and-dataset partition isolation is preserved.
+10. Submission Unit identity, membership, and atomicity remain immutable.
+11. Provenance remains attributable through every interface.
+12. Unsafe, sensitive, raw, SDK-private, or transport-private material cannot be promoted.
+13. Error-domain meanings remain distinct.
+14. Time meanings remain distinct.
+15. Composite interfaces retain every contributing source’s ownership and semantic identity.
+16. Observability cannot control or alter subsystem decisions.
+17. Audit owns only its Audit Trail.
+18. EAIC-002 remains the sole Provider-to-Instrument submission boundary.
+19. No interface permits direct Provider-to-Instrument state mutation.
+20. IF-17 is the sole downstream terminal external interface.
+21. EDD-005 terminates before Instrument interpretation.
+
+## 9. Interface Invariants
+
+### Universal Interface Invariants
+
+1. `UI-01`: An interface transfers established meaning only.
+2. `UI-02`: Source semantic ownership remains with the source owner.
+3. `UI-03`: Authority is never transferred or inferred.
+4. `UI-04`: Structural dependency is not a semantic precondition.
+5. `UI-05`: A satisfied precondition does not imply the target outcome.
+6. `UI-06`: Composite meaning cannot erase contributing-source distinctions.
+7. `UI-07`: Interface consumption cannot mutate source meaning.
+8. `UI-08`: Provider identity remains separate from Instrument identity.
+9. `UI-09`: Submission membership and atomicity remain fixed.
+10. `UI-10`: Provenance remains attributable.
+11. `UI-11`: Error and time meanings remain separate.
+12. `UI-12`: Observability and Audit use remain non-interfering.
+13. `UI-13`: No interface defines implementation or runtime behaviour.
+14. `UI-14`: No semantic feedback cycle is permitted.
+15. `UI-15`: EAIC-002 exclusivity is preserved.
+16. `UI-16`: No interface crosses into Instrument interpretation.
+
+### Interface-Specific Invariant Preservation
+
+| Interface | Inherited invariant scope |
+|---|---|
+| IF-01 | BB-01; `INV-C01-*`–`INV-C02-*` |
+| IF-02 | BB-01–BB-02; `INV-C01-*`–`INV-C03-*` |
+| IF-03 | BB-01–BB-03; `INV-C01-*`–`INV-C05-*` |
+| IF-04 | BB-01, BB-02, BB-04; `INV-C01-*`–`INV-C03-*`, `INV-C06-*`–`INV-C08-*` |
+| IF-05 | BB-01, BB-02, BB-04, BB-05; corresponding inherited invariants |
+| IF-06 | BB-01, BB-05, BB-06; duplicate invariants preserved |
+| IF-07 | BB-01, BB-05, BB-07; replay invariants preserved |
+| IF-08 | BB-01, BB-05, BB-08; ordering invariants preserved |
+| IF-09 | BB-01, BB-05, BB-09; concurrency invariants preserved |
+| IF-10 | BB-01, BB-05, BB-10; lineage/stale invariants preserved |
+| IF-11 | BB-03–BB-11; all contributing conformance and validation invariants |
+| IF-12 | BB-11–BB-12; validation/admission separation invariants |
+| IF-13 | BB-06–BB-13; continuity, validation, admission, and rejection invariants |
+| IF-14 | BB-02, BB-06–BB-14; receipt, outcome, error, time, and response invariants |
+| IF-15 | BB-01–BB-15 as applicable; `INV-C01-*`–`INV-C21-*` |
+| IF-16 | BB-12–BB-14 and BB-16; terminal-boundary invariants |
+| IF-17 | BB-16 and EAP-004 entry invariants |
+| IF-18 | BB-15 and Audit non-ownership invariants |
+| IF-19 | All 66 ES-02 invariants and all ES-03 boundary constraints |
+
+No inherited invariant is weakened, merged away, or reinterpreted.
+
+## 10. Future Interface Readiness
+
+| Interfaces | Readiness classification |
+|---|---|
+| IF-01 | External engineering boundary |
+| IF-02–IF-14 | Internal module interface |
+| IF-15 | Cross-cutting interface |
+| IF-16 | Conceptual-only interface |
+| IF-17 | External engineering boundary |
+| IF-18 | Cross-cutting interface |
+| IF-19 | Cross-cutting interface |
+
+These classifications do not define modules, methods, physical forms, protocols, or technology.
+
+## 11. Engineering Traceability Matrix
+
+| Responsibilities | Capabilities | Building Block | Interfaces | ES-05 verification |
+|---:|---|---|---|---|
+| 1–6 | C01–C02 | BB-01 | IF-01–IF-10, IF-15, IF-19 | Verify boundary, authority, identity, membership, atomicity, and ownership preservation. |
+| 7–10 | C03 | BB-02 | IF-02–IF-05, IF-14–IF-15, IF-19 | Verify receipt remains independent. |
+| 11–16, 46–47 | C04–C05 | BB-03 | IF-03, IF-11, IF-15, IF-19 | Verify compatibility and structural conformance without technology coupling. |
+| 17–21 | C06–C08 | BB-04 | IF-04–IF-05, IF-11, IF-15, IF-19 | Verify Provider evidence and constraint ownership. |
+| 22 | C09 | BB-05 | IF-05–IF-11, IF-15, IF-19 | Verify continuity evidence remains separate from classification. |
+| 35–36 | C13 | BB-06 | IF-06, IF-11, IF-13–IF-15, IF-19 | Verify duplicate classification without persistence. |
+| 37–38 | C14 | BB-07 | IF-07, IF-11, IF-13–IF-15, IF-19 | Verify replay independently from retry mechanisms. |
+| 39 | C15 | BB-08 | IF-08, IF-11, IF-13–IF-15, IF-19 | Verify partition ordering without orchestration. |
+| 40 | C16 | BB-09 | IF-09, IF-11, IF-13–IF-15, IF-19 | Verify concurrency without mechanisms. |
+| 41 | C17 | BB-10 | IF-10–IF-11, IF-13–IF-15, IF-19 | Verify stale meaning and non-destructive lineage. |
+| 23–25 | C10 | BB-11 | IF-11–IF-15, IF-19 | Verify one validation result and admission separation. |
+| 26–29 | C11 | BB-12 | IF-12–IF-17, IF-19 | Verify exactly two admission meanings and no interpretation leakage. |
+| 30–34 | C12 | BB-13 | IF-13–IF-16, IF-19 | Verify deterministic pre-interpretation rejection. |
+| 42–45 | C18–C19 | BB-14 | IF-14–IF-16, IF-19 | Verify error/time separation and logical-response independence. |
+| 48–50 | C20–C21 | BB-15 | IF-15, IF-18–IF-19 | Verify safe observability, reconstruction, and Audit non-ownership. |
+| 51–52 | C22 | BB-16 | IF-16–IF-17, IF-19 | Verify terminal closure and accepted handoff before interpretation. |
+
+Coverage confirmation:
+
+- Interfaces: **19**
+- Internal Building Block interfaces: **15**
+- External or cross-cutting interfaces: **4**
+- Building Blocks represented: **16 of 16**
+- Approved Building Block dependencies represented: **100%**
+- Capabilities preserved: **22 of 22**
+- Responsibilities traceable: **52 of 52**
+- Invariants preserved: **66 of 66**
+- Orphan interfaces: **0**
+- Unjustified interfaces: **0**
+- Uncovered dependencies: **0**
+- Semantic cycles: **0**
+- New responsibilities or ownership: **0**
+
+## 12. Presentation Projection Assessment
+
+This assessment grants no Presentation Authority and defines no GUI or workflow.
+
+| Classification | Interface outputs |
+|---|---|
+| **Safe for future Presentation** | Non-sensitive receipt status from IF-02; compatibility and conformance status from IF-03–IF-05; approved duplicate, replay, ordering, concurrency, and stale classifications from IF-06–IF-10; validation status from IF-11; admission disposition from IF-12; approved rejection classification from IF-13; logical-response status and safe time meaning from IF-14; provenance-completeness, evidence-completeness, and reconstruction-availability status from IF-15. |
+| **Prohibited** | Raw Provider content; credentials, secrets, tokens; restricted licensed material; untrusted material presented as verified; internal security controls; exploit-relevant details; unrestricted evidence; implementation internals; and anything represented as interpretation, canonical identity, Provider mapping, product eligibility, Observation meaning, persistence success, delivery success, or runtime success. |
+| **Requires future Security Architecture** | Provider, dataset, partition, snapshot, submission, or authority identifiers; detailed rejection evidence; duplicate correlation; replay relationships; ordering references; concurrency relationships; lineage and supersession evidence; detailed provenance; retained-evidence references; licensing and retention details; precise times; and reconstruction evidence subject to role, purpose, environment, sensitivity, or Audit authority. |
+
+IF-17 accepted-admission evidence is not automatically safe for Presentation merely because it is safe for the EAP-004 boundary.
+
+## 13. Engineering Risks
+
+| Risk | Consequence | Required control |
+|---|---|---|
+| Interface overlap | Multiple interfaces claim the same semantic exchange. | Preserve the exact IF-01–IF-19 purposes. |
+| Hidden semantic cycle | A downstream result changes an upstream determination. | Enforce acyclic dependencies and no feedback. |
+| Ownership leakage | Target acquires source semantic ownership. | Apply `UI-02` and composite-source ownership rules. |
+| Authority leakage | Evidence or status is treated as authority. | Apply `UI-03`. |
+| Composite ambiguity | Source distinctions disappear inside a composite interface. | Preserve every contributing source explicitly. |
+| Receipt becomes validation | IF-03 treats receipt as conformance. | Preserve IF-02/IF-03 separation. |
+| Validation becomes admission | IF-12 treats validity as acceptance. | Preserve admission preconditions. |
+| Admission becomes interpretation | IF-17 begins semantic processing. | Terminate at accepted evidence. |
+| Duplicate becomes persistence | IF-06 implies keys or lookup mechanisms. | Keep duplicate meaning conceptual. |
+| Replay becomes runtime retry | IF-07 implies scheduling or backoff. | Preserve semantic replay only. |
+| Ordering becomes orchestration | IF-08 implies runtime sequencing. | Keep ordering partition-bounded. |
+| Concurrency becomes mechanism | IF-09 implies locks or threads. | Preserve relationship meaning only. |
+| Stale meaning becomes destructive | IF-10 implies overwrite or deletion. | Preserve non-destructive lineage. |
+| Response becomes acknowledgement | IF-14 implies transport or delivery success. | Preserve logical response only. |
+| Observability becomes control | IF-15 changes subsystem decisions. | Enforce non-interference. |
+| Reconstruction becomes persistence | IF-18 selects storage technology. | Preserve evidence requirements only. |
+| Unsafe Presentation projection | Sensitive evidence is exposed. | Require future Security Architecture classification. |
+| Audit ownership leakage | Audit acquires recorded semantics. | Preserve IF-18 read-only non-ownership. |
+| EAIC-002 leakage | Another Provider-to-Instrument entry path appears. | Preserve IF-01 exclusivity. |
+| Terminal-boundary leakage | Rejected or unadmitted meaning reaches EAP-004. | Permit IF-17 only after acceptance. |
+
+## 14. Verification Criteria
+
+Engineering Review shall accept ES-04 only when:
+
+1. Exactly 19 conceptual interfaces are defined.
+2. All 16 Building Blocks are represented.
+3. Every approved ES-03 dependency is represented.
+4. All 22 capabilities remain preserved.
+5. All 52 responsibilities remain traceable.
+6. All 66 invariants remain preserved.
+7. No interface introduces a responsibility.
+8. No interface transfers ownership.
+9. No interface transfers authority.
+10. No interface transfers execution responsibility.
+11. No interface is orphaned.
+12. No interface is unjustified.
+13. Composite interfaces identify every contributing source.
+14. Composite interfaces preserve each source’s ownership.
+15. Structural dependencies and semantic preconditions remain distinct.
+16. The semantic dependency graph is acyclic.
+17. IF-01 remains the sole Provider-to-Instrument submission entry boundary.
+18. Boundary qualification remains distinct from receipt.
+19. Receipt remains distinct from contract conformance.
+20. Contract conformance remains distinct from validation.
+21. Validation remains distinct from admission.
+22. Admission remains distinct from interpretation.
+23. Duplicate classification remains independent.
+24. Replay remains independent from runtime retry.
+25. Ordering remains Provider-partition bounded.
+26. Concurrency remains mechanism-independent.
+27. Stale and supersession meanings remain non-destructive.
+28. Rejection remains deterministic and pre-interpretation.
+29. Error-domain meanings remain distinct.
+30. Time meanings remain distinct.
+31. Logical response remains independent of transport and delivery.
+32. Observability remains non-interfering.
+33. Reconstruction remains independent of persistence design.
+34. Audit consumes evidence without acquiring semantics.
+35. Provider ownership remains preserved.
+36. Instrument ownership remains preserved.
+37. Provider and product neutrality remain preserved.
+38. Submission membership and atomicity remain immutable.
+39. Provenance and safe-content restrictions remain preserved.
+40. No direct Provider-to-Instrument state mutation exists.
+41. IF-17 is the sole downstream terminal external interface.
+42. IF-17 transfers only accepted-admission evidence.
+43. IF-17 does not begin or perform Instrument interpretation.
+44. No methods, calls, messages, payloads, fields, schemas, protocols, APIs, transport, persistence, runtime, scheduling, retries, orchestration, deployment, GUI, framework, language, or code design appears.
+45. The model is ready for ES-05 Engineering Verification without additional architecture.
+
+**Engineering readiness determination:** ES-04 is complete, internally consistent, fully traceable to ES-03, implementation-independent, and ready for Engineering Review and subsequent controlled ES-05 verification.
