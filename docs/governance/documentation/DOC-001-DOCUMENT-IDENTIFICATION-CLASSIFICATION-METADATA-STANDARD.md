@@ -2,7 +2,7 @@
 
 **Document ID:** DOC-001
 **Title:** Document Identification, Classification & Metadata Standard
-**Version:** 1.0
+**Version:** 1.1
 **Status:** Approved
 **Canonical Status:** Canonical
 **Classification:** Governance Standard
@@ -10,6 +10,9 @@
 **Prepared By:** Engineering Architect
 **Review Authority:** Chief Architect
 **Repository Location:** `docs/governance/documentation/DOC-001-DOCUMENT-IDENTIFICATION-CLASSIFICATION-METADATA-STANDARD.md`
+**Documentation Authority:** Chief Architect Approved
+**Implementation Authority:** None
+**Runtime Authority:** None
 
 ---
 
@@ -52,6 +55,7 @@ This standard applies to every controlled document maintained within the Project
 - research documents;
 - migration packages;
 - review packages;
+- Architecture Governance Programme artefacts;
 - repository indexes.
 
 Documents outside repository governance are not subject to this standard.
@@ -192,6 +196,31 @@ Every controlled document shall include the following metadata:
 
 Optional metadata may be added where appropriate but shall not replace required metadata.
 
+## 7.1 Architecture Governance Programme Artefact Metadata
+
+All existing mandatory metadata remains required for Architecture Governance Programme artefacts.
+
+Architecture Governance Programme artefacts shall additionally record:
+
+| Metadata | Requirement |
+|---|---|
+| Programme | The exact governed programme name or identity established by its specific authorization. Programme metadata shall not be populated before that authorization exists. |
+| Programme Stage | The CAR-005 gate or activity to which the artefact belongs. This is distinct from DOC-001 Workflow Stage. |
+| Classification | One approved DOC-001 primary classification. Discovery artefacts use `Architecture Discovery`. |
+| Programme Authority | The approved governance record and bounded authority under which the artefact exists, or `None` where authority is absent. |
+| Lifecycle Status | Recorded through the existing DOC-001 `Status` field. |
+| Repository Status | Whether the governed version is `Not Published` or `Published` at its approved canonical repository location. |
+
+The following rules apply:
+
+- `Programme Stage` does not grant authority or alter Workflow Stage.
+- `Programme Authority` shall cite authority and shall not infer authority from a programme name, folder, register entry, or prior stage.
+- `Repository Status: Published` records repository presence only. It does not mean Approved, Canonical, or authorized.
+- `Status: Draft` remains non-authoritative even when Repository Status is `Published`.
+- Architecture Discovery shall always record `Status: Draft` and `Canonical Status: Draft`.
+- Implementation Authority and Runtime Authority remain separate and shall be `None` unless an explicit future decision establishes otherwise.
+- Conflicting metadata shall be resolved in favor of the governing authorization and the higher repository authority.
+
 ---
 
 # 8. Document Classification
@@ -220,9 +249,78 @@ Approved classifications include:
 - Validation Report
 - Research Standard
 - Research Report
+- Architecture Discovery
 - Review Package
 
 A document shall have only one primary classification.
+
+## 8.1 Architecture Governance Programme Documentation
+
+An Architecture Governance Programme is a bounded, repository-governed coordination mechanism authorized under CAR-005. It coordinates controlled Discovery, Architecture, Engineering Design, Verification, Publication, and Programme Closure activity.
+
+An Architecture Governance Programme:
+
+- operates within Platform Governance;
+- remains subordinate to PLATFORM-000 and approved Platform Architecture;
+- may coordinate Product Architecture without acquiring product authority;
+- permits Engineering Design only after architecture publication and separate Engineering Authorization;
+- uses DOC-001 for document identity, classification, metadata, location, naming, lifecycle, and register governance;
+- cannot transfer semantic ownership;
+- cannot grant authority merely through programme membership; and
+- requires each controlled artefact to complete its own lifecycle.
+
+An Architecture Governance Programme is not:
+
+- architecture;
+- a document family;
+- a repository location;
+- a product;
+- a domain;
+- an engineering authority;
+- an implementation authority; or
+- a runtime authority.
+
+## 8.2 Programme Artefact Categories
+
+Programme artefact categories describe an artefact's role within a programme. They are not document families or primary classifications unless this standard separately identifies them as classifications.
+
+| Artefact category | Documentation purpose | Governance boundary |
+|---|---|---|
+| Programme Charter | Records the separately approved programme purpose, scope, exclusions, owner, authorities, gates, required artefacts, and closure conditions. | Does not independently authorize the programme or any phase. |
+| Discovery | Records evidence, observations, alternatives, risks, limitations, and recommendations. | Uses the `Architecture Discovery` classification and remains Draft and non-authoritative. |
+| Architecture | Records proposed or approved architecture through an applicable existing architectural form. | Authority arises only from the artefact's own approval, not its programme association. |
+| Engineering Design | Translates approved, published architecture through applicable existing Engineering governance. | Requires separate Engineering Authorization and cannot redefine architecture. |
+| Verification | Records independent conformance, completeness, traceability, boundary, and lifecycle findings. | Verification produces evidence; it does not create architecture or implementation authority. |
+
+Programme Closure shall be recorded through the applicable authorized governance or verification artefact. It does not require a new artefact category or document family.
+
+## 8.3 Architecture Discovery Classification
+
+Architecture Discovery is the primary classification for controlled exploratory findings produced during the Discovery phase of a separately authorized Architecture Governance Programme.
+
+Architecture Discovery shall:
+
+- have Lifecycle Status `Draft`;
+- have Canonical Status `Draft`;
+- remain exploratory and non-authoritative;
+- identify its governing programme authorization;
+- distinguish evidence, observation, inference, recommendation, and unresolved question;
+- preserve approved architecture unchanged;
+- create no domain, product, responsibility, ownership, dependency, interface, or authority;
+- create no Engineering Design or implementation requirement;
+- recommend architectural work or ADR preparation without approving it; and
+- remain non-authoritative after Discovery Review.
+
+Classification distinctions are:
+
+| Classification or authority | Distinction from Architecture Discovery |
+|---|---|
+| Approved Architecture | Possesses architectural authority within its approved scope. Architecture Discovery never does. |
+| Engineering Design | Translates approved architecture downstream. Architecture Discovery cannot perform that translation. |
+| Architecture Decision Record | Records an architectural decision and becomes authoritative only after approval. Architecture Discovery may recommend an ADR but cannot replace one. |
+| Chief Architect Review | Records governance, review, authorization, or disposition. Architecture Discovery cannot grant those outcomes. |
+
+Adding the Architecture Discovery classification does not create a corresponding document family, prefix, number range, identifier, or repository path.
 
 ---
 
@@ -334,6 +432,28 @@ Example:
 
 `EDD-001-PROVIDER-ACCESS-AND-PROVIDER-CONTEXT-ENGINEERING-DESIGN.md`
 
+## 11.1 Architecture Governance Programme Artefact Naming
+
+Architecture Governance Programme artefact naming shall:
+
+- use an identifier allocated from an approved document family;
+- contain the assigned stable Document ID;
+- describe the programme association and artefact purpose clearly;
+- identify the artefact category or governed subject where useful;
+- follow existing uppercase-prefix and hyphenated-filename rules;
+- avoid unapproved abbreviations;
+- avoid implying Approved or Canonical status in the filename;
+- remain stable across ordinary version changes; and
+- avoid treating the programme name as a document-family prefix.
+
+This standard does not define:
+
+- a programme-specific prefix;
+- a programme-specific numbering sequence;
+- reserved programme identifiers;
+- programme acronyms; or
+- filenames for any specific programme.
+
 ---
 
 # 12. Repository Location
@@ -347,6 +467,23 @@ Repository location:
 - shall not affect document identity.
 
 Only one canonical repository location shall exist for each controlled document.
+
+## 12.1 Architecture Governance Programme Artefact Locations
+
+Future Architecture Governance Programme artefact locations shall:
+
+- be approved before controlled publication;
+- conform to the selected existing document family and artefact purpose;
+- preserve one canonical location per controlled document;
+- avoid duplicating an artefact merely to group it under a programme;
+- preserve shared authorities at their existing owning locations;
+- use links instead of copied authoritative content;
+- remain stable after approval except through governed refactoring; and
+- be recorded in both document metadata and the Document Register.
+
+A programme name, programme stage, folder, or artefact category does not allocate a repository location.
+
+This standard does not prescribe a generic programme directory. Any programme-specific hierarchy requires separate repository governance.
 
 ---
 
@@ -382,6 +519,22 @@ The register shall record:
 No controlled document shall exist outside the register.
 
 The register is the authoritative index of repository-controlled documentation.
+
+## 14.1 Architecture Governance Programme Artefacts
+
+Every controlled Architecture Governance Programme artefact shall have its own Document Register entry.
+
+The existing register structure remains applicable:
+
+- Document ID, Title, Classification, Status, Workflow Stage, Owner, Review Authority, and Repository Location use existing columns.
+- Programme, Programme Stage, Programme Authority, and Repository Status may be recorded in `Remarks`.
+- Architecture Discovery entries shall record Lifecycle Status `Draft` and Classification `Architecture Discovery`.
+- A programme-level row shall not replace individual artefact rows.
+- Planned or Reserved entries do not authorize drafting.
+- Register inclusion does not authorize a programme, stage, document, architecture, engineering, implementation, or runtime activity.
+- No controlled programme artefact may exist outside the register.
+
+No Document Register schema change is required.
 
 ---
 
@@ -447,6 +600,22 @@ Traceability may include references to:
 An Engineering Design Document shall maintain backward traceability to applicable approved governance, architecture and engineering authority. Forward traceability to implementation, tests, validation and verification evidence shall be established progressively as those artifacts are created. The absence of future downstream artifacts shall not prevent EDD approval or canonicalization.
 
 Traceability shall improve repository navigation without introducing unnecessary duplication.
+
+## 17.1 Architecture Governance Programme Traceability
+
+Architecture Governance Programme artefacts shall maintain traceability to:
+
+- CAR-005;
+- the specific programme authorization;
+- the applicable programme stage;
+- source evidence and predecessor artefacts;
+- applicable Platform and Product Architecture;
+- affected ADRs and contracts;
+- separately authorized downstream artefacts;
+- verification findings; and
+- Programme Closure disposition.
+
+Traceability does not promote a referenced Draft into authority.
 
 ---
 
