@@ -2,7 +2,7 @@
 
 **Document ID:** EAP-005
 **Title:** Instrument-to-Observation Attribution Eligibility Engineering Architecture
-**Version:** 1.0
+**Version:** 1.1
 
 **Status:** Approved
 
@@ -19,15 +19,19 @@
 
 **Approved By:** Chief Architect
 
-**Product:** KRONOS Swing
-
-**Phase:** Phase 1 — Market Data Foundation
-
 **Governing ADP:** ADP-001D Version 1.0
 
-**Supporting ADPs:** ADP-001A, ADP-001B, ADP-001C, ADP-001E, ADP-001H, ADP-001I, ADP-001J
+**Governing Architecture:** ADR-009 Version 1.0; DOMAIN-001 Instrument Domain; DOMAIN-002 Observation Domain
 
-**Upstream EAP:** EAP-004 Version 1.0
+**Governing Migration:** MIG-001 Version 0.1
+
+**Upstream EAP:** EAP-004 Version 2.0
+
+**Downstream EAP:** EAP-006 Version 1.1
+
+**Workflow Stage:** Repository Publication
+
+**Activation State:** Inactive — Pending RC-03 Repository Synchronization and RC-04 Activation Governance
 
 **ADR Required:** No
 
@@ -35,15 +39,9 @@
 
 **Runtime Impact:** None
 
-**EDD Authorization:** None
+**EDD-004 Drafting Authorization:** None
 
 **Implementation Authorization:** None
-
-**Commit Authorization:** None
-
-**Push Authorization:** None
-
-**Next Authorized Capability:** None
 
 ## 1. Purpose
 
@@ -77,9 +75,11 @@ EAP-005 defines engineering architecture for:
 
 ## 3. Engineering Governance
 
-This Draft is the engineering translation authorized by the Chief Architect for ADP-001D. It introduces no new domain, semantic owner, dependency, runtime behavior, communication authority or implementation decision.
+This Version 1.1 amendment is the approved engineering translation of migrated ADP-001D and the product-neutral EAP-004 Version 2.0 identity boundary. It introduces no new domain, semantic owner, dependency, runtime behavior, communication authority or implementation decision.
 
 Canonical repository architecture remains authoritative. EAP-005 shall be interpreted consistently with ADP-001D, ADP-001E, ADP-001J, EAP-004 and all listed approved dependencies. Unresolved matters remain unresolved or become explicit attribution-ineligibility reasons; Engineering shall not invent their meaning.
+
+ADP-001C and ADP-001H are superseded historical predecessors and grant no active authority. Product membership and product-universe context shall not enter canonical identity association or determine Attribution Eligibility. Product-specific Observation requirements may be applied only through separately approved product-consumption authority and shall not alter Instrument identity, Observation attribution ownership or factual meaning.
 
 ## 4. Explicit Out of Scope
 
@@ -100,27 +100,25 @@ EAP-005 shall not define or authorize:
 - Market Schedule;
 - Validation, Risk, Execution, Portfolio, Event or Audit meaning;
 - persistence, caching, scheduling, retries or runtime orchestration;
-- EDD, implementation, code or EAP-006.
+- EDD, implementation, code or EAP-006 runtime behavior.
 
 EAP-005 shall not reinterpret Instrument identity, make candidate facts Observation-owned merely by entry, resolve uncertainty or ambiguity, or represent this boundary as executable behavior.
 
 ## 5. Canonical Dependencies
 
-The following documents are mandatory dependencies for this Draft:
+The following documents are mandatory dependencies for this Version 1.1 architecture:
 
 - Platform Constitution;
-- ADP-001A — Swing Phase 1 Market Data Inventory;
 - ADP-001B — Instrument Identity Architecture;
-- ADP-001C — Provider → Instrument Contract;
 - ADP-001D — Instrument → Observation Contract;
 - ADP-001E — Observation Domain Architecture;
-- ADP-001H — Provider Instrument Master Acquisition Capability and Contract;
-- ADP-001I — Approved Instrument Universe and Reference Semantics Architecture;
 - ADP-001J Version 1.0 — Instrument Interpretation and Canonical Identity Establishment Architecture;
-- EAP-001 Version 1.0;
-- EAP-002 Version 1.0;
-- EAP-003 Version 1.0;
-- EAP-004 Version 1.0;
+- ADR-009 Version 1.0;
+- MIG-001 Version 0.1;
+- EAIC-002 Version 0.1;
+- EAP-002 Version 2.0;
+- EAP-003 Version 2.0;
+- EAP-004 Version 2.0;
 - Instrument Domain Architecture;
 - Observation Domain Architecture;
 - Provider Domain Architecture;
@@ -179,7 +177,7 @@ This is a semantic engineering boundary only. It shall not be represented as a r
 
 ### 8.1 Instrument Identity Input
 
-The immediate canonical identity dependency is the EAP-004 Version 1.0 Instrument Identity Contract. EAP-005 may consume canonical Instrument identity meaning, identity layer, approved classification and relationships, approved universe context, applicable historical or effective context and approved provenance association. EAP-005 shall not recreate, reinterpret or remap Instrument identity.
+The immediate canonical identity dependency is the EAP-004 Version 2.0 Instrument Identity Contract. EAP-005 may consume product-neutral canonical Instrument identity meaning, identity layer, approved classification and relationships, applicable historical or effective context and approved provenance association. It shall not consume product membership or a product universe as canonical identity meaning. EAP-005 shall not recreate, reinterpret or remap Instrument identity.
 
 ### 8.2 Candidate Factual Information Input
 
@@ -370,9 +368,9 @@ The following questions are reproduced exactly and answered one-to-one.
 
 The Attribution Evaluation Readiness Contract represents whether the governed EAP-004 Instrument Identity Contract input, bounded candidate factual input, applicable ownership and evaluation context, boundary conformance and ability to evaluate each attribution precondition permit Attribution Evaluation to be represented. Positive provenance, source, temporal or effective-context establishment is evaluated during Attribution Evaluation, not required for readiness. It is not an Attribution Outcome.
 
-### 2. How is Attribution Evaluation Readiness kept distinct from Architectural Admissibility and Attribution Outcome?
+### 2. How is Attribution Evaluation Readiness kept distinct from Interpretation Admission and Attribution Outcome?
 
-Architectural Admissibility is an upstream approved architectural condition. Attribution Evaluation Readiness is the subsequent engineering readiness meaning, while Attribution Outcome is the single result of the bounded evaluation. None implies factual correctness, Observation Acceptance or ownership.
+EAP-003 Interpretation Admission is an upstream boundary result that permits separately authorized Instrument interpretation to begin. Attribution Evaluation Readiness is the later Observation-owned engineering readiness meaning after EAP-004 has established product-neutral identity and the EAP-005 inputs exist. Attribution Outcome is the single result of the bounded attribution evaluation. None implies factual correctness, Observation Acceptance or ownership.
 
 ### 3. What information may enter the EAP-005 boundary?
 
@@ -384,7 +382,7 @@ Raw Provider payloads, sensitive values, acquisition or transport details, APIs,
 
 ### 5. What engineering contract represents the approved canonical Instrument identity input?
 
-The Instrument Identity Input Contract represents the EAP-004 Instrument Identity Contract and its approved canonical identity meaning, identity layer, relationships, universe context, effective context and provenance association.
+The Instrument Identity Input Contract represents the EAP-004 Version 2.0 Instrument Identity Contract and its approved product-neutral canonical identity meaning, identity layer, relationships, effective context and provenance association. Product membership and product-universe context are excluded from canonical identity input.
 
 ### 6. How is Instrument identity consumed without reinterpretation or ownership transfer?
 
@@ -558,6 +556,14 @@ Factual-data acquisition, Provider communication, APIs, schemas, payloads, times
 
 35. **EAP-005 shall remain provider-neutral and implementation-neutral and shall not authorize Provider communication, an EDD, implementation or code.**
 
+36. **Product membership and product-universe context shall not establish canonical identity association or Attribution Eligibility.**
+
+37. **Product-specific Observation requirements shall not transfer Instrument identity ownership, Observation attribution ownership or factual meaning.**
+
+38. **EAP-005 publication shall not activate ADR-009, EAIC-002, attribution evaluation or Observation processing.**
+
+39. **EDD-004 shall remain unauthorized.**
+
 ## 17. Engineering Verification Obligations
 
 Engineering shall verify:
@@ -576,8 +582,10 @@ Engineering shall verify:
 - effective identity context is preserved without Lifecycle processing;
 - Mapping mechanics and Observation Acceptance remain excluded;
 - the exact 30-question set is retained;
-- the exact 35-invariant set is retained;
+- the original 35-invariant set is preserved and the four migration invariants are present;
 - ADP-001D, ADP-001E and EAP-004 traceability is complete;
+- product membership and product-universe context are excluded from canonical identity association and Attribution Eligibility;
+- product-specific Observation requirements do not change identity, attribution ownership or factual meaning;
 - no runtime or Provider communication authority is introduced; and
 - no EDD or implementation authority is introduced.
 
@@ -601,10 +609,12 @@ Chief Architect review shall verify:
 14. Mapping mechanics remain excluded.
 15. Observation Acceptance remains excluded.
 16. The exact 30-question set is retained.
-17. The exact 35-invariant set is retained.
+17. The original 35-invariant set is preserved and the four migration invariants are present.
 18. ADP-001D, ADP-001E and EAP-004 traceability is complete.
-19. No runtime or Provider communication authority is introduced.
-20. No EDD or implementation authority is introduced.
+19. Product membership and product-universe context are excluded from canonical identity association and Attribution Eligibility.
+20. Product-specific Observation requirements do not change identity, attribution ownership or factual meaning.
+21. No runtime or Provider communication authority is introduced.
+22. No EDD or implementation authority is introduced.
 
 ## 19. ADR Determination
 
@@ -619,23 +629,22 @@ No ADR is required provided EAP-005 translates ADP-001D, preserves Instrument an
 | Document ID | EAP-005 |
 | Title | Instrument-to-Observation Attribution Eligibility Engineering Architecture |
 | Classification | Engineering Architecture Package |
-| Product | KRONOS Swing |
-| Phase | Phase 1 — Market Data Foundation |
 | Owner | Engineering Architect |
 | Governing ADP | ADP-001D Version 1.0 |
-| Supporting ADPs | ADP-001A, ADP-001B, ADP-001C, ADP-001E, ADP-001H, ADP-001I, ADP-001J |
-| Upstream EAP | EAP-004 Version 1.0 |
-| Version | 1.0 |
+| Governing Architecture | ADR-009 Version 1.0; DOMAIN-001; DOMAIN-002 |
+| Governing Migration | MIG-001 Version 0.1 |
+| Upstream EAP | EAP-004 Version 2.0 |
+| Downstream EAP | EAP-006 Version 1.1 |
+| Version | 1.1 |
 | Status | Approved |
 | Canonical Status | Approved Canonical Engineering Architecture |
+| Workflow Stage | Repository Publication |
+| Activation State | Inactive — Pending RC-03 Repository Synchronization and RC-04 Activation Governance |
 | ADR Required | No |
 | Engineering Impact | None |
 | Runtime Impact | None |
-| EDD Authorization | None |
+| EDD-004 Drafting Authorization | None |
 | Implementation Authorization | None |
-| Commit Authorization | None |
-| Push Authorization | None |
-| Next Authorized Capability | None |
 | Repository location | `docs/engineering/eap/EAP-005-INSTRUMENT-TO-OBSERVATION-ATTRIBUTION-ELIGIBILITY.md` |
 
 ## 21. Authorization Boundaries
@@ -646,18 +655,19 @@ No ADR is required provided EAP-005 translates ADP-001D, preserves Instrument an
 | Original EAP-005 Draft Version 0.1 | Authorized and reviewed |
 | Amended EAP-005 Draft Version 0.2 | Authorized for amendment review |
 | EAP-005 Draft Version 0.3 | Reviewed and amended |
-| Canonical EAP-005 Version 1.0 | Approved Canonical Engineering Architecture |
+| Canonical EAP-005 Version 1.0 | Approved historical canonical baseline |
+| Canonical EAP-005 Version 1.1 | Approved Canonical Engineering Architecture under RC-02 |
 | Canonicalization | Authorized |
-| EAP-006 | Not authorized |
+| EAP-006 engineering architecture publication | Separate RC-02 publication unit |
 | EDD | Not authorized |
 | Implementation | Not authorized |
 | Runtime activity | Not authorized |
-| Commit | Not authorized |
-| Push | Not authorized |
 
 ## 22. Review History
 
-EAP-005 Draft Version 0.1 was authorized by the Chief Architect Repository Architecture Review — Next Authorized Capability. Engineering verification was completed. The first independent Chief Architect review produced CA-EAP005-001 through CA-EAP005-003 together with the associated governance corrections. Draft Version 0.2 applied those amendments. Engineering re-verification was completed and the Chief Architect re-review produced CA-EAP005-004 and GOV-EAP005-006. Draft Version 0.3 applied those required amendments. The final Chief Architect review authorized canonicalization. EAP-005 Version 1.0 is the Approved Canonical Engineering Architecture.
+EAP-005 Draft Version 0.1 was authorized by the Chief Architect Repository Architecture Review — Next Authorized Capability. Engineering verification was completed. The first independent Chief Architect review produced CA-EAP005-001 through CA-EAP005-003 together with the associated governance corrections. Draft Version 0.2 applied those amendments. Engineering re-verification was completed and the Chief Architect re-review produced CA-EAP005-004 and GOV-EAP005-006. Draft Version 0.3 applied those required amendments. The final Chief Architect review authorized canonicalization of Version 1.0.
+
+Version 1.1 applies the approved MIG-001 minor amendment: product-neutral EAP-004 Version 2.0 identity is the sole upstream identity meaning; product membership and product-universe context are excluded from canonical identity association and Attribution Eligibility; product-specific Observation requirements remain downstream and do not transfer ownership. Version 1.1 is published under RC-02 and remains inactive pending RC-03 and RC-04.
 
 ## 23. Approval Record
 
@@ -669,31 +679,28 @@ EAP-005 Draft Version 0.1 was authorized by the Chief Architect Repository Archi
 
 **ADR Required:** No
 
-**EDD Authorization:** None
+**Activation State:** Inactive — Pending RC-03 Repository Synchronization and RC-04 Activation Governance
+
+**EDD-004 Drafting Authorization:** None
 
 **Implementation Authorization:** None
 
-**Commit Authorization:** None
-
-**Push Authorization:** None
-
-**Next Authorized Capability:** None
+**Runtime Authority:** None
 
 ## Related Approved Authority
 
 - [Platform Constitution](../../architecture/platform/PLATFORM-000-CONSTITUTION.md)
 - [ADP-001A — Swing Phase 1 Market Data Inventory](../../architecture/products/swing/SWING-PHASE-1-MARKET-DATA-INVENTORY.md)
 - [ADP-001B — Instrument Identity Architecture](../../architecture/products/swing/SWING-PHASE-1-INSTRUMENT-IDENTITY-ARCHITECTURE.md)
-- [ADP-001C — Provider → Instrument Contract](../../architecture/products/swing/SWING-PHASE-1-PROVIDER-INSTRUMENT-CONTRACT.md)
 - [ADP-001D — Instrument → Observation Contract](../../architecture/products/swing/SWING-PHASE-1-INSTRUMENT-OBSERVATION-CONTRACT.md)
 - [ADP-001E — Observation Domain Architecture](../../architecture/products/swing/SWING-PHASE-1-OBSERVATION-DOMAIN-ARCHITECTURE.md)
-- [ADP-001H — Provider Instrument Master Acquisition Capability and Contract](../../architecture/products/swing/SWING-PHASE-1-PROVIDER-INSTRUMENT-MASTER-ACQUISITION-CAPABILITY-AND-CONTRACT.md)
-- [ADP-001I — Approved Instrument Universe and Reference Semantics Architecture](../../architecture/products/swing/SWING-PHASE-1-APPROVED-INSTRUMENT-UNIVERSE-AND-REFERENCE-SEMANTICS-ARCHITECTURE.md)
 - [ADP-001J Version 1.0 — Instrument Interpretation and Canonical Identity Establishment Architecture](../../architecture/products/swing/SWING-PHASE-1-INSTRUMENT-INTERPRETATION-AND-CANONICAL-IDENTITY-ESTABLISHMENT-ARCHITECTURE.md)
-- [EAP-001 Version 1.0](EAP-001-CONFIGURATION-TO-PROVIDER-AUTHENTICATED-CONTEXT.md)
-- [EAP-002 Version 1.0](EAP-002-PROVIDER-INSTRUMENT-MASTER-ACQUISITION.md)
-- [EAP-003 Version 1.0](EAP-003-PROVIDER-TO-INSTRUMENT-ARCHITECTURAL-ADMISSIBILITY.md)
-- [EAP-004 Version 1.0](EAP-004-INSTRUMENT-INTERPRETATION-AND-CANONICAL-IDENTITY-ESTABLISHMENT.md)
+- [ADR-009 — Provider-Bounded Instrument Master Acquisition Architecture](../../architecture/platform/domains/provider/ADR-009-PROVIDER-BOUNDED-INSTRUMENT-MASTER-ACQUISITION-ARCHITECTURE.md)
+- [MIG-001 — ADR-009 Coordinated Architecture Migration Package](../../architecture/migrations/MIG-001-ADR-009-COORDINATED-ARCHITECTURE-MIGRATION-PACKAGE.md)
+- [EAIC-002 — Provider → Instrument Submission Contract](../../architecture/interfaces/EAIC-002-PROVIDER-TO-INSTRUMENT-SUBMISSION-CONTRACT.md)
+- [EAP-002 Version 2.0](EAP-002-PROVIDER-INSTRUMENT-MASTER-ACQUISITION.md)
+- [EAP-003 Version 2.0](EAP-003-PROVIDER-TO-INSTRUMENT-ARCHITECTURAL-ADMISSIBILITY.md)
+- [EAP-004 Version 2.0](EAP-004-INSTRUMENT-INTERPRETATION-AND-CANONICAL-IDENTITY-ESTABLISHMENT.md)
 - [Instrument Domain Architecture](../../architecture/platform/domains/instrument/ARCHITECTURE.md)
 - [Observation Domain Architecture](../../architecture/platform/domains/observation/ARCHITECTURE.md)
 - [Provider Domain Architecture](../../architecture/platform/domains/provider/ARCHITECTURE.md)
