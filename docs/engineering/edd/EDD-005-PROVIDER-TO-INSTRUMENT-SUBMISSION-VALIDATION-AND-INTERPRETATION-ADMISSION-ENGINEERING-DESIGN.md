@@ -2,7 +2,7 @@
 
 **Document ID:** EDD-005
 **Title:** Provider-to-Instrument Submission Validation and Interpretation Admission Engineering Design
-**Version:** 0.2
+**Version:** 0.3
 **Status:** Draft
 **Canonical Status:** Draft
 **Classification:** Engineering Design Document
@@ -11,7 +11,7 @@
 **Review Authority:** Chief Architect
 **Repository Location:** `docs/engineering/edd/EDD-005-PROVIDER-TO-INSTRUMENT-SUBMISSION-VALIDATION-AND-INTERPRETATION-ADMISSION-ENGINEERING-DESIGN.md`
 **Workflow Stage:** Draft Preparation
-**Engineering Stage:** Engineering Capability Decomposition
+**Engineering Stage:** Engineering Building Block Architecture
 **Engineering Authority:** Draft Preparation
 **Draft Authorization:** Approved with Constraints — CAR-004
 **Governing Architecture:** ADR-009 Version 1.0
@@ -880,3 +880,446 @@ Engineering Review shall accept ES-02 only when all of the following are confirm
 44. ES-03 can begin without redefining ES-01 or resolving capability ownership ambiguity.
 
 **Engineering readiness determination:** The decomposition is complete, internally consistent, fully traceable to frozen ES-01, and ready for Engineering Review and subsequent controlled ES-03 preparation.
+
+# ES-03 — Engineering Building Block Architecture
+
+## 1. Executive Summary
+
+EDD-005 ES-03 decomposes the frozen 22-capability ES-02 model into exactly 16 Engineering Building Blocks.
+
+The architecture:
+
+- realizes all 22 capabilities exactly once;
+- preserves all 52 ES-01 responsibilities;
+- preserves all 66 ES-02 invariants;
+- has zero orphan or duplicate capability allocations;
+- maintains independent duplicate, replay, ordering, concurrency, and stale-submission blocks;
+- distinguishes structural dependencies from semantic preconditions;
+- satisfies the Independent Engineering Team Test;
+- has an acyclic semantic dependency graph;
+- preserves Provider and Instrument ownership; and
+- terminates before Instrument interpretation.
+
+Building Blocks are bounded engineering responsibilities. They are not modules, services, APIs, processes, persistence components, or runtime stages.
+
+## 2. Repository Review
+
+| Authority | ES-03 effect |
+|---|---|
+| CAR-004 Version 1.0 | Authorizes constrained, implementation-independent EDD-005 Engineering Design. |
+| EDD-005 Version 0.2 Draft | Supplies the frozen ES-01 scope and ES-02 capability model. |
+| EAP-003 Version 2.0 | Governs receipt, validation, admission, rejection, continuity, response, security, provenance, observability, and reconstruction meanings. |
+| EAP-004 Version 2.0 | Establishes the external interpretation boundary after `ACCEPTED_FOR_INTERPRETATION`. |
+| EAIC-002 Version 0.1 | Governs the Provider-to-Instrument submission contract. |
+| ADR-009 Version 1.0 | Governs Provider-bounded Instrument Master acquisition and ownership separation. |
+| Provider Domain | Retains Provider identity, evidence, snapshot, partition, disposition, eligibility, and provenance ownership. |
+| Instrument Domain | Owns contract validation, admission, and later interpretation and canonical meaning within their respective boundaries. |
+| Domain Ownership Matrix | Requires single semantic ownership through engineering and later realization. |
+| Domain Dependency Matrix | Permits Instrument consumption through EAIC-002 without ownership transfer. |
+| DATA_FLOW | Prohibits direct Provider-to-Instrument state mutation and semantic feedback. |
+| EAS-001–EAS-007 | Govern building-block decomposition, traceability, verification, authorization, and change control. |
+
+Repository baseline:
+
+- Current `develop`: `ecdf814c7d0d18f1cf73849f5c412456edef0144`
+- EDD-005 Version: 0.2 Draft
+- Engineering Stage: Engineering Capability Decomposition
+- EDD-005 SHA-256: `a0d4db7625b3cc3964b775c721141f1fd012a7c92ba054608e5f665bb51685a3`
+- Working tree: clean
+
+## 3. Scope Validation
+
+| Validation | Result |
+|---|---|
+| ES-01 published and frozen | Confirmed. |
+| ES-02 published and frozen | Confirmed. |
+| Repository remains authoritative | Confirmed. |
+| All 22 capabilities are identifiable and bounded | Confirmed. |
+| All 66 capability invariants are present | Confirmed. |
+| No upstream authority invalidates ES-02 | Confirmed. |
+| Building Block Architecture may begin | Confirmed. |
+| Implementation Authority | None. |
+| Runtime Authority | None. |
+| Instrument Interpretation Authority | None. |
+
+## 4. Building Block Architecture
+
+All Building Blocks are owned by EDD-005 Engineering Design for the bounded validation and admission subsystem. Consuming Provider-owned evidence does not transfer its semantic ownership.
+
+### BB-01 — Submission Boundary Preservation
+
+- **Engineering Purpose:** Preserve the exact subsystem entrance, authority separation, submitted-unit identity, membership, atomicity, and Provider-owned meaning.
+- **Capabilities Covered:** C01–C02.
+- **Responsibilities Covered:** 1–6.
+- **Inputs:** Separately authorized presentation meaning; Submission Eligibility and Submission Authority evidence; submitted identity, membership, atomicity, provenance, and evidence associations.
+- **Outputs:** One qualified, bounded, attributable submission-unit meaning with authorities kept distinct.
+- **Dependencies:** Repository governance, EDD-004, EAIC-002, and EAP-003.
+- **Preconditions:** Presentation has reached EAIC-002 sufficiently for boundary qualification; all declared associations remain attributable.
+- **Constraints:** No presentation, delivery, acquisition, mutation, authority inference, membership change, or ownership transfer.
+- **Engineering Invariants:** `INV-C01-1`–`INV-C01-3`; `INV-C02-1`–`INV-C02-3`.
+- **Independent Engineering Team Test:** Pass. The block owns boundary preservation only and consumes no other EDD-005 block’s responsibility.
+
+### BB-02 — Technical Receipt Determination
+
+- **Engineering Purpose:** Determine whether sufficient technical receipt evidence exists.
+- **Capabilities Covered:** C03.
+- **Responsibilities Covered:** 7–10.
+- **Inputs:** Qualified boundary entry and preserved submission-unit meaning.
+- **Outputs:** Exactly one `RECEIPT_ESTABLISHED` or `RECEIPT_NOT_ESTABLISHED`.
+- **Dependencies:** BB-01.
+- **Preconditions:** The presentation is sufficiently identifiable for technical receipt assessment.
+- **Constraints:** Receipt is not validation, admission, interpretation, or semantic rejection.
+- **Engineering Invariants:** `INV-C03-1`–`INV-C03-3`.
+- **Independent Engineering Team Test:** Pass. It owns receipt meaning without owning submission preservation or contract validation.
+
+### BB-03 — Contract Representation Conformance
+
+- **Engineering Purpose:** Assess contract version, compatibility, bounded-unit structure, identity consistency, membership, and snapshot closure.
+- **Capabilities Covered:** C04–C05.
+- **Responsibilities Covered:** 11–16 and 46–47.
+- **Inputs:** Technically received submission; contract version; preserved unit, envelope, identity, partition, snapshot, and membership meanings.
+- **Outputs:** Compatibility and structural-conformance determinations.
+- **Dependencies:** BB-01 and BB-02.
+- **Preconditions:** Technical receipt is established and the declared contract representation is available for assessment.
+- **Constraints:** No Provider-specific, product-specific, transport-specific, schema, or implementation coupling.
+- **Engineering Invariants:** `INV-C04-1`–`INV-C04-3`; `INV-C05-1`–`INV-C05-3`.
+- **Independent Engineering Team Test:** Pass. It owns representation conformance while consuming the preserved unit and receipt result as established inputs.
+
+### BB-04 — Provider Evidence and Boundary Constraint Conformance
+
+- **Engineering Purpose:** Assess Provider disposition, eligibility, submission-authority, security, safe-content, provenance, and retained-evidence conformance.
+- **Capabilities Covered:** C06–C08.
+- **Responsibilities Covered:** 17–21.
+- **Inputs:** Provider dispositions; eligibility and authority evidence; security, sensitivity, licensing, retention, provenance, and evidence-availability meanings.
+- **Outputs:** Separate evidence-conformance, safe-content, provenance, and availability determinations.
+- **Dependencies:** BB-01 and BB-02.
+- **Preconditions:** Receipt is established and applicable evidence remains attributable to the exact submission.
+- **Constraints:** Does not recreate eligibility or authority, reinterpret Provider dispositions, define security controls, or design evidence persistence.
+- **Engineering Invariants:** `INV-C06-1`–`INV-C06-3`; `INV-C07-1`–`INV-C07-3`; `INV-C08-1`–`INV-C08-3`.
+- **Independent Engineering Team Test:** Pass. It owns evidence-conformance assessment without owning Provider evidence production or later contract validation.
+
+### BB-05 — Submission-Continuity Evidence Qualification
+
+- **Engineering Purpose:** Determine whether evidence required for duplicate, replay, ordering, concurrency, supersession, and stale-submission assessment is present and internally consistent.
+- **Capabilities Covered:** C09.
+- **Responsibilities Covered:** 22.
+- **Inputs:** Identity, membership, partition, snapshot, lineage, relationship, provenance, and continuity evidence.
+- **Outputs:** Continuity-evidence conformance meaning.
+- **Dependencies:** BB-01, BB-02, and BB-04.
+- **Preconditions:** The submission is attributable and applicable continuity evidence has been presented.
+- **Constraints:** Does not itself decide duplicate, replay, ordering, concurrency, or stale meaning.
+- **Engineering Invariants:** `INV-C09-1`–`INV-C09-3`.
+- **Independent Engineering Team Test:** Pass. It owns evidence qualification, not the specialized continuity determinations.
+
+### BB-06 — Duplicate Meaning Characterization
+
+- **Engineering Purpose:** Distinguish exact duplicates from conflicting duplicates and non-duplicate submissions.
+- **Capabilities Covered:** C13.
+- **Responsibilities Covered:** 35–36.
+- **Inputs:** Qualified continuity evidence and immutable submission identity, membership, authority, partition, snapshot, disposition, and provenance meaning.
+- **Outputs:** Exact-duplicate, conflicting-duplicate, or non-duplicate classification.
+- **Dependencies:** BB-01 and BB-05.
+- **Preconditions:** The applicable identity and comparison evidence is sufficient and attributable.
+- **Constraints:** Defines semantic relationship only; no database, key, index, lookup, storage, or idempotency mechanism.
+- **Engineering Invariants:** `INV-C13-1`–`INV-C13-3`.
+- **Independent Engineering Team Test:** Pass. It owns duplicate meaning without owning continuity evidence production or persistence.
+
+### BB-07 — Replay and Safe-Retry Meaning
+
+- **Engineering Purpose:** Preserve replay relationship and safe-retry meaning independently of runtime retry behaviour.
+- **Capabilities Covered:** C14.
+- **Responsibilities Covered:** 37–38.
+- **Inputs:** Qualified continuity evidence, submission identity, original-submission relationship, eligibility, and authority evidence.
+- **Outputs:** Replay classification and safe-retry meaning.
+- **Dependencies:** BB-01 and BB-05.
+- **Preconditions:** The claimed replay or retry relationship is attributable to an exact original submission.
+- **Constraints:** No retry timing, count, backoff, transport retry, scheduling, or execution policy.
+- **Engineering Invariants:** `INV-C14-1`–`INV-C14-3`.
+- **Independent Engineering Team Test:** Pass. It owns replay semantics without owning runtime retry mechanisms.
+
+### BB-08 — Provider-Partition Ordering Meaning
+
+- **Engineering Purpose:** Assess ordering meaning within one governed Provider-and-dataset partition.
+- **Capabilities Covered:** C15.
+- **Responsibilities Covered:** 39.
+- **Inputs:** Qualified partition, snapshot, lineage, and ordering evidence.
+- **Outputs:** Partition-bounded ordering-conformance meaning.
+- **Dependencies:** BB-01 and BB-05.
+- **Preconditions:** Partition identity and relevant snapshot lineage are established.
+- **Constraints:** No global ordering, sequencing algorithm, scheduler, queue, or orchestration.
+- **Engineering Invariants:** `INV-C15-1`–`INV-C15-3`.
+- **Independent Engineering Team Test:** Pass. It owns ordering semantics without owning arrival, scheduling, or runtime sequencing.
+
+### BB-09 — Submission Concurrency Meaning
+
+- **Engineering Purpose:** Preserve semantic relationships among concurrently assessable submissions.
+- **Capabilities Covered:** C16.
+- **Responsibilities Covered:** 40.
+- **Inputs:** Qualified submission identity, membership, partition, snapshot, and bounded-relationship evidence.
+- **Outputs:** Concurrency-conformance meaning.
+- **Dependencies:** BB-01 and BB-05.
+- **Preconditions:** Concurrent submission identities and membership relationships remain independently attributable.
+- **Constraints:** No locks, threads, transactions, queues, synchronization, or orchestration.
+- **Engineering Invariants:** `INV-C16-1`–`INV-C16-3`.
+- **Independent Engineering Team Test:** Pass. It owns concurrency meaning without owning any concurrency mechanism.
+
+### BB-10 — Lineage and Stale-Submission Meaning
+
+- **Engineering Purpose:** Assess lineage, supersession, currentness, and stale-submission meaning non-destructively.
+- **Capabilities Covered:** C17.
+- **Responsibilities Covered:** 41.
+- **Inputs:** Qualified partition, snapshot, lineage, supersession, and currentness evidence.
+- **Outputs:** Governed current, superseded, or stale relationship meaning.
+- **Dependencies:** BB-01 and BB-05.
+- **Preconditions:** Applicable snapshot lineage and supersession evidence are attributable.
+- **Constraints:** No deletion, overwrite, mutation, storage policy, or runtime currentness mechanism.
+- **Engineering Invariants:** `INV-C17-1`–`INV-C17-3`.
+- **Independent Engineering Team Test:** Pass. It owns stale and lineage meaning without owning Provider snapshot management.
+
+### BB-11 — Contract Validation Determination
+
+- **Engineering Purpose:** Establish exactly one contract-valid or contract-invalid result from the complete governed conformance basis.
+- **Capabilities Covered:** C10.
+- **Responsibilities Covered:** 23–25.
+- **Inputs:** Representation, Provider-evidence, constraint, provenance, continuity-evidence, duplicate, replay, ordering, concurrency, and stale-submission determinations.
+- **Outputs:** Exactly one contract validation result with governed evidence and basis.
+- **Dependencies:** BB-03–BB-10.
+- **Preconditions:** Technical receipt is established and every applicable conformance determination is available.
+- **Constraints:** Validation does not repair Provider meaning, authorize interpretation, or perform admission.
+- **Engineering Invariants:** `INV-C10-1`–`INV-C10-3`.
+- **Independent Engineering Team Test:** Pass. It owns the validation decision while consuming other blocks’ established determinations.
+
+### BB-12 — Interpretation Admission Determination
+
+- **Engineering Purpose:** Determine whether a contract-valid submission may enter separately authorized Instrument interpretation.
+- **Capabilities Covered:** C11.
+- **Responsibilities Covered:** 26–29.
+- **Inputs:** Contract validation result and every applicable admission precondition.
+- **Outputs:** Exactly one `ACCEPTED_FOR_INTERPRETATION` or `REJECTED_BEFORE_INTERPRETATION`.
+- **Dependencies:** BB-11.
+- **Preconditions:** Contract validation is complete and all admission conditions are determinate.
+- **Constraints:** Admission is not interpretation and implies no processing, identity, mapping, product, persistence, or runtime outcome.
+- **Engineering Invariants:** `INV-C11-1`–`INV-C11-3`.
+- **Independent Engineering Team Test:** Pass. It owns admission without owning validation or downstream interpretation.
+
+### BB-13 — Deterministic Rejection Characterization
+
+- **Engineering Purpose:** Establish the governed reason and trusted evidence for rejection before interpretation.
+- **Capabilities Covered:** C12.
+- **Responsibilities Covered:** 30–34.
+- **Inputs:** Invalid contract or rejected admission meaning and relevant duplicate, replay, ordering, concurrency, and stale-submission determinations.
+- **Outputs:** Deterministic rejection classification with trusted supporting evidence.
+- **Dependencies:** BB-06–BB-12.
+- **Preconditions:** A governed validation or admission condition requires `REJECTED_BEFORE_INTERPRETATION`.
+- **Constraints:** No untrusted promotion, Instrument invalidity, Provider mutation, or downstream interpretation.
+- **Engineering Invariants:** `INV-C12-1`–`INV-C12-3`.
+- **Independent Engineering Team Test:** Pass. It owns rejection characterization without owning the underlying validation or continuity decisions.
+
+### BB-14 — Boundary Outcome and Logical Response Evidence
+
+- **Engineering Purpose:** Preserve error and time separation and establish governed logical response evidence.
+- **Capabilities Covered:** C18–C19.
+- **Responsibilities Covered:** 42–45.
+- **Inputs:** Receipt, validation, admission, rejection, continuity, error-domain, and time-domain meanings.
+- **Outputs:** Distinct error and time meanings plus governed logical response evidence.
+- **Dependencies:** BB-02 and BB-06–BB-13.
+- **Preconditions:** The applicable boundary result and its trusted evidence are established.
+- **Constraints:** Error and time meanings remain independent; logical response is not transport acknowledgement, delivery, retry, or orchestration.
+- **Engineering Invariants:** `INV-C18-1`–`INV-C18-3`; `INV-C19-1`–`INV-C19-3`.
+- **Independent Engineering Team Test:** Pass. It owns boundary-result evidence without owning the determinations it records.
+
+### BB-15 — Boundary Observability and Reconstruction Evidence
+
+- **Engineering Purpose:** Preserve non-sensitive observability and audit-safe reconstruction evidence.
+- **Capabilities Covered:** C20–C21.
+- **Responsibilities Covered:** 48–50.
+- **Inputs:** Preserved submission meaning and governed status, classification, provenance, timing, and evidence-completeness meanings from the subsystem.
+- **Outputs:** Non-sensitive observability meaning and audit-safe reconstruction evidence.
+- **Dependencies:** BB-01–BB-14 as applicable.
+- **Preconditions:** Relevant governed determinations and evidence are available and classified for safe use.
+- **Constraints:** Observability and reconstruction remain distinct; no monitoring product, logging schema, persistence design, sensitive disclosure, or Audit ownership transfer.
+- **Engineering Invariants:** `INV-C20-1`–`INV-C20-3`; `INV-C21-1`–`INV-C21-3`.
+- **Independent Engineering Team Test:** Pass. It owns evidence projection and reconstruction requirements without owning upstream decisions or storage technology.
+
+### BB-16 — Terminal Boundary and Interpretation Handoff
+
+- **Engineering Purpose:** Close EDD-005 responsibility and preserve the boundary to separately authorized EAP-004 interpretation.
+- **Capabilities Covered:** C22.
+- **Responsibilities Covered:** 51–52.
+- **Inputs:** Terminal admission disposition and governed logical response evidence.
+- **Outputs:** Closed EDD-005 boundary and, only after acceptance, an eligible conceptual downstream handoff.
+- **Dependencies:** BB-12–BB-14.
+- **Preconditions:** Exactly one terminal admission disposition and its logical response evidence are established.
+- **Constraints:** Does not define, initiate, execute, monitor, or own Instrument interpretation.
+- **Engineering Invariants:** `INV-C22-1`–`INV-C22-3`.
+- **Independent Engineering Team Test:** Pass. It owns boundary closure without owning interpretation.
+
+## 5. Building Block Relationships
+
+Dependencies identify structural engineering reliance. Preconditions identify semantic conditions required before a block may establish its meaning. Neither defines runtime sequence.
+
+| Building Block | Structural dependencies | Semantic preconditions |
+|---|---|---|
+| BB-01 | External repository authority | Separately authorized presentation has reached the governed boundary sufficiently for qualification. |
+| BB-02 | BB-01 | Receipt is technically assessable. |
+| BB-03 | BB-01, BB-02 | Receipt is established and the contract representation is available. |
+| BB-04 | BB-01, BB-02 | Receipt is established and evidence remains attributable. |
+| BB-05 | BB-01, BB-02, BB-04 | Applicable continuity evidence is available and provenance-qualified. |
+| BB-06 | BB-01, BB-05 | Duplicate-comparison evidence is sufficient. |
+| BB-07 | BB-01, BB-05 | A claimed replay or retry relationship is attributable. |
+| BB-08 | BB-01, BB-05 | Partition and lineage evidence is established. |
+| BB-09 | BB-01, BB-05 | Concurrent identities and memberships remain attributable. |
+| BB-10 | BB-01, BB-05 | Snapshot lineage and supersession evidence is established. |
+| BB-11 | BB-03–BB-10 | All applicable conformance meanings are determinate. |
+| BB-12 | BB-11 | Contract validation is complete and admission conditions are determinate. |
+| BB-13 | BB-06–BB-12 | A governed condition requires rejection before interpretation. |
+| BB-14 | BB-02, BB-06–BB-13 | Applicable boundary-result meaning is established. |
+| BB-15 | BB-01–BB-14 as applicable | Evidence is available and classified for its intended safe or Audit use. |
+| BB-16 | BB-12–BB-14 | Terminal disposition and logical response evidence are established. |
+
+The semantic graph is acyclic. No block can revise an upstream Provider assertion, continuity classification, receipt result, validation result, admission result, or rejection evidence.
+
+## 6. Building Block Invariants
+
+| Building Block | Invariants inherited without weakening |
+|---|---|
+| BB-01 | `INV-C01-1`–`INV-C01-3`; `INV-C02-1`–`INV-C02-3` |
+| BB-02 | `INV-C03-1`–`INV-C03-3` |
+| BB-03 | `INV-C04-1`–`INV-C04-3`; `INV-C05-1`–`INV-C05-3` |
+| BB-04 | `INV-C06-1`–`INV-C06-3`; `INV-C07-1`–`INV-C07-3`; `INV-C08-1`–`INV-C08-3` |
+| BB-05 | `INV-C09-1`–`INV-C09-3` |
+| BB-06 | `INV-C13-1`–`INV-C13-3` |
+| BB-07 | `INV-C14-1`–`INV-C14-3` |
+| BB-08 | `INV-C15-1`–`INV-C15-3` |
+| BB-09 | `INV-C16-1`–`INV-C16-3` |
+| BB-10 | `INV-C17-1`–`INV-C17-3` |
+| BB-11 | `INV-C10-1`–`INV-C10-3` |
+| BB-12 | `INV-C11-1`–`INV-C11-3` |
+| BB-13 | `INV-C12-1`–`INV-C12-3` |
+| BB-14 | `INV-C18-1`–`INV-C18-3`; `INV-C19-1`–`INV-C19-3` |
+| BB-15 | `INV-C20-1`–`INV-C20-3`; `INV-C21-1`–`INV-C21-3` |
+| BB-16 | `INV-C22-1`–`INV-C22-3` |
+
+Invariant accounting:
+
+- Required ES-02 invariants: **66**
+- Invariants inherited: **66**
+- Missing invariants: **0**
+- Duplicate invariant ownership: **0**
+- Weakened invariants: **0**
+
+## 7. Engineering Traceability Matrix
+
+| Responsibilities | Capabilities | Building Block | Future Interface obligation | ES-05 verification |
+|---:|---|---|---|---|
+| 1–6 | C01–C02 | BB-01 | Preserve authority, identity, membership, atomicity, and ownership without transfer. | Verify exact boundary and submitted-unit preservation. |
+| 7–10 | C03 | BB-02 | Preserve receipt meaning independently. | Verify receipt cardinality and non-implications. |
+| 11–16, 46–47 | C04–C05 | BB-03 | Preserve compatibility and structural meaning without schemas or technology. | Verify version, identity, partition, snapshot, and membership conformance. |
+| 17–21 | C06–C08 | BB-04 | Preserve Provider evidence, authority, security, and provenance boundaries. | Verify no evidence reinterpretation or ownership transfer. |
+| 22 | C09 | BB-05 | Preserve continuity evidence separately from classification. | Verify evidence completeness and attribution. |
+| 35–36 | C13 | BB-06 | Preserve exact/conflicting duplicate distinction. | Verify duplicate meaning without persistence assumptions. |
+| 37–38 | C14 | BB-07 | Preserve replay and safe-retry meaning. | Verify independence from runtime retry. |
+| 39 | C15 | BB-08 | Preserve partition-bounded ordering. | Verify no global ordering or scheduling. |
+| 40 | C16 | BB-09 | Preserve concurrent relationship meaning. | Verify no concurrency mechanism or merger. |
+| 41 | C17 | BB-10 | Preserve lineage and non-destructive stale meaning. | Verify no deletion, overwrite, or mutation. |
+| 23–25 | C10 | BB-11 | Preserve validation separately from admission. | Verify deterministic valid/invalid meaning. |
+| 26–29 | C11 | BB-12 | Preserve exactly two terminal admission meanings. | Verify acceptance grants no interpretation outcome. |
+| 30–34 | C12 | BB-13 | Preserve deterministic trusted rejection evidence. | Verify rejection remains pre-interpretation and non-mutating. |
+| 42–45 | C18–C19 | BB-14 | Preserve error, time, and response meaning independently of transport. | Verify separation and logical-response completeness. |
+| 48–50 | C20–C21 | BB-15 | Preserve safe projection and non-owning reconstruction. | Verify sensitivity and Audit boundaries. |
+| 51–52 | C22 | BB-16 | Preserve one terminal external interpretation boundary. | Verify EDD-005 terminates before interpretation. |
+
+Coverage result:
+
+- Building Blocks: **16**
+- ES-02 capabilities realized: **22 of 22**
+- Duplicate capability allocations: **0**
+- Orphan capabilities: **0**
+- ES-01 responsibilities preserved: **52 of 52**
+- Missing responsibilities: **0**
+- Duplicate responsibility allocations: **0**
+- Future interfaces designed: **0**
+
+## 8. Presentation Projection Assessment
+
+This assessment grants no Presentation Authority and defines no GUI.
+
+| Classification | Building Block outputs |
+|---|---|
+| **Safe** | Non-sensitive BB-02 receipt status; BB-03 compatibility and structural-conformance status; BB-04 boundary-evidence conformance status; BB-06 duplicate classification; BB-07 approved replay classification; BB-08 ordering status; BB-09 concurrency status; BB-10 stale classification; BB-11 validation result; BB-12 admission disposition; BB-13 approved rejection classification; BB-14 logical-response status and safe time meaning; BB-15 provenance-completeness, evidence-completeness, and reconstruction-availability status. |
+| **Prohibited** | Raw submitted content; credentials, secrets, or tokens; restricted licensed information; internal security controls; untrusted material represented as verified; exploit-relevant validation details; unrestricted evidence; implementation internals; and any output presented as interpretation, canonical identity, Provider mapping, product eligibility, Observation meaning, persistence success, or runtime success. |
+| **Requires future security architecture** | Provider, dataset, partition, snapshot, submission, or authority identifiers; detailed rejection evidence; duplicate correlation; replay relationships; ordering references; concurrency relationships; lineage and supersession evidence; detailed provenance; retained evidence references; licensing or retention details; precise times; and reconstruction material subject to role, purpose, environment, sensitivity, or Audit authority. |
+
+## 9. Engineering Risks
+
+| Risk | Consequence | Required control |
+|---|---|---|
+| Structural overlap | Multiple blocks own the same capability or responsibility. | Preserve the exact allocation in §7. |
+| Ownership leakage | Provider evidence becomes Instrument-owned through assessment. | Enforce BB-01 and BB-04 ownership invariants. |
+| Authority leakage | Eligibility or authority is inferred from presentation or receipt. | Preserve BB-01 authority separation. |
+| Semantic collapse | Receipt, validation, admission, and interpretation become one result. | Preserve BB-02, BB-11, BB-12, and external EAP-004 boundaries. |
+| Duplicate becomes persistence | BB-06 is defined by keys, indexes, or databases. | Preserve semantic, evidence-based duplicate characterization. |
+| Replay becomes implementation | BB-07 becomes a retry mechanism. | Preserve replay independently from scheduling and runtime retry. |
+| Ordering becomes runtime | BB-08 becomes execution sequencing. | Keep ordering partition-bounded and mechanism-free. |
+| Concurrency becomes mechanism | BB-09 becomes threading, locks, or transactions. | Preserve relationship meaning only. |
+| Stale meaning becomes destructive | BB-10 overwrites or deletes superseded evidence. | Preserve lineage and non-destructive supersession. |
+| Admission becomes interpretation | BB-12 begins or implies semantic processing. | Preserve BB-12 and BB-16 terminal invariants. |
+| Rejection becomes Instrument invalidity | BB-13 creates canonical or lifecycle meaning. | Preserve rejection non-implications. |
+| Response becomes transport | BB-14 becomes acknowledgement or delivery logic. | Preserve logical response independently. |
+| Observability becomes authority | Displayed state is treated as the underlying decision authority. | Preserve BB-15 as non-owning projection. |
+| Reconstruction becomes persistence | Audit needs prematurely select storage technology. | Keep BB-15 evidence-oriented and technology-neutral. |
+| Building-block coupling | A team must own another block to complete its own responsibility. | Restrict dependencies to consumption of established meanings. |
+| Preconditions collapse into dependencies | Structural reliance is mistaken for semantic permission. | Maintain the separate dependency and precondition definitions in §5. |
+| Weakened invariants | Grouped capabilities lose semantic separation. | Preserve all inherited invariant identifiers verbatim. |
+| Premature interfaces | Building Blocks imply payloads or APIs. | Defer interface design to ES-04. |
+
+## 10. Verification Criteria
+
+Engineering Review shall accept ES-03 only when:
+
+1. The architecture contains exactly 16 Building Blocks.
+2. All 22 ES-02 capabilities are realized exactly once.
+3. No capability is missing or duplicated.
+4. No Building Block is orphaned.
+5. All 52 ES-01 responsibilities remain represented exactly once.
+6. No ES-01 responsibility is altered or extended.
+7. All 66 ES-02 invariants are inherited without weakening.
+8. Dependencies and semantic preconditions remain separate.
+9. The dependency graph is acyclic.
+10. No block revises an upstream block’s established meaning.
+11. BB-01 preserves boundary, authority, identity, membership, atomicity, and Provider ownership.
+12. BB-02 preserves Technical Receipt independently.
+13. BB-03 preserves compatibility and structural conformance without technology coupling.
+14. BB-04 preserves Provider evidence and constraint ownership.
+15. BB-05 preserves continuity-evidence qualification separately from continuity classification.
+16. BB-06 preserves Duplicate Meaning independently.
+17. BB-07 preserves Replay Meaning independently.
+18. BB-08 preserves Ordering Meaning independently.
+19. BB-09 preserves Concurrency Meaning independently.
+20. BB-10 preserves Stale Submission Meaning independently.
+21. BB-11 preserves Contract Validation independently.
+22. BB-12 preserves Interpretation Admission independently.
+23. BB-13 preserves Deterministic Rejection independently.
+24. BB-14 preserves error, time, and Logical Response Evidence meanings.
+25. BB-15 preserves observability and Reconstruction Evidence without ownership transfer.
+26. BB-16 terminates EDD-005 before Instrument interpretation.
+27. Every block passes the Independent Engineering Team Test.
+28. No block requires ownership of another block’s responsibilities.
+29. Exact and conflicting duplicates remain distinct.
+30. Replay remains distinct from runtime retry.
+31. Ordering remains Provider-partition bounded.
+32. Concurrency remains mechanism-independent.
+33. Stale and supersession meanings remain non-destructive.
+34. Contract validity does not imply admission.
+35. Admission does not imply interpretation or downstream success.
+36. Rejection creates no Instrument invalidity or Provider mutation.
+37. Logical response remains independent of transport and delivery.
+38. Audit consumes evidence without acquiring Provider or Instrument semantics.
+39. Provider and Instrument ownership remain consistent with the Domain Ownership Matrix.
+40. EAIC-002 remains the sole governed Provider-to-Instrument boundary.
+41. No direct Provider-to-Instrument state mutation is introduced.
+42. No modules, services, interfaces, APIs, payloads, schemas, protocols, persistence, runtime, scheduling, retry mechanisms, deployment, GUI, framework, language, or code design is present.
+43. Every future ES-04 interface can trace to a Building Block relationship without adding scope.
+44. ES-04 can begin without redefining capability or Building Block ownership.
+
+**Engineering readiness determination:** ES-03 is complete, internally consistent, fully traceable, implementation-independent, and ready for Engineering Review and subsequent controlled ES-04 preparation.
