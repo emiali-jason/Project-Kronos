@@ -47,7 +47,7 @@ Approved repository architecture remains authoritative. ADP-001G shall be interp
 
 ## 2. Purpose
 
-Define the bounded, Provider-neutral architectural conditions under which Configuration-owned authentication material may be used by Provider to establish an authenticated Provider context without transferring ownership, exposing sensitive material, authorizing a dataset, implying Provider capability or acquisition success, or granting downstream architectural admissibility.
+Define the bounded, Provider-neutral architectural conditions under which Configuration-owned authentication material may be used by Provider to establish an authenticated Provider context without transferring ownership, exposing sensitive material, authorizing a dataset, implying Provider capability or acquisition success, or granting downstream Interpretation Admission.
 
 ADP-001G is limited to the Configuration → Provider authentication boundary. It preserves Configuration ownership of authentication material and Provider ownership of authentication activity, technical outcomes, authenticated Provider context, Provider capability, and Provider availability.
 
@@ -69,7 +69,7 @@ Without that boundary:
 
 ADP-001G addresses one architectural question:
 
-> Under what governed architectural conditions may Configuration-owned authentication material be used by Provider to establish an authenticated Provider context without transferring ownership, exposing secrets, authorizing datasets, implying Provider capability, implying acquisition success, or granting downstream architectural admissibility?
+> Under what governed architectural conditions may Configuration-owned authentication material be used by Provider to establish an authenticated Provider context without transferring ownership, exposing secrets, authorizing datasets, implying Provider capability, implying acquisition success, or granting downstream Interpretation Admission?
 
 The boundary shall preserve all existing ownership and meaning. Authentication is an operational prerequisite only and shall not create Instrument, Observation, Market, Validation, research, business, evidentiary, execution, or trading meaning.
 
@@ -117,7 +117,7 @@ This architecture does not define, authorize, or recommend:
 - an EDD, Engineering Package, test, or runtime implementation;
 - Instrument Master acquisition;
 - Provider → Instrument runtime communication;
-- dataset retrieval, normalization, mapping, interpretation, or architectural admissibility;
+- dataset retrieval, normalization, mapping, interpretation, or Interpretation Admission;
 - historical data, Current Quote, Open Interest, Market Metadata, or any other dataset operation;
 - Observation acquisition, acceptance, ownership, publication, or Provider → Observation communication;
 - Market Schedule, Market availability, Validation judgment, research, ranking, trading logic, execution, orders, positions, or automated trading;
@@ -136,7 +136,7 @@ This architecture does not define, authorize, or recommend:
 | Authentication Success | Provider-owned technical outcome that establishes only an Authenticated Provider Context. A Provider capability must be separately approved and shall not be created, extended, or implied by Authentication Success. |
 | Authentication Rejection | Provider-owned technical outcome indicating that Provider did not establish an authenticated Provider context because supplied material was not accepted within the attempted activity. It does not automatically invalidate, withdraw, or redefine Configuration-owned material. |
 | Authentication Failure | Provider-owned technical outcome indicating that the authentication activity did not establish an authenticated Provider context for a technical reason not represented as Authentication Rejection. It is distinct from Configuration unavailability and is not automatically Provider unavailability. |
-| Authenticated Provider Context | A Provider-owned architectural condition established only by Authentication Success for an approved Provider and authentication context. It means only that the Provider has established that bounded authenticated condition. It does not establish Provider Capability, entitlement, Dataset Permission, Acquisition Authority, dataset availability, acquisition success or downstream Architectural Admissibility. |
+| Authenticated Provider Context | A Provider-owned architectural condition established only by Authentication Success for an approved Provider and authentication context. It means only that the Provider has established that bounded authenticated condition. It does not establish Provider Capability, entitlement, Dataset Permission, Acquisition Authority, dataset availability, acquisition success, or downstream Interpretation Admission. |
 | Authenticated-Context Lifecycle | Provider-owned conceptual lifecycle semantics governing establishment, continued existence, loss, and termination of an Authenticated Provider Context. It excludes runtime-session mechanisms and does not transfer or redefine Configuration lifecycle authority. |
 | Configuration Eligibility | Configuration's canonical determination under ADP-001F that approved runtime configuration may be supplied for an already-approved Provider capability and operational context. |
 | Configuration Meaning | The semantic meaning exclusively owned by Configuration for authentication material, approval for supply, sensitive classification, availability, operational validity, lifecycle, selection, and provenance. |
@@ -145,7 +145,7 @@ This architecture does not define, authorize, or recommend:
 | Provider Availability | Provider-owned technical availability meaning. It is distinct from Configuration Availability, Authentication Outcome, Market availability, Market Schedule, and dataset availability. |
 | Dataset Permission | Architectural permission for a dataset established by the approved inventory and any separately approved capability or contract. It is independent of Authentication Eligibility and Authentication Success. |
 | Acquisition Authority | Separately approved architectural authority to acquire a defined dataset through a defined domain boundary. Authentication Eligibility and Authentication Success do not establish it. |
-| Downstream Architectural Admissibility | Satisfaction of separately approved semantic preconditions at a downstream governed boundary, including ADP-001C where applicable. It is not established by authentication. |
+| Downstream Interpretation Admission | The Instrument-owned result, governed by EAIC-002, that follows completed contract validation and determines whether Instrument interpretation may begin. It is not established by authentication. |
 | Temporary Operational Custody | Provider's bounded custody of Configuration-owned authentication material only for the duration and context of the approved authentication activity and related Authenticated Provider Context. It transfers no ownership or lifecycle authority. |
 | Configuration Provenance | Configuration-owned non-sensitive meaning approved by ADP-001F that makes Configuration authority and approved context explainable without exposing or reconstructing sensitive material. |
 | Authentication Provenance | Provider-owned, non-sensitive architectural explanation of Authentication Activity, approved context, Authentication Outcome, context establishment or termination, and applicable Configuration authority. It shall never contain or permit reconstruction of Authentication Material. |
@@ -215,7 +215,7 @@ Authentication Eligibility permits supply to be considered at the architectural 
 - grant Dataset Permission;
 - grant Acquisition Authority;
 - establish acquisition success;
-- establish downstream Architectural Admissibility;
+- establish downstream Interpretation Admission;
 - authorize Provider → Instrument or Provider → Observation communication; or
 - create business, evidentiary, research, execution, or trading meaning.
 
@@ -267,7 +267,7 @@ No outcome may contain, expose, reconstruct, or redistribute Authentication Mate
 
 ## 12. Authenticated Provider Context
 
-An Authenticated Provider Context is Provider-owned, bounded to one approved Provider and authentication context, and established only through Authentication Success. It grants no Provider Capability, entitlement, Dataset Permission, Acquisition Authority, dataset availability, acquisition success, or downstream Architectural Admissibility.
+An Authenticated Provider Context is Provider-owned, bounded to one approved Provider and authentication context, and established only through Authentication Success. It grants no Provider Capability, entitlement, Dataset Permission, Acquisition Authority, dataset availability, acquisition success, or downstream Interpretation Admission.
 
 Its architectural meaning is bounded to:
 
@@ -287,7 +287,7 @@ An Authenticated Provider Context shall not represent:
 - Acquisition Authority or acquisition success;
 - access entitlement for a specific dataset;
 - Provider, Market, or dataset availability;
-- downstream Architectural Admissibility;
+- downstream Interpretation Admission;
 - Instrument identity, Observation state, Market meaning, Validation judgment, or research readiness; or
 - business, evidentiary, execution, or trading meaning.
 
@@ -501,7 +501,7 @@ An Authenticated Provider Context shall not cross Provider, account, authorizati
 
 Any permitted reuse shall remain within the same Provider, account or authorization context, operating environment, authentication context, capability boundary, Configuration approval context, lifecycle or effective context, sensitive classification, and approved operational boundary. It shall require separately approved Provider capability and operation authority and shall not unnecessarily extend Temporary Operational Custody.
 
-Crossing the boundary shall never establish Provider Capability, Dataset Permission, Acquisition Authority, acquisition success, downstream Architectural Admissibility, or business meaning.
+Crossing the boundary shall never establish Provider Capability, Dataset Permission, Acquisition Authority, acquisition success, downstream Interpretation Admission, or business meaning.
 
 ## 19. Prohibited Information Flow
 
@@ -542,7 +542,7 @@ The following are the exact invariants approved by the Chief Architect for this 
 
 These invariants define architectural meaning only. They shall not be converted into runtime mechanisms, procedures, fields, schemas, APIs, state machines, Provider-specific behavior, or implementation.
 
-The Draft introduces no additional invariant and no platform-wide standard.
+This document introduces no additional invariant and no platform-wide standard.
 
 ## 21. Explicit Prohibitions
 
@@ -604,11 +604,13 @@ ADP-001G preserves ADP-001B by:
 - creating no canonical identity, mapping, classification, lifecycle, or underlying relationship; and
 - preserving Instrument ownership of Instrument meaning.
 
-### ADP-001C — Provider → Instrument Contract
+### Provider → Instrument Successor Authority
 
-ADP-001G is conceptually upstream of any future Provider operation whose information might later reach the ADP-001C boundary.
+ADP-001G is conceptually upstream of any separately authorized Provider operation whose information might later reach the Provider → Instrument boundary governed by ADR-009, DOMAIN-006, and EAIC-002.
 
-Authentication Eligibility and Authentication Success shall never establish ADP-001C Architectural Admissibility, authorize Instrument interpretation, create Provider Information for Instrument, or define Provider → Instrument runtime communication.
+Authentication Eligibility and Authentication Success shall never establish Submission Eligibility or Interpretation Admission, authorize Instrument interpretation, create Provider Information for Instrument, or define Provider → Instrument runtime communication.
+
+ADP-001C is a superseded historical predecessor and supplies no active authority. ADR-009 governs Provider-bounded acquisition architecture, DOMAIN-006 owns Provider acquisition and Provider Catalogue responsibilities, and EAIC-002 is the sole canonical Provider → Instrument submission contract. ADP-001G does not amend or activate those successor authorities.
 
 ### ADP-001D — Instrument → Observation Contract
 
@@ -647,7 +649,8 @@ This architecture depends on:
 - DOMAIN-006 for Provider authority;
 - ADP-001A for Phase 1 inventory permission and read-only restrictions;
 - ADP-001B for separation from Instrument identity;
-- ADP-001C for separation from Provider → Instrument admissibility;
+- ADR-009 and DOMAIN-006 for separation from Provider-bounded acquisition and Provider Catalogue ownership;
+- EAIC-002 for separation from Provider → Instrument submission and Interpretation Admission;
 - ADP-001D for separation from attribution admissibility;
 - ADP-001E for separation from Observation ownership and provenance;
 - ADP-001F for Configuration Eligibility, Temporary Operational Custody, failure ownership, secret containment, provenance obligations, and the authentication-boundary prerequisite;
@@ -671,13 +674,13 @@ Before the first Instrument Master acquisition, separately approved architecture
 - failed outcomes;
 - provenance;
 - Acquisition Authority;
-- the governed boundary terminating at ADP-001C eligibility;
+- the governed EAIC-002 submission boundary terminating at Instrument-owned Interpretation Admission;
 - prohibition on identity creation; and
 - prohibition on Instrument interpretation.
 
-That future architecture must establish Provider capability, Acquisition Authority, permitted Instrument Master scope, Provider acquisition outcomes, and the governed boundary to ADP-001C eligibility. This document does not design that capability, assign it an identifier, or authorize its drafting.
+That separately governed architecture must establish Provider capability, Acquisition Authority, permitted Instrument Master scope, Provider acquisition outcomes, and conformance with the EAIC-002 boundary. ADP-001G does not design, activate, or authorize that architecture.
 
-An EDD shall not be authorized until ADP-001G is canonical and the first Instrument Master acquisition has separately approved capability, acquisition, failure, provenance, scope and ADP-001C-boundary architecture. EDD authorization remains a separate Chief Architect decision.
+Any EDD remains subject to its own canonical architecture, governance lifecycle, and separate Chief Architect authorization. ADP-001G grants no EDD-004 drafting or implementation authority.
 
 The required architecture gates are:
 
@@ -685,7 +688,7 @@ The required architecture gates are:
 2. Provider capability architecture for the Instrument Master operation is canonical.
 3. The Instrument Master acquisition contract is canonical.
 4. Dataset scope and permission are traceable to ADP-001A.
-5. The Provider → Instrument boundary conforms to ADP-001C.
+5. The Provider → Instrument boundary conforms to EAIC-002.
 6. Failure, partiality, missingness and provenance semantics are approved.
 7. No additional ADR or domain change is required, or any required ADR or domain change has been separately approved.
 
@@ -706,7 +709,7 @@ The Chief Architect resolved all ten architectural questions raised by ADP-001G:
 | 7 | Can authentication context be reused across separately approved Provider operations? | No implicit Authenticated Provider Context reuse is permitted. Reuse requires explicit later architecture and separate operation authority. | The concrete set of Provider operations eligible for reuse remains deferred to future Provider capability architecture. |
 | 8 | What conditions prevent cross-context or cross-capability reuse? | Authenticated Provider Context reuse may not cross Provider, account, authorization, operating-environment, authentication, capability, Configuration-approval, lifecycle, sensitive-classification, or operational-context boundaries. | Concrete future operations remain deferred; the prohibition on implicit and cross-context reuse is resolved. |
 | 9 | Does the first Instrument Master acquisition require any further Provider capability contract after this architecture? | A separate Provider capability architecture and Instrument Master acquisition contract remain mandatory before the first acquisition. | The future capability is not designed, assigned an identifier, or authorized for drafting here. |
-| 10 | What remains required before an EDD may be authorized? | An EDD requires canonical ADP-001G plus separately approved capability, acquisition, failure, provenance, scope, and ADP-001C-boundary architecture, followed by separate Chief Architect authorization. | EDD content and implementation remain outside ADP-001G. |
+| 10 | What remains required before an EDD may be authorized? | An EDD requires applicable canonical architecture, approved capability, acquisition, failure, provenance, and scope authority, conformance with EAIC-002 where the Provider → Instrument boundary applies, and separate Chief Architect authorization. | EDD content and implementation remain outside ADP-001G; EDD-004 remains unauthorized. |
 
 No architectural question from the Chief Architect review remains unresolved. The concrete set of Provider operations eligible for reuse remains deferred without reopening the approved reuse rule.
 
@@ -723,21 +726,24 @@ These resolutions define architecture only. They define no runtime, API, schema,
 | Provider versus Execution Context Provider | DOMAIN-006; ADR-006 | Explicitly preserves the unrelated Execution-domain role. |
 | Phase 1 inventory and read-only scope | ADP-001A | Creates no dataset or acquisition authority and preserves inventory classification. |
 | Instrument identity | ADP-001B | Keeps authentication meanings outside canonical identity and Provider mappings. |
-| Provider → Instrument admissibility | ADP-001C | Keeps authentication separate from Provider Information eligibility and Instrument interpretation. |
+| Provider → Instrument submission and Interpretation Admission | ADR-009; DOMAIN-006; EAIC-002 | Keeps authentication separate from Provider acquisition, Submission Eligibility, submission, Interpretation Admission, and Instrument interpretation. ADP-001C remains historical predecessor traceability only. |
 | Instrument → Observation attribution | ADP-001D | Keeps authentication separate from attribution eligibility. |
 | Observation ownership and provenance | ADP-001E | Excludes Authentication Material and authentication state from factual ownership and provenance. |
 | Runtime-configuration boundary | ADP-001F | Specializes only the required authentication boundary while preserving Configuration Eligibility, Temporary Operational Custody, provenance, and failure distinctions. |
 | Authentication boundary decision | Chief Architect review and amendment decision | Incorporates the fifteen approved invariants and all ten Chief Architect resolutions without implementation assumptions. |
 
-No ADR trigger was encountered. The Draft does not change a frozen responsibility, dependency, ownership assignment, constitutional decision, approved principle, or canonical product architecture.
+No ADR trigger was encountered. This document does not change a frozen responsibility, dependency, ownership assignment, constitutional decision, approved principle, or canonical product architecture.
 
-**No ADR required for the Draft.**
+**No ADR required for this document.**
 
 ### Related Approved Authority
 
 - [ADP-001A — Swing Phase 1 Market Data Inventory](SWING-PHASE-1-MARKET-DATA-INVENTORY.md)
 - [ADP-001B — KRONOS Swing Instrument Identity Architecture](SWING-PHASE-1-INSTRUMENT-IDENTITY-ARCHITECTURE.md)
-- [ADP-001C — Provider → Instrument Contract](SWING-PHASE-1-PROVIDER-INSTRUMENT-CONTRACT.md)
+- [ADP-001C — Superseded Provider → Instrument Contract (historical predecessor)](SWING-PHASE-1-PROVIDER-INSTRUMENT-CONTRACT.md)
+- [ADR-009 — Provider-Bounded Instrument Master Acquisition Architecture](../../platform/domains/provider/ADR-009-PROVIDER-BOUNDED-INSTRUMENT-MASTER-ACQUISITION-ARCHITECTURE.md)
+- [DOMAIN-006 — Provider Domain Architecture](../../platform/domains/provider/ARCHITECTURE.md)
+- [EAIC-002 — Provider → Instrument Submission Contract](../../interfaces/EAIC-002-PROVIDER-TO-INSTRUMENT-SUBMISSION-CONTRACT.md)
 - [ADP-001D — Instrument → Observation Contract](SWING-PHASE-1-INSTRUMENT-OBSERVATION-CONTRACT.md)
 - [ADP-001E — Observation Domain Architecture](SWING-PHASE-1-OBSERVATION-DOMAIN-ARCHITECTURE.md)
 - [ADP-001F — Configuration → Provider Runtime Configuration Boundary](SWING-PHASE-1-CONFIGURATION-PROVIDER-RUNTIME-CONFIGURATION-BOUNDARY.md)

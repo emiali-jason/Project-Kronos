@@ -17,9 +17,10 @@ This index organizes documents. It does not approve, replace, reinterpret, or in
 1. Read the root [`AGENTS.md`](../../AGENTS.md).
 2. Read the central [`KNOWLEDGE_BASE.md`](KNOWLEDGE_BASE.md).
 3. Read the [Constitution](constitution/KRONOS_CONSTITUTION.md).
-4. Read applicable approved decision records.
-5. Read applicable product documents and interface contracts.
-6. Identify conflicts or missing authority instead of resolving them silently.
+4. Read applicable approved decision records, including [ADR-009](platform/domains/provider/ADR-009-PROVIDER-BOUNDED-INSTRUMENT-MASTER-ACQUISITION-ARCHITECTURE.md) for Provider-bounded Instrument Master acquisition.
+5. Read [MIG-001](migrations/MIG-001-ADR-009-COORDINATED-ARCHITECTURE-MIGRATION-PACKAGE.md) for coordinated-migration governance.
+6. Read applicable product documents and interface contracts, including [EAIC-002](interfaces/EAIC-002-PROVIDER-TO-INSTRUMENT-SUBMISSION-CONTRACT.md) for the canonical Provider → Instrument submission boundary.
+7. Identify conflicts or missing authority instead of resolving them silently.
 
 ## Repository Map
 
@@ -29,6 +30,8 @@ This index organizes documents. It does not approve, replace, reinterpret, or in
 | [`governance/`](governance/) | Architecture roles, proposal, review, approval, versioning, and traceability governance. |
 | [`adr/`](adr/) | Architecture Decision Record index and reusable template. |
 | [`interfaces/`](interfaces/) | Cross-product interface index and reusable interface template. |
+| [`migrations/`](migrations/) | Governed architecture-migration planning, sequencing, validation, publication, and rollback records. |
+| [`platform/`](platform/) | Canonical platform constitution, domain architecture, ownership, and dependency authorities. |
 | [`products/`](products/) | Draft or approved product-specific responsibilities, interfaces, constraints, and future records. |
 | [`decisions/`](decisions/) | Decision-history indexes and navigation. Formal new architecture decisions belong in `adr/`. |
 | [`glossary/`](glossary/) | Approved or Draft architectural terminology. |

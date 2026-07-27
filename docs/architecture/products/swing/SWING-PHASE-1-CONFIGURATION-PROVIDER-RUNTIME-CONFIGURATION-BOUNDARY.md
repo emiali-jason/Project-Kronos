@@ -68,7 +68,7 @@ ADP-001F therefore addresses one architectural question:
 
 > Under what minimum governed boundary may Configuration-owned Provider runtime configuration be supplied to and consumed by Provider without transferring configuration ownership, lifecycle authority, semantic authority, or permission for any dataset or downstream meaning?
 
-The boundary shall preserve Configuration meaning while permitting only approved Provider-specific runtime use. It shall never turn operational configuration into Provider-owned configuration, Instrument information, Observation information, Market meaning, Validation judgment, dataset permission, or architectural admissibility.
+The boundary shall preserve Configuration meaning while permitting only approved Provider-specific runtime use. It shall never turn operational configuration into Provider-owned configuration, Instrument information, Observation information, Market meaning, Validation judgment, dataset permission, or Interpretation Admission.
 
 ## 4. Scope
 
@@ -84,7 +84,7 @@ This architecture covers only:
 - sensitive configuration classification and containment;
 - separation between configuration permission and dataset permission;
 - separation between authentication success and Provider capability;
-- separation between acquisition success and architectural admissibility;
+- separation between acquisition success and Interpretation Admission;
 - Configuration-owned failure semantics;
 - Provider-owned technical outcome and failure semantics;
 - relationships with ADP-001A through ADP-001E;
@@ -127,7 +127,7 @@ This architecture does not define, authorize, or recommend:
 | Configuration Availability | Configuration-owned meaning that approved runtime configuration is or is not available for supply within a defined operational context. It is distinct from Provider availability. |
 | Operational Configuration Validity | Configuration-owned meaning that configuration remains approved, remains within its intended operational context, retains valid Configuration Meaning, has not been withdrawn or superseded, and is semantically sufficient for supply under the approved Configuration boundary. It does not guarantee Provider Usability. |
 | Configuration Permission | Configuration-owned authorization for approved runtime configuration to be supplied for an approved Provider context. It is not dataset permission or permission to perform an operation. |
-| Configuration Eligibility | Configuration's determination that approved runtime configuration may be supplied for an already-approved Provider capability and operational context. It does not approve the Provider capability or authorize authentication, acquisition, execution, a dataset, technical success, Provider Usability, or architectural admissibility. |
+| Configuration Eligibility | Configuration's determination that approved runtime configuration may be supplied for an already-approved Provider capability and operational context. It does not approve the Provider capability or authorize authentication, acquisition, execution, a dataset, technical success, Provider Usability, or Interpretation Admission. |
 | Provider Consumption | Provider's permitted use of supplied Provider runtime configuration within an approved technical operation. Consumption does not transfer configuration ownership or lifecycle authority. |
 | Provider-Specific Runtime Use | Provider-owned technical use of supplied configuration within the approved Provider boundary without changing Configuration Meaning. |
 | Provider Usability | Provider-owned technical meaning concerning whether Provider was or was not technically able to use supplied configuration during a separately approved technical operation. Provider inability to use supplied configuration does not automatically prove that Operational Configuration Validity was absent. |
@@ -138,12 +138,12 @@ This architecture does not define, authorize, or recommend:
 | Provider Capability | Provider-owned meaning concerning whether Provider supports a technical capability. Authentication success does not establish this meaning. |
 | Provider Availability | Provider-owned technical availability meaning. It is distinct from Configuration Availability and Market availability. |
 | Provider Technical Outcome | Provider-owned meaning describing the result or failure of an approved Provider technical operation after configuration is supplied. |
-| Architectural Admissibility | Satisfaction of approved semantic preconditions at a separately governed downstream boundary. Acquisition success does not establish admissibility. |
+| Interpretation Admission | The Instrument-owned result, governed by EAIC-002, that follows completed contract validation and determines whether Instrument interpretation may begin. Acquisition success does not establish Interpretation Admission. |
 | Configuration Provenance | Configuration-owned meaning that makes the approving Configuration authority, approved Provider and operational context, approved capability context, applicable lifecycle or effective context, currentness under Configuration Meaning, and applicable change, withdrawal, or supersession lineage explainable without exposing sensitive content. |
 
 Terminology in this architecture is architectural, semantic, Provider-neutral, and implementation-neutral. It defines no physical field, value, status code, payload, runtime type, or procedure.
 
-Configuration Eligibility shall never approve the Provider capability; authorize execution, authentication activity, a dataset, or acquisition; establish Provider Usability or technical success; or establish architectural admissibility.
+Configuration Eligibility shall never approve the Provider capability; authorize execution, authentication activity, a dataset, or acquisition; establish Provider Usability or technical success; or establish Interpretation Admission.
 
 ## 7. Governing Principles
 
@@ -178,7 +178,7 @@ ADP-001F is driven by the need to:
 - distinguish Configuration Availability from Provider availability;
 - distinguish configuration permission from dataset permission;
 - keep authentication success separate from Provider capability and acquisition success;
-- keep acquisition success separate from ADP-001C architectural admissibility; and
+- keep acquisition success separate from EAIC-002 Interpretation Admission; and
 - support a future read-only acquisition slice without authorizing that slice.
 
 These drivers do not create a runtime contract, Provider operation, or implementation sequence.
@@ -285,7 +285,7 @@ Provider shall never:
 - supply credentials or authentication material to Instrument, Observation, Market, or Validation;
 - treat configuration permission as dataset permission;
 - treat authentication success as Provider capability;
-- treat acquisition success as architectural admissibility; or
+- treat acquisition success as Interpretation Admission; or
 - acquire shared configuration ownership.
 
 This architecture defines no Provider operation, authentication activity, session, adapter, or runtime procedure.
@@ -316,7 +316,7 @@ Provider runtime configuration shall:
 - remain separate from factual market information and Observations;
 - remain separate from Market Schedule and Market availability;
 - remain separate from Validation and business judgment; and
-- remain separate from dataset permission and architectural admissibility.
+- remain separate from dataset permission and Interpretation Admission.
 
 ## 13. Sensitive Configuration and Secret Containment
 
@@ -387,7 +387,7 @@ The boundary may permit only:
 - preservation of sensitive classification and containment obligations; and
 - distinction between Configuration-owned and Provider-owned outcomes.
 
-Configuration Eligibility does not approve the Provider capability; authorize execution, authentication activity, a dataset, or acquisition; establish Provider Usability or technical success; or establish architectural admissibility.
+Configuration Eligibility does not approve the Provider capability; authorize execution, authentication activity, a dataset, or acquisition; establish Provider Usability or technical success; or establish Interpretation Admission.
 
 Crossing the boundary shall never:
 
@@ -398,7 +398,7 @@ Crossing the boundary shall never:
 - establish authentication success;
 - establish Provider capability or availability;
 - establish acquisition success;
-- establish ADP-001C architectural admissibility; or
+- establish EAIC-002 Interpretation Admission; or
 - create Instrument, Observation, Market, Validation, or business meaning.
 
 ## 15. Prohibited Architectural Information Flow
@@ -446,7 +446,7 @@ Configuration Availability answers only whether approved runtime configuration i
 - Provider capability;
 - successful acquisition;
 - dataset permission;
-- architectural admissibility; or
+- Interpretation Admission; or
 - Market availability.
 
 Configuration shall never interpret a Provider response in order to assign a Provider-owned technical meaning.
@@ -517,7 +517,7 @@ The following invariants are normative requirements for ADP-001F:
 11. Configuration Availability and Provider availability shall remain distinct.
 12. Configuration Permission and dataset permission shall remain distinct.
 13. Authentication success and acquisition success shall remain distinct.
-14. Acquisition success and architectural admissibility shall remain distinct.
+14. Acquisition success and Interpretation Admission shall remain distinct.
 15. No downstream domain shall infer configuration state from absence of Provider information.
 16. Configuration shall never interpret Provider outcomes.
 17. Provider shall never redefine Configuration Meaning.
@@ -544,7 +544,7 @@ Provider shall never:
 - independently persist, retain beyond the approved operational need, reuse outside the approved context, expose, or redistribute Configuration-owned operational configuration;
 - represent configuration permission as dataset permission;
 - represent authentication success as Provider capability;
-- represent acquisition success as architectural admissibility; or
+- represent acquisition success as Interpretation Admission; or
 - acquire configuration lifecycle authority.
 
 The boundary shall never allow:
@@ -596,9 +596,9 @@ ADP-001F preserves ADP-001B by:
 
 ADP-001F does not amend ADP-001B.
 
-## 22. Relationship to ADP-001C
+## 22. Relationship to the Provider → Instrument Boundary
 
-ADP-001F is conceptually upstream of ADP-001C:
+ADP-001F is conceptually upstream of the current Provider → Instrument boundary governed by ADR-009, DOMAIN-006, and EAIC-002:
 
 ```text
 Configuration Eligibility
@@ -607,7 +607,9 @@ Provider Technical Operation
         ↓
 Provider-Owned Information
         ↓
-ADP-001C Architectural Admissibility
+EAIC-002 Submission and Contract Validation
+        ↓
+Interpretation Admission
         ↓
 Instrument Interpretation
 ```
@@ -616,17 +618,17 @@ The diagram is conceptual and semantic. It defines no runtime flow, transport, s
 
 ADP-001F shall never:
 
-- determine ADP-001C architectural admissibility;
+- determine EAIC-002 Submission Eligibility, contract validation, or Interpretation Admission;
 - perform or authorize Instrument interpretation;
 - create Provider-owned information;
 - define Provider → Instrument runtime communication;
 - create canonical identity or mapping meaning;
 - convert Configuration Permission into Instrument eligibility; or
-- treat acquisition success as admissibility.
+- treat acquisition success as Interpretation Admission.
 
-Configuration Eligibility is Configuration's determination that approved runtime configuration may be supplied for an already-approved Provider capability and operational context. It does not determine ADP-001C admissibility, authorize Instrument interpretation, or convert Configuration Permission into Instrument eligibility.
+Configuration Eligibility is Configuration's determination that approved runtime configuration may be supplied for an already-approved Provider capability and operational context. It does not determine Submission Eligibility or Interpretation Admission, authorize Instrument interpretation, or convert Configuration Permission into Instrument eligibility.
 
-ADP-001F does not amend ADP-001C.
+ADP-001C is a superseded historical predecessor and supplies no active authority. ADR-009 governs Provider-bounded acquisition architecture, DOMAIN-006 owns Provider acquisition and Provider Catalogue responsibilities, and EAIC-002 is the sole canonical Provider → Instrument submission contract. ADP-001F does not amend or activate those successor authorities.
 
 ## 23. Relationship to ADP-001D and ADP-001E
 
@@ -659,7 +661,8 @@ ADP-001F depends on:
 - DOMAIN-006 for Provider authority;
 - ADP-001A for inventory permission and read-only restrictions;
 - ADP-001B for Instrument Identity separation;
-- ADP-001C for downstream Provider → Instrument admissibility;
+- ADR-009 and DOMAIN-006 for Provider-bounded acquisition and Provider Catalogue ownership;
+- EAIC-002 for the downstream Provider → Instrument submission boundary and Interpretation Admission;
 - ADP-001D for attribution separation;
 - ADP-001E for Observation ownership and credential-exclusion implications;
 - ENGINE_OWNERSHIP for preserved current configuration and routing responsibilities;
@@ -730,7 +733,7 @@ The approved architecture and ADP-001F relate as follows:
 - **Platform Architecture assigns Runtime Configuration to Configuration and Provider Integration to Provider.**
 - **ADP-001A defines which market information may enter KRONOS and identifies a future Configuration → Provider boundary.**
 - **ADP-001B keeps runtime configuration and authentication material outside Instrument Identity.**
-- **ADP-001C governs downstream Provider information eligibility for Instrument interpretation.**
+- **EAIC-002 governs the downstream Provider → Instrument submission boundary and Interpretation Admission.**
 - **ADP-001D keeps operational configuration outside canonical attribution.**
 - **ADP-001E keeps operational configuration outside Observation ownership and provenance.**
 - **ADP-001F defines the upstream boundary for Configuration-owned runtime configuration to become available for Provider consumption.**
@@ -773,13 +776,16 @@ The boundary permits Configuration → Provider supply and Provider consumption 
 
 **Review History:** The Chief Architect authorized drafting and subsequently approved ADP-001F with required amendments. The amendments were incorporated, Engineering Architect re-verification completed, and canonicalization was authorized. ADP-001F is approved canonical architecture, Version 1.0.
 
-ADP-001A, ADP-001B, ADP-001C, ADP-001D, ADP-001E, and approved Platform architecture remain authoritative. ADP-001F creates no implementation or follow-on authority.
+ADP-001A, ADP-001B, ADP-001D, ADP-001E, ADR-009, DOMAIN-006, EAIC-002, and approved Platform architecture remain authoritative within their respective scopes. ADP-001C remains superseded historical predecessor traceability only. ADP-001F creates no implementation, activation, or follow-on authority.
 
 ## Related Approved Authority
 
 - [ADP-001A — Swing Phase 1 Market Data Inventory](SWING-PHASE-1-MARKET-DATA-INVENTORY.md)
 - [ADP-001B — KRONOS Swing Instrument Identity Architecture](SWING-PHASE-1-INSTRUMENT-IDENTITY-ARCHITECTURE.md)
-- [ADP-001C — Provider → Instrument Contract](SWING-PHASE-1-PROVIDER-INSTRUMENT-CONTRACT.md)
+- [ADP-001C — Superseded Provider → Instrument Contract (historical predecessor)](SWING-PHASE-1-PROVIDER-INSTRUMENT-CONTRACT.md)
+- [ADR-009 — Provider-Bounded Instrument Master Acquisition Architecture](../../platform/domains/provider/ADR-009-PROVIDER-BOUNDED-INSTRUMENT-MASTER-ACQUISITION-ARCHITECTURE.md)
+- [DOMAIN-006 — Provider Domain Architecture](../../platform/domains/provider/ARCHITECTURE.md)
+- [EAIC-002 — Provider → Instrument Submission Contract](../../interfaces/EAIC-002-PROVIDER-TO-INSTRUMENT-SUBMISSION-CONTRACT.md)
 - [ADP-001D — Instrument → Observation Contract](SWING-PHASE-1-INSTRUMENT-OBSERVATION-CONTRACT.md)
 - [ADP-001E — Observation Domain Architecture](SWING-PHASE-1-OBSERVATION-DOMAIN-ARCHITECTURE.md)
 - [PLATFORM-000 — KRONOS Platform Constitution](../../platform/PLATFORM-000-CONSTITUTION.md)
