@@ -41,7 +41,7 @@ The following labels govern this approved architecture:
 - **Unresolved** identifies a matter intentionally reserved for later architecture.
 - **Deferred capability** identifies a capability outside this architecture.
 
-ADR-009, MIG-001, EAIC-002, the Provider Domain Architecture, the Instrument Domain Architecture, the Domain Ownership Matrix, the Domain Dependency Matrix, DATA_FLOW, migrated ADP-001H, migrated ADP-001B, migrated ADP-001J, ADL-001, and the Platform Constitution remain authoritative. ADP-001C is superseded and retained only for predecessor traceability. Where this architecture differs from higher approved architecture, the higher approved architecture prevails.
+ADR-009, MIG-001, EAIC-002, the Provider Domain Architecture, the Instrument Domain Architecture, the Domain Ownership Matrix, the Domain Dependency Matrix, DATA_FLOW, migrated ADP-001B, migrated ADP-001J, ADL-001, and the Platform Constitution remain authoritative. ADP-001C and ADP-001H are superseded and retained only for predecessor traceability. Where this architecture differs from higher approved architecture, the higher approved architecture prevails.
 
 This migration does not activate ADR-009 or EAIC-002 and does not authorize runtime behaviour, implementation or EDD-004.
 
@@ -214,7 +214,7 @@ Provider owns acquisition, Provider Catalogue content, Provider records, Provide
 
 Provider Instrument Master `last_price` remains auxiliary Provider metadata. It is not Canonical Instrument Identity, not Current Quote, and never replaces Observation-owned market state. Provider availability is not universe membership, Market availability, lifecycle state, or semantic acceptance.
 
-EAIC-002 is the only upstream Provider → Instrument boundary for the Instrument Master dataset governed by ADR-009. Provider owns Submission Eligibility and shall not populate Instrument directly. Instrument owns technical receipt, contract validation, Interpretation Admission, interpretation, canonical identity decision, Provider mapping, Provider Mapping Status, and cross-Provider reconciliation. ADP-001H governs Provider acquisition. ADP-001C is a superseded predecessor and supplies no active authority.
+EAIC-002 is the only upstream Provider → Instrument boundary for the Instrument Master dataset governed by ADR-009. Provider owns Submission Eligibility and shall not populate Instrument directly. Instrument owns technical receipt, contract validation, Interpretation Admission, interpretation, canonical identity decision, Provider mapping, Provider Mapping Status, and cross-Provider reconciliation. ADR-009 Version 1.0 and DOMAIN-006 Provider Domain Architecture govern Provider acquisition and Provider Catalogue responsibility. ADP-001C and ADP-001H are superseded predecessors and supply no active authority.
 
 This architecture creates no Provider-to-Instrument runtime communication, physical mapping interface, acquisition contract, mapping algorithm, endpoint authority, persistence authority, or activation authority.
 
@@ -327,7 +327,7 @@ The following 25 Chief Architect-authorized questions are answered one-to-one. W
 | 19 | What Provider vocabulary may support interpretation without becoming canonical vocabulary? | Provider identifiers, symbols, names, exchange or segment descriptions, instrument types, expiry descriptions, and Provider provenance may support Instrument interpretation after EAIC-002 admission, but none becomes canonical identity or cross-Provider equivalence. | Approved definition / EAIC-002 |
 | 20 | What conditions permit Provider reference information to enter Instrument interpretation? | Provider owns Submission Eligibility. EAIC-002 separately governs technical receipt, contract validation, and Instrument-owned Interpretation Admission. Admission does not establish an Interpretation Outcome, Canonical Identity Decision, Provider Mapping Status, product membership, or Observation authority. | Approved definition / EAIC-002 |
 | 21 | How are missing or ambiguous Provider meanings represented during Instrument processing? | Instrument preserves missingness, limitation, ambiguity, and provenance under the independent Interpretation Outcome, Canonical Identity Decision, and Provider Mapping Status meanings. No Provider-native value is forced into canonical identity or mapping. | Approved definition |
-| 22 | What exact information is excluded from the first Instrument Master acquisition scope? | ADP-001I establishes only Swing product-universe membership and exclusion. It does not approve Requested Acquisition Scope, activate Acquisition Authority, or modify ADP-001H governance. Concrete acquisition scope remains separately Provider-owned; operational acquisition records and Provider tokens or symbols are excluded from the Swing product-universe definition. | Approved definition |
+| 22 | What exact information is excluded from the first Instrument Master acquisition scope? | ADP-001I establishes only Swing product-universe membership and exclusion. It does not approve Requested Acquisition Scope or activate Acquisition Authority. Concrete acquisition scope remains separately Provider-owned under ADR-009 Version 1.0 and DOMAIN-006; operational acquisition records and Provider tokens or symbols are excluded from the Swing product-universe definition. | Approved definition |
 | 23 | How are Options rows kept outside active Phase 1 scope while Option identity remains conceptually recognised? | Option identity remains conceptually recognised under ADP-001B, but Options rows are excluded from active Phase 1 universe membership and no Options retrieval, analytics, validation, strategy, or execution is authorized. | Approved base |
 | 24 | Does the approved universe include only MCX execution contracts and their approved references, or any wider instrument set? | The Swing product universe includes only the approved canonical MCX Metals execution contracts and canonical COMEX reference subjects, not a wider Provider Catalogue or model configuration set. Product membership is resolved; operational contract enumeration and mapping mechanics remain deferred. | Approved definition |
 | 25 | What unresolved matters must remain deferred to lifecycle, mapping or acquisition architecture? | Exact identity attributes, contract enumeration, role cardinality details, mapping-effective context and mechanics, lifecycle transitions, source substitution, acquisition scope, and operational treatment remain deferred. Provider mapping ownership, cross-Provider reconciliation ownership, Provider Mapping Status, and independence from Canonical Identity Decision are resolved. | Unresolved |
@@ -362,7 +362,7 @@ ADP-001I fully resolves the semantic universe and conforms to the approved repos
 - ADP-001D governs attribution eligibility without transferring Instrument or Observation ownership.
 - ADP-001E assigns factual Observation ownership and preserves fact-versus-interpretation boundaries.
 - ADP-001F and ADP-001G retain Configuration and authentication boundaries.
-- ADP-001H governs the bounded Provider Instrument Master capability and ends before Instrument interpretation.
+- ADR-009 Version 1.0 and DOMAIN-006 govern Provider-bounded Instrument Master acquisition and Provider Catalogue responsibilities; EAIC-002 Version 0.1 governs the subsequent boundary and ends before Instrument interpretation.
 - ADP-001J aligns Instrument interpretation, canonical identity decision, Provider Mapping Status, and Canonical Instrument Catalogue publication.
 - ADL-001 and ENGINE_OWNERSHIP preserve existing analysis/reference/execution relationships and engine ownership.
 - The Domain Ownership Matrix assigns Provider mapping and cross-Provider reconciliation to Instrument, Provider acquisition and Submission Eligibility to Provider, and product universe and Product Eligibility to Swing.
@@ -377,10 +377,10 @@ No additional ADR is required for this migration because ADR-009 governs the Pro
 
 ## 23. Deferred Capabilities
 
-The following remain deferred and unauthorized. ADP-001I establishes only Swing product-universe membership, explicit consumption of approved Instrument-owned roles and relationships, and semantic exclusion; it does not approve Requested Acquisition Scope, activate Acquisition Authority, authorize mapping implementation, or modify ADP-001H governance. Concrete acquisition scope remains separately Provider-owned and governed.
+The following remain deferred and unauthorized. ADP-001I establishes only Swing product-universe membership, explicit consumption of approved Instrument-owned roles and relationships, and semantic exclusion; it does not approve Requested Acquisition Scope, activate Acquisition Authority, or authorize mapping implementation. Concrete acquisition scope remains separately Provider-owned and governed by ADR-009 Version 1.0 and DOMAIN-006.
 
 - operational contract enumeration, including Provider symbols, Provider tokens, expiry enumeration, lifecycle-effective activation, mapping-effective context, and operational acquisition records;
-- Provider Instrument Master acquisition beyond ADP-001H authority;
+- Provider Instrument Master acquisition beyond the authority of ADR-009 Version 1.0 and DOMAIN-006;
 - Provider mapping implementation, algorithms, persistence, and effective-context mechanics;
 - EAIC-002 runtime communication or activation;
 - Instrument lifecycle implementation and transition processing;
@@ -428,7 +428,7 @@ The following remain deferred and unauthorized. ADP-001I establishes only Swing 
 - [ADP-001E — Observation Domain Architecture](SWING-PHASE-1-OBSERVATION-DOMAIN-ARCHITECTURE.md)
 - [ADP-001F — Configuration → Provider Runtime Configuration Boundary](SWING-PHASE-1-CONFIGURATION-PROVIDER-RUNTIME-CONFIGURATION-BOUNDARY.md)
 - [ADP-001G — Configuration → Provider Authentication Boundary](SWING-PHASE-1-CONFIGURATION-PROVIDER-AUTHENTICATION-BOUNDARY.md)
-- [ADP-001H — Provider Instrument Master Acquisition Capability and Contract](SWING-PHASE-1-PROVIDER-INSTRUMENT-MASTER-ACQUISITION-CAPABILITY-AND-CONTRACT.md)
+- [ADP-001H — Superseded Provider Instrument Master Acquisition predecessor (historical traceability only)](SWING-PHASE-1-PROVIDER-INSTRUMENT-MASTER-ACQUISITION-CAPABILITY-AND-CONTRACT.md)
 - [ADP-001J — Instrument Interpretation and Canonical Identity Establishment Architecture](SWING-PHASE-1-INSTRUMENT-INTERPRETATION-AND-CANONICAL-IDENTITY-ESTABLISHMENT-ARCHITECTURE.md)
 - [Provider Domain Architecture](../../platform/domains/provider/ARCHITECTURE.md)
 - [Instrument Domain Architecture](../../platform/domains/instrument/ARCHITECTURE.md)

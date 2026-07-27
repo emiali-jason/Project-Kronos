@@ -103,7 +103,7 @@ ADP-001J shall conform to:
 - ADP-001B — Instrument Identity Architecture;
 - ADP-001D — Instrument → Observation Contract;
 - ADP-001E — Observation Domain Architecture;
-- ADP-001H — Provider Instrument Master Acquisition Capability;
+- ADR-009 Version 1.0 and DOMAIN-006 Provider Domain Architecture — Provider Instrument Master acquisition and Provider Catalogue authority;
 - ADP-001I — Approved Instrument Universe and Reference Semantics Architecture;
 - Instrument Domain Architecture;
 - Provider Domain Architecture;
@@ -641,7 +641,7 @@ Further ADR authority becomes mandatory if a future amendment proposes shared in
 | Governing Architecture | ADR-009 and ADP-001B |
 | Upstream Boundary | EAIC-002 |
 | Downstream Boundary | ADP-001D |
-| Supporting Architecture | MIG-001, ADP-001A, ADP-001E, ADP-001H, ADP-001I |
+| Supporting Architecture | MIG-001, ADR-009, DOMAIN-006, EAIC-002, ADP-001A, ADP-001E, ADP-001I; superseded ADP-001H retained for predecessor traceability only |
 | Semantic Owner | Instrument |
 | ADR Required | No |
 | Engineering Impact | None |
@@ -693,7 +693,7 @@ ADP-001J Version 0.1 was authorized for Draft preparation. CA-ADP001J-001 throug
 - [ADP-001C — Superseded Provider → Instrument Contract (historical predecessor)](SWING-PHASE-1-PROVIDER-INSTRUMENT-CONTRACT.md)
 - [ADP-001D — Instrument → Observation Contract](SWING-PHASE-1-INSTRUMENT-OBSERVATION-CONTRACT.md)
 - [ADP-001E — Observation Domain Architecture](SWING-PHASE-1-OBSERVATION-DOMAIN-ARCHITECTURE.md)
-- [ADP-001H — Provider Instrument Master Acquisition Capability and Contract](SWING-PHASE-1-PROVIDER-INSTRUMENT-MASTER-ACQUISITION-CAPABILITY-AND-CONTRACT.md)
+- [ADP-001H — Superseded Provider Instrument Master Acquisition predecessor (historical traceability only)](SWING-PHASE-1-PROVIDER-INSTRUMENT-MASTER-ACQUISITION-CAPABILITY-AND-CONTRACT.md)
 - [ADP-001I — Approved Instrument Universe and Reference Semantics Architecture](SWING-PHASE-1-APPROVED-INSTRUMENT-UNIVERSE-AND-REFERENCE-SEMANTICS-ARCHITECTURE.md)
 - [Instrument Domain Architecture](../../platform/domains/instrument/ARCHITECTURE.md)
 - [Provider Domain Architecture](../../platform/domains/provider/ARCHITECTURE.md)

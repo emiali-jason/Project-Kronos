@@ -1265,7 +1265,7 @@ The MIG-001 pre-classification planning label `PIC-001` has been aligned to the 
 - [Domain Dependency Matrix](../platform/DOMAIN_DEPENDENCY_MATRIX.md)
 - [DATA_FLOW](../DATA_FLOW.md)
 - [ADP-001C — Provider → Instrument Contract](../products/swing/SWING-PHASE-1-PROVIDER-INSTRUMENT-CONTRACT.md)
-- [ADP-001H — Provider Instrument Master Acquisition](../products/swing/SWING-PHASE-1-PROVIDER-INSTRUMENT-MASTER-ACQUISITION-CAPABILITY-AND-CONTRACT.md)
+- [ADP-001H — Superseded Provider Instrument Master Acquisition predecessor (historical traceability only)](../products/swing/SWING-PHASE-1-PROVIDER-INSTRUMENT-MASTER-ACQUISITION-CAPABILITY-AND-CONTRACT.md)
 - [ADP-001J — Instrument Interpretation and Canonical Identity](../products/swing/SWING-PHASE-1-INSTRUMENT-INTERPRETATION-AND-CANONICAL-IDENTITY-ESTABLISHMENT-ARCHITECTURE.md)
 - [ADR-007 — Provider Capability Assessment Architecture](../platform/domains/provider/ADR-007-PROVIDER-CAPABILITY-ASSESSMENT-ARCHITECTURE.md)
 - [ADR-008 — Provider Entitlement Assessment Architecture](../platform/domains/provider/ADR-008-PROVIDER-ENTITLEMENT-ASSESSMENT-ARCHITECTURE.md)

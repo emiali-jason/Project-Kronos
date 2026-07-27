@@ -30,7 +30,7 @@
 
 This document is the approved canonical Version 1.0 Architecture Documentation Package. It does not authorize implementation, retrieval, contracts, Engineering Design Documents, Engineering Packages, or runtime changes.
 
-This migrated version aligns ADP-001B with ADR-007, ADR-008, ADR-009, MIG-001, EAIC-002, the migrated Provider and Instrument Domain architectures, the Domain Ownership Matrix, the Domain Dependency Matrix, DATA_FLOW, migrated ADP-001H, and the supersession of ADP-001C.
+This migrated version aligns ADP-001B with ADR-007, ADR-008, ADR-009, MIG-001, EAIC-002, the migrated Provider and Instrument Domain architectures, the Domain Ownership Matrix, the Domain Dependency Matrix, DATA_FLOW, and the supersession of ADP-001C and ADP-001H. ADP-001H remains historical predecessor traceability only.
 
 ADR-009 governs Provider-bounded acquisition and product-neutral Instrument interpretation.
 
@@ -422,7 +422,7 @@ Instrument shall not accept direct Provider writes, access Provider Catalogue in
 | --- | --- |
 | EAIC-002 — Provider → Instrument Submission Contract | Sole current canonical Provider → Instrument submission boundary. It remains inactive pending coordinated migration and separate activation authorization and is referenced rather than redefined here. |
 | ADP-001C — Provider → Instrument Contract | Superseded historical Swing-specific predecessor retained only for traceability. It supplies no current boundary or implementation authority. |
-| Provider Instrument Master Acquisition | Provider-owned and governed by ADR-009 and migrated ADP-001H; it is independent of product membership and canonical identity. |
+| Provider Instrument Master Acquisition | Provider-owned and governed by ADR-009 Version 1.0 and DOMAIN-006 Provider Domain Architecture; EAIC-002 Version 0.1 separately governs Provider → Instrument submission. It is independent of product membership and canonical identity. |
 | Provider → Observation Contract | Required future contract for factual acquisition; referenced but not defined here. |
 | Historical Observation Architecture | Future Observation architecture dependent on approved identity; not defined here. |
 | Current Quote Architecture | Separately governed Observation dataset area; future architecture not defined here. |
@@ -465,7 +465,7 @@ No architecture assumption is made about Kite's or another Provider's coverage. 
 
 - ADR-009 — Provider-Bounded Instrument Master Acquisition Architecture;
 - EAIC-002 — Provider → Instrument Submission Contract;
-- migrated ADP-001H — Provider Instrument Master Acquisition Capability and Contract;
+- superseded ADP-001H — historical Provider Instrument Master Acquisition predecessor traceability only;
 - ADP-001C — superseded historical Provider → Instrument predecessor;
 - Instrument Identity Contract;
 - Instrument Lifecycle capability or architecture;
@@ -485,7 +485,7 @@ ADP-001B depends on:
 - MIG-001 for coordinated migration governance and the prohibition on partial activation;
 - ADR-007 for Provider-scoped Capability Assessment;
 - ADR-008 for account-scoped Provider-Reported Entitlement Assessment;
-- migrated ADP-001H for the Provider-owned Instrument Master acquisition capability and its termination before EAIC-002;
+- ADR-009 Version 1.0 and DOMAIN-006 Provider Domain Architecture for Provider-owned Instrument Master acquisition, with EAIC-002 Version 0.1 governing the subsequent Provider → Instrument submission boundary;
 - the approved Platform Constitution;
 - the migrated Domain Ownership Matrix and Domain Dependency Matrix;
 - the migrated Provider and Instrument Domain architectures;
@@ -552,7 +552,7 @@ Any later Instrument Identity Contract, Instrument Lifecycle capability, Observa
 
 **Next Authorized Capability:** None
 
-**Review History:** The Chief Architect initially approved ADP-001B with required amendments. The amendments were incorporated, Engineering Architect conformance verification completed, and repository metadata and indexes were updated before final canonicalization. WP-B3 migrated ADP-001B to ADR-009, EAIC-002, the migrated Provider and Instrument domains, migrated ADP-001H, and the controlled supersession of ADP-001C.
+**Review History:** The Chief Architect initially approved ADP-001B with required amendments. The amendments were incorporated, Engineering Architect conformance verification completed, and repository metadata and indexes were updated before final canonicalization. WP-B3 migrated ADP-001B to ADR-009, EAIC-002, and the migrated Provider and Instrument domains. DG-01 subsequently superseded ADP-001H in favor of ADR-009 Version 1.0, DOMAIN-006 Provider Domain Architecture, and EAIC-002 Version 0.1; ADP-001H remains predecessor traceability only.
 
 **Implementation Authorization:** None
 
@@ -577,7 +577,7 @@ ADP-001C supplies historical predecessor traceability only. EAIC-002 is the sole
 - [Configuration Domain](../../platform/domains/configuration/ARCHITECTURE.md)
 - [ADP-001A — Swing Phase 1 Market Data Inventory](SWING-PHASE-1-MARKET-DATA-INVENTORY.md)
 - [ADP-001C — Provider → Instrument Contract (superseded historical predecessor)](SWING-PHASE-1-PROVIDER-INSTRUMENT-CONTRACT.md)
-- [ADP-001H — Provider Instrument Master Acquisition Capability and Contract](SWING-PHASE-1-PROVIDER-INSTRUMENT-MASTER-ACQUISITION-CAPABILITY-AND-CONTRACT.md)
+- [ADP-001H — Superseded Provider Instrument Master Acquisition predecessor (historical traceability only)](SWING-PHASE-1-PROVIDER-INSTRUMENT-MASTER-ACQUISITION-CAPABILITY-AND-CONTRACT.md)
 - [ADR-007 — Provider Capability Assessment Architecture](../../platform/domains/provider/ADR-007-PROVIDER-CAPABILITY-ASSESSMENT-ARCHITECTURE.md)
 - [ADR-008 — Provider Entitlement Assessment Architecture](../../platform/domains/provider/ADR-008-PROVIDER-ENTITLEMENT-ASSESSMENT-ARCHITECTURE.md)
 - [ADR-009 — Provider-Bounded Instrument Master Acquisition Architecture](../../platform/domains/provider/ADR-009-PROVIDER-BOUNDED-INSTRUMENT-MASTER-ACQUISITION-ARCHITECTURE.md)

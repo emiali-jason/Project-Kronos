@@ -4,9 +4,9 @@
 **Title:** Provider Instrument Master Acquisition Capability and Contract
 **Version:** 1.0
 
-**Status:** Approved
+**Status:** Superseded
 
-**Canonical Status:** Approved Canonical Architecture
+**Canonical Status:** Superseded
 
 **Product:** KRONOS Swing
 
@@ -21,10 +21,18 @@
 **Review Authority:** Not stated
 
 **Repository Location:** `docs/architecture/products/swing/SWING-PHASE-1-PROVIDER-INSTRUMENT-MASTER-ACQUISITION-CAPABILITY-AND-CONTRACT.md`
+**Workflow Stage:** Repository Publication
+**Superseded By:** ADR-009 Version 1.0; DOMAIN-006 Provider Domain Architecture; EAIC-002 Version 0.1
+**Activation State:** Inactive — Superseded
+**Current Architecture Authority:** None
+**Acquisition Authority:** None
+**Implementation Authority:** None
+**Runtime Authority:** None
+**EDD-004 Drafting Authority:** None
 
 **Classification:** Architecture Documentation Package
 
-**Architecture Impact:** Approved Provider-bounded acquisition capability, Provider Catalogue preservation, and EAIC-002 submission boundary for the Instrument Master dataset
+**Architecture Impact:** Historical predecessor to ADR-009, DOMAIN-006 Provider Domain Architecture, and EAIC-002
 
 **Engineering Impact:** None
 
@@ -32,19 +40,38 @@
 
 ## 1. Status and Governance
 
-This document is the approved canonical Version 1.0 architecture for ADP-001H.
+ADP-001H Version 1.0 is superseded.
 
-This migrated version aligns ADP-001H with ADR-007, ADR-008, ADR-009, MIG-001, EAIC-002, the migrated Provider and Instrument Domain architectures, the Domain Ownership Matrix, the Domain Dependency Matrix, and DATA_FLOW.
+The current successor authority set is:
 
-Nothing in this approval authorizes authentication, Instrument Master acquisition, Provider communication, implementation, an Engineering Design Document, an Engineering Package, or any runtime change.
+- [ADR-009 — Provider-Bounded Instrument Master Acquisition Architecture](../../platform/domains/provider/ADR-009-PROVIDER-BOUNDED-INSTRUMENT-MASTER-ACQUISITION-ARCHITECTURE.md) Version 1.0, which governs Provider-bounded Instrument Master acquisition architecture;
+- [DOMAIN-006 — Provider Domain Architecture](../../platform/domains/provider/ARCHITECTURE.md), which owns Provider acquisition and Provider Catalogue responsibilities; and
+- [EAIC-002 — Provider → Instrument Submission Contract](../../interfaces/EAIC-002-PROVIDER-TO-INSTRUMENT-SUBMISSION-CONTRACT.md) Version 0.1, which governs the Provider → Instrument submission boundary.
 
-ADR-009 is the governing acquisition architecture.
+ADP-001H has no current independent architecture authority. It is retained only as the historical predecessor and for decision, terminology, and repository traceability.
 
-EAIC-002 is the sole governed Provider-to-Instrument submission boundary for Instrument Master.
+No replacement ADP is required.
 
-The KRONOS Swing product placement of ADP-001H does not make Swing or any product the owner, scope source, prerequisite, or filter for Provider acquisition.
+Sections 2 through 38 preserve the former Version 1.0 text, including the WP-B1 in-place rewrite, as non-normative historical content. Their descriptions, principles, responsibilities, contracts, preconditions, outcomes, invariants, permissions, prohibitions, diagrams, and uses of normative language have no current architectural force. The WP-B1 rewrite remains preserved in Git history and is not ratified as an independently active canonical successor.
 
-Canonical publication does not activate ADR-009 or EAIC-002. Their separate activation constraints remain unchanged.
+ADP-001H shall not be used as authority for:
+
+- Instrument Master acquisition;
+- Provider Catalogue ownership or operation;
+- Submission Eligibility;
+- Provider → Instrument submission;
+- implementation;
+- runtime behaviour;
+- endpoint invocation;
+- persistence;
+- activation;
+- an Engineering Design Document;
+- EDD-004 drafting; or
+- any follow-on engineering work.
+
+Supersession does not activate ADR-009 or EAIC-002 and grants no acquisition, implementation, runtime, endpoint, persistence, migration-execution, product, EDD, or EDD-004 authority.
+
+Version 1.0 is retained because it identifies the historical canonical release that the successor authority set supersedes. This lifecycle update does not create a new architectural revision of ADP-001H.
 
 ## 2. Purpose
 
@@ -1130,13 +1157,13 @@ This architecture defers:
 
 No deferral creates authority.
 
-## 38. EDD Authorization Gate
+## 38. Historical EDD Authorization Gate
 
-ADP-001H authorizes no EDD.
+This section preserves the former EDD gate as non-normative historical traceability only. ADP-001H is superseded, has no current architecture authority, and authorizes no EDD or engineering work.
 
-**Approved architectural definition:** An EDD for the Instrument Master Acquisition Capability may be considered only after all of the following architectural conditions exist:
+**Historical architectural definition:** At the time of the former canonical release, an EDD for the Instrument Master Acquisition Capability could be considered only after all of the following architectural conditions existed:
 
-1. ADP-001H is approved canonical architecture.
+1. ADP-001H was approved canonical architecture.
 2. The required Provider, dataset, operation, Provider Context, environment, security context, and authority reference have been separately approved under repository governance.
 3. No unresolved architecture dependency affects the Provider, dataset, operation, Provider Context, environment, security context, or authority reference.
 4. The exact Approved Acquisition Scope required for engineering is Provider-and-dataset bounded and approved without product-universe coupling.
@@ -1149,19 +1176,21 @@ ADP-001H authorizes no EDD.
 11. No additional ADR or Platform architecture change is required, or any required ADR or change has been separately approved.
 12. The Chief Architect separately authorizes EDD preparation.
 
-Satisfaction of these conditions shall never authorize implementation, an Engineering Package, Provider communication, or Instrument Master acquisition. Each requires separate authority under repository governance.
+These historical conditions grant no present EDD, implementation, Engineering Package, Provider communication, or Instrument Master acquisition authority. Any future design or engineering authority must derive from the current successor authority set and separate explicit governance authorization.
 
 ## 39. Approval Record
 
-**Chief Architect Decision:** Approved
+**Chief Architect Lifecycle Decision:** Superseded
 
-**Engineering Architect Verification:** Complete
+**Status:** Superseded
 
-**Canonical Status:** Approved Canonical Architecture
+**Historical Engineering Architect Verification:** Complete
 
-**ADR Required:** No
+**Canonical Status:** Superseded
 
-**Canonicalization Authorization:** Authorized
+**Current Architecture Authority:** None
+
+**Superseded By:** ADR-009 Version 1.0; DOMAIN-006 Provider Domain Architecture; EAIC-002 Version 0.1
 
 **Implementation Authorization:** None
 
@@ -1177,13 +1206,9 @@ Satisfaction of these conditions shall never authorize implementation, an Engine
 
 **Engineering Package Authorization:** None
 
-**Commit Authorization:** Authorized
-
-**Push Authorization:** Authorized after successful commit verification
-
 **Next Authorized Capability:** None
 
-**Review History:** The Chief Architect authorized preparation of the first engineering Draft of ADP-001H. The Engineering Architect reviewed Version 0.1 and identified findings EA-001 through EA-010, which Version 0.2 addressed. The Chief Architect then approved ADP-001H with required amendments CA-001 through CA-005. Version 1.0 incorporates those amendments, has completed Engineering Architect verification, and is approved as canonical architecture. No concrete Acquisition Authority, acquisition, implementation, EDD, Engineering Package, or follow-on capability is authorized. Commit and push are authorized only for this canonicalization after successful verification.
+**Review History:** The Chief Architect authorized preparation of the first engineering Draft of ADP-001H. The Engineering Architect reviewed Version 0.1 and identified findings EA-001 through EA-010, which Version 0.2 addressed. The Chief Architect approved Version 1.0 after amendments CA-001 through CA-005 and Engineering Architect verification. WP-B1 later rewrote Version 1.0 in place during coordinated migration. DG-01 subsequently superseded ADP-001H in favor of ADR-009 Version 1.0, DOMAIN-006 Provider Domain Architecture, and EAIC-002 Version 0.1. The WP-B1 rewrite remains preserved in Git history but is not independently authoritative.
 
 ## Related Approved Authority
 

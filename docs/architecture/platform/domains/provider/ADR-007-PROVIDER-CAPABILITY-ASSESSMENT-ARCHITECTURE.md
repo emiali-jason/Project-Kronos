@@ -52,7 +52,7 @@ It derives from:
 - DATA_FLOW;
 - ADP-001A — Swing Phase 1 Market Data Inventory;
 - ADP-001G — Configuration → Provider Authentication Boundary;
-- ADP-001H — Provider Instrument Master Acquisition Capability and Contract;
+- ADP-001H — superseded Provider Instrument Master Acquisition predecessor, retained for historical traceability only;
 - EAP-001 — Configuration-to-Provider Authenticated Context Engineering Architecture;
 - EDD-001 — Provider Access and Provider Context Engineering Design;
 - DOC-001 — Document Identification, Classification & Metadata Standard; and
@@ -739,9 +739,11 @@ Context reuse remains explicit, capability-specific and bounded.
 
 ## 23.2 ADP-001H
 
-ADP-001H remains the authoritative architecture for the bounded Instrument Master Acquisition Capability and its Acquisition Contract.
+ADP-001H Version 1.0 is a superseded historical predecessor and has no current independent architecture authority.
 
-This document may assess support for the Instrument Reference Capability. It shall not replace ADP-001H, authorize acquisition or generalize ADP-001H into a reusable acquisition framework.
+ADR-009 Version 1.0 governs Provider-bounded Instrument Master acquisition architecture. DOMAIN-006 owns Provider acquisition and Provider Catalogue responsibilities. EAIC-002 Version 0.1 governs the Provider → Instrument submission boundary.
+
+This document may assess support for the Instrument Reference Capability. It shall not authorize acquisition, alter the successor authority set, or generalize historical ADP-001H content into a reusable acquisition framework.
 
 ## 23.3 EAP-001
 

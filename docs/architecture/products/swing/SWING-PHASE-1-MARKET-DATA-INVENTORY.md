@@ -337,7 +337,7 @@ Approval does not activate ADR-009 or EAIC-002 and does not authorize EDD-004.
 
 This document is **Approved** architecture for KRONOS Swing — Phase 1 Market Data Foundation. Its metadata and the Document Register continue to record Canonical Status as Not stated.
 
-Approval does not independently authorize implementation. WP-B6 aligns this document with ADR-009, MIG-001, EAIC-002, the migrated Provider and Instrument domains, the Domain Ownership Matrix, the Domain Dependency Matrix, DATA_FLOW, migrated ADP-001H, ADP-001B, ADP-001J, ADP-001I, and the supersession of ADP-001C. No runtime, implementation, activation, or EDD-004 authority is introduced.
+Approval does not independently authorize implementation. WP-B6 aligns this document with ADR-009, MIG-001, EAIC-002, the migrated Provider and Instrument domains, the Domain Ownership Matrix, the Domain Dependency Matrix, DATA_FLOW, ADP-001B, ADP-001J, ADP-001I, and the supersession of ADP-001C. ADR-009 Version 1.0, DOMAIN-006 Provider Domain Architecture, and EAIC-002 Version 0.1 supersede ADP-001H, which remains historical predecessor traceability only. No runtime, implementation, activation, or EDD-004 authority is introduced.
 
 ## Related Approved Authority
 
@@ -359,7 +359,7 @@ Approval does not independently authorize implementation. WP-B6 aligns this docu
 - [ADL-001 — Futures Model Architecture](../../ADL-001-Futures-Model.md)
 - [ADR-006 — Execution Context Provider Architecture](../../adr/ADR-006-Execution-Context-Provider-Architecture.md)
 - [PP-007 — Execution Semantics Across Markets](../../principles/PP-007-Execution-Semantics-Across-Markets.md)
-- [ADP-001H — Provider Instrument Master Acquisition Capability and Contract](SWING-PHASE-1-PROVIDER-INSTRUMENT-MASTER-ACQUISITION-CAPABILITY-AND-CONTRACT.md)
+- [ADP-001H — Superseded Provider Instrument Master Acquisition predecessor (historical traceability only)](SWING-PHASE-1-PROVIDER-INSTRUMENT-MASTER-ACQUISITION-CAPABILITY-AND-CONTRACT.md)
 - [ADP-001B — KRONOS Swing Instrument Identity Architecture](SWING-PHASE-1-INSTRUMENT-IDENTITY-ARCHITECTURE.md)
 - [ADP-001J — Instrument Interpretation and Canonical Identity Establishment Architecture](SWING-PHASE-1-INSTRUMENT-INTERPRETATION-AND-CANONICAL-IDENTITY-ESTABLISHMENT-ARCHITECTURE.md)
 - [ADP-001I — Swing Phase 1 Approved Instrument Universe and Reference Semantics Architecture](SWING-PHASE-1-APPROVED-INSTRUMENT-UNIVERSE-AND-REFERENCE-SEMANTICS-ARCHITECTURE.md)
