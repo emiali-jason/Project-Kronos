@@ -20,7 +20,7 @@
 
 **Classification:** Architecture Documentation Package
 
-**Architecture Impact:** Approved canonical Observation Domain architecture
+**Architecture Impact:** Approved canonical Observation acceptance architecture aligned with product-neutral Instrument attribution and Provider isolation
 
 **Engineering Impact:** None
 
@@ -32,17 +32,19 @@ This document is approved canonical architecture. It does not authorize factual-
 
 The following labels govern this document:
 
-- **Approved base** identifies architecture already approved in ADP-001A, ADP-001B, ADP-001C, ADP-001D, or another approved repository document.
+- **Approved base** identifies architecture already approved in ADR-009, EAIC-002, migrated ADP-001D, the migrated platform documents, or another approved repository document.
 - **Chief Architect-approved direction** identifies architectural direction approved through the Chief Architect's final review and incorporated into this canonical architecture.
 - **Deferred** identifies a capability or detail excluded from this document.
 
 The Chief Architect approved the architecture, and Engineering Architect verification passed. ADP-001E is approved canonical architecture. No ADR, implementation, runtime contract, follow-on capability, or engineering work is authorized.
 
+ADP-001C is superseded by EAIC-002 and remains relevant only as historical predecessor traceability. This migration does not activate ADR-009, EAIC-002, Observation processing, product consumption, runtime behaviour, implementation, or EDD-004.
+
 ## 2. Purpose
 
 Define the KRONOS Swing Observation Domain architecture for owning and preserving factual market state that is authoritative within KRONOS's governed factual architecture, attributable, and temporally meaningful without introducing business interpretation, Validation judgment, or trading meaning.
 
-ADP-001E elaborates the approved Observation ownership boundary. It does not amend the Platform Constitution, domain ownership, domain dependencies, engine ownership, data flow, ADP-001A through ADP-001D, or any approved interface.
+ADP-001E elaborates the approved Observation ownership boundary. It does not amend the Platform Constitution, domain ownership, domain dependencies, engine ownership, DATA_FLOW, migrated ADP-001A, migrated ADP-001B, migrated ADP-001D, or any approved interface.
 
 ## 3. Architectural Problem
 
@@ -84,11 +86,11 @@ This document covers only:
 - relationships with Provider, Instrument, Market, and future Validation;
 - architectural invariants and prohibitions;
 - conceptual, technology-independent models;
-- conformance with ADP-001A through ADP-001D;
+- conformance with ADR-009, EAIC-002, migrated ADP-001A, migrated ADP-001B, and migrated ADP-001D;
 - confirmation that no unresolved architectural question blocks canonical approval; and
 - deferred capabilities.
 
-This document applies only within KRONOS Swing Phase 1 — Market Data Foundation and does not expand the approved information inventory, instrument universe, market model, product boundary, or domain dependency matrix.
+This document applies only within KRONOS Swing Phase 1 — Market Data Foundation and does not expand the approved information inventory, canonical Instrument Catalogue, product universe, Product Eligibility, market model, product boundary, or Domain Dependency Matrix.
 
 ## 5. Out of Scope
 
@@ -139,6 +141,7 @@ This document shall never convert these separate authorities into shared ownersh
 | Factual State | A factual assertion about a defined subject and temporal context, preserved with applicable provenance and known limits. |
 | Candidate Observation | Candidate factual information available for possible Observation participation that has not been accepted and is not owned by Observation. It may concern any approved attributable subject within the Phase 1 subject scope. |
 | Admissibility | Satisfaction of approved architectural eligibility conditions. Admissibility does not imply correctness, acceptance, ownership, publication, validation, or fitness for use. |
+| Observation Attribution Eligibility | For instrument-specific candidate factual information, the ADP-001D architectural condition that permits Observation participation after approved attribution to product-neutral canonical Instrument identity. It is the only ADP-001D meaning consumed by Observation Acceptance and does not create an Observation, ownership, canonical identity, Provider mapping, product-universe membership, or Product Eligibility. |
 | Observation Acceptance | Observation's exclusive semantic architectural decision to accept candidate factual information as a governed Observation. Acceptance produces Observation ownership of the accepted factual record but is not itself that ownership state. This document defines no acceptance mechanism. |
 | Observation Ownership | The resulting architectural state in which Observation owns the accepted factual record and its factual meaning within KRONOS's governed factual architecture. |
 | Observation Authority | Observation's exclusive architectural responsibility to assign and govern factual meaning that is authoritative within KRONOS's governed factual architecture. It is not a claim of absolute external truth, exchange authority, Provider infallibility, or objective correctness beyond represented provenance and known factual limits. |
@@ -225,11 +228,12 @@ The approved ownership boundary remains:
 
 | Domain | Exclusive ownership relevant to ADP-001E |
 | --- | --- |
-| Provider | External information, Provider meaning, Provider identifiers, Provider records, Provider capability, Provider availability, Provider-specific technical meaning, acquisition outcomes, and source-origin semantics. |
-| Instrument | Canonical Instrument identity, classification, lifecycle, relationships, Provider mapping semantics, identity resolution, identity invariants, and Instrument meaning. |
+| Provider | Acquisition, Provider Catalogue, Provider-and-Dataset Catalogue Partitions, Provider Snapshots, Provider Records, Provider Record Identity, Provider dispositions, Submission Eligibility, Provider capability, Provider entitlement, Provider availability, acquisition scope and outcomes, provenance, and source-origin semantics. |
+| Instrument | Product-neutral canonical Instrument identity, interpretation, classification, lifecycle, relationships, Provider mapping, Provider Mapping Status, cross-Provider reconciliation, identity invariants, Canonical Instrument Catalogue publication, and Instrument meaning. |
 | Market | Market Schedule, trading-day and holiday meaning, session definitions, authoritative market-open and market-closed semantics, exchange-availability meaning, and temporal market context. |
 | Observation | Market Facts and factual market-state records that are authoritative within KRONOS's governed factual architecture; Observation semantics; factual attribution; temporal factual meaning; factual lineage continuity; Observation provenance continuity; and accepted factual-state relationships. |
 | Validation | Business Judgment. Future evidentiary quality, relevance, sufficiency, weighting, reliability for a defined use, and fitness-for-trading meaning require separately approved Validation architecture. |
+| Applicable Product | Its bounded product universe, Product Eligibility, explicit consumption, evidence requirements, validation requirements, decision semantics, and risk interpretation. |
 
 Observation owns the architectural meaning of the acceptance decision and the resulting Observation ownership state, correction and supersession relationships, current and historical factual-state distinctions, factual-scope availability and completeness, and governed derived factual Observations where permitted.
 
@@ -240,7 +244,9 @@ No new domain, shared ownership, or responsibility transfer is created.
 Observation shall never own or redefine:
 
 - external Provider information, Provider meaning, Provider capability, or Provider availability;
-- canonical Instrument identity, classification, lifecycle, relationships, or Provider mapping semantics;
+- Provider Catalogue content, Provider Snapshots, Provider Records, Provider Record Identity, Provider dispositions, Submission Eligibility, or EAIC-002 artefacts;
+- canonical Instrument identity, interpretation, classification, lifecycle, relationships, Provider mapping, Provider Mapping Status, cross-Provider reconciliation, or Canonical Instrument Catalogue state;
+- product-universe membership, Product Eligibility, or product-consumption authority;
 - Market Schedule, sessions, holidays, trading-day meaning, exchange availability, or Market status semantics;
 - Validation judgment, evidence quality, hypothesis relevance, evidence sufficiency, confidence, or fitness for trading;
 - direction, readiness, risk permission, execution timing, orders, positions, or model-trade state;
@@ -294,14 +300,19 @@ Observation Authority shall never:
 
 ## 14. Observation Acceptance
 
-Availability, acquisition success, normalization, architectural admissibility, and approved subject attribution shall never create an Observation.
+Availability, acquisition success, normalization, architectural admissibility, and Observation Attribution Eligibility shall never create an Observation.
 
 Observation exclusively owns the semantic authority to accept candidate factual information as a governed Observation. Observation ownership of the accepted factual record is the resulting architectural state.
+
+For instrument-specific candidate factual information, Observation Acceptance consumes only Observation Attribution Eligibility from ADP-001D. It shall not consume Provider records, Provider Catalogue content, Provider-and-Dataset Catalogue Partitions, Provider Snapshots, Provider-native identifiers, Provider dispositions, Submission Eligibility, Submission Units, or any EAIC-002 artefact.
 
 The conceptual distinction is:
 
 ```text
 Candidate Factual Information
+        ↓
+Observation Attribution Eligibility
+from ADP-001D where Instrument-scoped
         ↓
 Architectural Acceptance Decision
         ↓
@@ -326,6 +337,8 @@ Acceptance means only that:
 
 Acceptance as an architectural decision shall remain distinct from Observation ownership as its resulting architectural state. Both shall remain distinct from correctness, completeness, publication, consumption, validation, and fitness for trading.
 
+Acceptance shall not establish or alter canonical Instrument identity, Instrument interpretation, Provider mapping, Provider Mapping Status, cross-Provider reconciliation, product-universe membership, or Product Eligibility.
+
 The acceptance mechanism, runtime criteria, runtime checks, representation, and processing remain deferred. This architecture defines only the minimum semantic conditions above and no mechanism, algorithm, schema, service, check, or state machine.
 
 ## 15. Approved Subject Attribution
@@ -337,7 +350,7 @@ Phase 1 Observation ownership is not limited to Instrument-scoped facts. Observa
 - an approved exchange or session subject where that subject already exists under Market architecture; or
 - a defined Observation factual availability or completeness scope.
 
-Instrument-specific factual information shall require attribution to an approved canonical Instrument identity under ADP-001D before Observation may make the acceptance decision that results in ownership of the accepted factual record.
+Instrument-specific factual information shall require Observation Attribution Eligibility based on an approved product-neutral canonical Instrument identity under ADP-001D before Observation may make the acceptance decision that results in ownership of the accepted factual record.
 
 Observation may own a factual availability or completeness assertion only when:
 
@@ -356,6 +369,8 @@ Observation shall:
 - reject silent identity inference or ambiguity resolution.
 
 Observation shall never create or own the subject identity.
+
+ADP-001D attribution eligibility is the only Instrument-owned meaning consumed by Observation Acceptance for an instrument-specific candidate. EAIC-002 terminates at Instrument and does not provide an input to Observation Acceptance.
 
 No new subject identity, identity domain, dependency, or cross-domain contract is created by this document.
 
@@ -654,7 +669,7 @@ The following lifecycle concepts are conceptual and do not define runtime states
 | Lifecycle concept | Architectural meaning |
 | --- | --- |
 | Candidate | Candidate factual information is available for possible Observation participation but has not been accepted and is not owned by Observation. |
-| Admissible | The candidate satisfies approved architectural eligibility conditions. Admissible does not mean accepted, correct, complete, published, or validated. |
+| Admissible | The candidate satisfies approved architectural eligibility conditions, including Observation Attribution Eligibility from ADP-001D where Instrument-scoped. Admissible does not mean accepted, correct, complete, published, validated, or product-eligible. |
 | Accepted | Observation has made the architectural acceptance decision. The accepted factual record is consequently owned by Observation and authoritative within KRONOS's governed factual architecture. |
 | Current | The accepted Observation is presently applicable for a defined subject, factual category, and temporal context under approved Observation semantics. It does not imply latest Provider receipt, low latency, freshness, correctness, completeness, Validation acceptance, tradability, or actionability. |
 | Historical | The Observation remains in the accepted factual record but is not current for the relevant context. |
@@ -666,7 +681,7 @@ The following lifecycle concepts are conceptual and do not define runtime states
 
 “Invalidated as a fact” is excluded as a canonical lifecycle concept unless separately approved architecture requires it, because it risks importing Validation judgment.
 
-Observation acceptance authority is exclusively Observation-owned. Acceptance is the semantic architectural decision; ownership of the accepted factual record is the resulting architectural state. The acceptance mechanism remains deferred.
+Observation acceptance authority is exclusively Observation-owned. Acceptance is the semantic architectural decision; ownership of the accepted factual record begins only after successful Observation Acceptance and is the resulting architectural state. Rejected candidate information never becomes Observation-owned. The acceptance mechanism remains deferred.
 
 ## 27. Availability, Missingness, Partiality, and Completeness
 
@@ -688,7 +703,7 @@ The following rules apply:
 - missing is not zero;
 - unavailable does not imply Market closure;
 - Provider success does not establish Observation completeness;
-- attribution admissibility does not establish factual acceptance;
+- Observation Attribution Eligibility does not establish factual acceptance;
 - incomplete does not automatically mean invalid;
 - absence shall not be inferred solely from acquisition failure; and
 - current shall not establish freshness.
@@ -720,20 +735,23 @@ Provider shall never:
 
 Provider information may become candidate factual information only through separately approved architecture. This document does not create a Provider → Observation contract, runtime path, retrieval capability, or new domain dependency.
 
+Observation Acceptance never consumes Provider Records, Provider Catalogue content, Provider-and-Dataset Catalogue Partitions, Provider Snapshots, Provider-native identifiers, Provider dispositions, Submission Eligibility, Submission Units, or EAIC-002 artefacts. Preserved provenance does not create a direct Observation dependency on Provider or transfer Provider ownership.
+
 ## 29. Relationship with Instrument
 
 ADP-001E preserves ADP-001D:
 
-- Instrument owns canonical identity.
+- Instrument owns product-neutral canonical identity.
 - Observation owns factual state.
 - Facts do not possess identity; they are attributed to identity.
 - Attribution shall never transfer identity ownership.
+- Observation Acceptance consumes only Observation Attribution Eligibility from ADP-001D for instrument-specific candidate factual information.
 - Observation may preserve the attribution and applicable lifecycle context.
 - Observation shall never create, alter, resolve, or infer canonical Instrument identity.
 
-Instrument-specific candidate factual information shall not be accepted, and therefore shall not become Observation-owned, without approved canonical attribution.
+Instrument-specific candidate factual information shall not be accepted, and therefore shall not become Observation-owned, without Observation Attribution Eligibility based on approved product-neutral canonical Instrument identity.
 
-ADP-001E does not define the Instrument Identity Contract or alter the approved Instrument → Observation dependency.
+ADP-001E does not define the Instrument Identity Contract or alter the approved Instrument → Observation dependency. It does not consume Provider mapping, Provider Mapping Status, Provider Catalogue content, or EAIC-002 artefacts.
 
 ## 30. Relationship with Market
 
@@ -787,7 +805,7 @@ The following Chief Architect-approved invariants are normative within this appr
 1. Observation shall exclusively own factual market state that is authoritative within KRONOS's governed factual architecture.
 2. Observation shall exclusively own the semantic authority to accept candidate factual information as a governed Observation.
 3. Observation acceptance shall be the semantic architectural decision, and Observation ownership of the accepted factual record shall be the resulting architectural state.
-4. Provider availability, acquisition success, normalization, architectural admissibility, and canonical attribution shall never establish Observation acceptance or ownership.
+4. Provider availability, acquisition success, normalization, architectural admissibility, and Observation Attribution Eligibility shall never establish Observation acceptance or ownership.
 5. Every accepted Observation shall have an approved attributable subject, factual rather than interpretive semantic purpose, explicit temporal meaning, preserved provenance, explainable factual lineage, preserved uncertainty, ambiguity, and known limits, and no embedded Validation, business, or trading judgment.
 6. Instrument-specific facts shall require approved canonical Instrument attribution.
 7. Observation may own facts concerning an approved Market subject, an approved exchange or session subject already established under Market architecture, or a defined Observation factual availability or completeness scope without acquiring Market or Provider ownership.
@@ -819,6 +837,10 @@ The following Chief Architect-approved invariants are normative within this appr
 33. Temporal concepts that coincide shall never be assumed semantically identical.
 34. Observation acceptance shall remain distinct from publication or downstream consumption.
 35. Observation authority shall never imply exchange authority, Provider infallibility, absolute external truth, or objective correctness beyond represented provenance and known factual limits.
+36. Observation Acceptance shall consume only Observation Attribution Eligibility from ADP-001D for instrument-specific candidate factual information.
+37. Observation Acceptance shall never consume Provider Records, Provider Catalogue content, Provider Snapshots, Provider-native identifiers, Submission Units, or EAIC-002 artefacts.
+38. Observation Acceptance shall never establish canonical Instrument identity, Provider mapping, product-universe membership, or Product Eligibility.
+39. Observation ownership of an accepted factual record shall begin only after successful Observation Acceptance.
 
 These invariants define architectural meaning only and no implementation enforcement mechanism.
 
@@ -838,6 +860,8 @@ Observation shall never:
 - treat architectural admissibility as factual correctness;
 - treat Provider success as Observation acceptance;
 - treat Provider success as Observation completeness;
+- consume Provider Records, Provider Catalogue content, Provider Snapshots, Provider-native identifiers, Submission Units, or EAIC-002 artefacts as inputs to Observation Acceptance;
+- establish canonical Instrument identity, Provider mapping, product-universe membership, or Product Eligibility through Observation Acceptance;
 - represent Provider capability, endpoint availability, request outcome, technical payload completeness, Provider error meaning, or Provider acquisition outcome as Observation-owned Provider meaning;
 - silently replace provenance;
 - silently overwrite corrected facts;
@@ -868,20 +892,28 @@ Observation architecture shall never become a runtime contract, schema, persiste
 ### Figure 1 — Domain ownership context
 
 ```text
-Provider                              Market
-External Information                 Schedules and Session Meaning
-and Provider Meaning                         │
-        │                                    │ approved subject or
-        │                                    │ referenced context
-        ▼                                    ▼
-Instrument Attribution Boundary ───────► Observation
-Canonical Instrument attribution       KRONOS-Governed Factual
-                                       Market State
-                                              │
-                                              ▼
-                                      Future Validation
-                                      Evidentiary Judgment
-                                      and Use
+Instrument                            Market
+Product-Neutral Canonical             Schedules and Session Meaning
+Instrument Identity                           │
+        │                                      │ approved subject or
+        ▼                                      │ referenced context
+ADP-001D Observation                          │
+Attribution Eligibility ────────────────┐      │
+                                        ▼      ▼
+                                  Observation Acceptance
+                                           │
+                                           ▼
+                                  Observation-Owned Factual
+                                  Market State
+                                           │
+                                           ▼
+                                  Future Validation
+                                  Evidentiary Judgment
+                                  and Use
+
+Provider Catalogue content, Provider Records, Provider Snapshots,
+Provider-native identifiers, Submission Units, and EAIC-002 artefacts
+do not enter Observation Acceptance.
 ```
 
 Figure 1 is conceptual, semantic, and technology-independent. It is not a runtime flow, transport design, schema, processing order, or implementation sequence.
@@ -891,7 +923,8 @@ Figure 1 is conceptual, semantic, and technology-independent. It is not a runtim
 ```text
 Candidate Factual Information
         ↓
-Approved Subject Attribution
+Observation Attribution Eligibility
+from ADP-001D where Instrument-scoped
         ↓
 Candidate Observation
         ↓
@@ -921,19 +954,20 @@ Figure 3 is conceptual, semantic, and technology-independent. It is not a runtim
 
 The approved architecture and this document progress as follows:
 
-- **ADP-001A defines what information may enter KRONOS and establishes key factual distinctions.**
-- **ADP-001B defines canonical Instrument identity.**
-- **ADP-001C governs when Provider information becomes eligible for Instrument interpretation.**
-- **ADP-001D governs when factual information may be attributed to canonical Instrument identity and become eligible for Observation participation.**
+- **Provider owns acquisition and Provider Catalogue meaning under ADR-009.**
+- **EAIC-002 is the sole Provider → Instrument submission boundary for the Instrument Master dataset and terminates at Instrument.**
+- **Instrument owns product-neutral interpretation, canonical identity, Provider mapping, reconciliation, and Canonical Instrument Catalogue publication.**
+- **ADP-001D governs Observation Attribution Eligibility for instrument-specific candidate factual information without creating Observation ownership.**
 - **ADP-001E defines Observation ownership and the architecture of governed factual state.**
+- **Applicable products remain downstream explicit consumers and separately own product-universe membership and Product Eligibility.**
 
-ADP-001E shall never restate ADP-001A through ADP-001D as new decisions, weaken their exclusions, expand their approved scope, or transfer their ownership assignments.
+ADP-001E shall conform to ADR-009, EAIC-002, migrated ADP-001D, the migrated domains, the Domain Ownership Matrix, the Domain Dependency Matrix, DATA_FLOW, and applicable migrated product architecture. Historical references to superseded architecture provide traceability only and grant no present authority.
 
 ## 36. Conformance with ADP-001A
 
-This document conforms to ADP-001A by:
+This document conforms to migrated ADP-001A by:
 
-- limiting factual scope to the approved Phase 1 inventory;
+- limiting factual scope to separately authorized factual categories within approved product-consumption requirements;
 - preserving Observation ownership of accepted OHLCV, Open Interest, Current Quote facts, provenance, and factual-scope completeness;
 - preserving missing, zero, partial, unsupported, unavailable, and incomplete distinctions;
 - keeping Provider availability separate from Market availability;
@@ -943,7 +977,7 @@ This document conforms to ADP-001A by:
 - retaining Options, TradingView, interpretation, ranking, execution, order, and position exclusions; and
 - leaving dataset-specific Observation models unresolved and deferred.
 
-ADP-001E does not amend ADP-001A classifications, inventory, completion criteria, or outstanding questions.
+ADP-001E does not amend ADP-001A consumption classifications, dataset boundaries, completion criteria, or outstanding questions.
 
 ## 37. Conformance with ADP-001B
 
@@ -955,24 +989,16 @@ This document conforms to ADP-001B by:
 - keeping Provider Instrument References external and non-canonical;
 - preserving historical attribution across Provider-reference and lifecycle change;
 - allowing no factual state to create, alter, resolve, or infer identity;
-- keeping Observation lifecycle distinct from Instrument Lifecycle and Provider Mapping State; and
+- keeping Observation lifecycle distinct from Instrument Lifecycle, Canonical Identity Decision, and Provider Mapping Status; and
 - creating no mapping, successor, continuous-futures, or Options capability.
 
 ADP-001E does not amend ADP-001B.
 
-## 38. Conformance with ADP-001C
+## 38. Historical Traceability to Superseded ADP-001C
 
-This document conforms to ADP-001C by:
+ADP-001C is superseded by EAIC-002 and remains available only as historical predecessor traceability. Its former Swing-specific Provider → Instrument contract grants no current authority for acquisition scope, Submission Eligibility, boundary validation, Interpretation Admission, Instrument interpretation, Observation Acceptance, implementation, or runtime behaviour.
 
-- preserving Provider ownership of external information, Provider meaning, provenance, capability, availability, and acquisition outcomes;
-- preserving the separation between physical movement, admissibility, and semantic authority;
-- preventing Provider success from becoming Observation acceptance;
-- preserving partiality, failure, unavailability, uncertainty, and ambiguity;
-- keeping Provider provenance distinguishable from Observation provenance continuity;
-- creating no Provider → Observation contract, retrieval authority, or runtime path; and
-- preserving exclusive domain ownership.
-
-ADP-001E does not amend ADP-001C.
+ADP-001E independently preserves Provider ownership, exclusive Observation Acceptance authority, separation of physical movement from semantic authority, partiality, failure, unavailability, uncertainty, ambiguity, provenance continuity, and the prohibition on a Provider → Observation runtime path. It does not reproduce, reactivate, or redefine ADP-001C or EAIC-002.
 
 ## 39. Conformance with ADP-001D
 
@@ -980,11 +1006,12 @@ This document conforms to ADP-001D by:
 
 - preserving the principle that facts do not possess identity and are attributed to identity;
 - preserving Instrument identity and Observation factual-state ownership;
-- requiring approved attribution before Observation participation for instrument-specific facts;
+- consuming only Observation Attribution Eligibility from ADP-001D before Observation Acceptance for instrument-specific facts;
 - preserving attribution, provenance, temporal context, uncertainty, and ambiguity;
 - keeping admissibility distinct from acceptance, ownership, publication, and validation;
 - preventing the attribution boundary from creating an Observation;
-- preserving attribution failure as distinct from factual acceptance; and
+- preserving attribution failure as distinct from factual acceptance;
+- excluding Provider Records, Provider Catalogue content, Provider Snapshots, Provider-native identifiers, Submission Units, and EAIC-002 artefacts from Observation Acceptance; and
 - creating no Instrument → Observation runtime communication or contract implementation.
 
 ADP-001E elaborates the Observation side of the approved boundary without amending ADP-001D.
@@ -993,16 +1020,18 @@ ADP-001E elaborates the Observation side of the approved boundary without amendi
 
 ADP-001E depends on:
 
-- ADP-001A for approved factual categories, provenance requirements, inventory boundaries, and read-only restrictions;
-- ADP-001B for canonical Instrument identity, lifecycle, mapping semantics, and historical attribution;
-- ADP-001C for governed admissibility and preservation of Provider meaning;
-- ADP-001D for canonical attribution eligibility and Instrument–Observation ownership separation;
+- ADR-009 for product-neutral canonical Instrument support and the separation of Provider acquisition from Observation authority;
+- MIG-001 for the coordinated migration authority;
+- EAIC-002 only as the upstream Provider → Instrument boundary that terminates before Observation;
+- migrated ADP-001A for approved factual consumption requirements, provenance requirements, and dataset boundaries;
+- migrated ADP-001B for product-neutral canonical Instrument identity, lifecycle, mapping semantics, and historical attribution;
+- migrated ADP-001D for Observation Attribution Eligibility and Instrument–Observation ownership separation;
 - PLATFORM-000 for contract-based dependencies and single semantic ownership;
 - DOMAIN-002 for Observation ownership;
 - DOMAIN-001, DOMAIN-006, DOMAIN-008, and DOMAIN-003 for the preserved Instrument, Provider, Market, and Validation boundaries;
 - the Domain Ownership Matrix and Domain Dependency Matrix;
 - ENGINE_OWNERSHIP for preserved source-engine responsibilities;
-- DATA_FLOW for existing current information paths; and
+- DATA_FLOW for the Instrument → Observation dependency, Provider isolation, and downstream product consumption; and
 - EAIC-001 for explicit Exchange Availability meaning.
 
 ADP-001E creates no new domain dependency. Observation continues to depend on Instrument through approved semantic meaning. Platform support from Provider or Market shall never create an unapproved business-domain dependency or transfer semantic ownership.
@@ -1083,14 +1112,17 @@ This section creates no sequence, roadmap commitment, contract, ADR, EDD, Engine
 
 **Review History:** Initial Draft prepared from Chief Architect direction after Engineering Architecture discovery review. The Chief Architect approved the architecture after the required documentation amendments, Engineering Architect verification passed, and repository metadata and indexes were updated for canonicalization.
 
-ADP-001A, ADP-001B, ADP-001C, ADP-001D, ADP-001E, and the approved Platform architecture retain authority within their respective scopes. Approval of ADP-001E creates no implementation or follow-on authority.
+ADR-009, MIG-001, EAIC-002, the migrated Provider and Instrument domains, the Observation Domain, the migrated matrices and DATA_FLOW, applicable migrated product architecture, migrated ADP-001D, ADP-001E, and the approved Platform architecture retain authority within their respective scopes. ADP-001C remains superseded historical traceability only. Approval of ADP-001E does not activate ADR-009 or EAIC-002 and creates no Observation processing, product activation, runtime, implementation, EDD-004, or follow-on authority.
 
 ## Related Approved Authority
 
 - [ADP-001A — Swing Phase 1 Market Data Inventory](SWING-PHASE-1-MARKET-DATA-INVENTORY.md)
 - [ADP-001B — KRONOS Swing Instrument Identity Architecture](SWING-PHASE-1-INSTRUMENT-IDENTITY-ARCHITECTURE.md)
-- [ADP-001C — Provider → Instrument Contract](SWING-PHASE-1-PROVIDER-INSTRUMENT-CONTRACT.md)
+- [ADP-001C — Superseded Provider → Instrument Contract (historical predecessor only)](SWING-PHASE-1-PROVIDER-INSTRUMENT-CONTRACT.md)
 - [ADP-001D — Instrument → Observation Contract](SWING-PHASE-1-INSTRUMENT-OBSERVATION-CONTRACT.md)
+- [ADR-009 — Provider-Bounded Instrument Master Acquisition Architecture](../../platform/domains/provider/ADR-009-PROVIDER-BOUNDED-INSTRUMENT-MASTER-ACQUISITION-ARCHITECTURE.md)
+- [MIG-001 — ADR-009 Coordinated Architecture Migration Package](../../migrations/MIG-001-ADR-009-COORDINATED-ARCHITECTURE-MIGRATION-PACKAGE.md)
+- [EAIC-002 — Provider → Instrument Submission Contract](../../interfaces/EAIC-002-PROVIDER-TO-INSTRUMENT-SUBMISSION-CONTRACT.md)
 - [PLATFORM-000 — KRONOS Platform Constitution](../../platform/PLATFORM-000-CONSTITUTION.md)
 - [KRONOS Platform Overview](../../platform/PLATFORM_OVERVIEW.md)
 - [Domain Ownership Matrix](../../platform/DOMAIN_OWNERSHIP_MATRIX.md)
