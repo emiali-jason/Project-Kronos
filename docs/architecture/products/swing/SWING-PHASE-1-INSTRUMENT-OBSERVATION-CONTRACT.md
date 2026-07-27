@@ -20,7 +20,7 @@
 
 **Classification:** Architecture Documentation Package
 
-**Architecture Impact:** Approved canonical governed attribution boundary between Instrument and Observation
+**Architecture Impact:** Approved canonical product-neutral attribution boundary between Instrument-owned canonical identity and Observation-owned factual market state
 
 **Engineering Impact:** None
 
@@ -32,15 +32,17 @@ This document is the approved canonical Version 1.0 Architecture Documentation P
 
 The following labels govern this document:
 
-- **Approved base** identifies architecture already approved in ADP-001A, ADP-001B, ADP-001C, or another approved repository document.
+- **Approved base** identifies architecture already approved in ADR-009, EAIC-002, the migrated platform documents, or another approved repository document.
 - **Approved principle** identifies normative wording approved through ADP-001D.
 - **Unresolved** identifies a matter this document does not decide.
 
 The Chief Architect approved the governed attribution boundary, and the Engineering Architect authorized canonicalization. ADP-001D is canonical Version 1.0.
 
+ADP-001C is superseded by EAIC-002 and remains relevant only as historical predecessor traceability. This migration does not activate ADR-009, EAIC-002, Observation processing, a product capability, runtime behaviour, implementation, or EDD-004.
+
 ## 2. Purpose
 
-Define the governed architectural conditions under which factual market information may be attributed to an approved canonical Instrument identity and therefore become eligible for Observation participation and possible Observation ownership.
+Define the governed architectural conditions under which factual market information may be attributed to an approved product-neutral canonical Instrument identity and therefore become eligible for Observation participation and possible Observation ownership.
 
 ADP-001D defines a governed attribution boundary. It is not an Instrument architecture document, an Observation architecture document, a market-data model, a runtime contract, a transport contract, a schema, an API, or an implementation design.
 
@@ -77,9 +79,9 @@ This document covers only:
 - preserved uncertainty and unresolved ambiguity;
 - normative contract responsibilities and invariants;
 - explicit prohibitions; and
-- conformance with ADP-001A, ADP-001B, and ADP-001C.
+- conformance with ADR-009, EAIC-002, the migrated Instrument architecture, the migrated Observation dependency, and applicable approved product architecture.
 
-The boundary applies only to approved Phase 1 factual market-information categories and approved canonical Instrument identity. It does not expand the approved dataset inventory, Instrument universe, product scope, Observation responsibility, or any domain dependency.
+The boundary applies only to separately approved factual market-information categories and approved product-neutral canonical Instrument identity. It does not expand an approved dataset inventory, canonical Instrument Catalogue, product universe, Product Eligibility, Observation responsibility, or any domain dependency.
 
 ## 5. Out of Scope
 
@@ -104,7 +106,7 @@ This document does not define or authorize:
 
 | Term | Architectural meaning in this document |
 | --- | --- |
-| Canonical Instrument Identity | An Instrument-owned canonical semantic identity within the Economic Instrument, Listed Instrument, or Derivative Contract layer approved by ADP-001B. |
+| Canonical Instrument Identity | An Instrument-owned, product-neutral canonical semantic identity within the Economic Instrument, Listed Instrument, or Derivative Contract layer approved by ADP-001B and the migrated Instrument architecture. |
 | Factual Market Information | A factual claim or state concerning a market or instrument before this boundary establishes eligibility for Observation participation and possible Observation ownership. It is not Instrument meaning and is not automatically an authoritative Market Fact. |
 | Market Fact | Authoritative factual market state owned by Observation that answers what happened without assigning business meaning. Factual information does not become a Market Fact merely because it is available or eligible for consideration. |
 | Attribution | The governed architectural association of factual market information with an approved canonical Instrument identity, identifying whose factual market state is being considered without transferring ownership. |
@@ -144,8 +146,9 @@ No shared ownership is introduced.
 | --- | --- | --- |
 | Instrument | Canonical identity, Economic Instrument identity, Listed Instrument identity, Derivative Contract identity, identity semantics, classification, lifecycle, relationships, mapping semantics, and identity invariants. | What is this? |
 | Observation | Factual market-state records, price, OHLC facts, volume, Open Interest, bid, ask, depth, quote timestamp, exchange-reported factual state, Observation provenance, and factual attribution where defined by approved architecture. | What happened? |
+| Applicable Product | Its bounded product universe, Product Eligibility, explicit consumption, evidence requirements, validation requirements, decision semantics, and risk interpretation. | What does this product explicitly consume? |
 
-The governed attribution boundary shall never become a third semantic owner. Attribution shall relate approved identity to factual market information without merging their meanings.
+The governed attribution boundary shall never become a third semantic owner. Attribution shall relate approved identity to factual market information without merging their meanings. Product consumption remains downstream and does not establish acquisition, canonical identity, attribution eligibility, Observation acceptance, or Observation ownership.
 
 ## 9. Instrument Responsibilities
 
@@ -173,9 +176,11 @@ Within approved architecture, Observation:
 
 - owns authoritative factual market state and Market Facts;
 - owns Observation provenance and factual attribution where approved;
-- consumes approved canonical Instrument identity without recreating or reinterpreting it;
+- consumes approved product-neutral canonical Instrument identity only, without recreating or reinterpreting it;
 - answers what happened without answering what it means; and
 - preserves the distinction between factual state, identity metadata, and derived interpretation.
+
+Observation shall not consume Provider-native records, Provider Catalogue content, Provider-and-Dataset Catalogue Partitions, Provider Snapshots, Provider Records, Provider Record Identity, Provider dispositions, Submission Eligibility, or EAIC-002 Submission Units or envelopes. Provider acquisition and EAIC-002 submission do not create Observation authority.
 
 Observation shall never:
 
@@ -189,6 +194,8 @@ Observation shall never:
 
 Observation eligibility makes factual market information eligible for Observation participation only. It does not create an Observation, establish acceptance, confer ownership, authorize publication, or progress an Observation lifecycle. ADP-001D defines none of those capabilities.
 
+Product-universe membership and Product Eligibility remain separately governed downstream product meanings. Neither canonical Instrument identity nor attribution eligibility establishes either meaning, and neither product meaning may alter Instrument identity or Observation-owned factual state.
+
 ## 11. Nature of the Governed Attribution Boundary
 
 ADP-001D is a governed attribution boundary.
@@ -197,7 +204,7 @@ It governs attribution only. It does not govern identity creation, fact generati
 
 The boundary relates:
 
-1. an approved canonical Instrument identity carrying Instrument meaning; and
+1. an approved product-neutral canonical Instrument identity carrying Instrument meaning; and
 2. factual market information carrying its factual source, temporal context, provenance, uncertainty, and ambiguity.
 
 A governed contract shall establish only whether the factual market information is architecturally eligible for attribution to the approved identity and therefore eligible for Observation participation and possible Observation ownership.
@@ -215,6 +222,8 @@ A governed contract shall never:
 - transfer ownership or semantic authority.
 
 The contract name identifies Observation's approved dependency on Instrument meaning. It does not mean that Instrument produces, transports, or owns factual market information.
+
+The boundary is downstream of Instrument processing. EAIC-002 terminates at Instrument and is not an Observation input. No Provider Catalogue object, Provider Snapshot, Provider Record, Provider-native identifier, Provider disposition, Submission Unit, or EAIC-002 envelope may cross or substitute for this Instrument → Observation attribution boundary.
 
 ## 12. Identity Versus Facts
 
@@ -250,7 +259,7 @@ Architectural admissibility shall never imply:
 - validation success; or
 - fitness for research, trading, strategy, or execution.
 
-Physical availability, successful acquisition, data movement, or matching syntax shall never establish architectural admissibility by themselves.
+Physical availability, successful Provider acquisition, EAIC-002 submission, data movement, or matching syntax shall never establish architectural admissibility by themselves.
 
 ## 14. Architectural Preconditions for Observation Eligibility
 
@@ -332,7 +341,7 @@ A governed attribution contract shall:
 8. keep identity metadata distinct from factual market information;
 9. keep factual information distinct from derived interpretation;
 10. keep attribution failure visible; and
-11. prevent eligibility from being mistaken for factual correctness, Observation acceptance, Observation ownership, publication, or validation.
+11. prevent eligibility from being mistaken for factual correctness, Observation acceptance, Observation ownership, publication, validation, product-universe membership, or Product Eligibility.
 
 These responsibilities define architectural meaning only. They authorize no runtime contract or implementation.
 
@@ -372,6 +381,9 @@ The following invariants are normative for ADP-001D:
 15. A governed contract shall never construct strategy or execution semantics.
 16. A governed contract shall preserve the separation between canonical Instrument identity and factual market state.
 17. A governed contract shall never equate architectural admissibility with Observation acceptance or ownership.
+18. A governed contract shall accept canonical Instrument identity only through the approved Instrument → Observation dependency.
+19. A governed contract shall never accept Provider Catalogue content, Provider Snapshots, Provider Records, Provider-native identifiers, Submission Units, or EAIC-002 envelopes as canonical Instrument identity.
+20. A governed contract shall never establish product-universe membership or Product Eligibility.
 
 These invariants apply to the governed attribution boundary and define no implementation enforcement mechanism.
 
@@ -400,6 +412,8 @@ A governed contract shall never:
 - produce BUY or SELL logic;
 - authorize execution;
 - resolve Provider inconsistencies;
+- consume Provider Catalogue content, Provider Snapshots, Provider Records, Provider-native identifiers, Submission Units, or EAIC-002 envelopes;
+- establish product-universe membership or Product Eligibility;
 - define retrieval;
 - define persistence;
 - define APIs;
@@ -437,7 +451,7 @@ The diagram is conceptual, semantic, and technology-independent. It is not a run
 
 ## 22. Provenance and Attribution Continuity
 
-Provenance continuity shall preserve the factual information's source and origin meaning throughout the attribution boundary. Attribution shall never make a source claim appear to originate from Instrument or Observation.
+Provenance continuity shall preserve the factual information's source and origin meaning throughout the attribution boundary. Attribution shall never make a source claim appear to originate from Instrument or Observation. Preserved source provenance does not permit Observation to consume Provider Catalogue internals, Provider-native records, Provider Snapshots, Submission Units, or EAIC-002 envelopes.
 
 Attribution continuity shall keep the association between factual market information and the approved canonical Instrument identity explainable across the applicable identity, lifecycle, mapping, source, and temporal context.
 
@@ -447,26 +461,31 @@ ADP-001D does not define how provenance or attribution continuity is represented
 
 ## 23. Architectural Precedent
 
-ADP-001D reinforces the ADP-001C precedent that a domain contract governs admissibility while preserving ownership and semantic authority.
+ADP-001D preserves the historical ADP-001C concern that a governed boundary must preserve ownership and semantic authority. ADP-001C is superseded and grants no current architectural authority. EAIC-002 is the sole canonical Provider → Instrument submission contract, terminates at Instrument, and is not reused or extended by ADP-001D.
 
-Within KRONOS Swing Phase 1, ADP-001D additionally governs attribution eligibility between Instrument meaning and factual market information. It shall not declare a platform-wide principle, create a reusable platform pattern, amend the Platform Constitution, or modify any existing platform principle.
+ADP-001D governs product-neutral attribution eligibility between Instrument meaning and factual market information. It shall not declare a new platform-wide principle, create a reusable platform pattern, amend the Platform Constitution, or modify any existing platform principle.
 
 ## 24. Dependencies
 
 ADP-001D depends on:
 
-- ADP-001A for the approved Phase 1 information inventory, factual categories, provenance requirements, and read-only restrictions;
-- ADP-001B for canonical Instrument identity layers, lifecycle, mapping semantics, and identity invariants;
-- ADP-001C for governed admissibility, preservation of ownership, and separation of physical movement from semantic authority;
+- ADR-009 for product-neutral canonical Instrument identity support and the separation of Provider acquisition from Observation authority;
+- MIG-001 for the coordinated migration authority;
+- EAIC-002 only as the upstream Provider → Instrument boundary that terminates before this attribution boundary;
+- migrated ADP-001A for approved Swing consumption requirements and factual categories;
+- migrated ADP-001B for product-neutral canonical Instrument identity layers, lifecycle, mapping semantics, and identity invariants;
+- the Instrument Domain Architecture for canonical identity, interpretation, classification, Provider mapping, reconciliation, and Canonical Instrument Catalogue ownership;
+- the Observation Domain Architecture for authoritative factual market-state ownership and attribution;
 - PLATFORM-000 for contract-based dependencies and single semantic ownership;
 - DOMAIN-001 for Instrument ownership;
 - DOMAIN-002 for Observation ownership;
 - the Domain Ownership Matrix; and
-- the Domain Dependency Matrix.
+- the Domain Dependency Matrix; and
+- DATA_FLOW for the Instrument → Observation dependency and Provider-isolation rules.
 
 ADP-001D elaborates the approved dependency in which Observation consumes Instrument Identity. It creates no new domain dependency and does not alter the Domain Dependency Matrix.
 
-ADP-001D does not replace or define a Provider → Observation acquisition contract. It identifies no producer, retrieval mechanism, or runtime source for factual market information.
+ADP-001D does not replace or define a Provider → Observation acquisition contract. Observation has no direct dependency on Provider acquisition, Provider Catalogue, Provider Records, Provider Snapshots, or EAIC-002 envelopes. This document identifies no producer, retrieval mechanism, or runtime source for factual market information.
 
 No runtime, transport, storage, Provider-specific implementation, validation, or Engineering Package dependency is established.
 
@@ -474,28 +493,30 @@ No runtime, transport, storage, Provider-specific implementation, validation, or
 
 The approved architecture progresses as follows:
 
-- **ADP-001A defines what information may enter KRONOS.**
-- **ADP-001B defines what that information represents and what Instrument owns.**
-- **ADP-001C defines when Provider information becomes eligible for Instrument interpretation.**
-- **ADP-001D defines when factual market information may be attributed to a canonical Instrument identity and become eligible for Observation participation and possible Observation ownership.**
+- **Provider owns acquisition and Provider Catalogue meaning under ADR-009.**
+- **EAIC-002 is the sole Provider → Instrument submission boundary for the Instrument Master dataset and terminates at Instrument.**
+- **Instrument owns product-neutral interpretation, canonical identity, classification, Provider mapping, reconciliation, and Canonical Instrument Catalogue publication.**
+- **ADP-001D defines when factual market information may be attributed to product-neutral canonical Instrument identity and become eligible for Observation participation and possible Observation ownership.**
+- **Applicable products remain downstream explicit consumers and separately own product-universe membership and Product Eligibility.**
 
-ADP-001D shall conform to ADP-001A, ADP-001B, and ADP-001C. It shall never restate them as new decisions, weaken their exclusions, expand their approved scope, or transfer their ownership assignments.
+ADP-001D shall conform to ADR-009, EAIC-002, the migrated Provider and Instrument domains, the Domain Ownership Matrix, the Domain Dependency Matrix, DATA_FLOW, and applicable migrated product architecture. Historical references to superseded architecture provide traceability only and grant no present authority.
 
 ## 26. Conformance with ADP-001A
 
-This document conforms to ADP-001A by:
+This document conforms to migrated ADP-001A by:
 
-- limiting the boundary to factual market-information categories within the approved Phase 1 inventory;
+- limiting the boundary to separately authorized factual market-information categories within approved product-consumption requirements;
 - preserving Instrument ownership of canonical identity and Observation ownership of Market Facts;
+- keeping product-universe membership and Product Eligibility downstream from and independent of acquisition, canonical identity, and attribution eligibility;
 - preserving source attribution, temporal attribution, partiality, failure, unavailability, uncertainty, and ambiguity;
 - keeping Instrument Master metadata distinct from Current Quote and Observation-owned factual state;
 - keeping Provider availability separate from Market availability;
 - preserving the distinction between missing information and zero and between successful acquisition and dataset completeness;
-- retaining Options, TradingView, judgment, ranking, execution, orders, positions, persistence, retries, scheduling, and streaming exclusions;
+- retaining Options, TradingView, judgment, ranking, execution, orders, positions, persistence, retries, scheduling, and separately authorized streaming exclusions;
 - creating no factual-data acquisition authority or implementation sequence; and
 - preserving read-only Phase 1 scope.
 
-ADP-001D does not amend ADP-001A classifications, datasets, completion criteria, or unresolved questions.
+ADP-001D does not amend ADP-001A consumption classifications, dataset boundaries, completion criteria, or unresolved questions.
 
 ## 27. Conformance with ADP-001B
 
@@ -507,26 +528,17 @@ This document conforms to ADP-001B by:
 - keeping Provider Instrument References external and non-canonical;
 - respecting potentially time-bounded Provider mappings and effective identity context without defining temporal fields or algorithms;
 - preserving historical identity and mapping attribution;
-- keeping Provider Mapping State separate from Instrument lifecycle;
+- keeping Provider Mapping Status separate from Canonical Identity Decision and Instrument lifecycle;
 - allowing no factual state to create or redefine Instrument identity; and
 - creating no identity, mapping, classification, lifecycle state, or successor relationship.
 
 ADP-001D defines attribution eligibility only. It does not amend ADP-001B.
 
-## 28. Conformance with ADP-001C
+## 28. Historical Traceability to Superseded ADP-001C
 
-This document conforms to ADP-001C by:
+ADP-001C is superseded by EAIC-002 and remains available only as historical predecessor traceability. Its former Swing-specific Provider → Instrument contract grants no current authority for acquisition scope, Submission Eligibility, boundary validation, Interpretation Admission, Instrument interpretation, implementation, or runtime behaviour.
 
-- preserving the separation between physical movement, architectural admissibility, and semantic authority;
-- preserving Instrument meaning under Instrument ownership;
-- preserving factual source provenance without transferring ownership;
-- treating eligibility as permission for Observation participation rather than correctness, acceptance, validation, ownership, publication, or lifecycle progression;
-- preserving uncertainty and unresolved ambiguity;
-- prohibiting the governed contract from becoming a runtime, transport, payload, schema, or implementation contract;
-- creating no reusable platform pattern or platform-wide principle; and
-- preserving exclusive domain ownership.
-
-ADP-001D applies the approved governed-boundary precedent to attribution between Instrument and Observation. It does not amend ADP-001C.
+ADP-001D independently preserves exclusive domain ownership, the separation of physical movement from semantic authority, factual source provenance, retained uncertainty, unresolved ambiguity, and the prohibition on runtime or implementation authority. It does not reproduce, reactivate, or redefine ADP-001C or EAIC-002.
 
 ## 29. Unresolved Architectural Questions
 
@@ -534,7 +546,7 @@ ADP-001D applies the approved governed-boundary precedent to attribution between
 2. Shall all approved factual market-information categories share the same attribution preconditions, or shall category-specific architectural obligations apply?
 3. Which architectural distinctions must keep attribution failure separate from retained uncertainty and unresolved ambiguity?
 4. How shall Instrument lifecycle and effective identity context constrain attribution eligibility?
-5. What minimum provenance-continuity obligations apply across Provider, Instrument, and Observation without transferring ownership?
+5. What minimum provenance-continuity obligations apply through separately governed boundaries without creating a direct Observation dependency on Provider?
 6. What architectural obligations shall keep ambiguous or conflicting attribution visible and unresolved without changing Instrument or Observation ownership?
 7. Does future Observation architecture require a separately approved capability document after ADP-001D?
 8. Does review identify any material architectural decision beyond the existing Instrument → Observation dependency that must be recorded by ADR before approval?
@@ -565,13 +577,16 @@ This section creates no sequence, roadmap commitment, contract, ADR, EDD, Engine
 
 **Review History:** The Chief Architect approved ADP-001D after Engineering Architect review. The Engineering Architect authorized canonicalization, and repository metadata and indexes were updated for Version 1.0.
 
-ADP-001A, ADP-001B, ADP-001C, ADP-001D, and the approved Platform architecture retain authority within their respective scopes. Approval of ADP-001D does not independently authorize implementation.
+ADR-009, MIG-001, EAIC-002, the migrated Provider and Instrument domains, the migrated matrices and DATA_FLOW, applicable migrated product architecture, ADP-001D, and the approved Platform architecture retain authority within their respective scopes. ADP-001C remains superseded historical traceability only. Approval of ADP-001D does not activate ADR-009 or EAIC-002 and does not authorize Observation processing, product activation, runtime behaviour, implementation, or EDD-004.
 
 ## Related Approved Authority
 
 - [ADP-001A — Swing Phase 1 Market Data Inventory](SWING-PHASE-1-MARKET-DATA-INVENTORY.md)
 - [ADP-001B — KRONOS Swing Instrument Identity Architecture](SWING-PHASE-1-INSTRUMENT-IDENTITY-ARCHITECTURE.md)
-- [ADP-001C — Provider → Instrument Contract](SWING-PHASE-1-PROVIDER-INSTRUMENT-CONTRACT.md)
+- [ADP-001C — Superseded Provider → Instrument Contract (historical predecessor only)](SWING-PHASE-1-PROVIDER-INSTRUMENT-CONTRACT.md)
+- [ADR-009 — Provider-Bounded Instrument Master Acquisition Architecture](../../platform/domains/provider/ADR-009-PROVIDER-BOUNDED-INSTRUMENT-MASTER-ACQUISITION-ARCHITECTURE.md)
+- [MIG-001 — ADR-009 Coordinated Architecture Migration Package](../../migrations/MIG-001-ADR-009-COORDINATED-ARCHITECTURE-MIGRATION-PACKAGE.md)
+- [EAIC-002 — Provider → Instrument Submission Contract](../../interfaces/EAIC-002-PROVIDER-TO-INSTRUMENT-SUBMISSION-CONTRACT.md)
 - [PLATFORM-000 — KRONOS Platform Constitution](../../platform/PLATFORM-000-CONSTITUTION.md)
 - [Domain Ownership Matrix](../../platform/DOMAIN_OWNERSHIP_MATRIX.md)
 - [Domain Dependency Matrix](../../platform/DOMAIN_DEPENDENCY_MATRIX.md)
