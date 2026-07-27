@@ -2,23 +2,25 @@
 
 **Document ID:** EDD-004
 **Title:** Provider Instrument Master Acquisition Engineering Design
-**Version:** 0.4
-**Status:** Draft
-**Canonical Status:** Draft
+**Version:** 1.0
+**Status:** Approved
+**Canonical Status:** Canonical
 **Classification:** Engineering Design Document
 **Owner:** Engineering Design Team
 **Prepared By:** Engineering Design Team
 **Review Authority:** Chief Architect
 **Repository Location:** `docs/engineering/edd/EDD-004-PROVIDER-INSTRUMENT-MASTER-ACQUISITION-ENGINEERING-DESIGN.md`
-**Workflow Stage:** Draft Preparation
-**Engineering Stage:** Engineering Interface Architecture
+**Workflow Stage:** Repository Publication
+**Engineering Stage:** Completed
+**Engineering Verification:** PASS
+**Engineering Lifecycle:** Complete
 **Engineering Authority:** Draft Preparation
 **Draft Authorization:** Approved with Constraints — RC-04
 **Governing Architecture:** ADR-009 Version 1.0
 **Governing Interface:** EAIC-002 Version 0.1
 **Governing Engineering Baseline:** EAP-001 Version 1.0 and EAP-002 Version 2.0
 **Activation Decision:** CAR-003 Version 1.0
-**Approval State:** Not Approved
+**Approval State:** Approved
 **Implementation Authorization:** None
 **Runtime Authority:** None
 **Provider Endpoint Invocation Authority:** None
@@ -1765,5 +1767,15 @@ Engineering Review shall confirm:
 24. The Engineering Interface Principle is normative for every EDD-004 interface.
 
 Interface coverage and dependency validation passed: all 14 approved building blocks are represented, the semantic dependency model is acyclic, and EI-014 is the sole terminal EAIC-002 boundary.
+
+# Publication Record
+
+| Version | Publication State | Engineering Verification | Non-Conformities | Historical Effect |
+|---|---|---|---|---|
+| 1.0 | Approved canonical repository publication | PASS | Zero Critical, zero Major, and zero Minor NCRs | Engineering lifecycle completed; engineering design frozen |
+
+EDD-004 Version 1.0 is published as the approved canonical engineering design and records completion of the Engineering lifecycle following ES-05 Engineering Verification with a PASS result and zero NCRs.
+
+This publication record is historical only. Future changes to the frozen engineering design require formal repository governance.
 
 # End of Document
