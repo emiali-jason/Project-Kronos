@@ -29,11 +29,12 @@
 
 **Workflow Stage:** Repository Publication
 
-**Activation State:** Inactive — Pending RC-04 Activation Governance
+**Activation State:** Active — Engineering Design Baseline under RC-04
+**Activation Decision:** CAR-003 Version 1.0
 
 **ADR Required:** No
 
-**EDD-004 Drafting Authorization:** None
+**EDD-004 Drafting Authorization:** Approved with Constraints — RC-04
 
 **Implementation Authorization:** None
 
@@ -496,7 +497,7 @@ EAP-006 defines semantic contracts, representations and obligations only. It int
 
 59. **Applicable products shall remain separately authorized downstream consumers and shall not acquire Observation ownership.**
 
-60. **EAP-006 publication shall not activate Observation processing, product consumption, runtime behavior, implementation or EDD-004.**
+60. **EAP-006 publication shall not activate Observation processing, product consumption, runtime behavior, implementation or EDD-004; CAR-003 separately limits EDD-004 authority to constrained Draft Preparation.**
 
 ## 14. Engineering Observability
 
@@ -551,9 +552,9 @@ EAP-006 translates ADP-001E through the existing Observation dependency and crea
 | Status | Approved |
 | Canonical Status | Approved Canonical Engineering Architecture |
 | Workflow Stage | Repository Publication |
-| Activation State | Inactive — Pending RC-04 Activation Governance |
+| Activation State | Active — Engineering Design Baseline under RC-04 |
 | ADR Required | No |
-| EDD-004 Drafting Authorization | None |
+| EDD-004 Drafting Authorization | Approved with Constraints — RC-04 |
 | Implementation Authorization | None |
 | Repository location | `docs/engineering/eap/EAP-006-OBSERVATION-ACCEPTANCE-AND-GOVERNED-OBSERVATION-ESTABLISHMENT.md` |
 
@@ -566,7 +567,7 @@ EAP-006 translates ADP-001E through the existing Observation dependency and crea
 | Canonical EAP-006 Version 1.1 | Approved Canonical Engineering Architecture under RC-02 |
 | Engineering verification | Complete |
 | Canonicalization | Authorized |
-| EDD | Not authorized |
+| EDD-004 Draft Preparation | Approved with Constraints under RC-04 |
 | Implementation | Not authorized |
 | Runtime behaviour | Not authorized |
 | Product consumption | Not authorized |
@@ -576,7 +577,7 @@ EAP-006 translates ADP-001E through the existing Observation dependency and crea
 
 EAP-006 Draft Version 0.1 was prepared under the repository-preserved Chief Architect Draft Authorization. Engineering verification was completed. The Chief Architect Final Review authorized governance-only canonicalization through CA-006-001 and CA-006-002. Version 1.0 became the approved canonical baseline.
 
-Version 1.1 applies the approved MIG-001 minor amendment: EAP-005 Version 1.1 product-neutral attribution eligibility is the sole instrument-specific input; Provider and EAIC-002 artefacts remain isolated upstream; and applicable products remain separately authorized downstream consumers that cannot alter Observation ownership or governed factual meaning. Version 1.1 is published under RC-02; RC-03 is complete, and the document remains inactive pending RC-04.
+Version 1.1 applies the approved MIG-001 minor amendment: EAP-005 Version 1.1 product-neutral attribution eligibility is the sole instrument-specific input; Provider and EAIC-002 artefacts remain isolated upstream; and applicable products remain separately authorized downstream consumers that cannot alter Observation ownership or governed factual meaning. Version 1.1 is published under RC-02; RC-03 repository synchronization and RC-04 activation are complete.
 
 ## 21. Approval Record
 
@@ -588,9 +589,9 @@ Version 1.1 applies the approved MIG-001 minor amendment: EAP-005 Version 1.1 pr
 
 **ADR Required:** No
 
-**Activation State:** Inactive — Pending RC-04 Activation Governance
+**Activation State:** Active — Engineering Design Baseline under RC-04
 
-**EDD-004 Drafting Authorization:** None
+**EDD-004 Drafting Authorization:** Approved with Constraints — RC-04
 
 **Implementation Authorization:** None
 
@@ -598,6 +599,7 @@ Version 1.1 applies the approved MIG-001 minor amendment: EAP-005 Version 1.1 pr
 
 ## Related Approved Authority
 
+- [CAR-003 — RC-04 Architecture Activation and Engineering Authorization Decision](../../governance/reviews/CAR-003-RC-04-ARCHITECTURE-ACTIVATION-AND-ENGINEERING-AUTHORIZATION-DECISION.md)
 - [Platform Constitution](../../architecture/platform/PLATFORM-000-CONSTITUTION.md)
 - [ADP-001D — Instrument → Observation Contract](../../architecture/products/swing/SWING-PHASE-1-INSTRUMENT-OBSERVATION-CONTRACT.md)
 - [ADP-001E — Observation Domain Architecture](../../architecture/products/swing/SWING-PHASE-1-OBSERVATION-DOMAIN-ARCHITECTURE.md)

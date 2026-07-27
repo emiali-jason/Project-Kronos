@@ -31,7 +31,8 @@
 
 **Workflow Stage:** Repository Publication
 
-**Activation State:** Inactive — Pending RC-04 Activation Governance
+**Activation State:** Active — Engineering Design Baseline under RC-04
+**Activation Decision:** CAR-003 Version 1.0
 
 **ADR Required:** No
 
@@ -39,7 +40,7 @@
 
 **Runtime Impact:** None
 
-**EDD-004 Drafting Authorization:** None
+**EDD-004 Drafting Authorization:** Approved with Constraints — RC-04
 
 **Implementation Authorization:** None
 
@@ -562,7 +563,7 @@ Factual-data acquisition, Provider communication, APIs, schemas, payloads, times
 
 38. **EAP-005 publication shall not activate ADR-009, EAIC-002, attribution evaluation or Observation processing.**
 
-39. **EDD-004 shall remain unauthorized.**
+39. **EAP-005 shall not independently authorize EDD-004; CAR-003 separately limits EDD-004 authority to constrained Draft Preparation.**
 
 ## 17. Engineering Verification Obligations
 
@@ -639,11 +640,11 @@ No ADR is required provided EAP-005 translates ADP-001D, preserves Instrument an
 | Status | Approved |
 | Canonical Status | Approved Canonical Engineering Architecture |
 | Workflow Stage | Repository Publication |
-| Activation State | Inactive — Pending RC-04 Activation Governance |
+| Activation State | Active — Engineering Design Baseline under RC-04 |
 | ADR Required | No |
 | Engineering Impact | None |
 | Runtime Impact | None |
-| EDD-004 Drafting Authorization | None |
+| EDD-004 Drafting Authorization | Approved with Constraints — RC-04 |
 | Implementation Authorization | None |
 | Repository location | `docs/engineering/eap/EAP-005-INSTRUMENT-TO-OBSERVATION-ATTRIBUTION-ELIGIBILITY.md` |
 
@@ -659,7 +660,7 @@ No ADR is required provided EAP-005 translates ADP-001D, preserves Instrument an
 | Canonical EAP-005 Version 1.1 | Approved Canonical Engineering Architecture under RC-02 |
 | Canonicalization | Authorized |
 | EAP-006 engineering architecture publication | Separate RC-02 publication unit |
-| EDD | Not authorized |
+| EDD-004 Draft Preparation | Approved with Constraints under RC-04 |
 | Implementation | Not authorized |
 | Runtime activity | Not authorized |
 
@@ -667,7 +668,7 @@ No ADR is required provided EAP-005 translates ADP-001D, preserves Instrument an
 
 EAP-005 Draft Version 0.1 was authorized by the Chief Architect Repository Architecture Review — Next Authorized Capability. Engineering verification was completed. The first independent Chief Architect review produced CA-EAP005-001 through CA-EAP005-003 together with the associated governance corrections. Draft Version 0.2 applied those amendments. Engineering re-verification was completed and the Chief Architect re-review produced CA-EAP005-004 and GOV-EAP005-006. Draft Version 0.3 applied those required amendments. The final Chief Architect review authorized canonicalization of Version 1.0.
 
-Version 1.1 applies the approved MIG-001 minor amendment: product-neutral EAP-004 Version 2.0 identity is the sole upstream identity meaning; product membership and product-universe context are excluded from canonical identity association and Attribution Eligibility; product-specific Observation requirements remain downstream and do not transfer ownership. Version 1.1 is published under RC-02; RC-03 is complete, and the document remains inactive pending RC-04.
+Version 1.1 applies the approved MIG-001 minor amendment: product-neutral EAP-004 Version 2.0 identity is the sole upstream identity meaning; product membership and product-universe context are excluded from canonical identity association and Attribution Eligibility; product-specific Observation requirements remain downstream and do not transfer ownership. Version 1.1 is published under RC-02; RC-03 repository synchronization and RC-04 activation are complete.
 
 ## 23. Approval Record
 
@@ -679,9 +680,9 @@ Version 1.1 applies the approved MIG-001 minor amendment: product-neutral EAP-00
 
 **ADR Required:** No
 
-**Activation State:** Inactive — Pending RC-04 Activation Governance
+**Activation State:** Active — Engineering Design Baseline under RC-04
 
-**EDD-004 Drafting Authorization:** None
+**EDD-004 Drafting Authorization:** Approved with Constraints — RC-04
 
 **Implementation Authorization:** None
 
@@ -689,6 +690,7 @@ Version 1.1 applies the approved MIG-001 minor amendment: product-neutral EAP-00
 
 ## Related Approved Authority
 
+- [CAR-003 — RC-04 Architecture Activation and Engineering Authorization Decision](../../governance/reviews/CAR-003-RC-04-ARCHITECTURE-ACTIVATION-AND-ENGINEERING-AUTHORIZATION-DECISION.md)
 - [Platform Constitution](../../architecture/platform/PLATFORM-000-CONSTITUTION.md)
 - [ADP-001A — Swing Phase 1 Market Data Inventory](../../architecture/products/swing/SWING-PHASE-1-MARKET-DATA-INVENTORY.md)
 - [ADP-001B — Instrument Identity Architecture](../../architecture/products/swing/SWING-PHASE-1-INSTRUMENT-IDENTITY-ARCHITECTURE.md)

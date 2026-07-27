@@ -10,7 +10,7 @@ This is the central navigation index for KRONOS architecture knowledge. It recor
 
 Status values in this index reproduce the source document where one is stated. `Not stated` identifies missing metadata; it does not infer approval.
 
-Repository synchronization is complete. The architecture migration and engineering publication are complete; activation remains pending, implementation is not authorized, and EDD-004 is not authorized.
+Repository synchronization and RC-04 activation are complete. ADR-009 is Operational Architecture, EAIC-002 is the Operational Canonical Provider → Instrument Contract, the Engineering Programme is Authorized with Constraints, and EDD-004 Draft Preparation is Approved with Constraints. Implementation and runtime activity remain unauthorized.
 
 ## Repository Governance and Draft Scaffolds
 
@@ -33,6 +33,7 @@ Repository synchronization is complete. The architecture migration and engineeri
 | Architecture Glossary | Draft terminology register | Draft | TBD | [`glossary/KRONOS_GLOSSARY.md`](glossary/KRONOS_GLOSSARY.md) |
 | Architecture Diagrams | Diagram navigation and placement | Draft | Architecture Librarian | [`diagrams/README.md`](diagrams/README.md) |
 | Decision Indexes | Decision-history navigation | Draft | Architecture Librarian | [`decisions/README.md`](decisions/README.md) |
+| CAR-003 — RC-04 Architecture Activation and Engineering Authorization Decision | Canonical publication of completed RC-04 activation and constrained EDD-004 Draft Preparation authorization | Approved | Chief Architect | [`../governance/reviews/CAR-003-RC-04-ARCHITECTURE-ACTIVATION-AND-ENGINEERING-AUTHORIZATION-DECISION.md`](../governance/reviews/CAR-003-RC-04-ARCHITECTURE-ACTIVATION-AND-ENGINEERING-AUTHORIZATION-DECISION.md) |
 
 ## Existing Canonical and Approved Architecture Documents
 
@@ -60,9 +61,9 @@ Repository synchronization is complete. The architecture migration and engineeri
 | ADR-006 — Execution Context Provider Architecture | Execution Context Provider architecture decision record | Approved | Chief Architect | [`adr/ADR-006-Execution-Context-Provider-Architecture.md`](adr/ADR-006-Execution-Context-Provider-Architecture.md) |
 | ADR-007 — Provider Capability Assessment Architecture | Canonical platform Provider-domain architecture for governed Provider capability assessment | Approved | Chief Architect | [`platform/domains/provider/ADR-007-PROVIDER-CAPABILITY-ASSESSMENT-ARCHITECTURE.md`](platform/domains/provider/ADR-007-PROVIDER-CAPABILITY-ASSESSMENT-ARCHITECTURE.md) |
 | ADR-008 — Provider Entitlement Assessment Architecture | Canonical platform Provider-domain architecture for governed account-specific Provider entitlement assessment | Approved | Chief Architect | [`platform/domains/provider/ADR-008-PROVIDER-ENTITLEMENT-ASSESSMENT-ARCHITECTURE.md`](platform/domains/provider/ADR-008-PROVIDER-ENTITLEMENT-ASSESSMENT-ARCHITECTURE.md) |
-| ADR-009 — Provider-Bounded Instrument Master Acquisition Architecture | Canonical Provider-bounded acquisition and Provider Catalogue architecture; inactive pending Chief Architect activation review | Approved | Chief Architect | [`platform/domains/provider/ADR-009-PROVIDER-BOUNDED-INSTRUMENT-MASTER-ACQUISITION-ARCHITECTURE.md`](platform/domains/provider/ADR-009-PROVIDER-BOUNDED-INSTRUMENT-MASTER-ACQUISITION-ARCHITECTURE.md) |
+| ADR-009 — Provider-Bounded Instrument Master Acquisition Architecture | Operational Architecture for Provider-bounded acquisition and Provider Catalogue meaning under RC-04 | Approved | Chief Architect | [`platform/domains/provider/ADR-009-PROVIDER-BOUNDED-INSTRUMENT-MASTER-ACQUISITION-ARCHITECTURE.md`](platform/domains/provider/ADR-009-PROVIDER-BOUNDED-INSTRUMENT-MASTER-ACQUISITION-ARCHITECTURE.md) |
 | MIG-001 — ADR-009 Coordinated Architecture Migration Package | Canonical Version 0.2 closure record for completed architecture migration, engineering publication, and repository synchronization | Approved | Chief Architect | [`migrations/MIG-001-ADR-009-COORDINATED-ARCHITECTURE-MIGRATION-PACKAGE.md`](migrations/MIG-001-ADR-009-COORDINATED-ARCHITECTURE-MIGRATION-PACKAGE.md) |
-| EAIC-002 — Provider → Instrument Submission Contract | Canonical Provider → Instrument submission contract; operational activation remains pending separate authority | Approved | Chief Architect | [`interfaces/EAIC-002-PROVIDER-TO-INSTRUMENT-SUBMISSION-CONTRACT.md`](interfaces/EAIC-002-PROVIDER-TO-INSTRUMENT-SUBMISSION-CONTRACT.md) |
+| EAIC-002 — Provider → Instrument Submission Contract | Operational Canonical Provider → Instrument Contract under RC-04; runtime submission authority remains separate and absent | Approved | Chief Architect | [`interfaces/EAIC-002-PROVIDER-TO-INSTRUMENT-SUBMISSION-CONTRACT.md`](interfaces/EAIC-002-PROVIDER-TO-INSTRUMENT-SUBMISSION-CONTRACT.md) |
 | ECIC-001 — Execution Context Interface Contract | Execution Context public interface contract | Approved | Chief Architect | [`interfaces/ECIC-001-Execution-Context-Interface-Contract.md`](interfaces/ECIC-001-Execution-Context-Interface-Contract.md) |
 | ECM-001 — Execution Context Model | Execution Context behavioral model | Approved | Not stated | [`models/ECM-001-Execution-Context-Model.md`](models/ECM-001-Execution-Context-Model.md) |
 | ECPC-001 — Execution Context Payload Contract | Conceptual Execution Context payload-governance contract | Approved | Not stated | [`interfaces/ECPC-001-Execution-Context-Payload-Contract.md`](interfaces/ECPC-001-Execution-Context-Payload-Contract.md) |

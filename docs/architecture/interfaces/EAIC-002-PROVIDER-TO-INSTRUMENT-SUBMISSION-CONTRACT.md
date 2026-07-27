@@ -13,14 +13,15 @@
 **Workflow Stage:** Repository Publication
 **Governing Architecture:** ADR-009 Version 1.0
 **Governing Migration:** MIG-001 Version 0.1
-**Activation State:** Inactive — Pending Coordinated Migration and Separate Activation Authorization
+**Activation State:** Active — Operational Canonical Contract
+**Activation Decision:** CAR-003 Version 1.0
 **Migration Execution Authority:** None
 **Implementation Authority:** None
 **Runtime Authority:** None
 **Provider Endpoint Invocation Authority:** None
 **Persistence Authority:** None
 **Provider-to-Instrument Submission Authority:** None
-**EDD-004 Drafting Authority:** None
+**EDD-004 Drafting Authority:** Approved with Constraints — RC-04
 **Commit Authority:** None
 **Push Authority:** None
 
@@ -1142,9 +1143,9 @@ Provider mapping does not imply product eligibility.
 
 # 19. Activation and Migration Constraints
 
-This Version 0.1 approved canonical Interface Contract is inactive pending coordinated migration and separate activation authorization.
+This Version 0.1 approved canonical Interface Contract is active as the Operational Canonical Provider → Instrument Contract under RC-04.
 
-It shall not activate until:
+Activation required all of the following conditions, and CAR-003 records them as satisfied:
 
 1. the contract is approved through architecture governance;
 2. the contract is canonical;
@@ -1169,6 +1170,8 @@ Activation does not itself authorize:
 - persistence;
 - Instrument interpretation execution; or
 - EDD-004.
+
+CAR-003 separately authorizes constrained EDD-004 Draft Preparation. It does not alter the runtime prohibitions above.
 
 # 20. Conformance Requirements
 
@@ -1238,9 +1241,9 @@ The following are intentionally deferred implementation or governance matters, n
 - physical persistence;
 - runtime deployment;
 - migration execution authorization;
-- activation authorization;
-- EDD-004 authorization; and
 - implementation authorization.
+
+Activation authorization and EDD-004 Draft Preparation authorization were resolved by CAR-003 under RC-04. Runtime and implementation authorities remain deferred.
 
 The MIG-001 pre-classification planning label `PIC-001` has been aligned to the governed identifier EAIC-002. It remains historical traceability only and does not identify a separate governed document.
 
@@ -1256,6 +1259,7 @@ The MIG-001 pre-classification planning label `PIC-001` has been aligned to the 
 
 # 23. Related Authority
 
+- [CAR-003 — RC-04 Architecture Activation and Engineering Authorization Decision](../../governance/reviews/CAR-003-RC-04-ARCHITECTURE-ACTIVATION-AND-ENGINEERING-AUTHORIZATION-DECISION.md)
 - [ADR-009 — Provider-Bounded Instrument Master Acquisition Architecture](../platform/domains/provider/ADR-009-PROVIDER-BOUNDED-INSTRUMENT-MASTER-ACQUISITION-ARCHITECTURE.md)
 - [MIG-001 — ADR-009 Coordinated Architecture Migration Package](../migrations/MIG-001-ADR-009-COORDINATED-ARCHITECTURE-MIGRATION-PACKAGE.md)
 - [DOC-001 — Document Identification, Classification & Metadata Standard](../../governance/documentation/DOC-001-DOCUMENT-IDENTIFICATION-CLASSIFICATION-METADATA-STANDARD.md)
@@ -1285,6 +1289,7 @@ The MIG-001 pre-classification planning label `PIC-001` has been aligned to the 
 |---|---|---|
 | 0.1 | Classification and identifier preflight | EAIC family confirmed; EAIC-002 allocated as governed alternative to PIC-001 planning label |
 | 0.1 | Initial architecture drafting | Draft prepared under ADR-009 and MIG-001 |
+| 0.1 | RC-04 governance activation | CAR-003 activates EAIC-002 as the Operational Canonical Provider → Instrument Contract; contract content is unchanged |
 
 # 25. Approval Record
 
@@ -1296,7 +1301,7 @@ The MIG-001 pre-classification planning label `PIC-001` has been aligned to the 
 
 **Canonical Status:** Canonical
 
-**Activation State:** Inactive — Pending Coordinated Migration and Separate Activation Authorization
+**Activation State:** Active — Operational Canonical Contract
 
 **Migration Execution Authority:** None
 
@@ -1310,13 +1315,13 @@ The MIG-001 pre-classification planning label `PIC-001` has been aligned to the 
 
 **Provider-to-Instrument Submission Authority:** None
 
-**EDD-004 Drafting Authority:** None
+**EDD-004 Drafting Authority:** Approved with Constraints — RC-04
 
 **Commit Authority:** None
 
 **Push Authority:** None
 
-**Next Authorized Capability:** None
+**Next Authorized Capability:** EDD-004 Draft Preparation — Approved with Constraints
 
 # 26. Governance Statement
 
@@ -1324,10 +1329,10 @@ This Version 0.1 document is an approved canonical Interface Contract.
 
 Architectural contract publication is complete.
 
-Its Activation State remains inactive pending coordinated migration and separate Chief Architect activation authority.
+CAR-003 records completion of RC-04 and activates this document as the Operational Canonical Provider → Instrument Contract.
 
-Canonical publication does not constitute runtime activation.
+Operational canonical status does not constitute runtime activation.
 
-It establishes no migration execution, implementation, runtime, endpoint, acquisition, persistence, submission, interpretation, product-consumption, EDD-004, commit, or push authority.
+It establishes no migration execution, implementation, runtime, endpoint, acquisition, persistence, submission, interpretation, product-consumption, commit, or push authority. CAR-003 separately authorizes constrained EDD-004 Draft Preparation only.
 
 # End of Document

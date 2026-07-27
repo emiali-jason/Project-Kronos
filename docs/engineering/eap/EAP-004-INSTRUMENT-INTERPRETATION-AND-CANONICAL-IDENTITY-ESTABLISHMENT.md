@@ -17,8 +17,9 @@
 **Governing Migration:** MIG-001 Version 0.1
 **Upstream EAP:** EAP-003 Version 2.0
 **Downstream EAP:** EAP-005 Version 1.1
-**Activation State:** Inactive — Pending RC-04 Activation Governance
-**EDD-004 Drafting Authorization:** None
+**Activation State:** Active — Engineering Design Baseline under RC-04
+**Activation Decision:** CAR-003 Version 1.0
+**EDD-004 Drafting Authorization:** Approved with Constraints — RC-04
 **Implementation Authorization:** None
 **Runtime Authority:** None
 **Instrument Interpretation Authority:** None
@@ -116,7 +117,7 @@ EAP-004 does not define or authorize:
 - product universe membership, Product Eligibility, product consumption, strategy, or execution selection;
 - Observation formation, factual attribution, Market Facts, Validation, Risk, Execution, Portfolio, Event, or Audit meaning;
 - implementation, production code, or runtime behavior; or
-- EDD-004 drafting.
+- independent EDD-004 drafting authority; CAR-003 separately authorizes constrained EDD-004 Draft Preparation.
 
 # 6. Ownership and Dependency Direction
 
@@ -395,9 +396,9 @@ Audit owns the Audit Trail only and does not acquire Instrument or Provider mean
 14. Provider Snapshot currentness and record change do not create Instrument lifecycle.
 15. Canonical Instrument Catalogue remains distinct from Provider Catalogue and product universes.
 16. Instrument publication creates no product eligibility, Observation acceptance, Validation, Risk, Execution, Portfolio, or trading authority.
-17. EAP-004 remains implementation-neutral and inactive.
+17. EAP-004 remains implementation-neutral and is active only as an Engineering Design baseline.
 18. No persistence, runtime interpretation, or implementation authority is granted.
-19. EDD-004 remains unauthorized.
+19. EDD-004 authority remains external to EAP-004 and is limited by CAR-003 to constrained Draft Preparation.
 
 # 21. Engineering Verification
 
@@ -413,18 +414,19 @@ Engineering Verification shall confirm:
 - Canonical Instrument Catalogue separation;
 - absence of product eligibility, Observation, Validation, Risk, Execution, Portfolio, Event, or Audit meaning;
 - security, observability, and Audit safety;
-- authority separation and inactive state;
+- authority separation and the RC-04 Engineering Design activation state;
 - metadata, register, links, and repository path consistency; and
-- absence of implementation, persistence, runtime, or EDD-004 authority.
+- absence of implementation, persistence, runtime, or independent EDD-004 authority.
 
 # 22. Publication Record
 
 Version 2.0 is the approved canonical engineering replacement for EAP-004 Version 1.0 under RC-02 — Engineering Architecture Publication.
 
-Publication establishes engineering architecture only. RC-03 Repository Synchronization is complete; RC-04 Activation Governance remains separate and subsequent. EDD-004 drafting remains prohibited until explicitly authorized after activation.
+Publication establishes engineering architecture only. RC-03 Repository Synchronization and RC-04 Activation Governance are complete. CAR-003 authorizes EDD-004 Draft Preparation with constraints while preserving all implementation, persistence, and runtime prohibitions.
 
 # 23. Related Approved Authority
 
+- [CAR-003 — RC-04 Architecture Activation and Engineering Authorization Decision](../../governance/reviews/CAR-003-RC-04-ARCHITECTURE-ACTIVATION-AND-ENGINEERING-AUTHORIZATION-DECISION.md)
 - [ADR-009 — Provider-Bounded Instrument Master Acquisition Architecture](../../architecture/platform/domains/provider/ADR-009-PROVIDER-BOUNDED-INSTRUMENT-MASTER-ACQUISITION-ARCHITECTURE.md)
 - [MIG-001 — ADR-009 Coordinated Architecture Migration Package](../../architecture/migrations/MIG-001-ADR-009-COORDINATED-ARCHITECTURE-MIGRATION-PACKAGE.md)
 - [EAIC-002 — Provider → Instrument Submission Contract](../../architecture/interfaces/EAIC-002-PROVIDER-TO-INSTRUMENT-SUBMISSION-CONTRACT.md)

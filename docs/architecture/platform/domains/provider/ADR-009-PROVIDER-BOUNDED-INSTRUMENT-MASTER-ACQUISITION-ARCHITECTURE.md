@@ -14,11 +14,12 @@
 **Workflow Stage:** Repository Publication
 **Decision Scope:** Platform Provider and Instrument Foundation
 **Architecture Impact:** Fundamental Provider acquisition and product-consumption separation
-**Architectural Effect:** Approved Architecture — Inactive Pending Chief Architect Activation Review
-**Activation State:** Inactive — Pending Chief Architect Activation Review
-**Engineering Impact:** None
+**Architectural Effect:** Operational Architecture — Active under RC-04
+**Activation State:** Active — Operational Architecture
+**Activation Decision:** CAR-003 Version 1.0
+**Engineering Impact:** EDD-004 Draft Preparation Approved with Constraints
 **Runtime Impact:** None
-**EDD-004 Drafting Authorization:** None
+**EDD-004 Drafting Authorization:** Approved with Constraints — RC-04
 **Implementation Authorization:** None
 **Provider Endpoint Invocation Authority:** None
 **Live Acquisition Authority:** None
@@ -46,11 +47,11 @@ That candidate:
 - granted no authority; and
 - is not an architectural base for this architecture.
 
-This document establishes approved platform architecture whose Activation State remains Inactive — Pending Chief Architect Activation Review.
+This document establishes approved platform architecture. CAR-003 records completion of RC-04 and activates ADR-009 as Operational Architecture.
 
-The coordinated canonical migration in Section 36 is complete. ADR-009 shall remain inactive until a separate Chief Architect activation decision.
+The coordinated canonical migration in Section 36 and the separate Chief Architect activation decision are complete.
 
-This architecture authorizes no:
+This architecture by itself authorizes no:
 
 - amendment to an existing canonical document;
 - EDD-004;
@@ -65,6 +66,8 @@ This architecture authorizes no:
 - product activation;
 - commit; or
 - push.
+
+CAR-003 separately authorizes EDD-004 Draft Preparation with constraints. That governance authorization does not change the architectural content or grant implementation or runtime authority.
 
 # 2. Purpose
 
@@ -545,7 +548,7 @@ That permission:
 
 - is dataset-specific;
 - is Provider-specific;
-- is inactive pending Chief Architect activation review;
+- is active for architecture and constrained Engineering Design under RC-04;
 - permits architecture and later design consideration only; and
 - does not authorize endpoint invocation or live acquisition.
 
@@ -1838,8 +1841,8 @@ The following authorities are separate:
 | Authority | Meaning | Current canonical state |
 |---|---|---|
 | Architecture approval | Approval of ADR-009 decisions | Approved |
-| Coordinated migration approval | Approval of the canonical change set required to activate ADR-009 | None |
-| EDD-004 Draft Authorization | Authority to prepare engineering design | None |
+| Coordinated migration approval | Approval of the canonical change set required to activate ADR-009 | Completed |
+| EDD-004 Draft Authorization | Authority to prepare engineering design | Approved with Constraints — RC-04 |
 | EDD-004 canonicalization | Approval of a verified EDD-004 | None |
 | Implementation Authorization | Authority to create runtime code and tests | None |
 | Endpoint Invocation Authority | Authority to call one Provider Instrument Master operation | None |
@@ -2005,9 +2008,9 @@ ADR-009 shall use a controlled coordinated migration:
 
 ADR-009 shall not claim full effectiveness before Step 11 completes.
 
-The proposed post-approval effect is:
+The post-RC-04 effect is:
 
-**Approved Architecture — Inactive Pending Chief Architect Activation Review**
+**Operational Architecture — Active under RC-04**
 
 The Lifecycle Status remains `Approved`, with activation state recorded separately.
 
@@ -2061,18 +2064,18 @@ The absence of a deletion schedule is handled conservatively through no-deletion
 
 # 39. EDD-004 Status
 
-EDD-004 remains unauthorized.
+EDD-004 Draft Preparation is Approved with Constraints by CAR-003 under RC-04.
 
-After:
+The required prerequisites are complete:
 
 - ADR-009 approval;
 - coordinated canonical migration;
 - Architecture Verification;
 - ADR-009 activation;
 - platform Provider-to-Instrument contract approval; and
-- separate Chief Architect Draft Authorization,
+- separate Chief Architect Draft Authorization.
 
-the next design may be considered as:
+The authorized design is:
 
 **EDD-004 — Provider Instrument Master Acquisition Engineering Design**
 
@@ -2143,8 +2146,8 @@ Architecture Verification shall confirm:
 - `last_price` remains auxiliary Provider metadata;
 - capability and entitlement remain distinct from authority;
 - every canonical conflict is recorded as migration impact;
-- ADR-009 remains inactive pending Chief Architect activation review;
-- EDD-004 remains unauthorized;
+- ADR-009 is active as Operational Architecture under RC-04;
+- EDD-004 authority is limited to constrained Draft Preparation;
 - implementation remains unauthorized;
 - endpoint invocation remains unauthorized; and
 - live acquisition remains unauthorized.
@@ -2160,6 +2163,7 @@ Architecture Verification shall confirm:
 | 0.1 | Controlled architecture correction cycle | AV-ADR009-001 through AV-ADR009-005 applied |
 | 0.1 | Focused Architecture Reverification | Pass; AV-ADR009-001 through AV-ADR009-005 closed |
 | 1.0 | Chief Architect approval and canonical publication | Approved canonical architecture; Activation State remains Pending Coordinated Migration |
+| 1.0 | RC-04 governance activation | CAR-003 activates ADR-009 as Operational Architecture and authorizes EDD-004 Draft Preparation with constraints; architecture content is unchanged |
 
 # 44. Approval Record
 
@@ -2173,15 +2177,15 @@ Architecture Verification shall confirm:
 
 **Canonical Status:** Canonical
 
-**Architectural Effect:** Approved Architecture — Inactive Pending Chief Architect Activation Review
+**Architectural Effect:** Operational Architecture — Active under RC-04
 
-**Activation State:** Inactive — Pending Chief Architect Activation Review
+**Activation State:** Active — Operational Architecture
 
 **ADR Required:** Yes — ADR-009
 
 **Coordinated Migration Authorization:** None
 
-**EDD-004 Drafting Authorization:** None
+**EDD-004 Drafting Authorization:** Approved with Constraints — RC-04
 
 **EDD-004 Canonicalization Authorization:** None
 
@@ -2199,14 +2203,15 @@ Architecture Verification shall confirm:
 
 **Product Consumption Authority:** None
 
-**Commit Authorization:** Approved — ADR-009 Canonical Publication Only
+**Commit Authorization:** Approved — ADR-009 Canonical Publication and RC-04A Governance Metadata Only
 
-**Push Authorization:** Approved — ADR-009 Canonical Publication Only
+**Push Authorization:** Approved — ADR-009 Canonical Publication and RC-04A Governance Metadata Only
 
-**Next Authorized Capability:** None
+**Next Authorized Capability:** EDD-004 Draft Preparation — Approved with Constraints
 
 # 45. Related Approved Authority
 
+- [CAR-003 — RC-04 Architecture Activation and Engineering Authorization Decision](../../../../governance/reviews/CAR-003-RC-04-ARCHITECTURE-ACTIVATION-AND-ENGINEERING-AUTHORIZATION-DECISION.md)
 - [PLATFORM-000 — KRONOS Platform Constitution](../../PLATFORM-000-CONSTITUTION.md)
 - [DOMAIN-006 — Provider Domain](ARCHITECTURE.md)
 - [DOMAIN-001 — Instrument Domain](../instrument/ARCHITECTURE.md)
@@ -2248,8 +2253,8 @@ It intentionally identifies conflicts with existing canonical authority.
 
 It does not amend those documents.
 
-The coordinated architecture change set is approved and published. Its Activation State remains Inactive — Pending Chief Architect Activation Review.
+The coordinated architecture change set is approved and published. CAR-003 records RC-04 completion and activates this document as Operational Architecture.
 
-It grants no coordinated migration, EDD, implementation, dependency, Provider communication, endpoint invocation, acquisition, persistence, submission, interpretation, or product-consumption authority.
+This document grants no coordinated migration, implementation, dependency, Provider communication, endpoint invocation, acquisition, persistence, submission, interpretation, or product-consumption authority. CAR-003 separately grants constrained EDD-004 Draft Preparation authority only.
 
 # End of Document

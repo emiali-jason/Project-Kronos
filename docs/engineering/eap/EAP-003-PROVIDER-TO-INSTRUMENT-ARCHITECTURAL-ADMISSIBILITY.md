@@ -17,8 +17,9 @@
 **Governing Migration:** MIG-001 Version 0.1
 **Upstream EAP:** EAP-002 Version 2.0
 **Downstream EAP:** EAP-004 Version 2.0
-**Activation State:** Inactive — Pending RC-04 Activation Governance
-**EDD-004 Drafting Authorization:** None
+**Activation State:** Active — Engineering Design Baseline under RC-04
+**Activation Decision:** CAR-003 Version 1.0
+**EDD-004 Drafting Authorization:** Approved with Constraints — RC-04
 **Implementation Authorization:** None
 **Runtime Authority:** None
 **Provider-to-Instrument Submission Authority:** None
@@ -115,7 +116,7 @@ EAP-003 does not define or authorize:
 - Observation, Market, Validation, Risk, Execution, Portfolio, Event, or Audit meaning;
 - silent repair, normalization, enrichment, selection, merge, split, or correction of Provider information;
 - implementation, production code, or runtime behavior; or
-- EDD-004 drafting.
+- independent EDD-004 drafting authority; CAR-003 separately authorizes constrained EDD-004 Draft Preparation.
 
 # 6. Ownership and Dependency Direction
 
@@ -363,7 +364,7 @@ Audit owns the Audit Trail only. Audit does not acquire Provider Records, Submis
 
 # 19. Mandatory Engineering Invariants
 
-1. EAIC-002 is the sole current canonical Provider → Instrument submission boundary and remains inactive pending separate activation authority.
+1. EAIC-002 is the sole current canonical Provider → Instrument submission boundary and is active as the Operational Canonical Contract under RC-04.
 2. ADP-001C Architectural Admissibility is historical predecessor terminology only.
 3. Provider Submission Eligibility remains distinct from Submission Authority.
 4. Submission Authority remains distinct from technical receipt.
@@ -380,9 +381,9 @@ Audit owns the Audit Trail only. Audit does not acquire Provider Records, Submis
 15. Arrival order does not override snapshot lineage.
 16. Sensitive, raw, SDK, and transport-private material never crosses the boundary.
 17. EAP-003 creates no Observation, Market, Validation, Risk, Execution, Portfolio, Event, or Audit meaning.
-18. EAP-003 remains implementation-neutral and inactive.
+18. EAP-003 remains implementation-neutral and is active only as an Engineering Design baseline.
 19. No implementation or runtime authority is granted.
-20. EDD-004 remains unauthorized.
+20. EDD-004 authority remains external to EAP-003 and is limited by CAR-003 to constrained Draft Preparation.
 
 # 20. Engineering Verification
 
@@ -396,18 +397,19 @@ Engineering Verification shall confirm:
 - preservation of Provider ownership and Instrument ownership;
 - absence of interpretation, canonical identity, mapping, lifecycle, product, or downstream domain meaning;
 - security, provenance, observability, and Audit safety;
-- authority separation and inactive state;
+- authority separation and the RC-04 Engineering Design activation state;
 - metadata, register, links, and repository path consistency; and
-- absence of implementation, runtime submission, or EDD-004 authority.
+- absence of implementation, runtime submission, or independent EDD-004 authority.
 
 # 21. Publication Record
 
 Version 2.0 is the approved canonical engineering replacement for EAP-003 Version 1.0 under RC-02 — Engineering Architecture Publication.
 
-Publication establishes engineering architecture only. RC-03 Repository Synchronization is complete; RC-04 Activation Governance remains separate and subsequent. EDD-004 drafting remains prohibited until explicitly authorized after activation.
+Publication establishes engineering architecture only. RC-03 Repository Synchronization and RC-04 Activation Governance are complete. CAR-003 authorizes EDD-004 Draft Preparation with constraints while preserving all implementation and runtime prohibitions.
 
 # 22. Related Approved Authority
 
+- [CAR-003 — RC-04 Architecture Activation and Engineering Authorization Decision](../../governance/reviews/CAR-003-RC-04-ARCHITECTURE-ACTIVATION-AND-ENGINEERING-AUTHORIZATION-DECISION.md)
 - [ADR-009 — Provider-Bounded Instrument Master Acquisition Architecture](../../architecture/platform/domains/provider/ADR-009-PROVIDER-BOUNDED-INSTRUMENT-MASTER-ACQUISITION-ARCHITECTURE.md)
 - [MIG-001 — ADR-009 Coordinated Architecture Migration Package](../../architecture/migrations/MIG-001-ADR-009-COORDINATED-ARCHITECTURE-MIGRATION-PACKAGE.md)
 - [EAIC-002 — Provider → Instrument Submission Contract](../../architecture/interfaces/EAIC-002-PROVIDER-TO-INSTRUMENT-SUBMISSION-CONTRACT.md)

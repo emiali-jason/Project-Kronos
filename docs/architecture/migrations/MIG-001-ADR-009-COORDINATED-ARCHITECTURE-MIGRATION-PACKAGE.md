@@ -15,14 +15,15 @@
 **Architecture Migration:** Completed
 **Engineering Publication:** Completed
 **Repository Synchronization:** Completed
-**Activation State:** Inactive — Pending Chief Architect Activation Review
+**Activation State:** Active — RC-04 Completed
+**Activation Decision:** CAR-003 Version 1.0
 **Migration Execution Authorization:** None
 **Implementation Authorization:** None
 **Runtime Authority:** None
 **Provider Endpoint Invocation Authority:** None
 **Persistence Authority:** None
 **Provider-to-Instrument Submission Authority:** None
-**EDD-004 Drafting Authorization:** None
+**EDD-004 Drafting Authorization:** Approved with Constraints — RC-04
 
 ---
 
@@ -34,7 +35,7 @@ This document defines and records the controlled architecture migration programm
 
 Version 0.2 records the completed architecture migration, completed engineering publication, and completed repository synchronization.
 
-It does not activate architecture, authorize implementation, or authorize EDD-004 drafting.
+MIG-001 itself does not activate architecture, authorize implementation, or authorize EDD-004 drafting. CAR-003 separately records the completed RC-04 activation and constrained EDD-004 Draft Preparation authorization.
 
 ## 1.2 Scope
 
@@ -54,7 +55,7 @@ MIG-001 governs:
 
 [ADR-009 — Provider-Bounded Instrument Master Acquisition Architecture](../platform/domains/provider/ADR-009-PROVIDER-BOUNDED-INSTRUMENT-MASTER-ACQUISITION-ARCHITECTURE.md) is the governing canonical architecture for this migration package.
 
-The coordinated migration and engineering publication are complete. The published documents remain authoritative within their approved boundaries. ADR-009 remains inactive pending a separate Chief Architect activation review.
+The coordinated migration, engineering publication, repository synchronization, and separate RC-04 activation are complete. The published documents remain authoritative within their approved boundaries.
 
 MIG-001 shall not reinterpret ADR-009, create replacement architecture, or resolve architecture questions outside the decisions already approved by ADR-009.
 
@@ -68,11 +69,11 @@ Engineering Publication is Completed.
 
 Repository Synchronization is Completed.
 
-Activation remains Pending.
+Activation is Completed under RC-04.
 
 Implementation is Not Authorized.
 
-EDD-004 Drafting Authorization remains None.
+EDD-004 Draft Preparation is Approved with Constraints under RC-04.
 
 It grants no:
 
@@ -94,6 +95,7 @@ It grants no:
 MIG-001 depends on:
 
 - canonical ADR-009;
+- CAR-003 for the completed post-migration RC-04 activation and EDD-004 Draft Preparation authorization;
 - the existing canonical Provider and Instrument ownership boundaries;
 - the Domain Ownership Matrix;
 - the Domain Dependency Matrix;
@@ -106,7 +108,7 @@ MIG-001 depends on:
 
 `PIC-001` was a pre-classification planning label and is not a governed document identifier.
 
-MIG-001 governs the completed coordinated migration dependency on EAIC-002. EAIC-002 is approved and canonical but remains inactive pending separate Chief Architect activation authorization.
+MIG-001 governs the completed coordinated migration dependency on EAIC-002. EAIC-002 is approved, canonical, and active as the Operational Canonical Provider → Instrument Contract under RC-04.
 
 ## 1.6 Related ADRs
 
@@ -156,7 +158,7 @@ Piecemeal amendment is prohibited because an isolated change could:
 - place canonical documents in mutually inconsistent states; or
 - imply activation before the complete architecture is coherent.
 
-Repository consistency remains mandatory because architecture authority is distributed across domain architecture, contracts, matrices, DATA_FLOW, ADPs, and EAPs. The synchronized authorities express one compatible ownership and dependency model; activation remains a separate pending governance action.
+Repository consistency remains mandatory because architecture authority is distributed across domain architecture, contracts, matrices, DATA_FLOW, ADPs, and EAPs. The synchronized authorities express one compatible ownership and dependency model; CAR-003 records completion of the separate RC-04 governance action.
 
 Runtime authority is intentionally excluded. Architecture migration establishes canonical meaning only. It does not authorize endpoint invocation, acquisition, persistence, submission, interpretation, implementation, deployment, or EDD-004.
 
@@ -327,8 +329,8 @@ flowchart TD
     EAPS["EAP Migration Set"]
     VERIFY["Repository Architecture Verification"]
     PUBLISH["Migration Publication"]
-    ACTIVATION["Separate Activation Governance"]
-    EDD004["Separate EDD-004 Authorisation"]
+    ACTIVATION["RC-04 Activation Governance — Completed"]
+    EDD004["EDD-004 Draft Preparation — Approved with Constraints"]
 
     ADR009 --> MIG001
     MIG001 -->|"governs"| EAIC002
@@ -351,7 +353,7 @@ The graph represents required sequencing only.
 
 It grants no activation, EDD, implementation, or runtime authority.
 
-EAIC-002 is governed by MIG-001, approved, canonical, and included in the completed migration; it remains inactive pending separate activation authorization.
+EAIC-002 is governed by MIG-001, approved, canonical, included in the completed migration, and active under RC-04.
 
 # 8. Migration Workstreams
 
@@ -464,8 +466,8 @@ Closure state: Completed.
 | MG-03 ADP Alignment | MG-01 and MG-02 candidates stable | Product acquisition coupling removed; product consumption preserved; supersession traceable | ADP migration candidates complete | No product or Provider activation | Completed |
 | MG-04 EAP Alignment | Architecture migration candidates approved for engineering translation | Architecture-to-Engineering traceability, contract alignment, and implementation neutrality verified | EAP migration candidates complete | No EDD or implementation authority | Completed |
 | MG-05 Repository Architecture Verification | Every inventory item is Candidate Complete or verified No Change | Repository-wide terminology, ownership, dependency, boundary, supersession, and authority review | Architecture Verification PASS with no blocking conflicts | Publication may be considered | Completed |
-| MG-06 Coordinated Publication | Chief Architect approval; MG-05 PASS; publication set fixed | Metadata, identifiers, links, paths, register, Markdown, and repository diff verified | All approved candidates published together and repository consistency confirmed | Architecture published; activation still pending | Completed |
-| MG-07 Activation Readiness | MG-06 complete | No conflicting canonical architecture; completion criteria satisfied | Separate Chief Architect activation decision may be requested | No automatic activation | Ready — activation pending |
+| MG-06 Coordinated Publication | Chief Architect approval; MG-05 PASS; publication set fixed | Metadata, identifiers, links, paths, register, Markdown, and repository diff verified | All approved candidates published together and repository consistency confirmed | Architecture published; activation governed separately | Completed |
+| MG-07 Activation Readiness | MG-06 complete | No conflicting canonical architecture; completion criteria satisfied | Separate Chief Architect activation decision | No automatic activation | Completed — RC-04 recorded by CAR-003 |
 
 Failure of any gate returns the affected candidate set to the preceding controlled stage.
 
@@ -483,10 +485,10 @@ No gate may be inferred complete from partial document approval. The closure sta
 | MIG-R006 | Superseded documents remain presented as active authority | Competing canonical authority | Record explicit supersession and update controlled navigation atomically | Chief Architect | Closed — verified |
 | MIG-R007 | Product requirements transfer Validation or Risk ownership | Domain ownership corruption | Verify matrices and domain clarifications against canonical ownership | Chief Architect | Closed — verified |
 | MIG-R008 | Provider identity or catalogue partitions collide across Providers or datasets | Evidence contamination | Preserve Provider-and-Dataset partition identity and lineage rules | Chief Architect | Closed — verified |
-| MIG-R009 | Architecture publication is interpreted as runtime authority | Unauthorized Provider activity | Preserve explicit authority separation in every migrated document | Chief Architect | Controlled — activation pending |
+| MIG-R009 | Architecture publication is interpreted as runtime authority | Unauthorized Provider activity | Preserve explicit authority separation in every migrated document | Chief Architect | Controlled — RC-04 preserves runtime prohibition |
 | MIG-R010 | Migration interruption leaves unreviewed candidates mistaken for authority | Engineering uses non-canonical content | Apply the rollback and authority rules in Section 11 | Chief Architect | Closed — publication complete |
 | MIG-R011 | Repository indexes or links do not match published authority | Discoverability and traceability failure | Include index, path, and link checks in MG-06 | Engineering Architect | Closed — verified |
-| MIG-R012 | EDD-004 begins before activation and authorization | Engineering design proceeds against unstable authority | Retain EDD-004 prohibition through MG-07 and require separate authorization | Chief Architect | Controlled — EDD-004 not authorized |
+| MIG-R012 | EDD-004 begins before activation and authorization | Engineering design proceeds against unstable authority | Retain EDD-004 prohibition through MG-07 and require separate authorization | Chief Architect | Controlled — RC-04 authorizes constrained Draft Preparation |
 
 # 11. Rollback Strategy
 
@@ -550,7 +552,7 @@ The coordinated architecture migration closure is established by Criteria 1 thro
 
 Criteria 1 through 17 are complete. They establish migration closure and activation readiness only.
 
-Activation remains pending a separate Chief Architect decision. EDD-004 remains unauthorized until separately approved after activation.
+CAR-003 records the separate Chief Architect activation decision and constrained EDD-004 Draft Preparation authorization. These governance outcomes do not create implementation or runtime authority.
 
 # 13. Migration Register
 
@@ -623,11 +625,11 @@ Migration success shall be determined only through the measurable criteria below
 | MSM-008 | Repository consistency verification | Result equals `PASS`; 0 duplicate identifiers, 0 broken controlled paths, 0 broken local links, and 0 inconsistent lifecycle records in scope | Post-publication repository validation report | Pass |
 | MSM-009 | Chief Architect approval | Exactly 1 recorded Chief Architect approval covering the fixed coordinated publication set | Approval record identifying the complete publication set | Pass |
 | MSM-010 | Canonical publication | 100% of the approved publication set is present on the governed branch at the approved versions and canonical states | Publication commits, register evidence, and repository status | Pass |
-| MSM-011 | Separate activation authorization | Exactly 1 explicit Chief Architect activation decision recorded after MSM-001 through MSM-010 pass | Separate activation approval record | Pending — excluded from migration closure |
+| MSM-011 | Separate activation authorization | Exactly 1 explicit Chief Architect activation decision recorded after MSM-001 through MSM-010 pass | CAR-003 — RC-04 Architecture Activation and Engineering Authorization Decision | Pass |
 
-Migration closure is established by MSM-001 through MSM-010. MSM-011 is the separate post-closure activation action and remains pending.
+Migration closure is established by MSM-001 through MSM-010. MSM-011 is the separate post-closure activation action and is complete under RC-04.
 
-EDD-004 Authorisation remains separate and may be considered only after the separate activation decision and its own Chief Architect authorization.
+EDD-004 Draft Preparation was separately authorized with constraints by CAR-003 after the activation decision.
 
 # 15. Final Migration Status
 
@@ -641,8 +643,8 @@ EDD-004 Authorisation remains separate and may be considered only after the sepa
 | Minor amendments | Completed — 4 published; 4 verified as requiring no repository amendment |
 | Supersessions | Completed — 3 published |
 | Verified no-change states | Completed — 12 recorded |
-| Activation | Pending |
+| Activation | Completed — RC-04 |
 | Implementation | Not Authorized |
-| EDD-004 | Not Authorized |
+| EDD-004 | Draft Preparation Approved with Constraints |
 
 # End of Document

@@ -20,10 +20,11 @@ This index organizes documents. It does not approve, replace, reinterpret, or in
 4. Read applicable approved decision records, including [ADR-009](platform/domains/provider/ADR-009-PROVIDER-BOUNDED-INSTRUMENT-MASTER-ACQUISITION-ARCHITECTURE.md) for Provider-bounded Instrument Master acquisition.
 5. Read [MIG-001](migrations/MIG-001-ADR-009-COORDINATED-ARCHITECTURE-MIGRATION-PACKAGE.md) for the completed migration and repository-synchronization record.
 6. Read applicable product documents and interface contracts, including [EAIC-002](interfaces/EAIC-002-PROVIDER-TO-INSTRUMENT-SUBMISSION-CONTRACT.md) for the canonical Provider → Instrument submission boundary.
-7. Read the [engineering architecture packages](../engineering/eap/) for the published EAP-001 through EAP-006 baseline.
-8. Identify conflicts or missing authority instead of resolving them silently.
+7. Read [CAR-003](../governance/reviews/CAR-003-RC-04-ARCHITECTURE-ACTIVATION-AND-ENGINEERING-AUTHORIZATION-DECISION.md) for the completed RC-04 activation and constrained EDD-004 Draft Preparation authorization.
+8. Read the [engineering architecture packages](../engineering/eap/) for the active EAP-001 through EAP-006 Engineering Design baseline.
+9. Identify conflicts or missing authority instead of resolving them silently.
 
-Current programme state: Architecture Migration — Completed; Engineering Publication — Completed; Repository Synchronization — Completed; Activation — Pending; Implementation — Not Authorized; EDD-004 — Not Authorized.
+Current programme state: Architecture Programme — Accepted; Repository — Ready; Architecture Migration — Completed; Engineering Publication — Completed; Repository Synchronization — Completed; RC-04 Activation — Completed; ADR-009 — Operational Architecture; EAIC-002 — Operational Canonical Contract; Engineering Programme — Authorized with Constraints; EDD-004 Draft Preparation — Approved with Constraints; Implementation — Not Authorized; Runtime — Not Authorized.
 
 ## Repository Map
 

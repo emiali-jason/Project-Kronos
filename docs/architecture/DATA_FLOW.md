@@ -278,16 +278,14 @@ This migrated DATA_FLOW document describes canonical architecture.
 
 It does not:
 
-- activate ADR-009 or EAIC-002;
 - authorize runtime Provider-to-Instrument submission;
 - authorize Provider endpoint invocation;
 - authorize persistence;
 - authorize implementation;
-- authorize EDD-004;
 - authorize product activation; or
 - execute coordinated migration.
 
-The Instrument Master support path remains subject to [MIG-001](migrations/MIG-001-ADR-009-COORDINATED-ARCHITECTURE-MIGRATION-PACKAGE.md) completion and separate Chief Architect activation authorization.
+The Instrument Master support path completed migration under [MIG-001](migrations/MIG-001-ADR-009-COORDINATED-ARCHITECTURE-MIGRATION-PACKAGE.md) and activation under [CAR-003](../governance/reviews/CAR-003-RC-04-ARCHITECTURE-ACTIVATION-AND-ENGINEERING-AUTHORIZATION-DECISION.md). EDD-004 Draft Preparation is authorized with constraints; runtime, endpoint, persistence, implementation, and product activation authorities remain absent.
 
 ## Existing Swing Product-Consumption and Decision Flow
 

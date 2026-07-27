@@ -14,4 +14,4 @@ Start with the [project lifecycle](KRONOS-PROJECT-LIFECYCLE.md), [ID conventions
 - [EAP-005 — Instrument-to-Observation Attribution Eligibility](engineering/eap/EAP-005-INSTRUMENT-TO-OBSERVATION-ATTRIBUTION-ELIGIBILITY.md)
 - [EAP-006 — Observation Acceptance and Governed Observation Establishment](engineering/eap/EAP-006-OBSERVATION-ACCEPTANCE-AND-GOVERNED-OBSERVATION-ESTABLISHMENT.md)
 
-The engineering baseline is published but inactive pending RC-04 Activation Governance. Implementation and EDD-004 drafting are not authorized.
+RC-04 Activation Governance is complete. [CAR-003](governance/reviews/CAR-003-RC-04-ARCHITECTURE-ACTIVATION-AND-ENGINEERING-AUTHORIZATION-DECISION.md) records ADR-009 as Operational Architecture, EAIC-002 as the Operational Canonical Provider → Instrument Contract, the Engineering Programme as Authorized with Constraints, and EDD-004 Draft Preparation as Approved with Constraints. Implementation and runtime activity remain unauthorized.
