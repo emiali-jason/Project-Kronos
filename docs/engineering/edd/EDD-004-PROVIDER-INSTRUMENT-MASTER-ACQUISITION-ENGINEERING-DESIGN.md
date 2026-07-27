@@ -2,7 +2,7 @@
 
 **Document ID:** EDD-004
 **Title:** Provider Instrument Master Acquisition Engineering Design
-**Version:** 0.1
+**Version:** 0.2
 **Status:** Draft
 **Canonical Status:** Draft
 **Classification:** Engineering Design Document
@@ -11,7 +11,7 @@
 **Review Authority:** Chief Architect
 **Repository Location:** `docs/engineering/edd/EDD-004-PROVIDER-INSTRUMENT-MASTER-ACQUISITION-ENGINEERING-DESIGN.md`
 **Workflow Stage:** Draft Preparation
-**Engineering Stage:** Engineering Scope Definition
+**Engineering Stage:** Engineering Capability Decomposition
 **Engineering Authority:** Draft Preparation
 **Draft Authorization:** Approved with Constraints — RC-04
 **Governing Architecture:** ADR-009 Version 1.0
@@ -483,5 +483,535 @@ Engineering Review may determine that the EDD-004 Engineering Scope Definition i
 32. The document creates no architecture change, ownership change, new dependency, contract redesign, implementation authority, runtime authority, endpoint authority, live-acquisition authority, persistence authority, submission authority, interpretation authority, product authority, commit authority, or push authority.
 
 Successful review of these criteria verifies the completeness and internal consistency of the frozen Engineering Scope Definition only. It does not constitute Engineering Verification of later EDD-004 stages, Chief Architect approval, canonicalization, implementation authorization, or runtime authority.
+
+# ES-02 — Engineering Capability Decomposition
+
+## 1. Executive Summary
+
+The frozen EDD-004 Version 0.1 Engineering Scope Definition decomposes into 11 cohesive Provider-owned engineering capabilities.
+
+This capability decomposition:
+
+- maps all 43 frozen E1 responsibilities exactly once;
+- maps all 30 frozen E1 internal capability statements exactly once;
+- introduces no new responsibility or ownership;
+- contains no module, service, class, namespace, package, API, persistence, runtime, scheduling, retry, deployment, or GUI design; and
+- terminates before presentation or delivery across EAIC-002.
+
+Capabilities identify cohesive engineering responsibilities only. They are not modules, services, classes, namespaces, packages, APIs, runtime components, persistence structures, or execution stages.
+
+## 2. Engineering Capability Model
+
+### C1 — Acquisition Boundary Qualification
+
+**Engineering Purpose:** Establish whether one exact Provider Instrument Master acquisition boundary is eligible for engineering treatment without creating or extending any prerequisite or authority.
+
+**Responsibilities:** EDD-004 Responsibilities 1–5; Internal Capabilities 1–3.
+
+**Inputs:**
+
+- exact Provider, Instrument Master dataset, operation, environment, and operational-context identities;
+- capability, Dataset Permission, entitlement, Configuration, Provider Context, availability, usability, and Acquisition Authority evidence;
+- security, licensing, and retention references; and
+- blocking-dependency status.
+
+**Outputs:**
+
+- one bounded acquisition identity;
+- Acquisition Eligibility or preserved ineligibility meaning; and
+- independently attributable prerequisite status.
+
+**Constraints:**
+
+- No prerequisite implies another.
+- Eligibility creates no permission, authority, endpoint, acquisition, or runtime right.
+- The boundary remains Provider-, dataset-, and operation-specific.
+
+### C2 — Acquisition Scope Definition and Reconciliation
+
+**Engineering Purpose:** Preserve the authorized, requested, and actually received extent of one bounded acquisition.
+
+**Responsibilities:** EDD-004 Responsibilities 6–10; Internal Capabilities 4–7.
+
+**Inputs:**
+
+- bounded acquisition identity;
+- approved scope authority;
+- complete intended Instrument Master request scope; and
+- received coverage and quality evidence.
+
+**Outputs:**
+
+- Approved Acquisition Scope;
+- Requested Acquisition Scope;
+- Received Acquisition Scope; and
+- Requested-to-Received comparison evidence.
+
+**Constraints:**
+
+- The three scopes remain independent.
+- Requested scope cannot be reduced by product use.
+- Received scope describes actual evidence, including excess, missingness, partiality, duplicates, malformed information, ambiguity, inconsistency, quarantine, and limitations.
+- Scope does not establish technical success, completeness, or product meaning.
+
+### C3 — Acquisition Result and Outcome Characterization
+
+**Engineering Purpose:** Characterize technical acquisition result and Provider-owned acquisition meaning without conflating either with scope, availability, usability, or completeness.
+
+**Responsibilities:** EDD-004 Responsibilities 11–13; Internal Capabilities 8–9.
+
+**Inputs:**
+
+- bounded technical-activity evidence;
+- Approved, Requested, and Received Acquisition Scope; and
+- Provider availability and usability references.
+
+**Outputs:**
+
+- exactly one technical success or technical failure result; and
+- exactly one Complete, Partial, Empty, Missing, Unsupported, or Failed Acquisition Outcome.
+
+**Constraints:**
+
+- Technical result and Acquisition Outcome remain independent.
+- Technical success does not establish completeness.
+- Outcome does not redefine Provider availability or usability.
+- Empty or Missing does not establish Instrument non-existence.
+
+### C4 — Provider Record Normalization and Complete Preservation
+
+**Engineering Purpose:** Convert safely representable returned Instrument Master information into preserved Provider-owned, product-neutral, non-canonical evidence.
+
+**Responsibilities:** EDD-004 Responsibilities 14–16 and 24; Internal Capabilities 10–11.
+
+**Inputs:**
+
+- returned Instrument Master information;
+- Provider assertions, vocabulary, identities, limitations, and permitted metadata; and
+- applicable security, licensing, and retention constraints.
+
+**Outputs:**
+
+- safely normalized Provider Record evidence;
+- complete preservation of every safely preservable returned record; and
+- preserved Provider assertions, ambiguity, duplication, inconsistency, missingness, and limitations.
+
+**Constraints:**
+
+- No Instrument interpretation or canonicalization.
+- No product filtering.
+- Options Instrument references remain Instrument Master reference evidence only.
+- Provider assertions cannot be silently repaired.
+- Raw, sensitive, SDK, and transport-private material cannot enter governed output.
+
+### C5 — Provider Snapshot, Catalogue Partition, and Record Identity
+
+**Engineering Purpose:** Establish immutable snapshot context, strict catalogue isolation, and correctly scoped Provider Record identity.
+
+**Responsibilities:** EDD-004 Responsibilities 17–23; Internal Capabilities 12–14.
+
+**Inputs:**
+
+- safely preserved Provider Records;
+- acquisition identity, scopes, result, and outcome; and
+- timing, authority, limitation, retention, licensing, and provenance references.
+
+**Outputs:**
+
+- immutable Provider Snapshot;
+- distinct timing meanings;
+- Provider-and-Dataset Catalogue Partition membership;
+- snapshot-bounded Provider Record identities; and
+- partition and snapshot identity evidence.
+
+**Constraints:**
+
+- A closed snapshot is immutable.
+- Partitions remain isolated by Provider and dataset.
+- Records, snapshots, currentness, provenance, and native identifiers cannot cross partitions.
+- Provider tokens, exchange tokens, symbols, and row positions cannot become permanent or canonical identity.
+- This capability defines no persistence technology.
+
+### C6 — Provider Record Disposition and Evidence Quality
+
+**Engineering Purpose:** Assign the complete multidimensional Provider disposition model while preserving unsafe, ambiguous, duplicate, inconsistent, or limited evidence.
+
+**Responsibilities:** EDD-004 Responsibilities 25–33; Internal Capabilities 15–20.
+
+**Inputs:**
+
+- snapshot-bounded Provider Records;
+- structural evidence; and
+- ambiguity, duplication, inconsistency, missingness, vocabulary, and limitation evidence.
+
+**Outputs:**
+
+- preservation fact;
+- structural disposition;
+- evidence-quality flags;
+- quarantine disposition;
+- interpretation-support disposition;
+- submission disposition; and
+- preserved disposition reasons and relationships.
+
+**Constraints:**
+
+- Each disposition retains its independent cardinality.
+- `STRUCTURALLY_INVALID` requires quarantine, no interpretation support, and submission ineligibility.
+- Quarantine requires submission ineligibility.
+- Duplicate occurrences and relationships remain preserved.
+- No silent selection, merge, repair, or discard is permitted.
+- Provider dispositions never become Instrument lifecycle or semantic correctness.
+
+### C7 — Catalogue Continuity and Non-Destructive Supersession
+
+**Engineering Purpose:** Preserve Provider-owned catalogue continuity across comparable snapshots without creating Instrument identity or lifecycle meaning.
+
+**Responsibilities:** EDD-004 Responsibilities 34–36; Internal Capabilities 21–23.
+
+**Inputs:**
+
+- comparable immutable snapshots;
+- Acquisition Outcomes; and
+- snapshot-bounded record identities and Provider evidence.
+
+**Outputs:**
+
+- Provider Snapshot currentness;
+- explicit non-destructive supersession; and
+- record-added, record-absent, record-changed, token-reuse, and symbol-change evidence.
+
+**Constraints:**
+
+- Earlier snapshots remain unchanged.
+- Partial, Empty, Missing, Unsupported, or Failed outcomes do not automatically displace the last applicable complete snapshot.
+- Record absence does not establish expiry, delisting, retirement, deletion, or non-existence.
+- Record change and token reuse do not establish canonical identity continuity.
+- Continuity evidence remains Provider-owned.
+
+### C8 — Retention, Licensing, and Security Governance
+
+**Engineering Purpose:** Apply governing preservation restrictions and authority separation without designing persistence or creating the governed authorities.
+
+**Responsibilities:** EDD-004 Responsibilities 37–39; Internal Capabilities 26–27.
+
+**Inputs:**
+
+- security classification;
+- licensing and redistribution restrictions;
+- retention obligations;
+- deletion and Audit authority references; and
+- protected-content classifications.
+
+**Outputs:**
+
+- conservative retention obligations;
+- licensing and redistribution constraints;
+- sensitive-content exclusions; and
+- authority-separation evidence.
+
+**Constraints:**
+
+- The capability creates no persistence, retention, deletion, or Audit authority.
+- It defines no storage or deletion mechanism.
+- Normalized preservation does not imply raw-payload retention.
+- Credentials, Authentication Material, raw payloads, SDK objects, exceptions, and transport-private state remain excluded.
+- Unlimited retention cannot be inferred.
+
+### C9 — Provider and Acquisition Provenance
+
+**Engineering Purpose:** Preserve attributable, non-sensitive evidence explaining Provider basis, acquisition context, and the origin of governed Provider meaning.
+
+**Responsibilities:** EDD-004 Responsibilities 40–41; Internal Capabilities 24–25.
+
+**Inputs:**
+
+- Provider, operation, documentation, SDK, and adapter basis where applicable;
+- acquisition identity, scopes, result, outcome, timings, lineage, dispositions, limitations, and retention treatment; and
+- authority references.
+
+**Outputs:**
+
+- non-sensitive Provider provenance;
+- non-sensitive acquisition provenance;
+- attributable snapshot and record lineage; and
+- distinct provenance timing evidence.
+
+**Constraints:**
+
+- Provider and acquisition provenance remain distinct.
+- Neither becomes Instrument interpretation or product-consumption provenance.
+- Timing meanings cannot silently substitute for one another.
+- Sensitive or transport-private information cannot enter provenance.
+- Provenance does not establish authority or canonical meaning.
+
+### C10 — Non-Sensitive Engineering Observability
+
+**Engineering Purpose:** Make EDD-004 meanings and boundary conformance explainable without changing those meanings.
+
+**Responsibilities:** EDD-004 Responsibility 42; Internal Capability 28.
+
+**Inputs:**
+
+- non-sensitive outputs from C1–C9 and C11;
+- authority-reference presence; and
+- boundary-conformance and violation evidence.
+
+**Outputs:**
+
+- non-sensitive scope, result, outcome, preservation, disposition, continuity, provenance-completeness, and boundary-conformance observability.
+
+**Constraints:**
+
+- Observability is evidential and creates no new semantic result.
+- It cannot expose protected material.
+- It cannot imply canonical identity, Instrument acceptance, product exclusion, or business meaning.
+- It cannot reinterpret Provider evidence or alter another capability’s output.
+
+### C11 — Submission Eligibility and EAIC-002 Boundary Preparation
+
+**Engineering Purpose:** Determine whether Provider-owned evidence is eligible for EAIC-002 and produce the terminal EDD-004 submission meaning.
+
+**Responsibilities:** EDD-004 Responsibility 43; Internal Capabilities 29–30.
+
+**Inputs:**
+
+- Provider, dataset, partition, snapshot, record, and Submission Unit identities;
+- fixed Submission Unit membership;
+- scopes and applicable lineage;
+- structural, evidence-quality, quarantine, interpretation-support, and submission dispositions;
+- Provider and acquisition provenance; and
+- security, licensing, retention, missingness, ambiguity, duplicate, inconsistency, and limitation evidence.
+
+**Outputs:**
+
+- `SUBMISSION_INELIGIBLE` with preserved reason and evidence; or
+- one deterministically bounded, `SUBMISSION_ELIGIBLE`, EAIC-002-conforming Provider submission meaning.
+
+**Constraints:**
+
+- Eligibility remains Provider-owned and product-neutral.
+- A unit remains bounded to one Provider, dataset, partition, and snapshot.
+- Membership remains complete, fixed, and immutable.
+- Eligibility does not grant Submission Authority.
+- No canonical Instrument inference is permitted.
+- The capability ends before presentation, delivery, technical receipt, validation, rejection, interpretation admission, response, or Instrument processing.
+
+## 3. Capability Relationships
+
+The following are engineering dependencies only. They do not define runtime sequencing, execution flow, scheduling, orchestration, or implementation interaction:
+
+- C1 supplies bounded acquisition identity and eligibility meaning to C2 and C3.
+- C2 supplies scope meaning to C3, C4, C5, C9, and C11.
+- C3 supplies technical result and Acquisition Outcome to C5, C7, C9, and C10.
+- C4 supplies preserved normalized Provider evidence to C5 and C6.
+- C5 supplies immutable snapshot, partition, and record identity meaning to C6, C7, C9, and C11.
+- C6 supplies disposition and evidence-quality meaning to C9, C10, and C11.
+- C7 supplies currentness, supersession, and continuity evidence to C9, C10, and C11 where applicable.
+- C8 constrains C4–C11 without acquiring their responsibilities.
+- C9 supplies provenance evidence to C10 and C11.
+- C10 consumes observable meaning but supplies no authority or semantic feedback to another capability.
+- C11 is the terminal internal capability and depends on the necessary outputs of C2, C5, C6, C8, and C9.
+
+No reverse dependency, circular ownership, or Instrument-to-Provider meaning dependency is introduced.
+
+## 4. Capability Ownership
+
+All 11 capabilities are semantically owned by Provider:
+
+| Capability | Semantic Owner |
+|---|---|
+| C1 — Acquisition Boundary Qualification | Provider |
+| C2 — Acquisition Scope Definition and Reconciliation | Provider |
+| C3 — Acquisition Result and Outcome Characterization | Provider |
+| C4 — Provider Record Normalization and Complete Preservation | Provider |
+| C5 — Provider Snapshot, Catalogue Partition, and Record Identity | Provider |
+| C6 — Provider Record Disposition and Evidence Quality | Provider |
+| C7 — Catalogue Continuity and Non-Destructive Supersession | Provider |
+| C8 — Retention, Licensing, and Security Governance | Provider |
+| C9 — Provider and Acquisition Provenance | Provider |
+| C10 — Non-Sensitive Engineering Observability | Provider |
+| C11 — Submission Eligibility and EAIC-002 Boundary Preparation | Provider |
+
+Ownership qualifications:
+
+- Configuration retains ownership of Configuration Eligibility and Operational Configuration Validity.
+- Upstream Provider capabilities retain ownership of Provider Context, capability, entitlement, availability, and usability meanings.
+- Governing authorities retain permission and authority ownership.
+- Instrument retains exclusive ownership of receipt-side interpretation admission, Instrument interpretation, canonical identity, Provider mapping, Instrument lifecycle, and the Canonical Instrument Catalogue.
+- Audit may consume published evidence read-only but owns only the Audit Trail.
+- The Engineering Design Team owns design stewardship, not semantic capability ownership.
+- No capability is jointly owned.
+
+## 5. Capability Boundaries
+
+- **C1 begins** with independently established entry evidence and **ends** with bounded eligibility or ineligibility meaning. It does not establish an upstream prerequisite or perform acquisition.
+- **C2 begins** with a bounded acquisition identity and scope authority and **ends** with three independent scopes and their comparison evidence.
+- **C3 begins** with bounded technical-result evidence and applicable scopes and **ends** with one technical result and one Acquisition Outcome.
+- **C4 begins** with returned Provider Instrument Master information and **ends** with safely normalized, completely preserved Provider evidence. It does not assign canonical meaning.
+- **C5 begins** with preserved records and acquisition context and **ends** with immutable snapshot, partition membership, and bounded record identity.
+- **C6 begins** with snapshot-bounded Provider Records and quality evidence and **ends** with the complete disposition set and preserved quality relationships.
+- **C7 begins** with comparable immutable snapshot evidence and **ends** with Provider-owned currentness, supersession, and difference meaning.
+- **C8 begins** with approved restriction and authority references and **ends** with preservation obligations, exclusions, and authority-separation evidence.
+- **C9 begins** with attributable facts produced by the other Provider capabilities and **ends** with non-sensitive Provider and acquisition provenance.
+- **C10 begins** with already-established non-sensitive capability meaning and **ends** with explainable observability. It cannot change the observed meaning.
+- **C11 begins** with fully bounded Provider evidence needed for eligibility evaluation and **ends** with submission-ineligible meaning or EAIC-002-conforming Provider submission meaning. It stops before EAIC-002 presentation.
+
+## 6. Capability Interfaces
+
+The conceptual internal engineering interfaces are:
+
+1. C1 → C2: qualified acquisition-boundary interface.
+2. C1 → C3: eligibility and bounded-context interface.
+3. C2 → C3: acquisition-scope interface.
+4. C2 → C4: requested and received scope interface.
+5. C2/C3/C4 → C5: snapshot-establishment evidence interface.
+6. C4/C5 → C6: snapshot-bounded Provider Record interface.
+7. C3/C5 → C7: comparable-snapshot continuity interface.
+8. C8 → C4–C11: security, licensing, retention, and authority-constraint interface.
+9. C1–C8 → C9: provenance-source interface.
+10. C1–C9/C11 → C10: non-sensitive observability interface.
+11. C5/C6/C8/C9 → C11: submission-eligibility evidence interface.
+12. C7 → C11: applicable currentness and lineage interface.
+13. C11 → EAIC-002 boundary: terminal Provider submission-meaning interface.
+
+These identify conceptual responsibility boundaries only. They define no fields, payloads, methods, protocols, schemas, transports, APIs, or runtime interactions.
+
+## 7. Capability Invariants
+
+### C1 Invariants
+
+- Every entry meaning remains independently established.
+- Acquisition Eligibility never becomes authority or technical activity.
+
+### C2 Invariants
+
+- Approved, Requested, and Received scopes remain distinct.
+- Product membership never narrows Requested Acquisition Scope.
+
+### C3 Invariants
+
+- Exactly one technical result and one Acquisition Outcome exist.
+- Technical success never establishes completeness.
+
+### C4 Invariants
+
+- Every safely preservable returned record is preserved.
+- Provider Records remain Provider-owned, product-neutral, and non-canonical.
+- No Provider assertion is silently repaired or interpreted canonically.
+
+### C5 Invariants
+
+- Closed snapshots are immutable.
+- Partitions remain isolated by Provider and dataset.
+- Provider-native identifiers never become permanent or canonical identity.
+
+### C6 Invariants
+
+- Disposition dimensions retain independent cardinalities.
+- Structural invalidity and quarantine enforce the mandated submission-ineligibility precedence.
+- Duplicate and adverse evidence remains preserved.
+- Dispositions never become Instrument lifecycle.
+
+### C7 Invariants
+
+- Supersession is explicit and non-destructive.
+- Snapshot difference never establishes Instrument identity or lifecycle.
+- Record absence never establishes Instrument non-existence.
+
+### C8 Invariants
+
+- Acquisition, preservation, persistence, retention, deletion, submission, interpretation, and Audit authorities remain separate.
+- Protected or adapter-private information never enters governed outputs.
+- Restrictions never create the authority they constrain.
+
+### C9 Invariants
+
+- Provider and acquisition provenance remain attributable and non-sensitive.
+- Provenance types and timing meanings remain distinct.
+- Provenance never establishes canonical or product meaning.
+
+### C10 Invariants
+
+- Observability never changes observed meaning.
+- Observability remains non-sensitive.
+- Observability never implies downstream acceptance or authority.
+
+### C11 Invariants
+
+- Submission Eligibility remains deterministic, Provider-owned, and product-neutral.
+- Every evaluated unit receives exactly one submission disposition.
+- Submission Eligibility never implies Submission Authority or Instrument acceptance.
+- The capability terminates before EAIC-002 presentation or delivery.
+
+## 8. Future Engineering Readiness
+
+These classifications indicate expected decomposition pressure only. They do not create modules or prescribe module count, structure, technology, or interaction.
+
+| Capability | Expected Readiness |
+|---|---|
+| C1 — Acquisition Boundary Qualification | One engineering module |
+| C2 — Acquisition Scope Definition and Reconciliation | One engineering module |
+| C3 — Acquisition Result and Outcome Characterization | One engineering module |
+| C4 — Provider Record Normalization and Complete Preservation | Multiple engineering modules |
+| C5 — Provider Snapshot, Catalogue Partition, and Record Identity | Multiple engineering modules |
+| C6 — Provider Record Disposition and Evidence Quality | Multiple engineering modules |
+| C7 — Catalogue Continuity and Non-Destructive Supersession | One engineering module |
+| C8 — Retention, Licensing, and Security Governance | Multiple engineering modules |
+| C9 — Provider and Acquisition Provenance | Multiple engineering modules |
+| C10 — Non-Sensitive Engineering Observability | Remain conceptual |
+| C11 — Submission Eligibility and EAIC-002 Boundary Preparation | One engineering module |
+
+“Multiple engineering modules” indicates only that later separately authorized module design may require more than one cohesive implementation responsibility.
+
+## 9. Engineering Risks
+
+1. **Entry-authority conflation:** Combining C1 with acquisition activity could make eligibility appear to authorize endpoints or runtime behavior.
+2. **Scope collapse:** Merging the three scopes could make technical success appear complete or allow product filtering.
+3. **Result/outcome collapse:** Combining C3 with C2 could erase Partial, Empty, Missing, or Unsupported meaning.
+4. **Preservation narrowing:** Poor separation of C4 could allow current product demand to determine which Provider records survive.
+5. **Identity leakage:** Combining C4 with Instrument concerns could allow Provider tokens or symbols to become canonical identity.
+6. **Catalogue-boundary erosion:** Weak C5 isolation could mix Providers, datasets, environments, snapshots, or native identities.
+7. **Disposition collapse:** Treating C6 as one status could convert quarantine or quality evidence into Instrument lifecycle.
+8. **Silent evidence repair:** Poor C6 boundaries could permit duplicates, ambiguity, or inconsistency to be silently removed.
+9. **Lifecycle leakage:** Weak C7 boundaries could turn record absence, change, or token reuse into Instrument lifecycle.
+10. **Authority dilution:** Distributing C8 responsibilities informally could make preservation appear to grant persistence, retention, or deletion authority.
+11. **Provenance fragmentation:** Splitting C9 meaning inconsistently could make evidence unattributable or conflate Provider, acquisition, Instrument, and product provenance.
+12. **Observability ownership drift:** C10 could become an alternate semantic producer instead of an evidence view.
+13. **EAIC-002 boundary leakage:** C11 could absorb delivery, validation, admission, replay, ordering, or Instrument responsibilities.
+14. **Overlapping capability ownership:** Duplicate responsibility assignment could produce conflicting meanings for scope, identity, disposition, currentness, or eligibility.
+15. **Hidden dependency cycles:** Reverse dependencies could allow downstream eligibility or product meaning to alter acquisition or preservation.
+
+## 10. Verification Criteria
+
+Engineering Review shall confirm:
+
+1. Exactly 11 capabilities are defined.
+2. EDD-004 Responsibilities 1–43 are each assigned exactly once.
+3. EDD-004 Internal Capabilities 1–30 are each represented exactly once.
+4. No capability introduces a responsibility absent from the frozen Engineering Scope Definition.
+5. Every capability has a name, Engineering Purpose, responsibilities, inputs, outputs, and constraints.
+6. Every capability has one unambiguous semantic owner.
+7. All capability ownership remains Provider-owned.
+8. External input ownership remains with its governing source.
+9. Capability boundaries are mutually exclusive.
+10. Capability outputs correspond to another capability input or an approved external boundary.
+11. No circular semantic dependency exists.
+12. Approved, Requested, and Received scopes remain separate.
+13. Technical result and Acquisition Outcome remain separate.
+14. Complete safely preservable returned-record preservation remains explicit.
+15. Snapshot, partition, and record identity boundaries remain isolated.
+16. Disposition cardinalities and precedence remain preserved.
+17. Catalogue continuity creates no Instrument lifecycle or identity meaning.
+18. Security, licensing, retention, and authority separation remain cross-cutting constraints without hidden ownership transfer.
+19. Provenance and observability remain non-sensitive and non-authoritative.
+20. Submission Eligibility remains distinct from Submission Authority.
+21. The final capability terminates before EAIC-002 presentation or delivery.
+22. Instrument interpretation, canonical identity, Provider mapping, Instrument lifecycle, product eligibility, and product consumption remain excluded.
+23. No module, service, class, namespace, package, API, persistence, database, runtime, scheduling, retry, deployment, or GUI design appears.
+24. No implementation or runtime authority is implied.
+25. The model remains Provider-neutral, product-neutral, Instrument-Master-specific, Kite-first-adapter compatible, future-Provider compatible, retention-aware, and provenance-preserving.
+
+Successful review of these criteria verifies the completeness, internal consistency, ownership clarity, boundary conformance, and frozen-scope traceability of the Engineering Capability Decomposition only. It does not constitute module design, implementation authorization, runtime authority, EDD-004 approval, or canonicalization.
 
 # End of Document
