@@ -17,7 +17,7 @@
 **Governing Migration:** MIG-001 Version 0.1
 **Upstream EAP:** EAP-002 Version 2.0
 **Downstream EAP:** EAP-004 Version 2.0
-**Activation State:** Inactive — Pending RC-03 Repository Synchronization and RC-04 Activation Governance
+**Activation State:** Inactive — Pending RC-04 Activation Governance
 **EDD-004 Drafting Authorization:** None
 **Implementation Authorization:** None
 **Runtime Authority:** None
@@ -363,7 +363,7 @@ Audit owns the Audit Trail only. Audit does not acquire Provider Records, Submis
 
 # 19. Mandatory Engineering Invariants
 
-1. EAIC-002 is the sole active canonical Provider → Instrument submission boundary.
+1. EAIC-002 is the sole current canonical Provider → Instrument submission boundary and remains inactive pending separate activation authority.
 2. ADP-001C Architectural Admissibility is historical predecessor terminology only.
 3. Provider Submission Eligibility remains distinct from Submission Authority.
 4. Submission Authority remains distinct from technical receipt.
@@ -404,7 +404,7 @@ Engineering Verification shall confirm:
 
 Version 2.0 is the approved canonical engineering replacement for EAP-003 Version 1.0 under RC-02 — Engineering Architecture Publication.
 
-Publication establishes engineering architecture only. RC-03 Repository Synchronization and RC-04 Activation Governance remain subsequent and separate. EDD-004 drafting remains prohibited until explicitly authorized after those stages.
+Publication establishes engineering architecture only. RC-03 Repository Synchronization is complete; RC-04 Activation Governance remains separate and subsequent. EDD-004 drafting remains prohibited until explicitly authorized after activation.
 
 # 22. Related Approved Authority
 

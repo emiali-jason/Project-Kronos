@@ -31,7 +31,7 @@
 
 **Workflow Stage:** Repository Publication
 
-**Activation State:** Inactive — Pending RC-03 Repository Synchronization and RC-04 Activation Governance
+**Activation State:** Inactive — Pending RC-04 Activation Governance
 
 **ADR Required:** No
 
@@ -639,7 +639,7 @@ No ADR is required provided EAP-005 translates ADP-001D, preserves Instrument an
 | Status | Approved |
 | Canonical Status | Approved Canonical Engineering Architecture |
 | Workflow Stage | Repository Publication |
-| Activation State | Inactive — Pending RC-03 Repository Synchronization and RC-04 Activation Governance |
+| Activation State | Inactive — Pending RC-04 Activation Governance |
 | ADR Required | No |
 | Engineering Impact | None |
 | Runtime Impact | None |
@@ -667,7 +667,7 @@ No ADR is required provided EAP-005 translates ADP-001D, preserves Instrument an
 
 EAP-005 Draft Version 0.1 was authorized by the Chief Architect Repository Architecture Review — Next Authorized Capability. Engineering verification was completed. The first independent Chief Architect review produced CA-EAP005-001 through CA-EAP005-003 together with the associated governance corrections. Draft Version 0.2 applied those amendments. Engineering re-verification was completed and the Chief Architect re-review produced CA-EAP005-004 and GOV-EAP005-006. Draft Version 0.3 applied those required amendments. The final Chief Architect review authorized canonicalization of Version 1.0.
 
-Version 1.1 applies the approved MIG-001 minor amendment: product-neutral EAP-004 Version 2.0 identity is the sole upstream identity meaning; product membership and product-universe context are excluded from canonical identity association and Attribution Eligibility; product-specific Observation requirements remain downstream and do not transfer ownership. Version 1.1 is published under RC-02 and remains inactive pending RC-03 and RC-04.
+Version 1.1 applies the approved MIG-001 minor amendment: product-neutral EAP-004 Version 2.0 identity is the sole upstream identity meaning; product membership and product-universe context are excluded from canonical identity association and Attribution Eligibility; product-specific Observation requirements remain downstream and do not transfer ownership. Version 1.1 is published under RC-02; RC-03 is complete, and the document remains inactive pending RC-04.
 
 ## 23. Approval Record
 
@@ -679,7 +679,7 @@ Version 1.1 applies the approved MIG-001 minor amendment: product-neutral EAP-00
 
 **ADR Required:** No
 
-**Activation State:** Inactive — Pending RC-03 Repository Synchronization and RC-04 Activation Governance
+**Activation State:** Inactive — Pending RC-04 Activation Governance
 
 **EDD-004 Drafting Authorization:** None
 

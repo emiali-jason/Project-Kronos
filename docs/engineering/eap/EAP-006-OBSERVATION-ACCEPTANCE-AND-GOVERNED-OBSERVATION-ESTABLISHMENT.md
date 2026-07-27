@@ -29,7 +29,7 @@
 
 **Workflow Stage:** Repository Publication
 
-**Activation State:** Inactive — Pending RC-03 Repository Synchronization and RC-04 Activation Governance
+**Activation State:** Inactive — Pending RC-04 Activation Governance
 
 **ADR Required:** No
 
@@ -551,7 +551,7 @@ EAP-006 translates ADP-001E through the existing Observation dependency and crea
 | Status | Approved |
 | Canonical Status | Approved Canonical Engineering Architecture |
 | Workflow Stage | Repository Publication |
-| Activation State | Inactive — Pending RC-03 Repository Synchronization and RC-04 Activation Governance |
+| Activation State | Inactive — Pending RC-04 Activation Governance |
 | ADR Required | No |
 | EDD-004 Drafting Authorization | None |
 | Implementation Authorization | None |
@@ -576,7 +576,7 @@ EAP-006 translates ADP-001E through the existing Observation dependency and crea
 
 EAP-006 Draft Version 0.1 was prepared under the repository-preserved Chief Architect Draft Authorization. Engineering verification was completed. The Chief Architect Final Review authorized governance-only canonicalization through CA-006-001 and CA-006-002. Version 1.0 became the approved canonical baseline.
 
-Version 1.1 applies the approved MIG-001 minor amendment: EAP-005 Version 1.1 product-neutral attribution eligibility is the sole instrument-specific input; Provider and EAIC-002 artefacts remain isolated upstream; and applicable products remain separately authorized downstream consumers that cannot alter Observation ownership or governed factual meaning. Version 1.1 is published under RC-02 and remains inactive pending RC-03 and RC-04.
+Version 1.1 applies the approved MIG-001 minor amendment: EAP-005 Version 1.1 product-neutral attribution eligibility is the sole instrument-specific input; Provider and EAIC-002 artefacts remain isolated upstream; and applicable products remain separately authorized downstream consumers that cannot alter Observation ownership or governed factual meaning. Version 1.1 is published under RC-02; RC-03 is complete, and the document remains inactive pending RC-04.
 
 ## 21. Approval Record
 
@@ -588,7 +588,7 @@ Version 1.1 applies the approved MIG-001 minor amendment: EAP-005 Version 1.1 pr
 
 **ADR Required:** No
 
-**Activation State:** Inactive — Pending RC-03 Repository Synchronization and RC-04 Activation Governance
+**Activation State:** Inactive — Pending RC-04 Activation Governance
 
 **EDD-004 Drafting Authorization:** None
 

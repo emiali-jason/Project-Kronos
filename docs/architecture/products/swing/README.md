@@ -10,6 +10,8 @@ This directory is the Draft documentation scaffold for the KRONOS Swing product 
 
 The folder name does not establish product responsibility, authority, interfaces, dependencies, or approved architecture.
 
+The architecture migration and engineering publication are complete. The published baseline remains inactive pending separate activation governance; implementation and EDD-004 are not authorized.
+
 ## Documents
 
 - [Responsibilities](RESPONSIBILITIES.md)
@@ -42,4 +44,7 @@ The folder name does not establish product responsibility, authority, interfaces
 
 ## Governing ADRs
 
-[TBD]
+- [ADR-007 — Provider Capability Assessment Architecture](../../platform/domains/provider/ADR-007-PROVIDER-CAPABILITY-ASSESSMENT-ARCHITECTURE.md)
+- [ADR-008 — Provider Entitlement Assessment Architecture](../../platform/domains/provider/ADR-008-PROVIDER-ENTITLEMENT-ASSESSMENT-ARCHITECTURE.md)
+- [ADR-009 — Provider-Bounded Instrument Master Acquisition Architecture](../../platform/domains/provider/ADR-009-PROVIDER-BOUNDED-INSTRUMENT-MASTER-ACQUISITION-ARCHITECTURE.md) — Approved and canonical; inactive pending Chief Architect activation review
+- [EAIC-002 — Provider → Instrument Submission Contract](../../interfaces/EAIC-002-PROVIDER-TO-INSTRUMENT-SUBMISSION-CONTRACT.md) — Sole canonical Provider → Instrument submission contract; inactive pending separate activation authority

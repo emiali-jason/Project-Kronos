@@ -3,13 +3,14 @@
 **Document ID:** CAR-002
 **Title:** Governance Foundation Closure Review
 **Version:** 0.1 Draft
-**Status:** Engineering Verification
+**Status:** Draft
 **Canonical Status:** Draft
 **Classification:** Review Package
 **Owner:** Chief Architect
 **Prepared By:** Engineering Architect
 **Review Authority:** Chief Architect
 **Repository Location:** `docs/governance/reviews/CAR-002-GOVERNANCE-FOUNDATION-CLOSURE-REVIEW.md`
+**Workflow Stage:** Engineering Verification
 
 ---
 

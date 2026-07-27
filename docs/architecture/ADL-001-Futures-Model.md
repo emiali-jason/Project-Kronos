@@ -4,7 +4,8 @@
 **Title:** Futures Model Architecture
 **Document Family:** Legacy Architecture Decision Log
 **Version:** Not stated
-**Status:** Approved for Version 1.x, not required for initial MVP  
+**Status:** Approved
+**Applicability:** Version 1.x; not required for initial MVP
 **Canonical Status:** Not stated
 **Classification:** Legacy Architecture Decision Log
 **Owner:** Not stated

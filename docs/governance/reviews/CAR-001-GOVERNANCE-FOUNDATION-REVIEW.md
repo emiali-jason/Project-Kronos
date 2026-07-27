@@ -3,13 +3,14 @@
 **Document ID:** CAR-001
 **Title:** Governance Foundation Review
 **Version:** 0.1 Draft
-**Status:** Chief Architect Review
+**Status:** Draft
 **Canonical Status:** Draft
 **Classification:** Review Package
 **Owner:** Chief Architect
 **Prepared By:** Engineering Architect
 **Review Authority:** Not stated
 **Repository Location:** `docs/governance/reviews/CAR-001-GOVERNANCE-FOUNDATION-REVIEW.md`
+**Workflow Stage:** Chief Architect Review
 
 ---
 

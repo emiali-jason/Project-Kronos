@@ -18,9 +18,12 @@ This index organizes documents. It does not approve, replace, reinterpret, or in
 2. Read the central [`KNOWLEDGE_BASE.md`](KNOWLEDGE_BASE.md).
 3. Read the [Constitution](constitution/KRONOS_CONSTITUTION.md).
 4. Read applicable approved decision records, including [ADR-009](platform/domains/provider/ADR-009-PROVIDER-BOUNDED-INSTRUMENT-MASTER-ACQUISITION-ARCHITECTURE.md) for Provider-bounded Instrument Master acquisition.
-5. Read [MIG-001](migrations/MIG-001-ADR-009-COORDINATED-ARCHITECTURE-MIGRATION-PACKAGE.md) for coordinated-migration governance.
+5. Read [MIG-001](migrations/MIG-001-ADR-009-COORDINATED-ARCHITECTURE-MIGRATION-PACKAGE.md) for the completed migration and repository-synchronization record.
 6. Read applicable product documents and interface contracts, including [EAIC-002](interfaces/EAIC-002-PROVIDER-TO-INSTRUMENT-SUBMISSION-CONTRACT.md) for the canonical Provider → Instrument submission boundary.
-7. Identify conflicts or missing authority instead of resolving them silently.
+7. Read the [engineering architecture packages](../engineering/eap/) for the published EAP-001 through EAP-006 baseline.
+8. Identify conflicts or missing authority instead of resolving them silently.
+
+Current programme state: Architecture Migration — Completed; Engineering Publication — Completed; Repository Synchronization — Completed; Activation — Pending; Implementation — Not Authorized; EDD-004 — Not Authorized.
 
 ## Repository Map
 
@@ -30,7 +33,7 @@ This index organizes documents. It does not approve, replace, reinterpret, or in
 | [`governance/`](governance/) | Architecture roles, proposal, review, approval, versioning, and traceability governance. |
 | [`adr/`](adr/) | Architecture Decision Record index and reusable template. |
 | [`interfaces/`](interfaces/) | Cross-product interface index and reusable interface template. |
-| [`migrations/`](migrations/) | Governed architecture-migration planning, sequencing, validation, publication, and rollback records. |
+| [`migrations/`](migrations/) | Governed architecture-migration planning, sequencing, validation, publication, and closure records. |
 | [`platform/`](platform/) | Canonical platform constitution, domain architecture, ownership, and dependency authorities. |
 | [`products/`](products/) | Draft or approved product-specific responsibilities, interfaces, constraints, and future records. |
 | [`decisions/`](decisions/) | Decision-history indexes and navigation. Formal new architecture decisions belong in `adr/`. |
@@ -60,6 +63,6 @@ Product folder names do not establish product responsibilities. Draft placeholde
 
 ## Existing Architecture
 
-Existing architecture documents remain at their current paths and retain their recorded status. They have not been moved, renamed, duplicated, or rewritten by this repository setup. See [`KNOWLEDGE_BASE.md`](KNOWLEDGE_BASE.md) for the complete index.
+Published architecture documents remain at their governed paths and retain their recorded status. The completed migration’s amendments and supersessions are recorded in [MIG-001](migrations/MIG-001-ADR-009-COORDINATED-ARCHITECTURE-MIGRATION-PACKAGE.md), and historical predecessors remain available through governed links. See [`KNOWLEDGE_BASE.md`](KNOWLEDGE_BASE.md) for the current index.
 
 Any migration, supersession, status change, or reinterpretation requires explicit architectural authority and preserved Git history.

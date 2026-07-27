@@ -17,7 +17,7 @@
 **Governing Migration:** MIG-001 Version 0.1
 **Upstream EAP:** EAP-003 Version 2.0
 **Downstream EAP:** EAP-005 Version 1.1
-**Activation State:** Inactive — Pending RC-03 Repository Synchronization and RC-04 Activation Governance
+**Activation State:** Inactive — Pending RC-04 Activation Governance
 **EDD-004 Drafting Authorization:** None
 **Implementation Authorization:** None
 **Runtime Authority:** None
@@ -421,7 +421,7 @@ Engineering Verification shall confirm:
 
 Version 2.0 is the approved canonical engineering replacement for EAP-004 Version 1.0 under RC-02 — Engineering Architecture Publication.
 
-Publication establishes engineering architecture only. RC-03 Repository Synchronization and RC-04 Activation Governance remain subsequent and separate. EDD-004 drafting remains prohibited until explicitly authorized after those stages.
+Publication establishes engineering architecture only. RC-03 Repository Synchronization is complete; RC-04 Activation Governance remains separate and subsequent. EDD-004 drafting remains prohibited until explicitly authorized after activation.
 
 # 23. Related Approved Authority
 

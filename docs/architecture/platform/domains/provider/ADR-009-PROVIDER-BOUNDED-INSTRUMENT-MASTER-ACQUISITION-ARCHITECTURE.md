@@ -14,8 +14,8 @@
 **Workflow Stage:** Repository Publication
 **Decision Scope:** Platform Provider and Instrument Foundation
 **Architecture Impact:** Fundamental Provider acquisition and product-consumption separation
-**Architectural Effect:** Approved Architecture — Activation Pending Coordinated Migration
-**Activation State:** Pending Coordinated Migration
+**Architectural Effect:** Approved Architecture — Inactive Pending Chief Architect Activation Review
+**Activation State:** Inactive — Pending Chief Architect Activation Review
 **Engineering Impact:** None
 **Runtime Impact:** None
 **EDD-004 Drafting Authorization:** None
@@ -46,9 +46,9 @@ That candidate:
 - granted no authority; and
 - is not an architectural base for this architecture.
 
-This document establishes approved platform architecture whose Activation State remains Pending Coordinated Migration.
+This document establishes approved platform architecture whose Activation State remains Inactive — Pending Chief Architect Activation Review.
 
-ADR-009 shall remain activation-pending until the coordinated canonical migration in Section 36 is complete.
+The coordinated canonical migration in Section 36 is complete. ADR-009 shall remain inactive until a separate Chief Architect activation decision.
 
 This architecture authorizes no:
 
@@ -545,7 +545,7 @@ That permission:
 
 - is dataset-specific;
 - is Provider-specific;
-- is activation-pending coordinated migration;
+- is inactive pending Chief Architect activation review;
 - permits architecture and later design consideration only; and
 - does not authorize endpoint invocation or live acquisition.
 
@@ -2007,32 +2007,30 @@ ADR-009 shall not claim full effectiveness before Step 11 completes.
 
 The proposed post-approval effect is:
 
-**Approved Architecture — Activation Pending Coordinated Migration**
+**Approved Architecture — Inactive Pending Chief Architect Activation Review**
 
-If repository governance does not accept that exact status as Lifecycle Status, the document shall remain `Approved` with activation state recorded separately until coordinated migration completes.
+The Lifecycle Status remains `Approved`, with activation state recorded separately.
 
-# 37. Unresolved Dependencies
+# 37. Remaining Dependencies
+
+The platform Provider-to-Instrument contract identifier, coordinated amendments, and supersession records were resolved by the completed migration.
 
 The following remain unresolved:
 
-1. the exact platform Provider-to-Instrument contract document and identifier;
-2. the exact coordinated amendments and supersession records;
-3. the exact runtime environment for the first live Kite acquisition;
-4. the exact runtime Configuration and Provider Context instances;
-5. the exact security classification for the live acquisition;
-6. live Acquisition Authority;
-7. endpoint invocation authority;
-8. persistence implementation authority;
-9. the physical retention mechanism;
-10. the governed retirement schedule for unreferenced superseded snapshots;
-11. deletion authority;
-12. Provider-to-Instrument submission authority;
-13. Instrument interpretation runtime authority; and
-14. Swing, Intraday, and future-product consumption authorities.
+1. the exact runtime environment for the first live Kite acquisition;
+2. the exact runtime Configuration and Provider Context instances;
+3. the exact security classification for the live acquisition;
+4. live Acquisition Authority;
+5. endpoint invocation authority;
+6. persistence implementation authority;
+7. the physical retention mechanism;
+8. the governed retirement schedule for unreferenced superseded snapshots;
+9. deletion authority;
+10. Provider-to-Instrument submission authority;
+11. Instrument interpretation runtime authority; and
+12. Swing, Intraday, and future-product consumption authorities.
 
-Items 1 and 2 block ADR-009 activation.
-
-Items 3 through 14 block runtime activity.
+These items block runtime activity.
 
 They do not authorize implementation discretion.
 
@@ -2145,7 +2143,7 @@ Architecture Verification shall confirm:
 - `last_price` remains auxiliary Provider metadata;
 - capability and entitlement remain distinct from authority;
 - every canonical conflict is recorded as migration impact;
-- ADR-009 remains activation-pending until coordinated migration;
+- ADR-009 remains inactive pending Chief Architect activation review;
 - EDD-004 remains unauthorized;
 - implementation remains unauthorized;
 - endpoint invocation remains unauthorized; and
@@ -2175,9 +2173,9 @@ Architecture Verification shall confirm:
 
 **Canonical Status:** Canonical
 
-**Architectural Effect:** Approved Architecture — Activation Pending Coordinated Migration
+**Architectural Effect:** Approved Architecture — Inactive Pending Chief Architect Activation Review
 
-**Activation State:** Pending Coordinated Migration
+**Activation State:** Inactive — Pending Chief Architect Activation Review
 
 **ADR Required:** Yes — ADR-009
 
@@ -2250,7 +2248,7 @@ It intentionally identifies conflicts with existing canonical authority.
 
 It does not amend those documents.
 
-Its Activation State remains Pending Coordinated Migration until the coordinated architecture change set is separately approved and published.
+The coordinated architecture change set is approved and published. Its Activation State remains Inactive — Pending Chief Architect Activation Review.
 
 It grants no coordinated migration, EDD, implementation, dependency, Provider communication, endpoint invocation, acquisition, persistence, submission, interpretation, or product-consumption authority.
 

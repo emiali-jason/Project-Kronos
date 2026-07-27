@@ -420,7 +420,7 @@ Instrument shall not accept direct Provider writes, access Provider Catalogue in
 
 | Relationship or capability | Treatment in ADP-001B |
 | --- | --- |
-| EAIC-002 — Provider → Instrument Submission Contract | Sole current canonical Provider → Instrument submission boundary. It remains inactive pending coordinated migration and separate activation authorization and is referenced rather than redefined here. |
+| EAIC-002 — Provider → Instrument Submission Contract | Sole current canonical Provider → Instrument submission boundary. It is included in the completed coordinated migration, remains inactive pending separate activation authorization, and is referenced rather than redefined here. |
 | ADP-001C — Provider → Instrument Contract | Superseded historical Swing-specific predecessor retained only for traceability. It supplies no current boundary or implementation authority. |
 | Provider Instrument Master Acquisition | Provider-owned and governed by ADR-009 Version 1.0 and DOMAIN-006 Provider Domain Architecture; EAIC-002 Version 0.1 separately governs Provider → Instrument submission. It is independent of product membership and canonical identity. |
 | Provider → Observation Contract | Required future contract for factual acquisition; referenced but not defined here. |
@@ -534,7 +534,7 @@ ADP-001B elaborates product-neutral Instrument Identity architecture only. ADP-0
 
 ADP-001C is superseded. It remains available only as the historical Swing-specific predecessor to EAIC-002.
 
-EAIC-002 Version 0.1 is the sole current canonical Provider → Instrument submission contract. It remains inactive pending coordinated migration and separate activation authorization.
+EAIC-002 Version 0.1 is the sole current canonical Provider → Instrument submission contract. It is included in the completed coordinated migration and remains inactive pending separate activation authorization.
 
 ADP-001B does not activate EAIC-002, authorize Provider acquisition or submission, authorize Instrument interpretation, or grant implementation, runtime, endpoint, persistence, product, EDD, Engineering Package, or EDD-004 authority.
 
