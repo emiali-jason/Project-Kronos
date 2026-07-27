@@ -2,717 +2,437 @@
 
 **Document ID:** EAP-004
 **Title:** Instrument Interpretation and Canonical Identity Establishment Engineering Architecture
-**Version:** 1.0
-
+**Version:** 2.0
 **Status:** Approved
-
 **Canonical Status:** Approved Canonical Engineering Architecture
-
 **Classification:** Engineering Architecture Package
-
 **Owner:** Engineering Architect
-
 **Prepared By:** Engineering Architect
-
 **Review Authority:** Chief Architect
-**Repository Location:** `docs/engineering/eap/EAP-004-INSTRUMENT-INTERPRETATION-AND-CANONICAL-IDENTITY-ESTABLISHMENT.md`
-
 **Approved By:** Chief Architect
-
-**Product:** KRONOS Swing
-
-**Phase:** Phase 1 — Market Data Foundation
-
-**Governing ADP:** ADP-001J Version 1.0
-
-**Supporting ADPs:** ADP-001A, ADP-001B, ADP-001C, ADP-001D, ADP-001E, ADP-001H, ADP-001I
-
-**Upstream EAP:** EAP-003 Version 1.0
-
-**ADR Required:** No
-
-**Engineering Impact:** None
-
-**Runtime Impact:** None
-
-**EDD Authorization:** None
-
+**Repository Location:** `docs/engineering/eap/EAP-004-INSTRUMENT-INTERPRETATION-AND-CANONICAL-IDENTITY-ESTABLISHMENT.md`
+**Workflow Stage:** Repository Publication
+**Governing Architecture:** ADR-009 Version 1.0; DOMAIN-001 Instrument Domain; ADP-001J Version 1.0
+**Governing Interface:** EAIC-002 Version 0.1
+**Governing Migration:** MIG-001 Version 0.1
+**Upstream EAP:** EAP-003 Version 2.0
+**Downstream EAP:** EAP-005 Version 1.1
+**Activation State:** Inactive — Pending RC-03 Repository Synchronization and RC-04 Activation Governance
+**EDD-004 Drafting Authorization:** None
 **Implementation Authorization:** None
+**Runtime Authority:** None
+**Instrument Interpretation Authority:** None
+**Persistence Authority:** None
 
-**Commit Authorization:** None
+---
 
-**Push Authorization:** None
+# 1. Purpose
 
-**Next Authorized Capability:** None
+EAP-004 translates the approved product-neutral Instrument interpretation and canonical identity architecture into implementation-neutral engineering contracts.
 
-## 1. Purpose
+It begins only after EAP-003 has established `ACCEPTED_FOR_INTERPRETATION` under EAIC-002. It defines:
 
-EAP-004 translates ADP-001J Version 1.0 into provider-neutral and implementation-neutral engineering contracts and representations for Instrument Interpretation and Canonical Identity Establishment.
+1. Interpretation Processing Status;
+2. Interpretation Outcome;
+3. Canonical Identity Decision; and
+4. Provider Mapping Status
 
-EAP-004 begins at the EAP-003 Instrument Interpretation Entry Contract and defines Interpretation Readiness, Interpretation Activity, Interpretation Outcome, the determinate and indeterminate outcome taxonomy, identity-layer semantic sufficiency, identity decision boundaries, identity publication eligibility, provenance preservation, continuity preservation and boundary conformance.
+as four independent Instrument-owned dimensions.
 
-EAP-004 is an engineering contract boundary only. It does not define runtime sequence, executable state machines, physical data movement, service workflows, implementation orchestration or any implementation technology.
+EAP-004 also defines engineering contracts for identity-layer semantic sufficiency, identity continuity, Provider mapping and cross-Provider reconciliation evidence, Instrument Identity Contract publication, and Canonical Instrument Catalogue publication.
 
-## 2. Scope
+It terminates before EAP-005 factual attribution evaluation and before any product-consumption decision.
+
+# 2. Migration Effect
+
+Version 2.0 replaces the product-coupled interpretation model in EAP-004 Version 1.0.
+
+The migration:
+
+- replaces ADP-001C Architectural Admissibility with EAIC-002 Interpretation Admission;
+- removes current-product universe membership as an interpretation or canonical identity prerequisite;
+- replaces the former determinate/indeterminate outcome tree with the four independent canonical dimensions;
+- makes Provider Mapping Status explicitly independent from Canonical Identity Decision;
+- preserves Instrument-owned cross-Provider reconciliation;
+- establishes the Canonical Instrument Catalogue as product-neutral and distinct from the Provider Catalogue;
+- preserves product-specific universes solely for later explicit product consumption; and
+- grants no implementation, runtime, persistence, product, or EDD-004 authority.
+
+ADP-001C and ADP-001H remain historical predecessor traceability only.
+
+# 3. Governing Authority
+
+EAP-004 is subordinate to:
+
+- PLATFORM-000 — KRONOS Platform Constitution;
+- ADR-009 — Provider-Bounded Instrument Master Acquisition Architecture;
+- MIG-001 — ADR-009 Coordinated Architecture Migration Package;
+- EAIC-002 — Provider → Instrument Submission Contract;
+- DOMAIN-001 — Instrument Domain Architecture;
+- DOMAIN-006 — Provider Domain Architecture;
+- ADP-001B — Instrument Identity Architecture;
+- ADP-001J — Instrument Interpretation and Canonical Identity Establishment Architecture;
+- ADP-001D — Instrument → Observation Contract;
+- the Domain Ownership Matrix;
+- the Domain Dependency Matrix;
+- DATA_FLOW;
+- EAP-003 Version 2.0;
+- EAS-001 through EAS-007; and
+- applicable approved Instrument relationship, lifecycle, security, and governance authorities.
+
+Product documents govern product eligibility and consumption only. They do not create, broaden, narrow, or replace canonical Instrument meaning.
+
+# 4. Scope
 
 EAP-004 defines engineering architecture for:
 
-- Interpretation Readiness and Interpretation Not Ready;
-- Interpretation Activity and its bounded activity meaning;
-- determinate and indeterminate Interpretation Outcomes;
-- Existing Identity Determined and New Identity Establishment Eligible;
-- Existing Identity Reuse;
-- Canonical Identity Establishment Eligibility and Canonical Identity Establishment Decision;
-- Canonical Identity Established and Canonical Identity Not Established;
-- Identity Publication Eligibility and Identity Publication Ineligibility;
-- Instrument Identity Contract availability and unavailability;
-- independent semantic sufficiency representations for Economic Instrument, Listed Instrument and Derivative Contract;
-- Provider and Acquisition Provenance preservation;
-- approved universe-context and identity-layer-context preservation;
-- historical identity continuity preservation;
-- boundary conformance and boundary violations;
-- non-sensitive observability;
-- engineering verification obligations; and
-- termination before the ADP-001D Instrument-to-Observation boundary.
+- Interpretation Admission consumption;
+- Interpretation Processing Status;
+- Instrument interpretation activity and Interpretation Outcome;
+- Canonical Identity Decision;
+- Provider Mapping Status;
+- Economic Instrument, Listed Instrument, and Derivative Contract identity layers;
+- identity-layer semantic sufficiency;
+- existing identity reuse and new canonical identity establishment;
+- Provider identity-scope preservation;
+- canonical identity continuity;
+- Provider mapping and cross-Provider reconciliation evidence;
+- ambiguity, unsupported meaning, insufficiency, non-establishment, and deferral;
+- Instrument Identity Contract publication eligibility;
+- Canonical Instrument Catalogue publication eligibility;
+- product-neutrality and downstream restrictions;
+- provenance, evidence, security, and observability; and
+- engineering verification.
 
-## 3. Engineering Governance
+# 5. Explicit Exclusions
 
-This Draft is an engineering translation of ADP-001J Version 1.0. It introduces no new architectural concept, semantic owner, domain dependency, physical communication authority, runtime behavior or implementation decision.
+EAP-004 does not define or authorize:
 
-Canonical repository architecture remains authoritative. EAP-004 shall be interpreted consistently with ADP-001J, EAP-003, EAP-002, EAP-001 and their approved dependencies. Any conflict remains an architecture matter and shall not be resolved by engineering discretion.
+- Provider acquisition, Provider Catalogue mutation, Submission Eligibility, EAIC-002 delivery, or contract validation;
+- parsing, matching, ranking, scoring, fuzzy logic, normalization, enrichment, deduplication, repair, algorithms, thresholds, or automated resolution;
+- runtime sequencing, service workflows, APIs, schemas, payloads, transport, persistence, caches, databases, repositories, queues, or deployment;
+- a new Instrument lifecycle state or relationship type;
+- mapping-effective-time mechanics or lifecycle-transition behavior not already governed;
+- product universe membership, Product Eligibility, product consumption, strategy, or execution selection;
+- Observation formation, factual attribution, Market Facts, Validation, Risk, Execution, Portfolio, Event, or Audit meaning;
+- implementation, production code, or runtime behavior; or
+- EDD-004 drafting.
 
-## 4. Explicit Out of Scope
+# 6. Ownership and Dependency Direction
 
-EAP-004 shall not define or authorize:
-
-- Provider communication, Provider acquisition or authentication;
-- Provider Submission Eligibility or ADP-001C Architectural Admissibility;
-- physical movement or runtime Provider-to-Instrument communication;
-- APIs, schemas, fields, payloads, serialization or transport;
-- matching algorithms, symbol parsing, fuzzy matching, scoring, ranking, conflict-resolution algorithms or identity-generation algorithms;
-- Provider Mapping establishment, Mapping persistence, Mapping reconciliation or Mapping effective-time mechanics;
-- Lifecycle transitions, Lifecycle state machines, successor processing or continuous futures;
-- Observation attribution, Observation Acceptance, Observation construction or Market Facts;
-- Validation, Risk, Execution, Portfolio, Event or Audit meaning;
-- databases, persistence, caching, scheduling, retries or runtime orchestration;
-- EDD, implementation or code; and
-- EAP-005.
-
-EAP-004 shall not reinterpret Provider meaning, create canonical identity from availability, force an identity determination, or represent a semantic boundary as executable behavior.
-
-## 5. Canonical Dependencies
-
-The following documents are mandatory dependencies for this Draft:
-
-- Platform Constitution;
-- ADP-001A — Swing Phase 1 Market Data Inventory;
-- ADP-001B — Instrument Identity Architecture;
-- ADP-001C — Provider → Instrument Contract;
-- ADP-001D — Instrument → Observation Contract;
-- ADP-001E — Observation Domain Architecture;
-- ADP-001H — Provider Instrument Master Acquisition Capability and Contract;
-- ADP-001I — Approved Instrument Universe and Reference Semantics Architecture;
-- ADP-001J Version 1.0 — Instrument Interpretation and Canonical Identity Establishment Architecture;
-- EAP-001 Version 1.0 — Configuration-to-Provider Authenticated Context Engineering Architecture;
-- EAP-002 Version 1.0 — Provider Instrument Master Acquisition Engineering Architecture;
-- EAP-003 Version 1.0 — Provider-to-Instrument Architectural Admissibility Engineering Architecture;
-- Instrument Domain Architecture;
-- Provider Domain Architecture;
-- Domain Ownership Matrix;
-- DOMAIN_DEPENDENCY_MATRIX.md;
-- ENGINE_OWNERSHIP;
-- DATA_FLOW;
-- ADL-001 where applicable;
-- the applicable Document Register; and
-- approved architecture and engineering indexes.
-
-## 6. Ownership and Domain Boundary
-
-The primary governing architecture is ADP-001J. Instrument remains the sole semantic owner of Instrument Interpretation, canonical identity and the Instrument Identity Contract.
-
-| Responsibility | Owner |
+| Engineering meaning | Semantic owner |
 | --- | --- |
-| Provider records, assertions and Provider meaning | Provider |
-| Provider Provenance and Acquisition Provenance | Provider |
-| EAP-003 Instrument Interpretation Entry Contract | Instrument-owned boundary derived from ADP-001C |
-| Interpretation Readiness | Instrument |
-| Interpretation Activity | Instrument |
-| Interpretation Outcome | Instrument |
-| Economic Instrument identity | Instrument |
-| Listed Instrument identity | Instrument |
-| Derivative Contract identity | Instrument |
-| Existing Identity Reuse | Instrument |
-| Canonical Identity Establishment | Instrument |
-| Identity Publication Eligibility | Instrument |
-| Instrument Identity Contract | Instrument |
-| Observation attribution | Observation through ADP-001D, outside EAP-004 |
+| Provider Records, Provider dispositions, and Provider provenance | Provider |
+| EAIC-002 receipt, validation, and Interpretation Admission | Instrument boundary |
+| Instrument interpretation and all four dimensions | Instrument |
+| Canonical Instrument identity and identity layers | Instrument |
+| Provider mapping and cross-Provider reconciliation | Instrument |
+| Instrument relationships and governed lifecycle meaning | Instrument |
+| Instrument Identity Contract and Canonical Instrument Catalogue | Instrument |
+| Product universe, Product Eligibility, and product consumption | Each product, outside EAP-004 |
+| Factual attribution and governed Observation | Observation, outside EAP-004 |
 
-Engineering representation shall not transfer semantic ownership. No shared semantic ownership or new domain dependency is introduced.
-
-## 7. Engineering Boundary
+The engineering dependency direction is:
 
 ```text
-EAP-003 Instrument Interpretation Entry Contract
-                         ↓
-              EAP-004 Interpretation Readiness
-                         ↓
-              EAP-004 Interpretation Activity
-                         ↓
-                 Interpretation Outcome
-          ┌──────────────┼────────────────────┐
-          ↓              ↓                    ↓
- Existing Identity   New Identity        Indeterminate Outcome
- Determined          Establishment       ├─ No Determination
-          │           Eligible            ├─ Ambiguous Determination
-          ↓              ↓                ├─ Conflicting Determination
- Existing Identity  Canonical Identity   ├─ Insufficient Semantic Information
- Reuse              Establishment        └─ Unsupported Identity Context
-          │          Eligibility                  ↓
-          │              ↓               Instrument Identity Contract Availability: Unavailable
-          │   Canonical Identity Establishment       ↓
-          │          Decision                    No Instrument Identity Contract
-          │              ├─ Established
-          │              └─ Not Established ──── Instrument Identity Contract Availability: Unavailable
-          ↓              ↓
- Identity Publication Eligibility
-          ↓
- Instrument Identity Contract Availability: Available
-          ↓
- Instrument Identity Contract
-
-EAP-004 terminates before ADP-001D Instrument-to-Observation attribution.
+EAP-003 ACCEPTED_FOR_INTERPRETATION
+                    ↓
+Interpretation Processing Status
+                    ↓
+Interpretation Outcome
+                    ↓
+Canonical Identity Decision
+                    ↓
+Provider Mapping Status
+                    ↓
+Instrument Identity Contract and
+Canonical Instrument Catalogue publication
+                    ↓
+EAP-005 factual attribution boundary
 ```
 
-This is an engineering contract boundary only. It shall not be represented as a runtime sequence, executable state machine, physical data movement, service workflow or implementation orchestration. The Instrument Identity Contract Availability Contract remains entirely within the EAP-004 publication boundary and only determines whether the Instrument Identity Contract is available. Existing Identity Determined proceeds through Existing Identity Reuse and Identity Publication Eligibility; New Identity Establishment Eligible proceeds through Canonical Identity Establishment Eligibility, Decision and, only when established, Identity Publication Eligibility. An available result then permits the Instrument Identity Contract to cross the EAP-004 boundary as the sole downstream semantic contract. An unavailable result, including for indeterminate outcomes or Canonical Identity Not Established, produces no Instrument Identity Contract and no downstream semantic publication.
+The ordering does not require synchronous completion and shall not collapse the four dimensions into one workflow status.
 
-## 8. Upstream Dependency
+# 7. Interpretation Input Contract
 
-The immediate upstream dependency is EAP-003 Version 1.0. EAP-004 may consume only an EAP-003 Instrument Interpretation Entry Contract that communicates Architectural Admissibility, the bounded Provider-owned Submission Unit association, preserved Provider and Acquisition Provenance, retained uncertainty and ambiguity, admissibility evidence, limitations and non-sensitive traceability.
+The input contract shall consume only:
 
-EAP-004 shall not consume raw Provider payloads, Provider internals, transport objects, implementation exceptions, Authentication Material, Submission Ineligible units or information bypassing EAP-003. EAP-003 Architectural Admissibility remains distinct from Interpretation Readiness and does not itself imply interpretation success.
+- one EAIC-002 Submission Unit with `ACCEPTED_FOR_INTERPRETATION`;
+- its immutable Provider, dataset, partition, snapshot, record, and unit identity associations;
+- preserved Provider assertions and Provider vocabulary;
+- Provider and acquisition provenance;
+- submission, receipt, validation, and admission evidence;
+- retained missingness, limitations, ambiguity, duplicate, and inconsistency evidence;
+- safe content or immutable content reference; and
+- applicable approved Instrument context.
 
-## 9. Downstream Boundary
+The input contract shall not contain raw Provider payloads, SDK objects, credentials, transport-private state, Provider-created canonical meaning, product eligibility, Observation facts, or business judgment.
 
-The Instrument Identity Contract Availability Contract remains entirely within the EAP-004 publication boundary. Its sole responsibility is to determine whether an Instrument Identity Contract is available. It shall not become the downstream semantic contract presented to ADP-001D.
+Instrument shall preserve Provider-owned identity scopes and shall not globalize Provider Catalogue Partition Identity, Provider Snapshot Identity, Provider Record Identity, or Submission Unit identity.
 
-The only semantic contract crossing the EAP-004 boundary toward ADP-001D is the Instrument Identity Contract. It may cross only when Instrument Identity Contract Available, Identity Publication Eligibility and an approved determinate publication path have all been established. Instrument Identity Contract Unavailable shall produce no Instrument Identity Contract, no downstream identity publication and no downstream semantic contract. EAP-004 shall not define Instrument-side consumer behavior, Observation behavior or any downstream domain behavior.
+# 8. Interpretation Processing Status Contract
 
-## 10. Engineering Contracts
+Exactly one processing status shall exist:
 
-The following are semantic engineering contracts only. They shall not become APIs, schemas, payloads, fields, serialized objects, runtime interfaces or persistence structures.
+- `NOT_STARTED`;
+- `PENDING`; or
+- `COMPLETED`.
 
-### 10.1 Interpretation Input Contract
+`NOT_STARTED` means Instrument interpretation has not begun.
 
-Represents the EAP-003 Instrument Interpretation Entry Contract and its preserved Provider meaning, Provider Provenance, Acquisition Provenance, approved universe context, identity-layer context, uncertainty, ambiguity and non-sensitive admissibility evidence.
+`PENDING` means the bounded interpretation activity began but has not completed.
 
-### 10.2 Interpretation Readiness Contract
+`COMPLETED` means the bounded interpretation activity completed.
 
-Represents whether the EAP-004 engineering preconditions for Interpretation Activity are present. Interpretation Readiness requires that an EAP-003 Instrument Interpretation Entry Contract exists, Architectural Admissibility has already been satisfied upstream, required provenance associations are present, approved Instrument evaluation context exists, approved universe context exists, identity-layer evaluation context exists, and the bounded interpretation may legitimately evaluate the presence, absence, ambiguity, conflict or support of semantic categories. Positive semantic sufficiency is not a readiness prerequisite. Interpretation Readiness is internal Instrument meaning, distinct from ADP-001C Architectural Admissibility and EAP-003 entry eligibility, and creates no second admissibility authority. Interpretation Not Ready is limited to absent upstream contract, ownership context, evaluation context or boundary conformance.
+Technical receipt, contract validation, and `ACCEPTED_FOR_INTERPRETATION` shall not themselves cause `PENDING` or `COMPLETED`.
 
-### 10.3 Interpretation Activity Contract
+Processing status establishes no Interpretation Outcome, canonical identity, Provider mapping, product eligibility, or Instrument lifecycle.
 
-Represents the bounded Instrument-owned engineering activity of interpreting an eligible input. It does not define runtime behavior, algorithms, matching, orchestration or identity results.
+# 9. Interpretation Outcome Contract
 
-### 10.4 Interpretation Outcome Contract
+When processing status is `COMPLETED`, exactly one mutually exclusive outcome shall exist:
 
-Represents exactly one Interpretation Outcome for one bounded interpretation. The only determinate outcomes are Existing Identity Determined and New Identity Establishment Eligible. The only indeterminate outcomes are No Determination, Ambiguous Determination, Conflicting Determination, Insufficient Semantic Information and Unsupported Identity Context.
-
-### 10.5 Existing Identity Reuse Contract
-
-Represents Existing Identity Reuse only after Existing Identity Determined and continuity conformance establish that an existing canonical identity applies. Existing Identity Determined shall not automatically become Existing Identity Reuse.
-
-### 10.6 New Identity Establishment Eligibility Contract
-
-Represents New Identity Establishment Eligible as a determinate Interpretation Outcome. It does not establish canonical identity and does not itself establish Canonical Identity Establishment Eligibility.
-
-### 10.7 Canonical Identity Establishment Eligibility Contract
-
-Represents the separate Instrument-owned eligibility meaning that a Canonical Identity Establishment Decision may be considered after New Identity Establishment Eligible and applicable semantic sufficiency evaluation.
-
-### 10.8 Canonical Identity Establishment Decision Contract
-
-Represents the Instrument-owned decision that may result in Canonical Identity Established or Canonical Identity Not Established. Canonical Identity Not Established preserves the applicable reason, establishes no canonical identity, produces no Instrument Identity Contract, does not imply Instrument non-existence, does not become No Determination retroactively and does not alter Provider meaning.
-
-### 10.9 Identity Indeterminacy Contract
-
-Represents No Determination, Ambiguous Determination, Conflicting Determination, Insufficient Semantic Information or Unsupported Identity Context. It shall not produce an Instrument Identity Contract.
-
-### 10.10 Identity-Layer Semantic Sufficiency Contract
-
-Represents semantic sufficiency independently for Economic Instrument, Listed Instrument and Derivative Contract. It preserves every conceptual category established by ADP-001J and does not define fields, formats, parsing, matching, thresholds, algorithms or implementation.
-
-### 10.11 Provenance Preservation Contract
-
-Preserves Provider Provenance and Acquisition Provenance without transferring Provider ownership or exposing sensitive values.
-
-### 10.12 Identity Continuity Contract
-
-Represents preserved historical identity continuity and continuity context without defining Mapping mechanics or Lifecycle transition mechanics.
-
-### 10.13 Identity Publication Eligibility Contract
-
-Represents whether approved Instrument meaning may be presented through the Instrument Identity Contract after a determinate outcome and applicable identity decision. It is established before the internal Instrument Identity Contract Availability Contract and remains distinct from that availability determination.
-
-### 10.14 Instrument Identity Contract
-
-Represents only the Instrument-owned semantic contract containing approved canonical Instrument meaning, identity layer, approved classification where already established, approved relationships where already established, approved universe context, applicable historical or effective context where already required, and provenance association without ownership transfer. It is the only semantic contract that may cross the EAP-004 boundary toward ADP-001D. It shall not represent its own availability, and shall not contain raw Provider payloads or sensitive values.
-
-### 10.15 Instrument Identity Contract Availability Contract
-
-Represents exactly one determination: Instrument Identity Contract Available or Instrument Identity Contract Unavailable. It remains downstream of Identity Publication Eligibility, remains entirely within the EAP-004 publication boundary, and is distinct from the Instrument Identity Contract. It shall not be presented to ADP-001D as a semantic contract.
-
-### 10.16 Boundary Violation Contract
-
-Represents a prohibited boundary condition, ownership violation, missing prerequisite, unsupported inference, attempted bypass or prohibited information crossing the EAP-004 boundary. It does not authorize remediation or reinterpretation.
-
-## 11. Engineering Representations
-
-The following representations preserve one-to-one engineering meaning. They are not implementation states or runtime state-machine instructions.
-
-| Engineering representation | Meaning |
+| Outcome | Instrument-owned engineering meaning |
 | --- | --- |
-| `INTERPRETATION_READY` | EAP-004 preconditions permit Interpretation Activity to be represented. |
-| `INTERPRETATION_NOT_READY` | EAP-004 preconditions do not permit Interpretation Activity to be represented. |
-| `INTERPRETATION_NOT_STARTED` | Interpretation Activity has not been represented as begun. |
-| `INTERPRETATION_ACTIVE` | Interpretation Activity is represented as active within the bounded engineering contract. |
-| `EXISTING_IDENTITY_DETERMINED` | Determinate outcome establishing that an existing canonical identity applies to the bounded context. |
-| `NEW_IDENTITY_ESTABLISHMENT_ELIGIBLE` | Determinate outcome indicating that a new identity decision may be considered. |
-| `NO_DETERMINATION` | Indeterminate outcome in which no identity determination is established; it does not imply non-existence. |
-| `AMBIGUOUS_DETERMINATION` | Indeterminate outcome preserving materially plausible unresolved alternatives. |
-| `CONFLICTING_DETERMINATION` | Indeterminate outcome preserving conflicting identity meaning. |
-| `INSUFFICIENT_SEMANTIC_INFORMATION` | Indeterminate outcome where a required semantic category is absent or indistinguishable. |
-| `UNSUPPORTED_IDENTITY_CONTEXT` | Indeterminate outcome where the approved identity context is not supported for determination. |
-| `EXISTING_IDENTITY_REUSED` | Existing identity reuse after Existing Identity Determined and continuity conformance. |
-| `CANONICAL_IDENTITY_ESTABLISHMENT_ELIGIBLE` | Separate eligibility meaning for considering a Canonical Identity Establishment Decision. |
-| `CANONICAL_IDENTITY_ESTABLISHED` | Decision result establishing a new canonical identity after positive sufficiency. |
-| `CANONICAL_IDENTITY_NOT_ESTABLISHED` | Decision result preserving the applicable reason where new identity conditions were not positively satisfied; no identity contract is available. |
-| `IDENTITY_PUBLICATION_ELIGIBLE` | Approved Instrument meaning may be presented through the Instrument Identity Contract. |
-| `IDENTITY_PUBLICATION_INELIGIBLE` | Approved Instrument meaning may not be presented through the Instrument Identity Contract. |
-| `INSTRUMENT_IDENTITY_CONTRACT_AVAILABLE` | Instrument Identity Contract is available after applicable determinate processing and publication eligibility. |
-| `INSTRUMENT_IDENTITY_CONTRACT_UNAVAILABLE` | No Instrument Identity Contract is available, including for indeterminate outcomes or Canonical Identity Not Established. |
-| `PROVENANCE_PRESERVED` | Provider and Acquisition Provenance remain associated without sensitive disclosure. |
-| `UNIVERSE_CONTEXT_PRESERVED` | Approved universe context remains associated. |
-| `IDENTITY_LAYER_CONTEXT_PRESERVED` | Applicable identity-layer context remains associated. |
-| `HISTORICAL_IDENTITY_CONTINUITY_PRESERVED` | Approved historical identity continuity remains associated. |
-| `BOUNDARY_CONFORMANT` | The engineering contract conforms to the EAP-004 boundary. |
-| `BOUNDARY_VIOLATION` | A prohibited condition, ownership violation, bypass or unsupported information crossing is represented. |
+| `INTERPRETED` | A bounded supported Instrument semantic interpretation was established. |
+| `UNINTERPRETED` | Processing completed without sufficient semantic interpretation. |
+| `AMBIGUOUS` | More than one materially valid Instrument interpretation remains. |
+| `UNSUPPORTED` | Current canonical Instrument architecture does not support interpretation of the submitted Provider assertion. |
 
-Semantic representations are not a runtime sequence and shall not be interpreted as executable lifecycle behavior.
+An Interpretation Outcome shall not alter Provider information, Provider dispositions, Submission Eligibility, Provider availability, product membership, or business judgment.
 
-## 12. Identity-Layer Semantic Sufficiency
+Provider `AMBIGUOUS` evidence is not automatically Instrument `AMBIGUOUS`. Unrecognized Provider vocabulary is not automatically `UNSUPPORTED`.
 
-EAP-004 represents semantic sufficiency independently for each identity layer using the conceptual categories established by ADP-001J.
+# 10. Canonical Identity Decision Contract
 
-### 12.1 Economic Instrument
+Exactly one decision shall exist:
 
-The representation shall preserve: approved economic subject; approved instrument class; approved universe-membership context; semantic distinction from existing Economic Instruments; applicable identity continuity meaning; required provenance; absence of unresolved ambiguity; and absence of unresolved conflict.
+- `NOT_EVALUATED`;
+- `CANONICAL_IDENTITY_ESTABLISHED`; or
+- `CANONICAL_IDENTITY_NOT_ESTABLISHED`.
 
-### 12.2 Listed Instrument
+`NOT_EVALUATED` preserves that the bounded identity evaluation has not begun or remains deferred. It may coexist with `NOT_STARTED`, `PENDING`, or a completed `INTERPRETED` outcome before identity evaluation.
 
-The representation shall preserve: one approved Economic Instrument association; approved venue or listing context; semantic distinction from other Listed Instruments; applicable identity-layer and continuity context; approved role context where applicable; required provenance; absence of unresolved ambiguity; and absence of unresolved conflict.
+`CANONICAL_IDENTITY_ESTABLISHED` requires:
 
-### 12.3 Derivative Contract
+- processing status `COMPLETED`;
+- Interpretation Outcome `INTERPRETED`;
+- sufficient approved Instrument-owned identity evidence;
+- no unresolved ambiguity preventing one identity decision; and
+- an Instrument-owned decision to reuse an existing identity or establish a new identity.
 
-The representation shall preserve: one approved Listed Instrument association; approved underlying relationship; contract category; contract-expiry identity meaning; semantic distinction from every other expiry; approved universe and role context; required provenance; absence of unresolved ambiguity; and absence of unresolved conflict.
+Once identity evaluation is completed, `UNINTERPRETED`, `AMBIGUOUS`, or `UNSUPPORTED` requires `CANONICAL_IDENTITY_NOT_ESTABLISHED`.
 
-Failure to establish any required category produces an Indeterminate Outcome. Missing meaning shall never be filled through inference, Provider vocabulary, symbols, tokens, price behaviour, availability or implementation convenience.
+`CANONICAL_IDENTITY_NOT_ESTABLISHED` preserves the applicable reason, creates no identity, does not imply Instrument non-existence, does not alter Provider meaning, and does not create product exclusion. It is not an Interpretation Outcome.
 
-## 13. Engineering Obligations
+# 11. Provider Mapping Status Contract
 
-Engineering shall:
+Exactly one mapping status shall exist:
 
-- preserve Provider meaning, Provider Provenance and Acquisition Provenance;
-- preserve approved universe context and identity-layer context;
-- preserve historical identity continuity;
-- keep Interpretation Readiness distinct from ADP-001C Architectural Admissibility and EAP-003 entry eligibility;
-- establish Interpretation Readiness without requiring positive semantic sufficiency;
-- evaluate missing semantic categories during Interpretation Activity, allowing Insufficient Semantic Information, Ambiguous Determination, Conflicting Determination or Unsupported Identity Context;
-- keep Interpretation Activity distinct from Interpretation Outcome;
-- keep determinate outcomes distinct from indeterminate outcomes;
-- keep reuse, establishment eligibility, establishment decision and publication eligibility distinct;
-- represent Canonical Identity Not Established without converting it to an Interpretation Outcome;
-- keep Mapping and Lifecycle mechanics outside EAP-004;
-- preserve boundary conformance and violations; and
-- terminate before ADP-001D engineering.
+- `NOT_EVALUATED`;
+- `MAPPING_PENDING`;
+- `MAPPED`;
+- `NOT_MAPPED`;
+- `MAPPING_AMBIGUOUS`; or
+- `MAPPING_UNSUPPORTED`.
 
-## 14. Engineering Observability
+Provider Mapping Status is independent from Canonical Identity Decision.
 
-Observability shall expose only non-sensitive engineering meaning sufficient to explain:
+- a canonical Instrument may exist without a current Provider mapping;
+- `MAPPED` requires a canonical identity target;
+- `MAPPING_PENDING` may coexist with `CANONICAL_IDENTITY_ESTABLISHED`;
+- `NOT_MAPPED` does not invalidate canonical identity;
+- `MAPPING_AMBIGUOUS` preserves unresolved alternatives;
+- `MAPPING_UNSUPPORTED` preserves current mapping-architecture limits;
+- Provider mapping shall not create canonical identity; and
+- one Provider mapping shall not establish another Provider’s mapping.
 
-- Interpretation Readiness or Interpretation Not Ready;
-- Interpretation Activity representation;
-- exactly one Interpretation Outcome;
-- semantic sufficiency by identity layer;
-- preserved Provider and Acquisition Provenance presence;
-- preserved universe and identity-layer context;
-- preserved historical identity continuity;
-- Existing Identity Reuse, Canonical Identity Establishment Eligibility and Decision;
-- Canonical Identity Established or Canonical Identity Not Established and its applicable non-sensitive reason;
-- Identity Publication Eligibility or Ineligibility;
-- Instrument Identity Contract Available or Instrument Identity Contract Unavailable; and
-- boundary conformance or violation.
+Cross-Provider reconciliation remains Instrument-owned. It shall preserve each Provider’s evidence and provenance separately, prohibit silent Provider preference, and establish no equivalence without sufficient approved Instrument evidence.
 
-Observability shall not expose raw Provider payloads, sensitive values, implementation details, transport details, APIs, schemas, persistence details or downstream semantic outcomes.
+# 12. Dimension Coexistence and Terminal Meaning
 
-## 15. Downstream Restrictions
+The following coexistence is expressly permitted:
 
-The Instrument Identity Contract Availability Contract remains internal to the EAP-004 publication boundary. Only an approved determinate publication path that establishes Identity Publication Eligibility and Instrument Identity Contract Available may permit the Instrument Identity Contract to cross the EAP-004 downstream boundary toward the existing ADP-001D boundary. Instrument Identity Contract Unavailable shall produce no Instrument Identity Contract, no downstream identity publication and no downstream semantic contract.
+- `NOT_STARTED` with identity `NOT_EVALUATED` and mapping `NOT_EVALUATED`;
+- `PENDING` with identity `NOT_EVALUATED` and mapping `NOT_EVALUATED`;
+- `COMPLETED` and `INTERPRETED` while identity remains `NOT_EVALUATED`;
+- `CANONICAL_IDENTITY_ESTABLISHED` with mapping `NOT_EVALUATED`;
+- `CANONICAL_IDENTITY_ESTABLISHED` with `MAPPING_PENDING`;
+- `CANONICAL_IDENTITY_ESTABLISHED` with `MAPPED`;
+- `CANONICAL_IDENTITY_ESTABLISHED` with `NOT_MAPPED`;
+- `CANONICAL_IDENTITY_ESTABLISHED` with `MAPPING_AMBIGUOUS`; and
+- `CANONICAL_IDENTITY_ESTABLISHED` with `MAPPING_UNSUPPORTED`.
 
-EAP-004 shall define no Instrument consumer behavior, Observation behavior, Market behavior, Validation behavior, Risk behavior, Execution behavior, Portfolio behavior, Event behavior or Audit behavior. No downstream domain may consume EAP-004 contracts directly except through the approved Instrument Identity Contract boundary.
+A terminal value is terminal only for the identified bounded evaluation. It does not create a permanent prohibition, Instrument lifecycle state, Provider disposition, product-eligibility state, or runtime reassessment authority.
 
-## 16. Mandatory Engineering Question Set
+# 13. Identity-Layer Semantic Sufficiency
 
-The following questions are reproduced exactly and answered one-to-one.
+Canonical identity shall preserve three distinct layers:
 
-### 1. What engineering contract represents Instrument Interpretation Readiness?
+## 13.1 Economic Instrument
 
-The Interpretation Readiness Contract represents whether EAP-004 preconditions permit Interpretation Activity. It is internal Instrument meaning and creates no second admissibility authority.
+Sufficiency requires approved meaning for the economic subject, instrument class, distinction from existing Economic Instruments, continuity, provenance, and absence of unresolved ambiguity or conflict.
 
-### 2. How is Interpretation Readiness kept distinct from ADP-001C Architectural Admissibility and EAP-003 entry eligibility?
+## 13.2 Listed Instrument
 
-ADP-001C Architectural Admissibility is the approved architectural determination that permits interpretation to begin. EAP-003 entry eligibility is the engineering boundary output that carries that determination. Interpretation Readiness is the subsequent EAP-004 internal Instrument meaning for whether Interpretation Activity may be represented. None implies interpretation success, identity or publication.
+Sufficiency requires one approved Economic Instrument association, venue or listing context, distinction from other Listed Instruments, applicable relationship and continuity meaning, provenance, and absence of unresolved ambiguity or conflict.
 
-### 3. What engineering contract represents Instrument Interpretation Activity?
+## 13.3 Derivative Contract
 
-The Interpretation Activity Contract represents the bounded Instrument-owned engineering activity of interpreting an eligible input without defining runtime behavior, algorithms or implementation.
+Sufficiency requires one approved Listed Instrument association, underlying relationship, contract category, contract-expiry identity meaning, distinction from every other contract, applicable role context, provenance, and absence of unresolved ambiguity or conflict.
 
-### 4. What exact preconditions permit Interpretation Activity?
+These are semantic categories, not fields, parsing rules, algorithms, scores, or thresholds.
 
-An EAP-003 Instrument Interpretation Entry Contract must be present; Architectural Admissibility must already have been satisfied upstream; required provenance associations must be present; approved Instrument evaluation context, approved universe context and identity-layer evaluation context must exist; the bounded interpretation must be able to legitimately evaluate the presence, absence, ambiguity, conflict or support of semantic categories; and no boundary violation may prevent readiness. Positive semantic sufficiency is not a readiness prerequisite. Interpretation Not Ready is limited to an absent upstream contract, ownership context, evaluation context or required boundary conformance. Missing semantic categories are evaluated during Interpretation Activity and may produce Insufficient Semantic Information, Ambiguous Determination, Conflicting Determination or Unsupported Identity Context.
+Sufficiency shall not be established by product membership, Provider vocabulary, token presence, symbol presence, row order, price behavior, product demand, or implementation convenience.
 
-### 5. What information may enter the EAP-004 boundary?
+# 14. Existing Identity Reuse and New Identity Establishment
 
-Only an EAP-003-conforming Instrument Interpretation Entry Contract containing the bounded Provider-owned association, preserved Provider and Acquisition Provenance, approved universe and identity-layer context, retained uncertainty and ambiguity, admissibility evidence and non-sensitive traceability may enter.
+An existing canonical identity shall be reused when approved semantic continuity is established. Provider reference, symbol, snapshot, row, or token change alone shall not create a new identity.
 
-### 6. What information is prohibited from entering the EAP-004 boundary?
+A new identity may be established only when positive semantic sufficiency exists for the applicable layer and the new identity remains distinguishable from existing identities.
 
-Raw Provider payloads, Provider internals, transport objects, sensitive values, Authentication Material, implementation exceptions, Mapping mechanics, Lifecycle mechanics, information bypassing EAP-003, and any information that would introduce Observation, Market, Validation, Risk, Execution, Portfolio, Event or Audit meaning are prohibited.
+Provider record presence, Submission Eligibility, Interpretation Admission, or `INTERPRETED` alone shall not establish canonical identity.
 
-### 7. What engineering contract represents Interpretation Outcome?
+Provider record addition, absence, change, token reuse, or symbol change remains evidence for Instrument evaluation and shall not mutate canonical or historical identity automatically.
 
-The Interpretation Outcome Contract represents exactly one determinate or indeterminate Interpretation Outcome for one bounded interpretation.
+# 15. Instrument Identity Contract
 
-### 8. What determinate outcomes are permitted?
+An Instrument Identity Contract may be published only when:
 
-Only Existing Identity Determined and New Identity Establishment Eligible are determinate outcomes.
+- Canonical Identity Decision is `CANONICAL_IDENTITY_ESTABLISHED`;
+- the applicable identity-layer meaning and continuity are established;
+- required evidence and provenance are attributable;
+- unresolved ambiguity does not invalidate the bounded identity decision;
+- security and sensitive-data exclusions are satisfied; and
+- separately required publication authority exists.
 
-### 9. What indeterminate outcomes are permitted?
+The contract may publish approved canonical identity, classification, relationships, continuity, and applicable Provider mapping meaning through Instrument-owned semantics.
 
-Only No Determination, Ambiguous Determination, Conflicting Determination, Insufficient Semantic Information and Unsupported Identity Context are indeterminate outcomes.
+It shall not publish raw Provider payloads, SDK representations, credentials, transport-private state, Provider dispositions as Instrument meaning, or product eligibility.
 
-### 10. How is Successful Determination prevented from becoming an independent outcome?
+# 16. Canonical Instrument Catalogue Contract
 
-Successful Determination is represented only as a collective classification of Existing Identity Determined and New Identity Establishment Eligible. It is not an independent engineering representation or contract.
+The Canonical Instrument Catalogue is a product-neutral Instrument-owned publication of approved:
 
-### 11. What represents Existing Identity Determined?
+- canonical Instrument identities;
+- canonical classifications;
+- canonical relationships;
+- governed lifecycle meaning;
+- identity continuity;
+- Provider mappings; and
+- traceable evidence associations.
 
-`EXISTING_IDENTITY_DETERMINED` represents the determinate outcome that an existing canonical identity applies to the bounded context. It does not automatically establish Existing Identity Reuse.
+It is distinct from Provider Catalogue, Provider Snapshots, Provider Records, Provider dispositions, EAIC-002 units and envelopes, product universes, product eligibility lists, Observation stores, and trading-eligibility lists.
 
-### 12. What engineering conditions establish Existing Identity Reuse?
+It may contain canonical Instruments consumed by zero, one, or multiple products and mapped to zero, one, or multiple Providers.
 
-`EXISTING_IDENTITY_REUSED` may be represented only after Existing Identity Determined and continuity conformance establish that the existing canonical identity applies. Provider-reference change alone is insufficient.
+Products shall not write canonical identity, classification, relationship, lifecycle, or Provider mapping meaning into the catalogue.
 
-### 13. What represents New Identity Establishment Eligible?
+This engineering contract defines publication meaning only. It grants no Persistence Authority and defines no physical catalogue implementation.
 
-`NEW_IDENTITY_ESTABLISHMENT_ELIGIBLE` represents the determinate outcome that positive semantic sufficiency may permit a Canonical Identity Establishment Decision. It does not establish canonical identity.
+# 17. Deferral, Ambiguity, and Unsupported Meaning
 
-### 14. How is New Identity Establishment Eligibility kept distinct from Canonical Identity Establishment Eligibility?
+Contract rejection remains an EAP-003 result and shall not become an Interpretation Outcome.
 
-New Identity Establishment Eligible is an Interpretation Outcome. Canonical Identity Establishment Eligibility is a separate Instrument-owned eligibility meaning evaluated afterward and before the Canonical Identity Establishment Decision. Neither is canonical identity.
+Canonical identity deferral is represented only by `NOT_EVALUATED`.
 
-### 15. What engineering contract represents the Canonical Identity Establishment Decision?
+Provider mapping deferral is represented only by `NOT_EVALUATED` or `MAPPING_PENDING` according to the bounded stage.
 
-The Canonical Identity Establishment Decision Contract represents the later Instrument-owned decision that may result in Canonical Identity Established or Canonical Identity Not Established.
+Insufficient identity evidence shall remain explicit, preserve its reason and evidence, establish no identity, and never be converted into a convenient canonical result.
 
-### 16. What represents Canonical Identity Established?
+Cross-Provider reconciliation deferral shall preserve separate Provider evidence, mappings, ambiguity, and conflict without inventing equivalence or lifecycle meaning.
 
-`CANONICAL_IDENTITY_ESTABLISHED` represents the decision result that a new canonical identity has been positively established after New Identity Establishment Eligible, Canonical Identity Establishment Eligibility and applicable semantic sufficiency.
+# 18. Product and Downstream Separation
 
-### 17. What represents Canonical Identity Not Established?
+Canonical identity is independent from Provider mapping, Provider availability, snapshot currentness, product membership, Product Eligibility, Observation availability, Validation result, Risk Approval, execution status, and current product consumption.
 
-`CANONICAL_IDENTITY_NOT_ESTABLISHED` represents the later decision result that required conditions were not positively satisfied. It preserves the applicable non-sensitive reason, establishes no canonical identity, produces no Instrument Identity Contract, does not imply non-existence, does not become No Determination retroactively and does not alter Provider meaning.
+Swing, Intraday, and future products may consume canonical Instruments only through separately approved product-consumption boundaries.
 
-### 18. Why does Canonical Identity Not Established produce no Instrument Identity Contract?
+A product shall not:
 
-Because no canonical identity was established. Identity Publication Eligibility cannot produce an available Instrument Identity Contract without an established canonical identity.
+- alter canonical identity, classification, relationships, lifecycle, or Provider mappings;
+- filter Provider acquisition or delete Provider evidence;
+- consume Provider Catalogue records, EAIC-002 units, or envelopes directly;
+- turn product exclusion into identity non-establishment; or
+- activate another product.
 
-### 19. What represents No Determination?
+EAP-004 output may enter EAP-005 only through the approved Instrument Identity Contract and associated safe provenance. EAP-004 creates no factual attribution or Observation ownership.
 
-`NO_DETERMINATION` represents an indeterminate outcome in which no identity determination is established. It does not imply Instrument non-existence and produces no Instrument Identity Contract.
+# 19. Provenance, Security, Observability, and Auditability
 
-### 20. What represents Ambiguous Determination?
+Engineering evidence shall preserve:
 
-`AMBIGUOUS_DETERMINATION` represents an indeterminate outcome preserving materially plausible unresolved alternatives. It produces no Instrument Identity Contract.
+- EAIC-002 contract version and immutable input associations;
+- admission evidence;
+- status, outcome, identity-decision, and mapping-status evidence;
+- semantic sufficiency and identity continuity evidence;
+- Provider mapping and cross-Provider reconciliation evidence;
+- deferral, ambiguity, unsupported, insufficiency, and non-establishment reasons;
+- Instrument Identity Contract or Canonical Instrument Catalogue publication evidence where separately authorized; and
+- distinct Provider acquisition, EAIC-002 submission, Instrument interpretation, identity, and mapping provenance.
 
-### 21. What represents Conflicting Determination?
+Credentials, tokens, authorization headers, raw Provider payloads, SDK objects, exceptions, and private transport state shall not become Instrument evidence, identity, mapping, logs, errors, or Audit evidence.
 
-`CONFLICTING_DETERMINATION` represents an indeterminate outcome preserving conflicting identity meaning. It produces no Instrument Identity Contract.
+Observability may expose only non-sensitive dimension values, reason classifications, evidence completeness, identity-layer category, publication eligibility, and boundary conformance.
 
-### 22. What represents Insufficient Semantic Information?
+Audit owns the Audit Trail only and does not acquire Instrument or Provider meaning.
 
-`INSUFFICIENT_SEMANTIC_INFORMATION` represents an indeterminate outcome where a required semantic category is absent or indistinguishable. Missing meaning is not filled by inference, Provider vocabulary, symbols, tokens, price behaviour, availability or implementation convenience.
+# 20. Mandatory Engineering Invariants
 
-### 23. What represents Unsupported Identity Context?
+1. Instrument interpretation begins only after EAIC-002 `ACCEPTED_FOR_INTERPRETATION`.
+2. Contract rejection never becomes an Interpretation Outcome.
+3. The four Instrument dimensions remain independent and retain exact cardinality.
+4. Processing status does not establish an Interpretation Outcome.
+5. `INTERPRETED` does not by itself establish canonical identity.
+6. Canonical identity does not by itself establish Provider mapping.
+7. Provider mapping does not create canonical identity.
+8. Product membership does not participate in interpretation, identity, or mapping.
+9. Provider-owned identity scopes remain bounded and never become canonical identity automatically.
+10. Provider information remains Provider-owned throughout interpretation.
+11. Instrument does not silently repair, select, merge, or discard Provider evidence.
+12. Canonical identity remains product-neutral.
+13. Cross-Provider reconciliation remains Instrument-owned and preserves separate provenance.
+14. Provider Snapshot currentness and record change do not create Instrument lifecycle.
+15. Canonical Instrument Catalogue remains distinct from Provider Catalogue and product universes.
+16. Instrument publication creates no product eligibility, Observation acceptance, Validation, Risk, Execution, Portfolio, or trading authority.
+17. EAP-004 remains implementation-neutral and inactive.
+18. No persistence, runtime interpretation, or implementation authority is granted.
+19. EDD-004 remains unauthorized.
 
-`UNSUPPORTED_IDENTITY_CONTEXT` represents an indeterminate outcome where the approved identity context is not supported for determination. It shall not be converted into a supported determination.
+# 21. Engineering Verification
 
-### 24. How is semantic sufficiency represented separately for Economic Instrument, Listed Instrument and Derivative Contract?
+Engineering Verification shall confirm:
 
-The Identity-Layer Semantic Sufficiency Contract represents each layer independently. Economic Instrument preserves approved subject, class, universe membership, distinction, continuity, provenance, and absence of unresolved ambiguity or conflict. Listed Instrument preserves its approved Economic Instrument association, venue or listing, distinction, identity-layer and continuity context, role where applicable, provenance, and absence of unresolved ambiguity or conflict. Derivative Contract preserves its approved Listed Instrument association, underlying relationship, contract category, expiry identity meaning, distinction from every other expiry, universe and role context, provenance, and absence of unresolved ambiguity or conflict.
+- traceability to ADR-009, MIG-001, EAIC-002, DOMAIN-001, ADP-001J, EAP-003 Version 2.0, and ADP-001D;
+- complete removal of active ADP-001C and product-universe identity prerequisites;
+- exact four-dimension values, cardinality, ordering, permitted coexistence, and non-implications;
+- product-neutral identity-layer sufficiency;
+- canonical identity and Provider mapping independence;
+- Provider identity-scope and provenance preservation;
+- Instrument-owned cross-Provider reconciliation;
+- Canonical Instrument Catalogue separation;
+- absence of product eligibility, Observation, Validation, Risk, Execution, Portfolio, Event, or Audit meaning;
+- security, observability, and Audit safety;
+- authority separation and inactive state;
+- metadata, register, links, and repository path consistency; and
+- absence of implementation, persistence, runtime, or EDD-004 authority.
 
-### 25. How are Provider meaning and provenance preserved?
+# 22. Publication Record
 
-Provider meaning, Provider Provenance and Acquisition Provenance remain associated through the Provenance Preservation Contract without transferring ownership or exposing sensitive values.
+Version 2.0 is the approved canonical engineering replacement for EAP-004 Version 1.0 under RC-02 — Engineering Architecture Publication.
 
-### 26. How are Mapping mechanics excluded while Mapping ownership remains recognized?
+Publication establishes engineering architecture only. RC-03 Repository Synchronization and RC-04 Activation Governance remain subsequent and separate. EDD-004 drafting remains prohibited until explicitly authorized after those stages.
 
-EAP-004 preserves that Mapping is Instrument-owned but defines no Mapping establishment, persistence, reconciliation, selection or effective-time mechanics.
+# 23. Related Approved Authority
 
-### 27. How are Lifecycle mechanics excluded while identity continuity remains preserved?
-
-EAP-004 preserves historical identity continuity and approved Lifecycle context while defining no Lifecycle transitions, state machines, successor processing or continuous futures.
-
-### 28. What conditions establish Identity Publication Eligibility?
-
-Identity Publication Eligibility shall be established only after Existing Identity Reuse or Canonical Identity Established, with required provenance and context preserved and no boundary violation. It is followed by the internal Instrument Identity Contract Availability Contract, which then determines exactly one of Instrument Identity Contract Available or Instrument Identity Contract Unavailable. Only the Instrument Identity Contract, never the availability contract, may cross toward ADP-001D as the downstream semantic contract.
-
-### 29. What exactly may the Instrument Identity Contract publish and what must it never publish?
-
-The Instrument Identity Contract is the only semantic contract that may cross toward ADP-001D. It may publish canonical identity meaning, identity layer, approved classification where already established, approved relationships where already established, approved universe context, applicable historical or effective context where already required, and provenance association without ownership transfer. It must never represent its own availability or publish raw Provider payloads, sensitive values, an indeterminate outcome, Canonical Identity Not Established, Observation, Market, Validation, Risk, Execution, Portfolio, Event or Audit meaning. The Instrument Identity Contract Availability Contract shall not be presented as this downstream semantic contract.
-
-### 30. What matters require further architecture rather than Engineering discretion?
-
-Provider communication, acquisition, authentication, Mapping mechanics, Lifecycle mechanics, Observation attribution, downstream domain behavior, APIs, schemas, persistence, runtime orchestration, EDD scope, implementation and any change in ownership, dependency or semantic authority require further approved architecture.
-
-## 17. Mandatory Engineering Invariant Set
-
-1. **Instrument Interpretation has one semantic owner: Instrument.**
-
-2. **Canonical Instrument Identity has one semantic owner: Instrument.**
-
-3. **Engineering representation shall not transfer semantic ownership.**
-
-4. **Provider records, Provider assertions and Provider meaning shall remain owned by Provider.**
-
-5. **EAP-003 entry eligibility shall not imply successful Instrument Interpretation.**
-
-6. **Interpretation Readiness shall remain internal Instrument meaning and shall not create a second admissibility authority.**
-
-7. **Interpretation Readiness shall not imply a determinate outcome.**
-
-8. **Interpretation Activity shall remain distinct from Interpretation Outcome.**
-
-9. **Exactly one Interpretation Outcome shall be represented for one bounded interpretation.**
-
-10. **Existing Identity Determined and New Identity Establishment Eligible shall be the only determinate outcomes.**
-
-11. **No Determination, Ambiguous Determination, Conflicting Determination, Insufficient Semantic Information and Unsupported Identity Context shall be the only indeterminate outcomes.**
-
-12. **Successful Determination shall remain a collective classification and shall not become an independent state.**
-
-13. **Existing Identity Determined shall not automatically become Existing Identity Reuse without continuity conformance.**
-
-14. **New Identity Establishment Eligible shall not establish canonical identity.**
-
-15. **Canonical Identity Establishment Eligibility shall remain distinct from the Canonical Identity Establishment Decision.**
-
-16. **Canonical Identity Established and Canonical Identity Not Established shall remain distinct decision results.**
-
-17. **Canonical Identity Not Established shall produce no Instrument Identity Contract.**
-
-18. **An indeterminate outcome shall produce no Instrument Identity Contract.**
-
-19. **No Determination shall not imply Instrument non-existence.**
-
-20. **Ambiguity shall remain explicit and unresolved.**
-
-21. **Conflicting identity meaning shall remain explicit.**
-
-22. **Insufficient semantic information shall not be filled through inference.**
-
-23. **Unsupported Identity Context shall not be converted into a supported determination.**
-
-24. **Economic Instrument, Listed Instrument and Derivative Contract semantic sufficiency shall remain distinct.**
-
-25. **Provider vocabulary, symbols, tokens, price behaviour and availability shall not establish canonical identity.**
-
-26. **Provider Provenance shall remain preserved.**
-
-27. **Approved universe context shall remain preserved.**
-
-28. **Identity-layer context shall remain preserved.**
-
-29. **Historical identity continuity shall remain preserved.**
-
-30. **Provider Mapping mechanics shall remain outside EAP-004.**
-
-31. **Instrument Lifecycle transition mechanics shall remain outside EAP-004.**
-
-32. **Raw Provider payloads and sensitive values shall not enter EAP-004 contracts.**
-
-33. **No Observation, Market, Validation, Risk, Execution, Portfolio, Event or Audit meaning shall be created by EAP-004.**
-
-34. **EAP-004 shall remain provider-neutral and implementation-neutral.**
-
-35. **EAP-004 shall not authorize Provider communication, Instrument-to-Observation attribution, an EDD, implementation or code.**
-
-## 18. Engineering Verification Obligations
-
-Engineering shall verify consistency with ADP-001J Version 1.0, EAP-003 Version 1.0, EAP-001, EAP-002, the authorized 30 Engineering Questions, the authorized 35 Engineering Invariants, the mandatory EAP-004 review criteria, the Domain Ownership Matrix, DOMAIN_DEPENDENCY_MATRIX.md, ENGINE_OWNERSHIP, DATA_FLOW and all listed canonical dependencies.
-
-Verification shall confirm:
-
-- no second admissibility authority;
-- Interpretation Readiness does not require positive semantic sufficiency;
-- Interpretation Not Ready is limited to missing upstream, ownership, evaluation or boundary context;
-- missing semantic categories are evaluated during Interpretation Activity;
-- exact determinate and indeterminate outcome taxonomy;
-- mutually exclusive outcome meanings;
-- no forced identity determination;
-- no identity publication from indeterminate outcomes;
-- no identity publication from Canonical Identity Not Established;
-- Instrument Identity Contract Availability remains separate from the Instrument Identity Contract;
-- reuse, establishment and publication remain separate;
-- identity-layer semantic sufficiency is complete;
-- no inference-based completion;
-- Provider ownership and provenance are preserved;
-- Mapping is excluded;
-- Lifecycle is excluded;
-- Observation is excluded; and
-- no implementation, EDD or runtime authority exists.
-
-## 19. Mandatory EAP-004 Review Criteria
-
-The independent review shall verify:
-
-1. Interpretation Readiness is not ADP-001C Architectural Admissibility or EAP-003 entry eligibility.
-2. Interpretation Readiness requires upstream contract, ownership, evaluation and conformance context only; positive semantic sufficiency is not required.
-3. Interpretation Not Ready is not substituted for Insufficient Semantic Information.
-4. Interpretation Activity remains distinct from Interpretation Outcome.
-5. The determinate and indeterminate outcome sets are exact and mutually exclusive.
-6. Successful Determination is not an independent state.
-7. Existing Identity Determined remains distinct from Existing Identity Reuse.
-8. New Identity Establishment Eligible remains distinct from Canonical Identity Establishment Eligibility.
-9. Canonical Identity Establishment Eligibility remains distinct from the Decision.
-10. Canonical Identity Not Established produces Instrument Identity Contract Unavailable and no Instrument Identity Contract.
-11. Indeterminate outcomes produce Instrument Identity Contract Unavailable and no Instrument Identity Contract.
-12. Instrument Identity Contract Availability is separate from the Instrument Identity Contract.
-13. Identity Publication Eligibility follows Existing Identity Reuse or Canonical Identity Established only.
-14. Semantic sufficiency is represented independently for all three identity layers.
-15. No required semantic category is filled by inference, Provider vocabulary, symbols, tokens, price behaviour, availability or convenience.
-16. Provider and Acquisition Provenance are preserved without ownership transfer or sensitive disclosure.
-17. Approved universe and identity-layer context remain preserved.
-18. Historical identity continuity remains preserved.
-19. Mapping mechanics and Lifecycle mechanics remain outside EAP-004.
-20. The boundary terminates before ADP-001D.
-21. The exact 30-question set is retained and answered one-to-one.
-22. The exact 35-invariant set is retained.
-23. Instrument Identity Contract Availability remains internal to EAP-004 and is not the downstream semantic contract.
-24. Only the Instrument Identity Contract may cross toward ADP-001D after the approved determinate publication path.
-25. No Observation, Market, Validation, Risk, Execution, Portfolio, Event or Audit meaning is introduced.
-26. No implementation, EDD, Provider communication, commit or push authority is introduced.
-
-## 20. ADR Determination
-
-**ADR Required: No**
-
-EAP-004 translates the already-approved ADP-001J boundary and introduces no new semantic owner, domain dependency, architecture, communication authority or implementation decision. Any departure from the approved ownership, dependency, boundary or scope conditions requires Chief Architect review and may require an ADR.
-
-## 21. Document Register Entry
-
-| Field | Required value |
-| --- | --- |
-| Document ID | EAP-004 |
-| Title | Instrument Interpretation and Canonical Identity Establishment Engineering Architecture |
-| Classification | Engineering Architecture Package |
-| Product | KRONOS Swing |
-| Phase | Phase 1 — Market Data Foundation |
-| Owner | Engineering Architect |
-| Governing ADP | ADP-001J Version 1.0 |
-| Supporting ADPs | ADP-001A, ADP-001B, ADP-001C, ADP-001D, ADP-001E, ADP-001H, ADP-001I |
-| Upstream EAP | EAP-003 Version 1.0 |
-| Version | 0.3 |
-| Status | Draft |
-| Canonical Status | Not Canonical |
-| ADR Required | No |
-| Engineering Impact | None |
-| Runtime Impact | None |
-| EDD Authorization | None |
-| Implementation Authorization | None |
-| Commit Authorization | None |
-| Push Authorization | None |
-| Next Authorized Capability | None |
-| Repository location | `docs/engineering/eap/EAP-004-INSTRUMENT-INTERPRETATION-AND-CANONICAL-IDENTITY-ESTABLISHMENT.md` |
-
-## 22. Authorization Boundaries
-
-| Item | Decision |
-| --- | --- |
-| Official EAP number | EAP-004 confirmed |
-| Original Draft EAP-004 Version 0.1 | Authorized |
-| Reviewed and amended Draft EAP-004 Version 0.2 | Amendments applied |
-| Canonical EAP-004 Version 1.0 | Approved Canonical Engineering Architecture |
-| Interpretation Readiness engineering architecture | Authorized for Draft only |
-| Instrument Interpretation implementation | Not authorized |
-| Provider communication or acquisition | Not authorized |
-| Mapping or normalization | Not authorized |
-| Lifecycle implementation | Not authorized |
-| Observation attribution | Not authorized |
-| EDD | Not authorized |
-| Implementation | Not authorized |
-| Code | Not authorized |
-| EAP-005 | Not authorized |
-| Commit | Not authorized |
-| Push | Not authorized |
-
-## 23. Review History
-
-EAP-004 Draft Version 0.1 was prepared under the authorized Draft instruction. Engineering Architect verification was completed for Draft Version 0.1. Independent Chief Architect review produced CA-EAP004-001, CA-EAP004-002 and CA-EAP004-003. Draft Version 0.2 applied those required amendments. The Chief Architect re-review produced CA-EAP004-004. Draft Version 0.3 applied that required amendment. Engineering Architect verification was completed for Draft Version 0.3. The final Chief Architect review approved canonicalization. EAP-004 Version 1.0 is the Approved Canonical Engineering Architecture.
-
-## 24. Approval Record
-
-**Chief Architect Decision:** Approved
-
-**Original Draft Version:** 0.1
-
-**Reviewed and Amended Draft Version:** 0.2
-
-**Canonical Version:** 1.0
-
-**Engineering Architect Verification:** Complete
-
-**Canonical Status:** Approved Canonical Engineering Architecture
-
-**ADR Required:** No
-
-**EDD Authorization:** None
-
-**Implementation Authorization:** None
-
-**Commit Authorization:** None
-
-**Push Authorization:** None
-
-**Next Authorized Capability:** None
-
-## Related Approved Authority
-
-- [Platform Constitution](../../architecture/platform/PLATFORM-000-CONSTITUTION.md)
-- [ADP-001A — Swing Phase 1 Market Data Inventory](../../architecture/products/swing/SWING-PHASE-1-MARKET-DATA-INVENTORY.md)
-- [ADP-001B — Instrument Identity Architecture](../../architecture/products/swing/SWING-PHASE-1-INSTRUMENT-IDENTITY-ARCHITECTURE.md)
-- [ADP-001C — Provider → Instrument Contract](../../architecture/products/swing/SWING-PHASE-1-PROVIDER-INSTRUMENT-CONTRACT.md)
-- [ADP-001D — Instrument → Observation Contract](../../architecture/products/swing/SWING-PHASE-1-INSTRUMENT-OBSERVATION-CONTRACT.md)
-- [ADP-001E — Observation Domain Architecture](../../architecture/products/swing/SWING-PHASE-1-OBSERVATION-DOMAIN-ARCHITECTURE.md)
-- [ADP-001H — Provider Instrument Master Acquisition Capability and Contract](../../architecture/products/swing/SWING-PHASE-1-PROVIDER-INSTRUMENT-MASTER-ACQUISITION-CAPABILITY-AND-CONTRACT.md)
-- [ADP-001I — Approved Instrument Universe and Reference Semantics Architecture](../../architecture/products/swing/SWING-PHASE-1-APPROVED-INSTRUMENT-UNIVERSE-AND-REFERENCE-SEMANTICS-ARCHITECTURE.md)
-- [ADP-001J Version 1.0 — Instrument Interpretation and Canonical Identity Establishment Architecture](../../architecture/products/swing/SWING-PHASE-1-INSTRUMENT-INTERPRETATION-AND-CANONICAL-IDENTITY-ESTABLISHMENT-ARCHITECTURE.md)
-- [EAP-001 Version 1.0](EAP-001-CONFIGURATION-TO-PROVIDER-AUTHENTICATED-CONTEXT.md)
-- [EAP-002 Version 1.0](EAP-002-PROVIDER-INSTRUMENT-MASTER-ACQUISITION.md)
-- [EAP-003 Version 1.0](EAP-003-PROVIDER-TO-INSTRUMENT-ARCHITECTURAL-ADMISSIBILITY.md)
+- [ADR-009 — Provider-Bounded Instrument Master Acquisition Architecture](../../architecture/platform/domains/provider/ADR-009-PROVIDER-BOUNDED-INSTRUMENT-MASTER-ACQUISITION-ARCHITECTURE.md)
+- [MIG-001 — ADR-009 Coordinated Architecture Migration Package](../../architecture/migrations/MIG-001-ADR-009-COORDINATED-ARCHITECTURE-MIGRATION-PACKAGE.md)
+- [EAIC-002 — Provider → Instrument Submission Contract](../../architecture/interfaces/EAIC-002-PROVIDER-TO-INSTRUMENT-SUBMISSION-CONTRACT.md)
 - [Instrument Domain Architecture](../../architecture/platform/domains/instrument/ARCHITECTURE.md)
-- [Provider Domain Architecture](../../architecture/platform/domains/provider/ARCHITECTURE.md)
-- [Domain Ownership Matrix](../../architecture/platform/DOMAIN_OWNERSHIP_MATRIX.md)
-- [Domain Dependency Matrix](../../architecture/platform/DOMAIN_DEPENDENCY_MATRIX.md)
-- [KRONOS Engine Ownership](../../architecture/ENGINE_OWNERSHIP.md)
-- [Project KRONOS Data Flow](../../architecture/DATA_FLOW.md)
+- [ADP-001J — Instrument Interpretation and Canonical Identity](../../architecture/products/swing/SWING-PHASE-1-INSTRUMENT-INTERPRETATION-AND-CANONICAL-IDENTITY-ESTABLISHMENT-ARCHITECTURE.md)
+- [ADP-001D — Instrument → Observation Contract](../../architecture/products/swing/SWING-PHASE-1-INSTRUMENT-OBSERVATION-CONTRACT.md)
+- [EAP-003 — Submission Validation and Interpretation Admission](EAP-003-PROVIDER-TO-INSTRUMENT-ARCHITECTURAL-ADMISSIBILITY.md)
+- [EAP-005 — Instrument-to-Observation Attribution Eligibility](EAP-005-INSTRUMENT-TO-OBSERVATION-ATTRIBUTION-ELIGIBILITY.md)
 - [Document Register](../../indexes/DOCUMENT-REGISTER.md)
+
+# End of Document
