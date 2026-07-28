@@ -2,7 +2,7 @@
 
 **Document ID:** EDD-011<br>
 **Title:** Market Facts Validation Assessment and Business Judgment Engineering Design<br>
-**Version:** 0.3<br>
+**Version:** 0.4<br>
 **Status:** Approved<br>
 **Canonical Status:** Draft<br>
 **Classification:** Engineering Design Document<br>
@@ -11,9 +11,9 @@
 **Review Authority:** Chief Architect<br>
 **Engineering Review Authority:** Chief Systems Engineer<br>
 **Repository Location:** `docs/engineering/edd/EDD-011-MARKET-FACTS-VALIDATION-ASSESSMENT-AND-BUSINESS-JUDGMENT-ENGINEERING-DESIGN.md`<br>
-**Workflow Stage:** ES-03 Published<br>
-**Baseline Status:** ES-01 through ES-03 Frozen<br>
-**Engineering Stage:** ES-03 Complete<br>
+**Workflow Stage:** ES-04 Published<br>
+**Baseline Status:** ES-01 through ES-04 Frozen<br>
+**Engineering Stage:** ES-04 Complete<br>
 **Engineering Lifecycle:** In Progress<br>
 **ES-01 Review Status:** Approved<br>
 **ES-01 Approved By:** Chief Architect<br>
@@ -27,15 +27,19 @@
 **ES-03 Approved By:** Chief Architect<br>
 **ES-03 Baseline Status:** Frozen<br>
 **ES-03 Repository Publication:** Published<br>
+**ES-04 Review Status:** Approved<br>
+**ES-04 Approved By:** Chief Architect<br>
+**ES-04 Baseline Status:** Frozen<br>
+**ES-04 Repository Publication:** Published<br>
 **Authorization Decision:** CAR-010 Version 1.0<br>
 **Direct Engineering Architecture:** EAP-008 Version 1.0<br>
 **Upstream Engineering Architecture Dependency:** EAP-007 Version 1.0<br>
 **Supporting Completed Upstream Engineering Design:** EDD-009 Version 1.0<br>
-**Engineering Authority:** ES-01 and ES-02 published and frozen; ES-03 Draft Preparation; ES-04 and ES-05 remain subject to sequential stage gates<br>
+**Engineering Authority:** ES-01 through ES-04 published and frozen; ES-05 Draft Preparation<br>
 **Architecture Authority:** None<br>
 **Implementation Authority:** None<br>
 **Runtime Authority:** None<br>
-**Repository Status:** Published — ES-03 Frozen Baseline
+**Repository Status:** Published — ES-04 Frozen Baseline
 
 ---
 
@@ -1500,5 +1504,428 @@ Engineering Architect review shall verify:
 | ES-03 publication | Published |
 | ES-03 baseline freeze | Frozen |
 | ES-04 | Authorized after ES-03 repository synchronization |
+| Implementation | Not Authorized |
+| Runtime | Not Authorized |
+
+---
+
+# ES-04 — Engineering Interface Design
+
+## 1. Executive Summary
+
+EDD-011 ES-04 translates the frozen ES-03 Building Block relationship model into 58 conceptual Engineering Interfaces.
+
+Every approved direct Building Block dependency is represented exactly once:
+
+- 40 primary or Knowledge-watchpoint interfaces; and
+- 18 cross-cutting governance interfaces into XBB-02.
+
+Interfaces transfer established engineering meaning only. They do not transfer ownership, authority, execution responsibility, implementation behavior, runtime behavior or technology choices.
+
+The interface model introduces no new Building Block, capability, responsibility, dependency, architecture or authority.
+
+## 2. Engineering Interface Principle
+
+Every EDD-011 interface:
+
+- has exactly one source Building Block and one destination Building Block;
+- is directional only for conceptual responsibility reliance;
+- preserves source ownership of established meaning;
+- permits the destination to rely only on meaning authorized by its own boundary;
+- preserves Observation ownership, Validation ownership and Building Block ownership;
+- preserves semantic independence;
+- preserves provider, product, implementation and runtime neutrality;
+- preserves architectural authority separation;
+- creates no runtime order, call, execution flow or orchestration; and
+- creates no API, payload, message, schema, protocol, transport, event, queue, persistence structure or technology choice.
+
+An interface never transfers ownership and never redefines architecture.
+
+## 3. Interface Catalogue
+
+The **Ownership** column identifies the Building Block that retains ownership of the transferred engineering meaning. Directionality is conceptual source-to-destination reliance only.
+
+| Interface | Source | Destination | Engineering purpose and information meaning | Ownership | Directionality | Contract class |
+|---|---|---|---|---|---|---|
+| IF-01 | BB-01 | BB-02 | Governing authority applicable to published-input stewardship | BB-01 | BB-01 → BB-02 | AUTH |
+| IF-02 | BB-01 | BB-03 | Governing ownership authority applicable to the Observation guard | BB-01 | BB-01 → BB-03 | AUTH |
+| IF-03 | BB-02 | BB-03 | Established Market Facts input-boundary meaning | BB-02 | BB-02 → BB-03 | INPUT |
+| IF-04 | BB-02 | BB-04 | Conformant published-input meaning applicable to proposition establishment | BB-02 | BB-02 → BB-04 | INPUT |
+| IF-05 | BB-03 | BB-04 | Preserved Observation boundary and ownership constraints | BB-03 | BB-03 → BB-04 | OWN |
+| IF-06 | BB-01 | BB-05 | Governing Validation authority applicable to programme meaning | BB-01 | BB-01 → BB-05 | AUTH |
+| IF-07 | BB-04 | BB-05 | Explicit proposition identity applicable to one programme | BB-04 | BB-04 → BB-05 | PROP |
+| IF-08 | BB-04 | BB-06 | Explicit proposition and integrity meaning applicable to assessment identity | BB-04 | BB-04 → BB-06 | PROP |
+| IF-09 | BB-05 | BB-06 | Neutral conformant Validation Programme meaning | BB-05 | BB-05 → BB-06 | PROG |
+| IF-10 | BB-06 | BB-07 | Governed Validation Assessment identity and lineage basis | BB-06 | BB-06 → BB-07 | ASSESS |
+| IF-11 | BB-02 | BB-08 | Approved Market Facts source admissibility meaning | BB-02 | BB-02 → BB-08 | INPUT |
+| IF-12 | BB-04 | BB-08 | One explicit proposition boundary for multi-fact reasoning | BB-04 | BB-04 → BB-08 | PROP |
+| IF-13 | BB-05 | BB-08 | One neutral Validation Programme boundary for reasoning | BB-05 | BB-05 → BB-08 | PROG |
+| IF-14 | BB-06 | BB-08 | One bounded Validation Assessment identity for reasoning | BB-06 | BB-06 → BB-08 | ASSESS |
+| IF-15 | XBB-01 | BB-08 | Knowledge Watchpoint constraint on bounded reasoning | XBB-01 | XBB-01 → BB-08 | WATCH |
+| IF-16 | BB-03 | BB-09 | Observation ownership constraints applicable to evidence association | BB-03 | BB-03 → BB-09 | OWN |
+| IF-17 | BB-08 | BB-09 | Admissible bounded multi-fact reasoning meaning | BB-08 | BB-08 → BB-09 | REASON |
+| IF-18 | BB-09 | BB-10 | Governed evidence-association meaning | BB-09 | BB-09 → BB-10 | EVID |
+| IF-19 | BB-04 | BB-11 | Proposition meaning bounding judgment and interpretation | BB-04 | BB-04 → BB-11 | PROP |
+| IF-20 | BB-05 | BB-11 | Programme authority and neutrality bounding judgment | BB-05 | BB-05 → BB-11 | PROG |
+| IF-21 | BB-06 | BB-11 | Assessment identity bounding judgment and interpretation | BB-06 | BB-06 → BB-11 | ASSESS |
+| IF-22 | BB-10 | BB-11 | Distinct evidence-evaluation meanings | BB-10 | BB-10 → BB-11 | EVID |
+| IF-23 | BB-11 | BB-12 | Bounded judgment and interpretation meaning for explanation | BB-11 | BB-11 → BB-12 | JUDGE |
+| IF-24 | BB-04 | BB-13 | Proposition cardinality applicable to outcome cardinality | BB-04 | BB-04 → BB-13 | PROP |
+| IF-25 | BB-06 | BB-13 | Assessment identity applicable to exactly-one outcome | BB-06 | BB-06 → BB-13 | ASSESS |
+| IF-26 | BB-10 | BB-13 | Evidentiary separation applicable to outcome cardinality | BB-10 | BB-10 → BB-13 | EVID |
+| IF-27 | BB-11 | BB-13 | Judgment and interpretation meaning applicable to outcome cardinality | BB-11 | BB-11 → BB-13 | JUDGE |
+| IF-28 | BB-12 | BB-13 | Attributable explanation meaning applicable to outcome cardinality | BB-12 | BB-12 → BB-13 | EXPLAIN |
+| IF-29 | BB-13 | BB-14 | Exactly-one mutually exclusive outcome cardinality | BB-13 | BB-13 → BB-14 | OUTCOME |
+| IF-30 | BB-06 | BB-15 | Governed assessment identity applicable to lifecycle stewardship | BB-06 | BB-06 → BB-15 | ASSESS |
+| IF-31 | BB-07 | BB-15 | Non-destructive lifecycle relationship meaning | BB-07 | BB-07 → BB-15 | ASSESS |
+| IF-32 | BB-14 | BB-15 | One approved Validation Outcome applicable to lifecycle meaning | BB-14 | BB-14 → BB-15 | OUTCOME |
+| IF-33 | XBB-01 | BB-15 | Knowledge Watchpoint constraint on lifecycle stewardship | XBB-01 | XBB-01 → BB-15 | WATCH |
+| IF-34 | BB-13 | BB-16 | Outcome cardinality applicable to publication separation | BB-13 | BB-13 → BB-16 | OUTCOME |
+| IF-35 | BB-14 | BB-16 | One approved outcome meaning applicable to publication separation | BB-14 | BB-14 → BB-16 | OUTCOME |
+| IF-36 | BB-15 | BB-16 | Assessment lifecycle meaning applicable to publication separation | BB-15 | BB-15 → BB-16 | LIFE |
+| IF-37 | BB-16 | BB-17 | Separated publication eligibility and publication-outcome meaning | BB-16 | BB-16 → BB-17 | PUBLISH |
+| IF-38 | XBB-01 | BB-17 | Knowledge and downstream-authority constraint on terminal publication | XBB-01 | XBB-01 → BB-17 | WATCH |
+| IF-39 | BB-01 | XBB-01 | Governing authority applicable to both Knowledge Watchpoints | BB-01 | BB-01 → XBB-01 | AUTH |
+| IF-40 | BB-03 | XBB-01 | Observation ownership boundary applicable to Knowledge guarding | BB-03 | BB-03 → XBB-01 | OWN |
+| IF-41 | BB-01 | XBB-02 | Authority-translation conformance meaning | BB-01 | BB-01 → XBB-02 | GOV |
+| IF-42 | BB-02 | XBB-02 | Input-boundary conformance meaning | BB-02 | BB-02 → XBB-02 | GOV |
+| IF-43 | BB-03 | XBB-02 | Observation-boundary conformance meaning | BB-03 | BB-03 → XBB-02 | GOV |
+| IF-44 | BB-04 | XBB-02 | Proposition-integrity conformance meaning | BB-04 | BB-04 → XBB-02 | GOV |
+| IF-45 | BB-05 | XBB-02 | Programme-authority and neutrality conformance meaning | BB-05 | BB-05 → XBB-02 | GOV |
+| IF-46 | BB-06 | XBB-02 | Assessment-identity conformance meaning | BB-06 | BB-06 → XBB-02 | GOV |
+| IF-47 | BB-07 | XBB-02 | Lifecycle-relationship conformance meaning | BB-07 | BB-07 → XBB-02 | GOV |
+| IF-48 | BB-08 | XBB-02 | Bounded-reasoning conformance meaning | BB-08 | BB-08 → XBB-02 | GOV |
+| IF-49 | BB-09 | XBB-02 | Evidence-association conformance meaning | BB-09 | BB-09 → XBB-02 | GOV |
+| IF-50 | BB-10 | XBB-02 | Evidence-evaluation separation conformance meaning | BB-10 | BB-10 → XBB-02 | GOV |
+| IF-51 | BB-11 | XBB-02 | Judgment and interpretation conformance meaning | BB-11 | BB-11 → XBB-02 | GOV |
+| IF-52 | BB-12 | XBB-02 | Explanation conformance meaning | BB-12 | BB-12 → XBB-02 | GOV |
+| IF-53 | BB-13 | XBB-02 | Outcome-cardinality conformance meaning | BB-13 | BB-13 → XBB-02 | GOV |
+| IF-54 | BB-14 | XBB-02 | Outcome-meaning conformance meaning | BB-14 | BB-14 → XBB-02 | GOV |
+| IF-55 | BB-15 | XBB-02 | Assessment-lifecycle conformance meaning | BB-15 | BB-15 → XBB-02 | GOV |
+| IF-56 | BB-16 | XBB-02 | Publication-separation conformance meaning | BB-16 | BB-16 → XBB-02 | GOV |
+| IF-57 | BB-17 | XBB-02 | Terminal-publication conformance meaning | BB-17 | BB-17 → XBB-02 | GOV |
+| IF-58 | XBB-01 | XBB-02 | Watchpoint and Knowledge-authority conformance meaning | XBB-01 | XBB-01 → XBB-02 | GOV |
+
+## 4. Conceptual Interface Contracts
+
+### 4.1 Contract Classes
+
+| Class | Preconditions | Postconditions | Boundary guarantees | Failure ownership |
+|---|---|---|---|---|
+| AUTH | Source authority meaning is established and applicable | Destination may rely on that authority within its own boundary | No architecture or authority transfer | Source owns invalid authority meaning; destination owns non-admission |
+| INPUT | Source input meaning is published and conformant | Destination may rely on approved factual-boundary meaning | No unpublished or reconstructed meaning crosses | Source owns input non-conformance; destination owns refusal |
+| OWN | Source ownership constraint is established | Destination remains bounded by preserved ownership | No domain or Building Block ownership transfer | Source owns constraint defect; destination owns boundary violation |
+| PROP | One explicit proposition and integrity meaning are established | Destination may rely on unchanged proposition meaning | No broadening, merging, replacement or reinterpretation | BB-04 owns proposition defect; destination owns misuse |
+| PROG | One neutral conformant programme is established | Destination may rely on bounded programme authority | No product, strategy, Risk or execution policy implication | BB-05 owns programme defect; destination owns policy leakage |
+| ASSESS | One governed assessment identity or relationship is established | Destination may rely on bounded identity and lineage | No silent identity mutation or runtime lifecycle implication | Source owns identity defect; destination owns lineage misuse |
+| WATCH | Approved Watchpoint constraint is established | Destination remains inside the non-Knowledge boundary | No reusable Knowledge or Knowledge authority | XBB-01 owns Watchpoint meaning; destination owns violation |
+| REASON | Multi-fact reasoning is admissible and bounded | Destination may associate only approved facts | No reusable synthesis or cross-assessment knowledge | BB-08 owns admissibility defect; destination owns association misuse |
+| EVID | Evidence association or evaluation meaning is distinct and established | Destination may rely on the specific evidentiary meaning only | No collapse into another evidentiary meaning or outcome | Source owns evidentiary defect; destination owns substitution |
+| JUDGE | Bounded Validation judgment and interpretation are established | Destination may rely on Validation-owned judgment only | No product, Risk, Execution or Knowledge meaning | BB-11 owns judgment defect; destination owns authority leakage |
+| EXPLAIN | Attributable non-sensitive explanation is established | Destination may associate explanation to one assessment | No sensitive, Observation-internal or implementation detail | BB-12 owns explanation defect; destination owns misuse |
+| OUTCOME | Exactly-one outcome cardinality or one approved outcome is established | Destination may rely on that outcome meaning only | No Market Facts mutation or publication implication | Source owns outcome defect; destination owns collapse or misuse |
+| LIFE | Validation Assessment lifecycle meaning is established | Destination may rely on attributable non-destructive lifecycle meaning | No Observation lifecycle transfer or runtime mechanism | BB-15 owns lifecycle defect; destination owns misuse |
+| PUBLISH | Publication meanings are separated and eligible for terminal determination | Destination may establish exactly one terminal publication result | No automatic downstream authority | BB-16 owns separation defect; BB-17 owns terminal misuse |
+| GOV | Source meaning is independently reviewable | XBB-02 may establish conformance or violation meaning | No feedback, mutation or primary-meaning ownership | Source owns source defect; XBB-02 owns conformance finding |
+
+### 4.2 Universal Interface Contract
+
+Every interface in the catalogue inherits these normative terms:
+
+1. **Precondition:** the source Building Block has established the exact engineering meaning named in the catalogue and remains boundary-conformant.
+2. **Postcondition:** the destination may rely on that meaning only for its approved responsibilities; no destination result is implied.
+3. **Ownership:** source ownership of the transferred meaning remains unchanged.
+4. **Authority:** no architecture, domain, Product, Risk, Execution, Knowledge, implementation or runtime authority transfers.
+5. **Boundary:** no information outside the approved source output or destination input meaning crosses.
+6. **Failure ownership:** source owns missing, invalid or non-conformant source meaning; destination owns refusal, misuse or boundary violation within its responsibility.
+7. **Failure meaning:** failure is conceptual conformance meaning only and defines no error object, exception, retry, recovery or runtime path.
+8. **Governance:** XBB-01 applies wherever Knowledge-sensitive meaning exists; XBB-02 applies to every interface.
+9. **Verification:** both source and destination traceability, ownership, boundary and neutrality shall be independently reviewable.
+
+## 5. Interface Responsibility and Traceability Matrix
+
+The source responsibilities establish the transferred meaning. Destination responsibilities may rely on it without acquiring ownership.
+
+| Interface | Source responsibilities | Destination responsibilities | Capability trace | EAP-008 trace |
+|---|---|---|---|---|
+| IF-01 | R1–R4 | R5–R6 | C1 → C2 | Authority; input |
+| IF-02 | R1–R4 | R7–R10 | C1 → C3 | Authority; ownership |
+| IF-03 | R5–R6 | R7–R10 | C2 → C3 | Input; ownership |
+| IF-04 | R5–R6 | R11–R13 | C2 → C4 | Input; proposition |
+| IF-05 | R7–R10 | R11–R13 | C3 → C4 | Ownership; proposition |
+| IF-06 | R1–R4 | R14–R17 | C1 → C5 | Authority; programme |
+| IF-07 | R11–R13 | R14–R17 | C4 → C5 | Proposition; programme |
+| IF-08 | R11–R13 | R18–R20 | C4 → C6 | Proposition; assessment identity |
+| IF-09 | R14–R17 | R18–R20 | C5 → C6 | Programme; assessment identity |
+| IF-10 | R18–R20 | R21–R24 | C6 → C7 | Assessment identity; lifecycle relationships |
+| IF-11 | R5–R6 | R25–R27 | C2 → C8 | Input; multi-fact reasoning |
+| IF-12 | R11–R13 | R25–R27 | C4 → C8 | Proposition; multi-fact reasoning |
+| IF-13 | R14–R17 | R25–R27 | C5 → C8 | Programme; multi-fact reasoning |
+| IF-14 | R18–R20 | R25–R27 | C6 → C8 | Assessment; multi-fact reasoning |
+| IF-15 | R55–R57 | R25–R27 | C21 → C8 | Watchpoints; multi-fact reasoning |
+| IF-16 | R7–R10 | R28 | C3 → C9 | Ownership; evidence association |
+| IF-17 | R25–R27 | R28 | C8 → C9 | Multi-fact reasoning; association |
+| IF-18 | R28 | R29–R34 | C9 → C10–C13 | Evidence association; evaluation |
+| IF-19 | R11–R13 | R35–R36 | C4 → C14 | Proposition; judgment |
+| IF-20 | R14–R17 | R35–R36 | C5 → C14 | Programme; judgment |
+| IF-21 | R18–R20 | R35–R36 | C6 → C14 | Assessment; judgment |
+| IF-22 | R29–R34 | R35–R36 | C10–C13 → C14 | Evidence evaluation; judgment |
+| IF-23 | R35–R36 | R37 | C14 → C15 | Judgment; explanation |
+| IF-24 | R11–R13 | R38, R43–R44 | C4 → C16 | Proposition; outcome cardinality |
+| IF-25 | R18–R20 | R38, R43–R44 | C6 → C16 | Assessment; outcome cardinality |
+| IF-26 | R29–R34 | R38, R43–R44 | C10–C13 → C16 | Evidence evaluation; outcome separation |
+| IF-27 | R35–R36 | R38, R43–R44 | C14 → C16 | Judgment; outcome cardinality |
+| IF-28 | R37 | R38, R43–R44 | C15 → C16 | Explanation; outcome cardinality |
+| IF-29 | R38, R43–R44 | R39–R42 | C16 → C17 | Outcome cardinality; outcome meanings |
+| IF-30 | R18–R20 | R45 | C6 → C18 | Assessment identity; lifecycle |
+| IF-31 | R21–R24 | R45 | C7 → C18 | Lifecycle relationships; lifecycle |
+| IF-32 | R39–R42 | R45 | C17 → C18 | Outcome; lifecycle |
+| IF-33 | R55–R57 | R45 | C21 → C18 | Watchpoints; lifecycle |
+| IF-34 | R38, R43–R44 | R46–R48 | C16 → C19 | Outcome cardinality; publication separation |
+| IF-35 | R39–R42 | R46–R48 | C17 → C19 | Outcome; publication separation |
+| IF-36 | R45 | R46–R48 | C18 → C19 | Lifecycle; publication separation |
+| IF-37 | R46–R48 | R49–R54 | C19 → C20 | Publication separation; terminal result |
+| IF-38 | R55–R57 | R49–R54 | C21 → C20 | Watchpoints; terminal result |
+| IF-39 | R1–R4 | R55–R57 | C1 → C21 | Authority; Watchpoints |
+| IF-40 | R7–R10 | R55–R57 | C3 → C21 | Ownership; Watchpoints |
+| IF-41 | R1–R4 | R58–R62 | C1 → C22 | Authority conformance |
+| IF-42 | R5–R6 | R58–R62 | C2 → C22 | Input conformance |
+| IF-43 | R7–R10 | R58–R62 | C3 → C22 | Ownership conformance |
+| IF-44 | R11–R13 | R58–R62 | C4 → C22 | Proposition conformance |
+| IF-45 | R14–R17 | R58–R62 | C5 → C22 | Programme conformance |
+| IF-46 | R18–R20 | R58–R62 | C6 → C22 | Assessment identity conformance |
+| IF-47 | R21–R24 | R58–R62 | C7 → C22 | Lifecycle relationship conformance |
+| IF-48 | R25–R27 | R58–R62 | C8 → C22 | Reasoning conformance |
+| IF-49 | R28 | R58–R62 | C9 → C22 | Evidence association conformance |
+| IF-50 | R29–R34 | R58–R62 | C10–C13 → C22 | Evidence evaluation conformance |
+| IF-51 | R35–R36 | R58–R62 | C14 → C22 | Judgment conformance |
+| IF-52 | R37 | R58–R62 | C15 → C22 | Explanation conformance |
+| IF-53 | R38, R43–R44 | R58–R62 | C16 → C22 | Cardinality conformance |
+| IF-54 | R39–R42 | R58–R62 | C17 → C22 | Outcome conformance |
+| IF-55 | R45 | R58–R62 | C18 → C22 | Lifecycle conformance |
+| IF-56 | R46–R48 | R58–R62 | C19 → C22 | Publication separation conformance |
+| IF-57 | R49–R54 | R58–R62 | C20 → C22 | Terminal publication conformance |
+| IF-58 | R55–R57 | R58–R62 | C21 → C22 | Watchpoint conformance |
+
+Responsibilities remain owned and allocated to their ES-03 Building Blocks. The matrix records meaning relied upon across interfaces; it does not reallocate a responsibility.
+
+## 6. Building Block Interface Matrix
+
+| Building Block | Incoming interfaces | Outgoing interfaces |
+|---|---|---|
+| BB-01 | None | IF-01, IF-02, IF-06, IF-39, IF-41 |
+| BB-02 | IF-01 | IF-03, IF-04, IF-11, IF-42 |
+| BB-03 | IF-02, IF-03 | IF-05, IF-16, IF-40, IF-43 |
+| BB-04 | IF-04, IF-05 | IF-07, IF-08, IF-12, IF-19, IF-24, IF-44 |
+| BB-05 | IF-06, IF-07 | IF-09, IF-13, IF-20, IF-45 |
+| BB-06 | IF-08, IF-09 | IF-10, IF-14, IF-21, IF-25, IF-30, IF-46 |
+| BB-07 | IF-10 | IF-31, IF-47 |
+| BB-08 | IF-11, IF-12, IF-13, IF-14, IF-15 | IF-17, IF-48 |
+| BB-09 | IF-16, IF-17 | IF-18, IF-49 |
+| BB-10 | IF-18 | IF-22, IF-26, IF-50 |
+| BB-11 | IF-19, IF-20, IF-21, IF-22 | IF-23, IF-27, IF-51 |
+| BB-12 | IF-23 | IF-28, IF-52 |
+| BB-13 | IF-24, IF-25, IF-26, IF-27, IF-28 | IF-29, IF-34, IF-53 |
+| BB-14 | IF-29 | IF-32, IF-35, IF-54 |
+| BB-15 | IF-30, IF-31, IF-32, IF-33 | IF-36, IF-55 |
+| BB-16 | IF-34, IF-35, IF-36 | IF-37, IF-56 |
+| BB-17 | IF-37, IF-38 | IF-57 |
+| XBB-01 | IF-39, IF-40 | IF-15, IF-33, IF-38, IF-58 |
+| XBB-02 | IF-41 through IF-58 | None |
+
+All 19 Building Blocks are represented. No Building Block is orphaned.
+
+## 7. Interface Dependency Matrix
+
+An interface dependency means its source engineering meaning must be established before that interface contract is conceptually satisfied. It does not define execution order.
+
+| Destination | Incoming interface set | Conceptual prerequisite |
+|---|---|---|
+| BB-02 | IF-01 | Governing authority |
+| BB-03 | IF-02, IF-03 | Authority and published input |
+| BB-04 | IF-04, IF-05 | Input conformance and Observation boundary |
+| BB-05 | IF-06, IF-07 | Authority and explicit proposition |
+| BB-06 | IF-08, IF-09 | Proposition and programme |
+| BB-07 | IF-10 | Assessment identity |
+| BB-08 | IF-11 through IF-15 | Input, proposition, programme, assessment and Watchpoint |
+| BB-09 | IF-16, IF-17 | Ownership constraint and admissible reasoning |
+| BB-10 | IF-18 | Evidence association |
+| BB-11 | IF-19 through IF-22 | Proposition, programme, assessment and evidence evaluation |
+| BB-12 | IF-23 | Judgment and interpretation |
+| BB-13 | IF-24 through IF-28 | Proposition, assessment, evidence, judgment and explanation |
+| BB-14 | IF-29 | Outcome cardinality |
+| BB-15 | IF-30 through IF-33 | Assessment identity, lifecycle relationships, outcome and Watchpoint |
+| BB-16 | IF-34 through IF-36 | Outcome cardinality, outcome meaning and lifecycle |
+| BB-17 | IF-37, IF-38 | Publication separation and Watchpoint |
+| XBB-01 | IF-39, IF-40 | Authority and Observation ownership |
+| XBB-02 | IF-41 through IF-58 | Reviewable meaning from every other Building Block |
+
+The interface dependency graph is identical in topology to the frozen ES-03 Building Block dependency graph and remains acyclic.
+
+## 8. Interface Boundary Rules
+
+1. IF-01 through IF-58 begin only after their source meaning is established.
+2. An interface ends when the destination may rely on the named meaning within its approved boundary.
+3. Interfaces carry no unstated context.
+4. Interfaces never transfer ownership.
+5. Interfaces never transfer architecture or execution authority.
+6. Observation-owned meaning remains Observation-owned across every interface.
+7. Validation-owned meaning remains Validation-owned across every interface.
+8. Building Block responsibility remains with the originating Building Block.
+9. Interface meaning cannot broaden a Validation Proposition.
+10. Interface meaning cannot make Validation Programme conformance product, strategy, Risk or execution policy.
+11. Interface meaning cannot silently mutate Validation Assessment identity.
+12. Interface meaning cannot create reusable Knowledge.
+13. Interface meaning cannot collapse evidentiary meanings or Validation Outcome.
+14. Interface meaning cannot collapse Validation Outcome, publication eligibility or publication outcome.
+15. No interface crosses upstream of the EAP-007 Market Facts Contract boundary.
+16. No interface crosses downstream of the EAP-008 terminal publication boundary.
+
+The external Market Facts Contract input and Validation Assessment terminal outputs remain architectural boundaries, not ES-04 inter-Block interfaces.
+
+## 9. Interface Governance Rules
+
+Every interface shall preserve:
+
+- CAR-010 lifecycle authority;
+- EAP-008 as sole direct Engineering Architecture;
+- EAP-007 as upstream Engineering Architecture dependency;
+- EDD-009 as supporting completed upstream Engineering Design only;
+- frozen ES-01 responsibilities;
+- frozen ES-02 capability ownership and dependencies;
+- frozen ES-03 Building Block ownership and dependencies;
+- Observation ownership;
+- Validation ownership;
+- provider neutrality;
+- product neutrality;
+- implementation neutrality;
+- runtime neutrality; and
+- architecture-first governance.
+
+No interface may introduce architecture, owner, domain, dependency, responsibility, capability or Building Block scope.
+
+Any required architectural expansion shall be returned for governance review.
+
+## 10. Interface Watchpoint Preservation
+
+Both approved Knowledge Watchpoints remain normative for every interface.
+
+IF-15, IF-33 and IF-38 carry the Validation-specific Watchpoint into Knowledge-sensitive primary Building Blocks.
+
+IF-39 and IF-40 establish the authority and ownership basis for XBB-01.
+
+IF-58 exposes Watchpoint conformance meaning to XBB-02 without transferring Watchpoint ownership.
+
+No interface may create:
+
+- reusable Knowledge;
+- reusable synthesis;
+- generalized historical intelligence;
+- persistent market memory;
+- reusable cross-assessment knowledge;
+- Knowledge ownership;
+- Knowledge contracts;
+- Knowledge dependencies;
+- implementation authority; or
+- runtime authority.
+
+If any interface requires such meaning, Engineering shall stop and return the matter for Chief Architect governance.
+
+## 11. Interface Verification Obligations
+
+Every interface shall be verified for:
+
+1. unique identifier;
+2. unique source-destination pair;
+3. justified ES-03 dependency;
+4. source responsibility traceability;
+5. destination responsibility traceability;
+6. originating capability traceability;
+7. EAP-008 traceability;
+8. source ownership preservation;
+9. destination boundary preservation;
+10. directionality without runtime sequencing;
+11. precondition completeness;
+12. postcondition completeness;
+13. boundary guarantee completeness;
+14. conceptual failure ownership;
+15. XBB-01 applicability where Knowledge-sensitive;
+16. XBB-02 governance applicability;
+17. Observation ownership preservation;
+18. Validation ownership preservation;
+19. provider and product neutrality;
+20. implementation and runtime neutrality;
+21. absence of APIs, messages, schemas, protocols and transports;
+22. absence of persistence, algorithms and technology decisions;
+23. absence of Product, Risk, Execution or Knowledge-layer authority; and
+24. no semantic feedback cycle.
+
+Verification is Engineering Design review only. It defines no implementation test or runtime verification mechanism.
+
+## 12. Complete ES-04 Traceability
+
+| Trace level | Preserved ES-04 evidence |
+|---|---|
+| EAP-008 | Interface catalogue meaning, contract classes, boundary rules, ownership rules, Watchpoints and terminal limits |
+| ES-01 | R1–R62 remain allocated to their approved Building Blocks and are referenced without reallocation |
+| ES-02 | C1–C22 appear in IF-01 through IF-58 capability traceability |
+| ES-03 | Every one of the 58 direct Building Block dependencies is represented exactly once |
+| Ownership | Catalogue ownership column and universal ownership contract |
+| Boundaries | Interface Boundary Rules and per-class guarantees |
+| Governance | IF-41 through IF-58 and Interface Governance Rules |
+| Watchpoints | IF-15, IF-33, IF-38, IF-39, IF-40 and IF-58 |
+| Verification | Interface Verification Obligations |
+
+Traceability result:
+
+- approved Building Blocks represented: 19;
+- approved direct dependencies represented: 58;
+- interfaces defined: 58;
+- orphan interfaces: 0;
+- duplicate source-destination pairs: 0;
+- new dependencies: 0;
+- responsibilities reallocated: 0;
+- ownership transfers: 0; and
+- semantic cycles: 0.
+
+## 13. ES-04 Verification Criteria
+
+Engineering Architect review shall verify:
+
+1. exactly 58 conceptual interfaces are defined;
+2. all 58 frozen ES-03 dependencies are represented exactly once;
+3. every interface has one source and one destination Building Block;
+4. every interface has purpose, meaning, ownership, directionality, responsibilities, preconditions, postconditions, guarantees, failure ownership, traceability, governance applicability and verification obligations;
+5. all 19 Building Blocks are represented;
+6. all 22 capabilities remain traceable;
+7. all 62 responsibilities remain allocated exactly once to Building Blocks;
+8. no interface is orphaned or duplicated;
+9. interface dependencies remain conceptual and acyclic;
+10. ES-01 through ES-03 remain unchanged and frozen;
+11. ownership and authority separation are preserved;
+12. both Knowledge Watchpoints remain normative;
+13. no API, message, schema, protocol, transport, event, queue, persistence, algorithm or technology design is introduced;
+14. no implementation or runtime semantics are introduced;
+15. no Product, Risk, Execution or Knowledge-layer authority is introduced; and
+16. ES-05 remains unauthorized.
+
+## ES-04 Review State
+
+| Item | State |
+|---|---|
+| CAR-010 Version 1.0 | Approved, Published, Synchronized and Frozen |
+| EAP-008 Version 1.0 | Sole direct Engineering Architecture authority |
+| EAP-007 Version 1.0 | Upstream Engineering Architecture dependency |
+| EDD-009 Version 1.0 | Supporting completed upstream Engineering Design |
+| EDD-011 ES-01 | Approved, Published and Frozen |
+| EDD-011 ES-02 | Approved, Published and Frozen |
+| EDD-011 ES-03 | Approved, Published and Frozen |
+| ES-04 Draft Preparation | Complete |
+| Engineering Architect review | Pending |
+| Chief Systems Engineer review | Not Yet Started |
+| Chief Architect review | Not Yet Started |
+| ES-04 publication | Not Authorized |
+| ES-04 baseline freeze | Not Authorized |
+| ES-05 | Not Authorized |
 | Implementation | Not Authorized |
 | Runtime | Not Authorized |
