@@ -2,7 +2,7 @@
 
 **Document ID:** EDD-006<br>
 **Title:** Instrument Identity Engineering Design<br>
-**Version:** 0.1 Draft<br>
+**Version:** 0.2 Draft<br>
 **Status:** Draft<br>
 **Canonical Status:** Draft<br>
 **Classification:** Engineering Design Document<br>
@@ -12,10 +12,12 @@
 **Engineering Review Authority:** Chief Systems Engineer<br>
 **Repository Location:** `docs/engineering/edd/EDD-006-INSTRUMENT-IDENTITY-ENGINEERING-DESIGN.md`<br>
 **Workflow Stage:** Draft Preparation<br>
-**Engineering Stage:** Engineering Scope Definition<br>
+**Engineering Stage:** Engineering Capability Decomposition<br>
 **ES-01 Review Status:** Approved<br>
 **ES-01 Approved By:** Chief Systems Engineer<br>
-**Draft Authorization:** ES-01 Draft Preparation only under CAR-006 Version 1.0<br>
+**ES-02 Review Status:** Approved<br>
+**ES-02 Approved By:** Chief Systems Engineer<br>
+**Draft Authorization:** ES-01 completed under CAR-006 Version 1.0; ES-02 through ES-05 authorized under CAR-006 Version 1.1<br>
 **Direct Engineering Architecture:** EAP-004 Version 2.0<br>
 **Immediate Upstream Engineering Design:** EDD-005 Version 1.0<br>
 **Downstream Engineering Architecture:** EAP-005 Version 1.1<br>
@@ -264,3 +266,288 @@ The following approved authorities constrain EDD-006 through EAP-004 and remain 
 - [EAS-001 through EAS-006](../eap/EAS-001-ENGINEERING-ARCHITECTURE-FRAMEWORK.md), together with EAS-007.
 
 Repository content is the sole authority for this Engineering Design. Undocumented discussion creates no engineering authority, and any conflict is resolved in favor of the approved repository authority.
+
+---
+
+# ES-02 — Engineering Capability Design
+
+ES-02 decomposes the approved ES-01 scope into cohesive engineering capabilities and conceptual engineering components. It allocates responsibility only. It does not define building blocks, modules, interfaces, physical realization, operational sequencing, or technology.
+
+Every ES-02 capability remains subordinate to EAP-004 Version 2.0 and preserves the complete ES-01 boundary. No capability creates new architecture, ownership, authority, or engineering scope.
+
+## 1. Engineering Capability Decomposition
+
+The EDD-006 capability model contains exactly 16 capabilities:
+
+| Capability | Name | Engineering purpose | ES-01 responsibilities |
+|---|---|---|---|
+| C1 | Admitted Interpretation Input Stewardship | Preserve one accepted EAIC-002 Submission Unit and all governed Provider-owned meaning required for Instrument evaluation. | R1–R6 |
+| C2 | Interpretation Processing Status | Establish the independent processing-status dimension without implying any other Instrument meaning. | R7–R8 |
+| C3 | Interpretation Outcome | Establish the bounded Instrument Interpretation Outcome while preserving Provider meaning and outcome non-implications. | R9–R11 |
+| C4 | Canonical Identity Decision | Establish the independent canonical-identity decision and preserve justified non-establishment. | R12–R14 |
+| C5 | Dimension Independence and Coexistence | Preserve independence, permitted coexistence, terminal meaning, and deferral across the four Instrument dimensions. | R15–R17 |
+| C6 | Identity-Layer Semantic Sufficiency | Establish approved sufficiency meaning independently for Economic Instrument, Listed Instrument, and Derivative Contract layers. | R18–R20 |
+| C7 | Canonical Identity Continuity and Establishment | Preserve existing identity continuity and govern reuse or new identity establishment from positive semantic sufficiency. | R21–R24 |
+| C8 | Provider Mapping Determination | Establish Provider Mapping Status independently from canonical identity while preserving its governed meanings. | R25–R26 |
+| C9 | Cross-Provider Reconciliation | Preserve Instrument-owned reconciliation evidence without merging Provider scopes or inventing equivalence. | R27–R28 |
+| C10 | Instrument Identity Contract Publication Eligibility | Determine eligibility and preserve approved meaning for the Instrument Identity Contract without creating publication authority. | R29–R30 |
+| C11 | Canonical Instrument Catalogue Publication Eligibility | Determine eligibility and preserve product-neutral Canonical Instrument Catalogue meaning and write-ownership restrictions. | R31–R33 |
+| C12 | Downstream Boundary Control | Restrict EDD-006 output to the approved Instrument Identity Contract boundary and terminate before EAP-005 evaluation. | R34–R35 |
+| C13 | Evidence and Provenance Integrity | Preserve distinct, attributable evidence and provenance obligations for every governed EDD-006 meaning. | R36–R41 |
+| C14 | Security Containment and Observability | Exclude prohibited sensitive material and preserve only approved non-sensitive observability with Audit authority separation. | R42–R43 |
+| C15 | Governed Relationship and Authority Separation | Preserve only already-approved relationship and lifecycle meaning and prevent downstream authority creation. | R44–R45 |
+| C16 | Engineering Verification and Repository Conformance | Establish verification, traceability, lifecycle, metadata, review, and authorization conformance. | R46–R47 |
+
+The decomposition is exhaustive and exclusive: each ES-01 responsibility is allocated to exactly one capability, and every capability is justified by at least one ES-01 responsibility.
+
+## 2. Engineering Components
+
+Each capability is represented by one conceptual engineering component at ES-02. These components are responsibility boundaries only and do not predetermine the ES-03 building-block model.
+
+| Component | Capability | Conceptual engineering input | Conceptual engineering output |
+|---|---|---|---|
+| EC-01 | C1 | Accepted EAIC-002 Submission Unit and its governed associations | Preserved admitted interpretation-input meaning |
+| EC-02 | C2 | Preserved admitted input meaning and processing evidence obligations | One governed Interpretation Processing Status meaning |
+| EC-03 | C3 | Preserved admitted input meaning and completed processing meaning | One governed Interpretation Outcome meaning when applicable |
+| EC-04 | C4 | Processing, outcome, semantic-sufficiency, continuity, and establishment meaning | One governed Canonical Identity Decision meaning |
+| EC-05 | C5 | The four independently established dimension meanings | Governed coexistence, terminal-meaning, and deferral conformance |
+| EC-06 | C6 | Provider-owned evidence and applicable approved Instrument context | Identity-layer semantic-sufficiency meaning |
+| EC-07 | C7 | Semantic-sufficiency, continuity, distinction, and Provider-change evidence | Reuse-or-establishment determination evidence with continuity evidence |
+| EC-08 | C8 | Canonical-identity meaning where applicable and reconciliation evidence | One governed Provider Mapping Status meaning |
+| EC-09 | C9 | Canonical-identity decision and Provider-separated identity, provenance, ambiguity, and conflict evidence | Instrument-owned reconciliation evidence without unsupported equivalence |
+| EC-10 | C10 | Canonical-identity, continuity, mapping, evidence, and containment conformance | Instrument Identity Contract publication-eligibility meaning |
+| EC-11 | C11 | Approved canonical identity, relationship, continuity, mapping, and evidence meaning | Canonical Instrument Catalogue publication-eligibility meaning |
+| EC-12 | C12 | Eligible Instrument Identity Contract meaning and safe provenance | EDD-006 terminal boundary meaning toward EAP-005 |
+| EC-13 | C13 | EAP-004 evidence and provenance obligations | Distinct evidence classes, attribution requirements, and preservation constraints |
+| EC-14 | C14 | EAP-004 sensitive-data exclusions and permitted observability meaning | Containment and observability constraints with Audit authority preserved |
+| EC-15 | C15 | Approved Instrument relationship, lifecycle, ownership, and authority constraints | Preserved relationship meaning and downstream non-authority constraints |
+| EC-16 | C16 | ES-01, EAP-004, component allocation, and repository governance traceability | Engineering conformance obligations and review evidence requirements |
+
+All 16 components are owned as EDD-006 Engineering Design responsibilities. Semantic ownership remains assigned by EAP-004: Instrument owns Instrument meaning, Provider retains Provider meaning, and Audit retains the Audit Trail only.
+
+## 3. Component Responsibilities
+
+### 3.1 EC-01 — Admitted Interpretation Input Stewardship
+
+EC-01 owns consumption-boundary qualification, immutable association preservation, Provider-meaning preservation, Provider identity-scope preservation, sensitive-content exclusion at entry, and contract-rejection separation.
+
+### 3.2 EC-02 — Interpretation Processing Status
+
+EC-02 owns the exact processing-status cardinality and meaning and prevents upstream boundary results from establishing interpretation progress.
+
+### 3.3 EC-03 — Interpretation Outcome
+
+EC-03 owns the exact bounded outcome cardinality and meaning, Provider non-mutation, and protection against automatic conversion of Provider ambiguity or vocabulary limitations into Instrument outcomes.
+
+### 3.4 EC-04 — Canonical Identity Decision
+
+EC-04 owns canonical-identity decision cardinality, establishment preconditions, and attributable non-establishment meaning.
+
+### 3.5 EC-05 — Dimension Independence and Coexistence
+
+EC-05 owns non-collapse of the four dimensions, permitted coexistence, bounded terminal meaning, and dimension-specific deferral.
+
+### 3.6 EC-06 — Identity-Layer Semantic Sufficiency
+
+EC-06 owns separation of the three identity layers, positive semantic-sufficiency meaning, and exclusion of technical or product-derived substitutes for sufficiency.
+
+### 3.7 EC-07 — Canonical Identity Continuity and Establishment
+
+EC-07 owns existing-identity reuse assessment, bounded new-identity establishment assessment, Provider-change non-mutation, and canonical and historical continuity evidence.
+
+### 3.8 EC-08 — Provider Mapping Determination
+
+EC-08 owns Provider Mapping Status cardinality, independence from Canonical Identity Decision, and the prohibition on mapping-created identity.
+
+### 3.9 EC-09 — Cross-Provider Reconciliation
+
+EC-09 owns Provider-separated reconciliation evidence, provenance preservation, conflict preservation, and the prohibition on cross-Provider scope merger or unsupported equivalence.
+
+### 3.10 EC-10 — Instrument Identity Contract Publication Eligibility
+
+EC-10 owns publication-precondition assessment and preservation of approved Instrument Identity Contract meaning and exclusions.
+
+### 3.11 EC-11 — Canonical Instrument Catalogue Publication Eligibility
+
+EC-11 owns catalogue-publication eligibility, product-neutral catalogue meaning, separation from Provider and downstream collections, and Instrument-only write ownership.
+
+### 3.12 EC-12 — Downstream Boundary Control
+
+EC-12 owns the sole EDD-006 terminal projection toward EAP-005 and prevents factual attribution, Observation meaning, or downstream product decisions from entering EDD-006.
+
+### 3.13 EC-13 — Evidence and Provenance Integrity
+
+EC-13 owns evidence-class separation, attribution, preservation of dimension and identity evidence, reconciliation evidence, unresolved-meaning evidence, and publication evidence where separately authorized.
+
+### 3.14 EC-14 — Security Containment and Observability
+
+EC-14 owns sensitive-material exclusion, permitted non-sensitive observability, and preservation of Audit authority without semantic ownership transfer.
+
+### 3.15 EC-15 — Governed Relationship and Authority Separation
+
+EC-15 owns preservation of already-governed relationship and lifecycle meaning and every EAP-004 downstream non-implication.
+
+### 3.16 EC-16 — Engineering Verification and Repository Conformance
+
+EC-16 owns complete architecture and scope traceability, design-conformance obligations, repository metadata, lifecycle, review, and authorization conformance.
+
+## 4. Component Boundaries
+
+| Component | Boundary begins | Boundary ends | Explicitly remains outside |
+|---|---|---|---|
+| EC-01 | At one accepted EAIC-002 Submission Unit | With preserved admitted input meaning suitable for Instrument-owned evaluation | Receipt, contract validation, admission determination, Provider acquisition, and Provider mutation |
+| EC-02 | With preserved admitted input meaning | With exactly one governed processing-status meaning | Interpretation Outcome, identity decision, mapping status, and lifecycle meaning |
+| EC-03 | With preserved admitted meaning and completed processing meaning | With exactly one governed Interpretation Outcome when applicable | Provider disposition, identity decision, mapping status, and product meaning |
+| EC-04 | With completed interpretation meaning and required identity evidence | With exactly one governed canonical-identity decision | Provider mapping, product eligibility, and downstream factual meaning |
+| EC-05 | With independently established dimension meanings | With coexistence, terminal-meaning, and deferral conformance | Creation of a combined status, lifecycle state, or reassessment authority |
+| EC-06 | With preserved Provider evidence and approved Instrument context | With semantic-sufficiency meaning for the applicable identity layer | Parsing rules, heuristics, scores, thresholds, and product membership |
+| EC-07 | With positive sufficiency and continuity evidence | With governed reuse-or-establishment determination evidence and continuity evidence | Automatic mutation from Provider record, symbol, token, or reference change |
+| EC-08 | With mapping evidence and canonical target meaning where required | With exactly one governed Provider Mapping Status | Canonical identity creation, Provider disposition, and cross-Provider scope merger |
+| EC-09 | With canonical-identity decision and Provider-separated identity and provenance evidence | With Instrument-owned reconciliation evidence | Silent Provider preference, partition merger, and unsupported equivalence |
+| EC-10 | With established publication preconditions | With Instrument Identity Contract publication-eligibility meaning | Publication authority itself, Provider-private meaning, and product eligibility |
+| EC-11 | With approved canonical catalogue meaning and publication preconditions | With Canonical Instrument Catalogue publication-eligibility meaning | Physical catalogue realization, Provider Catalogue meaning, and product-specific lists |
+| EC-12 | With eligible Instrument Identity Contract meaning and safe provenance | At the EAP-005 factual-attribution boundary | Factual attribution, Observation formation, and downstream product decisions |
+| EC-13 | At every governed evidence obligation within EDD-006 | With distinct, attributable preservation requirements | Semantic ownership transfer and substitution of one evidence time or class for another |
+| EC-14 | At every EDD-006 evidence and publication boundary | With containment and permitted observability constraints | Sensitive material exposure and Audit ownership of Provider or Instrument meaning |
+| EC-15 | At approved Instrument relationship, lifecycle, and authority constraints | With preserved relationship meaning and downstream non-authority | New relationship types, lifecycle states, transitions, or downstream authority |
+| EC-16 | At ES-01, EAP-004, CAR-006, and repository-governance traceability | With complete ES-02 conformance and review obligations | Engineering approval, architecture amendment, and later-stage design |
+
+The boundaries are mutually exclusive by owned responsibility. Cross-cutting constraints from EC-13 through EC-15 apply to other components without transferring those components' semantic responsibilities.
+
+## 5. Component Dependencies
+
+### 5.1 Dependency Rules
+
+Component dependencies describe required engineering meaning only. They do not define calls, timing, orchestration, concurrency, or physical interaction.
+
+The primary semantic dependency model is acyclic:
+
+| Component | Direct engineering dependencies | Dependency meaning |
+|---|---|---|
+| EC-01 | None within EDD-006 | Begins at the separately governed accepted EAIC-002 boundary. |
+| EC-13 | None | Establishes cross-cutting evidence and provenance obligations. |
+| EC-14 | None | Establishes cross-cutting containment and observability obligations. |
+| EC-15 | None | Establishes cross-cutting relationship and authority-separation obligations. |
+| EC-02 | EC-01, EC-13, EC-14, EC-15 | Processing status requires admitted meaning and governed conformance obligations. |
+| EC-03 | EC-01, EC-02, EC-13, EC-14, EC-15 | Outcome meaning requires admitted meaning and completed processing meaning. |
+| EC-06 | EC-01, EC-13, EC-14, EC-15 | Sufficiency requires preserved evidence and approved Instrument context. |
+| EC-07 | EC-01, EC-06, EC-13, EC-14, EC-15 | Identity continuity and establishment require positive semantic sufficiency and preserved evidence. |
+| EC-04 | EC-02, EC-03, EC-07, EC-13, EC-14, EC-15 | Canonical identity decision requires processing, outcome, and reuse-or-establishment determination evidence. |
+| EC-09 | EC-01, EC-04, EC-06, EC-07, EC-13, EC-14, EC-15 | Reconciliation requires a canonical-identity decision, Provider-separated evidence, and approved Instrument identity meaning. |
+| EC-08 | EC-04, EC-09, EC-13, EC-14, EC-15 | Mapping status uses identity meaning where applicable and reconciliation evidence. |
+| EC-05 | EC-02, EC-03, EC-04, EC-08, EC-13, EC-15 | Coexistence conformance evaluates the four independent dimensions without collapsing them. |
+| EC-10 | EC-04, EC-05, EC-07, EC-08, EC-13, EC-14, EC-15 | Contract eligibility requires identity, coexistence, continuity, applicable mapping, evidence, and containment conformance. |
+| EC-11 | EC-04, EC-05, EC-07, EC-08, EC-13, EC-14, EC-15 | Catalogue eligibility requires approved canonical meaning, coexistence, evidence, and authority separation. |
+| EC-12 | EC-10, EC-13, EC-14, EC-15 | Terminal projection requires eligible contract meaning and safe provenance. |
+| EC-16 | EC-01 through EC-15 | Verification consumes traceability from every component and creates no semantic feedback dependency. |
+
+### 5.2 Dependency Preservation
+
+- EC-01 preserves the sole admitted entry boundary.
+- EC-02, EC-03, EC-04, and EC-08 remain distinct despite their approved dependency direction.
+- EC-06 and EC-07 preserve positive semantic sufficiency and identity continuity before identity establishment.
+- EC-09 preserves Provider-separated reconciliation evidence before EC-08 establishes mapping meaning.
+- EC-10 and EC-11 remain separate publication-eligibility responsibilities.
+- EC-12 is the sole terminal downstream component.
+- EC-13, EC-14, and EC-15 are cross-cutting constraints, not alternative semantic owners.
+- EC-16 assesses conformance and does not modify component meaning.
+
+## 6. Engineering Information Flow
+
+Engineering information flow describes transfer of established meaning between conceptual components. It is not an execution sequence.
+
+| Flow | Source | Consumer | Engineering meaning transferred |
+|---|---|---|---|
+| EIF-01 | EC-01 | EC-02, EC-03, EC-06, EC-07, EC-09 | Preserved admitted Submission Unit meaning and Provider-owned evidence associations |
+| EIF-02 | EC-02 | EC-03, EC-04, EC-05 | Interpretation Processing Status meaning |
+| EIF-03 | EC-03 | EC-04, EC-05 | Interpretation Outcome meaning |
+| EIF-04 | EC-06 | EC-07 | Applicable identity-layer semantic-sufficiency meaning |
+| EIF-05 | EC-07 | EC-04, EC-09, EC-10, EC-11 | Reuse-or-establishment determination evidence and continuity evidence |
+| EIF-06 | EC-04 | EC-05, EC-08, EC-09, EC-10, EC-11 | Canonical Identity Decision meaning |
+| EIF-07 | EC-09 | EC-08 | Provider-separated reconciliation evidence |
+| EIF-08 | EC-08 | EC-05, EC-10, EC-11 | Provider Mapping Status meaning |
+| EIF-09 | EC-05 | EC-10, EC-11 | Four-dimension coexistence and bounded terminal-meaning conformance |
+| EIF-10 | EC-13 | EC-01 through EC-12 and EC-15 | Evidence-class, attribution, provenance, and preservation obligations |
+| EIF-11 | EC-14 | EC-01 through EC-13 and EC-15 | Sensitive-material containment and permitted observability constraints |
+| EIF-12 | EC-15 | EC-01 through EC-14 | Relationship, lifecycle, ownership, and downstream-authority constraints |
+| EIF-13 | EC-10 | EC-12 | Eligible Instrument Identity Contract meaning and associated safe provenance obligations |
+| EIF-14 | EC-01 through EC-15 | EC-16 | Responsibility, boundary, dependency, constraint, and traceability evidence |
+
+No information flow transfers semantic ownership. Provider meaning remains Provider-owned, Instrument meaning remains Instrument-owned, and Audit remains owner only of the Audit Trail.
+
+## 7. Responsibility Allocation
+
+### 7.1 One-to-One Allocation Matrix
+
+| ES-01 responsibility | Capability | Component |
+|---|---|---|
+| R1–R6 | C1 | EC-01 |
+| R7–R8 | C2 | EC-02 |
+| R9–R11 | C3 | EC-03 |
+| R12–R14 | C4 | EC-04 |
+| R15–R17 | C5 | EC-05 |
+| R18–R20 | C6 | EC-06 |
+| R21–R24 | C7 | EC-07 |
+| R25–R26 | C8 | EC-08 |
+| R27–R28 | C9 | EC-09 |
+| R29–R30 | C10 | EC-10 |
+| R31–R33 | C11 | EC-11 |
+| R34–R35 | C12 | EC-12 |
+| R36–R41 | C13 | EC-13 |
+| R42–R43 | C14 | EC-14 |
+| R44–R45 | C15 | EC-15 |
+| R46–R47 | C16 | EC-16 |
+
+### 7.2 Allocation Rules
+
+1. Responsibilities R1 through R47 are allocated exactly once.
+2. No component owns a responsibility outside ES-01.
+3. No cross-cutting constraint transfers the primary responsibility allocated to another component.
+4. No component transfers Provider, Instrument, Observation, product, or Audit ownership.
+5. No unallocated or duplicate responsibility remains.
+
+## 8. Capability Constraints
+
+| Capability | Mandatory capability constraints |
+|---|---|
+| C1 | Consume only an accepted EAIC-002 Submission Unit; preserve immutable associations and Provider identity scopes; never convert upstream rejection into Instrument outcome meaning. |
+| C2 | Preserve exact processing-status cardinality; prevent receipt, validation, or admission meaning from establishing processing progress; imply no other dimension. |
+| C3 | Preserve exact outcome cardinality; require completed bounded interpretation; alter no Provider meaning and infer no automatic outcome from Provider ambiguity or vocabulary. |
+| C4 | Preserve exact decision cardinality; require every EAP-004 establishment precondition; preserve justified non-establishment without downstream implication. |
+| C5 | Keep all four dimensions independent; preserve every permitted coexistence and bounded terminal meaning; use only governed dimension-specific deferral. |
+| C6 | Keep all three identity layers distinct; require positive approved semantic evidence; exclude product, Provider-native, behavioral, and technical substitutes for sufficiency. |
+| C7 | Prefer existing identity continuity where established; require positive sufficiency for new identity; never mutate identity automatically from Provider record change. |
+| C8 | Preserve exact mapping-status cardinality; keep mapping independent from canonical identity; require a canonical target for mapped meaning and never create identity through mapping. |
+| C9 | Keep every Provider's evidence and provenance separate; prohibit silent Provider preference, partition merger, identifier globalization, and unsupported equivalence. |
+| C10 | Require all EAP-004 publication preconditions and separate publication authority; publish only approved Instrument-owned meaning; exclude prohibited Provider and product meaning. |
+| C11 | Preserve product-neutral catalogue meaning; keep the catalogue distinct from Provider and downstream collections; permit only Instrument-owned canonical writes. |
+| C12 | Use only the approved Instrument Identity Contract boundary with safe provenance; terminate before factual attribution and Observation meaning; create no downstream decision. |
+| C13 | Keep evidence classes and applicable time meanings distinct; preserve attribution and unresolved reasons; transfer no Provider ownership. |
+| C14 | Exclude credentials, raw Provider content, and private technical material; expose only approved non-sensitive observability; preserve Audit authority separation. |
+| C15 | Preserve only already-governed relationship and lifecycle meaning; create no new state or transition; create no downstream factual, business, execution, or product authority. |
+| C16 | Verify complete ES-01 and EAP-004 traceability; preserve repository and lifecycle conformance; create no architecture, approval, or later-stage authority. |
+
+These constraints survive all later EDD-006 Engineering Stages and any separately authorized future realization.
+
+## 9. ES-01 and EAP-004 Traceability
+
+| Capability | ES-01 authority | Direct EAP-004 authority |
+|---|---|---|
+| C1 | R1–R6 | Sections 7, 17, and 19 |
+| C2 | R7–R8 | Sections 8 and 20 |
+| C3 | R9–R11 | Sections 9 and 20 |
+| C4 | R12–R14 | Sections 10 and 20 |
+| C5 | R15–R17 | Sections 12, 17, and 20 |
+| C6 | R18–R20 | Sections 13 and 20 |
+| C7 | R21–R24 | Sections 14 and 20 |
+| C8 | R25–R26 | Sections 11 and 20 |
+| C9 | R27–R28 | Sections 11, 17, and 20 |
+| C10 | R29–R30 | Sections 15, 19, and 20 |
+| C11 | R31–R33 | Sections 16, 18, and 20 |
+| C12 | R34–R35 | Sections 18 and 20 |
+| C13 | R36–R41 | Section 19 |
+| C14 | R42–R43 | Sections 19 and 20 |
+| C15 | R44–R45 | Sections 16, 18, and 20 |
+| C16 | R46–R47 | Sections 20 and 21; CAR-006 Version 1.1; EAS-007; DOC-001 |
+
+The traceability model confirms complete realization of ES-01 without duplication, loss, reinterpretation, or extension. EAP-004 remains the sole direct Engineering Architecture authority.
