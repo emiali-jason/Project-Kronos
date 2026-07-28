@@ -2,7 +2,7 @@
 
 **Document ID:** EDD-006<br>
 **Title:** Instrument Identity Engineering Design<br>
-**Version:** 0.3 Draft<br>
+**Version:** 0.4 Draft<br>
 **Status:** Draft<br>
 **Canonical Status:** Draft<br>
 **Classification:** Engineering Design Document<br>
@@ -12,13 +12,15 @@
 **Engineering Review Authority:** Chief Systems Engineer<br>
 **Repository Location:** `docs/engineering/edd/EDD-006-INSTRUMENT-IDENTITY-ENGINEERING-DESIGN.md`<br>
 **Workflow Stage:** Draft Preparation<br>
-**Engineering Stage:** Engineering Building Block Architecture<br>
+**Engineering Stage:** Engineering Interface Architecture<br>
 **ES-01 Review Status:** Approved<br>
 **ES-01 Approved By:** Chief Systems Engineer<br>
 **ES-02 Review Status:** Approved<br>
 **ES-02 Approved By:** Chief Systems Engineer<br>
 **ES-03 Review Status:** Approved<br>
 **ES-03 Approved By:** Chief Systems Engineer<br>
+**ES-04 Review Status:** Approved<br>
+**ES-04 Approved By:** Chief Systems Engineer<br>
 **Draft Authorization:** ES-01 completed under CAR-006 Version 1.0; ES-02 through ES-05 authorized under CAR-006 Version 1.1<br>
 **Direct Engineering Architecture:** EAP-004 Version 2.0<br>
 **Immediate Upstream Engineering Design:** EDD-005 Version 1.0<br>
@@ -784,3 +786,224 @@ No collaboration transfers semantic ownership. Provider meaning remains Provider
 | XBB-04 | Verify complete ES-01, ES-02, and EAP-004 traceability; preserve repository and lifecycle conformance; create no architecture, approval, implementation, or later-stage authority. |
 
 These constraints survive ES-04, ES-05, and any separately authorized future realization. ES-03 grants no implementation, runtime, persistence, publication, or downstream authority.
+
+---
+
+# ES-04 — Engineering Interface Design
+
+ES-04 translates the approved ES-03 Building Block relationships, collaborations, and boundaries into conceptual Engineering Interfaces. Each interface transfers established engineering meaning only.
+
+Interfaces do not define APIs, methods, messages, payloads, fields, schemas, protocols, transports, physical communication, operational sequencing, or technology. They transfer no ownership, authority, lifecycle control, or implementation behavior.
+
+The interface model contains 10 internal Building Block interfaces, three external engineering boundaries, and four cross-cutting interfaces. Every interface is justified by an approved ES-03 collaboration or Building Block boundary.
+
+## 1. Engineering Interface Design
+
+### 1.1 Internal Building Block Interfaces
+
+| Interface | Name | Source | Consumer | Engineering purpose |
+|---|---|---|---|---|
+| IF-02 | Admitted Interpretation Meaning | BB-01 | BB-02, BB-03, BB-04, BB-05, BB-07 | Make preserved admitted Submission Unit meaning and Provider-owned evidence associations available for bounded Instrument evaluation. |
+| IF-03 | Interpretation Processing Status Meaning | BB-02 | BB-03, BB-06, BB-09 | Transfer the independently established Interpretation Processing Status meaning. |
+| IF-04 | Interpretation Outcome Meaning | BB-03 | BB-06, BB-09 | Transfer the independently established Interpretation Outcome meaning. |
+| IF-05 | Identity-Layer Semantic Sufficiency Meaning | BB-04 | BB-05, BB-07 | Transfer applicable identity-layer semantic-sufficiency meaning. |
+| IF-06 | Canonical Identity Continuity and Establishment Assessment | BB-05 | BB-06, BB-07, BB-10, BB-11 | Transfer reuse-or-establishment assessment evidence and continuity meaning. |
+| IF-07 | Canonical Identity Decision Meaning | BB-06 | BB-07, BB-08, BB-09, BB-10, BB-11 | Transfer the independently established Canonical Identity Decision meaning. |
+| IF-08 | Cross-Provider Reconciliation Evidence | BB-07 | BB-08 | Transfer Provider-separated reconciliation evidence without creating mapping or equivalence. |
+| IF-09 | Provider Mapping Status Meaning | BB-08 | BB-09, BB-10, BB-11 | Transfer the independently established Provider Mapping Status meaning. |
+| IF-10 | Dimension Coexistence Conformance | BB-09 | BB-10, BB-11 | Transfer four-dimension coexistence, bounded terminal-meaning, and deferral conformance. |
+| IF-11 | Instrument Identity Contract Eligibility Meaning | BB-10 | BB-12 | Transfer eligible Instrument Identity Contract meaning and safe provenance obligations for terminal boundary control. |
+
+### 1.2 External Engineering Boundaries
+
+| Interface | Name | Source | Consumer | Engineering purpose |
+|---|---|---|---|---|
+| IF-01 | Accepted EAIC-002 Interpretation Input Boundary | Separately governed EAIC-002 admission boundary | BB-01 | Admit only one Submission Unit for which `ACCEPTED_FOR_INTERPRETATION` and its governed evidence already exist. |
+| IF-12 | Instrument Identity Contract Terminal Boundary | BB-12 | Separately governed EAP-005 factual-attribution boundary | Expose eligible Instrument Identity Contract meaning and safe provenance without entering factual attribution or Observation meaning. |
+| IF-13 | Canonical Instrument Catalogue Eligibility Boundary | BB-11 | Separately governed catalogue publication authority | Expose catalogue publication-eligibility meaning without publishing, realizing, or authorizing a catalogue. |
+
+### 1.3 Cross-Cutting Interfaces
+
+| Interface | Name | Source | Consumer | Engineering purpose |
+|---|---|---|---|---|
+| XIF-01 | Evidence and Provenance Obligations | XBB-01 | BB-01 through BB-12 and XBB-03 | Apply evidence-class, attribution, provenance, unresolved-meaning, and preservation obligations. |
+| XIF-02 | Security Containment and Observability Constraints | XBB-02 | BB-01 through BB-12, XBB-01, and XBB-03 | Apply sensitive-material containment and approved non-sensitive observability constraints. |
+| XIF-03 | Relationship and Authority-Separation Constraints | XBB-03 | BB-01 through BB-12, XBB-01, and XBB-02 | Apply governed relationship, lifecycle, ownership, and downstream non-authority constraints. |
+| XIF-04 | Engineering Conformance Evidence | BB-01 through BB-12 and XBB-01 through XBB-03 | XBB-04 | Supply responsibility, boundary, relationship, constraint, and traceability evidence for Engineering Verification. |
+
+## 2. Interface Responsibilities
+
+| Interface | Engineering responsibility |
+|---|---|
+| IF-01 | Preserve the sole accepted EAIC-002 entry boundary and prevent upstream receipt, validation, admission, or rejection responsibility from entering EDD-006. |
+| IF-02 | Preserve admitted Provider-owned meaning, immutable associations, identity scopes, and safe evidence references for bounded Instrument evaluation. |
+| IF-03 | Preserve exact Interpretation Processing Status meaning and its independence from every other Instrument dimension. |
+| IF-04 | Preserve exact Interpretation Outcome meaning, Provider non-mutation, and all approved outcome non-implications. |
+| IF-05 | Preserve distinct Economic Instrument, Listed Instrument, and Derivative Contract sufficiency meaning based only on approved semantic evidence. |
+| IF-06 | Preserve existing-identity reuse, bounded new-identity establishment assessment, identity distinction, and continuity evidence. |
+| IF-07 | Preserve exact Canonical Identity Decision meaning, establishment preconditions, and attributable non-establishment. |
+| IF-08 | Preserve Provider-separated reconciliation evidence, ambiguity, conflict, and provenance without merging scopes or asserting unsupported equivalence. |
+| IF-09 | Preserve exact Provider Mapping Status meaning, independence from canonical identity, and Provider-specific mapping scope. |
+| IF-10 | Preserve dimension independence, permitted coexistence, bounded terminal meaning, and dimension-specific deferral. |
+| IF-11 | Preserve Instrument Identity Contract publication-eligibility meaning, applicable safe provenance, and the absence of publication authority. |
+| IF-12 | Preserve the sole downstream EDD-006 boundary and prevent factual attribution, Observation meaning, or downstream decisions from flowing back into EDD-006. |
+| IF-13 | Preserve product-neutral Canonical Instrument Catalogue eligibility and Instrument-only write ownership without granting publication or physical-realization authority. |
+| XIF-01 | Preserve distinct evidence classes, attribution, provenance, continuity, unresolved reasons, and applicable publication evidence obligations. |
+| XIF-02 | Exclude prohibited sensitive or private material and preserve only approved non-sensitive observability with Audit authority separation. |
+| XIF-03 | Preserve approved relationship, lifecycle, ownership, dependency, and downstream non-authority constraints. |
+| XIF-04 | Preserve complete ES-01, ES-02, ES-03, EAP-004, and repository-governance traceability for review and verification. |
+
+Each interface owns only the preservation and transfer of its identified engineering meaning. The source Building Block retains responsibility for establishing that meaning, and the consumer acquires no source ownership or authority.
+
+## 3. Interface Boundaries
+
+| Interface | Boundary begins | Boundary ends | Explicitly remains outside |
+|---|---|---|---|
+| IF-01 | After `ACCEPTED_FOR_INTERPRETATION` and its governed evidence have been separately established | At BB-01 consumption of one accepted Submission Unit | Technical receipt, contract validation, admission determination, pre-interpretation rejection, and logical response establishment |
+| IF-02 | At BB-01 preserved admitted interpretation-input meaning | At the identified consuming Building Blocks' use of that meaning within their approved responsibilities | Raw Provider content, Provider mutation, contract rejection, product meaning, and semantic ownership transfer |
+| IF-03 | At BB-02 establishment of one processing-status meaning | At BB-03, BB-06, and BB-09 consumption of that meaning | Interpretation Outcome, canonical identity, mapping, lifecycle, and progress-establishment behavior |
+| IF-04 | At BB-03 establishment of one bounded outcome meaning | At BB-06 and BB-09 consumption of that meaning | Provider disposition, canonical identity, mapping, product eligibility, and business judgment |
+| IF-05 | At BB-04 establishment of applicable identity-layer sufficiency meaning | At BB-05 and BB-07 consumption of that meaning | Fields, parsing rules, algorithms, scores, thresholds, Provider vocabulary substitution, and product membership |
+| IF-06 | At BB-05 establishment of reuse-or-establishment assessment and continuity evidence | At BB-06, BB-07, BB-10, and BB-11 consumption of that meaning | Automatic identity mutation, canonical decision establishment, mapping status, and physical identity realization |
+| IF-07 | At BB-06 establishment of one canonical-identity decision | At the identified consuming Building Blocks' use of that decision | Provider mapping, product eligibility, factual attribution, Observation meaning, and downstream authority |
+| IF-08 | At BB-07 establishment of Provider-separated reconciliation evidence | At BB-08 consumption of that evidence | Provider partition merger, Provider preference, identifier globalization, mapping determination, and unsupported equivalence |
+| IF-09 | At BB-08 establishment of one Provider Mapping Status meaning | At BB-09, BB-10, and BB-11 consumption of that meaning | Canonical identity creation, another Provider's mapping, Provider disposition, and product meaning |
+| IF-10 | At BB-09 establishment of dimension-coexistence conformance | At BB-10 and BB-11 consumption of that conformance | Combined status, new lifecycle state, reassessment authority, and operational control |
+| IF-11 | At BB-10 establishment of Instrument Identity Contract eligibility | At BB-12 terminal-boundary assessment | Publication authority, physical publication, factual attribution, Observation meaning, and product eligibility |
+| IF-12 | At BB-12 establishment of terminally eligible contract meaning and safe provenance | Immediately at the EAP-005 factual-attribution boundary | EAP-005 evaluation, factual attribution, Observation formation, Validation, product decisions, and semantic feedback |
+| IF-13 | At BB-11 establishment of catalogue publication eligibility | At the separately governed catalogue publication-authority boundary | Publication approval, physical catalogue realization, persistence, Provider Catalogue meaning, and product collections |
+| XIF-01 | At every EDD-006 evidence obligation | At preservation of the applicable evidence and provenance constraint by each consumer | Semantic ownership transfer and substitution of evidence classes or time meanings |
+| XIF-02 | At every EDD-006 evidence, observability, and publication boundary | At preservation of containment and approved observability constraints by each consumer | Credentials, raw Provider content, private technical material, and Audit ownership of Provider or Instrument meaning |
+| XIF-03 | At every approved relationship, lifecycle, ownership, and authority constraint | At preservation of the applicable constraint by each consumer | New relationships, lifecycle states, transitions, factual meaning, business authority, and product authority |
+| XIF-04 | At each Building Block's established design-conformance evidence | At XBB-04 review and verification responsibility | Architecture amendment, approval authority, implementation authority, and semantic feedback |
+
+All external interfaces terminate at their identified engineering boundary. IF-12 is the sole EDD-006 interface toward EAP-005. IF-13 terminates at eligibility and does not perform or authorize catalogue publication.
+
+## 4. Interface Contracts
+
+| Interface | Meaning transferred | Meaning never transferred | Ownership, authority, and lifecycle preservation |
+|---|---|---|---|
+| IF-01 | Accepted Submission Unit meaning and governed admission evidence | Rejected submission meaning, upstream decision responsibility, or Instrument interpretation result | Provider meaning remains Provider-owned; admission authority remains upstream; no Instrument lifecycle is created. |
+| IF-02 | Preserved admitted meaning, immutable associations, Provider assertions, limitations, ambiguity, and safe evidence references | Raw Provider payloads, credentials, Provider-created canonical meaning, product meaning, or contract-rejection meaning | Provider identity scopes and provenance remain bounded; Instrument receives evaluation responsibility only. |
+| IF-03 | One approved Interpretation Processing Status meaning | Outcome, identity, mapping, eligibility, lifecycle, or operational progress behavior | BB-02 remains the status owner; no other dimension or authority is established. |
+| IF-04 | One approved Interpretation Outcome meaning | Provider disposition, identity decision, mapping, product membership, or business judgment | Instrument owns the outcome; Provider meaning remains unchanged; no lifecycle or downstream authority is created. |
+| IF-05 | Approved semantic-sufficiency meaning for the applicable identity layer | Fields, algorithms, heuristics, scores, thresholds, Provider-native substitutes, or product demand | Instrument owns sufficiency meaning; Provider evidence ownership is preserved; no identity is established by transfer alone. |
+| IF-06 | Reuse-or-establishment assessment evidence, distinction, and continuity meaning | Automatic identity mutation, canonical decision, mapping, or implementation realization | Instrument continuity responsibility is preserved; Provider changes remain evidence only; no lifecycle is inferred. |
+| IF-07 | One approved Canonical Identity Decision meaning and applicable attributable reason | Provider mapping, Provider availability, product eligibility, Observation meaning, or factual attribution | Instrument owns canonical identity; no Provider, product, or downstream authority is transferred. |
+| IF-08 | Provider-separated reconciliation evidence, ambiguity, conflict, and provenance | Mapping status, merged Provider scope, preferred Provider meaning, or unsupported equivalence | Each Provider scope remains separate; reconciliation remains Instrument-owned; no lifecycle meaning is created. |
+| IF-09 | One approved Provider Mapping Status meaning | Canonical identity creation, another Provider's mapping, Provider disposition, or product eligibility | Instrument owns mapping meaning; Provider evidence remains Provider-owned; canonical identity remains independent. |
+| IF-10 | Approved coexistence, bounded terminal-meaning, and deferral conformance | Combined dimension status, lifecycle state, reassessment authority, or operational sequencing | Each dimension retains its owner and cardinality; no new authority or lifecycle is created. |
+| IF-11 | Instrument Identity Contract eligibility and safe provenance obligations | Publication authority, raw Provider meaning, product eligibility, factual meaning, or physical realization | Instrument contract meaning remains Instrument-owned; eligibility does not grant publication or downstream authority. |
+| IF-12 | Eligible Instrument Identity Contract meaning and associated safe provenance | Provider-private meaning, EAP-005 results, Observation meaning, product decisions, or semantic feedback | Instrument ownership is preserved at the boundary; EAP-005 retains downstream responsibility; lifecycle authority is unchanged. |
+| IF-13 | Canonical Instrument Catalogue eligibility and approved product-neutral catalogue meaning | Publication approval, physical catalogue realization, persistence, Provider Catalogue meaning, or product collections | Instrument retains catalogue write ownership; separate publication authority is preserved; no lifecycle transition is created. |
+| XIF-01 | Evidence-class, attribution, provenance, continuity, unresolved-reason, and preservation obligations | Provider ownership, semantic decisions, or replacement of one evidence class by another | Evidence obligations constrain but do not own source meaning or create authority. |
+| XIF-02 | Sensitive-material exclusions and approved non-sensitive observability constraints | Credentials, raw Provider content, private technical state, or semantic ownership | Audit retains Audit Trail ownership only; Provider and Instrument meaning remain with their governed owners. |
+| XIF-03 | Approved relationship, lifecycle, ownership, dependency, and downstream non-authority constraints | New relationships, states, transitions, product authority, or business decisions | Existing architectural ownership and authority remain unchanged; the interface creates no lifecycle behavior. |
+| XIF-04 | Design responsibility, boundary, relationship, constraint, and traceability evidence | Architecture changes, semantic decisions, approval, implementation, or runtime authority | XBB-04 verifies conformance only; all semantic ownership and stage-gate authority remain with their governed owners. |
+
+## 5. Interface Information Exchange
+
+Information exchange describes conceptual engineering meaning, not data structure or communication behavior.
+
+| Exchange class | Interfaces | Permitted engineering meaning | Prohibited exchange |
+|---|---|---|---|
+| Admitted input | IF-01, IF-02 | Accepted Submission Unit meaning, immutable associations, preserved Provider assertions, limitations, ambiguity, and safe evidence references | Raw Provider content, credentials, upstream rejection responsibility, and Provider-created canonical meaning |
+| Independent dimensions | IF-03, IF-04, IF-07, IF-09 | Exact processing-status, outcome, canonical-identity-decision, and Provider-mapping-status meanings | Combined status, implied values, lifecycle meaning, operational behavior, and product meaning |
+| Identity sufficiency and continuity | IF-05, IF-06 | Identity-layer sufficiency, distinction, reuse-or-establishment assessment, and continuity evidence | Fields, parsing logic, algorithms, technical heuristics, automatic mutation, and product-derived identity |
+| Reconciliation | IF-08 | Provider-separated evidence, provenance, ambiguity, and conflict | Provider scope merger, silent preference, identifier globalization, and unsupported equivalence |
+| Coexistence | IF-10 | Permitted coexistence, bounded terminal meaning, and dimension-specific deferral | Combined lifecycle state, reassessment authority, or execution sequence |
+| Publication eligibility | IF-11, IF-13 | Approved eligibility meaning, safe provenance obligations, and applicable product-neutral canonical meaning | Publication authority, physical realization, persistence, raw Provider meaning, and product collections |
+| Downstream boundary | IF-12 | Eligible Instrument Identity Contract meaning and safe provenance | EAP-005 results, factual attribution, Observation meaning, Validation, and product decisions |
+| Evidence and governance constraints | XIF-01, XIF-02, XIF-03, XIF-04 | Evidence obligations, containment, observability, authority separation, and conformance evidence | Semantic ownership transfer, architecture amendment, approval, implementation, or downstream authority |
+
+No interface information exchange defines representation. ES-04 establishes meaning, exclusions, and preservation obligations only.
+
+## 6. Interface Dependencies
+
+Interface dependencies are semantic prerequisites only. They do not define execution order, calls, orchestration, scheduling, concurrency, persistence, or physical communication.
+
+| Interface | Direct engineering dependencies | Dependency meaning |
+|---|---|---|
+| IF-01 | None within EDD-006 | Begins at the separately governed accepted EAIC-002 boundary. |
+| XIF-01 | None | Establishes cross-cutting evidence and provenance obligations. |
+| XIF-02 | None | Establishes cross-cutting containment and observability obligations. |
+| XIF-03 | None | Establishes cross-cutting relationship and authority-separation obligations. |
+| IF-02 | IF-01, XIF-01, XIF-02, XIF-03 | Preserved admitted meaning depends on the accepted boundary and applicable constraints. |
+| IF-03 | IF-02, XIF-01, XIF-02, XIF-03 | Processing-status meaning depends on preserved admitted meaning. |
+| IF-04 | IF-02, IF-03, XIF-01, XIF-02, XIF-03 | Outcome meaning depends on admitted meaning and completed processing meaning. |
+| IF-05 | IF-02, XIF-01, XIF-02, XIF-03 | Sufficiency meaning depends on admitted evidence and approved Instrument context. |
+| IF-06 | IF-02, IF-05, XIF-01, XIF-02, XIF-03 | Continuity and establishment assessment depends on positive semantic sufficiency and preserved evidence. |
+| IF-07 | IF-03, IF-04, IF-06, XIF-01, XIF-02, XIF-03 | Canonical identity decision depends on processing, outcome, continuity, and establishment-assessment meaning. |
+| IF-08 | IF-02, IF-05, IF-06, IF-07, XIF-01, XIF-02, XIF-03 | Reconciliation evidence depends on Provider-separated evidence and approved Instrument identity meaning. |
+| IF-09 | IF-07, IF-08, XIF-01, XIF-02, XIF-03 | Mapping meaning depends on identity meaning where applicable and Provider-separated reconciliation evidence. |
+| IF-10 | IF-03, IF-04, IF-07, IF-09, XIF-01, XIF-03 | Coexistence conformance depends on all four independently established dimension meanings. |
+| IF-11 | IF-06, IF-07, IF-09, IF-10, XIF-01, XIF-02, XIF-03 | Contract eligibility depends on continuity, identity, applicable mapping, coexistence, evidence, containment, and authority conformance. |
+| IF-13 | IF-06, IF-07, IF-09, IF-10, XIF-01, XIF-02, XIF-03 | Catalogue eligibility depends on approved canonical meaning, continuity, applicable mapping, coexistence, evidence, containment, and authority conformance. |
+| IF-12 | IF-11, XIF-01, XIF-02, XIF-03 | Terminal projection depends on eligible contract meaning and safe provenance. |
+| XIF-04 | IF-01 through IF-13 and XIF-01 through XIF-03 | Verification consumes traceability from every interface and creates no semantic feedback dependency. |
+
+The semantic dependency model is acyclic. IF-01 is the sole admitted entry interface, IF-12 is the sole EAP-005 terminal interface, and IF-13 is an eligibility boundary that creates no publication dependency.
+
+## 7. Interface Constraints
+
+| Interface | Mandatory constraints |
+|---|---|
+| IF-01 | Admit only one Submission Unit with separately established `ACCEPTED_FOR_INTERPRETATION`; preserve upstream authority; introduce no upstream responsibility into EDD-006. |
+| IF-02 | Preserve immutable associations, Provider-owned meaning, Provider identity scopes, and safe references; exclude raw or sensitive Provider content. |
+| IF-03 | Preserve exact processing-status cardinality and independence; establish no outcome, identity, mapping, lifecycle, or operational meaning. |
+| IF-04 | Preserve exact outcome cardinality and Provider non-mutation; establish no identity, mapping, product, or business meaning. |
+| IF-05 | Preserve three distinct identity layers and positive semantic sufficiency; exclude fields, algorithms, scores, thresholds, technical substitutes, and product demand. |
+| IF-06 | Preserve continuity, distinction, and reuse-or-establishment assessment evidence; prevent automatic identity mutation from Provider change. |
+| IF-07 | Preserve exact decision cardinality, establishment preconditions, and justified non-establishment; establish no mapping or downstream meaning. |
+| IF-08 | Preserve Provider-separated evidence and provenance; prohibit Provider scope merger, silent preference, identifier globalization, and unsupported equivalence. |
+| IF-09 | Preserve exact mapping-status cardinality, canonical-target requirements, and Provider-specific scope; never create canonical identity. |
+| IF-10 | Preserve independence, permitted coexistence, bounded terminal meaning, and dimension-specific deferral; create no combined state or reassessment authority. |
+| IF-11 | Require every EAP-004 Instrument Identity Contract eligibility precondition; preserve separate publication authority; exclude Provider-private and product meaning. |
+| IF-12 | Expose only eligible Instrument Identity Contract meaning and safe provenance; terminate before EAP-005 evaluation; prohibit semantic feedback. |
+| IF-13 | Preserve product-neutral catalogue eligibility and Instrument-only write ownership; create no publication, physical-realization, persistence, or product authority. |
+| XIF-01 | Keep evidence classes and applicable time meanings distinct; preserve attribution, provenance, and unresolved reasons; transfer no semantic ownership. |
+| XIF-02 | Exclude credentials, raw Provider content, and private technical material; permit only approved non-sensitive observability; preserve Audit authority separation. |
+| XIF-03 | Preserve only governed relationship and lifecycle meaning; create no new state, transition, factual meaning, business authority, or product authority. |
+| XIF-04 | Preserve complete design and repository traceability; create no architecture, approval, implementation, runtime, or later-stage authority. |
+
+These constraints apply regardless of any separately authorized future realization. No ES-04 interface grants implementation, runtime, persistence, publication, transport, or downstream authority.
+
+## 8. Traceability to Engineering Building Blocks
+
+### 8.1 Interface-to-ES-03 Traceability
+
+| Interface | ES-03 authority | Building Blocks represented | ES-02 capability responsibility |
+|---|---|---|---|
+| IF-01 | BB-01 entry boundary | BB-01 | C1 / EC-01 / R1–R6 |
+| IF-02 | BBC-01 | BB-01, BB-02, BB-03, BB-04, BB-05, BB-07 | C1 / EC-01 / R1–R6 |
+| IF-03 | BBC-02 | BB-02, BB-03, BB-06, BB-09 | C2 / EC-02 / R7–R8 |
+| IF-04 | BBC-03 | BB-03, BB-06, BB-09 | C3 / EC-03 / R9–R11 |
+| IF-05 | BBC-04 | BB-04, BB-05, BB-07 | C6 / EC-06 / R18–R20 |
+| IF-06 | BBC-05 | BB-05, BB-06, BB-07, BB-10, BB-11 | C7 / EC-07 / R21–R24 |
+| IF-07 | BBC-06 | BB-06, BB-07, BB-08, BB-09, BB-10, BB-11 | C4 / EC-04 / R12–R14 |
+| IF-08 | BBC-07 | BB-07, BB-08 | C9 / EC-09 / R27–R28 |
+| IF-09 | BBC-08 | BB-08, BB-09, BB-10, BB-11 | C8 / EC-08 / R25–R26 |
+| IF-10 | BBC-09 | BB-09, BB-10, BB-11 | C5 / EC-05 / R15–R17 |
+| IF-11 | BBC-13 | BB-10, BB-12 | C10 / EC-10 / R29–R30 |
+| IF-12 | BB-12 terminal boundary | BB-12 | C12 / EC-12 / R34–R35 |
+| IF-13 | BB-11 catalogue-eligibility boundary | BB-11 | C11 / EC-11 / R31–R33 |
+| XIF-01 | BBC-10 | XBB-01, BB-01 through BB-12, XBB-03 | C13 / EC-13 / R36–R41 |
+| XIF-02 | BBC-11 | XBB-02, BB-01 through BB-12, XBB-01, XBB-03 | C14 / EC-14 / R42–R43 |
+| XIF-03 | BBC-12 | XBB-03, BB-01 through BB-12, XBB-01, XBB-02 | C15 / EC-15 / R44–R45 |
+| XIF-04 | BBC-14 | XBB-04, BB-01 through BB-12, XBB-01 through XBB-03 | C16 / EC-16 / R46–R47 |
+
+### 8.2 Traceability Conformance
+
+1. All 12 primary Building Blocks are represented.
+2. All four cross-cutting Building Blocks are represented.
+3. Collaborations BBC-01 through BBC-14 are represented exactly once.
+4. BB-01, BB-11, and BB-12 external boundaries are represented exactly once.
+5. Capabilities C1 through C16 remain represented without responsibility transfer.
+6. Components EC-01 through EC-16 remain represented without boundary change.
+7. Responsibilities R1 through R47 remain completely traceable through their owning Building Blocks; interface participation does not reallocate or duplicate responsibility ownership.
+8. IF-01 is the sole accepted EAIC-002 entry interface.
+9. IF-12 is the sole EDD-006 interface toward EAP-005 factual attribution.
+10. IF-13 terminates at catalogue eligibility and creates no publication authority.
+11. No interface introduces architecture, implementation, runtime behavior, or later-stage authority.
+
+The interface model fully realizes ES-03 and remains directly subordinate to EAP-004 Version 2.0.
