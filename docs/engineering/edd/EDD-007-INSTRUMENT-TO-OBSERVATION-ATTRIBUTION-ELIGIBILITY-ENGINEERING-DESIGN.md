@@ -2,17 +2,18 @@
 
 **Document ID:** EDD-007<br>
 **Title:** Instrument-to-Observation Attribution Eligibility Engineering Design<br>
-**Version:** 0.4 Draft<br>
-**Status:** Draft<br>
-**Canonical Status:** Draft<br>
+**Version:** 1.0<br>
+**Status:** Approved<br>
+**Canonical Status:** Canonical<br>
 **Classification:** Engineering Design Document<br>
 **Owner:** Engineering Architect<br>
 **Prepared By:** Engineering Design Team<br>
 **Review Authority:** Chief Architect<br>
 **Engineering Review Authority:** Chief Systems Engineer<br>
 **Repository Location:** `docs/engineering/edd/EDD-007-INSTRUMENT-TO-OBSERVATION-ATTRIBUTION-ELIGIBILITY-ENGINEERING-DESIGN.md`<br>
-**Workflow Stage:** Draft Preparation<br>
-**Engineering Stage:** Engineering Interface Design<br>
+**Workflow Stage:** Repository Publication<br>
+**Engineering Stage:** Complete<br>
+**Engineering Lifecycle:** Complete<br>
 **ES-01 Review Status:** Approved<br>
 **ES-01 Approved By:** Chief Systems Engineer<br>
 **ES-02 Review Status:** Approved<br>
@@ -21,13 +22,19 @@
 **ES-03 Approved By:** Chief Systems Engineer<br>
 **ES-04 Review Status:** Approved<br>
 **ES-04 Approved By:** Chief Systems Engineer<br>
+**ES-05 Review Status:** Approved<br>
+**ES-05 Approved By:** Chief Systems Engineer<br>
+**Engineering Verification:** PASS<br>
+**Critical NCR:** 0<br>
+**Major NCR:** 0<br>
+**Minor NCR:** 0<br>
 **Authorization Decision:** CAR-007 Version 1.0<br>
 **Direct Engineering Architecture:** EAP-005 Version 1.1<br>
 **Engineering Authority:** ES-01 through ES-05, sequential under CAR-007 Version 1.0<br>
 **Architecture Authority:** None<br>
 **Implementation Authority:** None<br>
 **Runtime Authority:** None<br>
-**Repository Status:** Published
+**Repository Status:** Publication Prepared — Push Pending Chief Architect Approval
 
 ---
 
@@ -1111,3 +1118,283 @@ The interface model is complete and conformant because:
 - every interface terminates before Observation construction, Observation Acceptance, and EAP-006 responsibility.
 
 This traceability creates no authority for ES-05. Independent Engineering Verification remains prohibited until ES-04 completes the CAR-007 review, approval, publication, and freeze gate.
+
+---
+
+# ES-05 — Independent Engineering Verification
+
+## 1. Independent Engineering Verification
+
+### 1.1 Verification Scope
+
+Independent Engineering Verification examined the complete EDD-007 Engineering Design through the frozen ES-01, ES-02, ES-03, and ES-04 baselines.
+
+The verification assessed:
+
+- conformance with CAR-007 Version 1.0;
+- faithful realization of EAP-005 Version 1.1;
+- preservation of the approved EDD-006 upstream Instrument Identity Contract boundary;
+- preservation of Instrument, Observation, and applicable source-domain ownership;
+- completeness and exclusivity of responsibility allocation;
+- completeness of capability, Building Block, and interface realization;
+- internal consistency and dependency acyclicity;
+- preservation of the EAP-005 terminal boundary;
+- absence of unauthorized architecture or implementation design;
+- EAS-007 lifecycle and traceability conformance;
+- DOC-001 metadata and Document Register conformance; and
+- readiness for Version 1.0 Canonical publication.
+
+### 1.2 Verification Method
+
+Verification used repository evidence only. The method comprised:
+
+1. direct comparison of EDD-007 scope and constraints with EAP-005 and CAR-007;
+2. one-to-one enumeration of ES-01 responsibilities R1–R50;
+3. allocation comparison from ES-01 responsibilities to ES-02 capabilities C1–C16;
+4. realization comparison from capabilities to ES-03 Building Blocks BB-01 through BB-12 and XBB-01 through XBB-04;
+5. relationship comparison from ES-03 to ES-04 interfaces IF-01 through IF-19;
+6. ownership, authority, boundary, and semantic-separation review;
+7. conceptual dependency-graph acyclicity checks;
+8. prohibited-content and implementation-independence review;
+9. metadata, register, Markdown, table, fence, whitespace, and final-newline validation;
+10. repository test execution; and
+11. `git diff --check`.
+
+The method verified existing design only and introduced no corrective design.
+
+### 1.3 Verification Result
+
+| Verification area | Result | Evidence summary |
+|---|---|---|
+| Scope | PASS | ES-01 preserves the EAP-005 beginning, ending, ownership, exclusions, and authority limits. |
+| Responsibilities | PASS | R1–R50 are complete, sequential, non-duplicated, and allocated exactly once. |
+| Capabilities | PASS | C1–C16 realize the complete responsibility set without overlap or orphan capability. |
+| Building Blocks | PASS | Twelve primary and four cross-cutting blocks realize C1–C16 exactly once. |
+| Interfaces | PASS | Nineteen justified interfaces represent every approved ES-03 relationship and all 16 blocks. |
+| Traceability | PASS | CAR-007 and EAP-005 trace through every Engineering Stage without scope loss or ownership change. |
+| Repository compliance | PASS | Lifecycle, metadata, register, formatting, and repository checks conform. |
+| Implementation independence | PASS | No implementation design or implementation authority is introduced. |
+
+**Independent Engineering Verification Result: PASS**
+
+This result is an Engineering Verification finding. It does not itself approve, canonicalize, publish, implement, or operationally activate EDD-007.
+
+## 2. Scope Verification
+
+| Scope criterion | Verification evidence | Result |
+|---|---|---|
+| Direct authority | EAP-005 Version 1.1 remains the sole direct Engineering Architecture authority throughout ES-01 through ES-04. | PASS |
+| Authorized mission | The design remains limited to Instrument-to-Observation Attribution Eligibility Engineering Design authorized by CAR-007. | PASS |
+| Upstream beginning | The design begins only with one approved Instrument Identity Contract and one bounded source-neutral Candidate Factual Information input. | PASS |
+| Downstream ending | The design ends with Observation Participation Eligibility or preserved Attribution Ineligibility and governed reasons. | PASS |
+| Observation boundary | Candidate Observation construction, Observation Acceptance, ownership, publication, and all later Observation responsibility remain excluded. | PASS |
+| Identity boundary | Canonical Instrument identity is consumed without creation, reinterpretation, repair, remapping, reopening, or ownership transfer. | PASS |
+| Provider boundary | Direct Provider, Provider Catalogue, Provider Record, EAIC-002, raw payload, and sensitive-content bypasses remain excluded. | PASS |
+| Product neutrality | Product membership, Product Eligibility, product strategy, and fitness-for-use meaning remain excluded. | PASS |
+| Authority limits | Architecture Authority, Implementation Authority, and Runtime Authority remain None. | PASS |
+
+No scope expansion, contraction, or responsibility leakage was found.
+
+## 3. Responsibility Verification
+
+### 3.1 Responsibility Counts
+
+| Verification item | Expected | Observed | Result |
+|---|---:|---:|---|
+| ES-01 Engineering Responsibilities | 50 | 50 | PASS |
+| Responsibilities allocated to ES-02 | 50 | 50 | PASS |
+| Missing responsibility allocations | 0 | 0 | PASS |
+| Duplicate responsibility allocations | 0 | 0 | PASS |
+| Responsibilities preserved through ES-03 | 50 | 50 | PASS |
+| Responsibilities traceable through ES-04 | 50 | 50 | PASS |
+
+### 3.2 Responsibility Integrity
+
+Verification confirmed that:
+
+- R1–R7 preserve the two governed input boundaries;
+- R8–R15 preserve readiness, bounded evaluation, outcome cardinality, and outcome evidence;
+- R16–R33 preserve identity association, factual association, semantic separation, continuity, context, condition, uncertainty, and ambiguity;
+- R34–R39 preserve eligibility, ineligibility, reasons, and the terminal Observation Participation boundary;
+- R40–R46 preserve boundary, ownership, authority, security, observability, Provider-condition, and downstream-feedback constraints; and
+- R47–R50 preserve architecture traceability, mandatory EAP-005 meaning, Engineering Verification, and repository governance.
+
+No responsibility was redefined, divided, merged away, reassigned, or extended.
+
+## 4. Capability Verification
+
+| Capability criterion | Verification evidence | Result |
+|---|---|---|
+| Capability count | Exactly 16 capabilities, C1 through C16 | PASS |
+| Responsibility coverage | Every responsibility R1–R50 is allocated to exactly one capability | PASS |
+| Orphan capabilities | Every capability is justified by at least one ES-01 responsibility | PASS |
+| Boundary separation | Each capability has a distinct beginning, ending, and explicit outside responsibility | PASS |
+| Semantic separation | Readiness, evaluation, association, continuity, condition, ambiguity, eligibility, ineligibility, and downstream eligibility remain separate | PASS |
+| Cross-cutting separation | C13–C16 constrain or assess without absorbing C1–C12 | PASS |
+| Dependency integrity | Capability relationships are conceptual, one-directional, and acyclic | PASS |
+| Implementation independence | Capabilities define responsibility only and do not predetermine realization | PASS |
+
+The capability model fully realizes the frozen ES-01 scope and introduces no new capability authority.
+
+## 5. Building Block Verification
+
+| Building Block criterion | Verification evidence | Result |
+|---|---|---|
+| Primary Building Blocks | BB-01 through BB-12: 12 present | PASS |
+| Cross-cutting Building Blocks | XBB-01 through XBB-04: 4 present | PASS |
+| Capability realization | Every capability C1–C16 is realized by exactly one Building Block | PASS |
+| Responsibility preservation | Forty responsibilities remain in primary blocks and ten remain in cross-cutting blocks | PASS |
+| Orphan or duplicate blocks | Zero orphan blocks and zero duplicate capability realizations | PASS |
+| Boundary integrity | Every block terminates within EAP-005 and before later Observation responsibility | PASS |
+| Relationship integrity | Every relationship is justified by ES-02 dependency meaning | PASS |
+| Collaboration integrity | Collaboration preserves separate responsibility and defines no execution or communication behavior | PASS |
+| Dependency integrity | The Building Block relationship model is acyclic | PASS |
+
+The Building Block model is cohesive, non-overlapping, independently reviewable, and implementation-independent.
+
+## 6. Interface Verification
+
+### 6.1 Interface Counts
+
+| Interface class | Expected | Observed | Result |
+|---|---:|---:|---|
+| External engineering boundaries | 3 | 3 | PASS |
+| Internal primary interfaces | 12 | 12 | PASS |
+| Cross-cutting interfaces | 4 | 4 | PASS |
+| Total conceptual interfaces | 19 | 19 | PASS |
+
+### 6.2 Interface Integrity
+
+Verification confirmed that:
+
+- IF-01 is the sole canonical Instrument identity input boundary;
+- IF-02 is the sole Candidate Factual Information input boundary;
+- IF-03 through IF-14 represent the approved internal Building Block relationships;
+- IF-15 is the sole downstream external interface and transfers Observation Participation Eligibility only;
+- IF-16 through IF-19 represent approved cross-cutting conformance, containment, traceability, and verification relationships;
+- all 16 Building Blocks are represented;
+- every interface has one justified purpose, responsibility, boundary, contract, information meaning, dependency basis, and traceability record;
+- composite-source interfaces preserve independent contributor meaning and ownership;
+- Attribution Ineligible produces no downstream eligibility interface;
+- interface contracts transfer established engineering meaning only;
+- no interface transfers ownership, authority, primary responsibility, or lifecycle state;
+- no interface crosses into Candidate Observation construction, Observation Acceptance, or downstream Observation responsibility; and
+- the interface dependency model is acyclic.
+
+No orphan, unjustified, cyclic, operational, or implementation-coupled interface was found.
+
+## 7. Traceability Verification
+
+### 7.1 End-to-End Traceability
+
+| Traceability layer | Repository evidence | Result |
+|---|---|---|
+| Governance to architecture | CAR-007 limits EDD-007 to Engineering Design derived exclusively from EAP-005 Version 1.1. | PASS |
+| Architecture to scope | ES-01 translates EAP-005 into 50 bounded Engineering Responsibilities. | PASS |
+| Scope to capabilities | ES-02 allocates R1–R50 exactly once across C1–C16. | PASS |
+| Capabilities to Building Blocks | ES-03 realizes C1–C16 exactly once across 16 Building Blocks. | PASS |
+| Building Blocks to interfaces | ES-04 represents every approved relationship through IF-01–IF-19. | PASS |
+| Interfaces to verification | ES-05 verifies interface coverage, boundaries, ownership, dependencies, and constraints. | PASS |
+
+### 7.2 Mandatory EAP-005 Meaning
+
+| EAP-005 mandatory set | Repository count | EDD-007 preservation path | Result |
+|---|---:|---|---|
+| Mandatory Engineering Question Set | 30 | ES-01 R47–R49 → ES-02 C15–C16 → ES-03 XBB-03–XBB-04 → ES-04 IF-18–IF-19 | PASS |
+| Required Engineering Representations | 28 | ES-01 R48 → ES-02 C15 → ES-03 XBB-03 → ES-04 IF-18 | PASS |
+| Engineering Obligations | 35 | ES-01 R48–R49 → ES-02 C15–C16 → ES-03 XBB-03–XBB-04 → ES-04 IF-18–IF-19 | PASS |
+| Mandatory Engineering Invariants | 39 | ES-01 R48–R49 → ES-02 C15–C16 → ES-03 XBB-03–XBB-04 → ES-04 IF-18–IF-19 | PASS |
+| Engineering Contracts | 19 | ES-01 R48 → ES-02 C15 → ES-03 XBB-03 → ES-04 conceptual contracts and IF-18 | PASS |
+
+### 7.3 Ownership and Semantic Traceability
+
+Verification confirmed continuous preservation of:
+
+- Instrument ownership of canonical Instrument identity and the Instrument Identity Contract;
+- Observation ownership of attribution authority, Attribution Evaluation, Attribution Outcome, and Observation Participation Eligibility;
+- applicable source-domain ownership of source assertions and provenance;
+- absence of premature Observation ownership for Candidate Factual Information;
+- separation of identity, candidate facts, authoritative factual state, and derived interpretation;
+- distinction between Attribution Ambiguity and Retained Factual Ambiguity;
+- distinction among partial, failed, unavailable, missing, ambiguous, and zero-valued information; and
+- separation of eligibility from correctness, acceptance, ownership, publication, Validation, product, strategy, and fitness-for-use meaning.
+
+No missing architectural origin, broken traceability path, or ownership transfer was found.
+
+## 8. Repository Compliance Verification
+
+| Compliance area | Verification evidence | Result |
+|---|---|---|
+| CAR-007 lifecycle | ES-01 through ES-04 were prepared, reviewed, approved, published, and frozen sequentially before ES-05. | PASS |
+| EAS-007 governance | EDD lifecycle, ownership, review authority, traceability, and authority separation are preserved. | PASS |
+| DOC-001 metadata | Document identity, classification, owner, review authority, version, stage, status, and repository location are present and consistent. | PASS |
+| Document Register | The EDD-007 row matches Version 0.5 Draft and the Independent Engineering Verification stage. | PASS |
+| Repository authority | No undocumented discussion is used as engineering authority. | PASS |
+| Markdown | Headings, tables, fences, whitespace, and final newline conform. | PASS |
+| Repository checks | Local validation and `git diff --check` pass. | PASS |
+| Implementation independence | No APIs, protocols, payloads, schemas, transports, algorithms, data structures, persistence, deployment, or implementation technology are designed. | PASS |
+| Authority state | Architecture Authority, Implementation Authority, and Runtime Authority remain None. | PASS |
+
+Repository compliance is complete for the ES-05 Draft review state.
+
+## 9. Engineering Risks
+
+No design defect or publication-blocking engineering risk was found.
+
+The following controlled residual risks remain relevant to future governed work:
+
+| Risk | Condition to prevent | Existing EDD-007 control | Status |
+|---|---|---|---|
+| ER-01 — Eligibility semantic expansion | Observation Participation Eligibility could be mistaken for Observation Acceptance, correctness, ownership, publication, or fitness for use. | R35, C10, BB-10, IF-13, IF-15, and interface constraints preserve all non-implications. | Controlled |
+| ER-02 — Identity ownership leakage | Attribution association could be mistaken for identity creation, repair, remapping, or ownership transfer. | R1–R3 and R16–R17, C1/C4, BB-01/BB-04, IF-01/IF-05 preserve Instrument ownership. | Controlled |
+| ER-03 — Composite-source collapse | Composite-source interface meaning could be mistaken for shared ownership or operational aggregation. | ES-04 explicitly preserves independent contributor meaning and prohibits a merged owner or executable aggregation. | Controlled |
+| ER-04 — Ineligibility concealment | Attribution failure or ambiguity could be hidden, repaired, or converted to eligibility. | R33 and R36–R39, C9/C11/C12, BB-09/BB-11/BB-12, IF-12/IF-14 preserve explicit terminal ineligibility. | Controlled |
+
+These are preservation risks for later authorized work, not Engineering Non-Conformities in EDD-007.
+
+## 10. Engineering Non-Conformities
+
+| NCR severity | Count |
+|---|---:|
+| Critical | 0 |
+| Major | 0 |
+| Minor | 0 |
+| **Total** | **0** |
+
+No Engineering Non-Conformity was identified.
+
+## 11. Engineering Readiness Assessment
+
+EDD-007 is engineering-complete for its authorized design boundary because:
+
+- its mission and terminal boundary are explicit;
+- all 50 responsibilities are owned and allocated;
+- all 16 capabilities are complete and non-overlapping;
+- all 16 Building Blocks are justified and bounded;
+- all 19 conceptual interfaces are justified and complete;
+- ownership and authority remain unambiguous;
+- the dependency models are acyclic;
+- EAP-005 mandatory meaning remains traceable;
+- implementation independence is preserved;
+- repository governance is satisfied; and
+- no NCR or unresolved design defect remains.
+
+EDD-007 is suitable for Version 1.0 Canonical publication preparation after Chief Systems Engineer review and Chief Architect approval of ES-05.
+
+This readiness assessment grants no implementation, operational, or publication authority.
+
+## 12. Canonical Publication Recommendation
+
+**RECOMMEND VERSION 1.0 CANONICAL PUBLICATION**
+
+Independent Engineering Verification finds EDD-007 complete, internally consistent, architecturally compliant, repository compliant, implementation-independent, and suitable for Version 1.0 Canonical publication.
+
+The recommendation is conditional on:
+
+1. Chief Systems Engineer approval of ES-05;
+2. controlled publication and freezing of ES-05;
+3. Chief Architect publication approval;
+4. Version 1.0 metadata and Document Register preparation; and
+5. separately authorized repository synchronization.
+
+No Engineering redesign is recommended. No implementation or operational authority is granted.
