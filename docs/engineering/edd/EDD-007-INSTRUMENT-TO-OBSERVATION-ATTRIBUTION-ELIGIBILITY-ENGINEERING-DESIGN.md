@@ -2,7 +2,7 @@
 
 **Document ID:** EDD-007<br>
 **Title:** Instrument-to-Observation Attribution Eligibility Engineering Design<br>
-**Version:** 0.3 Draft<br>
+**Version:** 0.4 Draft<br>
 **Status:** Draft<br>
 **Canonical Status:** Draft<br>
 **Classification:** Engineering Design Document<br>
@@ -12,13 +12,15 @@
 **Engineering Review Authority:** Chief Systems Engineer<br>
 **Repository Location:** `docs/engineering/edd/EDD-007-INSTRUMENT-TO-OBSERVATION-ATTRIBUTION-ELIGIBILITY-ENGINEERING-DESIGN.md`<br>
 **Workflow Stage:** Draft Preparation<br>
-**Engineering Stage:** Engineering Building Block Design<br>
+**Engineering Stage:** Engineering Interface Design<br>
 **ES-01 Review Status:** Approved<br>
 **ES-01 Approved By:** Chief Systems Engineer<br>
 **ES-02 Review Status:** Approved<br>
 **ES-02 Approved By:** Chief Systems Engineer<br>
 **ES-03 Review Status:** Approved<br>
 **ES-03 Approved By:** Chief Systems Engineer<br>
+**ES-04 Review Status:** Approved<br>
+**ES-04 Approved By:** Chief Systems Engineer<br>
 **Authorization Decision:** CAR-007 Version 1.0<br>
 **Direct Engineering Architecture:** EAP-005 Version 1.1<br>
 **Engineering Authority:** ES-01 through ES-05, sequential under CAR-007 Version 1.0<br>
@@ -829,3 +831,283 @@ The realization is exhaustive and exclusive:
 - ES-03 terminates before interface design, implementation, Observation construction, Observation Acceptance, and EAP-006 responsibility.
 
 This traceability creates no authority for ES-04. Engineering Interface Design remains prohibited until ES-03 completes the CAR-007 review, approval, publication, and freeze gate.
+
+---
+
+# ES-04 — Engineering Interface Design
+
+ES-04 defines the conceptual engineering interfaces required by the approved and frozen ES-03 Building Block model. An Engineering Interface transfers established engineering meaning between bounded responsibilities only. It does not define an API, method, call, message, payload, field, schema, protocol, transport, execution path, operational sequence, or implementation technology.
+
+Every interface preserves Building Block responsibility, semantic ownership, authority separation, and the EAP-005 terminal boundary. Composite-source interfaces preserve the independent meaning and ownership of every contributing Building Block and do not create a merged owner or operational aggregator.
+
+## 1. Engineering Interfaces
+
+The EDD-007 interface model contains exactly 19 conceptual interfaces:
+
+| Interface | Source | Target | Engineering purpose | Information meaning |
+|---|---|---|---|---|
+| IF-01 | EDD-006 Instrument Identity Contract boundary | BB-01 | Admit only the approved upstream canonical identity meaning governed by EAP-005. | Product-neutral canonical Instrument identity, applicable approved identity context, and safe provenance association |
+| IF-02 | EAP-005 Candidate Factual Information boundary | BB-01 | Admit only bounded source-neutral candidate factual meaning and its permitted context. | Candidate factual assertion, category, source, provenance, temporal, condition, uncertainty, ambiguity, and limitation meaning |
+| IF-03 | BB-01 | BB-02 | Make preserved, boundary-conformant input and required context meaning available to readiness responsibility. | Governed attribution-input availability, ownership context, evaluation context, and boundary-conformance meaning |
+| IF-04 | BB-02 | BB-03 | Transfer readiness or not-ready meaning without transferring an Attribution Outcome. | Attribution Evaluation Ready or Attribution Evaluation Not Ready meaning and its bounded basis |
+| IF-05 | BB-01 and BB-03 | BB-04 | Relate the approved identity input and bounded evaluation meaning to canonical identity association responsibility. | Approved canonical identity context, candidate association context, and bounded evaluation meaning |
+| IF-06 | BB-01 and BB-03 | BB-05 | Relate preserved candidate factual meaning to semantic-separation responsibility within the bounded evaluation. | Candidate factual association, identity metadata context, and bounded evaluation meaning |
+| IF-07 | BB-01 and BB-03 | BB-06 | Relate preserved source and provenance meaning to continuity responsibility within the bounded evaluation. | Source, origin, provenance, identity-association context, and bounded evaluation meaning |
+| IF-08 | BB-01 and BB-03 | BB-07 | Relate preserved attribution context to source, temporal, and effective-context responsibility. | Source attribution, approved temporal context, applicable effective identity context, and bounded evaluation meaning |
+| IF-09 | BB-01 and BB-03 | BB-08 | Relate preserved candidate-information condition to Provider-condition distinction responsibility. | Partiality, failure, unavailability, missingness, ambiguity, zero-value distinction, and bounded evaluation meaning |
+| IF-10 | BB-01 and BB-03 | BB-09 | Relate preserved uncertainty and ambiguity context to their governed preservation responsibility. | Retained uncertainty, Attribution Ambiguity, Retained Factual Ambiguity, and bounded evaluation meaning |
+| IF-11 | BB-03 through BB-09 | BB-10 | Present the independently established evaluation and attribution-precondition meanings required for eligibility determination. | Bounded evaluation, canonical association, semantic separation, continuity, attribution context, condition distinction, uncertainty, and ambiguity meaning |
+| IF-12 | BB-03 through BB-09 | BB-11 | Present the independently established absent, conflicting, ambiguous, or unestablished meanings required for ineligibility and reason preservation. | Bounded evaluation and governed precondition meaning sufficient to establish ineligibility and its non-sensitive reason or reasons |
+| IF-13 | BB-10 | BB-12 | Transfer Attribution Eligible meaning to the terminal boundary without transferring any prohibited implication. | Attribution Eligible and its preserved non-implications |
+| IF-14 | BB-11 | BB-12 | Transfer Attribution Ineligible meaning and its governed reason or reasons to the terminal boundary. | Attribution Ineligible and exact non-sensitive ineligibility reason meaning |
+| IF-15 | BB-12 | EAP-006 downstream boundary | Expose the sole permitted downstream eligibility meaning. | Observation Participation Eligibility only |
+| IF-16 | XBB-01 | BB-01 through BB-12 | Apply boundary, ownership, authority, violation, and downstream-separation constraints across primary responsibilities. | Boundary conformance or violation, ownership preservation, authority preservation, and non-feedback constraints |
+| IF-17 | XBB-02 | BB-01 through BB-12 and XBB-01 | Apply prohibited-content containment and permitted-observability constraints across the subsystem. | Sensitive-content exclusion and non-sensitive observability constraints |
+| IF-18 | BB-01 through BB-12, XBB-01, and XBB-02 | XBB-03 | Preserve the architectural and capability origin of every Building Block meaning. | Building Block realization, responsibility allocation, EAP-005 origin, and mandatory-meaning preservation evidence |
+| IF-19 | Complete ES-03 model and XBB-03 | XBB-04 | Make the complete traceable design available to Engineering Verification and repository-conformance responsibility. | Scope, allocation, relationship, constraint, traceability, lifecycle, metadata, and authority-conformance meaning |
+
+Interface classifications are:
+
+- **External engineering boundaries:** IF-01, IF-02, and IF-15;
+- **Internal primary interfaces:** IF-03 through IF-14; and
+- **Cross-cutting interfaces:** IF-16 through IF-19.
+
+Every interface is justified by an approved ES-03 structural relationship or cross-cutting applicability rule. No interface introduces an additional Building Block relationship.
+
+## 2. Interface Responsibilities
+
+| Interface | Engineering responsibility |
+|---|---|
+| IF-01 | Preserve the EDD-006 Instrument Identity Contract as the sole canonical identity input without identity reinterpretation, ownership transfer, or upstream responsibility acquisition. |
+| IF-02 | Preserve source-neutral Candidate Factual Information and its permitted context without acquisition, correction, factual-ownership, or correctness authority. |
+| IF-03 | Preserve only the input and context availability meaning required for readiness assessment without changing either input. |
+| IF-04 | Preserve readiness or not-ready meaning while excluding Attribution Outcome, positive precondition establishment, and evaluation mechanics. |
+| IF-05 | Preserve separate identity-input and evaluation meanings for canonical association without creating identity or merging source ownership. |
+| IF-06 | Preserve candidate factual association and semantic-separation context without creating authoritative factual state or interpretation. |
+| IF-07 | Preserve source, origin, provenance, and identity-association meaning required for continuity without defining mapping or acquisition. |
+| IF-08 | Preserve source, temporal, and effective identity context without defining timestamp, lifecycle, or transition mechanics. |
+| IF-09 | Preserve Provider-condition and missingness distinctions without converting them into lifecycle, Market, or factual-correctness meaning. |
+| IF-10 | Preserve uncertainty and both ambiguity meanings without resolution, selection, or conversion to certainty. |
+| IF-11 | Preserve the independent contribution of BB-03 through BB-09 to eligibility determination without merging their responsibilities or implying eligibility prematurely. |
+| IF-12 | Preserve the independent absent, conflicting, ambiguous, or unestablished meanings required for ineligibility without repair, remediation, or concealment. |
+| IF-13 | Preserve Attribution Eligible and every governed non-implication at the terminal boundary. |
+| IF-14 | Preserve Attribution Ineligible and its exact non-sensitive reason or reasons without creating downstream eligibility. |
+| IF-15 | Preserve only Observation Participation Eligibility and terminate before any downstream Observation responsibility. |
+| IF-16 | Preserve boundary, ownership, and authority conformance across every primary interface without absorbing primary responsibility. |
+| IF-17 | Preserve security containment and bounded non-sensitive observability without defining implementation controls or operational telemetry. |
+| IF-18 | Preserve complete backward traceability without amending architecture, reallocating capability, or adding scope. |
+| IF-19 | Preserve a complete reviewable design basis without predetermining verification, approval, or publication results. |
+
+Interface responsibility concerns preservation and transfer of established engineering meaning only. Source and target Building Blocks retain their approved responsibilities, and semantic owners retain their approved authority.
+
+## 3. Interface Boundaries
+
+| Interface | Begins at | Ends at | Remains outside |
+|---|---|---|---|
+| IF-01 | Completed EDD-006 Instrument Identity Contract boundary | BB-01 identity-input responsibility | Identity creation, remapping, lifecycle processing, and direct Provider meaning |
+| IF-02 | EAP-005 source-neutral Candidate Factual Information boundary | BB-01 candidate-input responsibility | Acquisition, Provider communication, factual correctness, and Observation ownership |
+| IF-03 | BB-01 preserved input meaning | BB-02 readiness responsibility | Attribution-precondition evaluation and outcome meaning |
+| IF-04 | BB-02 readiness or not-ready meaning | BB-03 bounded evaluation responsibility | Eligibility, ineligibility, and operational sequencing |
+| IF-05 | Separate BB-01 identity context and BB-03 evaluation meaning | BB-04 association responsibility | Identity establishment, repair, mapping, and ownership transfer |
+| IF-06 | Separate BB-01 factual context and BB-03 evaluation meaning | BB-05 semantic-separation responsibility | Observation construction, factual correctness, and interpretation |
+| IF-07 | Separate BB-01 provenance context and BB-03 evaluation meaning | BB-06 continuity responsibility | Acquisition, source ownership, and mapping mechanics |
+| IF-08 | Separate BB-01 attribution context and BB-03 evaluation meaning | BB-07 context-preservation responsibility | Timestamp formats, lifecycle transitions, and implementation mechanics |
+| IF-09 | Separate BB-01 condition context and BB-03 evaluation meaning | BB-08 condition-distinction responsibility | Correction, normalization, and Market conclusions |
+| IF-10 | Separate BB-01 uncertainty context and BB-03 evaluation meaning | BB-09 uncertainty-and-ambiguity responsibility | Ambiguity resolution and silent identity selection |
+| IF-11 | Independently established BB-03 through BB-09 meanings | BB-10 eligibility responsibility | Observation Acceptance, correctness, ownership, publication, and fitness for use |
+| IF-12 | Independently established BB-03 through BB-09 meanings | BB-11 ineligibility responsibility | Repair, remediation, retry, and downstream eligibility |
+| IF-13 | BB-10 Attribution Eligible meaning | BB-12 terminal-boundary responsibility | Every eligibility non-implication prohibited by EAP-005 |
+| IF-14 | BB-11 Attribution Ineligible and reason meaning | BB-12 terminal-boundary responsibility | Observation Participation Eligibility and remediation |
+| IF-15 | BB-12 Observation Participation Eligibility meaning | EAP-006 downstream boundary | Candidate Observation construction, Observation Acceptance, ownership, publication, and all EAP-006 responsibility |
+| IF-16 | XBB-01 conformance responsibility | Each primary Building Block responsibility boundary | Primary responsibility ownership and remediation |
+| IF-17 | XBB-02 containment and observability responsibility | Each applicable Building Block responsibility boundary | Implementation controls, sensitive disclosure, and operational telemetry design |
+| IF-18 | Independently preserved Building Block and cross-cutting meanings | XBB-03 traceability responsibility | Architecture amendment, responsibility reallocation, and new scope |
+| IF-19 | Complete traceable ES-03 design meaning | XBB-04 verification and conformance responsibility | Verification result, approval result, implementation testing, and operational authority |
+
+No interface extends beyond its source and target responsibility boundaries. IF-15 is the sole downstream external interface and terminates before EAP-006 responsibility begins.
+
+## 4. Interface Contracts
+
+The following contracts are conceptual Engineering Design contracts only:
+
+| Interface | Contract |
+|---|---|
+| IF-01 | Shall preserve approved canonical Instrument identity meaning and safe provenance; shall never create, reinterpret, remap, modify, reopen, or transfer Instrument identity. |
+| IF-02 | Shall preserve bounded source-neutral candidate factual meaning and permitted context; shall never authorize acquisition, correction, factual correctness, or Observation ownership. |
+| IF-03 | Shall preserve governed input and context availability; shall never determine an attribution precondition or Attribution Outcome. |
+| IF-04 | Shall preserve ready or not-ready meaning; shall never represent not-ready as Attribution Ineligible or as an operational instruction. |
+| IF-05 | Shall preserve the independent identity and evaluation meanings required for canonical association; shall never create identity or merge their owners. |
+| IF-06 | Shall preserve candidate factual association and semantic distinctions; shall never create authoritative factual state or derived interpretation. |
+| IF-07 | Shall preserve provenance and attribution-continuity basis; shall never define acquisition, mapping mechanics, or source ownership transfer. |
+| IF-08 | Shall preserve source, temporal, and applicable effective identity context; shall never define timestamp or lifecycle mechanics. |
+| IF-09 | Shall preserve partiality, failure, unavailability, missingness, ambiguity, and zero-value distinctions; shall never infer lifecycle, Market, or correctness meaning. |
+| IF-10 | Shall preserve retained uncertainty and both ambiguity meanings; shall never resolve ambiguity or convert uncertainty into certainty. |
+| IF-11 | Shall preserve every independent eligibility-precondition meaning; shall never collapse contributors, imply eligibility before BB-10 responsibility, or transfer contributor ownership. |
+| IF-12 | Shall preserve every independent ineligibility basis; shall never conceal, repair, reinterpret, or operationalize an ineligibility reason. |
+| IF-13 | Shall preserve Attribution Eligible and all non-implications; shall never establish an Observation, correctness, ownership, publication, Validation, product, strategy, or fitness meaning. |
+| IF-14 | Shall preserve Attribution Ineligible and exact non-sensitive reasons; shall never produce Observation Participation Eligibility. |
+| IF-15 | Shall preserve Observation Participation Eligibility only; shall never create or imply any EAP-006 or later Observation responsibility. |
+| IF-16 | Shall preserve ownership, authority, boundary, and violation meaning; shall never absorb primary responsibility or transfer semantic authority. |
+| IF-17 | Shall preserve prohibited-content exclusion and bounded observability; shall never expose sensitive content or define implementation telemetry. |
+| IF-18 | Shall preserve architectural and capability origin; shall never amend architecture, reallocate responsibility, or add scope. |
+| IF-19 | Shall preserve the complete review basis; shall never predetermine verification, approval, publication, implementation, or operational authority. |
+
+Every contract preserves lifecycle separation: interface availability, interface meaning, Engineering Verification, document approval, publication, implementation authorization, and operational authorization remain separate governed matters.
+
+## 5. Interface Information Exchange
+
+### 5.1 Permitted Meaning
+
+Interface information exchange is limited to:
+
+- established engineering meaning named in the Interface Model;
+- applicable ownership and authority context;
+- source and provenance meaning already authorized by EAP-005;
+- bounded evaluation, association, continuity, condition, uncertainty, ambiguity, outcome, eligibility, ineligibility, and reason meaning;
+- non-sensitive evidence sufficient to preserve explainability and traceability;
+- boundary-conformance and violation meaning;
+- security-containment and observability constraints; and
+- verification and repository-conformance meaning.
+
+### 5.2 Prohibited Meaning
+
+No interface may exchange or establish:
+
+- raw Provider payloads, Provider Catalogue content, Provider Snapshots, Provider Records, Provider-native identifiers, Provider dispositions, Submission Units, or EAIC-002 envelopes;
+- credentials, authorization material, private technical state, or unapproved sensitive information;
+- identity creation, identity resolution, mapping mechanics, lifecycle transition, or identity ownership transfer;
+- factual acquisition, correction, normalization, enrichment, correctness, or authoritative Observation state;
+- Candidate Observation construction, Observation Acceptance, Observation ownership, Observation publication, or EAP-006 meaning;
+- product membership, Product Eligibility, Validation, strategy, Risk, execution, Portfolio, Event, or Audit conclusions;
+- algorithms, thresholds, data structures, persistence, deployment, or implementation decisions; or
+- execution, scheduling, retry, orchestration, transport, or operational meaning.
+
+Composite-source exchange preserves each source meaning independently. It does not imply a combined payload, shared owner, executable aggregation, or ordering among contributing sources.
+
+## 6. Interface Dependencies
+
+### 6.1 Dependency Model
+
+Dependencies identify conceptual meaning prerequisites only. They do not define execution order, calls, control flow, orchestration, scheduling, or operational behavior.
+
+| Interface | Conceptual dependencies | Dependency meaning |
+|---|---|---|
+| IF-01 | EDD-006 Version 1.0 boundary | Requires approved canonical Instrument identity meaning. |
+| IF-02 | EAP-005 Candidate Factual Information boundary | Requires bounded source-neutral candidate factual meaning. |
+| IF-03 | IF-01, IF-02 | Requires both preserved upstream meanings. |
+| IF-04 | IF-03 | Requires governed input and context availability meaning. |
+| IF-05 | IF-01, IF-03, IF-04 | Requires approved identity, preserved candidate context, and bounded evaluation readiness meaning. |
+| IF-06 | IF-02 through IF-04 | Requires candidate factual context and bounded evaluation meaning. |
+| IF-07 | IF-02 through IF-04 | Requires source, provenance, association, and bounded evaluation meaning. |
+| IF-08 | IF-01 through IF-04 | Requires approved identity context, source and temporal context, and bounded evaluation meaning. |
+| IF-09 | IF-02 through IF-04 | Requires candidate-condition context and bounded evaluation meaning. |
+| IF-10 | IF-02 through IF-04 | Requires uncertainty and ambiguity context and bounded evaluation meaning. |
+| IF-11 | IF-04 through IF-10 | Requires the bounded evaluation and every independently established eligibility-precondition meaning. |
+| IF-12 | IF-04 through IF-10 | Requires the bounded evaluation and any absent, conflicting, ambiguous, or unestablished precondition meaning. |
+| IF-13 | IF-11 | Requires Attribution Eligible meaning. |
+| IF-14 | IF-12 | Requires Attribution Ineligible and reason meaning. |
+| IF-15 | IF-13 | Requires the sole permitted downstream eligibility meaning; IF-14 terminates without this dependency. |
+| IF-16 | EAP-005 ownership and boundary rules | Cross-cutting constraint on IF-01 through IF-15. |
+| IF-17 | EAP-005 security and observability rules; IF-16 | Cross-cutting constraint on IF-01 through IF-16. |
+| IF-18 | IF-01 through IF-17; frozen ES-01 through ES-03 | Requires complete interface and Building Block traceability. |
+| IF-19 | IF-18; CAR-007; EAS-007; DOC-001 | Requires complete traceable design and repository governance meaning. |
+
+### 6.2 Dependency Rules
+
+The interface dependency model shall:
+
+1. preserve separate upstream identity and candidate-factual boundaries;
+2. create no dependency back into EDD-006 or Instrument identity establishment;
+3. create no direct Provider or EAIC-002 dependency;
+4. preserve readiness as distinct from evaluation and outcome;
+5. preserve independent association, continuity, context, condition, uncertainty, and ambiguity meanings;
+6. preserve distinct eligibility and ineligibility dependencies;
+7. terminate ineligible meaning without a downstream eligibility dependency;
+8. expose only IF-15 across the downstream external boundary;
+9. apply cross-cutting constraints without primary-responsibility transfer;
+10. preserve traceability and verification as assessment dependencies; and
+11. remain acyclic.
+
+## 7. Interface Constraints
+
+The complete interface model is constrained as follows:
+
+1. Every interface shall remain implementation-independent and provider-neutral.
+2. EAP-005 Version 1.1 remains the sole direct Engineering Architecture authority.
+3. The frozen ES-01 through ES-03 baselines remain unchanged.
+4. Every interface shall be justified by an approved ES-03 relationship or cross-cutting rule.
+5. Interfaces transfer established engineering meaning only.
+6. Interfaces transfer no semantic ownership, authority, primary responsibility, or lifecycle state.
+7. Composite sources remain independent and create no shared semantic owner.
+8. Instrument retains exclusive ownership of canonical Instrument identity.
+9. Observation retains exclusive ownership of attribution authority, Attribution Evaluation, Attribution Outcome, and Observation Participation Eligibility.
+10. Candidate factual information gains no new semantic owner through any interface.
+11. IF-01 is the sole canonical Instrument identity input boundary.
+12. IF-02 is the sole Candidate Factual Information input boundary.
+13. No interface may admit direct Provider or EAIC-002 meaning.
+14. Readiness, evaluation, identity association, factual association, continuity, context, condition distinction, ambiguity, eligibility, ineligibility, and downstream eligibility remain separate interface meanings.
+15. Exactly one of the two permitted Attribution Outcomes remains established for one bounded evaluation.
+16. Attribution Ambiguity requires Attribution Ineligible; Retained Factual Ambiguity remains explicit under its governed conditions.
+17. Provenance, attribution, source, temporal, uncertainty, ambiguity, partiality, failure, unavailability, and effective identity context remain preserved where required.
+18. Identity metadata, candidate factual information, authoritative factual state, and derived interpretation remain distinct.
+19. IF-13 transfers no eligibility implication prohibited by EAP-005.
+20. IF-14 produces no Observation Participation Eligibility.
+21. IF-15 is the sole downstream external interface and transfers Observation Participation Eligibility only.
+22. Every interface terminates before Candidate Observation construction, Observation Acceptance, governed Observation establishment, Observation publication, and EAP-006 responsibility.
+23. Cross-cutting interfaces constrain or assess but do not absorb, duplicate, or redistribute primary responsibilities.
+24. No interface may define an API, method, call, message, payload, field, schema, protocol, transport, algorithm, data structure, persistence design, deployment design, operational behavior, or implementation technology.
+25. No interface may create architecture, implementation authority, operational authority, verification approval, or publication authority.
+26. Interface dependencies shall remain acyclic and shall not reverse approved domain dependency direction.
+27. ES-04 defines Engineering Interface Design only; ES-05 remains subject to the next CAR-007 gate.
+
+## 8. Traceability to Engineering Building Blocks
+
+### 8.1 Interface-to-Building-Block Traceability
+
+| Interface | ES-03 source relationship | Building Blocks represented | Capabilities preserved | ES-01 responsibility basis |
+|---|---|---|---|---|
+| IF-01 | EDD-006 boundary to BB-01 | BB-01 | C1 | R1–R3 |
+| IF-02 | Candidate Factual Information boundary to BB-01 | BB-01 | C1 | R4–R7 |
+| IF-03 | BB-01 to BB-02 | BB-01, BB-02 | C1, C2 | R1–R11 |
+| IF-04 | BB-02 to BB-03 | BB-02, BB-03 | C2, C3 | R8–R15 |
+| IF-05 | BB-01 and BB-03 to BB-04 | BB-01, BB-03, BB-04 | C1, C3, C4 | R1–R7, R12–R17 |
+| IF-06 | BB-01 and BB-03 to BB-05 | BB-01, BB-03, BB-05 | C1, C3, C5 | R1–R7, R12–R15, R18–R20, R30–R31 |
+| IF-07 | BB-01 and BB-03 to BB-06 | BB-01, BB-03, BB-06 | C1, C3, C6 | R1–R7, R12–R15, R21–R22 |
+| IF-08 | BB-01 and BB-03 to BB-07 | BB-01, BB-03, BB-07 | C1, C3, C7 | R1–R7, R12–R15, R23–R25 |
+| IF-09 | BB-01 and BB-03 to BB-08 | BB-01, BB-03, BB-08 | C1, C3, C8 | R1–R7, R12–R15, R26–R29, R43 |
+| IF-10 | BB-01 and BB-03 to BB-09 | BB-01, BB-03, BB-09 | C1, C3, C9 | R1–R7, R12–R15, R32–R33 |
+| IF-11 | BB-03 through BB-09 to BB-10 | BB-03 through BB-10 | C3 through C10 | R12–R35, R43 |
+| IF-12 | BB-03 through BB-09 to BB-11 | BB-03 through BB-09, BB-11 | C3 through C9, C11 | R12–R33, R36–R37, R43 |
+| IF-13 | BB-10 to BB-12 | BB-10, BB-12 | C10, C12 | R34–R35, R38–R39 |
+| IF-14 | BB-11 to BB-12 | BB-11, BB-12 | C11, C12 | R36–R39 |
+| IF-15 | BB-12 to EAP-006 boundary | BB-12 | C12 | R38 |
+| IF-16 | XBB-01 to BB-01 through BB-12 | BB-01 through BB-12, XBB-01 | C1 through C13 | R1–R43, R46 |
+| IF-17 | XBB-02 to primary blocks and XBB-01 | BB-01 through BB-12, XBB-01, XBB-02 | C1 through C14 | R1–R46 |
+| IF-18 | Primary and conformance blocks to XBB-03 | BB-01 through BB-12, XBB-01 through XBB-03 | C1 through C15 | R1–R48 |
+| IF-19 | Complete ES-03 model and XBB-03 to XBB-04 | All 16 Building Blocks | C1 through C16 | R1–R50 |
+
+### 8.2 Coverage and Conformance
+
+| Interface class | Interfaces | Count |
+|---|---|---:|
+| External engineering boundaries | IF-01, IF-02, IF-15 | 3 |
+| Internal primary interfaces | IF-03 through IF-14 | 12 |
+| Cross-cutting interfaces | IF-16 through IF-19 | 4 |
+| **Total** | **IF-01 through IF-19** | **19** |
+
+The interface model is complete and conformant because:
+
+- all 16 approved Building Blocks are represented;
+- every approved ES-03 structural relationship is represented;
+- every approved cross-cutting applicability rule is represented;
+- all 16 capabilities and all 50 responsibilities remain traceable without reallocation;
+- no interface is orphaned or unjustified;
+- no interface transfers semantic ownership, authority, or primary responsibility;
+- composite sources preserve independent contributor meaning;
+- the interface dependency model is acyclic;
+- IF-01 and IF-02 are the only upstream external boundaries;
+- IF-15 is the sole downstream external boundary;
+- Attribution Ineligible produces no downstream eligibility interface; and
+- every interface terminates before Observation construction, Observation Acceptance, and EAP-006 responsibility.
+
+This traceability creates no authority for ES-05. Independent Engineering Verification remains prohibited until ES-04 completes the CAR-007 review, approval, publication, and freeze gate.
