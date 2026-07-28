@@ -2,7 +2,7 @@
 
 **Document ID:** EAP-006
 **Title:** Observation Acceptance and Governed Observation Establishment Engineering Architecture
-**Version:** 1.1
+**Version:** 1.2
 
 **Status:** Approved
 
@@ -19,13 +19,13 @@
 
 **Approved By:** Chief Architect
 
-**Governing ADP:** ADP-001E Version 1.0
+**Governing ADP:** ADP-001E Version 1.1
 
 **Governing Architecture:** ADR-009 Version 1.0; DOMAIN-002 Observation Domain
 
 **Governing Migration:** MIG-001 Version 0.1
 
-**Immediate Upstream EAP:** EAP-005 Version 1.1
+**Immediate Upstream EAP:** EAP-005 Version 1.2
 
 **Workflow Stage:** Repository Publication
 
@@ -40,7 +40,7 @@
 
 ## 1. Purpose
 
-EAP-006 translates ADP-001E into provider-neutral and implementation-neutral engineering contracts, representations and obligations through which an EAP-005 Observation Participation Eligibility Contract and its eligible candidate factual information context may participate in a bounded Observation Acceptance evaluation.
+EAP-006 translates ADP-001E into provider-neutral and implementation-neutral engineering contracts, representations and obligations through which the approved EAP-005 Composite Observation Participation Boundary may participate in a bounded Observation Acceptance evaluation. The boundary contains the Observation Participation Eligibility Contract and its inseparably associated Eligible Candidate Factual Context Contract as mandatory, semantically independent constituents.
 
 The evaluation produces exactly one outcome: Observation Accepted, resulting in an Observation-owned governed factual record, or Observation Not Accepted, preserving the exact non-sensitive reason or reasons and producing no Observation ownership. EAP-006 terminates after governed Observation establishment or preserved non-acceptance.
 
@@ -50,16 +50,16 @@ EAP-006 defines engineering architecture for Candidate Observation establishment
 
 ## 3. Engineering Governance
 
-This Version 1.1 amendment is the approved engineering translation of migrated ADP-001E and the product-neutral EAP-005 Version 1.1 attribution boundary. It introduces no new domain, semantic owner, dependency, runtime behavior, communication authority or implementation decision. Canonical repository architecture remains authoritative.
+This Version 1.2 amendment is the approved bounded alignment with migrated ADP-001E and the product-neutral EAP-005 Version 1.2 attribution boundary. It introduces no new domain, semantic owner, dependency, runtime behavior, communication authority or implementation decision. Canonical repository architecture remains authoritative.
 
-Observation Acceptance consumes only EAP-005 Observation Participation Eligibility for an instrument-specific candidate. It shall not consume Provider Records, Provider Catalogue content, Provider Snapshots, Provider-native identities, Provider dispositions, Submission Units, EAIC-002 envelopes or another product’s eligibility. Applicable products remain separately authorized downstream consumers and shall not alter Observation ownership or governed factual meaning.
+Observation Acceptance consumes only the approved EAP-005 Composite Observation Participation Boundary for an instrument-specific candidate. Its eligibility constituent supplies attribution-admission meaning, and its factual-context constituent supplies the candidate meaning subject to acceptance. Neither constituent may be reconstructed, supplemented or inferred from Provider or other upstream internals. EAP-006 shall not consume Provider Records, Provider Catalogue content, Provider Snapshots, Provider-native identities, Provider dispositions, Submission Units, EAIC-002 envelopes or another product’s eligibility. Applicable products remain separately authorized downstream consumers and shall not alter Observation ownership or governed factual meaning.
 
 ## 4. Engineering Boundary
 
 ```text
-EAP-005 Observation Participation Eligibility Contract
-                         +
-Eligible Candidate Factual Information Context
+EAP-005 Composite Observation Participation Boundary
+        ├── Observation Participation Eligibility Contract
+        └── Eligible Candidate Factual Context Contract
                          ↓
 Candidate Observation Establishment
                          ↓
@@ -94,6 +94,7 @@ EAP-006 preserves that eligibility is not acceptance; acceptance is not ownershi
 | Canonical Instrument Identity | Instrument |
 | Observation Participation Eligibility | Observation |
 | Candidate factual information before acceptance | No new semantic owner; source assertions remain with their applicable source domain |
+| Eligible Candidate Factual Context | Has not acquired Observation ownership; source assertions and provenance retain their applicable source-domain ownership before acceptance |
 | Candidate Observation meaning | Observation |
 | Observation Acceptance Authority | Observation |
 | Observation Acceptance Decision | Observation |
@@ -107,13 +108,13 @@ EAP-006 preserves that eligibility is not acceptance; acceptance is not ownershi
 | Validation and evidentiary judgment | Validation |
 | Product universe, Product Eligibility and explicit consumption | Each applicable product, outside EAP-006 |
 
-Publication and persistence remain outside EAP-006. The boundary creates no third owner.
+The governed association between the composite-boundary constituents does not transfer Instrument identity ownership or any source-domain ownership. Observation ownership begins only after Observation Accepted. Publication and persistence remain outside EAP-006. The boundary creates no third owner.
 
 ## 7. Upstream Dependencies
 
-The immediate engineering input is the EAP-005 Version 1.1 Observation Participation Eligibility Contract and its associated eligible candidate factual information context. The identity association is product-neutral. EAP-006 consumes that contract without reopening Attribution Evaluation, changing the canonical subject, resolving Provider Mapping, changing Instrument identity, reinterpreting provenance, applying product membership, adding acquisition authority or inferring factual correctness.
+The immediate engineering input is exactly one approved EAP-005 Version 1.2 Composite Observation Participation Boundary. Its Observation Participation Eligibility Contract and Eligible Candidate Factual Context Contract must both be present, concern the same candidate, preserve the same product-neutral canonical subject association and remain semantically distinguishable. EAP-006 consumes both constituents without supplementation or reinterpretation and without reopening Attribution Evaluation, changing the canonical subject, resolving Provider Mapping, changing Instrument identity, reinterpreting provenance, applying product membership, adding acquisition authority or inferring factual correctness.
 
-The associated context may preserve factual assertion, approved subject attribution, factual category, source attribution, provenance, temporal context, factual lineage, partiality, failure or unavailability distinction, uncertainty, Retained Factual Ambiguity, known limitations and applicable effective identity context. It grants no Provider communication, acquisition, mapping, lifecycle, publication, persistence or implementation authority.
+The Eligible Candidate Factual Context Contract may preserve factual assertion, approved subject attribution, factual category, source attribution, provenance, temporal context, factual lineage, partiality, failure or unavailability distinction, uncertainty, Retained Factual Ambiguity, known limitations and applicable effective identity context. It grants no Provider communication, acquisition, mapping, lifecycle, publication, persistence or implementation authority. Absence of either constituent means the approved EAP-006 input boundary is not established; this architecture defines no runtime failure behavior.
 
 ## 8. Downstream Boundary
 
@@ -133,11 +134,11 @@ The following are semantic Engineering Architecture contracts only. They shall n
 
 ### 10.1 Observation Participation Eligibility Input Contract
 
-Consumes the EAP-005 downstream contract without reopening attribution.
+Consumes the eligibility constituent of the EAP-005 Composite Observation Participation Boundary without reopening attribution.
 
 ### 10.2 Eligible Candidate Factual Context Contract
 
-Preserves bounded factual assertion and approved contextual meanings.
+Consumes the factual-context constituent of the EAP-005 Composite Observation Participation Boundary and preserves bounded factual assertion and approved contextual meanings. It is jointly required with the eligibility constituent while remaining semantically independent.
 
 ### 10.3 Candidate Observation Establishment Contract
 
@@ -274,15 +275,15 @@ The following 40 questions are reproduced exactly and answered one-to-one.
 
 ### 1. What engineering contract consumes Observation Participation Eligibility?
 
-The Observation Participation Eligibility Input Contract consumes the EAP-005 contract without reopening attribution.
+The Observation Participation Eligibility Input Contract consumes the eligibility constituent of the EAP-005 Composite Observation Participation Boundary without reopening attribution. It is jointly required with the associated Eligible Candidate Factual Context Contract.
 
 ### 2. How is EAP-005 eligibility consumed without reopening attribution evaluation?
 
-EAP-006 consumes only the approved eligibility and associated candidate context; it does not rerun, reinterpret or alter Attribution Evaluation.
+EAP-006 consumes only the approved composite boundary. It neither reconstructs eligibility nor infers factual context from eligibility, and it does not rerun, reinterpret or alter Attribution Evaluation.
 
 ### 3. What information may enter the EAP-006 boundary?
 
-Only the EAP-005 eligibility contract and eligible candidate factual information context with approved subject, temporal, provenance, lineage, uncertainty, ambiguity, partiality and limits may enter.
+Only the two mandatory constituents of the EAP-005 Composite Observation Participation Boundary may enter: the Observation Participation Eligibility Contract and its associated Eligible Candidate Factual Context Contract with approved subject, temporal, provenance, lineage, uncertainty, ambiguity, partiality and limits. Their association is preserved, and neither grants Observation ownership or acceptance.
 
 ### 4. What information is prohibited from entering the EAP-006 boundary?
 
@@ -302,7 +303,7 @@ Candidate factual information has not acquired Observation ownership or governed
 
 ### 8. What exact conditions permit Observation Acceptance Evaluation to begin?
 
-The EAP-005 eligibility input, eligible candidate context, required ownership and evaluation context, boundary conformance and ability to evaluate acceptance preconditions must be present. A positive acceptance result is not a readiness prerequisite.
+Both associated constituents of the EAP-005 Composite Observation Participation Boundary, required ownership and evaluation context, boundary conformance and the ability to evaluate acceptance preconditions must be present. Eligibility is not reconstructed, factual context is not inferred from eligibility, and neither constituent grants Observation ownership or acceptance. A positive acceptance result is not a readiness prerequisite.
 
 ### 9. How is Acceptance Readiness kept distinct from Acceptance Outcome?
 
@@ -491,13 +492,21 @@ EAP-006 defines semantic contracts, representations and obligations only. It int
 55. **No EDD or implementation authority shall be inferred from EAP-006.**
 56. **EAP-006 shall terminate at governed Observation establishment or preserved non-acceptance.**
 
-57. **Observation Acceptance shall consume only EAP-005 Observation Participation Eligibility for an instrument-specific candidate and shall never consume Provider or EAIC-002 artefacts directly.**
+57. **Observation Acceptance shall consume only the approved EAP-005 Composite Observation Participation Boundary for an instrument-specific candidate and shall never consume Provider or EAIC-002 artefacts directly.**
 
 58. **Product membership and Product Eligibility shall not establish Observation Acceptance or alter governed factual meaning.**
 
 59. **Applicable products shall remain separately authorized downstream consumers and shall not acquire Observation ownership.**
 
 60. **EAP-006 publication shall not activate Observation processing, product consumption, runtime behavior, implementation or EDD-004; CAR-003 separately limits EDD-004 authority to constrained Draft Preparation.**
+
+61. **EAP-006 shall admit only the approved EAP-005 Composite Observation Participation Boundary.**
+
+62. **The Observation Participation Eligibility and Eligible Candidate Factual Context constituents shall remain associated and semantically distinguishable.**
+
+63. **Eligible Candidate Factual Context shall not be inferred from Observation Participation Eligibility alone.**
+
+64. **Neither composite-boundary constituent shall create Observation ownership before Observation Accepted.**
 
 ## 14. Engineering Observability
 
@@ -507,13 +516,16 @@ It shall not expose raw Provider payloads, sensitive values, implementation deta
 
 ## 15. Engineering Verification Obligations
 
-Engineering shall verify the 24 contracts, 32 representations, 40 questions, original 56 invariants and four migration invariants against the repository authorization and canonical ADP-001E boundary. Verification shall confirm ownership separation, EAP-005 Version 1.1 eligibility consumption without reinterpretation, product-neutral identity association, Provider and EAIC-002 isolation, readiness/outcome distinction, exactly two outcomes, acceptance/ownership separation, governed Observation prerequisites, explicit downstream product-consumption separation, non-acceptance reason preservation, factual limits, provenance, lineage, temporal meaning, interpretation absence, downstream-judgment absence and all explicit exclusions.
+Engineering shall verify the 24 contracts, 32 representations, 40 questions, original 56 invariants, four migration invariants and four Version 1.2 composite-boundary invariants against the repository authorization and canonical ADP-001E boundary. Verification shall confirm ownership separation, exact consumption of the EAP-005 Version 1.2 Composite Observation Participation Boundary, presence and governed association of both constituents without inference or reinterpretation, product-neutral identity association, Provider and EAIC-002 isolation, absence of any source-domain bypass, readiness/outcome distinction, exactly two outcomes, acceptance/ownership separation, governed Observation prerequisites, explicit downstream product-consumption separation, non-acceptance reason preservation, factual limits, provenance, lineage, temporal meaning, interpretation absence, downstream-judgment absence and all explicit exclusions.
 
 ## 16. Mandatory Review Criteria
 
 Chief Architect review shall verify:
 
-- EAP-005 eligibility is consumed without reopening attribution;
+- the EAP-005 Version 1.2 Composite Observation Participation Boundary is consumed exactly without reopening attribution;
+- both composite-boundary constituents are present, associated and semantically distinguishable;
+- no factual context is inferred from eligibility alone;
+- no Provider or source-domain bypass, ownership transfer or new dependency is introduced;
 - Candidate Observation establishment is distinct from ownership;
 - Acceptance Readiness is distinct from Acceptance Outcome;
 - exactly two mutually exclusive outcomes exist;
@@ -524,7 +536,7 @@ Chief Architect review shall verify:
 - subject, temporal, provenance, lineage and factual limits remain explicit;
 - interpretation and downstream judgment are absent;
 - publication, persistence, retrieval, Mapping, Lifecycle, Validation and implementation remain excluded;
-- the exact 24 contracts, 32 representations and 40 questions are present, and the original 56 invariants plus four migration invariants are preserved;
+- the exact 24 contracts, 32 representations and 40 questions are present, and the original 56 invariants, four migration invariants and four Version 1.2 composite-boundary invariants are preserved;
 - Provider and EAIC-002 artefacts never bypass EAP-005;
 - product membership and Product Eligibility do not affect Observation Acceptance;
 - products remain separately authorized downstream consumers without Observation ownership;
@@ -544,11 +556,11 @@ EAP-006 translates ADP-001E through the existing Observation dependency and crea
 | Title | Observation Acceptance and Governed Observation Establishment Engineering Architecture |
 | Classification | Engineering Architecture Package |
 | Owner | Engineering Architect |
-| Governing ADP | ADP-001E Version 1.0 |
+| Governing ADP | ADP-001E Version 1.1 |
 | Governing Architecture | ADR-009 Version 1.0; DOMAIN-002 |
 | Governing Migration | MIG-001 Version 0.1 |
-| Immediate Upstream EAP | EAP-005 Version 1.1 |
-| Version | 1.1 |
+| Immediate Upstream EAP | EAP-005 Version 1.2 |
+| Version | 1.2 |
 | Status | Approved |
 | Canonical Status | Approved Canonical Engineering Architecture |
 | Workflow Stage | Repository Publication |
@@ -565,6 +577,7 @@ EAP-006 translates ADP-001E through the existing Observation dependency and crea
 | EAP-006 Draft Version 0.1 | Reviewed and amended |
 | Canonical EAP-006 Version 1.0 | Approved historical canonical baseline |
 | Canonical EAP-006 Version 1.1 | Approved Canonical Engineering Architecture under RC-02 |
+| Canonical EAP-006 Version 1.2 | Approved bounded composite-boundary alignment |
 | Engineering verification | Complete |
 | Canonicalization | Authorized |
 | EDD-004 Draft Preparation | Approved with Constraints under RC-04 |
@@ -578,6 +591,8 @@ EAP-006 translates ADP-001E through the existing Observation dependency and crea
 EAP-006 Draft Version 0.1 was prepared under the repository-preserved Chief Architect Draft Authorization. Engineering verification was completed. The Chief Architect Final Review authorized governance-only canonicalization through CA-006-001 and CA-006-002. Version 1.0 became the approved canonical baseline.
 
 Version 1.1 applies the approved MIG-001 minor amendment: EAP-005 Version 1.1 product-neutral attribution eligibility is the sole instrument-specific input; Provider and EAIC-002 artefacts remain isolated upstream; and applicable products remain separately authorized downstream consumers that cannot alter Observation ownership or governed factual meaning. Version 1.1 is published under RC-02; RC-03 repository synchronization and RC-04 activation are complete.
+
+Version 1.2 applies the Chief Architect-approved bounded EAP-005 → EAP-006 composite-boundary amendment. EAP-006 consumes the Observation Participation Eligibility Contract and Eligible Candidate Factual Context Contract as the two mandatory, inseparably associated and semantically independent constituents of one conceptual upstream boundary. It changes no ownership, domain dependency, runtime authority or implementation authority.
 
 ## 21. Approval Record
 
@@ -609,7 +624,7 @@ Version 1.1 applies the approved MIG-001 minor amendment: EAP-005 Version 1.1 pr
 - [EAP-002 Version 2.0](EAP-002-PROVIDER-INSTRUMENT-MASTER-ACQUISITION.md)
 - [EAP-003 Version 2.0](EAP-003-PROVIDER-TO-INSTRUMENT-ARCHITECTURAL-ADMISSIBILITY.md)
 - [EAP-004 Version 2.0](EAP-004-INSTRUMENT-INTERPRETATION-AND-CANONICAL-IDENTITY-ESTABLISHMENT.md)
-- [EAP-005 Version 1.1](EAP-005-INSTRUMENT-TO-OBSERVATION-ATTRIBUTION-ELIGIBILITY.md)
+- [EAP-005 Version 1.2](EAP-005-INSTRUMENT-TO-OBSERVATION-ATTRIBUTION-ELIGIBILITY.md)
 - [Instrument Domain Architecture](../../architecture/platform/domains/instrument/ARCHITECTURE.md)
 - [Observation Domain Architecture](../../architecture/platform/domains/observation/ARCHITECTURE.md)
 - [Provider Domain Architecture](../../architecture/platform/domains/provider/ARCHITECTURE.md)

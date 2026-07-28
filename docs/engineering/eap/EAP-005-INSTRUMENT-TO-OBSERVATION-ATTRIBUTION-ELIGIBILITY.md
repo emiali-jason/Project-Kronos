@@ -2,7 +2,7 @@
 
 **Document ID:** EAP-005
 **Title:** Instrument-to-Observation Attribution Eligibility Engineering Architecture
-**Version:** 1.1
+**Version:** 1.2
 
 **Status:** Approved
 
@@ -27,7 +27,7 @@
 
 **Upstream EAP:** EAP-004 Version 2.0
 
-**Downstream EAP:** EAP-006 Version 1.1
+**Downstream EAP:** EAP-006 Version 1.2
 
 **Workflow Stage:** Repository Publication
 
@@ -36,7 +36,7 @@
 
 **ADR Required:** No
 
-**Engineering Impact:** None
+**Engineering Impact:** Bounded EDD-007 amendment and reverification required under separate governance after architecture publication
 
 **Runtime Impact:** None
 
@@ -48,7 +48,7 @@
 
 EAP-005 translates the approved ADP-001D Instrument-to-Observation Contract into provider-neutral and implementation-neutral engineering contracts, representations and obligations for evaluating whether candidate factual information is eligible for governed attribution and later Observation participation.
 
-EAP-005 begins with an EAP-004 Instrument Identity Contract and source-neutral candidate factual information. It preserves provenance continuity, source attribution, temporal attribution, uncertainty, ambiguity, partiality, failed-information distinction, unavailable-information distinction and effective identity context. It terminates before Candidate Observation construction, Observation Acceptance, Observation ownership and Observation publication.
+EAP-005 begins with an EAP-004 Instrument Identity Contract and source-neutral candidate factual information. It preserves provenance continuity, source attribution, temporal attribution, uncertainty, ambiguity, partiality, failed-information distinction, unavailable-information distinction and effective identity context. Attribution Eligible terminates through the Composite Observation Participation Boundary, which contains the Observation Participation Eligibility Contract and its inseparably associated Eligible Candidate Factual Context Contract. Attribution Ineligible terminates with preserved reasons and neither constituent. EAP-005 terminates before Candidate Observation construction, Observation Acceptance, Observation ownership and Observation publication.
 
 ## 2. Scope
 
@@ -70,13 +70,14 @@ EAP-005 defines engineering architecture for:
 - retained uncertainty and unresolved ambiguity;
 - effective identity-context preservation;
 - Observation Participation Eligibility and Ineligibility;
+- Eligible Candidate Factual Context preservation and its governed association with Observation Participation Eligibility;
 - boundary conformance and violations;
 - non-sensitive observability; and
 - engineering verification.
 
 ## 3. Engineering Governance
 
-This Version 1.1 amendment is the approved engineering translation of migrated ADP-001D and the product-neutral EAP-004 Version 2.0 identity boundary. It introduces no new domain, semantic owner, dependency, runtime behavior, communication authority or implementation decision.
+This Version 1.2 amendment is the approved bounded resolution of the EAP-005 → EAP-006 boundary inconsistency. It defines the Composite Observation Participation Boundary as two mandatory, inseparably associated and semantically independent constituents without changing the migrated ADP-001D meaning or the product-neutral EAP-004 Version 2.0 identity boundary. It introduces no new domain, semantic owner, dependency, runtime behavior, communication authority or implementation decision.
 
 Canonical repository architecture remains authoritative. EAP-005 shall be interpreted consistently with ADP-001D, ADP-001E, ADP-001J, EAP-004 and all listed approved dependencies. Unresolved matters remain unresolved or become explicit attribution-ineligibility reasons; Engineering shall not invent their meaning.
 
@@ -107,7 +108,7 @@ EAP-005 shall not reinterpret Instrument identity, make candidate facts Observat
 
 ## 5. Canonical Dependencies
 
-The following documents are mandatory dependencies for this Version 1.1 architecture:
+The following documents are mandatory dependencies for this Version 1.2 architecture:
 
 - Platform Constitution;
 - ADP-001B — Instrument Identity Architecture;
@@ -142,10 +143,11 @@ The following documents are mandatory dependencies for this Version 1.1 architec
 | Attribution Evaluation | Observation |
 | Attribution Outcome | Observation |
 | Observation Participation Eligibility | Observation |
+| Eligible Candidate Factual Context | Has not acquired Observation ownership merely through eligibility or boundary crossing; applicable source assertions and provenance retain their approved source-domain ownership |
 | Observation Acceptance | Observation, outside EAP-005 |
 | Governed Observation | Observation, outside EAP-005 |
 
-ADP-001D assigns Instrument ownership of identity and Observation ownership of factual attribution and Market Facts. Candidate factual information has no new semantic owner before Observation Acceptance. EAP-005 does not assign a new semantic owner to candidate factual information, introduces no third or premature factual owner and transfers no ownership through engineering representation.
+ADP-001D assigns Instrument ownership of identity and Observation ownership of factual attribution and Market Facts. Candidate factual information has no new semantic owner before Observation Acceptance. The Composite Observation Participation Boundary creates no third owner, and Observation ownership may arise only after EAP-006 Observation Acceptance. EAP-005 does not assign a new semantic owner to candidate factual information, introduces no third or premature factual owner and transfers no ownership through engineering representation or boundary crossing.
 
 ## 7. Engineering Boundary
 
@@ -161,15 +163,16 @@ Candidate Factual Information Contract
              Attribution Outcome
           ┌──────────────┴──────────────┐
           ↓                             ↓
- Attribution Eligible          Attribution Ineligible
-          ↓                             ↓
- Observation Participation      Attribution Ineligibility
- Eligibility Contract           Reason Preserved
-          ↓                             ↓
- EAP-005 terminates             No Observation Participation
-                                Eligibility Contract
-                                      ↓
-                                EAP-005 terminates
+ Attribution Eligible                Attribution Ineligible
+          ↓                                   ↓
+ Composite Observation               Attribution Ineligibility
+ Participation Boundary              Reason Preserved
+   ├── Observation Participation              ↓
+   │   Eligibility Contract           Neither Composite-Boundary
+   └── Eligible Candidate             Constituent Produced
+       Factual Context Contract                ↓
+          ↓                            EAP-005 terminates
+ EAP-005 terminates
 ```
 
 This is a semantic engineering boundary only. It shall not be represented as a runtime sequence, executable workflow, service orchestration, physical communication or state machine.
@@ -186,9 +189,14 @@ The Candidate Factual Information Input Contract is source-neutral and may prese
 
 ## 9. Downstream Boundary
 
-The downstream output is the Observation Participation Eligibility Contract. It represents only that candidate factual information is attributable to an approved canonical Instrument identity, satisfies governed ADP-001D attribution preconditions and may participate in later Observation architecture.
+The positive downstream output is the Composite Observation Participation Boundary. It contains exactly two mandatory, inseparably associated and semantically independent constituents:
 
-It shall not establish Candidate Observation construction, Observation Acceptance, Observation ownership, factual correctness, Market Fact authority, publication, Validation or fitness for use. EAP-005 terminates before Observation Acceptance architecture begins.
+1. the Observation Participation Eligibility Contract, representing only that candidate factual information is attributable to an approved canonical Instrument identity, satisfies governed ADP-001D attribution preconditions and may participate in later Observation architecture; and
+2. the Eligible Candidate Factual Context Contract, preserving the exact bounded candidate factual meaning to which that eligibility applies.
+
+Both constituents shall originate from the same bounded Attribution Evaluation, concern the same candidate factual information and preserve the same approved canonical Instrument association. They remain distinct in meaning and ownership state. No unrelated factual context may cross this boundary. Attribution Ineligible produces neither constituent.
+
+Neither constituent shall establish Candidate Observation construction, Observation Acceptance, Observation ownership, factual correctness, Market Fact authority, publication, Validation or fitness for use. The composite boundary is semantic only and does not represent a payload, envelope, message, schema, transport, persistence structure, runtime operation or two independent communication paths. EAP-005 terminates before Observation Acceptance architecture begins.
 
 ## 10. Engineering Contracts
 
@@ -266,7 +274,13 @@ Preserves applicable approved identity or lifecycle context without defining Lif
 
 Represents only eligibility for later Observation participation. It does not create an Observation, confer Observation ownership or authorize acceptance or publication.
 
-### 10.19 Boundary Violation Contract
+### 10.19 Eligible Candidate Factual Context Contract
+
+Preserves only the eligible candidate's approved factual assertion, factual category, canonical subject attribution, source attribution, provenance, temporal context, factual lineage available within the approved boundary, partiality, failure and unavailability distinctions, uncertainty, Retained Factual Ambiguity, known limitations and applicable effective identity context.
+
+It remains inseparably associated with the corresponding Observation Participation Eligibility Contract while retaining independent factual meaning and ownership state. It creates no factual correctness or Observation ownership, adds no interpretation, grants no acquisition or Provider access, grants no publication or persistence authority and defines no representation mechanism.
+
+### 10.20 Boundary Violation Contract
 
 Represents prohibited bypasses, ownership violations, unsupported inference or information crossing the EAP-005 boundary. It does not authorize remediation or reinterpretation.
 
@@ -274,7 +288,7 @@ Represents prohibited bypasses, ownership violations, unsupported inference or i
 
 The following representations preserve one-to-one engineering meaning. They are not implementation states or runtime state-machine instructions.
 
-**Required Engineering Representations: 28 present.**
+**Required Engineering Representations: 29 present.**
 
 | Engineering representation | Meaning |
 | --- | --- |
@@ -304,6 +318,7 @@ The following representations preserve one-to-one engineering meaning. They are 
 | `EFFECTIVE_IDENTITY_CONTEXT_NOT_ESTABLISHED` | Required effective identity context is not established. |
 | `OBSERVATION_PARTICIPATION_ELIGIBLE` | Candidate factual information is eligible for later Observation participation. |
 | `OBSERVATION_PARTICIPATION_INELIGIBLE` | Candidate factual information is not eligible for later Observation participation. |
+| `ELIGIBLE_CANDIDATE_FACTUAL_CONTEXT_PRESERVED` | The exact bounded candidate factual context associated with Observation Participation Eligibility remains preserved for the composite downstream boundary without acquiring Observation ownership. |
 | `BOUNDARY_CONFORMANT` | The engineering contract conforms to the EAP-005 boundary. |
 | `BOUNDARY_VIOLATION` | A prohibited condition, ownership violation, bypass or unsupported inference is represented. |
 
@@ -348,16 +363,23 @@ Engineering shall demonstrate that:
 33. Sensitive information and raw Provider payloads remain excluded.
 34. Provider neutrality and implementation neutrality are preserved.
 35. EAP-005 terminates before Observation Acceptance architecture begins.
+36. Both Composite Observation Participation Boundary constituents apply to the same bounded Attribution Evaluation.
+37. Both constituents concern the same candidate factual information and approved canonical subject association.
+38. The constituents remain semantically distinct, and their association transfers no ownership, authority or lifecycle state.
+39. Attribution Ineligible exports neither constituent.
+40. No implementation or runtime correlation mechanism is implied by their governed association.
 
 ## 13. Engineering Observability
 
-Observability shall expose only non-sensitive meaning sufficient to explain Attribution Evaluation Readiness, exactly one Attribution Outcome, canonical identity association, provenance continuity, source attribution, temporal attribution, partiality, failure, unavailability, Attribution Ambiguity, Retained Factual Ambiguity, uncertainty, effective identity context, Observation Participation Eligibility and boundary conformance or violation.
+Observability shall expose only non-sensitive meaning sufficient to explain Attribution Evaluation Readiness, exactly one Attribution Outcome, canonical identity association, provenance continuity, source attribution, temporal attribution, partiality, failure, unavailability, Attribution Ambiguity, Retained Factual Ambiguity, uncertainty, effective identity context, Observation Participation Eligibility, the presence and governed association of both Composite Observation Participation Boundary constituents for the same eligible boundary case, ownership and semantic separation, and boundary conformance or violation.
 
 Observability shall not expose raw Provider payloads, sensitive values, implementation details, transport details, APIs, schemas, persistence details or downstream Observation meaning.
 
 ## 14. Downstream Restrictions
 
-Only the Observation Participation Eligibility Contract may cross the EAP-005 boundary as an eligibility meaning for later Observation architecture. It shall not be interpreted as an Observation, Observation Acceptance, Observation ownership, factual correctness, Market Fact authority or publication authority.
+Only the Composite Observation Participation Boundary may cross the positive EAP-005 boundary for later Observation architecture. It contains exactly the Observation Participation Eligibility Contract and its associated Eligible Candidate Factual Context Contract. Observation Participation Eligibility remains the only eligibility meaning; the factual-context constituent carries factual meaning and shall not be interpreted as additional eligibility meaning. Neither constituent shall be interpreted as an Observation, Observation Acceptance, Observation ownership, factual correctness, Market Fact authority or publication authority.
+
+Attribution Ineligible exports neither composite-boundary constituent. Its exact non-sensitive reason or reasons remain terminal within EAP-005.
 
 EAP-005 shall define no Candidate Observation construction, Observation Acceptance, Observation lifecycle or downstream Validation, Risk, Execution, Portfolio, Event or Audit behavior. No Provider runtime communication is authorized.
 
@@ -467,7 +489,7 @@ The Effective Identity Context Contract preserves applicable approved context wh
 
 ### 26. What does Attribution Eligible permit?
 
-Attribution Eligible permits only the Observation Participation Eligibility Contract to represent eligibility for later Observation participation.
+Attribution Eligible permits only the Composite Observation Participation Boundary to expose the Observation Participation Eligibility Contract and its inseparably associated Eligible Candidate Factual Context Contract for later Observation architecture. Eligibility remains the only eligibility meaning.
 
 ### 27. What does Attribution Eligible never establish?
 
@@ -475,13 +497,17 @@ Attribution Eligible never establishes factual correctness, Observation Acceptan
 
 ### 28. What engineering contract may cross the downstream boundary?
 
-Only the Observation Participation Eligibility Contract may cross as an eligibility meaning for later Observation architecture. It is not an Observation or an acceptance contract.
+Only the Composite Observation Participation Boundary may cross on the eligible path. It contains exactly the Observation Participation Eligibility Contract and the associated Eligible Candidate Factual Context Contract. The constituents remain semantically independent, and neither is an Observation or an acceptance contract.
 
 ### 29. Where does EAP-005 terminate?
 
-EAP-005 terminates after the Attribution Outcome. Attribution Eligible may produce the Observation Participation Eligibility Contract. Attribution Ineligible preserves its Attribution Ineligibility Reason and produces no Observation Participation Eligibility Contract. No downstream ineligibility contract is created, implied, authorized or required. EAP-005 terminates before Candidate Observation construction, Observation Acceptance, ownership and publication.
+EAP-005 terminates after the Attribution Outcome. Attribution Eligible may produce the Composite Observation Participation Boundary with exactly its two mandatory constituents. Attribution Ineligible preserves its Attribution Ineligibility Reason and produces neither constituent. No downstream ineligibility contract is created, implied, authorized or required. EAP-005 terminates before Candidate Observation construction, Observation Acceptance, ownership and publication.
 
-### 30. What matters require further architecture rather than Engineering discretion?
+### 30. How do the two Composite Observation Participation Boundary constituents remain associated?
+
+They remain governed as inseparably associated semantic constituents originating from the same bounded Attribution Evaluation, concerning the same candidate factual information and preserving the same approved canonical Instrument association. EAP-005 defines no identifier, field, payload, message, schema, transport, persistence structure or runtime correlation mechanism.
+
+### 31. What matters require further architecture rather than Engineering discretion?
 
 Factual-data acquisition, Provider communication, APIs, schemas, payloads, timestamp formats, mapping, lifecycle transitions, factual correction, enrichment, normalization, Candidate Observation construction, Observation Acceptance, publication, persistence, runtime orchestration, EDD scope, implementation and any ownership or dependency change require further approved architecture.
 
@@ -565,6 +591,14 @@ Factual-data acquisition, Provider communication, APIs, schemas, payloads, times
 
 39. **EAP-005 shall not independently authorize EDD-004; CAR-003 separately limits EDD-004 authority to constrained Draft Preparation.**
 
+40. **The positive terminal boundary shall contain exactly the Observation Participation Eligibility Contract and the Eligible Candidate Factual Context Contract.**
+
+41. **Both positive-boundary constituents shall correspond to the same bounded Attribution Evaluation and candidate factual context.**
+
+42. **Their governed association shall transfer no ownership, authority or lifecycle state.**
+
+43. **Attribution Ineligible shall export neither positive-boundary constituent.**
+
 ## 17. Engineering Verification Obligations
 
 Engineering shall verify:
@@ -582,8 +616,10 @@ Engineering shall verify:
 - identity metadata and derived interpretation remain distinct from facts;
 - effective identity context is preserved without Lifecycle processing;
 - Mapping mechanics and Observation Acceptance remain excluded;
-- the exact 30-question set is retained;
+- the exact 31-question set is present;
 - the original 35-invariant set is preserved and the four migration invariants are present;
+- the four Version 1.2 composite-boundary invariants are present;
+- the 20 contracts and 29 representations are present;
 - ADP-001D, ADP-001E and EAP-004 traceability is complete;
 - product membership and product-universe context are excluded from canonical identity association and Attribution Eligibility;
 - product-specific Observation requirements do not change identity, attribution ownership or factual meaning;
@@ -609,13 +645,17 @@ Chief Architect review shall verify:
 13. Effective identity context is preserved without Lifecycle processing.
 14. Mapping mechanics remain excluded.
 15. Observation Acceptance remains excluded.
-16. The exact 30-question set is retained.
+16. The exact 31-question set is present.
 17. The original 35-invariant set is preserved and the four migration invariants are present.
-18. ADP-001D, ADP-001E and EAP-004 traceability is complete.
-19. Product membership and product-universe context are excluded from canonical identity association and Attribution Eligibility.
-20. Product-specific Observation requirements do not change identity, attribution ownership or factual meaning.
-21. No runtime or Provider communication authority is introduced.
-22. No EDD or implementation authority is introduced.
+18. The four Version 1.2 composite-boundary invariants are present.
+19. The 20 contracts and 29 representations are present.
+20. ADP-001D, ADP-001E and EAP-004 traceability is complete.
+21. Product membership and product-universe context are excluded from canonical identity association and Attribution Eligibility.
+22. Product-specific Observation requirements do not change identity, attribution ownership or factual meaning.
+23. The two composite-boundary constituents remain associated and semantically independent.
+24. Attribution Ineligible exports neither constituent.
+25. No runtime or Provider communication authority is introduced.
+26. No EDD or implementation authority is introduced.
 
 ## 19. ADR Determination
 
@@ -635,8 +675,8 @@ No ADR is required provided EAP-005 translates ADP-001D, preserves Instrument an
 | Governing Architecture | ADR-009 Version 1.0; DOMAIN-001; DOMAIN-002 |
 | Governing Migration | MIG-001 Version 0.1 |
 | Upstream EAP | EAP-004 Version 2.0 |
-| Downstream EAP | EAP-006 Version 1.1 |
-| Version | 1.1 |
+| Downstream EAP | EAP-006 Version 1.2 |
+| Version | 1.2 |
 | Status | Approved |
 | Canonical Status | Approved Canonical Engineering Architecture |
 | Workflow Stage | Repository Publication |
@@ -658,6 +698,7 @@ No ADR is required provided EAP-005 translates ADP-001D, preserves Instrument an
 | EAP-005 Draft Version 0.3 | Reviewed and amended |
 | Canonical EAP-005 Version 1.0 | Approved historical canonical baseline |
 | Canonical EAP-005 Version 1.1 | Approved Canonical Engineering Architecture under RC-02 |
+| Canonical EAP-005 Version 1.2 | Approved bounded composite-boundary amendment |
 | Canonicalization | Authorized |
 | EAP-006 engineering architecture publication | Separate RC-02 publication unit |
 | EDD-004 Draft Preparation | Approved with Constraints under RC-04 |
@@ -669,6 +710,8 @@ No ADR is required provided EAP-005 translates ADP-001D, preserves Instrument an
 EAP-005 Draft Version 0.1 was authorized by the Chief Architect Repository Architecture Review — Next Authorized Capability. Engineering verification was completed. The first independent Chief Architect review produced CA-EAP005-001 through CA-EAP005-003 together with the associated governance corrections. Draft Version 0.2 applied those amendments. Engineering re-verification was completed and the Chief Architect re-review produced CA-EAP005-004 and GOV-EAP005-006. Draft Version 0.3 applied those required amendments. The final Chief Architect review authorized canonicalization of Version 1.0.
 
 Version 1.1 applies the approved MIG-001 minor amendment: product-neutral EAP-004 Version 2.0 identity is the sole upstream identity meaning; product membership and product-universe context are excluded from canonical identity association and Attribution Eligibility; product-specific Observation requirements remain downstream and do not transfer ownership. Version 1.1 is published under RC-02; RC-03 repository synchronization and RC-04 activation are complete.
+
+Version 1.2 applies the Chief Architect-approved bounded EAP-005 → EAP-006 composite-boundary amendment. It defines the Observation Participation Eligibility Contract and Eligible Candidate Factual Context Contract as the two mandatory, inseparably associated and semantically independent constituents of one conceptual positive boundary. It changes no ownership, domain dependency, runtime authority or implementation authority.
 
 ## 23. Approval Record
 

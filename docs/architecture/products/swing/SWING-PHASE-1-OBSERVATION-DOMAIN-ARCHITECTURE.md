@@ -2,7 +2,7 @@
 
 **Document ID:** ADP-001E
 **Title:** Observation Domain Architecture
-**Version:** 1.0
+**Version:** 1.1
 **Status:** Approved
 **Canonical Status:** Approved Canonical Architecture
 
@@ -304,7 +304,7 @@ Availability, acquisition success, normalization, architectural admissibility, a
 
 Observation exclusively owns the semantic authority to accept candidate factual information as a governed Observation. Observation ownership of the accepted factual record is the resulting architectural state.
 
-For instrument-specific candidate factual information, Observation Acceptance consumes only Observation Attribution Eligibility from ADP-001D. It shall not consume Provider records, Provider Catalogue content, Provider-and-Dataset Catalogue Partitions, Provider Snapshots, Provider-native identifiers, Provider dispositions, Submission Eligibility, Submission Units, or any EAIC-002 artefact.
+For instrument-specific candidate factual information, Observation Acceptance consumes only the approved composite attribution boundary derived from ADP-001D. Observation Attribution Eligibility is the sole attribution-admission meaning, while its inseparably associated eligible candidate factual context is the candidate subject to Acceptance. Both constituents enter through one governed boundary; the factual-context constituent is not a second eligibility meaning or domain dependency. Neither constituent creates Observation ownership before Acceptance. Observation Acceptance shall not consume Provider records, Provider Catalogue content, Provider-and-Dataset Catalogue Partitions, Provider Snapshots, Provider-native identifiers, Provider dispositions, Submission Eligibility, Submission Units, or any EAIC-002 artefact.
 
 The conceptual distinction is:
 
@@ -745,7 +745,7 @@ ADP-001E preserves ADP-001D:
 - Observation owns factual state.
 - Facts do not possess identity; they are attributed to identity.
 - Attribution shall never transfer identity ownership.
-- Observation Acceptance consumes only Observation Attribution Eligibility from ADP-001D for instrument-specific candidate factual information.
+- Observation Acceptance consumes only the approved composite attribution boundary derived from ADP-001D for instrument-specific candidate factual information; eligibility remains the sole attribution-admission meaning and the associated eligible candidate factual context remains the candidate subject to Acceptance.
 - Observation may preserve the attribution and applicable lifecycle context.
 - Observation shall never create, alter, resolve, or infer canonical Instrument identity.
 
@@ -837,7 +837,7 @@ The following Chief Architect-approved invariants are normative within this appr
 33. Temporal concepts that coincide shall never be assumed semantically identical.
 34. Observation acceptance shall remain distinct from publication or downstream consumption.
 35. Observation authority shall never imply exchange authority, Provider infallibility, absolute external truth, or objective correctness beyond represented provenance and known factual limits.
-36. Observation Acceptance shall consume only Observation Attribution Eligibility from ADP-001D for instrument-specific candidate factual information.
+36. Observation Acceptance shall consume only the approved composite attribution boundary derived from ADP-001D for instrument-specific candidate factual information; Observation Attribution Eligibility and its associated eligible candidate factual context shall remain semantically distinct, and neither shall create Observation ownership before Acceptance.
 37. Observation Acceptance shall never consume Provider Records, Provider Catalogue content, Provider Snapshots, Provider-native identifiers, Submission Units, or EAIC-002 artefacts.
 38. Observation Acceptance shall never establish canonical Instrument identity, Provider mapping, product-universe membership, or Product Eligibility.
 39. Observation ownership of an accepted factual record shall begin only after successful Observation Acceptance.
@@ -1006,7 +1006,7 @@ This document conforms to ADP-001D by:
 
 - preserving the principle that facts do not possess identity and are attributed to identity;
 - preserving Instrument identity and Observation factual-state ownership;
-- consuming only Observation Attribution Eligibility from ADP-001D before Observation Acceptance for instrument-specific facts;
+- consuming only the approved composite attribution boundary derived from ADP-001D before Observation Acceptance for instrument-specific facts, with eligibility as the sole attribution-admission meaning and the associated eligible candidate factual context as the candidate subject to Acceptance;
 - preserving attribution, provenance, temporal context, uncertainty, and ambiguity;
 - keeping admissibility distinct from acceptance, ownership, publication, and validation;
 - preventing the attribution boundary from creating an Observation;
@@ -1110,7 +1110,7 @@ This section creates no sequence, roadmap commitment, contract, ADR, EDD, Engine
 
 **Next Authorized Capability:** None
 
-**Review History:** Initial Draft prepared from Chief Architect direction after Engineering Architecture discovery review. The Chief Architect approved the architecture after the required documentation amendments, Engineering Architect verification passed, and repository metadata and indexes were updated for canonicalization.
+**Review History:** Initial Draft prepared from Chief Architect direction after Engineering Architecture discovery review. The Chief Architect approved the architecture after the required documentation amendments, Engineering Architect verification passed, and repository metadata and indexes were updated for canonicalization. Version 1.1 applies the Chief Architect-approved bounded terminology clarification for the EAP-005 → EAP-006 composite boundary; it changes no Observation responsibility, ownership, dependency, runtime authority or implementation authority.
 
 ADR-009, MIG-001, EAIC-002, the migrated Provider and Instrument domains, the Observation Domain, the migrated matrices and DATA_FLOW, applicable migrated product architecture, migrated ADP-001D, ADP-001E, and the approved Platform architecture retain authority within their respective scopes. ADP-001C remains superseded historical traceability only. Approval of ADP-001E does not activate ADR-009 or EAIC-002 and creates no Observation processing, product activation, runtime, implementation, EDD-004, or follow-on authority.
 

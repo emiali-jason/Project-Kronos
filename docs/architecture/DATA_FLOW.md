@@ -227,6 +227,15 @@ Provider acquisition does not depend on Swing, Intraday, or future-product membe
 
 Observation consumes canonical Instrument identity through the separately governed Instrument-to-Observation attribution boundary.
 
+For an eligible instrument-specific candidate, the governed attribution boundary produces one Composite Observation Participation Boundary containing exactly:
+
+- Observation Participation Eligibility; and
+- its inseparably associated Eligible Candidate Factual Context.
+
+Observation Participation Eligibility remains the sole attribution-admission meaning. Eligible Candidate Factual Context remains distinct factual meaning and does not acquire Observation ownership through eligibility or boundary crossing. The two constituents form one conceptual semantic boundary, not two independent domain flows.
+
+The composite boundary creates no direct Provider → Observation dependency, carries no Provider Record, Provider Catalogue content, Provider Snapshot, Provider-native identifier, Submission Unit or EAIC-002 artefact, and authorizes no runtime path. Observation ownership of an accepted factual record begins only following separately governed Observation Acceptance.
+
 Observation does not consume Provider-native records, Provider Catalogue content, Provider Snapshots, or EAIC-002 envelopes.
 
 Provider acquisition and EAIC-002 submission do not create Observation authority.
