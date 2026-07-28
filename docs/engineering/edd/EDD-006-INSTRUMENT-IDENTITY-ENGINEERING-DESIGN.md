@@ -2,7 +2,7 @@
 
 **Document ID:** EDD-006<br>
 **Title:** Instrument Identity Engineering Design<br>
-**Version:** 0.2 Draft<br>
+**Version:** 0.3 Draft<br>
 **Status:** Draft<br>
 **Canonical Status:** Draft<br>
 **Classification:** Engineering Design Document<br>
@@ -12,11 +12,13 @@
 **Engineering Review Authority:** Chief Systems Engineer<br>
 **Repository Location:** `docs/engineering/edd/EDD-006-INSTRUMENT-IDENTITY-ENGINEERING-DESIGN.md`<br>
 **Workflow Stage:** Draft Preparation<br>
-**Engineering Stage:** Engineering Capability Decomposition<br>
+**Engineering Stage:** Engineering Building Block Architecture<br>
 **ES-01 Review Status:** Approved<br>
 **ES-01 Approved By:** Chief Systems Engineer<br>
 **ES-02 Review Status:** Approved<br>
 **ES-02 Approved By:** Chief Systems Engineer<br>
+**ES-03 Review Status:** Approved<br>
+**ES-03 Approved By:** Chief Systems Engineer<br>
 **Draft Authorization:** ES-01 completed under CAR-006 Version 1.0; ES-02 through ES-05 authorized under CAR-006 Version 1.1<br>
 **Direct Engineering Architecture:** EAP-004 Version 2.0<br>
 **Immediate Upstream Engineering Design:** EDD-005 Version 1.0<br>
@@ -551,3 +553,234 @@ These constraints survive all later EDD-006 Engineering Stages and any separatel
 | C16 | R46–R47 | Sections 20 and 21; CAR-006 Version 1.1; EAS-007; DOC-001 |
 
 The traceability model confirms complete realization of ES-01 without duplication, loss, reinterpretation, or extension. EAP-004 remains the sole direct Engineering Architecture authority.
+
+---
+
+# ES-03 — Engineering Building Block Design
+
+ES-03 translates the approved ES-02 capability model into bounded Engineering Building Blocks. The Building Blocks allocate established engineering meaning only. They do not define modules, services, classes, interfaces, physical components, operational sequencing, or technology.
+
+Every Building Block remains subordinate to EAP-004 Version 2.0 and preserves the complete ES-01 and ES-02 boundaries. The model contains 12 primary Building Blocks and four cross-cutting Building Blocks. Each ES-02 capability and conceptual component is realized exactly once.
+
+## 1. Engineering Building Blocks
+
+### 1.1 Primary Building Blocks
+
+| Building Block | Name | Engineering purpose | ES-02 realization |
+|---|---|---|---|
+| BB-01 | Admitted Interpretation Input Boundary | Preserve one accepted EAIC-002 Submission Unit and its governed Provider-owned meaning as the sole EDD-006 interpretation input. | C1 / EC-01 |
+| BB-02 | Interpretation Processing Status Determination | Establish the independent processing-status dimension with its exact approved cardinality and non-implications. | C2 / EC-02 |
+| BB-03 | Interpretation Outcome Determination | Establish the bounded Instrument Interpretation Outcome without altering or replacing Provider meaning. | C3 / EC-03 |
+| BB-04 | Identity-Layer Semantic Sufficiency Assessment | Establish approved semantic-sufficiency meaning independently for each canonical identity layer. | C6 / EC-06 |
+| BB-05 | Canonical Identity Continuity and Establishment Assessment | Determine whether approved evidence supports existing identity reuse or bounded new identity establishment. | C7 / EC-07 |
+| BB-06 | Canonical Identity Decision Determination | Establish the independent canonical-identity decision and preserve justified non-establishment. | C4 / EC-04 |
+| BB-07 | Cross-Provider Reconciliation Evidence | Preserve Instrument-owned reconciliation meaning while keeping Provider scopes, evidence, ambiguity, and conflict separate. | C9 / EC-09 |
+| BB-08 | Provider Mapping Status Determination | Establish Provider Mapping Status independently from canonical identity and without creating identity through mapping. | C8 / EC-08 |
+| BB-09 | Dimension Independence and Coexistence Conformance | Preserve independence, permitted coexistence, terminal meaning, and deferral across the four Instrument dimensions. | C5 / EC-05 |
+| BB-10 | Instrument Identity Contract Publication Eligibility | Determine whether approved Instrument Identity Contract publication preconditions are satisfied without creating publication authority. | C10 / EC-10 |
+| BB-11 | Canonical Instrument Catalogue Publication Eligibility | Determine whether approved product-neutral catalogue publication preconditions are satisfied while preserving Instrument-only write ownership. | C11 / EC-11 |
+| BB-12 | Downstream Boundary Control | Restrict EDD-006 output to eligible Instrument Identity Contract meaning and terminate before EAP-005 factual attribution. | C12 / EC-12 |
+
+### 1.2 Cross-Cutting Building Blocks
+
+| Building Block | Name | Engineering purpose | ES-02 realization |
+|---|---|---|---|
+| XBB-01 | Evidence and Provenance Integrity | Apply distinct, attributable evidence and provenance obligations to every governed EDD-006 meaning. | C13 / EC-13 |
+| XBB-02 | Security Containment and Observability | Apply sensitive-material exclusion and approved non-sensitive observability while preserving Audit authority separation. | C14 / EC-14 |
+| XBB-03 | Governed Relationship and Authority Separation | Preserve only approved relationship and lifecycle meaning and prevent creation of downstream authority. | C15 / EC-15 |
+| XBB-04 | Engineering Verification and Repository Conformance | Preserve design traceability, lifecycle, metadata, review, and authorization conformance across the Building Block model. | C16 / EC-16 |
+
+The cross-cutting Building Blocks constrain primary Building Blocks without acquiring their semantic responsibilities or changing Provider, Instrument, or Audit ownership.
+
+## 2. Building Block Responsibilities
+
+### 2.1 BB-01 — Admitted Interpretation Input Boundary
+
+BB-01 owns qualification of the sole consumption boundary, preservation of immutable input associations, Provider meaning and identity scopes, exclusion of prohibited sensitive content, and separation of contract rejection from Instrument interpretation.
+
+### 2.2 BB-02 — Interpretation Processing Status Determination
+
+BB-02 owns the exact Interpretation Processing Status cardinality and meaning and prevents receipt, validation, or admission meaning from establishing interpretation progress or any other Instrument dimension.
+
+### 2.3 BB-03 — Interpretation Outcome Determination
+
+BB-03 owns the exact bounded Interpretation Outcome cardinality and meaning, requires completed interpretation meaning where applicable, preserves Provider non-mutation, and prevents Provider ambiguity or vocabulary limitations from automatically becoming Instrument outcomes.
+
+### 2.4 BB-04 — Identity-Layer Semantic Sufficiency Assessment
+
+BB-04 owns separation of Economic Instrument, Listed Instrument, and Derivative Contract sufficiency meaning; positive approved semantic evidence requirements; and exclusion of technical, Provider-native, behavioral, and product-derived substitutes for sufficiency.
+
+### 2.5 BB-05 — Canonical Identity Continuity and Establishment Assessment
+
+BB-05 owns existing-identity reuse assessment, bounded new-identity establishment assessment, Provider-change non-mutation, and canonical and historical continuity evidence.
+
+### 2.6 BB-06 — Canonical Identity Decision Determination
+
+BB-06 owns canonical-identity decision cardinality, establishment preconditions, and attributable non-establishment meaning without creating Provider mapping, product eligibility, or downstream factual meaning.
+
+### 2.7 BB-07 — Cross-Provider Reconciliation Evidence
+
+BB-07 owns Provider-separated reconciliation evidence, provenance preservation, ambiguity and conflict preservation, and prohibition of Provider scope merger, silent Provider preference, identifier globalization, or unsupported equivalence.
+
+### 2.8 BB-08 — Provider Mapping Status Determination
+
+BB-08 owns Provider Mapping Status cardinality and meaning, independence from Canonical Identity Decision, the canonical-target requirement for mapped meaning, and the prohibition on mapping-created identity.
+
+### 2.9 BB-09 — Dimension Independence and Coexistence Conformance
+
+BB-09 owns non-collapse of Interpretation Processing Status, Interpretation Outcome, Canonical Identity Decision, and Provider Mapping Status; permitted coexistence; bounded terminal meaning; and dimension-specific deferral.
+
+### 2.10 BB-10 — Instrument Identity Contract Publication Eligibility
+
+BB-10 owns assessment of every EAP-004 Instrument Identity Contract publication precondition and preservation of approved Instrument-owned contract meaning and exclusions. It creates no publication authority.
+
+### 2.11 BB-11 — Canonical Instrument Catalogue Publication Eligibility
+
+BB-11 owns catalogue-publication eligibility, product-neutral catalogue meaning, separation from Provider and product collections, and preservation of Instrument-only canonical write ownership. It defines no physical catalogue realization.
+
+### 2.12 BB-12 — Downstream Boundary Control
+
+BB-12 owns the sole EDD-006 terminal projection toward EAP-005 and prevents factual attribution, Observation meaning, product decisions, or downstream authority from entering EDD-006.
+
+### 2.13 XBB-01 — Evidence and Provenance Integrity
+
+XBB-01 owns evidence-class separation, attribution, dimension and identity evidence obligations, reconciliation evidence, unresolved-meaning evidence, continuity evidence, and publication evidence where separately authorized.
+
+### 2.14 XBB-02 — Security Containment and Observability
+
+XBB-02 owns sensitive-material exclusion, permitted non-sensitive observability constraints, and preservation of Audit Trail ownership without semantic ownership transfer.
+
+### 2.15 XBB-03 — Governed Relationship and Authority Separation
+
+XBB-03 owns preservation of already-approved Instrument relationship and lifecycle meaning and every EAP-004 downstream non-implication.
+
+### 2.16 XBB-04 — Engineering Verification and Repository Conformance
+
+XBB-04 owns complete ES-01, ES-02, and EAP-004 traceability; Building Block conformance obligations; repository metadata and lifecycle conformance; and review-evidence requirements.
+
+## 3. Building Block Boundaries
+
+| Building Block | Boundary begins | Boundary ends | Explicitly remains outside |
+|---|---|---|---|
+| BB-01 | At one accepted EAIC-002 Submission Unit | With preserved admitted input meaning suitable for Instrument-owned evaluation | Receipt, contract validation, admission determination, pre-interpretation rejection, Provider acquisition, and Provider mutation |
+| BB-02 | With preserved admitted input meaning | With exactly one governed Interpretation Processing Status meaning | Interpretation Outcome, identity decision, mapping status, and lifecycle meaning |
+| BB-03 | With preserved admitted meaning and completed processing meaning | With exactly one governed Interpretation Outcome when applicable | Provider disposition, identity decision, mapping status, and product meaning |
+| BB-04 | With Provider-owned evidence and applicable approved Instrument context | With semantic-sufficiency meaning for the applicable identity layer | Fields, parsing rules, algorithms, scores, thresholds, and product membership |
+| BB-05 | With positive sufficiency, continuity, and distinction evidence | With governed reuse-or-establishment assessment evidence and continuity evidence | Automatic identity mutation from Provider record, symbol, token, snapshot, or reference change |
+| BB-06 | With completed interpretation meaning and required identity evidence | With exactly one governed Canonical Identity Decision meaning | Provider mapping, product eligibility, and downstream factual meaning |
+| BB-07 | With canonical-identity meaning and Provider-separated identity and provenance evidence | With Instrument-owned reconciliation evidence | Provider partition merger, silent Provider preference, and unsupported equivalence |
+| BB-08 | With canonical-target meaning where applicable and reconciliation evidence | With exactly one governed Provider Mapping Status meaning | Canonical identity creation, Provider disposition, and another Provider's mapping |
+| BB-09 | With the four independently established dimension meanings | With coexistence, bounded terminal-meaning, and deferral conformance | Combined status, Instrument lifecycle state, or reassessment authority |
+| BB-10 | With identity, continuity, mapping, evidence, containment, and authority-separation conformance | With Instrument Identity Contract publication-eligibility meaning | Publication authority, raw Provider meaning, product eligibility, and physical publication |
+| BB-11 | With approved canonical catalogue meaning and publication preconditions | With Canonical Instrument Catalogue publication-eligibility meaning | Physical catalogue realization, Provider Catalogue meaning, product universes, and product-specific lists |
+| BB-12 | With eligible Instrument Identity Contract meaning and safe provenance | At the EAP-005 factual-attribution boundary | Factual attribution, Observation formation, Validation, and downstream product decisions |
+| XBB-01 | At every governed evidence obligation within EDD-006 | With distinct, attributable preservation requirements | Semantic ownership transfer and substitution of one evidence class or time meaning for another |
+| XBB-02 | At every EDD-006 evidence, observability, and publication boundary | With containment and permitted observability constraints | Sensitive-material exposure and Audit ownership of Provider or Instrument meaning |
+| XBB-03 | At approved Instrument relationship, lifecycle, ownership, and authority constraints | With preserved relationship meaning and downstream non-authority constraints | New relationship types, lifecycle states, transitions, factual meaning, or product authority |
+| XBB-04 | At ES-01, ES-02, EAP-004, CAR-006, and repository-governance traceability | With complete ES-03 conformance and review obligations | Engineering approval, architecture amendment, implementation authority, and later-stage design |
+
+Each boundary is independently reviewable and non-overlapping by primary responsibility. Cross-cutting application does not transfer or duplicate the responsibility owned by a primary Building Block.
+
+## 4. Building Block Relationships
+
+Building Block relationships express semantic dependency only. They do not define execution order, calls, orchestration, scheduling, concurrency, persistence, or physical interaction.
+
+| Building Block | Direct engineering dependencies | Relationship meaning |
+|---|---|---|
+| BB-01 | None within EDD-006 | Begins at the separately governed accepted EAIC-002 boundary. |
+| XBB-01 | None | Establishes cross-cutting evidence and provenance obligations. |
+| XBB-02 | None | Establishes cross-cutting containment and observability obligations. |
+| XBB-03 | None | Establishes cross-cutting relationship and authority-separation obligations. |
+| BB-02 | BB-01, XBB-01, XBB-02, XBB-03 | Processing-status meaning requires preserved admitted meaning and governed conformance obligations. |
+| BB-03 | BB-01, BB-02, XBB-01, XBB-02, XBB-03 | Outcome meaning requires admitted meaning and completed processing meaning. |
+| BB-04 | BB-01, XBB-01, XBB-02, XBB-03 | Sufficiency meaning requires preserved evidence and approved Instrument context. |
+| BB-05 | BB-01, BB-04, XBB-01, XBB-02, XBB-03 | Continuity and establishment assessment requires positive semantic sufficiency and preserved evidence. |
+| BB-06 | BB-02, BB-03, BB-05, XBB-01, XBB-02, XBB-03 | Canonical identity decision requires processing, outcome, and reuse-or-establishment assessment evidence. |
+| BB-07 | BB-01, BB-04, BB-05, BB-06, XBB-01, XBB-02, XBB-03 | Reconciliation requires Provider-separated evidence and approved Instrument identity meaning. |
+| BB-08 | BB-06, BB-07, XBB-01, XBB-02, XBB-03 | Mapping status uses canonical identity meaning where applicable and reconciliation evidence. |
+| BB-09 | BB-02, BB-03, BB-06, BB-08, XBB-01, XBB-03 | Coexistence conformance assesses the four independent dimensions without collapsing them. |
+| BB-10 | BB-05, BB-06, BB-08, BB-09, XBB-01, XBB-02, XBB-03 | Contract eligibility requires identity, coexistence, continuity, applicable mapping, evidence, containment, and authority conformance. |
+| BB-11 | BB-05, BB-06, BB-08, BB-09, XBB-01, XBB-02, XBB-03 | Catalogue eligibility requires approved canonical meaning, coexistence, continuity, mapping, evidence, containment, and authority conformance. |
+| BB-12 | BB-10, XBB-01, XBB-02, XBB-03 | Terminal projection requires eligible contract meaning and safe provenance. |
+| XBB-04 | BB-01 through BB-12, XBB-01 through XBB-03 | Verification consumes traceability from every Building Block and creates no semantic feedback dependency. |
+
+The dependency model is acyclic. XBB-01 through XBB-03 are independent constraints, and XBB-04 is a conformance responsibility rather than a semantic producer.
+
+## 5. Building Block Collaboration
+
+Collaboration means conceptual exchange of established engineering meaning. It does not define an interface, message, payload, method, protocol, transport, or runtime interaction.
+
+| Collaboration | Contributors | Receiving Building Block | Established engineering meaning |
+|---|---|---|---|
+| BBC-01 | BB-01 | BB-02, BB-03, BB-04, BB-05, BB-07 | Preserved admitted Submission Unit meaning and Provider-owned evidence associations |
+| BBC-02 | BB-02 | BB-03, BB-06, BB-09 | Interpretation Processing Status meaning |
+| BBC-03 | BB-03 | BB-06, BB-09 | Interpretation Outcome meaning |
+| BBC-04 | BB-04 | BB-05, BB-07 | Applicable identity-layer semantic-sufficiency meaning |
+| BBC-05 | BB-05 | BB-06, BB-07, BB-10, BB-11 | Reuse-or-establishment assessment evidence and continuity evidence |
+| BBC-06 | BB-06 | BB-07, BB-08, BB-09, BB-10, BB-11 | Canonical Identity Decision meaning |
+| BBC-07 | BB-07 | BB-08 | Provider-separated reconciliation evidence |
+| BBC-08 | BB-08 | BB-09, BB-10, BB-11 | Provider Mapping Status meaning |
+| BBC-09 | BB-09 | BB-10, BB-11 | Four-dimension coexistence and bounded terminal-meaning conformance |
+| BBC-10 | XBB-01 | BB-01 through BB-12 and XBB-03 | Evidence-class, attribution, provenance, and preservation obligations |
+| BBC-11 | XBB-02 | BB-01 through BB-12, XBB-01, and XBB-03 | Sensitive-material containment and permitted observability constraints |
+| BBC-12 | XBB-03 | BB-01 through BB-12, XBB-01, and XBB-02 | Relationship, lifecycle, ownership, and downstream-authority constraints |
+| BBC-13 | BB-10 | BB-12 | Eligible Instrument Identity Contract meaning and safe provenance obligations |
+| BBC-14 | BB-01 through BB-12, XBB-01 through XBB-03 | XBB-04 | Responsibility, boundary, relationship, constraint, and traceability evidence |
+
+No collaboration transfers semantic ownership. Provider meaning remains Provider-owned, Instrument meaning remains Instrument-owned, and Audit remains owner only of the Audit Trail.
+
+## 6. Responsibility Mapping
+
+### 6.1 ES-02-to-ES-03 Allocation
+
+| ES-02 capability | ES-02 component | ES-01 responsibilities | ES-03 Building Block | Direct EAP-004 authority |
+|---|---|---|---|---|
+| C1 | EC-01 | R1–R6 | BB-01 | Sections 7, 17, and 19 |
+| C2 | EC-02 | R7–R8 | BB-02 | Sections 8 and 20 |
+| C3 | EC-03 | R9–R11 | BB-03 | Sections 9 and 20 |
+| C4 | EC-04 | R12–R14 | BB-06 | Sections 10 and 20 |
+| C5 | EC-05 | R15–R17 | BB-09 | Sections 12, 17, and 20 |
+| C6 | EC-06 | R18–R20 | BB-04 | Sections 13 and 20 |
+| C7 | EC-07 | R21–R24 | BB-05 | Sections 14 and 20 |
+| C8 | EC-08 | R25–R26 | BB-08 | Sections 11 and 20 |
+| C9 | EC-09 | R27–R28 | BB-07 | Sections 11, 17, and 20 |
+| C10 | EC-10 | R29–R30 | BB-10 | Sections 15, 19, and 20 |
+| C11 | EC-11 | R31–R33 | BB-11 | Sections 16, 18, and 20 |
+| C12 | EC-12 | R34–R35 | BB-12 | Sections 18 and 20 |
+| C13 | EC-13 | R36–R41 | XBB-01 | Section 19 |
+| C14 | EC-14 | R42–R43 | XBB-02 | Sections 19 and 20 |
+| C15 | EC-15 | R44–R45 | XBB-03 | Sections 16, 18, and 20 |
+| C16 | EC-16 | R46–R47 | XBB-04 | Sections 20 and 21; CAR-006 Version 1.1; EAS-007; DOC-001 |
+
+### 6.2 Allocation Conformance
+
+1. Capabilities C1 through C16 are realized exactly once.
+2. Components EC-01 through EC-16 are realized exactly once.
+3. Responsibilities R1 through R47 remain allocated exactly once.
+4. Every Building Block is justified by one approved ES-02 capability and conceptual component.
+5. No Building Block introduces responsibility outside ES-01 or ES-02.
+6. No primary or cross-cutting Building Block transfers Provider, Instrument, Observation, product, or Audit ownership.
+7. BB-12 remains the sole EDD-006 terminal Building Block before EAP-005 factual attribution.
+
+## 7. Building Block Constraints
+
+| Building Block | Mandatory constraints |
+|---|---|
+| BB-01 | Consume only an accepted EAIC-002 Submission Unit; preserve immutable associations and Provider identity scopes; never convert upstream rejection into Instrument outcome meaning. |
+| BB-02 | Preserve exact processing-status cardinality; prevent receipt, validation, or admission meaning from establishing progress; imply no other dimension. |
+| BB-03 | Preserve exact outcome cardinality; require completed bounded interpretation; alter no Provider meaning and infer no automatic outcome from Provider ambiguity or vocabulary. |
+| BB-04 | Keep the three identity layers distinct; require positive approved semantic evidence; exclude product, Provider-native, behavioral, and technical substitutes for sufficiency. |
+| BB-05 | Prefer existing identity continuity where established; require positive sufficiency for new identity; never mutate identity automatically from Provider record change. |
+| BB-06 | Preserve exact decision cardinality; require every EAP-004 establishment precondition; preserve justified non-establishment without downstream implication. |
+| BB-07 | Keep every Provider's evidence and provenance separate; prohibit silent Provider preference, partition merger, identifier globalization, and unsupported equivalence. |
+| BB-08 | Preserve exact mapping-status cardinality; keep mapping independent from canonical identity; require a canonical target for mapped meaning; never create identity through mapping. |
+| BB-09 | Keep all four dimensions independent; preserve every permitted coexistence and bounded terminal meaning; use only governed dimension-specific deferral. |
+| BB-10 | Require every EAP-004 Instrument Identity Contract publication precondition and separate publication authority; exclude prohibited Provider and product meaning. |
+| BB-11 | Preserve product-neutral catalogue meaning; keep the catalogue distinct from Provider and product collections; preserve Instrument-only canonical write ownership. |
+| BB-12 | Use only eligible Instrument Identity Contract meaning and safe provenance; terminate before factual attribution and Observation meaning; create no downstream decision. |
+| XBB-01 | Keep evidence classes and applicable time meanings distinct; preserve attribution and unresolved reasons; transfer no Provider ownership. |
+| XBB-02 | Exclude credentials, raw Provider content, and private technical material; permit only approved non-sensitive observability; preserve Audit authority separation. |
+| XBB-03 | Preserve only governed relationship and lifecycle meaning; create no new state or transition; create no downstream factual, business, execution, or product authority. |
+| XBB-04 | Verify complete ES-01, ES-02, and EAP-004 traceability; preserve repository and lifecycle conformance; create no architecture, approval, implementation, or later-stage authority. |
+
+These constraints survive ES-04, ES-05, and any separately authorized future realization. ES-03 grants no implementation, runtime, persistence, publication, or downstream authority.
