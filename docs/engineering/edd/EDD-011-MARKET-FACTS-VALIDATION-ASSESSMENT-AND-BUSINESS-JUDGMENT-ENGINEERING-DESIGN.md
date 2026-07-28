@@ -2,7 +2,7 @@
 
 **Document ID:** EDD-011<br>
 **Title:** Market Facts Validation Assessment and Business Judgment Engineering Design<br>
-**Version:** 0.2<br>
+**Version:** 0.3<br>
 **Status:** Approved<br>
 **Canonical Status:** Draft<br>
 **Classification:** Engineering Design Document<br>
@@ -11,9 +11,9 @@
 **Review Authority:** Chief Architect<br>
 **Engineering Review Authority:** Chief Systems Engineer<br>
 **Repository Location:** `docs/engineering/edd/EDD-011-MARKET-FACTS-VALIDATION-ASSESSMENT-AND-BUSINESS-JUDGMENT-ENGINEERING-DESIGN.md`<br>
-**Workflow Stage:** ES-02 Published<br>
-**Baseline Status:** ES-01 and ES-02 Frozen<br>
-**Engineering Stage:** ES-02 Complete<br>
+**Workflow Stage:** ES-03 Published<br>
+**Baseline Status:** ES-01 through ES-03 Frozen<br>
+**Engineering Stage:** ES-03 Complete<br>
 **Engineering Lifecycle:** In Progress<br>
 **ES-01 Review Status:** Approved<br>
 **ES-01 Approved By:** Chief Architect<br>
@@ -23,15 +23,19 @@
 **ES-02 Approved By:** Chief Architect<br>
 **ES-02 Baseline Status:** Frozen<br>
 **ES-02 Repository Publication:** Published<br>
+**ES-03 Review Status:** Approved<br>
+**ES-03 Approved By:** Chief Architect<br>
+**ES-03 Baseline Status:** Frozen<br>
+**ES-03 Repository Publication:** Published<br>
 **Authorization Decision:** CAR-010 Version 1.0<br>
 **Direct Engineering Architecture:** EAP-008 Version 1.0<br>
 **Upstream Engineering Architecture Dependency:** EAP-007 Version 1.0<br>
 **Supporting Completed Upstream Engineering Design:** EDD-009 Version 1.0<br>
-**Engineering Authority:** ES-01 published and frozen; ES-02 Draft Preparation; ES-03 through ES-05 remain subject to sequential stage gates<br>
+**Engineering Authority:** ES-01 and ES-02 published and frozen; ES-03 Draft Preparation; ES-04 and ES-05 remain subject to sequential stage gates<br>
 **Architecture Authority:** None<br>
 **Implementation Authority:** None<br>
 **Runtime Authority:** None<br>
-**Repository Status:** Published — ES-02 Frozen Baseline
+**Repository Status:** Published — ES-03 Frozen Baseline
 
 ---
 
@@ -972,5 +976,529 @@ Engineering Architect review shall verify:
 | ES-02 publication | Published |
 | ES-02 baseline freeze | Frozen |
 | ES-03 | Authorized after ES-02 repository synchronization |
+| Implementation | Not Authorized |
+| Runtime | Not Authorized |
+---
+
+# ES-03 — Engineering Building Block Design
+
+## 1. Executive Summary
+
+EDD-011 ES-03 realizes the frozen 22-capability ES-02 model through 19 cohesive and independently reviewable Engineering Building Blocks:
+
+- 17 primary Building Blocks; and
+- 2 cross-cutting Building Blocks.
+
+Every capability C1–C22 is realized exactly once. Every frozen responsibility R1–R62 remains allocated exactly once.
+
+Capabilities C10–C13 are realized together by BB-10 — Evidence Evaluation because their separate sufficiency, quality, confidence, processing-status and evidentiary-separation meanings form one cohesive Building Block boundary. This grouping does not merge, alter or reassign any capability, responsibility, dependency or invariant.
+
+Building Blocks are bounded Engineering Design responsibilities. They are not modules, services, classes, packages, APIs, schemas, runtime components, persistence structures, algorithms or technology selections.
+
+## 2. Approved Engineering Baselines
+
+ES-03 derives only from:
+
+- CAR-010 Version 1.0;
+- EAP-008 Version 1.0;
+- EAP-007 Version 1.0;
+- EDD-009 Version 1.0 as supporting completed upstream Engineering Design;
+- frozen EDD-011 ES-01; and
+- frozen EDD-011 ES-02.
+
+ES-03 preserves:
+
+- all 62 frozen responsibilities;
+- all 22 frozen capabilities;
+- the ES-02 dependency model;
+- Observation and Validation ownership;
+- the Market Facts Contract boundary;
+- Validation Proposition integrity;
+- Validation Programme neutrality;
+- Validation Assessment identity and lifecycle lineage;
+- bounded multi-fact reasoning;
+- evidentiary separation;
+- exactly-one Validation Outcome;
+- publication separation and terminal cardinality;
+- both Knowledge Watchpoints; and
+- provider, product, implementation and runtime neutrality.
+
+## 3. Engineering Building Block Model
+
+### BB-01 — Architecture and Governance Translation
+
+- **Engineering Purpose:** Preserve the governing architecture, dependency, supporting-design and authorization chain.
+- **Capability Coverage:** C1
+- **Responsibilities:** R1, R2, R3, R4
+- **Inputs:** CAR-010, EAP-008, EAP-007 and EDD-009 authority meanings.
+- **Outputs:** Unaltered Engineering Design authority and traceability meaning.
+- **Dependencies:** None.
+- **Boundary:** Governing repository authority to engineering applicability.
+- **Constraints:** Cannot create architecture or elevate EDD-009 into architectural authority.
+- **Invariants:** EAP-008 remains the sole direct Engineering Architecture.
+
+### BB-02 — Published Market Facts Input Stewardship
+
+- **Engineering Purpose:** Establish the sole permitted factual input and its conformance.
+- **Capability Coverage:** C2
+- **Responsibilities:** R5, R6
+- **Inputs:** Published Market Facts Contract.
+- **Outputs:** Established and conformant input-boundary meaning.
+- **Dependencies:** BB-01.
+- **Boundary:** EAP-007 published contract to pre-assessment Validation boundary.
+- **Constraints:** Cannot admit unpublished Observation meaning.
+- **Invariants:** No other factual input establishes the EDD-011 boundary.
+
+### BB-03 — Observation Boundary and Ownership Guard
+
+- **Engineering Purpose:** Preserve Observation isolation, closed Acceptance and Market Facts ownership.
+- **Capability Coverage:** C3
+- **Responsibilities:** R7, R8, R9, R10
+- **Inputs:** Established Market Facts input and canonical ownership authority.
+- **Outputs:** Preserved Observation boundary and ownership meaning.
+- **Dependencies:** BB-01, BB-02.
+- **Boundary:** Published contract boundary to Validation-owned proposition meaning.
+- **Constraints:** Cannot expose Observation internals or transfer ownership.
+- **Invariants:** Validation never owns Market Facts.
+
+### BB-04 — Validation Proposition Integrity
+
+- **Engineering Purpose:** Establish one explicit and stable Validation Proposition.
+- **Capability Coverage:** C4
+- **Responsibilities:** R11, R12, R13
+- **Inputs:** Conformant Market Facts boundary and proposed Validation subject.
+- **Outputs:** One explicit proposition with preserved integrity.
+- **Dependencies:** BB-02, BB-03.
+- **Boundary:** Proposed Validation subject to governed proposition.
+- **Constraints:** Cannot broaden, merge, replace or reinterpret the proposition.
+- **Invariants:** One completed assessment evaluates exactly one explicit proposition.
+
+### BB-05 — Validation Programme Authority
+
+- **Engineering Purpose:** Establish one neutral Validation-owned programme authority.
+- **Capability Coverage:** C5
+- **Responsibilities:** R14, R15, R16, R17
+- **Inputs:** Explicit proposition and Validation architecture.
+- **Outputs:** One conformant Validation Programme for one bounded assessment.
+- **Dependencies:** BB-01, BB-04.
+- **Boundary:** Programme authority to bounded assessment authority.
+- **Constraints:** Cannot become product, strategy, Risk or execution policy.
+- **Invariants:** Conformance establishes no Product Eligibility, opportunity status, trade direction, trade expression, Risk approval or execution readiness.
+
+### BB-06 — Bounded Validation Assessment Identity
+
+- **Engineering Purpose:** Establish one bounded Validation Assessment with governed identity and lineage.
+- **Capability Coverage:** C6
+- **Responsibilities:** R18, R19, R20
+- **Inputs:** One proposition and one Validation Programme.
+- **Outputs:** One bounded Validation Assessment identity.
+- **Dependencies:** BB-04, BB-05.
+- **Boundary:** Established proposition and programme to governed assessment identity.
+- **Constraints:** Defines no identifier, persistence or runtime mechanism.
+- **Invariants:** Lifecycle meaning never silently mutates identity.
+
+### BB-07 — Validation Assessment Lifecycle Relationships
+
+- **Engineering Purpose:** Preserve non-destructive revalidation, supersession, withdrawal and archival relationships.
+- **Capability Coverage:** C7
+- **Responsibilities:** R21, R22, R23, R24
+- **Inputs:** Governed Validation Assessment identity.
+- **Outputs:** Governed lifecycle relationship meaning.
+- **Dependencies:** BB-06.
+- **Boundary:** Existing assessment identity to preserved relationship lineage.
+- **Constraints:** Cannot erase or replace the existing assessment.
+- **Invariants:** Lifecycle events create relationships rather than identity replacement.
+
+### BB-08 — Bounded Multi-Fact Reasoning Admissibility
+
+- **Engineering Purpose:** Bound reasoning across approved Market Facts without creating reusable Knowledge.
+- **Capability Coverage:** C8
+- **Responsibilities:** R25, R26, R27
+- **Inputs:** Approved Market Facts, one proposition, one programme, one assessment and XBB-01 constraints.
+- **Outputs:** Admissible or non-admissible bounded reasoning meaning.
+- **Dependencies:** BB-02, BB-04, BB-05, BB-06, XBB-01.
+- **Boundary:** Candidate approved facts to assessment-local reasoning meaning.
+- **Constraints:** Cannot create reusable synthesis, historical intelligence, market memory or cross-assessment knowledge.
+- **Invariants:** Reasoning remains bounded to one proposition, programme and assessment.
+
+### BB-09 — Evidence Association
+
+- **Engineering Purpose:** Associate approved Market Facts to one assessment without ownership transfer.
+- **Capability Coverage:** C9
+- **Responsibilities:** R28
+- **Inputs:** Admissible facts and bounded assessment.
+- **Outputs:** Attributable evidence-association meaning.
+- **Dependencies:** BB-03, BB-08.
+- **Boundary:** Admissible facts to governed assessment association.
+- **Constraints:** Cannot mutate or assume ownership of Market Facts.
+- **Invariants:** Source, provenance, lineage and Observation ownership remain preserved.
+
+### BB-10 — Evidence Evaluation
+
+- **Engineering Purpose:** Preserve distinct sufficiency, quality, confidence and processing meanings and their non-substitutive separation.
+- **Capability Coverage:** C10, C11, C12, C13
+- **Responsibilities:** R29, R30, R31, R32, R33, R34
+- **Inputs:** Governed evidence associations and assessment-status meaning.
+- **Outputs:** Distinct Evidence Sufficiency, evidence quality, confidence assessment, processing status and separation meaning.
+- **Dependencies:** BB-09.
+- **Boundary:** Associated evidence to preserved evidentiary and processing distinctions.
+- **Constraints:** Defines no scoring, weighting, scale, threshold, numerical model or algorithm.
+- **Invariants:** C10–C13 remain separately traceable; none of their meanings substitutes for another or for Validation Outcome.
+
+### BB-11 — Evidentiary Judgment and Business Interpretation
+
+- **Engineering Purpose:** Preserve Validation-owned judgment and interpretation within one bounded assessment.
+- **Capability Coverage:** C14
+- **Responsibilities:** R35, R36
+- **Inputs:** Proposition, programme, assessment and BB-10 evidentiary meanings.
+- **Outputs:** Evidentiary judgment and business interpretation meaning.
+- **Dependencies:** BB-04, BB-05, BB-06, BB-10.
+- **Boundary:** Governed evidentiary meaning to bounded Validation judgment.
+- **Constraints:** Cannot create product, strategy, Risk, Execution or Knowledge-layer decisions.
+- **Invariants:** Judgment and interpretation remain Validation-owned and assessment-bounded.
+
+### BB-12 — Validation Explanation
+
+- **Engineering Purpose:** Preserve attributable and non-sensitive explanation.
+- **Capability Coverage:** C15
+- **Responsibilities:** R37
+- **Inputs:** Proposition, programme, evidence and Validation-owned judgment.
+- **Outputs:** Attributable Validation explanation.
+- **Dependencies:** BB-11.
+- **Boundary:** Bounded judgment meaning to governed explanation.
+- **Constraints:** Cannot expose Observation internals, sensitive information or implementation detail.
+- **Invariants:** Explanation remains associated with one proposition, programme and assessment.
+
+### BB-13 — Validation Outcome Cardinality
+
+- **Engineering Purpose:** Establish exactly-one outcome cardinality without mutating Market Facts.
+- **Capability Coverage:** C16
+- **Responsibilities:** R38, R43, R44
+- **Inputs:** Bounded assessment, BB-10 evidentiary meanings, judgment, interpretation and explanation.
+- **Outputs:** Mutually exclusive exactly-one Validation Outcome cardinality.
+- **Dependencies:** BB-04, BB-06, BB-10, BB-11, BB-12.
+- **Boundary:** Completed bounded assessment meaning to outcome cardinality.
+- **Constraints:** Cannot mutate Market Facts or collapse outcome categories.
+- **Invariants:** One completed assessment has exactly one Validation Outcome.
+
+### BB-14 — Validation Outcome Meaning
+
+- **Engineering Purpose:** Preserve the four approved Validation Outcomes independently.
+- **Capability Coverage:** C17
+- **Responsibilities:** R39, R40, R41, R42
+- **Inputs:** Exactly-one outcome cardinality.
+- **Outputs:** `VALIDATED`, `NOT_VALIDATED`, `INDETERMINATE` or `UNSUPPORTED`.
+- **Dependencies:** BB-13.
+- **Boundary:** Outcome cardinality to one approved outcome meaning.
+- **Constraints:** Cannot add, remove, merge, rename or reinterpret outcomes.
+- **Invariants:** The four outcome meanings remain mutually exclusive.
+
+### BB-15 — Validation Assessment Lifecycle Stewardship
+
+- **Engineering Purpose:** Preserve Validation-owned lifecycle meaning after outcome establishment.
+- **Capability Coverage:** C18
+- **Responsibilities:** R45
+- **Inputs:** Assessment identity, lifecycle relationships, one outcome and XBB-01 constraints.
+- **Outputs:** Preserved Validation Assessment lifecycle meaning.
+- **Dependencies:** BB-06, BB-07, BB-14, XBB-01.
+- **Boundary:** Assessment identity and outcome to attributable lifecycle meaning.
+- **Constraints:** Cannot absorb Observation lifecycle or define runtime mechanics.
+- **Invariants:** Validation Assessment lineage remains non-destructive.
+
+### BB-16 — Assessment Publication Separation
+
+- **Engineering Purpose:** Preserve Validation Outcome, publication eligibility and publication outcome as distinct meanings.
+- **Capability Coverage:** C19
+- **Responsibilities:** R46, R47, R48
+- **Inputs:** Completed assessment, one outcome and lifecycle meaning.
+- **Outputs:** Separated publication eligibility and publication outcome.
+- **Dependencies:** BB-13, BB-14, BB-15.
+- **Boundary:** Established outcome and lifecycle to pre-terminal publication meaning.
+- **Constraints:** Eligibility cannot imply publication; publication cannot change outcome.
+- **Invariants:** Outcome, eligibility and publication result never substitute for one another.
+
+### BB-17 — Terminal Validation Assessment Publication
+
+- **Engineering Purpose:** Establish exactly one terminal publication result.
+- **Capability Coverage:** C20
+- **Responsibilities:** R49, R50, R51, R52, R53, R54
+- **Inputs:** Separated publication meanings and XBB-01 authority constraints.
+- **Outputs:** Published Validation Assessment Contract eligible for separately approved downstream consumption, or Validation Assessment Not Published with exact reason.
+- **Dependencies:** BB-16, XBB-01.
+- **Boundary:** Pre-terminal publication meaning to the EAP-008 ending boundary.
+- **Constraints:** Cannot establish automatic downstream consumption or downstream authority.
+- **Invariants:** Positive and negative results are mutually exclusive; non-publication creates no published contract.
+
+### XBB-01 — Knowledge Watchpoint and Authority Guard
+
+- **Engineering Purpose:** Preserve both Knowledge Watchpoints and stop Engineering at required architectural expansion.
+- **Capability Coverage:** C21
+- **Responsibilities:** R55, R56, R57
+- **Inputs:** Approved Watchpoints and domain ownership boundaries.
+- **Outputs:** Preserved stop condition and Knowledge-authority prohibition.
+- **Dependencies:** BB-01, BB-03.
+- **Boundary:** Cross-cutting across all Knowledge-sensitive Building Blocks.
+- **Constraints:** Cannot create Knowledge ownership, dependency, contract, reusable construct, implementation authority or runtime authority.
+- **Invariants:** Reusable synthesis, historical intelligence, persistent market memory or cross-assessment knowledge requires Chief Architect review.
+
+### XBB-02 — Boundary, Neutrality, Observability and Verification Governance
+
+- **Engineering Purpose:** Preserve conformance, neutrality, non-sensitive observability, traceability and verification readiness.
+- **Capability Coverage:** C22
+- **Responsibilities:** R58, R59, R60, R61, R62
+- **Inputs:** Meanings established by BB-01 through BB-17 and XBB-01.
+- **Outputs:** Boundary conformance or violation, approved observability, neutrality and verification readiness.
+- **Dependencies:** BB-01 through BB-17 and XBB-01.
+- **Boundary:** Cross-cutting across the complete Building Block model.
+- **Constraints:** Cannot create implementation, runtime, persistence, API, schema, algorithm, technology, Product, Risk, Execution or Knowledge-layer design.
+- **Invariants:** Every Building Block remains traceable, non-overlapping and inside the EAP-008 boundary.
+
+## 4. Capability-to-Building-Block Traceability
+
+| Building Block | Capability realization |
+|---|---|
+| BB-01 | C1 |
+| BB-02 | C2 |
+| BB-03 | C3 |
+| BB-04 | C4 |
+| BB-05 | C5 |
+| BB-06 | C6 |
+| BB-07 | C7 |
+| BB-08 | C8 |
+| BB-09 | C9 |
+| BB-10 | C10, C11, C12, C13 |
+| BB-11 | C14 |
+| BB-12 | C15 |
+| BB-13 | C16 |
+| BB-14 | C17 |
+| BB-15 | C18 |
+| BB-16 | C19 |
+| BB-17 | C20 |
+| XBB-01 | C21 |
+| XBB-02 | C22 |
+
+Traceability result:
+
+- approved capabilities realized: 22;
+- capabilities realized more than once: 0;
+- missing capabilities: 0;
+- orphan Building Blocks: 0; and
+- new capabilities introduced: 0.
+
+BB-10 preserves the internal frozen dependency distinction:
+
+- C10, C11 and C12 each depend on C9; and
+- C13 depends on C10, C11 and C12.
+
+Grouping does not remove or alter those dependencies.
+
+## 5. Responsibility-to-Building-Block Allocation
+
+| Building Block | Frozen responsibilities preserved |
+|---|---|
+| BB-01 | R1, R2, R3, R4 |
+| BB-02 | R5, R6 |
+| BB-03 | R7, R8, R9, R10 |
+| BB-04 | R11, R12, R13 |
+| BB-05 | R14, R15, R16, R17 |
+| BB-06 | R18, R19, R20 |
+| BB-07 | R21, R22, R23, R24 |
+| BB-08 | R25, R26, R27 |
+| BB-09 | R28 |
+| BB-10 | R29, R30, R31, R32, R33, R34 |
+| BB-11 | R35, R36 |
+| BB-12 | R37 |
+| BB-13 | R38, R43, R44 |
+| BB-14 | R39, R40, R41, R42 |
+| BB-15 | R45 |
+| BB-16 | R46, R47, R48 |
+| BB-17 | R49, R50, R51, R52, R53, R54 |
+| XBB-01 | R55, R56, R57 |
+| XBB-02 | R58, R59, R60, R61, R62 |
+
+Allocation result:
+
+- frozen responsibilities preserved: 62;
+- missing responsibilities: 0;
+- duplicate allocations: 0; and
+- new responsibilities introduced: 0.
+
+## 6. Building Block Boundary Model
+
+| Building Block | Primary boundary test | Independent Engineering Team Test |
+|---|---|---|
+| BB-01 | Governing authority only | PASS — reviewable without assessment semantics |
+| BB-02 | Published input only | PASS — reviewable without Observation internals |
+| BB-03 | Ownership and isolation only | PASS — reviewable without proposition meaning |
+| BB-04 | Proposition identity and integrity only | PASS — reviewable without programme policy |
+| BB-05 | Programme authority and neutrality only | PASS — reviewable without assessment mechanics |
+| BB-06 | Bounded assessment identity only | PASS — reviewable without lifecycle relationship realization |
+| BB-07 | Lifecycle relationships only | PASS — reviewable without outcome meaning |
+| BB-08 | Multi-fact admissibility only | PASS — reviewable without evidentiary evaluation |
+| BB-09 | Evidence association only | PASS — reviewable without sufficiency or quality judgment |
+| BB-10 | Evidence evaluation separation only | PASS — reviewable without business judgment or outcome |
+| BB-11 | Judgment and interpretation only | PASS — reviewable without outcome publication |
+| BB-12 | Explanation only | PASS — reviewable without outcome cardinality |
+| BB-13 | Outcome cardinality only | PASS — reviewable without selecting additional categories |
+| BB-14 | Four outcome meanings only | PASS — reviewable without publication meaning |
+| BB-15 | Assessment lifecycle only | PASS — reviewable without Observation lifecycle |
+| BB-16 | Publication separation only | PASS — reviewable without terminal delivery |
+| BB-17 | Terminal publication only | PASS — reviewable without downstream consumption |
+| XBB-01 | Knowledge authority guard only | PASS — cross-cutting and independently reviewable |
+| XBB-02 | Governance and verification only | PASS — cross-cutting and independently reviewable |
+
+No Building Block overlaps another primary responsibility boundary.
+
+## 7. Building Block Relationship Model
+
+Relationships express semantic Engineering Design dependencies only. They are not runtime calls, sequences, workflows, orchestration, scheduling, queues, transports or APIs.
+
+| Building Block | Direct semantic dependencies |
+|---|---|
+| BB-01 | None |
+| BB-02 | BB-01 |
+| BB-03 | BB-01, BB-02 |
+| BB-04 | BB-02, BB-03 |
+| BB-05 | BB-01, BB-04 |
+| BB-06 | BB-04, BB-05 |
+| BB-07 | BB-06 |
+| BB-08 | BB-02, BB-04, BB-05, BB-06, XBB-01 |
+| BB-09 | BB-03, BB-08 |
+| BB-10 | BB-09 |
+| BB-11 | BB-04, BB-05, BB-06, BB-10 |
+| BB-12 | BB-11 |
+| BB-13 | BB-04, BB-06, BB-10, BB-11, BB-12 |
+| BB-14 | BB-13 |
+| BB-15 | BB-06, BB-07, BB-14, XBB-01 |
+| BB-16 | BB-13, BB-14, BB-15 |
+| BB-17 | BB-16, XBB-01 |
+| XBB-01 | BB-01, BB-03 |
+| XBB-02 | BB-01 through BB-17 and XBB-01 |
+
+The relationship model is acyclic. BB-10 internalizes only the already-approved C10–C13 dependency relationships. XBB-01 constrains Knowledge-sensitive blocks without semantic feedback. XBB-02 verifies completed meaning without creating feedback into primary responsibility.
+
+## 8. Building Block Collaboration
+
+Collaboration means conceptual responsibility alignment only:
+
+1. BB-01 preserves authority context for every Building Block.
+2. BB-02 and BB-03 jointly preserve the upstream Market Facts and Observation boundary without overlapping ownership.
+3. BB-04 and BB-05 provide distinct proposition and programme meaning to BB-06.
+4. BB-06 provides governed assessment identity to BB-07 and assessment-bounded blocks.
+5. BB-08 and BB-09 preserve admissibility and association before BB-10 evaluates evidence meaning.
+6. BB-10 preserves C10–C13 distinctions before BB-11 establishes judgment and interpretation.
+7. BB-11 and BB-12 preserve judgment and explanation before BB-13 establishes outcome cardinality.
+8. BB-13 and BB-14 preserve cardinality separately from outcome meaning.
+9. BB-15 preserves lifecycle meaning independently from BB-16 publication separation.
+10. BB-16 preserves eligibility and publication-outcome separation before BB-17 establishes a terminal result.
+11. XBB-01 constrains BB-08, BB-15 and BB-17 where Knowledge-layer leakage could occur.
+12. XBB-02 preserves conformance and verification across the complete model.
+
+This collaboration model defines no interface, payload, method, protocol or execution flow.
+
+## 9. Cross-Cutting Building Blocks
+
+### 9.1 XBB-01 — Knowledge Watchpoint and Authority Guard
+
+XBB-01 remains cross-cutting because both Watchpoints constrain multiple primary responsibilities without owning proposition, programme, evidence, judgment, outcome, lifecycle or publication meaning.
+
+It cannot be absorbed into BB-08, BB-15 or BB-17 because doing so would narrow the Chief Architect stop condition to one primary responsibility.
+
+### 9.2 XBB-02 — Boundary, Neutrality, Observability and Verification Governance
+
+XBB-02 remains cross-cutting because boundary conformance, violation meaning, neutrality, observability, traceability and verification apply across the entire subsystem.
+
+It does not own primary Validation meaning and cannot alter a capability or Building Block result.
+
+## 10. Building Block Constraints and Invariants
+
+Every Building Block shall:
+
+1. preserve its allocated capabilities exactly;
+2. preserve its allocated responsibilities exactly;
+3. remain within frozen ES-01 and ES-02 boundaries;
+4. preserve capability ownership;
+5. preserve the ES-02 dependency model;
+6. preserve Observation and Validation ownership;
+7. preserve the Market Facts Contract boundary;
+8. preserve Validation Proposition integrity;
+9. preserve Validation Programme neutrality;
+10. preserve Validation Assessment identity and lifecycle lineage;
+11. preserve bounded multi-fact reasoning;
+12. preserve Evidence Sufficiency, evidence quality, confidence, processing status and outcome separation;
+13. preserve exactly-one Validation Outcome;
+14. preserve publication separation and terminal cardinality;
+15. preserve both Knowledge Watchpoints;
+16. remain cohesive, non-overlapping and independently reviewable;
+17. remain provider-neutral and product-neutral;
+18. remain implementation-independent and runtime-neutral;
+19. introduce no architecture, owner, domain, dependency or authority;
+20. introduce no interface design;
+21. introduce no API, schema, algorithm, persistence or technology selection; and
+22. return any required architectural expansion to governance review.
+
+## 11. Engineering Traceability
+
+| Architectural concern | ES-02 capabilities | ES-03 Building Blocks |
+|---|---|---|
+| Authority translation | C1 | BB-01 |
+| Market Facts input | C2 | BB-02 |
+| Observation boundary | C3 | BB-03 |
+| Validation Proposition | C4 | BB-04 |
+| Validation Programme | C5 | BB-05 |
+| Assessment identity | C6 | BB-06 |
+| Lifecycle relationships | C7 | BB-07 |
+| Multi-fact reasoning | C8 | BB-08 |
+| Evidence association | C9 | BB-09 |
+| Sufficiency, quality, confidence and processing separation | C10–C13 | BB-10 |
+| Judgment and interpretation | C14 | BB-11 |
+| Explanation | C15 | BB-12 |
+| Outcome cardinality | C16 | BB-13 |
+| Outcome meaning | C17 | BB-14 |
+| Assessment lifecycle | C18 | BB-15 |
+| Publication separation | C19 | BB-16 |
+| Terminal publication | C20 | BB-17 |
+| Knowledge Watchpoints | C21 | XBB-01 |
+| Boundary, neutrality, observability and verification | C22 | XBB-02 |
+
+Future ES-04 may define conceptual engineering interfaces between these approved Building Blocks only after the ES-03 publication gate. This statement does not define interface content.
+
+## 12. ES-03 Verification Criteria
+
+Engineering Architect review shall verify:
+
+1. exactly 19 Building Blocks are defined;
+2. exactly 17 are primary and 2 are cross-cutting;
+3. all 22 capabilities are realized exactly once;
+4. all 62 responsibilities are preserved exactly once;
+5. no capability responsibility or dependency is changed;
+6. BB-10 preserves C10–C13 as separate capabilities with their internal dependencies intact;
+7. no Building Block is orphaned or overlapping;
+8. all Building Blocks pass the Independent Engineering Team Test;
+9. the Building Block dependency model is acyclic;
+10. ES-01 and ES-02 remain unchanged and frozen;
+11. ownership and boundaries are preserved;
+12. both Knowledge Watchpoints are preserved;
+13. no architecture, implementation, runtime, persistence, API, schema, algorithm, technology, Product, Risk, Execution or Knowledge-layer design is introduced;
+14. no interface design is introduced; and
+15. ES-04 remains unauthorized.
+
+## ES-03 Review State
+
+| Item | State |
+|---|---|
+| CAR-010 Version 1.0 | Approved, Published, Synchronized and Frozen |
+| EAP-008 Version 1.0 | Sole direct Engineering Architecture authority |
+| EAP-007 Version 1.0 | Upstream Engineering Architecture dependency |
+| EDD-009 Version 1.0 | Supporting completed upstream Engineering Design |
+| EDD-011 ES-01 | Approved, Published and Frozen |
+| EDD-011 ES-02 | Approved, Published and Frozen |
+| ES-03 Draft Preparation | Complete |
+| Engineering Architect review | Complete |
+| Chief Systems Engineer review | Complete |
+| Chief Architect review | Approved |
+| ES-03 publication | Published |
+| ES-03 baseline freeze | Frozen |
+| ES-04 | Authorized after ES-03 repository synchronization |
 | Implementation | Not Authorized |
 | Runtime | Not Authorized |
