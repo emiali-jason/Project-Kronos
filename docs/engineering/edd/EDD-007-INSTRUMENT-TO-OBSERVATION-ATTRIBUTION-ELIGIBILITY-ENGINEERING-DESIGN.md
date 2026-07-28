@@ -2,7 +2,7 @@
 
 **Document ID:** EDD-007<br>
 **Title:** Instrument-to-Observation Attribution Eligibility Engineering Design<br>
-**Version:** 1.0<br>
+**Version:** 1.1<br>
 **Status:** Approved<br>
 **Canonical Status:** Canonical<br>
 **Classification:** Engineering Design Document<br>
@@ -24,17 +24,21 @@
 **ES-04 Approved By:** Chief Systems Engineer<br>
 **ES-05 Review Status:** Approved<br>
 **ES-05 Approved By:** Chief Systems Engineer<br>
-**Engineering Verification:** PASS<br>
+**Engineering Verification:** PASS — Version 1.0 Historical Record<br>
+**Engineering Reverification:** PASS — Version 1.1 Amendment<br>
 **Critical NCR:** 0<br>
 **Major NCR:** 0<br>
 **Minor NCR:** 0<br>
 **Authorization Decision:** CAR-007 Version 1.0<br>
-**Direct Engineering Architecture:** EAP-005 Version 1.1<br>
+**Direct Engineering Architecture:** EAP-005 Version 1.2<br>
 **Engineering Authority:** ES-01 through ES-05, sequential under CAR-007 Version 1.0<br>
 **Architecture Authority:** None<br>
 **Implementation Authority:** None<br>
 **Runtime Authority:** None<br>
-**Repository Status:** Publication Prepared — Push Pending Chief Architect Approval
+**Previous Canonical Version:** 1.0<br>
+**Amendment Status:** Approved<br>
+**Amendment Approved By:** Chief Architect<br>
+**Repository Status:** Published
 
 ---
 
@@ -42,11 +46,11 @@
 
 ## 1. Engineering Mission
 
-EDD-007 shall define the implementation-independent Engineering Design responsibility required to translate EAP-005 Version 1.1 into a complete, bounded, and verifiable Observation-owned attribution-eligibility design.
+EDD-007 shall define the implementation-independent Engineering Design responsibility required to translate EAP-005 Version 1.2 into a complete, bounded, and verifiable Observation-owned attribution-eligibility design.
 
 The engineered subsystem begins only with the governed combination of one approved Instrument Identity Contract supplied through the completed EDD-006 boundary and one bounded source-neutral Candidate Factual Information input. It preserves Instrument ownership of canonical identity, preserves the candidate information's source, provenance, temporal, uncertainty, ambiguity, partiality, failure, unavailability, and limitation meaning, and engineers the responsibilities required to determine Attribution Evaluation Readiness, conduct bounded Attribution Evaluation, and establish exactly one governed Attribution Outcome.
 
-The subsystem terminates with either Observation Participation Eligibility meaning or preserved Attribution Ineligibility meaning and its governed reason or reasons. It ends before Candidate Observation construction, Observation Acceptance, Observation ownership, governed Observation establishment, factual correctness determination, and Observation publication.
+The subsystem terminates with either the Composite Observation Participation Boundary, containing Observation Participation Eligibility and its inseparably associated Eligible Candidate Factual Context, or preserved Attribution Ineligibility meaning and its governed reason or reasons with neither constituent exported. It ends before Candidate Observation construction, Observation Acceptance, Observation ownership, governed Observation establishment, factual correctness determination, and Observation publication.
 
 ## 2. Engineering Objectives
 
@@ -62,7 +66,7 @@ EDD-007 ES-01 establishes the engineering boundary required to:
 8. preserve exactly one of the two permitted Attribution Outcomes for one bounded evaluation;
 9. preserve approved canonical identity association, provenance continuity, attribution continuity, source attribution, temporal attribution, and effective identity context;
 10. preserve partiality, failed information, unavailable information, retained uncertainty, Attribution Ambiguity, Retained Factual Ambiguity, identity metadata, and derived interpretation as distinct meanings;
-11. define the bounded eligibility, ineligibility, ineligibility-reason, boundary-conformance, boundary-violation, and non-sensitive observability responsibilities authorized by EAP-005; and
+11. define the bounded eligibility, associated eligible candidate factual context, ineligibility, ineligibility-reason, boundary-conformance, boundary-violation, and non-sensitive observability responsibilities authorized by EAP-005; and
 12. establish complete traceability and future Engineering Verification obligations while terminating before downstream Observation architecture begins.
 
 ## 3. Engineering Scope
@@ -105,6 +109,7 @@ EDD-007 includes Engineering Design responsibility for:
 - identity-metadata, factual-information, and derived-interpretation separation;
 - applicable effective identity-context preservation;
 - Observation Participation Eligibility and Ineligibility;
+- Eligible Candidate Factual Context preservation at the positive terminal boundary and its governed association with Observation Participation Eligibility;
 - boundary conformance and boundary violations;
 - ownership and authority separation;
 - non-sensitive observability; and
@@ -114,8 +119,8 @@ EDD-007 includes Engineering Design responsibility for:
 
 EDD-007 ends when one bounded Attribution Evaluation has established exactly one of:
 
-1. `ATTRIBUTION_ELIGIBLE`, permitting only an Observation Participation Eligibility meaning to cross the downstream boundary; or
-2. `ATTRIBUTION_INELIGIBLE`, preserving the exact governed non-sensitive reason or reasons and producing no Observation Participation Eligibility.
+1. `ATTRIBUTION_ELIGIBLE`, permitting only the Composite Observation Participation Boundary, containing Observation Participation Eligibility and its associated Eligible Candidate Factual Context, to cross the downstream boundary; or
+2. `ATTRIBUTION_INELIGIBLE`, preserving the exact governed non-sensitive reason or reasons and producing neither composite-boundary constituent.
 
 EDD-007 produces no Candidate Observation, Observation Acceptance, Observation ownership, governed Observation, factual correctness determination, Market Fact authority, publication authority, Validation meaning, or fitness-for-use judgment. EAP-006 remains the downstream Engineering Architecture and is not performed or designed by EDD-007 ES-01.
 
@@ -160,8 +165,8 @@ EDD-007 owns the following Engineering Design responsibilities within the EAP-00
 35. Preserve that Attribution Eligible establishes neither factual correctness, Observation Acceptance, Observation ownership, Observation publication, Validation success, product membership, Product Eligibility, nor fitness for use.
 36. Establish Attribution Ineligible whenever one or more governed attribution preconditions cannot be established, including unresolved Attribution Ambiguity, conflicting identity association, or inability to establish one approved canonical identity association.
 37. Preserve the exact non-sensitive Attribution Ineligibility reason or reasons without reinterpretation, concealment, silent selection, repair, or unsupported inference.
-38. Produce Observation Participation Eligibility meaning only for an Attribution Eligible outcome and only through the approved downstream boundary.
-39. Produce no Observation Participation Eligibility for an Attribution Ineligible outcome.
+38. Produce the Composite Observation Participation Boundary only for an Attribution Eligible outcome and only through the approved downstream boundary, containing Observation Participation Eligibility and the exact Eligible Candidate Factual Context already preserved by Responsibilities 5 and 16–33 without reallocating those responsibilities.
+39. Produce neither Composite Observation Participation Boundary constituent for an Attribution Ineligible outcome.
 40. Represent boundary conformance and prohibited bypass, ownership violation, unsupported inference, or prohibited information crossing as distinct governed meanings.
 41. Preserve Instrument ownership of canonical identity, Observation ownership of attribution authority, and applicable source-domain ownership of source assertions, provenance, and attribution.
 42. Prevent engineering representation, evidence, eligibility, or boundary crossing from transferring semantic ownership or authority.
@@ -198,13 +203,13 @@ EDD-007 ES-01 does not define, authorize, or perform:
 EDD-007 ES-01 relies only on the following governed assumptions and preconditions:
 
 1. CAR-007 Version 1.0 remains the approved authority for sequential EDD-007 ES-01 through ES-05 Engineering Design subject to its stage gates.
-2. EAP-005 Version 1.1 remains the sole direct, approved, canonical, and active Engineering Architecture baseline for EDD-007.
+2. EAP-005 Version 1.2 remains the sole direct, approved, canonical, and active Engineering Architecture baseline for EDD-007.
 3. EDD-006 Version 1.0 remains the completed upstream Engineering Design and supplies only the approved Instrument Identity Contract boundary governed by EAP-005.
-4. The approved Instrument Domain, Observation Domain, Provider Domain, ADP-001D, and EAP-005 ownership model remains unchanged.
+4. The approved Instrument Domain, Observation Domain, Provider Domain, ADP-001D, ADP-001E Version 1.1, and EAP-005 ownership model remains unchanged.
 5. The upstream boundary supplies one approved Instrument Identity Contract with its governed identity meaning and safe provenance associations intact.
 6. The Candidate Factual Information input is source-neutral and carries only the bounded context permitted by EAP-005; its availability creates no acquisition, factual-ownership, or correctness authority.
 7. Applicable approved source, provenance, temporal, uncertainty, ambiguity, partiality, failure, unavailability, limitation, and effective identity context may be consumed only where already established by approved authority.
-8. EAP-006 Version 1.1 remains the downstream Engineering Architecture and begins only after the EDD-007 terminal boundary.
+8. EAP-006 Version 1.2 remains the downstream Engineering Architecture and begins only after the EDD-007 terminal boundary.
 9. Any attribution precondition that cannot be established remains explicit and results in the governed ineligibility meaning rather than being completed by Engineering assumption.
 10. Any matter not decided by EAP-005 remains unresolved and cannot be decided through Engineering convenience.
 
@@ -232,8 +237,8 @@ EDD-007 ES-01 is constrained as follows:
 18. Identity metadata, candidate factual information, and derived interpretation remain semantically distinct.
 19. Provider unavailability establishes neither Instrument Lifecycle nor Market availability.
 20. Attribution Eligible establishes no factual correctness, Observation Acceptance, Observation ownership, publication, Validation, product, strategy, or fitness-for-use meaning.
-21. Attribution Ineligible produces no Observation Participation Eligibility.
-22. Only Observation Participation Eligibility meaning may cross the downstream boundary; governed ineligibility and its reasons terminate within EDD-007.
+21. Attribution Ineligible produces neither Composite Observation Participation Boundary constituent.
+22. Only the Composite Observation Participation Boundary may cross the positive downstream boundary. It contains exactly Observation Participation Eligibility and its associated Eligible Candidate Factual Context as semantically independent constituents. Governed ineligibility and its reasons terminate within EDD-007 and export neither constituent.
 23. EDD-007 terminates before Candidate Observation construction, Observation Acceptance, governed Observation establishment, factual correctness determination, and Observation publication.
 24. Product membership and product-universe context cannot establish canonical identity association or Attribution Eligibility.
 25. Product-specific Observation requirements cannot alter Instrument identity, Observation attribution ownership, candidate factual meaning, or the EDD-007 boundary.
@@ -251,39 +256,39 @@ EDD-007 ES-01 is constrained as follows:
 | Objectives 1–4 | Sections 3, 5, 6, and 12 | Architecture remains authoritative; Instrument and Observation ownership remain separate; candidate information gains no premature owner. |
 | Objectives 5–7 | Sections 8 and 10.1–10.5 | Inputs are consumed through approved boundaries; readiness, evaluation, and outcome remain distinct. |
 | Objectives 8–10 | Sections 10.5–10.17, 11, and 12 | Outcome cardinality, association, continuity, attribution, uncertainty, ambiguity, and semantic separation are preserved. |
-| Objectives 11–12 | Sections 10.18–10.19 and 13–18 | Eligibility, boundary control, observability, downstream restrictions, and verification are bounded and traceable. |
+| Objectives 11–12 | Sections 10.18–10.20 and 13–18 | Eligibility, associated eligible candidate factual context, boundary control, observability, downstream restrictions, and verification are bounded and traceable. |
 | Responsibilities 1–7 | Sections 6, 8, 10.1–10.2, 12, and 14 | Approved upstream inputs, ownership, source-neutrality, and prohibited bypasses are preserved. |
 | Responsibilities 8–15 | Sections 10.3–10.5, 11, and 12 | Readiness, bounded evaluation, exactly one outcome, and evidence remain distinct and complete. |
 | Responsibilities 16–20 | Sections 10.9, 10.16, and 12 | Canonical identity association and candidate factual association remain separate without identity alteration. |
 | Responsibilities 21–25 | Sections 10.10–10.13, 10.17, and 12 | Provenance, attribution, source, temporal, and effective-context continuity are preserved. |
 | Responsibilities 26–33 | Sections 10.14–10.16, 11, and 12 | Provider conditions, missingness, uncertainty, ambiguity, identity metadata, and interpretation remain distinct. |
-| Responsibilities 34–39 | Sections 9, 10.5–10.8, 10.18, 12, and 14 | Eligibility and ineligibility have bounded conditions, consequences, reasons, and downstream meaning. |
-| Responsibilities 40–46 | Sections 6, 10.19, and 12–16 | Boundary, ownership, authority, security, observability, and downstream separation remain intact. |
+| Responsibilities 34–39 | Sections 9, 10.5–10.8, 10.18–10.19, 12, and 14 | Eligibility, associated eligible candidate factual context, and ineligibility have bounded conditions, consequences, reasons, and downstream meaning. |
+| Responsibilities 40–46 | Sections 6, 10.20, and 12–16 | Boundary, ownership, authority, security, observability, and downstream separation remain intact. |
 | Responsibilities 47–50 | Sections 16–18 and 21; CAR-007 Sections 5, 8, and 10 | Traceability, invariant preservation, future verification, and sequential governance remain mandatory. |
 | Explicit Exclusions | Sections 3–5 and 14–15; CAR-007 Section 9 | No architecture, acquisition, identity engineering, Observation Acceptance, implementation, or operational authority is introduced. |
 | Assumptions and Constraints | Sections 3–9, 12, 14, 16, and 19 | Approved authority, unresolved meaning, neutrality, ownership, outcome cardinality, and terminal boundaries remain normative. |
 
-This traceability does not make EAP-005 supporting dependencies additional direct Engineering Architecture authorities for EDD-007. EAP-005 Version 1.1 remains the sole direct Engineering Architecture authority.
+This traceability does not make EAP-005 supporting dependencies additional direct Engineering Architecture authorities for EDD-007. EAP-005 Version 1.2 remains the sole direct Engineering Architecture authority.
 
 ## 9. Governing Repository Authorities
 
 | Authority | EDD-007 ES-01 application |
 |---|---|
 | CAR-007 Version 1.0 | Authorizes sequential EDD-007 ES-01 through ES-05 Engineering Design and establishes the stage gates, authority limits, and explicit prohibitions. |
-| EAP-005 Version 1.1 | Sole direct Engineering Architecture authority and normative source for the EDD-007 scope, ownership, boundary, meanings, obligations, invariants, and exclusions. |
+| EAP-005 Version 1.2 | Sole direct Engineering Architecture authority and normative source for the EDD-007 scope, ownership, boundary, meanings, obligations, invariants, and exclusions. |
 | EDD-006 Version 1.0 | Completed upstream Engineering Design and source of the approved Instrument Identity Contract boundary only; used as a document template without content reuse. |
-| EAP-006 Version 1.1 | Downstream Engineering Architecture that begins after the EDD-007 terminal boundary and grants EDD-007 no downstream responsibility. |
+| EAP-006 Version 1.2 | Downstream Engineering Architecture that begins after the EDD-007 terminal boundary and grants EDD-007 no downstream responsibility. |
 | ADP-001D Version 1.0 | Governs the Instrument-to-Observation attribution boundary translated by EAP-005. |
 | Instrument Domain Architecture | Preserves Instrument ownership of canonical identity and the approved Instrument Identity Contract dependency. |
-| Observation Domain Architecture | Preserves Observation ownership of attribution authority and later authoritative Market Facts while keeping Observation Acceptance outside EDD-007. |
+| ADP-001E Version 1.1 and Observation Domain Architecture | Preserve Observation ownership of attribution authority and later authoritative Market Facts while keeping Observation Acceptance outside EDD-007. |
 | Provider Domain Architecture | Preserves Provider-owned source, assertion, provenance, and condition meaning and prohibits direct Provider-to-Observation bypass. |
 | ADR-009 Version 1.0 and EAIC-002 Version 0.1 | Preserve the upstream Provider-to-Instrument boundary and prevent EAIC-002 meaning from entering EDD-007 as Observation input. |
 | Domain Ownership Matrix, Domain Dependency Matrix, ENGINE_OWNERSHIP, and DATA_FLOW | Preserve approved semantic ownership and dependency direction. |
-| MIG-001 Version 0.1 | Preserves the governed migration alignment on which EAP-005 Version 1.1 depends. |
+| MIG-001 Version 0.1 | Preserves the governed migration alignment inherited by EAP-005 Version 1.2. |
 | EAS-007 Version 1.0 | Governs EDD lifecycle, metadata, ownership, traceability, review, approval, and authority separation. |
 | DOC-001 Version 1.1 | Governs controlled document identity, classification, metadata, repository location, lifecycle state, and Document Register consistency. |
 
-Only EAP-005 Version 1.1 directly defines the Engineering Architecture translated by EDD-007. All other authorities constrain governance, ownership, boundaries, dependencies, and traceability without expanding the ES-01 scope.
+Only EAP-005 Version 1.2 directly defines the Engineering Architecture translated by EDD-007. All other authorities constrain governance, ownership, boundaries, dependencies, and traceability without expanding the ES-01 scope.
 
 ---
 
@@ -291,7 +296,7 @@ Only EAP-005 Version 1.1 directly defines the Engineering Architecture translate
 
 ES-02 decomposes the approved and frozen ES-01 scope into cohesive engineering capabilities and conceptual engineering components. It allocates responsibility only. It does not define Building Blocks, interfaces, modules, physical realization, operational sequencing, or technology.
 
-Every ES-02 capability remains subordinate to EAP-005 Version 1.1 and preserves the complete ES-01 boundary. No capability creates new architecture, ownership, authority, or engineering scope.
+Every ES-02 capability remains subordinate to EAP-005 Version 1.2 and preserves the complete ES-01 boundary. No capability creates new architecture, ownership, authority, or engineering scope.
 
 ## 1. Engineering Capability Decomposition
 
@@ -310,7 +315,7 @@ The EDD-007 capability model contains exactly 16 capabilities:
 | C9 | Uncertainty and Ambiguity Preservation | Preserve uncertainty, Attribution Ambiguity, and Retained Factual Ambiguity with their distinct eligibility consequences. | R32–R33 |
 | C10 | Attribution Eligibility Determination | Preserve the complete conditions and explicit non-implications of Attribution Eligible. | R34–R35 |
 | C11 | Attribution Ineligibility and Reason Preservation | Preserve the complete conditions of Attribution Ineligible and its exact governed non-sensitive reason or reasons. | R36–R37 |
-| C12 | Observation Participation Boundary | Permit Observation Participation Eligibility only for Attribution Eligible and terminate ineligible meaning without downstream eligibility. | R38–R39 |
+| C12 | Observation Participation Boundary | Expose the Composite Observation Participation Boundary only for Attribution Eligible, preserve its two constituents as semantically independent and terminate ineligible meaning without either constituent. | R38–R39 |
 | C13 | Boundary, Ownership, and Authority Conformance | Preserve boundary conformance, domain ownership, authority separation, and protection from downstream semantic feedback. | R40–R42, R46 |
 | C14 | Security Containment and Observability | Exclude prohibited sensitive material and preserve only the non-sensitive observability authorized by EAP-005. | R44–R45 |
 | C15 | Architecture Traceability and Meaning Preservation | Maintain backward traceability and preserve every EAP-005 contract, representation, obligation, invariant, and downstream restriction for later realization. | R47–R48 |
@@ -335,7 +340,7 @@ Each capability is represented by one conceptual engineering component at ES-02.
 | EC-09 | C9 | Retained uncertainty, Attribution Ambiguity, and Retained Factual Ambiguity context | Explicit uncertainty and ambiguity meaning with governed eligibility consequences |
 | EC-10 | C10 | Bounded evaluation meaning and all governed attribution-precondition meanings | Attribution Eligible meaning with all non-implications preserved |
 | EC-11 | C11 | Bounded evaluation meaning and absent, conflicting, ambiguous, or unestablished precondition meaning | Attribution Ineligible meaning and exact governed non-sensitive reason or reasons |
-| EC-12 | C12 | Attribution Eligible or Attribution Ineligible meaning | Observation Participation Eligibility or terminal ineligibility meaning |
+| EC-12 | C12 | Attribution Eligible or Attribution Ineligible meaning together with already-established canonical association and eligible factual-context preservation meaning | Composite Observation Participation Boundary or terminal ineligibility meaning |
 | EC-13 | C13 | Boundary, ownership, authority, and downstream-separation constraints | Boundary conformance or violation meaning with ownership and authority preserved |
 | EC-14 | C14 | Sensitive-content exclusions and permitted observability meaning | Security containment and non-sensitive observability constraints |
 | EC-15 | C15 | ES-01 allocation and EAP-005 architectural traceability | Preserved architecture-to-capability traceability and mandatory meaning set |
@@ -391,7 +396,7 @@ EC-11 owns the complete governed conditions for Attribution Ineligible and prese
 
 ### 3.12 EC-12 — Observation Participation Boundary
 
-EC-12 owns the sole downstream eligibility meaning for Attribution Eligible and ensures that Attribution Ineligible terminates without producing Observation Participation Eligibility.
+EC-12 owns terminal exposure of the Composite Observation Participation Boundary for Attribution Eligible and ensures that Attribution Ineligible terminates without producing either constituent. EC-12 does not acquire the factual assertion, provenance, temporal, condition, uncertainty, ambiguity or canonical-association responsibilities retained by EC-04 through EC-09.
 
 ### 3.13 EC-13 — Boundary, Ownership, and Authority Conformance
 
@@ -424,7 +429,7 @@ EC-16 owns future Engineering Verification obligations and repository lifecycle,
 | C9 | Uncertainty and the two governed ambiguity meanings | Explicit preserved uncertainty and ambiguity consequences | Ambiguity resolution and identity selection |
 | C10 | The bounded evaluation and all required established preconditions | Attribution Eligible meaning and its non-implications | Observation Acceptance, factual correctness, and publication |
 | C11 | The bounded evaluation and any unestablished or conflicting precondition | Attribution Ineligible meaning and preserved reason or reasons | Repair, remediation, retry, or downstream eligibility |
-| C12 | One governed Attribution Outcome | Observation Participation Eligibility or terminal ineligibility | Candidate Observation construction and Observation Acceptance |
+| C12 | One governed Attribution Outcome and the already-established meanings required for its eligible factual context | Composite Observation Participation Boundary or terminal ineligibility | Candidate Observation construction and Observation Acceptance |
 | C13 | EAP-005 boundary, ownership, and authority rules | Conformance or violation meaning with authority preserved | Remediation and transfer of ownership or authority |
 | C14 | Prohibited-content and observability rules | Contained evidence and permitted non-sensitive observability | Sensitive disclosure and implementation telemetry design |
 | C15 | Frozen ES-01 and EAP-005 meaning | Complete architecture-to-capability traceability | Architecture amendment and new engineering scope |
@@ -451,7 +456,7 @@ Dependencies identify required engineering meaning only. They do not define exec
 | C9 | C1, C3 | Uncertainty and ambiguity meanings remain explicit within the bounded evaluation. |
 | C10 | C3–C9 | Eligibility depends on the bounded outcome model and establishment of every governed attribution precondition. |
 | C11 | C3–C9 | Ineligibility depends on the bounded outcome model and any governed precondition that remains absent, conflicting, ambiguous, or unestablished. |
-| C12 | C10, C11 | The terminal boundary depends on the established eligible or ineligible meaning. |
+| C12 | C4–C10 on the positive path; C11 on the negative path | The positive terminal boundary depends on the established canonical association, eligible factual-context preservation meanings and Attribution Eligible; the negative path depends on Attribution Ineligible and exports neither constituent. |
 | C13 | EAP-005 ownership and boundary rules | Cross-cutting constraint on C1–C12; it does not create dependency cycles or take over their meanings. |
 | C14 | EAP-005 security and observability rules | Cross-cutting constraint on C1–C13; it does not create dependency cycles or take over their meanings. |
 | C15 | C1–C14; frozen ES-01; EAP-005 | Traceability preserves the architectural origin of every allocated capability. |
@@ -464,7 +469,7 @@ The dependency model shall preserve:
 1. one-way dependency from the approved upstream identity boundary into EDD-007;
 2. no dependency from EDD-007 back into Instrument identity establishment;
 3. no direct Provider or EAIC-002 dependency;
-4. no downstream Observation dependency except the terminal Observation Participation Eligibility meaning;
+4. no downstream Observation dependency except the terminal Composite Observation Participation Boundary meaning;
 5. readiness as a prerequisite context rather than an Attribution Outcome;
 6. evaluation concerns as independent contributors to eligibility or ineligibility;
 7. outcome cardinality without collapsing eligibility and ineligibility responsibilities;
@@ -512,7 +517,7 @@ The allocation is conformant because:
 The following constraints apply to the complete capability model:
 
 1. Every capability shall remain implementation-independent and provider-neutral.
-2. EAP-005 Version 1.1 remains the sole direct Engineering Architecture authority.
+2. EAP-005 Version 1.2 remains the sole direct Engineering Architecture authority.
 3. The frozen ES-01 mission, scope, responsibilities, exclusions, assumptions, constraints, and terminal boundary remain unchanged.
 4. Instrument retains exclusive ownership of canonical Instrument identity.
 5. Observation retains exclusive ownership of attribution authority, Attribution Evaluation, Attribution Outcome, and Observation Participation Eligibility.
@@ -525,7 +530,7 @@ The following constraints apply to the complete capability model:
 12. Provenance, attribution, source, temporal, uncertainty, ambiguity, partiality, failure, unavailability, and effective identity context remain preserved where required.
 13. Identity metadata, candidate factual information, and derived interpretation remain distinct.
 14. Eligibility establishes no factual correctness, Observation Acceptance, ownership, publication, Validation, product, strategy, or fitness-for-use meaning.
-15. Ineligibility produces no Observation Participation Eligibility.
+15. Ineligibility produces neither Composite Observation Participation Boundary constituent.
 16. EDD-007 terminates before Candidate Observation construction, Observation Acceptance, governed Observation establishment, and Observation publication.
 17. No capability may introduce Building Blocks, interfaces, modules, algorithms, data structures, persistence, deployment, or operational behavior.
 18. No capability may introduce architecture, implementation authority, operational authority, or publication authority.
@@ -547,8 +552,8 @@ The following constraints apply to the complete capability model:
 | C9 | R32–R33 | Sections 10.14, 12, and 16 | Verify uncertainty and both ambiguity meanings remain explicit and correctly separated. |
 | C10 | R34–R35 | Sections 9, 10.6, 12, 14, and 16 | Verify every eligibility precondition and every eligibility non-implication. |
 | C11 | R36–R37 | Sections 10.7–10.8, 12, and 16 | Verify ineligibility conditions and exact non-sensitive reasons remain visible. |
-| C12 | R38–R39 | Sections 9, 10.18, 14, and 16 | Verify the sole downstream eligibility meaning and terminal ineligibility boundary. |
-| C13 | R40–R42, R46 | Sections 6, 10.19, 12, 14, and 16 | Verify boundary, ownership, authority, and downstream separation. |
+| C12 | R38–R39 | Sections 9, 10.18–10.19, 14, and 16 | Verify the paired positive downstream boundary, constituent independence and terminal ineligibility without either constituent. |
+| C13 | R40–R42, R46 | Sections 6, 10.20, 12, 14, and 16 | Verify boundary, ownership, authority, and downstream separation. |
 | C14 | R44–R45 | Sections 12–13 and 16 | Verify sensitive-content exclusion and bounded non-sensitive observability. |
 | C15 | R47–R48 | Sections 15–18 | Verify complete architecture traceability and preservation of mandatory EAP-005 meaning. |
 | C16 | R49–R50 | Sections 17–18 and 21; CAR-007 Sections 5, 8, and 10 | Verify scope completeness, repository conformance, sequential governance, and authority limits. |
@@ -580,7 +585,7 @@ The model preserves all 16 ES-02 capabilities and all 50 ES-01 responsibilities 
 | BB-09 | Uncertainty and Ambiguity Preservation | Preserve retained uncertainty, Attribution Ambiguity, and Retained Factual Ambiguity with their distinct governed consequences. | C9 | R32–R33 |
 | BB-10 | Attribution Eligibility Determination | Preserve the complete conditions and explicit non-implications of Attribution Eligible. | C10 | R34–R35 |
 | BB-11 | Attribution Ineligibility and Reason Preservation | Preserve the complete conditions of Attribution Ineligible and its exact governed non-sensitive reason or reasons. | C11 | R36–R37 |
-| BB-12 | Observation Participation Boundary | Permit the sole downstream Observation Participation Eligibility meaning and terminate ineligible meaning without downstream eligibility. | C12 | R38–R39 |
+| BB-12 | Observation Participation Boundary | Expose the Composite Observation Participation Boundary for Attribution Eligible and terminate ineligible meaning without either constituent. | C12 | R38–R39 |
 
 ### 1.2 Cross-Cutting Building Blocks
 
@@ -641,7 +646,7 @@ BB-11 owns the complete governed conditions for Attribution Ineligible and prese
 
 ### 2.12 BB-12 — Observation Participation Boundary
 
-BB-12 owns the sole downstream Observation Participation Eligibility meaning for Attribution Eligible and ensures that Attribution Ineligible terminates without producing downstream eligibility.
+BB-12 owns terminal exposure of Observation Participation Eligibility and its associated Eligible Candidate Factual Context for Attribution Eligible, preserves their semantic independence and ensures that Attribution Ineligible terminates without producing either constituent. It does not absorb the factual-context or canonical-association responsibilities retained by BB-04 through BB-09.
 
 ### 2.13 XBB-01 — Boundary, Ownership, and Authority Conformance
 
@@ -674,7 +679,7 @@ XBB-04 owns future Engineering Verification obligations and repository lifecycle
 | BB-09 | Uncertainty and the two governed ambiguity meanings | Explicit uncertainty and ambiguity consequences | Ambiguity resolution and identity selection |
 | BB-10 | Bounded evaluation and all required established preconditions | Attribution Eligible meaning and its non-implications | Observation construction, Acceptance, factual correctness, and publication |
 | BB-11 | Bounded evaluation and any absent, conflicting, ambiguous, or unestablished precondition | Attribution Ineligible meaning and preserved reason or reasons | Repair, remediation, retry, and downstream eligibility |
-| BB-12 | One governed Attribution Outcome | Observation Participation Eligibility or terminal ineligibility meaning | Candidate Observation construction, Observation Acceptance, and EAP-006 responsibilities |
+| BB-12 | One governed Attribution Outcome and the approved meanings already established by BB-04 through BB-09 | Composite Observation Participation Boundary or terminal ineligibility meaning | Candidate Observation construction, Observation Acceptance, and EAP-006 responsibilities |
 | XBB-01 | EAP-005 boundary, ownership, and authority rules | Conformance or violation meaning with ownership and authority preserved | Remediation and ownership or authority transfer |
 | XBB-02 | Prohibited-content and observability rules | Contained evidence and permitted non-sensitive observability | Sensitive disclosure and implementation telemetry design |
 | XBB-03 | Frozen ES-01, approved ES-02, and EAP-005 meaning | Complete architecture-to-Building-Block traceability | Architecture amendment and new engineering scope |
@@ -701,7 +706,7 @@ Relationships identify required engineering meaning only. They do not define int
 | BB-09 | BB-01, BB-03 | Uncertainty and ambiguity remain explicit within the bounded evaluation. |
 | BB-10 | BB-03 through BB-09 | Eligibility depends on the bounded outcome model and establishment of every governed attribution precondition. |
 | BB-11 | BB-03 through BB-09 | Ineligibility depends on the bounded outcome model and any absent, conflicting, ambiguous, or unestablished precondition. |
-| BB-12 | BB-10, BB-11 | The terminal boundary preserves the established eligible or ineligible meaning. |
+| BB-12 | BB-04 through BB-10 on the positive path; BB-11 on the negative path | The positive terminal boundary exposes established eligibility and its associated preserved factual context without reallocating contributor responsibility; the negative path exports neither constituent. |
 | XBB-01 | EAP-005 ownership and boundary rules | Constrains BB-01 through BB-12 without taking over their primary responsibilities. |
 | XBB-02 | EAP-005 security and observability rules | Constrains BB-01 through BB-12 and XBB-01 without taking over their responsibilities. |
 | XBB-03 | BB-01 through BB-12, XBB-01, XBB-02, frozen ES-01, approved ES-02, and EAP-005 | Preserves the architectural and capability origin of every block. |
@@ -717,7 +722,7 @@ The Building Block relationship model shall:
 4. preserve readiness as prerequisite meaning rather than an Attribution Outcome;
 5. preserve independent evaluation concerns without merging their responsibilities;
 6. preserve distinct eligibility and ineligibility responsibility;
-7. permit only the approved terminal Observation Participation Eligibility meaning downstream;
+7. permit only the approved terminal Composite Observation Participation Boundary meaning downstream;
 8. apply cross-cutting constraints without reallocating primary responsibility;
 9. preserve traceability and verification as assessment responsibilities rather than attribution responsibilities; and
 10. remain acyclic.
@@ -737,7 +742,7 @@ Collaboration describes how independently owned engineering meanings remain mutu
 | Evaluation and ambiguity preservation | BB-03, BB-09 | Ambiguity remains explicit and is not resolved by evaluation convenience. |
 | Eligibility determination | BB-03 through BB-10 | BB-10 owns eligibility conditions; contributing blocks retain their separate meanings. |
 | Ineligibility determination | BB-03 through BB-09, BB-11 | BB-11 owns ineligibility and reasons; contributing blocks do not perform repair or remediation. |
-| Terminal boundary | BB-10, BB-11, BB-12 | BB-12 preserves downstream eligibility or terminal ineligibility without creating an Observation. |
+| Terminal boundary | BB-04 through BB-12 | BB-12 preserves the paired positive boundary or terminal ineligibility without absorbing contributor responsibility or creating an Observation. |
 | Ownership and security conformance | BB-01 through BB-12, XBB-01, XBB-02 | Cross-cutting conformance constrains but does not absorb primary block ownership. |
 | Traceability and verification | All blocks, XBB-03, XBB-04 | Assessment preserves design meaning and cannot redesign or approve it. |
 
@@ -772,7 +777,7 @@ Cross-cutting Building Blocks shall:
 The complete Building Block model is constrained as follows:
 
 1. Every block shall remain implementation-independent and provider-neutral.
-2. EAP-005 Version 1.1 remains the sole direct Engineering Architecture authority.
+2. EAP-005 Version 1.2 remains the sole direct Engineering Architecture authority.
 3. The frozen ES-01 and approved ES-02 baselines remain unchanged.
 4. Every ES-02 capability shall be realized by exactly one Building Block.
 5. Every ES-01 responsibility shall remain owned by exactly one Building Block through its approved capability allocation.
@@ -787,7 +792,7 @@ The complete Building Block model is constrained as follows:
 14. Provenance, attribution, source, temporal, uncertainty, ambiguity, partiality, failure, unavailability, and effective identity context remain preserved where required.
 15. Identity metadata, candidate factual information, authoritative factual state, and derived interpretation remain distinct.
 16. Eligibility establishes no factual correctness, Observation Acceptance, ownership, publication, Validation, product, strategy, or fitness-for-use meaning.
-17. Ineligibility produces no Observation Participation Eligibility.
+17. Ineligibility produces neither Composite Observation Participation Boundary constituent.
 18. EDD-007 terminates before Candidate Observation construction, Observation Acceptance, governed Observation establishment, Observation publication, and all EAP-006 responsibilities.
 19. No block may define an interface, API, algorithm, data structure, persistence design, deployment design, operational behavior, or implementation technology.
 20. No block may create architecture, implementation authority, operational authority, or publication authority.
@@ -812,8 +817,8 @@ The complete Building Block model is constrained as follows:
 | C9 | BB-09 | R32, R33 | Sections 10.14, 12, and 16 | Verify uncertainty and both ambiguity meanings remain explicit and separate. |
 | C10 | BB-10 | R34, R35 | Sections 9, 10.6, 12, 14, and 16 | Verify eligibility conditions and every non-implication. |
 | C11 | BB-11 | R36, R37 | Sections 10.7–10.8, 12, and 16 | Verify ineligibility conditions and exact non-sensitive reasons. |
-| C12 | BB-12 | R38, R39 | Sections 9, 10.18, 14, and 16 | Verify the sole downstream eligibility meaning and terminal ineligibility. |
-| C13 | XBB-01 | R40, R41, R42, R46 | Sections 6, 10.19, 12, 14, and 16 | Verify boundary, ownership, authority, and downstream separation. |
+| C12 | BB-12 | R38, R39 | Sections 9, 10.18–10.19, 14, and 16 | Verify the paired positive boundary, contributor responsibility preservation and terminal ineligibility without either constituent. |
+| C13 | XBB-01 | R40, R41, R42, R46 | Sections 6, 10.20, 12, 14, and 16 | Verify boundary, ownership, authority, and downstream separation. |
 | C14 | XBB-02 | R44, R45 | Sections 12–13 and 16 | Verify sensitive-content exclusion and bounded observability. |
 | C15 | XBB-03 | R47, R48 | Sections 15–18 | Verify complete architectural origin and mandatory meaning preservation. |
 | C16 | XBB-04 | R49, R50 | Sections 17–18 and 21; CAR-007 Sections 5, 8, and 10 | Verify design completeness, repository conformance, and authority limits. |
@@ -865,9 +870,9 @@ The EDD-007 interface model contains exactly 19 conceptual interfaces:
 | IF-10 | BB-01 and BB-03 | BB-09 | Relate preserved uncertainty and ambiguity context to their governed preservation responsibility. | Retained uncertainty, Attribution Ambiguity, Retained Factual Ambiguity, and bounded evaluation meaning |
 | IF-11 | BB-03 through BB-09 | BB-10 | Present the independently established evaluation and attribution-precondition meanings required for eligibility determination. | Bounded evaluation, canonical association, semantic separation, continuity, attribution context, condition distinction, uncertainty, and ambiguity meaning |
 | IF-12 | BB-03 through BB-09 | BB-11 | Present the independently established absent, conflicting, ambiguous, or unestablished meanings required for ineligibility and reason preservation. | Bounded evaluation and governed precondition meaning sufficient to establish ineligibility and its non-sensitive reason or reasons |
-| IF-13 | BB-10 | BB-12 | Transfer Attribution Eligible meaning to the terminal boundary without transferring any prohibited implication. | Attribution Eligible and its preserved non-implications |
+| IF-13 | BB-04 through BB-10 | BB-12 | Present Attribution Eligible and the independently preserved eligible factual-context meanings to the terminal boundary without merging their responsibilities or ownership. | Attribution Eligible, approved canonical association, candidate factual association, provenance, temporal and effective context, condition, uncertainty, ambiguity and all preserved non-implications |
 | IF-14 | BB-11 | BB-12 | Transfer Attribution Ineligible meaning and its governed reason or reasons to the terminal boundary. | Attribution Ineligible and exact non-sensitive ineligibility reason meaning |
-| IF-15 | BB-12 | EAP-006 downstream boundary | Expose the sole permitted downstream eligibility meaning. | Observation Participation Eligibility only |
+| IF-15 | BB-12 | EAP-006 downstream boundary | Expose the sole permitted Composite Observation Participation Boundary. | Observation Participation Eligibility and its inseparably associated Eligible Candidate Factual Context as semantically independent constituents |
 | IF-16 | XBB-01 | BB-01 through BB-12 | Apply boundary, ownership, authority, violation, and downstream-separation constraints across primary responsibilities. | Boundary conformance or violation, ownership preservation, authority preservation, and non-feedback constraints |
 | IF-17 | XBB-02 | BB-01 through BB-12 and XBB-01 | Apply prohibited-content containment and permitted-observability constraints across the subsystem. | Sensitive-content exclusion and non-sensitive observability constraints |
 | IF-18 | BB-01 through BB-12, XBB-01, and XBB-02 | XBB-03 | Preserve the architectural and capability origin of every Building Block meaning. | Building Block realization, responsibility allocation, EAP-005 origin, and mandatory-meaning preservation evidence |
@@ -897,9 +902,9 @@ Every interface is justified by an approved ES-03 structural relationship or cro
 | IF-10 | Preserve uncertainty and both ambiguity meanings without resolution, selection, or conversion to certainty. |
 | IF-11 | Preserve the independent contribution of BB-03 through BB-09 to eligibility determination without merging their responsibilities or implying eligibility prematurely. |
 | IF-12 | Preserve the independent absent, conflicting, ambiguous, or unestablished meanings required for ineligibility without repair, remediation, or concealment. |
-| IF-13 | Preserve Attribution Eligible and every governed non-implication at the terminal boundary. |
-| IF-14 | Preserve Attribution Ineligible and its exact non-sensitive reason or reasons without creating downstream eligibility. |
-| IF-15 | Preserve only Observation Participation Eligibility and terminate before any downstream Observation responsibility. |
+| IF-13 | Preserve Attribution Eligible and the already-established eligible factual context as independent contributor meanings at the terminal boundary without creating a merged owner or executable aggregation. |
+| IF-14 | Preserve Attribution Ineligible and its exact non-sensitive reason or reasons while ensuring that neither Composite Observation Participation Boundary constituent is produced. |
+| IF-15 | Preserve exactly the Observation Participation Eligibility and Eligible Candidate Factual Context constituents of one Composite Observation Participation Boundary and terminate before any downstream Observation responsibility. |
 | IF-16 | Preserve boundary, ownership, and authority conformance across every primary interface without absorbing primary responsibility. |
 | IF-17 | Preserve security containment and bounded non-sensitive observability without defining implementation controls or operational telemetry. |
 | IF-18 | Preserve complete backward traceability without amending architecture, reallocating capability, or adding scope. |
@@ -923,9 +928,9 @@ Interface responsibility concerns preservation and transfer of established engin
 | IF-10 | Separate BB-01 uncertainty context and BB-03 evaluation meaning | BB-09 uncertainty-and-ambiguity responsibility | Ambiguity resolution and silent identity selection |
 | IF-11 | Independently established BB-03 through BB-09 meanings | BB-10 eligibility responsibility | Observation Acceptance, correctness, ownership, publication, and fitness for use |
 | IF-12 | Independently established BB-03 through BB-09 meanings | BB-11 ineligibility responsibility | Repair, remediation, retry, and downstream eligibility |
-| IF-13 | BB-10 Attribution Eligible meaning | BB-12 terminal-boundary responsibility | Every eligibility non-implication prohibited by EAP-005 |
-| IF-14 | BB-11 Attribution Ineligible and reason meaning | BB-12 terminal-boundary responsibility | Observation Participation Eligibility and remediation |
-| IF-15 | BB-12 Observation Participation Eligibility meaning | EAP-006 downstream boundary | Candidate Observation construction, Observation Acceptance, ownership, publication, and all EAP-006 responsibility |
+| IF-13 | Independently established BB-04 through BB-10 meanings | BB-12 terminal-boundary responsibility | Contributor ownership transfer, merged factual ownership, executable aggregation, and every eligibility non-implication prohibited by EAP-005 |
+| IF-14 | BB-11 Attribution Ineligible and reason meaning | BB-12 terminal-boundary responsibility | Either Composite Observation Participation Boundary constituent and remediation |
+| IF-15 | BB-12 Composite Observation Participation Boundary meaning | EAP-006 downstream boundary | Candidate Observation construction, Observation Acceptance, ownership, publication, implementation association mechanisms, and all EAP-006 responsibility |
 | IF-16 | XBB-01 conformance responsibility | Each primary Building Block responsibility boundary | Primary responsibility ownership and remediation |
 | IF-17 | XBB-02 containment and observability responsibility | Each applicable Building Block responsibility boundary | Implementation controls, sensitive disclosure, and operational telemetry design |
 | IF-18 | Independently preserved Building Block and cross-cutting meanings | XBB-03 traceability responsibility | Architecture amendment, responsibility reallocation, and new scope |
@@ -951,9 +956,9 @@ The following contracts are conceptual Engineering Design contracts only:
 | IF-10 | Shall preserve retained uncertainty and both ambiguity meanings; shall never resolve ambiguity or convert uncertainty into certainty. |
 | IF-11 | Shall preserve every independent eligibility-precondition meaning; shall never collapse contributors, imply eligibility before BB-10 responsibility, or transfer contributor ownership. |
 | IF-12 | Shall preserve every independent ineligibility basis; shall never conceal, repair, reinterpret, or operationalize an ineligibility reason. |
-| IF-13 | Shall preserve Attribution Eligible and all non-implications; shall never establish an Observation, correctness, ownership, publication, Validation, product, strategy, or fitness meaning. |
-| IF-14 | Shall preserve Attribution Ineligible and exact non-sensitive reasons; shall never produce Observation Participation Eligibility. |
-| IF-15 | Shall preserve Observation Participation Eligibility only; shall never create or imply any EAP-006 or later Observation responsibility. |
+| IF-13 | Shall preserve Attribution Eligible and the independently established eligible factual-context meanings without merging contributor responsibility or ownership; shall never establish an Observation, correctness, ownership, publication, Validation, product, strategy, or fitness meaning. |
+| IF-14 | Shall preserve Attribution Ineligible and exact non-sensitive reasons; shall never produce either Composite Observation Participation Boundary constituent. |
+| IF-15 | Shall preserve exactly Observation Participation Eligibility and its associated Eligible Candidate Factual Context as semantically independent constituents concerning the same bounded evaluation, candidate and canonical subject association; shall never define their implementation association or create or imply any EAP-006 or later Observation responsibility. |
 | IF-16 | Shall preserve ownership, authority, boundary, and violation meaning; shall never absorb primary responsibility or transfer semantic authority. |
 | IF-17 | Shall preserve prohibited-content exclusion and bounded observability; shall never expose sensitive content or define implementation telemetry. |
 | IF-18 | Shall preserve architectural and capability origin; shall never amend architecture, reallocate responsibility, or add scope. |
@@ -971,6 +976,7 @@ Interface information exchange is limited to:
 - applicable ownership and authority context;
 - source and provenance meaning already authorized by EAP-005;
 - bounded evaluation, association, continuity, condition, uncertainty, ambiguity, outcome, eligibility, ineligibility, and reason meaning;
+- the Composite Observation Participation Boundary containing its two semantically independent constituents for the same bounded evaluation, candidate and canonical subject association;
 - non-sensitive evidence sufficient to preserve explainability and traceability;
 - boundary-conformance and violation meaning;
 - security-containment and observability constraints; and
@@ -989,7 +995,7 @@ No interface may exchange or establish:
 - algorithms, thresholds, data structures, persistence, deployment, or implementation decisions; or
 - execution, scheduling, retry, orchestration, transport, or operational meaning.
 
-Composite-source exchange preserves each source meaning independently. It does not imply a combined payload, shared owner, executable aggregation, or ordering among contributing sources.
+Composite-source exchange preserves each source meaning independently. It does not imply a combined payload, shared owner, executable aggregation, implementation correlation mechanism, or ordering among contributing sources.
 
 ## 6. Interface Dependencies
 
@@ -1011,9 +1017,9 @@ Dependencies identify conceptual meaning prerequisites only. They do not define 
 | IF-10 | IF-02 through IF-04 | Requires uncertainty and ambiguity context and bounded evaluation meaning. |
 | IF-11 | IF-04 through IF-10 | Requires the bounded evaluation and every independently established eligibility-precondition meaning. |
 | IF-12 | IF-04 through IF-10 | Requires the bounded evaluation and any absent, conflicting, ambiguous, or unestablished precondition meaning. |
-| IF-13 | IF-11 | Requires Attribution Eligible meaning. |
+| IF-13 | IF-05 through IF-11 | Requires Attribution Eligible together with the independently established canonical association and eligible factual-context preservation meanings. |
 | IF-14 | IF-12 | Requires Attribution Ineligible and reason meaning. |
-| IF-15 | IF-13 | Requires the sole permitted downstream eligibility meaning; IF-14 terminates without this dependency. |
+| IF-15 | IF-13 | Requires the sole permitted Composite Observation Participation Boundary meaning; IF-14 terminates without this dependency and exports neither constituent. |
 | IF-16 | EAP-005 ownership and boundary rules | Cross-cutting constraint on IF-01 through IF-15. |
 | IF-17 | EAP-005 security and observability rules; IF-16 | Cross-cutting constraint on IF-01 through IF-16. |
 | IF-18 | IF-01 through IF-17; frozen ES-01 through ES-03 | Requires complete interface and Building Block traceability. |
@@ -1040,7 +1046,7 @@ The interface dependency model shall:
 The complete interface model is constrained as follows:
 
 1. Every interface shall remain implementation-independent and provider-neutral.
-2. EAP-005 Version 1.1 remains the sole direct Engineering Architecture authority.
+2. EAP-005 Version 1.2 remains the sole direct Engineering Architecture authority.
 3. The frozen ES-01 through ES-03 baselines remain unchanged.
 4. Every interface shall be justified by an approved ES-03 relationship or cross-cutting rule.
 5. Interfaces transfer established engineering meaning only.
@@ -1057,9 +1063,9 @@ The complete interface model is constrained as follows:
 16. Attribution Ambiguity requires Attribution Ineligible; Retained Factual Ambiguity remains explicit under its governed conditions.
 17. Provenance, attribution, source, temporal, uncertainty, ambiguity, partiality, failure, unavailability, and effective identity context remain preserved where required.
 18. Identity metadata, candidate factual information, authoritative factual state, and derived interpretation remain distinct.
-19. IF-13 transfers no eligibility implication prohibited by EAP-005.
-20. IF-14 produces no Observation Participation Eligibility.
-21. IF-15 is the sole downstream external interface and transfers Observation Participation Eligibility only.
+19. IF-13 preserves independent contributor meaning and transfers no eligibility implication prohibited by EAP-005.
+20. IF-14 produces neither Composite Observation Participation Boundary constituent.
+21. IF-15 is the sole downstream external interface and transfers exactly Observation Participation Eligibility and its associated Eligible Candidate Factual Context as semantically independent constituents.
 22. Every interface terminates before Candidate Observation construction, Observation Acceptance, governed Observation establishment, Observation publication, and EAP-006 responsibility.
 23. Cross-cutting interfaces constrain or assess but do not absorb, duplicate, or redistribute primary responsibilities.
 24. No interface may define an API, method, call, message, payload, field, schema, protocol, transport, algorithm, data structure, persistence design, deployment design, operational behavior, or implementation technology.
@@ -1085,9 +1091,9 @@ The complete interface model is constrained as follows:
 | IF-10 | BB-01 and BB-03 to BB-09 | BB-01, BB-03, BB-09 | C1, C3, C9 | R1–R7, R12–R15, R32–R33 |
 | IF-11 | BB-03 through BB-09 to BB-10 | BB-03 through BB-10 | C3 through C10 | R12–R35, R43 |
 | IF-12 | BB-03 through BB-09 to BB-11 | BB-03 through BB-09, BB-11 | C3 through C9, C11 | R12–R33, R36–R37, R43 |
-| IF-13 | BB-10 to BB-12 | BB-10, BB-12 | C10, C12 | R34–R35, R38–R39 |
+| IF-13 | BB-04 through BB-10 to BB-12 | BB-04 through BB-10, BB-12 | C4 through C10, C12 | R16–R35, R38 |
 | IF-14 | BB-11 to BB-12 | BB-11, BB-12 | C11, C12 | R36–R39 |
-| IF-15 | BB-12 to EAP-006 boundary | BB-12 | C12 | R38 |
+| IF-15 | BB-12 to EAP-006 boundary | BB-12 | C4 through C10, C12 | R16–R35, R38 |
 | IF-16 | XBB-01 to BB-01 through BB-12 | BB-01 through BB-12, XBB-01 | C1 through C13 | R1–R43, R46 |
 | IF-17 | XBB-02 to primary blocks and XBB-01 | BB-01 through BB-12, XBB-01, XBB-02 | C1 through C14 | R1–R46 |
 | IF-18 | Primary and conformance blocks to XBB-03 | BB-01 through BB-12, XBB-01 through XBB-03 | C1 through C15 | R1–R48 |
@@ -1114,7 +1120,7 @@ The interface model is complete and conformant because:
 - the interface dependency model is acyclic;
 - IF-01 and IF-02 are the only upstream external boundaries;
 - IF-15 is the sole downstream external boundary;
-- Attribution Ineligible produces no downstream eligibility interface; and
+- Attribution Ineligible produces neither Composite Observation Participation Boundary constituent; and
 - every interface terminates before Observation construction, Observation Acceptance, and EAP-006 responsibility.
 
 This traceability creates no authority for ES-05. Independent Engineering Verification remains prohibited until ES-04 completes the CAR-007 review, approval, publication, and freeze gate.
@@ -1122,6 +1128,8 @@ This traceability creates no authority for ES-05. Independent Engineering Verifi
 ---
 
 # ES-05 — Independent Engineering Verification
+
+Sections 1 through 12 below preserve the historical Independent Engineering Verification record for EDD-007 Version 1.0 against EAP-005 Version 1.1. They do not verify the Version 1.1 amendment. The independent amendment reverification is recorded separately in Section 13.
 
 ## 1. Independent Engineering Verification
 
@@ -1398,3 +1406,141 @@ The recommendation is conditional on:
 5. separately authorized repository synchronization.
 
 No Engineering redesign is recommended. No implementation or operational authority is granted.
+
+## 13. Version 1.1 Amendment Independent Engineering Reverification
+
+### 13.1 Reverification Scope and Authority
+
+This reverification examines only the bounded EDD-007 Version 1.1 amendment derived from EAP-005 Version 1.2 and the Chief Architect-approved EDD-007 Bounded Engineering Amendment Proposal. It preserves Sections 1 through 12 as the historical Version 1.0 verification record and introduces no new Engineering Design.
+
+Reverification assessed:
+
+- the amended ES-01 terminal boundary and Responsibilities 38–39;
+- C12 and EC-12 capability alignment;
+- BB-12 boundary, relationships and collaboration;
+- IF-13 composite-source integrity;
+- IF-15 composite-boundary integrity and downstream exclusivity;
+- complete preservation of all other responsibilities, capabilities, Building Blocks and interfaces;
+- ownership, authority and dependency preservation;
+- implementation and runtime independence;
+- EAP-005 Version 1.2 mandatory-set traceability; and
+- repository and metadata conformance for the Version 1.1 Draft amendment.
+
+### 13.2 Reverification Method
+
+The amendment was compared directly with EAP-005 Version 1.2, EAP-006 Version 1.2, ADP-001D Version 1.0, ADP-001E Version 1.1, the approved architecture amendment, the historical EDD-007 Version 1.0 baseline, EAS-007 and DOC-001.
+
+The method comprised:
+
+1. one-to-one responsibility enumeration;
+2. capability, component and Building Block count comparison;
+3. interface count and classification comparison;
+4. positive and negative terminal-boundary comparison;
+5. contributor-ownership and semantic-separation review;
+6. conceptual dependency-graph acyclicity review;
+7. prohibited-content and authority review;
+8. EAP-005 mandatory-set count and traceability review;
+9. metadata, Document Register, link, Markdown, table, fence, whitespace and final-newline validation; and
+10. `git diff --check`.
+
+### 13.3 Structural Preservation Results
+
+| Engineering element | Version 1.0 baseline | Version 1.1 Draft | Result |
+|---|---:|---:|---|
+| Engineering Responsibilities | 50 | 50 | PASS |
+| Capabilities | 16 | 16 | PASS |
+| Conceptual components | 16 | 16 | PASS |
+| Primary Building Blocks | 12 | 12 | PASS |
+| Cross-cutting Building Blocks | 4 | 4 | PASS |
+| Total Building Blocks | 16 | 16 | PASS |
+| External interfaces | 3 | 3 | PASS |
+| Internal primary interfaces | 12 | 12 | PASS |
+| Cross-cutting interfaces | 4 | 4 | PASS |
+| Total interfaces | 19 | 19 | PASS |
+
+R38 remains allocated only to C12 and BB-12 and now owns terminal exposure of the paired positive boundary. R39 remains allocated only to C12 and BB-12 and prohibits both constituents on the negative path. No responsibility was added, removed, divided, duplicated or reassigned.
+
+### 13.4 Composite-Boundary Verification
+
+| Criterion | Verification evidence | Result |
+|---|---|---|
+| Positive boundary | R38, C12, BB-12 and IF-15 identify exactly Observation Participation Eligibility and Eligible Candidate Factual Context. | PASS |
+| Constituent association | IF-13 and IF-15 preserve the same bounded evaluation, candidate and canonical subject association. | PASS |
+| Semantic independence | C12, BB-12, IF-13 and IF-15 prohibit merged ownership or contributor-responsibility absorption. | PASS |
+| IF-15 exclusivity | IF-15 remains the sole downstream external interface. | PASS |
+| Negative boundary | R39, C12, BB-12, IF-14 and IF-15 establish that Attribution Ineligible exports neither constituent. | PASS |
+| Observation boundary | Candidate Observation construction, Observation Acceptance, ownership, publication and all EAP-006 responsibility remain excluded. | PASS |
+| Provider isolation | No direct Provider, Provider Catalogue, Provider Record, Provider Snapshot, Provider-native identity, Submission Unit or EAIC-002 meaning enters or crosses the boundary. | PASS |
+| Ownership preservation | Instrument, Observation and applicable source-domain ownership remain unchanged. | PASS |
+| Dependency preservation | No new domain dependency or reversed dependency is introduced. | PASS |
+| Acyclicity | Amended C12, BB-12 and IF-13/IF-15 dependencies remain one-directional and acyclic. | PASS |
+| Implementation independence | No API, message, payload, field, schema, protocol, transport, persistence or correlation mechanism is defined. | PASS |
+| Runtime independence | No runtime, execution, orchestration, scheduling, retry or communication authority is introduced. | PASS |
+
+### 13.5 EAP-005 Version 1.2 Mandatory-Set Verification
+
+| Mandatory EAP-005 set | Required count | EDD-007 preservation path | Result |
+|---|---:|---|---|
+| Engineering Contracts | 20 | R48 → C15 → XBB-03 → IF-18 | PASS |
+| Required Engineering Representations | 29 | R48 → C15 → XBB-03 → IF-18 | PASS |
+| Engineering Obligations | 40 | R48–R49 → C15–C16 → XBB-03–XBB-04 → IF-18–IF-19 | PASS |
+| Mandatory Engineering Questions | 31 | R47–R49 → C15–C16 → XBB-03–XBB-04 → IF-18–IF-19 | PASS |
+| Mandatory Engineering Invariants | 43 | R48–R49 → C15–C16 → XBB-03–XBB-04 → IF-18–IF-19 | PASS |
+
+The additional Version 1.2 contract, representation, obligations, question and invariants are realized through the amended terminal-boundary meaning without introducing a new EDD-007 responsibility or structural element.
+
+### 13.6 Repository Compliance Reverification
+
+| Compliance area | Result |
+|---|---|
+| EAP-005 Version 1.2 traceability | PASS |
+| EAP-006 Version 1.2 terminal alignment | PASS |
+| ADP-001E Version 1.1 terminology alignment | PASS |
+| Ownership and Domain Dependency Matrix preservation | PASS |
+| EAS-007 lifecycle and authority separation | PASS |
+| DOC-001 metadata and register consistency | PASS |
+| Local-link and Markdown structure | PASS |
+| Table and fence integrity | PASS |
+| Whitespace and final newline | PASS |
+| `git diff --check` | PASS |
+
+### 13.7 Amendment Risks
+
+| Risk | Amendment control | Status |
+|---|---|---|
+| Eligibility–context semantic collapse | IF-13 and IF-15 require semantic independence and prohibit merged ownership. | Controlled |
+| Premature Observation ownership | ES-01, C12, BB-12 and IF-15 preserve that boundary crossing does not create Observation ownership. | Controlled |
+| Contributor-responsibility absorption | C12 and BB-12 consume established meanings without acquiring C4–C9 or BB-04–BB-09 responsibility. | Controlled |
+| Negative-path leakage | R39, C12, BB-12 and IF-14 prohibit both positive constituents. | Controlled |
+| Runtime-association inference | Interface contracts prohibit payload, transport, persistence and correlation-mechanism design. | Controlled |
+
+These are controlled preservation risks, not Engineering Non-Conformities.
+
+### 13.8 Engineering Non-Conformities
+
+| NCR severity | Count |
+|---|---:|
+| Critical | 0 |
+| Major | 0 |
+| Minor | 0 |
+| **Total** | **0** |
+
+### 13.9 Reverification Result
+
+**INDEPENDENT ENGINEERING REVERIFICATION: PASS**
+
+The bounded EDD-007 Version 1.1 Draft amendment faithfully realizes EAP-005 Version 1.2, preserves every existing engineering structure and ownership boundary, introduces no new dependency, remains implementation- and runtime-independent, and is internally consistent.
+
+### 13.10 Publication Recommendation
+
+**RECOMMEND EDD-007 VERSION 1.1 CANONICAL REPUBLICATION**
+
+This recommendation is conditional on:
+
+1. Chief Architect approval of the Version 1.1 amendment and this reverification;
+2. metadata promotion from Draft to Approved and Canonical;
+3. Document Register publication-state alignment;
+4. final repository validation; and
+5. separately authorized commit and repository synchronization.
+
+No implementation, runtime, CAR-008 or EDD-008 authority is granted.
