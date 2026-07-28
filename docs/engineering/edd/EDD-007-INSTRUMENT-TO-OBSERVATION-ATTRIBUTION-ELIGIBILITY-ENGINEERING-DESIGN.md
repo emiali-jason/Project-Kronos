@@ -2,7 +2,7 @@
 
 **Document ID:** EDD-007<br>
 **Title:** Instrument-to-Observation Attribution Eligibility Engineering Design<br>
-**Version:** 0.2 Draft<br>
+**Version:** 0.3 Draft<br>
 **Status:** Draft<br>
 **Canonical Status:** Draft<br>
 **Classification:** Engineering Design Document<br>
@@ -12,11 +12,13 @@
 **Engineering Review Authority:** Chief Systems Engineer<br>
 **Repository Location:** `docs/engineering/edd/EDD-007-INSTRUMENT-TO-OBSERVATION-ATTRIBUTION-ELIGIBILITY-ENGINEERING-DESIGN.md`<br>
 **Workflow Stage:** Draft Preparation<br>
-**Engineering Stage:** Engineering Capability Design<br>
+**Engineering Stage:** Engineering Building Block Design<br>
 **ES-01 Review Status:** Approved<br>
 **ES-01 Approved By:** Chief Systems Engineer<br>
 **ES-02 Review Status:** Approved<br>
 **ES-02 Approved By:** Chief Systems Engineer<br>
+**ES-03 Review Status:** Approved<br>
+**ES-03 Approved By:** Chief Systems Engineer<br>
 **Authorization Decision:** CAR-007 Version 1.0<br>
 **Direct Engineering Architecture:** EAP-005 Version 1.1<br>
 **Engineering Authority:** ES-01 through ES-05, sequential under CAR-007 Version 1.0<br>
@@ -543,3 +545,287 @@ The following constraints apply to the complete capability model:
 | C16 | R49–R50 | Sections 17–18 and 21; CAR-007 Sections 5, 8, and 10 | Verify scope completeness, repository conformance, sequential governance, and authority limits. |
 
 This traceability is complete at ES-02. It creates no forward authority for Building Blocks, interfaces, implementation, or operational behavior. ES-03 remains prohibited until ES-02 completes the CAR-007 review, approval, publication, and freeze gate.
+
+---
+
+# ES-03 — Engineering Building Block Design
+
+ES-03 realizes the approved and frozen ES-02 capability model as bounded Engineering Building Blocks. Building Blocks allocate conceptual engineering responsibility only. They are not modules, services, classes, packages, processes, deployable units, data structures, or implementation constructs.
+
+The model preserves all 16 ES-02 capabilities and all 50 ES-01 responsibilities exactly once. It introduces no new engineering scope, semantic owner, dependency direction, interface, or implementation decision.
+
+## 1. Engineering Building Blocks
+
+### 1.1 Primary Building Blocks
+
+| Building Block | Name | Engineering purpose | Capability realized | ES-01 responsibilities |
+|---|---|---|---|---|
+| BB-01 | Governed Attribution Input Boundary | Preserve the only permitted identity and candidate-factual inputs with their ownership, context, source-neutrality, and prohibited-content boundaries intact. | C1 | R1–R7 |
+| BB-02 | Attribution Evaluation Readiness | Preserve readiness and not-ready meaning independently from positive attribution preconditions and Attribution Outcome. | C2 | R8–R11 |
+| BB-03 | Bounded Attribution Evaluation and Outcome | Preserve bounded Observation-owned evaluation, exactly-one-outcome cardinality, permitted outcome meanings, and attributable outcome evidence. | C3 | R12–R15 |
+| BB-04 | Canonical Identity Association | Preserve association with one approved canonical Instrument identity without creating, changing, reopening, or transferring identity meaning. | C4 | R16–R17 |
+| BB-05 | Candidate Factual Association and Semantic Separation | Preserve candidate factual association while keeping identity, factual information, authoritative factual state, and derived interpretation distinct. | C5 | R18–R20, R30–R31 |
+| BB-06 | Provenance and Attribution Continuity | Preserve factual source and origin meaning and explainable identity-to-candidate-information continuity. | C6 | R21–R22 |
+| BB-07 | Source, Temporal, and Effective Identity Context | Preserve source attribution, approved temporal attribution, and applicable effective identity context without acquisition or lifecycle mechanics. | C7 | R23–R25 |
+| BB-08 | Provider Condition Distinction | Preserve partial, failed, unavailable, missing, ambiguous, and zero-valued distinctions without creating lifecycle or Market meaning. | C8 | R26–R29, R43 |
+| BB-09 | Uncertainty and Ambiguity Preservation | Preserve retained uncertainty, Attribution Ambiguity, and Retained Factual Ambiguity with their distinct governed consequences. | C9 | R32–R33 |
+| BB-10 | Attribution Eligibility Determination | Preserve the complete conditions and explicit non-implications of Attribution Eligible. | C10 | R34–R35 |
+| BB-11 | Attribution Ineligibility and Reason Preservation | Preserve the complete conditions of Attribution Ineligible and its exact governed non-sensitive reason or reasons. | C11 | R36–R37 |
+| BB-12 | Observation Participation Boundary | Permit the sole downstream Observation Participation Eligibility meaning and terminate ineligible meaning without downstream eligibility. | C12 | R38–R39 |
+
+### 1.2 Cross-Cutting Building Blocks
+
+| Building Block | Name | Engineering purpose | Capability realized | ES-01 responsibilities |
+|---|---|---|---|---|
+| XBB-01 | Boundary, Ownership, and Authority Conformance | Preserve boundary conformance, domain ownership, authority separation, and protection from downstream semantic feedback across the primary blocks. | C13 | R40–R42, R46 |
+| XBB-02 | Security Containment and Observability | Exclude prohibited sensitive material and constrain observability to non-sensitive EAP-005 meaning across the subsystem. | C14 | R44–R45 |
+| XBB-03 | Architecture Traceability and Meaning Preservation | Preserve complete architectural origin and the mandatory EAP-005 meaning set across every Building Block. | C15 | R47–R48 |
+| XBB-04 | Engineering Verification and Repository Conformance | Preserve verification, lifecycle, metadata, review, publication, and authority-conformance obligations across the design. | C16 | R49–R50 |
+
+The 16-block model realizes every capability exactly once. Cross-cutting application does not duplicate capability or responsibility ownership: XBB-01 through XBB-04 constrain or assess the primary blocks while retaining only their separately allocated ES-02 responsibilities.
+
+## 2. Building Block Responsibilities
+
+### 2.1 BB-01 — Governed Attribution Input Boundary
+
+BB-01 owns the bounded consumption responsibility for one approved Instrument Identity Contract and one source-neutral Candidate Factual Information input. It preserves permitted identity, factual, source, provenance, temporal, partiality, failure, unavailability, uncertainty, ambiguity, limitation, and ownership meaning and excludes direct Provider, EAIC-002, raw, sensitive, or otherwise prohibited content.
+
+### 2.2 BB-02 — Attribution Evaluation Readiness
+
+BB-02 owns the exact readiness and not-ready meanings, the limited readiness preconditions, the separation between readiness and positive attribution-precondition establishment, and the prohibition on using not-ready meaning as Attribution Ineligible.
+
+### 2.3 BB-03 — Bounded Attribution Evaluation and Outcome
+
+BB-03 owns bounded Observation-controlled Attribution Evaluation meaning, exactly-one-outcome cardinality, the mutual exclusivity of Attribution Eligible and Attribution Ineligible, and attributable non-sensitive evaluation and outcome evidence.
+
+### 2.4 BB-04 — Canonical Identity Association
+
+BB-04 owns the bounded association of candidate factual information with one approved canonical Instrument identity. It prevents association from creating, altering, repairing, inferring, reopening, remapping, or transferring canonical identity.
+
+### 2.5 BB-05 — Candidate Factual Association and Semantic Separation
+
+BB-05 owns candidate factual association and preserves the separation among canonical identity association, identity metadata, candidate factual information, authoritative factual state, and derived interpretation.
+
+### 2.6 BB-06 — Provenance and Attribution Continuity
+
+BB-06 owns preservation of factual source-and-origin continuity and explainable identity-to-candidate-information continuity without acquiring source ownership or defining mapping mechanics.
+
+### 2.7 BB-07 — Source, Temporal, and Effective Identity Context
+
+BB-07 owns preservation of source attribution, approved temporal attribution, and applicable effective identity context without defining acquisition, timestamp, Instrument Lifecycle, or transition mechanics.
+
+### 2.8 BB-08 — Provider Condition Distinction
+
+BB-08 owns the independent preservation of partial, failed, unavailable, missing, ambiguous, and zero-valued information and prevents Provider condition from becoming Instrument Lifecycle or Market availability meaning.
+
+### 2.9 BB-09 — Uncertainty and Ambiguity Preservation
+
+BB-09 owns explicit retained uncertainty, Attribution Ambiguity as an ineligibility condition, and Retained Factual Ambiguity as unresolved factual meaning that may coexist with eligibility only under the governed EAP-005 conditions.
+
+### 2.10 BB-10 — Attribution Eligibility Determination
+
+BB-10 owns the complete governed conditions for Attribution Eligible and every prohibited implication, including factual correctness, Observation Acceptance, ownership, publication, Validation, product, strategy, and fitness-for-use meaning.
+
+### 2.11 BB-11 — Attribution Ineligibility and Reason Preservation
+
+BB-11 owns the complete governed conditions for Attribution Ineligible and preservation of its exact non-sensitive reason or reasons without concealment, silent selection, repair, or unsupported inference.
+
+### 2.12 BB-12 — Observation Participation Boundary
+
+BB-12 owns the sole downstream Observation Participation Eligibility meaning for Attribution Eligible and ensures that Attribution Ineligible terminates without producing downstream eligibility.
+
+### 2.13 XBB-01 — Boundary, Ownership, and Authority Conformance
+
+XBB-01 owns boundary-conformance and violation meaning, Instrument and Observation ownership separation, applicable source-authority preservation, non-transfer of semantic ownership or authority, and protection against downstream semantic feedback.
+
+### 2.14 XBB-02 — Security Containment and Observability
+
+XBB-02 owns exclusion of credentials, authorization material, private technical state, raw Provider content, and unapproved sensitive information and limits observability to the non-sensitive meanings permitted by EAP-005.
+
+### 2.15 XBB-03 — Architecture Traceability and Meaning Preservation
+
+XBB-03 owns complete backward traceability and preservation of all EAP-005 contract meanings, required engineering representations, obligations, invariants, and downstream restrictions allocated through ES-01 and ES-02.
+
+### 2.16 XBB-04 — Engineering Verification and Repository Conformance
+
+XBB-04 owns future Engineering Verification obligations and repository lifecycle, metadata, review, approval, publication, and authorization conformance without predetermining a verification or approval result.
+
+## 3. Building Block Boundaries
+
+| Building Block | Begins with | Ends with | Explicitly outside |
+|---|---|---|---|
+| BB-01 | The two inputs permitted by ES-01 | Preserved, source-neutral, ownership-safe input meaning | Readiness, attribution evaluation, identity engineering, and acquisition |
+| BB-02 | Preserved input and required context availability | Ready or not-ready meaning | Positive attribution-precondition evaluation and outcome determination |
+| BB-03 | A bounded evaluation context permitted by readiness | Bounded evaluation meaning and exactly one permitted outcome | Detailed condition ownership assigned to BB-04 through BB-11 and downstream eligibility |
+| BB-04 | Approved identity and candidate-association context | Established or unestablished canonical identity association meaning | Identity creation, resolution, mapping, and lifecycle mechanics |
+| BB-05 | Identity, candidate factual, and interpretation context | Preserved factual association and semantic separation | Factual correctness, authoritative factual state creation, and derived interpretation |
+| BB-06 | Source, origin, provenance, and identity-association context | Provenance and attribution continuity meaning | Acquisition, mapping mechanics, and source ownership |
+| BB-07 | Source, temporal, and effective identity context | Preserved attribution context | Timestamp formats, acquisition, and lifecycle processing |
+| BB-08 | Candidate-information and Provider-condition context | Explicit condition distinctions | Correction, normalization, and Market or lifecycle conclusions |
+| BB-09 | Uncertainty and the two governed ambiguity meanings | Explicit uncertainty and ambiguity consequences | Ambiguity resolution and identity selection |
+| BB-10 | Bounded evaluation and all required established preconditions | Attribution Eligible meaning and its non-implications | Observation construction, Acceptance, factual correctness, and publication |
+| BB-11 | Bounded evaluation and any absent, conflicting, ambiguous, or unestablished precondition | Attribution Ineligible meaning and preserved reason or reasons | Repair, remediation, retry, and downstream eligibility |
+| BB-12 | One governed Attribution Outcome | Observation Participation Eligibility or terminal ineligibility meaning | Candidate Observation construction, Observation Acceptance, and EAP-006 responsibilities |
+| XBB-01 | EAP-005 boundary, ownership, and authority rules | Conformance or violation meaning with ownership and authority preserved | Remediation and ownership or authority transfer |
+| XBB-02 | Prohibited-content and observability rules | Contained evidence and permitted non-sensitive observability | Sensitive disclosure and implementation telemetry design |
+| XBB-03 | Frozen ES-01, approved ES-02, and EAP-005 meaning | Complete architecture-to-Building-Block traceability | Architecture amendment and new engineering scope |
+| XBB-04 | The complete Building Block model and governance obligations | Reviewable verification and repository-conformance obligations | Implementation tests and approval decisions not yet granted |
+
+Each block begins and ends at a distinct engineering responsibility boundary. No block owns a responsibility allocated to another block, and no boundary crosses into Observation construction, Observation Acceptance, or EAP-006 responsibility.
+
+## 4. Building Block Relationships
+
+### 4.1 Structural Relationship Model
+
+Relationships identify required engineering meaning only. They do not define interfaces, calls, execution order, control flow, orchestration, scheduling, or operational behavior.
+
+| Building Block | Required structural relationships | Relationship meaning |
+|---|---|---|
+| BB-01 | EDD-006 Instrument Identity Contract boundary; EAP-005 Candidate Factual Information boundary | Establishes the sole permitted upstream meaning for the subsystem. |
+| BB-02 | BB-01 | Readiness is meaningful only for governed, preserved inputs and required context. |
+| BB-03 | BB-02 | Bounded evaluation and outcome meaning require an evaluation context permitted by readiness. |
+| BB-04 | BB-01, BB-03 | Canonical identity association is bounded by the approved identity input and attribution evaluation meaning. |
+| BB-05 | BB-01, BB-03 | Candidate association and semantic separation apply without changing either input meaning. |
+| BB-06 | BB-01, BB-03 | Provenance and attribution continuity preserve input meaning across the bounded evaluation. |
+| BB-07 | BB-01, BB-03 | Source, temporal, and effective identity context remain bounded by the approved inputs and evaluation meaning. |
+| BB-08 | BB-01, BB-03 | Provider-condition distinctions preserve candidate information condition within the bounded evaluation. |
+| BB-09 | BB-01, BB-03 | Uncertainty and ambiguity remain explicit within the bounded evaluation. |
+| BB-10 | BB-03 through BB-09 | Eligibility depends on the bounded outcome model and establishment of every governed attribution precondition. |
+| BB-11 | BB-03 through BB-09 | Ineligibility depends on the bounded outcome model and any absent, conflicting, ambiguous, or unestablished precondition. |
+| BB-12 | BB-10, BB-11 | The terminal boundary preserves the established eligible or ineligible meaning. |
+| XBB-01 | EAP-005 ownership and boundary rules | Constrains BB-01 through BB-12 without taking over their primary responsibilities. |
+| XBB-02 | EAP-005 security and observability rules | Constrains BB-01 through BB-12 and XBB-01 without taking over their responsibilities. |
+| XBB-03 | BB-01 through BB-12, XBB-01, XBB-02, frozen ES-01, approved ES-02, and EAP-005 | Preserves the architectural and capability origin of every block. |
+| XBB-04 | Complete ES-03 model, XBB-03, CAR-007, EAS-007, and DOC-001 | Preserves reviewable verification and repository conformance. |
+
+### 4.2 Relationship Rules
+
+The Building Block relationship model shall:
+
+1. preserve the one-way dependency from the completed EDD-006 identity boundary into EDD-007;
+2. create no relationship back into canonical identity establishment;
+3. create no direct Provider or EAIC-002 relationship;
+4. preserve readiness as prerequisite meaning rather than an Attribution Outcome;
+5. preserve independent evaluation concerns without merging their responsibilities;
+6. preserve distinct eligibility and ineligibility responsibility;
+7. permit only the approved terminal Observation Participation Eligibility meaning downstream;
+8. apply cross-cutting constraints without reallocating primary responsibility;
+9. preserve traceability and verification as assessment responsibilities rather than attribution responsibilities; and
+10. remain acyclic.
+
+## 5. Building Block Collaboration
+
+Collaboration describes how independently owned engineering meanings remain mutually consistent. It is not execution, communication, an interface definition, or a sequence.
+
+| Collaboration | Participating Building Blocks | Preserved separation |
+|---|---|---|
+| Governed input context and readiness | BB-01, BB-02 | Input preservation does not determine readiness; readiness does not change either input. |
+| Readiness and bounded evaluation | BB-02, BB-03 | Readiness permits an evaluation context but never establishes an outcome. |
+| Evaluation and identity association | BB-03, BB-04 | Evaluation does not create identity; association does not own evaluation cardinality. |
+| Evaluation and factual semantic separation | BB-03, BB-05 | Evaluation does not create authoritative factual state or derived interpretation. |
+| Evaluation and continuity preservation | BB-03, BB-06, BB-07 | Continuity and attribution context remain evidence meanings and do not define evaluation mechanics. |
+| Evaluation and Provider-condition preservation | BB-03, BB-08 | Provider condition remains source meaning and does not become lifecycle or Market meaning. |
+| Evaluation and ambiguity preservation | BB-03, BB-09 | Ambiguity remains explicit and is not resolved by evaluation convenience. |
+| Eligibility determination | BB-03 through BB-10 | BB-10 owns eligibility conditions; contributing blocks retain their separate meanings. |
+| Ineligibility determination | BB-03 through BB-09, BB-11 | BB-11 owns ineligibility and reasons; contributing blocks do not perform repair or remediation. |
+| Terminal boundary | BB-10, BB-11, BB-12 | BB-12 preserves downstream eligibility or terminal ineligibility without creating an Observation. |
+| Ownership and security conformance | BB-01 through BB-12, XBB-01, XBB-02 | Cross-cutting conformance constrains but does not absorb primary block ownership. |
+| Traceability and verification | All blocks, XBB-03, XBB-04 | Assessment preserves design meaning and cannot redesign or approve it. |
+
+No collaboration grants interface, implementation, or operational authority.
+
+## 6. Cross-Cutting Building Blocks
+
+### 6.1 Cross-Cutting Applicability
+
+| Cross-Cutting Building Block | Applies to | Normative effect | Does not own |
+|---|---|---|---|
+| XBB-01 | BB-01 through BB-12 | Preserves EAP-005 boundary conformance, domain ownership, authority separation, violation meaning, and downstream non-feedback. | Primary input, readiness, evaluation, association, preservation, determination, or terminal-boundary responsibilities |
+| XBB-02 | BB-01 through BB-12 and XBB-01 | Excludes prohibited sensitive content and bounds observability to approved non-sensitive meaning. | Primary evidence meaning, operational telemetry, or implementation controls |
+| XBB-03 | BB-01 through BB-12, XBB-01, and XBB-02 | Maintains backward traceability and the complete EAP-005 mandatory meaning set. | Architecture amendment, capability reallocation, or new scope |
+| XBB-04 | Complete ES-03 model | Establishes future Engineering Verification and repository-conformance obligations. | Verification result, approval decision, implementation test, or operational authority |
+
+### 6.2 Cross-Cutting Ownership Rules
+
+Cross-cutting Building Blocks shall:
+
+1. retain only the responsibilities allocated to C13 through C16;
+2. constrain or assess primary blocks without duplicating their responsibilities;
+3. preserve Instrument, Observation, and applicable source-domain semantic ownership;
+4. introduce no shared semantic ownership;
+5. create no feedback relationship into identity, factual, or attribution meaning;
+6. remain independently reviewable;
+7. remain subordinate to EAP-005 and the frozen ES-01 and ES-02 baselines; and
+8. create no implementation or operational authority.
+
+## 7. Engineering Constraints
+
+The complete Building Block model is constrained as follows:
+
+1. Every block shall remain implementation-independent and provider-neutral.
+2. EAP-005 Version 1.1 remains the sole direct Engineering Architecture authority.
+3. The frozen ES-01 and approved ES-02 baselines remain unchanged.
+4. Every ES-02 capability shall be realized by exactly one Building Block.
+5. Every ES-01 responsibility shall remain owned by exactly one Building Block through its approved capability allocation.
+6. Instrument retains exclusive ownership of canonical Instrument identity.
+7. Observation retains exclusive ownership of attribution authority, Attribution Evaluation, Attribution Outcome, and Observation Participation Eligibility.
+8. Candidate factual information gains no new semantic owner through any Building Block.
+9. No block may consume direct Provider, EAIC-002, raw Provider payload, or prohibited sensitive meaning.
+10. No block may create, alter, repair, infer, reopen, remap, or transfer canonical identity.
+11. Readiness, evaluation, identity association, factual association, continuity, condition distinction, ambiguity, eligibility, ineligibility, and downstream eligibility remain distinct block responsibilities.
+12. Exactly one of the two permitted Attribution Outcomes remains established for one bounded evaluation.
+13. Attribution Ambiguity requires Attribution Ineligible; Retained Factual Ambiguity remains explicit under its governed conditions.
+14. Provenance, attribution, source, temporal, uncertainty, ambiguity, partiality, failure, unavailability, and effective identity context remain preserved where required.
+15. Identity metadata, candidate factual information, authoritative factual state, and derived interpretation remain distinct.
+16. Eligibility establishes no factual correctness, Observation Acceptance, ownership, publication, Validation, product, strategy, or fitness-for-use meaning.
+17. Ineligibility produces no Observation Participation Eligibility.
+18. EDD-007 terminates before Candidate Observation construction, Observation Acceptance, governed Observation establishment, Observation publication, and all EAP-006 responsibilities.
+19. No block may define an interface, API, algorithm, data structure, persistence design, deployment design, operational behavior, or implementation technology.
+20. No block may create architecture, implementation authority, operational authority, or publication authority.
+21. Cross-cutting blocks may constrain or assess but shall not absorb, duplicate, or redistribute primary responsibilities.
+22. Structural relationships shall remain acyclic and shall not reverse approved domain dependency direction.
+23. ES-03 defines Engineering Building Blocks only; Interface Design and all later Engineering Stages remain subject to subsequent CAR-007 gates.
+
+## 8. Traceability to Engineering Capabilities
+
+### 8.1 Capability-to-Building-Block Traceability
+
+| ES-02 capability | Building Block | ES-01 responsibilities preserved | Direct EAP-005 source | Verification carried forward |
+|---|---|---|---|---|
+| C1 | BB-01 | R1, R2, R3, R4, R5, R6, R7 | Sections 6, 8, 10.1–10.2, 12, and 14 | Verify only approved inputs enter and ownership and source-neutrality remain intact. |
+| C2 | BB-02 | R8, R9, R10, R11 | Sections 10.3, 11, 12, and 16 | Verify readiness remains distinct and does not replace ineligibility. |
+| C3 | BB-03 | R12, R13, R14, R15 | Sections 10.4–10.5, 11, 12, and 16 | Verify bounded evaluation and exact outcome cardinality. |
+| C4 | BB-04 | R16, R17 | Sections 10.9, 12, and 16 | Verify one approved identity association without identity alteration. |
+| C5 | BB-05 | R18, R19, R20, R30, R31 | Sections 10.2, 10.16, 12, and 16 | Verify factual association and semantic separation. |
+| C6 | BB-06 | R21, R22 | Sections 10.10–10.11, 12, and 16 | Verify provenance and attribution continuity. |
+| C7 | BB-07 | R23, R24, R25 | Sections 10.12–10.13, 10.17, 12, and 16 | Verify source, temporal, and effective-context preservation without mechanics. |
+| C8 | BB-08 | R26, R27, R28, R29, R43 | Sections 10.15, 11, 12, and 16 | Verify Provider conditions and missingness remain distinct. |
+| C9 | BB-09 | R32, R33 | Sections 10.14, 12, and 16 | Verify uncertainty and both ambiguity meanings remain explicit and separate. |
+| C10 | BB-10 | R34, R35 | Sections 9, 10.6, 12, 14, and 16 | Verify eligibility conditions and every non-implication. |
+| C11 | BB-11 | R36, R37 | Sections 10.7–10.8, 12, and 16 | Verify ineligibility conditions and exact non-sensitive reasons. |
+| C12 | BB-12 | R38, R39 | Sections 9, 10.18, 14, and 16 | Verify the sole downstream eligibility meaning and terminal ineligibility. |
+| C13 | XBB-01 | R40, R41, R42, R46 | Sections 6, 10.19, 12, 14, and 16 | Verify boundary, ownership, authority, and downstream separation. |
+| C14 | XBB-02 | R44, R45 | Sections 12–13 and 16 | Verify sensitive-content exclusion and bounded observability. |
+| C15 | XBB-03 | R47, R48 | Sections 15–18 | Verify complete architectural origin and mandatory meaning preservation. |
+| C16 | XBB-04 | R49, R50 | Sections 17–18 and 21; CAR-007 Sections 5, 8, and 10 | Verify design completeness, repository conformance, and authority limits. |
+
+### 8.2 Realization and Responsibility Conformance
+
+| Building Block class | Blocks | Capabilities realized | Responsibilities preserved |
+|---|---:|---:|---:|
+| Primary | BB-01 through BB-12 | 12 | 40 |
+| Cross-cutting | XBB-01 through XBB-04 | 4 | 10 |
+| **Total** | **16** | **16** | **50** |
+
+The realization is exhaustive and exclusive:
+
+- every capability C1–C16 is realized exactly once;
+- every responsibility R1–R50 remains allocated exactly once through its approved capability;
+- no Building Block is orphaned;
+- no capability or responsibility is split, duplicated, merged away, or reassigned;
+- semantic ownership remains governed by EAP-005;
+- cross-cutting applicability creates no duplicate ownership;
+- the conceptual relationship model remains acyclic; and
+- ES-03 terminates before interface design, implementation, Observation construction, Observation Acceptance, and EAP-006 responsibility.
+
+This traceability creates no authority for ES-04. Engineering Interface Design remains prohibited until ES-03 completes the CAR-007 review, approval, publication, and freeze gate.
