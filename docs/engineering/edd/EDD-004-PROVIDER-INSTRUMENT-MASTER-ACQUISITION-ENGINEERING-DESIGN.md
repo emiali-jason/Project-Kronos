@@ -52,7 +52,7 @@ Within that boundary, EDD-004 owns the engineering scope for:
 
 The subsystem ends before the EAIC-002 boundary begins. Its final output is one deterministically bounded, EAIC-002-conforming Provider submission meaning that is ready for separately authorized presentation. EDD-004 does not present or deliver that meaning, establish Provider-to-Instrument Submission Authority, perform contract receipt or validation, admit Instrument interpretation, perform Instrument interpretation, create canonical identity or Provider mapping, or establish any product meaning.
 
-This Version 0.1 publication freezes the Engineering Scope Definition for subsequent EDD-004 work. It does not approve or canonicalize EDD-004, perform capability or module decomposition, authorize implementation, or grant runtime authority.
+This Version 1.0 publication records EDD-004 as Approved and Canonical; Implementation Authorization and Runtime Authority remain None.
 
 # 2. Engineering Mission
 
