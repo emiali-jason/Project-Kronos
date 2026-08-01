@@ -2,7 +2,7 @@
 
 **Document ID:** CAR-011
 **Title:** Kite Profile Verification Pilot Authorization Decision
-**Version:** 1.0
+**Version:** 1.1
 **Status:** Approved
 **Canonical Status:** Canonical
 **Classification:** Review Package
@@ -23,6 +23,9 @@
 **Publication Date:** 2026-07-30
 **Authority Expiry Date:** 2026-08-06
 **Outcome Revision:** CAR-011 Version 1.1
+**Authority Status:** Consumed
+**Consumption Basis:** Failed authorized attempt
+**Sanitized Outcome Category:** ACCESS_TOKEN_INVALID_OR_EXPIRED
 
 ---
 
@@ -275,6 +278,42 @@ This decision becomes effective only after CAR-011 Version 1.0 is committed and 
 Publication authorizes no immediate Provider call. Pre-execution verification and a separate explicit Sponsor instruction remain mandatory.
 
 The decision does not accept any governance-nonconforming historical implementation, alter EDD-004 engineering meaning, or establish continuing runtime authority.
+
+# 17. Version 1.1 Sanitized Outcome
+
+**Execution date and time:** 2026-08-01T16:37:53+0530
+
+**Environment identifier:** SPONSOR-MAC-LOCAL-NONPROD-2026-08-01
+
+**Repository commit SHA:** `3327d20157320f81c001c2f2a967a48aabff5322`
+
+**Kite SDK version:** 5.2.0
+
+**Endpoint classification:** AUTHENTICATED PROFILE CONNECTIVITY
+
+**Sanitized outcome category:** ACCESS_TOKEN_INVALID_OR_EXPIRED
+
+**One SDK profile invocation confirmed:** YES
+
+**No retry confirmed:** YES
+
+**Payload discarded:** YES
+
+**No secret or account detail logged:** YES
+
+**No Provider-side mutation:** YES
+
+**No other endpoint invoked:** YES
+
+**Wire-level HTTP transmission count asserted:** NO
+
+**Redirect presence or absence asserted:** NO
+
+**CAR-011 authority consumed:** YES
+
+**Second attempt authorized:** NO
+
+**Required disposition:** FRESH CHIEF ARCHITECT AUTHORITY REQUIRED FOR ANY LATER ATTEMPT
 
 ## Related Authority
 
