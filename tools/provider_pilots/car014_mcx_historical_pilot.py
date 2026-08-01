@@ -24,6 +24,8 @@ _EXPECTED_CAR_ID = "CAR-014"
 _EXPECTED_CAR_VERSION = "1.1"
 _EXPECTED_INTERVAL = "5minute"
 _STANDARD_GOLD_SYMBOL = re.compile(r"GOLD\d{2}[A-Z]{3}FUT")
+_EXCLUDED_GOLD_VARIANTS = frozenset({"GOLDM", "GOLDGUINEA", "GOLDPETAL"})
+_DEFINITIVE_GOLD_OPTION_TYPES = frozenset({"CE", "PE"})
 _REQUIRED_INSTRUMENT_FIELDS = (
     "exchange",
     "name_or_underlying",
@@ -80,6 +82,11 @@ class Stage1Evidence:
     outcome_category: str = "NOT_INITIATED"
     total_record_count: int = 0
     qualifying_record_count: int = 0
+    off_scope_structural_issue_count: int = 0
+    definitive_option_record_count: int = 0
+    excluded_variant_record_count: int = 0
+    target_record_count: int = 0
+    target_blocking_issue_count: int = 0
     required_field_presence_matrix: tuple[tuple[str, bool], ...] = ()
     expected_futures_value: str = "FUT"
     fut_observed: bool = False
@@ -485,21 +492,21 @@ def _analyze_instruments(
         )
 
     total = len(payload)
-    presence = {
-        field: total > 0 for field in _REQUIRED_INSTRUMENT_FIELDS
-    }
+    presence = {field: True for field in _REQUIRED_INSTRUMENT_FIELDS}
     candidates: list[_SelectedContract] = []
     fut_observed = False
     expiry_types: set[str] = set()
     token_types: set[str] = set()
-    blocking_category: str | None = None
+    off_scope_structural_issue_count = 0
+    definitive_option_record_count = 0
+    excluded_variant_record_count = 0
+    target_record_count = 0
+    target_failures: list[str] = []
     ambiguity = "NONE"
 
     for item in payload:
         if not isinstance(item, Mapping):
-            blocking_category = blocking_category or "REQUIRED_FIELDS_MISSING"
-            for field in presence:
-                presence[field] = False
+            off_scope_structural_issue_count += 1
             continue
 
         exchange = _normalized_string(item.get("exchange"))
@@ -513,6 +520,59 @@ def _analyze_instruments(
         token_value = item.get("instrument_token")
         effective_name = name or underlying
 
+        product_hints = {value for value in (name, underlying) if value}
+        has_exact_gold_hint = "GOLD" in product_hints
+        has_variant_hint = bool(product_hints & _EXCLUDED_GOLD_VARIANTS)
+        symbol_has_standard_gold_hint = bool(
+            symbol and _STANDARD_GOLD_SYMBOL.fullmatch(symbol)
+        )
+
+        if exchange and exchange != "MCX":
+            continue
+        if not exchange and not (
+            has_exact_gold_hint or symbol_has_standard_gold_hint
+        ):
+            off_scope_structural_issue_count += 1
+            continue
+        if has_exact_gold_hint and len(product_hints) > 1:
+            target_record_count += 1
+            target_failures.append("CONFLICTING_NAME_AND_UNDERLYING")
+            fields = {
+                "exchange": bool(exchange),
+                "name_or_underlying": bool(effective_name),
+                "tradingsymbol": bool(symbol),
+                "instrument_type": bool(instrument_type),
+                "expiry": expiry_value is not None,
+                "instrument_token": token_value is not None,
+            }
+            _merge_target_presence(presence, fields)
+            if instrument_type == "FUT":
+                fut_observed = True
+            continue
+        if not has_exact_gold_hint:
+            if has_variant_hint or effective_name in _EXCLUDED_GOLD_VARIANTS:
+                excluded_variant_record_count += 1
+            elif symbol_has_standard_gold_hint:
+                target_record_count += 1
+                target_failures.append("REQUIRED_FIELDS_MISSING")
+                fields = {
+                    "exchange": bool(exchange),
+                    "name_or_underlying": bool(effective_name),
+                    "tradingsymbol": bool(symbol),
+                    "instrument_type": bool(instrument_type),
+                    "expiry": expiry_value is not None,
+                    "instrument_token": token_value is not None,
+                }
+                _merge_target_presence(presence, fields)
+                if instrument_type == "FUT":
+                    fut_observed = True
+            continue
+
+        if instrument_type in _DEFINITIVE_GOLD_OPTION_TYPES:
+            definitive_option_record_count += 1
+            continue
+
+        target_record_count += 1
         fields = {
             "exchange": bool(exchange),
             "name_or_underlying": bool(effective_name),
@@ -521,31 +581,31 @@ def _analyze_instruments(
             "expiry": expiry_value is not None,
             "instrument_token": token_value is not None,
         }
-        for field, present in fields.items():
-            presence[field] = presence[field] and present
+        _merge_target_presence(presence, fields)
 
         if instrument_type == "FUT":
             fut_observed = True
-        if exchange != "MCX" or effective_name != "GOLD":
-            continue
-        if name and underlying and name != underlying:
-            blocking_category = "STANDARD_GOLD_CLASSIFICATION_UNRESOLVED"
-            ambiguity = "CONFLICTING_NAME_AND_UNDERLYING"
-            continue
-        if segment and segment not in {"MCX", "MCX-FUT"}:
-            blocking_category = "STANDARD_GOLD_CLASSIFICATION_UNRESOLVED"
-            ambiguity = "CONFLICTING_SEGMENT"
-            continue
-        if not symbol or not _STANDARD_GOLD_SYMBOL.fullmatch(symbol):
-            blocking_category = "STANDARD_GOLD_CLASSIFICATION_UNRESOLVED"
-            ambiguity = "STANDARD_VARIANT_DISTINCTION_UNRESOLVED"
+        if not instrument_type:
+            target_failures.append(
+                "MISSING_INSTRUMENT_TYPE"
+                if item.get("instrument_type") is None
+                else "MALFORMED_INSTRUMENT_TYPE"
+            )
             continue
         if instrument_type != "FUT":
-            blocking_category = "FUTURES_CLASSIFICATION_UNRESOLVED"
-            ambiguity = "NON_FUT_INSTRUMENT_TYPE"
+            target_failures.append("NON_FUT_INSTRUMENT_TYPE")
+            continue
+        if not exchange:
+            target_failures.append("REQUIRED_FIELDS_MISSING")
+            continue
+        if segment not in {"MCX", "MCX-FUT"}:
+            target_failures.append("CONFLICTING_SEGMENT")
+            continue
+        if not symbol or not _STANDARD_GOLD_SYMBOL.fullmatch(symbol):
+            target_failures.append("STANDARD_VARIANT_DISTINCTION_UNRESOLVED")
             continue
         if expiry_value is None or token_value is None:
-            blocking_category = "REQUIRED_FIELDS_MISSING"
+            target_failures.append("REQUIRED_FIELDS_MISSING")
             continue
 
         expiry_types.add(type(expiry_value).__name__)
@@ -553,12 +613,12 @@ def _analyze_instruments(
         try:
             expiry = _parse_date(expiry_value)
         except (TypeError, ValueError):
-            blocking_category = "EXPIRY_PARSE_FAILED"
+            target_failures.append("EXPIRY_PARSE_FAILED")
             continue
         try:
             token = _parse_token(token_value)
         except (TypeError, ValueError):
-            blocking_category = "TOKEN_REPRESENTATION_INVALID"
+            target_failures.append("TOKEN_REPRESENTATION_INVALID")
             continue
         if expiry <= execution_date:
             continue
@@ -572,17 +632,30 @@ def _analyze_instruments(
             )
         )
 
-    if blocking_category is not None:
+    if target_record_count == 0:
+        presence = {field: False for field in _REQUIRED_INSTRUMENT_FIELDS}
+
+    if target_failures:
+        failure_category, failure_ambiguity = _resolve_target_failure(
+            target_failures
+        )
         return _Stage1Analysis(
             _stage1_evidence(
-                category=blocking_category,
+                category=failure_category,
                 total=total,
                 candidates=candidates,
                 presence=presence,
                 fut_observed=fut_observed,
                 expiry_types=expiry_types,
                 token_types=token_types,
-                ambiguity=ambiguity,
+                ambiguity=failure_ambiguity,
+                off_scope_structural_issue_count=(
+                    off_scope_structural_issue_count
+                ),
+                definitive_option_record_count=definitive_option_record_count,
+                excluded_variant_record_count=excluded_variant_record_count,
+                target_record_count=target_record_count,
+                target_blocking_issue_count=len(target_failures),
             ),
             None,
         )
@@ -622,6 +695,13 @@ def _analyze_instruments(
                 expiry_types=expiry_types,
                 token_types=token_types,
                 ambiguity=ambiguity,
+                off_scope_structural_issue_count=(
+                    off_scope_structural_issue_count
+                ),
+                definitive_option_record_count=definitive_option_record_count,
+                excluded_variant_record_count=excluded_variant_record_count,
+                target_record_count=target_record_count,
+                target_blocking_issue_count=0,
             ),
             None,
         )
@@ -644,6 +724,13 @@ def _analyze_instruments(
                 expiry_types=expiry_types,
                 token_types=token_types,
                 ambiguity="NONE",
+                off_scope_structural_issue_count=(
+                    off_scope_structural_issue_count
+                ),
+                definitive_option_record_count=definitive_option_record_count,
+                excluded_variant_record_count=excluded_variant_record_count,
+                target_record_count=target_record_count,
+                target_blocking_issue_count=0,
             ),
             None,
         )
@@ -658,6 +745,11 @@ def _analyze_instruments(
         expiry_types=expiry_types,
         token_types=token_types,
         ambiguity="NONE",
+        off_scope_structural_issue_count=off_scope_structural_issue_count,
+        definitive_option_record_count=definitive_option_record_count,
+        excluded_variant_record_count=excluded_variant_record_count,
+        target_record_count=target_record_count,
+        target_blocking_issue_count=0,
         selected=selected,
     )
     return _Stage1Analysis(evidence, selected)
@@ -673,6 +765,11 @@ def _stage1_evidence(
     expiry_types: set[str],
     token_types: set[str],
     ambiguity: str,
+    off_scope_structural_issue_count: int,
+    definitive_option_record_count: int,
+    excluded_variant_record_count: int,
+    target_record_count: int,
+    target_blocking_issue_count: int,
     selected: _SelectedContract | None = None,
 ) -> Stage1Evidence:
     return Stage1Evidence(
@@ -681,6 +778,11 @@ def _stage1_evidence(
         outcome_category=category,
         total_record_count=total,
         qualifying_record_count=len(candidates),
+        off_scope_structural_issue_count=off_scope_structural_issue_count,
+        definitive_option_record_count=definitive_option_record_count,
+        excluded_variant_record_count=excluded_variant_record_count,
+        target_record_count=target_record_count,
+        target_blocking_issue_count=target_blocking_issue_count,
         required_field_presence_matrix=tuple(
             (field, presence[field]) for field in _REQUIRED_INSTRUMENT_FIELDS
         ),
@@ -704,6 +806,71 @@ def _stage1_evidence(
         payload_discarded=True,
         numeric_token_retained_in_evidence=False,
     )
+
+
+_TARGET_FAILURE_PRECEDENCE = (
+    (
+        "CONFLICTING_NAME_AND_UNDERLYING",
+        "STANDARD_GOLD_CLASSIFICATION_UNRESOLVED",
+        "CONFLICTING_NAME_AND_UNDERLYING",
+    ),
+    (
+        "CONFLICTING_SEGMENT",
+        "STANDARD_GOLD_CLASSIFICATION_UNRESOLVED",
+        "CONFLICTING_SEGMENT",
+    ),
+    (
+        "STANDARD_VARIANT_DISTINCTION_UNRESOLVED",
+        "STANDARD_GOLD_CLASSIFICATION_UNRESOLVED",
+        "STANDARD_VARIANT_DISTINCTION_UNRESOLVED",
+    ),
+    (
+        "MALFORMED_INSTRUMENT_TYPE",
+        "FUTURES_CLASSIFICATION_UNRESOLVED",
+        "MALFORMED_INSTRUMENT_TYPE",
+    ),
+    (
+        "NON_FUT_INSTRUMENT_TYPE",
+        "FUTURES_CLASSIFICATION_UNRESOLVED",
+        "NON_FUT_INSTRUMENT_TYPE",
+    ),
+    (
+        "MISSING_INSTRUMENT_TYPE",
+        "REQUIRED_FIELDS_MISSING",
+        "MISSING_INSTRUMENT_TYPE",
+    ),
+    (
+        "REQUIRED_FIELDS_MISSING",
+        "REQUIRED_FIELDS_MISSING",
+        "MISSING_TARGET_FIELDS",
+    ),
+    (
+        "EXPIRY_PARSE_FAILED",
+        "EXPIRY_PARSE_FAILED",
+        "EXPIRY_PARSE_FAILED",
+    ),
+    (
+        "TOKEN_REPRESENTATION_INVALID",
+        "TOKEN_REPRESENTATION_INVALID",
+        "TOKEN_REPRESENTATION_INVALID",
+    ),
+)
+
+
+def _merge_target_presence(
+    aggregate: dict[str, bool],
+    fields: Mapping[str, bool],
+) -> None:
+    for field in _REQUIRED_INSTRUMENT_FIELDS:
+        aggregate[field] = aggregate[field] and fields[field]
+
+
+def _resolve_target_failure(failures: Sequence[str]) -> tuple[str, str]:
+    observed = frozenset(failures)
+    for failure, category, ambiguity in _TARGET_FAILURE_PRECEDENCE:
+        if failure in observed:
+            return category, ambiguity
+    raise RuntimeError
 
 
 def _analyze_candles(payload: object, plan: ExecutionPlan) -> Stage2Evidence:

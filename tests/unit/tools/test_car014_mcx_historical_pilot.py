@@ -67,6 +67,62 @@ def _gold_record(**changes: object) -> dict[str, object]:
     return record
 
 
+def _gold_option_record(
+    instrument_type: str,
+    *,
+    segment: object = "MCX-OPT",
+) -> dict[str, object]:
+    return _gold_record(
+        segment=segment,
+        tradingsymbol=f"GOLD26AUG100000{instrument_type}",
+        instrument_type=instrument_type,
+        instrument_token=201 if instrument_type == "CE" else 202,
+    )
+
+
+def _full_mixed_instrument_payload() -> list[object]:
+    return [
+        _gold_record(),
+        _gold_option_record("CE"),
+        _gold_option_record("PE"),
+        _gold_record(
+            name="GOLDM",
+            tradingsymbol="GOLDM26AUGFUT",
+            instrument_token=301,
+        ),
+        _gold_record(
+            name="GOLDGUINEA",
+            tradingsymbol="GOLDGUINEA26AUGFUT",
+            instrument_token=302,
+        ),
+        _gold_record(
+            name="GOLDPETAL",
+            tradingsymbol="GOLDPETAL26AUGFUT",
+            instrument_token=303,
+        ),
+        _gold_record(
+            name="SILVER",
+            tradingsymbol="SILVER26AUGFUT",
+            instrument_token=401,
+        ),
+        {"exchange": "MCX", "name": "CRUDEOIL"},
+        "opaque-off-scope-row",
+    ]
+
+
+def _mixed_payload_orders() -> list[list[object]]:
+    records = _full_mixed_instrument_payload()
+    rotations = [
+        records[index:] + records[:index]
+        for index in range(len(records))
+    ]
+    return rotations + [
+        list(reversed(records)),
+        records[::2] + records[1::2],
+        records[1::2] + records[::2],
+    ]
+
+
 def _candles() -> list[dict[str, object]]:
     return [
         {
@@ -673,16 +729,109 @@ def test_gold_variants_are_excluded(variant: str) -> None:
     assert outcome.stage2.initiated is False
 
 
-@pytest.mark.parametrize("instrument_type", ["CE", "PE", "OPT"])
-def test_options_and_non_fut_values_are_unresolved(
+@pytest.mark.parametrize("instrument_type", ["CE", "PE"])
+def test_definitive_gold_options_are_cleanly_excluded(
     instrument_type: str,
 ) -> None:
-    adapter = _FakeAdapter(records=[_gold_record(instrument_type=instrument_type)])
+    adapter = _FakeAdapter(records=[_gold_option_record(instrument_type)])
+    outcome = _execute(_engine(_Factory(adapter)))
+
+    assert outcome.stage1.outcome_category == "NO_QUALIFYING_GOLD_FUTURES"
+    assert outcome.stage1.definitive_option_record_count == 1
+    assert outcome.stage1.target_blocking_issue_count == 0
+    assert outcome.stage1.fut_observed is False
+    assert outcome.stage2.initiated is False
+    assert adapter.historical_calls == 0
+
+
+def test_unknown_non_fut_value_is_unresolved() -> None:
+    adapter = _FakeAdapter(records=[_gold_record(instrument_type="OPT")])
     outcome = _execute(_engine(_Factory(adapter)))
 
     assert outcome.stage1.outcome_category == "FUTURES_CLASSIFICATION_UNRESOLVED"
+    assert outcome.stage1.ambiguity_category == "NON_FUT_INSTRUMENT_TYPE"
+    assert outcome.stage1.target_blocking_issue_count == 1
     assert outcome.stage2.initiated is False
     assert adapter.historical_calls == 0
+
+
+@pytest.mark.parametrize("instrument_type", ["CE", "PE"])
+@pytest.mark.parametrize("segment", [None, "", "MCX", "MCX-OPT", "MCX-OPTION"])
+def test_gold_options_are_excluded_before_segment_and_symbol_validation(
+    instrument_type: str,
+    segment: object,
+) -> None:
+    adapter = _FakeAdapter(
+        records=[
+            _gold_record(),
+            _gold_option_record(instrument_type, segment=segment),
+        ]
+    )
+    outcome = _execute(_engine(_Factory(adapter)))
+
+    assert outcome.stage1.outcome_category == "STANDARD_GOLD_FUTURE_SELECTED"
+    assert outcome.stage1.selected_trading_symbol == "GOLD26AUGFUT"
+    assert outcome.stage1.definitive_option_record_count == 1
+    assert outcome.stage1.target_blocking_issue_count == 0
+    assert outcome.stage2.initiated is True
+    assert adapter.historical_calls == 1
+
+
+def test_realistic_full_mixed_payload_selects_standard_gold_future() -> None:
+    adapter = _FakeAdapter(records=_full_mixed_instrument_payload())
+    outcome = _execute(_engine(_Factory(adapter)))
+
+    assert outcome.stage1.outcome_category == "STANDARD_GOLD_FUTURE_SELECTED"
+    assert outcome.stage1.selected_exchange == "MCX"
+    assert outcome.stage1.selected_trading_symbol == "GOLD26AUGFUT"
+    assert outcome.stage1.selected_expiry == "2026-08-31"
+    assert outcome.stage1.selected_instrument_type == "FUT"
+    assert outcome.stage1.definitive_option_record_count == 2
+    assert outcome.stage1.excluded_variant_record_count == 3
+    assert outcome.stage1.off_scope_structural_issue_count == 1
+    assert outcome.stage1.target_record_count == 1
+    assert outcome.stage1.target_blocking_issue_count == 0
+    assert outcome.stage2.initiated is True
+    assert adapter.instrument_calls == 1
+    assert adapter.historical_calls == 1
+
+
+def test_full_mixed_payload_is_record_order_invariant() -> None:
+    results: set[tuple[object, ...]] = set()
+
+    for records in _mixed_payload_orders():
+        adapter = _FakeAdapter(records=records)
+        outcome = _execute(_engine(_Factory(adapter)))
+        results.add(
+            (
+                outcome.stage1.outcome_category,
+                outcome.stage1.selected_exchange,
+                outcome.stage1.selected_trading_symbol,
+                outcome.stage1.selected_expiry,
+                outcome.stage1.selected_instrument_type,
+                outcome.stage1.definitive_option_record_count,
+                outcome.stage1.excluded_variant_record_count,
+                outcome.stage1.off_scope_structural_issue_count,
+                adapter.historical_calls,
+            )
+        )
+        pilot._execution_started = False
+        pilot._authority_consumed = False
+
+    assert len(_mixed_payload_orders()) == 12
+    assert results == {
+        (
+            "STANDARD_GOLD_FUTURE_SELECTED",
+            "MCX",
+            "GOLD26AUGFUT",
+            "2026-08-31",
+            "FUT",
+            2,
+            3,
+            1,
+            1,
+        )
+    }
 
 
 def test_expired_contract_is_excluded() -> None:
@@ -719,8 +868,172 @@ def test_missing_name_and_underlying_blocks_selection() -> None:
     adapter = _FakeAdapter(records=[record])
     outcome = _execute(_engine(_Factory(adapter)))
 
-    assert outcome.stage1.outcome_category == "NO_QUALIFYING_GOLD_FUTURES"
+    assert outcome.stage1.outcome_category == "REQUIRED_FIELDS_MISSING"
+    assert outcome.stage1.target_blocking_issue_count == 1
     assert outcome.stage2.initiated is False
+
+
+def test_missing_instrument_type_on_exact_gold_target_blocks() -> None:
+    record = _gold_record()
+    record.pop("instrument_type")
+    adapter = _FakeAdapter(records=[record])
+    outcome = _execute(_engine(_Factory(adapter)))
+
+    assert outcome.stage1.outcome_category == "REQUIRED_FIELDS_MISSING"
+    assert outcome.stage1.ambiguity_category == "MISSING_INSTRUMENT_TYPE"
+    assert outcome.stage1.target_blocking_issue_count == 1
+    assert outcome.stage2.initiated is False
+    assert adapter.historical_calls == 0
+
+
+def test_malformed_instrument_type_on_exact_gold_target_blocks() -> None:
+    adapter = _FakeAdapter(records=[_gold_record(instrument_type=7)])
+    outcome = _execute(_engine(_Factory(adapter)))
+
+    assert outcome.stage1.outcome_category == "FUTURES_CLASSIFICATION_UNRESOLVED"
+    assert outcome.stage1.ambiguity_category == "MALFORMED_INSTRUMENT_TYPE"
+    assert outcome.stage2.initiated is False
+
+
+def test_conflicting_exact_gold_name_and_underlying_blocks_deterministically() -> None:
+    records = [_gold_record(), _gold_record(underlying="GOLDM")]
+    adapter = _FakeAdapter(records=records)
+    outcome = _execute(_engine(_Factory(adapter)))
+
+    assert outcome.stage1.outcome_category == "STANDARD_GOLD_CLASSIFICATION_UNRESOLVED"
+    assert outcome.stage1.ambiguity_category == "CONFLICTING_NAME_AND_UNDERLYING"
+    assert outcome.stage1.target_blocking_issue_count == 1
+    assert outcome.stage2.initiated is False
+
+
+def test_target_failure_precedence_is_record_order_invariant() -> None:
+    failures = [
+        _gold_record(expiry="not-a-date", instrument_token=501),
+        _gold_record(instrument_token="not-a-token"),
+        _gold_record(segment="MCX-OPT", instrument_token=502),
+        _gold_record(underlying="GOLDM", instrument_token=503),
+        _gold_record(),
+        {"exchange": "MCX", "name": "SILVER"},
+    ]
+    outcomes: set[tuple[str, str, int, bool]] = set()
+    orders = [
+        failures,
+        list(reversed(failures)),
+        failures[2:] + failures[:2],
+        failures[1::2] + failures[::2],
+    ]
+
+    for records in orders:
+        adapter = _FakeAdapter(records=records)
+        outcome = _execute(_engine(_Factory(adapter)))
+        outcomes.add(
+            (
+                outcome.stage1.outcome_category,
+                outcome.stage1.ambiguity_category,
+                outcome.stage1.target_blocking_issue_count,
+                outcome.stage2.initiated,
+            )
+        )
+        assert adapter.historical_calls == 0
+        pilot._execution_started = False
+        pilot._authority_consumed = False
+
+    assert outcomes == {
+        (
+            "STANDARD_GOLD_CLASSIFICATION_UNRESOLVED",
+            "CONFLICTING_NAME_AND_UNDERLYING",
+            4,
+            False,
+        )
+    }
+
+
+def test_later_unrelated_or_valid_rows_cannot_erase_target_blocker() -> None:
+    records = [
+        _gold_record(expiry="not-a-date", instrument_token=501),
+        {"exchange": "MCX", "name": "SILVER"},
+        _gold_record(),
+    ]
+    adapter = _FakeAdapter(records=records)
+    outcome = _execute(_engine(_Factory(adapter)))
+
+    assert outcome.stage1.outcome_category == "EXPIRY_PARSE_FAILED"
+    assert outcome.stage1.target_blocking_issue_count == 1
+    assert outcome.stage2.initiated is False
+    assert adapter.historical_calls == 0
+
+
+def test_unrelated_incomplete_mapping_does_not_affect_target_evidence() -> None:
+    adapter = _FakeAdapter(
+        records=[_gold_record(), {"exchange": "MCX", "name": "SILVER"}]
+    )
+    outcome = _execute(_engine(_Factory(adapter)))
+
+    assert outcome.stage1.outcome_category == "STANDARD_GOLD_FUTURE_SELECTED"
+    assert all(dict(outcome.stage1.required_field_presence_matrix).values())
+    assert outcome.stage1.target_record_count == 1
+    assert outcome.stage1.target_blocking_issue_count == 0
+    assert adapter.historical_calls == 1
+
+
+def test_non_mapping_row_is_tolerated_and_recorded_safely() -> None:
+    adapter = _FakeAdapter(records=[None, _gold_record()])
+    outcome = _execute(_engine(_Factory(adapter)))
+
+    assert outcome.stage1.outcome_category == "STANDARD_GOLD_FUTURE_SELECTED"
+    assert outcome.stage1.off_scope_structural_issue_count == 1
+    assert outcome.stage1.target_blocking_issue_count == 0
+    assert adapter.historical_calls == 1
+
+
+def test_malformed_proven_variant_does_not_block_valid_target() -> None:
+    adapter = _FakeAdapter(
+        records=[
+            _gold_record(),
+            {"exchange": "MCX", "name": "GOLDPETAL"},
+        ]
+    )
+    outcome = _execute(_engine(_Factory(adapter)))
+
+    assert outcome.stage1.outcome_category == "STANDARD_GOLD_FUTURE_SELECTED"
+    assert outcome.stage1.excluded_variant_record_count == 1
+    assert outcome.stage1.target_blocking_issue_count == 0
+    assert adapter.historical_calls == 1
+
+
+def test_unrelated_future_does_not_set_target_scoped_fut_observation() -> None:
+    adapter = _FakeAdapter(
+        records=[
+            _gold_record(
+                name="SILVER",
+                tradingsymbol="SILVER26AUGFUT",
+            )
+        ]
+    )
+    outcome = _execute(_engine(_Factory(adapter)))
+
+    assert outcome.stage1.outcome_category == "NO_QUALIFYING_GOLD_FUTURES"
+    assert outcome.stage1.fut_observed is False
+    assert outcome.stage1.target_record_count == 0
+
+
+def test_aggregate_evidence_contains_only_sanitized_counts() -> None:
+    token = 987654321
+    records = _full_mixed_instrument_payload()
+    records[0] = _gold_record(instrument_token=token)
+    adapter = _FakeAdapter(records=records)
+    outcome = _execute(_engine(_Factory(adapter)))
+    serialized = str(asdict(outcome))
+
+    assert outcome.stage1.off_scope_structural_issue_count == 1
+    assert outcome.stage1.definitive_option_record_count == 2
+    assert outcome.stage1.excluded_variant_record_count == 3
+    assert outcome.stage1.target_record_count == 1
+    assert outcome.stage1.target_blocking_issue_count == 0
+    assert str(token) not in repr(outcome)
+    assert str(token) not in serialized
+    assert "opaque-off-scope-row" not in repr(outcome)
+    assert "opaque-off-scope-row" not in serialized
 
 
 def test_unparseable_expiry_blocks_stage2() -> None:
@@ -729,6 +1042,47 @@ def test_unparseable_expiry_blocks_stage2() -> None:
 
     assert outcome.stage1.outcome_category == "EXPIRY_PARSE_FAILED"
     assert outcome.stage2.initiated is False
+
+
+@pytest.mark.parametrize(
+    ("changes", "category", "ambiguity"),
+    [
+        (
+            {"segment": "MCX-OPT"},
+            "STANDARD_GOLD_CLASSIFICATION_UNRESOLVED",
+            "CONFLICTING_SEGMENT",
+        ),
+        (
+            {"tradingsymbol": "GOLDM26AUGFUT"},
+            "STANDARD_GOLD_CLASSIFICATION_UNRESOLVED",
+            "STANDARD_VARIANT_DISTINCTION_UNRESOLVED",
+        ),
+        (
+            {"expiry": "not-a-date"},
+            "EXPIRY_PARSE_FAILED",
+            "EXPIRY_PARSE_FAILED",
+        ),
+        (
+            {"instrument_token": "not-a-token"},
+            "TOKEN_REPRESENTATION_INVALID",
+            "TOKEN_REPRESENTATION_INVALID",
+        ),
+    ],
+)
+def test_potential_target_failures_block_with_stable_categories(
+    changes: dict[str, object],
+    category: str,
+    ambiguity: str,
+) -> None:
+    adapter = _FakeAdapter(records=[_gold_record(**changes), _gold_record()])
+    outcome = _execute(_engine(_Factory(adapter)))
+
+    assert outcome.stage1.outcome_category == category
+    assert outcome.stage1.ambiguity_category == ambiguity
+    assert outcome.stage1.target_blocking_issue_count == 1
+    assert outcome.stage2.initiated is False
+    assert adapter.instrument_calls == 1
+    assert adapter.historical_calls == 0
 
 
 def test_earliest_expiry_is_selected() -> None:
