@@ -2,6 +2,7 @@
 
 from collections.abc import Sequence
 
+from kronos.configuration.principals import PrincipalBindingResult
 from kronos.provider.contracts.access import AuthenticationActivity
 from kronos.provider.exceptions.access import (
     ProviderAccessPreconditionCode,
@@ -22,6 +23,7 @@ from kronos.provider.models.context import (
     ContextValidity,
     ProviderAuditEvidence,
     ProviderEvidenceKind,
+    ProviderProvenance,
 )
 
 
@@ -83,24 +85,11 @@ class ProviderContextService:
         )
 
         if outcome.succeeded:
+            # Exchange or legacy Authentication Success is not sufficient to
+            # publish context. Only adopt_authenticated_context() accepts the
+            # matched projection created by ProviderAuthenticationService.
             self.__availability = ProviderAvailability(
-                operational=ProviderOperationalAvailability.AVAILABLE
-            )
-            self.__context = AuthenticatedProviderContext(
-                validity=ContextValidity.VALID,
-                reuse_eligibility=ContextReuseEligibility.ELIGIBLE,
-                provider=self.__provider,
-                context_id=outcome.provenance.activity_id,
-                provenance=outcome.provenance,
-                valid_until=outcome.valid_until,
-            )
-            self.__record(
-                ProviderAuditEvidence(
-                    kind=ProviderEvidenceKind.CONTEXT_ESTABLISHED,
-                    provenance=outcome.provenance,
-                    context_id=self.__context.context_id,
-                    outcome=outcome.kind,
-                )
+                operational=ProviderOperationalAvailability.NOT_ESTABLISHED
             )
         elif (
             outcome.reason
@@ -117,6 +106,45 @@ class ProviderContextService:
             )
 
         return outcome
+
+    def adopt_authenticated_context(
+        self,
+        context: AuthenticatedProviderContext,
+    ) -> None:
+        """Adopt only an already-bound canonical context projection."""
+
+        if self.__context is not None:
+            raise RuntimeError("PROVIDER_CONTEXT_ALREADY_PRESENT")
+        if (
+            context.provider != self.__provider
+            or context.validity is not ContextValidity.VALID
+            or context.reuse_eligibility is not ContextReuseEligibility.ELIGIBLE
+            or context.binding_result is not PrincipalBindingResult.MATCHED
+            or context.attempt_id is None
+        ):
+            raise ValueError("MATCHED_AUTHENTICATED_CONTEXT_REQUIRED")
+
+        provenance = context.provenance or ProviderProvenance(
+            provider=context.provider,
+            activity_id=context.attempt_id,
+        )
+        self.__context = AuthenticatedProviderContext(
+            validity=context.validity,
+            reuse_eligibility=context.reuse_eligibility,
+            provider=context.provider,
+            context_id=context.context_id,
+            provenance=provenance,
+            valid_until=context.valid_until,
+            attempt_id=context.attempt_id,
+            binding_result=context.binding_result,
+        )
+        self.__record(
+            ProviderAuditEvidence(
+                kind=ProviderEvidenceKind.CONTEXT_ESTABLISHED,
+                provenance=provenance,
+                context_id=context.context_id,
+            )
+        )
 
     def current_context(self) -> AuthenticatedProviderContext | None:
         """Return the current read-only context, if one is present."""

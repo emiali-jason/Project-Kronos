@@ -1,5 +1,6 @@
 import pytest
 
+from kronos.configuration.principals import PrincipalBindingResult
 from kronos.provider.exceptions.access import (
     ProviderAccessPreconditionCode,
     ProviderAccessPreconditionError,
@@ -17,9 +18,11 @@ from kronos.provider.models.configuration import (
     RuntimeConfiguration,
 )
 from kronos.provider.models.context import (
+    AuthenticatedProviderContext,
     AuthenticationOutcome,
     AuthenticationOutcomeKind,
     ContextLifecycleReason,
+    ContextReuseEligibility,
     ContextValidity,
     ProviderEvidenceKind,
     ProviderProvenance,
@@ -56,21 +59,78 @@ def _success(configuration: ConfigurationBoundaryInput) -> AuthenticationOutcome
     )
 
 
-def test_verified_success_establishes_one_bounded_context_and_evidence() -> None:
+def _bound_context() -> AuthenticatedProviderContext:
+    return AuthenticatedProviderContext(
+        validity=ContextValidity.VALID,
+        reuse_eligibility=ContextReuseEligibility.ELIGIBLE,
+        provider="KITE",
+        context_id="attempt-1",
+        attempt_id="attempt-1",
+        binding_result=PrincipalBindingResult.MATCHED,
+    )
+
+
+def test_legacy_success_cannot_directly_establish_context() -> None:
     service = ProviderContextService("KITE", _success)
 
     outcome = service.authenticate(_configuration())
     context = service.current_context()
 
     assert outcome.kind is AuthenticationOutcomeKind.SUCCESS
-    assert context is not None
-    assert context.validity is ContextValidity.VALID
-    assert context.context_id == outcome.provenance.activity_id
+    assert context is None
+    assert (
+        service.availability().operational
+        is ProviderOperationalAvailability.NOT_ESTABLISHED
+    )
     assert [item.kind for item in service.evidence()] == [
         ProviderEvidenceKind.AUTHENTICATION_ACTIVITY,
         ProviderEvidenceKind.AUTHENTICATION_OUTCOME,
-        ProviderEvidenceKind.CONTEXT_ESTABLISHED,
     ]
+
+
+def test_only_matched_canonical_context_can_be_adopted() -> None:
+    service = ProviderContextService("KITE", _success)
+
+    service.adopt_authenticated_context(_bound_context())
+
+    context = service.current_context()
+    assert context is not None
+    assert context.validity is ContextValidity.VALID
+    assert context.binding_result is PrincipalBindingResult.MATCHED
+    assert context.attempt_id == "attempt-1"
+    assert [item.kind for item in service.evidence()] == [
+        ProviderEvidenceKind.CONTEXT_ESTABLISHED
+    ]
+
+
+@pytest.mark.parametrize(
+    "context",
+    [
+        AuthenticatedProviderContext(
+            validity=ContextValidity.VALID,
+            reuse_eligibility=ContextReuseEligibility.ELIGIBLE,
+            provider="KITE",
+            context_id="legacy-unbound",
+        ),
+        AuthenticatedProviderContext(
+            validity=ContextValidity.INVALID,
+            reuse_eligibility=ContextReuseEligibility.INELIGIBLE,
+            provider="KITE",
+            context_id="attempt-invalid",
+            attempt_id="attempt-invalid",
+            binding_result=PrincipalBindingResult.MATCHED,
+        ),
+    ],
+)
+def test_unbound_or_inactive_context_adoption_is_prohibited(
+    context: AuthenticatedProviderContext,
+) -> None:
+    service = ProviderContextService("KITE", _success)
+
+    with pytest.raises(ValueError, match="MATCHED_AUTHENTICATED_CONTEXT_REQUIRED"):
+        service.adopt_authenticated_context(context)
+
+    assert service.current_context() is None
 
 
 def test_unverified_success_is_prohibited() -> None:
@@ -150,7 +210,7 @@ def test_rejection_and_failure_never_establish_context() -> None:
 
 def test_invalidation_and_termination_preserve_context_correlation() -> None:
     service = ProviderContextService("KITE", _success)
-    service.authenticate(_configuration())
+    service.adopt_authenticated_context(_bound_context())
     original = service.current_context()
     assert original is not None
 
@@ -185,13 +245,13 @@ def test_usability_requires_configuration_context_and_operational_availability()
         is ProviderUsabilityState.UNUSABLE
     )
 
-    service.authenticate(_configuration())
+    service.adopt_authenticated_context(_bound_context())
 
     assert (
         service.availability().operational
-        is ProviderOperationalAvailability.AVAILABLE
+        is ProviderOperationalAvailability.NOT_ESTABLISHED
     )
-    assert service.usability(_configuration()).state is ProviderUsabilityState.USABLE
+    assert service.usability(_configuration()).state is ProviderUsabilityState.UNUSABLE
     assert (
         service.usability(_configuration(valid=False)).state
         is ProviderUsabilityState.UNUSABLE
