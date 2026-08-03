@@ -12,6 +12,15 @@ Status values in this index reproduce the source document where one is stated. `
 
 Repository synchronization and RC-04 activation are complete. ADR-009 is Operational Architecture, EAIC-002 is the Operational Canonical Provider → Instrument Contract, the Engineering Programme is Authorized with Constraints, and EDD-004 Draft Preparation is Approved with Constraints. Implementation and runtime activity remain unauthorized.
 
+## Provider Authentication Canonical Architecture
+
+The following documents are approved canonical architecture. They grant no engineering-design, implementation or runtime authority.
+
+| Document | Purpose | Status | Owner | Location |
+| --- | --- | --- | --- | --- |
+| ADR-010 — Provider Authentication Shared Platform Capability | Provider-neutral Shared Platform capability for Provider Authentication and Authenticated Context Establishment | Approved Canonical Architecture | Chief Architect | [`platform/domains/provider/ADR-010-PROVIDER-AUTHENTICATION-SHARED-PLATFORM-CAPABILITY.md`](platform/domains/provider/ADR-010-PROVIDER-AUTHENTICATION-SHARED-PLATFORM-CAPABILITY.md) |
+| DOMAIN-006 Version 1.1 | Provider Authentication and Authenticated Context Establishment within the Provider Domain architecture | Approved Canonical Architecture | Chief Architect | [`platform/domains/provider/ARCHITECTURE.md`](platform/domains/provider/ARCHITECTURE.md) |
+
 ## Repository Governance and Draft Scaffolds
 
 | Document or section | Purpose | Status | Owner | Location |

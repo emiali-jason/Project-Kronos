@@ -21,7 +21,7 @@ Provide navigation to the approved KRONOS Platform Architecture v1.0 documents a
 - [DOMAIN-003 — Validation](domains/validation/ARCHITECTURE.md)
 - [DOMAIN-004 — Execution](domains/execution/ARCHITECTURE.md)
 - [DOMAIN-005 — Portfolio](domains/portfolio/ARCHITECTURE.md)
-- [DOMAIN-006 — Provider](domains/provider/ARCHITECTURE.md)
+- [DOMAIN-006 — Provider](domains/provider/ARCHITECTURE.md) — Version 1.1 Approved Canonical Architecture
 - [DOMAIN-007 — Risk](domains/risk/ARCHITECTURE.md)
 - [DOMAIN-008 — Market](domains/market/ARCHITECTURE.md)
 - [DOMAIN-009 — Event](domains/event/ARCHITECTURE.md)
@@ -32,6 +32,7 @@ Provide navigation to the approved KRONOS Platform Architecture v1.0 documents a
 
 - [ADR-007 — Provider Capability Assessment Architecture](domains/provider/ADR-007-PROVIDER-CAPABILITY-ASSESSMENT-ARCHITECTURE.md)
 - [ADR-008 — Provider Entitlement Assessment Architecture](domains/provider/ADR-008-PROVIDER-ENTITLEMENT-ASSESSMENT-ARCHITECTURE.md)
+- [ADR-010 — Provider Authentication Shared Platform Capability](domains/provider/ADR-010-PROVIDER-AUTHENTICATION-SHARED-PLATFORM-CAPABILITY.md) — Version 1.0 Approved Canonical Architecture
 
 ## Platform Principles
 

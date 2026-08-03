@@ -1,7 +1,15 @@
 # DOMAIN-006 — Provider Domain
 Status: Approved
+Canonical Status: Approved Canonical Architecture
 Owner: Chief Architect
-Version: 1.0
+Version: 1.1
+Previous Canonical Version: 1.0
+Classification: Architecture Standard
+Review Authority: Chief Architect
+Repository Location: `docs/architecture/platform/domains/provider/ARCHITECTURE.md`
+Governing Decision: ADR-010 Version 1.0
+Implementation Authority: None
+Runtime Authority: None
 
 ## Purpose
 
@@ -92,6 +100,156 @@ Provider shall preserve Provider meaning without converting it into canonical, p
 Provider capability, Provider entitlement, Dataset Permission, Acquisition Authority, Provider Context, Provider Operational Availability, Provider Usability, Submission Eligibility, submission authority, and runtime authority remain independent determinations.
 
 No one determination implies another.
+
+## Proposed Provider Authentication and Authenticated Context Establishment Capability
+
+This Version 1.1 section is approved canonical architecture published under the Chief Architect Decision and Engineering Architect Execution — Phase 1. It supersedes Version 1.0 as the canonical Provider Domain architecture while preserving unrelated Version 1.0 meaning.
+
+### Capability Identity and Scope
+
+**Provider Authentication and Authenticated Context Establishment** is a provider-neutral Shared Platform capability. Zerodha Kite is the first Provider adapter only.
+
+The capability covers authentication initiation, Authentication Attempt lifecycle, callback acceptance, bounded credential retrieval, Provider-specific protocol translation, candidate Provider Context establishment, principal verification, intended Provider registration binding, Authenticated Provider Context establishment, local KRONOS session disposal and sanitized authentication and Provider-availability projections.
+
+Authentication grants no Provider capability, account entitlement, Dataset Permission, Acquisition Authority, product eligibility, execution authority, trading permission or account-mutation authority.
+
+### Single-Owner Model
+
+Configuration owns credential meaning, Provider identity configuration, intended Provider registration, redirect-registration meaning and configuration validity.
+
+The Secure Credential capability owns protected storage and retrieval mechanics, operating-system backend abstraction, custody evidence and retrieval-failure reporting.
+
+The Provider Authentication Service owns Authentication Activity, Authentication Attempt creation and lifecycle, login initiation, callback acceptance and consumption state, sanitized Authentication Outcome, candidate Provider Context establishment, principal-binding orchestration, Authenticated Provider Context establishment and local context disposal.
+
+The Kite adapter owns Kite-specific login-URL translation, request-token interpretation, session exchange, profile and principal-evidence translation and SDK interaction.
+
+Presentation owns explicit initiation and sanitized state or failure presentation only. It owns no credential, token, authentication decision, principal-binding decision or Provider protocol logic.
+
+No shared ownership is introduced.
+
+### Dependency Direction
+
+```text
+Presentation
+    → Provider Authentication Service
+        → Configuration contract
+        → Secure Credential contract
+        → Provider authentication contract
+            → Kite adapter
+                → Kite SDK
+```
+
+Provider-specific SDK mechanics, responses, exceptions, tokens and credentials remain adapter-local.
+
+### Authentication Attempt
+
+Authentication Attempt is a first-class Provider Authentication Service construct for one bounded, explicitly initiated attempt against one intended Provider registration.
+
+It preserves an internal non-sequential cryptographically random attempt identity, Provider identity, intended Provider registration identity, creation/start/expiry times, lifecycle state, callback-consumed state, terminal state, sanitized outcome, correlation evidence, callback-acceptance evidence, principal-binding evidence and local listener identity where applicable.
+
+At most one attempt may be active per Provider registration. Each attempt is bounded in time. A callback and request token may each be accepted at most once. A terminal attempt cannot reactivate. No attempt exposes credentials or tokens. No automatic retry creates an attempt; another attempt requires explicit user action and separate authority where governance requires it.
+
+### Authentication Lifecycle
+
+The provider-neutral authentication lifecycle is:
+
+- `NOT_AUTHENTICATED`
+- `AUTHENTICATING`
+- `AUTHENTICATED`
+- `FAILED`
+- `EXPIRED`
+- `ENDED`
+
+Permitted transitions are:
+
+```text
+NOT_AUTHENTICATED → AUTHENTICATING
+AUTHENTICATING → AUTHENTICATED | FAILED | EXPIRED
+AUTHENTICATED → EXPIRED | ENDED
+```
+
+`FAILED`, `EXPIRED` and `ENDED` are terminal for the applicable attempt or context. A new explicit attempt is required to return to `AUTHENTICATING`. `CONNECTED` is not an authentication state.
+
+### Provider Availability
+
+Provider availability is represented separately as `NOT_VERIFIED`, `VERIFYING`, `AVAILABLE`, `UNAVAILABLE` or `INDETERMINATE`.
+
+`AUTHENTICATED` does not imply `AVAILABLE`. Temporary Provider Unavailability during later verification does not rewrite an established authentication result as `FAILED`. Authoritative invalid-token evidence may transition the context to `EXPIRED` or another separately approved invalid state.
+
+### Callback Acceptance
+
+Callback acceptance is owned by the Provider Authentication Service; the loopback component owns transport mechanics and cannot decide authentication success.
+
+The approved callback boundary is:
+
+```text
+http://127.0.0.1:8765/kite/callback
+```
+
+The listener shall bind only to `127.0.0.1` on fixed port `8765`, accept GET only on `/kite/callback`, validate the Host header exactly, serve one outstanding Authentication Attempt, accept one callback and one request token, enforce a bounded timeout, and reject duplicate, wrong-method, wrong-path, wrong-host, missing-token and multiple-token requests. Provider rejection and error callbacks become sanitized terminal outcomes.
+
+The component shall log no URL or query string, suppress default HTTP request logging, return only a sanitized completion page and stop immediately after terminal acceptance or failure.
+
+Live execution remains prohibited until the Sponsor confirms the external Provider registration uses the exact approved callback URL. This architecture authorizes no external configuration change.
+
+### Correlation and Residual Risk
+
+Provider-returned state or nonce round-trip support is unproven. Version 1 does not claim full state-based CSRF protection.
+
+Available correlation evidence is one explicitly initiated attempt, one internal attempt identity, one active listener, listener start and expiry, exact configured host/port/path, expected Provider and registration identities, callback time within the attempt lifetime, callback-consumed state, one-token cardinality and post-exchange principal-binding evidence.
+
+Compensating controls are explicit initiation, short lifetime, loopback binding, exact Host and path validation, GET only, one active attempt, one callback, one token, duplicate rejection, bounded timeout, immediate shutdown and principal binding.
+
+Residual risk remains: without proven Provider-returned state correlation, a malicious local process or browser-mediated callback injection may attempt to deliver a token to the active loopback listener. The controls reduce but do not eliminate this risk.
+
+### Principal Binding and Context Establishment
+
+```text
+authentication exchange outcome
+    → candidate Provider Context
+    → principal verification
+    → intended Provider registration binding
+    → Authenticated Provider Context
+```
+
+Token-exchange success creates only a candidate Provider Context. The candidate is unavailable to products and to all other Provider operations except the approved principal-verification operation.
+
+Principal verification uses the approved Provider verification path and returns only minimum evidence needed to compare against Configuration's intended Provider registration.
+
+- `MATCHED` permits Authenticated Provider Context establishment.
+- `MISMATCHED` requires local candidate disposal and terminal attempt failure without manual override.
+- `UNCONFIRMED` requires local candidate disposal and terminal attempt failure without manual override.
+- `UNAVAILABLE` is never treated as matched; for the pilot it requires local candidate disposal, terminal `FAILED` authentication with sanitized `PRINCIPAL_BINDING_UNAVAILABLE`, and `INDETERMINATE` Provider availability.
+
+The `UNAVAILABLE` pilot rule applies before authentication is established and does not rewrite an already Authenticated Provider Context as failed.
+
+Retainable binding evidence is limited to the sanitized binding category, Provider identity, a non-sensitive intended-registration reference, attempt terminal category, permitted time evidence and confirmation of candidate establishment or disposal. Account identifiers, profile fields, raw Provider payloads and raw exceptions are prohibited from UI, logs and retained evidence.
+
+### Credential Custody
+
+The API key comes from approved Configuration and is not displayed or logged.
+
+The API secret is retrieved through a provider-neutral Secure Credential contract. Apple Keychain is the first backend and Windows Credential Manager is a future backend. It is returned only for the bounded exchange operation and is excluded from source code, repository fixtures, browser storage, command-line arguments, logs, screenshots, plain-text configuration, `.env` and normal daily UI entry.
+
+The request token is one-use and in-memory, accepted once, exchanged once, never displayed, logged or persisted, and discarded immediately after exchange.
+
+The access token remains inside the authenticated Provider client and Provider Context. It has no public getter, UI exposure, Version 1 persistence or cross-context reuse after local disposal. No secure-memory-erasure claim is made.
+
+### End KRONOS Session
+
+End KRONOS Session performs local Authenticated Provider Context disposal, local candidate disposal where applicable, removal of reuse eligibility and transition to `ENDED`. It performs no Provider token invalidation, remote logout, Provider mutation or automatic reauthentication.
+
+The existing Kite termination path performs Provider-side token invalidation and cannot be reused for End KRONOS Session without separation from a local-only disposal path.
+
+### Engineering Lifecycle Separation
+
+This architecture amendment contains no engineering design or implementation authority.
+
+Any downstream Engineering Design activity requires its own governed authorization, drafting, verification, review and publication lifecycle. Existing login behavior alone does not prove architecture or future engineering conformance.
+
+### Architecture Authority Boundary
+
+This amendment grants no implementation, credential-use, browser, listener, endpoint, runtime, commit or push authority. It authorizes no CAR-014 execution and does not reopen CAR-015.
 
 ## Provider Catalogue
 
