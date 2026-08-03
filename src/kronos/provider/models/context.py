@@ -5,6 +5,8 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Final
 
+from kronos.configuration.principals import PrincipalBindingResult
+
 
 class AuthenticationOutcomeKind(StrEnum):
     """The only outcomes produced by one Authentication Activity."""
@@ -100,6 +102,21 @@ class AuthenticatedProviderContext:
     context_id: str = ""
     provenance: ProviderProvenance | None = None
     valid_until: datetime | None = None
+    attempt_id: str | None = None
+    binding_result: PrincipalBindingResult | None = None
+
+    def __post_init__(self) -> None:
+        """Accept only paired, sanitized, matched binding provenance."""
+
+        if (self.attempt_id is None) is not (self.binding_result is None):
+            raise ValueError("ATTEMPT_AND_BINDING_PROVENANCE_MUST_BE_PAIRED")
+        if self.attempt_id is not None and not self.attempt_id.strip():
+            raise ValueError("ATTEMPT_ID_CANNOT_BE_BLANK")
+        if (
+            self.binding_result is not None
+            and self.binding_result is not PrincipalBindingResult.MATCHED
+        ):
+            raise ValueError("AUTHENTICATED_CONTEXT_REQUIRES_MATCHED_BINDING")
 
 
 @dataclass(frozen=True, slots=True)
