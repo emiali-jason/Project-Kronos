@@ -37,7 +37,10 @@ from kronos.provider.services.provider_authentication import (
 _REFERENCE_PATTERN = re.compile(r"[A-Za-z0-9._:-]{1,128}\Z")
 _PROTECTED_REFERENCE_PATTERN = re.compile(r"[A-Za-z0-9._-]{1,64}\Z")
 _SHA_PATTERN = re.compile(r"[0-9a-f]{40}\Z")
-_LIVE_DEPENDENCY_SET_REF = "car017.live.dependencies"
+_COORDINATED_PROVIDER_IDENTITY_REF = "ZERODHA_KITE"
+_KITE_APPLICATION_REGISTRATION_REF = "ZERODHA-KITE-APP-REGISTRATION-PRIMARY"
+_LIVE_DEPENDENCY_SET_REF = "CAR017-LIVE-COMPOSITION-DEPENDENCY-SET-V1"
+_OPERATIONAL_PROVIDER = "KITE"
 
 CapabilityValidator = Callable[[object], bool]
 Clock = Callable[[], datetime]
@@ -67,12 +70,14 @@ class LiveActivationContext:
     __slots__ = (
         "__activation_authority_ref",
         "__activation_capability",
+        "__application_registration_ref",
         "__availability_authority_ref",
         "__composition_dependency_set_ref",
         "__credential_ref",
         "__environment_ref",
         "__implementation_sha",
         "__intended_registration_ref",
+        "__provider_identity_ref",
         "__provider_configuration_ref",
     )
     __hash__ = None
@@ -89,7 +94,9 @@ class LiveActivationContext:
         activation_authority_ref: str,
         implementation_sha: str,
         environment_ref: str,
+        provider_identity_ref: str,
         provider_configuration_ref: str,
+        application_registration_ref: str,
         credential_ref: str,
         intended_registration_ref: str,
         composition_dependency_set_ref: str,
@@ -113,7 +120,9 @@ class LiveActivationContext:
             _valid_reference(activation_authority_ref)
             and _SHA_PATTERN.fullmatch(implementation_sha) is not None
             and _valid_reference(environment_ref)
+            and _valid_reference(provider_identity_ref)
             and _valid_reference(provider_configuration_ref)
+            and _valid_reference(application_registration_ref)
             and _valid_protected_reference(credential_ref)
             and _valid_protected_reference(intended_registration_ref)
             and _valid_reference(composition_dependency_set_ref)
@@ -147,8 +156,18 @@ class LiveActivationContext:
         )
         object.__setattr__(
             instance,
+            "_LiveActivationContext__provider_identity_ref",
+            provider_identity_ref,
+        )
+        object.__setattr__(
+            instance,
             "_LiveActivationContext__provider_configuration_ref",
             provider_configuration_ref,
+        )
+        object.__setattr__(
+            instance,
+            "_LiveActivationContext__application_registration_ref",
+            application_registration_ref,
         )
         object.__setattr__(
             instance,
@@ -188,6 +207,17 @@ class LiveActivationContext:
             == configuration.intended_registration_ref
         )
 
+    def _matches_coordinated_references(
+        self,
+        configuration: ProviderAuthenticationConfiguration,
+    ) -> bool:
+        return (
+            self.__provider_identity_ref == _COORDINATED_PROVIDER_IDENTITY_REF
+            and self.__application_registration_ref
+            == _KITE_APPLICATION_REGISTRATION_REF
+            and configuration.provider == _OPERATIONAL_PROVIDER
+        )
+
     def _matches_dependency_set(self, dependency_set_ref: object) -> bool:
         return dependency_set_ref == self.__composition_dependency_set_ref
 
@@ -204,8 +234,16 @@ class LiveActivationContext:
         return self.__environment_ref
 
     @property
+    def provider_identity_ref(self) -> str:
+        return self.__provider_identity_ref
+
+    @property
     def provider_configuration_ref(self) -> str:
         return self.__provider_configuration_ref
+
+    @property
+    def application_registration_ref(self) -> str:
+        return self.__application_registration_ref
 
     @property
     def composition_dependency_set_ref(self) -> str:
@@ -290,6 +328,10 @@ def compose_kite_authentication(
     ):
         raise LiveCompositionError(LiveCompositionFailure.INVALID_ACTIVATION)
     if type(configuration) is not ProviderAuthenticationConfiguration:
+        raise LiveCompositionError(LiveCompositionFailure.CONFIGURATION_MISMATCH)
+    if not activation._matches_coordinated_references(  # type: ignore[attr-defined]
+        configuration
+    ):
         raise LiveCompositionError(LiveCompositionFailure.CONFIGURATION_MISMATCH)
     if not activation._matches_configuration(configuration):  # type: ignore[attr-defined]
         raise LiveCompositionError(LiveCompositionFailure.CONFIGURATION_MISMATCH)

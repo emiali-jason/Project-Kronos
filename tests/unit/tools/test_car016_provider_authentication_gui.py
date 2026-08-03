@@ -26,6 +26,8 @@ from tools.provider_pilots import car016_provider_authentication_gui as pilot
 _ROOT = Path(__file__).resolve().parents[3]
 _SOURCE = _ROOT / "tools/provider_pilots/car016_provider_authentication_gui.py"
 _IMPLEMENTATION_SHA = "a" * 40
+_PROVIDER_IDENTITY_REF = "ZERODHA_KITE"
+_APPLICATION_REGISTRATION_REF = "ZERODHA-KITE-APP-REGISTRATION-PRIMARY"
 
 
 class _ReviewedFakeCapability:
@@ -42,7 +44,9 @@ def _accepted_activation(
         activation_authority_ref="CAR-017:STAGE-2-FAKE",
         implementation_sha=_IMPLEMENTATION_SHA,
         environment_ref="TEST-NONPROD",
+        provider_identity_ref=_PROVIDER_IDENTITY_REF,
         provider_configuration_ref="kite.primary",
+        application_registration_ref=_APPLICATION_REGISTRATION_REF,
         credential_ref="primary.credential",
         intended_registration_ref="primary.registration",
         composition_dependency_set_ref="car017.stage2.fakes",
@@ -272,6 +276,11 @@ def test_stage1_activation_is_passed_once_without_interpretation() -> None:
     )
 
     assert received == [activation]
+    assert received[0].provider_identity_ref == _PROVIDER_IDENTITY_REF
+    assert (
+        received[0].application_registration_ref
+        == _APPLICATION_REGISTRATION_REF
+    )
     assert view.controls["login"] is True
     assert view.notice == pilot.ACTIVATED_NOTICE
 
