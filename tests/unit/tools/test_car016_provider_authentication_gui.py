@@ -12,14 +12,42 @@ from kronos.provider.models.authentication import (
     AuthenticatedContextState,
     AuthenticationAttemptCancellationResult,
     AuthenticationAttemptState,
+    ProviderAuthenticationConfiguration,
     ProviderAvailabilityState,
     SessionStatus,
+)
+from kronos.provider.kite.composition import (
+    LiveActivationContext,
+    compose_kite_authentication,
 )
 from tools.provider_pilots import car016_provider_authentication_gui as pilot
 
 
 _ROOT = Path(__file__).resolve().parents[3]
 _SOURCE = _ROOT / "tools/provider_pilots/car016_provider_authentication_gui.py"
+_IMPLEMENTATION_SHA = "a" * 40
+
+
+class _ReviewedFakeCapability:
+    pass
+
+
+def _accepted_activation(
+    capability: object | None = None,
+) -> tuple[LiveActivationContext, object]:
+    selected_capability = capability or _ReviewedFakeCapability()
+    context = LiveActivationContext.from_reviewed_capability(
+        activation_capability=selected_capability,
+        capability_validator=lambda candidate: candidate is selected_capability,
+        activation_authority_ref="CAR-017:STAGE-2-FAKE",
+        implementation_sha=_IMPLEMENTATION_SHA,
+        environment_ref="TEST-NONPROD",
+        provider_configuration_ref="kite.primary",
+        credential_ref="primary.credential",
+        intended_registration_ref="primary.registration",
+        composition_dependency_set_ref="car017.stage2.fakes",
+    )
+    return context, selected_capability
 
 
 class _FakeRoot:
@@ -95,6 +123,8 @@ class _FakeService:
         self.effect: Exception | None = None
         self.before_cancel: Callable[[], None] | None = None
         self.before_begin: Callable[[], None] | None = None
+        self.composition_count = 0
+        self.composed_activation: object | None = None
 
     def begin_login(self) -> object:
         if self.before_begin is not None:
@@ -166,14 +196,21 @@ def _functional_controller(
     _DeferredWorker,
 ]:
     selected_service = service or _FakeService()
+    activation, _ = _accepted_activation()
     view = _FakeView()
     worker = _DeferredWorker()
+
+    def compose(received: LiveActivationContext) -> _FakeService:
+        selected_service.composition_count += 1
+        selected_service.composed_activation = received
+        return selected_service
+
     controller = pilot.Car016AuthenticationPilotController(
         view=view,
-        service=selected_service,  # type: ignore[arg-type]
         worker_submit=worker.submit,
         confirmation=confirmation,
-        activation=pilot._OFFLINE_FAKE_ACTIVATION,
+        activation=activation,
+        composition_factory=compose,
         availability_authorized=availability_authorized,
     )
     return controller, view, selected_service, worker
@@ -215,15 +252,217 @@ def test_ordinary_direct_launch_is_inspection_only() -> None:
     assert view.notice == pilot.INSPECTION_NOTICE
 
 
+def test_stage1_activation_is_passed_once_without_interpretation() -> None:
+    activation, _ = _accepted_activation()
+    service = _FakeService()
+    view = _FakeView()
+    worker = _DeferredWorker()
+    received: list[LiveActivationContext] = []
+
+    def composition(context: LiveActivationContext) -> _FakeService:
+        received.append(context)
+        return service
+
+    pilot.Car016AuthenticationPilotController(
+        view=view,
+        worker_submit=worker.submit,
+        confirmation=lambda: True,
+        activation=activation,
+        composition_factory=composition,
+    )
+
+    assert received == [activation]
+    assert view.controls["login"] is True
+    assert view.notice == pilot.ACTIVATED_NOTICE
+
+
+def test_stage2_source_does_not_own_or_interpret_activation_context() -> None:
+    source = _SOURCE.read_text()
+    tree = ast.parse(source)
+    class_names = {
+        node.name for node in ast.walk(tree) if isinstance(node, ast.ClassDef)
+    }
+    called_attributes = {
+        node.func.attr
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+    }
+    activation_attributes = {
+        node.attr
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Attribute)
+        and isinstance(node.value, ast.Name)
+        and node.value.id == "activation"
+    }
+
+    assert "LiveActivationContext" not in class_names
+    assert "from_reviewed_capability" not in called_attributes
+    assert activation_attributes == set()
+    assert "compose_kite_authentication" not in source
+    assert "isinstance(activation" not in source
+    assert "type(activation" not in source
+    assert "_matches_" not in source
+
+
+def test_explicit_main_injection_enables_only_the_composed_presentation() -> None:
+    activation, _ = _accepted_activation()
+    service = _FakeService()
+    root = _FakeRoot()
+    view = _FakeView()
+    worker = _DeferredWorker()
+    received: list[LiveActivationContext] = []
+
+    def composition(context: LiveActivationContext) -> _FakeService:
+        received.append(context)
+        return service
+
+    pilot.main(
+        root_factory=lambda: root,
+        view_factory=lambda _root: view,
+        activation=activation,
+        composition_factory=composition,
+        worker_submit=worker.submit,
+        confirmation=lambda: True,
+    )
+
+    assert received == [activation]
+    assert root.mainloop_count == 1
+    assert view.controls == {
+        "login": True,
+        "cancel": False,
+        "verify": False,
+        "end": False,
+    }
+
+
+def test_ambient_and_gui_state_cannot_create_activation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    activation, _ = _accepted_activation()
+    service = _FakeService()
+    root = _FakeRoot()
+    view = _FakeView()
+    composition_calls = 0
+
+    def composition(_context: LiveActivationContext) -> _FakeService:
+        nonlocal composition_calls
+        composition_calls += 1
+        return service
+
+    monkeypatch.setenv("KRONOS_LIVE_ACTIVATION", "enabled")
+    monkeypatch.setattr(pilot, "ambient_activation", activation, raising=False)
+    view.activation = activation
+
+    pilot.main(
+        root_factory=lambda: root,
+        view_factory=lambda _root: view,
+        composition_factory=composition,
+        worker_submit=lambda _operation: None,
+        confirmation=lambda: True,
+    )
+
+    assert composition_calls == 0
+    assert service.begin_count == 0
+    assert view.controls["login"] is False
+    assert view.notice == pilot.INSPECTION_NOTICE
+
+
+def test_composition_rejection_is_sanitized_and_keeps_controls_disabled() -> None:
+    activation, _ = _accepted_activation()
+    view = _FakeView()
+    worker = _DeferredWorker()
+
+    def reject(_context: LiveActivationContext) -> _FakeService:
+        raise RuntimeError("raw-composition-material")
+
+    controller = pilot.Car016AuthenticationPilotController(
+        view=view,
+        worker_submit=worker.submit,
+        confirmation=lambda: True,
+        activation=activation,
+        composition_factory=reject,
+    )
+    controller.login()
+
+    assert "raw-composition-material" not in view.rendered
+    assert view.notice == pilot.INSPECTION_NOTICE
+    assert all(enabled is False for enabled in view.controls.values())
+    assert worker.operations == []
+
+
+@pytest.mark.parametrize("missing", ["composition", "worker", "confirmation"])
+def test_incomplete_injected_seams_remain_inspection_only(missing: str) -> None:
+    activation, _ = _accepted_activation()
+    service = _FakeService()
+    view = _FakeView()
+    worker = _DeferredWorker()
+    composition_calls = 0
+
+    def composition(_context: LiveActivationContext) -> _FakeService:
+        nonlocal composition_calls
+        composition_calls += 1
+        return service
+
+    pilot.Car016AuthenticationPilotController(
+        view=view,
+        worker_submit=None if missing == "worker" else worker.submit,
+        confirmation=None if missing == "confirmation" else lambda: True,
+        activation=activation,
+        composition_factory=None if missing == "composition" else composition,
+    )
+
+    assert composition_calls == 0
+    assert view.notice == pilot.INSPECTION_NOTICE
+    assert all(enabled is False for enabled in view.controls.values())
+
+
+def test_fake_activation_cannot_enable_real_composition_dependencies() -> None:
+    activation, capability = _accepted_activation()
+    view = _FakeView()
+    worker = _DeferredWorker()
+    configuration = ProviderAuthenticationConfiguration(
+        provider="KITE",
+        _api_key="ABC123",
+        redirect_uri="http://127.0.0.1:8765/kite/callback",
+        intended_registration_ref="primary.registration",
+        credential_ref="primary.credential",
+    )
+
+    def composition(context: LiveActivationContext) -> object:
+        return compose_kite_authentication(
+            context,
+            activation_capability=capability,
+            configuration=configuration,
+            composition_dependency_set_ref="car017.stage2.fakes",
+        )
+
+    pilot.Car016AuthenticationPilotController(
+        view=view,
+        worker_submit=worker.submit,
+        confirmation=lambda: True,
+        activation=activation,
+        composition_factory=composition,  # type: ignore[arg-type]
+    )
+
+    assert view.notice == pilot.INSPECTION_NOTICE
+    assert all(enabled is False for enabled in view.controls.values())
+    assert worker.operations == []
+
+
 def test_controller_construction_without_fake_capability_is_inert() -> None:
     view = _FakeView()
     service = _FakeService()
     worker = _DeferredWorker()
 
+    def composition(_activation: LiveActivationContext) -> _FakeService:
+        service.composition_count += 1
+        return service
+
     controller = pilot.Car016AuthenticationPilotController(
         view=view,
-        service=service,  # type: ignore[arg-type]
         worker_submit=worker.submit,
+        confirmation=lambda: True,
+        composition_factory=composition,
     )
     controller.login()
     controller.cancel()
@@ -235,6 +474,7 @@ def test_controller_construction_without_fake_capability_is_inert() -> None:
     assert service.cancel_count == 0
     assert service.verify_count == 0
     assert service.end_count == 0
+    assert service.composition_count == 0
     assert worker.operations == []
 
 
@@ -281,6 +521,8 @@ def test_fake_login_runs_one_attempt_and_one_worker_completion() -> None:
 
     controller.login()
 
+    assert service.composition_count == 1
+    assert type(service.composed_activation) is LiveActivationContext
     assert service.begin_count == 1
     assert service.complete_count == 0
     assert len(worker.operations) == 1

@@ -6,11 +6,14 @@ from collections.abc import Callable
 from dataclasses import dataclass
 import tkinter as tk
 from tkinter import ttk
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from kronos.provider.contracts.provider_authentication import (
     ProviderAuthenticationService,
 )
+
+if TYPE_CHECKING:
+    from kronos.provider.kite.composition import LiveActivationContext
 
 
 WINDOW_TITLE = "KRONOS — CAR-016 Authentication Inspection"
@@ -18,6 +21,15 @@ INSPECTION_NOTICE = (
     "INSPECTION ONLY — CAR-016 Version 1.0 grants no live authority. "
     "All lifecycle controls are disabled."
 )
+ACTIVATED_NOTICE = (
+    "REVIEWED ACTIVATION CAPABILITY — no live authority is granted here. "
+    "Provider availability requires separate authority."
+)
+
+CompositionFactory = Callable[
+    ["LiveActivationContext"],
+    ProviderAuthenticationService,
+]
 
 _ATTEMPT_STATES = frozenset(
     {
@@ -61,11 +73,6 @@ _FAILURE_CODES = frozenset(
         "SANITIZED_LOCAL_FAILURE",
     }
 )
-class _OfflineFakeActivation:
-    __slots__ = ()
-
-
-_OFFLINE_FAKE_ACTIVATION = _OfflineFakeActivation()
 
 
 @dataclass(frozen=True, slots=True)
@@ -87,7 +94,7 @@ class SanitizedPilotState:
 
 
 class Car016AuthenticationPilotController:
-    """Thin controller; functional calls require the offline fake capability."""
+    """Thin presentation controller consuming one injected Stage 1 capability."""
 
     __slots__ = (
         "__attempt",
@@ -105,18 +112,26 @@ class Car016AuthenticationPilotController:
         self,
         *,
         view: Any,
-        service: ProviderAuthenticationService | None = None,
         worker_submit: Callable[[Callable[[], None]], None] | None = None,
         confirmation: Callable[[], bool] | None = None,
-        activation: object | None = None,
+        activation: LiveActivationContext | None = None,
+        composition_factory: CompositionFactory | None = None,
         availability_authorized: bool = False,
     ) -> None:
-        functional = (
-            activation is _OFFLINE_FAKE_ACTIVATION
-            and service is not None
+        composition_ready = (
+            activation is not None
+            and callable(composition_factory)
             and worker_submit is not None
             and confirmation is not None
         )
+        service: ProviderAuthenticationService | None = None
+        if composition_ready and composition_factory is not None:
+            try:
+                service = composition_factory(activation)
+            except Exception:
+                service = None
+        del activation
+        functional = service is not None
         self.__view = view
         self.__service = service if functional else None
         self.__worker_submit = worker_submit if functional else None
@@ -129,14 +144,14 @@ class Car016AuthenticationPilotController:
         view.bind(self)
         view.show_state(SanitizedPilotState().render())
         if functional:
-            view.set_notice("OFFLINE FAKE COMPOSITION — NO LIVE AUTHORITY")
+            view.set_notice(ACTIVATED_NOTICE)
             self.__set_controls(login=True)
         else:
             view.set_notice(INSPECTION_NOTICE)
             self.__set_controls()
 
     def login(self) -> None:
-        """Begin at most one fake-composed attempt and complete it on a worker."""
+        """Begin at most one composed attempt and complete it on a worker."""
 
         service = self.__service
         submit = self.__worker_submit
@@ -172,7 +187,7 @@ class Car016AuthenticationPilotController:
             self.__show_local_failure()
 
     def cancel(self) -> None:
-        """Cancel only the current non-terminal fake attempt."""
+        """Cancel only the current non-terminal composed attempt."""
 
         service = self.__service
         attempt = self.__attempt
@@ -213,7 +228,7 @@ class Car016AuthenticationPilotController:
         self.refresh_state()
 
     def end_kronos_session(self) -> None:
-        """End only an ACTIVE fake-composed local session."""
+        """End only an ACTIVE composed local session."""
 
         service = self.__service
         if not self.__functional or service is None:
@@ -433,12 +448,24 @@ def main(
     *,
     root_factory: Callable[[], Any] = tk.Tk,
     view_factory: Callable[[Any], Any] = _TkView,
+    activation: LiveActivationContext | None = None,
+    composition_factory: CompositionFactory | None = None,
+    worker_submit: Callable[[Callable[[], None]], None] | None = None,
+    confirmation: Callable[[], bool] | None = None,
+    availability_authorized: bool = False,
 ) -> None:
-    """Open the permanently inspection-only direct-launch composition."""
+    """Open inspection mode unless reviewed activation seams are injected."""
 
     root = root_factory()
     view = view_factory(root)
-    Car016AuthenticationPilotController(view=view)
+    Car016AuthenticationPilotController(
+        view=view,
+        worker_submit=worker_submit,
+        confirmation=confirmation,
+        activation=activation,
+        composition_factory=composition_factory,
+        availability_authorized=availability_authorized,
+    )
     root.mainloop()
 
 
