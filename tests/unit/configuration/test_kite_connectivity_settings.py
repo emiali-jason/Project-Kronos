@@ -4,7 +4,7 @@ import pytest
 
 from kronos.configuration import loader
 from kronos.configuration.exceptions import ConfigurationError
-from kronos.configuration.settings import Settings
+from kronos.configuration.settings import CAR016_KITE_REDIRECT_URL, Settings
 
 
 def _settings(
@@ -164,3 +164,165 @@ def test_loader_reads_access_token_through_configuration_only(
 
     assert settings.kite_access_token == "unit-access-token"
     settings.validate_kite_connectivity()
+
+
+def _car016_settings(
+    *,
+    provider: str = "KITE",
+    api_key: str = "unit-api-key",
+    redirect_url: str = CAR016_KITE_REDIRECT_URL,
+    credential_ref: str = "kite-primary",
+    registration_ref: str = "sponsor-primary",
+    legacy_secret: str = "",
+) -> Settings:
+    return Settings(
+        provider=provider,
+        kite_api_key=api_key,
+        kite_api_secret=legacy_secret,
+        kite_access_token="",
+        kite_redirect_url=redirect_url,
+        kite_credential_ref=credential_ref,
+        kite_intended_registration_ref=registration_ref,
+    )
+
+
+def test_car016_configuration_uses_protected_references_not_plaintext_secret() -> None:
+    settings = _car016_settings(legacy_secret="plaintext-must-not-satisfy-path")
+
+    settings.validate_car016_provider_authentication()
+    configuration = settings.provider_authentication_configuration()
+
+    assert configuration.provider == "KITE"
+    assert configuration.redirect_uri == CAR016_KITE_REDIRECT_URL
+    assert configuration.credential_ref == "kite-primary"
+    assert configuration.intended_registration_ref == "sponsor-primary"
+    assert "plaintext-must-not-satisfy-path" not in repr(configuration)
+
+
+@pytest.mark.parametrize(
+    (
+        "provider",
+        "api_key",
+        "redirect_url",
+        "credential_ref",
+        "registration_ref",
+        "name",
+    ),
+    [
+        (
+            "OTHER",
+            "unit",
+            CAR016_KITE_REDIRECT_URL,
+            "cred",
+            "principal",
+            "KRONOS_PROVIDER",
+        ),
+        (
+            "KITE",
+            "",
+            CAR016_KITE_REDIRECT_URL,
+            "cred",
+            "principal",
+            "KRONOS_KITE_API_KEY",
+        ),
+        (
+            "KITE",
+            "unit",
+            "http://localhost:8765/kite/callback",
+            "cred",
+            "principal",
+            "KRONOS_KITE_REDIRECT_URL",
+        ),
+        (
+            "KITE",
+            "unit",
+            CAR016_KITE_REDIRECT_URL,
+            "",
+            "principal",
+            "KRONOS_KITE_CREDENTIAL_REF",
+        ),
+        (
+            "KITE",
+            "unit",
+            CAR016_KITE_REDIRECT_URL,
+            "bad ref",
+            "principal",
+            "KRONOS_KITE_CREDENTIAL_REF",
+        ),
+        (
+            "KITE",
+            "unit",
+            CAR016_KITE_REDIRECT_URL,
+            "cred",
+            "",
+            "KRONOS_KITE_INTENDED_REGISTRATION_REF",
+        ),
+    ],
+)
+def test_car016_configuration_validation_is_fail_closed_and_sanitized(
+    provider: str,
+    api_key: str,
+    redirect_url: str,
+    credential_ref: str,
+    registration_ref: str,
+    name: str,
+) -> None:
+    settings = _car016_settings(
+        provider=provider,
+        api_key=api_key,
+        redirect_url=redirect_url,
+        credential_ref=credential_ref,
+        registration_ref=registration_ref,
+        legacy_secret="plaintext-secret",
+    )
+
+    with pytest.raises(ConfigurationError) as captured:
+        settings.validate_car016_provider_authentication()
+
+    assert name in str(captured.value)
+    assert "plaintext-secret" not in str(captured.value)
+
+
+def test_plaintext_secret_alone_cannot_satisfy_car016() -> None:
+    settings = _car016_settings(
+        credential_ref="",
+        registration_ref="",
+        legacy_secret="legacy-plaintext-secret",
+    )
+
+    with pytest.raises(ConfigurationError, match="KRONOS_KITE_CREDENTIAL_REF"):
+        settings.validate_car016_provider_authentication()
+
+
+def test_car016_loader_does_not_read_plaintext_secret_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(loader, "load_dotenv", lambda: None)
+    monkeypatch.setenv("KRONOS_PROVIDER", "KITE")
+    monkeypatch.setenv("KRONOS_KITE_API_KEY", "unit-api-key")
+    monkeypatch.setenv("KRONOS_KITE_API_SECRET", "must-not-be-loaded")
+    monkeypatch.setenv("KRONOS_KITE_CREDENTIAL_REF", "kite-primary")
+    monkeypatch.setenv("KRONOS_KITE_INTENDED_REGISTRATION_REF", "sponsor-primary")
+    monkeypatch.delenv("KRONOS_KITE_REDIRECT_URL", raising=False)
+
+    configuration = loader.load_provider_authentication_configuration()
+
+    assert configuration.provider == "KITE"
+    assert configuration.redirect_uri == CAR016_KITE_REDIRECT_URL
+    assert configuration.credential_ref == "kite-primary"
+    assert "must-not-be-loaded" not in repr(configuration)
+
+
+def test_legacy_loader_behavior_remains_available_outside_car016(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(loader, "load_dotenv", lambda: None)
+    monkeypatch.setenv("KRONOS_PROVIDER", "KITE")
+    monkeypatch.setenv("KRONOS_KITE_API_KEY", "unit-api-key")
+    monkeypatch.setenv("KRONOS_KITE_API_SECRET", "legacy-secret")
+    monkeypatch.setenv("KRONOS_KITE_REDIRECT_URL", "http://localhost:8000/callback")
+
+    settings = loader.load_settings()
+
+    assert settings.kite_api_secret == "legacy-secret"
+    settings.validate_kite_authentication()
