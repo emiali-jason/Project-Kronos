@@ -2,7 +2,7 @@
 
 **Document ID:** CAR-017
 **Title:** Live Composition Layer Implementation Authorization
-**Version:** 1.0
+**Version:** 1.1
 **Status:** Approved
 **Canonical Status:** Canonical
 **Classification:** Review Package
@@ -10,9 +10,9 @@
 **Prepared By:** Engineering Architect
 **Review Authority:** Chief Architect
 **Repository Location:** `docs/governance/reviews/CAR-017-LIVE-COMPOSITION-LAYER-IMPLEMENTATION-AUTHORIZATION.md`
-**Workflow Stage:** Repository Publication
-**Decision:** APPROVED FOR CANONICAL PUBLICATION WITH FINAL CONDITIONS
-**Implementation Authority:** Authorized with Constraints — Stage 1 only after publication
+**Workflow Stage:** Implementation Conformance Complete
+**Decision:** IMPLEMENTATION COMPLETE — EDD-001 VERSION 1.1 CONFORMANT
+**Implementation Authority:** Completed
 **Runtime Authority:** None
 **Live Authority:** None
 **Credential Authority:** None
@@ -28,17 +28,20 @@
 **Authoritative Branch:** `develop`
 **Exact Implementation Baseline:** `8c401890f1bfd8bf587621d7f31d2f7f75f531c8`
 **Frozen Upstream CAR-016 Implementation SHA:** `bb5aa16fbc4fda2609376d53161d591fb0fe0d36`
-**Exact Implementation/Test Path Count:** 8
+**CAR-017 Version 1.0 Publication SHA:** `6539e6282d482da0cc7f1f181db74aa4b4d6f692`
+**Stage 1 SHA:** `1769dd641e8af1d6ea4eddb7dea8a0d1177a2eb8`
+**Stage 2 and Frozen Final Implementation SHA:** `7ea79305b2330721fbb6d5549034b0c05cb6e162`
+**Completed Implementation/Test Path Count:** 8
 
 ---
 
 # 1. Purpose
 
-CAR-017 Version 1.0 is the bounded implementation authority for the Live Composition Layer required to assemble the completed CAR-016 authentication platform into a reviewed live-capable but externally inert composition.
+CAR-017 Version 1.1 records completion and EDD-001 Version 1.1 conformance of the bounded Live Composition Layer implementation required to assemble the completed CAR-016 authentication platform into a reviewed live-capable but externally inert composition.
 
-Canonical publication activates Stage 1 implementation and fake-only verification only. It grants no Stage 1 commit or push without the separate gates in Section 14 and no runtime, credential, Keychain, browser, listener, SDK, Provider endpoint, network, trading, live-execution or CAR-014 authority.
+Version 1.0 authorized the exact two-stage implementation and fake-only verification described below. Both Engineering Architect-gated stages are completed at the frozen final implementation SHA. Version 1.1 grants no further implementation, runtime, credential, Keychain, browser, listener, SDK, Provider endpoint, network, trading, live-execution or CAR-014 authority.
 
-Stage 2 and all external effects remain withheld.
+All external effects remain withheld. Any live activation requires the later separately governed Version 1.2 lifecycle; Version 1.1 does not activate it.
 
 # 2. Governing Authority
 
@@ -506,7 +509,7 @@ Every revision requires separate review, publication, commit and push authority.
 
 # 17. Explicitly Withheld Authority
 
-The following remain `NONE` throughout Version 1.0 preparation, implementation and offline verification:
+The following remain `NONE` throughout Version 1.0 preparation, implementation and offline verification and Version 1.1 conformance recording:
 
 - Runtime;
 - Credentials;
@@ -519,7 +522,7 @@ The following remain `NONE` throughout Version 1.0 preparation, implementation a
 - Trading; and
 - CAR-014.
 
-Version 1.0 also withholds:
+Versions 1.0 and 1.1 also withhold:
 
 - live authentication;
 - real activation-context creation;
@@ -538,13 +541,91 @@ Version 1.0 also withholds:
 - deployment, polling, scheduling or automatic login; and
 - commit or push without the exact applicable gate.
 
-# 18. Canonical Disposition
+# 18. Version 1.1 Completed Implementation and Conformance Record
 
-CAR-017 Version 1.0 is Approved and Canonical upon synchronization of its authorized governance-only publication commit to `origin/develop`.
+## 18.1 Controlled SHA chain
 
-Publication activates Stage 1 implementation and fake-only verification only. Stage 1 evidence acceptance, commit and push remain separately gated. Stage 2, Version 1.1 conformance, Version 1.2 live activation and Version 1.3 outcome recording each remain separately governed.
+The completed governed implementation chain is:
 
-**Implementation Authority:** Authorized with Constraints — Stage 1 only after publication
+| Gate | Exact commit SHA | Controlled result |
+|---|---|---|
+| CAR-017 Version 1.0 publication | `6539e6282d482da0cc7f1f181db74aa4b4d6f692` | Governance-only staged implementation authority published |
+| Stage 1 | `1769dd641e8af1d6ea4eddb7dea8a0d1177a2eb8` | Live composition infrastructure completed |
+| Stage 2 | `7ea79305b2330721fbb6d5549034b0c05cb6e162` | Pilot presentation integration completed |
+
+The Stage 2 SHA is the frozen final CAR-017 implementation SHA. The completed implementation consists of exactly these eight authorized paths:
+
+1. `src/kronos/configuration/apple_keychain.py`;
+2. `src/kronos/provider/adapters/kite/navigation.py`;
+3. `src/kronos/provider/kite/composition.py`;
+4. `tools/provider_pilots/car016_provider_authentication_gui.py`;
+5. `tests/unit/configuration/test_apple_keychain.py`;
+6. `tests/unit/provider/test_kite_login_navigator.py`;
+7. `tests/unit/provider/test_kite_authentication_composition.py`; and
+8. `tests/unit/tools/test_car016_provider_authentication_gui.py`.
+
+No ninth implementation or test path entered either stage. No architecture, EDD, dependency, configuration, fixture or unrelated Provider path changed.
+
+## 18.2 Verification evidence
+
+| Verification | Result |
+|---|---|
+| Focused Stage 2 tests | 31 PASSED |
+| All CAR-017 focused tests | 116 PASSED |
+| Complete offline regression | 643 PASSED |
+| Secret scan | PASS |
+| Sensitive-material scan | PASS |
+| Ordinary direct launch | Inspection-only |
+| `LiveActivationContext` ownership | Stage 1 only |
+| Live composition responsibility | Wiring only |
+| Duplicate authentication or Provider path | ABSENT |
+| Real external-effect activity | NONE |
+| CAR-014 execution | NO — remains unexecuted |
+
+No verification accessed credentials or Apple Keychain, opened a browser or production listener, constructed a real Kite SDK client, or made a network or Provider call.
+
+## 18.3 EDD-001 Version 1.1 conformance
+
+The frozen implementation conforms to EDD-001 Version 1.1 within the exact CAR-017 scope:
+
+1. `LiveActivationContext` remains immutable, redacted and non-serializable, and Stage 1 exclusively owns its definition, construction, provenance validation, activation-capability validation, type validation, fake/live separation and pre-factory enforcement;
+2. Configuration, environment, command-line, module, file, import, successful-test, synthetic, malformed and wrong-provenance material cannot create activation authority;
+3. invalid activation is rejected before Keychain, intended-principal, browser, callback-listener, SDK-adapter, service or Provider dependency construction;
+4. the Apple Keychain integration remains retrieval-only and preserves separate API-secret and intended-principal purposes;
+5. the Kite LoginNavigator preserves the exact governed URL policy, one browser-opener invocation maximum and no retry or fallback;
+6. the live composition layer performs wiring only and introduces no authentication, callback, credential, Provider, SDK, context-establishment or availability logic;
+7. Stage 2 consumes the already accepted Stage 1 capability through presentation seams only and does not define, validate, mutate, reinterpret, infer, replace or bypass it;
+8. ordinary import and direct launch remain effect-free and inspection-only, with all lifecycle controls disabled without accepted activation;
+9. Login remains one-shot, availability verification remains separately gated, and GUI close preserves required local cancellation;
+10. only sanitized state and outcomes are displayed; and
+11. no duplicate authentication, callback, Provider, context-establishment or availability path exists.
+
+All external effects remain deferred behind the existing reviewed seams.
+
+## 18.4 Authority disposition
+
+- **Implementation status:** Complete at `7ea79305b2330721fbb6d5549034b0c05cb6e162`.
+- **Further implementation authority:** None.
+- **Runtime authority:** None.
+- **Live authority:** None.
+- **Credential-use authority:** None.
+- **Keychain authority:** None.
+- **Browser/listener authority:** None.
+- **SDK/Provider endpoint authority:** None.
+- **Network authority:** None.
+- **CAR-014 status:** Unexecuted.
+
+Version 1.1 is a conformance record only. It does not activate Version 1.2, authorize live execution, access any protected value or consume an Authentication Attempt.
+
+# 19. Canonical Disposition
+
+CAR-017 Version 1.1 is Approved and Canonical upon synchronization of its authorized governance-only publication commit to `origin/develop`.
+
+Version 1.0 implementation authority is completed. Version 1.1 records the accepted two-stage implementation and EDD-001 Version 1.1 conformance. Version 1.2 live activation and Version 1.3 outcome recording remain separately governed and inactive.
+
+**Implementation Status:** Completed at `7ea79305b2330721fbb6d5549034b0c05cb6e162`
+
+**Further Implementation Authority:** None
 
 **Runtime Authority:** None
 
@@ -554,7 +635,7 @@ Publication activates Stage 1 implementation and fake-only verification only. St
 
 **CAR-014:** Unexecuted and unauthorized
 
-# 19. References
+# 20. References
 
 - [ADR-010 Version 1.0](../../architecture/platform/domains/provider/ADR-010-PROVIDER-AUTHENTICATION-SHARED-PLATFORM-CAPABILITY.md)
 - [DOMAIN-006 Version 1.1](../../architecture/platform/domains/provider/ARCHITECTURE.md)
