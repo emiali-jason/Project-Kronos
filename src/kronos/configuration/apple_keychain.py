@@ -12,6 +12,13 @@ from kronos.configuration.credentials import (
     OneUseSecretLease,
     SecretLease,
 )
+from kronos.configuration.principals import (
+    IntendedPrincipalLease,
+    IntendedPrincipalResolutionOutcome,
+    IntendedPrincipalResolutionResult,
+    OneUseIntendedPrincipalLease,
+    PrincipalBindingResult,
+)
 
 
 SECURITY_EXECUTABLE = "/usr/bin/security"
@@ -20,9 +27,16 @@ DEFAULT_TIMEOUT_SECONDS = 5.0
 MAX_TIMEOUT_SECONDS = 10.0
 
 _REFERENCE_PATTERN = re.compile(r"[A-Za-z0-9._-]{1,64}\Z")
+_PRINCIPAL_PATTERN = re.compile(r"[A-Za-z0-9]{1,64}\Z")
 _MISSING_RETURN_CODES = frozenset({44})
 _ACCESS_DENIED_RETURN_CODES = frozenset({36, 51})
 _MINIMAL_ENVIRONMENT = (("LANG", "C"), ("PATH", "/usr/bin:/bin"))
+_API_SECRET_PURPOSE = "api-secret:"
+_INTENDED_PRINCIPAL_PURPOSE = "intended-principal:"
+_ALLOWED_ACCOUNT_PURPOSES = (
+    _API_SECRET_PURPOSE,
+    _INTENDED_PRINCIPAL_PURPOSE,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -121,44 +135,12 @@ class AppleKeychainCredentialSource:
                 "-s",
                 f"{SERVICE_PREFIX}{self._provider}",
                 "-a",
-                f"api-secret:{credential_ref}",
+                f"{_API_SECRET_PURPOSE}{credential_ref}",
             ),
             timeout_seconds=self._timeout_seconds,
         )
 
-        try:
-            result = self._runner(request)
-        except TimeoutError:
-            raise AppleKeychainCredentialError(
-                CredentialRetrievalOutcome.TIMED_OUT
-            ) from None
-        except PermissionError:
-            raise AppleKeychainCredentialError(
-                CredentialRetrievalOutcome.ACCESS_DENIED
-            ) from None
-        except (FileNotFoundError, OSError):
-            raise AppleKeychainCredentialError(
-                CredentialRetrievalOutcome.BACKEND_UNAVAILABLE
-            ) from None
-        except Exception:
-            raise AppleKeychainCredentialError(
-                CredentialRetrievalOutcome.BACKEND_UNAVAILABLE
-            ) from None
-
-        if not isinstance(result, SubprocessResult):
-            raise AppleKeychainCredentialError(
-                CredentialRetrievalOutcome.MALFORMED
-            )
-
-        returncode = result.returncode
-        stdout, stderr = result._take_output()
-        if returncode != 0:
-            raise AppleKeychainCredentialError(
-                _outcome_for_returncode(returncode)
-            )
-        if stderr:
-            raise AppleKeychainCredentialError(CredentialRetrievalOutcome.MALFORMED)
-
+        stdout = _retrieve_once(self._runner, request)
         secret = _decode_secret(stdout)
         return OneUseSecretLease(secret)
 
@@ -170,6 +152,95 @@ class AppleKeychainCredentialSource:
 
     def __reduce_ex__(self, _protocol: int) -> object:
         raise TypeError("CREDENTIAL_SOURCE_SERIALIZATION_PROHIBITED")
+
+
+class AppleKeychainIntendedPrincipalResolver:
+    """Resolve one intended principal through retrieval-only Keychain custody."""
+
+    __slots__ = ("_provider", "_runner", "_timeout_seconds")
+
+    def __init__(
+        self,
+        *,
+        provider: str,
+        runner: SubprocessRunner,
+        timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
+    ) -> None:
+        if not _valid_reference(provider) or not (
+            0 < timeout_seconds <= MAX_TIMEOUT_SECONDS
+        ):
+            raise AppleKeychainCredentialError(
+                CredentialRetrievalOutcome.MALFORMED
+            )
+        self._provider = provider.lower()
+        self._runner = runner
+        self._timeout_seconds = timeout_seconds
+
+    def use_resolved_once(
+        self,
+        registration_ref: str,
+        operation: Callable[[IntendedPrincipalLease], PrincipalBindingResult],
+    ) -> IntendedPrincipalResolutionResult:
+        """Supply one protected principal lease and retain only its outcome."""
+
+        if not _valid_reference(registration_ref) or not callable(operation):
+            return IntendedPrincipalResolutionResult(
+                IntendedPrincipalResolutionOutcome.INVALID_CONFIGURATION
+            )
+
+        request = SubprocessRequest(
+            argv=(
+                SECURITY_EXECUTABLE,
+                "find-generic-password",
+                "-w",
+                "-s",
+                f"{SERVICE_PREFIX}{self._provider}",
+                "-a",
+                f"{_INTENDED_PRINCIPAL_PURPOSE}{registration_ref}",
+            ),
+            timeout_seconds=self._timeout_seconds,
+        )
+        try:
+            stdout = _retrieve_once(self._runner, request)
+        except AppleKeychainCredentialError as error:
+            return IntendedPrincipalResolutionResult(
+                _principal_outcome(error.outcome)
+            )
+
+        try:
+            expected_principal = _decode_principal(stdout)
+            lease = OneUseIntendedPrincipalLease(expected_principal)
+        except Exception:
+            return IntendedPrincipalResolutionResult(
+                IntendedPrincipalResolutionOutcome.SANITIZED_FAILURE
+            )
+        finally:
+            stdout = b""
+
+        del expected_principal
+        try:
+            result = operation(lease)
+            if not isinstance(result, PrincipalBindingResult):
+                raise TypeError("PRINCIPAL_BINDING_RESULT_INVALID")
+        except Exception:
+            return IntendedPrincipalResolutionResult(
+                IntendedPrincipalResolutionOutcome.SANITIZED_FAILURE
+            )
+        finally:
+            lease.close()
+
+        return IntendedPrincipalResolutionResult(
+            IntendedPrincipalResolutionOutcome.RESOLVED,
+            result,
+        )
+
+    def __repr__(self) -> str:
+        return "<AppleKeychainIntendedPrincipalResolver redacted>"
+
+    __str__ = __repr__
+
+    def __reduce_ex__(self, _protocol: int) -> object:
+        raise TypeError("INTENDED_PRINCIPAL_RESOLVER_SERIALIZATION_PROHIBITED")
 
 
 def run_security_subprocess(request: SubprocessRequest) -> SubprocessResult:
@@ -223,12 +294,21 @@ def _valid_security_request(request: SubprocessRequest) -> bool:
         or service_flag != "-s"
         or account_flag != "-a"
         or not service.startswith(SERVICE_PREFIX)
-        or not account.startswith("api-secret:")
     ):
         return False
-    return _valid_reference(service.removeprefix(SERVICE_PREFIX)) and _valid_reference(
-        account.removeprefix("api-secret:")
+    account_reference = _account_reference(account)
+    return (
+        _valid_reference(service.removeprefix(SERVICE_PREFIX))
+        and account_reference is not None
+        and _valid_reference(account_reference)
     )
+
+
+def _account_reference(account: str) -> str | None:
+    for purpose in _ALLOWED_ACCOUNT_PURPOSES:
+        if account.startswith(purpose):
+            return account.removeprefix(purpose)
+    return None
 
 
 def _valid_reference(value: object) -> bool:
@@ -241,6 +321,45 @@ def _outcome_for_returncode(returncode: int) -> CredentialRetrievalOutcome:
     if returncode in _ACCESS_DENIED_RETURN_CODES:
         return CredentialRetrievalOutcome.ACCESS_DENIED
     return CredentialRetrievalOutcome.BACKEND_UNAVAILABLE
+
+
+def _retrieve_once(
+    runner: SubprocessRunner,
+    request: SubprocessRequest,
+) -> bytes:
+    try:
+        result = runner(request)
+    except TimeoutError:
+        raise AppleKeychainCredentialError(
+            CredentialRetrievalOutcome.TIMED_OUT
+        ) from None
+    except PermissionError:
+        raise AppleKeychainCredentialError(
+            CredentialRetrievalOutcome.ACCESS_DENIED
+        ) from None
+    except (FileNotFoundError, OSError):
+        raise AppleKeychainCredentialError(
+            CredentialRetrievalOutcome.BACKEND_UNAVAILABLE
+        ) from None
+    except Exception:
+        raise AppleKeychainCredentialError(
+            CredentialRetrievalOutcome.BACKEND_UNAVAILABLE
+        ) from None
+
+    if not isinstance(result, SubprocessResult):
+        raise AppleKeychainCredentialError(CredentialRetrievalOutcome.MALFORMED)
+
+    returncode = result.returncode
+    stdout, stderr = result._take_output()
+    if returncode != 0:
+        stdout = b""
+        stderr = b""
+        raise AppleKeychainCredentialError(_outcome_for_returncode(returncode))
+    if stderr:
+        stdout = b""
+        stderr = b""
+        raise AppleKeychainCredentialError(CredentialRetrievalOutcome.MALFORMED)
+    return stdout
 
 
 def _decode_secret(stdout: bytes) -> str:
@@ -267,9 +386,46 @@ def _decode_secret(stdout: bytes) -> str:
     return secret
 
 
+def _decode_principal(stdout: bytes) -> str:
+    principal = _decode_secret(stdout)
+    if (
+        principal != principal.strip()
+        or _PRINCIPAL_PATTERN.fullmatch(principal) is None
+    ):
+        principal = ""
+        raise AppleKeychainCredentialError(CredentialRetrievalOutcome.MALFORMED)
+    return principal
+
+
+def _principal_outcome(
+    outcome: CredentialRetrievalOutcome,
+) -> IntendedPrincipalResolutionOutcome:
+    return {
+        CredentialRetrievalOutcome.MISSING: (
+            IntendedPrincipalResolutionOutcome.NOT_FOUND
+        ),
+        CredentialRetrievalOutcome.ACCESS_DENIED: (
+            IntendedPrincipalResolutionOutcome.ACCESS_DENIED
+        ),
+        CredentialRetrievalOutcome.BACKEND_UNAVAILABLE: (
+            IntendedPrincipalResolutionOutcome.BACKEND_UNAVAILABLE
+        ),
+        CredentialRetrievalOutcome.TIMED_OUT: (
+            IntendedPrincipalResolutionOutcome.BACKEND_UNAVAILABLE
+        ),
+        CredentialRetrievalOutcome.MALFORMED: (
+            IntendedPrincipalResolutionOutcome.SANITIZED_FAILURE
+        ),
+        CredentialRetrievalOutcome.FOUND: (
+            IntendedPrincipalResolutionOutcome.SANITIZED_FAILURE
+        ),
+    }[outcome]
+
+
 __all__ = [
     "AppleKeychainCredentialError",
     "AppleKeychainCredentialSource",
+    "AppleKeychainIntendedPrincipalResolver",
     "SubprocessRequest",
     "SubprocessResult",
     "run_security_subprocess",
