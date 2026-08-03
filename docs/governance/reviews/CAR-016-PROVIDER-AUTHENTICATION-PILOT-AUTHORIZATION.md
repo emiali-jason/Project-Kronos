@@ -2,7 +2,7 @@
 
 **Document ID:** CAR-016
 **Title:** Provider Authentication and Authenticated Context Establishment Implementation and Pilot Authorization
-**Version:** 1.1
+**Version:** 1.2
 **Status:** Approved
 **Canonical Status:** Canonical
 **Classification:** Review Package
@@ -10,10 +10,11 @@
 **Prepared By:** Engineering Architect
 **Review Authority:** Chief Architect
 **Repository Location:** `docs/governance/reviews/CAR-016-PROVIDER-AUTHENTICATION-PILOT-AUTHORIZATION.md`
-**Workflow Stage:** Implementation Conformance Complete
-**Decision:** IMPLEMENTATION COMPLETE — EDD-001 VERSION 1.1 CONFORMANT
+**Workflow Stage:** Repository Publication
+**Decision:** APPROVED — CANONICAL COORDINATED VERSION 1.2
 **Current Implementation Authorization:** Completed
 **Current Runtime Authority:** None
+**Current Live Authority:** None — Separate Sponsor execution instruction required
 **Current Provider Endpoint Authority:** None
 **Current Credential-Use Authority:** None
 **Current Browser/Listener Authority:** None
@@ -23,16 +24,20 @@
 **CAR-016 Version 1.0 Publication SHA:** `443367eeed233034d276d6a4121895c77aff3372`
 **Frozen Final Implementation SHA:** `bb5aa16fbc4fda2609376d53161d591fb0fe0d36`
 **Completed Implementation/Test Path Count:** 30
+**Coordinated Activation Identity:** `KRONOS-COORD-AUTH-20260803-001`
+**Logical CAR-016 Publication Reference:** `CAR-016-V1.2-KRONOS-COORD-AUTH-20260803-001`
+**Logical CAR-017 Publication Reference:** `CAR-017-V1.2-KRONOS-COORD-AUTH-20260803-001`
+**Actual Coordinated Governance Publication Commit SHA:** `PENDING — ESTABLISHED BY CANONICAL PUBLICATION`
 
 ---
 
 # 1. Purpose
 
-CAR-016 Version 1.1 records completion of the bounded implementation-publication sequence and EDD-001 Version 1.1 conformance for Provider Authentication and Authenticated Context Establishment.
+CAR-016 Version 1.2 is the CAR-016 half of the canonical coordinated Live Activation Authority identified by `KRONOS-COORD-AUTH-20260803-001`. It governs the bounded Authentication Attempt, callback, exchange, principal-binding and authenticated-context-establishment lifecycle.
 
-Version 1.0 authorized the exact sequential implementation, fake-only verification and inspection-safe pilot governance described below. All six Engineering Architect-gated stages are now completed at the frozen final implementation SHA. Version 1.1 grants no live credentials, Keychain access, listener creation, browser opening, real SDK construction, Provider calls, endpoint use or runtime authority.
+Version 1.0 authorized the exact sequential implementation, fake-only verification and inspection-safe pilot governance described below. Version 1.1 remains the Approved Canonical completed-implementation and EDD-001 Version 1.1 conformance record. Version 1.2 changes no implementation, production code, pilot code, test, dependency, architecture or Engineering Design.
 
-Any live pilot requires successful publication, the external Kite redirect-confirmation gate, a clean frozen implementation SHA, successful preflight and a separate explicit Sponsor execution instruction. No one condition implies another.
+Canonical publication grants no runtime or live activity by itself. CAR-016 Version 1.2 and CAR-017 Version 1.2 are jointly necessary and individually insufficient. Bounded execution exists only after coordinated governance-only publication, exact coordinated preflight and a later final Sponsor confirmation that cannot define or expand the activation identity.
 
 # 2. Governing Authority
 
@@ -77,7 +82,7 @@ Published Version 1.0 still grants no Stage 2-6 authority, live credential use, 
 
 A live pilot is unavailable by default. It requires prior canonical Chief Architect live-activation authority, every gate in Sections 16 and 17 and then an explicit Sponsor execution instruction identifying the frozen implementation commit, local non-production environment and exact permitted live operations. Sponsor instruction operates only inside already-approved Chief Architect authority and creates no live authority by itself.
 
-The prior Chief Architect activation may permit one Authentication Attempt only. The later Sponsor instruction must initiate within that boundary and state separately whether one post-establishment `verify_provider_availability()` operation is included. If prior Chief Architect activation authority is absent, the Sponsor instruction must not be acted upon.
+The coordinated Chief Architect activation may permit one Authentication Attempt only. For Version 1.2, **Provider Availability Verification Authority: `WITHHELD`** and **Maximum Provider Availability verification operations: `0`**. Sponsor instruction cannot request, enable or imply `verify_provider_availability()`. If prior coordinated Chief Architect activation authority is absent, the Sponsor instruction must not be acted upon.
 
 Success, failure, cancellation or timeout after live initiation consumes the one-attempt authority. A second attempt requires fresh authority.
 
@@ -314,7 +319,7 @@ Authenticated context states are `ABSENT`, `ACTIVE`, `EXPIRED` and `ENDED`. Only
 
 Provider Availability is separate: `NOT_VERIFIED`, `VERIFYING`, `AVAILABLE`, `UNAVAILABLE` and `INDETERMINATE`. Every new active context starts `NOT_VERIFIED`. Principal binding cannot set availability.
 
-Only a separate explicit `verify_provider_availability()` action may leave `NOT_VERIFIED`. Future canonical Chief Architect activation authority must include that operation before a Sponsor may instruct it; otherwise the control remains disabled. Sponsor instruction creates no endpoint authority. Temporary Provider failure changes availability only. Authoritative invalid-token evidence may expire the context but does not rewrite the completed attempt.
+Only the separately implemented `verify_provider_availability()` action can leave `NOT_VERIFIED` under some future authority. CAR-016 Version 1.2 does not provide that authority: **Provider Availability Verification Authority: `WITHHELD`** and **Maximum Provider Availability verification operations: `0`**. Sponsor instruction cannot request, enable or imply `verify_provider_availability()`. Temporary Provider failure changes availability only. Authoritative invalid-token evidence may expire the context but does not rewrite the completed attempt.
 
 Kite next-06:00 Asia/Kolkata validity is adapter policy. No universal Provider expiry is authorized.
 
@@ -336,7 +341,7 @@ The view may display only:
 - sanitized attempt and context state;
 - sanitized Provider Availability;
 - **Cancel**;
-- **Verify Provider Availability**, disabled unless separately authorized and context-active;
+- **Verify Provider Availability**, disabled throughout CAR-016 Version 1.2 because Provider Availability Verification Authority is `WITHHELD` and the maximum operation count is `0`;
 - **End KRONOS Session**; and
 - sanitized terminal evidence.
 
@@ -365,7 +370,7 @@ The matrix shall prove:
 13. `MATCHED`, `MISMATCHED`, `UNCONFIRMED` and fail-closed `UNAVAILABLE`;
 14. raw profile/principal disposal and sanitized retained evidence;
 15. successful attempt `SUCCEEDED`, context `ACTIVE` and availability `NOT_VERIFIED`;
-16. explicit availability verification only, with no effect on the completed attempt;
+16. fake-only proof that availability verification remains a separate implemented operation with no effect on the completed attempt; CAR-016 Version 1.2 authorizes `0` live availability-verification operations;
 17. invalid-token context expiry versus ordinary Provider Unavailability;
 18. cancellation before listener, during wait, after callback and with a candidate;
 19. idempotent cancellation, late-callback rejection and zero Provider cleanup call;
@@ -795,13 +800,13 @@ Before any Sponsor execution instruction can be acted upon, all of the following
 9. no capture, proxy, inspection or diagnostic tool retains sensitive requests or callback queries;
 10. CAR-014 remains unexecuted;
 11. no prior CAR-016 live attempt has begun; and
-12. the Sponsor issues a new explicit instruction freezing the environment, SHA, one-attempt boundary and whether availability verification is included.
+12. the Sponsor issues a new explicit instruction within, and without expanding, the previously frozen authority.
 
 The Sponsor instruction is last in this chain and creates no live authority. If prior canonical Chief Architect activation is absent, it must not be acted upon. Failure of any condition returns a preflight blocker and causes no live activity.
 
-# 17. Future Live Attempt Boundary
+# 17. Historical Future Live Attempt Reservation
 
-Only after canonical Chief Architect activation, frozen-SHA approval, successful preflight, exact redirect confirmation, custody gates and a Sponsor instruction within that authority may one live attempt begin. It is consumed when `begin_login()` reserves the Authentication Attempt and listener construction starts. Success, failure, cancellation, timeout, listener failure, browser failure, credential failure, exchange failure, principal failure or local cleanup failure consumes the attempt.
+Version 1.0 reserved a possible future live attempt without granting it. Version 1.2 Section 22 now supplies the sole canonical coordinated boundary and supersedes this historical reservation wherever the two differ. In particular, Section 22 requires atomic coordinated consumption before Authentication Attempt reservation and listener construction, and Provider Availability verification is `WITHHELD`.
 
 The separately authorized path may contain at most:
 
@@ -814,7 +819,7 @@ The separately authorized path may contain at most:
 7. one request-token exchange;
 8. one principal `profile()` verification;
 9. one atomic local context establishment on match;
-10. at most one additional `profile()` operation only when the Sponsor instruction explicitly authorizes availability verification; and
+10. zero Provider Availability verification operations; and
 11. local cancellation or End KRONOS Session cleanup without Provider mutation.
 
 There is no retry, corrected credential, second browser flow, second callback attempt, token refresh, remote invalidation or automatic reauthentication. A failed or cancelled attempt stops. Fresh authority is required for any later attempt.
@@ -872,7 +877,7 @@ Each of Stages 1-6 requires exactly one separately reviewed commit and one separ
 
 Publication does not access credentials, use Keychain, start a production listener, open a real browser, construct a real SDK client, make a Provider call or consume the live attempt.
 
-The governance phases are distinct: the pre-publication Draft authorized documentation review only; published Version 1.0 activated Stage 1 implementation and fake-only tests only; evidence acceptance, commit authority, push authority and next-stage authority were four separate actions; Version 1.1 records completed implementation without live authority; Version 1.2 may provide canonical Chief Architect live activation; Sponsor instruction may then initiate only within that existing authority; and Version 1.3 records the sanitized outcome. None is implied by another.
+The governance phases are distinct: the pre-publication Draft authorized documentation review only; published Version 1.0 activated Stage 1 implementation and fake-only tests only; evidence acceptance, commit authority, push authority and next-stage authority were four separate actions; Version 1.1 records completed implementation without live authority; Version 1.2 may provide canonical Chief Architect live activation; Sponsor instruction may then initiate only within that existing authority but cannot request, enable or imply `verify_provider_availability()`; and Version 1.3 records the sanitized outcome. None is implied by another.
 
 # 21. Version 1.1 Completed Implementation and Conformance Record
 
@@ -918,7 +923,7 @@ The frozen implementation conforms to EDD-001 Version 1.1 within the exact CAR-0
 3. token exchange produces only an isolated candidate before mandatory fail-closed principal binding;
 4. only matched binding establishes an active context;
 5. a newly active context begins with Provider Availability `NOT_VERIFIED`; no immediate `AVAILABLE` state exists;
-6. availability verification remains a separate explicit operation and is disabled in ordinary inspection launch;
+6. availability verification remains a separate implemented operation; CAR-016 Version 1.2 keeps its authority `WITHHELD`, permits `0` operations and does not allow Sponsor instruction to request, enable or imply it;
 7. cancellation and End KRONOS Session are local-only and invoke no remote token invalidation;
 8. no public access-token, credential, principal, candidate or SDK-client getter exists;
 9. no credential persistence is introduced; protected values remain bounded, one-use and non-retained under the implemented contracts;
@@ -945,16 +950,186 @@ The controlled CAR-016 revision lifecycle is:
 
 - **Version 1.0:** canonical sequential implementation and fake-only offline-test governance. Publication activates Stage 1 only; Stages 2-6 each require explicit next-stage authority after the preceding accepted push. It grants no live authority.
 - **Version 1.1:** completed implementation and EDD-001 conformance record at the frozen `STAGE_6_IMPLEMENTATION_SHA`. It grants no live authority.
-- **Version 1.2:** possible live-activation authorization only after Version 1.1 approval, exact redirect-registration confirmation, frozen implementation SHA, clean preflight, protected credential/intended-principal custody availability and separate Chief Architect and Sponsor approval.
+- **Version 1.2:** canonical coordinated Live Activation Authority under `KRONOS-COORD-AUTH-20260803-001`, jointly necessary with and individually insufficient without CAR-017 Version 1.2. Publication itself grants no runtime or live activity; a separate Sponsor execution instruction remains required.
 - **Version 1.3:** sanitized consumed-outcome record after the one authorized live attempt.
 
 Every revision requires its own governed review and publication authority. No revision authorizes retry unless it states that authority explicitly. A failed, cancelled or timed-out future live attempt consumes the one-attempt authority. A later attempt requires fresh Chief Architect and Sponsor authority.
 
 No raw credential, request token, access token, intended principal, Provider principal, profile payload, account identifier, callback URL/query, header, SDK exception, Provider exception or traceback may be retained.
 
-# 22. Canonical Disposition
+# 22. Version 1.2 Canonical Coordinated Live Activation Authority
 
-**CAR-016 Status:** Approved — Canonical Version 1.1
+## 22.1 Frozen coordinated Activation Context
+
+The complete coordinated Activation Context consists only of the following frozen non-sensitive values:
+
+| Field | Exact frozen value |
+|---|---|
+| Coordinated activation identity | `KRONOS-COORD-AUTH-20260803-001` |
+| Logical CAR-016 publication reference | `CAR-016-V1.2-KRONOS-COORD-AUTH-20260803-001` |
+| Logical CAR-017 publication reference | `CAR-017-V1.2-KRONOS-COORD-AUTH-20260803-001` |
+| Frozen CAR-016 implementation SHA | `bb5aa16fbc4fda2609376d53161d591fb0fe0d36` |
+| Frozen CAR-017 implementation SHA | `7ea79305b2330721fbb6d5549034b0c05cb6e162` |
+| Authority effective | `2026-08-03T20:30:00+05:30`<br>`Asia/Kolkata` |
+| Authority expiry | `2026-08-10T20:30:00+05:30`<br>`Asia/Kolkata` |
+| Authentication Attempt timeout | `300 seconds` |
+| Sponsor environment | `SPONSOR-MACOS-LOCAL-NONPROD-01` |
+| Provider identity | `ZERODHA_KITE` |
+| Provider configuration | `ZERODHA-KITE-PROVIDER-CONFIG-PRIMARY` |
+| Kite application registration | `ZERODHA-KITE-APP-REGISTRATION-PRIMARY` |
+| Secure credential | `KITE-API-SECRET-PRIMARY` |
+| Intended principal registration | `KITE-INTENDED-PRINCIPAL-PRIMARY` |
+| Composition dependency set | `CAR017-LIVE-COMPOSITION-DEPENDENCY-SET-V1` |
+| Provider Availability Verification Authority | `WITHHELD` |
+| Maximum Provider Availability verification operations | `0` |
+| Attempt cardinality | `ONE` |
+| Initial coordinated consumption state | `UNUSED` |
+| Controlled invalid-activation category | `COORDINATED_LIVE_ACTIVATION_NOT_AUTHORIZED_OR_CONTEXT_MISMATCH` |
+
+No value may be renamed, normalized, reinterpreted, derived, inferred, substituted or expanded. Configuration, environment variables, command-line values, module globals, file presence, successful imports, successful tests, GUI state and Sponsor instruction cannot create, define or expand this Activation Context.
+
+The two logical publication references above are identifiers, not Git commit SHAs.
+
+```text
+Actual Coordinated Governance Publication Commit SHA:
+PENDING — ESTABLISHED BY CANONICAL PUBLICATION
+```
+
+One coordinated commit containing exactly the three authorized governance files establishes the actual coordinated governance publication SHA. The resulting SHA is obtained only after the coordinated commit is created and pushed, becomes authoritative post-publication evidence, and is not required inside the original publication commit. The post-publication report must record the resulting SHA. No amendment of the original Version 1.2 publication commit is required merely to insert its own SHA.
+
+**Provider Availability Verification Authority:** `WITHHELD`
+
+**Maximum Provider Availability verification operations:** `0`
+
+Sponsor instruction cannot request, enable or imply `verify_provider_availability()`.
+
+## 22.2 Joint necessity and coordinated activation matrix
+
+CAR-016 Version 1.2 and CAR-017 Version 1.2 are jointly necessary and individually insufficient.
+
+| Authority component | CAR-016 Version 1.2 | CAR-017 Version 1.2 | Coordinated result |
+|---|---|---|---|
+| Authentication Attempt lifecycle, callback, exchange, principal binding and matched-only context establishment | Required | Insufficient alone | Available only when both exact logical publication references and authoritative post-publication SHA evidence validate |
+| Live composition, activation-capability validation and external-effect dependency wiring | Insufficient alone | Required | Available only when both exact logical publication references and authoritative post-publication SHA evidence validate |
+| Provider Availability Verification Authority | `WITHHELD` | `WITHHELD` | `WITHHELD` |
+| Attempt cardinality | `ONE` | `ONE` | `ONE` coordinated attempt, not one per CAR |
+| Consumption state | Shared | Shared | One atomic coordinated `UNUSED` to `CONSUMED` transition |
+
+Neither record may be applied separately, aggregated with another authority, or treated as a fallback for the other. Any ambiguity returns to the Chief Architect.
+
+## 22.3 Coordinated preflight and ordering
+
+Before any external-effect dependency is constructed or invoked, all of the following must be proven:
+
+1. both Version 1.2 records have separate Chief Architect approval and have been published as one coordinated governance package;
+2. both exact logical publication references and both frozen implementation SHAs match Section 22.1;
+3. one coordinated commit containing exactly the three authorized governance files has been created and pushed, and its resulting SHA is recorded in the post-publication report as authoritative post-publication evidence;
+4. the current time is within the exact effective and expiry timestamps in Section 22.1;
+5. the Sponsor environment, Provider identity, Provider configuration, Kite application registration, secure credential, intended-principal registration and composition dependency-set references all match Section 22.1;
+6. the Authentication Attempt timeout is `300 seconds`, attempt cardinality is `ONE`, Provider Availability Verification Authority is `WITHHELD`, Maximum Provider Availability verification operations is `0`, and the coordinated consumption state is `UNUSED`;
+7. the exact Kite redirect registered under `ZERODHA-KITE-APP-REGISTRATION-PRIMARY` matches the existing canonical loopback callback contract, without exposing sensitive registration material;
+8. Keychain readiness for `KITE-API-SECRET-PRIMARY` and `KITE-INTENDED-PRINCIPAL-PRIMARY` is attested without retrieval, enumeration or access;
+9. the Sponsor workstation and environment match `SPONSOR-MACOS-LOCAL-NONPROD-01` without configuration, dependency or implementation drift;
+10. the local branch is `develop`;
+11. local `develop` is aligned with `origin/develop`;
+12. `HEAD` equals the resulting coordinated governance publication SHA recorded in the post-publication report;
+13. the working tree is clean;
+14. the final Sponsor execution instruction includes the resulting coordinated governance publication SHA;
+15. no socket is bound and no Keychain, browser, listener, SDK, network or Provider operation occurs during preflight; and
+16. CAR-014 remains unexecuted.
+
+The mandatory activation order is:
+
+1. validate the complete coordinated Activation Context;
+2. obtain final Sponsor confirmation;
+3. atomically mark the coordinated authority `CONSUMED`;
+4. reserve the one Authentication Attempt; and
+5. construct the one listener.
+
+Listener bind is the first socket operation. No socket bind is permitted during preflight. The listener has no alternate port and no retry. Bind failure occurs after consumption and therefore consumes authority.
+
+If validation fails before the atomic consumption transition, no execution is initiated and the only permitted category is `COORDINATED_LIVE_ACTIVATION_NOT_AUTHORIZED_OR_CONTEXT_MISMATCH`. The Sponsor instruction cannot define or expand the activation identity. The Engineering Architect cannot renew consumed or failed live authority. Any ambiguity returns to the Chief Architect.
+
+## 22.4 Exact live operation sequence and cardinality
+
+After the mandatory ordering in Section 22.3, the sole coordinated sequence is:
+
+1. construct and bind one listener under the canonical loopback callback contract;
+2. generate one official login URL;
+3. launch one browser;
+4. accept one terminal callback;
+5. retrieve `KITE-API-SECRET-PRIMARY` from Keychain once;
+6. exchange the accepted request token once;
+7. isolate the resulting candidate Provider Context;
+8. retrieve `KITE-INTENDED-PRINCIPAL-PRIMARY` from Keychain once;
+9. perform one principal profile verification;
+10. on `MATCHED` only, establish one authenticated context; and
+11. perform local-only cleanup.
+
+| Operation | Maximum coordinated cardinality |
+|---|---:|
+| Authentication Attempt | `ONE` |
+| Listener | `ONE` |
+| Official login URL generation | `ONE` |
+| Browser launch | `ONE` |
+| Terminal callback | `ONE` |
+| API-secret Keychain retrieval | `ONE` |
+| Request-token exchange | `ONE` |
+| Intended-principal Keychain retrieval | `ONE` |
+| Principal profile verification | `ONE` |
+| Matched-only authenticated-context establishment | `ONE` |
+| Local-only cleanup | `ONE` bounded cleanup sequence |
+| Provider Availability verification | `0 — WITHHELD` |
+
+The Authentication Attempt is bounded by `300 seconds`. There is no retry, fallback, second attempt, second listener, alternate port, second URL generation, second browser, second callback, second retrieval, second exchange, second profile verification or automatic verification. Sponsor instruction cannot request, enable or imply `verify_provider_availability()`.
+
+## 22.5 Consumption rule
+
+The coordinated authority begins in state `UNUSED`. It is atomically marked `CONSUMED` only after complete Activation Context validation and final Sponsor confirmation, and before Authentication Attempt reservation or listener construction.
+
+After that transition, every success, failure, cancellation, timeout, bind failure, browser failure, callback rejection, Keychain failure, exchange failure, principal-resolution failure, principal mismatch, Provider failure, context-establishment failure or cleanup failure leaves the authority `CONSUMED`. No corrected input or second execution is authorized. Consumed or failed authority cannot be renewed by the Engineering Architect; any later attempt requires fresh Chief Architect authority and a new Sponsor instruction.
+
+## 22.6 Explicitly withheld operations and authorities
+
+The coordinated package does not authorize:
+
+- Provider Availability verification;
+- retry, fallback, a second attempt, listener, callback, browser or exchange;
+- an alternate callback port, host, path or method;
+- Instrument Master, Historical Data, Quote, LTP, OHLC or WebSocket;
+- Trading, Orders or any Provider-side mutation;
+- remote token invalidation, remote logout or remote session termination;
+- credential, token, principal, callback, profile or Provider-payload persistence;
+- polling, scheduling, automatic login, automatic verification or background execution;
+- CAR-014 execution; or
+- any implementation, test, architecture, EDD, dependency or configuration change.
+
+## 22.7 Sanitized Version 1.3 outcome schema
+
+The coordinated consumed-authority record must be prepared as CAR-016 Version 1.3 and CAR-017 Version 1.3 and may retain only:
+
+1. coordinated activation identity;
+2. both Version 1.2 logical publication references and the resulting coordinated governance publication SHA from authoritative post-publication evidence;
+3. both frozen implementation SHAs;
+4. effective and expiry timestamps;
+5. sanitized execution date and time;
+6. Sponsor environment, Provider identity, Provider configuration, Kite application-registration, secure-credential, intended-principal-registration and composition dependency-set references;
+7. Authentication Attempt timeout and the final coordinated consumption state;
+8. one sanitized outcome category, including the controlled invalid-activation category where applicable;
+9. final sanitized Authentication Attempt, authenticated-context and Provider Availability states;
+10. actual counts for each operation in Section 22.4;
+11. confirmation of final Sponsor confirmation, no retry, no alternate port and no second attempt;
+12. confirmation that Provider Availability verification remained `WITHHELD` and was not invoked;
+13. local-only cleanup result; and
+14. confirmation that no sensitive material, raw exception, payload, account detail, other endpoint or Provider mutation was logged or retained.
+
+Version 1.3 must not retain an API key, API secret, request token, access token, intended or observed principal, account identifier, callback URL or query, header, browser history, raw SDK or Provider exception, traceback, profile response or Provider payload.
+
+# 23. Canonical Disposition
+
+CAR-016 Version 1.2 is Approved and Canonical through coordinated publication with CAR-017 Version 1.2. Publication alone does not initiate execution and grants no runtime or live activity.
+
+**CAR-016 Status:** Approved — Canonical Version 1.2
 
 **Implementation Status:** Completed at `bb5aa16fbc4fda2609376d53161d591fb0fe0d36`
 
@@ -962,7 +1137,7 @@ No raw credential, request token, access token, intended principal, Provider pri
 
 **Runtime Authority:** None
 
-**Live Authority:** None
+**Live Authority:** None — Separate Sponsor execution instruction required
 
 **Credential-Use Authority:** None
 
