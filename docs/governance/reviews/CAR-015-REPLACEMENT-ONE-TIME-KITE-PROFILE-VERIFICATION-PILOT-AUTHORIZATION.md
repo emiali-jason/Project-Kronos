@@ -2,7 +2,7 @@
 
 **Document ID:** CAR-015
 **Title:** Replacement One-Time Kite Profile Verification Pilot Authorization
-**Version:** 1.0
+**Version:** 1.1
 **Status:** Approved
 **Canonical Status:** Canonical
 **Classification:** Review Package
@@ -13,9 +13,9 @@
 **Workflow Stage:** Repository Publication
 **Decision:** APPROVE WITH CONDITIONS
 **Implementation Authorization:** Authorized with Constraints — CAR-015 pilot-local tkinter harness only
-**Runtime Authority:** Authorized with Constraints — one Sponsor-initiated local non-production profile verification attempt after publication, preflight and explicit Sponsor instruction
-**Provider Endpoint Authority:** Authorized with Constraints — exactly one KRONOS-controlled `KiteConnect.profile()` SDK invocation
-**Credential-Use Authority:** Authorized with Constraints — ephemeral Kite API key and newly obtained valid access token only
+**Runtime Authority:** Consumed — no further CAR-015 execution authorized
+**Provider Endpoint Authority:** Consumed — no further CAR-015 Provider endpoint invocation authorized
+**Credential-Use Authority:** Consumed — no further CAR-015 credential use authorized
 **Token-Generation Authority:** Withheld
 **Repository:** `emiali-jason/Project-Kronos`
 **Authoritative Branch:** `develop`
@@ -23,8 +23,10 @@
 **Publication Date:** 2026-08-02
 **Authority Expiry Date:** 2026-08-09
 **Approved Environment Class:** Sponsor-controlled local non-production macOS environment
-**Authority Status:** Unused
-**Outcome Revision:** CAR-015 Version 1.1 reserved only for sanitized outcome
+**Authority Status:** Consumed
+**Consumption Basis:** Failed authorized attempt
+**Sanitized Outcome Category:** `ACCESS_TOKEN_INVALID_OR_EXPIRED`
+**Outcome Revision:** CAR-015 Version 1.1 sanitized outcome recorded
 
 ---
 
@@ -239,6 +241,32 @@ No raw profile data, credential, account information, transport detail or raw ex
 Version 1.0 permits one implementation-and-documentation commit containing only the four authorized CAR-015 files and one push to `origin/develop` after Engineering Architect acceptance.
 
 This decision becomes effective only after that commit is synchronized to `origin/develop`. Publication creates implementation, bounded future runtime and endpoint authority only on the exact conditions stated here. It does not itself execute the pilot, access credentials, construct a real SDK client or consume CAR-015.
+
+# 16. Version 1.1 Sanitized Outcome
+
+The complete Version 1.0 decision is preserved above. The following is the only retained outcome of the consumed authorized attempt:
+
+| Outcome Field | Sanitized Record |
+|---|---|
+| Execution date and time | 2026-08-03 — exact local time not retained in the approved sanitized evidence |
+| Exact execution SHA | `dd03f49e97255d4c3b209d279ce2d3886a8a94b0` |
+| Python version | 3.13.14 |
+| Kite SDK version | 5.2.0 |
+| Endpoint classification | AUTHENTICATED PROFILE CONNECTIVITY |
+| Profile connectivity | UNAVAILABLE |
+| Controlled error code | `ACCESS_TOKEN_INVALID_OR_EXPIRED` |
+| Local shutdown | SUCCESS |
+| One probe invocation confirmed | YES |
+| One SDK profile invocation confirmed | YES |
+| No retry confirmed | YES |
+| No second endpoint confirmed | YES |
+| No credential logging confirmed | YES |
+| No payload retention confirmed | YES |
+| No raw exception displayed | YES |
+| CAR-015 authority consumed | YES |
+| Second attempt authorized | NO |
+
+CAR-015 is closed. No later execution, credential use or Provider operation may rely on CAR-015.
 
 ## Related Authority
 
