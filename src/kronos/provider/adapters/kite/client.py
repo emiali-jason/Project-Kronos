@@ -24,6 +24,20 @@ class _KiteSessionInvalidated(RuntimeError):
     pass
 
 
+class _KiteExchangeAlreadyAttempted(RuntimeError):
+    pass
+
+
+class _KiteSessionState:
+    __slots__ = ("invalidated",)
+
+    def __init__(self) -> None:
+        self.invalidated = False
+
+    def mark_invalidated(self) -> None:
+        self.invalidated = True
+
+
 class _KiteClientHandle:
     """Narrow internal handle exposing only the EP-004 probe and cleanup."""
 
@@ -82,19 +96,21 @@ def _create_kite_client(api_key: str, access_token: str) -> _KiteClientHandle:
 
 
 class _KiteAuthenticationClientHandle:
-    """Narrow SDK handle for the official Kite authentication lifecycle."""
+    """Pre-exchange SDK handle that transfers ownership to one candidate."""
 
     __slots__ = (
         "__client",
-        "__has_authenticated_context",
-        "__session_invalidated",
+        "__exchange_started",
+        "__session_state",
     )
 
     def __init__(self, client: Any) -> None:
         self.__client = client
-        self.__has_authenticated_context = False
-        self.__session_invalidated = False
-        self.__client.set_session_expiry_hook(self.__mark_session_invalidated)
+        self.__exchange_started = False
+        self.__session_state = _KiteSessionState()
+        self.__client.set_session_expiry_hook(
+            self.__session_state.mark_invalidated
+        )
 
     def login_url(self) -> str:
         login_url = self.__client.login_url()
@@ -102,44 +118,114 @@ class _KiteAuthenticationClientHandle:
             raise _UnexpectedAuthenticationResponse
         return login_url
 
-    def exchange(self, request_token: str, api_secret: str) -> None:
-        response = self.__client.generate_session(request_token, api_secret)
+    def exchange_once(
+        self,
+        request_token: str,
+        api_secret: str,
+    ) -> "_KiteCandidateClientHandle":
+        if self.__exchange_started:
+            raise _KiteExchangeAlreadyAttempted
+        if self.__session_state.invalidated:
+            raise _KiteSessionInvalidated
+        self.__exchange_started = True
+        client = self.__client
+        if client is None:
+            raise _KiteExchangeAlreadyAttempted
+
+        response = client.generate_session(request_token, api_secret)
         if not isinstance(response, Mapping):
             raise _UnexpectedAuthenticationResponse
         access_token = response.get("access_token")
         if not isinstance(access_token, str) or not access_token:
             raise _UnexpectedAuthenticationResponse
-        self.__has_authenticated_context = True
-        self.__session_invalidated = False
         del access_token
         del response
+        self.__client = None
+        return _KiteCandidateClientHandle(client, self.__session_state)
 
-    def verify(self) -> None:
-        if not self.__has_authenticated_context or self.__session_invalidated:
+    def __repr__(self) -> str:
+        return "<_KiteAuthenticationClientHandle redacted>"
+
+    __str__ = __repr__
+
+    def __reduce_ex__(self, _protocol: int) -> object:
+        raise TypeError("KITE_AUTHENTICATION_HANDLE_SERIALIZATION_PROHIBITED")
+
+
+class _KiteCandidateClientHandle:
+    """Opaque local owner of one exchanged Kite SDK candidate client."""
+
+    __slots__ = (
+        "__client",
+        "__closed",
+        "__principal_attempted",
+        "__session_state",
+    )
+
+    def __init__(self, client: Any, session_state: _KiteSessionState) -> None:
+        self.__client = client
+        self.__closed = False
+        self.__principal_attempted = False
+        self.__session_state = session_state
+
+    def principal_user_id_once(self) -> str | None:
+        if self.__principal_attempted:
+            raise _UnexpectedAuthenticationResponse
+        self.__principal_attempted = True
+        profile = self.__profile_mapping()
+        principal = profile.get("user_id")
+        del profile
+        return principal if isinstance(principal, str) else None
+
+    def verify_profile_once(self) -> None:
+        profile = self.__profile_mapping()
+        del profile
+
+    def close_local(self) -> None:
+        if self.__closed:
+            return
+        self.__closed = True
+        client = self.__client
+        self.__client = None
+        if client is None:
+            return
+
+        session = getattr(client, "reqsession", None)
+        close_session = getattr(session, "close", None)
+        if not callable(close_session):
+            raise _KiteCleanupError
+        close_session()
+
+    def invalidate_remote_session(self) -> None:
+        """Retain the legacy remote operation as a separately named dead end."""
+
+        if self.__closed or self.__client is None:
+            raise _KiteClientClosedError
+        result = self.__client.invalidate_access_token()
+        if result is not True:
+            raise _UnexpectedAuthenticationResponse
+
+    def __profile_mapping(self) -> Mapping[str, object]:
+        if self.__closed or self.__client is None:
+            raise _KiteClientClosedError
+        if self.__session_state.invalidated:
             raise _KiteSessionInvalidated
         try:
             profile = self.__client.profile()
         finally:
-            if self.__session_invalidated:
+            if self.__session_state.invalidated:
                 raise _KiteSessionInvalidated from None
         if not isinstance(profile, Mapping):
             raise _UnexpectedProfileResponse
-        del profile
+        return profile
 
-    def session_invalidated(self) -> bool:
-        return self.__session_invalidated
+    def __repr__(self) -> str:
+        return "<_KiteCandidateClientHandle redacted>"
 
-    def terminate(self) -> None:
-        if not self.__has_authenticated_context:
-            return
-        result = self.__client.invalidate_access_token()
-        if result is not True:
-            raise _UnexpectedAuthenticationResponse
-        self.__has_authenticated_context = False
-        self.__session_invalidated = True
+    __str__ = __repr__
 
-    def __mark_session_invalidated(self) -> None:
-        self.__session_invalidated = True
+    def __reduce_ex__(self, _protocol: int) -> object:
+        raise TypeError("KITE_CANDIDATE_HANDLE_SERIALIZATION_PROHIBITED")
 
 
 def _create_kite_authentication_client(api_key: str) -> _KiteAuthenticationClientHandle:
