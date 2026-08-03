@@ -969,7 +969,7 @@ The complete coordinated Activation Context consists only of the following froze
 | Logical CAR-016 publication reference | `CAR-016-V1.2-KRONOS-COORD-AUTH-20260803-001` |
 | Logical CAR-017 publication reference | `CAR-017-V1.2-KRONOS-COORD-AUTH-20260803-001` |
 | Frozen CAR-016 implementation SHA | `bb5aa16fbc4fda2609376d53161d591fb0fe0d36` |
-| Frozen CAR-017 implementation SHA | `7ea79305b2330721fbb6d5549034b0c05cb6e162` |
+| Frozen CAR-017 implementation SHA | `8f052d0cc3b7abc63a28c2951a3b4770c58b4454` |
 | Authority effective | `2026-08-03T20:30:00+05:30`<br>`Asia/Kolkata` |
 | Authority expiry | `2026-08-10T20:30:00+05:30`<br>`Asia/Kolkata` |
 | Authentication Attempt timeout | `300 seconds` |

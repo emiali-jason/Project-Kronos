@@ -30,7 +30,7 @@
 **Frozen Upstream CAR-016 Implementation SHA:** `bb5aa16fbc4fda2609376d53161d591fb0fe0d36`
 **CAR-017 Version 1.0 Publication SHA:** `6539e6282d482da0cc7f1f181db74aa4b4d6f692`
 **Stage 1 SHA:** `1769dd641e8af1d6ea4eddb7dea8a0d1177a2eb8`
-**Stage 2 and Frozen Final Implementation SHA:** `7ea79305b2330721fbb6d5549034b0c05cb6e162`
+**Stage 2 and Frozen Final Implementation SHA:** `8f052d0cc3b7abc63a28c2951a3b4770c58b4454`
 **Completed Implementation/Test Path Count:** 8
 **Coordinated Activation Identity:** `KRONOS-COORD-AUTH-20260803-001`
 **Logical CAR-016 Publication Reference:** `CAR-016-V1.2-KRONOS-COORD-AUTH-20260803-001`
@@ -60,7 +60,7 @@ CAR-017 is subordinate to:
 
 CAR-017 cannot amend architecture, DOMAIN-006, ADR-010, EDD-001 or CAR-016 semantics. It supplies only a bounded composition implementation around previously reviewed components.
 
-CAR-016 freezes its completed implementation at `bb5aa16fbc4fda2609376d53161d591fb0fe0d36`; CAR-017 freezes its completed Live Composition Layer at `7ea79305b2330721fbb6d5549034b0c05cb6e162`. Neither frozen implementation or authority record is sufficient alone.
+CAR-016 freezes its completed implementation at `bb5aa16fbc4fda2609376d53161d591fb0fe0d36`; CAR-017 freezes its completed Live Composition Layer at `8f052d0cc3b7abc63a28c2951a3b4770c58b4454`. Neither frozen implementation or authority record is sufficient alone.
 
 # 3. Exact Implementation Scope
 
@@ -633,7 +633,7 @@ The complete coordinated Activation Context consists only of the following froze
 | Logical CAR-016 publication reference | `CAR-016-V1.2-KRONOS-COORD-AUTH-20260803-001` |
 | Logical CAR-017 publication reference | `CAR-017-V1.2-KRONOS-COORD-AUTH-20260803-001` |
 | Frozen CAR-016 implementation SHA | `bb5aa16fbc4fda2609376d53161d591fb0fe0d36` |
-| Frozen CAR-017 implementation SHA | `7ea79305b2330721fbb6d5549034b0c05cb6e162` |
+| Frozen CAR-017 implementation SHA | `8f052d0cc3b7abc63a28c2951a3b4770c58b4454` |
 | Authority effective | `2026-08-03T20:30:00+05:30`<br>`Asia/Kolkata` |
 | Authority expiry | `2026-08-10T20:30:00+05:30`<br>`Asia/Kolkata` |
 | Authentication Attempt timeout | `300 seconds` |
@@ -708,7 +708,7 @@ Every item below must pass before the Sponsor execution instruction is acted upo
 1. CAR-016 Version 1.2 and CAR-017 Version 1.2 have separate Chief Architect approval and are published as one coordinated governance package;
 2. `CAR-016-V1.2-KRONOS-COORD-AUTH-20260803-001` and `CAR-017-V1.2-KRONOS-COORD-AUTH-20260803-001` both validate as logical publication references;
 3. one coordinated commit containing exactly the three authorized governance files has been created and pushed, and its resulting SHA is recorded in the post-publication report as authoritative post-publication evidence;
-4. implementation content matches `bb5aa16fbc4fda2609376d53161d591fb0fe0d36` and `7ea79305b2330721fbb6d5549034b0c05cb6e162`;
+4. implementation content matches `bb5aa16fbc4fda2609376d53161d591fb0fe0d36` and `8f052d0cc3b7abc63a28c2951a3b4770c58b4454`;
 5. the current time is within `2026-08-03T20:30:00+05:30` `Asia/Kolkata` and `2026-08-10T20:30:00+05:30` `Asia/Kolkata`;
 6. the workstation is `SPONSOR-MACOS-LOCAL-NONPROD-01`;
 7. `ZERODHA_KITE`, `ZERODHA-KITE-PROVIDER-CONFIG-PRIMARY`, `ZERODHA-KITE-APP-REGISTRATION-PRIMARY`, `KITE-API-SECRET-PRIMARY`, `KITE-INTENDED-PRINCIPAL-PRIMARY` and `CAR017-LIVE-COMPOSITION-DEPENDENCY-SET-V1` all match the accepted Activation Context;
@@ -824,7 +824,7 @@ Version 1.3 must not retain an API key, API secret, request token, access token,
 
 CAR-017 Version 1.2 is Approved and Canonical through coordinated publication with CAR-016 Version 1.2. Publication alone does not initiate execution or grant runtime or live activity. Successful exact preflight and later final Sponsor confirmation are mandatory.
 
-**Implementation Status:** Completed at `7ea79305b2330721fbb6d5549034b0c05cb6e162`
+**Implementation Status:** Completed at `8f052d0cc3b7abc63a28c2951a3b4770c58b4454`
 
 **Further Implementation Authority:** None
 
