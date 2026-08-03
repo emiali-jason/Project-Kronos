@@ -1,196 +1,58 @@
-"""Kite implementation of the EDD-001 Provider Access boundary."""
+"""Kite entry point for the authoritative authentication lifecycle."""
 
-from datetime import datetime
-from typing import Protocol
-
-from kronos.provider.adapters.kite.authentication import KiteContextEvidence
-from kronos.provider.contracts.authentication import AuthenticationProvider
-from kronos.provider.contracts.context import ProviderContext
-from kronos.provider.contracts.provider import Provider
-from kronos.provider.exceptions.connectivity import ProviderConnectivityError
-from kronos.provider.models.access import (
-    ProviderAvailability,
-    ProviderOperationalAvailability,
-    ProviderUsability,
-    ProviderUsabilityState,
+from kronos.provider.contracts.provider_authentication import (
+    AuthenticationAttemptHandle,
 )
-from kronos.provider.models.configuration import ConfigurationBoundaryInput
-from kronos.provider.models.context import (
-    AuthenticationOutcome,
-    AuthenticatedProviderContext,
-    ContextLifecycleReason,
-    ContextValidity,
-    ProviderAuditEvidence,
-    ProviderEvidenceKind,
+from kronos.provider.kite.auth.kite_authentication import KiteAuthentication
+from kronos.provider.models.authentication import (
+    AuthenticationAttemptCancellationResult,
+    AuthenticationOutcomeEvidence,
+    ProviderAvailabilityState,
+    SessionStatus,
 )
+from kronos.provider.models.context import AuthenticatedProviderContext
 
 
-class _KiteAuthenticationBoundary(AuthenticationProvider, Protocol):
-    def operational_availability(self) -> ProviderOperationalAvailability: ...
+class KiteProvider:
+    """Expose one supported authentication path with no lifecycle bypass."""
 
-    def context_evidence(self) -> KiteContextEvidence: ...
+    __slots__ = ("__authentication",)
 
-    def terminate_authenticated_context(self) -> None: ...
+    def __init__(self, authentication: KiteAuthentication) -> None:
+        self.__authentication = authentication
 
-    def context_expired(self, valid_until: datetime | None) -> bool: ...
+    def begin_login(self) -> AuthenticationAttemptHandle:
+        return self.__authentication.begin_login()
 
-
-class KiteProvider(Provider):
-    """Orchestrate Kite access without absorbing authentication mechanics."""
-
-    def __init__(
+    def complete_callback(
         self,
-        authentication: _KiteAuthenticationBoundary,
-        context: ProviderContext,
-    ) -> None:
-        self._authentication = authentication
-        self._context = context
-        self._evidence: list[ProviderAuditEvidence] = []
+        attempt: AuthenticationAttemptHandle,
+    ) -> AuthenticationOutcomeEvidence:
+        return self.__authentication.complete_callback(attempt)
 
-    def authenticate(
+    def cancel_authentication_attempt(
         self,
-        configuration: ConfigurationBoundaryInput,
-    ) -> AuthenticationOutcome:
-        outcome = self._authentication.authenticate(configuration)
-        provenance = outcome.provenance
-        self._evidence.append(
-            ProviderAuditEvidence(
-                kind=ProviderEvidenceKind.AUTHENTICATION_ACTIVITY,
-                provenance=provenance,
-            )
-        )
-        self._evidence.append(
-            ProviderAuditEvidence(
-                kind=ProviderEvidenceKind.AUTHENTICATION_OUTCOME,
-                provenance=provenance,
-                outcome=outcome.kind,
-                reason=outcome.reason,
-            )
-        )
-        if outcome.succeeded:
-            context = self._context.establish(outcome)
-            self._evidence.append(
-                ProviderAuditEvidence(
-                    kind=ProviderEvidenceKind.CONTEXT_ESTABLISHED,
-                    provenance=provenance,
-                    context_id=context.context_id,
-                    outcome=outcome.kind,
-                )
-            )
-        return outcome
+        attempt: AuthenticationAttemptHandle,
+    ) -> AuthenticationAttemptCancellationResult:
+        return self.__authentication.cancel_authentication_attempt(attempt)
 
     def current_context(self) -> AuthenticatedProviderContext | None:
-        self._invalidate_documented_expiry()
-        return self._context.current()
+        return self.__authentication.current_context()
 
-    def validate_context(self) -> ProviderAuditEvidence | None:
-        """Apply current authoritative provider evidence to Context Validity."""
+    def verify_provider_availability(self) -> ProviderAvailabilityState:
+        return self.__authentication.verify_provider_availability()
 
-        self._invalidate_documented_expiry()
-        current = self._context.current()
-        if current is None or current.validity is not ContextValidity.VALID:
-            return None
-        evidence = self._authentication.context_evidence()
-        if evidence is KiteContextEvidence.INVALID:
-            return self.invalidate_context(ContextLifecycleReason.INVALID_PROVIDER_TOKEN)
-        return None
+    def session_status(self) -> SessionStatus:
+        return self.__authentication.session_status()
 
-    def invalidate_context(
+    def authentication_attempt_status(
         self,
-        reason: ContextLifecycleReason = ContextLifecycleReason.CONTEXT_NO_LONGER_VALID,
-    ) -> ProviderAuditEvidence | None:
-        current = self._context.current()
-        if current is None or current.provenance is None:
-            self._context.invalidate()
-            return None
-        self._context.invalidate()
-        self._evidence.append(
-            ProviderAuditEvidence(
-                kind=ProviderEvidenceKind.CONTEXT_VALIDITY_CHANGED,
-                provenance=current.provenance,
-                context_id=current.context_id,
-                reason=reason,
-            )
-        )
-        evidence = ProviderAuditEvidence(
-            kind=ProviderEvidenceKind.CONTEXT_INVALIDATED,
-            provenance=current.provenance,
-            context_id=current.context_id,
-            reason=reason,
-        )
-        self._evidence.append(evidence)
-        return evidence
+        attempt: AuthenticationAttemptHandle,
+    ) -> AuthenticationOutcomeEvidence | None:
+        return self.__authentication.authentication_attempt_status(attempt)
 
-    def terminate_context(
-        self,
-        reason: ContextLifecycleReason = ContextLifecycleReason.EXPLICIT_TERMINATION,
-    ) -> ProviderAuditEvidence | None:
-        current = self._context.current()
-        if current is None or current.provenance is None:
-            return None
-        try:
-            self._authentication.terminate_authenticated_context()
-        except ProviderConnectivityError:
-            return self.invalidate_context(
-                ContextLifecycleReason.CONTEXT_NO_LONGER_VALID
-            )
+    def end_kronos_session(self) -> None:
+        self.__authentication.end_kronos_session()
 
-        self._context.terminate()
-        self._evidence.append(
-            ProviderAuditEvidence(
-                kind=ProviderEvidenceKind.CONTEXT_VALIDITY_CHANGED,
-                provenance=current.provenance,
-                context_id=current.context_id,
-                reason=reason,
-            )
-        )
-        evidence = ProviderAuditEvidence(
-            kind=ProviderEvidenceKind.CONTEXT_TERMINATED,
-            provenance=current.provenance,
-            context_id=current.context_id,
-            reason=reason,
-        )
-        self._evidence.append(evidence)
-        return evidence
 
-    def context_reuse_eligible(self) -> bool:
-        self._invalidate_documented_expiry()
-        return self._context.reuse_eligible()
-
-    def availability(self) -> ProviderAvailability:
-        return ProviderAvailability(
-            operational=self._authentication.operational_availability()
-        )
-
-    def usability(self, configuration: ConfigurationBoundaryInput) -> ProviderUsability:
-        self._invalidate_documented_expiry()
-        context = self._context.current()
-        usable = (
-            configuration.runtime.provider.upper() == "KITE"
-            and configuration.usable
-            and context is not None
-            and context.validity is ContextValidity.VALID
-            and self._authentication.operational_availability()
-            is ProviderOperationalAvailability.AVAILABLE
-        )
-        return ProviderUsability(
-            state=(
-                ProviderUsabilityState.USABLE
-                if usable
-                else ProviderUsabilityState.UNUSABLE
-            ),
-            reason=None if usable else "PROVIDER_CONTEXT_NOT_USABLE",
-        )
-
-    def evidence(self) -> tuple[ProviderAuditEvidence, ...]:
-        self._invalidate_documented_expiry()
-        return tuple(self._evidence)
-
-    def _invalidate_documented_expiry(self) -> None:
-        current = self._context.current()
-        if (
-            current is not None
-            and current.validity is ContextValidity.VALID
-            and self._authentication.context_expired(current.valid_until)
-        ):
-            self.invalidate_context(ContextLifecycleReason.CONTEXT_EXPIRED)
+__all__ = ["KiteProvider"]
