@@ -2,17 +2,22 @@
 
 **Document ID:** CAR-018
 **Title:** Complete Provider Authentication Operational Closure Authorization
-**Version:** 1.0
-**Status:** Approved
-**Canonical Status:** Canonical
+**Version:** 1.1
+**Status:** Draft
+**Canonical Status:** Draft
+**Previous Canonical Version:** 1.0
+**Version 1.0 Canonical Publication SHA:** `dd8caa77b4c896628633d269c9c56775b24f6cfa`
 **Classification:** Review Package
 **Owner:** Chief Architect
 **Prepared By:** Engineering Architect
 **Review Authority:** Chief Architect
 **Repository Location:** `docs/governance/reviews/CAR-018-COMPLETE-PROVIDER-AUTHENTICATION-OPERATIONAL-CLOSURE-AUTHORIZATION.md`
-**Workflow Stage:** Repository Publication
-**Decision:** APPROVED — AUTHORIZE WITH CONSTRAINTS
-**Implementation Authority:** Authorized with Constraints — Stage 1 eligibility only; separate Engineering Architect start authority required
+**Workflow Stage:** Chief Architect Review
+**Decision:** DRAFT — IMPLEMENTATION CONFORMANCE CANDIDATE
+**Implementation Authority:** Completed — no new implementation authority
+**Implementation Conformance:** Offline Verified
+**Authority State:** Unconsumed
+**Authentication Attempt State:** Not Started
 **Runtime Authority:** None
 **Live Authority:** None
 **Credential Authority:** None
@@ -28,6 +33,144 @@
 **Authoritative Branch:** `develop`
 **Authority-Package Baseline:** `4c5c6ec8fe1a315411725e29ff14291d98355d86`
 **Current Corrected CAR-017 Implementation SHA:** `8f052d0cc3b7abc63a28c2951a3b4770c58b4454`
+
+---
+
+# Version 1.1 Draft implementation-conformance record
+
+## Conformance purpose and boundary
+
+This Version 1.1 Draft records completion of the CAR-018 implementation and
+fake-only offline verification programme. It does not grant runtime, live,
+credential-use, Keychain, browser, listener, SDK, network, Provider-endpoint,
+trading or CAR-014 authority. It does not renew, revive, extend, replace or
+consume any coordinated activation authority. It does not amend CAR-016 or
+CAR-017 and is not the coordinated activation publication described by Version
+1.0 Section 15.
+
+Every conformance claim in this amendment uses exactly one of these evidence
+classes:
+
+- **IMPLEMENTED** — repository code or test structure exists at the frozen
+  implementation SHA;
+- **OFFLINE VERIFIED** — injected-fake or static offline verification passed;
+  or
+- **NOT YET LIVE VERIFIED** — no practical Provider or external-effect
+  validation has occurred.
+
+No claim in this record converts offline evidence into live evidence.
+
+## Frozen publication and implementation chain
+
+| Evidence | Exact SHA | Classification | Manifest evidence |
+|---|---|---|---|
+| CAR-018 Version 1.0 canonical publication | `dd8caa77b4c896628633d269c9c56775b24f6cfa` | IMPLEMENTED | CAR-018 Version 1.0 and Document Register; 2 documentation files |
+| Stage 1 | `30e6caa8e13fcc0015d86bac4c5af14241be5148` | IMPLEMENTED | governed activation and consumption contracts; 4 implementation/test files |
+| Original Stage 2 | `9a8a2e743276ee73e3c5dc82298e58d7fab2c99e` | IMPLEMENTED | governed live authentication launcher integration; 12 implementation/test files |
+| Stage 2 corrective | `9b6953275145115a8cc9d2fbeb610a9be877f67c` | IMPLEMENTED | exact proof, deadline, budget and ledger integration; 4 implementation/test files |
+| Stage 3 and frozen final implementation | `6273663a8ca8729833a8a0f05e06d55973ce6dc0` | IMPLEMENTED | final service conformance verification; 1 test file |
+
+The **Frozen CAR-018 Corrective Composite Implementation SHA** is
+`6273663a8ca8729833a8a0f05e06d55973ce6dc0`.
+
+The original Stage 2 commit did not complete the canonical service integration
+allocation. The separately reviewed Stage 2 corrective commit completed that
+allocation without erasing or relabelling the original Stage 2 history.
+
+## Completed 18-path implementation and test manifest
+
+All 18 canonical implementation/test paths are complete. Each path is recorded
+as **IMPLEMENTED**; its behavior is classified separately below.
+
+### Production and pilot — 11 paths
+
+1. `src/kronos/provider/kite/live_activation.py`
+2. `src/kronos/provider/kite/composition.py`
+3. `src/kronos/provider/models/authentication.py`
+4. `src/kronos/configuration/settings.py`
+5. `src/kronos/configuration/loader.py`
+6. `src/kronos/provider/contracts/provider_authentication.py`
+7. `src/kronos/provider/services/provider_authentication.py`
+8. `src/kronos/provider/adapters/kite/client.py`
+9. `src/kronos/provider/adapters/kite/authentication.py`
+10. `tools/provider_pilots/car017_live_authentication_launcher.py`
+11. `tools/provider_pilots/car016_provider_authentication_gui.py`
+
+### Tests — 7 paths
+
+12. `tests/unit/provider/test_kite_live_activation.py`
+13. `tests/unit/tools/test_car017_live_authentication_launcher.py`
+14. `tests/unit/provider/test_kite_authentication_composition.py`
+15. `tests/unit/configuration/test_kite_connectivity_settings.py`
+16. `tests/unit/provider/test_provider_authentication_service.py`
+17. `tests/unit/provider/test_kite_authentication_adapter.py`
+18. `tests/unit/tools/test_car016_provider_authentication_gui.py`
+
+## Claim-classification matrix
+
+| Claim | Classification | Evidence boundary |
+|---|---|---|
+| Trusted coordinated activation provenance and immutable activation context | IMPLEMENTED | Stage 1 repository implementation |
+| Durable consumption state, strict parser and descriptor-relative no-follow contract | IMPLEMENTED | Stage 1 contracts and implementation |
+| One 300-second monotonic complete-lifecycle deadline and remaining-budget contract | IMPLEMENTED | Stage 1 model and Stage 2 service integration |
+| Sanitized single operation-ledger contract | IMPLEMENTED | Stage 1 model and Stage 2 integration |
+| Governed configuration, no-dotenv authentication path and exact identity bindings | IMPLEMENTED | Original Stage 2 implementation |
+| Sole governed launcher and one authoritative authentication path | IMPLEMENTED | Original and corrective Stage 2 implementation |
+| Exact `ProvenConsumption`, deadline, budget and canonical-ledger propagation | IMPLEMENTED | Stage 2 corrective implementation |
+| Proof-before-attempt and proof-before-listener ordering | IMPLEMENTED | Stage 2 corrective service integration |
+| MATCHED-only authenticated-context establishment | IMPLEMENTED | Provider Authentication Service lifecycle |
+| Local-only cleanup with no remote token invalidation | IMPLEMENTED | Service and launcher cleanup paths |
+| Provider Availability Verification maximum count `0` | IMPLEMENTED | Governed runtime and ledger enforcement |
+| Activation, persistence, deadline, ledger, composition and lifecycle behavior under injected fakes | OFFLINE VERIFIED | Accepted CAR-018 focused suites |
+| Exact operation cardinality, no duplicate path and terminal cleanup matrix | OFFLINE VERIFIED | Stage 2 corrective and Stage 3 service tests plus static scans |
+| Secret and sensitive-material containment in changed evidence | OFFLINE VERIFIED | Accepted scans; no finding |
+| Complete repository regression | OFFLINE VERIFIED | 764 tests passed at the frozen final SHA |
+| Real Apple Keychain retrieval | NOT YET LIVE VERIFIED | No real Keychain access occurred |
+| Real default-browser launch and official login-page behavior | NOT YET LIVE VERIFIED | No browser was opened |
+| Real loopback listener bind and terminal callback | NOT YET LIVE VERIFIED | No production listener or callback occurred |
+| Real Kite SDK construction | NOT YET LIVE VERIFIED | No real SDK client was constructed |
+| Real `generate_session()` request-token exchange | NOT YET LIVE VERIFIED | No request token or Provider exchange occurred |
+| Real `profile()` principal verification | NOT YET LIVE VERIFIED | No Provider profile operation occurred |
+| Real Provider behavior or availability | NOT YET LIVE VERIFIED | No network or Provider call occurred; availability count remains `0` |
+| Real authenticated Provider Context establishment | NOT YET LIVE VERIFIED | Only injected-fake context establishment was exercised |
+
+## Accepted offline verification evidence
+
+| Evidence set | Result | Classification |
+|---|---|---|
+| Stage 2 corrective focused composition and service tests | 51 passed | OFFLINE VERIFIED |
+| Stage 2 corrective CAR-018 focused suites | 255 passed | OFFLINE VERIFIED |
+| Stage 2 corrective complete offline regression | 755 passed | OFFLINE VERIFIED |
+| Stage 3 focused Provider Authentication Service tests | 37 passed | OFFLINE VERIFIED |
+| Final CAR-018 focused suites | 264 passed | OFFLINE VERIFIED |
+| Final complete offline regression | 764 passed | OFFLINE VERIFIED |
+| Duplicate-path scan | PASS | OFFLINE VERIFIED |
+| Secret scan | PASS | OFFLINE VERIFIED |
+| Sensitive-material scan | PASS | OFFLINE VERIFIED |
+| `git diff --check` at accepted stage gates | PASS | OFFLINE VERIFIED |
+
+All verification used injected fakes, synthetic data, injected clocks and
+isolated local test boundaries. No real credential, Keychain, browser,
+production listener, callback, SDK client, request-token exchange, profile
+operation, network request, Provider behavior or authenticated-context
+establishment was practically validated.
+
+## Preserved authority and operational state
+
+| State | Recorded value | Classification |
+|---|---|---|
+| Runtime Authority | None | IMPLEMENTED |
+| Live Authority | None | IMPLEMENTED |
+| Coordinated authority state | Unconsumed | OFFLINE VERIFIED |
+| Authentication Attempt | Not Started | OFFLINE VERIFIED |
+| Provider Availability verification operations | `0` | OFFLINE VERIFIED |
+| External-effect activity during implementation and verification | None | OFFLINE VERIFIED |
+| CAR-014 execution | Unexecuted | OFFLINE VERIFIED |
+| Activation renewal, revival or replacement | None | IMPLEMENTED |
+
+This Draft grants no activation renewal, live preflight authority or Sponsor
+execution authority. Any later conformance publication, activation disposition,
+preflight or live execution requires its own explicit Chief Architect authority.
 
 ---
 
@@ -708,7 +851,10 @@ No Engineering or Sponsor instruction can waive a stop condition or renew consum
 
 # 18. Publication and authority lifecycle
 
-CAR-018 Version 1.0 remains Draft and non-authoritative until Chief Architect approval and canonical repository publication.
+CAR-018 Version 1.0 was approved and canonically published at
+`dd8caa77b4c896628633d269c9c56775b24f6cfa`. The Version 1.1
+implementation-conformance amendment remains Draft and non-authoritative until
+separate Chief Architect approval and canonical repository publication.
 
 Canonical Version 1.0 publication shall contain only:
 
@@ -719,7 +865,9 @@ The publication commit activates eligibility for a separately instructed Stage 1
 
 For every stage, stage-start authority, evidence acceptance, commit authority, push authority and next-stage authority are distinct. No one gate implies another.
 
-Version 1.1 is reserved for completed implementation conformance and the frozen corrected implementation SHA. It grants no runtime or live authority.
+Version 1.1 records completed implementation conformance and the frozen
+corrected implementation SHA. While Draft it grants no authority; publication
+would grant no runtime or live authority.
 
 CAR-016 and CAR-017 Version 1.3 remain reserved for the sanitized consumed-authority outcome of any later live attempt. CAR-018 does not reuse those versions for correction.
 
