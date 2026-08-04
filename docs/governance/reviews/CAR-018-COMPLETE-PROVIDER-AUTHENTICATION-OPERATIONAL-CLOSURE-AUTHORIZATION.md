@@ -3,8 +3,8 @@
 **Document ID:** CAR-018
 **Title:** Complete Provider Authentication Operational Closure Authorization
 **Version:** 1.1
-**Status:** Draft
-**Canonical Status:** Draft
+**Status:** Approved
+**Canonical Status:** Canonical
 **Previous Canonical Version:** 1.0
 **Version 1.0 Canonical Publication SHA:** `dd8caa77b4c896628633d269c9c56775b24f6cfa`
 **Classification:** Review Package
@@ -12,14 +12,16 @@
 **Prepared By:** Engineering Architect
 **Review Authority:** Chief Architect
 **Repository Location:** `docs/governance/reviews/CAR-018-COMPLETE-PROVIDER-AUTHENTICATION-OPERATIONAL-CLOSURE-AUTHORIZATION.md`
-**Workflow Stage:** Chief Architect Review
-**Decision:** DRAFT — IMPLEMENTATION CONFORMANCE CANDIDATE
+**Workflow Stage:** Repository Publication
+**Decision:** APPROVED — IMPLEMENTATION CONFORMANCE ACCEPTED
 **Implementation Authority:** Completed — no new implementation authority
 **Implementation Conformance:** Offline Verified
 **Authority State:** Unconsumed
 **Authentication Attempt State:** Not Started
 **Runtime Authority:** None
 **Live Authority:** None
+**Preflight Authority:** None
+**Sponsor Execution Authority:** None
 **Credential Authority:** None
 **Keychain Authority:** None
 **Browser Authority:** None
@@ -33,14 +35,18 @@
 **Authoritative Branch:** `develop`
 **Authority-Package Baseline:** `4c5c6ec8fe1a315411725e29ff14291d98355d86`
 **Current Corrected CAR-017 Implementation SHA:** `8f052d0cc3b7abc63a28c2951a3b4770c58b4454`
+**Frozen CAR-018 Corrective Composite Implementation SHA:** `6273663a8ca8729833a8a0f05e06d55973ce6dc0`
+**CAR-016 CA1 Logical Publication Reference:** `CAR-016-V1.2-CA1-KRONOS-COORD-AUTH-20260804-002`
+**CAR-017 CA1 Logical Publication Reference:** `CAR-017-V1.2-CA1-KRONOS-COORD-AUTH-20260804-002`
+**CA1 Coordinated Governance Publication Commit SHA:** `PENDING — ESTABLISHED BY THE FOUR-FILE CANONICAL PUBLICATION COMMIT`
 
 ---
 
-# Version 1.1 Draft implementation-conformance record
+# Version 1.1 Approved Canonical implementation-conformance record
 
 ## Conformance purpose and boundary
 
-This Version 1.1 Draft records completion of the CAR-018 implementation and
+This Version 1.1 Approved Canonical record documents completion of the CAR-018 implementation and
 fake-only offline verification programme. It does not grant runtime, live,
 credential-use, Keychain, browser, listener, SDK, network, Provider-endpoint,
 trading or CAR-014 authority. It does not renew, revive, extend, replace or
@@ -168,9 +174,91 @@ establishment was practically validated.
 | CAR-014 execution | Unexecuted | OFFLINE VERIFIED |
 | Activation renewal, revival or replacement | None | IMPLEMENTED |
 
-This Draft grants no activation renewal, live preflight authority or Sponsor
-execution authority. Any later conformance publication, activation disposition,
-preflight or live execution requires its own explicit Chief Architect authority.
+This canonical conformance record grants no activation renewal, live preflight
+authority or Sponsor execution authority. Any later preflight or live execution
+requires its own explicit Chief Architect authority.
+
+## Approved Canonical coordinated activation disposition
+
+The Chief Architect-authorized four-file canonical publication records this
+disposition without executing it:
+
+| Controlled value | Exact disposition |
+|---|---|
+| Previous coordinated activation identity | `KRONOS-COORD-AUTH-20260803-001` |
+| Previous identity disposition | `RETIRED FOR EXECUTION — UNUSED` |
+| New coordinated activation identity | `KRONOS-COORD-AUTH-20260804-002` |
+| Effective | `2026-08-06T09:00:00+05:30 Asia/Kolkata` |
+| Expiry | `2026-08-13T09:00:00+05:30 Asia/Kolkata` |
+| Attempt cardinality | `ONE` |
+| Consumption state | `UNUSED` |
+| Provider Availability | `WITHHELD — MAXIMUM 0` |
+| Frozen corrective composite implementation SHA | `6273663a8ca8729833a8a0f05e06d55973ce6dc0` |
+| CAR-016 controlled amendment | `CAR-016-V1.2-CA1` |
+| CAR-017 controlled amendment | `CAR-017-V1.2-CA1` |
+| CAR-016 CA1 logical publication reference | `CAR-016-V1.2-CA1-KRONOS-COORD-AUTH-20260804-002` |
+| CAR-017 CA1 logical publication reference | `CAR-017-V1.2-CA1-KRONOS-COORD-AUTH-20260804-002` |
+| CA1 coordinated governance publication commit SHA | `PENDING — ESTABLISHED BY THE FOUR-FILE CANONICAL PUBLICATION COMMIT` |
+| CAR-014 | `UNEXECUTED` |
+
+### Complete coordinated Activation Context equality matrix
+
+Every field below must match byte-for-byte across CAR-016 CA1, CAR-017 CA1
+and CAR-018 Version 1.1. A missing field, additional field, normalization,
+case change, whitespace change, reinterpretation, derivation, substitution or
+other unequal representation fails closed.
+
+| Activation Context field | CAR-016 CA1 | CAR-017 CA1 | CAR-018 Version 1.1 | Equality |
+|---|---|---|---|---|
+| Coordinated activation identity | `KRONOS-COORD-AUTH-20260804-002` | `KRONOS-COORD-AUTH-20260804-002` | `KRONOS-COORD-AUTH-20260804-002` | MATCH |
+| CA1 coordinated governance publication commit SHA | `PENDING — ESTABLISHED BY THE FOUR-FILE CANONICAL PUBLICATION COMMIT` | `PENDING — ESTABLISHED BY THE FOUR-FILE CANONICAL PUBLICATION COMMIT` | `PENDING — ESTABLISHED BY THE FOUR-FILE CANONICAL PUBLICATION COMMIT` | MATCH; replaced by the resulting publication SHA as post-publication evidence |
+| Logical CAR-016 CA1 publication reference | `CAR-016-V1.2-CA1-KRONOS-COORD-AUTH-20260804-002` | `CAR-016-V1.2-CA1-KRONOS-COORD-AUTH-20260804-002` | `CAR-016-V1.2-CA1-KRONOS-COORD-AUTH-20260804-002` | MATCH |
+| Logical CAR-017 CA1 publication reference | `CAR-017-V1.2-CA1-KRONOS-COORD-AUTH-20260804-002` | `CAR-017-V1.2-CA1-KRONOS-COORD-AUTH-20260804-002` | `CAR-017-V1.2-CA1-KRONOS-COORD-AUTH-20260804-002` | MATCH |
+| Frozen CAR-016 implementation SHA | `bb5aa16fbc4fda2609376d53161d591fb0fe0d36` | `bb5aa16fbc4fda2609376d53161d591fb0fe0d36` | `bb5aa16fbc4fda2609376d53161d591fb0fe0d36` | MATCH |
+| Frozen CAR-017 implementation SHA | `8f052d0cc3b7abc63a28c2951a3b4770c58b4454` | `8f052d0cc3b7abc63a28c2951a3b4770c58b4454` | `8f052d0cc3b7abc63a28c2951a3b4770c58b4454` | MATCH |
+| Frozen CAR-018 corrective composite implementation SHA | `6273663a8ca8729833a8a0f05e06d55973ce6dc0` | `6273663a8ca8729833a8a0f05e06d55973ce6dc0` | `6273663a8ca8729833a8a0f05e06d55973ce6dc0` | MATCH |
+| Authority effective timestamp | `2026-08-06T09:00:00+05:30` | `2026-08-06T09:00:00+05:30` | `2026-08-06T09:00:00+05:30` | MATCH |
+| Authority effective timezone | `Asia/Kolkata` | `Asia/Kolkata` | `Asia/Kolkata` | MATCH |
+| Authority expiry timestamp | `2026-08-13T09:00:00+05:30` | `2026-08-13T09:00:00+05:30` | `2026-08-13T09:00:00+05:30` | MATCH |
+| Authority expiry timezone | `Asia/Kolkata` | `Asia/Kolkata` | `Asia/Kolkata` | MATCH |
+| Authentication Attempt timeout | `300 seconds` | `300 seconds` | `300 seconds` | MATCH |
+| Sponsor environment reference | `SPONSOR-MACOS-LOCAL-NONPROD-01` | `SPONSOR-MACOS-LOCAL-NONPROD-01` | `SPONSOR-MACOS-LOCAL-NONPROD-01` | MATCH |
+| Approved hostname | `Imrans-Mac-mini.local` | `Imrans-Mac-mini.local` | `Imrans-Mac-mini.local` | MATCH |
+| Provider identity | `ZERODHA_KITE` | `ZERODHA_KITE` | `ZERODHA_KITE` | MATCH |
+| Operational Provider value | `KITE` | `KITE` | `KITE` | MATCH |
+| Provider configuration reference | `ZERODHA-KITE-PROVIDER-CONFIG-PRIMARY` | `ZERODHA-KITE-PROVIDER-CONFIG-PRIMARY` | `ZERODHA-KITE-PROVIDER-CONFIG-PRIMARY` | MATCH |
+| Kite application-registration reference | `ZERODHA-KITE-APP-REGISTRATION-PRIMARY` | `ZERODHA-KITE-APP-REGISTRATION-PRIMARY` | `ZERODHA-KITE-APP-REGISTRATION-PRIMARY` | MATCH |
+| Secure-credential reference | `KITE-API-SECRET-PRIMARY` | `KITE-API-SECRET-PRIMARY` | `KITE-API-SECRET-PRIMARY` | MATCH |
+| Intended-principal registration reference | `KITE-INTENDED-PRINCIPAL-PRIMARY` | `KITE-INTENDED-PRINCIPAL-PRIMARY` | `KITE-INTENDED-PRINCIPAL-PRIMARY` | MATCH |
+| Composition dependency-set reference | `CAR017-LIVE-COMPOSITION-DEPENDENCY-SET-V1` | `CAR017-LIVE-COMPOSITION-DEPENDENCY-SET-V1` | `CAR017-LIVE-COMPOSITION-DEPENDENCY-SET-V1` | MATCH |
+| Redirect URL | `http://127.0.0.1:8765/kite/callback` | `http://127.0.0.1:8765/kite/callback` | `http://127.0.0.1:8765/kite/callback` | MATCH |
+| Attempt cardinality | `ONE` | `ONE` | `ONE` | MATCH |
+| Provider Availability Verification Authority | `WITHHELD` | `WITHHELD` | `WITHHELD` | MATCH |
+| Maximum Provider Availability verification operations | `0` | `0` | `0` | MATCH |
+| CAR-014 status | `UNEXECUTED` | `UNEXECUTED` | `UNEXECUTED` | MATCH |
+| Coordinated consumption state | `UNUSED` | `UNUSED` | `UNUSED` | MATCH |
+| Controlled invalid-activation category | `COORDINATED_LIVE_ACTIVATION_NOT_AUTHORIZED_OR_CONTEXT_MISMATCH` | `COORDINATED_LIVE_ACTIVATION_NOT_AUTHORIZED_OR_CONTEXT_MISMATCH` | `COORDINATED_LIVE_ACTIVATION_NOT_AUTHORIZED_OR_CONTEXT_MISMATCH` | MATCH |
+
+`CAR-016-V1.2-CA1-KRONOS-COORD-AUTH-20260804-002` and
+`CAR-017-V1.2-CA1-KRONOS-COORD-AUTH-20260804-002` are jointly necessary and
+individually insufficient. Version 1.3 remains reserved in both records for a
+post-attempt sanitized outcome. No attempt has started and no authority has
+been consumed while this package is prepared.
+
+The one four-file documentation-only publication commit establishes the actual
+coordinated governance publication SHA. That SHA is post-publication evidence,
+is obtained only after commit creation and push, and is not inserted into the
+commit that creates it. A later governed preflight must verify the resulting
+SHA before any separate Sponsor execution decision can be considered.
+
+The resulting four-file publication SHA is mandatory evidence for live
+preflight, the final Sponsor execution instruction, CAR-016 Version 1.3 and
+CAR-017 Version 1.3 sanitized outcome records.
+
+Publication of this record does not itself perform preflight, reserve an
+Authentication Attempt, consume authority or authorize Provider Availability
+verification. Runtime and live execution remain unavailable until every later
+governed gate and separate Sponsor instruction is satisfied.
 
 ---
 
@@ -178,7 +266,7 @@ preflight or live execution requires its own explicit Chief Architect authority.
 
 CAR-018 is the single bounded corrective authority package for every remaining repository-visible blocker identified by the Complete Authentication Closure Review.
 
-CAR-018 authorizes no implementation while Draft. After Chief Architect approval, canonical publication and synchronization to `origin/develop`, it authorizes only the sequential offline implementation stages and exact paths defined here. Each stage still requires separate Engineering Architect start authority, evidence acceptance, commit authority and push authority.
+CAR-018 Version 1.0 authorized no implementation while Draft. After Chief Architect approval, canonical publication and synchronization to `origin/develop`, it authorized only the sequential offline implementation stages and exact paths defined here. Each stage required separate Engineering Architect start authority, evidence acceptance, commit authority and push authority.
 
 CAR-018 grants no runtime, live, credential-use, Keychain-access, browser, listener, SDK, network, Provider-endpoint, market-data, trading or CAR-014 authority. It does not itself amend architecture or Engineering Design.
 
@@ -853,8 +941,8 @@ No Engineering or Sponsor instruction can waive a stop condition or renew consum
 
 CAR-018 Version 1.0 was approved and canonically published at
 `dd8caa77b4c896628633d269c9c56775b24f6cfa`. The Version 1.1
-implementation-conformance amendment remains Draft and non-authoritative until
-separate Chief Architect approval and canonical repository publication.
+implementation-conformance amendment is Approved Canonical in the coordinated
+four-file publication and remains without runtime or live authority.
 
 Canonical Version 1.0 publication shall contain only:
 
@@ -866,8 +954,8 @@ The publication commit activates eligibility for a separately instructed Stage 1
 For every stage, stage-start authority, evidence acceptance, commit authority, push authority and next-stage authority are distinct. No one gate implies another.
 
 Version 1.1 records completed implementation conformance and the frozen
-corrected implementation SHA. While Draft it grants no authority; publication
-would grant no runtime or live authority.
+corrected implementation SHA. Its canonical publication grants no runtime or
+live authority.
 
 CAR-016 and CAR-017 Version 1.3 remain reserved for the sanitized consumed-authority outcome of any later live attempt. CAR-018 does not reuse those versions for correction.
 

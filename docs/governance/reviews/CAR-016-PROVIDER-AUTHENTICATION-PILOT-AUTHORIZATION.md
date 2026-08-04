@@ -15,6 +15,8 @@
 **Current Implementation Authorization:** Completed
 **Current Runtime Authority:** None
 **Current Live Authority:** None — Separate Sponsor execution instruction required
+**Current Preflight Authority:** None
+**Current Sponsor Execution Authority:** None
 **Current Provider Endpoint Authority:** None
 **Current Credential-Use Authority:** None
 **Current Browser/Listener Authority:** None
@@ -28,6 +30,16 @@
 **Logical CAR-016 Publication Reference:** `CAR-016-V1.2-KRONOS-COORD-AUTH-20260803-001`
 **Logical CAR-017 Publication Reference:** `CAR-017-V1.2-KRONOS-COORD-AUTH-20260803-001`
 **Actual Coordinated Governance Publication Commit SHA:** `PENDING — ESTABLISHED BY CANONICAL PUBLICATION`
+**Controlled Amendment:** `CAR-016-V1.2-CA1`
+**Controlled Amendment Status:** Approved
+**Controlled Amendment Canonical Status:** Canonical Controlled Amendment
+**Underlying Canonical Record:** CAR-016 Version 1.2
+**Controlled Amendment Workflow Stage:** Repository Publication
+**Logical CAR-016 CA1 Publication Reference:** `CAR-016-V1.2-CA1-KRONOS-COORD-AUTH-20260804-002`
+**Logical CAR-017 CA1 Publication Reference:** `CAR-017-V1.2-CA1-KRONOS-COORD-AUTH-20260804-002`
+**Previous Activation Disposition:** `KRONOS-COORD-AUTH-20260803-001` — `RETIRED FOR EXECUTION — UNUSED`
+**Coordinated Activation Identity Under CA1:** `KRONOS-COORD-AUTH-20260804-002`
+**CA1 Coordinated Governance Publication Commit SHA:** `PENDING — ESTABLISHED BY THE FOUR-FILE CANONICAL PUBLICATION COMMIT`
 
 ---
 
@@ -1148,6 +1160,127 @@ CAR-016 Version 1.2 is Approved and Canonical through coordinated publication wi
 **SDK/Provider Endpoint Authority:** None
 
 **CAR-014 Status:** Unexecuted
+
+# 24. Controlled Amendment — CAR-016-V1.2-CA1
+
+**Controlled Amendment ID:** `CAR-016-V1.2-CA1`
+
+**Controlled Amendment Status:** Approved
+
+**Canonical Status:** Canonical Controlled Amendment
+
+**Underlying Canonical Record:** CAR-016 Version 1.2
+
+**Workflow Stage:** Repository Publication
+
+**Logical CAR-016 CA1 Publication Reference:** `CAR-016-V1.2-CA1-KRONOS-COORD-AUTH-20260804-002`
+
+**Logical CAR-017 CA1 Publication Reference:** `CAR-017-V1.2-CA1-KRONOS-COORD-AUTH-20260804-002`
+
+**CA1 Coordinated Governance Publication Commit SHA:**
+`PENDING — ESTABLISHED BY THE FOUR-FILE CANONICAL PUBLICATION COMMIT`
+
+**Frozen CAR-018 Corrective Composite Implementation SHA:**
+`6273663a8ca8729833a8a0f05e06d55973ce6dc0`
+
+This separately identifiable Approved Canonical controlled amendment preserves
+the complete canonical Version 1.2 history. It changes no implementation, test,
+architecture, EDD, dependency or configuration. One coordinated four-file
+canonical publication commit establishes its actual publication SHA as
+post-publication evidence. Publication itself performs no preflight, grants no
+Sponsor execution authority and causes no runtime or external-effect activity.
+
+## 24.1 Activation disposition
+
+| Controlled value | Exact disposition |
+|---|---|
+| Previous coordinated activation identity | `KRONOS-COORD-AUTH-20260803-001` |
+| Previous identity disposition | `RETIRED FOR EXECUTION — UNUSED` |
+| New coordinated activation identity | `KRONOS-COORD-AUTH-20260804-002` |
+| Effective | `2026-08-06T09:00:00+05:30 Asia/Kolkata` |
+| Expiry | `2026-08-13T09:00:00+05:30 Asia/Kolkata` |
+| Attempt cardinality | `ONE` |
+| Consumption state | `UNUSED` |
+| Provider Availability | `WITHHELD — MAXIMUM 0` |
+| CAR-017 coordinated amendment | `CAR-017-V1.2-CA1` |
+| CAR-014 | `UNEXECUTED` |
+
+The previous identity was never consumed and is retired for execution. It
+cannot be selected, renewed, revived, aliased or used as fallback for the new
+identity.
+
+## 24.2 Complete coordinated Activation Context
+
+The complete coordinated Activation Context for
+`CAR-016-V1.2-CA1-KRONOS-COORD-AUTH-20260804-002` and
+`CAR-017-V1.2-CA1-KRONOS-COORD-AUTH-20260804-002` consists exclusively of these exact, case-sensitive,
+non-sensitive values:
+
+| Activation Context field | Exact frozen value |
+|---|---|
+| Coordinated activation identity | `KRONOS-COORD-AUTH-20260804-002` |
+| CA1 coordinated governance publication commit SHA | `PENDING — ESTABLISHED BY THE FOUR-FILE CANONICAL PUBLICATION COMMIT` |
+| Logical CAR-016 CA1 publication reference | `CAR-016-V1.2-CA1-KRONOS-COORD-AUTH-20260804-002` |
+| Logical CAR-017 CA1 publication reference | `CAR-017-V1.2-CA1-KRONOS-COORD-AUTH-20260804-002` |
+| Frozen CAR-016 implementation SHA | `bb5aa16fbc4fda2609376d53161d591fb0fe0d36` |
+| Frozen CAR-017 implementation SHA | `8f052d0cc3b7abc63a28c2951a3b4770c58b4454` |
+| Frozen CAR-018 corrective composite implementation SHA | `6273663a8ca8729833a8a0f05e06d55973ce6dc0` |
+| Authority effective timestamp | `2026-08-06T09:00:00+05:30` |
+| Authority effective timezone | `Asia/Kolkata` |
+| Authority expiry timestamp | `2026-08-13T09:00:00+05:30` |
+| Authority expiry timezone | `Asia/Kolkata` |
+| Authentication Attempt timeout | `300 seconds` |
+| Sponsor environment reference | `SPONSOR-MACOS-LOCAL-NONPROD-01` |
+| Approved hostname | `Imrans-Mac-mini.local` |
+| Provider identity | `ZERODHA_KITE` |
+| Operational Provider value | `KITE` |
+| Provider configuration reference | `ZERODHA-KITE-PROVIDER-CONFIG-PRIMARY` |
+| Kite application-registration reference | `ZERODHA-KITE-APP-REGISTRATION-PRIMARY` |
+| Secure-credential reference | `KITE-API-SECRET-PRIMARY` |
+| Intended-principal registration reference | `KITE-INTENDED-PRINCIPAL-PRIMARY` |
+| Composition dependency-set reference | `CAR017-LIVE-COMPOSITION-DEPENDENCY-SET-V1` |
+| Redirect URL | `http://127.0.0.1:8765/kite/callback` |
+| Attempt cardinality | `ONE` |
+| Provider Availability Verification Authority | `WITHHELD` |
+| Maximum Provider Availability verification operations | `0` |
+| CAR-014 status | `UNEXECUTED` |
+| Coordinated consumption state | `UNUSED` |
+| Controlled invalid-activation category | `COORDINATED_LIVE_ACTIVATION_NOT_AUTHORIZED_OR_CONTEXT_MISMATCH` |
+
+No value may be renamed, normalized, reinterpreted, derived, inferred,
+substituted or expanded. The actual coordinated governance publication commit
+SHA becomes the resulting four-file canonical publication commit SHA after
+creation and push; it is not inserted into the commit that establishes it.
+
+## 24.3 Coordinated sufficiency and publication evidence
+
+`CAR-016-V1.2-CA1-KRONOS-COORD-AUTH-20260804-002` and
+`CAR-017-V1.2-CA1-KRONOS-COORD-AUTH-20260804-002` are jointly necessary and
+individually insufficient. They have one shared activation identity, authority
+window, attempt cardinality and consumption state. Any mismatch fails closed.
+
+One documentation-only commit containing exactly CAR-018 Version 1.1,
+`CAR-016-V1.2-CA1`, `CAR-017-V1.2-CA1` and the Document Register establishes
+the actual coordinated governance publication SHA. The resulting SHA is
+post-publication evidence, is obtained only after that commit is created and
+pushed, and is not inserted into the commit that creates it.
+
+The resulting four-file publication SHA is mandatory evidence for live
+preflight, the final Sponsor execution instruction, CAR-016 Version 1.3 and
+CAR-017 Version 1.3 sanitized outcome records.
+
+## 24.4 Preserved execution boundary
+
+Publication alone performs no preflight, consumes no authority, reserves no
+Authentication Attempt and grants no direct runtime activity. A later governed
+preflight and separate Sponsor execution instruction remain mandatory. All
+Version 1.2 one-attempt operation cardinalities, consumption-before-attempt
+ordering, local-only cleanup and prohibitions remain unchanged.
+
+Provider Availability Verification Authority remains `WITHHELD`; the maximum
+number of Provider Availability verification operations is `0`. CAR-014
+remains unexecuted. CAR-016 Version 1.3 remains reserved exclusively for the
+post-attempt sanitized outcome and creates no renewed attempt.
 
 ## Related Authority
 
