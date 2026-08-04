@@ -101,6 +101,9 @@ class AuthenticationModelFailure(StrEnum):
     INVALID_TRANSITION = "INVALID_TRANSITION"
     TERMINAL_ATTEMPT = "TERMINAL_ATTEMPT"
     PREMATURE_TIMEOUT = "PREMATURE_TIMEOUT"
+    INVALID_OPERATION_COUNT = "INVALID_OPERATION_COUNT"
+    OPERATION_CARDINALITY_EXCEEDED = "OPERATION_CARDINALITY_EXCEEDED"
+    PROVIDER_AVAILABILITY_WITHHELD = "PROVIDER_AVAILABILITY_WITHHELD"
 
 
 class AuthenticationModelError(ValueError):
@@ -109,6 +112,136 @@ class AuthenticationModelError(ValueError):
     def __init__(self, failure: AuthenticationModelFailure) -> None:
         self.failure = failure
         super().__init__(failure.value)
+
+
+class CoordinatedConsumptionState(StrEnum):
+    """Sanitized coordinated-authority states."""
+
+    UNUSED = "UNUSED"
+    CONSUMED = "CONSUMED"
+    CONSUMPTION_STATE_UNCERTAIN = "CONSUMPTION_STATE_UNCERTAIN"
+
+
+class ConsumptionOutcomeCategory(StrEnum):
+    """Mutually exclusive durable-consumption outcomes."""
+
+    PRE_CONSUMPTION_VALIDATION_FAILED = "PRE_CONSUMPTION_VALIDATION_FAILED"
+    POST_CONFIRMATION_CONSUMPTION_UNCERTAIN = (
+        "POST_CONFIRMATION_CONSUMPTION_UNCERTAIN"
+    )
+    CONSUMED = "CONSUMED"
+
+
+class RuntimeTerminationCategory(StrEnum):
+    """Cleanup boundary after durable consumption has been proven."""
+
+    PROVEN_CONSUMPTION_RUNTIME_TERMINATION = (
+        "PROVEN_CONSUMPTION_RUNTIME_TERMINATION"
+    )
+
+
+class GovernedAuthenticationOperation(StrEnum):
+    """Only operations admitted by the sanitized cardinality ledger."""
+
+    ACTIVATION_VALIDATION = "ACTIVATION_VALIDATION"
+    AUTHORITY_CONSUMPTION = "AUTHORITY_CONSUMPTION"
+    ATTEMPT_RESERVATION = "ATTEMPT_RESERVATION"
+    LISTENER_CONSTRUCTION = "LISTENER_CONSTRUCTION"
+    LISTENER_BIND = "LISTENER_BIND"
+    LOGIN_URL_GENERATION = "LOGIN_URL_GENERATION"
+    BROWSER_LAUNCH = "BROWSER_LAUNCH"
+    TERMINAL_CALLBACK = "TERMINAL_CALLBACK"
+    API_SECRET_RETRIEVAL = "API_SECRET_RETRIEVAL"
+    SESSION_EXCHANGE = "SESSION_EXCHANGE"
+    INTENDED_PRINCIPAL_RETRIEVAL = "INTENDED_PRINCIPAL_RETRIEVAL"
+    PRINCIPAL_PROFILE_VERIFICATION = "PRINCIPAL_PROFILE_VERIFICATION"
+    CONTEXT_ESTABLISHMENT = "CONTEXT_ESTABLISHMENT"
+    LOCAL_CLEANUP = "LOCAL_CLEANUP"
+    PROVIDER_AVAILABILITY_VERIFICATION = "PROVIDER_AVAILABILITY_VERIFICATION"
+
+
+@dataclass(frozen=True, slots=True)
+class SanitizedOperationCount:
+    """One non-sensitive operation count with bounded cardinality."""
+
+    operation: GovernedAuthenticationOperation
+    count: int
+
+    def __post_init__(self) -> None:
+        if type(self.operation) is not GovernedAuthenticationOperation or type(
+            self.count
+        ) is not int or self.count < 0:
+            raise AuthenticationModelError(
+                AuthenticationModelFailure.INVALID_OPERATION_COUNT
+            )
+        maximum = (
+            0
+            if self.operation
+            is GovernedAuthenticationOperation.PROVIDER_AVAILABILITY_VERIFICATION
+            else 1
+        )
+        if self.count > maximum:
+            failure = (
+                AuthenticationModelFailure.PROVIDER_AVAILABILITY_WITHHELD
+                if maximum == 0
+                else AuthenticationModelFailure.OPERATION_CARDINALITY_EXCEEDED
+            )
+            raise AuthenticationModelError(failure)
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class SanitizedOperationLedger:
+    """Immutable, non-serializable count-only authentication evidence."""
+
+    counts: tuple[SanitizedOperationCount, ...]
+
+    def __post_init__(self) -> None:
+        if type(self.counts) is not tuple:
+            raise AuthenticationModelError(
+                AuthenticationModelFailure.INVALID_OPERATION_COUNT
+            )
+        expected = tuple(GovernedAuthenticationOperation)
+        if tuple(item.operation for item in self.counts) != expected:
+            raise AuthenticationModelError(
+                AuthenticationModelFailure.INVALID_OPERATION_COUNT
+            )
+
+    @classmethod
+    def empty(cls) -> "SanitizedOperationLedger":
+        return cls(
+            tuple(
+                SanitizedOperationCount(operation=operation, count=0)
+                for operation in GovernedAuthenticationOperation
+            )
+        )
+
+    def count_for(self, operation: GovernedAuthenticationOperation) -> int:
+        if type(operation) is not GovernedAuthenticationOperation:
+            raise AuthenticationModelError(
+                AuthenticationModelFailure.INVALID_OPERATION_COUNT
+            )
+        return self.counts[tuple(GovernedAuthenticationOperation).index(operation)].count
+
+    def record(
+        self,
+        operation: GovernedAuthenticationOperation,
+    ) -> "SanitizedOperationLedger":
+        """Return a new snapshot after one bounded operation."""
+
+        current = self.count_for(operation)
+        replacement = SanitizedOperationCount(operation=operation, count=current + 1)
+        return SanitizedOperationLedger(
+            tuple(
+                replacement if item.operation is operation else item
+                for item in self.counts
+            )
+        )
+
+    def __repr__(self) -> str:
+        return "<SanitizedOperationLedger counts-only>"
+
+    def __reduce_ex__(self, _protocol: int) -> object:
+        raise TypeError("SANITIZED_OPERATION_LEDGER_SERIALIZATION_PROHIBITED")
 
 
 @dataclass(frozen=True, slots=True, repr=False, eq=False)

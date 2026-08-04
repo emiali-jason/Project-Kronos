@@ -27,6 +27,71 @@ class AuthenticationAttemptHandle(Protocol):
     """Opaque, non-serializable service capability."""
 
 
+class CanonicalActivationEvidenceVerifier(Protocol):
+    """Trusted boundary for canonical repository and governance evidence."""
+
+    def verify(
+        self,
+        expected_context: object,
+        observed_context: object,
+        repository_evidence: object,
+    ) -> bool:
+        """Return true only for exact canonical, synchronized evidence."""
+
+
+class DurableConsumptionFilesystem(Protocol):
+    """Descriptor-only durable-consumption filesystem boundary.
+
+    Implementations must not provide a path-based creation or reopen fallback.
+    """
+
+    def open_verified_parent_directory(
+        self,
+        directory: str,
+        *,
+        expected_owner: int,
+        expected_mode: int,
+    ) -> object:
+        """Safely create if absent, then open and verify the exact parent."""
+
+    def create_exclusive_nofollow(
+        self,
+        parent_descriptor: object,
+        filename: str,
+        *,
+        mode: int,
+    ) -> object:
+        """Create one file relative to the parent with O_EXCL/no-follow semantics."""
+
+    def verify_open_file(
+        self,
+        file_descriptor: object,
+        *,
+        expected_owner: int,
+        expected_mode: int,
+        expected_link_count: int,
+    ) -> None:
+        """Verify regular-file, owner, mode and link count through the descriptor."""
+
+    def write_all(self, file_descriptor: object, payload: bytes) -> None:
+        """Write the complete payload or fail; short writes are prohibited."""
+
+    def flush_file(self, file_descriptor: object) -> None:
+        """Flush language/runtime buffers without closing the descriptor."""
+
+    def fsync_file(self, file_descriptor: object) -> None:
+        """Synchronize file contents durably."""
+
+    def close_file(self, file_descriptor: object) -> None:
+        """Close the created file descriptor safely."""
+
+    def fsync_directory(self, parent_descriptor: object) -> None:
+        """Synchronize the verified parent directory after creation."""
+
+    def close_directory(self, parent_descriptor: object) -> None:
+        """Dispose the parent descriptor without mutating the record path."""
+
+
 class OneUseRequestToken(Protocol):
     """Single-use callback token boundary with no raw-value getter."""
 
@@ -157,7 +222,9 @@ __all__ = [
     "AuthenticatedContextPublisher",
     "AuthenticationAttemptHandle",
     "AuthenticationCallbackListener",
+    "CanonicalActivationEvidenceVerifier",
     "CallbackAcceptanceResult",
+    "DurableConsumptionFilesystem",
     "IntendedPrincipalResolver",
     "LoginNavigator",
     "OneUseRequestToken",
