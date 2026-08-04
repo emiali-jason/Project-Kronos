@@ -38,6 +38,14 @@ from kronos.provider.models.authentication import (
     ProviderAuthenticationConfiguration,
     ProviderAvailabilityState,
     SessionStatus,
+    GovernedAuthenticationOperation,
+    SanitizedOperationLedger,
+)
+from kronos.provider.kite.live_activation import (
+    DurableConsumptionRecord,
+    MonotonicLifecycleDeadline,
+    ProvenConsumption,
+    RemainingBudget,
 )
 from kronos.provider.models.context import (
     AuthenticatedProviderContext,
@@ -50,6 +58,13 @@ _Clock = Callable[[], datetime]
 _IdentityFactory = Callable[[], str]
 _AdapterFactory = Callable[[str], ProviderAuthenticationAdapter]
 _ListenerFactory = Callable[[], AuthenticationCallbackListener]
+_RemainingBudgetSupplier = Callable[[], RemainingBudget]
+
+
+class _OperationLedgerRecorder(Protocol):
+    def record(self, operation: GovernedAuthenticationOperation) -> None: ...
+
+    def snapshot(self) -> SanitizedOperationLedger: ...
 
 
 class _StartableCallbackListener(AuthenticationCallbackListener, Protocol):
@@ -172,6 +187,11 @@ class ProviderAuthenticationService:
         "__listener_factory",
         "__lock",
         "__navigator",
+        "__operation_recorder",
+        "__proven_consumption",
+        "__remaining_budget",
+        "__governed",
+        "__governed_cleanup_recorded",
         "__records",
     )
 
@@ -187,9 +207,48 @@ class ProviderAuthenticationService:
         clock: _Clock,
         identity_factory: _IdentityFactory,
         attempt_lifetime: timedelta = timedelta(minutes=5),
+        proven_consumption: ProvenConsumption | None = None,
+        remaining_budget: _RemainingBudgetSupplier | None = None,
+        operation_recorder: _OperationLedgerRecorder | None = None,
     ) -> None:
         if attempt_lifetime <= timedelta(0):
             raise ValueError("ATTEMPT_LIFETIME_INVALID")
+        governed_inputs = (
+            proven_consumption,
+            remaining_budget,
+            operation_recorder,
+        )
+        governed = all(value is not None for value in governed_inputs)
+        if any(value is not None for value in governed_inputs) and not governed:
+            raise ValueError("GOVERNED_AUTHENTICATION_SEAMS_INCOMPLETE")
+        if governed:
+            if (
+                type(proven_consumption) is not ProvenConsumption
+                or type(proven_consumption.record) is not DurableConsumptionRecord
+                or type(proven_consumption.deadline) is not MonotonicLifecycleDeadline
+                or type(proven_consumption.ledger) is not SanitizedOperationLedger
+                or not callable(remaining_budget)
+                or not callable(getattr(operation_recorder, "record", None))
+                or not callable(getattr(operation_recorder, "snapshot", None))
+                or operation_recorder.snapshot() is not proven_consumption.ledger
+                or proven_consumption.ledger.count_for(
+                    GovernedAuthenticationOperation.ACTIVATION_VALIDATION
+                )
+                != 1
+                or proven_consumption.ledger.count_for(
+                    GovernedAuthenticationOperation.AUTHORITY_CONSUMPTION
+                )
+                != 1
+                or proven_consumption.ledger.count_for(
+                    GovernedAuthenticationOperation.PROVIDER_AVAILABILITY_VERIFICATION
+                )
+                != 0
+            ):
+                raise ValueError("GOVERNED_CONSUMPTION_PROOF_INVALID")
+            budget = remaining_budget()
+            if type(budget) is not RemainingBudget:
+                raise ValueError("GOVERNED_DEADLINE_INVALID")
+            budget.require_available()
         self.__configuration = configuration
         self.__credential_source = credential_source
         self.__binding_verifier = ProtectedPrincipalBindingVerifier(
@@ -201,6 +260,11 @@ class ProviderAuthenticationService:
         self.__clock = clock
         self.__identity_factory = identity_factory
         self.__lifetime = attempt_lifetime
+        self.__governed = governed
+        self.__proven_consumption = proven_consumption
+        self.__remaining_budget = remaining_budget
+        self.__operation_recorder = operation_recorder
+        self.__governed_cleanup_recorded = False
         self.__lock = threading.RLock()
         self.__records: dict[_AttemptHandle, _AttemptRecord] = {}
         self.__active_handle: _AttemptHandle | None = None
@@ -213,6 +277,9 @@ class ProviderAuthenticationService:
     def begin_login(self) -> _AttemptHandle:
         """Begin one bounded attempt through listener-ready browser initiation."""
 
+        governed_seconds = self.__governed_before(
+            GovernedAuthenticationOperation.ATTEMPT_RESERVATION
+        )
         with self.__lock:
             if self.__active_handle is not None:
                 raise RuntimeError(AuthenticationFailureCode.ATTEMPT_ALREADY_ACTIVE.value)
@@ -220,6 +287,11 @@ class ProviderAuthenticationService:
                 raise RuntimeError("AUTHENTICATED_CONTEXT_ALREADY_ACTIVE")
             now = self.__aware_now()
             handle = _AttemptHandle()
+            attempt_lifetime = (
+                timedelta(seconds=governed_seconds)
+                if governed_seconds is not None
+                else self.__lifetime
+            )
             attempt = AuthenticationAttempt(
                 attempt_id=self.__identity_factory(),
                 provider=self.__configuration.provider,
@@ -228,7 +300,7 @@ class ProviderAuthenticationService:
                 ),
                 created_at=now,
                 started_at=now,
-                expires_at=now + self.__lifetime,
+                expires_at=now + attempt_lifetime,
                 listener_ref="LOOPBACK_CALLBACK",
             )
             record = _AttemptRecord(handle, attempt)
@@ -237,6 +309,7 @@ class ProviderAuthenticationService:
             self.__latest_handle = handle
 
         try:
+            self.__require_governed_budget()
             listener = self.__listener_factory()
             start = getattr(listener, "start", None)
             if not callable(start):
@@ -286,6 +359,7 @@ class ProviderAuthenticationService:
     ) -> AuthenticationOutcomeEvidence:
         """Complete the first callback and terminalize the attempt exactly once."""
 
+        self.__governed_before(GovernedAuthenticationOperation.TERMINAL_CALLBACK)
         record = self.__record_for(attempt)
         with self.__lock:
             if record.terminal_evidence is not None:
@@ -398,6 +472,9 @@ class ProviderAuthenticationService:
             return self.__required_terminal_evidence(record)
 
         try:
+            self.__governed_before(
+                GovernedAuthenticationOperation.CONTEXT_ESTABLISHMENT
+            )
             context = AuthenticatedProviderContext(
                 validity=ContextValidity.VALID,
                 reuse_eligibility=ContextReuseEligibility.ELIGIBLE,
@@ -443,6 +520,9 @@ class ProviderAuthenticationService:
 
     def verify_provider_availability(self) -> ProviderAvailabilityState:
         """Perform one explicit availability operation without changing attempt."""
+
+        if self.__governed:
+            raise RuntimeError("PROVIDER_AVAILABILITY_VERIFICATION_WITHHELD")
 
         with self.__lock:
             candidate = self.__candidate
@@ -553,6 +633,8 @@ class ProviderAuthenticationService:
 
     def end_kronos_session(self) -> None:
         """End and dispose the local context without a Provider mutation."""
+
+        self.__record_governed_cleanup_once()
 
         with self.__lock:
             candidate = self.__candidate
@@ -684,6 +766,7 @@ class ProviderAuthenticationService:
         *,
         dispose_candidate: bool,
     ) -> None:
+        self.__record_governed_cleanup_once()
         callback = record.callback_result
         record.callback_result = None
         if callback is not None:
@@ -767,6 +850,50 @@ class ProviderAuthenticationService:
         if now.tzinfo is None or now.utcoffset() is None:
             raise ValueError("AUTHENTICATION_CLOCK_MUST_BE_TIMEZONE_AWARE")
         return now
+
+    def __governed_before(
+        self,
+        operation: GovernedAuthenticationOperation,
+    ) -> float | None:
+        seconds = self.__require_governed_budget()
+        if seconds is None:
+            return None
+        recorder = self.__operation_recorder
+        if recorder is None:
+            raise RuntimeError("GOVERNED_OPERATION_LEDGER_UNAVAILABLE")
+        try:
+            recorder.record(operation)
+        except Exception:
+            raise RuntimeError("GOVERNED_OPERATION_CARDINALITY_REJECTED") from None
+        return seconds
+
+    def __require_governed_budget(self) -> float | None:
+        if not self.__governed:
+            return None
+        if type(self.__proven_consumption) is not ProvenConsumption:
+            raise RuntimeError("GOVERNED_CONSUMPTION_PROOF_UNAVAILABLE")
+        supplier = self.__remaining_budget
+        if supplier is None:
+            raise RuntimeError("GOVERNED_DEADLINE_UNAVAILABLE")
+        try:
+            budget = supplier()
+            if type(budget) is not RemainingBudget:
+                raise TypeError
+            return budget.require_available()
+        except Exception:
+            raise RuntimeError("GOVERNED_DEADLINE_EXHAUSTED") from None
+
+    def __record_governed_cleanup_once(self) -> None:
+        if not self.__governed or self.__governed_cleanup_recorded:
+            return
+        self.__governed_cleanup_recorded = True
+        recorder = self.__operation_recorder
+        if recorder is None:
+            return
+        try:
+            recorder.record(GovernedAuthenticationOperation.LOCAL_CLEANUP)
+        except Exception:
+            return
 
 
 def _candidate_contract(candidate: object) -> bool:

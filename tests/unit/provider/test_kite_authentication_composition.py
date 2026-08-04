@@ -14,14 +14,29 @@ from kronos.provider.kite.composition import (
     compose_kite_authentication,
 )
 from kronos.provider.kite.live_activation import (
+    ActivationReview,
     ActivationProvenanceKind,
     CanonicalRepositoryEvidence,
+    ConsumptionOutcomeCategory,
     CoordinatedActivationValues,
+    DurableConsumptionRecord,
+    DurableConsumptionResult,
     LiveActivationContext,
+    MonotonicLifecycleDeadline,
+    ProvenConsumption,
     RemainingBudget,
     TrustedActivationReviewer,
 )
-from kronos.provider.models.authentication import CoordinatedConsumptionState
+from kronos.provider.models.authentication import (
+    CoordinatedConsumptionState,
+    GovernedAuthenticationOperation,
+)
+from kronos.provider.services.provider_authentication import (
+    ProviderAuthenticationService,
+)
+from tools.provider_pilots.car017_live_authentication_launcher import (
+    PreparedGovernedLaunch,
+)
 
 
 SHA = "a" * 40
@@ -45,6 +60,11 @@ class _Counter:
         self.args = args
         self.kwargs = kwargs
         return self.result if self.result is not None else object()
+
+
+class _ConsumptionCounter(_Counter):
+    def consume(self, **kwargs: object) -> object:
+        return self(**kwargs)
 
 
 def _values(**changes: object) -> CoordinatedActivationValues:
@@ -134,6 +154,35 @@ def _counters() -> dict[str, _Counter]:
     }
 
 
+def _governed_seams(
+    values: CoordinatedActivationValues,
+    *,
+    budget: float = 300.0,
+) -> tuple[OperationLedgerRecorder, ProvenConsumption, object]:
+    recorder = OperationLedgerRecorder()
+    recorder.record(GovernedAuthenticationOperation.ACTIVATION_VALIDATION)
+    consumed_ledger = recorder.snapshot().record(
+        GovernedAuthenticationOperation.AUTHORITY_CONSUMPTION
+    )
+    recorder.adopt(consumed_ledger)
+    proof = ProvenConsumption(
+        record=DurableConsumptionRecord(
+            coordinated_activation_identity=values.coordinated_activation_identity,
+            coordinated_governance_publication_sha=(
+                values.coordinated_governance_publication_sha
+            ),
+            consumed_at=NOW.isoformat(),
+        ),
+        deadline=MonotonicLifecycleDeadline(monotonic_now=0.0),
+        ledger=consumed_ledger,
+    )
+
+    def remaining_budget() -> RemainingBudget:
+        return RemainingBudget(budget)
+
+    return recorder, proof, remaining_budget
+
+
 def _compose(
     activation: object,
     capability: object,
@@ -142,14 +191,24 @@ def _compose(
     *,
     configuration: object | None = None,
     budget: float = 300.0,
+    recorder: OperationLedgerRecorder | None = None,
+    proof: ProvenConsumption | None = None,
+    remaining_budget: object | None = None,
+    service_factory: object | None = None,
+    identity_factory: object | None = None,
 ) -> GovernedKiteAuthenticationRuntime:
+    default_recorder, default_proof, default_budget = _governed_seams(
+        values,
+        budget=budget,
+    )
     return compose_kite_authentication(
         activation,
+        proven_consumption=proof or default_proof,
         activation_capability=capability,
         activation_values=values,
         configuration=configuration or _configuration(),  # type: ignore[arg-type]
-        operation_recorder=OperationLedgerRecorder(),
-        remaining_budget=lambda: RemainingBudget(budget),
+        operation_recorder=recorder or default_recorder,
+        remaining_budget=remaining_budget or default_budget,  # type: ignore[arg-type]
         security_runner=counters["security"],  # type: ignore[arg-type]
         browser_opener=counters["browser"],  # type: ignore[arg-type]
         server_factory=counters["server"],  # type: ignore[arg-type]
@@ -157,9 +216,9 @@ def _compose(
         credential_source_factory=counters["credential"],
         intended_principal_resolver_factory=counters["principal"],
         navigator_factory=counters["navigator"],
-        service_factory=counters["service"],
+        service_factory=service_factory or counters["service"],  # type: ignore[arg-type]
         clock=lambda: NOW,
-        identity_factory=lambda: "attempt-1",
+        identity_factory=identity_factory or (lambda: "attempt-1"),  # type: ignore[arg-type]
     )
 
 
@@ -230,15 +289,17 @@ def test_configuration_identity_mismatch_fails_before_factories(
 
 def test_fake_review_cannot_enable_default_live_dependencies() -> None:
     context, capability, values = _review()
+    recorder, proof, remaining_budget = _governed_seams(values)
 
     with pytest.raises(LiveCompositionError, match="INVALID_ACTIVATION"):
         compose_kite_authentication(
             context,
+            proven_consumption=proof,
             activation_capability=capability,
             activation_values=values,
             configuration=_configuration(),  # type: ignore[arg-type]
-            operation_recorder=OperationLedgerRecorder(),
-            remaining_budget=lambda: RemainingBudget(300.0),
+            operation_recorder=recorder,
+            remaining_budget=remaining_budget,  # type: ignore[arg-type]
         )
 
 
@@ -259,6 +320,180 @@ def test_valid_fake_composition_wires_once_and_defers_all_effects() -> None:
         "navigator": 1,
         "service": 1,
     }
+
+
+def test_exact_proof_deadline_supplier_and_ledger_reach_service_unchanged() -> None:
+    context, capability, values = _review()
+    counters = _counters()
+    recorder, proof, remaining_budget = _governed_seams(values)
+
+    runtime = _compose(
+        context,
+        capability,
+        values,
+        counters,
+        recorder=recorder,
+        proof=proof,
+        remaining_budget=remaining_budget,
+    )
+
+    assert isinstance(runtime, GovernedKiteAuthenticationRuntime)
+    service_arguments = counters["service"].kwargs
+    assert service_arguments["proven_consumption"] is proof
+    assert service_arguments["remaining_budget"] is remaining_budget
+    assert service_arguments["operation_recorder"] is recorder
+    assert recorder.snapshot() is proof.ledger
+
+
+def test_launcher_forwards_exact_durable_consumption_proof_to_composition() -> None:
+    context, capability, values = _review()
+    recorder = OperationLedgerRecorder()
+    recorder.record(GovernedAuthenticationOperation.ACTIVATION_VALIDATION)
+    consumed_ledger = recorder.snapshot().record(
+        GovernedAuthenticationOperation.AUTHORITY_CONSUMPTION
+    )
+    proof = ProvenConsumption(
+        record=DurableConsumptionRecord(
+            coordinated_activation_identity=values.coordinated_activation_identity,
+            coordinated_governance_publication_sha=(
+                values.coordinated_governance_publication_sha
+            ),
+            consumed_at=NOW.isoformat(),
+        ),
+        deadline=MonotonicLifecycleDeadline(monotonic_now=0.0),
+        ledger=consumed_ledger,
+    )
+    consumption = _ConsumptionCounter(
+        DurableConsumptionResult(ConsumptionOutcomeCategory.CONSUMED, proof)
+    )
+    composition = _Counter()
+    prepared = PreparedGovernedLaunch(
+        review=ActivationReview(context, capability),
+        values=values,
+        configuration=_configuration(),
+        consumption=consumption,  # type: ignore[arg-type]
+        consumed_at=lambda: NOW,
+        monotonic=lambda: 1.0,
+        composition_factory=composition,
+        recorder=recorder,
+    )
+
+    prepared.compose_after_confirmation(context)
+
+    assert composition.kwargs["proven_consumption"] is proof
+    assert composition.kwargs["operation_recorder"] is recorder
+    assert recorder.snapshot() is proof.ledger
+    remaining_budget = composition.kwargs["remaining_budget"]
+    assert callable(remaining_budget)
+    assert remaining_budget().seconds == 299.0
+
+
+def test_substituted_proof_is_rejected_before_every_factory() -> None:
+    context, capability, values = _review()
+    counters = _counters()
+    recorder, _, remaining_budget = _governed_seams(values)
+    _, substituted, _ = _governed_seams(values)
+
+    with pytest.raises(LiveCompositionError, match="INVALID_ACTIVATION"):
+        _compose(
+            context,
+            capability,
+            values,
+            counters,
+            recorder=recorder,
+            proof=substituted,
+            remaining_budget=remaining_budget,
+        )
+
+    assert all(counter.calls == 0 for counter in counters.values())
+
+
+def test_malformed_proof_cannot_be_reconstructed_from_other_seams() -> None:
+    context, capability, values = _review()
+    counters = _counters()
+    recorder, _, remaining_budget = _governed_seams(values)
+
+    with pytest.raises(LiveCompositionError, match="INVALID_ACTIVATION"):
+        compose_kite_authentication(
+            context,
+            proven_consumption=object(),  # type: ignore[arg-type]
+            activation_capability=capability,
+            activation_values=values,
+            configuration=_configuration(),  # type: ignore[arg-type]
+            operation_recorder=recorder,
+            remaining_budget=remaining_budget,  # type: ignore[arg-type]
+            security_runner=counters["security"],  # type: ignore[arg-type]
+            browser_opener=counters["browser"],  # type: ignore[arg-type]
+            server_factory=counters["server"],  # type: ignore[arg-type]
+            adapter_factory=counters["adapter"],
+            credential_source_factory=counters["credential"],
+            intended_principal_resolver_factory=counters["principal"],
+            navigator_factory=counters["navigator"],
+            service_factory=counters["service"],
+        )
+
+    assert all(counter.calls == 0 for counter in counters.values())
+
+
+def test_proof_with_substituted_deadline_fails_before_every_factory() -> None:
+    context, capability, values = _review()
+    counters = _counters()
+    recorder, proof, remaining_budget = _governed_seams(values)
+    malformed = ProvenConsumption(
+        record=proof.record,
+        deadline=object(),  # type: ignore[arg-type]
+        ledger=proof.ledger,
+    )
+
+    with pytest.raises(LiveCompositionError, match="INVALID_ACTIVATION"):
+        _compose(
+            context,
+            capability,
+            values,
+            counters,
+            recorder=recorder,
+            proof=malformed,
+            remaining_budget=remaining_budget,
+        )
+
+    assert all(counter.calls == 0 for counter in counters.values())
+
+
+def test_proof_precedes_attempt_identity_listener_and_all_external_effects() -> None:
+    context, capability, values = _review()
+    counters = _counters()
+    recorder, proof, remaining_budget = _governed_seams(values)
+    identity = _Counter("attempt-1")
+    runtime = _compose(
+        context,
+        capability,
+        values,
+        counters,
+        recorder=recorder,
+        proof=proof,
+        remaining_budget=remaining_budget,
+        service_factory=ProviderAuthenticationService,
+        identity_factory=identity,
+    )
+
+    assert identity.calls == 0
+    assert counters["server"].calls == 0
+    runtime.begin_login()
+
+    ledger = runtime.operation_ledger()
+    assert identity.calls == 1
+    assert counters["server"].calls == 1
+    assert ledger.count_for(GovernedAuthenticationOperation.ATTEMPT_RESERVATION) == 1
+    assert ledger.count_for(GovernedAuthenticationOperation.LISTENER_CONSTRUCTION) == 1
+    assert ledger.count_for(GovernedAuthenticationOperation.LISTENER_BIND) == 1
+    assert ledger.count_for(GovernedAuthenticationOperation.LOCAL_CLEANUP) == 1
+    assert counters["security"].calls == 0
+    assert counters["browser"].calls == 0
+    assert counters["adapter"].calls == 0
+
+    with pytest.raises(RuntimeError, match="GOVERNED_OPERATION_CARDINALITY_REJECTED"):
+        runtime.begin_login()
+    assert ledger.count_for(GovernedAuthenticationOperation.ATTEMPT_RESERVATION) == 1
 
 
 def test_deadline_exhaustion_precedes_every_factory() -> None:

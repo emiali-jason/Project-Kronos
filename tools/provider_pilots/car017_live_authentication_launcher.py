@@ -108,7 +108,7 @@ class PreparedGovernedLaunch:
         return self.__review.context
 
     def compose_after_confirmation(self, activation: object) -> object:
-        """Atomically consume, create the deadline, then compose exactly once."""
+        """Consume, adopt the returned proof and deadline, then compose once."""
 
         if activation is not self.__review.context:
             raise RuntimeError("GOVERNED_ACTIVATION_CONTEXT_MISMATCH")
@@ -133,6 +133,7 @@ class PreparedGovernedLaunch:
 
         return self.__composition_factory(
             self.__review.context,
+            proven_consumption=result.proof,
             activation_capability=self.__review.capability,
             activation_values=self.__values,
             configuration=self.__configuration,

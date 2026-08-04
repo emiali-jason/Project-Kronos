@@ -31,12 +31,14 @@ from kronos.provider.kite.adapter.kite_provider import KiteProvider
 from kronos.provider.kite.auth.kite_authentication import KiteAuthentication
 from kronos.provider.kite.live_activation import (
     CoordinatedActivationValues,
+    DurableConsumptionRecord,
     LiveActivationContext,
+    MonotonicLifecycleDeadline,
+    ProvenConsumption,
     RemainingBudget,
     ReviewedActivationCapability,
 )
 from kronos.provider.models.authentication import (
-    AuthenticationAttemptState,
     GovernedAuthenticationOperation,
     SanitizedOperationLedger,
 )
@@ -98,42 +100,22 @@ class OperationLedgerRecorder:
 class GovernedKiteAuthenticationRuntime:
     """Single runtime facade that adds governed counts and blocks availability."""
 
-    __slots__ = ("__budget", "__cleanup_recorded", "__provider", "__recorder")
+    __slots__ = ("__provider", "__recorder")
 
     def __init__(
         self,
         provider: KiteProvider,
         *,
         recorder: OperationLedgerRecorder,
-        remaining_budget: BudgetSupplier,
     ) -> None:
         self.__provider = provider
         self.__recorder = recorder
-        self.__budget = remaining_budget
-        self.__cleanup_recorded = False
 
     def begin_login(self) -> object:
-        _before_operation(
-            GovernedAuthenticationOperation.ATTEMPT_RESERVATION,
-            self.__recorder,
-            self.__budget,
-        )
         return self.__provider.begin_login()
 
     def complete_callback(self, attempt: object) -> object:
-        _before_operation(
-            GovernedAuthenticationOperation.TERMINAL_CALLBACK,
-            self.__recorder,
-            self.__budget,
-        )
-        outcome = self.__provider.complete_callback(attempt)  # type: ignore[arg-type]
-        if getattr(outcome, "state", None) is AuthenticationAttemptState.SUCCEEDED:
-            _before_operation(
-                GovernedAuthenticationOperation.CONTEXT_ESTABLISHMENT,
-                self.__recorder,
-                self.__budget,
-            )
-        return outcome
+        return self.__provider.complete_callback(attempt)  # type: ignore[arg-type]
 
     def cancel_authentication_attempt(self, attempt: object) -> object:
         return self.__provider.cancel_authentication_attempt(attempt)  # type: ignore[arg-type]
@@ -151,27 +133,15 @@ class GovernedKiteAuthenticationRuntime:
         raise LiveCompositionError(LiveCompositionFailure.INVALID_ACTIVATION)
 
     def end_kronos_session(self) -> None:
-        try:
-            self.__provider.end_kronos_session()
-        finally:
-            self.__record_cleanup_once()
+        self.__provider.end_kronos_session()
 
     def cleanup_local(self) -> None:
         """Perform idempotent local-only cleanup through the authoritative path."""
 
-        try:
-            self.__provider.end_kronos_session()
-        finally:
-            self.__record_cleanup_once()
+        self.__provider.end_kronos_session()
 
     def operation_ledger(self) -> SanitizedOperationLedger:
         return self.__recorder.snapshot()
-
-    def __record_cleanup_once(self) -> None:
-        if self.__cleanup_recorded:
-            return
-        self.__cleanup_recorded = True
-        self.__recorder.record(GovernedAuthenticationOperation.LOCAL_CLEANUP)
 
     def __repr__(self) -> str:
         return "<GovernedKiteAuthenticationRuntime sanitized>"
@@ -207,6 +177,7 @@ class _GovernedListener:
 def compose_kite_authentication(
     activation: object,
     *,
+    proven_consumption: ProvenConsumption,
     activation_capability: object,
     activation_values: CoordinatedActivationValues,
     configuration: GovernedProviderAuthenticationConfiguration,
@@ -245,8 +216,17 @@ def compose_kite_authentication(
         or type(activation_capability) is not ReviewedActivationCapability
         or type(activation_values) is not CoordinatedActivationValues
         or type(operation_recorder) is not OperationLedgerRecorder
+        or type(proven_consumption) is not ProvenConsumption
+        or type(proven_consumption.record) is not DurableConsumptionRecord
+        or type(proven_consumption.deadline) is not MonotonicLifecycleDeadline
+        or type(proven_consumption.ledger) is not SanitizedOperationLedger
         or not activation._matches_capability(activation_capability)  # type: ignore[attr-defined]
         or not activation._matches_values(activation_values)  # type: ignore[attr-defined]
+        or operation_recorder.snapshot() is not proven_consumption.ledger
+        or proven_consumption.record.coordinated_activation_identity
+        != activation.coordinated_activation_identity  # type: ignore[attr-defined]
+        or proven_consumption.record.coordinated_governance_publication_sha
+        != activation.coordinated_governance_publication_sha  # type: ignore[attr-defined]
     ):
         raise LiveCompositionError(LiveCompositionFailure.INVALID_ACTIVATION)
     if (
@@ -342,6 +322,9 @@ def compose_kite_authentication(
             navigator=navigator,
             clock=effective_clock,
             identity_factory=effective_identity_factory,
+            proven_consumption=proven_consumption,
+            remaining_budget=remaining_budget,
+            operation_recorder=operation_recorder,
             attempt_lifetime=timedelta(
                 seconds=(
                     activation.authentication_attempt_timeout_seconds  # type: ignore[attr-defined]
@@ -352,7 +335,6 @@ def compose_kite_authentication(
         return GovernedKiteAuthenticationRuntime(
             provider,
             recorder=operation_recorder,
-            remaining_budget=remaining_budget,
         )
     except LiveCompositionError:
         raise
