@@ -13,7 +13,7 @@ from kronos.provider.contracts.provider_authentication import (
 )
 
 if TYPE_CHECKING:
-    from kronos.provider.kite.composition import LiveActivationContext
+    from kronos.provider.kite.live_activation import LiveActivationContext
 
 
 WINDOW_TITLE = "KRONOS — CAR-016 Authentication Inspection"
@@ -100,10 +100,12 @@ class Car016AuthenticationPilotController:
         "__attempt",
         "__availability_authorized",
         "__closed",
+        "__composition_factory",
         "__confirmation",
         "__functional",
         "__login_started",
         "__service",
+        "__activation",
         "__view",
         "__worker_submit",
     )
@@ -118,25 +120,20 @@ class Car016AuthenticationPilotController:
         composition_factory: CompositionFactory | None = None,
         availability_authorized: bool = False,
     ) -> None:
-        composition_ready = (
+        functional = (
             activation is not None
             and callable(composition_factory)
             and worker_submit is not None
             and confirmation is not None
         )
-        service: ProviderAuthenticationService | None = None
-        if composition_ready and composition_factory is not None:
-            try:
-                service = composition_factory(activation)
-            except Exception:
-                service = None
-        del activation
-        functional = service is not None
         self.__view = view
-        self.__service = service if functional else None
+        self.__activation = activation if functional else None
+        self.__composition_factory = composition_factory if functional else None
+        self.__service: ProviderAuthenticationService | None = None
         self.__worker_submit = worker_submit if functional else None
         self.__confirmation = confirmation if functional else None
-        self.__availability_authorized = functional and availability_authorized
+        # CAR-018 permanently withholds this operation for the governed runtime.
+        self.__availability_authorized = False
         self.__functional = functional
         self.__attempt: object | None = None
         self.__closed = False
@@ -153,12 +150,10 @@ class Car016AuthenticationPilotController:
     def login(self) -> None:
         """Begin at most one composed attempt and complete it on a worker."""
 
-        service = self.__service
         submit = self.__worker_submit
         confirmation = self.__confirmation
         if (
             not self.__functional
-            or service is None
             or submit is None
             or confirmation is None
         ):
@@ -175,8 +170,18 @@ class Car016AuthenticationPilotController:
         self.__login_started = True
         self.__set_controls()
         try:
+            factory = self.__composition_factory
+            activation = self.__activation
+            if factory is None or activation is None:
+                raise RuntimeError("GOVERNED_COMPOSITION_UNAVAILABLE")
+            service = factory(activation)
+            self.__service = service
+            self.__activation = None
+            self.__composition_factory = None
             attempt = service.begin_login()
         except Exception:
+            self.__cleanup_runtime()
+            self.__view.set_notice(INSPECTION_NOTICE)
             self.__show_local_failure()
             return
         self.__attempt = attempt
@@ -261,6 +266,7 @@ class Car016AuthenticationPilotController:
                     service.cancel_authentication_attempt(attempt)
                 except Exception:
                     pass
+        self.__cleanup_runtime()
         self.__closed = True
         self.__view.close()
 
@@ -305,6 +311,7 @@ class Car016AuthenticationPilotController:
         try:
             service.complete_callback(attempt)
         except Exception:
+            self.__cleanup_runtime()
             if not self.__closed:
                 self.__view.dispatch_to_main(self.__show_local_failure)
             return
@@ -328,6 +335,17 @@ class Car016AuthenticationPilotController:
             ).render()
         )
         self.__set_controls()
+
+    def __cleanup_runtime(self) -> None:
+        service = self.__service
+        if service is None:
+            return
+        cleanup = getattr(service, "cleanup_local", None)
+        if callable(cleanup):
+            try:
+                cleanup()
+            except Exception:
+                pass
 
     def __set_controls(
         self,

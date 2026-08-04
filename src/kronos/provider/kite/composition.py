@@ -1,22 +1,23 @@
-"""Externally inert Kite authentication dependency composition."""
+"""Governed, externally inert Kite authentication dependency composition."""
 
 from __future__ import annotations
 
-import re
 import secrets
 import webbrowser
-from collections.abc import Callable, Mapping, Sequence
-from datetime import datetime, timezone
+from collections.abc import Callable
+from dataclasses import replace
+from datetime import datetime, timedelta, timezone
 from enum import StrEnum
-from types import ModuleType
 from typing import Any
 
 from kronos.configuration.apple_keychain import (
     AppleKeychainCredentialSource,
     AppleKeychainIntendedPrincipalResolver,
+    SubprocessRequest,
     SubprocessRunner,
     run_security_subprocess,
 )
+from kronos.configuration.settings import GovernedProviderAuthenticationConfiguration
 from kronos.provider.adapters.kite.authentication import (
     create_kite_authentication_adapter,
 )
@@ -28,23 +29,27 @@ from kronos.provider.callbacks.loopback import (
 )
 from kronos.provider.kite.adapter.kite_provider import KiteProvider
 from kronos.provider.kite.auth.kite_authentication import KiteAuthentication
-from kronos.provider.models.authentication import ProviderAuthenticationConfiguration
-from kronos.provider.services.provider_authentication import (
-    ProviderAuthenticationService,
+from kronos.provider.kite.live_activation import (
+    CoordinatedActivationValues,
+    LiveActivationContext,
+    RemainingBudget,
+    ReviewedActivationCapability,
 )
+from kronos.provider.models.authentication import (
+    AuthenticationAttemptState,
+    GovernedAuthenticationOperation,
+    SanitizedOperationLedger,
+)
+from kronos.provider.services.provider_authentication import ProviderAuthenticationService
 
 
-_REFERENCE_PATTERN = re.compile(r"[A-Za-z0-9._:-]{1,128}\Z")
-_PROTECTED_REFERENCE_PATTERN = re.compile(r"[A-Za-z0-9._-]{1,64}\Z")
-_SHA_PATTERN = re.compile(r"[0-9a-f]{40}\Z")
-_COORDINATED_PROVIDER_IDENTITY_REF = "ZERODHA_KITE"
-_KITE_APPLICATION_REGISTRATION_REF = "ZERODHA-KITE-APP-REGISTRATION-PRIMARY"
 _LIVE_DEPENDENCY_SET_REF = "CAR017-LIVE-COMPOSITION-DEPENDENCY-SET-V1"
-_OPERATIONAL_PROVIDER = "KITE"
+_API_SECRET_ACCOUNT_PREFIX = "api-secret:"
+_INTENDED_PRINCIPAL_ACCOUNT_PREFIX = "intended-principal:"
 
-CapabilityValidator = Callable[[object], bool]
 Clock = Callable[[], datetime]
 IdentityFactory = Callable[[], str]
+BudgetSupplier = Callable[[], RemainingBudget]
 
 
 class LiveCompositionFailure(StrEnum):
@@ -53,6 +58,7 @@ class LiveCompositionFailure(StrEnum):
     INVALID_ACTIVATION = "INVALID_ACTIVATION"
     INCOMPLETE_COMPOSITION = "INCOMPLETE_COMPOSITION"
     CONFIGURATION_MISMATCH = "CONFIGURATION_MISMATCH"
+    DEADLINE_EXHAUSTED = "DEADLINE_EXHAUSTED"
     DEPENDENCY_CONSTRUCTION_FAILED = "DEPENDENCY_CONSTRUCTION_FAILED"
 
 
@@ -64,220 +70,152 @@ class LiveCompositionError(RuntimeError):
         super().__init__(failure.value)
 
 
-class LiveActivationContext:
-    """Immutable reviewed capability projection; construction alone has no effect."""
+class OperationLedgerRecorder:
+    """Mutable local holder around the immutable sanitized Stage 1 ledger."""
 
-    __slots__ = (
-        "__activation_authority_ref",
-        "__activation_capability",
-        "__application_registration_ref",
-        "__availability_authority_ref",
-        "__composition_dependency_set_ref",
-        "__credential_ref",
-        "__environment_ref",
-        "__implementation_sha",
-        "__intended_registration_ref",
-        "__provider_identity_ref",
-        "__provider_configuration_ref",
-    )
-    __hash__ = None
+    __slots__ = ("__ledger",)
 
-    def __new__(cls, *_args: object, **_kwargs: object) -> "LiveActivationContext":
-        raise LiveCompositionError(LiveCompositionFailure.INVALID_ACTIVATION)
-
-    @classmethod
-    def from_reviewed_capability(
-        cls,
-        *,
-        activation_capability: object,
-        capability_validator: CapabilityValidator,
-        activation_authority_ref: str,
-        implementation_sha: str,
-        environment_ref: str,
-        provider_identity_ref: str,
-        provider_configuration_ref: str,
-        application_registration_ref: str,
-        credential_ref: str,
-        intended_registration_ref: str,
-        composition_dependency_set_ref: str,
-        availability_authority_ref: str | None = None,
-    ) -> "LiveActivationContext":
-        """Create one inert context after explicit provenance validation."""
-
-        if not _valid_capability_type(activation_capability) or not callable(
-            capability_validator
-        ):
+    def __init__(self, ledger: SanitizedOperationLedger | None = None) -> None:
+        if ledger is not None and type(ledger) is not SanitizedOperationLedger:
             raise LiveCompositionError(LiveCompositionFailure.INVALID_ACTIVATION)
-        try:
-            capability_valid = capability_validator(activation_capability)
-        except Exception:
-            raise LiveCompositionError(
-                LiveCompositionFailure.INVALID_ACTIVATION
-            ) from None
-        if capability_valid is not True:
+        self.__ledger = ledger or SanitizedOperationLedger.empty()
+
+    def record(self, operation: GovernedAuthenticationOperation) -> None:
+        self.__ledger = self.__ledger.record(operation)
+
+    def snapshot(self) -> SanitizedOperationLedger:
+        return self.__ledger
+
+    def adopt(self, ledger: SanitizedOperationLedger) -> None:
+        if type(ledger) is not SanitizedOperationLedger:
             raise LiveCompositionError(LiveCompositionFailure.INVALID_ACTIVATION)
-        if not (
-            _valid_reference(activation_authority_ref)
-            and _SHA_PATTERN.fullmatch(implementation_sha) is not None
-            and _valid_reference(environment_ref)
-            and _valid_reference(provider_identity_ref)
-            and _valid_reference(provider_configuration_ref)
-            and _valid_reference(application_registration_ref)
-            and _valid_protected_reference(credential_ref)
-            and _valid_protected_reference(intended_registration_ref)
-            and _valid_reference(composition_dependency_set_ref)
-            and (
-                availability_authority_ref is None
-                or _valid_reference(availability_authority_ref)
-            )
-        ):
-            raise LiveCompositionError(LiveCompositionFailure.INVALID_ACTIVATION)
-
-        instance = object.__new__(cls)
-        object.__setattr__(
-            instance,
-            "_LiveActivationContext__activation_capability",
-            activation_capability,
-        )
-        object.__setattr__(
-            instance,
-            "_LiveActivationContext__activation_authority_ref",
-            activation_authority_ref,
-        )
-        object.__setattr__(
-            instance,
-            "_LiveActivationContext__implementation_sha",
-            implementation_sha,
-        )
-        object.__setattr__(
-            instance,
-            "_LiveActivationContext__environment_ref",
-            environment_ref,
-        )
-        object.__setattr__(
-            instance,
-            "_LiveActivationContext__provider_identity_ref",
-            provider_identity_ref,
-        )
-        object.__setattr__(
-            instance,
-            "_LiveActivationContext__provider_configuration_ref",
-            provider_configuration_ref,
-        )
-        object.__setattr__(
-            instance,
-            "_LiveActivationContext__application_registration_ref",
-            application_registration_ref,
-        )
-        object.__setattr__(
-            instance,
-            "_LiveActivationContext__credential_ref",
-            credential_ref,
-        )
-        object.__setattr__(
-            instance,
-            "_LiveActivationContext__intended_registration_ref",
-            intended_registration_ref,
-        )
-        object.__setattr__(
-            instance,
-            "_LiveActivationContext__composition_dependency_set_ref",
-            composition_dependency_set_ref,
-        )
-        object.__setattr__(
-            instance,
-            "_LiveActivationContext__availability_authority_ref",
-            availability_authority_ref,
-        )
-        return instance
-
-    def __setattr__(self, _name: str, _value: object) -> None:
-        raise AttributeError("LIVE_ACTIVATION_CONTEXT_IMMUTABLE")
-
-    def _matches_capability(self, capability: object) -> bool:
-        return capability is self.__activation_capability
-
-    def _matches_configuration(
-        self,
-        configuration: ProviderAuthenticationConfiguration,
-    ) -> bool:
-        return (
-            self.__credential_ref == configuration.credential_ref
-            and self.__intended_registration_ref
-            == configuration.intended_registration_ref
-        )
-
-    def _matches_coordinated_references(
-        self,
-        configuration: ProviderAuthenticationConfiguration,
-    ) -> bool:
-        return (
-            self.__provider_identity_ref == _COORDINATED_PROVIDER_IDENTITY_REF
-            and self.__application_registration_ref
-            == _KITE_APPLICATION_REGISTRATION_REF
-            and configuration.provider == _OPERATIONAL_PROVIDER
-        )
-
-    def _matches_dependency_set(self, dependency_set_ref: object) -> bool:
-        return dependency_set_ref == self.__composition_dependency_set_ref
-
-    @property
-    def implementation_sha(self) -> str:
-        return self.__implementation_sha
-
-    @property
-    def activation_authority_ref(self) -> str:
-        return self.__activation_authority_ref
-
-    @property
-    def environment_ref(self) -> str:
-        return self.__environment_ref
-
-    @property
-    def provider_identity_ref(self) -> str:
-        return self.__provider_identity_ref
-
-    @property
-    def provider_configuration_ref(self) -> str:
-        return self.__provider_configuration_ref
-
-    @property
-    def application_registration_ref(self) -> str:
-        return self.__application_registration_ref
-
-    @property
-    def composition_dependency_set_ref(self) -> str:
-        return self.__composition_dependency_set_ref
-
-    @property
-    def availability_authority_ref(self) -> str | None:
-        return self.__availability_authority_ref
+        self.__ledger = ledger
 
     def __repr__(self) -> str:
-        return "<LiveActivationContext redacted>"
+        return "<OperationLedgerRecorder sanitized>"
 
-    __str__ = __repr__
 
-    def __copy__(self) -> "LiveActivationContext":
-        raise TypeError("LIVE_ACTIVATION_CONTEXT_COPY_PROHIBITED")
+class GovernedKiteAuthenticationRuntime:
+    """Single runtime facade that adds governed counts and blocks availability."""
 
-    def __deepcopy__(self, _memo: object) -> "LiveActivationContext":
-        raise TypeError("LIVE_ACTIVATION_CONTEXT_COPY_PROHIBITED")
+    __slots__ = ("__budget", "__cleanup_recorded", "__provider", "__recorder")
 
-    def __reduce_ex__(self, _protocol: int) -> object:
-        raise TypeError("LIVE_ACTIVATION_CONTEXT_SERIALIZATION_PROHIBITED")
+    def __init__(
+        self,
+        provider: KiteProvider,
+        *,
+        recorder: OperationLedgerRecorder,
+        remaining_budget: BudgetSupplier,
+    ) -> None:
+        self.__provider = provider
+        self.__recorder = recorder
+        self.__budget = remaining_budget
+        self.__cleanup_recorded = False
+
+    def begin_login(self) -> object:
+        _before_operation(
+            GovernedAuthenticationOperation.ATTEMPT_RESERVATION,
+            self.__recorder,
+            self.__budget,
+        )
+        return self.__provider.begin_login()
+
+    def complete_callback(self, attempt: object) -> object:
+        _before_operation(
+            GovernedAuthenticationOperation.TERMINAL_CALLBACK,
+            self.__recorder,
+            self.__budget,
+        )
+        outcome = self.__provider.complete_callback(attempt)  # type: ignore[arg-type]
+        if getattr(outcome, "state", None) is AuthenticationAttemptState.SUCCEEDED:
+            _before_operation(
+                GovernedAuthenticationOperation.CONTEXT_ESTABLISHMENT,
+                self.__recorder,
+                self.__budget,
+            )
+        return outcome
+
+    def cancel_authentication_attempt(self, attempt: object) -> object:
+        return self.__provider.cancel_authentication_attempt(attempt)  # type: ignore[arg-type]
+
+    def session_status(self) -> object:
+        return self.__provider.session_status()
+
+    def authentication_attempt_status(self, attempt: object) -> object:
+        return self.__provider.authentication_attempt_status(attempt)  # type: ignore[arg-type]
+
+    def current_context(self) -> object:
+        return self.__provider.current_context()
+
+    def verify_provider_availability(self) -> object:
+        raise LiveCompositionError(LiveCompositionFailure.INVALID_ACTIVATION)
+
+    def end_kronos_session(self) -> None:
+        try:
+            self.__provider.end_kronos_session()
+        finally:
+            self.__record_cleanup_once()
+
+    def cleanup_local(self) -> None:
+        """Perform idempotent local-only cleanup through the authoritative path."""
+
+        try:
+            self.__provider.end_kronos_session()
+        finally:
+            self.__record_cleanup_once()
+
+    def operation_ledger(self) -> SanitizedOperationLedger:
+        return self.__recorder.snapshot()
+
+    def __record_cleanup_once(self) -> None:
+        if self.__cleanup_recorded:
+            return
+        self.__cleanup_recorded = True
+        self.__recorder.record(GovernedAuthenticationOperation.LOCAL_CLEANUP)
+
+    def __repr__(self) -> str:
+        return "<GovernedKiteAuthenticationRuntime sanitized>"
+
+
+class _GovernedListener:
+    __slots__ = ("__budget", "__listener")
+
+    def __init__(
+        self,
+        listener: LoopbackAuthenticationCallbackListener,
+        budget: BudgetSupplier,
+    ) -> None:
+        self.__listener = listener
+        self.__budget = budget
+
+    def start(self) -> None:
+        _require_budget(self.__budget)
+        self.__listener.start()
+
+    def readiness(self) -> object:
+        return self.__listener.readiness()
+
+    def receive_once(self, *, deadline: datetime) -> object:
+        seconds = _require_budget(self.__budget)
+        bounded = min(deadline, datetime.now(deadline.tzinfo) + timedelta(seconds=seconds))
+        return self.__listener.receive_once(deadline=bounded)
+
+    def close(self) -> None:
+        self.__listener.close()
 
 
 def compose_kite_authentication(
     activation: object,
     *,
     activation_capability: object,
-    configuration: ProviderAuthenticationConfiguration,
-    composition_dependency_set_ref: str = _LIVE_DEPENDENCY_SET_REF,
+    activation_values: CoordinatedActivationValues,
+    configuration: GovernedProviderAuthenticationConfiguration,
+    operation_recorder: OperationLedgerRecorder,
+    remaining_budget: BudgetSupplier,
     security_runner: SubprocessRunner = run_security_subprocess,
     browser_opener: Callable[[str], bool] = webbrowser.open,
     server_factory: ServerFactory = create_standard_library_server,
-    adapter_factory: Callable[[str], Any] = create_kite_authentication_adapter,
+    adapter_factory: Callable[..., Any] = create_kite_authentication_adapter,
     credential_source_factory: Callable[..., Any] = AppleKeychainCredentialSource,
     intended_principal_resolver_factory: Callable[..., Any] = (
         AppleKeychainIntendedPrincipalResolver
@@ -286,17 +224,8 @@ def compose_kite_authentication(
     service_factory: Callable[..., Any] = ProviderAuthenticationService,
     clock: Clock | None = None,
     identity_factory: IdentityFactory | None = None,
-) -> KiteProvider:
-    """Wire the one authoritative Kite path after pre-factory validation."""
-
-    if (
-        type(activation) is not LiveActivationContext
-        or not activation._matches_capability(activation_capability)  # type: ignore[attr-defined]
-        or not activation._matches_dependency_set(  # type: ignore[attr-defined]
-            composition_dependency_set_ref
-        )
-    ):
-        raise LiveCompositionError(LiveCompositionFailure.INVALID_ACTIVATION)
+) -> GovernedKiteAuthenticationRuntime:
+    """Wire the sole Kite path after exact pre-factory validation."""
 
     dependencies = (
         security_runner,
@@ -307,67 +236,124 @@ def compose_kite_authentication(
         intended_principal_resolver_factory,
         navigator_factory,
         service_factory,
-        clock or _utc_now,
-        identity_factory or _new_attempt_identity,
+        remaining_budget,
     )
     if any(not callable(dependency) for dependency in dependencies):
         raise LiveCompositionError(LiveCompositionFailure.INCOMPLETE_COMPOSITION)
-    if composition_dependency_set_ref != _LIVE_DEPENDENCY_SET_REF and any(
-        dependency is real_dependency
-        for dependency, real_dependency in (
-            (security_runner, run_security_subprocess),
-            (browser_opener, webbrowser.open),
-            (server_factory, create_standard_library_server),
-            (adapter_factory, create_kite_authentication_adapter),
-            (credential_source_factory, AppleKeychainCredentialSource),
-            (
-                intended_principal_resolver_factory,
-                AppleKeychainIntendedPrincipalResolver,
-            ),
-        )
+    if (
+        type(activation) is not LiveActivationContext
+        or type(activation_capability) is not ReviewedActivationCapability
+        or type(activation_values) is not CoordinatedActivationValues
+        or type(operation_recorder) is not OperationLedgerRecorder
+        or not activation._matches_capability(activation_capability)  # type: ignore[attr-defined]
+        or not activation._matches_values(activation_values)  # type: ignore[attr-defined]
     ):
         raise LiveCompositionError(LiveCompositionFailure.INVALID_ACTIVATION)
-    if type(configuration) is not ProviderAuthenticationConfiguration:
-        raise LiveCompositionError(LiveCompositionFailure.CONFIGURATION_MISMATCH)
-    if not activation._matches_coordinated_references(  # type: ignore[attr-defined]
-        configuration
+    if (
+        type(configuration) is not GovernedProviderAuthenticationConfiguration
+        or configuration.provider_identity != activation_values.provider_identity
+        or configuration.provider_configuration_ref
+        != activation_values.provider_configuration_ref
+        or configuration.application_registration_ref
+        != activation_values.application_registration_ref
+        or configuration.authentication.provider
+        != activation_values.operational_provider
+        or configuration.authentication.redirect_uri != activation_values.redirect_url
+        or configuration.authentication.credential_ref != activation_values.credential_ref
+        or configuration.authentication.intended_registration_ref
+        != activation_values.intended_principal_registration_ref
+        or activation_values.composition_dependency_set_ref
+        != _LIVE_DEPENDENCY_SET_REF
     ):
         raise LiveCompositionError(LiveCompositionFailure.CONFIGURATION_MISMATCH)
-    if not activation._matches_configuration(configuration):  # type: ignore[attr-defined]
-        raise LiveCompositionError(LiveCompositionFailure.CONFIGURATION_MISMATCH)
+
+    real_dependencies = (
+        security_runner is run_security_subprocess,
+        browser_opener is webbrowser.open,
+        server_factory is create_standard_library_server,
+        adapter_factory is create_kite_authentication_adapter,
+        credential_source_factory is AppleKeychainCredentialSource,
+        intended_principal_resolver_factory is AppleKeychainIntendedPrincipalResolver,
+    )
+    if any(real_dependencies) and not activation._is_live_capable():  # type: ignore[attr-defined]
+        raise LiveCompositionError(LiveCompositionFailure.INVALID_ACTIVATION)
+    _require_budget(remaining_budget)
 
     effective_clock = clock or _utc_now
     effective_identity_factory = identity_factory or _new_attempt_identity
-
     try:
+        governed_runner = _governed_security_runner(
+            security_runner,
+            operation_recorder,
+            remaining_budget,
+        )
         credential_source = credential_source_factory(
-            provider=configuration.provider,
-            runner=security_runner,
+            provider=configuration.authentication.provider,
+            runner=governed_runner,
         )
         principal_resolver = intended_principal_resolver_factory(
-            provider=configuration.provider,
-            runner=security_runner,
+            provider=configuration.authentication.provider,
+            runner=governed_runner,
         )
-        navigator = navigator_factory(opener=browser_opener)
+        navigator = navigator_factory(
+            opener=_governed_browser_opener(
+                browser_opener,
+                operation_recorder,
+                remaining_budget,
+            )
+        )
 
-        def listener_factory() -> LoopbackAuthenticationCallbackListener:
-            return LoopbackAuthenticationCallbackListener(
-                server_factory=server_factory,
-                clock=effective_clock,
+        def governed_server_factory(session: object) -> object:
+            _before_operation(
+                GovernedAuthenticationOperation.LISTENER_BIND,
+                operation_recorder,
+                remaining_budget,
+            )
+            return server_factory(session)  # type: ignore[arg-type]
+
+        def listener_factory() -> _GovernedListener:
+            _before_operation(
+                GovernedAuthenticationOperation.LISTENER_CONSTRUCTION,
+                operation_recorder,
+                remaining_budget,
+            )
+            return _GovernedListener(
+                LoopbackAuthenticationCallbackListener(
+                    server_factory=governed_server_factory,
+                    clock=effective_clock,
+                ),
+                remaining_budget,
+            )
+
+        def governed_adapter_factory(api_key: str) -> object:
+            _require_budget(remaining_budget)
+            return adapter_factory(
+                api_key,
+                operation_recorder=operation_recorder.record,
+                remaining_budget=remaining_budget,
             )
 
         service = service_factory(
-            configuration,
+            configuration.authentication,
             credential_source=credential_source,
             principal_resolver=principal_resolver,
-            adapter_factory=adapter_factory,
+            adapter_factory=governed_adapter_factory,
             listener_factory=listener_factory,
             navigator=navigator,
             clock=effective_clock,
             identity_factory=effective_identity_factory,
+            attempt_lifetime=timedelta(
+                seconds=(
+                    activation.authentication_attempt_timeout_seconds  # type: ignore[attr-defined]
+                )
+            ),
         )
-        authentication = KiteAuthentication(service, clock=effective_clock)
-        return KiteProvider(authentication)
+        provider = KiteProvider(KiteAuthentication(service, clock=effective_clock))
+        return GovernedKiteAuthenticationRuntime(
+            provider,
+            recorder=operation_recorder,
+            remaining_budget=remaining_budget,
+        )
     except LiveCompositionError:
         raise
     except Exception:
@@ -376,40 +362,79 @@ def compose_kite_authentication(
         ) from None
 
 
-def _valid_capability_type(capability: object) -> bool:
-    if isinstance(
-        capability,
-        (
-            str,
-            bytes,
-            bytearray,
-            bool,
-            int,
-            float,
-            Mapping,
-            Sequence,
-            ModuleType,
-            type,
-            ProviderAuthenticationConfiguration,
-        ),
-    ):
-        return False
-    if callable(capability):
-        return False
-    if callable(getattr(capability, "__fspath__", None)):
-        return False
-    return not type(capability).__module__.startswith("kronos.configuration")
+def _governed_security_runner(
+    runner: SubprocessRunner,
+    recorder: OperationLedgerRecorder,
+    budget: BudgetSupplier,
+) -> SubprocessRunner:
+    def run(request: SubprocessRequest) -> object:
+        operation = _keychain_operation(request)
+        seconds = _require_budget(budget)
+        _record_once(recorder, operation)
+        bounded_request = replace(
+            request,
+            timeout_seconds=min(request.timeout_seconds, seconds),
+        )
+        return runner(bounded_request)
+
+    return run  # type: ignore[return-value]
 
 
-def _valid_reference(value: object) -> bool:
-    return isinstance(value, str) and _REFERENCE_PATTERN.fullmatch(value) is not None
+def _keychain_operation(request: SubprocessRequest) -> GovernedAuthenticationOperation:
+    try:
+        account = request.argv[-1]
+    except Exception:
+        raise LiveCompositionError(LiveCompositionFailure.CONFIGURATION_MISMATCH) from None
+    if account.startswith(_API_SECRET_ACCOUNT_PREFIX):
+        return GovernedAuthenticationOperation.API_SECRET_RETRIEVAL
+    if account.startswith(_INTENDED_PRINCIPAL_ACCOUNT_PREFIX):
+        return GovernedAuthenticationOperation.INTENDED_PRINCIPAL_RETRIEVAL
+    raise LiveCompositionError(LiveCompositionFailure.CONFIGURATION_MISMATCH)
 
 
-def _valid_protected_reference(value: object) -> bool:
-    return (
-        isinstance(value, str)
-        and _PROTECTED_REFERENCE_PATTERN.fullmatch(value) is not None
-    )
+def _governed_browser_opener(
+    opener: Callable[[str], bool],
+    recorder: OperationLedgerRecorder,
+    budget: BudgetSupplier,
+) -> Callable[[str], bool]:
+    def open_once(url: str) -> bool:
+        _before_operation(
+            GovernedAuthenticationOperation.BROWSER_LAUNCH,
+            recorder,
+            budget,
+        )
+        return opener(url)
+
+    return open_once
+
+
+def _before_operation(
+    operation: GovernedAuthenticationOperation,
+    recorder: OperationLedgerRecorder,
+    budget: BudgetSupplier,
+) -> None:
+    _require_budget(budget)
+    _record_once(recorder, operation)
+
+
+def _record_once(
+    recorder: OperationLedgerRecorder,
+    operation: GovernedAuthenticationOperation,
+) -> None:
+    try:
+        recorder.record(operation)
+    except Exception:
+        raise LiveCompositionError(LiveCompositionFailure.INVALID_ACTIVATION) from None
+
+
+def _require_budget(supplier: BudgetSupplier) -> float:
+    try:
+        budget = supplier()
+        if type(budget) is not RemainingBudget:
+            raise TypeError
+        return budget.require_available()
+    except Exception:
+        raise LiveCompositionError(LiveCompositionFailure.DEADLINE_EXHAUSTED) from None
 
 
 def _utc_now() -> datetime:
@@ -421,8 +446,9 @@ def _new_attempt_identity() -> str:
 
 
 __all__ = [
-    "LiveActivationContext",
+    "GovernedKiteAuthenticationRuntime",
     "LiveCompositionError",
     "LiveCompositionFailure",
+    "OperationLedgerRecorder",
     "compose_kite_authentication",
 ]

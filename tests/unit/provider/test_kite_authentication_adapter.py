@@ -18,6 +18,9 @@ from kronos.provider.exceptions.connectivity import (
     ProviderConnectivityError,
     ProviderErrorCode,
 )
+from kronos.provider.kite.composition import OperationLedgerRecorder
+from kronos.provider.kite.live_activation import RemainingBudget
+from kronos.provider.models.authentication import GovernedAuthenticationOperation
 
 
 _API_KEY = "adapter-api-key"
@@ -494,3 +497,77 @@ def test_secret_and_token_are_closed_when_exchange_fails() -> None:
     assert secret.used is True
     with pytest.raises(SecretLeaseError):
         secret.reveal_for_call(lambda _value: None)
+
+
+def test_governed_adapter_records_exact_operations_with_remaining_budget() -> None:
+    recorder = OperationLedgerRecorder()
+    budgets = iter((120.0, 80.0, 40.0))
+    adapter = create_kite_authentication_adapter(
+        _API_KEY,
+        operation_recorder=recorder.record,
+        remaining_budget=lambda: RemainingBudget(next(budgets)),
+    )
+
+    adapter.login_url()
+    candidate = adapter.exchange_once(
+        _FakeRequestToken(),
+        OneUseSecretLease(_API_SECRET),
+    )
+    evidence = candidate.principal_evidence()
+    evidence.compare_expected(_PRINCIPAL)
+    candidate.dispose_local()
+
+    ledger = recorder.snapshot()
+    assert ledger.count_for(GovernedAuthenticationOperation.LOGIN_URL_GENERATION) == 1
+    assert ledger.count_for(GovernedAuthenticationOperation.SESSION_EXCHANGE) == 1
+    assert ledger.count_for(
+        GovernedAuthenticationOperation.PRINCIPAL_PROFILE_VERIFICATION
+    ) == 1
+    assert ledger.count_for(
+        GovernedAuthenticationOperation.PROVIDER_AVAILABILITY_VERIFICATION
+    ) == 0
+    client = _FakeKiteClient.instances[0]
+    assert client.login_count == 1
+    assert client.exchange_count == 1
+    assert client.profile_count == 1
+    assert client.timeout == 40.0
+
+
+def test_exhausted_budget_prevents_sdk_operation() -> None:
+    recorder = OperationLedgerRecorder()
+    adapter = create_kite_authentication_adapter(
+        _API_KEY,
+        operation_recorder=recorder.record,
+        remaining_budget=lambda: RemainingBudget(0.0),
+    )
+
+    with pytest.raises(ProviderConnectivityError) as captured:
+        adapter.login_url()
+
+    assert captured.value.code is ProviderErrorCode.INTERNAL_ADAPTER_DEFECT
+    assert _FakeKiteClient.instances[0].login_count == 0
+    assert recorder.snapshot().count_for(
+        GovernedAuthenticationOperation.LOGIN_URL_GENERATION
+    ) == 0
+
+
+def test_governed_candidate_blocks_withheld_availability_before_profile() -> None:
+    recorder = OperationLedgerRecorder()
+    adapter = create_kite_authentication_adapter(
+        _API_KEY,
+        operation_recorder=recorder.record,
+        remaining_budget=lambda: RemainingBudget(120.0),
+    )
+    candidate = adapter.exchange_once(
+        _FakeRequestToken(),
+        OneUseSecretLease(_API_SECRET),
+    )
+
+    with pytest.raises(ProviderConnectivityError):
+        candidate.verify_provider_availability()
+
+    assert _FakeKiteClient.instances[0].profile_count == 0
+    assert recorder.snapshot().count_for(
+        GovernedAuthenticationOperation.PROVIDER_AVAILABILITY_VERIFICATION
+    ) == 0
+    candidate.dispose_local()

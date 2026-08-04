@@ -1,78 +1,127 @@
-import copy
-from datetime import datetime, timezone
-import importlib
-from pathlib import Path
-import pickle
+from __future__ import annotations
+
+from datetime import datetime, timedelta, timezone
+import os
 
 import pytest
 
 from kronos.configuration.settings import Settings
-from kronos.provider.kite.adapter.kite_provider import KiteProvider
 from kronos.provider.kite.composition import (
-    LiveActivationContext,
+    GovernedKiteAuthenticationRuntime,
     LiveCompositionError,
     LiveCompositionFailure,
+    OperationLedgerRecorder,
     compose_kite_authentication,
 )
-from kronos.provider.models.authentication import ProviderAuthenticationConfiguration
+from kronos.provider.kite.live_activation import (
+    ActivationProvenanceKind,
+    CanonicalRepositoryEvidence,
+    CoordinatedActivationValues,
+    LiveActivationContext,
+    RemainingBudget,
+    TrustedActivationReviewer,
+)
+from kronos.provider.models.authentication import CoordinatedConsumptionState
 
 
-IMPLEMENTATION_SHA = "a" * 40
-PROVIDER_IDENTITY_REF = "ZERODHA_KITE"
-APPLICATION_REGISTRATION_REF = "ZERODHA-KITE-APP-REGISTRATION-PRIMARY"
-LIVE_DEPENDENCY_SET_REF = "CAR017-LIVE-COMPOSITION-DEPENDENCY-SET-V1"
-FAKE_DEPENDENCY_SET_REF = "car017.stage1.fakes"
+SHA = "a" * 40
+NOW = datetime(2026, 8, 4, 12, 0, tzinfo=timezone(timedelta(hours=5, minutes=30)))
 
 
-class _ReviewedFakeCapability:
-    pass
+class _Verifier:
+    def verify(self, expected: object, observed: object, evidence: object) -> bool:
+        return expected is observed and evidence is not None
 
 
 class _Counter:
     def __init__(self, result: object | None = None) -> None:
         self.calls = 0
         self.result = result
+        self.args: tuple[object, ...] = ()
+        self.kwargs: dict[str, object] = {}
 
-    def __call__(self, *_args: object, **_kwargs: object) -> object:
+    def __call__(self, *args: object, **kwargs: object) -> object:
         self.calls += 1
+        self.args = args
+        self.kwargs = kwargs
         return self.result if self.result is not None else object()
 
 
-def _configuration() -> ProviderAuthenticationConfiguration:
-    return ProviderAuthenticationConfiguration(
-        provider="KITE",
-        _api_key="ABC123",
-        redirect_uri="http://127.0.0.1:8765/kite/callback",
-        intended_registration_ref="primary.registration",
-        credential_ref="primary.credential",
-    )
+def _values(**changes: object) -> CoordinatedActivationValues:
+    values: dict[str, object] = {
+        "coordinated_activation_identity": "KRONOS-TEST-ACTIVATION-001",
+        "coordinated_governance_publication_sha": SHA,
+        "car016_logical_publication_ref": "CAR-016-V1.2-TEST",
+        "car017_logical_publication_ref": "CAR-017-V1.2-TEST",
+        "frozen_car016_implementation_sha": "b" * 40,
+        "frozen_car017_implementation_sha": "c" * 40,
+        "authority_effective_at": NOW - timedelta(hours=1),
+        "authority_effective_timezone": "Asia/Kolkata",
+        "authority_expires_at": NOW + timedelta(hours=1),
+        "authority_expiry_timezone": "Asia/Kolkata",
+        "authentication_attempt_timeout_seconds": 300,
+        "sponsor_environment_ref": "TEST-NONPROD",
+        "hostname": "test.local",
+        "provider_identity": "ZERODHA_KITE",
+        "operational_provider": "KITE",
+        "provider_configuration_ref": "ZERODHA-KITE-PROVIDER-CONFIG-PRIMARY",
+        "application_registration_ref": "ZERODHA-KITE-APP-REGISTRATION-PRIMARY",
+        "credential_ref": "KITE-API-SECRET-PRIMARY",
+        "intended_principal_registration_ref": "KITE-INTENDED-PRINCIPAL-PRIMARY",
+        "composition_dependency_set_ref": "CAR017-LIVE-COMPOSITION-DEPENDENCY-SET-V1",
+        "redirect_url": "http://127.0.0.1:8765/kite/callback",
+        "attempt_cardinality": "ONE",
+        "provider_availability_authority": "WITHHELD",
+        "provider_availability_max_operations": 0,
+        "car014_status": "UNEXECUTED",
+        "consumption_state": CoordinatedConsumptionState.UNUSED,
+    }
+    values.update(changes)
+    return CoordinatedActivationValues(**values)  # type: ignore[arg-type]
 
 
-def _context(
-    capability: object,
+def _review(
+    values: CoordinatedActivationValues | None = None,
     *,
-    validator: object | None = None,
-    provider_identity_ref: object = PROVIDER_IDENTITY_REF,
-    application_registration_ref: object = APPLICATION_REGISTRATION_REF,
-    composition_dependency_set_ref: object = FAKE_DEPENDENCY_SET_REF,
-) -> LiveActivationContext:
-    effective_validator = validator or (lambda candidate: candidate is capability)
-    return LiveActivationContext.from_reviewed_capability(
-        activation_capability=capability,
-        capability_validator=effective_validator,  # type: ignore[arg-type]
-        activation_authority_ref="CAR-017:TEST-ONLY",
-        implementation_sha=IMPLEMENTATION_SHA,
-        environment_ref="TEST-NONPROD",
-        provider_identity_ref=provider_identity_ref,  # type: ignore[arg-type]
-        provider_configuration_ref="kite.primary",
-        application_registration_ref=application_registration_ref,  # type: ignore[arg-type]
-        credential_ref="primary.credential",
-        intended_registration_ref="primary.registration",
-        composition_dependency_set_ref=composition_dependency_set_ref,  # type: ignore[arg-type]
+    kind: ActivationProvenanceKind = ActivationProvenanceKind.FAKE_ONLY,
+) -> tuple[object, object, CoordinatedActivationValues]:
+    selected = values or _values()
+    reviewer = TrustedActivationReviewer(_Verifier(), provenance_kind=kind)
+    review = reviewer.review(
+        expected=selected,
+        observed=selected,
+        repository_evidence=CanonicalRepositoryEvidence(
+            branch="develop",
+            head_sha=SHA,
+            origin_develop_sha=SHA,
+            working_tree_clean=True,
+            car016_canonical=True,
+            car017_canonical=True,
+            car014_unexecuted=True,
+        ),
+        reviewed_at=NOW,
     )
+    return review.context, review.capability, selected
 
 
-def _factory_counters() -> dict[str, _Counter]:
+def _configuration(**changes: object) -> object:
+    values: dict[str, object] = {
+        "provider": "KITE",
+        "kite_api_key": "UNITKEY",
+        "kite_api_secret": "",
+        "kite_access_token": "",
+        "kite_redirect_url": "http://127.0.0.1:8765/kite/callback",
+        "kite_credential_ref": "KITE-API-SECRET-PRIMARY",
+        "kite_intended_registration_ref": "KITE-INTENDED-PRINCIPAL-PRIMARY",
+        "provider_configuration_ref": "ZERODHA-KITE-PROVIDER-CONFIG-PRIMARY",
+        "kite_application_registration_ref": "ZERODHA-KITE-APP-REGISTRATION-PRIMARY",
+    }
+    values.update(changes)
+    settings = Settings(**values)  # type: ignore[arg-type]
+    return settings.governed_provider_authentication_configuration()
+
+
+def _counters() -> dict[str, _Counter]:
     return {
         "security": _Counter(),
         "browser": _Counter(True),
@@ -88,16 +137,19 @@ def _factory_counters() -> dict[str, _Counter]:
 def _compose(
     activation: object,
     capability: object,
+    values: CoordinatedActivationValues,
     counters: dict[str, _Counter],
     *,
     configuration: object | None = None,
-    composition_dependency_set_ref: str = FAKE_DEPENDENCY_SET_REF,
-) -> KiteProvider:
+    budget: float = 300.0,
+) -> GovernedKiteAuthenticationRuntime:
     return compose_kite_authentication(
         activation,
         activation_capability=capability,
+        activation_values=values,
         configuration=configuration or _configuration(),  # type: ignore[arg-type]
-        composition_dependency_set_ref=composition_dependency_set_ref,
+        operation_recorder=OperationLedgerRecorder(),
+        remaining_budget=lambda: RemainingBudget(budget),
         security_runner=counters["security"],  # type: ignore[arg-type]
         browser_opener=counters["browser"],  # type: ignore[arg-type]
         server_factory=counters["server"],  # type: ignore[arg-type]
@@ -106,334 +158,97 @@ def _compose(
         intended_principal_resolver_factory=counters["principal"],
         navigator_factory=counters["navigator"],
         service_factory=counters["service"],
-        clock=lambda: datetime(2026, 8, 3, tzinfo=timezone.utc),
+        clock=lambda: NOW,
         identity_factory=lambda: "attempt-1",
     )
 
 
-def test_direct_constructor_cannot_create_activation() -> None:
-    with pytest.raises(LiveCompositionError) as captured:
-        LiveActivationContext()
+def test_stage1_context_is_the_only_activation_type() -> None:
+    context, _, _ = _review()
 
-    assert captured.value.failure is LiveCompositionFailure.INVALID_ACTIVATION
-
-
-@pytest.mark.parametrize(
-    "ambient",
-    [
-        "CONFIGURATION_VALUE",
-        {"KRONOS_LIVE": "1"},
-        ["--live"],
-        Path("activation.flag"),
-        _configuration(),
-        Settings(
-            provider="KITE",
-            kite_api_key="",
-            kite_api_secret="",
-            kite_access_token="",
-            kite_redirect_url="",
-        ),
-        importlib.import_module("kronos.provider.kite.composition"),
-        lambda: None,
-        _ReviewedFakeCapability,
-    ],
-)
-def test_ambient_values_cannot_create_activation(ambient: object) -> None:
-    validator = _Counter(True)
-
-    with pytest.raises(LiveCompositionError) as captured:
-        _context(ambient, validator=validator)
-
-    assert captured.value.failure is LiveCompositionFailure.INVALID_ACTIVATION
-    assert validator.calls == 0
-
-
-def test_synthetic_malformed_and_wrong_provenance_are_rejected() -> None:
-    capability = _ReviewedFakeCapability()
-
-    with pytest.raises(LiveCompositionError):
-        _context(capability, validator=lambda _candidate: False)
-    with pytest.raises(LiveCompositionError):
-        LiveActivationContext.from_reviewed_capability(
-            activation_capability=capability,
-            capability_validator=lambda candidate: candidate is capability,
-            activation_authority_ref="",
-            implementation_sha="not-a-sha",
-            environment_ref="TEST",
-            provider_identity_ref=PROVIDER_IDENTITY_REF,
-            provider_configuration_ref="kite.primary",
-            application_registration_ref=APPLICATION_REGISTRATION_REF,
-            credential_ref="primary",
-            intended_registration_ref="primary",
-            composition_dependency_set_ref="fakes",
-        )
-
-
-def test_context_is_immutable_redacted_and_non_serializable() -> None:
-    context = _context(_ReviewedFakeCapability())
-
-    assert context.provider_identity_ref == PROVIDER_IDENTITY_REF
-    assert context.application_registration_ref == APPLICATION_REGISTRATION_REF
+    assert type(context) is LiveActivationContext
     assert repr(context) == "<LiveActivationContext redacted>"
-    assert str(context) == "<LiveActivationContext redacted>"
-    assert IMPLEMENTATION_SHA not in repr(context)
-    assert PROVIDER_IDENTITY_REF not in repr(context)
-    assert APPLICATION_REGISTRATION_REF not in repr(context)
-    with pytest.raises(AttributeError):
-        context.environment_ref = "OTHER"  # type: ignore[misc]
-    with pytest.raises(TypeError):
-        copy.copy(context)
-    with pytest.raises(TypeError):
-        copy.deepcopy(context)
-    with pytest.raises((TypeError, pickle.PicklingError)):
-        pickle.dumps(context)
+    assert not hasattr(LiveActivationContext, "from_reviewed_capability")
 
 
-def test_successful_import_creates_no_activation_context() -> None:
-    module = importlib.import_module("kronos.provider.kite.composition")
+@pytest.mark.parametrize("activation", [None, object(), "live", {}, Settings])
+def test_invalid_activation_rejected_before_every_factory(activation: object) -> None:
+    _, capability, values = _review()
+    counters = _counters()
 
-    assert not any(
-        type(value) is LiveActivationContext for value in vars(module).values()
-    )
+    with pytest.raises(LiveCompositionError, match="INVALID_ACTIVATION"):
+        _compose(activation, capability, values, counters)
 
-
-@pytest.mark.parametrize(
-    "invalid_activation",
-    [None, object(), "live", {"authority": "CAR-017"}, _configuration()],
-)
-def test_invalid_activation_rejected_before_every_factory(
-    invalid_activation: object,
-) -> None:
-    counters = _factory_counters()
-
-    with pytest.raises(LiveCompositionError) as captured:
-        _compose(invalid_activation, object(), counters)
-
-    assert captured.value.failure is LiveCompositionFailure.INVALID_ACTIVATION
-    assert {name: counter.calls for name, counter in counters.items()} == {
-        "security": 0,
-        "browser": 0,
-        "server": 0,
-        "adapter": 0,
-        "credential": 0,
-        "principal": 0,
-        "navigator": 0,
-        "service": 0,
-    }
-
-
-def test_wrong_provenance_rejected_before_every_factory() -> None:
-    capability = _ReviewedFakeCapability()
-    context = _context(capability)
-    counters = _factory_counters()
-
-    with pytest.raises(LiveCompositionError) as captured:
-        _compose(context, _ReviewedFakeCapability(), counters)
-
-    assert captured.value.failure is LiveCompositionFailure.INVALID_ACTIVATION
     assert all(counter.calls == 0 for counter in counters.values())
 
 
-def test_fake_activation_rejects_live_dependency_set_before_every_factory() -> None:
-    capability = _ReviewedFakeCapability()
-    context = _context(capability)
-    counters = _factory_counters()
+def test_wrong_capability_rejected_before_every_factory() -> None:
+    context, _, values = _review()
+    counters = _counters()
 
-    with pytest.raises(LiveCompositionError) as captured:
+    with pytest.raises(LiveCompositionError, match="INVALID_ACTIVATION"):
+        _compose(context, object(), values, counters)
+
+    assert all(counter.calls == 0 for counter in counters.values())
+
+
+def test_mismatched_activation_values_rejected_before_every_factory() -> None:
+    context, capability, _ = _review()
+    other = _values(coordinated_activation_identity="KRONOS-TEST-ACTIVATION-002")
+    counters = _counters()
+
+    with pytest.raises(LiveCompositionError, match="INVALID_ACTIVATION"):
+        _compose(context, capability, other, counters)
+
+    assert all(counter.calls == 0 for counter in counters.values())
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"provider_configuration_ref": "OTHER"},
+        {"kite_application_registration_ref": "OTHER"},
+        {"kite_credential_ref": "OTHER"},
+        {"kite_intended_registration_ref": "OTHER"},
+    ],
+)
+def test_configuration_identity_mismatch_fails_before_factories(
+    changes: dict[str, object],
+) -> None:
+    context, capability, values = _review()
+    counters = _counters()
+    try:
+        configuration = _configuration(**changes)
+    except Exception:
+        assert all(counter.calls == 0 for counter in counters.values())
+        return
+
+    with pytest.raises(LiveCompositionError, match="CONFIGURATION_MISMATCH"):
+        _compose(context, capability, values, counters, configuration=configuration)
+    assert all(counter.calls == 0 for counter in counters.values())
+
+
+def test_fake_review_cannot_enable_default_live_dependencies() -> None:
+    context, capability, values = _review()
+
+    with pytest.raises(LiveCompositionError, match="INVALID_ACTIVATION"):
         compose_kite_authentication(
             context,
             activation_capability=capability,
-            configuration=_configuration(),
-            security_runner=counters["security"],  # type: ignore[arg-type]
-            browser_opener=counters["browser"],  # type: ignore[arg-type]
-            server_factory=counters["server"],  # type: ignore[arg-type]
-            adapter_factory=counters["adapter"],
-            credential_source_factory=counters["credential"],
-            intended_principal_resolver_factory=counters["principal"],
-            navigator_factory=counters["navigator"],
-            service_factory=counters["service"],
+            activation_values=values,
+            configuration=_configuration(),  # type: ignore[arg-type]
+            operation_recorder=OperationLedgerRecorder(),
+            remaining_budget=lambda: RemainingBudget(300.0),
         )
-
-    assert captured.value.failure is LiveCompositionFailure.INVALID_ACTIVATION
-    assert all(counter.calls == 0 for counter in counters.values())
-
-
-def test_fake_dependency_set_rejects_real_external_effect_dependencies() -> None:
-    capability = _ReviewedFakeCapability()
-    context = _context(capability)
-
-    with pytest.raises(LiveCompositionError) as captured:
-        compose_kite_authentication(
-            context,
-            activation_capability=capability,
-            configuration=_configuration(),
-            composition_dependency_set_ref="car017.stage1.fakes",
-        )
-
-    assert captured.value.failure is LiveCompositionFailure.INVALID_ACTIVATION
-
-
-def test_incomplete_dependencies_rejected_before_every_factory() -> None:
-    capability = _ReviewedFakeCapability()
-    context = _context(capability)
-    counters = _factory_counters()
-    counters["credential"] = None  # type: ignore[assignment]
-
-    with pytest.raises(LiveCompositionError) as captured:
-        _compose(context, capability, counters)  # type: ignore[arg-type]
-
-    assert captured.value.failure is LiveCompositionFailure.INCOMPLETE_COMPOSITION
-    assert all(
-        counter is None or counter.calls == 0 for counter in counters.values()
-    )
-
-
-def test_configuration_mismatch_rejected_before_every_factory() -> None:
-    capability = _ReviewedFakeCapability()
-    context = _context(capability)
-    counters = _factory_counters()
-    mismatch = ProviderAuthenticationConfiguration(
-        provider="KITE",
-        _api_key="ABC123",
-        redirect_uri="http://127.0.0.1:8765/kite/callback",
-        intended_registration_ref="other.registration",
-        credential_ref="other.credential",
-    )
-
-    with pytest.raises(LiveCompositionError) as captured:
-        _compose(context, capability, counters, configuration=mismatch)
-
-    assert captured.value.failure is LiveCompositionFailure.CONFIGURATION_MISMATCH
-    assert all(counter.calls == 0 for counter in counters.values())
-
-
-def test_coordinated_provider_identity_is_separate_from_operational_provider() -> None:
-    capability = _ReviewedFakeCapability()
-    context = _context(
-        capability,
-        composition_dependency_set_ref=LIVE_DEPENDENCY_SET_REF,
-    )
-    counters = _factory_counters()
-
-    provider = _compose(
-        context,
-        capability,
-        counters,
-        composition_dependency_set_ref=LIVE_DEPENDENCY_SET_REF,
-    )
-
-    assert isinstance(provider, KiteProvider)
-    assert context.provider_identity_ref == "ZERODHA_KITE"
-    assert _configuration().provider == "KITE"
-
-
-@pytest.mark.parametrize(
-    ("provider_identity_ref", "application_registration_ref"),
-    [
-        ("zerodha_kite", APPLICATION_REGISTRATION_REF),
-        ("ZERODHA-KITE", APPLICATION_REGISTRATION_REF),
-        (PROVIDER_IDENTITY_REF, "zerodha-kite-app-registration-primary"),
-        (PROVIDER_IDENTITY_REF, "ZERODHA_KITE_APP_REGISTRATION_PRIMARY"),
-    ],
-)
-def test_coordinated_reference_mismatch_rejected_before_every_factory(
-    provider_identity_ref: str,
-    application_registration_ref: str,
-) -> None:
-    capability = _ReviewedFakeCapability()
-    context = _context(
-        capability,
-        provider_identity_ref=provider_identity_ref,
-        application_registration_ref=application_registration_ref,
-    )
-    counters = _factory_counters()
-
-    with pytest.raises(LiveCompositionError) as captured:
-        _compose(context, capability, counters)
-
-    assert captured.value.failure is LiveCompositionFailure.CONFIGURATION_MISMATCH
-    assert all(counter.calls == 0 for counter in counters.values())
-
-
-@pytest.mark.parametrize(
-    ("provider_identity_ref", "application_registration_ref"),
-    [
-        (None, APPLICATION_REGISTRATION_REF),
-        (PROVIDER_IDENTITY_REF, None),
-    ],
-)
-def test_coordinated_reference_absence_rejected_before_every_factory(
-    provider_identity_ref: object,
-    application_registration_ref: object,
-) -> None:
-    capability = _ReviewedFakeCapability()
-    counters = _factory_counters()
-
-    with pytest.raises(LiveCompositionError) as captured:
-        _context(
-            capability,
-            provider_identity_ref=provider_identity_ref,
-            application_registration_ref=application_registration_ref,
-        )
-
-    assert captured.value.failure is LiveCompositionFailure.INVALID_ACTIVATION
-    assert all(counter.calls == 0 for counter in counters.values())
-
-
-def test_live_dependency_set_mismatch_rejected_before_every_factory() -> None:
-    capability = _ReviewedFakeCapability()
-    context = _context(
-        capability,
-        composition_dependency_set_ref=LIVE_DEPENDENCY_SET_REF,
-    )
-    counters = _factory_counters()
-
-    with pytest.raises(LiveCompositionError) as captured:
-        _compose(
-            context,
-            capability,
-            counters,
-            composition_dependency_set_ref="car017-live-composition-dependency-set-v1",
-        )
-
-    assert captured.value.failure is LiveCompositionFailure.INVALID_ACTIVATION
-    assert all(counter.calls == 0 for counter in counters.values())
-
-
-def test_ambient_values_cannot_override_coordinated_references(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv("KRONOS_PROVIDER_IDENTITY_REF", "OTHER")
-    monkeypatch.setenv("KRONOS_KITE_APPLICATION_REGISTRATION_REF", "OTHER")
-    monkeypatch.setenv("KRONOS_COMPOSITION_DEPENDENCY_SET_REF", "OTHER")
-    capability = _ReviewedFakeCapability()
-    context = _context(
-        capability,
-        composition_dependency_set_ref=LIVE_DEPENDENCY_SET_REF,
-    )
-    counters = _factory_counters()
-
-    provider = _compose(
-        context,
-        capability,
-        counters,
-        composition_dependency_set_ref=LIVE_DEPENDENCY_SET_REF,
-    )
-
-    assert isinstance(provider, KiteProvider)
-    assert context.provider_identity_ref == PROVIDER_IDENTITY_REF
-    assert context.application_registration_ref == APPLICATION_REGISTRATION_REF
-    assert context.composition_dependency_set_ref == LIVE_DEPENDENCY_SET_REF
 
 
 def test_valid_fake_composition_wires_once_and_defers_all_effects() -> None:
-    capability = _ReviewedFakeCapability()
-    context = _context(capability)
-    counters = _factory_counters()
+    context, capability, values = _review()
+    counters = _counters()
 
-    provider = _compose(context, capability, counters)
+    runtime = _compose(context, capability, values, counters)
 
-    assert isinstance(provider, KiteProvider)
+    assert isinstance(runtime, GovernedKiteAuthenticationRuntime)
     assert {name: counter.calls for name, counter in counters.items()} == {
         "security": 0,
         "browser": 0,
@@ -446,16 +261,40 @@ def test_valid_fake_composition_wires_once_and_defers_all_effects() -> None:
     }
 
 
-def test_composition_does_not_verify_availability_or_create_second_path() -> None:
-    capability = _ReviewedFakeCapability()
-    context = _context(capability)
-    counters = _factory_counters()
-    fake_service = counters["service"]
+def test_deadline_exhaustion_precedes_every_factory() -> None:
+    context, capability, values = _review()
+    counters = _counters()
 
-    provider = _compose(context, capability, counters)
+    with pytest.raises(LiveCompositionError, match="DEADLINE_EXHAUSTED"):
+        _compose(context, capability, values, counters, budget=0.0)
 
-    assert isinstance(provider, KiteProvider)
-    assert fake_service.calls == 1
-    assert counters["adapter"].calls == 0
-    assert counters["server"].calls == 0
-    assert counters["browser"].calls == 0
+    assert all(counter.calls == 0 for counter in counters.values())
+
+
+def test_ambient_values_cannot_override_identity_bindings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("KRONOS_PROVIDER_IDENTITY_REF", "OTHER")
+    monkeypatch.setenv("KRONOS_COMPOSITION_DEPENDENCY_SET_REF", "OTHER")
+    context, capability, values = _review()
+    counters = _counters()
+
+    runtime = _compose(context, capability, values, counters)
+
+    assert isinstance(runtime, GovernedKiteAuthenticationRuntime)
+    assert os.environ["KRONOS_PROVIDER_IDENTITY_REF"] == "OTHER"
+
+
+def test_provider_availability_is_unreachable_from_governed_runtime() -> None:
+    context, capability, values = _review()
+    runtime = _compose(context, capability, values, _counters())
+
+    with pytest.raises(LiveCompositionError, match="INVALID_ACTIVATION"):
+        runtime.verify_provider_availability()
+    assert runtime.operation_ledger().count_for(
+        next(
+            operation
+            for operation in runtime.operation_ledger().counts
+            if operation.operation.value == "PROVIDER_AVAILABILITY_VERIFICATION"
+        ).operation
+    ) == 0

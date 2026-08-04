@@ -1,12 +1,49 @@
-from dataclasses import dataclass, field
 import re
+from dataclasses import dataclass, field
 
 from kronos.configuration.exceptions import ConfigurationError
 from kronos.provider.models.authentication import ProviderAuthenticationConfiguration
 
 
 CAR016_KITE_REDIRECT_URL = "http://127.0.0.1:8765/kite/callback"
+GOVERNED_PROVIDER_IDENTITY = "ZERODHA_KITE"
+GOVERNED_PROVIDER_CONFIGURATION_REF = "ZERODHA-KITE-PROVIDER-CONFIG-PRIMARY"
+GOVERNED_KITE_APPLICATION_REGISTRATION_REF = (
+    "ZERODHA-KITE-APP-REGISTRATION-PRIMARY"
+)
 _PROTECTED_REFERENCE_PATTERN = re.compile(r"[A-Za-z0-9._-]{1,64}\Z")
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class GovernedProviderAuthenticationConfiguration:
+    """Bound non-sensitive configuration for the governed authentication path."""
+
+    authentication: ProviderAuthenticationConfiguration
+    provider_identity: str
+    provider_configuration_ref: str
+    application_registration_ref: str
+
+    def __post_init__(self) -> None:
+        if (
+            type(self.authentication) is not ProviderAuthenticationConfiguration
+            or self.authentication.provider != "KITE"
+            or self.provider_identity != GOVERNED_PROVIDER_IDENTITY
+            or self.provider_configuration_ref
+            != GOVERNED_PROVIDER_CONFIGURATION_REF
+            or self.application_registration_ref
+            != GOVERNED_KITE_APPLICATION_REGISTRATION_REF
+        ):
+            raise ConfigurationError(
+                "GOVERNED_PROVIDER_AUTHENTICATION_CONFIGURATION_MISMATCH"
+            )
+
+    def __repr__(self) -> str:
+        return "<GovernedProviderAuthenticationConfiguration redacted>"
+
+    __str__ = __repr__
+
+    def __reduce_ex__(self, _protocol: int) -> object:
+        raise TypeError("GOVERNED_CONFIGURATION_SERIALIZATION_PROHIBITED")
 
 
 @dataclass(frozen=True, slots=True)
@@ -20,6 +57,8 @@ class Settings:
     kite_redirect_url: str
     kite_credential_ref: str = ""
     kite_intended_registration_ref: str = ""
+    provider_configuration_ref: str = ""
+    kite_application_registration_ref: str = ""
 
     def __post_init__(self) -> None:
         if not self.provider:
@@ -79,6 +118,30 @@ class Settings:
             redirect_uri=self.kite_redirect_url,
             intended_registration_ref=self.kite_intended_registration_ref,
             credential_ref=self.kite_credential_ref,
+        )
+
+    def governed_provider_authentication_configuration(
+        self,
+    ) -> GovernedProviderAuthenticationConfiguration:
+        """Bind the exact coordinated identities to the runtime projection."""
+
+        configuration = self.provider_authentication_configuration()
+        if self.provider_configuration_ref != GOVERNED_PROVIDER_CONFIGURATION_REF:
+            raise ConfigurationError(
+                "KRONOS_PROVIDER_CONFIGURATION_REF must match governed configuration"
+            )
+        if (
+            self.kite_application_registration_ref
+            != GOVERNED_KITE_APPLICATION_REGISTRATION_REF
+        ):
+            raise ConfigurationError(
+                "KRONOS_KITE_APPLICATION_REGISTRATION_REF must match governed application"
+            )
+        return GovernedProviderAuthenticationConfiguration(
+            authentication=configuration,
+            provider_identity=GOVERNED_PROVIDER_IDENTITY,
+            provider_configuration_ref=self.provider_configuration_ref,
+            application_registration_ref=self.kite_application_registration_ref,
         )
 
 

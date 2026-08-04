@@ -1,4 +1,5 @@
 from collections.abc import Mapping
+import math
 from typing import Any
 
 from kiteconnect import KiteConnect as _KiteConnect
@@ -122,6 +123,8 @@ class _KiteAuthenticationClientHandle:
         self,
         request_token: str,
         api_secret: str,
+        *,
+        timeout_seconds: float | None = None,
     ) -> "_KiteCandidateClientHandle":
         if self.__exchange_started:
             raise _KiteExchangeAlreadyAttempted
@@ -132,6 +135,7 @@ class _KiteAuthenticationClientHandle:
         if client is None:
             raise _KiteExchangeAlreadyAttempted
 
+        _apply_bounded_timeout(client, timeout_seconds)
         response = client.generate_session(request_token, api_secret)
         if not isinstance(response, Mapping):
             raise _UnexpectedAuthenticationResponse
@@ -168,17 +172,21 @@ class _KiteCandidateClientHandle:
         self.__principal_attempted = False
         self.__session_state = session_state
 
-    def principal_user_id_once(self) -> str | None:
+    def principal_user_id_once(
+        self,
+        *,
+        timeout_seconds: float | None = None,
+    ) -> str | None:
         if self.__principal_attempted:
             raise _UnexpectedAuthenticationResponse
         self.__principal_attempted = True
-        profile = self.__profile_mapping()
+        profile = self.__profile_mapping(timeout_seconds=timeout_seconds)
         principal = profile.get("user_id")
         del profile
         return principal if isinstance(principal, str) else None
 
-    def verify_profile_once(self) -> None:
-        profile = self.__profile_mapping()
+    def verify_profile_once(self, *, timeout_seconds: float | None = None) -> None:
+        profile = self.__profile_mapping(timeout_seconds=timeout_seconds)
         del profile
 
     def close_local(self) -> None:
@@ -205,11 +213,16 @@ class _KiteCandidateClientHandle:
         if result is not True:
             raise _UnexpectedAuthenticationResponse
 
-    def __profile_mapping(self) -> Mapping[str, object]:
+    def __profile_mapping(
+        self,
+        *,
+        timeout_seconds: float | None = None,
+    ) -> Mapping[str, object]:
         if self.__closed or self.__client is None:
             raise _KiteClientClosedError
         if self.__session_state.invalidated:
             raise _KiteSessionInvalidated
+        _apply_bounded_timeout(self.__client, timeout_seconds)
         try:
             profile = self.__client.profile()
         finally:
@@ -231,3 +244,21 @@ class _KiteCandidateClientHandle:
 def _create_kite_authentication_client(api_key: str) -> _KiteAuthenticationClientHandle:
     client = _KiteConnect(api_key=api_key, debug=False)
     return _KiteAuthenticationClientHandle(client)
+
+
+def _apply_bounded_timeout(client: object, timeout_seconds: float | None) -> None:
+    """Only shorten the SDK request timeout to the remaining lifecycle budget."""
+
+    if timeout_seconds is None:
+        return
+    if (
+        type(timeout_seconds) is not float
+        or not math.isfinite(timeout_seconds)
+        or timeout_seconds <= 0.0
+    ):
+        raise _KiteClientClosedError
+    current = getattr(client, "timeout", None)
+    bounded = timeout_seconds
+    if type(current) in {int, float} and math.isfinite(float(current)) and current > 0:
+        bounded = min(float(current), timeout_seconds)
+    setattr(client, "timeout", bounded)

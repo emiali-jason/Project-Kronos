@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import subprocess
 import sys
@@ -12,13 +13,16 @@ from kronos.provider.models.authentication import (
     AuthenticatedContextState,
     AuthenticationAttemptCancellationResult,
     AuthenticationAttemptState,
-    ProviderAuthenticationConfiguration,
     ProviderAvailabilityState,
     SessionStatus,
+    CoordinatedConsumptionState,
 )
-from kronos.provider.kite.composition import (
+from kronos.provider.kite.live_activation import (
+    ActivationProvenanceKind,
+    CanonicalRepositoryEvidence,
+    CoordinatedActivationValues,
     LiveActivationContext,
-    compose_kite_authentication,
+    TrustedActivationReviewer,
 )
 from tools.provider_pilots import car016_provider_authentication_gui as pilot
 
@@ -26,32 +30,59 @@ from tools.provider_pilots import car016_provider_authentication_gui as pilot
 _ROOT = Path(__file__).resolve().parents[3]
 _SOURCE = _ROOT / "tools/provider_pilots/car016_provider_authentication_gui.py"
 _IMPLEMENTATION_SHA = "a" * 40
-_PROVIDER_IDENTITY_REF = "ZERODHA_KITE"
-_APPLICATION_REGISTRATION_REF = "ZERODHA-KITE-APP-REGISTRATION-PRIMARY"
+class _Verifier:
+    def verify(self, expected: object, observed: object, evidence: object) -> bool:
+        return expected is observed and evidence is not None
 
 
-class _ReviewedFakeCapability:
-    pass
-
-
-def _accepted_activation(
-    capability: object | None = None,
-) -> tuple[LiveActivationContext, object]:
-    selected_capability = capability or _ReviewedFakeCapability()
-    context = LiveActivationContext.from_reviewed_capability(
-        activation_capability=selected_capability,
-        capability_validator=lambda candidate: candidate is selected_capability,
-        activation_authority_ref="CAR-017:STAGE-2-FAKE",
-        implementation_sha=_IMPLEMENTATION_SHA,
-        environment_ref="TEST-NONPROD",
-        provider_identity_ref=_PROVIDER_IDENTITY_REF,
-        provider_configuration_ref="kite.primary",
-        application_registration_ref=_APPLICATION_REGISTRATION_REF,
-        credential_ref="primary.credential",
-        intended_registration_ref="primary.registration",
-        composition_dependency_set_ref="car017.stage2.fakes",
+def _accepted_activation() -> tuple[LiveActivationContext, object]:
+    now = datetime(2026, 8, 4, tzinfo=timezone.utc)
+    values = CoordinatedActivationValues(
+        coordinated_activation_identity="KRONOS-TEST-GUI-001",
+        coordinated_governance_publication_sha=_IMPLEMENTATION_SHA,
+        car016_logical_publication_ref="CAR-016-V1.2-TEST",
+        car017_logical_publication_ref="CAR-017-V1.2-TEST",
+        frozen_car016_implementation_sha="b" * 40,
+        frozen_car017_implementation_sha="c" * 40,
+        authority_effective_at=now - timedelta(hours=1),
+        authority_effective_timezone="Asia/Kolkata",
+        authority_expires_at=now + timedelta(hours=1),
+        authority_expiry_timezone="Asia/Kolkata",
+        authentication_attempt_timeout_seconds=300,
+        sponsor_environment_ref="TEST-NONPROD",
+        hostname="test.local",
+        provider_identity="ZERODHA_KITE",
+        operational_provider="KITE",
+        provider_configuration_ref="ZERODHA-KITE-PROVIDER-CONFIG-PRIMARY",
+        application_registration_ref="ZERODHA-KITE-APP-REGISTRATION-PRIMARY",
+        credential_ref="KITE-API-SECRET-PRIMARY",
+        intended_principal_registration_ref="KITE-INTENDED-PRINCIPAL-PRIMARY",
+        composition_dependency_set_ref="CAR017-LIVE-COMPOSITION-DEPENDENCY-SET-V1",
+        redirect_url="http://127.0.0.1:8765/kite/callback",
+        attempt_cardinality="ONE",
+        provider_availability_authority="WITHHELD",
+        provider_availability_max_operations=0,
+        car014_status="UNEXECUTED",
+        consumption_state=CoordinatedConsumptionState.UNUSED,
     )
-    return context, selected_capability
+    review = TrustedActivationReviewer(
+        _Verifier(),
+        provenance_kind=ActivationProvenanceKind.FAKE_ONLY,
+    ).review(
+        expected=values,
+        observed=values,
+        repository_evidence=CanonicalRepositoryEvidence(
+            branch="develop",
+            head_sha=_IMPLEMENTATION_SHA,
+            origin_develop_sha=_IMPLEMENTATION_SHA,
+            working_tree_clean=True,
+            car016_canonical=True,
+            car017_canonical=True,
+            car014_unexecuted=True,
+        ),
+        reviewed_at=now,
+    )
+    return review.context, review.capability
 
 
 class _FakeRoot:
@@ -118,6 +149,7 @@ class _FakeService:
         self.cancel_count = 0
         self.verify_count = 0
         self.end_count = 0
+        self.cleanup_count = 0
         self.status_count = 0
         self.attempt_state: AuthenticationAttemptState | None = None
         self.context_state = AuthenticatedContextState.ABSENT
@@ -186,6 +218,9 @@ class _FakeService:
         self.end_count += 1
         self.context_state = AuthenticatedContextState.ENDED
         self.availability = ProviderAvailabilityState.NOT_VERIFIED
+
+    def cleanup_local(self) -> None:
+        self.cleanup_count += 1
 
 
 def _functional_controller(
@@ -267,7 +302,7 @@ def test_stage1_activation_is_passed_once_without_interpretation() -> None:
         received.append(context)
         return service
 
-    pilot.Car016AuthenticationPilotController(
+    controller = pilot.Car016AuthenticationPilotController(
         view=view,
         worker_submit=worker.submit,
         confirmation=lambda: True,
@@ -275,14 +310,12 @@ def test_stage1_activation_is_passed_once_without_interpretation() -> None:
         composition_factory=composition,
     )
 
-    assert received == [activation]
-    assert received[0].provider_identity_ref == _PROVIDER_IDENTITY_REF
-    assert (
-        received[0].application_registration_ref
-        == _APPLICATION_REGISTRATION_REF
-    )
+    assert received == []
     assert view.controls["login"] is True
     assert view.notice == pilot.ACTIVATED_NOTICE
+    controller.login()
+    assert received == [activation]
+    assert type(received[0]) is LiveActivationContext
 
 
 def test_stage2_source_does_not_own_or_interpret_activation_context() -> None:
@@ -334,7 +367,7 @@ def test_explicit_main_injection_enables_only_the_composed_presentation() -> Non
         confirmation=lambda: True,
     )
 
-    assert received == [activation]
+    assert received == []
     assert root.mainloop_count == 1
     assert view.controls == {
         "login": True,
@@ -426,34 +459,22 @@ def test_incomplete_injected_seams_remain_inspection_only(missing: str) -> None:
 
 
 def test_fake_activation_cannot_enable_real_composition_dependencies() -> None:
-    activation, capability = _accepted_activation()
+    activation, _ = _accepted_activation()
     view = _FakeView()
     worker = _DeferredWorker()
-    configuration = ProviderAuthenticationConfiguration(
-        provider="KITE",
-        _api_key="ABC123",
-        redirect_uri="http://127.0.0.1:8765/kite/callback",
-        intended_registration_ref="primary.registration",
-        credential_ref="primary.credential",
-    )
+    def composition(_context: LiveActivationContext) -> object:
+        raise RuntimeError("FAKE_ACTIVATION_CANNOT_ENABLE_LIVE_DEPENDENCIES")
 
-    def composition(context: LiveActivationContext) -> object:
-        return compose_kite_authentication(
-            context,
-            activation_capability=capability,
-            configuration=configuration,
-            composition_dependency_set_ref="car017.stage2.fakes",
-        )
-
-    pilot.Car016AuthenticationPilotController(
+    controller = pilot.Car016AuthenticationPilotController(
         view=view,
         worker_submit=worker.submit,
         confirmation=lambda: True,
         activation=activation,
         composition_factory=composition,  # type: ignore[arg-type]
     )
+    controller.login()
 
-    assert view.notice == pilot.INSPECTION_NOTICE
+    assert "FAKE_ACTIVATION" not in view.rendered
     assert all(enabled is False for enabled in view.controls.values())
     assert worker.operations == []
 
@@ -608,18 +629,18 @@ def test_verify_requires_active_context_even_with_fake_authority() -> None:
     assert service.verify_count == 0
 
 
-def test_verify_runs_once_only_after_active_context_and_fake_authority() -> None:
+def test_verify_remains_withheld_after_active_context() -> None:
     controller, view, service, worker = _functional_controller(
         availability_authorized=True
     )
     controller.login()
     worker.run_once()
 
-    assert view.controls["verify"] is True
+    assert view.controls["verify"] is False
     controller.verify_provider_availability()
 
-    assert service.verify_count == 1
-    assert "Provider Availability: AVAILABLE" in view.rendered
+    assert service.verify_count == 0
+    assert "Provider Availability: NOT_VERIFIED" in view.rendered
 
 
 def test_explicit_cancel_mutates_only_a_nonterminal_attempt() -> None:
@@ -704,6 +725,7 @@ def test_unrecognized_values_are_sanitized_without_rendering_raw_value() -> None
     service.failure_code = _UntrustedValue()
     controller, view, _, _ = _functional_controller(service=service)
 
+    controller.login()
     controller.refresh_state()
 
     assert "raw-material-must-not-render" not in view.rendered
@@ -719,6 +741,59 @@ def test_raw_exception_is_never_displayed_or_raised() -> None:
 
     assert "raw-exception-material-must-not-render" not in view.rendered
     assert "Controlled outcome: SANITIZED_LOCAL_FAILURE" in view.rendered
+
+
+def test_begin_failure_runs_local_cleanup_once() -> None:
+    service = _FakeService()
+    service.effect = RuntimeError("synthetic begin failure")
+    controller, _, _, _ = _functional_controller(service=service)
+
+    controller.login()
+
+    assert service.begin_count == 1
+    assert service.cleanup_count == 1
+
+
+def test_callback_failure_runs_local_cleanup_once() -> None:
+    service = _FakeService()
+    controller, _, _, worker = _functional_controller(service=service)
+    controller.login()
+    service.effect = RuntimeError("synthetic callback failure")
+
+    worker.run_once()
+
+    assert service.complete_count == 1
+    assert service.cleanup_count == 1
+
+
+def test_close_after_runtime_construction_runs_local_cleanup() -> None:
+    controller, view, service, _ = _functional_controller()
+    controller.login()
+
+    controller.close()
+
+    assert view.closed is True
+    assert service.cleanup_count == 1
+
+
+def test_close_before_confirmation_constructs_no_runtime_for_cleanup() -> None:
+    controller, view, service, _ = _functional_controller()
+
+    controller.close()
+
+    assert view.closed is True
+    assert service.composition_count == 0
+    assert service.cleanup_count == 0
+
+
+def test_repeated_close_does_not_repeat_local_cleanup() -> None:
+    controller, _, service, _ = _functional_controller()
+    controller.login()
+
+    controller.close()
+    controller.close()
+
+    assert service.cleanup_count == 1
 
 
 def test_all_fake_interactions_write_nothing_to_stdout_or_stderr(

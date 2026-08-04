@@ -2,7 +2,11 @@ import os
 
 from dotenv import load_dotenv
 
-from kronos.configuration.settings import CAR016_KITE_REDIRECT_URL, Settings
+from kronos.configuration.settings import (
+    CAR016_KITE_REDIRECT_URL,
+    GovernedProviderAuthenticationConfiguration,
+    Settings,
+)
 from kronos.provider.models.authentication import ProviderAuthenticationConfiguration
 
 
@@ -25,6 +29,14 @@ def load_settings() -> Settings:
         kite_credential_ref=os.getenv("KRONOS_KITE_CREDENTIAL_REF", "").strip(),
         kite_intended_registration_ref=os.getenv(
             "KRONOS_KITE_INTENDED_REGISTRATION_REF",
+            "",
+        ).strip(),
+        provider_configuration_ref=os.getenv(
+            "KRONOS_PROVIDER_CONFIGURATION_REF",
+            "",
+        ).strip(),
+        kite_application_registration_ref=os.getenv(
+            "KRONOS_KITE_APPLICATION_REGISTRATION_REF",
             "",
         ).strip(),
     )
@@ -50,3 +62,35 @@ def load_provider_authentication_configuration() -> ProviderAuthenticationConfig
         ).strip(),
     )
     return settings.provider_authentication_configuration()
+
+
+def load_governed_provider_authentication_configuration(
+    environment: object = None,
+) -> GovernedProviderAuthenticationConfiguration:
+    """Load the exact allow-list without invoking dotenv or reading secrets."""
+
+    source = os.environ if environment is None else environment
+    getter = getattr(source, "get", None)
+    if not callable(getter):
+        raise TypeError("GOVERNED_CONFIGURATION_SOURCE_INVALID")
+    settings = Settings(
+        provider=getter("KRONOS_PROVIDER", "").strip(),
+        kite_api_key=getter("KRONOS_KITE_API_KEY", ""),
+        kite_api_secret="",
+        kite_access_token="",
+        kite_redirect_url=getter("KRONOS_KITE_REDIRECT_URL", "").strip(),
+        kite_credential_ref=getter("KRONOS_KITE_CREDENTIAL_REF", "").strip(),
+        kite_intended_registration_ref=getter(
+            "KRONOS_KITE_INTENDED_REGISTRATION_REF",
+            "",
+        ).strip(),
+        provider_configuration_ref=getter(
+            "KRONOS_PROVIDER_CONFIGURATION_REF",
+            "",
+        ).strip(),
+        kite_application_registration_ref=getter(
+            "KRONOS_KITE_APPLICATION_REGISTRATION_REF",
+            "",
+        ).strip(),
+    )
+    return settings.governed_provider_authentication_configuration()

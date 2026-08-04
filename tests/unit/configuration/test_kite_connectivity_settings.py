@@ -326,3 +326,78 @@ def test_legacy_loader_behavior_remains_available_outside_car016(
 
     assert settings.kite_api_secret == "legacy-secret"
     settings.validate_kite_authentication()
+
+
+def test_governed_loader_bypasses_dotenv_and_binds_exact_identities(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    dotenv_calls = 0
+
+    def forbidden_dotenv() -> None:
+        nonlocal dotenv_calls
+        dotenv_calls += 1
+
+    monkeypatch.setattr(loader, "load_dotenv", forbidden_dotenv)
+    environment = {
+        "KRONOS_PROVIDER": "KITE",
+        "KRONOS_KITE_API_KEY": "unit-api-key",
+        "KRONOS_KITE_REDIRECT_URL": CAR016_KITE_REDIRECT_URL,
+        "KRONOS_KITE_CREDENTIAL_REF": "KITE-API-SECRET-PRIMARY",
+        "KRONOS_KITE_INTENDED_REGISTRATION_REF": (
+            "KITE-INTENDED-PRINCIPAL-PRIMARY"
+        ),
+        "KRONOS_PROVIDER_CONFIGURATION_REF": (
+            "ZERODHA-KITE-PROVIDER-CONFIG-PRIMARY"
+        ),
+        "KRONOS_KITE_APPLICATION_REGISTRATION_REF": (
+            "ZERODHA-KITE-APP-REGISTRATION-PRIMARY"
+        ),
+        "KRONOS_KITE_API_SECRET": "must-not-be-read",
+        "KRONOS_KITE_ACCESS_TOKEN": "must-not-be-read",
+    }
+
+    governed = loader.load_governed_provider_authentication_configuration(
+        environment
+    )
+
+    assert dotenv_calls == 0
+    assert governed.provider_identity == "ZERODHA_KITE"
+    assert governed.authentication.provider == "KITE"
+    assert (
+        governed.provider_configuration_ref
+        == "ZERODHA-KITE-PROVIDER-CONFIG-PRIMARY"
+    )
+    assert (
+        governed.application_registration_ref
+        == "ZERODHA-KITE-APP-REGISTRATION-PRIMARY"
+    )
+    assert "must-not-be-read" not in repr(governed)
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        "KRONOS_PROVIDER_CONFIGURATION_REF",
+        "KRONOS_KITE_APPLICATION_REGISTRATION_REF",
+    ],
+)
+def test_governed_loader_fails_closed_on_identity_mismatch(field: str) -> None:
+    environment = {
+        "KRONOS_PROVIDER": "KITE",
+        "KRONOS_KITE_API_KEY": "unit-api-key",
+        "KRONOS_KITE_REDIRECT_URL": CAR016_KITE_REDIRECT_URL,
+        "KRONOS_KITE_CREDENTIAL_REF": "KITE-API-SECRET-PRIMARY",
+        "KRONOS_KITE_INTENDED_REGISTRATION_REF": (
+            "KITE-INTENDED-PRINCIPAL-PRIMARY"
+        ),
+        "KRONOS_PROVIDER_CONFIGURATION_REF": (
+            "ZERODHA-KITE-PROVIDER-CONFIG-PRIMARY"
+        ),
+        "KRONOS_KITE_APPLICATION_REGISTRATION_REF": (
+            "ZERODHA-KITE-APP-REGISTRATION-PRIMARY"
+        ),
+    }
+    environment[field] = "WRONG"
+
+    with pytest.raises(ConfigurationError):
+        loader.load_governed_provider_authentication_configuration(environment)

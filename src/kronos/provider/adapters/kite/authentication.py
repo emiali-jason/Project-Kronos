@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from enum import StrEnum
 
 from kiteconnect.exceptions import (
@@ -35,6 +36,8 @@ from kronos.provider.exceptions.connectivity import (
     ProviderConnectivityError,
     ProviderErrorCode,
 )
+from kronos.provider.kite.live_activation import RemainingBudget
+from kronos.provider.models.authentication import GovernedAuthenticationOperation
 
 
 _CANONICAL_PRINCIPAL = re.compile(r"[A-Za-z0-9]{1,64}\Z")
@@ -101,16 +104,29 @@ class _KitePrincipalEvidence:
 class _KiteCandidateContext:
     """Opaque unpublished candidate restricted to bounded verification."""
 
-    __slots__ = ("__disposed", "__handle")
+    __slots__ = ("__budget", "__disposed", "__handle", "__record")
 
-    def __init__(self, handle: _KiteCandidateClientHandle) -> None:
+    def __init__(
+        self,
+        handle: _KiteCandidateClientHandle,
+        *,
+        operation_recorder: Callable[[GovernedAuthenticationOperation], None] | None,
+        remaining_budget: Callable[[], RemainingBudget] | None,
+    ) -> None:
         self.__handle: _KiteCandidateClientHandle | None = handle
+        self.__record = operation_recorder
+        self.__budget = remaining_budget
         self.__disposed = False
 
     def principal_evidence(self) -> PrincipalEvidence:
+        timeout_seconds = self.__before(
+            GovernedAuthenticationOperation.PRINCIPAL_PROFILE_VERIFICATION
+        )
         handle = self._active_handle()
         try:
-            principal = handle.principal_user_id_once()
+            principal = handle.principal_user_id_once(
+                timeout_seconds=timeout_seconds
+            )
         except Exception as error:
             code = _map_authentication_error_code(error)
         else:
@@ -131,8 +147,14 @@ class _KiteCandidateContext:
     def verify_provider_availability(self) -> KiteContextEvidence:
         """Run one separate, explicitly initiated profile verification."""
 
+        timeout_seconds = self.__before(
+            GovernedAuthenticationOperation.PROVIDER_AVAILABILITY_VERIFICATION
+        )
+
         try:
-            self._active_handle().verify_profile_once()
+            self._active_handle().verify_profile_once(
+                timeout_seconds=timeout_seconds
+            )
         except Exception as error:
             code = _map_authentication_error_code(error)
         else:
@@ -167,6 +189,28 @@ class _KiteCandidateContext:
             raise ProviderConnectivityError(ProviderErrorCode.INTERNAL_ADAPTER_DEFECT)
         return handle
 
+    def __before(
+        self,
+        operation: GovernedAuthenticationOperation,
+    ) -> float | None:
+        budget = self.__budget
+        record = self.__record
+        if budget is None and record is None:
+            return None
+        try:
+            if budget is None or record is None:
+                raise TypeError
+            remaining = budget()
+            if type(remaining) is not RemainingBudget:
+                raise TypeError
+            remaining.require_available()
+            record(operation)
+            return remaining.seconds
+        except Exception:
+            raise ProviderConnectivityError(
+                ProviderErrorCode.INTERNAL_ADAPTER_DEFECT
+            ) from None
+
     def __repr__(self) -> str:
         return "<_KiteCandidateContext redacted>"
 
@@ -179,18 +223,30 @@ class _KiteCandidateContext:
 class KiteAuthenticationAdapter:
     """Contain SDK and credential mechanics behind the Kite boundary."""
 
-    __slots__ = ("__api_secret", "__client", "__legacy_candidate")
+    __slots__ = (
+        "__api_secret",
+        "__budget",
+        "__client",
+        "__legacy_candidate",
+        "__record",
+    )
 
     def __init__(
         self,
         api_secret: str | None,
         client: _KiteAuthenticationClientHandle,
+        *,
+        operation_recorder: Callable[[GovernedAuthenticationOperation], None] | None = None,
+        remaining_budget: Callable[[], RemainingBudget] | None = None,
     ) -> None:
         self.__api_secret = api_secret
         self.__client: _KiteAuthenticationClientHandle | None = client
         self.__legacy_candidate: _KiteCandidateContext | None = None
+        self.__record = operation_recorder
+        self.__budget = remaining_budget
 
     def login_url(self, redirect_uri: str | None = None) -> str:
+        self.__before(GovernedAuthenticationOperation.LOGIN_URL_GENERATION)
         if redirect_uri is not None and not redirect_uri:
             raise ProviderConnectivityError(
                 ProviderErrorCode.INTERNAL_ADAPTER_DEFECT
@@ -213,6 +269,9 @@ class KiteAuthenticationAdapter:
     ) -> _KiteCandidateContext:
         """Consume one token and secret and return one unpublished candidate."""
 
+        timeout_seconds = self.__before(
+            GovernedAuthenticationOperation.SESSION_EXCHANGE
+        )
         self.__api_secret = None
 
         def exchange_token(raw_token: str) -> _KiteCandidateContext:
@@ -220,6 +279,7 @@ class KiteAuthenticationAdapter:
                 lambda raw_secret: self.__exchange_values(
                     raw_token,
                     raw_secret,
+                    timeout_seconds=timeout_seconds,
                 )
             )
 
@@ -275,6 +335,8 @@ class KiteAuthenticationAdapter:
         self,
         request_token: str,
         api_secret: str,
+        *,
+        timeout_seconds: float | None = None,
     ) -> _KiteCandidateContext:
         client = self.__client
         if client is None:
@@ -282,13 +344,41 @@ class KiteAuthenticationAdapter:
                 ProviderErrorCode.INTERNAL_ADAPTER_DEFECT
             )
         try:
-            handle = client.exchange_once(request_token, api_secret)
+            handle = client.exchange_once(
+                request_token,
+                api_secret,
+                timeout_seconds=timeout_seconds,
+            )
         except Exception as error:
             code = _map_authentication_error_code(error)
         else:
             self.__client = None
-            return _KiteCandidateContext(handle)
+            return _KiteCandidateContext(
+                handle,
+                operation_recorder=self.__record,
+                remaining_budget=self.__budget,
+            )
         raise ProviderConnectivityError(code)
+
+    def __before(
+        self,
+        operation: GovernedAuthenticationOperation,
+    ) -> float | None:
+        if self.__budget is None and self.__record is None:
+            return None
+        try:
+            if self.__budget is None or self.__record is None:
+                raise TypeError
+            budget = self.__budget()
+            if type(budget) is not RemainingBudget:
+                raise TypeError
+            budget.require_available()
+            self.__record(operation)
+            return budget.seconds
+        except Exception:
+            raise ProviderConnectivityError(
+                ProviderErrorCode.INTERNAL_ADAPTER_DEFECT
+            ) from None
 
     def __repr__(self) -> str:
         return "<KiteAuthenticationAdapter redacted>"
@@ -302,13 +392,21 @@ class KiteAuthenticationAdapter:
 def create_kite_authentication_adapter(
     api_key: str,
     api_secret: str | None = None,
+    *,
+    operation_recorder: Callable[[GovernedAuthenticationOperation], None] | None = None,
+    remaining_budget: Callable[[], RemainingBudget] | None = None,
 ) -> KiteAuthenticationAdapter:
     try:
         client = _create_kite_authentication_client(api_key)
     except Exception as error:
         code = _map_authentication_error_code(error)
     else:
-        return KiteAuthenticationAdapter(api_secret, client)
+        return KiteAuthenticationAdapter(
+            api_secret,
+            client,
+            operation_recorder=operation_recorder,
+            remaining_budget=remaining_budget,
+        )
     raise ProviderConnectivityError(code)
 
 
