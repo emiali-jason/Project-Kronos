@@ -20,6 +20,13 @@ from kronos.provider.exceptions.connectivity import (
     ProviderConnectivityError,
     ProviderErrorCode,
 )
+from kronos.provider.kite.composition import OperationLedgerRecorder
+from kronos.provider.kite.live_activation import (
+    DurableConsumptionRecord,
+    MonotonicLifecycleDeadline,
+    ProvenConsumption,
+    RemainingBudget,
+)
 from kronos.provider.models.authentication import (
     AuthenticatedContextState,
     AuthenticationAttempt,
@@ -30,6 +37,7 @@ from kronos.provider.models.authentication import (
     BrowserOpenResult,
     CallbackCategory,
     CallbackReadiness,
+    GovernedAuthenticationOperation,
     ProviderAuthenticationConfiguration,
     ProviderAvailabilityState,
 )
@@ -45,6 +53,7 @@ _PROVIDER_PRINCIPAL = "PRINCIPAL123"
 _REGISTRATION_REF = "registration-primary"
 _CREDENTIAL_REF = "credential-primary"
 _NOW = datetime(2026, 8, 3, 9, 0, tzinfo=UTC)
+_PUBLICATION_SHA = "9" * 40
 
 
 class _Clock:
@@ -53,6 +62,44 @@ class _Clock:
 
     def __call__(self) -> datetime:
         return self.current
+
+
+class _RemainingBudgetSupplier:
+    def __init__(self, deadline: MonotonicLifecycleDeadline) -> None:
+        self.deadline = deadline
+        self.monotonic_now = 0.0
+        self.calls = 0
+        self.events: list[str] | None = None
+
+    def __call__(self) -> RemainingBudget:
+        self.calls += 1
+        if self.events is not None:
+            self.events.append("budget")
+        return self.deadline.remaining(monotonic_now=self.monotonic_now)
+
+
+def _governed_seams() -> tuple[
+    OperationLedgerRecorder,
+    ProvenConsumption,
+    _RemainingBudgetSupplier,
+]:
+    recorder = OperationLedgerRecorder()
+    recorder.record(GovernedAuthenticationOperation.ACTIVATION_VALIDATION)
+    consumed = recorder.snapshot().record(
+        GovernedAuthenticationOperation.AUTHORITY_CONSUMPTION
+    )
+    recorder.adopt(consumed)
+    deadline = MonotonicLifecycleDeadline(monotonic_now=0.0)
+    proof = ProvenConsumption(
+        record=DurableConsumptionRecord(
+            coordinated_activation_identity="KRONOS-STAGE3-TEST-001",
+            coordinated_governance_publication_sha=_PUBLICATION_SHA,
+            consumed_at=_NOW.isoformat(),
+        ),
+        deadline=deadline,
+        ledger=consumed,
+    )
+    return recorder, proof, _RemainingBudgetSupplier(deadline)
 
 
 class _SecretLease:
@@ -337,6 +384,7 @@ class _Harness:
         ),
         expected_principal: str = _PROVIDER_PRINCIPAL,
         credential_error: BaseException | None = None,
+        governed: bool = False,
     ) -> None:
         self.clock = _Clock()
         self.callback = _CallbackResult(callback_category)
@@ -350,8 +398,10 @@ class _Harness:
         self.candidate = _Candidate()
         self.adapter = _Adapter(self.candidate)
         self.adapter_factory_count = 0
+        self.identity_count = 0
+        self.listener_factory_count = 0
         self.identities = iter(["attempt-1", "attempt-2", "attempt-3"])
-        configuration = ProviderAuthenticationConfiguration(
+        self.configuration = ProviderAuthenticationConfiguration(
             provider="KITE",
             _api_key=_API_KEY,
             redirect_uri="http://127.0.0.1:8765/kite/callback",
@@ -364,15 +414,38 @@ class _Harness:
             self.adapter.api_key_matched = api_key == _API_KEY
             return self.adapter
 
+        def listener_factory() -> _Listener:
+            self.listener_factory_count += 1
+            return self.listener
+
+        def identity_factory() -> str:
+            self.identity_count += 1
+            return next(self.identities)
+
+        self.service_arguments = {
+            "credential_source": self.credentials,
+            "principal_resolver": self.resolver,
+            "adapter_factory": adapter_factory,
+            "listener_factory": listener_factory,
+            "navigator": self.navigator,
+            "clock": self.clock,
+            "identity_factory": identity_factory,
+        }
+        self.recorder: OperationLedgerRecorder | None = None
+        self.proof: ProvenConsumption | None = None
+        self.remaining_budget: _RemainingBudgetSupplier | None = None
+        governed_arguments: dict[str, object] = {}
+        if governed:
+            self.recorder, self.proof, self.remaining_budget = _governed_seams()
+            governed_arguments = {
+                "proven_consumption": self.proof,
+                "remaining_budget": self.remaining_budget,
+                "operation_recorder": self.recorder,
+            }
         self.service = ProviderAuthenticationService(
-            configuration,
-            credential_source=self.credentials,
-            principal_resolver=self.resolver,
-            adapter_factory=adapter_factory,  # type: ignore[arg-type]
-            listener_factory=lambda: self.listener,
-            navigator=self.navigator,
-            clock=self.clock,
-            identity_factory=lambda: next(self.identities),
+            self.configuration,
+            **self.service_arguments,  # type: ignore[arg-type]
+            **governed_arguments,  # type: ignore[arg-type]
         )
 
 
@@ -908,3 +981,226 @@ def test_end_session_without_context_remains_absent() -> None:
     status = harness.service.session_status()
     assert status.context_state is AuthenticatedContextState.ABSENT
     assert harness.candidate.dispose_count == 0
+
+
+def test_governed_service_retains_exact_proof_before_attempt_or_listener() -> None:
+    harness = _Harness(governed=True)
+
+    assert harness.proof is not None
+    assert harness.recorder is not None
+    assert harness.remaining_budget is not None
+    assert (
+        getattr(
+            harness.service,
+            "_ProviderAuthenticationService__proven_consumption",
+        )
+        is harness.proof
+    )
+    assert harness.recorder.snapshot() is harness.proof.ledger
+    assert harness.remaining_budget.deadline is harness.proof.deadline
+    assert harness.identity_count == 0
+    assert harness.listener_factory_count == 0
+    assert harness.listener.start_count == 0
+
+
+def test_invalid_governed_seams_fail_before_identity_and_listener() -> None:
+    harness = _Harness()
+    recorder, proof, remaining_budget = _governed_seams()
+    other_recorder, other_proof, _ = _governed_seams()
+    cases = (
+        {"proven_consumption": proof},
+        {
+            "remaining_budget": remaining_budget,
+            "operation_recorder": recorder,
+        },
+        {
+            "proven_consumption": proof,
+            "operation_recorder": recorder,
+        },
+        {
+            "proven_consumption": object(),
+            "remaining_budget": remaining_budget,
+            "operation_recorder": recorder,
+        },
+        {
+            "proven_consumption": other_proof,
+            "remaining_budget": remaining_budget,
+            "operation_recorder": recorder,
+        },
+        {
+            "proven_consumption": proof,
+            "remaining_budget": remaining_budget,
+            "operation_recorder": other_recorder,
+        },
+    )
+
+    for governed_arguments in cases:
+        with pytest.raises(ValueError):
+            ProviderAuthenticationService(
+                harness.configuration,
+                **harness.service_arguments,  # type: ignore[arg-type]
+                **governed_arguments,  # type: ignore[arg-type]
+            )
+
+    assert harness.identity_count == 0
+    assert harness.listener_factory_count == 0
+    assert harness.listener.start_count == 0
+
+
+def test_one_deadline_checks_budget_before_each_service_operation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    harness = _Harness()
+    recorder, proof, remaining_budget = _governed_seams()
+    events: list[str] = []
+    remaining_budget.events = events
+    original_receive = harness.listener.receive_once
+    original_context = service_module.AuthenticatedProviderContext
+
+    def identity_factory() -> str:
+        events.append("identity")
+        harness.identity_count += 1
+        return "attempt-governed"
+
+    def listener_factory() -> _Listener:
+        events.append("listener")
+        harness.listener_factory_count += 1
+        return harness.listener
+
+    def receive_once(*, deadline: datetime) -> _CallbackResult:
+        events.append("callback")
+        return original_receive(deadline=deadline)
+
+    def context_factory(**arguments):  # type: ignore[no-untyped-def]
+        events.append("context")
+        return original_context(**arguments)
+
+    harness.listener.receive_once = receive_once  # type: ignore[method-assign]
+    monkeypatch.setattr(service_module, "AuthenticatedProviderContext", context_factory)
+    arguments = dict(harness.service_arguments)
+    arguments["identity_factory"] = identity_factory
+    arguments["listener_factory"] = listener_factory
+    service = ProviderAuthenticationService(
+        harness.configuration,
+        **arguments,  # type: ignore[arg-type]
+        proven_consumption=proof,
+        remaining_budget=remaining_budget,
+        operation_recorder=recorder,
+    )
+
+    assert events == ["budget"]
+    events.clear()
+    handle = service.begin_login()
+    assert events == ["budget", "identity", "budget", "listener"]
+    events.clear()
+
+    evidence = service.complete_callback(handle)
+
+    assert evidence.state is AuthenticationAttemptState.SUCCEEDED
+    assert events == ["budget", "callback", "budget", "context"]
+    assert remaining_budget.calls == 5
+    assert remaining_budget.deadline is proof.deadline
+
+
+def test_governed_success_has_exact_service_cardinality_and_no_second_path() -> None:
+    harness = _Harness(governed=True)
+    handle, evidence = _complete_success(harness)
+    assert harness.recorder is not None
+
+    ledger = harness.recorder.snapshot()
+    expected_counts = {
+        GovernedAuthenticationOperation.ATTEMPT_RESERVATION: 1,
+        GovernedAuthenticationOperation.TERMINAL_CALLBACK: 1,
+        GovernedAuthenticationOperation.CONTEXT_ESTABLISHMENT: 1,
+        GovernedAuthenticationOperation.LOCAL_CLEANUP: 1,
+        GovernedAuthenticationOperation.PROVIDER_AVAILABILITY_VERIFICATION: 0,
+    }
+    for operation, expected in expected_counts.items():
+        assert ledger.count_for(operation) == expected
+    assert evidence.binding_result is PrincipalBindingResult.MATCHED
+    assert harness.service.current_context() is not None
+    assert harness.identity_count == 1
+    assert harness.listener_factory_count == 1
+    assert harness.listener.start_count == 1
+    assert harness.listener.receive_count == 1
+    assert harness.navigator.open_count == 1
+    assert harness.adapter.login_count == 1
+    assert harness.adapter.exchange_count == 1
+    assert harness.candidate.principal_count == 1
+    assert harness.candidate.availability_count == 0
+
+    with pytest.raises(RuntimeError, match="GOVERNED_OPERATION_CARDINALITY_REJECTED"):
+        harness.service.complete_callback(handle)
+    with pytest.raises(RuntimeError, match="GOVERNED_OPERATION_CARDINALITY_REJECTED"):
+        harness.service.begin_login()
+    with pytest.raises(RuntimeError, match="PROVIDER_AVAILABILITY_VERIFICATION_WITHHELD"):
+        harness.service.verify_provider_availability()
+
+    assert harness.listener.receive_count == 1
+    assert harness.adapter.exchange_count == 1
+    assert harness.candidate.principal_count == 1
+    assert harness.candidate.availability_count == 0
+    assert harness.recorder.snapshot().count_for(
+        GovernedAuthenticationOperation.PROVIDER_AVAILABILITY_VERIFICATION
+    ) == 0
+
+
+@pytest.mark.parametrize("terminal_path", ["failure", "timeout", "cancel", "success"])
+def test_governed_terminal_paths_cleanup_locally_once(terminal_path: str) -> None:
+    callback_category = (
+        CallbackCategory.INVALID_HOST
+        if terminal_path == "failure"
+        else CallbackCategory.ACCEPTED
+    )
+    harness = _Harness(callback_category=callback_category, governed=True)
+    handle = harness.service.begin_login()
+
+    if terminal_path == "cancel":
+        result = harness.service.cancel_authentication_attempt(handle)
+        assert result is AuthenticationAttemptCancellationResult.CANCELLED
+    else:
+        if terminal_path == "timeout":
+            harness.clock.current = _NOW + timedelta(minutes=5)
+        evidence = harness.service.complete_callback(handle)
+        if terminal_path == "success":
+            assert evidence.state is AuthenticationAttemptState.SUCCEEDED
+            harness.service.end_kronos_session()
+            harness.service.end_kronos_session()
+        elif terminal_path == "timeout":
+            assert evidence.state is AuthenticationAttemptState.TIMED_OUT
+        else:
+            assert evidence.state is AuthenticationAttemptState.FAILED
+
+    assert harness.recorder is not None
+    assert harness.recorder.snapshot().count_for(
+        GovernedAuthenticationOperation.LOCAL_CLEANUP
+    ) == 1
+    assert harness.listener.close_count == 1
+    assert harness.candidate.availability_count == 0
+    assert not hasattr(harness.candidate, "invalidate_access_token")
+
+
+def test_governed_terminal_state_retains_no_raw_transient_material() -> None:
+    harness = _Harness(governed=True)
+    handle, evidence = _complete_success(harness)
+    assert harness.proof is not None
+    assert harness.recorder is not None
+
+    rendered = "".join(
+        (
+            repr(handle),
+            repr(evidence),
+            repr(harness.proof),
+            repr(harness.recorder.snapshot()),
+            repr(harness.service.current_context()),
+        )
+    )
+    for marker in (_API_SECRET, _REQUEST_TOKEN, _PROVIDER_PRINCIPAL):
+        assert marker not in rendered
+    assert harness.callback.token._token is None
+    assert harness.credentials.lease is not None
+    assert harness.credentials.lease._secret is None
+    assert harness.candidate.evidence._principal is None
+    assert harness.callback.close_count == 1
+    assert harness.credentials.lease.close_count == 1
+    assert harness.candidate.evidence.close_count >= 1
