@@ -1,15 +1,20 @@
-"""Sole governed CAR-018 live launcher; direct import and launch are inert."""
+"""Sole governed CAR-018 live launcher; direct import remains inert."""
 
 from __future__ import annotations
 
 import os
+import pwd
+import re
+import socket
 import stat
+import subprocess
 import threading
 import time
 from collections.abc import Callable
-from dataclasses import dataclass
-from datetime import datetime
+from dataclasses import dataclass, replace
+from datetime import datetime, timedelta, timezone
 from importlib.metadata import version
+from pathlib import Path
 
 from kronos.configuration.loader import (
     load_governed_provider_authentication_configuration,
@@ -21,22 +26,216 @@ from kronos.provider.kite.composition import (
 )
 from kronos.provider.kite.live_activation import (
     ActivationReview,
+    ActivationProvenanceKind,
     CanonicalRepositoryEvidence,
     CoordinatedActivationValues,
     DurableConsumptionCoordinator,
     DurableConsumptionResult,
     TrustedActivationReviewer,
+    consumption_filename,
 )
 from kronos.provider.models.authentication import (
     ConsumptionOutcomeCategory,
+    CoordinatedConsumptionState,
     GovernedAuthenticationOperation,
 )
-from tools.provider_pilots import car016_provider_authentication_gui
+if __package__:
+    from tools.provider_pilots import car016_provider_authentication_gui
+else:
+    import car016_provider_authentication_gui
 
 
 EXPECTED_PYTHON = (3, 13, 14)
 EXPECTED_TKINTER = "9.0"
 EXPECTED_KITE_SDK = "5.2.0"
+_ACTIVATION_IDENTITY = "KRONOS-COORD-AUTH-20260804-002"
+_CAR016_LOGICAL_REFERENCE = (
+    "CAR-016-V1.2-CA1-KRONOS-COORD-AUTH-20260804-002"
+)
+_CAR017_LOGICAL_REFERENCE = (
+    "CAR-017-V1.2-CA1-KRONOS-COORD-AUTH-20260804-002"
+)
+_FROZEN_CAR016_SHA = "bb5aa16fbc4fda2609376d53161d591fb0fe0d36"
+_FROZEN_CAR017_SHA = "8f052d0cc3b7abc63a28c2951a3b4770c58b4454"
+_FROZEN_CAR018_SHA = "6273663a8ca8729833a8a0f05e06d55973ce6dc0"
+_COORDINATED_GOVERNANCE_PUBLICATION_SHA = (
+    "cdaeaf1669e7182f36f9ea753315cf7992843d78"
+)
+_EFFECTIVE_AT = datetime(
+    2026, 8, 6, 9, 0, tzinfo=timezone(timedelta(hours=5, minutes=30))
+)
+_EXPIRES_AT = datetime(
+    2026, 8, 13, 9, 0, tzinfo=timezone(timedelta(hours=5, minutes=30))
+)
+_SPONSOR_ENVIRONMENT = "SPONSOR-MACOS-LOCAL-NONPROD-01"
+_APPROVED_HOSTNAME = "Imrans-Mac-mini.local"
+_GOVERNANCE_PATHS = (
+    "docs/governance/reviews/"
+    "CAR-016-PROVIDER-AUTHENTICATION-PILOT-AUTHORIZATION.md",
+    "docs/governance/reviews/"
+    "CAR-017-LIVE-COMPOSITION-LAYER-IMPLEMENTATION-AUTHORIZATION.md",
+    "docs/governance/reviews/"
+    "CAR-018-COMPLETE-PROVIDER-AUTHENTICATION-OPERATIONAL-CLOSURE-"
+    "AUTHORIZATION.md",
+    "docs/indexes/DOCUMENT-REGISTER.md",
+)
+_CORRECTIVE_PATHS = (
+    "tools/provider_pilots/car017_live_authentication_launcher.py",
+    "tests/unit/tools/test_car017_live_authentication_launcher.py",
+)
+_SHA_PATTERN = re.compile(r"[0-9a-f]{40}\Z")
+_CONSUMPTION_DIRECTORY = (
+    "Library/Application Support/KRONOS/provider-authentication/"
+    "activation-consumption"
+)
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class CanonicalRepositorySnapshot:
+    """Three independently evidenced repository identities for live preflight."""
+
+    evidence: CanonicalRepositoryEvidence
+    current_branch: str
+    current_head_sha: str
+    current_origin_develop_sha: str
+    current_working_tree_clean: bool
+    approved_corrective_implementation_sha: str
+    corrective_parent_sha: str
+    corrective_paths: tuple[str, ...]
+    activation_governance_publication_sha: str
+    activation_governance_paths: tuple[str, ...]
+    activation_governance_records: tuple[str, str, str, str]
+    historical_governance_publication_sha: str
+    historical_governance_paths: tuple[str, ...]
+    historical_governance_records: tuple[str, str, str, str]
+
+    def __repr__(self) -> str:
+        return "<CanonicalRepositorySnapshot sanitized>"
+
+
+class ProductionCanonicalActivationEvidenceVerifier:
+    """Verify exact historical governance and distinct current repository identity."""
+
+    __slots__ = ("__snapshot",)
+
+    def __init__(self, snapshot: CanonicalRepositorySnapshot) -> None:
+        self.__snapshot = snapshot
+
+    def verify(
+        self,
+        expected: object,
+        observed: object,
+        evidence: object,
+    ) -> bool:
+        snapshot = self.__snapshot
+        if (
+            type(expected) is not CoordinatedActivationValues
+            or type(observed) is not CoordinatedActivationValues
+            or type(evidence) is not CanonicalRepositoryEvidence
+            or not expected.exactly_matches(observed)
+            or snapshot.historical_governance_publication_sha
+            != _COORDINATED_GOVERNANCE_PUBLICATION_SHA
+            or expected.coordinated_governance_publication_sha
+            != snapshot.activation_governance_publication_sha
+            or evidence.branch != snapshot.current_branch
+            or evidence.head_sha != snapshot.current_head_sha
+            or evidence.origin_develop_sha != snapshot.current_origin_develop_sha
+            or evidence.working_tree_clean
+            is not snapshot.current_working_tree_clean
+            or tuple(sorted(snapshot.historical_governance_paths))
+            != tuple(sorted(_GOVERNANCE_PATHS))
+            or snapshot.current_branch != "develop"
+            or snapshot.current_head_sha != snapshot.current_origin_develop_sha
+            or snapshot.current_head_sha
+            != snapshot.activation_governance_publication_sha
+            or not snapshot.current_working_tree_clean
+            or not _SHA_PATTERN.fullmatch(
+                snapshot.approved_corrective_implementation_sha
+            )
+            or snapshot.approved_corrective_implementation_sha
+            == snapshot.current_head_sha
+            or snapshot.corrective_parent_sha
+            != snapshot.historical_governance_publication_sha
+            or tuple(sorted(snapshot.corrective_paths))
+            != tuple(sorted(_CORRECTIVE_PATHS))
+            or tuple(sorted(snapshot.activation_governance_paths))
+            != tuple(sorted(_GOVERNANCE_PATHS))
+        ):
+            return False
+        old016, old017, old018, old_register = snapshot.historical_governance_records
+        car016, car017, car018, register = snapshot.activation_governance_records
+        historical = _historical_activation_context()
+        return (
+            _verify_car016_record(old016, historical, _FROZEN_CAR018_SHA)
+            and _verify_car017_record(old017, historical, _FROZEN_CAR018_SHA)
+            and _verify_car018_record(old018, historical, _FROZEN_CAR018_SHA)
+            and _verify_document_register(old_register, historical, _FROZEN_CAR018_SHA)
+            and _verify_car016_record(
+                car016, expected, snapshot.approved_corrective_implementation_sha
+            )
+            and _verify_car017_record(
+                car017, expected, snapshot.approved_corrective_implementation_sha
+            )
+            and _verify_car018_record(
+                car018, expected, snapshot.approved_corrective_implementation_sha
+            )
+            and _verify_document_register(
+                register, expected, snapshot.approved_corrective_implementation_sha
+            )
+        )
+
+    def __repr__(self) -> str:
+        return "<ProductionCanonicalActivationEvidenceVerifier sanitized>"
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class SanitizedPreflightEvidence:
+    """Allow-listed preflight results containing no sensitive material."""
+
+    repository: bool
+    canonical_governance: bool
+    activation_context: bool
+    authority_window: bool
+    runtime: bool
+    configuration: bool
+    durable_record_absent: bool
+    consumption_directory_ready: bool
+    port_ready_without_bind: bool
+
+    @property
+    def passed(self) -> bool:
+        return all(
+            (
+                self.repository,
+                self.canonical_governance,
+                self.activation_context,
+                self.authority_window,
+                self.runtime,
+                self.configuration,
+                self.durable_record_absent,
+                self.consumption_directory_ready,
+                self.port_ready_without_bind,
+            )
+        )
+
+    def render(self) -> str:
+        rows = (
+            ("Repository", self.repository),
+            ("Canonical governance", self.canonical_governance),
+            ("Activation Context", self.activation_context),
+            ("Authority window", self.authority_window),
+            ("Runtime versions", self.runtime),
+            ("Governed configuration", self.configuration),
+            ("Durable record absent", self.durable_record_absent),
+            ("Consumption directory ready", self.consumption_directory_ready),
+            ("Port 8765 ready without bind", self.port_ready_without_bind),
+        )
+        body = "\n".join(f"{name}: {'PASS' if value else 'FAIL'}" for name, value in rows)
+        overall = "READY FOR FINAL SPONSOR CONFIRMATION" if self.passed else "NOT READY"
+        return f"GOVERNED LIVE PREFLIGHT EVIDENCE PACKAGE\n{body}\nOverall: {overall}"
+
+    def __repr__(self) -> str:
+        return "<SanitizedPreflightEvidence sanitized>"
 
 
 @dataclass(frozen=True, slots=True, repr=False)
@@ -221,6 +420,245 @@ def runtime_version_evidence() -> RuntimeVersionEvidence:
     )
 
 
+def canonical_repository_snapshot(
+    repository_root: Path,
+    *,
+    activation_governance_publication_sha: str,
+    git_output: Callable[[tuple[str, ...]], str] | None = None,
+) -> CanonicalRepositorySnapshot:
+    """Collect bounded local Git and canonical-document evidence without fetch."""
+
+    if not _SHA_PATTERN.fullmatch(activation_governance_publication_sha):
+        raise RuntimeError("GOVERNED_ACTIVATION_PUBLICATION_EVIDENCE_INVALID")
+    query = git_output or _local_git_output(repository_root)
+    branch = query(("branch", "--show-current")).strip()
+    head = query(("rev-parse", "HEAD")).strip()
+    origin = query(("rev-parse", "origin/develop")).strip()
+    clean = query(("status", "--porcelain")).strip() == ""
+    activation_paths = tuple(
+        line
+        for line in query(
+            (
+                "diff-tree",
+                "--no-commit-id",
+                "--name-only",
+                "-r",
+                activation_governance_publication_sha,
+            )
+        ).splitlines()
+        if line
+    )
+    activation_records = tuple(
+        query(("show", f"{activation_governance_publication_sha}:{path}"))
+        for path in _GOVERNANCE_PATHS
+    )
+    approved_corrective = _extract_corrective_sha(activation_records[2])
+    corrective_parent = query(("rev-parse", f"{approved_corrective}^")).strip()
+    corrective_paths = tuple(
+        line
+        for line in query(
+            ("diff-tree", "--no-commit-id", "--name-only", "-r", approved_corrective)
+        ).splitlines()
+        if line
+    )
+    historical_paths = tuple(
+        line
+        for line in query(
+            (
+                "diff-tree",
+                "--no-commit-id",
+                "--name-only",
+                "-r",
+                _COORDINATED_GOVERNANCE_PUBLICATION_SHA,
+            )
+        ).splitlines()
+        if line
+    )
+    historical_records = tuple(
+        query(("show", f"{_COORDINATED_GOVERNANCE_PUBLICATION_SHA}:{path}"))
+        for path in _GOVERNANCE_PATHS
+    )
+    car016, car017, car018, _register = activation_records
+    evidence = CanonicalRepositoryEvidence(
+        branch=branch,
+        head_sha=head,
+        origin_develop_sha=origin,
+        working_tree_clean=clean,
+        car016_canonical=_canonical_record(car016, "CAR-016-V1.2-CA1"),
+        car017_canonical=_canonical_record(car017, "CAR-017-V1.2-CA1"),
+        car014_unexecuted="CAR-014" in car018 and "UNEXECUTED" in car018,
+    )
+    return CanonicalRepositorySnapshot(
+        evidence=evidence,
+        current_branch=branch,
+        current_head_sha=head,
+        current_origin_develop_sha=origin,
+        current_working_tree_clean=clean,
+        approved_corrective_implementation_sha=approved_corrective,
+        corrective_parent_sha=corrective_parent,
+        corrective_paths=corrective_paths,
+        activation_governance_publication_sha=(
+            activation_governance_publication_sha
+        ),
+        activation_governance_paths=activation_paths,
+        activation_governance_records=activation_records,  # type: ignore[arg-type]
+        historical_governance_publication_sha=(
+            _COORDINATED_GOVERNANCE_PUBLICATION_SHA
+        ),
+        historical_governance_paths=historical_paths,
+        historical_governance_records=historical_records,  # type: ignore[arg-type]
+    )
+
+
+def expected_activation_context(
+    snapshot: CanonicalRepositorySnapshot,
+) -> CoordinatedActivationValues:
+    """Read the current governed binding while retaining historical provenance."""
+
+    return replace(
+        _activation_values_from_record(snapshot.activation_governance_records[0]),
+        coordinated_governance_publication_sha=(
+            snapshot.activation_governance_publication_sha
+        ),
+    )
+
+
+def observed_activation_context(
+    *,
+    expected: CoordinatedActivationValues,
+    repository_evidence: CanonicalRepositoryEvidence,
+    configuration: GovernedProviderAuthenticationConfiguration,
+    hostname: str,
+) -> CoordinatedActivationValues:
+    """Project the observed non-sensitive runtime references independently."""
+
+    authentication = configuration.authentication
+    return replace(
+        expected,
+        hostname=hostname,
+        operational_provider=authentication.provider,
+        provider_identity=configuration.provider_identity,
+        provider_configuration_ref=configuration.provider_configuration_ref,
+        application_registration_ref=configuration.application_registration_ref,
+        credential_ref=authentication.credential_ref,
+        intended_principal_registration_ref=(
+            authentication.intended_registration_ref
+        ),
+        redirect_url=authentication.redirect_uri,
+    )
+
+
+def execute_governed_launcher(
+    *,
+    repository_root: Path,
+    environment: object,
+    hostname: str,
+    reviewed_at: datetime,
+    runtime: RuntimeVersionEvidence,
+    snapshot: CanonicalRepositorySnapshot,
+    sponsor_home: str,
+    sponsor_user_id: int,
+    durable_state: tuple[bool, bool],
+    port_ready_without_bind: bool,
+    preflight_presenter: Callable[[str], None],
+    confirmation: Callable[[], bool],
+    gui_main: Callable[..., None] = car016_provider_authentication_gui.main,
+    worker_submit: Callable[[Callable[[], None]], None] | None = None,
+    monotonic: Callable[[], float] = time.monotonic,
+    consumed_at: Callable[[], datetime] | None = None,
+    composition_factory: Callable[..., object] = compose_kite_authentication,
+    filesystem: object | None = None,
+) -> PreparedGovernedLaunch:
+    """Assemble the approved path; effects remain gated by GUI confirmation."""
+
+    configuration = load_governed_provider_authentication_configuration(environment)
+    expected = expected_activation_context(snapshot)
+    observed = observed_activation_context(
+        expected=expected,
+        repository_evidence=snapshot.evidence,
+        configuration=configuration,
+        hostname=hostname,
+    )
+    verifier = ProductionCanonicalActivationEvidenceVerifier(snapshot)
+    canonical_verified = verifier.verify(expected, observed, snapshot.evidence)
+    directory_ready, record_absent = durable_state
+    preflight = SanitizedPreflightEvidence(
+        repository=(
+            snapshot.current_branch == "develop"
+            and snapshot.current_head_sha == snapshot.current_origin_develop_sha
+            and snapshot.current_head_sha
+            == snapshot.activation_governance_publication_sha
+            and snapshot.current_working_tree_clean
+            and snapshot.corrective_parent_sha
+            == snapshot.historical_governance_publication_sha
+            and tuple(sorted(snapshot.corrective_paths))
+            == tuple(sorted(_CORRECTIVE_PATHS))
+        ),
+        canonical_governance=(
+            canonical_verified
+            and snapshot.evidence.car016_canonical
+            and snapshot.evidence.car017_canonical
+            and snapshot.evidence.car014_unexecuted
+            and snapshot.historical_governance_publication_sha
+            == _COORDINATED_GOVERNANCE_PUBLICATION_SHA
+            and tuple(sorted(snapshot.activation_governance_paths))
+            == tuple(sorted(_GOVERNANCE_PATHS))
+        ),
+        activation_context=expected.exactly_matches(observed),
+        authority_window=(
+            expected.authority_effective_at
+            <= reviewed_at
+            < expected.authority_expires_at
+        ),
+        runtime=runtime.valid(),
+        configuration=True,
+        durable_record_absent=record_absent,
+        consumption_directory_ready=directory_ready,
+        port_ready_without_bind=port_ready_without_bind,
+    )
+    preflight_presenter(preflight.render())
+    if not preflight.passed:
+        raise RuntimeError("GOVERNED_RUNTIME_PREFLIGHT_FAILED")
+    reviewer = TrustedActivationReviewer(
+        verifier,
+        provenance_kind=ActivationProvenanceKind.CANONICAL_LIVE,
+    )
+    consumption = DurableConsumptionCoordinator(
+        filesystem=(
+            filesystem
+            if filesystem is not None
+            else DescriptorDurableConsumptionFilesystem()
+        ),  # type: ignore[arg-type]
+        sponsor_home=sponsor_home,
+        sponsor_user_id=sponsor_user_id,
+    )
+    prepared = prepare_governed_launch(
+        GovernedLaunchRequest(
+            expected=expected,
+            observed=observed,
+            repository_evidence=snapshot.evidence,
+            reviewed_at=reviewed_at,
+            runtime=runtime,
+        ),
+        reviewer=reviewer,
+        consumption=consumption,
+        configuration_loader=lambda: configuration,
+        consumed_at=consumed_at or _local_now,
+        monotonic=monotonic,
+        composition_factory=composition_factory,
+    )
+    try:
+        launch_prepared(
+            prepared,
+            gui_main=gui_main,
+            confirmation=confirmation,
+            worker_submit=worker_submit,
+        )
+    finally:
+        preflight_presenter(_render_terminal_evidence(prepared))
+    return prepared
+
+
 def _submit_daemon_worker(operation: Callable[[], None]) -> None:
     thread = threading.Thread(target=operation, daemon=True)
     thread.start()
@@ -321,11 +759,488 @@ def _descriptor(value: object) -> int:
     return value
 
 
-def main() -> None:
-    """Ordinary direct launch remains inspection-only until prepared externally."""
+def _activation_values(
+    *,
+    publication_sha: str,
+    hostname: str,
+    operational_provider: str,
+    provider_identity: str,
+    provider_configuration_ref: str,
+    application_registration_ref: str,
+    credential_ref: str,
+    intended_principal_registration_ref: str,
+    redirect_url: str,
+) -> CoordinatedActivationValues:
+    return CoordinatedActivationValues(
+        coordinated_activation_identity=_ACTIVATION_IDENTITY,
+        coordinated_governance_publication_sha=publication_sha,
+        car016_logical_publication_ref=_CAR016_LOGICAL_REFERENCE,
+        car017_logical_publication_ref=_CAR017_LOGICAL_REFERENCE,
+        frozen_car016_implementation_sha=_FROZEN_CAR016_SHA,
+        frozen_car017_implementation_sha=_FROZEN_CAR017_SHA,
+        authority_effective_at=_EFFECTIVE_AT,
+        authority_effective_timezone="Asia/Kolkata",
+        authority_expires_at=_EXPIRES_AT,
+        authority_expiry_timezone="Asia/Kolkata",
+        authentication_attempt_timeout_seconds=300,
+        sponsor_environment_ref=_SPONSOR_ENVIRONMENT,
+        hostname=hostname,
+        provider_identity=provider_identity,
+        operational_provider=operational_provider,
+        provider_configuration_ref=provider_configuration_ref,
+        application_registration_ref=application_registration_ref,
+        credential_ref=credential_ref,
+        intended_principal_registration_ref=intended_principal_registration_ref,
+        composition_dependency_set_ref="CAR017-LIVE-COMPOSITION-DEPENDENCY-SET-V1",
+        redirect_url=redirect_url,
+        attempt_cardinality="ONE",
+        provider_availability_authority="WITHHELD",
+        provider_availability_max_operations=0,
+        car014_status="UNEXECUTED",
+        consumption_state=CoordinatedConsumptionState.UNUSED,
+    )
 
-    car016_provider_authentication_gui.main()
+
+def _historical_activation_context() -> CoordinatedActivationValues:
+    return _activation_values(
+        publication_sha=_COORDINATED_GOVERNANCE_PUBLICATION_SHA,
+        hostname=_APPROVED_HOSTNAME,
+        operational_provider="KITE",
+        provider_identity="ZERODHA_KITE",
+        provider_configuration_ref="ZERODHA-KITE-PROVIDER-CONFIG-PRIMARY",
+        application_registration_ref="ZERODHA-KITE-APP-REGISTRATION-PRIMARY",
+        credential_ref="KITE-API-SECRET-PRIMARY",
+        intended_principal_registration_ref="KITE-INTENDED-PRINCIPAL-PRIMARY",
+        redirect_url="http://127.0.0.1:8765/kite/callback",
+    )
+
+
+def _extract_table_value(document: str, label: str) -> str:
+    pattern = re.compile(
+        rf"^\| {re.escape(label)} \| `([^`\n]+)` \|$",
+        re.MULTILINE,
+    )
+    matches = pattern.findall(document)
+    if not matches:
+        raise RuntimeError("GOVERNED_ACTIVATION_RECORD_INVALID")
+    return matches[-1]
+
+
+def _extract_corrective_sha(document: str) -> str:
+    marker = "**Frozen CAR-018 Corrective Composite Implementation SHA:** `"
+    matches = tuple(
+        line[len(marker) : -1]
+        for line in document.splitlines()
+        if line.startswith(marker) and line.endswith("`")
+    )
+    if len(matches) != 1 or not _SHA_PATTERN.fullmatch(matches[0]):
+        raise RuntimeError("GOVERNED_CORRECTIVE_IMPLEMENTATION_EVIDENCE_INVALID")
+    return matches[0]
+
+
+def _activation_values_from_record(document: str) -> CoordinatedActivationValues:
+    def value(label: str) -> str:
+        return _extract_table_value(document, label)
+
+    try:
+        effective = datetime.fromisoformat(value("Authority effective timestamp"))
+        expires = datetime.fromisoformat(value("Authority expiry timestamp"))
+        timeout = value("Authentication Attempt timeout")
+        maximum = value("Maximum Provider Availability verification operations")
+        consumption = CoordinatedConsumptionState(
+            value("Coordinated consumption state")
+        )
+    except (ValueError, TypeError) as error:
+        raise RuntimeError("GOVERNED_ACTIVATION_RECORD_INVALID") from error
+    if not timeout.endswith(" seconds"):
+        raise RuntimeError("GOVERNED_ACTIVATION_RECORD_INVALID")
+    return CoordinatedActivationValues(
+        coordinated_activation_identity=value("Coordinated activation identity"),
+        coordinated_governance_publication_sha=(
+            _COORDINATED_GOVERNANCE_PUBLICATION_SHA
+        ),
+        car016_logical_publication_ref=value(
+            "Logical CAR-016 CA1 publication reference"
+        ),
+        car017_logical_publication_ref=value(
+            "Logical CAR-017 CA1 publication reference"
+        ),
+        frozen_car016_implementation_sha=value(
+            "Frozen CAR-016 implementation SHA"
+        ),
+        frozen_car017_implementation_sha=value(
+            "Frozen CAR-017 implementation SHA"
+        ),
+        authority_effective_at=effective,
+        authority_effective_timezone=value("Authority effective timezone"),
+        authority_expires_at=expires,
+        authority_expiry_timezone=value("Authority expiry timezone"),
+        authentication_attempt_timeout_seconds=int(timeout.removesuffix(" seconds")),
+        sponsor_environment_ref=value("Sponsor environment reference"),
+        hostname=value("Approved hostname"),
+        provider_identity=value("Provider identity"),
+        operational_provider=value("Operational Provider value"),
+        provider_configuration_ref=value("Provider configuration reference"),
+        application_registration_ref=value(
+            "Kite application-registration reference"
+        ),
+        credential_ref=value("Secure-credential reference"),
+        intended_principal_registration_ref=value(
+            "Intended-principal registration reference"
+        ),
+        composition_dependency_set_ref=value(
+            "Composition dependency-set reference"
+        ),
+        redirect_url=value("Redirect URL"),
+        attempt_cardinality=value("Attempt cardinality"),
+        provider_availability_authority=value(
+            "Provider Availability Verification Authority"
+        ),
+        provider_availability_max_operations=int(maximum),
+        car014_status=value("CAR-014 status"),
+        consumption_state=consumption,
+    )
+
+
+def _verify_car016_record(
+    document: str,
+    values: CoordinatedActivationValues,
+    corrective_sha: str,
+) -> bool:
+    metadata = (
+        "**Document ID:** CAR-016",
+        "**Version:** 1.2",
+        "**Status:** Approved",
+        "**Canonical Status:** Canonical",
+        "**Controlled Amendment:** `CAR-016-V1.2-CA1`",
+        "**Controlled Amendment Status:** Approved",
+        "**Controlled Amendment Canonical Status:** Canonical Controlled Amendment",
+        "**Underlying Canonical Record:** CAR-016 Version 1.2",
+        "**Controlled Amendment Workflow Stage:** Repository Publication",
+    )
+    return _contains_exact_lines(document, metadata) and _verify_context_table(
+        document,
+        values,
+        corrective_sha,
+    )
+
+
+def _verify_car017_record(
+    document: str,
+    values: CoordinatedActivationValues,
+    corrective_sha: str,
+) -> bool:
+    metadata = (
+        "**Document ID:** CAR-017",
+        "**Version:** 1.2",
+        "**Status:** Approved",
+        "**Canonical Status:** Canonical",
+        "**Controlled Amendment:** `CAR-017-V1.2-CA1`",
+        "**Controlled Amendment Status:** Approved",
+        "**Controlled Amendment Canonical Status:** Canonical Controlled Amendment",
+        "**Underlying Canonical Record:** CAR-017 Version 1.2",
+        "**Controlled Amendment Workflow Stage:** Repository Publication",
+    )
+    return _contains_exact_lines(document, metadata) and _verify_context_table(
+        document,
+        values,
+        corrective_sha,
+    )
+
+
+def _verify_car018_record(
+    document: str,
+    values: CoordinatedActivationValues,
+    corrective_sha: str,
+) -> bool:
+    metadata = (
+        "**Document ID:** CAR-018",
+        "**Version:** 1.1",
+        "**Status:** Approved",
+        "**Canonical Status:** Canonical",
+        "**Workflow Stage:** Repository Publication",
+        "**Decision:** APPROVED — IMPLEMENTATION CONFORMANCE ACCEPTED",
+        "**Frozen CAR-018 Corrective Composite Implementation SHA:** "
+        f"`{corrective_sha}`",
+    )
+    if not _contains_exact_lines(document, metadata):
+        return False
+    repeated_rows = tuple(
+        f"| {label} | `{value}` | `{value}` | `{value}` | MATCH |"
+        for label, value in _context_pairs(values, corrective_sha)
+        if label != "CA1 coordinated governance publication commit SHA"
+    )
+    publication = (
+        "| CA1 coordinated governance publication commit SHA | "
+        "`PENDING — ESTABLISHED BY THE FOUR-FILE CANONICAL PUBLICATION COMMIT` | "
+        "`PENDING — ESTABLISHED BY THE FOUR-FILE CANONICAL PUBLICATION COMMIT` | "
+        "`PENDING — ESTABLISHED BY THE FOUR-FILE CANONICAL PUBLICATION COMMIT` | "
+        "MATCH; replaced by the resulting publication SHA as post-publication evidence |"
+    )
+    return _contains_exact_lines(document, (*repeated_rows, publication))
+
+
+def _verify_context_table(
+    document: str,
+    values: CoordinatedActivationValues,
+    corrective_sha: str,
+) -> bool:
+    rows = tuple(
+        f"| {label} | `{value}` |"
+        for label, value in _context_pairs(values, corrective_sha)
+    )
+    return _contains_exact_lines(document, rows)
+
+
+def _context_pairs(
+    values: CoordinatedActivationValues,
+    corrective_sha: str,
+) -> tuple[tuple[str, str], ...]:
+    return (
+        ("Coordinated activation identity", values.coordinated_activation_identity),
+        (
+            "CA1 coordinated governance publication commit SHA",
+            "PENDING — ESTABLISHED BY THE FOUR-FILE CANONICAL PUBLICATION COMMIT",
+        ),
+        (
+            "Logical CAR-016 CA1 publication reference",
+            values.car016_logical_publication_ref,
+        ),
+        (
+            "Logical CAR-017 CA1 publication reference",
+            values.car017_logical_publication_ref,
+        ),
+        ("Frozen CAR-016 implementation SHA", values.frozen_car016_implementation_sha),
+        ("Frozen CAR-017 implementation SHA", values.frozen_car017_implementation_sha),
+        ("Frozen CAR-018 corrective composite implementation SHA", corrective_sha),
+        ("Authority effective timestamp", values.authority_effective_at.isoformat()),
+        ("Authority effective timezone", values.authority_effective_timezone),
+        ("Authority expiry timestamp", values.authority_expires_at.isoformat()),
+        ("Authority expiry timezone", values.authority_expiry_timezone),
+        (
+            "Authentication Attempt timeout",
+            f"{values.authentication_attempt_timeout_seconds} seconds",
+        ),
+        ("Sponsor environment reference", values.sponsor_environment_ref),
+        ("Approved hostname", values.hostname),
+        ("Provider identity", values.provider_identity),
+        ("Operational Provider value", values.operational_provider),
+        ("Provider configuration reference", values.provider_configuration_ref),
+        (
+            "Kite application-registration reference",
+            values.application_registration_ref,
+        ),
+        ("Secure-credential reference", values.credential_ref),
+        (
+            "Intended-principal registration reference",
+            values.intended_principal_registration_ref,
+        ),
+        (
+            "Composition dependency-set reference",
+            values.composition_dependency_set_ref,
+        ),
+        ("Redirect URL", values.redirect_url),
+        ("Attempt cardinality", values.attempt_cardinality),
+        (
+            "Provider Availability Verification Authority",
+            values.provider_availability_authority,
+        ),
+        (
+            "Maximum Provider Availability verification operations",
+            str(values.provider_availability_max_operations),
+        ),
+        ("CAR-014 status", values.car014_status),
+        ("Coordinated consumption state", values.consumption_state.value),
+        (
+            "Controlled invalid-activation category",
+            "COORDINATED_LIVE_ACTIVATION_NOT_AUTHORIZED_OR_CONTEXT_MISMATCH",
+        ),
+    )
+
+
+def _verify_document_register(
+    document: str,
+    values: CoordinatedActivationValues,
+    corrective_sha: str,
+) -> bool:
+    rows = {
+        identifier: tuple(
+            line for line in document.splitlines() if line.startswith(f"| {identifier} |")
+        )
+        for identifier in ("CAR-016", "CAR-017", "CAR-018")
+    }
+    if any(len(matches) != 1 for matches in rows.values()):
+        return False
+    common = (
+        values.coordinated_activation_identity,
+        values.car016_logical_publication_ref,
+        values.car017_logical_publication_ref,
+        corrective_sha,
+        values.authority_effective_at.isoformat(),
+        values.authority_expires_at.isoformat(),
+        "attempt cardinality: ONE",
+        "consumption state: UNUSED",
+        "Provider Availability Verification Authority: WITHHELD",
+        "maximum operations: 0",
+        "CAR-014 UNEXECUTED",
+    )
+    record_specific = {
+        "CAR-016": (
+            "Version: 1.2",
+            "Controlled Amendment: `CAR-016-V1.2-CA1`",
+            "Canonical Status: Canonical Controlled Amendment",
+        ),
+        "CAR-017": (
+            "Version: 1.2",
+            "Controlled Amendment: `CAR-017-V1.2-CA1`",
+            "Canonical Status: Canonical Controlled Amendment",
+        ),
+        "CAR-018": (
+            "Version: 1.1",
+            "Canonical Status: Canonical",
+            "Decision: APPROVED — IMPLEMENTATION CONFORMANCE ACCEPTED",
+        ),
+    }
+    return all(
+        all(token in rows[identifier][0] for token in (*common, *specific))
+        for identifier, specific in record_specific.items()
+    )
+
+
+def _contains_exact_lines(document: str, expected: tuple[str, ...]) -> bool:
+    lines = frozenset(document.splitlines())
+    return all(line in lines for line in expected)
+
+
+def _local_git_output(repository_root: Path) -> Callable[[tuple[str, ...]], str]:
+    def query(arguments: tuple[str, ...]) -> str:
+        result = subprocess.run(
+            ("git", *arguments),
+            cwd=repository_root,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=10,
+        )
+        if result.returncode != 0:
+            raise RuntimeError("GOVERNED_REPOSITORY_EVIDENCE_UNAVAILABLE")
+        return result.stdout
+
+    return query
+
+
+def _canonical_record(document: str, amendment: str) -> bool:
+    return (
+        "**Canonical Status:** Canonical" in document
+        and amendment in document
+        and "Canonical Controlled Amendment" in document
+    )
+
+
+def _durable_state(
+    sponsor_home: str,
+    sponsor_user_id: int,
+    activation_identity: str,
+) -> tuple[bool, bool]:
+    directory = Path(sponsor_home) / _CONSUMPTION_DIRECTORY
+    try:
+        details = directory.lstat()
+    except OSError:
+        return False, False
+    directory_ready = (
+        stat.S_ISDIR(details.st_mode)
+        and not directory.is_symlink()
+        and details.st_uid == sponsor_user_id
+        and stat.S_IMODE(details.st_mode) == 0o700
+    )
+    if not directory_ready:
+        return False, False
+    record = directory / consumption_filename(activation_identity)
+    try:
+        record.lstat()
+    except FileNotFoundError:
+        return True, True
+    except OSError:
+        return True, False
+    return True, False
+
+
+def _port_ready_without_bind() -> bool:
+    try:
+        result = subprocess.run(
+            ("/usr/sbin/lsof", "-nP", "-iTCP:8765", "-sTCP:LISTEN"),
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=5,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return result.returncode == 1 and result.stdout == ""
+
+
+def _local_now() -> datetime:
+    return datetime.now().astimezone()
+
+
+def _final_sponsor_confirmation() -> bool:
+    from tkinter import messagebox
+
+    return bool(
+        messagebox.askyesno(
+            "CAR-018 final Sponsor confirmation",
+            "Proceed with the single governed authentication attempt? "
+            "Confirmation durably consumes the coordinated authority. "
+            "No retry is authorized.",
+        )
+    )
+
+
+def _render_terminal_evidence(prepared: PreparedGovernedLaunch) -> str:
+    ledger = prepared.operation_ledger()
+    rows = tuple(
+        f"{operation.value}: {ledger.count_for(operation)}"
+        for operation in GovernedAuthenticationOperation
+    )
+    return "SANITIZED GOVERNED TERMINAL EVIDENCE\n" + "\n".join(rows)
+
+
+def main() -> int:
+    """Assemble the sole governed path and fail with sanitized evidence."""
+
+    repository_root = Path(__file__).resolve().parents[2]
+    try:
+        snapshot = canonical_repository_snapshot(
+            repository_root,
+            activation_governance_publication_sha=os.environ.get(
+                "KRONOS_ACTIVATION_GOVERNANCE_PUBLICATION_SHA", ""
+            ),
+        )
+        expected = expected_activation_context(snapshot)
+        sponsor = pwd.getpwuid(os.getuid())
+        execute_governed_launcher(
+            repository_root=repository_root,
+            environment=os.environ,
+            hostname=socket.gethostname(),
+            reviewed_at=_local_now(),
+            runtime=runtime_version_evidence(),
+            snapshot=snapshot,
+            sponsor_home=sponsor.pw_dir,
+            sponsor_user_id=sponsor.pw_uid,
+            durable_state=_durable_state(
+                sponsor.pw_dir,
+                sponsor.pw_uid,
+                expected.coordinated_activation_identity,
+            ),
+            port_ready_without_bind=_port_ready_without_bind(),
+            preflight_presenter=print,
+            confirmation=_final_sponsor_confirmation,
+        )
+    except Exception:
+        print("GOVERNED LIVE AUTHENTICATION: SANITIZED FAILURE")
+        return 1
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
