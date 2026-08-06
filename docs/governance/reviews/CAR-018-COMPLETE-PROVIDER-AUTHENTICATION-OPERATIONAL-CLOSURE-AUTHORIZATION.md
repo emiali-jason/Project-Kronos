@@ -1004,4 +1004,82 @@ Before Chief Architect publication review, verify:
 
 ---
 
+## Approved Canonical post-correction CA2 activation disposition
+
+**CAR-016 Controlled Amendment:** `CAR-016-V1.2-CA2`
+
+**CAR-017 Controlled Amendment:** `CAR-017-V1.2-CA2`
+
+**Controlled Amendment Status:** Approved
+
+**Canonical Status:** Canonical Controlled Amendment
+
+**Workflow Stage:** Repository Publication
+
+**Frozen CAR-018 Corrective Composite Implementation SHA:** `7fdec7887faa94b5fd52ab59b01b023e726f7a68`
+
+| Controlled value | Exact disposition |
+|---|---|
+| Previous coordinated activation identity | `KRONOS-COORD-AUTH-20260804-002` |
+| Previous identity disposition | `RETIRED FOR EXECUTION — UNUSED` |
+| New coordinated activation identity | `KRONOS-COORD-AUTH-20260806-003` |
+| Effective | `2026-08-07T09:00:00+05:30 Asia/Kolkata` |
+| Expiry | `2026-08-14T09:00:00+05:30 Asia/Kolkata` |
+| Attempt cardinality | `ONE` |
+| Consumption state | `UNUSED` |
+| Provider Availability | `WITHHELD — MAXIMUM 0` |
+| CAR-016 controlled amendment | `CAR-016-V1.2-CA2` |
+| CAR-017 controlled amendment | `CAR-017-V1.2-CA2` |
+| CAR-016 CA2 logical publication reference | `CAR-016-V1.2-CA2-KRONOS-COORD-AUTH-20260806-003` |
+| CAR-017 CA2 logical publication reference | `CAR-017-V1.2-CA2-KRONOS-COORD-AUTH-20260806-003` |
+| CA2 coordinated governance publication commit SHA | `PENDING — ESTABLISHED BY THE FOUR-FILE CANONICAL PUBLICATION COMMIT` |
+| CAR-014 | `UNEXECUTED` |
+
+Every field below must match byte-for-byte across CAR-016 CA2, CAR-017 CA2 and
+this CAR-018 CA2 disposition. A missing, additional, normalized, inferred,
+substituted or unequal value fails closed.
+
+| Activation Context field | CAR-016 CA2 | CAR-017 CA2 | CAR-018 CA2 | Equality |
+|---|---|---|---|---|
+| Coordinated activation identity | `KRONOS-COORD-AUTH-20260806-003` | `KRONOS-COORD-AUTH-20260806-003` | `KRONOS-COORD-AUTH-20260806-003` | MATCH |
+| CA2 coordinated governance publication commit SHA | `PENDING — ESTABLISHED BY THE FOUR-FILE CANONICAL PUBLICATION COMMIT` | `PENDING — ESTABLISHED BY THE FOUR-FILE CANONICAL PUBLICATION COMMIT` | `PENDING — ESTABLISHED BY THE FOUR-FILE CANONICAL PUBLICATION COMMIT` | MATCH; replaced by the resulting publication SHA as post-publication evidence |
+| Logical CAR-016 CA2 publication reference | `CAR-016-V1.2-CA2-KRONOS-COORD-AUTH-20260806-003` | `CAR-016-V1.2-CA2-KRONOS-COORD-AUTH-20260806-003` | `CAR-016-V1.2-CA2-KRONOS-COORD-AUTH-20260806-003` | MATCH |
+| Logical CAR-017 CA2 publication reference | `CAR-017-V1.2-CA2-KRONOS-COORD-AUTH-20260806-003` | `CAR-017-V1.2-CA2-KRONOS-COORD-AUTH-20260806-003` | `CAR-017-V1.2-CA2-KRONOS-COORD-AUTH-20260806-003` | MATCH |
+| Frozen CAR-016 implementation SHA | `bb5aa16fbc4fda2609376d53161d591fb0fe0d36` | `bb5aa16fbc4fda2609376d53161d591fb0fe0d36` | `bb5aa16fbc4fda2609376d53161d591fb0fe0d36` | MATCH |
+| Frozen CAR-017 implementation SHA | `8f052d0cc3b7abc63a28c2951a3b4770c58b4454` | `8f052d0cc3b7abc63a28c2951a3b4770c58b4454` | `8f052d0cc3b7abc63a28c2951a3b4770c58b4454` | MATCH |
+| Frozen CAR-018 corrective composite implementation SHA | `7fdec7887faa94b5fd52ab59b01b023e726f7a68` | `7fdec7887faa94b5fd52ab59b01b023e726f7a68` | `7fdec7887faa94b5fd52ab59b01b023e726f7a68` | MATCH |
+| Authority effective timestamp | `2026-08-07T09:00:00+05:30` | `2026-08-07T09:00:00+05:30` | `2026-08-07T09:00:00+05:30` | MATCH |
+| Authority effective timezone | `Asia/Kolkata` | `Asia/Kolkata` | `Asia/Kolkata` | MATCH |
+| Authority expiry timestamp | `2026-08-14T09:00:00+05:30` | `2026-08-14T09:00:00+05:30` | `2026-08-14T09:00:00+05:30` | MATCH |
+| Authority expiry timezone | `Asia/Kolkata` | `Asia/Kolkata` | `Asia/Kolkata` | MATCH |
+| Authentication Attempt timeout | `300 seconds` | `300 seconds` | `300 seconds` | MATCH |
+| Sponsor environment reference | `SPONSOR-MACOS-LOCAL-NONPROD-01` | `SPONSOR-MACOS-LOCAL-NONPROD-01` | `SPONSOR-MACOS-LOCAL-NONPROD-01` | MATCH |
+| Approved hostname | `Imrans-Mac-mini.local` | `Imrans-Mac-mini.local` | `Imrans-Mac-mini.local` | MATCH |
+| Provider identity | `ZERODHA_KITE` | `ZERODHA_KITE` | `ZERODHA_KITE` | MATCH |
+| Operational Provider value | `KITE` | `KITE` | `KITE` | MATCH |
+| Provider configuration reference | `ZERODHA-KITE-PROVIDER-CONFIG-PRIMARY` | `ZERODHA-KITE-PROVIDER-CONFIG-PRIMARY` | `ZERODHA-KITE-PROVIDER-CONFIG-PRIMARY` | MATCH |
+| Kite application-registration reference | `ZERODHA-KITE-APP-REGISTRATION-PRIMARY` | `ZERODHA-KITE-APP-REGISTRATION-PRIMARY` | `ZERODHA-KITE-APP-REGISTRATION-PRIMARY` | MATCH |
+| Secure-credential reference | `KITE-API-SECRET-PRIMARY` | `KITE-API-SECRET-PRIMARY` | `KITE-API-SECRET-PRIMARY` | MATCH |
+| Intended-principal registration reference | `KITE-INTENDED-PRINCIPAL-PRIMARY` | `KITE-INTENDED-PRINCIPAL-PRIMARY` | `KITE-INTENDED-PRINCIPAL-PRIMARY` | MATCH |
+| Composition dependency-set reference | `CAR017-LIVE-COMPOSITION-DEPENDENCY-SET-V1` | `CAR017-LIVE-COMPOSITION-DEPENDENCY-SET-V1` | `CAR017-LIVE-COMPOSITION-DEPENDENCY-SET-V1` | MATCH |
+| Redirect URL | `http://127.0.0.1:8765/kite/callback` | `http://127.0.0.1:8765/kite/callback` | `http://127.0.0.1:8765/kite/callback` | MATCH |
+| Attempt cardinality | `ONE` | `ONE` | `ONE` | MATCH |
+| Provider Availability Verification Authority | `WITHHELD` | `WITHHELD` | `WITHHELD` | MATCH |
+| Maximum Provider Availability verification operations | `0` | `0` | `0` | MATCH |
+| CAR-014 status | `UNEXECUTED` | `UNEXECUTED` | `UNEXECUTED` | MATCH |
+| Coordinated consumption state | `UNUSED` | `UNUSED` | `UNUSED` | MATCH |
+| Controlled invalid-activation category | `COORDINATED_LIVE_ACTIVATION_NOT_AUTHORIZED_OR_CONTEXT_MISMATCH` | `COORDINATED_LIVE_ACTIVATION_NOT_AUTHORIZED_OR_CONTEXT_MISMATCH` | `COORDINATED_LIVE_ACTIVATION_NOT_AUTHORIZED_OR_CONTEXT_MISMATCH` | MATCH |
+
+CA2 supersedes CA1 for execution selection only. The complete existing CA1
+disposition and equality matrix remain canonical historical evidence and are
+not eligible for future execution selection. Fallback, revival, renewal,
+aliasing or execution through either retired activation identity is prohibited.
+
+Publication alone performs no preflight, consumes no authority, reserves no
+Authentication Attempt and grants no Sponsor execution authority. Provider
+Availability Verification Authority remains `WITHHELD` with maximum operation
+count `0`; CAR-014 remains `UNEXECUTED`. CAR-016 and CAR-017 Version 1.3
+remain reserved for the sanitized post-attempt outcome.
+
+
 # End of Document

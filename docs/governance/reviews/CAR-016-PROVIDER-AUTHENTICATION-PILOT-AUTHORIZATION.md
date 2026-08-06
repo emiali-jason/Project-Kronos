@@ -1290,4 +1290,61 @@ post-attempt sanitized outcome and creates no renewed attempt.
 - [DOC-001](../documentation/DOC-001-DOCUMENT-IDENTIFICATION-CLASSIFICATION-METADATA-STANDARD.md)
 - [Document Register](../../indexes/DOCUMENT-REGISTER.md)
 
+# 25. Controlled Amendment — CAR-016-V1.2-CA2
+
+**Controlled Amendment ID:** `CAR-016-V1.2-CA2`
+
+**Controlled Amendment Status:** Approved
+
+**Canonical Status:** Canonical Controlled Amendment
+
+**Underlying Canonical Record:** CAR-016 Version 1.2
+
+**Workflow Stage:** Repository Publication
+
+| Controlled value | Exact disposition |
+|---|---|
+| Previous coordinated activation identity | `KRONOS-COORD-AUTH-20260804-002` |
+| Previous identity disposition | `RETIRED FOR EXECUTION — UNUSED` |
+
+| Activation Context field | Exact frozen value |
+|---|---|
+| Coordinated activation identity | `KRONOS-COORD-AUTH-20260806-003` |
+| CA2 coordinated governance publication commit SHA | `PENDING — ESTABLISHED BY THE FOUR-FILE CANONICAL PUBLICATION COMMIT` |
+| Logical CAR-016 CA2 publication reference | `CAR-016-V1.2-CA2-KRONOS-COORD-AUTH-20260806-003` |
+| Logical CAR-017 CA2 publication reference | `CAR-017-V1.2-CA2-KRONOS-COORD-AUTH-20260806-003` |
+| Frozen CAR-016 implementation SHA | `bb5aa16fbc4fda2609376d53161d591fb0fe0d36` |
+| Frozen CAR-017 implementation SHA | `8f052d0cc3b7abc63a28c2951a3b4770c58b4454` |
+| Frozen CAR-018 corrective composite implementation SHA | `7fdec7887faa94b5fd52ab59b01b023e726f7a68` |
+| Authority effective timestamp | `2026-08-07T09:00:00+05:30` |
+| Authority effective timezone | `Asia/Kolkata` |
+| Authority expiry timestamp | `2026-08-14T09:00:00+05:30` |
+| Authority expiry timezone | `Asia/Kolkata` |
+| Authentication Attempt timeout | `300 seconds` |
+| Sponsor environment reference | `SPONSOR-MACOS-LOCAL-NONPROD-01` |
+| Approved hostname | `Imrans-Mac-mini.local` |
+| Provider identity | `ZERODHA_KITE` |
+| Operational Provider value | `KITE` |
+| Provider configuration reference | `ZERODHA-KITE-PROVIDER-CONFIG-PRIMARY` |
+| Kite application-registration reference | `ZERODHA-KITE-APP-REGISTRATION-PRIMARY` |
+| Secure-credential reference | `KITE-API-SECRET-PRIMARY` |
+| Intended-principal registration reference | `KITE-INTENDED-PRINCIPAL-PRIMARY` |
+| Composition dependency-set reference | `CAR017-LIVE-COMPOSITION-DEPENDENCY-SET-V1` |
+| Redirect URL | `http://127.0.0.1:8765/kite/callback` |
+| Attempt cardinality | `ONE` |
+| Provider Availability Verification Authority | `WITHHELD` |
+| Maximum Provider Availability verification operations | `0` |
+| CAR-014 status | `UNEXECUTED` |
+| Coordinated consumption state | `UNUSED` |
+| Controlled invalid-activation category | `COORDINATED_LIVE_ACTIVATION_NOT_AUTHORIZED_OR_CONTEXT_MISMATCH` |
+
+CA2 supersedes CA1 for execution selection only. CA1 remains canonical
+historical evidence. Fallback, revival, renewal, aliasing or execution through
+either retired activation identity is prohibited.
+
+CAR-016-V1.2-CA2 and CAR-017-V1.2-CA2 are jointly necessary and individually
+insufficient. Publication alone performs no preflight, consumes no authority,
+reserves no Authentication Attempt and grants no Sponsor execution authority.
+CAR-016 Version 1.3 remains reserved for the sanitized post-attempt outcome.
+
 # End of Document
