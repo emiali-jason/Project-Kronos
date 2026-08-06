@@ -84,6 +84,10 @@ _CORRECTIVE_PATHS = (
     "tests/unit/tools/test_car017_live_authentication_launcher.py",
 )
 _SHA_PATTERN = re.compile(r"[0-9a-f]{40}\Z")
+_HISTORICAL_AMENDMENT = "CA1"
+_CURRENT_AMENDMENT = "CA2"
+_CA2_RETIRED_PREDECESSOR = "KRONOS-COORD-AUTH-20260804-002"
+_RETIRED_UNUSED_DISPOSITION = "RETIRED FOR EXECUTION — UNUSED"
 _CONSUMPTION_DIRECTORY = (
     "Library/Application Support/KRONOS/provider-authentication/"
     "activation-consumption"
@@ -133,6 +137,11 @@ class ProductionCanonicalActivationEvidenceVerifier:
             or type(observed) is not CoordinatedActivationValues
             or type(evidence) is not CanonicalRepositoryEvidence
             or not expected.exactly_matches(observed)
+            or expected.attempt_cardinality != "ONE"
+            or expected.consumption_state is not CoordinatedConsumptionState.UNUSED
+            or expected.provider_availability_authority != "WITHHELD"
+            or expected.provider_availability_max_operations != 0
+            or expected.car014_status != "UNEXECUTED"
             or snapshot.historical_governance_publication_sha
             != _COORDINATED_GOVERNANCE_PUBLICATION_SHA
             or expected.coordinated_governance_publication_sha
@@ -154,6 +163,7 @@ class ProductionCanonicalActivationEvidenceVerifier:
             )
             or snapshot.approved_corrective_implementation_sha
             == snapshot.current_head_sha
+            or snapshot.approved_corrective_implementation_sha == _FROZEN_CAR018_SHA
             or snapshot.corrective_parent_sha
             != snapshot.historical_governance_publication_sha
             or tuple(sorted(snapshot.corrective_paths))
@@ -166,21 +176,44 @@ class ProductionCanonicalActivationEvidenceVerifier:
         car016, car017, car018, register = snapshot.activation_governance_records
         historical = _historical_activation_context()
         return (
-            _verify_car016_record(old016, historical, _FROZEN_CAR018_SHA)
-            and _verify_car017_record(old017, historical, _FROZEN_CAR018_SHA)
-            and _verify_car018_record(old018, historical, _FROZEN_CAR018_SHA)
-            and _verify_document_register(old_register, historical, _FROZEN_CAR018_SHA)
-            and _verify_car016_record(
-                car016, expected, snapshot.approved_corrective_implementation_sha
+            _verify_car016_record(
+                old016, historical, _FROZEN_CAR018_SHA, _HISTORICAL_AMENDMENT
             )
             and _verify_car017_record(
-                car017, expected, snapshot.approved_corrective_implementation_sha
+                old017, historical, _FROZEN_CAR018_SHA, _HISTORICAL_AMENDMENT
             )
             and _verify_car018_record(
-                car018, expected, snapshot.approved_corrective_implementation_sha
+                old018, historical, _FROZEN_CAR018_SHA, _HISTORICAL_AMENDMENT
             )
             and _verify_document_register(
-                register, expected, snapshot.approved_corrective_implementation_sha
+                old_register,
+                historical,
+                _FROZEN_CAR018_SHA,
+                _HISTORICAL_AMENDMENT,
+            )
+            and _verify_car016_record(
+                car016,
+                expected,
+                snapshot.approved_corrective_implementation_sha,
+                _CURRENT_AMENDMENT,
+            )
+            and _verify_car017_record(
+                car017,
+                expected,
+                snapshot.approved_corrective_implementation_sha,
+                _CURRENT_AMENDMENT,
+            )
+            and _verify_car018_record(
+                car018,
+                expected,
+                snapshot.approved_corrective_implementation_sha,
+                _CURRENT_AMENDMENT,
+            )
+            and _verify_document_register(
+                register,
+                expected,
+                snapshot.approved_corrective_implementation_sha,
+                _CURRENT_AMENDMENT,
             )
         )
 
@@ -452,7 +485,9 @@ def canonical_repository_snapshot(
         query(("show", f"{activation_governance_publication_sha}:{path}"))
         for path in _GOVERNANCE_PATHS
     )
-    approved_corrective = _extract_corrective_sha(activation_records[2])
+    approved_corrective = _extract_corrective_sha(
+        activation_records[2], _CURRENT_AMENDMENT
+    )
     corrective_parent = query(("rev-parse", f"{approved_corrective}^")).strip()
     corrective_paths = tuple(
         line
@@ -484,8 +519,8 @@ def canonical_repository_snapshot(
         head_sha=head,
         origin_develop_sha=origin,
         working_tree_clean=clean,
-        car016_canonical=_canonical_record(car016, "CAR-016-V1.2-CA1"),
-        car017_canonical=_canonical_record(car017, "CAR-017-V1.2-CA1"),
+        car016_canonical=_canonical_record(car016, "CAR-016-V1.2-CA2"),
+        car017_canonical=_canonical_record(car017, "CAR-017-V1.2-CA2"),
         car014_unexecuted="CAR-014" in car018 and "UNEXECUTED" in car018,
     )
     return CanonicalRepositorySnapshot(
@@ -516,7 +551,9 @@ def expected_activation_context(
     """Read the current governed binding while retaining historical provenance."""
 
     return replace(
-        _activation_values_from_record(snapshot.activation_governance_records[0]),
+        _activation_values_from_record(
+            snapshot.activation_governance_records[0], _CURRENT_AMENDMENT
+        ),
         coordinated_governance_publication_sha=(
             snapshot.activation_governance_publication_sha
         ),
@@ -815,22 +852,51 @@ def _historical_activation_context() -> CoordinatedActivationValues:
     )
 
 
-def _extract_table_value(document: str, label: str) -> str:
+def _amendment_section(document: str, record: str, amendment: str) -> str:
+    if amendment in {_HISTORICAL_AMENDMENT, _CURRENT_AMENDMENT} and record in {
+        "CAR-016",
+        "CAR-017",
+    }:
+        heading = rf"^# \d+\. Controlled Amendment — {record}-V1\.2-{amendment}$"
+        peer_heading = rf"^# \d+\. Controlled Amendment — {record}-V1\.2-CA\d+$"
+    elif record == "CAR-018" and amendment == _HISTORICAL_AMENDMENT:
+        heading = r"^## Approved Canonical coordinated activation disposition$"
+        peer_heading = r"^## Approved Canonical .*activation disposition$"
+    elif record == "CAR-018" and amendment == _CURRENT_AMENDMENT:
+        heading = r"^## Approved Canonical post-correction CA2 activation disposition$"
+        peer_heading = r"^## Approved Canonical .*activation disposition$"
+    else:
+        raise RuntimeError("GOVERNED_ACTIVATION_AMENDMENT_INVALID")
+    matches = tuple(re.finditer(heading, document, re.MULTILINE))
+    if len(matches) != 1:
+        raise RuntimeError("GOVERNED_ACTIVATION_AMENDMENT_INVALID")
+    start = matches[0].start()
+    later_peers = tuple(
+        match
+        for match in re.finditer(peer_heading, document, re.MULTILINE)
+        if match.start() > start
+    )
+    end = later_peers[0].start() if later_peers else len(document)
+    return document[start:end]
+
+
+def _extract_table_value(section: str, label: str) -> str:
     pattern = re.compile(
         rf"^\| {re.escape(label)} \| `([^`\n]+)` \|$",
         re.MULTILINE,
     )
-    matches = pattern.findall(document)
-    if not matches:
+    matches = pattern.findall(section)
+    if len(matches) != 1:
         raise RuntimeError("GOVERNED_ACTIVATION_RECORD_INVALID")
-    return matches[-1]
+    return matches[0]
 
 
-def _extract_corrective_sha(document: str) -> str:
+def _extract_corrective_sha(document: str, amendment: str) -> str:
+    section = _amendment_section(document, "CAR-018", amendment)
     marker = "**Frozen CAR-018 Corrective Composite Implementation SHA:** `"
     matches = tuple(
         line[len(marker) : -1]
-        for line in document.splitlines()
+        for line in section.splitlines()
         if line.startswith(marker) and line.endswith("`")
     )
     if len(matches) != 1 or not _SHA_PATTERN.fullmatch(matches[0]):
@@ -838,9 +904,13 @@ def _extract_corrective_sha(document: str) -> str:
     return matches[0]
 
 
-def _activation_values_from_record(document: str) -> CoordinatedActivationValues:
+def _activation_values_from_record(
+    document: str, amendment: str
+) -> CoordinatedActivationValues:
+    section = _amendment_section(document, "CAR-016", amendment)
+
     def value(label: str) -> str:
-        return _extract_table_value(document, label)
+        return _extract_table_value(section, label)
 
     try:
         effective = datetime.fromisoformat(value("Authority effective timestamp"))
@@ -860,10 +930,10 @@ def _activation_values_from_record(document: str) -> CoordinatedActivationValues
             _COORDINATED_GOVERNANCE_PUBLICATION_SHA
         ),
         car016_logical_publication_ref=value(
-            "Logical CAR-016 CA1 publication reference"
+            f"Logical CAR-016 {amendment} publication reference"
         ),
         car017_logical_publication_ref=value(
-            "Logical CAR-017 CA1 publication reference"
+            f"Logical CAR-017 {amendment} publication reference"
         ),
         frozen_car016_implementation_sha=value(
             "Frozen CAR-016 implementation SHA"
@@ -906,22 +976,26 @@ def _verify_car016_record(
     document: str,
     values: CoordinatedActivationValues,
     corrective_sha: str,
+    amendment: str,
 ) -> bool:
+    try:
+        section = _amendment_section(document, "CAR-016", amendment)
+    except RuntimeError:
+        return False
     metadata = (
-        "**Document ID:** CAR-016",
-        "**Version:** 1.2",
-        "**Status:** Approved",
-        "**Canonical Status:** Canonical",
-        "**Controlled Amendment:** `CAR-016-V1.2-CA1`",
+        f"**Controlled Amendment ID:** `CAR-016-V1.2-{amendment}`",
         "**Controlled Amendment Status:** Approved",
-        "**Controlled Amendment Canonical Status:** Canonical Controlled Amendment",
+        "**Canonical Status:** Canonical Controlled Amendment",
         "**Underlying Canonical Record:** CAR-016 Version 1.2",
-        "**Controlled Amendment Workflow Stage:** Repository Publication",
+        "**Workflow Stage:** Repository Publication",
     )
-    return _contains_exact_lines(document, metadata) and _verify_context_table(
-        document,
-        values,
-        corrective_sha,
+    return (
+        _contains_exact_lines_once(section, metadata)
+        and (
+            amendment != _CURRENT_AMENDMENT
+            or _verify_retired_predecessor(section, values)
+        )
+        and _verify_context_table(section, values, corrective_sha, amendment)
     )
 
 
@@ -929,22 +1003,26 @@ def _verify_car017_record(
     document: str,
     values: CoordinatedActivationValues,
     corrective_sha: str,
+    amendment: str,
 ) -> bool:
+    try:
+        section = _amendment_section(document, "CAR-017", amendment)
+    except RuntimeError:
+        return False
     metadata = (
-        "**Document ID:** CAR-017",
-        "**Version:** 1.2",
-        "**Status:** Approved",
-        "**Canonical Status:** Canonical",
-        "**Controlled Amendment:** `CAR-017-V1.2-CA1`",
+        f"**Controlled Amendment ID:** `CAR-017-V1.2-{amendment}`",
         "**Controlled Amendment Status:** Approved",
-        "**Controlled Amendment Canonical Status:** Canonical Controlled Amendment",
+        "**Canonical Status:** Canonical Controlled Amendment",
         "**Underlying Canonical Record:** CAR-017 Version 1.2",
-        "**Controlled Amendment Workflow Stage:** Repository Publication",
+        "**Workflow Stage:** Repository Publication",
     )
-    return _contains_exact_lines(document, metadata) and _verify_context_table(
-        document,
-        values,
-        corrective_sha,
+    return (
+        _contains_exact_lines_once(section, metadata)
+        and (
+            amendment != _CURRENT_AMENDMENT
+            or _verify_retired_predecessor(section, values)
+        )
+        and _verify_context_table(section, values, corrective_sha, amendment)
     )
 
 
@@ -952,6 +1030,7 @@ def _verify_car018_record(
     document: str,
     values: CoordinatedActivationValues,
     corrective_sha: str,
+    amendment: str,
 ) -> bool:
     metadata = (
         "**Document ID:** CAR-018",
@@ -960,34 +1039,56 @@ def _verify_car018_record(
         "**Canonical Status:** Canonical",
         "**Workflow Stage:** Repository Publication",
         "**Decision:** APPROVED — IMPLEMENTATION CONFORMANCE ACCEPTED",
-        "**Frozen CAR-018 Corrective Composite Implementation SHA:** "
-        f"`{corrective_sha}`",
     )
     if not _contains_exact_lines(document, metadata):
         return False
+    try:
+        section = _amendment_section(document, "CAR-018", amendment)
+    except RuntimeError:
+        return False
+    if amendment == _CURRENT_AMENDMENT:
+        amendment_metadata = (
+            "**CAR-016 Controlled Amendment:** `CAR-016-V1.2-CA2`",
+            "**CAR-017 Controlled Amendment:** `CAR-017-V1.2-CA2`",
+            "**Controlled Amendment Status:** Approved",
+            "**Canonical Status:** Canonical Controlled Amendment",
+            "**Workflow Stage:** Repository Publication",
+            "**Frozen CAR-018 Corrective Composite Implementation SHA:** "
+            f"`{corrective_sha}`",
+        )
+        if not _contains_exact_lines_once(section, amendment_metadata):
+            return False
+        if not _verify_retired_predecessor(section, values):
+            return False
+    elif (
+        "**Frozen CAR-018 Corrective Composite Implementation SHA:** "
+        f"`{corrective_sha}`"
+    ) not in document.splitlines():
+        return False
     repeated_rows = tuple(
         f"| {label} | `{value}` | `{value}` | `{value}` | MATCH |"
-        for label, value in _context_pairs(values, corrective_sha)
-        if label != "CA1 coordinated governance publication commit SHA"
+        for label, value in _context_pairs(values, corrective_sha, amendment)
+        if label != f"{amendment} coordinated governance publication commit SHA"
     )
     publication = (
-        "| CA1 coordinated governance publication commit SHA | "
+        f"| {amendment} coordinated governance publication commit SHA | "
         "`PENDING — ESTABLISHED BY THE FOUR-FILE CANONICAL PUBLICATION COMMIT` | "
         "`PENDING — ESTABLISHED BY THE FOUR-FILE CANONICAL PUBLICATION COMMIT` | "
         "`PENDING — ESTABLISHED BY THE FOUR-FILE CANONICAL PUBLICATION COMMIT` | "
         "MATCH; replaced by the resulting publication SHA as post-publication evidence |"
     )
-    return _contains_exact_lines(document, (*repeated_rows, publication))
+    return _contains_exact_lines(section, (*repeated_rows, publication))
 
 
 def _verify_context_table(
     document: str,
     values: CoordinatedActivationValues,
     corrective_sha: str,
+    amendment: str,
 ) -> bool:
     rows = tuple(
         f"| {label} | `{value}` |"
-        for label, value in _context_pairs(values, corrective_sha)
+        for label, value in _context_pairs(values, corrective_sha, amendment)
     )
     return _contains_exact_lines(document, rows)
 
@@ -995,19 +1096,20 @@ def _verify_context_table(
 def _context_pairs(
     values: CoordinatedActivationValues,
     corrective_sha: str,
+    amendment: str,
 ) -> tuple[tuple[str, str], ...]:
     return (
         ("Coordinated activation identity", values.coordinated_activation_identity),
         (
-            "CA1 coordinated governance publication commit SHA",
+            f"{amendment} coordinated governance publication commit SHA",
             "PENDING — ESTABLISHED BY THE FOUR-FILE CANONICAL PUBLICATION COMMIT",
         ),
         (
-            "Logical CAR-016 CA1 publication reference",
+            f"Logical CAR-016 {amendment} publication reference",
             values.car016_logical_publication_ref,
         ),
         (
-            "Logical CAR-017 CA1 publication reference",
+            f"Logical CAR-017 {amendment} publication reference",
             values.car017_logical_publication_ref,
         ),
         ("Frozen CAR-016 implementation SHA", values.frozen_car016_implementation_sha),
@@ -1062,6 +1164,7 @@ def _verify_document_register(
     document: str,
     values: CoordinatedActivationValues,
     corrective_sha: str,
+    amendment: str,
 ) -> bool:
     rows = {
         identifier: tuple(
@@ -1084,15 +1187,21 @@ def _verify_document_register(
         "maximum operations: 0",
         "CAR-014 UNEXECUTED",
     )
+    if amendment == _CURRENT_AMENDMENT:
+        common = (
+            *common,
+            f"previous coordinated identity: `{_CA2_RETIRED_PREDECESSOR}`",
+            f"previous identity disposition: {_RETIRED_UNUSED_DISPOSITION}",
+        )
     record_specific = {
         "CAR-016": (
             "Version: 1.2",
-            "Controlled Amendment: `CAR-016-V1.2-CA1`",
+            f"Controlled Amendment: `CAR-016-V1.2-{amendment}`",
             "Canonical Status: Canonical Controlled Amendment",
         ),
         "CAR-017": (
             "Version: 1.2",
-            "Controlled Amendment: `CAR-017-V1.2-CA1`",
+            f"Controlled Amendment: `CAR-017-V1.2-{amendment}`",
             "Canonical Status: Canonical Controlled Amendment",
         ),
         "CAR-018": (
@@ -1110,6 +1219,30 @@ def _verify_document_register(
 def _contains_exact_lines(document: str, expected: tuple[str, ...]) -> bool:
     lines = frozenset(document.splitlines())
     return all(line in lines for line in expected)
+
+
+def _contains_exact_lines_once(document: str, expected: tuple[str, ...]) -> bool:
+    lines = document.splitlines()
+    return all(lines.count(line) == 1 for line in expected)
+
+
+def _verify_retired_predecessor(
+    section: str, values: CoordinatedActivationValues
+) -> bool:
+    previous = re.findall(
+        r"^\| Previous coordinated activation identity \| `([^`\n]+)` \|$",
+        section,
+        re.MULTILINE,
+    )
+    disposition = (
+        f"| Previous identity disposition | `{_RETIRED_UNUSED_DISPOSITION}` |"
+    )
+    return (
+        len(previous) == 1
+        and previous[0] == _CA2_RETIRED_PREDECESSOR
+        and values.coordinated_activation_identity != _CA2_RETIRED_PREDECESSOR
+        and section.splitlines().count(disposition) == 1
+    )
 
 
 def _local_git_output(repository_root: Path) -> Callable[[tuple[str, ...]], str]:

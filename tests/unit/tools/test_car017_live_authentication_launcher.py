@@ -15,6 +15,7 @@ from kronos.provider.kite.live_activation import (
     CoordinatedActivationValues,
     DurableConsumptionRecord,
     DurableConsumptionResult,
+    LiveActivationError,
     MonotonicLifecycleDeadline,
     ProvenConsumption,
     TrustedActivationReviewer,
@@ -33,9 +34,12 @@ SHA = "a" * 40
 GOVERNANCE_SHA = "cdaeaf1669e7182f36f9ea753315cf7992843d78"
 CORRECTIVE_SHA = "d" * 40
 LATEST_GOVERNANCE_SHA = "f" * 40
+CA2_IDENTITY = "KRONOS-COORD-AUTH-20260806-003"
+CA2_CAR016_REF = "CAR-016-V1.2-CA2-KRONOS-COORD-AUTH-20260806-003"
+CA2_CAR017_REF = "CAR-017-V1.2-CA2-KRONOS-COORD-AUTH-20260806-003"
 NOW = datetime(2026, 8, 4, 12, 0, tzinfo=timezone(timedelta(hours=5, minutes=30)))
 LIVE_NOW = datetime(
-    2026, 8, 6, 12, 0, tzinfo=timezone(timedelta(hours=5, minutes=30))
+    2026, 8, 8, 12, 0, tzinfo=timezone(timedelta(hours=5, minutes=30))
 )
 
 
@@ -215,15 +219,125 @@ def _environment() -> dict[str, str]:
     }
 
 
+def _ca2_values() -> CoordinatedActivationValues:
+    return replace(
+        launcher._historical_activation_context(),
+        coordinated_activation_identity=CA2_IDENTITY,
+        car016_logical_publication_ref=CA2_CAR016_REF,
+        car017_logical_publication_ref=CA2_CAR017_REF,
+        authority_effective_at=datetime(
+            2026, 8, 7, 9, 0, tzinfo=timezone(timedelta(hours=5, minutes=30))
+        ),
+        authority_expires_at=datetime(
+            2026, 8, 14, 9, 0, tzinfo=timezone(timedelta(hours=5, minutes=30))
+        ),
+    )
+
+
+def _ca2_context_rows(*, equality: bool = False) -> str:
+    values = _ca2_values()
+    if equality:
+        return "\n".join(
+            f"| {label} | `{value}` | `{value}` | `{value}` | "
+            + (
+                "MATCH; replaced by the resulting publication SHA as "
+                "post-publication evidence |"
+                if label == "CA2 coordinated governance publication commit SHA"
+                else "MATCH |"
+            )
+            for label, value in launcher._context_pairs(
+                values, CORRECTIVE_SHA, "CA2"
+            )
+        )
+    return "\n".join(
+        f"| {label} | `{value}` |"
+        for label, value in launcher._context_pairs(values, CORRECTIVE_SHA, "CA2")
+    )
+
+
+def _canonical_ca2_records(
+    historical_records: tuple[str, str, str, str]
+) -> tuple[str, str, str, str]:
+    car016, car017, car018, register = historical_records
+    car016 += f"""
+
+# 25. Controlled Amendment — CAR-016-V1.2-CA2
+
+**Controlled Amendment ID:** `CAR-016-V1.2-CA2`
+**Controlled Amendment Status:** Approved
+**Canonical Status:** Canonical Controlled Amendment
+**Underlying Canonical Record:** CAR-016 Version 1.2
+**Workflow Stage:** Repository Publication
+**Frozen CAR-018 Corrective Composite Implementation SHA:** `{CORRECTIVE_SHA}`
+
+| Previous coordinated activation identity | `KRONOS-COORD-AUTH-20260804-002` |
+| Previous identity disposition | `RETIRED FOR EXECUTION — UNUSED` |
+
+{_ca2_context_rows()}
+"""
+    car017 += f"""
+
+# 22. Controlled Amendment — CAR-017-V1.2-CA2
+
+**Controlled Amendment ID:** `CAR-017-V1.2-CA2`
+**Controlled Amendment Status:** Approved
+**Canonical Status:** Canonical Controlled Amendment
+**Underlying Canonical Record:** CAR-017 Version 1.2
+**Workflow Stage:** Repository Publication
+**Frozen CAR-018 Corrective Composite Implementation SHA:** `{CORRECTIVE_SHA}`
+
+| Previous coordinated activation identity | `KRONOS-COORD-AUTH-20260804-002` |
+| Previous identity disposition | `RETIRED FOR EXECUTION — UNUSED` |
+
+{_ca2_context_rows()}
+"""
+    car018 += f"""
+
+## Approved Canonical post-correction CA2 activation disposition
+
+**CAR-016 Controlled Amendment:** `CAR-016-V1.2-CA2`
+**CAR-017 Controlled Amendment:** `CAR-017-V1.2-CA2`
+**Controlled Amendment Status:** Approved
+**Canonical Status:** Canonical Controlled Amendment
+**Workflow Stage:** Repository Publication
+**Frozen CAR-018 Corrective Composite Implementation SHA:** `{CORRECTIVE_SHA}`
+
+| Previous coordinated activation identity | `KRONOS-COORD-AUTH-20260804-002` |
+| Previous identity disposition | `RETIRED FOR EXECUTION — UNUSED` |
+
+{_ca2_context_rows(equality=True)}
+"""
+    register_lines = []
+    values = _ca2_values()
+    common = (
+        f"Controlled Amendment: `{{record}}-V1.2-CA2`; "
+        "Canonical Status: Canonical Controlled Amendment; "
+        f"{values.coordinated_activation_identity}; "
+        f"{values.car016_logical_publication_ref}; "
+        f"{values.car017_logical_publication_ref}; "
+        f"{CORRECTIVE_SHA}; "
+        f"{values.authority_effective_at.isoformat()}; "
+        f"{values.authority_expires_at.isoformat()}; "
+        "attempt cardinality: ONE; consumption state: UNUSED; "
+        "Provider Availability Verification Authority: WITHHELD; "
+        "maximum operations: 0; CAR-014 UNEXECUTED; "
+        "previous coordinated identity: `KRONOS-COORD-AUTH-20260804-002`; "
+        "previous identity disposition: RETIRED FOR EXECUTION — UNUSED"
+    )
+    for line in register.splitlines():
+        record = line.split(" |", 1)[0].removeprefix("| ")
+        if record in {"CAR-016", "CAR-017", "CAR-018"}:
+            line = f"{line[:-1]} {common.format(record=record)} |"
+        register_lines.append(line)
+    return car016, car017, car018, "\n".join(register_lines) + "\n"
+
+
 def _canonical_snapshot(**changes: object) -> launcher.CanonicalRepositorySnapshot:
     historical_records = tuple(
         (ROOT / path).read_text(encoding="utf-8")
         for path in launcher._GOVERNANCE_PATHS
     )
-    activation_records = tuple(
-        document.replace(launcher._FROZEN_CAR018_SHA, CORRECTIVE_SHA)
-        for document in historical_records
-    )
+    activation_records = _canonical_ca2_records(historical_records)
     snapshot = launcher.CanonicalRepositorySnapshot(
         evidence=CanonicalRepositoryEvidence(
             branch="develop",
@@ -249,6 +363,13 @@ def _canonical_snapshot(**changes: object) -> launcher.CanonicalRepositorySnapsh
         historical_governance_records=historical_records,
     )
     return replace(snapshot, **changes)
+
+
+def _is_verified(snapshot: launcher.CanonicalRepositorySnapshot) -> bool:
+    expected = launcher.expected_activation_context(snapshot)
+    return launcher.ProductionCanonicalActivationEvidenceVerifier(snapshot).verify(
+        expected, expected, snapshot.evidence
+    )
 
 
 def _prepare(
@@ -397,6 +518,314 @@ def test_production_verifier_accepts_exact_distinct_contexts_and_manifest() -> N
     assert verifier.verify(expected, observed, snapshot.evidence) is True
 
 
+def test_historical_ca1_and_current_ca2_are_selected_independently() -> None:
+    snapshot = _canonical_snapshot()
+    expected = launcher.expected_activation_context(snapshot)
+
+    assert launcher._verify_car016_record(
+        snapshot.historical_governance_records[0],
+        launcher._historical_activation_context(),
+        launcher._FROZEN_CAR018_SHA,
+        "CA1",
+    )
+    assert expected.coordinated_activation_identity == CA2_IDENTITY
+    assert expected.car016_logical_publication_ref == CA2_CAR016_REF
+    assert expected.car017_logical_publication_ref == CA2_CAR017_REF
+    assert expected.authority_effective_at.isoformat() == "2026-08-07T09:00:00+05:30"
+    assert expected.authority_expires_at.isoformat() == "2026-08-14T09:00:00+05:30"
+    assert snapshot.approved_corrective_implementation_sha == CORRECTIVE_SHA
+
+
+def test_ca1_and_ca2_section_slices_are_exact_and_non_overlapping() -> None:
+    document = _canonical_snapshot().activation_governance_records[0]
+    ca1 = launcher._amendment_section(document, "CAR-016", "CA1")
+    ca2 = launcher._amendment_section(document, "CAR-016", "CA2")
+
+    assert "CAR-016-V1.2-CA2" not in ca1
+    assert "CAR-016-V1.2-CA1" not in ca2
+    assert ca1 in document and ca2 in document
+
+
+def test_required_ca1_content_existing_only_in_ca2_does_not_satisfy_ca1() -> None:
+    snapshot = _canonical_snapshot()
+    ca2 = launcher._amendment_section(
+        snapshot.activation_governance_records[0], "CAR-016", "CA2"
+    )
+    document = "# 1. Controlled Amendment — CAR-016-V1.2-CA1\n\n" + ca2
+
+    assert launcher._verify_car016_record(
+        document,
+        launcher._historical_activation_context(),
+        launcher._FROZEN_CAR018_SHA,
+        "CA1",
+    ) is False
+
+
+def test_required_ca2_content_in_later_peer_does_not_satisfy_ca2() -> None:
+    snapshot = _canonical_snapshot()
+    ca2 = launcher._amendment_section(
+        snapshot.activation_governance_records[0], "CAR-016", "CA2"
+    )
+    body = ca2.split("\n", 1)[1]
+    document = (
+        "# 25. Controlled Amendment — CAR-016-V1.2-CA2\n\n"
+        "# 26. Controlled Amendment — CAR-016-V1.2-CA3\n"
+        f"{body}"
+    )
+
+    assert launcher._verify_car016_record(
+        document, _ca2_values(), CORRECTIVE_SHA, "CA2"
+    ) is False
+
+
+def test_duplicate_metadata_outside_ca2_does_not_count_as_internal() -> None:
+    snapshot = _canonical_snapshot()
+    document = snapshot.activation_governance_records[0] + (
+        "\n# 26. Controlled Amendment — CAR-016-V1.2-CA3\n"
+        "**Controlled Amendment Status:** Approved\n"
+    )
+
+    assert launcher._verify_car016_record(
+        document, _ca2_values(), CORRECTIVE_SHA, "CA2"
+    ) is True
+
+
+def test_duplicate_metadata_inside_ca2_fails() -> None:
+    snapshot = _canonical_snapshot()
+    records = list(snapshot.activation_governance_records)
+    records[0] += "\n**Controlled Amendment Status:** Approved\n"
+    altered = replace(snapshot, activation_governance_records=tuple(records))
+
+    assert _is_verified(altered) is False
+
+
+def test_later_post_attempt_peer_content_does_not_alter_ca2_parsing() -> None:
+    snapshot = _canonical_snapshot()
+    document = snapshot.activation_governance_records[2] + (
+        "\n## Approved Canonical post-attempt activation disposition\n"
+        "**Frozen CAR-018 Corrective Composite Implementation SHA:** `"
+        + ("e" * 40)
+        + "`\n"
+    )
+
+    assert launcher._extract_corrective_sha(document, "CA2") == CORRECTIVE_SHA
+    assert launcher._verify_car018_record(
+        document, _ca2_values(), CORRECTIVE_SHA, "CA2"
+    ) is True
+
+
+def test_exact_retired_predecessor_is_verified_across_all_current_records() -> None:
+    assert _is_verified(_canonical_snapshot()) is True
+
+
+@pytest.mark.parametrize(
+    "predecessor",
+    (
+        "KRONOS-COORD-AUTH-UNKNOWN",
+        "",
+        CA2_IDENTITY,
+        "kronos-coord-auth-20260804-002",
+    ),
+)
+def test_invalid_car016_retired_predecessor_is_rejected(predecessor: str) -> None:
+    snapshot = _canonical_snapshot()
+    records = list(snapshot.activation_governance_records)
+    records[0] = records[0].replace(
+        "| Previous coordinated activation identity | "
+        "`KRONOS-COORD-AUTH-20260804-002` |",
+        f"| Previous coordinated activation identity | `{predecessor}` |",
+    )
+    altered = replace(snapshot, activation_governance_records=tuple(records))
+
+    assert _is_verified(altered) is False
+
+
+@pytest.mark.parametrize("record_index", (1, 2))
+def test_cross_record_retired_predecessor_mismatch_is_rejected(
+    record_index: int,
+) -> None:
+    snapshot = _canonical_snapshot()
+    records = list(snapshot.activation_governance_records)
+    records[record_index] = records[record_index].replace(
+        "| Previous coordinated activation identity | "
+        "`KRONOS-COORD-AUTH-20260804-002` |",
+        "| Previous coordinated activation identity | `KRONOS-WRONG` |",
+    )
+    altered = replace(snapshot, activation_governance_records=tuple(records))
+
+    assert _is_verified(altered) is False
+
+
+def test_register_predecessor_mismatch_is_rejected() -> None:
+    snapshot = _canonical_snapshot()
+    records = list(snapshot.activation_governance_records)
+    records[3] = records[3].replace(
+        "previous coordinated identity: `KRONOS-COORD-AUTH-20260804-002`",
+        "previous coordinated identity: `KRONOS-WRONG`",
+        1,
+    )
+    altered = replace(snapshot, activation_governance_records=tuple(records))
+
+    assert _is_verified(altered) is False
+
+
+def test_altered_predecessor_disposition_is_rejected() -> None:
+    snapshot = _canonical_snapshot()
+    records = list(snapshot.activation_governance_records)
+    records[0] = records[0].replace(
+        "| Previous identity disposition | `RETIRED FOR EXECUTION — UNUSED` |",
+        "| Previous identity disposition | `RETIRED` |",
+    )
+    altered = replace(snapshot, activation_governance_records=tuple(records))
+
+    assert _is_verified(altered) is False
+
+
+def test_current_publication_with_only_ca1_fails_closed() -> None:
+    snapshot = _canonical_snapshot(
+        activation_governance_records=_canonical_snapshot().historical_governance_records
+    )
+
+    with pytest.raises(RuntimeError, match="GOVERNED_ACTIVATION_AMENDMENT_INVALID"):
+        launcher.expected_activation_context(snapshot)
+
+
+def test_draft_or_ambiguous_ca2_status_is_rejected() -> None:
+    snapshot = _canonical_snapshot()
+    records = list(snapshot.activation_governance_records)
+    records[0] = records[0].replace(
+        "**Controlled Amendment Status:** Approved",
+        "**Controlled Amendment Status:** Draft",
+    )
+    draft = replace(snapshot, activation_governance_records=tuple(records))
+    assert _is_verified(draft) is False
+
+    records = list(snapshot.activation_governance_records)
+    records[0] += "\n**Controlled Amendment Status:** Approved\n"
+    ambiguous = replace(snapshot, activation_governance_records=tuple(records))
+    assert _is_verified(ambiguous) is False
+
+
+def test_duplicate_ca2_section_or_corrective_binding_is_rejected() -> None:
+    snapshot = _canonical_snapshot()
+    records = list(snapshot.activation_governance_records)
+    section = launcher._amendment_section(records[0], "CAR-016", "CA2")
+    records[0] += "\n" + section
+    duplicate_section = replace(snapshot, activation_governance_records=tuple(records))
+    with pytest.raises(RuntimeError, match="GOVERNED_ACTIVATION_AMENDMENT_INVALID"):
+        launcher.expected_activation_context(duplicate_section)
+
+    records = list(snapshot.activation_governance_records)
+    records[2] += (
+        "\n**Frozen CAR-018 Corrective Composite Implementation SHA:** "
+        f"`{CORRECTIVE_SHA}`\n"
+    )
+    duplicate_sha = replace(snapshot, activation_governance_records=tuple(records))
+    assert _is_verified(duplicate_sha) is False
+
+
+def test_ca1_labels_inside_ca2_and_ca2_reference_mismatch_are_rejected() -> None:
+    snapshot = _canonical_snapshot()
+    records = list(snapshot.activation_governance_records)
+    records[0] = records[0].replace(
+        "Logical CAR-016 CA2 publication reference",
+        "Logical CAR-016 CA1 publication reference",
+        1,
+    )
+    substituted = replace(snapshot, activation_governance_records=tuple(records))
+    with pytest.raises(RuntimeError, match="GOVERNED_ACTIVATION_RECORD_INVALID"):
+        launcher.expected_activation_context(substituted)
+
+    records = list(snapshot.activation_governance_records)
+    records[1] = records[1].replace(CA2_CAR017_REF, "CAR-017-V1.2-CA2-WRONG", 1)
+    mismatched = replace(snapshot, activation_governance_records=tuple(records))
+    assert _is_verified(mismatched) is False
+
+
+def test_ca2_cross_record_identity_matrix_and_register_mismatches_are_rejected() -> None:
+    snapshot = _canonical_snapshot()
+    for index in (1, 2, 3):
+        records = list(snapshot.activation_governance_records)
+        records[index] = records[index].replace(CA2_IDENTITY, "KRONOS-WRONG")
+        altered = replace(snapshot, activation_governance_records=tuple(records))
+        assert _is_verified(altered) is False
+
+
+def test_retired_identity_and_historical_corrective_sha_cannot_be_current() -> None:
+    snapshot = _canonical_snapshot()
+    records = tuple(
+        document.replace(CA2_IDENTITY, "KRONOS-COORD-AUTH-20260804-002")
+        for document in snapshot.activation_governance_records
+    )
+    retired = replace(snapshot, activation_governance_records=records)
+    assert _is_verified(retired) is False
+
+    records = tuple(
+        document.replace(CORRECTIVE_SHA, launcher._FROZEN_CAR018_SHA)
+        for document in snapshot.activation_governance_records
+    )
+    historical = replace(
+        snapshot,
+        approved_corrective_implementation_sha=launcher._FROZEN_CAR018_SHA,
+        activation_governance_records=records,
+    )
+    assert _is_verified(historical) is False
+
+
+@pytest.mark.parametrize(
+    "reviewed_at",
+    (
+        datetime(
+            2026, 8, 7, 8, 59, 59, tzinfo=timezone(timedelta(hours=5, minutes=30))
+        ),
+        datetime(
+            2026, 8, 14, 9, 0, tzinfo=timezone(timedelta(hours=5, minutes=30))
+        ),
+    ),
+)
+def test_pre_effective_or_expired_ca2_window_is_rejected(
+    reviewed_at: datetime,
+) -> None:
+    snapshot = _canonical_snapshot()
+    expected = launcher.expected_activation_context(snapshot)
+    reviewer = TrustedActivationReviewer(
+        launcher.ProductionCanonicalActivationEvidenceVerifier(snapshot),
+        provenance_kind=ActivationProvenanceKind.CANONICAL_LIVE,
+    )
+
+    with pytest.raises(LiveActivationError, match="OUTSIDE_AUTHORITY_WINDOW"):
+        reviewer.review(
+            expected=expected,
+            observed=expected,
+            repository_evidence=snapshot.evidence,
+            reviewed_at=reviewed_at,
+        )
+
+
+@pytest.mark.parametrize(
+    ("label", "replacement"),
+    (
+        (
+            "| Maximum Provider Availability verification operations | `0` |",
+            "| Maximum Provider Availability verification operations | `1` |",
+        ),
+        (
+            "| CAR-014 status | `UNEXECUTED` |",
+            "| CAR-014 status | `EXECUTED` |",
+        ),
+    ),
+)
+def test_prohibited_ca2_authority_values_fail_closed(
+    label: str, replacement: str
+) -> None:
+    snapshot = _canonical_snapshot()
+    records = list(snapshot.activation_governance_records)
+    records[0] = records[0].replace(label, replacement)
+    altered = replace(snapshot, activation_governance_records=tuple(records))
+    with pytest.raises(LiveActivationError, match="INVALID_CONTEXT"):
+        launcher.expected_activation_context(altered)
+
+
 def test_current_activation_context_uses_latest_governance_publication_sha() -> None:
     snapshot = _canonical_snapshot()
 
@@ -537,6 +966,18 @@ def test_corrective_sha_absent_from_activation_records_is_rejected() -> None:
     ) is False
 
 
+@pytest.mark.parametrize("record_index", (0, 1, 2, 3))
+def test_ca2_corrective_sha_must_match_every_record(record_index: int) -> None:
+    snapshot = _canonical_snapshot()
+    records = list(snapshot.activation_governance_records)
+    records[record_index] = records[record_index].replace(
+        CORRECTIVE_SHA, "e" * 40
+    )
+    altered = replace(snapshot, activation_governance_records=tuple(records))
+
+    assert _is_verified(altered) is False
+
+
 def test_current_head_cannot_stand_in_for_latest_activation_governance() -> None:
     snapshot = _canonical_snapshot(
         current_head_sha=CORRECTIVE_SHA,
@@ -644,7 +1085,11 @@ def test_record_specific_metadata_and_register_rows_are_required() -> None:
     snapshot = _canonical_snapshot()
     expected = launcher.expected_activation_context(snapshot)
     records = list(snapshot.activation_governance_records)
-    records[0] = records[0].replace("**Version:** 1.2", "**Version:** 9.9", 1)
+    records[0] = records[0].replace(
+        "**Controlled Amendment ID:** `CAR-016-V1.2-CA2`",
+        "**Controlled Amendment ID:** `CAR-016-V1.2-WRONG`",
+        1,
+    )
     altered_car = replace(snapshot, activation_governance_records=tuple(records))
     assert launcher.ProductionCanonicalActivationEvidenceVerifier(altered_car).verify(
         expected,
@@ -654,7 +1099,7 @@ def test_record_specific_metadata_and_register_rows_are_required() -> None:
 
     records = list(snapshot.activation_governance_records)
     records[3] = records[3].replace(
-        "Controlled Amendment: `CAR-017-V1.2-CA1`",
+        "Controlled Amendment: `CAR-017-V1.2-CA2`",
         "Controlled Amendment: `CAR-017-V1.2-WRONG`",
         1,
     )
@@ -670,10 +1115,15 @@ def test_snapshot_reads_four_independent_repository_identities() -> None:
         path: (ROOT / path).read_text(encoding="utf-8")
         for path in launcher._GOVERNANCE_PATHS
     }
-    activation_records = {
-        path: document.replace(launcher._FROZEN_CAR018_SHA, CORRECTIVE_SHA)
-        for path, document in historical_records.items()
-    }
+    activation_records = dict(
+        zip(
+            launcher._GOVERNANCE_PATHS,
+            _canonical_ca2_records(
+                tuple(historical_records[path] for path in launcher._GOVERNANCE_PATHS)
+            ),
+            strict=True,
+        )
+    )
 
     def git_output(arguments: tuple[str, ...]) -> str:
         calls.append(arguments)
