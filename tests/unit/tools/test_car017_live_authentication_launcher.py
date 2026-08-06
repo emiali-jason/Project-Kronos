@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+import re
 import subprocess
 import sys
 
@@ -32,7 +33,33 @@ from tools.provider_pilots import car017_live_authentication_launcher as launche
 ROOT = Path(__file__).resolve().parents[3]
 SHA = "a" * 40
 GOVERNANCE_SHA = "cdaeaf1669e7182f36f9ea753315cf7992843d78"
-CORRECTIVE_SHA = "d" * 40
+SYNTHETIC_CORRECTIVE_SHA = "d" * 40
+
+
+def _candidate_corrective_sha(document: str | None = None) -> str:
+    selected_document = document
+    if selected_document is None:
+        selected_document = (
+            ROOT
+            / "docs/governance/reviews/"
+            "CAR-018-COMPLETE-PROVIDER-AUTHENTICATION-OPERATIONAL-CLOSURE-"
+            "AUTHORIZATION.md"
+        ).read_text(encoding="utf-8")
+    disposition_count = len(
+        re.findall(
+            r"^## Approved Canonical post-correction CA2 activation disposition$",
+            selected_document,
+            re.MULTILINE,
+        )
+    )
+    if disposition_count == 0:
+        return SYNTHETIC_CORRECTIVE_SHA
+    if disposition_count > 1:
+        raise AssertionError("CA2 fixture records are duplicated or ambiguous")
+    return launcher._extract_corrective_sha(selected_document, "CA2")
+
+
+CORRECTIVE_SHA = _candidate_corrective_sha()
 LATEST_GOVERNANCE_SHA = "f" * 40
 CA2_IDENTITY = "KRONOS-COORD-AUTH-20260806-003"
 CA2_CAR016_REF = "CAR-016-V1.2-CA2-KRONOS-COORD-AUTH-20260806-003"
@@ -234,7 +261,9 @@ def _ca2_values() -> CoordinatedActivationValues:
     )
 
 
-def _ca2_context_rows(*, equality: bool = False) -> str:
+def _ca2_context_rows(
+    *, equality: bool = False, corrective_sha: str = CORRECTIVE_SHA
+) -> str:
     values = _ca2_values()
     if equality:
         return "\n".join(
@@ -246,12 +275,12 @@ def _ca2_context_rows(*, equality: bool = False) -> str:
                 else "MATCH |"
             )
             for label, value in launcher._context_pairs(
-                values, CORRECTIVE_SHA, "CA2"
+                values, corrective_sha, "CA2"
             )
         )
     return "\n".join(
         f"| {label} | `{value}` |"
-        for label, value in launcher._context_pairs(values, CORRECTIVE_SHA, "CA2")
+        for label, value in launcher._context_pairs(values, corrective_sha, "CA2")
     )
 
 
@@ -259,6 +288,107 @@ def _canonical_ca2_records(
     historical_records: tuple[str, str, str, str]
 ) -> tuple[str, str, str, str]:
     car016, car017, car018, register = historical_records
+    section_counts = (
+        len(
+            re.findall(
+                r"^# \d+\. Controlled Amendment — CAR-016-V1\.2-CA2$",
+                car016,
+                re.MULTILINE,
+            )
+        ),
+        len(
+            re.findall(
+                r"^# \d+\. Controlled Amendment — CAR-017-V1\.2-CA2$",
+                car017,
+                re.MULTILINE,
+            )
+        ),
+        len(
+            re.findall(
+                r"^## Approved Canonical post-correction CA2 activation disposition$",
+                car018,
+                re.MULTILINE,
+            )
+        ),
+    )
+    register_rows: dict[str, str] = {}
+    for record in ("CAR-016", "CAR-017", "CAR-018"):
+        rows = tuple(
+            line
+            for line in register.splitlines()
+            if line.startswith(f"| {record} |")
+        )
+        if len(rows) != 1:
+            raise AssertionError("CA2 fixture records are duplicated or ambiguous")
+        register_rows[record] = rows[0]
+
+    register_discriminators = (
+        "current CA2 record:",
+        "Controlled Amendment: `CAR-016-V1.2-CA2`",
+        "Controlled Amendment: `CAR-017-V1.2-CA2`",
+        "Controlled Amendment: `CAR-018-V1.2-CA2`",
+        CA2_IDENTITY,
+        CA2_CAR016_REF,
+        CA2_CAR017_REF,
+        CORRECTIVE_SHA,
+        "previous coordinated identity: `KRONOS-COORD-AUTH-20260804-002`",
+        "previous identity disposition: RETIRED FOR EXECUTION — UNUSED",
+    )
+    register_has_ca2_evidence = any(
+        marker in row
+        for row in register_rows.values()
+        for marker in register_discriminators
+    )
+    if all(count == 0 for count in section_counts):
+        if register_has_ca2_evidence:
+            raise AssertionError("CA2 fixture records are duplicated or ambiguous")
+        corrective_sha = SYNTHETIC_CORRECTIVE_SHA
+    elif all(count == 1 for count in section_counts):
+        corrective_sha = _candidate_corrective_sha(car018)
+        common_markers = (
+            CA2_CAR016_REF,
+            CA2_CAR017_REF,
+            corrective_sha,
+            "previous coordinated identity: `KRONOS-COORD-AUTH-20260804-002`",
+            "previous identity disposition: RETIRED FOR EXECUTION — UNUSED",
+        )
+        record_markers = {
+            "CAR-016": ("Controlled Amendment: `CAR-016-V1.2-CA2`",),
+            "CAR-017": ("Controlled Amendment: `CAR-017-V1.2-CA2`",),
+        }
+        for record, row in register_rows.items():
+            ca2_record = row.split("; current CA2 record:", 1)[-1]
+            identity_count = len(
+                re.findall(
+                    rf"(?<!-){re.escape(CA2_IDENTITY)}(?!-)", ca2_record
+                )
+            )
+            common_counts = tuple(
+                ca2_record.count(marker) for marker in common_markers
+            )
+            if record == "CAR-018" and "; current CA2 record:" in row:
+                specific_markers = (
+                    "current CA2 record: post-correction CA2 activation disposition",
+                )
+            elif record == "CAR-018":
+                specific_markers = (
+                    "Controlled Amendment: `CAR-018-V1.2-CA2`",
+                )
+            else:
+                specific_markers = record_markers[record]
+            specific_counts = tuple(
+                row.count(marker) for marker in specific_markers
+            )
+            if identity_count != 1 or any(
+                count != 1 for count in (*common_counts, *specific_counts)
+            ):
+                raise AssertionError(
+                    "CA2 fixture records are duplicated or ambiguous"
+                )
+        return historical_records
+    else:
+        raise AssertionError("CA2 fixture records are duplicated or ambiguous")
+
     car016 += f"""
 
 # 25. Controlled Amendment — CAR-016-V1.2-CA2
@@ -268,12 +398,12 @@ def _canonical_ca2_records(
 **Canonical Status:** Canonical Controlled Amendment
 **Underlying Canonical Record:** CAR-016 Version 1.2
 **Workflow Stage:** Repository Publication
-**Frozen CAR-018 Corrective Composite Implementation SHA:** `{CORRECTIVE_SHA}`
+**Frozen CAR-018 Corrective Composite Implementation SHA:** `{corrective_sha}`
 
 | Previous coordinated activation identity | `KRONOS-COORD-AUTH-20260804-002` |
 | Previous identity disposition | `RETIRED FOR EXECUTION — UNUSED` |
 
-{_ca2_context_rows()}
+{_ca2_context_rows(corrective_sha=corrective_sha)}
 """
     car017 += f"""
 
@@ -284,12 +414,12 @@ def _canonical_ca2_records(
 **Canonical Status:** Canonical Controlled Amendment
 **Underlying Canonical Record:** CAR-017 Version 1.2
 **Workflow Stage:** Repository Publication
-**Frozen CAR-018 Corrective Composite Implementation SHA:** `{CORRECTIVE_SHA}`
+**Frozen CAR-018 Corrective Composite Implementation SHA:** `{corrective_sha}`
 
 | Previous coordinated activation identity | `KRONOS-COORD-AUTH-20260804-002` |
 | Previous identity disposition | `RETIRED FOR EXECUTION — UNUSED` |
 
-{_ca2_context_rows()}
+{_ca2_context_rows(corrective_sha=corrective_sha)}
 """
     car018 += f"""
 
@@ -300,12 +430,12 @@ def _canonical_ca2_records(
 **Controlled Amendment Status:** Approved
 **Canonical Status:** Canonical Controlled Amendment
 **Workflow Stage:** Repository Publication
-**Frozen CAR-018 Corrective Composite Implementation SHA:** `{CORRECTIVE_SHA}`
+**Frozen CAR-018 Corrective Composite Implementation SHA:** `{corrective_sha}`
 
 | Previous coordinated activation identity | `KRONOS-COORD-AUTH-20260804-002` |
 | Previous identity disposition | `RETIRED FOR EXECUTION — UNUSED` |
 
-{_ca2_context_rows(equality=True)}
+{_ca2_context_rows(equality=True, corrective_sha=corrective_sha)}
 """
     register_lines = []
     values = _ca2_values()
@@ -315,7 +445,7 @@ def _canonical_ca2_records(
         f"{values.coordinated_activation_identity}; "
         f"{values.car016_logical_publication_ref}; "
         f"{values.car017_logical_publication_ref}; "
-        f"{CORRECTIVE_SHA}; "
+        f"{corrective_sha}; "
         f"{values.authority_effective_at.isoformat()}; "
         f"{values.authority_expires_at.isoformat()}; "
         "attempt cardinality: ONE; consumption state: UNUSED; "
@@ -332,12 +462,61 @@ def _canonical_ca2_records(
     return car016, car017, car018, "\n".join(register_lines) + "\n"
 
 
+def _historical_ca1_records(
+    records: tuple[str, str, str, str]
+) -> tuple[str, str, str, str]:
+    def remove_ca2_section(
+        document: str, heading: str, *, terminal_heading: str | None = None
+    ) -> str:
+        matches = tuple(re.finditer(heading, document, re.MULTILINE))
+        if not matches:
+            return document
+        if len(matches) != 1:
+            raise AssertionError("CA2 fixture records are duplicated or ambiguous")
+        start = matches[0].start()
+        if terminal_heading is None:
+            return document[:start].rstrip("\n") + "\n"
+        terminal = re.search(
+            terminal_heading, document[matches[0].end() :], re.MULTILINE
+        )
+        if terminal is None:
+            raise AssertionError("CA2 fixture records are duplicated or ambiguous")
+        end = matches[0].end() + terminal.start()
+        return document[:start] + document[end:]
+
+    car016, car017, car018, register = records
+    car016 = remove_ca2_section(
+        car016,
+        r"^# \d+\. Controlled Amendment — CAR-016-V1\.2-CA2$",
+        terminal_heading=r"^# End of Document$",
+    )
+    car017 = remove_ca2_section(
+        car017,
+        r"^# \d+\. Controlled Amendment — CAR-017-V1\.2-CA2$",
+    )
+    car018 = remove_ca2_section(
+        car018,
+        r"^## Approved Canonical post-correction CA2 activation disposition$",
+        terminal_heading=r"^# End of Document$",
+    )
+    register_lines = []
+    for line in register.splitlines():
+        if line.startswith(("| CAR-016 |", "| CAR-017 |", "| CAR-018 |")):
+            line = line.split("; current CA2 record:", 1)[0].rstrip() + " |"
+        register_lines.append(line)
+    return car016, car017, car018, "\n".join(register_lines) + "\n"
+
+
 def _canonical_snapshot(**changes: object) -> launcher.CanonicalRepositorySnapshot:
-    historical_records = tuple(
+    repository_records = tuple(
         (ROOT / path).read_text(encoding="utf-8")
         for path in launcher._GOVERNANCE_PATHS
     )
-    activation_records = _canonical_ca2_records(historical_records)
+    historical_records = _historical_ca1_records(repository_records)
+    activation_records = _canonical_ca2_records(repository_records)
+    corrective_sha = launcher._extract_corrective_sha(
+        activation_records[2], "CA2"
+    )
     snapshot = launcher.CanonicalRepositorySnapshot(
         evidence=CanonicalRepositoryEvidence(
             branch="develop",
@@ -352,7 +531,7 @@ def _canonical_snapshot(**changes: object) -> launcher.CanonicalRepositorySnapsh
         current_head_sha=LATEST_GOVERNANCE_SHA,
         current_origin_develop_sha=LATEST_GOVERNANCE_SHA,
         current_working_tree_clean=True,
-        approved_corrective_implementation_sha=CORRECTIVE_SHA,
+        approved_corrective_implementation_sha=corrective_sha,
         corrective_parent_sha=GOVERNANCE_SHA,
         corrective_paths=launcher._CORRECTIVE_PATHS,
         activation_governance_publication_sha=LATEST_GOVERNANCE_SHA,
@@ -370,6 +549,217 @@ def _is_verified(snapshot: launcher.CanonicalRepositorySnapshot) -> bool:
     return launcher.ProductionCanonicalActivationEvidenceVerifier(snapshot).verify(
         expected, expected, snapshot.evidence
     )
+
+
+def _ca2_absent_records() -> tuple[str, str, str, str]:
+    return (
+        "# CAR-016 historical record\n",
+        "# CAR-017 historical record\n",
+        "# CAR-018 historical record\n",
+        "| CAR-016 | historical |\n"
+        "| CAR-017 | historical |\n"
+        "| CAR-018 | historical |\n",
+    )
+
+
+def test_ca2_fixture_synthesizes_only_when_all_ca2_records_are_absent() -> None:
+    records = _ca2_absent_records()
+
+    generated = _canonical_ca2_records(records)
+
+    assert generated != records
+    assert generated[0].count("Controlled Amendment — CAR-016-V1.2-CA2") == 1
+    assert generated[1].count("Controlled Amendment — CAR-017-V1.2-CA2") == 1
+    assert generated[2].count(
+        "Approved Canonical post-correction CA2 activation disposition"
+    ) == 1
+    assert all(SYNTHETIC_CORRECTIVE_SHA in document for document in generated)
+    assert all(
+        row.count(CA2_CAR016_REF) == 1
+        for row in generated[3].splitlines()
+        if row.startswith(("| CAR-016 |", "| CAR-017 |", "| CAR-018 |"))
+    )
+
+
+def test_ca2_fixture_preserves_exactly_once_records_byte_for_byte() -> None:
+    published = _canonical_ca2_records(_ca2_absent_records())
+
+    preserved = _canonical_ca2_records(published)
+
+    assert preserved is published
+    assert preserved == published
+    car018_row = next(
+        line for line in preserved[3].splitlines() if line.startswith("| CAR-018 |")
+    )
+    assert car018_row.count(
+        "Controlled Amendment: `CAR-018-V1.2-CA2`"
+    ) == 1
+
+
+@pytest.mark.parametrize("ambiguity", ["partial", "duplicate"])
+def test_ca2_fixture_rejects_partial_or_duplicate_records(ambiguity: str) -> None:
+    if ambiguity == "partial":
+        records = list(_ca2_absent_records())
+        records[0] += "\n# 25. Controlled Amendment — CAR-016-V1.2-CA2\n"
+    else:
+        records = list(_canonical_ca2_records(_ca2_absent_records()))
+        records[0] += "\n# 26. Controlled Amendment — CAR-016-V1.2-CA2\n"
+
+    with pytest.raises(
+        AssertionError, match="CA2 fixture records are duplicated or ambiguous"
+    ):
+        _canonical_ca2_records(tuple(records))  # type: ignore[arg-type]
+
+
+def test_actual_four_file_ca2_candidate_is_preserved_and_verified() -> None:
+    records = tuple(
+        (ROOT / path).read_text(encoding="utf-8")
+        for path in launcher._GOVERNANCE_PATHS
+    )
+
+    assert _canonical_ca2_records(records) is records
+    assert _is_verified(_canonical_snapshot()) is True
+    car018_row = next(
+        line for line in records[3].splitlines() if line.startswith("| CAR-018 |")
+    )
+    assert car018_row.count(
+        "current CA2 record: post-correction CA2 activation disposition"
+    ) == 1
+
+
+def test_corrective_sha_selection_distinguishes_absent_and_valid_ca2() -> None:
+    actual_car018 = (
+        ROOT / launcher._GOVERNANCE_PATHS[2]
+    ).read_text(encoding="utf-8")
+
+    assert _candidate_corrective_sha("# CAR-018 historical record\n") == (
+        SYNTHETIC_CORRECTIVE_SHA
+    )
+    assert _candidate_corrective_sha(actual_car018) == CORRECTIVE_SHA
+
+
+@pytest.mark.parametrize("defect", ["malformed", "missing", "duplicated"])
+def test_corrective_sha_selection_rejects_invalid_ca2_disposition(
+    defect: str,
+) -> None:
+    actual_car018 = (
+        ROOT / launcher._GOVERNANCE_PATHS[2]
+    ).read_text(encoding="utf-8")
+    if defect == "malformed":
+        document = actual_car018.replace(
+            f"**Frozen CAR-018 Corrective Composite Implementation SHA:** "
+            f"`{CORRECTIVE_SHA}`",
+            "**Frozen CAR-018 Corrective Composite Implementation SHA:** "
+            "`MALFORMED`",
+            1,
+        )
+    elif defect == "missing":
+        document = actual_car018.replace(
+            f"**Frozen CAR-018 Corrective Composite Implementation SHA:** "
+            f"`{CORRECTIVE_SHA}`\n",
+            "",
+            1,
+        )
+    else:
+        document = actual_car018 + (
+            "\n## Approved Canonical post-correction CA2 activation disposition\n"
+        )
+
+    expected_error = AssertionError if defect == "duplicated" else RuntimeError
+    with pytest.raises(expected_error):
+        _candidate_corrective_sha(document)
+
+
+@pytest.mark.parametrize(
+    ("defect", "target"),
+    (
+        ("only-car016-reference", ""),
+        ("missing-car017-reference", CA2_CAR017_REF),
+        ("missing-current-identity", CA2_IDENTITY),
+        (
+            "missing-prior-identity",
+            "previous coordinated identity: `KRONOS-COORD-AUTH-20260804-002`",
+        ),
+        (
+            "missing-retirement-disposition",
+            "previous identity disposition: RETIRED FOR EXECUTION — UNUSED",
+        ),
+        ("duplicated-required-marker", CA2_CAR016_REF),
+    ),
+)
+def test_ca2_fixture_rejects_incomplete_or_duplicated_register_markers(
+    defect: str, target: str
+) -> None:
+    records = list(
+        tuple(
+            (ROOT / path).read_text(encoding="utf-8")
+            for path in launcher._GOVERNANCE_PATHS
+        )
+    )
+    if defect == "only-car016-reference":
+        records[3] = (
+            f"| CAR-016 | {CA2_CAR016_REF} |\n"
+            f"| CAR-017 | {CA2_CAR016_REF} |\n"
+            f"| CAR-018 | {CA2_CAR016_REF} |\n"
+        )
+    elif defect == "duplicated-required-marker":
+        records[3] = records[3].replace(target, f"{target}; {target}", 1)
+    else:
+        records[3] = records[3].replace(target, "MISSING", 1)
+
+    with pytest.raises(
+        AssertionError, match="CA2 fixture records are duplicated or ambiguous"
+    ):
+        _canonical_ca2_records(tuple(records))  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    ("record_style", "mutation"),
+    (
+        ("real", "missing"),
+        ("real", "duplicated"),
+        ("synthetic", "missing"),
+        ("synthetic", "duplicated"),
+    ),
+)
+def test_car018_register_marker_is_required_exactly_once(
+    record_style: str, mutation: str
+) -> None:
+    if record_style == "real":
+        records = list(
+            tuple(
+                (ROOT / path).read_text(encoding="utf-8")
+                for path in launcher._GOVERNANCE_PATHS
+            )
+        )
+        marker = "current CA2 record: post-correction CA2 activation disposition"
+    else:
+        records = list(_canonical_ca2_records(_ca2_absent_records()))
+        marker = "Controlled Amendment: `CAR-018-V1.2-CA2`"
+    replacement = "MISSING" if mutation == "missing" else f"{marker}; {marker}"
+    records[3] = records[3].replace(marker, replacement, 1)
+
+    with pytest.raises(
+        AssertionError, match="CA2 fixture records are duplicated or ambiguous"
+    ):
+        _canonical_ca2_records(tuple(records))  # type: ignore[arg-type]
+
+
+def test_historical_ca1_derivation_matches_canonical_commit_byte_for_byte() -> None:
+    repository_records = tuple(
+        (ROOT / path).read_text(encoding="utf-8")
+        for path in launcher._GOVERNANCE_PATHS
+    )
+    historical_records = tuple(
+        subprocess.check_output(
+            ["git", "show", f"{GOVERNANCE_SHA}:{path}"],
+            cwd=ROOT,
+            text=True,
+        )
+        for path in launcher._GOVERNANCE_PATHS
+    )
+
+    assert _historical_ca1_records(repository_records) == historical_records
 
 
 def _prepare(
@@ -1111,16 +1501,21 @@ def test_record_specific_metadata_and_register_rows_are_required() -> None:
 
 def test_snapshot_reads_four_independent_repository_identities() -> None:
     calls: list[tuple[str, ...]] = []
-    historical_records = {
-        path: (ROOT / path).read_text(encoding="utf-8")
+    repository_records = tuple(
+        (ROOT / path).read_text(encoding="utf-8")
         for path in launcher._GOVERNANCE_PATHS
-    }
+    )
+    historical_records = dict(
+        zip(
+            launcher._GOVERNANCE_PATHS,
+            _historical_ca1_records(repository_records),
+            strict=True,
+        )
+    )
     activation_records = dict(
         zip(
             launcher._GOVERNANCE_PATHS,
-            _canonical_ca2_records(
-                tuple(historical_records[path] for path in launcher._GOVERNANCE_PATHS)
-            ),
+            _canonical_ca2_records(repository_records),
             strict=True,
         )
     )
