@@ -87,6 +87,7 @@ _CORRECTIVE_PATHS = (
     "tests/unit/tools/test_car017_live_authentication_launcher.py",
 )
 _SHA_PATTERN = re.compile(r"[0-9a-f]{40}\Z")
+_EXECUTABLE_ELIGIBILITY_ID = "PROVIDER-AUTH-EXECUTABLE"
 _HISTORICAL_AMENDMENT = "CA1"
 _CURRENT_AMENDMENT = "CA2"
 _CA2_RETIRED_PREDECESSOR = "KRONOS-COORD-AUTH-20260804-002"
@@ -121,6 +122,23 @@ class CanonicalRepositorySnapshot:
         return "<CanonicalRepositorySnapshot sanitized>"
 
 
+@dataclass(frozen=True, slots=True, repr=False)
+class ExecutableEligibilityRecord:
+    """Canonical executable selection independent of Git and publication identity."""
+
+    identity: str
+    governed_scope: str
+    repository: str
+    branch: str
+    current_eligible_sha: str
+    status: str
+    approved: str
+    superseded_executable_sha: str
+
+    def __repr__(self) -> str:
+        return "<ExecutableEligibilityRecord sanitized>"
+
+
 class ProductionCanonicalActivationEvidenceVerifier:
     """Verify exact historical governance and distinct current repository identity."""
 
@@ -136,6 +154,12 @@ class ProductionCanonicalActivationEvidenceVerifier:
         evidence: object,
     ) -> bool:
         snapshot = self.__snapshot
+        try:
+            eligibility = _executable_eligibility_record(
+                snapshot.activation_governance_records
+            )
+        except RuntimeError:
+            return False
         if (
             type(expected) is not CoordinatedActivationValues
             or type(observed) is not CoordinatedActivationValues
@@ -159,8 +183,10 @@ class ProductionCanonicalActivationEvidenceVerifier:
             != tuple(sorted(_GOVERNANCE_PATHS))
             or snapshot.current_branch != "develop"
             or snapshot.current_head_sha != snapshot.current_origin_develop_sha
-            or snapshot.current_head_sha
-            != snapshot.activation_governance_publication_sha
+            or snapshot.current_head_sha != eligibility.current_eligible_sha
+            or snapshot.current_branch != eligibility.branch
+            or eligibility.superseded_executable_sha
+            != snapshot.approved_corrective_implementation_sha
             or not snapshot.current_working_tree_clean
             or not _SHA_PATTERN.fullmatch(
                 snapshot.approved_corrective_implementation_sha
@@ -225,6 +251,89 @@ class ProductionCanonicalActivationEvidenceVerifier:
 
     def __repr__(self) -> str:
         return "<ProductionCanonicalActivationEvidenceVerifier sanitized>"
+
+
+class _BoundedSuccessorEvidenceBridge:
+    """Bridge the legacy reviewer predicate after current-state verification."""
+
+    __slots__ = ("__current_evidence", "__verifier")
+
+    def __init__(
+        self,
+        verifier: ProductionCanonicalActivationEvidenceVerifier,
+        current_evidence: CanonicalRepositoryEvidence,
+    ) -> None:
+        self.__verifier = verifier
+        self.__current_evidence = current_evidence
+
+    def verify(self, expected: object, observed: object, evidence: object) -> bool:
+        if (
+            type(expected) is not CoordinatedActivationValues
+            or type(evidence) is not CanonicalRepositoryEvidence
+            or evidence.branch != self.__current_evidence.branch
+            or evidence.head_sha != expected.coordinated_governance_publication_sha
+            or evidence.origin_develop_sha
+            != expected.coordinated_governance_publication_sha
+            or evidence.working_tree_clean
+            is not self.__current_evidence.working_tree_clean
+            or evidence.car016_canonical is not self.__current_evidence.car016_canonical
+            or evidence.car017_canonical is not self.__current_evidence.car017_canonical
+            or evidence.car014_unexecuted is not self.__current_evidence.car014_unexecuted
+        ):
+            return False
+        return self.__verifier.verify(
+            expected,
+            observed,
+            self.__current_evidence,
+        )
+
+
+class ProductionTrustedActivationReviewer:
+    """Issue trusted provenance from an exact bounded-successor repository."""
+
+    __slots__ = ("__verifier",)
+
+    def __init__(
+        self,
+        snapshot: CanonicalRepositorySnapshot,
+        verifier: ProductionCanonicalActivationEvidenceVerifier | None = None,
+    ) -> None:
+        self.__verifier = verifier or ProductionCanonicalActivationEvidenceVerifier(
+            snapshot
+        )
+
+    def review(
+        self,
+        *,
+        expected: CoordinatedActivationValues,
+        observed: CoordinatedActivationValues,
+        repository_evidence: CanonicalRepositoryEvidence,
+        reviewed_at: datetime,
+    ) -> ActivationReview:
+        """Verify current evidence, retaining publication identity as provenance."""
+
+        publication_evidence = CanonicalRepositoryEvidence(
+            branch=repository_evidence.branch,
+            head_sha=expected.coordinated_governance_publication_sha,
+            origin_develop_sha=expected.coordinated_governance_publication_sha,
+            working_tree_clean=repository_evidence.working_tree_clean,
+            car016_canonical=repository_evidence.car016_canonical,
+            car017_canonical=repository_evidence.car017_canonical,
+            car014_unexecuted=repository_evidence.car014_unexecuted,
+        )
+        reviewer = TrustedActivationReviewer(
+            _BoundedSuccessorEvidenceBridge(self.__verifier, repository_evidence),
+            provenance_kind=ActivationProvenanceKind.CANONICAL_LIVE,
+        )
+        return reviewer.review(
+            expected=expected,
+            observed=observed,
+            repository_evidence=publication_evidence,
+            reviewed_at=reviewed_at,
+        )
+
+    def __repr__(self) -> str:
+        return "<ProductionTrustedActivationReviewer sanitized>"
 
 
 @dataclass(frozen=True, slots=True, repr=False)
@@ -628,13 +737,19 @@ def execute_governed_launcher(
     )
     verifier = ProductionCanonicalActivationEvidenceVerifier(snapshot)
     canonical_verified = verifier.verify(expected, observed, snapshot.evidence)
+    try:
+        eligibility = _executable_eligibility_record(
+            snapshot.activation_governance_records
+        )
+    except RuntimeError:
+        eligibility = None
     directory_ready, record_absent = durable_state
     preflight = SanitizedPreflightEvidence(
         repository=(
             snapshot.current_branch == "develop"
             and snapshot.current_head_sha == snapshot.current_origin_develop_sha
-            and snapshot.current_head_sha
-            == snapshot.activation_governance_publication_sha
+            and eligibility is not None
+            and snapshot.current_head_sha == eligibility.current_eligible_sha
             and snapshot.current_working_tree_clean
             and snapshot.corrective_parent_sha
             == _CAR018_OPERATIONAL_CORRECTION_SHA
@@ -668,10 +783,7 @@ def execute_governed_launcher(
     preflight_presenter(preflight.render())
     if not preflight.passed:
         raise RuntimeError("GOVERNED_RUNTIME_PREFLIGHT_FAILED")
-    reviewer = TrustedActivationReviewer(
-        verifier,
-        provenance_kind=ActivationProvenanceKind.CANONICAL_LIVE,
-    )
+    reviewer = ProductionTrustedActivationReviewer(snapshot, verifier)
     consumption = DurableConsumptionCoordinator(
         filesystem=(
             filesystem
@@ -901,6 +1013,103 @@ def _extract_table_value(section: str, label: str) -> str:
     if len(matches) != 1:
         raise RuntimeError("GOVERNED_ACTIVATION_RECORD_INVALID")
     return matches[0]
+
+
+def _register_eligibility_section(document: str) -> str:
+    heading = "## Governed Executable Eligibility Index"
+    if document.splitlines().count(heading) != 1:
+        raise RuntimeError("GOVERNED_EXECUTABLE_ELIGIBILITY_INVALID")
+    start = document.index(heading)
+    later_heading = re.search(
+        r"^#(?:#)? ", document[start + len(heading) :], re.MULTILINE
+    )
+    end = (
+        start + len(heading) + later_heading.start()
+        if later_heading is not None
+        else len(document)
+    )
+    return document[start:end]
+
+
+def _executable_eligibility_record(
+    records: tuple[str, str, str, str],
+) -> ExecutableEligibilityRecord:
+    """Resolve exactly one approved executable selection from canonical records."""
+
+    if len(records) != 4:
+        raise RuntimeError("GOVERNED_EXECUTABLE_ELIGIBILITY_INVALID")
+    car016, car017, car018, register = records
+    car016_section = _amendment_section(car016, "CAR-016", _CURRENT_AMENDMENT)
+    car017_section = _amendment_section(car017, "CAR-017", _CURRENT_AMENDMENT)
+    car018_section = _amendment_section(car018, "CAR-018", _CURRENT_AMENDMENT)
+    register_section = _register_eligibility_section(register)
+    references = (
+        _extract_table_value(car016_section, "Executable Eligibility Identity"),
+        _extract_table_value(car017_section, "Executable Eligibility Identity"),
+        _extract_table_value(car018_section, "Executable Eligibility Identity"),
+        _extract_table_value(register_section, "Executable Eligibility Identity"),
+    )
+    if len(set(references)) != 1 or references[0] != _EXECUTABLE_ELIGIBILITY_ID:
+        raise RuntimeError("GOVERNED_EXECUTABLE_ELIGIBILITY_INVALID")
+
+    labels = (
+        "Governed Scope",
+        "Repository",
+        "Branch",
+        "Current Eligible SHA",
+        "Status",
+        "Approved",
+        "Supersedes",
+    )
+    car018_values = tuple(
+        _extract_table_value(car018_section, label) for label in labels
+    )
+    if (
+        _extract_table_value(register_section, "Authoritative Source") != "CAR-018"
+        or _extract_table_value(register_section, "Repository Location")
+        != "docs/governance/reviews/"
+        "CAR-018-COMPLETE-PROVIDER-AUTHENTICATION-OPERATIONAL-CLOSURE-"
+        "AUTHORIZATION.md"
+        or _extract_table_value(register_section, "Index Authority")
+        != "INDEX ONLY — CAR-018 AUTHORITATIVE"
+    ):
+        raise RuntimeError("GOVERNED_EXECUTABLE_ELIGIBILITY_INVALID")
+    (
+        scope,
+        repository,
+        branch,
+        eligible_sha,
+        status,
+        approved,
+        superseded_sha,
+    ) = car018_values
+    if (
+        scope != "Provider Authentication / CAR-018 governed launcher"
+        or not _SHA_PATTERN.fullmatch(eligible_sha)
+        or repository != "emiali-jason/Project-Kronos"
+        or branch != "develop"
+        or status != "ACTIVE"
+        or approved != "YES"
+        or not _SHA_PATTERN.fullmatch(superseded_sha)
+        or superseded_sha == eligible_sha
+        or car018_section.splitlines().count(
+            f"| `{superseded_sha}` | `SUPERSEDED` |"
+        )
+        != 1
+        or car018_section.splitlines().count(f"| `{eligible_sha}` | `ACTIVE` |")
+        != 1
+    ):
+        raise RuntimeError("GOVERNED_EXECUTABLE_ELIGIBILITY_INVALID")
+    return ExecutableEligibilityRecord(
+        identity=references[0],
+        governed_scope=scope,
+        repository=repository,
+        branch=branch,
+        current_eligible_sha=eligible_sha,
+        status=status,
+        approved=approved,
+        superseded_executable_sha=superseded_sha,
+    )
 
 
 def _extract_corrective_sha(document: str, amendment: str) -> str:

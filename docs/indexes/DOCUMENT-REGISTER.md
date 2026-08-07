@@ -162,6 +162,17 @@ Every ID-bearing controlled document shall appear exactly once. Unassigned Contr
 
 ---
 
+## Governed Executable Eligibility Index
+
+| Index field | Synchronized reference |
+|---|---|
+| Executable Eligibility Identity | `PROVIDER-AUTH-EXECUTABLE` |
+| Authoritative Source | `CAR-018` |
+| Repository Location | `docs/governance/reviews/CAR-018-COMPLETE-PROVIDER-AUTHENTICATION-OPERATIONAL-CLOSURE-AUTHORIZATION.md` |
+| Index Authority | `INDEX ONLY — CAR-018 AUTHORITATIVE` |
+
+---
+
 # 5. Register Maintenance Rules
 
 1. Every controlled document shall have a unique assigned Document ID unless it is explicitly recorded as an Unassigned Controlled Authority.

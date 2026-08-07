@@ -996,6 +996,7 @@ post-attempt sanitized outcome and creates no renewed attempt.
 |---|---|
 | Previous coordinated activation identity | `KRONOS-COORD-AUTH-20260804-002` |
 | Previous identity disposition | `RETIRED FOR EXECUTION — UNUSED` |
+| Executable Eligibility Identity | `PROVIDER-AUTH-EXECUTABLE` |
 
 | Activation Context field | Exact frozen value |
 |---|---|

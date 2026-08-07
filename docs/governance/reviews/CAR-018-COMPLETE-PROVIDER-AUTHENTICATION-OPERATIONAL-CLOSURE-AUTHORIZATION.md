@@ -1035,6 +1035,28 @@ Before Chief Architect publication review, verify:
 | CA2 coordinated governance publication commit SHA | `PENDING — ESTABLISHED BY THE FOUR-FILE CANONICAL PUBLICATION COMMIT` |
 | CAR-014 | `UNEXECUTED` |
 
+### Governed Executable Eligibility
+
+CAR-018 is the authoritative source for this executable-eligibility decision.
+
+| Eligibility field | Exact controlled current-state value |
+|---|---|
+| Executable Eligibility Identity | `PROVIDER-AUTH-EXECUTABLE` |
+| Governed Scope | `Provider Authentication / CAR-018 governed launcher` |
+| Repository | `emiali-jason/Project-Kronos` |
+| Branch | `develop` |
+| Current Eligible SHA | `12865f5db7959f7754a54f891c0cc29acddf963f` |
+| Status | `ACTIVE` |
+| Approved | `YES` |
+| Supersedes | `7fdec7887faa94b5fd52ab59b01b023e726f7a68` |
+
+#### Append-only eligibility history
+
+| Executable SHA | Eligibility disposition |
+|---|---|
+| `7fdec7887faa94b5fd52ab59b01b023e726f7a68` | `SUPERSEDED` |
+| `12865f5db7959f7754a54f891c0cc29acddf963f` | `ACTIVE` |
+
 Every field below must match byte-for-byte across CAR-016 CA2, CAR-017 CA2 and
 this CAR-018 CA2 disposition. A missing, additional, normalized, inferred,
 substituted or unequal value fails closed.

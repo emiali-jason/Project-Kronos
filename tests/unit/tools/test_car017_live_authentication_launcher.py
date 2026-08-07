@@ -61,7 +61,8 @@ def _candidate_corrective_sha(document: str | None = None) -> str:
 
 
 CORRECTIVE_SHA = _candidate_corrective_sha()
-LATEST_GOVERNANCE_SHA = "f" * 40
+LATEST_GOVERNANCE_SHA = "b4af4a27ac9d35fe75139b4ee3c0c7e6fc1a2d63"
+APPROVED_SUCCESSOR_SHA = "12865f5db7959f7754a54f891c0cc29acddf963f"
 CA2_IDENTITY = "KRONOS-COORD-AUTH-20260806-003"
 CA2_CAR016_REF = "CAR-016-V1.2-CA2-KRONOS-COORD-AUTH-20260806-003"
 CA2_CAR017_REF = "CAR-017-V1.2-CA2-KRONOS-COORD-AUTH-20260806-003"
@@ -500,6 +501,11 @@ def _historical_ca1_records(
         r"^## Approved Canonical post-correction CA2 activation disposition$",
         terminal_heading=r"^# End of Document$",
     )
+    register = remove_ca2_section(
+        register,
+        r"^## Governed Executable Eligibility Index$",
+        terminal_heading=r"^# 5\. Register Maintenance Rules$",
+    )
     register_lines = []
     for line in register.splitlines():
         if line.startswith(("| CAR-016 |", "| CAR-017 |", "| CAR-018 |")):
@@ -521,16 +527,16 @@ def _canonical_snapshot(**changes: object) -> launcher.CanonicalRepositorySnapsh
     snapshot = launcher.CanonicalRepositorySnapshot(
         evidence=CanonicalRepositoryEvidence(
             branch="develop",
-            head_sha=LATEST_GOVERNANCE_SHA,
-            origin_develop_sha=LATEST_GOVERNANCE_SHA,
+            head_sha=APPROVED_SUCCESSOR_SHA,
+            origin_develop_sha=APPROVED_SUCCESSOR_SHA,
             working_tree_clean=True,
             car016_canonical=True,
             car017_canonical=True,
             car014_unexecuted=True,
         ),
         current_branch="develop",
-        current_head_sha=LATEST_GOVERNANCE_SHA,
-        current_origin_develop_sha=LATEST_GOVERNANCE_SHA,
+        current_head_sha=APPROVED_SUCCESSOR_SHA,
+        current_origin_develop_sha=APPROVED_SUCCESSOR_SHA,
         current_working_tree_clean=True,
         approved_corrective_implementation_sha=corrective_sha,
         corrective_parent_sha=OPERATIONAL_CORRECTION_SHA,
@@ -1180,10 +1186,7 @@ def test_pre_effective_or_expired_ca2_window_is_rejected(
 ) -> None:
     snapshot = _canonical_snapshot()
     expected = launcher.expected_activation_context(snapshot)
-    reviewer = TrustedActivationReviewer(
-        launcher.ProductionCanonicalActivationEvidenceVerifier(snapshot),
-        provenance_kind=ActivationProvenanceKind.CANONICAL_LIVE,
-    )
+    reviewer = launcher.ProductionTrustedActivationReviewer(snapshot)
 
     with pytest.raises(LiveActivationError, match="OUTSIDE_AUTHORITY_WINDOW"):
         reviewer.review(
@@ -1231,9 +1234,9 @@ def test_trusted_reviewer_receives_current_repository_evidence() -> None:
     snapshot = _canonical_snapshot()
     expected = launcher.expected_activation_context(snapshot)
     verifier = _CapturingEvidenceVerifier()
-    reviewer = TrustedActivationReviewer(
+    reviewer = launcher.ProductionTrustedActivationReviewer(
+        snapshot,
         verifier,  # type: ignore[arg-type]
-        provenance_kind=ActivationProvenanceKind.CANONICAL_LIVE,
     )
 
     reviewer.review(
@@ -1244,8 +1247,8 @@ def test_trusted_reviewer_receives_current_repository_evidence() -> None:
     )
 
     assert verifier.evidence is snapshot.evidence
-    assert snapshot.evidence.head_sha == LATEST_GOVERNANCE_SHA
-    assert snapshot.evidence.origin_develop_sha == LATEST_GOVERNANCE_SHA
+    assert snapshot.evidence.head_sha == APPROVED_SUCCESSOR_SHA
+    assert snapshot.evidence.origin_develop_sha == APPROVED_SUCCESSOR_SHA
 
 
 def test_production_verifier_rejects_non_governance_publication_manifest() -> None:
@@ -1264,12 +1267,12 @@ def test_head_cannot_substitute_for_governance_publication_sha() -> None:
     snapshot = _canonical_snapshot()
     substituted = replace(
         launcher.expected_activation_context(snapshot),
-        coordinated_governance_publication_sha=CORRECTIVE_SHA,
+        coordinated_governance_publication_sha=APPROVED_SUCCESSOR_SHA,
     )
     substituted_evidence = replace(
         snapshot.evidence,
-        head_sha=CORRECTIVE_SHA,
-        origin_develop_sha=CORRECTIVE_SHA,
+        head_sha=APPROVED_SUCCESSOR_SHA,
+        origin_develop_sha=APPROVED_SUCCESSOR_SHA,
     )
 
     assert launcher.ProductionCanonicalActivationEvidenceVerifier(snapshot).verify(
@@ -1370,7 +1373,7 @@ def test_ca2_corrective_sha_must_match_every_record(record_index: int) -> None:
     assert _is_verified(altered) is False
 
 
-def test_current_head_cannot_stand_in_for_latest_activation_governance() -> None:
+def test_parser_alignment_sha_cannot_stand_in_for_current_repository_head() -> None:
     snapshot = _canonical_snapshot(
         current_head_sha=CORRECTIVE_SHA,
         current_origin_develop_sha=CORRECTIVE_SHA,
@@ -1382,7 +1385,7 @@ def test_current_head_cannot_stand_in_for_latest_activation_governance() -> None
     ) is False
 
 
-def test_current_head_must_equal_latest_activation_governance_publication() -> None:
+def test_current_head_must_equal_approved_governed_successor() -> None:
     snapshot = _canonical_snapshot(
         current_head_sha="e" * 40,
         current_origin_develop_sha="e" * 40,
@@ -1394,9 +1397,44 @@ def test_current_head_must_equal_latest_activation_governance_publication() -> N
     ) is False
 
 
+def test_current_head_must_equal_origin_develop() -> None:
+    snapshot = _canonical_snapshot(current_origin_develop_sha="e" * 40)
+
+    assert _is_verified(snapshot) is False
+
+
+def test_current_working_tree_must_be_clean() -> None:
+    snapshot = _canonical_snapshot(current_working_tree_clean=False)
+
+    assert _is_verified(snapshot) is False
+
+
+def test_current_head_may_be_a_valid_supplied_activation_publication() -> None:
+    snapshot = _canonical_snapshot(
+        activation_governance_publication_sha=APPROVED_SUCCESSOR_SHA,
+    )
+
+    assert _is_verified(snapshot) is True
+
+
+def test_unapproved_descendant_after_activation_publication_fails_closed() -> None:
+    unapproved = "e" * 40
+    snapshot = _canonical_snapshot(
+        evidence=replace(
+            _canonical_snapshot().evidence,
+            head_sha=unapproved,
+            origin_develop_sha=unapproved,
+        ),
+        current_head_sha=unapproved,
+        current_origin_develop_sha=unapproved,
+    )
+
+    assert _is_verified(snapshot) is False
+
+
 def test_approved_corrective_sha_cannot_be_substituted_with_ambient_head() -> None:
     snapshot = _canonical_snapshot(
-        approved_corrective_implementation_sha=LATEST_GOVERNANCE_SHA,
+        approved_corrective_implementation_sha=APPROVED_SUCCESSOR_SHA,
         corrective_parent_sha=OPERATIONAL_CORRECTION_SHA,
     )
     expected = launcher.expected_activation_context(snapshot)
@@ -1435,7 +1473,107 @@ def test_approved_multicommit_governed_ancestry_is_accepted() -> None:
     assert snapshot.corrective_parent_sha == OPERATIONAL_CORRECTION_SHA
     assert snapshot.approved_corrective_implementation_sha == CORRECTIVE_SHA
     assert snapshot.activation_governance_publication_sha == LATEST_GOVERNANCE_SHA
+    assert snapshot.current_head_sha == APPROVED_SUCCESSOR_SHA
+    assert snapshot.current_head_sha != snapshot.activation_governance_publication_sha
+    assert (
+        launcher._executable_eligibility_record(
+            snapshot.activation_governance_records
+        ).current_eligible_sha
+        == APPROVED_SUCCESSOR_SHA
+    )
     assert _is_verified(snapshot) is True
+
+
+def test_executable_eligibility_is_resolved_without_hard_coded_sha() -> None:
+    replacement_sha = "d" * 40
+    snapshot = _canonical_snapshot()
+    records = tuple(
+        document.replace(APPROVED_SUCCESSOR_SHA, replacement_sha)
+        for document in snapshot.activation_governance_records
+    )
+    altered = replace(
+        snapshot,
+        evidence=replace(
+            snapshot.evidence,
+            head_sha=replacement_sha,
+            origin_develop_sha=replacement_sha,
+        ),
+        current_head_sha=replacement_sha,
+        current_origin_develop_sha=replacement_sha,
+        activation_governance_records=records,
+    )
+
+    assert APPROVED_SUCCESSOR_SHA not in Path(launcher.__file__).read_text()
+    assert (
+        launcher._executable_eligibility_record(records).current_eligible_sha
+        == replacement_sha
+    )
+    assert _is_verified(altered) is True
+
+
+@pytest.mark.parametrize(
+    ("record_index", "old", "new"),
+    (
+        (
+            1,
+            "PROVIDER-AUTH-EXECUTABLE",
+            "PROVIDER-AUTH-EXECUTABLE-OTHER",
+        ),
+        (2, "| Approved | `YES` |", "| Approved | `NO` |"),
+        (2, "| Status | `ACTIVE` |", "| Status | `INACTIVE` |"),
+        (
+            2,
+            "| Repository | `emiali-jason/Project-Kronos` |",
+            "| Repository | `another/repository` |",
+        ),
+        (2, "| Branch | `develop` |", "| Branch | `main` |"),
+        (
+            3,
+            "| Executable Eligibility Identity | `PROVIDER-AUTH-EXECUTABLE` |",
+            "| Executable Eligibility Identity | `PROVIDER-AUTH-EXECUTABLE-OTHER` |",
+        ),
+        (
+            2,
+            "| Supersedes | `7fdec7887faa94b5fd52ab59b01b023e726f7a68` |",
+            "| Supersedes | `eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee` |",
+        ),
+    ),
+)
+def test_invalid_executable_eligibility_fails_closed(
+    record_index: int, old: str, new: str
+) -> None:
+    snapshot = _canonical_snapshot()
+    records = list(snapshot.activation_governance_records)
+    assert old in records[record_index]
+    records[record_index] = records[record_index].replace(old, new, 1)
+
+    assert _is_verified(
+        replace(snapshot, activation_governance_records=tuple(records))
+    ) is False
+
+
+def test_duplicate_executable_eligibility_record_fails_closed() -> None:
+    snapshot = _canonical_snapshot()
+    records = list(snapshot.activation_governance_records)
+    heading = "### Governed Executable Eligibility"
+    eligibility_section = records[2][records[2].index(heading) :]
+    records[2] = f"{records[2]}\n{eligibility_section}"
+
+    assert _is_verified(
+        replace(snapshot, activation_governance_records=tuple(records))
+    ) is False
+
+
+def test_missing_car018_executable_eligibility_fails_closed() -> None:
+    snapshot = _canonical_snapshot()
+    records = list(snapshot.activation_governance_records)
+    marker = "| Executable Eligibility Identity | `PROVIDER-AUTH-EXECUTABLE` |\n"
+    assert marker in records[2]
+    records[2] = records[2].replace(marker, "", 1)
+
+    assert _is_verified(
+        replace(snapshot, activation_governance_records=tuple(records))
+    ) is False
 
 
 def test_corrective_manifest_mismatch_is_rejected() -> None:
@@ -1447,13 +1585,45 @@ def test_corrective_manifest_mismatch_is_rejected() -> None:
     ) is False
 
 
-def test_activation_governance_publication_sha_mismatch_is_rejected() -> None:
-    snapshot = _canonical_snapshot(activation_governance_publication_sha="e" * 40)
+@pytest.mark.parametrize(
+    "publication_sha",
+    (LATEST_GOVERNANCE_SHA, "e" * 40),
+    ids=("publication-a", "publication-b"),
+)
+def test_valid_supplied_activation_governance_publication_is_accepted(
+    publication_sha: str,
+) -> None:
+    snapshot = _canonical_snapshot(
+        activation_governance_publication_sha=publication_sha
+    )
     expected = launcher.expected_activation_context(snapshot)
 
+    assert expected.coordinated_governance_publication_sha == publication_sha
     assert launcher.ProductionCanonicalActivationEvidenceVerifier(snapshot).verify(
         expected, expected, snapshot.evidence
-    ) is False
+    ) is True
+    assert LATEST_GOVERNANCE_SHA not in Path(launcher.__file__).read_text()
+
+
+def test_malformed_activation_governance_publication_sha_is_rejected() -> None:
+    calls = 0
+
+    def git_output(_arguments: tuple[str, ...]) -> str:
+        nonlocal calls
+        calls += 1
+        return ""
+
+    with pytest.raises(
+        RuntimeError,
+        match="GOVERNED_ACTIVATION_PUBLICATION_EVIDENCE_INVALID",
+    ):
+        launcher.canonical_repository_snapshot(
+            ROOT,
+            activation_governance_publication_sha="not-a-sha",
+            git_output=git_output,
+        )
+
+    assert calls == 0
 
 
 def test_governance_manifest_missing_required_file_is_rejected() -> None:
@@ -1550,9 +1720,9 @@ def test_snapshot_reads_four_independent_repository_identities() -> None:
         if arguments == ("branch", "--show-current"):
             return "develop\n"
         if arguments == ("rev-parse", "HEAD"):
-            return f"{LATEST_GOVERNANCE_SHA}\n"
+            return f"{APPROVED_SUCCESSOR_SHA}\n"
         if arguments == ("rev-parse", "origin/develop"):
-            return f"{LATEST_GOVERNANCE_SHA}\n"
+            return f"{APPROVED_SUCCESSOR_SHA}\n"
         if arguments == ("status", "--porcelain"):
             return ""
         if arguments == ("rev-parse", f"{CORRECTIVE_SHA}^"):
@@ -1583,9 +1753,9 @@ def test_snapshot_reads_four_independent_repository_identities() -> None:
         git_output=git_output,
     )
 
-    assert snapshot.current_head_sha == LATEST_GOVERNANCE_SHA
-    assert snapshot.evidence.head_sha == LATEST_GOVERNANCE_SHA
-    assert snapshot.evidence.origin_develop_sha == LATEST_GOVERNANCE_SHA
+    assert snapshot.current_head_sha == APPROVED_SUCCESSOR_SHA
+    assert snapshot.evidence.head_sha == APPROVED_SUCCESSOR_SHA
+    assert snapshot.evidence.origin_develop_sha == APPROVED_SUCCESSOR_SHA
     assert snapshot.activation_governance_publication_sha == LATEST_GOVERNANCE_SHA
     assert snapshot.approved_corrective_implementation_sha == CORRECTIVE_SHA
     assert snapshot.corrective_parent_sha == OPERATIONAL_CORRECTION_SHA
@@ -1634,11 +1804,24 @@ def test_post_correction_committed_state_preflight_passes_and_is_inert() -> None
     assert events == ["gui"]
     assert filesystem.payload == b""
     assert presented[0].startswith("GOVERNED LIVE PREFLIGHT EVIDENCE PACKAGE")
+    assert "Repository: PASS" in presented[0]
+    assert "Canonical governance: PASS" in presented[0]
+    assert "Activation Context: PASS" in presented[0]
     assert "Overall: READY FOR FINAL SPONSOR CONFIRMATION" in presented[0]
     assert presented[1].startswith("SANITIZED GOVERNED TERMINAL EVIDENCE")
+    assert prepared.activation._is_live_capable() is True
+    assert launcher.expected_activation_context(
+        _canonical_snapshot()
+    ).consumption_state is CoordinatedConsumptionState.UNUSED
     assert prepared.operation_ledger().count_for(
         GovernedAuthenticationOperation.AUTHORITY_CONSUMPTION
     ) == 0
+    assert prepared.operation_ledger().count_for(
+        GovernedAuthenticationOperation.PROVIDER_AVAILABILITY_VERIFICATION
+    ) == 0
+    assert launcher.expected_activation_context(_canonical_snapshot()).car014_status == (
+        "UNEXECUTED"
+    )
 
 
 def test_operational_path_consumes_before_exact_live_composition() -> None:
