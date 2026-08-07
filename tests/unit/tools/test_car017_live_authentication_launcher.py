@@ -62,7 +62,8 @@ def _candidate_corrective_sha(document: str | None = None) -> str:
 
 CORRECTIVE_SHA = _candidate_corrective_sha()
 LATEST_GOVERNANCE_SHA = "b4af4a27ac9d35fe75139b4ee3c0c7e6fc1a2d63"
-APPROVED_SUCCESSOR_SHA = "12865f5db7959f7754a54f891c0cc29acddf963f"
+APPROVED_SUCCESSOR_SHA = "e5ce94ecaf9927e22fcf151cbf3a241dd1515e68"
+PREVIOUS_ELIGIBLE_SHA = "12865f5db7959f7754a54f891c0cc29acddf963f"
 CA2_IDENTITY = "KRONOS-COORD-AUTH-20260806-003"
 CA2_CAR016_REF = "CAR-016-V1.2-CA2-KRONOS-COORD-AUTH-20260806-003"
 CA2_CAR017_REF = "CAR-017-V1.2-CA2-KRONOS-COORD-AUTH-20260806-003"
@@ -1511,6 +1512,109 @@ def test_executable_eligibility_is_resolved_without_hard_coded_sha() -> None:
     assert _is_verified(altered) is True
 
 
+def test_two_step_executable_eligibility_succession_is_accepted() -> None:
+    snapshot = _canonical_snapshot()
+    records = list(snapshot.activation_governance_records)
+    records[2] = (
+        records[2]
+        .replace(
+            f"| Current Eligible SHA | `{APPROVED_SUCCESSOR_SHA}` |",
+            f"| Current Eligible SHA | `{PREVIOUS_ELIGIBLE_SHA}` |",
+            1,
+        )
+        .replace(
+            f"| Supersedes | `{PREVIOUS_ELIGIBLE_SHA}` |",
+            f"| Supersedes | `{CORRECTIVE_SHA}` |",
+            1,
+        )
+        .replace(
+            f"| `{PREVIOUS_ELIGIBLE_SHA}` | `SUPERSEDED` |",
+            f"| `{PREVIOUS_ELIGIBLE_SHA}` | `ACTIVE` |",
+            1,
+        )
+        .replace(f"| `{APPROVED_SUCCESSOR_SHA}` | `ACTIVE` |\n", "", 1)
+    )
+    altered = replace(
+        snapshot,
+        evidence=replace(
+            snapshot.evidence,
+            head_sha=PREVIOUS_ELIGIBLE_SHA,
+            origin_develop_sha=PREVIOUS_ELIGIBLE_SHA,
+        ),
+        current_head_sha=PREVIOUS_ELIGIBLE_SHA,
+        current_origin_develop_sha=PREVIOUS_ELIGIBLE_SHA,
+        activation_governance_records=tuple(records),
+    )
+
+    assert _is_verified(altered) is True
+
+
+def test_superseded_executable_head_fails_closed() -> None:
+    snapshot = _canonical_snapshot()
+    altered = replace(
+        snapshot,
+        evidence=replace(
+            snapshot.evidence,
+            head_sha=PREVIOUS_ELIGIBLE_SHA,
+            origin_develop_sha=PREVIOUS_ELIGIBLE_SHA,
+        ),
+        current_head_sha=PREVIOUS_ELIGIBLE_SHA,
+        current_origin_develop_sha=PREVIOUS_ELIGIBLE_SHA,
+    )
+
+    assert _is_verified(altered) is False
+
+
+@pytest.mark.parametrize(
+    ("old", "new"),
+    (
+        (
+            f"| `{PREVIOUS_ELIGIBLE_SHA}` | `SUPERSEDED` |\n",
+            "",
+        ),
+        (
+            f"| `{PREVIOUS_ELIGIBLE_SHA}` | `SUPERSEDED` |",
+            f"| `{PREVIOUS_ELIGIBLE_SHA}` | `ACTIVE` |",
+        ),
+        (
+            f"| `{CORRECTIVE_SHA}` | `SUPERSEDED` |",
+            f"| `{CORRECTIVE_SHA}` | `ACTIVE` |",
+        ),
+    ),
+    ids=(
+        "missing-immediate-predecessor",
+        "immediate-predecessor-not-superseded",
+        "multiple-active-history-entries",
+    ),
+)
+def test_invalid_executable_eligibility_history_fails_closed(
+    old: str, new: str
+) -> None:
+    snapshot = _canonical_snapshot()
+    records = list(snapshot.activation_governance_records)
+    assert old in records[2]
+    records[2] = records[2].replace(old, new, 1)
+
+    assert _is_verified(
+        replace(snapshot, activation_governance_records=tuple(records))
+    ) is False
+
+
+def test_corrupted_car018_corrective_provenance_still_fails_closed() -> None:
+    snapshot = _canonical_snapshot()
+    records = list(snapshot.activation_governance_records)
+    marker = (
+        "**Frozen CAR-018 Corrective Composite Implementation SHA:** "
+        f"`{CORRECTIVE_SHA}`"
+    )
+    assert marker in records[2]
+    records[2] = records[2].replace(marker, f"{marker[:-41]}{'e' * 40}`", 1)
+
+    assert _is_verified(
+        replace(snapshot, activation_governance_records=tuple(records))
+    ) is False
+
+
 @pytest.mark.parametrize(
     ("record_index", "old", "new"),
     (
@@ -1534,7 +1638,7 @@ def test_executable_eligibility_is_resolved_without_hard_coded_sha() -> None:
         ),
         (
             2,
-            "| Supersedes | `7fdec7887faa94b5fd52ab59b01b023e726f7a68` |",
+            "| Supersedes | `12865f5db7959f7754a54f891c0cc29acddf963f` |",
             "| Supersedes | `eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee` |",
         ),
     ),

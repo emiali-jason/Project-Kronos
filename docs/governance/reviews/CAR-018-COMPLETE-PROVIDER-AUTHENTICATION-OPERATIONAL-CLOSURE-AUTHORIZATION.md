@@ -1045,17 +1045,18 @@ CAR-018 is the authoritative source for this executable-eligibility decision.
 | Governed Scope | `Provider Authentication / CAR-018 governed launcher` |
 | Repository | `emiali-jason/Project-Kronos` |
 | Branch | `develop` |
-| Current Eligible SHA | `12865f5db7959f7754a54f891c0cc29acddf963f` |
+| Current Eligible SHA | `e5ce94ecaf9927e22fcf151cbf3a241dd1515e68` |
 | Status | `ACTIVE` |
 | Approved | `YES` |
-| Supersedes | `7fdec7887faa94b5fd52ab59b01b023e726f7a68` |
+| Supersedes | `12865f5db7959f7754a54f891c0cc29acddf963f` |
 
 #### Append-only eligibility history
 
 | Executable SHA | Eligibility disposition |
 |---|---|
 | `7fdec7887faa94b5fd52ab59b01b023e726f7a68` | `SUPERSEDED` |
-| `12865f5db7959f7754a54f891c0cc29acddf963f` | `ACTIVE` |
+| `12865f5db7959f7754a54f891c0cc29acddf963f` | `SUPERSEDED` |
+| `e5ce94ecaf9927e22fcf151cbf3a241dd1515e68` | `ACTIVE` |
 
 Every field below must match byte-for-byte across CAR-016 CA2, CAR-017 CA2 and
 this CAR-018 CA2 disposition. A missing, additional, normalized, inferred,

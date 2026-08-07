@@ -185,8 +185,6 @@ class ProductionCanonicalActivationEvidenceVerifier:
             or snapshot.current_head_sha != snapshot.current_origin_develop_sha
             or snapshot.current_head_sha != eligibility.current_eligible_sha
             or snapshot.current_branch != eligibility.branch
-            or eligibility.superseded_executable_sha
-            != snapshot.approved_corrective_implementation_sha
             or not snapshot.current_working_tree_clean
             or not _SHA_PATTERN.fullmatch(
                 snapshot.approved_corrective_implementation_sha
@@ -1031,6 +1029,37 @@ def _register_eligibility_section(document: str) -> str:
     return document[start:end]
 
 
+def _eligibility_history(section: str) -> tuple[tuple[str, str], ...]:
+    """Parse one exact, unambiguous append-only eligibility history table."""
+
+    heading = "#### Append-only eligibility history"
+    lines = section.splitlines()
+    if lines.count(heading) != 1:
+        raise RuntimeError("GOVERNED_EXECUTABLE_ELIGIBILITY_INVALID")
+    start = lines.index(heading) + 1
+    while start < len(lines) and not lines[start]:
+        start += 1
+    if lines[start : start + 2] != [
+        "| Executable SHA | Eligibility disposition |",
+        "|---|---|",
+    ]:
+        raise RuntimeError("GOVERNED_EXECUTABLE_ELIGIBILITY_INVALID")
+    entries: list[tuple[str, str]] = []
+    row_pattern = re.compile(
+        r"\| `([0-9a-f]{40})` \| `(ACTIVE|SUPERSEDED)` \|\Z"
+    )
+    for line in lines[start + 2 :]:
+        if not line:
+            break
+        match = row_pattern.fullmatch(line)
+        if match is None:
+            raise RuntimeError("GOVERNED_EXECUTABLE_ELIGIBILITY_INVALID")
+        entries.append((match.group(1), match.group(2)))
+    if not entries or len({sha for sha, _status in entries}) != len(entries):
+        raise RuntimeError("GOVERNED_EXECUTABLE_ELIGIBILITY_INVALID")
+    return tuple(entries)
+
+
 def _executable_eligibility_record(
     records: tuple[str, str, str, str],
 ) -> ExecutableEligibilityRecord:
@@ -1083,6 +1112,9 @@ def _executable_eligibility_record(
         approved,
         superseded_sha,
     ) = car018_values
+    history = _eligibility_history(car018_section)
+    active_entries = tuple(sha for sha, value in history if value == "ACTIVE")
+    history_by_sha = dict(history)
     if (
         scope != "Provider Authentication / CAR-018 governed launcher"
         or not _SHA_PATTERN.fullmatch(eligible_sha)
@@ -1092,12 +1124,8 @@ def _executable_eligibility_record(
         or approved != "YES"
         or not _SHA_PATTERN.fullmatch(superseded_sha)
         or superseded_sha == eligible_sha
-        or car018_section.splitlines().count(
-            f"| `{superseded_sha}` | `SUPERSEDED` |"
-        )
-        != 1
-        or car018_section.splitlines().count(f"| `{eligible_sha}` | `ACTIVE` |")
-        != 1
+        or history_by_sha.get(superseded_sha) != "SUPERSEDED"
+        or active_entries != (eligible_sha,)
     ):
         raise RuntimeError("GOVERNED_EXECUTABLE_ELIGIBILITY_INVALID")
     return ExecutableEligibilityRecord(
