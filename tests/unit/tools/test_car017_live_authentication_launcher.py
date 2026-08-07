@@ -33,6 +33,7 @@ from tools.provider_pilots import car017_live_authentication_launcher as launche
 ROOT = Path(__file__).resolve().parents[3]
 SHA = "a" * 40
 GOVERNANCE_SHA = "cdaeaf1669e7182f36f9ea753315cf7992843d78"
+OPERATIONAL_CORRECTION_SHA = "218b01fa7ed7815f3b7fefb127e278dc3909481b"
 SYNTHETIC_CORRECTIVE_SHA = "d" * 40
 
 
@@ -532,7 +533,8 @@ def _canonical_snapshot(**changes: object) -> launcher.CanonicalRepositorySnapsh
         current_origin_develop_sha=LATEST_GOVERNANCE_SHA,
         current_working_tree_clean=True,
         approved_corrective_implementation_sha=corrective_sha,
-        corrective_parent_sha=GOVERNANCE_SHA,
+        corrective_parent_sha=OPERATIONAL_CORRECTION_SHA,
+        operational_correction_parent_sha=GOVERNANCE_SHA,
         corrective_paths=launcher._CORRECTIVE_PATHS,
         activation_governance_publication_sha=LATEST_GOVERNANCE_SHA,
         activation_governance_paths=launcher._GOVERNANCE_PATHS,
@@ -1395,7 +1397,7 @@ def test_current_head_must_equal_latest_activation_governance_publication() -> N
 def test_approved_corrective_sha_cannot_be_substituted_with_ambient_head() -> None:
     snapshot = _canonical_snapshot(
         approved_corrective_implementation_sha=LATEST_GOVERNANCE_SHA,
-        corrective_parent_sha=GOVERNANCE_SHA,
+        corrective_parent_sha=OPERATIONAL_CORRECTION_SHA,
     )
     expected = launcher.expected_activation_context(snapshot)
 
@@ -1411,6 +1413,29 @@ def test_corrective_parent_mismatch_is_rejected() -> None:
     assert launcher.ProductionCanonicalActivationEvidenceVerifier(snapshot).verify(
         expected, expected, snapshot.evidence
     ) is False
+
+
+def test_historical_parent_cannot_replace_parser_alignment_parent() -> None:
+    snapshot = _canonical_snapshot(corrective_parent_sha=GOVERNANCE_SHA)
+
+    assert _is_verified(snapshot) is False
+
+
+def test_operational_correction_parent_must_be_historical_governance() -> None:
+    snapshot = _canonical_snapshot(operational_correction_parent_sha="e" * 40)
+
+    assert _is_verified(snapshot) is False
+
+
+def test_approved_multicommit_governed_ancestry_is_accepted() -> None:
+    snapshot = _canonical_snapshot()
+
+    assert snapshot.historical_governance_publication_sha == GOVERNANCE_SHA
+    assert snapshot.operational_correction_parent_sha == GOVERNANCE_SHA
+    assert snapshot.corrective_parent_sha == OPERATIONAL_CORRECTION_SHA
+    assert snapshot.approved_corrective_implementation_sha == CORRECTIVE_SHA
+    assert snapshot.activation_governance_publication_sha == LATEST_GOVERNANCE_SHA
+    assert _is_verified(snapshot) is True
 
 
 def test_corrective_manifest_mismatch_is_rejected() -> None:
@@ -1531,6 +1556,11 @@ def test_snapshot_reads_four_independent_repository_identities() -> None:
         if arguments == ("status", "--porcelain"):
             return ""
         if arguments == ("rev-parse", f"{CORRECTIVE_SHA}^"):
+            return f"{OPERATIONAL_CORRECTION_SHA}\n"
+        if arguments == (
+            "rev-parse",
+            f"{OPERATIONAL_CORRECTION_SHA}^",
+        ):
             return f"{GOVERNANCE_SHA}\n"
         if arguments[0] == "diff-tree" and arguments[-1] == LATEST_GOVERNANCE_SHA:
             return "\n".join(launcher._GOVERNANCE_PATHS) + "\n"
@@ -1558,6 +1588,8 @@ def test_snapshot_reads_four_independent_repository_identities() -> None:
     assert snapshot.evidence.origin_develop_sha == LATEST_GOVERNANCE_SHA
     assert snapshot.activation_governance_publication_sha == LATEST_GOVERNANCE_SHA
     assert snapshot.approved_corrective_implementation_sha == CORRECTIVE_SHA
+    assert snapshot.corrective_parent_sha == OPERATIONAL_CORRECTION_SHA
+    assert snapshot.operational_correction_parent_sha == GOVERNANCE_SHA
     assert snapshot.historical_governance_publication_sha == GOVERNANCE_SHA
     assert (
         "diff-tree",

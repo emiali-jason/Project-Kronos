@@ -61,6 +61,9 @@ _FROZEN_CAR018_SHA = "6273663a8ca8729833a8a0f05e06d55973ce6dc0"
 _COORDINATED_GOVERNANCE_PUBLICATION_SHA = (
     "cdaeaf1669e7182f36f9ea753315cf7992843d78"
 )
+_CAR018_OPERATIONAL_CORRECTION_SHA = (
+    "218b01fa7ed7815f3b7fefb127e278dc3909481b"
+)
 _EFFECTIVE_AT = datetime(
     2026, 8, 6, 9, 0, tzinfo=timezone(timedelta(hours=5, minutes=30))
 )
@@ -105,6 +108,7 @@ class CanonicalRepositorySnapshot:
     current_working_tree_clean: bool
     approved_corrective_implementation_sha: str
     corrective_parent_sha: str
+    operational_correction_parent_sha: str
     corrective_paths: tuple[str, ...]
     activation_governance_publication_sha: str
     activation_governance_paths: tuple[str, ...]
@@ -165,6 +169,8 @@ class ProductionCanonicalActivationEvidenceVerifier:
             == snapshot.current_head_sha
             or snapshot.approved_corrective_implementation_sha == _FROZEN_CAR018_SHA
             or snapshot.corrective_parent_sha
+            != _CAR018_OPERATIONAL_CORRECTION_SHA
+            or snapshot.operational_correction_parent_sha
             != snapshot.historical_governance_publication_sha
             or tuple(sorted(snapshot.corrective_paths))
             != tuple(sorted(_CORRECTIVE_PATHS))
@@ -489,6 +495,9 @@ def canonical_repository_snapshot(
         activation_records[2], _CURRENT_AMENDMENT
     )
     corrective_parent = query(("rev-parse", f"{approved_corrective}^")).strip()
+    operational_correction_parent = query(
+        ("rev-parse", f"{_CAR018_OPERATIONAL_CORRECTION_SHA}^")
+    ).strip()
     corrective_paths = tuple(
         line
         for line in query(
@@ -531,6 +540,7 @@ def canonical_repository_snapshot(
         current_working_tree_clean=clean,
         approved_corrective_implementation_sha=approved_corrective,
         corrective_parent_sha=corrective_parent,
+        operational_correction_parent_sha=operational_correction_parent,
         corrective_paths=corrective_paths,
         activation_governance_publication_sha=(
             activation_governance_publication_sha
@@ -627,6 +637,8 @@ def execute_governed_launcher(
             == snapshot.activation_governance_publication_sha
             and snapshot.current_working_tree_clean
             and snapshot.corrective_parent_sha
+            == _CAR018_OPERATIONAL_CORRECTION_SHA
+            and snapshot.operational_correction_parent_sha
             == snapshot.historical_governance_publication_sha
             and tuple(sorted(snapshot.corrective_paths))
             == tuple(sorted(_CORRECTIVE_PATHS))
