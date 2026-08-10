@@ -141,13 +141,19 @@ Terminology defines no physical identifier, field, schema, storage representatio
 
 ADP-001A classifies Instrument Master reference information, provider tokens, relevant instrument reference fields, expiry, lifecycle information, approved analysis/reference/execution relationships, and required contextual references as Phase 1 information. Classification does not authorize retrieval and does not itself establish canonical membership.
 
-The approved Swing Phase 1 product universe is fully resolved by this architecture as the bounded set of canonical MCX Metals execution subjects and their approved canonical reference subjects required by the currently supported model. The approved MCX Metals Economic Instruments are Gold, Silver, and Copper. Their MCX Listed Instruments are the approved execution listings, and their COMEX Listed Instruments are the approved global reference listings. The approved Derivative Contract category is the individual futures contract for each approved listing and expiry. The repository also records MCX Energy, NSE Equity Swing, and NSE Index Swing as model/configuration contexts; their presence does not make their market-data integration operational or enlarge the approved Phase 1 product universe.
+The approved Swing Phase 1 product universe is the following bounded set of 98 canonical analytical subjects:
 
-The approved Analysis Instruments are the MCX Gold, Silver and Copper subjects used by the current model. The approved Reference Instruments are the corresponding COMEX Gold, Silver and Copper subjects. The approved Intended Execution Instruments are the MCX Gold, Silver and Copper Listed Instruments and their approved futures-contract identities.
+- the 91 approved NSE cash equities enumerated by `data/nse/KRONOS_NSE_RELATIONSHIPS.csv`;
+- the NSE indices NIFTY and BANK NIFTY; and
+- the MCX commodity subjects GOLDM, SILVERM, COPPER, CRUDEOIL, and NATURALGAS.
 
-Explicit product-universe exclusions are all non-approved canonical Instruments, unsupported venues, unapproved reference markets, Options capability, unapproved NSE or MCX Energy market-data integration, Provider-only records without approved Instrument meaning, and any subject inferred solely from availability, configuration, price, symbol, token, or Provider mapping.
+This 98-member universe supersedes the previous Swing Phase 1 Gold, Silver, and Copper-only universe boundary. It also supersedes the prior exclusion of NSE equities, NSE indices, and MCX Energy from Swing Phase 1 product-universe membership. The approved COMEX reference relationships for the MCX Metals model remain unchanged and do not add members to the 98 analytical subjects.
 
-Only operational contract enumeration and mapping mechanics remain deferred: Provider symbols, Provider tokens, expiry enumeration, lifecycle-effective activation, mapping-effective context, and operational acquisition records. Provider mapping ownership and status meaning are resolved by the Instrument Domain Architecture. No Swing product-universe boundary is unresolved by this architecture.
+The 98 universe members are the approved Swing analytical subjects. Within the current MCX Metals model, the approved Reference Instruments remain the corresponding COMEX Gold, Silver, and Copper subjects, and the approved Intended Execution Instruments remain the MCX Gold, Silver, and Copper Listed Instruments and their approved futures-contract identities.
+
+Explicit product-universe exclusions are all canonical Instruments outside the approved 98-member set, unsupported venues, unapproved reference markets, Options capability, Provider-only records without approved Instrument meaning, and any subject inferred solely from availability, configuration, price, symbol, token, or Provider mapping.
+
+Swing owns membership of this analytical universe and the stable Swing analytical identity used to refer to each member. Provider-specific symbols, Instrument Master records, current futures-contract resolution, and market-data retrieval remain outside Swing and within the Provider boundary. Expiring futures-contract symbols are operational Provider identities and shall not become permanent Swing analytical identities. Provider mapping ownership and status meaning remain governed by the Instrument Domain Architecture. No Swing product-universe boundary is unresolved by this architecture.
 
 ## 9. Identity Layers and Roles
 
@@ -287,7 +293,7 @@ The following invariants are normative for this approved architecture:
 23. No relationship in this architecture shall create an unapproved domain dependency.
 24. No relationship in this architecture shall authorize Provider communication, acquisition, or implementation.
 25. Options recognition shall not activate the Options product or any Options capability.
-26. Gold, Silver, and Copper, together with their approved MCX and COMEX canonical Instrument identities and product relationships, shall form the approved Swing product universe for this capability.
+26. The 91 approved NSE cash equities, NIFTY, BANK NIFTY, GOLDM, SILVERM, COPPER, CRUDEOIL, and NATURALGAS shall form the approved 98-member Swing Phase 1 analytical universe; the preceding Gold, Silver, and Copper-only universe boundary is superseded.
 27. A Provider Catalogue shall never define canonical Instrument identity or the approved Swing product universe.
 28. Unsupported reference coverage shall remain explicitly unsupported.
 29. COMEX Listed Instruments and MCX Listed Instruments shall remain distinct even when related to one Economic Instrument.
@@ -306,7 +312,7 @@ The following 25 Chief Architect-authorized questions are answered one-to-one. W
 
 | # | Architectural question | Answer | Status |
 | ---: | --- | --- | --- |
-| 1 | What is the exact approved KRONOS Swing Phase 1 universe? | The approved Swing product universe is the bounded set of canonical MCX Metals execution subjects Gold, Silver, and Copper, their approved MCX futures-contract identities, and the approved canonical COMEX reference subjects required by the current model. Only operational contract enumeration and mapping mechanics remain deferred. | Approved definition |
+| 1 | What is the exact approved KRONOS Swing Phase 1 universe? | The approved Swing product universe is the bounded set of 98 analytical subjects: the 91 approved NSE cash equities enumerated by `data/nse/KRONOS_NSE_RELATIONSHIPS.csv`; NIFTY and BANK NIFTY; and GOLDM, SILVERM, COPPER, CRUDEOIL, and NATURALGAS. This supersedes the preceding Gold, Silver, and Copper-only boundary. | Approved definition |
 | 2 | Which Economic Instruments are included in the currently approved MCX Metals model? | Gold, Silver, and Copper are included. | Approved base / ADL-001 |
 | 3 | Which Listed Instruments and venues are required for each approved Economic Instrument? | Each approved Economic Instrument requires its MCX Listed Instrument for execution context and its corresponding COMEX Listed Instrument for approved global reference context. | Approved definition; exact venue identifiers deferred |
 | 4 | Which Derivative Contract categories are in scope? | Individual futures contracts for the approved MCX and COMEX Listed Instruments are in scope; Option contracts remain identity-recognised but capability-inactive. Operational expiry enumeration remains deferred. | Approved base |
@@ -329,7 +335,7 @@ The following 25 Chief Architect-authorized questions are answered one-to-one. W
 | 21 | How are missing or ambiguous Provider meanings represented during Instrument processing? | Instrument preserves missingness, limitation, ambiguity, and provenance under the independent Interpretation Outcome, Canonical Identity Decision, and Provider Mapping Status meanings. No Provider-native value is forced into canonical identity or mapping. | Approved definition |
 | 22 | What exact information is excluded from the first Instrument Master acquisition scope? | ADP-001I establishes only Swing product-universe membership and exclusion. It does not approve Requested Acquisition Scope or activate Acquisition Authority. Concrete acquisition scope remains separately Provider-owned under ADR-009 Version 1.0 and DOMAIN-006; operational acquisition records and Provider tokens or symbols are excluded from the Swing product-universe definition. | Approved definition |
 | 23 | How are Options rows kept outside active Phase 1 scope while Option identity remains conceptually recognised? | Option identity remains conceptually recognised under ADP-001B, but Options rows are excluded from active Phase 1 universe membership and no Options retrieval, analytics, validation, strategy, or execution is authorized. | Approved base |
-| 24 | Does the approved universe include only MCX execution contracts and their approved references, or any wider instrument set? | The Swing product universe includes only the approved canonical MCX Metals execution contracts and canonical COMEX reference subjects, not a wider Provider Catalogue or model configuration set. Product membership is resolved; operational contract enumeration and mapping mechanics remain deferred. | Approved definition |
+| 24 | Does the approved universe include only MCX execution contracts and their approved references, or any wider instrument set? | The Swing product universe is the approved 98-member analytical set defined in Section 8. It is not a wider Provider Catalogue or an open-ended model-configuration set. Product membership is resolved; Provider-specific resolution and operational contract enumeration remain outside Swing. | Approved definition |
 | 25 | What unresolved matters must remain deferred to lifecycle, mapping or acquisition architecture? | Exact identity attributes, contract enumeration, role cardinality details, mapping-effective context and mechanics, lifecycle transitions, source substitution, acquisition scope, and operational treatment remain deferred. Provider mapping ownership, cross-Provider reconciliation ownership, Provider Mapping Status, and independence from Canonical Identity Decision are resolved. | Unresolved |
 
 ## 20. Unresolved Architecture Dependencies
