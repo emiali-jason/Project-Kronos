@@ -1,8 +1,13 @@
 from collections.abc import Mapping
+from datetime import datetime
 import math
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from kiteconnect import KiteConnect as _KiteConnect
+
+
+_KITE_MARKET_TIMEZONE = ZoneInfo("Asia/Kolkata")
 
 
 class _UnexpectedProfileResponse(RuntimeError):
@@ -189,6 +194,73 @@ class _KiteCandidateClientHandle:
         profile = self.__profile_mapping(timeout_seconds=timeout_seconds)
         del profile
 
+    def instrument_records(self, exchange: str) -> object:
+        """Return one raw SDK response only to the containing Kite adapter."""
+
+        if self.__closed or self.__client is None:
+            raise _KiteClientClosedError
+        if self.__session_state.invalidated:
+            raise _KiteSessionInvalidated
+        try:
+            records = self.__client.instruments(exchange)
+        finally:
+            if self.__session_state.invalidated:
+                raise _KiteSessionInvalidated from None
+        return records
+
+    def historical_candles(
+        self,
+        *,
+        instrument_token: int,
+        from_date: object,
+        to_date: object,
+        interval: str,
+    ) -> object:
+        """Return one raw historical response only to the containing adapter."""
+
+        if self.__closed or self.__client is None:
+            raise _KiteClientClosedError
+        if self.__session_state.invalidated:
+            raise _KiteSessionInvalidated
+        try:
+            candles = self.__client.historical_data(
+                instrument_token=instrument_token,
+                from_date=_kite_market_boundary(from_date),
+                to_date=_kite_market_boundary(to_date),
+                interval=interval,
+                continuous=False,
+                oi=False,
+            )
+        finally:
+            if self.__session_state.invalidated:
+                raise _KiteSessionInvalidated from None
+        return candles
+
+    def quote(self, instrument: str) -> object:
+        """Return one raw quote response only to the containing Kite adapter."""
+
+        return self.__live_snapshot("quote", instrument)
+
+    def ltp(self, instrument: str) -> object:
+        """Return one raw LTP response only to the containing Kite adapter."""
+
+        return self.__live_snapshot("ltp", instrument)
+
+    def ohlc(self, instrument: str) -> object:
+        """Return one raw OHLC response only to the containing Kite adapter."""
+
+        return self.__live_snapshot("ohlc", instrument)
+
+    @property
+    def active(self) -> bool:
+        """Return local usability without exposing the client or session token."""
+
+        return (
+            not self.__closed
+            and self.__client is not None
+            and not self.__session_state.invalidated
+        )
+
     def close_local(self) -> None:
         if self.__closed:
             return
@@ -232,6 +304,23 @@ class _KiteCandidateClientHandle:
             raise _UnexpectedProfileResponse
         return profile
 
+    def __live_snapshot(self, operation: str, instrument: str) -> object:
+        if self.__closed or self.__client is None:
+            raise _KiteClientClosedError
+        if self.__session_state.invalidated:
+            raise _KiteSessionInvalidated
+        if not isinstance(instrument, str) or not instrument:
+            raise _UnexpectedAuthenticationResponse
+        endpoint = getattr(self.__client, operation, None)
+        if not callable(endpoint):
+            raise _UnexpectedAuthenticationResponse
+        try:
+            response = endpoint([instrument])
+        finally:
+            if self.__session_state.invalidated:
+                raise _KiteSessionInvalidated from None
+        return response
+
     def __repr__(self) -> str:
         return "<_KiteCandidateClientHandle redacted>"
 
@@ -239,6 +328,18 @@ class _KiteCandidateClientHandle:
 
     def __reduce_ex__(self, _protocol: int) -> object:
         raise TypeError("KITE_CANDIDATE_HANDLE_SERIALIZATION_PROHIBITED")
+
+
+def _kite_market_boundary(value: object) -> object:
+    """Preserve an instant while supplying Kite's exchange-local wall time."""
+
+    if (
+        isinstance(value, datetime)
+        and value.tzinfo is not None
+        and value.utcoffset() is not None
+    ):
+        return value.astimezone(_KITE_MARKET_TIMEZONE)
+    return value
 
 
 def _create_kite_authentication_client(api_key: str) -> _KiteAuthenticationClientHandle:

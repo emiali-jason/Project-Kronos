@@ -17,21 +17,16 @@ _FORBIDDEN_KITE_CALLS = {
     "exit_order",
     "get_gtt",
     "get_gtts",
-    "historical_data",
     "holdings",
-    "instruments",
-    "ltp",
     "margins",
     "modify_gtt",
     "modify_order",
-    "ohlc",
     "order_history",
     "order_margins",
     "orders",
     "place_gtt",
     "place_order",
     "positions",
-    "quote",
     "renew_access_token",
     "trades",
 }
@@ -84,6 +79,11 @@ def test_kite_adapter_sdk_calls_remain_within_authorized_provider_scope() -> Non
     assert invoked.count("profile") == 2
     assert invoked.count("login_url") == 2
     assert invoked.count("generate_session") == 1
+    assert invoked.count("instruments") == 1
+    assert invoked.count("historical_data") == 1
+    assert invoked.count("quote") == 1
+    assert invoked.count("ltp") == 1
+    assert invoked.count("ohlc") == 1
     assert invoked.count("set_session_expiry_hook") == 2
     assert invoked.count("invalidate_access_token") == 1
     assert _FORBIDDEN_KITE_CALLS.isdisjoint(invoked)

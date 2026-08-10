@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
+from datetime import date, datetime, timedelta
 from enum import StrEnum
+from zoneinfo import ZoneInfo
 
 from kiteconnect.exceptions import (
     DataException as _DataException,
@@ -31,7 +33,29 @@ from kronos.provider.adapters.kite.client import (
     _UnexpectedProfileResponse,
     _create_kite_authentication_client,
 )
-from kronos.provider.contracts.provider_authentication import OneUseRequestToken
+from kronos.provider.contracts.provider_authentication import (
+    AuthenticatedReadOnlyProviderCapability,
+    OneUseRequestToken,
+    ReadOnlyProviderOperation,
+)
+from kronos.provider.contracts.instrument import (
+    InstrumentRecord,
+    InstrumentResolutionError,
+    InstrumentResolutionFailure,
+)
+from kronos.provider.contracts.market_data import (
+    HistoricalCandle,
+    HistoricalCandleRequest,
+    HistoricalDataError,
+    HistoricalDataFailure,
+    HistoricalInterval,
+    LiveSnapshotError,
+    LiveSnapshotFailure,
+    LtpSnapshot,
+    OhlcSnapshot,
+    OhlcValues,
+    QuoteSnapshot,
+)
 from kronos.provider.exceptions.connectivity import (
     ProviderConnectivityError,
     ProviderErrorCode,
@@ -41,6 +65,7 @@ from kronos.provider.models.authentication import GovernedAuthenticationOperatio
 
 
 _CANONICAL_PRINCIPAL = re.compile(r"[A-Za-z0-9]{1,64}\Z")
+_KITE_MARKET_TIMEZONE = ZoneInfo("Asia/Kolkata")
 
 
 class KiteContextEvidence(StrEnum):
@@ -104,7 +129,15 @@ class _KitePrincipalEvidence:
 class _KiteCandidateContext:
     """Opaque unpublished candidate restricted to bounded verification."""
 
-    __slots__ = ("__budget", "__disposed", "__handle", "__record")
+    __slots__ = (
+        "__budget",
+        "__capability_issued",
+        "__disposed",
+        "__handle",
+        "__instrument_tokens",
+        "__principal_requested",
+        "__record",
+    )
 
     def __init__(
         self,
@@ -117,8 +150,12 @@ class _KiteCandidateContext:
         self.__record = operation_recorder
         self.__budget = remaining_budget
         self.__disposed = False
+        self.__principal_requested = False
+        self.__capability_issued = False
+        self.__instrument_tokens: dict[InstrumentRecord, int] = {}
 
     def principal_evidence(self) -> PrincipalEvidence:
+        self.__principal_requested = True
         timeout_seconds = self.__before(
             GovernedAuthenticationOperation.PRINCIPAL_PROFILE_VERIFICATION
         )
@@ -143,6 +180,21 @@ class _KiteCandidateContext:
                 forced=PrincipalBindingResult.UNAVAILABLE,
             )
         raise ProviderConnectivityError(code) from None
+
+    def issue_read_only_capability(self) -> AuthenticatedReadOnlyProviderCapability:
+        """Issue one opaque handoff after principal evidence has been requested."""
+
+        if (
+            self.__disposed
+            or not self.__principal_requested
+            or self.__capability_issued
+        ):
+            raise ProviderConnectivityError(
+                ProviderErrorCode.INTERNAL_ADAPTER_DEFECT
+            )
+        self._active_handle()
+        self.__capability_issued = True
+        return _KiteReadOnlyProviderCapability(self)
 
     def verify_provider_availability(self) -> KiteContextEvidence:
         """Run one separate, explicitly initiated profile verification."""
@@ -171,6 +223,7 @@ class _KiteCandidateContext:
         if self.__disposed:
             return
         self.__disposed = True
+        self.__instrument_tokens.clear()
         handle = self.__handle
         self.__handle = None
         if handle is None:
@@ -188,6 +241,132 @@ class _KiteCandidateContext:
         if self.__disposed or handle is None:
             raise ProviderConnectivityError(ProviderErrorCode.INTERNAL_ADAPTER_DEFECT)
         return handle
+
+    def _read_only_capability_active(self) -> bool:
+        handle = self.__handle
+        return not self.__disposed and handle is not None and handle.active
+
+    def _instrument_records(self, exchange: str) -> tuple[InstrumentRecord, ...]:
+        if not _canonical_exchange(exchange):
+            raise InstrumentResolutionError(
+                InstrumentResolutionFailure.INVALID_REQUEST
+            )
+        try:
+            raw = self._active_handle().instrument_records(exchange)
+            normalized = _normalize_instrument_records(
+                raw,
+                expected_exchange=exchange,
+            )
+        except InstrumentResolutionError:
+            raise
+        except Exception as error:
+            code = _map_authentication_error_code(error)
+        else:
+            retained = {
+                record: token
+                for record, token in self.__instrument_tokens.items()
+                if record.exchange != exchange
+            }
+            retained.update({record: token for record, token in normalized})
+            self.__instrument_tokens = retained
+            return tuple(record for record, _token in normalized)
+        if code is ProviderErrorCode.ACCESS_TOKEN_INVALID_OR_EXPIRED:
+            self.dispose_local()
+            raise InstrumentResolutionError(
+                InstrumentResolutionFailure.CAPABILITY_UNAVAILABLE
+            ) from None
+        raise ProviderConnectivityError(code) from None
+
+    def _historical_candles(
+        self,
+        request: HistoricalCandleRequest,
+    ) -> tuple[HistoricalCandle, ...]:
+        if type(request) is not HistoricalCandleRequest:
+            raise HistoricalDataError(HistoricalDataFailure.INVALID_REQUEST)
+        token = self.__instrument_tokens.get(request.instrument)
+        if token is None:
+            raise HistoricalDataError(
+                HistoricalDataFailure.INSTRUMENT_NOT_RESOLVED
+            )
+        try:
+            raw = self._active_handle().historical_candles(
+                instrument_token=token,
+                from_date=request.start,
+                to_date=request.end,
+                interval=request.interval.value,
+            )
+            candles = _normalize_historical_candles(raw)
+            leading_overlap = _historical_interval_span(request.interval)
+            if any(
+                candle.timestamp < request.start - leading_overlap
+                or candle.timestamp > request.end
+                for candle in candles
+            ):
+                raise HistoricalDataError(
+                    HistoricalDataFailure.MALFORMED_PROVIDER_DATA
+                )
+            return candles
+        except HistoricalDataError:
+            raise
+        except Exception as error:
+            code = _map_authentication_error_code(error)
+        if code is ProviderErrorCode.ACCESS_TOKEN_INVALID_OR_EXPIRED:
+            self.dispose_local()
+            raise HistoricalDataError(
+                HistoricalDataFailure.CAPABILITY_UNAVAILABLE
+            ) from None
+        raise HistoricalDataError(HistoricalDataFailure.PROVIDER_FAILURE) from None
+
+    def _live_snapshot(
+        self,
+        instrument: InstrumentRecord,
+        operation: ReadOnlyProviderOperation,
+    ) -> QuoteSnapshot | LtpSnapshot | OhlcSnapshot:
+        if type(instrument) is not InstrumentRecord or operation not in {
+            ReadOnlyProviderOperation.QUOTE,
+            ReadOnlyProviderOperation.LTP,
+            ReadOnlyProviderOperation.OHLC,
+        }:
+            raise LiveSnapshotError(LiveSnapshotFailure.INVALID_REQUEST)
+        token = self.__instrument_tokens.get(instrument)
+        if token is None:
+            raise LiveSnapshotError(LiveSnapshotFailure.INSTRUMENT_NOT_RESOLVED)
+        kite_identity = f"{instrument.exchange}:{instrument.trading_symbol}"
+        handle = self._active_handle()
+        try:
+            if operation is ReadOnlyProviderOperation.QUOTE:
+                raw = handle.quote(kite_identity)
+                return _normalize_quote_snapshot(
+                    raw,
+                    instrument=instrument,
+                    kite_identity=kite_identity,
+                    expected_token=token,
+                )
+            if operation is ReadOnlyProviderOperation.LTP:
+                raw = handle.ltp(kite_identity)
+                return _normalize_ltp_snapshot(
+                    raw,
+                    instrument=instrument,
+                    kite_identity=kite_identity,
+                    expected_token=token,
+                )
+            raw = handle.ohlc(kite_identity)
+            return _normalize_ohlc_snapshot(
+                raw,
+                instrument=instrument,
+                kite_identity=kite_identity,
+                expected_token=token,
+            )
+        except LiveSnapshotError:
+            raise
+        except Exception as error:
+            code = _map_authentication_error_code(error)
+        if code is ProviderErrorCode.ACCESS_TOKEN_INVALID_OR_EXPIRED:
+            self.dispose_local()
+            raise LiveSnapshotError(
+                LiveSnapshotFailure.CAPABILITY_UNAVAILABLE
+            ) from None
+        raise LiveSnapshotError(LiveSnapshotFailure.PROVIDER_FAILURE) from None
 
     def __before(
         self,
@@ -218,6 +397,349 @@ class _KiteCandidateContext:
 
     def __reduce_ex__(self, _protocol: int) -> object:
         raise TypeError("KITE_CANDIDATE_SERIALIZATION_PROHIBITED")
+
+
+_READ_ONLY_OPERATIONS = frozenset(ReadOnlyProviderOperation)
+
+
+class _KiteReadOnlyProviderCapability:
+    """Opaque application handoff retaining the private candidate ownership chain."""
+
+    __slots__ = ("__candidate",)
+
+    def __init__(self, candidate: _KiteCandidateContext) -> None:
+        self.__candidate = candidate
+
+    @property
+    def operations(self) -> frozenset[ReadOnlyProviderOperation]:
+        return _READ_ONLY_OPERATIONS
+
+    @property
+    def active(self) -> bool:
+        return self.__candidate._read_only_capability_active()
+
+    def instrument_records(self, exchange: str) -> tuple[InstrumentRecord, ...]:
+        if not self.active:
+            raise InstrumentResolutionError(
+                InstrumentResolutionFailure.CAPABILITY_UNAVAILABLE
+            )
+        return self.__candidate._instrument_records(exchange)
+
+    def historical_candles(
+        self,
+        request: HistoricalCandleRequest,
+    ) -> tuple[HistoricalCandle, ...]:
+        if not self.active:
+            raise HistoricalDataError(
+                HistoricalDataFailure.CAPABILITY_UNAVAILABLE
+            )
+        return self.__candidate._historical_candles(request)
+
+    def quote(self, instrument: InstrumentRecord) -> QuoteSnapshot:
+        if not self.active:
+            raise LiveSnapshotError(LiveSnapshotFailure.CAPABILITY_UNAVAILABLE)
+        result = self.__candidate._live_snapshot(
+            instrument,
+            ReadOnlyProviderOperation.QUOTE,
+        )
+        if type(result) is not QuoteSnapshot:
+            raise LiveSnapshotError(LiveSnapshotFailure.MALFORMED_PROVIDER_DATA)
+        return result
+
+    def ltp(self, instrument: InstrumentRecord) -> LtpSnapshot:
+        if not self.active:
+            raise LiveSnapshotError(LiveSnapshotFailure.CAPABILITY_UNAVAILABLE)
+        result = self.__candidate._live_snapshot(
+            instrument,
+            ReadOnlyProviderOperation.LTP,
+        )
+        if type(result) is not LtpSnapshot:
+            raise LiveSnapshotError(LiveSnapshotFailure.MALFORMED_PROVIDER_DATA)
+        return result
+
+    def ohlc(self, instrument: InstrumentRecord) -> OhlcSnapshot:
+        if not self.active:
+            raise LiveSnapshotError(LiveSnapshotFailure.CAPABILITY_UNAVAILABLE)
+        result = self.__candidate._live_snapshot(
+            instrument,
+            ReadOnlyProviderOperation.OHLC,
+        )
+        if type(result) is not OhlcSnapshot:
+            raise LiveSnapshotError(LiveSnapshotFailure.MALFORMED_PROVIDER_DATA)
+        return result
+
+    def __repr__(self) -> str:
+        return "<AuthenticatedReadOnlyProviderCapability redacted>"
+
+    __str__ = __repr__
+
+    def __reduce_ex__(self, _protocol: int) -> object:
+        raise TypeError("READ_ONLY_PROVIDER_CAPABILITY_SERIALIZATION_PROHIBITED")
+
+
+def _historical_interval_span(interval: HistoricalInterval) -> timedelta:
+    minutes = {
+        HistoricalInterval.MINUTE: 1,
+        HistoricalInterval.THREE_MINUTE: 3,
+        HistoricalInterval.FIVE_MINUTE: 5,
+        HistoricalInterval.TEN_MINUTE: 10,
+        HistoricalInterval.FIFTEEN_MINUTE: 15,
+        HistoricalInterval.THIRTY_MINUTE: 30,
+        HistoricalInterval.SIXTY_MINUTE: 60,
+        HistoricalInterval.DAY: 24 * 60,
+    }[interval]
+    return timedelta(minutes=minutes)
+
+
+_CANONICAL_EXCHANGE = re.compile(r"[A-Z]{2,8}\Z")
+
+
+def _canonical_exchange(value: object) -> bool:
+    return isinstance(value, str) and _CANONICAL_EXCHANGE.fullmatch(value) is not None
+
+
+def _normalize_instrument_records(
+    raw: object,
+    *,
+    expected_exchange: str,
+) -> tuple[tuple[InstrumentRecord, int], ...]:
+    if not isinstance(raw, list):
+        raise InstrumentResolutionError(
+            InstrumentResolutionFailure.MALFORMED_PROVIDER_DATA
+        )
+    normalized: list[tuple[InstrumentRecord, int]] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            raise InstrumentResolutionError(
+                InstrumentResolutionFailure.MALFORMED_PROVIDER_DATA
+            )
+        exchange = item.get("exchange")
+        segment = item.get("segment")
+        trading_symbol = item.get("tradingsymbol")
+        name = item.get("name")
+        instrument_type = item.get("instrument_type")
+        instrument_token = item.get("instrument_token")
+        expiry = _normalized_expiry(item.get("expiry"))
+        normalized_name = name.strip() if isinstance(name, str) else name
+        if (
+            exchange != expected_exchange
+            or not _canonical_text(segment)
+            or not _canonical_text(trading_symbol)
+            or not _canonical_optional_text(normalized_name)
+            or not _canonical_optional_text(instrument_type)
+            or type(instrument_token) is not int
+            or instrument_token <= 0
+            or expiry is _MALFORMED_EXPIRY
+        ):
+            raise InstrumentResolutionError(
+                InstrumentResolutionFailure.MALFORMED_PROVIDER_DATA
+            )
+        normalized.append(
+            (
+                InstrumentRecord(
+                    provider="KITE",
+                    exchange=exchange,
+                    segment=segment,
+                    trading_symbol=trading_symbol,
+                    name=normalized_name,
+                    instrument_type=instrument_type,
+                    expiry=expiry,
+                ),
+                instrument_token,
+            )
+        )
+    return tuple(normalized)
+
+
+_MALFORMED_EXPIRY = object()
+
+
+def _normalized_expiry(value: object) -> date | None | object:
+    if value is None or value == "":
+        return None
+    if isinstance(value, datetime):
+        return value.date()
+    if type(value) is date:
+        return value
+    return _MALFORMED_EXPIRY
+
+
+def _canonical_text(value: object) -> bool:
+    return isinstance(value, str) and bool(value) and value == value.strip()
+
+
+def _canonical_optional_text(value: object) -> bool:
+    return isinstance(value, str) and value == value.strip()
+
+
+def _normalize_historical_candles(raw: object) -> tuple[HistoricalCandle, ...]:
+    if not isinstance(raw, list):
+        raise HistoricalDataError(HistoricalDataFailure.MALFORMED_PROVIDER_DATA)
+    candles: list[HistoricalCandle] = []
+    previous_timestamp: datetime | None = None
+    for item in raw:
+        if not isinstance(item, dict):
+            raise HistoricalDataError(
+                HistoricalDataFailure.MALFORMED_PROVIDER_DATA
+            )
+        timestamp = item.get("date")
+        try:
+            candle = HistoricalCandle(
+                timestamp=timestamp,  # type: ignore[arg-type]
+                open=_price(item.get("open")),
+                high=_price(item.get("high")),
+                low=_price(item.get("low")),
+                close=_price(item.get("close")),
+                volume=_volume(item.get("volume")),
+            )
+        except (TypeError, ValueError):
+            raise HistoricalDataError(
+                HistoricalDataFailure.MALFORMED_PROVIDER_DATA
+            ) from None
+        if previous_timestamp is not None and candle.timestamp <= previous_timestamp:
+            raise HistoricalDataError(
+                HistoricalDataFailure.MALFORMED_PROVIDER_DATA
+            )
+        previous_timestamp = candle.timestamp
+        candles.append(candle)
+    return tuple(candles)
+
+
+def _normalize_quote_snapshot(
+    raw: object,
+    *,
+    instrument: InstrumentRecord,
+    kite_identity: str,
+    expected_token: int,
+) -> QuoteSnapshot:
+    item = _live_snapshot_item(
+        raw,
+        kite_identity=kite_identity,
+        expected_token=expected_token,
+    )
+    try:
+        return QuoteSnapshot(
+            instrument=instrument,
+            timestamp=_quote_timestamp(item.get("timestamp")),
+            last_price=_price(item.get("last_price")),
+            volume=_quote_volume(item.get("volume"), instrument=instrument),
+            ohlc=_normalize_ohlc_values(item.get("ohlc")),
+        )
+    except (TypeError, ValueError):
+        raise LiveSnapshotError(
+            LiveSnapshotFailure.MALFORMED_PROVIDER_DATA
+        ) from None
+
+
+def _quote_timestamp(value: object) -> datetime:
+    """Normalize KiteConnect's exchange-local naive quote timestamp only."""
+
+    if not isinstance(value, datetime):
+        raise ValueError
+    if value.tzinfo is None or value.utcoffset() is None:
+        return value.replace(tzinfo=_KITE_MARKET_TIMEZONE)
+    return value
+
+
+def _quote_volume(
+    value: object,
+    *,
+    instrument: InstrumentRecord,
+) -> int | None:
+    """Preserve Kite's legitimate unavailable volume for index quotes only."""
+
+    if value is None and instrument.segment == "INDICES":
+        return None
+    return _volume(value)
+
+
+def _normalize_ltp_snapshot(
+    raw: object,
+    *,
+    instrument: InstrumentRecord,
+    kite_identity: str,
+    expected_token: int,
+) -> LtpSnapshot:
+    item = _live_snapshot_item(
+        raw,
+        kite_identity=kite_identity,
+        expected_token=expected_token,
+    )
+    try:
+        return LtpSnapshot(
+            instrument=instrument,
+            last_price=_price(item.get("last_price")),
+        )
+    except (TypeError, ValueError):
+        raise LiveSnapshotError(
+            LiveSnapshotFailure.MALFORMED_PROVIDER_DATA
+        ) from None
+
+
+def _normalize_ohlc_snapshot(
+    raw: object,
+    *,
+    instrument: InstrumentRecord,
+    kite_identity: str,
+    expected_token: int,
+) -> OhlcSnapshot:
+    item = _live_snapshot_item(
+        raw,
+        kite_identity=kite_identity,
+        expected_token=expected_token,
+    )
+    try:
+        return OhlcSnapshot(
+            instrument=instrument,
+            last_price=_price(item.get("last_price")),
+            ohlc=_normalize_ohlc_values(item.get("ohlc")),
+        )
+    except (TypeError, ValueError):
+        raise LiveSnapshotError(
+            LiveSnapshotFailure.MALFORMED_PROVIDER_DATA
+        ) from None
+
+
+def _live_snapshot_item(
+    raw: object,
+    *,
+    kite_identity: str,
+    expected_token: int,
+) -> Mapping[object, object]:
+    if (
+        not isinstance(raw, Mapping)
+        or len(raw) != 1
+        or kite_identity not in raw
+        or not isinstance(raw[kite_identity], Mapping)
+    ):
+        raise LiveSnapshotError(LiveSnapshotFailure.MALFORMED_PROVIDER_DATA)
+    item = raw[kite_identity]
+    if item.get("instrument_token") != expected_token:
+        raise LiveSnapshotError(LiveSnapshotFailure.MALFORMED_PROVIDER_DATA)
+    return item
+
+
+def _normalize_ohlc_values(raw: object) -> OhlcValues:
+    if not isinstance(raw, Mapping):
+        raise ValueError
+    return OhlcValues(
+        open=_price(raw.get("open")),
+        high=_price(raw.get("high")),
+        low=_price(raw.get("low")),
+        close=_price(raw.get("close")),
+    )
+
+
+def _price(value: object) -> float:
+    if type(value) not in {int, float}:
+        raise ValueError
+    return float(value)
+
+
+def _volume(value: object) -> int:
+    if type(value) is not int:
+        raise ValueError
+    return value
 
 
 class KiteAuthenticationAdapter:

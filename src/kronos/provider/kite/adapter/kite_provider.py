@@ -1,6 +1,7 @@
 """Kite entry point for the authoritative authentication lifecycle."""
 
 from kronos.provider.contracts.provider_authentication import (
+    AuthenticatedReadOnlyProviderCapability,
     AuthenticationAttemptHandle,
 )
 from kronos.provider.kite.auth.kite_authentication import KiteAuthentication
@@ -38,6 +39,11 @@ class KiteProvider:
 
     def current_context(self) -> AuthenticatedProviderContext | None:
         return self.__authentication.current_context()
+
+    def authenticated_read_only_capability(
+        self,
+    ) -> AuthenticatedReadOnlyProviderCapability | None:
+        return self.__authentication.authenticated_read_only_capability()
 
     def verify_provider_availability(self) -> ProviderAvailabilityState:
         return self.__authentication.verify_provider_availability()

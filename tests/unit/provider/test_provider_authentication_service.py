@@ -9,13 +9,13 @@ import threading
 
 import pytest
 
-from kronos.provider.services import provider_authentication as service_module
 from kronos.configuration.principals import (
     IntendedPrincipalResolutionOutcome,
     IntendedPrincipalResolutionResult,
     OneUseIntendedPrincipalLease,
     PrincipalBindingResult,
 )
+from kronos.provider.contracts.provider_authentication import ReadOnlyProviderOperation
 from kronos.provider.exceptions.connectivity import (
     ProviderConnectivityError,
     ProviderErrorCode,
@@ -44,6 +44,7 @@ from kronos.provider.models.authentication import (
 from kronos.provider.services.provider_authentication import (
     ProviderAuthenticationService,
 )
+from kronos.provider.services import provider_authentication as service_module
 
 
 _API_KEY = "service-api-key"
@@ -214,6 +215,8 @@ class _Candidate:
         "dispose_count",
         "evidence",
         "principal_count",
+        "capability_issue_count",
+        "capability",
     )
 
     def __init__(self) -> None:
@@ -221,6 +224,8 @@ class _Candidate:
         self.principal_count = 0
         self.availability_count = 0
         self.dispose_count = 0
+        self.capability_issue_count = 0
+        self.capability = _ReadOnlyCapability(self)
         self.availability_effect: object = _Availability.VALID
         self.availability_entered: threading.Event | None = None
         self.availability_release: threading.Event | None = None
@@ -239,11 +244,32 @@ class _Candidate:
             raise self.availability_effect
         return self.availability_effect
 
+    def issue_read_only_capability(self) -> object:
+        self.capability_issue_count += 1
+        if self.capability_issue_count != 1:
+            raise RuntimeError("CAPABILITY_ALREADY_ISSUED")
+        return self.capability
+
     def dispose_local(self) -> None:
         self.dispose_count += 1
 
     def __repr__(self) -> str:
         return "<_Candidate redacted>"
+
+
+class _ReadOnlyCapability:
+    __slots__ = ("_candidate",)
+
+    def __init__(self, candidate: _Candidate) -> None:
+        self._candidate = candidate
+
+    @property
+    def operations(self) -> frozenset[ReadOnlyProviderOperation]:
+        return frozenset(ReadOnlyProviderOperation)
+
+    @property
+    def active(self) -> bool:
+        return self._candidate.dispose_count == 0
 
 
 class _RequestToken:
@@ -573,6 +599,8 @@ def test_nonmatched_binding_disposes_candidate_and_never_publishes(
     assert evidence.failure_code is failure
     assert evidence.candidate_disposed is True
     assert harness.candidate.dispose_count == 1
+    assert harness.candidate.capability_issue_count == 0
+    assert harness.service.authenticated_read_only_capability() is None
     assert harness.service.current_context() is None
     status = harness.service.session_status()
     assert status.context_state is AuthenticatedContextState.ABSENT
@@ -594,6 +622,10 @@ def test_matched_only_context_is_atomic_active_and_not_verified() -> None:
     assert status.provider_availability is ProviderAvailabilityState.NOT_VERIFIED
     assert status.context_reusable is True
     assert harness.candidate.availability_count == 0
+    capability = harness.service.authenticated_read_only_capability()
+    assert capability is harness.candidate.capability
+    assert capability.operations == frozenset(ReadOnlyProviderOperation)
+    assert harness.candidate.capability_issue_count == 1
     with pytest.raises(RuntimeError, match="AUTHENTICATED_CONTEXT_ALREADY_ACTIVE"):
         harness.service.begin_login()
     assert harness.service.authentication_attempt_status(handle) is evidence
@@ -703,6 +735,7 @@ def test_end_kronos_session_is_local_idempotent_and_attempt_is_immutable() -> No
     harness.service.end_kronos_session()
 
     assert harness.candidate.dispose_count == 1
+    assert harness.service.authenticated_read_only_capability() is None
     assert harness.candidate.availability_count == 0
     assert harness.adapter.exchange_count == 1
     assert harness.service.authentication_attempt_status(handle) is evidence

@@ -15,10 +15,12 @@ from kronos.configuration.principals import (
     PrincipalEvidence,
 )
 from kronos.provider.contracts.provider_authentication import (
+    AuthenticatedReadOnlyProviderCapability,
     AuthenticationCallbackListener,
     LoginNavigator,
     ProviderAuthenticationAdapter,
     ProviderCandidateContext,
+    ReadOnlyProviderOperation,
 )
 from kronos.provider.exceptions.connectivity import (
     ProviderConnectivityError,
@@ -193,6 +195,7 @@ class ProviderAuthenticationService:
         "__governed",
         "__governed_cleanup_recorded",
         "__records",
+        "__read_only_capability",
     )
 
     def __init__(
@@ -271,6 +274,9 @@ class ProviderAuthenticationService:
         self.__latest_handle: _AttemptHandle | None = None
         self.__context: AuthenticatedProviderContext | None = None
         self.__candidate: _AvailabilityCandidate | None = None
+        self.__read_only_capability: (
+            AuthenticatedReadOnlyProviderCapability | None
+        ) = None
         self.__context_state = AuthenticatedContextState.ABSENT
         self.__availability = ProviderAvailabilityState.NOT_VERIFIED
 
@@ -483,6 +489,9 @@ class ProviderAuthenticationService:
                 attempt_id=record.attempt.attempt_id,
                 binding_result=PrincipalBindingResult.MATCHED,
             )
+            read_only_capability = candidate.issue_read_only_capability()
+            if not _read_only_capability_contract(read_only_capability):
+                raise TypeError
             transitioned = self.__transition(
                 record,
                 AuthenticationAttemptState.SUCCEEDED,
@@ -497,6 +506,7 @@ class ProviderAuthenticationService:
         with self.__lock:
             self.__context = context
             self.__candidate = candidate  # type: ignore[assignment]
+            self.__read_only_capability = read_only_capability
             self.__context_state = AuthenticatedContextState.ACTIVE
             self.__availability = ProviderAvailabilityState.NOT_VERIFIED
             record.candidate = None
@@ -631,6 +641,21 @@ class ProviderAuthenticationService:
 
         return self.__context
 
+    def authenticated_read_only_capability(
+        self,
+    ) -> AuthenticatedReadOnlyProviderCapability | None:
+        """Return only the matched, active opaque capability handoff."""
+
+        with self.__lock:
+            capability = self.__read_only_capability
+            if (
+                capability is None
+                or self.__context_state is not AuthenticatedContextState.ACTIVE
+                or not capability.active
+            ):
+                return None
+            return capability
+
     def end_kronos_session(self) -> None:
         """End and dispose the local context without a Provider mutation."""
 
@@ -640,6 +665,7 @@ class ProviderAuthenticationService:
             candidate = self.__candidate
             context = self.__context
             self.__candidate = None
+            self.__read_only_capability = None
             self.__availability = ProviderAvailabilityState.NOT_VERIFIED
             if context is not None:
                 self.__context_state = AuthenticatedContextState.ENDED
@@ -824,6 +850,7 @@ class ProviderAuthenticationService:
             context = self.__context
             candidate = self.__candidate
             self.__candidate = None
+            self.__read_only_capability = None
             self.__context_state = AuthenticatedContextState.EXPIRED
             self.__availability = ProviderAvailabilityState.INDETERMINATE
             if context is not None:
@@ -897,9 +924,33 @@ class ProviderAuthenticationService:
 
 
 def _candidate_contract(candidate: object) -> bool:
-    return callable(getattr(candidate, "principal_evidence", None)) and callable(
-        getattr(candidate, "dispose_local", None)
+    return (
+        callable(getattr(candidate, "principal_evidence", None))
+        and callable(getattr(candidate, "issue_read_only_capability", None))
+        and callable(getattr(candidate, "dispose_local", None))
     )
+
+
+def _read_only_capability_contract(capability: object) -> bool:
+    try:
+        return (
+            capability.operations == frozenset(ReadOnlyProviderOperation)
+            and capability.active is True
+            and not any(
+                hasattr(capability, name)
+                for name in (
+                    "api_secret",
+                    "access_token",
+                    "client",
+                    "sdk_client",
+                    "place_order",
+                    "modify_order",
+                    "cancel_order",
+                )
+            )
+        )
+    except Exception:
+        return False
 
 
 def _exchange_failure(error: Exception) -> AuthenticationFailureCode:

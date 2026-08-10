@@ -129,6 +129,9 @@ class GovernedKiteAuthenticationRuntime:
     def current_context(self) -> object:
         return self.__provider.current_context()
 
+    def authenticated_read_only_capability(self) -> object:
+        return self.__provider.authenticated_read_only_capability()
+
     def verify_provider_availability(self) -> object:
         raise LiveCompositionError(LiveCompositionFailure.INVALID_ACTIVATION)
 

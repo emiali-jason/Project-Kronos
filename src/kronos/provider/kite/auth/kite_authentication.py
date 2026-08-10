@@ -7,6 +7,7 @@ from zoneinfo import ZoneInfo
 
 from kronos.provider.contracts.authentication import AuthenticationProvider
 from kronos.provider.contracts.provider_authentication import (
+    AuthenticatedReadOnlyProviderCapability,
     AuthenticationAttemptHandle,
 )
 from kronos.provider.models.authentication import (
@@ -131,6 +132,16 @@ class KiteAuthentication:
                 valid_until=self.__valid_until,
             )
         return replace(context, valid_until=self.__valid_until)
+
+    def authenticated_read_only_capability(
+        self,
+    ) -> AuthenticatedReadOnlyProviderCapability | None:
+        """Delegate the opaque capability only while Kite context remains valid."""
+
+        self.__apply_documented_expiry()
+        if self.__expired or self.__ended:
+            return None
+        return self.__service.authenticated_read_only_capability()
 
     def end_kronos_session(self) -> None:
         """Dispose the local service context without Provider mutation."""

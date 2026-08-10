@@ -2,6 +2,7 @@
 
 from collections.abc import Callable
 from datetime import datetime
+from enum import StrEnum
 from typing import Protocol
 
 from kronos.configuration.credentials import SecretLease
@@ -21,10 +22,58 @@ from kronos.provider.models.authentication import (
     SessionStatus,
 )
 from kronos.provider.models.context import AuthenticatedProviderContext
+from kronos.provider.contracts.instrument import InstrumentRecord
+from kronos.provider.contracts.market_data import (
+    HistoricalCandle,
+    HistoricalCandleRequest,
+    LtpSnapshot,
+    OhlcSnapshot,
+    QuoteSnapshot,
+)
 
 
 class AuthenticationAttemptHandle(Protocol):
     """Opaque, non-serializable service capability."""
+
+
+class ReadOnlyProviderOperation(StrEnum):
+    """The complete bounded operation set of an authenticated read-only handle."""
+
+    INSTRUMENTS = "instruments"
+    HISTORICAL_DATA = "historical_data"
+    QUOTE = "quote"
+    LTP = "ltp"
+    OHLC = "ohlc"
+
+
+class AuthenticatedReadOnlyProviderCapability(Protocol):
+    """Opaque matched-principal capability; it exposes no Provider client or token."""
+
+    @property
+    def operations(self) -> frozenset[ReadOnlyProviderOperation]:
+        """Return the immutable read-only operation boundary."""
+
+    @property
+    def active(self) -> bool:
+        """Whether the owning authenticated context remains locally usable."""
+
+    def instrument_records(self, exchange: str) -> tuple[InstrumentRecord, ...]:
+        """Return normalized records; raw Provider records never cross this seam."""
+
+    def historical_candles(
+        self,
+        request: HistoricalCandleRequest,
+    ) -> tuple[HistoricalCandle, ...]:
+        """Return normalized candles using only private Provider identity."""
+
+    def quote(self, instrument: InstrumentRecord) -> QuoteSnapshot:
+        """Return a normalized quote without exposing Provider identity."""
+
+    def ltp(self, instrument: InstrumentRecord) -> LtpSnapshot:
+        """Return a normalized last price without exposing Provider identity."""
+
+    def ohlc(self, instrument: InstrumentRecord) -> OhlcSnapshot:
+        """Return normalized OHLC values without exposing Provider identity."""
 
 
 class CanonicalActivationEvidenceVerifier(Protocol):
@@ -137,6 +186,9 @@ class ProviderCandidateContext(Protocol):
     def principal_evidence(self) -> PrincipalEvidence:
         """Produce minimum transient evidence once."""
 
+    def issue_read_only_capability(self) -> AuthenticatedReadOnlyProviderCapability:
+        """Issue one opaque capability after the service proves principal MATCHED."""
+
     def dispose_local(self) -> None:
         """Release local resources without a Provider operation."""
 
@@ -197,6 +249,11 @@ class ProviderAuthenticationService(Protocol):
     def session_status(self) -> SessionStatus:
         """Return the three sanitized state projections."""
 
+    def authenticated_read_only_capability(
+        self,
+    ) -> AuthenticatedReadOnlyProviderCapability | None:
+        """Return the active matched-only capability without exposing credentials."""
+
     def authentication_attempt_status(
         self,
         attempt: AuthenticationAttemptHandle,
@@ -220,6 +277,7 @@ class AuthenticatedContextPublisher(Protocol):
 
 __all__ = [
     "AuthenticatedContextPublisher",
+    "AuthenticatedReadOnlyProviderCapability",
     "AuthenticationAttemptHandle",
     "AuthenticationCallbackListener",
     "CanonicalActivationEvidenceVerifier",
@@ -232,4 +290,5 @@ __all__ = [
     "ProviderAuthenticationAdapter",
     "ProviderAuthenticationService",
     "ProviderCandidateContext",
+    "ReadOnlyProviderOperation",
 ]

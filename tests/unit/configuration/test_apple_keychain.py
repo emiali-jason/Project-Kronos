@@ -5,11 +5,19 @@ from types import SimpleNamespace
 import pytest
 
 from kronos.configuration.apple_keychain import (
+    AppleKeychainApiKeySource,
     AppleKeychainCredentialError,
+    AppleKeychainCredentialPresenceProbe,
+    AppleKeychainCredentialProvisioner,
     AppleKeychainCredentialSource,
     AppleKeychainIntendedPrincipalResolver,
+    PresenceSubprocessRequest,
+    ProvisioningSubprocessRequest,
     SubprocessRequest,
     SubprocessResult,
+    run_security_provisioning_subprocess,
+    run_security_framework_provisioning,
+    run_security_framework_subprocess,
     run_security_subprocess,
 )
 from kronos.configuration.credentials import (
@@ -34,12 +42,39 @@ class _FakeRunner:
         return self.result
 
 
+class _FakeProvisioningRunner:
+    def __init__(self) -> None:
+        self.calls: list[tuple[ProvisioningSubprocessRequest, bytes]] = []
+
+    def __call__(
+        self,
+        request: ProvisioningSubprocessRequest,
+        secret_input: bytes,
+    ) -> SubprocessResult:
+        self.calls.append((request, secret_input))
+        return SubprocessResult(0, b"", b"")
+
+
+class _FakePresenceRunner:
+    def __init__(self, returncodes: list[int]) -> None:
+        self.returncodes = returncodes
+        self.requests: list[PresenceSubprocessRequest] = []
+
+    def __call__(self, request: PresenceSubprocessRequest) -> SubprocessResult:
+        self.requests.append(request)
+        return SubprocessResult(self.returncodes.pop(0), b"metadata", b"")
+
+
 def _source(runner: _FakeRunner) -> AppleKeychainCredentialSource:
     return AppleKeychainCredentialSource(provider="KITE", runner=runner)
 
 
 def _resolver(runner: _FakeRunner) -> AppleKeychainIntendedPrincipalResolver:
     return AppleKeychainIntendedPrincipalResolver(provider="KITE", runner=runner)
+
+
+def _api_key_source(runner: _FakeRunner) -> AppleKeychainApiKeySource:
+    return AppleKeychainApiKeySource(provider="KITE", runner=runner)
 
 
 class _Evidence:
@@ -90,6 +125,199 @@ def test_keychain_command_vector_is_exact_and_contains_no_secret() -> None:
     assert seen == ["unit-secret"]
     with pytest.raises(SecretLeaseError):
         lease.reveal_for_call(lambda _value: None)
+
+
+def test_api_key_uses_separate_protected_application_registration_account() -> None:
+    runner = _FakeRunner(SubprocessResult(0, b"unit-api-key\n", b""))
+
+    lease = _api_key_source(runner).acquire(
+        "ZERODHA-KITE-APP-REGISTRATION-PRIMARY"
+    )
+
+    assert runner.requests == [
+        SubprocessRequest(
+            argv=(
+                "/usr/bin/security",
+                "find-generic-password",
+                "-w",
+                "-s",
+                "com.project-kronos.provider-authentication.kite",
+                "-a",
+                "api-key:ZERODHA-KITE-APP-REGISTRATION-PRIMARY",
+            ),
+            timeout_seconds=5.0,
+        )
+    ]
+    assert repr(_api_key_source(runner)) == "<AppleKeychainApiKeySource redacted>"
+    observed: list[str] = []
+    lease.reveal_for_call(lambda value: observed.append(value))
+    assert observed == ["unit-api-key"]
+
+
+def test_setup_writer_sends_credentials_only_through_stdin() -> None:
+    runner = _FakeProvisioningRunner()
+    provisioner = AppleKeychainCredentialProvisioner(
+        provider="KITE",
+        runner=runner,
+    )
+
+    provisioner.store_api_key("app-primary", "unit-api-key")
+    provisioner.store_api_secret("secret-primary", "unit-api-secret")
+    provisioner.store_intended_principal("principal-primary", "AB1234")
+
+    assert [call[0].argv[-2] for call in runner.calls] == [
+        "api-key:app-primary",
+        "api-secret:secret-primary",
+        "intended-principal:principal-primary",
+    ]
+    assert all(call[0].argv[-1] == "-w" for call in runner.calls)
+    assert all("unit-api" not in repr(call[0]) for call in runner.calls)
+    assert [call[1] for call in runner.calls] == [
+        b"unit-api-key\n",
+        b"unit-api-secret\n",
+        b"AB1234\n",
+    ]
+
+
+def test_real_provisioning_runner_uses_stdin_and_never_argv(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
+
+    def fake_run(*args: object, **kwargs: object) -> object:
+        calls.append((args, kwargs))
+        return SimpleNamespace(returncode=0, stdout=b"", stderr=b"")
+
+    monkeypatch.setattr(
+        "kronos.configuration.apple_keychain.subprocess.run",
+        fake_run,
+    )
+    request = ProvisioningSubprocessRequest(
+        argv=(
+            "/usr/bin/security",
+            "add-generic-password",
+            "-U",
+            "-s",
+            "com.project-kronos.provider-authentication.kite",
+            "-a",
+            "api-key:app-primary",
+            "-w",
+        ),
+        timeout_seconds=5.0,
+    )
+
+    result = run_security_provisioning_subprocess(
+        request,
+        b"unit-api-key\n",
+    )
+
+    assert result.returncode == 0
+    assert calls[0][0] == (request.argv,)
+    assert calls[0][1]["input"] == b"unit-api-key\n"
+    assert "unit-api-key" not in repr(request)
+
+
+def test_framework_provisioning_never_invokes_subprocess(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[bytes, bytes, bytes]] = []
+
+    def fake_store(service: bytes, account: bytes, password: bytes) -> int:
+        calls.append((service, account, password))
+        return 0
+
+    monkeypatch.setattr(
+        "kronos.configuration.apple_keychain._security_framework_store",
+        fake_store,
+    )
+    monkeypatch.setattr(
+        "kronos.configuration.apple_keychain.subprocess.run",
+        lambda *_args, **_kwargs: pytest.fail("subprocess must not execute"),
+    )
+    request = ProvisioningSubprocessRequest(
+        argv=(
+            "/usr/bin/security",
+            "add-generic-password",
+            "-U",
+            "-s",
+            "com.project-kronos.provider-authentication.kite",
+            "-a",
+            "api-key:app-primary",
+            "-w",
+        ),
+        timeout_seconds=5.0,
+    )
+
+    result = run_security_framework_provisioning(
+        request,
+        b"unit-api-key\n",
+    )
+
+    assert result.returncode == 0
+    assert calls == [
+        (
+            b"com.project-kronos.provider-authentication.kite",
+            b"api-key:app-primary",
+            b"unit-api-key",
+        )
+    ]
+
+
+def test_framework_retrieval_uses_kronos_process_identity_without_cli(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[bytes, bytes]] = []
+
+    def fake_retrieve(service: bytes, account: bytes) -> tuple[int, bytes]:
+        calls.append((service, account))
+        return 0, b"unit-api-key\n"
+
+    monkeypatch.setattr(
+        "kronos.configuration.apple_keychain._security_framework_retrieve",
+        fake_retrieve,
+    )
+    monkeypatch.setattr(
+        "kronos.configuration.apple_keychain.subprocess.run",
+        lambda *_args, **_kwargs: pytest.fail("subprocess must not execute"),
+    )
+    request = SubprocessRequest(
+        argv=(
+            "/usr/bin/security",
+            "find-generic-password",
+            "-w",
+            "-s",
+            "com.project-kronos.provider-authentication.kite",
+            "-a",
+            "api-key:app-primary",
+        ),
+        timeout_seconds=5.0,
+    )
+
+    result = run_security_framework_subprocess(request)
+
+    assert result.returncode == 0
+    assert calls == [
+        (
+            b"com.project-kronos.provider-authentication.kite",
+            b"api-key:app-primary",
+        )
+    ]
+
+
+def test_presence_probe_never_requests_keychain_values() -> None:
+    runner = _FakePresenceRunner([0, 44])
+    probe = AppleKeychainCredentialPresenceProbe(
+        provider="KITE",
+        runner=runner,
+    )
+
+    assert probe.api_key_stored("app-primary") is True
+    assert probe.api_secret_stored("secret-primary") is False
+    assert all("-w" not in request.argv for request in runner.requests)
+    assert [request.argv[-1] for request in runner.requests] == [
+        "api-key:app-primary",
+        "api-secret:secret-primary",
+    ]
 
 
 @pytest.mark.parametrize("reference", ["", "space ref", "../ref", "x" * 65])
@@ -371,3 +599,5 @@ def test_intended_principal_operation_failure_closes_lease_and_is_sanitized() ->
     assert result.outcome is IntendedPrincipalResolutionOutcome.SANITIZED_FAILURE
     assert captured[0].closed is True  # type: ignore[attr-defined]
     assert "raw" not in repr(result)
+    PresenceSubprocessRequest,
+    ProvisioningSubprocessRequest,

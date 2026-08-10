@@ -1,4 +1,6 @@
 from dataclasses import FrozenInstanceError
+import json
+from pathlib import Path
 
 import pytest
 
@@ -296,6 +298,7 @@ def test_plaintext_secret_alone_cannot_satisfy_car016() -> None:
 
 def test_car016_loader_does_not_read_plaintext_secret_environment(
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     monkeypatch.setattr(loader, "load_dotenv", lambda: None)
     monkeypatch.setenv("KRONOS_PROVIDER", "KITE")
@@ -305,12 +308,240 @@ def test_car016_loader_does_not_read_plaintext_secret_environment(
     monkeypatch.setenv("KRONOS_KITE_INTENDED_REGISTRATION_REF", "sponsor-primary")
     monkeypatch.delenv("KRONOS_KITE_REDIRECT_URL", raising=False)
 
-    configuration = loader.load_provider_authentication_configuration()
+    configuration = loader.load_provider_authentication_configuration(
+        application_config_path=tmp_path / "missing.json"
+    )
 
     assert configuration.provider == "KITE"
     assert configuration.redirect_uri == CAR016_KITE_REDIRECT_URL
     assert configuration.credential_ref == "kite-primary"
     assert "must-not-be-loaded" not in repr(configuration)
+
+
+def _application_configuration() -> dict[str, str]:
+    return {
+        "KRONOS_PROVIDER": "KITE",
+        "KRONOS_KITE_REDIRECT_URL": CAR016_KITE_REDIRECT_URL,
+        "KRONOS_KITE_CREDENTIAL_REF": "KITE-API-SECRET-PRIMARY",
+        "KRONOS_KITE_INTENDED_REGISTRATION_REF": (
+            "KITE-INTENDED-PRINCIPAL-PRIMARY"
+        ),
+        "KRONOS_PROVIDER_CONFIGURATION_REF": (
+            "ZERODHA-KITE-PROVIDER-CONFIG-PRIMARY"
+        ),
+        "KRONOS_KITE_APPLICATION_REGISTRATION_REF": (
+            "ZERODHA-KITE-APP-REGISTRATION-PRIMARY"
+        ),
+    }
+
+
+def _write_application_configuration(path: Path, values: object) -> None:
+    path.write_text(json.dumps(values), encoding="utf-8")
+
+
+class _ApiKeyLease:
+    def __init__(self) -> None:
+        self.closed = False
+
+    def reveal_for_call(self, operation):  # type: ignore[no-untyped-def]
+        try:
+            return operation("unit-api-key")
+        finally:
+            self.close()
+
+    def close(self) -> None:
+        self.closed = True
+
+
+class _ApiKeySource:
+    def __init__(self) -> None:
+        self.references: list[str] = []
+        self.lease = _ApiKeyLease()
+
+    def acquire(self, reference: str) -> _ApiKeyLease:
+        self.references.append(reference)
+        return self.lease
+
+
+class _UnavailableApiKeySource:
+    def acquire(self, _reference: str) -> _ApiKeyLease:
+        raise RuntimeError("raw protected backend detail")
+
+
+def test_gui_process_loads_durable_non_secret_configuration_without_environment(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "provider-authentication.json"
+    _write_application_configuration(path, _application_configuration())
+    api_key_source = _ApiKeySource()
+
+    configuration = loader.load_provider_authentication_configuration(
+        application_config_path=path,
+        environment={},
+        api_key_source=api_key_source,
+    )
+
+    assert configuration.provider == "KITE"
+    assert configuration.redirect_uri == CAR016_KITE_REDIRECT_URL
+    assert configuration.credential_ref == "KITE-API-SECRET-PRIMARY"
+    assert (
+        configuration.intended_registration_ref
+        == "KITE-INTENDED-PRINCIPAL-PRIMARY"
+    )
+    assert "unit-api-key" not in repr(configuration)
+    assert api_key_source.references == [
+        "ZERODHA-KITE-APP-REGISTRATION-PRIMARY"
+    ]
+    assert api_key_source.lease.closed is True
+
+
+def test_application_configuration_location_is_independent_of_working_directory(
+    tmp_path: Path,
+) -> None:
+    path = loader.provider_authentication_application_config_path(home=tmp_path)
+
+    assert path == (
+        tmp_path
+        / "Library"
+        / "Application Support"
+        / "Project-KRONOS"
+        / "provider-authentication.json"
+    )
+
+
+def test_provisioner_atomically_writes_only_approved_non_secret_values(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "app" / "provider-authentication.json"
+
+    written = loader.provision_provider_authentication_application_config(
+        path=path
+    )
+    values = json.loads(path.read_text(encoding="utf-8"))
+
+    assert written == path
+    assert values == _application_configuration()
+    assert path.stat().st_mode & 0o777 == 0o600
+    assert not any(
+        name in values
+        for name in (
+            "KRONOS_KITE_API_KEY",
+            "KRONOS_KITE_API_SECRET",
+            "KRONOS_KITE_ACCESS_TOKEN",
+            "KRONOS_KITE_REQUEST_TOKEN",
+            "KRONOS_KITE_CALLBACK_TOKEN",
+        )
+    )
+    assert loader.provider_authentication_application_config_ready(path=path)
+
+
+def test_durable_application_configuration_does_not_accept_ambient_override(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "provider-authentication.json"
+    _write_application_configuration(path, _application_configuration())
+    api_key_source = _ApiKeySource()
+
+    configuration = loader.load_provider_authentication_configuration(
+        application_config_path=path,
+        environment={
+            "KRONOS_PROVIDER": "OTHER",
+            "KRONOS_KITE_API_KEY": "ambient-key-must-not-be-used",
+        },
+        api_key_source=api_key_source,
+    )
+
+    assert configuration.provider == "KITE"
+    assert api_key_source.references == [
+        "ZERODHA-KITE-APP-REGISTRATION-PRIMARY"
+    ]
+    assert "ambient-key-must-not-be-used" not in repr(configuration)
+
+
+@pytest.mark.parametrize(
+    "protected_key",
+    [
+        "KRONOS_KITE_API_KEY",
+        "KRONOS_KITE_API_SECRET",
+        "KRONOS_KITE_ACCESS_TOKEN",
+        "KRONOS_KITE_REQUEST_TOKEN",
+        "KRONOS_KITE_CALLBACK_TOKEN",
+    ],
+)
+def test_protected_material_is_rejected_from_application_configuration(
+    tmp_path: Path,
+    protected_key: str,
+) -> None:
+    path = tmp_path / "provider-authentication.json"
+    values = _application_configuration()
+    values[protected_key] = "must-not-be-persisted"
+    _write_application_configuration(path, values)
+
+    with pytest.raises(
+        ConfigurationError,
+        match="PROVIDER_AUTHENTICATION_PROTECTED_CONFIGURATION_PROHIBITED",
+    ) as captured:
+        loader.load_provider_authentication_configuration(
+            application_config_path=path,
+            environment={},
+        )
+
+    assert "must-not-be-persisted" not in str(captured.value)
+
+
+@pytest.mark.parametrize(
+    "values",
+    [
+        {"KRONOS_PROVIDER": "KITE"},
+        [],
+        "not-a-record",
+    ],
+)
+def test_incomplete_or_invalid_application_configuration_fails_sanitized(
+    tmp_path: Path,
+    values: object,
+) -> None:
+    path = tmp_path / "provider-authentication.json"
+    _write_application_configuration(path, values)
+
+    with pytest.raises(
+        ConfigurationError,
+        match="PROVIDER_AUTHENTICATION_APPLICATION_CONFIGURATION_INVALID",
+    ):
+        loader.load_provider_authentication_configuration(
+            application_config_path=path,
+            environment={},
+        )
+
+
+def test_missing_application_configuration_fails_sanitized(tmp_path: Path) -> None:
+    with pytest.raises(
+        ConfigurationError,
+        match="PROVIDER_AUTHENTICATION_APPLICATION_CONFIGURATION_UNAVAILABLE",
+    ):
+        loader.load_provider_authentication_configuration(
+            application_config_path=tmp_path / "missing.json",
+            environment={},
+        )
+
+
+def test_unavailable_api_key_source_fails_with_sanitized_configuration_code(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "provider-authentication.json"
+    _write_application_configuration(path, _application_configuration())
+
+    with pytest.raises(
+        ConfigurationError,
+        match="PROVIDER_AUTHENTICATION_API_KEY_UNAVAILABLE",
+    ) as captured:
+        loader.load_provider_authentication_configuration(
+            application_config_path=path,
+            environment={},
+            api_key_source=_UnavailableApiKeySource(),
+        )
+
+    assert "raw protected backend detail" not in str(captured.value)
 
 
 def test_legacy_loader_behavior_remains_available_outside_car016(

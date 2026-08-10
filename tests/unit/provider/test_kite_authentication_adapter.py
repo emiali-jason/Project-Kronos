@@ -14,6 +14,7 @@ from kronos.provider.adapters.kite.authentication import (
     KiteContextEvidence,
     create_kite_authentication_adapter,
 )
+from kronos.provider.contracts.provider_authentication import ReadOnlyProviderOperation
 from kronos.provider.exceptions.connectivity import (
     ProviderConnectivityError,
     ProviderErrorCode,
@@ -46,6 +47,7 @@ class _FakeKiteClient:
     exchange_effect: object = {"access_token": _ACCESS_TOKEN}
     profile_effects: list[object] = [{"user_id": _PRINCIPAL}]
     close_effect: BaseException | None = None
+    instrument_effects: list[object] = []
 
     def __init__(self, **arguments: object) -> None:
         self.arguments = arguments
@@ -53,6 +55,8 @@ class _FakeKiteClient:
         self.exchange_count = 0
         self.profile_count = 0
         self.invalidate_count = 0
+        self.instruments_count = 0
+        self.instrument_exchanges: list[str] = []
         self.login_count = 0
         self.request_token_matched = False
         self.api_secret_matched = False
@@ -84,6 +88,14 @@ class _FakeKiteClient:
         self.profile_count += 1
         effects = type(self).profile_effects
         effect = effects.pop(0)
+        if isinstance(effect, BaseException):
+            raise effect
+        return effect
+
+    def instruments(self, exchange: str) -> object:
+        self.instruments_count += 1
+        self.instrument_exchanges.append(exchange)
+        effect = type(self).instrument_effects.pop(0)
         if isinstance(effect, BaseException):
             raise effect
         return effect
@@ -135,6 +147,7 @@ def _fake_sdk(monkeypatch: pytest.MonkeyPatch) -> None:
     }
     _FakeKiteClient.profile_effects = [{"user_id": _PRINCIPAL}]
     _FakeKiteClient.close_effect = None
+    _FakeKiteClient.instrument_effects = []
     monkeypatch.setattr(client_module, "_KiteConnect", _FakeKiteClient)
 
 
@@ -285,6 +298,53 @@ def test_principal_evidence_uses_exact_canonical_case_sensitive_comparison(
         assert provider_principal not in gc.get_referents(candidate)
     with pytest.raises(RuntimeError, match="PRINCIPAL_EVIDENCE_UNAVAILABLE"):
         evidence.compare_expected(expected_principal)
+
+
+def test_matched_candidate_issues_one_opaque_read_only_capability() -> None:
+    _, candidate, _, _, client = _candidate()
+
+    with pytest.raises(ProviderConnectivityError):
+        candidate.issue_read_only_capability()
+
+    evidence = candidate.principal_evidence()
+    assert evidence.compare_expected(_PRINCIPAL) is PrincipalBindingResult.MATCHED
+    capability = candidate.issue_read_only_capability()
+
+    assert capability.operations == frozenset(ReadOnlyProviderOperation)
+    assert capability.active is True
+    assert repr(capability) == "<AuthenticatedReadOnlyProviderCapability redacted>"
+    assert client.profile_count == 1
+    for prohibited in (
+        "api_secret",
+        "access_token",
+        "client",
+        "sdk_client",
+        "place_order",
+        "modify_order",
+        "cancel_order",
+    ):
+        assert not hasattr(capability, prohibited)
+    with pytest.raises(TypeError):
+        pickle.dumps(capability)
+    with pytest.raises(ProviderConnectivityError):
+        candidate.issue_read_only_capability()
+
+    candidate.dispose_local()
+    assert capability.active is False
+    assert client.reqsession.close_count == 1
+    assert client.invalidate_count == 0
+
+
+def test_session_expiry_invalidates_read_only_capability_without_exposure() -> None:
+    _, candidate, _, _, client = _candidate()
+    evidence = candidate.principal_evidence()
+    assert evidence.compare_expected(_PRINCIPAL) is PrincipalBindingResult.MATCHED
+    capability = candidate.issue_read_only_capability()
+
+    client.expire_session()
+
+    assert capability.active is False
+    assert client.invalidate_count == 0
 
 
 @pytest.mark.parametrize("profile", [None, [], "raw", {"other": "field"}])

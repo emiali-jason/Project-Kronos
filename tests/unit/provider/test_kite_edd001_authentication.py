@@ -82,6 +82,7 @@ class _FakeAuthoritativeService:
         self.end_count = 0
         self.attempt_status_count = 0
         self.last_attempt: object | None = None
+        self.read_only_capability = object()
 
     def begin_login(self) -> object:
         self.begin_count += 1
@@ -138,6 +139,9 @@ class _FakeAuthoritativeService:
     def current_context(self) -> AuthenticatedProviderContext | None:
         return self.context
 
+    def authenticated_read_only_capability(self) -> object | None:
+        return self.read_only_capability if self.context is not None else None
+
     def end_kronos_session(self) -> None:
         self.end_count += 1
         self.availability = ProviderAvailabilityState.NOT_VERIFIED
@@ -187,6 +191,9 @@ def test_success_exposes_only_matched_bound_context() -> None:
     assert context.validity is ContextValidity.VALID
     assert context.binding_result is PrincipalBindingResult.MATCHED
     assert context.attempt_id == service.outcome.attempt_id
+    assert provider.authenticated_read_only_capability() is (
+        service.read_only_capability
+    )
 
 
 def test_success_does_not_automatically_verify_availability() -> None:
@@ -219,6 +226,7 @@ def test_failed_attempt_publishes_no_context_and_performs_no_verification() -> N
     provider.complete_callback(provider.begin_login())
 
     assert provider.current_context() is None
+    assert provider.authenticated_read_only_capability() is None
     assert service.verify_count == 0
 
 
@@ -257,6 +265,7 @@ def test_end_kronos_session_delegates_one_local_disposal() -> None:
     assert context is not None
     assert context.validity is ContextValidity.TERMINATED
     assert context.reuse_eligibility is ContextReuseEligibility.INELIGIBLE
+    assert provider.authenticated_read_only_capability() is None
 
 
 def test_repeated_end_is_local_and_never_verifies_provider() -> None:
@@ -296,6 +305,7 @@ def test_kite_expiry_disposes_locally_and_projects_expired_state() -> None:
     assert context is not None
     assert context.validity is ContextValidity.INVALID
     assert context.reuse_eligibility is ContextReuseEligibility.INELIGIBLE
+    assert provider.authenticated_read_only_capability() is None
 
 
 def test_expiry_cleanup_is_idempotent_and_blocks_availability_call() -> None:

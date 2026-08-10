@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 import subprocess
+import ctypes
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 
@@ -31,9 +32,11 @@ _PRINCIPAL_PATTERN = re.compile(r"[A-Za-z0-9]{1,64}\Z")
 _MISSING_RETURN_CODES = frozenset({44})
 _ACCESS_DENIED_RETURN_CODES = frozenset({36, 51})
 _MINIMAL_ENVIRONMENT = (("LANG", "C"), ("PATH", "/usr/bin:/bin"))
+_API_KEY_PURPOSE = "api-key:"
 _API_SECRET_PURPOSE = "api-secret:"
 _INTENDED_PRINCIPAL_PURPOSE = "intended-principal:"
 _ALLOWED_ACCOUNT_PURPOSES = (
+    _API_KEY_PURPOSE,
     _API_SECRET_PURPOSE,
     _INTENDED_PRINCIPAL_PURPOSE,
 )
@@ -85,6 +88,38 @@ class SubprocessResult:
 
 
 SubprocessRunner = Callable[[SubprocessRequest], SubprocessResult]
+
+
+@dataclass(frozen=True, slots=True)
+class ProvisioningSubprocessRequest:
+    """Inspectable Keychain write request containing no credential value."""
+
+    argv: tuple[str, ...]
+    timeout_seconds: float
+    shell: bool = False
+    capture_output: bool = True
+    environment: tuple[tuple[str, str], ...] = _MINIMAL_ENVIRONMENT
+
+
+ProvisioningSubprocessRunner = Callable[
+    [ProvisioningSubprocessRequest, bytes],
+    SubprocessResult,
+]
+
+
+@dataclass(frozen=True, slots=True)
+class PresenceSubprocessRequest:
+    """Metadata-only Keychain query that never requests a stored value."""
+
+    argv: tuple[str, ...]
+    timeout_seconds: float
+    shell: bool = False
+    stdin_devnull: bool = True
+    capture_output: bool = True
+    environment: tuple[tuple[str, str], ...] = _MINIMAL_ENVIRONMENT
+
+
+PresenceSubprocessRunner = Callable[[PresenceSubprocessRequest], SubprocessResult]
 
 
 class AppleKeychainCredentialError(RuntimeError):
@@ -152,6 +187,239 @@ class AppleKeychainCredentialSource:
 
     def __reduce_ex__(self, _protocol: int) -> object:
         raise TypeError("CREDENTIAL_SOURCE_SERIALIZATION_PROHIBITED")
+
+
+class AppleKeychainApiKeySource:
+    """Retrieve one protected API key for an application-registration reference."""
+
+    __slots__ = ("_provider", "_runner", "_timeout_seconds")
+
+    def __init__(
+        self,
+        *,
+        provider: str,
+        runner: SubprocessRunner,
+        timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
+    ) -> None:
+        if not _valid_reference(provider) or not (
+            0 < timeout_seconds <= MAX_TIMEOUT_SECONDS
+        ):
+            raise AppleKeychainCredentialError(
+                CredentialRetrievalOutcome.MALFORMED
+            )
+        self._provider = provider.lower()
+        self._runner = runner
+        self._timeout_seconds = timeout_seconds
+
+    def acquire(self, application_registration_ref: str) -> SecretLease:
+        """Acquire one API-key lease without exposing its value."""
+
+        if not _valid_reference(application_registration_ref):
+            raise AppleKeychainCredentialError(
+                CredentialRetrievalOutcome.MALFORMED
+            )
+        request = SubprocessRequest(
+            argv=(
+                SECURITY_EXECUTABLE,
+                "find-generic-password",
+                "-w",
+                "-s",
+                f"{SERVICE_PREFIX}{self._provider}",
+                "-a",
+                f"{_API_KEY_PURPOSE}{application_registration_ref}",
+            ),
+            timeout_seconds=self._timeout_seconds,
+        )
+        stdout = _retrieve_once(self._runner, request)
+        api_key = _decode_secret(stdout)
+        return OneUseSecretLease(api_key)
+
+    def __repr__(self) -> str:
+        return "<AppleKeychainApiKeySource redacted>"
+
+    __str__ = __repr__
+
+    def __reduce_ex__(self, _protocol: int) -> object:
+        raise TypeError("API_KEY_SOURCE_SERIALIZATION_PROHIBITED")
+
+
+class AppleKeychainCredentialProvisioner:
+    """Setup-only writer for API-key and API-secret Keychain items."""
+
+    __slots__ = ("_provider", "_runner", "_timeout_seconds")
+
+    def __init__(
+        self,
+        *,
+        provider: str,
+        runner: ProvisioningSubprocessRunner,
+        timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
+    ) -> None:
+        if not _valid_reference(provider) or not (
+            0 < timeout_seconds <= MAX_TIMEOUT_SECONDS
+        ):
+            raise AppleKeychainCredentialError(
+                CredentialRetrievalOutcome.MALFORMED
+            )
+        self._provider = provider.lower()
+        self._runner = runner
+        self._timeout_seconds = timeout_seconds
+
+    def store_api_key(self, reference: str, value: str) -> None:
+        self._store(_API_KEY_PURPOSE, reference, value)
+
+    def store_api_secret(self, reference: str, value: str) -> None:
+        self._store(_API_SECRET_PURPOSE, reference, value)
+
+    def store_intended_principal(self, reference: str, value: str) -> None:
+        self._store(_INTENDED_PRINCIPAL_PURPOSE, reference, value)
+
+    def _store(self, purpose: str, reference: str, value: str) -> None:
+        if (
+            purpose
+            not in {
+                _API_KEY_PURPOSE,
+                _API_SECRET_PURPOSE,
+                _INTENDED_PRINCIPAL_PURPOSE,
+            }
+            or not _valid_reference(reference)
+            or not isinstance(value, str)
+            or not value
+            or "\x00" in value
+            or "\n" in value
+            or "\r" in value
+        ):
+            raise AppleKeychainCredentialError(
+                CredentialRetrievalOutcome.MALFORMED
+            )
+        request = ProvisioningSubprocessRequest(
+            argv=(
+                SECURITY_EXECUTABLE,
+                "add-generic-password",
+                "-U",
+                "-s",
+                f"{SERVICE_PREFIX}{self._provider}",
+                "-a",
+                f"{purpose}{reference}",
+                "-w",
+            ),
+            timeout_seconds=self._timeout_seconds,
+        )
+        secret_input = value.encode("utf-8") + b"\n"
+        try:
+            result = self._runner(request, secret_input)
+            stdout, stderr = result._take_output()
+            stdout = b""
+            stderr = b""
+            if result.returncode != 0:
+                raise AppleKeychainCredentialError(
+                    _outcome_for_returncode(result.returncode)
+                )
+        except AppleKeychainCredentialError:
+            raise
+        except TimeoutError:
+            raise AppleKeychainCredentialError(
+                CredentialRetrievalOutcome.TIMED_OUT
+            ) from None
+        except Exception:
+            raise AppleKeychainCredentialError(
+                CredentialRetrievalOutcome.BACKEND_UNAVAILABLE
+            ) from None
+        finally:
+            secret_input = b""
+
+    def __repr__(self) -> str:
+        return "<AppleKeychainCredentialProvisioner redacted>"
+
+    __str__ = __repr__
+
+    def __reduce_ex__(self, _protocol: int) -> object:
+        raise TypeError("CREDENTIAL_PROVISIONER_SERIALIZATION_PROHIBITED")
+
+
+class AppleKeychainCredentialPresenceProbe:
+    """Check item presence without retrieving API-key or API-secret values."""
+
+    __slots__ = ("_provider", "_runner", "_timeout_seconds")
+
+    def __init__(
+        self,
+        *,
+        provider: str,
+        runner: PresenceSubprocessRunner,
+        timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
+    ) -> None:
+        if not _valid_reference(provider) or not (
+            0 < timeout_seconds <= MAX_TIMEOUT_SECONDS
+        ):
+            raise AppleKeychainCredentialError(
+                CredentialRetrievalOutcome.MALFORMED
+            )
+        self._provider = provider.lower()
+        self._runner = runner
+        self._timeout_seconds = timeout_seconds
+
+    def api_key_stored(self, reference: str) -> bool:
+        return self._stored(_API_KEY_PURPOSE, reference)
+
+    def api_secret_stored(self, reference: str) -> bool:
+        return self._stored(_API_SECRET_PURPOSE, reference)
+
+    def intended_principal_stored(self, reference: str) -> bool:
+        return self._stored(_INTENDED_PRINCIPAL_PURPOSE, reference)
+
+    def _stored(self, purpose: str, reference: str) -> bool:
+        if (
+            purpose
+            not in {
+                _API_KEY_PURPOSE,
+                _API_SECRET_PURPOSE,
+                _INTENDED_PRINCIPAL_PURPOSE,
+            }
+            or not _valid_reference(reference)
+        ):
+            raise AppleKeychainCredentialError(
+                CredentialRetrievalOutcome.MALFORMED
+            )
+        request = PresenceSubprocessRequest(
+            argv=(
+                SECURITY_EXECUTABLE,
+                "find-generic-password",
+                "-s",
+                f"{SERVICE_PREFIX}{self._provider}",
+                "-a",
+                f"{purpose}{reference}",
+            ),
+            timeout_seconds=self._timeout_seconds,
+        )
+        try:
+            result = self._runner(request)
+            result._take_output()
+        except TimeoutError:
+            raise AppleKeychainCredentialError(
+                CredentialRetrievalOutcome.TIMED_OUT
+            ) from None
+        except AppleKeychainCredentialError:
+            raise
+        except Exception:
+            raise AppleKeychainCredentialError(
+                CredentialRetrievalOutcome.BACKEND_UNAVAILABLE
+            ) from None
+        if result.returncode == 0:
+            return True
+        if result.returncode in _MISSING_RETURN_CODES:
+            return False
+        raise AppleKeychainCredentialError(
+            _outcome_for_returncode(result.returncode)
+        )
+
+    def __repr__(self) -> str:
+        return "<AppleKeychainCredentialPresenceProbe redacted>"
+
+    __str__ = __repr__
+
+    def __reduce_ex__(self, _protocol: int) -> object:
+        raise TypeError("CREDENTIAL_PRESENCE_PROBE_SERIALIZATION_PROHIBITED")
 
 
 class AppleKeychainIntendedPrincipalResolver:
@@ -270,6 +538,246 @@ def run_security_subprocess(request: SubprocessRequest) -> SubprocessResult:
     )
 
 
+def run_security_framework_subprocess(
+    request: SubprocessRequest,
+) -> SubprocessResult:
+    """Retrieve through Security.framework under the KRONOS process identity."""
+
+    if not _valid_security_request(request):
+        raise AppleKeychainCredentialError(CredentialRetrievalOutcome.MALFORMED)
+    service = request.argv[4].encode("utf-8")
+    account = request.argv[6].encode("utf-8")
+    try:
+        status, value = _security_framework_retrieve(service, account)
+    except Exception:
+        raise AppleKeychainCredentialError(
+            CredentialRetrievalOutcome.BACKEND_UNAVAILABLE
+        ) from None
+    return SubprocessResult(status, value, b"")
+
+
+def run_security_provisioning_subprocess(
+    request: ProvisioningSubprocessRequest,
+    secret_input: bytes,
+) -> SubprocessResult:
+    """Write one item using stdin; the credential never enters argv."""
+
+    if not _valid_provisioning_request(request) or not isinstance(
+        secret_input,
+        bytes,
+    ):
+        raise AppleKeychainCredentialError(CredentialRetrievalOutcome.MALFORMED)
+    try:
+        completed = subprocess.run(
+            request.argv,
+            shell=False,
+            check=False,
+            input=secret_input,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=request.timeout_seconds,
+            env=_environment_mapping(request.environment),
+        )
+    except subprocess.TimeoutExpired:
+        raise TimeoutError from None
+    return SubprocessResult(
+        returncode=completed.returncode,
+        stdout=completed.stdout,
+        stderr=completed.stderr,
+    )
+
+
+def run_security_framework_provisioning(
+    request: ProvisioningSubprocessRequest,
+    secret_input: bytes,
+) -> SubprocessResult:
+    """Store one credential through Security.framework, never a command line."""
+
+    if (
+        not _valid_provisioning_request(request)
+        or not isinstance(secret_input, bytes)
+        or not secret_input.endswith(b"\n")
+        or len(secret_input) <= 1
+    ):
+        raise AppleKeychainCredentialError(CredentialRetrievalOutcome.MALFORMED)
+    service = request.argv[4].encode("utf-8")
+    account = request.argv[6].encode("utf-8")
+    password = secret_input[:-1]
+    try:
+        status = _security_framework_store(service, account, password)
+    except Exception:
+        raise AppleKeychainCredentialError(
+            CredentialRetrievalOutcome.BACKEND_UNAVAILABLE
+        ) from None
+    finally:
+        password = b""
+    return SubprocessResult(status, b"", b"")
+
+
+def _security_framework_store(
+    service: bytes,
+    account: bytes,
+    password: bytes,
+) -> int:
+    security = ctypes.CDLL(
+        "/System/Library/Frameworks/Security.framework/Security"
+    )
+    core_foundation = ctypes.CDLL(
+        "/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation"
+    )
+    uint32 = ctypes.c_uint32
+    pointer = ctypes.c_void_p
+    status_type = ctypes.c_int32
+    security.SecKeychainFindGenericPassword.argtypes = (
+        pointer,
+        uint32,
+        pointer,
+        uint32,
+        pointer,
+        pointer,
+        pointer,
+        ctypes.POINTER(pointer),
+    )
+    security.SecKeychainFindGenericPassword.restype = status_type
+    security.SecKeychainAddGenericPassword.argtypes = (
+        pointer,
+        uint32,
+        pointer,
+        uint32,
+        pointer,
+        uint32,
+        pointer,
+        ctypes.POINTER(pointer),
+    )
+    security.SecKeychainAddGenericPassword.restype = status_type
+    security.SecKeychainItemModifyAttributesAndData.argtypes = (
+        pointer,
+        pointer,
+        uint32,
+        pointer,
+    )
+    security.SecKeychainItemModifyAttributesAndData.restype = status_type
+    core_foundation.CFRelease.argtypes = (pointer,)
+    core_foundation.CFRelease.restype = None
+
+    service_buffer = ctypes.create_string_buffer(service)
+    account_buffer = ctypes.create_string_buffer(account)
+    password_buffer = ctypes.create_string_buffer(password)
+    item = pointer()
+    status = security.SecKeychainFindGenericPassword(
+        None,
+        len(service),
+        service_buffer,
+        len(account),
+        account_buffer,
+        None,
+        None,
+        ctypes.byref(item),
+    )
+    try:
+        if status == 0:
+            return int(
+                security.SecKeychainItemModifyAttributesAndData(
+                    item,
+                    None,
+                    len(password),
+                    password_buffer,
+                )
+            )
+        if status == -25300:
+            return int(
+                security.SecKeychainAddGenericPassword(
+                    None,
+                    len(service),
+                    service_buffer,
+                    len(account),
+                    account_buffer,
+                    len(password),
+                    password_buffer,
+                    None,
+                )
+            )
+        return int(status)
+    finally:
+        if item.value:
+            core_foundation.CFRelease(item)
+
+
+def _security_framework_retrieve(
+    service: bytes,
+    account: bytes,
+) -> tuple[int, bytes]:
+    security = ctypes.CDLL(
+        "/System/Library/Frameworks/Security.framework/Security"
+    )
+    uint32 = ctypes.c_uint32
+    pointer = ctypes.c_void_p
+    status_type = ctypes.c_int32
+    security.SecKeychainFindGenericPassword.argtypes = (
+        pointer,
+        uint32,
+        pointer,
+        uint32,
+        pointer,
+        ctypes.POINTER(uint32),
+        ctypes.POINTER(pointer),
+        pointer,
+    )
+    security.SecKeychainFindGenericPassword.restype = status_type
+    security.SecKeychainItemFreeContent.argtypes = (pointer, pointer)
+    security.SecKeychainItemFreeContent.restype = status_type
+
+    service_buffer = ctypes.create_string_buffer(service)
+    account_buffer = ctypes.create_string_buffer(account)
+    value_length = uint32()
+    value_pointer = pointer()
+    status = int(
+        security.SecKeychainFindGenericPassword(
+            None,
+            len(service),
+            service_buffer,
+            len(account),
+            account_buffer,
+            ctypes.byref(value_length),
+            ctypes.byref(value_pointer),
+            None,
+        )
+    )
+    if status != 0:
+        return status, b""
+    try:
+        return status, ctypes.string_at(value_pointer, value_length.value) + b"\n"
+    finally:
+        security.SecKeychainItemFreeContent(None, value_pointer)
+
+
+def run_security_presence_subprocess(
+    request: PresenceSubprocessRequest,
+) -> SubprocessResult:
+    """Inspect Keychain item presence without requesting its value."""
+
+    if not _valid_presence_request(request):
+        raise AppleKeychainCredentialError(CredentialRetrievalOutcome.MALFORMED)
+    try:
+        completed = subprocess.run(
+            request.argv,
+            shell=False,
+            check=False,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=request.timeout_seconds,
+            env=_environment_mapping(request.environment),
+        )
+    except subprocess.TimeoutExpired:
+        raise TimeoutError from None
+    return SubprocessResult(
+        returncode=completed.returncode,
+        stdout=completed.stdout,
+        stderr=completed.stderr,
+    )
+
+
 def _environment_mapping(entries: tuple[tuple[str, str], ...]) -> Mapping[str, str]:
     environment = dict(entries)
     if environment != dict(_MINIMAL_ENVIRONMENT):
@@ -301,6 +809,66 @@ def _valid_security_request(request: SubprocessRequest) -> bool:
         _valid_reference(service.removeprefix(SERVICE_PREFIX))
         and account_reference is not None
         and _valid_reference(account_reference)
+    )
+
+
+def _valid_provisioning_request(request: ProvisioningSubprocessRequest) -> bool:
+    if request.shell or not request.capture_output:
+        return False
+    if not 0 < request.timeout_seconds <= MAX_TIMEOUT_SECONDS:
+        return False
+    if len(request.argv) != 8:
+        return False
+    executable, operation, update, service_flag, service, account_flag, account, prompt = (
+        request.argv
+    )
+    account_reference = _account_reference(account)
+    return (
+        executable == SECURITY_EXECUTABLE
+        and operation == "add-generic-password"
+        and update == "-U"
+        and service_flag == "-s"
+        and account_flag == "-a"
+        and prompt == "-w"
+        and service.startswith(SERVICE_PREFIX)
+        and _valid_reference(service.removeprefix(SERVICE_PREFIX))
+        and account_reference is not None
+        and _valid_reference(account_reference)
+        and account.startswith(
+            (
+                _API_KEY_PURPOSE,
+                _API_SECRET_PURPOSE,
+                _INTENDED_PRINCIPAL_PURPOSE,
+            )
+        )
+    )
+
+
+def _valid_presence_request(request: PresenceSubprocessRequest) -> bool:
+    if request.shell or not request.stdin_devnull or not request.capture_output:
+        return False
+    if not 0 < request.timeout_seconds <= MAX_TIMEOUT_SECONDS:
+        return False
+    if len(request.argv) != 6:
+        return False
+    executable, operation, service_flag, service, account_flag, account = request.argv
+    account_reference = _account_reference(account)
+    return (
+        executable == SECURITY_EXECUTABLE
+        and operation == "find-generic-password"
+        and service_flag == "-s"
+        and account_flag == "-a"
+        and service.startswith(SERVICE_PREFIX)
+        and _valid_reference(service.removeprefix(SERVICE_PREFIX))
+        and account_reference is not None
+        and _valid_reference(account_reference)
+        and account.startswith(
+            (
+                _API_KEY_PURPOSE,
+                _API_SECRET_PURPOSE,
+                _INTENDED_PRINCIPAL_PURPOSE,
+            )
+        )
     )
 
 
