@@ -1,4 +1,66 @@
-"""Deterministic Swing Zero classification."""
+"""Deterministic Swing product contracts."""
+
+from kronos.swing.candidate_validation import (
+    SwingCandidate,
+    SwingCandidateValidation,
+    SwingFormingAudit,
+    SwingPredicateAudit,
+    extract_qualified_candidates,
+    validate_qualified_candidates,
+)
+from kronos.swing.candidate_ranking import (
+    SWING_PHASE1_CANDIDATE_RANKING_POLICY_ID,
+    CandidateRanking,
+    InstrumentAttentionGroup,
+    RankedTradePlan,
+    rank_trade_plans,
+)
+
+from kronos.swing.daily_data import (
+    MINIMUM_COMPLETED_DAILY_CANDLES,
+    OPERATIONAL_DAILY_HISTORY_DEPTH,
+    SwingDailyDataset,
+    SwingDailyFailure,
+    SwingDailySeries,
+    SwingDailyStatus,
+    build_swing_daily_dataset,
+)
+from kronos.swing.market_assessment import (
+    SwingAssessmentCounts,
+    SwingInstrumentAssessments,
+    SwingMarketAssessment,
+    SwingMarketAssessmentFailure,
+    assess_swing_market,
+)
+from kronos.swing.trade_plan import (
+    SWING_PHASE1_TRADE_PLAN_POLICY_ID,
+    TradePlan,
+    TradePlanConstructionError,
+    TradePlanFailure,
+    TradePlanStatus,
+    build_trade_plan,
+)
+from kronos.swing.top_opportunity import (
+    ATTENTION_RISK_REWARD_STANDARD,
+    MAXIMUM_TOP_OPPORTUNITIES,
+    SWING_PHASE1_TOP_OPPORTUNITY_POLICY_ID,
+    AttentionEligibility,
+    AttentionPlan,
+    InstrumentAttentionEntry,
+    TopOpportunity,
+    TopOpportunitySelection,
+    select_top_opportunities,
+)
+
+from kronos.swing.universe import (
+    SWING_PHASE1_UNIVERSE,
+    SwingUniverseAssetClass,
+    SwingUniverseError,
+    SwingUniverseFailure,
+    SwingUniverseMember,
+    enabled_swing_phase1_universe,
+    load_swing_phase1_universe,
+)
 
 from kronos.swing.zero import (
     SWING_ZERO_POLICY_ID,
@@ -13,13 +75,58 @@ from kronos.swing.zero import (
 )
 
 __all__ = [
+    "MINIMUM_COMPLETED_DAILY_CANDLES",
+    "ATTENTION_RISK_REWARD_STANDARD",
+    "MAXIMUM_TOP_OPPORTUNITIES",
+    "OPERATIONAL_DAILY_HISTORY_DEPTH",
+    "SWING_PHASE1_UNIVERSE",
+    "SWING_PHASE1_TRADE_PLAN_POLICY_ID",
+    "SWING_PHASE1_TOP_OPPORTUNITY_POLICY_ID",
+    "SWING_PHASE1_CANDIDATE_RANKING_POLICY_ID",
     "SWING_ZERO_POLICY_ID",
+    "SwingCandidate",
+    "CandidateRanking",
+    "AttentionEligibility",
+    "AttentionPlan",
+    "SwingCandidateValidation",
     "SwingAnalysisError",
     "SwingAnalysisFailure",
+    "SwingAssessmentCounts",
     "SwingAssessment",
     "SwingDirection",
+    "SwingFormingAudit",
+    "SwingInstrumentAssessments",
+    "InstrumentAttentionGroup",
+    "InstrumentAttentionEntry",
+    "SwingMarketAssessment",
+    "SwingMarketAssessmentFailure",
+    "SwingPredicateAudit",
+    "SwingDailyDataset",
+    "SwingDailyFailure",
+    "SwingDailySeries",
+    "SwingDailyStatus",
     "SwingSetup",
     "SwingState",
     "SwingTrend",
+    "TradePlan",
+    "TradePlanConstructionError",
+    "TradePlanFailure",
+    "TradePlanStatus",
+    "RankedTradePlan",
+    "TopOpportunity",
+    "TopOpportunitySelection",
+    "SwingUniverseAssetClass",
+    "SwingUniverseError",
+    "SwingUniverseFailure",
+    "SwingUniverseMember",
     "analyze_swing_zero",
+    "assess_swing_market",
+    "build_swing_daily_dataset",
+    "build_trade_plan",
+    "enabled_swing_phase1_universe",
+    "extract_qualified_candidates",
+    "load_swing_phase1_universe",
+    "rank_trade_plans",
+    "select_top_opportunities",
+    "validate_qualified_candidates",
 ]

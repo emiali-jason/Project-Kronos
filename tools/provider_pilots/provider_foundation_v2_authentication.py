@@ -14,8 +14,14 @@ from kronos.configuration.exceptions import ConfigurationError
 from kronos.configuration.principals import PrincipalBindingResult
 from kronos.provider.models.authentication import AuthenticationAttemptState
 from tools.provider_pilots.provider_foundation_v2_historical_proof import (
+    SanitizedDailyDatasetProof,
     SanitizedHistoricalProof,
     SanitizedLiveSnapshotProof,
+    SanitizedMarketAssessmentProof,
+    SanitizedCandidateValidationProof,
+    SanitizedCandidateRankingProof,
+    SanitizedResolutionProof,
+    SanitizedTradePlanProof,
     _build_provider,
     execute_equity_batch_proof,
     execute_equity_quote_batch_proof,
@@ -23,8 +29,15 @@ from tools.provider_pilots.provider_foundation_v2_historical_proof import (
     execute_live_snapshot_proof,
     execute_mcx_batch_proof,
     execute_mcx_quote_batch_proof,
+    execute_swing_daily_dataset_proof,
+    execute_swing_market_assessment_proof,
+    execute_swing_candidate_validation_proof,
+    execute_swing_candidate_ranking_proof,
+    execute_swing_trade_plan_proof,
+    execute_universe_resolution_proof,
     load_equity_symbols,
 )
+from kronos.swing.universe import enabled_swing_phase1_universe
 
 
 WINDOW_TITLE = "KRONOS — Connect to Kite"
@@ -42,6 +55,12 @@ class SanitizedAuthenticationEvidence:
     instrument_master: str = ""
     historical_proofs: tuple[SanitizedHistoricalProof, ...] = ()
     live_snapshot_proofs: tuple[SanitizedLiveSnapshotProof, ...] = ()
+    resolution_proofs: tuple[SanitizedResolutionProof, ...] = ()
+    daily_dataset_proof: SanitizedDailyDatasetProof | None = None
+    market_assessment_proof: SanitizedMarketAssessmentProof | None = None
+    candidate_validation_proof: SanitizedCandidateValidationProof | None = None
+    trade_plan_proof: SanitizedTradePlanProof | None = None
+    candidate_ranking_proof: SanitizedCandidateRankingProof | None = None
 
     def render(self) -> str:
         lines = (
@@ -59,6 +78,32 @@ class SanitizedAuthenticationEvidence:
             (f"Instrument Master: {self.instrument_master}",)
             + tuple(proof.render() for proof in self.historical_proofs)
             + tuple(proof.render() for proof in self.live_snapshot_proofs)
+            + tuple(proof.render() for proof in self.resolution_proofs)
+            + (
+                (self.daily_dataset_proof.render(),)
+                if self.daily_dataset_proof is not None
+                else ()
+            )
+            + (
+                (self.market_assessment_proof.render(),)
+                if self.market_assessment_proof is not None
+                else ()
+            )
+            + (
+                (self.candidate_validation_proof.render(),)
+                if self.candidate_validation_proof is not None
+                else ()
+            )
+            + (
+                (self.trade_plan_proof.render(),)
+                if self.trade_plan_proof is not None
+                else ()
+            )
+            + (
+                (self.candidate_ranking_proof.render(),)
+                if self.candidate_ranking_proof is not None
+                else ()
+            )
             if self.instrument_master
             else ()
         )
@@ -75,6 +120,12 @@ class _AuthenticationWindow:
         mcx_symbols: tuple[str, ...] = (),
         live_snapshot_proof: bool = False,
         quote_only_proof: bool = False,
+        universe_resolution_proof: bool = False,
+        swing_daily_dataset_proof: bool = False,
+        swing_market_assessment_proof: bool = False,
+        swing_candidate_validation_proof: bool = False,
+        swing_trade_plan_proof: bool = False,
+        swing_candidate_ranking_proof: bool = False,
     ) -> None:
         self._root = root
         self._provider: object | None = None
@@ -83,6 +134,12 @@ class _AuthenticationWindow:
         self._mcx_symbols = mcx_symbols
         self._live_snapshot_proof = live_snapshot_proof
         self._quote_only_proof = quote_only_proof
+        self._universe_resolution_proof = universe_resolution_proof
+        self._swing_daily_dataset_proof = swing_daily_dataset_proof
+        self._swing_market_assessment_proof = swing_market_assessment_proof
+        self._swing_candidate_validation_proof = swing_candidate_validation_proof
+        self._swing_trade_plan_proof = swing_trade_plan_proof
+        self._swing_candidate_ranking_proof = swing_candidate_ranking_proof
         root.title(WINDOW_TITLE)
         root.resizable(False, False)
         frame = ttk.Frame(root, padding=18)
@@ -167,8 +224,69 @@ class _AuthenticationWindow:
                 and active
             )
             if succeeded:
+                daily_dataset_proof = None
+                market_assessment_proof = None
+                candidate_validation_proof = None
+                trade_plan_proof = None
+                candidate_ranking_proof = None
                 try:
-                    if self._live_snapshot_proof:
+                    if getattr(self, "_swing_candidate_ranking_proof", False):
+                        candidate_ranking_proof = (
+                            execute_swing_candidate_ranking_proof(
+                                provider,
+                                universe=enabled_swing_phase1_universe(),
+                            )
+                        )
+                        proofs = ()
+                        live_proofs = ()
+                        resolution_proofs = ()
+                    elif getattr(self, "_swing_trade_plan_proof", False):
+                        trade_plan_proof = execute_swing_trade_plan_proof(
+                            provider,
+                            universe=enabled_swing_phase1_universe(),
+                        )
+                        proofs = ()
+                        live_proofs = ()
+                        resolution_proofs = ()
+                    elif getattr(self, "_swing_candidate_validation_proof", False):
+                        candidate_validation_proof = (
+                            execute_swing_candidate_validation_proof(
+                                provider,
+                                universe=enabled_swing_phase1_universe(),
+                            )
+                        )
+                        proofs = ()
+                        live_proofs = ()
+                        resolution_proofs = ()
+                    elif getattr(self, "_swing_market_assessment_proof", False):
+                        market_assessment_proof = (
+                            execute_swing_market_assessment_proof(
+                                provider,
+                                universe=enabled_swing_phase1_universe(),
+                                now=datetime.now(UTC),
+                            )
+                        )
+                        proofs = ()
+                        live_proofs = ()
+                        resolution_proofs = ()
+                    elif getattr(self, "_swing_daily_dataset_proof", False):
+                        daily_dataset_proof = execute_swing_daily_dataset_proof(
+                            provider,
+                            universe=enabled_swing_phase1_universe(),
+                            now=datetime.now(UTC),
+                        )
+                        proofs = ()
+                        live_proofs = ()
+                        resolution_proofs = ()
+                    elif getattr(self, "_universe_resolution_proof", False):
+                        resolution_proofs = execute_universe_resolution_proof(
+                            provider,
+                            universe=enabled_swing_phase1_universe(),
+                            now=datetime.now(UTC),
+                        )
+                        proofs = ()
+                        live_proofs = ()
+                    elif self._live_snapshot_proof:
                         if self._quote_only_proof and self._equity_symbols:
                             live_proofs = execute_equity_quote_batch_proof(
                                 provider,
@@ -207,6 +325,8 @@ class _AuthenticationWindow:
                         )
                     if not self._live_snapshot_proof:
                         live_proofs = ()
+                    if not getattr(self, "_universe_resolution_proof", False):
+                        resolution_proofs = ()
                 except Exception:
                     evidence = SanitizedAuthenticationEvidence(
                         "PASS",
@@ -229,6 +349,12 @@ class _AuthenticationWindow:
                         instrument_master="PASS",
                         historical_proofs=proofs,
                         live_snapshot_proofs=live_proofs,
+                        resolution_proofs=resolution_proofs,
+                        daily_dataset_proof=daily_dataset_proof,
+                        market_assessment_proof=market_assessment_proof,
+                        candidate_validation_proof=candidate_validation_proof,
+                        trade_plan_proof=trade_plan_proof,
+                        candidate_ranking_proof=candidate_ranking_proof,
                     )
             else:
                 callback = "PASS" if outcome.callback_consumed else "FAIL"
@@ -290,6 +416,12 @@ def main() -> None:
     parser.add_argument("--mcx-symbol", action="append", default=[])
     parser.add_argument("--live-snapshot-proof", action="store_true")
     parser.add_argument("--quote-only-proof", action="store_true")
+    parser.add_argument("--universe-resolution-proof", action="store_true")
+    parser.add_argument("--swing-daily-dataset-proof", action="store_true")
+    parser.add_argument("--swing-market-assessment-proof", action="store_true")
+    parser.add_argument("--swing-candidate-validation-proof", action="store_true")
+    parser.add_argument("--swing-trade-plan-proof", action="store_true")
+    parser.add_argument("--swing-candidate-ranking-proof", action="store_true")
     arguments = parser.parse_args()
     symbols = (
         load_equity_symbols(arguments.equity_symbols_csv)
@@ -305,6 +437,14 @@ def main() -> None:
             arguments.live_snapshot_proof or arguments.quote_only_proof
         ),
         quote_only_proof=arguments.quote_only_proof,
+        universe_resolution_proof=arguments.universe_resolution_proof,
+        swing_daily_dataset_proof=arguments.swing_daily_dataset_proof,
+        swing_market_assessment_proof=arguments.swing_market_assessment_proof,
+        swing_candidate_validation_proof=(
+            arguments.swing_candidate_validation_proof
+        ),
+        swing_trade_plan_proof=arguments.swing_trade_plan_proof,
+        swing_candidate_ranking_proof=arguments.swing_candidate_ranking_proof,
     )
     root.mainloop()
 

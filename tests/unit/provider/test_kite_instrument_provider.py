@@ -380,6 +380,34 @@ def test_optional_kite_name_outer_padding_is_normalized(
             "NIFTY 50",
         ),
         (
+            InstrumentKind.NSE_INDEX,
+            "BANK NIFTY",
+            "NSE",
+            _raw(
+                token=112,
+                exchange="NSE",
+                segment="INDICES",
+                symbol="NIFTY BANK",
+                name="NIFTY BANK",
+                instrument_type="EQ",
+            ),
+            "NIFTY BANK",
+        ),
+        (
+            InstrumentKind.NSE_EQUITY,
+            "BAJAJ_AUTO",
+            "NSE",
+            _raw(
+                token=113,
+                exchange="NSE",
+                segment="NSE",
+                symbol="BAJAJ-AUTO",
+                name="BAJAJ AUTO LIMITED",
+                instrument_type="EQ",
+            ),
+            "BAJAJ-AUTO",
+        ),
+        (
             InstrumentKind.MCX_FUTURE,
             "GOLD",
             "MCX",
@@ -467,6 +495,27 @@ def test_non_authoritative_name_does_not_change_exact_nse_identity_resolution(
     resolved = provider.resolve(_request(kind, symbol))
 
     assert resolved.trading_symbol in {"RELIANCE", "NIFTY 50"}
+
+
+def test_unknown_nse_alias_is_not_inferred() -> None:
+    record = InstrumentRecord(
+        provider="KITE",
+        exchange="NSE",
+        segment="NSE",
+        trading_symbol="UNKNOWN-SYMBOL",
+        name="UNKNOWN",
+        instrument_type="EQ",
+        expiry=None,
+    )
+
+    with pytest.raises(InstrumentResolutionError) as captured:
+        KiteInstrumentProvider.resolve_from_records(  # type: ignore[misc]
+            object(),
+            (record,),
+            _request(InstrumentKind.NSE_EQUITY, "UNKNOWN_SYMBOL"),
+        )
+
+    assert captured.value.failure is InstrumentResolutionFailure.NO_MATCH
 
 
 def test_many_equities_resolve_from_one_retrieved_master(

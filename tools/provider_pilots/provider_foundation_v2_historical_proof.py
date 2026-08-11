@@ -13,6 +13,7 @@ import threading
 import time
 import tkinter as tk
 from tkinter import ttk
+from zoneinfo import ZoneInfo
 import webbrowser
 
 from kronos.configuration.apple_keychain import (
@@ -55,9 +56,35 @@ from kronos.provider.models.authentication import AuthenticationAttemptState
 from kronos.provider.services.provider_authentication import (
     ProviderAuthenticationService,
 )
+from kronos.swing.daily_data import (
+    SwingDailyDataset,
+    SwingDailyStatus,
+    build_swing_daily_dataset,
+)
+from kronos.swing.candidate_validation import (
+    SwingCandidateValidation,
+    validate_qualified_candidates,
+)
+from kronos.swing.market_assessment import (
+    SwingMarketAssessment,
+    assess_swing_market,
+)
+from kronos.swing.trade_plan import TradePlan, TradePlanStatus, build_trade_plan
+from kronos.swing.candidate_ranking import CandidateRanking, rank_trade_plans
+from kronos.swing.zero import SwingState
+from kronos.swing.universe import (
+    SwingUniverseAssetClass,
+    SwingUniverseMember,
+)
 
 
 WINDOW_TITLE = "KRONOS — Provider Foundation V2 Historical Proof"
+FROZEN_STAGE4_OBSERVATION_BOUNDARY = datetime(
+    2026,
+    8,
+    7,
+    tzinfo=ZoneInfo("Asia/Kolkata"),
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -107,6 +134,254 @@ class SanitizedLiveSnapshotProof:
             suffix = f" | {value}" if value else f" | {failure}" if failure else ""
             lines.append(f"{label}: {status}{suffix}")
         return "\n".join(lines)
+
+
+@dataclass(frozen=True, slots=True)
+class SanitizedResolutionProof:
+    """Sanitized canonical-to-Provider resolution evidence."""
+
+    canonical_identity: str
+    status: str
+    provider_identity: str = ""
+    failure: str = ""
+
+    def render(self) -> str:
+        if self.status == "PASS":
+            return f"{self.canonical_identity}: PASS"
+        return f"{self.canonical_identity}: FAIL | {self.failure}"
+
+
+@dataclass(frozen=True, slots=True)
+class SanitizedDailyDatasetProof:
+    """Aggregate evidence for one bounded 98-member completed-Daily run."""
+
+    dataset: SwingDailyDataset
+    nse_equities_ready: int
+    indices_ready: int
+    commodities_ready: int
+    current_incomplete_daily_excluded: bool
+    elapsed_seconds: float
+    failures: tuple[tuple[str, str], ...]
+
+    def render(self) -> str:
+        lines = (
+            f"Universe requested: {self.dataset.requested_count}",
+            f"READY: {self.dataset.ready_count}/98",
+            f"FAILED / UNAVAILABLE: {self.dataset.unavailable_count}/98",
+            f"NSE equities ready: {self.nse_equities_ready}/91",
+            f"Indices ready: {self.indices_ready}/2",
+            f"Commodities ready: {self.commodities_ready}/5",
+            "Current incomplete Daily candle excluded: "
+            + ("PASS" if self.current_incomplete_daily_excluded else "FAIL"),
+            f"Elapsed real run time: {self.elapsed_seconds:.3f} seconds",
+        )
+        failure_lines = tuple(
+            f"{identity}: UNAVAILABLE | {failure}"
+            for identity, failure in self.failures
+        )
+        return "\n".join(lines + failure_lines)
+
+
+@dataclass(frozen=True, slots=True)
+class SanitizedMarketAssessmentProof:
+    """Aggregate and actionable-state evidence from the frozen Swing engine."""
+
+    result: SwingMarketAssessment
+    analysis_elapsed_seconds: float
+
+    def render(self) -> str:
+        counts = self.result.counts
+        lines = (
+            f"Run identity: {self.result.run_identity}",
+            "Observation boundary: "
+            f"{self.result.observation_boundary.isoformat()}",
+            f"Instruments assessed: {self.result.assessed_count}/98",
+            f"Analysis failures: {self.result.failure_count}",
+            f"Setup assessments: {self.result.assessment_count}/196",
+            "PULLBACK CONTINUATION:",
+            f"NO_SETUP: {counts.pullback_no_setup}",
+            f"FORMING LONG: {counts.pullback_forming_long}",
+            f"FORMING SHORT: {counts.pullback_forming_short}",
+            f"QUALIFIED LONG: {counts.pullback_qualified_long}",
+            f"QUALIFIED SHORT: {counts.pullback_qualified_short}",
+            "CONSOLIDATION BREAKOUT:",
+            f"NO_SETUP: {counts.breakout_no_setup}",
+            f"FORMING: {counts.breakout_forming}",
+            f"QUALIFIED LONG: {counts.breakout_qualified_long}",
+            f"QUALIFIED SHORT: {counts.breakout_qualified_short}",
+            "FORMING instruments:",
+        )
+        forming = _render_market_states(self.result, SwingState.FORMING)
+        qualified = _render_market_states(self.result, SwingState.QUALIFIED)
+        return "\n".join(
+            lines
+            + (forming if forming else ("NONE",))
+            + ("QUALIFIED instruments:",)
+            + (qualified if qualified else ("NONE",))
+            + (
+                "Analysis elapsed time: "
+                f"{self.analysis_elapsed_seconds:.6f} seconds",
+            )
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class SanitizedCandidateValidationProof:
+    """Sanitized Stage-5 audit evidence from the frozen Stage-4 boundary."""
+
+    validation: SwingCandidateValidation
+
+    def render(self) -> str:
+        validation = self.validation
+        hdfc = tuple(
+            candidate
+            for candidate in validation.candidates
+            if candidate.canonical_identity == "HDFCBANK"
+        )
+        overall = (
+            validation.passed
+            and len(validation.candidates) == 12
+            and validation.unique_instrument_count == 11
+            and len(hdfc) == 2
+            and len({candidate.setup for candidate in hdfc}) == 2
+        )
+        lines = (
+            f"Stage 5: {'PASS' if overall else 'FAIL'}",
+            "Frozen observation boundary: "
+            f"{validation.observation_boundary.isoformat()}",
+            f"Qualified setup assessments: {len(validation.candidates)}/12",
+            "Unique qualified instruments: "
+            f"{validation.unique_instrument_count}/11",
+            "QUALIFIED predicate audits:",
+        )
+        audits = tuple(
+            f"{audit.candidate.canonical_identity} → "
+            f"{audit.candidate.setup.value} → {audit.candidate.direction.value}: "
+            f"{'PASS' if audit.passed else 'FAIL'}"
+            for audit in validation.audits
+        )
+        forming = tuple(
+            f"FORMING representative: {audit.canonical_identity} → "
+            f"{audit.setup.value} → {audit.direction.value} → "
+            f"{'PASS' if audit.passed else 'FAIL'} → missing={audit.missing_event}"
+            for audit in validation.forming_audits
+        )
+        summary = (
+            "Multiple-setup preservation: "
+            + ("PASS" if len(hdfc) == 2 else "FAIL"),
+            "Candidate extraction: " + ("PASS" if overall else "FAIL"),
+            f"FORMING leakage: {validation.forming_leakage}",
+            f"NO_SETUP leakage: {validation.no_setup_leakage}",
+            "Ranking introduced: NO",
+            "Score introduced: NO",
+            "Confidence introduced: NO",
+            "Trade Plan invented: NO",
+        )
+        return "\n".join(lines + audits + forming + summary)
+
+
+@dataclass(frozen=True, slots=True)
+class SanitizedTradePlanProof:
+    """Sanitized Stage-7 plans from the frozen Stage-5 candidate set."""
+
+    plans: tuple[TradePlan, ...]
+
+    def render(self) -> str:
+        actionable = sum(
+            plan.status is TradePlanStatus.ACTIONABLE for plan in self.plans
+        )
+        not_actionable = sum(
+            plan.status is TradePlanStatus.NOT_ACTIONABLE for plan in self.plans
+        )
+        invalid = sum(plan.status is TradePlanStatus.INVALID for plan in self.plans)
+        lines = [
+            "Stage 7 Trade Plan proof: "
+            + ("PASS" if len(self.plans) == 12 else "FAIL"),
+            f"Trade Plans constructed: {len(self.plans)}/12",
+            f"ACTIONABLE: {actionable}",
+            f"NOT_ACTIONABLE: {not_actionable}",
+            f"INVALID / FAILED: {invalid}",
+        ]
+        for plan in self.plans:
+            lines.extend(
+                (
+                    plan.canonical_identity,
+                    f"Setup: {plan.setup.value}",
+                    f"Direction: {plan.direction.value}",
+                    f"Status: {plan.status.value}",
+                    f"Entry: {_number(plan.entry)}",
+                    f"Entry Condition: {plan.entry_condition}",
+                    f"Stop: {_number(plan.stop)}",
+                    "Thesis Invalidation: "
+                    + " OR ".join(plan.thesis_invalidation),
+                    f"Target 1: {_number(plan.target_1)}",
+                    f"Risk: {_number(plan.risk_per_unit)}",
+                    f"Reward: {_number(plan.reward_per_unit)}",
+                    "R:R: "
+                    + (
+                        _number(plan.risk_reward)
+                        if plan.risk_reward is not None
+                        else "NONE"
+                    ),
+                )
+            )
+        return "\n".join(lines)
+
+
+@dataclass(frozen=True, slots=True)
+class SanitizedCandidateRankingProof:
+    """Sanitized Stage-8 ranking of the frozen Stage-7 plans."""
+
+    ranking: CandidateRanking
+
+    def render(self) -> str:
+        lines = [
+            "Stage 8 Candidate Ranking proof: "
+            + ("PASS" if self.ranking.input_count == 12 else "FAIL"),
+            f"Input Trade Plans: {self.ranking.input_count}",
+            f"Ranked ACTIONABLE: {len(self.ranking.ranked_actionable)}",
+            "Preserved NOT_ACTIONABLE: "
+            f"{len(self.ranking.preserved_not_actionable)}",
+            f"INVALID / FAILED: {len(self.ranking.preserved_invalid)}",
+            f"Policy: {self.ranking.policy_id}",
+        ]
+        lines.extend(
+            f"{item.position}. {item.canonical_identity} | "
+            f"{item.setup.value} | {item.direction.value} | "
+            f"R:R {_number(item.risk_reward)}"
+            for item in self.ranking.ranked_actionable
+        )
+        lines.append(
+            "NOT_ACTIONABLE evidence: "
+            + ", ".join(
+                f"{plan.canonical_identity} ({plan.setup.value})"
+                for plan in self.ranking.preserved_not_actionable
+            )
+        )
+        lines.extend(
+            (
+                f"Instrument attention groups: {len(self.ranking.instrument_groups)}",
+                "Weighted / composite score: NOT IMPLEMENTED",
+                "Top 0–2: NOT IMPLEMENTED",
+                "Stage-9 selection authority introduced: NO",
+            )
+        )
+        return "\n".join(lines)
+
+
+def _render_market_states(
+    result: SwingMarketAssessment,
+    state: SwingState,
+) -> tuple[str, ...]:
+    return tuple(
+        f"{item.canonical_identity} → {assessment.setup.value} → "
+        f"{assessment.direction.value} → {assessment.state.value} → "
+        f"{assessment.why} → "
+        f"next={assessment.next_required_event or '—'}"
+        for item in result.instruments
+        for assessment in item.assessments
+        if assessment.state is state
+    )
 
 
 _TARGETS = (
@@ -352,7 +627,7 @@ def execute_equity_quote_batch_proof(
                 master,
                 InstrumentResolutionRequest(
                     kind=InstrumentKind.NSE_EQUITY,
-                    symbol=_kite_equity_symbol(symbol),
+                    symbol=symbol,
                     as_of=now.date(),
                 ),
             )
@@ -493,6 +768,10 @@ def _snapshot_operation(
         return "FAIL", "", "SANITIZED_PROVIDER_FAILURE"
 
 
+def _number(value: float) -> str:
+    return f"{value:.12g}"
+
+
 def load_equity_symbols(path: Path) -> tuple[str, ...]:
     """Load one bounded, non-sensitive symbol column from a Sponsor CSV."""
 
@@ -537,7 +816,7 @@ def execute_equity_batch_proof(
     for index, symbol in enumerate(symbols):
         request = InstrumentResolutionRequest(
             kind=InstrumentKind.NSE_EQUITY,
-            symbol=_kite_equity_symbol(symbol),
+            symbol=symbol,
             as_of=as_of,
         )
         try:
@@ -594,6 +873,282 @@ def execute_equity_batch_proof(
                 )
             )
     return tuple(proofs)
+
+
+def execute_universe_resolution_proof(
+    provider: object,
+    *,
+    universe: tuple[SwingUniverseMember, ...],
+    now: datetime,
+) -> tuple[SanitizedResolutionProof, ...]:
+    """Resolve one immutable Swing universe through one retained capability."""
+
+    capability_factory = getattr(provider, "authenticated_read_only_capability", None)
+    if not callable(capability_factory):
+        raise RuntimeError("READ_ONLY_CAPABILITY_UNAVAILABLE")
+    capability = capability_factory()
+    if capability is None or getattr(capability, "active", False) is not True:
+        raise RuntimeError("READ_ONLY_CAPABILITY_UNAVAILABLE")
+    instruments = KiteInstrumentProvider(capability)
+    masters = {
+        "NSE": instruments.retrieve("NSE"),
+        "MCX": instruments.retrieve("MCX"),
+    }
+    proofs: list[SanitizedResolutionProof] = []
+    for member in universe:
+        if member.asset_class is SwingUniverseAssetClass.NSE_EQUITY:
+            kind = InstrumentKind.NSE_EQUITY
+            master = masters["NSE"]
+        elif member.asset_class is SwingUniverseAssetClass.NSE_INDEX:
+            kind = InstrumentKind.NSE_INDEX
+            master = masters["NSE"]
+        else:
+            kind = InstrumentKind.MCX_FUTURE
+            master = masters["MCX"]
+        try:
+            resolved = instruments.resolve_from_records(
+                master,
+                InstrumentResolutionRequest(
+                    kind=kind,
+                    symbol=member.canonical_identity,
+                    as_of=now.date(),
+                ),
+            )
+        except InstrumentResolutionError as error:
+            proofs.append(
+                SanitizedResolutionProof(
+                    member.canonical_identity,
+                    "FAIL",
+                    failure=error.failure.value,
+                )
+            )
+        except Exception:
+            proofs.append(
+                SanitizedResolutionProof(
+                    member.canonical_identity,
+                    "FAIL",
+                    failure="SANITIZED_PROVIDER_FAILURE",
+                )
+            )
+        else:
+            proofs.append(
+                SanitizedResolutionProof(
+                    member.canonical_identity,
+                    "PASS",
+                    provider_identity=resolved.trading_symbol,
+                )
+            )
+    return tuple(proofs)
+
+
+def execute_swing_daily_dataset_proof(
+    provider: object,
+    *,
+    universe: tuple[SwingUniverseMember, ...],
+    now: datetime,
+    pace: Callable[[], None] = lambda: time.sleep(0.4),
+    monotonic: Callable[[], float] = time.monotonic,
+) -> SanitizedDailyDatasetProof:
+    """Build the Swing dataset through the retained read-only capability."""
+
+    capability_factory = getattr(provider, "authenticated_read_only_capability", None)
+    if not callable(capability_factory):
+        raise RuntimeError("READ_ONLY_CAPABILITY_UNAVAILABLE")
+    capability = capability_factory()
+    if capability is None or getattr(capability, "active", False) is not True:
+        raise RuntimeError("READ_ONLY_CAPABILITY_UNAVAILABLE")
+
+    instruments = KiteInstrumentProvider(capability)
+    market_data = KiteMarketDataProvider(capability)
+    masters = {
+        "NSE": instruments.retrieve("NSE"),
+        "MCX": instruments.retrieve("MCX"),
+    }
+
+    def resolve(member: SwingUniverseMember):  # type: ignore[no-untyped-def]
+        if member.asset_class is SwingUniverseAssetClass.NSE_EQUITY:
+            kind = InstrumentKind.NSE_EQUITY
+            master = masters["NSE"]
+        elif member.asset_class is SwingUniverseAssetClass.NSE_INDEX:
+            kind = InstrumentKind.NSE_INDEX
+            master = masters["NSE"]
+        else:
+            kind = InstrumentKind.MCX_FUTURE
+            master = masters["MCX"]
+        return instruments.resolve_from_records(
+            master,
+            InstrumentResolutionRequest(
+                kind=kind,
+                symbol=member.canonical_identity,
+                as_of=now.date(),
+            ),
+        )
+
+    historical_calls = 0
+
+    def retrieve(request: HistoricalCandleRequest):  # type: ignore[no-untyped-def]
+        nonlocal historical_calls
+        if historical_calls:
+            pace()
+        historical_calls += 1
+        return market_data.historical_candles(request)
+
+    started = monotonic()
+    dataset = build_swing_daily_dataset(
+        universe,
+        resolve_instrument=resolve,
+        historical_candles=retrieve,
+        now=now,
+    )
+    elapsed = monotonic() - started
+    ready = tuple(
+        record
+        for record in dataset.records
+        if record.status is SwingDailyStatus.READY
+    )
+    failures = tuple(
+        (record.canonical_identity, record.failure.value)
+        for record in dataset.records
+        if record.failure is not None
+    )
+    return SanitizedDailyDatasetProof(
+        dataset=dataset,
+        nse_equities_ready=sum(
+            record.asset_class is SwingUniverseAssetClass.NSE_EQUITY
+            for record in ready
+        ),
+        indices_ready=sum(
+            record.asset_class is SwingUniverseAssetClass.NSE_INDEX
+            for record in ready
+        ),
+        commodities_ready=sum(
+            record.asset_class is SwingUniverseAssetClass.MCX_COMMODITY
+            for record in ready
+        ),
+        current_incomplete_daily_excluded=all(
+            record.observation_boundary is not None
+            and record.observation_boundary.date()
+            < now.astimezone(record.observation_boundary.tzinfo).date()
+            for record in ready
+        ),
+        elapsed_seconds=max(0.0, elapsed),
+        failures=failures,
+    )
+
+
+def execute_swing_market_assessment_proof(
+    provider: object,
+    *,
+    universe: tuple[SwingUniverseMember, ...],
+    now: datetime,
+    pace: Callable[[], None] = lambda: time.sleep(0.4),
+    monotonic: Callable[[], float] = time.monotonic,
+) -> SanitizedMarketAssessmentProof:
+    """Retrieve one Stage-3 dataset, then time only frozen-engine analysis."""
+
+    daily = execute_swing_daily_dataset_proof(
+        provider,
+        universe=universe,
+        now=now,
+        pace=pace,
+    )
+    started = monotonic()
+    result = assess_swing_market(daily.dataset)
+    elapsed = monotonic() - started
+    return SanitizedMarketAssessmentProof(
+        result=result,
+        analysis_elapsed_seconds=max(0.0, elapsed),
+    )
+
+
+def execute_swing_candidate_validation_proof(
+    provider: object,
+    *,
+    universe: tuple[SwingUniverseMember, ...],
+    frozen_boundary: datetime = FROZEN_STAGE4_OBSERVATION_BOUNDARY,
+    pace: Callable[[], None] = lambda: time.sleep(0.4),
+) -> SanitizedCandidateValidationProof:
+    """Reconstruct and audit only the frozen Stage-4 completed-Daily boundary."""
+
+    if (
+        frozen_boundary.tzinfo is None
+        or frozen_boundary.utcoffset() is None
+    ):
+        raise ValueError("FROZEN_OBSERVATION_BOUNDARY_INVALID")
+    daily = execute_swing_daily_dataset_proof(
+        provider,
+        universe=universe,
+        now=frozen_boundary + timedelta(days=1),
+        pace=pace,
+    )
+    market = assess_swing_market(daily.dataset)
+    if market.observation_boundary != frozen_boundary:
+        raise RuntimeError("FROZEN_OBSERVATION_BOUNDARY_MISMATCH")
+    validation = validate_qualified_candidates(market, daily.dataset)
+    return SanitizedCandidateValidationProof(validation)
+
+
+def execute_swing_trade_plan_proof(
+    provider: object,
+    *,
+    universe: tuple[SwingUniverseMember, ...],
+    frozen_boundary: datetime = FROZEN_STAGE4_OBSERVATION_BOUNDARY,
+    pace: Callable[[], None] = lambda: time.sleep(0.4),
+) -> SanitizedTradePlanProof:
+    """Construct Stage-7 plans only from the frozen Stage-5 boundary."""
+
+    if frozen_boundary.tzinfo is None or frozen_boundary.utcoffset() is None:
+        raise ValueError("FROZEN_OBSERVATION_BOUNDARY_INVALID")
+    daily = execute_swing_daily_dataset_proof(
+        provider,
+        universe=universe,
+        now=frozen_boundary + timedelta(days=1),
+        pace=pace,
+    )
+    market = assess_swing_market(daily.dataset)
+    if market.observation_boundary != frozen_boundary:
+        raise RuntimeError("FROZEN_OBSERVATION_BOUNDARY_MISMATCH")
+    validation = validate_qualified_candidates(market, daily.dataset)
+    if (
+        not validation.passed
+        or len(validation.candidates) != 12
+        or validation.unique_instrument_count != 11
+    ):
+        raise RuntimeError("FROZEN_CANDIDATE_SET_MISMATCH")
+    records = {
+        record.canonical_identity: record for record in daily.dataset.records
+    }
+    return SanitizedTradePlanProof(
+        tuple(
+            build_trade_plan(
+                candidate,
+                tuple(
+                    candle
+                    for candle in records[candidate.canonical_identity].candles
+                    if candle.timestamp <= frozen_boundary
+                ),
+            )
+            for candidate in validation.candidates
+        )
+    )
+
+
+def execute_swing_candidate_ranking_proof(
+    provider: object,
+    *,
+    universe: tuple[SwingUniverseMember, ...],
+    frozen_boundary: datetime = FROZEN_STAGE4_OBSERVATION_BOUNDARY,
+    pace: Callable[[], None] = lambda: time.sleep(0.4),
+) -> SanitizedCandidateRankingProof:
+    """Rank the exact frozen Stage-7 plans through the generic V0 policy."""
+
+    trade_plans = execute_swing_trade_plan_proof(
+        provider,
+        universe=universe,
+        frozen_boundary=frozen_boundary,
+        pace=pace,
+    )
+    return SanitizedCandidateRankingProof(rank_trade_plans(trade_plans.plans))
 
 
 def execute_mcx_batch_proof(
@@ -680,12 +1235,6 @@ def execute_mcx_batch_proof(
                 )
             )
     return tuple(proofs)
-
-
-def _kite_equity_symbol(source_symbol: str) -> str:
-    """Translate TradingView's underscore form to NSE's hyphen form."""
-
-    return source_symbol.replace("_", "-")
 
 
 def _build_provider() -> KiteProvider:

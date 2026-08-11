@@ -17,6 +17,11 @@ from kronos.provider.contracts.provider_authentication import (
 
 
 _STANDARD_FUTURE = re.compile(r"(?P<root>[A-Z]+)\d{2}[A-Z]{3}FUT\Z")
+_NSE_EQUITY_SYMBOLS = {"BAJAJ_AUTO": "BAJAJ-AUTO"}
+_NSE_INDEX_SYMBOLS = {
+    "NIFTY": "NIFTY 50",
+    "BANK NIFTY": "NIFTY BANK",
+}
 
 
 class KiteInstrumentProvider(InstrumentProvider):
@@ -107,16 +112,18 @@ def _matches(
         return (
             record.exchange == "NSE"
             and record.segment == "NSE"
-            and record.trading_symbol == request.symbol
+            and record.trading_symbol
+            == _NSE_EQUITY_SYMBOLS.get(request.symbol, request.symbol)
             and record.instrument_type == "EQ"
             and record.expiry is None
         )
     if request.kind is InstrumentKind.NSE_INDEX:
+        provider_symbol = _NSE_INDEX_SYMBOLS.get(request.symbol)
         return (
-            request.symbol == "NIFTY"
+            provider_symbol is not None
             and record.exchange == "NSE"
             and record.segment == "INDICES"
-            and record.trading_symbol == "NIFTY 50"
+            and record.trading_symbol == provider_symbol
             and record.instrument_type == "EQ"
             and record.expiry is None
         )

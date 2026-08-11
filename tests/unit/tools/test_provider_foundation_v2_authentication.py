@@ -8,6 +8,7 @@ from tools.provider_pilots import provider_foundation_v2_authentication as auth
 from tools.provider_pilots.provider_foundation_v2_historical_proof import (
     SanitizedHistoricalProof,
     SanitizedLiveSnapshotProof,
+    SanitizedResolutionProof,
 )
 
 
@@ -222,3 +223,328 @@ def test_sanitized_success_evidence_contains_no_provider_material() -> None:
         "Order capability exposed: NO",
         "Order operations: 0",
     ]
+
+
+def test_universe_mode_uses_same_retained_provider_without_market_data(
+    monkeypatch,
+    capsys,
+) -> None:  # type: ignore[no-untyped-def]
+    capability = SimpleNamespace(active=True)
+
+    class _Provider:
+        def complete_callback(self, attempt):  # type: ignore[no-untyped-def]
+            assert attempt is expected_attempt
+            return SimpleNamespace(
+                state=AuthenticationAttemptState.SUCCEEDED,
+                binding_result=PrincipalBindingResult.MATCHED,
+                callback_consumed=True,
+                failure_code=None,
+            )
+
+        def authenticated_read_only_capability(self):  # type: ignore[no-untyped-def]
+            return capability
+
+    provider = _Provider()
+    expected_attempt = object()
+    proofs = (SanitizedResolutionProof("RELIANCE", "PASS", "RELIANCE"),)
+    captured: list[object] = []
+
+    def execute(received_provider, *, universe, now):  # type: ignore[no-untyped-def]
+        captured.extend((received_provider, universe, now))
+        return proofs
+
+    monkeypatch.setattr(auth, "execute_universe_resolution_proof", execute)
+    rendered: list[auth.SanitizedAuthenticationEvidence] = []
+    window = object.__new__(auth._AuthenticationWindow)
+    window._provider = provider
+    window._attempt = expected_attempt
+    window._equity_symbols = ()
+    window._mcx_symbols = ()
+    window._live_snapshot_proof = False
+    window._quote_only_proof = False
+    window._universe_resolution_proof = True
+    window._root = SimpleNamespace(after=lambda _delay, callback: callback())
+    window._finish = rendered.append
+
+    window._complete()
+
+    assert captured[0] is provider
+    assert len(captured[1]) == 98  # type: ignore[arg-type]
+    assert rendered[0].historical_proofs == ()
+    assert rendered[0].live_snapshot_proofs == ()
+    assert rendered[0].resolution_proofs is proofs
+    assert "RELIANCE: PASS" in rendered[0].render()
+    assert capsys.readouterr().out == ""
+
+
+def test_daily_dataset_mode_uses_same_retained_provider_and_sanitized_evidence(
+    monkeypatch,
+    capsys,
+) -> None:  # type: ignore[no-untyped-def]
+    capability = SimpleNamespace(active=True)
+
+    class _Provider:
+        def complete_callback(self, attempt):  # type: ignore[no-untyped-def]
+            assert attempt is expected_attempt
+            return SimpleNamespace(
+                state=AuthenticationAttemptState.SUCCEEDED,
+                binding_result=PrincipalBindingResult.MATCHED,
+                callback_consumed=True,
+                failure_code=None,
+            )
+
+        def authenticated_read_only_capability(self):  # type: ignore[no-untyped-def]
+            return capability
+
+    provider = _Provider()
+    expected_attempt = object()
+    daily_proof = SimpleNamespace(render=lambda: "READY: 98/98")
+    captured: list[object] = []
+
+    def execute(received_provider, *, universe, now):  # type: ignore[no-untyped-def]
+        captured.extend((received_provider, universe, now))
+        return daily_proof
+
+    monkeypatch.setattr(auth, "execute_swing_daily_dataset_proof", execute)
+    rendered: list[auth.SanitizedAuthenticationEvidence] = []
+    window = object.__new__(auth._AuthenticationWindow)
+    window._provider = provider
+    window._attempt = expected_attempt
+    window._equity_symbols = ()
+    window._mcx_symbols = ()
+    window._live_snapshot_proof = False
+    window._quote_only_proof = False
+    window._universe_resolution_proof = False
+    window._swing_daily_dataset_proof = True
+    window._root = SimpleNamespace(after=lambda _delay, callback: callback())
+    window._finish = rendered.append
+
+    window._complete()
+
+    assert captured[0] is provider
+    assert len(captured[1]) == 98  # type: ignore[arg-type]
+    assert rendered[0].historical_proofs == ()
+    assert rendered[0].resolution_proofs == ()
+    assert rendered[0].daily_dataset_proof is daily_proof
+    assert "READY: 98/98" in rendered[0].render()
+    assert capsys.readouterr().out == ""
+
+
+def test_market_assessment_mode_uses_same_retained_provider_and_sanitized_evidence(
+    monkeypatch,
+    capsys,
+) -> None:  # type: ignore[no-untyped-def]
+    capability = SimpleNamespace(active=True)
+
+    class _Provider:
+        def complete_callback(self, attempt):  # type: ignore[no-untyped-def]
+            assert attempt is expected_attempt
+            return SimpleNamespace(
+                state=AuthenticationAttemptState.SUCCEEDED,
+                binding_result=PrincipalBindingResult.MATCHED,
+                callback_consumed=True,
+                failure_code=None,
+            )
+
+        def authenticated_read_only_capability(self):  # type: ignore[no-untyped-def]
+            return capability
+
+    provider = _Provider()
+    expected_attempt = object()
+    market_proof = SimpleNamespace(render=lambda: "Setup assessments: 196/196")
+    captured: list[object] = []
+
+    def execute(received_provider, *, universe, now):  # type: ignore[no-untyped-def]
+        captured.extend((received_provider, universe, now))
+        return market_proof
+
+    monkeypatch.setattr(auth, "execute_swing_market_assessment_proof", execute)
+    rendered: list[auth.SanitizedAuthenticationEvidence] = []
+    window = object.__new__(auth._AuthenticationWindow)
+    window._provider = provider
+    window._attempt = expected_attempt
+    window._equity_symbols = ()
+    window._mcx_symbols = ()
+    window._live_snapshot_proof = False
+    window._quote_only_proof = False
+    window._universe_resolution_proof = False
+    window._swing_daily_dataset_proof = False
+    window._swing_market_assessment_proof = True
+    window._root = SimpleNamespace(after=lambda _delay, callback: callback())
+    window._finish = rendered.append
+
+    window._complete()
+
+    assert captured[0] is provider
+    assert len(captured[1]) == 98  # type: ignore[arg-type]
+    assert rendered[0].historical_proofs == ()
+    assert rendered[0].resolution_proofs == ()
+    assert rendered[0].daily_dataset_proof is None
+    assert rendered[0].market_assessment_proof is market_proof
+    assert "Setup assessments: 196/196" in rendered[0].render()
+    assert capsys.readouterr().out == ""
+
+
+def test_candidate_validation_mode_uses_same_retained_provider_and_sanitized_evidence(
+    monkeypatch,
+    capsys,
+) -> None:  # type: ignore[no-untyped-def]
+    capability = SimpleNamespace(active=True)
+
+    class _Provider:
+        def complete_callback(self, attempt):  # type: ignore[no-untyped-def]
+            assert attempt is expected_attempt
+            return SimpleNamespace(
+                state=AuthenticationAttemptState.SUCCEEDED,
+                binding_result=PrincipalBindingResult.MATCHED,
+                callback_consumed=True,
+                failure_code=None,
+            )
+
+        def authenticated_read_only_capability(self):  # type: ignore[no-untyped-def]
+            return capability
+
+    provider = _Provider()
+    expected_attempt = object()
+    proof = SimpleNamespace(render=lambda: "Stage 5: PASS")
+    captured: list[object] = []
+
+    def execute(received_provider, *, universe):  # type: ignore[no-untyped-def]
+        captured.extend((received_provider, universe))
+        return proof
+
+    monkeypatch.setattr(auth, "execute_swing_candidate_validation_proof", execute)
+    rendered: list[auth.SanitizedAuthenticationEvidence] = []
+    window = object.__new__(auth._AuthenticationWindow)
+    window._provider = provider
+    window._attempt = expected_attempt
+    window._equity_symbols = ()
+    window._mcx_symbols = ()
+    window._live_snapshot_proof = False
+    window._quote_only_proof = False
+    window._universe_resolution_proof = False
+    window._swing_daily_dataset_proof = False
+    window._swing_market_assessment_proof = False
+    window._swing_candidate_validation_proof = True
+    window._root = SimpleNamespace(after=lambda _delay, callback: callback())
+    window._finish = rendered.append
+
+    window._complete()
+
+    assert captured[0] is provider
+    assert len(captured[1]) == 98  # type: ignore[arg-type]
+    assert rendered[0].candidate_validation_proof is proof
+    assert rendered[0].market_assessment_proof is None
+    assert "Stage 5: PASS" in rendered[0].render()
+    assert capsys.readouterr().out == ""
+
+
+def test_trade_plan_mode_uses_same_retained_provider_and_sanitized_evidence(
+    monkeypatch,
+    capsys,
+) -> None:  # type: ignore[no-untyped-def]
+    capability = SimpleNamespace(active=True)
+
+    class _Provider:
+        def complete_callback(self, attempt):  # type: ignore[no-untyped-def]
+            assert attempt is expected_attempt
+            return SimpleNamespace(
+                state=AuthenticationAttemptState.SUCCEEDED,
+                binding_result=PrincipalBindingResult.MATCHED,
+                callback_consumed=True,
+                failure_code=None,
+            )
+
+        def authenticated_read_only_capability(self):  # type: ignore[no-untyped-def]
+            return capability
+
+    provider = _Provider()
+    expected_attempt = object()
+    proof = SimpleNamespace(render=lambda: "Stage 7 Trade Plan proof: PASS")
+    captured: list[object] = []
+
+    def execute(received_provider, *, universe):  # type: ignore[no-untyped-def]
+        captured.extend((received_provider, universe))
+        return proof
+
+    monkeypatch.setattr(auth, "execute_swing_trade_plan_proof", execute)
+    rendered: list[auth.SanitizedAuthenticationEvidence] = []
+    window = object.__new__(auth._AuthenticationWindow)
+    window._provider = provider
+    window._attempt = expected_attempt
+    window._equity_symbols = ()
+    window._mcx_symbols = ()
+    window._live_snapshot_proof = False
+    window._quote_only_proof = False
+    window._universe_resolution_proof = False
+    window._swing_daily_dataset_proof = False
+    window._swing_market_assessment_proof = False
+    window._swing_candidate_validation_proof = False
+    window._swing_trade_plan_proof = True
+    window._root = SimpleNamespace(after=lambda _delay, callback: callback())
+    window._finish = rendered.append
+
+    window._complete()
+
+    assert captured[0] is provider
+    assert len(captured[1]) == 98  # type: ignore[arg-type]
+    assert rendered[0].trade_plan_proof is proof
+    assert rendered[0].candidate_validation_proof is None
+    assert "Stage 7 Trade Plan proof: PASS" in rendered[0].render()
+    assert capsys.readouterr().out == ""
+
+
+def test_candidate_ranking_mode_uses_same_retained_provider_and_sanitized_evidence(
+    monkeypatch,
+    capsys,
+) -> None:  # type: ignore[no-untyped-def]
+    capability = SimpleNamespace(active=True)
+
+    class _Provider:
+        def complete_callback(self, attempt):  # type: ignore[no-untyped-def]
+            assert attempt is expected_attempt
+            return SimpleNamespace(
+                state=AuthenticationAttemptState.SUCCEEDED,
+                binding_result=PrincipalBindingResult.MATCHED,
+                callback_consumed=True,
+                failure_code=None,
+            )
+
+        def authenticated_read_only_capability(self):  # type: ignore[no-untyped-def]
+            return capability
+
+    provider = _Provider()
+    expected_attempt = object()
+    proof = SimpleNamespace(render=lambda: "Stage 8 Candidate Ranking proof: PASS")
+    captured: list[object] = []
+
+    def execute(received_provider, *, universe):  # type: ignore[no-untyped-def]
+        captured.extend((received_provider, universe))
+        return proof
+
+    monkeypatch.setattr(auth, "execute_swing_candidate_ranking_proof", execute)
+    rendered: list[auth.SanitizedAuthenticationEvidence] = []
+    window = object.__new__(auth._AuthenticationWindow)
+    window._provider = provider
+    window._attempt = expected_attempt
+    window._equity_symbols = ()
+    window._mcx_symbols = ()
+    window._live_snapshot_proof = False
+    window._quote_only_proof = False
+    window._universe_resolution_proof = False
+    window._swing_daily_dataset_proof = False
+    window._swing_market_assessment_proof = False
+    window._swing_candidate_validation_proof = False
+    window._swing_trade_plan_proof = False
+    window._swing_candidate_ranking_proof = True
+    window._root = SimpleNamespace(after=lambda _delay, callback: callback())
+    window._finish = rendered.append
+
+    window._complete()
+
+    assert captured[0] is provider
+    assert len(captured[1]) == 98  # type: ignore[arg-type]
+    assert rendered[0].candidate_ranking_proof is proof
+    assert rendered[0].trade_plan_proof is None
+    assert "Stage 8 Candidate Ranking proof: PASS" in rendered[0].render()
+    assert capsys.readouterr().out == ""
