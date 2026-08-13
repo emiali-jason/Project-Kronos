@@ -41,7 +41,7 @@ LIVE is Sponsor intent to act manually. It is not an order, fill, quantity, posi
 
 ## S32-009 — Pre-Entry Monitoring Binding
 
-Pre-entry monitoring binds `candidate_id` and `monitoring_binding_id`; `model_trade_id` exists only after activation. Monitoring begins when Risk permits, the candidate is current, integrity is valid, execution-instrument context is valid, and the publisher/configuration is authorized. Sponsor Decision is not required. Pre-entry monitoring ends on Entry, staleness, invalidation, Risk rejection, integrity failure, or supersession; post-entry monitoring ends on model closure or unrecoverable outcome.
+Pre-entry monitoring binds `candidate_id` and `monitoring_binding_id`; `model_trade_id` exists only after activation. Monitoring begins when Risk permits, the candidate is current, integrity is valid, governed execution-instrument context is valid, and the Kite Provider subscription is active. Sponsor Decision is not required. Subscribe only for current monitoring responsibility; pre-entry subscriptions end on Entry, staleness, invalidation, Risk rejection, integrity failure, or supersession, and post-entry subscriptions end on model closure or unrecoverable outcome unless another active KRONOS responsibility still needs the instrument.
 
 ## Prohibitions
 

@@ -42,24 +42,29 @@ All identities are immutable and all timestamps are timezone-aware. Contract ide
 - **Conditional:** quantity, actual entry/exit, costs, actual P&L, actual R, manual-exit evidence, each with availability.
 - **Lifecycle:** separate from objective model. IGNORE/no decision creates no Sponsor position. Sponsor changes never mutate model history.
 
-## KRONOS-SWING-V1-MONITORING-SUBMISSION-V1
+## KRONOS-SWING-V1-MONITORING-SUBMISSION-V1 — transport amended
 
 - **Semantic owner:** Swing Product Architecture.
-- **Producer:** authorized TradingView/Pine monitoring publisher.
-- **Consumer:** authorized KRONOS authenticated ingress.
-- **Semantic status:** untrusted factual submission only.
-- **Mandatory:** contract identity/version, `submission_id`, `candidate_id`, `monitoring_binding_id`, canonical and provider instrument, product, direction, submission type, observed-price availability, reference, `observed_at`, boundary/timeframe/session, Pine identity/version/build/hash, `alert_configuration_id`, payload digest, publisher identity.
+- **Producer:** KRONOS Kite Provider market-data adapter from one normalized WebSocket tick.
+- **Consumer:** DOMAIN-002 admission boundary.
+- **Semantic status:** factual Provider submission only.
+- **Mandatory:** contract identity/version, `submission_id`, `candidate_id`, `monitoring_binding_id`, canonical and provider instrument, product, direction, submission type, observed-price availability, reference, `observed_at`, boundary/timeframe/session, Provider source/connection/provenance, continuity flags, payload digest.
 - **Conditional:** `model_trade_id` after activation, observed price, source sequence.
 - **Types:** `ENTRY_LEVEL_CROSSED`, `STOP_LEVEL_CROSSED`, `TARGET_LEVEL_CROSSED`, `DAILY_BOUNDARY_CLOSED`, `DATA_UNAVAILABLE`.
 - **Lifecycle:** only an active binding may be admitted. No Observation, lifecycle, execution, broker, or decision authority.
+- **Supersession:** Pine identity/build/hash, alert configuration, webhook publisher, and public-ingress fields are retired from the active Swing V1 monitoring transport. Public webhook is not required.
 
 ## KRONOS-SWING-V1-MONITORING-OBSERVATION-V1
 
 - **Semantic owner / producer:** DOMAIN-002 Observation after admission.
 - **Consumers:** KR-380 and KR-390.
-- **Mandatory:** contract identity/version, `observation_id`, source submission identity/digest, candidate/binding, canonical/provider instrument, product, observation type, price availability, observed/received/admitted times, market/session/boundary, provenance, freshness, integrity.
+- **Mandatory:** contract identity/version, `observation_id`, source submission identity/digest, candidate/binding, canonical/provider instrument, product, observation type, price availability, observed/received/admitted times, market/session/boundary, Kite Provider provenance, freshness, integrity.
 - **Conditional:** `model_trade_id` after activation, observed/reference price, ordered source sequence.
 - **Lifecycle:** governed fact only; cannot declare Entry, closure, invalidation, staleness, or Event meaning.
+
+## Optional Kite order-update evidence
+
+Kite order-update evidence is Provider factual evidence for `KRONOS-SWING-V1-SPONSOR-POSITION-V1`; it is not a ninth lifecycle-authority contract. It carries order identity, status, filled quantity, average/fill information when authoritative, timestamps, governed instrument, side, Provider provenance, candidate binding, and Sponsor Decision binding. Missing/ambiguous current order state remains explicit. It cannot enter KR-380/KR-390 or mutate objective model history.
 
 ## KRONOS-SWING-V1-LIFECYCLE-EVENT-V1
 

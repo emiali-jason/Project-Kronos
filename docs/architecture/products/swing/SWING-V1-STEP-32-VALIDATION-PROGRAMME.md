@@ -72,9 +72,9 @@
 63. Wrong canonical instrument is rejected.
 64. Wrong provider instrument is rejected.
 65. Wrong product is rejected.
-66. Wrong Pine identity is rejected.
-67. Wrong Pine version/build/hash is rejected.
-68. Wrong `alert_configuration_id` is rejected.
+66. Wrong Kite Provider source/connection identity is rejected.
+67. Wrong governed execution-instrument binding is rejected.
+68. Reference-market tick cannot trigger another instrument's lifecycle.
 69. Duplicate identical submission is idempotent.
 70. Conflicting duplicate factual identity is retained and flagged.
 71. Out-of-order submission cannot regress lifecycle state.
@@ -155,15 +155,15 @@
 146. No personal-position authority leaks into KR-390.
 147. No broker authority leaks into KR-390.
 148. No broker authority leaks into DOMAIN-009.
-149. No broker credentials appear in monitoring payloads.
+149. No broker credentials or Provider-private instrument tokens appear in governed monitoring payloads.
 150. No OpenAI credentials appear in monitoring payloads.
-151. No account credentials appear in Pine.
-152. HTTPS ingress authentication succeeds for authorized publisher.
-153. Unauthorized publisher is rejected.
-154. Credential rotation preserves governed overlap without duplicate authority.
-155. Expired credential is rejected.
-156. Replay protection rejects unauthorized replay authority.
-157. Rate limiting operates without granting semantic authority.
+151. Active monitoring has no Pine dependency.
+152. Authenticated Kite market-data connection succeeds through existing Provider custody.
+153. Market-data subscription and unsubscribe follow current monitoring responsibility.
+154. Disconnect and reconnect retain affected-subscription evidence without claiming continuity.
+155. Expired authenticated capability fails closed.
+156. First post-reconnect tick cannot manufacture lifecycle authority.
+157. Provider message validation operates without granting semantic authority.
 158. Oversized payload is rejected.
 159. Invalid JSON/schema is rejected.
 160. Secrets are absent from ordinary logs.
@@ -193,13 +193,13 @@
 184. PAPER incomplete-accounting case passes.
 185. IGNORE objective-measurement case passes.
 186. `NO_DECISION_RECORDED` objective-measurement case passes.
-187. Duplicate-webhook case passes.
-188. Out-of-order-webhook case passes.
-189. Missed-webhook reconciliation case passes.
-190. Stale-webhook case passes.
-191. Wrong-trade webhook case passes.
-192. Wrong-instrument webhook case passes.
-193. Wrong-Pine webhook case passes.
+187. Duplicate Provider-message case passes.
+188. Out-of-order Provider-message case passes.
+189. Missing WebSocket interval reconciliation case passes.
+190. Stale Provider-observation case passes.
+191. Wrong-candidate/provider-binding case passes.
+192. Wrong-instrument/reference-market case passes.
+193. Order update remains Sponsor-position evidence only.
 194. Restart/recovery active-trade case passes.
 195. Restart/recovery closed-trade case passes.
 196. Restart/recovery ambiguous case fails closed.
@@ -207,5 +207,25 @@
 198. Sponsor manual execution remains separate from objective model accounting.
 199. Full Swing regression passes.
 200. V0 regression passes.
-201. Security review passes before public ingress activation.
+201. Security and live Kite transport review passes before operational commissioning; public ingress is not required.
 202. No Production authority is granted merely by validation completion.
+
+## Live Kite E2E qualification evidence
+
+The Sponsor-operated live transport qualification completed on 2026-08-13
+with the following non-secret evidence:
+
+- canonical instrument: `GOLDM`;
+- transport: `KITE CONNECT WEBSOCKET`;
+- factual market observation timestamp: `2026-08-13T21:40:16+05:30`;
+- genuine Provider market data: `YES`;
+- DOMAIN-002 admission: `ACCEPTED`;
+- synthetic or frozen market data: `NO`;
+- Entry, Stop, Target or other lifecycle mutation: `NONE`;
+- Sponsor Position: `NONE`;
+- broker order: `NONE`; and
+- TradingView/Pine active-monitoring dependency: `NONE`.
+
+This evidence closes the Live Kite E2E engineering qualification only. It
+grants no Production, operational, lifecycle, broker-execution, or Step-33
+authority. Operational authority remains `SHADOW / VALIDATION ONLY`.

@@ -15,13 +15,13 @@ Repository activation does not equal Production authority. Until every applicabl
 6. Approved MCX monitoring-context specification.
 7. Approved NSE monitoring-context specification.
 8. Approved persistence/recovery specification.
-9. Approved ingress-security specification.
-10. Security review of HTTPS ingress, authentication, credential storage/rotation, rate/payload limits, logging, replay protection, and incident response.
+9. Approved Kite WebSocket/provider transport, continuity, recovery, and order-evidence separation specification; former 32H/public webhook is retired/not required.
+10. Security review of authenticated Kite connection custody, private token/instrument binding, message validation, logging, reconnect/replay handling, and incident response.
 11. Deterministic Risk tests pass.
 12. Sponsor Decision tests pass.
 13. Entry timing tests pass.
 14. Objective model lifecycle tests pass.
-15. Monitoring ingress tests pass.
+15. Kite WebSocket/provider monitoring tests pass.
 16. Duplicate/out-of-order/stale/missed-event tests pass.
 17. Restart/replay/recovery tests pass.
 18. MCX shadow validation passes.
@@ -38,4 +38,4 @@ Repository activation does not equal Production authority. Until every applicabl
 29. Sponsor operational acceptance.
 30. Separate commissioning decision.
 
-Public ingress is not Production-authoritative merely because it is reachable. Validation completion alone grants no Production authority.
+WebSocket connectivity and validation completion grant no Production authority. Live Kite E2E, operational acceptance, and separate commissioning remain mandatory. Broker execution remains `NONE`.

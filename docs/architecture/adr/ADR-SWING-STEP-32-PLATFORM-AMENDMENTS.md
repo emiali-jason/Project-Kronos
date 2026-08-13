@@ -8,7 +8,7 @@
 **Engineering status:** Architecture activated; implementation not authorized
 **Operational authority:** SHADOW / VALIDATION ONLY
 
-These amendments extend, and do not silently rewrite, the existing Platform architecture. Repository activation does not grant runtime, Pine, webhook, or broker-execution authority.
+These amendments extend, and do not silently rewrite, the existing Platform architecture. Repository activation does not grant runtime, Pine, webhook, or broker-execution authority. The 2026-08-13 Kite WebSocket transport amendment supersedes only the active-monitoring transport: previous 32H and TradingView/Pine active-trade webhook transport are retained as historical decisions but are `RETIRED`; public webhook ingress is `NOT REQUIRED` for Swing V1.
 
 ## P32-001 — DOMAIN-003 Swing Business Judgment
 
@@ -28,9 +28,9 @@ KR-390 / DOMAIN-005 begins only after an accepted, Risk-permitted KR-380 Entry O
 
 Sponsor LIVE/PAPER Position is a separate contract and history from the objective model. Modes are `LIVE` and `PAPER`; neither may mutate the model. LIVE facts require explicit Sponsor or separately approved broker evidence. PAPER follows the approved PAPER semantics. Every actual-position field uses `AVAILABLE`, `UNAVAILABLE`, or `NOT_APPLICABLE` and missing evidence is never fabricated.
 
-## P32-005 — DOMAIN-002 External Monitoring Submission Admission
+## P32-005 — DOMAIN-002 Provider Monitoring Admission
 
-The governed path is Pine publisher → authenticated ingress → transport/schema/binding validation → DOMAIN-002 admission → governed Observation. A transport-valid payload is only an untrusted factual submission. Rejection is audit evidence only and cannot become an Observation, lifecycle conclusion, or event.
+The governed path is Kite Connect WebSocket → KRONOS Provider market-data adapter → normalization/instrument-binding/provenance validation → DOMAIN-002 admission → governed Observation. A provider-valid tick is factual input only. Rejection is audit evidence only and cannot become an Observation, lifecycle conclusion, or event. Optional Kite order updates follow a distinct Provider evidence adapter into Sponsor Position and never enter objective-model lifecycle authority.
 
 ## P32-006 — DOMAIN-005 / KR-390 Post-Entry Observation Consumption
 
@@ -52,11 +52,14 @@ Swing Trade Candidate
   → KR-390 Objective Model Trade
   → DOMAIN-009 Lifecycle Event
 
-TradingView/Pine
-  → untrusted Monitoring Submission
-  → authenticated ingress
+Kite Connect WebSocket market data
+  → Provider adapter and Monitoring Submission
   → DOMAIN-002 governed Observation
   → KR-380/KR-390
+
+Kite Connect WebSocket order update
+  → Provider order-evidence adapter
+  → Sponsor Position only
 ```
 
 Instrument retains mapping, tick, precision, lot, multiplier, and execution-instrument identity. Observation retains prices and crossings. Market retains session, calendar, and availability. Portfolio retains capital, position, and exposure. Risk retains permission and constraints. Audit remains read-only. Dependencies authorize contract consumption only and never transfer ownership.

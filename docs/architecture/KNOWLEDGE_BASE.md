@@ -122,4 +122,4 @@ The following documents are approved canonical architecture. They grant no engin
 - [Production gates](products/swing/SWING-V1-STEP-32-PRODUCTION-GATES.md)
 - [Step-33 outcome/journal architecture](products/swing/SWING-V1-STEP-33-OUTCOME-AND-JOURNAL-INTEGRATION.md)
 
-Implementation, Pine changes, webhook activation, and broker execution are not authorized. Authority remains SHADOW / VALIDATION ONLY.
+Step-32 implementation is authorized only within its current engineering scope. Active monitoring uses Kite Connect WebSocket factual Provider input; 32H and TradingView/Pine active-trade webhook transport are retired and public webhook ingress is not required. Pine changes and broker execution remain unauthorized. Authority remains SHADOW / VALIDATION ONLY.
