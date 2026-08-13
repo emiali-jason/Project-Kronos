@@ -5,16 +5,26 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from kronos.provider.contracts.instrument import InstrumentRecord
-from kronos.provider.contracts.market_data import HistoricalCandle
+from kronos.provider.contracts.market_data import (
+    HistoricalCandle,
+    HistoricalCandleRequest,
+    HistoricalInterval,
+)
 from kronos.swing.candidate_validation import (
     SwingCandidate,
+    _audit_breakout,
     extract_qualified_candidates,
     validate_qualified_candidates,
 )
 from kronos.swing.daily_data import build_swing_daily_dataset
 from kronos.swing.market_assessment import assess_swing_market
 from kronos.swing.universe import enabled_swing_phase1_universe
-from kronos.swing.zero import SwingDirection, SwingSetup, SwingState
+from kronos.swing.zero import (
+    SwingDirection,
+    SwingSetup,
+    SwingState,
+    analyze_swing_zero,
+)
 
 
 _KOLKATA = ZoneInfo("Asia/Kolkata")
@@ -140,6 +150,47 @@ def _stage4():  # type: ignore[no-untyped-def]
     return dataset, assess_swing_market(dataset)
 
 
+def _directional_breakout(
+    direction: SwingDirection,
+) -> tuple[SwingCandidate, tuple[HistoricalCandle, ...]]:
+    closes = [100.0] * 24 + ([105.0] if direction is SwingDirection.LONG else [95.0])
+    start = _BOUNDARY - timedelta(days=len(closes) - 1)
+    candles = tuple(
+        HistoricalCandle(
+            timestamp=start + timedelta(days=index),
+            open=float(close),
+            high=float(close + 1.0),
+            low=float(close - 1.0),
+            close=float(close),
+            volume=1000 + index,
+        )
+        for index, close in enumerate(closes)
+    )
+    instrument = _instrument("TEST")
+    assessment = analyze_swing_zero(
+        HistoricalCandleRequest(
+            instrument=instrument,
+            start=candles[0].timestamp,
+            end=candles[-1].timestamp + timedelta(days=1),
+            interval=HistoricalInterval.DAY,
+        ),
+        candles,
+    )[1]
+    assert assessment.state is SwingState.QUALIFIED
+    assert assessment.direction is direction
+    return (
+        SwingCandidate(
+            canonical_identity="TEST",
+            setup=assessment.setup,
+            direction=assessment.direction,
+            observation_boundary=assessment.observation_boundary,
+            rule_set_version=assessment.rule_set_version,
+            assessment=assessment,
+        ),
+        candles,
+    )
+
+
 def test_exact_12_setup_candidates_and_11_unique_instruments_are_preserved() -> None:
     dataset, market = _stage4()
 
@@ -226,7 +277,75 @@ def test_pullback_and_breakout_audits_prove_exclusion_boundaries() -> None:
     assert dict(pullback.predicate_results)["confirmation_beyond_previous_extreme"] is True
     assert dict(breakout.predicate_results)["preceding_ten_excludes_current"] is True
     assert dict(breakout.predicate_results)["atr14_ends_at_preceding_candle"] is True
-    assert dict(breakout.predicate_results)["short_breakout"] is True
+    assert dict(breakout.predicate_results)["directional_breakout"] is True
+
+
+@pytest.mark.parametrize("direction", (SwingDirection.LONG, SwingDirection.SHORT))
+def test_directional_breakout_audit_accepts_long_and_short(
+    direction: SwingDirection,
+) -> None:
+    candidate, candles = _directional_breakout(direction)
+
+    audit = _audit_breakout(candidate, candles)
+
+    assert all(passed for _, passed in audit)
+
+
+@pytest.mark.parametrize("direction", (SwingDirection.LONG, SwingDirection.SHORT))
+def test_directional_breakout_audit_rejects_close_inside_boundary(
+    direction: SwingDirection,
+) -> None:
+    candidate, candles = _directional_breakout(direction)
+    close = 101.0 if direction is SwingDirection.LONG else 99.0
+    changed = candles[:-1] + (
+        replace(
+            candles[-1],
+            open=close,
+            high=close + 1.0,
+            low=close - 1.0,
+            close=close,
+        ),
+    )
+
+    assert dict(_audit_breakout(candidate, changed))["directional_breakout"] is False
+
+
+@pytest.mark.parametrize("direction", (SwingDirection.LONG, SwingDirection.SHORT))
+def test_directional_breakout_audit_rejects_wrong_published_direction(
+    direction: SwingDirection,
+) -> None:
+    candidate, candles = _directional_breakout(direction)
+    wrong = SwingDirection.SHORT if direction is SwingDirection.LONG else SwingDirection.LONG
+    assessment = replace(candidate.assessment, direction=wrong)
+    changed = replace(candidate, direction=wrong, assessment=assessment)
+
+    assert dict(_audit_breakout(changed, candles))["directional_breakout"] is False
+
+
+@pytest.mark.parametrize("direction", (SwingDirection.LONG, SwingDirection.SHORT))
+def test_directional_breakout_audit_rejects_opposite_evidence(
+    direction: SwingDirection,
+) -> None:
+    candidate, candles = _directional_breakout(direction)
+    opposite = "below_range" if direction is SwingDirection.LONG else "above_range"
+    assessment = replace(
+        candidate.assessment,
+        evidence_for=candidate.assessment.evidence_for[:-1] + (f"breakout={opposite}",),
+    )
+    changed = replace(candidate, assessment=assessment)
+
+    assert dict(_audit_breakout(changed, candles))["evidence_exact"] is False
+
+
+@pytest.mark.parametrize("direction", (SwingDirection.LONG, SwingDirection.SHORT))
+def test_directional_breakout_audit_rejects_explanation_mismatch(
+    direction: SwingDirection,
+) -> None:
+    candidate, candles = _directional_breakout(direction)
+    assessment = replace(candidate.assessment, why="Mismatched breakout explanation.")
+    changed = replace(candidate, assessment=assessment)
+
+    assert dict(_audit_breakout(changed, candles))["why_exact"] is False
 
 
 def test_independent_audit_rejects_corrupted_published_evidence() -> None:

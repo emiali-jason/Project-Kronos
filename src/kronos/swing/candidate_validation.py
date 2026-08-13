@@ -314,6 +314,14 @@ def _audit_breakout(
         _SMA_PERIOD,
     )
     trend = _trend(current.close, current_sma, prior_sma)
+    long = candidate.direction is SwingDirection.LONG
+    breakout = current.close > range_high if long else current.close < range_low
+    breakout_label = "above_range" if long else "below_range"
+    expected_why = (
+        "The completed close broke above the preceding ten-bar consolidation range."
+        if long
+        else "The completed close broke below the preceding ten-bar consolidation range."
+    )
     expected_evidence = (
         f"current_close={_number(current.close)}",
         f"current_sma20={_number(current_sma)}",
@@ -324,23 +332,23 @@ def _audit_breakout(
         f"range_width={_number(range_width)}",
         f"preceding_atr14={_number(atr)}",
         f"consolidation={'true' if consolidated else 'false'}",
-        "breakout=below_range",
+        f"breakout={breakout_label}",
     )
     return (
         ("current_boundary_exact", current.timestamp == candidate.observation_boundary),
+        (
+            "published_direction_supported",
+            candidate.direction in {SwingDirection.LONG, SwingDirection.SHORT},
+        ),
         ("preceding_ten_exact", len(preceding) == _CONSOLIDATION_WINDOW),
         ("preceding_ten_excludes_current", current not in preceding),
         ("range_high_preceding_only", range_high == max(item.high for item in preceding)),
         ("range_low_preceding_only", range_low == min(item.low for item in preceding)),
         ("atr14_ends_at_preceding_candle", atr == _atr(candles[:-1], len(candles) - 2, _ATR_PERIOD)),
         ("consolidation_threshold", consolidated),
-        ("short_breakout", current.close < range_low),
+        ("directional_breakout", breakout),
         ("evidence_exact", assessment.evidence_for == expected_evidence),
-        (
-            "why_exact",
-            assessment.why
-            == "The completed close broke below the preceding ten-bar consolidation range.",
-        ),
+        ("why_exact", assessment.why == expected_why),
         ("qualified_has_no_missing_event", assessment.next_required_event is None),
         ("qualified_has_no_recorded_risk", assessment.evidence_against_or_risks == ()),
     )
