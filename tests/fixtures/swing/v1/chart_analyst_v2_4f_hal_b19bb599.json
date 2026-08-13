@@ -1,0 +1,102 @@
+{
+  "fixture_identity": "KRONOS-SWING-V1-4F-HAL-B19BB599-V1",
+  "source_run": "B19BB599",
+  "instrument": "HAL",
+  "image_sha256": "9dabee9148bf948647da6cb0b16dd225b9a2eca89f1a440b38563e8c03e67b48",
+  "question_set_id": "KRONOS-SWING-V1-CHART-ANALYST-V2",
+  "question_set_version": "2.0",
+  "expected_timeframes_present": {
+    "1D": "YES",
+    "1H": "YES",
+    "1W": "YES",
+    "4H": "YES"
+  },
+  "overall_image_readability": "GOOD",
+  "daily": {
+    "breakout_breakdown_retest": {
+      "break_direction": "BULLISH",
+      "break_state": "CONFIRMED",
+      "close_beyond_structure": "YES",
+      "retest_state": "DEVELOPING",
+      "returned_inside_range": "NO"
+    },
+    "candlestick_evidence": {
+      "candle_acceptance": "REJECTED",
+      "material_candle_evidence": "BEARISH_REJECTION"
+    },
+    "continuation_pattern": {
+      "continuation_direction": "BULLISH",
+      "continuation_pattern": "ORDERLY_PULLBACK",
+      "continuation_status": "DEVELOPING"
+    },
+    "impulse": {
+      "clear_impulse_present": "YES",
+      "impulse_direction": "BULLISH",
+      "impulse_quality": "STRONG"
+    },
+    "market_structure": {
+      "higher_highs_visible": "YES",
+      "higher_lows_visible": "YES",
+      "lower_highs_visible": "NO",
+      "lower_lows_visible": "NO",
+      "recent_swing_high": 5048,
+      "recent_swing_low": 4915,
+      "structure": "BULLISH",
+      "structure_condition": "PRESERVED"
+    },
+    "maturity_extension_chase_risk": {
+      "chase_risk": "HIGH",
+      "move_maturity": "EXTENDED"
+    },
+    "moving_averages": {
+      "SMA20": {"price_relation": "ABOVE", "role": "SUPPORT", "slope": "RISING"},
+      "SMA200": {"price_relation": "ABOVE", "role": "SUPPORT", "slope": "RISING"},
+      "SMA50": {"price_relation": "ABOVE", "role": "SUPPORT", "slope": "RISING"}
+    },
+    "pine_workstation": {
+      "acceptance": "PROD=Accepted; V2=Accepted",
+      "confidence": "PROD=Developing; V2=Developing",
+      "decision": "PROD=WATCH LONG; V2=WATCH LONG",
+      "momentum": "PROD=Exhausted; V2=Exhausted",
+      "need": "PROD=--; V2=--",
+      "opportunity": "PROD=Good; V2=Good",
+      "quality": "PROD=Extended; V2=Extended",
+      "status": "PROD=DATA OK; V2=DATA OK",
+      "trend": "PROD=Bullish; V2=Bullish"
+    },
+    "post_impulse_behaviour": "SHALLOW_PULLBACK",
+    "post_impulse_progress": "PAUSED",
+    "pullback": {
+      "impulse_structure_retained": "YES",
+      "pullback_depth": "SHALLOW",
+      "pullback_present": "YES",
+      "pullback_quality": "ORDERLY"
+    },
+    "readability": "GOOD",
+    "resumption_evidence": "NONE",
+    "support_resistance_barriers": {
+      "barrier_direction": "BOTH",
+      "ma_or_reference_barrier_present": "YES",
+      "major_swing_barrier_present": "YES",
+      "nearest_visible_resistance": 5048,
+      "nearest_visible_support": 4915,
+      "visible_room_for_continuation": "LIMITED"
+    },
+    "volume_participation": {
+      "participation_deteriorating": "NO",
+      "volume_context": "SUPPORTIVE",
+      "volume_during_pullback": "CONTRACTING",
+      "volume_on_break": "SUPPORTIVE",
+      "volume_with_impulse": "EXPANDING"
+    },
+    "weakening_failure_evidence": "LOSS_OF_PROGRESS"
+  },
+  "overall_observation": {
+    "most_material_negative_evidence": "Momentum is marked exhausted or weakening and the 1H breakout attempt has stalled back below immediate resistance.",
+    "most_material_positive_evidence": "Strong daily and 4H bullish impulses remain structurally retained while pullback volume contracts.",
+    "overall_determinability": "GOOD",
+    "setup_direction": "BULLISH",
+    "setup_phase": "DEVELOPING",
+    "setup_visually_exists": "YES"
+  }
+}

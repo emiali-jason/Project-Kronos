@@ -1,0 +1,28 @@
+{
+  "fixture": "SAME_98_SLICE_3_TRADINGVIEW_REQUIREMENTS",
+  "observation_boundary": "2026-08-11T00:00:00+05:30",
+  "probable_assessment_count": 5,
+  "unique_probable_instrument_count": 3,
+  "requirements": [
+    {
+      "instrument": "NAUKRI",
+      "setups": [
+        "PULLBACK_CONTINUATION|LONG",
+        "CONSOLIDATION_BREAKOUT|LONG"
+      ]
+    },
+    {
+      "instrument": "TITAN",
+      "setups": [
+        "PULLBACK_CONTINUATION|LONG",
+        "CONSOLIDATION_BREAKOUT|LONG"
+      ]
+    },
+    {
+      "instrument": "ADANIPORTS",
+      "setups": [
+        "PULLBACK_CONTINUATION|SHORT"
+      ]
+    }
+  ]
+}

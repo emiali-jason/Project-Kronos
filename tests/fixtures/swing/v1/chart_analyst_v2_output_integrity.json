@@ -1,0 +1,29 @@
+{
+  "fixture_identity": "KRONOS-SWING-V1-4E-OUTPUT-INTEGRITY-FIXTURES-V1",
+  "observed_defects": {
+    "BDL": {
+      "field_path": "thesis_behaviour.thesis_behaviour_reason",
+      "raw_value": "The bullish higher-timeframe impulse and retained breakout structure support continuation, while the 1H shallow pullback and consolidation remain above the breakout area. Repeated upper rejection, limited visible room, extended conditions, and weaker post-",
+      "expected_failure_code": "INVALID_INCOMPLETE_TEXT",
+      "expected_failure_reason": "TEXT_ENDS_WITH_INCOMPLETE_MARKER"
+    },
+    "SBIN": {
+      "field_path": "timeframes.1H.pine_workstation.quality",
+      "raw_value": "Bullish",
+      "expected_failure_code": "INVALID_TRANSCRIPTION",
+      "expected_failure_reason": "PINE_FIELD_SEMANTIC_DISPLACEMENT"
+    }
+  },
+  "valid_transcriptions": {
+    "trend": "PROD: Bullish; V2: Neutral",
+    "quality": "ANALYTICAL: Healthy | NOT PROD: Extended",
+    "acceptance": "PROD=Accepted; V2=Testing",
+    "momentum": "PROD: Weakening; V2: Exhausted",
+    "opportunity": "PROD: Good; V2: Limited",
+    "confidence": "PROD: 20 - Avoid; V2: High Confidence",
+    "decision": "PROD: WAIT; V2: NO SETUP",
+    "need": "PROD: Up Readiness | V2: Confirmation",
+    "status": "PROD: DATA OK; V2: DATA WAIT"
+  },
+  "valid_required_text": "A lower-timeframe close beyond the current consolidation boundary with sustained acceptance."
+}
