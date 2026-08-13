@@ -30,6 +30,10 @@ from kronos.provider.contracts.market_data import (
     OhlcSnapshot,
     QuoteSnapshot,
 )
+from kronos.provider.contracts.monitoring import (
+    MonitoringConsumer,
+    ReadOnlyMonitoringSession,
+)
 
 
 class AuthenticationAttemptHandle(Protocol):
@@ -44,6 +48,7 @@ class ReadOnlyProviderOperation(StrEnum):
     QUOTE = "quote"
     LTP = "ltp"
     OHLC = "ohlc"
+    MONITORING = "monitoring"
 
 
 class AuthenticatedReadOnlyProviderCapability(Protocol):
@@ -74,6 +79,12 @@ class AuthenticatedReadOnlyProviderCapability(Protocol):
 
     def ohlc(self, instrument: InstrumentRecord) -> OhlcSnapshot:
         """Return normalized OHLC values without exposing Provider identity."""
+
+    def open_monitoring_session(
+        self,
+        consumer: MonitoringConsumer,
+    ) -> ReadOnlyMonitoringSession:
+        """Open one opaque factual market/order-evidence stream."""
 
 
 class CanonicalActivationEvidenceVerifier(Protocol):

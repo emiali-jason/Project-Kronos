@@ -251,6 +251,36 @@ class _KiteCandidateClientHandle:
 
         return self.__live_snapshot("ohlc", instrument)
 
+    def open_monitoring_session(
+        self,
+        *,
+        token_resolver: object,
+        consumer: object,
+        clock: object = None,
+        socket_factory: object = None,
+    ) -> object:
+        """Construct an opaque Kite monitoring session without releasing credentials."""
+
+        if self.__closed or self.__client is None or self.__session_state.invalidated:
+            raise _KiteSessionInvalidated
+        api_key = getattr(self.__client, "api_key", None)
+        access_token = getattr(self.__client, "access_token", None)
+        if not isinstance(api_key, str) or not api_key or not isinstance(access_token, str) or not access_token:
+            raise _UnexpectedAuthenticationResponse
+        from kronos.provider.adapters.kite.monitoring import KiteReadOnlyMonitoringSession
+
+        arguments: dict[str, object] = {
+            "api_key": api_key,
+            "access_token": access_token,
+            "token_resolver": token_resolver,
+            "consumer": consumer,
+        }
+        if clock is not None:
+            arguments["clock"] = clock
+        if socket_factory is not None:
+            arguments["socket_factory"] = socket_factory
+        return KiteReadOnlyMonitoringSession(**arguments)  # type: ignore[arg-type]
+
     @property
     def active(self) -> bool:
         """Return local usability without exposing the client or session token."""

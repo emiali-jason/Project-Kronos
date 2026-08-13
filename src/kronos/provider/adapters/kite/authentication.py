@@ -56,6 +56,12 @@ from kronos.provider.contracts.market_data import (
     OhlcValues,
     QuoteSnapshot,
 )
+from kronos.provider.contracts.monitoring import (
+    MonitoringConsumer,
+    MonitoringError,
+    MonitoringFailure,
+    ReadOnlyMonitoringSession,
+)
 from kronos.provider.exceptions.connectivity import (
     ProviderConnectivityError,
     ProviderErrorCode,
@@ -368,6 +374,32 @@ class _KiteCandidateContext:
             ) from None
         raise LiveSnapshotError(LiveSnapshotFailure.PROVIDER_FAILURE) from None
 
+    def _open_monitoring_session(
+        self,
+        consumer: MonitoringConsumer,
+    ) -> ReadOnlyMonitoringSession:
+        if not callable(getattr(consumer, "on_market_tick", None)) or not callable(
+            getattr(consumer, "on_order_update", None)
+        ) or not callable(getattr(consumer, "on_connection_state", None)):
+            raise MonitoringError(MonitoringFailure.INVALID_REQUEST)
+
+        def token_resolver(instrument: InstrumentRecord) -> int | None:
+            return self.__instrument_tokens.get(instrument)
+
+        try:
+            return self._active_handle().open_monitoring_session(
+                token_resolver=token_resolver,
+                consumer=consumer,
+            )  # type: ignore[return-value]
+        except MonitoringError:
+            raise
+        except Exception as error:
+            code = _map_authentication_error_code(error)
+        if code is ProviderErrorCode.ACCESS_TOKEN_INVALID_OR_EXPIRED:
+            self.dispose_local()
+            raise MonitoringError(MonitoringFailure.CAPABILITY_UNAVAILABLE) from None
+        raise MonitoringError(MonitoringFailure.PROVIDER_FAILURE) from None
+
     def __before(
         self,
         operation: GovernedAuthenticationOperation,
@@ -467,6 +499,14 @@ class _KiteReadOnlyProviderCapability:
         if type(result) is not OhlcSnapshot:
             raise LiveSnapshotError(LiveSnapshotFailure.MALFORMED_PROVIDER_DATA)
         return result
+
+    def open_monitoring_session(
+        self,
+        consumer: MonitoringConsumer,
+    ) -> ReadOnlyMonitoringSession:
+        if not self.active:
+            raise MonitoringError(MonitoringFailure.CAPABILITY_UNAVAILABLE)
+        return self.__candidate._open_monitoring_session(consumer)
 
     def __repr__(self) -> str:
         return "<AuthenticatedReadOnlyProviderCapability redacted>"

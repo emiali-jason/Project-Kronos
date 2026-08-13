@@ -175,6 +175,8 @@ class _BrowserHandler(BaseHTTPRequestHandler):
                     snapshot,
                     self.server.chart_analyst_credentials.status(),
                     self.server.chart_analyst_activation.status(),
+                    self.server.application.live_monitoring_result(),
+                    self.server.application.live_monitoring_instruments(),
                 )
             )
             return
@@ -194,6 +196,7 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             return
         if path == "/status":
             diagnostic = self.server.application.analysis_diagnostic()
+            live_monitoring = self.server.application.live_monitoring_result()
             payload: dict[str, object] = {
                 "service": "KRONOS_BROWSER_V1",
                 "provider": snapshot.provider_state.value,
@@ -203,6 +206,7 @@ class _BrowserHandler(BaseHTTPRequestHandler):
                 ),
                 "v1_probables": len(snapshot.v1_probables),
                 "analysis_diagnostic": None,
+                "live_monitoring": live_monitoring.state.value,
             }
             if diagnostic is not None:
                 payload["analysis_diagnostic"] = {
@@ -294,6 +298,9 @@ class _BrowserHandler(BaseHTTPRequestHandler):
         if path == "/settings/chart-analyst/credential":
             self._receive_chart_analyst_credential()
             return
+        if path == "/settings/kite/live-monitoring/test":
+            self._test_live_monitoring()
+            return
         if path == "/settings/chart-analyst/test":
             self.server.chart_analyst_credentials.test_connection()
             self._redirect("/settings")
@@ -382,6 +389,33 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             self.server.chart_analyst_activation.set_enabled(enabled)
         except Exception:
             self._text(HTTPStatus.CONFLICT, "Configuration could not be saved.")
+            return
+        self._redirect("/settings")
+
+    def _test_live_monitoring(self) -> None:
+        content_type = self.headers.get("Content-Type", "").split(";", 1)[0]
+        try:
+            content_length = int(self.headers.get("Content-Length", ""))
+        except ValueError:
+            content_length = 0
+        if (
+            content_type.lower() != "application/x-www-form-urlencoded"
+            or not 0 < content_length <= 256
+        ):
+            self._text(HTTPStatus.BAD_REQUEST, "Request rejected.")
+            return
+        try:
+            fields = parse_qs(
+                self.rfile.read(content_length).decode("utf-8"),
+                keep_blank_values=True,
+                strict_parsing=True,
+            )
+            instruments = fields.get("instrument", ())
+            if set(fields) != {"instrument"} or len(instruments) != 1:
+                raise ValueError
+            self.server.application.test_live_monitoring(instruments[0])
+        except (UnicodeDecodeError, ValueError):
+            self._text(HTTPStatus.BAD_REQUEST, "Request rejected.")
             return
         self._redirect("/settings")
 

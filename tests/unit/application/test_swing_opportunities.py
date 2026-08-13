@@ -188,6 +188,46 @@ def test_initial_state_is_disconnected_and_not_run() -> None:
     )
 
 
+def test_live_monitoring_rejects_concurrency_without_workspace_mutation(
+    monkeypatch,
+) -> None:
+    pending = []
+
+    def runner(operation, name):  # type: ignore[no-untyped-def]
+        if name == "kronos-browser-auth":
+            operation()
+        else:
+            pending.append(operation)
+
+    service = app.SwingOpportunitiesApplication(_Provider, background_runner=runner)
+    assert service.connect_provider()
+    before = service.snapshot()
+    assert service.test_live_monitoring("RELIANCE")
+    assert service.live_monitoring_result().state is app.LiveMonitoringTestState.TESTING
+    assert service.test_live_monitoring("RELIANCE") is False
+    assert service.live_monitoring_result().state is app.LiveMonitoringTestState.TESTING
+    assert service.run_analysis() is False
+    assert service.disconnect_provider() is False
+    assert service.snapshot() == before
+
+    monkeypatch.setattr(
+        app,
+        "run_live_monitoring_e2e",
+        lambda *_a, **_k: app.LiveMonitoringTestResult(
+            app.LiveMonitoringTestState.CONNECTED_NO_DATA,
+            "RELIANCE",
+            safe_reason="NO_LIVE_MARKET_DATA",
+        ),
+    )
+    assert len(pending) == 1
+    pending.pop()()
+    assert (
+        service.live_monitoring_result().state
+        is app.LiveMonitoringTestState.CONNECTED_NO_DATA
+    )
+    assert service.snapshot() == before
+
+
 def test_authentication_retains_exact_provider_and_capability_in_same_process(
     monkeypatch,
 ) -> None:

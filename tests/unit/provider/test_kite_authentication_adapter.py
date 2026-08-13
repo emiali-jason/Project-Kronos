@@ -15,12 +15,14 @@ from kronos.provider.adapters.kite.authentication import (
     create_kite_authentication_adapter,
 )
 from kronos.provider.contracts.provider_authentication import ReadOnlyProviderOperation
+from kronos.provider.contracts.monitoring import MonitoringError, MonitoringFailure
 from kronos.provider.exceptions.connectivity import (
     ProviderConnectivityError,
     ProviderErrorCode,
 )
 from kronos.provider.kite.composition import OperationLedgerRecorder
 from kronos.provider.kite.live_activation import RemainingBudget
+from kronos.provider.adapters.kite import monitoring as monitoring_module
 from kronos.provider.models.authentication import GovernedAuthenticationOperation
 
 
@@ -51,6 +53,8 @@ class _FakeKiteClient:
 
     def __init__(self, **arguments: object) -> None:
         self.arguments = arguments
+        self.api_key = arguments.get("api_key")
+        self.access_token = arguments.get("access_token")
         self.reqsession = _FakeSession(type(self).close_effect)
         self.exchange_count = 0
         self.profile_count = 0
@@ -82,6 +86,8 @@ class _FakeKiteClient:
         type(self).exchange_effect = None
         if isinstance(effect, BaseException):
             raise effect
+        if isinstance(effect, dict):
+            self.access_token = effect.get("access_token")
         return effect
 
     def profile(self) -> object:
@@ -333,6 +339,38 @@ def test_matched_candidate_issues_one_opaque_read_only_capability() -> None:
     assert capability.active is False
     assert client.reqsession.close_count == 1
     assert client.invalidate_count == 0
+
+
+def test_authenticated_capability_opens_monitoring_without_exposing_credentials(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeSocket:
+        pass
+
+    class Consumer:
+        def on_market_tick(self, _tick: object) -> None: pass
+        def on_order_update(self, _update: object) -> None: pass
+        def on_connection_state(self, _state: object) -> None: pass
+
+    seen: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        monitoring_module,
+        "_create_socket",
+        lambda api_key, access_token: seen.append((api_key, access_token)) or FakeSocket(),
+    )
+    _, candidate, _, _, _ = _candidate()
+    candidate.principal_evidence().compare_expected(_PRINCIPAL)
+    capability = candidate.issue_read_only_capability()
+    session = capability.open_monitoring_session(Consumer())
+
+    assert repr(session) == "<KiteReadOnlyMonitoringSession redacted>"
+    assert seen == [(_API_KEY, _ACCESS_TOKEN)]
+    assert not hasattr(session, "access_token")
+
+    candidate.dispose_local()
+    with pytest.raises(MonitoringError) as error:
+        capability.open_monitoring_session(Consumer())
+    assert error.value.failure is MonitoringFailure.CAPABILITY_UNAVAILABLE
 
 
 def test_session_expiry_invalidates_read_only_capability_without_exposure() -> None:

@@ -12,6 +12,13 @@ import time
 from typing import Protocol
 from uuid import uuid4
 
+from kronos.application.live_monitoring_e2e import (
+    LiveMonitoringTestResult,
+    LiveMonitoringTestState,
+    governed_live_monitoring_instruments,
+    run_live_monitoring_e2e,
+)
+
 from kronos.configuration.principals import PrincipalBindingResult
 from kronos.provider.contracts.instrument import (
     InstrumentKind,
@@ -571,6 +578,7 @@ class SwingOpportunitiesApplication:
             lambda: f"SWING-RUN-{uuid4().hex.upper()}"
         ),
         run_provenance_store: LocalSwingRunProvenanceStore | None = None,
+        live_monitoring_timeout_seconds: float = 15.0,
     ) -> None:
         if not all(callable(item) for item in (
             provider_factory,
@@ -585,17 +593,26 @@ class SwingOpportunitiesApplication:
             and type(run_provenance_store) is not LocalSwingRunProvenanceStore
         ):
             raise TypeError("BROWSER_APPLICATION_DEPENDENCY_INVALID")
+        if (
+            type(live_monitoring_timeout_seconds) is not float
+            or not 0.0 < live_monitoring_timeout_seconds <= 60.0
+        ):
+            raise TypeError("BROWSER_APPLICATION_DEPENDENCY_INVALID")
         self.__provider_factory = provider_factory
         self.__clock = clock
         self.__pace = pace
         self.__background_runner = background_runner
         self.__swing_run_identity_factory = swing_run_identity_factory
         self.__run_provenance_store = run_provenance_store
+        self.__live_monitoring_timeout_seconds = live_monitoring_timeout_seconds
         self.__lock = RLock()
         self.__provider: _ProviderRuntime | None = None
         self.__analysis_attempt_count = 0
         self.__analysis_diagnostic: AnalysisFailureDiagnostic | None = None
         self.__completed_analysis_evidence: SwingAnalysisEvidenceSnapshot | None = None
+        self.__live_monitoring_result = LiveMonitoringTestResult(
+            LiveMonitoringTestState.NOT_TESTED
+        )
         if initial_snapshot is not None and type(initial_snapshot) is not BrowserWorkspaceSnapshot:
             raise TypeError("BROWSER_APPLICATION_DEPENDENCY_INVALID")
         self.__snapshot = initial_snapshot or BrowserWorkspaceSnapshot(
@@ -615,6 +632,43 @@ class SwingOpportunitiesApplication:
 
         with self.__lock:
             return self.__completed_analysis_evidence
+
+    def live_monitoring_result(self) -> LiveMonitoringTestResult:
+        with self.__lock:
+            return self.__live_monitoring_result
+
+    def live_monitoring_instruments(self) -> tuple[str, ...]:
+        return governed_live_monitoring_instruments()
+
+    def test_live_monitoring(self, canonical_instrument: str) -> bool:
+        """Start one bounded Sponsor E2E and reject invalid/concurrent attempts."""
+
+        if canonical_instrument not in governed_live_monitoring_instruments():
+            with self.__lock:
+                self.__live_monitoring_result = LiveMonitoringTestResult(
+                    LiveMonitoringTestState.FAIL,
+                    safe_reason="GOVERNED_INSTRUMENT_INVALID",
+                )
+            return False
+        with self.__lock:
+            if self.__live_monitoring_result.state is LiveMonitoringTestState.TESTING:
+                return False
+            if self.__snapshot.provider_state is not ProviderConnectionState.CONNECTED:
+                self.__live_monitoring_result = LiveMonitoringTestResult(
+                    LiveMonitoringTestState.FAIL,
+                    canonical_instrument,
+                    safe_reason="KITE_DISCONNECTED",
+                )
+                return False
+            self.__live_monitoring_result = LiveMonitoringTestResult(
+                LiveMonitoringTestState.TESTING,
+                canonical_instrument,
+            )
+        self.__background_runner(
+            lambda: self.__complete_live_monitoring_test(canonical_instrument),
+            "kronos-live-monitoring-e2e",
+        )
+        return True
 
     def restore_v1_review_projection(
         self,
@@ -675,6 +729,7 @@ class SwingOpportunitiesApplication:
             if (
                 self.__snapshot.provider_state is not ProviderConnectionState.CONNECTED
                 or self.__snapshot.analysis_state is AnalysisState.RUNNING
+                or self.__live_monitoring_result.state is LiveMonitoringTestState.TESTING
             ):
                 return False
             self.__snapshot = replace(
@@ -706,6 +761,7 @@ class SwingOpportunitiesApplication:
             if (
                 self.__snapshot.provider_state is not ProviderConnectionState.CONNECTED
                 or self.__snapshot.analysis_state is AnalysisState.RUNNING
+                or self.__live_monitoring_result.state is LiveMonitoringTestState.TESTING
             ):
                 return False
             provider = self.__provider
@@ -774,6 +830,41 @@ class SwingOpportunitiesApplication:
                 provider_state=ProviderConnectionState.CONNECTED,
                 provider_failure="",
             )
+
+    def __complete_live_monitoring_test(self, canonical_instrument: str) -> None:
+        with self.__lock:
+            provider = self.__provider
+        if provider is None:
+            result = LiveMonitoringTestResult(
+                LiveMonitoringTestState.FAIL,
+                canonical_instrument,
+                safe_reason="KITE_DISCONNECTED",
+            )
+        else:
+            capability = provider.authenticated_read_only_capability()
+            if capability is None or getattr(capability, "active", False) is not True:
+                result = LiveMonitoringTestResult(
+                    LiveMonitoringTestState.FAIL,
+                    canonical_instrument,
+                    safe_reason="KITE_DISCONNECTED",
+                )
+            else:
+                try:
+                    result = run_live_monitoring_e2e(
+                        capability,
+                        canonical_instrument,
+                        timeout_seconds=self.__live_monitoring_timeout_seconds,
+                        clock=self.__clock,
+                    )
+                except Exception as error:
+                    summary = _safe_exception_summary(error)
+                    result = LiveMonitoringTestResult(
+                        LiveMonitoringTestState.FAIL,
+                        canonical_instrument,
+                        safe_reason=summary,
+                    )
+        with self.__lock:
+            self.__live_monitoring_result = result
 
     def __complete_analysis(
         self,

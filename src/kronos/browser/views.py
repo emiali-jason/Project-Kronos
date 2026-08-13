@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+from decimal import Decimal
 from html import escape
 from urllib.parse import urlencode
 from zoneinfo import ZoneInfo
@@ -14,6 +16,10 @@ from kronos.application.swing_opportunities import (
     ProviderConnectionState,
     V1ProbableSnapshot,
 )
+from kronos.application.live_monitoring_e2e import (
+    LiveMonitoringTestResult,
+    LiveMonitoringTestState,
+)
 from kronos.application.swing_v1_review import (
     ChartAnalysisState,
     InstrumentChartAnalysisSnapshot,
@@ -23,6 +29,7 @@ from kronos.configuration.openai_chart_analyst import (
     ChartAnalystConnectionStatus,
     ChartAnalystV2ActivationStatus,
 )
+from kronos.provider.contracts.monitoring import MonitoringConnectionState
 from kronos.browser.v1_analysis_status import (
     batch_analysis_status,
     instrument_analysis_status,
@@ -31,6 +38,16 @@ from kronos.swing.run_identity import (
     LEGACY_UNBOUND_SWING_RUN_ID,
     is_swing_analysis_run_id,
 )
+from kronos.swing.v1.step32 import (
+    CandidateLifecycle,
+    CandidateLifecycleState,
+    ObjectiveModelState,
+    ObjectiveModelTrade,
+    RiskApproval,
+    SponsorDecision,
+    SponsorPosition,
+)
+from kronos.swing.v1.trade_construction import SwingV1TradeCandidate
 
 
 _NAVIGATION = (
@@ -57,6 +74,7 @@ a{color:inherit;text-decoration:none}.app{display:grid;grid-template-columns:218
 .analysis-batch{display:flex;align-items:center;justify-content:space-between;gap:12px;border:1px solid var(--line);background:#071827;border-radius:9px;padding:10px 13px;margin-bottom:12px}.analysis-batch span{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.05em}.analysis-batch strong{font-size:13px;color:#dce8f0}.analysis-run-times{text-align:right}.analysis-run-times strong,.analysis-run-times small{display:block}.analysis-run-times small{margin-top:2px;color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.04em}.chart-intake-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px}.chart-intake-card .chart-intake-head h2{margin:0}.analysis-state{border:1px solid #31506a;border-radius:999px;padding:3px 7px;font-size:10px;font-weight:800;white-space:nowrap;color:var(--muted)}.analysis-state.analyzing{border-color:#2b78ad;color:#8dd0ff}.analysis-state.analyzed{border-color:#176741;color:var(--green)}.analysis-state.context-incomplete{border-color:#82631f;color:var(--amber)}.analysis-state.analysis-failed{border-color:#793b40;color:var(--red)}
 .four-chart-label{display:block;color:#dce8f0;font-size:11px;font-weight:800;letter-spacing:.05em}.four-chart-timeframes{display:block;color:var(--muted);font-size:10px;margin-top:2px}.v1-context-result{border-top:1px solid var(--line);margin-top:12px;padding-top:10px;display:grid;gap:6px}.v1-context-row{display:grid;grid-template-columns:96px minmax(0,1fr);gap:8px;font-size:11px}.v1-context-row span{color:var(--muted);text-transform:uppercase;letter-spacing:.04em}.v1-context-row strong{font-weight:700}.v1-context-row .supportive{color:var(--green)}.v1-context-row .partial,.v1-context-row .incomplete{color:var(--amber)}.v1-context-row .contradictory{color:var(--red)}.shadow-authority{color:var(--muted);font-size:10px;text-align:right;margin-top:9px;letter-spacing:.04em}
 .configuration{max-width:760px;border:1px solid var(--line);background:rgba(6,23,37,.88);border-radius:11px;padding:20px}.configuration-head{display:flex;align-items:center;justify-content:space-between;gap:16px;border-bottom:1px solid var(--line);padding-bottom:14px;margin-bottom:16px}.configuration-head h2{margin:0;color:var(--blue)}.configuration-state{display:flex;align-items:center;justify-content:space-between;gap:16px;margin:10px 0}.connection-status{border:1px solid #246295;border-radius:999px;padding:5px 10px;font-size:12px;font-weight:800}.connection-status.CONNECTED{border-color:#176741;color:var(--green)}.connection-status.CONNECTION-FAILED{border-color:#793b40;color:var(--red)}.credential-form{display:grid;gap:10px;margin-top:18px;padding-top:16px;border-top:1px solid var(--line)}.credential-form label{font-weight:700}.credential-form input{width:100%;border:1px solid #31506a;background:#04131f;color:var(--text);border-radius:7px;padding:11px 12px;font:inherit}.credential-form input:focus{outline:2px solid var(--blue);outline-offset:1px}.configuration-actions{display:flex;gap:10px;align-items:center;margin-top:16px}.configuration-note{color:var(--muted);font-size:12px;margin:9px 0 0}
+.step32-workflow{margin-top:16px;border:1px solid var(--line);background:rgba(6,23,37,.88);border-radius:10px;padding:16px}.step32-head{display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--line);padding-bottom:10px}.step32-head h2{margin:0;font-size:18px}.step32-grid{display:grid;grid-template-columns:1.4fr .8fr .8fr;gap:12px;margin-top:12px}.step32-block{border-left:1px solid var(--line);padding-left:12px}.step32-block:first-child{border-left:0;padding-left:0}.step32-block h3{margin:0 0 8px;color:var(--muted);font-size:11px;letter-spacing:.06em;text-transform:uppercase}.step32-values{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}.step32-value label{display:block;color:var(--muted);font-size:10px}.step32-value strong{font-size:13px}.decision-options{display:flex;gap:5px;flex-wrap:wrap}.decision-option{border:1px solid var(--line);border-radius:6px;padding:4px 7px;color:var(--muted);font-size:11px}.decision-option.selected{border-color:var(--blue);color:#dff1ff}.model-position{display:grid;gap:7px}.model-position div{display:flex;justify-content:space-between;gap:8px;font-size:12px}.model-position span{color:var(--muted)}
 @media(max-width:1050px){.status-grid{grid-template-columns:repeat(3,1fr)}.panels,.workspace{grid-template-columns:1fr}.market-panel{min-height:260px}}
 @media(min-width:761px){.panels{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:760px){.app{grid-template-columns:1fr}.sidebar{position:static;height:auto}.nav{grid-template-columns:repeat(2,1fr)}.system{display:none}.topbar{height:auto;padding:18px;align-items:flex-start;gap:14px}.tabs{overflow:auto;padding:0 18px}.content{padding:18px}.status-grid{grid-template-columns:repeat(2,1fr)}.trade-grid,.plan-strip{grid-template-columns:1fr 1fr}.kite{flex-wrap:wrap;justify-content:flex-end}.chart-intake-list{grid-template-columns:1fr}}
@@ -144,9 +162,124 @@ def _operator_setup(value: str) -> str:
     return value.replace("_", " ").title()
 
 
+@dataclass(frozen=True, slots=True)
+class Step32SponsorWorkflowView:
+    instrument: str
+    direction: str
+    setup: str
+    entry: Decimal
+    stop: Decimal
+    invalidation: Decimal
+    target: Decimal
+    risk_reward: Decimal
+    risk: str
+    sponsor_decision: str
+    current_state: str
+    model_state: str
+    sponsor_position_state: str
+    kite_monitoring: str
+    trade_monitoring: str
+
+
+def build_step32_sponsor_workflow_view(
+    candidate: SwingV1TradeCandidate,
+    risk: RiskApproval,
+    lifecycle: CandidateLifecycle,
+    *,
+    decision: SponsorDecision | None = None,
+    model: ObjectiveModelTrade | None = None,
+    position: SponsorPosition | None = None,
+    monitoring_state: MonitoringConnectionState = MonitoringConnectionState.DISCONNECTED,
+) -> Step32SponsorWorkflowView:
+    if (
+        risk.candidate_id != candidate.candidate_id
+        or lifecycle.candidate_id != candidate.candidate_id
+        or (decision is not None and decision.candidate_id != candidate.candidate_id)
+        or (model is not None and model.candidate_id != candidate.candidate_id)
+        or (position is not None and position.candidate_id != candidate.candidate_id)
+    ):
+        raise ValueError("STEP32_BROWSER_BINDING_INVALID")
+    if model is None:
+        current = {
+            CandidateLifecycleState.WAITING_FOR_RISK: "Waiting for Risk",
+            CandidateLifecycleState.WAITING_FOR_ENTRY: "Waiting for Entry",
+            CandidateLifecycleState.RISK_REJECTED: "Risk Rejected",
+            CandidateLifecycleState.STALE: "Stale",
+            CandidateLifecycleState.PRE_ENTRY_INVALIDATED: "Pre-Entry Invalidated",
+            CandidateLifecycleState.RECONCILIATION_REQUIRED_PRE_ENTRY: "Reconciliation Required",
+        }[lifecycle.state]
+        model_state = "NOT ACTIVE"
+    else:
+        current = {
+            ObjectiveModelState.ACTIVE: "Active",
+            ObjectiveModelState.RECONCILIATION_REQUIRED: "Reconciliation Required",
+            ObjectiveModelState.CLOSED: "Closed",
+        }[model.state]
+        model_state = model.state.value.replace("MODEL_TRADE_", "").replace("_", " ")
+    return Step32SponsorWorkflowView(
+        candidate.canonical_instrument,
+        candidate.direction,
+        candidate.setup_family.replace("_", " ").title(),
+        _required_decimal(candidate.entry_price),
+        _required_decimal(candidate.stop_price),
+        _required_decimal(candidate.invalidation_level_or_reference),
+        _required_decimal(candidate.target_price),
+        _required_decimal(candidate.risk_reward_ratio),
+        risk.state.value.removeprefix("RISK_").replace("_", " "),
+        "NO DECISION RECORDED" if decision is None else decision.mode.value,
+        current,
+        model_state,
+        "NONE" if position is None else f"{position.mode.value} · {position.state.value}",
+        monitoring_state.value.replace("_", " "),
+        "RECONCILIATION REQUIRED"
+        if model is not None and model.state is ObjectiveModelState.RECONCILIATION_REQUIRED
+        else "MONITORING OK"
+        if monitoring_state is MonitoringConnectionState.CONNECTED
+        else "RECONCILIATION REQUIRED",
+    )
+
+
+def render_step32_sponsor_workflow(view: Step32SponsorWorkflowView) -> str:
+    options = "".join(
+        '<span class="decision-option'
+        + (' selected' if view.sponsor_decision == mode else '')
+        + f'">{mode}</span>'
+        for mode in ("LIVE", "PAPER", "IGNORE")
+    )
+    values = "".join(
+        '<div class="step32-value"><label>' + escape(label) + '</label><strong>'
+        + escape(_decimal_number(value)) + '</strong></div>'
+        for label, value in (
+            ("Entry", view.entry),
+            ("Stop", view.stop),
+            ("Invalidation", view.invalidation),
+            ("Target", view.target),
+            ("R:R", view.risk_reward),
+        )
+    )
+    return (
+        '<section class="step32-workflow"><div class="step32-head">'
+        f'<h2>{escape(view.instrument)} — {escape(view.direction)}</h2>'
+        f'<span class="setup-family">{escape(view.setup)}</span></div>'
+        '<div class="step32-grid"><div class="step32-block"><h3>Trade Plan</h3>'
+        f'<div class="step32-values">{values}</div></div>'
+        '<div class="step32-block"><h3>Risk</h3>'
+        f'<strong>{escape(view.risk)}</strong><h3>Your Decision</h3>'
+        f'<div class="decision-options">{options}</div></div>'
+        '<div class="step32-block"><h3>Current State</h3>'
+        f'<strong>{escape(view.current_state)}</strong><div class="model-position">'
+        f'<div><span>Kite Monitoring</span><strong>{escape(view.kite_monitoring)}</strong></div>'
+        f'<div><span>Trade Monitoring</span><strong>{escape(view.trade_monitoring)}</strong></div>'
+        f'<div><span>KRONOS Model</span><strong>{escape(view.model_state)}</strong></div>'
+        f'<div><span>Your Position</span><strong>{escape(view.sponsor_position_state)}</strong></div>'
+        '</div></div></div></section>'
+    )
+
+
 def render_workspace(
     snapshot: BrowserWorkspaceSnapshot,
     opportunity: OpportunitySnapshot,
+    step32: Step32SponsorWorkflowView | None = None,
 ) -> str:
     plan = (
         '<div class="plan-strip">'
@@ -177,7 +310,9 @@ def render_workspace(
         f'<p>{escape(opportunity.why)}</p><h3>Evidence For</h3><ul>{evidence_for}</ul>',
         f'<h3>Evidence Against / Risks</h3><ul>{evidence_against}</ul>',
         f'<h3>What Needs To Happen Next</h3><p>{escape(opportunity.next_required_event)}</p>',
-        '</section></div><div><section class="chart-placeholder"><div>',
+        '</section>',
+        "" if step32 is None else render_step32_sponsor_workflow(step32),
+        '</div><div><section class="chart-placeholder"><div>',
         '<strong>Chart reserved for Stage 10</strong><br>TradingView integration is not implemented.',
         '</div></section><section class="technical" style="margin-top:16px">',
         '<h2>Technical details</h2>',
@@ -431,6 +566,8 @@ def render_settings(
     snapshot: BrowserWorkspaceSnapshot,
     chart_analyst_status: ChartAnalystConnectionStatus,
     activation_status: ChartAnalystV2ActivationStatus,
+    live_monitoring: LiveMonitoringTestResult | None = None,
+    live_monitoring_instruments: tuple[str, ...] = (),
 ) -> str:
     if (
         type(chart_analyst_status) is not ChartAnalystConnectionStatus
@@ -444,7 +581,55 @@ def render_settings(
         else "enable"
     )
     activation_label = "Disable" if activation_action == "disable" else "Enable"
+    monitoring = live_monitoring or LiveMonitoringTestResult(
+        LiveMonitoringTestState.NOT_TESTED
+    )
+    selected = monitoring.instrument or (
+        live_monitoring_instruments[0] if live_monitoring_instruments else ""
+    )
+    options = "".join(
+        '<option'
+        + (' selected' if item == selected else '')
+        + f'>{escape(item)}</option>'
+        for item in live_monitoring_instruments
+    )
+    proof = ""
+    if monitoring.state is LiveMonitoringTestState.PASS:
+        proof = (
+            '<div class="configuration-note"><strong>LIVE MONITORING: PASS</strong><br>'
+            f'Instrument: {escape(monitoring.instrument or "—")}<br>'
+            'Provider: KITE<br>Market data received: YES<br>DOMAIN-002: ACCEPTED<br>'
+            f'Observed at: {escape(monitoring.observed_at.isoformat() if monitoring.observed_at else "—")}</div>'
+        )
+    elif monitoring.state is LiveMonitoringTestState.CONNECTED_NO_DATA:
+        proof = (
+            '<div class="configuration-note"><strong>CONNECTED — NO LIVE MARKET DATA</strong><br>'
+            'Live Kite E2E remains: PENDING</div>'
+        )
+    elif monitoring.state is LiveMonitoringTestState.FAIL:
+        proof = (
+            '<div class="configuration-note"><strong>LIVE MONITORING: FAIL</strong><br>'
+            f'{escape(monitoring.safe_reason.replace("_", " "))}</div>'
+        )
+    disabled = (
+        " disabled"
+        if snapshot.provider_state is not ProviderConnectionState.CONNECTED
+        or monitoring.state is LiveMonitoringTestState.TESTING
+        else ""
+    )
     body = (
+        f'<div id="live-monitoring-state" data-state="{escape(monitoring.state.value)}">'
+        '<section class="configuration"><div class="configuration-head">'
+        '<h2>Kite Live Monitoring</h2></div>'
+        '<div class="configuration-state"><span>Kite</span>'
+        f'<strong>● {escape(snapshot.provider_state.value)}</strong></div>'
+        '<div class="configuration-state"><span>Live monitoring</span>'
+        f'<strong>{escape(monitoring.state.value)}</strong></div>'
+        '<form method="post" action="/settings/kite/live-monitoring/test">'
+        '<label for="live-monitoring-instrument">Instrument</label>'
+        f'<select id="live-monitoring-instrument" name="instrument" required>{options}</select>'
+        f'<button class="primary" type="submit"{disabled}>TEST LIVE MONITORING</button>'
+        f'</form>{proof}</section></div>'
         '<section class="configuration"><div class="configuration-head">'
         '<h2>OpenAI Chart Analyst</h2>'
         '</div><div class="configuration-state"><span>Credential</span>'
@@ -465,6 +650,10 @@ def render_settings(
         '<div class="configuration-actions"><form method="post" '
         'action="/settings/chart-analyst/test">'
         '<button type="submit">Test Connection</button></form></div></section>'
+        '<script>const liveInitial=document.getElementById("live-monitoring-state").dataset.state;'
+        'setInterval(async()=>{try{const r=await fetch("/status",{cache:"no-store"});'
+        'if(!r.ok)return;const s=await r.json();if(s.live_monitoring!==liveInitial)'
+        'location.reload();}catch(_e){}},1000);</script>'
     )
     return _page(
         title="Settings",
@@ -819,6 +1008,16 @@ def _number(value: float) -> str:
     return f"{value:,.4f}".rstrip("0").rstrip(".")
 
 
+def _decimal_number(value: Decimal) -> str:
+    return f"{value:f}".rstrip("0").rstrip(".") if "." in f"{value:f}" else f"{value:f}"
+
+
+def _required_decimal(value: Decimal | None) -> Decimal:
+    if value is None:
+        raise ValueError("STEP32_BROWSER_GEOMETRY_UNAVAILABLE")
+    return value
+
+
 def _date(value) -> str:  # type: ignore[no-untyped-def]
     return "—" if value is None else value.strftime("%d %b %Y · %H:%M %Z")
 
@@ -831,9 +1030,12 @@ def _icon(name: str) -> str:
 
 
 __all__ = [
+    "Step32SponsorWorkflowView",
+    "build_step32_sponsor_workflow_view",
     "render_opportunities",
     "render_placeholder",
     "render_settings",
+    "render_step32_sponsor_workflow",
     "render_v1_review",
     "render_workspace",
 ]

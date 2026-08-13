@@ -139,8 +139,12 @@ def test_server_rejects_non_loopback_binding() -> None:
         KronosBrowserServer(("0.0.0.0", 0), app)
 
 
-def test_root_redirects_and_opportunities_route_renders() -> None:
-    server, thread = _running_server(_active_v1(_ready(_opportunity())))
+def test_root_redirects_and_opportunities_route_renders(tmp_path) -> None:
+    review = SwingV1ReviewWorkflow(LocalTradingViewEvidenceStore(tmp_path))
+    server, thread = _running_server(
+        _active_v1(_ready(_opportunity())),
+        v1_review=review,
+    )
     try:
         status, headers, _ = _request(server, "GET", "/")
         assert status == 303
@@ -203,7 +207,7 @@ def test_status_endpoint_is_small_and_sanitized() -> None:
         assert status == 200
         assert set(__import__("json").loads(body)) == {
             "service", "provider", "analysis", "completed_at", "v1_probables",
-            "analysis_diagnostic",
+            "analysis_diagnostic", "live_monitoring",
         }
         assert __import__("json").loads(body)["service"] == "KRONOS_BROWSER_V1"
         assert "HDFCBANK" not in body
@@ -312,7 +316,11 @@ def test_status_exposes_only_bounded_sanitized_analysis_diagnostic(
 
 @pytest.mark.parametrize(
     "path",
-    ("/provider/connect", "/provider/disconnect", "/swing/analysis"),
+    (
+        "/provider/connect",
+        "/provider/disconnect",
+        "/swing/analysis",
+    ),
 )
 def test_post_accepts_exact_running_loopback_origin(path: str) -> None:
     server, thread = _running_server()
@@ -326,6 +334,65 @@ def test_post_accepts_exact_running_loopback_origin(path: str) -> None:
         )
         assert status == 303
         assert headers["Location"] == "/swing/opportunities"
+    finally:
+        server.shutdown(); server.server_close(); thread.join()
+
+
+def test_live_monitoring_settings_control_invokes_current_process_capability(
+    monkeypatch,
+) -> None:
+    from datetime import UTC, datetime
+    from kronos.application.live_monitoring_e2e import (
+        LiveMonitoringTestResult,
+        LiveMonitoringTestState,
+    )
+
+    application = SwingOpportunitiesApplication(
+        _Provider,
+        background_runner=lambda operation, _name: operation(),
+    )
+    assert application.connect_provider()
+    monkeypatch.setattr(
+        "kronos.application.swing_opportunities.run_live_monitoring_e2e",
+        lambda capability, instrument, **_kwargs: LiveMonitoringTestResult(
+            LiveMonitoringTestState.PASS,
+            instrument,
+            market_data_received=True,
+            domain_002_accepted=True,
+            observed_at=datetime(2026, 8, 13, 9, 15, tzinfo=UTC),
+        ),
+    )
+    server = create_browser_server(application, port=0)
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    authority = f"127.0.0.1:{server.server_port}"
+    try:
+        status, _, settings = _request(server, "GET", "/settings")
+        assert status == 200
+        assert "Kite Live Monitoring" in settings
+        assert "TEST LIVE MONITORING" in settings
+        assert 'name="instrument"' in settings
+        status, headers, _ = _request(
+            server,
+            "POST",
+            "/settings/kite/live-monitoring/test",
+            headers={
+                "Host": authority,
+                "Origin": f"http://{authority}",
+                "Content-Type": "application/x-www-form-urlencoded",
+            },
+            body="instrument=RELIANCE",
+        )
+        assert status == 303
+        assert headers["Location"] == "/settings"
+        _, _, rendered = _request(server, "GET", "/settings")
+        assert "LIVE MONITORING: PASS" in rendered
+        assert "Instrument: RELIANCE" in rendered
+        assert "Market data received: YES" in rendered
+        assert "DOMAIN-002: ACCEPTED" in rendered
+        assert json.loads(_request(server, "GET", "/status")[2])[
+            "live_monitoring"
+        ] == "PASS"
     finally:
         server.shutdown(); server.server_close(); thread.join()
 
@@ -352,6 +419,7 @@ def test_post_accepts_exact_running_loopback_origin(path: str) -> None:
         "/swing/v1/chart",
         "/swing/v1/chart/remove",
         "/swing/v1/analyze",
+        "/settings/kite/live-monitoring/test",
     ),
 )
 def test_post_rejects_every_non_current_origin(

@@ -12,8 +12,17 @@ from kronos.application.swing_v1_review import SwingV1ReviewWorkflow
 from kronos.browser.views import (
     render_opportunities,
     render_placeholder,
+    render_settings,
     render_v1_review,
     render_workspace,
+)
+from kronos.application.live_monitoring_e2e import (
+    LiveMonitoringTestResult,
+    LiveMonitoringTestState,
+)
+from kronos.configuration.openai_chart_analyst import (
+    ChartAnalystConnectionStatus,
+    ChartAnalystV2ActivationStatus,
 )
 from kronos.swing.v1 import (
     ChartTimeframe,
@@ -63,6 +72,52 @@ def test_opportunities_has_frozen_navigation_and_lifecycle_shell() -> None:
     ):
         assert label in rendered
     assert rendered.count("Placeholder") >= 4
+
+
+def test_live_monitoring_settings_distinguishes_pass_no_data_and_disconnected() -> None:
+    pending = render_settings(
+        _ready(),
+        ChartAnalystConnectionStatus.NOT_CONFIGURED,
+        ChartAnalystV2ActivationStatus.DISABLED,
+        LiveMonitoringTestResult(
+            LiveMonitoringTestState.CONNECTED_NO_DATA,
+            "RELIANCE",
+            safe_reason="NO_LIVE_MARKET_DATA",
+        ),
+        ("RELIANCE",),
+    )
+    assert "CONNECTED — NO LIVE MARKET DATA" in pending
+    assert "Live Kite E2E remains: PENDING" in pending
+    assert "LIVE MONITORING: PASS" not in pending
+
+    passed = render_settings(
+        _ready(),
+        ChartAnalystConnectionStatus.NOT_CONFIGURED,
+        ChartAnalystV2ActivationStatus.DISABLED,
+        LiveMonitoringTestResult(
+            LiveMonitoringTestState.PASS,
+            "RELIANCE",
+            market_data_received=True,
+            domain_002_accepted=True,
+            observed_at=NOW,
+        ),
+        ("RELIANCE",),
+    )
+    assert "LIVE MONITORING: PASS" in passed
+    assert "Market data received: YES" in passed
+    assert "DOMAIN-002: ACCEPTED" in passed
+
+    disconnected = render_settings(
+        replace(_ready(), provider_state=ProviderConnectionState.DISCONNECTED),
+        ChartAnalystConnectionStatus.NOT_CONFIGURED,
+        ChartAnalystV2ActivationStatus.DISABLED,
+        live_monitoring_instruments=("RELIANCE",),
+    )
+    assert "TEST LIVE MONITORING" in disconnected
+    assert (
+        '<button class="primary" type="submit" disabled>'
+        "TEST LIVE MONITORING</button>"
+    ) in disconnected
 
 
 def test_v1_review_renders_all_unique_probables_and_only_requested_upload_slots(
