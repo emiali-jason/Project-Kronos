@@ -220,3 +220,7 @@ Provider shall not populate Instrument directly, and Instrument shall not access
 - [Domain Dependency Matrix](DOMAIN_DEPENDENCY_MATRIX.md)
 - [KRONOS Engine Ownership](../ENGINE_OWNERSHIP.md)
 - [Project KRONOS Data Flow](../DATA_FLOW.md)
+
+## Swing V1 Step-32 Approved Extension — 2026-08-13
+
+Governed by [P32-001–P32-008](../adr/ADR-SWING-STEP-32-PLATFORM-AMENDMENTS.md): Validation owns Business Judgment; Risk owns Risk results; Swing V1 Trade Candidate Lifecycle owns pre-entry state; KR-380/Execution owns Entry timing; KR-390/Portfolio owns objective model lifecycle; DOMAIN-005 separately represents Sponsor LIVE/PAPER positions; Observation owns admitted facts; Event publishes outcomes; Instrument owns execution mapping/tick/precision/lot; Market owns session/calendar/availability; Audit remains read-only. Pine owns no Observation, lifecycle, decision, Risk, or execution authority. Broker execution authority is NONE.

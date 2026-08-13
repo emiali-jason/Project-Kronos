@@ -50,3 +50,13 @@ Provide navigation to the approved KRONOS Platform Architecture v1.0 documents a
 - [Project KRONOS Data Flow](../DATA_FLOW.md)
 - [ADR-006 — Execution Context Provider Architecture](../adr/ADR-006-Execution-Context-Provider-Architecture.md)
 - [PP-007 — Execution Semantics Across Markets](../principles/PP-007-Execution-Semantics-Across-Markets.md)
+
+## Swing V1 Step-32 / Step-33 Approved Extensions
+
+- [Platform amendments](../adr/ADR-SWING-STEP-32-PLATFORM-AMENDMENTS.md)
+- [Product ADRs](../products/swing/SWING-V1-STEP-32-PRODUCT-ADRS.md)
+- [Versioned contracts](../interfaces/SWING-V1-STEP-32-VERSIONED-CONTRACTS.md)
+- [Monitoring architecture](../products/swing/SWING-V1-STEP-32-MONITORING-ARCHITECTURE.md)
+- [Validation programme](../products/swing/SWING-V1-STEP-32-VALIDATION-PROGRAMME.md)
+- [Production gates](../products/swing/SWING-V1-STEP-32-PRODUCTION-GATES.md)
+- [Step-33 architecture](../products/swing/SWING-V1-STEP-33-OUTCOME-AND-JOURNAL-INTEGRATION.md)

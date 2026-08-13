@@ -251,3 +251,7 @@ The existing Risk–Execution–Portfolio sequence remains governed across busin
 - [Instrument Domain Architecture](domains/instrument/ARCHITECTURE.md)
 - [ADL-003 — Execution Context Adapters](../ADL-003-Execution-Context-Adapters.md)
 - [ADR-006 — Execution Context Provider Architecture](../adr/ADR-006-Execution-Context-Provider-Architecture.md)
+
+## Swing V1 Step-32 Approved Extension — 2026-08-13
+
+Candidate → Validation Business Judgment → Risk Result → KR-380 Entry Outcome → KR-390 Objective Model → DOMAIN-009 Event. Monitoring follows authorized Pine publisher → authenticated ingress → DOMAIN-002 admission → Observation → KR-380/KR-390. Sponsor Decision and Sponsor Position are parallel branches. Each arrow permits only an approved [versioned contract](../interfaces/SWING-V1-STEP-32-VERSIONED-CONTRACTS.md); no ownership or runtime/Production authority transfers.

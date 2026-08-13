@@ -67,3 +67,7 @@ Product folder names do not establish product responsibilities. Draft placeholde
 Published architecture documents remain at their governed paths and retain their recorded status. The completed migration’s amendments and supersessions are recorded in [MIG-001](migrations/MIG-001-ADR-009-COORDINATED-ARCHITECTURE-MIGRATION-PACKAGE.md), and historical predecessors remain available through governed links. See [`KNOWLEDGE_BASE.md`](KNOWLEDGE_BASE.md) for the current index.
 
 Any migration, supersession, status change, or reinterpretation requires explicit architectural authority and preserved Git history.
+
+## Approved Swing V1 Extensions
+
+Swing V1 Step-32 repository activation is indexed in the [Architecture Index](platform/ARCHITECTURE_INDEX.md) and [Knowledge Base](KNOWLEDGE_BASE.md). It is architecture/contract publication only: implementation is not authorized, authority is SHADOW / VALIDATION ONLY, and broker execution authority is NONE.

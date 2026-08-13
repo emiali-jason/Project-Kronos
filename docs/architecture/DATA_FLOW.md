@@ -463,3 +463,7 @@ Reference charts may expose their own analytical states for diagnostics, but the
 On MCX 1H, every remaining blocker must be available in the same panel in trader language. The trader should not need to open COMEX merely to discover why execution is pending.
 
 The source of a blocker may be reference Daily, reference 4H, reference 1H, or MCX 1H. Its presentation must describe the required market behavior, not leak internal engine naming. This decision is recorded in [ADL-002](ADL-002-MCX-Self-Contained-Execution.md).
+
+## Swing V1 Step-32 Approved Data Flow — 2026-08-13
+
+Trade Candidate → Business Judgment → Risk Result → Entry Outcome → Objective Model Trade → Lifecycle Event. Authorized Pine publisher → untrusted Monitoring Submission → authenticated ingress → DOMAIN-002 governed Observation → KR-380/KR-390. Sponsor Decision and Sponsor Position remain parallel to objective history. Rejected transport evidence never enters the business flow; missing/ambiguous evidence fails closed. See [monitoring architecture](products/swing/SWING-V1-STEP-32-MONITORING-ARCHITECTURE.md).

@@ -111,3 +111,15 @@ The following documents are approved canonical architecture. They grant no engin
 - [`docs/Decisions.md`](../Decisions.md) remains an existing engineering decision log and ADL linkage record. The new `adr/` and `decisions/` directories do not replace it.
 - Approved [`PLATFORM_GOVERNANCE.md`](../product/PLATFORM_GOVERNANCE.md) remains the current recorded platform governance document. The new `ARCHITECTURE_GOVERNANCE.md` is a Draft repository-process document and does not override it.
 - Existing product architecture under [`docs/product/`](../product/) is preserved. Draft product folders under `docs/architecture/products/` are not populated from it without explicit architectural direction.
+
+## Swing V1 Step-32 Approved Architecture — 2026-08-13
+
+- [P32-001–P32-008](adr/ADR-SWING-STEP-32-PLATFORM-AMENDMENTS.md)
+- [S32-001–S32-009](products/swing/SWING-V1-STEP-32-PRODUCT-ADRS.md)
+- [Eight contracts](interfaces/SWING-V1-STEP-32-VERSIONED-CONTRACTS.md)
+- [Monitoring/recovery architecture](products/swing/SWING-V1-STEP-32-MONITORING-ARCHITECTURE.md)
+- [202-case validation](products/swing/SWING-V1-STEP-32-VALIDATION-PROGRAMME.md)
+- [Production gates](products/swing/SWING-V1-STEP-32-PRODUCTION-GATES.md)
+- [Step-33 outcome/journal architecture](products/swing/SWING-V1-STEP-33-OUTCOME-AND-JOURNAL-INTEGRATION.md)
+
+Implementation, Pine changes, webhook activation, and broker execution are not authorized. Authority remains SHADOW / VALIDATION ONLY.

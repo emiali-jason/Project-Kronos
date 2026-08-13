@@ -103,3 +103,7 @@ KES is an unnumbered architectural boundary over existing public evidence contra
 KR-380A and KR-390A are documented exceptions to the strict public-output-only dependency rule. They may access narrowly scoped lower-level datasets when a safe public fact does not yet exist. This exception does not permit them to duplicate complete trend, acceptance, confidence, structure, decision, timing, or management engines.
 
 The full adapter decision is recorded in [ADL-003](ADL-003-Execution-Context-Adapters.md).
+
+## Swing V1 Step-32 Engine Extension — Approved 2026-08-13
+
+KR-380 owns Entry timing without changing Step-31 geometry or inferring fills. KR-390 owns objective model lifecycle after an accepted Risk-permitted Entry Outcome and has no pre-entry authority. Swing V1 Trade Candidate Lifecycle owns pre-entry staleness, invalidation, binding validity, and terminal state. DOMAIN-002 admits Observations; DOMAIN-009 publishes Events. Execution Context Provider remains qualification/translation only. Pine is an untrusted factual publisher; broker execution authority is NONE. See [P32 amendments](adr/ADR-SWING-STEP-32-PLATFORM-AMENDMENTS.md).
