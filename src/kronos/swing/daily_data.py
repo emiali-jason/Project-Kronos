@@ -8,6 +8,7 @@ from datetime import UTC, date, datetime, timedelta
 from enum import StrEnum
 from zoneinfo import ZoneInfo
 
+from kronos.market.calendar import MarketCalendarPublisher
 from kronos.provider.contracts.instrument import (
     InstrumentRecord,
     InstrumentResolutionError,
@@ -117,6 +118,7 @@ def build_swing_daily_dataset(
         [HistoricalCandleRequest], Sequence[HistoricalCandle]
     ],
     now: datetime,
+    market_calendar_publisher: MarketCalendarPublisher | None = None,
 ) -> SwingDailyDataset:
     """Build one complete per-member result without hiding isolated failures."""
 
@@ -128,6 +130,10 @@ def build_swing_daily_dataset(
         or not callable(resolve_instrument)
         or not callable(historical_candles)
         or not _aware(now)
+        or (
+            market_calendar_publisher is not None
+            and type(market_calendar_publisher) is not MarketCalendarPublisher
+        )
     ):
         raise ValueError("SWING_DAILY_DATASET_REQUEST_INVALID")
 
@@ -140,7 +146,8 @@ def build_swing_daily_dataset(
             historical_candles=historical_candles,
             start=start,
             end=end,
-            current_trading_date=now.astimezone(_KOLKATA).date(),
+            observed_at=now,
+            market_calendar_publisher=market_calendar_publisher,
         )
         for member in universe
     )
@@ -156,7 +163,8 @@ def _build_series(
     ],
     start: datetime,
     end: datetime,
-    current_trading_date: date,
+    observed_at: datetime,
+    market_calendar_publisher: MarketCalendarPublisher | None,
 ) -> SwingDailySeries:
     try:
         instrument = resolve_instrument(member)
@@ -194,9 +202,13 @@ def _build_series(
         return _unavailable(member, SwingDailyFailure.MALFORMED_CANDLE_SEQUENCE)
 
     completed = tuple(
-        candle
-        for candle in observations
-        if candle.timestamp.astimezone(_KOLKATA).date() < current_trading_date
+        candle for candle in observations
+        if _daily_candle_completed(
+            member,
+            candle,
+            observed_at,
+            market_calendar_publisher,
+        )
     )
     completed = completed[-OPERATIONAL_DAILY_HISTORY_DEPTH:]
     if len(completed) < MINIMUM_COMPLETED_DAILY_CANDLES:
@@ -212,6 +224,35 @@ def _build_series(
         observation_boundary=completed[-1].timestamp,
         failure=None,
         _analysis_instrument=instrument,
+    )
+
+
+def _daily_candle_completed(
+    member: SwingUniverseMember,
+    candle: HistoricalCandle,
+    observed_at: datetime,
+    publisher: MarketCalendarPublisher | None,
+) -> bool:
+    """Use DOMAIN-008 for same-session completion; never admit a future bar."""
+
+    candle_date = candle.timestamp.astimezone(_KOLKATA).date()
+    observed_date = observed_at.astimezone(_KOLKATA).date()
+    if candle_date < observed_date:
+        return True
+    if candle_date > observed_date or publisher is None:
+        return False
+    exchange = (
+        "MCX"
+        if member.asset_class is SwingUniverseAssetClass.MCX_COMMODITY
+        else "NSE"
+    )
+    try:
+        schedule = publisher.schedule(exchange, candle_date, observed_at=observed_at)
+    except ValueError:
+        return False
+    return (
+        schedule is not None
+        and schedule.trading_date_completed(observed_at)
     )
 
 

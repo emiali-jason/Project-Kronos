@@ -5,6 +5,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
+from kronos.market.calendar import MarketCalendarPublisher
 from kronos.provider.contracts.instrument import (
     InstrumentRecord,
     InstrumentResolutionError,
@@ -128,6 +129,111 @@ def test_current_incomplete_trading_day_is_excluded() -> None:
         < _NOW.astimezone(_KOLKATA).date()
         for record in dataset.records
         if record.observation_boundary is not None
+    )
+
+
+def test_domain_008_excludes_same_day_before_close_and_includes_it_after_close() -> None:
+    publisher = MarketCalendarPublisher()
+    trading_date = date(2026, 8, 14)
+    calendar_reference = datetime(2026, 8, 14, 23, 59, tzinfo=_KOLKATA)
+    nse = publisher.schedule("NSE", trading_date, observed_at=calendar_reference)
+    mcx = publisher.schedule("MCX", trading_date, observed_at=calendar_reference)
+    assert nse is not None and nse.session_close is not None
+    assert mcx is not None and mcx.session_close is not None
+    before = min(nse.session_close, mcx.session_close) - timedelta(minutes=1)
+    after = max(nse.session_close, mcx.session_close) + timedelta(minutes=1)
+
+    def supplied(request):  # type: ignore[no-untyped-def]
+        exchange = request.instrument.exchange
+        publication = publisher.publication(exchange)
+        days = tuple(
+            day
+            for day in sorted(publication.trading_dates)
+            if day <= trading_date
+        )[-31:]
+        return tuple(
+            HistoricalCandle(
+                datetime.combine(day, datetime.min.time(), tzinfo=_KOLKATA),
+                100.0,
+                102.0,
+                99.0,
+                101.0,
+                1000,
+            )
+            for day in days
+        )
+
+    before_dataset = build_swing_daily_dataset(
+        enabled_swing_phase1_universe(),
+        resolve_instrument=lambda member: _instrument(member.canonical_identity),
+        historical_candles=supplied,
+        now=before,
+        market_calendar_publisher=publisher,
+    )
+    after_dataset = build_swing_daily_dataset(
+        enabled_swing_phase1_universe(),
+        resolve_instrument=lambda member: _instrument(member.canonical_identity),
+        historical_candles=supplied,
+        now=after,
+        market_calendar_publisher=publisher,
+    )
+
+    assert all(
+        record.observation_boundary is not None
+        and record.observation_boundary.astimezone(_KOLKATA).date() < trading_date
+        for record in before_dataset.records
+    )
+    assert all(
+        record.observation_boundary is not None
+        and record.observation_boundary.astimezone(_KOLKATA).date() == trading_date
+        for record in after_dataset.records
+    )
+
+
+def test_17_august_daily_completion_uses_each_authoritative_exchange_close() -> None:
+    publisher = MarketCalendarPublisher()
+    trading_date = date(2026, 8, 17)
+
+    def supplied(request):  # type: ignore[no-untyped-def]
+        publication = publisher.publication(request.instrument.exchange)
+        days = tuple(
+            day for day in sorted(publication.trading_dates) if day <= trading_date
+        )[-31:]
+        return tuple(
+            HistoricalCandle(
+                datetime.combine(day, datetime.min.time(), tzinfo=_KOLKATA),
+                100.0, 102.0, 99.0, 101.0, 1000,
+            )
+            for day in days
+        )
+
+    after_nse = build_swing_daily_dataset(
+        enabled_swing_phase1_universe(),
+        resolve_instrument=lambda member: _instrument(member.canonical_identity),
+        historical_candles=supplied,
+        now=datetime(2026, 8, 17, 16, 0, tzinfo=_KOLKATA),
+        market_calendar_publisher=publisher,
+    )
+    after_mcx = build_swing_daily_dataset(
+        enabled_swing_phase1_universe(),
+        resolve_instrument=lambda member: _instrument(member.canonical_identity),
+        historical_candles=supplied,
+        now=datetime(2026, 8, 17, 23, 31, tzinfo=_KOLKATA),
+        market_calendar_publisher=publisher,
+    )
+
+    for record in after_nse.records:
+        assert record.observation_boundary is not None
+        expected = (
+            date(2026, 8, 14)
+            if record.asset_class is SwingUniverseAssetClass.MCX_COMMODITY
+            else trading_date
+        )
+        assert record.observation_boundary.astimezone(_KOLKATA).date() == expected
+    assert all(
+        record.observation_boundary is not None
+        and record.observation_boundary.astimezone(_KOLKATA).date() == trading_date
+        for record in after_mcx.records
     )
 
 
