@@ -25,7 +25,7 @@ from kronos.intraday.instrument import adapt_runtime_instrument
 from kronos.intraday.persistence import LocalIntradayFactualEvidenceStore
 from kronos.market.calendar import (
     MARKET_CALENDAR_SCHEMA,
-    MarketCalendarPublisher,
+    SealedMarketCalendarPublisher,
     seal_market_calendar_document,
 )
 from kronos.provider.contracts.market_data import HistoricalCandle
@@ -89,7 +89,7 @@ def _instrument_registry(*, bound: bool = True):  # type: ignore[no-untyped-def]
     )
 
 
-def _calendar(*, day: str = "2026-08-17") -> MarketCalendarPublisher:
+def _calendar(*, day: str = "2026-08-17") -> SealedMarketCalendarPublisher:
     source_boundary = OBSERVED - timedelta(days=1)
     document = {
         "schema_identity": MARKET_CALENDAR_SCHEMA,
@@ -117,7 +117,7 @@ def _calendar(*, day: str = "2026-08-17") -> MarketCalendarPublisher:
             }
         ],
     }
-    return MarketCalendarPublisher.from_bytes(
+    return SealedMarketCalendarPublisher.from_bytes(
         seal_market_calendar_document(document),
         observed_at=OBSERVED,
     )
@@ -289,7 +289,7 @@ def test_calendar_publication_integrity_failure_stops_before_composition() -> No
     )
     document["market_identity"] = "TAMPERED"
     with pytest.raises(ValueError, match="MARKET_CALENDAR_INTEGRITY_MISMATCH"):
-        MarketCalendarPublisher.from_bytes(
+        SealedMarketCalendarPublisher.from_bytes(
             json.dumps(document).encode(),
             observed_at=publisher.observed_at,
         )

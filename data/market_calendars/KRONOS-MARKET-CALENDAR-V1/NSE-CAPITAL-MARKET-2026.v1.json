@@ -1,0 +1,886 @@
+{
+  "calendar_identity": "KRONOS-NSE-CAPITAL-MARKET-2026",
+  "calendar_version": "2026.1.0",
+  "contract_identity": "KRONOS-MARKET-CALENDAR-V1",
+  "contract_version": "1",
+  "coverage_end": "2026-08-14",
+  "coverage_start": "2026-01-01",
+  "exchange": "NSE",
+  "market_identity": "NSE_CAPITAL_MARKET",
+  "non_trading_dates": {
+    "2026-01-03": "WEEKEND",
+    "2026-01-04": "WEEKEND",
+    "2026-01-10": "WEEKEND",
+    "2026-01-11": "WEEKEND",
+    "2026-01-15": "MUNICIPAL_CORPORATION_ELECTION",
+    "2026-01-17": "WEEKEND",
+    "2026-01-18": "WEEKEND",
+    "2026-01-24": "WEEKEND",
+    "2026-01-25": "WEEKEND",
+    "2026-01-26": "REPUBLIC_DAY",
+    "2026-01-31": "WEEKEND",
+    "2026-02-07": "WEEKEND",
+    "2026-02-08": "WEEKEND",
+    "2026-02-14": "WEEKEND",
+    "2026-02-15": "WEEKEND",
+    "2026-02-21": "WEEKEND",
+    "2026-02-22": "WEEKEND",
+    "2026-02-28": "WEEKEND",
+    "2026-03-01": "WEEKEND",
+    "2026-03-03": "HOLI",
+    "2026-03-07": "WEEKEND",
+    "2026-03-08": "WEEKEND",
+    "2026-03-14": "WEEKEND",
+    "2026-03-15": "WEEKEND",
+    "2026-03-21": "WEEKEND",
+    "2026-03-22": "WEEKEND",
+    "2026-03-26": "SHRI_RAM_NAVMI",
+    "2026-03-28": "WEEKEND",
+    "2026-03-29": "WEEKEND",
+    "2026-03-31": "SHRI_MAHAVIR_JAYANTI",
+    "2026-04-03": "GOOD_FRIDAY",
+    "2026-04-04": "WEEKEND",
+    "2026-04-05": "WEEKEND",
+    "2026-04-11": "WEEKEND",
+    "2026-04-12": "WEEKEND",
+    "2026-04-14": "DR_BABA_SAHEB_AMBEDKAR_JAYANTI",
+    "2026-04-18": "WEEKEND",
+    "2026-04-19": "WEEKEND",
+    "2026-04-25": "WEEKEND",
+    "2026-04-26": "WEEKEND",
+    "2026-05-01": "MAHARASHTRA_DAY",
+    "2026-05-02": "WEEKEND",
+    "2026-05-03": "WEEKEND",
+    "2026-05-09": "WEEKEND",
+    "2026-05-10": "WEEKEND",
+    "2026-05-16": "WEEKEND",
+    "2026-05-17": "WEEKEND",
+    "2026-05-23": "WEEKEND",
+    "2026-05-24": "WEEKEND",
+    "2026-05-28": "BAKRI_ID",
+    "2026-05-30": "WEEKEND",
+    "2026-05-31": "WEEKEND",
+    "2026-06-06": "WEEKEND",
+    "2026-06-07": "WEEKEND",
+    "2026-06-13": "WEEKEND",
+    "2026-06-14": "WEEKEND",
+    "2026-06-20": "WEEKEND",
+    "2026-06-21": "WEEKEND",
+    "2026-06-26": "MOHARRAM",
+    "2026-06-27": "WEEKEND",
+    "2026-06-28": "WEEKEND",
+    "2026-07-04": "WEEKEND",
+    "2026-07-05": "WEEKEND",
+    "2026-07-11": "WEEKEND",
+    "2026-07-12": "WEEKEND",
+    "2026-07-18": "WEEKEND",
+    "2026-07-19": "WEEKEND",
+    "2026-07-25": "WEEKEND",
+    "2026-07-26": "WEEKEND",
+    "2026-08-01": "WEEKEND",
+    "2026-08-02": "WEEKEND",
+    "2026-08-08": "WEEKEND",
+    "2026-08-09": "WEEKEND"
+  },
+  "official_sources": [
+    {
+      "artifact_identity": "NSE-MARKET-TIMINGS",
+      "official_uri": "https://www.nseindia.com/static/market-data/market-timings",
+      "publication_date": "2025-08-04",
+      "reference": "NSE official market timings",
+      "title": "NSE Market Timings \u2014 Equities"
+    },
+    {
+      "artifact_identity": "NSE-CMTR-71775",
+      "official_uri": "https://nsearchives.nseindia.com/content/circulars/CMTR71775.pdf",
+      "publication_date": "2025-12-12",
+      "reference": "NSE/CMTR/71775; Circular 172/2025",
+      "title": "Trading holidays for the calendar year 2026"
+    },
+    {
+      "artifact_identity": "NSE-CMTR-72260",
+      "official_uri": "https://nsearchives.nseindia.com/content/circulars/CMTR72260.pdf",
+      "publication_date": "2026-01-12",
+      "reference": "NSE/CMTR/72260; Circular 07/2026",
+      "title": "Trading holiday on January 15, 2026"
+    },
+    {
+      "artifact_identity": "NSE-CMTR-72349",
+      "official_uri": "https://nsearchives.nseindia.com/content/circulars/CMTR72349.pdf",
+      "publication_date": "2026-01-16",
+      "reference": "NSE/CMTR/72349; Circular 11/2026",
+      "title": "Live Trading Session on February 01, 2026"
+    }
+  ],
+  "schema": "KRONOS-MARKET-CALENDAR-PUBLICATION-V1",
+  "segment": "CAPITAL_MARKET",
+  "source_boundary": "2026-08-14T00:00:00+05:30",
+  "timezone": "Asia/Kolkata",
+  "trading_dates": {
+    "2026-01-01": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-01-02": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-01-05": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-01-06": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-01-07": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-01-08": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-01-09": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-01-12": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-01-13": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-01-14": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-01-16": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-01-19": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-01-20": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-01-21": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-01-22": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-01-23": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-01-27": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-01-28": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-01-29": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-01-30": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-02-01": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "SPECIAL_UNION_BUDGET"
+    },
+    "2026-02-02": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-02-03": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-02-04": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-02-05": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-02-06": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-02-09": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-02-10": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-02-11": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-02-12": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-02-13": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-02-16": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-02-17": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-02-18": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-02-19": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-02-20": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-02-23": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-02-24": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-02-25": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-02-26": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-02-27": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-03-02": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-03-04": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-03-05": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-03-06": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-03-09": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-03-10": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-03-11": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-03-12": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-03-13": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-03-16": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-03-17": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-03-18": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-03-19": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-03-20": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-03-23": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-03-24": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-03-25": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-03-27": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-03-30": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-04-01": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-04-02": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-04-06": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-04-07": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-04-08": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-04-09": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-04-10": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-04-13": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-04-15": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-04-16": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-04-17": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-04-20": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-04-21": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-04-22": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-04-23": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-04-24": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-04-27": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-04-28": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-04-29": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-04-30": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-05-04": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-05-05": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-05-06": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-05-07": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-05-08": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-05-11": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-05-12": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-05-13": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-05-14": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-05-15": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-05-18": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-05-19": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-05-20": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-05-21": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-05-22": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-05-25": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-05-26": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-05-27": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-05-29": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-06-01": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-06-02": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-06-03": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-06-04": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-06-05": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-06-08": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-06-09": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-06-10": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-06-11": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-06-12": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-06-15": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-06-16": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-06-17": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-06-18": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-06-19": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-06-22": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-06-23": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-06-24": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-06-25": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-06-29": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-06-30": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-07-01": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-07-02": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-07-03": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-07-06": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-07-07": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-07-08": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-07-09": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-07-10": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-07-13": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-07-14": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-07-15": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-07-16": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-07-17": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-07-20": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-07-21": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-07-22": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-07-23": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-07-24": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-07-27": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-07-28": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-07-29": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-07-30": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-07-31": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-08-03": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-08-04": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-08-05": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-08-06": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-08-07": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-08-10": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-08-11": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-08-12": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-08-13": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    },
+    "2026-08-14": {
+      "close": "15:30",
+      "open": "09:15",
+      "session_type": "REGULAR"
+    }
+  }
+}

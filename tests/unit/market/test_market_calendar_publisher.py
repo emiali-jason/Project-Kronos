@@ -8,8 +8,8 @@ import pytest
 
 from kronos.market.calendar import (
     MARKET_CALENDAR_SCHEMA,
-    MarketCalendarPublisher,
     MarketCalendarRegistrySource,
+    SealedMarketCalendarPublisher,
     parse_market_calendar_publication,
     seal_market_calendar_document,
 )
@@ -62,8 +62,8 @@ def _document(entries: list[dict[str, object]]) -> dict[str, object]:
     }
 
 
-def _publisher(entries: list[dict[str, object]]) -> MarketCalendarPublisher:
-    return MarketCalendarPublisher.from_bytes(
+def _publisher(entries: list[dict[str, object]]) -> SealedMarketCalendarPublisher:
+    return SealedMarketCalendarPublisher.from_bytes(
         seal_market_calendar_document(_document(entries)),
         observed_at=OBSERVED,
     )
@@ -73,7 +73,10 @@ def test_governed_document_is_deterministically_sealed_and_published() -> None:
     first = seal_market_calendar_document(_document([_entry()]))
     second = seal_market_calendar_document(_document([_entry()]))
     publication = parse_market_calendar_publication(first)
-    schedule = MarketCalendarPublisher(publication, observed_at=OBSERVED).schedule_for("NSE", DAY)
+    schedule = SealedMarketCalendarPublisher(
+        publication,
+        observed_at=OBSERVED,
+    ).schedule_for("NSE", DAY)
 
     assert first == second
     assert publication.calendar_identity.startswith("MARKET-CALENDAR-")
@@ -110,7 +113,7 @@ def test_non_trading_and_special_multi_window_dates_are_explicit() -> None:
 
 def test_out_of_coverage_wrong_exchange_and_stale_publication_are_unavailable() -> None:
     publisher = _publisher([_entry()])
-    stale = MarketCalendarPublisher(
+    stale = SealedMarketCalendarPublisher(
         publisher.publication,
         observed_at=publisher.publication.valid_through + timedelta(seconds=1),
     )

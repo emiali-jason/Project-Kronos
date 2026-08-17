@@ -1,4 +1,4 @@
-"""DOMAIN-008 factual Market schedule service.
+"""DOMAIN-008 factual and normalized Market schedule contracts.
 
 The service contains no exchange rules.  It only evaluates explicit schedules
 provided by an authoritative source selected outside this component.
@@ -10,6 +10,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date, datetime
 from enum import StrEnum
+from hashlib import sha256
 from typing import Protocol
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -193,6 +194,271 @@ class MarketSessionService:
             local >= last.closes_at,
         )
 
+MARKET_SCHEDULE_CONTRACT_ID = "KRONOS-MARKET-SCHEDULE-V1"
+MARKET_SCHEDULE_CONTRACT_VERSION = "1"
+
+
+class MarketAvailability(StrEnum):
+    OPEN = "OPEN"
+    CLOSED = "CLOSED"
+    PRE_OPEN = "PRE_OPEN"
+    POST_CLOSE = "POST_CLOSE"
+    UNAVAILABLE = "UNAVAILABLE"
+
+
+class ScheduleFreshness(StrEnum):
+    CURRENT = "CURRENT"
+    STALE = "STALE"
+    UNAVAILABLE = "UNAVAILABLE"
+
+
+class ScheduleIntegrity(StrEnum):
+    VALID = "VALID"
+    INVALID = "INVALID"
+
+
+@dataclass(frozen=True, slots=True)
+class MarketSessionWindow:
+    """One ordered authoritative open interval within a trading date."""
+
+    identity: str
+    order: int
+    window_open: datetime
+    window_close: datetime
+
+    def __post_init__(self) -> None:
+        if (
+            not self.identity
+            or type(self.order) is not int
+            or self.order < 1
+            or not _aware(self.window_open)
+            or not _aware(self.window_close)
+            or self.window_open >= self.window_close
+            or self.window_open.date() != self.window_close.date()
+        ):
+            raise ValueError("MARKET_SESSION_WINDOW_INVALID")
+
+
+@dataclass(frozen=True, slots=True)
+class AuthoritativeMarketScheduleFacts:
+    """Facts supplied by an approved exchange-calendar source, not by ticks."""
+
+    market_identity: str
+    exchange: str
+    trading_date: date
+    calendar_identity: str
+    calendar_version: str
+    session_identity: str
+    session_type: str
+    session_open: datetime | None
+    session_close: datetime | None
+    timezone: str
+    market_availability: MarketAvailability
+    as_of: datetime
+    source_identity: str
+    source_boundary: datetime
+    freshness_status: ScheduleFreshness
+    integrity_status: ScheduleIntegrity
+    provenance: tuple[str, ...]
+    windows: tuple[MarketSessionWindow, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class MarketSchedule:
+    contract_identity: str
+    contract_version: str
+    identity: str
+    market_identity: str
+    exchange: str
+    trading_date: date
+    calendar_identity: str
+    calendar_version: str
+    session_identity: str
+    session_type: str
+    session_open: datetime | None
+    session_close: datetime | None
+    timezone: str
+    market_availability: MarketAvailability
+    as_of: datetime
+    source_identity: str
+    source_boundary: datetime
+    freshness_status: ScheduleFreshness
+    integrity_status: ScheduleIntegrity
+    provenance: tuple[str, ...]
+    windows: tuple[MarketSessionWindow, ...] = ()
+
+    def __post_init__(self) -> None:
+        if (
+            not self.windows
+            and self.session_open is not None
+            and self.session_close is not None
+        ):
+            object.__setattr__(
+                self,
+                "windows",
+                (
+                    MarketSessionWindow(
+                        f"{self.session_identity}:WINDOW:1",
+                        1,
+                        self.session_open,
+                        self.session_close,
+                    ),
+                ),
+            )
+        available = self.market_availability is not MarketAvailability.UNAVAILABLE
+        valid_windows = _valid_windows(self.windows, self.trading_date, self.timezone)
+        singleton = len(self.windows) == 1
+        if (
+            self.contract_identity != MARKET_SCHEDULE_CONTRACT_ID
+            or self.contract_version != MARKET_SCHEDULE_CONTRACT_VERSION
+            or not self.identity
+            or not self.market_identity
+            or not self.exchange
+            or type(self.trading_date) is not date
+            or not self.calendar_identity
+            or not self.calendar_version
+            or not self.session_identity
+            or not self.session_type
+            or not self.timezone
+            or type(self.market_availability) is not MarketAvailability
+            or type(self.freshness_status) is not ScheduleFreshness
+            or type(self.integrity_status) is not ScheduleIntegrity
+            or not _aware(self.as_of)
+            or not _aware(self.source_boundary)
+            or not self.source_identity
+            or not self.provenance
+            or (self.session_open is not None and not _aware(self.session_open))
+            or (self.session_close is not None and not _aware(self.session_close))
+            or type(self.windows) is not tuple
+            or (available and not valid_windows)
+            or (
+                available
+                and singleton
+                and (
+                    self.session_open != self.windows[0].window_open
+                    or self.session_close != self.windows[0].window_close
+                )
+            )
+            or (
+                available
+                and not singleton
+                and (self.session_open is not None or self.session_close is not None)
+            )
+            or available
+            and (
+                self.freshness_status is not ScheduleFreshness.CURRENT
+                or self.integrity_status is not ScheduleIntegrity.VALID
+            )
+        ):
+            raise ValueError("MARKET_SCHEDULE_INVALID")
+        try:
+            ZoneInfo(self.timezone)
+        except Exception as error:
+            raise ValueError("MARKET_SCHEDULE_INVALID") from error
+
+    def window_at(self, moment: datetime) -> MarketSessionWindow | None:
+        """Return the authoritative window containing ``moment``, excluding gaps."""
+
+        if not _aware(moment):
+            raise ValueError("MARKET_SCHEDULE_OBSERVATION_INVALID")
+        return next(
+            (
+                item
+                for item in self.windows
+                if item.window_open <= moment < item.window_close
+            ),
+            None,
+        )
+
+    def trading_date_completed(self, observed_at: datetime) -> bool:
+        """Return whether every authoritative window for the date has closed."""
+
+        if not _aware(observed_at):
+            raise ValueError("MARKET_SCHEDULE_OBSERVATION_INVALID")
+        return bool(self.windows) and self.windows[-1].window_close <= observed_at
+
+
+class _ScheduleAdapter:
+    exchange: str
+
+    def normalize(self, facts: AuthoritativeMarketScheduleFacts) -> MarketSchedule:
+        if type(facts) is not AuthoritativeMarketScheduleFacts:
+            raise ValueError("MARKET_SCHEDULE_SOURCE_INVALID")
+        if facts.exchange != self.exchange:
+            raise ValueError("MARKET_SCHEDULE_EXCHANGE_MISMATCH")
+        source_windows = facts.windows
+        if not source_windows and facts.session_open is not None and facts.session_close is not None:
+            source_windows = (
+                MarketSessionWindow(
+                    f"{facts.session_identity}:WINDOW:1",
+                    1,
+                    facts.session_open,
+                    facts.session_close,
+                ),
+            )
+        windows_valid = _valid_windows(source_windows, facts.trading_date, facts.timezone)
+        legacy_valid = (
+            len(source_windows) != 1
+            or (
+                facts.session_open == source_windows[0].window_open
+                and facts.session_close == source_windows[0].window_close
+            )
+        ) and (
+            len(source_windows) == 1
+            or (facts.session_open is None and facts.session_close is None)
+        )
+        valid = (
+            facts.integrity_status is ScheduleIntegrity.VALID
+            and facts.freshness_status is ScheduleFreshness.CURRENT
+            and windows_valid
+            and legacy_valid
+        )
+        availability = facts.market_availability if valid else MarketAvailability.UNAVAILABLE
+        digest = sha256("|".join((
+            facts.market_identity,
+            facts.exchange,
+            facts.trading_date.isoformat(),
+            facts.calendar_identity,
+            facts.calendar_version,
+            facts.session_identity,
+            facts.source_identity,
+            facts.source_boundary.isoformat(),
+            *(f"{item.order}:{item.window_open.isoformat()}:{item.window_close.isoformat()}" for item in source_windows),
+        )).encode()).hexdigest()
+        retained_windows = source_windows if valid else ()
+        legacy_open = retained_windows[0].window_open if len(retained_windows) == 1 else None
+        legacy_close = retained_windows[0].window_close if len(retained_windows) == 1 else None
+        return MarketSchedule(
+            MARKET_SCHEDULE_CONTRACT_ID,
+            MARKET_SCHEDULE_CONTRACT_VERSION,
+            f"MARKET-SCHEDULE-{digest}",
+            facts.market_identity,
+            facts.exchange,
+            facts.trading_date,
+            facts.calendar_identity,
+            facts.calendar_version,
+            facts.session_identity,
+            facts.session_type,
+            legacy_open,
+            legacy_close,
+            facts.timezone,
+            availability,
+            facts.as_of,
+            facts.source_identity,
+            facts.source_boundary,
+            facts.freshness_status if valid else ScheduleFreshness.UNAVAILABLE,
+            facts.integrity_status if valid else ScheduleIntegrity.INVALID,
+            facts.provenance,
+            retained_windows,
+        )
+
+
+class NseMarketScheduleAdapter(_ScheduleAdapter):
+    exchange = "NSE"
+
+
+class McxMarketScheduleAdapter(_ScheduleAdapter):
+    exchange = "MCX"
 
 def _aware(value: object) -> bool:
     return isinstance(value, datetime) and value.tzinfo is not None and value.utcoffset() is not None
@@ -202,7 +468,51 @@ def _text(value: object) -> bool:
     return isinstance(value, str) and bool(value) and value == value.strip()
 
 
+def _valid_windows(
+    windows: object,
+    trading_date: date,
+    timezone: str,
+) -> bool:
+    try:
+        governed_timezone = ZoneInfo(timezone)
+    except Exception:
+        return False
+    if (
+        type(windows) is not tuple
+        or not windows
+        or any(type(item) is not MarketSessionWindow for item in windows)
+        or tuple(item.order for item in windows) != tuple(range(1, len(windows) + 1))
+        or any(item.window_open.astimezone(governed_timezone).date() != trading_date for item in windows)
+        or any(item.window_close.astimezone(governed_timezone).date() != trading_date for item in windows)
+        or any(
+            item.window_open.utcoffset()
+            != item.window_open.astimezone(governed_timezone).utcoffset()
+            for item in windows
+        )
+        or any(
+            item.window_close.utcoffset()
+            != item.window_close.astimezone(governed_timezone).utcoffset()
+            for item in windows
+        )
+    ):
+        return False
+    return all(
+        previous.window_close <= current.window_open
+        for previous, current in zip(windows, windows[1:])
+    )
+
+
 __all__ = [
+    "AuthoritativeMarketScheduleFacts",
+    "MARKET_SCHEDULE_CONTRACT_ID",
+    "MARKET_SCHEDULE_CONTRACT_VERSION",
+    "MarketAvailability",
+    "MarketSessionWindow",
+    "MarketSchedule",
+    "McxMarketScheduleAdapter",
+    "NseMarketScheduleAdapter",
+    "ScheduleFreshness",
+    "ScheduleIntegrity",
     "InMemoryMarketScheduleSource",
     "MARKET_SCHEDULE_SCHEMA",
     "MarketDaySchedule",

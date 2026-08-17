@@ -1,23 +1,45 @@
-"""DOMAIN-008 governed static Market Calendar publication and publisher."""
+"""Canonical DOMAIN-008 publications and explicit sealed-calendar adapters."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime
-from enum import StrEnum
+from datetime import date, datetime, time, timedelta
+from enum import Enum, StrEnum
 from hashlib import sha256
 import json
 from pathlib import Path
+from types import MappingProxyType
+from typing import Mapping
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from kronos.market.derived_timeframes import GovernedTradingWeek
 from kronos.market.schedule import (
+    AuthoritativeMarketScheduleFacts,
+    MarketAvailability,
     MarketDaySchedule,
+    MarketSchedule,
     MarketScheduleSource,
+    MarketSessionWindow,
     MarketWindow,
+    McxMarketScheduleAdapter,
+    NseMarketScheduleAdapter,
+    ScheduleFreshness,
+    ScheduleIntegrity,
     TradingDayStatus,
 )
 
 
+MARKET_CALENDAR_CONTRACT_ID = "KRONOS-MARKET-CALENDAR-V1"
+MARKET_CALENDAR_CONTRACT_VERSION = "1"
+MARKET_CALENDAR_PUBLICATION_SCHEMA = "KRONOS-MARKET-CALENDAR-PUBLICATION-V1"
+MARKET_CALENDAR_MANIFEST_SCHEMA = "KRONOS-MARKET-CALENDAR-MANIFEST-V1"
+DEFAULT_MARKET_CALENDAR_ROOT = (
+    Path(__file__).resolve().parents[3]
+    / "data"
+    / "market_calendars"
+    / MARKET_CALENDAR_CONTRACT_ID
+)
+DEFAULT_CALENDAR_EXPIRY_WARNING_DAYS = 30
 MARKET_CALENDAR_SCHEMA = "KRONOS-MARKET-CALENDAR-V1"
 
 
@@ -27,6 +49,8 @@ class CalendarFactAvailability(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class MarketCalendarEntry:
+    """One entry in the explicit sealed-calendar compatibility format."""
+
     trading_date: date
     trading_disposition: TradingDayStatus
     session_id: str
@@ -56,8 +80,119 @@ class MarketCalendarEntry:
             raise ValueError("MARKET_CALENDAR_ENTRY_INVALID")
 
 
+class CalendarCoverageStatus(str, Enum):
+    """Operational health of one immutable calendar publication."""
+
+    CURRENT = "CURRENT"
+    EXPIRING = "EXPIRING"
+    EXPIRED = "EXPIRED"
+
+
 @dataclass(frozen=True, slots=True)
-class MarketCalendarPublication:
+class CalendarCoverageHealth:
+    exchange: str
+    calendar_identity: str
+    calendar_version: str
+    valid_through: date
+    observed_date: date
+    status: CalendarCoverageStatus
+
+    def __post_init__(self) -> None:
+        if (
+            self.exchange not in {"NSE", "MCX"}
+            or not self.calendar_identity
+            or not self.calendar_version
+            or type(self.valid_through) is not date
+            or type(self.observed_date) is not date
+            or type(self.status) is not CalendarCoverageStatus
+        ):
+            raise ValueError("MARKET_CALENDAR_COVERAGE_HEALTH_INVALID")
+
+
+@dataclass(frozen=True, slots=True)
+class OfficialCalendarSource:
+    artifact_identity: str
+    title: str
+    official_uri: str
+    reference: str
+    publication_date: date
+
+    def __post_init__(self) -> None:
+        if (
+            not self.artifact_identity
+            or not self.title
+            or not self.official_uri.startswith("https://")
+            or not self.reference
+            or type(self.publication_date) is not date
+        ):
+            raise ValueError("MARKET_CALENDAR_SOURCE_INVALID")
+
+
+@dataclass(frozen=True, slots=True)
+class PublishedTradingWindow:
+    """One ordered exchange-authoritative window expressed in local time."""
+
+    order: int
+    window_open: time
+    window_close: time
+
+    def __post_init__(self) -> None:
+        if (
+            type(self.order) is not int
+            or self.order < 1
+            or type(self.window_open) is not time
+            or type(self.window_close) is not time
+            or self.window_open >= self.window_close
+        ):
+            raise ValueError("MARKET_CALENDAR_WINDOW_INVALID")
+
+
+@dataclass(frozen=True, slots=True)
+class PublishedTradingSession:
+    trading_date: date
+    session_type: str
+    session_open: time | None
+    session_close: time | None
+    windows: tuple[PublishedTradingWindow, ...] = ()
+
+    def __post_init__(self) -> None:
+        if (
+            type(self.trading_date) is not date
+            or not self.session_type
+            or type(self.windows) is not tuple
+        ):
+            raise ValueError("MARKET_CALENDAR_SESSION_INVALID")
+        windows = self.windows
+        if not windows and type(self.session_open) is time and type(self.session_close) is time:
+            windows = (PublishedTradingWindow(1, self.session_open, self.session_close),)
+            object.__setattr__(self, "windows", windows)
+        if (
+            not windows
+            or any(type(item) is not PublishedTradingWindow for item in windows)
+            or tuple(item.order for item in windows) != tuple(range(1, len(windows) + 1))
+            or any(
+                previous.window_close > current.window_open
+                for previous, current in zip(windows, windows[1:])
+            )
+            or (
+                len(windows) == 1
+                and (
+                    self.session_open != windows[0].window_open
+                    or self.session_close != windows[0].window_close
+                )
+            )
+            or (
+                len(windows) > 1
+                and (self.session_open is not None or self.session_close is not None)
+            )
+        ):
+            raise ValueError("MARKET_CALENDAR_SESSION_INVALID")
+
+
+@dataclass(frozen=True, slots=True)
+class SealedMarketCalendarPublication:
+    """One integrity-sealed calendar publication adapted for Intraday."""
+
     market_identity: str
     exchange: str
     exchange_timezone: str
@@ -103,22 +238,37 @@ class MarketCalendarPublication:
             raise ValueError("MARKET_CALENDAR_PUBLICATION_INVALID")
 
 
-class MarketCalendarPublisher(MarketScheduleSource):
-    """Publish normalized schedules from one integrity-checked calendar."""
+class SealedMarketCalendarPublisher(MarketScheduleSource):
+    """Adapt one integrity-sealed publication to ``MarketScheduleSource``."""
 
-    def __init__(self, publication: MarketCalendarPublication, *, observed_at: datetime) -> None:
-        if type(publication) is not MarketCalendarPublication or not _aware(observed_at):
+    def __init__(
+        self,
+        publication: SealedMarketCalendarPublication,
+        *,
+        observed_at: datetime,
+    ) -> None:
+        if type(publication) is not SealedMarketCalendarPublication or not _aware(observed_at):
             raise ValueError("MARKET_CALENDAR_PUBLISHER_INVALID")
         self.publication = publication
         self.observed_at = observed_at
         self._entries = {item.trading_date: item for item in publication.entries}
 
     @classmethod
-    def from_bytes(cls, encoded: bytes, *, observed_at: datetime) -> "MarketCalendarPublisher":
+    def from_bytes(
+        cls,
+        encoded: bytes,
+        *,
+        observed_at: datetime,
+    ) -> "SealedMarketCalendarPublisher":
         return cls(parse_market_calendar_publication(encoded), observed_at=observed_at)
 
     @classmethod
-    def from_path(cls, path: Path, *, observed_at: datetime) -> "MarketCalendarPublisher":
+    def from_path(
+        cls,
+        path: Path,
+        *,
+        observed_at: datetime,
+    ) -> "SealedMarketCalendarPublisher":
         path = Path(path)
         try:
             encoded = path.read_bytes()
@@ -171,10 +321,12 @@ class MarketCalendarPublisher(MarketScheduleSource):
 class MarketCalendarRegistrySource(MarketScheduleSource):
     """Compose non-overlapping governed publications without inference."""
 
-    def __init__(self, publishers: tuple[MarketCalendarPublisher, ...]) -> None:
-        if not publishers or any(type(item) is not MarketCalendarPublisher for item in publishers):
+    def __init__(self, publishers: tuple[SealedMarketCalendarPublisher, ...]) -> None:
+        if not publishers or any(
+            type(item) is not SealedMarketCalendarPublisher for item in publishers
+        ):
             raise ValueError("MARKET_CALENDAR_REGISTRY_INVALID")
-        indexed: dict[tuple[str, date], MarketCalendarPublisher] = {}
+        indexed: dict[tuple[str, date], SealedMarketCalendarPublisher] = {}
         for publisher in publishers:
             for entry in publisher.publication.entries:
                 key = (publisher.publication.exchange, entry.trading_date)
@@ -215,7 +367,7 @@ def seal_market_calendar_document(document: dict[str, object]) -> bytes:
     return json.dumps(core, ensure_ascii=True, indent=2, sort_keys=True).encode("utf-8")
 
 
-def parse_market_calendar_publication(encoded: bytes) -> MarketCalendarPublication:
+def parse_market_calendar_publication(encoded: bytes) -> SealedMarketCalendarPublication:
     if type(encoded) is not bytes:
         raise ValueError("MARKET_CALENDAR_PUBLICATION_INVALID")
     try:
@@ -254,7 +406,7 @@ def parse_market_calendar_publication(encoded: bytes) -> MarketCalendarPublicati
     try:
         zone = ZoneInfo(document["exchange_timezone"])
         entries = tuple(_parse_entry(value, zone) for value in document["entries"])
-        publication = MarketCalendarPublication(
+        publication = SealedMarketCalendarPublication(
             market_identity=document["market_identity"],
             exchange=document["exchange"],
             exchange_timezone=document["exchange_timezone"],
@@ -314,7 +466,7 @@ def _calendar_identity(document: dict[str, object]) -> str:
     return f"MARKET-CALENDAR-{_digest(document)}"
 
 
-def _publication_core(publication: MarketCalendarPublication) -> dict[str, object]:
+def _publication_core(publication: SealedMarketCalendarPublication) -> dict[str, object]:
     return {
         "schema_identity": publication.schema_identity,
         "market_identity": publication.market_identity,
@@ -354,6 +506,320 @@ def _digest(document: object) -> str:
     return sha256(canonical.encode("utf-8")).hexdigest()
 
 
+@dataclass(frozen=True, slots=True)
+class MarketCalendarPublication:
+    calendar_identity: str
+    calendar_version: str
+    market_identity: str
+    exchange: str
+    segment: str
+    timezone: str
+    coverage_start: date
+    coverage_end: date
+    source_boundary: datetime
+    official_sources: tuple[OfficialCalendarSource, ...]
+    trading_dates: Mapping[date, PublishedTradingSession]
+    non_trading_dates: Mapping[date, str]
+    publication_sha256: str
+
+    def __post_init__(self) -> None:
+        all_dates = set(self.trading_dates) | set(self.non_trading_dates)
+        expected = {
+            self.coverage_start + timedelta(days=offset)
+            for offset in range((self.coverage_end - self.coverage_start).days + 1)
+        }
+        if (
+            not self.calendar_identity
+            or not self.calendar_version
+            or not self.market_identity
+            or self.exchange not in {"NSE", "MCX"}
+            or not self.segment
+            or self.timezone != "Asia/Kolkata"
+            or self.coverage_start > self.coverage_end
+            or not _aware(self.source_boundary)
+            or not self.official_sources
+            or len({item.artifact_identity for item in self.official_sources})
+            != len(self.official_sources)
+            or set(self.trading_dates) & set(self.non_trading_dates)
+            or all_dates != expected
+            or any(
+                type(day) is not date
+                or type(session) is not PublishedTradingSession
+                or session.trading_date != day
+                for day, session in self.trading_dates.items()
+            )
+            or any(type(day) is not date or not reason for day, reason in self.non_trading_dates.items())
+            or len(self.publication_sha256) != 64
+        ):
+            raise ValueError("MARKET_CALENDAR_PUBLICATION_INVALID")
+        try:
+            ZoneInfo(self.timezone)
+        except Exception as error:
+            raise ValueError("MARKET_CALENDAR_PUBLICATION_INVALID") from error
+
+
+class MarketCalendarPublisher:
+    """Publish exact versioned DOMAIN-008 schedules from checked-in facts."""
+
+    def __init__(self, root: Path = DEFAULT_MARKET_CALENDAR_ROOT) -> None:
+        root = Path(root).expanduser()
+        if not root.is_absolute():
+            raise ValueError("MARKET_CALENDAR_ROOT_INVALID")
+        self._root = root
+        self._publications = self._load_manifest()
+
+    @property
+    def publications(self) -> tuple[MarketCalendarPublication, ...]:
+        return tuple(self._publications[key] for key in sorted(self._publications))
+
+    def publication(self, exchange: str) -> MarketCalendarPublication:
+        try:
+            return self._publications[exchange]
+        except KeyError as error:
+            raise ValueError("MARKET_CALENDAR_EXCHANGE_UNAVAILABLE") from error
+
+    def coverage_health(
+        self,
+        exchange: str,
+        *,
+        observed_at: datetime,
+        warning_days: int = DEFAULT_CALENDAR_EXPIRY_WARNING_DAYS,
+    ) -> CalendarCoverageHealth:
+        """Report calendar horizon health without extending authority implicitly."""
+
+        if (
+            not _aware(observed_at)
+            or type(warning_days) is not int
+            or warning_days < 1
+        ):
+            raise ValueError("MARKET_CALENDAR_COVERAGE_HEALTH_INVALID")
+        publication = self.publication(exchange)
+        observed_date = observed_at.astimezone(ZoneInfo(publication.timezone)).date()
+        remaining = (publication.coverage_end - observed_date).days
+        status = (
+            CalendarCoverageStatus.EXPIRED
+            if remaining < 0
+            else CalendarCoverageStatus.EXPIRING
+            if remaining <= warning_days
+            else CalendarCoverageStatus.CURRENT
+        )
+        return CalendarCoverageHealth(
+            exchange,
+            publication.calendar_identity,
+            publication.calendar_version,
+            publication.coverage_end,
+            observed_date,
+            status,
+        )
+
+    def is_trading_date(self, exchange: str, trading_date: date) -> bool:
+        publication = self.publication(exchange)
+        self._require_covered(publication, trading_date)
+        return trading_date in publication.trading_dates
+
+    def schedule(
+        self,
+        exchange: str,
+        trading_date: date,
+        *,
+        observed_at: datetime,
+    ) -> MarketSchedule | None:
+        publication = self.publication(exchange)
+        self._require_covered(publication, trading_date)
+        if not _aware(observed_at):
+            raise ValueError("MARKET_CALENDAR_OBSERVATION_INVALID")
+        session = publication.trading_dates.get(trading_date)
+        if session is None:
+            return None
+        timezone = ZoneInfo(publication.timezone)
+        windows = tuple(
+            MarketSessionWindow(
+                (
+                    f"{publication.calendar_identity}:{publication.calendar_version}:"
+                    f"{trading_date.isoformat()}:{session.session_type}:WINDOW:{item.order}"
+                ),
+                item.order,
+                datetime.combine(trading_date, item.window_open, timezone),
+                datetime.combine(trading_date, item.window_close, timezone),
+            )
+            for item in session.windows
+        )
+        opening = windows[0].window_open if len(windows) == 1 else None
+        closing = windows[0].window_close if len(windows) == 1 else None
+        facts = AuthoritativeMarketScheduleFacts(
+            market_identity=publication.market_identity,
+            exchange=publication.exchange,
+            trading_date=trading_date,
+            calendar_identity=publication.calendar_identity,
+            calendar_version=publication.calendar_version,
+            session_identity=(
+                f"{publication.calendar_identity}:{publication.calendar_version}:"
+                f"{trading_date.isoformat()}:{session.session_type}"
+            ),
+            session_type=session.session_type,
+            session_open=opening,
+            session_close=closing,
+            timezone=publication.timezone,
+            market_availability=MarketAvailability.CLOSED,
+            as_of=observed_at,
+            source_identity=MARKET_CALENDAR_CONTRACT_ID,
+            source_boundary=publication.source_boundary,
+            freshness_status=ScheduleFreshness.CURRENT,
+            integrity_status=ScheduleIntegrity.VALID,
+            provenance=(
+                f"calendar={publication.calendar_identity}",
+                f"version={publication.calendar_version}",
+                f"publication_sha256={publication.publication_sha256}",
+                *(f"official_source={item.artifact_identity}|{item.official_uri}" for item in publication.official_sources),
+                *(f"window={item.order}|{item.window_open.isoformat()}|{item.window_close.isoformat()}" for item in windows),
+            ),
+            windows=windows,
+        )
+        adapter = NseMarketScheduleAdapter() if exchange == "NSE" else McxMarketScheduleAdapter()
+        return adapter.normalize(facts)
+
+    def trading_week(
+        self,
+        exchange: str,
+        member_date: date,
+        *,
+        observed_at: datetime,
+    ) -> GovernedTradingWeek:
+        start = member_date - timedelta(days=member_date.weekday())
+        publication = self.publication(exchange)
+        schedules = tuple(
+            schedule
+            for offset in range(7)
+            if publication.coverage_start <= start + timedelta(days=offset) <= publication.coverage_end
+            if (schedule := self.schedule(
+                exchange,
+                start + timedelta(days=offset),
+                observed_at=observed_at,
+            )) is not None
+        )
+        if not schedules:
+            raise ValueError("MARKET_CALENDAR_TRADING_WEEK_UNAVAILABLE")
+        return GovernedTradingWeek(
+            f"{publication.calendar_identity}:{publication.calendar_version}:WEEK:{start.isoformat()}",
+            schedules,
+        )
+
+    @staticmethod
+    def _require_covered(publication: MarketCalendarPublication, day: date) -> None:
+        if type(day) is not date or not publication.coverage_start <= day <= publication.coverage_end:
+            raise ValueError("MARKET_CALENDAR_DATE_OUTSIDE_PUBLICATION")
+
+    def _load_manifest(self) -> Mapping[str, MarketCalendarPublication]:
+        try:
+            manifest = json.loads((self._root / "manifest.json").read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as error:
+            raise ValueError("MARKET_CALENDAR_MANIFEST_INVALID") from error
+        if (
+            type(manifest) is not dict
+            or set(manifest) != {"schema", "publications"}
+            or manifest["schema"] != MARKET_CALENDAR_MANIFEST_SCHEMA
+            or type(manifest["publications"]) is not list
+            or len(manifest["publications"]) != 2
+        ):
+            raise ValueError("MARKET_CALENDAR_MANIFEST_INVALID")
+        publications: dict[str, MarketCalendarPublication] = {}
+        for item in manifest["publications"]:
+            if type(item) is not dict or set(item) != {"file", "sha256"}:
+                raise ValueError("MARKET_CALENDAR_MANIFEST_INVALID")
+            path = self._root / item["file"]
+            try:
+                raw = path.read_bytes()
+            except OSError as error:
+                raise ValueError("MARKET_CALENDAR_PUBLICATION_UNAVAILABLE") from error
+            digest = sha256(raw).hexdigest()
+            if digest != item["sha256"]:
+                raise ValueError("MARKET_CALENDAR_PUBLICATION_DIGEST_MISMATCH")
+            publication = _parse_publication(raw, digest)
+            if publication.exchange in publications:
+                raise ValueError("MARKET_CALENDAR_PUBLICATION_AMBIGUOUS")
+            publications[publication.exchange] = publication
+        if set(publications) != {"NSE", "MCX"}:
+            raise ValueError("MARKET_CALENDAR_PUBLICATION_INCOMPLETE")
+        return MappingProxyType(publications)
+
+
+def _parse_publication(raw: bytes, digest: str) -> MarketCalendarPublication:
+    try:
+        payload = json.loads(raw)
+        required = {
+            "schema", "contract_identity", "contract_version", "calendar_identity",
+            "calendar_version", "market_identity", "exchange", "segment", "timezone",
+            "coverage_start", "coverage_end", "source_boundary", "official_sources",
+            "trading_dates", "non_trading_dates",
+        }
+        if type(payload) is not dict or set(payload) != required:
+            raise ValueError
+        if (
+            payload["schema"] != MARKET_CALENDAR_PUBLICATION_SCHEMA
+            or payload["contract_identity"] != MARKET_CALENDAR_CONTRACT_ID
+            or payload["contract_version"] != MARKET_CALENDAR_CONTRACT_VERSION
+        ):
+            raise ValueError
+        sources = tuple(OfficialCalendarSource(
+            artifact_identity=item["artifact_identity"],
+            title=item["title"],
+            official_uri=item["official_uri"],
+            reference=item["reference"],
+            publication_date=date.fromisoformat(item["publication_date"]),
+        ) for item in payload["official_sources"])
+        trading = {
+            date.fromisoformat(day): _published_session(day, item)
+            for day, item in payload["trading_dates"].items()
+        }
+        non_trading = {
+            date.fromisoformat(day): reason
+            for day, reason in payload["non_trading_dates"].items()
+        }
+        return MarketCalendarPublication(
+            payload["calendar_identity"], payload["calendar_version"],
+            payload["market_identity"], payload["exchange"], payload["segment"],
+            payload["timezone"], date.fromisoformat(payload["coverage_start"]),
+            date.fromisoformat(payload["coverage_end"]),
+            datetime.fromisoformat(payload["source_boundary"]), sources,
+            MappingProxyType(trading), MappingProxyType(non_trading), digest,
+        )
+    except (KeyError, TypeError, ValueError, AttributeError) as error:
+        raise ValueError("MARKET_CALENDAR_PUBLICATION_INVALID") from error
+
+
+def _published_session(day: str, item: object) -> PublishedTradingSession:
+    if type(item) is not dict or "session_type" not in item:
+        raise ValueError("MARKET_CALENDAR_SESSION_INVALID")
+    trading_date = date.fromisoformat(day)
+    if set(item) == {"session_type", "open", "close"}:
+        return PublishedTradingSession(
+            trading_date,
+            item["session_type"],
+            time.fromisoformat(item["open"]),
+            time.fromisoformat(item["close"]),
+        )
+    if set(item) != {"session_type", "windows"} or type(item["windows"]) is not list:
+        raise ValueError("MARKET_CALENDAR_SESSION_INVALID")
+    windows = tuple(
+        PublishedTradingWindow(
+            index,
+            time.fromisoformat(window["open"]),
+            time.fromisoformat(window["close"]),
+        )
+        for index, window in enumerate(item["windows"], start=1)
+        if type(window) is dict and set(window) == {"open", "close"}
+    )
+    if len(windows) != len(item["windows"]):
+        raise ValueError("MARKET_CALENDAR_SESSION_INVALID")
+    return PublishedTradingSession(
+        trading_date,
+        item["session_type"],
+        None,
+        None,
+        windows,
+    )
+
+
 def _aware(value: object) -> bool:
     return isinstance(value, datetime) and value.tzinfo is not None and value.utcoffset() is not None
 
@@ -363,12 +829,23 @@ def _text(value: object) -> bool:
 
 
 __all__ = [
+    "CalendarCoverageHealth",
+    "CalendarCoverageStatus",
     "CalendarFactAvailability",
+    "DEFAULT_CALENDAR_EXPIRY_WARNING_DAYS",
+    "DEFAULT_MARKET_CALENDAR_ROOT",
+    "MARKET_CALENDAR_CONTRACT_ID",
+    "MARKET_CALENDAR_CONTRACT_VERSION",
     "MARKET_CALENDAR_SCHEMA",
     "MarketCalendarEntry",
     "MarketCalendarPublication",
     "MarketCalendarPublisher",
     "MarketCalendarRegistrySource",
+    "OfficialCalendarSource",
+    "PublishedTradingSession",
+    "PublishedTradingWindow",
+    "SealedMarketCalendarPublication",
+    "SealedMarketCalendarPublisher",
     "parse_market_calendar_publication",
     "seal_market_calendar_document",
 ]
