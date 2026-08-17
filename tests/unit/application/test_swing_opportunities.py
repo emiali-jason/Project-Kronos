@@ -17,13 +17,11 @@ from kronos.swing.run_provenance import LocalSwingRunProvenanceStore
 from kronos.swing.trade_plan import TradePlanFailure, TradePlanStatus
 from kronos.swing.universe import enabled_swing_phase1_universe
 from kronos.swing.zero import SwingSetup
-from kronos.swing.v1.shadow_mtf import ShadowMtfRun
 from kronos.swing.v1.mtf_facts import MtfFactEvidenceStore
 from kronos.swing.v1.native_discovery import (
     NativeDiscoveryEvidenceStore,
     discover_native_mtf,
 )
-from tests.unit.browser.test_browser_shadow_validation import _assessment as _shadow_assessment
 from tests.unit.application.test_swing_mtf_facts import _build as _mtf_fact_fixture
 from tests.unit.swing.test_swing_candidate_ranking import _plan
 from tests.unit.swing.test_swing_candidate_validation import (
@@ -140,41 +138,6 @@ def _real_completed(monkeypatch) -> app.CompletedSwingAnalysis:  # type: ignore[
         now=NOW,
         pace=lambda: None,
     )
-
-
-def test_completed_analysis_requires_same_immutable_daily_and_shadow_run(monkeypatch) -> None:
-    completed = _real_completed(monkeypatch)
-    base = _shadow_assessment()
-    assessments = tuple(
-        replace(
-            base,
-            run_identity=completed.evidence.swing_analysis_run_identity,
-            canonical_instrument=f"INSTRUMENT {index}",
-        )
-        for index in range(98)
-    )
-    shadow = ShadowMtfRun(
-        completed.evidence.swing_analysis_run_identity,
-        base.provider_source_identity,
-        assessments,
-    )
-    assert app.CompletedSwingAnalysis(
-        completed.workspace,
-        completed.evidence,
-        shadow,
-    ).shadow_run is shadow
-    wrong_run_identity = "SWING-RUN-FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF"
-    wrong_shadow = ShadowMtfRun(
-        wrong_run_identity,
-        base.provider_source_identity,
-        tuple(replace(item, run_identity=wrong_run_identity) for item in assessments),
-    )
-    with pytest.raises(ValueError, match="COMPLETED_SWING_ANALYSIS_INVALID"):
-        app.CompletedSwingAnalysis(
-            completed.workspace,
-            completed.evidence,
-            wrong_shadow,
-        )
 
 
 def _eligible(
@@ -622,10 +585,8 @@ def test_production_run_publishes_factual_mtf_without_invoking_shadow_candidate_
         completed.native_discovery_run.run_identity
         == completed.mtf_fact_snapshot.run_identity
     )
-    assert completed.shadow_run is None
     assert app.AnalysisStage.MTF_FACTS in stages
     assert app.AnalysisStage.NATIVE_DISCOVERY in stages
-    assert app.AnalysisStage.SHADOW_MTF not in stages
 
 
 def test_successful_browser_run_persists_restart_safe_provenance(

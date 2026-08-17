@@ -23,8 +23,6 @@ from kronos.swing.v1 import (
     V1Setup,
 )
 from kronos.swing.v1.step32 import create_business_judgment
-from kronos.swing.v1.shadow_mtf import ShadowMtfRun
-from tests.unit.browser.test_browser_shadow_validation import _assessment as _shadow_assessment
 from tests.unit.swing.v1.test_step32_lifecycle import _entry_fixture
 from tests.unit.application.test_swing_opportunities import (
     _Provider,
@@ -57,33 +55,6 @@ def _active_v1(snapshot, instrument: str = "NAUKRI"):  # type: ignore[no-untyped
             directions=(V1Direction.LONG,),
         ),),
     )
-
-
-def test_shadow_validation_route_reads_atomic_application_run(tmp_path) -> None:
-    base = _shadow_assessment()
-    run = ShadowMtfRun(
-        base.run_identity,
-        base.provider_source_identity,
-        tuple(
-            replace(base, canonical_instrument=f"INSTRUMENT {index}")
-            for index in range(98)
-        ),
-    )
-    application = SwingOpportunitiesApplication(_Provider, initial_snapshot=_ready())
-    application.restore_shadow_run(run)
-    review = SwingV1ReviewWorkflow(LocalTradingViewEvidenceStore(tmp_path))
-    server = create_browser_server(application, port=0, v1_review=review)
-    thread = Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    try:
-        status, _, body = _request(server, "GET", "/swing/shadow-validation")
-        assert status == 200
-        assert "INSTRUMENT 0" in body
-        assert "Shadow validation evidence is not available for this run." not in body
-    finally:
-        server.shutdown()
-        thread.join(timeout=2)
-        server.server_close()
 
 
 def _request(server, method: str, path: str, *, headers=None, body=None):  # type: ignore[no-untyped-def]

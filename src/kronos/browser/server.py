@@ -57,7 +57,6 @@ from kronos.browser.views import (
     render_placeholder,
     render_settings,
     render_trade_journal,
-    render_shadow_validation,
     render_mtf_fact_diagnostics,
     render_native_discovery,
     render_trade_candidates,
@@ -75,8 +74,6 @@ from kronos.swing.v1.tradingview import ChartTimeframe
 from kronos.swing.v1.step32 import SponsorDecisionMode
 from kronos.swing.v1.native_sponsor_decision import SponsorTradeChoice
 from kronos.swing.v1.native_active_trade_lifecycle import TradeExitReason
-from kronos.swing.v1.shadow_mtf import ShadowInstrumentAssessment
-from kronos.swing.v1.validation_evidence import ShadowValidationEvidenceStore
 from kronos.swing.v1.native_review import NativeReviewEvidenceStore
 from kronos.swing.v1.visual_evidence_v2 import (
     LocalVisualEvidenceV2DiagnosticStore,
@@ -124,13 +121,8 @@ class KronosBrowserServer(ThreadingHTTPServer):
         restart_control: BrowserBackendRestartControl | None = None,
         intraday_workstation: IntradayEvidenceWorkstation | None = None,
         step32_workflow: SwingV1BrowserOperationalization | None = None,
-        shadow_assessments: tuple[ShadowInstrumentAssessment, ...] = (),
-        shadow_evidence_store: ShadowValidationEvidenceStore | None = None,
         native_review: NativeReviewWorkflow | None = None,
     ) -> None:
-        effective_shadow_store = (
-            shadow_evidence_store or application.shadow_evidence_store()
-        )
         if (
             address[0] != _LOOPBACK_HOST
             or not isinstance(application, SwingOpportunitiesApplication)
@@ -157,12 +149,6 @@ class KronosBrowserServer(ThreadingHTTPServer):
                 step32_workflow is not None
                 and type(step32_workflow) is not SwingV1BrowserOperationalization
             )
-            or type(shadow_assessments) is not tuple
-            or any(type(item) is not ShadowInstrumentAssessment for item in shadow_assessments)
-            or (
-                effective_shadow_store is not None
-                and type(effective_shadow_store) is not ShadowValidationEvidenceStore
-            )
             or (
                 native_review is not None
                 and type(native_review) is not NativeReviewWorkflow
@@ -185,8 +171,6 @@ class KronosBrowserServer(ThreadingHTTPServer):
         self.step32_workflow = (
             step32_workflow or SwingV1BrowserOperationalization()
         )
-        self.shadow_assessments = shadow_assessments
-        self.shadow_evidence_store = effective_shadow_store
         if v1_review is not None:
             self.v1_review = v1_review
             evidence_store = LocalTradingViewEvidenceStore(
@@ -215,13 +199,6 @@ class KronosBrowserServer(ThreadingHTTPServer):
                     layer1_run,
                     provenance,
                 )
-                if self.shadow_evidence_store is not None:
-                    try:
-                        self.application.restore_shadow_run(
-                            self.shadow_evidence_store.load_run(parent_run)
-                        )
-                    except ValueError:
-                        pass
                 mtf_store = self.application.mtf_fact_evidence_store()
                 if mtf_store is not None:
                     try:
@@ -292,10 +269,6 @@ class KronosBrowserServer(ThreadingHTTPServer):
                 pass
         super().__init__(address, _BrowserHandler)
 
-    def current_shadow_assessments(self) -> tuple[ShadowInstrumentAssessment, ...]:
-        retained = self.application.shadow_assessments()
-        return retained if retained else self.shadow_assessments
-
     def server_close(self) -> None:
         self.application.close()
         if self.restart_control is not None:
@@ -339,12 +312,6 @@ class _BrowserHandler(BaseHTTPRequestHandler):
                 snapshot,
                 self.server.v1_review.snapshot(),
                 self.server.native_review.snapshot(),
-            ))
-            return
-        if path == "/swing/shadow-validation":
-            self._html(render_shadow_validation(
-                snapshot,
-                self.server.current_shadow_assessments(),
             ))
             return
         if path == "/swing/mtf-diagnostics":
@@ -586,9 +553,6 @@ class _BrowserHandler(BaseHTTPRequestHandler):
         if path == "/swing/v1/native-lifecycle/live-exit":
             self._record_native_live_exit()
             return
-        if path == "/swing/shadow-observation":
-            self._record_shadow_observation()
-            return
         if path == "/settings/chart-analyst/credential":
             self._receive_chart_analyst_credential()
             return
@@ -610,46 +574,6 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             self._record_sponsor_decision(decision_match.group(1))
             return
         self._text(HTTPStatus.NOT_FOUND, "Not found.")
-
-    def _record_shadow_observation(self) -> None:
-        query = parse_qs(urlsplit(self.path).query, strict_parsing=True)
-        runs = query.get("run", ())
-        instruments = query.get("instrument", ())
-        content_type = self.headers.get("Content-Type", "").split(";", 1)[0]
-        try:
-            content_length = int(self.headers.get("Content-Length", ""))
-        except ValueError:
-            content_length = 0
-        if (
-            self.server.shadow_evidence_store is None
-            or set(query) != {"run", "instrument"}
-            or len(runs) != 1
-            or len(instruments) != 1
-            or content_type.lower() != "application/x-www-form-urlencoded"
-            or not 0 < content_length <= 1024
-        ):
-            self._text(HTTPStatus.CONFLICT, "Shadow observation is not available.")
-            return
-        matching = tuple(
-            item for item in self.server.current_shadow_assessments()
-            if item.run_identity == runs[0]
-            and item.canonical_instrument == instruments[0]
-        )
-        try:
-            fields = parse_qs(
-                self.rfile.read(content_length).decode("utf-8"),
-                strict_parsing=True,
-            )
-            observations = fields.get("observation", ())
-            if set(fields) != {"observation"} or len(observations) != 1 or len(matching) != 1:
-                raise ValueError
-            self.server.shadow_evidence_store.record_sponsor_observation(
-                matching[0], observations[0]
-            )
-        except (UnicodeDecodeError, ValueError):
-            self._text(HTTPStatus.CONFLICT, "Shadow observation was not recorded.")
-            return
-        self._redirect("/swing/shadow-validation")
 
     def _record_sponsor_decision(self, candidate_id: str) -> None:
         content_type = self.headers.get("Content-Type", "").split(";", 1)[0]
@@ -1352,8 +1276,6 @@ def create_browser_server(
     restart_control: BrowserBackendRestartControl | None = None,
     intraday_workstation: IntradayEvidenceWorkstation | None = None,
     step32_workflow: SwingV1BrowserOperationalization | None = None,
-    shadow_assessments: tuple[ShadowInstrumentAssessment, ...] = (),
-    shadow_evidence_store: ShadowValidationEvidenceStore | None = None,
     native_review: NativeReviewWorkflow | None = None,
 ) -> KronosBrowserServer:
     if type(port) is not int or not 0 <= port <= 65535:
@@ -1367,8 +1289,6 @@ def create_browser_server(
         restart_control,
         intraday_workstation,
         step32_workflow,
-        shadow_assessments,
-        shadow_evidence_store,
         native_review,
     )
 

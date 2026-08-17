@@ -11,10 +11,6 @@ from kronos.browser.server import create_browser_server
 from kronos.browser.restart_control import BrowserBackendRestartControl
 from kronos.market.calendar import MarketCalendarPublisher
 from kronos.swing.run_provenance import LocalSwingRunProvenanceStore
-from kronos.swing.v1.validation_evidence import (
-    DEFAULT_SHADOW_VALIDATION_EVIDENCE_ROOT,
-    ShadowValidationEvidenceStore,
-)
 from kronos.swing.v1.mtf_facts import (
     DEFAULT_MTF_FACT_EVIDENCE_ROOT,
     MtfFactEvidenceStore,
@@ -37,9 +33,6 @@ def _parser() -> argparse.ArgumentParser:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
-    shadow_store = ShadowValidationEvidenceStore(
-        DEFAULT_SHADOW_VALIDATION_EVIDENCE_ROOT
-    )
     mtf_fact_store = MtfFactEvidenceStore(DEFAULT_MTF_FACT_EVIDENCE_ROOT)
     native_discovery_store = NativeDiscoveryEvidenceStore(
         DEFAULT_NATIVE_DISCOVERY_EVIDENCE_ROOT
@@ -48,7 +41,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         _build_provider,
         run_provenance_store=LocalSwingRunProvenanceStore(),
         market_calendar_publisher=MarketCalendarPublisher(),
-        shadow_evidence_store=shadow_store,
         mtf_fact_evidence_store=mtf_fact_store,
         native_discovery_evidence_store=native_discovery_store,
     )

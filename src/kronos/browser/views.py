@@ -73,7 +73,6 @@ from kronos.swing.v1.native_trade_journal import (
     JournalRecordType,
     TradeJournalSnapshot,
 )
-from kronos.swing.v1.shadow_mtf import ShadowInstrumentAssessment
 from kronos.swing.v1.mtf_facts import SameRunMtfFactSnapshot
 from kronos.swing.v1.native_discovery import (
     NativeDiscoveryRun,
@@ -1955,130 +1954,6 @@ def _v1_governed_reason(
     return reason, need
 
 
-def render_shadow_validation(
-    snapshot: BrowserWorkspaceSnapshot,
-    assessments: tuple[ShadowInstrumentAssessment, ...],
-) -> str:
-    """Render compact Daily-control versus MTF-Shadow validation evidence."""
-
-    if type(assessments) is not tuple or any(
-        type(item) is not ShadowInstrumentAssessment for item in assessments
-    ):
-        raise TypeError("SHADOW_VALIDATION_VIEW_INVALID")
-    cards = ""
-    for item in assessments:
-        if item.control.probable_identities:
-            control = "YES · " + " · ".join(
-                f"{identity.setup.value} {identity.direction.value}"
-                for identity in item.control.probable_identities
-            )
-        elif item.control.candidate and item.control.setup is not None:
-            control = (
-                f"YES · {item.control.setup.value} · "
-                f"{item.control.direction.value}"
-            )
-        else:
-            control = "NO"
-        shadow = (
-            f"{item.setup.value} · {item.direction.value}"
-            if item.setup is not None
-            else "NO SHADOW CANDIDATE"
-        )
-        timeframes = "".join(
-            '<div class="shadow-timeframe"><span>'
-            + escape(evidence.timeframe.value)
-            + '</span><strong>'
-            + escape(evidence.structure.value.replace("_", " "))
-            + '</strong><small>'
-            + escape(evidence.observation_boundary.strftime("%d %b %H:%M"))
-            + '</small></div>'
-            for evidence in (
-                item.weekly,
-                item.daily,
-                item.four_hour,
-                item.one_hour,
-            )
-        )
-        remainder = (
-            '<div class="remainder-tag">STATE CHANGE MATERIALLY DEPENDS ON A '
-            'COMPLETED 4H SESSION-REMAINDER BUCKET</div>'
-            if item.session_remainder_dependent_change
-            else ""
-        )
-        levels = tuple(
-            level
-            for evidence in (
-                item.weekly,
-                item.daily,
-                item.four_hour,
-                item.one_hour,
-            )
-            for level in evidence.relevant_levels
-        )
-        level_summary = " · ".join(levels) if levels else "LEVEL UNAVAILABLE"
-        contradiction_summary = (
-            " · ".join(item.contradictions)
-            if item.contradictions
-            else "NONE OBSERVED"
-        )
-        observation = urlencode({
-            "run": item.run_identity,
-            "instrument": item.canonical_instrument,
-        })
-        cards += (
-            '<details class="shadow-card"><summary><strong>'
-            + escape(item.canonical_instrument)
-            + '</strong><span>Control '
-            + escape("YES" if item.control.candidate else "NO")
-            + '</span><span class="shadow-state">'
-            + escape(item.state.value)
-            + '</span><span>View Analysis</span></summary>'
-            '<div class="shadow-comparison"><div class="shadow-side"><h3>DAILY CONTROL</h3><strong>'
-            + escape(control)
-            + '</strong><p>'
-            + escape(item.control.reason)
-            + '</p></div><div class="shadow-side"><h3>MTF SHADOW</h3><strong>'
-            + escape(shadow)
-            + '</strong><p>'
-            + escape(item.primary_reason.replace("_", " "))
-            + '</p></div></div><div class="shadow-timeframes">'
-            + timeframes
-            + '</div><div class="shadow-wait"><span>WHAT AM I WAITING FOR?</span><strong>'
-            + escape(item.one_hour.reason)
-            + ' · LEVEL UNAVAILABLE</strong><small>CHART-HEALTH EVENT · READINESS REQUIRES SEPARATE REASSESSMENT</small></div>'
-            '<div class="shadow-comparison"><div class="shadow-side"><h3>IMPULSE / PULLBACK</h3><p>'
-            + escape(item.four_hour.reason)
-            + '</p><h3>PARTICIPATION</h3><p>'
-            + escape(item.four_hour.participation)
-            + '</p><h3>MATURITY / CHASE</h3><p>UNAVAILABLE</p></div>'
-            '<div class="shadow-side"><h3>KEY LEVELS</h3><p>'
-            + escape(level_summary)
-            + '</p><h3>CONTRADICTIONS</h3><p>'
-            + escape(contradiction_summary)
-            + '</p></div></div>'
-            + remainder
-            + '<form class="shadow-observation" method="post" action="/swing/shadow-observation?'
-            + escape(observation)
-            + '"><input name="observation" maxlength="500" required '
-            'placeholder="Sponsor independent observation"><button type="submit">Record</button></form>'
-            '</details>'
-        )
-    if not cards:
-        cards = '<div class="global-empty">Shadow validation evidence is not available for this run.</div>'
-    body = (
-        '<div class="shadow-banner">VALIDATION EXPERIMENT · SHADOW — NO TRADING AUTHORITY</div>'
-        '<div class="shadow-list">' + cards + '</div>'
-    )
-    return _page(
-        title="Control vs Shadow",
-        subtitle="Daily control and freshest-completed MTF evidence remain separate.",
-        snapshot=snapshot,
-        active_nav="Swing",
-        active_tab="Review",
-        body=body,
-    )
-
-
 def render_mtf_fact_diagnostics(
     snapshot: BrowserWorkspaceSnapshot,
     facts: SameRunMtfFactSnapshot | None,
@@ -2430,7 +2305,6 @@ def _page(
                 ("Review", "/swing/v1-review"),
                 ("Layer-1 History", "/swing/layer1-history"),
                 ("Control vs Native", "/swing/native-discovery"),
-                ("Historical Shadow", "/swing/shadow-validation"),
                 ("MTF Data", "/swing/mtf-diagnostics"),
                 ("Trade Candidates", "/swing/trade-candidates"),
                 ("Active", "/swing/active"),
@@ -2467,7 +2341,7 @@ def _tab_link(name: str, href: str, active_tab: str) -> str:
     badge = (
         ""
         if name in {
-            "Opportunities", "Review", "Layer-1 History", "Control vs Native", "Historical Shadow",
+            "Opportunities", "Review", "Layer-1 History", "Control vs Native",
             "MTF Data", "Trade Candidates", "Active", "Closed",
         }
         else '<span class="badge">Placeholder</span>'
@@ -2801,7 +2675,6 @@ __all__ = [
     "render_trade_journal",
     "render_placeholder",
     "render_settings",
-    "render_shadow_validation",
     "render_mtf_fact_diagnostics",
     "render_native_discovery",
     "render_step32_sponsor_workflow",
