@@ -1,4 +1,6 @@
 from dataclasses import replace
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from kronos.application.swing_opportunities import (
     AnalysisState,
@@ -10,6 +12,7 @@ from kronos.application.swing_opportunities import (
 )
 from kronos.application.swing_v1_review import SwingV1ReviewWorkflow
 from kronos.browser.views import (
+    render_legacy_opportunities,
     render_opportunities,
     render_placeholder,
     render_settings,
@@ -24,6 +27,7 @@ from kronos.configuration.openai_chart_analyst import (
     ChartAnalystConnectionStatus,
     ChartAnalystV2ActivationStatus,
 )
+from kronos.market.calendar import MarketCalendarPublisher
 from kronos.swing.v1 import (
     ChartTimeframe,
     LocalTradingViewEvidenceStore,
@@ -64,14 +68,14 @@ from tests.unit.application.test_swing_opportunities import (
 
 
 def test_opportunities_has_frozen_navigation_and_lifecycle_shell() -> None:
-    rendered = render_opportunities(_ready())
+    rendered = render_legacy_opportunities(_ready())
     for label in (
         "Dashboard", "Swing", "Intraday", "Theta Earners", "Trading Journal",
-        "Portfolio", "Reports", "Settings", "Opportunities", "Active", "Paper",
-        "Ignored", "Closed",
+        "Portfolio", "Reports", "Settings", "Opportunities", "Review",
+        "Trade Candidates", "Active", "Closed",
     ):
         assert label in rendered
-    assert rendered.count("Placeholder") >= 4
+    assert "Placeholder" not in rendered
 
 
 def test_live_monitoring_settings_distinguishes_pass_no_data_and_disconnected() -> None:
@@ -118,6 +122,25 @@ def test_live_monitoring_settings_distinguishes_pass_no_data_and_disconnected() 
         '<button class="primary" type="submit" disabled>'
         "TEST LIVE MONITORING</button>"
     ) in disconnected
+
+
+def test_settings_presents_current_domain_008_coverage_horizon() -> None:
+    publisher = MarketCalendarPublisher()
+    observed = datetime(2026, 8, 17, 12, 0, tzinfo=ZoneInfo("Asia/Kolkata"))
+    rendered = render_settings(
+        _ready(),
+        ChartAnalystConnectionStatus.NOT_CONFIGURED,
+        ChartAnalystV2ActivationStatus.DISABLED,
+        market_calendar_health=tuple(
+            publisher.coverage_health(exchange, observed_at=observed)
+            for exchange in ("NSE", "MCX")
+        ),
+    )
+
+    assert "DOMAIN-008 Market Calendar" in rendered
+    assert "NSE VALID THROUGH 31 DEC 2026" in rendered
+    assert "MCX VALID THROUGH 31 DEC 2026" in rendered
+    assert rendered.count("CURRENT") >= 2
 
 
 def test_v1_review_renders_all_unique_probables_and_only_requested_upload_slots(
@@ -202,7 +225,7 @@ def test_review_run_status_requires_explicit_move_to_new_parent(tmp_path) -> Non
 
 
 def test_market_panels_are_side_by_side_and_stack_responsively() -> None:
-    rendered = render_opportunities(_ready())
+    rendered = render_legacy_opportunities(_ready())
     assert "EQUITIES + INDICES" in rendered
     assert "COMMODITIES" in rendered
     assert rendered.count("0 V1 Probables") == 2
@@ -212,7 +235,7 @@ def test_market_panels_are_side_by_side_and_stack_responsively() -> None:
 
 
 def test_zero_opportunity_state_has_no_fake_card() -> None:
-    rendered = render_opportunities(_ready())
+    rendered = render_legacy_opportunities(_ready())
     assert "No V1 Probables were found for this analysis." in rendered
     assert "Open Workspace" not in rendered
     assert "Qualified" not in rendered
@@ -220,7 +243,7 @@ def test_zero_opportunity_state_has_no_fake_card() -> None:
 
 
 def test_one_v1_probable_renders_without_v0_trade_projection() -> None:
-    rendered = render_opportunities(_v1_ready(_v1_probable()))
+    rendered = render_legacy_opportunities(_v1_ready(_v1_probable()))
     for expected in ("HDFCBANK", "SHORT", "Consolidation Breakout"):
         assert expected in rendered
     for forbidden in ("R:R", "Open Workspace", "Qualified", "Actionable"):
@@ -233,7 +256,7 @@ def test_two_v1_probables_preserve_panel_grouping() -> None:
         panel=MarketPanel.COMMODITIES,
         direction=V1Direction.LONG,
     )
-    rendered = render_opportunities(_v1_ready(_v1_probable(), commodity))
+    rendered = render_legacy_opportunities(_v1_ready(_v1_probable(), commodity))
     panels = rendered.index('<div class="panels">')
     equity_card = rendered.index("<h3>HDFCBANK</h3>", panels)
     commodity_panel = rendered.index("<h2>COMMODITIES</h2>", panels)
@@ -246,7 +269,7 @@ def test_two_v1_probables_preserve_panel_grouping() -> None:
 
 def test_direction_is_coloured_by_authoritative_long_short_meaning() -> None:
     long = _v1_probable("MARUTI", direction=V1Direction.LONG)
-    rendered = render_opportunities(_v1_ready(_v1_probable(), long))
+    rendered = render_legacy_opportunities(_v1_ready(_v1_probable(), long))
     assert '<span class="direction direction-short">SHORT</span>' in rendered
     assert '<span class="direction direction-long">LONG</span>' in rendered
     assert ".direction-long{color:var(--green)}" in rendered
@@ -258,7 +281,7 @@ def test_v1_probable_presentation_has_no_v0_rank() -> None:
         _v1_probable("GOLDM", panel=MarketPanel.COMMODITIES),
         _v1_probable("HDFCBANK"),
     )
-    rendered = render_opportunities(snapshot)
+    rendered = render_legacy_opportunities(snapshot)
     assert 'class="rank"' not in rendered
 
 
@@ -333,22 +356,24 @@ def test_provider_action_matches_connection_state() -> None:
 
 def test_primary_status_is_a_compact_v1_probable_summary() -> None:
     snapshot = _v1_ready(_v1_probable())
-    rendered = render_opportunities(snapshot)
+    rendered = render_legacy_opportunities(snapshot)
     assert 'class="status-grid"' in rendered
     for expected in (
         "Universe", "98", "V1 Probables", "Equities + Indices",
-        "Commodities", "Analysis boundary",
+        "Commodities",
     ):
         assert expected in rendered
+    assert "Analysis boundary" not in rendered
 
 
-def test_run_header_separates_execution_time_from_analysis_boundary() -> None:
+def test_sponsor_header_shows_only_last_successful_analysis_completion_in_ist() -> None:
     snapshot = replace(
         _v1_ready(_v1_probable()),
         swing_analysis_run_identity=(
             "SWING-RUN-0000000000000000000000004423B656"
         ),
         run_created_at=NOW.replace(day=13, hour=5, minute=1),
+        completed_at=NOW.replace(day=13, hour=5, minute=17),
         observation_boundary=NOW.replace(day=11, hour=18, minute=30),
         market_data_snapshot_identity=(
             "SWING-MARKET-DATA-SNAPSHOT-" + "a" * 64
@@ -357,12 +382,12 @@ def test_run_header_separates_execution_time_from_analysis_boundary() -> None:
 
     rendered = render_opportunities(snapshot)
 
-    assert "RUN 4423B656 · RUN AT 13 AUG 2026 10:31" in rendered
-    assert "ANALYSIS BOUNDARY 12 AUG 2026 · 00:00 IST" in rendered
-    assert "RUN 4423B656 · 13 Aug 2026" not in rendered
+    assert "LAST SUCCESSFUL ANALYSIS · 13 AUG 2026 10:47 IST" in rendered
+    assert "RUN 4423B656" not in rendered
+    assert "ANALYSIS BOUNDARY" not in rendered
 
 
-def test_legacy_run_never_substitutes_analysis_boundary_for_run_time() -> None:
+def test_sponsor_header_uses_completion_even_when_legacy_run_time_is_missing() -> None:
     snapshot = replace(
         _v1_ready(_v1_probable()),
         swing_analysis_run_identity=(
@@ -374,9 +399,9 @@ def test_legacy_run_never_substitutes_analysis_boundary_for_run_time() -> None:
 
     rendered = render_opportunities(snapshot)
 
-    assert "RUN D14E267F · RUN TIME UNKNOWN" in rendered
-    assert "ANALYSIS BOUNDARY 12 AUG 2026 · 00:00 IST" in rendered
-    assert "RUN D14E267F · 12 Aug 2026" not in rendered
+    assert "LAST SUCCESSFUL ANALYSIS ·" in rendered
+    assert "RUN D14E267F" not in rendered
+    assert "ANALYSIS BOUNDARY" not in rendered
 
 
 def test_v0_eligible_plans_are_absent_from_active_sponsor_page() -> None:
@@ -393,7 +418,7 @@ def test_v0_eligible_plans_are_absent_from_active_sponsor_page() -> None:
         ),
     )
 
-    rendered = render_opportunities(replace(
+    rendered = render_legacy_opportunities(replace(
         snapshot,
         v1_probables=(_v1_probable("NAUKRI"),),
     ))

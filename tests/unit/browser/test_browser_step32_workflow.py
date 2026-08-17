@@ -4,6 +4,7 @@ from kronos.browser.views import (
 )
 from kronos.provider.contracts.monitoring import MonitoringConnectionState
 from kronos.swing.v1.step32 import (
+    RiskState,
     SponsorDecisionMode,
     activate_objective_model,
     create_sponsor_position,
@@ -98,3 +99,15 @@ def test_step32_workflow_contains_no_broker_execution_control() -> None:
     )
     for forbidden in ("place_order", "modify_order", "cancel_order", "Buy Now", "Sell Now"):
         assert forbidden not in html
+
+
+def test_risk_unavailable_shows_reason_and_hides_decision_authority() -> None:
+    candidate = _candidate()
+    risk = _risk(candidate, RiskState.UNAVAILABLE)
+    html = render_step32_sponsor_workflow(
+        build_step32_sponsor_workflow_view(candidate, risk, _lifecycle(candidate, risk))
+    )
+    assert "RISK UNAVAILABLE" in html
+    assert "WAITING FOR RISK" in html.upper()
+    assert "NOT STARTED" in html
+    assert "LIVE" not in html and "PAPER" not in html and "IGNORE" not in html

@@ -20,6 +20,8 @@ from kronos.application.live_monitoring_e2e import (
 )
 
 from kronos.configuration.principals import PrincipalBindingResult
+from kronos.application.swing_mtf_facts import build_same_run_mtf_fact_snapshot
+from kronos.market.calendar import CalendarCoverageHealth, MarketCalendarPublisher
 from kronos.provider.contracts.instrument import (
     InstrumentKind,
     InstrumentResolutionRequest,
@@ -72,6 +74,17 @@ from kronos.swing.v1.models import (
     V1Layer1Run,
     V1Setup,
 )
+from kronos.swing.v1.shadow_mtf import ShadowInstrumentAssessment, ShadowMtfRun
+from kronos.swing.v1.mtf_facts import (
+    MtfFactEvidenceStore,
+    SameRunMtfFactSnapshot,
+)
+from kronos.swing.v1.native_discovery import (
+    NativeDiscoveryEvidenceStore,
+    NativeDiscoveryRun,
+    discover_native_mtf,
+)
+from kronos.swing.v1.validation_evidence import ShadowValidationEvidenceStore
 
 
 class ProviderConnectionState(StrEnum):
@@ -125,6 +138,9 @@ class AnalysisStage(StrEnum):
     TRADE_PLAN = "TRADE_PLAN"
     RANKING = "RANKING"
     TOP_OPPORTUNITY = "TOP_OPPORTUNITY"
+    MTF_FACTS = "CURRENT_GOVERNED_MTF_FACTS"
+    NATIVE_DISCOVERY = "KRONOS_NATIVE_MTF_DISCOVERY"
+    SHADOW_MTF = "SHADOW_MTF"
     BROWSER_PROJECTION = "BROWSER_APPLICATION_ORCHESTRATION"
 
 
@@ -328,6 +344,13 @@ class BrowserWorkspaceSnapshot:
                 )
             )
             or (
+                self.completed_at is not None
+                and (
+                    self.completed_at.tzinfo is None
+                    or self.completed_at.utcoffset() is None
+                )
+            )
+            or (
                 self.market_data_snapshot_identity is not None
                 and re.fullmatch(
                     r"SWING-MARKET-DATA-SNAPSHOT-[0-9a-f]{64}",
@@ -518,6 +541,9 @@ class CompletedSwingAnalysis:
 
     workspace: BrowserWorkspaceSnapshot
     evidence: SwingAnalysisEvidenceSnapshot
+    shadow_run: ShadowMtfRun | None = None
+    mtf_fact_snapshot: SameRunMtfFactSnapshot | None = None
+    native_discovery_run: NativeDiscoveryRun | None = None
 
     def __post_init__(self) -> None:
         if (
@@ -542,6 +568,35 @@ class CompletedSwingAnalysis:
             != len(self.evidence.actionable_plans)
             or self.workspace.attention_eligible_count
             != len(self.evidence.attention_eligible)
+            or (
+                self.shadow_run is not None
+                and (
+                    type(self.shadow_run) is not ShadowMtfRun
+                    or self.shadow_run.run_identity
+                    != self.evidence.swing_analysis_run_identity
+                    or self.shadow_run.control_population_size != len(self.evidence.universe)
+                )
+            )
+            or (
+                self.mtf_fact_snapshot is not None
+                and (
+                    type(self.mtf_fact_snapshot) is not SameRunMtfFactSnapshot
+                    or self.mtf_fact_snapshot.run_identity
+                    != self.evidence.swing_analysis_run_identity
+                    or len(self.mtf_fact_snapshot.instruments)
+                    != len(self.evidence.universe)
+                )
+            )
+            or (
+                self.native_discovery_run is not None
+                and (
+                    type(self.native_discovery_run) is not NativeDiscoveryRun
+                    or self.native_discovery_run.run_identity
+                    != self.evidence.swing_analysis_run_identity
+                    or len(self.native_discovery_run.assessments)
+                    != len(self.evidence.universe)
+                )
+            )
         ):
             raise ValueError("COMPLETED_SWING_ANALYSIS_INVALID")
 
@@ -578,6 +633,10 @@ class SwingOpportunitiesApplication:
             lambda: f"SWING-RUN-{uuid4().hex.upper()}"
         ),
         run_provenance_store: LocalSwingRunProvenanceStore | None = None,
+        market_calendar_publisher: MarketCalendarPublisher | None = None,
+        shadow_evidence_store: ShadowValidationEvidenceStore | None = None,
+        mtf_fact_evidence_store: MtfFactEvidenceStore | None = None,
+        native_discovery_evidence_store: NativeDiscoveryEvidenceStore | None = None,
         live_monitoring_timeout_seconds: float = 15.0,
     ) -> None:
         if not all(callable(item) for item in (
@@ -594,6 +653,21 @@ class SwingOpportunitiesApplication:
         ):
             raise TypeError("BROWSER_APPLICATION_DEPENDENCY_INVALID")
         if (
+            market_calendar_publisher is not None
+            and type(market_calendar_publisher) is not MarketCalendarPublisher
+        ) or (
+            shadow_evidence_store is not None
+            and type(shadow_evidence_store) is not ShadowValidationEvidenceStore
+        ) or (
+            mtf_fact_evidence_store is not None
+            and type(mtf_fact_evidence_store) is not MtfFactEvidenceStore
+        ) or (
+            native_discovery_evidence_store is not None
+            and type(native_discovery_evidence_store)
+            is not NativeDiscoveryEvidenceStore
+        ):
+            raise TypeError("BROWSER_APPLICATION_DEPENDENCY_INVALID")
+        if (
             type(live_monitoring_timeout_seconds) is not float
             or not 0.0 < live_monitoring_timeout_seconds <= 60.0
         ):
@@ -604,12 +678,19 @@ class SwingOpportunitiesApplication:
         self.__background_runner = background_runner
         self.__swing_run_identity_factory = swing_run_identity_factory
         self.__run_provenance_store = run_provenance_store
+        self.__market_calendar_publisher = market_calendar_publisher
+        self.__shadow_evidence_store = shadow_evidence_store
+        self.__mtf_fact_evidence_store = mtf_fact_evidence_store
+        self.__native_discovery_evidence_store = native_discovery_evidence_store
         self.__live_monitoring_timeout_seconds = live_monitoring_timeout_seconds
         self.__lock = RLock()
         self.__provider: _ProviderRuntime | None = None
         self.__analysis_attempt_count = 0
         self.__analysis_diagnostic: AnalysisFailureDiagnostic | None = None
         self.__completed_analysis_evidence: SwingAnalysisEvidenceSnapshot | None = None
+        self.__completed_shadow_run: ShadowMtfRun | None = None
+        self.__completed_mtf_fact_snapshot: SameRunMtfFactSnapshot | None = None
+        self.__completed_native_discovery_run: NativeDiscoveryRun | None = None
         self.__live_monitoring_result = LiveMonitoringTestResult(
             LiveMonitoringTestState.NOT_TESTED
         )
@@ -618,20 +699,134 @@ class SwingOpportunitiesApplication:
         self.__snapshot = initial_snapshot or BrowserWorkspaceSnapshot(
             ProviderConnectionState.DISCONNECTED, AnalysisState.NOT_RUN, 98
         )
+        if run_provenance_store is not None:
+            recovered = run_provenance_store.latest()
+            if recovered is not None:
+                self.restore_run_provenance(recovered)
+                if mtf_fact_evidence_store is not None:
+                    try:
+                        self.restore_mtf_fact_snapshot(
+                            mtf_fact_evidence_store.load(recovered.run_id)
+                        )
+                    except ValueError:
+                        pass
+                if native_discovery_evidence_store is not None:
+                    try:
+                        self.restore_native_discovery_run(
+                            native_discovery_evidence_store.load(recovered.run_id)
+                        )
+                    except ValueError:
+                        pass
 
     def snapshot(self) -> BrowserWorkspaceSnapshot:
         with self.__lock:
             return self.__snapshot
 
+    def opportunities_projection(
+        self,
+    ) -> tuple[BrowserWorkspaceSnapshot, NativeDiscoveryRun | None]:
+        """Return one atomically bound successful Opportunities projection."""
+
+        with self.__lock:
+            snapshot = self.__snapshot
+            discovery = self.__completed_native_discovery_run
+            if (
+                discovery is None
+                or discovery.run_identity != snapshot.swing_analysis_run_identity
+            ):
+                discovery = None
+            return snapshot, discovery
+
     def analysis_diagnostic(self) -> AnalysisFailureDiagnostic | None:
         with self.__lock:
             return self.__analysis_diagnostic
+
+    def market_calendar_health(self) -> tuple[CalendarCoverageHealth, ...]:
+        """Return current DOMAIN-008 publication horizon health for operations."""
+
+        if self.__market_calendar_publisher is None:
+            return ()
+        observed_at = self.__clock()
+        return tuple(
+            self.__market_calendar_publisher.coverage_health(
+                exchange,
+                observed_at=observed_at,
+            )
+            for exchange in ("NSE", "MCX")
+        )
 
     def completed_analysis_evidence(self) -> SwingAnalysisEvidenceSnapshot | None:
         """Return the latest immutable successful-run evidence without recomputation."""
 
         with self.__lock:
             return self.__completed_analysis_evidence
+
+    def restore_run_provenance(
+        self,
+        provenance: SwingAnalysisRunProvenance,
+    ) -> BrowserWorkspaceSnapshot:
+        """Restore the last-successful header from durable audit evidence."""
+
+        if type(provenance) is not SwingAnalysisRunProvenance:
+            raise ValueError("SWING_RUN_PROVENANCE_INVALID")
+        with self.__lock:
+            self.__snapshot = replace(
+                self.__snapshot,
+                swing_analysis_run_identity=provenance.run_id,
+                run_created_at=provenance.run_created_at,
+                market_data_snapshot_identity=provenance.market_data_snapshot_identity,
+                observation_boundary=provenance.analysis_boundary,
+                completed_at=provenance.successful_completed_at,
+            )
+            return self.__snapshot
+
+    def shadow_assessments(self) -> tuple[ShadowInstrumentAssessment, ...]:
+        with self.__lock:
+            return () if self.__completed_shadow_run is None else self.__completed_shadow_run.assessments
+
+    def shadow_evidence_store(self) -> ShadowValidationEvidenceStore | None:
+        return self.__shadow_evidence_store
+
+    def mtf_fact_snapshot(self) -> SameRunMtfFactSnapshot | None:
+        with self.__lock:
+            return self.__completed_mtf_fact_snapshot
+
+    def mtf_fact_evidence_store(self) -> MtfFactEvidenceStore | None:
+        return self.__mtf_fact_evidence_store
+
+    def native_discovery_run(self) -> NativeDiscoveryRun | None:
+        with self.__lock:
+            return self.__completed_native_discovery_run
+
+    def native_discovery_evidence_store(self) -> NativeDiscoveryEvidenceStore | None:
+        return self.__native_discovery_evidence_store
+
+    def restore_mtf_fact_snapshot(self, snapshot: SameRunMtfFactSnapshot) -> None:
+        if type(snapshot) is not SameRunMtfFactSnapshot:
+            raise ValueError("MTF_FACT_SNAPSHOT_INVALID")
+        with self.__lock:
+            current = self.__snapshot.swing_analysis_run_identity
+            if current and current != snapshot.run_identity:
+                raise ValueError("MTF_FACT_RUN_BINDING_MISMATCH")
+            self.__completed_mtf_fact_snapshot = snapshot
+
+    def restore_shadow_run(self, run: ShadowMtfRun) -> None:
+        if type(run) is not ShadowMtfRun:
+            raise ValueError("SHADOW_MTF_RUN_INVALID")
+        with self.__lock:
+            current = self.__snapshot.swing_analysis_run_identity
+            if current and current != run.run_identity:
+                raise ValueError("SHADOW_MTF_RUN_BINDING_MISMATCH")
+            self.__completed_shadow_run = run
+
+    def restore_native_discovery_run(self, run: NativeDiscoveryRun) -> None:
+        if type(run) is not NativeDiscoveryRun:
+            raise ValueError("NATIVE_DISCOVERY_RUN_INVALID")
+        with self.__lock:
+            current = self.__snapshot.swing_analysis_run_identity
+            if current and current != run.run_identity:
+                raise ValueError("NATIVE_DISCOVERY_RUN_BINDING_MISMATCH")
+            self.__completed_native_discovery_run = run
 
     def live_monitoring_result(self) -> LiveMonitoringTestResult:
         with self.__lock:
@@ -692,17 +887,21 @@ class SwingOpportunitiesApplication:
             for item in run.instruments
         }
         with self.__lock:
-            self.__snapshot = replace(
-                self.__snapshot,
-                swing_analysis_run_identity=provenance.run_id,
-                v1_layer1_run_identity=run.run_identity,
-                run_created_at=provenance.run_created_at,
-                market_data_snapshot_identity=(
-                    provenance.market_data_snapshot_identity
-                ),
-                observation_boundary=provenance.analysis_boundary,
-                v1_probables=_project_v1_probables(run, panels),
-            )
+            updates: dict[str, object] = {
+                "v1_layer1_run_identity": run.run_identity,
+                "v1_probables": _project_v1_probables(run, panels),
+            }
+            if self.__snapshot.completed_at is None:
+                updates.update({
+                    "swing_analysis_run_identity": provenance.run_id,
+                    "run_created_at": provenance.run_created_at,
+                    "market_data_snapshot_identity": (
+                        provenance.market_data_snapshot_identity
+                    ),
+                    "observation_boundary": provenance.analysis_boundary,
+                    "completed_at": provenance.successful_completed_at,
+                })
+            self.__snapshot = replace(self.__snapshot, **updates)
             return self.__snapshot
 
     def connect_provider(self) -> bool:
@@ -895,7 +1094,29 @@ class SwingOpportunitiesApplication:
                 now=run_created_at,
                 pace=self.__pace,
                 progress_observer=observe,
+                market_calendar_publisher=self.__market_calendar_publisher,
+                mtf_fact_evidence_store=self.__mtf_fact_evidence_store,
+                native_discovery_evidence_store=(
+                    self.__native_discovery_evidence_store
+                ),
             )
+            successful_completed_at = self.__aware_now()
+            published_workspace = replace(
+                completed.workspace,
+                completed_at=successful_completed_at,
+            )
+            shadow_run = getattr(completed, "shadow_run", None)
+            mtf_fact_snapshot = getattr(completed, "mtf_fact_snapshot", None)
+            native_discovery_run = getattr(completed, "native_discovery_run", None)
+            if shadow_run is not None and self.__shadow_evidence_store is not None:
+                self.__shadow_evidence_store.retain_run(shadow_run)
+            if mtf_fact_snapshot is not None and self.__mtf_fact_evidence_store is not None:
+                self.__mtf_fact_evidence_store.retain(mtf_fact_snapshot)
+            if (
+                native_discovery_run is not None
+                and self.__native_discovery_evidence_store is not None
+            ):
+                self.__native_discovery_evidence_store.retain(native_discovery_run)
             if self.__run_provenance_store is not None:
                 self.__run_provenance_store.retain(SwingAnalysisRunProvenance(
                     run_id=completed.evidence.swing_analysis_run_identity,
@@ -904,6 +1125,7 @@ class SwingOpportunitiesApplication:
                     market_data_snapshot_identity=(
                         completed.evidence.market_data_snapshot_identity
                     ),
+                    successful_completed_at=successful_completed_at,
                 ))
         except Exception as error:
             diagnostic = AnalysisFailureDiagnostic(
@@ -928,8 +1150,11 @@ class SwingOpportunitiesApplication:
         with self.__lock:
             self.__analysis_diagnostic = None
             self.__completed_analysis_evidence = completed.evidence
+            self.__completed_shadow_run = shadow_run
+            self.__completed_mtf_fact_snapshot = mtf_fact_snapshot
+            self.__completed_native_discovery_run = native_discovery_run
             self.__snapshot = replace(
-                completed.workspace,
+                published_workspace,
                 provider_state=ProviderConnectionState.CONNECTED,
             )
 
@@ -951,6 +1176,9 @@ def build_completed_swing_analysis(
     now: datetime,
     pace: Callable[[], None] = lambda: time.sleep(0.4),
     progress_observer: _ProgressObserver | None = None,
+    market_calendar_publisher: MarketCalendarPublisher | None = None,
+    mtf_fact_evidence_store: MtfFactEvidenceStore | None = None,
+    native_discovery_evidence_store: NativeDiscoveryEvidenceStore | None = None,
 ) -> CompletedSwingAnalysis:
     """Run Stage 1-9 once and retain evidence beside the compact projection."""
 
@@ -965,6 +1193,19 @@ def build_completed_swing_analysis(
         or run_created_at.utcoffset() is None
         or not callable(pace)
         or (progress_observer is not None and not callable(progress_observer))
+        or (
+            market_calendar_publisher is not None
+            and type(market_calendar_publisher) is not MarketCalendarPublisher
+        )
+        or (
+            mtf_fact_evidence_store is not None
+            and type(mtf_fact_evidence_store) is not MtfFactEvidenceStore
+        )
+        or (
+            native_discovery_evidence_store is not None
+            and type(native_discovery_evidence_store)
+            is not NativeDiscoveryEvidenceStore
+        )
     ):
         raise ValueError("BROWSER_ANALYSIS_REQUEST_INVALID")
 
@@ -1027,6 +1268,7 @@ def build_completed_swing_analysis(
         resolve_instrument=resolve,
         historical_candles=retrieve,
         now=now,
+        market_calendar_publisher=market_calendar_publisher,
     )
     snapshot_identity = market_data_snapshot_identity(dataset)
     v1_layer1_run = analyze_v1_layer1(dataset)
@@ -1078,6 +1320,41 @@ def build_completed_swing_analysis(
         observation_boundary=market.observation_boundary,
     )
     selection = select_top_opportunities(ranking)
+    shadow_run = None
+    mtf_fact_snapshot = None
+    native_discovery_run = None
+    if market_calendar_publisher is not None:
+        observe(
+            AnalysisStage.MTF_FACTS,
+            completed_instrument_count=dataset.ready_count,
+            observation_boundary=market.observation_boundary,
+        )
+        mtf_fact_snapshot = build_same_run_mtf_fact_snapshot(
+            run_identity=swing_analysis_run_identity,
+            daily_dataset=dataset,
+            historical_candles=retrieve,
+            calendar_publisher=market_calendar_publisher,
+            observed_at=now,
+            predecessor_snapshot=(
+                None
+                if mtf_fact_evidence_store is None
+                else mtf_fact_evidence_store.latest()
+            ),
+        )
+        observe(
+            AnalysisStage.NATIVE_DISCOVERY,
+            completed_instrument_count=dataset.ready_count,
+            observation_boundary=market.observation_boundary,
+        )
+        native_discovery_run = discover_native_mtf(
+            mtf_fact_snapshot,
+            predecessor=(
+                None
+                if native_discovery_evidence_store is None
+                else native_discovery_evidence_store.latest()
+            ),
+            daily_control=v1_layer1_run,
+        )
     observe(
         AnalysisStage.BROWSER_PROJECTION,
         completed_instrument_count=dataset.ready_count,
@@ -1155,7 +1432,13 @@ def build_completed_swing_analysis(
         ),
         v1_layer1_run=v1_layer1_run,
     )
-    return CompletedSwingAnalysis(workspace=workspace, evidence=evidence)
+    return CompletedSwingAnalysis(
+        workspace=workspace,
+        evidence=evidence,
+        shadow_run=shadow_run,
+        mtf_fact_snapshot=mtf_fact_snapshot,
+        native_discovery_run=native_discovery_run,
+    )
 
 
 def build_browser_workspace_snapshot(

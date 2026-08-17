@@ -7,6 +7,7 @@ import pytest
 
 from kronos.application import swing_opportunities as app
 from kronos.configuration.principals import PrincipalBindingResult
+from kronos.market.calendar import MarketCalendarPublisher
 from kronos.provider.contracts.provider_authentication import ReadOnlyProviderOperation
 from kronos.provider.models.authentication import AuthenticationAttemptState
 from kronos.provider.contracts.market_data import HistoricalCandle
@@ -16,6 +17,14 @@ from kronos.swing.run_provenance import LocalSwingRunProvenanceStore
 from kronos.swing.trade_plan import TradePlanFailure, TradePlanStatus
 from kronos.swing.universe import enabled_swing_phase1_universe
 from kronos.swing.zero import SwingSetup
+from kronos.swing.v1.shadow_mtf import ShadowMtfRun
+from kronos.swing.v1.mtf_facts import MtfFactEvidenceStore
+from kronos.swing.v1.native_discovery import (
+    NativeDiscoveryEvidenceStore,
+    discover_native_mtf,
+)
+from tests.unit.browser.test_browser_shadow_validation import _assessment as _shadow_assessment
+from tests.unit.application.test_swing_mtf_facts import _build as _mtf_fact_fixture
 from tests.unit.swing.test_swing_candidate_ranking import _plan
 from tests.unit.swing.test_swing_candidate_validation import (
     _candles as _stage4_candles,
@@ -131,6 +140,41 @@ def _real_completed(monkeypatch) -> app.CompletedSwingAnalysis:  # type: ignore[
         now=NOW,
         pace=lambda: None,
     )
+
+
+def test_completed_analysis_requires_same_immutable_daily_and_shadow_run(monkeypatch) -> None:
+    completed = _real_completed(monkeypatch)
+    base = _shadow_assessment()
+    assessments = tuple(
+        replace(
+            base,
+            run_identity=completed.evidence.swing_analysis_run_identity,
+            canonical_instrument=f"INSTRUMENT {index}",
+        )
+        for index in range(98)
+    )
+    shadow = ShadowMtfRun(
+        completed.evidence.swing_analysis_run_identity,
+        base.provider_source_identity,
+        assessments,
+    )
+    assert app.CompletedSwingAnalysis(
+        completed.workspace,
+        completed.evidence,
+        shadow,
+    ).shadow_run is shadow
+    wrong_run_identity = "SWING-RUN-FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF"
+    wrong_shadow = ShadowMtfRun(
+        wrong_run_identity,
+        base.provider_source_identity,
+        tuple(replace(item, run_identity=wrong_run_identity) for item in assessments),
+    )
+    with pytest.raises(ValueError, match="COMPLETED_SWING_ANALYSIS_INVALID"):
+        app.CompletedSwingAnalysis(
+            completed.workspace,
+            completed.evidence,
+            wrong_shadow,
+        )
 
 
 def _eligible(
@@ -360,6 +404,119 @@ def test_successful_analysis_clears_stale_diagnostic(monkeypatch) -> None:
     assert service.snapshot() == completed
 
 
+def test_successful_analysis_atomically_retains_same_run_mtf_facts(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    completed = _real_completed(monkeypatch)
+    facts, _ = _mtf_fact_fixture()
+    facts = replace(
+        facts,
+        run_identity=completed.evidence.swing_analysis_run_identity,
+    )
+    completed = replace(completed, mtf_fact_snapshot=facts)
+    store = MtfFactEvidenceStore(tmp_path)
+    service = app.SwingOpportunitiesApplication(
+        _Provider,
+        clock=lambda: NOW,
+        background_runner=_immediate,
+        mtf_fact_evidence_store=store,
+    )
+    assert service.connect_provider()
+    monkeypatch.setattr(
+        app,
+        "build_completed_swing_analysis",
+        lambda *_a, **_k: completed,
+    )
+
+    assert service.run_analysis()
+    assert service.snapshot() == completed.workspace
+    assert service.mtf_fact_snapshot() == facts
+    assert store.load(facts.run_identity) == facts
+
+
+def test_successful_analysis_atomically_retains_native_discovery(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    completed = _real_completed(monkeypatch)
+    facts, _ = _mtf_fact_fixture()
+    facts = replace(
+        facts,
+        run_identity=completed.evidence.swing_analysis_run_identity,
+    )
+    native = discover_native_mtf(facts)
+    completed = replace(
+        completed,
+        mtf_fact_snapshot=facts,
+        native_discovery_run=native,
+    )
+    store = NativeDiscoveryEvidenceStore(tmp_path)
+    service = app.SwingOpportunitiesApplication(
+        _Provider,
+        clock=lambda: NOW,
+        background_runner=_immediate,
+        native_discovery_evidence_store=store,
+    )
+    assert service.connect_provider()
+    monkeypatch.setattr(
+        app,
+        "build_completed_swing_analysis",
+        lambda *_a, **_k: completed,
+    )
+
+    assert service.run_analysis()
+    assert service.native_discovery_run() == native
+    assert store.load(native.run_identity) == native
+    projected_snapshot, projected_discovery = service.opportunities_projection()
+    assert projected_snapshot == service.snapshot()
+    assert projected_discovery == native
+
+    successful_completed_at = projected_snapshot.completed_at
+    monkeypatch.setattr(
+        app,
+        "build_completed_swing_analysis",
+        lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("SAFE_FAILURE")),
+    )
+
+    assert service.run_analysis()
+    failed_snapshot, retained_discovery = service.opportunities_projection()
+    assert failed_snapshot.analysis_state is app.AnalysisState.ERROR
+    assert failed_snapshot.completed_at == successful_completed_at
+    assert retained_discovery == native
+
+
+def test_native_discovery_is_recovered_for_last_successful_run(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    completed = _real_completed(monkeypatch)
+    facts, _ = _mtf_fact_fixture()
+    run_id = completed.evidence.swing_analysis_run_identity
+    facts = replace(facts, run_identity=run_id)
+    native = discover_native_mtf(facts)
+    provenance_store = LocalSwingRunProvenanceStore(tmp_path / "runs")
+    native_store = NativeDiscoveryEvidenceStore(tmp_path / "native")
+    provenance_store.retain(app.SwingAnalysisRunProvenance(
+        run_id=run_id,
+        run_created_at=completed.evidence.run_created_at,
+        analysis_boundary=completed.evidence.observation_boundary,
+        market_data_snapshot_identity=completed.evidence.market_data_snapshot_identity,
+        successful_completed_at=NOW,
+    ))
+    native_store.retain(native)
+
+    service = app.SwingOpportunitiesApplication(
+        _Provider,
+        run_provenance_store=provenance_store,
+        native_discovery_evidence_store=native_store,
+    )
+
+    assert service.snapshot().swing_analysis_run_identity == run_id
+    assert service.native_discovery_run() == native
+    assert service.opportunities_projection() == (service.snapshot(), native)
+
+
 def test_real_builder_emits_every_component_stage(monkeypatch) -> None:
     stages: list[app.AnalysisStage] = []
     completed_fixture = _real_completed(monkeypatch)
@@ -420,12 +577,65 @@ def test_real_builder_emits_every_component_stage(monkeypatch) -> None:
     assert stages.count(app.AnalysisStage.TRADE_PLAN) == 13
 
 
+def test_production_run_publishes_factual_mtf_without_invoking_shadow_candidate_authority(
+    monkeypatch,
+) -> None:
+    stages: list[app.AnalysisStage] = []
+    completed_fixture = _real_completed(monkeypatch)
+    dataset = completed_fixture.evidence.daily_dataset
+    market = completed_fixture.evidence.market_assessment
+    facts, _ = _mtf_fact_fixture()
+
+    class Instruments:
+        def __init__(self, _capability) -> None:  # type: ignore[no-untyped-def]
+            pass
+
+        def retrieve(self, _exchange):  # type: ignore[no-untyped-def]
+            return ()
+
+    class MarketData:
+        def __init__(self, _capability) -> None:  # type: ignore[no-untyped-def]
+            pass
+
+    def factual(**kwargs):  # type: ignore[no-untyped-def]
+        assert kwargs["daily_dataset"] is dataset
+        return replace(facts, run_identity=kwargs["run_identity"])
+
+    monkeypatch.setattr(app, "KiteInstrumentProvider", Instruments)
+    monkeypatch.setattr(app, "KiteMarketDataProvider", MarketData)
+    monkeypatch.setattr(app, "build_swing_daily_dataset", lambda *_a, **_k: dataset)
+    monkeypatch.setattr(app, "assess_swing_market", lambda _dataset: market)
+    monkeypatch.setattr(app, "build_same_run_mtf_fact_snapshot", factual)
+
+    completed = app.build_completed_swing_analysis(
+        _Capability(),
+        analysis_run_identity="ANALYSIS-000001",
+        now=NOW,
+        pace=lambda: None,
+        market_calendar_publisher=MarketCalendarPublisher(),
+        progress_observer=lambda progress: stages.append(progress.stage),
+    )
+
+    assert completed.mtf_fact_snapshot is not None
+    assert completed.native_discovery_run is not None
+    assert (
+        completed.native_discovery_run.run_identity
+        == completed.mtf_fact_snapshot.run_identity
+    )
+    assert completed.shadow_run is None
+    assert app.AnalysisStage.MTF_FACTS in stages
+    assert app.AnalysisStage.NATIVE_DISCOVERY in stages
+    assert app.AnalysisStage.SHADOW_MTF not in stages
+
+
 def test_successful_browser_run_persists_restart_safe_provenance(
     monkeypatch,
     tmp_path,
 ) -> None:
     completed = _real_completed(monkeypatch)
     store = LocalSwingRunProvenanceStore(tmp_path)
+    successful_completion = NOW + timedelta(minutes=7)
+    clock_values = iter((NOW, successful_completion))
     monkeypatch.setattr(
         app,
         "build_completed_swing_analysis",
@@ -433,7 +643,7 @@ def test_successful_browser_run_persists_restart_safe_provenance(
     )
     service = app.SwingOpportunitiesApplication(
         _Provider,
-        clock=lambda: NOW,
+        clock=lambda: next(clock_values),
         background_runner=_immediate,
         swing_run_identity_factory=lambda: (
             "SWING-RUN-00000000000000000000000000000001"
@@ -448,10 +658,69 @@ def test_successful_browser_run_persists_restart_safe_provenance(
         "SWING-RUN-00000000000000000000000000000001"
     )
     assert recovered.run_created_at == NOW
+    assert recovered.successful_completed_at == successful_completion
     assert recovered.analysis_boundary == completed.evidence.observation_boundary
     assert (
         recovered.market_data_snapshot_identity
         == completed.evidence.market_data_snapshot_identity
+    )
+    restarted = app.SwingOpportunitiesApplication(
+        _Provider,
+        run_provenance_store=restarted_store,
+    )
+    assert restarted.snapshot().completed_at == successful_completion
+    assert (
+        restarted.snapshot().swing_analysis_run_identity
+        == recovered.run_id
+    )
+    restored = restarted.restore_v1_review_projection(
+        completed.evidence.v1_layer1_run,
+        recovered,
+    )
+    assert restored.completed_at == successful_completion
+
+
+def test_older_review_recovery_does_not_replace_current_successful_run(
+    monkeypatch,
+) -> None:
+    completed = _real_completed(monkeypatch)
+    current_run = "SWING-RUN-915BCB97344540B3B708FDCF8335FC7F"
+    current_completed_at = NOW + timedelta(hours=2)
+    current = replace(
+        _ready(),
+        swing_analysis_run_identity=current_run,
+        run_created_at=NOW + timedelta(hours=1),
+        completed_at=current_completed_at,
+        market_data_snapshot_identity=(
+            "SWING-MARKET-DATA-SNAPSHOT-" + "c" * 64
+        ),
+    )
+    older = app.SwingAnalysisRunProvenance(
+        run_id="SWING-RUN-413912F4B30840CAAC8EEFFCADEB666C",
+        run_created_at=NOW - timedelta(days=1),
+        analysis_boundary=completed.evidence.v1_layer1_run.observation_boundary,
+        market_data_snapshot_identity=(
+            "SWING-MARKET-DATA-SNAPSHOT-" + "d" * 64
+        ),
+        successful_completed_at=NOW - timedelta(hours=12),
+    )
+    service = app.SwingOpportunitiesApplication(
+        _Provider,
+        initial_snapshot=current,
+    )
+
+    restored = service.restore_v1_review_projection(
+        completed.evidence.v1_layer1_run,
+        older,
+    )
+
+    assert restored.swing_analysis_run_identity == current_run
+    assert restored.completed_at == current_completed_at
+    assert restored.market_data_snapshot_identity == (
+        "SWING-MARKET-DATA-SNAPSHOT-" + "c" * 64
+    )
+    assert restored.v1_layer1_run_identity == (
+        completed.evidence.v1_layer1_run.run_identity
     )
 
 
@@ -555,6 +824,7 @@ def test_failed_run_does_not_replace_latest_successful_evidence(monkeypatch) -> 
     assert service.run_analysis()
     prior_evidence = service.completed_analysis_evidence()
     prior_opportunities = service.snapshot().opportunities
+    prior_completed_at = service.snapshot().completed_at
 
     monkeypatch.setattr(
         app,
@@ -564,6 +834,7 @@ def test_failed_run_does_not_replace_latest_successful_evidence(monkeypatch) -> 
     assert service.run_analysis()
     assert service.completed_analysis_evidence() is prior_evidence
     assert service.snapshot().opportunities == prior_opportunities
+    assert service.snapshot().completed_at == prior_completed_at
     assert service.snapshot().analysis_state is app.AnalysisState.ERROR
 
 

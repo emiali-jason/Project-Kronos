@@ -7,7 +7,7 @@ from kronos.application.swing_v1_review import (
     ChartAnalysisState,
     SwingV1ReviewWorkflow,
 )
-from kronos.browser.views import render_opportunities, render_v1_review
+from kronos.browser.views import render_legacy_opportunities, render_v1_review
 from kronos.swing.v1.chart_analyst_v2 import (
     OPENAI_CHART_ANALYST_V2_PROVIDER_ID,
     ChartAnalystV2Response,
@@ -90,18 +90,20 @@ def test_fresh_run_keeps_opportunities_review_and_run_times_consistent(tmp_path)
         _ready(),
         swing_analysis_run_identity=_PARENT_RUN,
         run_created_at=_NOW,
+        completed_at=_NOW,
         observation_boundary=workflow.snapshot().layer1_run.observation_boundary,
         v1_probables=(_v1_probable("NAUKRI"), _v1_probable("TITAN")),
     )
 
-    opportunities = render_opportunities(snapshot)
+    opportunities = render_legacy_opportunities(snapshot)
     review = render_v1_review(snapshot, workflow.snapshot())
 
     assert {item.instrument for item in snapshot.v1_probables} == {
         item.canonical_instrument for item in workflow.snapshot().requirements
     }
-    assert "RUN 0000004A · RUN AT 13 AUG 2026 10:31" in review
-    assert "ANALYSIS BOUNDARY" in review
+    assert "LAST SUCCESSFUL ANALYSIS · 13 AUG 2026 10:31 IST" in review
+    assert "RUN 0000004A" not in review
+    assert "ANALYSIS BOUNDARY" not in review
     assert "NAUKRI" in opportunities and "NAUKRI" in review
 
 
@@ -155,7 +157,7 @@ def test_successful_4f_result_is_compact_and_has_no_openai_authority_leakage(tmp
         "SUPPORTIVE",
         "READY FOR TRADE CONSTRUCTION",
         "ALL CANDIDATE READINESS CONTEXT SUPPORTS PROGRESSION",
-        "ELIGIBLE FOR STEP 31 HANDOFF",
+        "READY FOR TRADE PLAN",
         "SHADOW / VALIDATION ONLY",
     ):
         assert expected in rendered

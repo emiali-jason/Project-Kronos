@@ -1,3 +1,4 @@
+from dataclasses import replace
 from http.client import HTTPConnection
 from threading import Thread
 import json
@@ -10,6 +11,10 @@ from kronos.application.swing_opportunities import (
     V1ProbableSnapshot,
 )
 from kronos.application.swing_v1_review import SwingV1ReviewWorkflow
+from kronos.application.swing_v1_browser import (
+    BrowserCandidateRecord,
+    SwingV1BrowserOperationalization,
+)
 from kronos.browser.server import KronosBrowserServer, create_browser_server
 from kronos.browser.restart_control import BrowserBackendRestartControl
 from kronos.swing.v1 import (
@@ -17,6 +22,10 @@ from kronos.swing.v1 import (
     V1Direction,
     V1Setup,
 )
+from kronos.swing.v1.step32 import create_business_judgment
+from kronos.swing.v1.shadow_mtf import ShadowMtfRun
+from tests.unit.browser.test_browser_shadow_validation import _assessment as _shadow_assessment
+from tests.unit.swing.v1.test_step32_lifecycle import _entry_fixture
 from tests.unit.application.test_swing_opportunities import (
     _Provider,
     _eligible,
@@ -25,17 +34,20 @@ from tests.unit.application.test_swing_opportunities import (
 )
 
 
-def _running_server(snapshot=None, *, v1_review=None):  # type: ignore[no-untyped-def]
+def _running_server(snapshot=None, *, v1_review=None, step32_workflow=None):  # type: ignore[no-untyped-def]
     app = SwingOpportunitiesApplication(_Provider, initial_snapshot=snapshot)
-    server = create_browser_server(app, port=0, v1_review=v1_review)
+    server = create_browser_server(
+        app,
+        port=0,
+        v1_review=v1_review,
+        step32_workflow=step32_workflow,
+    )
     thread = Thread(target=server.serve_forever, daemon=True)
     thread.start()
     return server, thread
 
 
 def _active_v1(snapshot, instrument: str = "NAUKRI"):  # type: ignore[no-untyped-def]
-    from dataclasses import replace
-
     return replace(
         snapshot,
         v1_probables=(V1ProbableSnapshot(
@@ -45,6 +57,33 @@ def _active_v1(snapshot, instrument: str = "NAUKRI"):  # type: ignore[no-untyped
             directions=(V1Direction.LONG,),
         ),),
     )
+
+
+def test_shadow_validation_route_reads_atomic_application_run(tmp_path) -> None:
+    base = _shadow_assessment()
+    run = ShadowMtfRun(
+        base.run_identity,
+        base.provider_source_identity,
+        tuple(
+            replace(base, canonical_instrument=f"INSTRUMENT {index}")
+            for index in range(98)
+        ),
+    )
+    application = SwingOpportunitiesApplication(_Provider, initial_snapshot=_ready())
+    application.restore_shadow_run(run)
+    review = SwingV1ReviewWorkflow(LocalTradingViewEvidenceStore(tmp_path))
+    server = create_browser_server(application, port=0, v1_review=review)
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        status, _, body = _request(server, "GET", "/swing/shadow-validation")
+        assert status == 200
+        assert "INSTRUMENT 0" in body
+        assert "Shadow validation evidence is not available for this run." not in body
+    finally:
+        server.shutdown()
+        thread.join(timeout=2)
+        server.server_close()
 
 
 def _request(server, method: str, path: str, *, headers=None, body=None):  # type: ignore[no-untyped-def]
@@ -151,11 +190,16 @@ def test_root_redirects_and_opportunities_route_renders(tmp_path) -> None:
         assert headers["Location"] == "/swing/opportunities"
         status, headers, body = _request(server, "GET", "/swing/opportunities")
         assert status == 200
-        assert "NAUKRI" in body
+        assert "Native Discovery unavailable" in body
+        assert "NAUKRI" not in body
         assert "HDFCBANK" not in body
         assert headers["Cache-Control"] == "no-store"
         assert headers["Referrer-Policy"] == "same-origin"
         assert "frame-ancestors 'none'" in headers["Content-Security-Policy"]
+        status, _, body = _request(server, "GET", "/swing/layer1-history")
+        assert status == 200
+        assert "Layer-1 History" in body
+        assert "NAUKRI" in body
     finally:
         server.shutdown(); server.server_close(); thread.join()
 
@@ -168,7 +212,47 @@ def test_workspace_and_placeholder_routes() -> None:
         assert "V0 workspaces are reference-only" in body
         assert _request(server, "GET", "/swing/opportunities/2")[0] == 404
         status, _, body = _request(server, "GET", "/swing/active")
-        assert status == 200 and "not implemented" in body
+        assert status == 200 and "No objective model trades are currently active" in body
+        status, _, body = _request(server, "GET", "/swing/trade-candidates")
+        assert status == 200 and "No instruments from the current chart review" in body
+        status, _, body = _request(server, "GET", "/swing/closed")
+        assert status == 200 and "No objective model trades have closed" in body
+    finally:
+        server.shutdown(); server.server_close(); thread.join()
+
+
+def test_trade_candidate_route_and_protected_sponsor_decision() -> None:
+    candidate, risk, lifecycle, _, _ = _entry_fixture()
+    record = BrowserCandidateRecord(
+        candidate,
+        create_business_judgment(
+            candidate,
+            validation_identity="SWING-V1-VALIDATION-20260814",
+        ),
+        risk,
+        lifecycle,
+    )
+    workflow = SwingV1BrowserOperationalization(recovered_records=(record,))
+    server, thread = _running_server(_ready(), step32_workflow=workflow)
+    try:
+        route = f"/swing/trade-candidates/{record.browser_key}"
+        status, _, body = _request(server, "GET", route)
+        assert status == 200
+        assert "NOT SELECTED" in body
+        authority = f"127.0.0.1:{server.server_port}"
+        status, headers, _ = _request(
+            server,
+            "POST",
+            f"{route}/decision",
+            headers={
+                "Host": authority,
+                "Origin": f"http://{authority}",
+                "Content-Type": "application/x-www-form-urlencoded",
+            },
+            body="mode=PAPER",
+        )
+        assert status == 303 and headers["Location"] == route
+        assert workflow.snapshot().records[0].sponsor_decision.mode.value == "PAPER"
     finally:
         server.shutdown(); server.server_close(); thread.join()
 
@@ -419,6 +503,7 @@ def test_live_monitoring_settings_control_invokes_current_process_capability(
         "/swing/v1/chart",
         "/swing/v1/chart/remove",
         "/swing/v1/analyze",
+        "/swing/trade-candidates/0123456789abcdef/decision",
         "/settings/kite/live-monitoring/test",
     ),
 )
