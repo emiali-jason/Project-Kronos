@@ -1,0 +1,1 @@
+"""Intraday factual foundation tests."""
