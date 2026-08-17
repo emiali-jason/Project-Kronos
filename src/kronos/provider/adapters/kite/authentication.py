@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from collections.abc import Callable, Mapping
 from datetime import date, datetime, timedelta
+from decimal import Decimal, InvalidOperation
 from enum import StrEnum
 from zoneinfo import ZoneInfo
 
@@ -559,6 +560,8 @@ def _normalize_instrument_records(
         name = item.get("name")
         instrument_type = item.get("instrument_type")
         instrument_token = item.get("instrument_token")
+        tick_size = _nonnegative_decimal(item.get("tick_size"))
+        lot_size = item.get("lot_size")
         expiry = _normalized_expiry(item.get("expiry"))
         normalized_name = name.strip() if isinstance(name, str) else name
         if (
@@ -569,6 +572,9 @@ def _normalize_instrument_records(
             or not _canonical_optional_text(instrument_type)
             or type(instrument_token) is not int
             or instrument_token <= 0
+            or tick_size is None
+            or type(lot_size) is not int
+            or lot_size < 0
             or expiry is _MALFORMED_EXPIRY
         ):
             raise InstrumentResolutionError(
@@ -584,6 +590,8 @@ def _normalize_instrument_records(
                     name=normalized_name,
                     instrument_type=instrument_type,
                     expiry=expiry,
+                    tick_size=tick_size,
+                    lot_size=lot_size,
                 ),
                 instrument_token,
             )
@@ -610,6 +618,14 @@ def _canonical_text(value: object) -> bool:
 
 def _canonical_optional_text(value: object) -> bool:
     return isinstance(value, str) and value == value.strip()
+
+
+def _nonnegative_decimal(value: object) -> Decimal | None:
+    try:
+        result = value if type(value) is Decimal else Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError):
+        return None
+    return result if result.is_finite() and result >= 0 else None
 
 
 def _normalize_historical_candles(raw: object) -> tuple[HistoricalCandle, ...]:

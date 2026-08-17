@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from datetime import date
+from decimal import Decimal, InvalidOperation
 from enum import StrEnum
 from typing import Protocol
 
@@ -44,6 +45,8 @@ class InstrumentRecord:
     name: str
     instrument_type: str
     expiry: date | None
+    tick_size: Decimal | None = None
+    lot_size: int | None = None
 
     def __post_init__(self) -> None:
         required = (
@@ -58,6 +61,25 @@ class InstrumentRecord:
             raise ValueError("INSTRUMENT_RECORD_INVALID")
         if self.instrument_type != self.instrument_type.strip():
             raise ValueError("INSTRUMENT_RECORD_INVALID")
+        try:
+            tick_size = (
+                None
+                if self.tick_size is None
+                else self.tick_size
+                if type(self.tick_size) is Decimal
+                else Decimal(str(self.tick_size))
+            )
+        except (InvalidOperation, TypeError, ValueError) as error:
+            raise ValueError("INSTRUMENT_RECORD_INVALID") from error
+        if (
+            tick_size is not None
+            and (not tick_size.is_finite() or tick_size < 0)
+        ) or (
+            self.lot_size is not None
+            and (type(self.lot_size) is not int or self.lot_size < 0)
+        ):
+            raise ValueError("INSTRUMENT_RECORD_INVALID")
+        object.__setattr__(self, "tick_size", tick_size)
 
 
 @dataclass(frozen=True, slots=True)

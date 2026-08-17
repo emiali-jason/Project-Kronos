@@ -37,6 +37,7 @@ class SwingAnalysisRunProvenance:
     run_created_at: datetime
     analysis_boundary: datetime
     market_data_snapshot_identity: str
+    successful_completed_at: datetime | None = None
     schema_identity: str = SWING_RUN_PROVENANCE_SCHEMA
 
     def __post_init__(self) -> None:
@@ -44,6 +45,13 @@ class SwingAnalysisRunProvenance:
             not is_swing_analysis_run_id(self.run_id)
             or not _aware(self.run_created_at)
             or not _aware(self.analysis_boundary)
+            or (
+                self.successful_completed_at is not None
+                and (
+                    not _aware(self.successful_completed_at)
+                    or self.successful_completed_at < self.run_created_at
+                )
+            )
             or _SNAPSHOT_ID.fullmatch(self.market_data_snapshot_identity) is None
             or self.schema_identity != SWING_RUN_PROVENANCE_SCHEMA
         ):
@@ -163,6 +171,11 @@ class LocalSwingRunProvenanceStore:
                     market_data_snapshot_identity=payload[
                         "market_data_snapshot_identity"
                     ],
+                    successful_completed_at=(
+                        datetime.fromisoformat(payload["successful_completed_at"])
+                        if payload.get("successful_completed_at") is not None
+                        else None
+                    ),
                     schema_identity=payload["schema_identity"],
                 )
             except (KeyError, TypeError, ValueError) as error:
@@ -171,17 +184,40 @@ class LocalSwingRunProvenanceStore:
                 raise ValueError("SWING_RUN_PROVENANCE_BINDING_MISMATCH")
             return provenance
 
+    def latest(self) -> SwingAnalysisRunProvenance | None:
+        """Return the latest valid successful run without mutating the store."""
+
+        with self._lock:
+            candidates = []
+            for path in self._root.glob("SWING-RUN-*/run-provenance.json"):
+                try:
+                    provenance = self.load(path.parent.name)
+                except ValueError:
+                    continue
+                if provenance.successful_completed_at is not None:
+                    candidates.append(provenance)
+            return max(
+                candidates,
+                key=lambda item: (item.successful_completed_at, item.run_id),
+                default=None,
+            )
+
     def _path(self, run_id: str) -> Path:
         return self._root / run_id / "run-provenance.json"
 
 
-def _to_dict(provenance: SwingAnalysisRunProvenance) -> dict[str, str]:
+def _to_dict(provenance: SwingAnalysisRunProvenance) -> dict[str, str | None]:
     return {
         "schema_identity": provenance.schema_identity,
         "run_id": provenance.run_id,
         "run_created_at": provenance.run_created_at.isoformat(),
         "analysis_boundary": provenance.analysis_boundary.isoformat(),
         "market_data_snapshot_identity": provenance.market_data_snapshot_identity,
+        "successful_completed_at": (
+            provenance.successful_completed_at.isoformat()
+            if provenance.successful_completed_at is not None
+            else None
+        ),
     }
 
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -150,6 +151,8 @@ def _raw(
     name: str,
     instrument_type: str,
     expiry: date | str | None = None,
+    tick_size: object = 0.05,
+    lot_size: object = 1,
 ) -> dict[str, object]:
     return {
         "instrument_token": token,
@@ -161,6 +164,8 @@ def _raw(
         "expiry": expiry,
         "last_price": 999999.0,
         "exchange_token": "provider-private",
+        "tick_size": tick_size,
+        "lot_size": lot_size,
     }
 
 
@@ -264,6 +269,8 @@ def test_valid_master_is_normalized_without_provider_token_or_raw_fields(
     assert records[0].trading_symbol == "RELIANCE"
     assert not hasattr(records[0], "instrument_token")
     assert not hasattr(records[0], "exchange_token")
+    assert records[0].tick_size == Decimal("0.05")
+    assert records[0].lot_size == 1
     assert client.instrument_exchanges == ["NSE"]
     assert capability.active is True
     for prohibited in (
@@ -276,6 +283,73 @@ def test_valid_master_is_normalized_without_provider_token_or_raw_fields(
         "cancel_order",
     ):
         assert not hasattr(capability, prohibited)
+
+
+def test_zero_geometry_on_index_reference_is_preserved(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    provider, _, _, _ = _provider(
+        monkeypatch,
+        [
+            _raw(
+                token=102,
+                exchange="NSE",
+                segment="INDICES",
+                symbol="NIFTY 50",
+                name="NIFTY 50",
+                instrument_type="EQ",
+                tick_size=0.0,
+                lot_size=0,
+            )
+        ],
+    )
+
+    records = provider.retrieve("NSE")
+
+    assert len(records) == 1
+    assert records[0].segment == "INDICES"
+    assert records[0].tick_size == Decimal("0.0")
+    assert records[0].lot_size == 0
+
+
+@pytest.mark.parametrize(
+    "record",
+    [
+        _raw(
+            token=103,
+            exchange="NSE",
+            segment="NSE",
+            symbol="RELIANCE",
+            name="RELIANCE",
+            instrument_type="EQ",
+            tick_size=0.05,
+            lot_size=1,
+        ),
+        _raw(
+            token=104,
+            exchange="MCX",
+            segment="MCX-FUT",
+            symbol="GOLDM26AUGFUT",
+            name="GOLDM",
+            instrument_type="FUT",
+            expiry=date(2026, 8, 28),
+            tick_size=1.0,
+            lot_size=1,
+        ),
+    ],
+)
+def test_positive_executable_geometry_is_preserved(
+    monkeypatch: pytest.MonkeyPatch,
+    record: dict[str, object],
+) -> None:
+    provider, _, _, _ = _provider(monkeypatch, [record])
+
+    records = provider.retrieve(str(record["exchange"]))
+
+    assert records[0].tick_size is not None
+    assert records[0].tick_size > 0
+    assert records[0].lot_size is not None
+    assert records[0].lot_size > 0
 
 
 def test_legitimate_empty_kite_name_is_preserved_without_rejecting_master(
@@ -643,6 +717,28 @@ def test_duplicate_exact_instrument_is_ambiguous(
                 symbol="RELIANCE",
                 name="RELIANCE",
                 instrument_type="EQ",
+            )
+        ],
+        [
+            _raw(
+                token=402,
+                exchange="NSE",
+                segment="NSE",
+                symbol="RELIANCE",
+                name="RELIANCE",
+                instrument_type="EQ",
+                tick_size="invalid",
+            )
+        ],
+        [
+            _raw(
+                token=403,
+                exchange="NSE",
+                segment="NSE",
+                symbol="RELIANCE",
+                name="RELIANCE",
+                instrument_type="EQ",
+                lot_size=-1,
             )
         ],
     ],
