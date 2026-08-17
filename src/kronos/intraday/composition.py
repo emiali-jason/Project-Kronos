@@ -20,6 +20,7 @@ from kronos.intraday.contracts import (
     create_intraday_run,
 )
 from kronos.intraday.instrument import adapt_runtime_instrument
+from kronos.intraday.market_context import IntradayMarketContextAdapter
 from kronos.intraday.persistence import (
     IntradayFactualEvidence,
     LocalIntradayFactualEvidenceStore,
@@ -28,7 +29,6 @@ from kronos.intraday.persistence import (
 from kronos.market.schedule import (
     MarketScheduleSource,
     MarketSessionFact,
-    MarketSessionService,
     MarketSessionState,
 )
 from kronos.provider.contracts.market_data import HistoricalCandle
@@ -125,7 +125,7 @@ def compose_core_slice1_facts(
     if instrument.exchange != exchange:
         raise CoreSlice1CompositionError(CoreSlice1Failure.INSTRUMENT_UNAVAILABLE)
 
-    market = MarketSessionService(calendar_source).facts(
+    market = IntradayMarketContextAdapter(calendar_source).session_facts(
         exchange=exchange,
         trading_date=trading_date,
         observed_at=observed_at,

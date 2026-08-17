@@ -6,8 +6,33 @@ from decimal import Decimal
 from html import escape
 
 from kronos.application.intraday_workstation import IntradayWorkstationSnapshot
+from kronos.application.swing_opportunities import BrowserWorkspaceSnapshot
+from kronos.browser.views import render_browser_page
 from kronos.intraday.contracts import CandleCompletion, IntradayTimeframe
 from kronos.intraday.telemetry import TelemetryType
+
+
+_INTRADAY_CSS = r"""
+.intraday-warning{display:flex;justify-content:space-between;gap:16px;border:1px solid #82631f;background:#231d11;color:#f6d997;border-radius:8px;padding:12px 14px;margin-bottom:14px}.intraday-selector{display:flex;align-items:center;gap:10px;margin-bottom:14px}.intraday-selector label{font-weight:700}.intraday-selector select{border:1px solid #31506a;background:#04131f;color:var(--text);border-radius:7px;padding:9px 12px}.intraday-panel{border:1px solid var(--line);background:rgba(6,23,37,.88);border-radius:10px;padding:15px;margin-bottom:14px;min-width:0}.intraday-panel h2{margin:0 0 12px;color:var(--blue);font-size:17px}.intraday-panel h3{margin:14px 0 7px;color:var(--muted);font-size:11px;text-transform:uppercase}.intraday-facts{display:grid;grid-template-columns:minmax(140px,.35fr) minmax(0,1fr);margin:0}.intraday-facts dt,.intraday-facts dd{padding:6px 8px;border-top:1px solid var(--line);margin:0;overflow-wrap:anywhere}.intraday-facts dt{color:var(--muted)}.intraday-timeframes{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.incomplete-observation{display:grid;gap:5px;margin-top:11px;border:1px dashed #82631f;border-radius:7px;padding:9px;color:#f6d997}.incomplete-observation span{color:var(--muted);overflow-wrap:anywhere}.intraday-context{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}.intraday-table{width:100%;border-collapse:collapse;font-size:12px}.intraday-table th,.intraday-table td{text-align:left;vertical-align:top;padding:8px;border-bottom:1px solid var(--line);overflow-wrap:anywhere}.intraday-table th{color:var(--muted);white-space:nowrap}.table-scroll{overflow:auto}.intraday-unavailable{color:var(--muted)}.intraday-unavailable strong{color:var(--amber)}
+@media(max-width:760px){.intraday-timeframes,.intraday-context{grid-template-columns:1fr}.intraday-warning,.intraday-selector{align-items:flex-start;flex-direction:column}.intraday-facts{grid-template-columns:1fr}.intraday-facts dd{padding-top:0}}
+"""
+
+
+def render_intraday_workstation(
+    snapshot: BrowserWorkspaceSnapshot,
+    intraday: IntradayWorkstationSnapshot,
+) -> str:
+    """Render the complete Intraday page through the stable Browser shell."""
+
+    return render_browser_page(
+        title="Intraday Evidence Workstation",
+        subtitle="ENGINEERING / EVIDENCE — governed facts and shadow telemetry only.",
+        snapshot=snapshot,
+        active_nav="Intraday",
+        active_tab="",
+        body=render_intraday_body(intraday),
+        extra_styles=_INTRADAY_CSS,
+    )
 
 
 def render_intraday_body(snapshot: IntradayWorkstationSnapshot) -> str:
@@ -305,4 +330,4 @@ def _optional(value: Decimal | None) -> str:
     return "UNAVAILABLE" if value is None else _number(value)
 
 
-__all__ = ["render_intraday_body"]
+__all__ = ["render_intraday_body", "render_intraday_workstation"]

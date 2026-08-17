@@ -44,8 +44,6 @@ from kronos.browser.v1_analysis_status import (
     batch_analysis_status,
     instrument_analysis_status,
 )
-from kronos.application.intraday_workstation import IntradayWorkstationSnapshot
-from kronos.browser.intraday_views import render_intraday_body
 from kronos.swing.run_identity import (
     LEGACY_UNBOUND_SWING_RUN_ID,
     is_swing_analysis_run_id,
@@ -115,12 +113,11 @@ a{color:inherit;text-decoration:none}.app{display:grid;grid-template-columns:218
 .journal-filters{display:flex;gap:7px;margin-bottom:12px}.journal-filters .button{font-size:11px;padding:6px 10px}.journal-filters .button.primary{background:#0c4f83;border-color:#2c9cff}
 .mtf-fact-banner{border:1px solid #28506c;background:#071f32;color:#8dd0ff;border-radius:8px;padding:8px 11px;margin-bottom:12px;font-size:11px;font-weight:800}.mtf-fact-list{display:grid;gap:8px}.mtf-fact-card{border:1px solid var(--line);background:rgba(6,23,37,.88);border-radius:8px;padding:10px}.mtf-fact-card summary{cursor:pointer;display:flex;justify-content:space-between;gap:12px}.mtf-fact-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px;margin-top:9px}.mtf-fact-timeframe{border:1px solid var(--line);border-radius:6px;padding:8px;min-width:0}.mtf-fact-timeframe h3{margin:0 0 5px;color:var(--blue);font-size:12px}.mtf-fact-timeframe p{margin:2px 0;font-size:10px;color:var(--muted);overflow-wrap:anywhere}.mtf-fact-timeframe strong{color:var(--text)}
 .configuration{max-width:760px;border:1px solid var(--line);background:rgba(6,23,37,.88);border-radius:11px;padding:20px}.configuration-head{display:flex;align-items:center;justify-content:space-between;gap:16px;border-bottom:1px solid var(--line);padding-bottom:14px;margin-bottom:16px}.configuration-head h2{margin:0;color:var(--blue)}.configuration-state{display:flex;align-items:center;justify-content:space-between;gap:16px;margin:10px 0}.connection-status{border:1px solid #246295;border-radius:999px;padding:5px 10px;font-size:12px;font-weight:800}.connection-status.CONNECTED{border-color:#176741;color:var(--green)}.connection-status.CONNECTION-FAILED{border-color:#793b40;color:var(--red)}.credential-form{display:grid;gap:10px;margin-top:18px;padding-top:16px;border-top:1px solid var(--line)}.credential-form label{font-weight:700}.credential-form input{width:100%;border:1px solid #31506a;background:#04131f;color:var(--text);border-radius:7px;padding:11px 12px;font:inherit}.credential-form input:focus{outline:2px solid var(--blue);outline-offset:1px}.configuration-actions{display:flex;gap:10px;align-items:center;margin-top:16px}.configuration-note{color:var(--muted);font-size:12px;margin:9px 0 0}
-.intraday-warning{display:flex;justify-content:space-between;gap:16px;border:1px solid #82631f;background:#231d11;color:#f6d997;border-radius:8px;padding:12px 14px;margin-bottom:14px}.intraday-selector{display:flex;align-items:center;gap:10px;margin-bottom:14px}.intraday-selector label{font-weight:700}.intraday-selector select{border:1px solid #31506a;background:#04131f;color:var(--text);border-radius:7px;padding:9px 12px}.intraday-panel{border:1px solid var(--line);background:rgba(6,23,37,.88);border-radius:10px;padding:15px;margin-bottom:14px;min-width:0}.intraday-panel h2{margin:0 0 12px;color:var(--blue);font-size:17px}.intraday-panel h3{margin:14px 0 7px;color:var(--muted);font-size:11px;text-transform:uppercase}.intraday-facts{display:grid;grid-template-columns:minmax(140px,.35fr) minmax(0,1fr);margin:0}.intraday-facts dt,.intraday-facts dd{padding:6px 8px;border-top:1px solid var(--line);margin:0;overflow-wrap:anywhere}.intraday-facts dt{color:var(--muted)}.intraday-timeframes{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.incomplete-observation{display:grid;gap:5px;margin-top:11px;border:1px dashed #82631f;border-radius:7px;padding:9px;color:#f6d997}.incomplete-observation span{color:var(--muted);overflow-wrap:anywhere}.intraday-context{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}.intraday-table{width:100%;border-collapse:collapse;font-size:12px}.intraday-table th,.intraday-table td{text-align:left;vertical-align:top;padding:8px;border-bottom:1px solid var(--line);overflow-wrap:anywhere}.intraday-table th{color:var(--muted);white-space:nowrap}.table-scroll{overflow:auto}.intraday-unavailable{color:var(--muted)}.intraday-unavailable strong{color:var(--amber)}
 .step32-workflow{margin-top:16px;border:1px solid var(--line);background:rgba(6,23,37,.88);border-radius:10px;padding:16px}.step32-head{display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--line);padding-bottom:10px}.step32-head h2{margin:0;font-size:18px}.step32-grid{display:grid;grid-template-columns:1.2fr .8fr .8fr .9fr;gap:12px;margin-top:12px}.step32-block{border-left:1px solid var(--line);padding-left:12px}.step32-block:first-child{border-left:0;padding-left:0}.step32-block h3{margin:0 0 8px;color:var(--muted);font-size:11px;letter-spacing:.06em;text-transform:uppercase}.step32-values{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;margin-top:10px}.step32-value label{display:block;color:var(--muted);font-size:10px}.step32-value strong{font-size:13px}.step32-context{display:grid;gap:7px;font-size:12px}.step32-context span{display:block;color:var(--muted);font-size:10px}.decision-options{display:flex;gap:5px;flex-wrap:wrap}.decision-option{border:1px solid var(--line);border-radius:6px;padding:5px 8px;color:var(--muted);font-size:11px;background:#081c2c}.decision-option.selected{border-color:var(--blue);color:#dff1ff}.decision-time{color:var(--muted);font-size:10px;margin-top:7px}.model-position{display:grid;gap:7px;margin-top:9px}.model-position div{display:flex;justify-content:space-between;gap:8px;font-size:12px}.model-position span{color:var(--muted)}.workflow-list{display:grid;gap:12px}.workflow-card{border:1px solid var(--line);background:rgba(6,23,37,.88);border-radius:10px;padding:14px}.workflow-card-head{display:flex;align-items:center;gap:10px}.workflow-card-head h2{margin:0;font-size:18px}.workflow-card-state{margin-left:auto;color:var(--blue);font-size:11px;font-weight:800}.workflow-card-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;margin:12px 0}.workflow-card-grid label{display:block;color:var(--muted);font-size:10px}.workflow-card-actions{display:flex;justify-content:flex-end}.action-required{border:1px solid #8a4c26;background:#2d1b0f;color:#ffd59c;border-radius:7px;padding:9px 11px;margin-top:10px;font-weight:750}.workflow-empty{border:1px solid var(--line);background:rgba(6,23,37,.88);border-radius:10px;padding:30px;text-align:center;color:var(--muted)}
 .native-chart-grid.single{grid-template-columns:1fr}
 @media(max-width:1050px){.status-grid{grid-template-columns:repeat(3,1fr)}.panels,.workspace{grid-template-columns:1fr}.step32-grid{grid-template-columns:1fr}.step32-block{border-left:0;border-top:1px solid var(--line);padding:10px 0 0}.step32-block:first-child{border-top:0;padding-top:0}.market-panel{min-height:260px}}
 @media(min-width:761px){.panels{grid-template-columns:repeat(2,minmax(0,1fr))}}
-@media(max-width:760px){.app{grid-template-columns:1fr}.sidebar{position:static;height:auto}.nav{grid-template-columns:repeat(2,1fr)}.system{display:none}.topbar{height:auto;padding:18px;align-items:flex-start;gap:14px}.tabs{overflow:auto;padding:0 18px}.content{padding:18px}.status-grid{grid-template-columns:repeat(2,1fr)}.trade-grid,.plan-strip{grid-template-columns:1fr 1fr}.kite{flex-wrap:wrap;justify-content:flex-end}.chart-intake-list,.native-chart-grid,.intraday-timeframes,.intraday-context{grid-template-columns:1fr}.intraday-warning,.intraday-selector{align-items:flex-start;flex-direction:column}.intraday-facts{grid-template-columns:1fr}.intraday-facts dd{padding-top:0}}
+@media(max-width:760px){.app{grid-template-columns:1fr}.sidebar{position:static;height:auto}.nav{grid-template-columns:repeat(2,1fr)}.system{display:none}.topbar{height:auto;padding:18px;align-items:flex-start;gap:14px}.tabs{overflow:auto;padding:0 18px}.content{padding:18px}.status-grid{grid-template-columns:repeat(2,1fr)}.trade-grid,.plan-strip{grid-template-columns:1fr 1fr}.kite{flex-wrap:wrap;justify-content:flex-end}.chart-intake-list,.native-chart-grid{grid-template-columns:1fr}}
 """
 
 
@@ -2269,16 +2266,15 @@ def render_placeholder(
 
 def render_intraday_workstation(
     snapshot: BrowserWorkspaceSnapshot,
-    intraday: IntradayWorkstationSnapshot,
+    intraday: object,
 ) -> str:
-    return _page(
-        title="Intraday Evidence Workstation",
-        subtitle="ENGINEERING / EVIDENCE — governed facts and shadow telemetry only.",
-        snapshot=snapshot,
-        active_nav="Intraday",
-        active_tab="",
-        body=render_intraday_body(intraday),
+    """Compatibility shim; Intraday owns the implementation."""
+
+    from kronos.browser.intraday_views import (
+        render_intraday_workstation as render_product_workstation,
     )
+
+    return render_product_workstation(snapshot, intraday)  # type: ignore[arg-type]
 
 
 def _page(
@@ -2290,6 +2286,7 @@ def _page(
     active_tab: str,
     body: str,
     back_link: str = "",
+    extra_styles: str = "",
 ) -> str:
     nav = "".join(
         f'<a class="{"active" if name == active_nav else ""}" href="{href}">'
@@ -2318,7 +2315,7 @@ def _page(
     ))
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{escape(title)} · KRONOS</title><style>{_CSS}</style></head>
+<title>{escape(title)} · KRONOS</title><style>{_CSS}{extra_styles}</style></head>
 <body data-status-signature="{escape(signature)}"><div class="app"><aside class="sidebar">
 <div class="brand"><span class="brandmark">K</span> KRONOS</div><nav class="nav">{nav}</nav>
 <div class="system"><strong>● LOCAL · READ ONLY</strong>Provider capability stays inside this process.<br>Order capability: NONE</div>
@@ -2327,6 +2324,31 @@ def _page(
 {tabs}<div class="content">{body}</div><div class="footer">KRONOS Browser V1 · Local Mode</div></main></div>
 <script>const initial=document.body.dataset.statusSignature;setInterval(async()=>{{try{{const r=await fetch('/status',{{cache:'no-store'}});if(!r.ok)return;const s=await r.json();const next=[s.provider,s.analysis,s.completed_at||''].join('|');if(next!==initial)location.reload();}}catch(_e){{}}}},1500);</script>
 </body></html>"""
+
+
+def render_browser_page(
+    *,
+    title: str,
+    subtitle: str,
+    snapshot: BrowserWorkspaceSnapshot,
+    active_nav: str,
+    active_tab: str,
+    body: str,
+    back_link: str = "",
+    extra_styles: str = "",
+) -> str:
+    """Stable shared page shell for independently owned product views."""
+
+    return _page(
+        title=title,
+        subtitle=subtitle,
+        snapshot=snapshot,
+        active_nav=active_nav,
+        active_tab=active_tab,
+        body=body,
+        back_link=back_link,
+        extra_styles=extra_styles,
+    )
 
 
 def _connect_form(snapshot: BrowserWorkspaceSnapshot) -> str:
@@ -2671,6 +2693,7 @@ def _icon(name: str) -> str:
 __all__ = [
     "Step32SponsorWorkflowView",
     "build_step32_sponsor_workflow_view",
+    "render_browser_page",
     "render_opportunities",
     "render_trade_journal",
     "render_placeholder",

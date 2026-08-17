@@ -13,7 +13,6 @@ from threading import Thread
 from urllib.parse import parse_qs, urlsplit
 
 from kronos.application.swing_opportunities import SwingOpportunitiesApplication
-from kronos.application.intraday_workstation import IntradayEvidenceWorkstation
 from kronos.application.swing_v1_browser import SwingV1BrowserOperationalization
 from kronos.application.swing_v1_review import (
     SwingV1ReviewWorkflow,
@@ -53,7 +52,6 @@ from kronos.browser.views import (
     render_closed_candidates,
     render_legacy_opportunities,
     render_opportunities,
-    render_intraday_workstation,
     render_placeholder,
     render_settings,
     render_trade_journal,
@@ -64,6 +62,11 @@ from kronos.browser.views import (
 )
 from kronos.browser.v1_analysis_status import analysis_status_payload
 from kronos.browser.restart_control import BrowserBackendRestartControl
+from kronos.browser.product_routes import (
+    BrowserGetRequest,
+    ProductBrowserRoutes,
+    default_product_browser_routes,
+)
 from kronos.swing.v1.evidence_store import (
     LocalTradingViewEvidenceStore,
     TradingViewEvidenceStoreError,
@@ -119,9 +122,10 @@ class KronosBrowserServer(ThreadingHTTPServer):
         chart_analyst_credentials: OpenAIChartAnalystCredentialService | None = None,
         chart_analyst_activation: ChartAnalystV2ActivationService | None = None,
         restart_control: BrowserBackendRestartControl | None = None,
-        intraday_workstation: IntradayEvidenceWorkstation | None = None,
+        intraday_workstation: object | None = None,
         step32_workflow: SwingV1BrowserOperationalization | None = None,
         native_review: NativeReviewWorkflow | None = None,
+        product_routes: ProductBrowserRoutes | None = None,
     ) -> None:
         if (
             address[0] != _LOOPBACK_HOST
@@ -142,10 +146,6 @@ class KronosBrowserServer(ThreadingHTTPServer):
                 and type(restart_control) is not BrowserBackendRestartControl
             )
             or (
-                intraday_workstation is not None
-                and type(intraday_workstation) is not IntradayEvidenceWorkstation
-            )
-            or (
                 step32_workflow is not None
                 and type(step32_workflow) is not SwingV1BrowserOperationalization
             )
@@ -153,6 +153,8 @@ class KronosBrowserServer(ThreadingHTTPServer):
                 native_review is not None
                 and type(native_review) is not NativeReviewWorkflow
             )
+            or (product_routes is not None and type(product_routes) is not ProductBrowserRoutes)
+            or (product_routes is not None and intraday_workstation is not None)
         ):
             raise ValueError("BROWSER_SERVER_MUST_BIND_LOOPBACK")
         config = OpenAIChartAnalystV2Config.from_environment()
@@ -165,8 +167,12 @@ class KronosBrowserServer(ThreadingHTTPServer):
             chart_analyst_activation or ChartAnalystV2ActivationService()
         )
         self.restart_control = restart_control
-        self.intraday_workstation = (
-            intraday_workstation or IntradayEvidenceWorkstation()
+        self.product_routes = (
+            product_routes
+            if product_routes is not None
+            else default_product_browser_routes(
+                intraday_workstation=intraday_workstation,
+            )
         )
         self.step32_workflow = (
             step32_workflow or SwingV1BrowserOperationalization()
@@ -284,14 +290,19 @@ class _BrowserHandler(BaseHTTPRequestHandler):
         if path == "/":
             self._redirect("/swing/opportunities")
             return
-        if path == "/intraday":
-            snapshot = self.server.application.snapshot()
-            query = parse_qs(urlsplit(self.path).query)
-            selected = query.get("instrument", [None])[0]
-            self._html(render_intraday_workstation(
-                snapshot,
-                self.server.intraday_workstation.snapshot(selected),
-            ))
+        product_response = self.server.product_routes.dispatch_get(
+            BrowserGetRequest(
+                path=path,
+                query=parse_qs(urlsplit(self.path).query),
+            ),
+            self.server.application.snapshot,
+        )
+        if product_response is not None:
+            self._respond(
+                product_response.status,
+                product_response.body.encode("utf-8"),
+                product_response.content_type,
+            )
             return
         if path == "/swing/opportunities":
             snapshot, discovery = (
@@ -1274,9 +1285,10 @@ def create_browser_server(
     chart_analyst_credentials: OpenAIChartAnalystCredentialService | None = None,
     chart_analyst_activation: ChartAnalystV2ActivationService | None = None,
     restart_control: BrowserBackendRestartControl | None = None,
-    intraday_workstation: IntradayEvidenceWorkstation | None = None,
+    intraday_workstation: object | None = None,
     step32_workflow: SwingV1BrowserOperationalization | None = None,
     native_review: NativeReviewWorkflow | None = None,
+    product_routes: ProductBrowserRoutes | None = None,
 ) -> KronosBrowserServer:
     if type(port) is not int or not 0 <= port <= 65535:
         raise ValueError("BROWSER_SERVER_PORT_INVALID")
@@ -1290,6 +1302,7 @@ def create_browser_server(
         intraday_workstation,
         step32_workflow,
         native_review,
+        product_routes,
     )
 
 
