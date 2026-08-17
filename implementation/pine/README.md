@@ -1,4 +1,13 @@
 # Pine Implementation
 
-Future Pine engineering artefacts may be organized here only when an approved implementation plan calls for it. Current production Pine remains authoritative in [`KRONOS_FUTURES/source/`](../../KRONOS_FUTURES/source/).
+The sole authoritative KRONOS MCX Futures Production Pine is [`KRONOS_FUTURES/source/KRONOS_FUTURES.pine`](../../KRONOS_FUTURES/source/KRONOS_FUTURES.pine).
 
+- Identity: `KRONOS FUTURES / 0.6.0 / build 0005 / Pine v6`
+- Production lineage: V2
+- SHA-256: `85ccc53181607b8c82d40dc230cd1025f99be1e876d1d8278119ade32eed9bf8`
+- Former V1: `RETIRED / SUPERSEDED`; rollback source preserved at [`archive/KRONOS_FUTURES/V1-RETIRED/`](../../archive/KRONOS_FUTURES/V1-RETIRED/)
+- V1-versus-V2 comparison validation: `CLOSED`
+- Separate MCX Pine Swing Observation: `CLOSED`
+- Integrated Swing Visual Review: `CONTINUES`
+
+Future Pine engineering artefacts may be organized here only when an approved implementation plan calls for them.

@@ -4,6 +4,17 @@ All notable changes to PROJECT KRONOS will be documented in this file.
 
 This project follows a milestone-based development approach.
 
+## [0.6.0] — 2026-08-17
+
+### Production promotion
+
+- Promoted the approved frozen KRONOS FUTURES V2 lineage to sole active Production authority.
+- Retired KRONOS FUTURES V1 as `RETIRED / SUPERSEDED` while preserving its exact source, SHA-256, historical evidence, and rollback lineage.
+- Closed the V1-versus-V2 comparison programme.
+- Closed the separate MCX Pine Swing Observation programme after its evidence path was superseded by integrated Swing V1 probable-by-probable visual review; integrated Swing Visual Review continues.
+- Replaced the KR-705 comparison workstation with one `DESCRIPTION | PROD` Trader column and single-engine Production developer diagnostics.
+- Changed no analytical calculations, indicators, thresholds, readiness, decisions, triggers, lifecycle semantics, CPR, reference logic, or alerts.
+
 ---
 
 # [0.5.0-alpha.1] - 2026-07-04

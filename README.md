@@ -68,6 +68,9 @@ Ownership is strict:
 
 ## Current Status
 
+- KRONOS MCX Futures Production Pine: [`KRONOS_FUTURES/source/KRONOS_FUTURES.pine`](KRONOS_FUTURES/source/KRONOS_FUTURES.pine), V2 lineage, SHA-256 `85ccc53181607b8c82d40dc230cd1025f99be1e876d1d8278119ade32eed9bf8`.
+- Former V1 Production: retired / superseded, with rollback source preserved under [`archive/KRONOS_FUTURES/V1-RETIRED/`](archive/KRONOS_FUTURES/V1-RETIRED/).
+- V2 comparison validation and the separate MCX Pine Swing Observation programme are closed; integrated Swing Visual Review continues.
 - Intelligence, decision, and execution core through KR-380: Frozen.
 - KR-390 Trade Management: Foundation.
 - KR-400 Execution Alerts: Foundation.
@@ -84,6 +87,7 @@ BUY NOW and SELL NOW are confirmed execution-timing states. They are not broker 
 - [Testing Protocol](docs/validation/TESTING.md)
 - [Validation and Research Workflow](docs/validation/README.md)
 - [MCX Metals Validation](docs/validation/MCX-METALS-VALIDATION.md)
+- [MCX Pine-Swing Closure](docs/validation/MCX-PINE-SWING-CLOSURE.md)
 - [Engineering Manual](docs/KRONOS_ENGINEERING_MANUAL.md)
 - [Design Decisions](docs/Decisions.md)
 - [Futures Model Architecture](docs/architecture/ADL-001-Futures-Model.md)

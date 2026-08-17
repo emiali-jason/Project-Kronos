@@ -2,7 +2,16 @@
 
 **Document role:** Canonical current engine registry
 **Source audited:** `KRONOS_FUTURES/source/KRONOS_FUTURES.pine`
-**Audit date:** 2026-07-10
+**Audit date:** 2026-08-17
+
+## Production Lineage
+
+| Lineage | Status | Source | SHA-256 |
+|---|---|---|---|
+| KRONOS FUTURES V2 | ACTIVE PRODUCTION | `KRONOS_FUTURES/source/KRONOS_FUTURES.pine` | `85ccc53181607b8c82d40dc230cd1025f99be1e876d1d8278119ade32eed9bf8` |
+| KRONOS FUTURES V1 | RETIRED / SUPERSEDED; ROLLBACK PRESERVED | `archive/KRONOS_FUTURES/V1-RETIRED/source/KRONOS_FUTURES_V1_PRODUCTION.pine` | `d8043e5c1583b5ab798bb925aa917ecc53b0564508ad36b3722e42de16d17c9d` |
+
+The V1-versus-V2 comparison programme and separate MCX Pine Swing Observation programme are closed. Integrated Swing Visual Review continues. KR-705 now presents one Production value column and single-engine Production diagnostics. This status change grants no new analytical behavior; the promoted V2 lineage preserves the approved frozen analytical baseline.
 
 This registry reports source metadata exactly as it appears in the Pine file. Contract maturity is a documentation classification and does not replace the source header. Validation claims are deliberately limited to evidence present in source comments, repository history, or the current verified implementation baseline.
 

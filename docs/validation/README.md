@@ -20,6 +20,9 @@ The core rule is simple: one observation does not justify one code change. A cha
 - [KRONOS Weekly Review](KRONOS_WEEKLY_REVIEW.md) — converts repeated observations and paper-trade evidence into approved, deferred, rejected, research, or bug-fix decisions.
 - [Pine and TradingView Validation Protocol](TESTING.md) — defines static, compile, visual, and replay/live validation evidence.
 - [MCX Metals Validation Record](MCX-METALS-VALIDATION.md) — records current MCX Metals validation evidence and remaining work.
+- [MCX Pine-Swing Closure](MCX-PINE-SWING-CLOSURE.md) — records V2 Production promotion, V1 retirement with rollback preservation, and closure of the separate MCX Pine Swing Observation programme.
+
+The separate MCX Pine Swing Observation programme is closed. Integrated Swing Visual Review continues through the operating Swing path; historical observations and validation evidence remain preserved and unchanged.
 
 ## Decision Frequency Analysis
 
