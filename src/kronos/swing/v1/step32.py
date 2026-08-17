@@ -174,11 +174,16 @@ class RiskConstraints:
     maximum_margin: Decimal | None = None
     maximum_exposure: Decimal | None = None
     maximum_concentration: Decimal | None = None
+    maximum_lots: int | None = None
 
     def __post_init__(self) -> None:
         for field in fields(self):
             value = getattr(self, field.name)
             if value is not None:
+                if field.name == "maximum_lots":
+                    if type(value) is not int or value <= 0:
+                        raise ValueError("RISK_CONSTRAINT_INVALID")
+                    continue
                 value = _decimal(value)
                 if value <= 0:
                     raise ValueError("RISK_CONSTRAINT_INVALID")
