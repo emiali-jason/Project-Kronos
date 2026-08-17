@@ -151,6 +151,22 @@ class MarketCalendarPublisher(MarketScheduleSource):
             special_session=entry.special_session,
         )
 
+    def previous_trading_schedule(
+        self, exchange: str, before_date: date
+    ) -> MarketDaySchedule | None:
+        """Return the preceding published trading session without calendar inference."""
+
+        if type(before_date) is not date or exchange != self.publication.exchange:
+            return None
+        candidates = (
+            entry.trading_date
+            for entry in self.publication.entries
+            if entry.trading_date < before_date
+            and entry.trading_disposition is TradingDayStatus.TRADING
+        )
+        previous = max(candidates, default=None)
+        return None if previous is None else self.schedule_for(exchange, previous)
+
 
 class MarketCalendarRegistrySource(MarketScheduleSource):
     """Compose non-overlapping governed publications without inference."""
@@ -170,6 +186,22 @@ class MarketCalendarRegistrySource(MarketScheduleSource):
     def schedule_for(self, exchange: str, trading_date: date) -> MarketDaySchedule | None:
         publisher = self._publishers.get((exchange, trading_date))
         return None if publisher is None else publisher.schedule_for(exchange, trading_date)
+
+    def previous_trading_schedule(
+        self, exchange: str, before_date: date
+    ) -> MarketDaySchedule | None:
+        if type(before_date) is not date:
+            return None
+        candidates = (
+            trading_date
+            for candidate_exchange, trading_date in self._publishers
+            if candidate_exchange == exchange and trading_date < before_date
+        )
+        for trading_date in sorted(candidates, reverse=True):
+            schedule = self.schedule_for(exchange, trading_date)
+            if schedule is not None and schedule.status is TradingDayStatus.TRADING:
+                return schedule
+        return None
 
 
 def seal_market_calendar_document(document: dict[str, object]) -> bytes:

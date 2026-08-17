@@ -158,3 +158,56 @@ def test_registry_rejects_conflicting_publications() -> None:
     second = _publisher([_entry()])
     with pytest.raises(ValueError, match="MARKET_CALENDAR_PUBLICATION_CONFLICT"):
         MarketCalendarRegistrySource((first, second))
+
+
+def test_previous_trading_schedule_uses_governed_sequence_not_calendar_day() -> None:
+    publisher = _publisher([
+        _entry("2026-08-14"),
+        _entry("2026-08-15", disposition="NON_TRADING"),
+        _entry("2026-08-16", disposition="NON_TRADING"),
+        _entry("2026-08-17"),
+    ])
+
+    previous = publisher.previous_trading_schedule("NSE", DAY)
+
+    assert previous is not None
+    assert previous.trading_date == date(2026, 8, 14)
+    assert previous.session_id == "NSE-20260814"
+
+
+def test_previous_trading_schedule_resolves_normal_adjacent_session() -> None:
+    publisher = _publisher([_entry("2026-08-17"), _entry("2026-08-18")])
+
+    previous = publisher.previous_trading_schedule("NSE", date(2026, 8, 18))
+
+    assert previous is not None
+    assert previous.trading_date == date(2026, 8, 17)
+
+
+def test_previous_trading_schedule_skips_governed_weekday_holiday() -> None:
+    publisher = _publisher([
+        _entry("2026-08-12"),
+        _entry("2026-08-13", disposition="NON_TRADING"),
+        _entry("2026-08-14"),
+    ])
+
+    previous = publisher.previous_trading_schedule("NSE", date(2026, 8, 14))
+
+    assert previous is not None
+    assert previous.trading_date == date(2026, 8, 12)
+
+
+def test_previous_trading_schedule_preserves_special_session_and_fails_closed() -> None:
+    special = _entry(
+        "2026-08-14",
+        windows=[_window("2026-08-14T18:00:00+05:30", "2026-08-14T19:00:00+05:30")],
+        special=True,
+    )
+    publisher = _publisher([special, _entry("2026-08-17")])
+
+    previous = publisher.previous_trading_schedule("NSE", DAY)
+
+    assert previous is not None and previous.special_session is True
+    assert previous.windows[0].opens_at.hour == 18
+    assert publisher.previous_trading_schedule("MCX", DAY) is None
+    assert publisher.previous_trading_schedule("NSE", date(2026, 8, 14)) is None
