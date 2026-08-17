@@ -1,4 +1,6 @@
+from io import BytesIO
 import json
+from urllib.error import HTTPError
 from urllib.request import Request
 
 import pytest
@@ -6,6 +8,7 @@ import pytest
 from kronos.configuration.credentials import OneUseSecretLease
 from kronos.integrations.openai_chart_analyst import (
     OpenAIChartAnalystCapabilityProbe,
+    OpenAIProviderRequestRejected,
     OpenAITransportUnavailable,
     UrllibOpenAIResponsesTransport,
 )
@@ -122,6 +125,46 @@ def test_transport_failure_is_sanitized_and_does_not_fall_back_to_environment(
 
     assert str(caught.value) == "OPENAI_CREDENTIAL_UNAVAILABLE"
     assert api_key not in str(caught.value)
+
+
+def test_http_provider_rejection_retains_only_allowlisted_sanitized_fields(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    api_key = "fake-openai-key-value"
+    body = json.dumps({"error": {
+        "message": "Invalid schema pattern Bearer hidden sk-secret-value",
+        "type": "invalid_request_error",
+        "param": "text.format.schema.properties.observations.items",
+        "code": "invalid_json_schema",
+        "unrestricted": "must-not-be-retained",
+    }}).encode("utf-8")
+
+    def rejected(_request: Request, *, timeout: float) -> None:
+        assert timeout == 7.0
+        raise HTTPError(
+            "https://api.openai.com/v1/responses", 400, "Bad Request", {},
+            BytesIO(body),
+        )
+
+    monkeypatch.setattr(
+        "kronos.integrations.openai_chart_analyst.urlopen", rejected,
+    )
+    transport = UrllibOpenAIResponsesTransport(
+        credential_source=_Source(api_key),
+        credential_ref="chart-analyst-primary",
+    )
+
+    with pytest.raises(OpenAIProviderRequestRejected) as caught:
+        transport.create_response({}, timeout_seconds=7.0)
+
+    error = caught.value
+    assert error.http_status == 400
+    assert error.error_type == "invalid_request_error"
+    assert error.error_code == "invalid_json_schema"
+    assert error.rejected_parameter == "text.format.schema.properties.observations.items"
+    assert "[REDACTED]" in (error.provider_message or "")
+    assert "sk-secret-value" not in repr(error.__dict__)
+    assert "must-not-be-retained" not in repr(error.__dict__)
 
 
 def test_capability_probe_is_one_synthetic_non_swing_vision_request() -> None:

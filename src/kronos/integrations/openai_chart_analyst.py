@@ -4,9 +4,11 @@ from __future__ import annotations
 
 from base64 import b64encode
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 import json
+import math
 import os
+import re
 import socket
 from threading import RLock
 from time import monotonic
@@ -47,6 +49,26 @@ from kronos.swing.v1.chart_analyst_v2_store import (
     ChartAnalystV2CacheKey,
     ChartAnalystV2TelemetryEvent,
     LocalChartAnalystV2Store,
+)
+from kronos.swing.v1.visual_evidence_v2 import (
+    FROZEN_VISUAL_QUESTION_SET_V2,
+    LocalVisualEvidenceV2DiagnosticStore,
+    OPENAI_VISUAL_EVIDENCE_V2_PROVIDER_ID,
+    VISUAL_QUESTION_SET_V2_ID,
+    VISUAL_QUESTION_SET_V2_VERSION,
+    VisualEvidenceV2Observation,
+    VisualEvidenceV2ProviderDiagnostic,
+    VisualEvidenceV2Request,
+    VisualEvidenceV2Response,
+    VisualEvidenceV2ValidationDiagnostic,
+    VisualEvidenceV2ValidationStage,
+    VisualLevelAvailability,
+    VisualObservationStatus,
+    VisualQuestionV2,
+    VISUAL_EVIDENCE_V2_PROVIDER_SCHEMA_VERSION,
+    VISUAL_EVIDENCE_V2_SCHEMA,
+    validate_visual_evidence_v2_provider_value,
+    visual_evidence_v2_provider_schema,
 )
 
 
@@ -119,6 +141,26 @@ class OpenAITransportUnavailable(RuntimeError):
     pass
 
 
+class OpenAIProviderRequestRejected(OpenAITransportUnavailable):
+    """Allowlisted provider error metadata; request content is never retained."""
+
+    def __init__(
+        self,
+        *,
+        http_status: int,
+        error_type: str | None,
+        error_code: str | None,
+        rejected_parameter: str | None,
+        provider_message: str | None,
+    ) -> None:
+        super().__init__("OPENAI_PROVIDER_REQUEST_REJECTED")
+        self.http_status = http_status
+        self.error_type = error_type
+        self.error_code = error_code
+        self.rejected_parameter = rejected_parameter
+        self.provider_message = provider_message
+
+
 class OpenAIResponsesTransport(Protocol):
     def create_response(
         self,
@@ -174,6 +216,8 @@ class UrllibOpenAIResponsesTransport:
                 )
             )
         except OpenAITransportTimeout:
+            raise
+        except OpenAIProviderRequestRejected:
             raise
         except OpenAITransportUnavailable:
             raise
@@ -258,11 +302,41 @@ def _send_response_request(
         result = json.loads(raw.decode("utf-8"))
     except (TimeoutError, socket.timeout):
         raise OpenAITransportTimeout("OPENAI_RESPONSE_TIMEOUT") from None
-    except (HTTPError, URLError, OSError, ValueError):
+    except HTTPError as error:
+        raise _sanitized_provider_rejection(error) from None
+    except (URLError, OSError, ValueError):
         raise OpenAITransportUnavailable("OPENAI_RESPONSE_UNAVAILABLE") from None
     if type(result) is not dict:
         raise OpenAITransportUnavailable("OPENAI_RESPONSE_INVALID")
     return result
+
+
+def _sanitized_provider_rejection(error: HTTPError) -> OpenAIProviderRequestRejected:
+    try:
+        raw = error.read(64 * 1024 + 1)
+        value = json.loads(raw[: 64 * 1024].decode("utf-8"))
+    except (OSError, UnicodeDecodeError, ValueError):
+        value = None
+    detail = value.get("error") if type(value) is dict else None
+    if type(detail) is not dict:
+        detail = {}
+    return OpenAIProviderRequestRejected(
+        http_status=int(error.code),
+        error_type=_safe_provider_error_text(detail.get("type"), 128),
+        error_code=_safe_provider_error_text(detail.get("code"), 128),
+        rejected_parameter=_safe_provider_error_text(detail.get("param"), 256),
+        provider_message=_safe_provider_error_text(detail.get("message"), 512),
+    )
+
+
+def _safe_provider_error_text(value: object, maximum: int) -> str | None:
+    if type(value) is not str:
+        return None
+    text = " ".join(value.split())
+    text = re.sub(r"(?i)bearer\s+\S+", "Bearer [REDACTED]", text)
+    text = re.sub(r"\bsk-[A-Za-z0-9_-]+", "[REDACTED]", text)
+    text = re.sub(r"data:image/[^,\s]+,[A-Za-z0-9+/=_-]+", "[REDACTED_IMAGE]", text)
+    return text[:maximum] or None
 
 
 def _connection_probe_payload(model_identity: str) -> dict[str, object]:
@@ -819,6 +893,331 @@ class OpenAIChartAnalystV2Provider:
         ))
 
 
+@dataclass(frozen=True, slots=True)
+class OpenAIVisualEvidenceV2Config:
+    enabled: bool = False
+    model_identity: str = "gpt-5.6"
+    request_timeout_seconds: float = 90.0
+    maximum_retries: int = 1
+    question_set_identity: str = VISUAL_QUESTION_SET_V2_ID
+    question_set_version: str = VISUAL_QUESTION_SET_V2_VERSION
+
+    def __post_init__(self) -> None:
+        if (
+            type(self.enabled) is not bool
+            or not self.model_identity
+            or len(self.model_identity) > 128
+            or type(self.request_timeout_seconds) is not float
+            or not 1.0 <= self.request_timeout_seconds <= 180.0
+            or type(self.maximum_retries) is not int
+            or not 0 <= self.maximum_retries <= 2
+            or self.question_set_identity != VISUAL_QUESTION_SET_V2_ID
+            or self.question_set_version != VISUAL_QUESTION_SET_V2_VERSION
+        ):
+            raise ValueError("OPENAI_VISUAL_V2_CONFIG_INVALID")
+
+
+class _VisualV2ValidationFailure(ValueError):
+    def __init__(
+        self,
+        stage: VisualEvidenceV2ValidationStage,
+        code: str,
+        path: str,
+        expected: str,
+        received_shape: str,
+    ) -> None:
+        super().__init__(code)
+        self.stage = stage
+        self.code = code
+        self.path = path
+        self.expected = expected
+        self.received_shape = received_shape
+
+
+class OpenAIVisualEvidenceV2Provider:
+    """Ten-question observation-only adapter using the governed transport."""
+
+    def __init__(
+        self,
+        config: OpenAIVisualEvidenceV2Config,
+        *,
+        transport: OpenAIResponsesTransport | None = None,
+        diagnostic_store: LocalVisualEvidenceV2DiagnosticStore | None = None,
+        clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+    ) -> None:
+        if (
+            type(config) is not OpenAIVisualEvidenceV2Config
+            or (
+                diagnostic_store is not None
+                and type(diagnostic_store) is not LocalVisualEvidenceV2DiagnosticStore
+            )
+            or not callable(clock)
+        ):
+            raise TypeError("OPENAI_VISUAL_V2_DEPENDENCY_INVALID")
+        self._config = config
+        self._transport = transport or _UnavailableOpenAIResponsesTransport()
+        self._lock = RLock()
+        self._request_count = 0
+        self._diagnostic_store = diagnostic_store
+        self._clock = clock
+
+    @property
+    def provider_identity(self) -> str:
+        return OPENAI_VISUAL_EVIDENCE_V2_PROVIDER_ID
+
+    @property
+    def request_count(self) -> int:
+        with self._lock:
+            return self._request_count
+
+    def analyze(self, request: VisualEvidenceV2Request) -> VisualEvidenceV2Response:
+        if type(request) is not VisualEvidenceV2Request:
+            raise ValueError("VISUAL_V2_REQUEST_INVALID")
+        if not self._config.enabled:
+            raise ChartAnalystV2Error(ChartAnalystV2FailureCode.DISABLED)
+        payload = _visual_v2_payload(request, self._config.model_identity)
+        maximum_attempts = self._config.maximum_retries + 1
+        for attempt in range(1, maximum_attempts + 1):
+            with self._lock:
+                self._request_count += 1
+            raw: dict[str, object] | None = None
+            try:
+                raw = self._transport.create_response(
+                    payload, timeout_seconds=self._config.request_timeout_seconds
+                )
+                response = _decode_visual_v2(raw, request, self._config.model_identity)
+                try:
+                    response.validate_binding(request)
+                except ValueError as error:
+                    code = str(error)
+                    stage = (
+                        VisualEvidenceV2ValidationStage.TIMEFRAME_ROUTING
+                        if code in {
+                            "VISUAL_V2_ROUTING_INVALID",
+                            "VISUAL_V2_Q3_DUPLICATES_DETERMINISTIC_EVIDENCE",
+                        }
+                        else VisualEvidenceV2ValidationStage.PERSISTENCE_BINDING
+                    )
+                    raise _VisualV2ValidationFailure(
+                        stage,
+                        code,
+                        "response.binding",
+                        "response exactly bound to request and frozen routing",
+                        "binding or routing mismatch",
+                    ) from error
+                return response
+            except (OpenAITransportTimeout, OpenAITransportUnavailable) as error:
+                if (
+                    isinstance(error, OpenAIProviderRequestRejected)
+                    and self._diagnostic_store is not None
+                ):
+                    self._diagnostic_store.retain_provider_error(
+                        VisualEvidenceV2ProviderDiagnostic(
+                            http_status=error.http_status,
+                            error_type=error.error_type,
+                            error_code=error.error_code,
+                            rejected_parameter=error.rejected_parameter,
+                            provider_message=error.provider_message,
+                            model_identity=self._config.model_identity,
+                            timeframe=request.timeframe,
+                            schema_identity=VISUAL_EVIDENCE_V2_SCHEMA,
+                            schema_version=VISUAL_EVIDENCE_V2_PROVIDER_SCHEMA_VERSION,
+                            request_timestamp=request.request_timestamp,
+                        )
+                    )
+                if attempt == maximum_attempts:
+                    code = (
+                        ChartAnalystV2FailureCode.TIMEOUT
+                        if isinstance(error, OpenAITransportTimeout)
+                        else ChartAnalystV2FailureCode.UNAVAILABLE
+                    )
+                    raise ChartAnalystV2Error(code) from error
+            except (KeyError, TypeError, ValueError, ChartAnalystV2Error) as error:
+                if isinstance(error, ChartAnalystV2Error) and error.code is ChartAnalystV2FailureCode.REFUSAL:
+                    raise
+                diagnostic_error = (
+                    error
+                    if isinstance(error, _VisualV2ValidationFailure)
+                    else _diagnose_rejected_visual_v2(raw, request, error)
+                )
+                if diagnostic_error is not None:
+                    self._retain_visual_v2_diagnostic(
+                        request,
+                        raw,
+                        diagnostic_error,
+                        attempt=attempt,
+                        retry=attempt < maximum_attempts,
+                    )
+                if attempt == maximum_attempts:
+                    raise ChartAnalystV2Error(
+                        ChartAnalystV2FailureCode.INVALID_SCHEMA
+                    ) from (diagnostic_error or error)
+        raise AssertionError("OPENAI_VISUAL_V2_RETRY_STATE_INVALID")
+
+    def _retain_visual_v2_diagnostic(
+        self,
+        request: VisualEvidenceV2Request,
+        raw: dict[str, object] | None,
+        error: _VisualV2ValidationFailure,
+        *,
+        attempt: int,
+        retry: bool,
+    ) -> None:
+        if self._diagnostic_store is None:
+            return
+        recorded_at = self._clock()
+        if recorded_at.tzinfo is None or recorded_at.utcoffset() is None:
+            raise ValueError("OPENAI_VISUAL_V2_CLOCK_INVALID")
+        input_tokens, output_tokens, total_tokens = (
+            _v2_usage(raw) if raw is not None else (0, 0, 0)
+        )
+        status = raw.get("status") if raw is not None else "NOT_COMPLETED"
+        response_status = status if type(status) is str and status else "UNKNOWN"
+        self._diagnostic_store.retain(VisualEvidenceV2ValidationDiagnostic(
+            native_run_identity=request.requirement.native_run_identity,
+            canonical_instrument=request.requirement.canonical_instrument,
+            timeframe=request.timeframe,
+            chart_revision_sha256=request.chart_revision_sha256,
+            model_identity=self._config.model_identity,
+            attempt=attempt,
+            api_request_completed=raw is not None,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            total_tokens=total_tokens,
+            response_status=response_status[:64],
+            validation_stage=error.stage,
+            validation_error_code=error.code,
+            structural_path=error.path,
+            expected_constraint=error.expected,
+            received_shape=error.received_shape,
+            retry_disposition="RETRY" if retry else "FAILED_FINAL",
+            recorded_at=recorded_at,
+        ))
+
+
+def _visual_v2_payload(
+    request: VisualEvidenceV2Request,
+    model_identity: str,
+) -> dict[str, object]:
+    facts = request.deterministic_context.timeframe_facts
+    pivots = ", ".join(
+        f"r{item.radius}:{item.kind.value}:{item.timestamp.isoformat()}:{item.price:g}"
+        for item in facts.pivots
+    ) or "NONE"
+    references = ", ".join(
+        f"{identity}:{low:g}" if high is None else f"{identity}:{low:g}-{high:g}"
+        for identity, low, high in request.deterministic_context.known_reference_levels
+    ) or "NONE"
+    deterministic_range = (
+        "NONE"
+        if request.deterministic_context.deterministic_range_low is None
+        else (
+            f"{request.deterministic_context.deterministic_range_low:g}-"
+            f"{request.deterministic_context.deterministic_range_high:g}"
+        )
+    )
+    routing = ", ".join(f"{question.value}={route.value}" for question, route in request.routing)
+    prompt = "\n".join((
+        f"Question set: {VISUAL_QUESTION_SET_V2_ID} version {VISUAL_QUESTION_SET_V2_VERSION}.",
+        f"Evidence subject: {request.subject_identity} ({request.subject_kind.value}).",
+        f"Native instrument: {request.requirement.canonical_instrument}.",
+        f"Expected timeframe: {request.timeframe.value}.",
+        f"Completed observation boundary: {request.observation_boundary.isoformat()}.",
+        f"Native opportunity orientation only: direction={request.requirement.thesis.direction.value}; "
+        f"opportunity={request.requirement.thesis.opportunity_identity.value}.",
+        f"Completed close={facts.close:g}; SMA20={facts.sma20}; SMA50={facts.sma50}; SMA200={facts.sma200}.",
+        f"Completed volume={facts.volume}; prior-20 volume mean={facts.prior_20_volume_mean}.",
+        f"Deterministic pivots already represented: {pivots}.",
+        f"Deterministic range already represented: {deterministic_range}; "
+        f"known break boundary={request.deterministic_context.known_break_boundary}.",
+        f"Deterministic references already represented: {references}.",
+        f"Operative anchor already represented: {request.requirement.thesis.operative_anchor_identity} "
+        f"at {request.requirement.thesis.operative_anchor_price:g}.",
+        f"Question routing: {routing}.",
+        "Independently extract only requested visible evidence not already represented by supplied facts.",
+    ))
+    instructions = (
+        "You are the bounded KRONOS Visual Evidence V2 extractor. Return factual visual observations only. "
+        "Do not determine validity, tradability, Readiness, ACCEPT, WAIT, DISCARD, contradiction, material "
+        "barrier, Clear-Air, entry, stop, invalidation, target, risk/reward, position size, execution, or broker "
+        "state. Do not infer or approximate unreadable numeric values; use LEVEL_UNAVAILABLE. Q3 reports only "
+        "material support/resistance missing from supplied deterministic references. Q8 transcribes visible Pine "
+        "only. Q10 is NONE unless clearly visible material evidence cannot fit Q1-Q9. Return exactly ten ordered "
+        "observations using the strict schema. Extraction confidence describes reading confidence only."
+    )
+    data_url = f"data:{request.content_type};base64,{b64encode(request.original_image).decode('ascii')}"
+    return {
+        "model": model_identity,
+        "store": False,
+        "max_output_tokens": 8_000,
+        "instructions": instructions,
+        "input": [{"role": "user", "content": [
+            {"type": "input_text", "text": prompt},
+            {"type": "input_image", "image_url": data_url, "detail": "original"},
+        ]}],
+        "text": {"format": {
+            "type": "json_schema", "name": "kronos_swing_visual_evidence_v2",
+            "strict": True, "schema": visual_evidence_v2_provider_schema(),
+        }},
+    }
+
+
+def _decode_visual_v2(
+    raw: dict[str, object],
+    request: VisualEvidenceV2Request,
+    model_identity: str,
+) -> VisualEvidenceV2Response:
+    text, value = _extract_v2_analysis(raw)
+    del text
+    validate_visual_evidence_v2_provider_value(value)
+    if set(value) != {"observations"} or type(value["observations"]) is not list:
+        raise ValueError("VISUAL_V2_SCHEMA_INVALID")
+    expected_fields = {
+        "question_id", "observation_status", "observation",
+        "level_availability", "price", "zone_low", "zone_high",
+        "visible_basis", "confidence_in_extraction", "ambiguity_reason",
+        "why_not_covered_elsewhere",
+    }
+    if any(type(item) is not dict or set(item) != expected_fields for item in value["observations"]):
+        raise ValueError("VISUAL_V2_SCHEMA_INVALID")
+    observations = tuple(
+        VisualEvidenceV2Observation(
+            question_id=VisualQuestionV2(item["question_id"]),
+            timeframe=request.timeframe,
+            observation_status=VisualObservationStatus(item["observation_status"]),
+            observation=item["observation"],
+            level_availability=VisualLevelAvailability(item["level_availability"]),
+            price=item["price"], zone_low=item["zone_low"], zone_high=item["zone_high"],
+            visible_basis=item["visible_basis"],
+            source_chart_identity=request.chart_identity,
+            source_chart_revision=request.chart_revision_sha256,
+            confidence_in_extraction=item["confidence_in_extraction"],
+            ambiguity_reason=item["ambiguity_reason"],
+            provenance=(OPENAI_VISUAL_EVIDENCE_V2_PROVIDER_ID, model_identity, VISUAL_QUESTION_SET_V2_ID),
+            why_not_covered_elsewhere=item["why_not_covered_elsewhere"],
+        )
+        for item in value["observations"]
+    )
+    return VisualEvidenceV2Response(
+        provider_identity=OPENAI_VISUAL_EVIDENCE_V2_PROVIDER_ID,
+        model_identity=model_identity,
+        request_timestamp=request.request_timestamp,
+        native_run_identity=request.requirement.native_run_identity,
+        native_assessment_sha256=request.requirement.thesis.native_assessment_sha256,
+        native_canonical_instrument=request.requirement.canonical_instrument,
+        subject_kind=request.subject_kind,
+        subject_identity=request.subject_identity,
+        reference_market=request.reference_market,
+        reference_symbol=request.reference_symbol,
+        timeframe=request.timeframe,
+        observation_boundary=request.observation_boundary,
+        chart_identity=request.chart_identity,
+        chart_revision_sha256=request.chart_revision_sha256,
+        observations=observations,
+        source_provenance=(OPENAI_VISUAL_EVIDENCE_V2_PROVIDER_ID, model_identity),
+    )
+
+
 def _responses_v2_payload(
     request: ChartAnalystV2Request,
     model_identity: str,
@@ -902,6 +1301,325 @@ def _extract_v2_analysis(
     return texts[0], analysis
 
 
+def _diagnose_rejected_visual_v2(
+    raw: dict[str, object] | None,
+    request: VisualEvidenceV2Request,
+    error: BaseException,
+) -> _VisualV2ValidationFailure | None:
+    """Classify an already-rejected response without changing acceptance logic."""
+
+    if raw is None:
+        return None
+    if raw.get("status") != "completed":
+        return _visual_failure(
+            VisualEvidenceV2ValidationStage.STRUCTURED_OUTPUT_DECODING,
+            "V2_RESPONSE_NOT_COMPLETED", "status", "completed",
+            _safe_enum_shape(raw.get("status")),
+        )
+    output = raw.get("output")
+    if type(output) is not list:
+        return _visual_failure(
+            VisualEvidenceV2ValidationStage.STRUCTURED_OUTPUT_DECODING,
+            "V2_STRUCTURED_OUTPUT_MISSING", "output", "Responses API output array",
+            _safe_structural_shape(output),
+        )
+    texts: list[str] = []
+    for item in output:
+        if type(item) is not dict or item.get("type") != "message":
+            continue
+        content = item.get("content")
+        if type(content) is not list:
+            continue
+        for part in content:
+            if (
+                type(part) is dict
+                and part.get("type") == "output_text"
+                and type(part.get("text")) is str
+            ):
+                texts.append(part["text"])
+    if len(texts) != 1:
+        return _visual_failure(
+            VisualEvidenceV2ValidationStage.STRUCTURED_OUTPUT_DECODING,
+            "V2_OUTPUT_TEXT_CARDINALITY_INVALID",
+            "output[].content[].output_text",
+            "exactly one structured output text",
+            f"text count={len(texts)}",
+        )
+    try:
+        value = json.loads(texts[0])
+    except (TypeError, ValueError):
+        return _visual_failure(
+            VisualEvidenceV2ValidationStage.JSON_PARSING,
+            "V2_JSON_INVALID", "output_text", "valid JSON object",
+            f"string length={len(texts[0])}",
+        )
+    if type(value) is not dict:
+        return _visual_failure(
+            VisualEvidenceV2ValidationStage.TRANSPORT_TO_DOMAIN_ADAPTER,
+            "V2_JSON_ROOT_INVALID", "$", "JSON object",
+            _safe_structural_shape(value),
+        )
+    if set(value) != {"observations"}:
+        return _visual_failure(
+            VisualEvidenceV2ValidationStage.TRANSPORT_TO_DOMAIN_ADAPTER,
+            "V2_TOP_LEVEL_SHAPE_INVALID", "$",
+            "exact object with observations field", _safe_structural_shape(value),
+        )
+    observations = value["observations"]
+    if type(observations) is not list:
+        return _visual_failure(
+            VisualEvidenceV2ValidationStage.TRANSPORT_TO_DOMAIN_ADAPTER,
+            "V2_OBSERVATIONS_TYPE_INVALID", "observations",
+            "array of exactly 10 observations", _safe_structural_shape(observations),
+        )
+    if len(observations) != len(FROZEN_VISUAL_QUESTION_SET_V2):
+        return _visual_failure(
+            VisualEvidenceV2ValidationStage.FROZEN_DOMAIN_INVARIANT,
+            "V2_OBSERVATION_CARDINALITY_INVALID", "observations",
+            "exactly 10 ordered observations", f"array length={len(observations)}",
+        )
+    expected_fields = {
+        "question_id", "observation_status", "observation",
+        "level_availability", "price", "zone_low", "zone_high",
+        "visible_basis", "confidence_in_extraction", "ambiguity_reason",
+        "why_not_covered_elsewhere",
+    }
+    for index, item in enumerate(observations):
+        path = f"observations[{index}]"
+        if type(item) is not dict or set(item) != expected_fields:
+            return _visual_failure(
+                VisualEvidenceV2ValidationStage.TRANSPORT_TO_DOMAIN_ADAPTER,
+                "V2_OBSERVATION_SHAPE_INVALID", path,
+                "exact frozen observation fields", _safe_structural_shape(item),
+            )
+        diagnosed = _diagnose_visual_v2_observation(item, index)
+        if diagnosed is not None:
+            return diagnosed
+    expected_questions = tuple(item.value for item in FROZEN_VISUAL_QUESTION_SET_V2)
+    actual_questions = tuple(item["question_id"] for item in observations)
+    if actual_questions != expected_questions:
+        mismatch = next(
+            index for index, (actual, expected) in enumerate(
+                zip(actual_questions, expected_questions, strict=True)
+            ) if actual != expected
+        )
+        return _visual_failure(
+            VisualEvidenceV2ValidationStage.FROZEN_DOMAIN_INVARIANT,
+            "V2_QUESTION_IDENTITY_ORDER_INVALID",
+            f"observations[{mismatch}].question_id",
+            expected_questions[mismatch], _safe_enum_shape(actual_questions[mismatch]),
+        )
+    code = str(error)
+    if code in {
+        "VISUAL_V2_ROUTING_INVALID",
+        "VISUAL_V2_Q3_DUPLICATES_DETERMINISTIC_EVIDENCE",
+    }:
+        return _visual_failure(
+            VisualEvidenceV2ValidationStage.TIMEFRAME_ROUTING,
+            code, "observations", "frozen timeframe routing and deterministic gap",
+            f"timeframe={request.timeframe.value}",
+        )
+    return _visual_failure(
+        VisualEvidenceV2ValidationStage.FROZEN_DOMAIN_INVARIANT,
+        "V2_DOMAIN_INVARIANT_UNCLASSIFIED", "observations",
+        "frozen Visual Evidence V2 domain invariants", type(error).__name__,
+    )
+
+
+def _diagnose_visual_v2_observation(
+    item: dict[str, object], index: int,
+) -> _VisualV2ValidationFailure | None:
+    path = f"observations[{index}]"
+    enums = (
+        ("question_id", VisualQuestionV2),
+        ("observation_status", VisualObservationStatus),
+        ("level_availability", VisualLevelAvailability),
+    )
+    converted: dict[str, object] = {}
+    for field, enum_type in enums:
+        try:
+            converted[field] = enum_type(item[field])
+        except (TypeError, ValueError):
+            return _visual_failure(
+                VisualEvidenceV2ValidationStage.TRANSPORT_TO_DOMAIN_ADAPTER,
+                "V2_ENUM_INVALID", f"{path}.{field}",
+                f"one of {','.join(value.value for value in enum_type)}",
+                _safe_enum_shape(item[field]),
+            )
+    for field, maximum, nullable in (
+        ("observation", 512, False), ("visible_basis", 512, False),
+        ("confidence_in_extraction", 64, False),
+        ("ambiguity_reason", 512, False),
+        ("why_not_covered_elsewhere", 512, True),
+    ):
+        value = item[field]
+        valid = (
+            (nullable and value is None)
+            or (
+                type(value) is str and len(value) <= maximum
+                and (bool(value.strip()) or field == "ambiguity_reason")
+            )
+        )
+        if not valid:
+            return _visual_failure(
+                VisualEvidenceV2ValidationStage.TRANSPORT_TO_DOMAIN_ADAPTER,
+                "V2_TEXT_FIELD_INVALID", f"{path}.{field}",
+                f"{'nullable ' if nullable else ''}bounded text max {maximum}",
+                _safe_structural_shape(value),
+            )
+    for field in ("price", "zone_low", "zone_high"):
+        value = item[field]
+        if value is not None and (
+            type(value) is not float or not math.isfinite(value) or value < 0.0
+        ):
+            return _visual_failure(
+                VisualEvidenceV2ValidationStage.TRANSPORT_TO_DOMAIN_ADAPTER,
+                "V2_NUMERIC_LEVEL_INVALID", f"{path}.{field}",
+                "null or finite non-negative number", _safe_structural_shape(value),
+            )
+    status = converted["observation_status"]
+    availability = converted["level_availability"]
+    exact = item["price"] is not None
+    low, high = item["zone_low"], item["zone_high"]
+    zone = low is not None or high is not None
+    if (low is None) != (high is None):
+        return _visual_level_failure(
+            "V2_ZONE_PAIR_INCOMPLETE", path,
+            "zone_low and zone_high are both present or both null", item,
+        )
+    if low is not None and high is not None and low > high:
+        return _visual_level_failure(
+            "V2_ZONE_ORDER_INVALID", path, "zone_low must not exceed zone_high", item,
+        )
+    if exact and zone:
+        return _visual_level_failure(
+            "V2_PRICE_ZONE_EXCLUSIVITY_INVALID", path,
+            "price and bounded zone are mutually exclusive", item,
+        )
+    if availability is VisualLevelAvailability.AVAILABLE and exact == zone:
+        return _visual_level_failure(
+            "V2_LEVEL_AVAILABILITY_INCONSISTENT", path,
+            "AVAILABLE requires exactly one valid point or bounded zone", item,
+        )
+    if availability is not VisualLevelAvailability.AVAILABLE and (exact or zone):
+        return _visual_level_failure(
+            "V2_LEVEL_AVAILABILITY_INCONSISTENT", path,
+            "non-AVAILABLE level requires no numeric point or zone", item,
+        )
+    if status is not VisualObservationStatus.OBSERVED and availability is VisualLevelAvailability.AVAILABLE:
+        return _visual_level_failure(
+            "V2_OBSERVATION_LEVEL_STATUS_INVALID", path,
+            "only OBSERVED may publish an AVAILABLE level", item,
+        )
+    if status in {
+        VisualObservationStatus.PARTIAL,
+        VisualObservationStatus.UNAVAILABLE,
+        VisualObservationStatus.INVALID,
+    } and not item["ambiguity_reason"].strip():
+        return _visual_failure(
+            VisualEvidenceV2ValidationStage.FROZEN_DOMAIN_INVARIANT,
+            "V2_AMBIGUITY_REASON_REQUIRED", f"{path}.ambiguity_reason",
+            f"non-empty reason when observation_status={status.value}", "empty string",
+        )
+    question = converted["question_id"]
+    why = item["why_not_covered_elsewhere"]
+    if question is VisualQuestionV2.VISUAL_FACTS_NOT_CAPTURED_BY_KRONOS:
+        if item["observation"] == "NONE" and why is not None:
+            return _visual_failure(
+                VisualEvidenceV2ValidationStage.FROZEN_DOMAIN_INVARIANT,
+                "V2_Q10_NONE_SEMANTICS_INVALID",
+                f"{path}.why_not_covered_elsewhere",
+                "null when Q10 observation is NONE", _safe_structural_shape(why),
+            )
+        if item["observation"] != "NONE" and (
+            type(why) is not str or not why.strip()
+        ):
+            return _visual_failure(
+                VisualEvidenceV2ValidationStage.FROZEN_DOMAIN_INVARIANT,
+                "V2_Q10_WHY_REQUIRED", f"{path}.why_not_covered_elsewhere",
+                "non-empty bounded reason when Q10 is not NONE",
+                _safe_structural_shape(why),
+            )
+    elif why is not None:
+        return _visual_failure(
+            VisualEvidenceV2ValidationStage.FROZEN_DOMAIN_INVARIANT,
+            "V2_NON_Q10_WHY_PROHIBITED", f"{path}.why_not_covered_elsewhere",
+            "null outside Q10", _safe_structural_shape(why),
+        )
+    prohibited = _first_visual_prohibited_token(item)
+    if prohibited is not None:
+        return _visual_failure(
+            VisualEvidenceV2ValidationStage.FROZEN_DOMAIN_INVARIANT,
+            "V2_PROHIBITED_ANALYTICAL_CONSEQUENCE", path,
+            "observation-only content without analytical or execution consequence",
+            f"prohibited token={prohibited}",
+        )
+    return None
+
+
+def _visual_failure(
+    stage: VisualEvidenceV2ValidationStage,
+    code: str,
+    path: str,
+    expected: str,
+    received: str,
+) -> _VisualV2ValidationFailure:
+    return _VisualV2ValidationFailure(stage, code, path, expected, received)
+
+
+def _visual_level_failure(
+    code: str, path: str, expected: str, item: dict[str, object],
+) -> _VisualV2ValidationFailure:
+    availability = _safe_enum_shape(item.get("level_availability"))
+    point = "present" if item.get("price") is not None else "null"
+    zone = (
+        "present"
+        if item.get("zone_low") is not None or item.get("zone_high") is not None
+        else "null"
+    )
+    return _visual_failure(
+        VisualEvidenceV2ValidationStage.FROZEN_DOMAIN_INVARIANT,
+        code, path, expected,
+        f"{availability} + price={point} + zone={zone}",
+    )
+
+
+def _safe_structural_shape(value: object) -> str:
+    if value is None:
+        return "null"
+    if type(value) is dict:
+        return f"object keys={','.join(sorted(str(key) for key in value))}"[:512]
+    if type(value) is list:
+        return f"array length={len(value)}"
+    if type(value) is str:
+        return f"string length={len(value)}"
+    return type(value).__name__
+
+
+def _safe_enum_shape(value: object) -> str:
+    if type(value) is str and re.fullmatch(r"[A-Z0-9_]{1,64}", value):
+        return f"enum={value}"
+    return _safe_structural_shape(value)
+
+
+def _first_visual_prohibited_token(item: dict[str, object]) -> str | None:
+    material = " ".join(
+        value for value in (
+            item.get("observation"), item.get("visible_basis"),
+            item.get("ambiguity_reason"), item.get("why_not_covered_elsewhere"),
+        ) if type(value) is str
+    ).upper()
+    normalized = re.sub(r"[^A-Z]+", "_", material).strip("_")
+    for token in (
+        "CLEAR_AIR", "NO_CLEAR_AIR", "PATH_CLEAR", "PATH_BLOCKED",
+        "MATERIAL_BARRIER", "ACCEPT", "DISCARD", "BUY", "SELL",
+        "ENTRY_ZONE", "RISK_REWARD", "POSITION_SIZE", "BROKER_ORDER",
+    ):
+        if re.search(rf"(?:^|_){re.escape(token)}(?:_|$)", normalized):
+            return token
+    return None
+
+
 def _v2_usage(raw: dict[str, object]) -> tuple[int, int, int]:
     usage = raw.get("usage")
     if type(usage) is not dict:
@@ -927,6 +1645,9 @@ __all__ = [
     "OpenAIChartAnalystConfig",
     "OpenAIChartAnalystV2Config",
     "OpenAIChartAnalystV2Provider",
+    "OpenAIProviderRequestRejected",
+    "OpenAIVisualEvidenceV2Provider",
+    "OpenAIVisualEvidenceV2Config",
     "OpenAIChartAnalystCapabilityProbe",
     "OpenAIChartEvidenceProvider",
     "OpenAIResponsesTransport",

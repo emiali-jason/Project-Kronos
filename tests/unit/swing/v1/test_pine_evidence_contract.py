@@ -256,6 +256,9 @@ def test_existing_layer2_provider_contract_remains_compatible_and_separate():
     assert handoff.routine_openai_calls == 0
     assert handoff.browser_owned_questions == (ChartQuestionId.CHART_TEMPLATE_IDENTITY,)
     assert handoff.kronos_owned_questions == (ChartQuestionId.CONTRADICTIONS,)
+    assert handoff.mcx == MCX_PRODUCTION_COMPLETED.mcx
+    assert handoff.observation_boundary == MCX_PRODUCTION_COMPLETED.observation_boundary
+    assert handoff.provenance == MCX_PRODUCTION_COMPLETED.provenance
     assert callable(getattr(ManualChartEvidenceProvider, "analyze"))
     assert isinstance(ManualChartEvidenceProvider.provider_identity, property)
 

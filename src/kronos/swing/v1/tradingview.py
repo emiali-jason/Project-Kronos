@@ -28,6 +28,8 @@ DATA_ALIGNMENT_REVIEW = "DATA_ALIGNMENT_REVIEW"
 
 
 class ChartTimeframe(StrEnum):
+    COMPOSITE = "4-CHART"
+    WEEKLY = "1W"
     DAILY = "DAILY"
     FOUR_HOUR = "4H"
     ONE_HOUR = "1H"

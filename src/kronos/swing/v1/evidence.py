@@ -74,6 +74,22 @@ def structural_evidence(
     )
 
 
+def factual_pivot_candidates(
+    candles: tuple[HistoricalCandle, ...],
+    radius: int,
+) -> tuple[tuple[PivotCandidate, ...], tuple[PivotCandidate, ...]]:
+    """Expose deterministic pivot facts without consensus or candidate authority."""
+
+    if (
+        type(candles) is not tuple
+        or not candles
+        or any(type(item) is not HistoricalCandle for item in candles)
+        or radius not in {1, 2}
+    ):
+        raise ValueError("V1_FACTUAL_PIVOT_REQUEST_INVALID")
+    return _pivots(candles, radius)
+
+
 def moving_average_evidence(
     candles: tuple[HistoricalCandle, ...],
 ) -> MovingAverageEvidence:
@@ -826,6 +842,7 @@ def _unavailable_candle(reason: str) -> CandleEvidence:
 
 __all__ = [
     "candle_evidence",
+    "factual_pivot_candidates",
     "futures_positioning_evidence",
     "gap_context_evidence",
     "impulse_maturity_evidence",

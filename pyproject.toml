@@ -9,7 +9,9 @@ authors = [
 ]
 dependencies = [
     "kiteconnect>=5.2.0",
+    "pypdf>=6.1.0",
     "python-dotenv>=1.2.2",
+    "reportlab>=4.4.0",
 ]
 
 [build-system]

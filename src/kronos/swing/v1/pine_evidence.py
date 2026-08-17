@@ -557,6 +557,9 @@ class PineLayer2EvidenceHandoff:
     registry_entry_id: str
     canonical_instrument: str
     timeframe: str
+    observation_boundary: PineObservationBoundary
+    provenance: PineEnvelopeProvenance
+    mcx: McxPineEvidenceExtension | None
     question_set_identity: str
     evidence: tuple[PineDomainEvidence, ...]
     browser_owned_questions: tuple[ChartQuestionId, ...]
@@ -574,6 +577,15 @@ class PineLayer2EvidenceHandoff:
             or not _sha(self.event_id)
             or not _text(self.canonical_instrument)
             or not _timeframe(self.timeframe)
+            or type(self.observation_boundary) is not PineObservationBoundary
+            or self.observation_boundary.timeframe != self.timeframe
+            or type(self.provenance) is not PineEnvelopeProvenance
+            or self.provenance.publisher_role is not self.publisher_role
+            or (
+                self.product is PineProduct.MCX
+                and type(self.mcx) is not McxPineEvidenceExtension
+            )
+            or (self.product is PineProduct.NSE and self.mcx is not None)
             or self.question_set_identity != CHART_QUESTION_SET_V1_ID
             or type(self.evidence) is not tuple
             or tuple(item.question_id for item in self.evidence)
@@ -1155,6 +1167,9 @@ def build_pine_layer2_handoff(
         registry_entry_id=registry_entry.registry_entry_id,
         canonical_instrument=envelope.identity.canonical_instrument,
         timeframe=envelope.timeframe.chart_timeframe,
+        observation_boundary=envelope.observation_boundary,
+        provenance=envelope.provenance,
+        mcx=envelope.mcx,
         question_set_identity=CHART_QUESTION_SET_V1_ID,
         evidence=envelope.evidence,
         browser_owned_questions=BROWSER_OWNED_QUESTION_IDS,

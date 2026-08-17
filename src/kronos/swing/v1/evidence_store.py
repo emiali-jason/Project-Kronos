@@ -60,6 +60,10 @@ _CONTENT_TYPES = {
     "image/webp": (".webp", b"RIFF"),
 }
 _V1_REVIEW_RUN_SCHEMA_ID = "KRONOS_SWING_V1_REVIEW_RUN_V1"
+NATIVE_TRADINGVIEW_CHART_TEMPLATE_ID = "KRONOS-TV-SWING-V1-NATIVE-REVIEW@2"
+_NATIVE_TRADINGVIEW_MANIFEST_SCHEMA_ID = (
+    "KRONOS_SWING_V1_NATIVE_TRADINGVIEW_COMPOSITE_MANIFEST_V2"
+)
 _V1_REVIEW_TYPES = {
     name: value
     for name, value in vars(v1_models).items()
@@ -196,6 +200,107 @@ class TradingViewEvidencePackage:
             or ".." in Path(self.structured_evidence_path).parts
         ):
             raise ValueError("TRADINGVIEW_EVIDENCE_PACKAGE_INVALID")
+
+
+@dataclass(frozen=True, slots=True)
+class NativeChartReviewBinding:
+    """Provider-neutral chart identity bound directly to one Native assessment."""
+
+    native_run_identity: str
+    native_assessment_sha256: str
+    canonical_instrument: str
+    direction: str
+    opportunity_identity: str
+    subject_kind: str
+    chart_subject_identity: str
+    observation_boundaries: tuple[tuple[ChartTimeframe, datetime], ...]
+    required_timeframes: tuple[ChartTimeframe, ...] = (
+        ChartTimeframe.WEEKLY,
+        ChartTimeframe.DAILY,
+        ChartTimeframe.FOUR_HOUR,
+        ChartTimeframe.ONE_HOUR,
+    )
+    chart_template_identity: str = NATIVE_TRADINGVIEW_CHART_TEMPLATE_ID
+
+    def __post_init__(self) -> None:
+        if (
+            not is_swing_analysis_run_id(self.native_run_identity)
+            or re.fullmatch(r"[0-9a-f]{64}", self.native_assessment_sha256) is None
+            or not self.canonical_instrument
+            or self.direction not in {"LONG", "SHORT"}
+            or not self.opportunity_identity
+            or self.subject_kind not in {"NATIVE", "REFERENCE"}
+            or not self.chart_subject_identity
+            or (
+                self.subject_kind == "NATIVE"
+                and self.chart_subject_identity != self.canonical_instrument
+            )
+            or self.required_timeframes
+            != (
+                (
+                    ChartTimeframe.WEEKLY,
+                    ChartTimeframe.DAILY,
+                    ChartTimeframe.FOUR_HOUR,
+                    ChartTimeframe.ONE_HOUR,
+                )
+                if self.subject_kind == "NATIVE"
+                else (ChartTimeframe.DAILY,)
+            )
+            or tuple(item[0] for item in self.observation_boundaries)
+            != self.required_timeframes
+            or any(
+                value.tzinfo is None or value.utcoffset() is None
+                for _, value in self.observation_boundaries
+            )
+            or self.chart_template_identity
+            != NATIVE_TRADINGVIEW_CHART_TEMPLATE_ID
+        ):
+            raise ValueError("NATIVE_TRADINGVIEW_BINDING_INVALID")
+
+    def observation_boundary(self, timeframe: ChartTimeframe) -> datetime:
+        try:
+            return next(
+                boundary
+                for candidate, boundary in self.observation_boundaries
+                if candidate is timeframe
+            )
+        except StopIteration as error:
+            raise ValueError("NATIVE_TRADINGVIEW_TIMEFRAME_NOT_REQUESTED") from error
+
+    @property
+    def composite_observation_boundary(self) -> datetime:
+        return max(boundary for _, boundary in self.observation_boundaries)
+
+
+@dataclass(frozen=True, slots=True)
+class NativeTradingViewEvidencePackage:
+    binding: NativeChartReviewBinding
+    revisions: tuple[StoredChartRevision, ...]
+    active_revisions: tuple[StoredChartRevision, ...]
+    missing_required_timeframes: tuple[ChartTimeframe, ...]
+
+    def __post_init__(self) -> None:
+        expected_missing = (
+            () if self.active_revisions else self.binding.required_timeframes
+        )
+        if (
+            type(self.binding) is not NativeChartReviewBinding
+            or type(self.revisions) is not tuple
+            or any(type(item) is not StoredChartRevision for item in self.revisions)
+            or type(self.active_revisions) is not tuple
+            or any(
+                type(item) is not StoredChartRevision
+                for item in self.active_revisions
+            )
+            or len(self.active_revisions) > 1
+            or any(
+                item.timeframe is not ChartTimeframe.COMPOSITE
+                for item in self.revisions
+            )
+            or any(item not in self.revisions for item in self.active_revisions)
+            or self.missing_required_timeframes != expected_missing
+        ):
+            raise ValueError("NATIVE_TRADINGVIEW_PACKAGE_INVALID")
 
 
 class LocalTradingViewEvidenceStore:
@@ -526,6 +631,244 @@ class LocalTradingViewEvidenceStore:
             raise TradingViewEvidenceStoreError("TRADINGVIEW_EVIDENCE_INTEGRITY_FAILURE")
         return payload
 
+    def native_package_for(
+        self,
+        binding: NativeChartReviewBinding,
+    ) -> NativeTradingViewEvidencePackage:
+        """Load Native-bound revisions from the shared TradingView evidence store."""
+
+        if type(binding) is not NativeChartReviewBinding:
+            raise TradingViewEvidenceStoreError(
+                "NATIVE_TRADINGVIEW_BINDING_INVALID"
+            )
+        with self._lock:
+            directory = self._native_requirement_directory(binding)
+            manifest_path = directory / "manifest.json"
+            if not manifest_path.exists():
+                return NativeTradingViewEvidencePackage(
+                    binding, (), (), binding.required_timeframes
+                )
+            manifest = self._read_native_manifest(manifest_path, binding)
+            revisions = tuple(
+                _revision_from_json(item) for item in manifest["revisions"]
+            )
+            if any(
+                item.run_identity != binding.native_run_identity
+                or item.swing_analysis_run_identity
+                != binding.native_run_identity
+                or item.canonical_instrument != binding.canonical_instrument
+                or item.observation_boundary
+                != binding.composite_observation_boundary
+                or item.chart_template_identity
+                != binding.chart_template_identity
+                or item.timeframe is not ChartTimeframe.COMPOSITE
+                for item in revisions
+            ):
+                raise TradingViewEvidenceStoreError(
+                    "NATIVE_TRADINGVIEW_MANIFEST_BINDING_MISMATCH"
+                )
+            for revision in revisions:
+                self.original_bytes(revision)
+            active_digest = self._native_active_revision_binding(
+                manifest, revisions, binding
+            )
+            active = tuple(
+                revision
+                for revision in revisions
+                if revision.sha256 == active_digest
+            )
+            missing = () if active else binding.required_timeframes
+            return NativeTradingViewEvidencePackage(
+                binding, revisions, active, missing
+            )
+
+    def retain_native_upload(
+        self,
+        binding: NativeChartReviewBinding,
+        *,
+        selected_instrument: str,
+        content_type: str,
+        original_bytes: bytes,
+    ) -> StoredChartRevision:
+        """Append one immutable chart bound to a Native assessment, never Layer-1."""
+
+        if type(binding) is not NativeChartReviewBinding:
+            raise TradingViewEvidenceStoreError(
+                "NATIVE_TRADINGVIEW_BINDING_INVALID"
+            )
+        if selected_instrument != binding.canonical_instrument:
+            raise TradingViewEvidenceStoreError(
+                "NATIVE_TRADINGVIEW_INSTRUMENT_BINDING_MISMATCH"
+            )
+        if (
+            type(original_bytes) is not bytes
+            or not 0 < len(original_bytes) <= _MAX_CHART_BYTES
+        ):
+            raise TradingViewEvidenceStoreError("TRADINGVIEW_CHART_SIZE_INVALID")
+        suffix, magic = _CONTENT_TYPES.get(content_type, (None, None))
+        if suffix is None or not original_bytes.startswith(magic):
+            raise TradingViewEvidenceStoreError("TRADINGVIEW_CHART_CONTENT_INVALID")
+        if content_type == "image/webp" and original_bytes[8:12] != b"WEBP":
+            raise TradingViewEvidenceStoreError("TRADINGVIEW_CHART_CONTENT_INVALID")
+
+        with self._lock:
+            directory = self._native_requirement_directory(binding)
+            directory.mkdir(parents=True, exist_ok=True)
+            manifest_path = directory / "manifest.json"
+            manifest = (
+                self._read_native_manifest(manifest_path, binding)
+                if manifest_path.exists()
+                else self._new_native_manifest(binding)
+            )
+            digest = sha256(original_bytes).hexdigest()
+            duplicate = next(
+                (
+                    item for item in manifest["revisions"]
+                    if item["sha256"] == digest
+                ),
+                None,
+            )
+            revisions = tuple(
+                _revision_from_json(item) for item in manifest["revisions"]
+            )
+            active = self._native_active_revision_binding(
+                manifest, revisions, binding
+            )
+            if duplicate is not None:
+                if active == digest:
+                    raise TradingViewEvidenceStoreError(
+                        "TRADINGVIEW_DUPLICATE_UPLOAD"
+                    )
+                manifest["active_revision_sha256"] = digest
+                self._atomic_json(manifest_path, manifest)
+                return _revision_from_json(duplicate)
+            revision_number = len(manifest["revisions"]) + 1
+            relative_path = self._relative(
+                directory
+                / "composite"
+                / f"r{revision_number:04d}-original{suffix}"
+            )
+            destination = self._root / relative_path
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            self._atomic_write(destination, original_bytes)
+            revision = StoredChartRevision(
+                run_identity=binding.native_run_identity,
+                canonical_instrument=binding.canonical_instrument,
+                observation_boundary=binding.composite_observation_boundary,
+                timeframe=ChartTimeframe.COMPOSITE,
+                upload_timestamp=self._aware_now(),
+                chart_template_identity=binding.chart_template_identity,
+                source=TRADINGVIEW_UPLOAD_SOURCE,
+                retention_class=TRADINGVIEW_RETENTION_CLASS,
+                revision=revision_number,
+                sha256=digest,
+                byte_count=len(original_bytes),
+                content_type=content_type,
+                relative_path=str(relative_path),
+                swing_analysis_run_identity=binding.native_run_identity,
+            )
+            manifest["revisions"].append(_revision_to_json(revision))
+            manifest["active_revision_sha256"] = digest
+            self._atomic_json(manifest_path, manifest)
+            return revision
+
+    def bind_shared_native_revision(
+        self,
+        binding: NativeChartReviewBinding,
+        *,
+        selected_instrument: str,
+        source_revision: StoredChartRevision,
+    ) -> StoredChartRevision:
+        """Bind one already-retained physical composite to a second subject role."""
+
+        if (
+            type(binding) is not NativeChartReviewBinding
+            or type(source_revision) is not StoredChartRevision
+            or selected_instrument != binding.canonical_instrument
+            or source_revision.run_identity != binding.native_run_identity
+            or source_revision.swing_analysis_run_identity
+            != binding.native_run_identity
+            or source_revision.canonical_instrument
+            != binding.canonical_instrument
+            or source_revision.timeframe is not ChartTimeframe.COMPOSITE
+        ):
+            raise TradingViewEvidenceStoreError(
+                "NATIVE_TRADINGVIEW_SHARED_BINDING_INVALID"
+            )
+        # This integrity check also proves the shared path still contains the
+        # exact bytes represented by the common SHA-256 revision identity.
+        self.original_bytes(source_revision)
+        with self._lock:
+            directory = self._native_requirement_directory(binding)
+            directory.mkdir(parents=True, exist_ok=True)
+            manifest_path = directory / "manifest.json"
+            manifest = (
+                self._read_native_manifest(manifest_path, binding)
+                if manifest_path.exists()
+                else self._new_native_manifest(binding)
+            )
+            duplicate = next(
+                (
+                    item for item in manifest["revisions"]
+                    if item["sha256"] == source_revision.sha256
+                ),
+                None,
+            )
+            if duplicate is not None:
+                manifest["active_revision_sha256"] = source_revision.sha256
+                self._atomic_json(manifest_path, manifest)
+                return _revision_from_json(duplicate)
+            revision = StoredChartRevision(
+                run_identity=binding.native_run_identity,
+                canonical_instrument=binding.canonical_instrument,
+                observation_boundary=binding.composite_observation_boundary,
+                timeframe=ChartTimeframe.COMPOSITE,
+                upload_timestamp=source_revision.upload_timestamp,
+                chart_template_identity=binding.chart_template_identity,
+                source=source_revision.source,
+                retention_class=source_revision.retention_class,
+                revision=len(manifest["revisions"]) + 1,
+                sha256=source_revision.sha256,
+                byte_count=source_revision.byte_count,
+                content_type=source_revision.content_type,
+                relative_path=source_revision.relative_path,
+                swing_analysis_run_identity=binding.native_run_identity,
+            )
+            manifest["revisions"].append(_revision_to_json(revision))
+            manifest["active_revision_sha256"] = revision.sha256
+            self._atomic_json(manifest_path, manifest)
+            return revision
+
+    def remove_native_active_chart(
+        self,
+        binding: NativeChartReviewBinding,
+        *,
+        selected_instrument: str,
+    ) -> None:
+        if selected_instrument != binding.canonical_instrument:
+            raise TradingViewEvidenceStoreError(
+                "NATIVE_TRADINGVIEW_INSTRUMENT_BINDING_MISMATCH"
+            )
+        with self._lock:
+            path = self._native_requirement_directory(binding) / "manifest.json"
+            if not path.exists():
+                raise TradingViewEvidenceStoreError(
+                    "TRADINGVIEW_CHART_NOT_RECEIVED"
+                )
+            manifest = self._read_native_manifest(path, binding)
+            revisions = tuple(
+                _revision_from_json(item) for item in manifest["revisions"]
+            )
+            active = self._native_active_revision_binding(
+                manifest, revisions, binding
+            )
+            if active is None:
+                raise TradingViewEvidenceStoreError(
+                    "TRADINGVIEW_CHART_NOT_RECEIVED"
+                )
+            manifest["active_revision_sha256"] = None
+            self._atomic_json(path, manifest)
+
     def retain_chart_analysis(
         self,
         requirement: TradingViewReviewRequirement,
@@ -754,6 +1097,108 @@ class LocalTradingViewEvidenceStore:
             raise TradingViewEvidenceStoreError("TRADINGVIEW_INSTRUMENT_INVALID")
         date = requirement.observation_boundary.date().isoformat()
         return self._root / "runs" / date / run_hash / instrument / "tradingview"
+
+    def _native_requirement_directory(
+        self, binding: NativeChartReviewBinding
+    ) -> Path:
+        instrument = re.sub(
+            r"[^A-Z0-9._&-]+", "-", binding.canonical_instrument.upper()
+        )
+        if not instrument:
+            raise TradingViewEvidenceStoreError(
+                "NATIVE_TRADINGVIEW_INSTRUMENT_INVALID"
+            )
+        return (
+            self._root
+            / "native-review-composite-charts"
+            / binding.native_run_identity
+            / instrument
+            / binding.native_assessment_sha256
+            / binding.subject_kind.lower()
+            / re.sub(r"[^A-Z0-9._&!-]+", "-", binding.chart_subject_identity.upper())
+        )
+
+    @staticmethod
+    def _new_native_manifest(
+        binding: NativeChartReviewBinding,
+    ) -> dict[str, object]:
+        return {
+            "schema": _NATIVE_TRADINGVIEW_MANIFEST_SCHEMA_ID,
+            "native_run_identity": binding.native_run_identity,
+            "native_assessment_sha256": binding.native_assessment_sha256,
+            "canonical_instrument": binding.canonical_instrument,
+            "direction": binding.direction,
+            "opportunity_identity": binding.opportunity_identity,
+            "subject_kind": binding.subject_kind,
+            "chart_subject_identity": binding.chart_subject_identity,
+            "observation_boundaries": {
+                timeframe.value: boundary.isoformat()
+                for timeframe, boundary in binding.observation_boundaries
+            },
+            "chart_template_identity": binding.chart_template_identity,
+            "required_timeframes": [
+                item.value for item in binding.required_timeframes
+            ],
+            "retention_class": TRADINGVIEW_RETENTION_CLASS,
+            "pruning": "MANUAL_ONLY",
+            "active_revision_sha256": None,
+            "revisions": [],
+        }
+
+    def _read_native_manifest(
+        self, path: Path, binding: NativeChartReviewBinding
+    ) -> dict[str, object]:
+        try:
+            manifest = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as error:
+            raise TradingViewEvidenceStoreError(
+                "NATIVE_TRADINGVIEW_MANIFEST_INVALID"
+            ) from error
+        expected = self._new_native_manifest(binding)
+        for field in (
+            "schema",
+            "native_run_identity",
+            "native_assessment_sha256",
+            "canonical_instrument",
+            "direction",
+            "opportunity_identity",
+            "subject_kind",
+            "chart_subject_identity",
+            "observation_boundaries",
+            "chart_template_identity",
+            "required_timeframes",
+            "retention_class",
+            "pruning",
+        ):
+            if manifest.get(field) != expected[field]:
+                raise TradingViewEvidenceStoreError(
+                    "NATIVE_TRADINGVIEW_MANIFEST_BINDING_MISMATCH"
+                )
+        if type(manifest.get("revisions")) is not list:
+            raise TradingViewEvidenceStoreError(
+                "NATIVE_TRADINGVIEW_MANIFEST_INVALID"
+            )
+        return manifest
+
+    @staticmethod
+    def _native_active_revision_binding(
+        manifest: dict[str, object],
+        revisions: tuple[StoredChartRevision, ...],
+        binding: NativeChartReviewBinding,
+    ) -> str | None:
+        digest = manifest.get("active_revision_sha256")
+        if digest is not None and (
+            type(digest) is not str
+            or not any(
+                item.timeframe is ChartTimeframe.COMPOSITE
+                and item.sha256 == digest
+                for item in revisions
+            )
+        ):
+            raise TradingViewEvidenceStoreError(
+                "NATIVE_TRADINGVIEW_MANIFEST_BINDING_MISMATCH"
+            )
+        return digest
 
     def _new_manifest(self, requirement: TradingViewReviewRequirement) -> dict[str, object]:
         return {
@@ -999,6 +1444,9 @@ def _decode_v1_review_value(value: object) -> object:
 __all__ = [
     "DEFAULT_V1_EVIDENCE_ROOT",
     "LocalTradingViewEvidenceStore",
+    "NATIVE_TRADINGVIEW_CHART_TEMPLATE_ID",
+    "NativeChartReviewBinding",
+    "NativeTradingViewEvidencePackage",
     "StoredChartRevision",
     "StoredChartAnalysis",
     "StoredChartAnalysisState",
