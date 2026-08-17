@@ -21,6 +21,7 @@ The core rule is simple: one observation does not justify one code change. A cha
 - [Pine and TradingView Validation Protocol](TESTING.md) — defines static, compile, visual, and replay/live validation evidence.
 - [MCX Metals Validation Record](MCX-METALS-VALIDATION.md) — records current MCX Metals validation evidence and remaining work.
 - [MCX Pine-Swing Closure](MCX-PINE-SWING-CLOSURE.md) — records V2 Production promotion, V1 retirement with rollback preservation, and closure of the separate MCX Pine Swing Observation programme.
+- [NSE Pine Closure](NSE-PINE-CLOSURE.md) — records first NSE Production promotion from NSE-V1-SR1, preserved 93/93 and Week-1 evidence, and closure of the separate NSE Pine programme.
 
 The separate MCX Pine Swing Observation programme is closed. Integrated Swing Visual Review continues through the operating Swing path; historical observations and validation evidence remain preserved and unchanged.
 

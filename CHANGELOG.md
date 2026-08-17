@@ -15,6 +15,14 @@ This project follows a milestone-based development approach.
 - Replaced the KR-705 comparison workstation with one `DESCRIPTION | PROD` Trader column and single-engine Production developer diagnostics.
 - Changed no analytical calculations, indicators, thresholds, readiness, decisions, triggers, lifecycle semantics, CPR, reference logic, or alerts.
 
+### NSE Production promotion
+
+- Promoted the approved NSE-V1-SR1 lineage to the first formal KRONOS NSE Production Pine.
+- Preserved the byte-exact SR1 checkpoint and working candidate at SHA-256 `33ddbdd416d905bf4cb925d45d08d9d4efccfe6db969b668d5101164c96b48f2`.
+- Replaced the Candidate-versus-legacy comparison workstation with one NSE Production column; changed no analytical logic or thresholds.
+- Closed the separate NSE Pine programme while preserving NSE-A/B/C/D, 93/93 qualification, Week-1 evidence, the SBI CPR determination, and deferred NSE-T01.
+- Integrated Swing Visual Review continues; evidence-backed future refinement remains permitted.
+
 ---
 
 # [0.5.0-alpha.1] - 2026-07-04

@@ -33,10 +33,13 @@ It does not:
 
 Reference markets support the execution decision. The MCX 1H chart is the self-contained execution context for confirmed BUY NOW and SELL NOW states.
 
+**Supported NSE Swing Model:** 91 approved NSE equities plus NIFTY and BANK NIFTY, using underlying-first analysis.
+
+**NSE readiness timeframe:** NSE 1H. Daily and 4H readiness are not applicable. NSE V1 stops at BUY READY / SELL READY; BUY NOW / SELL NOW are unavailable.
+
 ## Planned Scope
 
 - MCX Energy: Crude Oil and Natural Gas.
-- NSE Stock Futures.
 
 KRONOS follows the principle: **One Engine. Multiple Market Models.** Market-specific behavior should be handled through dependency profiles, reference symbols, weights, and thresholds rather than separate codebases.
 
@@ -71,6 +74,9 @@ Ownership is strict:
 - KRONOS MCX Futures Production Pine: [`KRONOS_FUTURES/source/KRONOS_FUTURES.pine`](KRONOS_FUTURES/source/KRONOS_FUTURES.pine), V2 lineage, SHA-256 `85ccc53181607b8c82d40dc230cd1025f99be1e876d1d8278119ade32eed9bf8`.
 - Former V1 Production: retired / superseded, with rollback source preserved under [`archive/KRONOS_FUTURES/V1-RETIRED/`](archive/KRONOS_FUTURES/V1-RETIRED/).
 - V2 comparison validation and the separate MCX Pine Swing Observation programme are closed; integrated Swing Visual Review continues.
+- KRONOS NSE Swing Production Pine: [`KRONOS_NSE/source/KRONOS_NSE.pine`](KRONOS_NSE/source/KRONOS_NSE.pine), NSE-V1-SR1 lineage, SHA-256 `802f21a33ec51279758732c8c1b08656691079077b508ac3b76c465242cb2a76`.
+- NSE-V1-SR1 candidate/checkpoint history and Week-1 evidence are preserved. There was no prior NSE Production.
+- The separate NSE Pine programme is closed; integrated Swing Visual Review continues.
 - Intelligence, decision, and execution core through KR-380: Frozen.
 - KR-390 Trade Management: Foundation.
 - KR-400 Execution Alerts: Foundation.
@@ -88,6 +94,7 @@ BUY NOW and SELL NOW are confirmed execution-timing states. They are not broker 
 - [Validation and Research Workflow](docs/validation/README.md)
 - [MCX Metals Validation](docs/validation/MCX-METALS-VALIDATION.md)
 - [MCX Pine-Swing Closure](docs/validation/MCX-PINE-SWING-CLOSURE.md)
+- [NSE Pine Closure](docs/validation/NSE-PINE-CLOSURE.md)
 - [Engineering Manual](docs/KRONOS_ENGINEERING_MANUAL.md)
 - [Design Decisions](docs/Decisions.md)
 - [Futures Model Architecture](docs/architecture/ADL-001-Futures-Model.md)
