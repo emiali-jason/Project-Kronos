@@ -10,6 +10,7 @@ from threading import Thread
 from urllib.parse import parse_qs, urlsplit
 
 from kronos.application.swing_opportunities import SwingOpportunitiesApplication
+from kronos.application.intraday_workstation import IntradayEvidenceWorkstation
 from kronos.application.swing_v1_review import (
     SwingV1ReviewWorkflow,
     V1BatchPreflightFailure,
@@ -38,6 +39,7 @@ from kronos.integrations.openai_chart_analyst import (
 )
 from kronos.browser.views import (
     render_opportunities,
+    render_intraday_workstation,
     render_placeholder,
     render_settings,
     render_v1_review,
@@ -59,7 +61,6 @@ _WORKSPACE_ROUTE = re.compile(r"/swing/opportunities/([1-2])\Z")
 _ELIGIBLE_WORKSPACE_ROUTE = re.compile(r"/swing/eligible/([1-9][0-9]*)\Z")
 _PLACEHOLDERS = {
     "/dashboard": ("Dashboard", "Dashboard", ""),
-    "/intraday": ("Intraday", "Intraday", ""),
     "/theta-earners": ("Theta Earners", "Theta Earners", ""),
     "/journal": ("Trading Journal", "Trading Journal", ""),
     "/portfolio": ("Portfolio", "Portfolio", ""),
@@ -83,6 +84,7 @@ class KronosBrowserServer(ThreadingHTTPServer):
         chart_analyst_credentials: OpenAIChartAnalystCredentialService | None = None,
         chart_analyst_activation: ChartAnalystV2ActivationService | None = None,
         restart_control: BrowserBackendRestartControl | None = None,
+        intraday_workstation: IntradayEvidenceWorkstation | None = None,
     ) -> None:
         if (
             address[0] != _LOOPBACK_HOST
@@ -102,6 +104,10 @@ class KronosBrowserServer(ThreadingHTTPServer):
                 restart_control is not None
                 and type(restart_control) is not BrowserBackendRestartControl
             )
+            or (
+                intraday_workstation is not None
+                and type(intraday_workstation) is not IntradayEvidenceWorkstation
+            )
         ):
             raise ValueError("BROWSER_SERVER_MUST_BIND_LOOPBACK")
         config = OpenAIChartAnalystV2Config.from_environment()
@@ -114,6 +120,9 @@ class KronosBrowserServer(ThreadingHTTPServer):
             chart_analyst_activation or ChartAnalystV2ActivationService()
         )
         self.restart_control = restart_control
+        self.intraday_workstation = (
+            intraday_workstation or IntradayEvidenceWorkstation()
+        )
         if v1_review is not None:
             self.v1_review = v1_review
         else:
@@ -157,6 +166,14 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             self._redirect("/swing/opportunities")
             return
         snapshot = self.server.application.snapshot()
+        if path == "/intraday":
+            query = parse_qs(urlsplit(self.path).query)
+            selected = query.get("instrument", [None])[0]
+            self._html(render_intraday_workstation(
+                snapshot,
+                self.server.intraday_workstation.snapshot(selected),
+            ))
+            return
         if path == "/swing/opportunities":
             self._html(render_opportunities(snapshot))
             return
@@ -648,6 +665,7 @@ def create_browser_server(
     chart_analyst_credentials: OpenAIChartAnalystCredentialService | None = None,
     chart_analyst_activation: ChartAnalystV2ActivationService | None = None,
     restart_control: BrowserBackendRestartControl | None = None,
+    intraday_workstation: IntradayEvidenceWorkstation | None = None,
 ) -> KronosBrowserServer:
     if type(port) is not int or not 0 <= port <= 65535:
         raise ValueError("BROWSER_SERVER_PORT_INVALID")
@@ -658,6 +676,7 @@ def create_browser_server(
         chart_analyst_credentials,
         chart_analyst_activation,
         restart_control,
+        intraday_workstation,
     )
 
 
