@@ -34,6 +34,7 @@ from kronos.provider.contracts.monitoring import (
     MonitoringConsumer,
     ReadOnlyMonitoringSession,
 )
+from kronos.instrument.runtime import ProviderInstrumentAssertion
 
 
 class AuthenticationAttemptHandle(Protocol):
@@ -44,6 +45,7 @@ class ReadOnlyProviderOperation(StrEnum):
     """The complete bounded operation set of an authenticated read-only handle."""
 
     INSTRUMENTS = "instruments"
+    INSTRUMENT_ASSERTIONS = "instrument_assertions"
     HISTORICAL_DATA = "historical_data"
     QUOTE = "quote"
     LTP = "ltp"
@@ -64,6 +66,15 @@ class AuthenticatedReadOnlyProviderCapability(Protocol):
 
     def instrument_records(self, exchange: str) -> tuple[InstrumentRecord, ...]:
         """Return normalized records; raw Provider records never cross this seam."""
+
+    def instrument_assertions(
+        self,
+        exchange: str,
+        *,
+        source_boundary: datetime,
+        valid_through: datetime,
+    ) -> tuple[ProviderInstrumentAssertion, ...]:
+        """Publish typed Provider facts while retaining private token custody."""
 
     def historical_candles(
         self,

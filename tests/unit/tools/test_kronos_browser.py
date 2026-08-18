@@ -27,8 +27,8 @@ def test_launcher_uses_loopback_server_and_opens_swing_workspace(monkeypatch) ->
     monkeypatch.setattr(
         kronos_browser,
         "create_browser_server",
-        lambda app, port, restart_control: (
-            events.append((app, port, restart_control)) or _Server()
+        lambda app, port, restart_control, intraday_workstation: (
+            events.append((app, port, restart_control, intraday_workstation)) or _Server()
         ),
     )
     monkeypatch.setattr(kronos_browser.webbrowser, "open_new_tab", lambda url: events.append(url) or True)
@@ -56,7 +56,7 @@ def test_developer_no_browser_mode_does_not_open_browser(monkeypatch) -> None:
     monkeypatch.setattr(
         kronos_browser,
         "create_browser_server",
-        lambda _app, port, restart_control: _Server(),
+        lambda _app, port, restart_control, intraday_workstation: _Server(),
     )
     monkeypatch.setattr(kronos_browser.webbrowser, "open_new_tab", lambda _url: (_ for _ in ()).throw(AssertionError))
     assert kronos_browser.main(["--no-browser"]) == 0

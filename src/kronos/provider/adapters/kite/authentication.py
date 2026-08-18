@@ -7,6 +7,8 @@ from collections.abc import Callable, Mapping
 from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from enum import StrEnum
+from hashlib import sha256
+import json
 from zoneinfo import ZoneInfo
 
 from kiteconnect.exceptions import (
@@ -69,6 +71,10 @@ from kronos.provider.exceptions.connectivity import (
 )
 from kronos.provider.kite.live_activation import RemainingBudget
 from kronos.provider.models.authentication import GovernedAuthenticationOperation
+from kronos.instrument.runtime import (
+    ProviderInstrumentAssertion,
+    create_provider_assertion,
+)
 
 
 _CANONICAL_PRINCIPAL = re.compile(r"[A-Za-z0-9]{1,64}\Z")
@@ -284,6 +290,58 @@ class _KiteCandidateContext:
             ) from None
         raise ProviderConnectivityError(code) from None
 
+    def _instrument_assertions(
+        self,
+        exchange: str,
+        *,
+        source_boundary: datetime,
+        valid_through: datetime,
+    ) -> tuple[ProviderInstrumentAssertion, ...]:
+        """Publish governed Provider facts without exposing the private token map."""
+
+        if (
+            not _canonical_exchange(exchange)
+            or not _aware(source_boundary)
+            or not _aware(valid_through)
+            or valid_through < source_boundary
+        ):
+            raise InstrumentResolutionError(
+                InstrumentResolutionFailure.INVALID_REQUEST
+            )
+        records = self._instrument_records(exchange)
+        material = tuple(
+            {
+                "provider": record.provider,
+                "exchange": record.exchange,
+                "segment": record.segment,
+                "symbol": record.trading_symbol,
+                "instrument_type": record.instrument_type,
+                "expiry": None if record.expiry is None else record.expiry.isoformat(),
+                "token": self.__instrument_tokens[record],
+            }
+            for record in records
+        )
+        digest = sha256(
+            json.dumps(material, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        ).hexdigest().upper()
+        source_identity = f"KITE-INSTRUMENT-MASTER-{digest[:24]}"
+        return tuple(
+            create_provider_assertion(
+                provider=record.provider,
+                provider_symbol=record.trading_symbol,
+                provider_instrument_token=self.__instrument_tokens[record],
+                exchange=record.exchange,
+                segment=record.segment,
+                instrument_type=record.instrument_type,
+                asserted_tick_size=record.tick_size,
+                asserted_lot_size=record.lot_size,
+                binding_source_identity=source_identity,
+                source_boundary=source_boundary,
+                valid_through=valid_through,
+            )
+            for record in records
+        )
+
     def _historical_candles(
         self,
         request: HistoricalCandleRequest,
@@ -458,6 +516,23 @@ class _KiteReadOnlyProviderCapability:
             )
         return self.__candidate._instrument_records(exchange)
 
+    def instrument_assertions(
+        self,
+        exchange: str,
+        *,
+        source_boundary: datetime,
+        valid_through: datetime,
+    ) -> tuple[ProviderInstrumentAssertion, ...]:
+        if not self.active:
+            raise InstrumentResolutionError(
+                InstrumentResolutionFailure.CAPABILITY_UNAVAILABLE
+            )
+        return self.__candidate._instrument_assertions(
+            exchange,
+            source_boundary=source_boundary,
+            valid_through=valid_through,
+        )
+
     def historical_candles(
         self,
         request: HistoricalCandleRequest,
@@ -533,6 +608,14 @@ def _historical_interval_span(interval: HistoricalInterval) -> timedelta:
 
 
 _CANONICAL_EXCHANGE = re.compile(r"[A-Z]{2,8}\Z")
+
+
+def _aware(value: object) -> bool:
+    return (
+        isinstance(value, datetime)
+        and value.tzinfo is not None
+        and value.utcoffset() is not None
+    )
 
 
 def _canonical_exchange(value: object) -> bool:

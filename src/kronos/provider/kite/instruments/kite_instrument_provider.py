@@ -34,7 +34,7 @@ class KiteInstrumentProvider(InstrumentProvider):
         capability: AuthenticatedReadOnlyProviderCapability,
     ) -> None:
         if (
-            capability.operations != frozenset(ReadOnlyProviderOperation)
+            ReadOnlyProviderOperation.INSTRUMENTS not in capability.operations
             or not callable(getattr(capability, "instrument_records", None))
         ):
             raise InstrumentResolutionError(

@@ -29,7 +29,7 @@ class KiteMarketDataProvider(MarketDataProvider):
         capability: AuthenticatedReadOnlyProviderCapability,
     ) -> None:
         if (
-            capability.operations != frozenset(ReadOnlyProviderOperation)
+            ReadOnlyProviderOperation.HISTORICAL_DATA not in capability.operations
             or not callable(getattr(capability, "historical_candles", None))
         ):
             raise HistoricalDataError(HistoricalDataFailure.CAPABILITY_UNAVAILABLE)

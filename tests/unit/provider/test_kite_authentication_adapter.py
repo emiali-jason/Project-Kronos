@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
+from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 import gc
 import pickle
 
@@ -339,6 +341,50 @@ def test_matched_candidate_issues_one_opaque_read_only_capability() -> None:
     assert capability.active is False
     assert client.reqsession.close_count == 1
     assert client.invalidate_count == 0
+
+
+def test_capability_publishes_deterministic_instrument_assertion_from_private_map() -> None:
+    _FakeKiteClient.instrument_effects = [[{
+        "instrument_token": 256265,
+        "exchange": "NSE",
+        "segment": "INDICES",
+        "tradingsymbol": "NIFTY 50",
+        "name": "NIFTY 50",
+        "instrument_type": "EQ",
+        "expiry": None,
+        "tick_size": Decimal("0.05"),
+        "lot_size": 1,
+    }], [{
+        "instrument_token": 256265,
+        "exchange": "NSE",
+        "segment": "INDICES",
+        "tradingsymbol": "NIFTY 50",
+        "name": "NIFTY 50",
+        "instrument_type": "EQ",
+        "expiry": None,
+        "tick_size": Decimal("0.05"),
+        "lot_size": 1,
+    }]]
+    _, candidate, _, _, _ = _candidate()
+    candidate.principal_evidence().compare_expected(_PRINCIPAL)
+    capability = candidate.issue_read_only_capability()
+    boundary = datetime(2026, 8, 18, 4, 30, tzinfo=timezone.utc)
+
+    first = capability.instrument_assertions(
+        "NSE",
+        source_boundary=boundary,
+        valid_through=boundary + timedelta(days=1),
+    )
+    second = capability.instrument_assertions(
+        "NSE",
+        source_boundary=boundary,
+        valid_through=boundary + timedelta(days=1),
+    )
+
+    assert first == second
+    assert first[0].provider_instrument_token == 256265
+    assert first[0].binding_source_identity.startswith("KITE-INSTRUMENT-MASTER-")
+    assert not hasattr(capability, "instrument_token")
 
 
 def test_authenticated_capability_opens_monitoring_without_exposing_credentials(

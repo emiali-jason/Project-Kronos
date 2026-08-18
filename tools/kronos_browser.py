@@ -7,9 +7,12 @@ from collections.abc import Sequence
 import webbrowser
 
 from kronos.application.swing_opportunities import SwingOpportunitiesApplication
+from kronos.application.intraday_runtime import create_intraday_runtime
 from kronos.browser.server import create_browser_server
 from kronos.browser.restart_control import BrowserBackendRestartControl
 from kronos.market.calendar import MarketCalendarPublisher
+from kronos.provider.contracts.provider_authentication import ReadOnlyProviderOperation
+from kronos.provider.runtime import SharedAuthenticatedProviderRuntime
 from kronos.swing.run_provenance import LocalSwingRunProvenanceStore
 from kronos.swing.v1.mtf_facts import (
     DEFAULT_MTF_FACT_EVIDENCE_ROOT,
@@ -37,8 +40,24 @@ def main(argv: Sequence[str] | None = None) -> int:
     native_discovery_store = NativeDiscoveryEvidenceStore(
         DEFAULT_NATIVE_DISCOVERY_EVIDENCE_ROOT
     )
-    application = SwingOpportunitiesApplication(
+    shared_provider_runtime = SharedAuthenticatedProviderRuntime(
         _build_provider,
+        provider_identity="KITE",
+    )
+    swing_provider_factory = lambda: shared_provider_runtime.compatibility_facade(
+        consumer_identity="SWING",
+        operations=frozenset({
+            ReadOnlyProviderOperation.INSTRUMENTS,
+            ReadOnlyProviderOperation.HISTORICAL_DATA,
+            ReadOnlyProviderOperation.QUOTE,
+            ReadOnlyProviderOperation.LTP,
+            ReadOnlyProviderOperation.OHLC,
+            ReadOnlyProviderOperation.MONITORING,
+        }),
+    )
+    intraday_runtime = create_intraday_runtime(shared_provider_runtime)
+    application = SwingOpportunitiesApplication(
+        swing_provider_factory,
         run_provenance_store=LocalSwingRunProvenanceStore(),
         market_calendar_publisher=MarketCalendarPublisher(),
         mtf_fact_evidence_store=mtf_fact_store,
@@ -50,6 +69,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             application,
             port=args.port,
             restart_control=restart_control,
+            intraday_workstation=intraday_runtime.workstation,
         )
     except Exception:
         restart_control.remove()
@@ -63,6 +83,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         pass
     finally:
         server.server_close()
+        shared_provider_runtime.end_kronos_session()
     return 0
 
 
