@@ -1,0 +1,44 @@
+{
+  "binding_directives": [
+    {
+      "canonical_instrument_id": "RELIANCE",
+      "directive_version": "1.0.0",
+      "expected_provider_symbol": "RELIANCE",
+      "integrity_identity": "PROVIDER-BINDING-DIRECTIVE-64da7809059d2ec794a2a7f5985f2604ea9ad97fc51386a7dd1cab90a66f4e29",
+      "provenance": ["mapping_owner=DOMAIN-001", "provider_fact_owner=DOMAIN-006", "selector=KITE:NSE:RELIANCE"],
+      "provider_identity": "KITE",
+      "source_boundary": "2026-08-18T00:00:00+05:30",
+      "source_identity": "KRONOS-DOMAIN-001-PROVIDER-BINDINGS-V1",
+      "valid_from": "2026-08-18T00:00:00+05:30",
+      "valid_through": "2026-12-31T23:59:59+05:30"
+    }
+  ],
+  "instruments": [
+    {
+      "availability": "AVAILABLE",
+      "canonical_instrument_id": "RELIANCE",
+      "canonical_name": "Reliance Industries Limited",
+      "canonical_symbol": "RELIANCE",
+      "exchange": "NSE",
+      "instrument_type": "EQ",
+      "integrity_identity": "CANONICAL-RECORD-ad788c80ffd96fc4aea5b52bb0ce996599c9d449cc8a9d9bd231ea6035e1872f",
+      "lot_size": 1,
+      "provenance": ["identity_owner=DOMAIN-001", "classification=NSE:CASH:EQUITY", "provider_attributes_reviewed_not_identity-forming=true"],
+      "segment": "NSE",
+      "source_identities": ["ADP-001I-V1.0:RELIANCE", "KRONOS-NSE-RELATIONSHIPS-V1:RELIANCE", "DOMAIN-006-PROVIDER-INSTRUMENT-ASSERTION-V1:KITE:NSE:RELIANCE"],
+      "tick_size": "0.05",
+      "valid_from": "2026-08-18T00:00:00+05:30",
+      "valid_through": "2026-12-31T23:59:59+05:30"
+    }
+  ],
+  "integrity_identity": "CATALOGUE-PUBLICATION-9548259293e21a949b4a13d51c913320c88ff7256ef110b5ef15c044c0e86cdf",
+  "provenance": ["canonical_existence=ADP-001I:APPROVED:SECTION-8", "listed_subject=data/nse/KRONOS_NSE_RELATIONSHIPS.csv:RELIANCE", "operational_geometry=DOMAIN-001-reviewed-DOMAIN-006-assertion-baseline:2026-08-18", "product_membership_not_canonical_identity=true"],
+  "publication_identity": "KRONOS-CANONICAL-INSTRUMENT-CATALOGUE-V1",
+  "publication_version": "1.0.0",
+  "schema_identity": "KRONOS-CANONICAL-INSTRUMENT-CATALOGUE-V1",
+  "source_boundary": "2026-08-18T00:00:00+05:30",
+  "source_identities": ["ADP-001I-V1.0-APPROVED-SWING-UNIVERSE", "KRONOS-NSE-RELATIONSHIPS-V1", "DOMAIN-006-PROVIDER-INSTRUMENT-ASSERTION-V1"],
+  "supersedes": null,
+  "valid_from": "2026-08-18T00:00:00+05:30",
+  "valid_through": "2026-12-31T23:59:59+05:30"
+}

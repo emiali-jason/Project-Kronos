@@ -12,6 +12,7 @@ import pytest
 
 from kronos.application.intraday_runtime import create_intraday_runtime
 from kronos.configuration.principals import PrincipalBindingResult
+from kronos.instrument.catalogue import load_canonical_instrument_catalogue
 from kronos.instrument.runtime import (
     ExecutionContextAvailability,
     ProviderBindingStatus,
@@ -454,6 +455,41 @@ def test_provider_assertion_is_deterministic_and_domain_001_binds_fail_closed() 
     ).lookup("NIFTY")
     assert rejected.binding_status is ProviderBindingStatus.UNAVAILABLE
     assert rejected.execution_context is ExecutionContextAvailability.INCOMPLETE
+
+
+def test_shared_runtime_assertion_binds_through_production_domain_001_catalogue() -> None:
+    shared, runtime, _ = _shared()
+    runtime.capability.instrument_assertions = lambda exchange, **_: (  # type: ignore[method-assign]
+        create_provider_assertion(
+            provider="KITE",
+            provider_symbol="RELIANCE",
+            provider_instrument_token=738561,
+            exchange=exchange,
+            segment="NSE",
+            instrument_type="EQ",
+            asserted_tick_size=Decimal("0.05"),
+            asserted_lot_size=1,
+            binding_source_identity="KITE-INSTRUMENT-MASTER-FACTUAL-V1",
+            source_boundary=NOW,
+            valid_through=VALID_THROUGH,
+        ),
+    )
+    _authenticate(shared)
+    lease = create_intraday_runtime(shared).provider_access.acquire_historical_lease()
+    assertions = lease.instrument_assertions(
+        "NSE",
+        source_boundary=NOW,
+        valid_through=VALID_THROUGH,
+    )
+
+    published = load_canonical_instrument_catalogue().runtime_registry(
+        provider_assertions=assertions,
+        observed_at=NOW,
+    ).require_consumable("RELIANCE")
+
+    assert published.binding_status is ProviderBindingStatus.BOUND
+    assert published.provider_binding is not None
+    assert published.provider_binding.provider_instrument_token == 738561
 
 
 def test_restart_requires_new_authentication_and_does_not_restore_objects() -> None:
