@@ -12,6 +12,7 @@ import pytest
 
 from kronos.instrument.catalogue import (
     CANONICAL_INSTRUMENT_CATALOGUE_IDENTITY,
+    DEFAULT_CANONICAL_INSTRUMENT_CATALOGUE_PATH,
     CanonicalCatalogueError,
     CanonicalCatalogueFailure,
     load_canonical_instrument_catalogue,
@@ -26,7 +27,7 @@ from kronos.instrument.runtime import (
 
 
 IST = ZoneInfo("Asia/Kolkata")
-NOW = datetime(2026, 8, 18, 10, 0, tzinfo=IST)
+NOW = datetime(2026, 8, 18, 19, 0, tzinfo=IST)
 VALID_THROUGH = datetime(2026, 12, 31, 23, 59, 59, tzinfo=IST)
 
 
@@ -94,7 +95,7 @@ def _assertion(
     token: int = 738561,
     segment: str = "NSE",
     instrument_type: str = "EQ",
-    tick: Decimal = Decimal("0.05"),
+    tick: Decimal = Decimal("0.1"),
     lot: int = 1,
 ):  # type: ignore[no-untyped-def]
     return create_provider_assertion(
@@ -116,7 +117,8 @@ def test_production_catalogue_is_exact_reviewed_immutable_publication() -> None:
     catalogue = load_canonical_instrument_catalogue()
 
     assert catalogue.publication_identity == CANONICAL_INSTRUMENT_CATALOGUE_IDENTITY
-    assert catalogue.publication_version == "1.0.0"
+    assert catalogue.publication_version == "1.0.1"
+    assert catalogue.supersedes == "1.0.0"
     assert tuple(item.canonical_instrument_id for item in catalogue.instruments) == (
         "RELIANCE",
     )
@@ -124,12 +126,57 @@ def test_production_catalogue_is_exact_reviewed_immutable_publication() -> None:
     assert record.canonical_name == "Reliance Industries Limited"
     assert (record.exchange, record.segment, record.instrument_type) == ("NSE", "NSE", "EQ")
     assert (record.tick_size, record.lot_size, record.price_precision) == (
-        Decimal("0.05"),
+        Decimal("0.1"),
         1,
-        2,
+        1,
     )
     with pytest.raises(FrozenInstanceError):
         record.canonical_symbol = "CHANGED"  # type: ignore[misc]
+
+
+def test_superseding_publication_preserves_immutable_1_0_0_and_other_facts() -> None:
+    old_path = DEFAULT_CANONICAL_INSTRUMENT_CATALOGUE_PATH.with_name("1.0.0.json")
+    old_bytes = old_path.read_bytes()
+    old = load_canonical_instrument_catalogue(old_path)
+    current = load_canonical_instrument_catalogue()
+
+    assert sha256(old_bytes).hexdigest() == (
+        "b5a7ce48af7a123cb513bf5acacaea11e878d0ada3f8c5de99895f3fd29d4cdc"
+    )
+    assert old.publication_version == "1.0.0"
+    assert old.supersedes is None
+    assert current.publication_version == "1.0.1"
+    assert current.supersedes == "1.0.0"
+    assert old.integrity_identity != current.integrity_identity
+    old_record = old.instruments[0]
+    current_record = current.instruments[0]
+    assert (old_record.tick_size, old_record.price_precision) == (Decimal("0.05"), 2)
+    assert (current_record.tick_size, current_record.price_precision) == (Decimal("0.1"), 1)
+    assert (
+        old_record.canonical_instrument_id,
+        old_record.canonical_symbol,
+        old_record.canonical_name,
+        old_record.exchange,
+        old_record.segment,
+        old_record.instrument_type,
+        old_record.lot_size,
+        old_record.availability,
+        old_record.valid_through,
+    ) == (
+        current_record.canonical_instrument_id,
+        current_record.canonical_symbol,
+        current_record.canonical_name,
+        current_record.exchange,
+        current_record.segment,
+        current_record.instrument_type,
+        current_record.lot_size,
+        current_record.availability,
+        current_record.valid_through,
+    )
+    assert old.binding_directives == current.binding_directives
+    assert tuple(item.canonical_instrument_id for item in old.instruments) == tuple(
+        item.canonical_instrument_id for item in current.instruments
+    ) == ("RELIANCE",)
 
 
 def test_sealing_is_deterministic_and_source_document_remains_reviewable() -> None:

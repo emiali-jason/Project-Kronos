@@ -33,7 +33,7 @@ DEFAULT_CANONICAL_INSTRUMENT_CATALOGUE_PATH = (
     / "data"
     / "instruments"
     / CANONICAL_INSTRUMENT_CATALOGUE_IDENTITY
-    / "1.0.0.json"
+    / "1.0.1.json"
 )
 
 

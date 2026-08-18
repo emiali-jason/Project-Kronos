@@ -1,0 +1,77 @@
+{
+  "binding_directives": [
+    {
+      "canonical_instrument_id": "RELIANCE",
+      "directive_version": "1.0.0",
+      "expected_provider_symbol": "RELIANCE",
+      "integrity_identity": "PROVIDER-BINDING-DIRECTIVE-64da7809059d2ec794a2a7f5985f2604ea9ad97fc51386a7dd1cab90a66f4e29",
+      "provenance": ["mapping_owner=DOMAIN-001", "provider_fact_owner=DOMAIN-006", "selector=KITE:NSE:RELIANCE"],
+      "provider_identity": "KITE",
+      "source_boundary": "2026-08-18T00:00:00+05:30",
+      "source_identity": "KRONOS-DOMAIN-001-PROVIDER-BINDINGS-V1",
+      "valid_from": "2026-08-18T00:00:00+05:30",
+      "valid_through": "2026-12-31T23:59:59+05:30"
+    }
+  ],
+  "instruments": [
+    {
+      "availability": "AVAILABLE",
+      "canonical_instrument_id": "RELIANCE",
+      "canonical_name": "Reliance Industries Limited",
+      "canonical_symbol": "RELIANCE",
+      "exchange": "NSE",
+      "instrument_type": "EQ",
+      "integrity_identity": "CANONICAL-RECORD-04cbda04bfdf0b784599a5ae0fdaf0ba74f209c77c11defd62ffce49118da10e",
+      "lot_size": 1,
+      "provenance": [
+        "identity_owner=DOMAIN-001",
+        "classification=NSE:CASH:EQUITY",
+        "provider_attributes_reviewed_not_identity-forming=true",
+        "canonical_owner=DOMAIN-001",
+        "prior_tick=1.0.0:0.05",
+        "corrected_tick=0.10",
+        "effective_boundary=2026-08-18T18:34:48+05:30:prospective",
+        "historical_applicability_before_effective_boundary_not_claimed=true",
+        "provider_fact_does_not_automatically_mutate_canonical=true"
+      ],
+      "segment": "NSE",
+      "source_identities": [
+        "ADP-001I-V1.0:RELIANCE",
+        "KRONOS-NSE-RELATIONSHIPS-V1:RELIANCE",
+        "DOMAIN-006-PROVIDER-INSTRUMENT-ASSERTION-V1:KITE:NSE:RELIANCE",
+        "OFFICIAL-NSE-CURRENT-RELIANCE-TICK-2026-08-18",
+        "DOMAIN-006-KITE-ASSERTION-RELIANCE-TICK-0.10-2026-08-18",
+        "CA-RELIANCE-TICK-CORRECTION-2026-08-18"
+      ],
+      "tick_size": "0.1",
+      "valid_from": "2026-08-18T18:34:48+05:30",
+      "valid_through": "2026-12-31T23:59:59+05:30"
+    }
+  ],
+  "integrity_identity": "CATALOGUE-PUBLICATION-c5ac495885961e2ccde98dbb29d66c030e600afd6cd13cbb2ceca42e4edc6c0a",
+  "provenance": [
+    "canonical_owner=DOMAIN-001",
+    "official_nse_current_reliance_tick=0.10",
+    "current_kite_assertion_tick=0.10",
+    "prior_kronos_catalogue=1.0.0:tick=0.05",
+    "correction_authority=CA:2026-08-18",
+    "effective_boundary=2026-08-18T18:34:48+05:30:prospective",
+    "historical_applicability_before_effective_boundary_not_claimed=true",
+    "automatic_provider_catalogue_mutation=false",
+    "product_membership_not_canonical_identity=true"
+  ],
+  "publication_identity": "KRONOS-CANONICAL-INSTRUMENT-CATALOGUE-V1",
+  "publication_version": "1.0.1",
+  "schema_identity": "KRONOS-CANONICAL-INSTRUMENT-CATALOGUE-V1",
+  "source_boundary": "2026-08-18T18:34:48+05:30",
+  "source_identities": [
+    "ADP-001I-V1.0-APPROVED-SWING-UNIVERSE",
+    "KRONOS-NSE-RELATIONSHIPS-V1",
+    "DOMAIN-006-PROVIDER-INSTRUMENT-ASSERTION-V1",
+    "OFFICIAL-NSE-CURRENT-RELIANCE-TICK-2026-08-18",
+    "CA-RELIANCE-TICK-CORRECTION-2026-08-18"
+  ],
+  "supersedes": "1.0.0",
+  "valid_from": "2026-08-18T18:34:48+05:30",
+  "valid_through": "2026-12-31T23:59:59+05:30"
+}

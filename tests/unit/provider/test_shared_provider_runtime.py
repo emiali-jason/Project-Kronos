@@ -506,6 +506,8 @@ def test_provider_assertion_lease_fails_closed_when_unauthorized_released_or_exp
 
 def test_shared_runtime_assertion_binds_through_production_domain_001_catalogue() -> None:
     shared, runtime, _ = _shared()
+    catalogue_now = datetime(2026, 8, 18, 19, 0, tzinfo=IST)
+    catalogue_valid_through = catalogue_now + timedelta(hours=1)
     runtime.capability.instrument_assertions = lambda exchange, **_: (  # type: ignore[method-assign]
         create_provider_assertion(
             provider="KITE",
@@ -514,24 +516,24 @@ def test_shared_runtime_assertion_binds_through_production_domain_001_catalogue(
             exchange=exchange,
             segment="NSE",
             instrument_type="EQ",
-            asserted_tick_size=Decimal("0.05"),
+            asserted_tick_size=Decimal("0.1"),
             asserted_lot_size=1,
             binding_source_identity="KITE-INSTRUMENT-MASTER-FACTUAL-V1",
-            source_boundary=NOW,
-            valid_through=VALID_THROUGH,
+            source_boundary=catalogue_now,
+            valid_through=catalogue_valid_through,
         ),
     )
     _authenticate(shared)
     lease = create_intraday_runtime(shared).provider_access.acquire_historical_lease()
     assertions = lease.instrument_assertions(
         "NSE",
-        source_boundary=NOW,
-        valid_through=VALID_THROUGH,
+        source_boundary=catalogue_now,
+        valid_through=catalogue_valid_through,
     )
 
     published = load_canonical_instrument_catalogue().runtime_registry(
         provider_assertions=assertions,
-        observed_at=NOW,
+        observed_at=catalogue_now,
     ).require_consumable("RELIANCE")
 
     assert published.binding_status is ProviderBindingStatus.BOUND
