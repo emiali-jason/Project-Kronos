@@ -387,6 +387,54 @@ def test_capability_publishes_deterministic_instrument_assertion_from_private_ma
     assert not hasattr(capability, "instrument_token")
 
 
+def test_capability_publishes_reliance_when_exchange_contains_zero_geometry() -> None:
+    _FakeKiteClient.instrument_effects = [[{
+        "instrument_token": 256265,
+        "exchange": "NSE",
+        "segment": "INDICES",
+        "tradingsymbol": "NIFTY 50",
+        "name": "NIFTY 50",
+        "instrument_type": "EQ",
+        "expiry": None,
+        "tick_size": Decimal("0"),
+        "lot_size": 0,
+    }, {
+        "instrument_token": 738561,
+        "exchange": "NSE",
+        "segment": "NSE",
+        "tradingsymbol": "RELIANCE",
+        "name": "RELIANCE INDUSTRIES",
+        "instrument_type": "EQ",
+        "expiry": None,
+        "tick_size": Decimal("0.05"),
+        "lot_size": 1,
+    }]]
+    _, candidate, _, _, _ = _candidate()
+    candidate.principal_evidence().compare_expected(_PRINCIPAL)
+    capability = candidate.issue_read_only_capability()
+    boundary = datetime(2026, 8, 18, 4, 30, tzinfo=timezone.utc)
+
+    assertions = capability.instrument_assertions(
+        "NSE",
+        source_boundary=boundary,
+        valid_through=boundary + timedelta(days=1),
+    )
+
+    index = next(item for item in assertions if item.provider_symbol == "NIFTY 50")
+    reliance = next(item for item in assertions if item.provider_symbol == "RELIANCE")
+    assert index.asserted_tick_size is None
+    assert index.asserted_lot_size is None
+    assert reliance.provider == "KITE"
+    assert reliance.provider_instrument_token == 738561
+    assert reliance.asserted_tick_size == Decimal("0.05")
+    assert reliance.asserted_lot_size == 1
+    assert reliance.binding_source_identity.startswith("KITE-INSTRUMENT-MASTER-")
+    assert reliance.source_boundary == boundary
+    assert reliance.valid_through == boundary + timedelta(days=1)
+    assert reliance.assertion_identity
+    assert not hasattr(capability, "instrument_token")
+
+
 def test_authenticated_capability_opens_monitoring_without_exposing_credentials(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

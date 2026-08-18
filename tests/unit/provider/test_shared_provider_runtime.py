@@ -457,6 +457,53 @@ def test_provider_assertion_is_deterministic_and_domain_001_binds_fail_closed() 
     assert rejected.execution_context is ExecutionContextAvailability.INCOMPLETE
 
 
+def test_provider_assertion_lease_fails_closed_when_unauthorized_released_or_expired() -> None:
+    shared, runtime, factory_calls = _shared()
+    _authenticate(shared)
+    unauthorized = _lease(shared, "INTRADAY")
+    with pytest.raises(
+        ProviderRuntimeAccessError,
+        match=ProviderRuntimeFailure.OPERATION_NOT_AUTHORIZED.value,
+    ):
+        unauthorized.instrument_assertions(
+            "NSE", source_boundary=NOW, valid_through=VALID_THROUGH
+        )
+
+    authorized = shared.acquire_lease(
+        consumer_identity="INTRADAY",
+        operations=frozenset({ReadOnlyProviderOperation.INSTRUMENT_ASSERTIONS}),
+    )
+    assertion = authorized.instrument_assertions(
+        "NSE", source_boundary=NOW, valid_through=VALID_THROUGH
+    )[0]
+    assert assertion.provider == "KITE"
+    assert assertion.assertion_identity
+    assert factory_calls == [1]
+
+    authorized.release()
+    with pytest.raises(
+        ProviderRuntimeAccessError,
+        match=ProviderRuntimeFailure.LEASE_RELEASED.value,
+    ):
+        authorized.instrument_assertions(
+            "NSE", source_boundary=NOW, valid_through=VALID_THROUGH
+        )
+
+    expiring = shared.acquire_lease(
+        consumer_identity="INTRADAY",
+        operations=frozenset({ReadOnlyProviderOperation.INSTRUMENT_ASSERTIONS}),
+    )
+    runtime.context_state = AuthenticatedContextState.EXPIRED
+    runtime.capability.active = False
+    with pytest.raises(
+        ProviderRuntimeAccessError,
+        match=ProviderRuntimeFailure.CONTEXT_EXPIRED.value,
+    ):
+        expiring.instrument_assertions(
+            "NSE", source_boundary=NOW, valid_through=VALID_THROUGH
+        )
+
+
 def test_shared_runtime_assertion_binds_through_production_domain_001_catalogue() -> None:
     shared, runtime, _ = _shared()
     runtime.capability.instrument_assertions = lambda exchange, **_: (  # type: ignore[method-assign]

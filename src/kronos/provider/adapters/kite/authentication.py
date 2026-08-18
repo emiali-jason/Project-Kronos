@@ -333,8 +333,16 @@ class _KiteCandidateContext:
                 exchange=record.exchange,
                 segment=record.segment,
                 instrument_type=record.instrument_type,
-                asserted_tick_size=record.tick_size,
-                asserted_lot_size=record.lot_size,
+                asserted_tick_size=(
+                    record.tick_size
+                    if record.tick_size is not None and record.tick_size > 0
+                    else None
+                ),
+                asserted_lot_size=(
+                    record.lot_size
+                    if record.lot_size is not None and record.lot_size > 0
+                    else None
+                ),
                 binding_source_identity=source_identity,
                 source_boundary=source_boundary,
                 valid_through=valid_through,
