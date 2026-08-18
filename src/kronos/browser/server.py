@@ -10,7 +10,7 @@ import json
 import logging
 import re
 from threading import Thread
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, unquote, urlsplit
 
 from kronos.application.swing_opportunities import SwingOpportunitiesApplication
 from kronos.application.swing_v1_browser import SwingV1BrowserOperationalization
@@ -18,7 +18,10 @@ from kronos.application.swing_v1_review import (
     SwingV1ReviewWorkflow,
     V1BatchPreflightFailure,
 )
-from kronos.application.swing_native_review import NativeReviewWorkflow
+from kronos.application.swing_native_review import (
+    NativeReviewWorkflow,
+    project_native_analysis_details,
+)
 from kronos.configuration.apple_keychain import (
     AppleKeychainApiKeySource,
     AppleKeychainCredentialPresenceProbe,
@@ -57,6 +60,7 @@ from kronos.browser.views import (
     render_trade_journal,
     render_mtf_fact_diagnostics,
     render_native_discovery,
+    render_native_analysis_details,
     render_trade_candidates,
     render_v1_review,
 )
@@ -96,6 +100,9 @@ _LOG = logging.getLogger(__name__)
 _ELIGIBLE_WORKSPACE_ROUTE = re.compile(r"/swing/eligible/([1-9][0-9]*)\Z")
 _TRADE_CANDIDATE_ROUTE = re.compile(
     r"/swing/trade-candidates/([0-9a-f]{16})\Z"
+)
+_ANALYSIS_DETAILS_ROUTE = re.compile(
+    r"/swing/analysis-details/(SWING-RUN-[A-F0-9]{32})/([^/]+)\Z"
 )
 _TRADE_CANDIDATE_DECISION_ROUTE = re.compile(
     r"/swing/trade-candidates/([0-9a-f]{16})/decision\Z"
@@ -290,6 +297,9 @@ class _BrowserHandler(BaseHTTPRequestHandler):
         if path == "/":
             self._redirect("/swing/opportunities")
             return
+        if path == "/swing":
+            self._redirect("/swing/opportunities")
+            return
         product_response = self.server.product_routes.dispatch_get(
             BrowserGetRequest(
                 path=path,
@@ -313,6 +323,24 @@ class _BrowserHandler(BaseHTTPRequestHandler):
                 discovery,
                 self.server.native_review.snapshot(),
             ))
+            return
+        details_match = _ANALYSIS_DETAILS_ROUTE.fullmatch(path)
+        if details_match:
+            snapshot, discovery = self.server.application.opportunities_projection()
+            details = (
+                None
+                if discovery is None
+                else project_native_analysis_details(
+                    discovery,
+                    self.server.native_review.snapshot(),
+                    details_match.group(1),
+                    unquote(details_match.group(2)),
+                )
+            )
+            if details is None:
+                self._text(HTTPStatus.NOT_FOUND, "Analysis Details not found.")
+                return
+            self._html(render_native_analysis_details(snapshot, details))
             return
         snapshot = self.server.application.snapshot()
         if path == "/swing/layer1-history":

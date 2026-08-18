@@ -3,6 +3,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from threading import Thread
 from zoneinfo import ZoneInfo
+from urllib.parse import quote
 
 from kronos.application.swing_native_review import (
     NativeReviewAnalysisOutcome,
@@ -42,6 +43,7 @@ from kronos.swing.v1.visual_evidence_v2 import (
     VisualLevelAvailability,
     VisualObservationStatus,
     VisualTimeframe,
+    VisualQuestionV2,
 )
 
 from tests.unit.application.test_swing_opportunities import _Provider
@@ -60,6 +62,7 @@ from tests.unit.swing.v1.test_native_review import _evidence_run
 from tests.unit.swing.v1.test_native_review_mcx_reference import _run_with_probables
 from tests.unit.swing.v1.test_visual_evidence_v2 import _request as _visual_request
 from tests.unit.swing.v1.test_visual_evidence_v2 import _response as _visual_response
+from tests.unit.swing.v1.test_visual_evidence_v2 import _observation as _visual_observation
 from tests.unit.swing.v1.test_native_review_chart_intake import _VisualV2Provider
 
 
@@ -382,6 +385,156 @@ def test_opportunities_uses_native_population_and_keeps_layer1_separate(
         assert "BDL" in history
         assert "ALKEM" in history
         assert probable.canonical_instrument not in history
+    finally:
+        server.shutdown()
+        thread.join(timeout=2)
+        server.server_close()
+
+
+def test_analysis_details_route_binds_exact_current_run_and_instrument(
+    tmp_path: Path,
+) -> None:
+    facts, run, probable = _evidence_run()
+    application = SwingOpportunitiesApplication(
+        _Provider,
+        initial_snapshot=replace(_ready(), swing_analysis_run_identity=run.run_identity),
+    )
+    application.restore_mtf_fact_snapshot(facts)
+    application.restore_native_discovery_run(run)
+    native = NativeReviewWorkflow(NativeReviewEvidenceStore(tmp_path / "native"))
+    native.prepare(run, facts)
+    server = create_browser_server(
+        application,
+        port=0,
+        v1_review=SwingV1ReviewWorkflow(
+            LocalTradingViewEvidenceStore(tmp_path / "legacy")
+        ),
+        native_review=native,
+    )
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        status, _, opportunities = _request(server, "GET", "/swing/opportunities")
+        route = (
+            f"/swing/analysis-details/{run.run_identity}/"
+            f"{quote(probable.canonical_instrument, safe='')}"
+        )
+        assert status == 200
+        assert f'href="{route}"' in opportunities
+        assert "View Analysis Details" in opportunities
+
+        status, _, body = _request(server, "GET", route)
+        assert status == 200
+        assert f"{probable.canonical_instrument} Analysis Details" in body
+        assert "WHAT KITE / NATIVE DISCOVERY SAYS" in body
+        assert probable.direction.value in body
+        assert probable.weekly_state.value in body
+        assert probable.daily_state.value.replace("_", " ") in body
+        assert probable.four_hour_state.value.replace("_", " ") in body
+        assert probable.one_hour_state.value in body
+        assert "NATIVE TEST PROBABLE" in body
+        assert "Governed Visual V2 evidence is not yet available" in body
+        assert "REVIEW REQUIRED" in body
+        assert "TECHNICAL EVIDENCE" in body
+        assert '<details class="analysis-section">' in body
+        assert run.run_identity in body
+
+        wrong_run = "SWING-RUN-" + "F" * 32
+        assert _request(server, "GET", route.replace(run.run_identity, wrong_run))[0] == 404
+        assert _request(server, "GET", route.rsplit("/", 1)[0] + "/UNKNOWN")[0] == 404
+        swing_status, swing_headers, _ = _request(server, "GET", "/swing")
+        assert swing_status == 303
+        assert swing_headers["Location"] == "/swing/opportunities"
+        assert _request(server, "GET", "/intraday")[0] == 200
+    finally:
+        server.shutdown()
+        thread.join(timeout=2)
+        server.server_close()
+
+
+class _Ux01VisualProvider(_VisualV2Provider):
+    def analyze(self, request):  # type: ignore[no-untyped-def]
+        self.requests.append(request)
+        replacements = {
+            VisualQuestionV2.CPR_CONTEXT: _visual_observation(
+                request,
+                VisualQuestionV2.CPR_CONTEXT,
+                status=VisualObservationStatus.PARTIAL,
+                observation="CPR PARTIALLY VISIBLE",
+                level=VisualLevelAvailability.LEVEL_UNAVAILABLE,
+            ),
+            VisualQuestionV2.VISUAL_SUPPORT_RESISTANCE_GAP: _visual_observation(
+                request,
+                VisualQuestionV2.VISUAL_SUPPORT_RESISTANCE_GAP,
+                status=VisualObservationStatus.OBSERVED,
+                observation="NONE",
+                level=VisualLevelAvailability.NOT_APPLICABLE,
+            ),
+        }
+        return _visual_response(request, replacements)
+
+
+def test_analysis_details_projects_visual_layer2_readiness_without_new_authority(
+    tmp_path: Path,
+) -> None:
+    facts, run, probable = _evidence_run()
+    application = SwingOpportunitiesApplication(
+        _Provider,
+        initial_snapshot=replace(_ready(), swing_analysis_run_identity=run.run_identity),
+    )
+    application.restore_mtf_fact_snapshot(facts)
+    application.restore_native_discovery_run(run)
+    provider = _Ux01VisualProvider()
+    native = NativeReviewWorkflow(
+        NativeReviewEvidenceStore(tmp_path / "native"),
+        chart_store=LocalTradingViewEvidenceStore(tmp_path / "charts"),
+        visual_v2_provider=provider,
+    )
+    native.prepare(run, facts)
+    native.upload_chart(
+        instrument=probable.canonical_instrument,
+        content_type="image/png",
+        original_bytes=b"\x89PNG\r\n\x1a\nux01-composite",
+    )
+    native.analyze(probable.canonical_instrument)
+    assert len(provider.requests) == 4
+    server = create_browser_server(
+        application,
+        port=0,
+        v1_review=SwingV1ReviewWorkflow(
+            LocalTradingViewEvidenceStore(tmp_path / "legacy")
+        ),
+        native_review=native,
+    )
+    before = native.snapshot()
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        route = (
+            f"/swing/analysis-details/{run.run_identity}/"
+            f"{quote(probable.canonical_instrument, safe='')}"
+        )
+        status, _, body = _request(server, "GET", route)
+        assert status == 200
+        assert "WHAT THE TRADINGVIEW CHART / CHART ANALYST SAYS" in body
+        assert "PARTIAL" in body
+        assert "CPR PARTIALLY VISIBLE" in body
+        assert "LEVEL_UNAVAILABLE" in body
+        assert ">NONE<" in body
+        assert "NOT_VISIBLE" in body
+        assert "NOT_APPLICABLE" in body
+        assert "WHAT KRONOS RECONCILED" in body
+        assert "PERSISTED READINESS CONDITIONS" in body
+        assert before.readiness_records[0].conditions.thesis_intact.value.replace("_", " ") in body
+        assert "CURRENT DECISION" in body
+        assert before.readiness_records[0].primary_reason.replace("_", " ") in body
+        assert "WHAT HAPPENS NEXT" in body
+        assert "Chart revisions" in body
+        assert "Evidence hashes" in body
+        assert "Readiness policy" in body
+        assert native.snapshot() == before
+        assert len(provider.requests) == 4
+        assert "place_order" not in body
     finally:
         server.shutdown()
         thread.join(timeout=2)

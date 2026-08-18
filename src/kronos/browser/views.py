@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from decimal import Decimal
 from html import escape
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 from zoneinfo import ZoneInfo
 
 from kronos.application.swing_opportunities import (
@@ -26,6 +26,7 @@ from kronos.application.swing_v1_review import (
     V1ReviewWorkflowSnapshot,
 )
 from kronos.application.swing_native_review import (
+    NativeAnalysisDetailsProjection,
     NativeReviewAnalysisState,
     NativeReviewRunState,
     NativeReviewWorkflowSnapshot,
@@ -115,6 +116,7 @@ a{color:inherit;text-decoration:none}.app{display:grid;grid-template-columns:218
 .configuration{max-width:760px;border:1px solid var(--line);background:rgba(6,23,37,.88);border-radius:11px;padding:20px}.configuration-head{display:flex;align-items:center;justify-content:space-between;gap:16px;border-bottom:1px solid var(--line);padding-bottom:14px;margin-bottom:16px}.configuration-head h2{margin:0;color:var(--blue)}.configuration-state{display:flex;align-items:center;justify-content:space-between;gap:16px;margin:10px 0}.connection-status{border:1px solid #246295;border-radius:999px;padding:5px 10px;font-size:12px;font-weight:800}.connection-status.CONNECTED{border-color:#176741;color:var(--green)}.connection-status.CONNECTION-FAILED{border-color:#793b40;color:var(--red)}.credential-form{display:grid;gap:10px;margin-top:18px;padding-top:16px;border-top:1px solid var(--line)}.credential-form label{font-weight:700}.credential-form input{width:100%;border:1px solid #31506a;background:#04131f;color:var(--text);border-radius:7px;padding:11px 12px;font:inherit}.credential-form input:focus{outline:2px solid var(--blue);outline-offset:1px}.configuration-actions{display:flex;gap:10px;align-items:center;margin-top:16px}.configuration-note{color:var(--muted);font-size:12px;margin:9px 0 0}
 .step32-workflow{margin-top:16px;border:1px solid var(--line);background:rgba(6,23,37,.88);border-radius:10px;padding:16px}.step32-head{display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--line);padding-bottom:10px}.step32-head h2{margin:0;font-size:18px}.step32-grid{display:grid;grid-template-columns:1.2fr .8fr .8fr .9fr;gap:12px;margin-top:12px}.step32-block{border-left:1px solid var(--line);padding-left:12px}.step32-block:first-child{border-left:0;padding-left:0}.step32-block h3{margin:0 0 8px;color:var(--muted);font-size:11px;letter-spacing:.06em;text-transform:uppercase}.step32-values{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;margin-top:10px}.step32-value label{display:block;color:var(--muted);font-size:10px}.step32-value strong{font-size:13px}.step32-context{display:grid;gap:7px;font-size:12px}.step32-context span{display:block;color:var(--muted);font-size:10px}.decision-options{display:flex;gap:5px;flex-wrap:wrap}.decision-option{border:1px solid var(--line);border-radius:6px;padding:5px 8px;color:var(--muted);font-size:11px;background:#081c2c}.decision-option.selected{border-color:var(--blue);color:#dff1ff}.decision-time{color:var(--muted);font-size:10px;margin-top:7px}.model-position{display:grid;gap:7px;margin-top:9px}.model-position div{display:flex;justify-content:space-between;gap:8px;font-size:12px}.model-position span{color:var(--muted)}.workflow-list{display:grid;gap:12px}.workflow-card{border:1px solid var(--line);background:rgba(6,23,37,.88);border-radius:10px;padding:14px}.workflow-card-head{display:flex;align-items:center;gap:10px}.workflow-card-head h2{margin:0;font-size:18px}.workflow-card-state{margin-left:auto;color:var(--blue);font-size:11px;font-weight:800}.workflow-card-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;margin:12px 0}.workflow-card-grid label{display:block;color:var(--muted);font-size:10px}.workflow-card-actions{display:flex;justify-content:flex-end}.action-required{border:1px solid #8a4c26;background:#2d1b0f;color:#ffd59c;border-radius:7px;padding:9px 11px;margin-top:10px;font-weight:750}.workflow-empty{border:1px solid var(--line);background:rgba(6,23,37,.88);border-radius:10px;padding:30px;text-align:center;color:var(--muted)}
 .native-chart-grid.single{grid-template-columns:1fr}
+.analysis-details{display:grid;gap:12px;max-width:1180px}.analysis-section{border:1px solid var(--line);background:rgba(6,23,37,.88);border-radius:10px;padding:16px}.analysis-section h2{margin:0 0 10px;color:var(--blue);font-size:15px}.analysis-facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.analysis-fact{border-left:2px solid #28506a;padding:5px 9px;font-size:11px}.analysis-fact span{display:block;color:var(--muted);font-size:9px;letter-spacing:.06em;text-transform:uppercase}.analysis-table{width:100%;border-collapse:collapse;font-size:11px}.analysis-table th,.analysis-table td{text-align:left;vertical-align:top;border-top:1px solid var(--line);padding:7px}.analysis-table th{color:var(--muted);font-size:9px;letter-spacing:.05em}.analysis-decision{font-size:18px;font-weight:800}.analysis-next{border-left:3px solid var(--amber)}
 @media(max-width:1050px){.status-grid{grid-template-columns:repeat(3,1fr)}.panels,.workspace{grid-template-columns:1fr}.step32-grid{grid-template-columns:1fr}.step32-block{border-left:0;border-top:1px solid var(--line);padding:10px 0 0}.step32-block:first-child{border-top:0;padding-top:0}.market-panel{min-height:260px}}
 @media(min-width:761px){.panels{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:760px){.app{grid-template-columns:1fr}.sidebar{position:static;height:auto}.nav{grid-template-columns:repeat(2,1fr)}.system{display:none}.topbar{height:auto;padding:18px;align-items:flex-start;gap:14px}.tabs{overflow:auto;padding:0 18px}.content{padding:18px}.status-grid{grid-template-columns:repeat(2,1fr)}.trade-grid,.plan-strip{grid-template-columns:1fr 1fr}.kite{flex-wrap:wrap;justify-content:flex-end}.chart-intake-list,.native-chart-grid{grid-template-columns:1fr}}
@@ -294,9 +296,149 @@ def _native_opportunity_card(item, review: NativeReviewWorkflowSnapshot | None) 
         '</div><p class="summary-reason">' + escape(context) + '</p>'
         '<div class="summary-footer"><span class="summary-rr">Review · <strong>'
         + escape(review_status) + '</strong></span>'
-        '<a class="button" href="/swing/v1-review">Open Native Review →</a>'
+        '<span><a class="button" href="/swing/v1-review">Open Native Review →</a> '
+        f'<a class="button" href="/swing/analysis-details/{escape(item.run_identity)}/'
+        f'{quote(item.canonical_instrument, safe="")}">View Analysis Details →</a></span>'
         '</div></article>'
     )
+
+
+def render_native_analysis_details(
+    snapshot: BrowserWorkspaceSnapshot,
+    details: NativeAnalysisDetailsProjection,
+) -> str:
+    """Render governed evidence without recalculation or authority."""
+
+    item = details.assessment
+    thesis = details.requirement.thesis
+    native_facts = [
+        ("Instrument", item.canonical_instrument),
+        ("Direction", item.direction.value),
+        ("Opportunity", item.opportunity_identity.value.replace("_", " ")),
+        ("1W context", item.weekly_state.value.replace("_", " ")),
+        ("1D regime", item.daily_state.value.replace("_", " ")),
+        ("4H opportunity", item.four_hour_state.value.replace("_", " ")),
+        ("1H progression", item.one_hour_state.value.replace("_", " ")),
+        ("Operative anchor", f"{thesis.operative_anchor_identity} · {thesis.operative_anchor_price:g}"),
+        ("Why PROBABLE", " · ".join(code.replace("_", " ") for code in item.reason_codes)),
+    ]
+    native_facts.extend((name.replace("_", " "), f"{value:g}") for name, value in item.factual_levels)
+    native_facts.extend(
+        (
+            f"{name.replace('_', ' ')} volume",
+            f"current {current} · prior-20 mean {mean:g}"
+            if mean is not None else f"current {current} · prior-20 mean unavailable",
+        )
+        for name, current, mean in item.volume_facts
+    )
+    visual_rows = "".join(
+        '<tr><td>' + escape(result.timeframe.value) + '</td><td>'
+        + escape(observation.question_id.value) + '</td><td>'
+        + escape(observation.observation_status.value) + '</td><td>'
+        + escape(observation.observation) + '</td><td>'
+        + escape(_visual_level(observation)) + '</td></tr>'
+        for result in details.visual_v2_results
+        for observation in result.observations
+    ) or '<tr><td colspan="5">Governed Visual V2 evidence is not yet available.</td></tr>'
+    layer2 = details.layer2_record
+    readiness = details.readiness_record
+    if layer2 is None and readiness is None:
+        reconciliation = '<p>Deterministic Layer-2 reconciliation is not yet available.</p>'
+    elif layer2 is None:
+        conditions = readiness.conditions
+        reconciliation = (
+            '<p><strong>PERSISTED READINESS CONDITIONS</strong></p>'
+            f'<p>Thesis intact: {escape(conditions.thesis_intact.value.replace("_", " "))} · '
+            f'Evidence completeness: {escape(conditions.evidence_completeness.value.replace("_", " "))}</p>'
+            f'<p>Pullback: {escape(conditions.pullback_condition.value.replace("_", " "))} · '
+            f'Retest: {escape(conditions.retest_condition.value.replace("_", " "))} · '
+            f'Obstacle: {escape(conditions.obstacle_condition.value.replace("_", " "))} · '
+            f'Deterioration: {escape(conditions.deterioration_condition.value.replace("_", " "))} · '
+            f'Failure: {escape(conditions.failure_condition.value.replace("_", " "))}</p>'
+        )
+    else:
+        states = " · ".join(
+            f"{timeframe.value} {state.value.replace('_', ' ')}"
+            for timeframe, state in layer2.evidence.timeframe_states
+        )
+        reconciliation = (
+            f'<p><strong>{escape(layer2.reconciliation.value.replace("_", " "))}</strong></p>'
+            f'<p>{escape(states)}</p><p>Thesis intact: {"YES" if layer2.native_thesis_unchanged else "NO"}</p>'
+            f'<p>Material unresolved evidence: {escape(" · ".join(layer2.contradictions) or "NONE")}</p>'
+        )
+    if readiness is None:
+        decision = "REVIEW REQUIRED"
+        reason = "No persisted Readiness decision is available for this evidence cycle."
+        next_step = "Candidate remains stopped until the governed Review cycle establishes a Readiness decision."
+    else:
+        decision = sponsor_status(readiness.readiness)
+        reason = readiness.primary_reason.replace("_", " ")
+        next_step = _governed_next_step(readiness.readiness.value)
+    review_pack = details.review_pack_record
+    technical = [
+        ("Native run", item.run_identity),
+        ("Native assessment", item.result_sha256),
+        ("Analysis boundary", item.factual_boundaries[-1][1].isoformat() if item.factual_boundaries else "UNAVAILABLE"),
+        ("Review Pack", review_pack.review_pack_id if review_pack else "NOT CREATED"),
+        ("Review observation boundary", review_pack.observation_boundary.isoformat() if review_pack else "UNAVAILABLE"),
+        ("Chart revisions", " · ".join(result.chart_revision_sha256 for result in details.visual_v2_results) or "NOT RECEIVED"),
+        ("Evidence hashes", " · ".join(result.evidence_sha256 for result in details.visual_v2_results) or "NOT ANALYZED"),
+        ("Provider", " · ".join(item.provider_provenance)),
+        ("Native policy", f"{item.policy_identity} {item.policy_version}"),
+        ("Visual V2", f"{details.visual_v2_results[0].question_set_identity} {details.visual_v2_results[0].question_set_version}" if details.visual_v2_results else "NOT ANALYZED"),
+        ("Readiness policy", f"{readiness.readiness_policy_identity} {readiness.readiness_policy_version}" if readiness else "NOT AVAILABLE"),
+    ]
+    body = (
+        '<p><a class="button" href="/swing/opportunities">← Back to Opportunities</a></p>'
+        '<div class="analysis-details">'
+        + _analysis_section("A. WHAT KITE / NATIVE DISCOVERY SAYS", native_facts)
+        + '<section class="analysis-section"><h2>B. WHAT THE TRADINGVIEW CHART / CHART ANALYST SAYS</h2>'
+        '<table class="analysis-table"><thead><tr><th>Timeframe</th><th>Question</th><th>Status</th><th>Observation</th><th>Level</th></tr></thead><tbody>'
+        + visual_rows + '</tbody></table></section>'
+        + '<section class="analysis-section"><h2>C. WHAT KRONOS RECONCILED</h2>' + reconciliation + '</section>'
+        + '<section class="analysis-section"><h2>D. CURRENT DECISION</h2><div class="analysis-decision">'
+        + escape(decision) + '</div><p>' + escape(reason) + '</p></section>'
+        + '<section class="analysis-section analysis-next"><h2>E. WHAT HAPPENS NEXT</h2><p>' + escape(next_step) + '</p></section>'
+        + '<details class="analysis-section"><summary>F. TECHNICAL EVIDENCE</summary><div class="analysis-facts">'
+        + _analysis_fact_rows(technical) + '</div></details></div>'
+    )
+    return _page(
+        title=f"{item.canonical_instrument} Analysis Details",
+        subtitle="Governed evidence chain for the current immutable Native analysis.",
+        snapshot=snapshot,
+        active_nav="Swing",
+        active_tab="Opportunities",
+        body=body,
+    )
+
+
+def _analysis_section(title: str, facts: list[tuple[str, str]]) -> str:
+    return '<section class="analysis-section"><h2>' + escape(title) + '</h2><div class="analysis-facts">' + _analysis_fact_rows(facts) + '</div></section>'
+
+
+def _analysis_fact_rows(facts: list[tuple[str, str]]) -> str:
+    return "".join('<div class="analysis-fact"><span>' + escape(label) + '</span><strong>' + escape(value) + '</strong></div>' for label, value in facts)
+
+
+def _visual_level(observation) -> str:  # type: ignore[no-untyped-def]
+    if observation.level_availability.value != "AVAILABLE":
+        return observation.level_availability.value
+    if observation.price is not None:
+        return f"{observation.price:g}"
+    return f"{observation.zone_low:g}–{observation.zone_high:g}"
+
+
+def _governed_next_step(readiness: str) -> str:
+    return {
+        "READY_FOR_TRADE_CONSTRUCTION": "This persisted decision permits governed Step 31 Trade Construction.",
+        "INVALIDATED": "The candidate is discarded from the current trade path; no further action is permitted.",
+        "CONTEXT_INCOMPLETE": "The candidate remains stopped pending established governed evidence.",
+        "WAIT_PULLBACK_DEVELOPING": "No further action; the governed pullback condition remains developing.",
+        "WAIT_RETEST_DEVELOPING": "No further action; the governed retest condition remains developing.",
+        "WAIT_OBSTACLE_CLEARANCE": "No further action; the governed obstacle remains unresolved.",
+        "EXTENDED_DO_NOT_CHASE": "No further action; the persisted decision prohibits chasing this extension.",
+        "WEAKENING": "No further action; the persisted evidence identifies weakening.",
+    }[readiness]
 
 
 def _v1_status_metrics(snapshot: BrowserWorkspaceSnapshot) -> str:
@@ -2695,6 +2837,7 @@ __all__ = [
     "build_step32_sponsor_workflow_view",
     "render_browser_page",
     "render_opportunities",
+    "render_native_analysis_details",
     "render_trade_journal",
     "render_placeholder",
     "render_settings",

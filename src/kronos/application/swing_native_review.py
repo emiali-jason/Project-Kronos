@@ -19,7 +19,11 @@ from kronos.swing.v1.evidence_store import (
 )
 
 from kronos.swing.v1.mtf_facts import FactualTimeframe, SameRunMtfFactSnapshot
-from kronos.swing.v1.native_discovery import NativeDiscoveryRun
+from kronos.swing.v1.native_discovery import (
+    NativeDiscoveryRun,
+    NativeDiscoveryStatus,
+    NativeInstrumentDiscovery,
+)
 from kronos.swing.v1.native_review import (
     McxReferenceEvidenceState,
     McxReferenceResult,
@@ -301,6 +305,107 @@ class NativeReviewWorkflowSnapshot:
             (item for item in self.requirements if item.canonical_instrument == instrument),
             None,
         )
+
+
+@dataclass(frozen=True, slots=True)
+class NativeAnalysisDetailsProjection:
+    """Immutable, authority-free projection of one current Native review cycle."""
+
+    assessment: NativeInstrumentDiscovery
+    requirement: NativeReviewRequirement
+    visual_v2_results: tuple[VisualEvidenceV2Response, ...]
+    layer2_record: NativeLayer2ReviewRecord | None
+    readiness_record: NativeLayer2ReadinessRecord | None
+    chart_packages: tuple[NativeTradingViewEvidencePackage, ...]
+    review_pack_record: ReviewPackRecord | None
+
+
+def project_native_analysis_details(
+    run: NativeDiscoveryRun,
+    review: NativeReviewWorkflowSnapshot,
+    run_identity: str,
+    canonical_instrument: str,
+) -> NativeAnalysisDetailsProjection | None:
+    """Fail closed unless every available record binds to one run/instrument."""
+
+    if (
+        type(run) is not NativeDiscoveryRun
+        or type(review) is not NativeReviewWorkflowSnapshot
+        or run.run_identity != run_identity
+        or review.native_run_identity != run_identity
+        or not canonical_instrument
+    ):
+        return None
+    assessment = next(
+        (
+            item for item in run.assessments
+            if item.canonical_instrument == canonical_instrument
+            and item.status is NativeDiscoveryStatus.PROBABLE
+        ),
+        None,
+    )
+    requirement = next(
+        (
+            item for item in review.requirements
+            if item.native_run_identity == run_identity
+            and item.canonical_instrument == canonical_instrument
+        ),
+        None,
+    )
+    if (
+        assessment is None
+        or requirement is None
+        or requirement.thesis.native_assessment_sha256 != assessment.result_sha256
+    ):
+        return None
+    pack = review.review_pack_record
+    if pack is not None:
+        candidate = next(
+            (
+                item for item in pack.candidates
+                if item.canonical_instrument == canonical_instrument
+            ),
+            None,
+        )
+        if (
+            pack.native_run_identity != run_identity
+            or candidate is None
+            or candidate.native_assessment_sha256 != assessment.result_sha256
+        ):
+            return None
+    visual = tuple(
+        item for item in review.visual_v2_results
+        if item.native_run_identity == run_identity
+        and item.native_canonical_instrument == canonical_instrument
+        and item.native_assessment_sha256 == assessment.result_sha256
+    )
+    layer2 = next(
+        (
+            item for item in review.layer2_records
+            if item.requirement.native_run_identity == run_identity
+            and item.requirement.canonical_instrument == canonical_instrument
+            and item.requirement.thesis.native_assessment_sha256
+            == assessment.result_sha256
+        ),
+        None,
+    )
+    readiness = next(
+        (
+            item for item in review.readiness_records
+            if item.run_identity == run_identity
+            and item.canonical_instrument == canonical_instrument
+            and item.native_assessment_sha256 == assessment.result_sha256
+        ),
+        None,
+    )
+    packages = tuple(
+        item for item in review.chart_packages
+        if item.binding.native_run_identity == run_identity
+        and item.binding.native_assessment_sha256 == assessment.result_sha256
+    )
+    return NativeAnalysisDetailsProjection(
+        assessment, requirement, visual, layer2, readiness, packages, pack
+    )
 
 
 class NativeReviewWorkflow:
@@ -1785,9 +1890,11 @@ def _visual_layer2_evidence(
 
 
 __all__ = [
+    "NativeAnalysisDetailsProjection",
     "NativeReviewAnalysisOutcome",
     "NativeReviewAnalysisState",
     "NativeReviewRunState",
     "NativeReviewWorkflow",
     "NativeReviewWorkflowSnapshot",
+    "project_native_analysis_details",
 ]
