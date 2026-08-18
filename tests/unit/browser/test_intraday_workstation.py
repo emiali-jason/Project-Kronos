@@ -126,7 +126,13 @@ def test_intraday_route_renders_governed_evidence_without_trading_conclusion(
         assert "ENGINEERING / EVIDENCE" in rendered
         assert "NO TRADING CONCLUSION — EVIDENCE WORKSTATION" in rendered
         assert "NIFTY" in rendered
+        assert "PRESENTATION SELECTION ONLY" in rendered
+        assert "DETAILED EVIDENCE →" in rendered
+        assert "CLASSIC_PIVOT_POINTS_V1" not in rendered
+        status, rendered = _request(server, "/intraday/evidence/NIFTY")
+        assert status == 200
         assert "Provider Binding (separate)" in rendered
+        assert "Provider Token" not in rendered
         assert "NSE-20260817-REGULAR" in rendered
         assert all(f"{timeframe} Evidence" in rendered for timeframe in ("1D", "1H", "15M", "5M"))
         assert "CURRENT INCOMPLETE OBSERVATION" in rendered

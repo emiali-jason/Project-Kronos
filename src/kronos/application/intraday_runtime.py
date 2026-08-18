@@ -3,8 +3,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
 
+from kronos.application.intraday_reliance_bootstrap import (
+    DEFAULT_INTRADAY_EVIDENCE_ROOT,
+    RelianceIntradayBootstrap,
+    RelianceIntradayRuntimeWorkstation,
+)
 from kronos.application.intraday_workstation import IntradayEvidenceWorkstation
+from kronos.market.calendar import MarketCalendarPublisher
 from kronos.provider.contracts.provider_authentication import ReadOnlyProviderOperation
 from kronos.provider.runtime import (
     ReadOnlyProviderLease,
@@ -38,18 +46,30 @@ class IntradayProviderRuntimeAccess:
 
 @dataclass(frozen=True, slots=True)
 class IntradayRuntimeComposition:
-    workstation: IntradayEvidenceWorkstation
+    workstation: object
     provider_access: IntradayProviderRuntimeAccess
 
 
 def create_intraday_runtime(
     provider_runtime: SharedAuthenticatedProviderRuntime,
+    *,
+    calendar_publisher: MarketCalendarPublisher | None = None,
+    evidence_root: Path = DEFAULT_INTRADAY_EVIDENCE_ROOT,
+    clock=lambda: datetime.now(timezone.utc),
 ) -> IntradayRuntimeComposition:
     """Compose Intraday without moving product policy into shared modules."""
 
+    access = IntradayProviderRuntimeAccess(provider_runtime)
     return IntradayRuntimeComposition(
-        workstation=create_intraday_workstation(),
-        provider_access=IntradayProviderRuntimeAccess(provider_runtime),
+        workstation=RelianceIntradayRuntimeWorkstation(
+            RelianceIntradayBootstrap(
+                acquire_lease=access.acquire_historical_lease,
+                calendar_publisher=calendar_publisher,
+                evidence_root=evidence_root,
+                clock=clock,
+            )
+        ),
+        provider_access=access,
     )
 
 

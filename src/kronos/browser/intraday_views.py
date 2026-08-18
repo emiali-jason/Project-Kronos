@@ -13,6 +13,7 @@ from kronos.intraday.telemetry import TelemetryType
 
 
 _INTRADAY_CSS = r"""
+.intraday-card{border:1px solid #25704c;background:linear-gradient(145deg,#071a12,#0b2519);border-radius:12px;padding:18px;max-width:760px}.intraday-card h2{margin:0;color:#67d99a}.intraday-card .event{border-top:1px solid #214c38;padding:10px 0}.intraday-card .detail-link{display:inline-block;margin-top:10px;color:#7de4aa;font-weight:800}.intraday-status{color:#9ccab0;margin:8px 0 14px}.intraday-status strong{color:#67d99a}
 .intraday-warning{display:flex;justify-content:space-between;gap:16px;border:1px solid #82631f;background:#231d11;color:#f6d997;border-radius:8px;padding:12px 14px;margin-bottom:14px}.intraday-selector{display:flex;align-items:center;gap:10px;margin-bottom:14px}.intraday-selector label{font-weight:700}.intraday-selector select{border:1px solid #31506a;background:#04131f;color:var(--text);border-radius:7px;padding:9px 12px}.intraday-panel{border:1px solid var(--line);background:rgba(6,23,37,.88);border-radius:10px;padding:15px;margin-bottom:14px;min-width:0}.intraday-panel h2{margin:0 0 12px;color:var(--blue);font-size:17px}.intraday-panel h3{margin:14px 0 7px;color:var(--muted);font-size:11px;text-transform:uppercase}.intraday-facts{display:grid;grid-template-columns:minmax(140px,.35fr) minmax(0,1fr);margin:0}.intraday-facts dt,.intraday-facts dd{padding:6px 8px;border-top:1px solid var(--line);margin:0;overflow-wrap:anywhere}.intraday-facts dt{color:var(--muted)}.intraday-timeframes{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.incomplete-observation{display:grid;gap:5px;margin-top:11px;border:1px dashed #82631f;border-radius:7px;padding:9px;color:#f6d997}.incomplete-observation span{color:var(--muted);overflow-wrap:anywhere}.intraday-context{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}.intraday-table{width:100%;border-collapse:collapse;font-size:12px}.intraday-table th,.intraday-table td{text-align:left;vertical-align:top;padding:8px;border-bottom:1px solid var(--line);overflow-wrap:anywhere}.intraday-table th{color:var(--muted);white-space:nowrap}.table-scroll{overflow:auto}.intraday-unavailable{color:var(--muted)}.intraday-unavailable strong{color:var(--amber)}
 @media(max-width:760px){.intraday-timeframes,.intraday-context{grid-template-columns:1fr}.intraday-warning,.intraday-selector{align-items:flex-start;flex-direction:column}.intraday-facts{grid-template-columns:1fr}.intraday-facts dd{padding-top:0}}
 """
@@ -30,8 +31,76 @@ def render_intraday_workstation(
         snapshot=snapshot,
         active_nav="Intraday",
         active_tab="",
-        body=render_intraday_body(intraday),
+        body=render_intraday_triage(intraday),
         extra_styles=_INTRADAY_CSS,
+    )
+
+
+def render_intraday_detail(
+    snapshot: BrowserWorkspaceSnapshot,
+    intraday: IntradayWorkstationSnapshot,
+) -> str:
+    return render_browser_page(
+        title="Intraday Detailed Evidence",
+        subtitle="RELIANCE — immutable factual evidence; no trading conclusion.",
+        snapshot=snapshot,
+        active_nav="Intraday",
+        active_tab="",
+        body='<p><a href="/intraday">← Intraday triage</a></p>' + render_intraday_body(intraday),
+        extra_styles=_INTRADAY_CSS,
+    )
+
+
+def render_intraday_triage(snapshot: IntradayWorkstationSnapshot) -> str:
+    warning = ('<div class="intraday-warning"><strong>ENGINEERING / EVIDENCE</strong>'
+               '<span>NO TRADING CONCLUSION — EVIDENCE WORKSTATION</span></div>')
+    if snapshot.selected_instrument is None:
+        return warning + _unavailable(
+            "RELIANCE",
+            snapshot.runtime_detail or "UNAVAILABLE — no governed DOMAIN-001 publication.",
+        )
+    identity = snapshot.selected_instrument.canonical.canonical_instrument_id
+    state = snapshot.availability
+    if snapshot.evidence is None:
+        label = "DATA INCOMPLETE" if state == "DATA_INCOMPLETE" else "UNAVAILABLE"
+        return warning + (
+            '<section class="intraday-card"><h2>' + escape(identity) + '</h2>'
+            '<p class="intraday-status"><strong>' + label + '</strong> — '
+            + escape(snapshot.runtime_detail or "Governed evidence is unavailable.") + '</p></section>'
+        )
+    bundle = snapshot.evidence
+    events = []
+    for timeframe in (IntradayTimeframe.FIFTEEN_MINUTES, IntradayTimeframe.FIVE_MINUTES):
+        evidence = next((item for item in bundle.structural_evidence if item.timeframe is timeframe), None)
+        fact = _latest_fact(() if evidence is None else evidence.facts)
+        value = "No factual structural event" if fact is None else fact.fact_type.value
+        events.append(f'<div class="event"><strong>{timeframe.value}</strong> · {escape(value)}</div>')
+    participation = "UNAVAILABLE"
+    for evidence in bundle.shadow_telemetry:
+        for measure in evidence.measures:
+            if measure.telemetry_type is TelemetryType.RECENT_VOLUME_COMPARISON:
+                values = {item.name: item.value for item in measure.values}
+                ratio = values.get("volume_ratio")
+                if ratio is not None:
+                    participation = f"5M volume ratio {format(ratio, 'f')} · {measure.comparison.value}"
+    return warning + (
+        '<p class="intraday-status">Latest completed factual event — '
+        '<strong>PRESENTATION SELECTION ONLY</strong></p>'
+        '<section class="intraday-card"><h2>' + escape(identity) + '</h2>'
+        + ''.join(events) + '<div class="event"><strong>Participation</strong> · '
+        + escape(participation) + '</div><a class="detail-link" href="/intraday/evidence/'
+        + escape(identity) + '">DETAILED EVIDENCE →</a></section>'
+    )
+
+
+def _latest_fact(facts):  # type: ignore[no-untyped-def]
+    return None if not facts else max(
+        facts,
+        key=lambda item: (
+            item.confirmation_boundary or item.end_boundary or item.start_boundary
+            or item.observation_boundary.observed_at,
+            item.fact_id,
+        ),
     )
 
 
@@ -90,7 +159,9 @@ def _instrument_panel(snapshot: IntradayWorkstationSnapshot) -> str:
             ("Binding", instrument.binding_status.value),
             ("Provider", "UNAVAILABLE" if binding is None else binding.provider),
             ("Provider Symbol", "UNAVAILABLE" if binding is None else binding.provider_symbol),
-            ("Provider Token", "UNAVAILABLE" if binding is None else str(binding.provider_instrument_token)),
+            ("Tick Size", _optional(canonical.canonical_tick_size)),
+            ("Lot Size", "UNAVAILABLE" if canonical.canonical_lot_size is None else str(canonical.canonical_lot_size)),
+            ("Price Precision", "UNAVAILABLE" if canonical.canonical_price_precision is None else str(canonical.canonical_price_precision)),
         ))
     )
     return (
@@ -330,4 +401,9 @@ def _optional(value: Decimal | None) -> str:
     return "UNAVAILABLE" if value is None else _number(value)
 
 
-__all__ = ["render_intraday_body", "render_intraday_workstation"]
+__all__ = [
+    "render_intraday_body",
+    "render_intraday_detail",
+    "render_intraday_triage",
+    "render_intraday_workstation",
+]

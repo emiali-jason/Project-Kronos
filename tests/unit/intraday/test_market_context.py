@@ -5,7 +5,11 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from kronos.intraday.market_context import IntradayMarketContextAdapter
+from kronos.intraday.market_context import (
+    CurrentMarketCalendarScheduleSource,
+    IntradayMarketContextAdapter,
+)
+from kronos.market.calendar import MarketCalendarPublisher
 from kronos.market.schedule import (
     InMemoryMarketScheduleSource,
     MarketDaySchedule,
@@ -56,3 +60,19 @@ def test_intraday_market_adapter_preserves_domain_008_fact_semantics() -> None:
 def test_intraday_market_adapter_rejects_non_domain_008_source() -> None:
     with pytest.raises(ValueError, match="INTRADAY_MARKET_CONTEXT_SOURCE_INVALID"):
         IntradayMarketContextAdapter(object())  # type: ignore[arg-type]
+
+
+def test_current_domain_008_publisher_is_adapted_without_calendar_inference() -> None:
+    observed = datetime(2026, 8, 18, 10, 17, tzinfo=IST)
+    source = CurrentMarketCalendarScheduleSource(
+        MarketCalendarPublisher(), observed_at=observed
+    )
+
+    current = source.schedule_for("NSE", date(2026, 8, 18))
+    previous = source.previous_trading_schedule("NSE", date(2026, 8, 18))
+
+    assert current is not None
+    assert current.source_identity == "KRONOS-MARKET-CALENDAR-V1"
+    assert current.source_version == "2026.1.2"
+    assert (current.windows[0].opens_at.hour, current.windows[0].opens_at.minute) == (9, 15)
+    assert previous.trading_date == date(2026, 8, 17)

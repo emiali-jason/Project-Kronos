@@ -59,9 +59,13 @@ class IntradayWorkstationSnapshot:
     instruments: tuple[RuntimeInstrument, ...]
     selected_instrument: RuntimeInstrument | None
     evidence: IntradayEvidenceBundle | None
+    runtime_state: str | None = None
+    runtime_detail: str = ""
 
     @property
     def availability(self) -> str:
+        if self.runtime_state is not None:
+            return self.runtime_state
         if self.selected_instrument is None or self.evidence is None:
             return "UNAVAILABLE"
         return "AVAILABLE"

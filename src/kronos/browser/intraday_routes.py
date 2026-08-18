@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from kronos.application.intraday_workstation import IntradayEvidenceWorkstation
-from kronos.browser.intraday_views import render_intraday_workstation
+from kronos.browser.intraday_views import render_intraday_detail, render_intraday_workstation
 from kronos.browser.product_routes import (
     BrowserGetRequest,
     BrowserRouteResponse,
@@ -15,7 +14,7 @@ class IntradayBrowserRoutes:
     """Own Intraday Browser paths behind the stable product-route seam."""
 
     def __init__(self, workstation: object) -> None:
-        if type(workstation) is not IntradayEvidenceWorkstation:
+        if not callable(getattr(workstation, "snapshot", None)):
             raise ValueError("INTRADAY_BROWSER_ROUTES_INVALID")
         self._workstation = workstation
 
@@ -24,11 +23,17 @@ class IntradayBrowserRoutes:
         request: BrowserGetRequest,
         snapshot_provider: BrowserSnapshotProvider,
     ) -> BrowserRouteResponse | None:
-        if request.path != "/intraday":
+        detail_prefix = "/intraday/evidence/"
+        if request.path == "/intraday":
+            selected = request.query.get("instrument", [None])[0]
+            renderer = render_intraday_workstation
+        elif request.path.startswith(detail_prefix):
+            selected = request.path.removeprefix(detail_prefix)
+            renderer = render_intraday_detail
+        else:
             return None
-        selected = request.query.get("instrument", [None])[0]
         return BrowserRouteResponse(
-            render_intraday_workstation(
+            renderer(
                 snapshot_provider(),
                 self._workstation.snapshot(selected),
             )
