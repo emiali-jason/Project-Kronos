@@ -1,4 +1,5 @@
 #include <arpa/inet.h>
+#include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
@@ -16,6 +17,73 @@
 
 static const char *workspace_url = "http://127.0.0.1:8947/swing/opportunities";
 static const char *control_schema = "KRONOS_BROWSER_BACKEND_CONTROL_V1";
+
+static int directory_exists(const char *path) {
+    struct stat metadata;
+    return stat(path, &metadata) == 0 && S_ISDIR(metadata.st_mode);
+}
+
+static int repository_is_governed(const char *repository) {
+    char git_directory[PATH_MAX];
+    char project_file[PATH_MAX];
+    char python[PATH_MAX];
+    char browser_entry[PATH_MAX];
+    char package_directory[PATH_MAX];
+    if (
+        snprintf(git_directory, sizeof(git_directory), "%s/.git", repository) < 0 ||
+        snprintf(project_file, sizeof(project_file), "%s/pyproject.toml", repository) < 0 ||
+        snprintf(python, sizeof(python), "%s/.venv/bin/python", repository) < 0 ||
+        snprintf(browser_entry, sizeof(browser_entry), "%s/tools/kronos_browser.py", repository) < 0 ||
+        snprintf(package_directory, sizeof(package_directory), "%s/src/kronos", repository) < 0
+    ) {
+        return 0;
+    }
+    return (
+        directory_exists(git_directory) &&
+        access(project_file, R_OK) == 0 &&
+        access(python, X_OK) == 0 &&
+        access(browser_entry, R_OK) == 0 &&
+        directory_exists(package_directory)
+    );
+}
+
+static int discover_repository(const char *home, char repository[PATH_MAX]) {
+    static const char *relative_roots[] = {
+        "Documents/GitHub",
+        "Developer",
+        "Projects",
+    };
+    int matches = 0;
+    for (size_t root_index = 0;
+         root_index < sizeof(relative_roots) / sizeof(relative_roots[0]);
+         ++root_index) {
+        char root[PATH_MAX];
+        if (snprintf(root, sizeof(root), "%s/%s", home, relative_roots[root_index]) < 0) {
+            return 0;
+        }
+        DIR *directory = opendir(root);
+        if (directory == NULL) continue;
+        struct dirent *entry = NULL;
+        while ((entry = readdir(directory)) != NULL) {
+            if (entry->d_name[0] == '.') continue;
+            char candidate[PATH_MAX];
+            int length = snprintf(candidate, sizeof(candidate), "%s/%s", root, entry->d_name);
+            if (
+                length < 1 ||
+                (size_t)length >= sizeof(candidate) ||
+                !repository_is_governed(candidate)
+            ) {
+                continue;
+            }
+            ++matches;
+            if (matches == 1) {
+                (void)memcpy(repository, candidate, (size_t)length + 1);
+            }
+        }
+        (void)closedir(directory);
+    }
+    return matches == 1;
+}
 
 static int connect_backend(void) {
     int socket_fd = socket(AF_INET, SOCK_STREAM, 0);
@@ -265,7 +333,7 @@ int main(void) {
     char python_path[PATH_MAX * 2];
     char control_path[PATH_MAX];
     if (
-        snprintf(repository, sizeof(repository), "%s/Documents/GitHub/Project-Kronos", home) < 0 ||
+        !discover_repository(home, repository) ||
         snprintf(python, sizeof(python), "%s/.venv/bin/python", repository) < 0 ||
         snprintf(browser_entry, sizeof(browser_entry), "%s/tools/kronos_browser.py", repository) < 0 ||
         snprintf(python_path, sizeof(python_path), "%s/src:%s", repository, repository) < 0 ||

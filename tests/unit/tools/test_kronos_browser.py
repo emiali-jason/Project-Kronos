@@ -70,7 +70,11 @@ def test_macos_launcher_is_minimal_double_click_app_without_credentials() -> Non
     source = launcher_source.read_text(encoding="utf-8")
     assert executable.stat().st_mode & 0o111
     assert executable.read_bytes()[:4] in {b"\xcf\xfa\xed\xfe", b"\xfe\xed\xfa\xcf"}
-    assert "Documents/GitHub/Project-Kronos" in source
+    assert "discover_repository" in source
+    assert "Documents/GitHub" in source
+    assert "directory_exists(git_directory)" in source
+    assert "matches == 1" in source
+    assert ".rc02-publication-worktree" not in source
     assert ".venv/bin/python" in source
     assert "tools/kronos_browser.py" in source
     assert "backend_is_ready()" in source
