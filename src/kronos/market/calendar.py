@@ -33,6 +33,9 @@ MARKET_CALENDAR_CONTRACT_ID = "KRONOS-MARKET-CALENDAR-V1"
 MARKET_CALENDAR_CONTRACT_VERSION = "1"
 MARKET_CALENDAR_PUBLICATION_SCHEMA = "KRONOS-MARKET-CALENDAR-PUBLICATION-V1"
 MARKET_CALENDAR_MANIFEST_SCHEMA = "KRONOS-MARKET-CALENDAR-MANIFEST-V1"
+MARKET_SESSION_REGIME_PUBLICATION_SCHEMA = (
+    "KRONOS-MARKET-SESSION-REGIME-PUBLICATION-V1"
+)
 DEFAULT_MARKET_CALENDAR_ROOT = (
     Path(__file__).resolve().parents[3]
     / "data"
@@ -558,6 +561,83 @@ class MarketCalendarPublication:
             raise ValueError("MARKET_CALENDAR_PUBLICATION_INVALID") from error
 
 
+@dataclass(frozen=True, slots=True)
+class MarketSessionRegimePublication:
+    """Effective-dated, instrument-applicable DOMAIN-008 session semantics."""
+
+    regime_identity: str
+    regime_version: str
+    exchange: str
+    segment: str
+    timezone: str
+    effective_date: date
+    source_boundary: datetime
+    official_source: OfficialCalendarSource
+    applicable_canonical_instrument_ids: tuple[str, ...]
+    continuous_open: time
+    continuous_close: time
+    closing_auction_open: time
+    closing_auction_close: time
+    publication_sha256: str
+
+    def __post_init__(self) -> None:
+        if (
+            not _text(self.regime_identity)
+            or not _text(self.regime_version)
+            or self.exchange != "NSE"
+            or not _text(self.segment)
+            or self.timezone != "Asia/Kolkata"
+            or type(self.effective_date) is not date
+            or not _aware(self.source_boundary)
+            or type(self.official_source) is not OfficialCalendarSource
+            or not self.applicable_canonical_instrument_ids
+            or any(not _text(item) for item in self.applicable_canonical_instrument_ids)
+            or len(set(self.applicable_canonical_instrument_ids))
+            != len(self.applicable_canonical_instrument_ids)
+            or self.continuous_open >= self.continuous_close
+            or self.continuous_close != self.closing_auction_open
+            or self.closing_auction_open >= self.closing_auction_close
+            or len(self.publication_sha256) != 64
+        ):
+            raise ValueError("MARKET_SESSION_REGIME_PUBLICATION_INVALID")
+
+
+@dataclass(frozen=True, slots=True)
+class MarketInstrumentSessionProfile:
+    """Subject-applicable schedules without merging CAS into continuous trading."""
+
+    canonical_instrument_id: str
+    continuous_trading: MarketSchedule
+    closing_auction_session: MarketSchedule | None
+    last_continuous_close_identity: str = "LAST_CONTINUOUS_INTRADAY_CLOSE"
+    official_daily_close_identity: str = "OFFICIAL_DAILY_CLOSE"
+    official_daily_close_may_differ: bool = True
+
+    def __post_init__(self) -> None:
+        auction = self.closing_auction_session
+        if (
+            not _text(self.canonical_instrument_id)
+            or type(self.continuous_trading) is not MarketSchedule
+            or (auction is not None and type(auction) is not MarketSchedule)
+            or (
+                auction is not None
+                and (
+                    auction.exchange != self.continuous_trading.exchange
+                    or auction.trading_date != self.continuous_trading.trading_date
+                    or auction.session_identity
+                    == self.continuous_trading.session_identity
+                    or auction.windows[0].window_open
+                    < self.continuous_trading.windows[-1].window_close
+                )
+            )
+            or self.last_continuous_close_identity
+            != "LAST_CONTINUOUS_INTRADAY_CLOSE"
+            or self.official_daily_close_identity != "OFFICIAL_DAILY_CLOSE"
+            or self.official_daily_close_may_differ is not True
+        ):
+            raise ValueError("MARKET_INSTRUMENT_SESSION_PROFILE_INVALID")
+
+
 class MarketCalendarPublisher:
     """Publish exact versioned DOMAIN-008 schedules from checked-in facts."""
 
@@ -566,7 +646,7 @@ class MarketCalendarPublisher:
         if not root.is_absolute():
             raise ValueError("MARKET_CALENDAR_ROOT_INVALID")
         self._root = root
-        self._publications = self._load_manifest()
+        self._publications, self._session_regimes = self._load_manifest()
 
     @property
     def publications(self) -> tuple[MarketCalendarPublication, ...]:
@@ -678,6 +758,128 @@ class MarketCalendarPublisher:
         adapter = NseMarketScheduleAdapter() if exchange == "NSE" else McxMarketScheduleAdapter()
         return adapter.normalize(facts)
 
+    def instrument_session_profile(
+        self,
+        exchange: str,
+        trading_date: date,
+        *,
+        canonical_instrument_id: str,
+        observed_at: datetime,
+    ) -> MarketInstrumentSessionProfile | None:
+        """Publish effective-dated continuous and CAS schedules for one subject."""
+
+        if not _text(canonical_instrument_id):
+            raise ValueError("MARKET_SESSION_PROFILE_REQUEST_INVALID")
+        base = self.schedule(exchange, trading_date, observed_at=observed_at)
+        if base is None:
+            return None
+        regime = next(
+            (
+                item
+                for item in self._session_regimes
+                if item.exchange == exchange
+                and trading_date >= item.effective_date
+                and canonical_instrument_id
+                in item.applicable_canonical_instrument_ids
+            ),
+            None,
+        )
+        if regime is None or not self._regular_window_accepts_regime(base, regime):
+            return MarketInstrumentSessionProfile(canonical_instrument_id, base, None)
+        continuous = self._regime_schedule(
+            base=base,
+            regime=regime,
+            canonical_instrument_id=canonical_instrument_id,
+            session_type="CONTINUOUS_TRADING",
+            opening=regime.continuous_open,
+            closing=regime.continuous_close,
+            observed_at=observed_at,
+        )
+        auction = self._regime_schedule(
+            base=base,
+            regime=regime,
+            canonical_instrument_id=canonical_instrument_id,
+            session_type="CLOSING_AUCTION_SESSION",
+            opening=regime.closing_auction_open,
+            closing=regime.closing_auction_close,
+            observed_at=observed_at,
+        )
+        return MarketInstrumentSessionProfile(
+            canonical_instrument_id,
+            continuous,
+            auction,
+        )
+
+    @staticmethod
+    def _regular_window_accepts_regime(
+        schedule: MarketSchedule,
+        regime: MarketSessionRegimePublication,
+    ) -> bool:
+        if len(schedule.windows) != 1:
+            return False
+        window = schedule.windows[0]
+        return (
+            window.window_open.timetz().replace(tzinfo=None)
+            == regime.continuous_open
+            and window.window_close.timetz().replace(tzinfo=None) >= regime.continuous_close
+        )
+
+    @staticmethod
+    def _regime_schedule(
+        *,
+        base: MarketSchedule,
+        regime: MarketSessionRegimePublication,
+        canonical_instrument_id: str,
+        session_type: str,
+        opening: time,
+        closing: time,
+        observed_at: datetime,
+    ) -> MarketSchedule:
+        zone = ZoneInfo(regime.timezone)
+        session_identity = (
+            f"{regime.regime_identity}:{regime.regime_version}:"
+            f"{base.trading_date.isoformat()}:{canonical_instrument_id}:{session_type}"
+        )
+        window = MarketSessionWindow(
+            f"{session_identity}:WINDOW:1",
+            1,
+            datetime.combine(base.trading_date, opening, zone),
+            datetime.combine(base.trading_date, closing, zone),
+        )
+        facts = AuthoritativeMarketScheduleFacts(
+            market_identity=base.market_identity,
+            exchange=base.exchange,
+            trading_date=base.trading_date,
+            calendar_identity=regime.regime_identity,
+            calendar_version=regime.regime_version,
+            session_identity=session_identity,
+            session_type=session_type,
+            session_open=window.window_open,
+            session_close=window.window_close,
+            timezone=regime.timezone,
+            market_availability=MarketAvailability.CLOSED,
+            as_of=observed_at,
+            source_identity=MARKET_CALENDAR_CONTRACT_ID,
+            source_boundary=regime.source_boundary,
+            freshness_status=ScheduleFreshness.CURRENT,
+            integrity_status=ScheduleIntegrity.VALID,
+            provenance=(
+                *base.provenance,
+                f"session_regime={regime.regime_identity}",
+                f"session_regime_version={regime.regime_version}",
+                f"session_regime_sha256={regime.publication_sha256}",
+                f"effective_date={regime.effective_date.isoformat()}",
+                f"applicable_instrument={canonical_instrument_id}",
+                (
+                    f"official_source={regime.official_source.artifact_identity}|"
+                    f"{regime.official_source.official_uri}"
+                ),
+                f"session_purpose={session_type}",
+            ),
+            windows=(window,),
+        )
+        return NseMarketScheduleAdapter().normalize(facts)
+
     def trading_week(
         self,
         exchange: str,
@@ -709,17 +911,23 @@ class MarketCalendarPublisher:
         if type(day) is not date or not publication.coverage_start <= day <= publication.coverage_end:
             raise ValueError("MARKET_CALENDAR_DATE_OUTSIDE_PUBLICATION")
 
-    def _load_manifest(self) -> Mapping[str, MarketCalendarPublication]:
+    def _load_manifest(
+        self,
+    ) -> tuple[
+        Mapping[str, MarketCalendarPublication],
+        tuple[MarketSessionRegimePublication, ...],
+    ]:
         try:
             manifest = json.loads((self._root / "manifest.json").read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as error:
             raise ValueError("MARKET_CALENDAR_MANIFEST_INVALID") from error
         if (
             type(manifest) is not dict
-            or set(manifest) != {"schema", "publications"}
+            or set(manifest) != {"schema", "publications", "session_regimes"}
             or manifest["schema"] != MARKET_CALENDAR_MANIFEST_SCHEMA
             or type(manifest["publications"]) is not list
             or len(manifest["publications"]) != 2
+            or type(manifest["session_regimes"]) is not list
         ):
             raise ValueError("MARKET_CALENDAR_MANIFEST_INVALID")
         publications: dict[str, MarketCalendarPublication] = {}
@@ -740,7 +948,25 @@ class MarketCalendarPublisher:
             publications[publication.exchange] = publication
         if set(publications) != {"NSE", "MCX"}:
             raise ValueError("MARKET_CALENDAR_PUBLICATION_INCOMPLETE")
-        return MappingProxyType(publications)
+        regimes = tuple(
+            self._load_session_regime(item) for item in manifest["session_regimes"]
+        )
+        if len({item.regime_identity for item in regimes}) != len(regimes):
+            raise ValueError("MARKET_SESSION_REGIME_PUBLICATION_AMBIGUOUS")
+        return MappingProxyType(publications), regimes
+
+    def _load_session_regime(self, item: object) -> MarketSessionRegimePublication:
+        if type(item) is not dict or set(item) != {"file", "sha256"}:
+            raise ValueError("MARKET_CALENDAR_MANIFEST_INVALID")
+        path = self._root / item["file"]
+        try:
+            raw = path.read_bytes()
+        except OSError as error:
+            raise ValueError("MARKET_SESSION_REGIME_PUBLICATION_UNAVAILABLE") from error
+        digest = sha256(raw).hexdigest()
+        if digest != item["sha256"]:
+            raise ValueError("MARKET_SESSION_REGIME_PUBLICATION_DIGEST_MISMATCH")
+        return _parse_session_regime(raw, digest)
 
 
 def _parse_publication(raw: bytes, digest: str) -> MarketCalendarPublication:
@@ -785,6 +1011,87 @@ def _parse_publication(raw: bytes, digest: str) -> MarketCalendarPublication:
         )
     except (KeyError, TypeError, ValueError, AttributeError) as error:
         raise ValueError("MARKET_CALENDAR_PUBLICATION_INVALID") from error
+
+
+def _parse_session_regime(
+    raw: bytes,
+    digest: str,
+) -> MarketSessionRegimePublication:
+    try:
+        payload = json.loads(raw)
+        required = {
+            "schema",
+            "regime_identity",
+            "regime_version",
+            "exchange",
+            "segment",
+            "timezone",
+            "effective_date",
+            "source_boundary",
+            "official_source",
+            "applicable_canonical_instrument_ids",
+            "continuous_trading",
+            "closing_auction_session",
+            "daily_close_semantics",
+        }
+        if type(payload) is not dict or set(payload) != required:
+            raise ValueError
+        source = payload["official_source"]
+        continuous = payload["continuous_trading"]
+        auction = payload["closing_auction_session"]
+        close_semantics = payload["daily_close_semantics"]
+        if (
+            payload["schema"] != MARKET_SESSION_REGIME_PUBLICATION_SCHEMA
+            or type(source) is not dict
+            or set(source)
+            != {
+                "artifact_identity",
+                "title",
+                "official_uri",
+                "reference",
+                "publication_date",
+            }
+            or type(payload["applicable_canonical_instrument_ids"]) is not list
+            or type(continuous) is not dict
+            or set(continuous) != {"session_type", "open", "close"}
+            or continuous["session_type"] != "CONTINUOUS_TRADING"
+            or type(auction) is not dict
+            or set(auction) != {"session_type", "open", "close"}
+            or auction["session_type"] != "CLOSING_AUCTION_SESSION"
+            or close_semantics
+            != {
+                "last_continuous_close": "LAST_CONTINUOUS_INTRADAY_CLOSE",
+                "official_daily_close": "OFFICIAL_DAILY_CLOSE",
+                "equality_required": False,
+            }
+        ):
+            raise ValueError
+        return MarketSessionRegimePublication(
+            regime_identity=payload["regime_identity"],
+            regime_version=payload["regime_version"],
+            exchange=payload["exchange"],
+            segment=payload["segment"],
+            timezone=payload["timezone"],
+            effective_date=date.fromisoformat(payload["effective_date"]),
+            source_boundary=datetime.fromisoformat(payload["source_boundary"]),
+            official_source=OfficialCalendarSource(
+                artifact_identity=source["artifact_identity"],
+                title=source["title"],
+                official_uri=source["official_uri"],
+                reference=source["reference"],
+                publication_date=date.fromisoformat(source["publication_date"]),
+            ),
+            applicable_canonical_instrument_ids=tuple(
+                payload["applicable_canonical_instrument_ids"]
+            ),
+            continuous_open=time.fromisoformat(continuous["open"]),
+            continuous_close=time.fromisoformat(continuous["close"]),
+            closing_auction_open=time.fromisoformat(auction["open"]),
+            closing_auction_close=time.fromisoformat(auction["close"]),
+            publication_sha256=digest,
+        )
+    except (KeyError, TypeError, ValueError, AttributeError) as error:
+        raise ValueError("MARKET_SESSION_REGIME_PUBLICATION_INVALID") from error
 
 
 def _published_session(day: str, item: object) -> PublishedTradingSession:
@@ -837,10 +1144,13 @@ __all__ = [
     "MARKET_CALENDAR_CONTRACT_ID",
     "MARKET_CALENDAR_CONTRACT_VERSION",
     "MARKET_CALENDAR_SCHEMA",
+    "MARKET_SESSION_REGIME_PUBLICATION_SCHEMA",
     "MarketCalendarEntry",
     "MarketCalendarPublication",
     "MarketCalendarPublisher",
     "MarketCalendarRegistrySource",
+    "MarketInstrumentSessionProfile",
+    "MarketSessionRegimePublication",
     "OfficialCalendarSource",
     "PublishedTradingSession",
     "PublishedTradingWindow",

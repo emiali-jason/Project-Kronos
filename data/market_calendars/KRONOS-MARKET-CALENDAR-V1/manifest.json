@@ -9,5 +9,11 @@
       "sha256": "6c1ae4fe581b99628b0abcec67f3c85488a443a1639512b56f197813d252f4d2"
     }
   ],
-  "schema": "KRONOS-MARKET-CALENDAR-MANIFEST-V1"
+  "schema": "KRONOS-MARKET-CALENDAR-MANIFEST-V1",
+  "session_regimes": [
+    {
+      "file": "NSE-CLOSING-AUCTION-SESSION-2026.v1.json",
+      "sha256": "c1f0c887ff61be64e4ad875bd50b1bb6682080815de2206917e661c65cddb08a"
+    }
+  ]
 }
