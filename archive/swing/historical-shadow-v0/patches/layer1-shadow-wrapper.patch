@@ -1,0 +1,29 @@
+diff --git a/src/kronos/swing/v1/layer1.py b/src/kronos/swing/v1/layer1.py
+index 5faa723..8c23fa9 100644
+--- a/src/kronos/swing/v1/layer1.py
++++ b/src/kronos/swing/v1/layer1.py
+@@ -370,1 +370,21 @@
++def classify_probable_from_existing_evidence(
++    setup: V1Setup,
++    structural: StructuralEvidence,
++    moving_average: MovingAverageEvidence,
++    candle: CandleEvidence,
++    volatility: VolatilityEvidence,
++    impulse: ImpulseMaturityEvidence,
++) -> tuple[ProbableClassification, V1Direction, tuple[str, ...]]:
++    """Reuse the frozen Layer-1 relational predicate outside Daily orchestration."""
++
++    return _form_probable(
++        setup,
++        structural,
++        moving_average,
++        candle,
++        volatility,
++        impulse,
++    )
++
++
+ def _unavailable_instrument(
+@@ -582 +602 @@
+-__all__ = ["analyze_v1_layer1"]
++__all__ = ["analyze_v1_layer1", "classify_probable_from_existing_evidence"]
