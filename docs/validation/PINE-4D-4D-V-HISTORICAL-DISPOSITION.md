@@ -1,18 +1,18 @@
 # Pine 4D / 4D-V Historical Disposition
 
-- **Status:** Final Historical Closure
+- **Status:** Final Historical Closure — Reconciled After Recovery
 - **Date:** 2026-08-18
 - **Authority:** Pine Engineering Architect
 - **Implementation Authority:** None
 
 ## Workstreams
 
-- **4D Alert/Webhook Publication:** PAUSED / NOT CURRENT
-- **4D-V Visible Panel:** REJECTED / NOT CURRENT
+- **4D Alert/Webhook Publication:** PAUSED / HISTORICAL / NON-PRODUCTION
+- **4D-V Visible Panel:** REJECTED / HISTORICAL / NON-PRODUCTION
 
-These workstreams are not current architecture or Production. This administrative disposition does not establish that their unavailable historical content was analytically wrong.
+These workstreams are not current architecture or Production. Recovery does not activate, approve, or publish them, and this historical disposition does not establish that their content was analytically wrong.
 
-## Assigned Historical Paths
+## Recovered Original Paths
 
 1. `research/swing/pine-publication/MAIN-SLICE-4D-PUBLICATION-PROVENANCE.md`
 2. `research/swing/pine-publication/MAIN-SLICE-4D-V-VISIBLE-PANEL-PROVENANCE.md`
@@ -27,32 +27,42 @@ These workstreams are not current architecture or Production. This administrativ
 11. `tests/unit/swing/v1/test_pine_alert_publication_candidates.py`
 12. `tests/unit/swing/v1/test_visible_pine_evidence_panel.py`
 
-## Repository Audit Result
+## Recovery Chronology
 
-**Result:** IRRETRIEVABLY UNAVAILABLE / NOT FOUND
+### Initial audit
 
-Recovery searches covered:
+The initial audit could not locate the twelve assigned artifacts in the inspected working tree, Git history, branches, tags, stashes, unreachable objects, or wider inspected project filesystem. The operational result at that time was **IRRETRIEVABLY UNAVAILABLE / NOT FOUND**. That result accurately records what the initial audit established and is not erased by later recovery.
 
-- working tree;
-- Git history;
-- branches;
-- tags;
-- stashes;
-- unreachable Git objects; and
-- the wider inspected project filesystem.
+No active repository reference, import, or consumer was found. Current Swing had no dependency on the assigned paths and passed regression without them.
 
-No active repository reference, import, or consumer was found. Current Swing has no dependency on the assigned paths, and the current Swing regression passes without them.
+### Subsequent recovery
+
+All twelve original artifacts were later found in the authoritative worktree as untracked files.
+
+### Recovery determination
+
+The recovered files contain unique historical provenance, Pine candidates, a Python research module, a fixture, and validation tests. They are original recovered files; no reconstruction was performed.
+
+- **Recovered original files:** YES
+- **Reconstruction:** NO
+- **Production authority:** NONE
+- **Current architecture authority:** NONE
 
 ## Final Disposition
 
-**Disposition:** DELETED / UNAVAILABLE HISTORICAL WORK
+**Disposition:** ARCHIVED / HISTORICAL / NON-PRODUCTION / NON-AUTHORITATIVE
 
-- The assigned paths were never governed into the current repository.
-- They are not current architecture, Production, or a current Swing dependency.
-- Reconstruction is prohibited because their historical source cannot be established faithfully.
-- No synthetic archive, placeholder, or replacement at the former paths is authorized.
+The recovered artifacts are preserved under:
 
-Current architecture remains **Integrated Swing Visual Review**. Any future webhook-publication or visible-panel work requires fresh explicit architecture and product authority. The unavailable historical artifacts must not be treated as an implementation baseline.
+`archive/KRONOS_PINE_RESEARCH/4D-4D-V-HISTORICAL/`
+
+The byte-preserving path and SHA-256 record is:
+
+`archive/KRONOS_PINE_RESEARCH/4D-4D-V-HISTORICAL/RECOVERY-MANIFEST.md`
+
+The original loose working copies were removed after archival by moving the recovered files to their recorded archive destinations. The archive is historical evidence only and must not be treated as current Production Pine, current V1 evidence authority, Native Review, Visual V2, Readiness, or broker authority.
+
+Current architecture remains **Integrated Swing Visual Review**. Any future webhook-publication or visible-panel work requires fresh explicit architecture and product authority.
 
 ## Current Production Pine
 

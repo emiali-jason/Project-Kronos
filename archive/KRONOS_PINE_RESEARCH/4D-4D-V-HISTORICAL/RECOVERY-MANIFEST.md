@@ -1,0 +1,22 @@
+# Recovered 4D / 4D-V Artifact Manifest
+
+Recovery status for every entry: **RECOVERED ORIGINAL / BYTE-PRESERVED**.
+
+Final architectural disposition for every entry: **ARCHIVED / HISTORICAL / NON-PRODUCTION / NON-AUTHORITATIVE**.
+
+| # | Original path | Archive path | SHA-256 | Workstream | Role |
+| ---: | --- | --- | --- | --- | --- |
+| 1 | `research/swing/pine-publication/MAIN-SLICE-4D-PUBLICATION-PROVENANCE.md` | `archive/KRONOS_PINE_RESEARCH/4D-4D-V-HISTORICAL/4D-ALERT-WEBHOOK/provenance/MAIN-SLICE-4D-PUBLICATION-PROVENANCE.md` | `c0d55155ebe540fba4e4d01e4015dc11daef863939fd06140466c29d85f05a23` | 4D Alert/Webhook | Publication provenance record |
+| 2 | `research/swing/pine-publication/MAIN-SLICE-4D-V-VISIBLE-PANEL-PROVENANCE.md` | `archive/KRONOS_PINE_RESEARCH/4D-4D-V-HISTORICAL/4D-V-VISIBLE-PANEL/provenance/MAIN-SLICE-4D-V-VISIBLE-PANEL-PROVENANCE.md` | `7acd3791f76d6f617f8b50eb03e1cc06371c764e33c87aa44a0300ff566f3e81` | 4D-V Visible Panel | Panel provenance record |
+| 3 | `research/swing/pine-publication/TRADINGVIEW-4D-ALERT-CONFIGURATION.md` | `archive/KRONOS_PINE_RESEARCH/4D-4D-V-HISTORICAL/4D-ALERT-WEBHOOK/configuration/TRADINGVIEW-4D-ALERT-CONFIGURATION.md` | `b676b907f7208a7b22ca7a5492714fe698d11d6f0e8204d9f910c13a6a57b95b` | 4D Alert/Webhook | Sponsor alert configuration |
+| 4 | `research/swing/pine-publication/TRADINGVIEW-4D-V-SPONSOR-VALIDATION.md` | `archive/KRONOS_PINE_RESEARCH/4D-4D-V-HISTORICAL/4D-V-VISIBLE-PANEL/validation/TRADINGVIEW-4D-V-SPONSOR-VALIDATION.md` | `dcd0db0994ad9786b1a811f062887c740465058734623a1bc975238e0c322ec8` | 4D-V Visible Panel | Sponsor validation instructions |
+| 5 | `research/swing/pine-publication/candidates/4D-MCX/KRONOS_FUTURES_V2_PINE_EVIDENCE_V1_1_ALERT_CANDIDATE.pine` | `archive/KRONOS_PINE_RESEARCH/4D-4D-V-HISTORICAL/4D-ALERT-WEBHOOK/candidates/MCX/KRONOS_FUTURES_V2_PINE_EVIDENCE_V1_1_ALERT_CANDIDATE.pine` | `6bf7b7bd58a4bc9c839737a6ec0c258391b3a7c2a087c5cd333c5d8513eda73f` | 4D Alert/Webhook | MCX alert publication candidate Pine |
+| 6 | `research/swing/pine-publication/candidates/4D-NSE/KRONOS_NSE_V1_SR1_PINE_EVIDENCE_V1_1_ALERT_CANDIDATE.pine` | `archive/KRONOS_PINE_RESEARCH/4D-4D-V-HISTORICAL/4D-ALERT-WEBHOOK/candidates/NSE/KRONOS_NSE_V1_SR1_PINE_EVIDENCE_V1_1_ALERT_CANDIDATE.pine` | `42f527dbd5c20b8c6bd0bdcf94b8635dbc76bd3fe85c76c83916aa8302542136` | 4D Alert/Webhook | NSE alert publication candidate Pine |
+| 7 | `research/swing/pine-publication/candidates/4D-V-MCX/KRONOS_FUTURES_V2_VISIBLE_EVIDENCE_V1_CANDIDATE.pine` | `archive/KRONOS_PINE_RESEARCH/4D-4D-V-HISTORICAL/4D-V-VISIBLE-PANEL/candidates/MCX/KRONOS_FUTURES_V2_VISIBLE_EVIDENCE_V1_CANDIDATE.pine` | `e19f40903139272acc51abdb7bc87007fee53daf8f5e3f93f4ad8254d5e4d1cd` | 4D-V Visible Panel | MCX visible-panel candidate Pine |
+| 8 | `research/swing/pine-publication/candidates/4D-V-NSE/KRONOS_NSE_V1_SR1_VISIBLE_EVIDENCE_V1_CANDIDATE.pine` | `archive/KRONOS_PINE_RESEARCH/4D-4D-V-HISTORICAL/4D-V-VISIBLE-PANEL/candidates/NSE/KRONOS_NSE_V1_SR1_VISIBLE_EVIDENCE_V1_CANDIDATE.pine` | `a351e0fe7adc9b01e35023a124b7e41582790159d28f8c2ea350d2791ec4a52b` | 4D-V Visible Panel | NSE visible-panel candidate Pine |
+| 9 | `src/kronos/swing/v1/visible_pine_evidence.py` | `archive/KRONOS_PINE_RESEARCH/4D-4D-V-HISTORICAL/SHARED-CONTRACT-AND-TESTS/source/visible_pine_evidence.py` | `cd1ab76ba5f4631181f7994033bbb47c1611c047b7606c050b5c19e9adf0192b` | Shared 4D / 4D-V research | Historical visible-evidence Python module |
+| 10 | `tests/fixtures/swing_v1_visible_pine_evidence.py` | `archive/KRONOS_PINE_RESEARCH/4D-4D-V-HISTORICAL/SHARED-CONTRACT-AND-TESTS/fixtures/swing_v1_visible_pine_evidence.py` | `7e8f00bbe045c1813ae45e972448ad5f04b5a5fab46881a5efa801edd0c57019` | Shared 4D / 4D-V research | Historical known-truth fixture |
+| 11 | `tests/unit/swing/v1/test_pine_alert_publication_candidates.py` | `archive/KRONOS_PINE_RESEARCH/4D-4D-V-HISTORICAL/SHARED-CONTRACT-AND-TESTS/tests/test_pine_alert_publication_candidates.py` | `69a05748579f8ebf1a05f8492b4b3adbf77a1728daecefdb4722c52fe8d716d2` | 4D Alert/Webhook | Historical publication validation tests |
+| 12 | `tests/unit/swing/v1/test_visible_pine_evidence_panel.py` | `archive/KRONOS_PINE_RESEARCH/4D-4D-V-HISTORICAL/SHARED-CONTRACT-AND-TESTS/tests/test_visible_pine_evidence_panel.py` | `2f955cd2dbf3007cf3902f46acc6d3a07f46921abe27c19ea8011e672f4475a1` | 4D-V Visible Panel | Historical visible-panel validation tests |
+
+No recovered artifact is current architecture or implementation authority. Reconstruction performed: **NO**.
