@@ -9,7 +9,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import logging
 import re
-from threading import Thread
+from threading import Lock, Thread
 from urllib.parse import parse_qs, unquote, urlsplit
 
 from kronos.application.swing_opportunities import SwingOpportunitiesApplication
@@ -174,6 +174,9 @@ class KronosBrowserServer(ThreadingHTTPServer):
             chart_analyst_activation or ChartAnalystV2ActivationService()
         )
         self.restart_control = restart_control
+        self._shutdown_lock = Lock()
+        self._shutdown_started = False
+        self._active_sponsor_work = 0
         self.product_routes = (
             product_routes
             if product_routes is not None
@@ -283,10 +286,52 @@ class KronosBrowserServer(ThreadingHTTPServer):
         super().__init__(address, _BrowserHandler)
 
     def server_close(self) -> None:
+        self.native_review.close()
+        self.step32_workflow.close()
         self.application.close()
         if self.restart_control is not None:
             self.restart_control.remove()
         super().server_close()
+
+    def admit_sponsor_work(self) -> bool:
+        """Atomically reject new state-changing work after exit begins."""
+
+        with self._shutdown_lock:
+            if self._shutdown_started:
+                return False
+            self._active_sponsor_work += 1
+            return True
+
+    def finish_sponsor_work(self) -> None:
+        with self._shutdown_lock:
+            self._active_sponsor_work -= 1
+
+    def begin_sponsor_shutdown(self) -> str:
+        """Claim one bounded shutdown after proving this process owns the runtime."""
+
+        with self._shutdown_lock:
+            if self._shutdown_started:
+                return "ALREADY_SHUTTING_DOWN"
+            if (
+                self.restart_control is None
+                or not self.restart_control.owns_current_process()
+            ):
+                return "RUNTIME_OWNERSHIP_UNVERIFIED"
+            if self._active_sponsor_work:
+                return "SPONSOR_WORK_IN_PROGRESS"
+            snapshot = self.application.snapshot()
+            if (
+                snapshot.analysis_state.value == "RUNNING"
+                or snapshot.provider_state.value == "CONNECTING"
+                or self.application.live_monitoring_result().state.value == "TESTING"
+                or any(
+                    outcome.state.value == "ANALYZING"
+                    for outcome in self.native_review.snapshot().analysis_outcomes
+                )
+            ):
+                return "SPONSOR_WORK_IN_PROGRESS"
+            self._shutdown_started = True
+            return "SHUTDOWN_ACCEPTED"
 
 
 class _BrowserHandler(BaseHTTPRequestHandler):
@@ -488,6 +533,18 @@ class _BrowserHandler(BaseHTTPRequestHandler):
         if not self._same_origin():
             self._text(HTTPStatus.FORBIDDEN, "Request rejected.")
             return
+        if path == "/control/exit":
+            self._sponsor_exit()
+            return
+        if not self.server.admit_sponsor_work():
+            self._text(HTTPStatus.SERVICE_UNAVAILABLE, "KRONOS is shutting down.")
+            return
+        try:
+            self._dispatch_post(path)
+        finally:
+            self.server.finish_sponsor_work()
+
+    def _dispatch_post(self, path: str) -> None:
         if path == "/provider/connect":
             self.server.application.connect_provider()
             self._redirect("/swing/opportunities")
@@ -613,6 +670,41 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             self._record_sponsor_decision(decision_match.group(1))
             return
         self._text(HTTPStatus.NOT_FOUND, "Not found.")
+
+    def _sponsor_exit(self) -> None:
+        if self.headers.get("Content-Length") not in {None, "0"}:
+            self._text(HTTPStatus.BAD_REQUEST, "Request rejected.")
+            return
+        result = self.server.begin_sponsor_shutdown()
+        if result not in {"SHUTDOWN_ACCEPTED", "ALREADY_SHUTTING_DOWN"}:
+            self._text(
+                HTTPStatus.CONFLICT,
+                "KRONOS COULD NOT EXIT CLEANLY\n"
+                f"Safe shutdown was not confirmed: {result}.\n"
+                "No unrelated process was terminated.",
+            )
+            return
+        body = (
+            "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">"
+            "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
+            "<title>KRONOS is shutting down</title></head>"
+            "<body><main><h1>KRONOS IS SHUTTING DOWN SAFELY</h1>"
+            "<p>You may close this window.<br>Launch KRONOS.app to start again.</p>"
+            "</main></body></html>"
+        ).encode("utf-8")
+        self.send_response(HTTPStatus.ACCEPTED)
+        self._security_headers()
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+        self.wfile.flush()
+        if result == "SHUTDOWN_ACCEPTED":
+            Thread(
+                target=self.server.shutdown,
+                name="kronos-sponsor-exit",
+                daemon=True,
+            ).start()
 
     def _record_sponsor_decision(self, candidate_id: str) -> None:
         content_type = self.headers.get("Content-Type", "").split(";", 1)[0]

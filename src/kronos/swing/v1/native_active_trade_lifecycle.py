@@ -757,6 +757,15 @@ class ActiveLifecycleMonitoringCoordinator:
         if consumer is not None:
             consumer.close()
 
+    def close(self) -> None:
+        """Close owned transports without changing persisted position state."""
+
+        with self._lock:
+            consumers = tuple(self._consumers.values())
+            self._consumers.clear()
+        for consumer in consumers:
+            consumer.close()
+
     def restore(
         self,
         capability: object,
@@ -791,11 +800,14 @@ class _LifecycleMonitoringConsumer:
         self.clock = clock
         self.on_closed = on_closed
         self.session = None
+        self.closed = False
 
     def bind(self, session) -> None:  # type: ignore[no-untyped-def]
         self.session = session
 
     def on_market_tick(self, tick: ProviderMarketTick) -> None:
+        if self.closed:
+            return
         if tick.instrument != self.instrument:
             raise ValueError("ACTIVE_LIFECYCLE_INSTRUMENT_BINDING_MISMATCH")
         schedule = self.calendar.schedule(
@@ -814,6 +826,8 @@ class _LifecycleMonitoringConsumer:
         return None
 
     def on_connection_state(self, state: MonitoringConnectionState) -> None:
+        if self.closed:
+            return
         if state in {MonitoringConnectionState.DISCONNECTED, MonitoringConnectionState.CONTEXT_INCOMPLETE}:
             position = self.service._require(self.position_id)
             if position.state not in {ActiveLifecycleState.CLOSED, ActiveLifecycleState.MONITORING_UNAVAILABLE}:
@@ -822,6 +836,7 @@ class _LifecycleMonitoringConsumer:
                 )
 
     def close(self) -> None:
+        self.closed = True
         session, self.session = self.session, None
         if session is None:
             return

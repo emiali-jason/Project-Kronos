@@ -779,6 +779,11 @@ class NativeReviewWorkflow:
     def detach_lifecycle_monitoring(self, position_id: str) -> None:
         self._active_lifecycle_monitoring.detach(position_id)
 
+    def close(self) -> None:
+        """Release process-owned monitoring without mutating retained evidence."""
+
+        self._active_lifecycle_monitoring.close()
+
     def restore_lifecycle_monitoring(self, capability: object, instrument_resolver):  # type: ignore[no-untyped-def]
         return self._active_lifecycle_monitoring.restore(capability, instrument_resolver)
 

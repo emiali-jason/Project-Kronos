@@ -1,4 +1,5 @@
 from pathlib import Path
+import os
 
 import pytest
 
@@ -6,6 +7,26 @@ from kronos.browser.restart_control import (
     BACKEND_CONTROL_SCHEMA,
     BrowserBackendRestartControl,
 )
+
+
+def test_control_proves_only_matching_current_process_record(tmp_path: Path) -> None:
+    control = BrowserBackendRestartControl.create(
+        tmp_path / "browser.control",
+        process_id=os.getpid(),
+        token="a" * 64,
+    )
+    assert control.owns_current_process()
+    control.path.write_text(
+        f"{BACKEND_CONTROL_SCHEMA}\n{os.getpid()}\n{'b' * 64}\n",
+        encoding="ascii",
+    )
+    assert not control.owns_current_process()
+    other = BrowserBackendRestartControl(
+        control.path,
+        os.getpid() + 1,
+        "b" * 64,
+    )
+    assert not other.owns_current_process()
 
 
 def test_control_record_is_private_process_bound_and_removable(tmp_path) -> None:

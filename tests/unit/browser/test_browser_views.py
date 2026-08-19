@@ -76,6 +76,12 @@ def test_opportunities_has_frozen_navigation_and_lifecycle_shell() -> None:
     ):
         assert label in rendered
     assert "Placeholder" not in rendered
+    assert "EXIT KRONOS" in rendered
+    assert "EXIT KRONOS?" in rendered
+    assert "This will safely stop KRONOS and its runtime services." in rendered
+    assert "No trade or broker order will be created." in rendered
+    assert 'action="/control/exit"' in rendered
+    assert rendered.index("EXIT KRONOS?</b>") < rendered.index('action="/control/exit"')
 
 
 def test_live_monitoring_settings_distinguishes_pass_no_data_and_disconnected() -> None:

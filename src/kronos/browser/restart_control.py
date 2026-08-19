@@ -63,6 +63,19 @@ class BrowserBackendRestartControl:
             hmac.compare_digest(token, self._token)
         )
 
+    def owns_current_process(self) -> bool:
+        """Prove that this control record belongs to the calling KRONOS process."""
+
+        if self.process_id != os.getpid():
+            return False
+        try:
+            return hmac.compare_digest(
+                self.path.read_text(encoding="ascii"),
+                self._serialized(),
+            )
+        except OSError:
+            return False
+
     def remove(self) -> None:
         """Remove only this process's still-matching control record."""
 

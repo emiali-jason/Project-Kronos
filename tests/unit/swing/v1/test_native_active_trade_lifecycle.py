@@ -320,3 +320,39 @@ def test_monitoring_coordinator_subscribes_once_ignores_order_stream_and_stops_c
     assert service.snapshot().positions[0].state is ActiveLifecycleState.CLOSED
     assert capability.session.closed is True
     assert coordinator.active_position_ids == ()
+
+
+def test_monitoring_shutdown_closes_transport_without_mutating_position(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    result, plan, *_ = _go(SponsorTradeChoice.PAPER)
+    service = ActiveTradeLifecycleService(LocalActiveTradeLifecycleStore(tmp_path.resolve()))
+    position = service.register(result, plan)
+    instrument = InstrumentRecord("KITE", "NSE", "NSE", "IOC", "IOC", "EQ", None)
+
+    class Session:
+        def __init__(self, consumer): self.consumer = consumer; self.closed = False  # type: ignore[no-untyped-def]
+        def subscribe(self, _values): pass  # type: ignore[no-untyped-def]
+        def connect(self): pass
+        def unsubscribe(self, _values): pass  # type: ignore[no-untyped-def]
+        def disconnect(self):
+            self.closed = True
+            self.consumer.on_connection_state(MonitoringConnectionState.DISCONNECTED)
+
+    class Capability:
+        active = True
+        def open_monitoring_session(self, consumer):  # type: ignore[no-untyped-def]
+            self.session = Session(consumer)
+            return self.session
+
+    capability = Capability()
+    coordinator = ActiveLifecycleMonitoringCoordinator(
+        service, MarketCalendarPublisher(), clock=lambda: NOW,
+    )
+    coordinator.attach(position.position_id, capability, instrument)
+    before = service.snapshot()
+    coordinator.close()
+    assert capability.session.closed is True
+    assert coordinator.active_position_ids == ()
+    assert service.snapshot() == before
+    capability.session.consumer.on_market_tick(object())
+    coordinator.close()
+    assert service.snapshot() == before

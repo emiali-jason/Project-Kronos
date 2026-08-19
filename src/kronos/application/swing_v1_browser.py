@@ -382,6 +382,15 @@ class SwingV1BrowserOperationalization:
             "",
         )
 
+    def close(self) -> None:
+        """Release owned monitoring sessions without changing lifecycle records."""
+
+        with self._lock:
+            consumers = tuple(self._monitoring.values())
+            self._monitoring.clear()
+        for consumer in consumers:
+            consumer.close(preserve_state=True)
+
     def record_sponsor_choice(
         self,
         browser_key: str,
@@ -547,6 +556,8 @@ class _CandidateMonitoringConsumer:
         self._session = session
 
     def on_market_tick(self, tick: ProviderMarketTick) -> None:
+        if self._closed:
+            return
         try:
             if type(tick) is not ProviderMarketTick or tick.instrument != self._instrument:
                 raise ValueError("INSTRUMENT_BINDING_MISMATCH")
@@ -627,6 +638,8 @@ class _CandidateMonitoringConsumer:
         """Order evidence never enters objective-model monitoring."""
 
     def on_connection_state(self, state: MonitoringConnectionState) -> None:
+        if self._closed:
+            return
         reason = (
             "REVIEW_REQUIRED_DATA_GAP"
             if state in {
@@ -637,7 +650,7 @@ class _CandidateMonitoringConsumer:
         )
         self._workflow._mark_monitoring(self._browser_key, state, reason)
 
-    def close(self) -> None:
+    def close(self, *, preserve_state: bool = False) -> None:
         if self._closed or self._session is None:
             return
         self._closed = True
@@ -645,11 +658,12 @@ class _CandidateMonitoringConsumer:
             self._session.unsubscribe((self._instrument,))  # type: ignore[attr-defined]
         finally:
             self._session.disconnect()  # type: ignore[attr-defined]
-            self._workflow._mark_monitoring(
-                self._browser_key,
-                MonitoringConnectionState.DISCONNECTED,
-                "",
-            )
+            if not preserve_state:
+                self._workflow._mark_monitoring(
+                    self._browser_key,
+                    MonitoringConnectionState.DISCONNECTED,
+                    "",
+                )
 
 
 def _submission_type(

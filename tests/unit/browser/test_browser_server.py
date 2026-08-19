@@ -2,6 +2,8 @@ from dataclasses import replace
 from http.client import HTTPConnection
 from threading import Thread
 import json
+import os
+import socket
 
 import pytest
 
@@ -335,6 +337,109 @@ def test_restart_control_rejects_wrong_process_or_token(tmp_path) -> None:
             assert thread.is_alive()
     finally:
         server.shutdown(); server.server_close(); thread.join()
+
+
+def test_sponsor_exit_is_same_origin_process_owned_and_releases_port(tmp_path) -> None:
+    control = BrowserBackendRestartControl.create(
+        tmp_path / "browser.control",
+        process_id=os.getpid(),
+        token="a" * 64,
+    )
+    app = SwingOpportunitiesApplication(_Provider, initial_snapshot=_ready())
+    server = create_browser_server(app, port=0, restart_control=control)
+    port = server.server_port
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    authority = f"127.0.0.1:{port}"
+    evidence_before = app.completed_analysis_evidence()
+    status, _, body = _request(
+        server,
+        "POST",
+        "/control/exit",
+        headers={
+            "Host": authority,
+            "Origin": f"http://{authority}",
+            "Content-Length": "0",
+        },
+    )
+    assert status == 202
+    assert "KRONOS IS SHUTTING DOWN SAFELY" in body
+    assert "Launch KRONOS.app to start again" in body
+    thread.join(timeout=3)
+    assert not thread.is_alive()
+    server.server_close()
+    assert not control.path.exists()
+    assert app.completed_analysis_evidence() == evidence_before
+    probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        assert probe.connect_ex(("127.0.0.1", port)) != 0
+    finally:
+        probe.close()
+
+
+def test_sponsor_exit_rejects_foreign_origin_body_and_unverified_ownership(tmp_path) -> None:
+    control = BrowserBackendRestartControl.create(
+        tmp_path / "browser.control",
+        process_id=os.getpid(),
+        token="a" * 64,
+    )
+    server = create_browser_server(
+        SwingOpportunitiesApplication(_Provider, initial_snapshot=_ready()),
+        port=0,
+        restart_control=control,
+    )
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    authority = f"127.0.0.1:{server.server_port}"
+    try:
+        assert _request(
+            server, "POST", "/control/exit",
+            headers={"Host": authority, "Origin": "http://evil.example"},
+        )[0] == 403
+        assert _request(
+            server, "POST", "/control/exit",
+            headers={
+                "Host": authority,
+                "Origin": f"http://{authority}",
+                "Content-Length": "5",
+            },
+            body="pid=1",
+        )[0] == 400
+        control.path.write_text("invalid\n", encoding="ascii")
+        status, _, body = _request(
+            server, "POST", "/control/exit",
+            headers={
+                "Host": authority,
+                "Origin": f"http://{authority}",
+                "Content-Length": "0",
+            },
+        )
+        assert status == 409
+        assert "RUNTIME_OWNERSHIP_UNVERIFIED" in body
+        assert "No unrelated process was terminated" in body
+        assert thread.is_alive()
+    finally:
+        server.shutdown(); server.server_close(); thread.join()
+
+
+def test_sponsor_exit_is_bounded_and_blocks_new_work(tmp_path) -> None:
+    control = BrowserBackendRestartControl.create(
+        tmp_path / "browser.control",
+        process_id=os.getpid(),
+        token="a" * 64,
+    )
+    server = create_browser_server(
+        SwingOpportunitiesApplication(_Provider, initial_snapshot=_ready()),
+        port=0,
+        restart_control=control,
+    )
+    assert server.admit_sponsor_work()
+    assert server.begin_sponsor_shutdown() == "SPONSOR_WORK_IN_PROGRESS"
+    server.finish_sponsor_work()
+    assert server.begin_sponsor_shutdown() == "SHUTDOWN_ACCEPTED"
+    assert server.begin_sponsor_shutdown() == "ALREADY_SHUTTING_DOWN"
+    assert not server.admit_sponsor_work()
+    server.server_close()
 
 
 def test_status_exposes_only_bounded_sanitized_analysis_diagnostic(
