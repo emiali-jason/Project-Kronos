@@ -31,6 +31,7 @@ from kronos.application.swing_native_review import (
     NativeReviewRunState,
     NativeReviewWorkflowSnapshot,
 )
+from kronos.application.swing_progression_watch import SwingProgressionWatchSnapshot
 from kronos.application.swing_v1_browser import (
     BrowserCandidateRecord,
     BrowserStep32Snapshot,
@@ -86,6 +87,11 @@ from kronos.swing.v1.native_readiness import (
     NativeLayer2ReadinessRecord,
     NativeReadinessState,
 )
+from kronos.swing.v1.progression_watch import (
+    ProgressionRequirementState,
+    ProgressionWatchState,
+    tradingview_instruction,
+)
 
 
 _NAVIGATION = (
@@ -122,6 +128,7 @@ a{color:inherit;text-decoration:none}.app{display:grid;grid-template-columns:218
 .analysis-details{display:grid;gap:12px;max-width:1180px}.analysis-section{border:1px solid var(--line);background:rgba(6,23,37,.88);border-radius:10px;padding:16px}.analysis-section h2{margin:0 0 10px;color:var(--blue);font-size:15px}.analysis-facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.analysis-fact{border-left:2px solid #28506a;padding:5px 9px;font-size:11px}.analysis-fact span{display:block;color:var(--muted);font-size:9px;letter-spacing:.06em;text-transform:uppercase}.analysis-table{width:100%;border-collapse:collapse;font-size:11px}.analysis-table th,.analysis-table td{text-align:left;vertical-align:top;border-top:1px solid var(--line);padding:7px}.analysis-table th{color:var(--muted);font-size:9px;letter-spacing:.05em}.analysis-decision{font-size:18px;font-weight:800}.analysis-next{border-left:3px solid var(--amber)}
 .missing-evidence{display:block;color:var(--amber);font-size:10px;margin-top:5px}.missing-evidence strong{color:#ffd98c}.blocker-list{margin:8px 0 0;padding-left:18px;color:var(--muted);font-size:11px}
 .native-opportunity{padding:10px 11px;margin-top:7px}.native-opportunity .opp-head{gap:8px}.native-opportunity .opp-identity h3{font-size:18px;line-height:1.2}.native-opportunity .setup-family{font-size:11px;margin-top:0}.native-opportunity .direction{padding:2px 7px;font-size:11px}.native-opportunity .summary-reason{font-size:11px;line-height:1.35;margin:6px 0}.native-opportunity .summary-footer{align-items:flex-end;gap:7px;padding-top:7px}.native-opportunity .summary-rr{flex:1 1 220px;min-width:0;font-size:11px;line-height:1.35;overflow-wrap:anywhere}.native-opportunity .summary-rr>strong{font-size:12px}.native-opportunity .missing-evidence{font-size:9px;line-height:1.3;margin-top:3px}.native-opportunity-actions{display:flex;flex:0 1 auto;justify-content:flex-end;gap:5px;flex-wrap:wrap}.native-opportunity-actions .button{display:inline-flex;align-items:center;min-height:27px;padding:4px 8px;font-size:10px;line-height:1.15;white-space:nowrap}
+.progression-summary{display:block;color:var(--muted);font-size:9px;margin-top:3px;text-transform:uppercase;letter-spacing:.04em}.progression-list{display:grid;gap:8px}.progression-row{display:grid;grid-template-columns:20px 1fr;gap:8px;border-top:1px solid var(--line);padding-top:8px}.progression-row:first-child{border-top:0;padding-top:0}.progression-marker{color:var(--blue);font-weight:800}.progression-state{display:block;color:var(--amber);font-size:9px;font-weight:800;letter-spacing:.06em;margin-top:2px}.progression-row small{display:block;color:var(--muted);font-size:10px;margin-top:4px}.progression-row form{margin-top:7px}.progression-row details{margin-top:7px}.progression-row details .analysis-fact{margin-top:5px}
 @media(max-width:1050px){.status-grid{grid-template-columns:repeat(3,1fr)}.panels,.workspace{grid-template-columns:1fr}.step32-grid{grid-template-columns:1fr}.step32-block{border-left:0;border-top:1px solid var(--line);padding:10px 0 0}.step32-block:first-child{border-top:0;padding-top:0}.market-panel{min-height:260px}}
 @media(min-width:761px){.panels{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:760px){.app{grid-template-columns:1fr}.sidebar{position:static;height:auto}.nav{grid-template-columns:repeat(2,1fr)}.system{display:none}.topbar{height:auto;padding:18px;align-items:flex-start;gap:14px}.tabs{overflow:auto;padding:0 18px}.content{padding:18px}.status-grid{grid-template-columns:repeat(2,1fr)}.trade-grid,.plan-strip{grid-template-columns:1fr 1fr}.kite{flex-wrap:wrap;justify-content:flex-end}.chart-intake-list,.native-chart-grid{grid-template-columns:1fr}}
@@ -132,6 +139,7 @@ def render_opportunities(
     snapshot: BrowserWorkspaceSnapshot,
     discovery: NativeDiscoveryRun | None = None,
     review: NativeReviewWorkflowSnapshot | None = None,
+    progression: SwingProgressionWatchSnapshot | None = None,
 ) -> str:
     """Render the current successful Native Discovery opportunity population."""
 
@@ -139,6 +147,8 @@ def render_opportunities(
         raise TypeError("NATIVE_OPPORTUNITIES_DISCOVERY_INVALID")
     if review is not None and type(review) is not NativeReviewWorkflowSnapshot:
         raise TypeError("NATIVE_OPPORTUNITIES_REVIEW_INVALID")
+    if progression is not None and type(progression) is not SwingProgressionWatchSnapshot:
+        raise TypeError("NATIVE_OPPORTUNITIES_PROGRESSION_INVALID")
     body = _analysis_run_strip(snapshot)
     if discovery is None:
         body += (
@@ -168,8 +178,8 @@ def render_opportunities(
             item for item in probables if item.product_path is NativeProductPath.MCX
         )
         body += '<div class="panels">'
-        body += _native_opportunity_panel("EQUITIES + INDICES", equities, review)
-        body += _native_opportunity_panel("COMMODITIES", commodities, review)
+        body += _native_opportunity_panel("EQUITIES + INDICES", equities, review, progression)
+        body += _native_opportunity_panel("COMMODITIES", commodities, review, progression)
         body += "</div>"
     body += (
         '<p class="technical"><a href="/swing/layer1-history">'
@@ -232,8 +242,8 @@ def _native_opportunity_metrics(counts: dict[NativeDiscoveryStatus, int]) -> str
     )
 
 
-def _native_opportunity_panel(title, probables, review) -> str:  # type: ignore[no-untyped-def]
-    cards = "".join(_native_opportunity_card(item, review) for item in probables)
+def _native_opportunity_panel(title, probables, review, progression=None) -> str:  # type: ignore[no-untyped-def]
+    cards = "".join(_native_opportunity_card(item, review, progression) for item in probables)
     if not cards:
         cards = (
             '<div class="empty"><div><strong>No Native Probables</strong>'
@@ -247,7 +257,7 @@ def _native_opportunity_panel(title, probables, review) -> str:  # type: ignore[
     )
 
 
-def _native_opportunity_card(item, review: NativeReviewWorkflowSnapshot | None) -> str:  # type: ignore[no-untyped-def]
+def _native_opportunity_card(item, review: NativeReviewWorkflowSnapshot | None, progression=None) -> str:  # type: ignore[no-untyped-def]
     review_run_identity = None if review is None else review.native_run_identity
     readiness_records = () if review is None else review.readiness_records
     outcomes = () if review is None else review.analysis_outcomes
@@ -321,6 +331,18 @@ def _native_opportunity_card(item, review: NativeReviewWorkflowSnapshot | None) 
         if sponsor_readiness is not None and sponsor_readiness.missing_evidence
         else ""
     )
+    progression_items = (
+        () if progression is None else progression.for_instrument(item.canonical_instrument)
+    )
+    outstanding = sum(
+        value.state is not ProgressionRequirementState.SATISFIED
+        for value in progression_items
+    )
+    progression_summary = (
+        '<small class="progression-summary">Requirements to progress · <strong>'
+        + str(outstanding) + ' outstanding</strong></small>'
+        if progression_items else ""
+    )
     return (
         '<article class="opportunity native-opportunity"><div class="opp-head">'
         f'<div class="opp-identity"><h3>{escape(item.canonical_instrument)}</h3>'
@@ -328,7 +350,7 @@ def _native_opportunity_card(item, review: NativeReviewWorkflowSnapshot | None) 
         f'<span class="direction direction-{escape(direction.lower())}">{escape(direction)}</span>'
         '</div><p class="summary-reason">' + escape(context) + '</p>'
         '<div class="summary-footer"><span class="summary-rr">Review · <strong>'
-        + escape(review_status) + '</strong>' + missing + '</span>'
+        + escape(review_status) + '</strong>' + missing + progression_summary + '</span>'
         '<span class="native-opportunity-actions"><a class="button" href="/swing/v1-review">Open Native Review →</a>'
         f'<a class="button" href="/swing/analysis-details/{escape(item.run_identity)}/'
         f'{quote(item.canonical_instrument, safe="")}">View Analysis Details →</a></span>'
@@ -339,6 +361,7 @@ def _native_opportunity_card(item, review: NativeReviewWorkflowSnapshot | None) 
 def render_native_analysis_details(
     snapshot: BrowserWorkspaceSnapshot,
     details: NativeAnalysisDetailsProjection,
+    progression: SwingProgressionWatchSnapshot | None = None,
 ) -> str:
     """Render governed evidence without recalculation or authority."""
 
@@ -448,8 +471,9 @@ def render_native_analysis_details(
             if readiness is not None and sponsor_readiness.missing_evidence else ""
         )
         + '<p>' + escape(reason) + '</p></section>'
-        + '<section class="analysis-section analysis-next"><h2>E. WHAT HAPPENS NEXT</h2><p>' + escape(next_step) + '</p></section>'
-        + '<details class="analysis-section"><summary>F. TECHNICAL EVIDENCE</summary><div class="analysis-facts">'
+        + _progression_requirements_section(item.canonical_instrument, progression)
+        + '<section class="analysis-section analysis-next"><h2>F. WHAT HAPPENS NEXT</h2><p>' + escape(next_step) + '</p></section>'
+        + '<details class="analysis-section"><summary>G. TECHNICAL EVIDENCE</summary><div class="analysis-facts">'
         + _analysis_fact_rows(technical) + '</div></details></div>'
     )
     return _page(
@@ -462,6 +486,60 @@ def render_native_analysis_details(
     )
 
 
+def _progression_requirements_section(
+    instrument: str,
+    progression: SwingProgressionWatchSnapshot | None,
+) -> str:
+    requirements = () if progression is None else progression.for_instrument(instrument)
+    if not requirements:
+        content = '<p>Governed progression requirements are not available for this current candidate.</p>'
+    else:
+        rows = []
+        for requirement in requirements:
+            watch = None if progression is None else progression.watch_for(requirement.requirement_id)
+            state = requirement.state.value.replace("_", " ")
+            detail = ""
+            if watch is not None and watch.state is ProgressionWatchState.TRIGGERED:
+                state = "REASSESSMENT REQUIRED"
+                detail = (
+                    '<small>Watch condition reached. No trade has been authorized.</small>'
+                )
+            elif watch is not None and watch.state is ProgressionWatchState.STALE:
+                state = "NOT WATCHABLE"
+                detail = '<small>Original analytical identity is stale; watch was not rebound.</small>'
+            elif requirement.state is ProgressionRequirementState.WATCH_AVAILABLE:
+                instruction = tradingview_instruction(requirement)
+                detail = (
+                    '<form method="post" action="/swing/progression-watch/activate">'
+                    '<input type="hidden" name="requirement_id" value="'
+                    + escape(requirement.requirement_id) + '">'
+                    '<button class="button" type="submit">Activate Watch</button></form>'
+                    '<details><summary>TradingView alert instruction</summary>'
+                    + ''.join(
+                        '<div class="analysis-fact"><span>' + escape(label)
+                        + '</span><strong>' + escape(value) + '</strong></div>'
+                        for label, value in instruction
+                    ) + '</details>'
+                )
+            elif requirement.state is ProgressionRequirementState.WATCH_ACTIVE:
+                detail = (
+                    '<small>Live monitoring active · completed governed bars only. Activated '
+                    + escape(watch.activated_at.isoformat() if watch is not None else "UNKNOWN")
+                    + '.</small>'
+                )
+            marker = "✓" if requirement.state is ProgressionRequirementState.SATISFIED else "○"
+            rows.append(
+                '<div class="progression-row"><span class="progression-marker">'
+                + marker + '</span><div><strong>' + escape(requirement.summary)
+                + '</strong><span class="progression-state">' + escape(state)
+                + '</span>' + detail + '</div></div>'
+            )
+        content = ''.join(rows)
+    return (
+        '<section class="analysis-section"><h2>E. REQUIREMENTS TO PROGRESS</h2>'
+        '<p class="technical">Satisfaction requests the next governed reassessment; it does not authorize a trade.</p>'
+        '<div class="progression-list">' + content + '</div></section>'
+    )
 def _analysis_section(title: str, facts: list[tuple[str, str]]) -> str:
     return '<section class="analysis-section"><h2>' + escape(title) + '</h2><div class="analysis-facts">' + _analysis_fact_rows(facts) + '</div></section>'
 

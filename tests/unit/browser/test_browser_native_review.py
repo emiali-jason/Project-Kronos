@@ -9,11 +9,13 @@ from kronos.application.swing_native_review import (
     NativeReviewAnalysisOutcome,
     NativeReviewAnalysisState,
     NativeReviewWorkflow,
+    project_native_analysis_details,
 )
+from kronos.application.swing_progression_watch import SwingProgressionWatchWorkflow
 from kronos.application.swing_opportunities import SwingOpportunitiesApplication
 from kronos.application.swing_v1_review import SwingV1ReviewWorkflow
 from kronos.browser.server import create_browser_server
-from kronos.browser.views import render_v1_review
+from kronos.browser.views import render_native_analysis_details, render_v1_review
 from kronos.configuration.openai_chart_analyst import (
     ChartAnalystV2ActivationService,
     OpenAIChartAnalystCredentialService,
@@ -29,13 +31,19 @@ from kronos.swing.v1.native_review import (
     McxReferenceStatus,
     NativeReviewEvidenceStore,
 )
-from kronos.swing.v1.mtf_facts import MtfFactEvidenceStore
+from kronos.swing.v1.mtf_facts import FactualTimeframe, MtfFactEvidenceStore
 from kronos.swing.v1.native_discovery import (
     NativeDiscoveryEvidenceStore,
     NativeDiscoveryStatus,
     discover_native_mtf,
 )
 from kronos.swing.v1.models import V1Direction, V1Setup
+from kronos.swing.v1.progression_watch import (
+    ProgressionComparator,
+    ProgressionRequirement,
+    ProgressionRequirementState,
+    ProgressionWatchStore,
+)
 from kronos.swing.v1.tradingview import ChartTimeframe
 from kronos.swing.v1.visual_evidence_v2 import (
     VisualEvidenceV2ValidationDiagnostic,
@@ -434,6 +442,7 @@ def test_analysis_details_route_binds_exact_current_run_and_instrument(
         assert status == 200
         assert f'href="{route}"' in opportunities
         assert "View Analysis Details" in opportunities
+        assert "Requirements to progress" in opportunities
 
         status, _, body = _request(server, "GET", route)
         assert status == 200
@@ -447,6 +456,25 @@ def test_analysis_details_route_binds_exact_current_run_and_instrument(
         assert "NATIVE TEST PROBABLE" in body
         assert "Governed Visual V2 evidence is not yet available" in body
         assert "REVIEW REQUIRED" in body
+        assert "REQUIREMENTS TO PROGRESS" in body
+        assert "Native thesis intact" in body
+        assert "EVIDENCE REQUIRED" in body
+        assert "Activate Watch" not in body
+        assert "does not authorize a trade" in body
+
+        form = "requirement_id=" + "f" * 64
+        foreign_status, _, _ = _request(
+            server, "POST", "/swing/progression-watch/activate",
+            body=form.encode(),
+            headers={
+                "Host": f"127.0.0.1:{server.server_port}",
+                "Origin": "http://127.0.0.1:9999",
+                "Referer": "http://127.0.0.1:9999/swing/opportunities",
+                "Content-Type": "application/x-www-form-urlencoded",
+                "Content-Length": str(len(form)),
+            },
+        )
+        assert foreign_status == 403
         assert "TECHNICAL EVIDENCE" in body
         assert '<details class="analysis-section">' in body
         assert run.run_identity in body
@@ -462,6 +490,39 @@ def test_analysis_details_route_binds_exact_current_run_and_instrument(
         server.shutdown()
         thread.join(timeout=2)
         server.server_close()
+
+
+def test_analysis_details_exposes_only_governed_watch_activation(tmp_path: Path) -> None:
+    facts, run, probable = _evidence_run()
+    native = NativeReviewWorkflow(NativeReviewEvidenceStore(tmp_path / "native"))
+    review = native.prepare(run, facts)
+    details = project_native_analysis_details(
+        run, review, run.run_identity, probable.canonical_instrument
+    )
+    assert details is not None
+    requirement = ProgressionRequirement(
+        "a" * 64, "SWING", probable.canonical_instrument,
+        probable.direction, run.run_identity, probable.result_sha256,
+        "WAIT_PULLBACK_DEVELOPING", "ONE_HOUR_PROGRESSION",
+        "1H close above 1482.5", ProgressionRequirementState.WATCH_AVAILABLE,
+        FactualTimeframe.ONE_HOUR, ProgressionComparator.BAR_CLOSE_ABOVE,
+        1482.5, None, None, (probable.result_sha256,), run.observed_at,
+        ("CONTROLLED_TEST_EVIDENCE",),
+    )
+    workflow = SwingProgressionWatchWorkflow(
+        ProgressionWatchStore(tmp_path / "watches")
+    )
+    progression = workflow.synchronize(run.run_identity, (requirement,))
+
+    body = render_native_analysis_details(_ready(), details, progression)
+
+    assert "WATCH AVAILABLE" in body
+    assert "Activate Watch" in body
+    assert 'name="requirement_id"' in body
+    assert "Bar close crosses above 1482.5" in body
+    assert "KRONOS progression watch" in body
+    assert "BUY ABOVE" not in body
+    assert "ENTRY ABOVE" not in body
 
 
 class _Ux01VisualProvider(_VisualV2Provider):
@@ -582,6 +643,11 @@ def test_analysis_details_projects_visual_layer2_readiness_without_new_authority
         assert "CPR" in body
         assert "1H PDH/PDL" in body
         assert "Confluence Zone" in body
+        assert "CPR must be established" in body
+        assert "1H PDH/PDL must be established" in body
+        assert "Confluence Zone must be established" in body
+        assert body.count("EVIDENCE REQUIRED") >= 3
+        assert "Activate Watch" not in body
         assert "Internal readiness" in body
         assert "CONTEXT_INCOMPLETE" in body
         assert "Q2 CPR CONTEXT" in body

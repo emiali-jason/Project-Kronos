@@ -667,6 +667,7 @@ class SwingOpportunitiesApplication:
         self.__live_monitoring_timeout_seconds = live_monitoring_timeout_seconds
         self.__lock = RLock()
         self.__provider: _ProviderRuntime | None = None
+        self.__progression_watch_workflow: object | None = None
         self.__analysis_attempt_count = 0
         self.__analysis_diagnostic: AnalysisFailureDiagnostic | None = None
         self.__completed_analysis_evidence: SwingAnalysisEvidenceSnapshot | None = None
@@ -886,6 +887,44 @@ class SwingOpportunitiesApplication:
         self.__background_runner(self.__complete_connection, "kronos-browser-auth")
         return True
 
+    def register_progression_watch_workflow(self, workflow: object) -> None:
+        """Bind the product-local watch lifecycle without exposing Provider state."""
+
+        if not all(callable(getattr(workflow, name, None)) for name in (
+            "activate_requirement", "restore_active", "close_monitoring",
+        )):
+            raise TypeError("PROGRESSION_WATCH_WORKFLOW_INVALID")
+        with self.__lock:
+            if (
+                self.__progression_watch_workflow is not None
+                and self.__progression_watch_workflow is not workflow
+            ):
+                raise ValueError("PROGRESSION_WATCH_WORKFLOW_ALREADY_REGISTERED")
+            self.__progression_watch_workflow = workflow
+
+    def activate_progression_watch(self, requirement_id: str) -> bool:
+        """Explicit Sponsor activation through the owned read-only capability."""
+
+        with self.__lock:
+            provider = self.__provider
+            workflow = self.__progression_watch_workflow
+            allowed = (
+                self.__snapshot.provider_state is ProviderConnectionState.CONNECTED
+                and self.__snapshot.analysis_state is not AnalysisState.RUNNING
+                and provider is not None
+                and workflow is not None
+            )
+        if not allowed:
+            return False
+        capability = provider.authenticated_read_only_capability()
+        if capability is None or getattr(capability, "active", False) is not True:
+            return False
+        try:
+            workflow.activate_requirement(requirement_id, capability)
+        except (TypeError, ValueError):
+            return False
+        return True
+
     def run_analysis(self) -> bool:
         """Start one complete Stage 1-9 run and reject concurrent requests."""
 
@@ -929,12 +968,15 @@ class SwingOpportunitiesApplication:
             ):
                 return False
             provider = self.__provider
+            workflow = self.__progression_watch_workflow
             self.__provider = None
             self.__snapshot = replace(
                 self.__snapshot,
                 provider_state=ProviderConnectionState.DISCONNECTED,
                 provider_failure="",
             )
+        if workflow is not None:
+            workflow.close_monitoring()
         if provider is not None:
             try:
                 provider.end_kronos_session()
@@ -945,11 +987,14 @@ class SwingOpportunitiesApplication:
     def close(self) -> None:
         with self.__lock:
             provider = self.__provider
+            workflow = self.__progression_watch_workflow
             self.__provider = None
             self.__snapshot = replace(
                 self.__snapshot,
                 provider_state=ProviderConnectionState.DISCONNECTED,
             )
+        if workflow is not None:
+            workflow.close_monitoring()
         if provider is not None:
             try:
                 provider.end_kronos_session()
@@ -989,11 +1034,17 @@ class SwingOpportunitiesApplication:
             return
         with self.__lock:
             self.__provider = provider
+            workflow = self.__progression_watch_workflow
             self.__snapshot = replace(
                 self.__snapshot,
                 provider_state=ProviderConnectionState.CONNECTED,
                 provider_failure="",
             )
+        if workflow is not None:
+            try:
+                workflow.restore_active(capability)
+            except Exception:
+                workflow.close_monitoring()
 
     def __complete_live_monitoring_test(self, canonical_instrument: str) -> None:
         with self.__lock:

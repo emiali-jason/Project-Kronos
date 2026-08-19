@@ -87,7 +87,9 @@ def run_live_monitoring_e2e(
         return _failure(canonical_instrument, "KITE_DISCONNECTED")
     if type(timeout_seconds) is not float or not 0.0 < timeout_seconds <= 60.0:
         raise ValueError("LIVE_MONITORING_TIMEOUT_INVALID")
-    instrument = _resolve(capability, member, clock().date())
+    instrument = resolve_governed_monitoring_instrument(
+        capability, canonical_instrument, clock().date()
+    )
     consumer = _ProofConsumer(member, instrument, clock)
     session = None
     cleanup_failed = False
@@ -235,6 +237,16 @@ def _resolve(capability: object, member: SwingUniverseMember, as_of) -> Instrume
     )
 
 
+def resolve_governed_monitoring_instrument(
+    capability: object,
+    canonical_instrument: str,
+    as_of,
+) -> InstrumentRecord:  # type: ignore[no-untyped-def]
+    """Resolve one canonical Swing member through the existing Provider boundary."""
+
+    return _resolve(capability, _member(canonical_instrument), as_of)
+
+
 def _safe_failure(error: Exception) -> str:
     value = str(error)
     return value if re.fullmatch(r"[A-Z][A-Z0-9_]{0,95}", value) else "LIVE_MONITORING_FAILED"
@@ -252,5 +264,6 @@ __all__ = [
     "LiveMonitoringTestResult",
     "LiveMonitoringTestState",
     "governed_live_monitoring_instruments",
+    "resolve_governed_monitoring_instrument",
     "run_live_monitoring_e2e",
 ]

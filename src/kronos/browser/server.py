@@ -13,6 +13,10 @@ from threading import Lock, Thread
 from urllib.parse import parse_qs, unquote, urlsplit
 
 from kronos.application.swing_opportunities import SwingOpportunitiesApplication
+from kronos.application.swing_progression_watch import (
+    SwingProgressionWatchSnapshot,
+    SwingProgressionWatchWorkflow,
+)
 from kronos.application.swing_v1_browser import SwingV1BrowserOperationalization
 from kronos.application.swing_v1_review import (
     SwingV1ReviewWorkflow,
@@ -65,6 +69,7 @@ from kronos.browser.views import (
     render_v1_review,
 )
 from kronos.browser.v1_analysis_status import analysis_status_payload
+from kronos.browser.swing_readiness_presentation import present_native_readiness
 from kronos.browser.restart_control import BrowserBackendRestartControl
 from kronos.browser.product_routes import (
     BrowserGetRequest,
@@ -91,6 +96,7 @@ from kronos.swing.v1.pdf_visual_review import (
     PdfReviewTransportError,
     PdfVisualReviewTransport,
 )
+from kronos.swing.v1.progression_watch import derive_progression_requirements
 
 
 _LOOPBACK_HOST = "127.0.0.1"
@@ -133,6 +139,7 @@ class KronosBrowserServer(ThreadingHTTPServer):
         step32_workflow: SwingV1BrowserOperationalization | None = None,
         native_review: NativeReviewWorkflow | None = None,
         product_routes: ProductBrowserRoutes | None = None,
+        progression_watches: SwingProgressionWatchWorkflow | None = None,
     ) -> None:
         if (
             address[0] != _LOOPBACK_HOST
@@ -162,6 +169,10 @@ class KronosBrowserServer(ThreadingHTTPServer):
             )
             or (product_routes is not None and type(product_routes) is not ProductBrowserRoutes)
             or (product_routes is not None and intraday_workstation is not None)
+            or (
+                progression_watches is not None
+                and type(progression_watches) is not SwingProgressionWatchWorkflow
+            )
         ):
             raise ValueError("BROWSER_SERVER_MUST_BIND_LOOPBACK")
         config = OpenAIChartAnalystV2Config.from_environment()
@@ -187,6 +198,8 @@ class KronosBrowserServer(ThreadingHTTPServer):
         self.step32_workflow = (
             step32_workflow or SwingV1BrowserOperationalization()
         )
+        self.progression_watches = progression_watches or SwingProgressionWatchWorkflow()
+        self.application.register_progression_watch_workflow(self.progression_watches)
         if v1_review is not None:
             self.v1_review = v1_review
             evidence_store = LocalTradingViewEvidenceStore(
@@ -283,15 +296,80 @@ class KronosBrowserServer(ThreadingHTTPServer):
                 self.native_review.restore(native_run, mtf_facts)
             except ValueError:
                 pass
+        self.progression_snapshot()
         super().__init__(address, _BrowserHandler)
 
     def server_close(self) -> None:
+        self.progression_watches.close_monitoring()
         self.native_review.close()
         self.step32_workflow.close()
         self.application.close()
         if self.restart_control is not None:
             self.restart_control.remove()
         super().server_close()
+
+    def progression_snapshot(self) -> SwingProgressionWatchSnapshot:
+        """Project UX-08 requirements from one immutable Native/Review binding."""
+
+        _, run = self.application.opportunities_projection()
+        review = self.native_review.snapshot()
+        if run is None or review.native_run_identity != run.run_identity:
+            return self.progression_watches.synchronize(None, ())
+        requirements = []
+        for assessment in run.assessments:
+            if assessment.status.value != "PROBABLE":
+                continue
+            review_requirement = review.requirement_for(
+                assessment.canonical_instrument
+            )
+            if (
+                review_requirement is None
+                or review_requirement.thesis.native_assessment_sha256
+                != assessment.result_sha256
+            ):
+                continue
+            readiness = next((
+                item for item in review.readiness_records
+                if item.run_identity == run.run_identity
+                and item.canonical_instrument == assessment.canonical_instrument
+                and item.native_assessment_sha256 == assessment.result_sha256
+            ), None)
+            visual = tuple(
+                item for item in review.visual_v2_results
+                if item.native_run_identity == run.run_identity
+                and item.native_canonical_instrument == assessment.canonical_instrument
+                and item.native_assessment_sha256 == assessment.result_sha256
+            )
+            missing = ()
+            if readiness is not None:
+                missing = present_native_readiness(
+                    readiness, review_requirement, visual
+                ).missing_evidence
+            boundary = max(
+                (value for _, value in assessment.factual_boundaries),
+                default=run.observed_at,
+            )
+            requirements.extend(derive_progression_requirements(
+                canonical_instrument=assessment.canonical_instrument,
+                direction=assessment.direction,
+                native_run_identity=run.run_identity,
+                native_assessment_sha256=assessment.result_sha256,
+                source_analytical_state=(
+                    readiness.readiness.value
+                    if readiness is not None else "REVIEW_REQUIRED"
+                ),
+                observation_boundary=boundary,
+                provenance=tuple(dict.fromkeys((
+                    *assessment.provider_provenance,
+                    *assessment.calendar_provenance,
+                    assessment.policy_identity,
+                ))),
+                readiness=readiness,
+                missing_evidence=missing,
+            ))
+        return self.progression_watches.synchronize(
+            run.run_identity, tuple(requirements)
+        )
 
     def admit_sponsor_work(self) -> bool:
         """Atomically reject new state-changing work after exit begins."""
@@ -367,6 +445,7 @@ class _BrowserHandler(BaseHTTPRequestHandler):
                 snapshot,
                 discovery,
                 self.server.native_review.snapshot(),
+                self.server.progression_snapshot(),
             ))
             return
         details_match = _ANALYSIS_DETAILS_ROUTE.fullmatch(path)
@@ -385,7 +464,9 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             if details is None:
                 self._text(HTTPStatus.NOT_FOUND, "Analysis Details not found.")
                 return
-            self._html(render_native_analysis_details(snapshot, details))
+            self._html(render_native_analysis_details(
+                snapshot, details, self.server.progression_snapshot()
+            ))
             return
         snapshot = self.server.application.snapshot()
         if path == "/swing/layer1-history":
@@ -557,6 +638,9 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             self.server.application.run_analysis()
             self._redirect("/swing/opportunities")
             return
+        if path == "/swing/progression-watch/activate":
+            self._activate_progression_watch()
+            return
         if path == "/swing/v1/layer1":
             evidence = self.server.application.completed_analysis_evidence()
             if evidence is None:
@@ -670,6 +754,39 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             self._record_sponsor_decision(decision_match.group(1))
             return
         self._text(HTTPStatus.NOT_FOUND, "Not found.")
+
+    def _activate_progression_watch(self) -> None:
+        if urlsplit(self.path).query:
+            self._text(HTTPStatus.BAD_REQUEST, "Watch activation rejected.")
+            return
+        try:
+            content_length = int(self.headers.get("Content-Length", ""))
+        except ValueError:
+            content_length = 0
+        if (
+            self.headers.get("Content-Type", "").split(";", 1)[0].lower()
+            != "application/x-www-form-urlencoded"
+            or not 0 < content_length <= 128
+        ):
+            self._text(HTTPStatus.BAD_REQUEST, "Watch activation rejected.")
+            return
+        try:
+            fields = parse_qs(
+                self.rfile.read(content_length).decode("utf-8"),
+                strict_parsing=True,
+            )
+            values = fields.get("requirement_id", ())
+            if (
+                set(fields) != {"requirement_id"}
+                or len(values) != 1
+                or re.fullmatch(r"[0-9a-f]{64}", values[0]) is None
+                or not self.server.application.activate_progression_watch(values[0])
+            ):
+                raise ValueError
+        except (UnicodeDecodeError, ValueError):
+            self._text(HTTPStatus.CONFLICT, "Progression watch is not available.")
+            return
+        self._redirect("/swing/opportunities")
 
     def _sponsor_exit(self) -> None:
         if self.headers.get("Content-Length") not in {None, "0"}:
@@ -1409,6 +1526,7 @@ def create_browser_server(
     step32_workflow: SwingV1BrowserOperationalization | None = None,
     native_review: NativeReviewWorkflow | None = None,
     product_routes: ProductBrowserRoutes | None = None,
+    progression_watches: SwingProgressionWatchWorkflow | None = None,
 ) -> KronosBrowserServer:
     if type(port) is not int or not 0 <= port <= 65535:
         raise ValueError("BROWSER_SERVER_PORT_INVALID")
@@ -1423,6 +1541,7 @@ def create_browser_server(
         step32_workflow,
         native_review,
         product_routes,
+        progression_watches,
     )
 
 
