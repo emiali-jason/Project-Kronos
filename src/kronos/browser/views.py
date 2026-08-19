@@ -465,10 +465,10 @@ def render_native_analysis_details(
     body = (
         '<p><a class="button" href="/swing/opportunities">← Back to Opportunities</a></p>'
         '<div class="analysis-details">'
-        + _analysis_section("A. WHAT KITE / NATIVE DISCOVERY SAYS", native_facts)
-        + '<section class="analysis-section"><h2>B. WHAT THE TRADINGVIEW CHART / CHART ANALYST SAYS</h2>'
+        + _analysis_disclosure("A. WHAT KITE / NATIVE DISCOVERY SAYS", native_facts)
+        + '<details class="analysis-section"><summary>B. WHAT THE TRADINGVIEW CHART / CHART ANALYST SAYS</summary>'
         '<table class="analysis-table"><thead><tr><th>Timeframe</th><th>Question</th><th>Status</th><th>Observation</th><th>Level</th></tr></thead><tbody>'
-        + visual_rows + '</tbody></table></section>'
+        + visual_rows + '</tbody></table></details>'
         + '<section class="analysis-section"><h2>C. WHAT KRONOS RECONCILED</h2>' + reconciliation + '</section>'
         + '<section class="analysis-section"><h2>D. CURRENT DECISION</h2><div class="analysis-decision">'
         + escape(decision) + '</div>'
@@ -548,8 +548,16 @@ def _progression_requirements_section(
         '<p class="technical">Satisfaction requests the next governed reassessment; it does not authorize a trade.</p>'
         '<div class="progression-list">' + content + '</div></section>'
     )
-def _analysis_section(title: str, facts: list[tuple[str, str]]) -> str:
-    return '<section class="analysis-section"><h2>' + escape(title) + '</h2><div class="analysis-facts">' + _analysis_fact_rows(facts) + '</div></section>'
+
+
+def _analysis_disclosure(title: str, facts: list[tuple[str, str]]) -> str:
+    return (
+        '<details class="analysis-section"><summary>'
+        + escape(title)
+        + '</summary><div class="analysis-facts">'
+        + _analysis_fact_rows(facts)
+        + '</div></details>'
+    )
 
 
 def _analysis_fact_rows(facts: list[tuple[str, str]]) -> str:

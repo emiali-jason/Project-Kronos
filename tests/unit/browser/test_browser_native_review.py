@@ -434,6 +434,8 @@ def test_analysis_details_route_binds_exact_current_run_and_instrument(
     thread = Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
+        application_before = application.snapshot()
+        native_before = native.snapshot()
         status, _, opportunities = _request(server, "GET", "/swing/opportunities")
         route = (
             f"/swing/analysis-details/{run.run_identity}/"
@@ -447,7 +449,25 @@ def test_analysis_details_route_binds_exact_current_run_and_instrument(
         status, _, body = _request(server, "GET", route)
         assert status == 200
         assert f"{probable.canonical_instrument} Analysis Details" in body
-        assert "WHAT KITE / NATIVE DISCOVERY SAYS" in body
+        assert (
+            '<details class="analysis-section"><summary>'
+            'A. WHAT KITE / NATIVE DISCOVERY SAYS</summary>' in body
+        )
+        assert (
+            '<details class="analysis-section"><summary>'
+            'B. WHAT THE TRADINGVIEW CHART / CHART ANALYST SAYS</summary>' in body
+        )
+        assert (
+            '<section class="analysis-section"><h2>'
+            'C. WHAT KRONOS RECONCILED</h2>' in body
+        )
+        assert '<section class="analysis-section"><h2>D. CURRENT DECISION</h2>' in body
+        assert '<section class="analysis-section"><h2>E. REQUIREMENTS TO PROGRESS</h2>' in body
+        assert '<section class="analysis-section analysis-next"><h2>F. WHAT HAPPENS NEXT</h2>' in body
+        assert '<details class="analysis-section"><summary>G. TECHNICAL EVIDENCE</summary>' in body
+        assert '<details open class="analysis-section"><summary>A.' not in body
+        assert '<details open class="analysis-section"><summary>B.' not in body
+        assert '<details open class="analysis-section"><summary>G.' not in body
         assert probable.direction.value in body
         assert probable.weekly_state.value in body
         assert probable.daily_state.value.replace("_", " ") in body
@@ -461,6 +481,8 @@ def test_analysis_details_route_binds_exact_current_run_and_instrument(
         assert "EVIDENCE REQUIRED" in body
         assert "Activate Watch" not in body
         assert "does not authorize a trade" in body
+        assert application.snapshot() == application_before
+        assert native.snapshot() == native_before
 
         form = "requirement_id=" + "f" * 64
         foreign_status, _, _ = _request(
@@ -485,6 +507,7 @@ def test_analysis_details_route_binds_exact_current_run_and_instrument(
         swing_status, swing_headers, _ = _request(server, "GET", "/swing")
         assert swing_status == 303
         assert swing_headers["Location"] == "/swing/opportunities"
+        assert _request(server, "GET", "/notifications")[0] == 200
         assert _request(server, "GET", "/intraday")[0] == 200
     finally:
         server.shutdown()
