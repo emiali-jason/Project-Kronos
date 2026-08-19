@@ -44,6 +44,8 @@ from kronos.swing.v1.visual_evidence_v2 import (
     VisualObservationStatus,
     VisualTimeframe,
     VisualQuestionV2,
+    VisualQuestionRouting,
+    visual_question_routing,
 )
 
 from tests.unit.application.test_swing_opportunities import _Provider
@@ -456,21 +458,46 @@ class _Ux01VisualProvider(_VisualV2Provider):
     def analyze(self, request):  # type: ignore[no-untyped-def]
         self.requests.append(request)
         replacements = {
-            VisualQuestionV2.CPR_CONTEXT: _visual_observation(
+            question: _visual_observation(
                 request,
-                VisualQuestionV2.CPR_CONTEXT,
-                status=VisualObservationStatus.PARTIAL,
-                observation="CPR PARTIALLY VISIBLE",
-                level=VisualLevelAvailability.LEVEL_UNAVAILABLE,
-            ),
-            VisualQuestionV2.VISUAL_SUPPORT_RESISTANCE_GAP: _visual_observation(
+                question,
+                status=VisualObservationStatus.OBSERVED,
+                observation="VISIBLE FACT",
+            )
+            for question, routing in visual_question_routing(request.timeframe)
+            if routing is VisualQuestionRouting.YES
+        }
+        replacements[VisualQuestionV2.VISUAL_SUPPORT_RESISTANCE_GAP] = (
+            _visual_observation(
                 request,
                 VisualQuestionV2.VISUAL_SUPPORT_RESISTANCE_GAP,
                 status=VisualObservationStatus.OBSERVED,
                 observation="NONE",
                 level=VisualLevelAvailability.NOT_APPLICABLE,
-            ),
-        }
+            )
+        )
+        for question in (
+            VisualQuestionV2.CPR_CONTEXT,
+            VisualQuestionV2.VISUAL_CONFLUENCE,
+        ):
+            if dict(request.routing)[question] is VisualQuestionRouting.YES:
+                replacements[question] = _visual_observation(
+                    request,
+                    question,
+                    status=VisualObservationStatus.PARTIAL,
+                    observation="CHART LEVEL PARTIALLY VISIBLE",
+                    level=VisualLevelAvailability.LEVEL_UNAVAILABLE,
+                )
+        if request.timeframe is VisualTimeframe.ONE_HOUR:
+            replacements[VisualQuestionV2.PDH_PDL_REFERENCE_CONTEXT] = (
+                _visual_observation(
+                    request,
+                    VisualQuestionV2.PDH_PDL_REFERENCE_CONTEXT,
+                    status=VisualObservationStatus.PARTIAL,
+                    observation="PDH PDL PARTIALLY VISIBLE",
+                    level=VisualLevelAvailability.LEVEL_UNAVAILABLE,
+                )
+            )
         return _visual_response(request, replacements)
 
 
@@ -510,6 +537,17 @@ def test_analysis_details_projects_visual_layer2_readiness_without_new_authority
     thread = Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
+        status, _, opportunities = _request(server, "GET", "/swing/opportunities")
+        assert status == 200
+        assert "CHART LEVELS NOT CONFIRMED" in opportunities
+        assert "CPR · 1H PDH/PDL · Confluence Zone" in opportunities
+
+        status, _, review_body = _request(server, "GET", "/swing/v1-review")
+        assert status == 200
+        assert "CHART LEVELS NOT CONFIRMED" in review_body
+        assert "CPR · 1H PDH/PDL · Confluence Zone" in review_body
+        assert "CONTEXT_INCOMPLETE" in review_body
+
         route = (
             f"/swing/analysis-details/{run.run_identity}/"
             f"{quote(probable.canonical_instrument, safe='')}"
@@ -518,7 +556,7 @@ def test_analysis_details_projects_visual_layer2_readiness_without_new_authority
         assert status == 200
         assert "WHAT THE TRADINGVIEW CHART / CHART ANALYST SAYS" in body
         assert "PARTIAL" in body
-        assert "CPR PARTIALLY VISIBLE" in body
+        assert "CHART LEVEL PARTIALLY VISIBLE" in body
         assert "LEVEL_UNAVAILABLE" in body
         assert ">NONE<" in body
         assert "NOT_VISIBLE" in body
@@ -529,6 +567,14 @@ def test_analysis_details_projects_visual_layer2_readiness_without_new_authority
         assert "CURRENT DECISION" in body
         assert before.readiness_records[0].primary_reason.replace("_", " ") in body
         assert "WHAT HAPPENS NEXT" in body
+        assert "CHART LEVELS NOT CONFIRMED" in body
+        assert "Missing evidence" in body
+        assert "CPR" in body
+        assert "1H PDH/PDL" in body
+        assert "Confluence Zone" in body
+        assert "Internal readiness" in body
+        assert "CONTEXT_INCOMPLETE" in body
+        assert "Q2 CPR CONTEXT" in body
         assert "Chart revisions" in body
         assert "Evidence hashes" in body
         assert "Readiness policy" in body

@@ -76,7 +76,15 @@ def test_all_eight_states_render_one_minute_sponsor_surface(state: NativeReadine
         state is NativeReadinessState.READY_FOR_TRADE_CONSTRUCTION
     )
     html = _native_one_minute_review(record, requirement, visual, None)
-    assert sponsor_status(state) in html
+    expected_status = (
+        "MORE REVIEW EVIDENCE REQUIRED"
+        if state is NativeReadinessState.CONTEXT_INCOMPLETE
+        else sponsor_status(state)
+    )
+    assert expected_status in html
+    if state is NativeReadinessState.CONTEXT_INCOMPLETE:
+        assert "Required Review Evidence" in html
+        assert "CONTEXT_INCOMPLETE" in html
     assert "WHY THIS TRADE?" in html
     assert html.count("one-minute-fact") >= 3
     assert "ANALYSIS DETAILS" in html

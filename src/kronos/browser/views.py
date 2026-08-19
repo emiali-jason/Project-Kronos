@@ -45,6 +45,9 @@ from kronos.browser.v1_analysis_status import (
     batch_analysis_status,
     instrument_analysis_status,
 )
+from kronos.browser.swing_readiness_presentation import (
+    present_native_readiness,
+)
 from kronos.swing.run_identity import (
     LEGACY_UNBOUND_SWING_RUN_ID,
     is_swing_analysis_run_id,
@@ -82,7 +85,6 @@ from kronos.swing.v1.native_readiness import (
     LevelAvailability,
     NativeLayer2ReadinessRecord,
     NativeReadinessState,
-    sponsor_status,
 )
 
 
@@ -117,6 +119,7 @@ a{color:inherit;text-decoration:none}.app{display:grid;grid-template-columns:218
 .step32-workflow{margin-top:16px;border:1px solid var(--line);background:rgba(6,23,37,.88);border-radius:10px;padding:16px}.step32-head{display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--line);padding-bottom:10px}.step32-head h2{margin:0;font-size:18px}.step32-grid{display:grid;grid-template-columns:1.2fr .8fr .8fr .9fr;gap:12px;margin-top:12px}.step32-block{border-left:1px solid var(--line);padding-left:12px}.step32-block:first-child{border-left:0;padding-left:0}.step32-block h3{margin:0 0 8px;color:var(--muted);font-size:11px;letter-spacing:.06em;text-transform:uppercase}.step32-values{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;margin-top:10px}.step32-value label{display:block;color:var(--muted);font-size:10px}.step32-value strong{font-size:13px}.step32-context{display:grid;gap:7px;font-size:12px}.step32-context span{display:block;color:var(--muted);font-size:10px}.decision-options{display:flex;gap:5px;flex-wrap:wrap}.decision-option{border:1px solid var(--line);border-radius:6px;padding:5px 8px;color:var(--muted);font-size:11px;background:#081c2c}.decision-option.selected{border-color:var(--blue);color:#dff1ff}.decision-time{color:var(--muted);font-size:10px;margin-top:7px}.model-position{display:grid;gap:7px;margin-top:9px}.model-position div{display:flex;justify-content:space-between;gap:8px;font-size:12px}.model-position span{color:var(--muted)}.workflow-list{display:grid;gap:12px}.workflow-card{border:1px solid var(--line);background:rgba(6,23,37,.88);border-radius:10px;padding:14px}.workflow-card-head{display:flex;align-items:center;gap:10px}.workflow-card-head h2{margin:0;font-size:18px}.workflow-card-state{margin-left:auto;color:var(--blue);font-size:11px;font-weight:800}.workflow-card-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;margin:12px 0}.workflow-card-grid label{display:block;color:var(--muted);font-size:10px}.workflow-card-actions{display:flex;justify-content:flex-end}.action-required{border:1px solid #8a4c26;background:#2d1b0f;color:#ffd59c;border-radius:7px;padding:9px 11px;margin-top:10px;font-weight:750}.workflow-empty{border:1px solid var(--line);background:rgba(6,23,37,.88);border-radius:10px;padding:30px;text-align:center;color:var(--muted)}
 .native-chart-grid.single{grid-template-columns:1fr}
 .analysis-details{display:grid;gap:12px;max-width:1180px}.analysis-section{border:1px solid var(--line);background:rgba(6,23,37,.88);border-radius:10px;padding:16px}.analysis-section h2{margin:0 0 10px;color:var(--blue);font-size:15px}.analysis-facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.analysis-fact{border-left:2px solid #28506a;padding:5px 9px;font-size:11px}.analysis-fact span{display:block;color:var(--muted);font-size:9px;letter-spacing:.06em;text-transform:uppercase}.analysis-table{width:100%;border-collapse:collapse;font-size:11px}.analysis-table th,.analysis-table td{text-align:left;vertical-align:top;border-top:1px solid var(--line);padding:7px}.analysis-table th{color:var(--muted);font-size:9px;letter-spacing:.05em}.analysis-decision{font-size:18px;font-weight:800}.analysis-next{border-left:3px solid var(--amber)}
+.missing-evidence{display:block;color:var(--amber);font-size:10px;margin-top:5px}.missing-evidence strong{color:#ffd98c}.blocker-list{margin:8px 0 0;padding-left:18px;color:var(--muted);font-size:11px}
 @media(max-width:1050px){.status-grid{grid-template-columns:repeat(3,1fr)}.panels,.workspace{grid-template-columns:1fr}.step32-grid{grid-template-columns:1fr}.step32-block{border-left:0;border-top:1px solid var(--line);padding:10px 0 0}.step32-block:first-child{border-top:0;padding-top:0}.market-panel{min-height:260px}}
 @media(min-width:761px){.panels{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:760px){.app{grid-template-columns:1fr}.sidebar{position:static;height:auto}.nav{grid-template-columns:repeat(2,1fr)}.system{display:none}.topbar{height:auto;padding:18px;align-items:flex-start;gap:14px}.tabs{overflow:auto;padding:0 18px}.content{padding:18px}.status-grid{grid-template-columns:repeat(2,1fr)}.trade-grid,.plan-strip{grid-template-columns:1fr 1fr}.kite{flex-wrap:wrap;justify-content:flex-end}.chart-intake-list,.native-chart-grid{grid-template-columns:1fr}}
@@ -247,6 +250,8 @@ def _native_opportunity_card(item, review: NativeReviewWorkflowSnapshot | None) 
     readiness_records = () if review is None else review.readiness_records
     outcomes = () if review is None else review.analysis_outcomes
     packages = () if review is None else review.chart_packages
+    requirements = () if review is None else review.requirements
+    visual_results = () if review is None else review.visual_v2_results
     readiness = next(
         (
             record for record in readiness_records
@@ -272,9 +277,28 @@ def _native_opportunity_card(item, review: NativeReviewWorkflowSnapshot | None) 
         ),
         None,
     )
+    requirement = next(
+        (
+            value for value in requirements
+            if value.native_run_identity == item.run_identity
+            and value.canonical_instrument == item.canonical_instrument
+            and value.thesis.native_assessment_sha256 == item.result_sha256
+        ),
+        None,
+    )
+    bound_visual = tuple(
+        value for value in visual_results
+        if value.native_run_identity == item.run_identity
+        and value.native_canonical_instrument == item.canonical_instrument
+        and value.native_assessment_sha256 == item.result_sha256
+    )
+    sponsor_readiness = (
+        present_native_readiness(readiness, requirement, bound_visual)
+        if readiness is not None and requirement is not None else None
+    )
     review_status = (
-        sponsor_status(readiness.readiness)
-        if readiness is not None
+        sponsor_readiness.status
+        if sponsor_readiness is not None
         else outcome.state.value.replace("_", " ")
         if outcome is not None
         else "CHART RECEIVED"
@@ -288,6 +312,13 @@ def _native_opportunity_card(item, review: NativeReviewWorkflowSnapshot | None) 
         f"1H {item.one_hour_state.value}",
     )).replace("_", " ")
     direction = item.direction.value
+    missing = (
+        '<small class="missing-evidence">Missing evidence: <strong>'
+        + escape(" · ".join(sponsor_readiness.missing_evidence))
+        + '</strong></small>'
+        if sponsor_readiness is not None and sponsor_readiness.missing_evidence
+        else ""
+    )
     return (
         '<article class="opportunity"><div class="opp-head">'
         f'<div class="opp-identity"><h3>{escape(item.canonical_instrument)}</h3>'
@@ -295,7 +326,7 @@ def _native_opportunity_card(item, review: NativeReviewWorkflowSnapshot | None) 
         f'<span class="direction direction-{escape(direction.lower())}">{escape(direction)}</span>'
         '</div><p class="summary-reason">' + escape(context) + '</p>'
         '<div class="summary-footer"><span class="summary-rr">Review · <strong>'
-        + escape(review_status) + '</strong></span>'
+        + escape(review_status) + '</strong>' + missing + '</span>'
         '<span><a class="button" href="/swing/v1-review">Open Native Review →</a> '
         f'<a class="button" href="/swing/analysis-details/{escape(item.run_identity)}/'
         f'{quote(item.canonical_instrument, safe="")}">View Analysis Details →</a></span>'
@@ -371,7 +402,10 @@ def render_native_analysis_details(
         reason = "No persisted Readiness decision is available for this evidence cycle."
         next_step = "Candidate remains stopped until the governed Review cycle establishes a Readiness decision."
     else:
-        decision = sponsor_status(readiness.readiness)
+        sponsor_readiness = present_native_readiness(
+            readiness, details.requirement, details.visual_v2_results
+        )
+        decision = sponsor_readiness.status
         reason = readiness.primary_reason.replace("_", " ")
         next_step = _governed_next_step(readiness.readiness.value)
     review_pack = details.review_pack_record
@@ -387,6 +421,13 @@ def render_native_analysis_details(
         ("Native policy", f"{item.policy_identity} {item.policy_version}"),
         ("Visual V2", f"{details.visual_v2_results[0].question_set_identity} {details.visual_v2_results[0].question_set_version}" if details.visual_v2_results else "NOT ANALYZED"),
         ("Readiness policy", f"{readiness.readiness_policy_identity} {readiness.readiness_policy_version}" if readiness else "NOT AVAILABLE"),
+        ("Internal readiness", readiness.readiness.value if readiness else "NOT AVAILABLE"),
+        (
+            "Detailed blockers",
+            " · ".join(sponsor_readiness.blocker_details)
+            if readiness is not None and sponsor_readiness.blocker_details
+            else "NONE",
+        ),
     ]
     body = (
         '<p><a class="button" href="/swing/opportunities">← Back to Opportunities</a></p>'
@@ -397,7 +438,14 @@ def render_native_analysis_details(
         + visual_rows + '</tbody></table></section>'
         + '<section class="analysis-section"><h2>C. WHAT KRONOS RECONCILED</h2>' + reconciliation + '</section>'
         + '<section class="analysis-section"><h2>D. CURRENT DECISION</h2><div class="analysis-decision">'
-        + escape(decision) + '</div><p>' + escape(reason) + '</p></section>'
+        + escape(decision) + '</div>'
+        + (
+            '<p class="missing-evidence">Missing evidence: <strong>'
+            + escape(" · ".join(sponsor_readiness.missing_evidence))
+            + '</strong></p>'
+            if readiness is not None and sponsor_readiness.missing_evidence else ""
+        )
+        + '<p>' + escape(reason) + '</p></section>'
         + '<section class="analysis-section analysis-next"><h2>E. WHAT HAPPENS NEXT</h2><p>' + escape(next_step) + '</p></section>'
         + '<details class="analysis-section"><summary>F. TECHNICAL EVIDENCE</summary><div class="analysis-facts">'
         + _analysis_fact_rows(technical) + '</div></details></div>'
@@ -1795,7 +1843,10 @@ def _native_one_minute_review(
     reference_result,
 ) -> str:  # type: ignore[no-untyped-def]
     thesis = requirement.thesis
-    status = sponsor_status(record.readiness)
+    sponsor_readiness = present_native_readiness(
+        record, requirement, visual_results
+    )
+    status = sponsor_readiness.status
     direction = thesis.direction.value.lower()
     opportunity = thesis.opportunity_identity.value.replace("_", " ").lower()
     support = (
@@ -1811,7 +1862,11 @@ def _native_one_minute_review(
         NativeReadinessState.EXTENDED_DO_NOT_CHASE: "The opportunity is materially extended from relevant structure.",
         NativeReadinessState.WEAKENING: "Deterministic progression has meaningfully deteriorated.",
         NativeReadinessState.INVALIDATED: "Authoritative deterministic evidence has failed the current thesis.",
-        NativeReadinessState.CONTEXT_INCOMPLETE: "Required Review evidence is missing or invalid.",
+        NativeReadinessState.CONTEXT_INCOMPLETE: (
+            "Required chart levels remain unconfirmed."
+            if status == "CHART LEVELS NOT CONFIRMED"
+            else "More governed Review evidence is required."
+        ),
     }[record.readiness]
     facts = [
         f"Operative anchor · {thesis.operative_anchor_identity.replace('_', ' ')} · {thesis.operative_anchor_price:g}",
@@ -1853,12 +1908,24 @@ def _native_one_minute_review(
         if record.readiness is NativeReadinessState.READY_FOR_TRADE_CONSTRUCTION
         else ""
     )
+    missing = (
+        '<p class="missing-evidence">Missing evidence: <strong>'
+        + escape(" · ".join(sponsor_readiness.missing_evidence))
+        + '</strong></p>'
+        if sponsor_readiness.missing_evidence else ""
+    )
+    blocker_details = (
+        '<div class="v1-context-row"><span>Detailed blockers</span><strong>'
+        + escape(" · ".join(sponsor_readiness.blocker_details))
+        + '</strong></div>'
+        if sponsor_readiness.blocker_details else ""
+    )
     return (
         '<section class="one-minute"><div><h3>WHY THIS TRADE?</h3><p>'
         + escape(f"Native {direction} {opportunity} opportunity.")
         + '</p><p>' + escape(support + " " + blocking) + '</p></div>'
         '<div><h3>STATUS NOW</h3><strong class="one-minute-status">'
-        + escape(status) + '</strong></div><div><h3>WHAT MATTERS?</h3>'
+        + escape(status) + '</strong>' + missing + '</div><div><h3>WHAT MATTERS?</h3>'
         '<div class="one-minute-facts">'
         + ''.join('<div class="one-minute-fact">' + escape(item) + '</div>' for item in facts)
         + '</div></div>' + wait + next_step
@@ -1874,9 +1941,12 @@ def _native_one_minute_review(
         )))
         + '</strong></div><div class="v1-context-row"><span>Reason</span><strong>'
         + escape(record.primary_reason)
+        + '</strong></div><div class="v1-context-row"><span>Internal readiness</span><strong>'
+        + escape(record.readiness.value)
         + '</strong></div><div class="v1-context-row"><span>Record</span><strong>'
         + escape(record.result_sha256)
         + '</strong></div>'
+        + blocker_details
         + _visual_v2_diagnostics(visual_results)
         + (
             "" if reference_result is None else
