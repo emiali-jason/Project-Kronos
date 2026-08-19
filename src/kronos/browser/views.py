@@ -20,6 +20,12 @@ from kronos.application.live_monitoring_e2e import (
     LiveMonitoringTestResult,
     LiveMonitoringTestState,
 )
+from kronos.application.notifications import (
+    ManagedNotification,
+    NotificationProduct,
+    NotificationState,
+    NotificationWorkspaceSnapshot,
+)
 from kronos.application.swing_v1_review import (
     ChartAnalysisState,
     InstrumentChartAnalysisSnapshot,
@@ -99,6 +105,7 @@ _NAVIGATION = (
     ("Swing", "/swing/opportunities", "swing"),
     ("Intraday", "/intraday", "bolt"),
     ("Theta Earners", "/theta-earners", "theta"),
+    ("Notifications", "/notifications", "notifications"),
     ("Trading Journal", "/journal", "journal"),
     ("Portfolio", "/portfolio", "portfolio"),
     ("Reports", "/reports", "reports"),
@@ -129,6 +136,7 @@ a{color:inherit;text-decoration:none}.app{display:grid;grid-template-columns:218
 .missing-evidence{display:block;color:var(--amber);font-size:10px;margin-top:5px}.missing-evidence strong{color:#ffd98c}.blocker-list{margin:8px 0 0;padding-left:18px;color:var(--muted);font-size:11px}
 .native-opportunity{padding:10px 11px;margin-top:7px}.native-opportunity .opp-head{gap:8px}.native-opportunity .opp-identity h3{font-size:18px;line-height:1.2}.native-opportunity .setup-family{font-size:11px;margin-top:0}.native-opportunity .direction{padding:2px 7px;font-size:11px}.native-opportunity .summary-reason{font-size:11px;line-height:1.35;margin:6px 0}.native-opportunity .summary-footer{align-items:flex-end;gap:7px;padding-top:7px}.native-opportunity .summary-rr{flex:1 1 220px;min-width:0;font-size:11px;line-height:1.35;overflow-wrap:anywhere}.native-opportunity .summary-rr>strong{font-size:12px}.native-opportunity .missing-evidence{font-size:9px;line-height:1.3;margin-top:3px}.native-opportunity-actions{display:flex;flex:0 1 auto;justify-content:flex-end;gap:5px;flex-wrap:wrap}.native-opportunity-actions .button{display:inline-flex;align-items:center;min-height:27px;padding:4px 8px;font-size:10px;line-height:1.15;white-space:nowrap}
 .progression-summary{display:block;color:var(--muted);font-size:9px;margin-top:3px;text-transform:uppercase;letter-spacing:.04em}.progression-list{display:grid;gap:8px}.progression-row{display:grid;grid-template-columns:20px 1fr;gap:8px;border-top:1px solid var(--line);padding-top:8px}.progression-row:first-child{border-top:0;padding-top:0}.progression-marker{color:var(--blue);font-weight:800}.progression-state{display:block;color:var(--amber);font-size:9px;font-weight:800;letter-spacing:.06em;margin-top:2px}.progression-row small{display:block;color:var(--muted);font-size:10px;margin-top:4px}.progression-row form{margin-top:7px}.progression-row details{margin-top:7px}.progression-row details .analysis-fact{margin-top:5px}
+.notification-tabs{display:flex;gap:7px;margin-bottom:12px}.notification-tabs .button{padding:6px 11px;font-size:11px}.notification-tabs .active{background:#0c4f83;border-color:#2c9cff}.notification-action-centre{border:1px solid #8a4c26;background:#21170f;border-radius:9px;padding:11px 13px;margin-bottom:12px}.notification-action-centre h2{margin:0 0 5px;color:#ffd59c;font-size:13px}.notification-action-centre p{margin:0;color:var(--muted);font-size:11px}.notification-list{display:grid;gap:9px}.notification-row{border:1px solid var(--line);background:rgba(6,23,37,.88);border-radius:9px;padding:12px}.notification-head{display:flex;align-items:center;gap:9px}.notification-head h2{font-size:18px;margin:0}.notification-product{color:var(--blue);font-size:10px;font-weight:800}.notification-state{margin-left:auto;border:1px solid currentColor;border-radius:999px;padding:3px 8px;font-size:10px;font-weight:800}.notification-state.ACTIVE{color:var(--green)}.notification-state.TRIGGERED{color:var(--amber)}.notification-state.INACTIVE{color:var(--muted)}.notification-state.STALE{color:var(--red)}.notification-condition{margin:7px 0 4px;font-weight:750}.notification-trigger{border-left:2px solid var(--amber);padding:6px 9px;margin:8px 0;background:#211a0d}.notification-trigger strong,.notification-trigger span{display:block}.notification-trigger span{color:var(--amber);font-size:11px}.notification-trigger small{color:#ffd59c}.notification-meta{display:flex;gap:12px;flex-wrap:wrap;color:var(--muted);font-size:10px}.notification-actions{display:flex;align-items:flex-start;gap:6px;flex-wrap:wrap;margin-top:9px}.notification-actions form{display:inline}.notification-actions button,.notification-actions .button{padding:5px 8px;font-size:10px}.notification-confirm summary{list-style:none;border:1px solid #246295;background:#0b2b47;color:#e9f5ff;padding:5px 8px;border-radius:7px;font-size:10px;font-weight:650;cursor:pointer}.notification-confirm summary::-webkit-details-marker{display:none}.notification-confirm div{position:absolute;z-index:10;max-width:330px;border:1px solid var(--line);background:#071827;padding:10px;border-radius:8px;box-shadow:0 12px 30px rgba(0,0,0,.45)}.notification-confirm p{margin:0 0 7px;color:var(--muted);font-size:11px}.notification-history{margin-top:8px;border-top:1px solid var(--line);padding-top:7px}.notification-history summary{cursor:pointer;color:var(--muted);font-size:10px}.notification-history ul{margin:6px 0 0;padding-left:18px;color:var(--muted);font-size:10px}
 @media(max-width:1050px){.status-grid{grid-template-columns:repeat(3,1fr)}.panels,.workspace{grid-template-columns:1fr}.step32-grid{grid-template-columns:1fr}.step32-block{border-left:0;border-top:1px solid var(--line);padding:10px 0 0}.step32-block:first-child{border-top:0;padding-top:0}.market-panel{min-height:260px}}
 @media(min-width:761px){.panels{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:760px){.app{grid-template-columns:1fr}.sidebar{position:static;height:auto}.nav{grid-template-columns:repeat(2,1fr)}.system{display:none}.topbar{height:auto;padding:18px;align-items:flex-start;gap:14px}.tabs{overflow:auto;padding:0 18px}.content{padding:18px}.status-grid{grid-template-columns:repeat(2,1fr)}.trade-grid,.plan-strip{grid-template-columns:1fr 1fr}.kite{flex-wrap:wrap;justify-content:flex-end}.chart-intake-list,.native-chart-grid{grid-template-columns:1fr}}
@@ -2556,6 +2564,147 @@ def render_placeholder(
     )
 
 
+def render_notifications(
+    snapshot: BrowserWorkspaceSnapshot,
+    notifications: NotificationWorkspaceSnapshot,
+    *,
+    selected_product: NotificationProduct | None = None,
+) -> str:
+    """Render one durable management surface over product-owned records."""
+
+    if type(notifications) is not NotificationWorkspaceSnapshot:
+        raise TypeError("NOTIFICATION_WORKSPACE_INVALID")
+    if selected_product is not None and type(selected_product) is not NotificationProduct:
+        raise TypeError("NOTIFICATION_PRODUCT_FILTER_INVALID")
+    tabs = '<nav class="notification-tabs">' + "".join(
+        f'<a class="button{" active" if selected_product is product else ""}" href="{href}">{label}</a>'
+        for label, href, product in (
+            ("ALL", "/notifications", None),
+            ("SWING", "/notifications/swing", NotificationProduct.SWING),
+            ("INTRADAY", "/notifications/intraday", NotificationProduct.INTRADAY),
+        )
+    ) + "</nav>"
+    records = notifications.for_product(selected_product)
+    action_required = tuple(
+        item for item in records
+        if item.state is NotificationState.TRIGGERED
+    )
+    action_centre = ""
+    if action_required:
+        instruments = ", ".join(item.instrument for item in action_required)
+        action_centre = (
+            '<section class="notification-action-centre"><h2>ACTION CENTRE · '
+            f'{len(action_required)} REASSESSMENT REQUIRED</h2><p>{escape(instruments)} · '
+            'One governed trigger event is projected here and in its durable record.</p></section>'
+        )
+    if records:
+        body = '<div class="notification-list">' + "".join(
+            _notification_row(item) for item in records
+        ) + "</div>"
+    else:
+        message = {
+            None: "No notifications.",
+            NotificationProduct.SWING: "No active Swing watches.",
+            NotificationProduct.INTRADAY: "No Intraday notifications. Intraday alert policy has not been manufactured.",
+        }[selected_product]
+        body = f'<div class="global-empty">{escape(message)}</div>'
+    watch_refresh = (
+        f'<script>const notificationRevision="{notifications.revision}";'
+        'setInterval(async()=>{try{const r=await fetch("/notifications/status",{cache:"no-store"});'
+        'if(!r.ok)return;const s=await r.json();if(s.revision!==notificationRevision)location.reload();'
+        '}catch(_e){}},1500);</script>'
+    )
+    return _page(
+        title="Notifications",
+        subtitle="Durable product-segregated watch and alert management.",
+        snapshot=snapshot,
+        active_nav="Notifications",
+        active_tab="",
+        body=tabs + action_centre + body + watch_refresh,
+    )
+
+
+def _notification_row(item: ManagedNotification) -> str:
+    direction_class = "direction-long" if item.direction == "LONG" else "direction-short"
+    activated = item.activated_at.astimezone(_KOLKATA).strftime("%d %b %Y · %H:%M IST")
+    triggered = ""
+    if item.state is NotificationState.TRIGGERED:
+        trigger_time = (
+            item.triggered_at.astimezone(_KOLKATA).strftime("%d %b %Y · %H:%M IST")
+            if item.triggered_at else "UNAVAILABLE"
+        )
+        triggered = (
+            '<div class="notification-trigger"><strong>PROMOTION WATCH REACHED</strong>'
+            f'<small>{escape(item.trigger_summary or item.condition_summary)}</small>'
+            '<span>REASSESSMENT REQUIRED</span>'
+            '<small>NO TRADE HAS BEEN AUTHORIZED</small>'
+            f'<small>Triggered {escape(trigger_time)}</small></div>'
+        )
+    monitoring = ""
+    if item.state is NotificationState.ACTIVE and not item.monitoring_active:
+        monitoring = (
+            '<div class="notification-trigger"><strong>PROVIDER MONITORING UNAVAILABLE</strong>'
+            '<small>The durable watch remains active but no Provider session is attached. '
+            'Reconnect Kite to restore valid monitoring.</small></div>'
+        )
+    exact_details = (
+        '<span class="button">ANALYSIS DETAILS UNAVAILABLE · STALE SOURCE</span>'
+        if item.state is NotificationState.STALE
+        else (
+            f'<a class="button" href="/swing/analysis-details/{escape(item.source_run_identity)}/'
+            f'{quote(item.instrument, safe="")}">VIEW ANALYSIS DETAILS →</a>'
+        )
+    )
+    controls = [exact_details]
+    if item.state is NotificationState.ACTIVE:
+        controls.append(_notification_confirmation(
+            item.source_identity, "deactivate", "DEACTIVATE",
+            "Monitoring stops. The analytical candidate and immutable history remain preserved.",
+        ))
+    elif item.state is NotificationState.INACTIVE:
+        controls.append(
+            '<form method="post" action="/notifications/watch/reactivate">'
+            f'<input type="hidden" name="watch_id" value="{escape(item.source_identity)}">'
+            '<button type="submit">REACTIVATE</button></form>'
+        )
+    controls.append(_notification_confirmation(
+        item.source_identity, "delete", "DELETE",
+        "The notification disappears from this workspace. Required audit history is preserved.",
+    ))
+    history = "".join(
+        f'<li>{escape(event.event_type)} · '
+        f'{escape(event.occurred_at.astimezone(_KOLKATA).strftime("%d %b %Y %H:%M IST"))}</li>'
+        for event in item.history
+    )
+    return (
+        f'<article class="notification-row" data-watch-id="{escape(item.source_identity)}">'
+        '<div class="notification-head">'
+        f'<h2>{escape(item.instrument)}</h2><strong class="notification-product">{escape(item.product.value)}</strong>'
+        f'<span class="direction {direction_class}">{escape(item.direction)}</span>'
+        f'<span class="notification-state {escape(item.state.value)}">{escape(item.state.value)}</span></div>'
+        f'<div class="notification-condition">{escape(item.condition_summary)}</div>{triggered}{monitoring}'
+        '<div class="notification-meta">'
+        f'<span>{escape(item.timeframe)} · {escape(item.comparator)}</span>'
+        f'<span>Level {escape(item.authoritative_level)}</span>'
+        f'<span>Activated {escape(activated)}</span>'
+        f'<span>Source {escape(item.source_run_identity)}</span></div>'
+        f'<div class="notification-actions">{"".join(controls)}</div>'
+        f'<details class="notification-history"><summary>WATCH HISTORY · {len(item.history)} EVENTS</summary>'
+        f'<ul>{history}</ul></details></article>'
+    )
+
+
+def _notification_confirmation(
+    watch_id: str, action: str, label: str, explanation: str,
+) -> str:
+    return (
+        '<details class="notification-confirm"><summary>' + escape(label) + '</summary><div>'
+        f'<p>{escape(explanation)}</p><form method="post" action="/notifications/watch/{escape(action)}">'
+        f'<input type="hidden" name="watch_id" value="{escape(watch_id)}">'
+        f'<button type="submit">CONFIRM {escape(label)}</button></form></div></details>'
+    )
+
+
 def render_intraday_workstation(
     snapshot: BrowserWorkspaceSnapshot,
     intraday: object,
@@ -2979,7 +3128,8 @@ def _date(value) -> str:  # type: ignore[no-untyped-def]
 def _icon(name: str) -> str:
     return {
         "home": "⌂", "swing": "↗", "bolt": "ϟ", "theta": "Σ",
-        "journal": "▤", "portfolio": "▣", "reports": "▥", "settings": "⚙",
+        "notifications": "◉", "journal": "▤", "portfolio": "▣",
+        "reports": "▥", "settings": "⚙",
     }[name]
 
 
@@ -2989,6 +3139,7 @@ __all__ = [
     "render_browser_page",
     "render_opportunities",
     "render_native_analysis_details",
+    "render_notifications",
     "render_trade_journal",
     "render_placeholder",
     "render_settings",

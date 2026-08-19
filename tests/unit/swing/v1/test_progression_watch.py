@@ -21,9 +21,12 @@ from kronos.swing.v1.progression_watch import (
     ProgressionWatchState,
     ProgressionWatchStore,
     activate_watch,
+    deactivate_watch,
     derive_progression_requirements,
+    hide_watch,
     mark_watch_stale,
     observe_completed_bar,
+    reactivate_watch,
     tradingview_instruction,
 )
 
@@ -143,6 +146,43 @@ def test_watch_persistence_restart_and_stale_state_are_fail_closed(tmp_path: Pat
     with pytest.raises(ValueError, match="TRANSITION_INVALID"):
         store.retain(watch)
     assert mark_watch_stale(watch).state is ProgressionWatchState.STALE
+
+
+def test_deactivate_reactivate_delete_preserve_one_identity_and_immutable_history(tmp_path: Path) -> None:
+    store = ProgressionWatchStore(tmp_path)
+    active = activate_watch(_watchable_requirement(), activated_at=NOW)
+    store.retain(active)
+    inactive = deactivate_watch(active, occurred_at=NOW + timedelta(minutes=1))
+    store.retain(inactive)
+    assert inactive.state is ProgressionWatchState.INACTIVE
+    assert deactivate_watch(inactive, occurred_at=NOW + timedelta(minutes=2)) == inactive
+    reactivated = reactivate_watch(inactive, occurred_at=NOW + timedelta(minutes=3))
+    store.retain(reactivated)
+    assert reactivated.watch_id == active.watch_id
+    assert reactivated.state is ProgressionWatchState.ACTIVE
+    hidden = hide_watch(reactivated, occurred_at=NOW + timedelta(minutes=4))
+    store.retain(hidden)
+    assert hidden.workspace_hidden is True
+    assert hidden.state is ProgressionWatchState.INACTIVE
+    assert hide_watch(hidden, occurred_at=NOW + timedelta(minutes=5)) == hidden
+    assert store.load() == (hidden,)
+    assert [event.event_type.value for event in hidden.history] == [
+        "ACTIVATED", "DEACTIVATED", "REACTIVATED", "DELETED",
+    ]
+    assert len(tuple((tmp_path / "events").glob("*.json"))) == 4
+
+
+def test_stale_or_hidden_watch_cannot_be_reactivated() -> None:
+    active = activate_watch(_watchable_requirement(), activated_at=NOW)
+    stale = mark_watch_stale(active, occurred_at=NOW + timedelta(minutes=1))
+    with pytest.raises(ValueError, match="REACTIVATION_NOT_PERMITTED"):
+        reactivate_watch(stale, occurred_at=NOW + timedelta(minutes=2))
+    hidden = hide_watch(
+        deactivate_watch(active, occurred_at=NOW + timedelta(minutes=1)),
+        occurred_at=NOW + timedelta(minutes=2),
+    )
+    with pytest.raises(ValueError, match="REACTIVATION_NOT_PERMITTED"):
+        reactivate_watch(hidden, occurred_at=NOW + timedelta(minutes=3))
 
 
 def test_tradingview_instruction_is_exact_and_non_trading() -> None:

@@ -145,6 +145,50 @@ def test_restart_restores_only_same_run_watch_and_stale_run_is_not_rebound(tmp_p
     assert other.sessions == []
 
 
+def test_notification_controls_share_watch_identity_and_monitoring_lifecycle(tmp_path: Path) -> None:
+    workflow = _workflow(tmp_path)
+    capability = _Capability()
+    requirement = _requirement()
+    workflow.synchronize(RUN, (requirement,))
+    active = workflow.activate_requirement(requirement.requirement_id, capability)
+
+    inactive = workflow.deactivate(active.watch_id)
+    assert inactive.state is ProgressionWatchState.INACTIVE
+    assert workflow.active_monitoring_count == 0
+    assert capability.sessions[0].disconnect_count == 1
+    assert workflow.deactivate(active.watch_id) == inactive
+
+    reactivated = workflow.reactivate(active.watch_id, capability)
+    assert reactivated.watch_id == active.watch_id
+    assert reactivated.state is ProgressionWatchState.ACTIVE
+    assert workflow.active_monitoring_count == 1
+    assert len(capability.sessions) == 2
+
+    hidden = workflow.delete(active.watch_id)
+    assert hidden.workspace_hidden is True
+    assert hidden.state is ProgressionWatchState.INACTIVE
+    assert workflow.active_monitoring_count == 0
+    assert workflow.delete(active.watch_id) == hidden
+    with pytest.raises(ValueError, match="REACTIVATION_NOT_PERMITTED"):
+        workflow.reactivate(active.watch_id, capability)
+
+
+def test_inactive_watch_remains_inactive_on_restart_and_stale_run_fails_closed(tmp_path: Path) -> None:
+    first = _workflow(tmp_path)
+    requirement = _requirement()
+    first.synchronize(RUN, (requirement,))
+    watch = first.activate_requirement(requirement.requirement_id, _Capability())
+    first.deactivate(watch.watch_id)
+
+    restarted = _workflow(tmp_path)
+    capability = _Capability()
+    restarted.synchronize(RUN, (requirement,))
+    assert restarted.restore_active(capability) == ()
+    assert capability.sessions == []
+    restarted.synchronize("SWING-RUN-FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF", ())
+    assert restarted.snapshot().watches[0].state is ProgressionWatchState.STALE
+
+
 def test_provider_connect_disconnect_and_application_close_own_watch_cleanup() -> None:
     capability = _Capability()
 

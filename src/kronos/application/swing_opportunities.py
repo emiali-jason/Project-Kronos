@@ -925,6 +925,63 @@ class SwingOpportunitiesApplication:
             return False
         return True
 
+    def deactivate_progression_watch(self, watch_id: str) -> bool:
+        """Stop one watch without changing its analytical source or history."""
+
+        with self.__lock:
+            workflow = self.__progression_watch_workflow
+            allowed = (
+                self.__snapshot.analysis_state is not AnalysisState.RUNNING
+                and workflow is not None
+            )
+        if not allowed:
+            return False
+        try:
+            workflow.deactivate(watch_id)
+        except (TypeError, ValueError):
+            return False
+        return True
+
+    def reactivate_progression_watch(self, watch_id: str) -> bool:
+        """Resume only the exact still-current UX-08 watch identity."""
+
+        with self.__lock:
+            provider = self.__provider
+            workflow = self.__progression_watch_workflow
+            allowed = (
+                self.__snapshot.provider_state is ProviderConnectionState.CONNECTED
+                and self.__snapshot.analysis_state is not AnalysisState.RUNNING
+                and provider is not None
+                and workflow is not None
+            )
+        if not allowed:
+            return False
+        capability = provider.authenticated_read_only_capability()
+        if capability is None or getattr(capability, "active", False) is not True:
+            return False
+        try:
+            workflow.reactivate(watch_id, capability)
+        except (TypeError, ValueError):
+            return False
+        return True
+
+    def delete_progression_watch(self, watch_id: str) -> bool:
+        """Hide one Sponsor projection while preserving the governed record."""
+
+        with self.__lock:
+            workflow = self.__progression_watch_workflow
+            allowed = (
+                self.__snapshot.analysis_state is not AnalysisState.RUNNING
+                and workflow is not None
+            )
+        if not allowed:
+            return False
+        try:
+            workflow.delete(watch_id)
+        except (TypeError, ValueError):
+            return False
+        return True
+
     def run_analysis(self) -> bool:
         """Start one complete Stage 1-9 run and reject concurrent requests."""
 

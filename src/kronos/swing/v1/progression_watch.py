@@ -54,7 +54,17 @@ class ProgressionComparator(StrEnum):
 class ProgressionWatchState(StrEnum):
     ACTIVE = "ACTIVE"
     TRIGGERED = "TRIGGERED"
+    INACTIVE = "INACTIVE"
     STALE = "STALE"
+
+
+class ProgressionWatchEventType(StrEnum):
+    ACTIVATED = "ACTIVATED"
+    DEACTIVATED = "DEACTIVATED"
+    REACTIVATED = "REACTIVATED"
+    TRIGGERED = "TRIGGERED"
+    STALE = "STALE"
+    DELETED = "DELETED"
 
 
 _WATCHABLE_EVENTS = {
@@ -156,6 +166,23 @@ class GovernedCompletedBar:
 
 
 @dataclass(frozen=True, slots=True)
+class ProgressionWatchEvent:
+    event_id: str
+    event_type: ProgressionWatchEventType
+    occurred_at: datetime
+    summary: str
+
+    def __post_init__(self) -> None:
+        if (
+            not _digest(self.event_id)
+            or type(self.event_type) is not ProgressionWatchEventType
+            or not _aware(self.occurred_at)
+            or not self.summary
+        ):
+            raise ValueError("PROGRESSION_WATCH_EVENT_INVALID")
+
+
+@dataclass(frozen=True, slots=True)
 class ProgressionWatch:
     watch_id: str
     requirement: ProgressionRequirement
@@ -164,6 +191,8 @@ class ProgressionWatch:
     triggered_at: datetime | None = None
     trigger_bar: GovernedCompletedBar | None = None
     consequence: str = "REASSESSMENT_REQUIRED"
+    workspace_hidden: bool = False
+    history: tuple[ProgressionWatchEvent, ...] = ()
 
     def __post_init__(self) -> None:
         triggered = self.state is ProgressionWatchState.TRIGGERED
@@ -187,6 +216,14 @@ class ProgressionWatch:
                 )
             )
             or self.consequence != "REASSESSMENT_REQUIRED"
+            or type(self.workspace_hidden) is not bool
+            or type(self.history) is not tuple
+            or any(type(item) is not ProgressionWatchEvent for item in self.history)
+            or len({item.event_id for item in self.history}) != len(self.history)
+            or any(
+                later.occurred_at < earlier.occurred_at
+                for earlier, later in zip(self.history, self.history[1:])
+            )
         ):
             raise ValueError("PROGRESSION_WATCH_INVALID")
 
@@ -259,7 +296,11 @@ def activate_watch(requirement: ProgressionRequirement, *, activated_at: datetim
     if requirement.state is not ProgressionRequirementState.WATCH_AVAILABLE or not _aware(activated_at):
         raise ValueError("PROGRESSION_WATCH_ACTIVATION_NOT_PERMITTED")
     watch_id = _identity("SWING-PROGRESSION-WATCH", requirement.requirement_id)
-    return ProgressionWatch(watch_id, requirement, ProgressionWatchState.ACTIVE, activated_at)
+    event = _event(watch_id, ProgressionWatchEventType.ACTIVATED, activated_at)
+    return ProgressionWatch(
+        watch_id, requirement, ProgressionWatchState.ACTIVE, activated_at,
+        history=(event,),
+    )
 
 
 def observe_completed_bar(watch: ProgressionWatch, bar: GovernedCompletedBar) -> ProgressionWatch:
@@ -283,18 +324,71 @@ def observe_completed_bar(watch: ProgressionWatch, bar: GovernedCompletedBar) ->
     )
     if not reached:
         return watch
+    event = _event(watch.watch_id, ProgressionWatchEventType.TRIGGERED, bar.observation_boundary)
     return replace(
         watch,
         state=ProgressionWatchState.TRIGGERED,
         triggered_at=bar.observation_boundary,
         trigger_bar=bar,
+        history=(*watch.history, event),
     )
 
 
-def mark_watch_stale(watch: ProgressionWatch) -> ProgressionWatch:
-    if watch.state is not ProgressionWatchState.ACTIVE:
+def mark_watch_stale(
+    watch: ProgressionWatch, *, occurred_at: datetime | None = None,
+) -> ProgressionWatch:
+    if watch.state not in {ProgressionWatchState.ACTIVE, ProgressionWatchState.INACTIVE}:
         return watch
-    return replace(watch, state=ProgressionWatchState.STALE)
+    timestamp = occurred_at or datetime.now(watch.activated_at.tzinfo)
+    event = _event(watch.watch_id, ProgressionWatchEventType.STALE, timestamp)
+    return replace(
+        watch, state=ProgressionWatchState.STALE,
+        history=(*watch.history, event),
+    )
+
+
+def deactivate_watch(watch: ProgressionWatch, *, occurred_at: datetime) -> ProgressionWatch:
+    if watch.state is ProgressionWatchState.INACTIVE:
+        return watch
+    if watch.state is not ProgressionWatchState.ACTIVE or not _aware(occurred_at):
+        raise ValueError("PROGRESSION_WATCH_DEACTIVATION_NOT_PERMITTED")
+    event = _event(watch.watch_id, ProgressionWatchEventType.DEACTIVATED, occurred_at)
+    return replace(
+        watch, state=ProgressionWatchState.INACTIVE,
+        history=(*watch.history, event),
+    )
+
+
+def reactivate_watch(watch: ProgressionWatch, *, occurred_at: datetime) -> ProgressionWatch:
+    if watch.state is ProgressionWatchState.ACTIVE:
+        return watch
+    if (
+        watch.state is not ProgressionWatchState.INACTIVE
+        or watch.workspace_hidden
+        or not _aware(occurred_at)
+    ):
+        raise ValueError("PROGRESSION_WATCH_REACTIVATION_NOT_PERMITTED")
+    event = _event(watch.watch_id, ProgressionWatchEventType.REACTIVATED, occurred_at)
+    return replace(
+        watch, state=ProgressionWatchState.ACTIVE,
+        history=(*watch.history, event),
+    )
+
+
+def hide_watch(watch: ProgressionWatch, *, occurred_at: datetime) -> ProgressionWatch:
+    if watch.workspace_hidden:
+        return watch
+    if not _aware(occurred_at):
+        raise ValueError("PROGRESSION_WATCH_DELETE_NOT_PERMITTED")
+    event = _event(watch.watch_id, ProgressionWatchEventType.DELETED, occurred_at)
+    state = (
+        ProgressionWatchState.INACTIVE
+        if watch.state is ProgressionWatchState.ACTIVE else watch.state
+    )
+    return replace(
+        watch, state=state, workspace_hidden=True,
+        history=(*watch.history, event),
+    )
 
 
 def tradingview_instruction(requirement: ProgressionRequirement) -> tuple[tuple[str, str], ...]:
@@ -325,27 +419,36 @@ class ProgressionWatchStore:
         path = self.root / f"{watch.watch_id}.json"
         if path.exists():
             current = _watch_from_dict(json.loads(path.read_text(encoding="utf-8")))
-            allowed = (
-                current == watch
-                or (
-                    current.state is ProgressionWatchState.ACTIVE
-                    and watch.state in {
+            allowed = current == watch or (
+                current.watch_id == watch.watch_id
+                and current.requirement == watch.requirement
+                and current.activated_at == watch.activated_at
+                and not current.workspace_hidden
+                and watch.history[:len(current.history)] == current.history
+                and len(watch.history) > len(current.history)
+                and (
+                    (current.state is ProgressionWatchState.ACTIVE and watch.state in {
                         ProgressionWatchState.TRIGGERED,
                         ProgressionWatchState.STALE,
-                    }
-                    and current.watch_id == watch.watch_id
-                    and current.requirement == watch.requirement
-                    and current.activated_at == watch.activated_at
+                        ProgressionWatchState.INACTIVE,
+                    })
+                    or (current.state is ProgressionWatchState.INACTIVE and watch.state in {
+                        ProgressionWatchState.ACTIVE,
+                        ProgressionWatchState.STALE,
+                        ProgressionWatchState.INACTIVE,
+                    })
+                    or (current.state is watch.state and watch.workspace_hidden)
                 )
             )
             if not allowed:
                 raise ValueError("PROGRESSION_WATCH_TRANSITION_INVALID")
-        event_path = self.root / "events" / f"{watch.watch_id}-{watch.state.value}.json"
-        if event_path.exists():
-            if json.loads(event_path.read_text(encoding="utf-8")) != payload:
+        for event in watch.history:
+            event_payload = _event_to_dict(event, watch.watch_id)
+            event_path = self.root / "events" / f"{event.event_id}.json"
+            if event_path.exists() and json.loads(event_path.read_text(encoding="utf-8")) != event_payload:
                 raise ValueError("PROGRESSION_WATCH_EVENT_IMMUTABLE")
-        else:
-            _atomic_payload(event_path, payload)
+            if not event_path.exists():
+                _atomic_payload(event_path, event_payload)
         _atomic_payload(path, payload)
 
     def load(self) -> tuple[ProgressionWatch, ...]:
@@ -428,6 +531,25 @@ def _identity(prefix: str, *values: object) -> str:
     return sha256(json.dumps((prefix, values), sort_keys=True, default=str, separators=(",", ":")).encode()).hexdigest()
 
 
+def _event(
+    watch_id: str, event_type: ProgressionWatchEventType, occurred_at: datetime,
+) -> ProgressionWatchEvent:
+    return ProgressionWatchEvent(
+        _identity("SWING-PROGRESSION-WATCH-EVENT", watch_id, event_type.value, occurred_at.isoformat()),
+        event_type, occurred_at, event_type.value.replace("_", " ").title(),
+    )
+
+
+def _event_to_dict(value: ProgressionWatchEvent, watch_id: str) -> dict[str, object]:
+    return {
+        "event_id": value.event_id,
+        "watch_id": watch_id,
+        "event_type": value.event_type.value,
+        "occurred_at": value.occurred_at.isoformat(),
+        "summary": value.summary,
+    }
+
+
 def _watch_to_dict(value: ProgressionWatch) -> dict[str, object]:
     requirement = value.requirement
     return {
@@ -436,6 +558,8 @@ def _watch_to_dict(value: ProgressionWatch) -> dict[str, object]:
         "activated_at": value.activated_at.isoformat(),
         "triggered_at": None if value.triggered_at is None else value.triggered_at.isoformat(),
         "consequence": value.consequence,
+        "workspace_hidden": value.workspace_hidden,
+        "history": tuple(_event_to_dict(item, value.watch_id) for item in value.history),
         "requirement": {
             "requirement_id": requirement.requirement_id,
             "product": requirement.product,
@@ -491,11 +615,26 @@ def _watch_from_dict(value: dict[str, object]) -> ProgressionWatch:
         bar_raw["source_identity"], bar_raw["calendar_identity"],
         bar_raw["calendar_version"], bar_raw["session_identity"], tuple(bar_raw["provenance"]),
     )
+    history = tuple(
+        ProgressionWatchEvent(
+            item["event_id"], ProgressionWatchEventType(item["event_type"]),
+            datetime.fromisoformat(item["occurred_at"]), item["summary"],
+        )
+        for item in value.get("history", ())
+    )
+    if not history:
+        activated_at = datetime.fromisoformat(value["activated_at"])
+        history = (_event(value["watch_id"], ProgressionWatchEventType.ACTIVATED, activated_at),)
+        state = ProgressionWatchState(value["state"])
+        if state is ProgressionWatchState.TRIGGERED:
+            history += (_event(value["watch_id"], ProgressionWatchEventType.TRIGGERED, datetime.fromisoformat(value["triggered_at"])),)
+        elif state is ProgressionWatchState.STALE:
+            history += (_event(value["watch_id"], ProgressionWatchEventType.STALE, activated_at),)
     return ProgressionWatch(
         value["watch_id"], requirement, ProgressionWatchState(value["state"]),
         datetime.fromisoformat(value["activated_at"]),
         None if value["triggered_at"] is None else datetime.fromisoformat(value["triggered_at"]),
-        bar, value["consequence"],
+        bar, value["consequence"], bool(value.get("workspace_hidden", False)), history,
     )
 
 
@@ -550,6 +689,8 @@ __all__ = [
     "PROGRESSION_WATCH_AUTHORITY", "PROGRESSION_WATCH_POLICY_ID",
     "ProgressionComparator", "ProgressionRequirement",
     "ProgressionRequirementState", "ProgressionWatch", "ProgressionWatchState",
+    "ProgressionWatchEvent", "ProgressionWatchEventType",
     "ProgressionWatchStore", "activate_watch", "derive_progression_requirements",
-    "mark_watch_stale", "observe_completed_bar", "tradingview_instruction",
+    "deactivate_watch", "hide_watch", "mark_watch_stale", "observe_completed_bar",
+    "reactivate_watch", "tradingview_instruction",
 ]

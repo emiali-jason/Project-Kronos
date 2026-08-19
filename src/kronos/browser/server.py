@@ -17,6 +17,10 @@ from kronos.application.swing_progression_watch import (
     SwingProgressionWatchSnapshot,
     SwingProgressionWatchWorkflow,
 )
+from kronos.application.notifications import (
+    NotificationProduct,
+)
+from kronos.application.swing_notifications import project_swing_notification_workspace
 from kronos.application.swing_v1_browser import SwingV1BrowserOperationalization
 from kronos.application.swing_v1_review import (
     SwingV1ReviewWorkflow,
@@ -65,6 +69,7 @@ from kronos.browser.views import (
     render_mtf_fact_diagnostics,
     render_native_discovery,
     render_native_analysis_details,
+    render_notifications,
     render_trade_candidates,
     render_v1_review,
 )
@@ -437,6 +442,16 @@ class _BrowserHandler(BaseHTTPRequestHandler):
                 product_response.content_type,
             )
             return
+        if path == "/notifications/status":
+            projected = project_swing_notification_workspace(
+                self.server.progression_snapshot()
+            )
+            self._json({
+                "revision": projected.revision,
+                "count": len(projected.records),
+                "action_required": len(projected.action_required),
+            })
+            return
         if path == "/swing/opportunities":
             snapshot, discovery = (
                 self.server.application.opportunities_projection()
@@ -446,6 +461,18 @@ class _BrowserHandler(BaseHTTPRequestHandler):
                 discovery,
                 self.server.native_review.snapshot(),
                 self.server.progression_snapshot(),
+            ))
+            return
+        if path in {"/notifications", "/notifications/swing", "/notifications/intraday"}:
+            selected = {
+                "/notifications": None,
+                "/notifications/swing": NotificationProduct.SWING,
+                "/notifications/intraday": NotificationProduct.INTRADAY,
+            }[path]
+            self._html(render_notifications(
+                self.server.application.snapshot(),
+                project_swing_notification_workspace(self.server.progression_snapshot()),
+                selected_product=selected,
             ))
             return
         details_match = _ANALYSIS_DETAILS_ROUTE.fullmatch(path)
@@ -641,6 +668,15 @@ class _BrowserHandler(BaseHTTPRequestHandler):
         if path == "/swing/progression-watch/activate":
             self._activate_progression_watch()
             return
+        if path == "/notifications/watch/deactivate":
+            self._manage_progression_watch("deactivate")
+            return
+        if path == "/notifications/watch/reactivate":
+            self._manage_progression_watch("reactivate")
+            return
+        if path == "/notifications/watch/delete":
+            self._manage_progression_watch("delete")
+            return
         if path == "/swing/v1/layer1":
             evidence = self.server.application.completed_analysis_evidence()
             if evidence is None:
@@ -787,6 +823,43 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             self._text(HTTPStatus.CONFLICT, "Progression watch is not available.")
             return
         self._redirect("/swing/opportunities")
+
+    def _manage_progression_watch(self, action: str) -> None:
+        if urlsplit(self.path).query:
+            self._text(HTTPStatus.BAD_REQUEST, "Notification action rejected.")
+            return
+        try:
+            content_length = int(self.headers.get("Content-Length", ""))
+        except ValueError:
+            content_length = 0
+        if (
+            self.headers.get("Content-Type", "").split(";", 1)[0].lower()
+            != "application/x-www-form-urlencoded"
+            or not 0 < content_length <= 128
+        ):
+            self._text(HTTPStatus.BAD_REQUEST, "Notification action rejected.")
+            return
+        try:
+            fields = parse_qs(
+                self.rfile.read(content_length).decode("utf-8"),
+                strict_parsing=True,
+            )
+            values = fields.get("watch_id", ())
+            operation = getattr(
+                self.server.application,
+                f"{action}_progression_watch",
+            )
+            if (
+                set(fields) != {"watch_id"}
+                or len(values) != 1
+                or re.fullmatch(r"[0-9a-f]{64}", values[0]) is None
+                or not operation(values[0])
+            ):
+                raise ValueError
+        except (AttributeError, UnicodeDecodeError, ValueError):
+            self._text(HTTPStatus.CONFLICT, "Notification action is not available.")
+            return
+        self._redirect("/notifications")
 
     def _sponsor_exit(self) -> None:
         if self.headers.get("Content-Length") not in {None, "0"}:

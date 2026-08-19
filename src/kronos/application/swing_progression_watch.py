@@ -38,8 +38,11 @@ from kronos.swing.v1.progression_watch import (
     ProgressionWatchState,
     ProgressionWatchStore,
     activate_watch,
+    deactivate_watch,
+    hide_watch,
     mark_watch_stale,
     observe_completed_bar,
+    reactivate_watch,
 )
 
 
@@ -48,6 +51,7 @@ class SwingProgressionWatchSnapshot:
     current_native_run_identity: str | None
     requirements: tuple[ProgressionRequirement, ...]
     watches: tuple[ProgressionWatch, ...]
+    monitoring_watch_ids: tuple[str, ...] = ()
 
     def for_instrument(self, instrument: str) -> tuple[ProgressionRequirement, ...]:
         return tuple(item for item in self.requirements if item.canonical_instrument == instrument)
@@ -100,7 +104,11 @@ class SwingProgressionWatchWorkflow:
             self._requirements = {item.requirement_id: item for item in requirements}
             stale = tuple(
                 watch for watch in self._watches.values()
-                if watch.state is ProgressionWatchState.ACTIVE
+                if not watch.workspace_hidden
+                and watch.state in {
+                    ProgressionWatchState.ACTIVE,
+                    ProgressionWatchState.INACTIVE,
+                }
                 and (
                     native_run_identity is None
                     or watch.requirement.native_run_identity != native_run_identity
@@ -109,7 +117,7 @@ class SwingProgressionWatchWorkflow:
             )
         for watch in stale:
             self._detach(watch.watch_id)
-            updated = mark_watch_stale(watch)
+            updated = mark_watch_stale(watch, occurred_at=self._clock())
             self._store.retain(updated)
             with self._lock:
                 self._watches[watch.watch_id] = updated
@@ -135,7 +143,10 @@ class SwingProgressionWatchWorkflow:
                 else _active_requirement(requirement)
                 for requirement in requirements
             )
-            return SwingProgressionWatchSnapshot(self._run_identity, projected, watches)
+            return SwingProgressionWatchSnapshot(
+                self._run_identity, projected, watches,
+                tuple(sorted(self._consumers)),
+            )
 
     def activate_requirement(self, requirement_id: str, capability: object) -> ProgressionWatch:
         with self._lock:
@@ -187,6 +198,62 @@ class SwingProgressionWatchWorkflow:
                 self._attach(watch, capability)
             restored.append(watch.watch_id)
         return tuple(restored)
+
+    def deactivate(self, watch_id: str) -> ProgressionWatch:
+        with self._lock:
+            watch = self._watches.get(watch_id)
+        if watch is None or watch.workspace_hidden:
+            raise ValueError("PROGRESSION_WATCH_UNAVAILABLE")
+        updated = deactivate_watch(watch, occurred_at=self._clock())
+        if updated != watch:
+            self._detach(watch_id)
+            self._store.retain(updated)
+            with self._lock:
+                self._watches[watch_id] = updated
+        return updated
+
+    def reactivate(self, watch_id: str, capability: object) -> ProgressionWatch:
+        with self._lock:
+            watch = self._watches.get(watch_id)
+            requirement = None if watch is None else self._requirements.get(
+                watch.requirement.requirement_id
+            )
+            run_identity = self._run_identity
+        if (
+            watch is None
+            or watch.workspace_hidden
+            or watch.state not in {
+                ProgressionWatchState.ACTIVE,
+                ProgressionWatchState.INACTIVE,
+            }
+            or requirement != watch.requirement
+            or watch.requirement.native_run_identity != run_identity
+            or getattr(capability, "active", False) is not True
+        ):
+            raise ValueError("PROGRESSION_WATCH_REACTIVATION_NOT_PERMITTED")
+        if watch.state is ProgressionWatchState.ACTIVE:
+            if watch.watch_id not in self._consumers:
+                self._attach(watch, capability)
+            return watch
+        updated = reactivate_watch(watch, occurred_at=self._clock())
+        self._attach(updated, capability)
+        self._store.retain(updated)
+        with self._lock:
+            self._watches[watch_id] = updated
+        return updated
+
+    def delete(self, watch_id: str) -> ProgressionWatch:
+        with self._lock:
+            watch = self._watches.get(watch_id)
+        if watch is None:
+            raise ValueError("PROGRESSION_WATCH_UNAVAILABLE")
+        updated = hide_watch(watch, occurred_at=self._clock())
+        if updated != watch:
+            self._detach(watch_id)
+            self._store.retain(updated)
+            with self._lock:
+                self._watches[watch_id] = updated
+        return updated
 
     def close_monitoring(self) -> None:
         with self._lock:
