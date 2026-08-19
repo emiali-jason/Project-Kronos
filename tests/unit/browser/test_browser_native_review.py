@@ -375,6 +375,16 @@ def test_opportunities_uses_native_population_and_keeps_layer1_separate(
         assert "UNAVAILABLE" in body
         assert "Open Native Review" in body
         assert "/swing/v1-review" in body
+        assert 'class="opportunity native-opportunity"' in body
+        assert 'class="native-opportunity-actions"' in body
+        assert ".native-opportunity .opp-identity h3{font-size:18px" in body
+        assert ".native-opportunity-actions .button" in body
+        assert "min-height:27px" in body
+        assert "white-space:nowrap" in body
+        assert "1W SUPPORTIVE" in body
+        assert "1D BULLISH SWING REGIME" in body
+        assert "4H STRUCTURAL HOLD" in body
+        assert "1H NEUTRAL" in body
         assert "BDL" not in body
         assert "ALKEM" not in body
         assert "Current immutable Swing V1 Layer-1 Probables" not in body

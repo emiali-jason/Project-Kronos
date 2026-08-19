@@ -121,6 +121,7 @@ a{color:inherit;text-decoration:none}.app{display:grid;grid-template-columns:218
 .native-chart-grid.single{grid-template-columns:1fr}
 .analysis-details{display:grid;gap:12px;max-width:1180px}.analysis-section{border:1px solid var(--line);background:rgba(6,23,37,.88);border-radius:10px;padding:16px}.analysis-section h2{margin:0 0 10px;color:var(--blue);font-size:15px}.analysis-facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.analysis-fact{border-left:2px solid #28506a;padding:5px 9px;font-size:11px}.analysis-fact span{display:block;color:var(--muted);font-size:9px;letter-spacing:.06em;text-transform:uppercase}.analysis-table{width:100%;border-collapse:collapse;font-size:11px}.analysis-table th,.analysis-table td{text-align:left;vertical-align:top;border-top:1px solid var(--line);padding:7px}.analysis-table th{color:var(--muted);font-size:9px;letter-spacing:.05em}.analysis-decision{font-size:18px;font-weight:800}.analysis-next{border-left:3px solid var(--amber)}
 .missing-evidence{display:block;color:var(--amber);font-size:10px;margin-top:5px}.missing-evidence strong{color:#ffd98c}.blocker-list{margin:8px 0 0;padding-left:18px;color:var(--muted);font-size:11px}
+.native-opportunity{padding:10px 11px;margin-top:7px}.native-opportunity .opp-head{gap:8px}.native-opportunity .opp-identity h3{font-size:18px;line-height:1.2}.native-opportunity .setup-family{font-size:11px;margin-top:0}.native-opportunity .direction{padding:2px 7px;font-size:11px}.native-opportunity .summary-reason{font-size:11px;line-height:1.35;margin:6px 0}.native-opportunity .summary-footer{align-items:flex-end;gap:7px;padding-top:7px}.native-opportunity .summary-rr{flex:1 1 220px;min-width:0;font-size:11px;line-height:1.35;overflow-wrap:anywhere}.native-opportunity .summary-rr>strong{font-size:12px}.native-opportunity .missing-evidence{font-size:9px;line-height:1.3;margin-top:3px}.native-opportunity-actions{display:flex;flex:0 1 auto;justify-content:flex-end;gap:5px;flex-wrap:wrap}.native-opportunity-actions .button{display:inline-flex;align-items:center;min-height:27px;padding:4px 8px;font-size:10px;line-height:1.15;white-space:nowrap}
 @media(max-width:1050px){.status-grid{grid-template-columns:repeat(3,1fr)}.panels,.workspace{grid-template-columns:1fr}.step32-grid{grid-template-columns:1fr}.step32-block{border-left:0;border-top:1px solid var(--line);padding:10px 0 0}.step32-block:first-child{border-top:0;padding-top:0}.market-panel{min-height:260px}}
 @media(min-width:761px){.panels{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:760px){.app{grid-template-columns:1fr}.sidebar{position:static;height:auto}.nav{grid-template-columns:repeat(2,1fr)}.system{display:none}.topbar{height:auto;padding:18px;align-items:flex-start;gap:14px}.tabs{overflow:auto;padding:0 18px}.content{padding:18px}.status-grid{grid-template-columns:repeat(2,1fr)}.trade-grid,.plan-strip{grid-template-columns:1fr 1fr}.kite{flex-wrap:wrap;justify-content:flex-end}.chart-intake-list,.native-chart-grid{grid-template-columns:1fr}}
@@ -321,14 +322,14 @@ def _native_opportunity_card(item, review: NativeReviewWorkflowSnapshot | None) 
         else ""
     )
     return (
-        '<article class="opportunity"><div class="opp-head">'
+        '<article class="opportunity native-opportunity"><div class="opp-head">'
         f'<div class="opp-identity"><h3>{escape(item.canonical_instrument)}</h3>'
         f'<span class="setup-family">{escape(item.opportunity_identity.value.replace("_", " "))}</span></div>'
         f'<span class="direction direction-{escape(direction.lower())}">{escape(direction)}</span>'
         '</div><p class="summary-reason">' + escape(context) + '</p>'
         '<div class="summary-footer"><span class="summary-rr">Review · <strong>'
         + escape(review_status) + '</strong>' + missing + '</span>'
-        '<span><a class="button" href="/swing/v1-review">Open Native Review →</a> '
+        '<span class="native-opportunity-actions"><a class="button" href="/swing/v1-review">Open Native Review →</a>'
         f'<a class="button" href="/swing/analysis-details/{escape(item.run_identity)}/'
         f'{quote(item.canonical_instrument, safe="")}">View Analysis Details →</a></span>'
         '</div></article>'
