@@ -190,6 +190,48 @@ class SwingVisualV3ReviewCycle:
             review.readiness.canonical_instrument,
         )] = review
 
+    def restore_persisted(
+        self,
+        requirement: NativeReviewRequirement,
+        mtf_snapshot: SameRunMtfFactSnapshot,
+        requests: tuple[VisualEvidenceV3Request, ...],
+        *,
+        review_pack: VisualV3ReviewPackRecord,
+    ) -> CompletedVisualV3Review | None:
+        """Restore one exact persisted V3 cycle without recalculation."""
+
+        if (
+            type(requests) is not tuple
+            or tuple(item.timeframe for item in requests) != tuple(VisualTimeframe)
+            or any(item.requirement != requirement for item in requests)
+        ):
+            raise ValueError("VISUAL_V3_RESTORE_REQUESTS_INVALID")
+        responses = []
+        for request in requests:
+            values = self._evidence_store.load_for_request(request)
+            if not values:
+                return None
+            if len(values) != 1:
+                raise ValueError("VISUAL_V3_RESTORE_EVIDENCE_AMBIGUOUS")
+            responses.append(values[0])
+        ordered = tuple(responses)
+        readiness = self._readiness_store.load_exact(
+            requirement.native_run_identity,
+            requirement.canonical_instrument,
+            requirement.thesis.native_assessment_sha256,
+            tuple(
+                item.evidence_sha256
+                for item in sorted(ordered, key=lambda value: value.timeframe.value)
+            ),
+        )
+        if readiness is None:
+            raise ValueError("VISUAL_V3_RESTORE_READINESS_MISSING")
+        completed = CompletedVisualV3Review(
+            requirement, mtf_snapshot, ordered, readiness, review_pack
+        )
+        self.restore_completed(completed)
+        return completed
+
     def completed_for(
         self, run_identity: str, canonical_instrument: str
     ) -> CompletedVisualV3Review | None:

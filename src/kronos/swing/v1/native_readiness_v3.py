@@ -23,6 +23,7 @@ from kronos.swing.v1.native_readiness import (
     ReferenceCondition,
     ThesisIntact,
     build_native_layer2_conditions,
+    native_layer2_conditions_from_dict,
     resolve_native_readiness,
 )
 from kronos.swing.v1.native_review import (
@@ -344,6 +345,35 @@ class NativeLayer2ReadinessV3Store:
             _atomic_json(path, payload)
         return path
 
+    def load_exact(
+        self,
+        run_identity: str,
+        canonical_instrument: str,
+        native_assessment_sha256: str,
+        visual_evidence_hashes: tuple[str, ...],
+    ) -> NativeLayer2ReadinessRecordV3 | None:
+        """Restore one exact immutable V3 readiness identity, never a latest value."""
+
+        root = self._root / run_identity
+        if not root.exists():
+            return None
+        matches = []
+        for path in sorted(root.glob(f"{canonical_instrument}--*.json")):
+            payload = _read(path)
+            if payload.get("schema") != NATIVE_READINESS_V3_RECORD_SCHEMA:
+                raise ValueError("NATIVE_READINESS_V3_RESTORE_SCHEMA_INVALID")
+            record = _record_from_dict(payload.get("record"))
+            if (
+                record.run_identity == run_identity
+                and record.canonical_instrument == canonical_instrument
+                and record.native_assessment_sha256 == native_assessment_sha256
+                and record.visual_evidence_hashes == visual_evidence_hashes
+            ):
+                matches.append(record)
+        if len(matches) > 1:
+            raise ValueError("NATIVE_READINESS_V3_RESTORE_AMBIGUOUS")
+        return None if not matches else matches[0]
+
 
 def _v3_finding(
     values: tuple[VisualEvidenceV3Response, ...],
@@ -383,6 +413,36 @@ def _values_digest(values: dict[str, object]) -> str:
         "authority": "READINESS_ONLY_NO_TRADING_OR_EXECUTION_AUTHORITY",
     }
     return sha256(_canonical(payload)).hexdigest()
+
+
+def _record_from_dict(value: object) -> NativeLayer2ReadinessRecordV3:
+    if type(value) is not dict:
+        raise ValueError("NATIVE_READINESS_V3_RESTORE_INVALID")
+    try:
+        return NativeLayer2ReadinessRecordV3(
+            run_identity=value["run_identity"],
+            canonical_instrument=value["canonical_instrument"],
+            native_assessment_sha256=value["native_assessment_sha256"],
+            machine_fact_bindings=tuple(tuple(item) for item in value["machine_fact_bindings"]),
+            visual_bindings=tuple(tuple(item) for item in value["visual_bindings"]),
+            visual_evidence_hashes=tuple(value["visual_evidence_hashes"]),
+            conditions=native_layer2_conditions_from_dict(value["conditions"]),
+            readiness=NativeReadinessState(value["readiness"]),
+            primary_reason=value["primary_reason"],
+            analysis_boundary=datetime.fromisoformat(value["analysis_boundary"]),
+            created_at=datetime.fromisoformat(value["created_at"]),
+            result_sha256=value["result_sha256"],
+            question_set_identity=value["question_set_identity"],
+            question_set_version=value["question_set_version"],
+            binding_policy_identity=value["binding_policy_identity"],
+            binding_policy_version=value["binding_policy_version"],
+            schema=value["schema"],
+            authority=value["authority"],
+        )
+    except (KeyError, TypeError, ValueError) as error:
+        if isinstance(error, ValueError) and str(error).startswith("NATIVE_"):
+            raise
+        raise ValueError("NATIVE_READINESS_V3_RESTORE_INVALID") from error
 
 
 def _record_digest(record: NativeLayer2ReadinessRecordV3) -> str:

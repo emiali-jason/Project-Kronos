@@ -31,6 +31,7 @@ from kronos.application.swing_native_review import (
     project_native_analysis_details,
 )
 from kronos.application.swing_visual_v3 import SwingVisualV3ReviewCycle
+from kronos.application.swing_visual_v3_live import SwingVisualV3LiveWorkflow
 from kronos.configuration.apple_keychain import (
     AppleKeychainApiKeySource,
     AppleKeychainCredentialPresenceProbe,
@@ -103,6 +104,12 @@ from kronos.swing.v1.pdf_visual_review import (
     PdfReviewTransportError,
     PdfVisualReviewTransport,
 )
+from kronos.swing.v1.native_readiness_v3 import NativeLayer2ReadinessV3Store
+from kronos.swing.v1.pdf_visual_review_v3_live import (
+    VisualV3PdfRecordStore,
+    VisualV3PdfReviewTransport,
+)
+from kronos.swing.v1.visual_evidence_v3 import LocalVisualEvidenceV3Store
 from kronos.swing.v1.progression_watch import (
     derive_progression_requirements,
     derive_v3_progression_requirements,
@@ -151,6 +158,7 @@ class KronosBrowserServer(ThreadingHTTPServer):
         product_routes: ProductBrowserRoutes | None = None,
         progression_watches: SwingProgressionWatchWorkflow | None = None,
         visual_v3: SwingVisualV3ReviewCycle | None = None,
+        visual_v3_live: SwingVisualV3LiveWorkflow | None = None,
     ) -> None:
         if (
             address[0] != _LOOPBACK_HOST
@@ -188,6 +196,10 @@ class KronosBrowserServer(ThreadingHTTPServer):
                 visual_v3 is not None
                 and type(visual_v3) is not SwingVisualV3ReviewCycle
             )
+            or (
+                visual_v3_live is not None
+                and type(visual_v3_live) is not SwingVisualV3LiveWorkflow
+            )
         ):
             raise ValueError("BROWSER_SERVER_MUST_BIND_LOOPBACK")
         config = OpenAIChartAnalystV2Config.from_environment()
@@ -214,7 +226,6 @@ class KronosBrowserServer(ThreadingHTTPServer):
             step32_workflow or SwingV1BrowserOperationalization()
         )
         self.progression_watches = progression_watches or SwingProgressionWatchWorkflow()
-        self.visual_v3 = visual_v3
         self.application.register_progression_watch_workflow(self.progression_watches)
         if v1_review is not None:
             self.v1_review = v1_review
@@ -261,7 +272,11 @@ class KronosBrowserServer(ThreadingHTTPServer):
                     except ValueError:
                         pass
                 self.step32_workflow.synchronize_review(self.v1_review)
-        native_review_store = NativeReviewEvidenceStore()
+        native_review_store = (
+            NativeReviewEvidenceStore()
+            if native_review is None
+            else NativeReviewEvidenceStore(native_review.evidence_root)
+        )
         visual_v2_diagnostic_store = LocalVisualEvidenceV2DiagnosticStore(
             native_review_store.root / "visual-v2-diagnostics"
         )
@@ -285,6 +300,29 @@ class KronosBrowserServer(ThreadingHTTPServer):
                 clock=lambda: datetime.now(UTC),
             ),
         )
+        governed_review_root = self.native_review.evidence_root
+        if visual_v3_live is not None:
+            if visual_v3 is not None and visual_v3_live.cycle is not visual_v3:
+                raise ValueError("VISUAL_V3_LIFECYCLE_MISMATCH")
+            self.visual_v3_live = visual_v3_live
+            self.visual_v3 = visual_v3_live.cycle
+        else:
+            self.visual_v3 = visual_v3 or SwingVisualV3ReviewCycle(
+                LocalVisualEvidenceV3Store(governed_review_root / "visual-v3"),
+                NativeLayer2ReadinessV3Store(
+                    governed_review_root / "layer2-readiness-v3"
+                ),
+            )
+            self.visual_v3_live = SwingVisualV3LiveWorkflow(
+                self.visual_v3,
+                VisualV3PdfReviewTransport(
+                    load_or_provision_pdf_visual_review_configuration(),
+                    VisualV3PdfRecordStore(
+                        governed_review_root / "pdf-transport-v3"
+                    ),
+                    clock=lambda: datetime.now(UTC),
+                ),
+            )
         native_run = self.application.native_discovery_run()
         mtf_facts = self.application.mtf_fact_snapshot()
         native_store = self.application.native_discovery_evidence_store()
@@ -311,6 +349,16 @@ class KronosBrowserServer(ThreadingHTTPServer):
             try:
                 self.native_review.restore(native_run, mtf_facts)
             except ValueError:
+                pass
+            try:
+                self.visual_v3_live.restore(
+                    self.native_review.snapshot(),
+                    mtf_facts,
+                    self.native_review.original_chart_bytes,
+                )
+            except (ValueError, PdfReviewTransportError, TradingViewEvidenceStoreError):
+                # Versioned V3 restoration is fail-closed. Historical V2 remains
+                # independently restorable and is never converted as recovery.
                 pass
         self.progression_snapshot()
         super().__init__(address, _BrowserHandler)
@@ -412,12 +460,26 @@ class KronosBrowserServer(ThreadingHTTPServer):
         )
 
     def visual_v3_presentations(self):  # type: ignore[no-untyped-def]
-        if self.visual_v3 is None:
-            return ()
         return tuple(
             present_visual_v3_review(item)
             for item in self.visual_v3.completed_snapshot()
         )
+
+    def native_review_version(self) -> str:
+        """Select by the persisted current Review identity, never module presence."""
+
+        review = self.native_review.snapshot()
+        run_identity = review.native_run_identity
+        if self.visual_v3_live.is_current_run(run_identity):
+            return "V3"
+        historical = review.review_pack_record
+        if (
+            historical is not None
+            and historical.native_run_identity == run_identity
+            and not review.review_pack_superseded
+        ):
+            return "V2"
+        return "V3"
 
     def admit_sponsor_work(self) -> bool:
         """Atomically reject new state-changing work after exit begins."""
@@ -552,10 +614,18 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             self._html(render_legacy_opportunities(snapshot))
             return
         if path == "/swing/v1-review":
+            review = self.server.native_review.snapshot()
             self._html(render_v1_review(
                 snapshot,
                 self.server.v1_review.snapshot(),
-                self.server.native_review.snapshot(),
+                review,
+                (
+                    self.server.visual_v3_live.snapshot(
+                        review.native_run_identity
+                    )
+                    if self.server.native_review_version() == "V3"
+                    else None
+                ),
             ))
             return
         if path == "/swing/mtf-diagnostics":
@@ -1453,7 +1523,20 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             self._text(HTTPStatus.BAD_REQUEST, "Review Pack request rejected.")
             return
         try:
-            self.server.native_review.generate_review_pack(instrument)
+            if self.server.native_review_version() == "V3":
+                facts = self.server.native_review_facts
+                if facts is None:
+                    raise PdfReviewTransportError(
+                        "VISUAL_V3_MACHINE_SNAPSHOT_UNAVAILABLE"
+                    )
+                self.server.visual_v3_live.generate(
+                    self.server.native_review.snapshot(),
+                    facts,
+                    self.server.native_review.original_chart_bytes,
+                    instrument,
+                )
+            else:
+                self.server.native_review.generate_review_pack(instrument)
         except (PdfReviewTransportError, TradingViewEvidenceStoreError, OSError):
             self._redirect("/swing/v1-review")
             return
@@ -1502,7 +1585,20 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             self._text(HTTPStatus.BAD_REQUEST, "Answer Pack request rejected.")
             return
         try:
-            self.server.native_review.upload_review_answer()
+            if self.server.native_review_version() == "V3":
+                facts = self.server.native_review_facts
+                if facts is None:
+                    raise PdfReviewTransportError(
+                        "VISUAL_V3_MACHINE_SNAPSHOT_UNAVAILABLE"
+                    )
+                self.server.visual_v3_live.upload(
+                    self.server.native_review.snapshot(),
+                    facts,
+                    self.server.native_review.original_chart_bytes,
+                )
+                self.server.progression_snapshot()
+            else:
+                self.server.native_review.upload_review_answer()
         except (PdfReviewTransportError, TradingViewEvidenceStoreError, OSError, ValueError):
             self._redirect("/swing/v1-review")
             return
@@ -1653,6 +1749,7 @@ def create_browser_server(
     product_routes: ProductBrowserRoutes | None = None,
     progression_watches: SwingProgressionWatchWorkflow | None = None,
     visual_v3: SwingVisualV3ReviewCycle | None = None,
+    visual_v3_live: SwingVisualV3LiveWorkflow | None = None,
 ) -> KronosBrowserServer:
     if type(port) is not int or not 0 <= port <= 65535:
         raise ValueError("BROWSER_SERVER_PORT_INVALID")
@@ -1669,6 +1766,7 @@ def create_browser_server(
         product_routes,
         progression_watches,
         visual_v3,
+        visual_v3_live,
     )
 
 

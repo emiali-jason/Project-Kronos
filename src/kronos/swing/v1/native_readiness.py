@@ -825,27 +825,7 @@ def _record_from_dict(value: object) -> NativeLayer2ReadinessRecord:
     if type(value) is not dict:
         raise ValueError("NATIVE_READINESS_STORED_RECORD_INVALID")
     try:
-        conditions_value = value["conditions"]
-        evidence = tuple(_condition_from_dict(item) for item in conditions_value["evidence"])
-        next_value = conditions_value["next_condition"]
-        conditions = NativeLayer2Conditions(
-            ThesisIntact(conditions_value["thesis_intact"]),
-            PullbackCondition(conditions_value["pullback_condition"]),
-            RetestCondition(conditions_value["retest_condition"]),
-            ExtensionCondition(conditions_value["extension_condition"]),
-            DeteriorationCondition(conditions_value["deterioration_condition"]),
-            FailureCondition(conditions_value["failure_condition"]),
-            ObstacleCondition(conditions_value["obstacle_condition"]),
-            PineCondition(conditions_value["pine_condition"]),
-            ReferenceCondition(conditions_value["reference_condition"]),
-            EvidenceCompleteness(conditions_value["evidence_completeness"]),
-            NextConditionState(conditions_value["next_condition_state"]),
-            None if next_value is None else _next_from_dict(next_value),
-            evidence,
-            conditions_value["condition_policy_identity"],
-            conditions_value["condition_policy_version"],
-            conditions_value["policy_status"],
-        )
+        conditions = native_layer2_conditions_from_dict(value["conditions"])
         return NativeLayer2ReadinessRecord(
             run_identity=value["run_identity"], canonical_instrument=value["canonical_instrument"],
             native_assessment_sha256=value["native_assessment_sha256"], native_thesis_sha256=value["native_thesis_sha256"],
@@ -861,6 +841,36 @@ def _record_from_dict(value: object) -> NativeLayer2ReadinessRecord:
         )
     except (KeyError, TypeError, ValueError) as error:
         raise ValueError("NATIVE_READINESS_STORED_RECORD_INVALID") from error
+
+
+def native_layer2_conditions_from_dict(value: object) -> NativeLayer2Conditions:
+    """Restore the shared frozen condition contract for versioned readiness stores."""
+
+    if type(value) is not dict:
+        raise ValueError("NATIVE_LAYER2_CONDITIONS_STORED_INVALID")
+    try:
+        evidence = tuple(_condition_from_dict(item) for item in value["evidence"])
+        next_value = value["next_condition"]
+        return NativeLayer2Conditions(
+            ThesisIntact(value["thesis_intact"]),
+            PullbackCondition(value["pullback_condition"]),
+            RetestCondition(value["retest_condition"]),
+            ExtensionCondition(value["extension_condition"]),
+            DeteriorationCondition(value["deterioration_condition"]),
+            FailureCondition(value["failure_condition"]),
+            ObstacleCondition(value["obstacle_condition"]),
+            PineCondition(value["pine_condition"]),
+            ReferenceCondition(value["reference_condition"]),
+            EvidenceCompleteness(value["evidence_completeness"]),
+            NextConditionState(value["next_condition_state"]),
+            None if next_value is None else _next_from_dict(next_value),
+            evidence,
+            value["condition_policy_identity"],
+            value["condition_policy_version"],
+            value["policy_status"],
+        )
+    except (KeyError, TypeError, ValueError) as error:
+        raise ValueError("NATIVE_LAYER2_CONDITIONS_STORED_INVALID") from error
 
 
 def _condition_from_dict(value: dict[str, object]) -> ConditionEvidence:
@@ -941,5 +951,6 @@ __all__ = [
     "NextConditionEvidence", "NextConditionState", "ObstacleCondition", "PineCondition",
     "PullbackCondition", "ReferenceCondition", "RetestCondition", "ThesisIntact",
     "build_native_layer2_conditions", "create_native_readiness_record",
+    "native_layer2_conditions_from_dict",
     "resolve_native_readiness", "sponsor_status",
 ]

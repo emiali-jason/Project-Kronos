@@ -521,6 +521,17 @@ class NativeReviewWorkflow:
         self._review_pack_skipped: tuple[tuple[str, str], ...] = ()
         self._refresh_status: str | None = None
 
+    @property
+    def evidence_root(self) -> Path:
+        """Return the governed root so versioned Review services share one lifecycle."""
+
+        return self._store.root
+
+    def original_chart_bytes(self, revision: object) -> bytes:
+        """Read one already-governed chart revision for a versioned Review cycle."""
+
+        return self._chart_store.original_bytes(revision)  # type: ignore[arg-type]
+
     def prepare(
         self,
         native_run: NativeDiscoveryRun,

@@ -38,6 +38,7 @@ from kronos.application.swing_native_review import (
     NativeReviewWorkflowSnapshot,
 )
 from kronos.application.swing_progression_watch import SwingProgressionWatchSnapshot
+from kronos.application.swing_visual_v3_live import SwingVisualV3LiveSnapshot
 from kronos.application.swing_v1_browser import (
     BrowserCandidateRecord,
     BrowserStep32Snapshot,
@@ -1542,6 +1543,7 @@ def render_v1_review(
     snapshot: BrowserWorkspaceSnapshot,
     review: V1ReviewWorkflowSnapshot,
     native_review: NativeReviewWorkflowSnapshot | None = None,
+    visual_v3_live: SwingVisualV3LiveSnapshot | None = None,
 ) -> str:
     if (
         native_review is not None
@@ -1549,7 +1551,7 @@ def render_v1_review(
     ):
         body = (
             _analysis_run_strip(snapshot)
-            + _native_review_requirements(native_review)
+            + _native_review_requirements(native_review, visual_v3_live)
         )
     elif review.layer1_run is None:
         body = (
@@ -1704,7 +1706,10 @@ def render_v1_review(
     )
 
 
-def _native_review_requirements(review: NativeReviewWorkflowSnapshot) -> str:
+def _native_review_requirements(
+    review: NativeReviewWorkflowSnapshot,
+    visual_v3_live: SwingVisualV3LiveSnapshot | None = None,
+) -> str:
     cards = ""
     slot_index = 0
     chart_ready = sum(
@@ -1735,56 +1740,108 @@ def _native_review_requirements(review: NativeReviewWorkflowSnapshot) -> str:
         + ('' if chart_ready else ' disabled title="At least one candidate needs a valid composite chart"')
         + '>CREATE ALL REVIEW PDF</button></form></div></div>'
     )
-    pack = review.review_pack_record
-    latest_import = review.answer_import_records[-1] if review.answer_import_records else None
     if review.refresh_status is not None:
         batch += '<div class="review-note"><strong>' + escape(review.refresh_status) + '</strong></div>'
-    if pack is None:
-        pdf_controls = (
-            '<div class="native-analysis-all pdf-review-control"><div>'
-            '<strong>PDF VISUAL REVIEW</strong><span>NO REVIEW PACK</span></div></div>'
+    if visual_v3_live is not None:
+        v3_pack = (
+            visual_v3_live.review_pack if visual_v3_live.current_run else None
         )
+        v3_import = (
+            visual_v3_live.answer_imports[-1]
+            if visual_v3_live.answer_imports and visual_v3_live.current_run
+            else None
+        )
+        if v3_pack is None:
+            pdf_controls = (
+                '<div class="native-analysis-all pdf-review-control"><div>'
+                '<strong>PDF VISUAL REVIEW · V3</strong>'
+                '<span>NO V3 REVIEW PACK · QUESTION SET 3.0</span></div></div>'
+            )
+        else:
+            status = (
+                "WAITING FOR CHART ANALYST"
+                if v3_import is None
+                else v3_import.state.value.replace("_", " ")
+            )
+            scope = (
+                v3_pack.candidate_packs[0].canonical_instrument + " ONLY"
+                if v3_pack.scope == "INDIVIDUAL"
+                else "ALL ELIGIBLE CANDIDATES"
+            )
+            pdf_controls = (
+                '<div class="native-analysis-all pdf-review-control"><div>'
+                '<strong>PDF VISUAL REVIEW · V3 CURRENT REVIEW PACK</strong><span>'
+                + escape(v3_pack.question_filename)
+                + '<br>SWING-V1-VISUAL-QUESTION-SET-V3 3.0'
+                + '<br>SCOPE: ' + escape(scope)
+                + '<br>STATUS: ' + escape(status) + '</span></div>'
+                '<form method="post" action="/swing/v1/native-review-answer">'
+                '<button class="primary" type="submit">UPLOAD ANSWER</button>'
+                '</form></div>'
+            )
+            if v3_pack.skipped:
+                pdf_controls += (
+                    '<div class="review-note"><strong>V3 REVIEW PACK CREATED · '
+                    + str(len(v3_pack.candidate_packs))
+                    + ' CANDIDATE(S) INCLUDED</strong><br>SKIPPED: '
+                    + ' · '.join(
+                        escape(instrument + " — " + reason)
+                        for instrument, reason in v3_pack.skipped
+                    ) + '</div>'
+                )
+            if v3_import is not None and not v3_import.consumed:
+                pdf_controls += (
+                    '<div class="review-note batch-preflight"><strong>'
+                    'V3 ANSWER PACK REJECTED</strong><br>'
+                    + escape(" · ".join(v3_import.reasons)) + '</div>'
+                )
     else:
-        answer_status = (
-            "WAITING FOR CHART ANALYST"
-            if latest_import is None
-            else latest_import.state.value.replace("_", " ")
-        )
-        if review.review_pack_superseded:
-            answer_status = "SUPERSEDED FOR CURRENT REVIEW"
-        scope = (
-            pack.candidates[0].canonical_instrument + " ONLY"
-            if review.review_pack_scope == "INDIVIDUAL"
-            else "ALL ELIGIBLE CANDIDATES"
-        )
-        pdf_controls = (
-            '<div class="native-analysis-all pdf-review-control"><div>'
-            '<strong>PDF VISUAL REVIEW · CURRENT REVIEW PACK</strong>'
-            '<span>'
-            + escape(pack.question_filename)
-            + '<br>SCOPE: ' + escape(scope)
-            + '<br>STATUS: ' + escape(answer_status) + '</span></div>'
-            '<form method="post" action="/swing/v1/native-review-answer">'
-            '<button class="primary" type="submit"'
-            + (' disabled title="Create a current Review Pack first"' if review.review_pack_superseded else '')
-            + '>UPLOAD ANSWER</button>'
-            '</form></div>'
-        )
-        if review.review_pack_skipped:
-            pdf_controls += (
-                '<div class="review-note"><strong>REVIEW PACK CREATED · '
-                + str(len(pack.candidates)) + ' CANDIDATE(S) INCLUDED</strong><br>SKIPPED: '
-                + ' · '.join(
-                    escape(instrument + " — " + reason)
-                    for instrument, reason in review.review_pack_skipped
-                ) + '</div>'
+        pack = review.review_pack_record
+        latest_import = review.answer_import_records[-1] if review.answer_import_records else None
+        if pack is None:
+            pdf_controls = (
+                '<div class="native-analysis-all pdf-review-control"><div>'
+                '<strong>PDF VISUAL REVIEW</strong><span>NO REVIEW PACK</span></div></div>'
             )
-        if latest_import is not None and not latest_import.consumed:
-            pdf_controls += (
-                '<div class="review-note batch-preflight"><strong>ANSWER PACK REJECTED</strong><br>'
-                + escape(" · ".join(latest_import.validation_reasons))
-                + '</div>'
+        else:
+            answer_status = (
+                "WAITING FOR CHART ANALYST"
+                if latest_import is None
+                else latest_import.state.value.replace("_", " ")
             )
+            if review.review_pack_superseded:
+                answer_status = "SUPERSEDED FOR CURRENT REVIEW"
+            scope = (
+                pack.candidates[0].canonical_instrument + " ONLY"
+                if review.review_pack_scope == "INDIVIDUAL"
+                else "ALL ELIGIBLE CANDIDATES"
+            )
+            pdf_controls = (
+                '<div class="native-analysis-all pdf-review-control"><div>'
+                '<strong>PDF VISUAL REVIEW · CURRENT REVIEW PACK</strong>'
+                '<span>' + escape(pack.question_filename)
+                + '<br>SCOPE: ' + escape(scope)
+                + '<br>STATUS: ' + escape(answer_status) + '</span></div>'
+                '<form method="post" action="/swing/v1/native-review-answer">'
+                '<button class="primary" type="submit"'
+                + (' disabled title="Create a current Review Pack first"' if review.review_pack_superseded else '')
+                + '>UPLOAD ANSWER</button></form></div>'
+            )
+            if review.review_pack_skipped:
+                pdf_controls += (
+                    '<div class="review-note"><strong>REVIEW PACK CREATED · '
+                    + str(len(pack.candidates)) + ' CANDIDATE(S) INCLUDED</strong><br>SKIPPED: '
+                    + ' · '.join(
+                        escape(instrument + " — " + reason)
+                        for instrument, reason in review.review_pack_skipped
+                    ) + '</div>'
+                )
+            if latest_import is not None and not latest_import.consumed:
+                pdf_controls += (
+                    '<div class="review-note batch-preflight"><strong>ANSWER PACK REJECTED</strong><br>'
+                    + escape(" · ".join(latest_import.validation_reasons))
+                    + '</div>'
+                )
     batch += pdf_controls
     for requirement in sorted(
         review.requirements,
@@ -1911,13 +1968,19 @@ def _native_review_requirements(review: NativeReviewWorkflowSnapshot) -> str:
             + ('' if all_received else ' disabled title="Paste the required composite chart first"')
             + ('>CREATE PDF</button></form>' if all_received else '>CHART REQUIRED</button></form>')
         )
+        v3_complete = (
+            visual_v3_live is not None
+            and thesis.canonical_instrument
+            in visual_v3_live.completed_instruments
+        )
         review_state = (
-            "REVIEW EVIDENCE IMPORTED" if readiness is not None
+            "V3 REVIEW EVIDENCE IMPORTED" if v3_complete
+            else "REVIEW EVIDENCE IMPORTED" if readiness is not None
             else "CHART READY" if all_received
             else "CHART REQUIRED"
         )
         review_class = (
-            "analyzed" if readiness is not None or all_received else ""
+            "analyzed" if v3_complete or readiness is not None or all_received else ""
         )
         direction_class = (
             "direction-long" if thesis.direction.value == "LONG"
