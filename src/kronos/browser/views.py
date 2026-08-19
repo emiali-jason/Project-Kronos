@@ -55,6 +55,14 @@ from kronos.browser.v1_analysis_status import (
 from kronos.browser.swing_readiness_presentation import (
     present_native_readiness,
 )
+from kronos.browser.swing_v3_presentation import V3SponsorEvidencePresentation
+from kronos.swing.v1.reference_facts import (
+    CPR_CALCULATION_POLICY_IDENTITY,
+    CPR_CALCULATION_POLICY_VERSION,
+    REFERENCE_MACHINE_FACT_SCHEMA,
+    REFERENCE_POLICY_IDENTITY,
+    REFERENCE_POLICY_VERSION,
+)
 from kronos.swing.run_identity import (
     LEGACY_UNBOUND_SWING_RUN_ID,
     is_swing_analysis_run_id,
@@ -148,6 +156,7 @@ def render_opportunities(
     discovery: NativeDiscoveryRun | None = None,
     review: NativeReviewWorkflowSnapshot | None = None,
     progression: SwingProgressionWatchSnapshot | None = None,
+    visual_v3: tuple[V3SponsorEvidencePresentation, ...] = (),
 ) -> str:
     """Render the current successful Native Discovery opportunity population."""
 
@@ -157,6 +166,10 @@ def render_opportunities(
         raise TypeError("NATIVE_OPPORTUNITIES_REVIEW_INVALID")
     if progression is not None and type(progression) is not SwingProgressionWatchSnapshot:
         raise TypeError("NATIVE_OPPORTUNITIES_PROGRESSION_INVALID")
+    if type(visual_v3) is not tuple or any(
+        type(item) is not V3SponsorEvidencePresentation for item in visual_v3
+    ):
+        raise TypeError("NATIVE_OPPORTUNITIES_V3_PRESENTATION_INVALID")
     body = _analysis_run_strip(snapshot)
     if discovery is None:
         body += (
@@ -186,8 +199,12 @@ def render_opportunities(
             item for item in probables if item.product_path is NativeProductPath.MCX
         )
         body += '<div class="panels">'
-        body += _native_opportunity_panel("EQUITIES + INDICES", equities, review, progression)
-        body += _native_opportunity_panel("COMMODITIES", commodities, review, progression)
+        body += _native_opportunity_panel(
+            "EQUITIES + INDICES", equities, review, progression, visual_v3
+        )
+        body += _native_opportunity_panel(
+            "COMMODITIES", commodities, review, progression, visual_v3
+        )
         body += "</div>"
     body += (
         '<p class="technical"><a href="/swing/layer1-history">'
@@ -250,8 +267,13 @@ def _native_opportunity_metrics(counts: dict[NativeDiscoveryStatus, int]) -> str
     )
 
 
-def _native_opportunity_panel(title, probables, review, progression=None) -> str:  # type: ignore[no-untyped-def]
-    cards = "".join(_native_opportunity_card(item, review, progression) for item in probables)
+def _native_opportunity_panel(
+    title, probables, review, progression=None, visual_v3=()
+) -> str:  # type: ignore[no-untyped-def]
+    cards = "".join(
+        _native_opportunity_card(item, review, progression, visual_v3)
+        for item in probables
+    )
     if not cards:
         cards = (
             '<div class="empty"><div><strong>No Native Probables</strong>'
@@ -265,7 +287,12 @@ def _native_opportunity_panel(title, probables, review, progression=None) -> str
     )
 
 
-def _native_opportunity_card(item, review: NativeReviewWorkflowSnapshot | None, progression=None) -> str:  # type: ignore[no-untyped-def]
+def _native_opportunity_card(
+    item,
+    review: NativeReviewWorkflowSnapshot | None,
+    progression=None,
+    visual_v3=(),
+) -> str:  # type: ignore[no-untyped-def]
     review_run_identity = None if review is None else review.native_run_identity
     readiness_records = () if review is None else review.readiness_records
     outcomes = () if review is None else review.analysis_outcomes
@@ -316,7 +343,16 @@ def _native_opportunity_card(item, review: NativeReviewWorkflowSnapshot | None, 
         present_native_readiness(readiness, requirement, bound_visual)
         if readiness is not None and requirement is not None else None
     )
+    v3 = next((
+        value for value in visual_v3
+        if value.run_identity == item.run_identity
+        and value.canonical_instrument == item.canonical_instrument
+        and value.native_assessment_sha256 == item.result_sha256
+    ), None)
     review_status = (
+        v3.sponsor_status
+        if v3 is not None
+        else
         sponsor_readiness.status
         if sponsor_readiness is not None
         else outcome.state.value.replace("_", " ")
@@ -336,7 +372,8 @@ def _native_opportunity_card(item, review: NativeReviewWorkflowSnapshot | None, 
         '<small class="missing-evidence">Missing evidence: <strong>'
         + escape(" · ".join(sponsor_readiness.missing_evidence))
         + '</strong></small>'
-        if sponsor_readiness is not None and sponsor_readiness.missing_evidence
+        if v3 is None
+        and sponsor_readiness is not None and sponsor_readiness.missing_evidence
         else ""
     )
     progression_items = (
@@ -346,9 +383,17 @@ def _native_opportunity_card(item, review: NativeReviewWorkflowSnapshot | None, 
         value.state is not ProgressionRequirementState.SATISFIED
         for value in progression_items
     )
+    watchable = sum(
+        value.state in {
+            ProgressionRequirementState.WATCH_AVAILABLE,
+            ProgressionRequirementState.WATCH_ACTIVE,
+        }
+        for value in progression_items
+    )
     progression_summary = (
         '<small class="progression-summary">Requirements to progress · <strong>'
-        + str(outstanding) + ' outstanding</strong></small>'
+        + str(outstanding) + ' outstanding · ' + str(watchable)
+        + ' watchable</strong></small>'
         if progression_items else ""
     )
     return (
@@ -357,7 +402,9 @@ def _native_opportunity_card(item, review: NativeReviewWorkflowSnapshot | None, 
         f'<span class="setup-family">{escape(item.opportunity_identity.value.replace("_", " "))}</span></div>'
         f'<span class="direction direction-{escape(direction.lower())}">{escape(direction)}</span>'
         '</div><p class="summary-reason">' + escape(context) + '</p>'
-        '<div class="summary-footer"><span class="summary-rr">Review · <strong>'
+        '<div class="summary-footer"><span class="summary-rr">'
+        + ('Chart / reference status' if v3 is not None else 'Review')
+        + ' · <strong>'
         + escape(review_status) + '</strong>' + missing + progression_summary + '</span>'
         '<span class="native-opportunity-actions"><a class="button" href="/swing/v1-review">Open Native Review →</a>'
         f'<a class="button" href="/swing/analysis-details/{escape(item.run_identity)}/'
@@ -370,8 +417,23 @@ def render_native_analysis_details(
     snapshot: BrowserWorkspaceSnapshot,
     details: NativeAnalysisDetailsProjection,
     progression: SwingProgressionWatchSnapshot | None = None,
+    visual_v3: V3SponsorEvidencePresentation | None = None,
 ) -> str:
     """Render governed evidence without recalculation or authority."""
+
+    if visual_v3 is not None:
+        if (
+            type(visual_v3) is not V3SponsorEvidencePresentation
+            or visual_v3.run_identity != details.assessment.run_identity
+            or visual_v3.canonical_instrument
+            != details.assessment.canonical_instrument
+            or visual_v3.native_assessment_sha256
+            != details.assessment.result_sha256
+        ):
+            raise ValueError("NATIVE_ANALYSIS_DETAILS_V3_BINDING_INVALID")
+        return _render_native_analysis_details_v3(
+            snapshot, details, progression, visual_v3
+        )
 
     item = details.assessment
     thesis = details.requirement.thesis
@@ -494,6 +556,157 @@ def render_native_analysis_details(
     )
 
 
+def _render_native_analysis_details_v3(
+    snapshot: BrowserWorkspaceSnapshot,
+    details: NativeAnalysisDetailsProjection,
+    progression: SwingProgressionWatchSnapshot | None,
+    visual_v3: V3SponsorEvidencePresentation,
+) -> str:
+    item = details.assessment
+    thesis = details.requirement.thesis
+    native_facts = [
+        ("Instrument", item.canonical_instrument),
+        ("Direction", item.direction.value),
+        ("Opportunity", item.opportunity_identity.value.replace("_", " ")),
+        ("1W context", item.weekly_state.value.replace("_", " ")),
+        ("1D regime", item.daily_state.value.replace("_", " ")),
+        ("4H opportunity", item.four_hour_state.value.replace("_", " ")),
+        ("1H progression", item.one_hour_state.value.replace("_", " ")),
+        ("Operative anchor", f"{thesis.operative_anchor_identity} · {_sponsor_price(thesis.operative_anchor_price)}"),
+        ("Why probable", " · ".join(code.replace("_", " ") for code in item.reason_codes)),
+    ]
+    visual_rows = "".join(
+        '<tr><td>' + escape(value.timeframe) + '</td><td>CPR relationship</td><td>'
+        + escape(value.cpr_observation) + '</td></tr>'
+        + '<tr><td>' + escape(value.timeframe) + '</td><td>Reference interaction</td><td>'
+        + escape(value.reference_observation) + '</td></tr>'
+        + '<tr><td>' + escape(value.timeframe) + '</td><td>Nearby technical structures</td><td>'
+        + escape(value.clustering_observation) + (
+            ' Components: ' + escape(" · ".join(value.clustering_components))
+            if value.clustering_components else ""
+        ) + '</td></tr>'
+        for value in visual_v3.visual_facts
+    )
+    reconciled = "".join(_v3_timeframe_reconciliation(
+        machine, visual_v3.visual_for(machine.timeframe)
+    ) for machine in visual_v3.machine_facts)
+    technical = [
+        ("Native run", visual_v3.run_identity),
+        ("Native assessment", visual_v3.native_assessment_sha256),
+        ("Analysis boundary", details.assessment.factual_boundaries[-1][1].isoformat() if details.assessment.factual_boundaries else "UNAVAILABLE"),
+        ("Review Pack", visual_v3.review_pack_identity or "NOT CREATED"),
+        ("Visual question set", f"{visual_v3.question_set_identity} {visual_v3.question_set_version}"),
+        ("Machine-fact contract", REFERENCE_MACHINE_FACT_SCHEMA),
+        ("Reference policy", f"{REFERENCE_POLICY_IDENTITY} {REFERENCE_POLICY_VERSION}"),
+        ("Calculation policy", f"{CPR_CALCULATION_POLICY_IDENTITY} {CPR_CALCULATION_POLICY_VERSION}"),
+        ("Machine fact identities", " · ".join(value.integrity_sha256 for value in visual_v3.machine_facts)),
+        ("Visual evidence identities", " · ".join(value.evidence_sha256 for value in visual_v3.visual_facts)),
+        ("Readiness identity", visual_v3.readiness_identity),
+        ("Internal readiness", visual_v3.readiness),
+        ("Reference-period identities", " · ".join(f"{value.timeframe} {value.reference_period_identity}" for value in visual_v3.machine_facts)),
+        ("Watch identities", _watch_identities(item.canonical_instrument, progression)),
+    ]
+    body = (
+        '<p><a class="button" href="/swing/opportunities">← Back to Opportunities</a></p>'
+        '<div class="analysis-details">'
+        + _analysis_disclosure("A. WHAT KITE / NATIVE DISCOVERY SAYS", native_facts)
+        + '<details class="analysis-section"><summary>B. WHAT THE TRADINGVIEW CHART / CHART ANALYST SAYS</summary>'
+        '<p class="technical">Independent chart observations; KRONOS numerical facts are shown separately.</p>'
+        '<table class="analysis-table"><thead><tr><th>Timeframe</th><th>Observation</th><th>Chart Analyst evidence</th></tr></thead><tbody>'
+        + visual_rows + '</tbody></table></details>'
+        + '<section class="analysis-section"><h2>C. WHAT KRONOS RECONCILED</h2>'
+        '<p class="technical">KRONOS numerical facts and independent chart observations retain separate authority.</p>'
+        + reconciled + '</section>'
+        + '<section class="analysis-section"><h2>D. CURRENT DECISION</h2>'
+        '<div class="analysis-decision">' + escape(visual_v3.sponsor_status) + '</div>'
+        '<p>' + escape(visual_v3.readiness_reason) + '</p></section>'
+        + _progression_requirements_section(item.canonical_instrument, progression)
+        + '<section class="analysis-section analysis-next"><h2>F. WHAT HAPPENS NEXT</h2><p>'
+        + escape(_v3_next_step(item.canonical_instrument, progression, visual_v3.next_step))
+        + '</p></section>'
+        + '<details class="analysis-section"><summary>G. TECHNICAL EVIDENCE</summary><div class="analysis-facts">'
+        + _analysis_fact_rows(technical) + '</div></details></div>'
+    )
+    return _page(
+        title=f"{item.canonical_instrument} Analysis Details",
+        subtitle="Governed V3 evidence chain for the current immutable Native analysis.",
+        snapshot=snapshot,
+        active_nav="Swing",
+        active_tab="Opportunities",
+        body=body,
+    )
+
+
+def _v3_timeframe_reconciliation(machine, visual) -> str:  # type: ignore[no-untyped-def]
+    if machine.availability == "AVAILABLE":
+        numerical = (
+            '<div class="analysis-facts">'
+            + _analysis_fact_rows([
+                ("Reference period", machine.reference_period),
+                ("BC", machine.bc or "UNAVAILABLE"),
+                ("CP", machine.cp or "UNAVAILABLE"),
+                ("TC", machine.tc or "UNAVAILABLE"),
+                ("Reference High", machine.reference_high or "UNAVAILABLE"),
+                ("Reference Low", machine.reference_low or "UNAVAILABLE"),
+            ]) + '</div>'
+        )
+    else:
+        numerical = (
+            '<p class="missing-evidence"><strong>Numerical reference not available.</strong> '
+            + escape(machine.unavailable_explanation or "The governed fact is unavailable.")
+            + '</p>'
+        )
+    components = (
+        '<p><strong>Identified components:</strong> '
+        + escape(" · ".join(visual.clustering_components)) + '</p>'
+        if visual.clustering_components else ""
+    )
+    return (
+        '<div class="analysis-section"><h3>' + escape(machine.timeframe)
+        + ' · ' + escape(machine.reference_period) + '</h3>'
+        '<p><strong>KRONOS NUMERICAL FACTS</strong></p>' + numerical
+        + '<p><strong>CHART OBSERVATION</strong></p><p>'
+        + escape(visual.cpr_observation) + '</p><p>'
+        + escape(visual.reference_observation) + '</p><p>'
+        + escape(visual.clustering_observation) + '</p>' + components + '</div>'
+    )
+
+
+def _watch_identities(
+    instrument: str, progression: SwingProgressionWatchSnapshot | None
+) -> str:
+    if progression is None:
+        return "NONE"
+    values = tuple(
+        watch.watch_id for watch in progression.watches
+        if watch.requirement.canonical_instrument == instrument
+    )
+    return " · ".join(values) or "NONE"
+
+
+def _v3_next_step(
+    instrument: str,
+    progression: SwingProgressionWatchSnapshot | None,
+    fallback: str,
+) -> str:
+    if progression is None:
+        return fallback
+    watches = tuple(
+        item for item in progression.watches
+        if item.requirement.canonical_instrument == instrument
+    )
+    if any(item.state is ProgressionWatchState.TRIGGERED for item in watches):
+        return "The watch condition has been reached. Reassessment is required. No trade has been authorized."
+    if any(item.state is ProgressionWatchState.ACTIVE for item in watches):
+        return "KRONOS is monitoring this condition. If reached, the candidate will require reassessment."
+    if any(
+        item.state is ProgressionRequirementState.WATCH_AVAILABLE
+        for item in progression.for_instrument(instrument)
+    ):
+        return "You may activate a KRONOS watch for the governed outstanding progression condition."
+    return fallback
+
+
 def _progression_requirements_section(
     instrument: str,
     progression: SwingProgressionWatchSnapshot | None,
@@ -506,6 +719,7 @@ def _progression_requirements_section(
         for requirement in requirements:
             watch = None if progression is None else progression.watch_for(requirement.requirement_id)
             state = requirement.state.value.replace("_", " ")
+            summary = _progression_summary(requirement)
             detail = ""
             if watch is not None and watch.state is ProgressionWatchState.TRIGGERED:
                 state = "REASSESSMENT REQUIRED"
@@ -538,16 +752,40 @@ def _progression_requirements_section(
             marker = "✓" if requirement.state is ProgressionRequirementState.SATISFIED else "○"
             rows.append(
                 '<div class="progression-row"><span class="progression-marker">'
-                + marker + '</span><div><strong>' + escape(requirement.summary)
+                + marker + '</span><div><strong>' + escape(summary)
                 + '</strong><span class="progression-state">' + escape(state)
                 + '</span>' + detail + '</div></div>'
             )
         content = ''.join(rows)
     return (
         '<section class="analysis-section"><h2>E. REQUIREMENTS TO PROGRESS</h2>'
+        '<p><strong>WHAT KRONOS IS WAITING FOR</strong></p>'
         '<p class="technical">Satisfaction requests the next governed reassessment; it does not authorize a trade.</p>'
         '<div class="progression-list">' + content + '</div></section>'
     )
+
+
+def _progression_summary(requirement) -> str:  # type: ignore[no-untyped-def]
+    if (
+        requirement.state in {
+            ProgressionRequirementState.WATCH_AVAILABLE,
+            ProgressionRequirementState.WATCH_ACTIVE,
+            ProgressionRequirementState.ALREADY_SATISFIED,
+        }
+        and requirement.timeframe is not None
+        and requirement.comparator is not None
+        and requirement.price is not None
+    ):
+        relation = (
+            "ABOVE"
+            if requirement.comparator.value == "BAR_CLOSE_ABOVE"
+            else "BELOW"
+        )
+        return (
+            f"WATCH FOR · {requirement.timeframe.value} CLOSE {relation} "
+            f"{_sponsor_price(requirement.price)}"
+        )
+    return requirement.summary
 
 
 def _analysis_disclosure(title: str, facts: list[tuple[str, str]]) -> str:
@@ -3101,6 +3339,10 @@ def _plan_field(label: str, value: str, css_class: str = "") -> str:
 
 def _number(value: float) -> str:
     return f"{value:,.4f}".rstrip("0").rstrip(".")
+
+
+def _sponsor_price(value: float) -> str:
+    return "₹" + _number(value)
 
 
 def _duration(seconds: int | None) -> str:

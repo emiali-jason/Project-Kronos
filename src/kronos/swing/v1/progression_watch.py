@@ -26,6 +26,17 @@ from kronos.swing.v1.native_readiness import (
     NextConditionState,
     ThesisIntact,
 )
+from kronos.swing.v1.native_readiness_v3 import NativeLayer2ReadinessRecordV3
+from kronos.swing.v1.native_review import NativeReviewRequirement
+from kronos.swing.v1.reference_facts import (
+    SwingReferenceAvailability,
+    SwingReferenceCprMachineFact,
+)
+from kronos.swing.v1.visual_evidence_v2 import VisualObservationStatus
+from kronos.swing.v1.visual_evidence_v3 import (
+    VisualEvidenceV3Response,
+    VisualQuestionV3,
+)
 
 
 PROGRESSION_WATCH_POLICY_ID = "SWING-UX-08-PROGRESSION-WATCH-V0"
@@ -279,6 +290,126 @@ def derive_progression_requirements(
             source_evidence_ids=(native_assessment_sha256,),
         ))
     elif readiness.conditions.next_condition_state is NextConditionState.AVAILABLE:
+        assert readiness.conditions.next_condition is not None
+        result.append(_from_next_condition(common, readiness.conditions.next_condition))
+    elif readiness.conditions.next_condition_state is NextConditionState.UNAVAILABLE:
+        result.append(_requirement(
+            **common,
+            condition_identity="GOVERNED_NEXT_CONDITION",
+            summary="A deterministic next condition is not established",
+            state=ProgressionRequirementState.NOT_WATCHABLE,
+            source_evidence_ids=(readiness.result_sha256,),
+        ))
+    return tuple(result)
+
+
+def derive_v3_progression_requirements(
+    *,
+    requirement: NativeReviewRequirement,
+    machine_facts: tuple[SwingReferenceCprMachineFact, ...],
+    visual: tuple[VisualEvidenceV3Response, ...],
+    readiness: NativeLayer2ReadinessRecordV3,
+    provenance: tuple[str, ...],
+) -> tuple[ProgressionRequirement, ...]:
+    """Project V3 evidence gaps and an existing governed next condition.
+
+    Machine numerical facts are explanatory inputs only.  The only watchable
+    requirement remains the exact ``NextConditionEvidence`` already persisted
+    by the governed Readiness conditions.
+    """
+
+    if (
+        type(requirement) is not NativeReviewRequirement
+        or type(machine_facts) is not tuple
+        or len(machine_facts) != 4
+        or type(visual) is not tuple
+        or type(readiness) is not NativeLayer2ReadinessRecordV3
+        or readiness.run_identity != requirement.native_run_identity
+        or readiness.canonical_instrument != requirement.canonical_instrument
+        or readiness.native_assessment_sha256
+        != requirement.thesis.native_assessment_sha256
+        or any(
+            item.run_identity != readiness.run_identity
+            or item.canonical_instrument != readiness.canonical_instrument
+            for item in machine_facts
+        )
+        or any(
+            item.native_run_identity != readiness.run_identity
+            or item.native_canonical_instrument != readiness.canonical_instrument
+            for item in visual
+        )
+        or not provenance
+    ):
+        raise ValueError("V3_PROGRESSION_REQUIREMENTS_INVALID")
+    common = dict(
+        canonical_instrument=readiness.canonical_instrument,
+        direction=requirement.thesis.direction,
+        native_run_identity=readiness.run_identity,
+        native_assessment_sha256=readiness.native_assessment_sha256,
+        source_analytical_state=readiness.readiness.value,
+        observation_boundary=readiness.analysis_boundary,
+        provenance=provenance,
+    )
+    result = [_requirement(
+        **common,
+        condition_identity="NATIVE_THESIS_INTACT",
+        summary="Native thesis intact",
+        state=(
+            ProgressionRequirementState.SATISFIED
+            if readiness.conditions.thesis_intact is ThesisIntact.YES
+            else ProgressionRequirementState.EVIDENCE_REQUIRED
+        ),
+        source_evidence_ids=(readiness.native_assessment_sha256,),
+    )]
+    for fact in machine_facts:
+        if fact.availability is SwingReferenceAvailability.AVAILABLE:
+            result.append(_requirement(
+                **common,
+                condition_identity=f"TIMEFRAME_{fact.chart_timeframe.value}_REFERENCE_FACT",
+                summary=(
+                    f"{fact.chart_timeframe.value} "
+                    f"{fact.reference_period_type.value.replace('_', ' ').title()} "
+                    "reference fact known"
+                ),
+                state=ProgressionRequirementState.SATISFIED,
+                source_evidence_ids=(fact.integrity_sha256,),
+            ))
+        else:
+            result.append(_requirement(
+                **common,
+                condition_identity=f"TIMEFRAME_{fact.chart_timeframe.value}_REFERENCE_FACT",
+                summary=(
+                    f"{fact.chart_timeframe.value} deterministic reference fact "
+                    "must be available"
+                ),
+                state=ProgressionRequirementState.EVIDENCE_REQUIRED,
+                source_evidence_ids=(fact.integrity_sha256,),
+            ))
+    required_visual = {
+        VisualQuestionV3.CPR_VISUAL_RELATIONSHIP:
+            "chart relationship to the governed CPR structure must be confirmed",
+        VisualQuestionV3.GOVERNED_REFERENCE_VISUAL_CONTEXT:
+            "chart interaction with the governed reference structure must be confirmed",
+        VisualQuestionV3.VISUAL_COMPONENT_CLUSTERING:
+            "nearby technical-structure clustering must be visually established",
+    }
+    for response in visual:
+        by_question = {item.question_id: item for item in response.observations}
+        for question, label in required_visual.items():
+            observation = by_question[question]
+            state = (
+                ProgressionRequirementState.SATISFIED
+                if observation.observation_status is VisualObservationStatus.OBSERVED
+                else ProgressionRequirementState.EVIDENCE_REQUIRED
+            )
+            result.append(_requirement(
+                **common,
+                condition_identity=f"TIMEFRAME_{response.timeframe.value}_{question.value}",
+                summary=f"{response.timeframe.value} {label}",
+                state=state,
+                source_evidence_ids=(response.evidence_sha256,),
+            ))
+    if readiness.conditions.next_condition_state is NextConditionState.AVAILABLE:
         assert readiness.conditions.next_condition is not None
         result.append(_from_next_condition(common, readiness.conditions.next_condition))
     elif readiness.conditions.next_condition_state is NextConditionState.UNAVAILABLE:
@@ -691,6 +822,7 @@ __all__ = [
     "ProgressionRequirementState", "ProgressionWatch", "ProgressionWatchState",
     "ProgressionWatchEvent", "ProgressionWatchEventType",
     "ProgressionWatchStore", "activate_watch", "derive_progression_requirements",
+    "derive_v3_progression_requirements",
     "deactivate_watch", "hide_watch", "mark_watch_stale", "observe_completed_bar",
     "reactivate_watch", "tradingview_instruction",
 ]

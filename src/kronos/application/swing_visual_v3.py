@@ -17,6 +17,7 @@ from kronos.swing.v1.native_readiness_v3 import (
     NativeLayer2ReadinessV3Store,
     create_native_readiness_record_v3,
 )
+from kronos.swing.v1.pdf_visual_review_v3 import VisualV3ReviewPackRecord
 from kronos.swing.v1.native_review import (
     McxReferenceResult,
     NativeIndependentLayer2Evidence,
@@ -51,6 +52,60 @@ class VisualV3ChartInput:
             raise ValueError("VISUAL_V3_CHART_INPUT_INVALID")
 
 
+@dataclass(frozen=True, slots=True)
+class CompletedVisualV3Review:
+    """Exact governed inputs for one completed future V3 Sponsor cycle."""
+
+    requirement: NativeReviewRequirement
+    mtf_snapshot: SameRunMtfFactSnapshot
+    responses: tuple[VisualEvidenceV3Response, ...]
+    readiness: NativeLayer2ReadinessRecordV3
+    review_pack: VisualV3ReviewPackRecord | None = None
+
+    def __post_init__(self) -> None:
+        instrument = self.requirement.canonical_instrument
+        run_identity = self.requirement.native_run_identity
+        if (
+            type(self.requirement) is not NativeReviewRequirement
+            or type(self.mtf_snapshot) is not SameRunMtfFactSnapshot
+            or self.mtf_snapshot.run_identity != run_identity
+            or type(self.responses) is not tuple
+            or len(self.responses) != len(VisualTimeframe)
+            or tuple(item.timeframe for item in self.responses)
+            != tuple(VisualTimeframe)
+            or any(
+                item.native_run_identity != run_identity
+                or item.native_canonical_instrument != instrument
+                or item.native_assessment_sha256
+                != self.requirement.thesis.native_assessment_sha256
+                for item in self.responses
+            )
+            or type(self.readiness) is not NativeLayer2ReadinessRecordV3
+            or self.readiness.run_identity != run_identity
+            or self.readiness.canonical_instrument != instrument
+            or self.readiness.native_assessment_sha256
+            != self.requirement.thesis.native_assessment_sha256
+            or (
+                self.review_pack is not None
+                and (
+                    type(self.review_pack) is not VisualV3ReviewPackRecord
+                    or self.review_pack.native_run_identity != run_identity
+                    or self.review_pack.canonical_instrument != instrument
+                    or self.review_pack.native_assessment_sha256
+                    != self.requirement.thesis.native_assessment_sha256
+                )
+            )
+        ):
+            raise ValueError("COMPLETED_VISUAL_V3_REVIEW_INVALID")
+        facts = self.mtf_snapshot.instrument(instrument).reference_facts
+        if any(
+            response.machine_fact_integrity_sha256 != fact.integrity_sha256
+            or response.analysis_boundary != fact.analysis_boundary
+            for response, fact in zip(self.responses, facts, strict=True)
+        ):
+            raise ValueError("COMPLETED_VISUAL_V3_REVIEW_BINDING_INVALID")
+
+
 class SwingVisualV3ReviewCycle:
     """Prepare, retain, and reconcile one explicit V3 review cycle."""
 
@@ -61,6 +116,7 @@ class SwingVisualV3ReviewCycle:
     ) -> None:
         self._evidence_store = evidence_store
         self._readiness_store = readiness_store
+        self._completed: dict[tuple[str, str], CompletedVisualV3Review] = {}
 
     def prepare(
         self,
@@ -106,6 +162,7 @@ class SwingVisualV3ReviewCycle:
         created_at: datetime,
         reference: McxReferenceResult | None = None,
         inputs: NativeConditionInputs = NativeConditionInputs(),
+        review_pack: VisualV3ReviewPackRecord | None = None,
     ) -> NativeLayer2ReadinessRecordV3:
         record = create_native_readiness_record_v3(
             requirement,
@@ -117,7 +174,32 @@ class SwingVisualV3ReviewCycle:
             inputs=inputs,
         )
         self._readiness_store.retain(record)
+        completed = CompletedVisualV3Review(
+            requirement, mtf_snapshot, responses, record, review_pack
+        )
+        self._completed[(record.run_identity, record.canonical_instrument)] = completed
         return record
+
+    def restore_completed(self, review: CompletedVisualV3Review) -> None:
+        """Restore an already-persisted exact V3 cycle without reinterpretation."""
+
+        if type(review) is not CompletedVisualV3Review:
+            raise TypeError("COMPLETED_VISUAL_V3_REVIEW_INVALID")
+        self._completed[(
+            review.readiness.run_identity,
+            review.readiness.canonical_instrument,
+        )] = review
+
+    def completed_for(
+        self, run_identity: str, canonical_instrument: str
+    ) -> CompletedVisualV3Review | None:
+        return self._completed.get((run_identity, canonical_instrument))
+
+    def completed_snapshot(self) -> tuple[CompletedVisualV3Review, ...]:
+        return tuple(
+            self._completed[key]
+            for key in sorted(self._completed)
+        )
 
 
 def chart_inputs_from_requirement(
@@ -156,6 +238,7 @@ def _aware(value: object) -> bool:
 
 
 __all__ = [
+    "CompletedVisualV3Review",
     "SwingVisualV3ReviewCycle",
     "VisualV3ChartInput",
     "chart_inputs_from_requirement",

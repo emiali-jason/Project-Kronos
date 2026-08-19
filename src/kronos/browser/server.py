@@ -30,6 +30,7 @@ from kronos.application.swing_native_review import (
     NativeReviewWorkflow,
     project_native_analysis_details,
 )
+from kronos.application.swing_visual_v3 import SwingVisualV3ReviewCycle
 from kronos.configuration.apple_keychain import (
     AppleKeychainApiKeySource,
     AppleKeychainCredentialPresenceProbe,
@@ -75,6 +76,7 @@ from kronos.browser.views import (
 )
 from kronos.browser.v1_analysis_status import analysis_status_payload
 from kronos.browser.swing_readiness_presentation import present_native_readiness
+from kronos.browser.swing_v3_presentation import present_visual_v3_review
 from kronos.browser.restart_control import BrowserBackendRestartControl
 from kronos.browser.product_routes import (
     BrowserGetRequest,
@@ -101,7 +103,10 @@ from kronos.swing.v1.pdf_visual_review import (
     PdfReviewTransportError,
     PdfVisualReviewTransport,
 )
-from kronos.swing.v1.progression_watch import derive_progression_requirements
+from kronos.swing.v1.progression_watch import (
+    derive_progression_requirements,
+    derive_v3_progression_requirements,
+)
 
 
 _LOOPBACK_HOST = "127.0.0.1"
@@ -145,6 +150,7 @@ class KronosBrowserServer(ThreadingHTTPServer):
         native_review: NativeReviewWorkflow | None = None,
         product_routes: ProductBrowserRoutes | None = None,
         progression_watches: SwingProgressionWatchWorkflow | None = None,
+        visual_v3: SwingVisualV3ReviewCycle | None = None,
     ) -> None:
         if (
             address[0] != _LOOPBACK_HOST
@@ -178,6 +184,10 @@ class KronosBrowserServer(ThreadingHTTPServer):
                 progression_watches is not None
                 and type(progression_watches) is not SwingProgressionWatchWorkflow
             )
+            or (
+                visual_v3 is not None
+                and type(visual_v3) is not SwingVisualV3ReviewCycle
+            )
         ):
             raise ValueError("BROWSER_SERVER_MUST_BIND_LOOPBACK")
         config = OpenAIChartAnalystV2Config.from_environment()
@@ -204,6 +214,7 @@ class KronosBrowserServer(ThreadingHTTPServer):
             step32_workflow or SwingV1BrowserOperationalization()
         )
         self.progression_watches = progression_watches or SwingProgressionWatchWorkflow()
+        self.visual_v3 = visual_v3
         self.application.register_progression_watch_workflow(self.progression_watches)
         if v1_review is not None:
             self.v1_review = v1_review
@@ -333,6 +344,30 @@ class KronosBrowserServer(ThreadingHTTPServer):
                 != assessment.result_sha256
             ):
                 continue
+            completed_v3 = (
+                None
+                if self.visual_v3 is None
+                else self.visual_v3.completed_for(
+                    run.run_identity, assessment.canonical_instrument
+                )
+            )
+            if completed_v3 is not None:
+                requirements.extend(derive_v3_progression_requirements(
+                    requirement=completed_v3.requirement,
+                    machine_facts=completed_v3.mtf_snapshot.instrument(
+                        assessment.canonical_instrument
+                    ).reference_facts,
+                    visual=completed_v3.responses,
+                    readiness=completed_v3.readiness,
+                    provenance=tuple(dict.fromkeys((
+                        *assessment.provider_provenance,
+                        *assessment.calendar_provenance,
+                        assessment.policy_identity,
+                        completed_v3.readiness.binding_policy_identity,
+                        completed_v3.readiness.question_set_identity,
+                    ))),
+                ))
+                continue
             readiness = next((
                 item for item in review.readiness_records
                 if item.run_identity == run.run_identity
@@ -374,6 +409,14 @@ class KronosBrowserServer(ThreadingHTTPServer):
             ))
         return self.progression_watches.synchronize(
             run.run_identity, tuple(requirements)
+        )
+
+    def visual_v3_presentations(self):  # type: ignore[no-untyped-def]
+        if self.visual_v3 is None:
+            return ()
+        return tuple(
+            present_visual_v3_review(item)
+            for item in self.visual_v3.completed_snapshot()
         )
 
     def admit_sponsor_work(self) -> bool:
@@ -461,6 +504,7 @@ class _BrowserHandler(BaseHTTPRequestHandler):
                 discovery,
                 self.server.native_review.snapshot(),
                 self.server.progression_snapshot(),
+                self.server.visual_v3_presentations(),
             ))
             return
         if path in {"/notifications", "/notifications/swing", "/notifications/intraday"}:
@@ -491,8 +535,16 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             if details is None:
                 self._text(HTTPStatus.NOT_FOUND, "Analysis Details not found.")
                 return
+            v3 = next((
+                value for value in self.server.visual_v3_presentations()
+                if value.run_identity == details.assessment.run_identity
+                and value.canonical_instrument
+                == details.assessment.canonical_instrument
+                and value.native_assessment_sha256
+                == details.assessment.result_sha256
+            ), None)
             self._html(render_native_analysis_details(
-                snapshot, details, self.server.progression_snapshot()
+                snapshot, details, self.server.progression_snapshot(), v3
             ))
             return
         snapshot = self.server.application.snapshot()
@@ -1600,6 +1652,7 @@ def create_browser_server(
     native_review: NativeReviewWorkflow | None = None,
     product_routes: ProductBrowserRoutes | None = None,
     progression_watches: SwingProgressionWatchWorkflow | None = None,
+    visual_v3: SwingVisualV3ReviewCycle | None = None,
 ) -> KronosBrowserServer:
     if type(port) is not int or not 0 <= port <= 65535:
         raise ValueError("BROWSER_SERVER_PORT_INVALID")
@@ -1615,6 +1668,7 @@ def create_browser_server(
         native_review,
         product_routes,
         progression_watches,
+        visual_v3,
     )
 
 
