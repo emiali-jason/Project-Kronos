@@ -177,7 +177,13 @@ def test_restart_requires_exact_same_run_and_source_evidence(tmp_path: Path) -> 
     )
     assert restored.requirements == prepared.requirements
 
-    wrong_facts = replace(facts, run_identity="SWING-RUN-" + "C" * 32)
+    wrong_facts = replace(
+        facts,
+        run_identity="SWING-RUN-" + "C" * 32,
+        instruments=tuple(
+            replace(item, reference_facts=()) for item in facts.instruments
+        ),
+    )
     with pytest.raises(ValueError, match="SAME_RUN"):
         NativeReviewWorkflow(NativeReviewEvidenceStore(tmp_path)).restore(
             run, wrong_facts

@@ -1403,6 +1403,7 @@ def build_completed_swing_analysis(
             historical_candles=retrieve,
             calendar_publisher=market_calendar_publisher,
             observed_at=now,
+            analysis_boundary=market.observation_boundary,
             predecessor_snapshot=(
                 None
                 if mtf_fact_evidence_store is None

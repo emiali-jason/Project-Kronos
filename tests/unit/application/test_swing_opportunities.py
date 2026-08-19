@@ -22,7 +22,7 @@ from kronos.swing.v1.native_discovery import (
     NativeDiscoveryEvidenceStore,
     discover_native_mtf,
 )
-from tests.unit.application.test_swing_mtf_facts import _build as _mtf_fact_fixture
+from tests.unit.application.test_swing_mtf_facts import _build as _build_mtf_fixture
 from tests.unit.swing.test_swing_candidate_ranking import _plan
 from tests.unit.swing.test_swing_candidate_validation import (
     _candles as _stage4_candles,
@@ -32,6 +32,18 @@ from tests.unit.swing.test_swing_top_opportunity import _selection
 
 
 NOW = datetime(2026, 8, 11, 4, 30, tzinfo=UTC)
+
+
+def _mtf_fact_fixture():  # type: ignore[no-untyped-def]
+    """Return a legacy snapshot for tests that intentionally rewrite run IDs."""
+
+    snapshot, requests = _build_mtf_fixture()
+    return replace(
+        snapshot,
+        instruments=tuple(
+            replace(item, reference_facts=()) for item in snapshot.instruments
+        ),
+    ), requests
 
 
 class _Capability:

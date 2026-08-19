@@ -14,6 +14,11 @@ from threading import RLock
 
 from kronos.swing.run_identity import is_swing_analysis_run_id
 from kronos.swing.v1.models import PivotCandidate, PivotKind
+from kronos.swing.v1.reference_facts import (
+    SwingReferenceChartTimeframe,
+    SwingReferenceCprMachineFact,
+    reference_machine_fact_from_dict,
+)
 from kronos.swing.v1.weekly_facts import (
     CompletedWeeklyBarFact,
     FactualPivotRelation,
@@ -200,6 +205,7 @@ class InstrumentMtfFactSnapshot:
     exchange: str
     timeframes: tuple[CompletedTimeframeFact, ...]
     nse_weekly_foundation: NseWeeklyFactualFoundation | None = None
+    reference_facts: tuple[SwingReferenceCprMachineFact, ...] = ()
 
     def __post_init__(self) -> None:
         if (
@@ -217,11 +223,32 @@ class InstrumentMtfFactSnapshot:
                 and self.nse_weekly_foundation.canonical_instrument
                 != self.canonical_instrument
             )
+            or type(self.reference_facts) is not tuple
+            or (
+                self.reference_facts
+                and tuple(item.chart_timeframe for item in self.reference_facts)
+                != tuple(SwingReferenceChartTimeframe)
+            )
+            or any(
+                item.canonical_instrument != self.canonical_instrument
+                for item in self.reference_facts
+            )
         ):
             raise ValueError("INSTRUMENT_MTF_FACT_SNAPSHOT_INVALID")
 
     def fact(self, timeframe: FactualTimeframe) -> CompletedTimeframeFact:
         return next(item for item in self.timeframes if item.timeframe is timeframe)
+
+    def reference_fact(
+        self, timeframe: SwingReferenceChartTimeframe
+    ) -> SwingReferenceCprMachineFact:
+        try:
+            return next(
+                item for item in self.reference_facts
+                if item.chart_timeframe is timeframe
+            )
+        except StopIteration as error:
+            raise ValueError("SWING_REFERENCE_FACT_UNAVAILABLE") from error
 
 
 @dataclass(frozen=True, slots=True)
@@ -239,6 +266,7 @@ class SameRunMtfFactSnapshot:
 
     def __post_init__(self) -> None:
         identities = tuple(item.canonical_instrument for item in self.instruments)
+        reference_counts = {len(item.reference_facts) for item in self.instruments}
         if (
             not is_swing_analysis_run_id(self.run_identity)
             or not _aware(self.observed_at)
@@ -247,6 +275,12 @@ class SameRunMtfFactSnapshot:
             or type(self.instruments) is not tuple
             or len(self.instruments) != 98
             or len(set(identities)) != 98
+            or reference_counts not in ({0}, {4})
+            or any(
+                fact.run_identity != self.run_identity
+                for instrument in self.instruments
+                for fact in instrument.reference_facts
+            )
             or self.quote_context is not None
             or self.quote_authority != QUOTE_FACT_AUTHORITY
             or self.authority != MTF_FACT_AUTHORITY
@@ -347,6 +381,10 @@ def _instrument(value: object) -> InstrumentMtfFactSnapshot:
             None
             if value.get("nse_weekly_foundation") is None
             else _weekly_foundation(value["nse_weekly_foundation"])
+        ),
+        tuple(
+            reference_machine_fact_from_dict(item)
+            for item in value.get("reference_facts", ())
         ),
     )
 

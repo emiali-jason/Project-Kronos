@@ -36,6 +36,7 @@ from kronos.swing.v1.mtf_facts import (
     InstrumentMtfFactSnapshot,
     SameRunMtfFactSnapshot,
 )
+from kronos.swing.v1.reference_facts import build_reference_machine_facts
 from kronos.swing.v1.weekly_facts import NseWeeklyFactualFoundation
 
 
@@ -51,6 +52,7 @@ def build_same_run_mtf_fact_snapshot(
     historical_candles: object,
     calendar_publisher: MarketCalendarPublisher,
     observed_at: datetime,
+    analysis_boundary: datetime | None = None,
     predecessor_snapshot: SameRunMtfFactSnapshot | None = None,
 ) -> SameRunMtfFactSnapshot:
     """Build the complete same-98 factual snapshot from fresh Provider calls."""
@@ -62,6 +64,7 @@ def build_same_run_mtf_fact_snapshot(
         or not callable(historical_candles)
         or type(calendar_publisher) is not MarketCalendarPublisher
         or not _aware(observed_at)
+        or (analysis_boundary is not None and not _aware(analysis_boundary))
         or (
             predecessor_snapshot is not None
             and type(predecessor_snapshot) is not SameRunMtfFactSnapshot
@@ -159,8 +162,28 @@ def build_same_run_mtf_fact_snapshot(
                 hour_boundary, hourly_candles, "60minute",
             ),
         )
+        reference_facts = build_reference_machine_facts(
+            run_identity=run_identity,
+            canonical_instrument=record.canonical_identity,
+            exchange=exchange,
+            completed_daily=daily_candles,
+            completed_week=latest_week,
+            completed_week_identity=week_identity,
+            calendar_publisher=calendar_publisher,
+            observed_at=observed_at,
+            analysis_boundary=(
+                analysis_boundary
+                if analysis_boundary is not None
+                else min(item.observation_boundary for item in facts)
+            ),
+            provider_source_identity=_PROVIDER_SOURCE,
+        )
         instruments.append(InstrumentMtfFactSnapshot(
-            record.canonical_identity, exchange, facts, weekly_foundation
+            record.canonical_identity,
+            exchange,
+            facts,
+            weekly_foundation,
+            reference_facts,
         ))
         source_material.append({
             "instrument": record.canonical_identity,
@@ -175,6 +198,15 @@ def build_same_run_mtf_fact_snapshot(
                 [item.timeframe.value, item.observation_boundary.isoformat(),
                  item.open, item.high, item.low, item.close, item.volume]
                 for item in facts
+            ],
+            "reference_facts": [
+                [
+                    item.chart_timeframe.value,
+                    item.reference_period_identity,
+                    item.availability.value,
+                    item.integrity_sha256,
+                ]
+                for item in reference_facts
             ],
         })
 

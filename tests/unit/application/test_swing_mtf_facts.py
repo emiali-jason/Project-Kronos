@@ -38,6 +38,11 @@ from kronos.swing.v1.mtf_facts import (
     MTF_FACT_AUTHORITY,
     MtfFactEvidenceStore,
 )
+from kronos.swing.v1.reference_facts import (
+    REFERENCE_MACHINE_FACT_AUTHORITY,
+    SwingReferenceAvailability,
+    SwingReferenceChartTimeframe,
+)
 
 
 IST = ZoneInfo("Asia/Kolkata")
@@ -216,6 +221,24 @@ def test_same_run_factual_mtf_snapshot_uses_fresh_same_98_provider_histories() -
         for instrument in snapshot.instruments
         for fact in instrument.timeframes
     )
+    assert all(
+        tuple(fact.chart_timeframe for fact in instrument.reference_facts)
+        == tuple(SwingReferenceChartTimeframe)
+        for instrument in snapshot.instruments
+    )
+    assert all(
+        fact.run_identity == RUN_ID
+        and fact.canonical_instrument == instrument.canonical_instrument
+        and fact.authority == REFERENCE_MACHINE_FACT_AUTHORITY
+        for instrument in snapshot.instruments
+        for fact in instrument.reference_facts
+    )
+    assert all(
+        fact.availability is SwingReferenceAvailability.AVAILABLE
+        for instrument in snapshot.instruments
+        for fact in instrument.reference_facts
+        if instrument.exchange == "NSE"
+    )
 
 
 def test_snapshot_records_completed_derived_week_and_shortened_four_hour_remainder() -> None:
@@ -368,6 +391,10 @@ def test_factual_snapshot_is_restart_safe_and_immutable(tmp_path) -> None:
     assert (
         store.load(RUN_ID).instrument("RELIANCE").nse_weekly_foundation
         == snapshot.instrument("RELIANCE").nse_weekly_foundation
+    )
+    assert (
+        store.load(RUN_ID).instrument("RELIANCE").reference_facts
+        == snapshot.instrument("RELIANCE").reference_facts
     )
     assert first.stat().st_mode & 0o777 == 0o600
 
