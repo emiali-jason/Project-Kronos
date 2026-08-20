@@ -7,6 +7,7 @@ from datetime import UTC, date, datetime, time, timedelta
 from hashlib import sha256
 import json
 import math
+import statistics
 from zoneinfo import ZoneInfo
 
 from kronos.market.calendar import MarketCalendarPublisher
@@ -28,13 +29,17 @@ from kronos.swing.daily_data import SwingDailyDataset, SwingDailyStatus
 from kronos.swing.universe import SwingUniverseAssetClass
 from kronos.swing.v1.evidence import factual_pivot_candidates
 from kronos.swing.v1.mtf_facts import (
+    CompletedOneHourAtrFact,
     CompletedTimeframeFact,
     FactualMovingAverageFacts,
     FactualPivotSeries,
     FactualTimeframe,
     FactualVolumeFacts,
     InstrumentMtfFactSnapshot,
+    ONE_HOUR_ATR_REQUIRED_CANDLES,
+    OneHourAtrAvailability,
     SameRunMtfFactSnapshot,
+    one_hour_atr_integrity_sha256,
 )
 from kronos.swing.v1.reference_facts import build_reference_machine_facts
 from kronos.swing.v1.weekly_facts import NseWeeklyFactualFoundation
@@ -162,6 +167,18 @@ def build_same_run_mtf_fact_snapshot(
                 hour_boundary, hourly_candles, "60minute",
             ),
         )
+        effective_analysis_boundary = (
+            analysis_boundary
+            if analysis_boundary is not None
+            else min(item.observation_boundary for item in facts)
+        )
+        one_hour_atr = _one_hour_atr_fact(
+            run_identity=run_identity,
+            canonical_instrument=record.canonical_identity,
+            analysis_boundary=effective_analysis_boundary,
+            one_hour_fact=facts[-1],
+            completed_hourly=hourly_candles,
+        )
         reference_facts = build_reference_machine_facts(
             run_identity=run_identity,
             canonical_instrument=record.canonical_identity,
@@ -171,11 +188,7 @@ def build_same_run_mtf_fact_snapshot(
             completed_week_identity=week_identity,
             calendar_publisher=calendar_publisher,
             observed_at=observed_at,
-            analysis_boundary=(
-                analysis_boundary
-                if analysis_boundary is not None
-                else min(item.observation_boundary for item in facts)
-            ),
+            analysis_boundary=effective_analysis_boundary,
             provider_source_identity=_PROVIDER_SOURCE,
         )
         instruments.append(InstrumentMtfFactSnapshot(
@@ -184,6 +197,7 @@ def build_same_run_mtf_fact_snapshot(
             facts,
             weekly_foundation,
             reference_facts,
+            one_hour_atr,
         ))
         source_material.append({
             "instrument": record.canonical_identity,
@@ -208,6 +222,7 @@ def build_same_run_mtf_fact_snapshot(
                 ]
                 for item in reference_facts
             ],
+            "one_hour_atr_integrity_sha256": one_hour_atr.integrity_sha256,
         })
 
     identity = "KITE-MTF-FACTS-" + sha256(
@@ -459,6 +474,66 @@ def _volume_facts(
         candles[-1].volume,
         None if len(prior) < 20 else math.fsum(prior) / len(prior),
     )
+
+
+def _one_hour_atr_fact(
+    *,
+    run_identity: str,
+    canonical_instrument: str,
+    analysis_boundary: datetime,
+    one_hour_fact: CompletedTimeframeFact,
+    completed_hourly: tuple[HistoricalCandle, ...],
+) -> CompletedOneHourAtrFact:
+    value = _completed_arithmetic_atr14(completed_hourly)
+    available = value is not None
+    values: dict[str, object] = {
+        "run_identity": run_identity,
+        "canonical_instrument": canonical_instrument,
+        "analysis_boundary": analysis_boundary,
+        "observation_boundary": one_hour_fact.observation_boundary,
+        "source_market_data_boundary": one_hour_fact.source_market_data_boundary,
+        "calendar_identity": one_hour_fact.calendar_identity,
+        "calendar_version": one_hour_fact.calendar_version,
+        "session_identity": one_hour_fact.session_identity,
+        "exchange_timezone": one_hour_fact.exchange_timezone,
+        "source_provider_identity": one_hour_fact.source_provider_identity,
+        "provenance": one_hour_fact.provenance,
+        "completed_candle_count": len(completed_hourly),
+        "availability": (
+            OneHourAtrAvailability.AVAILABLE
+            if available
+            else OneHourAtrAvailability.UNAVAILABLE
+        ),
+        "unavailable_reason": (
+            None if available else "INSUFFICIENT_COMPLETED_1H_HISTORY"
+        ),
+        "value": value,
+    }
+    return CompletedOneHourAtrFact(
+        **values,  # type: ignore[arg-type]
+        integrity_sha256=one_hour_atr_integrity_sha256(values),
+    )
+
+
+def _completed_arithmetic_atr14(
+    candles: tuple[HistoricalCandle, ...],
+) -> float | None:
+    """Match the established KRONOS arithmetic mean True Range convention."""
+
+    if len(candles) < ONE_HOUR_ATR_REQUIRED_CANDLES:
+        return None
+    true_ranges = []
+    for index in range(
+        len(candles) - (ONE_HOUR_ATR_REQUIRED_CANDLES - 1), len(candles)
+    ):
+        candle = candles[index]
+        previous_close = candles[index - 1].close
+        true_ranges.append(max(
+            candle.high - candle.low,
+            abs(candle.high - previous_close),
+            abs(candle.low - previous_close),
+        ))
+    return statistics.fmean(true_ranges)
 
 
 def _validated_series(value: object, reason: str) -> tuple[HistoricalCandle, ...]:

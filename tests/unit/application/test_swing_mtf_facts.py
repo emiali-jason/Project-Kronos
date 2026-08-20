@@ -2,11 +2,15 @@ from dataclasses import fields
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 import inspect
+import json
 from zoneinfo import ZoneInfo
+
+import pytest
 
 from kronos.application import swing_mtf_facts
 from kronos.application.swing_opportunities import SwingOpportunitiesApplication
 from kronos.application.swing_mtf_facts import (
+    _completed_arithmetic_atr14,
     _completed_hourly,
     build_same_run_mtf_fact_snapshot,
 )
@@ -37,7 +41,13 @@ from kronos.swing.v1.mtf_facts import (
     FactualTimeframe,
     MTF_FACT_AUTHORITY,
     MtfFactEvidenceStore,
+    ONE_HOUR_ATR_AGGREGATION_IDENTITY,
+    ONE_HOUR_ATR_POLICY_IDENTITY,
+    ONE_HOUR_ATR_POLICY_VERSION,
+    ONE_HOUR_TRUE_RANGE_IDENTITY,
+    OneHourAtrAvailability,
 )
+from kronos.swing.v1.evidence import _atr as _existing_kronos_atr
 from kronos.swing.v1.reference_facts import (
     REFERENCE_MACHINE_FACT_AUTHORITY,
     SwingReferenceAvailability,
@@ -239,6 +249,42 @@ def test_same_run_factual_mtf_snapshot_uses_fresh_same_98_provider_histories() -
         for fact in instrument.reference_facts
         if instrument.exchange == "NSE"
     )
+    assert all(
+        instrument.one_hour_atr is not None
+        and instrument.one_hour_atr.run_identity == RUN_ID
+        and instrument.one_hour_atr.canonical_instrument
+        == instrument.canonical_instrument
+        and instrument.one_hour_atr.availability
+        is OneHourAtrAvailability.AVAILABLE
+        and instrument.one_hour_atr.calculation_policy_identity
+        == ONE_HOUR_ATR_POLICY_IDENTITY
+        and instrument.one_hour_atr.calculation_policy_version
+        == ONE_HOUR_ATR_POLICY_VERSION
+        and instrument.one_hour_atr.true_range_identity
+        == ONE_HOUR_TRUE_RANGE_IDENTITY
+        and instrument.one_hour_atr.aggregation_identity
+        == ONE_HOUR_ATR_AGGREGATION_IDENTITY
+        for instrument in snapshot.instruments
+    )
+
+
+def test_completed_one_hour_atr14_matches_existing_arithmetic_true_range_precedent() -> None:
+    candles = tuple(
+        HistoricalCandle(
+            datetime(2026, 8, 10, index, tzinfo=IST),
+            100.0 + index,
+            102.0 + index,
+            99.0 + index,
+            101.0 + index,
+            1000,
+        )
+        for index in range(15)
+    )
+
+    # Every governed True Range is exactly 3.0; KRONOS uses the arithmetic mean.
+    assert _completed_arithmetic_atr14(candles) == 3.0
+    assert _completed_arithmetic_atr14(candles) == _existing_kronos_atr(candles)
+    assert _completed_arithmetic_atr14(candles[:14]) is None
 
 
 def test_snapshot_records_completed_derived_week_and_shortened_four_hour_remainder() -> None:
@@ -299,6 +345,17 @@ def test_incomplete_one_hour_candle_is_excluded_until_governed_boundary() -> Non
     )
     assert len(completed) == 1
     assert completed[0][2] == schedule.session_open + timedelta(hours=1)
+
+    prior = tuple(
+        item for item in _hourly_history(publisher, "NSE")
+        if item.timestamp.astimezone(IST).date() < NOW.date()
+    )
+    governed = _completed_hourly(
+        "NSE", (*prior, candle), publisher, before_boundary
+    )
+    assert governed
+    assert candle not in tuple(item[0] for item in governed)
+    assert _completed_arithmetic_atr14(tuple(item[0] for item in governed)) is not None
 
 
 def test_multi_window_hourly_completion_excludes_closed_gap_without_missing_evidence() -> None:
@@ -401,3 +458,10 @@ def test_factual_snapshot_is_restart_safe_and_immutable(tmp_path) -> None:
     restarted = SwingOpportunitiesApplication(lambda: object())
     restarted.restore_mtf_fact_snapshot(store.load(RUN_ID))
     assert restarted.mtf_fact_snapshot() == snapshot
+
+    payload = json.loads(first.read_text(encoding="utf-8"))
+    atr = payload["snapshot"]["instruments"][0]["one_hour_atr"]
+    atr["value"] += 1.0
+    first.write_text(json.dumps(payload), encoding="utf-8")
+    with pytest.raises(ValueError, match="MTF_FACT_SNAPSHOT_INVALID"):
+        store.load(RUN_ID)

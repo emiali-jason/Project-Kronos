@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
+from hashlib import sha256
 import json
 import math
 import os
@@ -35,6 +36,16 @@ from kronos.swing.v1.weekly_facts import (
 MTF_FACT_SNAPSHOT_SCHEMA = "KRONOS-CURRENT-GOVERNED-MTF-FACTS-V1"
 MTF_FACT_AUTHORITY = "FACTUAL_ONLY_NO_CANDIDATE_AUTHORITY"
 QUOTE_FACT_AUTHORITY = "FACTUAL_ONLY_SEPARATE_NOT_ACQUIRED"
+ONE_HOUR_ATR_POLICY_IDENTITY = "KR-370-E01-COMPLETED-1H-ATR14-POLICY"
+ONE_HOUR_ATR_POLICY_VERSION = "1"
+ONE_HOUR_ATR_SCHEMA = "KRONOS-COMPLETED-1H-ATR14-FACT-V1"
+ONE_HOUR_ATR_AUTHORITY = "FACTUAL_ONLY_NO_PROMOTION_OR_EXECUTION_AUTHORITY"
+ONE_HOUR_ATR_PERIOD = 14
+ONE_HOUR_ATR_REQUIRED_CANDLES = ONE_HOUR_ATR_PERIOD + 1
+ONE_HOUR_TRUE_RANGE_IDENTITY = (
+    "MAX_HIGH_LOW_ABS_HIGH_PREVIOUS_CLOSE_ABS_LOW_PREVIOUS_CLOSE"
+)
+ONE_HOUR_ATR_AGGREGATION_IDENTITY = "ARITHMETIC_MEAN_LAST_14_TRUE_RANGES"
 DEFAULT_MTF_FACT_EVIDENCE_ROOT = (
     Path.home()
     / "Library"
@@ -51,6 +62,93 @@ class FactualTimeframe(StrEnum):
     DAILY = "1D"
     FOUR_HOUR = "4H"
     ONE_HOUR = "1H"
+
+
+class OneHourAtrAvailability(StrEnum):
+    AVAILABLE = "AVAILABLE"
+    UNAVAILABLE = "UNAVAILABLE"
+
+
+@dataclass(frozen=True, slots=True)
+class CompletedOneHourAtrFact:
+    """Governed arithmetic ATR14 from authoritative completed 1H candles."""
+
+    run_identity: str
+    canonical_instrument: str
+    analysis_boundary: datetime
+    observation_boundary: datetime
+    source_market_data_boundary: datetime
+    calendar_identity: str
+    calendar_version: str
+    session_identity: str
+    exchange_timezone: str
+    source_provider_identity: str
+    provenance: tuple[str, ...]
+    completed_candle_count: int
+    availability: OneHourAtrAvailability
+    unavailable_reason: str | None
+    value: float | None
+    integrity_sha256: str
+    timeframe: FactualTimeframe = FactualTimeframe.ONE_HOUR
+    period: int = ONE_HOUR_ATR_PERIOD
+    required_completed_candles: int = ONE_HOUR_ATR_REQUIRED_CANDLES
+    true_range_identity: str = ONE_HOUR_TRUE_RANGE_IDENTITY
+    aggregation_identity: str = ONE_HOUR_ATR_AGGREGATION_IDENTITY
+    calculation_policy_identity: str = ONE_HOUR_ATR_POLICY_IDENTITY
+    calculation_policy_version: str = ONE_HOUR_ATR_POLICY_VERSION
+    source_completion_authority: str = "DOMAIN-008-COMPLETED-1H"
+    authority: str = ONE_HOUR_ATR_AUTHORITY
+    schema: str = ONE_HOUR_ATR_SCHEMA
+
+    def __post_init__(self) -> None:
+        available = self.availability is OneHourAtrAvailability.AVAILABLE
+        if (
+            not is_swing_analysis_run_id(self.run_identity)
+            or not re.fullmatch(r"[A-Z0-9&._ -]{1,64}", self.canonical_instrument)
+            or not _aware(self.analysis_boundary)
+            or not _aware(self.observation_boundary)
+            or not _aware(self.source_market_data_boundary)
+            or not self.calendar_identity
+            or not self.calendar_version
+            or not self.session_identity
+            or self.exchange_timezone != "Asia/Kolkata"
+            or self.source_provider_identity != "KITE_NORMALIZED_HISTORICAL"
+            or type(self.provenance) is not tuple
+            or not self.provenance
+            or type(self.completed_candle_count) is not int
+            or self.completed_candle_count < 0
+            or type(self.availability) is not OneHourAtrAvailability
+            or (
+                available
+                and (
+                    self.completed_candle_count < ONE_HOUR_ATR_REQUIRED_CANDLES
+                    or self.unavailable_reason is not None
+                    or type(self.value) is not float
+                    or not math.isfinite(self.value)
+                    or self.value < 0.0
+                )
+            )
+            or (
+                not available
+                and (
+                    not self.unavailable_reason
+                    or self.value is not None
+                )
+            )
+            or re.fullmatch(r"[0-9a-f]{64}", self.integrity_sha256) is None
+            or self.timeframe is not FactualTimeframe.ONE_HOUR
+            or self.period != ONE_HOUR_ATR_PERIOD
+            or self.required_completed_candles != ONE_HOUR_ATR_REQUIRED_CANDLES
+            or self.true_range_identity != ONE_HOUR_TRUE_RANGE_IDENTITY
+            or self.aggregation_identity != ONE_HOUR_ATR_AGGREGATION_IDENTITY
+            or self.calculation_policy_identity != ONE_HOUR_ATR_POLICY_IDENTITY
+            or self.calculation_policy_version != ONE_HOUR_ATR_POLICY_VERSION
+            or self.source_completion_authority != "DOMAIN-008-COMPLETED-1H"
+            or self.authority != ONE_HOUR_ATR_AUTHORITY
+            or self.schema != ONE_HOUR_ATR_SCHEMA
+            or self.integrity_sha256 != one_hour_atr_integrity_sha256(self)
+        ):
+            raise ValueError("COMPLETED_ONE_HOUR_ATR_FACT_INVALID")
 
 
 @dataclass(frozen=True, slots=True)
@@ -206,6 +304,7 @@ class InstrumentMtfFactSnapshot:
     timeframes: tuple[CompletedTimeframeFact, ...]
     nse_weekly_foundation: NseWeeklyFactualFoundation | None = None
     reference_facts: tuple[SwingReferenceCprMachineFact, ...] = ()
+    one_hour_atr: CompletedOneHourAtrFact | None = None
 
     def __post_init__(self) -> None:
         if (
@@ -232,6 +331,14 @@ class InstrumentMtfFactSnapshot:
             or any(
                 item.canonical_instrument != self.canonical_instrument
                 for item in self.reference_facts
+            )
+            or (
+                self.one_hour_atr is not None
+                and (
+                    type(self.one_hour_atr) is not CompletedOneHourAtrFact
+                    or self.one_hour_atr.canonical_instrument
+                    != self.canonical_instrument
+                )
             )
         ):
             raise ValueError("INSTRUMENT_MTF_FACT_SNAPSHOT_INVALID")
@@ -280,6 +387,11 @@ class SameRunMtfFactSnapshot:
                 fact.run_identity != self.run_identity
                 for instrument in self.instruments
                 for fact in instrument.reference_facts
+            )
+            or any(
+                instrument.one_hour_atr is not None
+                and instrument.one_hour_atr.run_identity != self.run_identity
+                for instrument in self.instruments
             )
             or self.quote_context is not None
             or self.quote_authority != QUOTE_FACT_AUTHORITY
@@ -385,6 +497,11 @@ def _instrument(value: object) -> InstrumentMtfFactSnapshot:
         tuple(
             reference_machine_fact_from_dict(item)
             for item in value.get("reference_facts", ())
+        ),
+        (
+            None
+            if value.get("one_hour_atr") is None
+            else _one_hour_atr(value["one_hour_atr"])
         ),
     )
 
@@ -526,6 +643,66 @@ def _volume_facts(value: object) -> FactualVolumeFacts:
     )
 
 
+def _one_hour_atr(value: object) -> CompletedOneHourAtrFact:
+    if type(value) is not dict:
+        raise ValueError("MTF_FACT_SNAPSHOT_INVALID")
+    try:
+        return CompletedOneHourAtrFact(
+            run_identity=value["run_identity"],
+            canonical_instrument=value["canonical_instrument"],
+            analysis_boundary=datetime.fromisoformat(value["analysis_boundary"]),
+            observation_boundary=datetime.fromisoformat(value["observation_boundary"]),
+            source_market_data_boundary=datetime.fromisoformat(
+                value["source_market_data_boundary"]
+            ),
+            calendar_identity=value["calendar_identity"],
+            calendar_version=value["calendar_version"],
+            session_identity=value["session_identity"],
+            exchange_timezone=value["exchange_timezone"],
+            source_provider_identity=value["source_provider_identity"],
+            provenance=tuple(value["provenance"]),
+            completed_candle_count=value["completed_candle_count"],
+            availability=OneHourAtrAvailability(value["availability"]),
+            unavailable_reason=value["unavailable_reason"],
+            value=value["value"],
+            integrity_sha256=value["integrity_sha256"],
+            timeframe=FactualTimeframe(value["timeframe"]),
+            period=value["period"],
+            required_completed_candles=value["required_completed_candles"],
+            true_range_identity=value["true_range_identity"],
+            aggregation_identity=value["aggregation_identity"],
+            calculation_policy_identity=value["calculation_policy_identity"],
+            calculation_policy_version=value["calculation_policy_version"],
+            source_completion_authority=value["source_completion_authority"],
+            authority=value["authority"],
+            schema=value["schema"],
+        )
+    except (KeyError, TypeError, ValueError) as error:
+        raise ValueError("MTF_FACT_SNAPSHOT_INVALID") from error
+
+
+def one_hour_atr_integrity_sha256(
+    fact: CompletedOneHourAtrFact | dict[str, object],
+) -> str:
+    material = asdict(fact) if type(fact) is CompletedOneHourAtrFact else dict(fact)
+    material.pop("integrity_sha256", None)
+    material.setdefault("timeframe", FactualTimeframe.ONE_HOUR)
+    material.setdefault("period", ONE_HOUR_ATR_PERIOD)
+    material.setdefault("required_completed_candles", ONE_HOUR_ATR_REQUIRED_CANDLES)
+    material.setdefault("true_range_identity", ONE_HOUR_TRUE_RANGE_IDENTITY)
+    material.setdefault("aggregation_identity", ONE_HOUR_ATR_AGGREGATION_IDENTITY)
+    material.setdefault("calculation_policy_identity", ONE_HOUR_ATR_POLICY_IDENTITY)
+    material.setdefault("calculation_policy_version", ONE_HOUR_ATR_POLICY_VERSION)
+    material.setdefault("source_completion_authority", "DOMAIN-008-COMPLETED-1H")
+    material.setdefault("authority", ONE_HOUR_ATR_AUTHORITY)
+    material.setdefault("schema", ONE_HOUR_ATR_SCHEMA)
+    return sha256(
+        json.dumps(
+            _json_value(material), sort_keys=True, separators=(",", ":")
+        ).encode()
+    ).hexdigest()
+
+
 def _pivot_series(value: object) -> FactualPivotSeries:
     if type(value) is not dict:
         raise ValueError("MTF_FACT_SNAPSHOT_INVALID")
@@ -585,9 +762,15 @@ def _aware(value: object) -> bool:
 
 
 __all__ = [
-    "CompletedTimeframeFact", "DEFAULT_MTF_FACT_EVIDENCE_ROOT",
+    "CompletedOneHourAtrFact", "CompletedTimeframeFact",
+    "DEFAULT_MTF_FACT_EVIDENCE_ROOT",
     "FactualMovingAverageFacts", "FactualPivotSeries", "FactualTimeframe",
     "FactualVolumeFacts", "InstrumentMtfFactSnapshot",
     "MTF_FACT_AUTHORITY", "MTF_FACT_SNAPSHOT_SCHEMA", "MtfFactEvidenceStore",
-    "QUOTE_FACT_AUTHORITY", "SameRunMtfFactSnapshot",
+    "ONE_HOUR_ATR_AGGREGATION_IDENTITY", "ONE_HOUR_ATR_AUTHORITY",
+    "ONE_HOUR_ATR_PERIOD", "ONE_HOUR_ATR_POLICY_IDENTITY",
+    "ONE_HOUR_ATR_POLICY_VERSION", "ONE_HOUR_ATR_REQUIRED_CANDLES",
+    "ONE_HOUR_ATR_SCHEMA", "ONE_HOUR_TRUE_RANGE_IDENTITY",
+    "OneHourAtrAvailability", "QUOTE_FACT_AUTHORITY",
+    "SameRunMtfFactSnapshot", "one_hour_atr_integrity_sha256",
 ]

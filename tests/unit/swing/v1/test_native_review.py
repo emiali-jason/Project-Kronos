@@ -181,7 +181,8 @@ def test_restart_requires_exact_same_run_and_source_evidence(tmp_path: Path) -> 
         facts,
         run_identity="SWING-RUN-" + "C" * 32,
         instruments=tuple(
-            replace(item, reference_facts=()) for item in facts.instruments
+            replace(item, reference_facts=(), one_hour_atr=None)
+            for item in facts.instruments
         ),
     )
     with pytest.raises(ValueError, match="SAME_RUN"):

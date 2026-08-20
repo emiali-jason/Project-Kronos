@@ -41,7 +41,8 @@ def _mtf_fact_fixture():  # type: ignore[no-untyped-def]
     return replace(
         snapshot,
         instruments=tuple(
-            replace(item, reference_facts=()) for item in snapshot.instruments
+            replace(item, reference_facts=(), one_hour_atr=None)
+            for item in snapshot.instruments
         ),
     ), requests
 

@@ -171,7 +171,8 @@ def _new_run_with_probables(facts, indexes: tuple[int, ...]):  # type: ignore[no
         run_identity=run_identity,
         observed_at=facts.observed_at + timedelta(minutes=1),
         instruments=tuple(
-            replace(item, reference_facts=()) for item in facts.instruments
+            replace(item, reference_facts=(), one_hour_atr=None)
+            for item in facts.instruments
         ),
     )
     base = discover_native_mtf(current_facts)
