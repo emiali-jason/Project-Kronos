@@ -509,6 +509,7 @@ def _validate_answer(
             bound = dict(raw_response)
             bound.update({
                 "provider_identity": PDF_ANSWER_PROVIDER_IDENTITY,
+                "request_timestamp": request.request_timestamp.isoformat(),
                 "native_run_identity": record.native_run_identity,
                 "native_assessment_sha256": request.requirement.thesis.native_assessment_sha256,
                 "native_canonical_instrument": instrument,
@@ -625,9 +626,11 @@ def _write_answer_contract(
         ),
         Paragraph("Machine and visual authority", styles["Heading2"]),
         Paragraph(
-            "KRONOS owns deterministic numerical facts and binds Provider, run, "
-            "assessment, boundary, machine-fact, provenance, schema, and authority "
-            "fields after validation. The Chart Analyst must not provide or infer "
+            "KRONOS owns deterministic numerical facts and binds Provider, request "
+            "timestamp, run, assessment, boundary, machine-fact, provenance, schema, "
+            "and authority fields after validation. The Chart Analyst must not "
+            "provide, convert, round, or independently generate request_timestamp, "
+            "and must not provide or infer "
             "machine CP, BC, TC, numerical governed reference levels, or machine-fact "
             "hashes. Q4 uses governed reference context, never generic PDH/PDL. Q9 "
             "uses component identities and never a numerical Confluence Zone, score, "
@@ -730,7 +733,6 @@ def _complete_response_example(
 
     return {
         "model_identity": "ILLUSTRATIVE_CHART_ANALYST",
-        "request_timestamp": request.request_timestamp.isoformat(),
         "timeframe": request.timeframe.value,
         "chart_identity": request.chart_identity,
         "chart_revision_sha256": request.chart_revision_sha256,

@@ -567,7 +567,6 @@ def visual_evidence_v3_answer_contract() -> dict[str, object]:
         "questions": [item.value for item in FROZEN_VISUAL_QUESTION_SET_V3],
         "response_fields": [
             "model_identity",
-            "request_timestamp",
             "timeframe",
             "chart_identity",
             "chart_revision_sha256",
@@ -651,6 +650,7 @@ def visual_evidence_v3_answer_contract() -> dict[str, object]:
         },
         "kronos_owned_fields": [
             "provider_identity",
+            "request_timestamp",
             "native_run_identity",
             "native_assessment_sha256",
             "native_canonical_instrument",

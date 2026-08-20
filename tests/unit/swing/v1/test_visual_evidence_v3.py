@@ -1,6 +1,6 @@
 import copy
 from dataclasses import replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from pathlib import Path
 
@@ -394,7 +394,24 @@ def test_answer_contract_exposes_exact_validator_fields_enums_and_rules() -> Non
     assert contract["rules"]["q10_none"] == (
         "FINDING_NONE_REQUIRES_WHY_NOT_COVERED_ELSEWHERE_NULL"
     )
+    assert "request_timestamp" not in contract["response_fields"]
+    assert "request_timestamp" in contract["kronos_owned_fields"]
     assert "source_provenance" in contract["kronos_owned_fields"]
+
+
+def test_response_binding_remains_strict_for_governed_request_timestamp() -> None:
+    request = _request()
+    response = _response(request)
+
+    response.validate_binding(request)
+    with pytest.raises(ValueError, match="VISUAL_V3_BINDING_INVALID"):
+        response.validate_binding(
+            replace(
+                request,
+                request_timestamp=request.request_timestamp
+                + timedelta(microseconds=1),
+            )
+        )
 
 
 def test_wrong_run_timeframe_and_integrity_machine_facts_are_rejected() -> None:

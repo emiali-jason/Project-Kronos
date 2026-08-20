@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import asdict
-from datetime import datetime
+from copy import deepcopy
+from dataclasses import asdict, replace
+from datetime import UTC, datetime, timedelta, timezone
 from enum import StrEnum
 import json
 from pathlib import Path
@@ -198,6 +199,10 @@ def test_v3_question_pack_publishes_exact_complete_answer_contract(
     assert "never generic PDH/PDL" in compact_contract
     assert "never a numerical Confluence Zone" in compact_contract
     assert "must not provide or infer machine CP, BC, TC" in compact_contract
+    assert (
+        "must not provide, convert, round, or independently generate "
+        "request_timestamp"
+    ) in compact_contract
     assert "CPR_CONTEXT" not in contract
     assert "GOVERNED_REFERENCE_STRUCTURE_CONTEXT" not in contract
     assert "VISUAL_CONFLUENCE" not in contract
@@ -240,6 +245,12 @@ def test_published_complete_response_example_passes_actual_v3_answer_validator(
         ],
     }
 
+    assert all(
+        "request_timestamp" not in response
+        for candidate in payload["candidates"]
+        for response in candidate["responses"]
+    )
+
     validated = _validate_answer(record, prepared, payload)
 
     assert len(validated) == len(record.candidate_packs)
@@ -248,6 +259,98 @@ def test_published_complete_response_example_passes_actual_v3_answer_validator(
         len(response.observations) == 10
         for item in validated for response in item.responses
     )
+
+
+def test_kronos_binds_exact_request_timestamp_without_changing_answer_evidence(
+    tmp_path: Path,
+) -> None:
+    native, facts, live = _live(tmp_path)
+    record = live.generate(native.snapshot(), facts, native.original_chart_bytes)
+    prepared, _ = live._prepare_for_record(  # noqa: SLF001 - exact Pack proof
+        native.snapshot(), facts, native.original_chart_bytes, record
+    )
+    governed_timestamp = datetime(
+        2026, 8, 16, 15, 35, 30, 5_914, tzinfo=UTC
+    )
+    governed = tuple(
+        tuple(replace(request, request_timestamp=governed_timestamp) for request in requests)
+        for requests in prepared
+    )
+    analyst_timestamps = (
+        governed_timestamp.astimezone(
+            timezone(timedelta(hours=5, minutes=30))
+        ).isoformat(),
+        governed_timestamp.replace(microsecond=0).isoformat(),
+        "2099-01-01T00:00:00+00:00",
+    )
+
+    for analyst_timestamp in analyst_timestamps:
+        payload = _payload(live, native, facts, record)
+        for candidate in payload["candidates"]:
+            for response in candidate["responses"]:
+                response["request_timestamp"] = analyst_timestamp
+        observations_before = deepcopy([
+            response["observations"]
+            for candidate in payload["candidates"]
+            for response in candidate["responses"]
+        ])
+
+        validated = _validate_answer(record, governed, payload)
+
+        responses = [
+            response
+            for candidate in validated
+            for response in candidate.responses
+        ]
+        assert all(
+            response.request_timestamp == governed_timestamp
+            for response in responses
+        )
+        assert [_primitive(response.observations) for response in responses] == (
+            observations_before
+        )
+
+
+def test_timestamp_ownership_does_not_weaken_other_answer_bindings(
+    tmp_path: Path,
+) -> None:
+    native, facts, live = _live(tmp_path)
+    record = live.generate(native.snapshot(), facts, native.original_chart_bytes)
+    prepared, _ = live._prepare_for_record(  # noqa: SLF001 - exact Pack proof
+        native.snapshot(), facts, native.original_chart_bytes, record
+    )
+    cases = (
+        (
+            lambda value: value["manifest"].__setitem__(
+                "native_run_identity", "SWING-RUN-" + "F" * 32
+            ),
+            "ANSWER_VERSION_MISMATCH",
+        ),
+        (
+            lambda value: value["candidates"][0].__setitem__(
+                "canonical_instrument", "SBIN"
+            ),
+            "CHART_IDENTITY_MISMATCH",
+        ),
+        (
+            lambda value: value["candidates"][0]["responses"][0].__setitem__(
+                "chart_revision_sha256", "0" * 64
+            ),
+            "ANSWER_VERSION_MISMATCH",
+        ),
+        (
+            lambda value: value["candidates"][0]["responses"][0].__setitem__(
+                "timeframe", "1D"
+            ),
+            "ANSWER_VERSION_MISMATCH",
+        ),
+    )
+
+    for mutate, reason in cases:
+        payload = _payload(live, native, facts, record)
+        mutate(payload)
+        with pytest.raises(PdfReviewTransportError, match=reason):
+            _validate_answer(record, prepared, payload)
 
 
 def test_v3_record_restores_historical_question_path_after_new_path_cutover(
