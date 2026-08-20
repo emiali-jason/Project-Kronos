@@ -490,6 +490,16 @@ def test_v3_answer_persists_v3_evidence_and_readiness_without_v2_store(
     assert len(tuple((tmp_path / "readiness-v3").rglob("*.json"))) == len(
         record.candidate_packs
     )
+    completed = live.cycle.completed_snapshot()
+    assert all(
+        any(
+            evidence.condition_identity == "KR_370_E03_EXTENSION"
+            and evidence.timeframe.value == "1H"
+            and len(evidence.source_evidence_ids) == 3
+            for evidence in item.readiness.conditions.evidence
+        )
+        for item in completed
+    )
     assert not tuple(native.evidence_root.rglob("*visual-v2*"))
 
 

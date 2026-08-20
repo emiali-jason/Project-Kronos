@@ -16,6 +16,7 @@ from kronos.swing.v1.mtf_facts import SameRunMtfFactSnapshot
 from kronos.swing.v1.native_readiness import (
     EvidenceCompleteness,
     ExtensionCondition,
+    LevelAvailability,
     NativeConditionInputs,
     NativeLayer2Conditions,
     NativeReadinessState,
@@ -242,6 +243,13 @@ def build_native_layer2_conditions_v3(
             incomplete = True
     if inputs.retest is None and base.retest_condition.value == "UNAVAILABLE":
         incomplete = True
+    extension_unavailable = (
+        inputs.extension is not None
+        and inputs.extension.structural_context.level_availability
+        is not LevelAvailability.AVAILABLE
+    )
+    if extension_unavailable:
+        incomplete = True
     completeness = (
         EvidenceCompleteness.INVALID
         if invalid
@@ -255,6 +263,9 @@ def build_native_layer2_conditions_v3(
         "VISIBLY_EXTENDED",
     )
     extension = (
+        ExtensionCondition.UNAVAILABLE
+        if extension_unavailable
+        else
         ExtensionCondition.MATERIAL_EXTENSION
         if base.thesis_intact is ThesisIntact.YES
         and visual_extended

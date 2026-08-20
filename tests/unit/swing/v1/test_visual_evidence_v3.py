@@ -10,7 +10,15 @@ from kronos.application.swing_visual_v3 import (
     SwingVisualV3ReviewCycle,
     chart_inputs_from_requirement,
 )
-from kronos.swing.v1.native_readiness import EvidenceCompleteness
+from kronos.swing.v1.mtf_facts import FactualTimeframe
+from kronos.swing.v1.native_readiness import (
+    ConditionEvidence,
+    DeterministicExtensionEvidence,
+    EvidenceCompleteness,
+    ExtensionCondition,
+    LevelAvailability,
+    NativeConditionInputs,
+)
 from kronos.swing.v1.native_readiness_v3 import (
     NativeLayer2ReadinessV3Store,
     build_native_layer2_conditions_v3,
@@ -550,6 +558,100 @@ def test_complete_v3_evidence_satisfies_only_evidence_completeness() -> None:
     )
     assert conditions.evidence_completeness is EvidenceCompleteness.COMPLETE
     assert evaluate_v3_evidence_gate(requirement, facts, _visual()).incomplete is False
+
+
+def test_v3_extension_requires_independent_visual_and_machine_evidence() -> None:
+    facts, requirement = _context()
+    layer2 = _layer2(
+        requirement, NativeLayer2EvidenceState.SUPPORTS_NATIVE_THESIS
+    )
+    hour = next(
+        item for item in requirement.thesis.timeframe_facts
+        if item.timeframe is FactualTimeframe.ONE_HOUR
+    )
+    context = ConditionEvidence(
+        "KR_370_E03_EXTENSION",
+        (requirement.thesis.native_assessment_sha256, "a" * 64),
+        FactualTimeframe.ONE_HOUR,
+        "FRACTAL_UNIQUE_EXTREME_RADIUS_2@LOW",
+        LevelAvailability.AVAILABLE,
+        hour.close,
+        None,
+        None,
+        hour.observation_boundary,
+        "MATERIALLY_EXTENDED",
+        ("CONTROLLED_E03_MACHINE_FACT",),
+    )
+    machine_true = NativeConditionInputs(
+        extension=DeterministicExtensionEvidence(context, True)
+    )
+    machine_false = NativeConditionInputs(
+        extension=DeterministicExtensionEvidence(
+            replace(context, reason_code="NOT_MATERIALLY_EXTENDED"), False
+        )
+    )
+    visual_extended = tuple(
+        replace(
+            response,
+            observations=tuple(
+                replace(item, finding="VISIBLY_EXTENDED")
+                if item.question_id
+                is VisualQuestionV3.MATURITY_AND_CHASE_CONTEXT
+                else item
+                for item in response.observations
+            ),
+        )
+        for response in _visual()
+    )
+
+    visual_only = build_native_layer2_conditions_v3(
+        requirement, layer2, facts, visual_extended, inputs=machine_false
+    )
+    machine_only = build_native_layer2_conditions_v3(
+        requirement, layer2, facts, _visual(), inputs=machine_true
+    )
+    corroborated = build_native_layer2_conditions_v3(
+        requirement, layer2, facts, visual_extended, inputs=machine_true
+    )
+
+    assert visual_only.extension_condition is ExtensionCondition.NONE
+    assert machine_only.extension_condition is ExtensionCondition.NONE
+    assert corroborated.extension_condition is ExtensionCondition.MATERIAL_EXTENSION
+
+
+def test_v3_unavailable_extension_is_not_silently_not_extended() -> None:
+    facts, requirement = _context()
+    layer2 = _layer2(
+        requirement, NativeLayer2EvidenceState.SUPPORTS_NATIVE_THESIS
+    )
+    hour = next(
+        item for item in requirement.thesis.timeframe_facts
+        if item.timeframe is FactualTimeframe.ONE_HOUR
+    )
+    unavailable = NativeConditionInputs(
+        extension=DeterministicExtensionEvidence(
+            ConditionEvidence(
+                "KR_370_E03_EXTENSION",
+                (requirement.thesis.native_assessment_sha256, "0" * 64),
+                FactualTimeframe.ONE_HOUR,
+                None,
+                LevelAvailability.LEVEL_UNAVAILABLE,
+                None,
+                None,
+                None,
+                hour.observation_boundary,
+                "REQUIRED_DIRECTIONAL_1H_PIVOT_UNAVAILABLE",
+                ("CONTROLLED_E03_MACHINE_FACT",),
+            ),
+            False,
+        )
+    )
+    conditions = build_native_layer2_conditions_v3(
+        requirement, layer2, facts, _visual(), inputs=unavailable
+    )
+
+    assert conditions.extension_condition is ExtensionCondition.UNAVAILABLE
+    assert conditions.evidence_completeness is EvidenceCompleteness.INCOMPLETE
 
 
 def test_q9_valid_negative_is_complete_and_not_a_false_blocker() -> None:

@@ -10,8 +10,11 @@ from kronos.application.swing_visual_v3 import (
     SwingVisualV3ReviewCycle,
     chart_inputs_from_requirement,
 )
+from kronos.swing.v1.extension import (
+    evaluate_completed_one_hour_extension,
+    extension_native_condition_inputs,
+)
 from kronos.swing.v1.mtf_facts import FactualTimeframe, SameRunMtfFactSnapshot
-from kronos.swing.v1.native_readiness import NativeConditionInputs
 from kronos.swing.v1.native_review import (
     NativeIndependentLayer2Evidence,
     NativeLayer2EvidenceState,
@@ -150,6 +153,9 @@ class SwingVisualV3LiveWorkflow:
                 item for item in record.candidate_packs
                 if item.canonical_instrument == candidate.canonical_instrument
             )
+            extension_fact = evaluate_completed_one_hour_extension(
+                requirement, facts
+            )
             self.cycle.complete(
                 requirement,
                 _v3_layer2(requirement, candidate.responses),
@@ -157,7 +163,9 @@ class SwingVisualV3LiveWorkflow:
                 candidate.responses,
                 created_at=self._now(),
                 reference=references.get(candidate.canonical_instrument),
-                inputs=NativeConditionInputs(),
+                inputs=extension_native_condition_inputs(
+                    extension_fact, requirement
+                ),
                 review_pack=candidate_pack,
             )
         imported = self.transport.record_import(record, answer, tuple(hashes))
