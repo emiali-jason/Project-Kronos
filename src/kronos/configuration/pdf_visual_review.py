@@ -29,6 +29,17 @@ def default_pdf_visual_review_directories(
 ) -> tuple[Path, Path]:
     root = Path.home() if home is None else Path(home)
     review_root = root / "Documents" / "Project-KRONOS" / "KRONOS REVIEW PACK"
+    swing_root = review_root / "SWING"
+    return swing_root / "KRONOS QUESTIONS", swing_root / "CHATGPT ANSWERS"
+
+
+def _historical_pdf_visual_review_directories(
+    *, home: Path | None = None,
+) -> tuple[Path, Path]:
+    """Return the pre-segregation paths retained as historical artifacts."""
+
+    root = Path.home() if home is None else Path(home)
+    review_root = root / "Documents" / "Project-KRONOS" / "KRONOS REVIEW PACK"
     return review_root / "KRONOS QUESTIONS", review_root / "CHATGPT ANSWERS"
 
 
@@ -68,6 +79,14 @@ def load_or_provision_pdf_visual_review_configuration(
         question, answer = default_pdf_visual_review_directories(home=home)
         _write_configuration(target, question, answer)
     configuration = _read_configuration(target)
+    historical = _historical_pdf_visual_review_directories(home=home)
+    if (
+        configuration.question_directory,
+        configuration.answer_directory,
+    ) == historical:
+        question, answer = default_pdf_visual_review_directories(home=home)
+        _write_configuration(target, question, answer)
+        configuration = _read_configuration(target)
     configuration.ensure_directories()
     return configuration
 

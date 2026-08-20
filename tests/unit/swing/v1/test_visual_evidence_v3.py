@@ -349,6 +349,54 @@ def test_answer_contract_removes_numeric_q2_q4_q9_and_invented_confluence() -> N
     assert "threshold" not in repr(contract).lower()
 
 
+def test_answer_contract_exposes_exact_validator_fields_enums_and_rules() -> None:
+    contract = visual_evidence_v3_answer_contract()
+
+    assert contract["questions"] == [
+        item.value for item in FROZEN_VISUAL_QUESTION_SET_V3
+    ]
+    assert contract["qualitative_result_field"] == "finding"
+    assert contract["common_observation_fields"] == [
+        "question_id",
+        "timeframe",
+        "observation_status",
+        "visible_basis",
+        "confidence_in_extraction",
+        "ambiguity_reason",
+        "source_chart_identity",
+        "source_chart_revision",
+    ]
+    fields = contract["observable_fields"]
+    assert fields["CPR_VISUAL_RELATIONSHIP"] == {
+        "presence": ["PRESENT", "NOT_PRESENT", "NOT_IDENTIFIABLE"],
+        "price_relationship": ["ABOVE", "INSIDE", "BELOW", "NOT_OBSERVABLE"],
+        "interaction": [
+            "HOLD", "RECLAIM", "REJECTION", "BREAK", "NONE", "NOT_OBSERVABLE"
+        ],
+    }
+    assert fields["GOVERNED_REFERENCE_VISUAL_CONTEXT"]["relationship"] == [
+        "ABOVE_REFERENCE_RANGE",
+        "INSIDE_REFERENCE_RANGE",
+        "BELOW_REFERENCE_RANGE",
+        "INTERACTING_WITH_REFERENCE_HIGH",
+        "INTERACTING_WITH_REFERENCE_LOW",
+        "NOT_OBSERVABLE",
+    ]
+    assert fields["VISUAL_COMPONENT_CLUSTERING"]["clustering"] == [
+        "CLUSTERED",
+        "NOT_CLUSTERED",
+        "PARTIAL_COMPONENT_IDENTITY",
+        "NOT_OBSERVABLE",
+    ]
+    assert contract["rules"]["q9_clustered"] == (
+        "CLUSTERED_REQUIRES_AT_LEAST_TWO_UNIQUE_COMPONENTS"
+    )
+    assert contract["rules"]["q10_none"] == (
+        "FINDING_NONE_REQUIRES_WHY_NOT_COVERED_ELSEWHERE_NULL"
+    )
+    assert "source_provenance" in contract["kronos_owned_fields"]
+
+
 def test_wrong_run_timeframe_and_integrity_machine_facts_are_rejected() -> None:
     request = _request()
     for attribute, value in (

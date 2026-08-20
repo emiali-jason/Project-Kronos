@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 from threading import Thread
 
+from pypdf import PdfReader
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
 import pytest
@@ -29,6 +30,8 @@ from kronos.swing.v1.pdf_visual_review import (
 from kronos.swing.v1.pdf_visual_review_v3_live import (
     VisualV3PdfRecordStore,
     VisualV3PdfReviewTransport,
+    _complete_response_example,
+    _validate_answer,
 )
 from kronos.swing.v1.visual_evidence_v3 import (
     LocalVisualEvidenceV3Store,
@@ -146,6 +149,129 @@ def test_new_live_cycle_generates_only_v3_pack_with_exact_machine_bindings(
     assert Path(record.question_path).is_file()
     assert native.snapshot().review_pack_record is None
     assert all(len(item.machine_fact_bindings) == 4 for item in record.candidate_packs)
+
+
+def test_v3_question_pack_publishes_exact_complete_answer_contract(
+    tmp_path: Path,
+) -> None:
+    native, facts, live = _live(tmp_path)
+    record = live.generate(native.snapshot(), facts, native.original_chart_bytes)
+    text = "\n".join(
+        page.extract_text() or "" for page in PdfReader(record.question_path).pages
+    )
+    contract = text.split("Exact V3 Observation Contract", 1)[1]
+    compact_contract = " ".join(contract.split())
+    exact_questions = (
+        "VISUAL_CHART_VALIDATION",
+        "CPR_VISUAL_RELATIONSHIP",
+        "VISUAL_SUPPORT_RESISTANCE_GAP",
+        "GOVERNED_REFERENCE_VISUAL_CONTEXT",
+        "PRICE_ACTION_QUALITY",
+        "VISUAL_OBSTACLE_EVIDENCE",
+        "MATURITY_AND_CHASE_CONTEXT",
+        "PINE_VISIBLE_EVIDENCE",
+        "VISUAL_COMPONENT_CLUSTERING",
+        "VISUAL_FACTS_NOT_CAPTURED_BY_KRONOS",
+    )
+
+    positions = [contract.index(f'"{item}"') for item in exact_questions]
+    assert positions == sorted(positions)
+    assert '"qualitative_result_field": "finding"' in contract
+    assert '"observation":' not in contract
+    assert '"presence"' in contract
+    assert all(item in contract for item in (
+        "PRESENT", "NOT_PRESENT", "NOT_IDENTIFIABLE",
+        "ABOVE", "INSIDE", "BELOW", "NOT_OBSERVABLE",
+        "HOLD", "RECLAIM", "REJECTION", "BREAK", "NONE",
+        "ABOVE_REFERENCE_RANGE", "INSIDE_REFERENCE_RANGE",
+        "BELOW_REFERENCE_RANGE", "INTERACTING_WITH_REFERENCE_HIGH",
+        "INTERACTING_WITH_REFERENCE_LOW",
+        "CLUSTERED", "NOT_CLUSTERED", "PARTIAL_COMPONENT_IDENTITY",
+        "STRUCTURAL_PIVOT", "OPERATIVE_ANCHOR", "RANGE_BOUNDARY",
+        "BREAK_BOUNDARY",
+    ))
+    assert "CLUSTERED_REQUIRES_AT_LEAST_TWO_UNIQUE_COMPONENTS" in contract
+    assert "point_price" in contract
+    assert "zone_low/zone_high" in contract
+    assert "When Q10 finding is NONE" in compact_contract
+    assert "why_not_covered_elsewhere must be null" in compact_contract
+    assert "never generic PDH/PDL" in compact_contract
+    assert "never a numerical Confluence Zone" in compact_contract
+    assert "must not provide or infer machine CP, BC, TC" in compact_contract
+    assert "CPR_CONTEXT" not in contract
+    assert "GOVERNED_REFERENCE_STRUCTURE_CONTEXT" not in contract
+    assert "VISUAL_CONFLUENCE" not in contract
+
+
+def test_published_complete_response_example_passes_actual_v3_answer_validator(
+    tmp_path: Path,
+) -> None:
+    native, facts, live = _live(tmp_path)
+    record = live.generate(native.snapshot(), facts, native.original_chart_bytes)
+    prepared, _ = live._prepare_for_record(  # noqa: SLF001 - exact Pack proof
+        native.snapshot(), facts, native.original_chart_bytes, record
+    )
+    payload = {
+        "schema": VISUAL_EVIDENCE_V3_ANSWER_SCHEMA,
+        "manifest": {
+            "review_pack_id": record.review_pack_id,
+            "native_run_identity": record.native_run_identity,
+            "question_set_identity": VISUAL_QUESTION_SET_V3_ID,
+            "question_set_version": VISUAL_QUESTION_SET_V3_VERSION,
+            "answer_schema": VISUAL_EVIDENCE_V3_ANSWER_SCHEMA,
+            "candidate_population": [
+                {
+                    "canonical_instrument": item.canonical_instrument,
+                    "chart_revision_sha256": item.chart_revisions[0][1],
+                }
+                for item in record.candidate_packs
+            ],
+        },
+        "candidates": [
+            {
+                "canonical_instrument": requests[0].requirement.canonical_instrument,
+                "observed_chart_instrument": requests[0].requirement.canonical_instrument,
+                "chart_revision_sha256": requests[0].chart_revision_sha256,
+                "responses": [
+                    _complete_response_example(request) for request in requests
+                ],
+            }
+            for requests in prepared
+        ],
+    }
+
+    validated = _validate_answer(record, prepared, payload)
+
+    assert len(validated) == len(record.candidate_packs)
+    assert all(len(item.responses) == 4 for item in validated)
+    assert all(
+        len(response.observations) == 10
+        for item in validated for response in item.responses
+    )
+
+
+def test_v3_record_restores_historical_question_path_after_new_path_cutover(
+    tmp_path: Path,
+) -> None:
+    native, facts, live = _live(tmp_path)
+    record = live.generate(native.snapshot(), facts, native.original_chart_bytes)
+    historical_path = Path(record.question_path)
+    new_configuration = PdfVisualReviewConfiguration(
+        tmp_path / "SWING" / "KRONOS QUESTIONS",
+        tmp_path / "SWING" / "CHATGPT ANSWERS",
+    )
+    restored_transport = VisualV3PdfReviewTransport(
+        new_configuration,
+        VisualV3PdfRecordStore((tmp_path / "v3-pdf-records").resolve()),
+        clock=lambda: NOW,
+    )
+
+    restored = restored_transport.record_store.load_current()
+
+    assert restored == record
+    assert Path(restored.question_path) == historical_path
+    assert historical_path.is_file()
+    assert not new_configuration.question_directory.exists()
 
 
 def test_production_server_constructs_explicit_v3_lifecycle_when_not_injected(

@@ -40,6 +40,7 @@ from kronos.swing.v1.pdf_visual_review_v3 import (
     write_visual_v3_question_pack,
 )
 from kronos.swing.v1.visual_evidence_v3 import (
+    FROZEN_VISUAL_QUESTION_SET_V3,
     VISUAL_EVIDENCE_V3_ANSWER_SCHEMA,
     VISUAL_EVIDENCE_V3_AUTHORITY,
     VISUAL_EVIDENCE_V3_SCHEMA,
@@ -48,6 +49,7 @@ from kronos.swing.v1.visual_evidence_v3 import (
     VisualEvidenceV3Request,
     VisualEvidenceV3Response,
     VisualTimeframe,
+    visual_evidence_v3_answer_contract,
     visual_evidence_v3_response_from_dict,
 )
 
@@ -534,6 +536,9 @@ def _write_answer_contract(
     expected_answer_filename: str,
 ) -> None:
     styles = getSampleStyleSheet()
+    code_style = styles["Code"].clone("V3AnswerContractCode")
+    code_style.fontSize = 5.5
+    code_style.leading = 6.5
     first = prepared[0][0]
     population = [
         {
@@ -542,7 +547,7 @@ def _write_answer_contract(
         }
         for item in prepared
     ]
-    example = {
+    envelope = {
         "schema": VISUAL_EVIDENCE_V3_ANSWER_SCHEMA,
         "manifest": {
             "review_pack_id": review_pack_id,
@@ -556,18 +561,11 @@ def _write_answer_contract(
             "canonical_instrument": population[0]["canonical_instrument"],
             "observed_chart_instrument": "<READ EXACTLY FROM CHART>",
             "chart_revision_sha256": population[0]["chart_revision_sha256"],
-            "responses": [{
-                "model_identity": "<CHART ANALYST IDENTITY>",
-                "request_timestamp": "<ISO-8601>",
-                "timeframe": "1W | 1D | 4H | 1H",
-                "chart_identity": population[0]["canonical_instrument"],
-                "chart_revision_sha256": population[0]["chart_revision_sha256"],
-                "observations": "Q1 THROUGH Q10 EXACTLY ONCE AND IN ORDER",
-                "question_set_identity": VISUAL_QUESTION_SET_V3_ID,
-                "question_set_version": VISUAL_QUESTION_SET_V3_VERSION,
-            }],
+            "responses": "EXACTLY FOUR: 1W, 1D, 4H, 1H; USE THE COMPLETE RESPONSE CONTRACT BELOW",
         }],
     }
+    contract = visual_evidence_v3_answer_contract()
+    response_example = _complete_response_example(first)
     document = SimpleDocTemplate(BytesIO(), pagesize=A4)
     buffer = document.filename
     story = [
@@ -580,15 +578,166 @@ def _write_answer_contract(
         ),
         Spacer(1, 8),
         Paragraph(f"Expected Answer: {expected_answer_filename}", styles["BodyText"]),
+        Spacer(1, 8),
+        Paragraph("Required Answer Envelope", styles["Heading2"]),
         Preformatted(
             BEGIN_GOVERNED_ANSWER_DATA + "\n"
-            + json.dumps(example, indent=2)
+            + json.dumps(envelope, indent=2)
             + "\n" + END_GOVERNED_ANSWER_DATA,
-            styles["Code"],
+            code_style,
         ),
+        Spacer(1, 8),
+        Paragraph("Exact V3 Observation Contract", styles["Heading2"]),
+        Paragraph(
+            "Use every Q1-Q10 question_id exactly once and in the published "
+            "order. Qualitative visual results belong in finding. Do not use "
+            "the legacy field named observation. Every observation also requires "
+            "timeframe, observation_status, visible_basis, confidence_in_extraction, "
+            "ambiguity_reason, source_chart_identity, and source_chart_revision. "
+            "For Q1-Q9, why_not_covered_elsewhere is null.",
+            styles["BodyText"],
+        ),
+        Preformatted(json.dumps(contract, indent=2), code_style),
+        Spacer(1, 8),
+        Paragraph("Negative and unavailable evidence", styles["Heading2"]),
+        Paragraph(
+            "Do not manufacture evidence to complete the schema. Use only the "
+            "governed status and structured enums printed above. NONE, "
+            "NOT_OBSERVABLE, NOT_IDENTIFIABLE, NOT_APPLICABLE, and PARTIAL are "
+            "legitimate where the printed contract permits them. PARTIAL, "
+            "UNAVAILABLE, or INVALID requires a non-empty ambiguity_reason.",
+            styles["BodyText"],
+        ),
+        Paragraph("Q3 and Q6 level rule", styles["Heading2"]),
+        Paragraph(
+            "A Q3 or Q6 finding may be qualitative, including NONE, with no "
+            "point or zone. If an exact visible level is reported, provide either "
+            "one non-negative float point_price or one complete non-negative float "
+            "zone_low/zone_high pair, never both. Do not force numerical extraction.",
+            styles["BodyText"],
+        ),
+        Paragraph("Q10 rule", styles["Heading2"]),
+        Paragraph(
+            "When Q10 finding is NONE, why_not_covered_elsewhere must be null. "
+            "For any non-NONE Q10 finding, provide a bounded non-empty "
+            "why_not_covered_elsewhere. For Q1-Q9 it must be null.",
+            styles["BodyText"],
+        ),
+        Paragraph("Machine and visual authority", styles["Heading2"]),
+        Paragraph(
+            "KRONOS owns deterministic numerical facts and binds Provider, run, "
+            "assessment, boundary, machine-fact, provenance, schema, and authority "
+            "fields after validation. The Chart Analyst must not provide or infer "
+            "machine CP, BC, TC, numerical governed reference levels, or machine-fact "
+            "hashes. Q4 uses governed reference context, never generic PDH/PDL. Q9 "
+            "uses component identities and never a numerical Confluence Zone, score, "
+            "or threshold.",
+            styles["BodyText"],
+        ),
+        Spacer(1, 8),
+        Paragraph(
+            "Complete validator-compliant V3 response example - illustrative only",
+            styles["Heading2"],
+        ),
+        Paragraph(
+            "Replace every illustrative finding and visible basis with independent "
+            "evidence from the applicable chart. Repeat this response shape for all "
+            "four timeframes of every candidate.",
+            styles["BodyText"],
+        ),
+        Preformatted(json.dumps(response_example, indent=2), code_style),
     ]
     document.build(story)
     path.write_bytes(buffer.getvalue())
+
+
+def _complete_response_example(
+    request: VisualEvidenceV3Request,
+) -> dict[str, object]:
+    """Return one raw Answer response that the governed importer accepts."""
+
+    def common(
+        question_id: str,
+        *,
+        status: str = "OBSERVED",
+        ambiguity_reason: str = "",
+    ) -> dict[str, object]:
+        return {
+            "question_id": question_id,
+            "timeframe": request.timeframe.value,
+            "observation_status": status,
+            "visible_basis": "ILLUSTRATIVE ONLY - REPLACE WITH VISIBLE CHART BASIS",
+            "confidence_in_extraction": "ILLUSTRATIVE",
+            "ambiguity_reason": ambiguity_reason,
+            "source_chart_identity": request.chart_identity,
+            "source_chart_revision": request.chart_revision_sha256,
+            "why_not_covered_elsewhere": None,
+        }
+
+    questions = iter(FROZEN_VISUAL_QUESTION_SET_V3)
+    observations = []
+
+    item = common(next(questions).value)
+    item["finding"] = "ILLUSTRATIVE VISIBLE CHART VALIDATION"
+    observations.append(item)
+
+    item = common(next(questions).value)
+    item.update({
+        "presence": "PRESENT",
+        "price_relationship": "ABOVE",
+        "interaction": "HOLD",
+    })
+    observations.append(item)
+
+    item = common(next(questions).value)
+    item["finding"] = "NONE"
+    observations.append(item)
+
+    item = common(next(questions).value)
+    item.update({
+        "presence": "PRESENT",
+        "relationship": "INTERACTING_WITH_REFERENCE_HIGH",
+        "interaction": "REJECTION",
+    })
+    observations.append(item)
+
+    item = common(next(questions).value)
+    item["finding"] = "ILLUSTRATIVE VISIBLE PRICE-ACTION DESCRIPTION"
+    observations.append(item)
+
+    item = common(next(questions).value)
+    item["finding"] = "ILLUSTRATIVE QUALITATIVE OBSTACLE DESCRIPTION"
+    observations.append(item)
+
+    item = common(next(questions).value)
+    item["finding"] = "ILLUSTRATIVE VISIBLE MATURITY DESCRIPTION"
+    observations.append(item)
+
+    item = common(next(questions).value, status="NOT_APPLICABLE")
+    item["finding"] = "NONE"
+    observations.append(item)
+
+    item = common(next(questions).value)
+    item.update({
+        "clustering": "CLUSTERED",
+        "components": ["CPR", "SMA20"],
+    })
+    observations.append(item)
+
+    item = common(next(questions).value)
+    item["finding"] = "NONE"
+    observations.append(item)
+
+    return {
+        "model_identity": "ILLUSTRATIVE_CHART_ANALYST",
+        "request_timestamp": request.request_timestamp.isoformat(),
+        "timeframe": request.timeframe.value,
+        "chart_identity": request.chart_identity,
+        "chart_revision_sha256": request.chart_revision_sha256,
+        "observations": observations,
+        "question_set_identity": VISUAL_QUESTION_SET_V3_ID,
+        "question_set_version": VISUAL_QUESTION_SET_V3_VERSION,
+    }
 
 
 def _pack_from_dict(value: object) -> VisualV3LiveReviewPack:

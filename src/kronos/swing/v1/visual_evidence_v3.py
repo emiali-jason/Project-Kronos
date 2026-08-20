@@ -565,17 +565,102 @@ def visual_evidence_v3_answer_contract() -> dict[str, object]:
         "question_set_version": VISUAL_QUESTION_SET_V3_VERSION,
         "authority": VISUAL_EVIDENCE_V3_AUTHORITY,
         "questions": [item.value for item in FROZEN_VISUAL_QUESTION_SET_V3],
-        "observable_fields": {
-            VisualQuestionV3.CPR_VISUAL_RELATIONSHIP.value: [
-                "presence", "price_relationship", "interaction"
+        "response_fields": [
+            "model_identity",
+            "request_timestamp",
+            "timeframe",
+            "chart_identity",
+            "chart_revision_sha256",
+            "observations",
+            "question_set_identity",
+            "question_set_version",
+        ],
+        "common_observation_fields": [
+            "question_id",
+            "timeframe",
+            "observation_status",
+            "visible_basis",
+            "confidence_in_extraction",
+            "ambiguity_reason",
+            "source_chart_identity",
+            "source_chart_revision",
+        ],
+        "observation_status": [item.value for item in VisualObservationStatus],
+        "qualitative_questions": [
+            VisualQuestionV3.VISUAL_CHART_VALIDATION.value,
+            VisualQuestionV3.VISUAL_SUPPORT_RESISTANCE_GAP.value,
+            VisualQuestionV3.PRICE_ACTION_QUALITY.value,
+            VisualQuestionV3.VISUAL_OBSTACLE_EVIDENCE.value,
+            VisualQuestionV3.MATURITY_AND_CHASE_CONTEXT.value,
+            VisualQuestionV3.PINE_VISIBLE_EVIDENCE.value,
+            VisualQuestionV3.VISUAL_FACTS_NOT_CAPTURED_BY_KRONOS.value,
+        ],
+        "qualitative_result_field": "finding",
+        "qualitative_optional_field": "why_not_covered_elsewhere",
+        "level_observation": {
+            "questions": [
+                VisualQuestionV3.VISUAL_SUPPORT_RESISTANCE_GAP.value,
+                VisualQuestionV3.VISUAL_OBSTACLE_EVIDENCE.value,
             ],
-            VisualQuestionV3.GOVERNED_REFERENCE_VISUAL_CONTEXT.value: [
-                "presence", "relationship", "interaction"
-            ],
-            VisualQuestionV3.VISUAL_COMPONENT_CLUSTERING.value: [
-                "clustering", "components"
-            ],
+            "point_field": "point_price",
+            "zone_fields": ["zone_low", "zone_high"],
         },
+        "observable_fields": {
+            VisualQuestionV3.CPR_VISUAL_RELATIONSHIP.value: {
+                "presence": [item.value for item in VisualStructurePresence],
+                "price_relationship": [
+                    item.value for item in VisualPriceRelationship
+                ],
+                "interaction": [item.value for item in VisualInteraction],
+            },
+            VisualQuestionV3.GOVERNED_REFERENCE_VISUAL_CONTEXT.value: {
+                "presence": [item.value for item in VisualStructurePresence],
+                "relationship": [
+                    item.value for item in VisualReferenceRelationship
+                ],
+                "interaction": [item.value for item in VisualInteraction],
+            },
+            VisualQuestionV3.VISUAL_COMPONENT_CLUSTERING.value: {
+                "clustering": [item.value for item in VisualClusteringState],
+                "components": [item.value for item in VisualComponentType],
+            },
+        },
+        "rules": {
+            "question_order": "EXACTLY_ONCE_IN_PUBLISHED_ORDER",
+            "finding_field": "USE_FINDING_NOT_LEGACY_OBSERVATION",
+            "q2_non_present": (
+                "NOT_PRESENT_OR_NOT_IDENTIFIABLE_REQUIRES_NOT_OBSERVABLE_"
+                "PRICE_RELATIONSHIP_AND_INTERACTION"
+            ),
+            "q4_non_present": (
+                "NOT_PRESENT_OR_NOT_IDENTIFIABLE_REQUIRES_NOT_OBSERVABLE_"
+                "RELATIONSHIP_AND_INTERACTION"
+            ),
+            "q3_q6_level": (
+                "OPTIONAL_SINGLE_NONNEGATIVE_FLOAT_POINT_PRICE_OR_COMPLETE_"
+                "NONNEGATIVE_FLOAT_ZONE; QUALITATIVE_FINDING_WITHOUT_LEVEL_IS_VALID"
+            ),
+            "q9_clustered": "CLUSTERED_REQUIRES_AT_LEAST_TWO_UNIQUE_COMPONENTS",
+            "q9_not_clustered_or_unobservable": "COMPONENTS_MUST_BE_EMPTY",
+            "q10_none": "FINDING_NONE_REQUIRES_WHY_NOT_COVERED_ELSEWHERE_NULL",
+            "q10_non_none": (
+                "NON_NONE_FINDING_REQUIRES_BOUNDED_WHY_NOT_COVERED_ELSEWHERE"
+            ),
+            "q1_to_q9_why": "WHY_NOT_COVERED_ELSEWHERE_MUST_BE_NULL",
+            "non_observed_status": "PARTIAL_UNAVAILABLE_OR_INVALID_REQUIRES_AMBIGUITY_REASON",
+        },
+        "kronos_owned_fields": [
+            "provider_identity",
+            "native_run_identity",
+            "native_assessment_sha256",
+            "native_canonical_instrument",
+            "observation_boundary",
+            "analysis_boundary",
+            "machine_fact_integrity_sha256",
+            "source_provenance",
+            "schema",
+            "authority",
+        ],
         "forbidden_numeric_transcription": [
             "CP",
             "BC",
