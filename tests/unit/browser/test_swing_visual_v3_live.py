@@ -32,12 +32,15 @@ from kronos.swing.v1.pdf_visual_review_v3_live import (
     VisualV3PdfRecordStore,
     VisualV3PdfReviewTransport,
     _complete_response_example,
+    _pack_from_dict,
     _validate_answer,
 )
 from kronos.swing.v1.visual_evidence_v3 import (
     LocalVisualEvidenceV3Store,
     VISUAL_EVIDENCE_V3_ANSWER_SCHEMA,
+    VISUAL_EVIDENCE_V3_LEGACY_ANSWER_SCHEMA,
     VISUAL_QUESTION_SET_V3_ID,
+    VISUAL_QUESTION_SET_V3_LEGACY_VERSION,
     VISUAL_QUESTION_SET_V3_VERSION,
 )
 from tests.unit.application.test_swing_opportunities import _Provider, _ready
@@ -192,6 +195,14 @@ def test_v3_question_pack_publishes_exact_complete_answer_contract(
         "BREAK_BOUNDARY",
     ))
     assert "CLUSTERED_REQUIRES_AT_LEAST_TWO_UNIQUE_COMPONENTS" in contract
+    assert '"classification_field": "setup_quality"' in contract
+    assert "Native direction:" in text
+    assert all(item in contract for item in (
+        "CLEAN_DIRECTIONAL", "HEALTHY_CONSOLIDATION", "HEALTHY_COMPRESSION",
+        "ORDERLY_PULLBACK", "MESSY_CHOPPY", "CONFLICTING", "NOT_OBSERVABLE",
+    ))
+    assert "CLASSIFY_RELATIVE_TO_SUPPLIED_NATIVE_DIRECTION" in contract
+    assert "VOLUME_IS_SUPPORTING_ONLY_NOT_CLASSIFICATION_AUTHORITY" in contract
     assert "point_price" in contract
     assert "zone_low/zone_high" in contract
     assert "When Q10 finding is NONE" in compact_contract
@@ -259,6 +270,26 @@ def test_published_complete_response_example_passes_actual_v3_answer_validator(
         len(response.observations) == 10
         for item in validated for response in item.responses
     )
+
+
+@pytest.mark.parametrize("mutation", ("missing", "unknown"))
+def test_new_q5_setup_quality_fails_closed_when_missing_or_unknown(
+    tmp_path: Path, mutation: str
+) -> None:
+    native, facts, live = _live(tmp_path)
+    record = live.generate(native.snapshot(), facts, native.original_chart_bytes)
+    prepared, _ = live._prepare_for_record(  # noqa: SLF001
+        native.snapshot(), facts, native.original_chart_bytes, record
+    )
+    payload = _payload(live, native, facts, record)
+    q5 = payload["candidates"][0]["responses"][0]["observations"][4]
+    if mutation == "missing":
+        del q5["setup_quality"]
+    else:
+        q5["setup_quality"] = "GOOD"
+
+    with pytest.raises(PdfReviewTransportError, match="ANSWER_FORMAT_INVALID"):
+        _validate_answer(record, prepared, payload)
 
 
 def test_kronos_binds_exact_request_timestamp_without_changing_answer_evidence(
@@ -375,6 +406,38 @@ def test_v3_record_restores_historical_question_path_after_new_path_cutover(
     assert Path(restored.question_path) == historical_path
     assert historical_path.is_file()
     assert not new_configuration.question_directory.exists()
+
+
+def test_historical_v3_3_0_pack_restores_under_its_original_contract(
+    tmp_path: Path,
+) -> None:
+    native, facts, live = _live(tmp_path)
+    current = live.generate(native.snapshot(), facts, native.original_chart_bytes)
+    candidates = tuple(
+        replace(
+            item,
+            question_set_version=VISUAL_QUESTION_SET_V3_LEGACY_VERSION,
+        )
+        for item in current.candidate_packs
+    )
+    historical = replace(
+        current,
+        candidate_packs=candidates,
+        question_set_version=VISUAL_QUESTION_SET_V3_LEGACY_VERSION,
+        answer_schema=VISUAL_EVIDENCE_V3_LEGACY_ANSWER_SCHEMA,
+    )
+
+    restored = _pack_from_dict(_primitive(historical))
+    prepared, _ = live._prepare_for_record(  # noqa: SLF001
+        native.snapshot(), facts, native.original_chart_bytes, restored
+    )
+
+    assert restored == historical
+    assert restored.question_set_version == "3.0"
+    assert all(
+        request.question_set_version == "3.0"
+        for requests in prepared for request in requests
+    )
 
 
 def test_production_server_constructs_explicit_v3_lifecycle_when_not_injected(
@@ -506,7 +569,7 @@ def test_production_server_selects_v3_and_restores_exact_completed_cycle(
         assert "Confluence Zone" not in opportunities
         status, _, review = _browser_request(server, "GET", "/swing/v1-review")
         assert status == 200
-        assert "SWING-V1-VISUAL-QUESTION-SET-V3 3.0" in review
+        assert "SWING-V1-VISUAL-QUESTION-SET-V3 3.1" in review
         assert "V3 REVIEW EVIDENCE IMPORTED" in review
     finally:
         server.shutdown()

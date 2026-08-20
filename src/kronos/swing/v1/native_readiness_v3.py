@@ -44,6 +44,7 @@ from kronos.swing.v1.reference_facts import (
 from kronos.swing.v1.visual_evidence_v2 import VisualObservationStatus
 from kronos.swing.v1.visual_evidence_v3 import (
     VISUAL_QUESTION_SET_V3_ID,
+    VISUAL_QUESTION_SET_V3_LEGACY_VERSION,
     VISUAL_QUESTION_SET_V3_VERSION,
     VisualEvidenceV3Response,
     VisualQuestionV3,
@@ -116,7 +117,10 @@ class NativeLayer2ReadinessRecordV3:
             or not _digest(self.result_sha256)
             or self.result_sha256 != _record_digest(self)
             or self.question_set_identity != VISUAL_QUESTION_SET_V3_ID
-            or self.question_set_version != VISUAL_QUESTION_SET_V3_VERSION
+            or self.question_set_version not in {
+                VISUAL_QUESTION_SET_V3_LEGACY_VERSION,
+                VISUAL_QUESTION_SET_V3_VERSION,
+            }
             or self.binding_policy_identity != NATIVE_READINESS_V3_BINDING_POLICY_ID
             or self.binding_policy_version != NATIVE_READINESS_V3_BINDING_POLICY_VERSION
             or self.schema != NATIVE_READINESS_V3_RECORD_SCHEMA
@@ -288,6 +292,10 @@ def create_native_readiness_record_v3(
     reference: McxReferenceResult | None = None,
     inputs: NativeConditionInputs = NativeConditionInputs(),
 ) -> NativeLayer2ReadinessRecordV3:
+    versions = {item.question_set_version for item in visual}
+    if len(versions) != 1:
+        raise ValueError("NATIVE_V3_VISUAL_VERSION_MISMATCH")
+    question_set_version = versions.pop()
     gate = evaluate_v3_evidence_gate(requirement, mtf_snapshot, visual)
     conditions = build_native_layer2_conditions_v3(
         requirement,
@@ -316,7 +324,8 @@ def create_native_readiness_record_v3(
     }
     return NativeLayer2ReadinessRecordV3(
         **values,  # type: ignore[arg-type]
-        result_sha256=_values_digest(values),
+        result_sha256=_values_digest(values, question_set_version),
+        question_set_version=question_set_version,
     )
 
 
@@ -401,12 +410,14 @@ def _v3_observed(
     )
 
 
-def _values_digest(values: dict[str, object]) -> str:
+def _values_digest(
+    values: dict[str, object], question_set_version: str
+) -> str:
     payload = {
         **values,
         "result_sha256": "",
         "question_set_identity": VISUAL_QUESTION_SET_V3_ID,
-        "question_set_version": VISUAL_QUESTION_SET_V3_VERSION,
+        "question_set_version": question_set_version,
         "binding_policy_identity": NATIVE_READINESS_V3_BINDING_POLICY_ID,
         "binding_policy_version": NATIVE_READINESS_V3_BINDING_POLICY_VERSION,
         "schema": NATIVE_READINESS_V3_RECORD_SCHEMA,

@@ -43,9 +43,13 @@ from kronos.swing.v1.visual_evidence_v3 import (
     FROZEN_VISUAL_QUESTION_SET_V3,
     VISUAL_EVIDENCE_V3_ANSWER_SCHEMA,
     VISUAL_EVIDENCE_V3_AUTHORITY,
+    VISUAL_EVIDENCE_V3_LEGACY_ANSWER_SCHEMA,
+    VISUAL_EVIDENCE_V3_LEGACY_SCHEMA,
     VISUAL_EVIDENCE_V3_SCHEMA,
     VISUAL_QUESTION_SET_V3_ID,
+    VISUAL_QUESTION_SET_V3_LEGACY_VERSION,
     VISUAL_QUESTION_SET_V3_VERSION,
+    VisualSetupQuality,
     VisualEvidenceV3Request,
     VisualEvidenceV3Response,
     VisualTimeframe,
@@ -107,6 +111,7 @@ class VisualV3LiveReviewPack:
                 or item.review_pack_id != self.review_pack_id
                 or item.question_path != self.question_path
                 or item.question_pdf_sha256 != self.question_pdf_sha256
+                or item.question_set_version != self.question_set_version
                 for item in self.candidate_packs
             )
             or tuple(item.canonical_instrument for item in self.candidate_packs)
@@ -115,8 +120,11 @@ class VisualV3LiveReviewPack:
             or (self.scope == "INDIVIDUAL" and (len(self.candidate_packs) != 1 or self.skipped))
             or any(len(item) != 2 or item[1] != "CHART REQUIRED" for item in self.skipped)
             or self.question_set_identity != VISUAL_QUESTION_SET_V3_ID
-            or self.question_set_version != VISUAL_QUESTION_SET_V3_VERSION
-            or self.answer_schema != VISUAL_EVIDENCE_V3_ANSWER_SCHEMA
+            or self.question_set_version not in {
+                VISUAL_QUESTION_SET_V3_LEGACY_VERSION,
+                VISUAL_QUESTION_SET_V3_VERSION,
+            }
+            or self.answer_schema != _answer_schema(self.question_set_version)
             or self.transport_identity != VISUAL_V3_LIVE_TRANSPORT_ID
             or self.transport_version != VISUAL_V3_LIVE_TRANSPORT_VERSION
             or self.schema != VISUAL_V3_LIVE_REVIEW_SCHEMA
@@ -442,7 +450,7 @@ def _validate_answer(
 ) -> tuple[ValidatedVisualV3Candidate, ...]:
     if type(payload) is not dict or set(payload) != {"schema", "manifest", "candidates"}:
         raise PdfReviewTransportError("ANSWER_FORMAT_INVALID")
-    if payload.get("schema") != VISUAL_EVIDENCE_V3_ANSWER_SCHEMA:
+    if payload.get("schema") != record.answer_schema:
         raise PdfReviewTransportError("ANSWER_VERSION_MISMATCH")
     manifest = payload.get("manifest")
     if type(manifest) is not dict:
@@ -451,8 +459,8 @@ def _validate_answer(
         ("review_pack_id", record.review_pack_id),
         ("native_run_identity", record.native_run_identity),
         ("question_set_identity", VISUAL_QUESTION_SET_V3_ID),
-        ("question_set_version", VISUAL_QUESTION_SET_V3_VERSION),
-        ("answer_schema", VISUAL_EVIDENCE_V3_ANSWER_SCHEMA),
+        ("question_set_version", record.question_set_version),
+        ("answer_schema", record.answer_schema),
     ):
         if manifest.get(key) != expected:
             raise PdfReviewTransportError("ANSWER_VERSION_MISMATCH")
@@ -495,7 +503,7 @@ def _validate_answer(
                 or raw_response.get("chart_identity") != instrument
                 or raw_response.get("chart_revision_sha256") != request.chart_revision_sha256
                 or raw_response.get("question_set_identity") != VISUAL_QUESTION_SET_V3_ID
-                or raw_response.get("question_set_version") != VISUAL_QUESTION_SET_V3_VERSION
+                or raw_response.get("question_set_version") != record.question_set_version
             ):
                 raise PdfReviewTransportError("ANSWER_VERSION_MISMATCH")
             observations = raw_response.get("observations")
@@ -517,7 +525,7 @@ def _validate_answer(
                 "analysis_boundary": request.analysis_boundary.isoformat(),
                 "machine_fact_integrity_sha256": request.machine_fact.integrity_sha256,
                 "source_provenance": (record.transport_identity, record.review_pack_id),
-                "schema": VISUAL_EVIDENCE_V3_SCHEMA,
+                "schema": _evidence_schema(record.question_set_version),
                 "authority": VISUAL_EVIDENCE_V3_AUTHORITY,
             })
             try:
@@ -549,13 +557,13 @@ def _write_answer_contract(
         for item in prepared
     ]
     envelope = {
-        "schema": VISUAL_EVIDENCE_V3_ANSWER_SCHEMA,
+        "schema": _answer_schema(first.question_set_version),
         "manifest": {
             "review_pack_id": review_pack_id,
             "native_run_identity": first.requirement.native_run_identity,
             "question_set_identity": VISUAL_QUESTION_SET_V3_ID,
-            "question_set_version": VISUAL_QUESTION_SET_V3_VERSION,
-            "answer_schema": VISUAL_EVIDENCE_V3_ANSWER_SCHEMA,
+            "question_set_version": first.question_set_version,
+            "answer_schema": _answer_schema(first.question_set_version),
             "candidate_population": population,
         },
         "candidates": [{
@@ -705,7 +713,13 @@ def _complete_response_example(
     observations.append(item)
 
     item = common(next(questions).value)
-    item["finding"] = "ILLUSTRATIVE VISIBLE PRICE-ACTION DESCRIPTION"
+    item.update({
+        "setup_quality": VisualSetupQuality.HEALTHY_CONSOLIDATION.value,
+        "finding": (
+            "ILLUSTRATIVE ONLY - orderly sideways pause with the supplied "
+            "Native direction visibly intact"
+        ),
+    })
     observations.append(item)
 
     item = common(next(questions).value)
@@ -738,7 +752,7 @@ def _complete_response_example(
         "chart_revision_sha256": request.chart_revision_sha256,
         "observations": observations,
         "question_set_identity": VISUAL_QUESTION_SET_V3_ID,
-        "question_set_version": VISUAL_QUESTION_SET_V3_VERSION,
+        "question_set_version": request.question_set_version,
     }
 
 
@@ -816,6 +830,22 @@ def _primitive(value: object) -> object:
     if isinstance(value, (tuple, list)):
         return [_primitive(item) for item in value]
     return value
+
+
+def _answer_schema(question_set_version: str) -> str:
+    if question_set_version == VISUAL_QUESTION_SET_V3_LEGACY_VERSION:
+        return VISUAL_EVIDENCE_V3_LEGACY_ANSWER_SCHEMA
+    if question_set_version == VISUAL_QUESTION_SET_V3_VERSION:
+        return VISUAL_EVIDENCE_V3_ANSWER_SCHEMA
+    raise ValueError("VISUAL_V3_ANSWER_VERSION_UNSUPPORTED")
+
+
+def _evidence_schema(question_set_version: str) -> str:
+    if question_set_version == VISUAL_QUESTION_SET_V3_LEGACY_VERSION:
+        return VISUAL_EVIDENCE_V3_LEGACY_SCHEMA
+    if question_set_version == VISUAL_QUESTION_SET_V3_VERSION:
+        return VISUAL_EVIDENCE_V3_SCHEMA
+    raise ValueError("VISUAL_V3_EVIDENCE_VERSION_UNSUPPORTED")
 
 
 def _read(path: Path) -> dict[str, object]:

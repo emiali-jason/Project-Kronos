@@ -36,7 +36,9 @@ from kronos.swing.v1.visual_evidence_v3 import (
     FROZEN_VISUAL_QUESTION_SET_V3,
     LocalVisualEvidenceV3Store,
     VISUAL_EVIDENCE_V3_ANSWER_SCHEMA,
+    VISUAL_EVIDENCE_V3_LEGACY_SCHEMA,
     VISUAL_QUESTION_SET_V3_ID,
+    VISUAL_QUESTION_SET_V3_LEGACY_VERSION,
     VISUAL_QUESTION_SET_V3_VERSION,
     VisualClusteringState,
     VisualComponentType,
@@ -46,11 +48,13 @@ from kronos.swing.v1.visual_evidence_v3 import (
     VisualQuestionV3,
     VisualReferenceRelationship,
     VisualStructurePresence,
+    VisualSetupQuality,
     VisualV3ClusteringObservation,
     VisualV3CprObservation,
     VisualV3LevelObservation,
     VisualV3QualitativeObservation,
     VisualV3ReferenceObservation,
+    VisualV3SetupQualityObservation,
     build_visual_evidence_v3_request,
     visual_evidence_v3_answer_contract,
 )
@@ -131,6 +135,12 @@ def _observations(request, *, q9=VisualClusteringState.CLUSTERED):  # type: igno
             item = VisualV3ClusteringObservation(
                 **base, clustering=q9, components=components
             )
+        elif question is VisualQuestionV3.PRICE_ACTION_QUALITY:
+            item = VisualV3SetupQualityObservation(
+                **base,
+                setup_quality=VisualSetupQuality.CLEAN_DIRECTIONAL,
+                finding="ORDERLY DIRECTIONAL PRICE ACTION",
+            )
         elif question in {
             VisualQuestionV3.VISUAL_SUPPORT_RESISTANCE_GAP,
             VisualQuestionV3.VISUAL_OBSTACLE_EVIDENCE,
@@ -198,9 +208,83 @@ def _visual_for(facts, requirement):  # type: ignore[no-untyped-def]
 
 def test_v3_is_explicit_and_does_not_redefine_v2() -> None:
     assert VISUAL_QUESTION_SET_V3_ID == "SWING-V1-VISUAL-QUESTION-SET-V3"
-    assert VISUAL_QUESTION_SET_V3_VERSION == "3.0"
+    assert VISUAL_QUESTION_SET_V3_VERSION == "3.1"
     assert VISUAL_QUESTION_SET_V2_ID != VISUAL_QUESTION_SET_V3_ID
     assert visual_evidence_v3_answer_contract()["schema"] == VISUAL_EVIDENCE_V3_ANSWER_SCHEMA
+
+
+def test_e02_setup_quality_contract_is_bounded_and_explicit() -> None:
+    contract = visual_evidence_v3_answer_contract()["setup_quality_observation"]
+
+    assert contract["classification_field"] == "setup_quality"
+    assert contract["finding_field"] == "finding"
+    assert contract["values"] == [item.value for item in VisualSetupQuality]
+    assert set(contract["definitions"]) == {
+        "CLEAN_DIRECTIONAL",
+        "HEALTHY_CONSOLIDATION",
+        "HEALTHY_COMPRESSION",
+        "ORDERLY_PULLBACK",
+        "MESSY_CHOPPY",
+        "CONFLICTING",
+        "NOT_OBSERVABLE",
+    }
+    assert "SUPPLIED_NATIVE_DIRECTION" in contract["direction_binding"]
+    assert "SUPPORTING_ONLY" in contract["volume_rule"]
+
+
+@pytest.mark.parametrize("quality", tuple(VisualSetupQuality))
+def test_e02_all_controlled_setup_quality_cases_are_unambiguous(
+    quality: VisualSetupQuality,
+) -> None:
+    request = _request()
+
+    result = VisualV3SetupQualityObservation(
+        **_base(request, VisualQuestionV3.PRICE_ACTION_QUALITY),
+        setup_quality=quality,
+        finding="CONCISE CONTROLLED VISUAL EXPLANATION",
+    )
+
+    assert result.setup_quality is quality
+    assert result.finding == "CONCISE CONTROLLED VISUAL EXPLANATION"
+
+
+def test_historical_v3_3_0_q5_prose_restores_without_enum_conversion(
+    tmp_path: Path,
+) -> None:
+    request = replace(
+        _request(), question_set_version=VISUAL_QUESTION_SET_V3_LEGACY_VERSION
+    )
+    observations = list(_observations(request))
+    observations[4] = VisualV3QualitativeObservation(
+        **_base(request, VisualQuestionV3.PRICE_ACTION_QUALITY),
+        finding="HISTORICAL BOUNDED PROSE ONLY",
+    )
+    response = VisualEvidenceV3Response(
+        provider_identity="CONTROLLED_FIXTURE",
+        model_identity="NO_MODEL_CALL",
+        request_timestamp=request.request_timestamp,
+        native_run_identity=request.requirement.native_run_identity,
+        native_assessment_sha256=request.requirement.thesis.native_assessment_sha256,
+        native_canonical_instrument=request.requirement.canonical_instrument,
+        timeframe=request.timeframe,
+        observation_boundary=request.observation_boundary,
+        analysis_boundary=request.analysis_boundary,
+        chart_identity=request.chart_identity,
+        chart_revision_sha256=request.chart_revision_sha256,
+        machine_fact_integrity_sha256=request.machine_fact.integrity_sha256,
+        observations=tuple(observations),
+        source_provenance=("HISTORICAL_V3_3_0_FIXTURE",),
+        question_set_version=VISUAL_QUESTION_SET_V3_LEGACY_VERSION,
+        schema=VISUAL_EVIDENCE_V3_LEGACY_SCHEMA,
+    )
+    store = LocalVisualEvidenceV3Store((tmp_path / "historical-v3").resolve())
+
+    store.retain(request, response)
+    restored = store.load_for_request(request)
+
+    assert restored == (response,)
+    assert type(restored[0].observations[4]) is VisualV3QualitativeObservation
+    assert not hasattr(restored[0].observations[4], "setup_quality")
 
 
 def test_question_pack_context_is_visual_only_and_never_discloses_machine_values() -> None:
@@ -213,6 +297,7 @@ def test_question_pack_context_is_visual_only_and_never_discloses_machine_values
         for key in ("reference_high", "reference_low", "cp", "bc", "tc")
     )
     assert context["authority"] == "INDEPENDENT_VISUAL_OBSERVATION_ONLY"
+    assert context["native_direction"] == request.requirement.thesis.direction.value
 
 
 def test_machine_owns_cpr_and_visual_cannot_manufacture_it() -> None:

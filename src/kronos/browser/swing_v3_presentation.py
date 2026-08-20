@@ -22,6 +22,7 @@ from kronos.swing.v1.reference_facts import (
 from kronos.swing.v1.visual_evidence_v2 import VisualObservationStatus
 from kronos.swing.v1.visual_evidence_v3 import (
     VISUAL_QUESTION_SET_V3_ID,
+    VISUAL_QUESTION_SET_V3_LEGACY_VERSION,
     VISUAL_QUESTION_SET_V3_VERSION,
     VisualClusteringState,
     VisualEvidenceV3Response,
@@ -91,10 +92,13 @@ def present_visual_v3_review(
     readiness = review.readiness
     if (
         readiness.question_set_identity != VISUAL_QUESTION_SET_V3_ID
-        or readiness.question_set_version != VISUAL_QUESTION_SET_V3_VERSION
+        or readiness.question_set_version not in {
+            VISUAL_QUESTION_SET_V3_LEGACY_VERSION,
+            VISUAL_QUESTION_SET_V3_VERSION,
+        }
         or any(
             item.question_set_identity != VISUAL_QUESTION_SET_V3_ID
-            or item.question_set_version != VISUAL_QUESTION_SET_V3_VERSION
+            or item.question_set_version != readiness.question_set_version
             for item in review.responses
         )
     ):

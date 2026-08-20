@@ -78,6 +78,7 @@ from kronos.swing.v1.step32 import (
     SponsorPosition,
 )
 from kronos.swing.v1.trade_construction import SwingV1TradeCandidate
+from kronos.swing.v1.visual_evidence_v3 import VISUAL_QUESTION_SET_V3_VERSION
 from kronos.swing.v1.native_trade_construction import TradePlanRecord, TradePlanStatus
 from kronos.swing.v1.native_sponsor_decision import (
     SponsorInitiationResult,
@@ -1755,7 +1756,9 @@ def _native_review_requirements(
             pdf_controls = (
                 '<div class="native-analysis-all pdf-review-control"><div>'
                 '<strong>PDF VISUAL REVIEW · V3</strong>'
-                '<span>NO V3 REVIEW PACK · QUESTION SET 3.0</span></div></div>'
+                '<span>NO V3 REVIEW PACK · QUESTION SET '
+                + escape(VISUAL_QUESTION_SET_V3_VERSION)
+                + '</span></div></div>'
             )
         else:
             status = (
@@ -1772,7 +1775,8 @@ def _native_review_requirements(
                 '<div class="native-analysis-all pdf-review-control"><div>'
                 '<strong>PDF VISUAL REVIEW · V3 CURRENT REVIEW PACK</strong><span>'
                 + escape(v3_pack.question_filename)
-                + '<br>SWING-V1-VISUAL-QUESTION-SET-V3 3.0'
+                + '<br>' + escape(v3_pack.question_set_identity)
+                + ' ' + escape(v3_pack.question_set_version)
                 + '<br>SCOPE: ' + escape(scope)
                 + '<br>STATUS: ' + escape(status) + '</span></div>'
                 '<form method="post" action="/swing/v1/native-review-answer">'

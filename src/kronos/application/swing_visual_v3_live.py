@@ -30,6 +30,7 @@ from kronos.swing.v1.visual_evidence_v2 import (
 )
 from kronos.swing.v1.visual_evidence_v3 import (
     VISUAL_QUESTION_SET_V3_ID,
+    VISUAL_QUESTION_SET_V3_VERSION,
     VisualEvidenceV3Request,
     VisualEvidenceV3Response,
     VisualQuestionV3,
@@ -201,6 +202,7 @@ class SwingVisualV3LiveWorkflow:
         instrument: str | None,
         *,
         request_timestamp: datetime | None = None,
+        question_set_version: str = VISUAL_QUESTION_SET_V3_VERSION,
     ) -> tuple[
         tuple[tuple[VisualEvidenceV3Request, ...], ...],
         tuple[tuple[str, str], ...],
@@ -249,7 +251,11 @@ class SwingVisualV3LiveWorkflow:
                 images=(image, image, image, image),
             )
             prepared.append(self.cycle.prepare(
-                requirement, facts, charts, request_timestamp=prepared_at
+                requirement,
+                facts,
+                charts,
+                request_timestamp=prepared_at,
+                question_set_version=question_set_version,
             ))
         if not prepared:
             raise PdfReviewTransportError("REQUIRED_CHART_MISSING")
@@ -274,6 +280,7 @@ class SwingVisualV3LiveWorkflow:
                 if record.scope == "INDIVIDUAL" else None
             ),
             request_timestamp=record.created_at,
+            question_set_version=record.question_set_version,
         )
         expected = {
             item.canonical_instrument: item for item in record.candidate_packs

@@ -37,9 +37,12 @@ from kronos.swing.v1.visual_evidence_v2 import (
 
 
 VISUAL_QUESTION_SET_V3_ID = "SWING-V1-VISUAL-QUESTION-SET-V3"
-VISUAL_QUESTION_SET_V3_VERSION = "3.0"
-VISUAL_EVIDENCE_V3_SCHEMA = "KRONOS-SWING-V1-VISUAL-EVIDENCE-V3"
-VISUAL_EVIDENCE_V3_ANSWER_SCHEMA = "KRONOS-SWING-V1-VISUAL-ANSWER-V3"
+VISUAL_QUESTION_SET_V3_LEGACY_VERSION = "3.0"
+VISUAL_QUESTION_SET_V3_VERSION = "3.1"
+VISUAL_EVIDENCE_V3_LEGACY_SCHEMA = "KRONOS-SWING-V1-VISUAL-EVIDENCE-V3"
+VISUAL_EVIDENCE_V3_SCHEMA = "KRONOS-SWING-V1-VISUAL-EVIDENCE-V3.1"
+VISUAL_EVIDENCE_V3_LEGACY_ANSWER_SCHEMA = "KRONOS-SWING-V1-VISUAL-ANSWER-V3"
+VISUAL_EVIDENCE_V3_ANSWER_SCHEMA = "KRONOS-SWING-V1-VISUAL-ANSWER-V3.1"
 VISUAL_EVIDENCE_V3_AUTHORITY = "INDEPENDENT_VISUAL_OBSERVATION_ONLY"
 MACHINE_FACT_AUTHORITY = "DETERMINISTIC_NUMERICAL_FACT_ONLY"
 DEFAULT_VISUAL_EVIDENCE_V3_ROOT = (
@@ -78,7 +81,7 @@ VISUAL_QUESTION_SEMANTICS_V3: dict[VisualQuestionV3, str] = {
     VisualQuestionV3.GOVERNED_REFERENCE_VISUAL_CONTEXT:
         "Observe the governed previous-week/month reference structure without calling it PDH/PDL or transcribing levels.",
     VisualQuestionV3.PRICE_ACTION_QUALITY:
-        "Describe bounded visible price-action quality without analytical consequence.",
+        "Classify bounded visible price-action quality relative to the supplied Native direction and explain the visible basis without analytical consequence.",
     VisualQuestionV3.VISUAL_OBSTACLE_EVIDENCE:
         "Extract factual visible obstacle evidence.",
     VisualQuestionV3.MATURITY_AND_CHASE_CONTEXT:
@@ -158,6 +161,34 @@ class VisualComponentType(StrEnum):
     UNIDENTIFIED_PLOTTED_STRUCTURE = "UNIDENTIFIED_PLOTTED_STRUCTURE"
 
 
+class VisualSetupQuality(StrEnum):
+    CLEAN_DIRECTIONAL = "CLEAN_DIRECTIONAL"
+    HEALTHY_CONSOLIDATION = "HEALTHY_CONSOLIDATION"
+    HEALTHY_COMPRESSION = "HEALTHY_COMPRESSION"
+    ORDERLY_PULLBACK = "ORDERLY_PULLBACK"
+    MESSY_CHOPPY = "MESSY_CHOPPY"
+    CONFLICTING = "CONFLICTING"
+    NOT_OBSERVABLE = "NOT_OBSERVABLE"
+
+
+VISUAL_SETUP_QUALITY_DEFINITIONS: dict[VisualSetupQuality, str] = {
+    VisualSetupQuality.CLEAN_DIRECTIONAL:
+        "Visible price action is orderly and progressing consistently in the supplied Native direction.",
+    VisualSetupQuality.HEALTHY_CONSOLIDATION:
+        "Price is pausing or moving sideways in an orderly manner without visibly damaging the directional structure; this is not automatically negative.",
+    VisualSetupQuality.HEALTHY_COMPRESSION:
+        "Price is visibly compressing or tightening in an orderly structure without obvious directional failure; this is not automatically negative.",
+    VisualSetupQuality.ORDERLY_PULLBACK:
+        "Price is retracing against the supplied Native direction in an orderly manner while the broader visible structure remains intact; this is not automatically negative.",
+    VisualSetupQuality.MESSY_CHOPPY:
+        "Price action is visibly disorganized or choppy with repeated conflicting movement and no clean directional structure.",
+    VisualSetupQuality.CONFLICTING:
+        "Visible price action materially conflicts with the supplied Native direction.",
+    VisualSetupQuality.NOT_OBSERVABLE:
+        "The supplied chart does not allow a reliable price-action-quality classification.",
+}
+
+
 @dataclass(frozen=True, slots=True)
 class VisualV3BaseObservation:
     question_id: VisualQuestionV3
@@ -221,6 +252,21 @@ class VisualV3QualitativeObservation(VisualV3BaseObservation):
             or (not q10 and self.why_not_covered_elsewhere is not None)
         ):
             raise ValueError("VISUAL_V3_QUALITATIVE_OBSERVATION_INVALID")
+
+
+@dataclass(frozen=True, slots=True)
+class VisualV3SetupQualityObservation(VisualV3BaseObservation):
+    setup_quality: VisualSetupQuality
+    finding: str
+
+    def __post_init__(self) -> None:
+        super(VisualV3SetupQualityObservation, self).__post_init__()
+        if (
+            self.question_id is not VisualQuestionV3.PRICE_ACTION_QUALITY
+            or type(self.setup_quality) is not VisualSetupQuality
+            or not _text(self.finding, 512)
+        ):
+            raise ValueError("VISUAL_V3_SETUP_QUALITY_OBSERVATION_INVALID")
 
 
 @dataclass(frozen=True, slots=True)
@@ -347,6 +393,7 @@ class VisualV3ClusteringObservation(VisualV3BaseObservation):
 
 VisualV3Observation = (
     VisualV3QualitativeObservation
+    | VisualV3SetupQualityObservation
     | VisualV3LevelObservation
     | VisualV3CprObservation
     | VisualV3ReferenceObservation
@@ -404,7 +451,7 @@ class VisualEvidenceV3Request:
             != CPR_CALCULATION_POLICY_VERSION
             or self.routing != visual_question_routing_v3(self.timeframe)
             or self.question_set_identity != VISUAL_QUESTION_SET_V3_ID
-            or self.question_set_version != VISUAL_QUESTION_SET_V3_VERSION
+            or self.question_set_version not in _SUPPORTED_VISUAL_V3_VERSIONS
         ):
             raise ValueError("VISUAL_V3_REQUEST_BINDING_INVALID")
 
@@ -415,6 +462,7 @@ class VisualEvidenceV3Request:
             "question_set_identity": self.question_set_identity,
             "question_set_version": self.question_set_version,
             "canonical_instrument": self.requirement.canonical_instrument,
+            "native_direction": self.requirement.thesis.direction.value,
             "timeframe": self.timeframe.value,
             "chart_identity": self.chart_identity,
             "chart_revision_sha256": self.chart_revision_sha256,
@@ -478,8 +526,9 @@ class VisualEvidenceV3Response:
             or any(item.source_chart_revision != self.chart_revision_sha256 for item in self.observations)
             or not self.source_provenance
             or self.question_set_identity != VISUAL_QUESTION_SET_V3_ID
-            or self.question_set_version != VISUAL_QUESTION_SET_V3_VERSION
-            or self.schema != VISUAL_EVIDENCE_V3_SCHEMA
+            or not _response_contract_matches(
+                self.question_set_version, self.schema, self.observations
+            )
             or self.authority != VISUAL_EVIDENCE_V3_AUTHORITY
         ):
             raise ValueError("VISUAL_V3_RESPONSE_INVALID")
@@ -504,6 +553,8 @@ class VisualEvidenceV3Response:
             or self.chart_revision_sha256 != request.chart_revision_sha256
             or self.machine_fact_integrity_sha256
             != request.machine_fact.integrity_sha256
+            or self.question_set_identity != request.question_set_identity
+            or self.question_set_version != request.question_set_version
         ):
             raise ValueError("VISUAL_V3_BINDING_INVALID")
 
@@ -529,6 +580,7 @@ def build_visual_evidence_v3_request(
     content_type: str,
     original_image: bytes,
     request_timestamp: datetime,
+    question_set_version: str = VISUAL_QUESTION_SET_V3_VERSION,
 ) -> VisualEvidenceV3Request:
     if (
         type(requirement) is not NativeReviewRequirement
@@ -553,6 +605,7 @@ def build_visual_evidence_v3_request(
         request_timestamp=request_timestamp,
         machine_fact=machine_fact,
         routing=visual_question_routing_v3(timeframe),
+        question_set_version=question_set_version,
     )
 
 
@@ -588,7 +641,6 @@ def visual_evidence_v3_answer_contract() -> dict[str, object]:
         "qualitative_questions": [
             VisualQuestionV3.VISUAL_CHART_VALIDATION.value,
             VisualQuestionV3.VISUAL_SUPPORT_RESISTANCE_GAP.value,
-            VisualQuestionV3.PRICE_ACTION_QUALITY.value,
             VisualQuestionV3.VISUAL_OBSTACLE_EVIDENCE.value,
             VisualQuestionV3.MATURITY_AND_CHASE_CONTEXT.value,
             VisualQuestionV3.PINE_VISIBLE_EVIDENCE.value,
@@ -596,6 +648,27 @@ def visual_evidence_v3_answer_contract() -> dict[str, object]:
         ],
         "qualitative_result_field": "finding",
         "qualitative_optional_field": "why_not_covered_elsewhere",
+        "setup_quality_observation": {
+            "question": VisualQuestionV3.PRICE_ACTION_QUALITY.value,
+            "classification_field": "setup_quality",
+            "finding_field": "finding",
+            "values": [item.value for item in VisualSetupQuality],
+            "definitions": {
+                item.value: VISUAL_SETUP_QUALITY_DEFINITIONS[item]
+                for item in VisualSetupQuality
+            },
+            "direction_binding": (
+                "CLASSIFY_RELATIVE_TO_SUPPLIED_NATIVE_DIRECTION;_DO_NOT_CHOOSE_DIRECTION"
+            ),
+            "volume_rule": "VOLUME_IS_SUPPORTING_ONLY_NOT_CLASSIFICATION_AUTHORITY",
+            "illustrative_example": {
+                "setup_quality": VisualSetupQuality.HEALTHY_CONSOLIDATION.value,
+                "finding": (
+                    "Illustrative only: price pauses sideways in an orderly range "
+                    "while the supplied Native direction remains visibly intact."
+                ),
+            },
+        },
         "level_observation": {
             "questions": [
                 VisualQuestionV3.VISUAL_SUPPORT_RESISTANCE_GAP.value,
@@ -695,7 +768,7 @@ class LocalVisualEvidenceV3Store:
             / f"{response.chart_revision_sha256}--{response.evidence_sha256}.json"
         )
         payload = {
-            "schema": VISUAL_EVIDENCE_V3_SCHEMA,
+            "schema": response.schema,
             "evidence_sha256": response.evidence_sha256,
             "response": _primitive(response),
         }
@@ -723,7 +796,7 @@ class LocalVisualEvidenceV3Store:
         values = []
         for path in sorted(root.glob(f"{request.chart_revision_sha256}--*.json")):
             payload = _read(path)
-            if payload.get("schema") != VISUAL_EVIDENCE_V3_SCHEMA:
+            if payload.get("schema") not in _SUPPORTED_VISUAL_V3_EVIDENCE_SCHEMAS:
                 raise ValueError("VISUAL_V3_RESTART_SCHEMA_INVALID")
             response = visual_evidence_v3_response_from_dict(payload.get("response"))
             if payload.get("evidence_sha256") != response.evidence_sha256:
@@ -741,8 +814,9 @@ def visual_evidence_v3_response_from_dict(
     if type(value) is not dict:
         raise ValueError("VISUAL_V3_RESPONSE_INVALID")
     try:
+        version = value["question_set_version"]
         observations = tuple(
-            _observation_from_dict(item) for item in value["observations"]
+            _observation_from_dict(item, version) for item in value["observations"]
         )
         return VisualEvidenceV3Response(
             provider_identity=value["provider_identity"],
@@ -770,7 +844,9 @@ def visual_evidence_v3_response_from_dict(
         raise ValueError("VISUAL_V3_RESPONSE_INVALID") from error
 
 
-def _observation_from_dict(value: object) -> VisualV3Observation:
+def _observation_from_dict(
+    value: object, question_set_version: object
+) -> VisualV3Observation:
     if type(value) is not dict:
         raise ValueError("VISUAL_V3_OBSERVATION_INVALID")
     try:
@@ -787,6 +863,15 @@ def _observation_from_dict(value: object) -> VisualV3Observation:
             "source_chart_revision": value["source_chart_revision"],
         }
         question = common["question_id"]
+        if (
+            question is VisualQuestionV3.PRICE_ACTION_QUALITY
+            and question_set_version == VISUAL_QUESTION_SET_V3_VERSION
+        ):
+            return VisualV3SetupQualityObservation(
+                **common,
+                setup_quality=VisualSetupQuality(value["setup_quality"]),
+                finding=value["finding"],
+            )
         if question is VisualQuestionV3.CPR_VISUAL_RELATIONSHIP:
             return VisualV3CprObservation(
                 **common,
@@ -834,6 +919,36 @@ def _observation_from_dict(value: object) -> VisualV3Observation:
         if isinstance(error, ValueError) and str(error).startswith("VISUAL_V3_"):
             raise
         raise ValueError("VISUAL_V3_OBSERVATION_INVALID") from error
+
+
+_SUPPORTED_VISUAL_V3_VERSIONS = {
+    VISUAL_QUESTION_SET_V3_LEGACY_VERSION,
+    VISUAL_QUESTION_SET_V3_VERSION,
+}
+_SUPPORTED_VISUAL_V3_EVIDENCE_SCHEMAS = {
+    VISUAL_EVIDENCE_V3_LEGACY_SCHEMA,
+    VISUAL_EVIDENCE_V3_SCHEMA,
+}
+
+
+def _response_contract_matches(
+    version: str, schema: str, observations: tuple[VisualV3Observation, ...]
+) -> bool:
+    q5 = next(
+        (item for item in observations if item.question_id is VisualQuestionV3.PRICE_ACTION_QUALITY),
+        None,
+    )
+    if version == VISUAL_QUESTION_SET_V3_LEGACY_VERSION:
+        return (
+            schema == VISUAL_EVIDENCE_V3_LEGACY_SCHEMA
+            and type(q5) is VisualV3QualitativeObservation
+        )
+    if version == VISUAL_QUESTION_SET_V3_VERSION:
+        return (
+            schema == VISUAL_EVIDENCE_V3_SCHEMA
+            and type(q5) is VisualV3SetupQualityObservation
+        )
+    return False
 
 
 def _safe(value: str) -> str:
@@ -908,8 +1023,11 @@ __all__ = [
     "VISUAL_EVIDENCE_V3_ANSWER_SCHEMA",
     "VISUAL_EVIDENCE_V3_AUTHORITY",
     "VISUAL_EVIDENCE_V3_SCHEMA",
+    "VISUAL_EVIDENCE_V3_LEGACY_ANSWER_SCHEMA",
+    "VISUAL_EVIDENCE_V3_LEGACY_SCHEMA",
     "VISUAL_QUESTION_SEMANTICS_V3",
     "VISUAL_QUESTION_SET_V3_ID",
+    "VISUAL_QUESTION_SET_V3_LEGACY_VERSION",
     "VISUAL_QUESTION_SET_V3_VERSION",
     "VisualClusteringState",
     "VisualComponentType",
@@ -920,6 +1038,7 @@ __all__ = [
     "VisualQuestionV3",
     "VisualReferenceRelationship",
     "VisualStructurePresence",
+    "VisualSetupQuality",
     "VisualV3BaseObservation",
     "VisualV3ClusteringObservation",
     "VisualV3CprObservation",
@@ -927,6 +1046,8 @@ __all__ = [
     "VisualV3Observation",
     "VisualV3QualitativeObservation",
     "VisualV3ReferenceObservation",
+    "VisualV3SetupQualityObservation",
+    "VISUAL_SETUP_QUALITY_DEFINITIONS",
     "build_visual_evidence_v3_request",
     "visual_evidence_v3_answer_contract",
     "visual_evidence_v3_response_from_dict",

@@ -29,6 +29,7 @@ from kronos.swing.v1.visual_evidence_v3 import (
     VisualEvidenceV3Request,
     VisualEvidenceV3Response,
     build_visual_evidence_v3_request,
+    VISUAL_QUESTION_SET_V3_VERSION,
 )
 
 
@@ -85,6 +86,10 @@ class CompletedVisualV3Review:
             or self.readiness.canonical_instrument != instrument
             or self.readiness.native_assessment_sha256
             != self.requirement.thesis.native_assessment_sha256
+            or any(
+                item.question_set_version != self.readiness.question_set_version
+                for item in self.responses
+            )
             or (
                 self.review_pack is not None
                 and (
@@ -125,6 +130,7 @@ class SwingVisualV3ReviewCycle:
         charts: tuple[VisualV3ChartInput, ...],
         *,
         request_timestamp: datetime,
+        question_set_version: str = VISUAL_QUESTION_SET_V3_VERSION,
     ) -> tuple[VisualEvidenceV3Request, ...]:
         if (
             type(charts) is not tuple
@@ -141,6 +147,7 @@ class SwingVisualV3ReviewCycle:
                 content_type=chart.content_type,
                 original_image=chart.original_image,
                 request_timestamp=request_timestamp,
+                question_set_version=question_set_version,
             )
             for chart in charts
         )

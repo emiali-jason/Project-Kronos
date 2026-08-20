@@ -23,6 +23,7 @@ from kronos.swing.v1.visual_evidence_v3 import (
     VISUAL_EVIDENCE_V3_AUTHORITY,
     VISUAL_QUESTION_SEMANTICS_V3,
     VISUAL_QUESTION_SET_V3_ID,
+    VISUAL_QUESTION_SET_V3_LEGACY_VERSION,
     VISUAL_QUESTION_SET_V3_VERSION,
     VisualEvidenceV3Request,
 )
@@ -61,7 +62,10 @@ class VisualV3ReviewPackRecord:
             or any(len(item) != 2 or not _digest(item[1]) for item in self.chart_revisions)
             or any(len(item) != 2 or not _digest(item[1]) for item in self.machine_fact_bindings)
             or self.question_set_identity != VISUAL_QUESTION_SET_V3_ID
-            or self.question_set_version != VISUAL_QUESTION_SET_V3_VERSION
+            or self.question_set_version not in {
+                VISUAL_QUESTION_SET_V3_LEGACY_VERSION,
+                VISUAL_QUESTION_SET_V3_VERSION,
+            }
             or self.schema != VISUAL_V3_REVIEW_PACK_SCHEMA
             or self.analyst_authority != VISUAL_EVIDENCE_V3_AUTHORITY
         ):
@@ -86,7 +90,7 @@ def write_visual_v3_question_pack(
         or any(
             item.requirement != first.requirement
             or item.question_set_identity != VISUAL_QUESTION_SET_V3_ID
-            or item.question_set_version != VISUAL_QUESTION_SET_V3_VERSION
+            or item.question_set_version != first.question_set_version
             for item in requests
         )
     ):
@@ -117,7 +121,8 @@ def write_visual_v3_question_pack(
         Spacer(1, 3 * mm),
         Paragraph(
             f"Instrument: {first.requirement.canonical_instrument} | "
-            f"Question set: {VISUAL_QUESTION_SET_V3_ID} {VISUAL_QUESTION_SET_V3_VERSION}",
+            f"Native direction: {first.requirement.thesis.direction.value} | "
+            f"Question set: {VISUAL_QUESTION_SET_V3_ID} {first.question_set_version}",
             styles["BodyText"],
         ),
     ]
@@ -153,6 +158,7 @@ def write_visual_v3_question_pack(
             (item.timeframe.value, item.machine_fact.integrity_sha256)
             for item in requests
         ),
+        question_set_version=first.question_set_version,
     )
 
 
