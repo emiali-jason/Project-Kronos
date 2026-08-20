@@ -1,7 +1,7 @@
 # KRONOS Platform Business Pipeline
 Status: Approved
 Owner: Chief Architect
-Version: 1.0
+Version: 1.1
 
 ## Purpose
 
@@ -37,11 +37,11 @@ This is a semantic business flow. It does not replace the runtime information pa
 
 ## Existing KRONOS Alignment
 
-- KR-370 direction and BUY READY / SELL READY remain the current approved business-judgment ownership within Validation.
+- KR-370 Sponsor-facing BUY NOW, SELL NOW, BUY READY, SELL READY, POTENTIAL BUY/SELL SETUP, and NO SETUP are analytical-promotion Business Judgment within Validation and grant no downstream authority by themselves.
 - KR-380A remains the current entry Execution Context Provider within the approved Execution Context boundary.
-- KR-380 remains the sole current entry Execution Context consumer and owns final execution timing and BUY NOW / SELL NOW.
+- KR-380 remains the sole current entry Execution Context consumer and owns final entry timing and LONG_ENTRY_TRIGGERED / SHORT_ENTRY_TRIGGERED Entry Outcomes.
 - KR-390 retains ownership of the objective KRONOS model trade within the Portfolio responsibility.
-- BUY NOW and SELL NOW are not broker orders.
+- Neither KR-370 analytical BUY NOW / SELL NOW nor KR-380 Entry Outcomes are broker orders.
 
 ## Related Documents
 

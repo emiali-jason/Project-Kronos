@@ -23,7 +23,7 @@ It is not:
 - an opaque black-box strategy;
 - a personal-position tracker yet.
 
-BUY NOW and SELL NOW are explicit, confirmed execution-timing states. They are not broker orders and do not mean that an automated trade has been placed.
+KR-370 BUY NOW and SELL NOW are explicit analytical-promotion states with no execution authority. Current confirmed KR-380 entry-timing states are LONG_ENTRY_TRIGGERED and SHORT_ENTRY_TRIGGERED. Neither family is a broker order or proves personal entry. Historical KR-380 BUY NOW / SELL NOW retains its original Version 1 Entry Outcome meaning.
 
 ## Architecture Layers
 
@@ -34,7 +34,8 @@ BUY NOW and SELL NOW are explicit, confirmed execution-timing states. They are n
 | Intelligence Core | Trend, quality, compression, acceptance, momentum, review, consolidated directional bias, opportunity, evidence synthesis, confidence | KR-300 through KR-360 plus KES (KRONOS Evidence Synthesis) |
 | Decision | Direction and readiness | KR-370 |
 | Execution context | Narrow translation of reference and MCX execution facts | KR-380A |
-| Execution timing | Confirmed NO TRIGGER/FORMING/BUY NOW/SELL NOW/EXTENDED/FAILED state | KR-380 |
+| Analytical promotion | BUY NOW/SELL NOW/BUY READY/SELL READY/POTENTIAL/NO SETUP | KR-370 |
+| Entry timing | Confirmed NO_TRIGGER/FORMING/LONG_ENTRY_TRIGGERED/SHORT_ENTRY_TRIGGERED/EXTENDED/FAILED state | KR-380 |
 | Model trade management | Persistent objective model entry, protection, trailing, and exit state | KR-390A, KR-390 |
 | Alerts | Event-edge TradingView notifications | KR-400 |
 | Trader interface | Display and trader-readable translation | KR-705 |
@@ -91,7 +92,7 @@ Supporting reference context:
 
 Execution context:
 
-- MCX 1H only for confirmed BUY NOW and SELL NOW events.
+- MCX 1H only for confirmed current KR-380 LONG_ENTRY_TRIGGERED and SHORT_ENTRY_TRIGGERED events under the applicable product contract.
 
 COMEX charts support the decision. They are not MCX execution venues and cannot issue executable MCX triggers.
 

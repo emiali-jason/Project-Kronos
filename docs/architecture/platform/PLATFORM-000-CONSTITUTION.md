@@ -2,7 +2,7 @@
 
 **Document ID:** PLATFORM-000
 **Title:** KRONOS Platform Constitution
-**Version:** 1.0
+**Version:** 1.1
 **Status:** Approved
 **Canonical Status:** Not stated
 **Classification:** Constitution
@@ -77,7 +77,7 @@ Completion of a domain responsibility must not depend on an undocumented manual 
 
 Human review, presentation, approval, and action may consume platform outputs where explicitly authorized, but they do not silently replace domain ownership or contract completion.
 
-Current BUY NOW and SELL NOW remain confirmed KR-380 execution-timing states and are not broker orders. Human or broker action remains outside the current execution contract unless separately approved.
+Current KR-370 `BUY NOW` and `SELL NOW` are analytical-promotion classifications only. They are not Entry Outcomes, Risk approval, Sponsor decisions, positions, fills, or broker orders. Current KR-380 entry-timing states are `LONG_ENTRY_TRIGGERED` and `SHORT_ENTRY_TRIGGERED`; they remain analytical Entry Outcomes and are not broker orders. Human or broker action remains outside the current execution contract unless separately approved. Historical KR-380 `BUY NOW` / `SELL NOW` records retain their original entry-timing meaning under their historical contract version.
 
 ## CA-019 — Architecture Freeze
 
@@ -94,12 +94,14 @@ A frozen responsibility, dependency, ownership assignment, or constitutional dec
 
 ## Existing Authority Preserved
 
-- KR-370 retains direction and BUY READY / SELL READY ownership.
-- KR-380 retains final execution timing and BUY NOW / SELL NOW ownership.
+- KR-370 owns Sponsor-facing analytical promotion: BUY NOW, SELL NOW, BUY READY, SELL READY, POTENTIAL BUY/SELL SETUP, and NO SETUP. This ownership carries no execution, Risk, Sponsor-decision, position, fill, or broker authority.
+- KR-380 retains final entry timing and current `LONG_ENTRY_TRIGGERED` / `SHORT_ENTRY_TRIGGERED` Entry Outcome ownership.
 - KR-380 remains the sole currently authorized consumer of the entry Execution Context.
-- Execution Context Providers do not own direction, readiness, final execution authorization, BUY NOW, SELL NOW, or trade management.
+- Execution Context Providers do not own direction, analytical promotion, readiness, final entry timing, Entry Outcomes, or trade management.
 - Execution semantics remain market-neutral under PP-007.
 - Existing engine ownership and information flow remain governed by ENGINE_OWNERSHIP and DATA_FLOW.
+
+These Version 1.1 clauses are governed by [ADR-0011](../adr/ADR-0011-KR-370-ANALYTICAL-PROMOTION-AND-KR-380-ENTRY-OUTCOME-SEMANTICS.md) and supersede only the affected Version 1.0 ownership and terminology clauses. Step-31 geometry, DOMAIN-007 Risk, Sponsor Decision, KR-390 lifecycle, and broker boundaries are unchanged.
 
 ## Related Approved Documents
 
@@ -108,4 +110,5 @@ A frozen responsibility, dependency, ownership assignment, or constitutional dec
 - [Project KRONOS Data Flow](../DATA_FLOW.md)
 - [PP-007 — Execution Semantics Across Markets](../principles/PP-007-Execution-Semantics-Across-Markets.md)
 - [ADR-006 — Execution Context Provider Architecture](../adr/ADR-006-Execution-Context-Provider-Architecture.md)
+- [ADR-0011 — KR-370 Analytical Promotion and KR-380 Entry Outcome Semantics](../adr/ADR-0011-KR-370-ANALYTICAL-PROMOTION-AND-KR-380-ENTRY-OUTCOME-SEMANTICS.md)
 - [ADL-003 — Execution Context Adapters](../ADL-003-Execution-Context-Adapters.md)

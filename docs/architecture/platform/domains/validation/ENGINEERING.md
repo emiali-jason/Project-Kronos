@@ -18,12 +18,12 @@ Realize the approved Business Judgment responsibility by interpreting approved M
 
 - Consume only the approved Market Facts Contract from Observation.
 - Preserve distinct confidence and decision responsibilities within Validation.
-- Preserve KR-370 ownership of direction and BUY READY / SELL READY.
+- Preserve KR-370 ownership of versioned analytical promotion under ADR-0011.
 - Publish only the approved Business Judgment Contract.
 
 ## Explicit Non-Responsibilities
 
-- Instrument Identity, Market Facts production, Risk Approval, final execution timing, BUY NOW / SELL NOW, orders, positions, provider integration, Market Schedule, event transport, Runtime Configuration, or Audit Trail.
+- Instrument Identity, Market Facts production, Risk Approval, final entry timing, KR-380 Entry Outcomes, orders, positions, provider integration, Market Schedule, event transport, Runtime Configuration, or Audit Trail.
 - Reinterpreting Execution Context or producing an execution outcome.
 
 ## Consumed Approved Contracts
@@ -47,7 +47,7 @@ Realize the approved Business Judgment responsibility by interpreting approved M
 ## Existing KR Engine Alignment
 
 - KR-360 retains confidence ownership.
-- KR-370 retains direction, readiness, and BUY READY / SELL READY ownership.
+- KR-370 retains analytical BUY NOW, SELL NOW, BUY READY, SELL READY, POTENTIAL BUY/SELL SETUP, and NO SETUP ownership without downstream authority.
 - Component alignment does not merge the two engine responsibilities.
 
 ## Existing Implementation Alignment
@@ -58,4 +58,4 @@ Realize the approved Business Judgment responsibility by interpreting approved M
 ## Open Engineering Questions
 
 - Which current KR-360 and KR-370 public outputs collectively conform to the Business Judgment Contract?
-- What contract-conformance evidence is required without changing KR-370’s public states or current engine ownership?
+- What contract-conformance evidence is required to implement ADR-0011 without changing its frozen authority boundaries?

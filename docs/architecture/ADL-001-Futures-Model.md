@@ -113,7 +113,7 @@ The current absence of the selector does not change the architecture decision. M
 
 ### Self-Contained Execution
 
-The MCX 1H execution chart must be self-contained. Reference Daily, 4H, and 1H markets provide supporting context, but they do not execute MCX trades. Confirmed BUY NOW and SELL NOW events may occur only on the MCX 1H execution chart.
+The MCX 1H execution chart must be self-contained. Reference Daily, 4H, and 1H markets provide supporting context, but they do not execute MCX trades. Current confirmed KR-380 LONG_ENTRY_TRIGGERED and SHORT_ENTRY_TRIGGERED events may occur only on the governed MCX 1H execution path. KR-370 analytical BUY NOW / SELL NOW is not an execution event.
 
 The panel must translate all remaining reference and execution blockers into trader-readable requirements on that chart. See [ADL-002](ADL-002-MCX-Self-Contained-Execution.md).
 

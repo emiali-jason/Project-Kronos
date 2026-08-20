@@ -6,7 +6,7 @@
 
 **Owner:** Chief Architect
 
-**Version:** 1.0
+**Version:** 1.1
 
 **Canonical Status:** Not stated
 **Classification:** Architecture Principle
@@ -64,9 +64,14 @@ KR-380
 Responsible for:
 
 - Consuming standardized execution context
-- Consuming BUY READY / SELL READY from KR-370
+- Consuming an exact current, Risk-permitted downstream path derived from KR-370 analytical BUY NOW / SELL NOW and immutable Step-31 geometry
 - Determining execution authorization
-- Producing BUY NOW / SELL NOW
+- Producing LONG_ENTRY_TRIGGERED / SHORT_ENTRY_TRIGGERED Entry Outcomes
+
+KR-370 analytical BUY NOW / SELL NOW is a DOMAIN-003 analytical-promotion
+classification and has no execution authority. KR-380 remains the sole owner of
+final entry timing. Historical KR-380 BUY NOW / SELL NOW retains its original
+meaning only under the historical Entry Outcome Version 1 contract.
 
 ---
 
@@ -93,5 +98,6 @@ No implementation may introduce market-specific execution semantics without an a
 # Related Documents
 
 - ADR-006 — Execution Context Provider Architecture
+- ADR-0011 — KR-370 Analytical Promotion and KR-380 Entry Outcome Semantics
 - ECIC-001 — Execution Context Interface Contract
 - ECM-001 — Execution Context Model

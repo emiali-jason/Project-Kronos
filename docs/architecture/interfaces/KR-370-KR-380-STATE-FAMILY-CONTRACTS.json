@@ -1,0 +1,80 @@
+{
+  "contract_identity": "KRONOS-KR-370-KR-380-STATE-FAMILY-REGISTRY",
+  "contract_version": "1.0",
+  "governing_adr": "ADR-0011",
+  "governing_decision_identity": "KR-370-ADR-01",
+  "authority": "ARCHITECTURE_AND_CONTRACT_ONLY",
+  "state_families": {
+    "KR370_ANALYTICAL_PROMOTION_V1": {
+      "contract_identity": "KRONOS-KR-370-ANALYTICAL-PROMOTION-V1",
+      "contract_version": "1",
+      "owner_identity": "KR-370",
+      "domain_identity": "DOMAIN-003-VALIDATION",
+      "state_family_identity": "KR370_ANALYTICAL_PROMOTION",
+      "status": "CURRENT",
+      "states": [
+        "BUY_NOW",
+        "SELL_NOW",
+        "BUY_READY",
+        "SELL_READY",
+        "POTENTIAL_BUY_SETUP",
+        "POTENTIAL_SELL_SETUP",
+        "NO_SETUP"
+      ],
+      "execution_authority": false,
+      "risk_authority": false,
+      "sponsor_decision_authority": false,
+      "position_authority": false,
+      "fill_authority": false,
+      "broker_authority": false,
+      "kr390_current_input": false,
+      "kr400_current_alert_source": false
+    },
+    "KR380_ENTRY_OUTCOME_V2": {
+      "contract_identity": "KRONOS-KR-380-ENTRY-OUTCOME-V2",
+      "contract_version": "2",
+      "owner_identity": "KR-380",
+      "domain_identity": "DOMAIN-004-EXECUTION",
+      "state_family_identity": "KR380_ENTRY_OUTCOME",
+      "status": "CURRENT",
+      "states": [
+        "NO_TRIGGER",
+        "FORMING",
+        "LONG_ENTRY_TRIGGERED",
+        "SHORT_ENTRY_TRIGGERED",
+        "EXTENDED",
+        "FAILED"
+      ],
+      "execution_timing_authority": true,
+      "broker_authority": false,
+      "kr390_current_trigger_states": [
+        "LONG_ENTRY_TRIGGERED",
+        "SHORT_ENTRY_TRIGGERED"
+      ],
+      "kr400_current_event_identities": [
+        "KR380_LONG_ENTRY_TRIGGERED",
+        "KR380_SHORT_ENTRY_TRIGGERED"
+      ]
+    },
+    "KR380_ENTRY_OUTCOME_V1": {
+      "contract_identity": "KRONOS-KR-380-ENTRY-OUTCOME-V1",
+      "contract_version": "1",
+      "owner_identity": "KR-380",
+      "domain_identity": "DOMAIN-004-EXECUTION",
+      "state_family_identity": "KR380_ENTRY_OUTCOME",
+      "status": "HISTORICAL_READ_ONLY",
+      "states": [
+        "NO_TRIGGER",
+        "FORMING",
+        "BUY_NOW",
+        "SELL_NOW",
+        "EXTENDED",
+        "FAILED"
+      ],
+      "current_production_permitted": false,
+      "historical_restoration_permitted": true,
+      "new_downstream_effect_permitted": false,
+      "broker_authority": false
+    }
+  }
+}

@@ -2,7 +2,7 @@
 
 Status: Approved
 Owner: Chief Architect
-Version: 1.0
+Version: 1.1
 
 ## Purpose
 
@@ -228,8 +228,8 @@ The existing Risk–Execution–Portfolio sequence remains governed across busin
 
 ## Existing KRONOS Alignment
 
-- KR-370 remains upstream of KR-380 and owns direction and readiness.
-- KR-380 consumes approved direction/readiness and Execution Context without reinterpreting either.
+- KR-370 remains upstream of Step 31, Risk, and KR-380 and owns analytical promotion only.
+- KR-380 consumes the exact Risk-permitted, geometry-bound path derived from current KR-370 analytical BUY NOW / SELL NOW plus Execution Context without reinterpreting any upstream authority.
 - KR-390 consumes confirmed KR-380 execution outcomes for objective model-trade state.
 - Existing narrow adapter exceptions remain governed by ADL-003 and do not create new domain dependencies.
 - Provider Capability remains Provider-scoped under ADR-007.
@@ -254,4 +254,4 @@ The existing Risk–Execution–Portfolio sequence remains governed across busin
 
 ## Swing V1 Step-32 Approved Extension — 2026-08-13
 
-Candidate → Validation Business Judgment → Risk Result → KR-380 Entry Outcome → KR-390 Objective Model → DOMAIN-009 Event. Monitoring follows authorized Pine publisher → authenticated ingress → DOMAIN-002 admission → Observation → KR-380/KR-390. Sponsor Decision and Sponsor Position are parallel branches. Each arrow permits only an approved [versioned contract](../interfaces/SWING-V1-STEP-32-VERSIONED-CONTRACTS.md); no ownership or runtime/Production authority transfers.
+Candidate → Validation/KR-370 Analytical Promotion → Step-31 geometry → Risk Result → KR-380 Entry Outcome → KR-390 Objective Model → DOMAIN-009 Event. Monitoring follows the approved Provider path → DOMAIN-002 admission → Observation → KR-380/KR-390. Sponsor Decision and Sponsor Position are parallel branches. Each arrow permits only an approved [versioned contract](../interfaces/SWING-V1-STEP-32-VERSIONED-CONTRACTS.md); no ownership or runtime/Production authority transfers.

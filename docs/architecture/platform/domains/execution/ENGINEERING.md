@@ -12,7 +12,7 @@ Translate DOMAIN-004 — Execution into one primary Execution engineering compon
 
 ## Engineering Responsibility
 
-Realize approved execution action and order semantics while preserving KR-380 ownership of final execution timing and BUY NOW / SELL NOW.
+Realize approved execution action and order semantics while preserving KR-380 ownership of final entry timing and LONG_ENTRY_TRIGGERED / SHORT_ENTRY_TRIGGERED Entry Outcomes.
 
 ## Responsibilities
 
@@ -50,14 +50,14 @@ Realize approved execution action and order semantics while preserving KR-380 ow
 
 ## Existing KR Engine Alignment
 
-- KR-380 retains final execution timing and BUY NOW / SELL NOW ownership.
+- KR-380 retains final entry timing and current LONG_ENTRY_TRIGGERED / SHORT_ENTRY_TRIGGERED ownership.
 - KR-380A remains the current concrete entry Execution Context Provider in its narrow approved role.
 - KR-390 and KR-390A remain Portfolio-aligned post-entry model-trade responsibilities.
 
 ## Existing Implementation Alignment
 
 - KR-380A and KR-380 sections exist in `KRONOS_FUTURES/source/KRONOS_FUTURES.pine`.
-- BUY NOW and SELL NOW remain confirmed timing states, not broker orders.
+- Current KR-380 Entry Outcomes remain confirmed timing states, not broker orders. KR-370 analytical BUY NOW / SELL NOW carries no execution authority.
 - No independently packaged Execution component or broker-order implementation was discovered.
 
 ## Open Engineering Questions

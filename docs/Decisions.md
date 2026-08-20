@@ -211,13 +211,13 @@ The following Architecture Decision Logs extend this decision record. KD-001 thr
 | [ADL-002 - MCX Self-Contained Execution](architecture/ADL-002-MCX-Self-Contained-Execution.md) | The MCX execution chart must be self-contained. | Clarifies KD-005 and supersedes the old DD-004 assumption that the trader must depend on separate timeframe panels for execution understanding. |
 | [ADL-003 - Execution Context Adapters](architecture/ADL-003-Execution-Context-Adapters.md) | Narrow adapters may bridge low-level data into execution engines. | Clarifies KD-001 by documenting a controlled exception to strict prior-public-output access without permitting duplicated intelligence stacks. |
 | [ADL-004 - Model Trade Ownership](architecture/ADL-004-Model-Trade-Ownership.md) | KR-390 manages the objective KRONOS model trade independently of personal entry. | Clarifies KD-004: model analysis is not broker execution or personal-position tracking. |
-| [ADL-005 - Alert Architecture](architecture/ADL-005-Alert-Architecture.md) | KR-400 owns confirmed BUY NOW and SELL NOW TradingView alert events. | Clarifies KD-004: actionable notifications do not convert KRONOS into an automated broker system. |
+| [ADL-005 - Alert Architecture](architecture/ADL-005-Alert-Architecture.md) | KR-400 owns confirmed KR-380 long/short Entry Outcome alert events. | Clarifies KD-004: actionable notifications do not convert KRONOS into an automated broker system; ADR-0011 preserves historical alert names. |
 
 ## Clarifications
 
-### BUY NOW, SELL NOW, and Alerts
+### Analytical promotion, Entry Outcomes, and alerts
 
-KD-004 remains in force. BUY NOW and SELL NOW are confirmed KR-380 execution-timing states, and KR-400 alerts are TradingView notifications. Neither state places a broker order or proves that the user entered a personal position.
+KD-004 remains in force. Under ADR-0011, KR-370 BUY NOW / SELL NOW is analytical promotion only, while current KR-380 Entry Outcomes are LONG_ENTRY_TRIGGERED / SHORT_ENTRY_TRIGGERED. KR-400 entry alerts consume only the latter versioned transitions. No state places a broker order or proves personal entry. Historical KR-380 BUY NOW / SELL NOW retains its original Version 1 meaning.
 
 ### DD-004 Timeframe Assumption
 

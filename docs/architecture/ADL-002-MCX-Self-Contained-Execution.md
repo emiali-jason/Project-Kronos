@@ -27,7 +27,7 @@ For the current MCX Metals model:
 
 - reference Daily, 4H, and 1H provide supporting context;
 - MCX 1H is the only executable chart;
-- BUY NOW and SELL NOW may occur only on confirmed MCX 1H context;
+- current KR-380 LONG_ENTRY_TRIGGERED and SHORT_ENTRY_TRIGGERED may occur only on confirmed MCX 1H context;
 - the MCX 1H panel must show the highest-priority remaining blockers;
 - the trader must not need to open a reference chart to learn why execution is pending.
 
@@ -39,7 +39,7 @@ For the current MCX Metals model:
 | Silver | `COMEX:SI1!` |
 | Copper | `COMEX:HG1!` |
 
-Reference charts may be used for diagnostics and validation. They cannot emit executable MCX BUY NOW/SELL NOW states because they do not satisfy the MCX 1H execution gate.
+Reference charts may be used for diagnostics and validation. They cannot emit KR-380 MCX Entry Outcomes because they do not satisfy the MCX 1H execution gate. KR-370 analytical BUY NOW / SELL NOW remains upstream and non-executable.
 
 ## Blocker Translation
 

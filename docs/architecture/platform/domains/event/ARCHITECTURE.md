@@ -1,7 +1,7 @@
 # DOMAIN-009 — Event Domain
 Status: Approved
 Owner: Chief Architect
-Version: 1.0
+Version: 1.1
 
 ## Purpose
 
@@ -11,7 +11,7 @@ Own platform event semantics without acquiring ownership of the business outcome
 
 - Own Platform Events as the single platform semantic responsibility.
 - Publish completed domain events without reinterpreting their source meaning.
-- Preserve KR-400 ownership of confirmed BUY NOW / SELL NOW alert-event edges.
+- Preserve KR-400 ownership of confirmed KR-380 LONG_ENTRY_TRIGGERED / SHORT_ENTRY_TRIGGERED alert-event edges.
 - Keep event publication outside business judgment and execution timing.
 
 ## Non-Responsibilities
@@ -24,7 +24,7 @@ Own platform event semantics without acquiring ownership of the business outcome
 ## Published Contracts
 
 - Platform Event Contract — the authoritative event meaning derived from an already completed domain outcome.
-- Confirmed Execution Alert Event Contract — the current KR-400 BUY NOW / SELL NOW event-edge meaning.
+- Confirmed Entry Outcome Alert Event Contract — the current KR-400 long/short entry-trigger event-edge meaning. KR-370 analytical promotion is excluded unless a later UX-10 decision authorizes a separate notification family.
 
 ## Consumed Contracts
 

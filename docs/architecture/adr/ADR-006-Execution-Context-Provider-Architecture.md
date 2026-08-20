@@ -15,6 +15,13 @@
 **Review Authority:** Not stated
 **Repository Location:** `docs/architecture/adr/ADR-006-Execution-Context-Provider-Architecture.md`
 
+**Partial supersession:** The clauses assigning the literals `BUY NOW` /
+`SELL NOW` exclusively to KR-380, and prohibiting those literals as a distinct
+KR-370 analytical-promotion state family, are superseded by
+[ADR-0011](ADR-0011-KR-370-ANALYTICAL-PROMOTION-AND-KR-380-ENTRY-OUTCOME-SEMANTICS.md).
+This historical decision text is preserved. KR-380 final entry-timing ownership,
+KR-380A provider boundaries, and KR-380 sole-consumer status are not superseded.
+
 ---
 
 # Context

@@ -52,6 +52,13 @@ Providers shall not:
 - Produce SELL READY
 - Produce BUY NOW
 - Produce SELL NOW
+- Produce any KR-370 analytical-promotion or KR-380 Entry Outcome state
+
+The legacy literals remain listed to preserve the historical prohibition. Under
+[ADR-0011](../adr/ADR-0011-KR-370-ANALYTICAL-PROMOTION-AND-KR-380-ENTRY-OUTCOME-SEMANTICS.md),
+the prohibition applies equally to current KR-370 analytical states and current
+KR-380 `LONG_ENTRY_TRIGGERED` / `SHORT_ENTRY_TRIGGERED` outcomes. No provider
+responsibility or payload field changes.
 
 ---
 
@@ -157,6 +164,7 @@ The following invariants shall always hold:
 
 - PP-007 — Execution Semantics Across Markets
 - ADR-006 — Execution Context Provider Architecture
+- ADR-0011 — KR-370 Analytical Promotion and KR-380 Entry Outcome Semantics
 - ECPC-001 — Execution Context Payload Contract
 - ECM-001 — Execution Context Model
 - ADL-003 — Execution Context Adapters

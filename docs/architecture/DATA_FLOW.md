@@ -341,22 +341,23 @@ KES collects, validates, standardizes, and packages that evidence before KR-360 
 
 ### 2. Decision
 
-KR-370 consumes prior public intelligence outputs and uses KR-341 as the authoritative consolidated directional contract before producing one progressive decision state:
+KR-370 consumes governed current Native and same-run post-Review public evidence before producing one versioned analytical-promotion state:
 
-- AVOID;
-- WAIT;
-- WATCH LONG;
-- WATCH SHORT;
+- NO SETUP;
+- POTENTIAL BUY SETUP;
+- POTENTIAL SELL SETUP;
 - BUY READY;
-- SELL READY.
+- SELL READY;
+- BUY NOW;
+- SELL NOW.
 
-KR-370 owns direction and readiness. It does not issue BUY NOW or SELL NOW and does not access raw Daily/4H/1H market data. Final BUY READY and SELL READY states require KR-341's consolidated directional bias rather than KR-300's local Daily trend direction alone. KR-341 treats Weekly Neutral as permissive, requires Confirmed Daily direction for READY permission, allows Developing Daily to support WATCH only, and separates Neutral from Conflicted evidence.
+KR-370 owns analytical promotion. Its BUY NOW / SELL NOW means only that all governed KR-370 promotion criteria are satisfied; it is not an Entry Outcome and grants no execution, Risk, Sponsor-decision, position, fill, or broker authority. KR-370 consumes governed public facts and does not recreate raw timeframe engines. Exact current BUY NOW / SELL NOW alone may establish eligibility for Step 31. READY, POTENTIAL, and NO SETUP remain analytical only.
 
 ```text
-Intelligence public outputs
-  -> KR-341 consolidated directional bias
-  -> KR-370 direction/readiness
-  -> decision reason, blocker, review point, and checklist
+Native PROBABLE + same-run V3 Review
+  -> KR-370 analytical promotion
+  -> versioned state, reason, criteria, and authority declaration
+  -> exact BUY NOW / SELL NOW only: Step-31 eligibility
 ```
 
 ### 3. Execution Context
@@ -380,15 +381,16 @@ KR-380A does not create separate Daily, 4H, and 1H copies of the intelligence co
 
 ### 4. Execution Timing
 
-KR-380 acts only when KR-370 says BUY READY or SELL READY.
+KR-380 acts only after exact KR-370 analytical promotion complete, immutable Step-31 geometry, DOMAIN-007 Risk permission, and the existing governed timing inputs are valid.
 
 ```text
-BUY READY  -> FORMING / EXTENDED / FAILED / BUY NOW
-SELL READY -> FORMING / EXTENDED / FAILED / SELL NOW
-Other KR-370 states -> NO TRIGGER
+KR-370 BUY NOW  + long geometry + Risk -> FORMING / EXTENDED / FAILED / LONG_ENTRY_TRIGGERED
+KR-370 SELL NOW + short geometry + Risk -> FORMING / EXTENDED / FAILED / SHORT_ENTRY_TRIGGERED
+Other KR-370 states                         -> no Step-31 progression
+Invalid/missing downstream authority        -> NO_TRIGGER / fail closed
 ```
 
-Final BUY NOW, SELL NOW, EXTENDED, and FAILED outcomes require confirmed MCX 1H context. KR-380 cannot infer a direction, reverse KR-370, or upgrade WATCH to an entry.
+Final LONG_ENTRY_TRIGGERED, SHORT_ENTRY_TRIGGERED, EXTENDED, and FAILED outcomes retain the existing confirmed timing/context requirements. KR-380 cannot infer direction, reverse KR-370, upgrade incomplete analytical promotion, change Step-31 geometry, or bypass Risk.
 
 KR-380 also publishes an ordered blocker queue. KR-705 translates that queue into trader-readable Need, Next, and Then rows.
 
@@ -396,11 +398,11 @@ KR-380 also publishes an ordered blocker queue. KR-705 translates that queue int
 
 KR-390A supplies the narrow confirmed structure reference required for the initial and managed model stop. It uses completed MCX 1H execution bars and does not duplicate KR-275.
 
-KR-390 starts a model trade only from confirmed `outTriggerBuy` or `outTriggerSell`.
+KR-390 starts a new current model trade only from an exact Version 2 KR-380 `LONG_ENTRY_TRIGGERED` or `SHORT_ENTRY_TRIGGERED` Entry Outcome with valid geometry and Risk binding. Historical Version 1 trigger records remain restorable but cannot create a new current model trade.
 
 ```text
 NO TRADE
-  -> confirmed BUY NOW / SELL NOW
+  -> confirmed LONG_ENTRY_TRIGGERED / SHORT_ENTRY_TRIGGERED
   -> HOLD
   -> PROTECT at qualifying progress
   -> TRAIL from confirmed structure
@@ -416,17 +418,18 @@ KR-390 tracks the objective KRONOS model trade whether or not the user personall
 
 ### 6. Alerts
 
-KR-400 consumes KR-380 public outputs only and defines two alert types:
+KR-400 consumes versioned KR-380 Entry Outcomes only and defines two current alert types:
 
-- KRONOS BUY NOW;
-- KRONOS SELL NOW.
+- KRONOS ENTRY TRIGGERED — LONG;
+- KRONOS ENTRY TRIGGERED — SHORT.
 
 The alert event fires only on the transition into the confirmed trigger state. A persistent trigger state must not produce duplicate alerts on later calculations.
 
 ```text
-new confirmed outTriggerBuy edge  -> KRONOS BUY NOW alert
-new confirmed outTriggerSell edge -> KRONOS SELL NOW alert
-all other states                  -> no alert
+new KR380_LONG_ENTRY_TRIGGERED edge  -> KRONOS ENTRY TRIGGERED — LONG alert
+new KR380_SHORT_ENTRY_TRIGGERED edge -> KRONOS ENTRY TRIGGERED — SHORT alert
+KR-370 analytical transition         -> no KR-400 entry alert
+all other states                     -> no alert
 ```
 
 TradingView handles alert creation, mobile push, and delivery. KRONOS places no broker order. See [ADL-005](ADL-005-Alert-Architecture.md).
@@ -438,8 +441,8 @@ KR-705 consumes public outputs and presents:
 - explicit Exchange Availability from EAIC-001 when available;
 - trend, quality, acceptance, momentum, compression, opportunity, and confidence;
 - KR-390 model-trade status in the Risk row;
-- KR-380 execution state in the Entry row;
-- KR-370 decision state in the Decision row;
+- KR-380 versioned Entry Outcome in the Entry row;
+- KR-370 analytical-promotion state in the Decision row;
 - the most relevant decision or execution blockers in Need, Next, and Then;
 - core data status.
 
@@ -449,12 +452,12 @@ EAIC-001 Exchange Availability flows from KR-200 to KR-705 for presentation only
 
 ### Reference Charts Versus Execution Chart
 
-| Context | Role | May issue executable MCX BUY NOW/SELL NOW? |
+| Context | Role | May issue a current KR-380 MCX Entry Outcome? |
 |---|---|---:|
 | COMEX/NYMEX Daily | Strategic/reference support | No |
 | COMEX/NYMEX 4H | Structure, acceptance, compression support | No |
 | COMEX/NYMEX 1H | Momentum/timing support | No |
-| MCX 1H | Self-contained execution venue | Yes, after KR-370 readiness and confirmed KR-380 timing |
+| MCX 1H | Self-contained execution venue | Yes, after KR-370 analytical promotion, Step-31 geometry, Risk, and confirmed KR-380 timing |
 
 Reference charts may expose their own analytical states for diagnostics, but they cannot issue an MCX executable trigger.
 

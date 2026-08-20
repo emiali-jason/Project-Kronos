@@ -49,6 +49,8 @@ Provide navigation to the approved KRONOS Platform Architecture v1.0 documents a
 - [KRONOS Engine Ownership](../ENGINE_OWNERSHIP.md)
 - [Project KRONOS Data Flow](../DATA_FLOW.md)
 - [ADR-006 — Execution Context Provider Architecture](../adr/ADR-006-Execution-Context-Provider-Architecture.md)
+- [ADR-0011 — KR-370 Analytical Promotion and KR-380 Entry Outcome Semantics](../adr/ADR-0011-KR-370-ANALYTICAL-PROMOTION-AND-KR-380-ENTRY-OUTCOME-SEMANTICS.md)
+- [KR-370 / KR-380 state-family contracts](../interfaces/KR-370-KR-380-STATE-FAMILY-CONTRACTS.md)
 - [PP-007 — Execution Semantics Across Markets](../principles/PP-007-Execution-Semantics-Across-Markets.md)
 
 ## Swing V1 Step-32 / Step-33 Approved Extensions

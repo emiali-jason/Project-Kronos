@@ -38,7 +38,7 @@ Existing execution ownership remains defined by [Engine Ownership](../ENGINE_OWN
 3. Execution Context communication occurs only through ECIC-001.
 4. A published Execution Context is immutable for its execution evaluation cycle.
 5. Consumers interpret only standardized context behavior, never provider implementation details.
-6. Qualification is distinct from execution authorization and does not create BUY READY, SELL READY, BUY NOW, or SELL NOW.
+6. Qualification is distinct from analytical promotion and entry authorization; it creates neither a KR-370 promotion state nor a KR-380 Entry Outcome.
 7. Execution Context behavior is market-neutral even when provider evaluation is market-specific.
 8. No lifecycle rule in this model changes the repository-defined responsibilities of KR-370, KR-380, or any other engine.
 
@@ -107,7 +107,7 @@ For this behavioral model, the provider:
 - produces one standardized Execution Context for an evaluation cycle;
 - reports execution qualification behavior without authorizing execution;
 - publishes through the Execution Context Contract;
-- does not generate BUY READY, SELL READY, BUY NOW, or SELL NOW.
+- does not generate any KR-370 analytical-promotion state or KR-380 Entry Outcome.
 
 This section does not add to or reinterpret ADR-006.
 
@@ -199,6 +199,11 @@ ECM-001 does not define fields, types, serialization, payload structure, or cons
 
 ECM-001 does not broaden provider responsibility, identify new consumers, or modify execution ownership.
 
+[ADR-0011](../adr/ADR-0011-KR-370-ANALYTICAL-PROMOTION-AND-KR-380-ENTRY-OUTCOME-SEMANTICS.md)
+supersedes only the affected state-name and analytical-promotion ownership
+clauses. It leaves this Execution Context lifecycle, KR-380A ownership, and
+KR-380 sole-consumer boundary unchanged.
+
 ## 15. Relationship to ADL-003
 
 [ADL-003](../ADL-003-Execution-Context-Adapters.md) establishes the narrow adapter/data-access architecture, source-isolation rules, and adapter boundaries. It does not define Execution Context readiness, lifecycle, unavailable behavior, or other behavioral semantics.
@@ -218,7 +223,7 @@ Future approved architecture may define:
 - onboarding behavior for additional markets or products;
 - additional consumers through a separate approved architecture decision.
 
-Each extension must preserve PP-007, ADR-006, ECIC-001, ADL-003, and existing execution ownership as applicable. Material changes require the repository’s architecture-governance process.
+Each extension must preserve PP-007, ADR-006 as partially superseded by ADR-0011, ECIC-001, ADL-003, and existing execution ownership as applicable. Material changes require the repository’s architecture-governance process.
 
 ## 17. Out of Scope
 
@@ -230,7 +235,7 @@ This model does not define or change:
 - contract-version field representation;
 - provider implementation, market rules, routing, thresholds, or data sources;
 - KR-370, KR-380, KR-390, KR-400, or KR-705 responsibilities;
-- BUY READY, SELL READY, BUY NOW, or SELL NOW semantics;
+- KR-370 analytical-promotion or KR-380 Entry Outcome semantics;
 - decision direction, readiness, trigger logic, trade management, alerts, or presentation;
 - failure-handling outcomes owned by product architecture;
 - implementation sequencing, migration code, or regression tests;

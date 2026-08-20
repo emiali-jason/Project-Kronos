@@ -1,7 +1,7 @@
 # DOMAIN-007 — Risk Domain
 Status: Approved
 Owner: Chief Architect
-Version: 1.0
+Version: 1.1
 
 ## Purpose
 
@@ -17,7 +17,7 @@ Own the authoritative decision of whether an approved Business Judgment is allow
 ## Non-Responsibilities
 
 - Instrument identity, Market Facts, or Business Judgment.
-- Execution timing, BUY NOW / SELL NOW, or orders.
+- KR-370 analytical promotion, KR-380 entry timing/Entry Outcomes, or orders.
 - Positions or Portfolio State.
 - Provider integration, market schedules, platform events, runtime configuration, or audit.
 
@@ -34,7 +34,7 @@ Own the authoritative decision of whether an approved Business Judgment is allow
 
 - Risk answers whether action is allowed and must not answer what happened, what it means, or whether execution occurred.
 - Risk must not recreate Validation judgment or Portfolio state.
-- Risk permission alone must not produce BUY NOW / SELL NOW.
+- Risk permission alone must produce neither KR-370 analytical promotion nor a KR-380 Entry Outcome.
 - No current engine responsibility is silently reassigned by this domain-level approval.
 
 ## Approved Constitutional References

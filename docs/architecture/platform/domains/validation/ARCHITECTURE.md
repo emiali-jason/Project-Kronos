@@ -1,7 +1,7 @@
 # DOMAIN-003 — Validation Domain
 Status: Approved
 Owner: Chief Architect
-Version: 1.0
+Version: 1.1
 
 ## Purpose
 
@@ -12,13 +12,13 @@ Own Business Judgment by interpreting approved Market Facts and answering what t
 - Own Business Judgment as the single platform semantic responsibility.
 - Consume Market Facts without recreating Observation.
 - Publish authoritative business judgment for downstream Risk and Execution consumption.
-- Preserve KR-370 ownership of direction and BUY READY / SELL READY within the current KRONOS architecture.
+- Preserve KR-370 ownership of Sponsor-facing analytical promotion under ADR-0011.
 
 ## Non-Responsibilities
 
 - Instrument identity or market-fact production.
 - Risk approval.
-- Final execution timing, BUY NOW / SELL NOW, or orders.
+- Final entry timing, KR-380 Entry Outcomes, or orders.
 - Positions or model-trade state.
 - Provider integration, market schedules, event transport, runtime configuration, or audit.
 
@@ -34,8 +34,9 @@ Own Business Judgment by interpreting approved Market Facts and answering what t
 
 - Validation answers what the facts mean and must not answer whether risk permits action or whether execution has occurred.
 - Validation is the domain-level owner of Business Judgment; existing KR-360 confidence and KR-370 decision responsibilities remain distinct within that domain boundary.
-- KR-370 remains the sole current owner of direction and BUY READY / SELL READY.
-- Validation must not create BUY NOW / SELL NOW or reinterpret Execution Context.
+- KR-370 remains the sole current owner of analytical BUY NOW, SELL NOW, BUY READY, SELL READY, POTENTIAL BUY/SELL SETUP, and NO SETUP.
+- Validation must not create KR-380 LONG_ENTRY_TRIGGERED / SHORT_ENTRY_TRIGGERED Entry Outcomes or reinterpret Execution Context.
+- KR-370 analytical BUY NOW / SELL NOW carries no Risk, execution, Sponsor-decision, position, fill, alert-event, or broker authority.
 - Validation evidence does not by itself alter architecture or implementation.
 
 ## Approved Constitutional References

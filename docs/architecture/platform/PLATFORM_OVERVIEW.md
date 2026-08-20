@@ -1,7 +1,7 @@
 # KRONOS Platform Architecture Overview
 Status: Approved
 Owner: Chief Architect
-Version: 1.0
+Version: 1.1
 
 ## Platform Vision
 
@@ -52,11 +52,11 @@ The platform preserves the existing KRONOS decision and execution boundaries whi
 
 ## Existing KRONOS Boundaries
 
-- KR-370 owns direction and BUY READY / SELL READY.
-- KR-380 owns final execution timing and BUY NOW / SELL NOW.
+- KR-370 owns Sponsor-facing analytical promotion, including analytical BUY NOW / SELL NOW with no execution authority.
+- KR-380 owns final entry timing and current LONG_ENTRY_TRIGGERED / SHORT_ENTRY_TRIGGERED Entry Outcomes.
 - KR-380 is the sole currently authorized consumer of the entry Execution Context.
 - KR-390 owns the objective KRONOS model trade.
-- KR-400 owns confirmed BUY NOW / SELL NOW alert events.
+- KR-400 owns confirmed KR-380 long/short entry-trigger alert events; it does not consume KR-370 promotion transitions.
 - PP-007 requires identical execution semantics across markets.
 - ENGINE_OWNERSHIP and DATA_FLOW remain authoritative for current engine responsibilities and information paths.
 

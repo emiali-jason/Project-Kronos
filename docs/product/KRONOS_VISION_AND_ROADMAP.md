@@ -21,7 +21,7 @@ KRONOS is:
 - extensible;
 - execution-aware.
 
-The platform should help a trader understand why the market is or is not ready, why execution is or is not allowed, and what objective model trade state KRONOS is tracking after a confirmed trigger. BUY NOW and SELL NOW are confirmed execution-timing states, not broker orders.
+The platform should help a trader understand analytical promotion, why execution is or is not allowed, and what objective model trade state KRONOS is tracking after a confirmed trigger. KR-370 BUY NOW / SELL NOW is analytical only; current KR-380 LONG_ENTRY_TRIGGERED / SHORT_ENTRY_TRIGGERED is the confirmed Entry Outcome. Neither is a broker order.
 
 ## 2. Mission
 
@@ -253,7 +253,7 @@ Platform v1.0 should be considered successful when:
 - KR-390 and KR-400 have sufficient validation evidence for supported model claims;
 - documentation, engine status, validation records, and product memory are aligned;
 - TradingView compile/runtime behavior is clean for the supported symbol matrix;
-- BUY NOW / SELL NOW states and alerts remain explainable and non-automated.
+- KR-370 analytical promotion and KR-380 Entry Outcome states and alerts remain explainable and non-automated.
 
 ### Platform v2.0
 

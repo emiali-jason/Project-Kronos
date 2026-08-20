@@ -51,12 +51,12 @@ KES is an unnumbered architectural boundary over existing public evidence contra
 | KR-345 | How is the instrument performing relative to its benchmark? | Market relative, sector relative, relative evidence scoring, and relative state classification | Trend, trend quality, compression, market acceptance, momentum, price action, opportunity, confidence, decisions, execution, trade management, alerts, or presentation | Public outputs from KR-252, KR-260A, and KR-260B only | Relative readiness/status/reason/score/state/summary plus market/sector relative values, states, trends, benchmark symbol, and lookback | Future evidence synthesis consumers only; no KR-360/KR-370/KR-380 influence in this release |
 | KR-350 | Is there a directional opportunity context? | Bullish, bearish, or absent opportunity context | Entry trigger or trade management | Context and review outputs | Opportunity state/text/direction flags | KR-360; KR-370; KR-380; KR-705 |
 | KR-360 | How confident is the combined evidence? | Explainable 0-100 confidence and gates | Direction, entry timing, or decisions | Public outputs from KR-341, KR-310, KR-315, KR-320, KR-330, KR-340, and KR-350; KR-335 and KR-345 are not consumed in this release | Confidence score/state/reason/readiness | KR-370; KR-380; KR-705 |
-| KR-370 | What should the trader do now? | Direction and readiness: AVOID, WAIT, WATCH, BUY READY, SELL READY | Entry triggers, raw timeframe calculations, alerts, stops, or trade management | Public outputs from prior engines, with KR-341 as directional authority | Decision state/text/reason, blockers, checklist, state flags | KR-380; KR-705 |
+| KR-370 | How close is this reviewed Probable to an actionable analytical setup? | Sponsor-facing analytical promotion: BUY NOW, SELL NOW, BUY READY, SELL READY, POTENTIAL BUY/SELL SETUP, NO SETUP | Entry timing, Entry Outcomes, Risk approval, Sponsor decisions, positions, fills, alerts, stops, geometry, broker actions, or trade management | Governed current Native and same-run post-Review public evidence under the approved KR-370 contract | Versioned analytical-promotion state, reasons, criteria, bindings, and authority declaration | Step 31 eligibility; KR-705 |
 | KR-380A | Which minimum reference and MCX execution facts does timing require? | Narrow execution-context translation | Full Daily/4H/1H intelligence stacks or a directional decision | Narrow KR-260/270 datasets and prior public context | Reference permissions/readiness/blockers and MCX 1H context | KR-380; KR-390A gating |
-| KR-380 | Has the entry trigger occurred? | Execution timing only | Bullish/bearish direction, WATCH/READY decisions, stops, targets, or management | KR-370 READY direction; public intelligence outputs; KR-380A | NO TRIGGER, FORMING, BUY NOW, SELL NOW, EXTENDED, FAILED and blocker queue | KR-390; KR-400; KR-705 |
+| KR-380 | Has the entry trigger occurred? | Final entry timing and Entry Outcome only | Bullish/bearish direction, analytical promotion, geometry changes, stops, targets, Risk approval, fills, or management | Exact current candidate after KR-370 analytical promotion, immutable Step-31 geometry, Risk permission, public intelligence outputs, governed Observations, and KR-380A | NO_TRIGGER, FORMING, LONG_ENTRY_TRIGGERED, SHORT_ENTRY_TRIGGERED, EXTENDED, FAILED and blocker queue | KR-390; KR-400; KR-705 |
 | KR-390A | Which confirmed MCX 1H structure reference can protect a model trade? | Narrow completed-bar swing stop references | A full structure engine, trade direction, or management policy | Execution H/L/C and MCX 1H context | Execution close, confirmed swing low/high, readiness | KR-390 |
 | KR-390 | What is the state of the objective KRONOS model trade? | Persistent model-trade entry, stop, targets, HOLD, PROTECT, TRAIL, EXIT, INVALIDATED | Personal-position tracking, broker orders, alerts, or new direction | Confirmed KR-380 BUY/SELL event; KR-390A | Trade state, direction, model prices, reasons, lifecycle flags | KR-705; future management interfaces |
-| KR-400 | Did a new confirmed BUY NOW or SELL NOW event occur? | Exactly two TradingView alert event types | Trading intelligence, entry timing, trade management, or broker automation | KR-380 public BUY/SELL and confirmation outputs | Buy/sell alert event, readiness, status text | TradingView alerts |
+| KR-400 | Did a new confirmed KR-380 Entry Outcome occur? | Exactly two current entry-alert event types | Trading intelligence, analytical promotion, entry timing, trade management, KR-370 notifications, or broker automation | KR-380 Version 2 LONG_ENTRY_TRIGGERED / SHORT_ENTRY_TRIGGERED transitions | Long/short entry-trigger alert event, readiness, status text | TradingView alerts |
 | KR-705 | What intelligence should the trader see? | Trader-facing display, concise translation, status presentation, Hidden/Trader/Developer panel modes, and optional Developer diagnostic sections | Trading calculations, confidence weighting, decisions, timing, management, alerts, or Exchange Availability inference | Public outputs from upstream engines and adapters; EAIC-001 Exchange Availability when available | Visual table only | Trader |
 | KR-710 | Why is the current active blocker active? | Deterministic blocker evidence contract: owner, severity, category, metric, current, required, comparator, pass/fail, clear condition | Decisions, thresholds, scoring, raw market calculations, presentation, or trader wording | Public source-engine outputs only | Active Blocker explainability contract | KR-711; KR-705 Developer Mode; validation records |
 | KR-711 | How should the active blocker be worded for Trader Mode? | Action-oriented Trader Mode wording from KR-710 | Raw market inspection, condition calculation, thresholds, decisions, or diagnostics | KR-710 public blocker contract | Concise trader Need text and category | KR-705 Trader Mode |
@@ -65,11 +65,12 @@ KES is an unnumbered architectural boundary over existing public evidence contra
 
 ### KR-370 and KR-380
 
-- KR-370 owns direction and readiness but never triggers an entry.
-- KR-380 acts only when KR-370 is BUY READY or SELL READY.
-- Only BUY READY may become BUY NOW.
-- Only SELL READY may become SELL NOW.
-- KR-380 must not upgrade WATCH states or infer a new direction.
+- KR-370 owns analytical promotion but never produces an Entry Outcome.
+- Only exact current KR-370 BUY NOW or SELL NOW may establish eligibility for the governed Step-31 path; READY, POTENTIAL, and NO SETUP remain analytical only.
+- KR-380 acts only after Step-31 geometry, Risk permission, and its existing Observation and Execution Context gates are valid.
+- Only a valid long path may become LONG_ENTRY_TRIGGERED; only a valid short path may become SHORT_ENTRY_TRIGGERED.
+- KR-380 must not infer direction, upgrade an incomplete analytical-promotion state, change geometry, or bypass Risk.
+- Historical KR-380 BUY NOW / SELL NOW remains readable only under KRONOS-KR-380-ENTRY-OUTCOME-V1 and is never reinterpreted as KR-370 promotion.
 
 ### KR-390
 
@@ -79,7 +80,7 @@ KES is an unnumbered architectural boundary over existing public evidence contra
 
 ### KR-400
 
-- KR-400 owns only the event edge for confirmed BUY NOW and SELL NOW alerts.
+- KR-400 owns only the current event edge for confirmed KR-380 LONG_ENTRY_TRIGGERED and SHORT_ENTRY_TRIGGERED alerts. Historical BUY NOW / SELL NOW alert records retain their original Version 1 meaning.
 - It does not create trading intelligence or repeat KR-380 timing logic.
 - TradingView delivers notifications; KRONOS does not automate a broker.
 

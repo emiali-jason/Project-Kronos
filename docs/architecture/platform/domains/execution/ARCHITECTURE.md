@@ -1,7 +1,7 @@
 # DOMAIN-004 — Execution Domain
 Status: Approved
 Owner: Chief Architect
-Version: 1.0
+Version: 1.1
 
 ## Purpose
 
@@ -11,7 +11,7 @@ Own execution action and order semantics while preserving KR-380 final execution
 
 - Own Orders as the single platform semantic responsibility.
 - Consume approved Business Judgment and Risk Approval.
-- Preserve KR-380 ownership of final execution timing, final execution authorization, and BUY NOW / SELL NOW.
+- Preserve KR-380 ownership of final entry timing, final entry authorization, and LONG_ENTRY_TRIGGERED / SHORT_ENTRY_TRIGGERED Entry Outcomes.
 - Consume standardized Execution Context only through the approved provider and interface boundaries.
 - Publish the completed Execution Outcome for Portfolio.
 
@@ -38,9 +38,9 @@ Own execution action and order semantics while preserving KR-380 final execution
 
 - KR-380 remains the sole currently authorized consumer of the entry Execution Context.
 - KR-380A remains the current concrete entry Execution Context Provider within ADL-003's narrow boundary.
-- Execution Context Providers must not own direction, readiness, final execution authorization, BUY NOW / SELL NOW, orders, or positions.
+- Execution Context Providers must not own direction, analytical promotion, final entry authorization, Entry Outcomes, orders, or positions.
 - Execution semantics remain identical across markets under PP-007.
-- BUY NOW and SELL NOW remain confirmed timing states and are not broker orders.
+- LONG_ENTRY_TRIGGERED and SHORT_ENTRY_TRIGGERED are confirmed KR-380 Entry Outcomes and are not broker orders. KR-370 analytical BUY NOW / SELL NOW is upstream Business Judgment and cannot bypass Step 31, Risk, or KR-380.
 
 ## Approved Constitutional References
 

@@ -192,6 +192,7 @@ Validation evidence does not approve architecture by itself.
 - [ECIC-001](ECIC-001-Execution-Context-Interface-Contract.md) owns the payload-neutral communication interface and assigns payload-definition governance to ECPC-001.
 - [ECM-001](../models/ECM-001-Execution-Context-Model.md) is Approved, owns Execution Context behavior, and does not define payload schema.
 - [ADR-006](../adr/ADR-006-Execution-Context-Provider-Architecture.md) is Approved and defines provider and consumer ownership without defining payload schema.
+- [ADR-0011](../adr/ADR-0011-KR-370-ANALYTICAL-PROMOTION-AND-KR-380-ENTRY-OUTCOME-SEMANTICS.md) is Approved and governs the distinct KR-370 analytical-promotion and KR-380 Entry Outcome state families without changing this payload.
 - [ADL-003](../ADL-003-Execution-Context-Adapters.md) remains the approved narrow-adapter architecture.
 - [PP-007](../principles/PP-007-Execution-Semantics-Across-Markets.md) requires market-neutral execution semantics.
 
@@ -356,32 +357,38 @@ KR-380A owns:
 
 KR-380 owns:
 
-- consuming KR-370 direction and BUY READY / SELL READY through their separate upstream contract;
+- consuming the exact Risk-permitted, geometry-bound downstream path derived from current KR-370 analytical BUY NOW / SELL NOW through separate upstream contracts;
 - consuming the standardized Execution Context without reconstructing provider logic;
 - final execution timing;
-- mapping the authoritative Execution Context Outcome into its existing public execution states;
-- final execution authorization and BUY NOW / SELL NOW;
+- mapping the authoritative Execution Context Outcome into its current Version 2 Entry Outcome states;
+- final entry authorization and LONG_ENTRY_TRIGGERED / SHORT_ENTRY_TRIGGERED;
 - publishing its existing ordered execution blocker queue.
 
-KR-380A shall not own or establish direction, BUY READY, SELL READY, final execution authorization, BUY NOW, SELL NOW, or trade management. KR-380 shall not inspect provider internals, reproduce provider interpretation, or derive a replacement Execution Context Outcome.
+KR-380A shall not own or establish direction, KR-370 analytical promotion, final entry authorization, KR-380 Entry Outcomes, or trade management. KR-380 shall not inspect provider internals, reproduce provider interpretation, or derive a replacement Execution Context Outcome.
 
 ### KR-380 behavior mapping
 
-| KR-370 input | Execution Context | KR-380 final timing | KR-380 public result |
+| Governed upstream eligibility | Execution Context | KR-380 final timing | KR-380 Version 2 public result |
 |---|---|---|---|
-| No BUY READY or SELL READY | Any available outcome | Any | `NO TRIGGER` |
-| BUY READY or SELL READY | `PENDING` | Any | `FORMING` |
-| BUY READY | `QUALIFIED` | Not final | `FORMING` |
-| SELL READY | `QUALIFIED` | Not final | `FORMING` |
-| BUY READY | `QUALIFIED` | Final | `BUY NOW` |
-| SELL READY | `QUALIFIED` | Final | `SELL NOW` |
-| BUY READY or SELL READY | `EXTENDED` | Not final | `FORMING` |
-| BUY READY or SELL READY | `EXTENDED` | Final | `EXTENDED` |
-| BUY READY or SELL READY | `FAILED` | Not final | `FORMING` |
-| BUY READY or SELL READY | `FAILED` | Final | `FAILED` |
+| No exact current KR-370 analytical BUY NOW / SELL NOW, Step-31 geometry, and Risk permission | Any available outcome | Any | `NO_TRIGGER` |
+| Valid direction-bound path | `PENDING` | Any | `FORMING` |
+| Valid long path | `QUALIFIED` | Not final | `FORMING` |
+| Valid short path | `QUALIFIED` | Not final | `FORMING` |
+| Valid long path | `QUALIFIED` | Final | `LONG_ENTRY_TRIGGERED` |
+| Valid short path | `QUALIFIED` | Final | `SHORT_ENTRY_TRIGGERED` |
+| Valid direction-bound path | `EXTENDED` | Not final | `FORMING` |
+| Valid direction-bound path | `EXTENDED` | Final | `EXTENDED` |
+| Valid direction-bound path | `FAILED` | Not final | `FORMING` |
+| Valid direction-bound path | `FAILED` | Final | `FAILED` |
 | Any | Unavailable | Any | Stop Execution Context processing; execution does not proceed. |
 
-KR-380 retains direction-specific FORMING behavior through the separate KR-370 direction/readiness contract. The Execution Context neither supplies nor infers direction.
+KR-380 retains direction-specific FORMING behavior through separate versioned promotion, geometry, and Risk contracts. The Execution Context neither supplies nor infers direction, promotion, geometry, or Risk permission.
+
+The historical KR-380 Version 1 mapping used `BUY_NOW` / `SELL_NOW` for the two
+final triggered outcomes. It remains readable/restorable under
+`KRONOS-KR-380-ENTRY-OUTCOME-V1` but is not a current producer mapping. The
+current and historical state families are governed by the
+[KR-370/KR-380 state-family contracts](KR-370-KR-380-STATE-FAMILY-CONTRACTS.md).
 
 ### Consumer boundary and dependent migration
 
@@ -419,9 +426,9 @@ KR-380 shall validate the Version 2 public contract before consumption:
 - When `outExecContextAvailable = false`, KR-380 shall stop Execution Context processing, shall not interpret `outExecContextOutcome`, and shall not proceed with execution.
 - When `outExecContextAvailable = true`, KR-380 shall treat `outExecContextOutcome` and ordered blockers as authoritative for Execution Context.
 - KR-380 shall not reconstruct, supplement, reorder, or replace provider-owned Execution Context outcome or provider-owned blocker priority.
-- KR-380 may combine separate KR-370 readiness blockers with provider-owned Execution Context blockers only for its own existing ordered execution blocker queue.
-- `BUY NOW` and `SELL NOW` require a `QUALIFIED` Execution Context outcome, corresponding KR-370 READY state, and KR-380 final timing.
-- `PENDING` maps to `FORMING` while KR-370 READY is present.
+- KR-380 may combine separate upstream eligibility blockers with provider-owned Execution Context blockers only for its own existing ordered execution blocker queue.
+- `LONG_ENTRY_TRIGGERED` and `SHORT_ENTRY_TRIGGERED` require a `QUALIFIED` Execution Context outcome, exact current KR-370 analytical promotion, immutable Step-31 geometry, Risk permission, and KR-380 final timing.
+- `PENDING` maps to `FORMING` only while the complete direction-bound upstream path is valid.
 - `EXTENDED` and `FAILED` remain non-final until KR-380 final timing permits the corresponding public final state.
 - The Execution Context Outcome shall never authorize trade execution by itself.
 
@@ -439,4 +446,4 @@ The dependent readiness migration is approved as follows:
 
 Version 2 is required because Version 1 cannot preserve the approved `PENDING`, `EXTENDED`, `FAILED`, and ordered-blocker responsibilities without consumer-side reconstruction of provider logic.
 
-Version 1 is Superseded Before Implementation. Version 2 is the active contract for implementation.
+Version 1 is Superseded Before Implementation. Version 2 remains the active Execution Context payload contract. ADR-0011 changes the separately versioned KR-380 Entry Outcome terminology, not the Version 2 payload fields or provider-owned outcomes.

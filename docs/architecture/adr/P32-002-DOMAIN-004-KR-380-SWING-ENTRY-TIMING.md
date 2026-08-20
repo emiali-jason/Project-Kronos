@@ -1,5 +1,5 @@
 # P32-002 — DOMAIN-004 / KR-380 Swing Entry Timing
-**Status:** Approved | **Version:** 1.0 | **Approved:** 2026-08-13 by Chief Architect
+**Status:** Approved | **Version:** 1.1 | **Approved:** 2026-08-13; ADR-0011 conformance approved 2026-08-21 by Chief Architect
 **Owner:** DOMAIN-004 / KR-380 | **Extension:** KR-380 and Step-31 geometry boundary
 **Dependencies:** Risk permission, monitoring binding, governed Observation and Execution Context qualification
-The normative decision is P32-002 in [the Step-32 Platform amendments](ADR-SWING-STEP-32-PLATFORM-AMENDMENTS.md). Implementation is not authorized.
+The normative decision is P32-002 in [the Step-32 Platform amendments](ADR-SWING-STEP-32-PLATFORM-AMENDMENTS.md), as conformed to [ADR-0011](ADR-0011-KR-370-ANALYTICAL-PROMOTION-AND-KR-380-ENTRY-OUTCOME-SEMANTICS.md). Current KR-380 Entry Outcomes are `LONG_ENTRY_TRIGGERED` and `SHORT_ENTRY_TRIGGERED`; historical Version 1 BUY NOW / SELL NOW remains restorable. Implementation is not authorized by this architecture record.

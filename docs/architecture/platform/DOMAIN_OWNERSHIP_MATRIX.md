@@ -2,7 +2,7 @@
 
 Status: Approved
 Owner: Chief Architect
-Version: 1.0
+Version: 1.1
 
 ## Purpose
 
@@ -196,8 +196,8 @@ Provider shall not populate Instrument directly, and Instrument shall not access
 - KR-200 retains its approved engine responsibilities. Its instrument-identity responsibility aligns to Instrument; its approved Exchange Availability production aligns to Market.
 - Existing evidence engines retain their individual ENGINE_OWNERSHIP boundaries while their published market facts align to Observation.
 - Business Judgment is a domain-level responsibility and does not merge the distinct KR-360 confidence and KR-370 decision engine responsibilities.
-- KR-370 remains the engine owner of direction and BUY READY / SELL READY within Business Judgment.
-- KR-380 remains the engine owner of final execution timing and BUY NOW / SELL NOW within Execution.
+- KR-370 is the engine owner of Sponsor-facing analytical promotion, including analytical BUY NOW / SELL NOW, within Business Judgment. Those states carry no Risk, execution, Sponsor-decision, position, fill, or broker authority.
+- KR-380 remains the engine owner of final entry timing and current LONG_ENTRY_TRIGGERED / SHORT_ENTRY_TRIGGERED Entry Outcomes within Execution.
 - The Orders assignment reserves order semantics to Execution; the current KRONOS execution contract does not place broker orders.
 - KR-390 remains the owner of the objective KRONOS model trade within Portfolio. No personal broker-position ownership is introduced.
 - KR-400 retains confirmed alert-event ownership within Event.
@@ -223,4 +223,4 @@ Provider shall not populate Instrument directly, and Instrument shall not access
 
 ## Swing V1 Step-32 Approved Extension — 2026-08-13
 
-Governed by [P32-001–P32-008](../adr/ADR-SWING-STEP-32-PLATFORM-AMENDMENTS.md): Validation owns Business Judgment; Risk owns Risk results; Swing V1 Trade Candidate Lifecycle owns pre-entry state; KR-380/Execution owns Entry timing; KR-390/Portfolio owns objective model lifecycle; DOMAIN-005 separately represents Sponsor LIVE/PAPER positions; Observation owns admitted facts; Event publishes outcomes; Instrument owns execution mapping/tick/precision/lot; Market owns session/calendar/availability; Audit remains read-only. Pine owns no Observation, lifecycle, decision, Risk, or execution authority. Broker execution authority is NONE.
+Governed by [ADR-0011](../adr/ADR-0011-KR-370-ANALYTICAL-PROMOTION-AND-KR-380-ENTRY-OUTCOME-SEMANTICS.md) and [P32-001–P32-008](../adr/ADR-SWING-STEP-32-PLATFORM-AMENDMENTS.md): Validation/KR-370 owns analytical promotion; Risk owns Risk results; Swing V1 Trade Candidate Lifecycle owns pre-entry state; KR-380/Execution owns Entry timing and Entry Outcomes; KR-390/Portfolio owns objective model lifecycle; DOMAIN-005 separately represents Sponsor LIVE/PAPER positions; Observation owns admitted facts; Event publishes outcomes; Instrument owns execution mapping/tick/precision/lot; Market owns session/calendar/availability; Audit remains read-only. Pine owns no Observation, lifecycle, decision, Risk, or execution authority. Broker execution authority is NONE.

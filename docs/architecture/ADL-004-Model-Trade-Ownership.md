@@ -3,7 +3,7 @@
 **Document ID:** ADL-004
 **Title:** Model Trade Ownership
 **Document Family:** Legacy Architecture Decision Log
-**Version:** Not stated
+**Version:** 1.1
 **Status:** Approved
 **Canonical Status:** Not stated
 **Classification:** Legacy Architecture Decision Log
@@ -15,7 +15,7 @@
 
 ## Context
 
-KR-380 can confirm BUY NOW or SELL NOW even when the user does not personally enter. If trade management depended on a user's unrecorded personal action, KRONOS could not evaluate its own decisions consistently or maintain an objective management state.
+KR-380 can confirm LONG_ENTRY_TRIGGERED or SHORT_ENTRY_TRIGGERED even when the user does not personally enter. If trade management depended on a user's unrecorded personal action, KRONOS could not evaluate its own decisions consistently or maintain an objective management state. Historical KR-380 Version 1 records used BUY NOW / SELL NOW for these entry-timing outcomes and retain that historical meaning.
 
 The current Pine implementation has no broker-position or personal-fill interface.
 
@@ -23,7 +23,7 @@ The current Pine implementation has no broker-position or personal-fill interfac
 
 **KR-390 manages the objective KRONOS model trade independently of whether the user personally entered.**
 
-A confirmed KR-380 BUY NOW or SELL NOW event may create one KRONOS model trade. KR-390 then maintains that model until EXIT or INVALIDATED according to its public contract.
+A confirmed current KR-380 Version 2 LONG_ENTRY_TRIGGERED or SHORT_ENTRY_TRIGGERED event may create one KRONOS model trade. A KR-370 analytical BUY NOW / SELL NOW record is invalid at this boundary. KR-390 then maintains that model until EXIT or INVALIDATED according to its public contract. Historical Version 1 restoration may preserve an already-recorded model but cannot create a new current model trade.
 
 ## Model Trade Versus Personal Position
 
@@ -41,7 +41,7 @@ The model entry, stops, and targets are analytical references. They are not brok
 
 ```text
 NO TRADE
-  -> confirmed BUY NOW / SELL NOW
+  -> confirmed LONG_ENTRY_TRIGGERED / SHORT_ENTRY_TRIGGERED
   -> HOLD
   -> PROTECT
   -> TRAIL
@@ -71,10 +71,10 @@ Until that layer exists, KR-705's trade-management display refers to the KRONOS 
 
 ## Ownership Boundaries
 
-- KR-370 owns direction and readiness.
+- KR-370 owns analytical promotion and has no Entry Outcome or model-trade authority.
 - KR-380 owns entry timing.
 - KR-390 owns the post-trigger model state.
 - KR-400 owns alerts.
 - No current engine owns personal broker-position state.
 
-See [Data Flow](DATA_FLOW.md) and [Engine Ownership](ENGINE_OWNERSHIP.md).
+See [ADR-0011](adr/ADR-0011-KR-370-ANALYTICAL-PROMOTION-AND-KR-380-ENTRY-OUTCOME-SEMANTICS.md), [Data Flow](DATA_FLOW.md), and [Engine Ownership](ENGINE_OWNERSHIP.md).

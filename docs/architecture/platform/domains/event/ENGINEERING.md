@@ -17,7 +17,7 @@ Realize approved Platform Events ownership by publishing events from completed d
 ## Responsibilities
 
 - Preserve source-domain meaning and ownership in every platform event.
-- Preserve KR-400 ownership of confirmed BUY NOW / SELL NOW alert-event edges.
+- Preserve KR-400 ownership of confirmed KR-380 LONG_ENTRY_TRIGGERED / SHORT_ENTRY_TRIGGERED alert-event edges.
 - Prevent persistent state from creating duplicate confirmed execution alert events.
 - Publish only the approved Platform Event Contract and Confirmed Execution Alert Event Contract.
 
@@ -48,7 +48,7 @@ Realize approved Platform Events ownership by publishing events from completed d
 
 ## Existing KR Engine Alignment
 
-- KR-400 retains ownership of exactly the confirmed BUY NOW and SELL NOW alert-event edges.
+- KR-400 retains ownership of exactly the current confirmed KR-380 long/short Entry Outcome alert-event edges. KR-370 analytical transitions are excluded pending separate UX-10 authority.
 - KR-380 retains ownership of the source execution timing; KR-400 does not recalculate it.
 
 ## Existing Implementation Alignment

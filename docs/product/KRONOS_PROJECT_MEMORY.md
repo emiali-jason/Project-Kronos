@@ -1,13 +1,13 @@
 # KRONOS Project Memory
 
 **Status:** Permanent project briefing
-**Date:** 2026-07-11
+**Date:** 2026-08-21
 
 Read this document before starting any future KRONOS development chat. It is the compact briefing for where the project stands and what should happen next.
 
 ## 1. Current Platform Status
 
-KRONOS is a modular market-intelligence and decision-support platform built in Pine Script for TradingView. KRONOS Core is the current shared intelligence product. It analyzes execution and reference markets, produces explainable decisions, confirms execution timing, manages objective model trades, and creates confirmed BUY NOW / SELL NOW TradingView alert events.
+KRONOS is a modular market-intelligence and decision-support platform. KRONOS Core is the current shared intelligence product. It analyzes execution and reference markets, produces explainable analytical promotion, confirms entry timing, manages objective model trades, and creates confirmed KR-380 long/short Entry Outcome alert events. KR-370 BUY NOW / SELL NOW is analytical promotion only.
 
 It is not broker automation, not a black-box AI, and not a personal-position tracker yet.
 
@@ -90,7 +90,7 @@ Brief status only:
 - KR-380A is the narrow execution-context adapter.
 - KR-390A is the narrow trade-management adapter.
 - KR-390 manages the objective KRONOS model trade and remains Foundation.
-- KR-400 owns confirmed BUY NOW / SELL NOW TradingView alert events and remains Foundation.
+- KR-400 owns confirmed KR-380 LONG_ENTRY_TRIGGERED / SHORT_ENTRY_TRIGGERED TradingView alert events and remains Foundation; KR-370 notifications require separate authority.
 - KR-705 displays and translates trader-facing intelligence.
 
 Do not duplicate the full engine registry here. Read [Engine Status](../ENGINE_STATUS.md) and [Engine Ownership](../architecture/ENGINE_OWNERSHIP.md) before changing code.
