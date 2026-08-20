@@ -358,7 +358,9 @@ def project_native_analysis_details(
         or requirement.thesis.native_assessment_sha256 != assessment.result_sha256
     ):
         return None
-    pack = review.review_pack_record
+    pack = (
+        None if review.review_pack_superseded else review.review_pack_record
+    )
     if pack is not None:
         candidate = next(
             (

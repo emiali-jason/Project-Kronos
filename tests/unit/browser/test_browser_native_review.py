@@ -44,6 +44,11 @@ from kronos.swing.v1.progression_watch import (
     ProgressionRequirementState,
     ProgressionWatchStore,
 )
+from kronos.swing.v1.pdf_visual_review import (
+    ReviewPackCandidate,
+    ReviewPackRecord,
+    ReviewPackState,
+)
 from kronos.swing.v1.tradingview import ChartTimeframe
 from kronos.swing.v1.visual_evidence_v2 import (
     VisualEvidenceV2ValidationDiagnostic,
@@ -74,6 +79,41 @@ from tests.unit.swing.v1.test_visual_evidence_v2 import _request as _visual_requ
 from tests.unit.swing.v1.test_visual_evidence_v2 import _response as _visual_response
 from tests.unit.swing.v1.test_visual_evidence_v2 import _observation as _visual_observation
 from tests.unit.swing.v1.test_native_review_chart_intake import _VisualV2Provider
+
+
+def _v2_review_pack(
+    probable,
+    *,
+    run_identity: str,
+    canonical_instrument: str | None = None,
+    assessment_sha256: str | None = None,
+) -> ReviewPackRecord:  # type: ignore[no-untyped-def]
+    candidate = ReviewPackCandidate(
+        canonical_instrument or probable.canonical_instrument,
+        probable.direction.value,
+        probable.opportunity_identity.value,
+        assessment_sha256 or probable.result_sha256,
+        canonical_instrument or probable.canonical_instrument,
+        "b" * 64,
+        ("1W", "1D", "4H", "1H"),
+    )
+    created_at = datetime(2026, 8, 20, 8, 0, tzinfo=UTC)
+    return ReviewPackRecord(
+        "KRONOS-REVIEW-" + "A" * 32,
+        run_identity,
+        "KRONOS_V2_BINDING_TEST_QUESTIONS.pdf",
+        "/tmp/KRONOS_V2_BINDING_TEST_QUESTIONS.pdf",
+        "KRONOS_V2_BINDING_TEST_ANSWERS.pdf",
+        "a" * 64,
+        created_at,
+        created_at,
+        (candidate,),
+        ReviewPackState.WAITING_FOR_CHART_ANALYST,
+        (
+            ReviewPackState.REVIEW_PACK_GENERATED.value,
+            ReviewPackState.WAITING_FOR_CHART_ANALYST.value,
+        ),
+    )
 
 
 def _population_run(
@@ -546,6 +586,78 @@ def test_analysis_details_exposes_only_governed_watch_activation(tmp_path: Path)
     assert "KRONOS progression watch" in body
     assert "BUY ABOVE" not in body
     assert "ENTRY ABOVE" not in body
+
+
+def test_analysis_details_ignores_only_a_superseded_v2_review_pack(
+    tmp_path: Path,
+) -> None:
+    facts, run, probable = _evidence_run()
+    native = NativeReviewWorkflow(NativeReviewEvidenceStore(tmp_path / "native"))
+    review = native.prepare(run, facts)
+    superseded = replace(
+        review,
+        review_pack_record=_v2_review_pack(
+            probable,
+            run_identity="SWING-RUN-" + "F" * 32,
+        ),
+        review_pack_scope="ALL_ELIGIBLE",
+        review_pack_superseded=True,
+    )
+
+    details = project_native_analysis_details(
+        run, superseded, run.run_identity, probable.canonical_instrument
+    )
+
+    assert details is not None
+    assert details.assessment == probable
+    assert details.review_pack_record is None
+
+
+def test_analysis_details_keeps_current_v2_review_pack_binding_strict(
+    tmp_path: Path,
+) -> None:
+    facts, run, probable = _evidence_run()
+    native = NativeReviewWorkflow(NativeReviewEvidenceStore(tmp_path / "native"))
+    review = native.prepare(run, facts)
+    current = replace(
+        review,
+        review_pack_record=_v2_review_pack(
+            probable,
+            run_identity=run.run_identity,
+        ),
+        review_pack_scope="ALL_ELIGIBLE",
+    )
+    mismatched_instrument = replace(
+        review,
+        review_pack_record=_v2_review_pack(
+            probable,
+            run_identity=run.run_identity,
+            canonical_instrument="SBIN",
+        ),
+        review_pack_scope="ALL_ELIGIBLE",
+    )
+    mismatched_sha = replace(
+        review,
+        review_pack_record=_v2_review_pack(
+            probable,
+            run_identity=run.run_identity,
+            assessment_sha256="c" * 64,
+        ),
+        review_pack_scope="ALL_ELIGIBLE",
+    )
+
+    assert project_native_analysis_details(
+        run, current, run.run_identity, probable.canonical_instrument
+    ) is not None
+    assert project_native_analysis_details(
+        run,
+        mismatched_instrument,
+        run.run_identity,
+        probable.canonical_instrument,
+    ) is None
+    assert project_native_analysis_details(
+        run, mismatched_sha, run.run_identity, probable.canonical_instrument
+    ) is None
 
 
 class _Ux01VisualProvider(_VisualV2Provider):

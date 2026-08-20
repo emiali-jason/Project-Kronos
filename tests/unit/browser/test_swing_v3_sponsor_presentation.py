@@ -56,6 +56,7 @@ from kronos.swing.v1.visual_evidence_v3 import (
 from kronos.swing.v1.evidence_store import LocalTradingViewEvidenceStore
 from tests.unit.application.test_swing_opportunities import _Provider, _ready
 from tests.unit.browser.test_browser_server import _request as _browser_request
+from tests.unit.browser.test_browser_native_review import _v2_review_pack
 from tests.unit.swing.v1.test_native_review import _evidence_run, _layer2
 from tests.unit.swing.v1.test_visual_evidence_v3 import (
     NOW,
@@ -451,6 +452,16 @@ def test_browser_routes_select_exact_v3_cycle_and_keep_notifications_healthy(
     application.restore_native_discovery_run(run)
     native = NativeReviewWorkflow(NativeReviewEvidenceStore(tmp_path / "native"))
     native.prepare(run, completed.mtf_snapshot)
+    probable = next(
+        item for item in run.assessments
+        if item.canonical_instrument == completed.requirement.canonical_instrument
+    )
+    native._review_pack = _v2_review_pack(  # type: ignore[attr-defined]
+        probable,
+        run_identity="SWING-RUN-" + "F" * 32,
+    )
+    native._review_pack_scope = "ALL_ELIGIBLE"  # type: ignore[attr-defined]
+    assert native.snapshot().review_pack_superseded is True
     cycle = SwingVisualV3ReviewCycle(
         LocalVisualEvidenceV3Store((tmp_path / "visual-v3").resolve()),
         NativeLayer2ReadinessV3Store((tmp_path / "readiness-v3").resolve()),
@@ -483,6 +494,16 @@ def test_browser_routes_select_exact_v3_cycle_and_keep_notifications_healthy(
         status, _, details = _browser_request(server, "GET", path)
         assert status == 200
         assert "SWING-V1-VISUAL-QUESTION-SET-V3" in details
+        assert '<details class="analysis-section"><summary>A.' in details
+        assert '<details class="analysis-section"><summary>B.' in details
+        assert '<section class="analysis-section"><h2>C.' in details
+        assert '<section class="analysis-section"><h2>D.' in details
+        assert '<section class="analysis-section"><h2>E.' in details
+        assert '<section class="analysis-section analysis-next"><h2>F.' in details
+        assert '<details class="analysis-section"><summary>G.' in details
+        assert '<details open class="analysis-section"><summary>A.' not in details
+        assert '<details open class="analysis-section"><summary>B.' not in details
+        assert '<details open class="analysis-section"><summary>G.' not in details
         assert _browser_request(server, "GET", "/notifications")[0] == 200
     finally:
         server.shutdown()
