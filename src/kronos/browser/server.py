@@ -32,6 +32,7 @@ from kronos.application.swing_native_review import (
 )
 from kronos.application.swing_visual_v3 import SwingVisualV3ReviewCycle
 from kronos.application.swing_visual_v3_live import SwingVisualV3LiveWorkflow
+from kronos.application.swing_trade_window import SwingTradeWindowWorkflow
 from kronos.configuration.apple_keychain import (
     AppleKeychainApiKeySource,
     AppleKeychainCredentialPresenceProbe,
@@ -71,6 +72,7 @@ from kronos.browser.views import (
     render_mtf_fact_diagnostics,
     render_native_discovery,
     render_native_analysis_details,
+    render_native_trade_window,
     render_notifications,
     render_trade_candidates,
     render_v1_review,
@@ -110,6 +112,8 @@ from kronos.swing.v1.pdf_visual_review_v3_live import (
     VisualV3PdfReviewTransport,
 )
 from kronos.swing.v1.visual_evidence_v3 import LocalVisualEvidenceV3Store
+from kronos.swing.v1.kr370_step31_handoff import LocalKr370Step31HandoffStore
+from kronos.swing.v1.native_trade_construction import LocalTradePlanStore
 from kronos.swing.v1.progression_watch import (
     derive_kr370_progression_requirements,
     derive_progression_requirements,
@@ -127,6 +131,9 @@ _TRADE_CANDIDATE_ROUTE = re.compile(
 )
 _ANALYSIS_DETAILS_ROUTE = re.compile(
     r"/swing/analysis-details/(SWING-RUN-[A-F0-9]{32})/([^/]+)\Z"
+)
+_TRADE_WINDOW_ROUTE = re.compile(
+    r"/swing/trade-window/(SWING-RUN-[A-F0-9]{32})/([^/]+)\Z"
 )
 _TRADE_CANDIDATE_DECISION_ROUTE = re.compile(
     r"/swing/trade-candidates/([0-9a-f]{16})/decision\Z"
@@ -160,6 +167,7 @@ class KronosBrowserServer(ThreadingHTTPServer):
         progression_watches: SwingProgressionWatchWorkflow | None = None,
         visual_v3: SwingVisualV3ReviewCycle | None = None,
         visual_v3_live: SwingVisualV3LiveWorkflow | None = None,
+        trade_window: SwingTradeWindowWorkflow | None = None,
     ) -> None:
         if (
             address[0] != _LOOPBACK_HOST
@@ -200,6 +208,10 @@ class KronosBrowserServer(ThreadingHTTPServer):
             or (
                 visual_v3_live is not None
                 and type(visual_v3_live) is not SwingVisualV3LiveWorkflow
+            )
+            or (
+                trade_window is not None
+                and type(trade_window) is not SwingTradeWindowWorkflow
             )
         ):
             raise ValueError("BROWSER_SERVER_MUST_BIND_LOOPBACK")
@@ -324,6 +336,12 @@ class KronosBrowserServer(ThreadingHTTPServer):
                     clock=lambda: datetime.now(UTC),
                 ),
             )
+        self.trade_window = trade_window or SwingTradeWindowWorkflow(
+            LocalKr370Step31HandoffStore(
+                governed_review_root / "kr370-step31-handoff-v1"
+            ),
+            LocalTradePlanStore(governed_review_root / "trade-construction-v0"),
+        )
         native_run = self.application.native_discovery_run()
         mtf_facts = self.application.mtf_fact_snapshot()
         native_store = self.application.native_discovery_evidence_store()
@@ -361,6 +379,7 @@ class KronosBrowserServer(ThreadingHTTPServer):
                 # Versioned V3 restoration is fail-closed. Historical V2 remains
                 # independently restorable and is never converted as recovery.
                 pass
+        self.trade_window.restore(self.visual_v3.completed_snapshot())
         self.progression_snapshot()
         super().__init__(address, _BrowserHandler)
 
@@ -575,6 +594,7 @@ class _BrowserHandler(BaseHTTPRequestHandler):
                 self.server.native_review.snapshot(),
                 self.server.progression_snapshot(),
                 self.server.visual_v3_presentations(),
+                self.server.trade_window.projections(),
             ))
             return
         if path in {"/notifications", "/notifications/swing", "/notifications/intraday"}:
@@ -614,7 +634,26 @@ class _BrowserHandler(BaseHTTPRequestHandler):
                 == details.assessment.result_sha256
             ), None)
             self._html(render_native_analysis_details(
-                snapshot, details, self.server.progression_snapshot(), v3
+                snapshot,
+                details,
+                self.server.progression_snapshot(),
+                v3,
+                self.server.trade_window.project(
+                    details.assessment.run_identity,
+                    details.assessment.canonical_instrument,
+                ),
+            ))
+            return
+        trade_window_match = _TRADE_WINDOW_ROUTE.fullmatch(path)
+        if trade_window_match:
+            projection = self.server.trade_window.project(
+                trade_window_match.group(1), unquote(trade_window_match.group(2))
+            )
+            if projection is None:
+                self._text(HTTPStatus.NOT_FOUND, "Trade Window not found.")
+                return
+            self._html(render_native_trade_window(
+                self.server.application.snapshot(), projection
             ))
             return
         snapshot = self.server.application.snapshot()
@@ -1604,6 +1643,9 @@ class _BrowserHandler(BaseHTTPRequestHandler):
                     facts,
                     self.server.native_review.original_chart_bytes,
                 )
+                self.server.trade_window.restore(
+                    self.server.visual_v3.completed_snapshot()
+                )
                 self.server.progression_snapshot()
             else:
                 self.server.native_review.upload_review_answer()
@@ -1764,6 +1806,7 @@ def create_browser_server(
     progression_watches: SwingProgressionWatchWorkflow | None = None,
     visual_v3: SwingVisualV3ReviewCycle | None = None,
     visual_v3_live: SwingVisualV3LiveWorkflow | None = None,
+    trade_window: SwingTradeWindowWorkflow | None = None,
 ) -> KronosBrowserServer:
     if type(port) is not int or not 0 <= port <= 65535:
         raise ValueError("BROWSER_SERVER_PORT_INVALID")
@@ -1781,6 +1824,7 @@ def create_browser_server(
         progression_watches,
         visual_v3,
         visual_v3_live,
+        trade_window,
     )
 
 

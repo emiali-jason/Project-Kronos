@@ -15,6 +15,7 @@ from threading import RLock
 
 from kronos.instrument.facts import CanonicalInstrumentContext, InstrumentContextStatus
 from kronos.swing.v1.models import V1Direction
+from kronos.swing.v1.kr370_step31_handoff import Kr370Step31EligibilityHandoff
 from kronos.swing.v1.native_discovery import NativeOpportunityIdentity
 from kronos.swing.v1.native_readiness import NativeLayer2ReadinessRecord, NativeReadinessState
 from kronos.swing.v1.native_review import NativeReviewRequirement
@@ -388,7 +389,7 @@ def create_trade_construction_evidence_package(
 
 def construct_trade_plan(
     requirement: NativeReviewRequirement,
-    readiness: NativeLayer2ReadinessRecord,
+    readiness: NativeLayer2ReadinessRecord | Kr370Step31EligibilityHandoff,
     evidence: TradeConstructionEvidencePackage,
     execution_context: CanonicalInstrumentContext,
     *,
@@ -396,9 +397,15 @@ def construct_trade_plan(
 ) -> TradePlanRecord:
     """Construct frozen V0 geometry; no readiness or review is recalculated."""
 
-    if type(requirement) is not NativeReviewRequirement or type(readiness) is not NativeLayer2ReadinessRecord:
+    if type(requirement) is not NativeReviewRequirement or type(readiness) not in {
+        NativeLayer2ReadinessRecord,
+        Kr370Step31EligibilityHandoff,
+    }:
         raise TradeConstructionInputRejected("STEP31_INPUT_INVALID")
-    if readiness.readiness is not NativeReadinessState.READY_FOR_TRADE_CONSTRUCTION:
+    if (
+        type(readiness) is NativeLayer2ReadinessRecord
+        and readiness.readiness is not NativeReadinessState.READY_FOR_TRADE_CONSTRUCTION
+    ):
         raise TradeConstructionInputRejected("STEP31_READINESS_NOT_ELIGIBLE")
     if not _hard_binding_valid(requirement, readiness):
         raise TradeConstructionInputRejected("STEP31_READINESS_BINDING_INVALID")
@@ -550,8 +557,20 @@ def step32_handoff(record: TradePlanRecord) -> TradePlanRecord:
     return record
 
 
-def _hard_binding_valid(requirement: NativeReviewRequirement, readiness: NativeLayer2ReadinessRecord) -> bool:
+def _hard_binding_valid(
+    requirement: NativeReviewRequirement,
+    readiness: NativeLayer2ReadinessRecord | Kr370Step31EligibilityHandoff,
+) -> bool:
     thesis = requirement.thesis
+    if type(readiness) is Kr370Step31EligibilityHandoff:
+        return (
+            readiness.native_run_identity == requirement.native_run_identity
+            and readiness.canonical_instrument == requirement.canonical_instrument
+            and readiness.native_assessment_sha256 == thesis.native_assessment_sha256
+            and readiness.native_requirement_sha256 == requirement.requirement_sha256
+            and readiness.native_opportunity_identity is thesis.opportunity_identity
+            and readiness.direction is thesis.direction
+        )
     return (
         readiness.run_identity == requirement.native_run_identity
         and readiness.canonical_instrument == requirement.canonical_instrument
@@ -571,16 +590,21 @@ def _evidence_binding_reason(requirement, readiness, evidence):  # type: ignore[
         or evidence.native_assessment_sha256 != requirement.thesis.native_assessment_sha256
     ):
         return TradePlanUnavailableReason.EVIDENCE_BINDING_INVALID
-    if evidence.observation_boundary != readiness.observation_boundary:
+    if evidence.observation_boundary != _eligibility_boundary(readiness):
         return TradePlanUnavailableReason.EVIDENCE_STALE
     return None
 
 
 def _base_fields(requirement, readiness, evidence, context, created_at):  # type: ignore[no-untyped-def]
     thesis = requirement.thesis
-    readiness_identity = f"NATIVE-READINESS-{readiness.result_sha256}"
+    readiness_identity, readiness_sha256 = _readiness_lineage(readiness)
     plan_seed = {
-        "readiness_record_sha256": readiness.result_sha256,
+        "readiness_record_sha256": readiness_sha256,
+        "eligibility_integrity_sha256": (
+            readiness.integrity_sha256
+            if type(readiness) is Kr370Step31EligibilityHandoff
+            else readiness_sha256
+        ),
         "evidence_package_sha256": evidence.package_sha256,
         "policy_identity": TRADE_CONSTRUCTION_POLICY_ID,
         "policy_version": TRADE_CONSTRUCTION_POLICY_VERSION,
@@ -596,10 +620,10 @@ def _base_fields(requirement, readiness, evidence, context, created_at):  # type
         native_direction=thesis.direction,
         native_assessment_sha256=thesis.native_assessment_sha256,
         readiness_record_identity=readiness_identity,
-        readiness_record_sha256=readiness.result_sha256,
+        readiness_record_sha256=readiness_sha256,
         trade_construction_policy_identity=TRADE_CONSTRUCTION_POLICY_ID,
         trade_construction_policy_version=TRADE_CONSTRUCTION_POLICY_VERSION,
-        observation_boundary=readiness.observation_boundary,
+        observation_boundary=_eligibility_boundary(readiness),
         evidence_package_identity=evidence.package_identity,
         evidence_package_sha256=evidence.package_sha256,
         evidence_identities=evidence.evidence_identities,
@@ -608,10 +632,42 @@ def _base_fields(requirement, readiness, evidence, context, created_at):  # type
         execution_context_identity=(context.identity if type(context) is CanonicalInstrumentContext else "EXECUTION-CONTEXT-UNAVAILABLE"),
         tick_size=(context.tick_size if type(context) is CanonicalInstrumentContext else None),
         price_precision=(context.price_precision if type(context) is CanonicalInstrumentContext else None),
-        provenance=tuple(dict.fromkeys((*thesis.provider_provenance, *thesis.calendar_provenance, *evidence.provenance, "DOMAIN-001", "DOMAIN-008"))),
+        provenance=tuple(dict.fromkeys((
+            *thesis.provider_provenance,
+            *thesis.calendar_provenance,
+            *evidence.provenance,
+            *(
+                (
+                    *readiness.provenance,
+                    readiness.handoff_identity,
+                    readiness.integrity_sha256,
+                )
+                if type(readiness) is Kr370Step31EligibilityHandoff else ()
+            ),
+            "DOMAIN-001",
+            "DOMAIN-008",
+        ))),
         created_at=created_at,
         policy_status=TRADE_CONSTRUCTION_POLICY_STATUS,
         authority=TRADE_PLAN_AUTHORITY,
+    )
+
+
+def _readiness_lineage(
+    value: NativeLayer2ReadinessRecord | Kr370Step31EligibilityHandoff,
+) -> tuple[str, str]:
+    if type(value) is Kr370Step31EligibilityHandoff:
+        return value.v3_readiness_identity, value.v3_readiness_sha256
+    return f"NATIVE-READINESS-{value.result_sha256}", value.result_sha256
+
+
+def _eligibility_boundary(
+    value: NativeLayer2ReadinessRecord | Kr370Step31EligibilityHandoff,
+) -> datetime:
+    return (
+        value.analysis_boundary
+        if type(value) is Kr370Step31EligibilityHandoff
+        else value.observation_boundary
     )
 
 

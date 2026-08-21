@@ -39,6 +39,10 @@ from kronos.application.swing_native_review import (
 )
 from kronos.application.swing_progression_watch import SwingProgressionWatchSnapshot
 from kronos.application.swing_visual_v3_live import SwingVisualV3LiveSnapshot
+from kronos.application.swing_trade_window import (
+    NativeTradeWindowProjection,
+    TradeWindowState,
+)
 from kronos.swing.v1.pdf_visual_review_v3_live import VisualV3AnswerImportState
 from kronos.application.swing_v1_browser import (
     BrowserCandidateRecord,
@@ -161,6 +165,7 @@ def render_opportunities(
     review: NativeReviewWorkflowSnapshot | None = None,
     progression: SwingProgressionWatchSnapshot | None = None,
     visual_v3: tuple[V3SponsorEvidencePresentation, ...] = (),
+    trade_windows: tuple[NativeTradeWindowProjection, ...] = (),
 ) -> str:
     """Render the current successful Native Discovery opportunity population."""
 
@@ -174,6 +179,10 @@ def render_opportunities(
         type(item) is not V3SponsorEvidencePresentation for item in visual_v3
     ):
         raise TypeError("NATIVE_OPPORTUNITIES_V3_PRESENTATION_INVALID")
+    if type(trade_windows) is not tuple or any(
+        type(item) is not NativeTradeWindowProjection for item in trade_windows
+    ):
+        raise TypeError("NATIVE_OPPORTUNITIES_TRADE_WINDOW_INVALID")
     body = _analysis_run_strip(snapshot)
     if discovery is None:
         body += (
@@ -204,10 +213,12 @@ def render_opportunities(
         )
         body += '<div class="panels">'
         body += _native_opportunity_panel(
-            "EQUITIES + INDICES", equities, review, progression, visual_v3
+            "EQUITIES + INDICES", equities, review, progression, visual_v3,
+            trade_windows,
         )
         body += _native_opportunity_panel(
-            "COMMODITIES", commodities, review, progression, visual_v3
+            "COMMODITIES", commodities, review, progression, visual_v3,
+            trade_windows,
         )
         body += "</div>"
     body += (
@@ -272,10 +283,12 @@ def _native_opportunity_metrics(counts: dict[NativeDiscoveryStatus, int]) -> str
 
 
 def _native_opportunity_panel(
-    title, probables, review, progression=None, visual_v3=()
+    title, probables, review, progression=None, visual_v3=(), trade_windows=()
 ) -> str:  # type: ignore[no-untyped-def]
     cards = "".join(
-        _native_opportunity_card(item, review, progression, visual_v3)
+        _native_opportunity_card(
+            item, review, progression, visual_v3, trade_windows
+        )
         for item in probables
     )
     if not cards:
@@ -296,6 +309,7 @@ def _native_opportunity_card(
     review: NativeReviewWorkflowSnapshot | None,
     progression=None,
     visual_v3=(),
+    trade_windows=(),
 ) -> str:  # type: ignore[no-untyped-def]
     review_run_identity = None if review is None else review.native_run_identity
     readiness_records = () if review is None else review.readiness_records
@@ -350,6 +364,12 @@ def _native_opportunity_card(
     v3 = next((
         value for value in visual_v3
         if value.run_identity == item.run_identity
+        and value.canonical_instrument == item.canonical_instrument
+        and value.native_assessment_sha256 == item.result_sha256
+    ), None)
+    trade_window = next((
+        value for value in trade_windows
+        if value.native_run_identity == item.run_identity
         and value.canonical_instrument == item.canonical_instrument
         and value.native_assessment_sha256 == item.result_sha256
     ), None)
@@ -414,6 +434,14 @@ def _native_opportunity_card(
         + _kr370_state_class(kr370_state) + '">'
         + escape(_kr370_state_label(kr370_state)) + '</span>'
     )
+    trade_window_action = (
+        ""
+        if trade_window is None
+        or trade_window.kr370_classification not in {"BUY_NOW", "SELL_NOW"}
+        else
+        f'<a class="button" href="/swing/trade-window/{escape(item.run_identity)}/'
+        f'{quote(item.canonical_instrument, safe="")}">Open Trade Window →</a>'
+    )
     return (
         '<article class="opportunity native-opportunity"><div class="opp-head">'
         f'<div class="opp-identity"><h3>{escape(item.canonical_instrument)}</h3>'
@@ -428,7 +456,8 @@ def _native_opportunity_card(
         + kr370_summary + '</span>'
         '<span class="native-opportunity-actions"><a class="button" href="/swing/v1-review">Open Native Review →</a>'
         f'<a class="button" href="/swing/analysis-details/{escape(item.run_identity)}/'
-        f'{quote(item.canonical_instrument, safe="")}">View Analysis Details →</a></span>'
+        f'{quote(item.canonical_instrument, safe="")}">View Analysis Details →</a>'
+        + trade_window_action + '</span>'
         '</div></article>'
     )
 
@@ -523,6 +552,7 @@ def render_native_analysis_details(
     details: NativeAnalysisDetailsProjection,
     progression: SwingProgressionWatchSnapshot | None = None,
     visual_v3: V3SponsorEvidencePresentation | None = None,
+    trade_window: NativeTradeWindowProjection | None = None,
 ) -> str:
     """Render governed evidence without recalculation or authority."""
 
@@ -537,7 +567,7 @@ def render_native_analysis_details(
         ):
             raise ValueError("NATIVE_ANALYSIS_DETAILS_V3_BINDING_INVALID")
         return _render_native_analysis_details_v3(
-            snapshot, details, progression, visual_v3
+            snapshot, details, progression, visual_v3, trade_window
         )
 
     item = details.assessment
@@ -666,6 +696,7 @@ def _render_native_analysis_details_v3(
     details: NativeAnalysisDetailsProjection,
     progression: SwingProgressionWatchSnapshot | None,
     visual_v3: V3SponsorEvidencePresentation,
+    trade_window: NativeTradeWindowProjection | None,
 ) -> str:
     item = details.assessment
     thesis = details.requirement.thesis
@@ -748,10 +779,34 @@ def _render_native_analysis_details_v3(
             ) + '</tbody></table>'
         )
         technical.append(("KR-370 promotion identity", promotion.integrity_sha256))
+    trade_window_summary = ""
+    if trade_window is not None:
+        trade_window_summary = (
+            '<section class="analysis-section"><h2>STEP-31 / TRADE WINDOW</h2>'
+            '<div class="analysis-facts">'
+            + _analysis_fact_rows([
+                ("Handoff status", trade_window.state.value.replace("_", " ")),
+                ("Trade record", (
+                    trade_window.trade_plan.trade_plan_id
+                    if trade_window.trade_plan is not None else "NOT AVAILABLE"
+                )),
+                ("Risk", trade_window.risk_state.replace("_", " ")),
+                ("Entry timing", trade_window.kr380_entry_timing_state),
+            ]) + '</div>'
+            + (
+                '<p><a class="button" href="/swing/trade-window/'
+                + escape(trade_window.native_run_identity) + '/'
+                + quote(trade_window.canonical_instrument, safe="")
+                + '">Open Trade Window →</a></p>'
+                if trade_window.kr370_classification in {"BUY_NOW", "SELL_NOW"}
+                else ""
+            ) + '</section>'
+        )
     body = (
         '<p><a class="button" href="/swing/opportunities">← Back to Opportunities</a></p>'
         '<div class="analysis-details">'
         + kr370_summary
+        + trade_window_summary
         + _analysis_disclosure("A. WHAT KITE / NATIVE DISCOVERY SAYS", native_facts)
         + '<details class="analysis-section"><summary>B. WHAT THE TRADINGVIEW CHART / CHART ANALYST SAYS</summary>'
         '<p class="technical">Independent chart observations; KRONOS numerical facts are shown separately.</p>'
@@ -787,6 +842,93 @@ def _render_native_analysis_details_v3(
     )
 
 
+def render_native_trade_window(
+    snapshot: BrowserWorkspaceSnapshot,
+    projection: NativeTradeWindowProjection,
+) -> str:
+    """Render persisted Step-31 facts; the Browser performs no geometry."""
+
+    if type(projection) is not NativeTradeWindowProjection:
+        raise TypeError("NATIVE_TRADE_WINDOW_PROJECTION_INVALID")
+    plan = projection.trade_plan
+    heading = projection.kr370_classification.replace("_", " ")
+    notice = (
+        "Analytical promotion is complete. This is not an entry trigger or an order instruction."
+        if projection.kr370_classification in {"BUY_NOW", "SELL_NOW"}
+        else "Trade construction is not eligible for this analytical state."
+    )
+    if projection.state is TradeWindowState.TRADE_PLAN_READY and plan is not None:
+        geometry = (
+            '<section class="analysis-section"><h2>TRADE GEOMETRY AVAILABLE</h2>'
+            '<div class="native-trade-plan-grid">'
+            + ''.join(
+                '<div><span>' + escape(label) + '</span><strong>'
+                + escape(value) + '</strong></div>'
+                for label, value in (
+                    ("Entry", "₹" + _number(plan.entry)),
+                    ("Stop", "₹" + _number(plan.stop)),
+                    ("Target", "₹" + _number(plan.canonical_target)),
+                    ("Invalidation", "₹" + _number(plan.invalidation_reference)),
+                    ("R:R", "1 : " + _number(plan.risk_reward_ratio)),
+                )
+            ) + '</div><p class="why"><strong>Entry condition</strong> · '
+            + escape(plan.entry_condition.replace("_", " "))
+            + '<br><strong>Invalidation condition</strong> · '
+            + escape(plan.invalidation_condition.replace("_", " "))
+            + '</p></section>'
+        )
+    else:
+        geometry = (
+            '<section class="analysis-section"><h2>'
+            + escape(projection.state.value.replace("_", " "))
+            + '</h2><p>' + escape(projection.reason.replace("_", " "))
+            + '</p></section>'
+        )
+    risk = (
+        '<section class="analysis-section"><h2>RISK</h2><div class="analysis-decision">'
+        + escape(projection.risk_state.replace("_", " "))
+        + '</div><p>No Risk permission is inferred by this Trade Window.</p></section>'
+    )
+    timing = (
+        '<section class="analysis-section"><h2>ENTRY TIMING / SPONSOR ACTION</h2>'
+        '<div class="analysis-decision">'
+        + escape(projection.kr380_entry_timing_state)
+        + '</div><p>KR-380 entry timing is separate from KR-370 analytical promotion. '
+        'No LIVE / PAPER / IGNORE control is available without its governed downstream authority.</p></section>'
+    )
+    provenance = (
+        '<details class="analysis-section"><summary>GOVERNED PROVENANCE</summary>'
+        '<div class="analysis-facts">' + _analysis_fact_rows([
+            ("Native run", projection.native_run_identity),
+            ("Native assessment", projection.native_assessment_sha256),
+            ("KR-370 state", projection.kr370_classification),
+            ("KR-370 handoff", (
+                projection.handoff.handoff_identity
+                if projection.handoff is not None else "NOT PERSISTED"
+            )),
+            ("Step-31 plan", plan.trade_plan_id if plan is not None else "NOT AVAILABLE"),
+            ("Step-31 policy", (
+                f"{plan.trade_construction_policy_identity} {plan.trade_construction_policy_version}"
+                if plan is not None else "NOT APPLIED"
+            )),
+        ]) + '</div></details>'
+    )
+    body = (
+        '<p><a class="button" href="/swing/opportunities">← Back to Opportunities</a></p>'
+        '<div class="analysis-details"><section class="analysis-section">'
+        '<h2>' + escape(projection.canonical_instrument + " · " + projection.direction)
+        + '</h2><div class="analysis-decision kr370-state kr370-state-now">'
+        + escape(heading) + '</div><p>' + escape(notice) + '</p></section>'
+        + geometry + risk + timing + provenance + '</div>'
+    )
+    return _page(
+        title=f"{projection.canonical_instrument} Trade Window",
+        subtitle="Exact persisted Step-31 geometry and downstream authority state.",
+        snapshot=snapshot,
+        active_nav="Swing",
+        active_tab="Opportunities",
+        body=body,
+    )
 def _v3_timeframe_reconciliation(machine, visual) -> str:  # type: ignore[no-untyped-def]
     if machine.availability == "AVAILABLE":
         numerical = (
@@ -3628,6 +3770,7 @@ __all__ = [
     "render_browser_page",
     "render_opportunities",
     "render_native_analysis_details",
+    "render_native_trade_window",
     "render_notifications",
     "render_trade_journal",
     "render_placeholder",
