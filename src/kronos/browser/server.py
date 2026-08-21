@@ -64,6 +64,7 @@ from kronos.browser.views import (
     render_active_candidates,
     render_candidate_workspace,
     render_closed_candidates,
+    render_dashboard,
     render_legacy_opportunities,
     render_opportunities,
     render_placeholder,
@@ -77,6 +78,7 @@ from kronos.browser.views import (
     render_trade_candidates,
     render_v1_review,
 )
+from kronos.browser.dashboard import project_sponsor_dashboard
 from kronos.browser.v1_analysis_status import analysis_status_payload
 from kronos.browser.swing_readiness_presentation import present_native_readiness
 from kronos.browser.swing_v3_presentation import present_visual_v3_review
@@ -139,7 +141,6 @@ _TRADE_CANDIDATE_DECISION_ROUTE = re.compile(
     r"/swing/trade-candidates/([0-9a-f]{16})/decision\Z"
 )
 _PLACEHOLDERS = {
-    "/dashboard": ("Dashboard", "Dashboard", ""),
     "/theta-earners": ("Theta Earners", "Theta Earners", ""),
     "/portfolio": ("Portfolio", "Portfolio", ""),
     "/reports": ("Reports", "Reports", ""),
@@ -574,6 +575,23 @@ class _BrowserHandler(BaseHTTPRequestHandler):
                 product_response.body.encode("utf-8"),
                 product_response.content_type,
             )
+            return
+        if path == "/dashboard":
+            snapshot, discovery = self.server.application.opportunities_projection()
+            notifications = project_swing_notification_workspace(
+                self.server.progression_snapshot()
+            )
+            promotions = tuple(
+                item.promotion
+                for item in self.server.visual_v3.completed_snapshot()
+                if item.promotion is not None
+            )
+            self._html(render_dashboard(
+                snapshot,
+                project_sponsor_dashboard(
+                    snapshot, discovery, promotions, notifications,
+                ),
+            ))
             return
         if path == "/notifications/status":
             projected = project_swing_notification_workspace(

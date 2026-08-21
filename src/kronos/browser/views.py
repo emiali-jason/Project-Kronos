@@ -62,6 +62,8 @@ from kronos.browser.swing_readiness_presentation import (
     present_native_readiness,
 )
 from kronos.browser.swing_v3_presentation import V3SponsorEvidencePresentation
+from kronos.browser.dashboard import SponsorDashboardProjection
+from kronos.swing.v1.analytical_promotion import Kr370AnalyticalClassification
 from kronos.swing.v1.reference_facts import (
     CPR_CALCULATION_POLICY_IDENTITY,
     CPR_CALCULATION_POLICY_VERSION,
@@ -153,10 +155,154 @@ a{color:inherit;text-decoration:none}.app{display:grid;grid-template-columns:218
 .kr370-state{display:inline-flex;align-items:center;border:1px solid currentColor;border-radius:6px;padding:2px 7px;font-size:11px;font-weight:850;letter-spacing:.035em}.kr370-state-now{color:#d8ffea;border-color:#34dc88;background:#12623e;box-shadow:0 0 16px rgba(52,220,136,.18)}.kr370-state-ready{color:#77e6a9;border-color:#248a59;background:rgba(23,103,65,.16)}.kr370-state-potential{color:#ffd57a;border-color:#82631f;background:#2a210c}.kr370-state-no-setup{color:#ff9a9f;border-color:#793b40;background:#2c151c}.kr370-state-unavailable{color:#a9b8c3;border-color:#465866;background:#111d25}.kr370-card-line{display:block;color:var(--muted);font-size:9px;margin-top:4px;letter-spacing:.035em}.kr370-card-line strong{color:#dce8f0}.analysis-decision.kr370-state{font-size:18px;padding:4px 9px;margin-bottom:9px}
 .progression-summary{display:block;color:var(--muted);font-size:9px;margin-top:3px;text-transform:uppercase;letter-spacing:.04em}.progression-list{display:grid;gap:8px}.progression-row{display:grid;grid-template-columns:20px 1fr;gap:8px;border-top:1px solid var(--line);padding-top:8px}.progression-row:first-child{border-top:0;padding-top:0}.progression-marker{color:var(--blue);font-weight:800}.progression-state{display:block;color:var(--amber);font-size:9px;font-weight:800;letter-spacing:.06em;margin-top:2px}.progression-row small{display:block;color:var(--muted);font-size:10px;margin-top:4px}.progression-row form{margin-top:7px}.progression-row details{margin-top:7px}.progression-row details .analysis-fact{margin-top:5px}
 .notification-tabs{display:flex;gap:7px;margin-bottom:12px}.notification-tabs .button{padding:6px 11px;font-size:11px}.notification-tabs .active{background:#0c4f83;border-color:#2c9cff}.notification-action-centre{border:1px solid #8a4c26;background:#21170f;border-radius:9px;padding:11px 13px;margin-bottom:12px}.notification-action-centre h2{margin:0 0 5px;color:#ffd59c;font-size:13px}.notification-action-centre p{margin:0;color:var(--muted);font-size:11px}.notification-list{display:grid;gap:9px}.notification-row{border:1px solid var(--line);background:rgba(6,23,37,.88);border-radius:9px;padding:12px}.notification-head{display:flex;align-items:center;gap:9px}.notification-head h2{font-size:18px;margin:0}.notification-product{color:var(--blue);font-size:10px;font-weight:800}.notification-state{margin-left:auto;border:1px solid currentColor;border-radius:999px;padding:3px 8px;font-size:10px;font-weight:800}.notification-state.ACTIVE{color:var(--green)}.notification-state.TRIGGERED{color:var(--amber)}.notification-state.INACTIVE{color:var(--muted)}.notification-state.STALE{color:var(--red)}.notification-condition{margin:7px 0 4px;font-weight:750}.notification-trigger{border-left:2px solid var(--amber);padding:6px 9px;margin:8px 0;background:#211a0d}.notification-trigger strong,.notification-trigger span{display:block}.notification-trigger span{color:var(--amber);font-size:11px}.notification-trigger small{color:#ffd59c}.notification-meta{display:flex;gap:12px;flex-wrap:wrap;color:var(--muted);font-size:10px}.notification-actions{display:flex;align-items:flex-start;gap:6px;flex-wrap:wrap;margin-top:9px}.notification-actions form{display:inline}.notification-actions button,.notification-actions .button{padding:5px 8px;font-size:10px}.notification-confirm summary{list-style:none;border:1px solid #246295;background:#0b2b47;color:#e9f5ff;padding:5px 8px;border-radius:7px;font-size:10px;font-weight:650;cursor:pointer}.notification-confirm summary::-webkit-details-marker{display:none}.notification-confirm div{position:absolute;z-index:10;max-width:330px;border:1px solid var(--line);background:#071827;padding:10px;border-radius:8px;box-shadow:0 12px 30px rgba(0,0,0,.45)}.notification-confirm p{margin:0 0 7px;color:var(--muted);font-size:11px}.notification-history{margin-top:8px;border-top:1px solid var(--line);padding-top:7px}.notification-history summary{cursor:pointer;color:var(--muted);font-size:10px}.notification-history ul{margin:6px 0 0;padding-left:18px;color:var(--muted);font-size:10px}
-@media(max-width:1050px){.status-grid{grid-template-columns:repeat(3,1fr)}.panels,.workspace{grid-template-columns:1fr}.step32-grid{grid-template-columns:1fr}.step32-block{border-left:0;border-top:1px solid var(--line);padding:10px 0 0}.step32-block:first-child{border-top:0;padding-top:0}.market-panel{min-height:260px}}
+.dashboard-section-title{display:flex;align-items:baseline;justify-content:space-between;margin:0 0 10px}.dashboard-section-title h2{margin:0;font-size:13px;letter-spacing:.08em;color:#dce8f0}.dashboard-section-title span{color:var(--muted);font-size:10px}.strategy-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;min-height:330px}.strategy-card{display:flex;flex-direction:column;min-width:0;border:1px solid var(--strategy-line);border-radius:11px;padding:15px;background:linear-gradient(150deg,var(--strategy-tint),rgba(5,20,33,.92));box-shadow:inset 0 1px 0 var(--strategy-glow),0 14px 32px rgba(0,0,0,.14)}.strategy-card.swing{--strategy-line:#256da4;--strategy-tint:rgba(19,73,112,.3);--strategy-glow:rgba(80,183,255,.2);--strategy-accent:#50b7ff}.strategy-card.intraday{--strategy-line:#24714a;--strategy-tint:rgba(24,91,60,.24);--strategy-glow:rgba(46,212,119,.16);--strategy-accent:#43dc88}.strategy-card.theta{--strategy-line:#60458a;--strategy-tint:rgba(73,48,108,.27);--strategy-glow:rgba(188,124,255,.16);--strategy-accent:#bc7cff}.strategy-card.fundamental{--strategy-line:#786020;--strategy-tint:rgba(100,77,20,.25);--strategy-glow:rgba(246,183,60,.15);--strategy-accent:#f6c85f}.strategy-card h3{margin:0;color:var(--strategy-accent);font-size:16px;letter-spacing:.05em}.strategy-counts{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin:13px 0}.strategy-count{border:1px solid var(--strategy-line);border-radius:7px;padding:7px}.strategy-count span{display:block;color:var(--muted);font-size:9px;letter-spacing:.08em}.strategy-count strong{display:block;font-size:20px;margin-top:1px}.strategy-groups{display:grid;gap:7px}.strategy-group{border-top:1px solid rgba(146,168,185,.18);padding-top:6px}.strategy-group span{display:block;color:var(--muted);font-size:9px;letter-spacing:.06em}.strategy-instruments{display:flex;flex-wrap:wrap;gap:4px;margin-top:4px}.strategy-instruments a{border:1px solid var(--strategy-line);border-radius:999px;padding:2px 6px;font-size:10px}.strategy-instruments a:hover{background:var(--strategy-tint)}.strategy-empty{color:var(--muted);font-size:11px;margin:auto 0;text-align:center}.strategy-footer{margin-top:auto;padding-top:13px}.strategy-footer a,.strategy-footer span{color:var(--strategy-accent);font-size:10px;font-weight:800;letter-spacing:.05em}.strategy-footer span{opacity:.55}.attention-centre{margin-top:18px}.attention-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.attention-panel{border:1px solid var(--line);border-radius:10px;background:rgba(6,23,37,.82);padding:13px;min-height:158px}.attention-panel h3{margin:0 0 9px;font-size:12px;color:#dce8f0;letter-spacing:.06em}.dashboard-alert,.dashboard-issue{display:grid;gap:2px;border-top:1px solid var(--line);padding:7px 0;font-size:10px}.dashboard-alert:first-of-type,.dashboard-issue:first-of-type{border-top:0}.dashboard-alert{grid-template-columns:90px 58px minmax(0,1fr) 92px}.dashboard-alert strong{color:#dce8f0}.dashboard-alert span,.dashboard-issue span{color:var(--muted)}.dashboard-alert-state{color:var(--amber)!important;text-align:right}.dashboard-alert-state small{display:block;color:var(--muted);font-size:8px}.attention-footer{display:block;color:var(--blue);font-size:10px;font-weight:800;margin-top:8px}.dashboard-status{margin:14px 0 0}.dashboard-status .status-item{flex:1 1 auto}.dashboard-read-only{color:var(--muted);font-size:9px;text-align:right;margin-top:7px;letter-spacing:.06em}
+@media(max-width:1200px){.strategy-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:1050px){.status-grid{grid-template-columns:repeat(3,1fr)}.strategy-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.panels,.workspace{grid-template-columns:1fr}.attention-grid{grid-template-columns:1fr}.step32-grid{grid-template-columns:1fr}.step32-block{border-left:0;border-top:1px solid var(--line);padding:10px 0 0}.step32-block:first-child{border-top:0;padding-top:0}.market-panel{min-height:260px}}
 @media(min-width:761px){.panels{grid-template-columns:repeat(2,minmax(0,1fr))}}
-@media(max-width:760px){.app{grid-template-columns:1fr}.sidebar{position:static;height:auto}.nav{grid-template-columns:repeat(2,1fr)}.system{display:none}.topbar{height:auto;padding:18px;align-items:flex-start;gap:14px}.tabs{overflow:auto;padding:0 18px}.content{padding:18px}.status-grid{grid-template-columns:repeat(2,1fr)}.trade-grid,.plan-strip{grid-template-columns:1fr 1fr}.kite{flex-wrap:wrap;justify-content:flex-end}.chart-intake-list,.native-chart-grid{grid-template-columns:1fr}}
+@media(max-width:760px){.app{grid-template-columns:1fr}.sidebar{position:static;height:auto}.nav{grid-template-columns:repeat(2,1fr)}.system{display:none}.topbar{height:auto;padding:18px;align-items:flex-start;gap:14px}.tabs{overflow:auto;padding:0 18px}.content{padding:18px}.status-grid,.strategy-grid{grid-template-columns:1fr}.trade-grid,.plan-strip{grid-template-columns:1fr 1fr}.kite{flex-wrap:wrap;justify-content:flex-end}.chart-intake-list,.native-chart-grid{grid-template-columns:1fr}.dashboard-alert{grid-template-columns:1fr}.dashboard-alert-state{text-align:left}}
 """
+
+
+def render_dashboard(
+    snapshot: BrowserWorkspaceSnapshot,
+    dashboard: SponsorDashboardProjection,
+) -> str:
+    """Render one read-only derivative Sponsor strategy command centre."""
+
+    if type(dashboard) is not SponsorDashboardProjection:
+        raise TypeError("SPONSOR_DASHBOARD_PROJECTION_INVALID")
+    swing = _dashboard_swing_card(dashboard)
+    inactive = (
+        _dashboard_inactive_strategy(
+            "INTRADAY", "intraday", "/intraday", "VIEW INTRADAY →"
+        )
+        + _dashboard_inactive_strategy(
+            "THETA EARNERS", "theta", "/theta-earners", "VIEW THETA EARNERS →"
+        )
+        + _dashboard_inactive_strategy("FUNDAMENTAL", "fundamental", None, None)
+    )
+    strategy = (
+        '<section><div class="dashboard-section-title"><h2>STRATEGY SUMMARY</h2>'
+        '<span>CURRENT AUTHORITATIVE RECORDS</span></div>'
+        f'<div class="strategy-grid">{swing}{inactive}</div></section>'
+    )
+    alerts = (
+        "".join(
+            '<div class="dashboard-alert"><strong>' + escape(item.instrument)
+            + '</strong><span>' + escape(item.strategy) + '</span><span>'
+            + escape(item.condition) + '</span><span class="dashboard-alert-state">'
+            + escape(item.state.value) + '<small>'
+            + escape(item.observed_at.astimezone(_KOLKATA).strftime("%H:%M IST"))
+            + '</small></span></div>'
+            for item in dashboard.active_alerts
+        )
+        or '<div class="strategy-empty">NO ACTIVE ALERTS</div>'
+    )
+    issues = (
+        "".join(
+            '<div class="dashboard-issue"><strong>' + escape(item.summary)
+            + '</strong><span>' + escape(item.identity.replace("_", " "))
+            + '</span></div>'
+            for item in dashboard.issues
+        )
+        or '<div class="strategy-empty">NO CURRENT SYSTEM / DATA ISSUES</div>'
+    )
+    attention = (
+        '<section class="attention-centre"><div class="dashboard-section-title">'
+        '<h2>ATTENTION CENTRE</h2><span>FACTUAL CURRENT STATE</span></div>'
+        '<div class="attention-grid"><div class="attention-panel"><h3>ACTIVE ALERTS</h3>'
+        + alerts + '<a class="attention-footer" href="/notifications">VIEW ALL ALERTS →</a>'
+        '</div><div class="attention-panel"><h3>SYSTEM / DATA ISSUES</h3>'
+        + issues + '</div></div></section>'
+    )
+    last = (
+        "NOT AVAILABLE"
+        if dashboard.last_successful_analysis is None
+        else dashboard.last_successful_analysis.astimezone(_KOLKATA).strftime(
+            "%d %b %Y · %H:%M IST"
+        ).upper()
+    )
+    status = (
+        '<div class="status-strip dashboard-status">'
+        '<div class="status-item"><span>SYSTEM STATUS</span><strong>'
+        + escape(dashboard.system_status) + '</strong></div>'
+        '<div class="status-item"><span>DATA STATUS</span><strong>'
+        + escape(dashboard.data_status) + '</strong></div>'
+        '<div class="status-item"><span>ANALYSIS</span><strong>'
+        + escape(dashboard.analysis_status) + '</strong></div>'
+        '<div class="status-item"><span>LAST SUCCESSFUL ANALYSIS</span><strong>'
+        + escape(last) + '</strong></div></div>'
+        '<div class="dashboard-read-only">READ-ONLY DERIVATIVE SURFACE · '
+        'NO ANALYTICAL, TRADING OR EXECUTION AUTHORITY</div>'
+    )
+    return _page(
+        title="Strategy Command Centre",
+        subtitle="Current governed strategy attention and system state.",
+        snapshot=snapshot,
+        active_nav="Dashboard",
+        active_tab="",
+        body=strategy + attention + status,
+    )
+
+
+def _dashboard_swing_card(dashboard: SponsorDashboardProjection) -> str:
+    classifications = (
+        (Kr370AnalyticalClassification.BUY_NOW, "BUY NOW"),
+        (Kr370AnalyticalClassification.SELL_NOW, "SELL NOW"),
+        (Kr370AnalyticalClassification.BUY_READY, "BUY READY"),
+        (Kr370AnalyticalClassification.SELL_READY, "SELL READY"),
+    )
+    groups = []
+    for state, label in classifications:
+        values = tuple(
+            item for item in dashboard.swing_opportunities
+            if item.classification is state
+        )
+        if not values:
+            continue
+        instruments = "".join(
+            '<a href="/swing/analysis-details/' + escape(item.run_identity) + '/'
+            + quote(item.instrument, safe="") + '">' + escape(item.instrument) + '</a>'
+            for item in values
+        )
+        groups.append(
+            '<div class="strategy-group"><span>' + label
+            + '</span><div class="strategy-instruments">' + instruments + '</div></div>'
+        )
+    if not dashboard.swing_summary_available:
+        content = '<div class="strategy-empty">CURRENT SWING RESULTS UNAVAILABLE</div>'
+    elif not groups:
+        content = (
+            '<div class="strategy-empty">NO BUY/SELL NOW OR READY OPPORTUNITIES</div>'
+        )
+    else:
+        content = '<div class="strategy-groups">' + "".join(groups) + '</div>'
+    return (
+        '<article class="strategy-card swing"><h3>SWING</h3>'
+        '<div class="strategy-counts"><div class="strategy-count"><span>NOW</span><strong>'
+        + str(dashboard.now_count) + '</strong></div><div class="strategy-count">'
+        '<span>READY</span><strong>' + str(dashboard.ready_count) + '</strong></div></div>'
+        + content + '<div class="strategy-footer"><a href="/swing/opportunities">'
+        'VIEW SWING →</a></div></article>'
+    )
+
+
+def _dashboard_inactive_strategy(
+    title: str,
+    css_class: str,
+    href: str | None,
+    action: str | None,
+) -> str:
+    footer = (
+        '<span>RESERVED</span>'
+        if href is None or action is None
+        else '<a href="' + href + '">' + action + '</a>'
+    )
+    return (
+        '<article class="strategy-card ' + css_class + '"><h3>' + title + '</h3>'
+        '<div class="strategy-empty">SUMMARY NOT YET ACTIVATED</div>'
+        '<div class="strategy-footer">' + footer + '</div></article>'
+    )
 
 
 def render_opportunities(
@@ -3857,6 +4003,7 @@ def _icon(name: str) -> str:
 __all__ = [
     "Step32SponsorWorkflowView",
     "build_step32_sponsor_workflow_view",
+    "render_dashboard",
     "render_browser_page",
     "render_opportunities",
     "render_native_analysis_details",
