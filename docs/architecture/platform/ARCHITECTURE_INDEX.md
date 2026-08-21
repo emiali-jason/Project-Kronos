@@ -50,6 +50,7 @@ Provide navigation to the approved KRONOS Platform Architecture v1.0 documents a
 - [Project KRONOS Data Flow](../DATA_FLOW.md)
 - [ADR-006 — Execution Context Provider Architecture](../adr/ADR-006-Execution-Context-Provider-Architecture.md)
 - [ADR-0011 — KR-370 Analytical Promotion and KR-380 Entry Outcome Semantics](../adr/ADR-0011-KR-370-ANALYTICAL-PROMOTION-AND-KR-380-ENTRY-OUTCOME-SEMANTICS.md)
+- [ADR-0012 / SWING-UX-GOV-01 — Remaining Swing UX/OPS Scope and Disposition](../adr/ADR-0012-SWING-UX-GOV-01-REMAINING-SWING-UX-OPS-SCOPE-AND-DISPOSITION.md)
 - [KR-370 / KR-380 state-family contracts](../interfaces/KR-370-KR-380-STATE-FAMILY-CONTRACTS.md)
 - [PP-007 — Execution Semantics Across Markets](../principles/PP-007-Execution-Semantics-Across-Markets.md)
 

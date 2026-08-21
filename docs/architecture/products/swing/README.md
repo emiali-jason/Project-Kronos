@@ -48,3 +48,5 @@ The architecture migration, engineering publication, repository synchronization,
 - [ADR-008 — Provider Entitlement Assessment Architecture](../../platform/domains/provider/ADR-008-PROVIDER-ENTITLEMENT-ASSESSMENT-ARCHITECTURE.md)
 - [ADR-009 — Provider-Bounded Instrument Master Acquisition Architecture](../../platform/domains/provider/ADR-009-PROVIDER-BOUNDED-INSTRUMENT-MASTER-ACQUISITION-ARCHITECTURE.md) — Operational Architecture under RC-04
 - [EAIC-002 — Provider → Instrument Submission Contract](../../interfaces/EAIC-002-PROVIDER-TO-INSTRUMENT-SUBMISSION-CONTRACT.md) — Operational Canonical Provider → Instrument Contract under RC-04; runtime submission authority remains absent
+- [ADR-0011 — KR-370 Analytical Promotion and KR-380 Entry Outcome Semantics](../../adr/ADR-0011-KR-370-ANALYTICAL-PROMOTION-AND-KR-380-ENTRY-OUTCOME-SEMANTICS.md) — Approved current analytical-promotion and Entry Outcome ownership
+- [ADR-0012 / SWING-UX-GOV-01 — Remaining Swing UX/OPS Scope and Disposition](../../adr/ADR-0012-SWING-UX-GOV-01-REMAINING-SWING-UX-OPS-SCOPE-AND-DISPOSITION.md) — Approved remaining Swing UX/OPS definitions, dispositions, dependencies, and sequence
