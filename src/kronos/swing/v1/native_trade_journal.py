@@ -24,6 +24,7 @@ from kronos.swing.v1.native_active_trade_lifecycle import (
     TradeExitReason,
 )
 from kronos.swing.v1.native_readiness import NativeLayer2ReadinessRecord
+from kronos.swing.v1.native_readiness_v3 import NativeLayer2ReadinessRecordV3
 from kronos.swing.v1.native_sponsor_decision import (
     SponsorInitiationResult,
     SponsorTradeChoice,
@@ -305,7 +306,7 @@ class TradeJournalService:
                 if (
                     ready is None
                     or ready.result_sha256 != plan.readiness_record_sha256
-                    or plan.readiness_record_identity != f"NATIVE-READINESS-{ready.result_sha256}"
+                    or plan.readiness_record_identity != _readiness_identity(ready)
                     or ready.run_identity != plan.native_run_identity
                     or ready.canonical_instrument != plan.canonical_instrument
                     or ready.native_assessment_sha256 != plan.native_assessment_sha256
@@ -348,6 +349,16 @@ class TradeJournalService:
             return TradeJournalSnapshot(
                 records, calculate_journal_analytics(records), self._validation,
             )
+
+
+def _readiness_identity(
+    record: NativeLayer2ReadinessRecord | NativeLayer2ReadinessRecordV3,
+) -> str:
+    if type(record) is NativeLayer2ReadinessRecordV3:
+        return f"NATIVE-V3-READINESS-{record.result_sha256}"
+    if type(record) is NativeLayer2ReadinessRecord:
+        return f"NATIVE-READINESS-{record.result_sha256}"
+    raise ValueError("JOURNAL_UNAVAILABLE:READINESS_VERSION_UNSUPPORTED")
 
 
 def calculate_journal_analytics(records: tuple[TradeJournalRecord, ...]) -> TradeJournalAnalytics:
@@ -535,7 +546,16 @@ def _validation_analytics(readiness, plans, initiations, lifecycle, records):  #
     trades = tuple(item for item in records if item.record_type is JournalRecordType.TRADE)
     return JournalValidationAnalytics(
         opportunities_reviewed=len(readiness),
-        ready_for_trade_construction=sum(item.step31_eligible for item in readiness),
+        ready_for_trade_construction=sum(
+            item.step31_eligible
+            if type(item) is NativeLayer2ReadinessRecord
+            else any(
+                plan.readiness_record_sha256 == item.result_sha256
+                and plan.readiness_record_identity == _readiness_identity(item)
+                for plan in plans
+            )
+            for item in readiness
+        ),
         trade_plans_produced=len(plans),
         paper_decisions=sum(item.decision is SponsorTradeChoice.PAPER for item in decisions),
         live_decisions=sum(item.decision is SponsorTradeChoice.LIVE for item in decisions),

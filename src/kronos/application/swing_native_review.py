@@ -165,6 +165,7 @@ class NativeReviewWorkflowSnapshot:
             JournalValidationAnalytics(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, (), ()),
         )
     )
+    risk_records: tuple[RiskApproval, ...] = ()
 
     def __post_init__(self) -> None:
         if (
@@ -194,6 +195,8 @@ class NativeReviewWorkflowSnapshot:
             or type(self.step32_eligible_plan_ids) is not tuple
             or type(self.active_lifecycle) is not ActiveTradeLifecycleSnapshot
             or type(self.trade_journal) is not TradeJournalSnapshot
+            or type(self.risk_records) is not tuple
+            or any(type(item) is not RiskApproval for item in self.risk_records)
             or (
                 self.review_pack_record is None
                 and (
@@ -1748,6 +1751,7 @@ class NativeReviewWorkflow:
                 refresh_status=self._refresh_status,
                 active_lifecycle=self._active_lifecycle.snapshot(),
                 trade_journal=self._trade_journal.snapshot(),
+                risk_records=(),
             )
         return NativeReviewWorkflowSnapshot(
             NativeReviewRunState.REVIEW_REQUIRED,
@@ -1821,6 +1825,10 @@ class NativeReviewWorkflow:
             )),
             self._active_lifecycle.snapshot(),
             self._reconcile_journal_unlocked(),
+            tuple(
+                self._step32_inputs[key][1]
+                for key in sorted(self._step32_inputs)
+            ),
         )
 
 

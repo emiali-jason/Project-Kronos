@@ -887,14 +887,68 @@ def render_native_trade_window(
     risk = (
         '<section class="analysis-section"><h2>RISK</h2><div class="analysis-decision">'
         + escape(projection.risk_state.replace("_", " "))
-        + '</div><p>No Risk permission is inferred by this Trade Window.</p></section>'
+        + '</div><p>'
+        + escape(
+            "Exact DOMAIN-007 result. No approval is inferred by this Trade Window."
+            if projection.risk_result_id is not None
+            else "No Risk permission is inferred by this Trade Window."
+        ) + '</p></section>'
+    )
+    timing_label = {
+        "NO_TRIGGER": "WAITING FOR ENTRY TRIGGER",
+        "LONG_ENTRY_TRIGGERED": "ENTRY TRIGGERED — LONG",
+        "SHORT_ENTRY_TRIGGERED": "ENTRY TRIGGERED — SHORT",
+    }.get(
+        projection.kr380_entry_timing_state,
+        projection.kr380_entry_timing_state.replace("_", " "),
     )
     timing = (
-        '<section class="analysis-section"><h2>ENTRY TIMING / SPONSOR ACTION</h2>'
+        '<section class="analysis-section"><h2>ENTRY TIMING</h2>'
         '<div class="analysis-decision">'
-        + escape(projection.kr380_entry_timing_state)
-        + '</div><p>KR-380 entry timing is separate from KR-370 analytical promotion. '
+        + escape(timing_label)
+        + '</div><p>KR-380 entry timing is separate from KR-370 analytical promotion.</p></section>'
+    )
+    sponsor = (
+        '<section class="analysis-section"><h2>SPONSOR DECISION / POSITION</h2>'
+        '<div class="analysis-decision">' + escape(projection.sponsor_decision_state)
+        + '</div><p><strong>Actual Sponsor branch</strong> · '
+        + escape(projection.sponsor_position_state.replace("_", " "))
+        + '</p><p>This branch is separate from the objective KRONOS model lifecycle. '
         'No LIVE / PAPER / IGNORE control is available without its governed downstream authority.</p></section>'
+    )
+    model = (
+        '<section class="analysis-section"><h2>MODEL LIFECYCLE</h2>'
+        '<div class="analysis-decision">'
+        + escape(projection.model_lifecycle_state.replace("_", " "))
+        + '</div><p><strong>Monitoring</strong> · '
+        + escape(projection.model_monitoring_state.replace("_", " "))
+        + (
+            '<br><strong>Model close reason</strong> · '
+            + escape(projection.model_close_reason.replace("_", " "))
+            if projection.model_close_reason is not None else ""
+        )
+        + '<br>Objective model state does not imply that the Sponsor owns a position.</p></section>'
+    )
+    closure = (
+        '<section class="analysis-section"><h2>SPONSOR POSITION CLOSURE</h2>'
+        '<div class="analysis-decision">' + escape(projection.closure_state)
+        + '</div><p>'
+        + escape(
+            "Reason · " + projection.closure_reason.replace("_", " ")
+            if projection.closure_reason is not None
+            else "No governed closure is available."
+        ) + '</p></section>'
+    )
+    journal = (
+        '<section class="analysis-section"><h2>JOURNAL</h2>'
+        + (
+            '<a class="button primary" href="/journal?record='
+            + escape(projection.journal_record_id)
+            + '">OPEN JOURNAL</a><p>Exact Step-33 record available.</p>'
+            if projection.journal_record_id is not None
+            else '<div class="analysis-decision">NOT AVAILABLE</div>'
+                 '<p>No journal record is manufactured before its governed event.</p>'
+        ) + '</section>'
     )
     provenance = (
         '<details class="analysis-section"><summary>GOVERNED PROVENANCE</summary>'
@@ -907,6 +961,19 @@ def render_native_trade_window(
                 if projection.handoff is not None else "NOT PERSISTED"
             )),
             ("Step-31 plan", plan.trade_plan_id if plan is not None else "NOT AVAILABLE"),
+            ("Risk result", projection.risk_result_id or "NOT AVAILABLE"),
+            ("Sponsor decision", projection.sponsor_decision_id or "NOT AVAILABLE"),
+            ("KR-380 Entry Outcome", projection.kr380_entry_outcome_id or "NOT AVAILABLE"),
+            ("KR-390 model trade", projection.model_trade_id or "NOT AVAILABLE"),
+            ("Sponsor position", projection.sponsor_position_id or "NOT AVAILABLE"),
+            ("Sponsor lifecycle", projection.lifecycle_id or "NOT AVAILABLE"),
+            ("Closure", projection.closure_id or "NOT AVAILABLE"),
+            ("Step-33 journal", projection.journal_record_id or "NOT AVAILABLE"),
+            ("Continuity binding", (
+                "EXACT CURRENT"
+                if not projection.continuity_warnings
+                else "FAIL CLOSED · " + " · ".join(projection.continuity_warnings)
+            )),
             ("Step-31 policy", (
                 f"{plan.trade_construction_policy_identity} {plan.trade_construction_policy_version}"
                 if plan is not None else "NOT APPLIED"
@@ -919,7 +986,8 @@ def render_native_trade_window(
         '<h2>' + escape(projection.canonical_instrument + " · " + projection.direction)
         + '</h2><div class="analysis-decision kr370-state kr370-state-now">'
         + escape(heading) + '</div><p>' + escape(notice) + '</p></section>'
-        + geometry + risk + timing + provenance + '</div>'
+        + geometry + risk + timing + model + sponsor + closure + journal
+        + provenance + '</div>'
     )
     return _page(
         title=f"{projection.canonical_instrument} Trade Window",
@@ -1467,15 +1535,25 @@ def render_trade_journal(
     journal: TradeJournalSnapshot,
     *,
     selected_filter: str = "ALL",
+    selected_record_id: str | None = None,
 ) -> str:
     """Render Step-33 history and factual analytics, never active-trade authority."""
 
     selected_filter = selected_filter if selected_filter in {"ALL", "PAPER", "LIVE", "IGNORED"} else "ALL"
     records = tuple(
         item for item in journal.records
-        if selected_filter == "ALL"
-        or (selected_filter == "IGNORED" and item.record_type is JournalRecordType.IGNORED_OPPORTUNITY)
-        or item.mode.value == selected_filter
+        if (
+            selected_record_id is not None
+            and item.journal_record_id == selected_record_id
+        )
+        or (
+            selected_record_id is None
+            and (
+                selected_filter == "ALL"
+                or (selected_filter == "IGNORED" and item.record_type is JournalRecordType.IGNORED_OPPORTUNITY)
+                or item.mode.value == selected_filter
+            )
+        )
     )
     analytics = journal.analytics
     metrics = (

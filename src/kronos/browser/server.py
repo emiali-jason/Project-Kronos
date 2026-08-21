@@ -380,6 +380,7 @@ class KronosBrowserServer(ThreadingHTTPServer):
                 # independently restorable and is never converted as recovery.
                 pass
         self.trade_window.restore(self.visual_v3.completed_snapshot())
+        self.trade_window.synchronize_downstream(self.native_review.snapshot())
         self.progression_snapshot()
         super().__init__(address, _BrowserHandler)
 
@@ -585,6 +586,9 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             })
             return
         if path == "/swing/opportunities":
+            self.server.trade_window.synchronize_downstream(
+                self.server.native_review.snapshot()
+            )
             snapshot, discovery = (
                 self.server.application.opportunities_projection()
             )
@@ -611,6 +615,9 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             return
         details_match = _ANALYSIS_DETAILS_ROUTE.fullmatch(path)
         if details_match:
+            self.server.trade_window.synchronize_downstream(
+                self.server.native_review.snapshot()
+            )
             snapshot, discovery = self.server.application.opportunities_projection()
             details = (
                 None
@@ -646,6 +653,9 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             return
         trade_window_match = _TRADE_WINDOW_ROUTE.fullmatch(path)
         if trade_window_match:
+            self.server.trade_window.synchronize_downstream(
+                self.server.native_review.snapshot()
+            )
             projection = self.server.trade_window.project(
                 trade_window_match.group(1), unquote(trade_window_match.group(2))
             )
@@ -710,13 +720,19 @@ class _BrowserHandler(BaseHTTPRequestHandler):
         if path == "/journal":
             query = parse_qs(urlsplit(self.path).query, keep_blank_values=True)
             selected = query.get("filter", ["ALL"])
-            if set(query).difference({"filter"}) or len(selected) != 1:
+            selected_record = query.get("record", [None])
+            if (
+                set(query).difference({"filter", "record"})
+                or len(selected) != 1
+                or len(selected_record) != 1
+            ):
                 self._text(HTTPStatus.BAD_REQUEST, "Journal filter is invalid.")
                 return
             self._html(render_trade_journal(
                 snapshot,
                 self.server.native_review.journal_snapshot(),
                 selected_filter=selected[0],
+                selected_record_id=selected_record[0],
             ))
             return
         candidate_match = _TRADE_CANDIDATE_ROUTE.fullmatch(path)
