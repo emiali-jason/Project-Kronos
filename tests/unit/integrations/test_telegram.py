@@ -4,6 +4,7 @@ from kronos.integrations.telegram import (
     TELEGRAM_PRIVATE_CHAT_REF,
     TelegramConfigurationService,
     TelegramConfigurationState,
+    TelegramDeliveryControlStore,
     TelegramDeliveryState,
     TelegramTransportError,
 )
@@ -28,6 +29,12 @@ class Vault:
 
     def api_key_stored(self, reference):  # type: ignore[no-untyped-def]
         return reference in self.key
+
+    def remove_api_secret(self, reference):  # type: ignore[no-untyped-def]
+        self.secret.pop(reference, None)
+
+    def remove_api_key(self, reference):  # type: ignore[no-untyped-def]
+        self.key.pop(reference, None)
 
 
 class Source:
@@ -59,6 +66,7 @@ def service(updates=()):  # type: ignore[no-untyped-def]
     value = TelegramConfigurationService(
         provisioner=vault,
         presence_probe=vault,
+        remover=vault,
         token_source=Source(vault.secret),
         chat_source=Source(vault.key),
         transport=transport,
@@ -170,3 +178,47 @@ def test_unconfirmed_or_invalid_chat_fails_closed() -> None:
     value.configure_token(TOKEN)
     assert value.test().state is TelegramDeliveryState.FAILED_RETRYABLE
     assert tuple(item[0] for item in transport.calls) == ("getMe",)
+
+
+def test_disconnect_and_reconnect_only_control_delivery() -> None:
+    value, vault, transport = service()
+    value.configure_token(TOKEN)
+    vault.store_api_key(TELEGRAM_PRIVATE_CHAT_REF, "11111")
+
+    disconnected = value.disconnect()
+    assert disconnected.state is TelegramConfigurationState.DISCONNECTED
+    assert disconnected.delivery_enabled is False
+    assert vault.secret[TELEGRAM_BOT_TOKEN_REF] == TOKEN
+    assert vault.key[TELEGRAM_PRIVATE_CHAT_REF] == "11111"
+    assert value.test().safe_reason == "TELEGRAM_DELIVERY_DISABLED"
+    assert tuple(item[0] for item in transport.calls) == ("getMe",)
+
+    connected = value.connect()
+    assert connected.state is TelegramConfigurationState.READY
+    assert connected.delivery_enabled is True
+    assert tuple(item[0] for item in transport.calls) == ("getMe", "getMe")
+    assert value.test().state is TelegramDeliveryState.SENT
+
+
+def test_remove_configuration_is_explicit_and_removes_both_keychain_items() -> None:
+    value, vault, _ = service()
+    value.configure_token(TOKEN)
+    vault.store_api_key(TELEGRAM_PRIVATE_CHAT_REF, "11111")
+
+    status = value.remove_configuration()
+
+    assert status.state is TelegramConfigurationState.NOT_CONFIGURED
+    assert status.token_configured is False
+    assert status.private_chat_configured is False
+    assert vault.secret == {} and vault.key == {}
+
+
+def test_delivery_control_store_is_private_atomic_and_restart_stable(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    path = tmp_path / "telegram-delivery.json"
+    assert TelegramDeliveryControlStore(path).enabled() is True
+    first = TelegramDeliveryControlStore(path)
+    first.set_enabled(False)
+    assert TelegramDeliveryControlStore(path).enabled() is False
+    assert path.stat().st_mode & 0o777 == 0o600
+    first.set_enabled(True)
+    assert TelegramDeliveryControlStore(path).enabled() is True

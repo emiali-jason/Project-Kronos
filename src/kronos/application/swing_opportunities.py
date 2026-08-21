@@ -884,6 +884,9 @@ class SwingOpportunitiesApplication:
                 provider_state=ProviderConnectionState.CONNECTING,
                 provider_failure="",
             )
+            self.__live_monitoring_result = LiveMonitoringTestResult(
+                LiveMonitoringTestState.NOT_TESTED
+            )
         self.__background_runner(self.__complete_connection, "kronos-browser-auth")
         return True
 
@@ -1046,6 +1049,9 @@ class SwingOpportunitiesApplication:
                 self.__snapshot,
                 provider_state=ProviderConnectionState.DISCONNECTED,
                 provider_failure="",
+            )
+            self.__live_monitoring_result = LiveMonitoringTestResult(
+                LiveMonitoringTestState.NOT_TESTED
             )
         if workflow is not None:
             workflow.close_monitoring()

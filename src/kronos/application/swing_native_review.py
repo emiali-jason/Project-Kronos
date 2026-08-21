@@ -805,6 +805,12 @@ class NativeReviewWorkflow:
     def detach_lifecycle_monitoring(self, position_id: str) -> None:
         self._active_lifecycle_monitoring.detach(position_id)
 
+    @property
+    def active_monitoring_count(self) -> int:
+        """Return process-local active subscriptions without exposing provider state."""
+
+        return len(self._active_lifecycle_monitoring.active_position_ids)
+
     def close(self) -> None:
         """Release process-owned monitoring without mutating retained evidence."""
 

@@ -38,13 +38,18 @@ RUN_2 = "SWING-RUN-22222222222222222222222222222222"
 
 
 class Telegram:
-    def __init__(self, results=()) -> None:  # type: ignore[no-untyped-def]
+    def __init__(self, results=(), *, enabled=True) -> None:  # type: ignore[no-untyped-def]
         self.messages = []
         self.results = list(results)
+        self.enabled = enabled
 
     def status(self):  # type: ignore[no-untyped-def]
         return TelegramConfigurationStatus(
-            TelegramConfigurationState.READY, True, True
+            (
+                TelegramConfigurationState.READY
+                if self.enabled else TelegramConfigurationState.DISCONNECTED
+            ),
+            True, True, delivery_enabled=self.enabled,
         )
 
     def send(self, text):  # type: ignore[no-untyped-def]
@@ -79,6 +84,20 @@ def test_completed_bar_trigger_creates_one_reassessment_only_notification(tmp_pa
     assert "NO TRADE HAS BEEN AUTHORIZED" in record.action
     assert service.observe_progression_watch(watch) is None
     assert len(service.snapshot().records) == 1
+
+
+def test_disconnected_telegram_preserves_browser_notification_without_delivery(
+    tmp_path: Path,
+) -> None:
+    telegram = Telegram(enabled=False)
+    service = ux10(tmp_path, telegram)
+
+    record = service.observe_progression_watch(_triggered("CANBK"))
+
+    assert record is not None
+    assert record.browser_delivery_state is Ux10DeliveryState.SENT
+    assert record.telegram_delivery_state is Ux10DeliveryState.PENDING
+    assert telegram.messages == []
 
 
 def test_non_triggered_watch_does_not_notify(tmp_path: Path) -> None:

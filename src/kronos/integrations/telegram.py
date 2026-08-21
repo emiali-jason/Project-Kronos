@@ -5,7 +5,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
 import json
+import os
+from pathlib import Path
 import re
+import stat
+import tempfile
 from threading import RLock
 from typing import Protocol
 from urllib.error import HTTPError, URLError
@@ -21,6 +25,8 @@ TELEGRAM_PRIVATE_CHAT_REF = "ux10-private-chat"
 _BOT_API_ROOT = "https://api.telegram.org"
 _TOKEN = re.compile(r"[0-9]{6,12}:[A-Za-z0-9_-]{20,80}\Z")
 _CHAT_ID = re.compile(r"[1-9][0-9]{4,19}\Z")
+TELEGRAM_DELIVERY_CONTROL_SCHEMA = "KRONOS-TELEGRAM-DELIVERY-CONTROL-V1"
+TELEGRAM_DELIVERY_CONTROL_CONFIG = "telegram-delivery-control-v1.json"
 
 
 class TelegramConfigurationState(StrEnum):
@@ -28,6 +34,7 @@ class TelegramConfigurationState(StrEnum):
     TOKEN_CONFIGURED = "TOKEN CONFIGURED"
     PRIVATE_CHAT_REQUIRED = "PRIVATE CHAT REQUIRED"
     READY = "READY"
+    DISCONNECTED = "DISCONNECTED"
     CONNECTION_FAILED = "CONNECTION FAILED"
 
 
@@ -43,6 +50,7 @@ class TelegramConfigurationStatus:
     token_configured: bool
     private_chat_configured: bool
     safe_detail: str = ""
+    delivery_enabled: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -74,9 +82,112 @@ class TelegramCredentialProvisioner(Protocol):
     def store_api_key(self, reference: str, value: str) -> None: ...
 
 
+class TelegramCredentialRemover(Protocol):
+    def remove_api_secret(self, reference: str) -> None: ...
+    def remove_api_key(self, reference: str) -> None: ...
+
+
 class TelegramPresenceProbe(Protocol):
     def api_secret_stored(self, reference: str) -> bool: ...
     def api_key_stored(self, reference: str) -> bool: ...
+
+
+class TelegramDeliveryControl(Protocol):
+    def enabled(self) -> bool: ...
+    def set_enabled(self, enabled: bool) -> None: ...
+
+
+def telegram_delivery_control_path(*, home: Path | None = None) -> Path:
+    root = Path.home() if home is None else home
+    return (
+        root / "Library" / "Application Support" / "Project-KRONOS"
+        / TELEGRAM_DELIVERY_CONTROL_CONFIG
+    )
+
+
+class TelegramDeliveryControlStore:
+    """Persist only the non-secret Sponsor Telegram-delivery choice."""
+
+    def __init__(self, path: Path | None = None) -> None:
+        if path is not None and not isinstance(path, Path):
+            raise TypeError("TELEGRAM_DELIVERY_CONTROL_DEPENDENCY_INVALID")
+        self._path = path or telegram_delivery_control_path()
+        self._lock = RLock()
+
+    def enabled(self) -> bool:
+        with self._lock:
+            try:
+                metadata = self._path.lstat()
+            except FileNotFoundError:
+                return True
+            except OSError:
+                return False
+            if (
+                stat.S_ISLNK(metadata.st_mode)
+                or not stat.S_ISREG(metadata.st_mode)
+                or metadata.st_size > 4096
+            ):
+                return False
+            try:
+                payload = json.loads(self._path.read_text(encoding="utf-8"))
+            except (OSError, UnicodeError, json.JSONDecodeError):
+                return False
+            return (
+                type(payload) is dict
+                and set(payload) == {"schema_identity", "enabled"}
+                and payload["schema_identity"] == TELEGRAM_DELIVERY_CONTROL_SCHEMA
+                and type(payload["enabled"]) is bool
+                and payload["enabled"]
+            )
+
+    def set_enabled(self, enabled: bool) -> None:
+        if type(enabled) is not bool:
+            raise TypeError("TELEGRAM_DELIVERY_CONTROL_INVALID")
+        with self._lock:
+            self._path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+            payload = json.dumps({
+                "schema_identity": TELEGRAM_DELIVERY_CONTROL_SCHEMA,
+                "enabled": enabled,
+            }, indent=2, sort_keys=True) + "\n"
+            temporary_name = ""
+            try:
+                with tempfile.NamedTemporaryFile(
+                    mode="w", encoding="utf-8", dir=self._path.parent,
+                    prefix=f".{self._path.name}.", delete=False,
+                ) as temporary:
+                    temporary_name = temporary.name
+                    temporary.write(payload)
+                    temporary.flush()
+                    os.fsync(temporary.fileno())
+                os.chmod(temporary_name, 0o600)
+                os.replace(temporary_name, self._path)
+            except OSError as error:
+                if temporary_name:
+                    try:
+                        os.unlink(temporary_name)
+                    except OSError:
+                        pass
+                raise RuntimeError("TELEGRAM_DELIVERY_CONTROL_WRITE_FAILED") from error
+
+
+class InMemoryTelegramDeliveryControl:
+    """Process-local default for injected/test services; production injects a store."""
+
+    def __init__(self, enabled: bool = True) -> None:
+        if type(enabled) is not bool:
+            raise TypeError("TELEGRAM_DELIVERY_CONTROL_INVALID")
+        self._enabled = enabled
+        self._lock = RLock()
+
+    def enabled(self) -> bool:
+        with self._lock:
+            return self._enabled
+
+    def set_enabled(self, enabled: bool) -> None:
+        if type(enabled) is not bool:
+            raise TypeError("TELEGRAM_DELIVERY_CONTROL_INVALID")
+        with self._lock:
+            self._enabled = enabled
 
 
 class UrllibTelegramBotApiTransport:
@@ -156,6 +267,8 @@ class TelegramConfigurationService:
         token_source: SecureCredentialSource,
         chat_source: SecureCredentialSource,
         transport: TelegramTransport,
+        remover: TelegramCredentialRemover | None = None,
+        delivery_control: TelegramDeliveryControl | None = None,
         timeout_seconds: float = 10.0,
     ) -> None:
         if not 0.0 < timeout_seconds <= 30.0:
@@ -165,6 +278,8 @@ class TelegramConfigurationService:
         self._token_source = token_source
         self._chat_source = chat_source
         self._transport = transport
+        self._remover = remover
+        self._delivery_control = delivery_control or InMemoryTelegramDeliveryControl()
         self._timeout = timeout_seconds
         self._lock = RLock()
         self._discoveries: dict[str, str] = {}
@@ -177,21 +292,71 @@ class TelegramConfigurationService:
         except Exception:
             return TelegramConfigurationStatus(
                 TelegramConfigurationState.CONNECTION_FAILED, False, False,
-                "SECURE CREDENTIAL BACKEND UNAVAILABLE",
+                "SECURE CREDENTIAL BACKEND UNAVAILABLE", False,
             )
+        try:
+            enabled = self._delivery_control.enabled()
+        except Exception:
+            enabled = False
         state = (
-            TelegramConfigurationState.READY if token and chat
+            TelegramConfigurationState.READY if token and chat and enabled
+            else TelegramConfigurationState.DISCONNECTED if token and chat
             else TelegramConfigurationState.PRIVATE_CHAT_REQUIRED if token
             else TelegramConfigurationState.NOT_CONFIGURED
         )
-        return TelegramConfigurationStatus(state, token, chat, self._last_detail)
+        return TelegramConfigurationStatus(
+            state, token, chat, self._last_detail, enabled and token and chat
+        )
+
+    def connect(self) -> TelegramConfigurationStatus:
+        status = self.status()
+        if not status.token_configured or not status.private_chat_configured:
+            self._last_detail = "ADVANCED SETUP REQUIRED"
+            return self.status()
+        try:
+            self._with_token("getMe", {})
+            self._delivery_control.set_enabled(True)
+        except Exception:
+            self._last_detail = "TELEGRAM CONNECTION FAILED"
+        else:
+            self._last_detail = "TELEGRAM DELIVERY ENABLED"
+        return self.status()
+
+    def disconnect(self) -> TelegramConfigurationStatus:
+        status = self.status()
+        if not status.token_configured or not status.private_chat_configured:
+            self._last_detail = "TELEGRAM CONFIGURATION INCOMPLETE"
+            return self.status()
+        try:
+            self._delivery_control.set_enabled(False)
+        except Exception:
+            self._last_detail = "TELEGRAM DELIVERY CONTROL FAILED"
+        else:
+            self._last_detail = "TELEGRAM DELIVERY DISABLED"
+        return self.status()
+
+    def remove_configuration(self) -> TelegramConfigurationStatus:
+        if self._remover is None:
+            self._last_detail = "TELEGRAM CONFIGURATION REMOVAL UNAVAILABLE"
+            return self.status()
+        try:
+            self._remover.remove_api_secret(TELEGRAM_BOT_TOKEN_REF)
+            self._remover.remove_api_key(TELEGRAM_PRIVATE_CHAT_REF)
+            self._delivery_control.set_enabled(False)
+        except Exception:
+            self._last_detail = "TELEGRAM CONFIGURATION REMOVAL FAILED"
+        else:
+            with self._lock:
+                self._discoveries = {}
+            self._last_detail = "TELEGRAM CONFIGURATION REMOVED"
+        return self.status()
 
     def configure_token(self, token: str) -> TelegramConfigurationStatus:
         if not isinstance(token, str) or _TOKEN.fullmatch(token) is None:
             self._last_detail = "BOT TOKEN FORMAT INVALID"
             return TelegramConfigurationStatus(
                 TelegramConfigurationState.CONNECTION_FAILED, False, False,
-                self._last_detail,
+                self._last_detail, False,
             )
         try:
             self._transport.request(
@@ -201,13 +366,13 @@ class TelegramConfigurationService:
             self._last_detail = error.reason
             return TelegramConfigurationStatus(
                 TelegramConfigurationState.CONNECTION_FAILED, False, False,
-                self._last_detail,
+                self._last_detail, False,
             )
         except Exception:
             self._last_detail = "TELEGRAM_IDENTITY_CHECK_FAILED"
             return TelegramConfigurationStatus(
                 TelegramConfigurationState.CONNECTION_FAILED, False, False,
-                self._last_detail,
+                self._last_detail, False,
             )
         try:
             self._provisioner.store_api_secret(TELEGRAM_BOT_TOKEN_REF, token)
@@ -257,6 +422,7 @@ class TelegramConfigurationService:
             self._last_detail = "PRIVATE CHAT SELECTION INVALID"
             return self.status()
         self._provisioner.store_api_key(TELEGRAM_PRIVATE_CHAT_REF, chat_id)
+        self._delivery_control.set_enabled(True)
         self._last_detail = "PRIVATE CHAT CONFIRMED"
         with self._lock:
             self._discoveries = {}
@@ -277,6 +443,11 @@ class TelegramConfigurationService:
         if not isinstance(text, str) or not text or len(text) > 4096:
             return TelegramDeliveryResult(
                 TelegramDeliveryState.FAILED_FINAL, "TELEGRAM_MESSAGE_INVALID"
+            )
+        status = self.status()
+        if status.private_chat_configured and not status.delivery_enabled:
+            return TelegramDeliveryResult(
+                TelegramDeliveryState.FAILED_FINAL, "TELEGRAM_DELIVERY_DISABLED"
             )
         try:
             chat_lease = self._chat_source.acquire(TELEGRAM_PRIVATE_CHAT_REF)
@@ -336,8 +507,12 @@ def _opaque(chat_id: str) -> str:
 
 __all__ = [
     "TELEGRAM_BOT_TOKEN_REF", "TELEGRAM_PRIVATE_CHAT_REF", "TELEGRAM_PROVIDER",
+    "TELEGRAM_DELIVERY_CONTROL_CONFIG", "TELEGRAM_DELIVERY_CONTROL_SCHEMA",
     "TelegramConfigurationService", "TelegramConfigurationState",
     "TelegramConfigurationStatus", "TelegramDeliveryResult",
-    "TelegramDeliveryState", "TelegramPrivateChatCandidate", "TelegramTransport",
+    "InMemoryTelegramDeliveryControl", "TelegramDeliveryControlStore",
+    "TelegramDeliveryState",
+    "TelegramPrivateChatCandidate", "TelegramTransport",
     "TelegramTransportError", "UrllibTelegramBotApiTransport",
+    "telegram_delivery_control_path",
 ]

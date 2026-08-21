@@ -853,7 +853,20 @@ def test_disconnect_disposes_provider_and_old_capability_fails_closed(monkeypatc
         "build_completed_swing_analysis",
         lambda *_a, **_k: _completed(completed),
     )
+    monkeypatch.setattr(
+        app,
+        "run_live_monitoring_e2e",
+        lambda *_a, **_k: app.LiveMonitoringTestResult(
+            app.LiveMonitoringTestState.PASS,
+            "RELIANCE",
+            market_data_received=True,
+            domain_002_accepted=True,
+            observed_at=NOW,
+        ),
+    )
     assert service.connect_provider()
+    assert service.test_live_monitoring("RELIANCE")
+    assert service.live_monitoring_result().state is app.LiveMonitoringTestState.PASS
     assert service.run_analysis()
     old_capability = provider.capability
 
@@ -864,6 +877,7 @@ def test_disconnect_disposes_provider_and_old_capability_fails_closed(monkeypatc
     assert snapshot.provider_state is app.ProviderConnectionState.DISCONNECTED
     assert snapshot.analysis_state is app.AnalysisState.READY
     assert snapshot.opportunities == (_opportunity(),)
+    assert service.live_monitoring_result().state is app.LiveMonitoringTestState.NOT_TESTED
     assert service.run_analysis() is False
     assert service.disconnect_provider() is False
 

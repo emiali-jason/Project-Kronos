@@ -353,6 +353,11 @@ class SwingUx10NotificationService:
         )
 
     def retry_pending(self) -> None:
+        if (
+            self._telegram is None
+            or not self._telegram.status().delivery_enabled
+        ):
+            return
         now = self._clock()
         with self._lock:
             pending = tuple(
@@ -392,9 +397,12 @@ class SwingUx10NotificationService:
             if dedup in self._records:
                 return None
         now = created_at or self._clock()
+        telegram_status = (
+            self._telegram.status() if self._telegram is not None else None
+        )
         telegram_state = (
             Ux10DeliveryState.PENDING
-            if self._telegram is not None and self._telegram.status().private_chat_configured
+            if telegram_status is not None and telegram_status.private_chat_configured
             else Ux10DeliveryState.NOT_CONFIGURED
         )
         values = dict(
@@ -415,7 +423,11 @@ class SwingUx10NotificationService:
         self._store.retain(record)
         with self._lock:
             self._records[dedup] = record
-        if telegram_state is Ux10DeliveryState.PENDING:
+        if (
+            telegram_state is Ux10DeliveryState.PENDING
+            and telegram_status is not None
+            and telegram_status.delivery_enabled
+        ):
             self._schedule_delivery(dedup)
         return record
 
@@ -425,7 +437,12 @@ class SwingUx10NotificationService:
     def _deliver(self, dedup: str) -> None:
         with self._lock:
             record = self._records.get(dedup)
-        if record is None or self._telegram is None or record.telegram_delivery_state is Ux10DeliveryState.SENT:
+        if (
+            record is None
+            or self._telegram is None
+            or not self._telegram.status().delivery_enabled
+            or record.telegram_delivery_state is Ux10DeliveryState.SENT
+        ):
             return
         result = self._telegram.send(_telegram_message(record))
         attempts = record.delivery_attempts + 1

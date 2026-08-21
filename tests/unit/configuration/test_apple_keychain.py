@@ -9,14 +9,17 @@ from kronos.configuration.apple_keychain import (
     AppleKeychainCredentialError,
     AppleKeychainCredentialPresenceProbe,
     AppleKeychainCredentialProvisioner,
+    AppleKeychainCredentialRemover,
     AppleKeychainCredentialSource,
     AppleKeychainIntendedPrincipalResolver,
     PresenceSubprocessRequest,
     ProvisioningSubprocessRequest,
+    RemovalSubprocessRequest,
     SubprocessRequest,
     SubprocessResult,
     run_security_provisioning_subprocess,
     run_security_framework_provisioning,
+    run_security_framework_removal,
     run_security_framework_subprocess,
     run_security_subprocess,
 )
@@ -63,6 +66,16 @@ class _FakePresenceRunner:
     def __call__(self, request: PresenceSubprocessRequest) -> SubprocessResult:
         self.requests.append(request)
         return SubprocessResult(self.returncodes.pop(0), b"metadata", b"")
+
+
+class _FakeRemovalRunner:
+    def __init__(self, returncodes: list[int]) -> None:
+        self.returncodes = returncodes
+        self.requests: list[RemovalSubprocessRequest] = []
+
+    def __call__(self, request: RemovalSubprocessRequest) -> SubprocessResult:
+        self.requests.append(request)
+        return SubprocessResult(self.returncodes.pop(0), b"", b"")
 
 
 def _source(runner: _FakeRunner) -> AppleKeychainCredentialSource:
@@ -318,6 +331,58 @@ def test_presence_probe_never_requests_keychain_values() -> None:
         "api-key:app-primary",
         "api-secret:secret-primary",
     ]
+
+
+def test_explicit_remover_deletes_only_named_api_credentials() -> None:
+    runner = _FakeRemovalRunner([0, -25300])
+    remover = AppleKeychainCredentialRemover(provider="TELEGRAM-BOT", runner=runner)
+
+    remover.remove_api_secret("ux10-bot-token")
+    remover.remove_api_key("ux10-private-chat")
+
+    assert [request.argv for request in runner.requests] == [
+        (
+            "/usr/bin/security", "delete-generic-password", "-s",
+            "com.project-kronos.provider-authentication.telegram-bot", "-a",
+            "api-secret:ux10-bot-token",
+        ),
+        (
+            "/usr/bin/security", "delete-generic-password", "-s",
+            "com.project-kronos.provider-authentication.telegram-bot", "-a",
+            "api-key:ux10-private-chat",
+        ),
+    ]
+    assert repr(remover) == "<AppleKeychainCredentialRemover redacted>"
+
+
+def test_framework_removal_uses_process_identity_without_secret_or_cli(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[bytes, bytes]] = []
+    monkeypatch.setattr(
+        "kronos.configuration.apple_keychain._security_framework_remove",
+        lambda service, account: calls.append((service, account)) or 0,
+    )
+    monkeypatch.setattr(
+        "kronos.configuration.apple_keychain.subprocess.run",
+        lambda *_args, **_kwargs: pytest.fail("subprocess must not execute"),
+    )
+    request = RemovalSubprocessRequest(
+        argv=(
+            "/usr/bin/security", "delete-generic-password", "-s",
+            "com.project-kronos.provider-authentication.telegram-bot", "-a",
+            "api-secret:ux10-bot-token",
+        ),
+        timeout_seconds=5.0,
+    )
+
+    result = run_security_framework_removal(request)
+
+    assert result.returncode == 0
+    assert calls == [(
+        b"com.project-kronos.provider-authentication.telegram-bot",
+        b"api-secret:ux10-bot-token",
+    )]
 
 
 @pytest.mark.parametrize("reference", ["", "space ref", "../ref", "x" * 65])

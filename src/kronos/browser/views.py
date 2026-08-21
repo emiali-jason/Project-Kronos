@@ -3281,6 +3281,44 @@ def render_native_discovery(
     )
 
 
+_SETTINGS_CSS = r"""
+.topbar .title h1{font-size:24px}.topbar .title p{font-size:12px}
+.settings-control-centre{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;align-items:start}
+.settings-control-centre .configuration{max-width:none;min-width:0;padding:14px;border-radius:9px;font-size:12px}
+.settings-control-centre .configuration-head{gap:10px;padding-bottom:9px;margin-bottom:10px}
+.settings-control-centre .configuration-head h2{font-size:15px;letter-spacing:.02em}
+.settings-control-centre .configuration-head small{display:block;color:var(--muted);font-size:10px;margin-top:2px}
+.settings-control-centre .configuration-state{gap:10px;margin:6px 0;font-size:11px}
+.settings-control-centre .configuration-state span{color:var(--muted)}
+.settings-control-centre .configuration-state strong{font-size:11px;text-align:right}
+.settings-control-centre .configuration-note,.settings-control-centre .diagnostic-intro{font-size:10px;line-height:1.45}
+.settings-control-centre button,.settings-control-centre .button{font-size:11px;padding:7px 9px}
+.settings-control-centre label{font-size:11px}.settings-control-centre select{font-size:11px;padding:7px 9px}
+.settings-control-centre .credential-form{gap:7px;margin-top:10px;padding-top:10px}
+.settings-control-centre .credential-form input{font-size:11px;padding:8px 9px}
+.settings-control-centre .configuration-actions{gap:7px;margin-top:10px;flex-wrap:wrap}
+.settings-card{position:relative;overflow:hidden}.settings-card:before{content:"";position:absolute;inset:0 auto 0 0;width:3px;background:var(--card-accent)}
+.settings-kite{--card-accent:#39b99a;background:linear-gradient(145deg,rgba(8,39,38,.94),rgba(6,23,37,.91))}
+.settings-telegram{--card-accent:#3b91e8;background:linear-gradient(145deg,rgba(8,31,58,.96),rgba(6,23,37,.91))}
+.settings-calendar{--card-accent:#9b74e8;background:linear-gradient(145deg,rgba(31,22,57,.95),rgba(6,23,37,.91))}
+.settings-openai{--card-accent:#c06acb;background:linear-gradient(145deg,rgba(48,22,53,.94),rgba(6,23,37,.91))}
+.settings-engineering{--card-accent:#d8a542;background:linear-gradient(145deg,rgba(48,36,12,.92),rgba(6,23,37,.91));grid-column:span 2}
+.settings-security{--card-accent:#4ca8a9;background:linear-gradient(145deg,rgba(13,40,45,.94),rgba(6,23,37,.91));grid-column:1/-1}
+.settings-control-centre .connection-status{font-size:10px;padding:3px 7px}
+.settings-control-centre details.advanced{border-top:1px solid var(--line);margin-top:11px;padding-top:9px}
+.settings-control-centre details.advanced>summary{cursor:pointer;color:#b9d3e6;font-size:10px;font-weight:800;letter-spacing:.06em;list-style:none}
+.settings-control-centre details.advanced>summary::-webkit-details-marker{display:none}
+.settings-control-centre .diagnostic-grid{gap:7px}.settings-control-centre .diagnostic-card{min-height:94px;padding:9px}
+.settings-control-centre .diagnostic-card strong{font-size:11px}.settings-control-centre .diagnostic-card span{font-size:10px}
+.settings-control-centre .safety-warning{border:1px solid #8a6430;background:#2a1e0d;color:#f3d391;border-radius:7px;padding:8px;margin-top:9px;font-size:10px}
+.settings-control-centre .safety-warning strong{display:block;font-size:11px}.settings-control-centre .danger-zone{border-top:1px solid #663b42;margin-top:11px;padding-top:9px}
+.settings-control-centre .danger-zone summary{color:#ef9ea4}.settings-control-centre .danger-zone button{border-color:#793b40;background:#2c151c;color:#ffc3c6}
+.settings-security-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px}.settings-security-grid div{border-left:1px solid var(--line);padding-left:9px}.settings-security-grid div:first-child{border-left:0;padding-left:0}.settings-security-grid span,.settings-security-grid strong{display:block}.settings-security-grid span{color:var(--muted);font-size:9px;letter-spacing:.05em}.settings-security-grid strong{font-size:11px;margin-top:3px}
+@media(max-width:1100px){.settings-control-centre{grid-template-columns:repeat(2,minmax(0,1fr))}.settings-engineering{grid-column:span 1}.settings-security{grid-column:1/-1}.settings-security-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:700px){.settings-control-centre{grid-template-columns:1fr}.settings-engineering,.settings-security{grid-column:auto}.settings-security-grid{grid-template-columns:1fr}.settings-security-grid div{border-left:0;border-top:1px solid var(--line);padding:7px 0 0}.settings-security-grid div:first-child{border-top:0;padding-top:0}}
+"""
+
+
 def render_settings(
     snapshot: BrowserWorkspaceSnapshot,
     chart_analyst_status: ChartAnalystConnectionStatus,
@@ -3290,6 +3328,7 @@ def render_settings(
     market_calendar_health: tuple[CalendarCoverageHealth, ...] = (),
     telegram_status: TelegramConfigurationStatus | None = None,
     telegram_candidates: tuple[TelegramPrivateChatCandidate, ...] = (),
+    kite_active_watch_count: int = 0,
 ) -> str:
     if (
         type(chart_analyst_status) is not ChartAnalystConnectionStatus
@@ -3347,13 +3386,14 @@ def render_settings(
         for item in market_calendar_health
     )
     calendar_section = (
-        '<section class="configuration"><div class="configuration-head">'
-        '<h2>DOMAIN-008 Market Calendar</h2></div>'
+        '<section class="configuration settings-card settings-calendar">'
+        '<div class="configuration-head"><div><h2>MARKET CALENDAR</h2>'
+        '<small>DOMAIN-008 Market Calendar</small></div></div>'
         f'{calendar_rows or "<p class=configuration-note>Calendar health unavailable.</p>"}'
         '</section>'
     )
     diagnostics_section = (
-        '<section class="configuration engineering-diagnostics" id="engineering-diagnostics">'
+        '<section class="configuration settings-card settings-engineering engineering-diagnostics" id="engineering-diagnostics">'
         '<div class="configuration-head"><h2><span aria-hidden="true">⚙</span> '
         'Engineering &amp; Diagnostics</h2><span class="read-only-badge">READ ONLY</span>'
         '</div><p class="diagnostic-intro">Read-only technical and historical '
@@ -3382,15 +3422,41 @@ def render_settings(
             '<button type="submit">CONFIRM PRIVATE CHAT</button></form>'
             if candidates else ""
         )
+        telegram_connected = (
+            telegram_status.delivery_enabled
+            and telegram_status.token_configured
+            and telegram_status.private_chat_configured
+        )
+        everyday_actions = (
+            '<form method="post" action="/settings/telegram/disconnect">'
+            '<button type="submit">DISCONNECT</button></form>'
+            '<form method="post" action="/settings/telegram/test">'
+            '<button type="submit">TEST TELEGRAM</button></form>'
+            if telegram_connected else (
+                '<form method="post" action="/settings/telegram/connect">'
+                '<button class="primary" type="submit">CONNECT</button></form>'
+                if telegram_status.token_configured and telegram_status.private_chat_configured
+                else ''
+            )
+        )
         telegram_section = (
-            '<section class="configuration"><div class="configuration-head">'
-            '<h2>Telegram Notifications</h2></div>'
+            '<section class="configuration settings-card settings-telegram">'
+            '<div class="configuration-head"><div><h2>TELEGRAM NOTIFICATIONS</h2>'
+            '<small>Telegram Notifications · delivery only</small></div></div>'
+            '<div class="configuration-state"><span>Status</span><strong>'
+            + ('● CONNECTED' if telegram_connected else (
+                '● DISCONNECTED' if telegram_status.token_configured and telegram_status.private_chat_configured
+                else 'NOT CONFIGURED'))
+            + '</strong></div>'
             '<div class="configuration-state"><span>Bot Token</span><strong>'
             + ("CONFIGURED · ••••••••" if telegram_status.token_configured else "TELEGRAM · NOT CONFIGURED")
             + '</strong></div><div class="configuration-state"><span>Private chat</span><strong>'
             + ("CONFIRMED" if telegram_status.private_chat_configured else "TELEGRAM · NOT CONFIGURED")
-            + '</strong></div><div class="configuration-state"><span>Status</span><strong>'
-            + escape("TELEGRAM " + telegram_status.state.value) + '</strong></div>'
+            + '</strong></div><div class="configuration-state"><span>Destination</span><strong>'
+            + ('PRIVATE CHAT 1' if telegram_status.private_chat_configured else 'NOT CONFIGURED')
+            + '</strong></div><div class="configuration-actions">' + everyday_actions + '</div>'
+            '<details class="advanced"' + (' open' if not telegram_status.token_configured else '') + '>'
+            '<summary>ADVANCED SETUP ▾</summary>'
             '<form class="credential-form" method="post" action="/settings/telegram/token" '
             'autocomplete="off"><label for="telegram-bot-token">Bot Token</label>'
             '<input id="telegram-bot-token" name="bot_token" type="password" '
@@ -3399,38 +3465,63 @@ def render_settings(
             '<div class="configuration-actions"><form method="post" '
             'action="/settings/telegram/private-chat/discover">'
             '<button type="submit">DISCOVER PRIVATE CHAT</button></form>'
-            '<form method="post" action="/settings/telegram/test">'
-            '<button type="submit">TEST TELEGRAM</button></form></div>'
+            + ('' if telegram_connected else '<button type="button" disabled>TEST TELEGRAM</button>')
+            + '</div>'
             + confirmation
+            + ('<details class="danger-zone"><summary>REMOVE TELEGRAM CONFIGURATION</summary>'
+               '<p class="configuration-note">Removes the Keychain token and confirmed private destination.</p>'
+               '<form method="post" action="/settings/telegram/remove?confirm=REMOVE">'
+               '<button type="submit">CONFIRM REMOVE CONFIGURATION</button></form></details>'
+               if telegram_status.token_configured or telegram_status.private_chat_configured else '')
             + '<p class="configuration-note">Only an explicitly confirmed private chat '
             'can receive governed KRONOS notifications. Tokens and chat identifiers are '
-            'never displayed.</p>'
+            'never displayed.</p></details>'
             + (f'<p class="configuration-note">{escape(telegram_status.safe_detail)}</p>'
                if telegram_status.safe_detail else "")
             + '</section>'
         )
-    body = diagnostics_section + calendar_section + telegram_section + (
-        f'<div id="live-monitoring-state" data-state="{escape(monitoring.state.value)}">'
-        '<section class="configuration"><div class="configuration-head">'
-        '<h2>Kite Live Monitoring</h2></div>'
+    kite_controls = (
+        '<form method="post" action="/provider/connect"><button class="primary" type="submit">CONNECT</button></form>'
+        if snapshot.provider_state is not ProviderConnectionState.CONNECTED else (
+            '<div class="safety-warning"><strong>LIVE MONITORING IS ACTIVE</strong>'
+            'Disconnecting Kite will interrupt active watches and may create a monitoring gap requiring reconciliation.'
+            '<span> Continue?</span>'
+            '<form method="post" action="/provider/disconnect">'
+            '<input type="hidden" name="confirm_active" value="YES">'
+            '<button type="submit">CONTINUE · DISCONNECT</button></form></div>'
+            if kite_active_watch_count else
+            '<form method="post" action="/provider/disconnect"><button type="submit">DISCONNECT</button></form>'
+        )
+    )
+    kite_section = (
+        f'<section id="kite-market-data" class="configuration settings-card settings-kite" data-state="{escape(monitoring.state.value)}">'
+        '<div class="configuration-head"><div><h2>KITE / MARKET DATA</h2>'
+        '<small>Kite Live Monitoring · governed read-only Provider</small></div></div>'
         '<div class="configuration-state"><span>Kite</span>'
         f'<strong>● {escape(snapshot.provider_state.value)}</strong></div>'
         '<div class="configuration-state"><span>Live monitoring</span>'
         f'<strong>{escape(monitoring.state.value)}</strong></div>'
-        '<form method="post" action="/settings/kite/live-monitoring/test">'
+        '<div class="configuration-actions">' + kite_controls + '</div>'
+        '<form class="credential-form" method="post" action="/settings/kite/live-monitoring/test">'
         '<label for="live-monitoring-instrument">Instrument</label>'
         f'<select id="live-monitoring-instrument" name="instrument" required>{options}</select>'
         f'<button class="primary" type="submit"{disabled}>TEST LIVE MONITORING</button>'
-        f'</form>{proof}</section></div>'
-        '<section class="configuration"><div class="configuration-head">'
-        '<h2>OpenAI Chart Analyst</h2>'
+        f'</form>{proof}</section>'
+    )
+    openai_section = (
+        '<section class="configuration settings-card settings-openai"><div class="configuration-head">'
+        '<div><h2>OPENAI / CHART ANALYST</h2><small>OpenAI Chart Analyst · governed visual review</small></div>'
         '</div><div class="configuration-state"><span>Credential</span>'
         f'<strong class="connection-status {escape(status_class)}">'
         f'{escape(chart_analyst_status.value)}</strong></div>'
         '<div class="configuration-state"><span>Chart Analyst V2</span>'
         f'<strong>{escape(activation_status.value)}</strong></div>'
+        '<div class="configuration-actions">'
         f'<form method="post" action="/settings/chart-analyst/{activation_action}">'
         f'<button type="submit">{activation_label} Chart Analyst V2</button></form>'
+        '<form method="post" action="/settings/chart-analyst/test">'
+        '<button type="submit">Test Connection</button></form></div>'
+        '<details class="advanced"><summary>ADVANCED SETUP ▾</summary>'
         '<form class="credential-form" method="post" '
         'action="/settings/chart-analyst/credential" autocomplete="off">'
         '<label for="chart-analyst-api-key">OpenAI API key</label>'
@@ -3438,11 +3529,23 @@ def render_settings(
         'autocomplete="off" spellcheck="false" minlength="8" maxlength="512" required>'
         '<div><button class="primary" type="submit">Save credential</button></div>'
         '</form><p class="configuration-note">The saved credential is protected by '
-        'the KRONOS secure credential boundary and is never displayed again.</p>'
-        '<div class="configuration-actions"><form method="post" '
-        'action="/settings/chart-analyst/test">'
-        '<button type="submit">Test Connection</button></form></div></section>'
-        '<script>const liveInitial=document.getElementById("live-monitoring-state").dataset.state;'
+        'the KRONOS secure credential boundary and is never displayed again.</p></details></section>'
+    )
+    security_section = (
+        '<section class="configuration settings-card settings-security"><div class="configuration-head">'
+        '<div><h2>SYSTEM &amp; SECURITY</h2><small>Bounded factual runtime authority</small></div>'
+        '<span class="read-only-badge">READ ONLY</span></div><div class="settings-security-grid">'
+        '<div><span>MODE</span><strong>LOCAL · READ ONLY</strong></div>'
+        '<div><span>PROVIDER CAPABILITY</span><strong>INSIDE THIS PROCESS</strong></div>'
+        '<div><span>ORDER CAPABILITY</span><strong>NONE</strong></div>'
+        '<div><span>DATA VISIBILITY</span><strong>LOCAL ONLY</strong></div>'
+        '<div><span>CREDENTIAL STORAGE</span><strong>KEYCHAIN / SECURE BOUNDARY</strong></div>'
+        '</div></section>'
+    )
+    body = (
+        '<div class="settings-control-centre">' + kite_section + telegram_section
+        + calendar_section + openai_section + diagnostics_section + security_section
+        + '</div><script>const liveInitial=document.getElementById("kite-market-data").dataset.state;'
         'setInterval(async()=>{try{const r=await fetch("/status",{cache:"no-store"});'
         'if(!r.ok)return;const s=await r.json();if(s.live_monitoring!==liveInitial)'
         'location.reload();}catch(_e){}},1000);</script>'
@@ -3454,6 +3557,7 @@ def render_settings(
         active_nav="Settings",
         active_tab="",
         body=body,
+        extra_styles=_SETTINGS_CSS,
     )
 
 

@@ -40,16 +40,19 @@ from kronos.application.swing_visual_v3_live import SwingVisualV3LiveWorkflow
 from kronos.application.swing_trade_window import SwingTradeWindowWorkflow
 from kronos.configuration.apple_keychain import (
     AppleKeychainApiKeySource,
+    AppleKeychainCredentialRemover,
     AppleKeychainCredentialSource,
     AppleKeychainCredentialPresenceProbe,
     AppleKeychainCredentialProvisioner,
     run_security_framework_provisioning,
+    run_security_framework_removal,
     run_security_framework_subprocess,
     run_security_presence_subprocess,
 )
 from kronos.integrations.telegram import (
     TELEGRAM_PROVIDER,
     TelegramConfigurationService,
+    TelegramDeliveryControlStore,
     UrllibTelegramBotApiTransport,
 )
 from kronos.configuration.openai_chart_analyst import (
@@ -535,6 +538,14 @@ class KronosBrowserServer(ThreadingHTTPServer):
             snapshot = self.progression_watches.snapshot()
         return snapshot
 
+    def active_live_monitoring_count(self) -> int:
+        """Count owned live subscriptions without changing retained watch truth."""
+
+        return (
+            self.progression_watches.active_monitoring_count
+            + self.native_review.active_monitoring_count
+        )
+
     def visual_v3_presentations(self):  # type: ignore[no-untyped-def]
         return tuple(
             present_visual_v3_review(item)
@@ -832,6 +843,7 @@ class _BrowserHandler(BaseHTTPRequestHandler):
                     self.server.application.market_calendar_health(),
                     self.server.telegram.status(),
                     self.server.telegram.private_chat_candidates(),
+                    self.server.active_live_monitoring_count(),
                 )
             )
             return
@@ -912,8 +924,7 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             self._redirect("/swing/opportunities")
             return
         if path == "/provider/disconnect":
-            self.server.application.disconnect_provider()
-            self._redirect("/swing/opportunities")
+            self._disconnect_provider()
             return
         if path == "/swing/analysis":
             self.server.application.run_analysis()
@@ -1037,6 +1048,15 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             return
         if path == "/settings/telegram/test":
             self._test_telegram()
+            return
+        if path == "/settings/telegram/connect":
+            self._connect_telegram()
+            return
+        if path == "/settings/telegram/disconnect":
+            self._disconnect_telegram()
+            return
+        if path == "/settings/telegram/remove":
+            self._remove_telegram_configuration()
             return
         if path == "/settings/kite/live-monitoring/test":
             self._test_live_monitoring()
@@ -1350,6 +1370,33 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             raw = b""
         self._redirect("/settings")
 
+    def _disconnect_provider(self) -> None:
+        content_length = self.headers.get("Content-Length")
+        confirmed = False
+        if content_length not in {None, "0"}:
+            try:
+                length = int(content_length)
+            except ValueError:
+                length = 0
+            if (
+                self.headers.get("Content-Type", "").split(";", 1)[0].lower()
+                == "application/x-www-form-urlencoded"
+                and 0 < length <= 128
+            ):
+                try:
+                    fields = parse_qs(
+                        self.rfile.read(length).decode("utf-8"),
+                        strict_parsing=True,
+                    )
+                except (UnicodeDecodeError, ValueError):
+                    fields = {}
+                confirmed = fields == {"confirm_active": ["YES"]}
+        if self.server.active_live_monitoring_count() and not confirmed:
+            self._redirect("/settings#kite-market-data")
+            return
+        self.server.application.disconnect_provider()
+        self._redirect("/swing/opportunities")
+
     def _receive_telegram_token(self) -> None:
         content_type = self.headers.get("Content-Type", "").split(";", 1)[0]
         try:
@@ -1428,6 +1475,32 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             self._text(HTTPStatus.BAD_REQUEST, "Request rejected.")
             return
         self.server.telegram.test()
+        self._redirect("/settings")
+
+    def _connect_telegram(self) -> None:
+        if self.headers.get("Content-Length") not in {None, "0"}:
+            self._text(HTTPStatus.BAD_REQUEST, "Request rejected.")
+            return
+        status = self.server.telegram.connect()
+        if status.delivery_enabled:
+            self.server.ux10_notifications.retry_pending()
+        self._redirect("/settings")
+
+    def _disconnect_telegram(self) -> None:
+        if self.headers.get("Content-Length") not in {None, "0"}:
+            self._text(HTTPStatus.BAD_REQUEST, "Request rejected.")
+            return
+        self.server.telegram.disconnect()
+        self._redirect("/settings")
+
+    def _remove_telegram_configuration(self) -> None:
+        if (
+            self.headers.get("Content-Length") not in {None, "0"}
+            or urlsplit(self.path).query != "confirm=REMOVE"
+        ):
+            self._text(HTTPStatus.BAD_REQUEST, "Request rejected.")
+            return
+        self.server.telegram.remove_configuration()
         self._redirect("/settings")
 
     def _set_chart_analyst_activation(self, enabled: bool) -> None:
@@ -2049,6 +2122,11 @@ def _telegram_security() -> TelegramConfigurationService:
     return TelegramConfigurationService(
         provisioner=provisioner,
         presence_probe=presence,
+        remover=AppleKeychainCredentialRemover(
+            provider=TELEGRAM_PROVIDER,
+            runner=run_security_framework_removal,
+        ),
+        delivery_control=TelegramDeliveryControlStore(),
         token_source=AppleKeychainCredentialSource(
             provider=TELEGRAM_PROVIDER,
             runner=run_security_framework_subprocess,

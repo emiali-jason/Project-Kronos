@@ -29,7 +29,7 @@ MAX_TIMEOUT_SECONDS = 10.0
 
 _REFERENCE_PATTERN = re.compile(r"[A-Za-z0-9._-]{1,64}\Z")
 _PRINCIPAL_PATTERN = re.compile(r"[A-Za-z0-9]{1,64}\Z")
-_MISSING_RETURN_CODES = frozenset({44})
+_MISSING_RETURN_CODES = frozenset({44, -25300})
 _ACCESS_DENIED_RETURN_CODES = frozenset({36, 51})
 _MINIMAL_ENVIRONMENT = (("LANG", "C"), ("PATH", "/usr/bin:/bin"))
 _API_KEY_PURPOSE = "api-key:"
@@ -120,6 +120,21 @@ class PresenceSubprocessRequest:
 
 
 PresenceSubprocessRunner = Callable[[PresenceSubprocessRequest], SubprocessResult]
+
+
+@dataclass(frozen=True, slots=True)
+class RemovalSubprocessRequest:
+    """Inspectable Keychain deletion request containing no credential value."""
+
+    argv: tuple[str, ...]
+    timeout_seconds: float
+    shell: bool = False
+    stdin_devnull: bool = True
+    capture_output: bool = True
+    environment: tuple[tuple[str, str], ...] = _MINIMAL_ENVIRONMENT
+
+
+RemovalSubprocessRunner = Callable[[RemovalSubprocessRequest], SubprocessResult]
 
 
 class AppleKeychainCredentialError(RuntimeError):
@@ -420,6 +435,79 @@ class AppleKeychainCredentialPresenceProbe:
 
     def __reduce_ex__(self, _protocol: int) -> object:
         raise TypeError("CREDENTIAL_PRESENCE_PROBE_SERIALIZATION_PROHIBITED")
+
+
+class AppleKeychainCredentialRemover:
+    """Explicit setup-boundary removal without retrieving protected values."""
+
+    __slots__ = ("_provider", "_runner", "_timeout_seconds")
+
+    def __init__(
+        self,
+        *,
+        provider: str,
+        runner: RemovalSubprocessRunner,
+        timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
+    ) -> None:
+        if not _valid_reference(provider) or not (
+            0 < timeout_seconds <= MAX_TIMEOUT_SECONDS
+        ):
+            raise AppleKeychainCredentialError(
+                CredentialRetrievalOutcome.MALFORMED
+            )
+        self._provider = provider.lower()
+        self._runner = runner
+        self._timeout_seconds = timeout_seconds
+
+    def remove_api_key(self, reference: str) -> None:
+        self._remove(_API_KEY_PURPOSE, reference)
+
+    def remove_api_secret(self, reference: str) -> None:
+        self._remove(_API_SECRET_PURPOSE, reference)
+
+    def _remove(self, purpose: str, reference: str) -> None:
+        if purpose not in {_API_KEY_PURPOSE, _API_SECRET_PURPOSE} or not _valid_reference(
+            reference
+        ):
+            raise AppleKeychainCredentialError(
+                CredentialRetrievalOutcome.MALFORMED
+            )
+        request = RemovalSubprocessRequest(
+            argv=(
+                SECURITY_EXECUTABLE,
+                "delete-generic-password",
+                "-s",
+                f"{SERVICE_PREFIX}{self._provider}",
+                "-a",
+                f"{purpose}{reference}",
+            ),
+            timeout_seconds=self._timeout_seconds,
+        )
+        try:
+            result = self._runner(request)
+            result._take_output()
+        except TimeoutError:
+            raise AppleKeychainCredentialError(
+                CredentialRetrievalOutcome.TIMED_OUT
+            ) from None
+        except AppleKeychainCredentialError:
+            raise
+        except Exception:
+            raise AppleKeychainCredentialError(
+                CredentialRetrievalOutcome.BACKEND_UNAVAILABLE
+            ) from None
+        if result.returncode not in {0, *_MISSING_RETURN_CODES}:
+            raise AppleKeychainCredentialError(
+                _outcome_for_returncode(result.returncode)
+            )
+
+    def __repr__(self) -> str:
+        return "<AppleKeychainCredentialRemover redacted>"
+
+    __str__ = __repr__
+
+    def __reduce_ex__(self, _protocol: int) -> object:
+        raise TypeError("CREDENTIAL_REMOVER_SERIALIZATION_PROHIBITED")
 
 
 class AppleKeychainIntendedPrincipalResolver:
@@ -778,6 +866,57 @@ def run_security_presence_subprocess(
     )
 
 
+def run_security_framework_removal(
+    request: RemovalSubprocessRequest,
+) -> SubprocessResult:
+    """Delete one credential through Security.framework without reading it."""
+
+    if not _valid_removal_request(request):
+        raise AppleKeychainCredentialError(CredentialRetrievalOutcome.MALFORMED)
+    service = request.argv[3].encode("utf-8")
+    account = request.argv[5].encode("utf-8")
+    try:
+        status = _security_framework_remove(service, account)
+    except Exception:
+        raise AppleKeychainCredentialError(
+            CredentialRetrievalOutcome.BACKEND_UNAVAILABLE
+        ) from None
+    return SubprocessResult(status, b"", b"")
+
+
+def _security_framework_remove(service: bytes, account: bytes) -> int:
+    security = ctypes.CDLL(
+        "/System/Library/Frameworks/Security.framework/Security"
+    )
+    core_foundation = ctypes.CDLL(
+        "/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation"
+    )
+    uint32 = ctypes.c_uint32
+    pointer = ctypes.c_void_p
+    status_type = ctypes.c_int32
+    security.SecKeychainFindGenericPassword.argtypes = (
+        pointer, uint32, pointer, uint32, pointer, pointer, pointer,
+        ctypes.POINTER(pointer),
+    )
+    security.SecKeychainFindGenericPassword.restype = status_type
+    security.SecKeychainItemDelete.argtypes = (pointer,)
+    security.SecKeychainItemDelete.restype = status_type
+    core_foundation.CFRelease.argtypes = (pointer,)
+    core_foundation.CFRelease.restype = None
+    service_buffer = ctypes.create_string_buffer(service)
+    account_buffer = ctypes.create_string_buffer(account)
+    item = pointer()
+    status = int(security.SecKeychainFindGenericPassword(
+        None, len(service), service_buffer, len(account), account_buffer,
+        None, None, ctypes.byref(item),
+    ))
+    try:
+        return int(security.SecKeychainItemDelete(item)) if status == 0 else status
+    finally:
+        if item.value:
+            core_foundation.CFRelease(item)
+
+
 def _environment_mapping(entries: tuple[tuple[str, str], ...]) -> Mapping[str, str]:
     environment = dict(entries)
     if environment != dict(_MINIMAL_ENVIRONMENT):
@@ -869,6 +1008,28 @@ def _valid_presence_request(request: PresenceSubprocessRequest) -> bool:
                 _INTENDED_PRINCIPAL_PURPOSE,
             )
         )
+    )
+
+
+def _valid_removal_request(request: RemovalSubprocessRequest) -> bool:
+    if request.shell or not request.stdin_devnull or not request.capture_output:
+        return False
+    if not 0 < request.timeout_seconds <= MAX_TIMEOUT_SECONDS:
+        return False
+    if len(request.argv) != 6:
+        return False
+    executable, operation, service_flag, service, account_flag, account = request.argv
+    account_reference = _account_reference(account)
+    return (
+        executable == SECURITY_EXECUTABLE
+        and operation == "delete-generic-password"
+        and service_flag == "-s"
+        and account_flag == "-a"
+        and service.startswith(SERVICE_PREFIX)
+        and _valid_reference(service.removeprefix(SERVICE_PREFIX))
+        and account_reference is not None
+        and _valid_reference(account_reference)
+        and account.startswith((_API_KEY_PURPOSE, _API_SECRET_PURPOSE))
     )
 
 
