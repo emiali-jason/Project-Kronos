@@ -1607,7 +1607,13 @@ class _BrowserHandler(BaseHTTPRequestHandler):
                 self.server.progression_snapshot()
             else:
                 self.server.native_review.upload_review_answer()
-        except (PdfReviewTransportError, TradingViewEvidenceStoreError, OSError, ValueError):
+        except (
+            PdfReviewTransportError,
+            TradingViewEvidenceStoreError,
+            OSError,
+            TypeError,
+            ValueError,
+        ):
             self._redirect("/swing/v1-review")
             return
         self._redirect("/swing/v1-review")

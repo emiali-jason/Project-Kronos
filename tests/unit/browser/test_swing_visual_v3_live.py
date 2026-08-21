@@ -32,6 +32,7 @@ from kronos.swing.v1.pdf_visual_review import (
     PdfReviewTransportError,
 )
 from kronos.swing.v1.pdf_visual_review_v3_live import (
+    VisualV3AnswerImportState,
     VisualV3PdfRecordStore,
     VisualV3PdfReviewTransport,
     _complete_response_example,
@@ -509,6 +510,99 @@ def test_v3_answer_persists_v3_evidence_and_readiness_without_v2_store(
         for item in completed
     )
     assert not tuple(native.evidence_root.rglob("*visual-v2*"))
+
+
+def test_post_validation_failure_is_sanitized_and_identical_retry_is_idempotent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    native, facts, live = _live(tmp_path)
+    record = live.generate(native.snapshot(), facts, native.original_chart_bytes)
+    answer = (
+        live.transport.configuration.answer_directory
+        / record.expected_answer_filename
+    )
+    _answer_pdf(answer, _payload(live, native, facts, record))
+    live_module = __import__(
+        "kronos.application.swing_visual_v3_live",
+        fromlist=["evaluate_completed_one_hour_extension"],
+    )
+    original = live_module.evaluate_completed_one_hour_extension
+    assert live_module._sanitized_post_validation_failure(  # noqa: SLF001
+        ValueError(f"private detail: {tmp_path}")
+    ) == "POST_VALIDATION_PROCESSING_FAILED"
+
+    def fail_after_validation(*_args, **_kwargs):  # type: ignore[no-untyped-def]
+        raise ValueError("COMPLETED_ONE_HOUR_EXTENSION_FACT_INVALID")
+
+    monkeypatch.setattr(
+        "kronos.application.swing_visual_v3_live.evaluate_completed_one_hour_extension",
+        fail_after_validation,
+    )
+    with pytest.raises(
+        ValueError, match="COMPLETED_ONE_HOUR_EXTENSION_FACT_INVALID"
+    ):
+        live.upload(native.snapshot(), facts, native.original_chart_bytes)
+
+    failed = live.snapshot(native.snapshot().native_run_identity).answer_imports[-1]
+    assert failed.state is VisualV3AnswerImportState.ANSWER_IMPORT_FAILED
+    assert failed.reasons == ("COMPLETED_1H_EXTENSION_FACT_INVALID",)
+    assert not failed.consumed
+    assert not live.cycle.completed_snapshot()
+    assert len(tuple((tmp_path / "visual-v3").rglob("*.json"))) == 4
+    assert not tuple((tmp_path / "readiness-v3").rglob("*.json"))
+
+    run = _evidence_run()[1]
+    application = SwingOpportunitiesApplication(
+        _Provider,
+        initial_snapshot=replace(
+            _ready(), swing_analysis_run_identity=run.run_identity
+        ),
+    )
+    application.restore_mtf_fact_snapshot(facts)
+    application.restore_native_discovery_run(run)
+    server = create_browser_server(
+        application,
+        port=0,
+        v1_review=SwingV1ReviewWorkflow(
+            LocalTradingViewEvidenceStore(tmp_path / "legacy")
+        ),
+        native_review=native,
+        visual_v3_live=live,
+    )
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        status, _, page = _browser_request(server, "GET", "/swing/v1-review")
+        assert status == 200
+        assert "V3 ANSWER IMPORT FAILED" in page
+        assert "COMPLETED_1H_EXTENSION_FACT_INVALID" in page
+        assert "V3 REVIEW EVIDENCE IMPORTED" not in page
+        assert "Traceback" not in page
+        assert str(tmp_path) not in page
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+    live._clock = lambda: NOW + timedelta(seconds=1)  # noqa: SLF001
+    live.transport._clock = lambda: NOW + timedelta(seconds=1)  # noqa: SLF001
+    monkeypatch.setattr(
+        "kronos.application.swing_visual_v3_live.evaluate_completed_one_hour_extension",
+        original,
+    )
+    imports = live.upload(native.snapshot(), facts, native.original_chart_bytes)
+
+    assert imports[-2] == failed
+    assert imports[-1].state is VisualV3AnswerImportState.REVIEW_EVIDENCE_IMPORTED
+    assert imports[-1].consumed
+    assert imports[-1].answer_pdf_sha256 == failed.answer_pdf_sha256
+    assert len(live.cycle.completed_snapshot()) == len(record.candidate_packs)
+    assert len(tuple((tmp_path / "visual-v3").rglob("*.json"))) == 4 * len(
+        record.candidate_packs
+    )
+    assert len(tuple((tmp_path / "readiness-v3").rglob("*.json"))) == len(
+        record.candidate_packs
+    )
 
 
 def test_v2_answer_is_rejected_for_v3_pack_without_fallback(tmp_path: Path) -> None:

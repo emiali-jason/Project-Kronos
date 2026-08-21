@@ -411,11 +411,12 @@ def _base_values(
         "native_assessment_sha256": requirement.thesis.native_assessment_sha256,
         "canonical_instrument": requirement.canonical_instrument,
         "direction": requirement.thesis.direction,
-        "analysis_boundary": (
-            getattr(atr, "analysis_boundary")
-            if atr is not None
-            else getattr(hour, "observation_boundary")
-        ),
+        # E03 is evaluated against the governed completed-1H fact.  Its
+        # observation boundary is therefore the same-run analytical boundary
+        # that can authoritatively include that completed bucket.  The E01 ATR
+        # fact remains bound below by immutable integrity identity; its older
+        # daily analysis boundary is not E03's boundary authority.
+        "analysis_boundary": getattr(hour, "observation_boundary"),
         "observation_boundary": getattr(hour, "observation_boundary"),
         "source_market_data_boundary": getattr(
             hour, "source_market_data_boundary"

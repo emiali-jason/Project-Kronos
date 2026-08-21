@@ -39,6 +39,7 @@ from kronos.application.swing_native_review import (
 )
 from kronos.application.swing_progression_watch import SwingProgressionWatchSnapshot
 from kronos.application.swing_visual_v3_live import SwingVisualV3LiveSnapshot
+from kronos.swing.v1.pdf_visual_review_v3_live import VisualV3AnswerImportState
 from kronos.application.swing_v1_browser import (
     BrowserCandidateRecord,
     BrowserStep32Snapshot,
@@ -1887,9 +1888,15 @@ def _native_review_requirements(
                     ) + '</div>'
                 )
             if v3_import is not None and not v3_import.consumed:
+                failure_title = (
+                    "V3 ANSWER IMPORT FAILED"
+                    if v3_import.state
+                    is VisualV3AnswerImportState.ANSWER_IMPORT_FAILED
+                    else "V3 ANSWER PACK REJECTED"
+                )
                 pdf_controls += (
                     '<div class="review-note batch-preflight"><strong>'
-                    'V3 ANSWER PACK REJECTED</strong><br>'
+                    + failure_title + '</strong><br>'
                     + escape(" · ".join(v3_import.reasons)) + '</div>'
                 )
     else:

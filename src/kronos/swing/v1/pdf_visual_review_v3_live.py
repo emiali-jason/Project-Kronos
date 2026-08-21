@@ -72,6 +72,7 @@ class VisualV3AnswerImportState(StrEnum):
     ANSWER_PACK_VERIFIED = "ANSWER_PACK_VERIFIED"
     ANSWER_PACK_REJECTED = "ANSWER_PACK_REJECTED"
     ANSWER_PACK_INCOMPLETE = "ANSWER_PACK_INCOMPLETE"
+    ANSWER_IMPORT_FAILED = "ANSWER_IMPORT_FAILED"
     REVIEW_EVIDENCE_IMPORTED = "REVIEW_EVIDENCE_IMPORTED"
 
 
@@ -432,6 +433,33 @@ class VisualV3PdfReviewTransport:
             ),
             True,
             identity,
+        )
+        self.record_store.retain_import(value)
+        return value
+
+    def record_import_failure(
+        self,
+        record: VisualV3LiveReviewPack,
+        answer: ValidatedVisualV3Answer,
+        reason: str,
+    ) -> VisualV3AnswerImportRecord:
+        safe_reason = (
+            reason
+            if reason in {
+                "COMPLETED_1H_EXTENSION_FACT_INVALID",
+                "POST_VALIDATION_PROCESSING_FAILED",
+            }
+            else "POST_VALIDATION_PROCESSING_FAILED"
+        )
+        value = VisualV3AnswerImportRecord(
+            record.review_pack_id,
+            answer.answer_path.name,
+            str(answer.answer_path),
+            answer.answer_sha256,
+            self._now(),
+            VisualV3AnswerImportState.ANSWER_IMPORT_FAILED,
+            (safe_reason,),
+            False,
         )
         self.record_store.retain_import(value)
         return value

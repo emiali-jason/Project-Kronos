@@ -1,6 +1,6 @@
 from dataclasses import fields, replace
 import copy
-from datetime import timedelta
+from datetime import datetime, timedelta
 import inspect
 
 import pytest
@@ -32,6 +32,9 @@ from tests.unit.swing.v1.test_native_review import _evidence_run
 def _atr(
     original: CompletedOneHourAtrFact,
     value: float | None,
+    *,
+    analysis_boundary: datetime | None = None,
+    observation_boundary: datetime | None = None,
 ) -> CompletedOneHourAtrFact:
     values = {
         item.name: getattr(original, item.name)
@@ -49,6 +52,10 @@ def _atr(
         ),
         "value": value,
     })
+    if analysis_boundary is not None:
+        values["analysis_boundary"] = analysis_boundary
+    if observation_boundary is not None:
+        values["observation_boundary"] = observation_boundary
     return CompletedOneHourAtrFact(
         **values,  # type: ignore[arg-type]
         integrity_sha256=one_hour_atr_integrity_sha256(values),
@@ -158,6 +165,67 @@ def test_completed_one_hour_long_and_short_are_exact_mirrors() -> None:
     assert long.materially_extended is short.materially_extended is False
     assert long.anchor_price == short.anchor_price == 100.0
     assert long.timeframe is short.timeframe is FactualTimeframe.ONE_HOUR
+
+
+def test_e03_uses_governed_completed_1h_boundary_not_midnight_atr_boundary() -> None:
+    facts, run, probable = _evidence_run()
+    requirement = build_native_review_requirements(run, facts)[0]
+    assert requirement.canonical_instrument == probable.canonical_instrument
+    instrument = facts.instrument(requirement.canonical_instrument)
+    hour = instrument.fact(FactualTimeframe.ONE_HOUR)
+    assert instrument.one_hour_atr is not None
+    completed_1515 = replace(
+        hour,
+        observation_boundary=hour.source_timestamp,
+    )
+    midnight = completed_1515.observation_boundary.replace(
+        hour=0, minute=0, second=0, microsecond=0
+    )
+    atr = _atr(
+        instrument.one_hour_atr,
+        instrument.one_hour_atr.value,
+        analysis_boundary=midnight,
+        observation_boundary=completed_1515.observation_boundary,
+    )
+    changed_instrument = replace(
+        instrument,
+        timeframes=tuple(
+            completed_1515
+            if item.timeframe is FactualTimeframe.ONE_HOUR
+            else item
+            for item in instrument.timeframes
+        ),
+        one_hour_atr=atr,
+    )
+    changed = replace(
+        facts,
+        instruments=tuple(
+            changed_instrument
+            if item.canonical_instrument == requirement.canonical_instrument
+            else item
+            for item in facts.instruments
+        ),
+    )
+    requirement = build_native_review_requirements(run, changed)[0]
+
+    result = evaluate_completed_one_hour_extension(requirement, changed)
+
+    assert completed_1515.observation_boundary.hour == 15
+    assert completed_1515.observation_boundary.minute == 15
+    assert atr.analysis_boundary == midnight
+    assert result.analysis_boundary == completed_1515.observation_boundary
+    assert result.analysis_boundary >= result.observation_boundary
+    assert result.analysis_boundary != atr.analysis_boundary
+    assert result.atr_fact_integrity_sha256 == atr.integrity_sha256
+    assert atr.integrity_sha256 == one_hour_atr_integrity_sha256(atr)
+
+    with pytest.raises(
+        ValueError, match="COMPLETED_ONE_HOUR_EXTENSION_FACT_INVALID"
+    ):
+        replace(
+            result,
+            analysis_boundary=result.observation_boundary - timedelta(minutes=1),
+        )
 
 
 def test_radius_2_is_preferred_and_latest_pivot_in_series_is_selected() -> None:

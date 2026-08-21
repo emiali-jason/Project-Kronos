@@ -142,40 +142,67 @@ class SwingVisualV3LiveWorkflow:
             hashes.extend(item.evidence_sha256 for item in candidate.responses)
 
         # The full Answer has passed before any governed V3 evidence is written.
-        for candidate in answer.candidates:
-            requirement = requirements[candidate.canonical_instrument]
-            request_set = next(
-                item for item in prepared
-                if item[0].requirement.canonical_instrument == candidate.canonical_instrument
-            )
-            for request, response in zip(request_set, candidate.responses, strict=True):
-                self.cycle.retain(request, response)
-            candidate_pack = next(
-                item for item in record.candidate_packs
-                if item.canonical_instrument == candidate.canonical_instrument
-            )
-            extension_fact = evaluate_completed_one_hour_extension(
-                requirement, facts
-            )
-            path_clearance_fact = evaluate_one_hour_path_clearance(
-                run_identity=requirement.native_run_identity,
-                instrument=facts.instrument(requirement.canonical_instrument),
-                direction=requirement.thesis.direction,
-            )
-            self.cycle.complete(
+        try:
+            for candidate in answer.candidates:
+                request_set = next(
+                    item for item in prepared
+                    if item[0].requirement.canonical_instrument == candidate.canonical_instrument
+                )
+                for request, response in zip(request_set, candidate.responses, strict=True):
+                    self.cycle.retain(request, response)
+
+            completion_inputs = []
+            for candidate in answer.candidates:
+                requirement = requirements[candidate.canonical_instrument]
+                candidate_pack = next(
+                    item for item in record.candidate_packs
+                    if item.canonical_instrument == candidate.canonical_instrument
+                )
+                extension_fact = evaluate_completed_one_hour_extension(
+                    requirement, facts
+                )
+                path_clearance_fact = evaluate_one_hour_path_clearance(
+                    run_identity=requirement.native_run_identity,
+                    instrument=facts.instrument(requirement.canonical_instrument),
+                    direction=requirement.thesis.direction,
+                )
+                completion_inputs.append((
+                    candidate,
+                    requirement,
+                    candidate_pack,
+                    extension_fact,
+                    path_clearance_fact,
+                ))
+
+            # All deterministic E01/E02/E03 facts are valid before any
+            # Readiness or KR-370 promotion state can be retained.
+            for (
+                candidate,
                 requirement,
-                _v3_layer2(requirement, candidate.responses),
-                facts,
-                candidate.responses,
-                created_at=self._now(),
-                reference=references.get(candidate.canonical_instrument),
-                inputs=extension_native_condition_inputs(
-                    extension_fact, requirement
-                ),
-                review_pack=candidate_pack,
-                path_clearance=path_clearance_fact,
-                extension=extension_fact,
+                candidate_pack,
+                extension_fact,
+                path_clearance_fact,
+            ) in completion_inputs:
+                self.cycle.complete(
+                    requirement,
+                    _v3_layer2(requirement, candidate.responses),
+                    facts,
+                    candidate.responses,
+                    created_at=self._now(),
+                    reference=references.get(candidate.canonical_instrument),
+                    inputs=extension_native_condition_inputs(
+                        extension_fact, requirement
+                    ),
+                    review_pack=candidate_pack,
+                    path_clearance=path_clearance_fact,
+                    extension=extension_fact,
+                )
+        except (OSError, TypeError, ValueError) as error:
+            failed = self.transport.record_import_failure(
+                record, answer, _sanitized_post_validation_failure(error)
             )
+            self._imports = (*self._imports, failed)
+            raise
         imported = self.transport.record_import(record, answer, tuple(hashes))
         self._imports = (*self._imports, imported)
         return self._imports
@@ -330,6 +357,12 @@ class SwingVisualV3LiveWorkflow:
         if not isinstance(value, datetime) or value.tzinfo is None or value.utcoffset() is None:
             raise ValueError("VISUAL_V3_LIVE_CLOCK_INVALID")
         return value
+
+
+def _sanitized_post_validation_failure(error: BaseException) -> str:
+    if str(error) == "COMPLETED_ONE_HOUR_EXTENSION_FACT_INVALID":
+        return "COMPLETED_1H_EXTENSION_FACT_INVALID"
+    return "POST_VALIDATION_PROCESSING_FAILED"
 
 
 def _v3_layer2(
