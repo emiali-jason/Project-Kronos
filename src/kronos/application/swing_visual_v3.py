@@ -11,6 +11,13 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from kronos.swing.v1.mtf_facts import FactualTimeframe, SameRunMtfFactSnapshot
+from kronos.swing.v1.analytical_promotion import (
+    Kr370AnalyticalPromotionRecord,
+    LocalKr370AnalyticalPromotionStore,
+    evaluate_kr370_analytical_promotion,
+)
+from kronos.swing.v1.extension import CompletedOneHourExtensionFact
+from kronos.swing.v1.path_clearance import OneHourPathClearanceFact
 from kronos.swing.v1.native_readiness import NativeConditionInputs
 from kronos.swing.v1.native_readiness_v3 import (
     NativeLayer2ReadinessRecordV3,
@@ -62,6 +69,7 @@ class CompletedVisualV3Review:
     responses: tuple[VisualEvidenceV3Response, ...]
     readiness: NativeLayer2ReadinessRecordV3
     review_pack: VisualV3ReviewPackRecord | None = None
+    promotion: Kr370AnalyticalPromotionRecord | None = None
 
     def __post_init__(self) -> None:
         instrument = self.requirement.canonical_instrument
@@ -91,6 +99,25 @@ class CompletedVisualV3Review:
                 for item in self.responses
             )
             or (
+                self.promotion is not None
+                and (
+                    type(self.promotion) is not Kr370AnalyticalPromotionRecord
+                    or self.promotion.run_identity != run_identity
+                    or self.promotion.canonical_instrument != instrument
+                    or self.promotion.native_assessment_sha256
+                    != self.requirement.thesis.native_assessment_sha256
+                    or self.review_pack is None
+                    or self.promotion.review_pack_identity
+                    != self.review_pack.review_pack_id
+                    or tuple(
+                        item.evidence_sha256 for item in self.responses
+                    )
+                    != tuple(
+                        item[1] for item in self.promotion.visual_evidence_bindings
+                    )
+                )
+            )
+            or (
                 self.review_pack is not None
                 and (
                     type(self.review_pack) is not VisualV3ReviewPackRecord
@@ -118,9 +145,13 @@ class SwingVisualV3ReviewCycle:
         self,
         evidence_store: LocalVisualEvidenceV3Store,
         readiness_store: NativeLayer2ReadinessV3Store,
+        promotion_store: LocalKr370AnalyticalPromotionStore | None = None,
     ) -> None:
         self._evidence_store = evidence_store
         self._readiness_store = readiness_store
+        self._promotion_store = promotion_store or LocalKr370AnalyticalPromotionStore(
+            readiness_store.root.parent / "kr370-analytical-promotion-v1"
+        )
         self._completed: dict[tuple[str, str], CompletedVisualV3Review] = {}
 
     def prepare(
@@ -170,7 +201,11 @@ class SwingVisualV3ReviewCycle:
         reference: McxReferenceResult | None = None,
         inputs: NativeConditionInputs = NativeConditionInputs(),
         review_pack: VisualV3ReviewPackRecord | None = None,
+        path_clearance: OneHourPathClearanceFact | None = None,
+        extension: CompletedOneHourExtensionFact | None = None,
     ) -> NativeLayer2ReadinessRecordV3:
+        if (path_clearance is None) != (extension is None):
+            raise ValueError("KR370_PROMOTION_FACT_SET_INCOMPLETE")
         record = create_native_readiness_record_v3(
             requirement,
             layer2,
@@ -180,9 +215,24 @@ class SwingVisualV3ReviewCycle:
             reference=reference,
             inputs=inputs,
         )
+        promotion = None
+        if path_clearance is not None and extension is not None:
+            if review_pack is None:
+                raise ValueError("KR370_PROMOTION_REVIEW_PACK_REQUIRED")
+            promotion = evaluate_kr370_analytical_promotion(
+                requirement,
+                mtf_snapshot,
+                responses,
+                path_clearance,
+                extension,
+                review_pack_identity=review_pack.review_pack_id,
+                created_at=created_at,
+            )
         self._readiness_store.retain(record)
+        if promotion is not None:
+            self._promotion_store.retain(promotion)
         completed = CompletedVisualV3Review(
-            requirement, mtf_snapshot, responses, record, review_pack
+            requirement, mtf_snapshot, responses, record, review_pack, promotion
         )
         self._completed[(record.run_identity, record.canonical_instrument)] = completed
         return record
@@ -233,8 +283,15 @@ class SwingVisualV3ReviewCycle:
         )
         if readiness is None:
             raise ValueError("VISUAL_V3_RESTORE_READINESS_MISSING")
+        promotion = self._promotion_store.load_exact(
+            requirement.native_run_identity,
+            requirement.canonical_instrument,
+            requirement.thesis.native_assessment_sha256,
+            review_pack.review_pack_id,
+            tuple(item.evidence_sha256 for item in ordered),
+        )
         completed = CompletedVisualV3Review(
-            requirement, mtf_snapshot, ordered, readiness, review_pack
+            requirement, mtf_snapshot, ordered, readiness, review_pack, promotion
         )
         self.restore_completed(completed)
         return completed

@@ -14,6 +14,7 @@ from kronos.swing.v1.extension import (
     evaluate_completed_one_hour_extension,
     extension_native_condition_inputs,
 )
+from kronos.swing.v1.path_clearance import evaluate_one_hour_path_clearance
 from kronos.swing.v1.mtf_facts import FactualTimeframe, SameRunMtfFactSnapshot
 from kronos.swing.v1.native_review import (
     NativeIndependentLayer2Evidence,
@@ -156,6 +157,11 @@ class SwingVisualV3LiveWorkflow:
             extension_fact = evaluate_completed_one_hour_extension(
                 requirement, facts
             )
+            path_clearance_fact = evaluate_one_hour_path_clearance(
+                run_identity=requirement.native_run_identity,
+                instrument=facts.instrument(requirement.canonical_instrument),
+                direction=requirement.thesis.direction,
+            )
             self.cycle.complete(
                 requirement,
                 _v3_layer2(requirement, candidate.responses),
@@ -167,6 +173,8 @@ class SwingVisualV3LiveWorkflow:
                     extension_fact, requirement
                 ),
                 review_pack=candidate_pack,
+                path_clearance=path_clearance_fact,
+                extension=extension_fact,
             )
         imported = self.transport.record_import(record, answer, tuple(hashes))
         self._imports = (*self._imports, imported)

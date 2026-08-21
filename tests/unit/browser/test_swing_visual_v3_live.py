@@ -21,6 +21,9 @@ from kronos.application.swing_v1_review import SwingV1ReviewWorkflow
 from kronos.browser.server import create_browser_server
 from kronos.configuration.pdf_visual_review import PdfVisualReviewConfiguration
 from kronos.swing.v1.evidence_store import LocalTradingViewEvidenceStore
+from kronos.swing.v1.analytical_promotion import (
+    KR370_PROMOTION_CONTRACT_ID,
+)
 from kronos.swing.v1.native_readiness_v3 import NativeLayer2ReadinessV3Store
 from kronos.swing.v1.native_review import NativeReviewEvidenceStore
 from kronos.swing.v1.pdf_visual_review import (
@@ -452,7 +455,12 @@ def test_production_server_constructs_explicit_v3_lifecycle_when_not_injected(
         lambda: configuration,
     )
     run = _evidence_run()[1]
-    application = SwingOpportunitiesApplication(_Provider, initial_snapshot=_ready())
+    application = SwingOpportunitiesApplication(
+        _Provider,
+        initial_snapshot=replace(
+            _ready(), swing_analysis_run_identity=run.run_identity
+        ),
+    )
     application.restore_mtf_fact_snapshot(facts)
     application.restore_native_discovery_run(run)
     server = create_browser_server(
@@ -554,8 +562,22 @@ def test_production_server_selects_v3_and_restores_exact_completed_cycle(
     answer = live.transport.configuration.answer_directory / record.expected_answer_filename
     _answer_pdf(answer, _payload(live, native, facts, record))
     live.upload(native.snapshot(), facts, native.original_chart_bytes)
+    completed_before_restart = live.cycle.completed_snapshot()
+    assert completed_before_restart
+    assert all(item.promotion is not None for item in completed_before_restart)
+    assert all(
+        item.promotion.contract_identity == KR370_PROMOTION_CONTRACT_ID
+        and not item.promotion.execution_authority
+        and not item.promotion.broker_authority
+        for item in completed_before_restart
+    )
     run = _evidence_run()[1]
-    application = SwingOpportunitiesApplication(_Provider, initial_snapshot=_ready())
+    application = SwingOpportunitiesApplication(
+        _Provider,
+        initial_snapshot=replace(
+            _ready(), swing_analysis_run_identity=run.run_identity
+        ),
+    )
     application.restore_mtf_fact_snapshot(facts)
     application.restore_native_discovery_run(run)
     server = create_browser_server(
@@ -577,6 +599,16 @@ def test_production_server_selects_v3_and_restores_exact_completed_cycle(
         assert status == 200
         assert "1H PDH/PDL" not in opportunities
         assert "Confluence Zone" not in opportunities
+        assert "KR-370" in opportunities
+        assert any(
+            label in opportunities
+            for label in (
+                "BUY NOW", "SELL NOW", "BUY READY", "SELL READY",
+                "POTENTIAL BUY SETUP", "POTENTIAL SELL SETUP", "NO SETUP",
+            )
+        )
+        assert "0 OUTSTANDING" not in opportunities
+        assert "0 WATCHABLE" not in opportunities
         status, _, review = _browser_request(server, "GET", "/swing/v1-review")
         assert status == 200
         assert "SWING-V1-VISUAL-QUESTION-SET-V3 3.1" in review
@@ -601,6 +633,17 @@ def test_production_server_selects_v3_and_restores_exact_completed_cycle(
     )
     restored.restore(native.snapshot(), facts, native.original_chart_bytes)
     assert len(restored.cycle.completed_snapshot()) == len(record.candidate_packs)
+    assert all(
+        item.promotion is not None
+        and item.promotion.integrity_sha256
+        == next(
+            previous.promotion.integrity_sha256
+            for previous in completed_before_restart
+            if previous.requirement.canonical_instrument
+            == item.requirement.canonical_instrument
+        )
+        for item in restored.cycle.completed_snapshot()
+    )
 
 
 def test_historical_v2_pack_remains_v2_when_no_same_run_v3_pack(

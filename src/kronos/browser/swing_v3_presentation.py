@@ -10,6 +10,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from kronos.application.swing_visual_v3 import CompletedVisualV3Review
+from kronos.swing.v1.analytical_promotion import (
+    Kr370AnalyticalClassification,
+    Kr370AnalyticalPromotionRecord,
+)
 from kronos.swing.v1.native_readiness import (
     EvidenceCompleteness,
     NativeReadinessState,
@@ -60,6 +64,21 @@ class V3VisualFactPresentation:
 
 
 @dataclass(frozen=True, slots=True)
+class Kr370SponsorPromotionPresentation:
+    classification: str
+    direction: str
+    score: str
+    criteria: tuple[tuple[str, str, str], ...]
+    missing_criteria: tuple[str, ...]
+    hard_gate_reason: str | None
+    not_evaluable_reason: str | None
+    next_promotion_condition: str | None
+    watchability: str
+    all_criteria_satisfied: bool
+    integrity_sha256: str
+
+
+@dataclass(frozen=True, slots=True)
 class V3SponsorEvidencePresentation:
     run_identity: str
     canonical_instrument: str
@@ -74,6 +93,7 @@ class V3SponsorEvidencePresentation:
     next_step: str
     readiness_identity: str
     review_pack_identity: str | None
+    kr370: Kr370SponsorPromotionPresentation | None = None
 
     def machine_for(self, timeframe: str) -> V3MachineFactPresentation:
         return next(item for item in self.machine_facts if item.timeframe == timeframe)
@@ -106,6 +126,9 @@ def present_visual_v3_review(
     machine = review.mtf_snapshot.instrument(
         review.requirement.canonical_instrument
     ).reference_facts
+    promotion = (
+        None if review.promotion is None else _promotion(review.promotion)
+    )
     return V3SponsorEvidencePresentation(
         run_identity=readiness.run_identity,
         canonical_instrument=readiness.canonical_instrument,
@@ -114,15 +137,110 @@ def present_visual_v3_review(
         question_set_version=readiness.question_set_version,
         machine_facts=tuple(_machine(item) for item in machine),
         visual_facts=tuple(_visual(item) for item in review.responses),
-        sponsor_status=_status(review),
+        sponsor_status=(
+            promotion.classification if promotion is not None else _status(review)
+        ),
         readiness=readiness.readiness.value,
         readiness_reason=_plain(readiness.primary_reason),
-        next_step=_next_step(review),
+        next_step=(
+            _promotion_next_step(review.promotion)
+            if review.promotion is not None else _next_step(review)
+        ),
         readiness_identity=readiness.result_sha256,
         review_pack_identity=(
             review.review_pack.review_pack_id if review.review_pack is not None else None
         ),
+        kr370=promotion,
     )
+
+
+def _promotion(
+    record: Kr370AnalyticalPromotionRecord,
+) -> Kr370SponsorPromotionPresentation:
+    if type(record) is not Kr370AnalyticalPromotionRecord:
+        raise TypeError("KR370_SPONSOR_PRESENTATION_INVALID")
+    classification = {
+        Kr370AnalyticalClassification.BUY_NOW: "BUY NOW",
+        Kr370AnalyticalClassification.SELL_NOW: "SELL NOW",
+        Kr370AnalyticalClassification.BUY_READY:
+            "BUY READY — 1 CRITERION REMAINING",
+        Kr370AnalyticalClassification.SELL_READY:
+            "SELL READY — 1 CRITERION REMAINING",
+        Kr370AnalyticalClassification.POTENTIAL_BUY_SETUP:
+            f"POTENTIAL BUY SETUP — {record.missing_count} CRITERIA REMAINING",
+        Kr370AnalyticalClassification.POTENTIAL_SELL_SETUP:
+            f"POTENTIAL SELL SETUP — {record.missing_count} CRITERIA REMAINING",
+        Kr370AnalyticalClassification.NO_SETUP: "NO SETUP",
+    }[record.classification]
+    return Kr370SponsorPromotionPresentation(
+        classification=classification,
+        direction=record.direction.value,
+        score=f"{record.satisfied_count}/5",
+        criteria=tuple(
+            (
+                item.identity.value.replace("_", " "),
+                item.state.value,
+                _plain(item.reason),
+            )
+            for item in record.criteria
+        ),
+        missing_criteria=tuple(
+            item.identity.value.replace("_", " ")
+            for item in record.criteria if item.state.value == "UNSATISFIED"
+        ),
+        hard_gate_reason=(
+            None if record.hard_gate_reason is None
+            else _plain(record.hard_gate_reason)
+        ),
+        not_evaluable_reason=(
+            None if record.not_evaluable_reason is None
+            else _plain(record.not_evaluable_reason)
+        ),
+        next_promotion_condition=(
+            None if record.promotion_condition is None
+            else record.promotion_condition.summary
+        ),
+        watchability=_plain(record.watchability.value),
+        all_criteria_satisfied=record.classification in {
+            Kr370AnalyticalClassification.BUY_NOW,
+            Kr370AnalyticalClassification.SELL_NOW,
+        },
+        integrity_sha256=record.integrity_sha256,
+    )
+
+
+def _promotion_next_step(record: Kr370AnalyticalPromotionRecord) -> str:
+    if record.classification in {
+        Kr370AnalyticalClassification.BUY_NOW,
+        Kr370AnalyticalClassification.SELL_NOW,
+    }:
+        return (
+            "All KR-370 analytical promotion criteria are satisfied. "
+            "Trade geometry, Risk, Sponsor decision and KR-380 Entry Outcome "
+            "remain separate governed authorities."
+        )
+    if record.classification in {
+        Kr370AnalyticalClassification.BUY_READY,
+        Kr370AnalyticalClassification.SELL_READY,
+    }:
+        if record.promotion_condition is not None:
+            return (
+                record.promotion_condition.summary
+                + ". If reached, KRONOS requires new completed evidence and "
+                "reassessment; the watch cannot promote the state directly."
+            )
+        return "One criterion remains. No automated alert is available."
+    if record.classification in {
+        Kr370AnalyticalClassification.POTENTIAL_BUY_SETUP,
+        Kr370AnalyticalClassification.POTENTIAL_SELL_SETUP,
+    }:
+        missing = " · ".join(
+            item.identity.value.replace("_", " ")
+            for item in record.criteria if item.state.value == "UNSATISFIED"
+        )
+        return "Missing criteria: " + missing
+    reason = record.hard_gate_reason or record.not_evaluable_reason
+    return "No current setup. " + _plain(reason or "KR370 criteria not satisfied")
 
 
 def _machine(value: SwingReferenceCprMachineFact) -> V3MachineFactPresentation:
@@ -286,6 +404,7 @@ def _plain(value: str) -> str:
 
 
 __all__ = [
+    "Kr370SponsorPromotionPresentation",
     "V3MachineFactPresentation",
     "V3SponsorEvidencePresentation",
     "V3VisualFactPresentation",

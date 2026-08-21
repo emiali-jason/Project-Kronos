@@ -396,7 +396,13 @@ def _native_opportunity_card(
         '<small class="progression-summary">Requirements to progress · <strong>'
         + str(outstanding) + ' outstanding · ' + str(watchable)
         + ' watchable</strong></small>'
-        if progression_items else ""
+        if progression_items and (outstanding or watchable) and (
+            v3 is None or v3.kr370 is None
+        ) else ""
+    )
+    kr370_summary = (
+        "" if v3 is None or v3.kr370 is None
+        else _kr370_opportunity_summary(v3.kr370)
     )
     return (
         '<article class="opportunity native-opportunity"><div class="opp-head">'
@@ -405,13 +411,43 @@ def _native_opportunity_card(
         f'<span class="direction direction-{escape(direction.lower())}">{escape(direction)}</span>'
         '</div><p class="summary-reason">' + escape(context) + '</p>'
         '<div class="summary-footer"><span class="summary-rr">'
-        + ('Chart / reference status' if v3 is not None else 'Review')
+        + ('KR-370' if v3 is not None and v3.kr370 is not None
+           else 'Chart / reference status' if v3 is not None else 'Review')
         + ' · <strong>'
-        + escape(review_status) + '</strong>' + missing + progression_summary + '</span>'
+        + escape(review_status) + '</strong>' + missing + progression_summary
+        + kr370_summary + '</span>'
         '<span class="native-opportunity-actions"><a class="button" href="/swing/v1-review">Open Native Review →</a>'
         f'<a class="button" href="/swing/analysis-details/{escape(item.run_identity)}/'
         f'{quote(item.canonical_instrument, safe="")}">View Analysis Details →</a></span>'
         '</div></article>'
+    )
+
+
+def _kr370_opportunity_summary(value) -> str:  # type: ignore[no-untyped-def]
+    if value.hard_gate_reason is not None:
+        detail = value.hard_gate_reason
+    elif value.not_evaluable_reason is not None:
+        detail = value.not_evaluable_reason
+    elif value.all_criteria_satisfied:
+        detail = "ALL KR-370 PROMOTION CRITERIA SATISFIED"
+    elif value.missing_criteria:
+        detail = "Missing: " + " · ".join(value.missing_criteria)
+    else:
+        detail = "No current analytical promotion"
+    condition = (
+        ""
+        if value.next_promotion_condition is None
+        else '<small>Next exact condition: <strong>'
+        + escape(value.next_promotion_condition) + '</strong></small>'
+    )
+    alert = (
+        '<small><strong>NO AUTOMATED ALERT AVAILABLE</strong></small>'
+        if value.watchability == "No Automated Alert Available" else ""
+    )
+    return (
+        '<small class="progression-summary">K score · <strong>'
+        + escape(value.score) + '</strong> · ' + escape(detail) + '</small>'
+        + condition + alert
     )
 
 
@@ -608,9 +644,45 @@ def _render_native_analysis_details_v3(
         ("Reference-period identities", " · ".join(f"{value.timeframe} {value.reference_period_identity}" for value in visual_v3.machine_facts)),
         ("Watch identities", _watch_identities(item.canonical_instrument, progression)),
     ]
+    promotion = visual_v3.kr370
+    kr370_summary = ""
+    kr370_audit = ""
+    if promotion is not None:
+        summary = [
+            ("Classification", promotion.classification),
+            ("Direction", promotion.direction),
+            ("K score", promotion.score),
+            ("Missing criteria", " · ".join(promotion.missing_criteria) or "NONE"),
+            ("Hard gate", promotion.hard_gate_reason or "NONE"),
+            ("Evidence status", promotion.not_evaluable_reason or "EVALUABLE"),
+            ("Next exact promotion condition", promotion.next_promotion_condition or "NONE"),
+            ("Watch state", promotion.watchability),
+        ]
+        kr370_summary = (
+            '<section class="analysis-section"><h2>KR-370 ANALYTICAL PROMOTION</h2>'
+            '<div class="analysis-decision">' + escape(promotion.classification)
+            + '</div><div class="analysis-facts">'
+            + _analysis_fact_rows(summary) + '</div>'
+            + (
+                '<p><strong>ALL KR-370 PROMOTION CRITERIA SATISFIED</strong></p>'
+                if promotion.all_criteria_satisfied else ""
+            )
+            + '</section>'
+        )
+        kr370_audit = (
+            '<h3>KR-370 criterion audit</h3><table class="analysis-table">'
+            '<thead><tr><th>Criterion</th><th>State</th><th>Reason</th></tr></thead><tbody>'
+            + ''.join(
+                '<tr><td>' + escape(name) + '</td><td>' + escape(state)
+                + '</td><td>' + escape(reason) + '</td></tr>'
+                for name, state, reason in promotion.criteria
+            ) + '</tbody></table>'
+        )
+        technical.append(("KR-370 promotion identity", promotion.integrity_sha256))
     body = (
         '<p><a class="button" href="/swing/opportunities">← Back to Opportunities</a></p>'
         '<div class="analysis-details">'
+        + kr370_summary
         + _analysis_disclosure("A. WHAT KITE / NATIVE DISCOVERY SAYS", native_facts)
         + '<details class="analysis-section"><summary>B. WHAT THE TRADINGVIEW CHART / CHART ANALYST SAYS</summary>'
         '<p class="technical">Independent chart observations; KRONOS numerical facts are shown separately.</p>'
@@ -622,12 +694,19 @@ def _render_native_analysis_details_v3(
         + '<section class="analysis-section"><h2>D. CURRENT DECISION</h2>'
         '<div class="analysis-decision">' + escape(visual_v3.sponsor_status) + '</div>'
         '<p>' + escape(visual_v3.readiness_reason) + '</p></section>'
-        + _progression_requirements_section(item.canonical_instrument, progression)
+        + _progression_requirements_section(
+            item.canonical_instrument, progression,
+            hide_satisfied=promotion is not None,
+            promotion_complete=(
+                promotion is not None and promotion.all_criteria_satisfied
+            ),
+        )
         + '<section class="analysis-section analysis-next"><h2>F. WHAT HAPPENS NEXT</h2><p>'
         + escape(_v3_next_step(item.canonical_instrument, progression, visual_v3.next_step))
         + '</p></section>'
         + '<details class="analysis-section"><summary>G. TECHNICAL EVIDENCE</summary><div class="analysis-facts">'
-        + _analysis_fact_rows(technical) + '</div></details></div>'
+        + _analysis_fact_rows(technical) + '</div>' + kr370_audit
+        + '</details></div>'
     )
     return _page(
         title=f"{item.canonical_instrument} Analysis Details",
@@ -712,10 +791,24 @@ def _v3_next_step(
 def _progression_requirements_section(
     instrument: str,
     progression: SwingProgressionWatchSnapshot | None,
+    *,
+    hide_satisfied: bool = False,
+    promotion_complete: bool = False,
 ) -> str:
     requirements = () if progression is None else progression.for_instrument(instrument)
+    if hide_satisfied:
+        requirements = tuple(
+            item for item in requirements
+            if item.state is not ProgressionRequirementState.SATISFIED
+        )
     if not requirements:
-        content = '<p>Governed progression requirements are not available for this current candidate.</p>'
+        content = (
+            '<p><strong>ALL KR-370 PROMOTION CRITERIA SATISFIED</strong></p>'
+            if hide_satisfied and promotion_complete else
+            '<p>No unresolved countable KR-370 criterion. See the hard-gate or evidence status above.</p>'
+            if hide_satisfied else
+            '<p>Governed progression requirements are not available for this current candidate.</p>'
+        )
     else:
         rows = []
         for requirement in requirements:

@@ -111,6 +111,7 @@ from kronos.swing.v1.pdf_visual_review_v3_live import (
 )
 from kronos.swing.v1.visual_evidence_v3 import LocalVisualEvidenceV3Store
 from kronos.swing.v1.progression_watch import (
+    derive_kr370_progression_requirements,
     derive_progression_requirements,
     derive_v3_progression_requirements,
 )
@@ -400,6 +401,13 @@ class KronosBrowserServer(ThreadingHTTPServer):
                 )
             )
             if completed_v3 is not None:
+                if completed_v3.promotion is not None:
+                    requirements.extend(
+                        derive_kr370_progression_requirements(
+                            completed_v3.promotion
+                        )
+                    )
+                    continue
                 requirements.extend(derive_v3_progression_requirements(
                     requirement=completed_v3.requirement,
                     machine_facts=completed_v3.mtf_snapshot.instrument(

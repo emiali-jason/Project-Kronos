@@ -348,6 +348,10 @@ class NativeLayer2ReadinessV3Store:
         self._root = root
         self._lock = RLock()
 
+    @property
+    def root(self) -> Path:
+        return self._root
+
     def retain(self, record: NativeLayer2ReadinessRecordV3) -> Path:
         if type(record) is not NativeLayer2ReadinessRecordV3:
             raise TypeError("NATIVE_READINESS_V3_RECORD_INVALID")
