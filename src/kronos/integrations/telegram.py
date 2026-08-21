@@ -241,7 +241,8 @@ class TelegramConfigurationService:
         with self._lock:
             self._discoveries = discovered
         self._last_detail = (
-            "NO PRIVATE CHAT DISCOVERED" if not discovered
+            "SEND A NEW MESSAGE TO KRONOS ALERTS, THEN DISCOVER AGAIN"
+            if not discovered
             else "PRIVATE CHAT CONFIRMATION REQUIRED"
         )
         return tuple(

@@ -124,6 +124,16 @@ def test_multiple_private_chats_are_not_silently_bound() -> None:
     assert vault.key == {}
 
 
+def test_empty_discovery_gives_safe_actionable_retry_guidance() -> None:
+    value, vault, _ = service()
+    value.configure_token(TOKEN)
+    assert value.discover_private_chats() == ()
+    assert value.status().safe_detail == (
+        "SEND A NEW MESSAGE TO KRONOS ALERTS, THEN DISCOVER AGAIN"
+    )
+    assert vault.key == {}
+
+
 def test_test_message_is_exact_and_no_secret_is_returned() -> None:
     value, vault, transport = service()
     value.configure_token(TOKEN)
