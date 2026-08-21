@@ -146,6 +146,7 @@ a{color:inherit;text-decoration:none}.app{display:grid;grid-template-columns:218
 .analysis-details{display:grid;gap:12px;max-width:1180px}.analysis-section{border:1px solid var(--line);background:rgba(6,23,37,.88);border-radius:10px;padding:16px}.analysis-section h2{margin:0 0 10px;color:var(--blue);font-size:15px}.analysis-facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.analysis-fact{border-left:2px solid #28506a;padding:5px 9px;font-size:11px}.analysis-fact span{display:block;color:var(--muted);font-size:9px;letter-spacing:.06em;text-transform:uppercase}.analysis-table{width:100%;border-collapse:collapse;font-size:11px}.analysis-table th,.analysis-table td{text-align:left;vertical-align:top;border-top:1px solid var(--line);padding:7px}.analysis-table th{color:var(--muted);font-size:9px;letter-spacing:.05em}.analysis-decision{font-size:18px;font-weight:800}.analysis-next{border-left:3px solid var(--amber)}
 .missing-evidence{display:block;color:var(--amber);font-size:10px;margin-top:5px}.missing-evidence strong{color:#ffd98c}.blocker-list{margin:8px 0 0;padding-left:18px;color:var(--muted);font-size:11px}
 .native-opportunity{padding:10px 11px;margin-top:7px}.native-opportunity .opp-head{gap:8px}.native-opportunity .opp-identity h3{font-size:18px;line-height:1.2}.native-opportunity .setup-family{font-size:11px;margin-top:0}.native-opportunity .direction{padding:2px 7px;font-size:11px}.native-opportunity .summary-reason{font-size:11px;line-height:1.35;margin:6px 0}.native-opportunity .summary-footer{align-items:flex-end;gap:7px;padding-top:7px}.native-opportunity .summary-rr{flex:1 1 220px;min-width:0;font-size:11px;line-height:1.35;overflow-wrap:anywhere}.native-opportunity .summary-rr>strong{font-size:12px}.native-opportunity .missing-evidence{font-size:9px;line-height:1.3;margin-top:3px}.native-opportunity-actions{display:flex;flex:0 1 auto;justify-content:flex-end;gap:5px;flex-wrap:wrap}.native-opportunity-actions .button{display:inline-flex;align-items:center;min-height:27px;padding:4px 8px;font-size:10px;line-height:1.15;white-space:nowrap}
+.kr370-state{display:inline-flex;align-items:center;border:1px solid currentColor;border-radius:6px;padding:2px 7px;font-size:11px;font-weight:850;letter-spacing:.035em}.kr370-state-now{color:#d8ffea;border-color:#34dc88;background:#12623e;box-shadow:0 0 16px rgba(52,220,136,.18)}.kr370-state-ready{color:#77e6a9;border-color:#248a59;background:rgba(23,103,65,.16)}.kr370-state-potential{color:#ffd57a;border-color:#82631f;background:#2a210c}.kr370-state-no-setup{color:#ff9a9f;border-color:#793b40;background:#2c151c}.kr370-state-unavailable{color:#a9b8c3;border-color:#465866;background:#111d25}.kr370-card-line{display:block;color:var(--muted);font-size:9px;margin-top:4px;letter-spacing:.035em}.kr370-card-line strong{color:#dce8f0}.analysis-decision.kr370-state{font-size:18px;padding:4px 9px;margin-bottom:9px}
 .progression-summary{display:block;color:var(--muted);font-size:9px;margin-top:3px;text-transform:uppercase;letter-spacing:.04em}.progression-list{display:grid;gap:8px}.progression-row{display:grid;grid-template-columns:20px 1fr;gap:8px;border-top:1px solid var(--line);padding-top:8px}.progression-row:first-child{border-top:0;padding-top:0}.progression-marker{color:var(--blue);font-weight:800}.progression-state{display:block;color:var(--amber);font-size:9px;font-weight:800;letter-spacing:.06em;margin-top:2px}.progression-row small{display:block;color:var(--muted);font-size:10px;margin-top:4px}.progression-row form{margin-top:7px}.progression-row details{margin-top:7px}.progression-row details .analysis-fact{margin-top:5px}
 .notification-tabs{display:flex;gap:7px;margin-bottom:12px}.notification-tabs .button{padding:6px 11px;font-size:11px}.notification-tabs .active{background:#0c4f83;border-color:#2c9cff}.notification-action-centre{border:1px solid #8a4c26;background:#21170f;border-radius:9px;padding:11px 13px;margin-bottom:12px}.notification-action-centre h2{margin:0 0 5px;color:#ffd59c;font-size:13px}.notification-action-centre p{margin:0;color:var(--muted);font-size:11px}.notification-list{display:grid;gap:9px}.notification-row{border:1px solid var(--line);background:rgba(6,23,37,.88);border-radius:9px;padding:12px}.notification-head{display:flex;align-items:center;gap:9px}.notification-head h2{font-size:18px;margin:0}.notification-product{color:var(--blue);font-size:10px;font-weight:800}.notification-state{margin-left:auto;border:1px solid currentColor;border-radius:999px;padding:3px 8px;font-size:10px;font-weight:800}.notification-state.ACTIVE{color:var(--green)}.notification-state.TRIGGERED{color:var(--amber)}.notification-state.INACTIVE{color:var(--muted)}.notification-state.STALE{color:var(--red)}.notification-condition{margin:7px 0 4px;font-weight:750}.notification-trigger{border-left:2px solid var(--amber);padding:6px 9px;margin:8px 0;background:#211a0d}.notification-trigger strong,.notification-trigger span{display:block}.notification-trigger span{color:var(--amber);font-size:11px}.notification-trigger small{color:#ffd59c}.notification-meta{display:flex;gap:12px;flex-wrap:wrap;color:var(--muted);font-size:10px}.notification-actions{display:flex;align-items:flex-start;gap:6px;flex-wrap:wrap;margin-top:9px}.notification-actions form{display:inline}.notification-actions button,.notification-actions .button{padding:5px 8px;font-size:10px}.notification-confirm summary{list-style:none;border:1px solid #246295;background:#0b2b47;color:#e9f5ff;padding:5px 8px;border-radius:7px;font-size:10px;font-weight:650;cursor:pointer}.notification-confirm summary::-webkit-details-marker{display:none}.notification-confirm div{position:absolute;z-index:10;max-width:330px;border:1px solid var(--line);background:#071827;padding:10px;border-radius:8px;box-shadow:0 12px 30px rgba(0,0,0,.45)}.notification-confirm p{margin:0 0 7px;color:var(--muted);font-size:11px}.notification-history{margin-top:8px;border-top:1px solid var(--line);padding-top:7px}.notification-history summary{cursor:pointer;color:var(--muted);font-size:10px}.notification-history ul{margin:6px 0 0;padding-left:18px;color:var(--muted);font-size:10px}
 @media(max-width:1050px){.status-grid{grid-template-columns:repeat(3,1fr)}.panels,.workspace{grid-template-columns:1fr}.step32-grid{grid-template-columns:1fr}.step32-block{border-left:0;border-top:1px solid var(--line);padding:10px 0 0}.step32-block:first-child{border-top:0;padding-top:0}.market-panel{min-height:260px}}
@@ -405,6 +406,14 @@ def _native_opportunity_card(
         "" if v3 is None or v3.kr370 is None
         else _kr370_opportunity_summary(v3.kr370)
     )
+    kr370_state = None if v3 is None else v3.kr370
+    state_value = (
+        escape(review_status)
+        if kr370_state is None else
+        '<span class="kr370-state '
+        + _kr370_state_class(kr370_state) + '">'
+        + escape(_kr370_state_label(kr370_state)) + '</span>'
+    )
     return (
         '<article class="opportunity native-opportunity"><div class="opp-head">'
         f'<div class="opp-identity"><h3>{escape(item.canonical_instrument)}</h3>'
@@ -415,7 +424,7 @@ def _native_opportunity_card(
         + ('KR-370' if v3 is not None and v3.kr370 is not None
            else 'Chart / reference status' if v3 is not None else 'Review')
         + ' · <strong>'
-        + escape(review_status) + '</strong>' + missing + progression_summary
+        + state_value + '</strong>' + missing + progression_summary
         + kr370_summary + '</span>'
         '<span class="native-opportunity-actions"><a class="button" href="/swing/v1-review">Open Native Review →</a>'
         f'<a class="button" href="/swing/analysis-details/{escape(item.run_identity)}/'
@@ -425,31 +434,88 @@ def _native_opportunity_card(
 
 
 def _kr370_opportunity_summary(value) -> str:  # type: ignore[no-untyped-def]
-    if value.hard_gate_reason is not None:
-        detail = value.hard_gate_reason
-    elif value.not_evaluable_reason is not None:
-        detail = value.not_evaluable_reason
-    elif value.all_criteria_satisfied:
-        detail = "ALL KR-370 PROMOTION CRITERIA SATISFIED"
-    elif value.missing_criteria:
-        detail = "Missing: " + " · ".join(value.missing_criteria)
-    else:
-        detail = "No current analytical promotion"
+    state = _kr370_state_label(value)
+    if value.not_evaluable_reason is not None:
+        return '<small class="kr370-card-line">Required evidence is unavailable</small>'
+    if state == "NO SETUP":
+        return (
+            '<small class="kr370-card-line">'
+            + escape(_kr370_no_setup_reason(value.hard_gate_reason)) + '</small>'
+        )
+    if value.all_criteria_satisfied:
+        return (
+            '<small class="kr370-card-line"><strong>'
+            'ALL PROMOTION CRITERIA SATISFIED</strong></small>'
+        )
+    remaining = len(value.missing_criteria)
+    count = (
+        '<small class="kr370-card-line"><strong>' + str(remaining)
+        + (' CRITERION' if remaining == 1 else ' CRITERIA')
+        + ' REMAINING</strong></small>'
+    )
+    missing = " · ".join(
+        _kr370_criterion_name(item) for item in value.missing_criteria
+    )
+    waiting = (
+        "Waiting for: " + missing if state in {"BUY READY", "SELL READY"}
+        else "Missing: " + missing
+    )
     condition = (
         ""
         if value.next_promotion_condition is None
-        else '<small>Next exact condition: <strong>'
+        else '<small class="kr370-card-line">Next exact condition: <strong>'
         + escape(value.next_promotion_condition) + '</strong></small>'
     )
     alert = (
-        '<small><strong>NO AUTOMATED ALERT AVAILABLE</strong></small>'
+        '<small class="kr370-card-line"><strong>NO AUTOMATED ALERT AVAILABLE</strong></small>'
         if value.watchability == "No Automated Alert Available" else ""
     )
     return (
-        '<small class="progression-summary">K score · <strong>'
-        + escape(value.score) + '</strong> · ' + escape(detail) + '</small>'
+        count + '<small class="kr370-card-line">' + escape(waiting) + '</small>'
         + condition + alert
     )
+
+
+def _kr370_state_label(value) -> str:  # type: ignore[no-untyped-def]
+    if value.not_evaluable_reason is not None:
+        return "NOT EVALUABLE"
+    return value.classification.partition(" — ")[0]
+
+
+def _kr370_state_class(value) -> str:  # type: ignore[no-untyped-def]
+    label = _kr370_state_label(value)
+    if label in {"BUY NOW", "SELL NOW"}:
+        return "kr370-state-now"
+    if label in {"BUY READY", "SELL READY"}:
+        return "kr370-state-ready"
+    if label in {"POTENTIAL BUY SETUP", "POTENTIAL SELL SETUP"}:
+        return "kr370-state-potential"
+    if label == "NO SETUP":
+        return "kr370-state-no-setup"
+    return "kr370-state-unavailable"
+
+
+def _kr370_criterion_name(value: str) -> str:
+    return {
+        "K1 1H DIRECTIONAL PROGRESSION": "1H Progression",
+        "K2 1H CPR ACCEPTANCE": "1H CPR Clearance",
+        "K3 IMMEDIATE PATH CLEARANCE": "Path Clearance",
+        "K4 SETUP QUALITY": "Setup Quality",
+        "K5 NON EXTENSION": "Extension",
+    }.get(value, "Governed Criterion")
+
+
+def _kr370_no_setup_reason(value: str | None) -> str:
+    return {
+        "V3 1 1H MESSY CHOPPY": "Messy/choppy 1H price action",
+        "AFFIRMATIVE GOVERNED DIRECTIONAL CONFLICT":
+            "Conflicting 1H directional evidence",
+        "NATIVE THESIS INVALIDATED OR STRUCTURAL FAILURE":
+            "Native thesis invalidated or structure failed",
+        "NSE WEEKLY OPPOSING": "Weekly context opposes the setup",
+        "NSE WEEKLY UNAVAILABLE MANDATORY": "Required weekly context is unavailable",
+        "INVALID EXACT EVIDENCE BINDING": "Current governed evidence could not be bound",
+    }.get((value or "").upper(), "Current KR-370 criteria do not establish a setup")
 
 
 def render_native_analysis_details(
@@ -661,7 +727,9 @@ def _render_native_analysis_details_v3(
         ]
         kr370_summary = (
             '<section class="analysis-section"><h2>KR-370 ANALYTICAL PROMOTION</h2>'
-            '<div class="analysis-decision">' + escape(promotion.classification)
+            '<div class="analysis-decision kr370-state '
+            + _kr370_state_class(promotion) + '">'
+            + escape(_kr370_state_label(promotion))
             + '</div><div class="analysis-facts">'
             + _analysis_fact_rows(summary) + '</div>'
             + (
@@ -2140,9 +2208,13 @@ def _native_review_requirements(
             + chart_intake
             + pdf_action
             + (
-                _native_one_minute_review(readiness, requirement, visual_results, reference_result)
-                if readiness is not None
-                else _visual_v2_diagnostics(visual_results)
+                ""
+                if v3_complete else
+                _native_one_minute_review(
+                    readiness, requirement, visual_results, reference_result
+                )
+                if readiness is not None else
+                _visual_v2_diagnostics(visual_results)
             )
             + (
                 _native_trade_plan(

@@ -18,7 +18,10 @@ from kronos.application.swing_visual_v3 import (
     SwingVisualV3ReviewCycle,
 )
 from kronos.browser.server import create_browser_server
-from kronos.browser.swing_v3_presentation import present_visual_v3_review
+from kronos.browser.swing_v3_presentation import (
+    Kr370SponsorPromotionPresentation,
+    present_visual_v3_review,
+)
 from kronos.browser.views import render_native_analysis_details, render_opportunities
 from kronos.swing.v1.mtf_facts import FactualTimeframe
 from kronos.swing.v1.native_readiness import (
@@ -175,6 +178,52 @@ def _requirements(completed: CompletedVisualV3Review):  # type: ignore[no-untype
         readiness=completed.readiness,
         provenance=("CONTROLLED_V3_SPONSOR_FIXTURE",),
     )
+
+
+def _sponsor_promotion(
+    classification: str,
+    *,
+    direction: str = "LONG",
+    missing: tuple[str, ...] = (),
+    hard_gate: str | None = None,
+    unavailable: str | None = None,
+    condition: str | None = None,
+    watchability: str = "Not Applicable",
+) -> Kr370SponsorPromotionPresentation:
+    return Kr370SponsorPromotionPresentation(
+        classification=classification,
+        direction=direction,
+        score=f"{5 - len(missing)}/5",
+        criteria=tuple(
+            (name, "UNSATISFIED" if name in missing else "SATISFIED", "CONTROLLED")
+            for name in (
+                "K1 1H DIRECTIONAL PROGRESSION",
+                "K2 1H CPR ACCEPTANCE",
+                "K3 IMMEDIATE PATH CLEARANCE",
+                "K4 SETUP QUALITY",
+                "K5 NON EXTENSION",
+            )
+        ),
+        missing_criteria=missing,
+        hard_gate_reason=hard_gate,
+        not_evaluable_reason=unavailable,
+        next_promotion_condition=condition,
+        watchability=watchability,
+        all_criteria_satisfied=classification in {"BUY NOW", "SELL NOW"},
+        integrity_sha256="a" * 64,
+    )
+
+
+def _opportunity_with_promotion(
+    promotion: Kr370SponsorPromotionPresentation,
+) -> str:
+    completed, _, run = _completed()
+    presentation = replace(
+        present_visual_v3_review(completed),
+        sponsor_status=promotion.classification,
+        kr370=promotion,
+    )
+    return render_opportunities(_ready(), run, visual_v3=(presentation,))
 
 
 @pytest.mark.parametrize("timeframe", ("1W", "1D", "4H", "1H"))
@@ -428,6 +477,130 @@ def test_opportunity_card_stays_compact_and_uses_v3_status() -> None:
     probable_card = probable_card.split("</article>", 1)[0]
     assert "Reference High" not in probable_card
     assert "BC ₹" not in probable_card
+
+
+@pytest.mark.parametrize(
+    ("classification", "direction", "css_class"),
+    (
+        ("BUY NOW", "LONG", "kr370-state-now"),
+        ("SELL NOW", "SHORT", "kr370-state-now"),
+        ("BUY READY — 1 CRITERION REMAINING", "LONG", "kr370-state-ready"),
+        ("SELL READY — 1 CRITERION REMAINING", "SHORT", "kr370-state-ready"),
+        ("POTENTIAL BUY SETUP — 2 CRITERIA REMAINING", "LONG", "kr370-state-potential"),
+        ("POTENTIAL SELL SETUP — 3 CRITERIA REMAINING", "SHORT", "kr370-state-potential"),
+        ("NO SETUP", "LONG", "kr370-state-no-setup"),
+    ),
+)
+def test_kr370_classification_has_exact_sponsor_colour_family(
+    classification: str, direction: str, css_class: str
+) -> None:
+    missing = (
+        () if classification in {"BUY NOW", "SELL NOW", "NO SETUP"}
+        else ("K1 1H DIRECTIONAL PROGRESSION",)
+        if "READY" in classification
+        else (
+            "K1 1H DIRECTIONAL PROGRESSION",
+            "K3 IMMEDIATE PATH CLEARANCE",
+        )
+    )
+    rendered = _opportunity_with_promotion(_sponsor_promotion(
+        classification,
+        direction=direction,
+        missing=missing,
+        hard_gate="V3 1 1H Messy Choppy" if classification == "NO SETUP" else None,
+    ))
+
+    label = classification.partition(" — ")[0]
+    assert f'class="kr370-state {css_class}">{label}</span>' in rendered
+    assert "kr370-state-now{color:#d8ffea" in rendered
+    assert "kr370-state-ready{color:#77e6a9" in rendered
+    assert "kr370-state-potential{color:#ffd57a" in rendered
+    assert "kr370-state-no-setup{color:#ff9a9f" in rendered
+    assert 'class="direction direction-long"' in rendered
+
+
+def test_not_evaluable_is_neutral_and_distinct_from_evaluated_no_setup() -> None:
+    rendered = _opportunity_with_promotion(_sponsor_promotion(
+        "NO SETUP",
+        unavailable="Mandatory K5 Non Extension Evidence Unavailable",
+    ))
+
+    assert 'class="kr370-state kr370-state-unavailable">NOT EVALUABLE</span>' in rendered
+    assert "Required evidence is unavailable" in rendered
+    assert "kr370-state-no-setup\">NO SETUP" not in rendered
+
+
+def test_potential_card_uses_plain_criterion_names_without_k_score() -> None:
+    rendered = _opportunity_with_promotion(_sponsor_promotion(
+        "POTENTIAL BUY SETUP — 3 CRITERIA REMAINING",
+        missing=(
+            "K1 1H DIRECTIONAL PROGRESSION",
+            "K3 IMMEDIATE PATH CLEARANCE",
+            "K5 NON EXTENSION",
+        ),
+    ))
+
+    assert "3 CRITERIA REMAINING" in rendered
+    assert "Missing: 1H Progression · Path Clearance · Extension" in rendered
+    assert "K score" not in rendered
+    assert "3/5" not in rendered
+    assert "K1 1H" not in rendered
+    assert "K3 IMMEDIATE" not in rendered
+    assert "K5 NON" not in rendered
+
+
+def test_ready_card_preserves_exact_condition_or_no_alert_without_fake_watch() -> None:
+    condition = "Completed 1H close above ₹1,482.5"
+    watchable = _opportunity_with_promotion(_sponsor_promotion(
+        "BUY READY — 1 CRITERION REMAINING",
+        missing=("K2 1H CPR ACCEPTANCE",),
+        condition=condition,
+        watchability="Watch Available",
+    ))
+    unavailable = _opportunity_with_promotion(_sponsor_promotion(
+        "SELL READY — 1 CRITERION REMAINING",
+        direction="SHORT",
+        missing=("K5 NON EXTENSION",),
+        watchability="No Automated Alert Available",
+    ))
+
+    assert "1 CRITERION REMAINING" in watchable
+    assert "Waiting for: 1H CPR Clearance" in watchable
+    assert condition in watchable
+    assert "NO AUTOMATED ALERT AVAILABLE" not in watchable
+    assert "Waiting for: Extension" in unavailable
+    assert "NO AUTOMATED ALERT AVAILABLE" in unavailable
+
+
+@pytest.mark.parametrize("classification", ("BUY NOW", "SELL NOW"))
+def test_now_card_suppresses_zero_diagnostics_and_score(classification: str) -> None:
+    rendered = _opportunity_with_promotion(_sponsor_promotion(classification))
+
+    assert "ALL PROMOTION CRITERIA SATISFIED" in rendered
+    assert "5/5" not in rendered
+    assert "0 OUTSTANDING" not in rendered
+    assert "0 WATCHABLE" not in rendered
+
+
+def test_no_setup_uses_bounded_plain_reason_while_details_retain_enum() -> None:
+    completed, details, _ = _completed()
+    promotion = _sponsor_promotion(
+        "NO SETUP", hard_gate="V3 1 1H Messy Choppy"
+    )
+    compact = _opportunity_with_promotion(promotion)
+    presentation = replace(
+        present_visual_v3_review(completed),
+        sponsor_status=promotion.classification,
+        kr370=promotion,
+    )
+    detailed = render_native_analysis_details(
+        _ready(), details, None, presentation
+    )
+
+    assert "Messy/choppy 1H price action" in compact
+    assert "V3 1 1H Messy Choppy" not in compact
+    assert "V3 1 1H Messy Choppy" in detailed
+    assert 'class="analysis-decision kr370-state kr370-state-no-setup">NO SETUP' in detailed
 
 
 def test_version_mismatch_fails_closed_instead_of_falling_back() -> None:

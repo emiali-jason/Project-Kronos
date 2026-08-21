@@ -699,6 +699,7 @@ def test_production_server_selects_v3_and_restores_exact_completed_cycle(
             for label in (
                 "BUY NOW", "SELL NOW", "BUY READY", "SELL READY",
                 "POTENTIAL BUY SETUP", "POTENTIAL SELL SETUP", "NO SETUP",
+                "NOT EVALUABLE",
             )
         )
         assert "0 OUTSTANDING" not in opportunities
@@ -707,6 +708,10 @@ def test_production_server_selects_v3_and_restores_exact_completed_cycle(
         assert status == 200
         assert "SWING-V1-VISUAL-QUESTION-SET-V3 3.1" in review
         assert "V3 REVIEW EVIDENCE IMPORTED" in review
+        assert "VISUAL EVIDENCE V2" not in review.upper()
+        assert review.count("V3 REVIEW EVIDENCE IMPORTED") == len(
+            completed_before_restart
+        )
     finally:
         server.shutdown()
         server.server_close()

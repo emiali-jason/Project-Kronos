@@ -379,6 +379,7 @@ def test_browser_prepares_native_review_from_same_application_run(tmp_path: Path
         assert status == 200
         assert probable.canonical_instrument in body
         assert run.run_identity in body
+        assert "Visual Evidence V2" in body
         assert "NOT ANALYZED" in body
     finally:
         server.shutdown()
