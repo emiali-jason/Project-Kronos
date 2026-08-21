@@ -144,7 +144,7 @@ a{color:inherit;text-decoration:none}.app{display:grid;grid-template-columns:218
 .one-minute{display:grid;gap:12px}.one-minute h3{margin:0 0 5px;color:var(--muted);font-size:10px;letter-spacing:.07em}.one-minute-status{font-size:16px;color:var(--blue)}.one-minute p{margin:2px 0;color:#cfdee8}.one-minute-facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}.one-minute-fact{border:1px solid var(--line);border-radius:6px;padding:7px 9px;font-size:11px}.one-minute-wait{border-left:2px solid var(--amber);background:#211b0e;padding:8px 10px}.one-minute details{border-top:1px solid var(--line);padding-top:9px}.one-minute summary{cursor:pointer;color:var(--muted);font-size:11px}.native-trade-plan{margin-top:12px;border:1px solid #28506a;border-radius:8px;background:#0b1923;padding:12px}.native-trade-plan h3{margin:0;color:var(--blue);font-size:13px}.native-trade-plan-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:10px}.native-trade-plan-grid div{border:1px solid var(--line);border-radius:6px;padding:8px}.native-trade-plan-grid span{display:block;color:var(--muted);font-size:9px;letter-spacing:.08em}.native-trade-plan-grid strong{display:block;margin-top:3px;font-size:14px}.native-trade-plan .why{margin:10px 0 0;color:#cfdee8;font-size:11px}
 .journal-filters{display:flex;gap:7px;margin-bottom:12px}.journal-filters .button{font-size:11px;padding:6px 10px}.journal-filters .button.primary{background:#0c4f83;border-color:#2c9cff}
 .mtf-fact-banner{border:1px solid #28506c;background:#071f32;color:#8dd0ff;border-radius:8px;padding:8px 11px;margin-bottom:12px;font-size:11px;font-weight:800}.mtf-fact-list{display:grid;gap:8px}.mtf-fact-card{border:1px solid var(--line);background:rgba(6,23,37,.88);border-radius:8px;padding:10px}.mtf-fact-card summary{cursor:pointer;display:flex;justify-content:space-between;gap:12px}.mtf-fact-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px;margin-top:9px}.mtf-fact-timeframe{border:1px solid var(--line);border-radius:6px;padding:8px;min-width:0}.mtf-fact-timeframe h3{margin:0 0 5px;color:var(--blue);font-size:12px}.mtf-fact-timeframe p{margin:2px 0;font-size:10px;color:var(--muted);overflow-wrap:anywhere}.mtf-fact-timeframe strong{color:var(--text)}
-.configuration{max-width:760px;border:1px solid var(--line);background:rgba(6,23,37,.88);border-radius:11px;padding:20px}.configuration-head{display:flex;align-items:center;justify-content:space-between;gap:16px;border-bottom:1px solid var(--line);padding-bottom:14px;margin-bottom:16px}.configuration-head h2{margin:0;color:var(--blue)}.configuration-state{display:flex;align-items:center;justify-content:space-between;gap:16px;margin:10px 0}.connection-status{border:1px solid #246295;border-radius:999px;padding:5px 10px;font-size:12px;font-weight:800}.connection-status.CONNECTED{border-color:#176741;color:var(--green)}.connection-status.CONNECTION-FAILED{border-color:#793b40;color:var(--red)}.credential-form{display:grid;gap:10px;margin-top:18px;padding-top:16px;border-top:1px solid var(--line)}.credential-form label{font-weight:700}.credential-form input{width:100%;border:1px solid #31506a;background:#04131f;color:var(--text);border-radius:7px;padding:11px 12px;font:inherit}.credential-form input:focus{outline:2px solid var(--blue);outline-offset:1px}.configuration-actions{display:flex;gap:10px;align-items:center;margin-top:16px}.configuration-note{color:var(--muted);font-size:12px;margin:9px 0 0}
+.configuration{max-width:760px;border:1px solid var(--line);background:rgba(6,23,37,.88);border-radius:11px;padding:20px}.configuration-head{display:flex;align-items:center;justify-content:space-between;gap:16px;border-bottom:1px solid var(--line);padding-bottom:14px;margin-bottom:16px}.configuration-head h2{margin:0;color:var(--blue)}.configuration-state{display:flex;align-items:center;justify-content:space-between;gap:16px;margin:10px 0}.connection-status{border:1px solid #246295;border-radius:999px;padding:5px 10px;font-size:12px;font-weight:800}.connection-status.CONNECTED{border-color:#176741;color:var(--green)}.connection-status.CONNECTION-FAILED{border-color:#793b40;color:var(--red)}.credential-form{display:grid;gap:10px;margin-top:18px;padding-top:16px;border-top:1px solid var(--line)}.credential-form label{font-weight:700}.credential-form input{width:100%;border:1px solid #31506a;background:#04131f;color:var(--text);border-radius:7px;padding:11px 12px;font:inherit}.credential-form input:focus{outline:2px solid var(--blue);outline-offset:1px}.configuration-actions{display:flex;gap:10px;align-items:center;margin-top:16px}.configuration-note{color:var(--muted);font-size:12px;margin:9px 0 0}.engineering-diagnostics{margin-bottom:16px}.read-only-badge{border:1px solid #31506a;border-radius:999px;color:#8dd0ff;font-size:10px;font-weight:850;letter-spacing:.08em;padding:4px 8px}.diagnostic-intro{color:var(--muted);font-size:12px;margin:0 0 13px}.diagnostic-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px}.diagnostic-card{display:flex;flex-direction:column;min-height:122px;border:1px solid var(--line);border-radius:8px;background:#061421;padding:11px}.diagnostic-card:hover{border-color:#2c6f9e;background:#082038}.diagnostic-card small{color:#8dd0ff;font-size:9px;font-weight:800;letter-spacing:.08em}.diagnostic-card strong{font-size:12px;margin-top:7px}.diagnostic-card span{color:var(--muted);font-size:11px;margin-top:5px}.diagnostic-card b{color:var(--blue);font-size:11px;margin-top:auto;padding-top:9px}@media(max-width:760px){.diagnostic-grid{grid-template-columns:1fr}}
 .step32-workflow{margin-top:16px;border:1px solid var(--line);background:rgba(6,23,37,.88);border-radius:10px;padding:16px}.step32-head{display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--line);padding-bottom:10px}.step32-head h2{margin:0;font-size:18px}.step32-grid{display:grid;grid-template-columns:1.2fr .8fr .8fr .9fr;gap:12px;margin-top:12px}.step32-block{border-left:1px solid var(--line);padding-left:12px}.step32-block:first-child{border-left:0;padding-left:0}.step32-block h3{margin:0 0 8px;color:var(--muted);font-size:11px;letter-spacing:.06em;text-transform:uppercase}.step32-values{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;margin-top:10px}.step32-value label{display:block;color:var(--muted);font-size:10px}.step32-value strong{font-size:13px}.step32-context{display:grid;gap:7px;font-size:12px}.step32-context span{display:block;color:var(--muted);font-size:10px}.decision-options{display:flex;gap:5px;flex-wrap:wrap}.decision-option{border:1px solid var(--line);border-radius:6px;padding:5px 8px;color:var(--muted);font-size:11px;background:#081c2c}.decision-option.selected{border-color:var(--blue);color:#dff1ff}.decision-time{color:var(--muted);font-size:10px;margin-top:7px}.model-position{display:grid;gap:7px;margin-top:9px}.model-position div{display:flex;justify-content:space-between;gap:8px;font-size:12px}.model-position span{color:var(--muted)}.workflow-list{display:grid;gap:12px}.workflow-card{border:1px solid var(--line);background:rgba(6,23,37,.88);border-radius:10px;padding:14px}.workflow-card-head{display:flex;align-items:center;gap:10px}.workflow-card-head h2{margin:0;font-size:18px}.workflow-card-state{margin-left:auto;color:var(--blue);font-size:11px;font-weight:800}.workflow-card-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;margin:12px 0}.workflow-card-grid label{display:block;color:var(--muted);font-size:10px}.workflow-card-actions{display:flex;justify-content:flex-end}.action-required{border:1px solid #8a4c26;background:#2d1b0f;color:#ffd59c;border-radius:7px;padding:9px 11px;margin-top:10px;font-weight:750}.workflow-empty{border:1px solid var(--line);background:rgba(6,23,37,.88);border-radius:10px;padding:30px;text-align:center;color:var(--muted)}
 .native-chart-grid.single{grid-template-columns:1fr}
 .analysis-details{display:grid;gap:12px;max-width:1180px}.analysis-section{border:1px solid var(--line);background:rgba(6,23,37,.88);border-radius:10px;padding:16px}.analysis-section h2{margin:0 0 10px;color:var(--blue);font-size:15px}.analysis-facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.analysis-fact{border-left:2px solid #28506a;padding:5px 9px;font-size:11px}.analysis-fact span{display:block;color:var(--muted);font-size:9px;letter-spacing:.06em;text-transform:uppercase}.analysis-table{width:100%;border-collapse:collapse;font-size:11px}.analysis-table th,.analysis-table td{text-align:left;vertical-align:top;border-top:1px solid var(--line);padding:7px}.analysis-table th{color:var(--muted);font-size:9px;letter-spacing:.05em}.analysis-decision{font-size:18px;font-weight:800}.analysis-next{border-left:3px solid var(--amber)}
@@ -221,10 +221,6 @@ def render_opportunities(
             trade_windows,
         )
         body += "</div>"
-    body += (
-        '<p class="technical"><a href="/swing/layer1-history">'
-        'Open historical Layer-1 validation evidence →</a></p>'
-    )
     return _page(
         title="Swing Opportunities",
         subtitle="Current successful KRONOS Native Discovery opportunities.",
@@ -3199,7 +3195,24 @@ def render_settings(
         f'{calendar_rows or "<p class=configuration-note>Calendar health unavailable.</p>"}'
         '</section>'
     )
-    body = calendar_section + (
+    diagnostics_section = (
+        '<section class="configuration engineering-diagnostics" id="engineering-diagnostics">'
+        '<div class="configuration-head"><h2><span aria-hidden="true">⚙</span> '
+        'Engineering &amp; Diagnostics</h2><span class="read-only-badge">READ ONLY</span>'
+        '</div><p class="diagnostic-intro">Read-only technical and historical '
+        'evidence for KRONOS diagnostics.</p><div class="diagnostic-grid">'
+        '<a class="diagnostic-card" href="/swing/layer1-history">'
+        '<small>SWING</small><strong>LAYER-1 HISTORY</strong>'
+        '<span>Historical Layer-1 validation evidence.</span><b>OPEN →</b></a>'
+        '<a class="diagnostic-card" href="/swing/native-discovery">'
+        '<small>SWING</small><strong>CONTROL VS NATIVE</strong>'
+        '<span>Control/native comparison and validation evidence.</span><b>OPEN →</b></a>'
+        '<a class="diagnostic-card" href="/swing/mtf-diagnostics">'
+        '<small>SWING</small><strong>MTF DATA</strong>'
+        '<span>Governed multi-timeframe factual evidence.</span><b>OPEN →</b></a>'
+        '</div></section>'
+    )
+    body = diagnostics_section + calendar_section + (
         f'<div id="live-monitoring-state" data-state="{escape(monitoring.state.value)}">'
         '<section class="configuration"><div class="configuration-head">'
         '<h2>Kite Live Monitoring</h2></div>'
@@ -3446,14 +3459,14 @@ def _page(
             for name, href in (
                 ("Opportunities", "/swing/opportunities"),
                 ("Review", "/swing/v1-review"),
-                ("Layer-1 History", "/swing/layer1-history"),
-                ("Control vs Native", "/swing/native-discovery"),
-                ("MTF Data", "/swing/mtf-diagnostics"),
                 ("Trade Candidates", "/swing/trade-candidates"),
                 ("Active", "/swing/active"),
                 ("Closed", "/swing/closed"),
             )
-        ) + '<div class="toolbar">' + _analysis_form(snapshot) + "</div></nav>"
+        )
+        if active_tab not in {"Layer-1 History", "Control vs Native", "MTF Data"}:
+            tabs += '<div class="toolbar">' + _analysis_form(snapshot) + "</div>"
+        tabs += "</nav>"
     signature = "|".join((
         snapshot.provider_state.value,
         snapshot.analysis_state.value,
@@ -3510,8 +3523,7 @@ def _tab_link(name: str, href: str, active_tab: str) -> str:
     badge = (
         ""
         if name in {
-            "Opportunities", "Review", "Layer-1 History", "Control vs Native",
-            "MTF Data", "Trade Candidates", "Active", "Closed",
+            "Opportunities", "Review", "Trade Candidates", "Active", "Closed",
         }
         else '<span class="badge">Placeholder</span>'
     )
