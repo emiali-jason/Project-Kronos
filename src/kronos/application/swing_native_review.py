@@ -537,6 +537,16 @@ class NativeReviewWorkflow:
 
         return self._chart_store.original_bytes(revision)  # type: ignore[arg-type]
 
+    def set_ux10_lifecycle_event_listener(self, listener) -> None:  # type: ignore[no-untyped-def]
+        """Attach UX-10 as a read-only observer of persisted lifecycle events."""
+
+        self._active_lifecycle.set_ux10_event_listener(listener)
+
+    def set_shared_monitoring_hub(self, hub: object) -> None:
+        """Share one Provider transport across active-trade and progression watches."""
+
+        self._active_lifecycle_monitoring.set_shared_monitoring_hub(hub)
+
     def prepare(
         self,
         native_run: NativeDiscoveryRun,

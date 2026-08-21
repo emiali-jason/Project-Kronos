@@ -21,6 +21,11 @@ from kronos.application.notifications import (
     NotificationProduct,
 )
 from kronos.application.swing_notifications import project_swing_notification_workspace
+from kronos.application.swing_ux10 import (
+    SwingUx10NotificationService,
+    Ux10NotificationStore,
+)
+from kronos.application.shared_monitoring import SharedSwingMonitoringHub
 from kronos.application.swing_v1_browser import SwingV1BrowserOperationalization
 from kronos.application.swing_v1_review import (
     SwingV1ReviewWorkflow,
@@ -35,11 +40,17 @@ from kronos.application.swing_visual_v3_live import SwingVisualV3LiveWorkflow
 from kronos.application.swing_trade_window import SwingTradeWindowWorkflow
 from kronos.configuration.apple_keychain import (
     AppleKeychainApiKeySource,
+    AppleKeychainCredentialSource,
     AppleKeychainCredentialPresenceProbe,
     AppleKeychainCredentialProvisioner,
     run_security_framework_provisioning,
     run_security_framework_subprocess,
     run_security_presence_subprocess,
+)
+from kronos.integrations.telegram import (
+    TELEGRAM_PROVIDER,
+    TelegramConfigurationService,
+    UrllibTelegramBotApiTransport,
 )
 from kronos.configuration.openai_chart_analyst import (
     ChartAnalystConnectionStatus,
@@ -169,6 +180,8 @@ class KronosBrowserServer(ThreadingHTTPServer):
         visual_v3: SwingVisualV3ReviewCycle | None = None,
         visual_v3_live: SwingVisualV3LiveWorkflow | None = None,
         trade_window: SwingTradeWindowWorkflow | None = None,
+        telegram: TelegramConfigurationService | None = None,
+        ux10_notifications: SwingUx10NotificationService | None = None,
     ) -> None:
         if (
             address[0] != _LOOPBACK_HOST
@@ -343,6 +356,26 @@ class KronosBrowserServer(ThreadingHTTPServer):
             ),
             LocalTradePlanStore(governed_review_root / "trade-construction-v0"),
         )
+        self.telegram = telegram or _telegram_security()
+        self.swing_monitoring_hub = SharedSwingMonitoringHub()
+        self.swing_monitoring_hub.set_connection_listener(
+            lambda state: self.ux10_notifications.observe_connection_state(
+                "SHARED-SWING-MONITORING", "SWING MONITORING", state
+            )
+        )
+        self.progression_watches.set_shared_monitoring_hub(self.swing_monitoring_hub)
+        self.native_review.set_shared_monitoring_hub(self.swing_monitoring_hub)
+        self.ux10_notifications = ux10_notifications or SwingUx10NotificationService(
+            Ux10NotificationStore(governed_review_root / "ux10-notifications-v1"),
+            telegram=self.telegram,
+        )
+        self.progression_watches.set_ux10_listeners(
+            watch_listener=self.ux10_notifications.observe_progression_watch,
+            connection_listener=lambda *_values: None,
+        )
+        self.native_review.set_ux10_lifecycle_event_listener(
+            self.ux10_notifications.observe_lifecycle_event
+        )
         native_run = self.application.native_discovery_run()
         mtf_facts = self.application.mtf_fact_snapshot()
         native_store = self.application.native_discovery_evidence_store()
@@ -383,11 +416,13 @@ class KronosBrowserServer(ThreadingHTTPServer):
         self.trade_window.restore(self.visual_v3.completed_snapshot())
         self.trade_window.synchronize_downstream(self.native_review.snapshot())
         self.progression_snapshot()
+        self.ux10_notifications.retry_pending()
         super().__init__(address, _BrowserHandler)
 
     def server_close(self) -> None:
         self.progression_watches.close_monitoring()
         self.native_review.close()
+        self.swing_monitoring_hub.close()
         self.step32_workflow.close()
         self.application.close()
         if self.restart_control is not None:
@@ -402,6 +437,7 @@ class KronosBrowserServer(ThreadingHTTPServer):
         if run is None or review.native_run_identity != run.run_identity:
             return self.progression_watches.synchronize(None, ())
         requirements = []
+        promotions = []
         for assessment in run.assessments:
             if assessment.status.value != "PROBABLE":
                 continue
@@ -423,6 +459,7 @@ class KronosBrowserServer(ThreadingHTTPServer):
             )
             if completed_v3 is not None:
                 if completed_v3.promotion is not None:
+                    promotions.append(completed_v3.promotion)
                     requirements.extend(
                         derive_kr370_progression_requirements(
                             completed_v3.promotion
@@ -484,9 +521,19 @@ class KronosBrowserServer(ThreadingHTTPServer):
                 readiness=readiness,
                 missing_evidence=missing,
             ))
-        return self.progression_watches.synchronize(
+        snapshot = self.progression_watches.synchronize(
             run.run_identity, tuple(requirements)
         )
+        self.ux10_notifications.observe_promotions(tuple(promotions))
+        watchable = tuple(
+            item.requirement_id for item in snapshot.requirements
+            if item.state.value == "WATCH_AVAILABLE"
+            and item.source_analytical_state in {"BUY_READY", "SELL_READY"}
+        )
+        if watchable:
+            self.application.auto_activate_progression_watches(watchable)
+            snapshot = self.progression_watches.snapshot()
+        return snapshot
 
     def visual_v3_presentations(self):  # type: ignore[no-untyped-def]
         return tuple(
@@ -590,6 +637,7 @@ class _BrowserHandler(BaseHTTPRequestHandler):
                 snapshot,
                 project_sponsor_dashboard(
                     snapshot, discovery, promotions, notifications,
+                    self.server.ux10_notifications.snapshot(),
                 ),
             ))
             return
@@ -598,8 +646,8 @@ class _BrowserHandler(BaseHTTPRequestHandler):
                 self.server.progression_snapshot()
             )
             self._json({
-                "revision": projected.revision,
-                "count": len(projected.records),
+                "revision": projected.revision + self.server.ux10_notifications.snapshot().revision,
+                "count": len(projected.records) + len(self.server.ux10_notifications.snapshot().records),
                 "action_required": len(projected.action_required),
             })
             return
@@ -629,6 +677,7 @@ class _BrowserHandler(BaseHTTPRequestHandler):
                 self.server.application.snapshot(),
                 project_swing_notification_workspace(self.server.progression_snapshot()),
                 selected_product=selected,
+                ux10=self.server.ux10_notifications.snapshot(),
             ))
             return
         details_match = _ANALYSIS_DETAILS_ROUTE.fullmatch(path)
@@ -781,6 +830,8 @@ class _BrowserHandler(BaseHTTPRequestHandler):
                     self.server.application.live_monitoring_result(),
                     self.server.application.live_monitoring_instruments(),
                     self.server.application.market_calendar_health(),
+                    self.server.telegram.status(),
+                    self.server.telegram.private_chat_candidates(),
                 )
             )
             return
@@ -974,6 +1025,18 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             return
         if path == "/settings/chart-analyst/credential":
             self._receive_chart_analyst_credential()
+            return
+        if path == "/settings/telegram/token":
+            self._receive_telegram_token()
+            return
+        if path == "/settings/telegram/private-chat/discover":
+            self._discover_telegram_private_chat()
+            return
+        if path == "/settings/telegram/private-chat/confirm":
+            self._confirm_telegram_private_chat()
+            return
+        if path == "/settings/telegram/test":
+            self._test_telegram()
             return
         if path == "/settings/kite/live-monitoring/test":
             self._test_live_monitoring()
@@ -1285,6 +1348,86 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             fields.clear()
             encoded = ""
             raw = b""
+        self._redirect("/settings")
+
+    def _receive_telegram_token(self) -> None:
+        content_type = self.headers.get("Content-Type", "").split(";", 1)[0]
+        try:
+            content_length = int(self.headers.get("Content-Length", ""))
+        except ValueError:
+            content_length = 0
+        if (
+            content_type.lower() != "application/x-www-form-urlencoded"
+            or not 0 < content_length <= _MAX_CREDENTIAL_FORM_BYTES
+        ):
+            self._text(HTTPStatus.BAD_REQUEST, "Request rejected.")
+            return
+        raw = self.rfile.read(content_length)
+        token = ""
+        fields: dict[str, list[str]] = {}
+        try:
+            fields = parse_qs(
+                raw.decode("utf-8"), keep_blank_values=True, strict_parsing=True
+            )
+            if set(fields) != {"bot_token"} or len(fields["bot_token"]) != 1:
+                raise ValueError
+            token = fields["bot_token"][0]
+            self.server.telegram.configure_token(token)
+        except (UnicodeDecodeError, ValueError):
+            self._text(HTTPStatus.BAD_REQUEST, "Request rejected.")
+            return
+        finally:
+            token = ""
+            for values in fields.values():
+                values.clear()
+            fields.clear()
+            raw = b""
+        self._redirect("/settings")
+
+    def _discover_telegram_private_chat(self) -> None:
+        if self.headers.get("Content-Length") not in {None, "0"}:
+            self._text(HTTPStatus.BAD_REQUEST, "Request rejected.")
+            return
+        try:
+            self.server.telegram.discover_private_chats()
+        except Exception:
+            pass
+        self._redirect("/settings")
+
+    def _confirm_telegram_private_chat(self) -> None:
+        try:
+            content_length = int(self.headers.get("Content-Length", ""))
+        except ValueError:
+            content_length = 0
+        if (
+            self.headers.get("Content-Type", "").split(";", 1)[0].lower()
+            != "application/x-www-form-urlencoded"
+            or not 0 < content_length <= 256
+        ):
+            self._text(HTTPStatus.BAD_REQUEST, "Request rejected.")
+            return
+        try:
+            fields = parse_qs(
+                self.rfile.read(content_length).decode("utf-8"), strict_parsing=True
+            )
+            values = fields.get("selection_id", ())
+            if (
+                set(fields) != {"selection_id"}
+                or len(values) != 1
+                or re.fullmatch(r"[0-9a-f]{64}", values[0]) is None
+            ):
+                raise ValueError
+            self.server.telegram.confirm_private_chat(values[0])
+        except (UnicodeDecodeError, ValueError):
+            self._text(HTTPStatus.BAD_REQUEST, "Request rejected.")
+            return
+        self._redirect("/settings")
+
+    def _test_telegram(self) -> None:
+        if self.headers.get("Content-Length") not in {None, "0"}:
+            self._text(HTTPStatus.BAD_REQUEST, "Request rejected.")
+            return
+        self.server.telegram.test()
         self._redirect("/settings")
 
     def _set_chart_analyst_activation(self, enabled: bool) -> None:
@@ -1841,6 +1984,8 @@ def create_browser_server(
     visual_v3: SwingVisualV3ReviewCycle | None = None,
     visual_v3_live: SwingVisualV3LiveWorkflow | None = None,
     trade_window: SwingTradeWindowWorkflow | None = None,
+    telegram: TelegramConfigurationService | None = None,
+    ux10_notifications: SwingUx10NotificationService | None = None,
 ) -> KronosBrowserServer:
     if type(port) is not int or not 0 <= port <= 65535:
         raise ValueError("BROWSER_SERVER_PORT_INVALID")
@@ -1859,6 +2004,8 @@ def create_browser_server(
         visual_v3,
         visual_v3_live,
         trade_window,
+        telegram,
+        ux10_notifications,
     )
 
 
@@ -1888,6 +2035,30 @@ def _openai_chart_analyst_security(
         ),
     )
     return transport, credentials
+
+
+def _telegram_security() -> TelegramConfigurationService:
+    provisioner = AppleKeychainCredentialProvisioner(
+        provider=TELEGRAM_PROVIDER,
+        runner=run_security_framework_provisioning,
+    )
+    presence = AppleKeychainCredentialPresenceProbe(
+        provider=TELEGRAM_PROVIDER,
+        runner=run_security_presence_subprocess,
+    )
+    return TelegramConfigurationService(
+        provisioner=provisioner,
+        presence_probe=presence,
+        token_source=AppleKeychainCredentialSource(
+            provider=TELEGRAM_PROVIDER,
+            runner=run_security_framework_subprocess,
+        ),
+        chat_source=AppleKeychainApiKeySource(
+            provider=TELEGRAM_PROVIDER,
+            runner=run_security_framework_subprocess,
+        ),
+        transport=UrllibTelegramBotApiTransport(),
+    )
 
 
 __all__ = ["KronosBrowserServer", "create_browser_server"]

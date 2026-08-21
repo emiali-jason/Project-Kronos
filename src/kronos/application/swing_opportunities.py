@@ -925,6 +925,21 @@ class SwingOpportunitiesApplication:
             return False
         return True
 
+    def auto_activate_progression_watches(
+        self, requirement_ids: tuple[str, ...]
+    ) -> tuple[str, ...]:
+        """Auto-arm only already-governed UX-08 watchable requirements."""
+
+        if type(requirement_ids) is not tuple or any(
+            not isinstance(item, str) for item in requirement_ids
+        ):
+            raise TypeError("PROGRESSION_WATCH_REQUIREMENTS_INVALID")
+        activated = []
+        for requirement_id in requirement_ids:
+            if self.activate_progression_watch(requirement_id):
+                activated.append(requirement_id)
+        return tuple(activated)
+
     def deactivate_progression_watch(self, watch_id: str) -> bool:
         """Stop one watch without changing its analytical source or history."""
 

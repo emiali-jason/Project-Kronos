@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from types import SimpleNamespace
@@ -19,6 +19,7 @@ from kronos.provider.contracts.monitoring import MonitoringConnectionState
 from kronos.swing.v1.models import V1Direction
 from kronos.swing.v1.mtf_facts import FactualTimeframe
 from kronos.swing.v1.progression_watch import (
+    GovernedCompletedBar,
     ProgressionComparator,
     ProgressionRequirement,
     ProgressionRequirementState,
@@ -213,9 +214,10 @@ def test_provider_connect_disconnect_and_application_close_own_watch_cleanup() -
         def __init__(self) -> None:
             self.restored = []
             self.closed = 0
+            self.activated = []
 
-        def activate_requirement(self, _identity, _capability):
-            return None
+        def activate_requirement(self, identity, _capability):
+            self.activated.append(identity)
 
         def restore_active(self, value):
             self.restored.append(value)
@@ -236,7 +238,40 @@ def test_provider_connect_disconnect_and_application_close_own_watch_cleanup() -
     application.register_progression_watch_workflow(workflow)
     assert application.connect_provider()
     assert workflow.restored == [capability]
+    assert application.auto_activate_progression_watches(("1" * 64,)) == (
+        "1" * 64,
+    )
+    assert workflow.activated == ["1" * 64]
     assert application.disconnect_provider()
     assert workflow.closed == 1
     application.close()
     assert workflow.closed == 2
+
+
+def test_ux10_observers_receive_trigger_and_factual_connection_edges(tmp_path: Path) -> None:
+    watches = []
+    connections = []
+    workflow = SwingProgressionWatchWorkflow(
+        ProgressionWatchStore(tmp_path), clock=lambda: NOW,
+        instrument_resolver=lambda *_args: INSTRUMENT,
+        bar_loader=lambda *_args: None,
+        watch_listener=watches.append,
+        connection_listener=lambda *values: connections.append(values),
+    )
+    requirement = _requirement()
+    capability = _Capability()
+    workflow.synchronize(RUN, (requirement,))
+    active = workflow.activate_requirement(requirement.requirement_id, capability)
+    capability.sessions[0].consumer.on_connection_state(
+        MonitoringConnectionState.RECONNECTING
+    )
+    workflow.observe_bar(active.watch_id, GovernedCompletedBar(
+        "RELIANCE", FactualTimeframe.ONE_HOUR, 1500.0,
+        NOW + timedelta(hours=1),
+        "KITE_NORMALIZED_HISTORICAL", "NSE-CALENDAR", "2026.1",
+        "NSE-SESSION", ("DOMAIN-008",),
+    ))
+    assert connections[0][:3] == (
+        active.watch_id, "RELIANCE", MonitoringConnectionState.RECONNECTING,
+    )
+    assert watches[0].state is ProgressionWatchState.TRIGGERED

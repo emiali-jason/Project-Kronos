@@ -593,7 +593,14 @@ class LocalActiveTradeLifecycleStore:
 class ActiveTradeLifecycleService:
     """Persist every transition atomically enough for deterministic recovery."""
 
-    def __init__(self, store: LocalActiveTradeLifecycleStore) -> None:
+    def __init__(
+        self,
+        store: LocalActiveTradeLifecycleStore,
+        *,
+        event_listener: Callable[[TradeLifecycleEvent], None] | None = None,
+    ) -> None:
+        if event_listener is not None and not callable(event_listener):
+            raise TypeError("ACTIVE_LIFECYCLE_EVENT_LISTENER_INVALID")
         self.store = store
         restored = store.load()
         self._positions = {item.position_id: item for item in restored.positions}
@@ -601,7 +608,18 @@ class ActiveTradeLifecycleService:
         self._notifications = {item.notification_id: item for item in restored.notifications}
         self._closures = {item.position_id: item for item in restored.closures}
         self._latest: dict[str, GovernedLifecycleObservation] = {}
+        self._event_listener = event_listener
         self._lock = RLock()
+
+    def set_ux10_event_listener(
+        self, listener: Callable[[TradeLifecycleEvent], None]
+    ) -> None:
+        """Attach the reserved UX-10 delivery observer without lifecycle authority."""
+
+        if not callable(listener):
+            raise TypeError("ACTIVE_LIFECYCLE_EVENT_LISTENER_INVALID")
+        with self._lock:
+            self._event_listener = listener
 
     def register(self, initiation: SponsorInitiationResult, plan: TradePlanRecord) -> ActiveLifecyclePosition | None:
         if initiation.decision is None or initiation.position is None:
@@ -700,6 +718,10 @@ class ActiveTradeLifecycleService:
             self._closures[closure.position_id] = closure
         self.store.retain_position(position)
         self._positions[position.position_id] = position
+        listener = self._event_listener
+        if listener is not None:
+            for event in events:
+                listener(event)
 
 
 class ActiveLifecycleMonitoringCoordinator:
@@ -716,7 +738,16 @@ class ActiveLifecycleMonitoringCoordinator:
         self._calendar = calendar
         self._clock = clock
         self._consumers: dict[str, _LifecycleMonitoringConsumer] = {}
+        self._monitoring_hub = None
         self._lock = RLock()
+
+    def set_shared_monitoring_hub(self, hub: object) -> None:
+        if not callable(getattr(hub, "open", None)):
+            raise TypeError("SHARED_MONITORING_HUB_INVALID")
+        with self._lock:
+            if self._consumers:
+                raise ValueError("SHARED_MONITORING_HUB_REQUIRES_IDLE_COORDINATOR")
+            self._monitoring_hub = hub
 
     def attach(self, position_id: str, capability: object, instrument: InstrumentRecord) -> None:
         position = self._service._require(position_id)
@@ -734,7 +765,11 @@ class ActiveLifecycleMonitoringCoordinator:
                 position_id, instrument, self._service, self._calendar,
                 self._clock, lambda: self.detach(position_id),
             )
-            session = capability.open_monitoring_session(consumer)
+            session = (
+                capability.open_monitoring_session(consumer)
+                if self._monitoring_hub is None
+                else self._monitoring_hub.open(capability, consumer)
+            )
             consumer.bind(session)
             self._consumers[position_id] = consumer
         try:

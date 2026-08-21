@@ -14,6 +14,7 @@ from kronos.application.swing_opportunities import (
     BrowserWorkspaceSnapshot,
     ProviderConnectionState,
 )
+from kronos.application.swing_ux10 import Ux10NotificationSnapshot
 from kronos.swing.v1.analytical_promotion import (
     Kr370AnalyticalClassification,
     Kr370AnalyticalPromotionRecord,
@@ -93,6 +94,7 @@ def project_sponsor_dashboard(
     discovery: NativeDiscoveryRun | None,
     promotions: tuple[Kr370AnalyticalPromotionRecord, ...],
     notifications: NotificationWorkspaceSnapshot,
+    ux10: Ux10NotificationSnapshot | None = None,
 ) -> SponsorDashboardProjection:
     """Project current facts without evaluating or mutating any source authority."""
 
@@ -102,6 +104,7 @@ def project_sponsor_dashboard(
         or type(promotions) is not tuple
         or any(type(item) is not Kr370AnalyticalPromotionRecord for item in promotions)
         or type(notifications) is not NotificationWorkspaceSnapshot
+        or (ux10 is not None and type(ux10) is not Ux10NotificationSnapshot)
     ):
         raise TypeError("SPONSOR_DASHBOARD_SOURCE_INVALID")
 
@@ -181,6 +184,11 @@ def project_sponsor_dashboard(
             "CURRENT_NATIVE_DATA_UNAVAILABLE",
             "Current Native Swing results are unavailable.",
         ))
+    if ux10 is not None:
+        issues.extend(
+            DashboardIssue(item.notification_type.value, item.summary)
+            for item in ux10.active_incidents
+        )
 
     return SponsorDashboardProjection(
         current_run_identity=None if current is None else current.run_identity,

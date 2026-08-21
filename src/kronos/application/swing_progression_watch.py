@@ -76,19 +76,56 @@ class SwingProgressionWatchWorkflow:
             [object, InstrumentRecord, ProgressionRequirement, datetime],
             GovernedCompletedBar | None,
         ] | None = None,
+        watch_listener: Callable[[ProgressionWatch], None] | None = None,
+        connection_listener: Callable[
+            [str, str, MonitoringConnectionState, datetime], None
+        ] | None = None,
     ) -> None:
-        if not all(callable(item) for item in (clock, instrument_resolver)):
+        if (
+            not all(callable(item) for item in (clock, instrument_resolver))
+            or (watch_listener is not None and not callable(watch_listener))
+            or (connection_listener is not None and not callable(connection_listener))
+        ):
             raise TypeError("PROGRESSION_WATCH_DEPENDENCY_INVALID")
         self._store = store or ProgressionWatchStore()
         self._clock = clock
         self._calendar = calendar or MarketCalendarPublisher()
         self._resolver = instrument_resolver
         self._bar_loader = bar_loader or self._load_latest_completed_bar
+        self._watch_listener = watch_listener
+        self._connection_listener = connection_listener
+        self._monitoring_hub = None
         self._lock = RLock()
         self._run_identity: str | None = None
         self._requirements: dict[str, ProgressionRequirement] = {}
         self._watches = {item.watch_id: item for item in self._store.load()}
         self._consumers: dict[str, _ProgressionMonitoringConsumer] = {}
+
+    def set_ux10_listeners(
+        self,
+        *,
+        watch_listener: Callable[[ProgressionWatch], None],
+        connection_listener: Callable[
+            [str, str, MonitoringConnectionState, datetime], None
+        ],
+    ) -> None:
+        """Attach the reserved UX-10 delivery observers without changing watches."""
+
+        if not callable(watch_listener) or not callable(connection_listener):
+            raise TypeError("PROGRESSION_WATCH_LISTENER_INVALID")
+        with self._lock:
+            self._watch_listener = watch_listener
+            self._connection_listener = connection_listener
+
+    def set_shared_monitoring_hub(self, hub: object) -> None:
+        """Use one Provider-neutral session shared with active-trade monitoring."""
+
+        if not callable(getattr(hub, "open", None)):
+            raise TypeError("SHARED_MONITORING_HUB_INVALID")
+        with self._lock:
+            if self._consumers:
+                raise ValueError("SHARED_MONITORING_HUB_REQUIRES_IDLE_WORKFLOW")
+            self._monitoring_hub = hub
 
     def synchronize(
         self,
@@ -278,7 +315,27 @@ class SwingProgressionWatchWorkflow:
             with self._lock:
                 self._watches[watch_id] = updated
             self._detach(watch_id, asynchronous=True)
+            listener = self._watch_listener
+            if listener is not None:
+                listener(updated)
         return updated
+
+    def observe_connection_state(
+        self,
+        watch_id: str,
+        state: MonitoringConnectionState,
+        observed_at: datetime,
+    ) -> None:
+        with self._lock:
+            watch = self._watches.get(watch_id)
+            listener = self._connection_listener
+        if watch is not None and listener is not None:
+            listener(
+                watch_id,
+                watch.requirement.canonical_instrument,
+                state,
+                observed_at,
+            )
 
     def _attach(self, watch: ProgressionWatch, capability: object) -> None:
         instrument = self._resolver(
@@ -286,7 +343,11 @@ class SwingProgressionWatchWorkflow:
             self._clock().date(),
         )
         consumer = _ProgressionMonitoringConsumer(self, watch, capability, instrument)
-        session = capability.open_monitoring_session(consumer)
+        hub = self._monitoring_hub
+        session = (
+            capability.open_monitoring_session(consumer)
+            if hub is None else hub.open(capability, consumer)
+        )
         consumer.bind(session)
         with self._lock:
             if watch.watch_id in self._consumers:
@@ -410,9 +471,11 @@ class _ProgressionMonitoringConsumer:
     def on_order_update(self, _update: ProviderOrderUpdateEvidence) -> None:
         return None
 
-    def on_connection_state(self, _state: MonitoringConnectionState) -> None:
-        # The Provider session owns reconnect. Persisted watch state is unchanged.
-        return None
+    def on_connection_state(self, state: MonitoringConnectionState) -> None:
+        # Provider owns reconnect; UX-10 receives a factual transport-state edge.
+        self.workflow.observe_connection_state(
+            self.watch.watch_id, state, self.workflow._clock()
+        )
 
     def close(self) -> None:
         self.closed = True

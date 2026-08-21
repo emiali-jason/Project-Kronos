@@ -227,6 +227,23 @@ def test_store_restart_recovers_exact_state_events_notifications_and_closure(tmp
     ) == first.closures[0]
 
 
+def test_ux10_listener_observes_persisted_events_without_lifecycle_authority(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    result, plan, *_ = _go(
+        SponsorTradeChoice.LIVE, actual_live_entry=Decimal("101"), live_lots=1,
+    )
+    events = []
+    service = ActiveTradeLifecycleService(
+        LocalActiveTradeLifecycleStore(tmp_path.resolve()),
+        event_listener=events.append,
+    )
+    position = service.register(result, plan)
+    before_geometry = (position.model_entry, position.stop, position.target)
+    updated = service.observe(position.position_id, _observation(position, 1, "122"))
+    assert events[-1].event_type is LifecycleEventType.TARGET_HIT
+    assert service.snapshot().events[-1] == events[-1]
+    assert (updated.model_entry, updated.stop, updated.target) == before_geometry
+
+
 def test_service_repeated_monitoring_unavailable_is_idempotent(tmp_path) -> None:  # type: ignore[no-untyped-def]
     result, plan, *_ = _go(
         SponsorTradeChoice.LIVE, actual_live_entry=Decimal("101"), live_lots=1,

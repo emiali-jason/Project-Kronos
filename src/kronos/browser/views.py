@@ -26,6 +26,10 @@ from kronos.application.notifications import (
     NotificationState,
     NotificationWorkspaceSnapshot,
 )
+from kronos.application.swing_ux10 import (
+    Ux10NotificationRecord,
+    Ux10NotificationSnapshot,
+)
 from kronos.application.swing_v1_review import (
     ChartAnalysisState,
     InstrumentChartAnalysisSnapshot,
@@ -51,6 +55,10 @@ from kronos.application.swing_v1_browser import (
 from kronos.configuration.openai_chart_analyst import (
     ChartAnalystConnectionStatus,
     ChartAnalystV2ActivationStatus,
+)
+from kronos.integrations.telegram import (
+    TelegramConfigurationStatus,
+    TelegramPrivateChatCandidate,
 )
 from kronos.provider.contracts.monitoring import MonitoringConnectionState
 from kronos.market.calendar import CalendarCoverageHealth
@@ -156,6 +164,7 @@ a{color:inherit;text-decoration:none}.app{display:grid;grid-template-columns:218
 .progression-summary{display:block;color:var(--muted);font-size:9px;margin-top:3px;text-transform:uppercase;letter-spacing:.04em}.progression-list{display:grid;gap:8px}.progression-row{display:grid;grid-template-columns:20px 1fr;gap:8px;border-top:1px solid var(--line);padding-top:8px}.progression-row:first-child{border-top:0;padding-top:0}.progression-marker{color:var(--blue);font-weight:800}.progression-state{display:block;color:var(--amber);font-size:9px;font-weight:800;letter-spacing:.06em;margin-top:2px}.progression-row small{display:block;color:var(--muted);font-size:10px;margin-top:4px}.progression-row form{margin-top:7px}.progression-row details{margin-top:7px}.progression-row details .analysis-fact{margin-top:5px}
 .notification-tabs{display:flex;gap:7px;margin-bottom:12px}.notification-tabs .button{padding:6px 11px;font-size:11px}.notification-tabs .active{background:#0c4f83;border-color:#2c9cff}.notification-action-centre{border:1px solid #8a4c26;background:#21170f;border-radius:9px;padding:11px 13px;margin-bottom:12px}.notification-action-centre h2{margin:0 0 5px;color:#ffd59c;font-size:13px}.notification-action-centre p{margin:0;color:var(--muted);font-size:11px}.notification-list{display:grid;gap:9px}.notification-row{border:1px solid var(--line);background:rgba(6,23,37,.88);border-radius:9px;padding:12px}.notification-head{display:flex;align-items:center;gap:9px}.notification-head h2{font-size:18px;margin:0}.notification-product{color:var(--blue);font-size:10px;font-weight:800}.notification-state{margin-left:auto;border:1px solid currentColor;border-radius:999px;padding:3px 8px;font-size:10px;font-weight:800}.notification-state.ACTIVE{color:var(--green)}.notification-state.TRIGGERED{color:var(--amber)}.notification-state.INACTIVE{color:var(--muted)}.notification-state.STALE{color:var(--red)}.notification-condition{margin:7px 0 4px;font-weight:750}.notification-trigger{border-left:2px solid var(--amber);padding:6px 9px;margin:8px 0;background:#211a0d}.notification-trigger strong,.notification-trigger span{display:block}.notification-trigger span{color:var(--amber);font-size:11px}.notification-trigger small{color:#ffd59c}.notification-meta{display:flex;gap:12px;flex-wrap:wrap;color:var(--muted);font-size:10px}.notification-actions{display:flex;align-items:flex-start;gap:6px;flex-wrap:wrap;margin-top:9px}.notification-actions form{display:inline}.notification-actions button,.notification-actions .button{padding:5px 8px;font-size:10px}.notification-confirm summary{list-style:none;border:1px solid #246295;background:#0b2b47;color:#e9f5ff;padding:5px 8px;border-radius:7px;font-size:10px;font-weight:650;cursor:pointer}.notification-confirm summary::-webkit-details-marker{display:none}.notification-confirm div{position:absolute;z-index:10;max-width:330px;border:1px solid var(--line);background:#071827;padding:10px;border-radius:8px;box-shadow:0 12px 30px rgba(0,0,0,.45)}.notification-confirm p{margin:0 0 7px;color:var(--muted);font-size:11px}.notification-history{margin-top:8px;border-top:1px solid var(--line);padding-top:7px}.notification-history summary{cursor:pointer;color:var(--muted);font-size:10px}.notification-history ul{margin:6px 0 0;padding-left:18px;color:var(--muted);font-size:10px}
 .dashboard-section-title{display:flex;align-items:baseline;justify-content:space-between;margin:0 0 10px}.dashboard-section-title h2{margin:0;font-size:13px;letter-spacing:.08em;color:#dce8f0}.dashboard-section-title span{color:var(--muted);font-size:10px}.strategy-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;min-height:330px}.strategy-card{display:flex;flex-direction:column;min-width:0;border:1px solid var(--strategy-line);border-radius:11px;padding:15px;background:linear-gradient(150deg,var(--strategy-tint),rgba(5,20,33,.92));box-shadow:inset 0 1px 0 var(--strategy-glow),0 14px 32px rgba(0,0,0,.14)}.strategy-card.swing{--strategy-line:#256da4;--strategy-tint:rgba(19,73,112,.3);--strategy-glow:rgba(80,183,255,.2);--strategy-accent:#50b7ff}.strategy-card.intraday{--strategy-line:#24714a;--strategy-tint:rgba(24,91,60,.24);--strategy-glow:rgba(46,212,119,.16);--strategy-accent:#43dc88}.strategy-card.theta{--strategy-line:#60458a;--strategy-tint:rgba(73,48,108,.27);--strategy-glow:rgba(188,124,255,.16);--strategy-accent:#bc7cff}.strategy-card.fundamental{--strategy-line:#786020;--strategy-tint:rgba(100,77,20,.25);--strategy-glow:rgba(246,183,60,.15);--strategy-accent:#f6c85f}.strategy-card h3{margin:0;color:var(--strategy-accent);font-size:16px;letter-spacing:.05em}.strategy-counts{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin:13px 0}.strategy-count{border:1px solid var(--strategy-line);border-radius:7px;padding:7px}.strategy-count span{display:block;color:var(--muted);font-size:9px;letter-spacing:.08em}.strategy-count strong{display:block;font-size:20px;margin-top:1px}.strategy-groups{display:grid;gap:7px}.strategy-group{border-top:1px solid rgba(146,168,185,.18);padding-top:6px}.strategy-group span{display:block;color:var(--muted);font-size:9px;letter-spacing:.06em}.strategy-instruments{display:flex;flex-wrap:wrap;gap:4px;margin-top:4px}.strategy-instruments a{border:1px solid var(--strategy-line);border-radius:999px;padding:2px 6px;font-size:10px}.strategy-instruments a:hover{background:var(--strategy-tint)}.strategy-empty{color:var(--muted);font-size:11px;margin:auto 0;text-align:center}.strategy-footer{margin-top:auto;padding-top:13px}.strategy-footer a,.strategy-footer span{color:var(--strategy-accent);font-size:10px;font-weight:800;letter-spacing:.05em}.strategy-footer span{opacity:.55}.attention-centre{margin-top:18px}.attention-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.attention-panel{border:1px solid var(--line);border-radius:10px;background:rgba(6,23,37,.82);padding:13px;min-height:158px}.attention-panel h3{margin:0 0 9px;font-size:12px;color:#dce8f0;letter-spacing:.06em}.dashboard-alert,.dashboard-issue{display:grid;gap:2px;border-top:1px solid var(--line);padding:7px 0;font-size:10px}.dashboard-alert:first-of-type,.dashboard-issue:first-of-type{border-top:0}.dashboard-alert{grid-template-columns:90px 58px minmax(0,1fr) 92px}.dashboard-alert strong{color:#dce8f0}.dashboard-alert span,.dashboard-issue span{color:var(--muted)}.dashboard-alert-state{color:var(--amber)!important;text-align:right}.dashboard-alert-state small{display:block;color:var(--muted);font-size:8px}.attention-footer{display:block;color:var(--blue);font-size:10px;font-weight:800;margin-top:8px}.dashboard-status{margin:14px 0 0}.dashboard-status .status-item{flex:1 1 auto}.dashboard-read-only{color:var(--muted);font-size:9px;text-align:right;margin-top:7px;letter-spacing:.06em}
+.ux10-row{border-color:#226da3;background:linear-gradient(100deg,rgba(8,42,69,.96),rgba(5,24,39,.96))}.ux10-row.priority-high{box-shadow:inset 3px 0 #47b7ff}.ux10-event{color:#8dd0ff;font-size:10px;font-weight:850;letter-spacing:.06em}.ux10-action{color:#c4e8ff;font-size:11px;margin-top:7px}.telegram-options{display:grid;gap:7px;margin:10px 0}.telegram-option{display:flex;align-items:center;gap:8px;border:1px solid var(--line);padding:8px;border-radius:7px}
 @media(max-width:1200px){.strategy-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:1050px){.status-grid{grid-template-columns:repeat(3,1fr)}.strategy-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.panels,.workspace{grid-template-columns:1fr}.attention-grid{grid-template-columns:1fr}.step32-grid{grid-template-columns:1fr}.step32-block{border-left:0;border-top:1px solid var(--line);padding:10px 0 0}.step32-block:first-child{border-top:0;padding-top:0}.market-panel{min-height:260px}}
 @media(min-width:761px){.panels{grid-template-columns:repeat(2,minmax(0,1fr))}}
@@ -3279,6 +3288,8 @@ def render_settings(
     live_monitoring: LiveMonitoringTestResult | None = None,
     live_monitoring_instruments: tuple[str, ...] = (),
     market_calendar_health: tuple[CalendarCoverageHealth, ...] = (),
+    telegram_status: TelegramConfigurationStatus | None = None,
+    telegram_candidates: tuple[TelegramPrivateChatCandidate, ...] = (),
 ) -> str:
     if (
         type(chart_analyst_status) is not ChartAnalystConnectionStatus
@@ -3358,7 +3369,47 @@ def render_settings(
         '<span>Governed multi-timeframe factual evidence.</span><b>OPEN →</b></a>'
         '</div></section>'
     )
-    body = diagnostics_section + calendar_section + (
+    telegram_section = ""
+    if telegram_status is not None:
+        candidates = "".join(
+            '<label class="telegram-option"><input type="radio" name="selection_id" '
+            f'value="{escape(item.selection_id)}" required>{escape(item.display_identity)}</label>'
+            for item in telegram_candidates
+        )
+        confirmation = (
+            '<form method="post" action="/settings/telegram/private-chat/confirm">'
+            f'<div class="telegram-options">{candidates}</div>'
+            '<button type="submit">CONFIRM PRIVATE CHAT</button></form>'
+            if candidates else ""
+        )
+        telegram_section = (
+            '<section class="configuration"><div class="configuration-head">'
+            '<h2>Telegram Notifications</h2></div>'
+            '<div class="configuration-state"><span>Bot Token</span><strong>'
+            + ("CONFIGURED · ••••••••" if telegram_status.token_configured else "TELEGRAM · NOT CONFIGURED")
+            + '</strong></div><div class="configuration-state"><span>Private chat</span><strong>'
+            + ("CONFIRMED" if telegram_status.private_chat_configured else "TELEGRAM · NOT CONFIGURED")
+            + '</strong></div><div class="configuration-state"><span>Status</span><strong>'
+            + escape("TELEGRAM " + telegram_status.state.value) + '</strong></div>'
+            '<form class="credential-form" method="post" action="/settings/telegram/token" '
+            'autocomplete="off"><label for="telegram-bot-token">Bot Token</label>'
+            '<input id="telegram-bot-token" name="bot_token" type="password" '
+            'autocomplete="off" spellcheck="false" minlength="20" maxlength="96" required>'
+            '<div><button class="primary" type="submit">SAVE TELEGRAM TOKEN</button></div></form>'
+            '<div class="configuration-actions"><form method="post" '
+            'action="/settings/telegram/private-chat/discover">'
+            '<button type="submit">DISCOVER PRIVATE CHAT</button></form>'
+            '<form method="post" action="/settings/telegram/test">'
+            '<button type="submit">TEST TELEGRAM</button></form></div>'
+            + confirmation
+            + '<p class="configuration-note">Only an explicitly confirmed private chat '
+            'can receive governed KRONOS notifications. Tokens and chat identifiers are '
+            'never displayed.</p>'
+            + (f'<p class="configuration-note">{escape(telegram_status.safe_detail)}</p>'
+               if telegram_status.safe_detail else "")
+            + '</section>'
+        )
+    body = diagnostics_section + calendar_section + telegram_section + (
         f'<div id="live-monitoring-state" data-state="{escape(monitoring.state.value)}">'
         '<section class="configuration"><div class="configuration-head">'
         '<h2>Kite Live Monitoring</h2></div>'
@@ -3433,6 +3484,7 @@ def render_notifications(
     notifications: NotificationWorkspaceSnapshot,
     *,
     selected_product: NotificationProduct | None = None,
+    ux10: Ux10NotificationSnapshot | None = None,
 ) -> str:
     """Render one durable management surface over product-owned records."""
 
@@ -3461,10 +3513,16 @@ def render_notifications(
             f'{len(action_required)} REASSESSMENT REQUIRED</h2><p>{escape(instruments)} · '
             'One governed trigger event is projected here and in its durable record.</p></section>'
         )
-    if records:
+    ux10_records = (
+        ()
+        if ux10 is None or selected_product is NotificationProduct.INTRADAY
+        else ux10.records
+    )
+    ux10_body = "".join(_ux10_notification_row(item) for item in ux10_records)
+    if records or ux10_body:
         body = '<div class="notification-list">' + "".join(
             _notification_row(item) for item in records
-        ) + "</div>"
+        ) + ux10_body + "</div>"
     else:
         message = {
             None: "No notifications.",
@@ -3473,7 +3531,7 @@ def render_notifications(
         }[selected_product]
         body = f'<div class="global-empty">{escape(message)}</div>'
     watch_refresh = (
-        f'<script>const notificationRevision="{notifications.revision}";'
+        f'<script>const notificationRevision="{notifications.revision + (ux10.revision if ux10 else "")}";'
         'setInterval(async()=>{try{const r=await fetch("/notifications/status",{cache:"no-store"});'
         'if(!r.ok)return;const s=await r.json();if(s.revision!==notificationRevision)location.reload();'
         '}catch(_e){}},1500);</script>'
@@ -3485,6 +3543,35 @@ def render_notifications(
         active_nav="Notifications",
         active_tab="",
         body=tabs + action_centre + body + watch_refresh,
+    )
+
+
+def _ux10_notification_row(item: Ux10NotificationRecord) -> str:
+    occurred = item.created_at.astimezone(_KOLKATA).strftime("%d %b %Y · %H:%M IST")
+    instrument = item.instrument or "SYSTEM"
+    direction = f" · {item.direction}" if item.direction else ""
+    lifecycle_mode = (
+        f'<span>{escape(item.lifecycle_mode)}</span>' if item.lifecycle_mode else ""
+    )
+    telegram_delivery = (
+        "PENDING SETUP"
+        if item.telegram_delivery_state.value == "NOT_CONFIGURED"
+        else item.telegram_delivery_state.value.replace("_", " ")
+    )
+    return (
+        f'<article class="notification-row ux10-row priority-{escape(item.priority.value.lower())}">'
+        '<div class="notification-head"><span class="notification-product">KRONOS · SWING</span>'
+        f'<h2>{escape(instrument + direction)}</h2>'
+        f'<span class="notification-state">{escape(item.priority.value)}</span></div>'
+        f'<div class="ux10-event">{escape(item.notification_type.value.replace("_", " "))}</div>'
+        f'<p class="notification-condition">{escape(item.summary)}</p>'
+        f'<div class="ux10-action">{escape(item.action)}</div>'
+        '<div class="notification-meta">'
+        f'<span>{escape(item.family.value.replace("_", " "))}</span>'
+        f'{lifecycle_mode}'
+        f'<span>{escape(occurred)}</span>'
+        f'<span>TELEGRAM {escape(telegram_delivery)}</span>'
+        '</div></article>'
     )
 
 
