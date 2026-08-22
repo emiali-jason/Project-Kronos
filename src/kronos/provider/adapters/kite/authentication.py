@@ -46,6 +46,17 @@ from kronos.provider.contracts.instrument import (
     InstrumentResolutionError,
     InstrumentResolutionFailure,
 )
+from kronos.provider.contracts.instrument_master import (
+    ProviderInstrumentDiagnosticPhase,
+    ProviderInstrumentFieldFamily,
+    ProviderInstrumentMasterError,
+    ProviderInstrumentMasterFailure,
+    ProviderInstrumentMasterSourceRecord,
+    ProviderInstrumentValidationRule,
+    ProviderInstrumentValueClassification,
+    create_provider_instrument_master_source_record,
+    provider_instrument_schema_error,
+)
 from kronos.provider.contracts.market_data import (
     HistoricalCandle,
     HistoricalCandleRequest,
@@ -290,6 +301,33 @@ class _KiteCandidateContext:
             ) from None
         raise ProviderConnectivityError(code) from None
 
+    def _instrument_master_records(
+        self,
+    ) -> tuple[ProviderInstrumentMasterSourceRecord, ...]:
+        """Acquire the consolidated master without releasing raw SDK material."""
+
+        try:
+            raw = self._active_handle().instrument_master_records()
+            normalized = _normalize_instrument_master_records(raw)
+        except ProviderInstrumentMasterError:
+            raise
+        except Exception as error:
+            code = _map_authentication_error_code(error)
+        else:
+            self.__instrument_tokens = {
+                item.sanitized_instrument_record(): item.provider_instrument_token
+                for item in normalized
+            }
+            return normalized
+        if code is ProviderErrorCode.ACCESS_TOKEN_INVALID_OR_EXPIRED:
+            self.dispose_local()
+            raise ProviderInstrumentMasterError(
+                ProviderInstrumentMasterFailure.CONTEXT_UNAVAILABLE
+            ) from None
+        raise ProviderInstrumentMasterError(
+            ProviderInstrumentMasterFailure.PROVIDER_ACQUISITION_FAILED
+        ) from None
+
     def _instrument_assertions(
         self,
         exchange: str,
@@ -524,6 +562,15 @@ class _KiteReadOnlyProviderCapability:
             )
         return self.__candidate._instrument_records(exchange)
 
+    def instrument_master_records(
+        self,
+    ) -> tuple[ProviderInstrumentMasterSourceRecord, ...]:
+        if not self.active:
+            raise ProviderInstrumentMasterError(
+                ProviderInstrumentMasterFailure.CONTEXT_UNAVAILABLE
+            )
+        return self.__candidate._instrument_master_records()
+
     def instrument_assertions(
         self,
         exchange: str,
@@ -690,6 +737,79 @@ def _normalize_instrument_records(
     return tuple(normalized)
 
 
+def _normalize_instrument_master_records(
+    raw: object,
+) -> tuple[ProviderInstrumentMasterSourceRecord, ...]:
+    if not isinstance(raw, list):
+        raise ProviderInstrumentMasterError(
+            ProviderInstrumentMasterFailure.PROVIDER_DATASET_UNAVAILABLE
+        )
+    normalized: list[ProviderInstrumentMasterSourceRecord] = []
+    for ordinal, item in enumerate(raw, start=1):
+        if not isinstance(item, dict):
+            raise provider_instrument_schema_error(
+                phase=ProviderInstrumentDiagnosticPhase.PROVIDER_NORMALIZATION,
+                rule=ProviderInstrumentValidationRule.RECORD_MAPPING_REQUIRED,
+                field_family=ProviderInstrumentFieldFamily.RECORD,
+                value_classification=(
+                    ProviderInstrumentValueClassification.NULL
+                    if item is None
+                    else ProviderInstrumentValueClassification.MALFORMED
+                ),
+                input_ordinal=ordinal,
+            )
+        expiry = _normalized_expiry(item.get("expiry"))
+        if expiry is _MALFORMED_EXPIRY:
+            raise provider_instrument_schema_error(
+                phase=ProviderInstrumentDiagnosticPhase.PROVIDER_NORMALIZATION,
+                rule=ProviderInstrumentValidationRule.EXPIRY_SHAPE_INVALID,
+                field_family=ProviderInstrumentFieldFamily.EXPIRY,
+                value_classification=ProviderInstrumentValueClassification.MALFORMED,
+                input_ordinal=ordinal,
+            )
+        name = item.get("name")
+        normalized_name = name.strip() if isinstance(name, str) else name
+        exchange_token = _normalized_exchange_token(item.get("exchange_token"))
+        missing_fields = frozenset(
+            internal
+            for provider_field, internal in (
+                ("instrument_token", "provider_instrument_token"),
+                ("tradingsymbol", "trading_symbol"),
+                ("name", "name"),
+                ("tick_size", "tick_size"),
+                ("lot_size", "lot_size"),
+                ("instrument_type", "instrument_type"),
+                ("segment", "segment"),
+                ("exchange", "exchange"),
+            )
+            if provider_field not in item
+        )
+        record = create_provider_instrument_master_source_record(
+            provider="KITE",
+            provider_instrument_token=item.get("instrument_token"),
+            exchange_token=exchange_token,
+            trading_symbol=item.get("tradingsymbol"),
+            name=normalized_name,
+            last_price=item.get("last_price"),
+            expiry=expiry,
+            strike=item.get("strike"),
+            tick_size=item.get("tick_size"),
+            lot_size=item.get("lot_size"),
+            instrument_type=item.get("instrument_type"),
+            segment=item.get("segment"),
+            exchange=item.get("exchange"),
+            missing_fields=missing_fields,
+            phase=ProviderInstrumentDiagnosticPhase.PROVIDER_NORMALIZATION,
+            input_ordinal=ordinal,
+        )
+        normalized.append(record)
+    if not normalized:
+        raise ProviderInstrumentMasterError(
+            ProviderInstrumentMasterFailure.PROVIDER_DATASET_UNAVAILABLE
+        )
+    return tuple(normalized)
+
+
 _MALFORMED_EXPIRY = object()
 
 
@@ -701,6 +821,17 @@ def _normalized_expiry(value: object) -> date | None | object:
     if type(value) is date:
         return value
     return _MALFORMED_EXPIRY
+
+
+def _normalized_exchange_token(value: object) -> object:
+    """Normalize only CA-approved canonical ASCII decimal text."""
+
+    if type(value) is not str or re.fullmatch(r"(?:0|[1-9][0-9]*)", value) is None:
+        return value
+    try:
+        return int(value)
+    except ValueError:
+        return value
 
 
 def _canonical_text(value: object) -> bool:

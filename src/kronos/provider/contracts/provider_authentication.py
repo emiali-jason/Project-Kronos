@@ -23,6 +23,7 @@ from kronos.provider.models.authentication import (
 )
 from kronos.provider.models.context import AuthenticatedProviderContext
 from kronos.provider.contracts.instrument import InstrumentRecord
+from kronos.provider.contracts.instrument_master import ProviderInstrumentMasterSourceRecord
 from kronos.provider.contracts.market_data import (
     HistoricalCandle,
     HistoricalCandleRequest,
@@ -66,6 +67,11 @@ class AuthenticatedReadOnlyProviderCapability(Protocol):
 
     def instrument_records(self, exchange: str) -> tuple[InstrumentRecord, ...]:
         """Return normalized records; raw Provider records never cross this seam."""
+
+    def instrument_master_records(
+        self,
+    ) -> tuple[ProviderInstrumentMasterSourceRecord, ...]:
+        """Return the complete normalized master only to DOMAIN-006 ownership."""
 
     def instrument_assertions(
         self,

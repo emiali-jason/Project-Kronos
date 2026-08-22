@@ -4,14 +4,23 @@ from __future__ import annotations
 
 import argparse
 from collections.abc import Sequence
+from datetime import UTC, datetime
 import webbrowser
 
+from kronos.application.provider_instrument_master_operation import (
+    ProviderInstrumentMasterOperationalComposition,
+)
 from kronos.application.swing_opportunities import SwingOpportunitiesApplication
 from kronos.application.intraday_runtime import create_intraday_runtime
 from kronos.browser.server import create_browser_server
 from kronos.browser.restart_control import BrowserBackendRestartControl
 from kronos.market.calendar import MarketCalendarPublisher
+from kronos.intraday.universe import load_intraday_universe_publication
 from kronos.provider.contracts.provider_authentication import ReadOnlyProviderOperation
+from kronos.provider.instrument_master_persistence import (
+    DEFAULT_PROVIDER_INSTRUMENT_SNAPSHOT_ROOT,
+    ProviderInstrumentSnapshotStore,
+)
 from kronos.provider.runtime import SharedAuthenticatedProviderRuntime
 from kronos.swing.run_provenance import LocalSwingRunProvenanceStore
 from kronos.swing.v1.mtf_facts import (
@@ -56,6 +65,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         }),
     )
     intraday_runtime = create_intraday_runtime(shared_provider_runtime)
+    provider_instrument_master_operation = (
+        ProviderInstrumentMasterOperationalComposition(
+            shared_provider_runtime,
+            store=ProviderInstrumentSnapshotStore(
+                DEFAULT_PROVIDER_INSTRUMENT_SNAPSHOT_ROOT
+            ),
+            universe=load_intraday_universe_publication(),
+            clock=lambda: datetime.now(UTC),
+        )
+    )
     application = SwingOpportunitiesApplication(
         swing_provider_factory,
         run_provenance_store=LocalSwingRunProvenanceStore(),
@@ -70,6 +89,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             port=args.port,
             restart_control=restart_control,
             intraday_workstation=intraday_runtime.workstation,
+            provider_instrument_master_operation=(
+                provider_instrument_master_operation
+            ),
         )
     except Exception:
         restart_control.remove()

@@ -22,6 +22,10 @@ from kronos.instrument.runtime import (
     publish_runtime_instruments,
 )
 from kronos.provider.contracts.instrument import InstrumentRecord
+from kronos.provider.contracts.instrument_master import (
+    KITE_INSTRUMENT_MASTER_OPERATION,
+    ProviderInstrumentMasterSourceRecord,
+)
 from kronos.provider.contracts.market_data import (
     HistoricalCandle,
     HistoricalCandleRequest,
@@ -67,6 +71,24 @@ class _Capability:
     def instrument_records(self, exchange: str):  # type: ignore[no-untyped-def]
         assert exchange == "NSE"
         return (INSTRUMENT,)
+
+    def instrument_master_records(self):  # type: ignore[no-untyped-def]
+        self.calls += 1
+        return (ProviderInstrumentMasterSourceRecord(
+            provider="KITE",
+            provider_instrument_token=256265,
+            exchange_token=1001,
+            trading_symbol="NIFTY 50",
+            name="NIFTY 50",
+            last_price=Decimal("0"),
+            expiry=None,
+            strike=Decimal("0"),
+            tick_size=Decimal("0.05"),
+            lot_size=1,
+            instrument_type="EQ",
+            segment="INDICES",
+            exchange="NSE",
+        ),)
 
     def instrument_assertions(
         self,
@@ -245,6 +267,42 @@ def test_intraday_only_consumer_is_operation_minimized() -> None:
     assert not hasattr(lease, "place_order")
     assert not hasattr(lease, "begin_login")
     assert not hasattr(lease, "end_kronos_session")
+    assert not hasattr(lease, "instrument_master_records")
+
+
+def test_domain_006_master_read_uses_active_shared_context_without_product_accessor() -> None:
+    shared, runtime, factory_calls = _shared()
+    assert not shared.provider_instrument_master_operation_available
+    _authenticate(shared)
+    assert shared.provider_instrument_master_operation_available
+
+    records = shared.acquire_provider_instrument_master_records(
+        operation_identity=KITE_INSTRUMENT_MASTER_OPERATION
+    )
+
+    assert records[0].trading_symbol == "NIFTY 50"
+    assert runtime.capability.calls == 1
+    assert runtime.begin_count == 1
+    assert factory_calls == [1]
+    with pytest.raises(ProviderRuntimeAccessError) as captured:
+        shared.acquire_provider_instrument_master_records(
+            operation_identity="UNAUTHORIZED"
+        )
+    assert captured.value.failure is ProviderRuntimeFailure.OPERATION_NOT_AUTHORIZED
+
+
+def test_domain_006_master_operation_availability_is_sanitized_and_fail_closed() -> None:
+    shared, runtime, _ = _shared()
+    runtime.capability.instrument_master_records = None  # type: ignore[assignment]
+    _authenticate(shared)
+
+    assert shared.lifecycle_state is SharedProviderRuntimeLifecycle.ACTIVE
+    assert not shared.provider_instrument_master_operation_available
+    with pytest.raises(ProviderRuntimeAccessError) as captured:
+        shared.acquire_provider_instrument_master_records(
+            operation_identity=KITE_INSTRUMENT_MASTER_OPERATION
+        )
+    assert captured.value.failure is ProviderRuntimeFailure.CAPABILITY_UNAVAILABLE
 
 
 def test_swing_and_intraday_leases_are_independent_and_concurrent() -> None:

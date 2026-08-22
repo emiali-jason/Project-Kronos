@@ -79,7 +79,8 @@ def test_kite_adapter_sdk_calls_remain_within_authorized_provider_scope() -> Non
     assert invoked.count("profile") == 2
     assert invoked.count("login_url") == 2
     assert invoked.count("generate_session") == 1
-    assert invoked.count("instruments") == 1
+    # One existing exchange-scoped read plus one P1 consolidated master read.
+    assert invoked.count("instruments") == 2
     assert invoked.count("historical_data") == 1
     assert invoked.count("quote") == 1
     assert invoked.count("ltp") == 1

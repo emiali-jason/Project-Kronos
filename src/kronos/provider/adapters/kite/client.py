@@ -208,6 +208,20 @@ class _KiteCandidateClientHandle:
                 raise _KiteSessionInvalidated from None
         return records
 
+    def instrument_master_records(self) -> object:
+        """Return the consolidated raw master only to the containing adapter."""
+
+        if self.__closed or self.__client is None:
+            raise _KiteClientClosedError
+        if self.__session_state.invalidated:
+            raise _KiteSessionInvalidated
+        try:
+            records = self.__client.instruments()
+        finally:
+            if self.__session_state.invalidated:
+                raise _KiteSessionInvalidated from None
+        return records
+
     def historical_candles(
         self,
         *,

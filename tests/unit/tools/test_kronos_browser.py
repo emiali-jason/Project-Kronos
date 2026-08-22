@@ -27,14 +27,41 @@ def test_launcher_uses_loopback_server_and_opens_swing_workspace(monkeypatch) ->
     monkeypatch.setattr(
         kronos_browser,
         "create_browser_server",
-        lambda app, port, restart_control, intraday_workstation: (
-            events.append((app, port, restart_control, intraday_workstation)) or _Server()
+        lambda app, port, restart_control, intraday_workstation,
+        provider_instrument_master_operation: (
+            events.append((
+                app,
+                port,
+                restart_control,
+                intraday_workstation,
+                provider_instrument_master_operation,
+            )) or _Server()
         ),
     )
     monkeypatch.setattr(kronos_browser.webbrowser, "open_new_tab", lambda url: events.append(url) or True)
     assert kronos_browser.main(["--port", "9123"]) == 0
     assert "http://127.0.0.1:9123/swing/opportunities" in events
     assert "close" in events
+    server_event = next(
+        item for item in events if isinstance(item, tuple) and len(item) == 5
+    )
+    operation = server_event[4]
+    application_event = next(
+        item
+        for item in events
+        if isinstance(item, tuple)
+        and len(item) == 2
+        and callable(item[0])
+        and isinstance(item[1], dict)
+    )
+    swing_factory = application_event[0]
+    assert swing_factory.__closure__ is not None
+    assert any(
+        cell.cell_contents is operation._runtime
+        for cell in swing_factory.__closure__
+    )
+    source = Path(kronos_browser.__file__).read_text(encoding="utf-8")
+    assert source.count("SharedAuthenticatedProviderRuntime(") == 1
 
 
 def test_developer_no_browser_mode_does_not_open_browser(monkeypatch) -> None:
@@ -56,7 +83,8 @@ def test_developer_no_browser_mode_does_not_open_browser(monkeypatch) -> None:
     monkeypatch.setattr(
         kronos_browser,
         "create_browser_server",
-        lambda _app, port, restart_control, intraday_workstation: _Server(),
+        lambda _app, port, restart_control, intraday_workstation,
+        provider_instrument_master_operation: _Server(),
     )
     monkeypatch.setattr(kronos_browser.webbrowser, "open_new_tab", lambda _url: (_ for _ in ()).throw(AssertionError))
     assert kronos_browser.main(["--no-browser"]) == 0

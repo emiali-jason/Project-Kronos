@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 import gc
 import pickle
@@ -17,6 +17,13 @@ from kronos.provider.adapters.kite.authentication import (
     create_kite_authentication_adapter,
 )
 from kronos.provider.contracts.provider_authentication import ReadOnlyProviderOperation
+from kronos.provider.contracts.instrument_master import (
+    ProviderInstrumentDiagnosticPhase,
+    ProviderInstrumentFieldFamily,
+    ProviderInstrumentMasterError,
+    ProviderInstrumentValidationRule,
+    ProviderInstrumentValueClassification,
+)
 from kronos.provider.contracts.monitoring import MonitoringError, MonitoringFailure
 from kronos.provider.exceptions.connectivity import (
     ProviderConnectivityError,
@@ -62,7 +69,7 @@ class _FakeKiteClient:
         self.profile_count = 0
         self.invalidate_count = 0
         self.instruments_count = 0
-        self.instrument_exchanges: list[str] = []
+        self.instrument_exchanges: list[str | None] = []
         self.login_count = 0
         self.request_token_matched = False
         self.api_secret_matched = False
@@ -100,7 +107,7 @@ class _FakeKiteClient:
             raise effect
         return effect
 
-    def instruments(self, exchange: str) -> object:
+    def instruments(self, exchange: str | None = None) -> object:
         self.instruments_count += 1
         self.instrument_exchanges.append(exchange)
         effect = type(self).instrument_effects.pop(0)
@@ -385,6 +392,446 @@ def test_capability_publishes_deterministic_instrument_assertion_from_private_ma
     assert first[0].provider_instrument_token == 256265
     assert first[0].binding_source_identity.startswith("KITE-INSTRUMENT-MASTER-")
     assert not hasattr(capability, "instrument_token")
+
+
+def test_capability_acquires_complete_instrument_master_without_exchange_filter() -> None:
+    _FakeKiteClient.instrument_effects = [[{
+        "instrument_token": 738561,
+        "exchange_token": 2885,
+        "exchange": "NSE",
+        "segment": "NSE",
+        "tradingsymbol": "RELIANCE",
+        "name": "RELIANCE INDUSTRIES",
+        "instrument_type": "EQ",
+        "expiry": None,
+        "strike": Decimal("0"),
+        "last_price": Decimal("0"),
+        "tick_size": Decimal("0.05"),
+        "lot_size": 1,
+    }, {
+        "instrument_token": 123456,
+        "exchange_token": 482,
+        "exchange": "MCX",
+        "segment": "MCX-FUT",
+        "tradingsymbol": "GOLDM26AUGFUT",
+        "name": "GOLDM",
+        "instrument_type": "FUT",
+        "expiry": datetime(2026, 8, 28),
+        "strike": Decimal("0"),
+        "last_price": Decimal("0"),
+        "tick_size": Decimal("1"),
+        "lot_size": 100,
+    }]]
+    _, candidate, _, _, client = _candidate()
+    candidate.principal_evidence().compare_expected(_PRINCIPAL)
+    capability = candidate.issue_read_only_capability()
+
+    records = capability.instrument_master_records()
+
+    assert client.instrument_exchanges == [None]
+    assert tuple(item.exchange for item in records) == ("NSE", "MCX")
+    assert records[1].name == "GOLDM"
+    assert records[1].instrument_type == "FUT"
+    assert records[1].expiry == datetime(2026, 8, 28).date()
+    assert records[1].provider_instrument_token == 123456
+    assert "123456" not in repr(records[1])
+    assert not hasattr(capability, "instrument_tokens")
+
+
+def _instrument_master_row(**overrides: object) -> dict[str, object]:
+    row: dict[str, object] = {
+        "instrument_token": 738561,
+        "exchange_token": 2885,
+        "tradingsymbol": "RELIANCE",
+        "name": "RELIANCE INDUSTRIES",
+        "last_price": Decimal("0"),
+        "expiry": None,
+        "strike": Decimal("0"),
+        "tick_size": Decimal("0.05"),
+        "lot_size": 1,
+        "instrument_type": "EQ",
+        "segment": "NSE",
+        "exchange": "NSE",
+    }
+    row.update(overrides)
+    return row
+
+
+@pytest.mark.parametrize(
+    ("mutation", "rule", "field", "classification"),
+    [
+        (
+            lambda row: row.pop("tradingsymbol"),
+            ProviderInstrumentValidationRule.SYMBOL_REQUIRED,
+            ProviderInstrumentFieldFamily.SYMBOL,
+            ProviderInstrumentValueClassification.MISSING,
+        ),
+        (
+            lambda row: row.update(tick_size=None),
+            ProviderInstrumentValidationRule.TICK_REQUIRED,
+            ProviderInstrumentFieldFamily.TICK_SIZE,
+            ProviderInstrumentValueClassification.NULL,
+        ),
+        (
+            lambda row: row.update(lot_size=None),
+            ProviderInstrumentValidationRule.LOT_REQUIRED,
+            ProviderInstrumentFieldFamily.LOT_SIZE,
+            ProviderInstrumentValueClassification.NULL,
+        ),
+        (
+            lambda row: row.update(exchange=""),
+            ProviderInstrumentValidationRule.EXCHANGE_REQUIRED,
+            ProviderInstrumentFieldFamily.EXCHANGE,
+            ProviderInstrumentValueClassification.EMPTY,
+        ),
+        (
+            lambda row: row.update(segment=""),
+            ProviderInstrumentValidationRule.SEGMENT_REQUIRED,
+            ProviderInstrumentFieldFamily.SEGMENT,
+            ProviderInstrumentValueClassification.EMPTY,
+        ),
+        (
+            lambda row: row.update(expiry="2026-08-28"),
+            ProviderInstrumentValidationRule.EXPIRY_SHAPE_INVALID,
+            ProviderInstrumentFieldFamily.EXPIRY,
+            ProviderInstrumentValueClassification.MALFORMED,
+        ),
+        (
+            lambda row: row.update(strike="not-a-decimal"),
+            ProviderInstrumentValidationRule.STRIKE_INVALID,
+            ProviderInstrumentFieldFamily.STRIKE,
+            ProviderInstrumentValueClassification.MALFORMED,
+        ),
+        (
+            lambda row: row.update(strike=Decimal("-1")),
+            ProviderInstrumentValidationRule.STRIKE_INVALID,
+            ProviderInstrumentFieldFamily.STRIKE,
+            ProviderInstrumentValueClassification.NEGATIVE,
+        ),
+        (
+            lambda row: row.update(strike=Decimal("NaN")),
+            ProviderInstrumentValidationRule.STRIKE_INVALID,
+            ProviderInstrumentFieldFamily.STRIKE,
+            ProviderInstrumentValueClassification.NON_FINITE,
+        ),
+    ],
+)
+def test_instrument_master_normalization_reports_only_safe_schema_context(
+    mutation: Callable[[dict[str, object]], object],
+    rule: ProviderInstrumentValidationRule,
+    field: ProviderInstrumentFieldFamily,
+    classification: ProviderInstrumentValueClassification,
+) -> None:
+    row = _instrument_master_row()
+    mutation(row)
+
+    with pytest.raises(ProviderInstrumentMasterError) as captured:
+        adapter_module._normalize_instrument_master_records([row])
+
+    diagnostic = captured.value.diagnostic
+    assert diagnostic is not None
+    assert diagnostic.phase is ProviderInstrumentDiagnosticPhase.PROVIDER_NORMALIZATION
+    assert diagnostic.rule is rule
+    assert diagnostic.field_family is field
+    assert diagnostic.value_classification is classification
+    assert diagnostic.input_ordinal == 1
+    assert diagnostic.affected_count == 1
+    assert diagnostic.record_locator is not None
+    rendered = repr(captured.value) + repr(diagnostic) + str(captured.value)
+    for prohibited in ("738561", "RELIANCE", "not-a-decimal"):
+        assert prohibited not in rendered
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"tick_size": Decimal("0")},
+        {"lot_size": 0},
+        {"expiry": None},
+        {"expiry": date(2026, 8, 28)},
+        {"expiry": datetime(2026, 8, 28, 12, 0)},
+        {
+            "exchange": "NEW-EXCHANGE-VOCABULARY",
+            "segment": "NEW-SEGMENT-VOCABULARY",
+            "instrument_type": "NEW-TYPE-VOCABULARY",
+        },
+    ],
+)
+def test_instrument_master_normalization_acceptance_semantics_are_unchanged(
+    overrides: dict[str, object],
+) -> None:
+    records = adapter_module._normalize_instrument_master_records(
+        [_instrument_master_row(**overrides)]
+    )
+
+    assert len(records) == 1
+    if isinstance(overrides.get("expiry"), datetime):
+        assert records[0].expiry == date(2026, 8, 28)
+
+
+def test_duplicate_provider_tokens_remain_valid_distinct_provider_records() -> None:
+    records = adapter_module._normalize_instrument_master_records([
+        _instrument_master_row(),
+        _instrument_master_row(tradingsymbol="RELIANCE-ALTERNATE"),
+    ])
+
+    assert len(records) == 2
+    assert records[0].provider_instrument_token == records[1].provider_instrument_token
+    assert records[0].trading_symbol != records[1].trading_symbol
+
+
+_MISSING_IDENTITY_COMPONENT = object()
+
+
+@pytest.mark.parametrize(
+    (
+        "provider_field",
+        "value",
+        "accepted",
+        "field_family",
+        "classification",
+    ),
+    [
+        ("instrument_token", 101, True, None, None),
+        (
+            "instrument_token",
+            0,
+            False,
+            ProviderInstrumentFieldFamily.INSTRUMENT_TOKEN,
+            ProviderInstrumentValueClassification.INVALID,
+        ),
+        (
+            "instrument_token",
+            -1,
+            False,
+            ProviderInstrumentFieldFamily.INSTRUMENT_TOKEN,
+            ProviderInstrumentValueClassification.NEGATIVE,
+        ),
+        (
+            "instrument_token",
+            None,
+            False,
+            ProviderInstrumentFieldFamily.INSTRUMENT_TOKEN,
+            ProviderInstrumentValueClassification.NULL,
+        ),
+        (
+            "instrument_token",
+            "101",
+            False,
+            ProviderInstrumentFieldFamily.INSTRUMENT_TOKEN,
+            ProviderInstrumentValueClassification.MALFORMED,
+        ),
+        (
+            "instrument_token",
+            101.0,
+            False,
+            ProviderInstrumentFieldFamily.INSTRUMENT_TOKEN,
+            ProviderInstrumentValueClassification.MALFORMED,
+        ),
+        (
+            "instrument_token",
+            True,
+            False,
+            ProviderInstrumentFieldFamily.INSTRUMENT_TOKEN,
+            ProviderInstrumentValueClassification.MALFORMED,
+        ),
+        (
+            "instrument_token",
+            _MISSING_IDENTITY_COMPONENT,
+            False,
+            ProviderInstrumentFieldFamily.INSTRUMENT_TOKEN,
+            ProviderInstrumentValueClassification.MISSING,
+        ),
+        ("exchange_token", 202, True, None, None),
+        ("exchange_token", 0, True, None, None),
+        (
+            "exchange_token",
+            -1,
+            False,
+            ProviderInstrumentFieldFamily.EXCHANGE_TOKEN,
+            ProviderInstrumentValueClassification.NEGATIVE,
+        ),
+        ("exchange_token", None, True, None, None),
+        (
+            "exchange_token",
+            "202",
+            True,
+            None,
+            None,
+        ),
+        (
+            "exchange_token",
+            "0",
+            True,
+            None,
+            None,
+        ),
+        (
+            "exchange_token",
+            "0202",
+            False,
+            ProviderInstrumentFieldFamily.EXCHANGE_TOKEN,
+            ProviderInstrumentValueClassification.MALFORMED,
+        ),
+        (
+            "exchange_token",
+            "-202",
+            False,
+            ProviderInstrumentFieldFamily.EXCHANGE_TOKEN,
+            ProviderInstrumentValueClassification.MALFORMED,
+        ),
+        (
+            "exchange_token",
+            "202.0",
+            False,
+            ProviderInstrumentFieldFamily.EXCHANGE_TOKEN,
+            ProviderInstrumentValueClassification.MALFORMED,
+        ),
+        (
+            "exchange_token",
+            "2e2",
+            False,
+            ProviderInstrumentFieldFamily.EXCHANGE_TOKEN,
+            ProviderInstrumentValueClassification.MALFORMED,
+        ),
+        (
+            "exchange_token",
+            "ABC202",
+            False,
+            ProviderInstrumentFieldFamily.EXCHANGE_TOKEN,
+            ProviderInstrumentValueClassification.MALFORMED,
+        ),
+        (
+            "exchange_token",
+            "",
+            False,
+            ProviderInstrumentFieldFamily.EXCHANGE_TOKEN,
+            ProviderInstrumentValueClassification.MALFORMED,
+        ),
+        (
+            "exchange_token",
+            " 202 ",
+            False,
+            ProviderInstrumentFieldFamily.EXCHANGE_TOKEN,
+            ProviderInstrumentValueClassification.MALFORMED,
+        ),
+        (
+            "exchange_token",
+            202.0,
+            False,
+            ProviderInstrumentFieldFamily.EXCHANGE_TOKEN,
+            ProviderInstrumentValueClassification.MALFORMED,
+        ),
+        (
+            "exchange_token",
+            True,
+            False,
+            ProviderInstrumentFieldFamily.EXCHANGE_TOKEN,
+            ProviderInstrumentValueClassification.MALFORMED,
+        ),
+        ("exchange_token", _MISSING_IDENTITY_COMPONENT, True, None, None),
+    ],
+    ids=(
+        "instrument-valid-integer",
+        "instrument-zero",
+        "instrument-negative",
+        "instrument-null",
+        "instrument-string",
+        "instrument-float",
+        "instrument-boolean",
+        "instrument-missing",
+        "exchange-valid-integer",
+        "exchange-zero",
+        "exchange-negative",
+        "exchange-null",
+        "exchange-positive-digit-string",
+        "exchange-zero-string",
+        "exchange-leading-zero-string",
+        "exchange-negative-string",
+        "exchange-float-string",
+        "exchange-scientific-string",
+        "exchange-nonnumeric-string",
+        "exchange-empty-string",
+        "exchange-whitespace-string",
+        "exchange-float",
+        "exchange-boolean",
+        "exchange-missing",
+    ),
+)
+def test_identity_component_diagnostics_preserve_existing_shape_semantics(
+    provider_field: str,
+    value: object,
+    accepted: bool,
+    field_family: ProviderInstrumentFieldFamily | None,
+    classification: ProviderInstrumentValueClassification | None,
+) -> None:
+    row = _instrument_master_row()
+    if value is _MISSING_IDENTITY_COMPONENT:
+        row.pop(provider_field)
+    else:
+        row[provider_field] = value
+
+    if accepted:
+        records = adapter_module._normalize_instrument_master_records([row])
+        assert len(records) == 1
+        if provider_field == "exchange_token":
+            expected = (
+                None
+                if value is _MISSING_IDENTITY_COMPONENT
+                else int(value)
+                if type(value) is str
+                else value
+            )
+            assert records[0].exchange_token == expected
+            assert type(records[0].exchange_token) is (
+                type(None) if expected is None else int
+            )
+        return
+
+    with pytest.raises(ProviderInstrumentMasterError) as captured:
+        adapter_module._normalize_instrument_master_records([row])
+
+    diagnostic = captured.value.diagnostic
+    assert diagnostic is not None
+    assert diagnostic.phase is ProviderInstrumentDiagnosticPhase.PROVIDER_NORMALIZATION
+    assert diagnostic.rule is (
+        ProviderInstrumentValidationRule.PROVIDER_RECORD_IDENTITY_INVALID
+    )
+    assert diagnostic.field_family is field_family
+    assert diagnostic.value_classification is classification
+    assert diagnostic.input_ordinal == 1
+    assert diagnostic.affected_count == 1
+    assert diagnostic.record_locator is not None
+
+
+def test_unsupported_exchange_token_shape_is_isolated_without_value_exposure() -> None:
+    row = _instrument_master_row(exchange_token="SDK-CSV-TEXT-SHAPE")
+
+    with pytest.raises(ProviderInstrumentMasterError) as captured:
+        adapter_module._normalize_instrument_master_records([row])
+
+    diagnostic = captured.value.diagnostic
+    assert diagnostic is not None
+    assert diagnostic.field_family is ProviderInstrumentFieldFamily.EXCHANGE_TOKEN
+    assert diagnostic.value_classification is (
+        ProviderInstrumentValueClassification.MALFORMED
+    )
+    rendered = repr(captured.value) + repr(diagnostic) + str(captured.value)
+    assert "SDK-CSV-TEXT-SHAPE" not in rendered
+
+
+def test_kite_sdk_numeric_text_exchange_token_normalizes_before_contract() -> None:
+    records = adapter_module._normalize_instrument_master_records([
+        _instrument_master_row(
+            instrument_token=101,
+            exchange_token="202",
+        )
+    ])
+
+    assert len(records) == 1
+    assert records[0].provider_instrument_token == 101
+    assert records[0].exchange_token == 202
+    assert type(records[0].exchange_token) is int
 
 
 def test_capability_publishes_reliance_when_exchange_contains_zero_geometry() -> None:

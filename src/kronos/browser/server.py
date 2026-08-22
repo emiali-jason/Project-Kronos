@@ -13,6 +13,10 @@ from threading import Lock, Thread
 from urllib.parse import parse_qs, unquote, urlsplit
 
 from kronos.application.swing_opportunities import SwingOpportunitiesApplication
+from kronos.application.provider_instrument_master_operation import (
+    ProviderInstrumentMasterOperationalComposition,
+    p1_operational_result_document,
+)
 from kronos.application.swing_progression_watch import (
     SwingProgressionWatchSnapshot,
     SwingProgressionWatchWorkflow,
@@ -191,6 +195,9 @@ class KronosBrowserServer(ThreadingHTTPServer):
         trade_window: SwingTradeWindowWorkflow | None = None,
         telegram: TelegramConfigurationService | None = None,
         ux10_notifications: SwingUx10NotificationService | None = None,
+        provider_instrument_master_operation: (
+            ProviderInstrumentMasterOperationalComposition | None
+        ) = None,
     ) -> None:
         if (
             address[0] != _LOOPBACK_HOST
@@ -236,6 +243,11 @@ class KronosBrowserServer(ThreadingHTTPServer):
                 trade_window is not None
                 and type(trade_window) is not SwingTradeWindowWorkflow
             )
+            or (
+                provider_instrument_master_operation is not None
+                and type(provider_instrument_master_operation)
+                is not ProviderInstrumentMasterOperationalComposition
+            )
         ):
             raise ValueError("BROWSER_SERVER_MUST_BIND_LOOPBACK")
         config = OpenAIChartAnalystV2Config.from_environment()
@@ -248,6 +260,9 @@ class KronosBrowserServer(ThreadingHTTPServer):
             chart_analyst_activation or ChartAnalystV2ActivationService()
         )
         self.restart_control = restart_control
+        self.provider_instrument_master_operation = (
+            provider_instrument_master_operation
+        )
         self._shutdown_lock = Lock()
         self._shutdown_started = False
         self._active_sponsor_work = 0
@@ -638,6 +653,9 @@ class _BrowserHandler(BaseHTTPRequestHandler):
         if path == "/swing":
             self._redirect("/swing/opportunities")
             return
+        if path == "/control/provider-instrument-master/status":
+            self._provider_instrument_master_status()
+            return
         product_response = self.server.product_routes.dispatch_get(
             BrowserGetRequest(
                 path=path,
@@ -937,6 +955,9 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             self.server.finish_sponsor_work()
 
     def _dispatch_post(self, path: str) -> None:
+        if path == "/control/provider-instrument-master":
+            self._run_provider_instrument_master()
+            return
         if path == "/provider/connect":
             self.server.application.connect_provider()
             self._redirect("/swing/opportunities")
@@ -1094,6 +1115,64 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             self._record_sponsor_decision(decision_match.group(1))
             return
         self._text(HTTPStatus.NOT_FOUND, "Not found.")
+
+    def _provider_instrument_master_status(self) -> None:
+        operation = self.server.provider_instrument_master_operation
+        if operation is None:
+            self._text(HTTPStatus.NOT_FOUND, "Not found.")
+            return
+        query = urlsplit(self.path).query
+        if not query:
+            self._json({
+                "context_availability": operation.context_availability().value,
+            })
+            return
+        try:
+            fields = parse_qs(
+                query,
+                keep_blank_values=True,
+                strict_parsing=True,
+            )
+            values = fields.get("operation_identity", ())
+            if set(fields) != {"operation_identity"} or len(values) != 1:
+                raise ValueError
+            result = operation.result(values[0])
+        except ValueError:
+            self._text(HTTPStatus.BAD_REQUEST, "Request rejected.")
+            return
+        if result is None:
+            self._text(HTTPStatus.NOT_FOUND, "Operation not found.")
+            return
+        self._json(p1_operational_result_document(result))
+
+    def _run_provider_instrument_master(self) -> None:
+        operation = self.server.provider_instrument_master_operation
+        try:
+            content_length = int(self.headers.get("Content-Length", ""))
+        except ValueError:
+            content_length = 0
+        if (
+            operation is None
+            or urlsplit(self.path).query
+            or self.headers.get("Content-Type", "").split(";", 1)[0].lower()
+            != "application/x-www-form-urlencoded"
+            or not 0 < content_length <= 192
+        ):
+            self._text(HTTPStatus.BAD_REQUEST, "Request rejected.")
+            return
+        try:
+            fields = parse_qs(
+                self.rfile.read(content_length).decode("utf-8"),
+                strict_parsing=True,
+            )
+            values = fields.get("operation_identity", ())
+            if set(fields) != {"operation_identity"} or len(values) != 1:
+                raise ValueError
+            result = operation.run(operation_identity=values[0])
+        except (UnicodeDecodeError, ValueError):
+            self._text(HTTPStatus.BAD_REQUEST, "Request rejected.")
+            return
+        self._json(p1_operational_result_document(result))
 
     def _activate_progression_watch(self) -> None:
         if urlsplit(self.path).query:
@@ -2077,6 +2156,9 @@ def create_browser_server(
     trade_window: SwingTradeWindowWorkflow | None = None,
     telegram: TelegramConfigurationService | None = None,
     ux10_notifications: SwingUx10NotificationService | None = None,
+    provider_instrument_master_operation: (
+        ProviderInstrumentMasterOperationalComposition | None
+    ) = None,
 ) -> KronosBrowserServer:
     if type(port) is not int or not 0 <= port <= 65535:
         raise ValueError("BROWSER_SERVER_PORT_INVALID")
@@ -2097,6 +2179,7 @@ def create_browser_server(
         trade_window,
         telegram,
         ux10_notifications,
+        provider_instrument_master_operation,
     )
 
 

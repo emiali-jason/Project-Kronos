@@ -16,6 +16,10 @@ from kronos.provider.contracts.instrument import (
     InstrumentResolutionError,
     InstrumentResolutionFailure,
 )
+from kronos.provider.contracts.instrument_master import (
+    KITE_INSTRUMENT_MASTER_OPERATION,
+    ProviderInstrumentMasterSourceRecord,
+)
 from kronos.provider.contracts.market_data import (
     HistoricalCandle,
     HistoricalCandleRequest,
@@ -160,6 +164,28 @@ class SharedAuthenticatedProviderRuntime:
             return self.__lifecycle
 
     @property
+    def provider_instrument_master_operation_available(self) -> bool:
+        """Report capability availability without exposing the capability itself."""
+
+        with self.__lock:
+            self.__synchronize_locked()
+            return (
+                self.__lifecycle is SharedProviderRuntimeLifecycle.ACTIVE
+                and self.__capability is not None
+                and callable(
+                    getattr(self.__capability, "instrument_master_records", None)
+                )
+            )
+
+    @property
+    def authenticated_context_identity(self) -> str:
+        """Expose only the already-sanitized governed context identity."""
+
+        with self.__lock:
+            self.__require_active_locked()
+            return self.__context_identity
+
+    @property
     def active_lease_count(self) -> int:
         with self.__lock:
             self.__synchronize_locked()
@@ -282,6 +308,27 @@ class SharedAuthenticatedProviderRuntime:
             )
             self.__leases[lease_identity] = lease
             return lease
+
+    def acquire_provider_instrument_master_records(
+        self,
+        *,
+        operation_identity: str,
+    ) -> tuple[ProviderInstrumentMasterSourceRecord, ...]:
+        """Execute one DOMAIN-006-private consolidated Instrument Master read."""
+
+        if operation_identity != KITE_INSTRUMENT_MASTER_OPERATION:
+            raise ProviderRuntimeAccessError(
+                ProviderRuntimeFailure.OPERATION_NOT_AUTHORIZED
+            )
+        with self.__lock:
+            self.__require_active_locked()
+            capability = self.__capability
+            operation = getattr(capability, "instrument_master_records", None)
+            if capability is None or not callable(operation):
+                raise ProviderRuntimeAccessError(
+                    ProviderRuntimeFailure.CAPABILITY_UNAVAILABLE
+                )
+        return operation()
 
     def invalidate(self, sanitized_failure: str = "CONTEXT_INVALIDATED") -> None:
         """Invalidate centrally and revoke every outstanding product lease."""
