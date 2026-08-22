@@ -41,6 +41,10 @@ Provide navigation to the approved KRONOS Platform Architecture v1.0 documents a
 - [ADR-008 — Provider Entitlement Assessment Architecture](domains/provider/ADR-008-PROVIDER-ENTITLEMENT-ASSESSMENT-ARCHITECTURE.md)
 - [ADR-010 — Provider Authentication Shared Platform Capability](domains/provider/ADR-010-PROVIDER-AUTHENTICATION-SHARED-PLATFORM-CAPABILITY.md) — Version 1.0 Approved Canonical Architecture
 
+## Approved Instrument Architecture
+
+- [ADR-0014 — DOMAIN-001 Canonical Instrument V2 Semantic Layering, Provider Classification, and Active Derivative Binding Architecture](../adr/ADR-0014-DOMAIN-001-CANONICAL-INSTRUMENT-V2-SEMANTIC-LAYERING-PROVIDER-CLASSIFICATION-AND-ACTIVE-DERIVATIVE-BINDING.md)
+
 ## Platform Principles
 
 - [PP-001 — Information First](principles/PP-001-Information-First.md) — Draft
