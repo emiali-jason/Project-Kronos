@@ -111,6 +111,12 @@ from kronos.swing.v1.chart_analyst_v2_store import LocalChartAnalystV2Store
 from kronos.swing.v1.tradingview import ChartTimeframe
 from kronos.swing.v1.step32 import SponsorDecisionMode
 from kronos.swing.v1.native_sponsor_decision import SponsorTradeChoice
+from kronos.swing.v1.native_entry_timing import (
+    LocalKr380V2Store,
+    LocalObjectiveModelV1Store,
+    LocalPortfolioStateV1Store,
+    LocalRiskPermissionV1Store,
+)
 from kronos.swing.v1.native_active_trade_lifecycle import TradeExitReason
 from kronos.swing.v1.native_review import NativeReviewEvidenceStore
 from kronos.swing.v1.visual_evidence_v2 import (
@@ -358,6 +364,16 @@ class KronosBrowserServer(ThreadingHTTPServer):
                 governed_review_root / "kr370-step31-handoff-v1"
             ),
             LocalTradePlanStore(governed_review_root / "trade-construction-v0"),
+            LocalPortfolioStateV1Store(
+                governed_review_root / "portfolio-state-v1"
+            ),
+            LocalRiskPermissionV1Store(
+                governed_review_root / "domain-007-risk-permission-v1"
+            ),
+            LocalKr380V2Store(governed_review_root / "kr380-entry-outcome-v2"),
+            LocalObjectiveModelV1Store(
+                governed_review_root / "objective-model-v1"
+            ),
         )
         self.telegram = telegram or _telegram_security()
         self.swing_monitoring_hub = SharedSwingMonitoringHub()
@@ -368,6 +384,7 @@ class KronosBrowserServer(ThreadingHTTPServer):
         )
         self.progression_watches.set_shared_monitoring_hub(self.swing_monitoring_hub)
         self.native_review.set_shared_monitoring_hub(self.swing_monitoring_hub)
+        self.trade_window.set_shared_monitoring_hub(self.swing_monitoring_hub)
         self.ux10_notifications = ux10_notifications or SwingUx10NotificationService(
             Ux10NotificationStore(governed_review_root / "ux10-notifications-v1"),
             telegram=self.telegram,
@@ -425,6 +442,7 @@ class KronosBrowserServer(ThreadingHTTPServer):
     def server_close(self) -> None:
         self.progression_watches.close_monitoring()
         self.native_review.close()
+        self.trade_window.close_monitoring()
         self.swing_monitoring_hub.close()
         self.step32_workflow.close()
         self.application.close()

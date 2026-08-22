@@ -1,7 +1,7 @@
 # DOMAIN-007 — Risk Domain
 Status: Approved
 Owner: Chief Architect
-Version: 1.1
+Version: 1.2
 
 ## Purpose
 
@@ -24,6 +24,7 @@ Own the authoritative decision of whether an approved Business Judgment is allow
 ## Published Contracts
 
 - Risk Approval Contract — the authoritative permission decision consumed by Execution.
+- Swing V1 Risk Permission Contract — `KRONOS-SWING-DOMAIN-007-RISK-PERMISSION-V1`, commissioned by ADR-0013 for objective entry-timing permission only.
 
 ## Consumed Contracts
 
@@ -36,6 +37,8 @@ Own the authoritative decision of whether an approved Business Judgment is allow
 - Risk must not recreate Validation judgment or Portfolio state.
 - Risk permission alone must produce neither KR-370 analytical promotion nor a KR-380 Entry Outcome.
 - No current engine responsibility is silently reassigned by this domain-level approval.
+- Swing V1 V1 introduces no quantity, allocation, margin, leverage, concentration, correlation, drawdown, or R:R threshold. Missing authoritative Portfolio State produces `UNAVAILABLE`.
+- Current Risk Permission is bound to one exact Step-31 plan and Portfolio State cycle and is invalid after either is superseded.
 
 ## Approved Constitutional References
 

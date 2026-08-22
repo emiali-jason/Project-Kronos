@@ -4,8 +4,8 @@
 **Version:** 1.0
 **Approval date:** 2026-08-13
 **Owner / approved by:** Chief Architect
-**Engineering status:** Not authorized
-**Operational authority:** SHADOW / VALIDATION ONLY
+**Engineering status:** Native V2 production path commissioned by ADR-0013; historical/intermediate implementation remains validation-only
+**Operational authority:** PRODUCTION — exact ADR-0013 Native DOMAIN-007 V1 / ECPC V2 / KR-380 V2 / KR-390 path only
 
 ## S32-001 — Step-32 Product Orchestration
 
@@ -45,4 +45,4 @@ Pre-entry monitoring binds `candidate_id` and `monitoring_binding_id`; `model_tr
 
 ## Prohibitions
 
-No score, threshold, setup policy, geometry, broker authority, Pine decision authority, or automated execution authority is introduced. Step 32 implementation remains not authorized.
+No score, threshold, setup policy, geometry, broker authority, Pine decision authority, or automated execution authority is introduced. ADR-0013 authorizes only its exact Native production chain; all other Step-32 expansion remains unauthorized.

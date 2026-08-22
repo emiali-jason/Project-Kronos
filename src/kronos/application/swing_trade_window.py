@@ -8,11 +8,19 @@ positions, execution, or broker actions.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import StrEnum
+from hashlib import sha256
+from typing import Callable
 
 from kronos.instrument.facts import CanonicalInstrumentContext
-from kronos.provider.contracts.monitoring import MonitoringConnectionState
+from kronos.application.shared_monitoring import SharedSwingMonitoringHub
+from kronos.provider.contracts.instrument import InstrumentRecord
+from kronos.provider.contracts.monitoring import (
+    MonitoringConnectionState,
+    ProviderMarketTick,
+    ProviderOrderUpdateEvidence,
+)
 from kronos.swing.v1.analytical_promotion import (
     Kr370AnalyticalClassification,
 )
@@ -28,6 +36,27 @@ from kronos.swing.v1.native_trade_construction import (
     TradePlanStatus,
     construct_trade_plan,
 )
+from kronos.swing.v1.native_entry_timing import (
+    EcpcV2Blocker,
+    EcpcV2Outcome,
+    Kr380EntryOutcomeV2,
+    Kr380V2State,
+    LocalKr380V2Store,
+    LocalObjectiveModelV1Store,
+    LocalPortfolioStateV1Store,
+    LocalRiskPermissionV1Store,
+    NativeEcpcV2Context,
+    ObjectiveModelRecordV1,
+    PortfolioExposureFact,
+    PortfolioRuleFact,
+    PortfolioStateV1,
+    RiskPermissionV1,
+    activate_objective_model_v1,
+    create_portfolio_state_v1,
+    evaluate_kr380_v2,
+    evaluate_risk_permission_v1,
+    produce_native_ecpc_v2,
+)
 from kronos.application.swing_visual_v3 import CompletedVisualV3Review
 from kronos.application.swing_native_review import NativeReviewWorkflowSnapshot
 from kronos.swing.v1.native_active_trade_lifecycle import (
@@ -36,7 +65,16 @@ from kronos.swing.v1.native_active_trade_lifecycle import (
 )
 from kronos.swing.v1.native_sponsor_decision import SponsorInitiationResult
 from kronos.swing.v1.native_trade_journal import TradeJournalRecord
-from kronos.swing.v1.step32 import ObjectiveModelState, RiskApproval, RiskState
+from kronos.swing.v1.step32 import (
+    MonitoringAdmissionContext,
+    MonitoringAdmissionRegistry,
+    MonitoringObservation,
+    MonitoringSubmissionType,
+    ObjectiveModelState,
+    RiskApproval,
+    RiskState,
+    build_monitoring_submission,
+)
 
 
 KR380_ENTRY_OUTCOME_V2_CONTRACT_ID = "KRONOS-KR-380-ENTRY-OUTCOME-V2"
@@ -62,7 +100,7 @@ class GovernedKr380EntryOutcomeReference:
     trade_plan_sha256: str
     risk_result_id: str
     execution_context_identity: str
-    monitoring_binding_id: str
+    monitoring_binding_id: str | None
     state: Kr380EntryTimingState
     occurred_at: datetime
     source_observation_ids: tuple[str, ...]
@@ -81,12 +119,19 @@ class GovernedKr380EntryOutcomeReference:
                 self.trade_plan_id,
                 self.risk_result_id,
                 self.execution_context_identity,
-                self.monitoring_binding_id,
             ))
             or len(self.trade_plan_sha256) != 64
             or type(self.state) is not Kr380EntryTimingState
             or self.occurred_at.tzinfo is None
             or type(self.source_observation_ids) is not tuple
+            or (
+                self.state is not Kr380EntryTimingState.NO_TRIGGER
+                and not self.monitoring_binding_id
+            )
+            or (
+                self.monitoring_binding_id is not None
+                and not self.monitoring_binding_id
+            )
             or (
                 self.state in {
                     Kr380EntryTimingState.LONG_ENTRY_TRIGGERED,
@@ -196,7 +241,13 @@ class NativeTradeWindowProjection:
             or self.risk_state not in {
                 "RISK_UNAVAILABLE", "RISK_APPROVED", "RISK_CONSTRAINED", "RISK_REJECTED"
             }
-            or (self.risk_result_id is None) != (self.risk_state == "RISK_UNAVAILABLE")
+            or (
+                self.risk_result_id is not None
+                and self.risk_state not in {
+                    "RISK_UNAVAILABLE", "RISK_APPROVED",
+                    "RISK_CONSTRAINED", "RISK_REJECTED",
+                }
+            )
             or type(self.sponsor_controls_available) is not bool
             or not self.sponsor_decision_state
             or (self.sponsor_decision_id is None) != (
@@ -239,26 +290,326 @@ class SwingTradeWindowWorkflow:
         self,
         handoff_store: LocalKr370Step31HandoffStore,
         trade_plan_store: LocalTradePlanStore,
+        portfolio_store: LocalPortfolioStateV1Store | None = None,
+        risk_store: LocalRiskPermissionV1Store | None = None,
+        kr380_store: LocalKr380V2Store | None = None,
+        objective_model_store: LocalObjectiveModelV1Store | None = None,
     ) -> None:
         if (
             type(handoff_store) is not LocalKr370Step31HandoffStore
             or type(trade_plan_store) is not LocalTradePlanStore
+            or (
+                portfolio_store is not None
+                and type(portfolio_store) is not LocalPortfolioStateV1Store
+            )
+            or (
+                risk_store is not None
+                and type(risk_store) is not LocalRiskPermissionV1Store
+            )
+            or (
+                kr380_store is not None
+                and type(kr380_store) is not LocalKr380V2Store
+            )
+            or (
+                objective_model_store is not None
+                and type(objective_model_store) is not LocalObjectiveModelV1Store
+            )
         ):
             raise TypeError("SWING_TRADE_WINDOW_STORE_INVALID")
         self._handoff_store = handoff_store
         self._trade_plan_store = trade_plan_store
+        self._portfolio_store = portfolio_store
+        self._risk_store = risk_store
+        self._kr380_store = kr380_store
+        self._objective_model_store = objective_model_store
+        self._portfolio_state: PortfolioStateV1 | None = None
+        self._shared_monitoring_hub: SharedSwingMonitoringHub | None = None
+        self._monitoring_registrations: dict[str, object] = {}
+        self._monitoring_consumers: dict[str, _Kr380SharedMonitoringConsumer] = {}
         self._completed: dict[tuple[str, str], CompletedVisualV3Review] = {}
         self._handoffs: dict[tuple[str, str], Kr370Step31EligibilityHandoff] = {}
         self._plans: dict[tuple[str, str], TradePlanRecord] = {}
         self._failures: dict[tuple[str, str], str] = {}
-        self._risks: dict[str, RiskApproval] = {}
+        self._risks: dict[str, RiskApproval | RiskPermissionV1] = {}
+        self._production_risks: dict[str, RiskPermissionV1] = {}
         self._sponsor: dict[str, SponsorInitiationResult] = {}
         self._kr380: dict[str, GovernedKr380EntryOutcomeReference] = {}
+        self._production_kr380: dict[str, GovernedKr380EntryOutcomeReference] = {}
         self._models: dict[str, GovernedModelLifecycleReference] = {}
+        self._production_models: dict[str, GovernedModelLifecycleReference] = {}
         self._positions: dict[str, ActiveLifecyclePosition] = {}
         self._closures: dict[str, TradeClosureRecord] = {}
         self._journals: dict[str, TradeJournalRecord] = {}
         self._downstream_warnings: dict[str, tuple[str, ...]] = {}
+
+    def set_shared_monitoring_hub(self, hub: SharedSwingMonitoringHub) -> None:
+        """Bind the one existing factual Swing monitoring transport."""
+
+        if type(hub) is not SharedSwingMonitoringHub:
+            raise TypeError("KR380_SHARED_MONITORING_HUB_INVALID")
+        self._shared_monitoring_hub = hub
+
+    @property
+    def shared_monitoring_hub(self) -> SharedSwingMonitoringHub | None:
+        return self._shared_monitoring_hub
+
+    def start_current_entry_monitoring(
+        self,
+        run_identity: str,
+        canonical_instrument: str,
+        *,
+        capability: object,
+        instrument: InstrumentRecord,
+        session_identity: str,
+        observation_boundary: datetime,
+        ecpc_outcome: EcpcV2Outcome,
+        ecpc_blockers: tuple[EcpcV2Blocker, ...],
+        clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+    ) -> str:
+        """Attach KR-380 to the existing shared factual monitoring session."""
+
+        hub = self._shared_monitoring_hub
+        if hub is None:
+            raise ValueError("KR380_SHARED_MONITORING_HUB_UNAVAILABLE")
+        if not callable(clock):
+            raise TypeError("KR380_MONITORING_CLOCK_INVALID")
+        key = (run_identity, canonical_instrument)
+        completed = self._completed.get(key)
+        handoff = self._handoffs.get(key)
+        plan = self._plans.get(key)
+        if (
+            completed is None
+            or completed.promotion is None
+            or handoff is None
+            or plan is None
+            or type(instrument) is not InstrumentRecord
+            or (
+                instrument.name != canonical_instrument
+                and instrument.trading_symbol != canonical_instrument
+            )
+        ):
+            raise ValueError("CURRENT_NATIVE_ENTRY_MONITORING_INPUT_INVALID")
+        current_outcome = self._production_kr380.get(plan.trade_plan_id)
+        if current_outcome is not None and current_outcome.state in {
+            Kr380EntryTimingState.LONG_ENTRY_TRIGGERED,
+            Kr380EntryTimingState.SHORT_ENTRY_TRIGGERED,
+            Kr380EntryTimingState.EXTENDED,
+            Kr380EntryTimingState.FAILED,
+        }:
+            if current_outcome.monitoring_binding_id is None:
+                raise ValueError("CURRENT_NATIVE_ENTRY_MONITORING_TERMINAL")
+            return current_outcome.monitoring_binding_id
+        if plan.trade_plan_id in self._monitoring_registrations:
+            return self._monitoring_consumers[plan.trade_plan_id].binding_id
+        risk = self._evaluate_current_risk(plan, handoff, completed, clock())
+        if not risk.permits_entry:
+            raise ValueError("CURRENT_NATIVE_ENTRY_MONITORING_RISK_NOT_PERMITTED")
+        binding = "KR380-MONITORING-" + sha256(
+            f"{plan.trade_plan_id}:{session_identity}".encode("utf-8")
+        ).hexdigest()
+        context = produce_native_ecpc_v2(
+            plan,
+            risk,
+            monitoring_binding_id=binding,
+            session_identity=session_identity,
+            observation_boundary=observation_boundary,
+            outcome=ecpc_outcome,
+            blockers=ecpc_blockers,
+        )
+        consumer = _Kr380SharedMonitoringConsumer(
+            self, plan, risk, context, instrument, clock
+        )
+        registration = hub.open(capability, consumer)
+        registration.subscribe((instrument,))
+        registration.connect()
+        self._monitoring_consumers[plan.trade_plan_id] = consumer
+        self._monitoring_registrations[plan.trade_plan_id] = registration
+        return binding
+
+    def close_monitoring(self) -> None:
+        registrations = tuple(self._monitoring_registrations.values())
+        self._monitoring_registrations.clear()
+        self._monitoring_consumers.clear()
+        for registration in registrations:
+            registration.disconnect()
+
+    def publish_portfolio_state(
+        self,
+        *,
+        cycle_identity: str,
+        as_of_boundary: datetime,
+        objective_exposures: tuple[PortfolioExposureFact, ...],
+        sponsor_exposures: tuple[PortfolioExposureFact, ...],
+        rule_facts: tuple[PortfolioRuleFact, ...] = (),
+        source_identities: tuple[str, ...],
+        sources_complete: bool,
+        provenance: tuple[str, ...],
+    ) -> PortfolioStateV1:
+        """Publish factual Portfolio State; missing sources never mean empty."""
+
+        record = create_portfolio_state_v1(
+            cycle_identity=cycle_identity,
+            as_of_boundary=as_of_boundary,
+            objective_exposures=objective_exposures,
+            sponsor_exposures=sponsor_exposures,
+            rule_facts=rule_facts,
+            source_identities=source_identities,
+            sources_complete=sources_complete,
+            provenance=provenance,
+        )
+        if self._portfolio_store is None:
+            raise ValueError("PORTFOLIO_STATE_STORE_UNAVAILABLE")
+        self._portfolio_store.retain_current(record)
+        self._portfolio_state = record
+        return record
+
+    def _evaluate_current_risk(
+        self,
+        plan: TradePlanRecord,
+        handoff: Kr370Step31EligibilityHandoff,
+        completed: CompletedVisualV3Review,
+        evaluated_at: datetime,
+    ) -> RiskPermissionV1:
+        if completed.promotion is None or self._risk_store is None:
+            raise ValueError("CURRENT_RISK_PRODUCER_UNAVAILABLE")
+        portfolio = self._portfolio_state
+        risk = evaluate_risk_permission_v1(
+            plan,
+            handoff,
+            kr370_source_identity=completed.promotion.integrity_sha256,
+            kr370_source_sha256=completed.promotion.integrity_sha256,
+            portfolio_state=portfolio,
+            current_trade_plan_id=plan.trade_plan_id,
+            current_portfolio_cycle_identity=(
+                None if portfolio is None else portfolio.cycle_identity
+            ),
+            evaluated_at=evaluated_at,
+        )
+        self._risk_store.retain_current(risk)
+        self._production_risks[plan.trade_plan_id] = risk
+        self._merge_production_records()
+        return risk
+
+    def evaluate_current_entry_timing(
+        self,
+        run_identity: str,
+        canonical_instrument: str,
+        *,
+        session_identity: str,
+        observation_boundary: datetime,
+        ecpc_outcome: EcpcV2Outcome,
+        ecpc_blockers: tuple[EcpcV2Blocker, ...],
+        previous: MonitoringObservation | None,
+        current: MonitoringObservation | None,
+        evaluated_at: datetime,
+        monitoring_binding_id: str | None = None,
+        monitoring_state: MonitoringConnectionState = MonitoringConnectionState.DISCONNECTED,
+    ) -> Kr380EntryOutcomeV2:
+        """Evaluate and retain one current V2 outcome from governed facts only."""
+
+        key = (run_identity, canonical_instrument)
+        completed = self._completed.get(key)
+        handoff = self._handoffs.get(key)
+        plan = self._plans.get(key)
+        if completed is None or completed.promotion is None or handoff is None or plan is None:
+            raise ValueError("CURRENT_NATIVE_ENTRY_TIMING_INPUT_UNAVAILABLE")
+        if self._risk_store is None or self._kr380_store is None:
+            raise ValueError("CURRENT_NATIVE_ENTRY_TIMING_STORE_UNAVAILABLE")
+        promotion = completed.promotion
+        risk = self._evaluate_current_risk(plan, handoff, completed, evaluated_at)
+        context: NativeEcpcV2Context | None = None
+        if risk.permits_entry:
+            binding = monitoring_binding_id or (
+                "KR380-MONITORING-"
+                + sha256(plan.trade_plan_id.encode("utf-8")).hexdigest()
+            )
+            context = produce_native_ecpc_v2(
+                plan,
+                risk,
+                monitoring_binding_id=binding,
+                session_identity=session_identity,
+                observation_boundary=observation_boundary,
+                outcome=ecpc_outcome,
+                blockers=ecpc_blockers,
+            )
+        outcome = evaluate_kr380_v2(
+            plan,
+            risk,
+            context,
+            kr370_source_identity=promotion.integrity_sha256,
+            previous=previous,
+            current=current,
+            evaluated_at=evaluated_at,
+        )
+        self._retain_production_outcome(plan, outcome, monitoring_state)
+        return outcome
+
+    def _retain_production_outcome(
+        self,
+        plan: TradePlanRecord,
+        outcome: Kr380EntryOutcomeV2,
+        monitoring_state: MonitoringConnectionState,
+    ) -> None:
+        if self._kr380_store is None:
+            raise ValueError("CURRENT_KR380_STORE_UNAVAILABLE")
+        self._kr380_store.retain_current(outcome)
+        reference = _kr380_reference(plan, outcome)
+        self._production_kr380[plan.trade_plan_id] = reference
+        if outcome.state in {
+            Kr380V2State.LONG_ENTRY_TRIGGERED,
+            Kr380V2State.SHORT_ENTRY_TRIGGERED,
+        }:
+            if self._objective_model_store is None:
+                raise ValueError("CURRENT_OBJECTIVE_MODEL_STORE_UNAVAILABLE")
+            model = activate_objective_model_v1(
+                plan, outcome, monitoring_state=monitoring_state
+            )
+            self._objective_model_store.retain_current(model)
+            self._production_models[plan.trade_plan_id] = _model_reference(model)
+        self._merge_production_records()
+
+    def _restore_production_records(self, plan: TradePlanRecord) -> None:
+        risk = None if self._risk_store is None else self._risk_store.load_for_plan(
+            plan.trade_plan_id
+        )
+        if risk is not None and _risk_binding(plan, risk):
+            self._production_risks[plan.trade_plan_id] = risk
+        outcome = None if self._kr380_store is None else self._kr380_store.load_for_plan(
+            plan.trade_plan_id
+        )
+        risk_state = None if risk is None else risk.state
+        if outcome is not None:
+            reference = _kr380_reference(plan, outcome)
+            if _kr380_binding(
+                plan,
+                reference,
+                None if risk is None else risk.risk_result_id,
+                risk_state,
+            ):
+                self._production_kr380[plan.trade_plan_id] = reference
+            else:
+                outcome = None
+        model = (
+            None
+            if self._objective_model_store is None
+            else self._objective_model_store.load_for_plan(plan.trade_plan_id)
+        )
+        if model is not None and outcome is not None:
+            model_reference = _model_reference(model)
+            outcome_reference = self._production_kr380.get(plan.trade_plan_id)
+            if _model_binding(
+                plan,
+                model_reference,
+                outcome_reference,
+                None if risk is None else risk.risk_result_id,
+            ):
+                self._production_models[plan.trade_plan_id] = model_reference
+
+    def _merge_production_records(self) -> None:
+        # Current production V2 takes precedence over historical/injected fixtures.
+        self._risks.update(self._production_risks)
+        self._kr380.update(self._production_kr380)
+        self._models.update(self._production_models)
 
     def restore(self, completed: tuple[CompletedVisualV3Review, ...]) -> None:
         """Restore only exact persisted V3.1/KR-370 lineage and ready plans."""
@@ -273,6 +624,14 @@ class SwingTradeWindowWorkflow:
         }
         self._handoffs.clear()
         self._plans.clear()
+        self._production_risks.clear()
+        self._production_kr380.clear()
+        self._production_models.clear()
+        self._portfolio_state = (
+            None
+            if self._portfolio_store is None
+            else self._portfolio_store.load_current_state()
+        )
         requirements = tuple(item.requirement for item in completed)
         stored_plans = self._trade_plan_store.load_for_requirements(requirements)
         for review in completed:
@@ -303,7 +662,10 @@ class SwingTradeWindowWorkflow:
             if len(matches) > 1:
                 raise ValueError("SWING_TRADE_WINDOW_PLAN_RESTORE_AMBIGUOUS")
             if matches:
-                self._plans[key] = matches[0]
+                plan = matches[0]
+                self._plans[key] = plan
+                self._restore_production_records(plan)
+        self._merge_production_records()
 
     def synchronize_downstream(
         self,
@@ -337,6 +699,7 @@ class SwingTradeWindowWorkflow:
         }
         self._kr380 = {item.trade_plan_id: item for item in kr380_outcomes}
         self._models = {item.trade_plan_id: item for item in model_lifecycles}
+        self._merge_production_records()
         self._downstream_warnings.clear()
         for plan in self._plans.values():
             warnings: list[str] = []
@@ -566,6 +929,110 @@ class SwingTradeWindowWorkflow:
         return tuple(values)
 
 
+class _Kr380SharedMonitoringConsumer:
+    """Admit shared factual ticks and retain only current KR-380 V2 truth."""
+
+    def __init__(
+        self,
+        workflow: SwingTradeWindowWorkflow,
+        plan: TradePlanRecord,
+        risk: RiskPermissionV1,
+        context: NativeEcpcV2Context,
+        instrument: InstrumentRecord,
+        clock: Callable[[], datetime],
+    ) -> None:
+        self._workflow = workflow
+        self._plan = plan
+        self._risk = risk
+        self._context = context
+        self._instrument = instrument
+        self._clock = clock
+        self._registry = MonitoringAdmissionRegistry()
+        self._previous: MonitoringObservation | None = None
+        self._state = MonitoringConnectionState.DISCONNECTED
+        self._terminal = False
+
+    @property
+    def binding_id(self) -> str:
+        return self._context.monitoring_binding_id
+
+    def on_market_tick(self, tick: ProviderMarketTick) -> None:
+        if self._terminal:
+            return
+        if type(tick) is not ProviderMarketTick or tick.instrument != self._instrument:
+            raise ValueError("KR380_SHARED_TICK_BINDING_INVALID")
+        submission_id = "KR380-TICK-" + sha256(
+            (
+                f"{tick.connection_id}:{tick.observed_at.isoformat()}:"
+                f"{tick.source_sequence}:{self._plan.trade_plan_id}"
+            ).encode("utf-8")
+        ).hexdigest()
+        submission = build_monitoring_submission(
+            tick,
+            submission_id=submission_id,
+            candidate_id=self._plan.trade_plan_id,
+            monitoring_binding_id=self._context.monitoring_binding_id,
+            model_trade_id=None,
+            product="SWING",
+            direction=self._plan.native_direction.value,
+            submission_type=MonitoringSubmissionType.FACTUAL_MARKET_TICK,
+            reference="STEP31_ENTRY",
+            boundary=self._context.observation_boundary,
+            timeframe="TICK",
+            session_identity=self._context.session_identity,
+            canonical_instrument=self._plan.canonical_instrument,
+        )
+        observation = self._registry.admit(
+            submission,
+            MonitoringAdmissionContext(
+                candidate_id=self._plan.trade_plan_id,
+                monitoring_binding_id=self._context.monitoring_binding_id,
+                model_trade_id=None,
+                canonical_instrument=self._plan.canonical_instrument,
+                provider_instrument=(
+                    f"{tick.instrument.exchange}:{tick.instrument.trading_symbol}"
+                ),
+                product="SWING",
+                direction=self._plan.native_direction.value,
+                provider_source=tick.source,
+                source_connection_id=tick.connection_id,
+                binding_active=True,
+                boundary=self._context.observation_boundary,
+                timeframe="TICK",
+                session_identity=self._context.session_identity,
+            ),
+            clock=tick.received_at,
+        )
+        outcome = evaluate_kr380_v2(
+            self._plan,
+            self._risk,
+            self._context,
+            kr370_source_identity=self._risk.kr370_source_identity,
+            previous=self._previous,
+            current=observation,
+            evaluated_at=self._clock(),
+        )
+        self._workflow._retain_production_outcome(
+            self._plan, outcome, self._state
+        )
+        self._previous = observation
+        self._terminal = outcome.state in {
+            Kr380V2State.LONG_ENTRY_TRIGGERED,
+            Kr380V2State.SHORT_ENTRY_TRIGGERED,
+            Kr380V2State.EXTENDED,
+            Kr380V2State.FAILED,
+        }
+
+    def on_order_update(self, _update: ProviderOrderUpdateEvidence) -> None:
+        # Objective monitoring has no Sponsor-order or broker authority.
+        return None
+
+    def on_connection_state(self, state: MonitoringConnectionState) -> None:
+        if type(state) is not MonitoringConnectionState:
+            raise TypeError("KR380_MONITORING_CONNECTION_STATE_INVALID")
+        self._state = state
+
+
 def _exact_binding(
     completed: CompletedVisualV3Review,
     handoff: Kr370Step31EligibilityHandoff,
@@ -585,7 +1052,46 @@ def _exact_binding(
     )
 
 
-def _risk_binding(plan: TradePlanRecord, risk: RiskApproval) -> bool:
+def _kr380_reference(
+    plan: TradePlanRecord, outcome: Kr380EntryOutcomeV2
+) -> GovernedKr380EntryOutcomeReference:
+    return GovernedKr380EntryOutcomeReference(
+        entry_outcome_id=outcome.entry_outcome_id,
+        native_run_identity=outcome.native_run_identity,
+        canonical_instrument=outcome.canonical_instrument,
+        trade_plan_id=outcome.trade_plan_id,
+        trade_plan_sha256=outcome.trade_plan_sha256,
+        risk_result_id=outcome.risk_result_id,
+        execution_context_identity=plan.execution_context_identity,
+        monitoring_binding_id=outcome.monitoring_binding_id,
+        state=Kr380EntryTimingState(outcome.state.value),
+        occurred_at=outcome.occurred_at,
+        source_observation_ids=outcome.source_observation_ids,
+        source_integrity_sha256=outcome.integrity_sha256,
+    )
+
+
+def _model_reference(
+    model: ObjectiveModelRecordV1,
+) -> GovernedModelLifecycleReference:
+    return GovernedModelLifecycleReference(
+        model_trade_id=model.model_trade_id,
+        native_run_identity=model.native_run_identity,
+        canonical_instrument=model.canonical_instrument,
+        trade_plan_id=model.trade_plan_id,
+        trade_plan_sha256=model.trade_plan_sha256,
+        risk_result_id=model.risk_result_id,
+        entry_outcome_id=model.entry_outcome_id,
+        state=model.state,
+        monitoring_state=model.monitoring_state,
+        updated_at=model.activated_at,
+        source_integrity_sha256=model.integrity_sha256,
+    )
+
+
+def _risk_binding(
+    plan: TradePlanRecord, risk: RiskApproval | RiskPermissionV1
+) -> bool:
     return (
         risk.candidate_id == plan.trade_plan_id
         and risk.candidate_digest == plan.integrity_hash
@@ -630,9 +1136,14 @@ def _kr380_binding(
         outcome.state is not Kr380EntryTimingState.SHORT_ENTRY_TRIGGERED
         or plan.native_direction.value == "SHORT"
     )
+    risk_state_valid = (
+        risk_state in {RiskState.APPROVED, RiskState.CONSTRAINED}
+        or outcome.state is Kr380EntryTimingState.NO_TRIGGER
+        and risk_state in {RiskState.REJECTED, RiskState.UNAVAILABLE}
+    )
     return (
         risk_result_id is not None
-        and risk_state in {RiskState.APPROVED, RiskState.CONSTRAINED}
+        and risk_state_valid
         and outcome.native_run_identity == plan.native_run_identity
         and outcome.canonical_instrument == plan.canonical_instrument
         and outcome.trade_plan_id == plan.trade_plan_id

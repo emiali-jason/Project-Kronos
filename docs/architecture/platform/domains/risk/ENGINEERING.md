@@ -1,5 +1,5 @@
 # Risk Engineering Component
-Status: Draft
+Status: Approved for ADR-0013 Swing V1 bounded implementation
 Owner: Chief Architect
 
 ## Purpose
@@ -56,8 +56,13 @@ Realize approved Risk Approval ownership by deciding whether an approved Busines
 - No dedicated Risk Approval engine or independently packaged Risk component was discovered.
 - Current Pine model-trade risk references remain KR-390 Portfolio responsibilities and do not implement DOMAIN-007 Risk Approval.
 
-## Open Engineering Questions
+## Swing V1 closure
 
-- What approved rules will define Risk Approval without transferring Validation or Portfolio ownership?
-- How will previous Portfolio State be identified across decision cycles without creating circular authority?
-- What evidence is required before this currently unimplemented component can advance beyond Draft?
+ADR-0013 resolves the bounded Swing V1 questions only. The production component
+publishes objective permission from an exact current Step-31 plan plus the
+current complete Portfolio State cycle. No explicit prohibition means
+`APPROVED`; missing/invalid evidence means `UNAVAILABLE`. Constraints and hard
+rejections require pre-existing governed facts and are never invented.
+
+Capital allocation, sizing, optimization, and cross-cycle portfolio policy
+remain unresolved and reserved for a future DOMAIN-007 V2.

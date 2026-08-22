@@ -4,7 +4,7 @@
 **Version:** 1.1
 **Approval date:** 2026-08-13
 **Owner / approved by:** Chief Architect
-**Implementation:** Not authorized
+**Implementation:** ADR-0013 commissions the exact Native DOMAIN-007 V1, ECPC V2, KR-380 V2, persistence/restoration, and KR-390 handoff; all other expansion remains unauthorized
 
 All identities are immutable and all timestamps are timezone-aware. Contract identity/version, provenance, integrity, binding, and lifecycle applicability are mandatory. Unsupported versions, malformed identity/digest, binding mismatch, ambiguity, or unavailable mandatory evidence fail closed. Availability is expressed only as `AVAILABLE`, `UNAVAILABLE`, or `NOT_APPLICABLE`; absence is never converted into a fact.
 
@@ -52,6 +52,15 @@ The complete state-family contract and machine-readable registry are
 - **Mandatory:** `risk_result_id`, contract identity/version, candidate and judgment identities/digests, `run_id`, result (`APPROVED|CONSTRAINED|REJECTED|UNAVAILABLE`), evaluated time, validity/currentness, provenance, integrity.
 - **Conditional:** maximum quantity, notional, capital risk, margin, exposure, concentration, reason codes; each carries availability.
 - **Lifecycle:** valid only for the bound current candidate/run. It cannot alter geometry.
+- **ADR-0013 conformance:** the Native V1 producer also binds the exact UX-05 handoff, Step-31 plan, Portfolio State cycle, policy version, evaluation boundary, and integrity SHA. Quantity and numerical portfolio optimization remain unavailable.
+
+## KRONOS-SWING-PORTFOLIO-STATE-V1
+
+- **Semantic owner / producer:** DOMAIN-005 Portfolio factual-state publisher.
+- **Consumer:** DOMAIN-007 V1 only.
+- **Mandatory:** contract identity/version, cycle identity, as-of boundary, complete-source status and identities, objective-model and Sponsor-position exposure facts, provenance, integrity.
+- **Lifecycle:** immutable current-state cycle. Supersession invalidates Risk results bound to the older cycle. Missing sources cannot be represented as empty.
+- **Authority:** no Risk decision, optimization, quantity, order, fill, or broker authority.
 
 ## KRONOS-SWING-V1-SPONSOR-DECISION-V1
 

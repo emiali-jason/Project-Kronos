@@ -5,8 +5,11 @@
 **Approval date:** 2026-08-13
 **Decision owner / approved by:** Chief Architect
 **Scope:** Platform extension for Swing V1 Step 32
-**Engineering status:** Architecture activated; implementation not authorized
-**Operational authority:** SHADOW / VALIDATION ONLY
+**Engineering status:** Historical Step-32 activation baseline; the exact Native
+DOMAIN-007 V1 / ECPC V2 / KR-380 V2 / KR-390 path is commissioned separately by
+[ADR-0013](ADR-0013-NATIVE-SWING-DOMAIN-007-RISK-PERMISSION-AND-KR-380-V2-PRODUCTION-COMMISSIONING.md)
+**Operational authority:** SHADOW / VALIDATION ONLY except for the exact bounded
+Native path commissioned by ADR-0013
 
 These amendments extend, and do not silently rewrite, the existing Platform architecture. Repository activation does not grant runtime, Pine, webhook, or broker-execution authority. The 2026-08-13 Kite WebSocket transport amendment supersedes only the active-monitoring transport: previous 32H and TradingView/Pine active-trade webhook transport are retained as historical decisions but are `RETIRED`; public webhook ingress is `NOT REQUIRED` for Swing V1.
 
