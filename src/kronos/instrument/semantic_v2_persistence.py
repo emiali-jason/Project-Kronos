@@ -15,6 +15,11 @@ from kronos.instrument.semantic_v2 import (
 )
 
 
+DEFAULT_INSTRUMENT_SEMANTIC_V2_ROOT = (
+    Path(__file__).resolve().parents[3] / "data" / "instruments"
+)
+
+
 class InstrumentSemanticV2Store:
     """Retain immutable versions; directory order has no resolution authority."""
 
@@ -86,4 +91,7 @@ def _component(value: object) -> bool:
     )
 
 
-__all__ = ["InstrumentSemanticV2Store"]
+__all__ = [
+    "DEFAULT_INSTRUMENT_SEMANTIC_V2_ROOT",
+    "InstrumentSemanticV2Store",
+]

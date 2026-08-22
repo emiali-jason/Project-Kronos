@@ -35,6 +35,7 @@ class CanonicalSemanticKind(StrEnum):
 class CanonicalClassification(StrEnum):
     NSE_CASH_EQUITY = "NSE_CASH_EQUITY"
     NSE_INDEX = "NSE_INDEX"
+    EXCHANGE_INDEX = "EXCHANGE_INDEX"
     MCX_COMMODITY = "MCX_COMMODITY"
     MCX_FUTURE = "MCX_FUTURE"
 
@@ -171,6 +172,7 @@ class AnalyticalSubjectV2:
             self.semantic_kind is not CanonicalSemanticKind.ANALYTICAL_SUBJECT
             or self.classification not in {
                 CanonicalClassification.NSE_INDEX,
+                CanonicalClassification.EXCHANGE_INDEX,
                 CanonicalClassification.MCX_COMMODITY,
             }
             or not _base_semantic_valid(self)
@@ -254,7 +256,10 @@ class ProviderClassificationMapping:
 
     def __post_init__(self) -> None:
         fields = _mapping_fields(self)
-        index_scope = self.canonical_classification is CanonicalClassification.NSE_INDEX
+        index_scope = self.canonical_classification in {
+            CanonicalClassification.NSE_INDEX,
+            CanonicalClassification.EXCHANGE_INDEX,
+        }
         if (
             self.contract_identity != PROVIDER_CLASSIFICATION_MAPPING_V1
             or not _text(self.mapping_identity)
