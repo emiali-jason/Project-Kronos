@@ -432,7 +432,26 @@ This record is **LIVING DOCUMENT — V0.1**, not FINAL. A future governed work o
 
 The eventual production version may be published to GitHub and Google Drive only through separately authorized publication control.
 
-## 18. References
+## 18. Slice 3V factual / visual validation contract — WO-02
+
+WO-02 freezes the review-candidate Slice 3V V1 contract identities:
+
+| Contract | Identity |
+| --- | --- |
+| Question set | `KRONOS-INTRADAY-SLICE-3V-QUESTION-SET-V1` |
+| Visual Answer schema | `KRONOS-INTRADAY-SLICE-3V-VISUAL-ANSWER-V1` |
+| Comparison policy | `KRONOS-INTRADAY-SLICE-3V-COMPARISON-POLICY-V1` |
+| Validation record schema | `KRONOS-INTRADAY-SLICE-3V-VALIDATION-RECORD-V1` |
+
+The contract compares independently observed chart facts with already-frozen machine evidence. The reviewer payload contains visual-only fields; KRONOS owns identity binding, comparison, discrepancy records, persistence, and integrity. Exact values compare exactly, relational observations compare only like-for-like, and approximate or hidden precision remains `NOT_VISUALLY_VERIFIABLE`. V1 defines no tolerance or acceptance threshold.
+
+Individual results are `MATCH`, `MISMATCH`, `NOT_VISUALLY_VERIFIABLE`, `CHART_EVIDENCE_UNAVAILABLE`, `IDENTITY_MISMATCH`, `TIMEFRAME_MISMATCH`, or `OBSERVATION_BOUNDARY_MISMATCH`. These are factual validation results, not trading-quality states.
+
+Native chart validation and future `MCX_REFERENCE_MARKET_RELATIONSHIP_V0` validation are separate evidence families. V1 reserves the relationship seam but does not implement cross-market comparison. The contract introduces no Discovery, promotion, Readiness, Trade Construction, Risk, PAPER/LIVE, OpenAI, or broker authority.
+
+The complete review-candidate decision is recorded in [KRONOS Intraday Slice 3V Factual / Visual Validation Contract V1](KRONOS-INTRADAY-SLICE-3V-FACTUAL-VISUAL-VALIDATION-CONTRACT-V1.md).
+
+## 19. References
 
 - [Intraday Shared-File Change Rule](../../../engineering/INTRADAY-SHARED-FILE-CHANGE-RULE.md)
 - [Platform Constitution](../../platform/PLATFORM-000-CONSTITUTION.md)
