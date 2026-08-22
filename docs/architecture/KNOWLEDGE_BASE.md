@@ -35,7 +35,9 @@ The following documents are approved canonical architecture. They grant no engin
 | Interface Index | Navigation and interface record rules | Draft | Architecture Librarian | [`interfaces/README.md`](interfaces/README.md) |
 | Interface Template | Reusable cross-product interface template | Draft | Architecture Librarian | [`interfaces/INTERFACE_TEMPLATE.md`](interfaces/INTERFACE_TEMPLATE.md) |
 | Discovery product section | Draft product architecture placeholders | Draft | TBD | [`products/discovery/`](products/discovery/) |
-| Intraday product section | Draft product architecture placeholders | Draft | TBD | [`products/intraday/`](products/intraday/) |
+| Intraday product section | Living Intraday architecture, contracts, universe and control records | Living / source-specific | KRONOS Intraday | [`products/intraday/`](products/intraday/) |
+| Intraday Native Universe V1 | Exact 98-member Intraday-owned Native analytical universe and canonical coverage | WO-03A review candidate | KRONOS Intraday | [`products/intraday/KRONOS-INTRADAY-NATIVE-UNIVERSE-V1.md`](products/intraday/KRONOS-INTRADAY-NATIVE-UNIVERSE-V1.md) |
+| Intraday Programme Roadmap | CA-ratified WO sequence and conditional gates | Controlled | KRONOS Intraday | [`products/intraday/KRONOS-INTRADAY-V1-PROGRAMME-ROADMAP.md`](products/intraday/KRONOS-INTRADAY-V1-PROGRAMME-ROADMAP.md) |
 | Swing product section | Draft product architecture placeholders | Draft | TBD | [`products/swing/`](products/swing/) |
 | Execution product section | Draft product architecture placeholders | Draft | TBD | [`products/execution/`](products/execution/) |
 | Engineering product section | Draft product architecture placeholders | Draft | TBD | [`products/engineering/`](products/engineering/) |

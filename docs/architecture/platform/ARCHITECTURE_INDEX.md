@@ -14,6 +14,13 @@ Provide navigation to the approved KRONOS Platform Architecture v1.0 documents a
 - [Domain Dependency Matrix](DOMAIN_DEPENDENCY_MATRIX.md)
 - [Domain Ownership Matrix](DOMAIN_OWNERSHIP_MATRIX.md)
 
+## Intraday product records
+
+- [Intraday product architecture index](../products/intraday/README.md)
+- [Intraday Living Architecture Record](../products/intraday/KRONOS-INTRADAY-ENGINEERING-METHODOLOGY-ARCHITECTURE-RECORD-V0.1.md)
+- [Intraday Native Universe V1](../products/intraday/KRONOS-INTRADAY-NATIVE-UNIVERSE-V1.md)
+- [Intraday Programme Roadmap](../products/intraday/KRONOS-INTRADAY-V1-PROGRAMME-ROADMAP.md)
+
 ## Approved Domain Architectures
 
 - [DOMAIN-001 — Instrument](domains/instrument/ARCHITECTURE.md)

@@ -1,6 +1,6 @@
 # KRONOS Intraday Slice 3V Factual / Visual Validation Contract
 
-**Status:** WO-02 review candidate; not published; not final
+**Status:** WO-02 published contract; validation authority only
 
 **Authority:** VALIDATION ONLY
 
@@ -20,7 +20,11 @@ It does not answer whether KRONOS should trade.
 
 Slice 3V owns comparison, factual validation, discrepancy classification, evidence preservation, and engineering-validation statistics. It owns no Discovery, candidate, PROBABLE, Readiness, Trade Construction, Entry, Stop, Target, Risk, execution, or PAPER/LIVE eligibility meaning.
 
-The initial subject for WO-03 is RELIANCE run `INTRADAY-RUN-02490E741DA64343AAB2916271E98299`. WO-02 performs no RELIANCE comparison and consumes no screenshot.
+RELIANCE run `INTRADAY-RUN-02490E741DA64343AAB2916271E98299` remains the
+initial commissioning/validation anchor. The current programme assigns WO-03
+to Native Discovery; execution of this validation workflow therefore requires
+its own later governed instruction. WO-02 performs no RELIANCE comparison and
+consumes no screenshot.
 
 ### 1.1 DOMAIN-003 boundary
 
@@ -303,7 +307,7 @@ A future relationship contract/version must separately bind:
 
 It must not perform cross-market price arithmetic or create trading consequence. Native MCX chart validation and MCX↔reference-market relationship validation remain separate evidence families.
 
-## 15. Minimum WO-03 workflow
+## 15. Minimum Slice 3V validation workflow
 
 ```text
 machine evidence frozen

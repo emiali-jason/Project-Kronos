@@ -1,0 +1,1496 @@
+{
+  "integrity_identity": "INTRADAY-NATIVE-UNIVERSE-12f00b875532fd57d756ddebf555b5ed1e6d0418d123cf8930e12b3945bac2c1",
+  "members": [
+    {
+      "canonical_instrument_id": null,
+      "market_family": "NSE_EQUITY",
+      "membership_identity": "INTRADAY-NATIVE-MEMBER-4071ba0be9444ba48e5f4cf8d367b0506f796097e0ce18ab7a0ec5f947b85729",
+      "membership_status": "GOVERNED_TARGET",
+      "provenance": [
+        "Sponsor-approved Intraday V1 universe",
+        "CA Programme-Wide Prerequisite Closure"
+      ],
+      "role": "NATIVE",
+      "source_identity": "SPONSOR-INTRADAY-V1-91-NSE-EQUITIES-2026-08-22",
+      "sponsor_label": "ADANIENT",
+      "valid_from": "2026-08-22T00:00:00+05:30",
+      "valid_through": "9999-12-31T23:59:59+05:30"
+    },
+    {
+      "canonical_instrument_id": null,
+      "market_family": "NSE_EQUITY",
+      "membership_identity": "INTRADAY-NATIVE-MEMBER-6a456eed62dc58b95054549cd12b6a98ee27d84e0d55341bbc9ecebebdba1967",
+      "membership_status": "GOVERNED_TARGET",
+      "provenance": [
+        "Sponsor-approved Intraday V1 universe",
+        "CA Programme-Wide Prerequisite Closure"
+      ],
+      "role": "NATIVE",
+      "source_identity": "SPONSOR-INTRADAY-V1-91-NSE-EQUITIES-2026-08-22",
+      "sponsor_label": "ADANIGREEN",
+      "valid_from": "2026-08-22T00:00:00+05:30",
+      "valid_through": "9999-12-31T23:59:59+05:30"
+    },
+    {
+      "canonical_instrument_id": null,
+      "market_family": "NSE_EQUITY",
+      "membership_identity": "INTRADAY-NATIVE-MEMBER-41a150295e310da0ce2aa10cc830b5f221a90c51a2976584be49edf49ed9b053",
+      "membership_status": "GOVERNED_TARGET",
+      "provenance": [
+        "Sponsor-approved Intraday V1 universe",
+        "CA Programme-Wide Prerequisite Closure"
+      ],
+      "role": "NATIVE",
+      "source_identity": "SPONSOR-INTRADAY-V1-91-NSE-EQUITIES-2026-08-22",
+      "sponsor_label": "ADANIPORTS",
+      "valid_from": "2026-08-22T00:00:00+05:30",
+      "valid_through": "9999-12-31T23:59:59+05:30"
+    },
+    {
+      "canonical_instrument_id": null,
+      "market_family": "NSE_EQUITY",
+      "membership_identity": "INTRADAY-NATIVE-MEMBER-e00634305b6705edc2e62296e1347a62094f064f7eed2c855740b6e950b6cf54",
+      "membership_status": "GOVERNED_TARGET",
+      "provenance": [
+        "Sponsor-approved Intraday V1 universe",
+        "CA Programme-Wide Prerequisite Closure"
+      ],
+      "role": "NATIVE",
+      "source_identity": "SPONSOR-INTRADAY-V1-91-NSE-EQUITIES-2026-08-22",
+      "sponsor_label": "ALKEM",
+      "valid_from": "2026-08-22T00:00:00+05:30",
+      "valid_through": "9999-12-31T23:59:59+05:30"
+    },
+    {
+      "canonical_instrument_id": null,
+      "market_family": "NSE_EQUITY",
+      "membership_identity": "INTRADAY-NATIVE-MEMBER-6e4e2465925c364c1bc66fffa03eb80a09545e896f33b8dee8278709603bc223",
+      "membership_status": "GOVERNED_TARGET",
+      "provenance": [
+        "Sponsor-approved Intraday V1 universe",
+        "CA Programme-Wide Prerequisite Closure"
+      ],
+      "role": "NATIVE",
+      "source_identity": "SPONSOR-INTRADAY-V1-91-NSE-EQUITIES-2026-08-22",
+      "sponsor_label": "APOLLOHOSP",
+      "valid_from": "2026-08-22T00:00:00+05:30",
+      "valid_through": "9999-12-31T23:59:59+05:30"
+    },
+    {
+      "canonical_instrument_id": null,
+      "market_family": "NSE_EQUITY",
+      "membership_identity": "INTRADAY-NATIVE-MEMBER-c884b42886ace99e3703a273af291714a34116e51922e479c1c1df4e4d3b52af",
+      "membership_status": "GOVERNED_TARGET",
+      "provenance": [
+        "Sponsor-approved Intraday V1 universe",
+        "CA Programme-Wide Prerequisite Closure"
+      ],
+      "role": "NATIVE",
+      "source_identity": "SPONSOR-INTRADAY-V1-91-NSE-EQUITIES-2026-08-22",
+      "sponsor_label": "ASIANPAINT",
+      "valid_from": "2026-08-22T00:00:00+05:30",
+      "valid_through": "9999-12-31T23:59:59+05:30"
+    },
+    {
+      "canonical_instrument_id": null,
+      "market_family": "NSE_EQUITY",
+      "membership_identity": "INTRADAY-NATIVE-MEMBER-f6d7382afeb7af518431d7fb2dd45a24a5cd99e5ec25fbdad9ab8083f664fa2b",
+      "membership_status": "GOVERNED_TARGET",
+      "provenance": [
+        "Sponsor-approved Intraday V1 universe",
+        "CA Programme-Wide Prerequisite Closure"
+      ],
+      "role": "NATIVE",
+      "source_identity": "SPONSOR-INTRADAY-V1-91-NSE-EQUITIES-2026-08-22",
+      "sponsor_label": "AXISBANK",
+      "valid_from": "2026-08-22T00:00:00+05:30",
+      "valid_through": "9999-12-31T23:59:59+05:30"
+    },
+    {
+      "canonical_instrument_id": null,
+      "market_family": "NSE_EQUITY",
+      "membership_identity": "INTRADAY-NATIVE-MEMBER-24c43c57e44e5d7ed16122d84dc43cc1a4b59ccf8f57c7f376f39e94f367388b",
+      "membership_status": "GOVERNED_TARGET",
+      "provenance": [
+        "Sponsor-approved Intraday V1 universe",
+        "CA Programme-Wide Prerequisite Closure"
+      ],
+      "role": "NATIVE",
+      "source_identity": "SPONSOR-INTRADAY-V1-91-NSE-EQUITIES-2026-08-22",
+      "sponsor_label": "BAJAJFINSV",
+      "valid_from": "2026-08-22T00:00:00+05:30",
+      "valid_through": "9999-12-31T23:59:59+05:30"
+    },
+    {
+      "canonical_instrument_id": null,
+      "market_family": "NSE_EQUITY",
+      "membership_identity": "INTRADAY-NATIVE-MEMBER-89a96eb8c73886c7b703538bb0a766bd9e2a3fac5b706cd76166c8d490c703e3",
+      "membership_status": "GOVERNED_TARGET",
+      "provenance": [
+        "Sponsor-approved Intraday V1 universe",
+        "CA Programme-Wide Prerequisite Closure"
+      ],
+      "role": "NATIVE",
+      "source_identity": "SPONSOR-INTRADAY-V1-91-NSE-EQUITIES-2026-08-22",
+      "sponsor_label": "BAJAJ_AUTO",
+      "valid_from": "2026-08-22T00:00:00+05:30",
+      "valid_through": "9999-12-31T23:59:59+05:30"
+    },
+    {
+      "canonical_instrument_id": null,
+      "market_family": "NSE_EQUITY",
+      "membership_identity": "INTRADAY-NATIVE-MEMBER-3d51071337c5ab1e45088173ee3d0bff5e47486eace8b9d522d90821e1f465cd",
+      "membership_status": "GOVERNED_TARGET",
+      "provenance": [
+        "Sponsor-approved Intraday V1 universe",
+        "CA Programme-Wide Prerequisite Closure"
+      ],
+      "role": "NATIVE",
+      "source_identity": "SPONSOR-INTRADAY-V1-91-NSE-EQUITIES-2026-08-22",
+      "sponsor_label": "BAJFINANCE",
+      "valid_from": "2026-08-22T00:00:00+05:30",
+      "valid_through": "9999-12-31T23:59:59+05:30"
+    },
+    {
+      "canonical_instrument_id": null,
+      "market_family": "NSE_EQUITY",
+      "membership_identity": "INTRADAY-NATIVE-MEMBER-6a52eef4b93faeefce4810ed3d2e83710c9a8ce93ad417d10779d0c3b3895ebf",
+      "membership_status": "GOVERNED_TARGET",
+      "provenance": [
+        "Sponsor-approved Intraday V1 universe",
+        "CA Programme-Wide Prerequisite Closure"
+      ],
+      "role": "NATIVE",
+      "source_identity": "SPONSOR-INTRADAY-V1-91-NSE-EQUITIES-2026-08-22",
+      "sponsor_label": "BDL",
+      "valid_from": "2026-08-22T00:00:00+05:30",
+      "valid_through": "9999-12-31T23:59:59+05:30"
+    },
+    {
+      "canonical_instrument_id": null,
+      "market_family": "NSE_EQUITY",
+      "membership_identity": "INTRADAY-NATIVE-MEMBER-38ec7fa26b135c18485f64f0be5fb0579c0acc1093662f8dce63d2b507865d27",
+      "membership_status": "GOVERNED_TARGET",
+      "provenance": [
+        "Sponsor-approved Intraday V1 universe",
+        "CA Programme-Wide Prerequisite Closure"
+      ],
+      "role": "NATIVE",
+      "source_identity": "SPONSOR-INTRADAY-V1-91-NSE-EQUITIES-2026-08-22",
+      "sponsor_label": "BEL",
+      "valid_from": "2026-08-22T00:00:00+05:30",
+      "valid_through": "9999-12-31T23:59:59+05:30"
+    },
+    {
+      "canonical_instrument_id": null,
+      "market_family": "NSE_EQUITY",
+      "membership_identity": "INTRADAY-NATIVE-MEMBER-6ab5a9792accc465f4ec6cf55323c843552293bc5e5202f112e4e92477f8b3d6",
+      "membership_status": "GOVERNED_TARGET",
+      "provenance": [
+        "Sponsor-approved Intraday V1 universe",
+        "CA Programme-Wide Prerequisite Closure"
+      ],
+      "role": "NATIVE",
+      "source_identity": "SPONSOR-INTRADAY-V1-91-NSE-EQUITIES-2026-08-22",
+      "sponsor_label": "BHARATFORG",
+      "valid_from": "2026-08-22T00:00:00+05:30",
+      "valid_through": "9999-12-31T23:59:59+05:30"
+    },
+    {
+      "canonical_instrument_id": null,
+      "market_family": "NSE_EQUITY",
+      "membership_identity": "INTRADAY-NATIVE-MEMBER-7c402b555b99449f1d221c5533073e877be2fd26b306b4700a06702b4619ac6e",
+      "membership_status": "GOVERNED_TARGET",
+      "provenance": [
+        "Sponsor-approved Intraday V1 universe",
+        "CA Programme-Wide Prerequisite Closure"
+      ],
+      "role": "NATIVE",
+      "source_identity": "SPONSOR-INTRADAY-V1-91-NSE-EQUITIES-2026-08-22",
+      "sponsor_label": "BHARTIARTL",
+      "valid_from": "2026-08-22T00:00:00+05:30",
+      "valid_through": "9999-12-31T23:59:59+05:30"
+    },
+    {
+      "canonical_instrument_id": null,
+      "market_family": "NSE_EQUITY",
+      "membership_identity": "INTRADAY-NATIVE-MEMBER-419e4d4fa692059ea1ad3b8a4107753c4af40bd70baaf97965c27e7892c32eae",
+      "membership_status": "GOVERNED_TARGET",
+      "provenance": [
+        "Sponsor-approved Intraday V1 universe",
+        "CA Programme-Wide Prerequisite Closure"
+      ],
+      "role": "NATIVE",
+      "source_identity": "SPONSOR-INTRADAY-V1-91-NSE-EQUITIES-2026-08-22",
+      "sponsor_label": "BHEL",
+      "valid_from": "2026-08-22T00:00:00+05:30",
+      "valid_through": "9999-12-31T23:59:59+05:30"
+    },
+    {
+      "canonical_instrument_id": null,
+      "market_family": "NSE_EQUITY",
+      "membership_identity": "INTRADAY-NATIVE-MEMBER-44d9b5df1b15675fe5b0c09780232b07dda53f9f58680246a8e2bacc3ee8d7a2",
+      "membership_status": "GOVERNED_TARGET",
+      "provenance": [
+        "Sponsor-approved Intraday V1 universe",
+        "CA Programme-Wide Prerequisite Closure"
+      ],
+      "role": "NATIVE",
+      "source_identity": "SPONSOR-INTRADAY-V1-91-NSE-EQUITIES-2026-08-22",
+      "sponsor_label": "BPCL",
+      "valid_from": "2026-08-22T00:00:00+05:30",
+      "valid_through": "9999-12-31T23:59:59+05:30"
+    },
+    {
+      "canonical_instrument_id": null,
+      "market_family": "NSE_EQUITY",
+      "membership_identity": "INTRADAY-NATIVE-MEMBER-fff08644912123c98e59dc5fd7a808f657efe6361528aafaa7ace07b4d1a6e9c",
+      "membership_status": "GOVERNED_TARGET",
+      "provenance": [
+        "Sponsor-approved Intraday V1 universe",
+        "CA Programme-Wide Prerequisite Closure"
+      ],
+      "role": "NATIVE",
+      "source_identity": "SPONSOR-INTRADAY-V1-91-NSE-EQUITIES-2026-08-22",
+      "sponsor_label": "BSE",
+      "valid_from": "2026-08-22T00:00:00+05:30",
+      "valid_through": "9999-12-31T23:59:59+05:30"
+    },
+    {
+      "canonical_instrument_id": null,
+      "market_family": "NSE_EQUITY",
+      "membership_identity": "INTRADAY-NATIVE-MEMBER-f4c36d6a2b4c856c5c981016cded6e6adb6049ab2e03f35056445034a8b39045",
+      "membership_status": "GOVERNED_TARGET",
+      "provenance": [
+        "Sponsor-approved Intraday V1 universe",
+        "CA Programme-Wide Prerequisite Closure"
+      ],
+      "role": "NATIVE",
+      "source_identity": "SPONSOR-INTRADAY-V1-91-NSE-EQUITIES-2026-08-22",
+      "sponsor_label": "CANBK",
+      "valid_from": "2026-08-22T00:00:00+05:30",
+      "valid_through": "9999-12-31T23:59:59+05:30"
+    },
+    {
+      "canonical_instrument_id": null,
+      "market_family": "NSE_EQUITY",
+      "membership_identity": "INTRADAY-NATIVE-MEMBER-c03e6ae1df36152e0216045c211f7ca718566d8fd76ceb74d1814925d511618a",
+      "membership_status": "GOVERNED_TARGET",
+      "provenance": [
+        "Sponsor-approved Intraday V1 universe",
+        "CA Programme-Wide Prerequisite Closure"
+      ],
+      "role": "NATIVE",
+      "source_identity": "SPONSOR-INTRADAY-V1-91-NSE-EQUITIES-2026-08-22",
+      "sponsor_label": "CDSL",
+      "valid_from": "2026-08-22T00:00:00+05:30",
+      "valid_through": "9999-12-31T23:59:59+05:30"
+    },
+    {
+      "canonical_instrument_id": null,
+      "market_family": "NSE_EQUITY",
+      "membership_identity": "INTRADAY-NATIVE-MEMBER-f4721894e2413e9a348dba7dc8a7b766c1e3922f17a660d555dce370bc6b4c12",
+      "membership_status": "GOVERNED_TARGET",
+      "provenance": [
+        "Sponsor-approved Intraday V1 universe",
+        "CA Programme-Wide Prerequisite Closure"
+      ],
+      "role": "NATIVE",
+      "source_identity": "SPONSOR-INTRADAY-V1-91-NSE-EQUITIES-2026-08-22",
+      "sponsor_label": "CIPLA",
+      "valid_from": "2026-08-22T00:00:00+05:30",
+      "valid_through": "9999-12-31T23:59:59+05:30"
+    },
+    {
+      "canonical_instrument_id": null,
+      "market_family": "NSE_EQUITY",
+      "membership_identity": "INTRADAY-NATIVE-MEMBER-3b4b4b19acfa3f3ca98429540d289c0031b465db3b36e43c811bfcb0db7cbc81",
+      "membership_status": "GOVERNED_TARGET",
+      "provenance": [
+        "Sponsor-approved Intraday V1 universe",
+        "CA Programme-Wide Prerequisite Closure"
+      ],
+      "role": "NATIVE",
+      "source_identity": "SPONSOR-INTRADAY-V1-91-NSE-EQUITIES-2026-08-22",
+      "sponsor_label": "COALINDIA",
+      "valid_from": "2026-08-22T00:00:00+05:30",
+      "valid_through": "9999-12-31T23:59:59+05:30"
+    },
+    {
+      "canonical_instrument_id": null,
+      "market_family": "NSE_EQUITY",
+      "membership_identity": "INTRADAY-NATIVE-MEMBER-318ac4d820bd982ee135db0418af6cbe8cc04e4d65091522bc4c3930d8adefd6",
+      "membership_status": "GOVERNED_TARGET",
+      "provenance": [
+        "Sponsor-approved Intraday V1 universe",
+        "CA Programme-Wide Prerequisite Closure"
+      ],
+      "role": "NATIVE",
+      "source_identity": "SPONSOR-INTRADAY-V1-91-NSE-EQUITIES-2026-08-22",
+      "sponsor_label": "COFORGE",
+      "valid_from": "2026-08-22T00:00:00+05:30",
+      "valid_through": "9999-12-31T23:59:59+05:30"
+    },
+    {
+      "canonical_instrument_id": null,
+      "market_family": "NSE_EQUITY",
+      "membership_identity": "INTRADAY-NATIVE-MEMBER-6f3623e3cd1c29f6483be96d8a954b49da4c8b2c084f8d7db56209e4c0a15b3f",
+      "membership_status": "GOVERNED_TARGET",
+      "provenance": [
+        "Sponsor-approved Intraday V1 universe",
+        "CA Programme-Wide Prerequisite Closure"
+      ],
+      "role": "NATIVE",
+      "source_identity": "SPONSOR-INTRADAY-V1-91-NSE-EQUITIES-2026-08-22",
+      "sponsor_label": "CONCOR",
+      "valid_from": "2026-08-22T00:00:00+05:30",
+      "valid_through": "9999-12-31T23:59:59+05:30"
+    },
+    {
+      "canonical_instrument_id": null,
+      "market_family": "NSE_EQUITY",
+      "membership_identity": "INTRADAY-NATIVE-MEMBER-642dbf0d0645bf5f188dc4d34401aedfe873f69998dc3b54acaa56a0a02b934f",
+      "membership_status": "GOVERNED_TARGET",
+      "provenance": [
+        "Sponsor-approved Intraday V1 universe",
+        "CA Programme-Wide Prerequisite Closure"
+      ],
+      "role": "NATIVE",
+      "source_identity": "SPONSOR-INTRADAY-V1-91-NSE-EQUITIES-2026-08-22",
+      "sponsor_label": "CUMMINSIND",
+      "valid_from": "2026-08-22T00:00:00+05:30",
+      "valid_through": "9999-12-31T23:59:59+05:30"
+    },
+    {
+      "canonical_instrument_id": null,
+      "market_family": "NSE_EQUITY",
+      "membership_identity": "INTRADAY-NATIVE-MEMBER-3658c7e95ab9dddc1ce185f2285e5668230d07cfa78b025d857adc0343004143",
+      "membership_status": "GOVERNED_TARGET",
+      "provenance": [
+        "Sponsor-approved Intraday V1 universe",
+        "CA Programme-Wide Prerequisite Closure"
+      ],
+      "role": "NATIVE",
+      "source_identity": "SPONSOR-INTRADAY-V1-91-NSE-EQUITIES-2026-08-22",
+      "sponsor_label": "DIVISLAB",
+      "valid_from": "2026-08-22T00:00:00+05:30",
+      "valid_through": "9999-12-31T23:59:59+05:30"
+    },
+    {
+      "canonical_instrument_id": null,
+      "market_family": "NSE_EQUITY",
+      "membership_identity": "INTRADAY-NATIVE-MEMBER-6d15ae5ccc234382b32da8205847fd08e87923b2e1a975ca8e8c5c6a2263f36a",
+      "membership_status": "GOVERNED_TARGET",
+      "provenance": [
+        "Sponsor-approved Intraday V1 universe",
+        "CA Programme-Wide Prerequisite Closure"
+      ],
+      "role": "NATIVE",
+      "source_identity": "SPONSOR-INTRADAY-V1-91-NSE-EQUITIES-2026-08-22",
+      "sponsor_label": "DIXON",
+      "valid_from": "2026-08-22T00:00:00+05:30",
+      "valid_through": "9999-12-31T23:59:59+05:30"
+    },
+    {
+      "canonical_instrument_id": null,
+      "market_family": "NSE_EQUITY",
+      "membership_identity": "INTRADAY-NATIVE-MEMBER-5302dd39425dad3bf16a8399d8c804219ba574d163295b1d3160b2fe974814a3",
+      "membership_status": "GOVERNED_TARGET",
+      "provenance": [
+        "Sponsor-approved Intraday V1 universe",
+        "CA Programme-Wide Prerequisite Closure"
+      ],
+      "role": "NATIVE",
+      "source_identity": "SPONSOR-INTRADAY-V1-91-NSE-EQUITIES-2026-08-22",
+      "sponsor_label": "DRREDDY",
+      "valid_from": "2026-08-22T00:00:00+05:30",
+      "valid_through": "9999-12-31T23:59:59+05:30"
+    },
+    {
+      "canonical_instrument_id": null,
+      "market_family": "NSE_EQUITY",
+      "membership_identity": "INTRADAY-NATIVE-MEMBER-78a118148ee871020aeb79475b838f10474c4dee4c7157462574929c0da3de0a",
+      "membership_status": "GOVERNED_TARGET",
+      "provenance": [
+        "Sponsor-approved Intraday V1 universe",
+        "CA Programme-Wide Prerequisite Closure"
+      ],
+      "role": "NATIVE",
+      "source_identity": "SPONSOR-INTRADAY-V1-91-NSE-EQUITIES-2026-08-22",
+      "sponsor_label": "EICHERMOT",
+      "valid_from": "2026-08-22T00:00:00+05:30",
+      "valid_through": "9999-12-31T23:59:59+05:30"
+    },
+    {
+      "canonical_instrument_id": null,
+      "market_family": "NSE_EQUITY",
+      "membership_identity": "INTRADAY-NATIVE-MEMBER-8d1a4551389b099cce2e2806de684df26162ad368985ac522d30ff3a01390285",
+      "membership_status": "GOVERNED_TARGET",
+      "provenance": [
+        "Sponsor-approved Intraday V1 universe",
+        "CA Programme-Wide Prerequisite Closure"
+      ],
+      "role": "NATIVE",
+      "source_identity": "SPONSOR-INTRADAY-V1-91-NSE-EQUITIES-2026-08-22",
+      "sponsor_label": "ETERNAL",
+      "valid_from": "2026-08-22T00:00:00+05:30",
+      "valid_through": "9999-12-31T23:59:59+05:30"
+    },
+    {
+      "canonical_instrument_id": null,
+      "market_family": "NSE_EQUITY",
+      "membership_identity": "INTRADAY-NATIVE-MEMBER-c10e234b2c6e0d54b7399c08758572f9b1615dcd964174b74e96c80c58fe7c12",
+      "membership_status": "GOVERNED_TARGET",
+      "provenance": [
+        "Sponsor-approved Intraday V1 universe",
+        "CA Programme-Wide Prerequisite Closure"
+      ],
+      "role": "NATIVE",
+      "source_identity": "SPONSOR-INTRADAY-V1-91-NSE-EQUITIES-2026-08-22",
+      "sponsor_label": "FEDERALBNK",
+      "valid_from": "2026-08-22T00:00:00+05:30",
+      "valid_through": "9999-12-31T23:59:59+05:30"
+    },
+    {
+      "canonical_instrument_id": null,
+      "market_family": "NSE_EQUITY",
+      "membership_identity": "INTRADAY-NATIVE-MEMBER-f2f6a954d62718ac1a5d6e3c8bd05be79b0804e7a859ff0864c94e2569a045db",
+      "membership_status": "GOVERNED_TARGET",
+      "provenance": [
+        "Sponsor-approved Intraday V1 universe",
+        "CA Programme-Wide Prerequisite Closure"
+      ],
+      "role": "NATIVE",
+      "source_identity": "SPONSOR-INTRADAY-V1-91-NSE-EQUITIES-2026-08-22",
+      "sponsor_label": "HAL",
+      "valid_from": "2026-08-22T00:00:00+05:30",
+      "valid_through": "9999-12-31T23:59:59+05:30"
+    },
+    {
+      "canonical_instrument_id": null,
+      "market_family": "NSE_EQUITY",
+      "membership_identity": "INTRADAY-NATIVE-MEMBER-096bee90b95ab468e7ec8a55c2a9f89c8752c99a201f967b0b3dd830061c9916",
+      "membership_status": "GOVERNED_TARGET",
+      "provenance": [
+        "Sponsor-approved Intraday V1 universe",
+        "CA Programme-Wide Prerequisite Closure"
+      ],
+      "role": "NATIVE",
+      "source_identity": "SPONSOR-INTRADAY-V1-91-NSE-EQUITIES-2026-08-22",
+      "sponsor_label": "HCLTECH",
+      "valid_from": "2026-08-22T00:00:00+05:30",
+      "valid_through": "9999-12-31T23:59:59+05:30"
+    },
+    {
+      "canonical_instrument_id": null,
+      "market_family": "NSE_EQUITY",
+      "membership_identity": "INTRADAY-NATIVE-MEMBER-47aa85b92b9bfac03a6598979aab03553989717aec309b4196597c35df0ec220",
+      "membership_status": "GOVERNED_TARGET",
+      "provenance": [
+        "Sponsor-approved Intraday V1 universe",
+        "CA Programme-Wide Prerequisite Closure"
+      ],
+      "role": "NATIVE",
+      "source_identity": "SPONSOR-INTRADAY-V1-91-NSE-EQUITIES-2026-08-22",
+      "sponsor_label": "HDFCAMC",
+      "valid_from": "2026-08-22T00:00:00+05:30",
+      "valid_through": "9999-12-31T23:59:59+05:30"
+    },
+    {
+      "canonical_instrument_id": null,
+      "market_family": "NSE_EQUITY",
+      "membership_identity": "INTRADAY-NATIVE-MEMBER-7490aa6a03b4a7993bc828d3426f873f88644fc7af28e43ea4b2b39333573d90",
+      "membership_status": "GOVERNED_TARGET",
+      "provenance": [
+        "Sponsor-approved Intraday V1 universe",
+        "CA Programme-Wide Prerequisite Closure"
+      ],
+      "role": "NATIVE",
+      "source_identity": "SPONSOR-INTRADAY-V1-91-NSE-EQUITIES-2026-08-22",
+      "sponsor_label": "HDFCBANK",
+      "valid_from": "2026-08-22T00:00:00+05:30",
+      "valid_through": "9999-12-31T23:59:59+05:30"
+    },
+    {
+      "canonical_instrument_id": null,
+      "market_family": "NSE_EQUITY",
+      "membership_identity": "INTRADAY-NATIVE-MEMBER-b76323e9ed266288c17e8342891ebab6a697b3ed0a5647b10259c0bd05726713",
+      "membership_status": "GOVERNED_TARGET",
+      "provenance": [
+        "Sponsor-approved Intraday V1 universe",
+        "CA Programme-Wide Prerequisite Closure"
+      ],
+      "role": "NATIVE",
+      "source_identity": "SPONSOR-INTRADAY-V1-91-NSE-EQUITIES-2026-08-22",
+      "sponsor_label": "HDFCLIFE",
+      "valid_from": "2026-08-22T00:00:00+05:30",
+      "valid_through": "9999-12-31T23:59:59+05:30"
+    },
+    {
+      "canonical_instrument_id": null,
+      "market_family": "NSE_EQUITY",
+      "membership_identity": "INTRADAY-NATIVE-MEMBER-7504cd6d534cf4cb077e561380ffb7c3192ee243c9832bce6ecda2c577750822",
+      "membership_status": "GOVERNED_TARGET",
+      "provenance": [
+        "Sponsor-approved Intraday V1 universe",
+        "CA Programme-Wide Prerequisite Closure"
+      ],
+      "role": "NATIVE",
+      "source_identity": "SPONSOR-INTRADAY-V1-91-NSE-EQUITIES-2026-08-22",
+      "sponsor_label": "HEROMOTOCO",
+      "valid_from": "2026-08-22T00:00:00+05:30",
+      "valid_through": "9999-12-31T23:59:59+05:30"
+    },
+    {
+      "canonical_instrument_id": null,
+      "market_family": "NSE_EQUITY",
+      "membership_identity": "INTRADAY-NATIVE-MEMBER-232d283b227e15f34b380fede80152f5d609472ef9fe3ab7f4855de491113412",
+      "membership_status": "GOVERNED_TARGET",
+      "provenance": [
+        "Sponsor-approved Intraday V1 universe",
+        "CA Programme-Wide Prerequisite Closure"
+      ],
+      "role": "NATIVE",
+      "source_identity": "SPONSOR-INTRADAY-V1-91-NSE-EQUITIES-2026-08-22",
+      "sponsor_label": "HINDALCO",
+      "valid_from": "2026-08-22T00:00:00+05:30",
+      "valid_through": "9999-12-31T23:59:59+05:30"
+    },
+    {
+      "canonical_instrument_id": null,
+      "market_family": "NSE_EQUITY",
+      "membership_identity": "INTRADAY-NATIVE-MEMBER-df2f42d4c397a99e568a08438568a17215859b15384de976c6626beefc4e257d",
+      "membership_status": "GOVERNED_TARGET",
+      "provenance": [
+        "Sponsor-approved Intraday V1 universe",
+        "CA Programme-Wide Prerequisite Closure"
+      ],
+      "role": "NATIVE",
+      "source_identity": "SPONSOR-INTRADAY-V1-91-NSE-EQUITIES-2026-08-22",
+      "sponsor_label": "HINDPETRO",
+      "valid_from": "2026-08-22T00:00:00+05:30",
+      "valid_through": "9999-12-31T23:59:59+05:30"
+    },
+    {
+      "canonical_instrument_id": null,
+      "market_family": "NSE_EQUITY",
+      "membership_identity": "INTRADAY-NATIVE-MEMBER-20469903e1ea5520e66011af9f9481e1f4746dff757271de3964bbf0bb8c61f7",
+      "membership_status": "GOVERNED_TARGET",
+      "provenance": [
+        "Sponsor-approved Intraday V1 universe",
+        "CA Programme-Wide Prerequisite Closure"
+      ],
+      "role": "NATIVE",
+      "source_identity": "SPONSOR-INTRADAY-V1-91-NSE-EQUITIES-2026-08-22",
+      "sponsor_label": "HINDUNILVR",
+      "valid_from": "2026-08-22T00:00:00+05:30",
+      "valid_through": "9999-12-31T23:59:59+05:30"
+    },
+    {
+      "canonical_instrument_id": null,
+      "market_family": "NSE_EQUITY",
+      "membership_identity": "INTRADAY-NATIVE-MEMBER-6ef2724b03c752a77e6876e3ca5daf0c90c6a988a0a66eea0b9334cece716ad0",
+      "membership_status": "GOVERNED_TARGET",
+      "provenance": [
+        "Sponsor-approved Intraday V1 universe",
+        "CA Programme-Wide Prerequisite Closure"
+      ],
+      "role": "NATIVE",
+      "source_identity": "SPONSOR-INTRADAY-V1-91-NSE-EQUITIES-2026-08-22",
+      "sponsor_label": "ICICIBANK",
+      "valid_from": "2026-08-22T00:00:00+05:30",
+      "valid_through": "9999-12-31T23:59:59+05:30"
+    },
+    {
+      "canonical_instrument_id": null,
+      "market_family": "NSE_EQUITY",
+      "membership_identity": "INTRADAY-NATIVE-MEMBER-542696eb2119f781258b0102a1b142b783fc045a0d9131fa5100347b64d570ed",
+      "membership_status": "GOVERNED_TARGET",
+      "provenance": [
+        "Sponsor-approved Intraday V1 universe",
+        "CA Programme-Wide Prerequisite Closure"
+      ],
+      "role": "NATIVE",
+      "source_identity": "SPONSOR-INTRADAY-V1-91-NSE-EQUITIES-2026-08-22",
+      "sponsor_label": "IDEA",
+      "valid_from": "2026-08-22T00:00:00+05:30",
+      "valid_through": "9999-12-31T23:59:59+05:30"
+    },
+    {
+      "canonical_instrument_id": null,
+      "market_family": "NSE_EQUITY",
+      "membership_identity": "INTRADAY-NATIVE-MEMBER-34147c91dc12794c22fcb6ba228e4c657bca058ef54d95e949353126cb8f6ec3",
+      "membership_status": "GOVERNED_TARGET",
+      "provenance": [
+        "Sponsor-approved Intraday V1 universe",
+        "CA Programme-Wide Prerequisite Closure"
+      ],
+      "role": "NATIVE",
+      "source_identity": "SPONSOR-INTRADAY-V1-91-NSE-EQUITIES-2026-08-22",
+      "sponsor_label": "INDHOTEL",
+      "valid_from": "2026-08-22T00:00:00+05:30",
+      "valid_through": "9999-12-31T23:59:59+05:30"
+    },
+    {
+      "canonical_instrument_id": null,
+      "market_family": "NSE_EQUITY",
+      "membership_identity": "INTRADAY-NATIVE-MEMBER-be6e9883ae6de8daf6652fa495bbda581f5acb2fffd823bc7d61c14649bbacbe",
+      "membership_status": "GOVERNED_TARGET",
+      "provenance": [
+        "Sponsor-approved Intraday V1 universe",
+        "CA Programme-Wide Prerequisite Closure"
+      ],
+      "role": "NATIVE",
+      "source_identity": "SPONSOR-INTRADAY-V1-91-NSE-EQUITIES-2026-08-22",
+      "sponsor_label": "INDIANB",
+      "valid_from": "2026-08-22T00:00:00+05:30",
+      "valid_through": "9999-12-31T23:59:59+05:30"
+    },
+    {
+      "canonical_instrument_id": null,
+      "market_family": "NSE_EQUITY",
+      "membership_identity": "INTRADAY-NATIVE-MEMBER-3688cc141c68e1db3daa8a4b5b54f12fb64cc3c6eaed65e08e6801e8ec8fd794",
+      "membership_status": "GOVERNED_TARGET",
+      "provenance": [
+        "Sponsor-approved Intraday V1 universe",
+        "CA Programme-Wide Prerequisite Closure"
+      ],
+      "role": "NATIVE",
+      "source_identity": "SPONSOR-INTRADAY-V1-91-NSE-EQUITIES-2026-08-22",
+      "sponsor_label": "INDIGO",
+      "valid_from": "2026-08-22T00:00:00+05:30",
+      "valid_through": "9999-12-31T23:59:59+05:30"
+    },
+    {
+      "canonical_instrument_id": null,
+      "market_family": "NSE_EQUITY",
+      "membership_identity": "INTRADAY-NATIVE-MEMBER-3f7b3bf77052298256e0394480252e828efbebc9671c43245a3485cd978f2286",
+      "membership_status": "GOVERNED_TARGET",
+      "provenance": [
+        "Sponsor-approved Intraday V1 universe",
+        "CA Programme-Wide Prerequisite Closure"
+      ],
+      "role": "NATIVE",
+      "source_identity": "SPONSOR-INTRADAY-V1-91-NSE-EQUITIES-2026-08-22",
+      "sponsor_label": "INFY",
+      "valid_from": "2026-08-22T00:00:00+05:30",
+      "valid_through": "9999-12-31T23:59:59+05:30"
+    },
+    {
+      "canonical_instrument_id": null,
+      "market_family": "NSE_EQUITY",
+      "membership_identity": "INTRADAY-NATIVE-MEMBER-e0dd00707ff7846be09e1447ef9bb3444517776b64af66a748b7494f1010ba7b",
+      "membership_status": "GOVERNED_TARGET",
+      "provenance": [
+        "Sponsor-approved Intraday V1 universe",
+        "CA Programme-Wide Prerequisite Closure"
+      ],
+      "role": "NATIVE",
+      "source_identity": "SPONSOR-INTRADAY-V1-91-NSE-EQUITIES-2026-08-22",
+      "sponsor_label": "IOC",
+      "valid_from": "2026-08-22T00:00:00+05:30",
+      "valid_through": "9999-12-31T23:59:59+05:30"
+    },
+    {
+      "canonical_instrument_id": null,
+      "market_family": "NSE_EQUITY",
+      "membership_identity": "INTRADAY-NATIVE-MEMBER-526be8f8fffb25bb584518685de512b9c0eafd5da67e0ef1014923181897294f",
+      "membership_status": "GOVERNED_TARGET",
+      "provenance": [
+        "Sponsor-approved Intraday V1 universe",
+        "CA Programme-Wide Prerequisite Closure"
+      ],
+      "role": "NATIVE",
+      "source_identity": "SPONSOR-INTRADAY-V1-91-NSE-EQUITIES-2026-08-22",
+      "sponsor_label": "ITC",
+      "valid_from": "2026-08-22T00:00:00+05:30",
+      "valid_through": "9999-12-31T23:59:59+05:30"
+    },
+    {
+      "canonical_instrument_id": null,
+      "market_family": "NSE_EQUITY",
+      "membership_identity": "INTRADAY-NATIVE-MEMBER-b38ab98d0e3a384982dcf1d64d7ec6105b1b6c2bb0629af0ca2eafe1772ac1bd",
+      "membership_status": "GOVERNED_TARGET",
+      "provenance": [
+        "Sponsor-approved Intraday V1 universe",
+        "CA Programme-Wide Prerequisite Closure"
+      ],
+      "role": "NATIVE",
+      "source_identity": "SPONSOR-INTRADAY-V1-91-NSE-EQUITIES-2026-08-22",
+      "sponsor_label": "JIOFIN",
+      "valid_from": "2026-08-22T00:00:00+05:30",
+      "valid_through": "9999-12-31T23:59:59+05:30"
+    },
+    {
+      "canonical_instrument_id": null,
+      "market_family": "NSE_EQUITY",
+      "membership_identity": "INTRADAY-NATIVE-MEMBER-72239b8acc4e20808685cc9e287fc4e502c79ceb87b10e860dbe751c1b119c1c",
+      "membership_status": "GOVERNED_TARGET",
+      "provenance": [
+        "Sponsor-approved Intraday V1 universe",
+        "CA Programme-Wide Prerequisite Closure"
+      ],
+      "role": "NATIVE",
+      "source_identity": "SPONSOR-INTRADAY-V1-91-NSE-EQUITIES-2026-08-22",
+      "sponsor_label": "JUBLFOOD",
+      "valid_from": "2026-08-22T00:00:00+05:30",
+      "valid_through": "9999-12-31T23:59:59+05:30"
+    },
+    {
+      "canonical_instrument_id": null,
+      "market_family": "NSE_EQUITY",
+      "membership_identity": "INTRADAY-NATIVE-MEMBER-4350c55b6a688e260e38d08b0c4fc3bfe50a0172df9be71323d172bd55093b72",
+      "membership_status": "GOVERNED_TARGET",
+      "provenance": [
+        "Sponsor-approved Intraday V1 universe",
+        "CA Programme-Wide Prerequisite Closure"
+      ],
+      "role": "NATIVE",
+      "source_identity": "SPONSOR-INTRADAY-V1-91-NSE-EQUITIES-2026-08-22",
+      "sponsor_label": "KAYNES",
+      "valid_from": "2026-08-22T00:00:00+05:30",
+      "valid_through": "9999-12-31T23:59:59+05:30"
+    },
+    {
+      "canonical_instrument_id": null,
+      "market_family": "NSE_EQUITY",
+      "membership_identity": "INTRADAY-NATIVE-MEMBER-803a1d2f5c015ae564cfc36db49040c5ce52d6fa53b841e9999108d6fa699dc2",
+      "membership_status": "GOVERNED_TARGET",
+      "provenance": [
+        "Sponsor-approved Intraday V1 universe",
+        "CA Programme-Wide Prerequisite Closure"
+      ],
+      "role": "NATIVE",
+      "source_identity": "SPONSOR-INTRADAY-V1-91-NSE-EQUITIES-2026-08-22",
+      "sponsor_label": "KOTAKBANK",
+      "valid_from": "2026-08-22T00:00:00+05:30",
+      "valid_through": "9999-12-31T23:59:59+05:30"
+    },
+    {
+      "canonical_instrument_id": null,
+      "market_family": "NSE_EQUITY",
+      "membership_identity": "INTRADAY-NATIVE-MEMBER-aa8afb56d30b45abd3ef90d333c12304278082792347626cf131a2780f5e49fc",
+      "membership_status": "GOVERNED_TARGET",
+      "provenance": [
+        "Sponsor-approved Intraday V1 universe",
+        "CA Programme-Wide Prerequisite Closure"
+      ],
+      "role": "NATIVE",
+      "source_identity": "SPONSOR-INTRADAY-V1-91-NSE-EQUITIES-2026-08-22",
+      "sponsor_label": "LICI",
+      "valid_from": "2026-08-22T00:00:00+05:30",
+      "valid_through": "9999-12-31T23:59:59+05:30"
+    },
+    {
+      "canonical_instrument_id": null,
+      "market_family": "NSE_EQUITY",
+      "membership_identity": "INTRADAY-NATIVE-MEMBER-d5f719ddaf04e7095f6ba295bddf0faa49f7740b899edeb361a14dd8b5bd036a",
+      "membership_status": "GOVERNED_TARGET",
+      "provenance": [
+        "Sponsor-approved Intraday V1 universe",
+        "CA Programme-Wide Prerequisite Closure"
+      ],
+      "role": "NATIVE",
+      "source_identity": "SPONSOR-INTRADAY-V1-91-NSE-EQUITIES-2026-08-22",
+      "sponsor_label": "LT",
+      "valid_from": "2026-08-22T00:00:00+05:30",
+      "valid_through": "9999-12-31T23:59:59+05:30"
+    },
+    {
+      "canonical_instrument_id": null,
+      "market_family": "NSE_EQUITY",
+      "membership_identity": "INTRADAY-NATIVE-MEMBER-cecac32cd2b25fac4ab991a701363f192d5dfad29d6e25468d213a117a36e9f8",
+      "membership_status": "GOVERNED_TARGET",
+      "provenance": [
+        "Sponsor-approved Intraday V1 universe",
+        "CA Programme-Wide Prerequisite Closure"
+      ],
+      "role": "NATIVE",
+      "source_identity": "SPONSOR-INTRADAY-V1-91-NSE-EQUITIES-2026-08-22",
+      "sponsor_label": "LUPIN",
+      "valid_from": "2026-08-22T00:00:00+05:30",
+      "valid_through": "9999-12-31T23:59:59+05:30"
+    },
+    {
+      "canonical_instrument_id": null,
+      "market_family": "NSE_EQUITY",
+      "membership_identity": "INTRADAY-NATIVE-MEMBER-f804b94646303c9a4fd24916820fb93dd63e8d009feaa73062226ef62e9ac6d6",
+      "membership_status": "GOVERNED_TARGET",
+      "provenance": [
+        "Sponsor-approved Intraday V1 universe",
+        "CA Programme-Wide Prerequisite Closure"
+      ],
+      "role": "NATIVE",
+      "source_identity": "SPONSOR-INTRADAY-V1-91-NSE-EQUITIES-2026-08-22",
+      "sponsor_label": "M&M",
+      "valid_from": "2026-08-22T00:00:00+05:30",
+      "valid_through": "9999-12-31T23:59:59+05:30"
+    },
+    {
+      "canonical_instrument_id": null,
+      "market_family": "NSE_EQUITY",
+      "membership_identity": "INTRADAY-NATIVE-MEMBER-e094a1aac50de315d8a60eec1d304556b643fcf69c0f6f4b691fccf66d171c99",
+      "membership_status": "GOVERNED_TARGET",
+      "provenance": [
+        "Sponsor-approved Intraday V1 universe",
+        "CA Programme-Wide Prerequisite Closure"
+      ],
+      "role": "NATIVE",
+      "source_identity": "SPONSOR-INTRADAY-V1-91-NSE-EQUITIES-2026-08-22",
+      "sponsor_label": "MARUTI",
+      "valid_from": "2026-08-22T00:00:00+05:30",
+      "valid_through": "9999-12-31T23:59:59+05:30"
+    },
+    {
+      "canonical_instrument_id": null,
+      "market_family": "NSE_EQUITY",
+      "membership_identity": "INTRADAY-NATIVE-MEMBER-5a7fbd22506f552307807ee7d9025e5dca2bca1e632e3582b377a9b574167948",
+      "membership_status": "GOVERNED_TARGET",
+      "provenance": [
+        "Sponsor-approved Intraday V1 universe",
+        "CA Programme-Wide Prerequisite Closure"
+      ],
+      "role": "NATIVE",
+      "source_identity": "SPONSOR-INTRADAY-V1-91-NSE-EQUITIES-2026-08-22",
+      "sponsor_label": "MAXHEALTH",
+      "valid_from": "2026-08-22T00:00:00+05:30",
+      "valid_through": "9999-12-31T23:59:59+05:30"
+    },
+    {
+      "canonical_instrument_id": null,
+      "market_family": "NSE_EQUITY",
+      "membership_identity": "INTRADAY-NATIVE-MEMBER-718b5cf2470b19f34187368b071572bc49c3c91039680ba2003da33c7611b074",
+      "membership_status": "GOVERNED_TARGET",
+      "provenance": [
+        "Sponsor-approved Intraday V1 universe",
+        "CA Programme-Wide Prerequisite Closure"
+      ],
+      "role": "NATIVE",
+      "source_identity": "SPONSOR-INTRADAY-V1-91-NSE-EQUITIES-2026-08-22",
+      "sponsor_label": "MAZDOCK",
+      "valid_from": "2026-08-22T00:00:00+05:30",
+      "valid_through": "9999-12-31T23:59:59+05:30"
+    },
+    {
+      "canonical_instrument_id": null,
+      "market_family": "NSE_EQUITY",
+      "membership_identity": "INTRADAY-NATIVE-MEMBER-a52065ae7254e0b178bb6f636e0c4a81971860a6a73cd44f3836ed436b59e62f",
+      "membership_status": "GOVERNED_TARGET",
+      "provenance": [
+        "Sponsor-approved Intraday V1 universe",
+        "CA Programme-Wide Prerequisite Closure"
+      ],
+      "role": "NATIVE",
+      "source_identity": "SPONSOR-INTRADAY-V1-91-NSE-EQUITIES-2026-08-22",
+      "sponsor_label": "MCX",
+      "valid_from": "2026-08-22T00:00:00+05:30",
+      "valid_through": "9999-12-31T23:59:59+05:30"
+    },
+    {
+      "canonical_instrument_id": null,
+      "market_family": "NSE_EQUITY",
+      "membership_identity": "INTRADAY-NATIVE-MEMBER-7c40a8c381c5e6c6b4ab369d3652f3097e7010aee051b2684dc15daee5380464",
+      "membership_status": "GOVERNED_TARGET",
+      "provenance": [
+        "Sponsor-approved Intraday V1 universe",
+        "CA Programme-Wide Prerequisite Closure"
+      ],
+      "role": "NATIVE",
+      "source_identity": "SPONSOR-INTRADAY-V1-91-NSE-EQUITIES-2026-08-22",
+      "sponsor_label": "MOTHERSON",
+      "valid_from": "2026-08-22T00:00:00+05:30",
+      "valid_through": "9999-12-31T23:59:59+05:30"
+    },
+    {
+      "canonical_instrument_id": null,
+      "market_family": "NSE_EQUITY",
+      "membership_identity": "INTRADAY-NATIVE-MEMBER-5000a38f993867f6df94f21411ccea0a5f4d1529a57e61ad699858567cbf58e9",
+      "membership_status": "GOVERNED_TARGET",
+      "provenance": [
+        "Sponsor-approved Intraday V1 universe",
+        "CA Programme-Wide Prerequisite Closure"
+      ],
+      "role": "NATIVE",
+      "source_identity": "SPONSOR-INTRADAY-V1-91-NSE-EQUITIES-2026-08-22",
+      "sponsor_label": "MUTHOOTFIN",
+      "valid_from": "2026-08-22T00:00:00+05:30",
+      "valid_through": "9999-12-31T23:59:59+05:30"
+    },
+    {
+      "canonical_instrument_id": null,
+      "market_family": "NSE_EQUITY",
+      "membership_identity": "INTRADAY-NATIVE-MEMBER-050ab66dca33da3194e52d2acb0f03c87b2e288de34659c1141852ec4d2ea91d",
+      "membership_status": "GOVERNED_TARGET",
+      "provenance": [
+        "Sponsor-approved Intraday V1 universe",
+        "CA Programme-Wide Prerequisite Closure"
+      ],
+      "role": "NATIVE",
+      "source_identity": "SPONSOR-INTRADAY-V1-91-NSE-EQUITIES-2026-08-22",
+      "sponsor_label": "NAUKRI",
+      "valid_from": "2026-08-22T00:00:00+05:30",
+      "valid_through": "9999-12-31T23:59:59+05:30"
+    },
+    {
+      "canonical_instrument_id": null,
+      "market_family": "NSE_EQUITY",
+      "membership_identity": "INTRADAY-NATIVE-MEMBER-b075b3f1291d04ae919e20f83f899a009f51ce17fc0049b7605bdf9843f54c27",
+      "membership_status": "GOVERNED_TARGET",
+      "provenance": [
+        "Sponsor-approved Intraday V1 universe",
+        "CA Programme-Wide Prerequisite Closure"
+      ],
+      "role": "NATIVE",
+      "source_identity": "SPONSOR-INTRADAY-V1-91-NSE-EQUITIES-2026-08-22",
+      "sponsor_label": "NTPC",
+      "valid_from": "2026-08-22T00:00:00+05:30",
+      "valid_through": "9999-12-31T23:59:59+05:30"
+    },
+    {
+      "canonical_instrument_id": null,
+      "market_family": "NSE_EQUITY",
+      "membership_identity": "INTRADAY-NATIVE-MEMBER-445225495c48a3fe71c12f6b5b230d361790de9aaf0c57a0c1be27a323e0c334",
+      "membership_status": "GOVERNED_TARGET",
+      "provenance": [
+        "Sponsor-approved Intraday V1 universe",
+        "CA Programme-Wide Prerequisite Closure"
+      ],
+      "role": "NATIVE",
+      "source_identity": "SPONSOR-INTRADAY-V1-91-NSE-EQUITIES-2026-08-22",
+      "sponsor_label": "PAYTM",
+      "valid_from": "2026-08-22T00:00:00+05:30",
+      "valid_through": "9999-12-31T23:59:59+05:30"
+    },
+    {
+      "canonical_instrument_id": null,
+      "market_family": "NSE_EQUITY",
+      "membership_identity": "INTRADAY-NATIVE-MEMBER-6e0344bed707c9e261fefc6bca2df00a7e5e90bd9a14309fabd17892443de39d",
+      "membership_status": "GOVERNED_TARGET",
+      "provenance": [
+        "Sponsor-approved Intraday V1 universe",
+        "CA Programme-Wide Prerequisite Closure"
+      ],
+      "role": "NATIVE",
+      "source_identity": "SPONSOR-INTRADAY-V1-91-NSE-EQUITIES-2026-08-22",
+      "sponsor_label": "PERSISTENT",
+      "valid_from": "2026-08-22T00:00:00+05:30",
+      "valid_through": "9999-12-31T23:59:59+05:30"
+    },
+    {
+      "canonical_instrument_id": null,
+      "market_family": "NSE_EQUITY",
+      "membership_identity": "INTRADAY-NATIVE-MEMBER-d5d9c731c910555818777a6787d1c76d19982c14f4a46e6791e5da560e51a565",
+      "membership_status": "GOVERNED_TARGET",
+      "provenance": [
+        "Sponsor-approved Intraday V1 universe",
+        "CA Programme-Wide Prerequisite Closure"
+      ],
+      "role": "NATIVE",
+      "source_identity": "SPONSOR-INTRADAY-V1-91-NSE-EQUITIES-2026-08-22",
+      "sponsor_label": "PNB",
+      "valid_from": "2026-08-22T00:00:00+05:30",
+      "valid_through": "9999-12-31T23:59:59+05:30"
+    },
+    {
+      "canonical_instrument_id": null,
+      "market_family": "NSE_EQUITY",
+      "membership_identity": "INTRADAY-NATIVE-MEMBER-222b8a5d119378439ed0c0e51b6890956e6179847479b459df9171b1dd4bf2a9",
+      "membership_status": "GOVERNED_TARGET",
+      "provenance": [
+        "Sponsor-approved Intraday V1 universe",
+        "CA Programme-Wide Prerequisite Closure"
+      ],
+      "role": "NATIVE",
+      "source_identity": "SPONSOR-INTRADAY-V1-91-NSE-EQUITIES-2026-08-22",
+      "sponsor_label": "POLICYBZR",
+      "valid_from": "2026-08-22T00:00:00+05:30",
+      "valid_through": "9999-12-31T23:59:59+05:30"
+    },
+    {
+      "canonical_instrument_id": null,
+      "market_family": "NSE_EQUITY",
+      "membership_identity": "INTRADAY-NATIVE-MEMBER-84bdd8e8fb52e4faaa664bc73576aa36887c24787f1d097d9416a87f23c6cf08",
+      "membership_status": "GOVERNED_TARGET",
+      "provenance": [
+        "Sponsor-approved Intraday V1 universe",
+        "CA Programme-Wide Prerequisite Closure"
+      ],
+      "role": "NATIVE",
+      "source_identity": "SPONSOR-INTRADAY-V1-91-NSE-EQUITIES-2026-08-22",
+      "sponsor_label": "POWERGRID",
+      "valid_from": "2026-08-22T00:00:00+05:30",
+      "valid_through": "9999-12-31T23:59:59+05:30"
+    },
+    {
+      "canonical_instrument_id": null,
+      "market_family": "NSE_EQUITY",
+      "membership_identity": "INTRADAY-NATIVE-MEMBER-317ffa75a56d1c0c85ce40af7a269378f07c495f84f6563e3492aed018b7a358",
+      "membership_status": "GOVERNED_TARGET",
+      "provenance": [
+        "Sponsor-approved Intraday V1 universe",
+        "CA Programme-Wide Prerequisite Closure"
+      ],
+      "role": "NATIVE",
+      "source_identity": "SPONSOR-INTRADAY-V1-91-NSE-EQUITIES-2026-08-22",
+      "sponsor_label": "POWERINDIA",
+      "valid_from": "2026-08-22T00:00:00+05:30",
+      "valid_through": "9999-12-31T23:59:59+05:30"
+    },
+    {
+      "canonical_instrument_id": null,
+      "market_family": "NSE_EQUITY",
+      "membership_identity": "INTRADAY-NATIVE-MEMBER-557c6b495a285d4acfd5f2ed3d96249cfedaa186717b729d59245cea1d56ac81",
+      "membership_status": "GOVERNED_TARGET",
+      "provenance": [
+        "Sponsor-approved Intraday V1 universe",
+        "CA Programme-Wide Prerequisite Closure"
+      ],
+      "role": "NATIVE",
+      "source_identity": "SPONSOR-INTRADAY-V1-91-NSE-EQUITIES-2026-08-22",
+      "sponsor_label": "RBLBANK",
+      "valid_from": "2026-08-22T00:00:00+05:30",
+      "valid_through": "9999-12-31T23:59:59+05:30"
+    },
+    {
+      "canonical_instrument_id": null,
+      "market_family": "NSE_EQUITY",
+      "membership_identity": "INTRADAY-NATIVE-MEMBER-f105de440941784841734e8562cd14060feac55e192c9cde9af0e6fe643fe431",
+      "membership_status": "GOVERNED_TARGET",
+      "provenance": [
+        "Sponsor-approved Intraday V1 universe",
+        "CA Programme-Wide Prerequisite Closure"
+      ],
+      "role": "NATIVE",
+      "source_identity": "SPONSOR-INTRADAY-V1-91-NSE-EQUITIES-2026-08-22",
+      "sponsor_label": "RECLTD",
+      "valid_from": "2026-08-22T00:00:00+05:30",
+      "valid_through": "9999-12-31T23:59:59+05:30"
+    },
+    {
+      "canonical_instrument_id": "RELIANCE",
+      "market_family": "NSE_EQUITY",
+      "membership_identity": "INTRADAY-NATIVE-MEMBER-4cc4744e41275ca4b99dabbfa539b0f1491ed5d754090a8d168faf9b74ce512c",
+      "membership_status": "GOVERNED_TARGET",
+      "provenance": [
+        "Sponsor-approved Intraday V1 universe",
+        "CA Programme-Wide Prerequisite Closure"
+      ],
+      "role": "NATIVE",
+      "source_identity": "SPONSOR-INTRADAY-V1-91-NSE-EQUITIES-2026-08-22",
+      "sponsor_label": "RELIANCE",
+      "valid_from": "2026-08-22T00:00:00+05:30",
+      "valid_through": "9999-12-31T23:59:59+05:30"
+    },
+    {
+      "canonical_instrument_id": null,
+      "market_family": "NSE_EQUITY",
+      "membership_identity": "INTRADAY-NATIVE-MEMBER-b8a5b427faefdcd2ab80531ccf0041ebfca8135e03a1b00b623f681040277a10",
+      "membership_status": "GOVERNED_TARGET",
+      "provenance": [
+        "Sponsor-approved Intraday V1 universe",
+        "CA Programme-Wide Prerequisite Closure"
+      ],
+      "role": "NATIVE",
+      "source_identity": "SPONSOR-INTRADAY-V1-91-NSE-EQUITIES-2026-08-22",
+      "sponsor_label": "RVNL",
+      "valid_from": "2026-08-22T00:00:00+05:30",
+      "valid_through": "9999-12-31T23:59:59+05:30"
+    },
+    {
+      "canonical_instrument_id": null,
+      "market_family": "NSE_EQUITY",
+      "membership_identity": "INTRADAY-NATIVE-MEMBER-4ee1cd889e79b98d213bc3ed72edc4ae7e0580f34629b96c7b280baa01757d90",
+      "membership_status": "GOVERNED_TARGET",
+      "provenance": [
+        "Sponsor-approved Intraday V1 universe",
+        "CA Programme-Wide Prerequisite Closure"
+      ],
+      "role": "NATIVE",
+      "source_identity": "SPONSOR-INTRADAY-V1-91-NSE-EQUITIES-2026-08-22",
+      "sponsor_label": "SAIL",
+      "valid_from": "2026-08-22T00:00:00+05:30",
+      "valid_through": "9999-12-31T23:59:59+05:30"
+    },
+    {
+      "canonical_instrument_id": null,
+      "market_family": "NSE_EQUITY",
+      "membership_identity": "INTRADAY-NATIVE-MEMBER-6640f9c6e2673378c40e97c775a3510ba827e6e0ea6a433e2568b77d42c54ed9",
+      "membership_status": "GOVERNED_TARGET",
+      "provenance": [
+        "Sponsor-approved Intraday V1 universe",
+        "CA Programme-Wide Prerequisite Closure"
+      ],
+      "role": "NATIVE",
+      "source_identity": "SPONSOR-INTRADAY-V1-91-NSE-EQUITIES-2026-08-22",
+      "sponsor_label": "SBICARD",
+      "valid_from": "2026-08-22T00:00:00+05:30",
+      "valid_through": "9999-12-31T23:59:59+05:30"
+    },
+    {
+      "canonical_instrument_id": null,
+      "market_family": "NSE_EQUITY",
+      "membership_identity": "INTRADAY-NATIVE-MEMBER-4b2d729e57efc85dd00ab0c90fd36736236f77826cabf685db3fb9e0ad39202f",
+      "membership_status": "GOVERNED_TARGET",
+      "provenance": [
+        "Sponsor-approved Intraday V1 universe",
+        "CA Programme-Wide Prerequisite Closure"
+      ],
+      "role": "NATIVE",
+      "source_identity": "SPONSOR-INTRADAY-V1-91-NSE-EQUITIES-2026-08-22",
+      "sponsor_label": "SBIN",
+      "valid_from": "2026-08-22T00:00:00+05:30",
+      "valid_through": "9999-12-31T23:59:59+05:30"
+    },
+    {
+      "canonical_instrument_id": null,
+      "market_family": "NSE_EQUITY",
+      "membership_identity": "INTRADAY-NATIVE-MEMBER-b74f75d2165b447fd5421890dd35ef59075691c6a596b602637bd52f01a85d30",
+      "membership_status": "GOVERNED_TARGET",
+      "provenance": [
+        "Sponsor-approved Intraday V1 universe",
+        "CA Programme-Wide Prerequisite Closure"
+      ],
+      "role": "NATIVE",
+      "source_identity": "SPONSOR-INTRADAY-V1-91-NSE-EQUITIES-2026-08-22",
+      "sponsor_label": "SHRIRAMFIN",
+      "valid_from": "2026-08-22T00:00:00+05:30",
+      "valid_through": "9999-12-31T23:59:59+05:30"
+    },
+    {
+      "canonical_instrument_id": null,
+      "market_family": "NSE_EQUITY",
+      "membership_identity": "INTRADAY-NATIVE-MEMBER-2ad1fc5f63e62962ec74450778ac4def91c4fb6fa5555685906a239be4d067d9",
+      "membership_status": "GOVERNED_TARGET",
+      "provenance": [
+        "Sponsor-approved Intraday V1 universe",
+        "CA Programme-Wide Prerequisite Closure"
+      ],
+      "role": "NATIVE",
+      "source_identity": "SPONSOR-INTRADAY-V1-91-NSE-EQUITIES-2026-08-22",
+      "sponsor_label": "SRF",
+      "valid_from": "2026-08-22T00:00:00+05:30",
+      "valid_through": "9999-12-31T23:59:59+05:30"
+    },
+    {
+      "canonical_instrument_id": null,
+      "market_family": "NSE_EQUITY",
+      "membership_identity": "INTRADAY-NATIVE-MEMBER-e58425f9a25e7157e23d76b43b04a90aae0157f58766db07ab88da13837a4533",
+      "membership_status": "GOVERNED_TARGET",
+      "provenance": [
+        "Sponsor-approved Intraday V1 universe",
+        "CA Programme-Wide Prerequisite Closure"
+      ],
+      "role": "NATIVE",
+      "source_identity": "SPONSOR-INTRADAY-V1-91-NSE-EQUITIES-2026-08-22",
+      "sponsor_label": "SUNPHARMA",
+      "valid_from": "2026-08-22T00:00:00+05:30",
+      "valid_through": "9999-12-31T23:59:59+05:30"
+    },
+    {
+      "canonical_instrument_id": null,
+      "market_family": "NSE_EQUITY",
+      "membership_identity": "INTRADAY-NATIVE-MEMBER-942e61aa27da069475b04c039e6b0e5cdba46b869c1e0123eebc0e49d16b783a",
+      "membership_status": "GOVERNED_TARGET",
+      "provenance": [
+        "Sponsor-approved Intraday V1 universe",
+        "CA Programme-Wide Prerequisite Closure"
+      ],
+      "role": "NATIVE",
+      "source_identity": "SPONSOR-INTRADAY-V1-91-NSE-EQUITIES-2026-08-22",
+      "sponsor_label": "TATAPOWER",
+      "valid_from": "2026-08-22T00:00:00+05:30",
+      "valid_through": "9999-12-31T23:59:59+05:30"
+    },
+    {
+      "canonical_instrument_id": null,
+      "market_family": "NSE_EQUITY",
+      "membership_identity": "INTRADAY-NATIVE-MEMBER-9c783ebd39c675ed072addb559c4daf2222a0c5dcf11fa4ef80190f42791eb01",
+      "membership_status": "GOVERNED_TARGET",
+      "provenance": [
+        "Sponsor-approved Intraday V1 universe",
+        "CA Programme-Wide Prerequisite Closure"
+      ],
+      "role": "NATIVE",
+      "source_identity": "SPONSOR-INTRADAY-V1-91-NSE-EQUITIES-2026-08-22",
+      "sponsor_label": "TATASTEEL",
+      "valid_from": "2026-08-22T00:00:00+05:30",
+      "valid_through": "9999-12-31T23:59:59+05:30"
+    },
+    {
+      "canonical_instrument_id": null,
+      "market_family": "NSE_EQUITY",
+      "membership_identity": "INTRADAY-NATIVE-MEMBER-a4991714fc48e38e90993515fd457362eafadc26aea6435237a5324fcc9c368b",
+      "membership_status": "GOVERNED_TARGET",
+      "provenance": [
+        "Sponsor-approved Intraday V1 universe",
+        "CA Programme-Wide Prerequisite Closure"
+      ],
+      "role": "NATIVE",
+      "source_identity": "SPONSOR-INTRADAY-V1-91-NSE-EQUITIES-2026-08-22",
+      "sponsor_label": "TCS",
+      "valid_from": "2026-08-22T00:00:00+05:30",
+      "valid_through": "9999-12-31T23:59:59+05:30"
+    },
+    {
+      "canonical_instrument_id": null,
+      "market_family": "NSE_EQUITY",
+      "membership_identity": "INTRADAY-NATIVE-MEMBER-987cfdf97be2edacb7515204608f5af870e9f8808274f40fe84203c1b8af7400",
+      "membership_status": "GOVERNED_TARGET",
+      "provenance": [
+        "Sponsor-approved Intraday V1 universe",
+        "CA Programme-Wide Prerequisite Closure"
+      ],
+      "role": "NATIVE",
+      "source_identity": "SPONSOR-INTRADAY-V1-91-NSE-EQUITIES-2026-08-22",
+      "sponsor_label": "TECHM",
+      "valid_from": "2026-08-22T00:00:00+05:30",
+      "valid_through": "9999-12-31T23:59:59+05:30"
+    },
+    {
+      "canonical_instrument_id": null,
+      "market_family": "NSE_EQUITY",
+      "membership_identity": "INTRADAY-NATIVE-MEMBER-4b027a0d7b077941a91d4f49a9981c42793b932f794be8024c2b3a82902d5923",
+      "membership_status": "GOVERNED_TARGET",
+      "provenance": [
+        "Sponsor-approved Intraday V1 universe",
+        "CA Programme-Wide Prerequisite Closure"
+      ],
+      "role": "NATIVE",
+      "source_identity": "SPONSOR-INTRADAY-V1-91-NSE-EQUITIES-2026-08-22",
+      "sponsor_label": "TITAN",
+      "valid_from": "2026-08-22T00:00:00+05:30",
+      "valid_through": "9999-12-31T23:59:59+05:30"
+    },
+    {
+      "canonical_instrument_id": null,
+      "market_family": "NSE_EQUITY",
+      "membership_identity": "INTRADAY-NATIVE-MEMBER-d0d42a7e592a44c90d0ddba4c6f66876f9fd321bcd0d2ec9f1fb8281fc13184a",
+      "membership_status": "GOVERNED_TARGET",
+      "provenance": [
+        "Sponsor-approved Intraday V1 universe",
+        "CA Programme-Wide Prerequisite Closure"
+      ],
+      "role": "NATIVE",
+      "source_identity": "SPONSOR-INTRADAY-V1-91-NSE-EQUITIES-2026-08-22",
+      "sponsor_label": "TMPV",
+      "valid_from": "2026-08-22T00:00:00+05:30",
+      "valid_through": "9999-12-31T23:59:59+05:30"
+    },
+    {
+      "canonical_instrument_id": null,
+      "market_family": "NSE_EQUITY",
+      "membership_identity": "INTRADAY-NATIVE-MEMBER-ebc7229b22381d6c124ca3a0e8fc8a2d279366d0ac5ffc9d97cfd8fa8e0b6ffa",
+      "membership_status": "GOVERNED_TARGET",
+      "provenance": [
+        "Sponsor-approved Intraday V1 universe",
+        "CA Programme-Wide Prerequisite Closure"
+      ],
+      "role": "NATIVE",
+      "source_identity": "SPONSOR-INTRADAY-V1-91-NSE-EQUITIES-2026-08-22",
+      "sponsor_label": "TRENT",
+      "valid_from": "2026-08-22T00:00:00+05:30",
+      "valid_through": "9999-12-31T23:59:59+05:30"
+    },
+    {
+      "canonical_instrument_id": null,
+      "market_family": "NSE_EQUITY",
+      "membership_identity": "INTRADAY-NATIVE-MEMBER-0b07db316633f2b7a06f5cde5f300fc9e7bca9df529939f79c849b122aa772df",
+      "membership_status": "GOVERNED_TARGET",
+      "provenance": [
+        "Sponsor-approved Intraday V1 universe",
+        "CA Programme-Wide Prerequisite Closure"
+      ],
+      "role": "NATIVE",
+      "source_identity": "SPONSOR-INTRADAY-V1-91-NSE-EQUITIES-2026-08-22",
+      "sponsor_label": "UPL",
+      "valid_from": "2026-08-22T00:00:00+05:30",
+      "valid_through": "9999-12-31T23:59:59+05:30"
+    },
+    {
+      "canonical_instrument_id": null,
+      "market_family": "NSE_EQUITY",
+      "membership_identity": "INTRADAY-NATIVE-MEMBER-5ecdc94b4c2c2541e41a59b1ed20d2b89ee4bc5123db9ff1010ec41279f0039a",
+      "membership_status": "GOVERNED_TARGET",
+      "provenance": [
+        "Sponsor-approved Intraday V1 universe",
+        "CA Programme-Wide Prerequisite Closure"
+      ],
+      "role": "NATIVE",
+      "source_identity": "SPONSOR-INTRADAY-V1-91-NSE-EQUITIES-2026-08-22",
+      "sponsor_label": "VBL",
+      "valid_from": "2026-08-22T00:00:00+05:30",
+      "valid_through": "9999-12-31T23:59:59+05:30"
+    },
+    {
+      "canonical_instrument_id": null,
+      "market_family": "NSE_EQUITY",
+      "membership_identity": "INTRADAY-NATIVE-MEMBER-8992537add3936f58a9e71fc04201004862f436d3da100f29b0407b91ffe1e4e",
+      "membership_status": "GOVERNED_TARGET",
+      "provenance": [
+        "Sponsor-approved Intraday V1 universe",
+        "CA Programme-Wide Prerequisite Closure"
+      ],
+      "role": "NATIVE",
+      "source_identity": "SPONSOR-INTRADAY-V1-91-NSE-EQUITIES-2026-08-22",
+      "sponsor_label": "VEDL",
+      "valid_from": "2026-08-22T00:00:00+05:30",
+      "valid_through": "9999-12-31T23:59:59+05:30"
+    },
+    {
+      "canonical_instrument_id": null,
+      "market_family": "NSE_EQUITY",
+      "membership_identity": "INTRADAY-NATIVE-MEMBER-d8c43977abe3843109fafc8bcad6b803fabeb5eb5ce045a8e76af684c216869f",
+      "membership_status": "GOVERNED_TARGET",
+      "provenance": [
+        "Sponsor-approved Intraday V1 universe",
+        "CA Programme-Wide Prerequisite Closure"
+      ],
+      "role": "NATIVE",
+      "source_identity": "SPONSOR-INTRADAY-V1-91-NSE-EQUITIES-2026-08-22",
+      "sponsor_label": "WIPRO",
+      "valid_from": "2026-08-22T00:00:00+05:30",
+      "valid_through": "9999-12-31T23:59:59+05:30"
+    },
+    {
+      "canonical_instrument_id": null,
+      "market_family": "NSE_EQUITY",
+      "membership_identity": "INTRADAY-NATIVE-MEMBER-1ee2c469f825ac418156022d9904576d42381b6c3d6fa67695d87482e1ffda25",
+      "membership_status": "GOVERNED_TARGET",
+      "provenance": [
+        "Sponsor-approved Intraday V1 universe",
+        "CA Programme-Wide Prerequisite Closure"
+      ],
+      "role": "NATIVE",
+      "source_identity": "SPONSOR-INTRADAY-V1-91-NSE-EQUITIES-2026-08-22",
+      "sponsor_label": "YESBANK",
+      "valid_from": "2026-08-22T00:00:00+05:30",
+      "valid_through": "9999-12-31T23:59:59+05:30"
+    },
+    {
+      "canonical_instrument_id": null,
+      "market_family": "NSE_INDEX",
+      "membership_identity": "INTRADAY-NATIVE-MEMBER-1b71ad4e0ad72e9cf518b778dbd2708ed591a395ec7218ff02cec7ce32a9938d",
+      "membership_status": "GOVERNED_TARGET",
+      "provenance": [
+        "Sponsor-approved Intraday V1 universe",
+        "CA Programme-Wide Prerequisite Closure"
+      ],
+      "role": "NATIVE",
+      "source_identity": "SPONSOR-INTRADAY-V1-NSE-INDEX-INCLUSIONS-2026-08-22",
+      "sponsor_label": "NIFTY",
+      "valid_from": "2026-08-22T00:00:00+05:30",
+      "valid_through": "9999-12-31T23:59:59+05:30"
+    },
+    {
+      "canonical_instrument_id": null,
+      "market_family": "NSE_INDEX",
+      "membership_identity": "INTRADAY-NATIVE-MEMBER-5451a03bb52f6198d9b872e03fae41da8b1148bb43b12fc75b419a05fc2bdf58",
+      "membership_status": "GOVERNED_TARGET",
+      "provenance": [
+        "Sponsor-approved Intraday V1 universe",
+        "CA Programme-Wide Prerequisite Closure"
+      ],
+      "role": "NATIVE",
+      "source_identity": "SPONSOR-INTRADAY-V1-NSE-INDEX-INCLUSIONS-2026-08-22",
+      "sponsor_label": "BANKNIFTY",
+      "valid_from": "2026-08-22T00:00:00+05:30",
+      "valid_through": "9999-12-31T23:59:59+05:30"
+    },
+    {
+      "canonical_instrument_id": null,
+      "market_family": "MCX",
+      "membership_identity": "INTRADAY-NATIVE-MEMBER-e37f380a9617751d97b6412dee147e24cce6888fb5abe03ee1e1aa4d698aed43",
+      "membership_status": "GOVERNED_TARGET",
+      "provenance": [
+        "Sponsor-approved Intraday V1 universe",
+        "CA Programme-Wide Prerequisite Closure"
+      ],
+      "role": "NATIVE",
+      "source_identity": "SPONSOR-INTRADAY-V1-MCX-INCLUSIONS-2026-08-22",
+      "sponsor_label": "GOLDM",
+      "valid_from": "2026-08-22T00:00:00+05:30",
+      "valid_through": "9999-12-31T23:59:59+05:30"
+    },
+    {
+      "canonical_instrument_id": null,
+      "market_family": "MCX",
+      "membership_identity": "INTRADAY-NATIVE-MEMBER-3bf1d29aecfe4e65ac50b5b12d1295b136181baebf535d722e149b18955c44af",
+      "membership_status": "GOVERNED_TARGET",
+      "provenance": [
+        "Sponsor-approved Intraday V1 universe",
+        "CA Programme-Wide Prerequisite Closure"
+      ],
+      "role": "NATIVE",
+      "source_identity": "SPONSOR-INTRADAY-V1-MCX-INCLUSIONS-2026-08-22",
+      "sponsor_label": "SILVERM",
+      "valid_from": "2026-08-22T00:00:00+05:30",
+      "valid_through": "9999-12-31T23:59:59+05:30"
+    },
+    {
+      "canonical_instrument_id": null,
+      "market_family": "MCX",
+      "membership_identity": "INTRADAY-NATIVE-MEMBER-a3c8f1c677d5e28e5778a7d310a809978c40ac228cd923dac5cc1e88eefbcc62",
+      "membership_status": "GOVERNED_TARGET",
+      "provenance": [
+        "Sponsor-approved Intraday V1 universe",
+        "CA Programme-Wide Prerequisite Closure"
+      ],
+      "role": "NATIVE",
+      "source_identity": "SPONSOR-INTRADAY-V1-MCX-INCLUSIONS-2026-08-22",
+      "sponsor_label": "COPPER",
+      "valid_from": "2026-08-22T00:00:00+05:30",
+      "valid_through": "9999-12-31T23:59:59+05:30"
+    },
+    {
+      "canonical_instrument_id": null,
+      "market_family": "MCX",
+      "membership_identity": "INTRADAY-NATIVE-MEMBER-5143cf303b1522007a5ac398693ad56592499796d520edb197a29610c87eb848",
+      "membership_status": "GOVERNED_TARGET",
+      "provenance": [
+        "Sponsor-approved Intraday V1 universe",
+        "CA Programme-Wide Prerequisite Closure"
+      ],
+      "role": "NATIVE",
+      "source_identity": "SPONSOR-INTRADAY-V1-MCX-INCLUSIONS-2026-08-22",
+      "sponsor_label": "NATGAS",
+      "valid_from": "2026-08-22T00:00:00+05:30",
+      "valid_through": "9999-12-31T23:59:59+05:30"
+    },
+    {
+      "canonical_instrument_id": null,
+      "market_family": "MCX",
+      "membership_identity": "INTRADAY-NATIVE-MEMBER-fe3d1f49f8a10d6850a4caf218c144aeef8f157d3924fb5e218b90e1f930a2d8",
+      "membership_status": "GOVERNED_TARGET",
+      "provenance": [
+        "Sponsor-approved Intraday V1 universe",
+        "CA Programme-Wide Prerequisite Closure"
+      ],
+      "role": "NATIVE",
+      "source_identity": "SPONSOR-INTRADAY-V1-MCX-INCLUSIONS-2026-08-22",
+      "sponsor_label": "CRUDE",
+      "valid_from": "2026-08-22T00:00:00+05:30",
+      "valid_through": "9999-12-31T23:59:59+05:30"
+    }
+  ],
+  "product_identity": "INTRADAY",
+  "provenance": [
+    "Universe owner is INTRADAY",
+    "Membership is Sponsor-approved and independent of Provider and Swing membership",
+    "Native analytical membership does not confer execution eligibility",
+    "Missing DOMAIN-001 identity preserves membership with unavailable runtime binding"
+  ],
+  "publication_identity": "KRONOS-INTRADAY-NATIVE-UNIVERSE-V1",
+  "publication_version": "1.0.0",
+  "schema_identity": "KRONOS-INTRADAY-NATIVE-UNIVERSE-V1",
+  "source_boundary": "2026-08-22T00:00:00+05:30",
+  "source_identities": [
+    "SPONSOR-APPROVED-INTRADAY-V1-NATIVE-UNIVERSE-2026-08-22",
+    "SPONSOR-INTRADAY-V1-91-NSE-EQUITIES-2026-08-22",
+    "SPONSOR-INTRADAY-V1-NSE-INDEX-INCLUSIONS-2026-08-22",
+    "SPONSOR-INTRADAY-V1-MCX-INCLUSIONS-2026-08-22",
+    "CA-INTRADAY-V1-PROGRAMME-WIDE-PREREQUISITE-CLOSURE"
+  ],
+  "supersedes": null,
+  "valid_from": "2026-08-22T00:00:00+05:30",
+  "valid_through": "9999-12-31T23:59:59+05:30"
+}

@@ -1,14 +1,14 @@
 # Intraday Product Architecture
 
-**Status:** Draft  
-**Owner:** TBD  
-**Approved By:** Not approved
+**Status:** Living product architecture
+**Owner:** KRONOS Intraday
+**Authority:** Sponsor/EA/CA governed work orders
 
 ## Purpose
 
-This directory is the Draft documentation scaffold for the KRONOS Intraday product area.
-
-The folder name does not establish product responsibility, authority, interfaces, dependencies, or approved architecture.
+This directory indexes the governed Intraday product records. Source documents
+retain their own authority and status; this index grants no additional trading,
+Risk, execution, or broker authority.
 
 ## Documents
 
@@ -16,11 +16,23 @@ The folder name does not establish product responsibility, authority, interfaces
 - [Interfaces](INTERFACES.md)
 - [Constraints](CONSTRAINTS.md)
 - [Future](FUTURE.md)
+- [Living Architecture Record V0.1](KRONOS-INTRADAY-ENGINEERING-METHODOLOGY-ARCHITECTURE-RECORD-V0.1.md)
+- [Slice 3V Validation Contract V1](KRONOS-INTRADAY-SLICE-3V-FACTUAL-VISUAL-VALIDATION-CONTRACT-V1.md)
+- [Native Universe V1](KRONOS-INTRADAY-NATIVE-UNIVERSE-V1.md)
+- [DOMAIN-001 Prerequisite Manifest](KRONOS-INTRADAY-DOMAIN-001-PREREQUISITE-MANIFEST-V1.md)
+- [Machine-Fact Catalogue](KRONOS-INTRADAY-MACHINE-FACT-CATALOGUE.md)
+- [Contract/State Ownership Registry](KRONOS-INTRADAY-CONTRACT-STATE-OWNERSHIP-REGISTRY.md)
+- [Deferred Decision Register](KRONOS-INTRADAY-DEFERRED-DECISION-REGISTER.md)
+- [Programme Roadmap](KRONOS-INTRADAY-V1-PROGRAMME-ROADMAP.md)
 
-## Approved Architecture
+## Current governed boundary
 
-[TBD — no approved content is recorded in this Draft scaffold.]
+Intraday owns its 98-member Native analytical universe, factual product
+composition, later Discovery/promotion/construction policy, product state, and
+product projections. It consumes DOMAIN-001, DOMAIN-006, DOMAIN-008, and other
+Platform capabilities through governed seams. Native membership is not
+execution eligibility.
 
-## Governing ADRs
+## Change control
 
-[TBD]
+Follow the [Intraday Shared-File Change Rule](../../../engineering/INTRADAY-SHARED-FILE-CHANGE-RULE.md).

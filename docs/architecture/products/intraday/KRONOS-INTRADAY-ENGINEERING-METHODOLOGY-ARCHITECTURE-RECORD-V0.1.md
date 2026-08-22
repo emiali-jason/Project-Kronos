@@ -1,10 +1,10 @@
 # KRONOS Intraday Engineering, Methodology & Architecture Record
 
-**Status:** LIVING DOCUMENT — V0.1; EA/CA review candidate; not final
+**Status:** LIVING DOCUMENT — V0.1; published and amended through WO-03A review candidate
 
 **Product owner:** KRONOS Intraday
 
-**Repository baseline:** `5ca871df96ede9e5d6657ee31dab99eef389784d`
+**WO-03A repository baseline:** `542c84fbacbd9f1bfb2997255b90f00495ba4544`
 
 **Intraday factual publication checkpoint:** `8cb3b3e3632107dae585a60fceb4f88be90194d0`
 
@@ -20,7 +20,10 @@ Its governing handover principle is:
 
 > **REUSE ARCHITECTURE AND INFRASTRUCTURE; DO NOT COPY SWING TRADING METHODOLOGY.**
 
-This record documents current authority. It does not implement Slice 3V or Slice 4, establish a trading strategy, authorize Risk or broker execution, or convert a Swing implementation into a Platform API.
+This record documents current authority. WO-02 published the Slice 3V contract;
+WO-03A establishes the review-candidate Native universe. Neither establishes a
+trading strategy, authorizes Risk or broker execution, or converts a Swing
+implementation into a Platform API.
 
 Repository authority and ownership remain governed by the approved Platform records. In particular, a contract or support dependency does not transfer semantic ownership, permit access to producer internals, or create runtime authority.
 
@@ -388,9 +391,10 @@ The Swing programme may contribute architecture, infrastructure, failure lessons
 | --- | --- |
 | Slices 0–3 factual foundation | PUBLISHED |
 | Real RELIANCE factual commissioning | PASS |
-| Current repository baseline | `5ca871df96ede9e5d6657ee31dab99eef389784d` |
+| Current repository baseline | `542c84fbacbd9f1bfb2997255b90f00495ba4544` |
 | Intraday factual publication checkpoint | `8cb3b3e3632107dae585a60fceb4f88be90194d0` |
-| Next stage | SLICE 3V |
+| Native universe | 98 Sponsor-approved subjects; WO-03A review candidate |
+| Next stage | WO-03 NATIVE DISCOVERY, after canonical prerequisites required by its scope |
 | Slice 3V authority | VALIDATION ONLY |
 | Slice 4 | NOT STARTED |
 | Intraday analytical state family | NOT FROZEN |
@@ -402,15 +406,11 @@ The Swing programme may contribute architecture, infrastructure, failure lessons
 
 ## 15. Governed work sequence
 
-1. **WO-01** — Living Architecture Record.
-2. **WO-02** — Slice 3V Validation Contract.
-3. **WO-03** — RELIANCE Slice 3V.
-4. **WO-04** — Bounded factual correction, only if evidence establishes a genuine defect.
-5. **WO-05** — Broaden 3V validation across additional NSE subjects/dates and MCX.
-6. **WO-06** — Slice 3V validation closure.
-7. **WO-07** — Intraday analytical state model / Slice 4 design.
-
-Only after the governed sequence may later work address analytical classification, Trade Construction, Risk policy, entry timing, monitoring/watch semantics, consumption of shared monitoring transport, separate Intraday notifications, separate Intraday trades/positions/journal, controlled PAPER validation, and real-market acceptance.
+The CA-ratified sequence is maintained in the [Intraday V1 Programme
+Roadmap](KRONOS-INTRADAY-V1-PROGRAMME-ROADMAP.md): Track A begins WO-03A →
+WO-03 → conditional WO-04 → WO-05 → WO-06; Track B is WO-07 → conditional
+WO-08 → WO-09; Track C is MCX prerequisites → WO-10; WO-11 through WO-24
+then proceed in order. RELIANCE remains the commissioning/regression anchor.
 
 ## 16. Open policy and architecture items
 
@@ -434,7 +434,7 @@ The eventual production version may be published to GitHub and Google Drive only
 
 ## 18. Slice 3V factual / visual validation contract — WO-02
 
-WO-02 freezes the review-candidate Slice 3V V1 contract identities:
+WO-02 publishes the Slice 3V V1 contract identities:
 
 | Contract | Identity |
 | --- | --- |
@@ -449,9 +449,24 @@ Individual results are `MATCH`, `MISMATCH`, `NOT_VISUALLY_VERIFIABLE`, `CHART_EV
 
 Native chart validation and future `MCX_REFERENCE_MARKET_RELATIONSHIP_V0` validation are separate evidence families. V1 reserves the relationship seam but does not implement cross-market comparison. The contract introduces no Discovery, promotion, Readiness, Trade Construction, Risk, PAPER/LIVE, OpenAI, or broker authority.
 
-The complete review-candidate decision is recorded in [KRONOS Intraday Slice 3V Factual / Visual Validation Contract V1](KRONOS-INTRADAY-SLICE-3V-FACTUAL-VISUAL-VALIDATION-CONTRACT-V1.md).
+The complete published decision is recorded in [KRONOS Intraday Slice 3V Factual / Visual Validation Contract V1](KRONOS-INTRADAY-SLICE-3V-FACTUAL-VISUAL-VALIDATION-CONTRACT-V1.md).
 
-## 19. References
+## 19. WO-03A Native universe amendment
+
+The Intraday-owned publication `KRONOS-INTRADAY-NATIVE-UNIVERSE-V1` `1.0.0`
+preserves exactly 91 Sponsor equities, NIFTY, BANKNIFTY, and five persistent MCX
+subjects (98 total). Membership is independent of Swing and Provider presence
+and is not execution eligibility. DOMAIN-001 currently covers RELIANCE only;
+the remaining 97 members stay governed with unavailable canonical binding until
+a separate Platform publication closes the prerequisite.
+
+No standalone Swing-to-Intraday handover source exists in repository-accessible
+material. Its wording is therefore not reconstructed. The incorporated rules
+remain: share capability, not product state; reuse KRONOS architecture and
+infrastructure patterns; do not inherit Swing numerical/trading policy; and
+keep trades, watches, notifications, journals, and policy versions separate.
+
+## 20. References
 
 - [Intraday Shared-File Change Rule](../../../engineering/INTRADAY-SHARED-FILE-CHANGE-RULE.md)
 - [Platform Constitution](../../platform/PLATFORM-000-CONSTITUTION.md)
@@ -459,4 +474,8 @@ The complete review-candidate decision is recorded in [KRONOS Intraday Slice 3V 
 - [Domain Ownership Matrix](../../platform/DOMAIN_OWNERSHIP_MATRIX.md)
 - [Domain Dependency Matrix](../../platform/DOMAIN_DEPENDENCY_MATRIX.md)
 - [Intraday product architecture index](README.md)
-- KRONOS Swing → Intraday Engineering & Architecture Handover V1.0, dated 2026-08-22, as supplied under WO-01.
+- [Native Universe V1](KRONOS-INTRADAY-NATIVE-UNIVERSE-V1.md)
+- [Programme Roadmap](KRONOS-INTRADAY-V1-PROGRAMME-ROADMAP.md)
+- [Machine-Fact Catalogue](KRONOS-INTRADAY-MACHINE-FACT-CATALOGUE.md)
+- [Contract/State Ownership Registry](KRONOS-INTRADAY-CONTRACT-STATE-OWNERSHIP-REGISTRY.md)
+- [Deferred Decision Register](KRONOS-INTRADAY-DEFERRED-DECISION-REGISTER.md)
