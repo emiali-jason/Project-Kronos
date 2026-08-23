@@ -109,6 +109,9 @@ from kronos.browser.product_routes import (
 from kronos.browser.intraday_discovery_control import (
     IntradayDiscoveryOperationalControl,
 )
+from kronos.browser.intraday_historical_control import (
+    IntradayHistoricalQualificationOperationalControl,
+)
 from kronos.swing.v1.evidence_store import (
     LocalTradingViewEvidenceStore,
     TradingViewEvidenceStoreError,
@@ -202,6 +205,9 @@ class KronosBrowserServer(ThreadingHTTPServer):
             ProviderInstrumentMasterOperationalComposition | None
         ) = None,
         intraday_discovery_control: IntradayDiscoveryOperationalControl | None = None,
+        intraday_historical_control: (
+            IntradayHistoricalQualificationOperationalControl | None
+        ) = None,
     ) -> None:
         if (
             address[0] != _LOOPBACK_HOST
@@ -257,6 +263,11 @@ class KronosBrowserServer(ThreadingHTTPServer):
                 and type(intraday_discovery_control)
                 is not IntradayDiscoveryOperationalControl
             )
+            or (
+                intraday_historical_control is not None
+                and type(intraday_historical_control)
+                is not IntradayHistoricalQualificationOperationalControl
+            )
         ):
             raise ValueError("BROWSER_SERVER_MUST_BIND_LOOPBACK")
         config = OpenAIChartAnalystV2Config.from_environment()
@@ -273,6 +284,7 @@ class KronosBrowserServer(ThreadingHTTPServer):
             provider_instrument_master_operation
         )
         self.intraday_discovery_control = intraday_discovery_control
+        self.intraday_historical_control = intraday_historical_control
         self._shutdown_lock = Lock()
         self._shutdown_started = False
         self._active_sponsor_work = 0
@@ -669,6 +681,9 @@ class _BrowserHandler(BaseHTTPRequestHandler):
         if path == "/control/intraday-discovery/status":
             self._intraday_discovery_status()
             return
+        if path == "/control/intraday-historical-qualification/status":
+            self._intraday_historical_status()
+            return
         product_response = self.server.product_routes.dispatch_get(
             BrowserGetRequest(
                 path=path,
@@ -971,6 +986,9 @@ class _BrowserHandler(BaseHTTPRequestHandler):
         if path == "/control/intraday-discovery":
             self._run_intraday_discovery()
             return
+        if path == "/control/intraday-historical-qualification":
+            self._run_intraday_historical_qualification()
+            return
         if path == "/control/provider-instrument-master":
             self._run_provider_instrument_master()
             return
@@ -1174,6 +1192,19 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             return
         self._json(control.status_document())
 
+    def _intraday_historical_status(self) -> None:
+        control = self.server.intraday_historical_control
+        if control is None:
+            self._text(HTTPStatus.NOT_FOUND, "Not found.")
+            return
+        if not self._exact_loopback_host():
+            self._text(HTTPStatus.FORBIDDEN, "Request rejected.")
+            return
+        if urlsplit(self.path).query:
+            self._text(HTTPStatus.BAD_REQUEST, "Request rejected.")
+            return
+        self._json(control.status_document())
+
     def _run_intraday_discovery(self) -> None:
         control = self.server.intraday_discovery_control
         try:
@@ -1186,6 +1217,29 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             or self.headers.get("Content-Type", "").split(";", 1)[0].lower()
             != "application/json"
             or not 0 < content_length <= 512
+        ):
+            self._text(HTTPStatus.BAD_REQUEST, "Request rejected.")
+            return
+        try:
+            payload = json.loads(self.rfile.read(content_length).decode("utf-8"))
+            result = control.execute_document(payload)
+        except (UnicodeDecodeError, json.JSONDecodeError, ValueError):
+            self._text(HTTPStatus.BAD_REQUEST, "Request rejected.")
+            return
+        self._json(result)
+
+    def _run_intraday_historical_qualification(self) -> None:
+        control = self.server.intraday_historical_control
+        try:
+            content_length = int(self.headers.get("Content-Length", ""))
+        except ValueError:
+            content_length = 0
+        if (
+            control is None
+            or urlsplit(self.path).query
+            or self.headers.get("Content-Type", "").split(";", 1)[0].lower()
+            != "application/json"
+            or not 0 < content_length <= 4096
         ):
             self._text(HTTPStatus.BAD_REQUEST, "Request rejected.")
             return
@@ -2217,6 +2271,9 @@ def create_browser_server(
         ProviderInstrumentMasterOperationalComposition | None
     ) = None,
     intraday_discovery_control: IntradayDiscoveryOperationalControl | None = None,
+    intraday_historical_control: (
+        IntradayHistoricalQualificationOperationalControl | None
+    ) = None,
 ) -> KronosBrowserServer:
     if type(port) is not int or not 0 <= port <= 65535:
         raise ValueError("BROWSER_SERVER_PORT_INVALID")
@@ -2239,6 +2296,7 @@ def create_browser_server(
         ux10_notifications,
         provider_instrument_master_operation,
         intraday_discovery_control,
+        intraday_historical_control,
     )
 
 

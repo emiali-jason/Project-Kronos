@@ -28,7 +28,8 @@ def test_launcher_uses_loopback_server_and_opens_swing_workspace(monkeypatch) ->
         kronos_browser,
         "create_browser_server",
         lambda app, port, restart_control, intraday_workstation,
-        provider_instrument_master_operation, intraday_discovery_control: (
+        provider_instrument_master_operation, intraday_discovery_control,
+        intraday_historical_control: (
             events.append((
                 app,
                 port,
@@ -36,18 +37,24 @@ def test_launcher_uses_loopback_server_and_opens_swing_workspace(monkeypatch) ->
                 intraday_workstation,
                 provider_instrument_master_operation,
                 intraday_discovery_control,
+                intraday_historical_control,
             )) or _Server()
         ),
     )
-    monkeypatch.setattr(kronos_browser.webbrowser, "open_new_tab", lambda url: events.append(url) or True)
+    monkeypatch.setattr(
+        kronos_browser.webbrowser,
+        "open_new_tab",
+        lambda url: events.append(url) or True,
+    )
     assert kronos_browser.main(["--port", "9123"]) == 0
     assert "http://127.0.0.1:9123/swing/opportunities" in events
     assert "close" in events
     server_event = next(
-        item for item in events if isinstance(item, tuple) and len(item) == 6
+        item for item in events if isinstance(item, tuple) and len(item) == 7
     )
     operation = server_event[4]
     intraday_control = server_event[5]
+    historical_control = server_event[6]
     application_event = next(
         item
         for item in events
@@ -63,6 +70,12 @@ def test_launcher_uses_loopback_server_and_opens_swing_workspace(monkeypatch) ->
         for cell in swing_factory.__closure__
     )
     assert intraday_control.operation_service._runtime is operation._runtime
+    assert historical_control.historical_invocation.operation_service is (
+        historical_control.operation_service
+    )
+    assert historical_control.operation_service._runtime is operation._runtime
+    assert historical_control.operation_service.last_result is None
+    assert historical_control.operation_service.active_operation_identity is None
     source = Path(kronos_browser.__file__).read_text(encoding="utf-8")
     assert source.count("SharedAuthenticatedProviderRuntime(") == 1
 
@@ -87,9 +100,14 @@ def test_developer_no_browser_mode_does_not_open_browser(monkeypatch) -> None:
         kronos_browser,
         "create_browser_server",
         lambda _app, port, restart_control, intraday_workstation,
-        provider_instrument_master_operation, intraday_discovery_control: _Server(),
+        provider_instrument_master_operation, intraday_discovery_control,
+        intraday_historical_control: _Server(),
     )
-    monkeypatch.setattr(kronos_browser.webbrowser, "open_new_tab", lambda _url: (_ for _ in ()).throw(AssertionError))
+    monkeypatch.setattr(
+        kronos_browser.webbrowser,
+        "open_new_tab",
+        lambda _url: (_ for _ in ()).throw(AssertionError),
+    )
     assert kronos_browser.main(["--no-browser"]) == 0
 
 

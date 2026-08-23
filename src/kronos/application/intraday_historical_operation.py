@@ -140,6 +140,12 @@ class IntradayHistoricalQualificationOperationService:
             return self._active_identity
 
     @property
+    def universe_publication(self) -> IntradayUniversePublication:
+        """Expose the governed request universe to a bounded local adapter."""
+
+        return self._universe
+
+    @property
     def last_result(self) -> HistoricalQualificationOperationResult | None:
         with self._lock:
             return next(reversed(self._results.values()), None)
@@ -600,6 +606,12 @@ class IntradayHistoricalQualificationHarness:
         if type(operation) is not IntradayHistoricalQualificationOperationService:
             raise ValueError("HISTORICAL_OPERATION_HARNESS_INVALID")
         self._operation = operation
+
+    @property
+    def operation_service(self) -> IntradayHistoricalQualificationOperationService:
+        """Return the exact composed service for local identity verification."""
+
+        return self._operation
 
     def execute(
         self, request: HistoricalQualificationOperationRequest
