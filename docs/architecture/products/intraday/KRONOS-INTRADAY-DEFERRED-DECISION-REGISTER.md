@@ -1,14 +1,14 @@
 # Intraday Deferred Decision Register
 
-**Status:** WO-03A governed deferrals; no defaults implied
+**Status:** WO-03 governed deferrals; no defaults implied
 
 | Decision | Reason deferred | Required evidence | Earliest closure | Owner |
 |---|---|---|---|---|
-| Native Discovery numerical thresholds | Not CA-frozen | Native factual distributions | WO-03 | Intraday/CA |
-| Directional admission predicates | Not CA-frozen | Native Discovery validation | WO-03 | Intraday/CA |
-| ATR period/threshold | Need and values unproven | Native evidence and 3V comparison | WO-03/3V | Intraday/CA |
-| Path-clearance threshold | Value unproven | Barrier/path outcome evidence | WO-03 | Intraday/CA |
-| Extension threshold | Value unproven | Move/retracement outcome evidence | WO-03 | Intraday/CA |
+| Native Discovery numerical thresholds | Not CA-frozen | Governed WO-05/WO-06 factual distributions | After WO-05 | Intraday/CA |
+| Directional admission predicates | Not CA-frozen | Native Discovery validation | After WO-05 | Intraday/CA |
+| ATR period/threshold | Need and values unproven | Native evidence and 3V comparison | After WO-05/3V | Intraday/CA |
+| Path-clearance threshold | Value unproven | Barrier/path outcome evidence | After WO-05 | Intraday/CA |
+| Extension threshold | Value unproven | Move/retracement outcome evidence | After WO-05 | Intraday/CA |
 | Volume consequence | Volume remains shadow | Native/3V participation evidence | Slice 3V | Intraday/CA |
 | Setup-quality semantics | Families approved, quality scale not | Discovery outcome evidence | WO-05 | Intraday/CA |
 | Analytical Promotion criteria | Separate boundary not frozen | Discovery-to-promotion evidence | WO-07 | Intraday/CA |

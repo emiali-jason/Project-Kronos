@@ -1,11 +1,11 @@
 # Intraday Contract and State Ownership Registry
 
-**Status:** WO-03A controlled boundary record
+**Status:** WO-03 Native Discovery V0 boundary
 
 | Boundary | Owner | Consequence authority |
 |---|---|---|
 | Universe | Intraday | Native analytical membership only |
-| Native Discovery | Intraday | Discovery observation/result only; predicates deferred |
+| Native Discovery | Intraday | Factual evaluability, candidate-contract state, bounded reasons and run accounting; predicates deferred |
 | Analytical Promotion | Intraday | Promotion only; criteria deferred |
 | Trade Construction | Intraday | Plan construction only; no Risk permission |
 | Risk | DOMAIN-007 | Risk permission/denial only |

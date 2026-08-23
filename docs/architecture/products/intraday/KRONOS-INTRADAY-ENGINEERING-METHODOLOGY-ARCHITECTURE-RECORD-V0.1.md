@@ -1,6 +1,6 @@
 # KRONOS Intraday Engineering, Methodology & Architecture Record
 
-**Status:** LIVING DOCUMENT — V0.1; published and amended through WO-03A review candidate
+**Status:** LIVING DOCUMENT — V0.1; amended through WO-03 review candidate
 
 **Product owner:** KRONOS Intraday
 
@@ -391,10 +391,11 @@ The Swing programme may contribute architecture, infrastructure, failure lessons
 | --- | --- |
 | Slices 0–3 factual foundation | PUBLISHED |
 | Real RELIANCE factual commissioning | PASS |
-| Current repository baseline | `542c84fbacbd9f1bfb2997255b90f00495ba4544` |
+| Current WO-03 repository baseline | `76f97da9934aebff9b4de653bd028f2a26f11dfc` |
 | Intraday factual publication checkpoint | `8cb3b3e3632107dae585a60fceb4f88be90194d0` |
-| Native universe | 98 Sponsor-approved subjects; WO-03A review candidate |
-| Next stage | WO-03 NATIVE DISCOVERY, after canonical prerequisites required by its scope |
+| Native universe | 98 governed subjects; P5 reconciliation published |
+| Native factual evaluability | 93 available; 5 prerequisite unavailable |
+| Next stage | WO-05 scanner implementation after WO-03 publication; WO-04 not required |
 | Slice 3V authority | VALIDATION ONLY |
 | Slice 4 | NOT STARTED |
 | Intraday analytical state family | NOT FROZEN |
@@ -408,7 +409,7 @@ The Swing programme may contribute architecture, infrastructure, failure lessons
 
 The CA-ratified sequence is maintained in the [Intraday V1 Programme
 Roadmap](KRONOS-INTRADAY-V1-PROGRAMME-ROADMAP.md): Track A begins WO-03A →
-WO-03 → conditional WO-04 → WO-05 → WO-06; Track B is WO-07 → conditional
+WO-03 → WO-05 → WO-06; WO-04 was found unnecessary by WO-03. Track B is WO-07 → conditional
 WO-08 → WO-09; Track C is MCX prerequisites → WO-10; WO-11 through WO-24
 then proceed in order. RELIANCE remains the commissioning/regression anchor.
 
@@ -460,13 +461,42 @@ and is not execution eligibility. DOMAIN-001 currently covers RELIANCE only;
 the remaining 97 members stay governed with unavailable canonical binding until
 a separate Platform publication closes the prerequisite.
 
+That WO-03A-era prerequisite statement is historical. Platform P3/P4 and the
+published P5 reconciliation now provide all 98 persistent/direct canonical
+subjects; current machine-fact consumability is 93 available and five
+prerequisite unavailable.
+
 No standalone Swing-to-Intraday handover source exists in repository-accessible
 material. Its wording is therefore not reconstructed. The incorporated rules
 remain: share capability, not product state; reuse KRONOS architecture and
 infrastructure patterns; do not inherit Swing numerical/trading policy; and
 keep trades, watches, notifications, journals, and policy versions separate.
 
-## 20. References
+## 20. WO-03 Native Discovery V0 contract amendment
+
+WO-03 establishes `KRONOS-INTRADAY-NATIVE-DISCOVERY-V0 / 0.1.0` as an
+Intraday-owned factual-evaluability, candidate-contract and run-accounting
+boundary. Every current run accounts for all 98 governed members. The
+published P5 boundary yields 93 factually evaluable members and five explicit
+prerequisite-unavailable members; it does not create a 93-member universe.
+
+The structural family remains exactly 1D/1H/15m/5m and completed governed
+candles remain structural authority. Current/incomplete candles are
+observation only. The mandatory V0 bundle is limited to DOMAIN-008 session
+truth, completed OHLCV, completeness/reconciliation, exact source identities,
+versions, freshness and integrity. Existing pivots, CPR, structure, volume,
+distance, R:R and session-position facts remain optional telemetry with no
+admission consequence.
+
+No numerical or directional methodology is frozen. ATR, SMA20/50/200, volume
+consequence, path clearance, normalized extension and candidate thresholds
+remain deferred. WO-03 found no missing mandatory machine fact for this
+non-threshold contract, so WO-04 is skippable. WO-05 remains the scanner
+implementation stage. Discovery does not create Analytical Promotion,
+Trade Construction, Risk, Entry Timing, execution eligibility or broker
+authority.
+
+## 21. References
 
 - [Intraday Shared-File Change Rule](../../../engineering/INTRADAY-SHARED-FILE-CHANGE-RULE.md)
 - [Platform Constitution](../../platform/PLATFORM-000-CONSTITUTION.md)
@@ -479,3 +509,4 @@ keep trades, watches, notifications, journals, and policy versions separate.
 - [Machine-Fact Catalogue](KRONOS-INTRADAY-MACHINE-FACT-CATALOGUE.md)
 - [Contract/State Ownership Registry](KRONOS-INTRADAY-CONTRACT-STATE-OWNERSHIP-REGISTRY.md)
 - [Deferred Decision Register](KRONOS-INTRADAY-DEFERRED-DECISION-REGISTER.md)
+- [Native Discovery V0 Contract](KRONOS-INTRADAY-NATIVE-DISCOVERY-V0-CONTRACT.md)

@@ -1,15 +1,16 @@
 # KRONOS Intraday V1 Programme Roadmap
 
-**Status:** CA-ratified sequence recorded by WO-03A
+**Status:** WO-03 contract complete; publication pending
 
 Native universe count is 98. RELIANCE remains the commissioning and regression
 anchor; it is not the universe owner or a privileged membership class.
 
 ## Track A — Native factual and analytical foundation
 
-WO-03A → WO-03 → WO-04 if required → WO-05 → WO-06.
+WO-03A → WO-03 → WO-05 → WO-06.
 
-WO-04 is conditional on bounded prerequisite gaps discovered by WO-03.
+WO-03 found no missing mandatory machine fact for the approved non-threshold
+V0 contract. `WO-04 REQUIRED = NO`. Deferred methodology is not a fact gap.
 
 ## Track B — Promotion and construction
 
