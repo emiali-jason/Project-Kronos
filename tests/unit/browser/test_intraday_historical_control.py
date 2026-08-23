@@ -500,6 +500,7 @@ def test_five_session_control_fixture_plans_exactly_without_provider_work(
             provider_request_count=0,
             reconstruction_identities=(),
             bundle_identities=(),
+            failure_evidence_identities=(),
             session_accounting=(),
             observation_failure_counts=(),
             persistence_complete=False,

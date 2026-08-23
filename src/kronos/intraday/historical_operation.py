@@ -15,6 +15,7 @@ from kronos.intraday.historical_qualification import (
     WO06H_CONTRACT_VERSION,
     HistoricalBindingAvailability,
     HistoricalCalendarSource,
+    HistoricalFactualFailureEvidence,
     HistoricalFactFamily,
     HistoricalResearchSubjectSet,
     HistoricalResearchSubject,
@@ -106,8 +107,14 @@ class HistoricalOperationFailure(StrEnum):
 
 
 class HistoricalOperationError(RuntimeError):
-    def __init__(self, failure: HistoricalOperationFailure) -> None:
+    def __init__(
+        self,
+        failure: HistoricalOperationFailure,
+        *,
+        evidence: HistoricalFactualFailureEvidence | None = None,
+    ) -> None:
         self.failure = failure
+        self.evidence = evidence
         super().__init__(failure.value)
 
 
@@ -368,7 +375,7 @@ class HistoricalEodSession:
             or type(self.previous_schedule) is not MarketDaySchedule
             or type(self.selection) is not HistoricalSessionSelection
             or not _text(self.boundary_identity)
-            or self.request.session_identity != self.target_schedule.session_id
+            or self.request.trading_date != self.target_schedule.trading_date
             or self.selection.target_session_identity
             != self.target_schedule.session_id
             or self.selection.previous_session_identity
@@ -387,8 +394,14 @@ def resolve_historical_eod_sessions(
     requested: tuple[HistoricalOperationSessionRequest, ...],
     exchange: str,
     provenance: tuple[str, ...],
+    require_requested_session_identity: bool = True,
 ) -> tuple[HistoricalEodSession, ...]:
-    if not requested or not _text(exchange) or not _texts(provenance):
+    if (
+        not requested
+        or not _text(exchange)
+        or not _texts(provenance)
+        or type(require_requested_session_identity) is not bool
+    ):
         raise HistoricalOperationError(HistoricalOperationFailure.REQUEST_INVALID)
     resolved: list[HistoricalEodSession] = []
     for item in requested:
@@ -399,7 +412,8 @@ def resolve_historical_eod_sessions(
             or type(previous) is not MarketDaySchedule
             or target.status is not TradingDayStatus.TRADING
             or previous.status is not TradingDayStatus.TRADING
-            or target.session_id != item.session_identity
+            or require_requested_session_identity
+            and target.session_id != item.session_identity
             or not target.windows
             or not previous.windows
         ):
@@ -604,6 +618,7 @@ class HistoricalQualificationOperationResult:
     provider_request_count: int
     reconstruction_identities: tuple[str, ...]
     bundle_identities: tuple[str, ...]
+    failure_evidence_identities: tuple[str, ...]
     session_accounting: tuple[HistoricalSessionOperationAccounting, ...]
     observation_failure_counts: tuple[tuple[str, int], ...]
     persistence_complete: bool
@@ -641,6 +656,7 @@ class HistoricalQualificationOperationResult:
             or any(type(value) is not int or value < 0 for value in counts)
             or not _texts(self.reconstruction_identities, allow_empty=True)
             or not _texts(self.bundle_identities, allow_empty=True)
+            or not _texts(self.failure_evidence_identities, allow_empty=True)
             or any(
                 type(item) is not HistoricalSessionOperationAccounting
                 for item in self.session_accounting

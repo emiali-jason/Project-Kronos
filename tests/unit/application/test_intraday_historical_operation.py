@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 import inspect
@@ -38,6 +39,9 @@ from kronos.intraday.historical_operation import (
 from kronos.intraday.historical_qualification import (
     HistoricalBindingAvailability,
     HistoricalFactFamily,
+    HistoricalFactualFailureEvidence,
+    HistoricalFailureClassification,
+    HistoricalProviderFailureFamily,
     HistoricalQualificationError,
     HistoricalQualificationFailure,
     create_historical_research_subject_set,
@@ -108,6 +112,16 @@ class _Calendar:
             return None
         return self.schedules[max(candidates)]
 
+    def for_subject(
+        self,
+        *,
+        canonical_identity: str,
+        domain_008_subject_identity: str,
+    ):
+        assert canonical_identity
+        assert domain_008_subject_identity
+        return self
+
 
 def _universe_and_reconciliation():  # type: ignore[no-untyped-def]
     universe = load_intraday_universe_publication()
@@ -151,6 +165,7 @@ class _HistoricalCapability:
         omit_interval: HistoricalInterval | None = None,
         late_interval: HistoricalInterval | None = None,
         raw_failure: bool = False,
+        sequence_mutation: str | None = None,
         block: Event | None = None,
         proceed: Event | None = None,
     ) -> None:
@@ -163,6 +178,7 @@ class _HistoricalCapability:
         self._omit_interval = omit_interval
         self._late_interval = late_interval
         self._raw_failure = raw_failure
+        self._sequence_mutation = sequence_mutation
         self._block = block
         self._proceed = proceed
 
@@ -202,6 +218,23 @@ class _HistoricalCapability:
                     volume=999,
                 )
             )
+        if (
+            request.interval is HistoricalInterval.SIXTY_MINUTE
+            and self._sequence_mutation is not None
+        ):
+            if self._sequence_mutation == "EXTRA":
+                candles.insert(1, replace(
+                    candles[0], timestamp=candles[0].timestamp + timedelta(minutes=1)
+                ))
+            elif self._sequence_mutation == "OFFSET":
+                candles = [
+                    replace(item, timestamp=item.timestamp + timedelta(minutes=1))
+                    for item in candles
+                ]
+            elif self._sequence_mutation == "DUPLICATE":
+                candles.insert(1, candles[0])
+            elif self._sequence_mutation == "OUT_OF_ORDER":
+                candles[0], candles[1] = candles[1], candles[0]
         return tuple(candles)
 
 
@@ -586,11 +619,199 @@ def test_provider_raw_failure_is_sanitized_and_never_retried(tmp_path: Path) -> 
     )
     assert capability.instrument_calls == 1
     assert capability.historical_calls == 93
+    assert len(result.failure_evidence_identities) == 93
+    evidence = HistoricalQualificationStore(tmp_path).load(
+        artifact_type="HistoricalFactualFailureEvidence",
+        artifact_identity=result.failure_evidence_identities[0],
+    )
+    assert type(evidence) is HistoricalFactualFailureEvidence
+    assert evidence.timeframe is IntradayTimeframe.DAILY
+    assert evidence.provider_failure_family is (
+        HistoricalProviderFailureFamily.PROVIDER_REQUEST_FAILED
+    )
+    assert evidence.classifications == (
+        HistoricalFailureClassification.PROVIDER_ACQUISITION_FAILED,
+    )
     for forbidden in (
         "SECRET", "TOKEN", "HIDDEN", "Bearer", "738561", "ohlcv", "SDK", "traceback", "100.5"
     ):
         assert forbidden not in projection
+        assert forbidden not in repr(evidence)
     assert "PROVIDER_ACQUISITION_FAILED" in projection
+
+
+@pytest.mark.parametrize(
+    ("capability", "classification", "actual_count"),
+    (
+        (
+            _HistoricalCapability(
+                omit_interval=HistoricalInterval.SIXTY_MINUTE
+            ),
+            HistoricalFailureClassification.MISSING_EXPECTED_CANDLE,
+            6,
+        ),
+        (
+            _HistoricalCapability(sequence_mutation="EXTRA"),
+            HistoricalFailureClassification.EXTRA_UNEXPECTED_CANDLE,
+            8,
+        ),
+        (
+            _HistoricalCapability(sequence_mutation="OFFSET"),
+            HistoricalFailureClassification.TIMESTAMP_OFFSET,
+            7,
+        ),
+        (
+            _HistoricalCapability(sequence_mutation="DUPLICATE"),
+            HistoricalFailureClassification.DUPLICATE_TIMESTAMP,
+            8,
+        ),
+        (
+            _HistoricalCapability(sequence_mutation="OUT_OF_ORDER"),
+            HistoricalFailureClassification.OUT_OF_ORDER_TIMESTAMP,
+            7,
+        ),
+        (
+            _HistoricalCapability(
+                late_interval=HistoricalInterval.SIXTY_MINUTE
+            ),
+            HistoricalFailureClassification.CANDLE_AFTER_OBSERVATION_BOUNDARY,
+            8,
+        ),
+    ),
+)
+def test_strict_sequence_failures_retain_sanitized_classification(
+    tmp_path: Path,
+    capability: _HistoricalCapability,
+    classification: HistoricalFailureClassification,
+    actual_count: int,
+) -> None:
+    service, shared, _, _, _ = _service(tmp_path, capability)
+    _authenticate(shared)
+
+    result = service.execute(_request())
+
+    assert result.successful_reconstructions == 0
+    assert result.factual_failures == 93
+    assert len(result.failure_evidence_identities) == 93
+    evidence = HistoricalQualificationStore(tmp_path).load(
+        artifact_type="HistoricalFactualFailureEvidence",
+        artifact_identity=result.failure_evidence_identities[0],
+    )
+    assert evidence.canonical_identity.startswith("NSE-")
+    assert evidence.target_session_identity == "NSE:2026-08-17"
+    assert evidence.timeframe is IntradayTimeframe.ONE_HOUR
+    assert evidence.expected_timestamp_count == 7
+    assert evidence.actual_timestamp_count == actual_count
+    assert classification in evidence.classifications
+    assert evidence.mismatch_ordinal is not None
+    assert evidence.observation_boundary == datetime(
+        2026, 8, 17, 15, 30, tzinfo=IST
+    )
+    document = HistoricalQualificationStore(tmp_path).load_document(
+        artifact_type="HistoricalFactualFailureEvidence",
+        artifact_identity=evidence.evidence_identity,
+    )
+    sanitized = repr(document)
+    for forbidden in (
+        "open",
+        "high",
+        "low",
+        "close",
+        "volume",
+        "instrument_token",
+        "exchange_token",
+        "access_token",
+        "request_token",
+        "api_secret",
+        "Authorization",
+        "RuntimeError",
+        "traceback",
+    ):
+        assert forbidden not in sanitized
+
+
+def test_real_domain008_subject_schedules_drive_each_provider_request(
+    tmp_path: Path,
+) -> None:
+    shared, runtime, _ = _shared()
+    capability = _HistoricalCapability()
+    runtime.capability = capability
+    _authenticate(shared)
+    composition = create_intraday_runtime(
+        shared,
+        evidence_root=tmp_path.resolve(),
+        clock=lambda: NOW,
+    )
+
+    result = composition.historical_invocation.execute(
+        _repository_request(dates=(date(2026, 8, 18),))
+    )
+
+    assert result.state is HistoricalOperationState.COMPLETE
+    assert result.factual_failures == 0
+    assert len(result.reconstruction_identities) == 2
+    hourly = {
+        item.instrument.trading_symbol: item
+        for item in capability.requests
+        if item.interval is HistoricalInterval.SIXTY_MINUTE
+    }
+    assert hourly["RELIANCE"].end == datetime(
+        2026, 8, 18, 15, 15, tzinfo=IST
+    )
+    assert hourly["NIFTY 50"].end == datetime(
+        2026, 8, 18, 15, 30, tzinfo=IST
+    )
+    assert hourly["NIFTY BANK"].end == datetime(
+        2026, 8, 18, 15, 30, tzinfo=IST
+    )
+    assert len(_candles(hourly["RELIANCE"])) == 6
+    assert len(_candles(hourly["NIFTY 50"])) == 7
+    assert len(_candles(hourly["NIFTY BANK"])) == 7
+
+
+def test_unavailable_subject_schedule_fails_closed_before_provider_request(
+    tmp_path: Path,
+) -> None:
+    class _UnavailableSubjectCalendar(_Calendar):
+        def for_subject(
+            self,
+            *,
+            canonical_identity: str,
+            domain_008_subject_identity: str,
+        ):
+            if domain_008_subject_identity == "RELIANCE":
+                raise ValueError("SUBJECT_SCHEDULE_UNAVAILABLE")
+            return self
+
+    shared, runtime, _ = _shared()
+    capability = _HistoricalCapability()
+    runtime.capability = capability
+    universe, reconciliation = _universe_and_reconciliation()
+    service = IntradayHistoricalQualificationOperationService(
+        provider_runtime=shared,
+        universe=universe,
+        reconciliation=reconciliation,
+        calendar=_UnavailableSubjectCalendar(),
+        store=HistoricalQualificationStore(tmp_path),
+        clock=lambda: NOW,
+    )
+    _authenticate(shared)
+
+    result = service.execute(_request())
+
+    assert result.factual_failures == 1
+    assert "RELIANCE" not in {
+        item.instrument.trading_symbol for item in capability.requests
+    }
+    evidence = HistoricalQualificationStore(tmp_path).load(
+        artifact_type="HistoricalFactualFailureEvidence",
+        artifact_identity=result.failure_evidence_identities[0],
+    )
+    assert evidence.canonical_identity == "RELIANCE"
+    assert evidence.classifications == (
+        HistoricalFailureClassification.EXPECTED_BOUNDARY_UNAVAILABLE,
+    )
+    assert evidence.timeframe is None
 
 
 def test_duplicate_completed_identity_returns_terminal_result_without_provider(tmp_path: Path) -> None:

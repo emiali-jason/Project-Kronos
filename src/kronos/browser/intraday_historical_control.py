@@ -169,6 +169,10 @@ def historical_operation_result_document(
         "provider_request_count": result.provider_request_count,
         "reconstruction_count": len(result.reconstruction_identities),
         "bundle_count": len(result.bundle_identities),
+        "failure_evidence_count": len(result.failure_evidence_identities),
+        "failure_evidence_identities": list(
+            result.failure_evidence_identities
+        ),
         "session_accounting": [
             {
                 "session_identity": item.session_identity,

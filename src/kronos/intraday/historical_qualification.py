@@ -50,6 +50,9 @@ HISTORICAL_CORPUS_ELIGIBILITY_IDENTITY = (
 HISTORICAL_OUTCOME_IDENTITY = (
     "KRONOS-INTRADAY-HISTORICAL-QUALIFICATION-OUTCOME-V0"
 )
+HISTORICAL_FAILURE_EVIDENCE_IDENTITY = (
+    "KRONOS-INTRADAY-HISTORICAL-FACTUAL-FAILURE-EVIDENCE-V0"
+)
 WO06H_CONTRACT_VERSION = "0.1.0"
 
 
@@ -104,6 +107,25 @@ class HistoricalFactFamily(StrEnum):
     DISTANCE_PATH_FACTS = "DISTANCE_PATH_FACTS"
 
 
+class HistoricalFailureClassification(StrEnum):
+    MISSING_EXPECTED_CANDLE = "MISSING_EXPECTED_CANDLE"
+    EXTRA_UNEXPECTED_CANDLE = "EXTRA_UNEXPECTED_CANDLE"
+    TIMESTAMP_OFFSET = "TIMESTAMP_OFFSET"
+    DUPLICATE_TIMESTAMP = "DUPLICATE_TIMESTAMP"
+    OUT_OF_ORDER_TIMESTAMP = "OUT_OF_ORDER_TIMESTAMP"
+    CANDLE_AFTER_OBSERVATION_BOUNDARY = (
+        "CANDLE_AFTER_OBSERVATION_BOUNDARY"
+    )
+    EXPECTED_BOUNDARY_UNAVAILABLE = "EXPECTED_BOUNDARY_UNAVAILABLE"
+    PROVIDER_ACQUISITION_FAILED = "PROVIDER_ACQUISITION_FAILED"
+
+
+class HistoricalProviderFailureFamily(StrEnum):
+    PROVIDER_REQUEST_FAILED = "PROVIDER_REQUEST_FAILED"
+    PROVIDER_RESPONSE_INVALID = "PROVIDER_RESPONSE_INVALID"
+    INSTRUMENT_RECORD_UNAVAILABLE = "INSTRUMENT_RECORD_UNAVAILABLE"
+
+
 class CorpusEligibilityState(StrEnum):
     ELIGIBLE_FOR_EXPLICIT_BINDING_REVIEW = "ELIGIBLE_FOR_EXPLICIT_BINDING_REVIEW"
     INELIGIBLE = "INELIGIBLE"
@@ -118,6 +140,118 @@ class HistoricalCalendarSource(Protocol):
     ) -> MarketDaySchedule | None:
         ...
 
+
+@dataclass(frozen=True, slots=True)
+class HistoricalFactualFailureEvidence:
+    evidence_identity: str
+    canonical_identity: str
+    target_session_identity: str
+    timeframe: IntradayTimeframe | None
+    expected_timestamp_count: int
+    actual_timestamp_count: int | None
+    classifications: tuple[HistoricalFailureClassification, ...]
+    mismatch_ordinal: int | None
+    observation_boundary: datetime
+    diagnosed_at: datetime
+    source_identity: str
+    provider_failure_family: HistoricalProviderFailureFamily | None
+    provenance: tuple[str, ...]
+    integrity_identity: str
+    schema_identity: str = HISTORICAL_FAILURE_EVIDENCE_IDENTITY
+    schema_version: str = WO06H_CONTRACT_VERSION
+
+    def __post_init__(self) -> None:
+        if (
+            not self.evidence_identity.startswith(
+                "INTRADAY-HISTORICAL-FACTUAL-FAILURE-"
+            )
+            or not _texts(
+                (
+                    self.canonical_identity,
+                    self.target_session_identity,
+                    self.source_identity,
+                )
+            )
+            or self.timeframe is not None
+            and type(self.timeframe) is not IntradayTimeframe
+            or type(self.expected_timestamp_count) is not int
+            or self.expected_timestamp_count < 0
+            or self.actual_timestamp_count is not None
+            and (
+                type(self.actual_timestamp_count) is not int
+                or self.actual_timestamp_count < 0
+            )
+            or not self.classifications
+            or any(
+                type(item) is not HistoricalFailureClassification
+                for item in self.classifications
+            )
+            or len(set(self.classifications)) != len(self.classifications)
+            or self.mismatch_ordinal is not None
+            and (
+                type(self.mismatch_ordinal) is not int
+                or self.mismatch_ordinal < 0
+            )
+            or not _aware(self.observation_boundary)
+            or not _aware(self.diagnosed_at)
+            or self.diagnosed_at < self.observation_boundary
+            or self.provider_failure_family is not None
+            and type(self.provider_failure_family)
+            is not HistoricalProviderFailureFamily
+            or not _texts(self.provenance)
+            or self.schema_identity != HISTORICAL_FAILURE_EVIDENCE_IDENTITY
+            or self.schema_version != WO06H_CONTRACT_VERSION
+        ):
+            raise HistoricalQualificationError(
+                HistoricalQualificationFailure.INPUT_INVALID
+            )
+        _verify(
+            self,
+            "INTRADAY-HISTORICAL-FACTUAL-FAILURE-",
+            "INTEGRITY-HISTORICAL-FACTUAL-FAILURE-",
+        )
+
+
+def create_historical_failure_evidence(
+    *,
+    canonical_identity: str,
+    target_session_identity: str,
+    timeframe: IntradayTimeframe | None,
+    expected_timestamp_count: int,
+    actual_timestamp_count: int | None,
+    classifications: tuple[HistoricalFailureClassification, ...],
+    mismatch_ordinal: int | None,
+    observation_boundary: datetime,
+    diagnosed_at: datetime,
+    source_identity: str,
+    provider_failure_family: HistoricalProviderFailureFamily | None,
+    provenance: tuple[str, ...],
+) -> HistoricalFactualFailureEvidence:
+    payload = {
+        "canonical_identity": canonical_identity,
+        "target_session_identity": target_session_identity,
+        "timeframe": timeframe,
+        "expected_timestamp_count": expected_timestamp_count,
+        "actual_timestamp_count": actual_timestamp_count,
+        "classifications": classifications,
+        "mismatch_ordinal": mismatch_ordinal,
+        "observation_boundary": observation_boundary,
+        "diagnosed_at": diagnosed_at,
+        "source_identity": source_identity,
+        "provider_failure_family": provider_failure_family,
+        "provenance": provenance,
+        "schema_identity": HISTORICAL_FAILURE_EVIDENCE_IDENTITY,
+        "schema_version": WO06H_CONTRACT_VERSION,
+    }
+    return HistoricalFactualFailureEvidence(
+        evidence_identity=_identity(
+            "INTRADAY-HISTORICAL-FACTUAL-FAILURE-", payload
+        ),
+        integrity_identity=_identity(
+            "INTEGRITY-HISTORICAL-FACTUAL-FAILURE-", payload
+        ),
+        **payload,
+    )
 
 @dataclass(frozen=True, slots=True)
 class HistoricalResearchSubject:
@@ -1178,6 +1312,40 @@ def _decode_historical_artifact(
             provenance=tuple(data["provenance"]),
             integrity_identity=data["integrity_identity"],
         )
+    if artifact_type == "HistoricalFactualFailureEvidence":
+        return HistoricalFactualFailureEvidence(
+            evidence_identity=data["evidence_identity"],
+            canonical_identity=data["canonical_identity"],
+            target_session_identity=data["target_session_identity"],
+            timeframe=(
+                None
+                if data["timeframe"] is None
+                else IntradayTimeframe(data["timeframe"])
+            ),
+            expected_timestamp_count=data["expected_timestamp_count"],
+            actual_timestamp_count=data["actual_timestamp_count"],
+            classifications=tuple(
+                HistoricalFailureClassification(item)
+                for item in data["classifications"]
+            ),
+            mismatch_ordinal=data["mismatch_ordinal"],
+            observation_boundary=datetime.fromisoformat(
+                data["observation_boundary"]
+            ),
+            diagnosed_at=datetime.fromisoformat(data["diagnosed_at"]),
+            source_identity=data["source_identity"],
+            provider_failure_family=(
+                None
+                if data["provider_failure_family"] is None
+                else HistoricalProviderFailureFamily(
+                    data["provider_failure_family"]
+                )
+            ),
+            provenance=tuple(data["provenance"]),
+            integrity_identity=data["integrity_identity"],
+            schema_identity=data["schema_identity"],
+            schema_version=data["schema_version"],
+        )
     if artifact_type == "HistoricalPreviousSessionFacts":
         narrow = qualification_artifact_from_document(
             {"artifact_type": "NarrowCprFact", "artifact": data["narrow_cpr"]}
@@ -1351,6 +1519,7 @@ def _artifact_coordinates(value: object) -> tuple[str, str]:
         HistoricalResearchSubjectSet: "subject_set_identity",
         HistoricalSubjectBinding: "binding_identity",
         HistoricalSessionSelection: "selection_identity",
+        HistoricalFactualFailureEvidence: "evidence_identity",
         HistoricalPreviousSessionFacts: "facts_identity",
         HistoricalTimeframeFacts: "fact_set_identity",
         HistoricalQualificationFactBundle: "bundle_identity",
@@ -1432,6 +1601,7 @@ def _aware(value: object) -> bool:
 __all__ = [
     "HISTORICAL_CORPUS_ELIGIBILITY_IDENTITY",
     "HISTORICAL_FACT_BUNDLE_IDENTITY",
+    "HISTORICAL_FAILURE_EVIDENCE_IDENTITY",
     "HISTORICAL_OUTCOME_IDENTITY",
     "HISTORICAL_RECONSTRUCTION_IDENTITY",
     "HISTORICAL_SUBJECT_SET_IDENTITY",
@@ -1442,8 +1612,11 @@ __all__ = [
     "HistoricalCorpusEligibility",
     "HistoricalEvidenceSource",
     "HistoricalFactFamily",
+    "HistoricalFactualFailureEvidence",
+    "HistoricalFailureClassification",
     "HistoricalOutcomeEvidence",
     "HistoricalPreviousSessionFacts",
+    "HistoricalProviderFailureFamily",
     "HistoricalQualificationError",
     "HistoricalQualificationFactBundle",
     "HistoricalQualificationFailure",
@@ -1457,6 +1630,7 @@ __all__ = [
     "assess_historical_corpus_eligibility",
     "create_historical_auxiliary_fact",
     "create_historical_fact_bundle",
+    "create_historical_failure_evidence",
     "create_historical_outcome_evidence",
     "create_historical_reconstruction",
     "create_historical_research_subject_set",

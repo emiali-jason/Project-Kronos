@@ -29,10 +29,12 @@ from kronos.intraday.historical_operation import (
 from kronos.intraday.historical_qualification import (
     HistoricalBindingAvailability,
     HistoricalCalendarSource,
+    HistoricalFailureClassification,
     HistoricalQualificationError,
     HistoricalQualificationFactBundle,
     HistoricalResearchSubjectSet,
     assess_historical_corpus_eligibility,
+    create_historical_failure_evidence,
     create_historical_reconstruction,
     create_historical_research_subject_set,
 )
@@ -99,9 +101,7 @@ class IntradayHistoricalQualificationOperationService:
         reconciliation: ReconciliationPublication,
         calendar: HistoricalCalendarSource,
         store: HistoricalQualificationStore,
-        source_factory: HistoricalSourceFactory = (
-            ProviderHistoricalQualificationFactualSource
-        ),
+        source_factory: HistoricalSourceFactory | None = None,
         clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
     ) -> None:
         if (
@@ -110,8 +110,9 @@ class IntradayHistoricalQualificationOperationService:
             or type(reconciliation) is not ReconciliationPublication
             or not callable(getattr(calendar, "schedule_for", None))
             or not callable(getattr(calendar, "previous_trading_schedule", None))
+            or not callable(getattr(calendar, "for_subject", None))
             or type(store) is not HistoricalQualificationStore
-            or not callable(source_factory)
+            or source_factory is not None and not callable(source_factory)
             or not callable(clock)
         ):
             raise ValueError("HISTORICAL_OPERATION_DEPENDENCY_INVALID")
@@ -120,8 +121,13 @@ class IntradayHistoricalQualificationOperationService:
         self._reconciliation = reconciliation
         self._calendar = calendar
         self._store = store
-        self._source_factory = source_factory
         self._clock = clock
+        self._source_factory = source_factory or (
+            lambda lease: ProviderHistoricalQualificationFactualSource(
+                lease,
+                clock=clock,
+            )
+        )
         self._lock = RLock()
         self._active_identity: str | None = None
         self._results: dict[str, HistoricalQualificationOperationResult] = {}
@@ -352,6 +358,7 @@ class IntradayHistoricalQualificationOperationService:
         unavailable_count = len(subjects) - len(eligible)
         reconstruction_ids: list[str] = []
         bundle_ids: list[str] = []
+        failure_evidence_ids: list[str] = []
         accounting: list[HistoricalSessionOperationAccounting] = []
         failures: Counter[str] = Counter()
         total_success = 0
@@ -366,42 +373,129 @@ class IntradayHistoricalQualificationOperationService:
             self._retain_and_verify(session.selection)
 
         for session in sessions:
-            stage_bundles: list[HistoricalQualificationFactBundle] = []
-            previous_facts = []
+            grouped_bundles: dict[
+                tuple[str, str, str, datetime],
+                tuple[HistoricalEodSession, list[HistoricalQualificationFactBundle]],
+            ] = {}
+            retained_selections: set[str] = set()
             session_failures = 0
             session_true = 0
             session_false = 0
             for subject in eligible:
+                canonical_identity = subject.binding.canonical_identity
+                if canonical_identity is None:
+                    raise HistoricalOperationError(
+                        HistoricalOperationFailure.INTEGRITY_INVALID
+                    )
                 try:
+                    subject_calendar = self._calendar.for_subject(
+                        canonical_identity=canonical_identity,
+                        domain_008_subject_identity=subject.sponsor_label,
+                    )
+                    subject_session = resolve_historical_eod_sessions(
+                        calendar=subject_calendar,
+                        requested=(session.request,),
+                        exchange=subject.exchange,
+                        provenance=(
+                            request.operation_identity,
+                            COMPLETED_SESSION_EOD_BOUNDARY_IDENTITY,
+                            canonical_identity,
+                        ),
+                        require_requested_session_identity=False,
+                    )[0]
+                    if (
+                        subject_session.selection.selection_identity
+                        not in retained_selections
+                    ):
+                        self._retain_and_verify(subject_session.selection)
+                        retained_selections.add(
+                            subject_session.selection.selection_identity
+                        )
                     acquisition = source.acquire(
                         subject=subject,
-                        session=session,
+                        session=subject_session,
                         requested_factual_families=(
                             request.requested_factual_families
                         ),
                     )
+                except (HistoricalQualificationError, ValueError):
+                    failures[HistoricalOperationFailure.SESSION_UNAVAILABLE.value] += 1
+                    session_failures += 1
+                    evidence = create_historical_failure_evidence(
+                        canonical_identity=canonical_identity,
+                        target_session_identity=session.request.session_identity,
+                        timeframe=None,
+                        expected_timestamp_count=0,
+                        actual_timestamp_count=None,
+                        classifications=(
+                            HistoricalFailureClassification.EXPECTED_BOUNDARY_UNAVAILABLE,
+                        ),
+                        mismatch_ordinal=None,
+                        observation_boundary=session.selection.observation_boundary,
+                        diagnosed_at=self._clock(),
+                        source_identity="DOMAIN-008:SUBJECT-AWARE-MARKET-SCHEDULE",
+                        provider_failure_family=None,
+                        provenance=(request.operation_identity,),
+                    )
+                    self._retain_and_verify(evidence)
+                    failure_evidence_ids.append(evidence.evidence_identity)
+                    continue
                 except HistoricalOperationError as error:
                     failures[error.failure.value] += 1
                     session_failures += 1
+                    evidence = error.evidence
+                    if evidence is None and error.failure is HistoricalOperationFailure.SESSION_UNAVAILABLE:
+                        evidence = create_historical_failure_evidence(
+                            canonical_identity=canonical_identity,
+                            target_session_identity=session.request.session_identity,
+                            timeframe=None,
+                            expected_timestamp_count=0,
+                            actual_timestamp_count=None,
+                            classifications=(
+                                HistoricalFailureClassification.EXPECTED_BOUNDARY_UNAVAILABLE,
+                            ),
+                            mismatch_ordinal=None,
+                            observation_boundary=session.selection.observation_boundary,
+                            diagnosed_at=self._clock(),
+                            source_identity="DOMAIN-008:SUBJECT-AWARE-MARKET-SCHEDULE",
+                            provider_failure_family=None,
+                            provenance=(request.operation_identity,),
+                        )
+                    if evidence is not None:
+                        self._retain_and_verify(evidence)
+                        failure_evidence_ids.append(evidence.evidence_identity)
                     continue
-                stage_bundles.append(acquisition.bundle)
-                previous_facts.append(acquisition.previous_session_facts)
+                self._retain_and_verify(acquisition.previous_session_facts)
+                self._retain_and_verify(acquisition.bundle)
+                group_key = (
+                    subject_session.selection.target_session_identity,
+                    subject_session.selection.previous_session_identity,
+                    subject_session.selection.observation_boundary_identity,
+                    subject_session.selection.observation_boundary,
+                )
+                group = grouped_bundles.setdefault(
+                    group_key,
+                    (subject_session, []),
+                )
+                group[1].append(acquisition.bundle)
                 if acquisition.previous_session_facts.narrow_cpr.narrow_cpr_kgs_v0:
                     session_true += 1
                 else:
                     session_false += 1
 
-            for value in (*previous_facts, *stage_bundles):
-                self._retain_and_verify(value)
-
-            if stage_bundles:
+            stage_bundles = tuple(
+                bundle
+                for _, bundles in grouped_bundles.values()
+                for bundle in bundles
+            )
+            for subject_session, group_bundles in grouped_bundles.values():
                 stage = HistoricalOperationStage.RECONSTRUCTION
                 reconstruction = create_historical_reconstruction(
                     subject_set=subject_set,
                     reconciliation_identity=self._reconciliation.publication_identity,
                     reconciliation_version=self._reconciliation.publication_version,
-                    session=session.selection,
-                    fact_bundles=tuple(stage_bundles),
+                    session=subject_session.selection,
+                    fact_bundles=tuple(group_bundles),
                     hypothesis_versions=(
                         (
                             NARROW_CPR_CALCULATION_IDENTITY,
@@ -466,6 +560,7 @@ class IntradayHistoricalQualificationOperationService:
             provider_request_count=source.total_provider_request_count,
             reconstruction_identities=tuple(reconstruction_ids),
             bundle_identities=tuple(bundle_ids),
+            failure_evidence_identities=tuple(failure_evidence_ids),
             session_accounting=tuple(accounting),
             observation_failure_counts=tuple(sorted(failures.items())),
             persistence_complete=True,
@@ -547,6 +642,7 @@ class IntradayHistoricalQualificationOperationService:
             provider_request_count=provider_request_count,
             reconstruction_identities=(),
             bundle_identities=(),
+            failure_evidence_identities=(),
             session_accounting=(),
             observation_failure_counts=(),
             persistence_complete=False,
@@ -586,6 +682,7 @@ class IntradayHistoricalQualificationOperationService:
             provider_request_count=0,
             reconstruction_identities=(),
             bundle_identities=(),
+            failure_evidence_identities=(),
             session_accounting=(),
             observation_failure_counts=(),
             persistence_complete=False,
@@ -632,6 +729,7 @@ def _artifact_identity(value: object) -> str:
         "HistoricalResearchSubjectSet": "subject_set_identity",
         "HistoricalSubjectBinding": "binding_identity",
         "HistoricalSessionSelection": "selection_identity",
+        "HistoricalFactualFailureEvidence": "evidence_identity",
         "HistoricalPreviousSessionFacts": "facts_identity",
         "HistoricalQualificationFactBundle": "bundle_identity",
         "HistoricalQualificationReconstruction": "reconstruction_identity",

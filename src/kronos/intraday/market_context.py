@@ -29,6 +29,7 @@ class CurrentMarketCalendarScheduleSource:
         *,
         observed_at: datetime,
         canonical_instrument_id: str | None = None,
+        canonical_subject_identity: str | None = None,
     ) -> None:
         if (
             type(publisher) is not MarketCalendarPublisher
@@ -40,11 +41,43 @@ class CurrentMarketCalendarScheduleSource:
                     or canonical_instrument_id != canonical_instrument_id.strip()
                 )
             )
+            or (
+                canonical_subject_identity is not None
+                and (
+                    not canonical_subject_identity
+                    or canonical_subject_identity
+                    != canonical_subject_identity.strip()
+                )
+            )
         ):
             raise ValueError("INTRADAY_MARKET_CALENDAR_ADAPTER_INVALID")
         self.publisher = publisher
         self.observed_at = observed_at
         self.canonical_instrument_id = canonical_instrument_id
+        self.canonical_subject_identity = canonical_subject_identity
+
+    def for_subject(
+        self,
+        *,
+        canonical_identity: str,
+        domain_008_subject_identity: str,
+    ) -> CurrentMarketCalendarScheduleSource:
+        """Bind one canonical subject to its governed DOMAIN-008 schedule key."""
+
+        if (
+            not canonical_identity
+            or canonical_identity != canonical_identity.strip()
+            or not domain_008_subject_identity
+            or domain_008_subject_identity
+            != domain_008_subject_identity.strip()
+        ):
+            raise ValueError("INTRADAY_MARKET_SUBJECT_UNAVAILABLE")
+        return CurrentMarketCalendarScheduleSource(
+            self.publisher,
+            observed_at=self.observed_at,
+            canonical_instrument_id=domain_008_subject_identity,
+            canonical_subject_identity=canonical_identity,
+        )
 
     def schedule_for(self, exchange: str, trading_date: date) -> MarketDaySchedule | None:
         if self.canonical_instrument_id is None:

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 from hashlib import sha256
 import json
@@ -19,10 +19,13 @@ from kronos.intraday.historical_operation import (
 )
 from kronos.intraday.historical_qualification import (
     HistoricalFactFamily,
+    HistoricalFailureClassification,
     HistoricalPreviousSessionFacts,
+    HistoricalProviderFailureFamily,
     HistoricalQualificationFactBundle,
     create_historical_auxiliary_fact,
     create_historical_fact_bundle,
+    create_historical_failure_evidence,
     create_historical_timeframe_facts,
     reconstruct_previous_session_facts,
 )
@@ -65,12 +68,22 @@ class HistoricalProviderFactAcquisition:
 class ProviderHistoricalQualificationFactualSource:
     """Sequential exact-identity acquisition through one minimized lease."""
 
-    def __init__(self, lease: ReadOnlyProviderLease) -> None:
-        if type(lease) is not ReadOnlyProviderLease or not lease.active:
+    def __init__(
+        self,
+        lease: ReadOnlyProviderLease,
+        *,
+        clock=lambda: datetime.now(timezone.utc),
+    ) -> None:
+        if (
+            type(lease) is not ReadOnlyProviderLease
+            or not lease.active
+            or not callable(clock)
+        ):
             raise HistoricalOperationError(
                 HistoricalOperationFailure.CONTEXT_UNAVAILABLE
             )
         self._lease = lease
+        self._clock = clock
         self._records: dict[str, tuple[InstrumentRecord, ...]] = {}
         self._instrument_record_requests = 0
         self._historical_requests = 0
@@ -108,12 +121,13 @@ class ProviderHistoricalQualificationFactualSource:
             raise HistoricalOperationError(
                 HistoricalOperationFailure.HISTORICAL_PREREQUISITE_UNAVAILABLE
             )
-        record = self._record(subject)
+        record = self._record(subject, session)
         candles_by_timeframe: dict[
             IntradayTimeframe, tuple[HistoricalCandle, ...]
         ] = {}
         for timeframe in HISTORICAL_OPERATION_TIMEFRAMES:
             candles_by_timeframe[timeframe] = self._candles(
+                subject=subject,
                 record=record,
                 timeframe=timeframe,
                 session=session,
@@ -138,14 +152,47 @@ class ProviderHistoricalQualificationFactualSource:
         )
         if len(previous_daily) != 1 or len(target_daily) != 1:
             raise HistoricalOperationError(
-                HistoricalOperationFailure.MANDATORY_TIMEFRAME_UNAVAILABLE
+                HistoricalOperationFailure.MANDATORY_TIMEFRAME_UNAVAILABLE,
+                evidence=self._evidence(
+                    subject=subject,
+                    session=session,
+                    timeframe=IntradayTimeframe.DAILY,
+                    expected_count=2,
+                    actual_count=len(previous_daily) + len(target_daily),
+                    classifications=(
+                        HistoricalFailureClassification.MISSING_EXPECTED_CANDLE
+                        if len(previous_daily) + len(target_daily) < 2
+                        else HistoricalFailureClassification.EXTRA_UNEXPECTED_CANDLE,
+                    ),
+                    mismatch_ordinal=min(
+                        len(previous_daily) + len(target_daily), 1
+                    ),
+                ),
             )
         if any(
             item.timestamp > session.selection.observation_boundary
             for item in (*previous_daily, *target_daily)
         ):
             raise HistoricalOperationError(
-                HistoricalOperationFailure.QUALIFICATION_LOOK_AHEAD_REJECTED
+                HistoricalOperationFailure.QUALIFICATION_LOOK_AHEAD_REJECTED,
+                evidence=self._evidence(
+                    subject=subject,
+                    session=session,
+                    timeframe=IntradayTimeframe.DAILY,
+                    expected_count=2,
+                    actual_count=len(previous_daily) + len(target_daily),
+                    classifications=(
+                        HistoricalFailureClassification.CANDLE_AFTER_OBSERVATION_BOUNDARY,
+                    ),
+                    mismatch_ordinal=next(
+                        index
+                        for index, item in enumerate(
+                            (*previous_daily, *target_daily)
+                        )
+                        if item.timestamp
+                        > session.selection.observation_boundary
+                    ),
+                ),
             )
 
         previous_identity = _candle_identity(
@@ -243,16 +290,34 @@ class ProviderHistoricalQualificationFactualSource:
             previous_session_facts=previous,
         )
 
-    def _record(self, subject: HistoricalOperationalSubject) -> InstrumentRecord:
+    def _record(
+        self,
+        subject: HistoricalOperationalSubject,
+        session: HistoricalEodSession,
+    ) -> InstrumentRecord:
         if subject.exchange not in self._records:
             self._instrument_record_requests += 1
             try:
                 self._records[subject.exchange] = self._lease.instrument_records(
                     subject.exchange
                 )
-            except Exception as error:
+            except Exception:
                 raise HistoricalOperationError(
-                    HistoricalOperationFailure.PROVIDER_ACQUISITION_FAILED
+                    HistoricalOperationFailure.PROVIDER_ACQUISITION_FAILED,
+                    evidence=self._evidence(
+                        subject=subject,
+                        session=session,
+                        timeframe=None,
+                        expected_count=1,
+                        actual_count=None,
+                        classifications=(
+                            HistoricalFailureClassification.PROVIDER_ACQUISITION_FAILED,
+                        ),
+                        mismatch_ordinal=None,
+                        provider_failure_family=(
+                            HistoricalProviderFailureFamily.INSTRUMENT_RECORD_UNAVAILABLE
+                        ),
+                    ),
                 ) from None
         matches = tuple(
             item
@@ -270,6 +335,7 @@ class ProviderHistoricalQualificationFactualSource:
     def _candles(
         self,
         *,
+        subject: HistoricalOperationalSubject,
         record: InstrumentRecord,
         timeframe: IntradayTimeframe,
         session: HistoricalEodSession,
@@ -281,6 +347,12 @@ class ProviderHistoricalQualificationFactualSource:
         )
         end = session.selection.observation_boundary
         self._historical_requests += 1
+        expected = (
+            ()
+            if timeframe is IntradayTimeframe.DAILY
+            else expected_candle_boundaries(session.target_schedule, timeframe)
+        )
+        expected_count = 2 if timeframe is IntradayTimeframe.DAILY else len(expected)
         try:
             candles = tuple(
                 self._lease.historical_candles(
@@ -294,18 +366,42 @@ class ProviderHistoricalQualificationFactualSource:
             )
         except Exception:
             raise HistoricalOperationError(
-                HistoricalOperationFailure.PROVIDER_ACQUISITION_FAILED
+                HistoricalOperationFailure.PROVIDER_ACQUISITION_FAILED,
+                evidence=self._evidence(
+                    subject=subject,
+                    session=session,
+                    timeframe=timeframe,
+                    expected_count=expected_count,
+                    actual_count=None,
+                    classifications=(
+                        HistoricalFailureClassification.PROVIDER_ACQUISITION_FAILED,
+                    ),
+                    mismatch_ordinal=None,
+                    provider_failure_family=(
+                        HistoricalProviderFailureFamily.PROVIDER_REQUEST_FAILED
+                    ),
+                ),
             ) from None
         if any(type(item) is not HistoricalCandle for item in candles):
             raise HistoricalOperationError(
-                HistoricalOperationFailure.PROVIDER_ACQUISITION_FAILED
+                HistoricalOperationFailure.PROVIDER_ACQUISITION_FAILED,
+                evidence=self._evidence(
+                    subject=subject,
+                    session=session,
+                    timeframe=timeframe,
+                    expected_count=expected_count,
+                    actual_count=len(candles),
+                    classifications=(
+                        HistoricalFailureClassification.PROVIDER_ACQUISITION_FAILED,
+                    ),
+                    mismatch_ordinal=None,
+                    provider_failure_family=(
+                        HistoricalProviderFailureFamily.PROVIDER_RESPONSE_INVALID
+                    ),
+                ),
             )
         if timeframe is IntradayTimeframe.DAILY:
             return candles
-        expected = expected_candle_boundaries(
-            session.target_schedule,
-            timeframe,
-        )
         expected_starts = tuple(item.start for item in expected)
         actual_starts = tuple(item.timestamp for item in candles)
         if (
@@ -313,16 +409,142 @@ class ProviderHistoricalQualificationFactualSource:
             or actual_starts != expected_starts
             or any(item.end > session.selection.observation_boundary for item in expected)
         ):
+            classifications, mismatch_ordinal = _classify_mismatch(
+                expected_starts=expected_starts,
+                actual_starts=actual_starts,
+                observation_boundary=session.selection.observation_boundary,
+                expected_extends_beyond_boundary=any(
+                    item.end > session.selection.observation_boundary
+                    for item in expected
+                ),
+            )
             failure = (
                 HistoricalOperationFailure.QUALIFICATION_LOOK_AHEAD_REJECTED
-                if any(
-                    item.timestamp > session.selection.observation_boundary
-                    for item in candles
-                )
+                if HistoricalFailureClassification.CANDLE_AFTER_OBSERVATION_BOUNDARY
+                in classifications
                 else HistoricalOperationFailure.INCOMPLETE_CANDLE_NOT_AUTHORIZED
             )
-            raise HistoricalOperationError(failure)
+            raise HistoricalOperationError(
+                failure,
+                evidence=self._evidence(
+                    subject=subject,
+                    session=session,
+                    timeframe=timeframe,
+                    expected_count=len(expected_starts),
+                    actual_count=len(actual_starts),
+                    classifications=classifications,
+                    mismatch_ordinal=mismatch_ordinal,
+                ),
+            )
         return candles
+
+    def _evidence(
+        self,
+        *,
+        subject: HistoricalOperationalSubject,
+        session: HistoricalEodSession | None,
+        timeframe: IntradayTimeframe | None,
+        expected_count: int,
+        actual_count: int | None,
+        classifications: tuple[HistoricalFailureClassification, ...],
+        mismatch_ordinal: int | None,
+        provider_failure_family: HistoricalProviderFailureFamily | None = None,
+    ):
+        canonical_identity = subject.binding.canonical_identity
+        if canonical_identity is None:
+            raise HistoricalOperationError(
+                HistoricalOperationFailure.INTEGRITY_INVALID
+            )
+        boundary = (
+            self._clock()
+            if session is None
+            else session.selection.observation_boundary
+        )
+        return create_historical_failure_evidence(
+            canonical_identity=canonical_identity,
+            target_session_identity=(
+                "INSTRUMENT-RECORD-RESOLUTION"
+                if session is None
+                else session.target_schedule.session_id
+            ),
+            timeframe=timeframe,
+            expected_timestamp_count=expected_count,
+            actual_timestamp_count=actual_count,
+            classifications=classifications,
+            mismatch_ordinal=mismatch_ordinal,
+            observation_boundary=boundary,
+            diagnosed_at=self._clock(),
+            source_identity=HISTORICAL_FACTUAL_SOURCE_IDENTITY,
+            provider_failure_family=provider_failure_family,
+            provenance=(
+                HISTORICAL_OPERATION_IDENTITY,
+                subject.reconciliation_member_identity,
+            ),
+        )
+
+
+def _classify_mismatch(
+    *,
+    expected_starts: tuple[datetime, ...],
+    actual_starts: tuple[datetime, ...],
+    observation_boundary: datetime,
+    expected_extends_beyond_boundary: bool,
+) -> tuple[tuple[HistoricalFailureClassification, ...], int | None]:
+    classifications: list[HistoricalFailureClassification] = []
+    if not expected_starts or expected_extends_beyond_boundary:
+        classifications.append(
+            HistoricalFailureClassification.EXPECTED_BOUNDARY_UNAVAILABLE
+        )
+    if len(set(actual_starts)) != len(actual_starts):
+        classifications.append(
+            HistoricalFailureClassification.DUPLICATE_TIMESTAMP
+        )
+    if any(
+        current < previous
+        for previous, current in zip(actual_starts, actual_starts[1:])
+    ):
+        classifications.append(
+            HistoricalFailureClassification.OUT_OF_ORDER_TIMESTAMP
+        )
+    if any(item > observation_boundary for item in actual_starts):
+        classifications.append(
+            HistoricalFailureClassification.CANDLE_AFTER_OBSERVATION_BOUNDARY
+        )
+    if set(expected_starts) - set(actual_starts):
+        classifications.append(
+            HistoricalFailureClassification.MISSING_EXPECTED_CANDLE
+        )
+    if set(actual_starts) - set(expected_starts):
+        classifications.append(
+            HistoricalFailureClassification.EXTRA_UNEXPECTED_CANDLE
+        )
+    deltas = tuple(
+        actual - expected
+        for expected, actual in zip(expected_starts, actual_starts)
+    )
+    if (
+        len(expected_starts) == len(actual_starts)
+        and expected_starts != actual_starts
+        and deltas
+        and len(set(deltas)) == 1
+        and deltas[0].total_seconds() != 0
+    ):
+        classifications.append(HistoricalFailureClassification.TIMESTAMP_OFFSET)
+    if not classifications:
+        classifications.append(
+            HistoricalFailureClassification.EXPECTED_BOUNDARY_UNAVAILABLE
+        )
+    mismatch_ordinal = next(
+        (
+            index
+            for index, pair in enumerate(zip(expected_starts, actual_starts))
+            if pair[0] != pair[1]
+        ),
+        min(len(expected_starts), len(actual_starts))
+        if expected_starts != actual_starts
+        else None,
+    )
+    return tuple(classifications), mismatch_ordinal
 
 
 def _candle_identity(

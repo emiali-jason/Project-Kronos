@@ -633,7 +633,20 @@ state mutation is introduced. Real acquisition remains separately authorized.
 The full seam is recorded in [WO-06HA Historical Research Operational
 Seam](KRONOS-INTRADAY-WO-06HA-HISTORICAL-RESEARCH-OPERATIONAL-SEAM.md).
 
-## 27. References
+## 27. Deferred multi-refresh analysis-run requirement
+
+WO-06HJ records, but does not commission, the Sponsor requirement that every
+future Refresh Analysis creates a new immutable governed analysis run at the
+latest completed authorized candle boundary. Probables are
+observation-boundary-specific and may change during the same trading day.
+Earlier analysis runs remain immutable and inspectable.
+
+A later refresh must not rewrite an already-open PAPER or LIVE trade
+lifecycle. Commissioning belongs to WO-06 Part 3/runtime work and its
+downstream lifecycle architecture; WO-06HJ introduces no refresh operation,
+Probable admission, trade mutation, or lifecycle authority.
+
+## 28. References
 
 - [Intraday Shared-File Change Rule](../../../engineering/INTRADAY-SHARED-FILE-CHANGE-RULE.md)
 - [Platform Constitution](../../platform/PLATFORM-000-CONSTITUTION.md)
