@@ -12,6 +12,7 @@ from datetime import datetime
 from enum import StrEnum
 from hashlib import sha256
 import json
+from collections.abc import Mapping
 from typing import Iterable
 
 from kronos.intraday.contracts import IntradayTimeframe
@@ -588,6 +589,149 @@ def create_discovery_scope_run(
     )
 
 
+def create_discovery_runtime_run(
+    *,
+    reconciliation: ReconciliationPublication,
+    expected_universe_identity: str,
+    expected_universe_version: str,
+    expected_reconciliation_identity: str,
+    expected_reconciliation_version: str,
+    market_session_identity: str,
+    market_session_boundary_identity: str,
+    observation_boundary: datetime,
+    machine_fact_bundles: Mapping[str, NativeDiscoveryMachineFactBundle],
+    factual_failures: Mapping[str, DiscoveryReason],
+) -> NativeDiscoveryRun:
+    """Seal one complete runtime run without applying admission methodology."""
+
+    if type(reconciliation) is not ReconciliationPublication:
+        raise DiscoveryError(DiscoveryFailure.RECONCILIATION_VERSION_UNAVAILABLE)
+    if (reconciliation.universe_identity, reconciliation.universe_version) != (
+        expected_universe_identity,
+        expected_universe_version,
+    ):
+        raise DiscoveryError(DiscoveryFailure.UNIVERSE_VERSION_UNAVAILABLE)
+    if (
+        reconciliation.publication_identity,
+        reconciliation.publication_version,
+    ) != (expected_reconciliation_identity, expected_reconciliation_version):
+        raise DiscoveryError(DiscoveryFailure.RECONCILIATION_VERSION_UNAVAILABLE)
+    if not _aware(observation_boundary):
+        raise DiscoveryError(DiscoveryFailure.OBSERVATION_BOUNDARY_INVALID)
+    if not _text(market_session_identity) or not _text(
+        market_session_boundary_identity
+    ):
+        raise DiscoveryError(DiscoveryFailure.MARKET_SESSION_UNAVAILABLE)
+    if not isinstance(machine_fact_bundles, Mapping) or not isinstance(
+        factual_failures, Mapping
+    ):
+        raise DiscoveryError(DiscoveryFailure.INTEGRITY_INVALID)
+
+    eligible = {
+        item.universe_member_identity: item
+        for item in reconciliation.members
+        if item.dimensions.machine_fact_consumability is Availability.AVAILABLE
+    }
+    supplied = set(machine_fact_bundles)
+    failed = set(factual_failures)
+    if (
+        supplied & failed
+        or supplied | failed != set(eligible)
+        or any(type(reason) is not DiscoveryReason for reason in factual_failures.values())
+        or any(
+            type(bundle) is not NativeDiscoveryMachineFactBundle
+            or bundle.canonical_identity != eligible[member_id].canonical_identity
+            or bundle.universe_identity != reconciliation.universe_identity
+            or bundle.universe_version != reconciliation.universe_version
+            or bundle.reconciliation_identity != reconciliation.publication_identity
+            or bundle.reconciliation_version != reconciliation.publication_version
+            or bundle.market_session_identity != market_session_identity
+            or bundle.market_session_boundary_identity
+            != market_session_boundary_identity
+            or bundle.observation_boundary != observation_boundary
+            for member_id, bundle in machine_fact_bundles.items()
+        )
+    ):
+        raise DiscoveryError(DiscoveryFailure.INTEGRITY_INVALID)
+
+    accounting = DiscoveryRunAccounting(
+        universe_members=len(reconciliation.members),
+        factually_evaluable=len(machine_fact_bundles),
+        prerequisite_unavailable=sum(
+            item.dimensions.machine_fact_consumability is Availability.UNAVAILABLE
+            for item in reconciliation.members
+        ),
+        evaluated=0,
+        candidate_results=0,
+        factual_failures=len(factual_failures),
+        other_governed_unavailable=sum(
+            item.dimensions.machine_fact_consumability
+            not in {Availability.AVAILABLE, Availability.UNAVAILABLE}
+            for item in reconciliation.members
+        ),
+    )
+    run_identity = _identity(
+        "INTRADAY-DISCOVERY-RUN",
+        _run_identity_values(
+            universe_identity=reconciliation.universe_identity,
+            universe_version=reconciliation.universe_version,
+            reconciliation_identity=reconciliation.publication_identity,
+            reconciliation_version=reconciliation.publication_version,
+            market_session_identity=market_session_identity,
+            market_session_boundary_identity=market_session_boundary_identity,
+            observation_boundary=observation_boundary,
+            accounting=accounting,
+            member_identities=tuple(
+                item.universe_member_identity for item in reconciliation.members
+            ),
+        ),
+    )
+    results = tuple(
+        _runtime_result(
+            run_identity=run_identity,
+            member=member,
+            observation_boundary=observation_boundary,
+            bundle=machine_fact_bundles.get(member.universe_member_identity),
+            factual_failure=factual_failures.get(member.universe_member_identity),
+        )
+        for member in reconciliation.members
+    )
+    values = {
+        "universe_identity": reconciliation.universe_identity,
+        "universe_version": reconciliation.universe_version,
+        "universe_integrity_identity": reconciliation.universe_integrity_identity,
+        "reconciliation_identity": reconciliation.publication_identity,
+        "reconciliation_version": reconciliation.publication_version,
+        "reconciliation_integrity_identity": reconciliation.integrity_identity,
+        "machine_fact_bundle_schema": NATIVE_DISCOVERY_MACHINE_FACT_BUNDLE,
+        "market_session_identity": market_session_identity,
+        "market_session_boundary_identity": market_session_boundary_identity,
+        "observation_boundary": observation_boundary,
+        "accounting": accounting,
+        "results": results,
+        "source_identities": (
+            reconciliation.universe_integrity_identity,
+            reconciliation.integrity_identity,
+            market_session_boundary_identity,
+        ),
+        "provenance": (
+            "KRONOS-INTRADAY-WO-05",
+            "Governed completed factual evidence only",
+            "Candidate admission methodology not commissioned",
+        ),
+        "run_identity": run_identity,
+        "contract_identity": NATIVE_DISCOVERY_CONTRACT,
+        "contract_version": NATIVE_DISCOVERY_VERSION,
+    }
+    return NativeDiscoveryRun(
+        **values,
+        integrity_identity=_identity(
+            "INTRADAY-DISCOVERY-RUN-INTEGRITY",
+            _discovery_run_payload_from_values(values),
+        ),
+    )
+
+
 def discovery_result_payload(
     value: DiscoveryMemberResult, *, include_identities: bool = True
 ) -> dict[str, object]:
@@ -656,6 +800,63 @@ def machine_fact_bundle_payload(
     if include_identity:
         payload["bundle_identity"] = value.bundle_identity
     return payload
+
+
+def machine_fact_bundle_bytes(value: NativeDiscoveryMachineFactBundle) -> bytes:
+    return _encode(machine_fact_bundle_payload(value))
+
+
+def parse_machine_fact_bundle(
+    encoded: bytes,
+) -> NativeDiscoveryMachineFactBundle:
+    try:
+        item = json.loads(encoded)
+        value = NativeDiscoveryMachineFactBundle(
+            canonical_identity=item["canonical_identity"],
+            universe_identity=item["universe_identity"],
+            universe_version=item["universe_version"],
+            reconciliation_identity=item["reconciliation_identity"],
+            reconciliation_version=item["reconciliation_version"],
+            market_session_identity=item["market_session_identity"],
+            market_session_boundary_identity=item[
+                "market_session_boundary_identity"
+            ],
+            observation_boundary=datetime.fromisoformat(
+                item["observation_boundary"]
+            ),
+            evidence=tuple(
+                MachineFactEvidence(
+                    family=FactFamily(evidence["family"]),
+                    requirement=FactRequirement(evidence["requirement"]),
+                    evidence_identity=evidence["evidence_identity"],
+                    fact_version=evidence["fact_version"],
+                    observed_at=datetime.fromisoformat(evidence["observed_at"]),
+                    timeframe=(
+                        None
+                        if evidence["timeframe"] is None
+                        else IntradayTimeframe(evidence["timeframe"])
+                    ),
+                    completed_candle=evidence["completed_candle"],
+                )
+                for evidence in item["evidence"]
+            ),
+            source_identities=tuple(item["source_identities"]),
+            provenance=tuple(item["provenance"]),
+            bundle_identity=item["bundle_identity"],
+            schema_identity=item["schema_identity"],
+            bundle_version=item["bundle_version"],
+        )
+    except (
+        KeyError,
+        TypeError,
+        ValueError,
+        json.JSONDecodeError,
+        DiscoveryError,
+    ) as error:
+        raise DiscoveryError(DiscoveryFailure.INTEGRITY_INVALID) from error
+    if machine_fact_bundle_bytes(value) != encoded:
+        raise DiscoveryError(DiscoveryFailure.INTEGRITY_INVALID)
+    return value
 
 
 def parse_discovery_result(encoded: bytes) -> DiscoveryMemberResult:
@@ -761,6 +962,45 @@ def _scope_result(*, run_identity: str, member: object, observation_boundary: da
         evaluability=FactualEvaluability.PREREQUISITE_UNAVAILABLE,
         candidate_state=CandidateState.NOT_EVALUATED_DUE_TO_PREREQUISITE,
         reasons=(reason,),
+    )
+
+
+def _runtime_result(
+    *,
+    run_identity: str,
+    member: object,
+    observation_boundary: datetime,
+    bundle: NativeDiscoveryMachineFactBundle | None,
+    factual_failure: DiscoveryReason | None,
+) -> DiscoveryMemberResult:
+    if bundle is not None:
+        return create_discovery_result(
+            run_identity=run_identity,
+            universe_member_identity=member.universe_member_identity,
+            sponsor_label=member.sponsor_label,
+            canonical_identity=member.canonical_identity,
+            observation_boundary=observation_boundary,
+            machine_fact_bundle_identity=bundle.bundle_identity,
+            evaluability=FactualEvaluability.FACTUALLY_EVALUABLE,
+            candidate_state=CandidateState.NOT_EVALUATED,
+            reasons=(DiscoveryReason.FACTUAL_PATH_AVAILABLE,),
+        )
+    if factual_failure is not None:
+        return create_discovery_result(
+            run_identity=run_identity,
+            universe_member_identity=member.universe_member_identity,
+            sponsor_label=member.sponsor_label,
+            canonical_identity=member.canonical_identity,
+            observation_boundary=observation_boundary,
+            machine_fact_bundle_identity=None,
+            evaluability=FactualEvaluability.FACTUAL_FAILURE,
+            candidate_state=CandidateState.NOT_EVALUATED_DUE_TO_FACTUAL_FAILURE,
+            reasons=(factual_failure,),
+        )
+    return _scope_result(
+        run_identity=run_identity,
+        member=member,
+        observation_boundary=observation_boundary,
     )
 
 
@@ -1046,11 +1286,14 @@ __all__ = [
     "OPTIONAL_TELEMETRY_FACT_FAMILIES",
     "STRUCTURAL_TIMEFRAMES",
     "create_discovery_result",
+    "create_discovery_runtime_run",
     "create_discovery_scope_run",
     "create_machine_fact_bundle",
     "discovery_result_bytes",
     "discovery_run_bytes",
     "machine_fact_bundle_payload",
+    "machine_fact_bundle_bytes",
+    "parse_machine_fact_bundle",
     "parse_discovery_result",
     "parse_discovery_run",
 ]

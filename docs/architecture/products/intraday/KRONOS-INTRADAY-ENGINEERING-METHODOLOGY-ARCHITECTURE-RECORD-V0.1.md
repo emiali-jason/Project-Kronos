@@ -496,7 +496,77 @@ implementation stage. Discovery does not create Analytical Promotion,
 Trade Construction, Risk, Entry Timing, execution eligibility or broker
 authority.
 
-## 21. References
+## 21. WO-05 runtime and Sponsor projection record
+
+WO-05 implements the published non-threshold Native Discovery contract through
+an Intraday-owned coordinator, immutable bundle/result/run persistence and a
+read-only application snapshot. The existing product route seam is sufficient;
+no shared Browser server or shared Browser renderer change is required.
+
+The runtime is universe-driven and isolates per-member factual failure. The
+current governed accounting remains 98 members with 93 pre-evaluable factual
+paths and five explicit prerequisite-unavailable MCX results. Factual bundle
+success preserves `NOT_EVALUATED` while admission methodology is deferred.
+
+The main page follows `MAIN PAGE = TRIAGE`, using stable canonical presentation
+ordering without ranking meaning. Detail routes explain governed evidence. The
+Browser derives no machine fact or analytical state. Current failure cannot
+replace the last successful run.
+
+Controlled fixture evidence establishes 93 bundle-success paths, 372
+four-timeframe fact requests, deterministic restart reconstruction and bounded
+projection size. It establishes no production latency threshold. No real
+Provider operation was performed. The separately governed next engineering
+dependency is `DISCOVERY_OPERATIONAL_INVOCATION_SEAM_REQUIRED`; WO-06 remains
+held until WO-05 review/publication and controlled real operational proof.
+
+## 22. WO-05A operational invocation amendment
+
+WO-05A closes the engineering invocation seam with
+`KRONOS-INTRADAY-DISCOVERY-OPERATION-SERVICE-V0 / 0.1.0`. One explicit
+Intraday-owned operation verifies the actual shared DOMAIN-006 lifecycle,
+acquires a minimized `INSTRUMENTS + HISTORICAL_DATA` lease, builds the generic
+93-member factual source, invokes the existing Discovery runtime, verifies
+immutable persistence and updates the application snapshot. It creates no
+second Provider context, Browser command endpoint, automatic startup operation
+or retry.
+
+The operation binds a composite of all eligible subject-scoped DOMAIN-008
+sessions and one observation boundary. Five MCX prerequisite members remain
+outside Provider acquisition. Concurrent operations fail closed, duplicate
+completed identity is idempotent, and global failure preserves the last
+successful run.
+
+The CA successor-universe decision is recorded for a separate bounded work
+order: V1/1.0.0 stays immutable at 98, while a later governed successor may use
+publication-driven non-empty variable cardinality. WO-05A implements no such
+contract change. Candidate methodology and all downstream authority remain
+deferred.
+
+## 23. WO-05B bounded operational control amendment
+
+WO-05B freezes the remaining defect as
+`DISCOVERY_OPERATIONAL_INVOCATION_SURFACE_UNAVAILABLE` and closes it with the
+Intraday-owned
+`KRONOS-INTRADAY-DISCOVERY-OPERATIONAL-CONTROL-V0 / 0.1.0`. The loopback
+Browser exposes only `GET /control/intraday-discovery/status` and
+`POST /control/intraday-discovery`. GET is side-effect free. POST accepts one
+bounded request label and timezone-aware observation boundary, then invokes the
+already-composed WO-05A service inside the existing KRONOS process.
+
+This is an explicit shared-file exception under the Intraday Shared-File Change
+Rule. `kronos.browser.server` supplies only bounded HTTP transport and
+`tools.kronos_browser.py` injects the Intraday-owned control over the exact
+shared DOMAIN-006 runtime already used by Swing and Platform commissioning.
+No generic action framework, second Provider context, automatic authentication,
+startup operation or Sponsor trading control is introduced.
+
+The candidate is ready for a separately authorized controlled real Discovery
+run after review, publication and restart. Authentication is required only if
+the actual shared context is not active. No real Provider acquisition,
+authentication or restart occurred in WO-05B.
+
+## 24. References
 
 - [Intraday Shared-File Change Rule](../../../engineering/INTRADAY-SHARED-FILE-CHANGE-RULE.md)
 - [Platform Constitution](../../platform/PLATFORM-000-CONSTITUTION.md)
@@ -510,3 +580,6 @@ authority.
 - [Contract/State Ownership Registry](KRONOS-INTRADAY-CONTRACT-STATE-OWNERSHIP-REGISTRY.md)
 - [Deferred Decision Register](KRONOS-INTRADAY-DEFERRED-DECISION-REGISTER.md)
 - [Native Discovery V0 Contract](KRONOS-INTRADAY-NATIVE-DISCOVERY-V0-CONTRACT.md)
+- [WO-05 Native Discovery Runtime](KRONOS-INTRADAY-WO-05-NATIVE-DISCOVERY-RUNTIME.md)
+- [WO-05A Operational Invocation](KRONOS-INTRADAY-WO-05A-OPERATIONAL-INVOCATION.md)
+- [WO-05B Bounded Operational Control](KRONOS-INTRADAY-WO-05B-BOUNDED-OPERATIONAL-CONTROL.md)

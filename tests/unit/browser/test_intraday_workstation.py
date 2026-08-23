@@ -148,15 +148,18 @@ def test_intraday_route_renders_governed_evidence_without_trading_conclusion(
         thread.join(timeout=2)
 
 
-def test_intraday_route_fails_closed_when_publications_or_selection_are_absent(
+def test_intraday_route_presents_governed_universe_before_first_runtime_run(
     tmp_path: Path,
 ) -> None:
     server, thread = _server(tmp_path)
     try:
         status, rendered = _request(server, "/intraday")
         assert status == 200
-        assert "UNAVAILABLE — no governed DOMAIN-001 publication" in rendered
-        assert "No retained governed composition" not in rendered
+        assert "98" in rendered
+        assert "93" in rendered
+        assert "5" in rendered
+        assert "NO SUCCESSFUL DISCOVERY RUN AVAILABLE" in rendered
+        assert "UNAVAILABLE — no governed DOMAIN-001 publication" not in rendered
     finally:
         server.shutdown()
         server.server_close()

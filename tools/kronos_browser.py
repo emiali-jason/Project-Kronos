@@ -13,6 +13,9 @@ from kronos.application.provider_instrument_master_operation import (
 from kronos.application.swing_opportunities import SwingOpportunitiesApplication
 from kronos.application.intraday_runtime import create_intraday_runtime
 from kronos.browser.server import create_browser_server
+from kronos.browser.intraday_discovery_control import (
+    IntradayDiscoveryOperationalControl,
+)
 from kronos.browser.restart_control import BrowserBackendRestartControl
 from kronos.market.calendar import MarketCalendarPublisher
 from kronos.intraday.universe import load_intraday_universe_publication
@@ -65,6 +68,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         }),
     )
     intraday_runtime = create_intraday_runtime(shared_provider_runtime)
+    intraday_discovery_control = IntradayDiscoveryOperationalControl(
+        intraday_runtime.discovery_operation,
+        intraday_runtime.discovery_application,
+    )
     provider_instrument_master_operation = (
         ProviderInstrumentMasterOperationalComposition(
             shared_provider_runtime,
@@ -92,6 +99,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             provider_instrument_master_operation=(
                 provider_instrument_master_operation
             ),
+            intraday_discovery_control=intraday_discovery_control,
         )
     except Exception:
         restart_control.remove()
