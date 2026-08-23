@@ -14,6 +14,7 @@ from kronos.application.intraday_historical_operation import (
     IntradayHistoricalQualificationHarness,
     IntradayHistoricalQualificationOperationService,
 )
+from kronos.application.intraday_runtime import create_intraday_runtime
 from kronos.intraday import historical_operation, historical_source
 from kronos.intraday.contracts import IntradayTimeframe
 from kronos.intraday.historical_operation import (
@@ -267,6 +268,39 @@ def _request(
         requested_outcome_families=outcomes,
         requested_at=requested_at,
         provenance=("WO-06HA-CONTROLLED-FIXTURE",),
+    )
+
+
+def _repository_request(
+    *,
+    dates: tuple[date, ...] = (date(2026, 8, 17),),
+    maximum: int = 373,
+    requested_at: datetime = NOW,
+    timeframes: tuple[IntradayTimeframe, ...] = HISTORICAL_OPERATION_TIMEFRAMES,
+):
+    universe = load_intraday_universe_publication()
+    return create_historical_operation_request(
+        universe_identity=universe.publication_identity,
+        universe_version=universe.publication_version,
+        universe_integrity_identity=universe.integrity_identity,
+        sessions=tuple(
+            HistoricalOperationSessionRequest(
+                day,
+                (
+                    "KRONOS-NSE-CAPITAL-MARKET-2022-2026:2026.1.2:"
+                    f"{day.isoformat()}:REGULAR"
+                ),
+            )
+            for day in dates
+        ),
+        boundary_family_identity=COMPLETED_SESSION_EOD_BOUNDARY_IDENTITY,
+        boundary_family_version=COMPLETED_SESSION_EOD_BOUNDARY_VERSION,
+        timeframes=timeframes,
+        maximum_provider_requests=maximum,
+        requested_factual_families=REQUIRED_HISTORICAL_FACT_FAMILIES,
+        requested_outcome_families=(),
+        requested_at=requested_at,
+        provenance=("WO-06HC-COMPOSED-CONTROLLED-FIXTURE",),
     )
 
 
@@ -666,3 +700,217 @@ def test_existing_store_remains_explicit_identity_only_and_fail_closed(tmp_path:
             artifact_identity="MISSING-EXPLICIT-IDENTITY",
         )
     assert missing.value.failure is HistoricalQualificationFailure.ARTIFACT_UNAVAILABLE
+
+
+def test_runtime_composes_passive_typed_historical_invocation_on_shared_runtime(
+    tmp_path: Path,
+) -> None:
+    shared, runtime, factory_calls = _shared()
+    capability = _HistoricalCapability()
+    runtime.capability = capability
+
+    composition = create_intraday_runtime(
+        shared,
+        evidence_root=tmp_path.resolve(),
+        clock=lambda: NOW,
+    )
+
+    assert type(composition.historical_operation) is (
+        IntradayHistoricalQualificationOperationService
+    )
+    assert type(composition.historical_invocation) is (
+        IntradayHistoricalQualificationHarness
+    )
+    assert composition.historical_operation._runtime is shared
+    assert composition.historical_invocation._operation is (
+        composition.historical_operation
+    )
+    assert composition.discovery_operation._runtime is shared
+    assert composition.historical_operation.actual_context_state == "ABSENT"
+    assert composition.historical_operation.last_result is None
+    assert composition.historical_operation.active_operation_identity is None
+    assert capability.calls == 0
+    assert runtime.begin_count == 0
+    assert factory_calls == []
+    assert shared.active_lease_count == 0
+
+    with pytest.raises(HistoricalOperationError) as captured:
+        composition.historical_invocation.execute(  # type: ignore[arg-type]
+            {"symbol": "RELIANCE", "timeframe": "5minute"}
+        )
+    assert captured.value.failure is HistoricalOperationFailure.REQUEST_INVALID
+    assert capability.calls == 0
+
+    ceiling = inspect.signature(create_historical_operation_request).parameters[
+        "maximum_provider_requests"
+    ]
+    assert ceiling.default is inspect.Parameter.empty
+
+
+def test_composed_context_absent_and_expired_fail_closed_without_provider(
+    tmp_path: Path,
+) -> None:
+    shared, runtime, factory_calls = _shared()
+    capability = _HistoricalCapability()
+    runtime.capability = capability
+    composition = create_intraday_runtime(
+        shared,
+        evidence_root=tmp_path.resolve(),
+        clock=lambda: NOW,
+    )
+
+    absent = composition.historical_invocation.execute(_repository_request())
+    assert absent.state is HistoricalOperationState.FAILED
+    assert absent.failure is HistoricalOperationFailure.CONTEXT_UNAVAILABLE
+    assert absent.context_state == "ABSENT"
+    assert capability.calls == 0 and factory_calls == []
+
+    _authenticate(shared)
+    runtime.context_state = AuthenticatedContextState.EXPIRED
+    expired = composition.historical_invocation.execute(
+        _repository_request(requested_at=NOW + timedelta(seconds=1))
+    )
+    assert expired.state is HistoricalOperationState.FAILED
+    assert expired.failure is HistoricalOperationFailure.CONTEXT_EXPIRED
+    assert expired.context_state == "EXPIRED"
+    assert capability.calls == 0
+    assert len(factory_calls) == 1 and runtime.begin_count == 1
+
+
+def test_composed_fixture_completes_persists_reloads_and_is_idempotent(
+    tmp_path: Path,
+) -> None:
+    shared, runtime, factory_calls = _shared()
+    capability = _HistoricalCapability()
+    runtime.capability = capability
+    _authenticate(shared)
+    composition = create_intraday_runtime(
+        shared,
+        evidence_root=tmp_path.resolve(),
+        clock=lambda: NOW,
+    )
+    snapshot_before = composition.discovery_application.snapshot()
+    invalid_timeframes = composition.historical_invocation.execute(
+        _repository_request(
+            timeframes=(IntradayTimeframe.DAILY,),
+            requested_at=NOW - timedelta(seconds=1),
+        )
+    )
+    assert invalid_timeframes.state is HistoricalOperationState.FAILED
+    assert invalid_timeframes.stage is HistoricalOperationStage.REQUEST_VALIDATION
+    assert invalid_timeframes.failure is HistoricalOperationFailure.REQUEST_INVALID
+    assert capability.calls == 0
+    request = _repository_request()
+
+    result = composition.historical_invocation.execute(request)
+    calls_after_first = capability.calls
+    duplicate = composition.historical_invocation.execute(request)
+
+    assert result is duplicate
+    assert result.state is HistoricalOperationState.COMPLETE
+    assert result.stage is HistoricalOperationStage.COMPLETE
+    assert result.context_state == "ACTIVE"
+    assert result.subject_set_count == 98
+    assert result.historically_resolvable_count == 93
+    assert result.prerequisite_unavailable_count == 5
+    assert result.provider_request_count == 373
+    assert result.persistence_complete and result.reload_verified
+    assert not result.corpus_binding_performed
+    assert not result.production_state_mutated
+    assert capability.instrument_calls == 1
+    assert capability.historical_calls == 372
+    assert capability.calls == calls_after_first
+    assert len(factory_calls) == 1 and runtime.begin_count == 1
+    assert shared.active_lease_count == 0
+    assert composition.discovery_application.snapshot() == snapshot_before
+
+    store = HistoricalQualificationStore(tmp_path.resolve())
+    reconstruction = store.load(
+        artifact_type="HistoricalQualificationReconstruction",
+        artifact_identity=result.reconstruction_identities[0],
+    )
+    assert reconstruction.reconstruction_identity == (
+        result.reconstruction_identities[0]
+    )
+    bundle = store.load(
+        artifact_type="HistoricalQualificationFactBundle",
+        artifact_identity=result.bundle_identities[0],
+    )
+    assert bundle.bundle_identity == result.bundle_identities[0]
+    projection = repr(result)
+    for forbidden in (
+        "access_token",
+        "request_token",
+        "instrument_token",
+        "Authorization",
+        "HistoricalCandle",
+        "InstrumentRecord",
+        "traceback",
+    ):
+        assert forbidden not in projection
+
+
+def test_composed_five_session_plan_accepts_1861_without_provider_work(
+    tmp_path: Path,
+) -> None:
+    shared, runtime, factory_calls = _shared()
+    capability = _HistoricalCapability()
+    runtime.capability = capability
+    composition = create_intraday_runtime(
+        shared,
+        evidence_root=tmp_path.resolve(),
+        clock=lambda: NOW,
+    )
+    request = _repository_request(dates=TRADING_DATES[1:], maximum=1861)
+    operation = composition.historical_operation
+
+    operation._validate_request(request)
+    subject_set = create_historical_research_subject_set(operation._universe)
+    subjects = resolve_historical_operational_subjects(
+        subject_set=subject_set,
+        reconciliation=operation._reconciliation,
+    )
+    sessions = resolve_historical_eod_sessions(
+        calendar=operation._calendar,
+        requested=request.sessions,
+        exchange="NSE",
+        provenance=(request.operation_identity,),
+    )
+    plan = create_historical_request_plan(
+        request=request,
+        subjects=subjects,
+        sessions=sessions,
+    )
+
+    unavailable = tuple(
+        item
+        for item in subjects
+        if item.binding.availability
+        is HistoricalBindingAvailability.HISTORICAL_PREREQUISITE_UNAVAILABLE
+    )
+    assert request.maximum_provider_requests == 1861
+    assert tuple(item.request.trading_date for item in sessions) == (
+        date(2026, 8, 17),
+        date(2026, 8, 18),
+        date(2026, 8, 19),
+        date(2026, 8, 20),
+        date(2026, 8, 21),
+    )
+    assert plan.subject_set_count == 98
+    assert plan.eligible_subject_count == 93
+    assert plan.unavailable_subject_count == 5
+    assert plan.historical_request_count == 1860
+    assert plan.instrument_record_request_count == 1
+    assert plan.total_provider_request_count == 1861
+    assert plan.sequential and not plan.automatic_retry
+    assert {item.sponsor_label for item in unavailable} == {
+        "GOLDM",
+        "SILVERM",
+        "COPPER",
+        "NATGAS",
+        "CRUDE",
+    }
+    assert all(item.provider_symbol is None for item in unavailable)
+    assert capability.calls == 0
+    assert runtime.begin_count == 0
+    assert factory_calls == []

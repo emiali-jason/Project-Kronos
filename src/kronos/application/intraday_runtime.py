@@ -14,8 +14,16 @@ from kronos.application.intraday_discovery import IntradayDiscoveryApplication
 from kronos.application.intraday_discovery_operation import (
     IntradayDiscoveryOperationService,
 )
+from kronos.application.intraday_historical_operation import (
+    IntradayHistoricalQualificationHarness,
+    IntradayHistoricalQualificationOperationService,
+)
 from kronos.intraday.discovery_persistence import NativeDiscoveryStore
 from kronos.intraday.discovery_source import ProviderDiscoveryFactualSource
+from kronos.intraday.historical_qualification_persistence import (
+    HistoricalQualificationStore,
+)
+from kronos.intraday.market_context import CurrentMarketCalendarScheduleSource
 from kronos.intraday.reconciliation import (
     RECONCILIATION_IDENTITY,
     RECONCILIATION_VERSION,
@@ -74,6 +82,8 @@ class IntradayRuntimeComposition:
     provider_access: IntradayProviderRuntimeAccess
     discovery_application: IntradayDiscoveryApplication
     discovery_operation: IntradayDiscoveryOperationService
+    historical_operation: IntradayHistoricalQualificationOperationService
+    historical_invocation: IntradayHistoricalQualificationHarness
     reliance_bootstrap: RelianceIntradayBootstrap
 
 
@@ -126,11 +136,26 @@ def create_intraday_runtime(
         ),
         clock=clock,
     )
+    historical_operation = IntradayHistoricalQualificationOperationService(
+        provider_runtime=provider_runtime,
+        universe=universe,
+        reconciliation=reconciliation,
+        calendar=CurrentMarketCalendarScheduleSource(
+            calendar,
+            observed_at=clock(),
+        ),
+        store=HistoricalQualificationStore(Path(evidence_root)),
+        clock=clock,
+    )
     return IntradayRuntimeComposition(
         workstation=discovery,
         provider_access=access,
         discovery_application=discovery,
         discovery_operation=operation,
+        historical_operation=historical_operation,
+        historical_invocation=IntradayHistoricalQualificationHarness(
+            historical_operation
+        ),
         reliance_bootstrap=bootstrap,
     )
 
