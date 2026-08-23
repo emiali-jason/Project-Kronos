@@ -566,7 +566,74 @@ run after review, publication and restart. Authentication is required only if
 the actual shared context is not active. No real Provider acquisition,
 authentication or restart occurred in WO-05B.
 
-## 24. References
+## 24. WO-06 Part-1 qualification-foundation amendment
+
+WO-06 Part 1 introduces Intraday-owned, immutable research contracts for
+qualification hypotheses, multi-session corpora, observations, factual outcome
+definitions, population diagnostics and reports. It commissions the
+Sponsor-specified `NARROW_CPR_KGS_V0` calculation from the previous completed
+Daily candle using the strict `abs(P - BC_RAW) < 0.001 × C` boundary and retains
+both raw and normalized CPR levels.
+
+The calculation is an available deterministic qualification fact only. Market
+usefulness is not established, Probables methodology is not commissioned, and
+directional consequence is none. Synthetic fixtures cannot establish efficacy
+or approve methodology. All candidate-formation evidence must be available at
+or before its observation boundary; subsequent facts belong only to versioned
+factual outcome evidence and never to trade outcome.
+
+Population zero/flooding buckets are diagnostics without admission authority.
+There is no fixed quota, top-N, score, ranking, fixed universe capacity or
+successor-universe implementation. The first real operation supplied no corpus,
+so evidence remains `EVIDENCE_PENDING_REAL_DISCOVERY_RUN`. The complete Part-1
+boundary is recorded in the [WO-06 Part-1 Qualification
+Foundation](KRONOS-INTRADAY-WO-06-PART-1-QUALIFICATION-FOUNDATION.md).
+
+## 25. WO-06 Part-2 methodology-research amendment
+
+WO-06 Part 2 adds Intraday-owned explicit methodology variants, staged
+qualification, mandatory/supporting/veto/informational roles, research-only
+Long/Short/neutral/conflict states, stage attrition, population calibration,
+ablation, versioned factual outcome proposals and exact real-corpus binding.
+These are comparison mechanics, not production Probable admission.
+
+The current governed fact surface is sufficient for research representation;
+ATR and SMA are not required now. Volume thresholds remain deferred, and any
+nearest/important barrier consequence requires a separately governed selection
+methodology. No real post-activation corpus exists, so Narrow CPR usefulness,
+all directional methodologies and the final Probables methodology remain
+unsupported. `METHODOLOGY_FREEZE_READY = NO`; Part 3 is not started. The full
+boundary is recorded in [WO-06 Part-2 Probables Methodology
+Research](KRONOS-INTRADAY-WO-06-PART-2-PROBABLES-METHODOLOGY-RESEARCH.md).
+
+## 26. WO-06H historical qualification-reconstruction amendment
+
+WO-06H introduces a separate Intraday-owned research contract for reconstructing
+completed historical qualification facts for the current governed subject set.
+It does not backdate the universe or reuse production Discovery state. The
+production `observation_boundary < universe.valid_from → PUBLICATION_STALE`
+rule remains unchanged.
+
+Reconstruction binds exact current subject-set, canonical reconciliation,
+DOMAIN-008 target and previous-session schedules, governed observation boundary,
+completed 1D/1H/15M/5M facts, source identities and integrity. Inputs must have
+been available at the boundary; later outcomes remain separate. Historical,
+post-activation production and synthetic evidence stay distinct. Exact corpus
+eligibility requires a later explicit binding and never appends automatically.
+
+WO-06HA closes the engineering seam with the product-owned
+`KRONOS-INTRADAY-HISTORICAL-QUALIFICATION-OPERATION-V0 / 0.1.0` and the
+`COMPLETED_SESSION_EOD_RESEARCH_V0` boundary. Explicit sessions are resolved by
+DOMAIN-008, the complete request plan is bounded before a single minimized
+shared read-only lease, execution is sequential without retry, and immutable
+artifacts are reloaded by exact identity. The current five unavailable MCX
+subjects remain represented and cause zero Provider requests. No Browser or
+startup invocation, authentication, automatic corpus binding or production
+state mutation is introduced. Real acquisition remains separately authorized.
+The full seam is recorded in [WO-06HA Historical Research Operational
+Seam](KRONOS-INTRADAY-WO-06HA-HISTORICAL-RESEARCH-OPERATIONAL-SEAM.md).
+
+## 27. References
 
 - [Intraday Shared-File Change Rule](../../../engineering/INTRADAY-SHARED-FILE-CHANGE-RULE.md)
 - [Platform Constitution](../../platform/PLATFORM-000-CONSTITUTION.md)
@@ -583,3 +650,7 @@ authentication or restart occurred in WO-05B.
 - [WO-05 Native Discovery Runtime](KRONOS-INTRADAY-WO-05-NATIVE-DISCOVERY-RUNTIME.md)
 - [WO-05A Operational Invocation](KRONOS-INTRADAY-WO-05A-OPERATIONAL-INVOCATION.md)
 - [WO-05B Bounded Operational Control](KRONOS-INTRADAY-WO-05B-BOUNDED-OPERATIONAL-CONTROL.md)
+- [WO-06 Part-1 Qualification Foundation](KRONOS-INTRADAY-WO-06-PART-1-QUALIFICATION-FOUNDATION.md)
+- [WO-06 Part-2 Probables Methodology Research](KRONOS-INTRADAY-WO-06-PART-2-PROBABLES-METHODOLOGY-RESEARCH.md)
+- [WO-06H Historical Qualification Reconstruction](KRONOS-INTRADAY-WO-06H-HISTORICAL-QUALIFICATION-RECONSTRUCTION.md)
+- [WO-06HA Historical Research Operational Seam](KRONOS-INTRADAY-WO-06HA-HISTORICAL-RESEARCH-OPERATIONAL-SEAM.md)
