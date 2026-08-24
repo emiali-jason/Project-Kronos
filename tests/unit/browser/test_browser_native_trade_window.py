@@ -17,6 +17,12 @@ from kronos.swing.v1.native_trade_construction import (
     LocalTradePlanStore,
     create_trade_construction_evidence_package,
 )
+from kronos.swing.v1.native_sponsor_decision import SponsorTradeChoice
+from kronos.swing.v1.sponsor_observation_decision import (
+    LocalSponsorObservationDecisionStore,
+    SponsorActivationDisposition,
+    SponsorObservationReason,
+)
 from tests.unit.application.test_swing_opportunities import _ready
 from tests.unit.swing.v1.test_kr370_step31_handoff import (
     NOW,
@@ -57,8 +63,9 @@ def test_now_card_exposes_trade_window_and_window_uses_persisted_geometry(tmp_pa
     assert "₹100" in window and "₹90" in window and "₹120" in window
     assert "1 : 2" in window
     assert "RISK UNAVAILABLE" in window
-    assert "SPONSOR DECISION PATH" in window
-    assert "PENDING OBSERVATION-PHASE DECISION WIRING" in window
+    assert "SPONSOR DECISION" in window
+    assert 'action="/swing/trade-window/observation-decision"' in window
+    assert "These controls record Sponsor judgment" in window
     assert "Analytical promotion is complete" in window
     assert "not an entry trigger or an order instruction" in window
 
@@ -209,6 +216,83 @@ def test_step31_geometry_failure_preserves_handoff_and_blocks_actions(tmp_path) 
     assert "RED · COMPLETE WARNING" in html
     assert "Risk geometry is zero or negative." in html
     assert "No PAPER / LIVE action is available." not in html
-    assert "PENDING OBSERVATION-PHASE DECISION WIRING" in html
+    assert 'action="/swing/trade-window/observation-decision"' in html
+    assert "warning_acknowledged" in html
+    assert "POSITION ACTIVATION WILL REMAIN BLOCKED BY DOMAIN-007 RISK" in html
     assert "CONSTRUCT TRADE PLAN" not in html
-    assert "PAPER</button>" not in html and "LIVE</button>" not in html
+    assert "PAPER</button>" in html and "LIVE</button>" in html
+    assert "IGNORE</button>" in html
+
+
+def test_blocked_observation_decision_is_idempotent_and_restores_separately(tmp_path) -> None:
+    completed = _completed(tmp_path)
+    handoff_store = LocalKr370Step31HandoffStore(tmp_path / "handoffs")
+    plan_store = LocalTradePlanStore(tmp_path / "plans")
+    decision_store = LocalSponsorObservationDecisionStore(tmp_path / "decisions")
+    workflow = SwingTradeWindowWorkflow(
+        handoff_store, plan_store, sponsor_observation_store=decision_store
+    )
+    base = _evidence(completed)
+    warning = create_trade_construction_evidence_package(
+        package_identity=base.package_identity,
+        native_run_identity=base.native_run_identity,
+        canonical_instrument=base.canonical_instrument,
+        native_assessment_sha256=base.native_assessment_sha256,
+        setup_identity=base.setup_identity,
+        observation_boundary=base.observation_boundary,
+        provenance=base.provenance,
+        qualification_candle=base.qualification_candle,
+        governing_structural_low=base.governing_structural_low,
+        governing_structural_high=base.governing_structural_high,
+        prior_directional_swing_high=_price(
+            "RED-TARGET", "95", base.observation_boundary
+        ),
+        prior_directional_swing_low=base.prior_directional_swing_low,
+        original_range_high=base.original_range_high,
+        original_range_low=base.original_range_low,
+        material_barriers=base.material_barriers,
+    )
+    projection = workflow.construct(
+        completed,
+        warning,
+        _context(completed.requirement.canonical_instrument),
+        current_run_identity=completed.requirement.native_run_identity,
+        current_analysis_boundary=completed.promotion.analysis_boundary,
+        created_at=NOW,
+    )
+    observation = projection.step31_observation
+    assert observation is not None
+    values = dict(
+        run_identity=projection.native_run_identity,
+        canonical_instrument=projection.canonical_instrument,
+        native_assessment_sha256=projection.native_assessment_sha256,
+        observation_evidence_id=observation.observation_evidence_id,
+        choice=SponsorTradeChoice.PAPER,
+        disposition=SponsorActivationDisposition.BLOCKED_RISK_UNAVAILABLE,
+        current_run_identity=projection.native_run_identity,
+        warning_acknowledged=True,
+        sponsor_reason=SponsorObservationReason.STEP31_WARNING,
+        risk_state="RISK_UNAVAILABLE",
+    )
+    first = workflow.record_sponsor_observation_choice(decided_at=NOW, **values)
+    repeated = workflow.record_sponsor_observation_choice(
+        decided_at=NOW.replace(microsecond=1), **values
+    )
+    assert repeated is first
+    projected = workflow.project(
+        projection.native_run_identity, projection.canonical_instrument
+    )
+    assert projected.sponsor_observation_decision_state == "PAPER · RECORDED"
+    assert projected.activation_disposition == "BLOCKED_RISK_UNAVAILABLE"
+    assert projected.sponsor_position_id is None
+
+    restored = SwingTradeWindowWorkflow(
+        handoff_store, plan_store, sponsor_observation_store=decision_store
+    )
+    restored.restore((completed,))
+    recovery = restored.project(
+        projection.native_run_identity, projection.canonical_instrument
+    )
+    assert recovery.sponsor_observation_decision_id == first.decision.decision_identity
+    assert recovery.activation_disposition == "BLOCKED_RISK_UNAVAILABLE"
+    assert recovery.sponsor_observation_controls_available is False

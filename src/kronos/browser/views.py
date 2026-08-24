@@ -1230,36 +1230,83 @@ def render_native_trade_window(
         + '</div><p>KR-380 entry timing is separate from KR-370 analytical promotion.</p></section>'
     )
     controls = ""
-    if plan is not None and projection.sponsor_controls_available:
-        action = "/swing/v1/native-trade-decision?plan=" + escape(plan.trade_plan_id)
-        controls = (
-            '<div class="native-trade-actions">'
-            '<form method="post" action="' + action + '">'
-            '<input type="hidden" name="mode" value="PAPER">'
-            '<button class="button primary" type="submit">PAPER</button></form>'
-            '<form method="post" action="' + action + '">'
-            '<input type="hidden" name="mode" value="IGNORE">'
-            '<button class="button" type="submit">IGNORE</button></form>'
-            '<form method="post" action="' + action + '">'
-            '<input type="hidden" name="mode" value="LIVE">'
+    if observation is not None and projection.sponsor_observation_controls_available:
+        action = "/swing/trade-window/observation-decision"
+        hidden = ''.join(
+            '<input type="hidden" name="' + escape(name) + '" value="'
+            + escape(value) + '">'
+            for name, value in (
+                ("run_identity", projection.native_run_identity),
+                ("canonical_instrument", projection.canonical_instrument),
+                ("native_assessment_sha256", projection.native_assessment_sha256),
+                ("observation_evidence_id", observation.observation_evidence_id),
+            )
+        )
+        acknowledgement = (
+            '<label class="why"><input type="checkbox" '
+            'name="warning_acknowledged" value="YES" required> '
+            'I acknowledge the Step-31 warning(s) and choose to proceed with '
+            'this Sponsor decision.</label>'
+            if observation.severity.value == "RED" else ""
+        )
+        reason = (
+            '<label>Optional reason <select name="reason">'
+            '<option value="">NOT PROVIDED</option>'
+            '<option value="AGREE_WITH_KRONOS">AGREE WITH KRONOS</option>'
+            '<option value="POOR_RR">POOR R:R</option>'
+            '<option value="STEP31_WARNING">STEP-31 WARNING</option>'
+            '<option value="MARKET_CONTEXT">MARKET CONTEXT</option>'
+            '<option value="PERSONAL_RISK_LIMIT">PERSONAL RISK LIMIT</option>'
+            '<option value="TESTING_SETUP">TESTING SETUP</option>'
+            '<option value="OTHER">OTHER</option></select></label>'
+        )
+        activation_ready = (
+            plan is not None and projection.risk_state == "RISK_APPROVED"
+        )
+        live_attestation = (
             '<label>Actual entry <input name="actual_entry" inputmode="decimal" required></label>'
             '<label>Lots <input name="lots" inputmode="numeric" required></label>'
-            '<button class="button" type="submit">LIVE</button></form></div>'
+            if activation_ready else ""
         )
-    elif projection.sponsor_decision_id is None:
+        risk_warning = (
+            '<p class="why"><strong>YOUR DECISION WILL BE RECORDED FOR OBSERVATION.</strong><br>'
+            'POSITION ACTIVATION WILL REMAIN BLOCKED BY DOMAIN-007 RISK.</p>'
+            if projection.risk_state in {"RISK_REJECTED", "RISK_UNAVAILABLE"}
+            else ""
+        )
         controls = (
-            '<p class="empty"><strong>SPONSOR DECISION PATH</strong><br>'
-            'PENDING OBSERVATION-PHASE DECISION WIRING</p>'
-            if observation is not None else
-            '<p class="empty">No LIVE / PAPER / IGNORE control is available '
-            'until the governed Risk boundary permits it.</p>'
+            risk_warning
+            + '<p>These controls record Sponsor judgment. They do not guarantee position activation.</p>'
+            + '<div class="native-trade-actions">'
+            + '<form method="post" action="' + action + '">' + hidden
+            + '<input type="hidden" name="mode" value="PAPER">'
+            + acknowledgement + reason
+            + '<button class="button primary" type="submit">PAPER</button></form>'
+            + '<form method="post" action="' + action + '">' + hidden
+            + '<input type="hidden" name="mode" value="LIVE">'
+            + acknowledgement + reason + live_attestation
+            + '<button class="button" type="submit">LIVE</button></form>'
+            + '<form method="post" action="' + action + '">' + hidden
+            + '<input type="hidden" name="mode" value="IGNORE">' + reason
+            + '<button class="button" type="submit">IGNORE</button></form></div>'
+        )
+    elif observation is None and projection.sponsor_decision_id is None:
+        controls = (
+            '<p class="empty">No LIVE / PAPER / IGNORE observation control is '
+            'available until trustworthy Step-31 evidence exists.</p>'
         )
     sponsor = (
-        '<section class="analysis-section"><h2>SPONSOR DECISION / POSITION</h2>'
-        '<div class="analysis-decision">' + escape(projection.sponsor_decision_state)
-        + '</div><p><strong>Actual Sponsor branch</strong> · '
+        '<section class="analysis-section"><h2>SPONSOR DECISION</h2>'
+        '<div class="analysis-decision">'
+        + escape(projection.sponsor_observation_decision_state)
+        + '</div>' + controls
+        + '<h2>POSITION ACTIVATION</h2><div class="analysis-decision">'
+        + escape(projection.activation_disposition.replace("_", " "))
+        + '</div><p><strong>Activation reason</strong> · '
+        + escape(projection.activation_reason.replace("_", " "))
+        + '<br><strong>Actual Sponsor branch</strong> · '
         + escape(projection.sponsor_position_state.replace("_", " "))
-        + '</p>' + controls
+        + '</p>'
         + '<p>This branch is separate from the objective KRONOS model lifecycle.</p>'
         + '<div class="analysis-decision">'
         + escape(projection.sponsor_monitoring_state) + '</div><p>'
@@ -1317,6 +1364,9 @@ def render_native_trade_window(
             )),
             ("Risk result", projection.risk_result_id or "NOT AVAILABLE"),
             ("Sponsor decision", projection.sponsor_decision_id or "NOT AVAILABLE"),
+            ("Observation decision", projection.sponsor_observation_decision_id or "NOT AVAILABLE"),
+            ("Decision-time snapshot", projection.sponsor_observation_snapshot_id or "NOT AVAILABLE"),
+            ("Activation disposition", projection.activation_disposition),
             ("KR-380 Entry Outcome", projection.kr380_entry_outcome_id or "NOT AVAILABLE"),
             ("KR-390 model trade", projection.model_trade_id or "NOT AVAILABLE"),
             ("Sponsor position", projection.sponsor_position_id or "NOT AVAILABLE"),

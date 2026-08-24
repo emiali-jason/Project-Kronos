@@ -54,6 +54,15 @@ from kronos.swing.v1.step31_observation import (
     construct_step31_observation,
     create_sponsor_observation_handoff,
 )
+from kronos.swing.v1.sponsor_observation_decision import (
+    JournalObservationHandoffV1,
+    LocalSponsorObservationDecisionStore,
+    SponsorActivationDisposition,
+    SponsorObservationDecisionResult,
+    SponsorObservationReason,
+    journal_observation_handoff,
+    record_sponsor_observation_decision,
+)
 from kronos.swing.v1.native_entry_timing import (
     EcpcV2Blocker,
     EcpcV2Outcome,
@@ -83,7 +92,10 @@ from kronos.swing.v1.native_active_trade_lifecycle import (
     ActiveLifecyclePosition,
     TradeClosureRecord,
 )
-from kronos.swing.v1.native_sponsor_decision import SponsorInitiationResult
+from kronos.swing.v1.native_sponsor_decision import (
+    SponsorInitiationResult,
+    SponsorTradeChoice,
+)
 from kronos.swing.v1.native_trade_journal import TradeJournalRecord
 from kronos.swing.v1.step32 import (
     MonitoringAdmissionContext,
@@ -363,6 +375,13 @@ class NativeTradeWindowProjection:
     risk_reason: str = "RISK EVALUATION NOT AVAILABLE"
     risk_result_id: str | None = None
     sponsor_controls_available: bool = False
+    sponsor_observation_controls_available: bool = False
+    sponsor_observation_decision_state: str = "NO OBSERVATION DECISION RECORDED"
+    sponsor_observation_decision_id: str | None = None
+    sponsor_observation_snapshot_id: str | None = None
+    activation_disposition: str = "NOT ESTABLISHED"
+    activation_reason: str = "NO OBSERVATION DECISION RECORDED"
+    warning_acknowledged: bool = False
     sponsor_decision_state: str = "NO DECISION RECORDED"
     sponsor_decision_id: str | None = None
     kr380_entry_timing_state: str = "NOT ESTABLISHED"
@@ -416,6 +435,14 @@ class NativeTradeWindowProjection:
                 }
             )
             or type(self.sponsor_controls_available) is not bool
+            or type(self.sponsor_observation_controls_available) is not bool
+            or not self.sponsor_observation_decision_state
+            or (self.sponsor_observation_decision_id is None)
+            != (self.sponsor_observation_snapshot_id is None)
+            or (self.sponsor_observation_decision_id is None)
+            != (self.activation_disposition == "NOT ESTABLISHED")
+            or not self.activation_reason
+            or type(self.warning_acknowledged) is not bool
             or not self.sponsor_decision_state
             or (self.sponsor_decision_id is None) != (
                 self.sponsor_decision_state == "NO DECISION RECORDED"
@@ -478,6 +505,7 @@ class SwingTradeWindowWorkflow:
         objective_model_store: LocalObjectiveModelV1Store | None = None,
         diagnostic_store: LocalTradePlanConstructionDiagnosticStore | None = None,
         observation_store: LocalStep31ObservationStore | None = None,
+        sponsor_observation_store: LocalSponsorObservationDecisionStore | None = None,
     ) -> None:
         if (
             type(handoff_store) is not LocalKr370Step31HandoffStore
@@ -507,6 +535,11 @@ class SwingTradeWindowWorkflow:
                 observation_store is not None
                 and type(observation_store) is not LocalStep31ObservationStore
             )
+            or (
+                sponsor_observation_store is not None
+                and type(sponsor_observation_store)
+                is not LocalSponsorObservationDecisionStore
+            )
         ):
             raise TypeError("SWING_TRADE_WINDOW_STORE_INVALID")
         self._handoff_store = handoff_store
@@ -519,6 +552,12 @@ class SwingTradeWindowWorkflow:
         self._observation_store = observation_store or LocalStep31ObservationStore(
             trade_plan_store.root.parent / "step31-observation-v1"
         )
+        self._sponsor_observation_store = (
+            sponsor_observation_store
+            or LocalSponsorObservationDecisionStore(
+                trade_plan_store.root.parent / "sponsor-observation-decision-v1"
+            )
+        )
         self._portfolio_state: PortfolioStateV1 | None = None
         self._shared_monitoring_hub: SharedSwingMonitoringHub | None = None
         self._monitoring_registrations: dict[str, object] = {}
@@ -527,6 +566,9 @@ class SwingTradeWindowWorkflow:
         self._handoffs: dict[tuple[str, str], Kr370Step31EligibilityHandoff] = {}
         self._plans: dict[tuple[str, str], TradePlanRecord] = {}
         self._observations: dict[tuple[str, str], Step31ObservationEvidence] = {}
+        self._observation_decisions: dict[
+            tuple[str, str], SponsorObservationDecisionResult
+        ] = {}
         self._failures: dict[tuple[str, str], str] = {}
         restored_diagnostics = () if diagnostic_store is None else diagnostic_store.load()
         self._construction_attempts: dict[
@@ -1025,6 +1067,7 @@ class SwingTradeWindowWorkflow:
         self._handoffs.clear()
         self._plans.clear()
         self._observations.clear()
+        self._observation_decisions.clear()
         self._production_risks.clear()
         self._production_kr380.clear()
         self._production_models.clear()
@@ -1094,6 +1137,13 @@ class SwingTradeWindowWorkflow:
                 ):
                     raise ValueError("SWING_TRADE_WINDOW_OBSERVATION_PLAN_BINDING_INVALID")
                 self._observations[key] = observation
+        restored_decisions = self._sponsor_observation_store.for_current_observations(
+            tuple(self._observations.values())
+        )
+        self._observation_decisions = {
+            (item.snapshot.native_run_identity, item.snapshot.canonical_instrument): item
+            for item in restored_decisions
+        }
         self._merge_production_records()
 
     def synchronize_downstream(
@@ -1364,6 +1414,7 @@ class SwingTradeWindowWorkflow:
                 handoff=handoff,
                 trade_plan=None,
                 step31_observation=observation,
+                **self._observation_projection(key),
             )
         if plan is None:
             return NativeTradeWindowProjection(
@@ -1380,8 +1431,125 @@ class SwingTradeWindowWorkflow:
             handoff=handoff,
             trade_plan=plan,
             step31_observation=observation,
-            **self._downstream_projection(plan),
+            **(self._downstream_projection(plan) | self._observation_projection(key)),
         )
+
+    def record_sponsor_observation_choice(
+        self,
+        run_identity: str,
+        canonical_instrument: str,
+        native_assessment_sha256: str,
+        observation_evidence_id: str,
+        choice: SponsorTradeChoice,
+        disposition: SponsorActivationDisposition,
+        *,
+        current_run_identity: str,
+        decided_at: datetime,
+        warning_acknowledged: bool,
+        sponsor_reason: SponsorObservationReason | None = None,
+        risk_identity: str | None = None,
+        risk_state: str = "RISK_UNAVAILABLE",
+        existing_sponsor_decision_identity: str | None = None,
+        sponsor_position_identity: str | None = None,
+        mcx_supporting_context_identity: str | None = None,
+        mcx_supporting_context_sha256: str | None = None,
+    ) -> SponsorObservationDecisionResult:
+        """Retain Sponsor judgment without granting activation authority."""
+
+        key = (run_identity, canonical_instrument)
+        completed = self._completed.get(key)
+        observation = self._observations.get(key)
+        projection = self.project(*key)
+        if (
+            completed is None
+            or observation is None
+            or projection is None
+            or projection.native_assessment_sha256 != native_assessment_sha256
+            or observation.observation_evidence_id != observation_evidence_id
+            or current_run_identity != run_identity
+            or projection.risk_state != risk_state
+            or projection.risk_result_id != risk_identity
+        ):
+            raise ValueError("SPONSOR_OBSERVATION_CURRENT_BINDING_INVALID")
+        existing = self._observation_decisions.get(key)
+        if existing is not None:
+            if (
+                existing.decision.choice is choice
+                and existing.decision.warning_acknowledged is warning_acknowledged
+                and existing.decision.sponsor_reason is sponsor_reason
+                and existing.snapshot.step31_observation_identity
+                == observation_evidence_id
+            ):
+                return existing
+            raise ValueError("SPONSOR_OBSERVATION_DECISION_ALREADY_FINAL")
+        handoff = create_sponsor_observation_handoff(
+            observation,
+            risk_state=risk_state,
+            risk_evidence_identity=risk_identity,
+        )
+        result = record_sponsor_observation_decision(
+            completed.promotion,
+            observation,
+            handoff,
+            choice,
+            disposition,
+            current_run_identity=current_run_identity,
+            decided_at=decided_at,
+            warning_acknowledged=warning_acknowledged,
+            sponsor_reason=sponsor_reason,
+            risk_identity=risk_identity,
+            risk_state=risk_state,
+            existing_sponsor_decision_identity=existing_sponsor_decision_identity,
+            sponsor_position_identity=sponsor_position_identity,
+            mcx_supporting_context_identity=mcx_supporting_context_identity,
+            mcx_supporting_context_sha256=mcx_supporting_context_sha256,
+        )
+        retained = self._sponsor_observation_store.retain(result)
+        self._observation_decisions[key] = retained
+        return retained
+
+    def sponsor_observation_decisions(
+        self,
+    ) -> tuple[SponsorObservationDecisionResult, ...]:
+        return tuple(
+            self._observation_decisions[key]
+            for key in sorted(self._observation_decisions)
+        )
+
+    def journal_observation_handoffs(
+        self,
+    ) -> tuple[JournalObservationHandoffV1, ...]:
+        return tuple(
+            journal_observation_handoff(item)
+            for item in self.sponsor_observation_decisions()
+        )
+
+    def _observation_projection(
+        self, key: tuple[str, str]
+    ) -> dict[str, object]:
+        result = self._observation_decisions.get(key)
+        if result is None:
+            return {
+                "sponsor_observation_controls_available": (
+                    key in self._observations
+                ),
+            }
+        return {
+            "sponsor_observation_controls_available": False,
+            "sponsor_observation_decision_state": (
+                result.decision.choice.value + " · RECORDED"
+            ),
+            "sponsor_observation_decision_id": result.decision.decision_identity,
+            "sponsor_observation_snapshot_id": result.snapshot.snapshot_identity,
+            "activation_disposition": result.activation.disposition.value,
+            "activation_reason": result.activation.reason,
+            "warning_acknowledged": result.decision.warning_acknowledged,
+            "risk_state": result.snapshot.risk_state,
+            "risk_reason": (
+                "DECISION-TIME RISK STATE PRESERVED"
+            ),
+            "risk_result_id": result.snapshot.risk_identity,
+        }
 
     def sponsor_observation_handoff(
         self, run_identity: str, canonical_instrument: str

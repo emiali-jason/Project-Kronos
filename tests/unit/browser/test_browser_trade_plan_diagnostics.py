@@ -277,7 +277,39 @@ def test_step31_geometry_warning_redirects_and_reuses_one_handoff(
         assert "RED · COMPLETE WARNING" in page
         assert "Risk geometry is zero or negative." in page
         assert "No PAPER / LIVE action is available." not in page
-        assert "PENDING OBSERVATION-PHASE DECISION WIRING" in page
+        assert 'action="/swing/trade-window/observation-decision"' in page
+        assert "warning_acknowledged" in page
+        authority = f"127.0.0.1:{server.server_port}"
+        decision = _request(
+            server,
+            "POST",
+            "/swing/trade-window/observation-decision",
+            headers={
+                "Host": authority,
+                "Origin": f"http://{authority}",
+                "Referer": f"http://{authority}{first[1]['Location']}",
+                "Content-Type": "application/x-www-form-urlencoded",
+            },
+            body=urlencode({
+                "run_identity": projection.native_run_identity,
+                "canonical_instrument": projection.canonical_instrument,
+                "native_assessment_sha256": projection.native_assessment_sha256,
+                "observation_evidence_id": (
+                    projection.step31_observation.observation_evidence_id
+                ),
+                "mode": "PAPER",
+                "warning_acknowledged": "YES",
+                "reason": "STEP31_WARNING",
+            }),
+        )
+        assert decision[0] == 303
+        recorded = server.trade_window.project(
+            projection.native_run_identity, projection.canonical_instrument
+        )
+        assert recorded.sponsor_observation_decision_state == "PAPER · RECORDED"
+        assert recorded.activation_disposition == "BLOCKED_RISK_UNAVAILABLE"
+        assert recorded.sponsor_position_id is None
+        assert server.native_review.active_monitoring_count == 0
         assert "CONSTRUCT TRADE PLAN" not in page
     finally:
         server.shutdown()
