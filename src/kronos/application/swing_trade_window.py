@@ -97,6 +97,13 @@ from kronos.swing.v1.native_sponsor_decision import (
     SponsorTradeChoice,
 )
 from kronos.swing.v1.native_trade_journal import TradeJournalRecord
+from kronos.swing.v1.observation_research_ledger import (
+    LocalObservationResearchLedgerStore,
+    ObservationLinkKind,
+    ObservationResearchLedgerService,
+    ObservationResearchProjectionV1,
+    ObservationResearchQueryV1,
+)
 from kronos.swing.v1.step32 import (
     MonitoringAdmissionContext,
     MonitoringAdmissionRegistry,
@@ -506,6 +513,7 @@ class SwingTradeWindowWorkflow:
         diagnostic_store: LocalTradePlanConstructionDiagnosticStore | None = None,
         observation_store: LocalStep31ObservationStore | None = None,
         sponsor_observation_store: LocalSponsorObservationDecisionStore | None = None,
+        observation_research_ledger: ObservationResearchLedgerService | None = None,
     ) -> None:
         if (
             type(handoff_store) is not LocalKr370Step31HandoffStore
@@ -540,6 +548,11 @@ class SwingTradeWindowWorkflow:
                 and type(sponsor_observation_store)
                 is not LocalSponsorObservationDecisionStore
             )
+            or (
+                observation_research_ledger is not None
+                and type(observation_research_ledger)
+                is not ObservationResearchLedgerService
+            )
         ):
             raise TypeError("SWING_TRADE_WINDOW_STORE_INVALID")
         self._handoff_store = handoff_store
@@ -556,6 +569,15 @@ class SwingTradeWindowWorkflow:
             sponsor_observation_store
             or LocalSponsorObservationDecisionStore(
                 trade_plan_store.root.parent / "sponsor-observation-decision-v1"
+            )
+        )
+        self._observation_research = (
+            observation_research_ledger
+            or ObservationResearchLedgerService(
+                LocalObservationResearchLedgerStore(
+                    trade_plan_store.root.parent / "observation-research-ledger-v1"
+                ),
+                self._sponsor_observation_store,
             )
         )
         self._portfolio_state: PortfolioStateV1 | None = None
@@ -1227,6 +1249,87 @@ class SwingTradeWindowWorkflow:
                 self._journals.pop(plan.trade_plan_id, None)
             if warnings:
                 self._downstream_warnings[plan.trade_plan_id] = tuple(warnings)
+        self._synchronize_observation_research_links()
+
+    def _synchronize_observation_research_links(self) -> None:
+        """Link only already-governed downstream records to observations."""
+
+        for result in self._observation_decisions.values():
+            snapshot = result.snapshot
+            plan_id = snapshot.conventional_trade_plan_identity
+            plan_hash = snapshot.conventional_trade_plan_sha256
+            if plan_id is None or plan_hash is None:
+                continue
+            common = dict(
+                decision_identity=result.decision.decision_identity,
+                native_run_identity=snapshot.native_run_identity,
+                canonical_instrument=snapshot.canonical_instrument,
+                native_assessment_sha256=snapshot.native_assessment_sha256,
+                trade_plan_identity=plan_id,
+                trade_plan_sha256=plan_hash,
+            )
+            outcome = self._kr380.get(plan_id)
+            if outcome is not None:
+                self._observation_research.append_link(
+                    **common,
+                    kind=ObservationLinkKind.KR380_ENTRY_OUTCOME,
+                    source_contract_identity=outcome.contract_identity,
+                    source_contract_version=outcome.contract_version,
+                    source_record_identity=outcome.entry_outcome_id,
+                    source_integrity_sha256=outcome.source_integrity_sha256,
+                    source_state=outcome.state.value,
+                    source_timestamp=outcome.occurred_at,
+                )
+            model = self._models.get(plan_id)
+            if model is not None:
+                kind = (
+                    ObservationLinkKind.OBJECTIVE_MODEL_OUTCOME
+                    if model.state is ObjectiveModelState.CLOSED
+                    else ObservationLinkKind.KR390_OBJECTIVE_MODEL
+                )
+                self._observation_research.append_link(
+                    **common,
+                    kind=kind,
+                    source_contract_identity="KRONOS-SWING-OBJECTIVE-MODEL-TRADE-V1",
+                    source_contract_version="1",
+                    source_record_identity=model.model_trade_id,
+                    source_integrity_sha256=model.source_integrity_sha256,
+                    source_state=model.state.value,
+                    source_timestamp=model.updated_at,
+                )
+            sponsor = self._sponsor.get(plan_id)
+            position = None if sponsor is None else sponsor.position
+            if (
+                position is not None
+                and result.activation.sponsor_position_identity == position.position_id
+            ):
+                self._observation_research.append_link(
+                    **common,
+                    kind=ObservationLinkKind.SPONSOR_POSITION,
+                    source_contract_identity=position.contract_identity,
+                    source_contract_version=position.contract_version,
+                    source_record_identity=position.position_id,
+                    source_integrity_sha256=position.integrity_hash,
+                    source_state=position.state.value,
+                    source_timestamp=position.created_at,
+                    sponsor_position_identity=position.position_id,
+                )
+            closure = self._closures.get(plan_id)
+            if (
+                closure is not None
+                and result.activation.sponsor_position_identity == closure.position_id
+            ):
+                self._observation_research.append_link(
+                    **common,
+                    kind=ObservationLinkKind.SPONSOR_POSITION_OUTCOME,
+                    source_contract_identity=closure.contract_identity,
+                    source_contract_version=closure.contract_version,
+                    source_record_identity=closure.closure_id,
+                    source_integrity_sha256=closure.integrity_hash,
+                    source_state="CLOSED",
+                    source_timestamp=closure.created_at,
+                    sponsor_position_identity=closure.position_id,
+                )
 
     def construct(
         self,
@@ -1480,6 +1583,9 @@ class SwingTradeWindowWorkflow:
                 and existing.snapshot.step31_observation_identity
                 == observation_evidence_id
             ):
+                # Repair only the same prospective request if the linked-ledger
+                # write was interrupted after the authoritative decision write.
+                self._observation_research.retain_observation(existing)
                 return existing
             raise ValueError("SPONSOR_OBSERVATION_DECISION_ALREADY_FINAL")
         handoff = create_sponsor_observation_handoff(
@@ -1505,6 +1611,7 @@ class SwingTradeWindowWorkflow:
             mcx_supporting_context_sha256=mcx_supporting_context_sha256,
         )
         retained = self._sponsor_observation_store.retain(result)
+        self._observation_research.retain_observation(retained)
         self._observation_decisions[key] = retained
         return retained
 
@@ -1523,6 +1630,23 @@ class SwingTradeWindowWorkflow:
             journal_observation_handoff(item)
             for item in self.sponsor_observation_decisions()
         )
+
+    def observation_research_snapshot(
+        self, query: ObservationResearchQueryV1 | None = None
+    ) -> tuple[ObservationResearchProjectionV1, ...]:
+        """Return a read-only deterministic research projection."""
+
+        return self._observation_research.snapshot(query)
+
+    def observation_research_export_json(
+        self, query: ObservationResearchQueryV1 | None = None
+    ) -> str:
+        return self._observation_research.export_json(query)
+
+    def observation_research_export_csv(
+        self, query: ObservationResearchQueryV1 | None = None
+    ) -> str:
+        return self._observation_research.export_csv(query)
 
     def _observation_projection(
         self, key: tuple[str, str]

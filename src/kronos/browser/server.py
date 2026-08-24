@@ -187,6 +187,8 @@ from kronos.swing.v1.sponsor_observation_decision import (
     SponsorActivationDisposition,
     SponsorObservationReason,
 )
+from kronos.swing.v1.observation_research_ledger import ObservationResearchQueryV1
+from kronos.swing.v1.step31_observation import Step31WarningSeverity
 from kronos.swing.v1.progression_watch import (
     derive_kr370_progression_requirements,
     derive_progression_requirements,
@@ -1250,11 +1252,49 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             query = parse_qs(urlsplit(self.path).query, keep_blank_values=True)
             selected = query.get("filter", ["ALL"])
             selected_record = query.get("record", [None])
+            observation_choice = query.get("observation_choice", ["ALL"])
+            observation_activation = query.get("observation_activation", ["ALL"])
+            observation_severity = query.get("observation_severity", ["ALL"])
             if (
-                set(query).difference({"filter", "record"})
+                set(query).difference({
+                    "filter", "record", "observation_choice",
+                    "observation_activation", "observation_severity",
+                })
                 or len(selected) != 1
                 or len(selected_record) != 1
+                or len(observation_choice) != 1
+                or len(observation_activation) != 1
+                or len(observation_severity) != 1
             ):
+                self._text(HTTPStatus.BAD_REQUEST, "Journal filter is invalid.")
+                return
+            try:
+                observation_query = ObservationResearchQueryV1(
+                    choices=(
+                        () if observation_choice[0] == "ALL"
+                        else (SponsorTradeChoice(observation_choice[0]),)
+                    ),
+                    dispositions=(
+                        () if observation_activation[0] == "ALL"
+                        else tuple(
+                            item for item in SponsorActivationDisposition
+                            if (
+                                observation_activation[0] == "ACTIVATED"
+                                and item is SponsorActivationDisposition.ACTIVATED
+                            ) or (
+                                observation_activation[0] == "BLOCKED"
+                                and item.value.startswith("BLOCKED_")
+                            )
+                        )
+                    ),
+                    severities=(
+                        () if observation_severity[0] == "ALL"
+                        else (Step31WarningSeverity(observation_severity[0]),)
+                    ),
+                )
+                if observation_activation[0] not in {"ALL", "ACTIVATED", "BLOCKED"}:
+                    raise ValueError
+            except ValueError:
                 self._text(HTTPStatus.BAD_REQUEST, "Journal filter is invalid.")
                 return
             self._html(render_trade_journal(
@@ -1262,6 +1302,12 @@ class _BrowserHandler(BaseHTTPRequestHandler):
                 self.server.native_review.journal_snapshot(),
                 selected_filter=selected[0],
                 selected_record_id=selected_record[0],
+                observations=self.server.trade_window.observation_research_snapshot(
+                    observation_query
+                ),
+                observation_choice=observation_choice[0],
+                observation_activation=observation_activation[0],
+                observation_severity=observation_severity[0],
             ))
             return
         candidate_match = _TRADE_CANDIDATE_ROUTE.fullmatch(path)

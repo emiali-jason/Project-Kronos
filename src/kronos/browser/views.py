@@ -115,6 +115,10 @@ from kronos.swing.v1.native_trade_journal import (
     JournalRecordType,
     TradeJournalSnapshot,
 )
+from kronos.swing.v1.observation_research_ledger import (
+    ObservationLinkKind,
+    ObservationResearchProjectionV1,
+)
 from kronos.swing.v1.mtf_facts import SameRunMtfFactSnapshot
 from kronos.swing.v1.mcx_supporting_context import (
     MCX_CONTEXT_INSTRUMENT_FAMILIES,
@@ -1947,6 +1951,10 @@ def render_trade_journal(
     *,
     selected_filter: str = "ALL",
     selected_record_id: str | None = None,
+    observations: tuple[ObservationResearchProjectionV1, ...] = (),
+    observation_choice: str = "ALL",
+    observation_activation: str = "ALL",
+    observation_severity: str = "ALL",
 ) -> str:
     """Render Step-33 history and factual analytics, never active-trade authority."""
 
@@ -2054,13 +2062,145 @@ def render_trade_journal(
                 + detail + '</details></section>'
             )
         rows = "".join(cards)
+    observation_view = _observation_research_view(
+        observations,
+        observation_choice=observation_choice,
+        observation_activation=observation_activation,
+        observation_severity=observation_severity,
+    )
     return _page(
         title="Trading Journal",
-        subtitle="Immutable completed-trade and ignored-opportunity evidence with factual V0 analytics.",
+        subtitle=(
+            "Prospective observation research plus the independently governed "
+            "completed-trade and ignored-opportunity Journal."
+        ),
         snapshot=snapshot,
         active_nav="Trading Journal",
         active_tab="",
-        body=filters + summary + validation_view + rows,
+        body=observation_view + filters + summary + validation_view + rows,
+    )
+
+
+def _observation_research_view(
+    observations: tuple[ObservationResearchProjectionV1, ...],
+    *, observation_choice: str, observation_activation: str,
+    observation_severity: str,
+) -> str:
+    """Render evidence rows without deriving research or performance metrics."""
+
+    def href(choice: str, activation: str, severity: str) -> str:
+        return (
+            "/journal?observation_choice=" + choice
+            + "&observation_activation=" + activation
+            + "&observation_severity=" + severity
+        )
+
+    choice_filters = "".join(
+        '<a class="button ' + ("primary" if item == observation_choice else "")
+        + '" href="' + href(item, observation_activation, observation_severity)
+        + '">' + item + "</a>"
+        for item in ("ALL", "LIVE", "PAPER", "IGNORE")
+    )
+    activation_filters = "".join(
+        '<a class="button ' + ("primary" if item == observation_activation else "")
+        + '" href="' + href(observation_choice, item, observation_severity)
+        + '">' + item + "</a>"
+        for item in ("ALL", "ACTIVATED", "BLOCKED")
+    )
+    severity_filters = "".join(
+        '<a class="button ' + ("primary" if item == observation_severity else "")
+        + '" href="' + href(observation_choice, observation_activation, item)
+        + '">' + item + "</a>"
+        for item in ("ALL", "GREEN", "AMBER", "RED")
+    )
+    controls = (
+        '<div class="journal-filters">' + choice_filters + "</div>"
+        '<div class="journal-filters">' + activation_filters + "</div>"
+        '<div class="journal-filters">' + severity_filters + "</div>"
+    )
+    if not observations:
+        rows = '<div class="workflow-empty">No prospective Sponsor observation records match this view.</div>'
+    else:
+        cards = []
+        for item in observations:
+            source = item.source
+            snapshot = source.snapshot
+            activation = source.activation
+            objective = tuple(
+                link for link in item.links
+                if link.kind in {
+                    ObservationLinkKind.KR380_ENTRY_OUTCOME,
+                    ObservationLinkKind.KR390_OBJECTIVE_MODEL,
+                    ObservationLinkKind.OBJECTIVE_MODEL_OUTCOME,
+                }
+            )
+            position = tuple(
+                link for link in item.links
+                if link.kind in {
+                    ObservationLinkKind.SPONSOR_POSITION,
+                    ObservationLinkKind.SPONSOR_POSITION_OUTCOME,
+                }
+            )
+            headline = " · ".join((
+                source.decision.choice.value,
+                snapshot.canonical_instrument,
+                snapshot.direction.value,
+                snapshot.step31_severity.value,
+            ))
+            primary = "".join(
+                '<div><span>' + escape(label) + '</span><strong>'
+                + escape(value) + "</strong></div>"
+                for label, value in (
+                    ("Decision", source.decision.choice.value),
+                    ("Activation", activation.disposition.value),
+                    ("KR-370", snapshot.kr370_state),
+                    ("Objective outcome", "AVAILABLE" if item.objective_outcome_available else "UNAVAILABLE"),
+                    ("Sponsor-position outcome", "AVAILABLE" if item.sponsor_position_outcome_available else "UNAVAILABLE"),
+                )
+            )
+            decision_detail = "".join(
+                '<div class="v1-context-row"><span>' + escape(label) + '</span><strong>'
+                + escape(value) + "</strong></div>"
+                for label, value in (
+                    ("Run", snapshot.native_run_identity),
+                    ("Assessment SHA", snapshot.native_assessment_sha256),
+                    ("Snapshot", snapshot.snapshot_identity),
+                    ("Snapshot SHA", snapshot.integrity_sha256),
+                    ("Decision time", snapshot.snapshot_timestamp.isoformat()),
+                    ("Step-31 severity", snapshot.step31_severity.value),
+                    ("Step-31 warnings", " · ".join(snapshot.step31_warnings) or "NONE"),
+                    ("Risk at decision", snapshot.risk_state),
+                    ("Risk identity", snapshot.risk_identity or "UNAVAILABLE"),
+                    ("MCX supporting context", snapshot.mcx_supporting_context_identity or "NOT APPLICABLE / UNAVAILABLE"),
+                )
+            )
+            objective_detail = "".join(
+                '<div class="v1-context-row"><span>' + escape(link.kind.value) + '</span><strong>'
+                + escape(link.source_state + " · " + link.source_record_identity) + "</strong></div>"
+                for link in objective
+            ) or '<p>Objective-model evidence is unavailable. No outcome is manufactured.</p>'
+            position_detail = "".join(
+                '<div class="v1-context-row"><span>' + escape(link.kind.value) + '</span><strong>'
+                + escape(link.source_state + " · " + link.source_record_identity) + "</strong></div>"
+                for link in position
+            ) or '<p>Sponsor Position evidence is unavailable or not applicable.</p>'
+            cards.append(
+                '<section class="native-trade-plan"><h3>' + escape(headline) + "</h3>"
+                '<div class="native-trade-plan-grid">' + primary + "</div>"
+                '<details class="native-diagnostics"><summary>DECISION-TIME EVIDENCE</summary>'
+                + decision_detail + "</details>"
+                '<details class="native-diagnostics"><summary>OBJECTIVE MODEL</summary>'
+                + objective_detail + "</details>"
+                '<details class="native-diagnostics"><summary>SPONSOR POSITION</summary>'
+                + position_detail + "</details></section>"
+            )
+        rows = "".join(cards)
+    return (
+        '<section class="native-review-section"><h2>OBSERVATION RESEARCH</h2>'
+        '<p>Prospective Sponsor decisions and later factual links. No performance analytics or methodology authority.</p>'
+        + controls + rows + "</section>"
+        '<details class="native-diagnostics"><summary>EXISTING STEP-33 TRADING JOURNAL</summary>'
+        '<p>The historical completed-trade Journal remains independently governed below.</p></details>'
     )
 
 

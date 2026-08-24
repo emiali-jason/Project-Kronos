@@ -40,6 +40,10 @@ from kronos.swing.v1.native_trade_journal import (
     TradeJournalService,
 )
 from kronos.swing.v1.step32 import ObjectiveModelState, RiskState
+from kronos.swing.v1.sponsor_observation_decision import (
+    SponsorActivationDisposition,
+)
+from kronos.swing.v1.observation_research_ledger import ObservationLinkKind
 from tests.unit.application.test_swing_opportunities import _ready
 from tests.unit.swing.v1.test_kr370_step31_handoff import (
     NOW,
@@ -408,6 +412,67 @@ def test_closed_chain_restores_and_links_exact_step33_record(tmp_path) -> None:
         selected_record_id=projection.journal_record_id,
     )
     assert projection.journal_record_id in journal_html
+
+
+def test_observation_research_automatically_links_governed_downstream_chain(tmp_path) -> None:
+    completed, workflow, plan = _workflow(tmp_path)
+    judgment, risk = _risk(plan)
+    outcome = _kr380(plan, risk, Kr380EntryTimingState.LONG_ENTRY_TRIGGERED)
+    initiation = initiate_sponsor_decision(
+        plan, judgment, risk, _context(plan.canonical_instrument),
+        SponsorTradeChoice.PAPER, current_trade_plan_id=plan.trade_plan_id,
+        decided_at=NOW,
+    )
+    lifecycle = ActiveTradeLifecycleService(
+        LocalActiveTradeLifecycleStore((tmp_path / "research-lifecycle").resolve())
+    )
+    position = lifecycle.register(initiation, plan)
+    workflow.synchronize_downstream(
+        _review(
+            completed, plan, risk=(risk,), sponsor=(initiation,),
+            lifecycle=lifecycle.snapshot(),
+        ),
+        kr380_outcomes=(outcome,),
+        model_lifecycles=(_model(plan, risk, outcome, ObjectiveModelState.ACTIVE),),
+    )
+    observation = workflow.project(
+        plan.native_run_identity, plan.canonical_instrument
+    ).step31_observation
+    assert observation is not None
+    workflow.record_sponsor_observation_choice(
+        plan.native_run_identity, plan.canonical_instrument,
+        plan.native_assessment_sha256, observation.observation_evidence_id,
+        SponsorTradeChoice.PAPER, SponsorActivationDisposition.ACTIVATED,
+        current_run_identity=plan.native_run_identity, decided_at=NOW,
+        warning_acknowledged=False, risk_identity=risk.risk_result_id,
+        risk_state="RISK_APPROVED",
+        existing_sponsor_decision_identity=initiation.decision.decision_id,
+        sponsor_position_identity=position.position_id,
+    )
+    lifecycle.observe(position.position_id, _observation(position, 1, "99"))
+    active = lifecycle.observe(position.position_id, _observation(position, 2, "102"))
+    lifecycle.observe(active.position_id, _observation(active, 3, "122"))
+    closed_model = _model(
+        plan, risk, outcome, ObjectiveModelState.CLOSED, close_reason="TARGET"
+    )
+    workflow.synchronize_downstream(
+        _review(
+            completed, plan, risk=(risk,), sponsor=(initiation,),
+            lifecycle=lifecycle.snapshot(),
+        ),
+        kr380_outcomes=(outcome,), model_lifecycles=(closed_model,),
+    )
+
+    research = workflow.observation_research_snapshot()
+    assert len(research) == 1
+    assert {item.kind for item in research[0].links} == {
+        ObservationLinkKind.KR380_ENTRY_OUTCOME,
+        ObservationLinkKind.OBJECTIVE_MODEL_OUTCOME,
+        ObservationLinkKind.SPONSOR_POSITION,
+        ObservationLinkKind.SPONSOR_POSITION_OUTCOME,
+    }
+    assert research[0].objective_outcome_available
+    assert research[0].sponsor_position_outcome_available
 
 
 def test_journal_absence_creates_no_action(tmp_path) -> None:

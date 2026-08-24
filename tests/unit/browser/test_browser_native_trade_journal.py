@@ -14,6 +14,9 @@ from tests.unit.application.test_swing_opportunities import _Provider, _ready
 from tests.unit.swing.v1.test_native_sponsor_decision import _go
 from tests.unit.swing.v1.test_native_trade_journal import _empty_lifecycle, _run_paper
 from tests.unit.swing.v1.test_native_trade_construction import _ready as _ready_inputs
+from tests.unit.swing.v1.test_observation_research_ledger import _service
+from tests.unit.swing.v1.test_sponsor_observation_decision import _green, _record
+from kronos.swing.v1.sponsor_observation_decision import SponsorActivationDisposition
 
 
 def test_journal_renders_factual_analytics_model_actual_and_filters(tmp_path) -> None:  # type: ignore[no-untyped-def]
@@ -73,3 +76,28 @@ def test_actual_browser_journal_route_restores_records_and_filters_without_mutat
         assert workflow.journal_snapshot().records == journal.records
     finally:
         server.shutdown(); thread.join(timeout=2); server.server_close()
+
+
+def test_observation_research_is_compact_separate_and_has_no_performance_metrics(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    completed, observation = _green(tmp_path / "source")
+    result = _record(
+        completed, observation, SponsorTradeChoice.PAPER,
+        SponsorActivationDisposition.BLOCKED_RISK_UNAVAILABLE,
+    )
+    observations = _service(tmp_path / "ledger", result).snapshot()
+    journal = TradeJournalService(
+        LocalTradeJournalStore((tmp_path / "journal").resolve())
+    ).snapshot()
+
+    html = render_trade_journal(
+        _ready(), journal, observations=observations,
+        observation_choice="PAPER", observation_activation="BLOCKED",
+    )
+    research = html.split("EXISTING STEP-33 TRADING JOURNAL", 1)[0]
+    assert "OBSERVATION RESEARCH" in research
+    assert "DECISION-TIME EVIDENCE" in research
+    assert "OBJECTIVE MODEL" in research and "SPONSOR POSITION" in research
+    assert "BLOCKED_RISK_UNAVAILABLE" in research
+    assert "Objective outcome</span><strong>UNAVAILABLE" in research
+    assert "Win rate" not in research and "Gross P&amp;L" not in research
+    assert "/journal?observation_choice=LIVE" in html
