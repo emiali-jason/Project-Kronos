@@ -64,11 +64,12 @@ from kronos.configuration.openai_chart_analyst import (
     ChartAnalystV2ActivationStatus,
 )
 from kronos.integrations.telegram import (
+    TelegramConfigurationState,
     TelegramConfigurationStatus,
     TelegramPrivateChatCandidate,
 )
 from kronos.provider.contracts.monitoring import MonitoringConnectionState
-from kronos.market.calendar import CalendarCoverageHealth
+from kronos.market.calendar import CalendarCoverageHealth, CalendarCoverageStatus
 from kronos.browser.v1_analysis_status import (
     batch_analysis_status,
     instrument_analysis_status,
@@ -3712,6 +3713,13 @@ _SETTINGS_CSS = r"""
 .settings-control-centre .configuration-state{gap:10px;margin:6px 0;font-size:11px}
 .settings-control-centre .configuration-state span{color:var(--muted)}
 .settings-control-centre .configuration-state strong{font-size:11px;text-align:right}
+.settings-status{display:inline-flex;align-items:center;justify-content:flex-end;gap:6px;color:#dce8f0}
+.settings-status-dot{width:6px;height:6px;border-radius:50%;background:currentColor;flex:0 0 6px}
+.settings-control-centre .settings-status-dot,.settings-control-centre .settings-status-text{color:inherit}
+.settings-status-positive{color:var(--green)}
+.settings-status-negative{color:var(--red)}
+.settings-status-attention{color:var(--amber)}
+.settings-status-neutral{color:#b9c9d5}
 .settings-control-centre .configuration-note,.settings-control-centre .diagnostic-intro{font-size:10px;line-height:1.45}
 .settings-control-centre button,.settings-control-centre .button{font-size:11px;padding:7px 9px}
 .settings-control-centre label{font-size:11px}.settings-control-centre select{font-size:11px;padding:7px 9px}
@@ -3720,8 +3728,8 @@ _SETTINGS_CSS = r"""
 .settings-control-centre .configuration-actions{gap:7px;margin-top:10px;flex-wrap:wrap}
 .settings-card{position:relative;overflow:hidden}.settings-card:before{content:"";position:absolute;inset:0 auto 0 0;width:3px;background:var(--card-accent)}
 .settings-kite{--card-accent:#39b99a;background:linear-gradient(145deg,rgba(8,39,38,.94),rgba(6,23,37,.91))}
-.settings-telegram{--card-accent:#3b91e8;background:linear-gradient(145deg,rgba(8,31,58,.96),rgba(6,23,37,.91))}
-.settings-calendar{--card-accent:#9b74e8;background:linear-gradient(145deg,rgba(31,22,57,.95),rgba(6,23,37,.91))}
+.settings-telegram{--card-accent:#39b99a;background:linear-gradient(145deg,rgba(8,39,38,.94),rgba(6,23,37,.91))}
+.settings-calendar{--card-accent:#3b91e8;background:linear-gradient(145deg,rgba(8,31,58,.96),rgba(6,23,37,.91))}
 .settings-openai{--card-accent:#c06acb;background:linear-gradient(145deg,rgba(48,22,53,.94),rgba(6,23,37,.91))}
 .settings-engineering{--card-accent:#d8a542;background:linear-gradient(145deg,rgba(48,36,12,.92),rgba(6,23,37,.91));grid-column:span 2}
 .settings-security{--card-accent:#4ca8a9;background:linear-gradient(145deg,rgba(13,40,45,.94),rgba(6,23,37,.91));grid-column:1/-1}
@@ -3735,9 +3743,33 @@ _SETTINGS_CSS = r"""
 .settings-control-centre .safety-warning strong{display:block;font-size:11px}.settings-control-centre .danger-zone{border-top:1px solid #663b42;margin-top:11px;padding-top:9px}
 .settings-control-centre .danger-zone summary{color:#ef9ea4}.settings-control-centre .danger-zone button{border-color:#793b40;background:#2c151c;color:#ffc3c6}
 .settings-security-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px}.settings-security-grid div{border-left:1px solid var(--line);padding-left:9px}.settings-security-grid div:first-child{border-left:0;padding-left:0}.settings-security-grid span,.settings-security-grid strong{display:block}.settings-security-grid span{color:var(--muted);font-size:9px;letter-spacing:.05em}.settings-security-grid strong{font-size:11px;margin-top:3px}
+.topbar .dot.DISCONNECTED,.topbar .dot.ERROR{background:var(--red)}
 @media(max-width:1100px){.settings-control-centre{grid-template-columns:repeat(2,minmax(0,1fr))}.settings-engineering{grid-column:span 1}.settings-security{grid-column:1/-1}.settings-security-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(max-width:700px){.settings-control-centre{grid-template-columns:1fr}.settings-engineering,.settings-security{grid-column:auto}.settings-security-grid{grid-template-columns:1fr}.settings-security-grid div{border-left:0;border-top:1px solid var(--line);padding:7px 0 0}.settings-security-grid div:first-child{border-top:0;padding-top:0}}
 """
+
+
+def _settings_status(
+    value: str,
+    tone: str,
+    *,
+    connection: bool = False,
+    wrap_text: bool = False,
+) -> str:
+    """Render one textual Settings fact with a restrained, non-authoritative cue."""
+
+    classes = f"settings-status settings-status-{tone}"
+    if connection:
+        classes += " connection-status"
+    text = (
+        f'<span class="settings-status-text"> {escape(value)}</span>'
+        if wrap_text
+        else escape(value)
+    )
+    return (
+        f'<strong class="{classes}"><span class="settings-status-dot" '
+        f'aria-hidden="true"></span>{text}</strong>'
+    )
 
 
 def render_settings(
@@ -3756,7 +3788,6 @@ def render_settings(
         or type(activation_status) is not ChartAnalystV2ActivationStatus
     ):
         raise TypeError("CHART_ANALYST_STATUS_INVALID")
-    status_class = chart_analyst_status.value.replace(" ", "-")
     activation_action = (
         "disable"
         if activation_status is ChartAnalystV2ActivationStatus.ENABLED
@@ -3765,6 +3796,29 @@ def render_settings(
     activation_label = "Disable" if activation_action == "disable" else "Enable"
     monitoring = live_monitoring or LiveMonitoringTestResult(
         LiveMonitoringTestState.NOT_TESTED
+    )
+    provider_tone = {
+        ProviderConnectionState.CONNECTED: "positive",
+        ProviderConnectionState.CONNECTING: "attention",
+        ProviderConnectionState.DISCONNECTED: "negative",
+        ProviderConnectionState.ERROR: "negative",
+    }[snapshot.provider_state]
+    monitoring_tone = {
+        LiveMonitoringTestState.PASS: "positive",
+        LiveMonitoringTestState.TESTING: "attention",
+        LiveMonitoringTestState.CONNECTED_NO_DATA: "attention",
+        LiveMonitoringTestState.FAIL: "negative",
+        LiveMonitoringTestState.NOT_TESTED: "neutral",
+    }[monitoring.state]
+    chart_analyst_tone = {
+        ChartAnalystConnectionStatus.CONNECTED: "positive",
+        ChartAnalystConnectionStatus.CONNECTION_FAILED: "negative",
+        ChartAnalystConnectionStatus.NOT_CONFIGURED: "neutral",
+    }[chart_analyst_status]
+    activation_tone = (
+        "positive"
+        if activation_status is ChartAnalystV2ActivationStatus.ENABLED
+        else "neutral"
     )
     selected = monitoring.instrument or (
         live_monitoring_instruments[0] if live_monitoring_instruments else ""
@@ -3799,11 +3853,17 @@ def render_settings(
         or monitoring.state is LiveMonitoringTestState.TESTING
         else ""
     )
+    calendar_tones = {
+        CalendarCoverageStatus.CURRENT: "positive",
+        CalendarCoverageStatus.EXPIRING: "attention",
+        CalendarCoverageStatus.EXPIRED: "negative",
+    }
     calendar_rows = "".join(
         '<div class="configuration-state"><span>'
         f'{escape(item.exchange)} VALID THROUGH {item.valid_through.strftime("%d %b %Y").upper()}'
-        '</span><strong>'
-        f'{escape(item.status.value)}</strong></div>'
+        '</span>'
+        + _settings_status(item.status.value, calendar_tones[item.status])
+        + '</div>'
         for item in market_calendar_health
     )
     calendar_section = (
@@ -3848,6 +3908,19 @@ def render_settings(
             and telegram_status.token_configured
             and telegram_status.private_chat_configured
         )
+        telegram_state = (
+            "CONNECTED"
+            if telegram_status.state is TelegramConfigurationState.READY
+            else telegram_status.state.value
+        )
+        telegram_tone = {
+            TelegramConfigurationState.READY: "positive",
+            TelegramConfigurationState.DISCONNECTED: "negative",
+            TelegramConfigurationState.CONNECTION_FAILED: "negative",
+            TelegramConfigurationState.PRIVATE_CHAT_REQUIRED: "attention",
+            TelegramConfigurationState.TOKEN_CONFIGURED: "attention",
+            TelegramConfigurationState.NOT_CONFIGURED: "neutral",
+        }[telegram_status.state]
         everyday_actions = (
             '<form method="post" action="/settings/telegram/disconnect">'
             '<button type="submit">DISCONNECT</button></form>'
@@ -3864,16 +3937,23 @@ def render_settings(
             '<section class="configuration settings-card settings-telegram">'
             '<div class="configuration-head"><div><h2>TELEGRAM NOTIFICATIONS</h2>'
             '<small>Telegram Notifications · delivery only</small></div></div>'
-            '<div class="configuration-state"><span>Status</span><strong>'
-            + ('● CONNECTED' if telegram_connected else (
-                '● DISCONNECTED' if telegram_status.token_configured and telegram_status.private_chat_configured
-                else 'NOT CONFIGURED'))
-            + '</strong></div>'
-            '<div class="configuration-state"><span>Bot Token</span><strong>'
-            + ("CONFIGURED · ••••••••" if telegram_status.token_configured else "TELEGRAM · NOT CONFIGURED")
-            + '</strong></div><div class="configuration-state"><span>Private chat</span><strong>'
-            + ("CONFIRMED" if telegram_status.private_chat_configured else "TELEGRAM · NOT CONFIGURED")
-            + '</strong></div><div class="configuration-state"><span>Destination</span><strong>'
+            '<div class="configuration-state"><span>Status</span>'
+            + _settings_status(telegram_state, telegram_tone, wrap_text=True)
+            + '</div><div class="configuration-state"><span>Bot Token</span>'
+            + _settings_status(
+                "CONFIGURED · ••••••••"
+                if telegram_status.token_configured
+                else "TELEGRAM · NOT CONFIGURED",
+                "positive" if telegram_status.token_configured else "neutral",
+            )
+            + '</div><div class="configuration-state"><span>Private chat</span>'
+            + _settings_status(
+                "CONFIRMED"
+                if telegram_status.private_chat_configured
+                else "TELEGRAM · NOT CONFIGURED",
+                "positive" if telegram_status.private_chat_configured else "neutral",
+            )
+            + '</div><div class="configuration-state"><span>Destination</span><strong>'
             + ('PRIVATE CHAT 1' if telegram_status.private_chat_configured else 'NOT CONFIGURED')
             + '</strong></div><div class="configuration-actions">' + everyday_actions + '</div>'
             '<details class="advanced"' + (' open' if not telegram_status.token_configured else '') + '>'
@@ -3919,9 +3999,13 @@ def render_settings(
         '<div class="configuration-head"><div><h2>KITE / MARKET DATA</h2>'
         '<small>Kite Live Monitoring · governed read-only Provider</small></div></div>'
         '<div class="configuration-state"><span>Kite</span>'
-        f'<strong>● {escape(snapshot.provider_state.value)}</strong></div>'
+        + _settings_status(
+            snapshot.provider_state.value, provider_tone, wrap_text=True
+        )
+        + '</div>'
         '<div class="configuration-state"><span>Live monitoring</span>'
-        f'<strong>{escape(monitoring.state.value)}</strong></div>'
+        + _settings_status(monitoring.state.value, monitoring_tone)
+        + '</div>'
         '<div class="configuration-actions">' + kite_controls + '</div>'
         '<form class="credential-form" method="post" action="/settings/kite/live-monitoring/test">'
         '<label for="live-monitoring-instrument">Instrument</label>'
@@ -3933,10 +4017,13 @@ def render_settings(
         '<section class="configuration settings-card settings-openai"><div class="configuration-head">'
         '<div><h2>OPENAI / CHART ANALYST</h2><small>OpenAI Chart Analyst · governed visual review</small></div>'
         '</div><div class="configuration-state"><span>Credential</span>'
-        f'<strong class="connection-status {escape(status_class)}">'
-        f'{escape(chart_analyst_status.value)}</strong></div>'
+        + _settings_status(
+            chart_analyst_status.value, chart_analyst_tone, connection=True
+        )
+        + '</div>'
         '<div class="configuration-state"><span>Chart Analyst V2</span>'
-        f'<strong>{escape(activation_status.value)}</strong></div>'
+        + _settings_status(activation_status.value, activation_tone)
+        + '</div>'
         '<div class="configuration-actions">'
         f'<form method="post" action="/settings/chart-analyst/{activation_action}">'
         f'<button type="submit">{activation_label} Chart Analyst V2</button></form>'
