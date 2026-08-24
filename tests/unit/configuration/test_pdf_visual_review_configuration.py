@@ -7,8 +7,16 @@ from kronos.configuration.exceptions import ConfigurationError
 from kronos.configuration.pdf_visual_review import (
     PDF_VISUAL_REVIEW_CONFIGURATION_SCHEMA,
     default_pdf_visual_review_directories,
+    default_mcx_supporting_context_directories,
     load_or_provision_pdf_visual_review_configuration,
 )
+
+
+def test_mcx_supporting_context_uses_segregated_governed_directories(tmp_path: Path) -> None:
+    question, answer = default_mcx_supporting_context_directories(home=tmp_path)
+    root = tmp_path / "Documents" / "Project-KRONOS" / "KRONOS REVIEW PACK" / "Support Charts"
+    assert question == root / "KRONOS QUESTIONS"
+    assert answer == root / "CHATGPT ANSWERS"
 
 
 def test_provisions_non_secret_sponsor_directories_from_configuration(tmp_path: Path) -> None:

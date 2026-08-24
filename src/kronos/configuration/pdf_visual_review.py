@@ -33,6 +33,22 @@ def default_pdf_visual_review_directories(
     return swing_root / "KRONOS QUESTIONS", swing_root / "CHATGPT ANSWERS"
 
 
+def default_mcx_supporting_context_directories(
+    *, home: Path | None = None,
+) -> tuple[Path, Path]:
+    """Return the governed Sponsor-mediated MCX context transport paths."""
+
+    root = Path.home() if home is None else Path(home)
+    support_root = (
+        root / "Documents" / "Project-KRONOS" / "KRONOS REVIEW PACK"
+        / "Support Charts"
+    )
+    return (
+        support_root / "KRONOS QUESTIONS",
+        support_root / "CHATGPT ANSWERS",
+    )
+
+
 def _historical_pdf_visual_review_directories(
     *, home: Path | None = None,
 ) -> tuple[Path, Path]:
@@ -153,6 +169,7 @@ def _write_configuration(path: Path, question: Path, answer: Path) -> None:
 __all__ = [
     "PDF_VISUAL_REVIEW_CONFIGURATION_SCHEMA",
     "PdfVisualReviewConfiguration",
+    "default_mcx_supporting_context_directories",
     "default_pdf_visual_review_directories",
     "load_or_provision_pdf_visual_review_configuration",
     "pdf_visual_review_configuration_path",

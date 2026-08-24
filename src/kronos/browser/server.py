@@ -41,6 +41,9 @@ from kronos.application.swing_native_review import (
 )
 from kronos.application.swing_visual_v3 import SwingVisualV3ReviewCycle
 from kronos.application.swing_visual_v3_live import SwingVisualV3LiveWorkflow
+from kronos.application.swing_mcx_supporting_context import (
+    McxSupportingContextWorkflow,
+)
 from kronos.application.swing_trade_window import SwingTradeWindowWorkflow
 from kronos.configuration.apple_keychain import (
     AppleKeychainApiKeySource,
@@ -68,6 +71,8 @@ from kronos.configuration.openai_chart_analyst import (
     OpenAIChartAnalystCredentialService,
 )
 from kronos.configuration.pdf_visual_review import (
+    PdfVisualReviewConfiguration,
+    default_mcx_supporting_context_directories,
     load_or_provision_pdf_visual_review_configuration,
 )
 from kronos.integrations.openai_chart_analyst import (
@@ -145,6 +150,15 @@ from kronos.swing.v1.pdf_visual_review_v3_live import (
 )
 from kronos.swing.v1.visual_evidence_v3 import LocalVisualEvidenceV3Store
 from kronos.swing.v1.kr370_step31_handoff import LocalKr370Step31HandoffStore
+from kronos.swing.v1.mcx_supporting_context import (
+    McxContextFamily,
+    McxContextSlot,
+    McxSupportingContextStore,
+)
+from kronos.swing.v1.mcx_supporting_context_pdf import (
+    McxContextPdfStore,
+    McxContextPdfTransport,
+)
 from kronos.swing.v1.native_trade_construction import LocalTradePlanStore
 from kronos.swing.v1.progression_watch import (
     derive_kr370_progression_requirements,
@@ -208,6 +222,7 @@ class KronosBrowserServer(ThreadingHTTPServer):
         intraday_historical_control: (
             IntradayHistoricalQualificationOperationalControl | None
         ) = None,
+        mcx_supporting_context: McxSupportingContextWorkflow | None = None,
     ) -> None:
         if (
             address[0] != _LOOPBACK_HOST
@@ -267,6 +282,10 @@ class KronosBrowserServer(ThreadingHTTPServer):
                 intraday_historical_control is not None
                 and type(intraday_historical_control)
                 is not IntradayHistoricalQualificationOperationalControl
+            )
+            or (
+                mcx_supporting_context is not None
+                and type(mcx_supporting_context) is not McxSupportingContextWorkflow
             )
         ):
             raise ValueError("BROWSER_SERVER_MUST_BIND_LOOPBACK")
@@ -374,6 +393,23 @@ class KronosBrowserServer(ThreadingHTTPServer):
             ),
         )
         governed_review_root = self.native_review.evidence_root
+        if mcx_supporting_context is None:
+            context_questions, context_answers = (
+                default_mcx_supporting_context_directories()
+            )
+            context_root = governed_review_root / "mcx-supporting-context-v1"
+            context_pdf_store = McxContextPdfStore(context_root / "pdf-transport")
+            mcx_supporting_context = McxSupportingContextWorkflow(
+                McxSupportingContextStore(context_root / "records"),
+                McxContextPdfTransport(
+                    PdfVisualReviewConfiguration(
+                        context_questions, context_answers
+                    ),
+                    context_pdf_store,
+                    clock=lambda: datetime.now(UTC),
+                ),
+            )
+        self.mcx_supporting_context = mcx_supporting_context
         if visual_v3_live is not None:
             if visual_v3 is not None and visual_v3_live.cycle is not visual_v3:
                 raise ValueError("VISUAL_V3_LIFECYCLE_MISMATCH")
@@ -791,6 +827,10 @@ class _BrowserHandler(BaseHTTPRequestHandler):
                     details.assessment.run_identity,
                     details.assessment.canonical_instrument,
                 ),
+                self.server.mcx_supporting_context.context_for(
+                    details.assessment.canonical_instrument,
+                    assessment_boundary=discovery.observed_at,
+                ),
             ))
             return
         trade_window_match = _TRADE_WINDOW_ROUTE.fullmatch(path)
@@ -825,6 +865,7 @@ class _BrowserHandler(BaseHTTPRequestHandler):
                     if self.server.native_review_version() == "V3"
                     else None
                 ),
+                self.server.mcx_supporting_context.snapshot(),
             ))
             return
         if path == "/swing/mtf-diagnostics":
@@ -1097,6 +1138,15 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             return
         if path == "/swing/v1/native-review-answer":
             self._upload_native_review_answer()
+            return
+        if path == "/swing/mcx-context/image":
+            self._receive_mcx_context_image()
+            return
+        if path == "/swing/mcx-context/question-pack":
+            self._create_mcx_context_question_pack()
+            return
+        if path == "/swing/mcx-context/answer":
+            self._upload_mcx_context_answer()
             return
         if path == "/swing/v1/native-trade-decision":
             self._record_native_sponsor_decision()
@@ -1891,6 +1941,56 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             return
         self._redirect("/swing/v1-review")
 
+    def _mcx_context_slot_query(
+        self, *, with_family: bool,
+    ) -> tuple[McxContextSlot, McxContextFamily | None]:
+        query = parse_qs(urlsplit(self.path).query, strict_parsing=True)
+        expected = {"slot", "family"} if with_family else {"slot"}
+        if set(query) != expected or any(len(query[key]) != 1 for key in expected):
+            raise ValueError("MCX_CONTEXT_BINDING_INVALID")
+        return (
+            McxContextSlot(query["slot"][0]),
+            McxContextFamily(query["family"][0]) if with_family else None,
+        )
+
+    def _receive_mcx_context_image(self) -> None:
+        try:
+            slot, family = self._mcx_context_slot_query(with_family=True)
+            length = int(self.headers.get("Content-Length", ""))
+            if family is None or not 0 < length <= 25 * 1024 * 1024:
+                raise ValueError
+            self.server.mcx_supporting_context.stage_image(
+                slot=slot, family=family,
+                content_type=self.headers.get("Content-Type", ""),
+                payload=self.rfile.read(length),
+            )
+        except (ValueError, PdfReviewTransportError):
+            self._text(HTTPStatus.BAD_REQUEST, "MCX supporting-context image rejected.")
+            return
+        self._redirect("/swing/v1-review")
+
+    def _create_mcx_context_question_pack(self) -> None:
+        try:
+            slot, _ = self._mcx_context_slot_query(with_family=False)
+            if self.headers.get("Content-Length") not in {None, "0"}:
+                raise ValueError
+            self.server.mcx_supporting_context.create_question_pack(slot)
+        except (ValueError, PdfReviewTransportError):
+            self._redirect("/swing/v1-review")
+            return
+        self._redirect("/swing/v1-review")
+
+    def _upload_mcx_context_answer(self) -> None:
+        try:
+            slot, _ = self._mcx_context_slot_query(with_family=False)
+            if self.headers.get("Content-Length") not in {None, "0"}:
+                raise ValueError
+            self.server.mcx_supporting_context.upload_answer(slot)
+        except (ValueError, PdfReviewTransportError):
+            self._redirect("/swing/v1-review")
+            return
+        self._redirect("/swing/v1-review")
+
     def _remove_native_chart(self) -> None:
         try:
             instrument, subject, _ = self._native_chart_query()
@@ -2274,6 +2374,7 @@ def create_browser_server(
     intraday_historical_control: (
         IntradayHistoricalQualificationOperationalControl | None
     ) = None,
+    mcx_supporting_context: McxSupportingContextWorkflow | None = None,
 ) -> KronosBrowserServer:
     if type(port) is not int or not 0 <= port <= 65535:
         raise ValueError("BROWSER_SERVER_PORT_INVALID")
@@ -2297,6 +2398,7 @@ def create_browser_server(
         provider_instrument_master_operation,
         intraday_discovery_control,
         intraday_historical_control,
+        mcx_supporting_context,
     )
 
 
