@@ -50,8 +50,8 @@ def _mtf_fact_fixture():  # type: ignore[no-untyped-def]
 class _Capability:
     operations = frozenset(ReadOnlyProviderOperation)
 
-    def __init__(self) -> None:
-        self.active = True
+    def __init__(self, *, active: bool = True) -> None:
+        self.active = active
 
 
 class _Provider:
@@ -81,6 +81,51 @@ class _Provider:
 
 def _immediate(operation, _name):  # type: ignore[no-untyped-def]
     operation()
+
+
+def test_authenticated_capability_accessor_is_active_only_and_disconnects() -> None:
+    capability = _Capability()
+    provider = _Provider(capability)
+    service = app.SwingOpportunitiesApplication(
+        lambda: provider,
+        background_runner=_immediate,
+    )
+
+    assert service.authenticated_read_only_capability() is None
+    assert service.connect_provider()
+    assert service.snapshot().provider_state is app.ProviderConnectionState.CONNECTED
+    assert service.authenticated_read_only_capability() is capability
+
+    capability.active = False
+    assert service.authenticated_read_only_capability() is None
+    capability.active = True
+    assert service.disconnect_provider()
+    assert service.authenticated_read_only_capability() is None
+    assert provider.ended
+
+
+def test_reconnect_completion_exposes_only_the_new_current_capability() -> None:
+    first = _Provider()
+    second = _Provider()
+    providers = iter((first, second))
+    queued: list[callable] = []
+    service = app.SwingOpportunitiesApplication(
+        lambda: next(providers),
+        background_runner=lambda operation, _name: queued.append(operation),
+    )
+
+    assert service.connect_provider()
+    assert service.authenticated_read_only_capability() is None
+    queued.pop(0)()
+    assert service.authenticated_read_only_capability() is first.capability
+    assert service.disconnect_provider()
+    assert service.authenticated_read_only_capability() is None
+
+    assert service.connect_provider()
+    assert service.authenticated_read_only_capability() is None
+    queued.pop(0)()
+    assert service.authenticated_read_only_capability() is second.capability
+    assert second.capability is not first.capability
 
 
 def _completed(workspace, evidence=None):  # type: ignore[no-untyped-def]

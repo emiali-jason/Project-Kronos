@@ -704,6 +704,18 @@ class SwingOpportunitiesApplication:
         with self.__lock:
             return self.__snapshot
 
+    def authenticated_read_only_capability(self) -> object | None:
+        """Expose only the active capability owned by the current Provider facade."""
+
+        with self.__lock:
+            provider = self.__provider
+        if provider is None:
+            return None
+        capability = provider.authenticated_read_only_capability()
+        if capability is None or getattr(capability, "active", False) is not True:
+            return None
+        return capability
+
     def opportunities_projection(
         self,
     ) -> tuple[BrowserWorkspaceSnapshot, NativeDiscoveryRun | None]:

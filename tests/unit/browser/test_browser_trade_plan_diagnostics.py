@@ -12,7 +12,7 @@ from kronos.swing.v1.evidence_store import LocalTradingViewEvidenceStore
 from kronos.swing.v1.native_trade_construction import (
     create_trade_construction_evidence_package,
 )
-from tests.unit.application.test_swing_opportunities import _Provider, _ready
+from tests.unit.application.test_swing_opportunities import _Provider, _immediate, _ready
 from tests.unit.browser.test_browser_server import _request
 from tests.unit.browser.test_swing_visual_v3_live import (
     _answer_pdf,
@@ -28,17 +28,27 @@ from tests.unit.swing.v1.test_kr370_step31_handoff import (
 from tests.unit.swing.v1.test_native_review import _evidence_run
 
 
-def _server(tmp_path: Path):  # type: ignore[no-untyped-def]
+def _server(tmp_path: Path, *, connected: bool = False):  # type: ignore[no-untyped-def]
     native, facts, live = _live(tmp_path)
     record = live.generate(native.snapshot(), facts, native.original_chart_bytes)
     answer = live.transport.configuration.answer_directory / record.expected_answer_filename
     _answer_pdf(answer, _payload(live, native, facts, record))
     live.upload(native.snapshot(), facts, native.original_chart_bytes)
     run = _evidence_run()[1]
-    application = SwingOpportunitiesApplication(
-        _Provider,
-        initial_snapshot=replace(_ready(), swing_analysis_run_identity=run.run_identity),
+    initial = replace(_ready(), swing_analysis_run_identity=run.run_identity)
+    if connected:
+        initial = replace(
+            initial,
+            provider_state=type(initial.provider_state).DISCONNECTED,
+        )
+    application_options = (
+        {"background_runner": _immediate} if connected else {}
     )
+    application = SwingOpportunitiesApplication(
+        _Provider, initial_snapshot=initial, **application_options
+    )
+    if connected:
+        assert application.connect_provider()
     application.restore_mtf_fact_snapshot(facts)
     application.restore_native_discovery_run(run)
     server = create_browser_server(
@@ -53,6 +63,35 @@ def _server(tmp_path: Path):  # type: ignore[no-untyped-def]
     thread = Thread(target=server.serve_forever, daemon=True)
     thread.start()
     return server, thread, server.visual_v3.completed_snapshot()[0]
+
+
+def test_connected_browser_and_trade_window_share_active_capability(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    server, thread, completed = _server(tmp_path, connected=True)
+    try:
+        capability = server.application.authenticated_read_only_capability()
+        assert server.application.snapshot().provider_state.value == "CONNECTED"
+        assert capability is not None and capability.active is True
+        assert server._provider_capability() is capability
+
+        with monkeypatch.context() as patch:
+            patch.setattr(
+                server,
+                "_execution_context",
+                lambda *_values: (_ for _ in ()).throw(
+                    ValueError("GOVERNED_INSTRUMENT_INVALID")
+                ),
+            )
+            status, _, body = _post(server, completed)
+        assert status == 303 and body == ""
+        attempt = _latest(server, completed)
+        assert attempt.stage.value == "EXECUTION_CONTEXT"
+        assert attempt.safe_failure_code == "GOVERNED_INSTRUMENT_INVALID"
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
 
 
 def _post(server, completed, *, extra: bool = False):  # type: ignore[no-untyped-def]
