@@ -1,5 +1,8 @@
 from dataclasses import replace
 from datetime import datetime
+from hashlib import sha256
+from pathlib import Path
+from struct import unpack
 from zoneinfo import ZoneInfo
 
 from kronos.application.swing_opportunities import (
@@ -82,6 +85,30 @@ def test_opportunities_has_frozen_navigation_and_lifecycle_shell() -> None:
     assert "No trade or broker order will be created." in rendered
     assert 'action="/control/exit"' in rendered
     assert rendered.index("EXIT KRONOS?</b>") < rendered.index('action="/control/exit"')
+
+
+def test_shared_shell_uses_approved_local_kronos_brand_assets() -> None:
+    root = Path(__file__).resolve().parents[3]
+    brand_root = root / "assets" / "images" / "brand"
+    master = brand_root / "kronos-logo-master.png"
+    mark = brand_root / "kronos-brand-mark.png"
+    favicon = brand_root / "kronos-favicon.png"
+
+    assert sha256(master.read_bytes()).hexdigest() == (
+        "d5adbe98c9f93e82d3f65ef49c4634dc822c3ac30596e8cc8ac1ec3c62d75291"
+    )
+    assert unpack(">II", mark.read_bytes()[16:24]) == (512, 512)
+    assert unpack(">II", favicon.read_bytes()[16:24]) == (64, 64)
+
+    rendered = render_placeholder(_ready(), "Portfolio", active_nav="Portfolio")
+    assert 'href="/favicon.png"' in rendered
+    assert 'src="/assets/brand/kronos-brand-mark.png"' in rendered
+    assert 'alt="KRONOS"' in rendered
+    assert 'width="35" height="35"' in rendered
+    assert '<span class="brandword">KRONOS</span>' in rendered
+    assert 'class="brandmark">K</span>' not in rendered
+    assert 'src="http://' not in rendered
+    assert 'src="https://' not in rendered
 
 
 def test_live_monitoring_settings_distinguishes_pass_no_data_and_disconnected() -> None:

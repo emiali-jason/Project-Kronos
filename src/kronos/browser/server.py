@@ -9,6 +9,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from hashlib import sha256
 import json
 import logging
+from pathlib import Path
 import re
 from threading import Lock, Thread
 from urllib.parse import parse_qs, quote, unquote, urlsplit
@@ -198,6 +199,11 @@ from kronos.swing.v1.progression_watch import (
 
 _LOOPBACK_HOST = "127.0.0.1"
 _MAX_CREDENTIAL_FORM_BYTES = 4096
+_BRAND_ASSET_ROOT = (
+    Path(__file__).resolve().parents[3] / "assets" / "images" / "brand"
+)
+_BRAND_MARK_ASSET = _BRAND_ASSET_ROOT / "kronos-brand-mark.png"
+_FAVICON_ASSET = _BRAND_ASSET_ROOT / "kronos-favicon.png"
 _WORKSPACE_ROUTE = re.compile(r"/swing/opportunities/([1-2])\Z")
 _LOG = logging.getLogger(__name__)
 _ELIGIBLE_WORKSPACE_ROUTE = re.compile(r"/swing/eligible/([1-9][0-9]*)\Z")
@@ -1052,6 +1058,12 @@ class _BrowserHandler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:  # noqa: N802
         path = urlsplit(self.path).path
+        if path == "/assets/brand/kronos-brand-mark.png":
+            self._png_asset(_BRAND_MARK_ASSET)
+            return
+        if path == "/favicon.png":
+            self._png_asset(_FAVICON_ASSET)
+            return
         if path == "/":
             self._redirect("/swing/opportunities")
             return
@@ -2991,6 +3003,14 @@ class _BrowserHandler(BaseHTTPRequestHandler):
 
     def _html(self, body: str) -> None:
         self._respond(HTTPStatus.OK, body.encode("utf-8"), "text/html; charset=utf-8")
+
+    def _png_asset(self, path: Path) -> None:
+        try:
+            payload = path.read_bytes()
+        except OSError:
+            self._text(HTTPStatus.NOT_FOUND, "Brand asset not found.")
+            return
+        self._respond(HTTPStatus.OK, payload, "image/png")
 
     def _json(self, payload: dict[str, object]) -> None:
         self._respond(

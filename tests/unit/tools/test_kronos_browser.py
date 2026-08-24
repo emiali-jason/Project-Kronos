@@ -116,6 +116,9 @@ def test_macos_launcher_is_minimal_double_click_app_without_credentials() -> Non
     executable = root / "tools/macos/KRONOS.app/Contents/MacOS/KRONOS"
     launcher_source = root / "tools/macos/kronos_launcher.c"
     plist = root / "tools/macos/KRONOS.app/Contents/Info.plist"
+    brand_mark = root / "assets/images/brand/kronos-brand-mark.png"
+    icon_png = root / "tools/macos/KRONOS.app/Contents/Resources/KRONOS.png"
+    icon_icns = root / "tools/macos/KRONOS.app/Contents/Resources/KRONOS.icns"
     source = launcher_source.read_text(encoding="utf-8")
     assert executable.stat().st_mode & 0o111
     assert executable.read_bytes()[:4] in {b"\xcf\xfa\xed\xfe", b"\xfe\xed\xfa\xcf"}
@@ -141,3 +144,6 @@ def test_macos_launcher_is_minimal_double_click_app_without_credentials() -> Non
     assert "api_key" not in source.lower()
     assert "secret" not in source.lower()
     assert "com.project-kronos.browser-v1" in plist.read_text(encoding="utf-8")
+    assert "<string>KRONOS</string>" in plist.read_text(encoding="utf-8")
+    assert icon_png.read_bytes() == brand_mark.read_bytes()
+    assert icon_icns.read_bytes().startswith(b"icns")

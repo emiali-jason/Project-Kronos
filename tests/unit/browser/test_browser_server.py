@@ -177,6 +177,28 @@ def test_root_redirects_and_opportunities_route_renders(tmp_path) -> None:
         server.shutdown(); server.server_close(); thread.join()
 
 
+def test_local_brand_mark_and_favicon_routes_resolve(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    review = SwingV1ReviewWorkflow(LocalTradingViewEvidenceStore(tmp_path))
+    server, thread = _running_server(_ready(), v1_review=review)
+    try:
+        for path, size in (
+            ("/assets/brand/kronos-brand-mark.png", (512, 512)),
+            ("/favicon.png", (64, 64)),
+        ):
+            status, headers, body = _request_bytes(server, "GET", path)
+            assert status == 200
+            assert headers["Content-Type"] == "image/png"
+            assert body.startswith(b"\x89PNG\r\n\x1a\n")
+            assert tuple(
+                int.from_bytes(body[index:index + 4], "big")
+                for index in (16, 20)
+            ) == size
+            assert headers["Cache-Control"] == "no-store"
+            assert "default-src 'self'" in headers["Content-Security-Policy"]
+    finally:
+        server.shutdown(); server.server_close(); thread.join()
+
+
 def test_workspace_and_placeholder_routes() -> None:
     server, thread = _running_server(_ready(_opportunity()))
     try:
