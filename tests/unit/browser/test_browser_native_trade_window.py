@@ -171,6 +171,92 @@ def test_provider_failure_returns_exact_trade_window_state_not_raw_error(tmp_pat
     assert "Trade Plan construction is not available for this current evidence" not in html
 
 
+def test_historical_geometry_failure_exposes_prospective_observation_action_without_mutation(
+    tmp_path,
+) -> None:
+    completed = _completed(tmp_path)
+    diagnostic_store = LocalTradePlanConstructionDiagnosticStore(
+        tmp_path / "diagnostics"
+    )
+    workflow = SwingTradeWindowWorkflow(
+        LocalKr370Step31HandoffStore(tmp_path / "handoffs"),
+        LocalTradePlanStore(tmp_path / "plans"),
+        diagnostic_store=diagnostic_store,
+    )
+    workflow.restore((completed,))
+    historical = workflow.retain_construction_attempt(
+        attempt_identity="e" * 64,
+        run_identity=completed.requirement.native_run_identity,
+        canonical_instrument=completed.requirement.canonical_instrument,
+        native_assessment_sha256=completed.requirement.thesis.native_assessment_sha256,
+        attempt_timestamp=NOW,
+        stage=TradePlanConstructionStage.STEP31,
+        result=TradePlanConstructionAttemptResult.FAILED,
+        safe_failure_code="GEOMETRY_INVALID",
+        safe_bounded_reason=(
+            "No valid governed trade geometry is available for this opportunity."
+        ),
+    )
+    historical_path = diagnostic_store.root / f"{historical.attempt_identity}.json"
+    historical_bytes = historical_path.read_bytes()
+
+    before = render_native_trade_window(
+        _ready(),
+        workflow.project(
+            completed.requirement.native_run_identity,
+            completed.requirement.canonical_instrument,
+        ),
+    )
+    assert 'action="/swing/trade-window/construct"' in before
+    assert "EVALUATE TRADE MATHEMATICS" in before
+    assert "CONSTRUCT TRADE PLAN</button>" not in before
+
+    base = _evidence(completed)
+    warning = create_trade_construction_evidence_package(
+        package_identity=base.package_identity,
+        native_run_identity=base.native_run_identity,
+        canonical_instrument=base.canonical_instrument,
+        native_assessment_sha256=base.native_assessment_sha256,
+        setup_identity=base.setup_identity,
+        observation_boundary=base.observation_boundary,
+        provenance=base.provenance,
+        qualification_candle=base.qualification_candle,
+        governing_structural_low=base.governing_structural_low,
+        governing_structural_high=base.governing_structural_high,
+        prior_directional_swing_high=_price(
+            "HISTORICAL-BRIDGE-TARGET", "95", base.observation_boundary
+        ),
+        prior_directional_swing_low=base.prior_directional_swing_low,
+        original_range_high=base.original_range_high,
+        original_range_low=base.original_range_low,
+        material_barriers=base.material_barriers,
+    )
+    first = workflow.construct(
+        completed,
+        warning,
+        _context(completed.requirement.canonical_instrument),
+        current_run_identity=completed.requirement.native_run_identity,
+        current_analysis_boundary=completed.promotion.analysis_boundary,
+        created_at=NOW,
+    )
+    repeated = workflow.construct(
+        completed,
+        warning,
+        _context(completed.requirement.canonical_instrument),
+        current_run_identity=completed.requirement.native_run_identity,
+        current_analysis_boundary=completed.promotion.analysis_boundary,
+        created_at=NOW,
+    )
+
+    assert first.step31_observation is not None
+    assert repeated.step31_observation == first.step31_observation
+    assert first.step31_observation.severity.value == "RED"
+    assert first.trade_plan is None
+    assert historical_path.read_bytes() == historical_bytes
+    assert workflow.sponsor_observation_decisions() == ()
+    assert workflow.observation_research_snapshot() == ()
+
+
 def test_step31_geometry_failure_preserves_handoff_and_blocks_actions(tmp_path) -> None:
     completed = _completed(tmp_path)
     workflow = SwingTradeWindowWorkflow(

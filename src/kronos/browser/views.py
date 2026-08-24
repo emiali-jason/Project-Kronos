@@ -1173,7 +1173,8 @@ def render_native_trade_window(
             '<p><strong>Stage</strong> · '
             + escape(attempt.stage.value.replace("_", " ")) + '</p>'
         )
-        retry_allowed = failure_code in {
+        prospective_observation_evaluation = failure_code == "GEOMETRY_INVALID"
+        retry_allowed = prospective_observation_evaluation or failure_code in {
             "STEP31_EVALUATION_NOT_COMPLETED",
             "KITE_READ_ONLY_CAPABILITY_UNAVAILABLE",
             "TRADE_PLAN_CONSTRUCTION_UNAVAILABLE",
@@ -1191,7 +1192,13 @@ def render_native_trade_window(
                 + escape(projection.canonical_instrument) + '">'
                 '<input type="hidden" name="native_assessment_sha256" value="'
                 + escape(projection.native_assessment_sha256) + '">'
-                '<button class="button primary" type="submit">CONSTRUCT TRADE PLAN</button>'
+                '<button class="button primary" type="submit">'
+                + (
+                    "EVALUATE TRADE MATHEMATICS"
+                    if prospective_observation_evaluation
+                    else "CONSTRUCT TRADE PLAN"
+                )
+                + '</button>'
                 '</form>'
                 if projection.kr370_classification in {"BUY_NOW", "SELL_NOW"}
                 and retry_allowed
