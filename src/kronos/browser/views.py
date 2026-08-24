@@ -30,6 +30,10 @@ from kronos.application.swing_ux10 import (
     Ux10NotificationRecord,
     Ux10NotificationSnapshot,
 )
+from kronos.application.swing_refresh_reminder import (
+    K5RefreshReminderSnapshot,
+    RefreshReminderState,
+)
 from kronos.application.swing_v1_review import (
     ChartAnalysisState,
     InstrumentChartAnalysisSnapshot,
@@ -329,6 +333,7 @@ def render_opportunities(
     progression: SwingProgressionWatchSnapshot | None = None,
     visual_v3: tuple[V3SponsorEvidencePresentation, ...] = (),
     trade_windows: tuple[NativeTradeWindowProjection, ...] = (),
+    refresh_reminders: K5RefreshReminderSnapshot | None = None,
 ) -> str:
     """Render the current successful Native Discovery opportunity population."""
 
@@ -346,6 +351,11 @@ def render_opportunities(
         type(item) is not NativeTradeWindowProjection for item in trade_windows
     ):
         raise TypeError("NATIVE_OPPORTUNITIES_TRADE_WINDOW_INVALID")
+    if (
+        refresh_reminders is not None
+        and type(refresh_reminders) is not K5RefreshReminderSnapshot
+    ):
+        raise TypeError("NATIVE_OPPORTUNITIES_REFRESH_REMINDERS_INVALID")
     body = _analysis_run_strip(snapshot)
     if discovery is None:
         body += (
@@ -377,11 +387,11 @@ def render_opportunities(
         body += '<div class="panels">'
         body += _native_opportunity_panel(
             "EQUITIES + INDICES", equities, review, progression, visual_v3,
-            trade_windows,
+            trade_windows, refresh_reminders,
         )
         body += _native_opportunity_panel(
             "COMMODITIES", commodities, review, progression, visual_v3,
-            trade_windows,
+            trade_windows, refresh_reminders,
         )
         body += "</div>"
     return _page(
@@ -442,11 +452,12 @@ def _native_opportunity_metrics(counts: dict[NativeDiscoveryStatus, int]) -> str
 
 
 def _native_opportunity_panel(
-    title, probables, review, progression=None, visual_v3=(), trade_windows=()
+    title, probables, review, progression=None, visual_v3=(), trade_windows=(),
+    refresh_reminders=None,
 ) -> str:  # type: ignore[no-untyped-def]
     cards = "".join(
         _native_opportunity_card(
-            item, review, progression, visual_v3, trade_windows
+            item, review, progression, visual_v3, trade_windows, refresh_reminders
         )
         for item in probables
     )
@@ -469,6 +480,7 @@ def _native_opportunity_card(
     progression=None,
     visual_v3=(),
     trade_windows=(),
+    refresh_reminders=None,
 ) -> str:  # type: ignore[no-untyped-def]
     review_run_identity = None if review is None else review.native_run_identity
     readiness_records = () if review is None else review.readiness_records
@@ -590,7 +602,12 @@ def _native_opportunity_card(
     )
     kr370_summary = (
         "" if v3 is None or v3.kr370 is None
-        else _kr370_opportunity_summary(v3.kr370)
+        else _kr370_opportunity_summary(
+            v3.kr370,
+            None if refresh_reminders is None else refresh_reminders.for_instrument(
+                item.run_identity, item.canonical_instrument
+            ),
+        )
     )
     kr370_state = None if v3 is None else v3.kr370
     state_value = (
@@ -628,7 +645,7 @@ def _native_opportunity_card(
     )
 
 
-def _kr370_opportunity_summary(value) -> str:  # type: ignore[no-untyped-def]
+def _kr370_opportunity_summary(value, reminder=None) -> str:  # type: ignore[no-untyped-def]
     state = _kr370_state_label(value)
     if value.not_evaluable_reason is not None:
         return '<small class="kr370-card-line">Required evidence is unavailable</small>'
@@ -670,9 +687,22 @@ def _kr370_opportunity_summary(value) -> str:  # type: ignore[no-untyped-def]
         if value.watchability == "No Automated Alert Available"
         else ""
     )
+    reminder_state = ""
+    if reminder is not None:
+        label = (
+            "REMINDER SET"
+            if reminder.state is RefreshReminderState.PENDING
+            else "REMINDER SENT"
+        )
+        reminder_state = (
+            '<small class="kr370-card-line"><strong>' + label + ' · '
+            + reminder.next_eligible_completed_1h_boundary.astimezone(_KOLKATA).strftime(
+                "%d %b %H:%M IST"
+            ).upper() + '</strong></small>'
+        )
     return (
         count + '<small class="kr370-card-line">' + escape(waiting) + '</small>'
-        + condition + alert
+        + condition + alert + reminder_state
     )
 
 
@@ -1026,6 +1056,10 @@ def render_native_trade_window(
     if type(projection) is not NativeTradeWindowProjection:
         raise TypeError("NATIVE_TRADE_WINDOW_PROJECTION_INVALID")
     plan = projection.trade_plan
+    attempt = projection.latest_construction_attempt
+    attempt_failed = (
+        attempt is not None and attempt.result.value == "FAILED"
+    )
     heading = projection.kr370_classification.replace("_", " ")
     notice = (
         "Analytical promotion is complete. This is not an entry trigger or an order instruction."
@@ -1053,11 +1087,40 @@ def render_native_trade_window(
             + '</p></section>'
         )
     else:
+        failure_code = (
+            attempt.safe_failure_code
+            if attempt_failed else projection.reason
+        )
+        failure_reason = (
+            attempt.safe_bounded_reason
+            if attempt_failed else projection.reason.replace("_", " ")
+        )
+        if failure_code == "KITE_READ_ONLY_CAPABILITY_UNAVAILABLE":
+            failure_title = "KITE CONNECTION REQUIRED"
+            failure_reason = "Connect Kite before constructing the Trade Plan."
+        elif failure_code == "GEOMETRY_INVALID":
+            failure_title = "GEOMETRY INVALID"
+            failure_reason = (
+                "No valid governed trade geometry is available for this opportunity. "
+                "No PAPER / LIVE action is available."
+            )
+        else:
+            failure_title = failure_code.replace("_", " ")
+        stage = (
+            "" if not attempt_failed else
+            '<p><strong>Stage</strong> · '
+            + escape(attempt.stage.value.replace("_", " ")) + '</p>'
+        )
+        retry_allowed = failure_code in {
+            "STEP31_EVALUATION_NOT_COMPLETED",
+            "KITE_READ_ONLY_CAPABILITY_UNAVAILABLE",
+            "TRADE_PLAN_CONSTRUCTION_UNAVAILABLE",
+        }
         geometry = (
-            '<section class="analysis-section"><h2>'
-            + escape(projection.state.value.replace("_", " "))
-            + '</h2><p>' + escape(projection.reason.replace("_", " "))
-            + '</p>'
+            '<section class="analysis-section"><h2>TRADE PLAN NOT CONSTRUCTED</h2>'
+            '<div class="analysis-decision">' + escape(failure_title)
+            + '</div><p>' + escape(failure_reason or "Trade Plan construction is unavailable.")
+            + '</p>' + stage
             + (
                 '<form method="post" action="/swing/trade-window/construct">'
                 '<input type="hidden" name="run_identity" value="'
@@ -1069,11 +1132,21 @@ def render_native_trade_window(
                 '<button class="button primary" type="submit">CONSTRUCT TRADE PLAN</button>'
                 '</form>'
                 if projection.kr370_classification in {"BUY_NOW", "SELL_NOW"}
-                and projection.reason == "STEP31_EVALUATION_NOT_COMPLETED"
+                and retry_allowed
                 else ""
             )
             + '</section>'
         )
+    attempt_notice = (
+        ""
+        if not attempt_failed or plan is None
+        else '<section class="analysis-section"><h2>CONSTRUCTION FOLLOW-UP INCOMPLETE</h2>'
+        '<div class="analysis-decision">'
+        + escape((attempt.safe_failure_code or "TRADE_PLAN_CONSTRUCTION_UNAVAILABLE").replace("_", " "))
+        + '</div><p>' + escape(attempt.safe_bounded_reason or "A downstream governed stage is unavailable.")
+        + '</p><p><strong>Stage</strong> · '
+        + escape(attempt.stage.value.replace("_", " ")) + '</p></section>'
+    )
     risk = (
         '<section class="analysis-section"><h2>RISK</h2><div class="analysis-decision">'
         + escape(projection.risk_state.replace("_", " "))
@@ -1203,7 +1276,7 @@ def render_native_trade_window(
         '<h2>' + escape(projection.canonical_instrument + " · " + projection.direction)
         + '</h2><div class="analysis-decision kr370-state kr370-state-now">'
         + escape(heading) + '</div><p>' + escape(notice) + '</p></section>'
-        + geometry + risk + timing + model + sponsor + closure + journal
+        + attempt_notice + geometry + risk + timing + model + sponsor + closure + journal
         + provenance + '</div>'
     )
     return _page(

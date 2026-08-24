@@ -34,6 +34,7 @@ from kronos.swing.v1.progression_watch import (
     ProgressionWatch,
     ProgressionWatchState,
 )
+from kronos.application.swing_refresh_reminder import K5RefreshReminderRecord
 
 
 UX10_NOTIFICATION_CONTRACT = "KRONOS-SWING-UX10-NOTIFICATION-V1"
@@ -49,6 +50,7 @@ class Ux10NotificationFamily(StrEnum):
     PROMOTION_WATCH = "PROMOTION_WATCH"
     ACTIVE_TRADE_WATCH = "ACTIVE_TRADE_WATCH"
     SYSTEM_CONNECTIVITY = "SYSTEM_CONNECTIVITY"
+    ANALYSIS_REMINDER = "ANALYSIS_REMINDER"
 
 
 class Ux10NotificationType(StrEnum):
@@ -61,6 +63,7 @@ class Ux10NotificationType(StrEnum):
     WEBSOCKET_DISCONNECTED = "WEBSOCKET_DISCONNECTED"
     WEBSOCKET_RESTORED = "WEBSOCKET_RESTORED"
     MONITORING_GAP_RECONCILIATION_REQUIRED = "MONITORING_GAP_RECONCILIATION_REQUIRED"
+    REFRESH_ANALYSIS_REMINDER = "REFRESH_ANALYSIS_REMINDER"
 
 
 class Ux10Priority(StrEnum):
@@ -327,6 +330,42 @@ class SwingUx10NotificationService:
                         created.append(value)
             self._promotion_state[key] = current
         return tuple(created)
+
+    def observe_refresh_analysis_reminder(
+        self, reminder: K5RefreshReminderRecord
+    ) -> Ux10NotificationRecord:
+        """Deliver one due K5 reminder without evaluating analytical state."""
+
+        if type(reminder) is not K5RefreshReminderRecord:
+            raise TypeError("UX10_REFRESH_REMINDER_INVALID")
+        instruments = tuple(item[0] for item in reminder.instrument_bindings)
+        visible = ", ".join(instruments[:12])
+        if len(instruments) > 12:
+            visible += f", +{len(instruments) - 12} more"
+        created = self._create(
+            family=Ux10NotificationFamily.ANALYSIS_REMINDER,
+            notification_type=Ux10NotificationType.REFRESH_ANALYSIS_REMINDER,
+            priority=Ux10Priority.NORMAL,
+            run_identity=reminder.run_identity,
+            source_event_identity=reminder.reminder_identity,
+            summary=(
+                "A new completed 1H boundary is available. K5 READY instruments "
+                "awaiting reassessment: " + visible
+            ),
+            action="REFRESH SWING ANALYSIS — REMINDER ONLY; NO ANALYTICAL STATE CHANGED",
+            created_at=reminder.next_eligible_completed_1h_boundary,
+        )
+        if created is not None:
+            return created
+        with self._lock:
+            existing = next((
+                item for item in self._records.values()
+                if item.notification_type is Ux10NotificationType.REFRESH_ANALYSIS_REMINDER
+                and item.source_event_identity == reminder.reminder_identity
+            ), None)
+        if existing is None:
+            raise ValueError("UX10_REFRESH_REMINDER_DELIVERY_UNAVAILABLE")
+        return existing
 
     def observe_lifecycle_event(
         self, event: TradeLifecycleEvent

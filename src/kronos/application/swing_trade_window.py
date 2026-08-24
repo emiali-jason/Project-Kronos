@@ -7,14 +7,19 @@ positions, execution, or broker actions.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
 from enum import StrEnum
 from hashlib import sha256
+import json
+import os
+from pathlib import Path
+import re
 from typing import Callable
 
 from kronos.instrument.facts import CanonicalInstrumentContext
+from kronos.swing.run_identity import is_swing_analysis_run_id
 from kronos.application.shared_monitoring import SharedSwingMonitoringHub
 from kronos.provider.contracts.instrument import InstrumentRecord
 from kronos.provider.contracts.monitoring import (
@@ -85,6 +90,132 @@ from kronos.swing.v1.step32 import (
 
 
 KR380_ENTRY_OUTCOME_V2_CONTRACT_ID = "KRONOS-KR-380-ENTRY-OUTCOME-V2"
+TRADE_PLAN_CONSTRUCTION_DIAGNOSTIC_SCHEMA = (
+    "KRONOS-SWING-TRADE-PLAN-CONSTRUCTION-DIAGNOSTIC-V1"
+)
+TRADE_PLAN_CONSTRUCTION_DIAGNOSTIC_AUTHORITY = (
+    "OPERABILITY_DIAGNOSTIC_ONLY_NO_DOMAIN_OR_EXECUTION_AUTHORITY"
+)
+TRADE_PLAN_CONSTRUCTION_SAFE_FAILURES = {
+    "TRADE_PLAN_REQUEST_INVALID": "The construction request was not accepted.",
+    "CURRENT_NATIVE_RUN_MISMATCH": "The selected analysis run is no longer current.",
+    "CURRENT_NATIVE_ASSESSMENT_MISMATCH": "The selected opportunity is not bound to the current assessment.",
+    "KITE_READ_ONLY_CAPABILITY_UNAVAILABLE": "Connect Kite before constructing the Trade Plan.",
+    "GOVERNED_INSTRUMENT_INVALID": "The governed instrument context is unavailable.",
+    "CURRENT_TRADE_CONSTRUCTION_SOURCE_INVALID": "Current governed construction evidence is unavailable.",
+    "KR370_PROMOTION_UNAVAILABLE": "The current KR-370 promotion record is unavailable.",
+    "ENTRY_AUTHORITY_UNAVAILABLE": "A governed Entry cannot be established from the current evidence.",
+    "STOP_AUTHORITY_UNAVAILABLE": "A governed Stop cannot be established from the current evidence.",
+    "INVALIDATION_AUTHORITY_UNAVAILABLE": "A governed thesis-invalidation reference cannot be established.",
+    "TARGET_AUTHORITY_UNAVAILABLE": "A governed Target cannot be established from the current evidence.",
+    "CURRENT_QUOTE_REQUIRED_BUT_UNAVAILABLE": "A required factual current quote is unavailable.",
+    "EVIDENCE_BINDING_INVALID": "The Trade Construction evidence binding is invalid.",
+    "EVIDENCE_STALE": "The Trade Construction evidence is no longer current.",
+    "GEOMETRY_INVALID": "No valid governed trade geometry is available for this opportunity.",
+    "MATERIAL_BARRIER_ELIMINATES_POSITIVE_REWARD": "A governed material barrier eliminates positive reward.",
+    "EXECUTION_CONTEXT_INCOMPLETE": "The governed execution context is incomplete.",
+    "PORTFOLIO_STATE_SOURCE_INCOMPLETE": "Current Portfolio State evidence is incomplete.",
+    "CURRENT_RISK_INPUT_UNAVAILABLE": "The governed Risk input is unavailable.",
+    "CURRENT_NATIVE_ENTRY_TIMING_INPUT_UNAVAILABLE": "The governed entry-timing input is unavailable.",
+    "OTHER_GOVERNED_UNAVAILABLE_REASON": "Step-31 returned a governed unavailable outcome.",
+    "TRADE_PLAN_CONSTRUCTION_UNAVAILABLE": (
+        "The current governed evidence could not complete Trade Plan construction."
+    ),
+}
+
+
+class TradePlanConstructionStage(StrEnum):
+    REQUEST_PARSE = "REQUEST_PARSE"
+    CURRENT_BINDING = "CURRENT_BINDING"
+    PROVIDER_CAPABILITY = "PROVIDER_CAPABILITY"
+    EXECUTION_CONTEXT = "EXECUTION_CONTEXT"
+    EVIDENCE_PACKAGE = "EVIDENCE_PACKAGE"
+    UX05_HANDOFF = "UX05_HANDOFF"
+    STEP31 = "STEP31"
+    PORTFOLIO_STATE = "PORTFOLIO_STATE"
+    DOMAIN007_RISK = "DOMAIN007_RISK"
+    ECPC_KR380 = "ECPC_KR380"
+
+
+class TradePlanConstructionAttemptResult(StrEnum):
+    FAILED = "FAILED"
+    SUCCEEDED = "SUCCEEDED"
+
+
+@dataclass(frozen=True, slots=True)
+class TradePlanConstructionAttemptDiagnostic:
+    attempt_identity: str
+    run_identity: str
+    canonical_instrument: str
+    native_assessment_sha256: str
+    attempt_timestamp: datetime
+    stage: TradePlanConstructionStage
+    safe_failure_code: str | None
+    safe_bounded_reason: str | None
+    result: TradePlanConstructionAttemptResult
+    integrity_sha256: str
+    schema: str = TRADE_PLAN_CONSTRUCTION_DIAGNOSTIC_SCHEMA
+    authority: str = TRADE_PLAN_CONSTRUCTION_DIAGNOSTIC_AUTHORITY
+
+    def __post_init__(self) -> None:
+        failed = self.result is TradePlanConstructionAttemptResult.FAILED
+        if (
+            re.fullmatch(r"[0-9a-f]{64}", self.attempt_identity) is None
+            or not is_swing_analysis_run_id(self.run_identity)
+            or re.fullmatch(r"[A-Z0-9&._ -]{1,64}", self.canonical_instrument) is None
+            or re.fullmatch(r"[0-9a-f]{64}", self.native_assessment_sha256) is None
+            or self.attempt_timestamp.tzinfo is None
+            or type(self.stage) is not TradePlanConstructionStage
+            or failed != (self.safe_failure_code is not None)
+            or failed != (self.safe_bounded_reason is not None)
+            or (
+                failed
+                and TRADE_PLAN_CONSTRUCTION_SAFE_FAILURES.get(
+                    self.safe_failure_code or ""
+                ) != self.safe_bounded_reason
+            )
+            or type(self.result) is not TradePlanConstructionAttemptResult
+            or self.schema != TRADE_PLAN_CONSTRUCTION_DIAGNOSTIC_SCHEMA
+            or self.authority != TRADE_PLAN_CONSTRUCTION_DIAGNOSTIC_AUTHORITY
+            or self.integrity_sha256 != _construction_diagnostic_integrity(self)
+        ):
+            raise ValueError("TRADE_PLAN_CONSTRUCTION_DIAGNOSTIC_INVALID")
+
+
+class LocalTradePlanConstructionDiagnosticStore:
+    """Append-only local store for bounded construction-attempt evidence."""
+
+    def __init__(self, root: Path) -> None:
+        self.root = root
+        self.root.mkdir(parents=True, exist_ok=True)
+
+    def retain(self, record: TradePlanConstructionAttemptDiagnostic) -> None:
+        path = self.root / f"{record.attempt_identity}.json"
+        payload = _construction_diagnostic_dict(record)
+        try:
+            with path.open("x", encoding="utf-8") as target:
+                json.dump(payload, target, sort_keys=True, separators=(",", ":"))
+                target.flush()
+                os.fsync(target.fileno())
+            os.chmod(path, 0o600)
+        except FileExistsError:
+            if json.loads(path.read_text(encoding="utf-8")) != payload:
+                raise ValueError("TRADE_PLAN_CONSTRUCTION_DIAGNOSTIC_IMMUTABILITY_VIOLATION")
+        except (OSError, json.JSONDecodeError) as error:
+            raise ValueError("TRADE_PLAN_CONSTRUCTION_DIAGNOSTIC_PERSISTENCE_FAILED") from error
+
+    def load(self) -> tuple[TradePlanConstructionAttemptDiagnostic, ...]:
+        records = []
+        for path in sorted(self.root.glob("*.json")):
+            try:
+                records.append(_construction_diagnostic_from_dict(
+                    json.loads(path.read_text(encoding="utf-8"))
+                ))
+            except (OSError, ValueError, TypeError, json.JSONDecodeError):
+                continue
+        return tuple(sorted(
+            records, key=lambda item: (item.attempt_timestamp, item.attempt_identity)
+        ))
 
 
 class Kr380EntryTimingState(StrEnum):
@@ -233,6 +364,7 @@ class NativeTradeWindowProjection:
     closure_reason: str | None = None
     journal_record_id: str | None = None
     continuity_warnings: tuple[str, ...] = ()
+    latest_construction_attempt: TradePlanConstructionAttemptDiagnostic | None = None
 
     def __post_init__(self) -> None:
         ready = self.state is TradeWindowState.TRADE_PLAN_READY
@@ -291,6 +423,19 @@ class NativeTradeWindowProjection:
             or (self.closure_id is None) != (self.closure_state == "OPEN / NOT ESTABLISHED")
             or (self.closure_id is None) != (self.closure_reason is None)
             or type(self.continuity_warnings) is not tuple
+            or (
+                self.latest_construction_attempt is not None
+                and (
+                    type(self.latest_construction_attempt)
+                    is not TradePlanConstructionAttemptDiagnostic
+                    or self.latest_construction_attempt.run_identity
+                    != self.native_run_identity
+                    or self.latest_construction_attempt.canonical_instrument
+                    != self.canonical_instrument
+                    or self.latest_construction_attempt.native_assessment_sha256
+                    != self.native_assessment_sha256
+                )
+            )
         ):
             raise ValueError("NATIVE_TRADE_WINDOW_PROJECTION_INVALID")
 
@@ -306,6 +451,7 @@ class SwingTradeWindowWorkflow:
         risk_store: LocalRiskPermissionV1Store | None = None,
         kr380_store: LocalKr380V2Store | None = None,
         objective_model_store: LocalObjectiveModelV1Store | None = None,
+        diagnostic_store: LocalTradePlanConstructionDiagnosticStore | None = None,
     ) -> None:
         if (
             type(handoff_store) is not LocalKr370Step31HandoffStore
@@ -326,6 +472,11 @@ class SwingTradeWindowWorkflow:
                 objective_model_store is not None
                 and type(objective_model_store) is not LocalObjectiveModelV1Store
             )
+            or (
+                diagnostic_store is not None
+                and type(diagnostic_store)
+                is not LocalTradePlanConstructionDiagnosticStore
+            )
         ):
             raise TypeError("SWING_TRADE_WINDOW_STORE_INVALID")
         self._handoff_store = handoff_store
@@ -334,6 +485,7 @@ class SwingTradeWindowWorkflow:
         self._risk_store = risk_store
         self._kr380_store = kr380_store
         self._objective_model_store = objective_model_store
+        self._diagnostic_store = diagnostic_store
         self._portfolio_state: PortfolioStateV1 | None = None
         self._shared_monitoring_hub: SharedSwingMonitoringHub | None = None
         self._monitoring_registrations: dict[str, object] = {}
@@ -342,6 +494,13 @@ class SwingTradeWindowWorkflow:
         self._handoffs: dict[tuple[str, str], Kr370Step31EligibilityHandoff] = {}
         self._plans: dict[tuple[str, str], TradePlanRecord] = {}
         self._failures: dict[tuple[str, str], str] = {}
+        restored_diagnostics = () if diagnostic_store is None else diagnostic_store.load()
+        self._construction_attempts: dict[
+            tuple[str, str], tuple[TradePlanConstructionAttemptDiagnostic, ...]
+        ] = {}
+        for item in restored_diagnostics:
+            key = (item.run_identity, item.canonical_instrument)
+            self._construction_attempts[key] = (*self._construction_attempts.get(key, ()), item)
         self._risks: dict[str, RiskApproval | RiskPermissionV1] = {}
         self._production_risks: dict[str, RiskPermissionV1] = {}
         self._sponsor: dict[str, SponsorInitiationResult] = {}
@@ -967,21 +1126,31 @@ class SwingTradeWindowWorkflow:
         current_run_identity: str,
         current_analysis_boundary: datetime,
         created_at: datetime,
+        stage_listener: Callable[[TradePlanConstructionStage], None] | None = None,
     ) -> NativeTradeWindowProjection:
         """Invoke the existing Step-31 geometry engine after exact eligibility."""
 
         promotion = completed.promotion
         if promotion is None:
             raise ValueError("KR370_PROMOTION_UNAVAILABLE")
-        handoff = create_kr370_step31_handoff(
-            completed.requirement,
-            completed.readiness,
-            promotion,
-            current_run_identity=current_run_identity,
-            current_analysis_boundary=current_analysis_boundary,
-            created_at=created_at,
-        )
-        self._handoff_store.retain(handoff)
+        if stage_listener is not None:
+            stage_listener(TradePlanConstructionStage.UX05_HANDOFF)
+        key = (promotion.run_identity, promotion.canonical_instrument)
+        handoff = self._handoffs.get(key)
+        if handoff is None:
+            handoff = create_kr370_step31_handoff(
+                completed.requirement,
+                completed.readiness,
+                promotion,
+                current_run_identity=current_run_identity,
+                current_analysis_boundary=current_analysis_boundary,
+                created_at=created_at,
+            )
+            self._handoff_store.retain(handoff)
+        elif not _exact_binding(completed, handoff):
+            raise ValueError("SWING_TRADE_WINDOW_HANDOFF_BINDING_INVALID")
+        if stage_listener is not None:
+            stage_listener(TradePlanConstructionStage.STEP31)
         plan = construct_trade_plan(
             completed.requirement,
             handoff,
@@ -989,7 +1158,6 @@ class SwingTradeWindowWorkflow:
             execution_context,
             created_at=created_at,
         )
-        key = (handoff.native_run_identity, handoff.canonical_instrument)
         self._completed[key] = completed
         self._handoffs[key] = handoff
         if plan.geometry_viability is TradePlanStatus.TRADE_PLAN_READY:
@@ -1000,6 +1168,57 @@ class SwingTradeWindowWorkflow:
             self._plans.pop(key, None)
             self._failures[key] = plan.unavailable_reason.value
         return self.project(*key)
+
+    def retain_construction_attempt(
+        self,
+        *,
+        attempt_identity: str,
+        run_identity: str,
+        canonical_instrument: str,
+        native_assessment_sha256: str,
+        attempt_timestamp: datetime,
+        stage: TradePlanConstructionStage,
+        result: TradePlanConstructionAttemptResult,
+        safe_failure_code: str | None = None,
+        safe_bounded_reason: str | None = None,
+    ) -> TradePlanConstructionAttemptDiagnostic:
+        values = dict(
+            attempt_identity=attempt_identity,
+            run_identity=run_identity,
+            canonical_instrument=canonical_instrument,
+            native_assessment_sha256=native_assessment_sha256,
+            attempt_timestamp=attempt_timestamp,
+            stage=stage,
+            safe_failure_code=safe_failure_code,
+            safe_bounded_reason=safe_bounded_reason,
+            result=result,
+            integrity_sha256="",
+        )
+        record = TradePlanConstructionAttemptDiagnostic(**(
+            values | {"integrity_sha256": _construction_diagnostic_integrity_values(values)}
+        ))
+        if self._diagnostic_store is not None:
+            self._diagnostic_store.retain(record)
+        key = (run_identity, canonical_instrument)
+        current = self._construction_attempts.get(key, ())
+        if any(item.attempt_identity == attempt_identity for item in current):
+            raise ValueError("TRADE_PLAN_CONSTRUCTION_ATTEMPT_DUPLICATE")
+        self._construction_attempts[key] = (*current, record)
+        return record
+
+    def latest_construction_attempt(
+        self,
+        run_identity: str,
+        canonical_instrument: str,
+        native_assessment_sha256: str | None = None,
+    ) -> TradePlanConstructionAttemptDiagnostic | None:
+        records = self._construction_attempts.get((run_identity, canonical_instrument), ())
+        if native_assessment_sha256 is not None:
+            records = tuple(
+                item for item in records
+                if item.native_assessment_sha256 == native_assessment_sha256
+            )
+        return None if not records else records[-1]
 
     def project(
         self, run_identity: str, canonical_instrument: str
@@ -1014,6 +1233,9 @@ class SwingTradeWindowWorkflow:
             native_assessment_sha256=promotion.native_assessment_sha256,
             kr370_classification=promotion.classification.value,
             direction=promotion.direction.value,
+            latest_construction_attempt=self.latest_construction_attempt(
+                run_identity, canonical_instrument, promotion.native_assessment_sha256
+            ),
         )
         if promotion.not_evaluable_reason is not None:
             return NativeTradeWindowProjection(
@@ -1582,12 +1804,70 @@ def _journal_binding(
     )
 
 
+def _construction_diagnostic_dict(
+    record: TradePlanConstructionAttemptDiagnostic,
+) -> dict[str, object]:
+    values = asdict(record)
+    values["stage"] = record.stage.value
+    values["result"] = record.result.value
+    values["attempt_timestamp"] = record.attempt_timestamp.isoformat()
+    return values
+
+
+def _construction_diagnostic_from_dict(
+    value: object,
+) -> TradePlanConstructionAttemptDiagnostic:
+    if type(value) is not dict:
+        raise ValueError("TRADE_PLAN_CONSTRUCTION_DIAGNOSTIC_INVALID")
+    values = dict(value)
+    values["stage"] = TradePlanConstructionStage(values["stage"])
+    values["result"] = TradePlanConstructionAttemptResult(values["result"])
+    values["attempt_timestamp"] = datetime.fromisoformat(values["attempt_timestamp"])
+    return TradePlanConstructionAttemptDiagnostic(**values)
+
+
+def _construction_diagnostic_integrity(
+    record: TradePlanConstructionAttemptDiagnostic,
+) -> str:
+    values = asdict(record)
+    values["integrity_sha256"] = ""
+    return _construction_diagnostic_integrity_values(values)
+
+
+def _construction_diagnostic_integrity_values(
+    values: dict[str, object],
+) -> str:
+    material = dict(values)
+    material.setdefault("schema", TRADE_PLAN_CONSTRUCTION_DIAGNOSTIC_SCHEMA)
+    material.setdefault("authority", TRADE_PLAN_CONSTRUCTION_DIAGNOSTIC_AUTHORITY)
+    material["integrity_sha256"] = ""
+    return sha256(json.dumps(
+        material,
+        sort_keys=True,
+        default=_construction_diagnostic_json_default,
+        separators=(",", ":"),
+    ).encode()).hexdigest()
+
+
+def _construction_diagnostic_json_default(value: object) -> object:
+    if isinstance(value, StrEnum):
+        return value.value
+    if isinstance(value, datetime):
+        return value.isoformat()
+    raise TypeError
+
+
 __all__ = [
     "GovernedKr380EntryOutcomeReference",
     "GovernedModelLifecycleReference",
     "Kr380EntryTimingState",
     "NativeTradeWindowProjection",
+    "LocalTradePlanConstructionDiagnosticStore",
     "SwingTradeWindowWorkflow",
+    "TradePlanConstructionAttemptDiagnostic",
+    "TradePlanConstructionAttemptResult",
+    "TRADE_PLAN_CONSTRUCTION_SAFE_FAILURES",
+    "TradePlanConstructionStage",
     "TradeWindowState",
     "build_current_trade_construction_evidence",
 ]

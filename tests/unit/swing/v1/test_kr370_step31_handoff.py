@@ -7,7 +7,10 @@ import pytest
 
 from kronos.instrument.facts import CanonicalInstrumentContext, InstrumentContextStatus
 from kronos.application.swing_trade_window import (
+    LocalTradePlanConstructionDiagnosticStore,
     SwingTradeWindowWorkflow,
+    TradePlanConstructionAttemptResult,
+    TradePlanConstructionStage,
     TradeWindowState,
 )
 from kronos.application.swing_visual_v3 import CompletedVisualV3Review
@@ -328,3 +331,76 @@ def test_step31_failure_is_not_persisted_as_a_trade_plan(tmp_path) -> None:  # t
     assert projection.reason == "ENTRY_AUTHORITY_UNAVAILABLE"
     assert projection.trade_plan is None
     assert plan_store.load_for_requirements((completed.requirement,)) == ()
+
+
+def test_construction_failures_are_immutable_stage_specific_and_restart_safe(
+    tmp_path,
+) -> None:  # type: ignore[no-untyped-def]
+    completed = _completed(tmp_path)
+    store = LocalTradePlanConstructionDiagnosticStore(tmp_path / "diagnostics")
+    workflow = SwingTradeWindowWorkflow(
+        LocalKr370Step31HandoffStore(tmp_path / "handoffs"),
+        LocalTradePlanStore(tmp_path / "plans"),
+        diagnostic_store=store,
+    )
+    for offset, stage in enumerate((
+        TradePlanConstructionStage.REQUEST_PARSE,
+        TradePlanConstructionStage.CURRENT_BINDING,
+        TradePlanConstructionStage.PROVIDER_CAPABILITY,
+        TradePlanConstructionStage.EXECUTION_CONTEXT,
+        TradePlanConstructionStage.EVIDENCE_PACKAGE,
+    )):
+        workflow.retain_construction_attempt(
+            attempt_identity=f"{offset + 1:064x}",
+            run_identity=completed.requirement.native_run_identity,
+            canonical_instrument=completed.requirement.canonical_instrument,
+            native_assessment_sha256=completed.requirement.thesis.native_assessment_sha256,
+            attempt_timestamp=NOW.replace(microsecond=offset),
+            stage=stage,
+            result=TradePlanConstructionAttemptResult.FAILED,
+            safe_failure_code="TRADE_PLAN_CONSTRUCTION_UNAVAILABLE",
+            safe_bounded_reason=(
+                "The current governed evidence could not complete Trade Plan construction."
+            ),
+        )
+    assert len(store.load()) == 5
+    with pytest.raises(
+        ValueError, match="TRADE_PLAN_CONSTRUCTION_DIAGNOSTIC_INVALID"
+    ):
+        workflow.retain_construction_attempt(
+            attempt_identity="f" * 64,
+            run_identity=completed.requirement.native_run_identity,
+            canonical_instrument=completed.requirement.canonical_instrument,
+            native_assessment_sha256=(
+                completed.requirement.thesis.native_assessment_sha256
+            ),
+            attempt_timestamp=NOW,
+            stage=TradePlanConstructionStage.EVIDENCE_PACKAGE,
+            result=TradePlanConstructionAttemptResult.FAILED,
+            safe_failure_code="TRADE_PLAN_CONSTRUCTION_UNAVAILABLE",
+            safe_bounded_reason="raw token or filesystem detail",
+        )
+    assert len(store.load()) == 5
+    assert workflow.latest_construction_attempt(
+        completed.requirement.native_run_identity,
+        completed.requirement.canonical_instrument,
+    ).stage is TradePlanConstructionStage.EVIDENCE_PACKAGE
+    assert LocalTradePlanStore(tmp_path / "plans").load_for_requirements(
+        (completed.requirement,)
+    ) == ()
+    assert LocalKr370Step31HandoffStore(tmp_path / "handoffs").load_exact(
+        completed.requirement.native_run_identity,
+        completed.requirement.canonical_instrument,
+        completed.requirement.thesis.native_assessment_sha256,
+        completed.promotion.integrity_sha256,
+    ) is None
+
+    restored = SwingTradeWindowWorkflow(
+        LocalKr370Step31HandoffStore(tmp_path / "handoffs"),
+        LocalTradePlanStore(tmp_path / "plans"),
+        diagnostic_store=store,
+    )
+    assert restored.latest_construction_attempt(
+        completed.requirement.native_run_identity,
+        completed.requirement.canonical_instrument,
+    ).attempt_identity == f"{5:064x}"
