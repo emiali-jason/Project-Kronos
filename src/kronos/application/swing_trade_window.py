@@ -676,8 +676,8 @@ class SwingTradeWindowWorkflow:
                 instrument=instrument,
                 session_identity=one_hour.session_identity,
                 observation_boundary=one_hour.observation_boundary,
-                ecpc_outcome=EcpcV2Outcome.QUALIFIED,
-                ecpc_blockers=(),
+                ecpc_outcome=EcpcV2Outcome.PENDING,
+                ecpc_blockers=(EcpcV2Blocker.EXECUTION_CONFIRMATION_PENDING,),
                 clock=clock,
             )
             restored.append(plan.trade_plan_id)

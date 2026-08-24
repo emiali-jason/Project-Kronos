@@ -134,6 +134,7 @@ from kronos.swing.v1.tradingview import ChartTimeframe
 from kronos.swing.v1.step32 import SponsorDecisionMode
 from kronos.swing.v1.native_sponsor_decision import SponsorTradeChoice
 from kronos.swing.v1.native_entry_timing import (
+    EcpcV2Blocker,
     EcpcV2Outcome,
     LocalKr380V2Store,
     LocalObjectiveModelV1Store,
@@ -760,8 +761,10 @@ class KronosBrowserServer(ThreadingHTTPServer):
                     canonical_instrument,
                     session_identity=one_hour.session_identity,
                     observation_boundary=one_hour.observation_boundary,
-                    ecpc_outcome=EcpcV2Outcome.QUALIFIED,
-                    ecpc_blockers=(),
+                    ecpc_outcome=EcpcV2Outcome.PENDING,
+                    ecpc_blockers=(
+                        EcpcV2Blocker.EXECUTION_CONFIRMATION_PENDING,
+                    ),
                     previous=None,
                     current=None,
                     evaluated_at=datetime.now(UTC),
@@ -775,8 +778,10 @@ class KronosBrowserServer(ThreadingHTTPServer):
                     instrument=instrument,
                     session_identity=one_hour.session_identity,
                     observation_boundary=one_hour.observation_boundary,
-                    ecpc_outcome=EcpcV2Outcome.QUALIFIED,
-                    ecpc_blockers=(),
+                    ecpc_outcome=EcpcV2Outcome.PENDING,
+                    ecpc_blockers=(
+                        EcpcV2Blocker.EXECUTION_CONFIRMATION_PENDING,
+                    ),
                 )
             except ValueError as error:
                 _LOG.warning("KR380 monitoring not active: %s", error)
