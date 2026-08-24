@@ -57,7 +57,8 @@ def test_now_card_exposes_trade_window_and_window_uses_persisted_geometry(tmp_pa
     assert "₹100" in window and "₹90" in window and "₹120" in window
     assert "1 : 2" in window
     assert "RISK UNAVAILABLE" in window
-    assert "No LIVE / PAPER / IGNORE control is available" in window
+    assert "SPONSOR DECISION PATH" in window
+    assert "PENDING OBSERVATION-PHASE DECISION WIRING" in window
     assert "Analytical promotion is complete" in window
     assert "not an entry trigger or an order instruction" in window
 
@@ -197,17 +198,6 @@ def test_step31_geometry_failure_preserves_handoff_and_blocks_actions(tmp_path) 
         current_analysis_boundary=completed.promotion.analysis_boundary,
         created_at=NOW,
     )
-    workflow.retain_construction_attempt(
-        attempt_identity="e" * 64,
-        run_identity=completed.requirement.native_run_identity,
-        canonical_instrument=completed.requirement.canonical_instrument,
-        native_assessment_sha256=completed.requirement.thesis.native_assessment_sha256,
-        attempt_timestamp=NOW,
-        stage=TradePlanConstructionStage.STEP31,
-        result=TradePlanConstructionAttemptResult.FAILED,
-        safe_failure_code="GEOMETRY_INVALID",
-        safe_bounded_reason="No valid governed trade geometry is available for this opportunity.",
-    )
     projection = workflow.project(
         completed.requirement.native_run_identity,
         completed.requirement.canonical_instrument,
@@ -215,7 +205,10 @@ def test_step31_geometry_failure_preserves_handoff_and_blocks_actions(tmp_path) 
     html = render_native_trade_window(_ready(), projection)
     assert projection.handoff is not None
     assert projection.trade_plan is None
-    assert "GEOMETRY INVALID" in html
-    assert "No PAPER / LIVE action is available." in html
+    assert "TRADE MATHEMATICS" in html
+    assert "RED · COMPLETE WARNING" in html
+    assert "Risk geometry is zero or negative." in html
+    assert "No PAPER / LIVE action is available." not in html
+    assert "PENDING OBSERVATION-PHASE DECISION WIRING" in html
     assert "CONSTRUCT TRADE PLAN" not in html
     assert "PAPER</button>" not in html and "LIVE</button>" not in html

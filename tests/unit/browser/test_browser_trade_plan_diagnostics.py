@@ -207,7 +207,7 @@ def test_pre_step31_stage_failures_are_retained_and_redirected(
         thread.join(timeout=2)
 
 
-def test_step31_invalid_geometry_redirects_and_reuses_one_handoff(
+def test_step31_geometry_warning_redirects_and_reuses_one_handoff(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     server, thread, _ = _server(tmp_path)
@@ -266,13 +266,18 @@ def test_step31_invalid_geometry_redirects_and_reuses_one_handoff(
         )
         assert projection is not None
         assert projection.handoff is not None and projection.trade_plan is None
+        assert projection.step31_observation is not None
         assert projection.handoff.handoff_identity == first_handoff
         assert _latest(server, completed).stage.value == "STEP31"
-        assert _latest(server, completed).safe_failure_code == "GEOMETRY_INVALID"
+        assert _latest(server, completed).result.value == "SUCCEEDED"
+        assert _latest(server, completed).safe_failure_code is None
         status, _, page = _request(server, "GET", first[1]["Location"])
         assert status == 200
-        assert "GEOMETRY INVALID" in page
-        assert "No PAPER / LIVE action is available." in page
+        assert "TRADE MATHEMATICS" in page
+        assert "RED · COMPLETE WARNING" in page
+        assert "Risk geometry is zero or negative." in page
+        assert "No PAPER / LIVE action is available." not in page
+        assert "PENDING OBSERVATION-PHASE DECISION WIRING" in page
         assert "CONSTRUCT TRADE PLAN" not in page
     finally:
         server.shutdown()

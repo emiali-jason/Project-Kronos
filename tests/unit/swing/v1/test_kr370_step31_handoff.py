@@ -327,9 +327,11 @@ def test_step31_failure_is_not_persisted_as_a_trade_plan(tmp_path) -> None:  # t
         created_at=NOW,
     )
 
-    assert projection.state is TradeWindowState.TRADE_PLAN_UNAVAILABLE
-    assert projection.reason == "ENTRY_AUTHORITY_UNAVAILABLE"
+    assert projection.state is TradeWindowState.STEP31_OBSERVATION_AVAILABLE
+    assert projection.reason == "STEP31_OBSERVATION_AVAILABLE"
     assert projection.trade_plan is None
+    assert projection.step31_observation is not None
+    assert projection.step31_observation.entry is None
     assert plan_store.load_for_requirements((completed.requirement,)) == ()
 
 

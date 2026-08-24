@@ -3,6 +3,12 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from kronos.swing.v1.native_trade_construction import TRADE_PLAN_CONTRACT_ID
+from kronos.swing.v1.step31_observation import (
+    STEP31_OBSERVATION_CONTRACT_ID,
+    STEP31_OBSERVATION_POLICY_ID,
+)
+
 
 ROOT = Path(__file__).resolve().parents[3]
 ARCHITECTURE = ROOT / "docs" / "architecture"
@@ -86,6 +92,29 @@ def test_observation_phase_keeps_decision_activation_and_objective_truth_distinc
     assert "IGNORE creates no Sponsor Position" in adr
     assert "A recorded PAPER or LIVE observation choice creates no Sponsor Position" in product
     assert "not sufficient by itself to retain every LIVE, PAPER, and IGNORE" in step33
+
+
+def test_step31_observation_contract_is_versioned_without_weakening_trade_plan() -> None:
+    contracts = (
+        ARCHITECTURE / "interfaces" / "SWING-V1-STEP-32-VERSIONED-CONTRACTS.md"
+    ).read_text(encoding="utf-8")
+
+    for required in (
+        "KRONOS-SWING-STEP31-OBSERVATION-EVIDENCE-V1",
+        "SWING-STEP31-OBSERVATION-PHASE-V1",
+        "COMPLETE_FAVOURABLE|COMPLETE_WARNING|INCOMPLETE_WARNING",
+        "Negative or zero risk/reward is retained",
+        "Trade Plan contract",
+        "No Risk, Sponsor-decision",
+        "broker, or autonomous",
+    ):
+        assert required in contracts
+    assert "Warning or incomplete evidence is never\n  promoted into that Trade Plan contract" in contracts
+    assert STEP31_OBSERVATION_CONTRACT_ID == (
+        "KRONOS-SWING-STEP31-OBSERVATION-EVIDENCE-V1"
+    )
+    assert STEP31_OBSERVATION_POLICY_ID == "SWING-STEP31-OBSERVATION-PHASE-V1"
+    assert TRADE_PLAN_CONTRACT_ID == "KRONOS-SWING-V1-TRADE-PLAN-RECORD-V0"
 
 
 def test_future_work_orders_are_bounded_and_runtime_is_not_started() -> None:

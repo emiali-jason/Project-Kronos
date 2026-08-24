@@ -1056,6 +1056,7 @@ def render_native_trade_window(
     if type(projection) is not NativeTradeWindowProjection:
         raise TypeError("NATIVE_TRADE_WINDOW_PROJECTION_INVALID")
     plan = projection.trade_plan
+    observation = projection.step31_observation
     attempt = projection.latest_construction_attempt
     attempt_failed = (
         attempt is not None and attempt.result.value == "FAILED"
@@ -1066,7 +1067,63 @@ def render_native_trade_window(
         if projection.kr370_classification in {"BUY_NOW", "SELL_NOW"}
         else "Trade construction is not eligible for this analytical state."
     )
-    if projection.state is TradeWindowState.TRADE_PLAN_READY and plan is not None:
+    if observation is not None:
+        def observed_number(value: object, unavailable: str = "UNAVAILABLE") -> str:
+            return unavailable if value is None else "₹" + _number(value)
+
+        ratio = (
+            "UNAVAILABLE"
+            if observation.risk_reward_state.value == "UNAVAILABLE"
+            else "INVALID"
+            if observation.risk_reward_state.value == "INVALID"
+            else "1 : " + _number(observation.risk_reward_ratio)
+        )
+        warning_labels = {
+            "TARGET_BELOW_ENTRY": "Target is at or below Entry for a LONG thesis.",
+            "TARGET_ABOVE_ENTRY": "Target is at or above Entry for a SHORT thesis.",
+            "NON_POSITIVE_REWARD": "Reward is zero or negative.",
+            "NON_POSITIVE_RISK": "Risk geometry is zero or negative.",
+            "RR_UNFAVOURABLE": "Risk/reward is unfavourable under governed policy.",
+            "TARGET_UNAVAILABLE": "Target evidence is unavailable.",
+            "STOP_UNAVAILABLE": "Stop evidence is unavailable.",
+            "ENTRY_UNAVAILABLE": "Entry evidence is unavailable.",
+            "STRUCTURAL_GEOMETRY_WARNING": "Structural invalidation evidence is incomplete.",
+        }
+        warning_text = (
+            '<p class="why"><strong>No Step-31 geometry warnings.</strong></p>'
+            if not observation.warnings else
+            '<ul>' + ''.join(
+                '<li>' + escape(warning_labels[item.value]) + '</li>'
+                for item in observation.warnings
+            ) + '</ul>'
+        )
+        geometry = (
+            '<section class="analysis-section"><h2>TRADE MATHEMATICS</h2>'
+            + (
+                '<div class="analysis-decision">TRADE GEOMETRY AVAILABLE</div>'
+                if plan is not None else ''
+            )
+            + '<div class="native-trade-plan-grid">'
+            + ''.join(
+                '<div><span>' + escape(label) + '</span><strong>'
+                + escape(value) + '</strong></div>'
+                for label, value in (
+                    ("Entry", observed_number(observation.entry)),
+                    ("Stop", observed_number(observation.stop)),
+                    ("Target", observed_number(observation.canonical_target)),
+                    ("Invalidation", observed_number(observation.invalidation_reference)),
+                    ("Risk", observed_number(observation.risk_per_unit)),
+                    ("Reward", observed_number(observation.reward_per_unit)),
+                    ("R:R", ratio),
+                )
+            ) + '</div></section>'
+            '<section class="analysis-section"><h2>STEP-31 ASSESSMENT</h2>'
+            '<div class="analysis-decision">'
+            + escape(observation.severity.value) + ' · '
+            + escape(observation.geometry_status.value.replace("_", " "))
+            + '</div>' + warning_text + '</section>'
+        )
+    elif projection.state is TradeWindowState.TRADE_PLAN_READY and plan is not None:
         geometry = (
             '<section class="analysis-section"><h2>TRADE GEOMETRY AVAILABLE</h2>'
             '<div class="native-trade-plan-grid">'
@@ -1191,6 +1248,9 @@ def render_native_trade_window(
         )
     elif projection.sponsor_decision_id is None:
         controls = (
+            '<p class="empty"><strong>SPONSOR DECISION PATH</strong><br>'
+            'PENDING OBSERVATION-PHASE DECISION WIRING</p>'
+            if observation is not None else
             '<p class="empty">No LIVE / PAPER / IGNORE control is available '
             'until the governed Risk boundary permits it.</p>'
         )
@@ -1251,6 +1311,10 @@ def render_native_trade_window(
                 if projection.handoff is not None else "NOT PERSISTED"
             )),
             ("Step-31 plan", plan.trade_plan_id if plan is not None else "NOT AVAILABLE"),
+            ("Step-31 observation", (
+                observation.observation_evidence_id
+                if observation is not None else "NOT AVAILABLE"
+            )),
             ("Risk result", projection.risk_result_id or "NOT AVAILABLE"),
             ("Sponsor decision", projection.sponsor_decision_id or "NOT AVAILABLE"),
             ("KR-380 Entry Outcome", projection.kr380_entry_outcome_id or "NOT AVAILABLE"),
@@ -1265,6 +1329,8 @@ def render_native_trade_window(
                 else "FAIL CLOSED · " + " · ".join(projection.continuity_warnings)
             )),
             ("Step-31 policy", (
+                f"{observation.policy_identity} {observation.policy_version}"
+                if observation is not None else
                 f"{plan.trade_construction_policy_identity} {plan.trade_construction_policy_version}"
                 if plan is not None else "NOT APPLIED"
             )),

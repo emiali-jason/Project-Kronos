@@ -1,18 +1,18 @@
 # Swing V1 Step 32 — Versioned Interface Contracts
 
 **Status:** Approved
-**Version:** 1.2
+**Version:** 1.3
 **Approval date:** 2026-08-13
 **Owner / approved by:** Chief Architect
 **Implementation:** ADR-0013 commissions the exact Native DOMAIN-007 V1, ECPC V2, KR-380 V2, persistence/restoration, and KR-390 handoff; all other expansion remains unauthorized
 
 All identities are immutable and all timestamps are timezone-aware. Contract identity/version, provenance, integrity, binding, and lifecycle applicability are mandatory. Unsupported versions, malformed identity/digest, binding mismatch, ambiguity, or unavailable mandatory evidence fail closed. Availability is expressed only as `AVAILABLE`, `UNAVAILABLE`, or `NOT_APPLICABLE`; absence is never converted into a fact.
 
-## ADR-0015 prospective observation-phase boundary
+## ADR-0015 observation-phase boundary
 
 [ADR-0015](../adr/ADR-0015-SWING-SPONSOR-OBSERVATION-PHASE-AUTHORITY-AND-STEP-31-EVIDENCE-GOVERNANCE.md)
-authorizes future versioned contracts for Step-31 observation evidence and
-Sponsor observation decisions. Those contracts must preserve individual
+authorizes versioned contracts for Step-31 observation evidence and future
+Sponsor observation decisions. The Step-31 evidence contract below preserves individual
 Entry/Stop/Target/invalidation/risk/reward/R:R availability, exact mathematics,
 warning identities, hard-blocker identities, DOMAIN-007 facts/state, and an
 immutable decision-time snapshot.
@@ -22,8 +22,48 @@ from activating a Sponsor Position or objective model. Risk `REJECTED` or
 `UNAVAILABLE`, invalid lineage/integrity, invalid execution context, or another
 existing hard blocker continues to prevent every downstream effect that
 requires that authority. A geometry warning alone does not become an `IGNORE`
-decision. Existing contract records and meanings below are unchanged until a
-separately implemented compatible version is published.
+decision. Existing contract records and meanings below remain unchanged.
+SPONSOR-OBS-01 is not implemented by the Step-31 evidence contract.
+
+## KRONOS-SWING-STEP31-OBSERVATION-EVIDENCE-V1
+
+- **Policy:** `SWING-STEP31-OBSERVATION-PHASE-V1`.
+- **Semantic owner / producer:** Step-31 Trade Construction.
+- **Consumers:** Trade Window presentation, Audit, and the bounded future
+  SPONSOR-OBS-01 handoff only.
+- **Eligibility:** exact current KR-370 `BUY_NOW` or `SELL_NOW` plus the
+  existing exact UX-05 handoff. Other KR-370 states remain ineligible.
+- **Mandatory lineage:** run, canonical instrument, Native assessment,
+  opportunity, direction, KR-370 handoff identity/integrity, V3/V3.1
+  Readiness identity/integrity, evidence-package identity/integrity,
+  canonical execution-context identity, policy/version, observation boundary,
+  provenance, created time, and record integrity.
+- **Factual mathematics:** Entry, Stop, Target, invalidation, risk, reward, and
+  R:R each retain their exact safely established value and availability.
+  Negative or zero risk/reward is retained as factual mathematics; R:R is
+  calculated only when both risk and reward are positive.
+- **Warnings:** `TARGET_BELOW_ENTRY`, `TARGET_ABOVE_ENTRY`,
+  `NON_POSITIVE_REWARD`, `NON_POSITIVE_RISK`, `RR_UNFAVOURABLE`,
+  `TARGET_UNAVAILABLE`, `STOP_UNAVAILABLE`, `ENTRY_UNAVAILABLE`, and
+  `STRUCTURAL_GEOMETRY_WARNING`. A producer emits only warnings justified by
+  existing approved mathematics; this contract creates no threshold.
+- **Presentation:** severity `GREEN|AMBER|RED` and geometry status
+  `COMPLETE_FAVOURABLE|COMPLETE_WARNING|INCOMPLETE_WARNING` are explanatory
+  only. `HARD_UNAVAILABLE` is reserved for fail-closed processing and is not
+  persisted as a successful observation.
+- **Conventional-plan linkage:** a valid existing
+  `KRONOS-SWING-V1-TRADE-PLAN-RECORD-V0` remains unchanged and is linked when
+  its strict geometry succeeds. Warning or incomplete evidence is never
+  promoted into that Trade Plan contract.
+- **Hard failures:** stale/foreign run, instrument, assessment, handoff, or
+  evidence; identity/integrity mismatch; malformed inputs; and untrusted or
+  incomplete canonical execution context fail closed without an observation
+  record.
+- **Persistence:** immutable, append-only, exact-binding restoration. Older
+  Trade Plans and unavailable records are not reinterpreted.
+- **Authority:** advisory geometry evidence only. No Risk, Sponsor-decision,
+  Sponsor-position, Entry Outcome, model, order, fill, broker, or autonomous
+  trading authority.
 
 ## KRONOS-KR-370-ANALYTICAL-PROMOTION-V1
 

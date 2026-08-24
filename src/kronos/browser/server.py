@@ -181,6 +181,7 @@ from kronos.swing.v1.mcx_supporting_context_pdf import (
     McxContextPdfTransport,
 )
 from kronos.swing.v1.native_trade_construction import LocalTradePlanStore
+from kronos.swing.v1.step31_observation import LocalStep31ObservationStore
 from kronos.swing.v1.progression_watch import (
     derive_kr370_progression_requirements,
     derive_progression_requirements,
@@ -475,6 +476,9 @@ class KronosBrowserServer(ThreadingHTTPServer):
             ),
             LocalTradePlanConstructionDiagnosticStore(
                 governed_review_root / "trade-plan-construction-diagnostics-v1"
+            ),
+            LocalStep31ObservationStore(
+                governed_review_root / "step31-observation-v1"
             ),
         )
         self.telegram = telegram or _telegram_security()
@@ -802,6 +806,19 @@ class KronosBrowserServer(ThreadingHTTPServer):
                 )
             plan = projection.trade_plan
             if plan is None:
+                if projection.step31_observation is not None:
+                    self.trade_window.retain_construction_attempt(
+                        attempt_identity=attempt_identity,
+                        run_identity=run_identity,
+                        canonical_instrument=canonical_instrument,
+                        native_assessment_sha256=native_assessment_sha256,
+                        attempt_timestamp=attempt_timestamp,
+                        stage=stage,
+                        result=TradePlanConstructionAttemptResult.SUCCEEDED,
+                    )
+                    return self.trade_window.project(
+                        run_identity, canonical_instrument
+                    )
                 self._retain_trade_plan_attempt(
                     attempt_identity,
                     run_identity,

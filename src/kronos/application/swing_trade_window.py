@@ -1,8 +1,9 @@
 """UX-05/06 application boundary for KR-370 to the Native Trade Window.
 
-This workflow persists the eligibility handoff and exact ready Step-31 record.
-It does not derive geometry, Risk, Sponsor decisions, KR-380 outcomes, alerts,
-positions, execution, or broker actions.
+This workflow persists the eligibility handoff, the strict ready Step-31 Trade
+Plan where available, and the separate advisory observation-phase evidence.
+It does not derive Risk, Sponsor decisions, alerts, positions, execution, or
+broker actions.
 """
 
 from __future__ import annotations
@@ -45,6 +46,13 @@ from kronos.swing.v1.native_trade_construction import (
     TradeSetupIdentity,
     construct_trade_plan,
     create_trade_construction_evidence_package,
+)
+from kronos.swing.v1.step31_observation import (
+    LocalStep31ObservationStore,
+    Step31ObservationEvidence,
+    Step31SponsorObservationHandoff,
+    construct_step31_observation,
+    create_sponsor_observation_handoff,
 )
 from kronos.swing.v1.native_entry_timing import (
     EcpcV2Blocker,
@@ -114,6 +122,13 @@ TRADE_PLAN_CONSTRUCTION_SAFE_FAILURES = {
     "GEOMETRY_INVALID": "No valid governed trade geometry is available for this opportunity.",
     "MATERIAL_BARRIER_ELIMINATES_POSITIVE_REWARD": "A governed material barrier eliminates positive reward.",
     "EXECUTION_CONTEXT_INCOMPLETE": "The governed execution context is incomplete.",
+    "STEP31_OBSERVATION_INPUT_INVALID": "The observation input is malformed.",
+    "STEP31_OBSERVATION_HANDOFF_BINDING_INVALID": "The current KR-370 handoff binding is invalid.",
+    "STEP31_OBSERVATION_EVIDENCE_BINDING_INVALID": "The observation evidence binding is invalid.",
+    "STEP31_OBSERVATION_EVIDENCE_STALE": "The observation evidence is no longer current.",
+    "STEP31_OBSERVATION_EXECUTION_CONTEXT_UNTRUSTED": "The canonical execution context is unavailable or untrusted.",
+    "STEP31_OBSERVATION_TRADE_PLAN_BINDING_INVALID": "The conventional Trade Plan does not match the observation evidence.",
+    "STEP31_OBSERVATION_CURRENT_BINDING_MISMATCH": "A different Step-31 observation is already bound to this evidence cycle.",
     "PORTFOLIO_STATE_SOURCE_INCOMPLETE": "Current Portfolio State evidence is incomplete.",
     "CURRENT_RISK_INPUT_UNAVAILABLE": "The governed Risk input is unavailable.",
     "CURRENT_NATIVE_ENTRY_TIMING_INPUT_UNAVAILABLE": "The governed entry-timing input is unavailable.",
@@ -328,6 +343,7 @@ class TradeWindowState(StrEnum):
     TRADE_CONSTRUCTION_NOT_ELIGIBLE = "TRADE_CONSTRUCTION_NOT_ELIGIBLE"
     CURRENT_TRADE_CONSTRUCTION_UNAVAILABLE = "CURRENT_TRADE_CONSTRUCTION_UNAVAILABLE"
     TRADE_PLAN_UNAVAILABLE = "TRADE_PLAN_UNAVAILABLE"
+    STEP31_OBSERVATION_AVAILABLE = "STEP31_OBSERVATION_AVAILABLE"
     TRADE_PLAN_READY = "TRADE_PLAN_READY"
 
 
@@ -342,6 +358,7 @@ class NativeTradeWindowProjection:
     reason: str
     handoff: Kr370Step31EligibilityHandoff | None
     trade_plan: TradePlanRecord | None
+    step31_observation: Step31ObservationEvidence | None = None
     risk_state: str = "RISK_UNAVAILABLE"
     risk_reason: str = "RISK EVALUATION NOT AVAILABLE"
     risk_result_id: str | None = None
@@ -378,7 +395,15 @@ class NativeTradeWindowProjection:
             or not self.reason
             or (self.handoff is not None and type(self.handoff) is not Kr370Step31EligibilityHandoff)
             or (self.trade_plan is not None and type(self.trade_plan) is not TradePlanRecord)
+            or (
+                self.step31_observation is not None
+                and type(self.step31_observation) is not Step31ObservationEvidence
+            )
             or ready != (self.trade_plan is not None)
+            or (
+                self.state is TradeWindowState.STEP31_OBSERVATION_AVAILABLE
+                and self.step31_observation is None
+            )
             or (ready and self.trade_plan.geometry_viability is not TradePlanStatus.TRADE_PLAN_READY)
             or self.risk_state not in {
                 "RISK_UNAVAILABLE", "RISK_APPROVED", "RISK_CONSTRAINED", "RISK_REJECTED"
@@ -441,7 +466,7 @@ class NativeTradeWindowProjection:
 
 
 class SwingTradeWindowWorkflow:
-    """Coordinate exact handoff and the existing Step-31 engine only."""
+    """Coordinate exact handoff and versioned Step-31 evidence only."""
 
     def __init__(
         self,
@@ -452,6 +477,7 @@ class SwingTradeWindowWorkflow:
         kr380_store: LocalKr380V2Store | None = None,
         objective_model_store: LocalObjectiveModelV1Store | None = None,
         diagnostic_store: LocalTradePlanConstructionDiagnosticStore | None = None,
+        observation_store: LocalStep31ObservationStore | None = None,
     ) -> None:
         if (
             type(handoff_store) is not LocalKr370Step31HandoffStore
@@ -477,6 +503,10 @@ class SwingTradeWindowWorkflow:
                 and type(diagnostic_store)
                 is not LocalTradePlanConstructionDiagnosticStore
             )
+            or (
+                observation_store is not None
+                and type(observation_store) is not LocalStep31ObservationStore
+            )
         ):
             raise TypeError("SWING_TRADE_WINDOW_STORE_INVALID")
         self._handoff_store = handoff_store
@@ -486,6 +516,9 @@ class SwingTradeWindowWorkflow:
         self._kr380_store = kr380_store
         self._objective_model_store = objective_model_store
         self._diagnostic_store = diagnostic_store
+        self._observation_store = observation_store or LocalStep31ObservationStore(
+            trade_plan_store.root.parent / "step31-observation-v1"
+        )
         self._portfolio_state: PortfolioStateV1 | None = None
         self._shared_monitoring_hub: SharedSwingMonitoringHub | None = None
         self._monitoring_registrations: dict[str, object] = {}
@@ -493,6 +526,7 @@ class SwingTradeWindowWorkflow:
         self._completed: dict[tuple[str, str], CompletedVisualV3Review] = {}
         self._handoffs: dict[tuple[str, str], Kr370Step31EligibilityHandoff] = {}
         self._plans: dict[tuple[str, str], TradePlanRecord] = {}
+        self._observations: dict[tuple[str, str], Step31ObservationEvidence] = {}
         self._failures: dict[tuple[str, str], str] = {}
         restored_diagnostics = () if diagnostic_store is None else diagnostic_store.load()
         self._construction_attempts: dict[
@@ -990,6 +1024,7 @@ class SwingTradeWindowWorkflow:
         }
         self._handoffs.clear()
         self._plans.clear()
+        self._observations.clear()
         self._production_risks.clear()
         self._production_kr380.clear()
         self._production_models.clear()
@@ -1002,6 +1037,7 @@ class SwingTradeWindowWorkflow:
         )
         requirements = tuple(item.requirement for item in completed)
         stored_plans = self._trade_plan_store.load_for_requirements(requirements)
+        stored_observations = self._observation_store.load_for_requirements(requirements)
         for review in completed:
             promotion = review.promotion
             if promotion is None:
@@ -1033,6 +1069,31 @@ class SwingTradeWindowWorkflow:
                 plan = matches[0]
                 self._plans[key] = plan
                 self._restore_production_records(plan)
+            observation_matches = tuple(
+                record for record in stored_observations
+                if record.native_run_identity == promotion.run_identity
+                and record.canonical_instrument == promotion.canonical_instrument
+                and record.native_assessment_sha256 == promotion.native_assessment_sha256
+                and record.v3_readiness_sha256 == handoff.v3_readiness_sha256
+                and record.kr370_handoff_identity == handoff.handoff_identity
+                and record.kr370_handoff_integrity_sha256 == handoff.integrity_sha256
+            )
+            if len(observation_matches) > 1:
+                raise ValueError("SWING_TRADE_WINDOW_OBSERVATION_RESTORE_AMBIGUOUS")
+            if observation_matches:
+                observation = observation_matches[0]
+                if (
+                    observation.conventional_trade_plan_id is not None
+                    and (
+                        not matches
+                        or matches[0].trade_plan_id
+                        != observation.conventional_trade_plan_id
+                        or matches[0].integrity_hash
+                        != observation.conventional_trade_plan_sha256
+                    )
+                ):
+                    raise ValueError("SWING_TRADE_WINDOW_OBSERVATION_PLAN_BINDING_INVALID")
+                self._observations[key] = observation
         self._merge_production_records()
 
     def synchronize_downstream(
@@ -1128,7 +1189,7 @@ class SwingTradeWindowWorkflow:
         created_at: datetime,
         stage_listener: Callable[[TradePlanConstructionStage], None] | None = None,
     ) -> NativeTradeWindowProjection:
-        """Invoke the existing Step-31 geometry engine after exact eligibility."""
+        """Publish strict plan and advisory evidence after exact eligibility."""
 
         promotion = completed.promotion
         if promotion is None:
@@ -1151,12 +1212,37 @@ class SwingTradeWindowWorkflow:
             raise ValueError("SWING_TRADE_WINDOW_HANDOFF_BINDING_INVALID")
         if stage_listener is not None:
             stage_listener(TradePlanConstructionStage.STEP31)
+        existing_observation = self._observations.get(key)
+        if existing_observation is not None:
+            if (
+                type(evidence) is TradeConstructionEvidencePackage
+                and type(execution_context) is CanonicalInstrumentContext
+                and existing_observation.kr370_handoff_identity == handoff.handoff_identity
+                and existing_observation.kr370_handoff_integrity_sha256
+                == handoff.integrity_sha256
+                and existing_observation.evidence_package_sha256 == evidence.package_sha256
+                and existing_observation.execution_context_identity == execution_context.identity
+            ):
+                return self.project(*key)
+            raise ValueError("STEP31_OBSERVATION_CURRENT_BINDING_MISMATCH")
         plan = construct_trade_plan(
             completed.requirement,
             handoff,
             evidence,
             execution_context,
             created_at=created_at,
+        )
+        observation = construct_step31_observation(
+            completed.requirement,
+            handoff,
+            evidence,
+            execution_context,
+            created_at=created_at,
+            conventional_plan=(
+                plan
+                if plan.geometry_viability is TradePlanStatus.TRADE_PLAN_READY
+                else None
+            ),
         )
         self._completed[key] = completed
         self._handoffs[key] = handoff
@@ -1166,7 +1252,9 @@ class SwingTradeWindowWorkflow:
             self._failures.pop(key, None)
         else:
             self._plans.pop(key, None)
-            self._failures[key] = plan.unavailable_reason.value
+            self._failures.pop(key, None)
+        self._observation_store.retain(observation)
+        self._observations[key] = observation
         return self.project(*key)
 
     def retain_construction_attempt(
@@ -1267,6 +1355,16 @@ class SwingTradeWindowWorkflow:
                 trade_plan=None,
             )
         plan = self._plans.get(key)
+        observation = self._observations.get(key)
+        if plan is None and observation is not None:
+            return NativeTradeWindowProjection(
+                **base,
+                state=TradeWindowState.STEP31_OBSERVATION_AVAILABLE,
+                reason="STEP31_OBSERVATION_AVAILABLE",
+                handoff=handoff,
+                trade_plan=None,
+                step31_observation=observation,
+            )
         if plan is None:
             return NativeTradeWindowProjection(
                 **base,
@@ -1281,7 +1379,22 @@ class SwingTradeWindowWorkflow:
             reason="EXACT_PERSISTED_STEP31_GEOMETRY_AVAILABLE",
             handoff=handoff,
             trade_plan=plan,
+            step31_observation=observation,
             **self._downstream_projection(plan),
+        )
+
+    def sponsor_observation_handoff(
+        self, run_identity: str, canonical_instrument: str
+    ) -> Step31SponsorObservationHandoff | None:
+        """Expose bounded observation lineage for the future Sponsor decision step."""
+
+        projection = self.project(run_identity, canonical_instrument)
+        if projection is None or projection.step31_observation is None:
+            return None
+        return create_sponsor_observation_handoff(
+            projection.step31_observation,
+            risk_state=projection.risk_state,
+            risk_evidence_identity=projection.risk_result_id,
         )
 
     def _downstream_projection(self, plan: TradePlanRecord) -> dict[str, object]:
