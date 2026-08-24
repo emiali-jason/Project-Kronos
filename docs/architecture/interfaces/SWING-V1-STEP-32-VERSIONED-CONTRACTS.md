@@ -1,12 +1,29 @@
 # Swing V1 Step 32 — Versioned Interface Contracts
 
 **Status:** Approved
-**Version:** 1.1
+**Version:** 1.2
 **Approval date:** 2026-08-13
 **Owner / approved by:** Chief Architect
 **Implementation:** ADR-0013 commissions the exact Native DOMAIN-007 V1, ECPC V2, KR-380 V2, persistence/restoration, and KR-390 handoff; all other expansion remains unauthorized
 
 All identities are immutable and all timestamps are timezone-aware. Contract identity/version, provenance, integrity, binding, and lifecycle applicability are mandatory. Unsupported versions, malformed identity/digest, binding mismatch, ambiguity, or unavailable mandatory evidence fail closed. Availability is expressed only as `AVAILABLE`, `UNAVAILABLE`, or `NOT_APPLICABLE`; absence is never converted into a fact.
+
+## ADR-0015 prospective observation-phase boundary
+
+[ADR-0015](../adr/ADR-0015-SWING-SPONSOR-OBSERVATION-PHASE-AUTHORITY-AND-STEP-31-EVIDENCE-GOVERNANCE.md)
+authorizes future versioned contracts for Step-31 observation evidence and
+Sponsor observation decisions. Those contracts must preserve individual
+Entry/Stop/Target/invalidation/risk/reward/R:R availability, exact mathematics,
+warning identities, hard-blocker identities, DOMAIN-007 facts/state, and an
+immutable decision-time snapshot.
+
+Recording Sponsor `LIVE`, `PAPER`, or `IGNORE` observation choice is distinct
+from activating a Sponsor Position or objective model. Risk `REJECTED` or
+`UNAVAILABLE`, invalid lineage/integrity, invalid execution context, or another
+existing hard blocker continues to prevent every downstream effect that
+requires that authority. A geometry warning alone does not become an `IGNORE`
+decision. Existing contract records and meanings below are unchanged until a
+separately implemented compatible version is published.
 
 ## KRONOS-KR-370-ANALYTICAL-PROMOTION-V1
 
@@ -69,6 +86,9 @@ The complete state-family contract and machine-readable registry are
 - **Mandatory:** `sponsor_decision_id`, contract identity/version, candidate/run/Risk binding, revision, decision time, mode (`LIVE|PAPER|IGNORE`), current/frozen status, provenance, integrity.
 - **Conditional:** Sponsor explanation and bounded intended quantity. `NO_DECISION_RECORDED` is represented by no contract, never as a mode.
 - **Lifecycle:** revisable only before Entry while all bindings remain current; frozen at Entry; no retrospective relabel.
+- **ADR-0015 compatibility:** existing V1 records retain this exact mandatory
+  Risk/geometry binding. SPONSOR-OBS-01 must use an explicitly versioned
+  observation-phase record rather than weakening or reinterpreting V1.
 
 ## KRONOS-SWING-V1-SPONSOR-POSITION-V1
 

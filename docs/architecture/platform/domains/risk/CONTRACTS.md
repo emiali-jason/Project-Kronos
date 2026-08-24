@@ -1,7 +1,7 @@
 # Risk Contracts
 Status: Approved for Swing V1 bounded contract
 Owner: Chief Architect
-Version: 1.0
+Version: 1.1
 
 ## KRONOS-SWING-DOMAIN-007-RISK-PERMISSION-V1
 
@@ -13,3 +13,11 @@ provenance, and integrity SHA.
 States are `APPROVED`, `CONSTRAINED`, `REJECTED`, and `UNAVAILABLE` under
 ADR-0013. It grants objective entry-timing permission only and owns no geometry,
 quantity, Sponsor action, order, fill, or broker authority.
+
+Under [ADR-0015](../../../adr/ADR-0015-SWING-SPONSOR-OBSERVATION-PHASE-AUTHORITY-AND-STEP-31-EVIDENCE-GOVERNANCE.md),
+`REJECTED` and `UNAVAILABLE` remain hard fail-closed results at every boundary
+that requires Risk permission. `APPROVED` and `CONSTRAINED` remain permission
+for objective timing only. Reason, constraint, and availability facts are
+retainable observation evidence, but no result substitutes for a Sponsor
+`LIVE`, `PAPER`, or `IGNORE` choice. Observation-phase contract expansion must
+be separately versioned and must not reinterpret existing V1 records.

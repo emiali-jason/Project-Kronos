@@ -394,6 +394,33 @@ Final LONG_ENTRY_TRIGGERED, SHORT_ENTRY_TRIGGERED, EXTENDED, and FAILED outcomes
 
 KR-380 also publishes an ordered blocker queue. KR-705 translates that queue into trader-readable Need, Next, and Then rows.
 
+### 4A. Observation-Phase Sponsor Branch
+
+[ADR-0015](adr/ADR-0015-SWING-SPONSOR-OBSERVATION-PHASE-AUTHORITY-AND-STEP-31-EVIDENCE-GOVERNANCE.md)
+adds a prospective evidence branch without changing the objective flow:
+
+```text
+exact KR-370 BUY NOW / SELL NOW
+  -> Step-31 factual mathematics + availability + warnings
+  -> DOMAIN-007 facts/state where evaluable
+  -> explicit Sponsor LIVE / PAPER / IGNORE observation choice
+  -> immutable decision-time snapshot
+  -> linked observation/research evidence
+
+valid geometry + APPROVED/CONSTRAINED Risk + qualified context
+  -> independent KR-380 / KR-390 objective progression
+
+hard Risk / integrity / context blocker
+  -> no prohibited downstream activation
+  -> no rewrite of KR-370 or Sponsor choice
+```
+
+The Sponsor branch and objective branch remain separate. A Step-31 warning is
+evidence, not Sponsor choice. A recorded choice is not a Sponsor Position,
+Entry Outcome, model trade, order, or fill. IGNORE creates no Sponsor Position;
+objective evidence remains observable wherever the independent objective path
+has every required valid input.
+
 ### 5. Model Trade Management
 
 KR-390A supplies the narrow confirmed structure reference required for the initial and managed model stop. It uses completed MCX 1H execution bars and does not duplicate KR-275.

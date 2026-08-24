@@ -72,6 +72,19 @@ KES is an unnumbered architectural boundary over existing public evidence contra
 - KR-380 must not infer direction, upgrade an incomplete analytical-promotion state, change geometry, or bypass Risk.
 - Historical KR-380 BUY NOW / SELL NOW remains readable only under KRONOS-KR-380-ENTRY-OUTCOME-V1 and is never reinterpreted as KR-370 promotion.
 
+### Step-31 Observation-Phase Boundary
+
+Under [ADR-0015](adr/ADR-0015-SWING-SPONSOR-OBSERVATION-PHASE-AUTHORITY-AND-STEP-31-EVIDENCE-GOVERNANCE.md),
+Step-31 owns factual construction mathematics, individual fact availability,
+and justified geometry warnings. It does not own Sponsor `LIVE`, `PAPER`, or
+`IGNORE`. A geometry warning alone cannot manufacture Sponsor `IGNORE`.
+
+DOMAIN-007 remains the hard permission owner for objective timing and every
+activation boundary that consumes Risk. KR-380 and KR-390 continue to require
+valid geometry, Risk, context, and monitoring inputs. Recording a Sponsor
+observation-phase choice never bypasses those gates or creates a position,
+Entry Outcome, model trade, order, or fill.
+
 ### KR-390
 
 - KR-390 manages the objective KRONOS model trade.

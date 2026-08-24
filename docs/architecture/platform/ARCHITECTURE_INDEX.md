@@ -63,6 +63,7 @@ Provide navigation to the approved KRONOS Platform Architecture v1.0 documents a
 - [ADR-0011 — KR-370 Analytical Promotion and KR-380 Entry Outcome Semantics](../adr/ADR-0011-KR-370-ANALYTICAL-PROMOTION-AND-KR-380-ENTRY-OUTCOME-SEMANTICS.md)
 - [ADR-0012 / SWING-UX-GOV-01 — Remaining Swing UX/OPS Scope and Disposition](../adr/ADR-0012-SWING-UX-GOV-01-REMAINING-SWING-UX-OPS-SCOPE-AND-DISPOSITION.md)
 - [ADR-0013 — Native Swing DOMAIN-007 Risk Permission and KR-380 V2 Production Commissioning](../adr/ADR-0013-NATIVE-SWING-DOMAIN-007-RISK-PERMISSION-AND-KR-380-V2-PRODUCTION-COMMISSIONING.md)
+- [ADR-0015 — Swing Sponsor Observation-Phase Authority and Step-31 Evidence Governance](../adr/ADR-0015-SWING-SPONSOR-OBSERVATION-PHASE-AUTHORITY-AND-STEP-31-EVIDENCE-GOVERNANCE.md)
 - [KR-370 / KR-380 state-family contracts](../interfaces/KR-370-KR-380-STATE-FAMILY-CONTRACTS.md)
 - [PP-007 — Execution Semantics Across Markets](../principles/PP-007-Execution-Semantics-Across-Markets.md)
 

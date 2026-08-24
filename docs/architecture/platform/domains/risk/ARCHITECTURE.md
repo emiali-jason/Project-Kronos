@@ -1,7 +1,7 @@
 # DOMAIN-007 — Risk Domain
 Status: Approved
 Owner: Chief Architect
-Version: 1.2
+Version: 1.3
 
 ## Purpose
 
@@ -39,6 +39,20 @@ Own the authoritative decision of whether an approved Business Judgment is allow
 - No current engine responsibility is silently reassigned by this domain-level approval.
 - Swing V1 V1 introduces no quantity, allocation, margin, leverage, concentration, correlation, drawdown, or R:R threshold. Missing authoritative Portfolio State produces `UNAVAILABLE`.
 - Current Risk Permission is bound to one exact Step-31 plan and Portfolio State cycle and is invalid after either is superseded.
+
+## Observation-Phase Conformance
+
+[ADR-0015](../../../adr/ADR-0015-SWING-SPONSOR-OBSERVATION-PHASE-AUTHORITY-AND-STEP-31-EVIDENCE-GOVERNANCE.md)
+does not make DOMAIN-007 advisory. `REJECTED` and `UNAVAILABLE` remain genuine
+hard blockers at every objective-timing, Sponsor-position, or other activation
+boundary that requires current Risk permission. Missing, stale, mismatched, or
+integrity-invalid Risk and Portfolio State bindings remain fail closed.
+
+`APPROVED` and `CONSTRAINED` permit objective timing only and do not become a
+Sponsor recommendation. Risk reason, constraint, and availability facts may be
+presented and retained as observation evidence, but no DOMAIN-007 state itself
+records `LIVE`, `PAPER`, or `IGNORE`. A Step-31 geometry warning alone is not a
+DOMAIN-007 result and must not be interpreted as the Sponsor's decision.
 
 ## Approved Constitutional References
 

@@ -71,3 +71,8 @@ Any migration, supersession, status change, or reinterpretation requires explici
 ## Approved Swing V1 Extensions
 
 Swing V1 Step-32 repository activation is indexed in the [Architecture Index](platform/ARCHITECTURE_INDEX.md) and [Knowledge Base](KNOWLEDGE_BASE.md). It is architecture/contract publication only: implementation is not authorized, authority is SHADOW / VALIDATION ONLY, and broker execution authority is NONE.
+
+Swing V1 Observation Phase V1 authority is governed prospectively by
+[ADR-0015](adr/ADR-0015-SWING-SPONSOR-OBSERVATION-PHASE-AUTHORITY-AND-STEP-31-EVIDENCE-GOVERNANCE.md).
+The ADR authorizes later bounded observation work orders but implements no
+runtime behavior and introduces no broker authority.

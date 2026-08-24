@@ -1,7 +1,7 @@
 # Swing V1 Step 32 — Product Architecture Decisions
 
 **Status:** Approved
-**Version:** 1.0
+**Version:** 1.1
 **Approval date:** 2026-08-13
 **Owner / approved by:** Chief Architect
 **Engineering status:** Native V2 production path commissioned by ADR-0013; historical/intermediate implementation remains validation-only
@@ -42,6 +42,30 @@ LIVE is Sponsor intent to act manually. It is not an order, fill, quantity, posi
 ## S32-009 — Pre-Entry Monitoring Binding
 
 Pre-entry monitoring binds `candidate_id` and `monitoring_binding_id`; `model_trade_id` exists only after activation. Monitoring begins when Risk permits, the candidate is current, integrity is valid, governed execution-instrument context is valid, and the Kite Provider subscription is active. Sponsor Decision is not required. Subscribe only for current monitoring responsibility; pre-entry subscriptions end on Entry, staleness, invalidation, Risk rejection, integrity failure, or supersession, and post-entry subscriptions end on model closure or unrecoverable outcome unless another active KRONOS responsibility still needs the instrument.
+
+## ADR-0015 Observation-Phase Conformance
+
+[ADR-0015](../../adr/ADR-0015-SWING-SPONSOR-OBSERVATION-PHASE-AUTHORITY-AND-STEP-31-EVIDENCE-GOVERNANCE.md)
+prospectively distinguishes recording an explicit Sponsor observation-phase
+choice from activating a Sponsor Position or objective model.
+
+- A factual Step-31 geometry warning alone must not manufacture `IGNORE` or
+  suppress recording the Sponsor's explicit `LIVE`, `PAPER`, or `IGNORE`
+  observation choice.
+- The decision-time evidence snapshot must retain individual geometry
+  availability, warnings, Risk facts/state, and every current binding.
+- `REJECTED` or `UNAVAILABLE` Risk, invalid integrity/lineage, invalid execution
+  context, or another existing hard blocker still prevents every downstream
+  effect that requires that authority.
+- A recorded PAPER or LIVE observation choice creates no Sponsor Position,
+  monitoring activation, objective Entry Outcome, model trade, order, or fill
+  when its separately governed activation requirements are not satisfied.
+- IGNORE creates no Sponsor Position and never terminates objective monitoring
+  where the independent objective path is otherwise valid.
+
+The existing Version 1 Sponsor Decision, Risk, Sponsor Position, and monitoring
+records retain their historical meaning. STEP31-OBS-01 and SPONSOR-OBS-01 must
+publish compatible prospective policy/contract versions before runtime use.
 
 ## Prohibitions
 
