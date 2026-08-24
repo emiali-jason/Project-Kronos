@@ -159,7 +159,15 @@ def test_exact_queries_exports_restart_and_late_objective_link(tmp_path) -> None
     )
     assert len(service.snapshot(query)) == 1
     assert '"objective_outcome_available":"AVAILABLE"' in service.export_json(query)
-    assert "UNAVAILABLE" in service.export_csv(query)
+    exported = service.export_csv(query)
+    assert "UNAVAILABLE" in exported
+    for field in (
+        "entry", "stop", "target", "risk_reward_ratio", "sponsor_reason",
+        "objective_kr380_state", "objective_kr390_identity",
+        "objective_kr390_state", "objective_outcome",
+        "sponsor_position_outcome", "mcx_supporting_context_identity",
+    ):
+        assert field in exported.splitlines()[0]
     assert (
         service.snapshot()[0].source.snapshot.native_run_identity,
         service.snapshot()[0].source.snapshot.step31_severity,

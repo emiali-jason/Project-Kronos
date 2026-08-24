@@ -441,15 +441,43 @@ def _export_row_fields() -> tuple[str, ...]:
     return (
         "record_identity", "decision_identity", "decision_timestamp",
         "native_run_identity", "canonical_instrument", "native_assessment_sha256",
-        "choice", "activation_disposition", "direction", "kr370_state",
-        "step31_severity", "step31_warnings", "risk_state",
+        "choice", "sponsor_reason", "activation_disposition", "direction",
+        "kr370_state", "kr370_criteria", "step31_severity", "step31_warnings",
+        "entry", "stop", "target", "risk_reward_ratio", "risk_state",
+        "objective_kr380_state", "objective_kr390_identity",
+        "objective_kr390_state", "objective_outcome",
         "objective_outcome_available", "sponsor_position_identity",
-        "sponsor_position_outcome_available", "link_identities",
+        "sponsor_position_outcome", "sponsor_position_outcome_available",
+        "mcx_supporting_context_identity", "link_identities",
     )
 
 
 def _export_row(item: ObservationResearchProjectionV1) -> dict[str, object]:
     source = item.source
+    snapshot = source.snapshot
+    kr380 = tuple(
+        link for link in item.links
+        if link.kind is ObservationLinkKind.KR380_ENTRY_OUTCOME
+    )
+    model = tuple(
+        link for link in item.links
+        if link.kind in {
+            ObservationLinkKind.KR390_OBJECTIVE_MODEL,
+            ObservationLinkKind.OBJECTIVE_MODEL_OUTCOME,
+        }
+    )
+    objective_outcome = tuple(
+        link for link in item.links
+        if link.kind is ObservationLinkKind.OBJECTIVE_MODEL_OUTCOME
+    )
+    position_outcome = tuple(
+        link for link in item.links
+        if link.kind is ObservationLinkKind.SPONSOR_POSITION_OUTCOME
+    )
+    latest_kr380 = None if not kr380 else kr380[-1]
+    latest_model = None if not model else model[-1]
+    latest_objective_outcome = None if not objective_outcome else objective_outcome[-1]
+    latest_position_outcome = None if not position_outcome else position_outcome[-1]
     return {
         "record_identity": item.record.record_identity,
         "decision_identity": item.record.decision_identity,
@@ -458,18 +486,52 @@ def _export_row(item: ObservationResearchProjectionV1) -> dict[str, object]:
         "canonical_instrument": item.record.canonical_instrument,
         "native_assessment_sha256": item.record.native_assessment_sha256,
         "choice": item.record.choice.value,
+        "sponsor_reason": (
+            "UNAVAILABLE" if source.decision.sponsor_reason is None
+            else source.decision.sponsor_reason.value
+        ),
         "activation_disposition": item.record.activation_disposition.value,
-        "direction": source.snapshot.direction.value,
-        "kr370_state": source.snapshot.kr370_state,
-        "step31_severity": source.snapshot.step31_severity.value,
-        "step31_warnings": "|".join(source.snapshot.step31_warnings) or "NONE",
-        "risk_state": source.snapshot.risk_state,
+        "direction": snapshot.direction.value,
+        "kr370_state": snapshot.kr370_state,
+        "kr370_criteria": "|".join(
+            identity + "=" + state for identity, state in snapshot.kr370_criteria
+        ),
+        "step31_severity": snapshot.step31_severity.value,
+        "step31_warnings": "|".join(snapshot.step31_warnings) or "NONE",
+        "entry": "UNAVAILABLE" if snapshot.entry is None else str(snapshot.entry),
+        "stop": "UNAVAILABLE" if snapshot.stop is None else str(snapshot.stop),
+        "target": "UNAVAILABLE" if snapshot.target is None else str(snapshot.target),
+        "risk_reward_ratio": (
+            "UNAVAILABLE" if snapshot.risk_reward_ratio is None
+            else str(snapshot.risk_reward_ratio)
+        ),
+        "risk_state": snapshot.risk_state,
+        "objective_kr380_state": (
+            "UNAVAILABLE" if latest_kr380 is None else latest_kr380.source_state
+        ),
+        "objective_kr390_identity": (
+            "UNAVAILABLE" if latest_model is None else latest_model.source_record_identity
+        ),
+        "objective_kr390_state": (
+            "UNAVAILABLE" if latest_model is None else latest_model.source_state
+        ),
+        "objective_outcome": (
+            "UNAVAILABLE" if latest_objective_outcome is None
+            else latest_objective_outcome.source_state
+        ),
         "objective_outcome_available": (
             "AVAILABLE" if item.objective_outcome_available else "UNAVAILABLE"
         ),
         "sponsor_position_identity": source.activation.sponsor_position_identity or "UNAVAILABLE",
+        "sponsor_position_outcome": (
+            "UNAVAILABLE" if latest_position_outcome is None
+            else latest_position_outcome.source_state
+        ),
         "sponsor_position_outcome_available": (
             "AVAILABLE" if item.sponsor_position_outcome_available else "UNAVAILABLE"
+        ),
+        "mcx_supporting_context_identity": (
+            snapshot.mcx_supporting_context_identity or "NOT_APPLICABLE_OR_UNAVAILABLE"
         ),
         "link_identities": "|".join(link.link_identity for link in item.links) or "UNAVAILABLE",
     }

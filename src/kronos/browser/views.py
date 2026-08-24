@@ -2118,6 +2118,18 @@ def _observation_research_view(
         '<div class="journal-filters">' + activation_filters + "</div>"
         '<div class="journal-filters">' + severity_filters + "</div>"
     )
+    counts = (
+        ("Observations", len(observations)),
+        ("Live", sum(item.record.choice.value == "LIVE" for item in observations)),
+        ("Paper", sum(item.record.choice.value == "PAPER" for item in observations)),
+        ("Ignore", sum(item.record.choice.value == "IGNORE" for item in observations)),
+        ("Activated", sum(item.record.activation_disposition.value == "ACTIVATED" for item in observations)),
+        ("Blocked", sum(item.record.activation_disposition.value.startswith("BLOCKED_") for item in observations)),
+    )
+    count_view = '<div class="status-strip">' + "".join(
+        '<div class="status-item"><span>' + escape(label) + '</span><strong>'
+        + str(value) + "</strong></div>" for label, value in counts
+    ) + "</div>"
     if not observations:
         rows = '<div class="workflow-empty">No prospective Sponsor observation records match this view.</div>'
     else:
@@ -2154,6 +2166,7 @@ def _observation_research_view(
                     ("Decision", source.decision.choice.value),
                     ("Activation", activation.disposition.value),
                     ("KR-370", snapshot.kr370_state),
+                    ("Decision time", snapshot.snapshot_timestamp.isoformat()),
                     ("Objective outcome", "AVAILABLE" if item.objective_outcome_available else "UNAVAILABLE"),
                     ("Sponsor-position outcome", "AVAILABLE" if item.sponsor_position_outcome_available else "UNAVAILABLE"),
                 )
@@ -2166,11 +2179,25 @@ def _observation_research_view(
                     ("Assessment SHA", snapshot.native_assessment_sha256),
                     ("Snapshot", snapshot.snapshot_identity),
                     ("Snapshot SHA", snapshot.integrity_sha256),
+                    ("KR-370 decision", snapshot.kr370_state),
+                    *tuple(
+                        (identity, state)
+                        for identity, state in snapshot.kr370_criteria
+                    ),
                     ("Decision time", snapshot.snapshot_timestamp.isoformat()),
+                    ("Entry", "UNAVAILABLE" if snapshot.entry is None else _number(snapshot.entry)),
+                    ("Stop", "UNAVAILABLE" if snapshot.stop is None else _number(snapshot.stop)),
+                    ("Target", "UNAVAILABLE" if snapshot.target is None else _number(snapshot.target)),
+                    ("Risk distance", "UNAVAILABLE" if snapshot.risk_distance is None else _number(snapshot.risk_distance)),
+                    ("Reward distance", "UNAVAILABLE" if snapshot.reward_distance is None else _number(snapshot.reward_distance)),
+                    ("R:R", "UNAVAILABLE" if snapshot.risk_reward_ratio is None else _number(snapshot.risk_reward_ratio)),
                     ("Step-31 severity", snapshot.step31_severity.value),
                     ("Step-31 warnings", " · ".join(snapshot.step31_warnings) or "NONE"),
                     ("Risk at decision", snapshot.risk_state),
                     ("Risk identity", snapshot.risk_identity or "UNAVAILABLE"),
+                    ("Sponsor decision", source.decision.choice.value),
+                    ("Sponsor reason", "UNAVAILABLE" if source.decision.sponsor_reason is None else source.decision.sponsor_reason.value),
+                    ("Activation disposition", activation.disposition.value),
                     ("MCX supporting context", snapshot.mcx_supporting_context_identity or "NOT APPLICABLE / UNAVAILABLE"),
                 )
             )
@@ -2198,7 +2225,7 @@ def _observation_research_view(
     return (
         '<section class="native-review-section"><h2>OBSERVATION RESEARCH</h2>'
         '<p>Prospective Sponsor decisions and later factual links. No performance analytics or methodology authority.</p>'
-        + controls + rows + "</section>"
+        + controls + count_view + rows + "</section>"
         '<details class="native-diagnostics"><summary>EXISTING STEP-33 TRADING JOURNAL</summary>'
         '<p>The historical completed-trade Journal remains independently governed below.</p></details>'
     )

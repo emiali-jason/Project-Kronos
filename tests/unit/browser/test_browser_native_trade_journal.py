@@ -99,5 +99,9 @@ def test_observation_research_is_compact_separate_and_has_no_performance_metrics
     assert "OBJECTIVE MODEL" in research and "SPONSOR POSITION" in research
     assert "BLOCKED_RISK_UNAVAILABLE" in research
     assert "Objective outcome</span><strong>UNAVAILABLE" in research
+    assert "K1_1H_DIRECTIONAL_PROGRESSION" in research
+    assert "Entry</span><strong>100" in research
+    assert "Sponsor decision" in research and "Sponsor reason" in research
+    assert "Observations</span><strong>1" in research
     assert "Win rate" not in research and "Gross P&amp;L" not in research
     assert "/journal?observation_choice=LIVE" in html
