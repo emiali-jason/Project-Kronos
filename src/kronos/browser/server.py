@@ -934,6 +934,9 @@ class _BrowserHandler(BaseHTTPRequestHandler):
         if path == "/swing/v1/native-chart-preview":
             self._native_chart_preview()
             return
+        if path == "/swing/mcx-context/image-preview":
+            self._mcx_context_image_preview()
+            return
         if path == "/swing/v1/status":
             self._json(analysis_status_payload(self.server.v1_review.snapshot()))
             return
@@ -1141,6 +1144,9 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             return
         if path == "/swing/mcx-context/image":
             self._receive_mcx_context_image()
+            return
+        if path == "/swing/mcx-context/image/remove":
+            self._remove_mcx_context_image()
             return
         if path == "/swing/mcx-context/question-pack":
             self._create_mcx_context_question_pack()
@@ -1968,6 +1974,36 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             self._text(HTTPStatus.BAD_REQUEST, "MCX supporting-context image rejected.")
             return
         self._redirect("/swing/v1-review")
+
+    def _remove_mcx_context_image(self) -> None:
+        try:
+            slot, family = self._mcx_context_slot_query(with_family=True)
+            if family is None or self.headers.get("Content-Length") not in {None, "0"}:
+                raise ValueError
+            self.server.mcx_supporting_context.remove_image(
+                slot=slot, family=family,
+            )
+        except (ValueError, PdfReviewTransportError):
+            self._text(HTTPStatus.BAD_REQUEST, "MCX supporting-context image removal rejected.")
+            return
+        self._redirect("/swing/v1-review")
+
+    def _mcx_context_image_preview(self) -> None:
+        try:
+            query = parse_qs(urlsplit(self.path).query, strict_parsing=True)
+            if set(query) != {"slot", "family", "sha256"} or any(
+                len(query[key]) != 1 for key in query
+            ):
+                raise ValueError
+            value, payload = self.server.mcx_supporting_context.current_image(
+                slot=McxContextSlot(query["slot"][0]),
+                family=McxContextFamily(query["family"][0]),
+                image_sha256=query["sha256"][0],
+            )
+        except (OSError, ValueError, PdfReviewTransportError):
+            self._text(HTTPStatus.NOT_FOUND, "MCX supporting-context image preview unavailable.")
+            return
+        self._respond(HTTPStatus.OK, payload, value.content_type)
 
     def _create_mcx_context_question_pack(self) -> None:
         try:

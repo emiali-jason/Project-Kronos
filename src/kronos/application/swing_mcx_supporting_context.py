@@ -36,6 +36,7 @@ class McxContextFamilyStatus:
     revision: int | None
     imported_at: datetime | None
     image_staged: bool
+    image_sha256: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -78,6 +79,25 @@ class McxSupportingContextWorkflow:
             content_type=content_type, payload=payload,
         )
         self._errors.pop(slot, None); return result
+
+    def remove_image(
+        self, *, slot: McxContextSlot, family: McxContextFamily,
+    ) -> None:
+        day, required = self.governed_trading_date()
+        if not required: raise ValueError("MCX_CONTEXT_NON_TRADING_DATE")
+        self.transport.remove_image(trading_date=day, slot=slot, family=family)
+        self._errors.pop(slot, None)
+
+    def current_image(
+        self, *, slot: McxContextSlot, family: McxContextFamily,
+        image_sha256: str,
+    ) -> tuple[McxContextStagedImage, bytes]:
+        day, required = self.governed_trading_date()
+        if not required: raise ValueError("MCX_CONTEXT_NON_TRADING_DATE")
+        return self.transport.current_image_payload(
+            trading_date=day, slot=slot, family=family,
+            image_sha256=image_sha256,
+        )
 
     def create_question_pack(self, slot: McxContextSlot) -> McxContextQuestionPack:
         day, required = self.governed_trading_date()
@@ -125,18 +145,21 @@ class McxSupportingContextWorkflow:
             for family in McxContextFamily:
                 records = self.store.records(trading_date=day, slot=slot, family=family)
                 latest = max(records, key=lambda item: item.revision, default=None)
-                staged = self.transport.store.current_image(day, slot, family) is not None
+                staged_image = self.transport.store.current_image(day, slot, family)
+                staged = staged_image is not None
                 families.append(McxContextFamilyStatus(
                     family,
                     ContextAvailability.NOT_REQUIRED if not required else ContextAvailability.VALID if latest else ContextAvailability.NOT_PROVIDED,
                     None if latest is None else latest.revision,
                     None if latest is None else latest.imported_at,
                     staged,
+                    None if staged_image is None else staged_image.image_sha256,
                 ))
                 if required and latest is None and slot in self._errors:
                     families[-1] = McxContextFamilyStatus(
                         family, ContextAvailability.INVALID_INCOMPLETE,
                         None, None, staged,
+                        None if staged_image is None else staged_image.image_sha256,
                     )
             slots.append(McxContextSlotStatus(
                 slot, tuple(families), self.transport.store.current(day, slot),

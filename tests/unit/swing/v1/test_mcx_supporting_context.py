@@ -134,6 +134,66 @@ def test_morning_and_evening_question_answer_revision_and_restart(tmp_path: Path
     assert len(restored.records(trading_date=DAY)) == 6
 
 
+def test_staged_images_coexist_replace_remove_and_restore_without_cross_slot_mutation(tmp_path: Path) -> None:
+    workflow, transport, _ = _transport(tmp_path)
+    _stage(workflow, McxContextSlot.MORNING)
+    _stage(workflow, McxContextSlot.EVENING)
+    morning_metals = transport.store.current_image(
+        DAY, McxContextSlot.MORNING, McxContextFamily.METALS,
+    )
+    morning_energy = transport.store.current_image(
+        DAY, McxContextSlot.MORNING, McxContextFamily.ENERGY,
+    )
+    evening_metals = transport.store.current_image(
+        DAY, McxContextSlot.EVENING, McxContextFamily.METALS,
+    )
+    assert morning_metals is not None and morning_energy is not None
+    assert evening_metals is not None
+
+    replacement = PNG + b"replacement"
+    replaced = workflow.stage_image(
+        slot=McxContextSlot.MORNING, family=McxContextFamily.METALS,
+        content_type="image/png", payload=replacement,
+    )
+    assert replaced.image_sha256 != morning_metals.image_sha256
+    assert transport.store.current_image(
+        DAY, McxContextSlot.MORNING, McxContextFamily.ENERGY,
+    ) == morning_energy
+    assert transport.store.current_image(
+        DAY, McxContextSlot.EVENING, McxContextFamily.METALS,
+    ) == evening_metals
+
+    restored = McxContextPdfStore(transport.store.root)
+    assert restored.current_image(
+        DAY, McxContextSlot.MORNING, McxContextFamily.METALS,
+    ) == replaced
+    assert restored.image_bytes(replaced) == replacement
+
+    workflow.remove_image(
+        slot=McxContextSlot.MORNING, family=McxContextFamily.METALS,
+    )
+    assert restored.current_image(
+        DAY, McxContextSlot.MORNING, McxContextFamily.METALS,
+    ) is None
+    assert Path(replaced.path).read_bytes() == replacement
+    assert restored.current_image(
+        DAY, McxContextSlot.EVENING, McxContextFamily.METALS,
+    ) == evening_metals
+
+
+def test_question_pack_uses_the_current_replaced_images(tmp_path: Path) -> None:
+    workflow, _, _ = _transport(tmp_path)
+    _stage(workflow, McxContextSlot.MORNING)
+    replacement = PNG + b"replacement"
+    replaced = workflow.stage_image(
+        slot=McxContextSlot.MORNING, family=McxContextFamily.METALS,
+        content_type="image/png", payload=replacement,
+    )
+    pack = workflow.create_question_pack(McxContextSlot.MORNING)
+    assert pack.images[0] == replaced
+    assert pack.images[1].family is McxContextFamily.ENERGY
+
+
 def test_temporal_binding_is_same_date_family_exact_and_never_retroactive(tmp_path: Path) -> None:
     store = McxSupportingContextStore(tmp_path)
     observations = tuple(McxContextPanelObservation(

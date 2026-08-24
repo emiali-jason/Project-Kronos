@@ -165,7 +165,7 @@ a{color:inherit;text-decoration:none}.app{display:grid;grid-template-columns:218
 .step32-workflow{margin-top:16px;border:1px solid var(--line);background:rgba(6,23,37,.88);border-radius:10px;padding:16px}.step32-head{display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--line);padding-bottom:10px}.step32-head h2{margin:0;font-size:18px}.step32-grid{display:grid;grid-template-columns:1.2fr .8fr .8fr .9fr;gap:12px;margin-top:12px}.step32-block{border-left:1px solid var(--line);padding-left:12px}.step32-block:first-child{border-left:0;padding-left:0}.step32-block h3{margin:0 0 8px;color:var(--muted);font-size:11px;letter-spacing:.06em;text-transform:uppercase}.step32-values{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;margin-top:10px}.step32-value label{display:block;color:var(--muted);font-size:10px}.step32-value strong{font-size:13px}.step32-context{display:grid;gap:7px;font-size:12px}.step32-context span{display:block;color:var(--muted);font-size:10px}.decision-options{display:flex;gap:5px;flex-wrap:wrap}.decision-option{border:1px solid var(--line);border-radius:6px;padding:5px 8px;color:var(--muted);font-size:11px;background:#081c2c}.decision-option.selected{border-color:var(--blue);color:#dff1ff}.decision-time{color:var(--muted);font-size:10px;margin-top:7px}.model-position{display:grid;gap:7px;margin-top:9px}.model-position div{display:flex;justify-content:space-between;gap:8px;font-size:12px}.model-position span{color:var(--muted)}.workflow-list{display:grid;gap:12px}.workflow-card{border:1px solid var(--line);background:rgba(6,23,37,.88);border-radius:10px;padding:14px}.workflow-card-head{display:flex;align-items:center;gap:10px}.workflow-card-head h2{margin:0;font-size:18px}.workflow-card-state{margin-left:auto;color:var(--blue);font-size:11px;font-weight:800}.workflow-card-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;margin:12px 0}.workflow-card-grid label{display:block;color:var(--muted);font-size:10px}.workflow-card-actions{display:flex;justify-content:flex-end}.action-required{border:1px solid #8a4c26;background:#2d1b0f;color:#ffd59c;border-radius:7px;padding:9px 11px;margin-top:10px;font-weight:750}.workflow-empty{border:1px solid var(--line);background:rgba(6,23,37,.88);border-radius:10px;padding:30px;text-align:center;color:var(--muted)}
 .native-chart-grid.single{grid-template-columns:1fr}
 .analysis-details{display:grid;gap:12px;max-width:1180px}.analysis-section{border:1px solid var(--line);background:rgba(6,23,37,.88);border-radius:10px;padding:16px}.analysis-section h2{margin:0 0 10px;color:var(--blue);font-size:15px}.analysis-facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.analysis-fact{border-left:2px solid #28506a;padding:5px 9px;font-size:11px}.analysis-fact span{display:block;color:var(--muted);font-size:9px;letter-spacing:.06em;text-transform:uppercase}.analysis-table{width:100%;border-collapse:collapse;font-size:11px}.analysis-table th,.analysis-table td{text-align:left;vertical-align:top;border-top:1px solid var(--line);padding:7px}.analysis-table th{color:var(--muted);font-size:9px;letter-spacing:.05em}.analysis-decision{font-size:18px;font-weight:800}.analysis-next{border-left:3px solid var(--amber)}
-.mcx-context-strip{display:flex;align-items:center;gap:10px;flex-wrap:wrap;border:1px solid var(--line);background:rgba(6,23,37,.88);border-radius:8px;padding:7px 10px;margin:8px 0;font-size:10px}.mcx-context-strip>strong{color:var(--blue);letter-spacing:.06em}.mcx-context-slot{display:flex;align-items:center;gap:7px}.mcx-context-slot b{font-size:9px}.mcx-context-slot form{display:inline}.mcx-context-inputs{display:inline-flex;gap:4px}.mcx-context-file{max-width:145px;font-size:9px}.mcx-context-status{color:var(--muted)}
+.mcx-context-strip{display:flex;align-items:center;gap:10px;flex-wrap:wrap;border:1px solid var(--line);background:rgba(6,23,37,.88);border-radius:8px;padding:7px 10px;margin:8px 0;font-size:10px}.mcx-context-strip>strong{color:var(--blue);letter-spacing:.06em}.mcx-context-slot{display:flex;align-items:center;gap:7px;flex-wrap:wrap}.mcx-context-slot b{font-size:9px}.mcx-context-slot form{display:inline}.mcx-context-status{color:var(--muted)}.mcx-context-prep{position:relative}.mcx-context-prep>summary{color:var(--blue);cursor:pointer;font-weight:800}.mcx-context-targets{display:grid;grid-template-columns:repeat(2,minmax(180px,1fr));gap:8px;position:absolute;z-index:5;top:24px;left:0;width:min(440px,75vw);padding:9px;border:1px solid var(--line);border-radius:8px;background:#071827;box-shadow:0 10px 30px #010812}.mcx-context-targets h3{margin:0 0 5px;font-size:10px;color:#dce8f0}.mcx-context-targets .chart-paste-target{min-height:68px}.mcx-context-targets .chart-slot-actions{margin-top:4px}@media(max-width:700px){.mcx-context-targets{grid-template-columns:1fr;position:fixed;left:12px;right:12px;top:auto;width:auto}}
 .missing-evidence{display:block;color:var(--amber);font-size:10px;margin-top:5px}.missing-evidence strong{color:#ffd98c}.blocker-list{margin:8px 0 0;padding-left:18px;color:var(--muted);font-size:11px}
 .native-opportunity{padding:10px 11px;margin-top:7px}.native-opportunity .opp-head{gap:8px}.native-opportunity .opp-identity h3{font-size:18px;line-height:1.2}.native-opportunity .setup-family{font-size:11px;margin-top:0}.native-opportunity .direction{padding:2px 7px;font-size:11px}.native-opportunity .summary-reason{font-size:11px;line-height:1.35;margin:6px 0}.native-opportunity .summary-footer{align-items:flex-end;gap:7px;padding-top:7px}.native-opportunity .summary-rr{flex:1 1 220px;min-width:0;font-size:11px;line-height:1.35;overflow-wrap:anywhere}.native-opportunity .summary-rr>strong{font-size:12px}.native-opportunity .missing-evidence{font-size:9px;line-height:1.3;margin-top:3px}.native-opportunity-actions{display:flex;flex:0 1 auto;justify-content:flex-end;gap:5px;flex-wrap:wrap}.native-opportunity-actions .button{display:inline-flex;align-items:center;min-height:27px;padding:4px 8px;font-size:10px;line-height:1.15;white-space:nowrap}
 .kr370-state{display:inline-flex;align-items:center;border:1px solid currentColor;border-radius:6px;padding:2px 7px;font-size:11px;font-weight:850;letter-spacing:.035em}.kr370-state-now{color:#d8ffea;border-color:#34dc88;background:#12623e;box-shadow:0 0 16px rgba(52,220,136,.18)}.kr370-state-ready{color:#77e6a9;border-color:#248a59;background:rgba(23,103,65,.16)}.kr370-state-potential{color:#ffd57a;border-color:#82631f;background:#2a210c}.kr370-state-no-setup{color:#ff9a9f;border-color:#793b40;background:#2c151c}.kr370-state-unavailable{color:#a9b8c3;border-color:#465866;background:#111d25}.kr370-card-line{display:block;color:var(--muted);font-size:9px;margin-top:4px;letter-spacing:.035em}.kr370-card-line strong{color:#dce8f0}.analysis-decision.kr370-state{font-size:18px;padding:4px 9px;margin-bottom:9px}
@@ -2100,18 +2100,62 @@ def _mcx_context_strip(snapshot: McxSupportingContextSnapshot) -> str:
             ) for item in slot.families
         }
         slot_query = urlencode({"slot": slot.slot.value})
-        inputs = "".join(
-            '<label>' + escape(family.value.title()) + ' '
-            f'<input class="mcx-context-file" type="file" accept="image/png,image/jpeg" '
-            f'data-upload-url="/swing/mcx-context/image?{escape(urlencode({"slot": slot.slot.value, "family": family.value}))}"></label>'
-            for family in tuple(item.family for item in slot.families)
+        targets = ""
+        for family_status in slot.families:
+            family = family_status.family
+            query = urlencode({"slot": slot.slot.value, "family": family.value})
+            target_id = f"mcx-context-{slot.slot.value.lower()}-{family.value.lower()}"
+            file_id = f"{target_id}-file"
+            if family_status.image_sha256 is None:
+                content = (
+                    '<div><span class="paste-key">⌘V</span>'
+                    '<strong>Click, then paste</strong>'
+                    '<small>TradingView PNG or JPEG</small></div>'
+                )
+                actions = ""
+                received_class = ""
+            else:
+                preview = urlencode({
+                    "slot": slot.slot.value,
+                    "family": family.value,
+                    "sha256": family_status.image_sha256,
+                })
+                content = (
+                    f'<img src="/swing/mcx-context/image-preview?{escape(preview)}" alt="">'
+                    '<div class="chart-received"><strong>Image received</strong>'
+                    f'<span>{escape(family.value.title())} context</span></div>'
+                )
+                actions = (
+                    f'<button class="replace-chart" type="button" data-target="{target_id}">Replace</button>'
+                    f'<form method="post" action="/swing/mcx-context/image/remove?{escape(query)}">'
+                    '<button type="submit">Remove</button></form>'
+                )
+                received_class = " received"
+            targets += "".join((
+                '<div class="chart-slot"><h3>', escape(family.value),
+                ' CONTEXT</h3>',
+                f'<div id="{target_id}" class="chart-paste-target{received_class}" ',
+                'role="button" tabindex="0" ',
+                f'aria-label="Paste {escape(family.value.title())} TradingView context image" ',
+                f'data-upload-url="/swing/mcx-context/image?{escape(query)}">{content}</div>',
+                '<div class="chart-slot-actions">', actions,
+                f'<label class="file-choice" for="{file_id}">Choose File</label>',
+                f'<input id="{file_id}" class="chart-file" type="file" ',
+                'accept="image/png,image/jpeg" ',
+                f'data-target="{target_id}"></div></div>',
+            ))
+        open_preparation = (
+            " open"
+            if any(item.image_staged for item in slot.families)
+            and not all(item.revision is not None for item in slot.families)
+            else ""
         )
         parts.append(
             '<span class="mcx-context-slot"><b>' + slot.slot.value + '</b>'
             '<span class="mcx-context-status">Metals ' + escape(statuses["METALS"])
             + ' · Energy ' + escape(statuses["ENERGY"]) + '</span>'
-            '<details><summary>IMAGES</summary><span class="mcx-context-inputs">'
-            + inputs + '</span></details>'
+            f'<details class="mcx-context-prep"{open_preparation}><summary>PREPARE</summary>'
+            '<div class="mcx-context-targets">' + targets + '</div></details>'
             '<form method="post" action="/swing/mcx-context/question-pack?'
             + escape(slot_query) + '"><button type="submit"'
             + ("" if required and all(item.image_staged for item in slot.families) else " disabled")
@@ -2123,12 +2167,7 @@ def _mcx_context_strip(snapshot: McxSupportingContextSnapshot) -> str:
             + ("<span>" + escape(slot.last_error) + "</span>" if slot.last_error else "")
             + '</span>'
         )
-    parts.append(
-        '</div><script>document.querySelectorAll(".mcx-context-file").forEach(function(input){'
-        'input.addEventListener("change",async function(){if(!input.files.length)return;'
-        'var response=await fetch(input.dataset.uploadUrl,{method:"POST",headers:{"Content-Type":input.files[0].type},body:input.files[0]});'
-        'if(response.ok){window.location.reload();}else{alert("MCX supporting-context image rejected.");}});});</script>'
-    )
+    parts.append('</div>')
     return "".join(parts)
 
 
@@ -2317,7 +2356,6 @@ def render_v1_review(
                 '<button class="primary" type="submit">Analyze Charts</button></form>'
             )
         body += '<div class="shadow-authority">SHADOW / VALIDATION ONLY</div>'
-        body += _chart_upload_script()
         if analysis_allowed:
             body += _chart_analysis_status_script()
     if (
@@ -2333,6 +2371,7 @@ def render_v1_review(
         )
     if mcx_context is not None:
         body = _mcx_context_strip(mcx_context) + body
+    body += _chart_upload_script()
     return _page(
         title="Review",
         subtitle="Copy a chart image, click its target, and paste with ⌘V.",
@@ -2708,7 +2747,6 @@ def _native_review_requirements(
         '<div class="shadow-banner">NATIVE PROBABLE · REVIEW INPUT AUTHORITY · '
         'NO TRADE OR EXECUTION AUTHORITY</div>'
         + batch + '<div class="chart-intake-list">' + cards + '</div>'
-        + _chart_upload_script()
     )
 
 

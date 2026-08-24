@@ -166,6 +166,28 @@ class McxContextPdfStore:
         path = self.root / "staged-current" / value.trading_date.isoformat() / value.slot.value / f"{value.family.value}.json"
         _replace(path, _primitive(value))
 
+    def remove_current_image(
+        self, trading_date: date, slot: McxContextSlot, family: McxContextFamily,
+    ) -> None:
+        path = self.root / "staged-current" / trading_date.isoformat() / slot.value / f"{family.value}.json"
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            return
+
+    def image_bytes(self, value: McxContextStagedImage) -> bytes:
+        path = Path(value.path)
+        image_root = (self.root / "images").resolve()
+        try:
+            resolved = path.resolve(strict=True)
+            resolved.relative_to(image_root)
+        except (FileNotFoundError, ValueError):
+            raise ValueError("MCX_CONTEXT_IMAGE_BINDING_INVALID") from None
+        payload = resolved.read_bytes()
+        if sha256(payload).hexdigest() != value.image_sha256:
+            raise ValueError("MCX_CONTEXT_IMAGE_BINDING_INVALID")
+        return payload
+
 
 class McxContextPdfTransport:
     def __init__(
@@ -188,6 +210,20 @@ class McxContextPdfTransport:
         value = McxContextStagedImage(trading_date, slot, family, normalized, digest, self._now(), str(path))
         self.store.retain_image(value, payload); self.store.select_image(value)
         return value
+
+    def remove_image(
+        self, *, trading_date: date, slot: McxContextSlot, family: McxContextFamily,
+    ) -> None:
+        self.store.remove_current_image(trading_date, slot, family)
+
+    def current_image_payload(
+        self, *, trading_date: date, slot: McxContextSlot,
+        family: McxContextFamily, image_sha256: str,
+    ) -> tuple[McxContextStagedImage, bytes]:
+        value = self.store.current_image(trading_date, slot, family)
+        if value is None or value.image_sha256 != image_sha256:
+            raise ValueError("MCX_CONTEXT_IMAGE_BINDING_INVALID")
+        return value, self.store.image_bytes(value)
 
     def generate(self, trading_date: date, slot: McxContextSlot) -> McxContextQuestionPack:
         self.configuration.ensure_directories()
