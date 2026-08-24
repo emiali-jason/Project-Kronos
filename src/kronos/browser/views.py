@@ -581,6 +581,13 @@ def _native_opportunity_card(
             v3 is None or v3.kr370 is None
         ) else ""
     )
+    active_watch_summary = "".join(
+        '<small class="progression-summary"><strong>WATCHING · '
+        + escape(value.condition_identity.replace("_", " "))
+        + '</strong> · LIVE MONITORING ACTIVE</small>'
+        for value in progression_items
+        if value.state is ProgressionRequirementState.WATCH_ACTIVE
+    )
     kr370_summary = (
         "" if v3 is None or v3.kr370 is None
         else _kr370_opportunity_summary(v3.kr370)
@@ -612,7 +619,7 @@ def _native_opportunity_card(
            else 'Chart / reference status' if v3 is not None else 'Review')
         + ' · <strong>'
         + state_value + '</strong>' + missing + progression_summary
-        + kr370_summary + '</span>'
+        + active_watch_summary + kr370_summary + '</span>'
         '<span class="native-opportunity-actions"><a class="button" href="/swing/v1-review">Open Native Review →</a>'
         f'<a class="button" href="/swing/analysis-details/{escape(item.run_identity)}/'
         f'{quote(item.canonical_instrument, safe="")}">View Analysis Details →</a>'
@@ -655,8 +662,13 @@ def _kr370_opportunity_summary(value) -> str:  # type: ignore[no-untyped-def]
         + escape(value.next_promotion_condition) + '</strong></small>'
     )
     alert = (
-        '<small class="kr370-card-line"><strong>NO AUTOMATED ALERT AVAILABLE</strong></small>'
-        if value.watchability == "No Automated Alert Available" else ""
+        '<small class="kr370-card-line"><strong>'
+        'REFRESH ANALYSIS AFTER NEXT COMPLETED 1H</strong></small>'
+        if value.watchability == "No Automated Alert Available"
+        and tuple(value.missing_criteria) == ("K5 NON EXTENSION",)
+        else '<small class="kr370-card-line"><strong>NO AUTOMATED ALERT AVAILABLE</strong></small>'
+        if value.watchability == "No Automated Alert Available"
+        else ""
     )
     return (
         count + '<small class="kr370-card-line">' + escape(waiting) + '</small>'
@@ -1045,14 +1057,30 @@ def render_native_trade_window(
             '<section class="analysis-section"><h2>'
             + escape(projection.state.value.replace("_", " "))
             + '</h2><p>' + escape(projection.reason.replace("_", " "))
-            + '</p></section>'
+            + '</p>'
+            + (
+                '<form method="post" action="/swing/trade-window/construct">'
+                '<input type="hidden" name="run_identity" value="'
+                + escape(projection.native_run_identity) + '">'
+                '<input type="hidden" name="canonical_instrument" value="'
+                + escape(projection.canonical_instrument) + '">'
+                '<input type="hidden" name="native_assessment_sha256" value="'
+                + escape(projection.native_assessment_sha256) + '">'
+                '<button class="button primary" type="submit">CONSTRUCT TRADE PLAN</button>'
+                '</form>'
+                if projection.kr370_classification in {"BUY_NOW", "SELL_NOW"}
+                and projection.reason == "STEP31_EVALUATION_NOT_COMPLETED"
+                else ""
+            )
+            + '</section>'
         )
     risk = (
         '<section class="analysis-section"><h2>RISK</h2><div class="analysis-decision">'
         + escape(projection.risk_state.replace("_", " "))
         + '</div><p>'
         + escape(
-            "Exact DOMAIN-007 result. No approval is inferred by this Trade Window."
+            "Exact DOMAIN-007 result: " + projection.risk_reason.replace("_", " ")
+            + ". No approval is inferred by this Trade Window."
             if projection.risk_result_id is not None
             else "No Risk permission is inferred by this Trade Window."
         ) + '</p></section>'
@@ -1071,13 +1099,39 @@ def render_native_trade_window(
         + escape(timing_label)
         + '</div><p>KR-380 entry timing is separate from KR-370 analytical promotion.</p></section>'
     )
+    controls = ""
+    if plan is not None and projection.sponsor_controls_available:
+        action = "/swing/v1/native-trade-decision?plan=" + escape(plan.trade_plan_id)
+        controls = (
+            '<div class="native-trade-actions">'
+            '<form method="post" action="' + action + '">'
+            '<input type="hidden" name="mode" value="PAPER">'
+            '<button class="button primary" type="submit">PAPER</button></form>'
+            '<form method="post" action="' + action + '">'
+            '<input type="hidden" name="mode" value="IGNORE">'
+            '<button class="button" type="submit">IGNORE</button></form>'
+            '<form method="post" action="' + action + '">'
+            '<input type="hidden" name="mode" value="LIVE">'
+            '<label>Actual entry <input name="actual_entry" inputmode="decimal" required></label>'
+            '<label>Lots <input name="lots" inputmode="numeric" required></label>'
+            '<button class="button" type="submit">LIVE</button></form></div>'
+        )
+    elif projection.sponsor_decision_id is None:
+        controls = (
+            '<p class="empty">No LIVE / PAPER / IGNORE control is available '
+            'until the governed Risk boundary permits it.</p>'
+        )
     sponsor = (
         '<section class="analysis-section"><h2>SPONSOR DECISION / POSITION</h2>'
         '<div class="analysis-decision">' + escape(projection.sponsor_decision_state)
         + '</div><p><strong>Actual Sponsor branch</strong> · '
         + escape(projection.sponsor_position_state.replace("_", " "))
-        + '</p><p>This branch is separate from the objective KRONOS model lifecycle. '
-        'No LIVE / PAPER / IGNORE control is available without its governed downstream authority.</p></section>'
+        + '</p>' + controls
+        + '<p>This branch is separate from the objective KRONOS model lifecycle.</p>'
+        + '<div class="analysis-decision">'
+        + escape(projection.sponsor_monitoring_state) + '</div><p>'
+        + escape(projection.sponsor_monitoring_reason.replace("_", " "))
+        + '</p></section>'
     )
     model = (
         '<section class="analysis-section"><h2>MODEL LIFECYCLE</h2>'
@@ -1657,8 +1711,12 @@ def render_active_candidates(
     snapshot: BrowserWorkspaceSnapshot,
     workflow: BrowserStep32Snapshot,
     native_lifecycle: ActiveTradeLifecycleSnapshot | None = None,
+    *,
+    active_monitoring_position_ids: tuple[str, ...] = (),
 ) -> str:
-    native = _native_active_lifecycle(native_lifecycle)
+    native = _native_active_lifecycle(
+        native_lifecycle, active_monitoring_position_ids
+    )
     legacy = _workflow_cards(
         workflow.active,
         empty_message="No objective model trades are currently active.",
@@ -1816,7 +1874,10 @@ def render_trade_journal(
     )
 
 
-def _native_active_lifecycle(snapshot: ActiveTradeLifecycleSnapshot | None) -> str:
+def _native_active_lifecycle(
+    snapshot: ActiveTradeLifecycleSnapshot | None,
+    active_monitoring_position_ids: tuple[str, ...] = (),
+) -> str:
     if snapshot is None or not snapshot.active:
         return '<div class="workflow-empty">No Native Paper or Live positions are currently active.</div>'
     notifications = {item.notification_id: item for item in snapshot.notifications}
@@ -1871,9 +1932,15 @@ def _native_active_lifecycle(snapshot: ActiveTradeLifecycleSnapshot | None) -> s
                 '<option>SPONSOR_MANUAL_EXIT</option></select></label>'
                 '<button type="submit">RECORD EXIT</button></form>'
             )
+        monitoring = (
+            '<div class="analysis-decision">LIVE MONITORING · SL + TARGET</div>'
+            if position.position_id in active_monitoring_position_ids
+            else '<div class="analysis-decision">MONITORING NOT ACTIVE</div>'
+        )
         cards.append(
             '<section class="native-trade-plan"><h3>' + escape(label) + '</h3>'
-            '<div class="native-trade-plan-grid">' + values + '</div>' + alerts + controls + '</section>'
+            '<div class="native-trade-plan-grid">' + values + '</div>'
+            + monitoring + alerts + controls + '</section>'
         )
     return "".join(cards)
 

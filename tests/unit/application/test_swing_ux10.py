@@ -108,6 +108,50 @@ def test_non_triggered_watch_does_not_notify(tmp_path: Path) -> None:
     assert ux10(tmp_path).observe_progression_watch(watch) is None
 
 
+def test_ready_monitoring_activation_is_durable_exactly_once_and_restart_safe(
+    tmp_path: Path,
+) -> None:
+    from kronos.swing.v1.progression_watch import activate_watch
+    from tests.unit.browser.test_browser_notifications import _requirement
+
+    telegram = Telegram()
+    root = tmp_path / "notifications"
+    watch = activate_watch(_requirement("CANBK", "9"), activated_at=NOW)
+    service = ux10(root, telegram)
+
+    record = service.observe_progression_monitoring_activation(watch)
+
+    assert record is not None
+    assert record.notification_type is Ux10NotificationType.READY_MONITORING_ACTIVATED
+    assert record.watch_identity == watch.watch_id
+    assert "live monitoring is active" in record.summary
+    assert len(telegram.messages) == 1
+    assert "READY MONITORING ACTIVATED" in telegram.messages[0]
+    assert service.observe_progression_monitoring_activation(watch) is None
+    restored = ux10(root, telegram)
+    assert restored.observe_progression_monitoring_activation(watch) is None
+    assert len(telegram.messages) == 1
+
+
+def test_active_trade_monitoring_activation_binds_plan_position_and_lifecycle(
+    tmp_path: Path,
+) -> None:
+    position, *_ = _position(SponsorTradeChoice.PAPER)
+    telegram = Telegram()
+    service = ux10(tmp_path, telegram)
+
+    record = service.observe_active_trade_monitoring_activation(position)
+
+    assert record is not None
+    assert record.notification_type is Ux10NotificationType.ACTIVE_TRADE_MONITORING_ACTIVATED
+    assert record.trade_identity == position.trade_plan_id
+    assert record.lifecycle_event_identity == position.position_id
+    assert record.watch_identity == position.lifecycle_id
+    assert record.summary == "Stop: Watching · Target: Watching"
+    assert len(telegram.messages) == 1
+    assert service.observe_active_trade_monitoring_activation(position) is None
+
+
 def _promotion(template, run, classification):  # type: ignore[no-untyped-def]
     payload = {field.name: getattr(template, field.name) for field in fields(template)}
     payload.update(run_identity=run, classification=classification)

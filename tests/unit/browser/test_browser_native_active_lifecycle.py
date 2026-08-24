@@ -58,6 +58,24 @@ def test_live_notification_and_record_exit_control_are_prominent() -> None:
     assert "close broker" not in html.lower()
 
 
+def test_active_monitoring_confirmation_requires_actual_attached_position() -> None:
+    result, plan, *_ = _go(SponsorTradeChoice.PAPER)
+    position = create_active_lifecycle(result.decision, result.position, plan)
+    snapshot = ActiveTradeLifecycleSnapshot((position,), (), (), ())
+
+    inactive = render_active_candidates(
+        _ready(), BrowserStep32Snapshot(None, ()), snapshot,
+    )
+    active = render_active_candidates(
+        _ready(), BrowserStep32Snapshot(None, ()), snapshot,
+        active_monitoring_position_ids=(position.position_id,),
+    )
+
+    assert "MONITORING NOT ACTIVE" in inactive
+    assert "LIVE MONITORING · SL + TARGET" not in inactive
+    assert "LIVE MONITORING · SL + TARGET" in active
+
+
 def test_closed_tab_renders_factual_economics_and_deterministic_commentary() -> None:
     result, plan, *_ = _go(SponsorTradeChoice.PAPER)
     position = create_active_lifecycle(result.decision, result.position, plan)

@@ -63,7 +63,9 @@ from kronos.swing.v1.native_trade_construction import (
     construct_trade_plan as build_trade_plan,
 )
 from kronos.swing.v1.native_sponsor_decision import (
+    create_trade_plan_business_judgment,
     LocalSponsorDecisionStore,
+    record_trade_plan_risk_result,
     SponsorInitiationResult,
     SponsorTradeChoice,
     initiate_sponsor_decision as initiate_native_sponsor_decision,
@@ -88,6 +90,7 @@ from kronos.swing.v1.native_trade_journal import (
 from kronos.market.calendar import MarketCalendarPublisher
 from kronos.provider.contracts.instrument import InstrumentRecord
 from kronos.swing.v1.step32 import BusinessJudgment, RiskApproval
+from kronos.swing.v1.native_entry_timing import RiskPermissionV1
 from kronos.instrument.facts import CanonicalInstrumentContext
 from kronos.swing.v1.pdf_visual_review import (
     AnswerImportRecord,
@@ -750,6 +753,57 @@ class NativeReviewWorkflow:
             )
             self._step32_inputs[trade_plan_id] = (judgment, risk, execution_context)
 
+    def bind_operability_inputs(
+        self,
+        plan: TradePlanRecord,
+        risk_permission: RiskPermissionV1,
+        execution_context: CanonicalInstrumentContext,
+    ) -> tuple[BusinessJudgment, RiskApproval]:
+        """Adapt current commissioned Risk truth to the existing Sponsor boundary."""
+
+        if type(plan) is not TradePlanRecord or type(risk_permission) is not RiskPermissionV1:
+            raise TypeError("OPERABILITY_STEP32_INPUT_INVALID")
+        with self._lock:
+            requirement = self._requirement_for(plan.canonical_instrument)
+            if (
+                plan.native_run_identity != requirement.native_run_identity
+                or plan.native_assessment_sha256
+                != requirement.thesis.native_assessment_sha256
+                or risk_permission.trade_plan_id != plan.trade_plan_id
+                or risk_permission.trade_plan_sha256 != plan.integrity_hash
+                or not risk_permission.current
+            ):
+                raise ValueError("OPERABILITY_STEP32_BINDING_INVALID")
+            if risk_permission.state.value == "RISK_CONSTRAINED":
+                # V1 constraints are reason identities, not enforceable quantities.
+                raise ValueError("RISK_CONSTRAINT_EXECUTION_DETAIL_UNAVAILABLE")
+            judgment = create_trade_plan_business_judgment(
+                plan,
+                validation_identity=plan.readiness_record_identity,
+                created_at=self._clock(),
+            )
+            risk = record_trade_plan_risk_result(
+                plan,
+                judgment,
+                risk_permission.state,
+                reason="_".join(risk_permission.reason_codes),
+                evaluated_at=risk_permission.evaluated_at,
+            )
+            self._trade_plan_store.retain(plan)
+            self._trade_plans[plan.trade_plan_id] = plan
+            validate_step32_inputs(
+                plan,
+                judgment,
+                risk,
+                execution_context,
+                current_trade_plan_id=plan.trade_plan_id,
+                validated_at=self._clock(),
+            )
+            self._step32_inputs[plan.trade_plan_id] = (
+                judgment, risk, execution_context
+            )
+            return judgment, risk
+
     def initiate_sponsor_decision(
         self,
         trade_plan_id: str,
@@ -810,6 +864,13 @@ class NativeReviewWorkflow:
         """Return process-local active subscriptions without exposing provider state."""
 
         return len(self._active_lifecycle_monitoring.active_position_ids)
+
+    def lifecycle_monitoring_active(self, position_id: str) -> bool:
+        return position_id in self._active_lifecycle_monitoring.active_position_ids
+
+    @property
+    def active_lifecycle_monitoring_ids(self) -> tuple[str, ...]:
+        return self._active_lifecycle_monitoring.active_position_ids
 
     def close(self) -> None:
         """Release process-owned monitoring without mutating retained evidence."""

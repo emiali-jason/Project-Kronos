@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from decimal import Decimal
 from enum import StrEnum
 from hashlib import sha256
 from typing import Callable
@@ -30,11 +31,15 @@ from kronos.swing.v1.kr370_step31_handoff import (
     create_kr370_step31_handoff,
 )
 from kronos.swing.v1.native_trade_construction import (
+    AuthoritativePriceEvidence,
     LocalTradePlanStore,
+    QualificationCandleEvidence,
     TradeConstructionEvidencePackage,
     TradePlanRecord,
     TradePlanStatus,
+    TradeSetupIdentity,
     construct_trade_plan,
+    create_trade_construction_evidence_package,
 )
 from kronos.swing.v1.native_entry_timing import (
     EcpcV2Blocker,
@@ -48,6 +53,7 @@ from kronos.swing.v1.native_entry_timing import (
     NativeEcpcV2Context,
     ObjectiveModelRecordV1,
     PortfolioExposureFact,
+    PortfolioExposureKind,
     PortfolioRuleFact,
     PortfolioStateV1,
     RiskPermissionV1,
@@ -57,6 +63,7 @@ from kronos.swing.v1.native_entry_timing import (
     evaluate_risk_permission_v1,
     produce_native_ecpc_v2,
 )
+from kronos.swing.v1.mtf_facts import FactualTimeframe
 from kronos.application.swing_visual_v3 import CompletedVisualV3Review
 from kronos.application.swing_native_review import NativeReviewWorkflowSnapshot
 from kronos.swing.v1.native_active_trade_lifecycle import (
@@ -205,6 +212,7 @@ class NativeTradeWindowProjection:
     handoff: Kr370Step31EligibilityHandoff | None
     trade_plan: TradePlanRecord | None
     risk_state: str = "RISK_UNAVAILABLE"
+    risk_reason: str = "RISK EVALUATION NOT AVAILABLE"
     risk_result_id: str | None = None
     sponsor_controls_available: bool = False
     sponsor_decision_state: str = "NO DECISION RECORDED"
@@ -217,6 +225,8 @@ class NativeTradeWindowProjection:
     model_close_reason: str | None = None
     sponsor_position_state: str = "NO SPONSOR POSITION"
     sponsor_position_id: str | None = None
+    sponsor_monitoring_state: str = "NOT APPLICABLE"
+    sponsor_monitoring_reason: str = "NO ACTIVE SPONSOR POSITION"
     lifecycle_id: str | None = None
     closure_state: str = "OPEN / NOT ESTABLISHED"
     closure_id: str | None = None
@@ -275,6 +285,8 @@ class NativeTradeWindowProjection:
                 self.sponsor_position_state == "NO SPONSOR POSITION"
             )
             or (self.lifecycle_id is not None and self.sponsor_position_id is None)
+            or not self.sponsor_monitoring_state
+            or not self.sponsor_monitoring_reason
             or not self.closure_state
             or (self.closure_id is None) != (self.closure_state == "OPEN / NOT ESTABLISHED")
             or (self.closure_id is None) != (self.closure_reason is None)
@@ -341,6 +353,8 @@ class SwingTradeWindowWorkflow:
         self._closures: dict[str, TradeClosureRecord] = {}
         self._journals: dict[str, TradeJournalRecord] = {}
         self._downstream_warnings: dict[str, tuple[str, ...]] = {}
+        self._sponsor_controls_ready: set[str] = set()
+        self._sponsor_monitoring_position_ids: set[str] = set()
 
     def set_shared_monitoring_hub(self, hub: SharedSwingMonitoringHub) -> None:
         """Bind the one existing factual Swing monitoring transport."""
@@ -352,6 +366,10 @@ class SwingTradeWindowWorkflow:
     @property
     def shared_monitoring_hub(self) -> SharedSwingMonitoringHub | None:
         return self._shared_monitoring_hub
+
+    @property
+    def active_monitoring_count(self) -> int:
+        return len(self._monitoring_registrations)
 
     def start_current_entry_monitoring(
         self,
@@ -463,6 +481,99 @@ class SwingTradeWindowWorkflow:
         self._portfolio_state = record
         return record
 
+    def publish_current_portfolio_state(
+        self,
+        review: NativeReviewWorkflowSnapshot,
+        *,
+        native_run_identity: str,
+        as_of_boundary: datetime,
+    ) -> PortfolioStateV1:
+        """Publish the approved minimal factual Portfolio State from owned stores."""
+
+        if (
+            type(review) is not NativeReviewWorkflowSnapshot
+            or review.native_run_identity != native_run_identity
+        ):
+            raise ValueError("CURRENT_PORTFOLIO_SOURCE_BINDING_INVALID")
+        plan_by_id = {item.trade_plan_id: item for item in self._plans.values()}
+        objective = tuple(
+            PortfolioExposureFact(
+                "PORTFOLIO-EXPOSURE-" + sha256(
+                    f"OBJECTIVE:{item.model_trade_id}".encode("utf-8")
+                ).hexdigest(),
+                PortfolioExposureKind.OBJECTIVE_MODEL,
+                item.canonical_instrument,
+                plan_by_id[item.trade_plan_id].native_direction.value,
+                item.model_trade_id,
+                item.model_trade_id,
+            )
+            for item in sorted(
+                self._production_models.values(), key=lambda value: value.model_trade_id
+            )
+            if item.state is ObjectiveModelState.ACTIVE
+            and item.trade_plan_id in plan_by_id
+        )
+        sponsor = tuple(
+            PortfolioExposureFact(
+                "PORTFOLIO-EXPOSURE-" + sha256(
+                    f"SPONSOR:{item.position_id}".encode("utf-8")
+                ).hexdigest(),
+                (
+                    PortfolioExposureKind.SPONSOR_LIVE
+                    if item.mode.value == "LIVE"
+                    else PortfolioExposureKind.SPONSOR_PAPER
+                ),
+                item.canonical_instrument,
+                item.direction.value,
+                item.lifecycle_id,
+                item.position_id,
+            )
+            for item in sorted(
+                review.active_lifecycle.active, key=lambda value: value.position_id
+            )
+        )
+        sources = tuple(dict.fromkeys((
+            "OBJECTIVE-MODEL-STORE",
+            *(item.source_record_identity for item in objective),
+            "SPONSOR-POSITION-STORE",
+            *(item.source_record_identity for item in sponsor),
+        )))
+        cycle = "PORTFOLIO-CYCLE-" + sha256(
+            f"{native_run_identity}:{'|'.join(sources)}".encode("utf-8")
+        ).hexdigest()
+        return self.publish_portfolio_state(
+            cycle_identity=cycle,
+            as_of_boundary=as_of_boundary,
+            objective_exposures=objective,
+            sponsor_exposures=sponsor,
+            source_identities=sources,
+            sources_complete=True,
+            provenance=(
+                native_run_identity,
+                "DOMAIN-005",
+                "ADR-0013",
+                "OBJECTIVE-MODEL-STORE",
+                "SPONSOR-POSITION-STORE",
+            ),
+        )
+
+    def evaluate_current_risk(
+        self,
+        run_identity: str,
+        canonical_instrument: str,
+        *,
+        evaluated_at: datetime,
+    ) -> RiskPermissionV1:
+        """Invoke the existing DOMAIN-007 producer for one exact current plan."""
+
+        key = (run_identity, canonical_instrument)
+        completed = self._completed.get(key)
+        handoff = self._handoffs.get(key)
+        plan = self._plans.get(key)
+        if completed is None or handoff is None or plan is None:
+            raise ValueError("CURRENT_RISK_INPUT_UNAVAILABLE")
+        return self._evaluate_current_risk(plan, handoff, completed, evaluated_at)
+
     def _evaluate_current_risk(
         self,
         plan: TradePlanRecord,
@@ -473,6 +584,17 @@ class SwingTradeWindowWorkflow:
         if completed.promotion is None or self._risk_store is None:
             raise ValueError("CURRENT_RISK_PRODUCER_UNAVAILABLE")
         portfolio = self._portfolio_state
+        current = self._production_risks.get(plan.trade_plan_id)
+        if (
+            current is not None
+            and current.trade_plan_sha256 == plan.integrity_hash
+            and current.handoff_identity == handoff.handoff_identity
+            and current.kr370_source_identity == completed.promotion.integrity_sha256
+            and current.portfolio_state_identity
+            == (None if portfolio is None else portfolio.portfolio_state_identity)
+            and current.current
+        ):
+            return current
         risk = evaluate_risk_permission_v1(
             plan,
             handoff,
@@ -489,6 +611,77 @@ class SwingTradeWindowWorkflow:
         self._production_risks[plan.trade_plan_id] = risk
         self._merge_production_records()
         return risk
+
+    def current_operability_inputs(
+        self, run_identity: str, canonical_instrument: str
+    ) -> tuple[TradePlanRecord, RiskPermissionV1] | None:
+        plan = self._plans.get((run_identity, canonical_instrument))
+        if plan is None:
+            return None
+        risk = self._production_risks.get(plan.trade_plan_id)
+        return None if risk is None else (plan, risk)
+
+    def mark_sponsor_controls_available(self, trade_plan_id: str) -> None:
+        if trade_plan_id not in {item.trade_plan_id for item in self._plans.values()}:
+            raise ValueError("SPONSOR_CONTROL_PLAN_UNAVAILABLE")
+        self._sponsor_controls_ready.add(trade_plan_id)
+
+    def synchronize_sponsor_monitoring(
+        self, active_position_ids: tuple[str, ...]
+    ) -> None:
+        if type(active_position_ids) is not tuple or any(
+            not isinstance(item, str) or not item for item in active_position_ids
+        ):
+            raise TypeError("SPONSOR_MONITORING_IDENTITIES_INVALID")
+        self._sponsor_monitoring_position_ids = set(active_position_ids)
+
+    def restore_current_entry_monitoring(
+        self,
+        capability: object,
+        instrument_resolver: Callable[[object, str, object], InstrumentRecord],
+        *,
+        clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+    ) -> tuple[str, ...]:
+        """Restore current non-terminal KR-380 bindings without re-evaluation."""
+
+        if getattr(capability, "active", False) is not True:
+            return ()
+        restored: list[str] = []
+        for key, plan in sorted(self._plans.items()):
+            outcome = self._production_kr380.get(plan.trade_plan_id)
+            risk = self._production_risks.get(plan.trade_plan_id)
+            completed = self._completed.get(key)
+            if (
+                outcome is None
+                or outcome.state is not Kr380EntryTimingState.FORMING
+                or risk is None
+                or not risk.permits_entry
+                or completed is None
+            ):
+                continue
+            one_hour = completed.mtf_snapshot.instrument(
+                plan.canonical_instrument
+            ).fact(FactualTimeframe.ONE_HOUR)
+            binding = "KR380-MONITORING-" + sha256(
+                f"{plan.trade_plan_id}:{one_hour.session_identity}".encode("utf-8")
+            ).hexdigest()
+            if outcome.monitoring_binding_id != binding:
+                raise ValueError("KR380_RESTART_BINDING_INVALID")
+            instrument = instrument_resolver(
+                capability, plan.canonical_instrument, clock().date()
+            )
+            self.start_current_entry_monitoring(
+                *key,
+                capability=capability,
+                instrument=instrument,
+                session_identity=one_hour.session_identity,
+                observation_boundary=one_hour.observation_boundary,
+                ecpc_outcome=EcpcV2Outcome.QUALIFIED,
+                ecpc_blockers=(),
+                clock=clock,
+            )
+            restored.append(plan.trade_plan_id)
+        return tuple(restored)
 
     def evaluate_current_entry_timing(
         self,
@@ -572,8 +765,22 @@ class SwingTradeWindowWorkflow:
         risk = None if self._risk_store is None else self._risk_store.load_for_plan(
             plan.trade_plan_id
         )
-        if risk is not None and _risk_binding(plan, risk):
+        portfolio = self._portfolio_state
+        portfolio_current = (
+            risk is not None
+            and portfolio is not None
+            and risk.portfolio_state_identity == portfolio.portfolio_state_identity
+            and risk.portfolio_state_sha256 == portfolio.integrity_sha256
+            and risk.portfolio_cycle_identity == portfolio.cycle_identity
+        )
+        if (
+            risk is not None
+            and _risk_binding(plan, risk)
+            and (not risk.permits_entry or portfolio_current)
+        ):
             self._production_risks[plan.trade_plan_id] = risk
+        else:
+            risk = None
         outcome = None if self._kr380_store is None else self._kr380_store.load_for_plan(
             plan.trade_plan_id
         )
@@ -627,6 +834,8 @@ class SwingTradeWindowWorkflow:
         self._production_risks.clear()
         self._production_kr380.clear()
         self._production_models.clear()
+        self._sponsor_controls_ready.clear()
+        self._sponsor_monitoring_position_ids.clear()
         self._portfolio_state = (
             None
             if self._portfolio_store is None
@@ -869,11 +1078,24 @@ class SwingTradeWindowWorkflow:
             else decision.risk_id if decision is not None
             else None
         )
+        risk_reason = (
+            " · ".join(risk.reason_codes)
+            if isinstance(risk, RiskPermissionV1)
+            else risk.reason
+            if isinstance(risk, RiskApproval)
+            else "PERSISTED SPONSOR DECISION RISK BINDING"
+            if decision is not None
+            else "RISK EVALUATION NOT AVAILABLE"
+        )
         outcome = self._kr380.get(plan.trade_plan_id)
         model = self._models.get(plan.trade_plan_id)
         position = self._positions.get(plan.trade_plan_id)
         closure = self._closures.get(plan.trade_plan_id)
         journal = self._journals.get(plan.trade_plan_id)
+        monitoring_active = (
+            position is not None
+            and position.position_id in self._sponsor_monitoring_position_ids
+        )
         sponsor_state = (
             "NO DECISION RECORDED"
             if decision is None
@@ -892,8 +1114,14 @@ class SwingTradeWindowWorkflow:
         )
         return {
             "risk_state": risk_state,
+            "risk_reason": risk_reason,
             "risk_result_id": risk_id,
-            "sponsor_controls_available": False,
+            "sponsor_controls_available": (
+                plan.trade_plan_id in self._sponsor_controls_ready
+                and risk is not None
+                and risk.permits_entry
+                and decision is None
+            ),
             "sponsor_decision_state": sponsor_state,
             "sponsor_decision_id": None if decision is None else decision.decision_id,
             "kr380_entry_timing_state": timing_state,
@@ -908,6 +1136,20 @@ class SwingTradeWindowWorkflow:
             "model_close_reason": None if model is None else model.close_reason,
             "sponsor_position_state": position_state,
             "sponsor_position_id": None if position is None else position.position_id,
+            "sponsor_monitoring_state": (
+                "NOT APPLICABLE"
+                if position is None
+                else "LIVE MONITORING · SL + TARGET"
+                if monitoring_active
+                else "MONITORING NOT ACTIVE"
+            ),
+            "sponsor_monitoring_reason": (
+                "NO ACTIVE SPONSOR POSITION"
+                if position is None
+                else "SHARED HUB REGISTRATION ACTIVE"
+                if monitoring_active
+                else "ACTIVE MONITORING REGISTRATION UNAVAILABLE"
+            ),
             "lifecycle_id": None if position is None else position.lifecycle_id,
             "closure_state": closure_state,
             "closure_id": None if closure is None else closure.closure_id,
@@ -927,6 +1169,105 @@ class SwingTradeWindowWorkflow:
             if projection is not None:
                 values.append(projection)
         return tuple(values)
+
+
+def build_current_trade_construction_evidence(
+    completed: CompletedVisualV3Review,
+) -> TradeConstructionEvidencePackage:
+    """Compose Step-31 inputs from immutable governed facts; derive no geometry."""
+
+    if type(completed) is not CompletedVisualV3Review or completed.promotion is None:
+        raise ValueError("CURRENT_TRADE_CONSTRUCTION_SOURCE_INVALID")
+    thesis = completed.requirement.thesis
+    facts = completed.mtf_snapshot.instrument(thesis.canonical_instrument)
+    four_hour = facts.fact(FactualTimeframe.FOUR_HOUR)
+    radius_two = next(
+        item for item in four_hour.structural_measurements if item.radius == 2
+    )
+
+    def digest(*values: object) -> str:
+        return sha256("|".join(str(value) for value in values).encode("utf-8")).hexdigest()
+
+    qualification_identity = (
+        f"STEP31-QUALIFICATION:{thesis.canonical_instrument}:"
+        f"{four_hour.observation_boundary.isoformat()}"
+    )
+    qualification = QualificationCandleEvidence(
+        qualification_identity,
+        digest(qualification_identity, four_hour.high, four_hour.low),
+        Decimal(str(four_hour.high)),
+        Decimal(str(four_hour.low)),
+        four_hour.observation_boundary,
+        True,
+        "KITE_NORMALIZED_HISTORICAL:COMPLETED_4H_QUALIFICATION_CANDLE",
+        tuple(dict.fromkeys((*four_hour.provenance, "DOMAIN-008"))),
+    )
+
+    def price(identity: str, value: float, boundary: datetime, source: str):
+        return AuthoritativePriceEvidence(
+            identity,
+            digest(identity, value, boundary.isoformat()),
+            Decimal(str(value)),
+            boundary,
+            source,
+            tuple(dict.fromkeys((*four_hour.provenance, "DOMAIN-008"))),
+        )
+
+    anchor = price(
+        f"STEP31-ANCHOR:{thesis.operative_anchor_identity}:"
+        f"{thesis.operative_anchor_boundary.isoformat()}",
+        thesis.operative_anchor_price,
+        thesis.operative_anchor_boundary,
+        "KITE_NORMALIZED_HISTORICAL:NATIVE_OPERATIVE_ANCHOR",
+    )
+    prior_high = (
+        None
+        if not radius_two.swing_highs
+        else price(
+            f"STEP31-PRIOR-HIGH:{radius_two.swing_highs[-1].timestamp.isoformat()}",
+            radius_two.swing_highs[-1].value,
+            radius_two.swing_highs[-1].timestamp,
+            "KITE_NORMALIZED_HISTORICAL:COMPLETED_4H_DIRECTIONAL_SWING_HIGH",
+        )
+    )
+    prior_low = (
+        None
+        if not radius_two.swing_lows
+        else price(
+            f"STEP31-PRIOR-LOW:{radius_two.swing_lows[-1].timestamp.isoformat()}",
+            radius_two.swing_lows[-1].value,
+            radius_two.swing_lows[-1].timestamp,
+            "KITE_NORMALIZED_HISTORICAL:COMPLETED_4H_DIRECTIONAL_SWING_LOW",
+        )
+    )
+    package_identity = "STEP31-CURRENT-PACKAGE-" + digest(
+        thesis.native_run_identity,
+        thesis.native_assessment_sha256,
+        completed.promotion.integrity_sha256,
+    )
+    return create_trade_construction_evidence_package(
+        package_identity=package_identity,
+        native_run_identity=thesis.native_run_identity,
+        canonical_instrument=thesis.canonical_instrument,
+        native_assessment_sha256=thesis.native_assessment_sha256,
+        setup_identity=TradeSetupIdentity.PULLBACK_CONTINUATION,
+        observation_boundary=completed.promotion.analysis_boundary,
+        provenance=tuple(dict.fromkeys((
+            *thesis.provider_provenance,
+            *thesis.calendar_provenance,
+            completed.promotion.integrity_sha256,
+            "SWING-V1-TRADE-CONSTRUCTION-V0",
+        ))),
+        qualification_candle=qualification,
+        governing_structural_low=(
+            anchor if thesis.direction.value == "LONG" else None
+        ),
+        governing_structural_high=(
+            anchor if thesis.direction.value == "SHORT" else None
+        ),
+        prior_directional_swing_high=prior_high,
+        prior_directional_swing_low=prior_low,
+    )
 
 
 class _Kr380SharedMonitoringConsumer:
@@ -1248,4 +1589,5 @@ __all__ = [
     "NativeTradeWindowProjection",
     "SwingTradeWindowWorkflow",
     "TradeWindowState",
+    "build_current_trade_construction_evidence",
 ]

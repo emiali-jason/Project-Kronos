@@ -13,6 +13,7 @@ from kronos.application.swing_trade_window import (
     GovernedModelLifecycleReference,
     Kr380EntryTimingState,
     SwingTradeWindowWorkflow,
+    build_current_trade_construction_evidence,
 )
 from kronos.browser.views import render_native_trade_window, render_trade_journal
 from kronos.provider.contracts.monitoring import MonitoringConnectionState
@@ -30,6 +31,10 @@ from kronos.swing.v1.native_sponsor_decision import (
     record_trade_plan_risk_result,
 )
 from kronos.swing.v1.native_trade_construction import LocalTradePlanStore
+from kronos.swing.v1.native_entry_timing import (
+    LocalPortfolioStateV1Store,
+    LocalRiskPermissionV1Store,
+)
 from kronos.swing.v1.native_trade_journal import (
     LocalTradeJournalStore,
     TradeJournalService,
@@ -155,6 +160,120 @@ def test_exact_risk_and_current_kr380_states_project_without_recalculation(
         "SHORT_ENTRY_TRIGGERED": "ENTRY TRIGGERED — SHORT",
     }[label]
     assert expected in html
+
+
+def test_current_portfolio_and_domain007_are_persisted_and_idempotent(
+    tmp_path,
+) -> None:
+    completed = _completed(tmp_path)
+    workflow = SwingTradeWindowWorkflow(
+        LocalKr370Step31HandoffStore(tmp_path / "handoffs"),
+        LocalTradePlanStore(tmp_path / "plans"),
+        LocalPortfolioStateV1Store(tmp_path / "portfolio"),
+        LocalRiskPermissionV1Store(tmp_path / "risk"),
+    )
+    projection = workflow.construct(
+        completed,
+        _evidence(completed),
+        _context(completed.requirement.canonical_instrument),
+        current_run_identity=completed.requirement.native_run_identity,
+        current_analysis_boundary=completed.promotion.analysis_boundary,
+        created_at=NOW,
+    )
+    plan = projection.trade_plan
+    assert plan is not None
+    portfolio = workflow.publish_current_portfolio_state(
+        _review(completed, plan),
+        native_run_identity=plan.native_run_identity,
+        as_of_boundary=plan.observation_boundary,
+    )
+    first = workflow.evaluate_current_risk(
+        plan.native_run_identity, plan.canonical_instrument, evaluated_at=NOW,
+    )
+    second = workflow.evaluate_current_risk(
+        plan.native_run_identity,
+        plan.canonical_instrument,
+        evaluated_at=NOW + timedelta(minutes=1),
+    )
+
+    assert portfolio.sources_complete
+    assert portfolio.objective_exposures == ()
+    assert portfolio.sponsor_exposures == ()
+    assert first.state is RiskState.APPROVED
+    assert first.reason_codes == ("NO_GOVERNED_PROHIBITION",)
+    assert second.risk_result_id == first.risk_result_id
+    workflow.mark_sponsor_controls_available(plan.trade_plan_id)
+    ready = workflow.project(plan.native_run_identity, plan.canonical_instrument)
+    html = render_native_trade_window(_ready(), ready)
+    assert "RISK APPROVED" in html
+    assert "NO GOVERNED PROHIBITION" in html
+    assert "PAPER</button>" in html
+    assert "LIVE</button>" in html
+    assert "IGNORE</button>" in html
+
+
+def test_production_step31_evidence_uses_only_completed_governed_machine_facts(
+    tmp_path,
+) -> None:
+    completed = _completed(tmp_path)
+
+    evidence = build_current_trade_construction_evidence(completed)
+
+    assert evidence.native_run_identity == completed.requirement.native_run_identity
+    assert evidence.native_assessment_sha256 == completed.requirement.thesis.native_assessment_sha256
+    assert evidence.qualification_candle is not None
+    assert evidence.qualification_candle.completed
+    assert "KITE_NORMALIZED_HISTORICAL" in evidence.qualification_candle.source
+    assert "QUOTE" not in " ".join(evidence.provenance)
+    assert "VISUAL" not in evidence.qualification_candle.source
+
+
+def test_plan_portfolio_and_risk_restore_under_exact_current_binding(tmp_path) -> None:
+    completed = _completed(tmp_path)
+    handoffs = LocalKr370Step31HandoffStore(tmp_path / "handoffs")
+    plans = LocalTradePlanStore(tmp_path / "plans")
+    portfolios = LocalPortfolioStateV1Store(tmp_path / "portfolio")
+    risks = LocalRiskPermissionV1Store(tmp_path / "risk")
+    initial = SwingTradeWindowWorkflow(handoffs, plans, portfolios, risks)
+    projection = initial.construct(
+        completed, _evidence(completed),
+        _context(completed.requirement.canonical_instrument),
+        current_run_identity=completed.requirement.native_run_identity,
+        current_analysis_boundary=completed.promotion.analysis_boundary,
+        created_at=NOW,
+    )
+    plan = projection.trade_plan
+    assert plan is not None
+    initial.publish_current_portfolio_state(
+        _review(completed, plan), native_run_identity=plan.native_run_identity,
+        as_of_boundary=plan.observation_boundary,
+    )
+    risk = initial.evaluate_current_risk(
+        plan.native_run_identity, plan.canonical_instrument, evaluated_at=NOW,
+    )
+
+    restored = SwingTradeWindowWorkflow(handoffs, plans, portfolios, risks)
+    restored.restore((completed,))
+    inputs = restored.current_operability_inputs(
+        plan.native_run_identity, plan.canonical_instrument,
+    )
+
+    assert inputs is not None
+    assert inputs[0] == plan
+    assert inputs[1] == risk
+
+    initial.publish_portfolio_state(
+        cycle_identity="PORTFOLIO-CYCLE-SUPERSEDING",
+        as_of_boundary=plan.observation_boundary + timedelta(minutes=1),
+        objective_exposures=(), sponsor_exposures=(), source_identities=(
+            "OBJECTIVE-MODEL-STORE", "SPONSOR-POSITION-STORE",
+        ), sources_complete=True, provenance=("DOMAIN-005", "ADR-0013"),
+    )
+    stale = SwingTradeWindowWorkflow(handoffs, plans, portfolios, risks)
+    stale.restore((completed,))
+    assert stale.current_operability_inputs(
+        plan.native_run_identity, plan.canonical_instrument,
+    ) is None
 
 
 def test_absent_or_rejected_risk_and_foreign_kr380_fail_closed(tmp_path) -> None:

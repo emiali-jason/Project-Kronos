@@ -6,11 +6,12 @@ from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from hashlib import sha256
 import json
 import logging
 import re
 from threading import Lock, Thread
-from urllib.parse import parse_qs, unquote, urlsplit
+from urllib.parse import parse_qs, quote, unquote, urlsplit
 
 from kronos.application.swing_opportunities import SwingOpportunitiesApplication
 from kronos.application.provider_instrument_master_operation import (
@@ -44,7 +45,13 @@ from kronos.application.swing_visual_v3_live import SwingVisualV3LiveWorkflow
 from kronos.application.swing_mcx_supporting_context import (
     McxSupportingContextWorkflow,
 )
-from kronos.application.swing_trade_window import SwingTradeWindowWorkflow
+from kronos.application.swing_trade_window import (
+    SwingTradeWindowWorkflow,
+    build_current_trade_construction_evidence,
+)
+from kronos.application.live_monitoring_e2e import (
+    resolve_governed_monitoring_instrument,
+)
 from kronos.configuration.apple_keychain import (
     AppleKeychainApiKeySource,
     AppleKeychainCredentialRemover,
@@ -127,11 +134,15 @@ from kronos.swing.v1.tradingview import ChartTimeframe
 from kronos.swing.v1.step32 import SponsorDecisionMode
 from kronos.swing.v1.native_sponsor_decision import SponsorTradeChoice
 from kronos.swing.v1.native_entry_timing import (
+    EcpcV2Outcome,
     LocalKr380V2Store,
     LocalObjectiveModelV1Store,
     LocalPortfolioStateV1Store,
     LocalRiskPermissionV1Store,
 )
+from kronos.swing.v1.mtf_facts import FactualTimeframe
+from kronos.instrument.facts import publish_instrument_context
+from kronos.swing.universe import enabled_swing_phase1_universe
 from kronos.swing.v1.native_active_trade_lifecycle import TradeExitReason
 from kronos.swing.v1.native_review import NativeReviewEvidenceStore
 from kronos.swing.v1.visual_evidence_v2 import (
@@ -509,6 +520,7 @@ class KronosBrowserServer(ThreadingHTTPServer):
         self.trade_window.restore(self.visual_v3.completed_snapshot())
         self.trade_window.synchronize_downstream(self.native_review.snapshot())
         self.progression_snapshot()
+        self.restore_sponsor_operability()
         self.ux10_notifications.retry_pending()
         super().__init__(address, _BrowserHandler)
 
@@ -627,6 +639,11 @@ class KronosBrowserServer(ThreadingHTTPServer):
         if watchable:
             self.application.auto_activate_progression_watches(watchable)
             snapshot = self.progression_watches.snapshot()
+            for watch in snapshot.watches:
+                if watch.state.value == "ACTIVE":
+                    self.ux10_notifications.observe_progression_monitoring_activation(
+                        watch
+                    )
         return snapshot
 
     def active_live_monitoring_count(self) -> int:
@@ -635,6 +652,7 @@ class KronosBrowserServer(ThreadingHTTPServer):
         return (
             self.progression_watches.active_monitoring_count
             + self.native_review.active_monitoring_count
+            + self.trade_window.active_monitoring_count
         )
 
     def visual_v3_presentations(self):  # type: ignore[no-untyped-def]
@@ -642,6 +660,181 @@ class KronosBrowserServer(ThreadingHTTPServer):
             present_visual_v3_review(item)
             for item in self.visual_v3.completed_snapshot()
         )
+
+    def _operability_context(self, canonical_instrument: str):  # type: ignore[no-untyped-def]
+        capability_getter = getattr(
+            self.application, "authenticated_read_only_capability", None
+        )
+        capability = capability_getter() if callable(capability_getter) else None
+        if capability is None or getattr(capability, "active", False) is not True:
+            raise ValueError("KITE_READ_ONLY_CAPABILITY_UNAVAILABLE")
+        record = resolve_governed_monitoring_instrument(
+            capability, canonical_instrument, datetime.now().astimezone().date()
+        )
+        member = next(
+            (
+                item for item in enabled_swing_phase1_universe()
+                if item.canonical_identity == canonical_instrument
+            ),
+            None,
+        )
+        if member is None:
+            raise ValueError("GOVERNED_INSTRUMENT_INVALID")
+        context = publish_instrument_context(
+            canonical_instrument, member.asset_class.value, record
+        )
+        return capability, record, context
+
+    def _synchronize_trade_window(self) -> None:
+        review = self.native_review.snapshot()
+        self.trade_window.synchronize_downstream(review)
+        self.trade_window.synchronize_sponsor_monitoring(
+            self.native_review.active_lifecycle_monitoring_ids
+        )
+
+    def construct_current_trade_plan(
+        self,
+        run_identity: str,
+        canonical_instrument: str,
+        native_assessment_sha256: str,
+    ):
+        """Perform the bounded production composition behind the Sponsor action."""
+
+        _, discovery = self.application.opportunities_projection()
+        if discovery is None or discovery.run_identity != run_identity:
+            raise ValueError("CURRENT_NATIVE_RUN_MISMATCH")
+        assessment = next((
+            item for item in discovery.assessments
+            if item.canonical_instrument == canonical_instrument
+            and item.result_sha256 == native_assessment_sha256
+        ), None)
+        completed = self.visual_v3.completed_for(
+            run_identity, canonical_instrument
+        )
+        if (
+            assessment is None
+            or completed is None
+            or completed.promotion is None
+            or completed.requirement.thesis.native_assessment_sha256
+            != native_assessment_sha256
+        ):
+            raise ValueError("CURRENT_NATIVE_ASSESSMENT_MISMATCH")
+        capability, instrument, context = self._operability_context(
+            canonical_instrument
+        )
+        projection = self.trade_window.project(run_identity, canonical_instrument)
+        if projection is None or projection.trade_plan is None:
+            projection = self.trade_window.construct(
+                completed,
+                build_current_trade_construction_evidence(completed),
+                context,
+                current_run_identity=run_identity,
+                current_analysis_boundary=completed.promotion.analysis_boundary,
+                created_at=datetime.now(UTC),
+            )
+        plan = projection.trade_plan
+        if plan is None:
+            return projection
+        review = self.native_review.snapshot()
+        self.trade_window.publish_current_portfolio_state(
+            review,
+            native_run_identity=run_identity,
+            as_of_boundary=plan.observation_boundary,
+        )
+        risk = self.trade_window.evaluate_current_risk(
+            run_identity, canonical_instrument, evaluated_at=datetime.now(UTC)
+        )
+        if risk.permits_entry:
+            self.native_review.bind_operability_inputs(plan, risk, context)
+            self.trade_window.mark_sponsor_controls_available(plan.trade_plan_id)
+            one_hour = completed.mtf_snapshot.instrument(
+                canonical_instrument
+            ).fact(FactualTimeframe.ONE_HOUR)
+            binding = "KR380-MONITORING-" + sha256(
+                f"{plan.trade_plan_id}:{one_hour.session_identity}".encode("utf-8")
+            ).hexdigest()
+            current = self.trade_window.project(run_identity, canonical_instrument)
+            if current is None or current.kr380_entry_outcome_id is None:
+                self.trade_window.evaluate_current_entry_timing(
+                    run_identity,
+                    canonical_instrument,
+                    session_identity=one_hour.session_identity,
+                    observation_boundary=one_hour.observation_boundary,
+                    ecpc_outcome=EcpcV2Outcome.QUALIFIED,
+                    ecpc_blockers=(),
+                    previous=None,
+                    current=None,
+                    evaluated_at=datetime.now(UTC),
+                    monitoring_binding_id=binding,
+                )
+            try:
+                self.trade_window.start_current_entry_monitoring(
+                    run_identity,
+                    canonical_instrument,
+                    capability=capability,
+                    instrument=instrument,
+                    session_identity=one_hour.session_identity,
+                    observation_boundary=one_hour.observation_boundary,
+                    ecpc_outcome=EcpcV2Outcome.QUALIFIED,
+                    ecpc_blockers=(),
+                )
+            except ValueError as error:
+                _LOG.warning("KR380 monitoring not active: %s", error)
+        self._synchronize_trade_window()
+        return self.trade_window.project(run_identity, canonical_instrument)
+
+    def restore_sponsor_operability(self) -> None:
+        """Restore persisted controls and shared monitoring without creating analysis."""
+
+        capability_getter = getattr(
+            self.application, "authenticated_read_only_capability", None
+        )
+        capability = capability_getter() if callable(capability_getter) else None
+        if capability is None or getattr(capability, "active", False) is not True:
+            self._synchronize_trade_window()
+            return
+        for projection in self.trade_window.projections():
+            inputs = self.trade_window.current_operability_inputs(
+                projection.native_run_identity, projection.canonical_instrument
+            )
+            if inputs is None:
+                continue
+            plan, risk = inputs
+            if not risk.permits_entry:
+                continue
+            try:
+                _, _, context = self._operability_context(
+                    projection.canonical_instrument
+                )
+                self.native_review.bind_operability_inputs(plan, risk, context)
+                self.trade_window.mark_sponsor_controls_available(plan.trade_plan_id)
+            except ValueError:
+                continue
+        try:
+            self.trade_window.restore_current_entry_monitoring(
+                capability, resolve_governed_monitoring_instrument
+            )
+        except ValueError as error:
+            _LOG.warning("KR380 restoration not active: %s", error)
+        try:
+            restored = self.native_review.restore_lifecycle_monitoring(
+                capability,
+                lambda instrument: resolve_governed_monitoring_instrument(
+                    capability, instrument, datetime.now().astimezone().date()
+                ),
+            )
+        except ValueError as error:
+            restored = ()
+            _LOG.warning("Active lifecycle restoration not active: %s", error)
+        lifecycle = self.native_review.snapshot().active_lifecycle
+        for position_id in restored:
+            position = next(
+                item for item in lifecycle.active if item.position_id == position_id
+            )
+            self.ux10_notifications.observe_active_trade_monitoring_activation(
+                position
+            )
+        self._synchronize_trade_window()
 
     def native_review_version(self) -> str:
         """Select by the persisted current Review identity, never module presence."""
@@ -763,9 +956,7 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             })
             return
         if path == "/swing/opportunities":
-            self.server.trade_window.synchronize_downstream(
-                self.server.native_review.snapshot()
-            )
+            self.server._synchronize_trade_window()
             snapshot, discovery = (
                 self.server.application.opportunities_projection()
             )
@@ -835,9 +1026,7 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             return
         trade_window_match = _TRADE_WINDOW_ROUTE.fullmatch(path)
         if trade_window_match:
-            self.server.trade_window.synchronize_downstream(
-                self.server.native_review.snapshot()
-            )
+            self.server._synchronize_trade_window()
             projection = self.server.trade_window.project(
                 trade_window_match.group(1), unquote(trade_window_match.group(2))
             )
@@ -887,10 +1076,14 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             ))
             return
         if path == "/swing/active":
+            review = self.server.native_review.snapshot()
             self._html(render_active_candidates(
                 snapshot,
                 self.server.step32_workflow.snapshot(),
-                self.server.native_review.snapshot().active_lifecycle,
+                review.active_lifecycle,
+                active_monitoring_position_ids=(
+                    self.server.native_review.active_lifecycle_monitoring_ids
+                ),
             ))
             return
         if path == "/swing/closed":
@@ -1038,6 +1231,7 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             return
         if path == "/provider/connect":
             self.server.application.connect_provider()
+            self.server.restore_sponsor_operability()
             self._redirect("/swing/opportunities")
             return
         if path == "/provider/disconnect":
@@ -1049,6 +1243,9 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             return
         if path == "/swing/progression-watch/activate":
             self._activate_progression_watch()
+            return
+        if path == "/swing/trade-window/construct":
+            self._construct_native_trade_plan()
             return
         if path == "/notifications/watch/deactivate":
             self._manage_progression_watch("deactivate")
@@ -1364,6 +1561,14 @@ class _BrowserHandler(BaseHTTPRequestHandler):
                 or not self.server.application.activate_progression_watch(values[0])
             ):
                 raise ValueError
+            for watch in self.server.progression_watches.snapshot().watches:
+                if (
+                    watch.requirement.requirement_id == values[0]
+                    and watch.state.value == "ACTIVE"
+                ):
+                    self.server.ux10_notifications.observe_progression_monitoring_activation(
+                        watch
+                    )
         except (UnicodeDecodeError, ValueError):
             self._text(HTTPStatus.CONFLICT, "Progression watch is not available.")
             return
@@ -1513,10 +1718,76 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             )
             if result.decision is None:
                 raise ValueError(result.reason)
+            if result.position is not None:
+                capability, instrument, _ = self.server._operability_context(
+                    result.position.canonical_instrument
+                )
+                if not self.server.native_review.lifecycle_monitoring_active(
+                    result.position.position_id
+                ):
+                    self.server.native_review.attach_lifecycle_monitoring(
+                        result.position.position_id, capability, instrument
+                    )
+                lifecycle = self.server.native_review.snapshot().active_lifecycle
+                active = next(
+                    item for item in lifecycle.active
+                    if item.position_id == result.position.position_id
+                )
+                self.server.ux10_notifications.observe_active_trade_monitoring_activation(
+                    active
+                )
+            self.server._synchronize_trade_window()
         except (UnicodeDecodeError, ValueError, InvalidOperation):
             self._text(HTTPStatus.CONFLICT, "Sponsor decision is not available.")
             return
-        self._redirect("/swing/v1-review")
+        decision = result.decision
+        assert decision is not None
+        self._redirect(
+            "/swing/trade-window/"
+            + decision.native_run_identity
+            + "/"
+            + quote(decision.canonical_instrument, safe="")
+        )
+
+    def _construct_native_trade_plan(self) -> None:
+        content_type = self.headers.get("Content-Type", "").split(";", 1)[0]
+        try:
+            content_length = int(self.headers.get("Content-Length", ""))
+        except ValueError:
+            content_length = 0
+        if content_type.lower() != "application/x-www-form-urlencoded" or not 0 < content_length <= 512:
+            self._text(HTTPStatus.BAD_REQUEST, "Request rejected.")
+            return
+        try:
+            fields = parse_qs(
+                self.rfile.read(content_length).decode("utf-8"),
+                strict_parsing=True,
+            )
+            if set(fields) != {
+                "run_identity", "canonical_instrument", "native_assessment_sha256"
+            } or any(len(value) != 1 for value in fields.values()):
+                raise ValueError
+            run_identity = fields["run_identity"][0]
+            instrument = fields["canonical_instrument"][0]
+            assessment = fields["native_assessment_sha256"][0]
+            if (
+                re.fullmatch(r"SWING-RUN-[A-F0-9]{32}", run_identity) is None
+                or re.fullmatch(r"[A-Z0-9&._ -]{1,64}", instrument) is None
+                or re.fullmatch(r"[0-9a-f]{64}", assessment) is None
+            ):
+                raise ValueError
+            self.server.construct_current_trade_plan(
+                run_identity, instrument, assessment
+            )
+        except (UnicodeDecodeError, ValueError):
+            self._text(
+                HTTPStatus.CONFLICT,
+                "Trade Plan construction is not available for this current evidence.",
+            )
+            return
+        self._redirect(
+            f"/swing/trade-window/{run_identity}/{quote(instrument, safe='')}"
+        )
 
     def _exit_native_paper_position(self) -> None:
         try:

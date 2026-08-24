@@ -569,7 +569,8 @@ def test_ready_card_preserves_exact_condition_or_no_alert_without_fake_watch() -
     assert condition in watchable
     assert "NO AUTOMATED ALERT AVAILABLE" not in watchable
     assert "Waiting for: Extension" in unavailable
-    assert "NO AUTOMATED ALERT AVAILABLE" in unavailable
+    assert "REFRESH ANALYSIS AFTER NEXT COMPLETED 1H" in unavailable
+    assert "NO AUTOMATED ALERT AVAILABLE" not in unavailable
 
 
 @pytest.mark.parametrize("classification", ("BUY NOW", "SELL NOW"))

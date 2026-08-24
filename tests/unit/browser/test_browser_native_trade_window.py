@@ -63,3 +63,25 @@ def test_non_now_card_has_no_trade_window_action(tmp_path) -> None:
     )
 
     assert "Open Trade Window" not in html
+
+
+def test_exact_now_without_plan_exposes_only_bounded_construct_action(tmp_path) -> None:
+    completed = _completed(tmp_path)
+    workflow = SwingTradeWindowWorkflow(
+        LocalKr370Step31HandoffStore(tmp_path / "handoffs"),
+        LocalTradePlanStore(tmp_path / "plans"),
+    )
+    workflow.restore((completed,))
+    projection = workflow.project(
+        completed.requirement.native_run_identity,
+        completed.requirement.canonical_instrument,
+    )
+
+    html = render_native_trade_window(_ready(), projection)
+
+    assert 'action="/swing/trade-window/construct"' in html
+    assert "CONSTRUCT TRADE PLAN" in html
+    assert completed.requirement.native_run_identity in html
+    assert completed.requirement.thesis.native_assessment_sha256 in html
+    assert "PAPER</button>" not in html
+    assert "LIVE</button>" not in html

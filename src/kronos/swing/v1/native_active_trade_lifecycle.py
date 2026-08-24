@@ -812,6 +812,9 @@ class ActiveLifecycleMonitoringCoordinator:
         for position in self._service.snapshot().active:
             if position.state is ActiveLifecycleState.EVENT_UNRESOLVED:
                 continue
+            if position.position_id in self.active_position_ids:
+                restored.append(position.position_id)
+                continue
             self.attach(
                 position.position_id,
                 capability,

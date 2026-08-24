@@ -26,6 +26,7 @@ from kronos.swing.v1.analytical_promotion import (
     Kr370AnalyticalPromotionRecord,
 )
 from kronos.swing.v1.native_active_trade_lifecycle import (
+    ActiveLifecyclePosition,
     LifecycleEventType,
     TradeLifecycleEvent,
 )
@@ -51,6 +52,8 @@ class Ux10NotificationFamily(StrEnum):
 
 
 class Ux10NotificationType(StrEnum):
+    READY_MONITORING_ACTIVATED = "READY_MONITORING_ACTIVATED"
+    ACTIVE_TRADE_MONITORING_ACTIVATED = "ACTIVE_TRADE_MONITORING_ACTIVATED"
     PROMOTION_CONDITION_MET = "PROMOTION_CONDITION_MET"
     ANALYTICAL_NOW_CONFIRMED = "ANALYTICAL_NOW_CONFIRMED"
     STOP_LEVEL_TOUCHED = "STOP_LEVEL_TOUCHED"
@@ -238,6 +241,56 @@ class SwingUx10NotificationService:
                 f"for {watch.requirement.canonical_instrument}."
             ),
             action="REFRESH SWING ANALYSIS — NO TRADE HAS BEEN AUTHORIZED",
+        )
+
+    def observe_progression_monitoring_activation(
+        self, watch: ProgressionWatch
+    ) -> Ux10NotificationRecord | None:
+        """Confirm that an eligible READY watch was actually registered."""
+
+        if type(watch) is not ProgressionWatch or watch.state is not ProgressionWatchState.ACTIVE:
+            return None
+        return self._create(
+            family=Ux10NotificationFamily.PROMOTION_WATCH,
+            notification_type=Ux10NotificationType.READY_MONITORING_ACTIVATED,
+            priority=Ux10Priority.NORMAL,
+            instrument=watch.requirement.canonical_instrument,
+            direction=watch.requirement.direction.value,
+            run_identity=watch.requirement.native_run_identity,
+            watch_identity=watch.watch_id,
+            source_event_identity=watch.history[0].event_id,
+            summary=(
+                f"Watching {watch.requirement.condition_identity}; "
+                "live monitoring is active."
+            ),
+            action="MONITORING ACTIVE — SATISFACTION STILL REQUIRES REFRESH ANALYSIS",
+            created_at=watch.activated_at,
+        )
+
+    def observe_active_trade_monitoring_activation(
+        self, position: ActiveLifecyclePosition
+    ) -> Ux10NotificationRecord | None:
+        """Confirm one successfully attached Stop/Target monitoring binding."""
+
+        if type(position) is not ActiveLifecyclePosition:
+            raise TypeError("ACTIVE_TRADE_MONITORING_ACTIVATION_INVALID")
+        return self._create(
+            family=Ux10NotificationFamily.ACTIVE_TRADE_WATCH,
+            notification_type=Ux10NotificationType.ACTIVE_TRADE_MONITORING_ACTIVATED,
+            priority=Ux10Priority.NORMAL,
+            instrument=position.canonical_instrument,
+            direction=position.direction.value,
+            trade_identity=position.trade_plan_id,
+            lifecycle_mode=position.mode.value,
+            watch_identity=position.lifecycle_id,
+            lifecycle_event_identity=position.position_id,
+            source_event_identity=(
+                f"{position.position_id}:{position.trade_plan_id}:"
+                f"{position.lifecycle_id}:SL_TARGET_MONITORING"
+            ),
+            summary="Stop: Watching · Target: Watching",
+            action="LIVE MONITORING ACTIVE — LEVEL TOUCHES ARE NOT BROKER FILLS",
+            created_at=position.updated_at,
         )
 
     def observe_promotions(
