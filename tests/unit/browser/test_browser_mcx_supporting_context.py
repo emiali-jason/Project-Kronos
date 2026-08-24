@@ -3,7 +3,8 @@ from pathlib import Path
 from threading import Thread
 
 from kronos.application.swing_mcx_supporting_context import (
-    McxContextFamilyStatus, McxContextSlotStatus, McxSupportingContextSnapshot,
+    McxContextFailureStatus, McxContextFamilyStatus, McxContextSlotStatus,
+    McxSupportingContextSnapshot,
 )
 from kronos.application.swing_opportunities import SwingOpportunitiesApplication
 from kronos.browser.server import create_browser_server
@@ -59,6 +60,41 @@ def test_received_image_renders_preview_replace_remove_and_secondary_file_fallba
     assert html.count(">Remove</button>") == 4
     assert html.count("/swing/mcx-context/image-preview?") == 4
     assert html.count("Choose File") == 4
+
+
+def test_panel_failure_renders_bounded_sponsor_safe_diagnostic() -> None:
+    families = tuple(
+        McxContextFamilyStatus(
+            family, ContextAvailability.NOT_PROVIDED, None, None, False,
+        )
+        for family in McxContextFamily
+    )
+    failure = McxContextFailureStatus(
+        "MCX_CONTEXT_PANEL_INVALID_INCOMPLETE",
+        McxContextFamily.METALS,
+        "M1",
+        "IDENTITY",
+        "US Dollar Index Futures / DXY",
+        "Gold Futures",
+    )
+    snapshot = McxSupportingContextSnapshot(
+        date(2026, 8, 24), True,
+        (
+            McxContextSlotStatus(
+                McxContextSlot.MORNING, families, None, failure,
+            ),
+            McxContextSlotStatus(
+                McxContextSlot.EVENING, families, None, None,
+            ),
+        ),
+    )
+    html = _mcx_context_strip(snapshot)
+    assert "MCX CONTEXT INVALID" in html
+    assert "METALS · M1 · IDENTITY MISMATCH" in html
+    assert "Expected: US Dollar Index Futures / DXY" in html
+    assert "Observed: Gold Futures" in html
+    assert "sha256" not in html.lower()
+    assert "/Users/" not in html
 
 
 def test_analysis_details_are_absent_for_nse_and_fail_closed_for_mcx() -> None:

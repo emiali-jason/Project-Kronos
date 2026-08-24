@@ -27,8 +27,13 @@ from kronos.swing.v1.mcx_supporting_context import (
     PanelValidation,
     StructuralCondition,
     build_context_record,
+    canonical_mcx_context_timeframe,
 )
-from kronos.swing.v1.mcx_supporting_context_pdf import McxContextPdfStore, McxContextPdfTransport
+from kronos.swing.v1.mcx_supporting_context_pdf import (
+    McxContextPanelValidationError,
+    McxContextPdfStore,
+    McxContextPdfTransport,
+)
 from kronos.swing.v1.pdf_visual_review import BEGIN_GOVERNED_ANSWER_DATA, END_GOVERNED_ANSWER_DATA, PdfReviewTransportError
 
 
@@ -88,6 +93,37 @@ def _payload(pack, *, captured_at: datetime = MORNING) -> dict[str, object]:
     }
 
 
+_REAL_VISIBLE_IDENTITIES = {
+    "M1": "US Dollar Index Futures",
+    "M2": "US Government Bonds 10 YR Yield",
+    "M3": "US Government Bonds 30 YR",
+    "M4": "U.S. Dollar / Indian Rupee",
+    "M5": "Copper Futures",
+    "M6": "USD/CNH",
+    "M7": "CSI 300 Index Futures",
+    "M8": "Gold Futures",
+    "E1": "Natural Gas Futures",
+    "E2": "Natural Gas Futures",
+    "E3": "U.S. Dollar / Indian Rupee",
+    "E4": "Light Crude Oil Futures",
+    "E5": "Crude Oil Brent Cash",
+    "E6": "U.S. Dollar Index",
+}
+_REAL_VISIBLE_TIMEFRAMES = {"E2": "4h", "E3": "1h", "E6": "1h"}
+
+
+def _real_visible_payload(pack) -> dict[str, object]:
+    payload = _payload(pack)
+    for family in payload["families"]:
+        for panel in family["panels"]:
+            panel_id = panel["panel_id"]
+            panel["observed_identity"] = _REAL_VISIBLE_IDENTITIES[panel_id]
+            panel["observed_timeframe"] = _REAL_VISIBLE_TIMEFRAMES.get(
+                panel_id, panel["observed_timeframe"],
+            )
+    return payload
+
+
 def _answer(path: Path, payload: dict[str, object]) -> None:
     styles = getSampleStyleSheet()
     SimpleDocTemplate(str(path), pagesize=A4).build([
@@ -132,6 +168,100 @@ def test_morning_and_evening_question_answer_revision_and_restart(tmp_path: Path
 
     restored = McxSupportingContextStore(store.root)
     assert len(restored.records(trading_date=DAY)) == 6
+
+
+def test_real_visible_labels_import_and_restore_as_unchanged_raw_evidence(tmp_path: Path) -> None:
+    workflow, transport, store = _transport(tmp_path)
+    _stage(workflow, McxContextSlot.MORNING)
+    pack = workflow.create_question_pack(McxContextSlot.MORNING)
+    payload = _real_visible_payload(pack)
+    _answer(
+        transport.configuration.answer_directory / pack.expected_answer_filename,
+        payload,
+    )
+
+    records = workflow.upload_answer(McxContextSlot.MORNING)
+    assert len(records) == 2
+    observations = {
+        item.panel_id: item
+        for record in records
+        for item in record.panels
+    }
+    assert set(observations) == set(_REAL_VISIBLE_IDENTITIES)
+    for panel_id, expected_visible_identity in _REAL_VISIBLE_IDENTITIES.items():
+        assert observations[panel_id].observed_identity == expected_visible_identity
+    for panel_id, expected_visible_timeframe in _REAL_VISIBLE_TIMEFRAMES.items():
+        assert observations[panel_id].observed_timeframe == expected_visible_timeframe
+
+    restored = McxSupportingContextStore(store.root).records(
+        trading_date=DAY, slot=McxContextSlot.MORNING,
+    )
+    assert {item.family: item for item in restored} == {
+        item.family: item for item in records
+    }
+    restored_observations = {
+        item.panel_id: item for record in restored for item in record.panels
+    }
+    assert restored_observations["E2"].observed_identity == "Natural Gas Futures"
+    assert restored_observations["E2"].observed_timeframe == "4h"
+
+
+@pytest.mark.parametrize(
+    "family_index,panel_index,value,field,panel_id",
+    [
+        (0, 0, "Gold Futures", "observed_identity", "M1"),
+        (0, 4, "Natural Gas Futures", "observed_identity", "M5"),
+        (1, 3, "Gold Futures", "observed_identity", "E4"),
+        (1, 1, "1H", "observed_timeframe", "E2"),
+        (0, 7, "4H", "observed_timeframe", "M8"),
+    ],
+)
+def test_unapproved_identity_and_timeframe_values_fail_closed_with_exact_diagnostic(
+    tmp_path: Path,
+    family_index: int,
+    panel_index: int,
+    value: str,
+    field: str,
+    panel_id: str,
+) -> None:
+    workflow, transport, store = _transport(tmp_path)
+    _stage(workflow, McxContextSlot.MORNING)
+    pack = workflow.create_question_pack(McxContextSlot.MORNING)
+    payload = _real_visible_payload(pack)
+    payload["families"][family_index]["panels"][panel_index][field] = value
+    _answer(
+        transport.configuration.answer_directory / pack.expected_answer_filename,
+        payload,
+    )
+    with pytest.raises(McxContextPanelValidationError) as captured:
+        workflow.upload_answer(McxContextSlot.MORNING)
+    failure = captured.value.failure
+    assert failure.panel_id == panel_id
+    assert failure.failed_field.value == (
+        "IDENTITY" if field == "observed_identity" else "TIMEFRAME"
+    )
+    assert failure.observed == value
+    status = workflow.snapshot().slots[0].last_error
+    assert status is not None
+    assert status.panel_id == panel_id
+    assert status.failed_field == failure.failed_field.value
+    assert status.observed == value
+    assert store.records() == ()
+
+
+@pytest.mark.parametrize(
+    "raw,canonical", [("1D", "1D"), ("1d", "1D"), ("1H", "1H"),
+                      ("1h", "1H"), ("4H", "4H"), ("4h", "4H")],
+)
+def test_timeframe_normalization_accepts_only_bounded_case_equivalents(
+    raw: str, canonical: str,
+) -> None:
+    assert canonical_mcx_context_timeframe(raw) == canonical
+
+
+@pytest.mark.parametrize("raw", ["15m", "DAY", "4hr", " 1H", "1H ", ""])
+def test_timeframe_normalization_rejects_unknown_or_semantically_different_values(raw: str) -> None:
+    assert canonical_mcx_context_timeframe(raw) is None
 
 
 def test_staged_images_coexist_replace_remove_and_restore_without_cross_slot_mutation(tmp_path: Path) -> None:

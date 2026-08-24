@@ -20,6 +20,7 @@ from kronos.swing.v1.mcx_supporting_context import (
 )
 from kronos.swing.v1.mcx_supporting_context_pdf import (
     McxContextPdfTransport,
+    McxContextPanelValidationError,
     McxContextQuestionPack,
     McxContextStagedImage,
 )
@@ -40,11 +41,21 @@ class McxContextFamilyStatus:
 
 
 @dataclass(frozen=True, slots=True)
+class McxContextFailureStatus:
+    machine_code: str
+    family: McxContextFamily | None = None
+    panel_id: str | None = None
+    failed_field: str | None = None
+    expected: str | None = None
+    observed: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class McxContextSlotStatus:
     slot: McxContextSlot
     families: tuple[McxContextFamilyStatus, McxContextFamilyStatus]
     question_pack: McxContextQuestionPack | None
-    last_error: str | None
+    last_error: McxContextFailureStatus | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,7 +73,7 @@ class McxSupportingContextWorkflow:
     ) -> None:
         self.store = store; self.transport = transport
         self.calendar = calendar or MarketCalendarPublisher(); self._clock = clock
-        self._errors: dict[McxContextSlot, str] = {}
+        self._errors: dict[McxContextSlot, McxContextFailureStatus] = {}
 
     def governed_trading_date(self) -> tuple[date, bool]:
         now = self._now(); day = now.astimezone(_IST).date()
@@ -104,7 +115,7 @@ class McxSupportingContextWorkflow:
         if not required: raise ValueError("MCX_CONTEXT_NON_TRADING_DATE")
         try: result = self.transport.generate(day, slot)
         except (PdfReviewTransportError, ValueError) as error:
-            self._errors[slot] = str(error); raise
+            self._errors[slot] = self._failure_status(error); raise
         self._errors.pop(slot, None); return result
 
     def upload_answer(self, slot: McxContextSlot) -> tuple[McxSupportingContextRecord, ...]:
@@ -135,7 +146,7 @@ class McxSupportingContextWorkflow:
             ) for item in answer.families)
             for value in records: self.store.retain(value)
         except (PdfReviewTransportError, ValueError) as error:
-            self._errors[slot] = str(error); raise
+            self._errors[slot] = self._failure_status(error); raise
         self._errors.pop(slot, None); return records
 
     def snapshot(self) -> McxSupportingContextSnapshot:
@@ -155,7 +166,13 @@ class McxSupportingContextWorkflow:
                     staged,
                     None if staged_image is None else staged_image.image_sha256,
                 ))
-                if required and latest is None and slot in self._errors:
+                error = self._errors.get(slot)
+                if (
+                    required
+                    and latest is None
+                    and error is not None
+                    and (error.family is None or error.family is family)
+                ):
                     families[-1] = McxContextFamilyStatus(
                         family, ContextAvailability.INVALID_INCOMPLETE,
                         None, None, staged,
@@ -188,5 +205,26 @@ class McxSupportingContextWorkflow:
             raise ValueError("MCX_CONTEXT_CLOCK_INVALID")
         return value
 
+    @staticmethod
+    def _failure_status(error: Exception) -> McxContextFailureStatus:
+        if isinstance(error, McxContextPanelValidationError):
+            failure = error.failure
+            observed = failure.observed
+            if len(observed) > 120:
+                observed = observed[:117] + "..."
+            return McxContextFailureStatus(
+                failure.machine_code,
+                failure.family,
+                failure.panel_id,
+                failure.failed_field.value,
+                failure.expected,
+                observed,
+            )
+        return McxContextFailureStatus(str(error))
 
-__all__ = ["McxContextFamilyStatus", "McxContextSlotStatus", "McxSupportingContextSnapshot", "McxSupportingContextWorkflow"]
+
+__all__ = [
+    "McxContextFailureStatus", "McxContextFamilyStatus",
+    "McxContextSlotStatus", "McxSupportingContextSnapshot",
+    "McxSupportingContextWorkflow",
+]

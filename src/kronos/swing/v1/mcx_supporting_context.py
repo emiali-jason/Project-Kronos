@@ -81,25 +81,70 @@ class McxContextPanelDefinition:
     panel_id: str
     expected_identity: str
     expected_timeframe: str
+    accepted_visible_identities: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        if (
+            not self.panel_id
+            or not self.expected_identity
+            or self.expected_timeframe not in {"1D", "1H", "4H"}
+            or not self.accepted_visible_identities
+            or self.expected_identity not in self.accepted_visible_identities
+            or len(set(self.accepted_visible_identities))
+            != len(self.accepted_visible_identities)
+            or any(
+                type(value) is not str or not value
+                for value in self.accepted_visible_identities
+            )
+        ):
+            raise ValueError("MCX_CONTEXT_PANEL_DEFINITION_INVALID")
+
+
+class McxContextPanelField(StrEnum):
+    IDENTITY = "IDENTITY"
+    TIMEFRAME = "TIMEFRAME"
+    VALIDATION = "VALIDATION"
+    EVIDENCE_QUALITY = "EVIDENCE_QUALITY"
+
+
+@dataclass(frozen=True, slots=True)
+class McxContextPanelValidationFailure:
+    family: McxContextFamily
+    panel_id: str
+    failed_field: McxContextPanelField
+    expected: str
+    observed: str
+    machine_code: str = "MCX_CONTEXT_PANEL_INVALID_INCOMPLETE"
+
+    def __post_init__(self) -> None:
+        if (
+            type(self.family) is not McxContextFamily
+            or not self.panel_id
+            or type(self.failed_field) is not McxContextPanelField
+            or not self.expected
+            or not self.observed
+            or self.machine_code != "MCX_CONTEXT_PANEL_INVALID_INCOMPLETE"
+        ):
+            raise ValueError("MCX_CONTEXT_PANEL_DIAGNOSTIC_INVALID")
 
 
 METALS_PANELS = (
-    McxContextPanelDefinition("M1", "US Dollar Index Futures / DXY", "1D"),
-    McxContextPanelDefinition("M2", "US Government Bonds 10Y Yield", "1D"),
-    McxContextPanelDefinition("M3", "US Government Bonds 30Y Yield", "1D"),
-    McxContextPanelDefinition("M4", "USD / INR", "1D"),
-    McxContextPanelDefinition("M5", "COMEX Copper Futures", "1D"),
-    McxContextPanelDefinition("M6", "USD / CNH", "1D"),
-    McxContextPanelDefinition("M7", "CSI 300", "1D"),
-    McxContextPanelDefinition("M8", "COMEX Gold Futures", "1D"),
+    McxContextPanelDefinition("M1", "US Dollar Index Futures / DXY", "1D", ("US Dollar Index Futures / DXY", "US Dollar Index Futures")),
+    McxContextPanelDefinition("M2", "US Government Bonds 10Y Yield", "1D", ("US Government Bonds 10Y Yield", "US Government Bonds 10 YR Yield")),
+    McxContextPanelDefinition("M3", "US Government Bonds 30Y Yield", "1D", ("US Government Bonds 30Y Yield", "US Government Bonds 30 YR")),
+    McxContextPanelDefinition("M4", "USD / INR", "1D", ("USD / INR", "U.S. Dollar / Indian Rupee")),
+    McxContextPanelDefinition("M5", "COMEX Copper Futures", "1D", ("COMEX Copper Futures", "Copper Futures")),
+    McxContextPanelDefinition("M6", "USD / CNH", "1D", ("USD / CNH", "USD/CNH")),
+    McxContextPanelDefinition("M7", "CSI 300", "1D", ("CSI 300", "CSI 300 Index Futures")),
+    McxContextPanelDefinition("M8", "COMEX Gold Futures", "1D", ("COMEX Gold Futures", "Gold Futures")),
 )
 ENERGY_PANELS = (
-    McxContextPanelDefinition("E1", "NYMEX / Henry Hub Natural Gas", "1D"),
-    McxContextPanelDefinition("E2", "NYMEX / Henry Hub Natural Gas", "4H"),
-    McxContextPanelDefinition("E3", "USD / INR", "1H"),
-    McxContextPanelDefinition("E4", "WTI / NYMEX Light Crude Oil", "1D"),
-    McxContextPanelDefinition("E5", "Brent Crude Oil", "1D"),
-    McxContextPanelDefinition("E6", "DXY", "1H"),
+    McxContextPanelDefinition("E1", "NYMEX / Henry Hub Natural Gas", "1D", ("NYMEX / Henry Hub Natural Gas", "Natural Gas Futures")),
+    McxContextPanelDefinition("E2", "NYMEX / Henry Hub Natural Gas", "4H", ("NYMEX / Henry Hub Natural Gas", "Natural Gas Futures")),
+    McxContextPanelDefinition("E3", "USD / INR", "1H", ("USD / INR", "U.S. Dollar / Indian Rupee")),
+    McxContextPanelDefinition("E4", "WTI / NYMEX Light Crude Oil", "1D", ("WTI / NYMEX Light Crude Oil", "Light Crude Oil Futures")),
+    McxContextPanelDefinition("E5", "Brent Crude Oil", "1D", ("Brent Crude Oil", "Crude Oil Brent Cash")),
+    McxContextPanelDefinition("E6", "DXY", "1H", ("DXY", "U.S. Dollar Index")),
 )
 MCX_CONTEXT_INSTRUMENT_FAMILIES = {
     "GOLDM": McxContextFamily.METALS,
@@ -112,6 +157,52 @@ MCX_CONTEXT_INSTRUMENT_FAMILIES = {
 
 def panels_for(family: McxContextFamily) -> tuple[McxContextPanelDefinition, ...]:
     return METALS_PANELS if family is McxContextFamily.METALS else ENERGY_PANELS
+
+
+_TIMEFRAME_EQUIVALENTS = {
+    "1D": "1D",
+    "1d": "1D",
+    "1H": "1H",
+    "1h": "1H",
+    "4H": "4H",
+    "4h": "4H",
+}
+
+
+def canonical_mcx_context_timeframe(value: str) -> str | None:
+    """Return only an explicitly approved equivalent timeframe spelling."""
+
+    return _TIMEFRAME_EQUIVALENTS.get(value) if type(value) is str else None
+
+
+def panel_validation_failure(
+    family: McxContextFamily,
+    definition: McxContextPanelDefinition,
+    observation: McxContextPanelObservation,
+) -> McxContextPanelValidationFailure | None:
+    """Validate raw visible evidence without rewriting the observation."""
+
+    if observation.observed_identity not in definition.accepted_visible_identities:
+        return McxContextPanelValidationFailure(
+            family, definition.panel_id, McxContextPanelField.IDENTITY,
+            definition.expected_identity, observation.observed_identity,
+        )
+    if canonical_mcx_context_timeframe(observation.observed_timeframe) != definition.expected_timeframe:
+        return McxContextPanelValidationFailure(
+            family, definition.panel_id, McxContextPanelField.TIMEFRAME,
+            definition.expected_timeframe, observation.observed_timeframe,
+        )
+    if observation.validation is not PanelValidation.MATCH:
+        return McxContextPanelValidationFailure(
+            family, definition.panel_id, McxContextPanelField.VALIDATION,
+            PanelValidation.MATCH.value, observation.validation.value,
+        )
+    if observation.evidence_quality is EvidenceQuality.UNREADABLE:
+        return McxContextPanelValidationFailure(
+            family, definition.panel_id, McxContextPanelField.EVIDENCE_QUALITY,
+            "CLEAR_OR_PARTIAL", observation.evidence_quality.value,
+        )
+    return None
 
 
 @dataclass(frozen=True, slots=True)
@@ -177,10 +268,7 @@ class McxSupportingContextRecord:
             or tuple(item.panel_id for item in self.panels)
             != tuple(item.panel_id for item in expected)
             or any(
-                item.validation is not PanelValidation.MATCH
-                or item.evidence_quality is EvidenceQuality.UNREADABLE
-                or item.observed_identity != definition.expected_identity
-                or item.observed_timeframe != definition.expected_timeframe
+                panel_validation_failure(self.family, definition, item) is not None
                 for item, definition in zip(self.panels, expected, strict=True)
             )
             or energy != (self.wti_brent_alignment is not None)
@@ -401,5 +489,7 @@ def _aware(value: datetime) -> bool:
 
 __all__ = [name for name in globals() if name.startswith("MCX_") or name.startswith("Mcx") or name in {
     "AlignmentState", "ContextAvailability", "DirectionState", "EvidenceQuality",
-    "PanelValidation", "StructuralCondition", "build_context_record", "panels_for",
+    "McxContextPanelField", "McxContextPanelValidationFailure",
+    "PanelValidation", "StructuralCondition", "build_context_record",
+    "canonical_mcx_context_timeframe", "panel_validation_failure", "panels_for",
 }]

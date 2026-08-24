@@ -31,9 +31,11 @@ from kronos.swing.v1.mcx_supporting_context import (
     METALS_PANELS,
     McxContextFamily,
     McxContextPanelObservation,
+    McxContextPanelValidationFailure,
     McxContextSlot,
     PanelValidation,
     StructuralCondition,
+    panel_validation_failure,
     panels_for,
 )
 from kronos.swing.v1.pdf_visual_review import (
@@ -47,6 +49,16 @@ from kronos.swing.v1.pdf_visual_review import (
 MCX_CONTEXT_TRANSPORT_ID = "KRONOS-SWING-MCX-CONTEXT-PDF-TRANSPORT-V1"
 MCX_CONTEXT_TRANSPORT_VERSION = "1.0"
 _DIGEST = re.compile(r"[0-9a-f]{64}\Z")
+
+
+class McxContextPanelValidationError(PdfReviewTransportError):
+    """Fail-closed panel rejection with bounded Sponsor-safe context."""
+
+    def __init__(self, failure: McxContextPanelValidationFailure) -> None:
+        if type(failure) is not McxContextPanelValidationFailure:
+            raise TypeError("MCX_CONTEXT_PANEL_DIAGNOSTIC_REQUIRED")
+        super().__init__(failure.machine_code)
+        self.failure = failure
 
 
 @dataclass(frozen=True, slots=True)
@@ -322,13 +334,9 @@ def _validate_answer(record: McxContextQuestionPack, path: Path, payload: dict[s
                 raise PdfReviewTransportError("MCX_CONTEXT_PANEL_ENUM_INVALID") from error
             if observation.panel_id != definition.panel_id:
                 raise PdfReviewTransportError("MCX_CONTEXT_PANEL_ORDER_INVALID")
-            if (
-                observation.observed_identity != definition.expected_identity
-                or observation.observed_timeframe != definition.expected_timeframe
-                or observation.validation is not PanelValidation.MATCH
-                or observation.evidence_quality is EvidenceQuality.UNREADABLE
-            ):
-                raise PdfReviewTransportError("MCX_CONTEXT_PANEL_INVALID_INCOMPLETE")
+            failure = panel_validation_failure(family, definition, observation)
+            if failure is not None:
+                raise McxContextPanelValidationError(failure)
             observations.append(observation)
         try:
             wti = AlignmentState(raw["wti_brent_alignment"]) if family is McxContextFamily.ENERGY else None
