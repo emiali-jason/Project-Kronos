@@ -24,6 +24,7 @@ class SharedSwingMonitoringHub:
         self._registrations: dict[int, _SharedRegistration] = {}
         self._by_instrument: dict[InstrumentRecord, set[int]] = defaultdict(set)
         self._connection_listener: Callable[[MonitoringConnectionState], None] | None = None
+        self._connection_state: MonitoringConnectionState | None = None
 
     def set_connection_listener(
         self, listener: Callable[[MonitoringConnectionState], None]
@@ -54,6 +55,13 @@ class SharedSwingMonitoringHub:
     def subscription_count(self) -> int:
         with self._lock:
             return len(self._by_instrument)
+
+    @property
+    def connection_state(self) -> MonitoringConnectionState | None:
+        """Expose actual WebSocket transport state without inferring from REST."""
+
+        with self._lock:
+            return self._connection_state
 
     def subscription_reference_count(self, instrument: InstrumentRecord) -> int:
         """Return the number of governed consumers sharing one subscription."""
@@ -134,6 +142,7 @@ class SharedSwingMonitoringHub:
             if last:
                 self._session = None
                 self._capability = None
+                self._connection_state = MonitoringConnectionState.DISCONNECTED
             registration._connected = False
         if session is not None:
             if removals:
@@ -161,7 +170,10 @@ class SharedSwingMonitoringHub:
             consumer.on_order_update(update)
 
     def on_connection_state(self, state: MonitoringConnectionState) -> None:
+        if type(state) is not MonitoringConnectionState:
+            raise TypeError("SHARED_MONITORING_CONNECTION_STATE_INVALID")
         with self._lock:
+            self._connection_state = state
             listener = self._connection_listener
             consumers = tuple(
                 registration._consumer for registration in self._registrations.values()

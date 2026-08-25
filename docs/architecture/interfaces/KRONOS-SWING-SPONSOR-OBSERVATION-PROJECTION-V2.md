@@ -1,6 +1,6 @@
 # KRONOS Swing Sponsor Observation Projection V2
 
-**Status:** Approved architecture contract; runtime not started
+**Status:** Approved implementation contract
 **Version:** 2
 **Contract identity:** `KRONOS-SWING-SPONSOR-OBSERVATION-PROJECTION-V2`
 **Owner:** Swing Sponsor presentation
@@ -45,3 +45,16 @@ research performance.
 All source run/instrument/assessment/decision/snapshot/track identities and
 digests must match. A mismatch fails closed. Historical V1 projections retain
 their original meaning and receive no inferred track.
+
+## Journal and Reports handoff boundary
+
+The read-only handoff exposes the four truth families independently: Sponsor
+Decision, Sponsor Position/outcome, Paper Track/outcome, and objective
+model/outcome. It includes product identity so Swing and Intraday projections
+cannot be mixed. Current market price, distance-to-Target, distance-to-Stop,
+WebSocket state, and governed current-trading-day routing are presentation-time
+fields and are not historical ledger evidence.
+
+Notifications remain outside this contract. A future notification projection
+may dismiss presentation without deleting governed evidence, and reactivation
+must create a new linked identity rather than mutate expired history.

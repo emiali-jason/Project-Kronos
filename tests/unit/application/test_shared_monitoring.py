@@ -168,3 +168,16 @@ def test_close_is_idempotent_and_releases_one_socket() -> None:
     hub.close()
     hub.close()
     assert capability.sessions[0].disconnections == 1
+
+
+def test_actual_connection_state_is_read_only_websocket_authority() -> None:
+    hub = SharedSwingMonitoringHub()
+    assert hub.connection_state is None
+
+    hub.on_connection_state(MonitoringConnectionState.CONNECTED)
+    assert hub.connection_state is MonitoringConnectionState.CONNECTED
+    hub.on_connection_state(MonitoringConnectionState.RECONNECTING)
+    assert hub.connection_state is MonitoringConnectionState.RECONNECTING
+
+    with pytest.raises(TypeError, match="CONNECTION_STATE_INVALID"):
+        hub.on_connection_state("CONNECTED")  # type: ignore[arg-type]

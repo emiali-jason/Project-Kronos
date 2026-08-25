@@ -9,7 +9,7 @@ broker actions.
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from enum import StrEnum
 from hashlib import sha256
@@ -107,6 +107,15 @@ from kronos.swing.v1.observation_research_ledger import (
     ObservationResearchLedgerService,
     ObservationResearchProjectionV1,
     ObservationResearchQueryV1,
+)
+from kronos.swing.v1.observation_research_ledger_v2 import (
+    CurrentMarketFactV2,
+    LocalObservationResearchLedgerV2Store,
+    ObservationOperationalHandoffV2,
+    ObservationResearchLedgerV2Service,
+    ObservationResearchProjectionV2,
+    ObservationResearchQueryV2,
+    websocket_presentation_state,
 )
 from kronos.swing.v1.paper_observation_track import (
     LocalPaperObservationTrackStore,
@@ -572,6 +581,7 @@ class SwingTradeWindowWorkflow:
         sponsor_observation_store: LocalSponsorObservationDecisionStore | None = None,
         observation_research_ledger: ObservationResearchLedgerService | None = None,
         paper_observation_store: LocalPaperObservationTrackStore | None = None,
+        observation_research_ledger_v2: ObservationResearchLedgerV2Service | None = None,
     ) -> None:
         if (
             type(handoff_store) is not LocalKr370Step31HandoffStore
@@ -615,6 +625,11 @@ class SwingTradeWindowWorkflow:
                 paper_observation_store is not None
                 and type(paper_observation_store) is not LocalPaperObservationTrackStore
             )
+            or (
+                observation_research_ledger_v2 is not None
+                and type(observation_research_ledger_v2)
+                is not ObservationResearchLedgerV2Service
+            )
         ):
             raise TypeError("SWING_TRADE_WINDOW_STORE_INVALID")
         self._handoff_store = handoff_store
@@ -642,10 +657,18 @@ class SwingTradeWindowWorkflow:
                 self._sponsor_observation_store,
             )
         )
-        self._paper_observation_tracking = PaperObservationTrackingWorkflow(
-            paper_observation_store
-            or LocalPaperObservationTrackStore(
-                trade_plan_store.root.parent / "paper-observation-track-v1"
+        paper_store = paper_observation_store or LocalPaperObservationTrackStore(
+            trade_plan_store.root.parent / "paper-observation-track-v1"
+        )
+        self._paper_observation_tracking = PaperObservationTrackingWorkflow(paper_store)
+        self._observation_research_v2 = (
+            observation_research_ledger_v2
+            or ObservationResearchLedgerV2Service(
+                LocalObservationResearchLedgerV2Store(
+                    trade_plan_store.root.parent / "observation-research-ledger-v2"
+                ),
+                self._observation_research,
+                paper_store,
             )
         )
         self._portfolio_state: PortfolioStateV1 | None = None
@@ -1240,6 +1263,7 @@ class SwingTradeWindowWorkflow:
             for item in restored_decisions
         }
         self._merge_production_records()
+        self._observation_research_v2.synchronize()
 
     def synchronize_downstream(
         self,
@@ -1323,6 +1347,7 @@ class SwingTradeWindowWorkflow:
             if warnings:
                 self._downstream_warnings[plan.trade_plan_id] = tuple(warnings)
         self._synchronize_observation_research_links()
+        self._observation_research_v2.synchronize()
 
     def _synchronize_observation_research_links(self) -> None:
         """Link only already-governed downstream records to observations."""
@@ -1668,6 +1693,9 @@ class SwingTradeWindowWorkflow:
                 # Repair only the same prospective request if the linked-ledger
                 # write was interrupted after the authoritative decision write.
                 self._observation_research.retain_observation(existing)
+                self._observation_research_v2.retain_decision(
+                    existing.decision.decision_identity
+                )
                 return existing
             raise ValueError("SPONSOR_OBSERVATION_DECISION_ALREADY_FINAL")
         handoff = create_sponsor_observation_handoff(
@@ -1694,6 +1722,9 @@ class SwingTradeWindowWorkflow:
         )
         retained = self._sponsor_observation_store.retain(result)
         self._observation_research.retain_observation(retained)
+        self._observation_research_v2.retain_decision(
+            retained.decision.decision_identity
+        )
         self._observation_decisions[key] = retained
         return retained
 
@@ -1765,6 +1796,46 @@ class SwingTradeWindowWorkflow:
     ) -> str:
         return self._observation_research.export_csv(query)
 
+    def observation_research_v2_snapshot(
+        self, query: ObservationResearchQueryV2 | None = None
+    ) -> tuple[ObservationResearchProjectionV2, ...]:
+        """Return the prospective V2 projection without reinterpreting V1 rows."""
+
+        self._observation_research_v2.synchronize()
+        return self._observation_research_v2.snapshot(query)
+
+    def observation_research_v2_export_json(
+        self, query: ObservationResearchQueryV2 | None = None
+    ) -> str:
+        return self._observation_research_v2.export_json(query)
+
+    def observation_research_v2_export_csv(
+        self, query: ObservationResearchQueryV2 | None = None
+    ) -> str:
+        return self._observation_research_v2.export_csv(query)
+
+    def observation_operational_handoffs_v2(
+        self,
+        *,
+        current_facts: dict[str, CurrentMarketFactV2] | None = None,
+        governed_current_trading_date: date,
+        completion_trading_dates: dict[str, date] | None = None,
+    ) -> tuple[ObservationOperationalHandoffV2, ...]:
+        """Supply stable Swing-only Journal/Reports data without implementing UX."""
+
+        hub = self._shared_monitoring_hub
+        required = hub is not None and hub.subscription_count > 0
+        state = websocket_presentation_state(
+            monitoring_required=required,
+            connection_state=None if hub is None else hub.connection_state,
+        )
+        return self._observation_research_v2.operational_handoffs(
+            current_facts=current_facts,
+            governed_current_trading_date=governed_current_trading_date,
+            completion_trading_dates=completion_trading_dates,
+            websocket_state=state,
+        )
+
     def start_paper_observation_track(
         self,
         run_identity: str,
@@ -1786,11 +1857,13 @@ class SwingTradeWindowWorkflow:
             or result.decision.decision_identity != decision_identity
         ):
             raise ValueError("PAPER_OBSERVATION_TRACK_CURRENT_BINDING_INVALID")
-        return self._paper_observation_tracking.start(
+        projection = self._paper_observation_tracking.start(
             result,
             current_run_identity=current_run_identity,
             started_at=started_at,
         )
+        self._observation_research_v2.synchronize()
+        return projection
 
     def attach_paper_observation_monitoring(
         self,
