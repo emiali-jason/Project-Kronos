@@ -113,6 +113,10 @@ def test_k5_ready_deduplicates_same_boundary_and_delivers_once(tmp_path: Path) -
     assert "K5 READY instruments" in notification.summary
     assert len(telegram.messages) == 1
     assert "REFRESH ANALYSIS REMINDER" in telegram.messages[0]
+    assert workflow.next_repeat_boundary(
+        notification.notification_id,
+        record.next_eligible_completed_1h_boundary,
+    ) == datetime(2026, 8, 17, 11, 15, tzinfo=IST)
     scheduler.calls[0][1].operation()
     assert len(delivered) == 1
 

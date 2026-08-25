@@ -27,6 +27,13 @@ from kronos.application.notifications import (
     NotificationState,
     NotificationWorkspaceSnapshot,
 )
+from kronos.application.notification_centre import (
+    SponsorNotificationAction,
+    SponsorNotificationFilter,
+    SponsorNotificationProjection,
+    SponsorNotificationRecord,
+    SponsorNotificationState,
+)
 from kronos.application.swing_ux10 import (
     Ux10NotificationRecord,
     Ux10NotificationSnapshot,
@@ -170,6 +177,7 @@ _NAVIGATION = (
 _KOLKATA = ZoneInfo("Asia/Kolkata")
 
 _CSS = r"""
+.notification-centre-head{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-bottom:10px}.notification-centre-products,.notification-centre-filters{display:flex;gap:6px}.notification-centre-head .button,.notification-centre-filters .button{padding:5px 9px;font-size:10px}.notification-centre-head .active,.notification-centre-filters .active{background:#0c4f83;border-color:#2c9cff}.notification-centre-ws{border:1px solid var(--line);border-radius:999px;padding:4px 9px;font-size:10px;font-weight:850}.notification-centre-ws.connected{color:var(--green);border-color:#176741}.notification-centre-ws.disconnected{color:var(--red);border-color:#793b40}.notification-centre-ws.idle{color:var(--muted)}.notification-centre-count{color:var(--muted);font-size:10px}.notification-centre-tools{display:flex;align-items:center;gap:7px;margin:8px 0 10px}.notification-centre-search{width:min(280px,100%);border:1px solid #31506a;background:#04131f;color:var(--text);border-radius:7px;padding:7px 9px}.notification-centre-notice{border:1px solid #31506a;background:#082038;border-radius:7px;padding:7px 9px;margin:8px 0;color:#b9d9ef;font-size:10px}.notification-centre-row{display:grid;grid-template-columns:62px 62px minmax(90px,130px) minmax(180px,1fr) auto auto;align-items:center;gap:8px;border-top:1px solid var(--line);padding:8px 9px;font-size:10px}.notification-centre-row:first-child{border-top:0}.notification-centre-row:hover{background:#0a2134}.notification-centre-state{font-weight:850}.notification-centre-state.live{color:var(--green)}.notification-centre-state.expired{color:var(--muted)}.notification-centre-row.failure .notification-centre-message{color:var(--red)}.notification-centre-time,.notification-centre-next{color:var(--muted)}.notification-centre-subject{font-weight:800}.notification-centre-message{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.notification-centre-actions{display:flex;gap:5px}.notification-centre-actions form{display:inline}.notification-centre-actions button,.notification-centre-actions .button{padding:4px 7px;font-size:9px;min-width:0}.notification-icon{font-size:13px}.notification-centre-list{border:1px solid var(--line);border-radius:8px;background:rgba(6,23,37,.88);overflow:hidden}.notification-centre-detail{grid-column:1/-1}.notification-centre-detail summary{cursor:pointer;color:var(--muted);font-size:9px}.notification-centre-confirm summary{list-style:none;border:1px solid #31506a;border-radius:6px;padding:4px 7px;cursor:pointer}.notification-centre-confirm summary::-webkit-details-marker{display:none}.notification-centre-confirm div{position:absolute;z-index:10;background:#071827;border:1px solid var(--line);border-radius:7px;padding:9px}.notification-centre-pagination{display:flex;justify-content:flex-end;align-items:center;gap:7px;margin-top:9px;color:var(--muted);font-size:10px}@media(max-width:850px){.notification-centre-row{grid-template-columns:60px 58px minmax(80px,1fr) auto}.notification-centre-message{grid-column:1/4}.notification-centre-next{grid-column:1/4}.notification-centre-actions{grid-column:4;grid-row:1/4}.notification-centre-tools{align-items:stretch;flex-wrap:wrap}}
 :root{color-scheme:dark;--bg:#03101c;--panel:#071827;--panel2:#0a1e30;--line:#1b3549;--text:#f2f7fb;--muted:#92a8b9;--blue:#2c9cff;--green:#2ed477;--red:#ff5c63;--amber:#f6b73c;--violet:#bc7cff}
 *{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 78% 0,#0a2237 0,#03101c 38%,#020b14 100%);color:var(--text);font:15px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;min-height:100vh}
 a{color:inherit;text-decoration:none}.app{display:grid;grid-template-columns:218px 1fr;min-height:100vh}.sidebar{position:sticky;top:0;height:100vh;border-right:1px solid var(--line);background:rgba(3,15,26,.96);padding:22px 14px;display:flex;flex-direction:column}.brand{display:flex;align-items:center;gap:11px;font-size:25px;font-weight:800;letter-spacing:.04em;padding:2px 9px 22px}.brandmark{width:35px;height:35px;border-radius:8px;background:linear-gradient(135deg,#50b7ff,#1769c8);display:grid;place-items:center;font-weight:900}.nav{display:grid;gap:7px}.nav a{display:flex;gap:12px;align-items:center;padding:12px 13px;border-radius:8px;color:#d7e4ee}.nav a:hover,.nav a.active{background:#0c3962;color:#fff}.nav .icon{width:19px;color:#6bb9ff;text-align:center}.system{margin-top:auto;border:1px solid var(--line);border-radius:9px;padding:13px;color:var(--muted);font-size:12px}.system strong{display:block;color:var(--green);margin-bottom:6px}.main{min-width:0}.topbar{height:78px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;padding:0 28px;background:rgba(3,15,26,.78);backdrop-filter:blur(12px)}.title h1{font-size:27px;margin:0}.title p{margin:2px 0 0;color:var(--muted)}.kite{display:flex;align-items:center;gap:12px}.dot{width:9px;height:9px;border-radius:50%;background:var(--muted);box-shadow:0 0 14px currentColor}.dot.CONNECTED{background:var(--green)}.dot.CONNECTING{background:var(--amber)}.dot.ERROR{background:var(--red)}button,.button{border:1px solid #246295;background:#0b2b47;color:#e9f5ff;padding:9px 14px;border-radius:7px;font:inherit;font-weight:650;cursor:pointer}button.primary{background:linear-gradient(135deg,#178ddf,#1466b4);border-color:#35a9f5}button:disabled{opacity:.45;cursor:not-allowed}.tabs{display:flex;align-items:center;gap:22px;border-bottom:1px solid var(--line);padding:0 28px;height:61px}.tabs a{height:61px;display:flex;align-items:center;color:var(--muted);border-bottom:2px solid transparent}.tabs a.active{color:#fff;border-color:var(--blue)}.badge{font-size:11px;border-radius:999px;padding:2px 7px;background:#172b3a;margin-left:6px}.toolbar{margin-left:auto}.content{padding:22px 28px 40px}.status-grid{display:grid;grid-template-columns:repeat(6,minmax(120px,1fr));gap:10px;margin-bottom:18px}.metric{border:1px solid var(--line);background:linear-gradient(150deg,rgba(12,35,55,.9),rgba(5,20,33,.92));border-radius:9px;padding:13px}.metric label{display:block;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.05em}.metric strong{display:block;font-size:20px;margin-top:4px}.panels{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(350px,.8fr);gap:16px}.market-panel{border:1px solid var(--line);background:rgba(6,23,37,.86);border-radius:11px;padding:16px;min-height:390px}.panel-heading{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--line);padding-bottom:11px;margin-bottom:13px}.panel-heading h2{margin:0;font-size:17px;color:var(--blue)}.panel-heading span{font-size:12px;color:var(--muted)}.opportunity{border:1px solid #21425c;border-radius:10px;background:linear-gradient(145deg,#0a2033,#071622);padding:13px;margin-top:10px;box-shadow:0 12px 28px rgba(0,0,0,.16)}.opp-head{display:flex;align-items:center;gap:10px}.opp-identity{min-width:0}.opp-identity h3{font-size:20px;margin:0}.setup-family{display:block;color:var(--muted);font-size:12px;margin-top:1px}.direction{margin-left:auto;border:1px solid currentColor;padding:3px 8px;border-radius:6px;font-size:12px;font-weight:750}.direction-long{color:var(--green)}.direction-short{color:var(--red)}.summary-reason{color:#c9d8e3;margin:10px 0}.summary-footer{display:flex;align-items:center;justify-content:space-between;gap:12px;border-top:1px solid var(--line);padding-top:10px}.summary-rr{color:var(--muted);font-size:12px}.summary-rr strong{color:var(--green);font-size:15px;margin-left:3px}.rank{display:grid;place-items:center;width:29px;height:29px;background:#0c4f83;border-radius:6px;color:#8dd0ff;font-weight:800}.opp-head h3{font-size:22px;margin:0}.pill{border:1px solid #176741;color:var(--green);padding:3px 8px;border-radius:6px;font-size:12px}.trade-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin:15px 0}.field{border-left:1px solid var(--line);padding-left:10px}.field:first-child{border-left:0;padding-left:0}.field label{display:block;color:var(--muted);font-size:11px}.field strong{display:block;margin-top:3px}.positive{color:var(--green)}.negative{color:var(--red)}.why{border-top:1px solid var(--line);padding-top:12px;color:#c9d8e3}.risk{color:#f0b8ba;font-size:13px}.opp-actions{display:flex;justify-content:flex-end;margin-top:14px}.empty{display:grid;place-items:center;min-height:270px;text-align:center;color:var(--muted);padding:30px}.empty strong{display:block;color:#dce8f0;font-size:17px;margin-bottom:6px}.error{border:1px solid #793b40;background:#2c151c;color:#ffc3c6;border-radius:8px;padding:11px 14px;margin-bottom:16px}.workspace{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(330px,.7fr);gap:16px}.workspace section{border:1px solid var(--line);background:rgba(6,23,37,.88);border-radius:10px;padding:17px}.workspace h2{margin:0 0 13px;font-size:17px;color:var(--blue)}.workspace h3{margin:18px 0 8px;font-size:13px;text-transform:uppercase;letter-spacing:.05em;color:#7ec7ff}.workspace ul{margin:7px 0;padding-left:19px}.plan-strip{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}.plan-strip div{background:#081c2c;border:1px solid var(--line);border-radius:7px;padding:10px}.plan-strip label{display:block;color:var(--muted);font-size:11px}.chart-placeholder{min-height:260px;display:grid;place-items:center;border:1px dashed #31506a!important;color:var(--muted);text-align:center}.technical{font-size:12px;color:var(--muted)}.placeholder{min-height:65vh;display:grid;place-items:center;text-align:center}.placeholder div{border:1px solid var(--line);background:var(--panel);border-radius:12px;padding:38px;max-width:520px}.placeholder h2{margin-top:0}.footer{padding:0 28px 22px;color:#698294;font-size:12px;text-align:right}
@@ -4943,6 +4951,8 @@ def render_notifications(
     *,
     selected_product: NotificationProduct | None = None,
     ux10: Ux10NotificationSnapshot | None = None,
+    operational: SponsorNotificationProjection | None = None,
+    notice: str = "",
 ) -> str:
     """Render one durable management surface over product-owned records."""
 
@@ -4950,6 +4960,12 @@ def render_notifications(
         raise TypeError("NOTIFICATION_WORKSPACE_INVALID")
     if selected_product is not None and type(selected_product) is not NotificationProduct:
         raise TypeError("NOTIFICATION_PRODUCT_FILTER_INVALID")
+    if operational is not None:
+        if type(operational) is not SponsorNotificationProjection:
+            raise TypeError("SPONSOR_NOTIFICATION_PROJECTION_INVALID")
+        return _render_operational_notifications(snapshot, operational, notice)
+    if selected_product is NotificationProduct.INTRADAY:
+        return _render_intraday_notifications(snapshot)
     tabs = '<nav class="notification-tabs">' + "".join(
         f'<a class="button{" active" if selected_product is product else ""}" href="{href}">{label}</a>'
         for label, href, product in (
@@ -5001,6 +5017,164 @@ def render_notifications(
         active_nav="Notifications",
         active_tab="",
         body=tabs + action_centre + body + watch_refresh,
+    )
+
+
+def _render_operational_notifications(
+    snapshot: BrowserWorkspaceSnapshot,
+    projection: SponsorNotificationProjection,
+    notice: str,
+) -> str:
+    query = projection.query
+    centre = projection.snapshot
+    products = (
+        '<div class="notification-centre-products">'
+        '<a class="button active" href="/notifications/swing">SWING</a>'
+        '<a class="button" href="/notifications/intraday">INTRADAY</a></div>'
+    )
+    ws = centre.websocket_state
+    ws_dot = "○" if ws == "IDLE" else "●"
+    header = (
+        '<div class="notification-centre-head">' + products
+        + '<span class="notification-centre-ws ' + ws.lower() + '">WS '
+        + ws_dot + ' ' + ws + '</span>'
+        + '<span class="notification-centre-count">LIVE ' + str(centre.live_count) + '</span>'
+        + '<span class="notification-centre-count">EXPIRED ' + str(centre.expired_count) + '</span>'
+    )
+    if centre.expired_count:
+        header += (
+            '<details class="notification-centre-confirm"><summary '
+            'title="DELETE EXPIRED NOTIFICATIONS" aria-label="DELETE EXPIRED NOTIFICATIONS">'
+            '🗑 DELETE EXPIRED</summary><div><p>DELETE '
+            + str(centre.expired_count) + ' EXPIRED SWING NOTIFICATIONS?</p>'
+            '<form method="post" action="/notifications/delete-expired">'
+            '<input type="hidden" name="product" value="SWING">'
+            '<input type="hidden" name="confirm" value="DELETE">'
+            '<button type="submit">CONFIRM DELETE EXPIRED</button></form></div></details>'
+        )
+    header += '</div>'
+    filters = '<div class="notification-centre-filters">' + ''.join(
+        '<a class="button ' + ('active' if query.state is item else '')
+        + '" href="/notifications/swing?' + urlencode({
+            "state": item.value, "search": query.search,
+        }) + '">' + item.value + '</a>'
+        for item in SponsorNotificationFilter
+    ) + '</div>'
+    search = (
+        '<form class="notification-centre-tools" method="get" action="/notifications/swing">'
+        '<input type="hidden" name="state" value="' + query.state.value + '">'
+        '<input class="notification-centre-search" name="search" maxlength="80" value="'
+        + escape(query.search) + '" placeholder="Search notifications..." '
+        'aria-label="Search notifications"><button type="submit">SEARCH</button></form>'
+    )
+    message = '' if not notice else '<div class="notification-centre-notice">' + escape(notice) + '</div>'
+    rows = ''.join(_operational_notification_row(item) for item in projection.page_records)
+    listing = (
+        '<div class="global-empty">NO NOTIFICATIONS MATCH THIS VIEW</div>'
+        if not projection.page_records
+        else '<div class="notification-centre-list">' + rows + '</div>'
+    )
+    pagination = ''
+    if projection.page_count > 1:
+        links = []
+        for label, page in (("PREVIOUS", query.page - 1), ("NEXT", query.page + 1)):
+            if 1 <= page <= projection.page_count:
+                links.append(
+                    '<a class="button" href="/notifications/swing?'
+                    + urlencode({
+                        "state": query.state.value, "search": query.search, "page": page,
+                    }) + '">' + label + '</a>'
+                )
+        pagination = (
+            '<div class="notification-centre-pagination"><span>PAGE '
+            + str(query.page) + ' / ' + str(projection.page_count) + '</span>'
+            + ''.join(links) + '</div>'
+        )
+    polling = (
+        '<script>const notificationRevision="' + centre.revision + '";'
+        'setInterval(async()=>{try{const r=await fetch("/notifications/status",{cache:"no-store"});'
+        'if(!r.ok)return;const s=await r.json();if(s.revision!==notificationRevision)location.reload();'
+        '}catch(_e){}},1500);</script>'
+    )
+    return _page(
+        title="Notifications", subtitle="Current operational alerts and reminders.",
+        snapshot=snapshot, active_nav="Notifications", active_tab="",
+        body=header + filters + search + message + listing + pagination + polling,
+    )
+
+
+def _render_intraday_notifications(snapshot: BrowserWorkspaceSnapshot) -> str:
+    return _page(
+        title="Notifications", subtitle="Current operational alerts and reminders.",
+        snapshot=snapshot, active_nav="Notifications", active_tab="",
+        body=(
+            '<div class="notification-centre-head"><div class="notification-centre-products">'
+            '<a class="button" href="/notifications/swing">SWING</a>'
+            '<a class="button active" href="/notifications/intraday">INTRADAY</a></div>'
+            '<span class="notification-centre-ws idle">WS — NOT AVAILABLE</span></div>'
+            '<div class="workflow-empty"><strong>INTRADAY NOTIFICATIONS</strong><br>'
+            'No Intraday notifications — NOT YET OPERATIONAL<br>'
+            '<small>Intraday alert policy has not been manufactured.</small></div>'
+        ),
+    )
+
+
+def _operational_notification_row(item: SponsorNotificationRecord) -> str:
+    time = item.updated_at.astimezone(_KOLKATA).strftime("%H:%M")
+    subject = item.instrument or "SYSTEM"
+    next_reminder = (
+        '' if item.next_reminder_at is None else
+        'NEXT ' + item.next_reminder_at.astimezone(_KOLKATA).strftime("%H:%M")
+        + ' · ×' + str(item.reminder_count)
+    )
+    actions = []
+    if item.state is SponsorNotificationState.LIVE:
+        if item.action is SponsorNotificationAction.REFRESH:
+            actions.append(
+                '<form method="post" action="/notifications/refresh">'
+                + _notification_lifecycle_hidden(item)
+                + '<button type="submit">REFRESH</button></form>'
+            )
+        elif item.action is SponsorNotificationAction.OPEN and item.action_path:
+            actions.append('<a class="button" href="' + escape(item.action_path) + '">OPEN</a>')
+    if item.state is SponsorNotificationState.EXPIRED and item.reactivatable:
+        actions.append(
+            '<form method="post" action="/notifications/reactivate">'
+            + _notification_lifecycle_hidden(item)
+            + '<button class="notification-icon" type="submit" title="RE-ACTIVATE NOTIFICATION" '
+            'aria-label="RE-ACTIVATE NOTIFICATION">♻</button></form>'
+        )
+    actions.append(
+        '<form method="post" action="/notifications/dismiss">'
+        + _notification_lifecycle_hidden(item)
+        + '<button class="notification-icon" type="submit" title="DELETE NOTIFICATION" '
+        'aria-label="DELETE NOTIFICATION">🗑</button></form>'
+    )
+    history = ''.join(
+        '<li>' + escape(event.event_type) + ' · '
+        + event.occurred_at.astimezone(_KOLKATA).strftime("%d %b %Y %H:%M IST")
+        + '</li>' for event in item.history
+    )
+    failure = ' failure' if item.family.value == "FAILURE_OPERABILITY" and item.state is SponsorNotificationState.LIVE else ''
+    return (
+        '<article class="notification-centre-row' + failure + '">'
+        '<span class="notification-centre-state ' + item.state.value.lower() + '">'
+        + item.state.value + '</span><span class="notification-centre-time">' + time + '</span>'
+        '<span class="notification-centre-subject">' + escape(subject) + '</span>'
+        '<span class="notification-centre-message" title="' + escape(item.summary) + '">'
+        + escape(item.summary) + '</span><span class="notification-centre-next">'
+        + escape(next_reminder) + '</span><span class="notification-centre-actions">'
+        + ''.join(actions) + '</span><details class="notification-centre-detail">'
+        '<summary>GOVERNED EVIDENCE · ' + escape(item.notification_type.replace('_', ' '))
+        + '</summary><ul>' + history + '</ul></details></article>'
+    )
+
+
+def _notification_lifecycle_hidden(item: SponsorNotificationRecord) -> str:
+    return (
+        '<input type="hidden" name="notification_id" value="'
+        + item.notification_identity + '"><input type="hidden" name="revision" value="'
+        + item.integrity_sha256 + '">'
     )
 
 

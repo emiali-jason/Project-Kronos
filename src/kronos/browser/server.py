@@ -12,7 +12,7 @@ import logging
 from pathlib import Path
 import re
 from threading import Lock, Thread
-from urllib.parse import parse_qs, quote, unquote, urlsplit
+from urllib.parse import parse_qs, quote, unquote, urlencode, urlsplit
 from uuid import uuid4
 
 from kronos.application.swing_opportunities import SwingOpportunitiesApplication
@@ -26,6 +26,13 @@ from kronos.application.swing_progression_watch import (
 )
 from kronos.application.notifications import (
     NotificationProduct,
+)
+from kronos.application.notification_centre import (
+    SponsorNotificationCentre,
+    SponsorNotificationFilter,
+    SponsorNotificationLifecycleStore,
+    SponsorNotificationQuery,
+    project_sponsor_notifications,
 )
 from kronos.application.swing_notifications import project_swing_notification_workspace
 from kronos.application.swing_ux10 import (
@@ -264,6 +271,7 @@ class KronosBrowserServer(ThreadingHTTPServer):
         telegram: TelegramConfigurationService | None = None,
         ux10_notifications: SwingUx10NotificationService | None = None,
         refresh_reminders: SwingK5RefreshReminderWorkflow | None = None,
+        notification_centre: SponsorNotificationCentre | None = None,
         provider_instrument_master_operation: (
             ProviderInstrumentMasterOperationalComposition | None
         ) = None,
@@ -320,6 +328,10 @@ class KronosBrowserServer(ThreadingHTTPServer):
             or (
                 refresh_reminders is not None
                 and type(refresh_reminders) is not SwingK5RefreshReminderWorkflow
+            )
+            or (
+                notification_centre is not None
+                and type(notification_centre) is not SponsorNotificationCentre
             )
             or (
                 provider_instrument_master_operation is not None
@@ -534,6 +546,12 @@ class KronosBrowserServer(ThreadingHTTPServer):
                 ).notification_id
             ),
         )
+        self.notification_centre = notification_centre or SponsorNotificationCentre(
+            SponsorNotificationLifecycleStore(
+                governed_review_root / "notification-centre-v1"
+            ),
+            reminder_boundary_resolver=self.refresh_reminders.next_repeat_boundary,
+        )
         self.progression_watches.set_ux10_listeners(
             watch_listener=self.ux10_notifications.observe_progression_watch,
             connection_listener=lambda *_values: None,
@@ -716,6 +734,22 @@ class KronosBrowserServer(ThreadingHTTPServer):
                         watch
                     )
         return snapshot
+
+    def sponsor_notification_snapshot(self):  # type: ignore[no-untyped-def]
+        """Compose current sources with durable Sponsor lifecycle and actual WS."""
+
+        watches = project_swing_notification_workspace(self.progression_snapshot())
+        _, run = self.application.opportunities_projection()
+        websocket = websocket_presentation_state(
+            monitoring_required=self.swing_monitoring_hub.subscription_count > 0,
+            connection_state=self.swing_monitoring_hub.connection_state,
+        )
+        return self.notification_centre.synchronize(
+            watches,
+            self.ux10_notifications.snapshot(),
+            current_run_identity=None if run is None else run.run_identity,
+            websocket_state=websocket.value,
+        )
 
     def active_live_monitoring_count(self) -> int:
         """Count owned live subscriptions without changing retained watch truth."""
@@ -1137,13 +1171,13 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             ))
             return
         if path == "/notifications/status":
-            projected = project_swing_notification_workspace(
-                self.server.progression_snapshot()
-            )
+            centre = self.server.sponsor_notification_snapshot()
             self._json({
-                "revision": projected.revision + self.server.ux10_notifications.snapshot().revision,
-                "count": len(projected.records) + len(self.server.ux10_notifications.snapshot().records),
-                "action_required": len(projected.action_required),
+                "revision": centre.revision,
+                "count": len(centre.visible),
+                "live": centre.live_count,
+                "expired": centre.expired_count,
+                "websocket": centre.websocket_state,
             })
             return
         if path == "/swing/opportunities":
@@ -1163,15 +1197,44 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             return
         if path in {"/notifications", "/notifications/swing", "/notifications/intraday"}:
             selected = {
-                "/notifications": None,
+                "/notifications": NotificationProduct.SWING,
                 "/notifications/swing": NotificationProduct.SWING,
                 "/notifications/intraday": NotificationProduct.INTRADAY,
             }[path]
+            query_values = parse_qs(
+                urlsplit(self.path).query, keep_blank_values=True
+            )
+            allowed = {"state", "search", "page", "notice"}
+            try:
+                if set(query_values).difference(allowed) or any(
+                    len(value) != 1 for value in query_values.values()
+                ):
+                    raise ValueError
+                notification_query = SponsorNotificationQuery(
+                    state=SponsorNotificationFilter(
+                        query_values.get("state", ["ALL"])[0]
+                    ),
+                    search=query_values.get("search", [""])[0],
+                    page=int(query_values.get("page", ["1"])[0]),
+                )
+                notice = query_values.get("notice", [""])[0]
+                if len(notice) > 96:
+                    raise ValueError
+            except (TypeError, ValueError):
+                self._text(HTTPStatus.BAD_REQUEST, "Notification filter is invalid.")
+                return
+            operational = None
+            if selected is NotificationProduct.SWING:
+                operational = project_sponsor_notifications(
+                    self.server.sponsor_notification_snapshot(), notification_query
+                )
             self._html(render_notifications(
                 self.server.application.snapshot(),
                 project_swing_notification_workspace(self.server.progression_snapshot()),
                 selected_product=selected,
                 ux10=self.server.ux10_notifications.snapshot(),
+                operational=operational,
+                notice=notice,
             ))
             return
         details_match = _ANALYSIS_DETAILS_ROUTE.fullmatch(path)
@@ -1659,6 +1722,18 @@ class _BrowserHandler(BaseHTTPRequestHandler):
         if path == "/notifications/watch/delete":
             self._manage_progression_watch("delete")
             return
+        if path == "/notifications/dismiss":
+            self._manage_notification_lifecycle("dismiss")
+            return
+        if path == "/notifications/delete-expired":
+            self._manage_notification_lifecycle("delete-expired")
+            return
+        if path == "/notifications/reactivate":
+            self._manage_notification_lifecycle("reactivate")
+            return
+        if path == "/notifications/refresh":
+            self._refresh_from_notification()
+            return
         if path == "/swing/v1/layer1":
             evidence = self.server.application.completed_analysis_evidence()
             if evidence is None:
@@ -2013,6 +2088,119 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             self._text(HTTPStatus.CONFLICT, "Notification action is not available.")
             return
         self._redirect("/notifications")
+
+    def _manage_notification_lifecycle(self, action: str) -> None:
+        if urlsplit(self.path).query:
+            self._notification_redirect("NOTIFICATION ACTION REJECTED")
+            return
+        try:
+            content_length = int(self.headers.get("Content-Length", ""))
+        except ValueError:
+            content_length = 0
+        if (
+            self.headers.get("Content-Type", "").split(";", 1)[0].lower()
+            != "application/x-www-form-urlencoded"
+            or not 0 < content_length <= 320
+        ):
+            self._notification_redirect("NOTIFICATION ACTION REJECTED")
+            return
+        try:
+            fields = parse_qs(
+                self.rfile.read(content_length).decode("utf-8"),
+                strict_parsing=True,
+            )
+            if action == "delete-expired":
+                if fields != {"product": ["SWING"], "confirm": ["DELETE"]}:
+                    raise ValueError("NOTIFICATION_DELETE_EXPIRED_CONFIRMATION_INVALID")
+                count = self.server.notification_centre.dismiss_expired()
+                self._notification_redirect(f"DELETED {count} EXPIRED NOTIFICATIONS")
+                return
+            if set(fields) != {"notification_id", "revision"}:
+                raise ValueError("NOTIFICATION_ACTION_FIELDS_INVALID")
+            identities = fields["notification_id"]
+            revisions = fields["revision"]
+            if (
+                len(identities) != 1 or len(revisions) != 1
+                or re.fullmatch(r"[0-9a-f]{64}", identities[0]) is None
+                or re.fullmatch(r"[0-9a-f]{64}", revisions[0]) is None
+            ):
+                raise ValueError("NOTIFICATION_ACTION_BINDING_INVALID")
+            record = self.server.notification_centre.record(identities[0])
+            if record is None:
+                raise ValueError("NOTIFICATION_NOT_FOUND")
+            if action == "dismiss":
+                self.server.notification_centre.dismiss(identities[0], revisions[0])
+                self._notification_redirect("NOTIFICATION DELETED")
+                return
+            if action != "reactivate":
+                raise ValueError("NOTIFICATION_ACTION_INVALID")
+            _, run = self.server.application.opportunities_projection()
+            source_valid = (
+                record.notification_type == "REFRESH_ANALYSIS_REMINDER"
+                and run is not None
+                and run.run_identity == record.source_run_identity
+            )
+            self.server.notification_centre.reactivate(
+                identities[0], revisions[0], source_valid=source_valid
+            )
+            self._notification_redirect("NOTIFICATION RE-ACTIVATED")
+        except (AttributeError, UnicodeDecodeError, ValueError):
+            self._notification_redirect("CANNOT RE-ACTIVATE OR DELETE · SOURCE STATE CHANGED")
+
+    def _notification_redirect(self, notice: str) -> None:
+        self._redirect("/notifications/swing?" + urlencode({"notice": notice}))
+
+    def _refresh_from_notification(self) -> None:
+        try:
+            record = self._notification_bound_record()
+            _, run = self.server.application.opportunities_projection()
+            if (
+                record.dismissed
+                or record.state.value != "LIVE"
+                or record.action.value != "REFRESH"
+                or run is None
+                or run.run_identity != record.source_run_identity
+            ):
+                raise ValueError("NOTIFICATION_REFRESH_STATE_INVALID")
+            self.server.application.run_analysis()
+        except (AttributeError, UnicodeDecodeError, ValueError):
+            self._notification_redirect(
+                "REFRESH NOT STARTED · NOTIFICATION STATE CHANGED"
+            )
+            return
+        self._redirect("/swing/opportunities")
+
+    def _notification_bound_record(self):  # type: ignore[no-untyped-def]
+        if urlsplit(self.path).query:
+            raise ValueError("NOTIFICATION_ACTION_QUERY_INVALID")
+        try:
+            content_length = int(self.headers.get("Content-Length", ""))
+        except ValueError as error:
+            raise ValueError("NOTIFICATION_ACTION_LENGTH_INVALID") from error
+        if (
+            self.headers.get("Content-Type", "").split(";", 1)[0].lower()
+            != "application/x-www-form-urlencoded"
+            or not 0 < content_length <= 320
+        ):
+            raise ValueError("NOTIFICATION_ACTION_REQUEST_INVALID")
+        fields = parse_qs(
+            self.rfile.read(content_length).decode("utf-8"), strict_parsing=True,
+        )
+        if set(fields) != {"notification_id", "revision"} or any(
+            len(value) != 1 for value in fields.values()
+        ):
+            raise ValueError("NOTIFICATION_ACTION_FIELDS_INVALID")
+        identity = fields["notification_id"][0]
+        revision = fields["revision"][0]
+        if (
+            re.fullmatch(r"[0-9a-f]{64}", identity) is None
+            or re.fullmatch(r"[0-9a-f]{64}", revision) is None
+        ):
+            raise ValueError("NOTIFICATION_ACTION_BINDING_INVALID")
+        record = self.server.notification_centre.record(identity)
+        if record is None or record.integrity_sha256 != revision:
+            raise ValueError("NOTIFICATION_STALE_REVISION")
+        return record
 
     def _sponsor_exit(self) -> None:
         if self.headers.get("Content-Length") not in {None, "0"}:
@@ -3447,6 +3635,7 @@ def create_browser_server(
     telegram: TelegramConfigurationService | None = None,
     ux10_notifications: SwingUx10NotificationService | None = None,
     refresh_reminders: SwingK5RefreshReminderWorkflow | None = None,
+    notification_centre: SponsorNotificationCentre | None = None,
     provider_instrument_master_operation: (
         ProviderInstrumentMasterOperationalComposition | None
     ) = None,
@@ -3476,6 +3665,7 @@ def create_browser_server(
         telegram,
         ux10_notifications,
         refresh_reminders,
+        notification_centre,
         provider_instrument_master_operation,
         intraday_discovery_control,
         intraday_historical_control,

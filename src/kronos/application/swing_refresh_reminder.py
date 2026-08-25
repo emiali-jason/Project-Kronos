@@ -187,6 +187,36 @@ class SwingK5RefreshReminderWorkflow:
                 self._records.values(), key=lambda item: item.created_at, reverse=True,
             )))
 
+    def next_repeat_boundary(
+        self, notification_identity: str, after: datetime
+    ) -> datetime | None:
+        """Resolve the next governed hourly boundary for a delivered reminder.
+
+        Browser recurrence reuses the same DOMAIN-008 authority as the original
+        K5 reminder.  It never manufactures a local wall-clock schedule.
+        """
+
+        if not notification_identity or after.tzinfo is None:
+            raise ValueError("K5_REFRESH_REPEAT_BOUNDARY_REQUEST_INVALID")
+        with self._lock:
+            record = next((
+                item for item in self._records.values()
+                if item.notification_identity == notification_identity
+                and item.state is RefreshReminderState.SENT
+            ), None)
+        if record is None:
+            return None
+        exchanges = tuple(sorted({item[3] for item in record.instrument_bindings}))
+        boundaries = []
+        for exchange in exchanges:
+            try:
+                boundaries.append(next_completed_one_hour_boundary(
+                    self._calendar, exchange, after, observed_at=after,
+                ))
+            except ValueError:
+                return None
+        return min(boundaries) if boundaries else None
+
     def synchronize(
         self,
         current_run_identity: str | None,
