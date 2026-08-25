@@ -270,6 +270,36 @@ class CurrentMarketFactV2:
 
 
 @dataclass(frozen=True, slots=True)
+class GovernedPositionPresentationFactsV2:
+    decision_identity: str
+    sponsor_position_identity: str
+    mode: SponsorTradeChoice
+    state: str
+    actual_entry: Decimal | None
+    actual_exit: Decimal | None
+    gross_pnl: Decimal | None
+    completion_timestamp: datetime | None
+    source_integrity_sha256: str
+
+    def __post_init__(self) -> None:
+        if (
+            not _identity(self.decision_identity)
+            or not _identity(self.sponsor_position_identity)
+            or self.mode not in {SponsorTradeChoice.PAPER, SponsorTradeChoice.LIVE}
+            or not re.fullmatch(r"[A-Z0-9_ -]{1,128}", self.state)
+            or any(value is not None and not _finite(value) for value in (
+                self.actual_entry, self.actual_exit, self.gross_pnl
+            ))
+            or (
+                self.completion_timestamp is not None
+                and not _aware(self.completion_timestamp)
+            )
+            or not _digest(self.source_integrity_sha256)
+        ):
+            raise ValueError("OBSERVATION_POSITION_PRESENTATION_FACT_INVALID")
+
+
+@dataclass(frozen=True, slots=True)
 class ObservationOperationalHandoffV2:
     product: ObservationProduct
     mode: ObservationMode
@@ -290,6 +320,8 @@ class ObservationOperationalHandoffV2:
     objective_state: str
     objective_outcome: str
     entry: Decimal | None
+    exit: Decimal | None
+    position_gross_pnl: Decimal | None
     stop: Decimal | None
     target: Decimal | None
     current_ltp: Decimal | None
@@ -491,10 +523,12 @@ class ObservationResearchLedgerV2Service:
         current_facts: dict[str, CurrentMarketFactV2] | None = None,
         governed_current_trading_date: date,
         completion_trading_dates: dict[str, date] | None = None,
+        position_facts: dict[str, GovernedPositionPresentationFactsV2] | None = None,
         websocket_state: WebSocketPresentationState = WebSocketPresentationState.IDLE,
     ) -> tuple[ObservationOperationalHandoffV2, ...]:
         current_facts = current_facts or {}
         completion_trading_dates = completion_trading_dates or {}
+        position_facts = position_facts or {}
         return tuple(
             _operational_handoff(
                 item,
@@ -502,6 +536,7 @@ class ObservationResearchLedgerV2Service:
                 governed_current_trading_date,
                 completion_trading_dates.get(item.record.decision_identity),
                 websocket_state,
+                position_facts.get(item.record.decision_identity),
             )
             for item in self.synchronize()
         )
@@ -751,6 +786,7 @@ def _operational_handoff(
     current_trading_date: date,
     completion_trading_date: date | None,
     websocket_state: WebSocketPresentationState,
+    position_fact: GovernedPositionPresentationFactsV2 | None,
 ) -> ObservationOperationalHandoffV2:
     source = item.source.source
     snapshot = source.snapshot
@@ -768,6 +804,13 @@ def _operational_handoff(
         snapshot.stop, "STOP", paper,
     )
     position = source.activation.sponsor_position_identity
+    if position_fact is not None and (
+        position is None
+        or position_fact.decision_identity != source.decision.decision_identity
+        or position_fact.sponsor_position_identity != position
+        or position_fact.mode is not source.decision.choice
+    ):
+        raise ValueError("OBSERVATION_POSITION_PRESENTATION_BINDING_INVALID")
     track_completion = None
     if paper is not None and paper.track_state is PaperObservationTrackState.COMPLETE:
         events = tuple(
@@ -775,7 +818,11 @@ def _operational_handoff(
             if link.kind is PaperObservationLinkKind.OUTCOME
         )
         track_completion = None if not events else events[-1].source_timestamp
-    completion = track_completion
+    completion = (
+        track_completion
+        if paper is not None
+        else None if position_fact is None else position_fact.completion_timestamp
+    )
     route = (
         ObservationOperationalRoute.ACTIVE
         if completion_trading_date is None and completion is None
@@ -811,7 +858,13 @@ def _operational_handoff(
         paper_track_outcome="NOT_APPLICABLE" if paper is None else paper.outcome_state.value,
         objective_state="UNAVAILABLE" if model is None else model.source_state,
         objective_outcome="UNAVAILABLE" if objective is None else objective.source_state,
-        entry=snapshot.entry,
+        entry=(
+            snapshot.entry
+            if paper is not None
+            else None if position_fact is None else position_fact.actual_entry
+        ),
+        exit=None if position_fact is None else position_fact.actual_exit,
+        position_gross_pnl=None if position_fact is None else position_fact.gross_pnl,
         stop=snapshot.stop,
         target=snapshot.target,
         current_ltp=None if market is None else market.last_price,
@@ -820,7 +873,11 @@ def _operational_handoff(
         distance_to_stop=stop_distance,
         distance_to_target_state=target_state,
         distance_to_stop_state=stop_state,
-        monetary_pnl_state=("UNAVAILABLE" if paper is not None else "GOVERNED_POSITION_ACCOUNTING_ONLY"),
+        monetary_pnl_state=(
+            "UNAVAILABLE"
+            if paper is not None or position_fact is None
+            else "AVAILABLE" if position_fact.gross_pnl is not None else "NOT_YET_ESTABLISHED"
+        ),
         completion_timestamp=completion,
         operational_route=route,
         websocket_state=websocket_state,
@@ -934,6 +991,7 @@ def _finite(value: object) -> bool:
 
 __all__ = [
     "CurrentMarketFactV2",
+    "GovernedPositionPresentationFactsV2",
     "LocalObservationResearchLedgerV2Store",
     "OBSERVATION_RESEARCH_V2_CONTRACT_ID",
     "OBSERVATION_RESEARCH_V2_CONTRACT_VERSION",

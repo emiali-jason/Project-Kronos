@@ -110,6 +110,7 @@ from kronos.swing.v1.observation_research_ledger import (
 )
 from kronos.swing.v1.observation_research_ledger_v2 import (
     CurrentMarketFactV2,
+    GovernedPositionPresentationFactsV2,
     LocalObservationResearchLedgerV2Store,
     ObservationOperationalHandoffV2,
     ObservationResearchLedgerV2Service,
@@ -1829,10 +1830,44 @@ class SwingTradeWindowWorkflow:
             monitoring_required=required,
             connection_state=None if hub is None else hub.connection_state,
         )
+        position_facts: dict[str, GovernedPositionPresentationFactsV2] = {}
+        for result in self._observation_decisions.values():
+            plan_identity = result.snapshot.conventional_trade_plan_identity
+            if plan_identity is None:
+                continue
+            position = self._positions.get(plan_identity)
+            closure = self._closures.get(plan_identity)
+            if (
+                position is None
+                or result.activation.sponsor_position_identity != position.position_id
+            ):
+                continue
+            position_facts[result.decision.decision_identity] = (
+                GovernedPositionPresentationFactsV2(
+                    decision_identity=result.decision.decision_identity,
+                    sponsor_position_identity=position.position_id,
+                    mode=position.mode,
+                    state="CLOSED" if closure is not None else position.state.value,
+                    actual_entry=(
+                        position.actual_entry
+                        if closure is None else closure.actual_entry
+                    ),
+                    actual_exit=None if closure is None else closure.actual_exit,
+                    gross_pnl=None if closure is None else closure.gross_pnl,
+                    completion_timestamp=(
+                        None if closure is None else closure.exit_timestamp
+                    ),
+                    source_integrity_sha256=(
+                        position.integrity_hash
+                        if closure is None else closure.integrity_hash
+                    ),
+                )
+            )
         return self._observation_research_v2.operational_handoffs(
             current_facts=current_facts,
             governed_current_trading_date=governed_current_trading_date,
             completion_trading_dates=completion_trading_dates,
+            position_facts=position_facts,
             websocket_state=state,
         )
 

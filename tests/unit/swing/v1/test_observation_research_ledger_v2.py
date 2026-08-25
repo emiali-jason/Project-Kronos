@@ -7,6 +7,7 @@ import pytest
 from kronos.swing.v1.native_sponsor_decision import SponsorTradeChoice
 from kronos.swing.v1.observation_research_ledger_v2 import (
     CurrentMarketFactV2,
+    GovernedPositionPresentationFactsV2,
     LocalObservationResearchLedgerV2Store,
     ObservationMode,
     ObservationOperationalRoute,
@@ -153,6 +154,29 @@ def test_activated_paper_live_and_ignore_never_manufacture_track(tmp_path) -> No
     projected = service.snapshot()[0]
     assert projected.paper_track is None
     assert projected.paper_track_state is PaperObservationTrackState.NOT_APPLICABLE_POSITION_ACTIVATED
+    position_fact = GovernedPositionPresentationFactsV2(
+        activated.decision.decision_identity,
+        "SPONSOR-POSITION-1",
+        SponsorTradeChoice.PAPER,
+        "CLOSED",
+        Decimal("101"),
+        Decimal("111"),
+        Decimal("1000"),
+        NOW + timedelta(days=1),
+        "9" * 64,
+    )
+    handoff = service.operational_handoffs(
+        governed_current_trading_date=(NOW + timedelta(days=1)).date(),
+        completion_trading_dates={
+            activated.decision.decision_identity: (NOW + timedelta(days=1)).date()
+        },
+        position_facts={activated.decision.decision_identity: position_fact},
+    )[0]
+    assert handoff.mode is ObservationMode.PAPER
+    assert handoff.entry == Decimal("101")
+    assert handoff.exit == Decimal("111")
+    assert handoff.position_gross_pnl == Decimal("1000")
+    assert handoff.monetary_pnl_state == "AVAILABLE"
 
     for choice, disposition in (
         (SponsorTradeChoice.LIVE, SponsorActivationDisposition.BLOCKED_RISK_UNAVAILABLE),

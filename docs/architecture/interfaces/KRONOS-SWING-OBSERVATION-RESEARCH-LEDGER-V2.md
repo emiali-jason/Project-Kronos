@@ -69,4 +69,6 @@ shared Swing monitoring owner currently requires the transport; required but
 not factually connected means `DISCONNECTED`.
 
 Paper Track monetary P/L and actual R remain `UNAVAILABLE`. Existing governed
-Sponsor Position/closure accounting is the only position P/L authority.
+Sponsor Position/closure accounting is the only position Entry/Exit/P&L
+authority; the handoff carries those values only when their exact decision and
+position lineage is trusted.
