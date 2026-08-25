@@ -745,6 +745,66 @@ def test_production_server_selects_v3_and_restores_exact_completed_cycle(
     )
 
 
+def test_restart_restores_latest_review_when_same_chart_was_reviewed_twice(
+    tmp_path: Path,
+) -> None:
+    native, facts, first_live = _live(tmp_path)
+    instrument = native.snapshot().requirements[0].canonical_instrument
+    first_record = first_live.generate(
+        native.snapshot(), facts, native.original_chart_bytes, instrument
+    )
+    first_answer = (
+        first_live.transport.configuration.answer_directory
+        / first_record.expected_answer_filename
+    )
+    _answer_pdf(first_answer, _payload(first_live, native, facts, first_record))
+    first_live.upload(native.snapshot(), facts, native.original_chart_bytes)
+
+    later = NOW + timedelta(minutes=10)
+    second_live = SwingVisualV3LiveWorkflow(
+        first_live.cycle,
+        VisualV3PdfReviewTransport(
+            first_live.transport.configuration,
+            VisualV3PdfRecordStore((tmp_path / "v3-pdf-records").resolve()),
+            clock=lambda: later,
+        ),
+        clock=lambda: later,
+    )
+    second_record = second_live.generate(
+        native.snapshot(), facts, native.original_chart_bytes, instrument
+    )
+    second_answer = (
+        second_live.transport.configuration.answer_directory
+        / second_record.expected_answer_filename
+    )
+    _answer_pdf(second_answer, _payload(second_live, native, facts, second_record))
+    second_live.upload(native.snapshot(), facts, native.original_chart_bytes)
+    expected = second_live.cycle.completed_for(
+        facts.run_identity, instrument
+    )
+    assert expected is not None and expected.promotion is not None
+
+    restored = SwingVisualV3LiveWorkflow(
+        SwingVisualV3ReviewCycle(
+            LocalVisualEvidenceV3Store((tmp_path / "visual-v3").resolve()),
+            NativeLayer2ReadinessV3Store((tmp_path / "readiness-v3").resolve()),
+        ),
+        VisualV3PdfReviewTransport(
+            first_live.transport.configuration,
+            VisualV3PdfRecordStore((tmp_path / "v3-pdf-records").resolve()),
+            clock=lambda: later,
+        ),
+        clock=lambda: later,
+    )
+    restored.restore(native.snapshot(), facts, native.original_chart_bytes)
+    actual = restored.cycle.completed_for(facts.run_identity, instrument)
+
+    assert first_record.review_pack_id != second_record.review_pack_id
+    assert actual is not None and actual.promotion is not None
+    assert actual.review_pack.review_pack_id == second_record.review_pack_id
+    assert actual.promotion.integrity_sha256 == expected.promotion.integrity_sha256
+
+
 def test_historical_v2_pack_remains_v2_when_no_same_run_v3_pack(
     tmp_path: Path,
 ) -> None:

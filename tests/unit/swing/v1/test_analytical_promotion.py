@@ -430,6 +430,62 @@ def test_store_is_immutable_exact_bound_and_restart_restorable(tmp_path: Path) -
     assert not restored.position_authority
     assert not restored.fill_authority
     assert not restored.broker_authority
+
+
+@pytest.mark.parametrize(
+    ("direction", "scenario", "expected"),
+    (
+        (V1Direction.LONG, {}, Kr370AnalyticalClassification.BUY_NOW),
+        (V1Direction.SHORT, {}, Kr370AnalyticalClassification.SELL_NOW),
+        (
+            V1Direction.LONG,
+            {"extended": True},
+            Kr370AnalyticalClassification.BUY_READY,
+        ),
+        (
+            V1Direction.SHORT,
+            {"extended": True},
+            Kr370AnalyticalClassification.SELL_READY,
+        ),
+        (
+            V1Direction.LONG,
+            {"extended": True, "cpr_accepted": False},
+            Kr370AnalyticalClassification.POTENTIAL_BUY_SETUP,
+        ),
+        (
+            V1Direction.SHORT,
+            {"extended": True, "cpr_accepted": False},
+            Kr370AnalyticalClassification.POTENTIAL_SELL_SETUP,
+        ),
+        (
+            V1Direction.LONG,
+            {"quality": VisualSetupQuality.MESSY_CHOPPY},
+            Kr370AnalyticalClassification.NO_SETUP,
+        ),
+    ),
+)
+def test_every_governed_promotion_state_restores_without_recalculation(
+    tmp_path: Path,
+    direction: V1Direction,
+    scenario: dict[str, object],
+    expected: Kr370AnalyticalClassification,
+) -> None:
+    record = _evaluate(direction=direction, **scenario)
+    store = LocalKr370AnalyticalPromotionStore(
+        (tmp_path / expected.value).resolve()
+    )
+    store.retain(record)
+
+    restored = LocalKr370AnalyticalPromotionStore(store.root).load_exact(
+        record.run_identity,
+        record.canonical_instrument,
+        record.native_assessment_sha256,
+        record.review_pack_identity,
+        tuple(item[1] for item in record.visual_evidence_bindings),
+    )
+
+    assert record.classification is expected
+    assert restored == record
     assert not restored.kr390_current_input
     assert not restored.kr400_current_alert_source
 

@@ -801,6 +801,12 @@ class LocalVisualEvidenceV3Store:
             response = visual_evidence_v3_response_from_dict(payload.get("response"))
             if payload.get("evidence_sha256") != response.evidence_sha256:
                 raise ValueError("VISUAL_V3_RESTART_INTEGRITY_INVALID")
+            # One immutable chart revision may legitimately be reviewed more than
+            # once.  The governed request timestamp identifies that exact Review
+            # Pack cycle; historical cycles remain retained but are not candidates
+            # for the current restoration.
+            if response.request_timestamp != request.request_timestamp:
+                continue
             response.validate_binding(request)
             values.append(response)
         return tuple(values)

@@ -295,6 +295,26 @@ def test_historical_v3_3_0_q5_prose_restores_without_enum_conversion(
     assert not hasattr(restored[0].observations[4], "setup_quality")
 
 
+def test_store_selects_exact_review_cycle_when_chart_revision_is_reused(
+    tmp_path: Path,
+) -> None:
+    first_request = _request()
+    second_request = replace(
+        first_request,
+        request_timestamp=first_request.request_timestamp + timedelta(minutes=10),
+    )
+    first_response = _response(first_request)
+    second_response = _response(second_request)
+    store = LocalVisualEvidenceV3Store((tmp_path / "repeated-review").resolve())
+
+    store.retain(first_request, first_response)
+    store.retain(second_request, second_response)
+
+    assert first_response.chart_revision_sha256 == second_response.chart_revision_sha256
+    assert store.load_for_request(first_request) == (first_response,)
+    assert store.load_for_request(second_request) == (second_response,)
+
+
 def test_question_pack_context_is_visual_only_and_never_discloses_machine_values() -> None:
     request = _request()
     context = request.analyst_context()
