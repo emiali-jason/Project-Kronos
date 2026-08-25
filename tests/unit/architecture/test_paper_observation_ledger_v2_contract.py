@@ -53,6 +53,11 @@ def test_v2_contracts_freeze_authority_and_future_handoffs() -> None:
         "four truth families",
         "Current market price",
         "Notifications remain outside this contract",
+        "presentation dismissal only",
+        "new linked LIVE notification",
+        "governed hour",
+        "Paper Observation Track P&L and actual R are unavailable",
+        "remain unimplemented analytics",
         "cannot be mixed",
     ):
         assert required in projection

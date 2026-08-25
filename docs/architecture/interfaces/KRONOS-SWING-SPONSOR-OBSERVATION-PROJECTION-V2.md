@@ -58,3 +58,19 @@ fields and are not historical ledger evidence.
 Notifications remain outside this contract. A future notification projection
 may dismiss presentation without deleting governed evidence, and reactivation
 must create a new linked identity rather than mutate expired history.
+
+Notification deletion is presentation dismissal only; it must not delete an
+analytical, monitoring, decision, or research source record. Reactivation of an
+immutable expired notification may create a new linked LIVE notification only
+while the governed source remains current; stale or superseded sources fail
+closed. A time-bound Refresh Analysis reminder begins at its governed due
+boundary and may update one durable LIVE reminder identity approximately once
+per governed hour until a successful fresh analysis or governed expiry resolves
+it. Durable reminder-event history is retained; repeated reminder rows are not
+manufactured. These are future authority notes, not Notification UX/runtime.
+
+Future Reports may read factual Entry/Exit/P&L from governed Sponsor Position
+and closure evidence. Paper Observation Track P&L and actual R are unavailable.
+Net-P&L aggregation, win rate, average R, max drawdown, daily P&L, performance
+trade counts, and all effectiveness conclusions remain unimplemented analytics
+and are not authorized by this projection.
