@@ -2265,6 +2265,7 @@ def _reports_filter_panel(projection: HistoricalReportsProjection) -> str:
         + escape(query.status) + '"></label><div class="reports-filter-actions">'
         + '<button type="submit">APPLY</button><a class="button" href="/reports?product=SWING">CLEAR</a>'
         '</div></form><div class="reports-filter-actions">'
+        + '<a class="button" href="/reports/export.xlsx?' + export_params + '">EXCEL</a>'
         + '<a class="button" href="/reports/export.csv?' + export_params + '">CSV</a>'
         + '<a class="button" href="/reports/export.json?' + export_params + '">JSON</a>'
         '</div><p class="reports-export-note">Exports preserve selected filters, evidence family, '

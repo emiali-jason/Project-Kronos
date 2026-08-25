@@ -2,8 +2,13 @@ from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from http.client import HTTPConnection
+from io import BytesIO
 import json
 from threading import Thread
+from xml.etree import ElementTree
+from zipfile import ZipFile
+
+import pytest
 
 from kronos.application.swing_native_review import NativeReviewWorkflow
 from kronos.application.swing_opportunities import SwingOpportunitiesApplication
@@ -16,7 +21,9 @@ from kronos.browser.reports import (
     ReportView,
     export_reports_csv,
     export_reports_json,
+    export_reports_xlsx,
     project_historical_reports,
+    reports_excel_filename,
 )
 from kronos.browser.views import render_reports
 from kronos.swing.v1.models import V1Direction
@@ -43,6 +50,7 @@ from tests.unit.swing.v1.test_native_trade_journal import _run_paper
 
 
 NOW = datetime(2026, 8, 25, 10, 0, tzinfo=UTC)
+_XLSX_NAMESPACE = {"x": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
 
 
 def _empty_journal(tmp_path):  # type: ignore[no-untyped-def]
@@ -84,6 +92,22 @@ def _record(
         "UNAVAILABLE" if observation or pnl is None else "AVAILABLE",
         when, route, WebSocketPresentationState.IDLE,
     )
+
+
+def _xlsx_rows(payload: bytes, sheet: str = "sheet1.xml") -> list[list[str]]:
+    with ZipFile(BytesIO(payload)) as archive:
+        root = ElementTree.fromstring(archive.read("xl/worksheets/" + sheet))
+    rows = []
+    for row in root.findall(".//x:sheetData/x:row", _XLSX_NAMESPACE):
+        values = []
+        for cell in row.findall("x:c", _XLSX_NAMESPACE):
+            if cell.get("t") == "inlineStr":
+                text = cell.find("x:is/x:t", _XLSX_NAMESPACE)
+            else:
+                text = cell.find("x:v", _XLSX_NAMESPACE)
+            values.append("" if text is None or text.text is None else text.text)
+        rows.append(values)
+    return rows
 
 
 def test_reports_projection_separates_families_and_excludes_active(tmp_path) -> None:
@@ -175,6 +199,101 @@ def test_reports_export_preserves_filters_family_and_unavailable_values(tmp_path
     assert "win_rate" not in csv_value and "effectiveness" not in csv_value
 
 
+def test_reports_excel_is_valid_filtered_mixed_family_workbook(tmp_path) -> None:
+    projection = project_historical_reports(
+        (
+            _record("CANBK", ObservationMode.PAPER, pnl=Decimal("0")),
+            _record("MCX", ObservationMode.LIVE, direction=V1Direction.SHORT),
+            _record("SAIL", ObservationMode.PAPER_OBSERVATION),
+        ),
+        _empty_journal(tmp_path),
+        ReportsQuery(view=ReportView.ALL_RECORDS),
+        governed_current_trading_date=NOW.date(),
+    )
+
+    payload = export_reports_xlsx(projection, generated_at=NOW)
+    with ZipFile(BytesIO(payload)) as archive:
+        assert archive.testzip() is None
+        names = set(archive.namelist())
+        report_xml = archive.read("xl/worksheets/sheet1.xml")
+        assert {"xl/workbook.xml", "xl/worksheets/sheet1.xml", "xl/worksheets/sheet2.xml"} <= names
+        assert b"<f" not in report_xml
+    rows = _xlsx_rows(payload)
+    summary = dict(_xlsx_rows(payload, "sheet2.xml"))
+
+    assert rows[0][:6] == [
+        "Date", "Completed / Exited At", "Instrument", "Direction", "Family", "Status"
+    ]
+    assert len(rows) == 4
+    assert {row[4] for row in rows[1:]} == {
+        "PAPER POSITION", "LIVE POSITION", "PAPER OBSERVATION"
+    }
+    observation = next(row for row in rows[1:] if row[4] == "PAPER OBSERVATION")
+    zero_position = next(row for row in rows[1:] if row[2] == "CANBK")
+    assert observation[8] == "UNAVAILABLE"
+    assert zero_position[8] == "0"
+    assert "Actual R" not in rows[0]
+    assert summary["Product"] == "SWING"
+    assert summary["Report View"] == "ALL RECORDS"
+    assert summary["Record Count"] == "3"
+    assert reports_excel_filename(projection, NOW) == "KRONOS_SWING_REPORT_20260825_153000_IST.xlsx"
+
+
+def test_reports_excel_preserves_exact_filters_and_formula_text(tmp_path) -> None:
+    dangerous = "=HYPERLINK(\"https://invalid.example\")"
+    projection = project_historical_reports(
+        (
+            _record(dangerous, ObservationMode.PAPER),
+            _record("CANBK", ObservationMode.PAPER, direction=V1Direction.SHORT),
+        ),
+        _empty_journal(tmp_path),
+        ReportsQuery(
+            view=ReportView.PAPER,
+            from_date=NOW.date(),
+            to_date=NOW.date(),
+            instrument="=HYPERLINK",
+            direction=V1Direction.LONG,
+            status="EXITED",
+        ),
+        governed_current_trading_date=NOW.date(),
+    )
+
+    payload = export_reports_xlsx(projection, generated_at=NOW)
+    rows = _xlsx_rows(payload)
+    summary = dict(_xlsx_rows(payload, "sheet2.xml"))
+    with ZipFile(BytesIO(payload)) as archive:
+        report_xml = archive.read("xl/worksheets/sheet1.xml")
+
+    assert len(rows) == 2 and rows[1][2] == dangerous
+    assert b"<f" not in report_xml
+    assert b't="inlineStr"' in report_xml
+    assert summary["From"] == summary["To"] == NOW.date().isoformat()
+    assert summary["Instrument Filter"] == "=HYPERLINK"
+    assert summary["Direction Filter"] == "LONG"
+    assert summary["Status / Outcome Filter"] == "EXITED"
+
+
+def test_reports_excel_empty_population_is_valid_and_intraday_fails_bounded(
+    tmp_path,
+) -> None:  # type: ignore[no-untyped-def]
+    empty = project_historical_reports(
+        (), _empty_journal(tmp_path), ReportsQuery(),
+        governed_current_trading_date=NOW.date(),
+    )
+    payload = export_reports_xlsx(empty, generated_at=NOW)
+    assert len(_xlsx_rows(payload)) == 1
+    assert dict(_xlsx_rows(payload, "sheet2.xml"))["Record Count"] == "0"
+
+    intraday = project_historical_reports(
+        (_record("CANBK", ObservationMode.PAPER),),
+        _empty_journal(tmp_path),
+        ReportsQuery(product=ReportProduct.INTRADAY),
+        governed_current_trading_date=NOW.date(),
+    )
+    with pytest.raises(ValueError, match="REPORTS_EXCEL_PRODUCT_UNAVAILABLE"):
+        export_reports_xlsx(intraday, generated_at=NOW)
+
+
 def test_reports_unavailable_exit_and_position_pnl_are_not_zero(tmp_path) -> None:
     value = replace(_record("CANBK", ObservationMode.PAPER, pnl=None), exit=None)
     projection = project_historical_reports(
@@ -218,7 +337,8 @@ def test_reports_render_factual_overview_tables_details_and_no_ws(tmp_path) -> N
     assert "UNAVAILABLE — NOT GOVERNED IN SWING V1" in html
     assert "SAIL · HISTORICAL DETAIL" in html and "GOVERNED EVIDENCE" in html
     assert "Completed / exited at" in html and "15:30 IST" in html
-    assert "TRADING JOURNAL" in html and "CSV" in html and "JSON" in html
+    assert "TRADING JOURNAL" in html
+    assert html.index(">EXCEL<") < html.index(">CSV<") < html.index(">JSON<")
     assert "WS ●" not in html and "LTP" not in html
 
 
@@ -282,6 +402,29 @@ def test_reports_browser_route_and_filtered_exports_are_read_only(tmp_path) -> N
             assert response.status == 200
             assert response.getheader("Content-Type", "").startswith(content_type)
             assert marker in body
+
+        connection = HTTPConnection("127.0.0.1", server.server_port, timeout=3)
+        connection.request("GET", "/reports/export.xlsx?product=SWING&view=ALL_RECORDS")
+        response = connection.getresponse()
+        workbook = response.read()
+        content_disposition = response.getheader("Content-Disposition", "")
+        connection.close()
+        assert response.status == 200
+        assert response.getheader("Content-Type") == (
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+        assert content_disposition.startswith(
+            'attachment; filename="KRONOS_SWING_REPORT_'
+        ) and content_disposition.endswith('_IST.xlsx"')
+        assert len(_xlsx_rows(workbook)) == 1
+
+        connection = HTTPConnection("127.0.0.1", server.server_port, timeout=3)
+        connection.request("GET", "/reports/export.xlsx?product=INTRADAY")
+        response = connection.getresponse()
+        body = response.read().decode("utf-8")
+        connection.close()
+        assert response.status == 409
+        assert body == "Intraday Excel reports are not yet operational."
         assert workflow.journal_snapshot().records == ()
     finally:
         server.shutdown(); thread.join(timeout=2); server.server_close()

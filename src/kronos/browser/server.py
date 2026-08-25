@@ -136,7 +136,9 @@ from kronos.browser.reports import (
     ReportView,
     export_reports_csv,
     export_reports_json,
+    export_reports_xlsx,
     project_historical_reports,
+    reports_excel_filename,
 )
 from kronos.browser.dashboard import project_sponsor_dashboard
 from kronos.browser.v1_analysis_status import analysis_status_payload
@@ -1348,7 +1350,12 @@ class _BrowserHandler(BaseHTTPRequestHandler):
                 self.server.native_review.snapshot().active_lifecycle,
             ))
             return
-        if path in {"/reports", "/reports/export.csv", "/reports/export.json"}:
+        if path in {
+            "/reports",
+            "/reports/export.xlsx",
+            "/reports/export.csv",
+            "/reports/export.json",
+        }:
             query_values = parse_qs(
                 urlsplit(self.path).query, keep_blank_values=True
             )
@@ -1423,6 +1430,21 @@ class _BrowserHandler(BaseHTTPRequestHandler):
                 reports_query,
                 governed_current_trading_date=governed_date,
             )
+            if path == "/reports/export.xlsx":
+                if reports_query.product is ReportProduct.INTRADAY:
+                    self._text(
+                        HTTPStatus.CONFLICT,
+                        "Intraday Excel reports are not yet operational.",
+                    )
+                    return
+                generated_at = datetime.now(UTC)
+                self._respond(
+                    HTTPStatus.OK,
+                    export_reports_xlsx(projection, generated_at=generated_at),
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    filename=reports_excel_filename(projection, generated_at),
+                )
+                return
             if path == "/reports/export.csv":
                 self._respond(
                     HTTPStatus.OK, export_reports_csv(projection),
@@ -3597,10 +3619,21 @@ class _BrowserHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", "0")
         self.end_headers()
 
-    def _respond(self, status: HTTPStatus, body: bytes, content_type: str) -> None:
+    def _respond(
+        self,
+        status: HTTPStatus,
+        body: bytes,
+        content_type: str,
+        *,
+        filename: str | None = None,
+    ) -> None:
         self.send_response(status)
         self._security_headers()
         self.send_header("Content-Type", content_type)
+        if filename is not None:
+            if re.fullmatch(r"[A-Za-z0-9_.-]{1,160}", filename) is None:
+                raise ValueError("DOWNLOAD_FILENAME_INVALID")
+            self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
