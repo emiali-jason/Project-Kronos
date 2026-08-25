@@ -421,6 +421,34 @@ Entry Outcome, model trade, order, or fill. IGNORE creates no Sponsor Position;
 objective evidence remains observable wherever the independent objective path
 has every required valid input.
 
+### 4B. Blocked-PAPER Observation Track
+
+[ADR-0016](adr/ADR-0016-SWING-PAPER-OBSERVATION-TRACK-AUTHORITY.md)
+adds a prospective, explicitly started research-evidence path without changing
+DOMAIN-007, the objective branch, or Sponsor Position activation:
+
+```text
+immutable PAPER decision + exact Step-31 observation evidence
+  -> DOMAIN-007 separately determines Sponsor Position activation
+
+activation permitted
+  -> existing PAPER Sponsor Position lifecycle
+  -> one Sponsor-decision Research Ledger row
+
+activation blocked + explicit START PAPER OBSERVATION
+  -> non-position Paper Observation Track
+  -> governed factual market observations
+  -> bounded Track outcome or explicit unavailability
+  -> relationship on the same Sponsor-decision Research Ledger row
+```
+
+The Track retains exact Entry as an observation reference and exact Stop,
+Target, invalidation, warnings, and severity. It never repairs geometry,
+creates a position, activates KR-380/KR-390, infers a fill, calculates P&L or
+actual R, changes LIVE authority, or calls a broker. An activated PAPER
+position and a Paper Track cannot both count as independent observations for
+the same decision.
+
 ### 5. Model Trade Management
 
 KR-390A supplies the narrow confirmed structure reference required for the initial and managed model stop. It uses completed MCX 1H execution bars and does not duplicate KR-275.

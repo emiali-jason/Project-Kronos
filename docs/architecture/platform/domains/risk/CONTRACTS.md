@@ -21,3 +21,10 @@ for objective timing only. Reason, constraint, and availability facts are
 retainable observation evidence, but no result substitutes for a Sponsor
 `LIVE`, `PAPER`, or `IGNORE` choice. Observation-phase contract expansion must
 be separately versioned and must not reinterpret existing V1 records.
+
+ADR-0016 prospectively permits an explicitly started, non-position Paper
+Observation Track for an exact blocked `PAPER` decision. This does not change
+`KRONOS-SWING-DOMAIN-007-RISK-PERMISSION-V1`: Risk remains hard for Sponsor
+Position and objective activation, and the Track receives no permission,
+override, or bypass. The decision-time Risk identity and state are retained as
+research evidence only.

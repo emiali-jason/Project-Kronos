@@ -67,6 +67,19 @@ The existing Version 1 Sponsor Decision, Risk, Sponsor Position, and monitoring
 records retain their historical meaning. STEP31-OBS-01 and SPONSOR-OBS-01 must
 publish compatible prospective policy/contract versions before runtime use.
 
+## ADR-0016 Paper Observation Track Conformance
+
+[ADR-0016](../../adr/ADR-0016-SWING-PAPER-OBSERVATION-TRACK-AUTHORITY.md)
+prospectively supersedes only the prohibition on monitoring an exact blocked
+`PAPER` decision when a separately identified non-position Paper Observation
+Track is explicitly started. DOMAIN-007 remains hard for Sponsor Position and
+objective activation. Activated PAPER uses the existing Sponsor Position
+lifecycle as its primary outcome relationship; no duplicate Track is created.
+
+The Track does not create KR-380 or KR-390 state, Sponsor Position, LIVE
+authority, P&L, actual R, fill, order, or broker evidence. Historical Version 1
+records retain their original meaning and are not backfilled.
+
 ## Prohibitions
 
 No score, threshold, setup policy, geometry, broker authority, Pine decision authority, or automated execution authority is introduced. ADR-0013 authorizes only its exact Native production chain; all other Step-32 expansion remains unauthorized.

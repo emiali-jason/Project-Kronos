@@ -51,3 +51,8 @@ The architecture migration, engineering publication, repository synchronization,
 - [EAIC-002 — Provider → Instrument Submission Contract](../../interfaces/EAIC-002-PROVIDER-TO-INSTRUMENT-SUBMISSION-CONTRACT.md) — Operational Canonical Provider → Instrument Contract under RC-04; runtime submission authority remains absent
 - [ADR-0011 — KR-370 Analytical Promotion and KR-380 Entry Outcome Semantics](../../adr/ADR-0011-KR-370-ANALYTICAL-PROMOTION-AND-KR-380-ENTRY-OUTCOME-SEMANTICS.md) — Approved current analytical-promotion and Entry Outcome ownership
 - [ADR-0012 / SWING-UX-GOV-01 — Remaining Swing UX/OPS Scope and Disposition](../../adr/ADR-0012-SWING-UX-GOV-01-REMAINING-SWING-UX-OPS-SCOPE-AND-DISPOSITION.md) — Approved remaining Swing UX/OPS definitions, dispositions, dependencies, and sequence
+- [ADR-0015 — Swing Sponsor Observation-Phase Authority and Step-31 Evidence Governance](../../adr/ADR-0015-SWING-SPONSOR-OBSERVATION-PHASE-AUTHORITY-AND-STEP-31-EVIDENCE-GOVERNANCE.md) — Approved observation decision and evidence governance
+- [ADR-0016 — Swing Paper Observation Track Authority](../../adr/ADR-0016-SWING-PAPER-OBSERVATION-TRACK-AUTHORITY.md) — Approved prospective non-position research tracking for blocked PAPER decisions; runtime not started
+- [Paper Observation Track V1](../../interfaces/KRONOS-SWING-PAPER-OBSERVATION-TRACK-V1.md)
+- [Sponsor Observation Projection V2](../../interfaces/KRONOS-SWING-SPONSOR-OBSERVATION-PROJECTION-V2.md)
+- [Observation Research Ledger V2](../../interfaces/KRONOS-SWING-OBSERVATION-RESEARCH-LEDGER-V2.md)

@@ -38,3 +38,18 @@ available, explicit unavailability, and objective-model/Sponsor-position
 separation. It must not reinterpret this Version 1 contract, manufacture a
 Sponsor Position for IGNORE, fabricate outcomes, or grant Production authority
 to research findings.
+
+## ADR-0016 Paper Observation Track boundary
+
+[ADR-0016](../../adr/ADR-0016-SWING-PAPER-OBSERVATION-TRACK-AUTHORITY.md)
+authorizes `KRONOS-SWING-OBSERVATION-RESEARCH-LEDGER-V2` as a prospective
+linked research ledger. One immutable Sponsor Observation Decision remains the
+primary row; Paper Track, objective-model, and Sponsor-position evidence are
+relationships on that row and cannot be double counted as separate Sponsor
+decisions.
+
+Paper Track monetary P&L and actual R remain unavailable. JOURNAL-UX-01 may
+present Track status and factual outcome only after PAPER-OBS-01 and
+PAPER-OBS-LEDGER-01 close. Existing Step-33 Version 1 eligibility and history
+remain unchanged, and no historical blocked PAPER record is reinterpreted or
+backfilled.

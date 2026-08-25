@@ -54,6 +54,13 @@ presented and retained as observation evidence, but no DOMAIN-007 state itself
 records `LIVE`, `PAPER`, or `IGNORE`. A Step-31 geometry warning alone is not a
 DOMAIN-007 result and must not be interpreted as the Sponsor's decision.
 
+[ADR-0016](../../../adr/ADR-0016-SWING-PAPER-OBSERVATION-TRACK-AUTHORITY.md)
+does not weaken this boundary. A blocked `PAPER` decision may later have a
+separately identified Paper Observation Track only as non-position research
+evidence. The Track receives no Risk approval, override, or bypass, and cannot
+create a Sponsor Position or objective activation. It preserves the immutable
+decision-time Risk result as evidence.
+
 ## Approved Constitutional References
 
 - CA-013 — Domain Identity

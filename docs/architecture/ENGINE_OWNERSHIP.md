@@ -85,6 +85,14 @@ valid geometry, Risk, context, and monitoring inputs. Recording a Sponsor
 observation-phase choice never bypasses those gates or creates a position,
 Entry Outcome, model trade, order, or fill.
 
+Under [ADR-0016](adr/ADR-0016-SWING-PAPER-OBSERVATION-TRACK-AUTHORITY.md),
+an explicitly started Paper Observation Track is a separate, non-position
+research-evidence owner for an exact blocked `PAPER` decision. It may retain
+the exact Step-31 hypothesis and observe factual market path, but it owns no
+Risk permission, Sponsor Position, KR-380/KR-390 state, fill, P&L, actual R,
+order, or broker authority. An activated PAPER Sponsor Position supplies the
+primary PAPER outcome relationship; no duplicate track is created.
+
 ### KR-390
 
 - KR-390 manages the objective KRONOS model trade.

@@ -76,3 +76,9 @@ Swing V1 Observation Phase V1 authority is governed prospectively by
 [ADR-0015](adr/ADR-0015-SWING-SPONSOR-OBSERVATION-PHASE-AUTHORITY-AND-STEP-31-EVIDENCE-GOVERNANCE.md).
 The ADR authorizes later bounded observation work orders but implements no
 runtime behavior and introduces no broker authority.
+
+The prospective non-position Paper Observation Track is governed by
+[ADR-0016](adr/ADR-0016-SWING-PAPER-OBSERVATION-TRACK-AUTHORITY.md). It permits
+an explicitly started factual research track for blocked PAPER decisions while
+leaving DOMAIN-007, Sponsor Position, KR-380, KR-390, LIVE, and broker authority
+unchanged. PAPER-OBS-01 and PAPER-OBS-LEDGER-01 are not started by publication.
