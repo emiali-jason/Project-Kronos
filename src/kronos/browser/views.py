@@ -1053,30 +1053,66 @@ def _render_native_analysis_details_v3(
     )
 
 
+_TRADE_WINDOW_CSS = r"""
+.trade-window-shell{max-width:1440px;margin:0 auto}.trade-window-back{margin:0 0 12px}
+.trade-window-grid{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(340px,.85fr);gap:14px;align-items:start}
+.trade-window-column{display:grid;gap:12px}.trade-panel{background:linear-gradient(155deg,rgba(15,27,46,.96),rgba(8,16,29,.98));border:1px solid #263a55;border-radius:12px;padding:14px;box-shadow:0 12px 28px rgba(0,0,0,.2)}
+.trade-panel h2{font-size:.72rem;letter-spacing:.13em;color:#8fa6c3;margin:0 0 9px}.trade-panel p{margin:7px 0;line-height:1.45}.trade-decision-head{display:flex;align-items:center;justify-content:space-between;gap:12px}.trade-instrument{font-size:1.22rem;margin:0;color:#f2f6fb}.trade-direction{font-size:.72rem;letter-spacing:.12em}.trade-direction.long{color:#63d59b}.trade-direction.short{color:#ff7e86}.trade-now{display:inline-flex;padding:6px 10px;border-radius:999px;font-weight:800;letter-spacing:.08em;font-size:.76rem;background:#102f27;color:#72e0a8;border:1px solid #277154}.trade-now.sell{background:#351a22;color:#ff969c;border-color:#7d3340}
+.trade-semantics{color:#aebdd0;font-size:.84rem}.trade-math-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px}.trade-math{background:#0a1525;border:1px solid #223650;border-radius:9px;padding:9px;min-width:0}.trade-math span{display:block;color:#7890ad;font-size:.65rem;letter-spacing:.09em;text-transform:uppercase;margin-bottom:4px}.trade-math strong{font-size:.94rem;color:#edf4fc}.trade-math.adverse{border-color:#873643;background:#24131a}.trade-math.adverse strong{color:#ff8d96}
+.trade-status-row{display:grid;grid-template-columns:1fr 1fr;gap:8px}.trade-status{background:#0a1525;border:1px solid #243751;border-radius:9px;padding:10px}.trade-status span{display:block;color:#7890ad;font-size:.65rem;letter-spacing:.09em;margin-bottom:5px}.trade-status strong{font-size:.82rem}.severity-green{border-color:#296a51}.severity-green strong{color:#71dba8}.severity-amber{border-color:#7a6026}.severity-amber strong{color:#f2c66f}.severity-red{border-color:#9a3946;background:#27141a}.severity-red strong{color:#ff7f89}.trade-warning{border:1px solid #9a3946;background:linear-gradient(145deg,#31171e,#1b1117);border-radius:10px;padding:11px;margin-top:9px;color:#ffd5d8}.trade-warning-title{display:block;color:#ff7681;font-weight:900;letter-spacing:.1em;font-size:.76rem;margin-bottom:6px}.trade-warning ul{margin:5px 0 0;padding-left:20px}
+.decision-cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px}.decision-card{display:flex;flex-direction:column;min-width:0;min-height:112px;border:1px solid #2d425f;background:#0b1728;border-radius:10px;padding:10px}.decision-card.paper{border-color:#4d55a9}.decision-card.live{border-color:#277154}.decision-card.ignore{border-color:#806125}.decision-card h3{font-size:.75rem;margin:0 0 5px;letter-spacing:.06em}.decision-card p{font-size:.74rem;color:#9fb0c5;flex:1}.decision-card select{box-sizing:border-box;min-width:0;width:100%}.decision-card .button{width:100%;margin-top:7px}.decision-card.live .button{background:#1e6a4d;border-color:#2b946d}.decision-card.ignore .button{background:#624c1e;border-color:#8e6c2b}.decision-explainer{font-size:.76rem;color:#9fb0c5}.trade-ack{display:flex;gap:7px;align-items:flex-start;font-size:.72rem;color:#ffd2d5;margin:7px 0}.trade-entry{border-color:#3c5578}.trade-entry-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin:9px 0}.trade-entry label{display:block;font-size:.72rem;color:#9fb0c5}.trade-entry input,.trade-entry select{width:100%;box-sizing:border-box;margin-top:4px}.manual-boundary{border-left:3px solid #4c9c78;padding-left:9px;color:#b9d8ca;font-size:.78rem}.trade-context-grid{display:grid;grid-template-columns:1fr 1fr;gap:7px}.trade-context-grid div{background:#0a1525;border-radius:8px;padding:8px}.trade-context-grid span{display:block;color:#7890ad;font-size:.62rem;letter-spacing:.08em}.trade-context-grid strong{font-size:.77rem;word-break:break-word}.trade-next{border-color:#315a80}.trade-next strong{color:#85c8ff;letter-spacing:.04em}.trade-error{border-color:#9a3946;background:#2b151b}.trade-error h2,.trade-error strong{color:#ff8b94}.trade-compact-details summary{font-size:.72rem;letter-spacing:.08em;color:#8fa6c3;cursor:pointer}.trade-lifecycle-line{display:flex;justify-content:space-between;gap:12px;border-top:1px solid #20334b;padding:7px 0;font-size:.76rem}.trade-lifecycle-line:first-of-type{border-top:0}.trade-muted{color:#91a2b7}.trade-actions-recorded{border:1px solid #34506f;background:#0c1a2d;border-radius:9px;padding:10px}.trade-actions-recorded strong{color:#dbe9f8}.trade-panel .why{font-size:.76rem}
+@media(max-width:980px){.trade-window-grid{grid-template-columns:1fr}.trade-math-grid{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:620px){.decision-cards,.trade-entry-grid,.trade-status-row,.trade-context-grid{grid-template-columns:1fr}.trade-math-grid{grid-template-columns:1fr 1fr}.trade-decision-head{align-items:flex-start;flex-direction:column}}
+"""
+
+
 def render_native_trade_window(
     snapshot: BrowserWorkspaceSnapshot,
     projection: NativeTradeWindowProjection,
+    *,
+    workflow_error: tuple[str, str] | None = None,
 ) -> str:
-    """Render persisted Step-31 facts; the Browser performs no geometry."""
+    """Render a compact Sponsor Trade Window from persisted governed facts."""
 
     if type(projection) is not NativeTradeWindowProjection:
         raise TypeError("NATIVE_TRADE_WINDOW_PROJECTION_INVALID")
+    if workflow_error is not None and (
+        type(workflow_error) is not tuple
+        or len(workflow_error) != 2
+        or any(type(item) is not str or not item for item in workflow_error)
+    ):
+        raise TypeError("TRADE_WINDOW_WORKFLOW_ERROR_INVALID")
+
     plan = projection.trade_plan
     observation = projection.step31_observation
     attempt = projection.latest_construction_attempt
-    attempt_failed = (
-        attempt is not None and attempt.result.value == "FAILED"
-    )
+    attempt_failed = attempt is not None and attempt.result.value == "FAILED"
     heading = projection.kr370_classification.replace("_", " ")
     notice = (
         "Analytical promotion is complete. This is not an entry trigger or an order instruction."
         if projection.kr370_classification in {"BUY_NOW", "SELL_NOW"}
         else "Trade construction is not eligible for this analytical state."
     )
-    if observation is not None:
-        def observed_number(value: object, unavailable: str = "UNAVAILABLE") -> str:
-            return unavailable if value is None else "₹" + _number(value)
 
+    warning_labels = {
+        "TARGET_BELOW_ENTRY": "Target is at or below Entry for a LONG thesis.",
+        "TARGET_ABOVE_ENTRY": "Target is at or above Entry for a SHORT thesis.",
+        "NON_POSITIVE_REWARD": "Reward is zero or negative.",
+        "NON_POSITIVE_RISK": "Risk geometry is zero or negative.",
+        "RR_UNFAVOURABLE": "Risk/reward is unfavourable under governed policy.",
+        "TARGET_UNAVAILABLE": "Target evidence is unavailable.",
+        "STOP_UNAVAILABLE": "Stop evidence is unavailable.",
+        "ENTRY_UNAVAILABLE": "Entry evidence is unavailable.",
+        "STRUCTURAL_GEOMETRY_WARNING": "Structural invalidation evidence is incomplete.",
+    }
+    warning_codes = {
+        item.value for item in observation.warnings
+    } if observation is not None else set()
+
+    def money(value: object) -> str:
+        return "UNAVAILABLE" if value is None else "₹" + _number(value)
+
+    if observation is not None:
         ratio = (
             "UNAVAILABLE"
             if observation.risk_reward_state.value == "UNAVAILABLE"
@@ -1084,168 +1120,123 @@ def render_native_trade_window(
             if observation.risk_reward_state.value == "INVALID"
             else "1 : " + _number(observation.risk_reward_ratio)
         )
-        warning_labels = {
-            "TARGET_BELOW_ENTRY": "Target is at or below Entry for a LONG thesis.",
-            "TARGET_ABOVE_ENTRY": "Target is at or above Entry for a SHORT thesis.",
-            "NON_POSITIVE_REWARD": "Reward is zero or negative.",
-            "NON_POSITIVE_RISK": "Risk geometry is zero or negative.",
-            "RR_UNFAVOURABLE": "Risk/reward is unfavourable under governed policy.",
-            "TARGET_UNAVAILABLE": "Target evidence is unavailable.",
-            "STOP_UNAVAILABLE": "Stop evidence is unavailable.",
-            "ENTRY_UNAVAILABLE": "Entry evidence is unavailable.",
-            "STRUCTURAL_GEOMETRY_WARNING": "Structural invalidation evidence is incomplete.",
-        }
-        warning_text = (
-            '<p class="why"><strong>No Step-31 geometry warnings.</strong></p>'
-            if not observation.warnings else
-            '<ul>' + ''.join(
+        math_values = (
+            ("Entry", money(observation.entry), "ENTRY_UNAVAILABLE"),
+            ("Stop", money(observation.stop), "STOP_UNAVAILABLE"),
+            ("Target", money(observation.canonical_target), "TARGET_UNAVAILABLE"),
+            ("Invalidation", money(observation.invalidation_reference), "STRUCTURAL_GEOMETRY_WARNING"),
+            ("Risk", money(observation.risk_per_unit), "NON_POSITIVE_RISK"),
+            ("Reward", money(observation.reward_per_unit), "NON_POSITIVE_REWARD"),
+            ("R:R", ratio, "RR_UNFAVOURABLE"),
+        )
+        mathematics = (
+            '<section class="trade-panel"><h2>TRADE MATHEMATICS</h2>'
+            + ('<p class="trade-muted">TRADE GEOMETRY AVAILABLE</p>' if plan is not None else '')
+            + '<div class="trade-math-grid">'
+            + ''.join(
+                '<div class="trade-math'
+                + (' adverse' if adverse in warning_codes or (
+                    label == "Target" and warning_codes.intersection({
+                        "TARGET_BELOW_ENTRY", "TARGET_ABOVE_ENTRY"
+                    })
+                ) else '')
+                + '"><span>' + escape(label) + '</span><strong>'
+                + escape(value) + '</strong></div>'
+                for label, value, adverse in math_values
+            )
+            + '</div></section>'
+        )
+        severity = observation.severity.value.lower()
+        warnings = (
+            '<p class="trade-muted">No Step-31 geometry warnings.</p>'
+            if not observation.warnings
+            else '<div class="trade-warning"><span class="trade-warning-title">'
+            + escape(
+                "RED · COMPLETE WARNING"
+                if observation.severity.value == "RED"
+                else observation.severity.value + " · STEP-31 WARNING"
+            )
+            + '</span><ul>'
+            + ''.join(
                 '<li>' + escape(warning_labels[item.value]) + '</li>'
                 for item in observation.warnings
-            ) + '</ul>'
-        )
-        geometry = (
-            '<section class="analysis-section"><h2>TRADE MATHEMATICS</h2>'
-            + (
-                '<div class="analysis-decision">TRADE GEOMETRY AVAILABLE</div>'
-                if plan is not None else ''
             )
-            + '<div class="native-trade-plan-grid">'
-            + ''.join(
-                '<div><span>' + escape(label) + '</span><strong>'
-                + escape(value) + '</strong></div>'
-                for label, value in (
-                    ("Entry", observed_number(observation.entry)),
-                    ("Stop", observed_number(observation.stop)),
-                    ("Target", observed_number(observation.canonical_target)),
-                    ("Invalidation", observed_number(observation.invalidation_reference)),
-                    ("Risk", observed_number(observation.risk_per_unit)),
-                    ("Reward", observed_number(observation.reward_per_unit)),
-                    ("R:R", ratio),
-                )
-            ) + '</div></section>'
-            '<section class="analysis-section"><h2>STEP-31 ASSESSMENT</h2>'
-            '<div class="analysis-decision">'
-            + escape(observation.severity.value) + ' · '
-            + escape(observation.geometry_status.value.replace("_", " "))
-            + '</div>' + warning_text + '</section>'
+            + '</ul></div>'
         )
-    elif projection.state is TradeWindowState.TRADE_PLAN_READY and plan is not None:
-        geometry = (
-            '<section class="analysis-section"><h2>TRADE GEOMETRY AVAILABLE</h2>'
-            '<div class="native-trade-plan-grid">'
+        assessment = (
+            '<section class="trade-panel"><h2>STEP-31 ASSESSMENT</h2>'
+            '<div class="trade-status-row"><div class="trade-status severity-'
+            + escape(severity) + '"><span>WARNING SEVERITY</span><strong>'
+            + escape(observation.severity.value) + '</strong></div>'
+            '<div class="trade-status"><span>GEOMETRY STATUS</span><strong>'
+            + escape(observation.geometry_status.value.replace("_", " "))
+            + '</strong></div></div>' + warnings + '</section>'
+        )
+    elif plan is not None:
+        mathematics = (
+            '<section class="trade-panel"><h2>TRADE MATHEMATICS</h2>'
+            '<p class="trade-muted">TRADE GEOMETRY AVAILABLE</p>'
+            '<div class="trade-math-grid">'
             + ''.join(
-                '<div><span>' + escape(label) + '</span><strong>'
-                + escape(value) + '</strong></div>'
+                '<div class="trade-math"><span>' + escape(label)
+                + '</span><strong>' + escape(value) + '</strong></div>'
                 for label, value in (
-                    ("Entry", "₹" + _number(plan.entry)),
-                    ("Stop", "₹" + _number(plan.stop)),
-                    ("Target", "₹" + _number(plan.canonical_target)),
-                    ("Invalidation", "₹" + _number(plan.invalidation_reference)),
+                    ("Entry", money(plan.entry)), ("Stop", money(plan.stop)),
+                    ("Target", money(plan.canonical_target)),
+                    ("Invalidation", money(plan.invalidation_reference)),
                     ("R:R", "1 : " + _number(plan.risk_reward_ratio)),
                 )
-            ) + '</div><p class="why"><strong>Entry condition</strong> · '
-            + escape(plan.entry_condition.replace("_", " "))
-            + '<br><strong>Invalidation condition</strong> · '
-            + escape(plan.invalidation_condition.replace("_", " "))
-            + '</p></section>'
+            ) + '</div></section>'
         )
+        assessment = ''
     else:
-        failure_code = (
-            attempt.safe_failure_code
-            if attempt_failed else projection.reason
-        )
-        failure_reason = (
-            attempt.safe_bounded_reason
-            if attempt_failed else projection.reason.replace("_", " ")
-        )
+        failure_code = attempt.safe_failure_code if attempt_failed else projection.reason
+        failure_reason = attempt.safe_bounded_reason if attempt_failed else projection.reason.replace("_", " ")
         if failure_code == "KITE_READ_ONLY_CAPABILITY_UNAVAILABLE":
             failure_title = "KITE CONNECTION REQUIRED"
             failure_reason = "Connect Kite before constructing the Trade Plan."
         elif failure_code == "GEOMETRY_INVALID":
             failure_title = "GEOMETRY INVALID"
-            failure_reason = (
-                "No valid governed trade geometry is available for this opportunity. "
-                "No PAPER / LIVE action is available."
-            )
+            failure_reason = "No valid governed trade geometry is available for this opportunity."
         else:
             failure_title = failure_code.replace("_", " ")
-        stage = (
-            "" if not attempt_failed else
-            '<p><strong>Stage</strong> · '
-            + escape(attempt.stage.value.replace("_", " ")) + '</p>'
-        )
-        prospective_observation_evaluation = failure_code == "GEOMETRY_INVALID"
-        retry_allowed = prospective_observation_evaluation or failure_code in {
-            "STEP31_EVALUATION_NOT_COMPLETED",
+        retry = failure_code in {
+            "GEOMETRY_INVALID", "STEP31_EVALUATION_NOT_COMPLETED",
             "KITE_READ_ONLY_CAPABILITY_UNAVAILABLE",
             "TRADE_PLAN_CONSTRUCTION_UNAVAILABLE",
         }
-        geometry = (
-            '<section class="analysis-section"><h2>TRADE PLAN NOT CONSTRUCTED</h2>'
-            '<div class="analysis-decision">' + escape(failure_title)
-            + '</div><p>' + escape(failure_reason or "Trade Plan construction is unavailable.")
-            + '</p>' + stage
+        mathematics = (
+            '<section class="trade-panel trade-error"><h2>TRADE PLAN NOT CONSTRUCTED</h2>'
+            '<strong>' + escape(failure_title) + '</strong><p>'
+            + escape(failure_reason or "Trade Plan construction is unavailable.") + '</p>'
+            + (
+                '<p><strong>Stage</strong> · '
+                + escape(attempt.stage.value.replace("_", " ")) + '</p>'
+                if attempt_failed else ''
+            )
             + (
                 '<form method="post" action="/swing/trade-window/construct">'
-                '<input type="hidden" name="run_identity" value="'
-                + escape(projection.native_run_identity) + '">'
-                '<input type="hidden" name="canonical_instrument" value="'
-                + escape(projection.canonical_instrument) + '">'
-                '<input type="hidden" name="native_assessment_sha256" value="'
-                + escape(projection.native_assessment_sha256) + '">'
-                '<button class="button primary" type="submit">'
-                + (
-                    "EVALUATE TRADE MATHEMATICS"
-                    if prospective_observation_evaluation
-                    else "CONSTRUCT TRADE PLAN"
+                + ''.join(
+                    '<input type="hidden" name="' + escape(name) + '" value="'
+                    + escape(value) + '">'
+                    for name, value in (
+                        ("run_identity", projection.native_run_identity),
+                        ("canonical_instrument", projection.canonical_instrument),
+                        ("native_assessment_sha256", projection.native_assessment_sha256),
+                    )
                 )
-                + '</button>'
-                '</form>'
-                if projection.kr370_classification in {"BUY_NOW", "SELL_NOW"}
-                and retry_allowed
-                else ""
-            )
-            + '</section>'
+                + '<button class="button primary" type="submit">'
+                + ("EVALUATE TRADE MATHEMATICS" if failure_code == "GEOMETRY_INVALID" else "CONSTRUCT TRADE PLAN")
+                + '</button></form>'
+                if projection.kr370_classification in {"BUY_NOW", "SELL_NOW"} and retry
+                else ''
+            ) + '</section>'
         )
-    attempt_notice = (
-        ""
-        if not attempt_failed or plan is None
-        else '<section class="analysis-section"><h2>CONSTRUCTION FOLLOW-UP INCOMPLETE</h2>'
-        '<div class="analysis-decision">'
-        + escape((attempt.safe_failure_code or "TRADE_PLAN_CONSTRUCTION_UNAVAILABLE").replace("_", " "))
-        + '</div><p>' + escape(attempt.safe_bounded_reason or "A downstream governed stage is unavailable.")
-        + '</p><p><strong>Stage</strong> · '
-        + escape(attempt.stage.value.replace("_", " ")) + '</p></section>'
-    )
-    risk = (
-        '<section class="analysis-section"><h2>RISK</h2><div class="analysis-decision">'
-        + escape(projection.risk_state.replace("_", " "))
-        + '</div><p>'
-        + escape(
-            "Exact DOMAIN-007 result: " + projection.risk_reason.replace("_", " ")
-            + ". No approval is inferred by this Trade Window."
-            if projection.risk_result_id is not None
-            else "No Risk permission is inferred by this Trade Window."
-        ) + '</p></section>'
-    )
-    timing_label = {
-        "NO_TRIGGER": "WAITING FOR ENTRY TRIGGER",
-        "LONG_ENTRY_TRIGGERED": "ENTRY TRIGGERED — LONG",
-        "SHORT_ENTRY_TRIGGERED": "ENTRY TRIGGERED — SHORT",
-    }.get(
-        projection.kr380_entry_timing_state,
-        projection.kr380_entry_timing_state.replace("_", " "),
-    )
-    timing = (
-        '<section class="analysis-section"><h2>ENTRY TIMING</h2>'
-        '<div class="analysis-decision">'
-        + escape(timing_label)
-        + '</div><p>KR-380 entry timing is separate from KR-370 analytical promotion.</p></section>'
-    )
-    controls = ""
-    if observation is not None and projection.sponsor_observation_controls_available:
-        action = "/swing/trade-window/observation-decision"
-        hidden = ''.join(
+        assessment = ''
+
+    decision_hidden = ''
+    if observation is not None:
+        decision_hidden = ''.join(
             '<input type="hidden" name="' + escape(name) + '" value="'
             + escape(value) + '">'
             for name, value in (
@@ -1255,166 +1246,244 @@ def render_native_trade_window(
                 ("observation_evidence_id", observation.observation_evidence_id),
             )
         )
-        acknowledgement = (
-            '<label class="why"><input type="checkbox" '
-            'name="warning_acknowledged" value="YES" required> '
-            'I acknowledge the Step-31 warning(s) and choose to proceed with '
-            'this Sponsor decision.</label>'
-            if observation.severity.value == "RED" else ""
+    reason_select = (
+        '<label class="why">Optional reason <select name="reason">'
+        '<option value="">NONE</option><option value="AGREE_WITH_KRONOS">AGREE WITH KRONOS</option>'
+        '<option value="POOR_RR">POOR R:R</option><option value="STEP31_WARNING">STEP-31 WARNING</option>'
+        '<option value="MARKET_CONTEXT">MARKET CONTEXT</option><option value="PERSONAL_RISK_LIMIT">PERSONAL RISK LIMIT</option>'
+        '<option value="TESTING_SETUP">TESTING SETUP</option><option value="OTHER">OTHER</option>'
+        '</select></label>'
+    )
+
+    controls = ''
+    if observation is not None and projection.sponsor_observation_controls_available:
+        red_ack = (
+            '<label class="trade-ack"><input type="checkbox" name="warning_acknowledged" value="YES" required>'
+            '<span>I acknowledge the RED Step-31 warning and choose this Sponsor observation decision.</span></label>'
+            if observation.severity.value == "RED" else ''
         )
-        reason = (
-            '<label>Optional reason <select name="reason">'
-            '<option value="">NOT PROVIDED</option>'
-            '<option value="AGREE_WITH_KRONOS">AGREE WITH KRONOS</option>'
-            '<option value="POOR_RR">POOR R:R</option>'
-            '<option value="STEP31_WARNING">STEP-31 WARNING</option>'
-            '<option value="MARKET_CONTEXT">MARKET CONTEXT</option>'
-            '<option value="PERSONAL_RISK_LIMIT">PERSONAL RISK LIMIT</option>'
-            '<option value="TESTING_SETUP">TESTING SETUP</option>'
-            '<option value="OTHER">OTHER</option></select></label>'
-        )
-        activation_ready = (
-            plan is not None and projection.risk_state == "RISK_APPROVED"
-        )
-        live_attestation = (
-            '<label>Actual entry <input name="actual_entry" inputmode="decimal" required></label>'
-            '<label>Lots <input name="lots" inputmode="numeric" required></label>'
-            if activation_ready else ""
-        )
+        cards = []
+        for mode, css, explanation in (
+            ("PAPER", "paper", "I will take this as a paper trade."),
+            ("LIVE", "live", "I will take this as a live trade."),
+            ("IGNORE", "ignore", "I choose to ignore this opportunity."),
+        ):
+            acknowledgement = red_ack if mode != "IGNORE" else ''
+            cards.append(
+                '<form class="decision-card ' + css + '" method="post" action="/swing/trade-window/observation-decision">'
+                + decision_hidden + '<input type="hidden" name="mode" value="' + mode + '">'
+                + '<h3>' + mode + (' TRADE' if mode != "IGNORE" else '') + '</h3><p>'
+                + escape(explanation) + '</p>' + acknowledgement + reason_select
+                + '<button class="button" type="submit">SELECT ' + mode + '</button></form>'
+            )
         risk_warning = (
-            '<p class="why"><strong>YOUR DECISION WILL BE RECORDED FOR OBSERVATION.</strong><br>'
+            '<p class="trade-warning"><strong>YOUR DECISION WILL BE RECORDED FOR OBSERVATION.</strong><br>'
             'POSITION ACTIVATION WILL REMAIN BLOCKED BY DOMAIN-007 RISK.</p>'
             if projection.risk_state in {"RISK_REJECTED", "RISK_UNAVAILABLE"}
-            else ""
+            else ''
         )
         controls = (
-            risk_warning
-            + '<p>These controls record Sponsor judgment. They do not guarantee position activation.</p>'
-            + '<div class="native-trade-actions">'
-            + '<form method="post" action="' + action + '">' + hidden
-            + '<input type="hidden" name="mode" value="PAPER">'
-            + acknowledgement + reason
-            + '<button class="button primary" type="submit">PAPER</button></form>'
-            + '<form method="post" action="' + action + '">' + hidden
-            + '<input type="hidden" name="mode" value="LIVE">'
-            + acknowledgement + reason + live_attestation
-            + '<button class="button" type="submit">LIVE</button></form>'
-            + '<form method="post" action="' + action + '">' + hidden
-            + '<input type="hidden" name="mode" value="IGNORE">' + reason
-            + '<button class="button" type="submit">IGNORE</button></form></div>'
+            '<p class="decision-explainer">These controls record Sponsor judgment. '
+            'They do not guarantee position activation.</p>'
+            + risk_warning + '<div class="decision-cards">' + ''.join(cards) + '</div>'
         )
-    elif observation is None and projection.sponsor_decision_id is None:
-        controls = (
-            '<p class="empty">No LIVE / PAPER / IGNORE observation control is '
-            'available until trustworthy Step-31 evidence exists.</p>'
+    elif observation is None and projection.sponsor_observation_decision_id is None:
+        controls = '<p class="trade-muted">Trustworthy Step-31 evidence is required before a Sponsor observation decision.</p>'
+
+    choice = projection.sponsor_observation_choice
+    pending = projection.activation_disposition == "PENDING_ENTRY_CONFIRMATION"
+    entry_workflow = ''
+    if pending and choice in {"PAPER", "LIVE"} and plan is not None:
+        activation_hidden = ''.join(
+            '<input type="hidden" name="' + escape(name) + '" value="'
+            + escape(value) + '">'
+            for name, value in (
+                ("run_identity", projection.native_run_identity),
+                ("canonical_instrument", projection.canonical_instrument),
+                ("native_assessment_sha256", projection.native_assessment_sha256),
+                ("decision_identity", projection.sponsor_observation_decision_id or ''),
+                ("mode", choice),
+            )
         )
+        entry_facts = (
+            '<div class="trade-entry-grid">'
+            + ''.join(
+                '<div class="trade-math"><span>' + label + '</span><strong>' + escape(value) + '</strong></div>'
+                for label, value in (
+                    ("Direction", projection.direction), ("Planned Entry", money(plan.entry)),
+                    ("Stop", money(plan.stop)), ("Target", money(plan.canonical_target)),
+                    ("Risk", projection.risk_state.replace("_", " ")),
+                    ("Step-31", observation.severity.value if observation is not None else "UNAVAILABLE"),
+                )
+            ) + '</div>'
+        )
+        if choice == "PAPER":
+            fields = (
+                '<div class="trade-status"><span>QUANTITY</span><strong>ONE LOT</strong></div>'
+                '<label class="trade-ack"><input type="checkbox" name="entry_confirmed" value="YES" required>'
+                '<span>Confirm one-lot PAPER activation. No broker fill, actual P&amp;L or actual R is manufactured.</span></label>'
+            )
+        else:
+            fields = (
+                '<p class="manual-boundary"><strong>MANUAL EXECUTION</strong><br>'
+                'KRONOS records Sponsor-attested facts. KRONOS will not place, modify or cancel an order.</p>'
+                '<div class="trade-entry-grid"><label>Sponsor actual entry'
+                '<input name="actual_entry" inputmode="decimal" required></label>'
+                '<label>Lots<input name="lots" inputmode="numeric" required></label></div>'
+                '<label class="trade-ack"><input type="checkbox" name="manual_execution_confirmed" value="YES" required>'
+                '<span>I confirm this LIVE entry was executed manually outside KRONOS broker authority.</span></label>'
+            )
+        entry_workflow = (
+            '<section class="trade-panel trade-entry"><h2>' + choice + ' TRADE ENTRY</h2>'
+            '<form method="post" action="/swing/trade-window/activate">'
+            + activation_hidden + entry_facts + fields
+            + '<button class="button primary" type="submit">CONFIRM ' + choice + ' ENTRY</button>'
+            '</form></section>'
+        )
+    elif choice in {"PAPER", "LIVE"} and projection.activation_disposition.startswith("BLOCKED_"):
+        entry_workflow = (
+            '<section class="trade-panel trade-error"><h2>' + choice + ' TRADE ENTRY</h2>'
+            '<strong>NOT AVAILABLE</strong><p>POSITION ACTIVATION · BLOCKED</p><p>Reason · '
+            + escape(projection.activation_reason.replace("_", " ")) + '</p></section>'
+        )
+
     sponsor = (
-        '<section class="analysis-section"><h2>SPONSOR DECISION</h2>'
-        '<div class="analysis-decision">'
+        '<section class="trade-panel"><h2>SPONSOR DECISION</h2>'
+        '<div class="trade-actions-recorded"><strong>'
         + escape(projection.sponsor_observation_decision_state)
-        + '</div>' + controls
-        + '<h2>POSITION ACTIVATION</h2><div class="analysis-decision">'
+        + '</strong><p class="decision-explainer">Decision is recorded as an OBSERVATION. '
+        'It does not by itself activate a position.</p></div>'
+        + controls + '</section>'
+    )
+    activation = (
+        '<section class="trade-panel"><h2>POSITION ACTIVATION</h2>'
+        '<div class="trade-status-row"><div class="trade-status"><span>DISPOSITION</span><strong>'
         + escape(projection.activation_disposition.replace("_", " "))
-        + '</div><p><strong>Activation reason</strong> · '
-        + escape(projection.activation_reason.replace("_", " "))
-        + '<br><strong>Actual Sponsor branch</strong> · '
+        + '</strong></div><div class="trade-status"><span>SPONSOR POSITION</span><strong>'
         + escape(projection.sponsor_position_state.replace("_", " "))
-        + '</p>'
-        + '<p>This branch is separate from the objective KRONOS model lifecycle.</p>'
-        + '<div class="analysis-decision">'
-        + escape(projection.sponsor_monitoring_state) + '</div><p>'
-        + escape(projection.sponsor_monitoring_reason.replace("_", " "))
+        + '</strong></div></div><p class="why">Reason · '
+        + escape(projection.activation_reason.replace("_", " "))
+        + '</p><div class="trade-status"><span>MONITORING</span><strong>'
+        + escape(projection.sponsor_monitoring_state) + '</strong></div></section>'
+    )
+
+    risk_class = "severity-green" if projection.risk_state == "RISK_APPROVED" else "severity-red" if projection.risk_state in {"RISK_REJECTED", "RISK_UNAVAILABLE"} else "severity-amber"
+    risk = (
+        '<section class="trade-panel"><h2>RISK</h2><div class="trade-status ' + risk_class
+        + '"><span>RISK STATUS</span><strong>' + escape(projection.risk_state.replace("_", " "))
+        + '</strong></div><p class="why"><strong>Reason</strong> · '
+        + escape(projection.risk_reason.replace("_", " "))
+        + '<br><strong>Position activation</strong> · '
+        + escape("PERMITTED" if projection.risk_state == "RISK_APPROVED" else "BLOCKED")
         + '</p></section>'
     )
-    model = (
-        '<section class="analysis-section"><h2>MODEL LIFECYCLE</h2>'
-        '<div class="analysis-decision">'
-        + escape(projection.model_lifecycle_state.replace("_", " "))
-        + '</div><p><strong>Monitoring</strong> · '
-        + escape(projection.model_monitoring_state.replace("_", " "))
-        + (
-            '<br><strong>Model close reason</strong> · '
-            + escape(projection.model_close_reason.replace("_", " "))
-            if projection.model_close_reason is not None else ""
-        )
-        + '<br>Objective model state does not imply that the Sponsor owns a position.</p></section>'
+    timing_label = {
+        "NO_TRIGGER": "WAITING FOR ENTRY TRIGGER",
+        "LONG_ENTRY_TRIGGERED": "ENTRY TRIGGERED — LONG",
+        "SHORT_ENTRY_TRIGGERED": "ENTRY TRIGGERED — SHORT",
+    }.get(projection.kr380_entry_timing_state, projection.kr380_entry_timing_state.replace("_", " "))
+    timing_model = (
+        '<section class="trade-panel"><h2>ENTRY TIMING &amp; MODEL</h2>'
+        '<div class="trade-lifecycle-line"><span>KR-380 ENTRY TIMING</span><strong>'
+        + escape(timing_label) + '</strong></div>'
+        '<div class="trade-lifecycle-line"><span>OBJECTIVE MODEL</span><strong>'
+        + escape(projection.model_lifecycle_state.replace("_", " ")) + '</strong></div>'
+        '<p class="why">Objective model state is separate from Sponsor judgment and position ownership.</p></section>'
     )
-    closure = (
-        '<section class="analysis-section"><h2>SPONSOR POSITION CLOSURE</h2>'
-        '<div class="analysis-decision">' + escape(projection.closure_state)
-        + '</div><p>'
-        + escape(
-            "Reason · " + projection.closure_reason.replace("_", " ")
-            if projection.closure_reason is not None
-            else "No governed closure is available."
-        ) + '</p></section>'
+
+    if projection.sponsor_observation_decision_id is None:
+        next_step = "SPONSOR OBSERVATION DECISION REQUIRED."
+    elif pending:
+        next_step = "CONFIRM " + (choice or "SPONSOR") + " TRADE ENTRY."
+    elif projection.activation_disposition.startswith("BLOCKED_"):
+        next_step = (choice or "SPONSOR") + " DECISION RECORDED · ACTIVATION BLOCKED."
+    elif choice == "IGNORE":
+        next_step = "OPPORTUNITY IGNORED · OBJECTIVE OBSERVATION CONTINUES."
+    elif projection.activation_disposition == "ACTIVATED":
+        next_step = "MONITOR ACTIVE POSITION."
+    else:
+        next_step = "REVIEW CURRENT GOVERNED STATE."
+    updated = (
+        "UNAVAILABLE"
+        if projection.last_updated_at is None
+        else projection.last_updated_at.astimezone(_KOLKATA).strftime("%d %b %Y · %H:%M IST")
     )
+    context = (
+        '<section class="trade-panel"><h2>KEY CONTEXT</h2><div class="trade-context-grid">'
+        + ''.join(
+            '<div><span>' + escape(label) + '</span><strong>' + escape(value) + '</strong></div>'
+            for label, value in (
+                ("Run", projection.native_run_identity[-12:]),
+                ("Review", "CURRENT NATIVE REVIEW"),
+                ("KR-370", projection.kr370_classification),
+                ("Instrument", projection.canonical_instrument),
+                ("Direction", projection.direction),
+                ("Last Updated", updated),
+            )
+        ) + '</div></section>'
+    )
+    next_panel = '<section class="trade-panel trade-next"><h2>NEXT STEP</h2><strong>' + escape(next_step) + '</strong></section>'
     journal = (
-        '<section class="analysis-section"><h2>JOURNAL</h2>'
+        '<section class="trade-panel"><h2>JOURNAL</h2>'
         + (
-            '<a class="button primary" href="/journal?record='
-            + escape(projection.journal_record_id)
-            + '">OPEN JOURNAL</a><p>Exact Step-33 record available.</p>'
+            '<a class="button primary" href="/journal?record=' + escape(projection.journal_record_id)
+            + '">OPEN JOURNAL</a>'
             if projection.journal_record_id is not None
-            else '<div class="analysis-decision">NOT AVAILABLE</div>'
-                 '<p>No journal record is manufactured before its governed event.</p>'
+            else '<p class="trade-muted">No journal record is manufactured before its governed event.</p>'
         ) + '</section>'
     )
     provenance = (
-        '<details class="analysis-section"><summary>GOVERNED PROVENANCE</summary>'
+        '<details class="trade-panel trade-compact-details"><summary>GOVERNED PROVENANCE</summary>'
         '<div class="analysis-facts">' + _analysis_fact_rows([
             ("Native run", projection.native_run_identity),
             ("Native assessment", projection.native_assessment_sha256),
             ("KR-370 state", projection.kr370_classification),
-            ("KR-370 handoff", (
-                projection.handoff.handoff_identity
-                if projection.handoff is not None else "NOT PERSISTED"
-            )),
             ("Step-31 plan", plan.trade_plan_id if plan is not None else "NOT AVAILABLE"),
-            ("Step-31 observation", (
-                observation.observation_evidence_id
-                if observation is not None else "NOT AVAILABLE"
-            )),
+            ("Step-31 observation", observation.observation_evidence_id if observation is not None else "NOT AVAILABLE"),
             ("Risk result", projection.risk_result_id or "NOT AVAILABLE"),
-            ("Sponsor decision", projection.sponsor_decision_id or "NOT AVAILABLE"),
             ("Observation decision", projection.sponsor_observation_decision_id or "NOT AVAILABLE"),
             ("Decision-time snapshot", projection.sponsor_observation_snapshot_id or "NOT AVAILABLE"),
             ("Activation disposition", projection.activation_disposition),
-            ("KR-380 Entry Outcome", projection.kr380_entry_outcome_id or "NOT AVAILABLE"),
-            ("KR-390 model trade", projection.model_trade_id or "NOT AVAILABLE"),
             ("Sponsor position", projection.sponsor_position_id or "NOT AVAILABLE"),
-            ("Sponsor lifecycle", projection.lifecycle_id or "NOT AVAILABLE"),
-            ("Closure", projection.closure_id or "NOT AVAILABLE"),
             ("Step-33 journal", projection.journal_record_id or "NOT AVAILABLE"),
-            ("Continuity binding", (
-                "EXACT CURRENT"
-                if not projection.continuity_warnings
-                else "FAIL CLOSED · " + " · ".join(projection.continuity_warnings)
-            )),
-            ("Step-31 policy", (
-                f"{observation.policy_identity} {observation.policy_version}"
-                if observation is not None else
-                f"{plan.trade_construction_policy_identity} {plan.trade_construction_policy_version}"
-                if plan is not None else "NOT APPLIED"
-            )),
+            ("Continuity binding", "EXACT CURRENT" if not projection.continuity_warnings else "FAIL CLOSED · " + " · ".join(projection.continuity_warnings)),
         ]) + '</div></details>'
     )
+    error = (
+        '' if workflow_error is None else
+        '<section class="trade-panel trade-error"><h2>' + escape(workflow_error[0])
+        + '</h2><p>' + escape(workflow_error[1]) + '</p></section>'
+    )
+    attempt_notice = (
+        '' if not attempt_failed or plan is None else
+        '<section class="trade-panel trade-error"><h2>CONSTRUCTION FOLLOW-UP INCOMPLETE</h2><strong>'
+        + escape((attempt.safe_failure_code or "TRADE_PLAN_CONSTRUCTION_UNAVAILABLE").replace("_", " "))
+        + '</strong><p>' + escape(attempt.safe_bounded_reason or "A downstream governed stage is unavailable.")
+        + '</p></section>'
+    )
+    decision_header = (
+        '<section class="trade-panel"><div class="trade-decision-head"><div><h1 class="trade-instrument">'
+        + escape(projection.canonical_instrument) + '</h1><span class="trade-direction '
+        + escape(projection.direction.lower()) + '">' + escape(projection.direction)
+        + '</span></div><span class="trade-now'
+        + (' sell' if projection.kr370_classification == "SELL_NOW" else '') + '">'
+        + escape(heading) + '</span></div><p class="trade-semantics">' + escape(notice) + '</p></section>'
+    )
     body = (
-        '<p><a class="button" href="/swing/opportunities">← Back to Opportunities</a></p>'
-        '<div class="analysis-details"><section class="analysis-section">'
-        '<h2>' + escape(projection.canonical_instrument + " · " + projection.direction)
-        + '</h2><div class="analysis-decision kr370-state kr370-state-now">'
-        + escape(heading) + '</div><p>' + escape(notice) + '</p></section>'
-        + attempt_notice + geometry + risk + timing + model + sponsor + closure + journal
-        + provenance + '</div>'
+        '<div class="trade-window-shell"><p class="trade-window-back"><a class="button" href="/swing/opportunities">← Back to Opportunities</a></p>'
+        + error + '<div class="trade-window-grid"><div class="trade-window-column">'
+        + decision_header + attempt_notice + mathematics + assessment + risk + timing_model
+        + '</div><aside class="trade-window-column">' + sponsor + entry_workflow
+        + activation + next_panel + context + journal + provenance + '</aside></div></div>'
     )
     return _page(
         title=f"{projection.canonical_instrument} Trade Window",
-        subtitle="Exact persisted Step-31 geometry and downstream authority state.",
+        subtitle="Sponsor decision, governed trade evidence and separate entry activation.",
         snapshot=snapshot,
         active_nav="Swing",
         active_tab="Opportunities",
         body=body,
+        extra_styles=_TRADE_WINDOW_CSS,
     )
 def _v3_timeframe_reconciliation(machine, visual) -> str:  # type: ignore[no-untyped-def]
     if machine.availability == "AVAILABLE":
@@ -2131,8 +2200,8 @@ def _observation_research_view(
         ("Live", sum(item.record.choice.value == "LIVE" for item in observations)),
         ("Paper", sum(item.record.choice.value == "PAPER" for item in observations)),
         ("Ignore", sum(item.record.choice.value == "IGNORE" for item in observations)),
-        ("Activated", sum(item.record.activation_disposition.value == "ACTIVATED" for item in observations)),
-        ("Blocked", sum(item.record.activation_disposition.value.startswith("BLOCKED_") for item in observations)),
+        ("Activated", sum(item.source.activation.disposition.value == "ACTIVATED" for item in observations)),
+        ("Blocked", sum(item.source.activation.disposition.value.startswith("BLOCKED_") for item in observations)),
     )
     count_view = '<div class="status-strip">' + "".join(
         '<div class="status-item"><span>' + escape(label) + '</span><strong>'

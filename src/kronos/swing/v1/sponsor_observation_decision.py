@@ -56,6 +56,7 @@ class SponsorObservationReason(StrEnum):
 
 
 class SponsorActivationDisposition(StrEnum):
+    PENDING_ENTRY_CONFIRMATION = "PENDING_ENTRY_CONFIRMATION"
     ACTIVATED = "ACTIVATED"
     BLOCKED_RISK_REJECTED = "BLOCKED_RISK_REJECTED"
     BLOCKED_RISK_UNAVAILABLE = "BLOCKED_RISK_UNAVAILABLE"
@@ -471,7 +472,70 @@ class LocalSponsorObservationDecisionStore:
             _atomic(path, payload)
         return result
 
+    def transition_activation(
+        self, result: SponsorObservationDecisionResult
+    ) -> SponsorObservationDecisionResult:
+        """Append one terminal activation outcome without rewriting Sponsor intent."""
+
+        if type(result) is not SponsorObservationDecisionResult:
+            raise TypeError("SPONSOR_OBSERVATION_RESULT_INVALID")
+        decision_path = self._path(
+            result.snapshot.native_run_identity,
+            result.snapshot.canonical_instrument,
+        )
+        activation_path = self._activation_path(
+            result.snapshot.native_run_identity,
+            result.snapshot.canonical_instrument,
+        )
+        with self._lock:
+            if not decision_path.exists():
+                raise ValueError("SPONSOR_OBSERVATION_DECISION_NOT_FOUND")
+            current = self.load(decision_path)
+            if current == result:
+                return current
+            if (
+                current.snapshot != result.snapshot
+                or current.decision != result.decision
+                or current.activation.disposition
+                is not SponsorActivationDisposition.PENDING_ENTRY_CONFIRMATION
+                or result.activation.disposition
+                is SponsorActivationDisposition.PENDING_ENTRY_CONFIRMATION
+            ):
+                raise ValueError("SPONSOR_ACTIVATION_TRANSITION_INVALID")
+            payload = {
+                "schema": SPONSOR_OBSERVATION_STORE_SCHEMA,
+                "activation": _primitive(result.activation),
+            }
+            _atomic(activation_path, payload)
+        return result
+
     def load(self, path: Path) -> SponsorObservationDecisionResult:
+        restored = self.load_initial(path)
+        activation_path = path.with_name("activation.json")
+        if not activation_path.exists():
+            return restored
+        try:
+            transition = json.loads(activation_path.read_text(encoding="utf-8"))
+            if transition.get("schema") != SPONSOR_OBSERVATION_STORE_SCHEMA:
+                raise ValueError
+            activation = _activation_from_dict(transition["activation"])
+            if (
+                restored.activation.disposition
+                is not SponsorActivationDisposition.PENDING_ENTRY_CONFIRMATION
+                or activation.disposition
+                is SponsorActivationDisposition.PENDING_ENTRY_CONFIRMATION
+                or activation.decision_identity != restored.decision.decision_identity
+            ):
+                raise ValueError
+            return SponsorObservationDecisionResult(
+                restored.snapshot, restored.decision, activation
+            )
+        except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError) as error:
+            raise ValueError("SPONSOR_OBSERVATION_STORED_RECORD_INVALID") from error
+
+    def load_initial(self, path: Path) -> SponsorObservationDecisionResult:
+        """Restore the immutable decision-time result before any activation transition."""
+
         try:
             payload = json.loads(path.read_text(encoding="utf-8"))
             if payload.get("schema") != SPONSOR_OBSERVATION_STORE_SCHEMA:
@@ -487,6 +551,12 @@ class LocalSponsorObservationDecisionStore:
 
     def load_all(self) -> tuple[SponsorObservationDecisionResult, ...]:
         return tuple(self.load(path) for path in sorted(self.root.glob("*/*/decision.json")))
+
+    def load_all_initial(self) -> tuple[SponsorObservationDecisionResult, ...]:
+        return tuple(
+            self.load_initial(path)
+            for path in sorted(self.root.glob("*/*/decision.json"))
+        )
 
     def for_current_observations(
         self, observations: tuple[Step31ObservationEvidence, ...]
@@ -524,6 +594,53 @@ class LocalSponsorObservationDecisionStore:
 
     def _path(self, run_id: str, instrument: str) -> Path:
         return self.root / run_id / instrument / "decision.json"
+
+    def _activation_path(self, run_id: str, instrument: str) -> Path:
+        return self.root / run_id / instrument / "activation.json"
+
+
+def transition_sponsor_observation_activation(
+    result: SponsorObservationDecisionResult,
+    disposition: SponsorActivationDisposition,
+    *,
+    existing_sponsor_decision_identity: str | None,
+    sponsor_position_identity: str | None,
+    recorded_at: datetime,
+) -> SponsorObservationDecisionResult:
+    """Create the one terminal factual activation outcome for recorded intent."""
+
+    if (
+        type(result) is not SponsorObservationDecisionResult
+        or result.activation.disposition
+        is not SponsorActivationDisposition.PENDING_ENTRY_CONFIRMATION
+        or disposition is SponsorActivationDisposition.PENDING_ENTRY_CONFIRMATION
+        or not _aware(recorded_at)
+    ):
+        raise ValueError("SPONSOR_ACTIVATION_TRANSITION_INVALID")
+    disposition_identity = _id(
+        "SPONSOR-ACTIVATION-DISPOSITION",
+        result.decision.decision_identity,
+        disposition.value,
+    )
+    values = dict(
+        disposition_identity=disposition_identity,
+        decision_identity=result.decision.decision_identity,
+        disposition=disposition,
+        reason=disposition.value,
+        existing_sponsor_decision_identity=existing_sponsor_decision_identity,
+        sponsor_position_identity=sponsor_position_identity,
+        recorded_at=recorded_at,
+        contract_identity=SPONSOR_ACTIVATION_DISPOSITION_CONTRACT_ID,
+        contract_version="1",
+        authority="FACTUAL_ACTIVATION_OUTCOME_ONLY_NO_ACTIVATION_AUTHORITY",
+        integrity_sha256="",
+    )
+    activation = SponsorActivationDispositionV1(**(
+        values | {"integrity_sha256": _values_digest(values)}
+    ))
+    return SponsorObservationDecisionResult(
+        result.snapshot, result.decision, activation
+    )
 
 
 def journal_observation_handoff(result: SponsorObservationDecisionResult) -> JournalObservationHandoffV1:
@@ -651,4 +768,5 @@ __all__ = [
     "SponsorObservationReason",
     "journal_observation_handoff",
     "record_sponsor_observation_decision",
+    "transition_sponsor_observation_activation",
 ]

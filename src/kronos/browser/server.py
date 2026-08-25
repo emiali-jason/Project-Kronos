@@ -1461,6 +1461,9 @@ class _BrowserHandler(BaseHTTPRequestHandler):
         if path == "/swing/trade-window/observation-decision":
             self._record_sponsor_observation_decision()
             return
+        if path == "/swing/trade-window/activate":
+            self._activate_sponsor_observation_entry()
+            return
         if path == "/notifications/watch/deactivate":
             self._manage_progression_watch("deactivate")
             return
@@ -1964,7 +1967,7 @@ class _BrowserHandler(BaseHTTPRequestHandler):
         )
 
     def _record_sponsor_observation_decision(self) -> None:
-        """Record explicit observation intent; activate only through V0 gates."""
+        """Record explicit observation intent without activating a position."""
 
         try:
             content_length = int(self.headers.get("Content-Length", ""))
@@ -1982,7 +1985,7 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             allowed = {
                 "run_identity", "canonical_instrument", "native_assessment_sha256",
                 "observation_evidence_id", "mode", "warning_acknowledged",
-                "reason", "actual_entry", "lots",
+                "reason",
             }
             if not set(fields).issubset(allowed):
                 raise ValueError("SPONSOR_OBSERVATION_REQUEST_INVALID")
@@ -2029,44 +2032,7 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             elif projection.trade_plan is None:
                 disposition = SponsorActivationDisposition.BLOCKED_MISSING_VALID_PLAN
             else:
-                actual_entry = None
-                lots = None
-                if choice is SponsorTradeChoice.LIVE:
-                    actual_text = fields.get("actual_entry", [""])[0]
-                    lots_text = fields.get("lots", [""])[0]
-                    if not re.fullmatch(r"[1-9][0-9]*", lots_text):
-                        raise ValueError("LIVE_POSITIVE_INTEGER_LOTS_REQUIRED")
-                    actual_entry = Decimal(actual_text)
-                    lots = int(lots_text)
-                result = self.server.native_review.initiate_sponsor_decision(
-                    projection.trade_plan.trade_plan_id,
-                    choice,
-                    actual_live_entry=actual_entry,
-                    live_lots=lots,
-                )
-                if result.decision is None or result.position is None:
-                    raise ValueError(result.reason)
-                existing_decision_id = result.decision.decision_id
-                position_id = result.position.position_id
-                disposition = SponsorActivationDisposition.ACTIVATED
-                capability, governed_instrument, _ = self.server._operability_context(
-                    result.position.canonical_instrument
-                )
-                monitoring_was_active = (
-                    self.server.native_review.lifecycle_monitoring_active(position_id)
-                )
-                if not monitoring_was_active:
-                    self.server.native_review.attach_lifecycle_monitoring(
-                        position_id, capability, governed_instrument
-                    )
-                    lifecycle = self.server.native_review.snapshot().active_lifecycle
-                    active = next(
-                        item for item in lifecycle.active
-                        if item.position_id == position_id
-                    )
-                    self.server.ux10_notifications.observe_active_trade_monitoring_activation(
-                        active
-                    )
+                disposition = SponsorActivationDisposition.PENDING_ENTRY_CONFIRMATION
 
             context_record = self.server.mcx_supporting_context.context_for(
                 instrument,
@@ -2096,14 +2062,160 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             )
             self.server._synchronize_trade_window()
         except (UnicodeDecodeError, ValueError, InvalidOperation):
-            self._text(
-                HTTPStatus.CONFLICT,
-                "Sponsor observation decision is not available for this current evidence.",
+            self._trade_window_conflict(
+                locals().get("run_identity"),
+                locals().get("instrument"),
+                "SPONSOR DECISION NOT AVAILABLE",
+                "The current opportunity evidence is stale, incomplete, or already final. Refresh Analysis before trying again.",
             )
             return
         self._redirect(
             "/swing/trade-window/" + run_identity + "/" + quote(instrument, safe="")
         )
+
+    def _activate_sponsor_observation_entry(self) -> None:
+        """Confirm PAPER/LIVE entry after a separately persisted Sponsor choice."""
+
+        try:
+            content_length = int(self.headers.get("Content-Length", ""))
+            if (
+                self.headers.get("Content-Type", "").split(";", 1)[0].lower()
+                != "application/x-www-form-urlencoded"
+                or not 0 < content_length <= 4096
+            ):
+                raise ValueError("SPONSOR_ENTRY_REQUEST_INVALID")
+            fields = parse_qs(
+                self.rfile.read(content_length).decode("utf-8"),
+                keep_blank_values=True,
+                strict_parsing=True,
+            )
+            allowed = {
+                "run_identity", "canonical_instrument", "native_assessment_sha256",
+                "decision_identity", "mode", "entry_confirmed",
+                "manual_execution_confirmed", "actual_entry", "lots",
+            }
+            required = {
+                "run_identity", "canonical_instrument", "native_assessment_sha256",
+                "decision_identity", "mode",
+            }
+            if (
+                not set(fields).issubset(allowed)
+                or not required.issubset(fields)
+                or any(len(values) != 1 for values in fields.values())
+            ):
+                raise ValueError("SPONSOR_ENTRY_REQUEST_INVALID")
+            run_identity = fields["run_identity"][0]
+            instrument = fields["canonical_instrument"][0]
+            assessment = fields["native_assessment_sha256"][0]
+            decision_identity = fields["decision_identity"][0]
+            choice = SponsorTradeChoice(fields["mode"][0])
+            projection = self.server.trade_window.project(run_identity, instrument)
+            _, current = self.server.application.opportunities_projection()
+            if (
+                projection is None
+                or projection.trade_plan is None
+                or current is None
+                or current.run_identity != run_identity
+                or projection.native_assessment_sha256 != assessment
+                or projection.sponsor_observation_decision_id != decision_identity
+                or projection.sponsor_observation_choice != choice.value
+                or projection.activation_disposition
+                != SponsorActivationDisposition.PENDING_ENTRY_CONFIRMATION.value
+                or projection.risk_state != "RISK_APPROVED"
+            ):
+                raise ValueError("SPONSOR_ENTRY_CURRENT_BINDING_INVALID")
+            actual_entry = None
+            lots = None
+            if choice is SponsorTradeChoice.PAPER:
+                if fields.get("entry_confirmed", [""])[0] != "YES":
+                    raise ValueError("PAPER_ENTRY_CONFIRMATION_REQUIRED")
+                if set(fields).difference(required | {"entry_confirmed"}):
+                    raise ValueError("SPONSOR_ENTRY_REQUEST_INVALID")
+            elif choice is SponsorTradeChoice.LIVE:
+                if fields.get("manual_execution_confirmed", [""])[0] != "YES":
+                    raise ValueError("LIVE_MANUAL_EXECUTION_CONFIRMATION_REQUIRED")
+                actual_entry = Decimal(fields.get("actual_entry", [""])[0])
+                if not actual_entry.is_finite() or actual_entry <= 0:
+                    raise ValueError("LIVE_POSITIVE_ENTRY_REQUIRED")
+                lots_text = fields.get("lots", [""])[0]
+                if not re.fullmatch(r"[1-9][0-9]*", lots_text):
+                    raise ValueError("LIVE_POSITIVE_INTEGER_LOTS_REQUIRED")
+                lots = int(lots_text)
+                if set(fields).difference(
+                    required | {"manual_execution_confirmed", "actual_entry", "lots"}
+                ):
+                    raise ValueError("SPONSOR_ENTRY_REQUEST_INVALID")
+            else:
+                raise ValueError("SPONSOR_ENTRY_CHOICE_INVALID")
+
+            result = self.server.native_review.initiate_sponsor_decision(
+                projection.trade_plan.trade_plan_id,
+                choice,
+                actual_live_entry=actual_entry,
+                live_lots=lots,
+            )
+            if result.decision is None or result.position is None:
+                raise ValueError(result.reason)
+            self.server.trade_window.finalize_sponsor_observation_activation(
+                run_identity,
+                instrument,
+                decision_identity,
+                choice,
+                disposition=SponsorActivationDisposition.ACTIVATED,
+                existing_sponsor_decision_identity=result.decision.decision_id,
+                sponsor_position_identity=result.position.position_id,
+                recorded_at=datetime.now(UTC),
+            )
+            capability, governed_instrument, _ = self.server._operability_context(
+                result.position.canonical_instrument
+            )
+            if not self.server.native_review.lifecycle_monitoring_active(
+                result.position.position_id
+            ):
+                self.server.native_review.attach_lifecycle_monitoring(
+                    result.position.position_id, capability, governed_instrument
+                )
+                lifecycle = self.server.native_review.snapshot().active_lifecycle
+                active = next(
+                    item for item in lifecycle.active
+                    if item.position_id == result.position.position_id
+                )
+                self.server.ux10_notifications.observe_active_trade_monitoring_activation(
+                    active
+                )
+            self.server._synchronize_trade_window()
+        except (UnicodeDecodeError, ValueError, InvalidOperation):
+            self._trade_window_conflict(
+                locals().get("run_identity"),
+                locals().get("instrument"),
+                "ENTRY NOT ACTIVATED",
+                "Entry confirmation is invalid, stale, or blocked. The recorded Sponsor observation decision has been preserved.",
+            )
+            return
+        self._redirect(
+            "/swing/trade-window/" + run_identity + "/" + quote(instrument, safe="")
+        )
+
+    def _trade_window_conflict(
+        self,
+        run_identity: object,
+        instrument: object,
+        title: str,
+        reason: str,
+    ) -> None:
+        projection = (
+            self.server.trade_window.project(run_identity, instrument)
+            if type(run_identity) is str and type(instrument) is str
+            else None
+        )
+        if projection is None:
+            self._redirect("/swing/opportunities")
+            return
+        self._html(render_native_trade_window(
+            self.server.application.snapshot(),
+            projection,
+            workflow_error=(title, reason),
+        ))
 
     def _construct_native_trade_plan(self) -> None:
         content_type = self.headers.get("Content-Type", "").split(";", 1)[0]

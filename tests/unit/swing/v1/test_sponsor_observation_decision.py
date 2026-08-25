@@ -13,6 +13,7 @@ from kronos.swing.v1.sponsor_observation_decision import (
     SponsorObservationReason,
     journal_observation_handoff,
     record_sponsor_observation_decision,
+    transition_sponsor_observation_activation,
 )
 from kronos.swing.v1.step31_observation import (
     Step31WarningSeverity,
@@ -261,3 +262,33 @@ def test_store_is_immutable_restart_safe_queryable_and_journal_ready(tmp_path) -
     )
     with pytest.raises(ValueError, match="ALREADY_FINAL"):
         store.retain(changed)
+
+
+def test_pending_entry_transition_preserves_decision_and_restores_terminal_activation(
+    tmp_path,
+) -> None:
+    completed, observation = _green(tmp_path)
+    pending = _record(
+        completed,
+        observation,
+        SponsorTradeChoice.PAPER,
+        SponsorActivationDisposition.PENDING_ENTRY_CONFIRMATION,
+        risk_state="RISK_APPROVED",
+        risk_identity="RISK-PENDING",
+    )
+    store = LocalSponsorObservationDecisionStore(tmp_path / "decisions")
+    assert store.retain(pending) == pending
+
+    activated = transition_sponsor_observation_activation(
+        pending,
+        SponsorActivationDisposition.ACTIVATED,
+        existing_sponsor_decision_identity="SPONSOR-DECISION-PAPER",
+        sponsor_position_identity="SPONSOR-POSITION-PAPER",
+        recorded_at=NOW,
+    )
+    assert store.transition_activation(activated) == activated
+    assert store.transition_activation(activated) == activated
+    assert store.load_all() == (activated,)
+    assert store.load_all_initial() == (pending,)
+    assert activated.snapshot == pending.snapshot
+    assert activated.decision == pending.decision

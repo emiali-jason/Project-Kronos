@@ -369,7 +369,13 @@ class ObservationResearchLedgerService:
                     links: tuple[ObservationResearchLinkV1, ...]) -> ObservationResearchProjectionV1:
         matches = tuple(item for item in self.decisions.load_all()
                         if item.decision.decision_identity == record.decision_identity)
-        if len(matches) != 1 or not _record_binding(record, matches[0]):
+        initial = tuple(item for item in self.decisions.load_all_initial()
+                        if item.decision.decision_identity == record.decision_identity)
+        if (
+            len(matches) != 1
+            or len(initial) != 1
+            or not _record_binding(record, matches[0], initial[0])
+        ):
             raise ValueError("OBSERVATION_RESEARCH_SOURCE_BINDING_INVALID")
         bound = tuple(sorted(
             (item for item in links if item.record_identity == record.record_identity),
@@ -378,19 +384,35 @@ class ObservationResearchLedgerService:
         return ObservationResearchProjectionV1(record, matches[0], bound)
 
 
-def _record_binding(record: ObservationResearchRecordV1,
-                    source: SponsorObservationDecisionResult) -> bool:
+def _record_binding(
+    record: ObservationResearchRecordV1,
+    source: SponsorObservationDecisionResult,
+    initial: SponsorObservationDecisionResult,
+) -> bool:
     return (
-        record.snapshot_identity == source.snapshot.snapshot_identity
-        and record.snapshot_sha256 == source.snapshot.integrity_sha256
-        and record.decision_sha256 == source.decision.integrity_sha256
-        and record.activation_identity == source.activation.disposition_identity
-        and record.activation_sha256 == source.activation.integrity_sha256
+        source.snapshot == initial.snapshot
+        and source.decision == initial.decision
+        and record.snapshot_identity == initial.snapshot.snapshot_identity
+        and record.snapshot_sha256 == initial.snapshot.integrity_sha256
+        and record.decision_sha256 == initial.decision.integrity_sha256
+        and record.activation_identity == initial.activation.disposition_identity
+        and record.activation_sha256 == initial.activation.integrity_sha256
         and record.native_run_identity == source.snapshot.native_run_identity
         and record.canonical_instrument == source.snapshot.canonical_instrument
         and record.native_assessment_sha256 == source.snapshot.native_assessment_sha256
         and record.choice is source.decision.choice
-        and record.activation_disposition is source.activation.disposition
+        and record.activation_disposition is initial.activation.disposition
+        and (
+            source.activation == initial.activation
+            or (
+                initial.activation.disposition
+                is SponsorActivationDisposition.PENDING_ENTRY_CONFIRMATION
+                and source.activation.disposition
+                is not SponsorActivationDisposition.PENDING_ENTRY_CONFIRMATION
+                and source.activation.decision_identity
+                == initial.activation.decision_identity
+            )
+        )
         and record.decision_timestamp == source.decision.decision_timestamp
     )
 
@@ -490,7 +512,7 @@ def _export_row(item: ObservationResearchProjectionV1) -> dict[str, object]:
             "UNAVAILABLE" if source.decision.sponsor_reason is None
             else source.decision.sponsor_reason.value
         ),
-        "activation_disposition": item.record.activation_disposition.value,
+        "activation_disposition": source.activation.disposition.value,
         "direction": snapshot.direction.value,
         "kr370_state": snapshot.kr370_state,
         "kr370_criteria": "|".join(

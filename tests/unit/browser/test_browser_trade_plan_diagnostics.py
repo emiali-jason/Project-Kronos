@@ -26,6 +26,7 @@ from tests.unit.swing.v1.test_kr370_step31_handoff import (
     _price,
 )
 from tests.unit.swing.v1.test_native_review import _evidence_run
+from tests.unit.browser.test_browser_trade_lifecycle_continuity import _review
 
 
 def _server(tmp_path: Path, *, connected: bool = False):  # type: ignore[no-untyped-def]
@@ -311,6 +312,108 @@ def test_step31_geometry_warning_redirects_and_reuses_one_handoff(
         assert recorded.sponsor_position_id is None
         assert server.native_review.active_monitoring_count == 0
         assert "CONSTRUCT TRADE PLAN" not in page
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+
+def test_http_records_choice_before_entry_and_preserves_it_on_invalid_confirmation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    server, thread, _ = _server(tmp_path)
+    completed = _completed(tmp_path / "separate-entry")
+    server.trade_window.restore((completed,))
+    projection = server.trade_window.construct(
+        completed,
+        _evidence(completed),
+        _context(completed.requirement.canonical_instrument),
+        current_run_identity=completed.requirement.native_run_identity,
+        current_analysis_boundary=completed.promotion.analysis_boundary,
+        created_at=completed.promotion.analysis_boundary,
+    )
+    plan = projection.trade_plan
+    observation = projection.step31_observation
+    assert plan is not None and observation is not None
+    server.trade_window.publish_current_portfolio_state(
+        _review(completed, plan),
+        native_run_identity=plan.native_run_identity,
+        as_of_boundary=plan.observation_boundary,
+    )
+    risk = server.trade_window.evaluate_current_risk(
+        plan.native_run_identity,
+        plan.canonical_instrument,
+        evaluated_at=completed.promotion.analysis_boundary,
+    )
+    authority = f"127.0.0.1:{server.server_port}"
+    headers = {
+        "Host": authority,
+        "Origin": f"http://{authority}",
+        "Referer": f"http://{authority}/swing/trade-window/{plan.native_run_identity}/{plan.canonical_instrument}",
+        "Content-Type": "application/x-www-form-urlencoded",
+    }
+    decision_body = urlencode({
+        "run_identity": plan.native_run_identity,
+        "canonical_instrument": plan.canonical_instrument,
+        "native_assessment_sha256": plan.native_assessment_sha256,
+        "observation_evidence_id": observation.observation_evidence_id,
+        "mode": "PAPER",
+    })
+    try:
+        with monkeypatch.context() as patch:
+            patch.setattr(
+                server.application,
+                "opportunities_projection",
+                lambda: (
+                    server.application.snapshot(),
+                    type("Current", (), {"run_identity": plan.native_run_identity})(),
+                ),
+            )
+            first = _request(
+                server,
+                "POST",
+                "/swing/trade-window/observation-decision",
+                headers=headers,
+                body=decision_body,
+            )
+            repeated = _request(
+                server,
+                "POST",
+                "/swing/trade-window/observation-decision",
+                headers=headers,
+                body=decision_body,
+            )
+            pending = server.trade_window.project(
+                plan.native_run_identity, plan.canonical_instrument
+            )
+            invalid_entry = _request(
+                server,
+                "POST",
+                "/swing/trade-window/activate",
+                headers=headers,
+                body=urlencode({
+                    "run_identity": plan.native_run_identity,
+                    "canonical_instrument": plan.canonical_instrument,
+                    "native_assessment_sha256": plan.native_assessment_sha256,
+                    "decision_identity": pending.sponsor_observation_decision_id,
+                    "mode": "PAPER",
+                }),
+            )
+        assert first[0] == repeated[0] == 303
+        assert pending.sponsor_observation_decision_state == "PAPER · RECORDED"
+        assert pending.activation_disposition == "PENDING_ENTRY_CONFIRMATION"
+        assert pending.sponsor_position_id is None
+        assert len(server.trade_window.observation_research_snapshot()) == 1
+        assert invalid_entry[0] == 200
+        assert "ENTRY NOT ACTIVATED" in invalid_entry[2]
+        assert "recorded Sponsor observation decision has been preserved" in invalid_entry[2]
+        after = server.trade_window.project(
+            plan.native_run_identity, plan.canonical_instrument
+        )
+        assert after.sponsor_observation_decision_id == pending.sponsor_observation_decision_id
+        assert after.activation_disposition == "PENDING_ENTRY_CONFIRMATION"
+        assert after.sponsor_position_id is None
+        assert risk.state.value == "RISK_APPROVED"
     finally:
         server.shutdown()
         server.server_close()

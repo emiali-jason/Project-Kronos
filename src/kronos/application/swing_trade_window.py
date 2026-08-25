@@ -62,6 +62,7 @@ from kronos.swing.v1.sponsor_observation_decision import (
     SponsorObservationReason,
     journal_observation_handoff,
     record_sponsor_observation_decision,
+    transition_sponsor_observation_activation,
 )
 from kronos.swing.v1.native_entry_timing import (
     EcpcV2Blocker,
@@ -384,6 +385,7 @@ class NativeTradeWindowProjection:
     sponsor_controls_available: bool = False
     sponsor_observation_controls_available: bool = False
     sponsor_observation_decision_state: str = "NO OBSERVATION DECISION RECORDED"
+    sponsor_observation_choice: str | None = None
     sponsor_observation_decision_id: str | None = None
     sponsor_observation_snapshot_id: str | None = None
     activation_disposition: str = "NOT ESTABLISHED"
@@ -408,6 +410,7 @@ class NativeTradeWindowProjection:
     journal_record_id: str | None = None
     continuity_warnings: tuple[str, ...] = ()
     latest_construction_attempt: TradePlanConstructionAttemptDiagnostic | None = None
+    last_updated_at: datetime | None = None
 
     def __post_init__(self) -> None:
         ready = self.state is TradeWindowState.TRADE_PLAN_READY
@@ -444,6 +447,10 @@ class NativeTradeWindowProjection:
             or type(self.sponsor_controls_available) is not bool
             or type(self.sponsor_observation_controls_available) is not bool
             or not self.sponsor_observation_decision_state
+            or (
+                self.sponsor_observation_choice is not None
+                and self.sponsor_observation_choice not in {"PAPER", "LIVE", "IGNORE"}
+            )
             or (self.sponsor_observation_decision_id is None)
             != (self.sponsor_observation_snapshot_id is None)
             or (self.sponsor_observation_decision_id is None)
@@ -482,6 +489,10 @@ class NativeTradeWindowProjection:
             or (self.closure_id is None) != (self.closure_state == "OPEN / NOT ESTABLISHED")
             or (self.closure_id is None) != (self.closure_reason is None)
             or type(self.continuity_warnings) is not tuple
+            or (
+                self.last_updated_at is not None
+                and self.last_updated_at.tzinfo is None
+            )
             or (
                 self.latest_construction_attempt is not None
                 and (
@@ -1517,7 +1528,10 @@ class SwingTradeWindowWorkflow:
                 handoff=handoff,
                 trade_plan=None,
                 step31_observation=observation,
-                **self._observation_projection(key),
+                **(
+                    {"last_updated_at": observation.created_at}
+                    | self._observation_projection(key)
+                ),
             )
         if plan is None:
             return NativeTradeWindowProjection(
@@ -1534,7 +1548,13 @@ class SwingTradeWindowWorkflow:
             handoff=handoff,
             trade_plan=plan,
             step31_observation=observation,
-            **(self._downstream_projection(plan) | self._observation_projection(key)),
+            **(
+                self._downstream_projection(plan)
+                | {"last_updated_at": (
+                    observation.created_at if observation is not None else plan.created_at
+                )}
+                | self._observation_projection(key)
+            ),
         )
 
     def record_sponsor_observation_choice(
@@ -1623,6 +1643,41 @@ class SwingTradeWindowWorkflow:
             for key in sorted(self._observation_decisions)
         )
 
+    def finalize_sponsor_observation_activation(
+        self,
+        run_identity: str,
+        canonical_instrument: str,
+        decision_identity: str,
+        choice: SponsorTradeChoice,
+        *,
+        disposition: SponsorActivationDisposition,
+        existing_sponsor_decision_identity: str | None,
+        sponsor_position_identity: str | None,
+        recorded_at: datetime,
+    ) -> SponsorObservationDecisionResult:
+        """Retain one terminal activation result after separate Sponsor entry."""
+
+        key = (run_identity, canonical_instrument)
+        current = self._observation_decisions.get(key)
+        if (
+            current is None
+            or current.decision.decision_identity != decision_identity
+            or current.decision.choice is not choice
+        ):
+            raise ValueError("SPONSOR_ACTIVATION_CURRENT_BINDING_INVALID")
+        if current.activation.disposition is disposition:
+            return current
+        transitioned = transition_sponsor_observation_activation(
+            current,
+            disposition,
+            existing_sponsor_decision_identity=existing_sponsor_decision_identity,
+            sponsor_position_identity=sponsor_position_identity,
+            recorded_at=recorded_at,
+        )
+        retained = self._sponsor_observation_store.transition_activation(transitioned)
+        self._observation_decisions[key] = retained
+        return retained
+
     def journal_observation_handoffs(
         self,
     ) -> tuple[JournalObservationHandoffV1, ...]:
@@ -1663,6 +1718,7 @@ class SwingTradeWindowWorkflow:
             "sponsor_observation_decision_state": (
                 result.decision.choice.value + " · RECORDED"
             ),
+            "sponsor_observation_choice": result.decision.choice.value,
             "sponsor_observation_decision_id": result.decision.decision_identity,
             "sponsor_observation_snapshot_id": result.snapshot.snapshot_identity,
             "activation_disposition": result.activation.disposition.value,
@@ -1673,6 +1729,10 @@ class SwingTradeWindowWorkflow:
                 "DECISION-TIME RISK STATE PRESERVED"
             ),
             "risk_result_id": result.snapshot.risk_identity,
+            "last_updated_at": max(
+                result.decision.decision_timestamp,
+                result.activation.recorded_at,
+            ),
         }
 
     def sponsor_observation_handoff(

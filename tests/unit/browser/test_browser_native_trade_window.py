@@ -1,3 +1,5 @@
+from dataclasses import replace
+
 from kronos.application.swing_trade_window import (
     LocalTradePlanConstructionDiagnosticStore,
     SwingTradeWindowWorkflow,
@@ -16,6 +18,10 @@ from kronos.swing.v1.kr370_step31_handoff import LocalKr370Step31HandoffStore
 from kronos.swing.v1.native_trade_construction import (
     LocalTradePlanStore,
     create_trade_construction_evidence_package,
+)
+from kronos.swing.v1.native_entry_timing import (
+    LocalPortfolioStateV1Store,
+    LocalRiskPermissionV1Store,
 )
 from kronos.swing.v1.native_sponsor_decision import SponsorTradeChoice
 from kronos.swing.v1.sponsor_observation_decision import (
@@ -382,3 +388,153 @@ def test_blocked_observation_decision_is_idempotent_and_restores_separately(tmp_
     assert recovery.sponsor_observation_decision_id == first.decision.decision_identity
     assert recovery.activation_disposition == "BLOCKED_RISK_UNAVAILABLE"
     assert recovery.sponsor_observation_controls_available is False
+
+
+def test_trade_ux_separates_recorded_paper_choice_from_confirmed_entry(tmp_path) -> None:
+    completed = _completed(tmp_path)
+    handoff_store = LocalKr370Step31HandoffStore(tmp_path / "handoffs")
+    plan_store = LocalTradePlanStore(tmp_path / "plans")
+    decision_store = LocalSponsorObservationDecisionStore(tmp_path / "decisions")
+    workflow = SwingTradeWindowWorkflow(
+        handoff_store,
+        plan_store,
+        LocalPortfolioStateV1Store(tmp_path / "portfolio"),
+        LocalRiskPermissionV1Store(tmp_path / "risk"),
+        sponsor_observation_store=decision_store,
+    )
+    projection = workflow.construct(
+        completed,
+        _evidence(completed),
+        _context(completed.requirement.canonical_instrument),
+        current_run_identity=completed.requirement.native_run_identity,
+        current_analysis_boundary=completed.promotion.analysis_boundary,
+        created_at=NOW,
+    )
+    plan = projection.trade_plan
+    observation = projection.step31_observation
+    assert plan is not None and observation is not None
+    from tests.unit.browser.test_browser_trade_lifecycle_continuity import _review
+
+    workflow.publish_current_portfolio_state(
+        _review(completed, plan),
+        native_run_identity=plan.native_run_identity,
+        as_of_boundary=plan.observation_boundary,
+    )
+    risk = workflow.evaluate_current_risk(
+        plan.native_run_identity, plan.canonical_instrument, evaluated_at=NOW
+    )
+    pending = workflow.record_sponsor_observation_choice(
+        plan.native_run_identity,
+        plan.canonical_instrument,
+        plan.native_assessment_sha256,
+        observation.observation_evidence_id,
+        SponsorTradeChoice.PAPER,
+        SponsorActivationDisposition.PENDING_ENTRY_CONFIRMATION,
+        current_run_identity=plan.native_run_identity,
+        decided_at=NOW,
+        warning_acknowledged=False,
+        risk_identity=risk.risk_result_id,
+        risk_state="RISK_APPROVED",
+    )
+    projected = workflow.project(plan.native_run_identity, plan.canonical_instrument)
+    html = render_native_trade_window(_ready(), projected)
+    assert "PAPER · RECORDED" in html
+    assert "PAPER TRADE ENTRY" in html
+    assert 'action="/swing/trade-window/activate"' in html
+    assert "ONE LOT" in html
+    assert "CONFIRM PAPER ENTRY" in html
+    assert "SELECT PAPER" not in html
+
+    activated = workflow.finalize_sponsor_observation_activation(
+        plan.native_run_identity,
+        plan.canonical_instrument,
+        pending.decision.decision_identity,
+        SponsorTradeChoice.PAPER,
+        disposition=SponsorActivationDisposition.ACTIVATED,
+        existing_sponsor_decision_identity="SPONSOR-DECISION-PAPER",
+        sponsor_position_identity="SPONSOR-POSITION-PAPER",
+        recorded_at=NOW,
+    )
+    assert activated.decision == pending.decision
+    research = workflow.observation_research_snapshot()
+    assert len(research) == 1
+    assert research[0].source.activation.disposition is SponsorActivationDisposition.ACTIVATED
+    assert research[0].record.activation_disposition is SponsorActivationDisposition.PENDING_ENTRY_CONFIRMATION
+    restored = SwingTradeWindowWorkflow(
+        handoff_store,
+        plan_store,
+        LocalPortfolioStateV1Store(tmp_path / "portfolio"),
+        LocalRiskPermissionV1Store(tmp_path / "risk"),
+        sponsor_observation_store=decision_store,
+    )
+    restored.restore((completed,))
+    recovery = restored.project(plan.native_run_identity, plan.canonical_instrument)
+    assert recovery.activation_disposition == "ACTIVATED"
+    assert recovery.sponsor_observation_decision_state == "PAPER · RECORDED"
+
+
+def test_trade_ux_is_compact_responsive_and_renders_bounded_entry_error(tmp_path) -> None:
+    completed = _completed(tmp_path)
+    workflow = SwingTradeWindowWorkflow(
+        LocalKr370Step31HandoffStore(tmp_path / "handoffs"),
+        LocalTradePlanStore(tmp_path / "plans"),
+    )
+    projection = workflow.construct(
+        completed,
+        _evidence(completed),
+        _context(completed.requirement.canonical_instrument),
+        current_run_identity=completed.requirement.native_run_identity,
+        current_analysis_boundary=completed.promotion.analysis_boundary,
+        created_at=NOW,
+    )
+    html = render_native_trade_window(
+        _ready(),
+        projection,
+        workflow_error=(
+            "ENTRY NOT ACTIVATED",
+            "The recorded Sponsor observation decision has been preserved.",
+        ),
+    )
+    assert "trade-window-grid" in html
+    assert "grid-template-columns:minmax(0,1.15fr)" in html
+    assert "@media(max-width:980px)" in html
+    assert "ENTRY NOT ACTIVATED" in html
+    assert "recorded Sponsor observation decision has been preserved" in html
+    assert "KEY CONTEXT" in html and "NEXT STEP" in html
+
+
+def test_trade_ux_live_entry_requires_manual_facts_and_never_claims_broker_authority(
+    tmp_path,
+) -> None:
+    completed = _completed(tmp_path)
+    workflow = SwingTradeWindowWorkflow(
+        LocalKr370Step31HandoffStore(tmp_path / "handoffs"),
+        LocalTradePlanStore(tmp_path / "plans"),
+    )
+    projection = workflow.construct(
+        completed,
+        _evidence(completed),
+        _context(completed.requirement.canonical_instrument),
+        current_run_identity=completed.requirement.native_run_identity,
+        current_analysis_boundary=completed.promotion.analysis_boundary,
+        created_at=NOW,
+    )
+    live = replace(
+        projection,
+        sponsor_observation_controls_available=False,
+        sponsor_observation_decision_state="LIVE · RECORDED",
+        sponsor_observation_choice="LIVE",
+        sponsor_observation_decision_id="SPONSOR-OBSERVATION-DECISION-LIVE",
+        sponsor_observation_snapshot_id="SPONSOR-DECISION-SNAPSHOT-LIVE",
+        activation_disposition="PENDING_ENTRY_CONFIRMATION",
+        activation_reason="PENDING_ENTRY_CONFIRMATION",
+        risk_state="RISK_APPROVED",
+        risk_reason="NO_GOVERNED_PROHIBITION",
+    )
+    html = render_native_trade_window(_ready(), live)
+    assert "LIVE TRADE ENTRY" in html
+    assert 'name="actual_entry"' in html
+    assert 'name="lots"' in html
+    assert 'name="manual_execution_confirmed"' in html
+    assert "KRONOS will not place, modify or cancel an order" in html
+    assert "CONFIRM LIVE ENTRY" in html
