@@ -22,6 +22,9 @@ from typing import Callable
 from kronos.instrument.facts import CanonicalInstrumentContext
 from kronos.swing.run_identity import is_swing_analysis_run_id
 from kronos.application.shared_monitoring import SharedSwingMonitoringHub
+from kronos.application.paper_observation_tracking import (
+    PaperObservationTrackingWorkflow,
+)
 from kronos.provider.contracts.instrument import InstrumentRecord
 from kronos.provider.contracts.monitoring import (
     MonitoringConnectionState,
@@ -104,6 +107,10 @@ from kronos.swing.v1.observation_research_ledger import (
     ObservationResearchLedgerService,
     ObservationResearchProjectionV1,
     ObservationResearchQueryV1,
+)
+from kronos.swing.v1.paper_observation_track import (
+    LocalPaperObservationTrackStore,
+    PaperObservationTrackProjectionV1,
 )
 from kronos.swing.v1.step32 import (
     MonitoringAdmissionContext,
@@ -391,6 +398,18 @@ class NativeTradeWindowProjection:
     activation_disposition: str = "NOT ESTABLISHED"
     activation_reason: str = "NO OBSERVATION DECISION RECORDED"
     warning_acknowledged: bool = False
+    paper_observation_track_start_available: bool = False
+    paper_observation_track_id: str | None = None
+    paper_observation_track_state: str = "NOT AVAILABLE"
+    paper_observation_monitoring_state: str = "NOT ACTIVE"
+    paper_observation_monitoring_reason: str = "NO PAPER OBSERVATION TRACK"
+    paper_observation_entry_state: str = "ENTRY NOT OBSERVED"
+    paper_observation_outcome_state: str = "OUTCOME NOT ESTABLISHED"
+    paper_observation_entry_reference: Decimal | None = None
+    paper_observation_stop: Decimal | None = None
+    paper_observation_target: Decimal | None = None
+    paper_observation_created_at: datetime | None = None
+    paper_observation_last_fact_at: datetime | None = None
     sponsor_decision_state: str = "NO DECISION RECORDED"
     sponsor_decision_id: str | None = None
     kr380_entry_timing_state: str = "NOT ESTABLISHED"
@@ -457,6 +476,33 @@ class NativeTradeWindowProjection:
             != (self.activation_disposition == "NOT ESTABLISHED")
             or not self.activation_reason
             or type(self.warning_acknowledged) is not bool
+            or type(self.paper_observation_track_start_available) is not bool
+            or (self.paper_observation_track_id is None) != (
+                self.paper_observation_track_state
+                in {"NOT AVAILABLE", "AVAILABLE", "NOT REQUIRED"}
+            )
+            or not self.paper_observation_track_state
+            or not self.paper_observation_monitoring_state
+            or not self.paper_observation_monitoring_reason
+            or not self.paper_observation_entry_state
+            or not self.paper_observation_outcome_state
+            or any(
+                value is not None and (
+                    type(value) is not Decimal or not value.is_finite()
+                )
+                for value in (
+                    self.paper_observation_entry_reference,
+                    self.paper_observation_stop,
+                    self.paper_observation_target,
+                )
+            )
+            or any(
+                value is not None and value.tzinfo is None
+                for value in (
+                    self.paper_observation_created_at,
+                    self.paper_observation_last_fact_at,
+                )
+            )
             or not self.sponsor_decision_state
             or (self.sponsor_decision_id is None) != (
                 self.sponsor_decision_state == "NO DECISION RECORDED"
@@ -525,6 +571,7 @@ class SwingTradeWindowWorkflow:
         observation_store: LocalStep31ObservationStore | None = None,
         sponsor_observation_store: LocalSponsorObservationDecisionStore | None = None,
         observation_research_ledger: ObservationResearchLedgerService | None = None,
+        paper_observation_store: LocalPaperObservationTrackStore | None = None,
     ) -> None:
         if (
             type(handoff_store) is not LocalKr370Step31HandoffStore
@@ -564,6 +611,10 @@ class SwingTradeWindowWorkflow:
                 and type(observation_research_ledger)
                 is not ObservationResearchLedgerService
             )
+            or (
+                paper_observation_store is not None
+                and type(paper_observation_store) is not LocalPaperObservationTrackStore
+            )
         ):
             raise TypeError("SWING_TRADE_WINDOW_STORE_INVALID")
         self._handoff_store = handoff_store
@@ -589,6 +640,12 @@ class SwingTradeWindowWorkflow:
                     trade_plan_store.root.parent / "observation-research-ledger-v1"
                 ),
                 self._sponsor_observation_store,
+            )
+        )
+        self._paper_observation_tracking = PaperObservationTrackingWorkflow(
+            paper_observation_store
+            or LocalPaperObservationTrackStore(
+                trade_plan_store.root.parent / "paper-observation-track-v1"
             )
         )
         self._portfolio_state: PortfolioStateV1 | None = None
@@ -630,6 +687,7 @@ class SwingTradeWindowWorkflow:
         if type(hub) is not SharedSwingMonitoringHub:
             raise TypeError("KR380_SHARED_MONITORING_HUB_INVALID")
         self._shared_monitoring_hub = hub
+        self._paper_observation_tracking.set_shared_monitoring_hub(hub)
 
     @property
     def shared_monitoring_hub(self) -> SharedSwingMonitoringHub | None:
@@ -637,7 +695,10 @@ class SwingTradeWindowWorkflow:
 
     @property
     def active_monitoring_count(self) -> int:
-        return len(self._monitoring_registrations)
+        return (
+            len(self._monitoring_registrations)
+            + self._paper_observation_tracking.active_monitoring_count
+        )
 
     def start_current_entry_monitoring(
         self,
@@ -718,6 +779,7 @@ class SwingTradeWindowWorkflow:
         self._monitoring_consumers.clear()
         for registration in registrations:
             registration.disconnect()
+        self._paper_observation_tracking.close()
 
     def publish_portfolio_state(
         self,
@@ -1703,6 +1765,81 @@ class SwingTradeWindowWorkflow:
     ) -> str:
         return self._observation_research.export_csv(query)
 
+    def start_paper_observation_track(
+        self,
+        run_identity: str,
+        canonical_instrument: str,
+        native_assessment_sha256: str,
+        decision_identity: str,
+        *,
+        current_run_identity: str,
+        started_at: datetime,
+    ) -> PaperObservationTrackProjectionV1:
+        """Start one explicit non-position Track from the exact blocked decision."""
+
+        key = (run_identity, canonical_instrument)
+        result = self._observation_decisions.get(key)
+        if (
+            result is None
+            or current_run_identity != run_identity
+            or result.snapshot.native_assessment_sha256 != native_assessment_sha256
+            or result.decision.decision_identity != decision_identity
+        ):
+            raise ValueError("PAPER_OBSERVATION_TRACK_CURRENT_BINDING_INVALID")
+        return self._paper_observation_tracking.start(
+            result,
+            current_run_identity=current_run_identity,
+            started_at=started_at,
+        )
+
+    def attach_paper_observation_monitoring(
+        self,
+        track_identity: str,
+        capability: object,
+        instrument: InstrumentRecord,
+    ) -> PaperObservationTrackProjectionV1:
+        return self._paper_observation_tracking.attach_monitoring(
+            track_identity, capability, instrument
+        )
+
+    def restore_paper_observation_monitoring(
+        self,
+        capability: object,
+        resolver: Callable[[str], InstrumentRecord],
+    ) -> tuple[str, ...]:
+        return self._paper_observation_tracking.restore_monitoring(
+            capability, resolver
+        )
+
+    def mark_paper_observation_monitoring_unavailable(self, reason: str) -> None:
+        self._paper_observation_tracking.mark_monitoring_unavailable(reason)
+
+    def paper_observation_projections(
+        self,
+    ) -> tuple[PaperObservationTrackProjectionV1, ...]:
+        return self._paper_observation_tracking.projections()
+
+    @staticmethod
+    def _paper_projection_values(
+        track: PaperObservationTrackProjectionV1,
+    ) -> dict[str, object]:
+        return {
+            "paper_observation_track_start_available": False,
+            "paper_observation_track_id": track.track.track_identity,
+            "paper_observation_track_state": track.track_state.value,
+            "paper_observation_monitoring_state": track.monitoring_state.value,
+            "paper_observation_monitoring_reason": track.monitoring_reason,
+            "paper_observation_entry_state": track.entry_state.value,
+            "paper_observation_outcome_state": track.outcome_state.value,
+            "paper_observation_entry_reference": (
+                track.track.observation_entry_reference
+            ),
+            "paper_observation_stop": track.track.stop,
+            "paper_observation_target": track.track.target,
+            "paper_observation_created_at": track.created_at,
+            "paper_observation_last_fact_at": track.last_factual_observation_at,
+        }
+
     def _observation_projection(
         self, key: tuple[str, str]
     ) -> dict[str, object]:
@@ -1713,6 +1850,46 @@ class SwingTradeWindowWorkflow:
                     key in self._observations
                 ),
             }
+        paper_values: dict[str, object]
+        if result.decision.choice is not SponsorTradeChoice.PAPER:
+            paper_values = {
+                "paper_observation_track_state": "NOT AVAILABLE",
+                "paper_observation_monitoring_reason": (
+                    "PAPER DECISION REQUIRED"
+                ),
+            }
+        elif result.activation.disposition is SponsorActivationDisposition.ACTIVATED:
+            paper_values = {
+                "paper_observation_track_state": "NOT REQUIRED",
+                "paper_observation_monitoring_reason": (
+                    "GOVERNED SPONSOR POSITION ACTIVATED"
+                ),
+            }
+        elif not result.activation.disposition.value.startswith("BLOCKED_"):
+            paper_values = {
+                "paper_observation_track_state": "NOT AVAILABLE",
+                "paper_observation_monitoring_reason": (
+                    "BLOCKED PAPER ACTIVATION REQUIRED"
+                ),
+            }
+        else:
+            track = self._paper_observation_tracking.projection_for_decision(
+                result.decision.decision_identity
+            )
+            paper_values = (
+                {
+                    "paper_observation_track_start_available": True,
+                    "paper_observation_track_state": "AVAILABLE",
+                    "paper_observation_monitoring_reason": (
+                        "EXPLICIT SPONSOR START REQUIRED"
+                    ),
+                    "paper_observation_entry_reference": result.snapshot.entry,
+                    "paper_observation_stop": result.snapshot.stop,
+                    "paper_observation_target": result.snapshot.target,
+                }
+                if track is None
+                else self._paper_projection_values(track)
+            )
         return {
             "sponsor_observation_controls_available": False,
             "sponsor_observation_decision_state": (
@@ -1733,7 +1910,7 @@ class SwingTradeWindowWorkflow:
                 result.decision.decision_timestamp,
                 result.activation.recorded_at,
             ),
-        }
+        } | paper_values
 
     def sponsor_observation_handoff(
         self, run_identity: str, canonical_instrument: str

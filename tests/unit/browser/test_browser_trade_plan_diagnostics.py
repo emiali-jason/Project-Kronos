@@ -310,6 +310,47 @@ def test_step31_geometry_warning_redirects_and_reuses_one_handoff(
         assert recorded.sponsor_observation_decision_state == "PAPER · RECORDED"
         assert recorded.activation_disposition == "BLOCKED_RISK_UNAVAILABLE"
         assert recorded.sponsor_position_id is None
+        track_body = urlencode({
+            "run_identity": projection.native_run_identity,
+            "canonical_instrument": projection.canonical_instrument,
+            "native_assessment_sha256": projection.native_assessment_sha256,
+            "decision_identity": recorded.sponsor_observation_decision_id,
+            "track_confirmed": "YES",
+        })
+        rejected = _request(
+            server,
+            "POST",
+            "/swing/trade-window/paper-observation/start",
+            headers={
+                "Host": authority,
+                "Origin": "http://foreign.example:8947",
+                "Referer": f"http://{authority}{first[1]['Location']}",
+                "Content-Type": "application/x-www-form-urlencoded",
+            },
+            body=track_body,
+        )
+        assert rejected[0] == 403
+        started_response = _request(
+            server,
+            "POST",
+            "/swing/trade-window/paper-observation/start",
+            headers={
+                "Host": authority,
+                "Origin": f"http://{authority}",
+                "Referer": f"http://{authority}{first[1]['Location']}",
+                "Content-Type": "application/x-www-form-urlencoded",
+            },
+            body=track_body,
+        )
+        assert started_response[0] == 303
+        tracked = server.trade_window.project(
+            projection.native_run_identity, projection.canonical_instrument
+        )
+        assert tracked.paper_observation_track_id is not None
+        assert tracked.paper_observation_track_state == "ACTIVE"
+        assert tracked.paper_observation_monitoring_state == "NOT_ACTIVE"
+        assert tracked.sponsor_position_id is None
+        assert len(server.trade_window.paper_observation_projections()) == 1
         assert server.native_review.active_monitoring_count == 0
         assert "CONSTRUCT TRADE PLAN" not in page
     finally:

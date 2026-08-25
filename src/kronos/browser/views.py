@@ -1056,11 +1056,11 @@ def _render_native_analysis_details_v3(
 _TRADE_WINDOW_CSS = r"""
 .trade-window-shell{max-width:1440px;margin:0 auto}.trade-window-back{margin:0 0 12px}
 .trade-window-grid{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(340px,.85fr);gap:14px;align-items:start}
-.trade-window-column{display:grid;gap:12px}.trade-panel{background:linear-gradient(155deg,rgba(15,27,46,.96),rgba(8,16,29,.98));border:1px solid #263a55;border-radius:12px;padding:14px;box-shadow:0 12px 28px rgba(0,0,0,.2)}
+.trade-window-column{display:grid;gap:10px}.trade-panel{background:linear-gradient(155deg,rgba(15,27,46,.96),rgba(8,16,29,.98));border:1px solid #263a55;border-radius:11px;padding:12px;box-shadow:0 10px 24px rgba(0,0,0,.18);font-size:.88rem}
 .trade-panel h2{font-size:.72rem;letter-spacing:.13em;color:#8fa6c3;margin:0 0 9px}.trade-panel p{margin:7px 0;line-height:1.45}.trade-decision-head{display:flex;align-items:center;justify-content:space-between;gap:12px}.trade-instrument{font-size:1.22rem;margin:0;color:#f2f6fb}.trade-direction{font-size:.72rem;letter-spacing:.12em}.trade-direction.long{color:#63d59b}.trade-direction.short{color:#ff7e86}.trade-now{display:inline-flex;padding:6px 10px;border-radius:999px;font-weight:800;letter-spacing:.08em;font-size:.76rem;background:#102f27;color:#72e0a8;border:1px solid #277154}.trade-now.sell{background:#351a22;color:#ff969c;border-color:#7d3340}
-.trade-semantics{color:#aebdd0;font-size:.84rem}.trade-math-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px}.trade-math{background:#0a1525;border:1px solid #223650;border-radius:9px;padding:9px;min-width:0}.trade-math span{display:block;color:#7890ad;font-size:.65rem;letter-spacing:.09em;text-transform:uppercase;margin-bottom:4px}.trade-math strong{font-size:.94rem;color:#edf4fc}.trade-math.adverse{border-color:#873643;background:#24131a}.trade-math.adverse strong{color:#ff8d96}
-.trade-status-row{display:grid;grid-template-columns:1fr 1fr;gap:8px}.trade-status{background:#0a1525;border:1px solid #243751;border-radius:9px;padding:10px}.trade-status span{display:block;color:#7890ad;font-size:.65rem;letter-spacing:.09em;margin-bottom:5px}.trade-status strong{font-size:.82rem}.severity-green{border-color:#296a51}.severity-green strong{color:#71dba8}.severity-amber{border-color:#7a6026}.severity-amber strong{color:#f2c66f}.severity-red{border-color:#9a3946;background:#27141a}.severity-red strong{color:#ff7f89}.trade-warning{border:1px solid #9a3946;background:linear-gradient(145deg,#31171e,#1b1117);border-radius:10px;padding:11px;margin-top:9px;color:#ffd5d8}.trade-warning-title{display:block;color:#ff7681;font-weight:900;letter-spacing:.1em;font-size:.76rem;margin-bottom:6px}.trade-warning ul{margin:5px 0 0;padding-left:20px}
-.decision-cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px}.decision-card{display:flex;flex-direction:column;min-width:0;min-height:112px;border:1px solid #2d425f;background:#0b1728;border-radius:10px;padding:10px}.decision-card.paper{border-color:#4d55a9}.decision-card.live{border-color:#277154}.decision-card.ignore{border-color:#806125}.decision-card h3{font-size:.75rem;margin:0 0 5px;letter-spacing:.06em}.decision-card p{font-size:.74rem;color:#9fb0c5;flex:1}.decision-card select{box-sizing:border-box;min-width:0;width:100%}.decision-card .button{width:100%;margin-top:7px}.decision-card.live .button{background:#1e6a4d;border-color:#2b946d}.decision-card.ignore .button{background:#624c1e;border-color:#8e6c2b}.decision-explainer{font-size:.76rem;color:#9fb0c5}.trade-ack{display:flex;gap:7px;align-items:flex-start;font-size:.72rem;color:#ffd2d5;margin:7px 0}.trade-entry{border-color:#3c5578}.trade-entry-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin:9px 0}.trade-entry label{display:block;font-size:.72rem;color:#9fb0c5}.trade-entry input,.trade-entry select{width:100%;box-sizing:border-box;margin-top:4px}.manual-boundary{border-left:3px solid #4c9c78;padding-left:9px;color:#b9d8ca;font-size:.78rem}.trade-context-grid{display:grid;grid-template-columns:1fr 1fr;gap:7px}.trade-context-grid div{background:#0a1525;border-radius:8px;padding:8px}.trade-context-grid span{display:block;color:#7890ad;font-size:.62rem;letter-spacing:.08em}.trade-context-grid strong{font-size:.77rem;word-break:break-word}.trade-next{border-color:#315a80}.trade-next strong{color:#85c8ff;letter-spacing:.04em}.trade-error{border-color:#9a3946;background:#2b151b}.trade-error h2,.trade-error strong{color:#ff8b94}.trade-compact-details summary{font-size:.72rem;letter-spacing:.08em;color:#8fa6c3;cursor:pointer}.trade-lifecycle-line{display:flex;justify-content:space-between;gap:12px;border-top:1px solid #20334b;padding:7px 0;font-size:.76rem}.trade-lifecycle-line:first-of-type{border-top:0}.trade-muted{color:#91a2b7}.trade-actions-recorded{border:1px solid #34506f;background:#0c1a2d;border-radius:9px;padding:10px}.trade-actions-recorded strong{color:#dbe9f8}.trade-panel .why{font-size:.76rem}
+.trade-semantics{color:#aebdd0;font-size:.8rem}.trade-math-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}.trade-math{background:#0a1525;border:1px solid #223650;border-radius:8px;padding:8px;min-width:0}.trade-math span{display:block;color:#7890ad;font-size:.62rem;letter-spacing:.09em;text-transform:uppercase;margin-bottom:3px}.trade-math strong{font-size:.88rem;color:#edf4fc}.trade-math.adverse{border-color:#6b4650;background:#101826}.trade-math.adverse strong{color:#e7b2b7}
+.trade-status-row{display:grid;grid-template-columns:1fr 1fr;gap:7px}.trade-status{background:#0a1525;border:1px solid #243751;border-radius:8px;padding:8px}.trade-status span{display:block;color:#7890ad;font-size:.62rem;letter-spacing:.09em;margin-bottom:4px}.trade-status strong{font-size:.78rem}.severity-green{border-color:#296a51}.severity-green strong{color:#71dba8}.severity-amber{border-color:#7a6026}.severity-amber strong{color:#f2c66f}.severity-muted{border-color:#4d5360}.severity-muted strong{color:#c3cad4}.severity-red{border-color:#9a3946;background:#27141a}.severity-red strong{color:#ff7f89}.trade-warning{border:1px solid #9a3946;background:linear-gradient(145deg,#31171e,#1b1117);border-radius:10px;padding:11px;margin-top:9px;color:#ffd5d8}.trade-warning-title{display:block;color:#ff7681;font-weight:900;letter-spacing:.1em;font-size:.76rem;margin-bottom:6px}.trade-warning ul{margin:5px 0 0;padding-left:20px}
+.decision-cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px}.decision-card{display:flex;flex-direction:column;min-width:0;min-height:112px;border:1px solid #2d425f;background:#0b1728;border-radius:10px;padding:10px}.decision-card.paper{border-color:#4d55a9}.decision-card.live{border-color:#277154}.decision-card.ignore{border-color:#806125}.decision-card h3{font-size:.75rem;margin:0 0 5px;letter-spacing:.06em}.decision-card p{font-size:.74rem;color:#9fb0c5;flex:1}.decision-card select{box-sizing:border-box;min-width:0;width:100%}.decision-card .button{width:100%;margin-top:7px}.decision-card.live .button{background:#1e6a4d;border-color:#2b946d}.decision-card.ignore .button{background:#624c1e;border-color:#8e6c2b}.decision-explainer{font-size:.76rem;color:#9fb0c5}.trade-ack{display:flex;gap:7px;align-items:flex-start;font-size:.72rem;color:#ffd2d5;margin:7px 0}.trade-entry{border-color:#3c5578}.trade-entry-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin:9px 0}.trade-entry label{display:block;font-size:.72rem;color:#9fb0c5}.trade-entry input,.trade-entry select{width:100%;box-sizing:border-box;margin-top:4px}.manual-boundary{border-left:3px solid #4c9c78;padding-left:9px;color:#b9d8ca;font-size:.78rem}.trade-context-grid{display:grid;grid-template-columns:1fr 1fr;gap:7px}.trade-context-grid div{background:#0a1525;border-radius:8px;padding:8px}.trade-context-grid span{display:block;color:#7890ad;font-size:.62rem;letter-spacing:.08em}.trade-context-grid strong{font-size:.77rem;word-break:break-word}.trade-next{border-color:#315a80}.trade-next strong{color:#85c8ff;letter-spacing:.04em}.trade-error{border-color:#9a3946;background:#2b151b}.trade-error h2,.trade-error strong{color:#ff8b94}.trade-blocked{border-color:#465369;background:#111b2a}.trade-blocked strong{color:#c3cbd7}.paper-observation-track{border-color:#4c64a9;background:linear-gradient(145deg,#111b35,#17152d)}.paper-observation-track h2,.paper-observation-track strong{color:#9ccaff}.paper-track-boundary{font-size:.74rem;color:#aeb8d7}.paper-track-boundary strong{color:#c7b4ff}.paper-track-confirm{color:#c7d8f2}.trade-compact-details summary{font-size:.72rem;letter-spacing:.08em;color:#8fa6c3;cursor:pointer}.trade-lifecycle-line{display:flex;justify-content:space-between;gap:12px;border-top:1px solid #20334b;padding:7px 0;font-size:.76rem}.trade-lifecycle-line:first-of-type{border-top:0}.trade-muted{color:#91a2b7}.trade-actions-recorded{border:1px solid #34506f;background:#0c1a2d;border-radius:9px;padding:10px}.trade-actions-recorded strong{color:#dbe9f8}.trade-panel .why{font-size:.76rem}
 @media(max-width:980px){.trade-window-grid{grid-template-columns:1fr}.trade-math-grid{grid-template-columns:repeat(2,1fr)}}
 @media(max-width:620px){.decision-cards,.trade-entry-grid,.trade-status-row,.trade-context-grid{grid-template-columns:1fr}.trade-math-grid{grid-template-columns:1fr 1fr}.trade-decision-head{align-items:flex-start;flex-direction:column}}
 """
@@ -1342,10 +1342,80 @@ def render_native_trade_window(
         )
     elif choice in {"PAPER", "LIVE"} and projection.activation_disposition.startswith("BLOCKED_"):
         entry_workflow = (
-            '<section class="trade-panel trade-error"><h2>' + choice + ' TRADE ENTRY</h2>'
-            '<strong>NOT AVAILABLE</strong><p>POSITION ACTIVATION · BLOCKED</p><p>Reason · '
-            + escape(projection.activation_reason.replace("_", " ")) + '</p></section>'
+            ''
+            if choice == "PAPER"
+            else (
+                '<section class="trade-panel trade-blocked"><h2>LIVE TRADE ENTRY</h2>'
+                '<strong>NOT AVAILABLE</strong><p>POSITION ACTIVATION · BLOCKED</p><p>Reason · '
+                + escape(projection.activation_reason.replace("_", " ")) + '</p></section>'
+            )
         )
+
+    track_hidden = ''.join(
+        '<input type="hidden" name="' + escape(name) + '" value="'
+        + escape(value) + '">'
+        for name, value in (
+            ("run_identity", projection.native_run_identity),
+            ("canonical_instrument", projection.canonical_instrument),
+            ("native_assessment_sha256", projection.native_assessment_sha256),
+            ("decision_identity", projection.sponsor_observation_decision_id or ""),
+        )
+    )
+    track_values = (
+        '<div class="trade-status-row"><div class="trade-status"><span>ENTRY REFERENCE</span><strong>'
+        + escape(money(projection.paper_observation_entry_reference))
+        + '</strong></div><div class="trade-status"><span>ENTRY STATE</span><strong>'
+        + escape(projection.paper_observation_entry_state.replace("_", " "))
+        + '</strong></div></div><div class="trade-status-row"><div class="trade-status"><span>STOP</span><strong>'
+        + escape(money(projection.paper_observation_stop))
+        + '</strong></div><div class="trade-status"><span>TARGET</span><strong>'
+        + escape(money(projection.paper_observation_target))
+        + '</strong></div></div>'
+    )
+    if projection.paper_observation_track_start_available:
+        paper_track = (
+            '<section class="trade-panel paper-observation-track"><h2>PAPER OBSERVATION TRACK</h2>'
+            '<strong>AVAILABLE</strong><p class="paper-track-boundary">Research-only factual path observation. '
+            'This creates no Sponsor Position, Risk permission, fill, P&amp;L, actual R or broker instruction.</p>'
+            + track_values
+            + '<form method="post" action="/swing/trade-window/paper-observation/start">'
+            + track_hidden
+            + '<label class="trade-ack paper-track-confirm"><input type="checkbox" name="track_confirmed" value="YES" required>'
+            '<span>Start a non-position PAPER Observation Track from this exact blocked decision and Step-31 geometry.</span></label>'
+            '<button class="button primary" type="submit">START PAPER OBSERVATION</button>'
+            '</form></section>'
+        )
+    elif projection.paper_observation_track_id is not None:
+        observed = (
+            "UNAVAILABLE"
+            if projection.paper_observation_last_fact_at is None
+            else projection.paper_observation_last_fact_at.astimezone(_KOLKATA).strftime(
+                "%d %b %Y · %H:%M:%S IST"
+            )
+        )
+        paper_track = (
+            '<section class="trade-panel paper-observation-track"><h2>PAPER OBSERVATION TRACK</h2>'
+            '<div class="trade-status-row"><div class="trade-status"><span>TRACK</span><strong>'
+            + escape(projection.paper_observation_track_state.replace("_", " "))
+            + '</strong></div><div class="trade-status"><span>MONITORING</span><strong>'
+            + escape(projection.paper_observation_monitoring_state.replace("_", " "))
+            + '</strong></div></div>' + track_values
+            + '<div class="trade-status"><span>FACTUAL OUTCOME</span><strong>'
+            + escape(projection.paper_observation_outcome_state.replace("_", " "))
+            + '</strong></div><p class="paper-track-boundary"><strong>Research evidence only.</strong> '
+            'No position, order, fill, P&amp;L or actual R is created.<br>Last factual observation · '
+            + escape(observed) + '<br>Monitoring · '
+            + escape(projection.paper_observation_monitoring_reason.replace("_", " "))
+            + '</p></section>'
+        )
+    elif projection.paper_observation_track_state == "NOT REQUIRED":
+        paper_track = (
+            '<section class="trade-panel paper-observation-track"><h2>PAPER OBSERVATION TRACK</h2>'
+            '<strong>NOT REQUIRED</strong><p class="paper-track-boundary">A governed Sponsor Position was activated; '
+            'a duplicate non-position Track is not created.</p></section>'
+        )
+    else:
+        paper_track = ''
 
     sponsor = (
         '<section class="trade-panel"><h2>SPONSOR DECISION</h2>'
@@ -1356,7 +1426,9 @@ def render_native_trade_window(
         + controls + '</section>'
     )
     activation = (
-        '<section class="trade-panel"><h2>POSITION ACTIVATION</h2>'
+        '<section class="trade-panel'
+        + (' trade-blocked' if projection.activation_disposition.startswith("BLOCKED_") else '')
+        + '"><h2>POSITION ACTIVATION</h2>'
         '<div class="trade-status-row"><div class="trade-status"><span>DISPOSITION</span><strong>'
         + escape(projection.activation_disposition.replace("_", " "))
         + '</strong></div><div class="trade-status"><span>SPONSOR POSITION</span><strong>'
@@ -1367,7 +1439,7 @@ def render_native_trade_window(
         + escape(projection.sponsor_monitoring_state) + '</strong></div></section>'
     )
 
-    risk_class = "severity-green" if projection.risk_state == "RISK_APPROVED" else "severity-red" if projection.risk_state in {"RISK_REJECTED", "RISK_UNAVAILABLE"} else "severity-amber"
+    risk_class = "severity-green" if projection.risk_state == "RISK_APPROVED" else "severity-muted" if projection.risk_state in {"RISK_REJECTED", "RISK_UNAVAILABLE"} else "severity-amber"
     risk = (
         '<section class="trade-panel"><h2>RISK</h2><div class="trade-status ' + risk_class
         + '"><span>RISK STATUS</span><strong>' + escape(projection.risk_state.replace("_", " "))
@@ -1396,7 +1468,13 @@ def render_native_trade_window(
     elif pending:
         next_step = "CONFIRM " + (choice or "SPONSOR") + " TRADE ENTRY."
     elif projection.activation_disposition.startswith("BLOCKED_"):
-        next_step = (choice or "SPONSOR") + " DECISION RECORDED · ACTIVATION BLOCKED."
+        next_step = (
+            "START PAPER OBSERVATION TRACK OR RETAIN THE BLOCKED DECISION."
+            if projection.paper_observation_track_start_available
+            else "MONITOR PAPER OBSERVATION TRACK."
+            if projection.paper_observation_track_id is not None
+            else (choice or "SPONSOR") + " DECISION RECORDED · ACTIVATION BLOCKED."
+        )
     elif choice == "IGNORE":
         next_step = "OPPORTUNITY IGNORED · OBJECTIVE OBSERVATION CONTINUES."
     elif projection.activation_disposition == "ACTIVATED":
@@ -1444,6 +1522,7 @@ def render_native_trade_window(
             ("Observation decision", projection.sponsor_observation_decision_id or "NOT AVAILABLE"),
             ("Decision-time snapshot", projection.sponsor_observation_snapshot_id or "NOT AVAILABLE"),
             ("Activation disposition", projection.activation_disposition),
+            ("Paper Observation Track", projection.paper_observation_track_id or projection.paper_observation_track_state),
             ("Sponsor position", projection.sponsor_position_id or "NOT AVAILABLE"),
             ("Step-33 journal", projection.journal_record_id or "NOT AVAILABLE"),
             ("Continuity binding", "EXACT CURRENT" if not projection.continuity_warnings else "FAIL CLOSED · " + " · ".join(projection.continuity_warnings)),
@@ -1473,8 +1552,8 @@ def render_native_trade_window(
         '<div class="trade-window-shell"><p class="trade-window-back"><a class="button" href="/swing/opportunities">← Back to Opportunities</a></p>'
         + error + '<div class="trade-window-grid"><div class="trade-window-column">'
         + decision_header + attempt_notice + mathematics + assessment + risk + timing_model
-        + '</div><aside class="trade-window-column">' + sponsor + entry_workflow
-        + activation + next_panel + context + journal + provenance + '</aside></div></div>'
+        + '</div><aside class="trade-window-column">' + sponsor + activation + paper_track
+        + entry_workflow + next_panel + context + journal + provenance + '</aside></div></div>'
     )
     return _page(
         title=f"{projection.canonical_instrument} Trade Window",

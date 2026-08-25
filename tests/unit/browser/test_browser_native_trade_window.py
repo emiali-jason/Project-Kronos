@@ -538,3 +538,225 @@ def test_trade_ux_live_entry_requires_manual_facts_and_never_claims_broker_autho
     assert 'name="manual_execution_confirmed"' in html
     assert "KRONOS will not place, modify or cancel an order" in html
     assert "CONFIRM LIVE ENTRY" in html
+
+
+def test_blocked_paper_decision_exposes_distinct_explicit_track_control(tmp_path) -> None:
+    completed = _completed(tmp_path)
+    workflow = SwingTradeWindowWorkflow(
+        LocalKr370Step31HandoffStore(tmp_path / "handoffs"),
+        LocalTradePlanStore(tmp_path / "plans"),
+    )
+    projected = workflow.construct(
+        completed,
+        _evidence(completed),
+        _context(completed.requirement.canonical_instrument),
+        current_run_identity=completed.requirement.native_run_identity,
+        current_analysis_boundary=completed.promotion.analysis_boundary,
+        created_at=NOW,
+    )
+    observation = projected.step31_observation
+    assert observation is not None
+    decision = workflow.record_sponsor_observation_choice(
+        projected.native_run_identity,
+        projected.canonical_instrument,
+        projected.native_assessment_sha256,
+        observation.observation_evidence_id,
+        SponsorTradeChoice.PAPER,
+        SponsorActivationDisposition.BLOCKED_RISK_UNAVAILABLE,
+        current_run_identity=projected.native_run_identity,
+        decided_at=NOW,
+        warning_acknowledged=False,
+        risk_state="RISK_UNAVAILABLE",
+    )
+    available = workflow.project(
+        projected.native_run_identity, projected.canonical_instrument
+    )
+    html = render_native_trade_window(_ready(), available)
+
+    assert available.paper_observation_track_start_available
+    assert available.paper_observation_track_state == "AVAILABLE"
+    assert "PAPER OBSERVATION TRACK" in html
+    assert "Research-only factual path observation" in html
+    assert 'action="/swing/trade-window/paper-observation/start"' in html
+    assert 'name="track_confirmed"' in html
+    assert "START PAPER OBSERVATION" in html
+    assert "no Sponsor Position" in html
+    assert "trade-blocked" in html
+    assert "PAPER-OBSERVATION-TRACK" not in html
+    assert html.index("SPONSOR DECISION") < html.index("POSITION ACTIVATION")
+    assert html.index("POSITION ACTIVATION") < html.index("PAPER OBSERVATION TRACK")
+
+    started = workflow.start_paper_observation_track(
+        projected.native_run_identity,
+        projected.canonical_instrument,
+        projected.native_assessment_sha256,
+        decision.decision.decision_identity,
+        current_run_identity=projected.native_run_identity,
+        started_at=NOW,
+    )
+    assert started.track.track_identity
+    active_html = render_native_trade_window(
+        _ready(),
+        workflow.project(projected.native_run_identity, projected.canonical_instrument),
+    )
+    assert "ACTIVE" in active_html
+    assert "NOT ACTIVE" in active_html
+    assert "ENTRY NOT OBSERVED" in active_html
+    assert "START PAPER OBSERVATION" not in active_html
+    assert "No position, order, fill, P&amp;L or actual R is created" in active_html
+
+    current = workflow.project(
+        projected.native_run_identity, projected.canonical_instrument
+    )
+    interrupted_html = render_native_trade_window(
+        _ready(),
+        replace(
+            current,
+            paper_observation_track_state="MONITORING_INTERRUPTED",
+            paper_observation_monitoring_state="INTERRUPTED",
+            paper_observation_monitoring_reason="PROVIDER_DISCONNECTED",
+        ),
+    )
+    assert "MONITORING INTERRUPTED" in interrupted_html
+    assert "PROVIDER DISCONNECTED" in interrupted_html
+
+    complete_html = render_native_trade_window(
+        _ready(),
+        replace(
+            current,
+            paper_observation_track_state="COMPLETE",
+            paper_observation_monitoring_state="COMPLETE",
+            paper_observation_monitoring_reason="TERMINAL_FACTUAL_OUTCOME_RETAINED",
+            paper_observation_entry_state="ENTRY_OBSERVED",
+            paper_observation_outcome_state="TARGET_LEVEL_TOUCHED",
+        ),
+    )
+    assert "PAPER OBSERVATION TRACK" in complete_html
+    assert "COMPLETE" in complete_html
+    assert "ENTRY OBSERVED" in complete_html
+    assert "TARGET LEVEL TOUCHED" in complete_html
+    assert "PROFIT" not in complete_html and "ACTUAL R" not in complete_html
+
+
+def test_activated_paper_position_suppresses_duplicate_track(tmp_path) -> None:
+    completed = _completed(tmp_path)
+    workflow = SwingTradeWindowWorkflow(
+        LocalKr370Step31HandoffStore(tmp_path / "handoffs"),
+        LocalTradePlanStore(tmp_path / "plans"),
+    )
+    projection = workflow.construct(
+        completed,
+        _evidence(completed),
+        _context(completed.requirement.canonical_instrument),
+        current_run_identity=completed.requirement.native_run_identity,
+        current_analysis_boundary=completed.promotion.analysis_boundary,
+        created_at=NOW,
+    )
+    activated = replace(
+        projection,
+        sponsor_observation_controls_available=False,
+        sponsor_observation_decision_state="PAPER · RECORDED",
+        sponsor_observation_choice="PAPER",
+        sponsor_observation_decision_id="SPONSOR-OBSERVATION-DECISION-PAPER",
+        sponsor_observation_snapshot_id="SPONSOR-DECISION-SNAPSHOT-PAPER",
+        activation_disposition="ACTIVATED",
+        activation_reason="GOVERNED_SPONSOR_POSITION_ACTIVATED",
+        sponsor_position_state="PAPER · ACTIVE",
+        sponsor_position_id="SPONSOR-POSITION-PAPER",
+        paper_observation_track_state="NOT REQUIRED",
+        paper_observation_monitoring_reason="GOVERNED SPONSOR POSITION ACTIVATED",
+    )
+    html = render_native_trade_window(_ready(), activated)
+    assert "PAPER OBSERVATION TRACK" in html
+    assert "NOT REQUIRED" in html
+    assert "duplicate non-position Track is not created" in html
+    assert "START PAPER OBSERVATION" not in html
+
+
+def test_risk_permitted_paper_pending_entry_does_not_offer_duplicate_track(
+    tmp_path,
+) -> None:
+    completed = _completed(tmp_path)
+    workflow = SwingTradeWindowWorkflow(
+        LocalKr370Step31HandoffStore(tmp_path / "handoffs"),
+        LocalTradePlanStore(tmp_path / "plans"),
+        LocalPortfolioStateV1Store(tmp_path / "portfolio"),
+        LocalRiskPermissionV1Store(tmp_path / "risk"),
+    )
+    projection = workflow.construct(
+        completed,
+        _evidence(completed),
+        _context(completed.requirement.canonical_instrument),
+        current_run_identity=completed.requirement.native_run_identity,
+        current_analysis_boundary=completed.promotion.analysis_boundary,
+        created_at=NOW,
+    )
+    observation = projection.step31_observation
+    plan = projection.trade_plan
+    assert observation is not None and plan is not None
+    from tests.unit.browser.test_browser_trade_lifecycle_continuity import _review
+
+    workflow.publish_current_portfolio_state(
+        _review(completed, plan),
+        native_run_identity=plan.native_run_identity,
+        as_of_boundary=plan.observation_boundary,
+    )
+    risk = workflow.evaluate_current_risk(
+        plan.native_run_identity, plan.canonical_instrument, evaluated_at=NOW
+    )
+    workflow.record_sponsor_observation_choice(
+        projection.native_run_identity,
+        projection.canonical_instrument,
+        projection.native_assessment_sha256,
+        observation.observation_evidence_id,
+        SponsorTradeChoice.PAPER,
+        SponsorActivationDisposition.PENDING_ENTRY_CONFIRMATION,
+        current_run_identity=projection.native_run_identity,
+        decided_at=NOW,
+        warning_acknowledged=False,
+        risk_state="RISK_APPROVED",
+        risk_identity=risk.risk_result_id,
+    )
+    pending = workflow.project(
+        projection.native_run_identity, projection.canonical_instrument
+    )
+    html = render_native_trade_window(_ready(), pending)
+
+    assert pending.paper_observation_track_state == "NOT AVAILABLE"
+    assert not pending.paper_observation_track_start_available
+    assert "START PAPER OBSERVATION" not in html
+
+
+def test_live_and_ignore_presentations_never_offer_paper_observation_track(
+    tmp_path,
+) -> None:
+    completed = _completed(tmp_path)
+    workflow = SwingTradeWindowWorkflow(
+        LocalKr370Step31HandoffStore(tmp_path / "handoffs"),
+        LocalTradePlanStore(tmp_path / "plans"),
+    )
+    base = workflow.construct(
+        completed,
+        _evidence(completed),
+        _context(completed.requirement.canonical_instrument),
+        current_run_identity=completed.requirement.native_run_identity,
+        current_analysis_boundary=completed.promotion.analysis_boundary,
+        created_at=NOW,
+    )
+    for choice, disposition in (
+        ("LIVE", "BLOCKED_RISK_UNAVAILABLE"),
+        ("IGNORE", "NOT_APPLICABLE_IGNORE"),
+    ):
+        html = render_native_trade_window(
+            _ready(),
+            replace(
+                base,
+                sponsor_observation_choice=choice,
+                sponsor_observation_decision_state=choice + " · RECORDED",
+                sponsor_observation_decision_id="SPONSOR-OBSERVATION-" + choice,
+                sponsor_observation_snapshot_id="SPONSOR-SNAPSHOT-" + choice,
+                activation_disposition=disposition,
+                activation_reason=disposition,
+            ),
+        )
+        assert "START PAPER OBSERVATION" not in html

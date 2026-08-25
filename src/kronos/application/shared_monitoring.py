@@ -55,6 +55,28 @@ class SharedSwingMonitoringHub:
         with self._lock:
             return len(self._by_instrument)
 
+    def subscription_reference_count(self, instrument: InstrumentRecord) -> int:
+        """Return the number of governed consumers sharing one subscription."""
+
+        if type(instrument) is not InstrumentRecord:
+            raise TypeError("SHARED_MONITORING_INSTRUMENT_INVALID")
+        with self._lock:
+            return len(self._by_instrument.get(instrument, ()))
+
+    def subscription_owner_identities(
+        self, instrument: InstrumentRecord
+    ) -> tuple[str, ...]:
+        """Expose bounded ownership facts without exposing Provider objects."""
+
+        if type(instrument) is not InstrumentRecord:
+            raise TypeError("SHARED_MONITORING_INSTRUMENT_INVALID")
+        with self._lock:
+            return tuple(sorted(
+                self._registrations[identity].owner_identity
+                for identity in self._by_instrument.get(instrument, ())
+                if identity in self._registrations
+            ))
+
     def close(self) -> None:
         with self._lock:
             registrations = tuple(self._registrations.values())
@@ -158,6 +180,11 @@ class _SharedRegistration:
         self._consumer = consumer
         self._instruments: set[InstrumentRecord] = set()
         self._connected = False
+
+    @property
+    def owner_identity(self) -> str:
+        value = getattr(self._consumer, "owner_identity", type(self._consumer).__name__)
+        return value if type(value) is str and value else "UNIDENTIFIED_CONSUMER"
 
     def subscribe(self, instruments: tuple[InstrumentRecord, ...]) -> None:
         self._hub._subscribe(self, instruments)

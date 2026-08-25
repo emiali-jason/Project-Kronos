@@ -951,6 +951,9 @@ class KronosBrowserServer(ThreadingHTTPServer):
         )
         capability = capability_getter() if callable(capability_getter) else None
         if capability is None or getattr(capability, "active", False) is not True:
+            self.trade_window.mark_paper_observation_monitoring_unavailable(
+                "PROVIDER_CAPABILITY_NOT_ACTIVE"
+            )
             self._synchronize_trade_window()
             return
         for projection in self.trade_window.projections():
@@ -976,6 +979,15 @@ class KronosBrowserServer(ThreadingHTTPServer):
             )
         except ValueError as error:
             _LOG.warning("KR380 restoration not active: %s", error)
+        try:
+            self.trade_window.restore_paper_observation_monitoring(
+                capability,
+                lambda instrument: resolve_governed_monitoring_instrument(
+                    capability, instrument, datetime.now().astimezone().date()
+                ),
+            )
+        except ValueError as error:
+            _LOG.warning("Paper observation restoration not active: %s", error)
         try:
             restored = self.native_review.restore_lifecycle_monitoring(
                 capability,
@@ -1463,6 +1475,9 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             return
         if path == "/swing/trade-window/activate":
             self._activate_sponsor_observation_entry()
+            return
+        if path == "/swing/trade-window/paper-observation/start":
+            self._start_paper_observation_track()
             return
         if path == "/notifications/watch/deactivate":
             self._manage_progression_watch("deactivate")
@@ -2196,6 +2211,84 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             "/swing/trade-window/" + run_identity + "/" + quote(instrument, safe="")
         )
 
+    def _start_paper_observation_track(self) -> None:
+        """Start research-only PAPER path tracking after explicit confirmation."""
+
+        run_identity = instrument = None
+        try:
+            content_length = int(self.headers.get("Content-Length", ""))
+            if (
+                self.headers.get("Content-Type", "").split(";", 1)[0].lower()
+                != "application/x-www-form-urlencoded"
+                or not 0 < content_length <= 2048
+            ):
+                raise ValueError("PAPER_OBSERVATION_START_REQUEST_INVALID")
+            fields = parse_qs(
+                self.rfile.read(content_length).decode("utf-8"),
+                strict_parsing=True,
+            )
+            required = {
+                "run_identity",
+                "canonical_instrument",
+                "native_assessment_sha256",
+                "decision_identity",
+                "track_confirmed",
+            }
+            if set(fields) != required or any(
+                len(values) != 1 for values in fields.values()
+            ):
+                raise ValueError("PAPER_OBSERVATION_START_REQUEST_INVALID")
+            run_identity = fields["run_identity"][0]
+            instrument = fields["canonical_instrument"][0]
+            assessment = fields["native_assessment_sha256"][0]
+            decision_identity = fields["decision_identity"][0]
+            if fields["track_confirmed"][0] != "YES":
+                raise ValueError("PAPER_OBSERVATION_START_CONFIRMATION_REQUIRED")
+            projection = self.server.trade_window.project(run_identity, instrument)
+            _, current = self.server.application.opportunities_projection()
+            if (
+                projection is None
+                or current is None
+                or current.run_identity != run_identity
+                or projection.native_assessment_sha256 != assessment
+                or projection.sponsor_observation_decision_id != decision_identity
+                or projection.sponsor_observation_choice != "PAPER"
+                or not projection.paper_observation_track_start_available
+                or not projection.activation_disposition.startswith("BLOCKED_")
+            ):
+                raise ValueError("PAPER_OBSERVATION_TRACK_CURRENT_BINDING_INVALID")
+            track = self.server.trade_window.start_paper_observation_track(
+                run_identity,
+                instrument,
+                assessment,
+                decision_identity,
+                current_run_identity=current.run_identity,
+                started_at=datetime.now(UTC),
+            )
+            try:
+                capability, governed_instrument, _ = self.server._operability_context(
+                    instrument
+                )
+                self.server.trade_window.attach_paper_observation_monitoring(
+                    track.track.track_identity, capability, governed_instrument
+                )
+            except ValueError:
+                self.server.trade_window.mark_paper_observation_monitoring_unavailable(
+                    "PROVIDER_CAPABILITY_NOT_ACTIVE"
+                )
+            self.server._synchronize_trade_window()
+        except (UnicodeDecodeError, ValueError):
+            self._trade_window_conflict(
+                run_identity,
+                instrument,
+                "PAPER OBSERVATION TRACK NOT STARTED",
+                "The exact blocked PAPER decision is stale, unavailable, already tracked, or was not explicitly confirmed.",
+            )
+            return
+        self._redirect(
+            "/swing/trade-window/" + run_identity + "/" + quote(instrument, safe="")
+        )
+
     def _trade_window_conflict(
         self,
         run_identity: object,
@@ -2420,7 +2513,11 @@ class _BrowserHandler(BaseHTTPRequestHandler):
         if self.server.active_live_monitoring_count() and not confirmed:
             self._redirect("/settings#kite-market-data")
             return
-        self.server.application.disconnect_provider()
+        if self.server.application.disconnect_provider():
+            self.server.trade_window.close_monitoring()
+            self.server.trade_window.mark_paper_observation_monitoring_unavailable(
+                "PROVIDER_DISCONNECTED"
+            )
         self._redirect("/swing/opportunities")
 
     def _receive_telegram_token(self) -> None:

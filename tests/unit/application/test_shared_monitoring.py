@@ -17,6 +17,8 @@ NOW = datetime(2026, 8, 21, 8, 0, tzinfo=UTC)
 
 
 class Consumer:
+    owner_identity = "TEST_CONSUMER"
+
     def __init__(self) -> None:
         self.ticks = []
         self.orders = []
@@ -98,6 +100,10 @@ def test_shared_instrument_is_subscribed_once_and_fanned_out() -> None:
         registration.connect()
         registrations.append(registration)
     assert capability.sessions[0].subscribed == [(ONE,)]
+    assert hub.subscription_reference_count(ONE) == 2
+    assert hub.subscription_owner_identities(ONE) == (
+        "TEST_CONSUMER", "TEST_CONSUMER"
+    )
     capability.sessions[0].consumer.on_market_tick(tick(ONE))
     assert all(len(item.ticks) == 1 for item in values)
 
@@ -112,6 +118,7 @@ def test_reference_counted_disconnect_keeps_shared_socket_until_last_consumer() 
         registration.connect()
         values.append(registration)
     values[0].disconnect()
+    assert hub.subscription_reference_count(ONE) == 0
     assert capability.sessions[0].disconnections == 0
     values[1].disconnect()
     assert capability.sessions[0].disconnections == 1
