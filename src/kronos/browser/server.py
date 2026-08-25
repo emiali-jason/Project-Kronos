@@ -59,6 +59,10 @@ from kronos.application.swing_trade_window import (
     TRADE_PLAN_CONSTRUCTION_SAFE_FAILURES,
     build_current_trade_construction_evidence,
 )
+from kronos.swing.v1.observation_research_ledger_v2 import (
+    CurrentMarketFactV2,
+    websocket_presentation_state,
+)
 from kronos.application.live_monitoring_e2e import (
     resolve_governed_monitoring_instrument,
 )
@@ -1274,6 +1278,9 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             return
         if path == "/journal":
             query = parse_qs(urlsplit(self.path).query, keep_blank_values=True)
+            product = query.get("product", ["SWING"])
+            search = query.get("search", [""])
+            view = query.get("view", ["operational"])
             selected = query.get("filter", ["ALL"])
             selected_record = query.get("record", [None])
             observation_choice = query.get("observation_choice", ["ALL"])
@@ -1281,9 +1288,16 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             observation_severity = query.get("observation_severity", ["ALL"])
             if (
                 set(query).difference({
+                    "product", "search", "view",
                     "filter", "record", "observation_choice",
                     "observation_activation", "observation_severity",
                 })
+                or len(product) != 1
+                or len(search) != 1
+                or len(view) != 1
+                or product[0] not in {"SWING", "INTRADAY"}
+                or view[0] not in {"operational", "research"}
+                or len(search[0]) > 80
                 or len(selected) != 1
                 or len(selected_record) != 1
                 or len(observation_choice) != 1
@@ -1320,6 +1334,63 @@ class _BrowserHandler(BaseHTTPRequestHandler):
                     raise ValueError
             except ValueError:
                 self._text(HTTPStatus.BAD_REQUEST, "Journal filter is invalid.")
+                return
+            if view[0] == "operational":
+                try:
+                    governed_date = self.server.application.current_swing_trading_date()
+                except ValueError:
+                    governed_date = None
+                    operational = ()
+                else:
+                    facts: dict[str, CurrentMarketFactV2] = {}
+                    for tick in self.server.swing_monitoring_hub.latest_market_ticks:
+                        for identity in {
+                            tick.instrument.name,
+                            tick.instrument.trading_symbol,
+                        }:
+                            if identity:
+                                facts[identity] = CurrentMarketFactV2(
+                                    identity,
+                                    tick.last_price,
+                                    tick.observed_at,
+                                    tick.source,
+                                    True,
+                                )
+                    preliminary = self.server.trade_window.observation_operational_handoffs_v2(
+                        current_facts=facts,
+                        governed_current_trading_date=governed_date,
+                    )
+                    completion_dates = {}
+                    for item in preliminary:
+                        if item.completion_timestamp is None:
+                            continue
+                        completion_date = self.server.application.swing_trading_date_for(
+                            item.completion_timestamp
+                        )
+                        if completion_date is not None:
+                            completion_dates[item.decision_identity] = completion_date
+                    operational = self.server.trade_window.observation_operational_handoffs_v2(
+                        current_facts=facts,
+                        governed_current_trading_date=governed_date,
+                        completion_trading_dates=completion_dates,
+                    )
+                self._html(render_trade_journal(
+                    snapshot,
+                    self.server.native_review.journal_snapshot(),
+                    operational=operational,
+                    operational_websocket_state=websocket_presentation_state(
+                        monitoring_required=(
+                            self.server.swing_monitoring_hub.subscription_count > 0
+                        ),
+                        connection_state=(
+                            self.server.swing_monitoring_hub.connection_state
+                        ),
+                    ),
+                    governed_trading_date=governed_date,
+                    selected_product=product[0],
+                    search=search[0],
+                    selected_record_id=selected_record[0],
+                ))
                 return
             self._html(render_trade_journal(
                 snapshot,

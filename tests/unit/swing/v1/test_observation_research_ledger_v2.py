@@ -210,6 +210,10 @@ def test_current_ltp_distance_is_projection_only_and_touch_state_wins(tmp_path) 
         websocket_state=WebSocketPresentationState.CONNECTED,
     )[0]
     assert handoff.mode is ObservationMode.PAPER_OBSERVATION
+    assert handoff.entry == track.observation_entry_reference
+    assert handoff.monitoring_state == paper.projection(
+        track.track_identity
+    ).monitoring_state.value
     assert handoff.distance_to_target == result.snapshot.target - Decimal("105")
     assert handoff.distance_to_stop == Decimal("105") - result.snapshot.stop
     assert handoff.monetary_pnl_state == "UNAVAILABLE"

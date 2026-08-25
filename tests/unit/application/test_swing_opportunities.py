@@ -1,5 +1,5 @@
 from dataclasses import fields, replace
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 import inspect
 from types import SimpleNamespace
 
@@ -32,6 +32,17 @@ from tests.unit.swing.test_swing_top_opportunity import _selection
 
 
 NOW = datetime(2026, 8, 11, 4, 30, tzinfo=UTC)
+
+
+def test_operational_book_date_is_derived_from_domain_008() -> None:
+    observed = datetime(2026, 8, 25, 5, 0, tzinfo=UTC)
+    application = app.SwingOpportunitiesApplication(
+        _Provider,
+        clock=lambda: observed,
+        market_calendar_publisher=MarketCalendarPublisher(),
+    )
+    assert application.current_swing_trading_date() == date(2026, 8, 25)
+    assert application.swing_trading_date_for(observed) == date(2026, 8, 25)
 
 
 def _mtf_fact_fixture():  # type: ignore[no-untyped-def]

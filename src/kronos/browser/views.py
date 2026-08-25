@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 from decimal import Decimal
 from html import escape
 from urllib.parse import quote, urlencode
@@ -119,6 +120,12 @@ from kronos.swing.v1.observation_research_ledger import (
     ObservationLinkKind,
     ObservationResearchProjectionV1,
 )
+from kronos.swing.v1.observation_research_ledger_v2 import (
+    ObservationMode,
+    ObservationOperationalHandoffV2,
+    ObservationOperationalRoute,
+    WebSocketPresentationState,
+)
 from kronos.swing.v1.mtf_facts import SameRunMtfFactSnapshot
 from kronos.swing.v1.mcx_supporting_context import (
     MCX_CONTEXT_INSTRUMENT_FAMILIES,
@@ -170,6 +177,7 @@ a{color:inherit;text-decoration:none}.app{display:grid;grid-template-columns:218
 .shadow-banner{border:1px solid #82631f;background:#241d0a;color:var(--amber);border-radius:8px;padding:8px 11px;margin-bottom:12px;font-size:11px;font-weight:800;letter-spacing:.05em}.shadow-list{display:grid;gap:10px}.shadow-card{border:1px solid var(--line);background:rgba(6,23,37,.88);border-radius:9px;padding:12px}.shadow-card summary{cursor:pointer;list-style:none;display:grid;grid-template-columns:minmax(150px,1fr) repeat(3,auto);gap:12px;align-items:center}.shadow-card summary::-webkit-details-marker{display:none}.shadow-state{color:var(--blue);font-weight:800}.shadow-comparison{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}.shadow-side{border-top:1px solid var(--line);padding-top:9px}.shadow-side h3{font-size:10px;color:var(--muted);letter-spacing:.06em;margin:0 0 7px}.shadow-timeframes{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px}.shadow-timeframe{border:1px solid var(--line);border-radius:6px;padding:7px}.shadow-timeframe span,.shadow-wait span{display:block;color:var(--muted);font-size:9px;letter-spacing:.05em}.shadow-timeframe strong{font-size:11px}.shadow-wait{margin-top:10px;border-left:2px solid var(--blue);padding:7px 9px;background:#061a29}.shadow-observation{display:flex;gap:7px;margin-top:10px}.shadow-observation input{flex:1;border:1px solid #31506a;background:#04131f;color:var(--text);border-radius:6px;padding:7px 9px}.remainder-tag{color:var(--amber);font-size:10px;margin-top:7px}
 .one-minute{display:grid;gap:12px}.one-minute h3{margin:0 0 5px;color:var(--muted);font-size:10px;letter-spacing:.07em}.one-minute-status{font-size:16px;color:var(--blue)}.one-minute p{margin:2px 0;color:#cfdee8}.one-minute-facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}.one-minute-fact{border:1px solid var(--line);border-radius:6px;padding:7px 9px;font-size:11px}.one-minute-wait{border-left:2px solid var(--amber);background:#211b0e;padding:8px 10px}.one-minute details{border-top:1px solid var(--line);padding-top:9px}.one-minute summary{cursor:pointer;color:var(--muted);font-size:11px}.native-trade-plan{margin-top:12px;border:1px solid #28506a;border-radius:8px;background:#0b1923;padding:12px}.native-trade-plan h3{margin:0;color:var(--blue);font-size:13px}.native-trade-plan-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:10px}.native-trade-plan-grid div{border:1px solid var(--line);border-radius:6px;padding:8px}.native-trade-plan-grid span{display:block;color:var(--muted);font-size:9px;letter-spacing:.08em}.native-trade-plan-grid strong{display:block;margin-top:3px;font-size:14px}.native-trade-plan .why{margin:10px 0 0;color:#cfdee8;font-size:11px}
 .journal-filters{display:flex;gap:7px;margin-bottom:12px}.journal-filters .button{font-size:11px;padding:6px 10px}.journal-filters .button.primary{background:#0c4f83;border-color:#2c9cff}
+.journal-head{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px}.journal-products{display:flex;gap:6px}.journal-products .button{padding:6px 12px;font-size:11px}.journal-products .active{background:#0c4f83;border-color:#2c9cff}.journal-date{color:var(--muted);font-size:11px}.journal-ws{margin-left:auto;border:1px solid var(--line);border-radius:999px;padding:4px 9px;font-size:10px;font-weight:850}.journal-ws.CONNECTED{color:var(--green);border-color:#176741}.journal-ws.DISCONNECTED{color:var(--red);border-color:#793b40}.journal-ws.IDLE{color:var(--muted)}.journal-toolbar{display:flex;align-items:center;gap:8px;margin-bottom:12px}.journal-search{width:min(300px,100%);border:1px solid #31506a;background:#04131f;color:var(--text);border-radius:7px;padding:8px 10px}.journal-section{border:1px solid var(--line);border-radius:10px;background:rgba(6,23,37,.86);margin-top:12px;overflow:hidden}.journal-section.paper{border-left:3px solid #6588e8}.journal-section.live{border-left:3px solid #2ed477}.journal-section.observation{border-left:3px solid #37b8d8}.journal-section-head{display:flex;align-items:baseline;justify-content:space-between;gap:10px;padding:11px 13px;border-bottom:1px solid var(--line)}.journal-section-head h2{font-size:13px;letter-spacing:.07em;margin:0}.journal-section-head span{color:var(--muted);font-size:10px}.journal-table-wrap{overflow-x:auto}.journal-table{width:100%;border-collapse:collapse;font-size:11px}.journal-table th,.journal-table td{padding:8px 9px;text-align:left;white-space:nowrap;border-top:1px solid rgba(27,53,73,.65)}.journal-table tr:first-child td{border-top:0}.journal-table th{color:var(--muted);font-size:9px;letter-spacing:.05em;text-transform:uppercase}.journal-table tbody tr:hover{background:#0a2134}.journal-table a{color:#dce8f0;font-weight:800}.journal-side.LONG{color:var(--green)}.journal-side.SHORT{color:var(--red)}.journal-pnl.positive{color:var(--green)}.journal-pnl.negative{color:var(--red)}.journal-monitor.ACTIVE{color:var(--green)}.journal-monitor.INTERRUPTED{color:var(--red)}.journal-detail{margin-top:12px;border:1px solid #28506a;border-radius:9px;background:#071827;padding:13px}.journal-detail h2{margin:0 0 10px;color:var(--blue);font-size:15px}.journal-detail-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}.journal-detail-grid div{border:1px solid var(--line);border-radius:6px;padding:8px}.journal-detail-grid span{display:block;color:var(--muted);font-size:9px;text-transform:uppercase}.journal-detail-grid strong{display:block;margin-top:3px;font-size:12px}.journal-reports{margin-left:auto}@media(max-width:760px){.journal-ws{margin-left:0}.journal-detail-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 .mtf-fact-banner{border:1px solid #28506c;background:#071f32;color:#8dd0ff;border-radius:8px;padding:8px 11px;margin-bottom:12px;font-size:11px;font-weight:800}.mtf-fact-list{display:grid;gap:8px}.mtf-fact-card{border:1px solid var(--line);background:rgba(6,23,37,.88);border-radius:8px;padding:10px}.mtf-fact-card summary{cursor:pointer;display:flex;justify-content:space-between;gap:12px}.mtf-fact-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px;margin-top:9px}.mtf-fact-timeframe{border:1px solid var(--line);border-radius:6px;padding:8px;min-width:0}.mtf-fact-timeframe h3{margin:0 0 5px;color:var(--blue);font-size:12px}.mtf-fact-timeframe p{margin:2px 0;font-size:10px;color:var(--muted);overflow-wrap:anywhere}.mtf-fact-timeframe strong{color:var(--text)}
 .configuration{max-width:760px;border:1px solid var(--line);background:rgba(6,23,37,.88);border-radius:11px;padding:20px}.configuration-head{display:flex;align-items:center;justify-content:space-between;gap:16px;border-bottom:1px solid var(--line);padding-bottom:14px;margin-bottom:16px}.configuration-head h2{margin:0;color:var(--blue)}.configuration-state{display:flex;align-items:center;justify-content:space-between;gap:16px;margin:10px 0}.connection-status{border:1px solid #246295;border-radius:999px;padding:5px 10px;font-size:12px;font-weight:800}.connection-status.CONNECTED{border-color:#176741;color:var(--green)}.connection-status.CONNECTION-FAILED{border-color:#793b40;color:var(--red)}.credential-form{display:grid;gap:10px;margin-top:18px;padding-top:16px;border-top:1px solid var(--line)}.credential-form label{font-weight:700}.credential-form input{width:100%;border:1px solid #31506a;background:#04131f;color:var(--text);border-radius:7px;padding:11px 12px;font:inherit}.credential-form input:focus{outline:2px solid var(--blue);outline-offset:1px}.configuration-actions{display:flex;gap:10px;align-items:center;margin-top:16px}.configuration-note{color:var(--muted);font-size:12px;margin:9px 0 0}.engineering-diagnostics{margin-bottom:16px}.read-only-badge{border:1px solid #31506a;border-radius:999px;color:#8dd0ff;font-size:10px;font-weight:850;letter-spacing:.08em;padding:4px 8px}.diagnostic-intro{color:var(--muted);font-size:12px;margin:0 0 13px}.diagnostic-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px}.diagnostic-card{display:flex;flex-direction:column;min-height:122px;border:1px solid var(--line);border-radius:8px;background:#061421;padding:11px}.diagnostic-card:hover{border-color:#2c6f9e;background:#082038}.diagnostic-card small{color:#8dd0ff;font-size:9px;font-weight:800;letter-spacing:.08em}.diagnostic-card strong{font-size:12px;margin-top:7px}.diagnostic-card span{color:var(--muted);font-size:11px;margin-top:5px}.diagnostic-card b{color:var(--blue);font-size:11px;margin-top:auto;padding-top:9px}@media(max-width:760px){.diagnostic-grid{grid-template-columns:1fr}}
 .step32-workflow{margin-top:16px;border:1px solid var(--line);background:rgba(6,23,37,.88);border-radius:10px;padding:16px}.step32-head{display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--line);padding-bottom:10px}.step32-head h2{margin:0;font-size:18px}.step32-grid{display:grid;grid-template-columns:1.2fr .8fr .8fr .9fr;gap:12px;margin-top:12px}.step32-block{border-left:1px solid var(--line);padding-left:12px}.step32-block:first-child{border-left:0;padding-left:0}.step32-block h3{margin:0 0 8px;color:var(--muted);font-size:11px;letter-spacing:.06em;text-transform:uppercase}.step32-values{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;margin-top:10px}.step32-value label{display:block;color:var(--muted);font-size:10px}.step32-value strong{font-size:13px}.step32-context{display:grid;gap:7px;font-size:12px}.step32-context span{display:block;color:var(--muted);font-size:10px}.decision-options{display:flex;gap:5px;flex-wrap:wrap}.decision-option{border:1px solid var(--line);border-radius:6px;padding:5px 8px;color:var(--muted);font-size:11px;background:#081c2c}.decision-option.selected{border-color:var(--blue);color:#dff1ff}.decision-time{color:var(--muted);font-size:10px;margin-top:7px}.model-position{display:grid;gap:7px;margin-top:9px}.model-position div{display:flex;justify-content:space-between;gap:8px;font-size:12px}.model-position span{color:var(--muted)}.workflow-list{display:grid;gap:12px}.workflow-card{border:1px solid var(--line);background:rgba(6,23,37,.88);border-radius:10px;padding:14px}.workflow-card-head{display:flex;align-items:center;gap:10px}.workflow-card-head h2{margin:0;font-size:18px}.workflow-card-state{margin-left:auto;color:var(--blue);font-size:11px;font-weight:800}.workflow-card-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;margin:12px 0}.workflow-card-grid label{display:block;color:var(--muted);font-size:10px}.workflow-card-actions{display:flex;justify-content:flex-end}.action-required{border:1px solid #8a4c26;background:#2d1b0f;color:#ffd59c;border-radius:7px;padding:9px 11px;margin-top:10px;font-weight:750}.workflow-empty{border:1px solid var(--line);background:rgba(6,23,37,.88);border-radius:10px;padding:30px;text-align:center;color:var(--muted)}
@@ -2102,6 +2110,273 @@ def render_closed_candidates(
 
 
 def render_trade_journal(
+    snapshot: BrowserWorkspaceSnapshot,
+    journal: TradeJournalSnapshot,
+    *,
+    operational: tuple[ObservationOperationalHandoffV2, ...] | None = None,
+    operational_websocket_state: WebSocketPresentationState | None = None,
+    governed_trading_date: date | None = None,
+    selected_product: str = "SWING",
+    search: str = "",
+    selected_record_id: str | None = None,
+    selected_filter: str = "ALL",
+    observations: tuple[ObservationResearchProjectionV1, ...] = (),
+    observation_choice: str = "ALL",
+    observation_activation: str = "ALL",
+    observation_severity: str = "ALL",
+) -> str:
+    """Render the operational Sponsor book or the preserved research surface."""
+
+    if operational is None:
+        return _render_trade_journal_research(
+            snapshot,
+            journal,
+            selected_filter=selected_filter,
+            selected_record_id=selected_record_id,
+            observations=observations,
+            observation_choice=observation_choice,
+            observation_activation=observation_activation,
+            observation_severity=observation_severity,
+        )
+    return _render_operational_trade_journal(
+        snapshot,
+        operational,
+        websocket_state=operational_websocket_state,
+        governed_trading_date=governed_trading_date,
+        selected_product=selected_product,
+        search=search,
+        selected_record_id=selected_record_id,
+    )
+
+
+def _render_operational_trade_journal(
+    snapshot: BrowserWorkspaceSnapshot,
+    records: tuple[ObservationOperationalHandoffV2, ...],
+    *,
+    websocket_state: WebSocketPresentationState | None,
+    governed_trading_date: date | None,
+    selected_product: str,
+    search: str,
+    selected_record_id: str | None,
+) -> str:
+    product = selected_product if selected_product in {"SWING", "INTRADAY"} else "SWING"
+    tabs = (
+        '<div class="journal-products">'
+        + ''.join(
+            '<a class="button ' + ('active' if item == product else '')
+            + '" href="/journal?product=' + item + '">' + item + '</a>'
+            for item in ("SWING", "INTRADAY")
+        ) + '</div>'
+    )
+    if product == "INTRADAY":
+        body = (
+            '<div class="journal-head">' + tabs + '</div>'
+            '<div class="workflow-empty"><strong>INTRADAY JOURNAL</strong><br>'
+            'NOT YET OPERATIONAL</div>'
+        )
+        return _page(
+            title="Trading Journal", subtitle="Current operational book.",
+            snapshot=snapshot, active_nav="Trading Journal", active_tab="",
+            body=body,
+        )
+
+    current = tuple(
+        item for item in records
+        if item.operational_route is not ObservationOperationalRoute.HISTORICAL
+    )
+    needle = search.strip().casefold()
+    if needle:
+        current = tuple(item for item in current if needle in item.instrument.casefold())
+    current = tuple(sorted(current, key=_journal_order_key))
+    websocket = websocket_state or (
+        current[0].websocket_state
+        if current else WebSocketPresentationState.IDLE
+    )
+    date_text = (
+        "GOVERNED DATE UNAVAILABLE"
+        if governed_trading_date is None else governed_trading_date.strftime("%d %b %Y").upper()
+    )
+    header = (
+        '<div class="journal-head">' + tabs
+        + '<span class="journal-date">' + escape(date_text) + '</span>'
+        + '<span class="journal-ws ' + websocket.value + '">WS '
+        + ('○ ' if websocket is WebSocketPresentationState.IDLE else '● ')
+        + websocket.value + '</span></div>'
+        '<form class="journal-toolbar" method="get" action="/journal">'
+        '<input type="hidden" name="product" value="SWING">'
+        '<input class="journal-search" name="search" value="' + escape(search)
+        + '" placeholder="Search instrument..." aria-label="Search instrument">'
+        '<button type="submit">SEARCH</button>'
+        '<a class="button journal-reports" href="/reports">VIEW HISTORICAL REPORTS</a>'
+        '</form>'
+    )
+    paper = tuple(
+        item for item in current
+        if item.mode is ObservationMode.PAPER
+        and item.sponsor_position_identity is not None
+        and item.activation_disposition.value == "ACTIVATED"
+    )
+    live = tuple(
+        item for item in current
+        if item.mode is ObservationMode.LIVE
+        and item.sponsor_position_identity is not None
+        and item.activation_disposition.value == "ACTIVATED"
+    )
+    observations = tuple(
+        item for item in current
+        if item.mode is ObservationMode.PAPER_OBSERVATION
+        and item.paper_track_identity is not None
+    )
+    detail = next(
+        (item for item in current if item.decision_identity == selected_record_id),
+        None,
+    )
+    content = ''.join((
+        _journal_position_section("PAPER TRADES", "paper", paper),
+        _journal_position_section("LIVE TRADES", "live", live),
+        _journal_observation_section(observations),
+    ))
+    if not paper and not live and not observations:
+        content = (
+            '<div class="workflow-empty"><strong>NO ACTIVE SWING TRADES OR OBSERVATIONS</strong><br>'
+            'Historical records remain available in Reports.</div>'
+        )
+    if detail is not None:
+        content = _journal_detail(detail) + content
+    content += (
+        '<details class="native-diagnostics"><summary>GOVERNED EVIDENCE</summary>'
+        '<a class="button" href="/journal?view=research">OPEN HISTORICAL RESEARCH LEDGER</a>'
+        '</details>'
+    )
+    return _page(
+        title="Trading Journal", subtitle="Current operational book.",
+        snapshot=snapshot, active_nav="Trading Journal", active_tab="",
+        body=header + content,
+    )
+
+
+def _journal_order_key(item: ObservationOperationalHandoffV2) -> tuple[object, ...]:
+    active = item.operational_route is ObservationOperationalRoute.ACTIVE
+    relevant = item.completion_timestamp or item.decision_timestamp
+    return (0 if active else 1, -relevant.timestamp(), item.decision_identity)
+
+
+def _journal_status(item: ObservationOperationalHandoffV2) -> str:
+    if item.operational_route is ObservationOperationalRoute.COMPLETED_CURRENT_TRADING_DAY:
+        return "COMPLETE TODAY" if item.mode is ObservationMode.PAPER_OBSERVATION else "EXITED TODAY"
+    if item.monitoring_state in {"INTERRUPTED", "MONITORING_UNAVAILABLE"}:
+        return "MONITORING INTERRUPTED"
+    if item.mode is ObservationMode.PAPER_OBSERVATION:
+        if item.paper_track_state == "COMPLETE":
+            return "COMPLETE TODAY"
+        if item.paper_track_outcome == "OUTCOME_NOT_ESTABLISHED":
+            return "OUTCOME NOT ESTABLISHED"
+    return "ACTIVE"
+
+
+def _journal_value(value: Decimal | None, *, money: bool = False) -> str:
+    if value is None:
+        return "—"
+    return ("₹" if money else "") + _number(value)
+
+
+def _journal_distance(item: ObservationOperationalHandoffV2, target: bool) -> str:
+    state = item.distance_to_target_state if target else item.distance_to_stop_state
+    value = item.distance_to_target if target else item.distance_to_stop
+    if state != "AVAILABLE":
+        return state.replace("_", " ") if state != "UNAVAILABLE" else "—"
+    return _journal_value(value)
+
+
+def _journal_monitoring(item: ObservationOperationalHandoffV2) -> str:
+    state = item.monitoring_state
+    if state in {"ACTIVE", "CONNECTED"}:
+        return "● ACTIVE"
+    if state in {"INTERRUPTED", "MONITORING_UNAVAILABLE", "DISCONNECTED"}:
+        return "● INTERRUPTED"
+    return "○ NOT ACTIVE"
+
+
+def _journal_position_section(
+    title: str, style: str, records: tuple[ObservationOperationalHandoffV2, ...]
+) -> str:
+    active = sum(item.operational_route is ObservationOperationalRoute.ACTIVE for item in records)
+    exited = len(records) - active
+    summary = f"{active} ACTIVE · {exited} EXITED TODAY"
+    rows = ''.join(
+        '<tr><td><a href="/journal?product=SWING&amp;record=' + escape(item.decision_identity)
+        + '">' + escape(item.instrument) + '</a></td>'
+        '<td class="journal-side ' + item.direction.value + '">' + item.direction.value + '</td>'
+        '<td>' + escape(_journal_status(item)) + '</td>'
+        '<td>' + _journal_value(item.entry) + '</td><td>' + _journal_value(item.current_ltp) + '</td>'
+        '<td class="journal-pnl ' + ('positive' if (item.position_gross_pnl or 0) > 0 else 'negative' if (item.position_gross_pnl or 0) < 0 else '') + '">'
+        + _journal_value(item.position_gross_pnl, money=True) + '</td>'
+        '<td>' + _journal_value(item.target) + '</td><td>' + escape(_journal_distance(item, True)) + '</td>'
+        '<td>' + _journal_value(item.stop) + '</td><td>' + escape(_journal_distance(item, False)) + '</td>'
+        '<td class="journal-monitor ' + escape(item.monitoring_state) + '">' + escape(_journal_monitoring(item)) + '</td></tr>'
+        for item in records
+    ) or '<tr><td colspan="11">No current ' + escape(title.lower()) + '.</td></tr>'
+    return (
+        '<section class="journal-section ' + style + '"><div class="journal-section-head"><h2>'
+        + escape(title) + '</h2><span>' + summary + '</span></div><div class="journal-table-wrap">'
+        '<table class="journal-table"><thead><tr><th>Instrument</th><th>Side</th><th>Status</th>'
+        '<th>Entry</th><th>LTP</th><th>P/L</th><th>Target</th><th>Distance Target</th>'
+        '<th>SL</th><th>Distance SL</th><th>Monitoring</th></tr></thead><tbody>'
+        + rows + '</tbody></table></div></section>'
+    )
+
+
+def _journal_observation_section(
+    records: tuple[ObservationOperationalHandoffV2, ...]
+) -> str:
+    active = sum(item.operational_route is ObservationOperationalRoute.ACTIVE for item in records)
+    complete = len(records) - active
+    rows = ''.join(
+        '<tr><td><a href="/journal?product=SWING&amp;record=' + escape(item.decision_identity)
+        + '">' + escape(item.instrument) + '</a></td>'
+        '<td class="journal-side ' + item.direction.value + '">' + item.direction.value + '</td>'
+        '<td>' + escape(_journal_status(item)) + '</td><td>' + _journal_value(item.entry) + '</td>'
+        '<td>' + _journal_value(item.current_ltp) + '</td><td>' + _journal_value(item.target) + '</td>'
+        '<td>' + escape(_journal_distance(item, True)) + '</td><td>' + _journal_value(item.stop) + '</td>'
+        '<td>' + escape(_journal_distance(item, False)) + '</td><td>'
+        + escape(item.paper_track_latest_event + ' · ' + item.paper_track_outcome) + '</td>'
+        '<td class="journal-monitor ' + escape(item.monitoring_state) + '">' + escape(_journal_monitoring(item)) + '</td></tr>'
+        for item in records
+    ) or '<tr><td colspan="11">No current paper observations.</td></tr>'
+    return (
+        '<section class="journal-section observation"><div class="journal-section-head"><h2>PAPER OBSERVATIONS</h2>'
+        '<span>' + str(active) + ' ACTIVE · ' + str(complete) + ' COMPLETE TODAY</span></div>'
+        '<div class="journal-table-wrap"><table class="journal-table"><thead><tr><th>Instrument</th>'
+        '<th>Side</th><th>Track Status</th><th>Observation Entry</th><th>LTP</th><th>Target</th>'
+        '<th>Distance Target</th><th>SL</th><th>Distance SL</th><th>Latest Event / Outcome</th>'
+        '<th>Monitoring</th></tr></thead><tbody>' + rows + '</tbody></table></div></section>'
+    )
+
+
+def _journal_detail(item: ObservationOperationalHandoffV2) -> str:
+    values = (
+        ("Sponsor Decision", item.mode.value), ("Step-31 severity", item.step31_severity.value),
+        ("Risk at decision", item.risk_state), ("Position activation", item.activation_disposition.value),
+        ("Observation / actual entry", _journal_value(item.entry)), ("LTP", _journal_value(item.current_ltp)),
+        ("Stop", _journal_value(item.stop)), ("Target", _journal_value(item.target)),
+        ("Latest event", item.paper_track_latest_event), ("Track outcome", item.paper_track_outcome),
+        ("Monitoring", _journal_monitoring(item)), ("Status", _journal_status(item)),
+    )
+    fields = ''.join(
+        '<div><span>' + escape(label) + '</span><strong>' + escape(value) + '</strong></div>'
+        for label, value in values
+    )
+    evidence = (
+        '<details class="native-diagnostics"><summary>GOVERNED EVIDENCE</summary>'
+        '<div class="v1-context-row"><span>Decision</span><strong>'
+        + escape(item.decision_identity) + '</strong></div><div class="v1-context-row"><span>Projection</span><strong>'
+        + escape(item.projection_contract_identity + ' / ' + item.projection_contract_version)
+        + '</strong></div></details>'
+    )
+    return '<section class="journal-detail"><h2>' + escape(item.instrument) + ' · READ-ONLY DETAIL</h2><div class="journal-detail-grid">' + fields + '</div>' + evidence + '</section>'
+
+
+def _render_trade_journal_research(
     snapshot: BrowserWorkspaceSnapshot,
     journal: TradeJournalSnapshot,
     *,

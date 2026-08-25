@@ -317,6 +317,7 @@ class ObservationOperationalHandoffV2:
     paper_track_state: str
     paper_track_latest_event: str
     paper_track_outcome: str
+    monitoring_state: str
     objective_state: str
     objective_outcome: str
     entry: Decimal | None
@@ -851,15 +852,28 @@ def _operational_handoff(
         risk_state=snapshot.risk_state,
         activation_disposition=source.activation.disposition,
         sponsor_position_identity=position,
-        sponsor_position_state="AVAILABLE" if position else "UNAVAILABLE",
+        sponsor_position_state=(
+            "UNAVAILABLE" if position_fact is None else position_fact.state
+        ),
         paper_track_identity=None if paper is None else paper.track.track_identity,
         paper_track_state="NOT_APPLICABLE" if item.paper_track_state is None else item.paper_track_state.value,
         paper_track_latest_event="NOT_APPLICABLE" if paper is None else paper.latest_event.value,
         paper_track_outcome="NOT_APPLICABLE" if paper is None else paper.outcome_state.value,
+        monitoring_state=(
+            paper.monitoring_state.value
+            if paper is not None
+            else (
+                "NOT_ACTIVE"
+                if position_fact is None
+                else "INTERRUPTED"
+                if "MONITORING" in position_fact.state
+                else "ACTIVE"
+            )
+        ),
         objective_state="UNAVAILABLE" if model is None else model.source_state,
         objective_outcome="UNAVAILABLE" if objective is None else objective.source_state,
         entry=(
-            snapshot.entry
+            paper.track.observation_entry_reference
             if paper is not None
             else None if position_fact is None else position_fact.actual_entry
         ),

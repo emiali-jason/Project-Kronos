@@ -4,13 +4,14 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, replace
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from enum import StrEnum
 import re
 from threading import RLock, Thread
 import time
 from typing import Protocol
 from uuid import uuid4
+from zoneinfo import ZoneInfo
 
 from kronos.application.live_monitoring_e2e import (
     LiveMonitoringTestResult,
@@ -748,6 +749,46 @@ class SwingOpportunitiesApplication:
             )
             for exchange in ("NSE", "MCX")
         )
+
+    def current_swing_trading_date(self) -> date:
+        """Resolve the current operational book date from DOMAIN-008 authority."""
+
+        if self.__market_calendar_publisher is None:
+            raise ValueError("MARKET_CALENDAR_AUTHORITY_UNAVAILABLE")
+        observed_at = self.__clock()
+        candidates: list[date] = []
+        for exchange in ("NSE", "MCX"):
+            publication = self.__market_calendar_publisher.publication(exchange)
+            local_date = observed_at.astimezone(
+                ZoneInfo(publication.timezone)
+            ).date()
+            governed = tuple(
+                day for day in publication.trading_dates if day <= local_date
+            )
+            if governed:
+                candidates.append(max(governed))
+        if not candidates:
+            raise ValueError("MARKET_CALENDAR_TRADING_DATE_UNAVAILABLE")
+        return max(candidates)
+
+    def swing_trading_date_for(self, observed_at: datetime) -> date | None:
+        """Map a factual event timestamp only when DOMAIN-008 admits its date."""
+
+        if self.__market_calendar_publisher is None or (
+            observed_at.tzinfo is None or observed_at.utcoffset() is None
+        ):
+            return None
+        admitted: list[date] = []
+        for exchange in ("NSE", "MCX"):
+            publication = self.__market_calendar_publisher.publication(exchange)
+            local_date = observed_at.astimezone(
+                ZoneInfo(publication.timezone)
+            ).date()
+            if local_date in publication.trading_dates:
+                admitted.append(local_date)
+        if not admitted or len(set(admitted)) != 1:
+            return None
+        return admitted[0]
 
     def completed_analysis_evidence(self) -> SwingAnalysisEvidenceSnapshot | None:
         """Return the latest immutable successful-run evidence without recomputation."""

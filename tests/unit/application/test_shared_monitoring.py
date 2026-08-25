@@ -87,6 +87,19 @@ def test_ticks_route_only_to_exact_instrument_consumers() -> None:
         registration.connect()
     capability.sessions[0].consumer.on_market_tick(tick(ONE))
     assert len(first.ticks) == 1 and second.ticks == []
+    assert hub.latest_market_ticks == (tick(ONE),)
+
+
+def test_presentation_tick_cache_is_process_local_and_clears_with_last_owner() -> None:
+    capability = Capability()
+    hub = SharedSwingMonitoringHub()
+    registration = hub.open(capability, Consumer())
+    registration.subscribe((ONE,))
+    registration.connect()
+    capability.sessions[0].consumer.on_market_tick(tick(ONE))
+    assert hub.latest_market_ticks[0].last_price == Decimal("100")
+    registration.disconnect()
+    assert hub.latest_market_ticks == ()
 
 
 def test_shared_instrument_is_subscribed_once_and_fanned_out() -> None:

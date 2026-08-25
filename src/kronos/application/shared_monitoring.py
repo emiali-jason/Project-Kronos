@@ -25,6 +25,7 @@ class SharedSwingMonitoringHub:
         self._by_instrument: dict[InstrumentRecord, set[int]] = defaultdict(set)
         self._connection_listener: Callable[[MonitoringConnectionState], None] | None = None
         self._connection_state: MonitoringConnectionState | None = None
+        self._latest_ticks: dict[InstrumentRecord, ProviderMarketTick] = {}
 
     def set_connection_listener(
         self, listener: Callable[[MonitoringConnectionState], None]
@@ -62,6 +63,21 @@ class SharedSwingMonitoringHub:
 
         with self._lock:
             return self._connection_state
+
+    @property
+    def latest_market_ticks(self) -> tuple[ProviderMarketTick, ...]:
+        """Return current process-local factual ticks for presentation only."""
+
+        with self._lock:
+            return tuple(
+                self._latest_ticks[instrument]
+                for instrument in sorted(
+                    self._latest_ticks,
+                    key=lambda item: (
+                        item.exchange, item.segment, item.trading_symbol,
+                    ),
+                )
+            )
 
     def subscription_reference_count(self, instrument: InstrumentRecord) -> int:
         """Return the number of governed consumers sharing one subscription."""
@@ -143,6 +159,7 @@ class SharedSwingMonitoringHub:
                 self._session = None
                 self._capability = None
                 self._connection_state = MonitoringConnectionState.DISCONNECTED
+                self._latest_ticks.clear()
             registration._connected = False
         if session is not None:
             if removals:
@@ -152,6 +169,7 @@ class SharedSwingMonitoringHub:
 
     def on_market_tick(self, tick: ProviderMarketTick) -> None:
         with self._lock:
+            self._latest_ticks[tick.instrument] = tick
             consumers = tuple(
                 self._registrations[identity]._consumer
                 for identity in self._by_instrument.get(tick.instrument, ())
