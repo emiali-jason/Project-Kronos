@@ -1,0 +1,39 @@
+{
+  "applicability_publication_identity": "KRONOS-NSE-CAS-SUBJECT-APPLICABILITY-2026",
+  "applicability_publication_version": "2026.1.0",
+  "closing_auction_session": {
+    "close": "15:35:00",
+    "open": "15:15:00",
+    "session_type": "CLOSING_AUCTION_SESSION"
+  },
+  "continuous_trading": {
+    "close": "15:15:00",
+    "open": "09:15:00",
+    "session_type": "CONTINUOUS_TRADING"
+  },
+  "daily_close_semantics": {
+    "equality_required": false,
+    "last_continuous_close": "LAST_CONTINUOUS_INTRADAY_CLOSE",
+    "official_daily_close": "OFFICIAL_DAILY_CLOSE"
+  },
+  "effective_date": "2026-08-03",
+  "exchange": "NSE",
+  "official_source": {
+    "artifact_identity": "NSE-CLOSING-AUCTION-SESSION-CAS-2026",
+    "official_uri": "https://www.nseindia.com/static/products-services/closing-auction-session",
+    "publication_date": "2026-08-03",
+    "reference": "NSE Closing Auction Session effective 3 August 2026",
+    "title": "NSE Closing Auction Session (CAS)"
+  },
+  "regime_identity": "KRONOS-NSE-CLOSING-AUCTION-SESSION-2026",
+  "regime_version": "2026.2.0",
+  "schema": "KRONOS-MARKET-SESSION-REGIME-PUBLICATION-V2",
+  "segment": "NSE_CAPITAL_MARKET_CAS_ELIGIBLE",
+  "source_boundary": "2026-08-25T16:00:00+05:30",
+  "supersedes": {
+    "identity": "KRONOS-NSE-CLOSING-AUCTION-SESSION-2026",
+    "sha256": "c1f0c887ff61be64e4ad875bd50b1bb6682080815de2206917e661c65cddb08a",
+    "version": "2026.1.0"
+  },
+  "timezone": "Asia/Kolkata"
+}

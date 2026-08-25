@@ -83,6 +83,45 @@ def test_june_2023_bakri_id_amendment_is_active_and_prior_publication_is_immutab
     )
 
 
+def test_cas_applicability_and_timing_successors_are_integrity_bound() -> None:
+    publisher = MarketCalendarPublisher()
+    applicability = publisher.subject_session_applicability_publications
+    old_regime = (
+        DEFAULT_MARKET_CALENDAR_ROOT
+        / "NSE-CLOSING-AUCTION-SESSION-2026.v1.json"
+    )
+
+    assert len(applicability) == 1
+    assert (
+        applicability[0].publication_identity,
+        applicability[0].publication_version,
+    ) == ("KRONOS-NSE-CAS-SUBJECT-APPLICABILITY-2026", "2026.1.0")
+    assert applicability[0].coverage_start == date(2026, 8, 3)
+    assert applicability[0].coverage_end == date(2026, 12, 31)
+    assert {item.artifact_identity for item in applicability[0].official_sources} == {
+        "NSE-CAS-SECURITY-MASTER-CMTR-73845",
+        "NSE-CAS-HISTORICAL-DATA-2026-08-03-TO-2026-08-25",
+    }
+    assert sha256(old_regime.read_bytes()).hexdigest() == (
+        "c1f0c887ff61be64e4ad875bd50b1bb6682080815de2206917e661c65cddb08a"
+    )
+
+
+def test_cas_applicability_digest_tampering_fails_closed(tmp_path: Path) -> None:
+    root = tmp_path / "calendar"
+    shutil.copytree(DEFAULT_MARKET_CALENDAR_ROOT, root)
+    target = root / "NSE-CAS-SUBJECT-APPLICABILITY-2026.v1.json"
+    payload = json.loads(target.read_text(encoding="utf-8"))
+    payload["coverage_end"] = "2026-08-26"
+    target.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(
+        ValueError,
+        match="MARKET_SESSION_APPLICABILITY_PUBLICATION_DIGEST_MISMATCH",
+    ):
+        MarketCalendarPublisher(root)
+
+
 def test_regular_special_and_shortened_sessions_publish_authoritative_boundaries() -> None:
     publisher = MarketCalendarPublisher()
     regular = publisher.schedule("NSE", date(2026, 8, 14), observed_at=OBSERVED)

@@ -89,6 +89,10 @@ def test_subject_bound_source_preserves_reliance_and_index_regimes() -> None:
         canonical_identity="RELIANCE",
         domain_008_subject_identity="RELIANCE",
     )
+    adanient = root.for_subject(
+        canonical_identity="NSE-EQUITY-ADANIENT",
+        domain_008_subject_identity="ADANIENT",
+    )
     nifty = root.for_subject(
         canonical_identity="NSE-INDEX-NIFTY",
         domain_008_subject_identity="NIFTY",
@@ -99,17 +103,21 @@ def test_subject_bound_source_preserves_reliance_and_index_regimes() -> None:
     )
 
     post = reliance.schedule_for("NSE", date(2026, 8, 18))
+    adanient_post = adanient.schedule_for("NSE", date(2026, 8, 18))
     pre = reliance.schedule_for("NSE", date(2026, 7, 31))
     nifty_post = nifty.schedule_for("NSE", date(2026, 8, 18))
     banknifty_post = banknifty.schedule_for("NSE", date(2026, 8, 18))
 
-    assert post is not None and pre is not None
+    assert post is not None and pre is not None and adanient_post is not None
     assert nifty_post is not None and banknifty_post is not None
     assert post.windows[-1].closes_at.time() == datetime.strptime(
         "15:15", "%H:%M"
     ).time()
     assert pre.windows[-1].closes_at.time() == datetime.strptime(
         "15:30", "%H:%M"
+    ).time()
+    assert adanient_post.windows[-1].closes_at.time() == datetime.strptime(
+        "15:15", "%H:%M"
     ).time()
     assert nifty_post.windows[-1].closes_at.time() == datetime.strptime(
         "15:30", "%H:%M"
@@ -138,6 +146,19 @@ def test_subject_bound_source_preserves_reliance_and_index_regimes() -> None:
     )
     assert reliance.canonical_subject_identity == "RELIANCE"
     assert nifty.canonical_subject_identity == "NSE-INDEX-NIFTY"
+
+
+def test_subject_bound_source_fails_closed_when_domain_008_membership_is_unknown() -> None:
+    source = CurrentMarketCalendarScheduleSource(
+        MarketCalendarPublisher(),
+        observed_at=datetime(2026, 8, 25, 19, 0, tzinfo=IST),
+    ).for_subject(
+        canonical_identity="NSE-EQUITY-UNKNOWN",
+        domain_008_subject_identity="UNKNOWN",
+    )
+
+    with pytest.raises(ValueError, match="MARKET_SESSION_APPLICABILITY_UNAVAILABLE"):
+        source.schedule_for("NSE", date(2026, 8, 18))
 
 
 def test_subject_schedule_and_previous_session_do_not_leak() -> None:

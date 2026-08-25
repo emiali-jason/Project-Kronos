@@ -9,11 +9,17 @@
       "sha256": "6c1ae4fe581b99628b0abcec67f3c85488a443a1639512b56f197813d252f4d2"
     }
   ],
-  "schema": "KRONOS-MARKET-CALENDAR-MANIFEST-V1",
+  "schema": "KRONOS-MARKET-CALENDAR-MANIFEST-V2",
   "session_regimes": [
     {
-      "file": "NSE-CLOSING-AUCTION-SESSION-2026.v1.json",
-      "sha256": "c1f0c887ff61be64e4ad875bd50b1bb6682080815de2206917e661c65cddb08a"
+      "file": "NSE-CLOSING-AUCTION-SESSION-2026.v2.json",
+      "sha256": "20522b49fabfc6237fe4a1b825417a7180bc80e7815b09ef567663bdc8ad7826"
+    }
+  ],
+  "subject_session_applicabilities": [
+    {
+      "file": "NSE-CAS-SUBJECT-APPLICABILITY-2026.v1.json",
+      "sha256": "c28efae6ff278715dcfd3744d624ef5c3ccc4822afc9e8b4f4b2a5f5b80ea026"
     }
   ]
 }

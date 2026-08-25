@@ -17,6 +17,7 @@ from kronos.application.intraday_historical_operation import (
 )
 from kronos.application.intraday_runtime import create_intraday_runtime
 from kronos.intraday import historical_operation, historical_source
+from kronos.intraday.candles import expected_candle_boundaries
 from kronos.intraday.contracts import IntradayTimeframe
 from kronos.intraday.historical_operation import (
     COMPLETED_SESSION_EOD_BOUNDARY_IDENTITY,
@@ -433,6 +434,45 @@ def test_domain008_resolves_exact_session_previous_and_eod_boundary() -> None:
     assert date(2026, 8, 16) not in {value for _, value in calendar.calls}
 
 
+def test_subject_aware_historical_operation_consumes_all_governed_cas_schedules() -> None:
+    universe, _ = _universe_and_reconciliation()
+    equities = tuple(
+        item for item in universe.members if item.market_family.value == "NSE_EQUITY"
+    )
+    days = tuple(date(2026, 8, day) for day in range(17, 22))
+    root = CurrentMarketCalendarScheduleSource(
+        MarketCalendarPublisher(),
+        observed_at=datetime(2026, 8, 25, 17, 0, tzinfo=IST),
+    )
+
+    assert len(equities) == 91
+    for member in equities:
+        source = root.for_subject(
+            canonical_identity=member.membership_identity,
+            domain_008_subject_identity=member.sponsor_label,
+        )
+        for day in days:
+            schedule = source.schedule_for("NSE", day)
+            assert schedule is not None
+            assert schedule.windows[-1].closes_at.time() == time(15, 15)
+            assert len(
+                expected_candle_boundaries(schedule, IntradayTimeframe.ONE_HOUR)
+            ) == 6
+
+    for subject in ("NIFTY", "BANKNIFTY"):
+        source = root.for_subject(
+            canonical_identity=f"NSE-INDEX-{subject}",
+            domain_008_subject_identity=subject,
+        )
+        for day in days:
+            schedule = source.schedule_for("NSE", day)
+            assert schedule is not None
+            assert schedule.windows[-1].closes_at.time() == time(15, 30)
+            assert len(
+                expected_candle_boundaries(schedule, IntradayTimeframe.ONE_HOUR)
+            ) == 7
+
+
 def test_request_plan_is_collection_derived_and_enforced_before_provider(tmp_path: Path) -> None:
     service, shared, _, capability, factory_calls = _service(tmp_path)
     _authenticate(shared)
@@ -749,7 +789,8 @@ def test_real_domain008_subject_schedules_drive_each_provider_request(
 
     assert result.state is HistoricalOperationState.COMPLETE
     assert result.factual_failures == 0
-    assert len(result.reconstruction_identities) == 2
+    assert result.successful_reconstructions == 93
+    assert len(result.reconstruction_identities) == 92
     hourly = {
         item.instrument.trading_symbol: item
         for item in capability.requests

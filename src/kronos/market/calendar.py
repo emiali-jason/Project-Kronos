@@ -32,9 +32,12 @@ from kronos.market.schedule import (
 MARKET_CALENDAR_CONTRACT_ID = "KRONOS-MARKET-CALENDAR-V1"
 MARKET_CALENDAR_CONTRACT_VERSION = "1"
 MARKET_CALENDAR_PUBLICATION_SCHEMA = "KRONOS-MARKET-CALENDAR-PUBLICATION-V1"
-MARKET_CALENDAR_MANIFEST_SCHEMA = "KRONOS-MARKET-CALENDAR-MANIFEST-V1"
+MARKET_CALENDAR_MANIFEST_SCHEMA = "KRONOS-MARKET-CALENDAR-MANIFEST-V2"
 MARKET_SESSION_REGIME_PUBLICATION_SCHEMA = (
-    "KRONOS-MARKET-SESSION-REGIME-PUBLICATION-V1"
+    "KRONOS-MARKET-SESSION-REGIME-PUBLICATION-V2"
+)
+MARKET_SUBJECT_SESSION_APPLICABILITY_PUBLICATION_SCHEMA = (
+    "KRONOS-MARKET-SUBJECT-SESSION-APPLICABILITY-PUBLICATION-V1"
 )
 DEFAULT_MARKET_CALENDAR_ROOT = (
     Path(__file__).resolve().parents[3]
@@ -573,7 +576,11 @@ class MarketSessionRegimePublication:
     effective_date: date
     source_boundary: datetime
     official_source: OfficialCalendarSource
-    applicable_canonical_instrument_ids: tuple[str, ...]
+    applicability_publication_identity: str
+    applicability_publication_version: str
+    supersedes_identity: str
+    supersedes_version: str
+    supersedes_sha256: str
     continuous_open: time
     continuous_close: time
     closing_auction_open: time
@@ -590,16 +597,195 @@ class MarketSessionRegimePublication:
             or type(self.effective_date) is not date
             or not _aware(self.source_boundary)
             or type(self.official_source) is not OfficialCalendarSource
-            or not self.applicable_canonical_instrument_ids
-            or any(not _text(item) for item in self.applicable_canonical_instrument_ids)
-            or len(set(self.applicable_canonical_instrument_ids))
-            != len(self.applicable_canonical_instrument_ids)
+            or not _text(self.applicability_publication_identity)
+            or not _text(self.applicability_publication_version)
+            or not _text(self.supersedes_identity)
+            or not _text(self.supersedes_version)
+            or len(self.supersedes_sha256) != 64
             or self.continuous_open >= self.continuous_close
             or self.continuous_close != self.closing_auction_open
             or self.closing_auction_open >= self.closing_auction_close
             or len(self.publication_sha256) != 64
         ):
             raise ValueError("MARKET_SESSION_REGIME_PUBLICATION_INVALID")
+
+
+class MarketSessionApplicabilityState(StrEnum):
+    """Authoritative subject applicability for one effective trading date."""
+
+    CAS_APPLICABLE = "CAS_APPLICABLE"
+    CAS_NOT_APPLICABLE = "CAS_NOT_APPLICABLE"
+    CAS_APPLICABILITY_UNAVAILABLE = "CAS_APPLICABILITY_UNAVAILABLE"
+
+
+@dataclass(frozen=True, slots=True)
+class MarketSubjectSessionApplicabilityPeriod:
+    effective_from: date
+    effective_through: date
+    applicable_domain_subject_ids: tuple[str, ...]
+    applicable_canonical_subject_ids: tuple[str, ...]
+    not_applicable_domain_subject_ids: tuple[str, ...]
+    not_applicable_canonical_subject_ids: tuple[str, ...]
+    source_artifact_identities: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        applicable = set(
+            (*self.applicable_domain_subject_ids, *self.applicable_canonical_subject_ids)
+        )
+        not_applicable = set(
+            (
+                *self.not_applicable_domain_subject_ids,
+                *self.not_applicable_canonical_subject_ids,
+            )
+        )
+        if (
+            type(self.effective_from) is not date
+            or type(self.effective_through) is not date
+            or self.effective_from > self.effective_through
+            or not self.applicable_domain_subject_ids
+            or any(not _text(item) for item in self.applicable_domain_subject_ids)
+            or any(not _text(item) for item in self.applicable_canonical_subject_ids)
+            or any(not _text(item) for item in self.not_applicable_domain_subject_ids)
+            or any(
+                not _text(item)
+                for item in self.not_applicable_canonical_subject_ids
+            )
+            or len(applicable)
+            != len(self.applicable_domain_subject_ids)
+            + len(self.applicable_canonical_subject_ids)
+            or len(not_applicable)
+            != len(self.not_applicable_domain_subject_ids)
+            + len(self.not_applicable_canonical_subject_ids)
+            or bool(applicable & not_applicable)
+            or not self.source_artifact_identities
+            or any(not _text(item) for item in self.source_artifact_identities)
+            or len(set(self.source_artifact_identities))
+            != len(self.source_artifact_identities)
+        ):
+            raise ValueError("MARKET_SESSION_APPLICABILITY_PERIOD_INVALID")
+
+
+@dataclass(frozen=True, slots=True)
+class MarketSubjectSessionApplicabilityPublication:
+    """Immutable date-effective DOMAIN-008 CAS subject applicability."""
+
+    publication_identity: str
+    publication_version: str
+    exchange: str
+    segment: str
+    timezone: str
+    coverage_start: date
+    coverage_end: date
+    source_boundary: datetime
+    official_sources: tuple[OfficialCalendarSource, ...]
+    independent_domain_subject_ids: tuple[str, ...]
+    periods: tuple[MarketSubjectSessionApplicabilityPeriod, ...]
+    supersedes_identity: str | None
+    supersedes_version: str | None
+    supersedes_sha256: str | None
+    publication_sha256: str
+
+    def __post_init__(self) -> None:
+        official_identities = {
+            item.artifact_identity for item in self.official_sources
+        }
+        independent = set(self.independent_domain_subject_ids)
+        period_subjects = {
+            subject
+            for period in self.periods
+            for subject in (
+                *period.applicable_domain_subject_ids,
+                *period.applicable_canonical_subject_ids,
+                *period.not_applicable_domain_subject_ids,
+                *period.not_applicable_canonical_subject_ids,
+            )
+        }
+        if (
+            not _text(self.publication_identity)
+            or not _text(self.publication_version)
+            or self.exchange != "NSE"
+            or not _text(self.segment)
+            or self.timezone != "Asia/Kolkata"
+            or type(self.coverage_start) is not date
+            or type(self.coverage_end) is not date
+            or self.coverage_start > self.coverage_end
+            or not _aware(self.source_boundary)
+            or not self.official_sources
+            or len(official_identities) != len(self.official_sources)
+            or not self.independent_domain_subject_ids
+            or any(not _text(item) for item in self.independent_domain_subject_ids)
+            or len(independent) != len(self.independent_domain_subject_ids)
+            or bool(independent & period_subjects)
+            or not self.periods
+            or any(
+                type(item) is not MarketSubjectSessionApplicabilityPeriod
+                for item in self.periods
+            )
+            or tuple(sorted(self.periods, key=lambda item: item.effective_from))
+            != self.periods
+            or any(
+                previous.effective_through >= current.effective_from
+                for previous, current in zip(self.periods, self.periods[1:])
+            )
+            or self.periods[0].effective_from != self.coverage_start
+            or self.periods[-1].effective_through != self.coverage_end
+            or any(
+                not set(item.source_artifact_identities) <= official_identities
+                for item in self.periods
+            )
+            or (
+                any(
+                    item is not None
+                    for item in (
+                        self.supersedes_identity,
+                        self.supersedes_version,
+                        self.supersedes_sha256,
+                    )
+                )
+                and (
+                    not _text(self.supersedes_identity)
+                    or not _text(self.supersedes_version)
+                    or not isinstance(self.supersedes_sha256, str)
+                    or len(self.supersedes_sha256) != 64
+                )
+            )
+            or len(self.publication_sha256) != 64
+        ):
+            raise ValueError("MARKET_SESSION_APPLICABILITY_PUBLICATION_INVALID")
+
+    def state_for(
+        self,
+        trading_date: date,
+        domain_subject_identity: str,
+    ) -> MarketSessionApplicabilityState:
+        if (
+            type(trading_date) is not date
+            or not _text(domain_subject_identity)
+        ):
+            raise ValueError("MARKET_SESSION_APPLICABILITY_REQUEST_INVALID")
+        if domain_subject_identity in self.independent_domain_subject_ids:
+            return MarketSessionApplicabilityState.CAS_NOT_APPLICABLE
+        period = next(
+            (
+                item
+                for item in self.periods
+                if item.effective_from <= trading_date <= item.effective_through
+            ),
+            None,
+        )
+        if period is None:
+            return MarketSessionApplicabilityState.CAS_APPLICABILITY_UNAVAILABLE
+        if domain_subject_identity in (
+            *period.applicable_domain_subject_ids,
+            *period.applicable_canonical_subject_ids,
+        ):
+            return MarketSessionApplicabilityState.CAS_APPLICABLE
+        if domain_subject_identity in (
+            *period.not_applicable_domain_subject_ids,
+            *period.not_applicable_canonical_subject_ids,
+        ):
+            return MarketSessionApplicabilityState.CAS_NOT_APPLICABLE
+        return MarketSessionApplicabilityState.CAS_APPLICABILITY_UNAVAILABLE
 
 
 @dataclass(frozen=True, slots=True)
@@ -646,7 +832,11 @@ class MarketCalendarPublisher:
         if not root.is_absolute():
             raise ValueError("MARKET_CALENDAR_ROOT_INVALID")
         self._root = root
-        self._publications, self._session_regimes = self._load_manifest()
+        (
+            self._publications,
+            self._session_regimes,
+            self._subject_session_applicabilities,
+        ) = self._load_manifest()
 
     @property
     def publications(self) -> tuple[MarketCalendarPublication, ...]:
@@ -657,6 +847,43 @@ class MarketCalendarPublisher:
             return self._publications[exchange]
         except KeyError as error:
             raise ValueError("MARKET_CALENDAR_EXCHANGE_UNAVAILABLE") from error
+
+    @property
+    def subject_session_applicability_publications(
+        self,
+    ) -> tuple[MarketSubjectSessionApplicabilityPublication, ...]:
+        return tuple(
+            self._subject_session_applicabilities[key]
+            for key in sorted(self._subject_session_applicabilities)
+        )
+
+    def subject_session_applicability(
+        self,
+        exchange: str,
+        trading_date: date,
+        *,
+        domain_subject_identity: str,
+    ) -> MarketSessionApplicabilityState:
+        regime = next(
+            (
+                item
+                for item in self._session_regimes
+                if item.exchange == exchange
+                and trading_date >= item.effective_date
+            ),
+            None,
+        )
+        if regime is None:
+            return MarketSessionApplicabilityState.CAS_NOT_APPLICABLE
+        publication = self._subject_session_applicabilities.get(
+            (
+                regime.applicability_publication_identity,
+                regime.applicability_publication_version,
+            )
+        )
+        if publication is None or publication.exchange != exchange:
+            return MarketSessionApplicabilityState.CAS_APPLICABILITY_UNAVAILABLE
+        return publication.state_for(trading_date, domain_subject_identity)
 
     def coverage_health(
         self,
@@ -779,13 +1006,22 @@ class MarketCalendarPublisher:
                 for item in self._session_regimes
                 if item.exchange == exchange
                 and trading_date >= item.effective_date
-                and canonical_instrument_id
-                in item.applicable_canonical_instrument_ids
             ),
             None,
         )
-        if regime is None or not self._regular_window_accepts_regime(base, regime):
+        if regime is None:
             return MarketInstrumentSessionProfile(canonical_instrument_id, base, None)
+        applicability = self.subject_session_applicability(
+            exchange,
+            trading_date,
+            domain_subject_identity=canonical_instrument_id,
+        )
+        if applicability is MarketSessionApplicabilityState.CAS_NOT_APPLICABLE:
+            return MarketInstrumentSessionProfile(canonical_instrument_id, base, None)
+        if applicability is MarketSessionApplicabilityState.CAS_APPLICABILITY_UNAVAILABLE:
+            raise ValueError("MARKET_SESSION_APPLICABILITY_UNAVAILABLE")
+        if not self._regular_window_accepts_regime(base, regime):
+            raise ValueError("MARKET_SESSION_APPLICABILITY_UNAVAILABLE")
         continuous = self._regime_schedule(
             base=base,
             regime=regime,
@@ -868,6 +1104,14 @@ class MarketCalendarPublisher:
                 f"session_regime={regime.regime_identity}",
                 f"session_regime_version={regime.regime_version}",
                 f"session_regime_sha256={regime.publication_sha256}",
+                (
+                    "subject_applicability_publication="
+                    f"{regime.applicability_publication_identity}"
+                ),
+                (
+                    "subject_applicability_version="
+                    f"{regime.applicability_publication_version}"
+                ),
                 f"effective_date={regime.effective_date.isoformat()}",
                 f"applicable_instrument={canonical_instrument_id}",
                 (
@@ -916,6 +1160,10 @@ class MarketCalendarPublisher:
     ) -> tuple[
         Mapping[str, MarketCalendarPublication],
         tuple[MarketSessionRegimePublication, ...],
+        Mapping[
+            tuple[str, str],
+            MarketSubjectSessionApplicabilityPublication,
+        ],
     ]:
         try:
             manifest = json.loads((self._root / "manifest.json").read_text(encoding="utf-8"))
@@ -923,11 +1171,18 @@ class MarketCalendarPublisher:
             raise ValueError("MARKET_CALENDAR_MANIFEST_INVALID") from error
         if (
             type(manifest) is not dict
-            or set(manifest) != {"schema", "publications", "session_regimes"}
+            or set(manifest)
+            != {
+                "schema",
+                "publications",
+                "session_regimes",
+                "subject_session_applicabilities",
+            }
             or manifest["schema"] != MARKET_CALENDAR_MANIFEST_SCHEMA
             or type(manifest["publications"]) is not list
             or len(manifest["publications"]) != 2
             or type(manifest["session_regimes"]) is not list
+            or type(manifest["subject_session_applicabilities"]) is not list
         ):
             raise ValueError("MARKET_CALENDAR_MANIFEST_INVALID")
         publications: dict[str, MarketCalendarPublication] = {}
@@ -953,7 +1208,36 @@ class MarketCalendarPublisher:
         )
         if len({item.regime_identity for item in regimes}) != len(regimes):
             raise ValueError("MARKET_SESSION_REGIME_PUBLICATION_AMBIGUOUS")
-        return MappingProxyType(publications), regimes
+        applicability_publications: dict[
+            tuple[str, str],
+            MarketSubjectSessionApplicabilityPublication,
+        ] = {}
+        for item in manifest["subject_session_applicabilities"]:
+            publication = self._load_subject_session_applicability(item)
+            key = (
+                publication.publication_identity,
+                publication.publication_version,
+            )
+            if key in applicability_publications:
+                raise ValueError(
+                    "MARKET_SESSION_APPLICABILITY_PUBLICATION_AMBIGUOUS"
+                )
+            applicability_publications[key] = publication
+        for regime in regimes:
+            key = (
+                regime.applicability_publication_identity,
+                regime.applicability_publication_version,
+            )
+            publication = applicability_publications.get(key)
+            if publication is None or publication.exchange != regime.exchange:
+                raise ValueError(
+                    "MARKET_SESSION_APPLICABILITY_PUBLICATION_UNAVAILABLE"
+                )
+        return (
+            MappingProxyType(publications),
+            regimes,
+            MappingProxyType(applicability_publications),
+        )
 
     def _load_session_regime(self, item: object) -> MarketSessionRegimePublication:
         if type(item) is not dict or set(item) != {"file", "sha256"}:
@@ -967,6 +1251,26 @@ class MarketCalendarPublisher:
         if digest != item["sha256"]:
             raise ValueError("MARKET_SESSION_REGIME_PUBLICATION_DIGEST_MISMATCH")
         return _parse_session_regime(raw, digest)
+
+    def _load_subject_session_applicability(
+        self,
+        item: object,
+    ) -> MarketSubjectSessionApplicabilityPublication:
+        if type(item) is not dict or set(item) != {"file", "sha256"}:
+            raise ValueError("MARKET_CALENDAR_MANIFEST_INVALID")
+        path = self._root / item["file"]
+        try:
+            raw = path.read_bytes()
+        except OSError as error:
+            raise ValueError(
+                "MARKET_SESSION_APPLICABILITY_PUBLICATION_UNAVAILABLE"
+            ) from error
+        digest = sha256(raw).hexdigest()
+        if digest != item["sha256"]:
+            raise ValueError(
+                "MARKET_SESSION_APPLICABILITY_PUBLICATION_DIGEST_MISMATCH"
+            )
+        return _parse_subject_session_applicability(raw, digest)
 
 
 def _parse_publication(raw: bytes, digest: str) -> MarketCalendarPublication:
@@ -1029,7 +1333,9 @@ def _parse_session_regime(
             "effective_date",
             "source_boundary",
             "official_source",
-            "applicable_canonical_instrument_ids",
+            "applicability_publication_identity",
+            "applicability_publication_version",
+            "supersedes",
             "continuous_trading",
             "closing_auction_session",
             "daily_close_semantics",
@@ -1040,6 +1346,7 @@ def _parse_session_regime(
         continuous = payload["continuous_trading"]
         auction = payload["closing_auction_session"]
         close_semantics = payload["daily_close_semantics"]
+        supersedes = payload["supersedes"]
         if (
             payload["schema"] != MARKET_SESSION_REGIME_PUBLICATION_SCHEMA
             or type(source) is not dict
@@ -1051,7 +1358,10 @@ def _parse_session_regime(
                 "reference",
                 "publication_date",
             }
-            or type(payload["applicable_canonical_instrument_ids"]) is not list
+            or not _text(payload["applicability_publication_identity"])
+            or not _text(payload["applicability_publication_version"])
+            or type(supersedes) is not dict
+            or set(supersedes) != {"identity", "version", "sha256"}
             or type(continuous) is not dict
             or set(continuous) != {"session_type", "open", "close"}
             or continuous["session_type"] != "CONTINUOUS_TRADING"
@@ -1081,9 +1391,15 @@ def _parse_session_regime(
                 reference=source["reference"],
                 publication_date=date.fromisoformat(source["publication_date"]),
             ),
-            applicable_canonical_instrument_ids=tuple(
-                payload["applicable_canonical_instrument_ids"]
+            applicability_publication_identity=(
+                payload["applicability_publication_identity"]
             ),
+            applicability_publication_version=(
+                payload["applicability_publication_version"]
+            ),
+            supersedes_identity=supersedes["identity"],
+            supersedes_version=supersedes["version"],
+            supersedes_sha256=supersedes["sha256"],
             continuous_open=time.fromisoformat(continuous["open"]),
             continuous_close=time.fromisoformat(continuous["close"]),
             closing_auction_open=time.fromisoformat(auction["open"]),
@@ -1092,6 +1408,138 @@ def _parse_session_regime(
         )
     except (KeyError, TypeError, ValueError, AttributeError) as error:
         raise ValueError("MARKET_SESSION_REGIME_PUBLICATION_INVALID") from error
+
+
+def _parse_subject_session_applicability(
+    raw: bytes,
+    digest: str,
+) -> MarketSubjectSessionApplicabilityPublication:
+    try:
+        payload = json.loads(raw)
+        required = {
+            "schema",
+            "publication_identity",
+            "publication_version",
+            "exchange",
+            "segment",
+            "timezone",
+            "coverage_start",
+            "coverage_end",
+            "source_boundary",
+            "official_sources",
+            "independent_domain_subject_ids",
+            "periods",
+            "supersedes",
+        }
+        if type(payload) is not dict or set(payload) != required:
+            raise ValueError
+        if (
+            payload["schema"]
+            != MARKET_SUBJECT_SESSION_APPLICABILITY_PUBLICATION_SCHEMA
+            or type(payload["official_sources"]) is not list
+            or type(payload["independent_domain_subject_ids"]) is not list
+            or type(payload["periods"]) is not list
+            or (
+                payload["supersedes"] is not None
+                and (
+                    type(payload["supersedes"]) is not dict
+                    or set(payload["supersedes"])
+                    != {"identity", "version", "sha256"}
+                )
+            )
+        ):
+            raise ValueError
+        sources = tuple(
+            OfficialCalendarSource(
+                artifact_identity=item["artifact_identity"],
+                title=item["title"],
+                official_uri=item["official_uri"],
+                reference=item["reference"],
+                publication_date=date.fromisoformat(item["publication_date"]),
+            )
+            for item in payload["official_sources"]
+            if type(item) is dict
+            and set(item)
+            == {
+                "artifact_identity",
+                "title",
+                "official_uri",
+                "reference",
+                "publication_date",
+            }
+        )
+        if len(sources) != len(payload["official_sources"]):
+            raise ValueError
+        periods = tuple(
+            MarketSubjectSessionApplicabilityPeriod(
+                effective_from=date.fromisoformat(item["effective_from"]),
+                effective_through=date.fromisoformat(item["effective_through"]),
+                applicable_domain_subject_ids=tuple(
+                    item["applicable_domain_subject_ids"]
+                ),
+                applicable_canonical_subject_ids=tuple(
+                    item["applicable_canonical_subject_ids"]
+                ),
+                not_applicable_domain_subject_ids=tuple(
+                    item["not_applicable_domain_subject_ids"]
+                ),
+                not_applicable_canonical_subject_ids=tuple(
+                    item["not_applicable_canonical_subject_ids"]
+                ),
+                source_artifact_identities=tuple(
+                    item["source_artifact_identities"]
+                ),
+            )
+            for item in payload["periods"]
+            if type(item) is dict
+            and set(item)
+            == {
+                "effective_from",
+                "effective_through",
+                "applicable_domain_subject_ids",
+                "applicable_canonical_subject_ids",
+                "not_applicable_domain_subject_ids",
+                "not_applicable_canonical_subject_ids",
+                "source_artifact_identities",
+            }
+            and type(item["applicable_domain_subject_ids"]) is list
+            and type(item["applicable_canonical_subject_ids"]) is list
+            and type(item["not_applicable_domain_subject_ids"]) is list
+            and type(item["not_applicable_canonical_subject_ids"]) is list
+            and type(item["source_artifact_identities"]) is list
+        )
+        if len(periods) != len(payload["periods"]):
+            raise ValueError
+        supersedes = payload["supersedes"]
+        return MarketSubjectSessionApplicabilityPublication(
+            publication_identity=payload["publication_identity"],
+            publication_version=payload["publication_version"],
+            exchange=payload["exchange"],
+            segment=payload["segment"],
+            timezone=payload["timezone"],
+            coverage_start=date.fromisoformat(payload["coverage_start"]),
+            coverage_end=date.fromisoformat(payload["coverage_end"]),
+            source_boundary=datetime.fromisoformat(payload["source_boundary"]),
+            official_sources=sources,
+            independent_domain_subject_ids=tuple(
+                payload["independent_domain_subject_ids"]
+            ),
+            periods=periods,
+            supersedes_identity=(
+                None if supersedes is None else supersedes["identity"]
+            ),
+            supersedes_version=(
+                None if supersedes is None else supersedes["version"]
+            ),
+            supersedes_sha256=(
+                None if supersedes is None else supersedes["sha256"]
+            ),
+            publication_sha256=digest,
+        )
+    except (KeyError, TypeError, ValueError, AttributeError) as error:
+        raise ValueError(
+            "MARKET_SESSION_APPLICABILITY_PUBLICATION_INVALID"
+        ) from error
 
 
 def _published_session(day: str, item: object) -> PublishedTradingSession:
@@ -1145,12 +1593,16 @@ __all__ = [
     "MARKET_CALENDAR_CONTRACT_VERSION",
     "MARKET_CALENDAR_SCHEMA",
     "MARKET_SESSION_REGIME_PUBLICATION_SCHEMA",
+    "MARKET_SUBJECT_SESSION_APPLICABILITY_PUBLICATION_SCHEMA",
     "MarketCalendarEntry",
     "MarketCalendarPublication",
     "MarketCalendarPublisher",
     "MarketCalendarRegistrySource",
     "MarketInstrumentSessionProfile",
+    "MarketSessionApplicabilityState",
     "MarketSessionRegimePublication",
+    "MarketSubjectSessionApplicabilityPeriod",
+    "MarketSubjectSessionApplicabilityPublication",
     "OfficialCalendarSource",
     "PublishedTradingSession",
     "PublishedTradingWindow",
