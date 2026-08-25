@@ -80,7 +80,15 @@ from kronos.browser.swing_readiness_presentation import (
 )
 from kronos.browser.swing_v3_presentation import V3SponsorEvidencePresentation
 from kronos.browser.dashboard import SponsorDashboardProjection
+from kronos.browser.reports import (
+    HistoricalReportRecord,
+    HistoricalReportsProjection,
+    ReportFamily,
+    ReportProduct,
+    ReportView,
+)
 from kronos.swing.v1.analytical_promotion import Kr370AnalyticalClassification
+from kronos.swing.v1.models import V1Direction
 from kronos.swing.v1.reference_facts import (
     CPR_CALCULATION_POLICY_IDENTITY,
     CPR_CALCULATION_POLICY_VERSION,
@@ -178,6 +186,7 @@ a{color:inherit;text-decoration:none}.app{display:grid;grid-template-columns:218
 .one-minute{display:grid;gap:12px}.one-minute h3{margin:0 0 5px;color:var(--muted);font-size:10px;letter-spacing:.07em}.one-minute-status{font-size:16px;color:var(--blue)}.one-minute p{margin:2px 0;color:#cfdee8}.one-minute-facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}.one-minute-fact{border:1px solid var(--line);border-radius:6px;padding:7px 9px;font-size:11px}.one-minute-wait{border-left:2px solid var(--amber);background:#211b0e;padding:8px 10px}.one-minute details{border-top:1px solid var(--line);padding-top:9px}.one-minute summary{cursor:pointer;color:var(--muted);font-size:11px}.native-trade-plan{margin-top:12px;border:1px solid #28506a;border-radius:8px;background:#0b1923;padding:12px}.native-trade-plan h3{margin:0;color:var(--blue);font-size:13px}.native-trade-plan-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:10px}.native-trade-plan-grid div{border:1px solid var(--line);border-radius:6px;padding:8px}.native-trade-plan-grid span{display:block;color:var(--muted);font-size:9px;letter-spacing:.08em}.native-trade-plan-grid strong{display:block;margin-top:3px;font-size:14px}.native-trade-plan .why{margin:10px 0 0;color:#cfdee8;font-size:11px}
 .journal-filters{display:flex;gap:7px;margin-bottom:12px}.journal-filters .button{font-size:11px;padding:6px 10px}.journal-filters .button.primary{background:#0c4f83;border-color:#2c9cff}
 .journal-head{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px}.journal-products{display:flex;gap:6px}.journal-products .button{padding:6px 12px;font-size:11px}.journal-products .active{background:#0c4f83;border-color:#2c9cff}.journal-date{color:var(--muted);font-size:11px}.journal-ws{margin-left:auto;border:1px solid var(--line);border-radius:999px;padding:4px 9px;font-size:10px;font-weight:850}.journal-ws.CONNECTED{color:var(--green);border-color:#176741}.journal-ws.DISCONNECTED{color:var(--red);border-color:#793b40}.journal-ws.IDLE{color:var(--muted)}.journal-toolbar{display:flex;align-items:center;gap:8px;margin-bottom:12px}.journal-search{width:min(300px,100%);border:1px solid #31506a;background:#04131f;color:var(--text);border-radius:7px;padding:8px 10px}.journal-section{border:1px solid var(--line);border-radius:10px;background:rgba(6,23,37,.86);margin-top:12px;overflow:hidden}.journal-section.paper{border-left:3px solid #6588e8}.journal-section.live{border-left:3px solid #2ed477}.journal-section.observation{border-left:3px solid #37b8d8}.journal-section-head{display:flex;align-items:baseline;justify-content:space-between;gap:10px;padding:11px 13px;border-bottom:1px solid var(--line)}.journal-section-head h2{font-size:13px;letter-spacing:.07em;margin:0}.journal-section-head span{color:var(--muted);font-size:10px}.journal-table-wrap{overflow-x:auto}.journal-table{width:100%;border-collapse:collapse;font-size:11px}.journal-table th,.journal-table td{padding:8px 9px;text-align:left;white-space:nowrap;border-top:1px solid rgba(27,53,73,.65)}.journal-table tr:first-child td{border-top:0}.journal-table th{color:var(--muted);font-size:9px;letter-spacing:.05em;text-transform:uppercase}.journal-table tbody tr:hover{background:#0a2134}.journal-table a{color:#dce8f0;font-weight:800}.journal-side.LONG{color:var(--green)}.journal-side.SHORT{color:var(--red)}.journal-pnl.positive{color:var(--green)}.journal-pnl.negative{color:var(--red)}.journal-monitor.ACTIVE{color:var(--green)}.journal-monitor.INTERRUPTED{color:var(--red)}.journal-detail{margin-top:12px;border:1px solid #28506a;border-radius:9px;background:#071827;padding:13px}.journal-detail h2{margin:0 0 10px;color:var(--blue);font-size:15px}.journal-detail-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}.journal-detail-grid div{border:1px solid var(--line);border-radius:6px;padding:8px}.journal-detail-grid span{display:block;color:var(--muted);font-size:9px;text-transform:uppercase}.journal-detail-grid strong{display:block;margin-top:3px;font-size:12px}.journal-reports{margin-left:auto}@media(max-width:760px){.journal-ws{margin-left:0}.journal-detail-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.reports-head{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:10px}.reports-products,.reports-views,.reports-quick{display:flex;gap:6px;flex-wrap:wrap}.reports-head .button,.reports-views .button,.reports-quick .button{padding:5px 9px;font-size:10px}.reports-head .active,.reports-views .active{background:#0c4f83;border-color:#2c9cff}.reports-date{color:var(--muted);font-size:10px}.reports-layout{display:grid;grid-template-columns:minmax(0,1fr) 245px;gap:12px;margin-top:12px}.reports-main{min-width:0}.reports-filter{border:1px solid var(--line);border-radius:9px;background:rgba(6,23,37,.88);padding:12px;height:max-content}.reports-filter h2{margin:0 0 9px;font-size:12px;color:var(--blue)}.reports-filter label{display:block;color:var(--muted);font-size:9px;margin-top:7px;text-transform:uppercase}.reports-filter input,.reports-filter select{width:100%;border:1px solid #31506a;background:#04131f;color:var(--text);border-radius:6px;padding:7px 8px;margin-top:3px}.reports-filter-actions{display:flex;gap:6px;margin-top:10px;flex-wrap:wrap}.reports-filter-actions button,.reports-filter-actions .button{padding:6px 8px;font-size:10px}.reports-summary{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:7px;margin-bottom:10px}.reports-metric{border:1px solid var(--line);border-radius:7px;background:#071827;padding:8px}.reports-metric span{display:block;color:var(--muted);font-size:8px;letter-spacing:.06em}.reports-metric strong{display:block;margin-top:2px;font-size:14px}.reports-chart{display:flex;gap:8px;align-items:flex-end;min-height:72px;border:1px solid var(--line);border-radius:8px;background:#061421;padding:10px;margin-bottom:10px}.reports-bar{flex:1;min-width:70px}.reports-bar span{display:block;color:var(--muted);font-size:9px}.reports-bar strong{display:block;color:#dce8f0;font-size:13px}.reports-bar i{display:block;height:5px;margin-top:5px;border-radius:4px;background:var(--blue)}.reports-bar.paper i{background:#6588e8}.reports-bar.live i{background:#2ed477}.reports-bar.observation i{background:#37b8d8}.reports-table-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:9px}.reports-table{width:100%;border-collapse:collapse;font-size:10px}.reports-table th,.reports-table td{text-align:left;white-space:nowrap;padding:8px;border-top:1px solid var(--line)}.reports-table th{border-top:0;color:var(--muted);font-size:8px;letter-spacing:.05em}.reports-table tbody tr:hover{background:#0a2134}.reports-family.paper{color:#9bb0ff}.reports-family.live{color:var(--green)}.reports-family.paper_observation{color:#58d2ea}.reports-pnl.positive{color:var(--green)}.reports-pnl.negative{color:var(--red)}.reports-pagination{display:flex;align-items:center;justify-content:flex-end;gap:7px;margin-top:9px;color:var(--muted);font-size:10px}.reports-detail{margin-bottom:10px}.reports-unavailable{color:var(--muted);font-size:9px;margin:7px 0}.reports-export-note{color:var(--muted);font-size:9px;margin-top:8px}@media(max-width:900px){.reports-layout{grid-template-columns:1fr}.reports-filter{order:-1}.reports-summary{grid-template-columns:repeat(3,minmax(0,1fr))}}
 .mtf-fact-banner{border:1px solid #28506c;background:#071f32;color:#8dd0ff;border-radius:8px;padding:8px 11px;margin-bottom:12px;font-size:11px;font-weight:800}.mtf-fact-list{display:grid;gap:8px}.mtf-fact-card{border:1px solid var(--line);background:rgba(6,23,37,.88);border-radius:8px;padding:10px}.mtf-fact-card summary{cursor:pointer;display:flex;justify-content:space-between;gap:12px}.mtf-fact-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px;margin-top:9px}.mtf-fact-timeframe{border:1px solid var(--line);border-radius:6px;padding:8px;min-width:0}.mtf-fact-timeframe h3{margin:0 0 5px;color:var(--blue);font-size:12px}.mtf-fact-timeframe p{margin:2px 0;font-size:10px;color:var(--muted);overflow-wrap:anywhere}.mtf-fact-timeframe strong{color:var(--text)}
 .configuration{max-width:760px;border:1px solid var(--line);background:rgba(6,23,37,.88);border-radius:11px;padding:20px}.configuration-head{display:flex;align-items:center;justify-content:space-between;gap:16px;border-bottom:1px solid var(--line);padding-bottom:14px;margin-bottom:16px}.configuration-head h2{margin:0;color:var(--blue)}.configuration-state{display:flex;align-items:center;justify-content:space-between;gap:16px;margin:10px 0}.connection-status{border:1px solid #246295;border-radius:999px;padding:5px 10px;font-size:12px;font-weight:800}.connection-status.CONNECTED{border-color:#176741;color:var(--green)}.connection-status.CONNECTION-FAILED{border-color:#793b40;color:var(--red)}.credential-form{display:grid;gap:10px;margin-top:18px;padding-top:16px;border-top:1px solid var(--line)}.credential-form label{font-weight:700}.credential-form input{width:100%;border:1px solid #31506a;background:#04131f;color:var(--text);border-radius:7px;padding:11px 12px;font:inherit}.credential-form input:focus{outline:2px solid var(--blue);outline-offset:1px}.configuration-actions{display:flex;gap:10px;align-items:center;margin-top:16px}.configuration-note{color:var(--muted);font-size:12px;margin:9px 0 0}.engineering-diagnostics{margin-bottom:16px}.read-only-badge{border:1px solid #31506a;border-radius:999px;color:#8dd0ff;font-size:10px;font-weight:850;letter-spacing:.08em;padding:4px 8px}.diagnostic-intro{color:var(--muted);font-size:12px;margin:0 0 13px}.diagnostic-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px}.diagnostic-card{display:flex;flex-direction:column;min-height:122px;border:1px solid var(--line);border-radius:8px;background:#061421;padding:11px}.diagnostic-card:hover{border-color:#2c6f9e;background:#082038}.diagnostic-card small{color:#8dd0ff;font-size:9px;font-weight:800;letter-spacing:.08em}.diagnostic-card strong{font-size:12px;margin-top:7px}.diagnostic-card span{color:var(--muted);font-size:11px;margin-top:5px}.diagnostic-card b{color:var(--blue);font-size:11px;margin-top:auto;padding-top:9px}@media(max-width:760px){.diagnostic-grid{grid-template-columns:1fr}}
 .step32-workflow{margin-top:16px;border:1px solid var(--line);background:rgba(6,23,37,.88);border-radius:10px;padding:16px}.step32-head{display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--line);padding-bottom:10px}.step32-head h2{margin:0;font-size:18px}.step32-grid{display:grid;grid-template-columns:1.2fr .8fr .8fr .9fr;gap:12px;margin-top:12px}.step32-block{border-left:1px solid var(--line);padding-left:12px}.step32-block:first-child{border-left:0;padding-left:0}.step32-block h3{margin:0 0 8px;color:var(--muted);font-size:11px;letter-spacing:.06em;text-transform:uppercase}.step32-values{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;margin-top:10px}.step32-value label{display:block;color:var(--muted);font-size:10px}.step32-value strong{font-size:13px}.step32-context{display:grid;gap:7px;font-size:12px}.step32-context span{display:block;color:var(--muted);font-size:10px}.decision-options{display:flex;gap:5px;flex-wrap:wrap}.decision-option{border:1px solid var(--line);border-radius:6px;padding:5px 8px;color:var(--muted);font-size:11px;background:#081c2c}.decision-option.selected{border-color:var(--blue);color:#dff1ff}.decision-time{color:var(--muted);font-size:10px;margin-top:7px}.model-position{display:grid;gap:7px;margin-top:9px}.model-position div{display:flex;justify-content:space-between;gap:8px;font-size:12px}.model-position span{color:var(--muted)}.workflow-list{display:grid;gap:12px}.workflow-card{border:1px solid var(--line);background:rgba(6,23,37,.88);border-radius:10px;padding:14px}.workflow-card-head{display:flex;align-items:center;gap:10px}.workflow-card-head h2{margin:0;font-size:18px}.workflow-card-state{margin-left:auto;color:var(--blue);font-size:11px;font-weight:800}.workflow-card-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;margin:12px 0}.workflow-card-grid label{display:block;color:var(--muted);font-size:10px}.workflow-card-actions{display:flex;justify-content:flex-end}.action-required{border:1px solid #8a4c26;background:#2d1b0f;color:#ffd59c;border-radius:7px;padding:9px 11px;margin-top:10px;font-weight:750}.workflow-empty{border:1px solid var(--line);background:rgba(6,23,37,.88);border-radius:10px;padding:30px;text-align:center;color:var(--muted)}
@@ -2107,6 +2116,245 @@ def render_closed_candidates(
         active_tab="Closed",
         body=native + '<details class="native-diagnostics"><summary>LEGACY STEP-32 MODEL LIFECYCLE</summary>' + legacy + '</details>',
     )
+
+
+def render_reports(
+    snapshot: BrowserWorkspaceSnapshot,
+    projection: HistoricalReportsProjection,
+    *,
+    selected_record_id: str | None = None,
+) -> str:
+    """Render the factual historical book without research or trading authority."""
+
+    query = projection.query
+    product_tabs = ''.join(
+        '<a class="button ' + ('active' if query.product is item else '')
+        + '" href="/reports?' + urlencode({"product": item.value}) + '">'
+        + item.value + '</a>'
+        for item in (ReportProduct.SWING, ReportProduct.INTRADAY)
+    )
+    if query.product is ReportProduct.INTRADAY:
+        return _page(
+            title="Reports", subtitle="Historical trading and observation evidence.",
+            snapshot=snapshot, active_nav="Reports", active_tab="",
+            body=(
+                '<div class="reports-head"><div class="reports-products">'
+                + product_tabs + '</div></div><div class="workflow-empty">'
+                '<strong>INTRADAY REPORTS</strong><br>NOT YET OPERATIONAL</div>'
+            ),
+        )
+    base = _reports_params(projection)
+    view_tabs = ''.join(
+        '<a class="button ' + ('active' if query.view is item else '')
+        + '" href="/reports?' + urlencode(base | {"view": item.value, "page": 1})
+        + '">' + item.value.replace('_', ' ') + '</a>'
+        for item in ReportView
+    )
+    governed = (
+        "GOVERNED DATE UNAVAILABLE" if projection.governed_current_trading_date is None
+        else projection.governed_current_trading_date.strftime("%d %b %Y").upper()
+    )
+    header = (
+        '<div class="reports-head"><div class="reports-products">' + product_tabs
+        + '</div><span class="reports-date">' + governed + '</span>'
+        '<a class="button journal-reports" href="/journal">TRADING JOURNAL</a></div>'
+        '<div class="reports-views">' + view_tabs + '</div>'
+    )
+    overview = projection.overview
+    metrics = (
+        ("Records", str(overview.records)),
+        ("Paper", str(overview.paper_positions)),
+        ("Live", str(overview.live_positions)),
+        ("Observations", str(overview.paper_observations)),
+        ("Completed", str(overview.completed_records)),
+        ("Net P/L", "UNAVAILABLE" if overview.net_pnl is None else "₹" + _number(overview.net_pnl)),
+    )
+    summary = '<div class="reports-summary">' + ''.join(
+        '<div class="reports-metric"><span>' + escape(label) + '</span><strong>'
+        + escape(value) + '</strong></div>' for label, value in metrics
+    ) + '</div>'
+    maximum = max(
+        1, overview.paper_positions, overview.live_positions,
+        overview.paper_observations,
+    )
+    chart = '<div class="reports-chart" aria-label="Factual records by mode">' + ''.join(
+        '<div class="reports-bar ' + style + '"><span>' + label + '</span><strong>'
+        + str(value) + '</strong><i style="width:' + str(round(value / maximum * 100))
+        + '%"></i></div>'
+        for label, value, style in (
+            ("PAPER RECORDS", overview.paper_positions, "paper"),
+            ("LIVE RECORDS", overview.live_positions, "live"),
+            ("PAPER OBSERVATIONS", overview.paper_observations, "observation"),
+        )
+    ) + '</div>'
+    unsupported = (
+        '<p class="reports-unavailable">WIN RATE · AVERAGE R · MAX DRAWDOWN · '
+        'DAILY P/L · EFFECTIVENESS: UNAVAILABLE — NOT GOVERNED IN SWING V1.</p>'
+    )
+    detail = next(
+        (item for item in projection.records if item.record_identity == selected_record_id),
+        None,
+    )
+    detail_view = '' if detail is None else _report_detail(detail)
+    table = _reports_table(projection)
+    filters = _reports_filter_panel(projection)
+    return _page(
+        title="Reports", subtitle="Historical trading and observation evidence.",
+        snapshot=snapshot, active_nav="Reports", active_tab="",
+        body=(
+            header + '<div class="reports-layout"><main class="reports-main">'
+            + summary + chart + unsupported + detail_view + table
+            + '</main>' + filters + '</div>'
+        ),
+    )
+
+
+def _reports_params(projection: HistoricalReportsProjection) -> dict[str, object]:
+    query = projection.query
+    values: dict[str, object] = {
+        "product": query.product.value, "view": query.view.value,
+        "search": query.instrument, "status": query.status, "page": query.page,
+    }
+    if query.from_date is not None:
+        values["from"] = query.from_date.isoformat()
+    if query.to_date is not None:
+        values["to"] = query.to_date.isoformat()
+    if query.direction is not None:
+        values["direction"] = query.direction.value
+    return values
+
+
+def _reports_filter_panel(projection: HistoricalReportsProjection) -> str:
+    query = projection.query
+    hidden = (
+        '<input type="hidden" name="product" value="' + query.product.value + '">'
+        '<input type="hidden" name="view" value="' + query.view.value + '">'
+    )
+    quick = ''.join(
+        '<a class="button" href="/reports?' + urlencode({
+            "product": query.product.value, "view": query.view.value, "quick": item,
+        }) + '">' + item.replace('_', ' ') + '</a>'
+        for item in ("TODAY", "7D", "30D", "THIS_MONTH")
+    )
+    direction_options = '<option value="">ALL</option>' + ''.join(
+        '<option value="' + item.value + '"'
+        + (' selected' if query.direction is item else '') + '>' + item.value + '</option>'
+        for item in V1Direction
+    )
+    export_params = urlencode(_reports_params(projection) | {"page": 1})
+    return (
+        '<aside class="reports-filter"><h2>FILTER & EXPORT</h2>'
+        '<div class="reports-quick">' + quick + '</div>'
+        '<form method="get" action="/reports">' + hidden
+        + '<label>From<input type="date" name="from" value="'
+        + ('' if query.from_date is None else query.from_date.isoformat()) + '"></label>'
+        + '<label>To<input type="date" name="to" value="'
+        + ('' if query.to_date is None else query.to_date.isoformat()) + '"></label>'
+        + '<label>Instrument<input name="search" maxlength="80" value="'
+        + escape(query.instrument) + '" placeholder="Search instrument..."></label>'
+        + '<label>Direction<select name="direction">' + direction_options + '</select></label>'
+        + '<label>Status / outcome<input name="status" maxlength="80" value="'
+        + escape(query.status) + '"></label><div class="reports-filter-actions">'
+        + '<button type="submit">APPLY</button><a class="button" href="/reports?product=SWING">CLEAR</a>'
+        '</div></form><div class="reports-filter-actions">'
+        + '<a class="button" href="/reports/export.csv?' + export_params + '">CSV</a>'
+        + '<a class="button" href="/reports/export.json?' + export_params + '">JSON</a>'
+        '</div><p class="reports-export-note">Exports preserve selected filters, evidence family, '
+        'and unavailable values. No performance analytics.</p></aside>'
+    )
+
+
+def _reports_table(projection: HistoricalReportsProjection) -> str:
+    if not projection.page_records:
+        message = (
+            "NO HISTORICAL RECORDS" if projection.total_records == 0 and not any((
+                projection.query.from_date, projection.query.to_date,
+                projection.query.instrument, projection.query.direction,
+                projection.query.status,
+            )) else "NO RECORDS MATCH THESE FILTERS"
+        )
+        return '<div class="workflow-empty"><strong>' + message + '</strong></div>'
+    rows = ''.join(_report_row(item, projection) for item in projection.page_records)
+    pagination = ''
+    if projection.page_count > 1:
+        links = []
+        for label, page in (
+            ("PREVIOUS", projection.query.page - 1),
+            ("NEXT", projection.query.page + 1),
+        ):
+            if 1 <= page <= projection.page_count:
+                links.append(
+                    '<a class="button" href="/reports?'
+                    + urlencode(_reports_params(projection) | {"page": page})
+                    + '">' + label + '</a>'
+                )
+        pagination = (
+            '<div class="reports-pagination"><span>PAGE '
+            + str(projection.query.page) + ' / ' + str(projection.page_count)
+            + '</span>' + ''.join(links) + '</div>'
+        )
+    return (
+        '<div class="reports-table-wrap"><table class="reports-table"><thead><tr>'
+        '<th>Date</th><th>Time</th><th>Instrument</th><th>Side</th><th>Family</th><th>Status</th>'
+        '<th>Entry</th><th>Exit</th><th>P/L</th><th>Target</th><th>SL</th>'
+        '<th>Position Outcome</th><th>Track Outcome</th></tr></thead><tbody>'
+        + rows + '</tbody></table></div>' + pagination
+    )
+
+
+def _report_row(
+    item: HistoricalReportRecord, projection: HistoricalReportsProjection
+) -> str:
+    params = _reports_params(projection) | {"record": item.record_identity}
+    pnl = "—" if item.pnl is None else "₹" + _number(item.pnl)
+    return (
+        '<tr><td>' + item.record_date.isoformat() + '</td><td>'
+        + item.relevant_timestamp.astimezone(_KOLKATA).strftime("%H:%M IST")
+        + '</td><td><a href="/reports?'
+        + urlencode(params) + '"><strong>' + escape(item.instrument) + '</strong></a></td>'
+        '<td class="journal-side ' + item.direction.value + '">' + item.direction.value + '</td>'
+        '<td class="reports-family ' + item.family.value.lower() + '">' + item.family.value.replace('_', ' ') + '</td>'
+        '<td>' + escape(item.status) + '</td><td>' + _report_value(item.entry) + '</td>'
+        '<td>' + _report_value(item.exit) + '</td><td class="reports-pnl '
+        + ('positive' if (item.pnl or 0) > 0 else 'negative' if (item.pnl or 0) < 0 else '')
+        + '">' + pnl + '</td><td>' + _report_value(item.target) + '</td><td>'
+        + _report_value(item.stop) + '</td><td>' + escape(item.sponsor_position_outcome)
+        + '</td><td>' + escape(item.paper_track_outcome) + '</td></tr>'
+    )
+
+
+def _report_detail(item: HistoricalReportRecord) -> str:
+    values = (
+        ("Family", item.family.value.replace('_', ' ')), ("Status", item.status),
+        ("Completed / exited at", item.relevant_timestamp.astimezone(_KOLKATA).strftime(
+            "%d %b %Y · %H:%M IST"
+        )),
+        ("Decision", item.decision_identity), ("Step-31 severity", item.step31_severity),
+        ("Risk at decision", item.risk_state), ("Activation", item.activation_disposition),
+        ("Entry / observation entry", _report_value(item.entry)), ("Exit", _report_value(item.exit)),
+        ("P/L", "—" if item.pnl is None else "₹" + _number(item.pnl)),
+        ("Target", _report_value(item.target)), ("Stop", _report_value(item.stop)),
+        ("Sponsor Position outcome", item.sponsor_position_outcome),
+        ("Paper Track outcome", item.paper_track_outcome),
+        ("Objective model", item.objective_outcome),
+    )
+    fields = ''.join(
+        '<div><span>' + escape(label) + '</span><strong>' + escape(value) + '</strong></div>'
+        for label, value in values
+    )
+    return (
+        '<section class="journal-detail reports-detail"><h2>' + escape(item.instrument)
+        + ' · HISTORICAL DETAIL</h2><div class="journal-detail-grid">' + fields
+        + '</div><details class="native-diagnostics"><summary>GOVERNED EVIDENCE</summary>'
+        '<div class="v1-context-row"><span>Record</span><strong>' + escape(item.record_identity)
+        + '</strong></div><div class="v1-context-row"><span>Contract</span><strong>'
+        + escape(item.source_contract_identity + ' / ' + item.source_contract_version)
+        + '</strong></div></details></section>'
+    )
+
+
+def _report_value(value: Decimal | None) -> str:
+    return "—" if value is None else _number(value)
 
 
 def render_trade_journal(
@@ -5306,6 +5554,7 @@ __all__ = [
     "render_native_analysis_details",
     "render_native_trade_window",
     "render_notifications",
+    "render_reports",
     "render_trade_journal",
     "render_placeholder",
     "render_settings",

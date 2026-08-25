@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -119,8 +119,17 @@ from kronos.browser.views import (
     render_native_analysis_details,
     render_native_trade_window,
     render_notifications,
+    render_reports,
     render_trade_candidates,
     render_v1_review,
+)
+from kronos.browser.reports import (
+    ReportProduct,
+    ReportsQuery,
+    ReportView,
+    export_reports_csv,
+    export_reports_json,
+    project_historical_reports,
 )
 from kronos.browser.dashboard import project_sponsor_dashboard
 from kronos.browser.v1_analysis_status import analysis_status_payload
@@ -193,6 +202,7 @@ from kronos.swing.v1.sponsor_observation_decision import (
     SponsorObservationReason,
 )
 from kronos.swing.v1.observation_research_ledger import ObservationResearchQueryV1
+from kronos.swing.v1.models import V1Direction
 from kronos.swing.v1.step31_observation import Step31WarningSeverity
 from kronos.swing.v1.progression_watch import (
     derive_kr370_progression_requirements,
@@ -226,7 +236,6 @@ _TRADE_CANDIDATE_DECISION_ROUTE = re.compile(
 _PLACEHOLDERS = {
     "/theta-earners": ("Theta Earners", "Theta Earners", ""),
     "/portfolio": ("Portfolio", "Portfolio", ""),
-    "/reports": ("Reports", "Reports", ""),
     "/swing/paper": ("Paper", "Swing", "Paper"),
     "/swing/ignored": ("Ignored", "Swing", "Ignored"),
 }
@@ -1274,6 +1283,97 @@ class _BrowserHandler(BaseHTTPRequestHandler):
                 snapshot,
                 self.server.step32_workflow.snapshot(),
                 self.server.native_review.snapshot().active_lifecycle,
+            ))
+            return
+        if path in {"/reports", "/reports/export.csv", "/reports/export.json"}:
+            query_values = parse_qs(
+                urlsplit(self.path).query, keep_blank_values=True
+            )
+            allowed = {
+                "product", "view", "from", "to", "quick", "search",
+                "direction", "status", "page", "record",
+            }
+            if set(query_values).difference(allowed) or any(
+                len(value) != 1 for value in query_values.values()
+            ):
+                self._text(HTTPStatus.BAD_REQUEST, "Reports filter is invalid.")
+                return
+            try:
+                product = ReportProduct(query_values.get("product", ["SWING"])[0])
+                view = ReportView(query_values.get("view", ["OVERVIEW"])[0])
+                governed_date = self.server.application.current_swing_trading_date()
+                quick = query_values.get("quick", [""])[0]
+                from_value = query_values.get("from", [""])[0]
+                to_value = query_values.get("to", [""])[0]
+                from_date = date.fromisoformat(from_value) if from_value else None
+                to_date = date.fromisoformat(to_value) if to_value else None
+                if quick:
+                    if quick == "TODAY":
+                        from_date = to_date = governed_date
+                    elif quick == "7D":
+                        from_date, to_date = governed_date - timedelta(days=6), governed_date
+                    elif quick == "30D":
+                        from_date, to_date = governed_date - timedelta(days=29), governed_date
+                    elif quick == "THIS_MONTH":
+                        from_date = governed_date.replace(day=1)
+                        to_date = governed_date
+                    else:
+                        raise ValueError
+                direction_value = query_values.get("direction", [""])[0]
+                reports_query = ReportsQuery(
+                    product=product,
+                    view=view,
+                    from_date=from_date,
+                    to_date=to_date,
+                    instrument=query_values.get("search", [""])[0],
+                    direction=(
+                        None if not direction_value else V1Direction(direction_value)
+                    ),
+                    status=query_values.get("status", [""])[0],
+                    page=int(query_values.get("page", ["1"])[0]),
+                )
+                selected_record = query_values.get("record", [None])[0]
+                if selected_record is not None and len(selected_record) > 160:
+                    raise ValueError
+            except (TypeError, ValueError):
+                self._text(HTTPStatus.BAD_REQUEST, "Reports filter is invalid.")
+                return
+            preliminary = self.server.trade_window.observation_operational_handoffs_v2(
+                governed_current_trading_date=governed_date,
+            )
+            completion_dates = {}
+            for item in preliminary:
+                if item.completion_timestamp is None:
+                    continue
+                completion_date = self.server.application.swing_trading_date_for(
+                    item.completion_timestamp
+                )
+                if completion_date is not None:
+                    completion_dates[item.decision_identity] = completion_date
+            operational = self.server.trade_window.observation_operational_handoffs_v2(
+                governed_current_trading_date=governed_date,
+                completion_trading_dates=completion_dates,
+            )
+            projection = project_historical_reports(
+                operational,
+                self.server.native_review.journal_snapshot(),
+                reports_query,
+                governed_current_trading_date=governed_date,
+            )
+            if path == "/reports/export.csv":
+                self._respond(
+                    HTTPStatus.OK, export_reports_csv(projection),
+                    "text/csv; charset=utf-8",
+                )
+                return
+            if path == "/reports/export.json":
+                self._respond(
+                    HTTPStatus.OK, export_reports_json(projection),
+                    "application/json; charset=utf-8",
+                )
+                return
+            self._html(render_reports(
+                snapshot, projection, selected_record_id=selected_record
             ))
             return
         if path == "/journal":
