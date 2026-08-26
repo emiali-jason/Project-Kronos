@@ -76,6 +76,7 @@ class IntradayBrowserRoutes:
             "/intraday/review/start",
             "/intraday/review/chart",
             "/intraday/review/question-pack",
+            "/intraday/review/question-packs",
         }
 
     def handle_post(
@@ -98,11 +99,22 @@ class IntradayBrowserRoutes:
                     media_type=request.content_type,
                     payload=request.body,
                 )
-            else:
+            elif request.path == "/intraday/review/question-pack":
                 cycle = _one_query(request, "cycle")
                 if request.body:
                     raise ValueError
                 self._review.create_question_pack(cycle)
+            else:
+                if request.query or request.body:
+                    raise ValueError
+                batch_result = self._review.create_all_question_packs()
+                return BrowserRouteResponse(
+                    render_intraday_review(
+                        snapshot_provider(),
+                        self._review.snapshot(),
+                        batch_result=batch_result,
+                    )
+                )
         except ValueError:
             return BrowserRouteResponse(
                 "Intraday Review request rejected.",

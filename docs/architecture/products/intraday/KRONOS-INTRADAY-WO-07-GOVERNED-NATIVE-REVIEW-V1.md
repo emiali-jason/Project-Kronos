@@ -4,6 +4,7 @@
 **Owner:** Intraday
 **Contract version:** 1.0.0
 **Trading authority:** None
+**Amended by:** [WO-07A Sponsor Review UX and Batch Transport](KRONOS-INTRADAY-WO-07A-SPONSOR-REVIEW-UX-AND-BATCH-TRANSPORT-V1.md)
 
 ## Purpose
 
@@ -116,3 +117,11 @@ WO-09 may later define and import a governed Answer Pack against the exact
 Probables Run, instrument, Review Cycle/Request, Chart Revision, Review Pack and
 Question Set/version. WO-07 does not invoke Chart Analyst, import an answer,
 establish Readiness or perform Analytical Promotion.
+
+## WO-07A transport amendment
+
+WO-07A preserves every WO-07 identity and the exact Q1-Q10 contract while
+adding candidate-bound clipboard paste, a compact multi-card Sponsor workflow,
+per-candidate batch accounting and the transport-only
+`KRONOS-INTRADAY-REVIEW-BATCH-PDF-V1 / 1.0.0`. Individual Question Packs remain
+authoritative. `UPLOAD ALL ANSWERS` remains disabled and uncommissioned.

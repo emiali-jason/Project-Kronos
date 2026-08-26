@@ -8,7 +8,7 @@ from html import escape
 from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
-from kronos.application.intraday_review import IntradayReviewSnapshot
+from kronos.application.intraday_review import IntradayReviewBatchResult, IntradayReviewSnapshot
 from kronos.application.intraday_discovery import (
     IntradayDiscoveryMemberSnapshot,
     IntradayDiscoverySnapshot,
@@ -30,9 +30,9 @@ _INTRADAY_CSS = r"""
 .intraday-warning{display:flex;justify-content:space-between;gap:16px;border:1px solid #82631f;background:#231d11;color:#f6d997;border-radius:8px;padding:12px 14px;margin-bottom:14px}.intraday-selector{display:flex;align-items:center;gap:10px;margin-bottom:14px}.intraday-selector label{font-weight:700}.intraday-selector select{border:1px solid #31506a;background:#04131f;color:var(--text);border-radius:7px;padding:9px 12px}.intraday-panel{border:1px solid var(--line);background:rgba(6,23,37,.88);border-radius:10px;padding:15px;margin-bottom:14px;min-width:0}.intraday-panel h2{margin:0 0 12px;color:var(--blue);font-size:17px}.intraday-panel h3{margin:14px 0 7px;color:var(--muted);font-size:11px;text-transform:uppercase}.intraday-facts{display:grid;grid-template-columns:minmax(140px,.35fr) minmax(0,1fr);margin:0}.intraday-facts dt,.intraday-facts dd{padding:6px 8px;border-top:1px solid var(--line);margin:0;overflow-wrap:anywhere}.intraday-facts dt{color:var(--muted)}.intraday-timeframes{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.incomplete-observation{display:grid;gap:5px;margin-top:11px;border:1px dashed #82631f;border-radius:7px;padding:9px;color:#f6d997}.incomplete-observation span{color:var(--muted);overflow-wrap:anywhere}.intraday-context{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}.intraday-table{width:100%;border-collapse:collapse;font-size:12px}.intraday-table th,.intraday-table td{text-align:left;vertical-align:top;padding:8px;border-bottom:1px solid var(--line);overflow-wrap:anywhere}.intraday-table th{color:var(--muted);white-space:nowrap}.table-scroll{overflow:auto}.intraday-unavailable{color:var(--muted)}.intraday-unavailable strong{color:var(--amber)}
 .intraday-discovery-header{border:1px solid var(--line);background:#071827;border-radius:9px;padding:13px 15px;margin-bottom:12px}.intraday-discovery-header h2{font-size:17px;color:var(--green);margin:0 0 5px}.intraday-discovery-header p{margin:3px 0;color:var(--muted);font-size:12px}.intraday-discovery-table{width:100%;border-collapse:collapse;font-size:12px}.intraday-discovery-table th,.intraday-discovery-table td{padding:7px 8px;border-bottom:1px solid var(--line);text-align:left}.intraday-discovery-table th{font-size:10px;color:var(--muted);text-transform:uppercase}.intraday-state-ready{color:var(--green)}.intraday-state-held{color:var(--amber)}.intraday-failure{border:1px solid #81502a;background:#26170d;color:#f0c08e;border-radius:7px;padding:9px 11px;margin-bottom:12px}.intraday-methodology{border:1px solid var(--line);background:#071827;color:#c2d2dd;border-radius:7px;padding:8px 11px;margin-bottom:12px;font-size:11px}.intraday-methodology strong{color:var(--green)}.intraday-detail-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
 .intraday-tabs{margin:-22px -28px 22px}.intraday-tabs a.active{border-color:var(--green)}.intraday-tab{height:61px;display:flex;align-items:center;color:var(--muted);border-bottom:2px solid transparent;white-space:nowrap}.intraday-refresh-state{margin-left:8px;color:var(--muted);font-size:10px}.intraday-summary .status-top strong{color:var(--green)}.intraday-market-panels{grid-template-columns:repeat(2,minmax(0,1fr))}.intraday-market-panels .panel-heading h2{color:var(--green)}.intraday-market-panels .market-panel{min-height:330px}.intraday-market-panels .empty{min-height:110px}.intraday-probable .summary-reason{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:7px}.intraday-card-fact{border-left:1px solid var(--line);padding-left:7px;min-width:0}.intraday-card-fact:first-child{border-left:0;padding-left:0}.intraday-card-fact span{display:block;color:var(--muted);font-size:8px;text-transform:uppercase;letter-spacing:.04em}.intraday-card-fact strong{display:block;margin-top:2px;font-size:11px;overflow-wrap:anywhere}.intraday-probable .summary-rr strong{color:#dce8f0}.intraday-panel-footer{display:flex;flex-wrap:wrap;gap:7px 14px;border-top:1px solid var(--line);margin-top:13px;padding-top:10px;color:var(--muted);font-size:10px}.intraday-panel-footer strong{color:#dce8f0}.intraday-unavailable-list{display:grid;gap:6px;margin-top:10px}.intraday-unavailable-subject{display:flex;justify-content:space-between;gap:10px;border-top:1px solid var(--line);padding-top:6px;color:var(--muted);font-size:11px}.intraday-unavailable-subject strong{color:var(--amber)}.intraday-analysis-context{display:flex;align-items:flex-start;gap:12px;border:1px solid var(--line);background:#071827;border-radius:8px;margin-top:14px;padding:8px 10px}.intraday-analysis-context>strong{flex:0 0 auto;color:var(--green);font-size:10px;text-transform:uppercase;letter-spacing:.05em}.intraday-analysis-context-detail{display:flex;align-items:center;flex-wrap:wrap;gap:5px 12px;color:var(--muted);font-size:8px;white-space:normal}.intraday-analysis-context-detail span{padding-left:12px;border-left:1px solid var(--line)}
-.intraday-review-list{display:grid;gap:12px}.intraday-review-card{border:1px solid var(--line);background:#071827;border-radius:10px;padding:14px}.intraday-review-card h2{margin:0;color:var(--green);font-size:18px}.intraday-review-head{display:flex;justify-content:space-between;gap:14px;align-items:center}.intraday-review-status{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin:12px 0}.intraday-review-status div{border:1px solid var(--line);border-radius:6px;padding:7px}.intraday-review-status span{display:block;color:var(--muted);font-size:9px;text-transform:uppercase}.intraday-review-status strong{font-size:11px}.intraday-review-actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center}.intraday-chart-input{max-width:280px;color:var(--muted);font-size:11px}.intraday-drop{border:1px dashed #3d836b;border-radius:7px;padding:10px;color:var(--muted);font-size:11px}.intraday-review-lineage{font-size:9px;color:var(--muted);overflow-wrap:anywhere}.intraday-review-config{margin-top:14px;border:1px solid var(--line);border-radius:7px;padding:9px;color:var(--muted);font-size:9px;overflow-wrap:anywhere}
+.intraday-review-toolbar{display:flex;align-items:center;gap:9px;flex-wrap:wrap;border:1px solid var(--line);background:#071827;border-radius:9px;padding:10px;margin-bottom:12px}.intraday-review-toolbar form{margin:0}.intraday-review-toolbar .future-action{opacity:.62}.intraday-review-toolbar-note{color:var(--muted);font-size:10px}.intraday-batch-result{border:1px solid #2d765d;background:#08261e;border-radius:9px;padding:10px 12px;margin-bottom:12px}.intraday-batch-result h2{color:var(--green);font-size:13px;margin:0 0 6px}.intraday-batch-accounting{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}.intraday-batch-accounting span,.intraday-batch-members span{font-size:10px;color:var(--muted)}.intraday-batch-members{display:flex;flex-wrap:wrap;gap:5px 12px;margin-top:7px}.intraday-review-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:12px}.intraday-review-card{border:1px solid var(--line);background:#071827;border-radius:10px;padding:14px;min-width:0}.intraday-review-card h2{margin:0;color:var(--green);font-size:18px}.intraday-review-head{display:flex;justify-content:space-between;gap:14px;align-items:center}.intraday-review-required{display:inline-block;margin-top:7px;color:#f6d997;font-size:10px;font-weight:850}.intraday-probable-context{border-top:1px solid var(--line);border-bottom:1px solid var(--line);padding:8px 0;margin:9px 0;color:#d9e6df;font-size:10px}.intraday-probable-context strong{display:block;color:var(--green);font-size:9px;text-transform:uppercase;margin-bottom:3px}.intraday-review-section-title{color:var(--muted);font-size:9px;font-weight:850;letter-spacing:.05em;margin:10px 0 6px}.intraday-review-status{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin:12px 0}.intraday-review-status div{border:1px solid var(--line);border-radius:6px;padding:7px}.intraday-review-status span{display:block;color:var(--muted);font-size:8px;text-transform:uppercase}.intraday-review-status strong{font-size:10px;overflow-wrap:anywhere}.intraday-review-actions{display:grid;gap:8px}.intraday-drop{display:grid;place-items:center;text-align:center;min-height:160px;border:2px dashed #3d836b;border-radius:9px;padding:16px;color:var(--muted);cursor:pointer;outline:none}.intraday-drop:hover,.intraday-drop:focus-visible{border-color:var(--green);background:#09251d;box-shadow:0 0 0 3px rgba(46,212,119,.14)}.intraday-drop .paste-key{display:grid;place-items:center;width:46px;height:36px;border:1px solid #3d836b;border-radius:7px;color:var(--green);font-size:18px;font-weight:900}.intraday-drop strong{color:#e9f7f0;font-size:13px;margin-top:7px}.intraday-drop span{display:block;font-size:10px}.intraday-drop .required-panels{margin-top:7px}.intraday-chart-input{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}.intraday-file-choice{justify-self:start;display:inline-block;border:1px solid #246a52;border-radius:7px;padding:7px 10px;color:#dff7eb;font-size:10px;font-weight:750;cursor:pointer}.intraday-file-choice:hover,.intraday-file-choice:focus-visible{border-color:var(--green);outline:2px solid rgba(46,212,119,.25)}.intraday-review-actions form{margin:0}.intraday-review-lineage{font-size:9px;color:var(--muted);overflow-wrap:anywhere}.intraday-review-diagnostics{font-size:9px;color:var(--muted)}.intraday-review-diagnostics summary{cursor:pointer}.intraday-review-config{margin-top:14px;border:1px solid var(--line);border-radius:7px;padding:9px;color:var(--muted);font-size:9px;overflow-wrap:anywhere}
 @media(max-width:900px){.intraday-detail-grid{grid-template-columns:1fr}.intraday-probable .summary-reason{grid-template-columns:repeat(3,minmax(0,1fr))}}
-@media(max-width:760px){.intraday-tabs{margin:-18px -18px 18px;padding:0 18px;gap:13px;overflow:auto}.intraday-tabs .toolbar{margin-left:0}.intraday-timeframes,.intraday-context{grid-template-columns:1fr}.intraday-warning,.intraday-selector{align-items:flex-start;flex-direction:column}.intraday-facts{grid-template-columns:1fr}.intraday-facts dd{padding-top:0}.intraday-market-panels{grid-template-columns:1fr}.intraday-probable .summary-reason{grid-template-columns:repeat(2,minmax(0,1fr))}.intraday-analysis-context{align-items:flex-start}.intraday-analysis-context-detail{flex-wrap:wrap;white-space:normal}}
+@media(max-width:760px){.intraday-tabs{margin:-18px -18px 18px;padding:0 18px;gap:13px;overflow:auto}.intraday-tabs .toolbar{margin-left:0}.intraday-timeframes,.intraday-context{grid-template-columns:1fr}.intraday-warning,.intraday-selector{align-items:flex-start;flex-direction:column}.intraday-facts{grid-template-columns:1fr}.intraday-facts dd{padding-top:0}.intraday-market-panels{grid-template-columns:1fr}.intraday-probable .summary-reason{grid-template-columns:repeat(2,minmax(0,1fr))}.intraday-analysis-context{align-items:flex-start}.intraday-analysis-context-detail{flex-wrap:wrap;white-space:normal}.intraday-review-list{grid-template-columns:1fr}.intraday-batch-accounting{grid-template-columns:repeat(2,minmax(0,1fr))}.intraday-review-status{grid-template-columns:1fr}.intraday-review-toolbar{align-items:stretch;flex-direction:column}.intraday-review-toolbar button{width:100%}}
 """
 
 
@@ -82,6 +82,8 @@ def render_intraday_detail(
 def render_intraday_review(
     snapshot: BrowserWorkspaceSnapshot,
     review: IntradayReviewSnapshot,
+    *,
+    batch_result: IntradayReviewBatchResult | None = None,
 ) -> str:
     """Render exact-current Review candidates without creating analytical state."""
 
@@ -91,11 +93,29 @@ def render_intraday_review(
         else '<div class="empty"><div><strong>Zero current Review candidates</strong>'
         'Only exact-current Long/Short Probables are eligible.</div></div>'
     )
+    ready_count = sum(item.chart_revision_identity is not None for item in review.candidates)
+    batch_feedback = "" if batch_result is None else _review_batch_result(batch_result)
+    current_batch = (
+        ""
+        if review.current_batch_identity is None
+        else '<span class="intraday-review-toolbar-note">Current batch · '
+        + escape(review.current_batch_filename or review.current_batch_identity)
+        + "</span>"
+    )
     body = (
         _intraday_tabs(False, active="review")
         + '<div class="intraday-warning"><strong>VISUAL REVIEW ONLY</strong>'
         '<span>NO READINESS, TRADE, RISK OR BROKER AUTHORITY</span></div>'
-        '<div class="intraday-review-list">' + cards + '</div>'
+        '<div class="intraday-review-toolbar"><form method="post" action="/intraday/review/question-packs">'
+        '<button class="primary" type="submit"'
+        + (" disabled" if ready_count == 0 else "")
+        + '>CREATE ALL REVIEW PDF</button></form>'
+        '<button class="future-action" type="button" disabled>UPLOAD ALL ANSWERS · NOT YET COMMISSIONED</button>'
+        '<span class="intraday-review-toolbar-note">Chart ready · '
+        + str(ready_count) + " / " + str(len(review.candidates)) + "</span>"
+        + current_batch + "</div>"
+        + batch_feedback
+        + '<div class="intraday-review-list">' + cards + '</div>'
         '<div class="intraday-review-config"><strong>Question outbox:</strong> '
         + escape(review.question_outbox)
         + '<br><strong>Future Answer inbox:</strong> '
@@ -126,6 +146,7 @@ def _review_candidate(item) -> str:  # type: ignore[no-untyped-def]
         pack_state = "NOT CREATED"
     else:
         cycle = quote(item.cycle_identity, safe="")
+        input_identity = "intraday-chart-" + item.cycle_identity.rsplit("-", 1)[-1][:12]
         chart_state = (
             "CHART REQUIRED"
             if item.chart_revision_ordinal is None
@@ -133,11 +154,16 @@ def _review_candidate(item) -> str:  # type: ignore[no-untyped-def]
         )
         pack_state = "NOT CREATED" if item.review_pack_identity is None else "CREATED"
         action = (
-            '<div class="intraday-drop" tabindex="0" data-review-upload="/intraday/review/chart?cycle='
+            '<div class="intraday-review-section-title">TRADINGVIEW CHARTS</div>'
+            '<div class="intraday-drop" role="button" tabindex="0" aria-label="Paste TradingView 1D 1H 15M 5M chart composite for '
+            + escape(item.canonical_subject_identity)
+            + '" data-review-upload="/intraday/review/chart?cycle='
             + cycle
-            + '"><input class="intraday-chart-input" type="file" accept="image/png,image/jpeg" '
-            'aria-label="Paste or upload 1D 1H 15M 5M chart composite">'
-            '<span>Paste or upload one 1D | 1H | 15M | 5M composite</span></div>'
+            + '"><span class="paste-key">⌘V</span><strong>PASTE / UPLOAD</strong>'
+            '<span>TRADINGVIEW 4-CHART IMAGE</span><span class="required-panels">Required: 1D · 1H · 15M · 5M</span></div>'
+            '<label class="intraday-file-choice" tabindex="0" for="' + input_identity + '">CHOOSE IMAGE FILE</label>'
+            '<input id="' + input_identity + '" class="intraday-chart-input" type="file" accept="image/png,image/jpeg" '
+            'aria-label="Choose 1D 1H 15M 5M chart composite" data-review-file-target="' + input_identity + '-target">'
         )
         if item.chart_revision_ordinal is not None:
             action += (
@@ -151,15 +177,55 @@ def _review_candidate(item) -> str:  # type: ignore[no-untyped-def]
         '<article class="intraday-review-card"><div class="intraday-review-head"><h2>'
         + escape(item.canonical_subject_identity)
         + '</h2><span class="direction ' + direction_class + '">' + escape(item.direction)
-        + '</span></div><div class="intraday-review-status">'
-        + _review_status("Review", "REVIEW REQUIRED")
+        + '</span></div><span class="intraday-review-required">REVIEW REQUIRED</span>'
+        '<div class="intraday-probable-context"><strong>PROBABLE CONTEXT</strong>1H '
+        + escape(item.one_hour_context) + " · 15M " + escape(item.fifteen_minute_context)
+        + " · COHERENCE " + escape(item.coherence_context)
+        + " · PARTICIPATION " + escape(item.participation_state)
+        + '</div><div class="intraday-review-status">'
         + _review_status("Chart", chart_state)
-        + _review_status("Questions", pack_state)
+        + _review_status("Visual Evidence", "NOT ANALYZED")
+        + _review_status("Question Pack", pack_state)
         + '</div><p class="intraday-review-lineage">Analysis boundary · '
         + escape(_ist_time(item.observation_boundary))
-        + '<br>Probables · ' + escape(item.probables_run_identity)
+        + '</p><div class="intraday-review-actions">' + action + '</div>'
+        '<details class="intraday-review-diagnostics"><summary>IDENTITY / DIAGNOSTICS</summary>Probables · '
+        + escape(item.probables_run_identity)
         + ('<br>Review Cycle · ' + escape(item.cycle_identity) if item.cycle_identity else '')
-        + '</p><div class="intraday-review-actions">' + action + '</div></article>'
+        + '</details></article>'
+    )
+
+
+def _review_batch_result(result: IntradayReviewBatchResult) -> str:
+    members = "".join(
+        '<span><strong>' + escape(item.canonical_subject_identity) + "</strong> · "
+        + escape(item.state.value.replace("_", " "))
+        + (" · " + escape(item.detail) if item.detail is not None else "")
+        + "</span>"
+        for item in result.members
+    )
+    return (
+        '<section class="intraday-batch-result"><h2>CREATE ALL REVIEW PDF · '
+        + escape(result.state.value.replace("_", " "))
+        + '</h2><div class="intraday-batch-accounting">'
+        + f"<span>Created <strong>{result.created_count}</strong></span>"
+        + f"<span>Reused <strong>{result.reused_count}</strong></span>"
+        + f"<span>Skipped <strong>{result.skipped_count}</strong></span>"
+        + f"<span>Failed <strong>{result.failed_count}</strong></span>"
+        + '</div><div class="intraday-batch-members">' + members + "</div>"
+        + (
+            ""
+            if result.batch_filename is None
+            else '<p class="intraday-review-lineage">Combined Sponsor PDF · '
+            + escape(result.batch_filename) + "</p>"
+        )
+        + (
+            ""
+            if result.batch_error is None
+            else '<p class="intraday-review-lineage">Batch transport · '
+            + escape(result.batch_error) + "</p>"
+        )
+        + "</section>"
     )
 
 
@@ -170,17 +236,19 @@ def _review_status(label: str, value: str) -> str:
 def _review_upload_script() -> str:
     return """<script>
 async function uploadReviewChart(target,file){
-  if(!file)return;
+  const accepted=new Set(['image/png','image/jpeg']);
+  if(!file||!accepted.has(file.type)){alert('Paste or choose a PNG or JPEG chart image.');return;}
   const response=await fetch(target.dataset.reviewUpload,{method:'POST',headers:{'Content-Type':file.type},body:file});
   if(!response.ok){alert('Chart upload rejected.');return;}
   document.open();document.write(await response.text());document.close();
 }
 document.querySelectorAll('[data-review-upload]').forEach(target=>{
-  const input=target.querySelector('input');
-  input.addEventListener('change',()=>uploadReviewChart(target,input.files[0]));
+  const input=target.parentElement.querySelector('input[data-review-file-target]');
+  if(input)input.addEventListener('change',()=>uploadReviewChart(target,input.files[0]));
+  target.addEventListener('click',()=>target.focus());
   target.addEventListener('dragover',event=>event.preventDefault());
   target.addEventListener('drop',event=>{event.preventDefault();uploadReviewChart(target,event.dataTransfer.files[0]);});
-  target.addEventListener('paste',event=>{const item=[...event.clipboardData.items].find(value=>value.kind==='file');if(item)uploadReviewChart(target,item.getAsFile());});
+  target.addEventListener('paste',event=>{const item=[...(event.clipboardData?.items||[])].find(value=>value.kind==='file'&&['image/png','image/jpeg'].includes(value.type));if(!item){alert('No supported chart image was found on the clipboard.');return;}event.preventDefault();uploadReviewChart(target,item.getAsFile());});
 });
 </script>"""
 

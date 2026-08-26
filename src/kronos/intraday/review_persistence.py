@@ -20,6 +20,11 @@ from kronos.intraday.review import (
     artifact_bytes,
     artifact_from_bytes,
 )
+from kronos.intraday.review_batch import (
+    ReviewBatchPdf,
+    batch_artifact_bytes,
+    batch_from_bytes,
+)
 
 
 DEFAULT_INTRADAY_REVIEW_ROOT = (
@@ -74,6 +79,14 @@ class IntradayReviewStore:
     def retain_pack(self, value: ReviewQuestionPack) -> Path:
         return self._retain_typed("question-packs", value.review_pack_identity, value)
 
+    def retain_batch(self, value: ReviewBatchPdf) -> Path:
+        if type(value) is not ReviewBatchPdf:
+            raise ReviewError(ReviewFailure.INPUT_INVALID)
+        path = self._path("batch-pdfs", value.batch_identity, ".json")
+        with self._lock:
+            self._retain(path, batch_artifact_bytes(value))
+        return path
+
     def save_current(self, value: CurrentReviewPointer) -> Path:
         if type(value) is not CurrentReviewPointer:
             raise ReviewError(ReviewFailure.INPUT_INVALID)
@@ -93,6 +106,16 @@ class IntradayReviewStore:
 
     def load_pack(self, identity: str) -> ReviewQuestionPack:
         return self._load_typed("question-packs", identity, ReviewQuestionPack)
+
+    def load_batch(self, identity: str) -> ReviewBatchPdf:
+        value = batch_from_bytes(self._read(self._path("batch-pdfs", identity, ".json")))
+        if value.batch_identity != identity:
+            raise ReviewError(ReviewFailure.INTEGRITY_INVALID)
+        return value
+
+    def load_batch_if_present(self, identity: str) -> ReviewBatchPdf | None:
+        path = self._path("batch-pdfs", identity, ".json")
+        return None if not path.exists() else self.load_batch(identity)
 
     def load_current(self) -> CurrentReviewPointer | None:
         path = self._root / "current" / "CURRENT-REVIEW-POINTER.json"

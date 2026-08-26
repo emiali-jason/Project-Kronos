@@ -1,6 +1,6 @@
 # Intraday Contract and State Ownership Registry
 
-**Status:** Amended through WO-07
+**Status:** Amended through WO-07A
 
 | Boundary | Owner | Consequence authority |
 |---|---|---|
@@ -10,7 +10,7 @@
 | WO-06H Historical Reconstruction | Intraday research boundary | Current governed membership as a research subject set, explicit historical sessions/boundaries, completed historical facts and exact corpus-binding eligibility; production Discovery and Probable authority is NONE |
 | WO-06HA Historical Operation | Intraday research operation | Bounded completed-session EOD factual acquisition, request accounting and immutable reload only; authentication, automatic corpus binding and production mutation authority are NONE |
 | Qualification outcomes | Intraday factual research boundary | Versioned subsequent-market labels only; no trade outcome |
-| WO-07 Native Review | Intraday | Exact-current Probable handoff, immutable visual-review cycle/chart revision, governed Q1-Q10 Question Pack and Sponsor PDF transport only; no visual answer, Promotion, Readiness or trade consequence |
+| WO-07 / WO-07A Native Review | Intraday | Exact-current Probable handoff, immutable visual-review cycle/chart revision, governed Q1-Q10 individual Question Packs, candidate-isolated paste-first UX and transport-only batch PDF; no visual answer, Promotion, Readiness or trade consequence |
 | Analytical Promotion | Intraday | Promotion only; criteria deferred |
 | Trade Construction | Intraday | Plan construction only; no Risk permission |
 | Risk | DOMAIN-007 | Risk permission/denial only |
@@ -28,6 +28,7 @@ The boundaries are explicitly non-equivalent:
 - Probable ≠ Promotion.
 - Review/Chart Ready ≠ visual analysis or Promotion.
 - Question Pack Created ≠ Answer imported.
+- Combined batch PDF ≠ shared analytical evidence or Answer import.
 - Promotion ≠ Entry.
 - Construction ≠ Risk.
 - Risk ≠ Entry Timing.

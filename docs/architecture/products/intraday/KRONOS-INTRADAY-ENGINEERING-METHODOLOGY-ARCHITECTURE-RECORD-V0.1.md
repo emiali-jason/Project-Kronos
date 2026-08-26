@@ -1,6 +1,6 @@
 # KRONOS Intraday Engineering, Methodology & Architecture Record
 
-**Status:** LIVING DOCUMENT — V0.1; amended through WO-07
+**Status:** LIVING DOCUMENT — V0.1; amended through WO-07A
 
 **Product owner:** KRONOS Intraday
 
@@ -741,6 +741,15 @@ chart identity. The Chart Analyst trust boundary is visual evidence only and
 WO-09 retains exclusive future Answer-import authority. Full detail is recorded
 in [WO-07 Governed Native Review](KRONOS-INTRADAY-WO-07-GOVERNED-NATIVE-REVIEW-V1.md).
 
+WO-07A adds the Sponsor's paste-first, multi-card Review workflow. Clipboard
+paste and file upload share one candidate-bound governed chart-intake path.
+`CREATE ALL REVIEW PDF` creates or reuses independent current Question Packs,
+reports per-candidate created/reused/skipped/failed state and may export one
+combined transport-only PDF with deterministic membership. Individual packs
+remain authoritative. `UPLOAD ALL ANSWERS` remains disabled until WO-09 and no
+inbox scan or Answer import occurs. See
+[WO-07A Sponsor Review UX and Batch Transport](KRONOS-INTRADAY-WO-07A-SPONSOR-REVIEW-UX-AND-BATCH-TRANSPORT-V1.md).
+
 ## 32. References
 
 - [Intraday Shared-File Change Rule](../../../engineering/INTRADAY-SHARED-FILE-CHANGE-RULE.md)
@@ -764,4 +773,5 @@ in [WO-07 Governed Native Review](KRONOS-INTRADAY-WO-07-GOVERNED-NATIVE-REVIEW-V
 - [WO-06HA Historical Research Operational Seam](KRONOS-INTRADAY-WO-06HA-HISTORICAL-RESEARCH-OPERATIONAL-SEAM.md)
 - [WO-06 Part-3 V0 Probables Methodology](KRONOS-INTRADAY-WO-06-PART-3-V0-PROBABLES-METHODOLOGY.md)
 - [WO-07 Governed Native Review](KRONOS-INTRADAY-WO-07-GOVERNED-NATIVE-REVIEW-V1.md)
+- [WO-07A Sponsor Review UX and Batch Transport](KRONOS-INTRADAY-WO-07A-SPONSOR-REVIEW-UX-AND-BATCH-TRANSPORT-V1.md)
 - [ADR-0017 Governed Active Derivative Contract Selection](../../adr/ADR-0017-GOVERNED-ACTIVE-DERIVATIVE-CONTRACT-SELECTION-V1.md)
