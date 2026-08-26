@@ -7,11 +7,17 @@ import re
 
 from kronos.application.intraday_discovery import IntradayDiscoveryApplication
 from kronos.application.intraday_discovery_operation import (
+    DISCOVERY_PROBABLES_REFRESH_ORCHESTRATION_IDENTITY,
+    DISCOVERY_PROBABLES_REFRESH_ORCHESTRATION_VERSION,
     DISCOVERY_OPERATION_SERVICE_IDENTITY,
     DISCOVERY_OPERATION_SERVICE_VERSION,
     DiscoveryOperationResult,
     IntradayDiscoveryOperationService,
     create_discovery_operation_request,
+)
+from kronos.intraday.probables_refresh import (
+    DISCOVERY_PROBABLES_CONTRACT_VERSION,
+    DISCOVERY_PROBABLES_MAPPING_IDENTITY,
 )
 
 
@@ -53,12 +59,24 @@ class IntradayDiscoveryOperationalControl:
         """Return current in-memory state without running Discovery or Provider."""
 
         snapshot = self._application.snapshot()
+        probable = snapshot.probables
+        diagnostics = (
+            None if probable is None or probable.run is None else probable.run.diagnostics
+        )
         last_result = self._operation.last_result
         return {
             "control_identity": INTRADAY_DISCOVERY_CONTROL_IDENTITY,
             "control_version": INTRADAY_DISCOVERY_CONTROL_VERSION,
             "service_identity": DISCOVERY_OPERATION_SERVICE_IDENTITY,
             "service_version": DISCOVERY_OPERATION_SERVICE_VERSION,
+            "refresh_orchestration_identity": (
+                DISCOVERY_PROBABLES_REFRESH_ORCHESTRATION_IDENTITY
+            ),
+            "refresh_orchestration_version": (
+                DISCOVERY_PROBABLES_REFRESH_ORCHESTRATION_VERSION
+            ),
+            "probables_mapper_identity": DISCOVERY_PROBABLES_MAPPING_IDENTITY,
+            "probables_mapper_version": DISCOVERY_PROBABLES_CONTRACT_VERSION,
             "service_available": True,
             "operation_available": self._operation.operation_available,
             "context_state": self._operation.actual_context_state,
@@ -68,6 +86,22 @@ class IntradayDiscoveryOperationalControl:
             ),
             "last_successful_run_identity": snapshot.last_successful_run_identity,
             "last_successful_analysis": _timestamp(snapshot.last_successful_analysis),
+            "last_successful_probables_run_identity": (
+                None if probable is None else probable.last_successful_run_identity
+            ),
+            "last_successful_probables_analysis": (
+                None
+                if probable is None
+                else _timestamp(probable.last_successful_analysis)
+            ),
+            "probables_current_failure": (
+                None if probable is None else probable.current_failure
+            ),
+            "long_probables": 0 if diagnostics is None else diagnostics.long_probables,
+            "short_probables": 0 if diagnostics is None else diagnostics.short_probables,
+            "total_probables": 0 if diagnostics is None else diagnostics.total_probables,
+            "not_admitted": 0 if diagnostics is None else diagnostics.not_admitted_count,
+            "unavailable": 0 if diagnostics is None else diagnostics.unavailable_count,
         }
 
     def execute_document(self, payload: object) -> dict[str, object]:
@@ -117,6 +151,10 @@ def operation_result_document(result: DiscoveryOperationResult) -> dict[str, obj
         "machine_fact_failures": result.machine_fact_failures,
         "historical_request_count": result.historical_request_count,
         "run_identity": result.run_identity,
+        "probables_run_identity": result.probables_run_identity,
+        "probables_mapping_identity": result.probables_mapping_identity,
+        "probables_invocation_count": result.probables_invocation_count,
+        "probables_provider_request_count": result.probables_provider_request_count,
         "persistence_complete": result.persistence_complete,
         "snapshot_updated": result.snapshot_updated,
         "failure": None if result.failure is None else result.failure.value,

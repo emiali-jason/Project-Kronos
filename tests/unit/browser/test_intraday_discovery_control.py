@@ -312,6 +312,10 @@ def test_post_reaches_exact_composed_service_and_is_idempotent(tmp_path: Path) -
         assert first["machine_fact_successes"] == 93
         assert first["machine_fact_failures"] == 0
         assert first["historical_request_count"] == 372
+        assert first["probables_run_identity"] is not None
+        assert first["probables_mapping_identity"] is not None
+        assert first["probables_invocation_count"] == 1
+        assert first["probables_provider_request_count"] == 0
         assert first["persistence_complete"] is True
         assert first["snapshot_updated"] is True
         assert requests == [372]
@@ -344,6 +348,18 @@ def test_post_reaches_exact_composed_service_and_is_idempotent(tmp_path: Path) -
         )[2])
         assert status_payload["last_result"] == first
         assert status_payload["last_successful_run_identity"] == first["run_identity"]
+        assert status_payload["last_successful_probables_run_identity"] == (
+            first["probables_run_identity"]
+        )
+        assert status_payload["last_successful_probables_analysis"] == (
+            OBSERVED.isoformat()
+        )
+        assert status_payload["probables_current_failure"] is None
+        assert status_payload["long_probables"] == 0
+        assert status_payload["short_probables"] == 0
+        assert status_payload["total_probables"] == 0
+        assert status_payload["not_admitted"] == 0
+        assert status_payload["unavailable"] == 98
     finally:
         _close(server, thread)
 

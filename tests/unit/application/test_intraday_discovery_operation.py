@@ -15,6 +15,7 @@ from kronos.application.intraday_discovery_operation import (
 from kronos.application.intraday_runtime import create_intraday_runtime
 from kronos.browser.intraday_views import render_intraday_triage
 from kronos.intraday.discovery import DiscoveryError, DiscoveryFailure
+from kronos.intraday.probables import ProbablesError, ProbablesFailure
 from kronos.intraday.reconciliation import (
     Availability,
     RECONCILIATION_IDENTITY,
@@ -29,6 +30,7 @@ from tests.unit.provider.test_shared_provider_runtime import _authenticate, _sha
 
 IST = ZoneInfo("Asia/Kolkata")
 OBSERVED = datetime(2026, 8, 24, 10, 17, tzinfo=IST)
+SEMANTIC_BOUNDARY = datetime(2026, 8, 24, 11, 17, tzinfo=IST)
 UNIVERSE_VALID_FROM = datetime(2026, 8, 22, 0, 0, tzinfo=IST)
 
 
@@ -125,6 +127,8 @@ def test_context_verification_is_actual_and_startup_has_no_side_effect(tmp_path:
     assert result.state is DiscoveryOperationState.FAILED
     assert result.failure is DiscoveryOperationFailure.CONTEXT_UNAVAILABLE
     assert result.context_state == "ABSENT"
+    assert result.probables_invocation_count == 0
+    assert result.probables_run_identity is None
     assert request_count == [0]
     assert factory_calls == []
 
@@ -164,6 +168,10 @@ def test_explicit_operation_reuses_one_context_and_is_idempotent(tmp_path: Path)
     assert result.historical_request_count == request_count[0] == 372
     assert result.persistence_complete and result.snapshot_updated
     assert result.run_identity is not None
+    assert result.probables_run_identity is not None
+    assert result.probables_mapping_identity is not None
+    assert result.probables_invocation_count == 1
+    assert result.probables_provider_request_count == 0
     assert shared.active_lease_count == 0
     assert factory_calls == [1]
     snapshot = composition.discovery_application.snapshot("RELIANCE")
@@ -171,12 +179,66 @@ def test_explicit_operation_reuses_one_context_and_is_idempotent(tmp_path: Path)
     assert snapshot.machine_fact_success_count == 93
     assert snapshot.candidate_admitted_count == 0
     assert snapshot.candidate_not_admitted_count == 0
+    assert snapshot.probables is not None
+    assert snapshot.probables.last_successful_run_identity == (
+        result.probables_run_identity
+    )
+    assert snapshot.probables.run is not None
+    assert snapshot.probables.run.source_run_identity == result.run_identity
+    assert snapshot.probables.run.observation_boundary == result.observation_boundary
+    assert composition.probables_application.snapshot().run == (
+        composition.probables_application._store.load_run(
+            run_identity=result.probables_run_identity
+        )
+    )
     calls_before_render = request_count[0]
     rendered = render_intraday_triage(snapshot)
     assert request_count[0] == calls_before_render
     assert "Provider Token" not in rendered
     assert "PLACE ORDER" not in rendered
     assert "token" not in repr(result).lower()
+
+
+def test_completed_discovery_semantics_map_to_exact_probables_run(
+    tmp_path: Path,
+) -> None:
+    shared, _, factory_calls, request_count = _configured_shared()
+    _authenticate(shared)
+    composition = create_intraday_runtime(
+        shared,
+        evidence_root=tmp_path.resolve(),
+        clock=lambda: SEMANTIC_BOUNDARY,
+    )
+
+    result = composition.discovery_operation.execute(
+        _request_at("SEMANTIC-EVIDENCE", SEMANTIC_BOUNDARY)
+    )
+    probable = composition.probables_application.snapshot()
+
+    assert result.state is DiscoveryOperationState.COMPLETE
+    assert result.run_identity is not None
+    assert result.probables_run_identity is not None
+    assert result.probables_invocation_count == 1
+    assert result.probables_provider_request_count == 0
+    assert probable.run is not None
+    assert probable.run.run_identity == result.probables_run_identity
+    assert probable.run.source_run_identity == result.run_identity
+    assert probable.run.observation_boundary == result.observation_boundary
+    assert probable.run.universe_identity == (
+        composition.discovery_operation._universe.publication_identity
+    )
+    assert probable.run.reconciliation_identity == (
+        composition.discovery_operation._reconciliation.publication_identity
+    )
+    assert probable.run.diagnostics.evaluable_count == 93
+    assert probable.run.diagnostics.unavailable_count == 5
+    assert all(
+        item.lineage.semantic_evidence_identity is not None
+        for item in probable.run.results
+        if item.canonical_subject_identity.startswith(("NSE-", "NSE_"))
+    )
+    assert request_count == [372]
+    assert factory_calls == [1]
 
 
 def test_active_operation_blocks_same_and_different_identity(tmp_path: Path) -> None:
@@ -251,6 +313,7 @@ def test_failed_later_operation_preserves_last_success_and_restart(tmp_path: Pat
     )
     success = composition.discovery_operation.execute(_request("SUCCESS"))
     assert success.run_identity is not None
+    assert success.probables_run_identity is not None
     shared.invalidate("CONTROLLED_CONTEXT_LOSS")
 
     failed = composition.discovery_operation.execute(_request("AFTER-LOSS"))
@@ -258,6 +321,11 @@ def test_failed_later_operation_preserves_last_success_and_restart(tmp_path: Pat
     assert failed.failure is DiscoveryOperationFailure.CONTEXT_UNAVAILABLE
     assert snapshot.last_successful_run_identity == success.run_identity
     assert snapshot.current_failure == DiscoveryOperationFailure.CONTEXT_UNAVAILABLE.value
+    assert snapshot.probables is not None
+    assert snapshot.probables.last_successful_run_identity == (
+        success.probables_run_identity
+    )
+    assert snapshot.probables.current_failure is None
 
     restarted_shared, _, factory_calls = _shared()
     restarted = create_intraday_runtime(
@@ -269,8 +337,61 @@ def test_failed_later_operation_preserves_last_success_and_restart(tmp_path: Pat
     restored = restarted.discovery_application.snapshot("RELIANCE")
     assert restored.last_successful_run_identity == success.run_identity
     assert restored.machine_fact_success_count == 93
+    assert restored.probables is not None
+    assert restored.probables.last_successful_run_identity == (
+        success.probables_run_identity
+    )
+    assert restored.current_failure == DiscoveryOperationFailure.CONTEXT_UNAVAILABLE.value
     assert restarted.discovery_operation.actual_context_state == "ABSENT"
     assert factory_calls == []
+
+
+def test_probables_failure_preserves_discovery_and_prior_probables_success(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:  # type: ignore[no-untyped-def]
+    shared, _, _, request_count = _configured_shared()
+    _authenticate(shared)
+    composition = create_intraday_runtime(
+        shared,
+        evidence_root=tmp_path.resolve(),
+        clock=lambda: OBSERVED,
+    )
+    success = composition.discovery_operation.execute(_request("PROBABLES-A"))
+    assert success.run_identity is not None
+    assert success.probables_run_identity is not None
+
+    invocation_count = [0]
+
+    def fail_probables(**_kwargs):  # type: ignore[no-untyped-def]
+        invocation_count[0] += 1
+        raise ProbablesError(ProbablesFailure.INTEGRITY_INVALID)
+
+    monkeypatch.setattr(
+        composition.probables_application,
+        "refresh_analysis",
+        fail_probables,
+    )
+    failed = composition.discovery_operation.execute(_request("PROBABLES-B"))
+    snapshot = composition.discovery_application.snapshot()
+
+    assert failed.state is DiscoveryOperationState.FAILED
+    assert failed.stage is DiscoveryOperationStage.PROBABLES_INVOCATION
+    assert failed.failure is DiscoveryOperationFailure.PROBABLES_REFRESH_FAILURE
+    assert failed.run_identity == success.run_identity
+    assert failed.probables_run_identity is None
+    assert failed.persistence_complete and failed.snapshot_updated
+    assert invocation_count == [1]
+    assert request_count == [744]
+    assert snapshot.last_successful_run_identity == success.run_identity
+    assert snapshot.current_failure is None
+    assert snapshot.probables is not None
+    assert snapshot.probables.last_successful_run_identity == (
+        success.probables_run_identity
+    )
+    assert snapshot.probables.current_failure == (
+        DiscoveryOperationFailure.PROBABLES_REFRESH_FAILURE.value
+    )
 
 
 def test_publication_validity_fails_closed_before_provider_acquisition(

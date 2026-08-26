@@ -15,6 +15,7 @@ from kronos.intraday.discovery_source import (
     ProviderDiscoveryFactualSource,
     governed_market_session_identities,
 )
+from kronos.intraday.probables_refresh import map_discovery_execution_to_probables
 from kronos.intraday.reconciliation import (
     Availability,
     RECONCILIATION_IDENTITY,
@@ -38,6 +39,7 @@ def _composition(
     *,
     omit_target: str | None = None,
     include_partial: bool = True,
+    observed_at: datetime = OBSERVED,
 ):  # type: ignore[no-untyped-def]
     universe = load_intraday_universe_publication()
     reconciliation = IntradayReconciliationStore().load(
@@ -106,7 +108,7 @@ def _composition(
     session, boundary_identity = governed_market_session_identities(
         calendar_publisher=calendar,
         reconciliation=reconciliation,
-        observed_at=OBSERVED,
+        observed_at=observed_at,
     )
     source = ProviderDiscoveryFactualSource(
         lease=lease,
@@ -124,7 +126,7 @@ def _composition(
         store=NativeDiscoveryStore(tmp_path.resolve()),
     )
     execution = service.execute(DiscoveryRunBoundary(
-        observation_boundary=OBSERVED,
+        observation_boundary=observed_at,
         market_session_identity=session,
         market_session_boundary_identity=boundary_identity,
     ))
@@ -184,3 +186,51 @@ def test_current_incomplete_candles_cannot_change_structural_bundle(tmp_path: Pa
     assert tuple(item.bundle_identity for item in with_partial.bundles) == tuple(
         item.bundle_identity for item in without_partial.bundles
     )
+
+
+def test_latest_completed_windows_create_typed_probables_semantics(
+    tmp_path: Path,
+) -> None:
+    boundary = datetime(2026, 8, 24, 11, 17, tzinfo=IST)
+    execution, _, _, requests, _ = _composition(
+        tmp_path,
+        observed_at=boundary,
+    )
+
+    assert len(execution.probables_facts) == 93
+    assert len(requests) == 372
+    assert all(item.observation_boundary == boundary for item in execution.probables_facts)
+    assert all(
+        fact.available_at <= boundary
+        for item in execution.probables_facts
+        for fact in item.semantic_evidence.facts
+    )
+    assert all(
+        item.semantic_evidence.source_bundle_identity
+        == item.discovery_bundle_identity
+        for item in execution.probables_facts
+    )
+    reconciliation = IntradayReconciliationStore().load(
+        publication_identity=RECONCILIATION_IDENTITY,
+        publication_version=RECONCILIATION_VERSION,
+    )
+    mapping = map_discovery_execution_to_probables(
+        execution=execution,
+        reconciliation=reconciliation,
+    )
+    assert len(mapping.member_evidence) == 93
+    assert len(mapping.unavailable_members) == 5
+    assert all(
+        item.source_run_identity == execution.run.run_identity
+        and item.observation_boundary == execution.run.observation_boundary
+        for item in mapping.member_evidence
+    )
+
+
+def test_insufficient_completed_hourly_history_is_member_unavailable_not_future_fill(
+    tmp_path: Path,
+) -> None:
+    execution, _, _, _, _ = _composition(tmp_path, observed_at=OBSERVED)
+
+    assert len(execution.bundles) == 93
+    assert execution.probables_facts == ()

@@ -27,6 +27,10 @@ from kronos.intraday.reconciliation import (
     ReconciliationMember,
     ReconciliationPublication,
 )
+from kronos.intraday.probables_refresh import (
+    DiscoveryProbablesMappingError,
+    create_discovery_probables_facts,
+)
 from kronos.market.calendar import MarketCalendarPublisher
 from kronos.market.schedule import MarketDaySchedule
 from kronos.provider.contracts.instrument import InstrumentRecord
@@ -234,10 +238,30 @@ class ProviderDiscoveryFactualSource:
                 member.reconciliation_member_identity,
             ),
         )
+        try:
+            probables_facts = create_discovery_probables_facts(
+                universe_member_identity=member.universe_member_identity,
+                canonical_subject_identity=member.canonical_identity,
+                universe_identity=self._universe_identity,
+                universe_version=self._universe_version,
+                reconciliation_identity=self._reconciliation_identity,
+                reconciliation_version=self._reconciliation_version,
+                discovery_bundle_identity=bundle.bundle_identity,
+                observation_boundary_identity=(
+                    boundary.market_session_boundary_identity
+                ),
+                observation_boundary=boundary.observation_boundary,
+                schedule=schedule,
+                previous_schedule=previous,
+                completed_by_timeframe=completed_by_timeframe,
+            )
+        except DiscoveryProbablesMappingError:
+            probables_facts = None
         return DiscoveryFactAcquisition(
             universe_member_identity=member.universe_member_identity,
             canonical_identity=member.canonical_identity,
             bundle=bundle,
+            probables_facts=probables_facts,
         )
 
     def _record(self, member: ReconciliationMember) -> InstrumentRecord:

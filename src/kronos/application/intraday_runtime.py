@@ -26,6 +26,9 @@ from kronos.intraday.historical_qualification_persistence import (
 )
 from kronos.intraday.market_context import CurrentMarketCalendarScheduleSource
 from kronos.intraday.probables_persistence import ProbablesStore
+from kronos.intraday.probables_refresh_persistence import (
+    RefreshOperationalStateStore,
+)
 from kronos.intraday.reconciliation import (
     RECONCILIATION_IDENTITY,
     RECONCILIATION_VERSION,
@@ -87,6 +90,7 @@ class IntradayRuntimeComposition:
     historical_operation: IntradayHistoricalQualificationOperationService
     historical_invocation: IntradayHistoricalQualificationHarness
     probables_application: IntradayProbablesApplication
+    refresh_state_store: RefreshOperationalStateStore
     reliance_bootstrap: RelianceIntradayBootstrap
 
 
@@ -110,6 +114,22 @@ def create_intraday_runtime(
         clock=clock,
     )
     store = NativeDiscoveryStore(Path(evidence_root) / "discovery")
+    refresh_state_store = RefreshOperationalStateStore(Path(evidence_root))
+    refresh_state = refresh_state_store.load_current()
+    restored_discovery_identity = (
+        last_successful_discovery_run_identity
+        if last_successful_discovery_run_identity is not None
+        else None
+        if refresh_state is None
+        else refresh_state.last_successful_discovery_run_identity
+    )
+    restored_probables_identity = (
+        last_successful_probables_run_identity
+        if last_successful_probables_run_identity is not None
+        else None
+        if refresh_state is None
+        else refresh_state.last_successful_probables_run_identity
+    )
     universe = load_intraday_universe_publication()
     reconciliation = IntradayReconciliationStore().load(
         publication_identity=RECONCILIATION_IDENTITY,
@@ -117,11 +137,11 @@ def create_intraday_runtime(
     )
     probables = IntradayProbablesApplication(
         store=ProbablesStore(Path(evidence_root)),
-        last_successful_run_identity=last_successful_probables_run_identity,
+        last_successful_run_identity=restored_probables_identity,
     )
     discovery = _create_discovery_application(
         store=store,
-        last_successful_run_identity=last_successful_discovery_run_identity,
+        last_successful_run_identity=restored_discovery_identity,
         universe=universe,
         reconciliation=reconciliation,
         probables=probables,
@@ -143,6 +163,8 @@ def create_intraday_runtime(
             reconciliation_version=reconciliation.publication_version,
             reconciliation=reconciliation,
         ),
+        probables=probables,
+        refresh_state_store=refresh_state_store,
         clock=clock,
     )
     historical_operation = IntradayHistoricalQualificationOperationService(
@@ -156,6 +178,14 @@ def create_intraday_runtime(
         store=HistoricalQualificationStore(Path(evidence_root)),
         clock=clock,
     )
+    if refresh_state is not None and refresh_state.current_failure is not None:
+        if refresh_state.current_failure_stage in {
+            "PROBABLES_EVIDENCE_MAPPING",
+            "PROBABLES_INVOCATION",
+        }:
+            probables.record_failure(refresh_state.current_failure)
+        else:
+            discovery.record_failure(refresh_state.current_failure)
     return IntradayRuntimeComposition(
         workstation=discovery,
         provider_access=access,
@@ -166,6 +196,7 @@ def create_intraday_runtime(
             historical_operation
         ),
         probables_application=probables,
+        refresh_state_store=refresh_state_store,
         reliance_bootstrap=bootstrap,
     )
 

@@ -11,9 +11,11 @@ from threading import RLock
 from typing import Callable
 
 from kronos.application.intraday_discovery import IntradayDiscoveryApplication
+from kronos.application.intraday_probables import IntradayProbablesApplication
 from kronos.intraday.discovery import DiscoveryError, DiscoveryFailure
 from kronos.intraday.discovery_persistence import NativeDiscoveryStore
 from kronos.intraday.discovery_runtime import (
+    DiscoveryRuntimeExecution,
     DiscoveryRunBoundary,
     IntradayNativeDiscoveryService,
 )
@@ -22,6 +24,21 @@ from kronos.intraday.discovery_source import (
     governed_market_session_identities,
 )
 from kronos.intraday.reconciliation import Availability, ReconciliationPublication
+from kronos.intraday.probables import (
+    FactualSourceKind,
+    ProbablesError,
+    ProbablesRun,
+)
+from kronos.intraday.probables_refresh import (
+    DiscoveryProbablesMapping,
+    DiscoveryProbablesMappingError,
+    map_discovery_execution_to_probables,
+)
+from kronos.intraday.probables_refresh_persistence import (
+    RefreshOperationalStateError,
+    RefreshOperationalStateStore,
+    create_refresh_operational_state,
+)
 from kronos.intraday.universe import (
     IntradayUniverseError,
     IntradayUniverseFailure,
@@ -41,6 +58,10 @@ DISCOVERY_OPERATION_SERVICE_IDENTITY = (
     "KRONOS-INTRADAY-DISCOVERY-OPERATION-SERVICE-V0"
 )
 DISCOVERY_OPERATION_SERVICE_VERSION = "0.1.0"
+DISCOVERY_PROBABLES_REFRESH_ORCHESTRATION_IDENTITY = (
+    "KRONOS-INTRADAY-DISCOVERY-PROBABLES-REFRESH-ORCHESTRATION-V1"
+)
+DISCOVERY_PROBABLES_REFRESH_ORCHESTRATION_VERSION = "1.0.0"
 
 
 class DiscoveryOperationState(StrEnum):
@@ -62,6 +83,9 @@ class DiscoveryOperationStage(StrEnum):
     DISCOVERY_RUN_CONSTRUCTION = "DISCOVERY_RUN_CONSTRUCTION"
     PERSISTENCE = "PERSISTENCE"
     APPLICATION_SNAPSHOT = "APPLICATION_SNAPSHOT"
+    PROBABLES_EVIDENCE_MAPPING = "PROBABLES_EVIDENCE_MAPPING"
+    PROBABLES_INVOCATION = "PROBABLES_INVOCATION"
+    REFRESH_STATE_PERSISTENCE = "REFRESH_STATE_PERSISTENCE"
     COMPLETE = "COMPLETE"
 
 
@@ -93,6 +117,9 @@ class DiscoveryOperationFailure(StrEnum):
     PERSISTENCE_CONFLICT = "PERSISTENCE_CONFLICT"
     PERSISTENCE_FAILURE = "PERSISTENCE_FAILURE"
     SNAPSHOT_UPDATE_FAILURE = "SNAPSHOT_UPDATE_FAILURE"
+    PROBABLES_MAPPING_FAILURE = "PROBABLES_MAPPING_FAILURE"
+    PROBABLES_REFRESH_FAILURE = "PROBABLES_REFRESH_FAILURE"
+    REFRESH_STATE_PERSISTENCE_FAILURE = "REFRESH_STATE_PERSISTENCE_FAILURE"
     OPERATION_CONFLICT = "OPERATION_CONFLICT"
 
 
@@ -144,6 +171,10 @@ class DiscoveryOperationResult:
     machine_fact_failures: int
     historical_request_count: int
     run_identity: str | None
+    probables_run_identity: str | None
+    probables_mapping_identity: str | None
+    probables_invocation_count: int
+    probables_provider_request_count: int
     persistence_complete: bool
     snapshot_updated: bool
     failure: DiscoveryOperationFailure | None
@@ -166,8 +197,19 @@ class DiscoveryOperationResult:
                 self.machine_fact_successes,
                 self.machine_fact_failures,
                 self.historical_request_count,
+                self.probables_invocation_count,
+                self.probables_provider_request_count,
             ))
             or (self.run_identity is not None and not _text(self.run_identity))
+            or (
+                self.probables_run_identity is not None
+                and not _text(self.probables_run_identity)
+            )
+            or (
+                self.probables_mapping_identity is not None
+                and not _text(self.probables_mapping_identity)
+            )
+            or self.probables_provider_request_count != 0
             or type(self.persistence_complete) is not bool
             or type(self.snapshot_updated) is not bool
             or (self.failure is not None and type(self.failure) is not DiscoveryOperationFailure)
@@ -194,6 +236,8 @@ class IntradayDiscoveryOperationService:
         store: NativeDiscoveryStore,
         calendar_publisher: MarketCalendarPublisher,
         factual_source_factory: FactualSourceFactory,
+        probables: IntradayProbablesApplication | None = None,
+        refresh_state_store: RefreshOperationalStateStore | None = None,
         clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
     ) -> None:
         if (
@@ -205,6 +249,14 @@ class IntradayDiscoveryOperationService:
             or type(store) is not NativeDiscoveryStore
             or type(calendar_publisher) is not MarketCalendarPublisher
             or not callable(factual_source_factory)
+            or (
+                probables is not None
+                and type(probables) is not IntradayProbablesApplication
+            )
+            or (
+                refresh_state_store is not None
+                and type(refresh_state_store) is not RefreshOperationalStateStore
+            )
             or not callable(clock)
         ):
             raise ValueError("DISCOVERY_OPERATION_DEPENDENCY_INVALID")
@@ -216,6 +268,8 @@ class IntradayDiscoveryOperationService:
         self._store = store
         self._calendar = calendar_publisher
         self._source_factory = factual_source_factory
+        self._probables = probables
+        self._refresh_state_store = refresh_state_store
         self._clock = clock
         self._lock = RLock()
         self._active_identity: str | None = None
@@ -257,6 +311,9 @@ class IntradayDiscoveryOperationService:
             self._active_identity = request.operation_identity
 
         lease: ReadOnlyProviderLease | None = None
+        execution: DiscoveryRuntimeExecution | None = None
+        mapping: DiscoveryProbablesMapping | None = None
+        probables_run: ProbablesRun | None = None
         stage = DiscoveryOperationStage.CONTEXT_VERIFICATION
         try:
             lifecycle = self._runtime.lifecycle_state
@@ -312,10 +369,43 @@ class IntradayDiscoveryOperationService:
                 )
             stage = DiscoveryOperationStage.APPLICATION_SNAPSHOT
             self._application.accept_completed_execution(execution)
+            if self._probables is not None:
+                stage = DiscoveryOperationStage.PROBABLES_EVIDENCE_MAPPING
+                mapping = map_discovery_execution_to_probables(
+                    execution=execution,
+                    reconciliation=self._reconciliation,
+                )
+                stage = DiscoveryOperationStage.PROBABLES_INVOCATION
+                probables_run = self._probables.refresh_analysis(
+                    source_kind=FactualSourceKind.NATIVE_DISCOVERY,
+                    source_run_identity=execution.run.run_identity,
+                    universe_identity=execution.run.universe_identity,
+                    universe_version=execution.run.universe_version,
+                    reconciliation_identity=execution.run.reconciliation_identity,
+                    reconciliation_version=execution.run.reconciliation_version,
+                    market_session_identity=execution.run.market_session_identity,
+                    observation_boundary=execution.run.observation_boundary,
+                    member_evidence=mapping.member_evidence,
+                    unavailable_members=mapping.unavailable_members,
+                    provenance=(
+                        DISCOVERY_PROBABLES_REFRESH_ORCHESTRATION_IDENTITY,
+                        mapping.mapping_identity,
+                    ),
+                )
+                if (
+                    probables_run.source_run_identity != execution.run.run_identity
+                    or probables_run.observation_boundary
+                    != execution.run.observation_boundary
+                ):
+                    raise DiscoveryProbablesMappingError(
+                        "DISCOVERY_PROBABLES_LINKAGE_INVALID"
+                    )
             return self._finish(
                 request,
                 stage=DiscoveryOperationStage.COMPLETE,
                 execution=execution,
+                mapping=mapping,
+                probables_run=probables_run,
                 historical_request_count=source.historical_request_count,
             )
         except ProviderRuntimeAccessError as error:
@@ -338,6 +428,21 @@ class IntradayDiscoveryOperationService:
                 stage=stage,
                 failure=DiscoveryOperationFailure(error.failure.value),
             )
+        except DiscoveryProbablesMappingError:
+            return self._finish(
+                request,
+                stage=stage,
+                failure=DiscoveryOperationFailure.PROBABLES_MAPPING_FAILURE,
+                execution=execution,
+            )
+        except ProbablesError:
+            return self._finish(
+                request,
+                stage=stage,
+                failure=DiscoveryOperationFailure.PROBABLES_REFRESH_FAILURE,
+                execution=execution,
+                mapping=mapping,
+            )
         except Exception:
             failure = {
                 DiscoveryOperationStage.OBSERVATION_BOUNDARY:
@@ -350,8 +455,18 @@ class IntradayDiscoveryOperationService:
                     DiscoveryOperationFailure.PERSISTENCE_FAILURE,
                 DiscoveryOperationStage.APPLICATION_SNAPSHOT:
                     DiscoveryOperationFailure.SNAPSHOT_UPDATE_FAILURE,
+                DiscoveryOperationStage.PROBABLES_EVIDENCE_MAPPING:
+                    DiscoveryOperationFailure.PROBABLES_MAPPING_FAILURE,
+                DiscoveryOperationStage.PROBABLES_INVOCATION:
+                    DiscoveryOperationFailure.PROBABLES_REFRESH_FAILURE,
             }.get(stage, DiscoveryOperationFailure.OPERATION_UNAVAILABLE)
-            return self._finish(request, stage=stage, failure=failure)
+            return self._finish(
+                request,
+                stage=stage,
+                failure=failure,
+                execution=execution,
+                mapping=mapping,
+            )
         finally:
             if lease is not None:
                 lease.release()
@@ -377,9 +492,49 @@ class IntradayDiscoveryOperationService:
         *,
         stage: DiscoveryOperationStage,
         failure: DiscoveryOperationFailure | None = None,
-        execution=None,
+        execution: DiscoveryRuntimeExecution | None = None,
+        mapping: DiscoveryProbablesMapping | None = None,
+        probables_run: ProbablesRun | None = None,
         historical_request_count: int = 0,
     ) -> DiscoveryOperationResult:
+        if failure is not None:
+            if failure in {
+                DiscoveryOperationFailure.PROBABLES_MAPPING_FAILURE,
+                DiscoveryOperationFailure.PROBABLES_REFRESH_FAILURE,
+            }:
+                if self._probables is not None:
+                    self._probables.record_failure(failure.value)
+            else:
+                self._application.record_failure(failure.value)
+        completed_at = self._clock()
+        if self._refresh_state_store is not None:
+            snapshot = self._application.snapshot()
+            probable_snapshot = (
+                None if self._probables is None else self._probables.snapshot()
+            )
+            try:
+                self._refresh_state_store.retain(create_refresh_operational_state(
+                    operation_identity=request.operation_identity,
+                    observation_boundary=request.observation_boundary,
+                    completed_at=completed_at,
+                    last_successful_discovery_run_identity=(
+                        snapshot.last_successful_run_identity
+                    ),
+                    last_successful_probables_run_identity=(
+                        None
+                        if probable_snapshot is None
+                        else probable_snapshot.last_successful_run_identity
+                    ),
+                    current_failure_stage=(
+                        None if failure is None else stage.value
+                    ),
+                    current_failure=None if failure is None else failure.value,
+                ))
+            except (OSError, RefreshOperationalStateError):
+                failure = (
+                    DiscoveryOperationFailure.REFRESH_STATE_PERSISTENCE_FAILURE
+                )
+                stage = DiscoveryOperationStage.REFRESH_STATE_PERSISTENCE
         result = DiscoveryOperationResult(
             operation_identity=request.operation_identity,
             state=(
@@ -405,15 +560,21 @@ class IntradayDiscoveryOperationService:
             ),
             historical_request_count=historical_request_count,
             run_identity=None if execution is None else execution.run.run_identity,
+            probables_run_identity=(
+                None if probables_run is None else probables_run.run_identity
+            ),
+            probables_mapping_identity=(
+                None if mapping is None else mapping.mapping_identity
+            ),
+            probables_invocation_count=0 if probables_run is None else 1,
+            probables_provider_request_count=0,
             persistence_complete=execution is not None,
             snapshot_updated=execution is not None,
             failure=failure,
-            completed_at=self._clock(),
+            completed_at=completed_at,
         )
         with self._lock:
             self._results[request.operation_identity] = result
-        if failure is not None:
-            self._application.record_failure(failure.value)
         return result
 
     def _conflict(self, request: DiscoveryOperationRequest) -> DiscoveryOperationResult:
@@ -436,6 +597,10 @@ class IntradayDiscoveryOperationService:
             machine_fact_failures=0,
             historical_request_count=0,
             run_identity=None,
+            probables_run_identity=None,
+            probables_mapping_identity=None,
+            probables_invocation_count=0,
+            probables_provider_request_count=0,
             persistence_complete=False,
             snapshot_updated=False,
             failure=DiscoveryOperationFailure.OPERATION_CONFLICT,
@@ -468,6 +633,8 @@ def _text(value: object) -> bool:
 __all__ = [
     "DISCOVERY_OPERATION_SERVICE_IDENTITY",
     "DISCOVERY_OPERATION_SERVICE_VERSION",
+    "DISCOVERY_PROBABLES_REFRESH_ORCHESTRATION_IDENTITY",
+    "DISCOVERY_PROBABLES_REFRESH_ORCHESTRATION_VERSION",
     "DiscoveryOperationFailure",
     "DiscoveryOperationRequest",
     "DiscoveryOperationResult",
