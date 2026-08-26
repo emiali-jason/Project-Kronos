@@ -44,6 +44,7 @@ Provide navigation to the approved KRONOS Platform Architecture v1.0 documents a
 ## Approved Instrument Architecture
 
 - [ADR-0014 — DOMAIN-001 Canonical Instrument V2 Semantic Layering, Provider Classification, and Active Derivative Binding Architecture](../adr/ADR-0014-DOMAIN-001-CANONICAL-INSTRUMENT-V2-SEMANTIC-LAYERING-PROVIDER-CLASSIFICATION-AND-ACTIVE-DERIVATIVE-BINDING.md)
+- [ADR-0017 — KRONOS Platform Governed Active Derivative Contract Selection V1](../adr/ADR-0017-GOVERNED-ACTIVE-DERIVATIVE-CONTRACT-SELECTION-V1.md)
 
 ## Platform Principles
 
@@ -65,6 +66,7 @@ Provide navigation to the approved KRONOS Platform Architecture v1.0 documents a
 - [ADR-0013 — Native Swing DOMAIN-007 Risk Permission and KR-380 V2 Production Commissioning](../adr/ADR-0013-NATIVE-SWING-DOMAIN-007-RISK-PERMISSION-AND-KR-380-V2-PRODUCTION-COMMISSIONING.md)
 - [ADR-0015 — Swing Sponsor Observation-Phase Authority and Step-31 Evidence Governance](../adr/ADR-0015-SWING-SPONSOR-OBSERVATION-PHASE-AUTHORITY-AND-STEP-31-EVIDENCE-GOVERNANCE.md)
 - [ADR-0016 — Swing Paper Observation Track Authority](../adr/ADR-0016-SWING-PAPER-OBSERVATION-TRACK-AUTHORITY.md)
+- [ADR-0017 — KRONOS Platform Governed Active Derivative Contract Selection V1](../adr/ADR-0017-GOVERNED-ACTIVE-DERIVATIVE-CONTRACT-SELECTION-V1.md)
 - [KR-370 / KR-380 state-family contracts](../interfaces/KR-370-KR-380-STATE-FAMILY-CONTRACTS.md)
 - [PP-007 — Execution Semantics Across Markets](../principles/PP-007-Execution-Semantics-Across-Markets.md)
 
