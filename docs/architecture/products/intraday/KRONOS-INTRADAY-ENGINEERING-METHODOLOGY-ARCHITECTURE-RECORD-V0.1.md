@@ -1,6 +1,6 @@
 # KRONOS Intraday Engineering, Methodology & Architecture Record
 
-**Status:** LIVING DOCUMENT — V0.1; amended through WO-07A
+**Status:** LIVING DOCUMENT — V0.1; amended through WO-09
 
 **Product owner:** KRONOS Intraday
 
@@ -750,7 +750,33 @@ remain authoritative. `UPLOAD ALL ANSWERS` remains disabled until WO-09 and no
 inbox scan or Answer import occurs. See
 [WO-07A Sponsor Review UX and Batch Transport](KRONOS-INTRADAY-WO-07A-SPONSOR-REVIEW-UX-AND-BATCH-TRANSPORT-V1.md).
 
-## 32. References
+## 32. WO-09 governed Chart Analyst Answer import amendment
+
+WO-09 commissions `KRONOS-INTRADAY-CHART-ANALYST-ANSWER-PACK-V1 / 1.0.0`
+and `KRONOS-INTRADAY-IMPORTED-VISUAL-EVIDENCE-V1 / 1.0.0`. One strict JSON
+Answer Pack carries exact ordered Q1-Q10 visual observations and independently
+reported chart identity. It contains no machine provenance, Provider token,
+trading field or analytical consequence. The optional extraction-confidence
+field was not copied because Swing does not provide a bounded product-neutral
+enum.
+
+KRONOS validates exact Question Set, Review Pack, Review Cycle/Request, Chart
+Revision, expected subject and proposed direction, then independently requires
+the observed visible subject to equal the expected subject before creating
+trusted evidence. An unreadable or mismatched identity fails closed. Individual
+`UPLOAD ANSWER` and candidate-isolated `UPLOAD ALL ANSWERS` resolve only the
+deterministic filename for each exact current Question Pack in the governed
+Answer inbox. There is no recursive, mtime or latest-file selection, and
+combined-answer transport is not accepted.
+
+Validated Answer Packs, import records and trusted evidence are append-only.
+An explicit integrity-bound pointer per Review Pack restores trusted evidence;
+a later missing, invalid or conflicting input cannot blank or replace prior
+valid evidence. Browser projection is compact factual Q1-Q10 evidence only.
+WO-10 exclusively owns any future reconciliation, consequence, Readiness or
+Promotion semantics. See [WO-09 Governed Chart Analyst Answer Import](KRONOS-INTRADAY-WO-09-GOVERNED-CHART-ANALYST-ANSWER-IMPORT-V1.md).
+
+## 33. References
 
 - [Intraday Shared-File Change Rule](../../../engineering/INTRADAY-SHARED-FILE-CHANGE-RULE.md)
 - [Platform Constitution](../../platform/PLATFORM-000-CONSTITUTION.md)
@@ -774,4 +800,5 @@ inbox scan or Answer import occurs. See
 - [WO-06 Part-3 V0 Probables Methodology](KRONOS-INTRADAY-WO-06-PART-3-V0-PROBABLES-METHODOLOGY.md)
 - [WO-07 Governed Native Review](KRONOS-INTRADAY-WO-07-GOVERNED-NATIVE-REVIEW-V1.md)
 - [WO-07A Sponsor Review UX and Batch Transport](KRONOS-INTRADAY-WO-07A-SPONSOR-REVIEW-UX-AND-BATCH-TRANSPORT-V1.md)
+- [WO-09 Governed Chart Analyst Answer Import](KRONOS-INTRADAY-WO-09-GOVERNED-CHART-ANALYST-ANSWER-IMPORT-V1.md)
 - [ADR-0017 Governed Active Derivative Contract Selection](../../adr/ADR-0017-GOVERNED-ACTIVE-DERIVATIVE-CONTRACT-SELECTION-V1.md)

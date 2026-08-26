@@ -77,6 +77,8 @@ class IntradayBrowserRoutes:
             "/intraday/review/chart",
             "/intraday/review/question-pack",
             "/intraday/review/question-packs",
+            "/intraday/review/answer",
+            "/intraday/review/answers",
         }
 
     def handle_post(
@@ -104,7 +106,7 @@ class IntradayBrowserRoutes:
                 if request.body:
                     raise ValueError
                 self._review.create_question_pack(cycle)
-            else:
+            elif request.path == "/intraday/review/question-packs":
                 if request.query or request.body:
                     raise ValueError
                 batch_result = self._review.create_all_question_packs()
@@ -113,6 +115,30 @@ class IntradayBrowserRoutes:
                         snapshot_provider(),
                         self._review.snapshot(),
                         batch_result=batch_result,
+                    )
+                )
+            elif request.path == "/intraday/review/answer":
+                cycle = _one_query(request, "cycle")
+                answer_result = (
+                    self._review.import_answer(cycle)
+                    if not request.body
+                    else self._review.upload_answer(
+                        cycle, media_type=request.content_type, payload=request.body,
+                    )
+                )
+                return BrowserRouteResponse(
+                    render_intraday_review(
+                        snapshot_provider(), self._review.snapshot(), answer_result=answer_result,
+                    )
+                )
+            else:
+                if request.query or request.body:
+                    raise ValueError
+                answer_batch_result = self._review.import_all_answers()
+                return BrowserRouteResponse(
+                    render_intraday_review(
+                        snapshot_provider(), self._review.snapshot(),
+                        answer_batch_result=answer_batch_result,
                     )
                 )
         except ValueError:

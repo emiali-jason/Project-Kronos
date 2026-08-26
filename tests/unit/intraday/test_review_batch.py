@@ -53,7 +53,7 @@ def test_batch_creates_ready_members_skips_chart_required_and_is_idempotent(tmp_
     first_payload = combined_path.read_bytes()
     text = "\n".join(page.extract_text() or "" for page in PdfReader(combined_path).pages)
     normalized_text = re.sub(r"\s+", " ", text)
-    assert text.count("LICI") == text.count("WIPRO") == 1
+    assert text.count("LICI") == text.count("WIPRO") == 2
     assert "RELIANCE" not in text
     assert text.count(cycles["LICI"].cycle_identity) == 1
     assert text.count(cycles["WIPRO"].cycle_identity) == 1

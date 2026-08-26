@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from hashlib import sha256
 from pathlib import Path
+import stat
 from threading import RLock
 from typing import Callable
 
@@ -27,6 +28,17 @@ from kronos.intraday.review import (
     create_review_handoff,
 )
 from kronos.intraday.review_batch import ReviewBatchPdf, create_review_batch
+from kronos.intraday.review_answer import (
+    MAX_ANSWER_BYTES,
+    AnswerImportRecord,
+    AnswerImportState,
+    ImportedVisualEvidence,
+    answer_pack_filename,
+    bind_imported_evidence,
+    create_import_record,
+    create_visual_evidence_pointer,
+    parse_answer_pack,
+)
 from kronos.intraday.review_pdf import (
     IntradayReviewPdfTransport,
     question_pack_filename,
@@ -52,6 +64,13 @@ class IntradayReviewCandidateSnapshot:
     chart_revision_ordinal: int | None
     review_pack_identity: str | None
     review_pack_filename: str | None
+    answer_filename: str | None
+    answer_state: str
+    visual_state: str
+    answer_pack_identity: str | None
+    visual_evidence_identity: str | None
+    observed_visible_subject_identity: str | None
+    visual_answers: tuple[tuple[str, str, str, str], ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,7 +81,7 @@ class IntradayReviewSnapshot:
     answer_inbox: str
     current_batch_identity: str | None = None
     current_batch_filename: str | None = None
-    answer_import_active: bool = False
+    answer_import_active: bool = True
     provider_operations: int = 0
     discovery_operations: int = 0
     probables_operations: int = 0
@@ -81,6 +100,34 @@ class IntradayReviewBatchState(StrEnum):
     PARTIAL = "PARTIAL"
     FAILED = "FAILED"
     NO_ELIGIBLE_REVIEW_PACKS = "NO_ELIGIBLE_REVIEW_PACKS"
+
+
+@dataclass(frozen=True, slots=True)
+class IntradayAnswerImportResult:
+    canonical_subject_identity: str
+    cycle_identity: str
+    answer_filename: str
+    state: AnswerImportState
+    import_identity: str | None = None
+    answer_pack_identity: str | None = None
+    visual_evidence_identity: str | None = None
+    detail: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class IntradayAnswerBatchResult:
+    members: tuple[IntradayAnswerImportResult, ...]
+
+    @property
+    def eligible_candidates(self) -> int:
+        return len(self.members)
+
+    @property
+    def files_discovered(self) -> int:
+        return sum(item.state is not AnswerImportState.MISSING for item in self.members)
+
+    def count(self, state: AnswerImportState) -> int:
+        return sum(item.state is state for item in self.members)
 
 
 @dataclass(frozen=True, slots=True)
@@ -324,6 +371,70 @@ class IntradayReviewApplication:
                 batch_filename=batch_path.name,
             )
 
+    def import_answer(self, cycle_identity: str) -> IntradayAnswerImportResult:
+        with self._lock:
+            run = self._require_current_run()
+            pointer = self._pointer_for_run(run)
+            item = self._cycle_pointer(pointer, cycle_identity)
+            if item.active_review_pack_identity is None:
+                raise ReviewError(ReviewFailure.ARTIFACT_UNAVAILABLE)
+            pack = self._store.load_pack(item.active_review_pack_identity)
+            filename = answer_pack_filename(pack)
+            target = self._transport.answer_inbox / filename
+            existing = self._store.load_visual_evidence_pointer(pack.review_pack_identity)
+            if existing is not None and not target.exists():
+                record = self._store.load_import_record(existing.import_identity)
+                return self._answer_result(
+                    pack, filename, AnswerImportState.ALREADY_IMPORTED, record=record,
+                )
+            payload: bytes | None = None
+            digest: str | None = None
+            try:
+                payload = self._read_answer_file(target)
+                digest = sha256(payload).hexdigest()
+                return self._import_answer_payload(pack, filename, payload)
+            except ReviewError as error:
+                state = {
+                    ReviewFailure.ANSWER_MISSING: AnswerImportState.MISSING,
+                    ReviewFailure.ANSWER_IDENTITY_MISMATCH: AnswerImportState.IDENTITY_MISMATCH,
+                    ReviewFailure.ANSWER_SCHEMA_INVALID: AnswerImportState.SCHEMA_INVALID,
+                    ReviewFailure.ANSWER_CONFLICT: AnswerImportState.CONFLICT,
+                }.get(error.failure, AnswerImportState.INVALID)
+                return self._failure_result(pack, filename, digest, state, error.failure)
+
+    def upload_answer(self, cycle_identity: str, *, media_type: str, payload: bytes) -> IntradayAnswerImportResult:
+        with self._lock:
+            run = self._require_current_run()
+            item = self._cycle_pointer(self._pointer_for_run(run), cycle_identity)
+            if item.active_review_pack_identity is None:
+                raise ReviewError(ReviewFailure.ARTIFACT_UNAVAILABLE)
+            pack = self._store.load_pack(item.active_review_pack_identity)
+            filename = answer_pack_filename(pack)
+            digest = sha256(payload).hexdigest() if type(payload) is bytes else None
+            if media_type.split(";", 1)[0].strip().lower() not in {"application/json", "text/json"}:
+                return self._failure_result(
+                    pack, filename, digest, AnswerImportState.INVALID, ReviewFailure.ANSWER_INVALID,
+                )
+            try:
+                return self._import_answer_payload(pack, filename, payload)
+            except ReviewError as error:
+                state = {
+                    ReviewFailure.ANSWER_IDENTITY_MISMATCH: AnswerImportState.IDENTITY_MISMATCH,
+                    ReviewFailure.ANSWER_SCHEMA_INVALID: AnswerImportState.SCHEMA_INVALID,
+                    ReviewFailure.ANSWER_CONFLICT: AnswerImportState.CONFLICT,
+                }.get(error.failure, AnswerImportState.INVALID)
+                return self._failure_result(pack, filename, digest, state, error.failure)
+
+    def import_all_answers(self) -> IntradayAnswerBatchResult:
+        with self._lock:
+            run = self._require_current_run()
+            pointer = self._pointer_for_run(run)
+            eligible = tuple(sorted(
+                (item for item in pointer.cycles if item.active_review_pack_identity is not None),
+                key=lambda item: item.canonical_subject_identity,
+            ))
+            return IntradayAnswerBatchResult(tuple(self.import_answer(item.cycle_identity) for item in eligible))
+
     def _candidate_snapshot(
         self,
         run: ProbablesRun,
@@ -333,6 +444,7 @@ class IntradayReviewApplication:
         chart = None if pointer is None or pointer.active_chart_revision_identity is None else self._store.load_chart(pointer.active_chart_revision_identity)
         pack = None if pointer is None or pointer.active_review_pack_identity is None else self._store.load_pack(pointer.active_review_pack_identity)
         filename = None if pack is None else question_pack_filename(pack)
+        evidence = None if pack is None else self._restore_visual_evidence(pack)
         direction = result.direction.value if result.direction is not None else "UNAVAILABLE"
         return IntradayReviewCandidateSnapshot(
             canonical_subject_identity=result.canonical_subject_identity,
@@ -350,6 +462,140 @@ class IntradayReviewApplication:
             chart_revision_ordinal=None if chart is None else chart.revision_ordinal,
             review_pack_identity=None if pack is None else pack.review_pack_identity,
             review_pack_filename=filename,
+            answer_filename=None if pack is None else answer_pack_filename(pack),
+            answer_state="NOT_IMPORTED" if evidence is None else "IMPORTED",
+            visual_state="NOT_ANALYZED" if evidence is None else evidence.global_observation_status.value,
+            answer_pack_identity=None if evidence is None else evidence.answer_pack_identity,
+            visual_evidence_identity=None if evidence is None else evidence.visual_evidence_identity,
+            observed_visible_subject_identity=None if evidence is None else evidence.observed_visible_subject_identity,
+            visual_answers=() if evidence is None else tuple(
+                (
+                    answer.question_id,
+                    answer.observation_status.value,
+                    "UNAVAILABLE" if answer.answer is None else answer.answer,
+                    "UNAVAILABLE" if answer.visible_basis is None else answer.visible_basis,
+                )
+                for answer in evidence.answers
+            ),
+        )
+
+    def _restore_visual_evidence(self, pack: ReviewQuestionPack) -> ImportedVisualEvidence | None:
+        pointer = self._store.load_visual_evidence_pointer(pack.review_pack_identity)
+        if pointer is None:
+            return None
+        answer = self._store.load_answer_pack(pointer.answer_pack_identity)
+        record = self._store.load_import_record(pointer.import_identity)
+        evidence = self._store.load_visual_evidence(pointer.visual_evidence_identity)
+        if (
+            pointer.review_cycle_identity != pack.review_cycle_identity
+            or pointer.chart_revision_identity != pack.chart_revision_identity
+            or record.review_pack_identity != pack.review_pack_identity
+            or record.answer_pack_identity != answer.answer_pack_identity
+            or record.visual_evidence_identity != evidence.visual_evidence_identity
+            or evidence.review_pack_identity != pack.review_pack_identity
+            or evidence.review_cycle_identity != pack.review_cycle_identity
+            or evidence.chart_revision_identity != pack.chart_revision_identity
+            or evidence.answer_pack_identity != answer.answer_pack_identity
+        ):
+            raise ReviewError(ReviewFailure.INTEGRITY_INVALID)
+        return evidence
+
+    def _read_answer_file(self, target: Path) -> bytes:
+        inbox = self._transport.answer_inbox.resolve()
+        if target.parent.resolve() != inbox or target.suffix.lower() != ".json" or target.is_symlink():
+            raise ReviewError(ReviewFailure.ANSWER_INVALID)
+        try:
+            metadata = target.lstat()
+        except FileNotFoundError as error:
+            raise ReviewError(ReviewFailure.ANSWER_MISSING) from error
+        except OSError as error:
+            raise ReviewError(ReviewFailure.ARTIFACT_UNAVAILABLE) from error
+        if not stat.S_ISREG(metadata.st_mode) or not 0 < metadata.st_size <= MAX_ANSWER_BYTES:
+            raise ReviewError(ReviewFailure.ANSWER_SCHEMA_INVALID)
+        try:
+            payload = target.read_bytes()
+        except OSError as error:
+            raise ReviewError(ReviewFailure.ARTIFACT_UNAVAILABLE) from error
+        if len(payload) != metadata.st_size:
+            raise ReviewError(ReviewFailure.ANSWER_INVALID)
+        return payload
+
+    def _failure_result(
+        self,
+        pack: ReviewQuestionPack,
+        filename: str,
+        digest: str | None,
+        state: AnswerImportState,
+        failure: ReviewFailure,
+    ) -> IntradayAnswerImportResult:
+        record = create_import_record(
+            pack,
+            answer_filename=filename,
+            answer_sha256=digest,
+            state=state,
+            imported_at=self._clock(),
+            failure=failure.value,
+        )
+        self._store.retain_import_record(record)
+        return self._answer_result(pack, filename, state, record=record, detail=failure.value)
+
+    def _import_answer_payload(
+        self,
+        pack: ReviewQuestionPack,
+        filename: str,
+        payload: bytes,
+    ) -> IntradayAnswerImportResult:
+        digest = sha256(payload).hexdigest()
+        answer = parse_answer_pack(payload)
+        existing = self._store.load_visual_evidence_pointer(pack.review_pack_identity)
+        if existing is not None:
+            prior = self._store.load_answer_pack(existing.answer_pack_identity)
+            if prior.answer_pack_identity == answer.answer_pack_identity:
+                record = self._store.load_import_record(existing.import_identity)
+                return self._answer_result(
+                    pack, filename, AnswerImportState.ALREADY_IMPORTED, record=record,
+                )
+            raise ReviewError(ReviewFailure.ANSWER_CONFLICT)
+        evidence = bind_imported_evidence(pack, answer, imported_at=self._clock())
+        record = create_import_record(
+            pack,
+            answer_filename=filename,
+            answer_sha256=digest,
+            state=AnswerImportState.IMPORTED,
+            imported_at=evidence.imported_at,
+            answer_pack_identity=answer.answer_pack_identity,
+            visual_evidence_identity=evidence.visual_evidence_identity,
+        )
+        self._store.retain_answer_transport(pack.review_pack_identity, payload)
+        self._store.retain_answer_pack(answer)
+        self._store.retain_visual_evidence(evidence)
+        self._store.retain_import_record(record)
+        self._store.save_visual_evidence_pointer(create_visual_evidence_pointer(evidence, record))
+        return self._answer_result(
+            pack, filename, AnswerImportState.IMPORTED, record=record, evidence=evidence,
+        )
+
+    @staticmethod
+    def _answer_result(
+        pack: ReviewQuestionPack,
+        filename: str,
+        state: AnswerImportState,
+        *,
+        record: AnswerImportRecord,
+        evidence: ImportedVisualEvidence | None = None,
+        detail: str | None = None,
+    ) -> IntradayAnswerImportResult:
+        return IntradayAnswerImportResult(
+            canonical_subject_identity=pack.expected_canonical_subject_identity,
+            cycle_identity=pack.review_cycle_identity,
+            answer_filename=filename,
+            state=state,
+            import_identity=record.import_identity,
+            answer_pack_identity=record.answer_pack_identity,
+            visual_evidence_identity=(
+                record.visual_evidence_identity if evidence is None else evidence.visual_evidence_identity
+            ),
+            detail=detail,
         )
 
     def _restored_batch(
@@ -404,6 +650,8 @@ def _replace_cycle(pointer: CurrentReviewPointer, replacement: ReviewCyclePointe
 
 
 __all__ = [
+    "IntradayAnswerBatchResult",
+    "IntradayAnswerImportResult",
     "IntradayReviewApplication",
     "IntradayReviewBatchMemberResult",
     "IntradayReviewBatchMemberState",

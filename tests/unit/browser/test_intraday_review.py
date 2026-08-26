@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -8,6 +9,8 @@ from kronos.browser.product_routes import BrowserGetRequest, BrowserPostRequest
 from tests.unit.browser.test_product_route_isolation import _snapshot
 from tests.unit.intraday.test_probables import _member, _run
 from tests.unit.intraday.test_review import _application, _png
+from tests.unit.intraday.test_review_answer import _document
+from kronos.intraday.review_answer import answer_pack_filename, answer_pack_template
 
 
 class _Workstation:
@@ -28,7 +31,8 @@ def test_intraday_review_browser_flow_is_bounded_and_get_is_side_effect_free(tmp
     assert "START REVIEW" in initial.body
     assert "CREATE PDF" not in initial.body
     assert '<button class="primary" type="submit" disabled>CREATE ALL REVIEW PDF</button>' in initial.body
-    assert "UPLOAD ALL ANSWERS · NOT YET COMMISSIONED" in initial.body
+    assert "UPLOAD ALL ANSWERS" in initial.body
+    assert 'action="/intraday/review/answers"' in initial.body
     assert application.snapshot().candidates[0].cycle_identity is None
 
     result = run.results[0].result_identity
@@ -66,7 +70,8 @@ def test_intraday_review_browser_flow_is_bounded_and_get_is_side_effect_free(tmp
         _snapshot,
     )
     assert created is not None and "Question Pack</span><strong>CREATED" in created.body
-    assert "Answer import NOT ACTIVE" in created.body
+    assert "Governed JSON Answer Pack import ACTIVE" in created.body
+    assert "UPLOAD ANSWER" in created.body
     assert "Readiness" not in created.body and "PAPER" not in created.body
 
 
@@ -127,3 +132,41 @@ def test_intraday_review_clipboard_targets_are_candidate_bound_and_share_upload_
         _snapshot,
     )
     assert rejected is not None and rejected.status.value == 400
+
+
+def test_intraday_review_individual_and_batch_answer_controls_project_visual_evidence(tmp_path: Path) -> None:
+    run = _run((_member("WIPRO"),))
+    current = [run]
+    application = _application(tmp_path, current)
+    routes = IntradayBrowserRoutes(_Workstation(), review=application)
+    cycle = application.start_review(run.results[0].result_identity)
+    application.upload_chart(cycle.cycle_identity, media_type="image/png", payload=_png(9))
+    pack, _ = application.create_question_pack(cycle.cycle_identity)
+
+    missing = routes.handle_post(
+        BrowserPostRequest("/intraday/review/answer", {"cycle": [cycle.cycle_identity]}, "", b""),
+        _snapshot,
+    )
+    assert missing is not None and "INDIVIDUAL ANSWER IMPORT" in missing.body
+    assert "MISSING" in missing.body
+
+    imported = routes.handle_post(
+        BrowserPostRequest(
+            "/intraday/review/answer", {"cycle": [cycle.cycle_identity]},
+            "application/json", json.dumps(_document(pack)).encode(),
+        ),
+        _snapshot,
+    )
+    assert imported is not None and "IMPORTED Q1-Q10 VISUAL EVIDENCE" in imported.body
+    assert imported.body.count("<th>Q") >= 1
+    assert "Observed visible identity · WIPRO" in imported.body
+    assert not (tmp_path / "answers" / answer_pack_filename(pack)).exists()
+    assert len(tuple((tmp_path / "evidence" / "answer-transports").glob("*.json"))) == 1
+
+    batch = routes.handle_post(
+        BrowserPostRequest("/intraday/review/answers", {}, "", b""), _snapshot,
+    )
+    assert batch is not None and "UPLOAD ALL ANSWERS · Eligible 1" in batch.body
+    assert "Already imported 1" in batch.body
+    assert routes.owns_post("/intraday/review/answer")
+    assert routes.owns_post("/intraday/review/answers")

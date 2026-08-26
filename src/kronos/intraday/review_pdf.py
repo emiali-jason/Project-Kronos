@@ -18,6 +18,11 @@ from reportlab.platypus import Image, KeepTogether, PageBreak, Paragraph, Simple
 
 from kronos.intraday.review import CHART_TIMEFRAMES, ReviewError, ReviewFailure, ReviewQuestionPack
 from kronos.intraday.review_batch import ReviewBatchPdf
+from kronos.intraday.review_answer import (
+    ANSWER_CONTRACT_VERSION,
+    ANSWER_PACK_IDENTITY,
+    answer_pack_filename,
+)
 
 
 DEFAULT_QUESTION_OUTBOX = Path(
@@ -183,6 +188,30 @@ def render_question_pack_pdf(pack: ReviewQuestionPack, chart_payload: bytes) -> 
         Spacer(1, 3 * mm),
         Paragraph("Expected identity is supplied by KRONOS. Report the independently observed visible chart identity without forcing it to equal the expected identity.", body),
         Spacer(1, 3 * mm),
+        Paragraph("Chart Analyst Answer Pack transport", heading),
+        Paragraph(
+            "Return one UTF-8 JSON object for this candidate using schema "
+            f"{escape(ANSWER_PACK_IDENTITY)} / {escape(ANSWER_CONTRACT_VERSION)}. "
+            "Do not return prose, Markdown fences, machine hashes, Provider tokens, internal KRONOS provenance, trading fields or additional keys.",
+            body,
+        ),
+        Paragraph(
+            "Required filename: <b>" + escape(answer_pack_filename(pack)) + "</b>",
+            small,
+        ),
+        Paragraph(
+            "Top-level keys: schema_identity, schema_version, question_set_identity, question_set_version, review_pack_identity, review_cycle_identity, review_request_identity, chart_revision_identity, expected_canonical_subject_identity, observed_visible_subject_identity, proposed_direction, global_observation_status, answers.",
+            small,
+        ),
+        Paragraph(
+            "Each of the exact ordered Q1-Q10 answer objects requires: question_id, observation_status, answer, visible_timeframes, visible_basis, status_detail, why_not_covered_elsewhere. Use null where the contract requires absence. UNCLEAR is an allowed substantive answer, never a status.",
+            small,
+        ),
+        Paragraph(
+            "OBSERVED requires the full governed timeframe scope and a concise visible basis. PARTIAL requires the visible subset, basis and status detail. If chart identity is unreadable, observed_visible_subject_identity must be null; never force it to match expected identity.",
+            warning,
+        ),
+        Spacer(1, 3 * mm),
     ))
     for question in pack.questions:
         values = " | ".join(question.allowed_answers)
@@ -291,6 +320,15 @@ def render_review_batch_pdf(
             Paragraph(escape(pack.trust_boundary), warning),
             Spacer(1, 2 * mm),
             Paragraph(escape(pack.trading_authority_prohibition), warning),
+            Spacer(1, 3 * mm),
+            Paragraph("Individual JSON Answer Pack", heading),
+            Paragraph(
+                "Return this candidate separately as " + escape(answer_pack_filename(pack))
+                + ". Combined or free-form answers are not accepted. Use schema "
+                + escape(ANSWER_PACK_IDENTITY) + " / " + escape(ANSWER_CONTRACT_VERSION)
+                + " with exact ordered Q1-Q10 and no additional or trading fields.",
+                warning,
+            ),
             Spacer(1, 3 * mm),
         ))
         for question in pack.questions:

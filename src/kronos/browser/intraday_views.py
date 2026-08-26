@@ -8,7 +8,12 @@ from html import escape
 from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
-from kronos.application.intraday_review import IntradayReviewBatchResult, IntradayReviewSnapshot
+from kronos.application.intraday_review import (
+    IntradayAnswerBatchResult,
+    IntradayAnswerImportResult,
+    IntradayReviewBatchResult,
+    IntradayReviewSnapshot,
+)
 from kronos.application.intraday_discovery import (
     IntradayDiscoveryMemberSnapshot,
     IntradayDiscoverySnapshot,
@@ -19,6 +24,7 @@ from kronos.browser.views import render_browser_page
 from kronos.intraday.contracts import CandleCompletion, IntradayTimeframe
 from kronos.intraday.discovery import FactFamily
 from kronos.intraday.probables import ProbablesRun, ProbableReason, ProbableState
+from kronos.intraday.review_answer import AnswerImportState
 from kronos.intraday.telemetry import TelemetryType
 
 
@@ -84,6 +90,8 @@ def render_intraday_review(
     review: IntradayReviewSnapshot,
     *,
     batch_result: IntradayReviewBatchResult | None = None,
+    answer_result: IntradayAnswerImportResult | None = None,
+    answer_batch_result: IntradayAnswerBatchResult | None = None,
 ) -> str:
     """Render exact-current Review candidates without creating analytical state."""
 
@@ -95,6 +103,10 @@ def render_intraday_review(
     )
     ready_count = sum(item.chart_revision_identity is not None for item in review.candidates)
     batch_feedback = "" if batch_result is None else _review_batch_result(batch_result)
+    answer_feedback = (
+        "" if answer_result is None and answer_batch_result is None
+        else _answer_import_result(answer_result, answer_batch_result)
+    )
     current_batch = (
         ""
         if review.current_batch_identity is None
@@ -110,17 +122,19 @@ def render_intraday_review(
         '<button class="primary" type="submit"'
         + (" disabled" if ready_count == 0 else "")
         + '>CREATE ALL REVIEW PDF</button></form>'
-        '<button class="future-action" type="button" disabled>UPLOAD ALL ANSWERS · NOT YET COMMISSIONED</button>'
+        '<form method="post" action="/intraday/review/answers"><button type="submit"'
+        + (" disabled" if not any(item.review_pack_identity is not None for item in review.candidates) else "")
+        + '>UPLOAD ALL ANSWERS</button></form>'
         '<span class="intraday-review-toolbar-note">Chart ready · '
         + str(ready_count) + " / " + str(len(review.candidates)) + "</span>"
         + current_batch + "</div>"
-        + batch_feedback
+        + batch_feedback + answer_feedback
         + '<div class="intraday-review-list">' + cards + '</div>'
         '<div class="intraday-review-config"><strong>Question outbox:</strong> '
         + escape(review.question_outbox)
         + '<br><strong>Future Answer inbox:</strong> '
         + escape(review.answer_inbox)
-        + ' · Answer import NOT ACTIVE</div>'
+        + ' · Governed JSON Answer Pack import ACTIVE</div>'
         + _review_upload_script()
     )
     return render_browser_page(
@@ -173,6 +187,16 @@ def _review_candidate(item) -> str:  # type: ignore[no-untyped-def]
             )
         if item.review_pack_filename is not None:
             action += '<span class="intraday-review-lineage">' + escape(item.review_pack_filename) + '</span>'
+            action += (
+                '<form method="post" action="/intraday/review/answer?cycle=' + cycle
+                + '"><button type="submit">IMPORT EXPECTED INBOX ANSWER</button></form>'
+                '<label class="intraday-file-choice" tabindex="0" for="answer-' + input_identity
+                + '">UPLOAD ANSWER</label><input id="answer-' + input_identity
+                + '" class="intraday-chart-input" type="file" accept="application/json,.json" '
+                + 'data-review-answer-upload="/intraday/review/answer?cycle=' + cycle + '">'
+                '<span class="intraday-review-lineage">Expected Answer · '
+                + escape(item.answer_filename or "UNAVAILABLE") + '</span>'
+            )
     return (
         '<article class="intraday-review-card"><div class="intraday-review-head"><h2>'
         + escape(item.canonical_subject_identity)
@@ -184,15 +208,18 @@ def _review_candidate(item) -> str:  # type: ignore[no-untyped-def]
         + " · PARTICIPATION " + escape(item.participation_state)
         + '</div><div class="intraday-review-status">'
         + _review_status("Chart", chart_state)
-        + _review_status("Visual Evidence", "NOT ANALYZED")
+        + _review_status("Visual Evidence", item.visual_state.replace("_", " "))
         + _review_status("Question Pack", pack_state)
+        + _review_status("Answer", item.answer_state.replace("_", " "))
         + '</div><p class="intraday-review-lineage">Analysis boundary · '
         + escape(_ist_time(item.observation_boundary))
         + '</p><div class="intraday-review-actions">' + action + '</div>'
         '<details class="intraday-review-diagnostics"><summary>IDENTITY / DIAGNOSTICS</summary>Probables · '
         + escape(item.probables_run_identity)
+        + ('<br>Observed visible identity · ' + escape(item.observed_visible_subject_identity) if item.observed_visible_subject_identity else '')
+        + ('<br>Visual Evidence · ' + escape(item.visual_evidence_identity) if item.visual_evidence_identity else '')
         + ('<br>Review Cycle · ' + escape(item.cycle_identity) if item.cycle_identity else '')
-        + '</details></article>'
+        + '</details>' + _visual_answer_projection(item.visual_answers) + '</article>'
     )
 
 
@@ -233,6 +260,51 @@ def _review_status(label: str, value: str) -> str:
     return '<div><span>' + escape(label) + '</span><strong>' + escape(value) + '</strong></div>'
 
 
+def _visual_answer_projection(answers: tuple[tuple[str, str, str, str], ...]) -> str:
+    if not answers:
+        return ""
+    rows = "".join(
+        '<tr><th>' + escape(question) + '</th><td>' + escape(status.replace("_", " "))
+        + '</td><td>' + escape(answer.replace("_", " ")) + '</td><td>' + escape(basis) + '</td></tr>'
+        for question, status, answer, basis in answers
+    )
+    return (
+        '<details class="intraday-review-diagnostics"><summary>IMPORTED Q1-Q10 VISUAL EVIDENCE</summary>'
+        '<div class="table-scroll"><table class="intraday-table"><thead><tr><th>Q</th><th>Status</th>'
+        '<th>Answer</th><th>Visible basis</th></tr></thead><tbody>' + rows + '</tbody></table></div></details>'
+    )
+
+
+def _answer_import_result(
+    individual: IntradayAnswerImportResult | None,
+    batch: IntradayAnswerBatchResult | None,
+) -> str:
+    members = (individual,) if individual is not None else (() if batch is None else batch.members)
+    rows = "".join(
+        '<span><strong>' + escape(item.canonical_subject_identity) + '</strong> · '
+        + escape(item.state.value.replace("_", " "))
+        + (' · ' + escape(item.detail) if item.detail else '') + '</span>'
+        for item in members
+    )
+    if batch is None:
+        summary = "INDIVIDUAL ANSWER IMPORT"
+    else:
+        summary = (
+            f"UPLOAD ALL ANSWERS · Eligible {batch.eligible_candidates} · Discovered {batch.files_discovered} · "
+            f"Imported {batch.count(AnswerImportState.IMPORTED)} · "
+            f"Already imported {batch.count(AnswerImportState.ALREADY_IMPORTED)} · "
+            f"Missing {batch.count(AnswerImportState.MISSING)} · "
+            f"Invalid {batch.count(AnswerImportState.INVALID)} · "
+            f"Identity mismatch {batch.count(AnswerImportState.IDENTITY_MISMATCH)} · "
+            f"Schema invalid {batch.count(AnswerImportState.SCHEMA_INVALID)} · "
+            f"Conflict {batch.count(AnswerImportState.CONFLICT)}"
+        )
+    return (
+        '<section class="intraday-batch-result"><h2>' + escape(summary)
+        + '</h2><div class="intraday-batch-members">' + rows + '</div></section>'
+    )
+
+
 def _review_upload_script() -> str:
     return """<script>
 async function uploadReviewChart(target,file){
@@ -249,6 +321,15 @@ document.querySelectorAll('[data-review-upload]').forEach(target=>{
   target.addEventListener('dragover',event=>event.preventDefault());
   target.addEventListener('drop',event=>{event.preventDefault();uploadReviewChart(target,event.dataTransfer.files[0]);});
   target.addEventListener('paste',event=>{const item=[...(event.clipboardData?.items||[])].find(value=>value.kind==='file'&&['image/png','image/jpeg'].includes(value.type));if(!item){alert('No supported chart image was found on the clipboard.');return;}event.preventDefault();uploadReviewChart(target,item.getAsFile());});
+});
+document.querySelectorAll('[data-review-answer-upload]').forEach(input=>{
+  input.addEventListener('change',async()=>{
+    const file=input.files[0];
+    if(!file||(!file.name.toLowerCase().endsWith('.json')&&!['application/json','text/json'].includes(file.type))){alert('Choose a JSON Answer Pack.');return;}
+    const response=await fetch(input.dataset.reviewAnswerUpload,{method:'POST',headers:{'Content-Type':'application/json'},body:file});
+    if(!response.ok){alert('Answer upload rejected.');return;}
+    document.open();document.write(await response.text());document.close();
+  });
 });
 </script>"""
 
