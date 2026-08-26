@@ -1,0 +1,107 @@
+{
+  "contract_identity": "KRONOS-MCX-CONTRACT-FAMILY-SESSION-V1",
+  "contract_version": "1",
+  "coverage_end": "2026-12-31",
+  "coverage_start": "2026-01-01",
+  "exchange": "MCX",
+  "official_sources": [
+    {
+      "artifact_identity": "MCX-COPPER-MAY-2026-ONWARDS",
+      "official_uri": "https://www.mcxindia.com/docs/default-source/products/contract-specification/copper/copper-may-2026-contracts-onwards.pdf",
+      "publication_date": "2025-12-23",
+      "reference": "MCX/TRD/655/2025; Copper May 2026 contracts onwards; expiry-day trading allowed up to 5pm",
+      "title": "Contract Specifications of Copper Futures Contract"
+    },
+    {
+      "artifact_identity": "MCX-CRUDEOIL-JAN-2026-ONWARDS",
+      "official_uri": "https://www.mcxindia.com/docs/default-source/products/contract-specification/crude-oil/crude-oil-january-2026-contract-onwards267be8c1-650a-4baa-aabd-ffcc9364c100.pdf",
+      "publication_date": "2025-06-27",
+      "reference": "MCX/TRD/319/2025; Crude Oil contracts expiring during calendar year 2026",
+      "title": "Contract Specifications of Crude Oil"
+    },
+    {
+      "artifact_identity": "MCX-GOLDM-AUG-2026-ONWARDS",
+      "official_uri": "https://www.mcxindia.com/docs/default-source/about-us/gold-mini-august-2026-contract-onwards8a79913a-e8de-4136-9f0b-25d31dc163c4.pdf",
+      "publication_date": "2026-07-01",
+      "reference": "MCX/TRD/041/2026, MCX/PMT/178/2026 and MCX/PMT/375/2026; Gold Mini contracts expiring August 2026 onwards",
+      "title": "Contract Specifications of Gold Mini Futures Contract"
+    },
+    {
+      "artifact_identity": "MCX-NATURALGAS-JAN-2026-ONWARDS",
+      "official_uri": "https://www.mcxindia.com/docs/default-source/products/contract-specification/natural-gas/natural-gas-january-2026-contract-onwards2ff2141b-f6e4-4b6a-9f0e-59f260cecf9b.pdf",
+      "publication_date": "2025-06-27",
+      "reference": "MCX/TRD/320/2025; Natural Gas contracts expiring during calendar year 2026",
+      "title": "Contract Specifications of Natural Gas Futures"
+    },
+    {
+      "artifact_identity": "MCX-SILVERM-AUG-2026-ONWARDS",
+      "official_uri": "https://www.mcxindia.com/docs/default-source/about-us/silver-mini-august-2026-contract-onwards.pdf",
+      "publication_date": "2026-07-17",
+      "reference": "MCX/TRD/383/2025, MCX/MCXCCL/455/2025 and MCX/PMT/415/2026; Silver Mini August and November 2026 expiries",
+      "title": "Contract Specifications of Silver Mini Futures Contract"
+    }
+  ],
+  "publication_identity": "KRONOS-MCX-CONTRACT-FAMILY-EXPIRY-SESSIONS-2026",
+  "publication_version": "2026.1.0",
+  "rules": [
+    {
+      "authorized_aliases": [],
+      "contract_expiry_effective_from": "2026-05-01",
+      "contract_expiry_effective_through": "2026-12-31",
+      "contract_family": "COPPER",
+      "expiry_local_close": "17:00:00",
+      "expiry_session_rule": "FIXED_LOCAL_CLOSE",
+      "normal_session_rule": "NORMAL_MARKET_SESSION",
+      "source_artifact_identity": "MCX-COPPER-MAY-2026-ONWARDS"
+    },
+    {
+      "authorized_aliases": [
+        "CRUDE"
+      ],
+      "contract_expiry_effective_from": "2026-01-01",
+      "contract_expiry_effective_through": "2026-12-31",
+      "contract_family": "CRUDEOIL",
+      "expiry_local_close": null,
+      "expiry_session_rule": "NORMAL_MARKET_SESSION",
+      "normal_session_rule": "NORMAL_MARKET_SESSION",
+      "source_artifact_identity": "MCX-CRUDEOIL-JAN-2026-ONWARDS"
+    },
+    {
+      "authorized_aliases": [],
+      "contract_expiry_effective_from": "2026-08-01",
+      "contract_expiry_effective_through": "2026-12-31",
+      "contract_family": "GOLDM",
+      "expiry_local_close": null,
+      "expiry_session_rule": "NORMAL_MARKET_SESSION",
+      "normal_session_rule": "NORMAL_MARKET_SESSION",
+      "source_artifact_identity": "MCX-GOLDM-AUG-2026-ONWARDS"
+    },
+    {
+      "authorized_aliases": [
+        "NATGAS"
+      ],
+      "contract_expiry_effective_from": "2026-01-01",
+      "contract_expiry_effective_through": "2026-12-31",
+      "contract_family": "NATURALGAS",
+      "expiry_local_close": null,
+      "expiry_session_rule": "NORMAL_MARKET_SESSION",
+      "normal_session_rule": "NORMAL_MARKET_SESSION",
+      "source_artifact_identity": "MCX-NATURALGAS-JAN-2026-ONWARDS"
+    },
+    {
+      "authorized_aliases": [],
+      "contract_expiry_effective_from": "2026-08-01",
+      "contract_expiry_effective_through": "2026-11-30",
+      "contract_family": "SILVERM",
+      "expiry_local_close": null,
+      "expiry_session_rule": "NORMAL_MARKET_SESSION",
+      "normal_session_rule": "NORMAL_MARKET_SESSION",
+      "source_artifact_identity": "MCX-SILVERM-AUG-2026-ONWARDS"
+    }
+  ],
+  "schema": "KRONOS-MCX-CONTRACT-FAMILY-SESSION-PUBLICATION-V1",
+  "segment": "MCX_FUTURES",
+  "source_boundary": "2026-07-17T23:59:59+05:30",
+  "supersedes": null,
+  "timezone": "Asia/Kolkata"
+}

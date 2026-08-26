@@ -9,7 +9,13 @@
       "sha256": "6c1ae4fe581b99628b0abcec67f3c85488a443a1639512b56f197813d252f4d2"
     }
   ],
-  "schema": "KRONOS-MARKET-CALENDAR-MANIFEST-V2",
+  "mcx_contract_family_sessions": [
+    {
+      "file": "MCX-CONTRACT-FAMILY-EXPIRY-SESSIONS-2026.v1.json",
+      "sha256": "f9f67240d95e3032d10e74c6043ca4c1031cfa04e604f0a6a560a1ac43f89e29"
+    }
+  ],
+  "schema": "KRONOS-MARKET-CALENDAR-MANIFEST-V3",
   "session_regimes": [
     {
       "file": "NSE-CLOSING-AUCTION-SESSION-2026.v2.json",

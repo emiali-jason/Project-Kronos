@@ -1,6 +1,6 @@
 # KRONOS Intraday Engineering, Methodology & Architecture Record
 
-**Status:** LIVING DOCUMENT — V0.1; amended through WO-06 Part-3 commissioning candidate
+**Status:** LIVING DOCUMENT — V0.1; amended through WO-06MCX-A
 
 **Product owner:** KRONOS Intraday
 
@@ -672,7 +672,32 @@ lifecycle, notification, journal or broker authority. WO-06 remains open for
 WO-06V, WO-06L and WO-06E2E. The complete freeze is recorded in
 [WO-06 Part-3 V0 Probables Methodology](KRONOS-INTRADAY-WO-06-PART-3-V0-PROBABLES-METHODOLOGY.md).
 
-## 29. References
+## 29. WO-06MCX-A DOMAIN-008 expiry-session amendment
+
+WO-06MCX-A closes `MCX_DOMAIN008_SESSION_GAP` with the platform-owned
+`KRONOS-MCX-CONTRACT-FAMILY-SESSION-V1 / 1` contract and immutable 2026
+publication. DOMAIN-008 now resolves a governed MCX family, contract expiry,
+trading date and historical observation boundary into pre-expiry,
+expiry-at-or-before-cutoff, expiry-after-cutoff or post-expiry state.
+
+GOLDM, SILVERM, NATURALGAS and CRUDEOIL retain their independently sourced
+normal MCX session on expiry. COPPER alone has the sourced 17:00 expiry close.
+NATGAS → NATURALGAS and CRUDE → CRUDEOIL are explicit governed aliases rather
+than inferred mappings. The cutoff instant is inclusive for expiry-day
+eligibility; any later observation is ineligible.
+
+Expiry schedules are completed-candle authority, so Copper acquisition cannot
+expect candles after 17:00 on its expiry date. Unknown families, uncovered or
+source-unqualified dates, missing publications and invalid integrity fail
+closed as `MCX_CONTRACT_SESSION_UNAVAILABLE`; the generic 23:30 session is not
+a fallback.
+
+DOMAIN-008 supplies this factual session authority. WO-06MCX remains the owner
+of active-futures selection and must consume the platform fact in its separately
+authorized rerun. No contract selection, Discovery, Probables, Risk or broker
+authority is introduced here.
+
+## 30. References
 
 - [Intraday Shared-File Change Rule](../../../engineering/INTRADAY-SHARED-FILE-CHANGE-RULE.md)
 - [Platform Constitution](../../platform/PLATFORM-000-CONSTITUTION.md)

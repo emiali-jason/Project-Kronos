@@ -58,5 +58,43 @@ Realize approved Market Schedule ownership and publish explicit market availabil
 
 ## Open Engineering Questions
 
-- What approved authoritative source will support Market Schedule and EAIC-001 publication?
 - Which KR-200 public output will carry the approved availability meaning once such a source exists?
+
+## WO-06MCX-A Contract-Family Expiry-Session Authority
+
+DOMAIN-008 publishes
+`KRONOS-MCX-CONTRACT-FAMILY-SESSION-V1 / 1` through the immutable
+`KRONOS-MCX-CONTRACT-FAMILY-EXPIRY-SESSIONS-2026 / 2026.1.0`
+publication. The publication binds official MCX contract specifications for
+GOLDM, SILVERM, COPPER, NATURALGAS and CRUDEOIL, plus the explicit governed
+consumer aliases NATGAS and CRUDE. Alias resolution is exact; fuzzy family
+matching is prohibited.
+
+The contract distinguishes `PRE_EXPIRY_SESSION`,
+`EXPIRY_SESSION_BEFORE_CUTOFF`, `EXPIRY_SESSION_AFTER_CUTOFF` and
+`POST_EXPIRY`. At the exact published expiry close, the contract is still
+expiry-day eligible; eligibility ends strictly after that instant. This
+eligibility fact does not select an active contract.
+
+The current family rules retain each specification's own authority:
+
+- GOLDM, SILVERM, NATURALGAS and CRUDEOIL use the governed normal MCX session
+  on their expiry date.
+- COPPER uses the governed normal session before expiry and a 17:00 Asia/Kolkata
+  close on expiry, as expressly stated in the MCX Copper specification.
+
+The derived expiry schedule is a completed-candle boundary. It never extends
+an expiring COPPER contract to the generic 23:30 close. Unknown families,
+uncovered calendar dates, contract expiries outside a source-effective period,
+missing expiry sessions, missing publications and invalid digests raise the
+typed `MCX_CONTRACT_SESSION_UNAVAILABLE` boundary. Generic MCX hours are not a
+fallback.
+
+Historical replay binds the requested contract family, expiry, trading date,
+historical observation instant, publication version and digest. Later source
+changes require an immutable successor publication and cannot rewrite the
+2026 record.
+
+DOMAIN-008 supplies session authority only. The separately governed WO-06MCX
+resolver owns active-contract selection; Intraday Discovery and Probables own
+neither authority.

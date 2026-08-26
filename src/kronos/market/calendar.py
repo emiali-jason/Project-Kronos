@@ -32,12 +32,19 @@ from kronos.market.schedule import (
 MARKET_CALENDAR_CONTRACT_ID = "KRONOS-MARKET-CALENDAR-V1"
 MARKET_CALENDAR_CONTRACT_VERSION = "1"
 MARKET_CALENDAR_PUBLICATION_SCHEMA = "KRONOS-MARKET-CALENDAR-PUBLICATION-V1"
-MARKET_CALENDAR_MANIFEST_SCHEMA = "KRONOS-MARKET-CALENDAR-MANIFEST-V2"
+MARKET_CALENDAR_MANIFEST_SCHEMA = "KRONOS-MARKET-CALENDAR-MANIFEST-V3"
 MARKET_SESSION_REGIME_PUBLICATION_SCHEMA = (
     "KRONOS-MARKET-SESSION-REGIME-PUBLICATION-V2"
 )
 MARKET_SUBJECT_SESSION_APPLICABILITY_PUBLICATION_SCHEMA = (
     "KRONOS-MARKET-SUBJECT-SESSION-APPLICABILITY-PUBLICATION-V1"
+)
+MCX_CONTRACT_FAMILY_SESSION_CONTRACT_ID = (
+    "KRONOS-MCX-CONTRACT-FAMILY-SESSION-V1"
+)
+MCX_CONTRACT_FAMILY_SESSION_CONTRACT_VERSION = "1"
+MCX_CONTRACT_FAMILY_SESSION_PUBLICATION_SCHEMA = (
+    "KRONOS-MCX-CONTRACT-FAMILY-SESSION-PUBLICATION-V1"
 )
 DEFAULT_MARKET_CALENDAR_ROOT = (
     Path(__file__).resolve().parents[3]
@@ -564,6 +571,243 @@ class MarketCalendarPublication:
             raise ValueError("MARKET_CALENDAR_PUBLICATION_INVALID") from error
 
 
+class McxContractSessionClassification(StrEnum):
+    """Contract-relative session state at one governed observation boundary."""
+
+    PRE_EXPIRY_SESSION = "PRE_EXPIRY_SESSION"
+    EXPIRY_SESSION_BEFORE_CUTOFF = "EXPIRY_SESSION_BEFORE_CUTOFF"
+    EXPIRY_SESSION_AFTER_CUTOFF = "EXPIRY_SESSION_AFTER_CUTOFF"
+    POST_EXPIRY = "POST_EXPIRY"
+
+
+class McxExpirySessionRule(StrEnum):
+    """How one MCX family obtains its expiry-date continuous close."""
+
+    NORMAL_MARKET_SESSION = "NORMAL_MARKET_SESSION"
+    FIXED_LOCAL_CLOSE = "FIXED_LOCAL_CLOSE"
+
+
+class McxContractSessionUnavailableReason(StrEnum):
+    UNKNOWN_FAMILY = "UNKNOWN_FAMILY"
+    DATE_OUTSIDE_PUBLICATION = "DATE_OUTSIDE_PUBLICATION"
+    EXPIRY_OUTSIDE_EFFECTIVE_PERIOD = "EXPIRY_OUTSIDE_EFFECTIVE_PERIOD"
+    EXPIRY_SESSION_UNAVAILABLE = "EXPIRY_SESSION_UNAVAILABLE"
+    PUBLICATION_UNAVAILABLE = "PUBLICATION_UNAVAILABLE"
+    PUBLICATION_DIGEST_MISMATCH = "PUBLICATION_DIGEST_MISMATCH"
+    PUBLICATION_INVALID = "PUBLICATION_INVALID"
+
+
+class McxContractSessionUnavailable(ValueError):
+    """Typed fail-closed boundary for unavailable MCX contract sessions."""
+
+    code = "MCX_CONTRACT_SESSION_UNAVAILABLE"
+
+    def __init__(self, reason: McxContractSessionUnavailableReason) -> None:
+        if type(reason) is not McxContractSessionUnavailableReason:
+            raise ValueError("MCX_CONTRACT_SESSION_UNAVAILABLE_REASON_INVALID")
+        self.reason = reason
+        super().__init__(f"{self.code}:{reason.value}")
+
+
+@dataclass(frozen=True, slots=True)
+class McxContractFamilySessionRule:
+    """One immutable family-specific expiry-session rule and source binding."""
+
+    contract_family: str
+    authorized_aliases: tuple[str, ...]
+    contract_expiry_effective_from: date
+    contract_expiry_effective_through: date
+    normal_session_rule: McxExpirySessionRule
+    expiry_session_rule: McxExpirySessionRule
+    expiry_local_close: time | None
+    source_artifact_identity: str
+
+    def __post_init__(self) -> None:
+        identities = (self.contract_family, *self.authorized_aliases)
+        if (
+            not _text(self.contract_family)
+            or type(self.authorized_aliases) is not tuple
+            or any(not _text(item) for item in self.authorized_aliases)
+            or len(set(identities)) != len(identities)
+            or type(self.contract_expiry_effective_from) is not date
+            or type(self.contract_expiry_effective_through) is not date
+            or self.contract_expiry_effective_from
+            > self.contract_expiry_effective_through
+            or self.normal_session_rule
+            is not McxExpirySessionRule.NORMAL_MARKET_SESSION
+            or type(self.expiry_session_rule) is not McxExpirySessionRule
+            or (
+                (self.expiry_session_rule is McxExpirySessionRule.FIXED_LOCAL_CLOSE)
+                != (type(self.expiry_local_close) is time)
+            )
+            or not _text(self.source_artifact_identity)
+        ):
+            raise ValueError("MCX_CONTRACT_FAMILY_SESSION_RULE_INVALID")
+
+    def accepts(self, family: str) -> bool:
+        return family in (self.contract_family, *self.authorized_aliases)
+
+
+@dataclass(frozen=True, slots=True)
+class McxContractFamilySessionPublication:
+    """Integrity-bound DOMAIN-008 authority for MCX contract-family sessions."""
+
+    publication_identity: str
+    publication_version: str
+    exchange: str
+    segment: str
+    timezone: str
+    coverage_start: date
+    coverage_end: date
+    source_boundary: datetime
+    official_sources: tuple[OfficialCalendarSource, ...]
+    rules: tuple[McxContractFamilySessionRule, ...]
+    supersedes_identity: str | None
+    supersedes_version: str | None
+    supersedes_sha256: str | None
+    publication_sha256: str
+
+    def __post_init__(self) -> None:
+        source_identities = {
+            item.artifact_identity for item in self.official_sources
+        }
+        family_identities = tuple(
+            identity
+            for rule in self.rules
+            for identity in (rule.contract_family, *rule.authorized_aliases)
+        )
+        if (
+            not _text(self.publication_identity)
+            or not _text(self.publication_version)
+            or self.exchange != "MCX"
+            or self.segment != "MCX_FUTURES"
+            or self.timezone != "Asia/Kolkata"
+            or type(self.coverage_start) is not date
+            or type(self.coverage_end) is not date
+            or self.coverage_start > self.coverage_end
+            or not _aware(self.source_boundary)
+            or not self.official_sources
+            or len(source_identities) != len(self.official_sources)
+            or not self.rules
+            or any(type(item) is not McxContractFamilySessionRule for item in self.rules)
+            or tuple(sorted(self.rules, key=lambda item: item.contract_family))
+            != self.rules
+            or len(set(family_identities)) != len(family_identities)
+            or any(
+                item.source_artifact_identity not in source_identities
+                for item in self.rules
+            )
+            or (
+                any(
+                    item is not None
+                    for item in (
+                        self.supersedes_identity,
+                        self.supersedes_version,
+                        self.supersedes_sha256,
+                    )
+                )
+                and (
+                    not _text(self.supersedes_identity)
+                    or not _text(self.supersedes_version)
+                    or not isinstance(self.supersedes_sha256, str)
+                    or len(self.supersedes_sha256) != 64
+                )
+            )
+            or len(self.publication_sha256) != 64
+        ):
+            raise ValueError("MCX_CONTRACT_FAMILY_SESSION_PUBLICATION_INVALID")
+
+    def rule_for(self, contract_family: str) -> McxContractFamilySessionRule:
+        if not _text(contract_family):
+            raise McxContractSessionUnavailable(
+                McxContractSessionUnavailableReason.UNKNOWN_FAMILY
+            )
+        rule = next((item for item in self.rules if item.accepts(contract_family)), None)
+        if rule is None:
+            raise McxContractSessionUnavailable(
+                McxContractSessionUnavailableReason.UNKNOWN_FAMILY
+            )
+        return rule
+
+
+@dataclass(frozen=True, slots=True)
+class McxContractFamilySessionProfile:
+    """Resolved session authority for one MCX family/expiry/date observation."""
+
+    requested_contract_family: str
+    contract_family: str
+    exchange: str
+    segment: str
+    trading_date: date
+    contract_expiry: date
+    classification: McxContractSessionClassification
+    continuous_trading: MarketSchedule | None
+    expiry_eligibility_boundary: datetime
+    contract_eligible: bool
+    contract_expiry_effective_from: date
+    contract_expiry_effective_through: date
+    publication_identity: str
+    publication_version: str
+    publication_sha256: str
+    source_authority: OfficialCalendarSource
+    contract_identity: str = MCX_CONTRACT_FAMILY_SESSION_CONTRACT_ID
+    contract_version: str = MCX_CONTRACT_FAMILY_SESSION_CONTRACT_VERSION
+
+    def __post_init__(self) -> None:
+        schedule = self.continuous_trading
+        if (
+            not _text(self.requested_contract_family)
+            or not _text(self.contract_family)
+            or self.exchange != "MCX"
+            or self.segment != "MCX_FUTURES"
+            or type(self.trading_date) is not date
+            or type(self.contract_expiry) is not date
+            or type(self.classification) is not McxContractSessionClassification
+            or (schedule is not None and type(schedule) is not MarketSchedule)
+            or (
+                schedule is not None
+                and (
+                    schedule.exchange != self.exchange
+                    or schedule.trading_date != self.trading_date
+                )
+            )
+            or not _aware(self.expiry_eligibility_boundary)
+            or self.expiry_eligibility_boundary.date() != self.contract_expiry
+            or type(self.contract_eligible) is not bool
+            or (
+                self.contract_eligible
+                != (
+                    self.classification
+                    in {
+                        McxContractSessionClassification.PRE_EXPIRY_SESSION,
+                        McxContractSessionClassification.EXPIRY_SESSION_BEFORE_CUTOFF,
+                    }
+                )
+            )
+            or (
+                (schedule is None)
+                != (
+                    self.classification
+                    is McxContractSessionClassification.POST_EXPIRY
+                )
+            )
+            or type(self.contract_expiry_effective_from) is not date
+            or type(self.contract_expiry_effective_through) is not date
+            or not (
+                self.contract_expiry_effective_from
+                <= self.contract_expiry
+                <= self.contract_expiry_effective_through
+            )
+            or not _text(self.publication_identity)
+            or not _text(self.publication_version)
+            or len(self.publication_sha256) != 64
+            or type(self.source_authority) is not OfficialCalendarSource
+            or self.contract_identity != MCX_CONTRACT_FAMILY_SESSION_CONTRACT_ID
+            or self.contract_version != MCX_CONTRACT_FAMILY_SESSION_CONTRACT_VERSION
+        ):
+            raise ValueError("MCX_CONTRACT_FAMILY_SESSION_PROFILE_INVALID")
+
+
 @dataclass(frozen=True, slots=True)
 class MarketSessionRegimePublication:
     """Effective-dated, instrument-applicable DOMAIN-008 session semantics."""
@@ -836,6 +1080,7 @@ class MarketCalendarPublisher:
             self._publications,
             self._session_regimes,
             self._subject_session_applicabilities,
+            self._mcx_contract_family_sessions,
         ) = self._load_manifest()
 
     @property
@@ -856,6 +1101,12 @@ class MarketCalendarPublisher:
             self._subject_session_applicabilities[key]
             for key in sorted(self._subject_session_applicabilities)
         )
+
+    @property
+    def mcx_contract_family_session_publication(
+        self,
+    ) -> McxContractFamilySessionPublication:
+        return self._mcx_contract_family_sessions
 
     def subject_session_applicability(
         self,
@@ -1046,6 +1297,199 @@ class MarketCalendarPublisher:
             auction,
         )
 
+    def mcx_contract_session_profile(
+        self,
+        *,
+        contract_family: str,
+        contract_expiry: date,
+        trading_date: date,
+        observed_at: datetime,
+    ) -> McxContractFamilySessionProfile:
+        """Resolve family/expiry-aware MCX session authority without selection."""
+
+        publication = self._mcx_contract_family_sessions
+        if (
+            type(contract_expiry) is not date
+            or type(trading_date) is not date
+            or not _aware(observed_at)
+        ):
+            raise McxContractSessionUnavailable(
+                McxContractSessionUnavailableReason.DATE_OUTSIDE_PUBLICATION
+            )
+        zone = ZoneInfo(publication.timezone)
+        local_observation = observed_at.astimezone(zone)
+        if local_observation.date() != trading_date:
+            raise McxContractSessionUnavailable(
+                McxContractSessionUnavailableReason.DATE_OUTSIDE_PUBLICATION
+            )
+        rule = publication.rule_for(contract_family)
+        if not (
+            publication.coverage_start <= trading_date <= publication.coverage_end
+            and publication.coverage_start
+            <= contract_expiry
+            <= publication.coverage_end
+        ):
+            raise McxContractSessionUnavailable(
+                McxContractSessionUnavailableReason.DATE_OUTSIDE_PUBLICATION
+            )
+        if not (
+            rule.contract_expiry_effective_from
+            <= contract_expiry
+            <= rule.contract_expiry_effective_through
+        ):
+            raise McxContractSessionUnavailable(
+                McxContractSessionUnavailableReason.EXPIRY_OUTSIDE_EFFECTIVE_PERIOD
+            )
+        expiry_base = self.schedule(
+            "MCX",
+            contract_expiry,
+            observed_at=observed_at,
+        )
+        if expiry_base is None:
+            raise McxContractSessionUnavailable(
+                McxContractSessionUnavailableReason.EXPIRY_SESSION_UNAVAILABLE
+            )
+        expiry_schedule = self._mcx_expiry_schedule(
+            base=expiry_base,
+            publication=publication,
+            rule=rule,
+            observed_at=observed_at,
+        )
+        boundary = expiry_schedule.windows[-1].window_close
+        if trading_date < contract_expiry:
+            classification = McxContractSessionClassification.PRE_EXPIRY_SESSION
+            schedule = self.schedule("MCX", trading_date, observed_at=observed_at)
+            if schedule is None:
+                raise McxContractSessionUnavailable(
+                    McxContractSessionUnavailableReason.EXPIRY_SESSION_UNAVAILABLE
+                )
+        elif trading_date > contract_expiry:
+            classification = McxContractSessionClassification.POST_EXPIRY
+            schedule = None
+        elif local_observation <= boundary:
+            classification = (
+                McxContractSessionClassification.EXPIRY_SESSION_BEFORE_CUTOFF
+            )
+            schedule = expiry_schedule
+        else:
+            classification = (
+                McxContractSessionClassification.EXPIRY_SESSION_AFTER_CUTOFF
+            )
+            schedule = expiry_schedule
+        source = next(
+            item
+            for item in publication.official_sources
+            if item.artifact_identity == rule.source_artifact_identity
+        )
+        return McxContractFamilySessionProfile(
+            requested_contract_family=contract_family,
+            contract_family=rule.contract_family,
+            exchange=publication.exchange,
+            segment=publication.segment,
+            trading_date=trading_date,
+            contract_expiry=contract_expiry,
+            classification=classification,
+            continuous_trading=schedule,
+            expiry_eligibility_boundary=boundary,
+            contract_eligible=classification
+            in {
+                McxContractSessionClassification.PRE_EXPIRY_SESSION,
+                McxContractSessionClassification.EXPIRY_SESSION_BEFORE_CUTOFF,
+            },
+            contract_expiry_effective_from=rule.contract_expiry_effective_from,
+            contract_expiry_effective_through=rule.contract_expiry_effective_through,
+            publication_identity=publication.publication_identity,
+            publication_version=publication.publication_version,
+            publication_sha256=publication.publication_sha256,
+            source_authority=source,
+        )
+
+    @staticmethod
+    def _mcx_expiry_schedule(
+        *,
+        base: MarketSchedule,
+        publication: McxContractFamilySessionPublication,
+        rule: McxContractFamilySessionRule,
+        observed_at: datetime,
+    ) -> MarketSchedule:
+        zone = ZoneInfo(publication.timezone)
+        fixed_close = (
+            None
+            if rule.expiry_session_rule
+            is McxExpirySessionRule.NORMAL_MARKET_SESSION
+            else datetime.combine(base.trading_date, rule.expiry_local_close, zone)
+        )
+        windows: list[MarketSessionWindow] = []
+        for item in base.windows:
+            closing = (
+                item.window_close
+                if fixed_close is None
+                else min(item.window_close, fixed_close)
+            )
+            if item.window_open < closing:
+                windows.append(
+                    MarketSessionWindow(
+                        (
+                            f"{publication.publication_identity}:"
+                            f"{publication.publication_version}:"
+                            f"{base.trading_date.isoformat()}:{rule.contract_family}:"
+                            f"WINDOW:{len(windows) + 1}"
+                        ),
+                        len(windows) + 1,
+                        item.window_open,
+                        closing,
+                    )
+                )
+        if not windows or (
+            fixed_close is not None
+            and windows[-1].window_close != fixed_close
+        ):
+            raise McxContractSessionUnavailable(
+                McxContractSessionUnavailableReason.EXPIRY_SESSION_UNAVAILABLE
+            )
+        session_identity = (
+            f"{publication.publication_identity}:{publication.publication_version}:"
+            f"{base.trading_date.isoformat()}:{rule.contract_family}:EXPIRY_SESSION"
+        )
+        singleton = len(windows) == 1
+        facts = AuthoritativeMarketScheduleFacts(
+            market_identity=base.market_identity,
+            exchange=base.exchange,
+            trading_date=base.trading_date,
+            calendar_identity=publication.publication_identity,
+            calendar_version=publication.publication_version,
+            session_identity=session_identity,
+            session_type="CONTRACT_FAMILY_EXPIRY_SESSION",
+            session_open=windows[0].window_open if singleton else None,
+            session_close=windows[0].window_close if singleton else None,
+            timezone=publication.timezone,
+            market_availability=MarketAvailability.CLOSED,
+            as_of=observed_at,
+            source_identity=MCX_CONTRACT_FAMILY_SESSION_CONTRACT_ID,
+            source_boundary=publication.source_boundary,
+            freshness_status=ScheduleFreshness.CURRENT,
+            integrity_status=ScheduleIntegrity.VALID,
+            provenance=(
+                *base.provenance,
+                f"contract_family_session={publication.publication_identity}",
+                f"contract_family_session_version={publication.publication_version}",
+                f"contract_family_session_sha256={publication.publication_sha256}",
+                f"contract_family={rule.contract_family}",
+                f"expiry_session_rule={rule.expiry_session_rule.value}",
+                (
+                    "contract_expiry_effective_from="
+                    f"{rule.contract_expiry_effective_from.isoformat()}"
+                ),
+                (
+                    "contract_expiry_effective_through="
+                    f"{rule.contract_expiry_effective_through.isoformat()}"
+                ),
+                f"official_source={rule.source_artifact_identity}",
+            ),
+            windows=tuple(windows),
+        )
+        return McxMarketScheduleAdapter().normalize(facts)
+
     @staticmethod
     def _regular_window_accepts_regime(
         schedule: MarketSchedule,
@@ -1164,6 +1608,7 @@ class MarketCalendarPublisher:
             tuple[str, str],
             MarketSubjectSessionApplicabilityPublication,
         ],
+        McxContractFamilySessionPublication,
     ]:
         try:
             manifest = json.loads((self._root / "manifest.json").read_text(encoding="utf-8"))
@@ -1177,12 +1622,15 @@ class MarketCalendarPublisher:
                 "publications",
                 "session_regimes",
                 "subject_session_applicabilities",
+                "mcx_contract_family_sessions",
             }
             or manifest["schema"] != MARKET_CALENDAR_MANIFEST_SCHEMA
             or type(manifest["publications"]) is not list
             or len(manifest["publications"]) != 2
             or type(manifest["session_regimes"]) is not list
             or type(manifest["subject_session_applicabilities"]) is not list
+            or type(manifest["mcx_contract_family_sessions"]) is not list
+            or len(manifest["mcx_contract_family_sessions"]) != 1
         ):
             raise ValueError("MARKET_CALENDAR_MANIFEST_INVALID")
         publications: dict[str, MarketCalendarPublication] = {}
@@ -1233,10 +1681,14 @@ class MarketCalendarPublisher:
                 raise ValueError(
                     "MARKET_SESSION_APPLICABILITY_PUBLICATION_UNAVAILABLE"
                 )
+        mcx_contract_family_sessions = self._load_mcx_contract_family_sessions(
+            manifest["mcx_contract_family_sessions"][0]
+        )
         return (
             MappingProxyType(publications),
             regimes,
             MappingProxyType(applicability_publications),
+            mcx_contract_family_sessions,
         )
 
     def _load_session_regime(self, item: object) -> MarketSessionRegimePublication:
@@ -1271,6 +1723,26 @@ class MarketCalendarPublisher:
                 "MARKET_SESSION_APPLICABILITY_PUBLICATION_DIGEST_MISMATCH"
             )
         return _parse_subject_session_applicability(raw, digest)
+
+    def _load_mcx_contract_family_sessions(
+        self,
+        item: object,
+    ) -> McxContractFamilySessionPublication:
+        if type(item) is not dict or set(item) != {"file", "sha256"}:
+            raise ValueError("MARKET_CALENDAR_MANIFEST_INVALID")
+        path = self._root / item["file"]
+        try:
+            raw = path.read_bytes()
+        except OSError as error:
+            raise McxContractSessionUnavailable(
+                McxContractSessionUnavailableReason.PUBLICATION_UNAVAILABLE
+            ) from error
+        digest = sha256(raw).hexdigest()
+        if digest != item["sha256"]:
+            raise McxContractSessionUnavailable(
+                McxContractSessionUnavailableReason.PUBLICATION_DIGEST_MISMATCH
+            )
+        return _parse_mcx_contract_family_sessions(raw, digest)
 
 
 def _parse_publication(raw: bytes, digest: str) -> MarketCalendarPublication:
@@ -1542,6 +2014,138 @@ def _parse_subject_session_applicability(
         ) from error
 
 
+def _parse_mcx_contract_family_sessions(
+    raw: bytes,
+    digest: str,
+) -> McxContractFamilySessionPublication:
+    try:
+        payload = json.loads(raw)
+        required = {
+            "schema",
+            "contract_identity",
+            "contract_version",
+            "publication_identity",
+            "publication_version",
+            "exchange",
+            "segment",
+            "timezone",
+            "coverage_start",
+            "coverage_end",
+            "source_boundary",
+            "official_sources",
+            "rules",
+            "supersedes",
+        }
+        if type(payload) is not dict or set(payload) != required:
+            raise ValueError
+        if (
+            payload["schema"]
+            != MCX_CONTRACT_FAMILY_SESSION_PUBLICATION_SCHEMA
+            or payload["contract_identity"]
+            != MCX_CONTRACT_FAMILY_SESSION_CONTRACT_ID
+            or payload["contract_version"]
+            != MCX_CONTRACT_FAMILY_SESSION_CONTRACT_VERSION
+            or type(payload["official_sources"]) is not list
+            or type(payload["rules"]) is not list
+        ):
+            raise ValueError
+        sources = tuple(
+            OfficialCalendarSource(
+                artifact_identity=item["artifact_identity"],
+                title=item["title"],
+                official_uri=item["official_uri"],
+                reference=item["reference"],
+                publication_date=date.fromisoformat(item["publication_date"]),
+            )
+            for item in payload["official_sources"]
+            if type(item) is dict
+            and set(item)
+            == {
+                "artifact_identity",
+                "title",
+                "official_uri",
+                "reference",
+                "publication_date",
+            }
+        )
+        if len(sources) != len(payload["official_sources"]):
+            raise ValueError
+        rules = tuple(
+            McxContractFamilySessionRule(
+                contract_family=item["contract_family"],
+                authorized_aliases=tuple(item["authorized_aliases"]),
+                contract_expiry_effective_from=date.fromisoformat(
+                    item["contract_expiry_effective_from"]
+                ),
+                contract_expiry_effective_through=date.fromisoformat(
+                    item["contract_expiry_effective_through"]
+                ),
+                normal_session_rule=McxExpirySessionRule(
+                    item["normal_session_rule"]
+                ),
+                expiry_session_rule=McxExpirySessionRule(
+                    item["expiry_session_rule"]
+                ),
+                expiry_local_close=(
+                    None
+                    if item["expiry_local_close"] is None
+                    else time.fromisoformat(item["expiry_local_close"])
+                ),
+                source_artifact_identity=item["source_artifact_identity"],
+            )
+            for item in payload["rules"]
+            if type(item) is dict
+            and set(item)
+            == {
+                "contract_family",
+                "authorized_aliases",
+                "contract_expiry_effective_from",
+                "contract_expiry_effective_through",
+                "normal_session_rule",
+                "expiry_session_rule",
+                "expiry_local_close",
+                "source_artifact_identity",
+            }
+            and type(item["authorized_aliases"]) is list
+        )
+        if len(rules) != len(payload["rules"]):
+            raise ValueError
+        supersedes = payload["supersedes"]
+        if supersedes is not None and (
+            type(supersedes) is not dict
+            or set(supersedes) != {"identity", "version", "sha256"}
+        ):
+            raise ValueError
+        return McxContractFamilySessionPublication(
+            publication_identity=payload["publication_identity"],
+            publication_version=payload["publication_version"],
+            exchange=payload["exchange"],
+            segment=payload["segment"],
+            timezone=payload["timezone"],
+            coverage_start=date.fromisoformat(payload["coverage_start"]),
+            coverage_end=date.fromisoformat(payload["coverage_end"]),
+            source_boundary=datetime.fromisoformat(payload["source_boundary"]),
+            official_sources=sources,
+            rules=rules,
+            supersedes_identity=(
+                None if supersedes is None else supersedes["identity"]
+            ),
+            supersedes_version=(
+                None if supersedes is None else supersedes["version"]
+            ),
+            supersedes_sha256=(
+                None if supersedes is None else supersedes["sha256"]
+            ),
+            publication_sha256=digest,
+        )
+    except (KeyError, TypeError, ValueError, AttributeError) as error:
+        if isinstance(error, McxContractSessionUnavailable):
+            raise
+        raise McxContractSessionUnavailable(
+            McxContractSessionUnavailableReason.PUBLICATION_INVALID
+        ) from error
+
+
 def _published_session(day: str, item: object) -> PublishedTradingSession:
     if type(item) is not dict or "session_type" not in item:
         raise ValueError("MARKET_CALENDAR_SESSION_INVALID")
@@ -1594,6 +2198,9 @@ __all__ = [
     "MARKET_CALENDAR_SCHEMA",
     "MARKET_SESSION_REGIME_PUBLICATION_SCHEMA",
     "MARKET_SUBJECT_SESSION_APPLICABILITY_PUBLICATION_SCHEMA",
+    "MCX_CONTRACT_FAMILY_SESSION_CONTRACT_ID",
+    "MCX_CONTRACT_FAMILY_SESSION_CONTRACT_VERSION",
+    "MCX_CONTRACT_FAMILY_SESSION_PUBLICATION_SCHEMA",
     "MarketCalendarEntry",
     "MarketCalendarPublication",
     "MarketCalendarPublisher",
@@ -1603,6 +2210,13 @@ __all__ = [
     "MarketSessionRegimePublication",
     "MarketSubjectSessionApplicabilityPeriod",
     "MarketSubjectSessionApplicabilityPublication",
+    "McxContractFamilySessionProfile",
+    "McxContractFamilySessionPublication",
+    "McxContractFamilySessionRule",
+    "McxContractSessionClassification",
+    "McxContractSessionUnavailable",
+    "McxContractSessionUnavailableReason",
+    "McxExpirySessionRule",
     "OfficialCalendarSource",
     "PublishedTradingSession",
     "PublishedTradingWindow",
