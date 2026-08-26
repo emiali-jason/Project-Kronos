@@ -120,6 +120,10 @@ class DiscoveryMemberFactError(RuntimeError):
             DiscoveryReason.MACHINE_FACT_BUNDLE_INCOMPLETE,
             DiscoveryReason.INCOMPLETE_CANDLE_NOT_AUTHORIZED,
             DiscoveryReason.SOURCE_STALE,
+            DiscoveryReason.ACTIVE_DERIVATIVE_BINDING_UNAVAILABLE,
+            DiscoveryReason.ACTIVE_DERIVATIVE_BINDING_AMBIGUOUS,
+            DiscoveryReason.CANONICAL_DERIVATIVE_CONTRACT_UNAVAILABLE,
+            DiscoveryReason.PROVIDER_CONTRACT_UNAVAILABLE,
         }:
             raise ValueError("DISCOVERY_MEMBER_FAILURE_REASON_INVALID")
         self.reason = reason
@@ -190,12 +194,20 @@ class IntradayNativeDiscoveryService:
         reconciliation: ReconciliationPublication,
         factual_source: DiscoveryFactualSource,
         store: NativeDiscoveryStore,
+        runtime_evaluable_member_ids: tuple[str, ...] = (),
+        additional_source_identities: tuple[str, ...] = (),
     ) -> None:
         if (
             type(universe) is not IntradayUniversePublication
             or type(reconciliation) is not ReconciliationPublication
             or not callable(getattr(factual_source, "acquire", None))
             or type(store) is not NativeDiscoveryStore
+            or type(runtime_evaluable_member_ids) is not tuple
+            or len(set(runtime_evaluable_member_ids))
+            != len(runtime_evaluable_member_ids)
+            or type(additional_source_identities) is not tuple
+            or len(set(additional_source_identities))
+            != len(additional_source_identities)
         ):
             raise DiscoveryError(DiscoveryFailure.INTEGRITY_INVALID)
         if (
@@ -215,6 +227,17 @@ class IntradayNativeDiscoveryService:
         self._reconciliation = reconciliation
         self._source = factual_source
         self._store = store
+        member_ids = {
+            item.universe_member_identity for item in reconciliation.members
+        }
+        if (
+            any(not _text(item) for item in runtime_evaluable_member_ids)
+            or not set(runtime_evaluable_member_ids).issubset(member_ids)
+            or any(not _text(item) for item in additional_source_identities)
+        ):
+            raise DiscoveryError(DiscoveryFailure.INTEGRITY_INVALID)
+        self._runtime_evaluable_member_ids = runtime_evaluable_member_ids
+        self._additional_source_identities = additional_source_identities
 
     def execute(self, boundary: DiscoveryRunBoundary) -> DiscoveryRuntimeExecution:
         if type(boundary) is not DiscoveryRunBoundary:
@@ -230,7 +253,11 @@ class IntradayNativeDiscoveryService:
         probables_facts: list[DiscoveryProbablesFacts] = []
         source_operations = 0
         for member in self._reconciliation.members:
-            if member.dimensions.machine_fact_consumability is not Availability.AVAILABLE:
+            if (
+                member.dimensions.machine_fact_consumability is not Availability.AVAILABLE
+                and member.universe_member_identity
+                not in self._runtime_evaluable_member_ids
+            ):
                 continue
             source_operations += 1
             try:
@@ -273,6 +300,8 @@ class IntradayNativeDiscoveryService:
             observation_boundary=boundary.observation_boundary,
             machine_fact_bundles=bundles,
             factual_failures=failures,
+            runtime_evaluable_member_ids=self._runtime_evaluable_member_ids,
+            additional_source_identities=self._additional_source_identities,
         )
         retained = tuple(
             sorted(bundles.values(), key=lambda item: item.canonical_identity)

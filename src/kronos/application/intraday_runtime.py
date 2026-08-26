@@ -39,11 +39,22 @@ from kronos.intraday.universe import (
     IntradayUniversePublication,
     load_intraday_universe_publication,
 )
+from kronos.instrument.active_derivative import ACTIVE_DERIVATIVE_CATALOGUE_VERSION
+from kronos.instrument.active_derivative_persistence import (
+    ActiveDerivativeBindingStore,
+)
+from kronos.instrument.semantic_v2_persistence import (
+    DEFAULT_INSTRUMENT_SEMANTIC_V2_ROOT,
+    InstrumentSemanticV2Store,
+)
 from kronos.market.calendar import MarketCalendarPublisher
 from kronos.provider.contracts.provider_authentication import ReadOnlyProviderOperation
 from kronos.provider.runtime import (
     ReadOnlyProviderLease,
     SharedAuthenticatedProviderRuntime,
+)
+from kronos.provider.instrument_master_persistence import (
+    ProviderInstrumentSnapshotStore,
 )
 
 
@@ -135,6 +146,15 @@ def create_intraday_runtime(
         publication_identity=RECONCILIATION_IDENTITY,
         publication_version=RECONCILIATION_VERSION,
     )
+    active_binding_store = ActiveDerivativeBindingStore(
+        Path(evidence_root) / "active-derivative-bindings"
+    )
+    active_catalogue = InstrumentSemanticV2Store(
+        DEFAULT_INSTRUMENT_SEMANTIC_V2_ROOT
+    ).load(
+        publication_identity="KRONOS-CANONICAL-INSTRUMENT-CATALOGUE-V2",
+        publication_version=ACTIVE_DERIVATIVE_CATALOGUE_VERSION,
+    )
     probables = IntradayProbablesApplication(
         store=ProbablesStore(Path(evidence_root)),
         last_successful_run_identity=restored_probables_identity,
@@ -145,6 +165,7 @@ def create_intraday_runtime(
         universe=universe,
         reconciliation=reconciliation,
         probables=probables,
+        active_derivative_binding_store=active_binding_store,
     )
     operation = IntradayDiscoveryOperationService(
         provider_runtime=provider_runtime,
@@ -154,7 +175,7 @@ def create_intraday_runtime(
         application=discovery,
         store=store,
         calendar_publisher=calendar,
-        factual_source_factory=lambda lease: ProviderDiscoveryFactualSource(
+        factual_source_factory=lambda lease, resolutions: ProviderDiscoveryFactualSource(
             lease=lease,
             calendar_publisher=calendar,
             universe_identity=universe.publication_identity,
@@ -162,9 +183,15 @@ def create_intraday_runtime(
             reconciliation_identity=reconciliation.publication_identity,
             reconciliation_version=reconciliation.publication_version,
             reconciliation=reconciliation,
+            active_derivative_resolutions=resolutions,
         ),
         probables=probables,
         refresh_state_store=refresh_state_store,
+        active_derivative_catalogue=active_catalogue,
+        active_derivative_binding_store=active_binding_store,
+        provider_snapshot_store=ProviderInstrumentSnapshotStore(
+            Path(evidence_root) / "provider-instrument-master"
+        ),
         clock=clock,
     )
     historical_operation = IntradayHistoricalQualificationOperationService(
@@ -214,6 +241,7 @@ def _create_discovery_application(
     universe: IntradayUniversePublication | None = None,
     reconciliation: ReconciliationPublication | None = None,
     probables: IntradayProbablesApplication | None = None,
+    active_derivative_binding_store: ActiveDerivativeBindingStore | None = None,
 ) -> IntradayDiscoveryApplication:
     selected_universe = universe or load_intraday_universe_publication()
     selected_reconciliation = reconciliation or IntradayReconciliationStore().load(
@@ -225,6 +253,7 @@ def _create_discovery_application(
         reconciliation=selected_reconciliation,
         store=store,
         probables=probables,
+        active_derivative_binding_store=active_derivative_binding_store,
         last_successful_run_identity=last_successful_run_identity,
     )
 

@@ -40,6 +40,7 @@ def _composition(
     omit_target: str | None = None,
     include_partial: bool = True,
     observed_at: datetime = OBSERVED,
+    active_mcx: bool = False,
 ):  # type: ignore[no-untyped-def]
     universe = load_intraday_universe_publication()
     reconciliation = IntradayReconciliationStore().load(
@@ -105,10 +106,16 @@ def _composition(
         }),
     )
     calendar = MarketCalendarPublisher()
+    resolutions = None
+    if active_mcx:
+        from tests.unit.instrument.test_active_derivative_selection import _resolve
+
+        resolutions = _resolve(observed_at)
     session, boundary_identity = governed_market_session_identities(
         calendar_publisher=calendar,
         reconciliation=reconciliation,
         observed_at=observed_at,
+        active_derivative_resolutions=resolutions,
     )
     source = ProviderDiscoveryFactualSource(
         lease=lease,
@@ -118,12 +125,29 @@ def _composition(
         reconciliation_identity=reconciliation.publication_identity,
         reconciliation_version=reconciliation.publication_version,
         reconciliation=reconciliation,
+        active_derivative_resolutions=resolutions,
     )
     service = IntradayNativeDiscoveryService(
         universe=universe,
         reconciliation=reconciliation,
         factual_source=source,
         store=NativeDiscoveryStore(tmp_path.resolve()),
+        runtime_evaluable_member_ids=(
+            ()
+            if resolutions is None
+            else tuple(
+                item.universe_member_identity
+                for item in reconciliation.members
+                if item.exchange == "MCX"
+            )
+        ),
+        additional_source_identities=(
+            ()
+            if resolutions is None
+            else tuple(
+                item.binding_identity for item in resolutions.successful_bindings
+            )
+        ),
     )
     execution = service.execute(DiscoveryRunBoundary(
         observation_boundary=observed_at,
@@ -158,6 +182,47 @@ def test_generic_provider_source_runs_91_equities_and_two_indexes(tmp_path: Path
         HistoricalInterval.FIFTEEN_MINUTE,
         HistoricalInterval.FIVE_MINUTE,
     }
+
+
+def test_active_bindings_drive_all_five_mcx_subjects_without_changing_identity(
+    tmp_path: Path,
+) -> None:
+    observed = datetime(2026, 8, 26, 10, 17, tzinfo=IST)
+    execution, source, record_requests, requests, _ = _composition(
+        tmp_path,
+        observed_at=observed,
+        active_mcx=True,
+    )
+
+    assert execution.run.accounting.universe_members == 98
+    assert execution.run.accounting.prerequisite_unavailable == 0
+    assert execution.run.accounting.factual_failures == 0
+    assert len(execution.bundles) == 98
+    assert source.historical_request_count == len(requests) == 392
+    assert record_requests == ["NSE"]
+    mcx = tuple(
+        item for item in requests if item.instrument.exchange == "MCX"
+    )
+    assert len(mcx) == 20
+    assert {item.instrument.name for item in mcx} == {
+        "GOLDM", "SILVERM", "COPPER", "NATURALGAS", "CRUDEOIL"
+    }
+    assert {
+        item.canonical_identity
+        for item in execution.run.results
+        if item.canonical_identity.startswith("MCX-SUBJECT-")
+    } == {
+        "MCX-SUBJECT-GOLDM",
+        "MCX-SUBJECT-SILVERM",
+        "MCX-SUBJECT-COPPER",
+        "MCX-SUBJECT-NATGAS",
+        "MCX-SUBJECT-CRUDE",
+    }
+    assert all(
+        item.completed_candle is not False
+        for bundle in execution.bundles
+        for item in bundle.evidence
+    )
 
 
 def test_missing_completed_member_window_is_isolated(tmp_path: Path) -> None:

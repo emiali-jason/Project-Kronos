@@ -100,6 +100,12 @@ class DiscoveryReason(StrEnum):
         "ACTIVE_DERIVATIVE_BINDING_UNAVAILABLE"
     )
     PROVIDER_CONTRACT_UNAVAILABLE = "PROVIDER_CONTRACT_UNAVAILABLE"
+    ACTIVE_DERIVATIVE_BINDING_AMBIGUOUS = (
+        "ACTIVE_DERIVATIVE_BINDING_AMBIGUOUS"
+    )
+    CANONICAL_DERIVATIVE_CONTRACT_UNAVAILABLE = (
+        "CANONICAL_DERIVATIVE_CONTRACT_UNAVAILABLE"
+    )
     PROVIDER_MAPPING_UNAVAILABLE = "PROVIDER_MAPPING_UNAVAILABLE"
     MARKET_SESSION_UNAVAILABLE = "MARKET_SESSION_UNAVAILABLE"
     MACHINE_FACT_BUNDLE_INCOMPLETE = "MACHINE_FACT_BUNDLE_INCOMPLETE"
@@ -601,6 +607,8 @@ def create_discovery_runtime_run(
     observation_boundary: datetime,
     machine_fact_bundles: Mapping[str, NativeDiscoveryMachineFactBundle],
     factual_failures: Mapping[str, DiscoveryReason],
+    runtime_evaluable_member_ids: tuple[str, ...] = (),
+    additional_source_identities: tuple[str, ...] = (),
 ) -> NativeDiscoveryRun:
     """Seal one complete runtime run without applying admission methodology."""
 
@@ -627,10 +635,28 @@ def create_discovery_runtime_run(
     ):
         raise DiscoveryError(DiscoveryFailure.INTEGRITY_INVALID)
 
+    if (
+        type(runtime_evaluable_member_ids) is not tuple
+        or type(additional_source_identities) is not tuple
+    ):
+        raise DiscoveryError(DiscoveryFailure.INTEGRITY_INVALID)
+    members = {
+        item.universe_member_identity: item for item in reconciliation.members
+    }
+    runtime_ids = set(runtime_evaluable_member_ids)
+    if (
+        len(runtime_ids) != len(runtime_evaluable_member_ids)
+        or not runtime_ids.issubset(members)
+        or any(not _text(item) for item in additional_source_identities)
+        or len(set(additional_source_identities))
+        != len(additional_source_identities)
+    ):
+        raise DiscoveryError(DiscoveryFailure.INTEGRITY_INVALID)
     eligible = {
         item.universe_member_identity: item
         for item in reconciliation.members
         if item.dimensions.machine_fact_consumability is Availability.AVAILABLE
+        or item.universe_member_identity in runtime_ids
     }
     supplied = set(machine_fact_bundles)
     failed = set(factual_failures)
@@ -659,6 +685,7 @@ def create_discovery_runtime_run(
         factually_evaluable=len(machine_fact_bundles),
         prerequisite_unavailable=sum(
             item.dimensions.machine_fact_consumability is Availability.UNAVAILABLE
+            and item.universe_member_identity not in runtime_ids
             for item in reconciliation.members
         ),
         evaluated=0,
@@ -709,11 +736,12 @@ def create_discovery_runtime_run(
         "observation_boundary": observation_boundary,
         "accounting": accounting,
         "results": results,
-        "source_identities": (
+        "source_identities": tuple(dict.fromkeys((
             reconciliation.universe_integrity_identity,
             reconciliation.integrity_identity,
             market_session_boundary_identity,
-        ),
+            *additional_source_identities,
+        ))),
         "provenance": (
             "KRONOS-INTRADAY-WO-05",
             "Governed completed factual evidence only",

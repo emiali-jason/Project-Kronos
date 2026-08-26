@@ -44,7 +44,26 @@ from kronos.intraday.universe import (
     IntradayUniverseFailure,
     IntradayUniversePublication,
 )
+from kronos.instrument.active_derivative import (
+    ActiveDerivativeResolutionSet,
+    GovernedActiveDerivativeResolver,
+)
+from kronos.instrument.active_derivative_persistence import (
+    ActiveDerivativeBindingStore,
+)
+from kronos.instrument.semantic_v2 import InstrumentSemanticPublicationV2
 from kronos.market.calendar import MarketCalendarPublisher
+from kronos.provider.contracts.instrument_master import (
+    KITE_INSTRUMENT_MASTER_DATASET,
+    KITE_INSTRUMENT_MASTER_OPERATION,
+    ProviderInstrumentMasterError,
+)
+from kronos.provider.instrument_master import (
+    ProviderInstrumentMasterAcquisitionService,
+)
+from kronos.provider.instrument_master_persistence import (
+    ProviderInstrumentSnapshotStore,
+)
 from kronos.provider.runtime import (
     ProviderRuntimeAccessError,
     ProviderRuntimeFailure,
@@ -74,6 +93,9 @@ class DiscoveryOperationState(StrEnum):
 
 class DiscoveryOperationStage(StrEnum):
     CONTEXT_VERIFICATION = "CONTEXT_VERIFICATION"
+    INSTRUMENT_MASTER_ACQUISITION = "INSTRUMENT_MASTER_ACQUISITION"
+    ACTIVE_DERIVATIVE_RESOLUTION = "ACTIVE_DERIVATIVE_RESOLUTION"
+    ACTIVE_BINDING_PERSISTENCE = "ACTIVE_BINDING_PERSISTENCE"
     LEASE_ACQUISITION = "LEASE_ACQUISITION"
     UNIVERSE_RESOLUTION = "UNIVERSE_RESOLUTION"
     RECONCILIATION_RESOLUTION = "RECONCILIATION_RESOLUTION"
@@ -217,9 +239,7 @@ class DiscoveryOperationResult:
             raise ValueError("DISCOVERY_OPERATION_RESULT_INVALID")
 
 
-FactualSourceFactory = Callable[
-    [ReadOnlyProviderLease], ProviderDiscoveryFactualSource
-]
+FactualSourceFactory = Callable[..., ProviderDiscoveryFactualSource]
 
 
 class IntradayDiscoveryOperationService:
@@ -238,6 +258,9 @@ class IntradayDiscoveryOperationService:
         factual_source_factory: FactualSourceFactory,
         probables: IntradayProbablesApplication | None = None,
         refresh_state_store: RefreshOperationalStateStore | None = None,
+        active_derivative_catalogue: InstrumentSemanticPublicationV2 | None = None,
+        active_derivative_binding_store: ActiveDerivativeBindingStore | None = None,
+        provider_snapshot_store: ProviderInstrumentSnapshotStore | None = None,
         clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
     ) -> None:
         if (
@@ -258,6 +281,18 @@ class IntradayDiscoveryOperationService:
                 and type(refresh_state_store) is not RefreshOperationalStateStore
             )
             or not callable(clock)
+            or (
+                any(item is not None for item in (
+                    active_derivative_catalogue,
+                    active_derivative_binding_store,
+                    provider_snapshot_store,
+                ))
+                and not all(item is not None for item in (
+                    active_derivative_catalogue,
+                    active_derivative_binding_store,
+                    provider_snapshot_store,
+                ))
+            )
         ):
             raise ValueError("DISCOVERY_OPERATION_DEPENDENCY_INVALID")
         self._runtime = provider_runtime
@@ -270,10 +305,16 @@ class IntradayDiscoveryOperationService:
         self._source_factory = factual_source_factory
         self._probables = probables
         self._refresh_state_store = refresh_state_store
+        self._active_derivative_catalogue = active_derivative_catalogue
+        self._active_derivative_binding_store = active_derivative_binding_store
+        self._provider_snapshot_store = provider_snapshot_store
         self._clock = clock
         self._lock = RLock()
         self._active_identity: str | None = None
         self._results: dict[str, DiscoveryOperationResult] = {}
+        self._last_active_derivative_resolutions: ActiveDerivativeResolutionSet | None = None
+        self._last_provider_snapshot_identity: str | None = None
+        self._last_instrument_master_read_count = 0
 
     @property
     def operation_available(self) -> bool:
@@ -295,6 +336,21 @@ class IntradayDiscoveryOperationService:
         with self._lock:
             return next(reversed(self._results.values()), None)
 
+    @property
+    def last_active_derivative_resolutions(self) -> ActiveDerivativeResolutionSet | None:
+        with self._lock:
+            return self._last_active_derivative_resolutions
+
+    @property
+    def last_provider_snapshot_identity(self) -> str | None:
+        with self._lock:
+            return self._last_provider_snapshot_identity
+
+    @property
+    def last_instrument_master_read_count(self) -> int:
+        with self._lock:
+            return self._last_instrument_master_read_count
+
     def result_for(self, operation_identity: str) -> DiscoveryOperationResult | None:
         with self._lock:
             return self._results.get(operation_identity)
@@ -309,11 +365,15 @@ class IntradayDiscoveryOperationService:
             if self._active_identity is not None:
                 return self._conflict(request)
             self._active_identity = request.operation_identity
+            self._last_active_derivative_resolutions = None
+            self._last_provider_snapshot_identity = None
+            self._last_instrument_master_read_count = 0
 
         lease: ReadOnlyProviderLease | None = None
         execution: DiscoveryRuntimeExecution | None = None
         mapping: DiscoveryProbablesMapping | None = None
         probables_run: ProbablesRun | None = None
+        active_resolutions: ActiveDerivativeResolutionSet | None = None
         stage = DiscoveryOperationStage.CONTEXT_VERIFICATION
         try:
             lifecycle = self._runtime.lifecycle_state
@@ -324,14 +384,6 @@ class IntradayDiscoveryOperationService:
                     else DiscoveryOperationFailure.CONTEXT_UNAVAILABLE
                 )
                 return self._finish(request, stage=stage, failure=failure)
-            stage = DiscoveryOperationStage.LEASE_ACQUISITION
-            lease = self._acquire_lease()
-            if not lease.active:
-                return self._finish(
-                    request,
-                    stage=stage,
-                    failure=DiscoveryOperationFailure.LEASE_UNAVAILABLE,
-                )
             stage = DiscoveryOperationStage.UNIVERSE_RESOLUTION
             self._universe.require_current(request.observation_boundary)
             stage = DiscoveryOperationStage.RECONCILIATION_RESOLUTION
@@ -350,13 +402,107 @@ class IntradayDiscoveryOperationService:
                 )
             stage = DiscoveryOperationStage.OBSERVATION_BOUNDARY
             boundary = self._boundary(request.observation_boundary)
+            if self._active_derivative_catalogue is not None:
+                assert self._active_derivative_binding_store is not None
+                assert self._provider_snapshot_store is not None
+                stage = DiscoveryOperationStage.INSTRUMENT_MASTER_ACQUISITION
+                snapshot = ProviderInstrumentMasterAcquisitionService(
+                    self._runtime,
+                    clock=self._clock,
+                ).acquire(
+                    source_boundary=request.observation_boundary,
+                    authorized_operation_identity=KITE_INSTRUMENT_MASTER_OPERATION,
+                    provenance=(
+                        "ADR-0017",
+                        "KRONOS-INTRADAY-WO-06MCX-R",
+                        "One consolidated read per governed Refresh boundary",
+                    ),
+                )
+                self._provider_snapshot_store.retain(snapshot)
+                snapshot = self._provider_snapshot_store.load(
+                    provider="KITE",
+                    dataset_identity=KITE_INSTRUMENT_MASTER_DATASET,
+                    snapshot_identity=snapshot.snapshot_identity,
+                )
+                previous = {
+                    item.canonical_subject_id: item
+                    for item in (
+                        self._active_derivative_binding_store.load_current(
+                            canonical_subject_id=member.canonical_identity,
+                        )
+                        for member in self._reconciliation.members
+                        if member.exchange == "MCX"
+                    )
+                    if item is not None
+                }
+                stage = DiscoveryOperationStage.ACTIVE_DERIVATIVE_RESOLUTION
+                active_resolutions = GovernedActiveDerivativeResolver(
+                    catalogue=self._active_derivative_catalogue,
+                    provider_snapshot=snapshot,
+                    calendar_publisher=self._calendar,
+                ).resolve_all(
+                    request.observation_boundary,
+                    previous_bindings=previous,
+                )
+                stage = DiscoveryOperationStage.ACTIVE_BINDING_PERSISTENCE
+                for binding in active_resolutions.successful_bindings:
+                    self._active_derivative_binding_store.retain(binding)
+                    if (
+                        self._active_derivative_binding_store.load(
+                            binding_identity=binding.binding_identity
+                        )
+                        != binding
+                    ):
+                        raise ValueError("ACTIVE_DERIVATIVE_BINDING_RELOAD_FAILED")
+                with self._lock:
+                    self._last_active_derivative_resolutions = active_resolutions
+                    self._last_provider_snapshot_identity = snapshot.snapshot_identity
+                    self._last_instrument_master_read_count = 1
+            stage = DiscoveryOperationStage.LEASE_ACQUISITION
+            lease = self._acquire_lease()
+            if not lease.active:
+                return self._finish(
+                    request,
+                    stage=stage,
+                    failure=DiscoveryOperationFailure.LEASE_UNAVAILABLE,
+                )
+            if active_resolutions is not None:
+                stage = DiscoveryOperationStage.OBSERVATION_BOUNDARY
+                boundary = self._boundary(
+                    request.observation_boundary,
+                    active_resolutions=active_resolutions,
+                )
             stage = DiscoveryOperationStage.FACTUAL_SOURCE_ACQUISITION
-            source = self._source_factory(lease)
+            source = (
+                self._source_factory(lease)
+                if active_resolutions is None
+                else self._source_factory(lease, active_resolutions)
+            )
+            runtime_mcx_member_ids = (
+                ()
+                if active_resolutions is None
+                else tuple(
+                    item.universe_member_identity
+                    for item in self._reconciliation.members
+                    if item.exchange == "MCX"
+                )
+            )
+            active_sources = (
+                ()
+                if active_resolutions is None
+                else (
+                    active_resolutions.provider_snapshot_identity,
+                    active_resolutions.provider_snapshot_integrity_identity,
+                    *(item.binding_identity for item in active_resolutions.successful_bindings),
+                )
+            )
             service = IntradayNativeDiscoveryService(
                 universe=self._universe,
                 reconciliation=self._reconciliation,
                 factual_source=source,
                 store=self._store,
+                runtime_evaluable_member_ids=runtime_mcx_member_ids,
+                additional_source_identities=active_sources,
             )
             stage = DiscoveryOperationStage.DISCOVERY_RUN_CONSTRUCTION
             execution = service.execute(boundary)
@@ -415,6 +561,12 @@ class IntradayDiscoveryOperationService:
                 else DiscoveryOperationFailure.LEASE_UNAVAILABLE
             )
             return self._finish(request, stage=stage, failure=failure)
+        except ProviderInstrumentMasterError:
+            return self._finish(
+                request,
+                stage=stage,
+                failure=DiscoveryOperationFailure.PROVIDER_ACQUISITION_FAILURE,
+            )
         except IntradayUniverseError as error:
             failure = (
                 DiscoveryOperationFailure.PUBLICATION_STALE
@@ -474,11 +626,17 @@ class IntradayDiscoveryOperationService:
                 if self._active_identity == request.operation_identity:
                     self._active_identity = None
 
-    def _boundary(self, observed_at: datetime) -> DiscoveryRunBoundary:
+    def _boundary(
+        self,
+        observed_at: datetime,
+        *,
+        active_resolutions: ActiveDerivativeResolutionSet | None = None,
+    ) -> DiscoveryRunBoundary:
         session_identity, boundary_identity = governed_market_session_identities(
             calendar_publisher=self._calendar,
             reconciliation=self._reconciliation,
             observed_at=observed_at,
+            active_derivative_resolutions=active_resolutions,
         )
         return DiscoveryRunBoundary(
             observation_boundary=observed_at,
@@ -546,13 +704,21 @@ class IntradayDiscoveryOperationService:
             stage=stage,
             observation_boundary=request.observation_boundary,
             universe_count=len(self._universe.members),
-            pre_evaluable_count=sum(
-                item.dimensions.machine_fact_consumability is Availability.AVAILABLE
-                for item in self._reconciliation.members
+            pre_evaluable_count=(
+                sum(
+                    item.dimensions.machine_fact_consumability is Availability.AVAILABLE
+                    for item in self._reconciliation.members
+                )
+                if execution is None
+                else execution.pre_evaluable_count
             ),
-            prerequisite_unavailable_count=sum(
-                item.dimensions.machine_fact_consumability is Availability.UNAVAILABLE
-                for item in self._reconciliation.members
+            prerequisite_unavailable_count=(
+                sum(
+                    item.dimensions.machine_fact_consumability is Availability.UNAVAILABLE
+                    for item in self._reconciliation.members
+                )
+                if execution is None
+                else execution.prerequisite_unavailable_count
             ),
             machine_fact_successes=(0 if execution is None else len(execution.bundles)),
             machine_fact_failures=(

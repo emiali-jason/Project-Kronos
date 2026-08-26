@@ -101,3 +101,20 @@ operation.
 No real Provider acquisition, authentication, restart, WebSocket operation,
 notification, trading, Risk, broker mutation or WO-06 activity is part of this
 candidate.
+
+## WO-06MCX-R active-contract extension
+
+The earlier 93/5 split above remains truthful historical commissioning evidence.
+For a new Refresh, ADR-0017 now permits all five MCX members to cross the runtime
+evaluation boundary after DOMAIN-001 resolves a unique active derivative
+binding from one current DOMAIN-006 master and DOMAIN-008 expiry eligibility.
+Successful members use the bound contract for 1D, 1H, 15M and 5M acquisition
+while retaining their analytical subject identities. Resolution or Provider
+failures remain isolated member-level factual unavailability.
+
+Bindings are immutable, token-free and linked into the Discovery run source
+identities. Restart projection reloads those exact identities; it never treats
+the current operational pointer as authority for a historical run. The Browser
+may display contract symbol, expiry and binding identity on detail only. GET is
+Provider-free and side-effect-free. The existing Probables methodology is
+consumed unchanged.

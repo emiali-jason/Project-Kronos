@@ -13,7 +13,10 @@ from kronos.application.intraday_discovery_operation import (
     create_discovery_operation_request,
 )
 from kronos.application.intraday_runtime import create_intraday_runtime
-from kronos.browser.intraday_views import render_intraday_triage
+from kronos.browser.intraday_views import (
+    _render_discovery_detail,
+    render_intraday_triage,
+)
 from kronos.intraday.discovery import DiscoveryError, DiscoveryFailure
 from kronos.intraday.probables import ProbablesError, ProbablesFailure
 from kronos.intraday.reconciliation import (
@@ -133,6 +136,68 @@ def test_context_verification_is_actual_and_startup_has_no_side_effect(tmp_path:
     assert factory_calls == []
 
 
+def test_one_refresh_resolves_and_processes_all_five_mcx_subjects(
+    tmp_path: Path,
+) -> None:
+    from tests.unit.instrument.test_active_derivative_selection import _rows
+
+    shared, runtime, _, request_count = _configured_shared()
+    runtime.capability.instrument_master_records = lambda: _rows()  # type: ignore[method-assign]
+    _authenticate(shared)
+    boundary = datetime(2026, 8, 26, 10, 17, tzinfo=IST)
+    composition = create_intraday_runtime(
+        shared,
+        evidence_root=tmp_path.resolve(),
+        clock=lambda: boundary,
+    )
+
+    result = composition.discovery_operation.execute(
+        _request_at("MCX-FIVE", boundary)
+    )
+    resolutions = composition.discovery_operation.last_active_derivative_resolutions
+
+    assert result.state is DiscoveryOperationState.COMPLETE
+    assert result.universe_count == result.pre_evaluable_count == 98
+    assert result.prerequisite_unavailable_count == 0
+    assert result.machine_fact_successes == 98
+    assert result.machine_fact_failures == 0
+    assert result.historical_request_count == request_count[0] == 392
+    assert composition.discovery_operation.last_instrument_master_read_count == 1
+    assert resolutions is not None and len(resolutions.successful_bindings) == 5
+    assert {item.analytical_subject for item in resolutions.successful_bindings} == {
+        "GOLDM", "SILVERM", "COPPER", "NATGAS", "CRUDE"
+    }
+    snapshot = composition.discovery_application.snapshot("MCX-SUBJECT-GOLDM")
+    mcx = tuple(item for item in snapshot.members if item.market_family == "MCX")
+    assert len(mcx) == 5
+    assert all(item.prerequisite_ready and item.analysis_contract for item in mcx)
+    main_page = render_intraday_triage(snapshot)
+    detail_page = _render_discovery_detail(snapshot)
+    assert "GOLDM26SEPFUT" not in main_page
+    assert "Analysis contract" in detail_page
+    assert "GOLDM26SEPFUT" in detail_page
+    assert "Provider Token" not in detail_page
+
+    provider_reads = runtime.capability.calls
+    historical_reads = request_count[0]
+    restored = create_intraday_runtime(
+        shared,
+        evidence_root=tmp_path.resolve(),
+        clock=lambda: boundary,
+    ).discovery_application.snapshot()
+    restored_mcx = tuple(
+        item for item in restored.members if item.market_family == "MCX"
+    )
+    assert runtime.capability.calls == provider_reads == 0
+    assert request_count[0] == historical_reads
+    assert tuple(
+        (item.sponsor_label, item.analysis_contract, item.active_binding_identity)
+        for item in restored_mcx
+    ) == tuple(
+        (item.sponsor_label, item.analysis_contract, item.active_binding_identity)
+        for item in mcx
+    )
+
 def test_explicit_operation_reuses_one_context_and_is_idempotent(tmp_path: Path) -> None:
     shared, _, factory_calls, request_count = _configured_shared()
     _authenticate(shared)
@@ -161,10 +226,10 @@ def test_explicit_operation_reuses_one_context_and_is_idempotent(tmp_path: Path)
     assert result.state is DiscoveryOperationState.COMPLETE
     assert result.context_state == "ACTIVE"
     assert result.universe_count == 98
-    assert result.pre_evaluable_count == 93
-    assert result.prerequisite_unavailable_count == 5
+    assert result.pre_evaluable_count == 98
+    assert result.prerequisite_unavailable_count == 0
     assert result.machine_fact_successes == 93
-    assert result.machine_fact_failures == 0
+    assert result.machine_fact_failures == 5
     assert result.historical_request_count == request_count[0] == 372
     assert result.persistence_complete and result.snapshot_updated
     assert result.run_identity is not None
@@ -296,7 +361,7 @@ def test_raw_provider_failure_becomes_bounded_member_failures(tmp_path: Path) ->
 
     assert result.state is DiscoveryOperationState.COMPLETE
     assert result.machine_fact_successes == 0
-    assert result.machine_fact_failures == 93
+    assert result.machine_fact_failures == 98
     assert result.historical_request_count == request_count[0] == 93
     assert "access_token" not in repr(result)
     assert "provider_record" not in repr(result)

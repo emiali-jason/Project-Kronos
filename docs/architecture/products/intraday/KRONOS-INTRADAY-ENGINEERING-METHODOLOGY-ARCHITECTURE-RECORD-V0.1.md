@@ -692,12 +692,37 @@ source-unqualified dates, missing publications and invalid integrity fail
 closed as `MCX_CONTRACT_SESSION_UNAVAILABLE`; the generic 23:30 session is not
 a fallback.
 
-DOMAIN-008 supplies this factual session authority. WO-06MCX remains the owner
-of active-futures selection and must consume the platform fact in its separately
-authorized rerun. No contract selection, Discovery, Probables, Risk or broker
-authority is introduced here.
+DOMAIN-008 supplies this factual session authority. No contract selection,
+Discovery, Probables, Risk or broker authority is introduced here.
 
-## 30. References
+## 30. WO-06MCX-R governed active derivative selection amendment
+
+ADR-0017 authorizes DOMAIN-001 to resolve an analytical derivative subject to
+one immutable active contract binding. The subject remains GOLDM, SILVERM,
+COPPER, NATGAS or CRUDE; the expiry-specific Kite symbol is contract lineage,
+not product identity. Exact mappings are GOLDM → GOLDM, SILVERM → SILVERM,
+COPPER → COPPER, NATGAS → NATURALGAS and CRUDE → CRUDEOIL. Fuzzy matching is
+prohibited.
+
+Each governed Refresh performs one complete DOMAIN-006 instrument-master read,
+filters exact MCX FUT records, consumes DOMAIN-008 family/expiry eligibility and
+selects the unique minimum eligible expiry. A tie at that expiry fails closed;
+Provider ordering, symbol and token are not tie-breakers. Provider absence,
+staleness or an unavailable DOMAIN-008 fact also fails closed, with no prior
+binding fallback.
+
+The binding records the observation and eligibility boundaries, exact Provider
+record and mapping directive identities, DOMAIN-008 publication/session facts,
+catalogue and snapshot integrity, and deterministic provenance. It never
+persists a Provider token. A roll creates a new binding and optional supersedes
+link; old bindings and Discovery/Probables runs remain immutable. Browser GET
+loads persisted lineage only and performs no resolution or Provider read.
+
+Active derivative binding is analytical availability only. It does not create
+execution eligibility, alter the frozen Probables methodology, or grant trading,
+Risk or broker authority.
+
+## 31. References
 
 - [Intraday Shared-File Change Rule](../../../engineering/INTRADAY-SHARED-FILE-CHANGE-RULE.md)
 - [Platform Constitution](../../platform/PLATFORM-000-CONSTITUTION.md)
@@ -719,3 +744,4 @@ authority is introduced here.
 - [WO-06H Historical Qualification Reconstruction](KRONOS-INTRADAY-WO-06H-HISTORICAL-QUALIFICATION-RECONSTRUCTION.md)
 - [WO-06HA Historical Research Operational Seam](KRONOS-INTRADAY-WO-06HA-HISTORICAL-RESEARCH-OPERATIONAL-SEAM.md)
 - [WO-06 Part-3 V0 Probables Methodology](KRONOS-INTRADAY-WO-06-PART-3-V0-PROBABLES-METHODOLOGY.md)
+- [ADR-0017 Governed Active Derivative Contract Selection](../../adr/ADR-0017-GOVERNED-ACTIVE-DERIVATIVE-CONTRACT-SELECTION-V1.md)

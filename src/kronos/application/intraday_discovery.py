@@ -32,6 +32,10 @@ from kronos.intraday.reconciliation import (
     ReconciliationState,
 )
 from kronos.intraday.universe import IntradayUniversePublication
+from kronos.instrument.active_derivative import ActiveDerivativeBindingArtifact
+from kronos.instrument.active_derivative_persistence import (
+    ActiveDerivativeBindingStore,
+)
 
 
 DISCOVERY_APPLICATION_IDENTITY = "KRONOS-INTRADAY-DISCOVERY-APPLICATION-V0"
@@ -55,6 +59,9 @@ class IntradayDiscoveryMemberSnapshot:
     machine_fact_bundle: NativeDiscoveryMachineFactBundle | None
     evidence: IntradayEvidenceBundle | None
     probable_result: ProbableMemberResult | None = None
+    analysis_contract: str | None = None
+    contract_expiry: str | None = None
+    active_binding_identity: str | None = None
 
     def __post_init__(self) -> None:
         if (
@@ -78,6 +85,21 @@ class IntradayDiscoveryMemberSnapshot:
             or (
                 self.probable_result is not None
                 and type(self.probable_result) is not ProbableMemberResult
+            )
+            or any(
+                value is not None and not _text(value)
+                for value in (
+                    self.analysis_contract,
+                    self.contract_expiry,
+                    self.active_binding_identity,
+                )
+            )
+            or (
+                self.analysis_contract is None
+                and any(value is not None for value in (
+                    self.contract_expiry,
+                    self.active_binding_identity,
+                ))
             )
         ):
             raise ValueError("INTRADAY_DISCOVERY_MEMBER_SNAPSHOT_INVALID")
@@ -167,6 +189,7 @@ class IntradayDiscoveryApplication:
         store: NativeDiscoveryStore,
         service: IntradayNativeDiscoveryService | None = None,
         probables: IntradayProbablesApplication | None = None,
+        active_derivative_binding_store: ActiveDerivativeBindingStore | None = None,
         last_successful_run_identity: str | None = None,
     ) -> None:
         if (
@@ -181,6 +204,11 @@ class IntradayDiscoveryApplication:
                 probables is not None
                 and type(probables) is not IntradayProbablesApplication
             )
+            or (
+                active_derivative_binding_store is not None
+                and type(active_derivative_binding_store)
+                is not ActiveDerivativeBindingStore
+            )
         ):
             raise ValueError("INTRADAY_DISCOVERY_APPLICATION_INVALID")
         if (
@@ -194,9 +222,11 @@ class IntradayDiscoveryApplication:
         self._store = store
         self._service = service
         self._probables = probables
+        self._active_derivative_binding_store = active_derivative_binding_store
         self._run: NativeDiscoveryRun | None = None
         self._bundles: dict[str, NativeDiscoveryMachineFactBundle] = {}
         self._evidence: dict[str, IntradayEvidenceBundle] = {}
+        self._active_bindings: dict[str, ActiveDerivativeBindingArtifact] = {}
         self._current_failure: str | None = None
         if last_successful_run_identity is not None:
             self._restore(last_successful_run_identity)
@@ -291,6 +321,7 @@ class IntradayDiscoveryApplication:
         self._run = execution.run
         self._bundles = {item.bundle_identity: item for item in execution.bundles}
         self._evidence = dict(execution.evidence)
+        self._load_active_bindings(execution.run)
 
     def _restore(self, run_identity: str) -> None:
         run = self._store.load_run(run_identity=run_identity)
@@ -311,6 +342,19 @@ class IntradayDiscoveryApplication:
         }
         self._run = run
         self._bundles = bundles
+        self._load_active_bindings(run)
+
+    def _load_active_bindings(self, run: NativeDiscoveryRun) -> None:
+        self._active_bindings = {}
+        if self._active_derivative_binding_store is None:
+            return
+        for identity in run.source_identities:
+            if not identity.startswith("ACTIVE-DERIVATIVE-BINDING-"):
+                continue
+            binding = self._active_derivative_binding_store.load(
+                binding_identity=identity
+            )
+            self._active_bindings[binding.canonical_subject_id] = binding
 
     def _member_snapshots(self) -> tuple[IntradayDiscoveryMemberSnapshot, ...]:
         results = {} if self._run is None else {
@@ -329,7 +373,13 @@ class IntradayDiscoveryApplication:
             result = results.get(member.universe_member_identity)
             prerequisite_ready = (
                 member.dimensions.machine_fact_consumability is Availability.AVAILABLE
+                or (
+                    result is not None
+                    and result.evaluability
+                    is not FactualEvaluability.PREREQUISITE_UNAVAILABLE
+                )
             )
+            active_binding = self._active_bindings.get(member.canonical_identity)
             if result is None:
                 evaluability = (
                     FactualEvaluability.FACTUALLY_EVALUABLE
@@ -371,6 +421,19 @@ class IntradayDiscoveryApplication:
                 machine_fact_bundle=bundle,
                 evidence=self._evidence.get(member.universe_member_identity),
                 probable_result=probable_results.get(member.universe_member_identity),
+                analysis_contract=(
+                    None if active_binding is None else active_binding.provider_symbol
+                ),
+                contract_expiry=(
+                    None
+                    if active_binding is None
+                    else active_binding.contract_expiry.isoformat()
+                ),
+                active_binding_identity=(
+                    None
+                    if active_binding is None
+                    else active_binding.binding_identity
+                ),
             ))
         return tuple(sorted(items, key=lambda item: (item.canonical_identity, item.sponsor_label)))
 

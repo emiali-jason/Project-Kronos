@@ -27,12 +27,22 @@ from kronos.intraday.reconciliation import (
     ReconciliationMember,
     ReconciliationPublication,
 )
+from kronos.instrument.active_derivative import (
+    ActiveDerivativeBindingArtifact,
+    ActiveDerivativeResolutionSet,
+    ActiveDerivativeSelectionFailure,
+)
 from kronos.intraday.probables_refresh import (
     DiscoveryProbablesMappingError,
     create_discovery_probables_facts,
 )
 from kronos.market.calendar import MarketCalendarPublisher
-from kronos.market.schedule import MarketDaySchedule
+from kronos.market.schedule import (
+    MarketDaySchedule,
+    MarketSchedule,
+    MarketWindow,
+    TradingDayStatus,
+)
 from kronos.provider.contracts.instrument import InstrumentRecord
 from kronos.provider.contracts.market_data import (
     HistoricalCandle,
@@ -66,11 +76,17 @@ class ProviderDiscoveryFactualSource:
         reconciliation_identity: str,
         reconciliation_version: str,
         reconciliation: ReconciliationPublication,
+        active_derivative_resolutions: ActiveDerivativeResolutionSet | None = None,
     ) -> None:
         if (
             type(lease) is not ReadOnlyProviderLease
             or type(calendar_publisher) is not MarketCalendarPublisher
             or type(reconciliation) is not ReconciliationPublication
+            or (
+                active_derivative_resolutions is not None
+                and type(active_derivative_resolutions)
+                is not ActiveDerivativeResolutionSet
+            )
             or not all(_text(item) for item in (
                 universe_identity,
                 universe_version,
@@ -86,6 +102,7 @@ class ProviderDiscoveryFactualSource:
         self._reconciliation_identity = reconciliation_identity
         self._reconciliation_version = reconciliation_version
         self._reconciliation = reconciliation
+        self._active_derivative_resolutions = active_derivative_resolutions
         self._records: dict[str, tuple[InstrumentRecord, ...]] = {}
         self._session_identities: dict[datetime, tuple[str, str]] = {}
         self._historical_requests = 0
@@ -104,20 +121,28 @@ class ProviderDiscoveryFactualSource:
             raise DiscoveryMemberFactError(
                 DiscoveryReason.MACHINE_FACT_BUNDLE_INCOMPLETE
             )
-        record = self._record(member)
+        active_binding = self._active_binding(member)
+        record = self._record(member, active_binding=active_binding)
         local = boundary.observation_boundary.astimezone(ZoneInfo("Asia/Kolkata"))
         calendar = CurrentMarketCalendarScheduleSource(
             self._calendar,
             observed_at=boundary.observation_boundary,
             canonical_instrument_id=member.canonical_identity,
         )
-        schedule = calendar.schedule_for(member.exchange, local.date())
+        schedule = (
+            calendar.schedule_for(member.exchange, local.date())
+            if active_binding is None
+            else self._binding_schedule(active_binding, boundary.observation_boundary)
+        )
         if boundary.observation_boundary not in self._session_identities:
             self._session_identities[boundary.observation_boundary] = (
                 governed_market_session_identities(
                     calendar_publisher=self._calendar,
                     reconciliation=self._reconciliation,
                     observed_at=boundary.observation_boundary,
+                    active_derivative_resolutions=(
+                        self._active_derivative_resolutions
+                    ),
                 )
             )
         governed_session, governed_boundary = self._session_identities[
@@ -232,11 +257,17 @@ class ProviderDiscoveryFactualSource:
             source_identities=tuple(
                 f"DOMAIN-006:KITE:HISTORICAL:{provider_interval(item).value}"
                 for item in _TIMEFRAMES
-            ),
+            ) + (() if active_binding is None else (
+                active_binding.binding_identity,
+                active_binding.provider_snapshot_identity,
+            )),
             provenance=(
                 DISCOVERY_FACTUAL_SOURCE_IDENTITY,
                 member.reconciliation_member_identity,
-            ),
+            ) + (() if active_binding is None else (
+                active_binding.integrity_identity,
+                active_binding.domain008_session_identity,
+            )),
         )
         try:
             probables_facts = create_discovery_probables_facts(
@@ -264,7 +295,51 @@ class ProviderDiscoveryFactualSource:
             probables_facts=probables_facts,
         )
 
-    def _record(self, member: ReconciliationMember) -> InstrumentRecord:
+    def _active_binding(
+        self,
+        member: ReconciliationMember,
+    ) -> ActiveDerivativeBindingArtifact | None:
+        if member.exchange != "MCX":
+            return None
+        resolutions = self._active_derivative_resolutions
+        if resolutions is None:
+            raise DiscoveryMemberFactError(
+                DiscoveryReason.ACTIVE_DERIVATIVE_BINDING_UNAVAILABLE
+            )
+        outcome = resolutions.for_subject(member.canonical_identity)
+        if outcome.binding is not None:
+            return outcome.binding
+        reason = {
+            ActiveDerivativeSelectionFailure.ACTIVE_BINDING_AMBIGUOUS:
+                DiscoveryReason.ACTIVE_DERIVATIVE_BINDING_AMBIGUOUS,
+            ActiveDerivativeSelectionFailure.PROVIDER_CONTRACT_UNAVAILABLE:
+                DiscoveryReason.PROVIDER_CONTRACT_UNAVAILABLE,
+            ActiveDerivativeSelectionFailure.CANONICAL_CONTRACT_UNAVAILABLE:
+                DiscoveryReason.CANONICAL_DERIVATIVE_CONTRACT_UNAVAILABLE,
+        }.get(
+            outcome.failure,
+            DiscoveryReason.ACTIVE_DERIVATIVE_BINDING_UNAVAILABLE,
+        )
+        raise DiscoveryMemberFactError(reason)
+
+    def _record(
+        self,
+        member: ReconciliationMember,
+        *,
+        active_binding: ActiveDerivativeBindingArtifact | None,
+    ) -> InstrumentRecord:
+        if active_binding is not None:
+            return InstrumentRecord(
+                provider="KITE",
+                exchange=active_binding.exchange,
+                segment=active_binding.segment,
+                trading_symbol=active_binding.provider_symbol,
+                name=active_binding.provider_contract_family,
+                instrument_type=active_binding.provider_instrument_type,
+                expiry=active_binding.contract_expiry,
+                tick_size=active_binding.tick_size,
+                lot_size=active_binding.lot_size,
+            )
         if member.provider_symbol is None:
             raise DiscoveryMemberFactError(
                 DiscoveryReason.MACHINE_FACT_BUNDLE_INCOMPLETE
@@ -282,6 +357,35 @@ class ProviderDiscoveryFactualSource:
                 DiscoveryReason.MACHINE_FACT_BUNDLE_INCOMPLETE
             )
         return matches[0]
+
+    def _binding_schedule(
+        self,
+        binding: ActiveDerivativeBindingArtifact,
+        observed_at: datetime,
+    ) -> MarketDaySchedule:
+        local_date = observed_at.astimezone(ZoneInfo("Asia/Kolkata")).date()
+        profile = self._calendar.mcx_contract_session_profile(
+            contract_family=binding.provider_contract_family,
+            contract_expiry=binding.contract_expiry,
+            trading_date=local_date,
+            observed_at=observed_at,
+        )
+        if (
+            not profile.contract_eligible
+            or profile.continuous_trading is None
+            or profile.publication_identity
+            != binding.domain008_publication_identity
+            or profile.publication_version
+            != binding.domain008_publication_version
+            or profile.publication_sha256
+            != binding.domain008_publication_sha256
+            or profile.continuous_trading.session_identity
+            != binding.domain008_session_identity
+        ):
+            raise DiscoveryMemberFactError(
+                DiscoveryReason.ACTIVE_DERIVATIVE_BINDING_UNAVAILABLE
+            )
+        return _market_day_schedule(profile.continuous_trading)
 
     def _acquire_timeframe(
         self,
@@ -370,12 +474,18 @@ def governed_market_session_identities(
     calendar_publisher: MarketCalendarPublisher,
     reconciliation: ReconciliationPublication,
     observed_at: datetime,
+    active_derivative_resolutions: ActiveDerivativeResolutionSet | None = None,
 ) -> tuple[str, str]:
     """Bind one operation to all governed subject-scoped DOMAIN-008 sessions."""
 
     if (
         type(calendar_publisher) is not MarketCalendarPublisher
         or type(reconciliation) is not ReconciliationPublication
+        or (
+            active_derivative_resolutions is not None
+            and type(active_derivative_resolutions)
+            is not ActiveDerivativeResolutionSet
+        )
         or not isinstance(observed_at, datetime)
         or observed_at.tzinfo is None
         or observed_at.utcoffset() is None
@@ -384,14 +494,37 @@ def governed_market_session_identities(
     local = observed_at.astimezone(ZoneInfo("Asia/Kolkata"))
     sessions: list[tuple[object, ...]] = []
     for member in reconciliation.members:
-        if member.dimensions.machine_fact_consumability is not Availability.AVAILABLE:
+        active_binding = None
+        if member.exchange == "MCX" and active_derivative_resolutions is not None:
+            outcome = active_derivative_resolutions.for_subject(
+                member.canonical_identity
+            )
+            active_binding = outcome.binding
+        if (
+            member.dimensions.machine_fact_consumability is not Availability.AVAILABLE
+            and active_binding is None
+        ):
             continue
         source = CurrentMarketCalendarScheduleSource(
             calendar_publisher,
             observed_at=observed_at,
             canonical_instrument_id=member.canonical_identity,
         )
-        schedule = source.schedule_for(member.exchange, local.date())
+        if active_binding is None:
+            schedule = source.schedule_for(member.exchange, local.date())
+        else:
+            profile = calendar_publisher.mcx_contract_session_profile(
+                contract_family=active_binding.provider_contract_family,
+                contract_expiry=active_binding.contract_expiry,
+                trading_date=local.date(),
+                observed_at=observed_at,
+            )
+            schedule = (
+                None
+                if not profile.contract_eligible
+                or profile.continuous_trading is None
+                else _market_day_schedule(profile.continuous_trading)
+            )
         if schedule is None:
             raise ValueError("DISCOVERY_MARKET_SESSION_UNAVAILABLE")
         sessions.append((
@@ -407,6 +540,23 @@ def governed_market_session_identities(
         "sessions": tuple(sessions),
     })
     return session_identity, boundary_identity
+
+
+def _market_day_schedule(value: MarketSchedule) -> MarketDaySchedule:
+    return MarketDaySchedule(
+        exchange=value.exchange,
+        trading_date=value.trading_date,
+        session_id=value.session_identity,
+        timezone=value.timezone,
+        status=TradingDayStatus.TRADING,
+        windows=tuple(
+            MarketWindow(item.window_open, item.window_close)
+            for item in value.windows
+        ),
+        source_identity=value.source_identity,
+        source_version=value.calendar_version,
+        special_session="EXPIRY" in value.session_type,
+    )
 
 
 def _optional_fact(

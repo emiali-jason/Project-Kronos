@@ -472,6 +472,9 @@ def _render_discovery_detail(snapshot: IntradayDiscoverySnapshot) -> str:
         + '<section class="intraday-panel"><h2>Identity / Availability</h2>'
         + _facts((
             ("Canonical identity", item.canonical_identity),
+            ("Analysis contract", item.analysis_contract or "NOT APPLICABLE"),
+            ("Contract expiry", item.contract_expiry or "NOT APPLICABLE"),
+            ("Active binding", item.active_binding_identity or "NOT APPLICABLE"),
             ("Factual prerequisite", "AVAILABLE" if item.prerequisite_ready else "UNAVAILABLE"),
             ("Machine facts", "AVAILABLE" if item.machine_facts_available else "NOT AVAILABLE"),
             ("Discovery state", _plain(item.candidate_state.value)),

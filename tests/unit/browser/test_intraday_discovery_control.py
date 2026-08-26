@@ -307,10 +307,10 @@ def test_post_reaches_exact_composed_service_and_is_idempotent(tmp_path: Path) -
         assert first["state"] == "COMPLETE"
         assert first["context_state"] == "ACTIVE"
         assert first["universe_count"] == 98
-        assert first["pre_evaluable_count"] == 93
-        assert first["prerequisite_unavailable_count"] == 5
+        assert first["pre_evaluable_count"] == 98
+        assert first["prerequisite_unavailable_count"] == 0
         assert first["machine_fact_successes"] == 93
-        assert first["machine_fact_failures"] == 0
+        assert first["machine_fact_failures"] == 5
         assert first["historical_request_count"] == 372
         assert first["probables_run_identity"] is not None
         assert first["probables_mapping_identity"] is not None
@@ -484,7 +484,7 @@ def test_raw_provider_exception_is_not_exposed_and_is_not_retried(
         assert status == 200
         assert payload["state"] == "COMPLETE"
         assert payload["machine_fact_successes"] == 0
-        assert payload["machine_fact_failures"] == 93
+        assert payload["machine_fact_failures"] == 98
         assert payload["historical_request_count"] == 93
         assert requests == [93]
         assert factory_calls == [1]
