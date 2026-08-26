@@ -10,6 +10,7 @@ from kronos.browser.intraday_routes import IntradayBrowserRoutes
 from kronos.browser.intraday_views import render_intraday_workstation
 from kronos.browser.product_routes import (
     BrowserGetRequest,
+    BrowserPostRequest,
     BrowserRouteResponse,
     ProductBrowserRoutes,
 )
@@ -54,6 +55,32 @@ def test_product_registry_accepts_intraday_evolution_without_server_edit() -> No
     )
 
     assert response == BrowserRouteResponse("product-owned")
+
+
+def test_product_registry_has_bounded_generic_post_dispatch() -> None:
+    class _ProductRoute:
+        def handle_get(self, request, snapshot_provider):  # type: ignore[no-untyped-def]
+            del request, snapshot_provider
+            return None
+
+        def owns_post(self, path):  # type: ignore[no-untyped-def]
+            return path == "/intraday/product-action"
+
+        def handle_post(self, request, snapshot_provider):  # type: ignore[no-untyped-def]
+            del snapshot_provider
+            return BrowserRouteResponse(request.body.decode("ascii"))
+
+    registry = ProductBrowserRoutes((_ProductRoute(),))
+    request = BrowserPostRequest(
+        path="/intraday/product-action",
+        query={},
+        content_type="text/plain",
+        body=b"product-owned",
+    )
+
+    assert registry.owns_post(request.path)
+    assert registry.dispatch_post(request, _snapshot) == BrowserRouteResponse("product-owned")
+    assert not registry.owns_post("/swing/opportunities")
 
 
 def test_shared_browser_files_contain_only_stable_intraday_seams() -> None:

@@ -2,21 +2,46 @@
 
 from __future__ import annotations
 
-from kronos.browser.intraday_views import render_intraday_detail, render_intraday_workstation
+from http import HTTPStatus
+
+from kronos.application.intraday_review import IntradayReviewApplication
+from kronos.browser.intraday_views import (
+    render_intraday_detail,
+    render_intraday_review,
+    render_intraday_workstation,
+)
 from kronos.browser.product_routes import (
     BrowserGetRequest,
+    BrowserPostRequest,
     BrowserRouteResponse,
     BrowserSnapshotProvider,
 )
+from kronos.intraday.review import ReviewError, ReviewFailure
+from kronos.intraday.review_pdf import IntradayReviewPdfTransport
+from kronos.intraday.review_persistence import IntradayReviewStore
 
 
 class IntradayBrowserRoutes:
     """Own Intraday Browser paths behind the stable product-route seam."""
 
-    def __init__(self, workstation: object) -> None:
+    def __init__(
+        self,
+        workstation: object,
+        review: IntradayReviewApplication | None = None,
+    ) -> None:
         if not callable(getattr(workstation, "snapshot", None)):
             raise ValueError("INTRADAY_BROWSER_ROUTES_INVALID")
         self._workstation = workstation
+        self._review = review or IntradayReviewApplication(
+            current_probables=self._current_probables,
+            store=IntradayReviewStore(),
+            transport=IntradayReviewPdfTransport(),
+        )
+
+    def _current_probables(self):  # type: ignore[no-untyped-def]
+        snapshot = self._workstation.snapshot()
+        probables = getattr(snapshot, "probables", None)
+        return None if probables is None else probables.run
 
     def handle_get(
         self,
@@ -30,6 +55,13 @@ class IntradayBrowserRoutes:
         elif request.path.startswith(detail_prefix):
             selected = request.path.removeprefix(detail_prefix)
             renderer = render_intraday_detail
+        elif request.path == "/intraday/review":
+            return BrowserRouteResponse(
+                render_intraday_review(
+                    snapshot_provider(),
+                    self._review.snapshot(),
+                )
+            )
         else:
             return None
         return BrowserRouteResponse(
@@ -38,6 +70,68 @@ class IntradayBrowserRoutes:
                 self._workstation.snapshot(selected),
             )
         )
+
+    def owns_post(self, path: str) -> bool:
+        return path in {
+            "/intraday/review/start",
+            "/intraday/review/chart",
+            "/intraday/review/question-pack",
+        }
+
+    def handle_post(
+        self,
+        request: BrowserPostRequest,
+        snapshot_provider: BrowserSnapshotProvider,
+    ) -> BrowserRouteResponse | None:
+        if not self.owns_post(request.path):
+            return None
+        try:
+            if request.path == "/intraday/review/start":
+                result = _one_query(request, "result")
+                if request.body:
+                    raise ValueError
+                self._review.start_review(result)
+            elif request.path == "/intraday/review/chart":
+                cycle = _one_query(request, "cycle")
+                self._review.upload_chart(
+                    cycle,
+                    media_type=request.content_type,
+                    payload=request.body,
+                )
+            else:
+                cycle = _one_query(request, "cycle")
+                if request.body:
+                    raise ValueError
+                self._review.create_question_pack(cycle)
+        except ValueError:
+            return BrowserRouteResponse(
+                "Intraday Review request rejected.",
+                status=HTTPStatus.BAD_REQUEST,
+                content_type="text/plain; charset=utf-8",
+            )
+        except ReviewError as error:
+            status = (
+                HTTPStatus.BAD_REQUEST
+                if error.failure in {ReviewFailure.CHART_INVALID, ReviewFailure.INPUT_INVALID}
+                else HTTPStatus.CONFLICT
+            )
+            return BrowserRouteResponse(
+                error.failure.value,
+                status=status,
+                content_type="text/plain; charset=utf-8",
+            )
+        return BrowserRouteResponse(
+            render_intraday_review(snapshot_provider(), self._review.snapshot())
+        )
+
+
+def _one_query(request: BrowserPostRequest, name: str) -> str:
+    if set(request.query) != {name} or len(request.query[name]) != 1:
+        raise ValueError("INTRADAY_REVIEW_QUERY_INVALID")
+    value = request.query[name][0]
+    if not value or value != value.strip() or "/" in value or "\\" in value:
+        raise ValueError("INTRADAY_REVIEW_QUERY_INVALID")
+    return value
 
 
 __all__ = ["IntradayBrowserRoutes"]

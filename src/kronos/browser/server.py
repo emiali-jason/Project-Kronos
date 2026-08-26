@@ -147,6 +147,7 @@ from kronos.browser.swing_v3_presentation import present_visual_v3_review
 from kronos.browser.restart_control import BrowserBackendRestartControl
 from kronos.browser.product_routes import (
     BrowserGetRequest,
+    BrowserPostRequest,
     ProductBrowserRoutes,
     default_product_browser_routes,
 )
@@ -222,6 +223,7 @@ from kronos.swing.v1.progression_watch import (
 
 _LOOPBACK_HOST = "127.0.0.1"
 _MAX_CREDENTIAL_FORM_BYTES = 4096
+_MAX_PRODUCT_POST_BYTES = 25 * 1024 * 1024
 _BRAND_ASSET_ROOT = (
     Path(__file__).resolve().parents[3] / "assets" / "images" / "brand"
 )
@@ -1699,9 +1701,13 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             self.server.finish_sponsor_work()
 
     def _dispatch_post(self, path: str) -> None:
+        if self.server.product_routes.owns_post(path):
+            self._dispatch_product_post(path)
+            return
         if path == "/control/intraday-discovery":
             self._run_intraday_discovery()
             return
+
         if path == "/control/intraday-historical-qualification":
             self._run_intraday_historical_qualification()
             return
@@ -1902,6 +1908,38 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             self._record_sponsor_decision(decision_match.group(1))
             return
         self._text(HTTPStatus.NOT_FOUND, "Not found.")
+
+    def _dispatch_product_post(self, path: str) -> None:
+        try:
+            content_length = int(self.headers.get("Content-Length", "0"))
+            query = parse_qs(urlsplit(self.path).query, strict_parsing=True)
+        except ValueError:
+            self._text(HTTPStatus.BAD_REQUEST, "Product request rejected.")
+            return
+        if content_length < 0 or content_length > _MAX_PRODUCT_POST_BYTES:
+            self._text(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, "Product request size is invalid.")
+            return
+        body = self.rfile.read(content_length)
+        if len(body) != content_length:
+            self._text(HTTPStatus.BAD_REQUEST, "Product request rejected.")
+            return
+        response = self.server.product_routes.dispatch_post(
+            BrowserPostRequest(
+                path=path,
+                query=query,
+                content_type=self.headers.get("Content-Type", "").split(";", 1)[0].lower(),
+                body=body,
+            ),
+            self.server.application.snapshot,
+        )
+        if response is None:
+            self._text(HTTPStatus.NOT_FOUND, "Not found.")
+            return
+        self._respond(
+            response.status,
+            response.body.encode("utf-8"),
+            response.content_type,
+        )
 
     def _provider_instrument_master_status(self) -> None:
         operation = self.server.provider_instrument_master_operation

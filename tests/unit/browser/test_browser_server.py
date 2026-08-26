@@ -19,6 +19,7 @@ from kronos.application.swing_v1_browser import (
 )
 from kronos.browser.server import KronosBrowserServer, create_browser_server
 from kronos.browser.restart_control import BrowserBackendRestartControl
+from kronos.browser.product_routes import BrowserRouteResponse, ProductBrowserRoutes
 from kronos.swing.v1 import (
     LocalTradingViewEvidenceStore,
     V1Direction,
@@ -75,6 +76,50 @@ def _request_bytes(server, method: str, path: str):  # type: ignore[no-untyped-d
     body = response.read()
     connection.close()
     return response.status, dict(response.headers), body
+
+
+def test_product_post_seam_preserves_same_origin_and_body_controls(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    class _Route:
+        def handle_get(self, request, snapshot_provider):  # type: ignore[no-untyped-def]
+            del request, snapshot_provider
+            return None
+
+        def owns_post(self, path):  # type: ignore[no-untyped-def]
+            return path == "/intraday/review/test"
+
+        def handle_post(self, request, snapshot_provider):  # type: ignore[no-untyped-def]
+            del snapshot_provider
+            return BrowserRouteResponse(request.body.decode("ascii"))
+
+    app = SwingOpportunitiesApplication(_Provider)
+    server = create_browser_server(
+        app,
+        port=0,
+        v1_review=SwingV1ReviewWorkflow(LocalTradingViewEvidenceStore(tmp_path)),
+        product_routes=ProductBrowserRoutes((_Route(),)),
+    )
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        authority = f"127.0.0.1:{server.server_port}"
+        assert _request(
+            server,
+            "POST",
+            "/intraday/review/test",
+            headers={"Host": authority, "Origin": "http://malicious.invalid"},
+            body=b"rejected",
+        )[0] == 403
+        status, _, body = _request(
+            server,
+            "POST",
+            "/intraday/review/test",
+            headers={"Host": authority, "Origin": f"http://{authority}", "Content-Type": "text/plain"},
+            body=b"accepted",
+        )
+        assert status == 200 and body == "accepted"
+        assert _request(server, "GET", "/intraday/review/test")[0] == 404
+    finally:
+        server.shutdown(); server.server_close(); thread.join()
 
 
 def test_v1_review_route_and_chart_intake_use_selected_slot_binding(tmp_path) -> None:

@@ -1,6 +1,6 @@
 # KRONOS Intraday Engineering, Methodology & Architecture Record
 
-**Status:** LIVING DOCUMENT — V0.1; amended through WO-06MCX-A
+**Status:** LIVING DOCUMENT — V0.1; amended through WO-07
 
 **Product owner:** KRONOS Intraday
 
@@ -722,7 +722,26 @@ Active derivative binding is analytical availability only. It does not create
 execution eligibility, alter the frozen Probables methodology, or grant trading,
 Risk or broker authority.
 
-## 31. References
+## 31. WO-07 governed Native Review amendment
+
+WO-07 establishes the Intraday-owned Review Handoff, Review Cycle, immutable
+Chart Revision, exact-current Review pointer and governed Q1-Q10 Question Pack.
+Only current Long/Short Probables are eligible. The frozen manual chart is one
+1D | 1H | 15M | 5M composite; chart receipt establishes `CHART_READY` but does
+not establish visual analysis, Readiness, Promotion or trading authority.
+
+The exact evidence-cycle identity binds the Probables run/member, Discovery
+run/member, observation boundary, canonical subject, Review Cycle/Request,
+Chart Revision and Review Pack. Restart uses an explicit integrity-bound
+pointer and never directory, mtime, instrument or revision-ordinal guessing.
+
+Canonical JSON remains authority and deterministic PDF is Sponsor transport.
+Expected canonical identity stays separate from future independently observed
+chart identity. The Chart Analyst trust boundary is visual evidence only and
+WO-09 retains exclusive future Answer-import authority. Full detail is recorded
+in [WO-07 Governed Native Review](KRONOS-INTRADAY-WO-07-GOVERNED-NATIVE-REVIEW-V1.md).
+
+## 32. References
 
 - [Intraday Shared-File Change Rule](../../../engineering/INTRADAY-SHARED-FILE-CHANGE-RULE.md)
 - [Platform Constitution](../../platform/PLATFORM-000-CONSTITUTION.md)
@@ -744,4 +763,5 @@ Risk or broker authority.
 - [WO-06H Historical Qualification Reconstruction](KRONOS-INTRADAY-WO-06H-HISTORICAL-QUALIFICATION-RECONSTRUCTION.md)
 - [WO-06HA Historical Research Operational Seam](KRONOS-INTRADAY-WO-06HA-HISTORICAL-RESEARCH-OPERATIONAL-SEAM.md)
 - [WO-06 Part-3 V0 Probables Methodology](KRONOS-INTRADAY-WO-06-PART-3-V0-PROBABLES-METHODOLOGY.md)
+- [WO-07 Governed Native Review](KRONOS-INTRADAY-WO-07-GOVERNED-NATIVE-REVIEW-V1.md)
 - [ADR-0017 Governed Active Derivative Contract Selection](../../adr/ADR-0017-GOVERNED-ACTIVE-DERIVATIVE-CONTRACT-SELECTION-V1.md)
