@@ -29,6 +29,12 @@ from kronos.intraday.historical_qualification import (
     create_historical_timeframe_facts,
     reconstruct_previous_session_facts,
 )
+from kronos.intraday.historical_semantic import (
+    GovernedHistoricalCandlePayload,
+    SemanticQualificationEvidence,
+    create_governed_historical_candle_payload,
+    derive_semantic_qualification_evidence,
+)
 from kronos.provider.contracts.instrument import InstrumentRecord
 from kronos.provider.contracts.market_data import (
     HistoricalCandle,
@@ -44,25 +50,43 @@ HISTORICAL_FACTUAL_SOURCE_VERSION = "0.1.0"
 
 
 class HistoricalProviderFactAcquisition:
-    __slots__ = ("bundle", "previous_session_facts")
+    __slots__ = (
+        "bundle",
+        "previous_session_facts",
+        "candle_payloads",
+        "semantic_evidence",
+    )
 
     def __init__(
         self,
         *,
         bundle: HistoricalQualificationFactBundle,
         previous_session_facts: HistoricalPreviousSessionFacts,
+        candle_payloads: tuple[GovernedHistoricalCandlePayload, ...],
+        semantic_evidence: SemanticQualificationEvidence,
     ) -> None:
         if (
             type(bundle) is not HistoricalQualificationFactBundle
             or type(previous_session_facts) is not HistoricalPreviousSessionFacts
             or bundle.previous_session_facts_identity
             != previous_session_facts.facts_identity
+            or not candle_payloads
+            or any(
+                type(item) is not GovernedHistoricalCandlePayload
+                for item in candle_payloads
+            )
+            or type(semantic_evidence) is not SemanticQualificationEvidence
+            or semantic_evidence.source_bundle_identity != bundle.bundle_identity
+            or semantic_evidence.candle_payload_identities
+            != tuple(item.candle_identity for item in candle_payloads)
         ):
             raise HistoricalOperationError(
                 HistoricalOperationFailure.INTEGRITY_INVALID
             )
         self.bundle = bundle
         self.previous_session_facts = previous_session_facts
+        self.candle_payloads = candle_payloads
+        self.semantic_evidence = semantic_evidence
 
 
 class ProviderHistoricalQualificationFactualSource:
@@ -106,6 +130,7 @@ class ProviderHistoricalQualificationFactualSource:
         subject: HistoricalOperationalSubject,
         session: HistoricalEodSession,
         requested_factual_families: tuple[HistoricalFactFamily, ...],
+        source_operation_identity: str,
     ) -> HistoricalProviderFactAcquisition:
         if (
             type(subject) is not HistoricalOperationalSubject
@@ -113,6 +138,10 @@ class ProviderHistoricalQualificationFactualSource:
             or subject.provider_symbol is None
             or subject.binding.canonical_identity is None
             or not requested_factual_families
+            or not isinstance(source_operation_identity, str)
+            or not source_operation_identity.startswith(
+                "INTRADAY-HISTORICAL-QUALIFICATION-OPERATION-"
+            )
             or any(
                 type(item) is not HistoricalFactFamily
                 for item in requested_factual_families
@@ -285,9 +314,39 @@ class ProviderHistoricalQualificationFactualSource:
                 session.target_schedule.source_identity,
             ),
         )
+        payloads = _retained_payloads(
+            subject=subject,
+            session=session,
+            candles_by_timeframe={
+                IntradayTimeframe.DAILY: target_daily,
+                IntradayTimeframe.ONE_HOUR: candles_by_timeframe[
+                    IntradayTimeframe.ONE_HOUR
+                ],
+                IntradayTimeframe.FIFTEEN_MINUTES: candles_by_timeframe[
+                    IntradayTimeframe.FIFTEEN_MINUTES
+                ],
+                IntradayTimeframe.FIVE_MINUTES: candles_by_timeframe[
+                    IntradayTimeframe.FIVE_MINUTES
+                ],
+            },
+            source_operation_identity=source_operation_identity,
+        )
+        semantic = derive_semantic_qualification_evidence(
+            candle_payloads=payloads,
+            previous_session_facts=previous,
+            source_bundle_identity=bundle.bundle_identity,
+            source_operation_identity=source_operation_identity,
+            provenance=(
+                "KRONOS-WO-06S-SEMANTIC-EVIDENCE-001",
+                HISTORICAL_FACTUAL_SOURCE_IDENTITY,
+                subject.reconciliation_member_identity,
+            ),
+        )
         return HistoricalProviderFactAcquisition(
             bundle=bundle,
             previous_session_facts=previous,
+            candle_payloads=payloads,
+            semantic_evidence=semantic,
         )
 
     def _record(
@@ -481,6 +540,74 @@ class ProviderHistoricalQualificationFactualSource:
                 subject.reconciliation_member_identity,
             ),
         )
+
+
+def _retained_payloads(
+    *,
+    subject: HistoricalOperationalSubject,
+    session: HistoricalEodSession,
+    candles_by_timeframe: dict[IntradayTimeframe, tuple[HistoricalCandle, ...]],
+    source_operation_identity: str,
+) -> tuple[GovernedHistoricalCandlePayload, ...]:
+    canonical_identity = subject.binding.canonical_identity
+    if canonical_identity is None:
+        raise HistoricalOperationError(HistoricalOperationFailure.INTEGRITY_INVALID)
+    retained: list[GovernedHistoricalCandlePayload] = []
+    for timeframe in HISTORICAL_OPERATION_TIMEFRAMES:
+        candles = candles_by_timeframe[timeframe]
+        if timeframe is IntradayTimeframe.DAILY:
+            boundaries = {
+                candles[0].timestamp: (
+                    session.target_schedule.windows[0].opens_at,
+                    session.target_schedule.windows[-1].closes_at,
+                )
+            }
+        else:
+            boundaries = {
+                item.start: (item.start, item.end)
+                for item in expected_candle_boundaries(
+                    session.target_schedule, timeframe
+                )
+            }
+        provider_source = (
+            f"DOMAIN-006:KITE:HISTORICAL:{provider_interval(timeframe).value}"
+        )
+        for candle in candles:
+            try:
+                start, end = boundaries[candle.timestamp]
+            except KeyError as error:
+                raise HistoricalOperationError(
+                    HistoricalOperationFailure.INTEGRITY_INVALID
+                ) from error
+            retained.append(
+                create_governed_historical_candle_payload(
+                    canonical_subject_identity=canonical_identity,
+                    exchange=subject.exchange,
+                    market_identity={
+                        "NSE": "NSE_CAPITAL_MARKET",
+                        "MCX": "MCX_NON_AGRI",
+                    }.get(subject.exchange, subject.exchange),
+                    market_session_identity=session.target_schedule.session_id,
+                    timeframe=timeframe,
+                    candle_start=start,
+                    candle_end=end,
+                    open=Decimal(str(candle.open)),
+                    high=Decimal(str(candle.high)),
+                    low=Decimal(str(candle.low)),
+                    close=Decimal(str(candle.close)),
+                    volume=candle.volume,
+                    observation_boundary=session.selection.observation_boundary,
+                    provider_source_identity=provider_source,
+                    source_operation_identity=source_operation_identity,
+                    provenance=(
+                        "KRONOS-WO-06S-SEMANTIC-EVIDENCE-001",
+                        HISTORICAL_FACTUAL_SOURCE_IDENTITY,
+                        subject.reconciliation_member_identity,
+                        session.target_schedule.source_identity,
+                    ),
+                )
+            )
+    return tuple(retained)
 
 
 def _classify_mismatch(

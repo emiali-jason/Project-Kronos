@@ -406,6 +406,11 @@ def test_post_reaches_exact_composed_harness_and_preserves_isolation(
         assert first["provider_request_count"] == 373
         assert first["sessions_requested"] == first["sessions_valid"] == 1
         assert first["successful_reconstructions"] == 93
+        # 91 CAS-applicable equities retain 103 completed candles and the two
+        # index subjects retain 108 under their subject-aware DOMAIN-008 clocks.
+        assert first["retained_candle_payload_count"] == 9_589
+        assert first["semantic_evidence_count"] == 93
+        assert first["semantic_fact_count"] == 837
         assert first["persistence_complete"] is True
         assert first["reload_verified"] is True
         assert first["corpus_binding_performed"] is False

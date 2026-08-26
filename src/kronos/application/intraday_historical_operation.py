@@ -45,6 +45,9 @@ from kronos.intraday.historical_source import (
     HistoricalProviderFactAcquisition,
     ProviderHistoricalQualificationFactualSource,
 )
+from kronos.intraday.historical_semantic_persistence import (
+    HistoricalSemanticStore,
+)
 from kronos.intraday.qualification import (
     NARROW_CPR_CALCULATION_IDENTITY,
     PART1_CONTRACT_VERSION,
@@ -84,6 +87,7 @@ class HistoricalFactualSource(Protocol):
         subject: HistoricalOperationalSubject,
         session: HistoricalEodSession,
         requested_factual_families: tuple,
+        source_operation_identity: str,
     ) -> HistoricalProviderFactAcquisition: ...
 
 
@@ -101,6 +105,7 @@ class IntradayHistoricalQualificationOperationService:
         reconciliation: ReconciliationPublication,
         calendar: HistoricalCalendarSource,
         store: HistoricalQualificationStore,
+        semantic_store: HistoricalSemanticStore | None = None,
         source_factory: HistoricalSourceFactory | None = None,
         clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
     ) -> None:
@@ -112,6 +117,8 @@ class IntradayHistoricalQualificationOperationService:
             or not callable(getattr(calendar, "previous_trading_schedule", None))
             or not callable(getattr(calendar, "for_subject", None))
             or type(store) is not HistoricalQualificationStore
+            or semantic_store is not None
+            and type(semantic_store) is not HistoricalSemanticStore
             or source_factory is not None and not callable(source_factory)
             or not callable(clock)
         ):
@@ -121,6 +128,9 @@ class IntradayHistoricalQualificationOperationService:
         self._reconciliation = reconciliation
         self._calendar = calendar
         self._store = store
+        self._semantic_store = semantic_store or HistoricalSemanticStore(
+            store.root
+        )
         self._clock = clock
         self._source_factory = source_factory or (
             lambda lease: ProviderHistoricalQualificationFactualSource(
@@ -131,6 +141,9 @@ class IntradayHistoricalQualificationOperationService:
         self._lock = RLock()
         self._active_identity: str | None = None
         self._results: dict[str, HistoricalQualificationOperationResult] = {}
+        self._semantic_artifacts: dict[
+            str, tuple[tuple[str, ...], tuple[str, ...]]
+        ] = {}
 
     @property
     def operation_available(self) -> bool:
@@ -161,6 +174,14 @@ class IntradayHistoricalQualificationOperationService:
     ) -> HistoricalQualificationOperationResult | None:
         with self._lock:
             return self._results.get(operation_identity)
+
+    def semantic_artifact_accounting(
+        self, operation_identity: str
+    ) -> tuple[tuple[str, ...], tuple[str, ...]]:
+        """Return exact candle/evidence identities for one in-process operation."""
+
+        with self._lock:
+            return self._semantic_artifacts.get(operation_identity, ((), ()))
 
     def execute(
         self, request: HistoricalQualificationOperationRequest
@@ -365,6 +386,8 @@ class IntradayHistoricalQualificationOperationService:
         total_factual_failures = 0
         total_true = 0
         total_false = 0
+        candle_payload_ids: list[str] = []
+        semantic_evidence_ids: list[str] = []
 
         self._retain_and_verify(subject_set)
         for subject in subjects:
@@ -417,6 +440,7 @@ class IntradayHistoricalQualificationOperationService:
                         requested_factual_families=(
                             request.requested_factual_families
                         ),
+                        source_operation_identity=request.operation_identity,
                     )
                 except (HistoricalQualificationError, ValueError):
                     failures[HistoricalOperationFailure.SESSION_UNAVAILABLE.value] += 1
@@ -465,6 +489,13 @@ class IntradayHistoricalQualificationOperationService:
                         self._retain_and_verify(evidence)
                         failure_evidence_ids.append(evidence.evidence_identity)
                     continue
+                for payload in acquisition.candle_payloads:
+                    self._retain_semantic_and_verify(payload)
+                    candle_payload_ids.append(payload.candle_identity)
+                self._retain_semantic_and_verify(acquisition.semantic_evidence)
+                semantic_evidence_ids.append(
+                    acquisition.semantic_evidence.evidence_identity
+                )
                 self._retain_and_verify(acquisition.previous_session_facts)
                 self._retain_and_verify(acquisition.bundle)
                 group_key = (
@@ -572,6 +603,10 @@ class IntradayHistoricalQualificationOperationService:
         )
         with self._lock:
             self._results[request.operation_identity] = result
+            self._semantic_artifacts[request.operation_identity] = (
+                tuple(candle_payload_ids),
+                tuple(semantic_evidence_ids),
+            )
         return result
 
     def _retain_and_verify(self, value: object) -> None:
@@ -598,6 +633,31 @@ class IntradayHistoricalQualificationOperationService:
             reloaded != value
             or document["artifact_identity"] != _artifact_identity(value)
         ):
+            raise HistoricalOperationError(
+                HistoricalOperationFailure.RELOAD_FAILED
+            )
+
+    def _retain_semantic_and_verify(self, value: object) -> None:
+        identity = getattr(
+            value,
+            "candle_identity",
+            getattr(value, "evidence_identity", None),
+        )
+        if type(identity) is not str:
+            raise HistoricalOperationError(
+                HistoricalOperationFailure.INTEGRITY_INVALID
+            )
+        try:
+            self._semantic_store.retain(value)
+            reloaded = self._semantic_store.load(
+                artifact_type=type(value).__name__,
+                artifact_identity=identity,
+            )
+        except Exception:
+            raise HistoricalOperationError(
+                HistoricalOperationFailure.PERSISTENCE_FAILED
+            ) from None
+        if reloaded != value:
             raise HistoricalOperationError(
                 HistoricalOperationFailure.RELOAD_FAILED
             )

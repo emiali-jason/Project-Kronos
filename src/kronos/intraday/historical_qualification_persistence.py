@@ -31,6 +31,12 @@ class HistoricalQualificationStore:
         self._root = root
         self._lock = RLock()
 
+    @property
+    def root(self) -> Path:
+        """Expose the configured evidence root for adjacent Intraday stores."""
+
+        return self._root
+
     def retain(self, value: object) -> Path:
         document = historical_artifact_document(value)
         path = self.path(

@@ -21,6 +21,7 @@ from kronos.intraday.historical_operation import (
     HistoricalQualificationOperationResult,
     create_historical_operation_request,
 )
+from kronos.intraday.historical_semantic import SemanticFactFamily
 
 
 INTRADAY_HISTORICAL_CONTROL_IDENTITY = (
@@ -127,10 +128,20 @@ class IntradayHistoricalQualificationOperationalControl:
             raise ValueError(
                 "INTRADAY_HISTORICAL_CONTROL_REQUEST_INVALID"
             ) from error
-        return historical_operation_result_document(
-            self._invocation.execute(request),
+        result = self._invocation.execute(request)
+        candle_ids, semantic_ids = self._operation.semantic_artifact_accounting(
+            result.operation_identity
+        )
+        document = historical_operation_result_document(
+            result,
             request_identity=request.request_identity,
         )
+        document.update({
+            "retained_candle_payload_count": len(candle_ids),
+            "semantic_evidence_count": len(semantic_ids),
+            "semantic_fact_count": len(semantic_ids) * len(SemanticFactFamily),
+        })
+        return document
 
 
 def historical_operation_result_document(
