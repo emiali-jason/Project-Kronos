@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from decimal import Decimal
 from html import escape
 from urllib.parse import quote
+from zoneinfo import ZoneInfo
 
 from kronos.application.intraday_discovery import (
     IntradayDiscoveryMemberSnapshot,
@@ -14,16 +16,21 @@ from kronos.application.intraday_workstation import IntradayWorkstationSnapshot
 from kronos.application.swing_opportunities import BrowserWorkspaceSnapshot
 from kronos.browser.views import render_browser_page
 from kronos.intraday.contracts import CandleCompletion, IntradayTimeframe
-from kronos.intraday.probables import ProbableState
+from kronos.intraday.discovery import FactFamily
+from kronos.intraday.probables import ProbablesRun, ProbableReason, ProbableState
 from kronos.intraday.telemetry import TelemetryType
 
 
+_KOLKATA = ZoneInfo("Asia/Kolkata")
+
+
 _INTRADAY_CSS = r"""
-.intraday-card{border:1px solid #25704c;background:linear-gradient(145deg,#071a12,#0b2519);border-radius:12px;padding:18px;max-width:760px}.intraday-card h2{margin:0;color:#67d99a}.intraday-card .event{border-top:1px solid #214c38;padding:10px 0}.intraday-card .detail-link{display:inline-block;margin-top:10px;color:#7de4aa;font-weight:800}.intraday-status{color:#9ccab0;margin:8px 0 14px}.intraday-status strong{color:#67d99a}
+.intraday-card{border:1px solid var(--line);background:#071827;border-radius:12px;padding:18px;max-width:760px}.intraday-card h2{margin:0;color:var(--green)}.intraday-card .event{border-top:1px solid var(--line);padding:10px 0}.intraday-card .detail-link{display:inline-block;margin-top:10px;color:var(--green);font-weight:800}.intraday-status{color:var(--muted);margin:8px 0 14px}.intraday-status strong{color:var(--green)}
 .intraday-warning{display:flex;justify-content:space-between;gap:16px;border:1px solid #82631f;background:#231d11;color:#f6d997;border-radius:8px;padding:12px 14px;margin-bottom:14px}.intraday-selector{display:flex;align-items:center;gap:10px;margin-bottom:14px}.intraday-selector label{font-weight:700}.intraday-selector select{border:1px solid #31506a;background:#04131f;color:var(--text);border-radius:7px;padding:9px 12px}.intraday-panel{border:1px solid var(--line);background:rgba(6,23,37,.88);border-radius:10px;padding:15px;margin-bottom:14px;min-width:0}.intraday-panel h2{margin:0 0 12px;color:var(--blue);font-size:17px}.intraday-panel h3{margin:14px 0 7px;color:var(--muted);font-size:11px;text-transform:uppercase}.intraday-facts{display:grid;grid-template-columns:minmax(140px,.35fr) minmax(0,1fr);margin:0}.intraday-facts dt,.intraday-facts dd{padding:6px 8px;border-top:1px solid var(--line);margin:0;overflow-wrap:anywhere}.intraday-facts dt{color:var(--muted)}.intraday-timeframes{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.incomplete-observation{display:grid;gap:5px;margin-top:11px;border:1px dashed #82631f;border-radius:7px;padding:9px;color:#f6d997}.incomplete-observation span{color:var(--muted);overflow-wrap:anywhere}.intraday-context{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}.intraday-table{width:100%;border-collapse:collapse;font-size:12px}.intraday-table th,.intraday-table td{text-align:left;vertical-align:top;padding:8px;border-bottom:1px solid var(--line);overflow-wrap:anywhere}.intraday-table th{color:var(--muted);white-space:nowrap}.table-scroll{overflow:auto}.intraday-unavailable{color:var(--muted)}.intraday-unavailable strong{color:var(--amber)}
-.intraday-discovery-header{border:1px solid #215f42;background:linear-gradient(135deg,#071a12,#0b271a);border-radius:9px;padding:13px 15px;margin-bottom:12px}.intraday-discovery-header h2{font-size:17px;color:#68dda0;margin:0 0 5px}.intraday-discovery-header p{margin:3px 0;color:#a8c8b6;font-size:12px}.intraday-metrics{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px;margin-bottom:12px}.intraday-metric{border:1px solid #264839;background:#081810;border-radius:7px;padding:9px}.intraday-metric span{display:block;color:#8eae9c;font-size:10px;text-transform:uppercase;letter-spacing:.04em}.intraday-metric strong{display:block;color:#d8f0e2;font-size:16px;margin-top:3px}.intraday-discovery-table{width:100%;border-collapse:collapse;font-size:12px}.intraday-discovery-table th,.intraday-discovery-table td{padding:7px 8px;border-bottom:1px solid #203a30;text-align:left}.intraday-discovery-table th{font-size:10px;color:#8eae9c;text-transform:uppercase}.intraday-state-ready{color:#75dda3}.intraday-state-held{color:#e0bd73}.intraday-failure{border:1px solid #81502a;background:#26170d;color:#f0c08e;border-radius:7px;padding:9px 11px;margin-bottom:12px}.intraday-methodology{border:1px solid #315941;background:#0a1d13;color:#b7ddc7;border-radius:7px;padding:9px 11px;margin-bottom:12px;font-size:12px}.intraday-mcx{margin-top:12px}.intraday-detail-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
-@media(max-width:760px){.intraday-timeframes,.intraday-context{grid-template-columns:1fr}.intraday-warning,.intraday-selector{align-items:flex-start;flex-direction:column}.intraday-facts{grid-template-columns:1fr}.intraday-facts dd{padding-top:0}}
-@media(max-width:900px){.intraday-metrics{grid-template-columns:repeat(3,minmax(0,1fr))}.intraday-detail-grid{grid-template-columns:1fr}}
+.intraday-discovery-header{border:1px solid var(--line);background:#071827;border-radius:9px;padding:13px 15px;margin-bottom:12px}.intraday-discovery-header h2{font-size:17px;color:var(--green);margin:0 0 5px}.intraday-discovery-header p{margin:3px 0;color:var(--muted);font-size:12px}.intraday-discovery-table{width:100%;border-collapse:collapse;font-size:12px}.intraday-discovery-table th,.intraday-discovery-table td{padding:7px 8px;border-bottom:1px solid var(--line);text-align:left}.intraday-discovery-table th{font-size:10px;color:var(--muted);text-transform:uppercase}.intraday-state-ready{color:var(--green)}.intraday-state-held{color:var(--amber)}.intraday-failure{border:1px solid #81502a;background:#26170d;color:#f0c08e;border-radius:7px;padding:9px 11px;margin-bottom:12px}.intraday-methodology{border:1px solid var(--line);background:#071827;color:#c2d2dd;border-radius:7px;padding:8px 11px;margin-bottom:12px;font-size:11px}.intraday-methodology strong{color:var(--green)}.intraday-detail-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.intraday-tabs{margin:-22px -28px 22px}.intraday-tabs a.active{border-color:var(--green)}.intraday-tab{height:61px;display:flex;align-items:center;color:var(--muted);border-bottom:2px solid transparent;white-space:nowrap}.intraday-refresh-state{margin-left:8px;color:var(--muted);font-size:10px}.intraday-summary .status-top strong{color:var(--green)}.intraday-market-panels{grid-template-columns:repeat(2,minmax(0,1fr))}.intraday-market-panels .panel-heading h2{color:var(--green)}.intraday-market-panels .market-panel{min-height:330px}.intraday-market-panels .empty{min-height:110px}.intraday-probable .summary-reason{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:7px}.intraday-card-fact{border-left:1px solid var(--line);padding-left:7px;min-width:0}.intraday-card-fact:first-child{border-left:0;padding-left:0}.intraday-card-fact span{display:block;color:var(--muted);font-size:8px;text-transform:uppercase;letter-spacing:.04em}.intraday-card-fact strong{display:block;margin-top:2px;font-size:11px;overflow-wrap:anywhere}.intraday-probable .summary-rr strong{color:#dce8f0}.intraday-panel-footer{display:flex;flex-wrap:wrap;gap:7px 14px;border-top:1px solid var(--line);margin-top:13px;padding-top:10px;color:var(--muted);font-size:10px}.intraday-panel-footer strong{color:#dce8f0}.intraday-unavailable-list{display:grid;gap:6px;margin-top:10px}.intraday-unavailable-subject{display:flex;justify-content:space-between;gap:10px;border-top:1px solid var(--line);padding-top:6px;color:var(--muted);font-size:11px}.intraday-unavailable-subject strong{color:var(--amber)}.intraday-analysis-context{display:flex;align-items:flex-start;gap:12px;border:1px solid var(--line);background:#071827;border-radius:8px;margin-top:14px;padding:8px 10px}.intraday-analysis-context>strong{flex:0 0 auto;color:var(--green);font-size:10px;text-transform:uppercase;letter-spacing:.05em}.intraday-analysis-context-detail{display:flex;align-items:center;flex-wrap:wrap;gap:5px 12px;color:var(--muted);font-size:8px;white-space:normal}.intraday-analysis-context-detail span{padding-left:12px;border-left:1px solid var(--line)}
+@media(max-width:900px){.intraday-detail-grid{grid-template-columns:1fr}.intraday-probable .summary-reason{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:760px){.intraday-tabs{margin:-18px -18px 18px;padding:0 18px;gap:13px;overflow:auto}.intraday-tabs .toolbar{margin-left:0}.intraday-timeframes,.intraday-context{grid-template-columns:1fr}.intraday-warning,.intraday-selector{align-items:flex-start;flex-direction:column}.intraday-facts{grid-template-columns:1fr}.intraday-facts dd{padding-top:0}.intraday-market-panels{grid-template-columns:1fr}.intraday-probable .summary-reason{grid-template-columns:repeat(2,minmax(0,1fr))}.intraday-analysis-context{align-items:flex-start}.intraday-analysis-context-detail{flex-wrap:wrap;white-space:normal}}
 """
 
 
@@ -34,12 +41,15 @@ def render_intraday_workstation(
     """Render the complete Intraday page through the stable Browser shell."""
 
     return render_browser_page(
-        title="Intraday Evidence Workstation — Native Discovery",
+        title="Intraday Opportunities — Native Discovery",
         subtitle="Native Discovery — governed facts, complete accounting, no trading authority.",
         snapshot=snapshot,
         active_nav="Intraday",
         active_tab="",
-        body=render_intraday_triage(intraday),
+        body=render_intraday_triage(
+            intraday,
+            refresh_enabled=snapshot.provider_state.value == "CONNECTED",
+        ),
         extra_styles=_INTRADAY_CSS,
     )
 
@@ -69,9 +79,11 @@ def render_intraday_detail(
 
 def render_intraday_triage(
     snapshot: IntradayWorkstationSnapshot | IntradayDiscoverySnapshot,
+    *,
+    refresh_enabled: bool = False,
 ) -> str:
     if isinstance(snapshot, IntradayDiscoverySnapshot):
-        return _render_discovery_triage(snapshot)
+        return _render_discovery_triage(snapshot, refresh_enabled=refresh_enabled)
     warning = ('<div class="intraday-warning"><strong>ENGINEERING / EVIDENCE</strong>'
                '<span>NO TRADING CONCLUSION — EVIDENCE WORKSTATION</span></div>')
     if snapshot.selected_instrument is None:
@@ -113,13 +125,12 @@ def render_intraday_triage(
     )
 
 
-def _render_discovery_triage(snapshot: IntradayDiscoverySnapshot) -> str:
-    last = (
-        "NO SUCCESSFUL DISCOVERY RUN AVAILABLE"
-        if snapshot.last_successful_analysis is None
-        else "LAST SUCCESSFUL ANALYSIS · "
-        + snapshot.last_successful_analysis.astimezone().isoformat()
-    )
+def _render_discovery_triage(
+    snapshot: IntradayDiscoverySnapshot,
+    *,
+    refresh_enabled: bool,
+) -> str:
+    last = _analysis_time(snapshot.last_successful_analysis)
     failure_text = {
         "PUBLICATION_STALE": (
             "Discovery could not run because the selected observation boundary "
@@ -141,11 +152,11 @@ def _render_discovery_triage(snapshot: IntradayDiscoverySnapshot) -> str:
     if probable_snapshot is None:
         metrics = (
             ("Universe", snapshot.universe_count),
-            ("Factual path ready", snapshot.pre_evaluable_count),
-            ("Prerequisite unavailable", snapshot.prerequisite_unavailable_count),
-            ("Machine facts complete", snapshot.machine_fact_success_count),
             ("Long Probables", 0),
             ("Short Probables", 0),
+            ("Not Admitted", 0),
+            ("Unavailable", snapshot.prerequisite_unavailable_count),
+            ("Population", "—"),
         )
         probable_note = (
             '<div class="intraday-methodology"><strong>Candidate-admission methodology '
@@ -155,11 +166,11 @@ def _render_discovery_triage(snapshot: IntradayDiscoverySnapshot) -> str:
     elif probable_run is None:
         metrics = (
             ("Universe", snapshot.universe_count),
-            ("Factual path ready", snapshot.pre_evaluable_count),
-            ("Prerequisite unavailable", snapshot.prerequisite_unavailable_count),
-            ("Machine facts complete", snapshot.machine_fact_success_count),
             ("Long Probables", 0),
             ("Short Probables", 0),
+            ("Not Admitted", 0),
+            ("Unavailable", snapshot.prerequisite_unavailable_count),
+            ("Population", "—"),
         )
         probable_note = (
             '<div class="intraday-methodology"><strong>V0 Probables methodology '
@@ -179,13 +190,14 @@ def _render_discovery_triage(snapshot: IntradayDiscoverySnapshot) -> str:
         probable_note = (
             '<div class="intraday-methodology"><strong>V0 Probables methodology · '
             + escape(probable_run.methodology_version)
-            + '</strong> Last successful analysis '
-            + escape(probable_run.observation_boundary.isoformat())
+            + '</strong> · Last successful analysis '
+            + escape(_ist_time(probable_run.observation_boundary))
             + '. Probable means selected for deeper review only; no trading authority.</div>'
         )
-    metric_html = '<div class="intraday-metrics">' + "".join(
-        '<div class="intraday-metric"><span>' + escape(label)
-        + '</span><strong>' + str(value) + "</strong></div>"
+    metric_html = '<div class="status-strip intraday-summary">' + "".join(
+        '<div class="status-item' + (' status-top' if label == 'Population' else '')
+        + '"><span>' + escape(label) + '</span><strong>' + escape(str(value))
+        + "</strong></div>"
         for label, value in metrics
     ) + "</div>"
     available = tuple(item for item in snapshot.members if item.prerequisite_ready)
@@ -197,62 +209,250 @@ def _render_discovery_triage(snapshot: IntradayDiscoverySnapshot) -> str:
             ProbableState.SHORT_PROBABLE,
         )
     )
-    presentation = (probable_members if probable_run is not None else available)[:15]
-    rows = "".join(_discovery_member_row(item) for item in presentation)
-    unavailable = tuple(item for item in snapshot.members if not item.prerequisite_ready)
-    unavailable_rows = "".join(
-        _row((
-            item.sponsor_label,
-            item.market_family,
-            _plain(item.reasons[0].value),
-            "Not evaluated — prerequisite unavailable",
-        ))
-        for item in unavailable
-    )
-    return (
-        '<section class="intraday-discovery-header"><h2>INTRADAY · NATIVE DISCOVERY</h2>'
-        '<p>' + escape(last) + '</p><p>Presentation order: stable canonical ordering only; '
-        'no ranking or analytical meaning.</p></section>'
-        + failure + metric_html
-        + probable_note
-        + _table_panel(
-            "Current Probables triage" if probable_run is not None else "Current factual triage",
-            ("Instrument", "Market", "Factual state", "Probables state", "Observation", "Evidence"),
-            rows or '<tr><td colspan="6">No governed Probables in the current run.</td></tr>',
+    unavailable = tuple(
+        item for item in snapshot.members
+        if not item.prerequisite_ready
+        or (
+            item.probable_result is not None
+            and item.probable_result.state is ProbableState.UNAVAILABLE
         )
-        + '<div class="intraday-mcx">'
-        + _table_panel(
-            f"MCX prerequisites — {len(unavailable)} unavailable",
-            ("Member", "Market", "Reason", "State"),
-            unavailable_rows or '<tr><td colspan="4">None unavailable.</td></tr>',
-        ) + "</div>"
+    )
+    not_admitted = tuple(
+        item for item in snapshot.members
+        if item.probable_result is not None
+        and item.probable_result.state is ProbableState.NOT_ADMITTED
+    )
+    equity_probables = tuple(item for item in probable_members if item.market_family != "MCX")
+    mcx_probables = tuple(item for item in probable_members if item.market_family == "MCX")
+    equity_unavailable = tuple(item for item in unavailable if item.market_family != "MCX")
+    mcx_unavailable = tuple(item for item in unavailable if item.market_family == "MCX")
+    equity_not_admitted = tuple(item for item in not_admitted if item.market_family != "MCX")
+    mcx_not_admitted = tuple(item for item in not_admitted if item.market_family == "MCX")
+    diagnostics = None if probable_run is None else probable_run.diagnostics
+    return (
+        _intraday_tabs(refresh_enabled)
+        + '<div class="analysis-batch"><span>Market analysis</span>'
+        '<div class="analysis-run-times"><strong>' + escape(last) + '</strong></div></div>'
+        + failure
+        + metric_html
+        + probable_note
+        + '<div class="panels intraday-market-panels">'
+        + _probables_panel(
+            "EQUITIES + INDICES",
+            equity_probables,
+            equity_unavailable,
+            not_admitted=len(equity_not_admitted),
+            conflicting=_conflicting_count(equity_not_admitted),
+            population="—" if diagnostics is None else diagnostics.population_bucket.value,
+            show_unavailable_members=False,
+        )
+        + _probables_panel(
+            "COMMODITIES (MCX)",
+            mcx_probables,
+            mcx_unavailable,
+            not_admitted=len(mcx_not_admitted),
+            conflicting=_conflicting_count(mcx_not_admitted),
+            population="—" if diagnostics is None else diagnostics.population_bucket.value,
+            show_unavailable_members=True,
+        )
+        + "</div>"
+        + _analysis_context(snapshot, probable_run)
     )
 
 
-def _discovery_member_row(item: IntradayDiscoveryMemberSnapshot) -> str:
-    factual = (
-        "Factual data available"
-        if item.machine_facts_available
-        else "Factual path ready"
-    )
-    observed = (
-        "Not yet run"
-        if item.observation_boundary is None
-        else item.observation_boundary.isoformat()
-    )
+def _probable_card(item: IntradayDiscoveryMemberSnapshot) -> str:
+    result = item.probable_result
+    if result is None:
+        return ""
+    direction = "UNAVAILABLE" if result.direction is None else result.direction.value
+    direction_class = "direction-long" if direction == "LONG" else "direction-short"
     detail = f'/intraday/evidence/{quote(item.canonical_identity, safe="")}'
-    analytical = (
-        _plain(item.candidate_state.value)
-        if item.probable_result is None
-        else _plain(item.probable_result.state.value)
+    return (
+        '<article class="opportunity native-opportunity intraday-probable"><div class="opp-head">'
+        '<div class="opp-identity"><h3>' + escape(item.sponsor_label) + '</h3>'
+        '<span class="setup-family">' + escape(item.canonical_identity) + '</span></div>'
+        '<span class="direction ' + direction_class + '">' + escape(direction) + '</span></div>'
+        '<div class="summary-reason">'
+        + _card_fact("Factual state", "FACTS COMPLETE")
+        + _card_fact("1H regime", direction)
+        + _card_fact("15M structure", direction)
+        + _card_fact("Coherence", direction)
+        + _card_fact("Participation", _plain(result.participation_state))
+        + '</div><div class="summary-footer"><span class="summary-rr">Selection state '
+        '<strong>' + escape(_plain(result.state.value)) + '</strong></span>'
+        '<div class="native-opportunity-actions"><a class="button" href="'
+        + detail + '">DETAIL →</a></div></div></article>'
+    )
+
+
+def _card_fact(label: str, value: str) -> str:
+    return (
+        '<span class="intraday-card-fact"><span>' + escape(label)
+        + '</span><strong>' + escape(value) + '</strong></span>'
+    )
+
+
+def _conflicting_count(
+    members: tuple[IntradayDiscoveryMemberSnapshot, ...],
+) -> int:
+    return sum(
+        ProbableReason.DIRECTION_CONFLICTING in item.probable_result.reasons
+        for item in members
+        if item.probable_result is not None
+    )
+
+
+def _probables_panel(
+    title: str,
+    probable_members: tuple[IntradayDiscoveryMemberSnapshot, ...],
+    unavailable_members: tuple[IntradayDiscoveryMemberSnapshot, ...],
+    *,
+    not_admitted: int,
+    conflicting: int,
+    population: str,
+    show_unavailable_members: bool,
+) -> str:
+    cards = "".join(_probable_card(item) for item in probable_members)
+    if not cards:
+        cards = (
+            '<div class="empty"><div><strong>Zero current Probables</strong>'
+            'No governed Long or Short Probable is present in this panel.</div></div>'
+        )
+    unavailable = ""
+    if show_unavailable_members and unavailable_members:
+        unavailable = '<div class="intraday-unavailable-list">' + "".join(
+            '<div class="intraday-unavailable-subject"><strong>'
+            + escape(item.sponsor_label) + '</strong><span>'
+            + escape(_plain(item.reasons[0].value)) + '</span></div>'
+            for item in unavailable_members
+        ) + '</div>'
+    footer = (
+        '<div class="intraday-panel-footer"><span>Probables <strong>'
+        + str(len(probable_members)) + '</strong></span><span>Not Admitted <strong>'
+        + str(not_admitted) + '</strong></span><span>Unavailable <strong>'
+        + str(len(unavailable_members)) + '</strong></span><span>Conflicting <strong>'
+        + str(conflicting) + '</strong></span><span>Population <strong>'
+        + escape(population) + '</strong></span></div>'
     )
     return (
-        "<tr><td><strong>" + escape(item.sponsor_label) + "</strong></td><td>"
-        + escape(item.market_family) + '</td><td class="intraday-state-ready">'
-        + escape(factual) + "</td><td>" + escape(analytical)
-        + "</td><td>" + escape(observed) + '</td><td><a href="'
-        + detail + '">DETAIL →</a></td></tr>'
+        '<section class="market-panel"><div class="panel-heading"><h2>'
+        + escape(title) + '</h2><span>' + str(len(probable_members))
+        + ' current Probables</span></div>' + cards + unavailable + footer + '</section>'
     )
+
+
+def _analysis_context(
+    snapshot: IntradayDiscoverySnapshot,
+    probable_run: ProbablesRun | None,
+) -> str:
+    observation = (
+        snapshot.last_successful_analysis
+        if probable_run is None
+        else probable_run.observation_boundary
+    )
+    methodology_identity = "NOT COMMISSIONED"
+    methodology_version = "—"
+    population = "—"
+    if probable_run is not None:
+        methodology_identity = probable_run.methodology_identity
+        methodology_version = probable_run.methodology_version
+        population = probable_run.diagnostics.population_bucket.value
+    completion = {
+        timeframe: any(_completed(item, timeframe) for item in snapshot.members)
+        for timeframe in (
+            IntradayTimeframe.DAILY,
+            IntradayTimeframe.ONE_HOUR,
+            IntradayTimeframe.FIFTEEN_MINUTES,
+            IntradayTimeframe.FIVE_MINUTES,
+        )
+    }
+    values = (
+        ("Observation Boundary", "UNAVAILABLE" if observation is None else _ist_time(observation)),
+        ("Completed 1D", _availability(completion[IntradayTimeframe.DAILY])),
+        ("Completed 1H", _availability(completion[IntradayTimeframe.ONE_HOUR])),
+        ("Completed 15M", _availability(completion[IntradayTimeframe.FIFTEEN_MINUTES])),
+        ("Completed 5M", _availability(completion[IntradayTimeframe.FIVE_MINUTES])),
+        ("Universe", snapshot.universe_identity + " · " + snapshot.universe_version),
+        (
+            "Reconciliation",
+            snapshot.reconciliation_identity + " · " + snapshot.reconciliation_version,
+        ),
+        ("Methodology", methodology_identity + " · " + methodology_version),
+        ("Population", population),
+    )
+    return (
+        '<section class="intraday-analysis-context"><strong>Analysis Context</strong>'
+        '<div class="intraday-analysis-context-detail">'
+        + "".join('<span><b>' + escape(label) + '</b> · ' + escape(value) + '</span>' for label, value in values)
+        + '</div></section>'
+    )
+
+
+def _completed(item: IntradayDiscoveryMemberSnapshot, timeframe: IntradayTimeframe) -> bool:
+    bundle = item.machine_fact_bundle
+    return bundle is not None and any(
+        fact.family is FactFamily.GOVERNED_COMPLETED_OHLCV
+        and fact.timeframe is timeframe
+        and fact.completed_candle is True
+        for fact in bundle.evidence
+    )
+
+
+def _availability(value: bool) -> str:
+    return "GOVERNED" if value else "UNAVAILABLE"
+
+
+def _analysis_time(value: datetime | None) -> str:
+    if value is None:
+        return "NO SUCCESSFUL DISCOVERY RUN AVAILABLE"
+    return "LAST SUCCESSFUL ANALYSIS · " + _ist_time(value)
+
+
+def _ist_time(value: datetime) -> str:
+    return value.astimezone(_KOLKATA).strftime("%d %b %Y %H:%M IST").upper()
+
+
+def _intraday_tabs(refresh_enabled: bool) -> str:
+    disabled = "" if refresh_enabled else " disabled"
+    return (
+        '<nav class="tabs intraday-tabs" aria-label="Intraday workflow">'
+        '<a class="active" href="/intraday">Opportunities</a>'
+        '<span class="intraday-tab">Review</span>'
+        '<span class="intraday-tab">Trade Candidates</span>'
+        '<span class="intraday-tab">Active</span>'
+        '<span class="intraday-tab">Closed</span>'
+        '<div class="toolbar"><button type="button" id="intraday-refresh-analysis"'
+        + disabled + '>Refresh Analysis</button><span class="intraday-refresh-state" '
+        'id="intraday-refresh-state" aria-live="polite"></span></div></nav>'
+        + _refresh_script()
+    )
+
+
+def _refresh_script() -> str:
+    return """<script>
+const intradayRefresh=document.getElementById('intraday-refresh-analysis');
+const intradayRefreshState=document.getElementById('intraday-refresh-state');
+if(intradayRefresh&&!intradayRefresh.disabled){
+  intradayRefresh.addEventListener('click',async()=>{
+    intradayRefresh.disabled=true;
+    intradayRefreshState.textContent='REFRESHING';
+    try{
+      const response=await fetch('/control/intraday-discovery',{
+        method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({
+          request_identity:`INTRADAY-REFRESH-${Date.now()}`,
+          observation_boundary:new Date().toISOString()
+        })
+      });
+      if(!response.ok)throw new Error();
+      location.reload();
+    }catch(_error){
+      intradayRefreshState.textContent='REFRESH FAILED';
+      intradayRefresh.disabled=false;
+    }
+  });
+}
+</script>"""
 
 
 def _render_discovery_detail(snapshot: IntradayDiscoverySnapshot) -> str:

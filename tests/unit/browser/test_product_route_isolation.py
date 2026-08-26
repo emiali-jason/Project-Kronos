@@ -29,8 +29,8 @@ def test_intraday_route_is_owned_and_testable_outside_shared_server() -> None:
     )
 
     assert type(response) is BrowserRouteResponse
-    assert "Intraday Evidence Workstation" in response.body
-    assert "INTRADAY · NATIVE DISCOVERY" in response.body
+    assert "Intraday Opportunities — Native Discovery" in response.body
+    assert 'class="tabs intraday-tabs"' in response.body
     assert "NO SUCCESSFUL DISCOVERY RUN AVAILABLE" in response.body
     assert routes.handle_get(
         BrowserGetRequest("/swing/opportunities", {}),

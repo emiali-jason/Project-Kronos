@@ -23,18 +23,20 @@ def test_intraday_main_page_is_compact_multi_instrument_factual_triage(
     app, _, _, _, _ = _application(tmp_path)
     body = _get(IntradayBrowserRoutes(app), "/intraday")
 
-    assert "INTRADAY · NATIVE DISCOVERY" in body
+    assert "Intraday Opportunities — Native Discovery" in body
     assert "NO SUCCESSFUL DISCOVERY RUN AVAILABLE" in body
     assert ">98<" in body
-    assert ">93<" in body
     assert ">5<" in body
     assert "Candidate-admission methodology is not yet commissioned" in body
-    assert "stable canonical ordering only" in body
-    assert body.count("/intraday/evidence/") == 15
+    assert "EQUITIES + INDICES" in body and "COMMODITIES (MCX)" in body
+    assert "Analysis Context" in body
+    assert "Current Probables triage" not in body
+    assert body.count("/intraday/evidence/") == 0
     assert "GOLDM" in body and "Active Derivative Binding Unavailable" in body
     assert "NATGAS" in body and "Provider Contract Unavailable" in body
-    assert "font-size:17px" in body
-    assert "#071a12" in body
+    assert "font-size:8px" in body
+    assert "#071827" in body
+    assert "#071a12" not in body
     assert "PLACE ORDER" not in body
 
 
@@ -51,7 +53,9 @@ def test_intraday_main_and_details_project_successful_run_without_fake_candidate
     banknifty = _get(routes, "/intraday/evidence/BANKNIFTY")
 
     assert "LAST SUCCESSFUL ANALYSIS ·" in main
-    assert "Machine facts complete" in main and ">93<" in main
+    assert "Completed 1D" in main and "Completed 5M" in main
+    assert "GOVERNED" in main
+    assert "Zero current Probables" in main
     assert "Candidate Admitted" not in main
     for body, identity in ((reliance, "RELIANCE"), (nifty, "NIFTY"), (banknifty, "BANKNIFTY")):
         assert identity in body
