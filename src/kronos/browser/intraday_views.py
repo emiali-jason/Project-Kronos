@@ -14,6 +14,7 @@ from kronos.application.intraday_workstation import IntradayWorkstationSnapshot
 from kronos.application.swing_opportunities import BrowserWorkspaceSnapshot
 from kronos.browser.views import render_browser_page
 from kronos.intraday.contracts import CandleCompletion, IntradayTimeframe
+from kronos.intraday.probables import ProbableState
 from kronos.intraday.telemetry import TelemetryType
 
 
@@ -129,25 +130,74 @@ def _render_discovery_triage(snapshot: IntradayDiscoverySnapshot) -> str:
         '<div class="intraday-failure"><strong>CURRENT RUN FAILURE</strong> · '
         + escape(failure_text) + "</div>"
     )
-    metrics = (
-        ("Universe", snapshot.universe_count),
-        ("Factual path ready", snapshot.pre_evaluable_count),
-        ("Prerequisite unavailable", snapshot.prerequisite_unavailable_count),
-        ("Machine facts complete", snapshot.machine_fact_success_count),
-        ("Machine facts failed", snapshot.machine_fact_failure_count),
-        (
-            "Candidates",
-            snapshot.candidate_admitted_count
-            + snapshot.candidate_not_admitted_count,
-        ),
-    )
+    probable_snapshot = snapshot.probables
+    if probable_snapshot is not None and probable_snapshot.current_failure is not None:
+        failure += (
+            '<div class="intraday-failure"><strong>CURRENT PROBABLES FAILURE</strong> · '
+            + escape(_plain(probable_snapshot.current_failure))
+            + " · last successful Probables remain preserved.</div>"
+        )
+    probable_run = None if probable_snapshot is None else probable_snapshot.run
+    if probable_snapshot is None:
+        metrics = (
+            ("Universe", snapshot.universe_count),
+            ("Factual path ready", snapshot.pre_evaluable_count),
+            ("Prerequisite unavailable", snapshot.prerequisite_unavailable_count),
+            ("Machine facts complete", snapshot.machine_fact_success_count),
+            ("Long Probables", 0),
+            ("Short Probables", 0),
+        )
+        probable_note = (
+            '<div class="intraday-methodology"><strong>Candidate-admission methodology '
+            'is not yet commissioned.</strong> Factual availability is not an opportunity; '
+            'no candidates are manufactured for presentation.</div>'
+        )
+    elif probable_run is None:
+        metrics = (
+            ("Universe", snapshot.universe_count),
+            ("Factual path ready", snapshot.pre_evaluable_count),
+            ("Prerequisite unavailable", snapshot.prerequisite_unavailable_count),
+            ("Machine facts complete", snapshot.machine_fact_success_count),
+            ("Long Probables", 0),
+            ("Short Probables", 0),
+        )
+        probable_note = (
+            '<div class="intraday-methodology"><strong>V0 Probables methodology '
+            'commissioned.</strong> No successful governed Probables run is loaded. '
+            'Browser refresh does not create an analytical run.</div>'
+        )
+    else:
+        diagnostics = probable_run.diagnostics
+        metrics = (
+            ("Universe", diagnostics.starting_population),
+            ("Long Probables", diagnostics.long_probables),
+            ("Short Probables", diagnostics.short_probables),
+            ("Not Admitted", diagnostics.not_admitted_count),
+            ("Unavailable", diagnostics.unavailable_count),
+            ("Population", diagnostics.population_bucket.value),
+        )
+        probable_note = (
+            '<div class="intraday-methodology"><strong>V0 Probables methodology · '
+            + escape(probable_run.methodology_version)
+            + '</strong> Last successful analysis '
+            + escape(probable_run.observation_boundary.isoformat())
+            + '. Probable means selected for deeper review only; no trading authority.</div>'
+        )
     metric_html = '<div class="intraday-metrics">' + "".join(
         '<div class="intraday-metric"><span>' + escape(label)
         + '</span><strong>' + str(value) + "</strong></div>"
         for label, value in metrics
     ) + "</div>"
     available = tuple(item for item in snapshot.members if item.prerequisite_ready)
-    presentation = available[:15]
+    probable_members = tuple(
+        item for item in available
+        if item.probable_result is not None
+        and item.probable_result.state in (
+            ProbableState.LONG_PROBABLE,
+            ProbableState.SHORT_PROBABLE,
+        )
+    )
+    presentation = (probable_members if probable_run is not None else available)[:15]
     rows = "".join(_discovery_member_row(item) for item in presentation)
     unavailable = tuple(item for item in snapshot.members if not item.prerequisite_ready)
     unavailable_rows = "".join(
@@ -164,13 +214,11 @@ def _render_discovery_triage(snapshot: IntradayDiscoverySnapshot) -> str:
         '<p>' + escape(last) + '</p><p>Presentation order: stable canonical ordering only; '
         'no ranking or analytical meaning.</p></section>'
         + failure + metric_html
-        + '<div class="intraday-methodology"><strong>Candidate-admission methodology '
-        'is not yet commissioned.</strong> Factual availability is not an opportunity; '
-        'no candidates are manufactured for presentation.</div>'
+        + probable_note
         + _table_panel(
-            "Current factual triage",
-            ("Instrument", "Market", "Factual state", "Discovery state", "Observation", "Evidence"),
-            rows or '<tr><td colspan="6">No factually ready members.</td></tr>',
+            "Current Probables triage" if probable_run is not None else "Current factual triage",
+            ("Instrument", "Market", "Factual state", "Probables state", "Observation", "Evidence"),
+            rows or '<tr><td colspan="6">No governed Probables in the current run.</td></tr>',
         )
         + '<div class="intraday-mcx">'
         + _table_panel(
@@ -193,10 +241,15 @@ def _discovery_member_row(item: IntradayDiscoveryMemberSnapshot) -> str:
         else item.observation_boundary.isoformat()
     )
     detail = f'/intraday/evidence/{quote(item.canonical_identity, safe="")}'
+    analytical = (
+        _plain(item.candidate_state.value)
+        if item.probable_result is None
+        else _plain(item.probable_result.state.value)
+    )
     return (
         "<tr><td><strong>" + escape(item.sponsor_label) + "</strong></td><td>"
         + escape(item.market_family) + '</td><td class="intraday-state-ready">'
-        + escape(factual) + "</td><td>" + escape(_plain(item.candidate_state.value))
+        + escape(factual) + "</td><td>" + escape(analytical)
         + "</td><td>" + escape(observed) + '</td><td><a href="'
         + detail + '">DETAIL →</a></td></tr>'
     )
@@ -207,6 +260,11 @@ def _render_discovery_detail(snapshot: IntradayDiscoverySnapshot) -> str:
     if item is None:
         return _unavailable("Intraday member", "The governed member was not found.")
     reasons = ", ".join(_plain(reason.value) for reason in item.reasons)
+    probable = item.probable_result
+    probable_state = "NOT YET ANALYSED" if probable is None else _plain(probable.state.value)
+    probable_reason = "UNAVAILABLE" if probable is None else ", ".join(
+        _plain(reason.value) for reason in probable.reasons
+    )
     header = (
         '<section class="intraday-discovery-header"><h2>' + escape(item.sponsor_label)
         + '</h2><p>' + escape(item.canonical_identity) + " · "
@@ -217,6 +275,8 @@ def _render_discovery_detail(snapshot: IntradayDiscoverySnapshot) -> str:
             ("Factual prerequisite", "AVAILABLE" if item.prerequisite_ready else "UNAVAILABLE"),
             ("Machine facts", "AVAILABLE" if item.machine_facts_available else "NOT AVAILABLE"),
             ("Discovery state", _plain(item.candidate_state.value)),
+            ("Probables state", probable_state),
+            ("Probables reason", probable_reason),
             ("Reason", reasons),
             ("Execution eligibility", "NOT ESTABLISHED"),
         )) + "</section>"
@@ -259,6 +319,15 @@ def _render_discovery_detail(snapshot: IntradayDiscoverySnapshot) -> str:
         detail += _structure_panel(rich.structural_evidence)
         detail += _telemetry_panels(rich.shadow_telemetry)
     source = "UNAVAILABLE" if bundle is None else " | ".join(bundle.source_identities)
+    probable_lineage = () if probable is None else (
+        ("Methodology", f"{probable.methodology_identity} / {probable.methodology_version}"),
+        ("Probable result identity", probable.result_identity),
+        ("Narrow CPR fact", probable.lineage.narrow_cpr_fact_identity or "UNAVAILABLE"),
+        ("1H fact", probable.lineage.one_hour_fact_identity or "UNAVAILABLE"),
+        ("15M fact", probable.lineage.fifteen_minute_fact_identity or "UNAVAILABLE"),
+        ("Coherence fact", probable.lineage.coherence_fact_identity or "UNAVAILABLE"),
+        ("Participation", probable.participation_state),
+    )
     lineage = '<section class="intraday-panel"><h2>Evidence / Timestamp</h2>' + _facts((
         (
             "Observation boundary",
@@ -271,6 +340,7 @@ def _render_discovery_detail(snapshot: IntradayDiscoverySnapshot) -> str:
             else f"{bundle.schema_identity} / {bundle.bundle_version}",
         ),
         ("Source identities", source),
+        *probable_lineage,
     )) + "</section></div>"
     return header + lineage + factual + detail
 

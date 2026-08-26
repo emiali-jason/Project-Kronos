@@ -6,7 +6,7 @@
 |---|---|---|
 | Universe | Intraday | Native analytical membership only |
 | Native Discovery | Intraday | Factual evaluability, candidate-contract state, bounded reasons and run accounting; predicates deferred |
-| WO-06 Qualification | Intraday | Hypotheses, explicit research variants, research-only direction, ablation, factual outcomes, population diagnostics and eventual Probable admission; Parts 1–2 production consequence is NONE |
+| WO-06 Qualification / Probables | Intraday | Parts 1–2 own hypotheses, explicit research variants, research-only direction, ablation and factual outcomes; Part 3 commissions only V0 Probable admission and factual population diagnostics for deeper review |
 | WO-06H Historical Reconstruction | Intraday research boundary | Current governed membership as a research subject set, explicit historical sessions/boundaries, completed historical facts and exact corpus-binding eligibility; production Discovery and Probable authority is NONE |
 | WO-06HA Historical Operation | Intraday research operation | Bounded completed-session EOD factual acquisition, request accounting and immutable reload only; authentication, automatic corpus binding and production mutation authority are NONE |
 | Qualification outcomes | Intraday factual research boundary | Versioned subsequent-market labels only; no trade outcome |

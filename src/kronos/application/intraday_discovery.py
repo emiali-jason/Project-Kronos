@@ -6,6 +6,10 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from kronos.application.intraday_workstation import IntradayEvidenceBundle
+from kronos.application.intraday_probables import (
+    IntradayProbablesApplication,
+    IntradayProbablesSnapshot,
+)
 from kronos.intraday.discovery import (
     CandidateState,
     DiscoveryError,
@@ -20,6 +24,7 @@ from kronos.intraday.discovery_runtime import (
     DiscoveryRuntimeExecution,
     IntradayNativeDiscoveryService,
 )
+from kronos.intraday.probables import ProbableMemberResult
 from kronos.intraday.reconciliation import (
     Availability,
     ReconciliationMember,
@@ -49,6 +54,7 @@ class IntradayDiscoveryMemberSnapshot:
     observation_boundary: datetime | None
     machine_fact_bundle: NativeDiscoveryMachineFactBundle | None
     evidence: IntradayEvidenceBundle | None
+    probable_result: ProbableMemberResult | None = None
 
     def __post_init__(self) -> None:
         if (
@@ -69,6 +75,10 @@ class IntradayDiscoveryMemberSnapshot:
             or (self.evidence is not None and type(self.evidence) is not IntradayEvidenceBundle)
             or self.machine_facts_available != (self.machine_fact_bundle is not None)
             or (self.evidence is not None and not self.machine_facts_available)
+            or (
+                self.probable_result is not None
+                and type(self.probable_result) is not ProbableMemberResult
+            )
         ):
             raise ValueError("INTRADAY_DISCOVERY_MEMBER_SNAPSHOT_INVALID")
 
@@ -93,6 +103,7 @@ class IntradayDiscoverySnapshot:
     universe_version: str
     reconciliation_identity: str
     reconciliation_version: str
+    probables: IntradayProbablesSnapshot | None = None
     application_identity: str = DISCOVERY_APPLICATION_IDENTITY
     application_version: str = DISCOVERY_APPLICATION_VERSION
 
@@ -135,6 +146,10 @@ class IntradayDiscoverySnapshot:
                 self.reconciliation_identity,
                 self.reconciliation_version,
             ))
+            or (
+                self.probables is not None
+                and type(self.probables) is not IntradayProbablesSnapshot
+            )
             or self.application_identity != DISCOVERY_APPLICATION_IDENTITY
             or self.application_version != DISCOVERY_APPLICATION_VERSION
         ):
@@ -151,6 +166,7 @@ class IntradayDiscoveryApplication:
         reconciliation: ReconciliationPublication,
         store: NativeDiscoveryStore,
         service: IntradayNativeDiscoveryService | None = None,
+        probables: IntradayProbablesApplication | None = None,
         last_successful_run_identity: str | None = None,
     ) -> None:
         if (
@@ -160,6 +176,10 @@ class IntradayDiscoveryApplication:
             or (
                 service is not None
                 and type(service) is not IntradayNativeDiscoveryService
+            )
+            or (
+                probables is not None
+                and type(probables) is not IntradayProbablesApplication
             )
         ):
             raise ValueError("INTRADAY_DISCOVERY_APPLICATION_INVALID")
@@ -173,6 +193,7 @@ class IntradayDiscoveryApplication:
         self._reconciliation = reconciliation
         self._store = store
         self._service = service
+        self._probables = probables
         self._run: NativeDiscoveryRun | None = None
         self._bundles: dict[str, NativeDiscoveryMachineFactBundle] = {}
         self._evidence: dict[str, IntradayEvidenceBundle] = {}
@@ -263,6 +284,7 @@ class IntradayDiscoveryApplication:
             universe_version=self._universe.publication_version,
             reconciliation_identity=self._reconciliation.publication_identity,
             reconciliation_version=self._reconciliation.publication_version,
+            probables=None if self._probables is None else self._probables.snapshot(),
         )
 
     def _accept_execution(self, execution: DiscoveryRuntimeExecution) -> None:
@@ -294,6 +316,14 @@ class IntradayDiscoveryApplication:
         results = {} if self._run is None else {
             item.universe_member_identity: item for item in self._run.results
         }
+        probable_results = (
+            {}
+            if self._probables is None
+            else {
+                item.universe_member_identity: item
+                for item in self._probables.snapshot().results
+            }
+        )
         items: list[IntradayDiscoveryMemberSnapshot] = []
         for member in self._reconciliation.members:
             result = results.get(member.universe_member_identity)
@@ -340,6 +370,7 @@ class IntradayDiscoveryApplication:
                 observation_boundary=observed_at,
                 machine_fact_bundle=bundle,
                 evidence=self._evidence.get(member.universe_member_identity),
+                probable_result=probable_results.get(member.universe_member_identity),
             ))
         return tuple(sorted(items, key=lambda item: (item.canonical_identity, item.sponsor_label)))
 

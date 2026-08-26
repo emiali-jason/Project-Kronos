@@ -1,6 +1,6 @@
 # KRONOS Intraday Engineering, Methodology & Architecture Record
 
-**Status:** LIVING DOCUMENT — V0.1; amended through WO-03 review candidate
+**Status:** LIVING DOCUMENT — V0.1; amended through WO-06 Part-3 commissioning candidate
 
 **Product owner:** KRONOS Intraday
 
@@ -646,7 +646,33 @@ lifecycle. Commissioning belongs to WO-06 Part 3/runtime work and its
 downstream lifecycle architecture; WO-06HJ introduces no refresh operation,
 Probable admission, trade mutation, or lifecycle authority.
 
-## 28. References
+## 28. WO-06 Part-3 V0 Probables methodology amendment
+
+WO-06 Part 3 freezes the WO-06S Variant-G evidence conclusion as
+`KRONOS-INTRADAY-PROBABLES-METHODOLOGY-V1 / 1.0.0`. Narrow CPR TRUE is required
+admission support; completed 1H, completed 15M and explicit coherence are
+mandatory; participation is supporting/non-blocking; completed 1D, completed
+5M, PDH/PDL, CPR location and Classic Pivots are informational.
+
+Long requires exact Long agreement across 1H, 15M and coherence; Short requires
+exact Short agreement. Non-directional and conflicting members are not
+admitted. Missing evidence remains unavailable. No score, rank, Top-N, quota,
+threshold, fallback or performance claim exists.
+
+The production evaluator reproduces the retained real sessions exactly as
+14/7/6/17/18, aggregating 17 Long and 45 Short. This is population-health
+evidence only; outcome evidence remains `ABSENT_PENDING`. Immutable runs bind
+exact source facts and subject-aware boundaries, preserve earlier runs, keep a
+later failure separate from the last success and project through a Provider-
+free Browser view.
+
+Part 3 commissions Probables for deeper review only. It does not commission
+3V Review, Promotion, Trade Construction, Risk, Entry Timing, PAPER/LIVE,
+lifecycle, notification, journal or broker authority. WO-06 remains open for
+WO-06V, WO-06L and WO-06E2E. The complete freeze is recorded in
+[WO-06 Part-3 V0 Probables Methodology](KRONOS-INTRADAY-WO-06-PART-3-V0-PROBABLES-METHODOLOGY.md).
+
+## 29. References
 
 - [Intraday Shared-File Change Rule](../../../engineering/INTRADAY-SHARED-FILE-CHANGE-RULE.md)
 - [Platform Constitution](../../platform/PLATFORM-000-CONSTITUTION.md)
@@ -667,3 +693,4 @@ Probable admission, trade mutation, or lifecycle authority.
 - [WO-06 Part-2 Probables Methodology Research](KRONOS-INTRADAY-WO-06-PART-2-PROBABLES-METHODOLOGY-RESEARCH.md)
 - [WO-06H Historical Qualification Reconstruction](KRONOS-INTRADAY-WO-06H-HISTORICAL-QUALIFICATION-RECONSTRUCTION.md)
 - [WO-06HA Historical Research Operational Seam](KRONOS-INTRADAY-WO-06HA-HISTORICAL-RESEARCH-OPERATIONAL-SEAM.md)
+- [WO-06 Part-3 V0 Probables Methodology](KRONOS-INTRADAY-WO-06-PART-3-V0-PROBABLES-METHODOLOGY.md)

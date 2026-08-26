@@ -14,6 +14,7 @@ from kronos.application.intraday_discovery import IntradayDiscoveryApplication
 from kronos.application.intraday_discovery_operation import (
     IntradayDiscoveryOperationService,
 )
+from kronos.application.intraday_probables import IntradayProbablesApplication
 from kronos.application.intraday_historical_operation import (
     IntradayHistoricalQualificationHarness,
     IntradayHistoricalQualificationOperationService,
@@ -24,6 +25,7 @@ from kronos.intraday.historical_qualification_persistence import (
     HistoricalQualificationStore,
 )
 from kronos.intraday.market_context import CurrentMarketCalendarScheduleSource
+from kronos.intraday.probables_persistence import ProbablesStore
 from kronos.intraday.reconciliation import (
     RECONCILIATION_IDENTITY,
     RECONCILIATION_VERSION,
@@ -84,6 +86,7 @@ class IntradayRuntimeComposition:
     discovery_operation: IntradayDiscoveryOperationService
     historical_operation: IntradayHistoricalQualificationOperationService
     historical_invocation: IntradayHistoricalQualificationHarness
+    probables_application: IntradayProbablesApplication
     reliance_bootstrap: RelianceIntradayBootstrap
 
 
@@ -93,6 +96,7 @@ def create_intraday_runtime(
     calendar_publisher: MarketCalendarPublisher | None = None,
     evidence_root: Path = DEFAULT_INTRADAY_EVIDENCE_ROOT,
     last_successful_discovery_run_identity: str | None = None,
+    last_successful_probables_run_identity: str | None = None,
     clock=lambda: datetime.now(timezone.utc),
 ) -> IntradayRuntimeComposition:
     """Compose Intraday without moving product policy into shared modules."""
@@ -111,11 +115,16 @@ def create_intraday_runtime(
         publication_identity=RECONCILIATION_IDENTITY,
         publication_version=RECONCILIATION_VERSION,
     )
+    probables = IntradayProbablesApplication(
+        store=ProbablesStore(Path(evidence_root)),
+        last_successful_run_identity=last_successful_probables_run_identity,
+    )
     discovery = _create_discovery_application(
         store=store,
         last_successful_run_identity=last_successful_discovery_run_identity,
         universe=universe,
         reconciliation=reconciliation,
+        probables=probables,
     )
     operation = IntradayDiscoveryOperationService(
         provider_runtime=provider_runtime,
@@ -156,6 +165,7 @@ def create_intraday_runtime(
         historical_invocation=IntradayHistoricalQualificationHarness(
             historical_operation
         ),
+        probables_application=probables,
         reliance_bootstrap=bootstrap,
     )
 
@@ -172,6 +182,7 @@ def _create_discovery_application(
     last_successful_run_identity: str | None = None,
     universe: IntradayUniversePublication | None = None,
     reconciliation: ReconciliationPublication | None = None,
+    probables: IntradayProbablesApplication | None = None,
 ) -> IntradayDiscoveryApplication:
     selected_universe = universe or load_intraday_universe_publication()
     selected_reconciliation = reconciliation or IntradayReconciliationStore().load(
@@ -182,6 +193,7 @@ def _create_discovery_application(
         universe=selected_universe,
         reconciliation=selected_reconciliation,
         store=store,
+        probables=probables,
         last_successful_run_identity=last_successful_run_identity,
     )
 

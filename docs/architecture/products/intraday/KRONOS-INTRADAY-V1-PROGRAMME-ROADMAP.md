@@ -1,6 +1,6 @@
 # KRONOS Intraday V1 Programme Roadmap
 
-**Status:** WO-06 Parts 1–2 + WO-06H/06HA combined engineering candidate
+**Status:** WO-06 Part-3 production commissioning candidate
 
 Native universe count is 98. RELIANCE remains the commissioning and regression
 anchor; it is not the universe owner or a privileged membership class.
@@ -29,12 +29,19 @@ V0, fixture evidence, immutable corpus/report persistence and diagnostic
 population health. No real post-activation Discovery corpus exists; real
 qualification remains `EVIDENCE_PENDING_REAL_DISCOVERY_RUN`.
 
-WO-06 Part 2 now adds explicit staged variants, evidence-role combinations,
+WO-06 Part 2 added explicit staged variants, evidence-role combinations,
 direction hypotheses, attrition/population calibration, ablation, factual
 outcome proposals and exact real-corpus binding. No valid post-activation real
 Discovery corpus exists, so all market-usefulness and methodology conclusions
-remain insufficient-evidence states. Part 3 may freeze Probable admission only
-after sufficient governed real evidence and approval; it is not started.
+remained insufficient-evidence states at that checkpoint. WO-06S subsequently
+supplied approved real semantic evidence and the exact Variant-G freeze
+candidate. WO-06 Part 3 commissions Variant G as V0 production Probables:
+Narrow CPR TRUE is required admission support; completed 1H, completed 15M and
+exact coherence are mandatory; participation is supporting/non-blocking; 1D,
+5M and level relationships are informational. Exact historical reproduction is
+14/7/6/17/18 with 17 Long and 45 Short. No outcome/performance claim, score,
+ranking, quota, Promotion, Trade, Risk, Entry or broker authority is introduced.
+WO-06 remains open pending WO-06V, WO-06L and WO-06E2E.
 
 WO-06H now adds a separate historical qualification-reconstruction contract so
 the current governed membership can be used as an explicit research subject set
@@ -47,8 +54,9 @@ invocation, completed-session EOD boundary, pre-acquisition request planner and
 ceiling, single minimized lease, sequential no-retry execution, immutable
 reload proof and sanitized terminal accounting. The current 98/93/5 split is
 derived from governed publications; unavailable MCX members issue zero Provider
-history calls. Real historical sessions/observations remain `0` pending a
-separate operational authorization; Part 3 is not started.
+history calls. The later governed WO-06S operation retained the real historical
+semantic evidence used by Part 3. Part 3 performs no additional Provider
+acquisition and no current-market Refresh Analysis.
 
 The CA-approved successor-universe decision is a separate bounded follow-up.
 WO-05A/WO-05B preserve current V1/1.0.0 at exactly 98 members.

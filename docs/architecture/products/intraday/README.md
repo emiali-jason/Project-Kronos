@@ -25,6 +25,7 @@ Risk, execution, or broker authority.
 - [WO-05B Bounded Operational Control](KRONOS-INTRADAY-WO-05B-BOUNDED-OPERATIONAL-CONTROL.md)
 - [WO-06 Part-1 Qualification Foundation](KRONOS-INTRADAY-WO-06-PART-1-QUALIFICATION-FOUNDATION.md)
 - [WO-06 Part-2 Probables Methodology Research](KRONOS-INTRADAY-WO-06-PART-2-PROBABLES-METHODOLOGY-RESEARCH.md)
+- [WO-06 Part-3 V0 Probables Methodology](KRONOS-INTRADAY-WO-06-PART-3-V0-PROBABLES-METHODOLOGY.md)
 - [WO-06H Historical Qualification Reconstruction](KRONOS-INTRADAY-WO-06H-HISTORICAL-QUALIFICATION-RECONSTRUCTION.md)
 - [WO-06HA Historical Research Operational Seam](KRONOS-INTRADAY-WO-06HA-HISTORICAL-RESEARCH-OPERATIONAL-SEAM.md)
 - [DOMAIN-001 Prerequisite Manifest](KRONOS-INTRADAY-DOMAIN-001-PREREQUISITE-MANIFEST-V1.md)
@@ -36,8 +37,8 @@ Risk, execution, or broker authority.
 ## Current governed boundary
 
 Intraday owns its 98-member Native analytical universe, factual product
-composition, later Discovery/promotion/construction policy, product state, and
-product projections. It consumes DOMAIN-001, DOMAIN-006, DOMAIN-008, and other
+composition, V0 Probables methodology, later promotion/construction policy,
+product state, and product projections. It consumes DOMAIN-001, DOMAIN-006, DOMAIN-008, and other
 Platform capabilities through governed seams. Native membership is not
 execution eligibility.
 
