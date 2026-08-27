@@ -26,6 +26,9 @@ from kronos.intraday.native_visual_reconciliation import ReconciliationError
 from kronos.intraday.native_visual_reconciliation_persistence import (
     IntradayNativeVisualReconciliationStore,
 )
+from kronos.instrument.visual_identity_persistence import (
+    load_default_visual_identity_resolver,
+)
 
 
 class IntradayBrowserRoutes:
@@ -44,6 +47,7 @@ class IntradayBrowserRoutes:
             current_probables=self._current_probables,
             store=IntradayReviewStore(),
             transport=IntradayReviewPdfTransport(),
+            visual_identity_resolver=load_default_visual_identity_resolver(),
         )
         self._reconciliation = reconciliation or IntradayNativeVisualReconciliationApplication(
             current_probables=self._review.current_probables,

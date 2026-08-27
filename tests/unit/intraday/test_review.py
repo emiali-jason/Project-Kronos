@@ -23,6 +23,14 @@ from kronos.intraday.review import (
 )
 from kronos.intraday.review_pdf import IntradayReviewPdfTransport, render_question_pack_pdf
 from kronos.intraday.review_persistence import MAX_CHART_BYTES, IntradayReviewStore, validate_chart_payload
+from kronos.instrument.visual_identity import (
+    VISUAL_IDENTITY_RELATIONSHIP_PUBLICATION_V1,
+    VisualIdentityRelationshipStatus,
+    VisualIdentityResolver,
+    VisualIdentitySourceContext,
+    create_visual_identity_publication,
+    create_visual_identity_relationship,
+)
 from tests.unit.intraday.test_historical_semantic import BOUNDARY
 from tests.unit.intraday.test_probables import _member, _run
 
@@ -34,7 +42,42 @@ def _png(red: int) -> bytes:
     return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", 1, 1, 8, 2, 0, 0, 0)) + chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b"")
 
 
-def _application(tmp_path: Path, current: list):  # type: ignore[no-untyped-def]
+def _application(
+    tmp_path: Path,
+    current: list,
+    visual_identity_resolver: VisualIdentityResolver | None = None,
+):  # type: ignore[no-untyped-def]
+    subjects = tuple(
+        result.canonical_subject_identity for result in current[0].results
+    )
+    relationships = tuple(
+        create_visual_identity_relationship(
+            canonical_subject_identity=subject,
+            observed_visible_subject_identity=subject,
+            source_context=VisualIdentitySourceContext.TRADINGVIEW_VISUAL_CHART,
+            effective_from=BOUNDARY - timedelta(days=1),
+            effective_through=BOUNDARY + timedelta(days=1),
+            status=VisualIdentityRelationshipStatus.ACTIVE,
+            source_identity="TEST-TRADINGVIEW-VISUAL-CHART",
+            provenance=("TEST", subject),
+            supersedes=None,
+        )
+        for subject in subjects
+    )
+    resolver = visual_identity_resolver or VisualIdentityResolver(
+        create_visual_identity_publication(
+            canonical_subject_identities=subjects,
+            publication_identity=VISUAL_IDENTITY_RELATIONSHIP_PUBLICATION_V1,
+            publication_version="1.0.0",
+            effective_from=BOUNDARY - timedelta(days=1),
+            effective_through=BOUNDARY + timedelta(days=1),
+            source_identities=("TEST-ADR-0018",),
+            provenance=("TEST", "DOMAIN-001"),
+            relationships=relationships,
+            supersedes=None,
+            schema_identity=VISUAL_IDENTITY_RELATIONSHIP_PUBLICATION_V1,
+        )
+    )
     return IntradayReviewApplication(
         current_probables=lambda: current[0],
         store=IntradayReviewStore((tmp_path / "evidence").resolve()),
@@ -42,6 +85,7 @@ def _application(tmp_path: Path, current: list):  # type: ignore[no-untyped-def]
             question_outbox=(tmp_path / "questions").resolve(),
             answer_inbox=(tmp_path / "answers").resolve(),
         ),
+        visual_identity_resolver=resolver,
         clock=lambda: BOUNDARY + timedelta(seconds=30),
     )
 

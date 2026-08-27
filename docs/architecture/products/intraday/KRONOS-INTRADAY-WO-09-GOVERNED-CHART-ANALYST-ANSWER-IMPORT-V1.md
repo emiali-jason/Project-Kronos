@@ -29,9 +29,13 @@ reuse without inventing new meaning.
 
 Expected canonical subject identity is supplied by the exact governed Question
 Pack. Observed visible subject identity is independently returned by the Chart
-Analyst. KRONOS never fills or corrects the observed value. A mismatch or
-unreadable observed identity creates a typed failed import and no trusted visual
-evidence.
+Analyst. KRONOS never fills, normalizes, or corrects the observed value. Under
+[ADR-0018](../../adr/ADR-0018-DOMAIN-001-GOVERNED-VISUAL-IDENTITY-RELATIONSHIP-V1.md),
+Intraday submits the raw value, the exact `TRADINGVIEW_VISUAL_CHART` source
+context, and the Review observation boundary to DOMAIN-001. The resolved
+canonical subject must equal the separately retained expected subject. A
+mismatch, unavailable or ambiguous relationship, or unreadable observed
+identity creates a typed failed import and no trusted visual evidence.
 
 Successful binding requires exact equality for Question Set/version, Review
 Pack, Review Cycle/Request, Chart Revision, expected subject and proposed

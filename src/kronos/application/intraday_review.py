@@ -52,6 +52,7 @@ from kronos.intraday.review_transport import (
     ReviewBatchTransport,
     create_review_batch_transport,
 )
+from kronos.instrument.visual_identity import VisualIdentityResolver
 
 
 @dataclass(frozen=True, slots=True)
@@ -188,13 +189,21 @@ class IntradayReviewApplication:
         current_probables: Callable[[], ProbablesRun | None],
         store: IntradayReviewStore,
         transport: IntradayReviewPdfTransport,
+        visual_identity_resolver: VisualIdentityResolver,
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
     ) -> None:
-        if not callable(current_probables) or type(store) is not IntradayReviewStore or type(transport) is not IntradayReviewPdfTransport or not callable(clock):
+        if (
+            not callable(current_probables)
+            or type(store) is not IntradayReviewStore
+            or type(transport) is not IntradayReviewPdfTransport
+            or type(visual_identity_resolver) is not VisualIdentityResolver
+            or not callable(clock)
+        ):
             raise ValueError("INTRADAY_REVIEW_APPLICATION_INVALID")
         self._current_probables = current_probables
         self._store = store
         self._transport = transport
+        self._visual_identity_resolver = visual_identity_resolver
         self._clock = clock
         self._lock = RLock()
 
@@ -517,6 +526,8 @@ class IntradayReviewApplication:
                 state = {
                     ReviewFailure.ANSWER_MISSING: AnswerImportState.MISSING,
                     ReviewFailure.ANSWER_IDENTITY_MISMATCH: AnswerImportState.IDENTITY_MISMATCH,
+                    ReviewFailure.VISUAL_IDENTITY_RELATIONSHIP_UNAVAILABLE: AnswerImportState.IDENTITY_MISMATCH,
+                    ReviewFailure.VISUAL_IDENTITY_RELATIONSHIP_AMBIGUOUS: AnswerImportState.IDENTITY_MISMATCH,
                     ReviewFailure.ANSWER_SCHEMA_INVALID: AnswerImportState.SCHEMA_INVALID,
                     ReviewFailure.ANSWER_CONFLICT: AnswerImportState.CONFLICT,
                 }.get(error.failure, AnswerImportState.INVALID)
@@ -540,6 +551,8 @@ class IntradayReviewApplication:
             except ReviewError as error:
                 state = {
                     ReviewFailure.ANSWER_IDENTITY_MISMATCH: AnswerImportState.IDENTITY_MISMATCH,
+                    ReviewFailure.VISUAL_IDENTITY_RELATIONSHIP_UNAVAILABLE: AnswerImportState.IDENTITY_MISMATCH,
+                    ReviewFailure.VISUAL_IDENTITY_RELATIONSHIP_AMBIGUOUS: AnswerImportState.IDENTITY_MISMATCH,
                     ReviewFailure.ANSWER_SCHEMA_INVALID: AnswerImportState.SCHEMA_INVALID,
                     ReviewFailure.ANSWER_CONFLICT: AnswerImportState.CONFLICT,
                 }.get(error.failure, AnswerImportState.INVALID)
@@ -632,6 +645,8 @@ class IntradayReviewApplication:
                 except ReviewError as error:
                     state = {
                         ReviewFailure.ANSWER_IDENTITY_MISMATCH: AnswerImportState.IDENTITY_MISMATCH,
+                        ReviewFailure.VISUAL_IDENTITY_RELATIONSHIP_UNAVAILABLE: AnswerImportState.IDENTITY_MISMATCH,
+                        ReviewFailure.VISUAL_IDENTITY_RELATIONSHIP_AMBIGUOUS: AnswerImportState.IDENTITY_MISMATCH,
                         ReviewFailure.ANSWER_SCHEMA_INVALID: AnswerImportState.SCHEMA_INVALID,
                         ReviewFailure.ANSWER_CONFLICT: AnswerImportState.CONFLICT,
                     }.get(error.failure, AnswerImportState.INVALID)
@@ -660,6 +675,8 @@ class IntradayReviewApplication:
         state = {
             ReviewFailure.ANSWER_MISSING: AnswerImportState.MISSING,
             ReviewFailure.ANSWER_IDENTITY_MISMATCH: AnswerImportState.IDENTITY_MISMATCH,
+            ReviewFailure.VISUAL_IDENTITY_RELATIONSHIP_UNAVAILABLE: AnswerImportState.IDENTITY_MISMATCH,
+            ReviewFailure.VISUAL_IDENTITY_RELATIONSHIP_AMBIGUOUS: AnswerImportState.IDENTITY_MISMATCH,
             ReviewFailure.ANSWER_SCHEMA_INVALID: AnswerImportState.SCHEMA_INVALID,
         }.get(failure, AnswerImportState.INVALID)
         return IntradayAnswerBatchResult(
@@ -791,7 +808,12 @@ class IntradayReviewApplication:
                     pack, filename, AnswerImportState.ALREADY_IMPORTED, record=record,
                 )
             raise ReviewError(ReviewFailure.ANSWER_CONFLICT)
-        evidence = bind_imported_evidence(pack, answer, imported_at=self._clock())
+        evidence = bind_imported_evidence(
+            pack,
+            answer,
+            imported_at=self._clock(),
+            visual_identity_resolver=self._visual_identity_resolver,
+        )
         record = create_import_record(
             pack,
             answer_filename=filename,

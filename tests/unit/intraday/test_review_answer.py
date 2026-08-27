@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import timedelta
 from pathlib import Path
 
 import pytest
@@ -17,14 +18,27 @@ from kronos.intraday.review_answer import (
     parse_batch_answer_transport,
     parse_answer_pack,
 )
+from kronos.instrument.visual_identity import (
+    VISUAL_IDENTITY_RELATIONSHIP_PUBLICATION_V1,
+    VisualIdentityRelationshipStatus,
+    VisualIdentityResolver,
+    VisualIdentitySourceContext,
+    create_visual_identity_publication,
+    create_visual_identity_relationship,
+)
+from tests.unit.intraday.test_historical_semantic import BOUNDARY
 from tests.unit.intraday.test_probables import _member, _run
 from tests.unit.intraday.test_review import _application, _png
 
 
-def _ready(tmp_path: Path, subjects: tuple[str, ...] = ("WIPRO",)):  # type: ignore[no-untyped-def]
+def _ready(
+    tmp_path: Path,
+    subjects: tuple[str, ...] = ("WIPRO",),
+    visual_identity_resolver: VisualIdentityResolver | None = None,
+):  # type: ignore[no-untyped-def]
     run = _run(tuple(_member(subject) for subject in subjects))
     current = [run]
-    application = _application(tmp_path, current)
+    application = _application(tmp_path, current, visual_identity_resolver)
     packs = {}
     cycles = {}
     for result in run.results:
@@ -80,6 +94,120 @@ def _import_combined(application, batch, document):  # type: ignore[no-untyped-d
     )
 
 
+def _visual_resolver(
+    mappings: tuple[tuple[str, str], ...],
+    *,
+    duplicate_rblbank: bool = False,
+) -> VisualIdentityResolver:
+    relationships = tuple(
+        create_visual_identity_relationship(
+            canonical_subject_identity=canonical,
+            observed_visible_subject_identity=observed,
+            source_context=VisualIdentitySourceContext.TRADINGVIEW_VISUAL_CHART,
+            effective_from=BOUNDARY - timedelta(days=1),
+            effective_through=BOUNDARY + timedelta(days=1),
+            status=VisualIdentityRelationshipStatus.ACTIVE,
+            source_identity="TRADINGVIEW_VISUAL_CHART",
+            provenance=("ADR-0018", f"EVIDENCE-{index}"),
+            supersedes=None,
+        )
+        for index, (observed, canonical) in enumerate(mappings)
+    )
+    if duplicate_rblbank:
+        relationships += (
+            create_visual_identity_relationship(
+                canonical_subject_identity="NSE-EQ-RBLBANK",
+                observed_visible_subject_identity="RBL Bank Ltd",
+                source_context=VisualIdentitySourceContext.TRADINGVIEW_VISUAL_CHART,
+                effective_from=BOUNDARY - timedelta(days=1),
+                effective_through=BOUNDARY + timedelta(days=1),
+                status=VisualIdentityRelationshipStatus.ACTIVE,
+                source_identity="TRADINGVIEW_VISUAL_CHART",
+                provenance=("ADR-0018", "SECOND-EVIDENCE"),
+                supersedes=None,
+            ),
+        )
+    canonical = tuple(dict.fromkeys(target for _, target in mappings))
+    return VisualIdentityResolver(create_visual_identity_publication(
+        canonical_subject_identities=canonical,
+        publication_identity=VISUAL_IDENTITY_RELATIONSHIP_PUBLICATION_V1,
+        publication_version="1.0.0",
+        effective_from=BOUNDARY - timedelta(days=1),
+        effective_through=BOUNDARY + timedelta(days=1),
+        source_identities=("ADR-0018",),
+        provenance=("ADR-0018", "TEST"),
+        relationships=relationships,
+        supersedes=None,
+        schema_identity=VISUAL_IDENTITY_RELATIONSHIP_PUBLICATION_V1,
+    ))
+
+
+def test_real_style_visual_labels_resolve_preserve_both_identities_and_restore(tmp_path: Path) -> None:
+    resolver = _visual_resolver((
+        ("RBL Bank Ltd", "NSE-EQ-RBLBANK"),
+        ("Nifty Bank Index", "NSE-INDEX-BANKNIFTY"),
+    ))
+    current, application, packs, _ = _ready(
+        tmp_path,
+        ("NSE-EQ-RBLBANK", "NSE-INDEX-BANKNIFTY"),
+        resolver,
+    )
+    batch, document = _batch_document(application, packs)
+    rblbank = _document(packs["NSE-EQ-RBLBANK"])
+    rblbank["observed_visible_subject_identity"] = "RBL Bank Ltd"
+    banknifty = _document(packs["NSE-INDEX-BANKNIFTY"])
+    banknifty["observed_visible_subject_identity"] = "Nifty Bank Index"
+    document["candidates"] = [banknifty, rblbank]
+    result = _import_combined(application, batch, document)
+    assert result.count(AnswerImportState.IMPORTED) == 2
+
+    snapshots = {
+        item.canonical_subject_identity: item for item in application.snapshot().candidates
+    }
+    assert snapshots["NSE-EQ-RBLBANK"].observed_visible_subject_identity == "RBL Bank Ltd"
+    assert snapshots["NSE-INDEX-BANKNIFTY"].observed_visible_subject_identity == "Nifty Bank Index"
+    for pack in packs.values():
+        pointer = application.store.load_visual_evidence_pointer(pack.review_pack_identity)
+        assert pointer is not None
+        evidence = application.store.load_visual_evidence(pointer.visual_evidence_identity)
+        assert evidence.expected_canonical_subject_identity == evidence.resolved_canonical_subject_identity
+        assert evidence.observed_visible_subject_identity in {"RBL Bank Ltd", "Nifty Bank Index"}
+        assert evidence.visual_identity_relationship_identity.startswith("VISUAL-IDENTITY-RELATIONSHIP-")
+        assert evidence.visual_identity_publication_identity == VISUAL_IDENTITY_RELATIONSHIP_PUBLICATION_V1
+        assert evidence.visual_identity_relationship_integrity_identity.startswith(
+            "INTEGRITY-VISUAL-IDENTITY-RELATIONSHIP-"
+        )
+
+    restored = _application(tmp_path, current, resolver)
+    assert {
+        item.observed_visible_subject_identity for item in restored.snapshot().candidates
+    } == {"RBL Bank Ltd", "Nifty Bank Index"}
+
+
+def test_visual_relationship_wrong_target_and_ambiguity_fail_closed(tmp_path: Path) -> None:
+    wrong = _visual_resolver((("RBL Bank Ltd", "NSE-EQ-OTHER"),))
+    _, application, packs, cycles = _ready(tmp_path / "wrong", ("NSE-EQ-RBLBANK",), wrong)
+    document = _document(packs["NSE-EQ-RBLBANK"])
+    document["observed_visible_subject_identity"] = "RBL Bank Ltd"
+    _write(tmp_path / "wrong", packs["NSE-EQ-RBLBANK"], document)
+    result = application.import_answer(cycles["NSE-EQ-RBLBANK"].cycle_identity)
+    assert result.state is AnswerImportState.IDENTITY_MISMATCH
+    assert result.detail == ReviewFailure.ANSWER_IDENTITY_MISMATCH.value
+
+    ambiguous = _visual_resolver(
+        (("RBL Bank Ltd", "NSE-EQ-RBLBANK"),), duplicate_rblbank=True
+    )
+    _, application, packs, cycles = _ready(
+        tmp_path / "ambiguous", ("NSE-EQ-RBLBANK",), ambiguous
+    )
+    document = _document(packs["NSE-EQ-RBLBANK"])
+    document["observed_visible_subject_identity"] = "RBL Bank Ltd"
+    _write(tmp_path / "ambiguous", packs["NSE-EQ-RBLBANK"], document)
+    result = application.import_answer(cycles["NSE-EQ-RBLBANK"].cycle_identity)
+    assert result.state is AnswerImportState.IDENTITY_MISMATCH
+    assert result.detail == ReviewFailure.VISUAL_IDENTITY_RELATIONSHIP_AMBIGUOUS.value
+
+
 def test_valid_answer_binds_exact_identity_persists_and_restarts(tmp_path: Path) -> None:
     current, application, packs, cycles = _ready(tmp_path)
     pack = packs["WIPRO"]
@@ -107,7 +235,7 @@ def test_valid_answer_binds_exact_identity_persists_and_restarts(tmp_path: Path)
 @pytest.mark.parametrize(
     ("mutation", "failure"),
     (
-        (lambda value: value.update(observed_visible_subject_identity="TCS"), ReviewFailure.ANSWER_IDENTITY_MISMATCH),
+        (lambda value: value.update(observed_visible_subject_identity="TCS"), ReviewFailure.VISUAL_IDENTITY_RELATIONSHIP_UNAVAILABLE),
         (lambda value: value.update(observed_visible_subject_identity=None), ReviewFailure.ANSWER_IDENTITY_MISMATCH),
         (lambda value: value.update(review_pack_identity="INTRADAY-REVIEW-PACK-WRONG"), ReviewFailure.ANSWER_IDENTITY_MISMATCH),
         (lambda value: value.update(review_cycle_identity="INTRADAY-REVIEW-CYCLE-WRONG"), ReviewFailure.ANSWER_IDENTITY_MISMATCH),
@@ -130,7 +258,11 @@ def test_cross_identity_unknown_fields_missing_duplicate_and_invalid_status_fail
     result = application.import_answer(cycles["WIPRO"].cycle_identity)
     expected = (
         AnswerImportState.IDENTITY_MISMATCH
-        if failure is ReviewFailure.ANSWER_IDENTITY_MISMATCH
+        if failure in {
+            ReviewFailure.ANSWER_IDENTITY_MISMATCH,
+            ReviewFailure.VISUAL_IDENTITY_RELATIONSHIP_UNAVAILABLE,
+            ReviewFailure.VISUAL_IDENTITY_RELATIONSHIP_AMBIGUOUS,
+        }
         else AnswerImportState.SCHEMA_INVALID
     )
     assert result.state is expected and result.detail == failure.value

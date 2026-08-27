@@ -22,6 +22,12 @@ from kronos.intraday.review import (
 )
 from kronos.intraday.review_batch import ReviewBatchPdf
 from kronos.intraday.review_transport import ReviewBatchTransport
+from kronos.instrument.visual_identity import (
+    VisualIdentityResolutionError,
+    VisualIdentityResolutionFailure,
+    VisualIdentityResolver,
+    VisualIdentitySourceContext,
+)
 
 
 ANSWER_PACK_IDENTITY = "KRONOS-INTRADAY-CHART-ANALYST-ANSWER-PACK-V1"
@@ -296,10 +302,35 @@ class ImportedVisualEvidence:
     imported_at: datetime
     provenance: tuple[str, ...]
     integrity_identity: str
+    resolved_canonical_subject_identity: str | None = None
+    visual_identity_source_context: str | None = None
+    visual_identity_governed_observation_boundary: datetime | None = None
+    visual_identity_relationship_identity: str | None = None
+    visual_identity_relationship_integrity_identity: str | None = None
+    visual_identity_publication_identity: str | None = None
+    visual_identity_publication_version: str | None = None
+    visual_identity_publication_integrity_identity: str | None = None
     schema_identity: str = IMPORTED_VISUAL_EVIDENCE_IDENTITY
     schema_version: str = ANSWER_CONTRACT_VERSION
 
     def __post_init__(self) -> None:
+        relationship_evidence = (
+            self.resolved_canonical_subject_identity,
+            self.visual_identity_source_context,
+            self.visual_identity_relationship_identity,
+            self.visual_identity_relationship_integrity_identity,
+            self.visual_identity_publication_identity,
+            self.visual_identity_publication_version,
+            self.visual_identity_publication_integrity_identity,
+        )
+        legacy = all(item is None for item in relationship_evidence) and self.visual_identity_governed_observation_boundary is None
+        governed = (
+            all(_text(item) for item in relationship_evidence)
+            and _aware(self.visual_identity_governed_observation_boundary)
+            and self.resolved_canonical_subject_identity == self.expected_canonical_subject_identity
+            and self.visual_identity_source_context
+            == VisualIdentitySourceContext.TRADINGVIEW_VISUAL_CHART.value
+        )
         if (
             not self.visual_evidence_identity.startswith("INTRADAY-VISUAL-EVIDENCE-")
             or not _texts((self.answer_pack_identity, self.probables_run_identity, self.probable_result_identity,
@@ -307,7 +338,10 @@ class ImportedVisualEvidence:
                            self.chart_revision_identity, self.chart_artifact_identity,
                            self.expected_canonical_subject_identity, self.observed_visible_subject_identity,
                            self.proposed_direction))
-            or self.expected_canonical_subject_identity != self.observed_visible_subject_identity
+            or not (legacy or governed)
+            or legacy
+            and self.expected_canonical_subject_identity
+            != self.observed_visible_subject_identity
             or self.question_set_identity != QUESTION_SET_IDENTITY
             or self.question_set_version != REVIEW_CONTRACT_VERSION
             or self.global_observation_status is ObservationStatus.INVALID
@@ -318,7 +352,10 @@ class ImportedVisualEvidence:
             or self.schema_version != ANSWER_CONTRACT_VERSION
         ):
             raise ReviewError(ReviewFailure.ANSWER_INVALID)
-        _verify(self, "visual_evidence_identity", "INTRADAY-VISUAL-EVIDENCE-", "INTEGRITY-VISUAL-EVIDENCE-")
+        if legacy:
+            _verify_legacy_visual_evidence(self)
+        else:
+            _verify(self, "visual_evidence_identity", "INTRADAY-VISUAL-EVIDENCE-", "INTEGRITY-VISUAL-EVIDENCE-")
 
 
 @dataclass(frozen=True, slots=True)
@@ -460,8 +497,19 @@ def parse_answer_pack(payload: bytes) -> ChartAnalystAnswerPack:
         raise ReviewError(ReviewFailure.ANSWER_SCHEMA_INVALID) from error
 
 
-def bind_imported_evidence(pack: ReviewQuestionPack, answer: ChartAnalystAnswerPack, *, imported_at: datetime) -> ImportedVisualEvidence:
-    if type(pack) is not ReviewQuestionPack or type(answer) is not ChartAnalystAnswerPack or not _aware(imported_at):
+def bind_imported_evidence(
+    pack: ReviewQuestionPack,
+    answer: ChartAnalystAnswerPack,
+    *,
+    imported_at: datetime,
+    visual_identity_resolver: VisualIdentityResolver,
+) -> ImportedVisualEvidence:
+    if (
+        type(pack) is not ReviewQuestionPack
+        or type(answer) is not ChartAnalystAnswerPack
+        or not _aware(imported_at)
+        or type(visual_identity_resolver) is not VisualIdentityResolver
+    ):
         raise ReviewError(ReviewFailure.ANSWER_INVALID)
     bindings = (
         (answer.question_set_identity, pack.question_set_identity),
@@ -475,7 +523,28 @@ def bind_imported_evidence(pack: ReviewQuestionPack, answer: ChartAnalystAnswerP
     )
     if any(left != right for left, right in bindings):
         raise ReviewError(ReviewFailure.ANSWER_IDENTITY_MISMATCH)
-    if answer.observed_visible_subject_identity != pack.expected_canonical_subject_identity:
+    if answer.observed_visible_subject_identity is None:
+        raise ReviewError(ReviewFailure.ANSWER_IDENTITY_MISMATCH)
+    try:
+        resolution = visual_identity_resolver.resolve(
+            observed_visible_subject_identity=answer.observed_visible_subject_identity,
+            source_context=VisualIdentitySourceContext.TRADINGVIEW_VISUAL_CHART,
+            governed_observation_boundary=pack.observation_boundary,
+        )
+    except VisualIdentityResolutionError as error:
+        if error.failure is VisualIdentityResolutionFailure.RELATIONSHIP_AMBIGUOUS:
+            raise ReviewError(
+                ReviewFailure.VISUAL_IDENTITY_RELATIONSHIP_AMBIGUOUS
+            ) from error
+        if error.failure in {
+            VisualIdentityResolutionFailure.RELATIONSHIP_UNAVAILABLE,
+            VisualIdentityResolutionFailure.PUBLICATION_STALE,
+        }:
+            raise ReviewError(
+                ReviewFailure.VISUAL_IDENTITY_RELATIONSHIP_UNAVAILABLE
+            ) from error
+        raise ReviewError(ReviewFailure.INTEGRITY_INVALID) from error
+    if resolution.canonical_subject_identity != pack.expected_canonical_subject_identity:
         raise ReviewError(ReviewFailure.ANSWER_IDENTITY_MISMATCH)
     if answer.global_observation_status is ObservationStatus.INVALID:
         raise ReviewError(ReviewFailure.ANSWER_INVALID)
@@ -497,6 +566,14 @@ def bind_imported_evidence(pack: ReviewQuestionPack, answer: ChartAnalystAnswerP
         "answers": answer.answers,
         "imported_at": imported_at,
         "provenance": ("WO-09", pack.review_pack_identity, answer.answer_pack_identity),
+        "resolved_canonical_subject_identity": resolution.canonical_subject_identity,
+        "visual_identity_source_context": resolution.source_context.value,
+        "visual_identity_governed_observation_boundary": resolution.governed_observation_boundary,
+        "visual_identity_relationship_identity": resolution.relationship_identity,
+        "visual_identity_relationship_integrity_identity": resolution.relationship_integrity_identity,
+        "visual_identity_publication_identity": resolution.publication_identity,
+        "visual_identity_publication_version": resolution.publication_version,
+        "visual_identity_publication_integrity_identity": resolution.publication_integrity_identity,
         "schema_identity": IMPORTED_VISUAL_EVIDENCE_IDENTITY,
         "schema_version": ANSWER_CONTRACT_VERSION,
     }
@@ -579,6 +656,10 @@ def answer_artifact_from_bytes(payload: bytes) -> object:
             raw["global_observation_status"] = ObservationStatus(raw["global_observation_status"])
             raw["answers"] = tuple(_restore_answer(item) for item in raw["answers"])
             raw["imported_at"] = datetime.fromisoformat(raw["imported_at"])
+            if raw.get("visual_identity_governed_observation_boundary") is not None:
+                raw["visual_identity_governed_observation_boundary"] = datetime.fromisoformat(
+                    raw["visual_identity_governed_observation_boundary"]
+                )
             raw["provenance"] = tuple(raw["provenance"])
             return ImportedVisualEvidence(**raw)
         if kind == "AnswerImportRecord":
@@ -617,6 +698,27 @@ def _restore_answer(value: Mapping[str, object]) -> ChartAnalystAnswer:
 def _verify(value: object, identity_name: str, identity_prefix: str, integrity_prefix: str) -> None:
     raw = _without(value, identity_name, "integrity_identity")
     if getattr(value, identity_name) != _identity(identity_prefix, raw) or getattr(value, "integrity_identity") != _identity(integrity_prefix, raw):
+        raise ReviewError(ReviewFailure.INTEGRITY_INVALID)
+
+
+def _verify_legacy_visual_evidence(value: ImportedVisualEvidence) -> None:
+    additions = (
+        "resolved_canonical_subject_identity",
+        "visual_identity_source_context",
+        "visual_identity_governed_observation_boundary",
+        "visual_identity_relationship_identity",
+        "visual_identity_relationship_integrity_identity",
+        "visual_identity_publication_identity",
+        "visual_identity_publication_version",
+        "visual_identity_publication_integrity_identity",
+    )
+    raw = _without(value, "visual_evidence_identity", "integrity_identity", *additions)
+    if (
+        value.visual_evidence_identity
+        != _identity("INTRADAY-VISUAL-EVIDENCE-", raw)
+        or value.integrity_identity
+        != _identity("INTEGRITY-VISUAL-EVIDENCE-", raw)
+    ):
         raise ReviewError(ReviewFailure.INTEGRITY_INVALID)
 
 
