@@ -8,6 +8,7 @@ from types import SimpleNamespace
 
 from kronos.browser.intraday_routes import IntradayBrowserRoutes
 from kronos.browser.intraday_views import render_intraday_review
+from kronos.browser.views import _chart_upload_script
 from kronos.browser.product_routes import BrowserGetRequest, BrowserPostRequest
 from tests.unit.browser.test_product_route_isolation import _snapshot
 from tests.unit.intraday.test_probables import _member, _run
@@ -46,7 +47,7 @@ def test_intraday_review_browser_flow_is_bounded_and_get_is_side_effect_free(tmp
     assert "CHART REQUIRED" in initial.body
     assert "TRADINGVIEW 4-CHART IMAGE" in initial.body
     assert "Required: 1D · 1H · 15M · 5M" in initial.body
-    assert 'data-review-upload="/intraday/review/chart?result=' in initial.body
+    assert 'data-upload-url="/intraday/review/chart?result=' in initial.body
     assert "CREATE PDF" not in initial.body
     assert '<button class="primary" type="submit" disabled>CREATE ALL REVIEW PDF</button>' in initial.body
     assert "UPLOAD ALL ANSWERS" in initial.body
@@ -121,38 +122,44 @@ def test_intraday_review_clipboard_targets_are_candidate_bound_and_share_upload_
     for candidate in snapshot.candidates:
         assert candidate.cycle_identity is None
         assert rendered.body.count(
-            "/intraday/review/chart?result=" + candidate.probable_result_identity
+            'data-upload-url="/intraday/review/chart?result='
+            + candidate.probable_result_identity
+            + '"'
         ) == 1
         assert (
             "Paste TradingView 1D 1H 15M 5M chart composite for "
             + candidate.canonical_subject_identity
         ) in rendered.body
-    assert rendered.body.count('class="intraday-drop" role="button" tabindex="0" aria-pressed="false"') == 2
+    assert rendered.body.count('class="intraday-drop" role="button" tabindex="0"') == 2
     assert rendered.body.count('class="intraday-paste-feedback" aria-live="polite"') == 2
-    assert rendered.body.count('class="intraday-paste-receiver"') == 2
-    assert rendered.body.count('data-review-receiver="intraday-chart-') == 2
-    assert "document.addEventListener('paste'" in rendered.body
-    assert "target.addEventListener('paste'" not in rendered.body
-    assert "activeReviewPasteTarget=target" in rendered.body
-    assert "activeReviewPasteReceiver=document.getElementById(target.dataset.reviewReceiver)" in rendered.body
-    assert "document.activeElement!==receiver" in rendered.body
-    assert "activeReviewPasteReceiver.focus({preventScroll:true})" in rendered.body
-    assert "Ready — press CMD+V to paste one PNG or JPEG chart image." in rendered.body
-    assert "reviewChartClipboardFiles(event.clipboardData)" in rendered.body
-    assert "clipboardData?.items" in rendered.body
-    assert "clipboardData?.files" in rendered.body
-    assert "reviewChartMediaTypes.has(item.type)" in rendered.body
-    assert "event.preventDefault();" in rendered.body
-    assert "event.stopPropagation();" in rendered.body
-    assert "files.length!==1" in rendered.body
-    assert "Multiple chart images are not accepted" in rendered.body
+    assert "intraday-paste-receiver" not in rendered.body
+    assert "activeReviewPasteTarget" not in rendered.body
+    assert "document.addEventListener('paste'" not in rendered.body
+    assert "target.addEventListener('click',()=>target.focus())" in rendered.body
+    assert "target.addEventListener('paste'" in rendered.body
+    assert "event.clipboardData&&Array.from(event.clipboardData.items||[])" in rendered.body
+    assert "item.kind==='file'&&acceptedCharts.has(item.type)" in rendered.body
+    assert "receiveChart(target,image.getAsFile())" in rendered.body
+    assert "fetch(target.dataset.uploadUrl" in rendered.body
     assert "No supported PNG or JPEG chart image was found" in rendered.body
-    assert "void uploadReviewChart(target,files[0])" in rendered.body
     assert "input.addEventListener('change'" in rendered.body
+    assert "if(file)receiveChart(target,file)" in rendered.body
     assert "location.reload()" in rendered.body
     assert rendered.body.count("document.write(await response.text())") == 1
     assert "Chart upload failed. Try again or use CHOOSE IMAGE FILE." in rendered.body
     assert ":focus-visible" in rendered.body
+
+    swing_script = _chart_upload_script()
+    for shared_behavior in (
+        "target.addEventListener('click',()=>target.focus())",
+        "target.addEventListener('paste',event=>{",
+        "event.clipboardData&&Array.from(event.clipboardData.items||[])",
+        "item.kind==='file'&&acceptedCharts.has(item.type)",
+        "receiveChart(target,image.getAsFile())",
+        "fetch(target.dataset.uploadUrl",
+    ):
+        assert shared_behavior in swing_script
+        assert shared_behavior in rendered.body
 
     rejected = routes.handle_post(
         BrowserPostRequest("/intraday/review/question-packs", {"cycle": ["unexpected"]}, "", b""),
@@ -175,6 +182,7 @@ def test_intraday_review_rejects_non_image_transport_without_creating_a_cycle(
         ("text/plain", b"https://www.tradingview.com/chart/"),
         ("text/html", b"<img src='https://example.invalid/chart.png'>"),
         ("image/gif", b"GIF89a"),
+        ("image/webp", b"RIFFxxxxWEBP"),
     ):
         response = routes.handle_post(
             BrowserPostRequest(
