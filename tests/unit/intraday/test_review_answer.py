@@ -8,9 +8,13 @@ import pytest
 from kronos.intraday.review import ObservationStatus, ReviewError, ReviewFailure
 from kronos.intraday.review_answer import (
     ANSWER_PACK_IDENTITY,
+    BATCH_ANSWER_PACK_IDENTITY,
     AnswerImportState,
     answer_pack_filename,
     answer_pack_template,
+    batch_answer_pack_filename,
+    batch_answer_pack_template,
+    parse_batch_answer_transport,
     parse_answer_pack,
 )
 from tests.unit.intraday.test_probables import _member, _run
@@ -52,6 +56,14 @@ def _write(tmp_path: Path, pack, document: dict) -> Path:  # type: ignore[no-unt
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(json.dumps(document), encoding="utf-8")
     return target
+
+
+def _batch_document(application, packs: dict):  # type: ignore[no-untyped-def]
+    result = application.create_all_question_packs()
+    assert result.batch_identity is not None
+    batch = application.store.load_batch(result.batch_identity)
+    ordered = tuple(packs[member.canonical_subject_identity] for member in batch.members)
+    return batch, json.loads(batch_answer_pack_template(batch, ordered))
 
 
 def test_valid_answer_binds_exact_identity_persists_and_restarts(tmp_path: Path) -> None:
@@ -206,16 +218,131 @@ def test_exact_inbox_file_safety_missing_symlink_and_oversize(tmp_path: Path) ->
 
 def test_batch_is_deterministic_candidate_isolated_and_does_not_scan_unrelated_files(tmp_path: Path) -> None:
     _, application, packs, cycles = _ready(tmp_path, ("WIPRO", "LICI"))
-    _write(tmp_path, packs["WIPRO"], _document(packs["WIPRO"]))
+    batch_contract, document = _batch_document(application, packs)
+    documents = {pack.review_pack_identity: _document(pack) for pack in packs.values()}
+    document["candidates"] = [documents[item.review_pack_identity] for item in reversed(batch_contract.members)]
+    target = tmp_path / "answers" / batch_answer_pack_filename(batch_contract)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(json.dumps(document), encoding="utf-8")
     unrelated = tmp_path / "answers" / "ARBITRARY.json"
     unrelated.write_text("{}", encoding="utf-8")
     batch = application.import_all_answers()
     assert tuple(item.canonical_subject_identity for item in batch.members) == ("LICI", "WIPRO")
-    assert batch.eligible_candidates == 2 and batch.files_discovered == 1
-    assert batch.count(AnswerImportState.IMPORTED) == 1
-    assert batch.count(AnswerImportState.MISSING) == 1
+    assert batch.eligible_candidates == 2 and batch.files_discovered == 2
+    assert batch.count(AnswerImportState.IMPORTED) == 2
+    assert batch.answer_filename == target.name and batch.transport_state == "COMPLETE"
     assert unrelated.read_text(encoding="utf-8") == "{}"
     assert application.snapshot().candidates[0].cycle_identity == cycles["LICI"].cycle_identity
+
+
+def test_combined_two_candidate_contract_is_strict_order_independent_idempotent_and_restores(tmp_path: Path) -> None:
+    current, application, packs, _ = _ready(
+        tmp_path, ("NSE-EQ-RBLBANK", "NSE-INDEX-BANKNIFTY"),
+    )
+    batch, document = _batch_document(application, packs)
+    assert document["schema_identity"] == BATCH_ANSWER_PACK_IDENTITY
+    assert document["review_batch_identity"] == batch.batch_identity
+    document["candidates"] = [
+        _document(packs["NSE-INDEX-BANKNIFTY"]),
+        _document(packs["NSE-EQ-RBLBANK"]),
+    ]
+    payload = json.dumps(document).encode()
+    parsed = parse_batch_answer_transport(payload)
+    assert parsed.review_batch_identity == batch.batch_identity
+
+    first = application.import_all_answers(media_type="application/json", payload=payload)
+    assert first.transport_state == "COMPLETE"
+    assert first.count(AnswerImportState.IMPORTED) == 2
+    second = application.import_all_answers(media_type="application/json", payload=payload)
+    assert second.count(AnswerImportState.ALREADY_IMPORTED) == 2
+    assert len(tuple((tmp_path / "evidence" / "visual-evidence").glob("*.json"))) == 2
+    assert len(tuple((tmp_path / "evidence" / "batch-answer-transports").glob("*.json"))) == 1
+
+    restored = _application(tmp_path, current)
+    restored_candidates = restored.snapshot().candidates
+    assert all(item.answer_state == "IMPORTED" for item in restored_candidates)
+    assert {item.observed_visible_subject_identity for item in restored_candidates} == {
+        "NSE-EQ-RBLBANK", "NSE-INDEX-BANKNIFTY",
+    }
+
+
+def test_combined_candidate_validation_isolated_for_schema_and_identity_failures(tmp_path: Path) -> None:
+    _, application, packs, _ = _ready(
+        tmp_path, ("NSE-EQ-RBLBANK", "NSE-INDEX-BANKNIFTY"),
+    )
+    _, document = _batch_document(application, packs)
+    rblbank = _document(packs["NSE-EQ-RBLBANK"])
+    banknifty = _document(packs["NSE-INDEX-BANKNIFTY"])
+    banknifty["answers"][0].pop("status_detail")
+    document["candidates"] = [banknifty, rblbank]
+    result = application.import_all_answers(
+        media_type="application/json", payload=json.dumps(document).encode(),
+    )
+    states = {item.canonical_subject_identity: item.state for item in result.members}
+    assert states == {
+        "NSE-EQ-RBLBANK": AnswerImportState.IMPORTED,
+        "NSE-INDEX-BANKNIFTY": AnswerImportState.SCHEMA_INVALID,
+    }
+    assert result.transport_state == "PARTIAL"
+
+
+@pytest.mark.parametrize("field", ("review_cycle_identity", "chart_revision_identity", "observed_visible_subject_identity"))
+def test_combined_wrong_exact_candidate_identity_fails_closed(tmp_path: Path, field: str) -> None:
+    _, application, packs, _ = _ready(tmp_path, ("NSE-EQ-RBLBANK", "NSE-INDEX-BANKNIFTY"))
+    _, document = _batch_document(application, packs)
+    candidates = [_document(pack) for pack in packs.values()]
+    candidates[0][field] = "WRONG"
+    document["candidates"] = candidates
+    result = application.import_all_answers(media_type="application/json", payload=json.dumps(document).encode())
+    states = {item.canonical_subject_identity: item.state for item in result.members}
+    assert states[candidates[0]["expected_canonical_subject_identity"]] is AnswerImportState.IDENTITY_MISMATCH
+    assert tuple(states.values()).count(AnswerImportState.IMPORTED) == 1
+
+
+@pytest.mark.parametrize("case", ("missing", "extra", "duplicate"))
+def test_combined_population_anomalies_are_accounted_without_order_association(tmp_path: Path, case: str) -> None:
+    _, application, packs, _ = _ready(tmp_path, ("NSE-EQ-RBLBANK", "NSE-INDEX-BANKNIFTY"))
+    _, document = _batch_document(application, packs)
+    candidates = [_document(pack) for pack in packs.values()]
+    if case == "missing":
+        candidates.pop()
+    elif case == "extra":
+        extra = dict(candidates[0])
+        extra["review_pack_identity"] = "INTRADAY-REVIEW-PACK-EXTRA"
+        candidates.append(extra)
+    else:
+        candidates.append(dict(candidates[0]))
+    document["candidates"] = candidates
+    result = application.import_all_answers(media_type="application/json", payload=json.dumps(document).encode())
+    assert result.transport_state == "PARTIAL"
+    if case == "missing":
+        assert result.count(AnswerImportState.MISSING) == 1
+    elif case == "extra":
+        assert result.extra_candidates == 1 and result.count(AnswerImportState.IMPORTED) == 2
+    else:
+        assert result.duplicate_candidates == 1
+        assert result.count(AnswerImportState.SCHEMA_INVALID) == 1
+        assert result.count(AnswerImportState.IMPORTED) == 1
+
+
+def test_combined_changed_content_conflicts_only_with_exact_bound_candidate(tmp_path: Path) -> None:
+    _, application, packs, _ = _ready(tmp_path, ("NSE-EQ-RBLBANK", "NSE-INDEX-BANKNIFTY"))
+    _, document = _batch_document(application, packs)
+    document["candidates"] = [_document(pack) for pack in packs.values()]
+    assert application.import_all_answers(
+        media_type="application/json", payload=json.dumps(document).encode(),
+    ).count(AnswerImportState.IMPORTED) == 2
+    changed = next(
+        item for item in document["candidates"]
+        if item["expected_canonical_subject_identity"] == "NSE-EQ-RBLBANK"
+    )
+    changed["answers"][0]["answer"] = packs["NSE-EQ-RBLBANK"].questions[0].allowed_answers[-1]
+    result = application.import_all_answers(
+        media_type="application/json", payload=json.dumps(document).encode(),
+    )
+    states = {item.canonical_subject_identity: item.state for item in result.members}
+    assert states["NSE-EQ-RBLBANK"] is AnswerImportState.CONFLICT
+    assert states["NSE-INDEX-BANKNIFTY"] is AnswerImportState.ALREADY_IMPORTED
 
 
 def test_answer_pack_contract_is_visual_only_and_has_no_internal_or_trading_fields(tmp_path: Path) -> None:
@@ -228,3 +355,20 @@ def test_answer_pack_contract_is_visual_only_and_has_no_internal_or_trading_fiel
     blank = json.loads(answer_pack_template(packs["WIPRO"]))
     assert blank["observed_visible_subject_identity"] is None
     assert all(item["answer"] is None for item in blank["answers"])
+
+
+def test_current_rblbank_legacy_response_shape_remains_schema_invalid(tmp_path: Path) -> None:
+    _, _, packs, _ = _ready(tmp_path, ("NSE-EQ-RBLBANK",))
+    pack = packs["NSE-EQ-RBLBANK"]
+    received = {
+        "schema": ANSWER_PACK_IDENTITY,
+        "schema_version": "1.0.0",
+        "review_pack_identity": pack.review_pack_identity,
+        "review_cycle_identity": pack.review_cycle_identity,
+        "chart_revision": pack.chart_revision_identity,
+        "expected_canonical_instrument": pack.expected_canonical_subject_identity,
+        "observed_chart_instrument": pack.expected_canonical_subject_identity,
+        "answers": [{"question_id": f"Q{index}", "answer": "NEUTRAL"} for index in range(1, 11)],
+    }
+    with pytest.raises(ReviewError, match=ReviewFailure.ANSWER_SCHEMA_INVALID.value):
+        parse_answer_pack(json.dumps(received).encode())

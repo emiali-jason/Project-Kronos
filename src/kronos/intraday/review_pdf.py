@@ -22,6 +22,8 @@ from kronos.intraday.review_answer import (
     ANSWER_CONTRACT_VERSION,
     ANSWER_PACK_IDENTITY,
     answer_pack_filename,
+    batch_answer_pack_filename,
+    batch_answer_pack_template,
 )
 
 
@@ -281,15 +283,20 @@ def render_review_batch_pdf(
                 ["Batch identity", Paragraph(escape(batch.batch_identity), table_value)],
                 ["Current Probables Run", Paragraph(escape(batch.probables_run_identity), table_value)],
                 ["Included individual packs", str(len(batch.members))],
-                ["Authority", "TRANSPORT ONLY - INDIVIDUAL QUESTION PACKS REMAIN AUTHORITATIVE"],
+                ["Authority", "ONE TRANSPORT - CANDIDATE EVIDENCE REMAINS INDEPENDENT"],
             ],
             colWidths=(48 * mm, 126 * mm),
             style=_identity_table_style(),
         ),
         Spacer(1, 3 * mm),
         Paragraph(
-            "This combined PDF is Sponsor transport convenience only. Every candidate below retains an independent Review Cycle, Chart Revision and governed Question Pack identity.",
+            "This is the governed combined Review transport. Return exactly one combined JSON Answer Pack. Every candidate retains an independent Review Cycle, Chart Revision, Question Pack, validation result and persisted visual evidence identity.",
             warning,
+        ),
+        Paragraph(
+            "Required combined Answer filename: <b>"
+            + escape(batch_answer_pack_filename(batch)) + "</b>",
+            body,
         ),
     ]
     for index, (member, (pack, chart_payload)) in enumerate(zip(batch.members, retained, strict=True), start=1):
@@ -301,7 +308,8 @@ def render_review_batch_pdf(
                     ["Expected canonical instrument", Paragraph(escape(member.canonical_subject_identity), table_value)],
                     ["Proposed direction", member.direction],
                     ["Review Pack", Paragraph(escape(member.review_pack_identity), table_value)],
-                    ["Review Cycle / Request", Paragraph(escape(member.review_cycle_identity), table_value)],
+                    ["Review Cycle", Paragraph(escape(member.review_cycle_identity), table_value)],
+                    ["Review Request", Paragraph(escape(pack.review_request_identity), table_value)],
                     ["Chart Revision", Paragraph(escape(member.chart_revision_identity), table_value)],
                     ["Question Set", Paragraph(escape(f"{pack.question_set_identity} / {pack.question_set_version}"), table_value)],
                 ],
@@ -321,12 +329,11 @@ def render_review_batch_pdf(
             Spacer(1, 2 * mm),
             Paragraph(escape(pack.trading_authority_prohibition), warning),
             Spacer(1, 3 * mm),
-            Paragraph("Individual JSON Answer Pack", heading),
+            Paragraph("Candidate member of the combined JSON Answer Pack", heading),
             Paragraph(
-                "Return this candidate separately as " + escape(answer_pack_filename(pack))
-                + ". Combined or free-form answers are not accepted. Use schema "
+                "Return this candidate inside the single combined Answer Pack. Its candidate object uses schema "
                 + escape(ANSWER_PACK_IDENTITY) + " / " + escape(ANSWER_CONTRACT_VERSION)
-                + " with exact ordered Q1-Q10 and no additional or trading fields.",
+                + " with exact ordered Q1-Q10 and no additional or trading fields. Candidate association is by the exact identities shown above, never array order.",
                 warning,
             ),
             Spacer(1, 3 * mm),
@@ -343,6 +350,18 @@ def render_review_batch_pdf(
                 detail.append(Paragraph(escape(question.conditional_instruction), small))
             detail.extend(Paragraph(escape(value), small) for value in question.constraints)
             story.append(KeepTogether(detail + [Spacer(1, 3 * mm)]))
+    template = batch_answer_pack_template(batch, tuple(pack for pack, _ in retained)).decode("utf-8").strip()
+    story.extend((
+        PageBreak(),
+        Paragraph("EXACT COMBINED ANSWER CONTRACT", heading),
+        Paragraph(
+            "Return one UTF-8 JSON object only. Replace governed observation placeholders without changing identity fields, keys or candidate population. Do not use Markdown fences or prose.",
+            warning,
+        ),
+        Spacer(1, 2 * mm),
+    ))
+    for offset in range(0, len(template), 900):
+        story.append(Paragraph(escape(template[offset:offset + 900]), small))
     document.build(story, onFirstPage=_batch_page, onLaterPages=_batch_page)
     return output.getvalue()
 
@@ -375,7 +394,7 @@ def _batch_page(canvas, document) -> None:  # type: ignore[no-untyped-def]
     canvas.saveState()
     canvas.setFont("Helvetica", 7)
     canvas.setFillColor(colors.HexColor("#60706a"))
-    canvas.drawString(16 * mm, 7 * mm, "KRONOS Intraday V1 - batch transport only")
+    canvas.drawString(16 * mm, 7 * mm, "KRONOS Intraday V1 - governed combined Review transport")
     canvas.drawRightString(194 * mm, 7 * mm, f"Page {document.page}")
     canvas.restoreState()
 

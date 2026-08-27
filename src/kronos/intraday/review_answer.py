@@ -20,6 +20,7 @@ from kronos.intraday.review import (
     ReviewFailure,
     ReviewQuestionPack,
 )
+from kronos.intraday.review_batch import ReviewBatchPdf
 
 
 ANSWER_PACK_IDENTITY = "KRONOS-INTRADAY-CHART-ANALYST-ANSWER-PACK-V1"
@@ -27,6 +28,7 @@ IMPORTED_VISUAL_EVIDENCE_IDENTITY = "KRONOS-INTRADAY-IMPORTED-VISUAL-EVIDENCE-V1
 ANSWER_IMPORT_RECORD_IDENTITY = "KRONOS-INTRADAY-ANSWER-IMPORT-RECORD-V1"
 VISUAL_EVIDENCE_POINTER_IDENTITY = "KRONOS-INTRADAY-VISUAL-EVIDENCE-POINTER-V1"
 ANSWER_CONTRACT_VERSION = "1.0.0"
+BATCH_ANSWER_PACK_IDENTITY = "KRONOS-INTRADAY-CHART-ANALYST-BATCH-ANSWER-PACK-V1"
 MAX_ANSWER_BYTES = 1024 * 1024
 
 _TOP_LEVEL_FIELDS = {
@@ -53,6 +55,15 @@ _ANSWER_FIELDS = {
     "status_detail",
     "why_not_covered_elsewhere",
 }
+_BATCH_TOP_LEVEL_FIELDS = {
+    "schema_identity",
+    "schema_version",
+    "question_set_identity",
+    "question_set_version",
+    "review_batch_identity",
+    "probables_run_identity",
+    "candidates",
+}
 
 
 class AnswerImportState(StrEnum):
@@ -63,6 +74,73 @@ class AnswerImportState(StrEnum):
     IDENTITY_MISMATCH = "IDENTITY_MISMATCH"
     SCHEMA_INVALID = "SCHEMA_INVALID"
     CONFLICT = "CONFLICT"
+
+
+@dataclass(frozen=True, slots=True)
+class ChartAnalystBatchAnswerTransport:
+    review_batch_identity: str
+    probables_run_identity: str
+    candidate_documents: tuple[Mapping[str, object], ...]
+    source_sha256: str
+
+
+def batch_answer_pack_filename(batch: ReviewBatchPdf) -> str:
+    if type(batch) is not ReviewBatchPdf:
+        raise ReviewError(ReviewFailure.INPUT_INVALID)
+    suffix = batch.batch_identity.rsplit("-", 1)[-1][:16]
+    return f"INTRADAY_REVIEW_BATCH_{suffix}_ANSWERS_QV1.json"
+
+
+def batch_answer_pack_template(
+    batch: ReviewBatchPdf,
+    packs: Iterable[ReviewQuestionPack],
+) -> bytes:
+    retained = tuple(packs)
+    if (
+        type(batch) is not ReviewBatchPdf
+        or tuple(pack.review_pack_identity for pack in retained)
+        != tuple(member.review_pack_identity for member in batch.members)
+    ):
+        raise ReviewError(ReviewFailure.INTEGRITY_INVALID)
+    document = {
+        "schema_identity": BATCH_ANSWER_PACK_IDENTITY,
+        "schema_version": ANSWER_CONTRACT_VERSION,
+        "question_set_identity": QUESTION_SET_IDENTITY,
+        "question_set_version": REVIEW_CONTRACT_VERSION,
+        "review_batch_identity": batch.batch_identity,
+        "probables_run_identity": batch.probables_run_identity,
+        "candidates": [json.loads(answer_pack_template(pack)) for pack in retained],
+    }
+    return _canonical(document) + b"\n"
+
+
+def parse_batch_answer_transport(payload: bytes) -> ChartAnalystBatchAnswerTransport:
+    if type(payload) is not bytes or not 0 < len(payload) <= MAX_ANSWER_BYTES:
+        raise ReviewError(ReviewFailure.ANSWER_SCHEMA_INVALID)
+    try:
+        document = json.loads(payload.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise ReviewError(ReviewFailure.ANSWER_SCHEMA_INVALID) from error
+    if (
+        type(document) is not dict
+        or set(document) != _BATCH_TOP_LEVEL_FIELDS
+        or document["schema_identity"] != BATCH_ANSWER_PACK_IDENTITY
+        or document["schema_version"] != ANSWER_CONTRACT_VERSION
+        or document["question_set_identity"] != QUESTION_SET_IDENTITY
+        or document["question_set_version"] != REVIEW_CONTRACT_VERSION
+        or not _text(document["review_batch_identity"])
+        or not _text(document["probables_run_identity"])
+        or type(document["candidates"]) is not list
+        or not document["candidates"]
+        or any(type(item) is not dict for item in document["candidates"])
+    ):
+        raise ReviewError(ReviewFailure.ANSWER_SCHEMA_INVALID)
+    return ChartAnalystBatchAnswerTransport(
+        review_batch_identity=document["review_batch_identity"],
+        probables_run_identity=document["probables_run_identity"],
+        candidate_documents=tuple(document["candidates"]),
+        source_sha256=sha256(payload).hexdigest(),
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -588,10 +666,13 @@ def _texts(values: Iterable[object]) -> bool:
 
 __all__ = [
     "ANSWER_CONTRACT_VERSION", "ANSWER_IMPORT_RECORD_IDENTITY", "ANSWER_PACK_IDENTITY",
+    "BATCH_ANSWER_PACK_IDENTITY",
     "IMPORTED_VISUAL_EVIDENCE_IDENTITY", "MAX_ANSWER_BYTES", "VISUAL_EVIDENCE_POINTER_IDENTITY",
     "AnswerImportRecord", "AnswerImportState", "ChartAnalystAnswer", "ChartAnalystAnswerPack",
+    "ChartAnalystBatchAnswerTransport",
     "ImportedVisualEvidence", "VisualEvidencePointer", "answer_artifact_bytes",
     "answer_artifact_from_bytes", "answer_pack_filename", "answer_pack_template",
+    "batch_answer_pack_filename", "batch_answer_pack_template",
     "bind_imported_evidence", "create_import_record", "create_visual_evidence_pointer",
-    "parse_answer_pack",
+    "parse_answer_pack", "parse_batch_answer_transport",
 ]

@@ -13,7 +13,7 @@ from kronos.browser.product_routes import BrowserGetRequest, BrowserPostRequest
 from tests.unit.browser.test_product_route_isolation import _snapshot
 from tests.unit.intraday.test_probables import _member, _run
 from tests.unit.intraday.test_review import _application, _png
-from tests.unit.intraday.test_review_answer import _document
+from tests.unit.intraday.test_review_answer import _batch_document, _document
 from kronos.intraday.review_answer import answer_pack_filename, answer_pack_template
 
 
@@ -51,6 +51,8 @@ def test_intraday_review_browser_flow_is_bounded_and_get_is_side_effect_free(tmp
     assert "CREATE PDF" not in initial.body
     assert '<button class="primary" type="submit" disabled>CREATE ALL REVIEW PDF</button>' in initial.body
     assert "UPLOAD ALL ANSWERS" in initial.body
+    assert "CHOOSE COMBINED ANSWER" in initial.body
+    assert 'data-review-batch-answer-upload="/intraday/review/answers"' in initial.body
     assert 'action="/intraday/review/answers"' in initial.body
     assert application.snapshot().candidates[0].cycle_identity is None
     assert _store_fingerprint(application.store.root) == before
@@ -148,7 +150,7 @@ def test_intraday_review_clipboard_targets_are_candidate_bound_and_share_upload_
     assert "document.getElementById(input.dataset.target)" in rendered.body
     assert "if(target&&file)receiveChart(target,file)" in rendered.body
     assert "location.reload()" in rendered.body
-    assert rendered.body.count("document.write(await response.text())") == 1
+    assert rendered.body.count("document.write(await response.text())") == 2
     assert "Chart could not be accepted." in rendered.body
     assert "intraday-replace-chart" in rendered.body
     assert "target.classList.add('replace-ready');target.focus()" in rendered.body
@@ -335,6 +337,7 @@ def test_intraday_review_individual_and_batch_answer_controls_project_visual_evi
     cycle = application.start_review(run.results[0].result_identity)
     application.upload_chart(cycle.cycle_identity, media_type="image/png", payload=_png(9))
     pack, _ = application.create_question_pack(cycle.cycle_identity)
+    batch_contract, batch_document = _batch_document(application, {"WIPRO": pack})
 
     missing = routes.handle_post(
         BrowserPostRequest("/intraday/review/answer", {"cycle": [cycle.cycle_identity]}, "", b""),
@@ -357,10 +360,14 @@ def test_intraday_review_individual_and_batch_answer_controls_project_visual_evi
     assert len(tuple((tmp_path / "evidence" / "answer-transports").glob("*.json"))) == 1
 
     batch = routes.handle_post(
-        BrowserPostRequest("/intraday/review/answers", {}, "", b""), _snapshot,
+        BrowserPostRequest(
+            "/intraday/review/answers", {}, "application/json",
+            json.dumps(batch_document | {"candidates": [_document(pack)]}).encode(),
+        ), _snapshot,
     )
-    assert batch is not None and "UPLOAD ALL ANSWERS · Eligible 1" in batch.body
+    assert batch is not None and "UPLOAD ALL ANSWERS · COMPLETE · Eligible 1" in batch.body
     assert "Already imported 1" in batch.body
+    assert batch_contract.batch_identity in application.snapshot().current_batch_identity
     assert routes.owns_post("/intraday/review/answer")
     assert routes.owns_post("/intraday/review/answers")
 

@@ -55,8 +55,13 @@ def test_batch_creates_ready_members_skips_chart_required_and_is_idempotent(tmp_
     normalized_text = re.sub(r"\s+", " ", text)
     assert text.count("LICI") == text.count("WIPRO") == 2
     assert "RELIANCE" not in text
-    assert text.count(cycles["LICI"].cycle_identity) == 1
-    assert text.count(cycles["WIPRO"].cycle_identity) == 1
+    assert text.count(cycles["LICI"].cycle_identity) == 2
+    assert text.count(cycles["WIPRO"].cycle_identity) == 2
+    assert text.count(application.store.load_pack(
+        next(item.review_pack_identity for item in first.members if item.canonical_subject_identity == "LICI") or ""
+    ).review_request_identity) >= 1
+    assert "EXACT COMBINED ANSWER CONTRACT" in text
+    assert "one combined JSON Answer Pack" in normalized_text
     for question in QUESTIONS:
         assert normalized_text.count(question.wording) == 2
     assert unrelated.read_text(encoding="utf-8") == "preserve"

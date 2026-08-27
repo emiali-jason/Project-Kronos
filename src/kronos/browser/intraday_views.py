@@ -149,6 +149,9 @@ def render_intraday_review(
         '<form method="post" action="/intraday/review/answers"><button type="submit"'
         + (" disabled" if not any(item.review_pack_identity is not None for item in review.candidates) else "")
         + '>UPLOAD ALL ANSWERS</button></form>'
+        '<label class="intraday-file-choice" tabindex="0" for="intraday-batch-answer">CHOOSE COMBINED ANSWER</label>'
+        '<input id="intraday-batch-answer" class="intraday-batch-answer-input" type="file" accept="application/json,.json" '
+        'data-review-batch-answer-upload="/intraday/review/answers">'
         '<form method="post" action="/intraday/review/reconcile-all"><button type="submit"'
         + (" disabled" if not any(item.visual_evidence_identity is not None for item in reconciled.values()) else "")
         + '>RECONCILE ALL READY REVIEWS</button></form>'
@@ -161,6 +164,7 @@ def render_intraday_review(
         + escape(review.question_outbox)
         + '<br><strong>Future Answer inbox:</strong> '
         + escape(review.answer_inbox)
+        + ' · Expected combined Answer: ' + escape(review.current_batch_answer_filename or "CREATE REVIEW PDF FIRST")
         + ' · Governed JSON Answer Pack import ACTIVE</div>'
         + _review_upload_script()
     )
@@ -380,14 +384,15 @@ def _answer_import_result(
         summary = "INDIVIDUAL ANSWER IMPORT"
     else:
         summary = (
-            f"UPLOAD ALL ANSWERS · Eligible {batch.eligible_candidates} · Discovered {batch.files_discovered} · "
+            f"UPLOAD ALL ANSWERS · {batch.transport_state} · Eligible {batch.eligible_candidates} · Discovered {batch.files_discovered} · "
             f"Imported {batch.count(AnswerImportState.IMPORTED)} · "
             f"Already imported {batch.count(AnswerImportState.ALREADY_IMPORTED)} · "
             f"Missing {batch.count(AnswerImportState.MISSING)} · "
             f"Invalid {batch.count(AnswerImportState.INVALID)} · "
             f"Identity mismatch {batch.count(AnswerImportState.IDENTITY_MISMATCH)} · "
             f"Schema invalid {batch.count(AnswerImportState.SCHEMA_INVALID)} · "
-            f"Conflict {batch.count(AnswerImportState.CONFLICT)}"
+            f"Conflict {batch.count(AnswerImportState.CONFLICT)} · "
+            f"Extra {batch.extra_candidates} · Duplicate {batch.duplicate_candidates}"
         )
     return (
         '<section class="intraday-batch-result"><h2>' + escape(summary)
@@ -455,6 +460,15 @@ document.querySelectorAll('[data-review-answer-upload]').forEach(input=>{
     if(!file||(!file.name.toLowerCase().endsWith('.json')&&!['application/json','text/json'].includes(file.type))){alert('Choose a JSON Answer Pack.');return;}
     const response=await fetch(input.dataset.reviewAnswerUpload,{method:'POST',headers:{'Content-Type':'application/json'},body:file});
     if(!response.ok){alert('Answer upload rejected.');return;}
+    document.open();document.write(await response.text());document.close();
+  });
+});
+document.querySelectorAll('[data-review-batch-answer-upload]').forEach(input=>{
+  input.addEventListener('change',async()=>{
+    const file=input.files[0];
+    if(!file||(!file.name.toLowerCase().endsWith('.json')&&!['application/json','text/json'].includes(file.type))){alert('Choose one combined JSON Answer Pack.');return;}
+    const response=await fetch(input.dataset.reviewBatchAnswerUpload,{method:'POST',headers:{'Content-Type':'application/json'},body:file});
+    if(!response.ok){alert('Combined Answer upload rejected.');return;}
     document.open();document.write(await response.text());document.close();
   });
 });

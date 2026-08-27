@@ -6,6 +6,7 @@ from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from enum import StrEnum
 from hashlib import sha256
+import json
 from pathlib import Path
 import stat
 from threading import RLock
@@ -34,9 +35,11 @@ from kronos.intraday.review_answer import (
     AnswerImportState,
     ImportedVisualEvidence,
     answer_pack_filename,
+    batch_answer_pack_filename,
     bind_imported_evidence,
     create_import_record,
     create_visual_evidence_pointer,
+    parse_batch_answer_transport,
     parse_answer_pack,
 )
 from kronos.intraday.review_pdf import (
@@ -81,6 +84,7 @@ class IntradayReviewSnapshot:
     answer_inbox: str
     current_batch_identity: str | None = None
     current_batch_filename: str | None = None
+    current_batch_answer_filename: str | None = None
     answer_import_active: bool = True
     provider_operations: int = 0
     discovery_operations: int = 0
@@ -117,6 +121,10 @@ class IntradayAnswerImportResult:
 @dataclass(frozen=True, slots=True)
 class IntradayAnswerBatchResult:
     members: tuple[IntradayAnswerImportResult, ...]
+    answer_filename: str | None = None
+    transport_state: str = "COMPLETE"
+    extra_candidates: int = 0
+    duplicate_candidates: int = 0
 
     @property
     def eligible_candidates(self) -> int:
@@ -214,6 +222,7 @@ class IntradayReviewApplication:
                 answer_inbox=str(self._transport.answer_inbox),
                 current_batch_identity=None if batch is None else batch.batch_identity,
                 current_batch_filename=None if batch is None else review_batch_filename(batch),
+                current_batch_answer_filename=None if batch is None else batch_answer_pack_filename(batch),
             )
 
     def start_review(self, probable_result_identity: str) -> ReviewCycle:
@@ -507,15 +516,121 @@ class IntradayReviewApplication:
                 }.get(error.failure, AnswerImportState.INVALID)
                 return self._failure_result(pack, filename, digest, state, error.failure)
 
-    def import_all_answers(self) -> IntradayAnswerBatchResult:
+    def import_all_answers(
+        self,
+        *,
+        media_type: str | None = None,
+        payload: bytes | None = None,
+    ) -> IntradayAnswerBatchResult:
         with self._lock:
             run = self._require_current_run()
             pointer = self._pointer_for_run(run)
-            eligible = tuple(sorted(
-                (item for item in pointer.cycles if item.active_review_pack_identity is not None),
-                key=lambda item: item.canonical_subject_identity,
-            ))
-            return IntradayAnswerBatchResult(tuple(self.import_answer(item.cycle_identity) for item in eligible))
+            batch = self._restored_batch(run, pointer)
+            if batch is None:
+                raise ReviewError(ReviewFailure.ARTIFACT_UNAVAILABLE)
+            packs = tuple(self._store.load_pack(member.review_pack_identity) for member in batch.members)
+            filename = batch_answer_pack_filename(batch)
+            target = self._transport.answer_inbox / filename
+            digest: str | None = None
+            if payload is None:
+                try:
+                    payload = self._read_answer_file(target)
+                except ReviewError as error:
+                    return self._batch_failure(packs, filename, digest, error.failure)
+            elif (
+                type(payload) is not bytes
+                or media_type is None
+                or media_type.split(";", 1)[0].strip().lower() not in {"application/json", "text/json"}
+            ):
+                return self._batch_failure(packs, filename, digest, ReviewFailure.ANSWER_INVALID)
+            digest = sha256(payload).hexdigest()
+            try:
+                transport = parse_batch_answer_transport(payload)
+            except ReviewError as error:
+                return self._batch_failure(packs, filename, digest, error.failure)
+            if (
+                transport.review_batch_identity != batch.batch_identity
+                or transport.probables_run_identity != batch.probables_run_identity
+            ):
+                return self._batch_failure(
+                    packs, filename, digest, ReviewFailure.ANSWER_IDENTITY_MISMATCH,
+                )
+            self._store.retain_batch_answer_transport(batch.batch_identity, payload)
+
+            expected = {pack.review_pack_identity: pack for pack in packs}
+            grouped: dict[str, list[dict[str, object]]] = {}
+            unbound = 0
+            for candidate in transport.candidate_documents:
+                identity = candidate.get("review_pack_identity")
+                if type(identity) is not str:
+                    unbound += 1
+                    continue
+                grouped.setdefault(identity, []).append(dict(candidate))
+            extras = unbound + sum(
+                len(documents) for identity, documents in grouped.items() if identity not in expected
+            )
+            duplicates = sum(
+                len(documents) - 1 for identity, documents in grouped.items()
+                if identity in expected and len(documents) > 1
+            )
+            members: list[IntradayAnswerImportResult] = []
+            for pack in packs:
+                documents = grouped.get(pack.review_pack_identity, [])
+                if not documents:
+                    members.append(self._failure_result(
+                        pack, filename, digest, AnswerImportState.MISSING,
+                        ReviewFailure.ANSWER_MISSING,
+                    ))
+                    continue
+                if len(documents) != 1:
+                    members.append(self._failure_result(
+                        pack, filename, digest, AnswerImportState.SCHEMA_INVALID,
+                        ReviewFailure.ANSWER_SCHEMA_INVALID,
+                    ))
+                    continue
+                candidate_payload = json.dumps(
+                    documents[0], sort_keys=True, separators=(",", ":"), ensure_ascii=True,
+                ).encode("utf-8")
+                try:
+                    members.append(self._import_answer_payload(pack, filename, candidate_payload))
+                except ReviewError as error:
+                    state = {
+                        ReviewFailure.ANSWER_IDENTITY_MISMATCH: AnswerImportState.IDENTITY_MISMATCH,
+                        ReviewFailure.ANSWER_SCHEMA_INVALID: AnswerImportState.SCHEMA_INVALID,
+                        ReviewFailure.ANSWER_CONFLICT: AnswerImportState.CONFLICT,
+                    }.get(error.failure, AnswerImportState.INVALID)
+                    members.append(self._failure_result(
+                        pack, filename, sha256(candidate_payload).hexdigest(), state, error.failure,
+                    ))
+            completed = all(
+                member.state in {AnswerImportState.IMPORTED, AnswerImportState.ALREADY_IMPORTED}
+                for member in members
+            ) and extras == 0 and duplicates == 0
+            return IntradayAnswerBatchResult(
+                tuple(members),
+                answer_filename=filename,
+                transport_state="COMPLETE" if completed else "PARTIAL",
+                extra_candidates=extras,
+                duplicate_candidates=duplicates,
+            )
+
+    def _batch_failure(
+        self,
+        packs: tuple[ReviewQuestionPack, ...],
+        filename: str,
+        digest: str | None,
+        failure: ReviewFailure,
+    ) -> IntradayAnswerBatchResult:
+        state = {
+            ReviewFailure.ANSWER_MISSING: AnswerImportState.MISSING,
+            ReviewFailure.ANSWER_IDENTITY_MISMATCH: AnswerImportState.IDENTITY_MISMATCH,
+            ReviewFailure.ANSWER_SCHEMA_INVALID: AnswerImportState.SCHEMA_INVALID,
+        }.get(failure, AnswerImportState.INVALID)
+        return IntradayAnswerBatchResult(
+            tuple(self._failure_result(pack, filename, digest, state, failure) for pack in packs),
+            answer_filename=filename,
+            transport_state="INVALID",
+        )
 
     def _candidate_snapshot(
         self,

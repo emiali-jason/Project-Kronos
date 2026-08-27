@@ -114,6 +114,15 @@ class IntradayReviewStore:
             self._retain(path, payload)
         return path
 
+    def retain_batch_answer_transport(self, batch_identity: str, payload: bytes) -> Path:
+        if type(payload) is not bytes or not payload:
+            raise ReviewError(ReviewFailure.INPUT_INVALID)
+        digest = sha256(payload).hexdigest()
+        path = self._path("batch-answer-transports", f"{batch_identity}-{digest}", ".json")
+        with self._lock:
+            self._retain(path, payload)
+        return path
+
     def save_visual_evidence_pointer(self, value: VisualEvidencePointer) -> Path:
         if type(value) is not VisualEvidencePointer:
             raise ReviewError(ReviewFailure.INPUT_INVALID)

@@ -31,7 +31,7 @@ from kronos.intraday.review_answer import AnswerImportState, answer_pack_filenam
 from tests.unit.intraday.test_historical_semantic import BOUNDARY
 from tests.unit.intraday.test_probables import _member, _run, _unavailable
 from tests.unit.intraday.test_review import _application, _png
-from tests.unit.intraday.test_review_answer import _document, _write
+from tests.unit.intraday.test_review_answer import _batch_document, _document, _write
 
 
 def _reconciliation(
@@ -482,12 +482,15 @@ def test_wo11_three_member_answer_and_reconciliation_partial_failures_are_isolat
         packs[probable.canonical_subject_identity] = pack
         cycles[probable.canonical_subject_identity] = cycle
 
-    for subject in ("WIPRO", "RELIANCE"):
-        _write(tmp_path, packs[subject], _document(packs[subject]))
+    _, combined = _batch_document(review, packs)
+    candidates = [_document(packs[subject]) for subject in ("WIPRO", "RELIANCE")]
     invalid = _document(packs["LICI"])
     invalid["observed_visible_subject_identity"] = "TCS"
-    _write(tmp_path, packs["LICI"], invalid)
-    batch = review.import_all_answers()
+    candidates.append(invalid)
+    combined["candidates"] = candidates
+    batch = review.import_all_answers(
+        media_type="application/json", payload=json.dumps(combined).encode(),
+    )
     assert batch.count(AnswerImportState.IMPORTED) == 2
     assert batch.count(AnswerImportState.IDENTITY_MISMATCH) == 1
     assert review.snapshot().candidates[0].canonical_subject_identity == "LICI"
