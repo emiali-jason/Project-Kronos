@@ -43,7 +43,7 @@ _INTRADAY_CSS = r"""
 .intraday-discovery-header{border:1px solid var(--line);background:#071827;border-radius:9px;padding:13px 15px;margin-bottom:12px}.intraday-discovery-header h2{font-size:17px;color:var(--green);margin:0 0 5px}.intraday-discovery-header p{margin:3px 0;color:var(--muted);font-size:12px}.intraday-discovery-table{width:100%;border-collapse:collapse;font-size:12px}.intraday-discovery-table th,.intraday-discovery-table td{padding:7px 8px;border-bottom:1px solid var(--line);text-align:left}.intraday-discovery-table th{font-size:10px;color:var(--muted);text-transform:uppercase}.intraday-state-ready{color:var(--green)}.intraday-state-held{color:var(--amber)}.intraday-failure{border:1px solid #81502a;background:#26170d;color:#f0c08e;border-radius:7px;padding:9px 11px;margin-bottom:12px}.intraday-methodology{border:1px solid var(--line);background:#071827;color:#c2d2dd;border-radius:7px;padding:8px 11px;margin-bottom:12px;font-size:11px}.intraday-methodology strong{color:var(--green)}.intraday-detail-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
 .intraday-tabs{margin:-22px -28px 22px}.intraday-tabs a.active{border-color:var(--green)}.intraday-tab{height:61px;display:flex;align-items:center;color:var(--muted);border-bottom:2px solid transparent;white-space:nowrap}.intraday-refresh-state{margin-left:8px;color:var(--muted);font-size:10px}.intraday-summary .status-top strong{color:var(--green)}.intraday-market-panels{grid-template-columns:repeat(2,minmax(0,1fr))}.intraday-market-panels .panel-heading h2{color:var(--green)}.intraday-market-panels .market-panel{min-height:330px}.intraday-market-panels .empty{min-height:110px}.intraday-probable .summary-reason{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:7px}.intraday-card-fact{border-left:1px solid var(--line);padding-left:7px;min-width:0}.intraday-card-fact:first-child{border-left:0;padding-left:0}.intraday-card-fact span{display:block;color:var(--muted);font-size:8px;text-transform:uppercase;letter-spacing:.04em}.intraday-card-fact strong{display:block;margin-top:2px;font-size:11px;overflow-wrap:anywhere}.intraday-probable .summary-rr strong{color:#dce8f0}.intraday-panel-footer{display:flex;flex-wrap:wrap;gap:7px 14px;border-top:1px solid var(--line);margin-top:13px;padding-top:10px;color:var(--muted);font-size:10px}.intraday-panel-footer strong{color:#dce8f0}.intraday-unavailable-list{display:grid;gap:6px;margin-top:10px}.intraday-unavailable-subject{display:flex;justify-content:space-between;gap:10px;border-top:1px solid var(--line);padding-top:6px;color:var(--muted);font-size:11px}.intraday-unavailable-subject strong{color:var(--amber)}.intraday-analysis-context{display:flex;align-items:flex-start;gap:12px;border:1px solid var(--line);background:#071827;border-radius:8px;margin-top:14px;padding:8px 10px}.intraday-analysis-context>strong{flex:0 0 auto;color:var(--green);font-size:10px;text-transform:uppercase;letter-spacing:.05em}.intraday-analysis-context-detail{display:flex;align-items:center;flex-wrap:wrap;gap:5px 12px;color:var(--muted);font-size:8px;white-space:normal}.intraday-analysis-context-detail span{padding-left:12px;border-left:1px solid var(--line)}
 .intraday-review-toolbar{display:flex;align-items:center;gap:9px;flex-wrap:wrap;border:1px solid var(--line);background:#071827;border-radius:9px;padding:10px;margin-bottom:12px}.intraday-review-toolbar form{margin:0}.intraday-review-toolbar .future-action{opacity:.62}.intraday-review-toolbar-note{color:var(--muted);font-size:10px}.intraday-batch-result{border:1px solid #2d765d;background:#08261e;border-radius:9px;padding:10px 12px;margin-bottom:12px}.intraday-batch-result h2{color:var(--green);font-size:13px;margin:0 0 6px}.intraday-batch-accounting{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}.intraday-batch-accounting span,.intraday-batch-members span{font-size:10px;color:var(--muted)}.intraday-batch-members{display:flex;flex-wrap:wrap;gap:5px 12px;margin-top:7px}.intraday-review-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:12px}.intraday-review-card{border:1px solid var(--line);background:#071827;border-radius:10px;padding:14px;min-width:0}.intraday-review-card h2{margin:0;color:var(--green);font-size:18px}.intraday-review-head{display:flex;justify-content:space-between;gap:14px;align-items:center}.intraday-review-required{display:inline-block;margin-top:7px;color:#f6d997;font-size:10px;font-weight:850}.intraday-probable-context{border-top:1px solid var(--line);border-bottom:1px solid var(--line);padding:8px 0;margin:9px 0;color:#d9e6df;font-size:10px}.intraday-probable-context strong{display:block;color:var(--green);font-size:9px;text-transform:uppercase;margin-bottom:3px}.intraday-review-section-title{color:var(--muted);font-size:9px;font-weight:850;letter-spacing:.05em;margin:10px 0 6px}.intraday-review-status{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin:12px 0}.intraday-review-status div{border:1px solid var(--line);border-radius:6px;padding:7px}.intraday-review-status span{display:block;color:var(--muted);font-size:8px;text-transform:uppercase}.intraday-review-status strong{font-size:10px;overflow-wrap:anywhere}.intraday-review-actions{display:grid;gap:8px}.intraday-drop{display:grid;place-items:center;text-align:center;min-height:160px;border:2px dashed #3d836b;border-radius:9px;padding:16px;color:var(--muted);cursor:pointer;outline:none}.intraday-drop:hover,.intraday-drop:focus-visible{border-color:var(--green);background:#09251d;box-shadow:0 0 0 3px rgba(46,212,119,.14)}.intraday-drop .paste-key{display:grid;place-items:center;width:46px;height:36px;border:1px solid #3d836b;border-radius:7px;color:var(--green);font-size:18px;font-weight:900}.intraday-drop strong{color:#e9f7f0;font-size:13px;margin-top:7px}.intraday-drop span{display:block;font-size:10px}.intraday-drop .required-panels{margin-top:7px}.intraday-chart-input{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}.intraday-file-choice{justify-self:start;display:inline-block;border:1px solid #246a52;border-radius:7px;padding:7px 10px;color:#dff7eb;font-size:10px;font-weight:750;cursor:pointer}.intraday-file-choice:hover,.intraday-file-choice:focus-visible{border-color:var(--green);outline:2px solid rgba(46,212,119,.25)}.intraday-review-actions form{margin:0}.intraday-review-lineage{font-size:9px;color:var(--muted);overflow-wrap:anywhere}.intraday-review-diagnostics{font-size:9px;color:var(--muted)}.intraday-review-diagnostics summary{cursor:pointer}.intraday-review-config{margin-top:14px;border:1px solid var(--line);border-radius:7px;padding:9px;color:var(--muted);font-size:9px;overflow-wrap:anywhere}
-.intraday-paste-feedback{display:block;min-height:1.25em;color:var(--muted);font-size:10px}.intraday-drop[data-upload-state="error"]+.intraday-paste-feedback{color:#f0c08e}.intraday-drop[data-upload-state="busy"]+.intraday-paste-feedback{color:var(--green)}
+.intraday-paste-feedback{display:block;min-height:1.25em;color:var(--muted);font-size:10px}.intraday-drop[data-upload-state="error"]+.intraday-paste-feedback{color:#f0c08e}.intraday-drop[data-upload-state="busy"]+.intraday-paste-feedback{color:var(--green)}.intraday-drop[data-paste-active="true"]{border-color:var(--green);background:#09251d;box-shadow:0 0 0 3px rgba(46,212,119,.14)}.intraday-paste-receiver{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap;opacity:.01}
 @media(max-width:900px){.intraday-detail-grid{grid-template-columns:1fr}.intraday-probable .summary-reason{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(max-width:760px){.intraday-tabs{margin:-18px -18px 18px;padding:0 18px;gap:13px;overflow:auto}.intraday-tabs .toolbar{margin-left:0}.intraday-timeframes,.intraday-context{grid-template-columns:1fr}.intraday-warning,.intraday-selector{align-items:flex-start;flex-direction:column}.intraday-facts{grid-template-columns:1fr}.intraday-facts dd{padding-top:0}.intraday-market-panels{grid-template-columns:1fr}.intraday-probable .summary-reason{grid-template-columns:repeat(2,minmax(0,1fr))}.intraday-analysis-context{align-items:flex-start}.intraday-analysis-context-detail{flex-wrap:wrap;white-space:normal}.intraday-review-list{grid-template-columns:1fr}.intraday-batch-accounting{grid-template-columns:repeat(2,minmax(0,1fr))}.intraday-review-status{grid-template-columns:1fr}.intraday-review-toolbar{align-items:stretch;flex-direction:column}.intraday-review-toolbar button{width:100%}}
 """
@@ -178,6 +178,7 @@ def _review_candidate(
     result = quote(item.probable_result_identity, safe="")
     input_identity = "intraday-chart-" + item.probable_result_identity.rsplit("-", 1)[-1][:12]
     feedback_identity = input_identity + "-feedback"
+    receiver_identity = input_identity + "-clipboard"
     chart_state = (
         "CHART REQUIRED"
         if item.chart_revision_ordinal is None
@@ -186,15 +187,20 @@ def _review_candidate(
     pack_state = "NOT CREATED" if item.review_pack_identity is None else "CREATED"
     action = (
         '<div class="intraday-review-section-title">TRADINGVIEW CHARTS</div>'
-        '<div class="intraday-drop" role="button" tabindex="0" aria-describedby="'
+        '<div class="intraday-drop" role="button" tabindex="0" aria-pressed="false" aria-describedby="'
         + feedback_identity
         + '" aria-label="Paste TradingView 1D 1H 15M 5M chart composite for '
         + escape(item.canonical_subject_identity)
         + '" data-review-upload="/intraday/review/chart?result='
         + result
+        + '" data-review-receiver="'
+        + receiver_identity
         + '"><span class="paste-key">⌘V</span><strong>PASTE / UPLOAD</strong>'
         '<span>TRADINGVIEW 4-CHART IMAGE</span><span class="required-panels">Required: 1D · 1H · 15M · 5M</span></div>'
         '<span id="' + feedback_identity + '" class="intraday-paste-feedback" aria-live="polite"></span>'
+        '<textarea id="' + receiver_identity + '" class="intraday-paste-receiver" '
+        'aria-label="Clipboard image receiver for ' + escape(item.canonical_subject_identity)
+        + '" autocomplete="off" autocapitalize="off" spellcheck="false"></textarea>'
         '<label class="intraday-file-choice" tabindex="0" for="' + input_identity + '">CHOOSE IMAGE FILE</label>'
         '<input id="' + input_identity + '" class="intraday-chart-input" type="file" accept="image/png,image/jpeg" '
         'aria-label="Choose 1D 1H 15M 5M chart composite" data-review-file-target="' + input_identity + '-target">'
@@ -398,6 +404,8 @@ def _review_upload_script() -> str:
     return """<script>
 (()=>{
 const reviewChartMediaTypes=new Set(['image/png','image/jpeg']);
+let activeReviewPasteTarget=null;
+let activeReviewPasteReceiver=null;
 function reviewChartFeedback(target,message,state=''){
   const feedback=target.nextElementSibling;
   target.dataset.uploadState=state;
@@ -411,6 +419,31 @@ function reviewChartClipboardFiles(clipboardData){
   return hasFileItems?itemFiles:[...(clipboardData?.files||[])]
     .filter(file=>reviewChartMediaTypes.has(file.type));
 }
+function clearReviewPasteTarget(target){
+  if(target&&target===activeReviewPasteTarget){
+    target.dataset.pasteActive='false';
+    target.setAttribute('aria-pressed','false');
+    activeReviewPasteTarget=null;
+    activeReviewPasteReceiver=null;
+  }
+}
+function activateReviewPasteTarget(target){
+  if(activeReviewPasteTarget&&activeReviewPasteTarget!==target){
+    activeReviewPasteTarget.dataset.pasteActive='false';
+    activeReviewPasteTarget.setAttribute('aria-pressed','false');
+  }
+  activeReviewPasteTarget=target;
+  activeReviewPasteReceiver=document.getElementById(target.dataset.reviewReceiver);
+  target.dataset.pasteActive='true';
+  target.setAttribute('aria-pressed','true');
+  reviewChartFeedback(target,'Ready — press CMD+V to paste one PNG or JPEG chart image.','ready');
+  if(activeReviewPasteReceiver){
+    activeReviewPasteReceiver.value='';
+    activeReviewPasteReceiver.focus({preventScroll:true});
+  }else{
+    reviewChartFeedback(target,'Clipboard receiver unavailable. Use CHOOSE IMAGE FILE.','error');
+  }
+}
 async function uploadReviewChart(target,file){
   if(!file||!reviewChartMediaTypes.has(file.type)){reviewChartFeedback(target,'Choose or paste exactly one PNG or JPEG chart image.','error');return;}
   target.setAttribute('aria-busy','true');
@@ -419,6 +452,7 @@ async function uploadReviewChart(target,file){
     const response=await fetch(target.dataset.reviewUpload,{method:'POST',headers:{'Content-Type':file.type},body:file});
     if(!response.ok){reviewChartFeedback(target,'Chart upload rejected.','error');return;}
     await response.text();
+    clearReviewPasteTarget(target);
     location.reload();
   }catch(_error){
     reviewChartFeedback(target,'Chart upload failed. Try again or use CHOOSE IMAGE FILE.','error');
@@ -429,10 +463,25 @@ async function uploadReviewChart(target,file){
 document.querySelectorAll('[data-review-upload]').forEach(target=>{
   const input=target.parentElement.querySelector('input[data-review-file-target]');
   if(input)input.addEventListener('change',()=>{const files=[...(input.files||[])];if(files.length!==1){reviewChartFeedback(target,'Choose exactly one PNG or JPEG chart image.','error');return;}void uploadReviewChart(target,files[0]);});
-  target.addEventListener('click',()=>target.focus());
+  target.addEventListener('click',()=>activateReviewPasteTarget(target));
+  target.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();activateReviewPasteTarget(target);}});
   target.addEventListener('dragover',event=>event.preventDefault());
   target.addEventListener('drop',event=>{event.preventDefault();const files=[...(event.dataTransfer?.files||[])].filter(file=>reviewChartMediaTypes.has(file.type));if(files.length!==1){reviewChartFeedback(target,'Drop exactly one PNG or JPEG chart image.','error');return;}void uploadReviewChart(target,files[0]);});
-  target.addEventListener('paste',event=>{event.preventDefault();event.stopPropagation();const files=reviewChartClipboardFiles(event.clipboardData);if(files.length!==1){reviewChartFeedback(target,files.length>1?'Multiple chart images are not accepted. Paste exactly one.':'No supported PNG or JPEG chart image was found on the clipboard.','error');return;}void uploadReviewChart(target,files[0]);});
+});
+document.addEventListener('paste',event=>{
+  const target=activeReviewPasteTarget;
+  const receiver=activeReviewPasteReceiver;
+  if(!target||!receiver||document.activeElement!==receiver)return;
+  event.preventDefault();
+  event.stopPropagation();
+  receiver.value='';
+  const files=reviewChartClipboardFiles(event.clipboardData);
+  if(files.length!==1){
+    reviewChartFeedback(target,files.length>1?'Multiple chart images are not accepted. Paste exactly one.':'No supported PNG or JPEG chart image was found on the clipboard.','error');
+    receiver.focus({preventScroll:true});
+    return;
+  }
+  void uploadReviewChart(target,files[0]);
 });
 document.querySelectorAll('[data-review-answer-upload]').forEach(input=>{
   input.addEventListener('change',async()=>{

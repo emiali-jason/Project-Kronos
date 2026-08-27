@@ -127,15 +127,23 @@ def test_intraday_review_clipboard_targets_are_candidate_bound_and_share_upload_
             "Paste TradingView 1D 1H 15M 5M chart composite for "
             + candidate.canonical_subject_identity
         ) in rendered.body
-    assert rendered.body.count('class="intraday-drop" role="button" tabindex="0"') == 2
+    assert rendered.body.count('class="intraday-drop" role="button" tabindex="0" aria-pressed="false"') == 2
     assert rendered.body.count('class="intraday-paste-feedback" aria-live="polite"') == 2
-    assert "document.addEventListener('paste'" not in rendered.body
-    assert "target.addEventListener('paste'" in rendered.body
+    assert rendered.body.count('class="intraday-paste-receiver"') == 2
+    assert rendered.body.count('data-review-receiver="intraday-chart-') == 2
+    assert "document.addEventListener('paste'" in rendered.body
+    assert "target.addEventListener('paste'" not in rendered.body
+    assert "activeReviewPasteTarget=target" in rendered.body
+    assert "activeReviewPasteReceiver=document.getElementById(target.dataset.reviewReceiver)" in rendered.body
+    assert "document.activeElement!==receiver" in rendered.body
+    assert "activeReviewPasteReceiver.focus({preventScroll:true})" in rendered.body
+    assert "Ready — press CMD+V to paste one PNG or JPEG chart image." in rendered.body
     assert "reviewChartClipboardFiles(event.clipboardData)" in rendered.body
     assert "clipboardData?.items" in rendered.body
     assert "clipboardData?.files" in rendered.body
     assert "reviewChartMediaTypes.has(item.type)" in rendered.body
-    assert "event.preventDefault();event.stopPropagation()" in rendered.body
+    assert "event.preventDefault();" in rendered.body
+    assert "event.stopPropagation();" in rendered.body
     assert "files.length!==1" in rendered.body
     assert "Multiple chart images are not accepted" in rendered.body
     assert "No supported PNG or JPEG chart image was found" in rendered.body
