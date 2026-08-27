@@ -128,11 +128,22 @@ def test_intraday_review_clipboard_targets_are_candidate_bound_and_share_upload_
             + candidate.canonical_subject_identity
         ) in rendered.body
     assert rendered.body.count('class="intraday-drop" role="button" tabindex="0"') == 2
+    assert rendered.body.count('class="intraday-paste-feedback" aria-live="polite"') == 2
     assert "document.addEventListener('paste'" not in rendered.body
     assert "target.addEventListener('paste'" in rendered.body
-    assert "['image/png','image/jpeg'].includes(value.type)" in rendered.body
-    assert "uploadReviewChart(target,item.getAsFile())" in rendered.body
-    assert "input.addEventListener('change',()=>uploadReviewChart(target,input.files[0]))" in rendered.body
+    assert "reviewChartClipboardFiles(event.clipboardData)" in rendered.body
+    assert "clipboardData?.items" in rendered.body
+    assert "clipboardData?.files" in rendered.body
+    assert "reviewChartMediaTypes.has(item.type)" in rendered.body
+    assert "event.preventDefault();event.stopPropagation()" in rendered.body
+    assert "files.length!==1" in rendered.body
+    assert "Multiple chart images are not accepted" in rendered.body
+    assert "No supported PNG or JPEG chart image was found" in rendered.body
+    assert "void uploadReviewChart(target,files[0])" in rendered.body
+    assert "input.addEventListener('change'" in rendered.body
+    assert "location.reload()" in rendered.body
+    assert rendered.body.count("document.write(await response.text())") == 1
+    assert "Chart upload failed. Try again or use CHOOSE IMAGE FILE." in rendered.body
     assert ":focus-visible" in rendered.body
 
     rejected = routes.handle_post(
@@ -140,6 +151,36 @@ def test_intraday_review_clipboard_targets_are_candidate_bound_and_share_upload_
         _snapshot,
     )
     assert rejected is not None and rejected.status.value == 400
+
+
+def test_intraday_review_rejects_non_image_transport_without_creating_a_cycle(
+    tmp_path: Path,
+) -> None:
+    run = _run((_member("WIPRO"), _member("LICI")))
+    current = [run]
+    application = _application(tmp_path, current)
+    routes = IntradayBrowserRoutes(_Workstation(), review=application)
+    wipro = next(item for item in run.results if item.canonical_subject_identity == "WIPRO")
+    before = _store_fingerprint(application.store.root)
+
+    for media_type, payload in (
+        ("text/plain", b"https://www.tradingview.com/chart/"),
+        ("text/html", b"<img src='https://example.invalid/chart.png'>"),
+        ("image/gif", b"GIF89a"),
+    ):
+        response = routes.handle_post(
+            BrowserPostRequest(
+                "/intraday/review/chart",
+                {"result": [wipro.result_identity]},
+                media_type,
+                payload,
+            ),
+            _snapshot,
+        )
+        assert response is not None and response.status.value == 400
+
+    assert all(item.cycle_identity is None for item in application.snapshot().candidates)
+    assert _store_fingerprint(application.store.root) == before
 
 
 def test_intraday_review_renders_sponsor_names_alphabetically_without_reordering_probables(
