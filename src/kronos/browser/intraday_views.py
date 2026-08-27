@@ -134,8 +134,12 @@ def render_intraday_review(
     current_batch = (
         ""
         if review.current_batch_identity is None
-        else '<span class="intraday-review-toolbar-note">Current batch · '
+        else '<span class="intraday-review-toolbar-note"><strong>QUESTION PACK:</strong> '
         + escape(review.current_batch_filename or review.current_batch_identity)
+        + '<br><strong>EXPECTED ANSWER:</strong> '
+        + escape(review.current_batch_answer_filename or "UNAVAILABLE")
+        + '<br><strong>Candidates:</strong> '
+        + str(review.current_batch_candidate_count)
         + "</span>"
     )
     body = (
@@ -162,7 +166,7 @@ def render_intraday_review(
         + '<div class="intraday-review-list">' + cards + '</div>'
         '<div class="intraday-review-config"><strong>Question outbox:</strong> '
         + escape(review.question_outbox)
-        + '<br><strong>Future Answer inbox:</strong> '
+        + '<br><strong>Answer inbox:</strong> '
         + escape(review.answer_inbox)
         + ' · Expected combined Answer: ' + escape(review.current_batch_answer_filename or "CREATE REVIEW PDF FIRST")
         + ' · Governed JSON Answer Pack import ACTIVE</div>'
@@ -382,9 +386,18 @@ def _answer_import_result(
     )
     if batch is None:
         summary = "INDIVIDUAL ANSWER IMPORT"
+    elif batch.transport_state == "MISSING":
+        return (
+            '<section class="intraday-batch-result"><h2>COMBINED ANSWER: MISSING</h2>'
+            '<div class="intraday-batch-members"><span><strong>Expected:</strong> '
+            + escape(batch.answer_filename or "UNAVAILABLE")
+            + '</span><span><strong>Candidates:</strong> '
+            + str(batch.eligible_candidates)
+            + '</span></div></section>'
+        )
     else:
         summary = (
-            f"UPLOAD ALL ANSWERS · {batch.transport_state} · Eligible {batch.eligible_candidates} · Discovered {batch.files_discovered} · "
+            f"BATCH ANSWER FOUND · {batch.transport_state} · Candidates {batch.eligible_candidates} · Files {batch.files_discovered} · "
             f"Imported {batch.count(AnswerImportState.IMPORTED)} · "
             f"Already imported {batch.count(AnswerImportState.ALREADY_IMPORTED)} · "
             f"Missing {batch.count(AnswerImportState.MISSING)} · "
@@ -467,7 +480,8 @@ document.querySelectorAll('[data-review-batch-answer-upload]').forEach(input=>{
   input.addEventListener('change',async()=>{
     const file=input.files[0];
     if(!file||(!file.name.toLowerCase().endsWith('.json')&&!['application/json','text/json'].includes(file.type))){alert('Choose one combined JSON Answer Pack.');return;}
-    const response=await fetch(input.dataset.reviewBatchAnswerUpload,{method:'POST',headers:{'Content-Type':'application/json'},body:file});
+    const uploadUrl=input.dataset.reviewBatchAnswerUpload+'?filename='+encodeURIComponent(file.name);
+    const response=await fetch(uploadUrl,{method:'POST',headers:{'Content-Type':'application/json'},body:file});
     if(!response.ok){alert('Combined Answer upload rejected.');return;}
     document.open();document.write(await response.text());document.close();
   });

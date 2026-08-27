@@ -48,6 +48,10 @@ from kronos.intraday.review_pdf import (
     review_batch_filename,
 )
 from kronos.intraday.review_persistence import IntradayReviewStore, validate_chart_payload
+from kronos.intraday.review_transport import (
+    ReviewBatchTransport,
+    create_review_batch_transport,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -85,6 +89,8 @@ class IntradayReviewSnapshot:
     current_batch_identity: str | None = None
     current_batch_filename: str | None = None
     current_batch_answer_filename: str | None = None
+    current_batch_generated_at: datetime | None = None
+    current_batch_candidate_count: int = 0
     answer_import_active: bool = True
     provider_operations: int = 0
     discovery_operations: int = 0
@@ -132,7 +138,7 @@ class IntradayAnswerBatchResult:
 
     @property
     def files_discovered(self) -> int:
-        return sum(item.state is not AnswerImportState.MISSING for item in self.members)
+        return 0 if self.transport_state == "MISSING" else 1
 
     def count(self, state: AnswerImportState) -> int:
         return sum(item.state is state for item in self.members)
@@ -214,15 +220,27 @@ class IntradayReviewApplication:
                 for result in (() if run is None else run.results)
                 if result.state in {ProbableState.LONG_PROBABLE, ProbableState.SHORT_PROBABLE}
             )
-            batch = self._restored_batch(run, current)
+            restored = self._restored_batch_transport(run, current)
+            batch = None if restored is None else restored[0]
+            transport = None if restored is None else restored[1]
             return IntradayReviewSnapshot(
                 current_probables_run_identity=None if run is None else run.run_identity,
                 candidates=candidates,
                 question_outbox=str(self._transport.question_outbox),
                 answer_inbox=str(self._transport.answer_inbox),
                 current_batch_identity=None if batch is None else batch.batch_identity,
-                current_batch_filename=None if batch is None else review_batch_filename(batch),
-                current_batch_answer_filename=None if batch is None else batch_answer_pack_filename(batch),
+                current_batch_filename=(
+                    None if transport is None else review_batch_filename(transport)
+                ),
+                current_batch_answer_filename=(
+                    None if transport is None else batch_answer_pack_filename(transport)
+                ),
+                current_batch_generated_at=(
+                    None if transport is None else transport.generated_at
+                ),
+                current_batch_candidate_count=(
+                    0 if transport is None else transport.candidate_count
+                ),
             )
 
     def start_review(self, probable_result_identity: str) -> ReviewCycle:
@@ -351,29 +369,35 @@ class IntradayReviewApplication:
 
     def create_question_pack(self, cycle_identity: str) -> tuple[ReviewQuestionPack, Path]:
         with self._lock:
-            run = self._require_current_run()
-            pointer = self._pointer_for_run(run)
-            item = self._cycle_pointer(pointer, cycle_identity)
-            if item.active_chart_revision_identity is None:
-                raise ReviewError(ReviewFailure.CHART_REQUIRED)
-            cycle = self._store.load_cycle(item.cycle_identity)
-            chart = self._store.load_chart(item.active_chart_revision_identity)
-            if item.active_review_pack_identity is None:
-                handoff = self._store.load_handoff(cycle.handoff_identity)
-                pack = create_question_pack(handoff, cycle, chart)
-                self._store.retain_pack(pack)
-                updated = replace(
-                    item,
-                    state=ReviewState.QUESTION_PACK_CREATED,
-                    active_review_pack_identity=pack.review_pack_identity,
-                )
-                self._store.save_current(_replace_cycle(pointer, updated))
-            else:
-                pack = self._store.load_pack(item.active_review_pack_identity)
-                if pack.chart_revision_identity != chart.chart_revision_identity:
-                    raise ReviewError(ReviewFailure.INTEGRITY_INVALID)
+            pack, chart = self._prepare_question_pack(cycle_identity)
             exported = self._transport.export(pack, self._store.load_chart_bytes(chart))
             return pack, exported
+
+    def _prepare_question_pack(
+        self, cycle_identity: str,
+    ) -> tuple[ReviewQuestionPack, ChartRevision]:
+        run = self._require_current_run()
+        pointer = self._pointer_for_run(run)
+        item = self._cycle_pointer(pointer, cycle_identity)
+        if item.active_chart_revision_identity is None:
+            raise ReviewError(ReviewFailure.CHART_REQUIRED)
+        cycle = self._store.load_cycle(item.cycle_identity)
+        chart = self._store.load_chart(item.active_chart_revision_identity)
+        if item.active_review_pack_identity is None:
+            handoff = self._store.load_handoff(cycle.handoff_identity)
+            pack = create_question_pack(handoff, cycle, chart)
+            self._store.retain_pack(pack)
+            updated = replace(
+                item,
+                state=ReviewState.QUESTION_PACK_CREATED,
+                active_review_pack_identity=pack.review_pack_identity,
+            )
+            self._store.save_current(_replace_cycle(pointer, updated))
+        else:
+            pack = self._store.load_pack(item.active_review_pack_identity)
+            if pack.chart_revision_identity != chart.chart_revision_identity:
+                raise ReviewError(ReviewFailure.INTEGRITY_INVALID)
+        return pack, chart
 
     def create_all_question_packs(self) -> IntradayReviewBatchResult:
         with self._lock:
@@ -399,8 +423,7 @@ class IntradayReviewApplication:
                     continue
                 reused = item.active_review_pack_identity is not None
                 try:
-                    pack, _ = self.create_question_pack(item.cycle_identity)
-                    chart = self._store.load_chart(pack.chart_revision_identity)
+                    pack, chart = self._prepare_question_pack(item.cycle_identity)
                     chart_payload = self._store.load_chart_bytes(chart)
                 except ReviewError as error:
                     outcomes.append(IntradayReviewBatchMemberResult(
@@ -435,7 +458,13 @@ class IntradayReviewApplication:
             batch = create_review_batch(run.run_identity, tuple(pack for pack, _ in entries))
             try:
                 self._store.retain_batch(batch)
-                batch_path = self._transport.export_batch(batch, entries)
+                transport = self._store.load_batch_transport_if_present(batch.batch_identity)
+                if transport is None:
+                    transport = create_review_batch_transport(
+                        batch, generated_at=self._clock(),
+                    )
+                    self._store.retain_batch_transport(transport)
+                batch_path = self._transport.export_batch(batch, transport, entries)
             except ReviewError as error:
                 return IntradayReviewBatchResult(
                     state=IntradayReviewBatchState.PARTIAL,
@@ -521,18 +550,24 @@ class IntradayReviewApplication:
         *,
         media_type: str | None = None,
         payload: bytes | None = None,
+        source_filename: str | None = None,
     ) -> IntradayAnswerBatchResult:
         with self._lock:
             run = self._require_current_run()
             pointer = self._pointer_for_run(run)
-            batch = self._restored_batch(run, pointer)
-            if batch is None:
+            restored = self._restored_batch_transport(run, pointer)
+            if restored is None:
                 raise ReviewError(ReviewFailure.ARTIFACT_UNAVAILABLE)
+            batch, transport = restored
             packs = tuple(self._store.load_pack(member.review_pack_identity) for member in batch.members)
-            filename = batch_answer_pack_filename(batch)
+            filename = batch_answer_pack_filename(transport)
             target = self._transport.answer_inbox / filename
             digest: str | None = None
             if payload is None:
+                if source_filename is not None:
+                    return self._batch_failure(
+                        packs, filename, digest, ReviewFailure.ANSWER_INVALID,
+                    )
                 try:
                     payload = self._read_answer_file(target)
                 except ReviewError as error:
@@ -541,6 +576,7 @@ class IntradayReviewApplication:
                 type(payload) is not bytes
                 or media_type is None
                 or media_type.split(";", 1)[0].strip().lower() not in {"application/json", "text/json"}
+                or source_filename != filename
             ):
                 return self._batch_failure(packs, filename, digest, ReviewFailure.ANSWER_INVALID)
             digest = sha256(payload).hexdigest()
@@ -629,7 +665,9 @@ class IntradayReviewApplication:
         return IntradayAnswerBatchResult(
             tuple(self._failure_result(pack, filename, digest, state, failure) for pack in packs),
             answer_filename=filename,
-            transport_state="INVALID",
+            transport_state=(
+                "MISSING" if failure is ReviewFailure.ANSWER_MISSING else "INVALID"
+            ),
         )
 
     def _candidate_snapshot(
@@ -795,11 +833,11 @@ class IntradayReviewApplication:
             detail=detail,
         )
 
-    def _restored_batch(
+    def _restored_batch_transport(
         self,
         run: ProbablesRun | None,
         pointer: CurrentReviewPointer | None,
-    ) -> ReviewBatchPdf | None:
+    ) -> tuple[ReviewBatchPdf, ReviewBatchTransport] | None:
         if run is None or pointer is None or pointer.probables_run_identity != run.run_identity:
             return None
         packs = tuple(
@@ -810,7 +848,17 @@ class IntradayReviewApplication:
         if not packs:
             return None
         candidate = create_review_batch(run.run_identity, packs)
-        return self._store.load_batch_if_present(candidate.batch_identity)
+        batch = self._store.load_batch_if_present(candidate.batch_identity)
+        transport = self._store.load_batch_transport_if_present(candidate.batch_identity)
+        if batch is None or transport is None:
+            return None
+        if (
+            transport.review_batch_identity != batch.batch_identity
+            or transport.probables_run_identity != batch.probables_run_identity
+            or transport.candidate_count != len(batch.members)
+        ):
+            raise ReviewError(ReviewFailure.INTEGRITY_INVALID)
+        return batch, transport
 
     def _current_result(self, identity: str) -> tuple[ProbablesRun, ProbableMemberResult]:
         run = self._require_current_run()

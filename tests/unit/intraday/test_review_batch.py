@@ -13,6 +13,7 @@ from kronos.application.intraday_review import (
 from kronos.intraday.historical_semantic import SemanticDirection
 from kronos.intraday.review import QUESTIONS
 from kronos.intraday.review_batch import batch_artifact_bytes, batch_from_bytes
+from kronos.intraday.review_transport import review_batch_stem
 from kronos.intraday.review_persistence import IntradayReviewStore
 from tests.unit.intraday.test_historical_semantic import BOUNDARY
 from tests.unit.intraday.test_probables import _member, _run
@@ -49,6 +50,10 @@ def test_batch_creates_ready_members_skips_chart_required_and_is_idempotent(tmp_
     assert tuple(item.canonical_subject_identity for item in first.members) == ("LICI", "RELIANCE", "WIPRO")
     assert next(item for item in first.members if item.canonical_subject_identity == "RELIANCE").state is IntradayReviewBatchMemberState.SKIPPED_CHART_REQUIRED
     assert first.batch_identity is not None and first.batch_filename is not None
+    assert re.fullmatch(
+        r"KRONOS_INTRADAY_REVIEW_20260817_153030_IST_[0-9A-F]{8}_QUESTIONS\.pdf",
+        first.batch_filename,
+    )
     combined_path = tmp_path / "questions" / first.batch_filename
     first_payload = combined_path.read_bytes()
     text = "\n".join(page.extract_text() or "" for page in PdfReader(combined_path).pages)
@@ -62,6 +67,9 @@ def test_batch_creates_ready_members_skips_chart_required_and_is_idempotent(tmp_
     ).review_request_identity) >= 1
     assert "EXACT COMBINED ANSWER CONTRACT" in text
     assert "one combined JSON Answer Pack" in normalized_text
+    assert "REQUIRED ANSWER FILENAME" in text
+    assert "Do not return individual files" in normalized_text
+    assert len(tuple((tmp_path / "questions").glob("*.pdf"))) == 1
     for question in QUESTIONS:
         assert normalized_text.count(question.wording) == 2
     assert unrelated.read_text(encoding="utf-8") == "preserve"
@@ -75,6 +83,12 @@ def test_batch_creates_ready_members_skips_chart_required_and_is_idempotent(tmp_
     restored = _application(tmp_path, [run]).snapshot()
     assert restored.current_batch_identity == first.batch_identity
     assert restored.current_batch_filename == first.batch_filename
+    assert restored.current_batch_answer_filename is not None
+    assert restored.current_batch_filename.removesuffix("_QUESTIONS.pdf") == (
+        restored.current_batch_answer_filename.removesuffix("_ANSWERS.json")
+    )
+    assert restored.current_batch_generated_at is not None
+    assert restored.current_batch_candidate_count == 2
 
 
 def test_batch_all_ready_new_revision_and_persisted_contract(tmp_path: Path) -> None:
@@ -106,6 +120,11 @@ def test_batch_all_ready_new_revision_and_persisted_contract(tmp_path: Path) -> 
     assert retained.probables_run_identity == run.run_identity
     assert tuple(item.canonical_subject_identity for item in retained.members) == ("LICI", "RELIANCE", "WIPRO")
     assert store.load_pack(wipro_first.review_pack_identity).review_pack_identity == wipro_first.review_pack_identity
+    transport = store.load_batch_transport_if_present(retained.batch_identity)
+    assert transport is not None
+    assert transport.question_filename == second.batch_filename
+    assert transport.question_filename == f"{review_batch_stem(transport)}_QUESTIONS.pdf"
+    assert transport.expected_answer_filename == f"{review_batch_stem(transport)}_ANSWERS.json"
 
 
 def test_batch_zero_ready_new_run_and_direction_flip_fail_closed(tmp_path: Path) -> None:
@@ -156,4 +175,4 @@ def test_overlapping_batch_operations_reuse_exact_immutable_outputs(tmp_path: Pa
     assert results[0].batch_filename == results[1].batch_filename
     assert {result.created_count for result in results} == {0, 3}
     assert {result.reused_count for result in results} == {0, 3}
-    assert len(tuple((tmp_path / "questions").glob("INTRADAY_REVIEW_BATCH_*.pdf"))) == 1
+    assert len(tuple((tmp_path / "questions").glob("KRONOS_INTRADAY_REVIEW_*_QUESTIONS.pdf"))) == 1

@@ -21,6 +21,7 @@ from kronos.intraday.review import (
     ReviewQuestionPack,
 )
 from kronos.intraday.review_batch import ReviewBatchPdf
+from kronos.intraday.review_transport import ReviewBatchTransport
 
 
 ANSWER_PACK_IDENTITY = "KRONOS-INTRADAY-CHART-ANALYST-ANSWER-PACK-V1"
@@ -84,11 +85,10 @@ class ChartAnalystBatchAnswerTransport:
     source_sha256: str
 
 
-def batch_answer_pack_filename(batch: ReviewBatchPdf) -> str:
-    if type(batch) is not ReviewBatchPdf:
+def batch_answer_pack_filename(transport: ReviewBatchTransport) -> str:
+    if type(transport) is not ReviewBatchTransport:
         raise ReviewError(ReviewFailure.INPUT_INVALID)
-    suffix = batch.batch_identity.rsplit("-", 1)[-1][:16]
-    return f"INTRADAY_REVIEW_BATCH_{suffix}_ANSWERS_QV1.json"
+    return transport.expected_answer_filename
 
 
 def batch_answer_pack_template(

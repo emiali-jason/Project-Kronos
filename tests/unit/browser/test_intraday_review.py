@@ -53,6 +53,7 @@ def test_intraday_review_browser_flow_is_bounded_and_get_is_side_effect_free(tmp
     assert "UPLOAD ALL ANSWERS" in initial.body
     assert "CHOOSE COMBINED ANSWER" in initial.body
     assert 'data-review-batch-answer-upload="/intraday/review/answers"' in initial.body
+    assert "'?filename='+encodeURIComponent(file.name)" in initial.body
     assert 'action="/intraday/review/answers"' in initial.body
     assert application.snapshot().candidates[0].cycle_identity is None
     assert _store_fingerprint(application.store.root) == before
@@ -76,7 +77,9 @@ def test_intraday_review_browser_flow_is_bounded_and_get_is_side_effect_free(tmp
     assert batch is not None
     assert "CREATE ALL REVIEW PDF · COMPLETE" in batch.body
     assert "Created <strong>1</strong>" in batch.body
-    assert "INTRADAY_REVIEW_BATCH_" in batch.body
+    assert "KRONOS_INTRADAY_REVIEW_20260817_153030_IST_" in batch.body
+    assert "_QUESTIONS.pdf" in batch.body
+    assert "_ANSWERS.json" in batch.body
 
     created = routes.handle_post(
         BrowserPostRequest("/intraday/review/question-pack", {"cycle": [cycle]}, "", b""),
@@ -339,6 +342,16 @@ def test_intraday_review_individual_and_batch_answer_controls_project_visual_evi
     pack, _ = application.create_question_pack(cycle.cycle_identity)
     batch_contract, batch_document = _batch_document(application, {"WIPRO": pack})
 
+    combined_missing = routes.handle_post(
+        BrowserPostRequest("/intraday/review/answers", {}, "", b""),
+        _snapshot,
+    )
+    assert combined_missing is not None
+    assert "COMBINED ANSWER: MISSING" in combined_missing.body
+    assert application.snapshot().current_batch_answer_filename in combined_missing.body
+    assert "<strong>Candidates:</strong> 1" in combined_missing.body
+    assert "<strong>WIPRO</strong> · MISSING" not in combined_missing.body
+
     missing = routes.handle_post(
         BrowserPostRequest("/intraday/review/answer", {"cycle": [cycle.cycle_identity]}, "", b""),
         _snapshot,
@@ -361,11 +374,13 @@ def test_intraday_review_individual_and_batch_answer_controls_project_visual_evi
 
     batch = routes.handle_post(
         BrowserPostRequest(
-            "/intraday/review/answers", {}, "application/json",
+            "/intraday/review/answers",
+            {"filename": [application.snapshot().current_batch_answer_filename or ""]},
+            "application/json",
             json.dumps(batch_document | {"candidates": [_document(pack)]}).encode(),
         ), _snapshot,
     )
-    assert batch is not None and "UPLOAD ALL ANSWERS · COMPLETE · Eligible 1" in batch.body
+    assert batch is not None and "BATCH ANSWER FOUND · COMPLETE · Candidates 1" in batch.body
     assert "Already imported 1" in batch.body
     assert batch_contract.batch_identity in application.snapshot().current_batch_identity
     assert routes.owns_post("/intraday/review/answer")

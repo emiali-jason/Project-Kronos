@@ -26,6 +26,11 @@ from kronos.intraday.review_batch import (
     batch_artifact_bytes,
     batch_from_bytes,
 )
+from kronos.intraday.review_transport import (
+    ReviewBatchTransport,
+    transport_artifact_bytes,
+    transport_from_bytes,
+)
 from kronos.intraday.review_answer import (
     AnswerImportRecord,
     ChartAnalystAnswerPack,
@@ -96,6 +101,14 @@ class IntradayReviewStore:
             self._retain(path, batch_artifact_bytes(value))
         return path
 
+    def retain_batch_transport(self, value: ReviewBatchTransport) -> Path:
+        if type(value) is not ReviewBatchTransport:
+            raise ReviewError(ReviewFailure.INPUT_INVALID)
+        path = self._path("batch-transports", value.review_batch_identity, ".json")
+        with self._lock:
+            self._retain(path, transport_artifact_bytes(value))
+        return path
+
     def retain_answer_pack(self, value: ChartAnalystAnswerPack) -> Path:
         return self._retain_answer_typed("answer-packs", value.answer_pack_identity, value)
 
@@ -160,6 +173,17 @@ class IntradayReviewStore:
     def load_batch_if_present(self, identity: str) -> ReviewBatchPdf | None:
         path = self._path("batch-pdfs", identity, ".json")
         return None if not path.exists() else self.load_batch(identity)
+
+    def load_batch_transport_if_present(
+        self, review_batch_identity: str,
+    ) -> ReviewBatchTransport | None:
+        path = self._path("batch-transports", review_batch_identity, ".json")
+        if not path.exists():
+            return None
+        value = transport_from_bytes(self._read(path))
+        if value.review_batch_identity != review_batch_identity:
+            raise ReviewError(ReviewFailure.INTEGRITY_INVALID)
+        return value
 
     def load_answer_pack(self, identity: str) -> ChartAnalystAnswerPack:
         return self._load_answer_typed("answer-packs", identity, ChartAnalystAnswerPack, "answer_pack_identity")

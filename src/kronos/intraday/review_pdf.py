@@ -8,6 +8,7 @@ import re
 from typing import Sequence
 from uuid import uuid4
 from xml.sax.saxutils import escape
+from zoneinfo import ZoneInfo
 
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_CENTER
@@ -18,6 +19,7 @@ from reportlab.platypus import Image, KeepTogether, PageBreak, Paragraph, Simple
 
 from kronos.intraday.review import CHART_TIMEFRAMES, ReviewError, ReviewFailure, ReviewQuestionPack
 from kronos.intraday.review_batch import ReviewBatchPdf
+from kronos.intraday.review_transport import ReviewBatchTransport
 from kronos.intraday.review_answer import (
     ANSWER_CONTRACT_VERSION,
     ANSWER_PACK_IDENTITY,
@@ -33,6 +35,7 @@ DEFAULT_QUESTION_OUTBOX = Path(
 DEFAULT_ANSWER_INBOX = Path(
     "/Users/imranali/Documents/Project-KRONOS/KRONOS REVIEW PACK/Intraday/CHATGPT ANSWERS"
 )
+_IST = ZoneInfo("Asia/Kolkata")
 
 
 class IntradayReviewPdfTransport:
@@ -61,11 +64,16 @@ class IntradayReviewPdfTransport:
     def export_batch(
         self,
         batch: ReviewBatchPdf,
+        transport: ReviewBatchTransport,
         entries: Sequence[tuple[ReviewQuestionPack, bytes]],
     ) -> Path:
         retained = tuple(entries)
         if (
             type(batch) is not ReviewBatchPdf
+            or type(transport) is not ReviewBatchTransport
+            or transport.review_batch_identity != batch.batch_identity
+            or transport.probables_run_identity != batch.probables_run_identity
+            or transport.candidate_count != len(batch.members)
             or not retained
             or any(type(pack) is not ReviewQuestionPack or type(chart) is not bytes or not chart for pack, chart in retained)
             or tuple(pack.review_pack_identity for pack, _ in retained)
@@ -81,8 +89,8 @@ class IntradayReviewPdfTransport:
             raise ReviewError(ReviewFailure.INTEGRITY_INVALID)
         self.question_outbox.mkdir(parents=True, exist_ok=True)
         self.answer_inbox.mkdir(parents=True, exist_ok=True)
-        target = self.question_outbox / review_batch_filename(batch)
-        return _retain_pdf(target, render_review_batch_pdf(batch, retained))
+        target = self.question_outbox / review_batch_filename(transport)
+        return _retain_pdf(target, render_review_batch_pdf(batch, transport, retained))
 
 
 def _retain_pdf(target: Path, payload: bytes) -> Path:
@@ -110,11 +118,10 @@ def question_pack_filename(pack: ReviewQuestionPack) -> str:
     return f"{instrument}_INTRADAY_REVIEW_{cycle_suffix}_CHART-{revision_suffix}_QV1.pdf"
 
 
-def review_batch_filename(batch: ReviewBatchPdf) -> str:
-    if type(batch) is not ReviewBatchPdf:
+def review_batch_filename(transport: ReviewBatchTransport) -> str:
+    if type(transport) is not ReviewBatchTransport:
         raise ReviewError(ReviewFailure.INPUT_INVALID)
-    suffix = batch.batch_identity.rsplit("-", 1)[-1][:16]
-    return f"INTRADAY_REVIEW_BATCH_{suffix}.pdf"
+    return transport.question_filename
 
 
 def render_question_pack_pdf(pack: ReviewQuestionPack, chart_payload: bytes) -> bytes:
@@ -234,11 +241,16 @@ def render_question_pack_pdf(pack: ReviewQuestionPack, chart_payload: bytes) -> 
 
 def render_review_batch_pdf(
     batch: ReviewBatchPdf,
+    transport: ReviewBatchTransport,
     entries: Sequence[tuple[ReviewQuestionPack, bytes]],
 ) -> bytes:
     retained = tuple(entries)
     if (
         type(batch) is not ReviewBatchPdf
+        or type(transport) is not ReviewBatchTransport
+        or transport.review_batch_identity != batch.batch_identity
+        or transport.probables_run_identity != batch.probables_run_identity
+        or transport.candidate_count != len(batch.members)
         or tuple(pack.review_pack_identity for pack, _ in retained)
         != tuple(member.review_pack_identity for member in batch.members)
     ):
@@ -282,6 +294,7 @@ def render_review_batch_pdf(
             [
                 ["Batch identity", Paragraph(escape(batch.batch_identity), table_value)],
                 ["Current Probables Run", Paragraph(escape(batch.probables_run_identity), table_value)],
+                ["Generated at (IST)", Paragraph(escape(transport.generated_at.astimezone(_IST).isoformat()), table_value)],
                 ["Included individual packs", str(len(batch.members))],
                 ["Authority", "ONE TRANSPORT - CANDIDATE EVIDENCE REMAINS INDEPENDENT"],
             ],
@@ -294,9 +307,15 @@ def render_review_batch_pdf(
             warning,
         ),
         Paragraph(
-            "Required combined Answer filename: <b>"
-            + escape(batch_answer_pack_filename(batch)) + "</b>",
+            "REQUIRED ANSWER FILENAME: <b>"
+            + escape(batch_answer_pack_filename(transport)) + "</b>",
             body,
+        ),
+        Paragraph(
+            "Return exactly ONE UTF-8 JSON object containing every candidate Answer Pack. "
+            "Do not return individual candidate files. Preserve this Question-batch filename stem exactly; "
+            "do not create or change the generation timestamp.",
+            warning,
         ),
     ]
     for index, (member, (pack, chart_payload)) in enumerate(zip(batch.members, retained, strict=True), start=1):
@@ -356,6 +375,11 @@ def render_review_batch_pdf(
         Paragraph("EXACT COMBINED ANSWER CONTRACT", heading),
         Paragraph(
             "Return one UTF-8 JSON object only. Replace governed observation placeholders without changing identity fields, keys or candidate population. Do not use Markdown fences or prose.",
+            warning,
+        ),
+        Paragraph(
+            "Required filename: <b>" + escape(batch_answer_pack_filename(transport)) + "</b>. "
+            "Do not return individual files and do not change the generation timestamp.",
             warning,
         ),
         Spacer(1, 2 * mm),

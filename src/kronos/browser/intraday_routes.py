@@ -158,11 +158,15 @@ class IntradayBrowserRoutes:
                     )
                 )
             elif request.path == "/intraday/review/answers":
-                if request.query:
+                source_filename = (
+                    _one_query(request, "filename") if request.body else None
+                )
+                if not request.body and request.query:
                     raise ValueError
                 answer_batch_result = self._review.import_all_answers(
                     media_type=request.content_type if request.body else None,
                     payload=request.body or None,
+                    source_filename=source_filename,
                 )
                 return BrowserRouteResponse(
                     render_intraday_review(
