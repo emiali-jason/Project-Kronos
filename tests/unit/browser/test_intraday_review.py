@@ -131,7 +131,9 @@ def test_intraday_review_clipboard_targets_are_candidate_bound_and_share_upload_
             + candidate.canonical_subject_identity
         ) in rendered.body
     assert rendered.body.count('class="intraday-drop" role="button" tabindex="0"') == 2
-    assert rendered.body.count('class="intraday-paste-feedback" aria-live="polite"') == 2
+    assert rendered.body.count('id="intraday-chart-slot-') == 2
+    assert rendered.body.count('class="intraday-chart-input" type="file"') == 2
+    assert rendered.body.count('data-target="intraday-chart-slot-') == 2
     assert "intraday-paste-receiver" not in rendered.body
     assert "activeReviewPasteTarget" not in rendered.body
     assert "document.addEventListener('paste'" not in rendered.body
@@ -141,12 +143,15 @@ def test_intraday_review_clipboard_targets_are_candidate_bound_and_share_upload_
     assert "item.kind==='file'&&acceptedCharts.has(item.type)" in rendered.body
     assert "receiveChart(target,image.getAsFile())" in rendered.body
     assert "fetch(target.dataset.uploadUrl" in rendered.body
-    assert "No supported PNG or JPEG chart image was found" in rendered.body
+    assert "No supported chart image was found" in rendered.body
     assert "input.addEventListener('change'" in rendered.body
-    assert "if(file)receiveChart(target,file)" in rendered.body
+    assert "document.getElementById(input.dataset.target)" in rendered.body
+    assert "if(target&&file)receiveChart(target,file)" in rendered.body
     assert "location.reload()" in rendered.body
     assert rendered.body.count("document.write(await response.text())") == 1
-    assert "Chart upload failed. Try again or use CHOOSE IMAGE FILE." in rendered.body
+    assert "Chart could not be accepted." in rendered.body
+    assert "intraday-replace-chart" in rendered.body
+    assert "target.classList.add('replace-ready');target.focus()" in rendered.body
     assert ":focus-visible" in rendered.body
 
     swing_script = _chart_upload_script()
@@ -157,6 +162,9 @@ def test_intraday_review_clipboard_targets_are_candidate_bound_and_share_upload_
         "item.kind==='file'&&acceptedCharts.has(item.type)",
         "receiveChart(target,image.getAsFile())",
         "fetch(target.dataset.uploadUrl",
+        "document.getElementById(input.dataset.target)",
+        "if(target&&file)receiveChart(target,file)",
+        "target.classList.add('replace-ready');target.focus()",
     ):
         assert shared_behavior in swing_script
         assert shared_behavior in rendered.body
@@ -166,6 +174,85 @@ def test_intraday_review_clipboard_targets_are_candidate_bound_and_share_upload_
         _snapshot,
     )
     assert rejected is not None and rejected.status.value == 400
+
+
+def test_intraday_chart_intake_preserves_swing_lifecycle_through_replacement_and_restore(
+    tmp_path: Path,
+) -> None:
+    run = _run((_member("WIPRO"), _member("LICI")))
+    current = [run]
+    application = _application(tmp_path, current)
+    routes = IntradayBrowserRoutes(_Workstation(), review=application)
+    wipro = next(item for item in run.results if item.canonical_subject_identity == "WIPRO")
+    lici = next(item for item in run.results if item.canonical_subject_identity == "LICI")
+
+    required = routes.handle_get(BrowserGetRequest("/intraday/review", {}), _snapshot)
+    assert required is not None
+    assert "CHART REQUIRED" in required.body
+    assert "TRADINGVIEW 4-CHART IMAGE · MISSING" in required.body
+    assert "intraday-replace-chart" in required.body  # registration exists; no rendered button yet
+    assert '<button class="intraday-replace-chart"' not in required.body
+
+    first = routes.handle_post(
+        BrowserPostRequest(
+            "/intraday/review/chart", {"result": [wipro.result_identity]},
+            "image/png", _png(41),
+        ),
+        _snapshot,
+    )
+    assert first is not None and first.status.value == 200
+    assert "CHART READY · REV 001" in first.body
+    assert "TRADINGVIEW 4-CHART IMAGE · RECEIVED" in first.body
+    assert 'class="intraday-drop received" role="button" tabindex="0"' in first.body
+    assert '<button class="intraday-replace-chart"' in first.body
+    assert ">Replace</button>" in first.body
+    assert first.body.count('data-upload-url="/intraday/review/chart?result=' + wipro.result_identity + '"') == 1
+
+    replacement = routes.handle_post(
+        BrowserPostRequest(
+            "/intraday/review/chart", {"result": [wipro.result_identity]},
+            "image/png", _png(42),
+        ),
+        _snapshot,
+    )
+    assert replacement is not None and replacement.status.value == 200
+    assert "CHART READY · REV 002" in replacement.body
+    assert "Chart Revision · REV 002" in replacement.body
+
+    reloaded = routes.handle_get(BrowserGetRequest("/intraday/review", {}), _snapshot)
+    assert reloaded is not None and "CHART READY · REV 002" in reloaded.body
+    assert routes.handle_get(BrowserGetRequest("/unrelated", {}), _snapshot) is None
+    returned = routes.handle_get(BrowserGetRequest("/intraday/review", {}), _snapshot)
+    assert returned is not None and "CHART READY · REV 002" in returned.body
+
+    restored_application = _application(tmp_path, current)
+    restored_routes = IntradayBrowserRoutes(_Workstation(), review=restored_application)
+    restored = restored_routes.handle_get(BrowserGetRequest("/intraday/review", {}), _snapshot)
+    assert restored is not None and "CHART READY · REV 002" in restored.body
+    restored_candidates = {
+        item.canonical_subject_identity: item
+        for item in restored_application.snapshot().candidates
+    }
+    assert restored_candidates["WIPRO"].chart_revision_ordinal == 2
+    assert restored_candidates["LICI"].chart_revision_identity is None
+
+    existing_lici_cycle = restored_application.start_review(lici.result_identity)
+    other = restored_routes.handle_post(
+        BrowserPostRequest(
+            "/intraday/review/chart", {"result": [lici.result_identity]},
+            "image/png", _png(43),
+        ),
+        _snapshot,
+    )
+    assert other is not None and other.status.value == 200
+    isolated = {
+        item.canonical_subject_identity: item
+        for item in restored_application.snapshot().candidates
+    }
+    assert isolated["WIPRO"].chart_revision_ordinal == 2
+    assert isolated["LICI"].chart_revision_ordinal == 1
+    assert isolated["LICI"].cycle_identity == existing_lici_cycle.cycle_identity
+    assert isolated["WIPRO"].cycle_identity != isolated["LICI"].cycle_identity
 
 
 def test_intraday_review_rejects_non_image_transport_without_creating_a_cycle(

@@ -43,7 +43,7 @@ _INTRADAY_CSS = r"""
 .intraday-discovery-header{border:1px solid var(--line);background:#071827;border-radius:9px;padding:13px 15px;margin-bottom:12px}.intraday-discovery-header h2{font-size:17px;color:var(--green);margin:0 0 5px}.intraday-discovery-header p{margin:3px 0;color:var(--muted);font-size:12px}.intraday-discovery-table{width:100%;border-collapse:collapse;font-size:12px}.intraday-discovery-table th,.intraday-discovery-table td{padding:7px 8px;border-bottom:1px solid var(--line);text-align:left}.intraday-discovery-table th{font-size:10px;color:var(--muted);text-transform:uppercase}.intraday-state-ready{color:var(--green)}.intraday-state-held{color:var(--amber)}.intraday-failure{border:1px solid #81502a;background:#26170d;color:#f0c08e;border-radius:7px;padding:9px 11px;margin-bottom:12px}.intraday-methodology{border:1px solid var(--line);background:#071827;color:#c2d2dd;border-radius:7px;padding:8px 11px;margin-bottom:12px;font-size:11px}.intraday-methodology strong{color:var(--green)}.intraday-detail-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
 .intraday-tabs{margin:-22px -28px 22px}.intraday-tabs a.active{border-color:var(--green)}.intraday-tab{height:61px;display:flex;align-items:center;color:var(--muted);border-bottom:2px solid transparent;white-space:nowrap}.intraday-refresh-state{margin-left:8px;color:var(--muted);font-size:10px}.intraday-summary .status-top strong{color:var(--green)}.intraday-market-panels{grid-template-columns:repeat(2,minmax(0,1fr))}.intraday-market-panels .panel-heading h2{color:var(--green)}.intraday-market-panels .market-panel{min-height:330px}.intraday-market-panels .empty{min-height:110px}.intraday-probable .summary-reason{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:7px}.intraday-card-fact{border-left:1px solid var(--line);padding-left:7px;min-width:0}.intraday-card-fact:first-child{border-left:0;padding-left:0}.intraday-card-fact span{display:block;color:var(--muted);font-size:8px;text-transform:uppercase;letter-spacing:.04em}.intraday-card-fact strong{display:block;margin-top:2px;font-size:11px;overflow-wrap:anywhere}.intraday-probable .summary-rr strong{color:#dce8f0}.intraday-panel-footer{display:flex;flex-wrap:wrap;gap:7px 14px;border-top:1px solid var(--line);margin-top:13px;padding-top:10px;color:var(--muted);font-size:10px}.intraday-panel-footer strong{color:#dce8f0}.intraday-unavailable-list{display:grid;gap:6px;margin-top:10px}.intraday-unavailable-subject{display:flex;justify-content:space-between;gap:10px;border-top:1px solid var(--line);padding-top:6px;color:var(--muted);font-size:11px}.intraday-unavailable-subject strong{color:var(--amber)}.intraday-analysis-context{display:flex;align-items:flex-start;gap:12px;border:1px solid var(--line);background:#071827;border-radius:8px;margin-top:14px;padding:8px 10px}.intraday-analysis-context>strong{flex:0 0 auto;color:var(--green);font-size:10px;text-transform:uppercase;letter-spacing:.05em}.intraday-analysis-context-detail{display:flex;align-items:center;flex-wrap:wrap;gap:5px 12px;color:var(--muted);font-size:8px;white-space:normal}.intraday-analysis-context-detail span{padding-left:12px;border-left:1px solid var(--line)}
 .intraday-review-toolbar{display:flex;align-items:center;gap:9px;flex-wrap:wrap;border:1px solid var(--line);background:#071827;border-radius:9px;padding:10px;margin-bottom:12px}.intraday-review-toolbar form{margin:0}.intraday-review-toolbar .future-action{opacity:.62}.intraday-review-toolbar-note{color:var(--muted);font-size:10px}.intraday-batch-result{border:1px solid #2d765d;background:#08261e;border-radius:9px;padding:10px 12px;margin-bottom:12px}.intraday-batch-result h2{color:var(--green);font-size:13px;margin:0 0 6px}.intraday-batch-accounting{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}.intraday-batch-accounting span,.intraday-batch-members span{font-size:10px;color:var(--muted)}.intraday-batch-members{display:flex;flex-wrap:wrap;gap:5px 12px;margin-top:7px}.intraday-review-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:12px}.intraday-review-card{border:1px solid var(--line);background:#071827;border-radius:10px;padding:14px;min-width:0}.intraday-review-card h2{margin:0;color:var(--green);font-size:18px}.intraday-review-head{display:flex;justify-content:space-between;gap:14px;align-items:center}.intraday-review-required{display:inline-block;margin-top:7px;color:#f6d997;font-size:10px;font-weight:850}.intraday-probable-context{border-top:1px solid var(--line);border-bottom:1px solid var(--line);padding:8px 0;margin:9px 0;color:#d9e6df;font-size:10px}.intraday-probable-context strong{display:block;color:var(--green);font-size:9px;text-transform:uppercase;margin-bottom:3px}.intraday-review-section-title{color:var(--muted);font-size:9px;font-weight:850;letter-spacing:.05em;margin:10px 0 6px}.intraday-review-status{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin:12px 0}.intraday-review-status div{border:1px solid var(--line);border-radius:6px;padding:7px}.intraday-review-status span{display:block;color:var(--muted);font-size:8px;text-transform:uppercase}.intraday-review-status strong{font-size:10px;overflow-wrap:anywhere}.intraday-review-actions{display:grid;gap:8px}.intraday-drop{display:grid;place-items:center;text-align:center;min-height:160px;border:2px dashed #3d836b;border-radius:9px;padding:16px;color:var(--muted);cursor:pointer;outline:none}.intraday-drop:hover,.intraday-drop:focus-visible{border-color:var(--green);background:#09251d;box-shadow:0 0 0 3px rgba(46,212,119,.14)}.intraday-drop .paste-key{display:grid;place-items:center;width:46px;height:36px;border:1px solid #3d836b;border-radius:7px;color:var(--green);font-size:18px;font-weight:900}.intraday-drop strong{color:#e9f7f0;font-size:13px;margin-top:7px}.intraday-drop span{display:block;font-size:10px}.intraday-drop .required-panels{margin-top:7px}.intraday-chart-input{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}.intraday-file-choice{justify-self:start;display:inline-block;border:1px solid #246a52;border-radius:7px;padding:7px 10px;color:#dff7eb;font-size:10px;font-weight:750;cursor:pointer}.intraday-file-choice:hover,.intraday-file-choice:focus-visible{border-color:var(--green);outline:2px solid rgba(46,212,119,.25)}.intraday-review-actions form{margin:0}.intraday-review-lineage{font-size:9px;color:var(--muted);overflow-wrap:anywhere}.intraday-review-diagnostics{font-size:9px;color:var(--muted)}.intraday-review-diagnostics summary{cursor:pointer}.intraday-review-config{margin-top:14px;border:1px solid var(--line);border-radius:7px;padding:9px;color:var(--muted);font-size:9px;overflow-wrap:anywhere}
-.intraday-paste-feedback{display:block;min-height:1.25em;color:var(--muted);font-size:10px}.intraday-drop[data-upload-state="error"]+.intraday-paste-feedback{color:#f0c08e}.intraday-drop[data-upload-state="busy"]+.intraday-paste-feedback{color:var(--green)}
+.intraday-drop{cursor:text;overflow:hidden}.intraday-drop.replace-ready{border-color:var(--green);background:#09251d;box-shadow:0 0 0 3px rgba(46,212,119,.14)}.intraday-drop.received{min-height:82px;border-style:solid}.intraday-chart-received strong{color:var(--green)}.intraday-chart-received span{color:var(--muted)}.intraday-chart-slot-actions{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
 @media(max-width:900px){.intraday-detail-grid{grid-template-columns:1fr}.intraday-probable .summary-reason{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(max-width:760px){.intraday-tabs{margin:-18px -18px 18px;padding:0 18px;gap:13px;overflow:auto}.intraday-tabs .toolbar{margin-left:0}.intraday-timeframes,.intraday-context{grid-template-columns:1fr}.intraday-warning,.intraday-selector{align-items:flex-start;flex-direction:column}.intraday-facts{grid-template-columns:1fr}.intraday-facts dd{padding-top:0}.intraday-market-panels{grid-template-columns:1fr}.intraday-probable .summary-reason{grid-template-columns:repeat(2,minmax(0,1fr))}.intraday-analysis-context{align-items:flex-start}.intraday-analysis-context-detail{flex-wrap:wrap;white-space:normal}.intraday-review-list{grid-template-columns:1fr}.intraday-batch-accounting{grid-template-columns:repeat(2,minmax(0,1fr))}.intraday-review-status{grid-template-columns:1fr}.intraday-review-toolbar{align-items:stretch;flex-direction:column}.intraday-review-toolbar button{width:100%}}
 """
@@ -111,8 +111,12 @@ def render_intraday_review(
     ordered_candidates = tuple(sorted(review.candidates, key=_review_presentation_sort_key))
     cards = (
         "".join(
-            _review_candidate(item, reconciled.get(item.probable_result_identity))
-            for item in ordered_candidates
+            _review_candidate(
+                item,
+                reconciled.get(item.probable_result_identity),
+                slot_index,
+            )
+            for slot_index, item in enumerate(ordered_candidates, start=1)
         )
         if review.candidates
         else '<div class="empty"><div><strong>Zero current Review candidates</strong>'
@@ -172,32 +176,51 @@ def render_intraday_review(
 
 
 def _review_candidate(
-    item, reconciliation: ReconciliationCandidateSnapshot | None  # type: ignore[no-untyped-def]
+    item,
+    reconciliation: ReconciliationCandidateSnapshot | None,
+    slot_index: int,
 ) -> str:
     direction_class = "direction-long" if item.direction == "LONG" else "direction-short"
     result = quote(item.probable_result_identity, safe="")
-    input_identity = "intraday-chart-" + item.probable_result_identity.rsplit("-", 1)[-1][:12]
-    feedback_identity = input_identity + "-feedback"
+    target_identity = f"intraday-chart-slot-{slot_index}"
+    input_identity = f"intraday-chart-file-{slot_index}"
     chart_state = (
         "CHART REQUIRED"
         if item.chart_revision_ordinal is None
         else f"CHART READY · REV {item.chart_revision_ordinal:03d}"
     )
     pack_state = "NOT CREATED" if item.review_pack_identity is None else "CREATED"
+    if item.chart_revision_ordinal is None:
+        chart_content = (
+            '<div><span class="paste-key">⌘V</span><strong>PASTE / UPLOAD CHART</strong>'
+            '<span>TRADINGVIEW 4-CHART IMAGE · MISSING</span>'
+            '<span class="required-panels">Required: 1D · 1H · 15M · 5M</span></div>'
+        )
+        chart_actions = ""
+        received_class = ""
+    else:
+        chart_content = (
+            '<div class="intraday-chart-received"><strong>TRADINGVIEW 4-CHART IMAGE · RECEIVED</strong>'
+            '<span>' + escape(item.canonical_subject_identity) + '</span>'
+            f'<span>Chart Revision · REV {item.chart_revision_ordinal:03d}</span></div>'
+        )
+        chart_actions = (
+            '<button class="intraday-replace-chart" type="button" data-target="'
+            + target_identity + '">Replace</button>'
+        )
+        received_class = " received"
     action = (
         '<div class="intraday-review-section-title">TRADINGVIEW CHARTS</div>'
-        '<div class="intraday-drop" role="button" tabindex="0" aria-describedby="'
-        + feedback_identity
-        + '" aria-label="Paste TradingView 1D 1H 15M 5M chart composite for '
+        '<div id="' + target_identity + '" class="intraday-drop' + received_class
+        + '" role="button" tabindex="0" aria-label="Paste TradingView 1D 1H 15M 5M chart composite for '
         + escape(item.canonical_subject_identity)
-        + '" data-upload-url="/intraday/review/chart?result='
-        + result
-        + '"><span class="paste-key">⌘V</span><strong>PASTE / UPLOAD</strong>'
-        '<span>TRADINGVIEW 4-CHART IMAGE</span><span class="required-panels">Required: 1D · 1H · 15M · 5M</span></div>'
-        '<span id="' + feedback_identity + '" class="intraday-paste-feedback" aria-live="polite"></span>'
-        '<label class="intraday-file-choice" tabindex="0" for="' + input_identity + '">CHOOSE IMAGE FILE</label>'
-        '<input id="' + input_identity + '" class="intraday-chart-input" type="file" accept="image/png,image/jpeg" '
-        'aria-label="Choose 1D 1H 15M 5M chart composite" data-review-file-target="' + input_identity + '-target">'
+        + '" data-upload-url="/intraday/review/chart?result=' + result + '">'
+        + chart_content + '</div><div class="intraday-chart-slot-actions">'
+        + chart_actions
+        + '<label class="intraday-file-choice" for="' + input_identity + '">Choose File</label>'
+        '<input id="' + input_identity + '" class="intraday-chart-input" type="file" '
+        'accept="image/png,image/jpeg" aria-label="Choose 1D 1H 15M 5M chart composite" '
+        'data-target="' + target_identity + '"></div>'
     )
     if item.cycle_identity is not None:
         cycle = quote(item.cycle_identity, safe="")
@@ -398,35 +421,32 @@ def _review_upload_script() -> str:
     return """<script>
 (()=>{
 const acceptedCharts=new Set(['image/png','image/jpeg']);
-function reviewChartFeedback(target,message,state=''){
-  const feedback=target.nextElementSibling;
-  target.dataset.uploadState=state;
-  if(feedback&&feedback.classList.contains('intraday-paste-feedback'))feedback.textContent=message;
-}
 async function receiveChart(target,file){
-  if(!file||!acceptedCharts.has(file.type)){reviewChartFeedback(target,'Paste or choose a PNG or JPEG chart image.','error');return;}
+  if(!file||!acceptedCharts.has(file.type)){alert('Paste or choose a PNG or JPEG image.');return;}
   target.setAttribute('aria-busy','true');
-  reviewChartFeedback(target,'Uploading governed chart image…','busy');
-  try{
-    const response=await fetch(target.dataset.uploadUrl,{method:'POST',headers:{'Content-Type':file.type},body:file});
-    if(!response.ok){reviewChartFeedback(target,'Chart upload rejected.','error');return;}
-    await response.text();
-    location.reload();
-  }catch(_error){
-    reviewChartFeedback(target,'Chart upload failed. Try again or use CHOOSE IMAGE FILE.','error');
-  }finally{
-    target.removeAttribute('aria-busy');
-  }
+  try{const response=await fetch(target.dataset.uploadUrl,{method:'POST',headers:{'Content-Type':file.type},body:file});
+    if(!response.ok)throw new Error();location.reload();
+  }catch(_error){target.removeAttribute('aria-busy');alert('Chart could not be accepted.');}
 }
 for(const target of document.querySelectorAll('.intraday-drop')){
-  const input=target.parentElement.querySelector('input[data-review-file-target]');
-  if(input)input.addEventListener('change',()=>{const file=input.files&&input.files[0];if(file)receiveChart(target,file);});
   target.addEventListener('click',()=>target.focus());
   target.addEventListener('paste',event=>{
     const items=event.clipboardData&&Array.from(event.clipboardData.items||[]);
     const image=items&&items.find(item=>item.kind==='file'&&acceptedCharts.has(item.type));
-    if(!image){reviewChartFeedback(target,'No supported PNG or JPEG chart image was found on the clipboard.','error');return;}
+    if(!image){alert('No supported chart image was found on the clipboard.');return;}
     event.preventDefault();receiveChart(target,image.getAsFile());
+  });
+}
+for(const button of document.querySelectorAll('.intraday-replace-chart')){
+  button.addEventListener('click',()=>{
+    const target=document.getElementById(button.dataset.target);if(!target)return;
+    target.classList.add('replace-ready');target.focus();
+  });
+}
+for(const input of document.querySelectorAll('.intraday-chart-input')){
+  input.addEventListener('change',()=>{
+    const target=document.getElementById(input.dataset.target);
+    const file=input.files&&input.files[0];if(target&&file)receiveChart(target,file);
   });
 }
 document.querySelectorAll('[data-review-answer-upload]').forEach(input=>{
