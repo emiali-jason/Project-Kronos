@@ -72,7 +72,8 @@ def test_intraday_review_browser_flow_is_bounded_and_get_is_side_effect_free(tmp
     assert created is not None and "Question Pack</span><strong>CREATED" in created.body
     assert "Governed JSON Answer Pack import ACTIVE" in created.body
     assert "UPLOAD ANSWER" in created.body
-    assert "Readiness" not in created.body and "PAPER" not in created.body
+    assert "Readiness" in created.body and "NOT READY" in created.body
+    assert "PAPER" not in created.body and "NO ENTRY, TRADE, RISK OR BROKER AUTHORITY" in created.body
 
 
 def test_intraday_review_route_rejects_cross_binding_and_invalid_body(tmp_path: Path) -> None:
@@ -170,3 +171,38 @@ def test_intraday_review_individual_and_batch_answer_controls_project_visual_evi
     assert "Already imported 1" in batch.body
     assert routes.owns_post("/intraday/review/answer")
     assert routes.owns_post("/intraday/review/answers")
+
+
+def test_intraday_review_explicit_reconciliation_control_projects_typed_state(tmp_path: Path) -> None:
+    run = _run((_member("WIPRO"),))
+    current = [run]
+    application = _application(tmp_path, current)
+    routes = IntradayBrowserRoutes(_Workstation(), review=application)
+    cycle = application.start_review(run.results[0].result_identity)
+    application.upload_chart(cycle.cycle_identity, media_type="image/png", payload=_png(21))
+    pack, _ = application.create_question_pack(cycle.cycle_identity)
+    application.upload_answer(
+        cycle.cycle_identity, media_type="application/json",
+        payload=json.dumps(_document(pack)).encode(),
+    )
+
+    before = routes.handle_get(BrowserGetRequest("/intraday/review", {}), _snapshot)
+    assert before is not None and "RECONCILE REVIEW" in before.body
+    assert "RECONCILE ALL READY REVIEWS" in before.body
+    assert "NOT ESTABLISHED" in before.body
+
+    response = routes.handle_post(
+        BrowserPostRequest(
+            "/intraday/review/reconcile", {"cycle": [cycle.cycle_identity]}, "", b""
+        ),
+        _snapshot,
+    )
+    assert response is not None and response.status.value == 200
+    assert "INDIVIDUAL RECONCILIATION" in response.body
+    assert "REVIEW COMPLETE" in response.body
+    assert "ANALYTICALLY READY" in response.body
+    assert "PROMOTED" in response.body
+    assert "NATIVE / VISUAL RECONCILIATION FACTS" in response.body
+    assert "ENTRY" not in response.body.replace("NO ENTRY", "")
+    assert routes.owns_post("/intraday/review/reconcile")
+    assert routes.owns_post("/intraday/review/reconcile-all")

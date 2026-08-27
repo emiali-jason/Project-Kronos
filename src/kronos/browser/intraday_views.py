@@ -14,6 +14,12 @@ from kronos.application.intraday_review import (
     IntradayReviewBatchResult,
     IntradayReviewSnapshot,
 )
+from kronos.application.intraday_native_visual_reconciliation import (
+    ReconciliationBatchResult,
+    ReconciliationCandidateSnapshot,
+    ReconciliationMemberResult,
+    ReconciliationSnapshot,
+)
 from kronos.application.intraday_discovery import (
     IntradayDiscoveryMemberSnapshot,
     IntradayDiscoverySnapshot,
@@ -88,15 +94,21 @@ def render_intraday_detail(
 def render_intraday_review(
     snapshot: BrowserWorkspaceSnapshot,
     review: IntradayReviewSnapshot,
+    reconciliation: ReconciliationSnapshot | None = None,
     *,
     batch_result: IntradayReviewBatchResult | None = None,
     answer_result: IntradayAnswerImportResult | None = None,
     answer_batch_result: IntradayAnswerBatchResult | None = None,
+    reconciliation_result: ReconciliationMemberResult | None = None,
+    reconciliation_batch_result: ReconciliationBatchResult | None = None,
 ) -> str:
-    """Render exact-current Review candidates without creating analytical state."""
+    """Render persisted exact-current Review and WO-10 analytical state."""
 
+    reconciled = {} if reconciliation is None else {
+        item.probable_result_identity: item for item in reconciliation.candidates
+    }
     cards = (
-        "".join(_review_candidate(item) for item in review.candidates)
+        "".join(_review_candidate(item, reconciled.get(item.probable_result_identity)) for item in review.candidates)
         if review.candidates
         else '<div class="empty"><div><strong>Zero current Review candidates</strong>'
         'Only exact-current Long/Short Probables are eligible.</div></div>'
@@ -107,6 +119,9 @@ def render_intraday_review(
         "" if answer_result is None and answer_batch_result is None
         else _answer_import_result(answer_result, answer_batch_result)
     )
+    reconciliation_feedback = _reconciliation_result(
+        reconciliation_result, reconciliation_batch_result
+    )
     current_batch = (
         ""
         if review.current_batch_identity is None
@@ -116,8 +131,8 @@ def render_intraday_review(
     )
     body = (
         _intraday_tabs(False, active="review")
-        + '<div class="intraday-warning"><strong>VISUAL REVIEW ONLY</strong>'
-        '<span>NO READINESS, TRADE, RISK OR BROKER AUTHORITY</span></div>'
+        + '<div class="intraday-warning"><strong>NATIVE + VISUAL REVIEW</strong>'
+        '<span>ANALYTICAL READINESS ONLY · NO ENTRY, TRADE, RISK OR BROKER AUTHORITY</span></div>'
         '<div class="intraday-review-toolbar"><form method="post" action="/intraday/review/question-packs">'
         '<button class="primary" type="submit"'
         + (" disabled" if ready_count == 0 else "")
@@ -125,10 +140,13 @@ def render_intraday_review(
         '<form method="post" action="/intraday/review/answers"><button type="submit"'
         + (" disabled" if not any(item.review_pack_identity is not None for item in review.candidates) else "")
         + '>UPLOAD ALL ANSWERS</button></form>'
+        '<form method="post" action="/intraday/review/reconcile-all"><button type="submit"'
+        + (" disabled" if not any(item.visual_evidence_identity is not None for item in reconciled.values()) else "")
+        + '>RECONCILE ALL READY REVIEWS</button></form>'
         '<span class="intraday-review-toolbar-note">Chart ready · '
         + str(ready_count) + " / " + str(len(review.candidates)) + "</span>"
         + current_batch + "</div>"
-        + batch_feedback + answer_feedback
+        + batch_feedback + answer_feedback + reconciliation_feedback
         + '<div class="intraday-review-list">' + cards + '</div>'
         '<div class="intraday-review-config"><strong>Question outbox:</strong> '
         + escape(review.question_outbox)
@@ -148,7 +166,9 @@ def render_intraday_review(
     )
 
 
-def _review_candidate(item) -> str:  # type: ignore[no-untyped-def]
+def _review_candidate(
+    item, reconciliation: ReconciliationCandidateSnapshot | None  # type: ignore[no-untyped-def]
+) -> str:
     direction_class = "direction-long" if item.direction == "LONG" else "direction-short"
     if item.cycle_identity is None:
         action = (
@@ -197,6 +217,12 @@ def _review_candidate(item) -> str:  # type: ignore[no-untyped-def]
                 '<span class="intraday-review-lineage">Expected Answer · '
                 + escape(item.answer_filename or "UNAVAILABLE") + '</span>'
             )
+        if item.visual_evidence_identity is not None:
+            action += (
+                '<form method="post" action="/intraday/review/reconcile?cycle=' + cycle
+                + '"><button type="submit">RECONCILE REVIEW</button></form>'
+            )
+    analytical = "" if reconciliation is None else _analytical_projection(reconciliation)
     return (
         '<article class="intraday-review-card"><div class="intraday-review-head"><h2>'
         + escape(item.canonical_subject_identity)
@@ -219,7 +245,37 @@ def _review_candidate(item) -> str:  # type: ignore[no-untyped-def]
         + ('<br>Observed visible identity · ' + escape(item.observed_visible_subject_identity) if item.observed_visible_subject_identity else '')
         + ('<br>Visual Evidence · ' + escape(item.visual_evidence_identity) if item.visual_evidence_identity else '')
         + ('<br>Review Cycle · ' + escape(item.cycle_identity) if item.cycle_identity else '')
-        + '</details>' + _visual_answer_projection(item.visual_answers) + '</article>'
+        + '</details>' + _visual_answer_projection(item.visual_answers) + analytical + '</article>'
+    )
+
+
+def _analytical_projection(item: ReconciliationCandidateSnapshot) -> str:
+    conditions = (
+        '<span class="intraday-review-lineage">None</span>'
+        if not item.remaining_conditions
+        else "".join(
+            '<span class="intraday-review-lineage"><strong>' + escape(identity)
+            + '</strong> · ' + escape(classification) + ' · ' + escape(question) + '</span>'
+            for identity, classification, question in item.remaining_conditions
+        )
+    )
+    facts = "".join(
+        '<tr><td>' + escape(question) + '</td><td>' + escape(status) + '</td><td>'
+        + escape(answer) + '</td><td>' + escape(relationship) + '</td><td>' + escape(role)
+        + '</td></tr>'
+        for question, status, answer, relationship, role in item.facts
+    )
+    return (
+        '<div class="intraday-review-section-title">RECONCILIATION / ANALYTICAL STATE</div>'
+        '<div class="intraday-review-status">'
+        + _review_status("Review", item.review_state.replace("_", " "))
+        + _review_status("Readiness", item.readiness_state.replace("_", " "))
+        + _review_status("Promotion", item.promotion_state.replace("_", " "))
+        + '</div><div class="intraday-review-actions"><strong class="intraday-review-lineage">REMAINING / ADVERSE CONDITIONS</strong>'
+        + conditions + '</div>'
+        + ("" if not facts else '<details class="intraday-review-diagnostics"><summary>NATIVE / VISUAL RECONCILIATION FACTS</summary>'
+           '<div class="table-scroll"><table class="intraday-table"><thead><tr><th>Question</th><th>Status</th><th>Visual observation</th><th>Relationship</th><th>Role</th></tr></thead><tbody>'
+           + facts + '</tbody></table></div></details>')
     )
 
 
@@ -301,6 +357,28 @@ def _answer_import_result(
         )
     return (
         '<section class="intraday-batch-result"><h2>' + escape(summary)
+        + '</h2><div class="intraday-batch-members">' + rows + '</div></section>'
+    )
+
+
+def _reconciliation_result(
+    individual: ReconciliationMemberResult | None,
+    batch: ReconciliationBatchResult | None,
+) -> str:
+    if individual is None and batch is None:
+        return ""
+    members = (individual,) if individual is not None else batch.members
+    rows = "".join(
+        '<span><strong>' + escape(item.canonical_subject_identity) + '</strong> · '
+        + escape(item.state.value.replace("_", " "))
+        + ("" if item.review_state is None else " · " + escape(item.review_state.replace("_", " ")))
+        + ("" if item.readiness_state is None else " · " + escape(item.readiness_state.replace("_", " ")))
+        + ("" if item.detail is None else " · " + escape(item.detail)) + '</span>'
+        for item in members
+    )
+    return (
+        '<section class="intraday-batch-result"><h2>'
+        + ("INDIVIDUAL RECONCILIATION" if individual is not None else "RECONCILE ALL READY REVIEWS")
         + '</h2><div class="intraday-batch-members">' + rows + '</div></section>'
     )
 

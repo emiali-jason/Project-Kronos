@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from http import HTTPStatus
 
+from kronos.application.intraday_native_visual_reconciliation import (
+    IntradayNativeVisualReconciliationApplication,
+)
 from kronos.application.intraday_review import IntradayReviewApplication
 from kronos.browser.intraday_views import (
     render_intraday_detail,
@@ -19,6 +22,10 @@ from kronos.browser.product_routes import (
 from kronos.intraday.review import ReviewError, ReviewFailure
 from kronos.intraday.review_pdf import IntradayReviewPdfTransport
 from kronos.intraday.review_persistence import IntradayReviewStore
+from kronos.intraday.native_visual_reconciliation import ReconciliationError
+from kronos.intraday.native_visual_reconciliation_persistence import (
+    IntradayNativeVisualReconciliationStore,
+)
 
 
 class IntradayBrowserRoutes:
@@ -28,6 +35,7 @@ class IntradayBrowserRoutes:
         self,
         workstation: object,
         review: IntradayReviewApplication | None = None,
+        reconciliation: IntradayNativeVisualReconciliationApplication | None = None,
     ) -> None:
         if not callable(getattr(workstation, "snapshot", None)):
             raise ValueError("INTRADAY_BROWSER_ROUTES_INVALID")
@@ -36,6 +44,13 @@ class IntradayBrowserRoutes:
             current_probables=self._current_probables,
             store=IntradayReviewStore(),
             transport=IntradayReviewPdfTransport(),
+        )
+        self._reconciliation = reconciliation or IntradayNativeVisualReconciliationApplication(
+            current_probables=self._review.current_probables,
+            review_store=self._review.store,
+            store=IntradayNativeVisualReconciliationStore(
+                (self._review.store.root / "native-visual-reconciliation-v1").resolve()
+            ),
         )
 
     def _current_probables(self):  # type: ignore[no-untyped-def]
@@ -60,6 +75,7 @@ class IntradayBrowserRoutes:
                 render_intraday_review(
                     snapshot_provider(),
                     self._review.snapshot(),
+                    self._reconciliation.snapshot(),
                 )
             )
         else:
@@ -79,6 +95,8 @@ class IntradayBrowserRoutes:
             "/intraday/review/question-packs",
             "/intraday/review/answer",
             "/intraday/review/answers",
+            "/intraday/review/reconcile",
+            "/intraday/review/reconcile-all",
         }
 
     def handle_post(
@@ -114,6 +132,7 @@ class IntradayBrowserRoutes:
                     render_intraday_review(
                         snapshot_provider(),
                         self._review.snapshot(),
+                        self._reconciliation.snapshot(),
                         batch_result=batch_result,
                     )
                 )
@@ -129,16 +148,41 @@ class IntradayBrowserRoutes:
                 return BrowserRouteResponse(
                     render_intraday_review(
                         snapshot_provider(), self._review.snapshot(), answer_result=answer_result,
+                        reconciliation=self._reconciliation.snapshot(),
                     )
                 )
-            else:
+            elif request.path == "/intraday/review/answers":
                 if request.query or request.body:
                     raise ValueError
                 answer_batch_result = self._review.import_all_answers()
                 return BrowserRouteResponse(
                     render_intraday_review(
                         snapshot_provider(), self._review.snapshot(),
+                        self._reconciliation.snapshot(),
                         answer_batch_result=answer_batch_result,
+                    )
+                )
+            elif request.path == "/intraday/review/reconcile":
+                cycle = _one_query(request, "cycle")
+                if request.body:
+                    raise ValueError
+                reconciliation_result = self._reconciliation.reconcile(cycle)
+                return BrowserRouteResponse(
+                    render_intraday_review(
+                        snapshot_provider(), self._review.snapshot(),
+                        self._reconciliation.snapshot(),
+                        reconciliation_result=reconciliation_result,
+                    )
+                )
+            else:
+                if request.query or request.body:
+                    raise ValueError
+                reconciliation_batch_result = self._reconciliation.reconcile_all_ready()
+                return BrowserRouteResponse(
+                    render_intraday_review(
+                        snapshot_provider(), self._review.snapshot(),
+                        self._reconciliation.snapshot(),
+                        reconciliation_batch_result=reconciliation_batch_result,
                     )
                 )
         except ValueError:
@@ -158,8 +202,16 @@ class IntradayBrowserRoutes:
                 status=status,
                 content_type="text/plain; charset=utf-8",
             )
+        except ReconciliationError as error:
+            return BrowserRouteResponse(
+                error.failure.value,
+                status=HTTPStatus.CONFLICT,
+                content_type="text/plain; charset=utf-8",
+            )
         return BrowserRouteResponse(
-            render_intraday_review(snapshot_provider(), self._review.snapshot())
+            render_intraday_review(
+                snapshot_provider(), self._review.snapshot(), self._reconciliation.snapshot()
+            )
         )
 
 

@@ -1,6 +1,6 @@
 # Intraday Contract and State Ownership Registry
 
-**Status:** Amended through WO-07A
+**Status:** Amended through WO-10 implementation candidate
 
 | Boundary | Owner | Consequence authority |
 |---|---|---|
@@ -11,7 +11,9 @@
 | WO-06HA Historical Operation | Intraday research operation | Bounded completed-session EOD factual acquisition, request accounting and immutable reload only; authentication, automatic corpus binding and production mutation authority are NONE |
 | Qualification outcomes | Intraday factual research boundary | Versioned subsequent-market labels only; no trade outcome |
 | WO-07 / WO-07A Native Review | Intraday | Exact-current Probable handoff, immutable visual-review cycle/chart revision, governed Q1-Q10 individual Question Packs, candidate-isolated paste-first UX and transport-only batch PDF; no visual answer, Promotion, Readiness or trade consequence |
-| Analytical Promotion | Intraday | Promotion only; criteria deferred |
+| WO-09 Visual Evidence Import | Intraday | Exact-cycle Answer Pack validation and immutable imported visual evidence only; no consequence authority |
+| WO-10 Native + Visual Reconciliation | Intraday | Typed Q1-Q10 relationships, Review state, two-state analytical Readiness, two-state analytical Promotion and remaining-condition facts; no Entry, Trade, Risk or broker authority |
+| Analytical Promotion | Intraday | `PROMOTED` iff WO-10 analytical Readiness is satisfied; inherited direction only |
 | Trade Construction | Intraday | Plan construction only; no Risk permission |
 | Risk | DOMAIN-007 | Risk permission/denial only |
 | Entry Timing | DOMAIN-004 | Entry-timing state only |
@@ -29,6 +31,8 @@ The boundaries are explicitly non-equivalent:
 - Review/Chart Ready ≠ visual analysis or Promotion.
 - Question Pack Created ≠ Answer imported.
 - Combined batch PDF ≠ shared analytical evidence or Answer import.
+- Answer imported ≠ reconciled.
+- Review Complete ≠ Analytically Ready.
 - Promotion ≠ Entry.
 - Construction ≠ Risk.
 - Risk ≠ Entry Timing.

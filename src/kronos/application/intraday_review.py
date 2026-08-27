@@ -184,6 +184,17 @@ class IntradayReviewApplication:
         self._clock = clock
         self._lock = RLock()
 
+    @property
+    def store(self) -> IntradayReviewStore:
+        """Expose the product-owned evidence store to downstream exact-cycle consumers."""
+
+        return self._store
+
+    def current_probables(self) -> ProbablesRun | None:
+        """Return the same exact-current Probables authority consumed by Review."""
+
+        return self._current_probables()
+
     def snapshot(self) -> IntradayReviewSnapshot:
         with self._lock:
             run = self._current_probables()

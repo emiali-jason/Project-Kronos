@@ -776,7 +776,31 @@ valid evidence. Browser projection is compact factual Q1-Q10 evidence only.
 WO-10 exclusively owns any future reconciliation, consequence, Readiness or
 Promotion semantics. See [WO-09 Governed Chart Analyst Answer Import](KRONOS-INTRADAY-WO-09-GOVERNED-CHART-ANALYST-ANSWER-IMPORT-V1.md).
 
-## 33. References
+## 33. WO-10 deterministic Native + visual reconciliation amendment
+
+WO-10 freezes and implements the Intraday-owned
+`KRONOS-INTRADAY-NATIVE-VISUAL-RECONCILIATION-POLICY-V1 / 1.0.0` under
+`POLICY_B_CORE_STRUCTURE` and
+`STATUS_POLICY_2_COMPLETE_IF_CORE_OBSERVED`. Q2 and Q4 are the only mandatory
+core visual conditions. Review is exactly incomplete, required or complete;
+Readiness is exactly not ready or analytically ready; Promotion is exactly not
+promoted or promoted. Promotion inherits the Native Probable direction and
+never flips it.
+
+Q1, Q7 and Q8 remain informational. Q3 and the stalling branch of Q5 remain
+adverse non-blocking. Q5 opposing structure, Q9 rejection against direction,
+and Q10 material observation require review and are terminal for automatic
+Promotion. Q6 remains supporting and non-blocking. No score, weight, rank,
+vote, quota, free-text interpretation or Entry consequence exists.
+
+Reconciliation is an explicit product-owned operation over persisted exact-
+cycle evidence. It performs no Provider, Discovery, Probables, Answer-import
+or Chart Analyst operation. Immutable facts, run, Review, Readiness, Promotion
+and explicit current pointer restore without Provider access. New evidence or
+policy inputs produce a new immutable result; historical evidence is never
+rewritten. Full details are in [WO-10 Native + Visual Reconciliation](KRONOS-INTRADAY-WO-10-NATIVE-VISUAL-RECONCILIATION-V1.md).
+
+## 34. References
 
 - [Intraday Shared-File Change Rule](../../../engineering/INTRADAY-SHARED-FILE-CHANGE-RULE.md)
 - [Platform Constitution](../../platform/PLATFORM-000-CONSTITUTION.md)
@@ -800,5 +824,6 @@ Promotion semantics. See [WO-09 Governed Chart Analyst Answer Import](KRONOS-INT
 - [WO-06 Part-3 V0 Probables Methodology](KRONOS-INTRADAY-WO-06-PART-3-V0-PROBABLES-METHODOLOGY.md)
 - [WO-07 Governed Native Review](KRONOS-INTRADAY-WO-07-GOVERNED-NATIVE-REVIEW-V1.md)
 - [WO-07A Sponsor Review UX and Batch Transport](KRONOS-INTRADAY-WO-07A-SPONSOR-REVIEW-UX-AND-BATCH-TRANSPORT-V1.md)
+- [WO-10 Native + Visual Reconciliation](KRONOS-INTRADAY-WO-10-NATIVE-VISUAL-RECONCILIATION-V1.md)
 - [WO-09 Governed Chart Analyst Answer Import](KRONOS-INTRADAY-WO-09-GOVERNED-CHART-ANALYST-ANSWER-IMPORT-V1.md)
 - [ADR-0017 Governed Active Derivative Contract Selection](../../adr/ADR-0017-GOVERNED-ACTIVE-DERIVATIVE-CONTRACT-SELECTION-V1.md)
