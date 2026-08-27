@@ -92,8 +92,7 @@ def _watches() -> NotificationWorkspaceSnapshot:
 
 
 def _next_boundary(_identity: str, after: datetime) -> datetime:
-    elapsed = int((after - NOW).total_seconds() // 3600)
-    return NOW + timedelta(hours=elapsed + 1)
+    return after + timedelta(hours=1)
 
 
 def _centre(tmp_path: Path, clock: list[datetime]) -> SponsorNotificationCentre:
@@ -213,6 +212,8 @@ def test_refresh_reactivation_creates_one_linked_identity_and_stale_fails(tmp_pa
     assert child == repeated
     assert child.reactivated_from == expired.notification_identity
     assert child.notification_identity != expired.notification_identity
+    assert child.last_reminded_at == clock[0]
+    assert child.next_reminder_at == clock[0] + timedelta(hours=1)
     assert centre.record(expired.notification_identity).state is SponsorNotificationState.EXPIRED  # type: ignore[union-attr]
     restored = SponsorNotificationCentre(
         SponsorNotificationLifecycleStore(tmp_path / "centre"),
@@ -227,7 +228,9 @@ def test_refresh_reactivation_creates_one_linked_identity_and_stale_fails(tmp_pa
         )
 
 
-def test_hourly_reminders_use_one_row_history_and_resolve_only_on_new_run(tmp_path: Path) -> None:
+def test_hourly_reminders_use_one_row_append_only_history_and_exact_elapsed_hours(
+    tmp_path: Path,
+) -> None:
     clock = [NOW]
     _, ux10 = _ux10(tmp_path)
     centre = _centre(tmp_path, clock)
@@ -236,7 +239,7 @@ def test_hourly_reminders_use_one_row_history_and_resolve_only_on_new_run(tmp_pa
         current_run_identity=RUN, websocket_state="IDLE",
     )
     identity = next(item.notification_identity for item in first.records if item.notification_type == "REFRESH_ANALYSIS_REMINDER")
-    for hour in (1, 2):
+    for hour in (1, 2, 3):
         clock[0] = NOW + timedelta(hours=hour)
         current = centre.synchronize(
             NotificationWorkspaceSnapshot(()), ux10,
@@ -244,6 +247,11 @@ def test_hourly_reminders_use_one_row_history_and_resolve_only_on_new_run(tmp_pa
         )
         record = centre.record(identity)
         assert record is not None and record.reminder_count == hour + 1
+        assert record.last_reminded_at == NOW + timedelta(hours=hour)
+        assert record.next_reminder_at == NOW + timedelta(hours=hour + 1)
+        assert tuple(item.event_type for item in record.history) == (
+            "CREATED", *(["HOURLY_REMINDER"] * hour)
+        )
         assert sum(item.notification_type == "REFRESH_ANALYSIS_REMINDER" for item in current.visible) == 1
     failed_refresh = centre.synchronize(
         NotificationWorkspaceSnapshot(()), ux10,
@@ -256,6 +264,77 @@ def test_hourly_reminders_use_one_row_history_and_resolve_only_on_new_run(tmp_pa
     )
     assert centre.record(identity).state is SponsorNotificationState.EXPIRED  # type: ignore[union-attr]
     assert failed_refresh.revision != resolved.revision
+
+
+def test_failed_refresh_keeps_due_time_and_success_at_boundary_wins_race(
+    tmp_path: Path,
+) -> None:
+    clock = [NOW]
+    _, ux10 = _ux10(tmp_path)
+    centre = _centre(tmp_path, clock)
+    first = centre.synchronize(
+        NotificationWorkspaceSnapshot(()), ux10,
+        current_run_identity=RUN, websocket_state="IDLE",
+    )
+    identity = next(
+        item.notification_identity for item in first.records
+        if item.notification_type == "REFRESH_ANALYSIS_REMINDER"
+    )
+
+    clock[0] = NOW + timedelta(minutes=20)
+    centre.synchronize(
+        NotificationWorkspaceSnapshot(()), ux10,
+        current_run_identity=RUN, websocket_state="DISCONNECTED",
+    )
+    failed = centre.record(identity)
+    assert failed is not None
+    assert failed.state is SponsorNotificationState.LIVE
+    assert failed.reminder_count == 1
+    assert failed.next_reminder_at == NOW + timedelta(hours=1)
+
+    clock[0] = NOW + timedelta(hours=1)
+    centre.synchronize(
+        NotificationWorkspaceSnapshot(()), ux10,
+        current_run_identity=NEW_RUN, websocket_state="CONNECTED",
+    )
+    resolved = centre.record(identity)
+    assert resolved is not None
+    assert resolved.state is SponsorNotificationState.EXPIRED
+    assert resolved.reminder_count == 1
+    assert resolved.next_reminder_at is None
+    assert tuple(item.event_type for item in resolved.history) == (
+        "CREATED", "SOURCE_RESOLVED",
+    )
+
+
+def test_delete_at_exact_repeat_boundary_cancels_before_recurrence(
+    tmp_path: Path,
+) -> None:
+    clock = [NOW]
+    _, ux10 = _ux10(tmp_path)
+    centre = _centre(tmp_path, clock)
+    first = centre.synchronize(
+        NotificationWorkspaceSnapshot(()), ux10,
+        current_run_identity=RUN, websocket_state="IDLE",
+    )
+    reminder = next(
+        item for item in first.records
+        if item.notification_type == "REFRESH_ANALYSIS_REMINDER"
+    )
+    clock[0] = NOW + timedelta(hours=1)
+    centre.dismiss(
+        reminder.notification_identity,
+        reminder.integrity_sha256,
+        occurred_at=clock[0],
+    )
+    centre.synchronize(
+        NotificationWorkspaceSnapshot(()), ux10,
+        current_run_identity=RUN, websocket_state="IDLE",
+    )
+    dismissed = centre.record(reminder.notification_identity)
+    assert dismissed is not None and dismissed.dismissed
+    assert dismissed.reminder_count == 1
+    assert dismissed.next_reminder_at is None
 
 
 def test_missed_hour_recovery_adds_one_event_and_next_future_boundary(tmp_path: Path) -> None:
@@ -280,7 +359,8 @@ def test_missed_hour_recovery_adds_one_event_and_next_future_boundary(tmp_path: 
     )
     record = restored.record(identity)
     assert record is not None and record.reminder_count == 2
-    assert record.next_reminder_at == NOW + timedelta(hours=5)
+    assert record.last_reminded_at == clock[0]
+    assert record.next_reminder_at == clock[0] + timedelta(hours=1)
     unchanged = restored.synchronize(
         NotificationWorkspaceSnapshot(()), ux10,
         current_run_identity=RUN, websocket_state="IDLE",

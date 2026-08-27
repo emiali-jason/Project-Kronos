@@ -1,8 +1,9 @@
 """Durable time-based reminders for K5-only KR-370 READY opportunities.
 
-The workflow uses governed DOMAIN-008 session boundaries and owns reminder
-delivery timing only.  It never evaluates K5, watches prices, or creates a
-trading state.
+The initial reminder uses a governed DOMAIN-008 completed-hour boundary.
+After delivery, recurrence is operational elapsed-time scheduling: the next
+reminder is due one hour after the previous delivery.  The workflow never
+evaluates K5, watches prices, or creates a trading state.
 """
 
 from __future__ import annotations
@@ -190,10 +191,12 @@ class SwingK5RefreshReminderWorkflow:
     def next_repeat_boundary(
         self, notification_identity: str, after: datetime
     ) -> datetime | None:
-        """Resolve the next governed hourly boundary for a delivered reminder.
+        """Return the operational repeat due time after a delivered reminder.
 
-        Browser recurrence reuses the same DOMAIN-008 authority as the original
-        K5 reminder.  It never manufactures a local wall-clock schedule.
+        DOMAIN-008 owns the initial completed-market-hour trigger.  Once that
+        reminder has been delivered, recurrence asks only whether a successful
+        Refresh Analysis has occurred, so it uses one elapsed wall-clock hour
+        from the factual delivery timestamp supplied by the caller.
         """
 
         if not notification_identity or after.tzinfo is None:
@@ -206,16 +209,7 @@ class SwingK5RefreshReminderWorkflow:
             ), None)
         if record is None:
             return None
-        exchanges = tuple(sorted({item[3] for item in record.instrument_bindings}))
-        boundaries = []
-        for exchange in exchanges:
-            try:
-                boundaries.append(next_completed_one_hour_boundary(
-                    self._calendar, exchange, after, observed_at=after,
-                ))
-            except ValueError:
-                return None
-        return min(boundaries) if boundaries else None
+        return after + timedelta(hours=1)
 
     def synchronize(
         self,

@@ -1,12 +1,14 @@
 from dataclasses import fields
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from kronos.application.swing_refresh_reminder import (
+    K5RefreshReminderRecord,
     K5RefreshReminderStore,
     RefreshReminderState,
     SwingK5RefreshReminderWorkflow,
+    _integrity_values as reminder_integrity,
     next_completed_one_hour_boundary,
 )
 from kronos.application.swing_ux10 import (
@@ -117,6 +119,14 @@ def test_k5_ready_deduplicates_same_boundary_and_delivers_once(tmp_path: Path) -
         notification.notification_id,
         record.next_eligible_completed_1h_boundary,
     ) == datetime(2026, 8, 17, 11, 15, tzinfo=IST)
+    assert workflow.next_repeat_boundary(
+        notification.notification_id,
+        datetime(2026, 8, 17, 15, 30, tzinfo=IST),
+    ) == datetime(2026, 8, 17, 16, 30, tzinfo=IST)
+    assert workflow.next_repeat_boundary(
+        notification.notification_id,
+        datetime(2026, 8, 17, 23, 30, tzinfo=IST),
+    ) == datetime(2026, 8, 18, 0, 30, tzinfo=IST)
     scheduler.calls[0][1].operation()
     assert len(delivered) == 1
 
@@ -174,10 +184,52 @@ def test_sent_reminder_is_not_rescheduled_or_resent_after_restart(tmp_path: Path
     )
     assert restarted.snapshot().records[0].state is RefreshReminderState.SENT
     assert restarted_scheduler.calls == []
+    assert restarted.next_repeat_boundary(
+        "n" * 64, now[0]
+    ) == now[0] + timedelta(hours=1)
     restarted.synchronize(
         promotion.run_identity, (promotion,), {promotion.canonical_instrument: "NSE"}
     )
     assert len(delivered) == 1
+
+
+def test_repeat_boundary_is_one_shared_elapsed_hour_for_mixed_exchanges(
+    tmp_path: Path,
+) -> None:
+    promotion = _ready(tmp_path / "source")
+    delivered_at = datetime(2026, 8, 17, 15, 30, tzinfo=IST)
+    values = dict(
+        reminder_identity="4" * 64,
+        run_identity=promotion.run_identity,
+        instrument_bindings=(
+            ("GOLDM", "5" * 64, "BUY_READY", "MCX"),
+            ("IOC", promotion.native_assessment_sha256, "BUY_READY", "NSE"),
+        ),
+        source_boundaries=(
+            ("GOLDM", delivered_at - timedelta(hours=1)),
+            ("IOC", delivered_at - timedelta(hours=1)),
+        ),
+        next_eligible_completed_1h_boundary=delivered_at,
+        calendar_bindings=(
+            ("MCX", "KRONOS-MCX-NON-AGRI-2026", "2026.1.1"),
+            ("NSE", "KRONOS-NSE-CAPITAL-MARKET-2022-2026", "2026.1.2"),
+        ),
+        state=RefreshReminderState.SENT,
+        created_at=delivered_at,
+        updated_at=delivered_at,
+        notification_identity="6" * 64,
+        integrity_sha256="",
+    )
+    record = K5RefreshReminderRecord(**(
+        values | {"integrity_sha256": reminder_integrity(values)}
+    ))
+    store = K5RefreshReminderStore(tmp_path / "reminders")
+    store.retain(record)
+    workflow = SwingK5RefreshReminderWorkflow(store, scheduler=Scheduler())
+
+    assert workflow.next_repeat_boundary(
+        record.notification_identity or "", delivered_at
+    ) == datetime(2026, 8, 17, 16, 30, tzinfo=IST)
 
 
 def test_next_boundary_respects_holiday_and_mcx_session() -> None:
