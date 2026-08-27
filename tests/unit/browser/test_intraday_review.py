@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+from dataclasses import replace
 import json
+from hashlib import sha256
 from pathlib import Path
 from types import SimpleNamespace
 
 from kronos.browser.intraday_routes import IntradayBrowserRoutes
+from kronos.browser.intraday_views import render_intraday_review
 from kronos.browser.product_routes import BrowserGetRequest, BrowserPostRequest
 from tests.unit.browser.test_product_route_isolation import _snapshot
 from tests.unit.intraday.test_probables import _member, _run
@@ -18,41 +21,48 @@ class _Workstation:
         return SimpleNamespace(probables=None)
 
 
+def _store_fingerprint(root: Path) -> tuple[tuple[str, str], ...]:
+    if not root.exists():
+        return ()
+    return tuple(
+        (str(path.relative_to(root)), sha256(path.read_bytes()).hexdigest())
+        for path in sorted(root.rglob("*"))
+        if path.is_file()
+    )
+
+
 def test_intraday_review_browser_flow_is_bounded_and_get_is_side_effect_free(tmp_path: Path) -> None:
     run = _run((_member("WIPRO"),))
     current = [run]
     application = _application(tmp_path, current)
     routes = IntradayBrowserRoutes(_Workstation(), review=application)
 
+    before = _store_fingerprint(application.store.root)
     initial = routes.handle_get(BrowserGetRequest("/intraday/review", {}), _snapshot)
     assert initial is not None
     assert "Intraday Native Review" in initial.body
     assert "WIPRO" in initial.body and "LONG" in initial.body
-    assert "START REVIEW" in initial.body
+    assert "START REVIEW" not in initial.body
+    assert "CHART REQUIRED" in initial.body
+    assert "TRADINGVIEW 4-CHART IMAGE" in initial.body
+    assert "Required: 1D · 1H · 15M · 5M" in initial.body
+    assert 'data-review-upload="/intraday/review/chart?result=' in initial.body
     assert "CREATE PDF" not in initial.body
     assert '<button class="primary" type="submit" disabled>CREATE ALL REVIEW PDF</button>' in initial.body
     assert "UPLOAD ALL ANSWERS" in initial.body
     assert 'action="/intraday/review/answers"' in initial.body
     assert application.snapshot().candidates[0].cycle_identity is None
+    assert _store_fingerprint(application.store.root) == before
 
     result = run.results[0].result_identity
-    started = routes.handle_post(
-        BrowserPostRequest("/intraday/review/start", {"result": [result]}, "", b""),
-        _snapshot,
-    )
-    assert started is not None and "CHART REQUIRED" in started.body
-    cycle = application.snapshot().candidates[0].cycle_identity
-    assert cycle is not None
-    assert "TRADINGVIEW 4-CHART IMAGE" in started.body
-    assert "Required: 1D · 1H · 15M · 5M" in started.body
-    assert "PROBABLE CONTEXT" in started.body
-    assert "CREATE PDF" not in started.body
-
     uploaded = routes.handle_post(
-        BrowserPostRequest("/intraday/review/chart", {"cycle": [cycle]}, "image/png", _png(7)),
+        BrowserPostRequest("/intraday/review/chart", {"result": [result]}, "image/png", _png(7)),
         _snapshot,
     )
     assert uploaded is not None and "CHART READY · REV 001" in uploaded.body
+    cycle = application.snapshot().candidates[0].cycle_identity
+    assert cycle is not None
+    assert "PROBABLE CONTEXT" in uploaded.body
     assert "CREATE PDF" in uploaded.body
     assert '<button class="primary" type="submit">CREATE ALL REVIEW PDF</button>' in uploaded.body
 
@@ -105,16 +115,13 @@ def test_intraday_review_clipboard_targets_are_candidate_bound_and_share_upload_
     current = [run]
     application = _application(tmp_path, current)
     routes = IntradayBrowserRoutes(_Workstation(), review=application)
-    for candidate in application.snapshot().candidates:
-        application.start_review(candidate.probable_result_identity)
-
     rendered = routes.handle_get(BrowserGetRequest("/intraday/review", {}), _snapshot)
     assert rendered is not None
     snapshot = application.snapshot()
     for candidate in snapshot.candidates:
-        assert candidate.cycle_identity is not None
+        assert candidate.cycle_identity is None
         assert rendered.body.count(
-            "/intraday/review/chart?cycle=" + candidate.cycle_identity
+            "/intraday/review/chart?result=" + candidate.probable_result_identity
         ) == 1
         assert (
             "Paste TradingView 1D 1H 15M 5M chart composite for "
@@ -133,6 +140,47 @@ def test_intraday_review_clipboard_targets_are_candidate_bound_and_share_upload_
         _snapshot,
     )
     assert rejected is not None and rejected.status.value == 400
+
+
+def test_intraday_review_renders_sponsor_names_alphabetically_without_reordering_probables(
+    tmp_path: Path,
+) -> None:
+    source_order = ("SRF", "INDIGO", "COALINDIA", "RBLBANK", "MAZDOCK", "RVNL")
+    run = _run(tuple(_member(identity) for identity in source_order))
+    current = [run]
+    application = _application(tmp_path, current)
+    routes = IntradayBrowserRoutes(_Workstation(), review=application)
+
+    expected = ("COALINDIA", "INDIGO", "MAZDOCK", "RBLBANK", "RVNL", "SRF")
+    by_identity = {
+        item.canonical_subject_identity: item for item in application.snapshot().candidates
+    }
+    unordered = replace(
+        application.snapshot(), candidates=tuple(by_identity[identity] for identity in source_order)
+    )
+    rendered = render_intraday_review(_snapshot(), unordered)
+    assert tuple(item.canonical_subject_identity for item in unordered.candidates) == source_order
+    positions = tuple(rendered.index(f"<h2>{identity}</h2>") for identity in expected)
+    assert positions == tuple(sorted(positions))
+
+    first = next(item for item in run.results if item.canonical_subject_identity == "COALINDIA")
+    response = routes.handle_post(
+        BrowserPostRequest(
+            "/intraday/review/chart",
+            {"result": [first.result_identity]},
+            "image/png",
+            _png(31),
+        ),
+        _snapshot,
+    )
+    assert response is not None and response.status.value == 200
+    snapshots = {item.canonical_subject_identity: item for item in application.snapshot().candidates}
+    assert snapshots["COALINDIA"].chart_revision_ordinal == 1
+    assert all(
+        item.chart_revision_identity is None
+        for identity, item in snapshots.items()
+        if identity != "COALINDIA"
+    )
 
 
 def test_intraday_review_individual_and_batch_answer_controls_project_visual_evidence(tmp_path: Path) -> None:

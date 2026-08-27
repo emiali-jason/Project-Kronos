@@ -107,8 +107,12 @@ def render_intraday_review(
     reconciled = {} if reconciliation is None else {
         item.probable_result_identity: item for item in reconciliation.candidates
     }
+    ordered_candidates = tuple(sorted(review.candidates, key=_review_presentation_sort_key))
     cards = (
-        "".join(_review_candidate(item, reconciled.get(item.probable_result_identity)) for item in review.candidates)
+        "".join(
+            _review_candidate(item, reconciled.get(item.probable_result_identity))
+            for item in ordered_candidates
+        )
         if review.candidates
         else '<div class="empty"><div><strong>Zero current Review candidates</strong>'
         'Only exact-current Long/Short Probables are eligible.</div></div>'
@@ -170,35 +174,28 @@ def _review_candidate(
     item, reconciliation: ReconciliationCandidateSnapshot | None  # type: ignore[no-untyped-def]
 ) -> str:
     direction_class = "direction-long" if item.direction == "LONG" else "direction-short"
-    if item.cycle_identity is None:
-        action = (
-            '<form method="post" action="/intraday/review/start?result='
-            + quote(item.probable_result_identity, safe="")
-            + '"><button type="submit">START REVIEW</button></form>'
-        )
-        chart_state = "NOT CREATED"
-        pack_state = "NOT CREATED"
-    else:
+    result = quote(item.probable_result_identity, safe="")
+    input_identity = "intraday-chart-" + item.probable_result_identity.rsplit("-", 1)[-1][:12]
+    chart_state = (
+        "CHART REQUIRED"
+        if item.chart_revision_ordinal is None
+        else f"CHART READY · REV {item.chart_revision_ordinal:03d}"
+    )
+    pack_state = "NOT CREATED" if item.review_pack_identity is None else "CREATED"
+    action = (
+        '<div class="intraday-review-section-title">TRADINGVIEW CHARTS</div>'
+        '<div class="intraday-drop" role="button" tabindex="0" aria-label="Paste TradingView 1D 1H 15M 5M chart composite for '
+        + escape(item.canonical_subject_identity)
+        + '" data-review-upload="/intraday/review/chart?result='
+        + result
+        + '"><span class="paste-key">⌘V</span><strong>PASTE / UPLOAD</strong>'
+        '<span>TRADINGVIEW 4-CHART IMAGE</span><span class="required-panels">Required: 1D · 1H · 15M · 5M</span></div>'
+        '<label class="intraday-file-choice" tabindex="0" for="' + input_identity + '">CHOOSE IMAGE FILE</label>'
+        '<input id="' + input_identity + '" class="intraday-chart-input" type="file" accept="image/png,image/jpeg" '
+        'aria-label="Choose 1D 1H 15M 5M chart composite" data-review-file-target="' + input_identity + '-target">'
+    )
+    if item.cycle_identity is not None:
         cycle = quote(item.cycle_identity, safe="")
-        input_identity = "intraday-chart-" + item.cycle_identity.rsplit("-", 1)[-1][:12]
-        chart_state = (
-            "CHART REQUIRED"
-            if item.chart_revision_ordinal is None
-            else f"CHART READY · REV {item.chart_revision_ordinal:03d}"
-        )
-        pack_state = "NOT CREATED" if item.review_pack_identity is None else "CREATED"
-        action = (
-            '<div class="intraday-review-section-title">TRADINGVIEW CHARTS</div>'
-            '<div class="intraday-drop" role="button" tabindex="0" aria-label="Paste TradingView 1D 1H 15M 5M chart composite for '
-            + escape(item.canonical_subject_identity)
-            + '" data-review-upload="/intraday/review/chart?cycle='
-            + cycle
-            + '"><span class="paste-key">⌘V</span><strong>PASTE / UPLOAD</strong>'
-            '<span>TRADINGVIEW 4-CHART IMAGE</span><span class="required-panels">Required: 1D · 1H · 15M · 5M</span></div>'
-            '<label class="intraday-file-choice" tabindex="0" for="' + input_identity + '">CHOOSE IMAGE FILE</label>'
-            '<input id="' + input_identity + '" class="intraday-chart-input" type="file" accept="image/png,image/jpeg" '
-            'aria-label="Choose 1D 1H 15M 5M chart composite" data-review-file-target="' + input_identity + '-target">'
-        )
         if item.chart_revision_ordinal is not None:
             action += (
                 '<form method="post" action="/intraday/review/question-pack?cycle='
@@ -247,6 +244,15 @@ def _review_candidate(
         + ('<br>Review Cycle · ' + escape(item.cycle_identity) if item.cycle_identity else '')
         + '</details>' + _visual_answer_projection(item.visual_answers) + analytical + '</article>'
     )
+
+
+def _review_presentation_sort_key(item) -> tuple[str, str]:  # type: ignore[no-untyped-def]
+    identity = item.canonical_subject_identity
+    for prefix in ("NSE-EQ-", "NSE-INDEX-", "MCX-SUBJECT-"):
+        if identity.startswith(prefix):
+            identity = identity.removeprefix(prefix)
+            break
+    return identity.casefold(), identity
 
 
 def _analytical_projection(item: ReconciliationCandidateSnapshot) -> str:

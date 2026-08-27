@@ -125,6 +125,89 @@ def test_review_flow_is_immutable_idempotent_and_provider_independent(tmp_path: 
     assert restored.provider_operations == restored.discovery_operations == restored.probables_operations == 0
 
 
+def test_direct_first_chart_establishes_one_exact_cycle_idempotently(tmp_path: Path) -> None:
+    run = _run((_member("WIPRO"), _member("LICI")))
+    current = [run]
+    application = _application(tmp_path, current)
+    wipro = next(item for item in run.results if item.canonical_subject_identity == "WIPRO")
+
+    first = application.upload_chart_for_result(
+        wipro.result_identity, media_type="image/png", payload=_png(35)
+    )
+    replay = application.upload_chart_for_result(
+        wipro.result_identity, media_type="image/png", payload=_png(35)
+    )
+
+    assert replay == first and first.revision_ordinal == 1
+    snapshot = application.snapshot()
+    wipro_snapshot = next(
+        item for item in snapshot.candidates if item.canonical_subject_identity == "WIPRO"
+    )
+    lici_snapshot = next(
+        item for item in snapshot.candidates if item.canonical_subject_identity == "LICI"
+    )
+    assert wipro_snapshot.review_state == ReviewState.CHART_READY.value
+    assert wipro_snapshot.chart_revision_identity == first.chart_revision_identity
+    assert lici_snapshot.cycle_identity is None
+    assert len(application.store.load_current().cycles) == 1  # type: ignore[union-attr]
+
+
+def test_direct_chart_reuses_existing_cycle_and_rejects_invalid_candidate_or_chart(
+    tmp_path: Path,
+) -> None:
+    run = _run((_member("WIPRO"), _member("LICI")))
+    current = [run]
+    application = _application(tmp_path, current)
+    wipro = next(item for item in run.results if item.canonical_subject_identity == "WIPRO")
+    cycle = application.start_review(wipro.result_identity)
+
+    chart = application.upload_chart_for_result(
+        wipro.result_identity, media_type="image/png", payload=_png(36)
+    )
+    assert chart.cycle_identity == cycle.cycle_identity
+    assert len(application.store.load_current().cycles) == 1  # type: ignore[union-attr]
+
+    with pytest.raises(ReviewError, match=ReviewFailure.NOT_CURRENT.value):
+        application.upload_chart_for_result(
+            "INTRADAY-PROBABLE-RESULT-WRONG", media_type="image/png", payload=_png(37)
+        )
+    before = application.store.load_current()
+    with pytest.raises(ReviewError, match=ReviewFailure.CHART_INVALID.value):
+        application.upload_chart_for_result(
+            next(item for item in run.results if item.canonical_subject_identity == "LICI").result_identity,
+            media_type="image/png",
+            payload=b"invalid",
+        )
+    assert application.store.load_current() == before
+
+
+def test_direct_chart_binds_new_run_and_direction_flip_without_old_cycle_reuse(
+    tmp_path: Path,
+) -> None:
+    run_a = _run((
+        _member("WIPRO", hourly=SemanticDirection.SHORT, fifteen=SemanticDirection.SHORT),
+    ))
+    current = [run_a]
+    application = _application(tmp_path, current)
+    chart_a = application.upload_chart_for_result(
+        run_a.results[0].result_identity, media_type="image/png", payload=_png(38)
+    )
+    cycle_a = application.snapshot().candidates[0].cycle_identity
+
+    boundary_b = BOUNDARY + timedelta(minutes=5)
+    run_b = _run((_member("WIPRO", boundary=boundary_b),), boundary=boundary_b)
+    current[0] = run_b
+    chart_b = application.upload_chart_for_result(
+        run_b.results[0].result_identity, media_type="image/png", payload=_png(39)
+    )
+    cycle_b = application.snapshot().candidates[0].cycle_identity
+
+    assert cycle_a is not None and cycle_b is not None and cycle_a != cycle_b
+    assert chart_a.cycle_identity == cycle_a and chart_b.cycle_identity == cycle_b
+    assert application.store.load_cycle(cycle_a).direction == "SHORT"
+    assert application.store.load_cycle(cycle_b).direction == "LONG"
+
+
 def test_same_instrument_multiple_cycles_and_direction_flip_restore_exactly(tmp_path: Path) -> None:
     run_a = _run((_member("WIPRO", hourly=SemanticDirection.SHORT, fifteen=SemanticDirection.SHORT),))
     current = [run_a]

@@ -245,29 +245,100 @@ class IntradayReviewApplication:
             run = self._require_current_run()
             pointer = self._pointer_for_run(run)
             item = self._cycle_pointer(pointer, cycle_identity)
-            cycle = self._store.load_cycle(item.cycle_identity)
-            if cycle.probables_run_identity != run.run_identity:
-                raise ReviewError(ReviewFailure.NOT_CURRENT)
-            digest = sha256(payload).hexdigest()
-            active = None if item.active_chart_revision_identity is None else self._store.load_chart(item.active_chart_revision_identity)
-            if active is not None and active.payload_sha256 == digest and active.media_type == media_type:
-                return active
+            return self._retain_chart(run, pointer, item, media_type=media_type, payload=payload)
+
+    def upload_chart_for_result(
+        self,
+        probable_result_identity: str,
+        *,
+        media_type: str,
+        payload: bytes,
+    ) -> ChartRevision:
+        """Resolve/create the exact-current Review Cycle and retain its chart fail-closed."""
+
+        with self._lock:
+            validate_chart_payload(media_type, payload)
+            run, result = self._current_result(probable_result_identity)
+            pointer = self._pointer_for_run(run)
+            existing = next(
+                (
+                    item
+                    for item in pointer.cycles
+                    if item.probable_result_identity == result.result_identity
+                ),
+                None,
+            )
+            if existing is not None:
+                return self._retain_chart(
+                    run,
+                    pointer,
+                    existing,
+                    media_type=media_type,
+                    payload=payload,
+                )
+
+            handoff = create_review_handoff(run, result, created_at=self._clock())
+            cycle = create_review_cycle(handoff)
             chart = create_chart_revision(
                 cycle,
-                revision_ordinal=1 if active is None else active.revision_ordinal + 1,
+                revision_ordinal=1,
                 payload=payload,
                 media_type=media_type,
                 received_at=self._clock(),
             )
-            self._store.retain_chart(chart, payload)
-            updated = replace(
-                item,
+            item = ReviewCyclePointer(
+                cycle_identity=cycle.cycle_identity,
+                probable_result_identity=result.result_identity,
+                canonical_subject_identity=result.canonical_subject_identity,
+                direction=cycle.direction,
                 state=ReviewState.CHART_READY,
                 active_chart_revision_identity=chart.chart_revision_identity,
                 active_review_pack_identity=None,
             )
-            self._store.save_current(_replace_cycle(pointer, updated))
+            self._store.retain_handoff(handoff)
+            self._store.retain_cycle(cycle)
+            self._store.retain_chart(chart, payload)
+            self._store.save_current(
+                create_current_pointer(run.run_identity, (*pointer.cycles, item))
+            )
             return chart
+
+    def _retain_chart(
+        self,
+        run: ProbablesRun,
+        pointer: CurrentReviewPointer,
+        item: ReviewCyclePointer,
+        *,
+        media_type: str,
+        payload: bytes,
+    ) -> ChartRevision:
+        cycle = self._store.load_cycle(item.cycle_identity)
+        if cycle.probables_run_identity != run.run_identity:
+            raise ReviewError(ReviewFailure.NOT_CURRENT)
+        digest = sha256(payload).hexdigest()
+        active = (
+            None
+            if item.active_chart_revision_identity is None
+            else self._store.load_chart(item.active_chart_revision_identity)
+        )
+        if active is not None and active.payload_sha256 == digest and active.media_type == media_type:
+            return active
+        chart = create_chart_revision(
+            cycle,
+            revision_ordinal=1 if active is None else active.revision_ordinal + 1,
+            payload=payload,
+            media_type=media_type,
+            received_at=self._clock(),
+        )
+        self._store.retain_chart(chart, payload)
+        updated = replace(
+            item,
+            state=ReviewState.CHART_READY,
+            active_chart_revision_identity=chart.chart_revision_identity,
+            active_review_pack_identity=None,
+        )
+        self._store.save_current(_replace_cycle(pointer, updated))
+        return chart
 
     def create_question_pack(self, cycle_identity: str) -> tuple[ReviewQuestionPack, Path]:
         with self._lock:

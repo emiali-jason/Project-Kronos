@@ -197,5 +197,5 @@ def test_wo11_review_controls_remain_responsive_and_candidate_bound(
     for candidate in review.snapshot().candidates:
         assert candidate.cycle_identity is not None
         assert response.body.count(
-            "/intraday/review/chart?cycle=" + candidate.cycle_identity
+            "/intraday/review/chart?result=" + candidate.probable_result_identity
         ) == 1

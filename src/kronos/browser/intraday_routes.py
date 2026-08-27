@@ -113,12 +113,18 @@ class IntradayBrowserRoutes:
                     raise ValueError
                 self._review.start_review(result)
             elif request.path == "/intraday/review/chart":
-                cycle = _one_query(request, "cycle")
-                self._review.upload_chart(
-                    cycle,
-                    media_type=request.content_type,
-                    payload=request.body,
-                )
+                if set(request.query) == {"result"}:
+                    self._review.upload_chart_for_result(
+                        _one_query(request, "result"),
+                        media_type=request.content_type,
+                        payload=request.body,
+                    )
+                else:
+                    self._review.upload_chart(
+                        _one_query(request, "cycle"),
+                        media_type=request.content_type,
+                        payload=request.body,
+                    )
             elif request.path == "/intraday/review/question-pack":
                 cycle = _one_query(request, "cycle")
                 if request.body:
