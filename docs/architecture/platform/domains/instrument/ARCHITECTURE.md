@@ -23,6 +23,7 @@ The Instrument Domain derives its architectural meaning from:
 - [Domain Ownership Matrix](../../DOMAIN_OWNERSHIP_MATRIX.md);
 - [Domain Dependency Matrix](../../DOMAIN_DEPENDENCY_MATRIX.md); and
 - [Project KRONOS Data Flow](../../../DATA_FLOW.md).
+- [ADR-0018 — DOMAIN-001 Governed Visual Identity Relationship V1](../../../adr/ADR-0018-DOMAIN-001-GOVERNED-VISUAL-IDENTITY-RELATIONSHIP-V1.md).
 
 ADR-009 governs the product-neutral Instrument interpretation and catalogue model established by this migration.
 
@@ -70,6 +71,28 @@ Instrument exclusively owns:
 Instrument Identity remains the single platform semantic responsibility assigned to Instrument by the Domain Ownership Matrix.
 
 Instrument meaning may be informed by Provider-owned evidence without transferring Provider ownership or allowing Provider evidence to become canonical automatically.
+
+## Governed Visual Identity Relationships
+
+ADR-0018 adds a source-qualified, effective-dated relationship from an exact
+external visible label to an existing canonical analytical subject. DOMAIN-001
+owns this relationship and its fail-closed resolver. The V1 source context is
+only `TRADINGVIEW_VISUAL_CHART`.
+
+The matching key is the exact, case-sensitive pair of raw observed label and
+source context. DOMAIN-001 performs no normalization, inference, Provider-symbol
+fallback, fuzzy matching, or product-owned alias lookup. Missing or multiple
+active relationships fail closed. Resolution preserves the raw observed label
+and returns separate immutable relationship, publication, and integrity
+evidence.
+
+The contract and publication are respectively:
+
+- `GOVERNED_VISUAL_IDENTITY_RELATIONSHIP_V1 / 1.0.0`; and
+- `KRONOS-GOVERNED-VISUAL-IDENTITY-RELATIONSHIP-PUBLICATION-V1 / 1.0.0`.
+
+Intraday may consume this result at its governed Review observation boundary.
+Swing is not migrated by ADR-0018.
 
 ## Provider Ownership Exclusions
 
