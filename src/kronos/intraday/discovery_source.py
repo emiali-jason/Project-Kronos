@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, time
+from datetime import datetime, time, timedelta
 from hashlib import sha256
 import json
 from zoneinfo import ZoneInfo
@@ -35,6 +35,10 @@ from kronos.instrument.active_derivative import (
 from kronos.intraday.probables_refresh import (
     DiscoveryProbablesMappingError,
     create_discovery_probables_facts,
+)
+from kronos.intraday.probables_v2 import ProbablesV2Error
+from kronos.intraday.probables_v2_refresh import (
+    create_discovery_probables_v2_facts,
 )
 from kronos.market.calendar import MarketCalendarPublisher
 from kronos.market.schedule import (
@@ -77,6 +81,7 @@ class ProviderDiscoveryFactualSource:
         reconciliation_version: str,
         reconciliation: ReconciliationPublication,
         active_derivative_resolutions: ActiveDerivativeResolutionSet | None = None,
+        produce_probables_v2_facts: bool = False,
     ) -> None:
         if (
             type(lease) is not ReadOnlyProviderLease
@@ -87,6 +92,7 @@ class ProviderDiscoveryFactualSource:
                 and type(active_derivative_resolutions)
                 is not ActiveDerivativeResolutionSet
             )
+            or type(produce_probables_v2_facts) is not bool
             or not all(_text(item) for item in (
                 universe_identity,
                 universe_version,
@@ -103,6 +109,7 @@ class ProviderDiscoveryFactualSource:
         self._reconciliation_version = reconciliation_version
         self._reconciliation = reconciliation
         self._active_derivative_resolutions = active_derivative_resolutions
+        self._produce_probables_v2_facts = produce_probables_v2_facts
         self._records: dict[str, tuple[InstrumentRecord, ...]] = {}
         self._session_identities: dict[datetime, tuple[str, str]] = {}
         self._historical_requests = 0
@@ -288,11 +295,66 @@ class ProviderDiscoveryFactualSource:
             )
         except DiscoveryProbablesMappingError:
             probables_facts = None
+        probables_v2_facts = None
+        if self._produce_probables_v2_facts:
+            try:
+                previous_one_hour = self._acquire_previous_one_hour(
+                    record=record,
+                    schedule=previous,
+                    observed_at=boundary.observation_boundary,
+                )
+                probables_v2_facts = create_discovery_probables_v2_facts(
+                    universe_member_identity=member.universe_member_identity,
+                    canonical_subject_identity=member.canonical_identity,
+                    subject_exchange=member.exchange,
+                    discovery_bundle_identity=bundle.bundle_identity,
+                    observation_boundary_identity=(
+                        boundary.market_session_boundary_identity
+                    ),
+                    observation_boundary=boundary.observation_boundary,
+                    current_schedule=schedule,
+                    previous_schedule=previous,
+                    previous_daily=previous_daily,
+                    previous_one_hour=previous_one_hour,
+                    current_one_hour=completed_by_timeframe[
+                        IntradayTimeframe.ONE_HOUR
+                    ],
+                    current_fifteen_minute=completed_by_timeframe[
+                        IntradayTimeframe.FIFTEEN_MINUTES
+                    ],
+                    current_five_minute=completed_by_timeframe[
+                        IntradayTimeframe.FIVE_MINUTES
+                    ],
+                )
+            except (ProbablesV2Error, DiscoveryMemberFactError):
+                probables_v2_facts = None
         return DiscoveryFactAcquisition(
             universe_member_identity=member.universe_member_identity,
             canonical_identity=member.canonical_identity,
             bundle=bundle,
             probables_facts=probables_facts,
+            probables_v2_facts=probables_v2_facts,
+        )
+
+    def _acquire_previous_one_hour(
+        self,
+        *,
+        record: InstrumentRecord,
+        schedule: MarketDaySchedule,
+        observed_at: datetime,
+    ) -> tuple[HistoricalCandle, ...]:
+        self._historical_requests += 1
+        candles = tuple(self._lease.historical_candles(HistoricalCandleRequest(
+            instrument=record,
+            start=schedule.windows[0].opens_at,
+            end=schedule.windows[-1].closes_at - timedelta(microseconds=1),
+            interval=provider_interval(IntradayTimeframe.ONE_HOUR),
+        )))
+        return _completed_intraday(
+            candles=candles,
+            schedule=schedule,
+            timeframe=IntradayTimeframe.ONE_HOUR,
+            observed_at=observed_at,
         )
 
     def _active_binding(
@@ -433,6 +495,10 @@ class ProviderDiscoveryFactualSource:
             schedule=schedule,
             timeframe=timeframe,
             observed_at=observed_at,
+            allow_domain008_empty=(
+                self._produce_probables_v2_facts
+                and timeframe is IntradayTimeframe.ONE_HOUR
+            ),
         )
 
 
@@ -442,7 +508,10 @@ def _completed_intraday(
     schedule: MarketDaySchedule,
     timeframe: IntradayTimeframe,
     observed_at: datetime,
+    allow_domain008_empty: bool = False,
 ) -> tuple[HistoricalCandle, ...]:
+    if type(allow_domain008_empty) is not bool:
+        raise DiscoveryMemberFactError(DiscoveryReason.MACHINE_FACT_BUNDLE_INCOMPLETE)
     if any(
         current.timestamp <= previous.timestamp
         for previous, current in zip(candles, candles[1:])
@@ -459,7 +528,7 @@ def _completed_intraday(
     completed = tuple(supplied[item.start] for item in eligible if item.start in supplied)
     expected_starts = {item.start for item in expected}
     if (
-        not eligible
+        (not eligible and not allow_domain008_empty)
         or len(completed) != len(eligible)
         or any(item.timestamp not in expected_starts for item in candles)
     ):

@@ -30,7 +30,20 @@ from kronos.browser.views import render_browser_page
 from kronos.intraday.contracts import CandleCompletion, IntradayTimeframe
 from kronos.intraday.discovery import FactFamily
 from kronos.intraday.probables import ProbablesRun, ProbableReason, ProbableState
-from kronos.intraday.probables_v2 import ProbablesRunV2
+from kronos.intraday.probables_v2 import (
+    PROBABLES_V2_METHODOLOGY_CHECKSUM,
+    PROBABLES_V2_METHODOLOGY_IDENTITY,
+    PROBABLES_V2_METHODOLOGY_VERSION,
+    PROBABLES_V2_PUBLICATION_IDENTITY,
+    ProbablesRunV2,
+)
+from kronos.intraday.refresh_v2 import (
+    REFRESH_V2_OPERATION_TYPE,
+    REFRESH_V2_REQUEST_IDENTITY,
+    REFRESH_V2_REQUEST_VERSION,
+    REFRESH_V2_ROUTE,
+    RefreshV2SourceClass,
+)
 from kronos.intraday.review_answer import AnswerImportState
 from kronos.intraday.telemetry import TelemetryType
 
@@ -581,6 +594,24 @@ def _render_discovery_triage(
             last=last,
             failure=failure,
         )
+    if probable_v2_snapshot is not None:
+        legacy = (
+            " LEGACY V1 LAST SUCCESSFUL ANALYSIS · "
+            + _ist_time(probable_run.observation_boundary)
+            + ". V1 evidence is retained separately for history and is not "
+            "the commissioned V2 analysis."
+            if probable_run is not None
+            else ""
+        )
+        return (
+            _intraday_tabs(refresh_enabled)
+            + failure
+            + '<div class="intraday-methodology"><strong>PHASE-AWARE V2 · '
+            'NOT YET RUN</strong> No commissioned V2 analytical run is loaded.'
+            + escape(legacy)
+            + ' Explicit Sponsor Refresh is required; no population or candidate '
+            'result is projected.</div>'
+        )
     if probable_snapshot is None:
         metrics = (
             ("Universe", snapshot.universe_count),
@@ -937,7 +968,7 @@ def _intraday_tabs(refresh_enabled: bool, *, active: str = "opportunities") -> s
         '<span class="intraday-tab">Active</span>'
         '<span class="intraday-tab">Closed</span>'
         '<div class="toolbar"><button type="button" id="intraday-refresh-analysis"'
-        + disabled + '>Refresh Analysis</button><span class="intraday-refresh-state" '
+        + disabled + '>Refresh Analysis · V2 Phase-Aware</button><span class="intraday-refresh-state" '
         'id="intraday-refresh-state" aria-live="polite"></span></div></nav>'
         + _refresh_script()
     )
@@ -952,11 +983,21 @@ if(intradayRefresh&&!intradayRefresh.disabled){
     intradayRefresh.disabled=true;
     intradayRefreshState.textContent='REFRESHING';
     try{
-      const response=await fetch('/control/intraday-discovery',{
+      const boundary=new Date().toISOString();
+      const response=await fetch('""" + REFRESH_V2_ROUTE + """',{
         method:'POST',headers:{'Content-Type':'application/json'},
         body:JSON.stringify({
-          request_identity:`INTRADAY-REFRESH-${Date.now()}`,
-          observation_boundary:new Date().toISOString()
+          request_identity:`INTRADAY-V2-REFRESH-${Date.now()}`,
+          observation_boundary:boundary,
+          request_created_at:boundary,
+          source_class:'""" + RefreshV2SourceClass.SPONSOR_BROWSER_CONTROL.value + """',
+          contract_identity:'""" + REFRESH_V2_REQUEST_IDENTITY + """',
+          contract_version:'""" + REFRESH_V2_REQUEST_VERSION + """',
+          methodology_identity:'""" + PROBABLES_V2_METHODOLOGY_IDENTITY + """',
+          methodology_version:'""" + PROBABLES_V2_METHODOLOGY_VERSION + """',
+          methodology_publication_identity:'""" + PROBABLES_V2_PUBLICATION_IDENTITY + """',
+          methodology_checksum:'""" + PROBABLES_V2_METHODOLOGY_CHECKSUM + """',
+          operation_type:'""" + REFRESH_V2_OPERATION_TYPE + """'
         })
       });
       if(!response.ok)throw new Error();

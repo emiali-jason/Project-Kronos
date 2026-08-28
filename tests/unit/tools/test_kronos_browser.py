@@ -27,14 +27,14 @@ def test_launcher_uses_loopback_server_and_opens_swing_workspace(monkeypatch) ->
     monkeypatch.setattr(
         kronos_browser,
         "create_browser_server",
-        lambda app, port, restart_control, intraday_workstation,
+        lambda app, port, restart_control, product_routes,
         provider_instrument_master_operation, intraday_discovery_control,
         intraday_historical_control: (
             events.append((
                 app,
                 port,
                 restart_control,
-                intraday_workstation,
+                product_routes,
                 provider_instrument_master_operation,
                 intraday_discovery_control,
                 intraday_historical_control,
@@ -99,7 +99,7 @@ def test_developer_no_browser_mode_does_not_open_browser(monkeypatch) -> None:
     monkeypatch.setattr(
         kronos_browser,
         "create_browser_server",
-        lambda _app, port, restart_control, intraday_workstation,
+        lambda _app, port, restart_control, product_routes,
         provider_instrument_master_operation, intraday_discovery_control,
         intraday_historical_control: _Server(),
     )

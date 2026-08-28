@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from http import HTTPStatus
+import json
 
 from kronos.application.intraday_native_visual_reconciliation import (
     IntradayNativeVisualReconciliationApplication,
@@ -12,6 +13,9 @@ from kronos.browser.intraday_views import (
     render_intraday_detail,
     render_intraday_review,
     render_intraday_workstation,
+)
+from kronos.browser.intraday_probables_v2_control import (
+    IntradayProbablesV2OperationalControl,
 )
 from kronos.browser.product_routes import (
     BrowserGetRequest,
@@ -39,10 +43,23 @@ class IntradayBrowserRoutes:
         workstation: object,
         review: IntradayReviewApplication | None = None,
         reconciliation: IntradayNativeVisualReconciliationApplication | None = None,
+        probables_v2_control: IntradayProbablesV2OperationalControl | None = None,
+        review_workstation: object | None = None,
     ) -> None:
         if not callable(getattr(workstation, "snapshot", None)):
             raise ValueError("INTRADAY_BROWSER_ROUTES_INVALID")
         self._workstation = workstation
+        self._review_workstation = (
+            workstation if review_workstation is None else review_workstation
+        )
+        if not callable(getattr(self._review_workstation, "snapshot", None)):
+            raise ValueError("INTRADAY_BROWSER_ROUTES_INVALID")
+        if (
+            probables_v2_control is not None
+            and type(probables_v2_control) is not IntradayProbablesV2OperationalControl
+        ):
+            raise ValueError("INTRADAY_BROWSER_ROUTES_INVALID")
+        self._probables_v2_control = probables_v2_control
         self._review = review or IntradayReviewApplication(
             current_probables=self._current_probables,
             store=IntradayReviewStore(),
@@ -58,7 +75,7 @@ class IntradayBrowserRoutes:
         )
 
     def _current_probables(self):  # type: ignore[no-untyped-def]
-        snapshot = self._workstation.snapshot()
+        snapshot = self._review_workstation.snapshot()
         probables = getattr(snapshot, "probables", None)
         return None if probables is None else probables.run
 
@@ -82,6 +99,21 @@ class IntradayBrowserRoutes:
                     self._reconciliation.snapshot(),
                 )
             )
+        elif request.path == "/control/intraday-discovery/v2/status":
+            if self._probables_v2_control is None or request.query:
+                return BrowserRouteResponse(
+                    "Not found.",
+                    status=HTTPStatus.NOT_FOUND,
+                    content_type="text/plain; charset=utf-8",
+                )
+            return BrowserRouteResponse(
+                json.dumps(
+                    self._probables_v2_control.status_document(),
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ),
+                content_type="application/json; charset=utf-8",
+            )
         else:
             return None
         return BrowserRouteResponse(
@@ -93,6 +125,7 @@ class IntradayBrowserRoutes:
 
     def owns_post(self, path: str) -> bool:
         return path in {
+            "/control/intraday-discovery/v2",
             "/intraday/review/start",
             "/intraday/review/chart",
             "/intraday/review/question-pack",
@@ -111,6 +144,36 @@ class IntradayBrowserRoutes:
         if not self.owns_post(request.path):
             return None
         try:
+            if request.path == "/control/intraday-discovery/v2":
+                if self._probables_v2_control is None:
+                    raise ValueError
+                if (
+                    request.query
+                    or request.content_type != "application/json"
+                    or not request.body
+                ):
+                    payload = None
+                else:
+                    try:
+                        payload = json.loads(request.body)
+                    except (UnicodeDecodeError, json.JSONDecodeError):
+                        payload = None
+                document = self._probables_v2_control.execute_document(payload)
+                outcome = document["outcome"]
+                return BrowserRouteResponse(
+                    json.dumps(document, sort_keys=True, separators=(",", ":")),
+                    status=(
+                        HTTPStatus.OK
+                        if outcome == "SUCCESS" or document["idempotent"]
+                        else HTTPStatus.CONFLICT
+                        if document["failure"]
+                        == "INTRADAY_PROBABLES_V2_REQUEST_IDENTITY_CONFLICT"
+                        else HTTPStatus.BAD_REQUEST
+                        if outcome == "REJECTED"
+                        else HTTPStatus.SERVICE_UNAVAILABLE
+                    ),
+                    content_type="application/json; charset=utf-8",
+                )
             if request.path == "/intraday/review/start":
                 result = _one_query(request, "result")
                 if request.body:

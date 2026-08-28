@@ -28,6 +28,7 @@ from kronos.intraday.discovery import (
 )
 from kronos.intraday.discovery_persistence import NativeDiscoveryStore
 from kronos.intraday.probables_refresh import DiscoveryProbablesFacts
+from kronos.intraday.probables_v2_refresh import DiscoveryProbablesV2Facts
 from kronos.intraday.reconciliation import (
     Availability,
     RECONCILIATION_IDENTITY,
@@ -68,6 +69,7 @@ class DiscoveryFactAcquisition:
     bundle: NativeDiscoveryMachineFactBundle
     evidence: IntradayEvidenceBundle | None = None
     probables_facts: DiscoveryProbablesFacts | None = None
+    probables_v2_facts: DiscoveryProbablesV2Facts | None = None
 
     def __post_init__(self) -> None:
         if (
@@ -94,6 +96,20 @@ class DiscoveryFactAcquisition:
                     or self.probables_facts.discovery_bundle_identity
                     != self.bundle.bundle_identity
                     or self.probables_facts.observation_boundary
+                    != self.bundle.observation_boundary
+                )
+            )
+            or (
+                self.probables_v2_facts is not None
+                and (
+                    type(self.probables_v2_facts) is not DiscoveryProbablesV2Facts
+                    or self.probables_v2_facts.universe_member_identity
+                    != self.universe_member_identity
+                    or self.probables_v2_facts.canonical_subject_identity
+                    != self.canonical_identity
+                    or self.probables_v2_facts.discovery_bundle_identity
+                    != self.bundle.bundle_identity
+                    or self.probables_v2_facts.observation_boundary
                     != self.bundle.observation_boundary
                 )
             )
@@ -140,6 +156,7 @@ class DiscoveryRuntimeExecution:
     prerequisite_unavailable_count: int
     timeframe_fact_requests: int
     source_operation_count: int
+    probables_v2_facts: tuple[DiscoveryProbablesV2Facts, ...] = ()
     runtime_identity: str = DISCOVERY_RUNTIME_IDENTITY
     runtime_version: str = DISCOVERY_RUNTIME_VERSION
 
@@ -148,6 +165,9 @@ class DiscoveryRuntimeExecution:
         evidence_ids = tuple(item[0] for item in self.evidence)
         probables_ids = tuple(
             item.universe_member_identity for item in self.probables_facts
+        )
+        probables_v2_ids = tuple(
+            item.universe_member_identity for item in self.probables_v2_facts
         )
         if (
             type(self.run) is not NativeDiscoveryRun
@@ -164,6 +184,12 @@ class DiscoveryRuntimeExecution:
                 for item in self.probables_facts
             )
             or len(set(probables_ids)) != len(probables_ids)
+            or any(
+                type(item) is not DiscoveryProbablesV2Facts
+                or item.observation_boundary != self.run.observation_boundary
+                for item in self.probables_v2_facts
+            )
+            or len(set(probables_v2_ids)) != len(probables_v2_ids)
             or any(
                 type(value) is not int or value < 0
                 for value in (
@@ -251,6 +277,7 @@ class IntradayNativeDiscoveryService:
         failures: dict[str, DiscoveryReason] = {}
         evidence: list[tuple[str, IntradayEvidenceBundle]] = []
         probables_facts: list[DiscoveryProbablesFacts] = []
+        probables_v2_facts: list[DiscoveryProbablesV2Facts] = []
         source_operations = 0
         for member in self._reconciliation.members:
             if (
@@ -278,6 +305,8 @@ class IntradayNativeDiscoveryService:
                     evidence.append((member.universe_member_identity, acquired.evidence))
                 if acquired.probables_facts is not None:
                     probables_facts.append(acquired.probables_facts)
+                if acquired.probables_v2_facts is not None:
+                    probables_v2_facts.append(acquired.probables_v2_facts)
             except DiscoveryMemberFactError as error:
                 failures[member.universe_member_identity] = error.reason
             except DiscoveryError as error:
@@ -313,6 +342,10 @@ class IntradayNativeDiscoveryService:
             evidence=tuple(sorted(evidence, key=lambda item: item[0])),
             probables_facts=tuple(sorted(
                 probables_facts,
+                key=lambda item: item.universe_member_identity,
+            )),
+            probables_v2_facts=tuple(sorted(
+                probables_v2_facts,
                 key=lambda item: item.universe_member_identity,
             )),
             pre_evaluable_count=len(bundles) + len(failures),

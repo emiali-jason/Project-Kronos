@@ -12,6 +12,7 @@ from typing import Callable
 
 from kronos.application.intraday_discovery import IntradayDiscoveryApplication
 from kronos.application.intraday_probables import IntradayProbablesApplication
+from kronos.application.intraday_probables_v2 import IntradayProbablesV2Application
 from kronos.intraday.discovery import DiscoveryError, DiscoveryFailure
 from kronos.intraday.discovery_persistence import NativeDiscoveryStore
 from kronos.intraday.discovery_runtime import (
@@ -38,6 +39,12 @@ from kronos.intraday.probables_refresh_persistence import (
     RefreshOperationalStateError,
     RefreshOperationalStateStore,
     create_refresh_operational_state,
+)
+from kronos.intraday.probables_v2 import ProbablesRunV2, ProbablesV2Error
+from kronos.intraday.probables_v2_refresh import (
+    DISCOVERY_PROBABLES_V2_REFRESH_IDENTITY,
+    DiscoveryProbablesV2Mapping,
+    map_discovery_execution_to_probables_v2,
 )
 from kronos.intraday.universe import (
     IntradayUniverseError,
@@ -81,6 +88,10 @@ DISCOVERY_PROBABLES_REFRESH_ORCHESTRATION_IDENTITY = (
     "KRONOS-INTRADAY-DISCOVERY-PROBABLES-REFRESH-ORCHESTRATION-V1"
 )
 DISCOVERY_PROBABLES_REFRESH_ORCHESTRATION_VERSION = "1.0.0"
+DISCOVERY_PROBABLES_V2_REFRESH_ORCHESTRATION_IDENTITY = (
+    "KRONOS-INTRADAY-DISCOVERY-PROBABLES-REFRESH-ORCHESTRATION-V2"
+)
+DISCOVERY_PROBABLES_V2_REFRESH_ORCHESTRATION_VERSION = "2.0.0"
 
 
 class DiscoveryOperationState(StrEnum):
@@ -242,6 +253,26 @@ class DiscoveryOperationResult:
 FactualSourceFactory = Callable[..., ProviderDiscoveryFactualSource]
 
 
+class IntradayRefreshAdmission:
+    """One cross-version admission guard for governed Intraday Refresh work."""
+
+    def __init__(self) -> None:
+        self._lock = RLock()
+        self._active_identity: str | None = None
+
+    def begin(self, operation_identity: str) -> bool:
+        with self._lock:
+            if self._active_identity is not None:
+                return False
+            self._active_identity = operation_identity
+            return True
+
+    def finish(self, operation_identity: str) -> None:
+        with self._lock:
+            if self._active_identity == operation_identity:
+                self._active_identity = None
+
+
 class IntradayDiscoveryOperationService:
     """Serialize one explicit operation over the existing shared context."""
 
@@ -257,7 +288,9 @@ class IntradayDiscoveryOperationService:
         calendar_publisher: MarketCalendarPublisher,
         factual_source_factory: FactualSourceFactory,
         probables: IntradayProbablesApplication | None = None,
+        probables_v2: IntradayProbablesV2Application | None = None,
         refresh_state_store: RefreshOperationalStateStore | None = None,
+        refresh_admission: IntradayRefreshAdmission | None = None,
         active_derivative_catalogue: InstrumentSemanticPublicationV2 | None = None,
         active_derivative_binding_store: ActiveDerivativeBindingStore | None = None,
         provider_snapshot_store: ProviderInstrumentSnapshotStore | None = None,
@@ -277,10 +310,19 @@ class IntradayDiscoveryOperationService:
                 and type(probables) is not IntradayProbablesApplication
             )
             or (
+                probables_v2 is not None
+                and type(probables_v2) is not IntradayProbablesV2Application
+            )
+            or (probables is not None and probables_v2 is not None)
+            or (
                 refresh_state_store is not None
                 and type(refresh_state_store) is not RefreshOperationalStateStore
             )
             or not callable(clock)
+            or (
+                refresh_admission is not None
+                and type(refresh_admission) is not IntradayRefreshAdmission
+            )
             or (
                 any(item is not None for item in (
                     active_derivative_catalogue,
@@ -304,7 +346,9 @@ class IntradayDiscoveryOperationService:
         self._calendar = calendar_publisher
         self._source_factory = factual_source_factory
         self._probables = probables
+        self._probables_v2 = probables_v2
         self._refresh_state_store = refresh_state_store
+        self._refresh_admission = refresh_admission or IntradayRefreshAdmission()
         self._active_derivative_catalogue = active_derivative_catalogue
         self._active_derivative_binding_store = active_derivative_binding_store
         self._provider_snapshot_store = provider_snapshot_store
@@ -364,6 +408,8 @@ class IntradayDiscoveryOperationService:
                 return completed
             if self._active_identity is not None:
                 return self._conflict(request)
+            if not self._refresh_admission.begin(request.operation_identity):
+                return self._conflict(request)
             self._active_identity = request.operation_identity
             self._last_active_derivative_resolutions = None
             self._last_provider_snapshot_identity = None
@@ -371,8 +417,8 @@ class IntradayDiscoveryOperationService:
 
         lease: ReadOnlyProviderLease | None = None
         execution: DiscoveryRuntimeExecution | None = None
-        mapping: DiscoveryProbablesMapping | None = None
-        probables_run: ProbablesRun | None = None
+        mapping: DiscoveryProbablesMapping | DiscoveryProbablesV2Mapping | None = None
+        probables_run: ProbablesRun | ProbablesRunV2 | None = None
         active_resolutions: ActiveDerivativeResolutionSet | None = None
         stage = DiscoveryOperationStage.CONTEXT_VERIFICATION
         try:
@@ -546,6 +592,38 @@ class IntradayDiscoveryOperationService:
                     raise DiscoveryProbablesMappingError(
                         "DISCOVERY_PROBABLES_LINKAGE_INVALID"
                     )
+            elif self._probables_v2 is not None:
+                stage = DiscoveryOperationStage.PROBABLES_EVIDENCE_MAPPING
+                mapping = map_discovery_execution_to_probables_v2(
+                    execution=execution,
+                    reconciliation=self._reconciliation,
+                )
+                stage = DiscoveryOperationStage.PROBABLES_INVOCATION
+                probables_run = self._probables_v2.refresh_analysis(
+                    source_discovery_run_identity=execution.run.run_identity,
+                    universe_identity=execution.run.universe_identity,
+                    universe_version=execution.run.universe_version,
+                    reconciliation_identity=execution.run.reconciliation_identity,
+                    reconciliation_version=execution.run.reconciliation_version,
+                    market_session_identity=execution.run.market_session_identity,
+                    analysis_boundary=execution.run.observation_boundary,
+                    member_evidence=mapping.member_evidence,
+                    unavailable_members=mapping.unavailable_members,
+                    provenance=(
+                        DISCOVERY_PROBABLES_V2_REFRESH_ORCHESTRATION_IDENTITY,
+                        DISCOVERY_PROBABLES_V2_REFRESH_IDENTITY,
+                        mapping.mapping_identity,
+                    ),
+                )
+                if (
+                    probables_run.source_discovery_run_identity
+                    != execution.run.run_identity
+                    or probables_run.analysis_boundary
+                    != execution.run.observation_boundary
+                ):
+                    raise ProbablesV2Error(
+                        "DISCOVERY_PROBABLES_V2_LINKAGE_INVALID"
+                    )
             return self._finish(
                 request,
                 stage=DiscoveryOperationStage.COMPLETE,
@@ -587,6 +665,18 @@ class IntradayDiscoveryOperationService:
                 failure=DiscoveryOperationFailure.PROBABLES_MAPPING_FAILURE,
                 execution=execution,
             )
+        except ProbablesV2Error:
+            return self._finish(
+                request,
+                stage=stage,
+                failure=(
+                    DiscoveryOperationFailure.PROBABLES_MAPPING_FAILURE
+                    if stage is DiscoveryOperationStage.PROBABLES_EVIDENCE_MAPPING
+                    else DiscoveryOperationFailure.PROBABLES_REFRESH_FAILURE
+                ),
+                execution=execution,
+                mapping=mapping,
+            )
         except ProbablesError:
             return self._finish(
                 request,
@@ -625,6 +715,7 @@ class IntradayDiscoveryOperationService:
             with self._lock:
                 if self._active_identity == request.operation_identity:
                     self._active_identity = None
+            self._refresh_admission.finish(request.operation_identity)
 
     def _boundary(
         self,
@@ -651,8 +742,8 @@ class IntradayDiscoveryOperationService:
         stage: DiscoveryOperationStage,
         failure: DiscoveryOperationFailure | None = None,
         execution: DiscoveryRuntimeExecution | None = None,
-        mapping: DiscoveryProbablesMapping | None = None,
-        probables_run: ProbablesRun | None = None,
+        mapping: DiscoveryProbablesMapping | DiscoveryProbablesV2Mapping | None = None,
+        probables_run: ProbablesRun | ProbablesRunV2 | None = None,
         historical_request_count: int = 0,
     ) -> DiscoveryOperationResult:
         if failure is not None:
@@ -662,6 +753,8 @@ class IntradayDiscoveryOperationService:
             }:
                 if self._probables is not None:
                     self._probables.record_failure(failure.value)
+                if self._probables_v2 is not None:
+                    self._probables_v2.record_failure(failure.value)
             else:
                 self._application.record_failure(failure.value)
         completed_at = self._clock()
@@ -801,11 +894,14 @@ __all__ = [
     "DISCOVERY_OPERATION_SERVICE_VERSION",
     "DISCOVERY_PROBABLES_REFRESH_ORCHESTRATION_IDENTITY",
     "DISCOVERY_PROBABLES_REFRESH_ORCHESTRATION_VERSION",
+    "DISCOVERY_PROBABLES_V2_REFRESH_ORCHESTRATION_IDENTITY",
+    "DISCOVERY_PROBABLES_V2_REFRESH_ORCHESTRATION_VERSION",
     "DiscoveryOperationFailure",
     "DiscoveryOperationRequest",
     "DiscoveryOperationResult",
     "DiscoveryOperationStage",
     "DiscoveryOperationState",
     "IntradayDiscoveryOperationService",
+    "IntradayRefreshAdmission",
     "create_discovery_operation_request",
 ]
