@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from copy import copy
+from datetime import timedelta
 import json
 from pathlib import Path
 
@@ -25,20 +27,27 @@ from kronos.intraday.native_visual_reconciliation_persistence import (
     IntradayNativeVisualReconciliationStore,
 )
 from kronos.intraday.historical_semantic import SemanticDirection
+from kronos.intraday.review_answer import AnswerImportState
+from kronos.instrument.visual_identity import VisualIdentityResolver
+from tests.unit.intraday.test_historical_semantic import BOUNDARY
 from tests.unit.intraday.test_probables import _member, _run
 from tests.unit.intraday.test_review import _application, _png
-from tests.unit.intraday.test_review_answer import _document
+from tests.unit.intraday.test_review_answer import _document, _visual_resolver
 
 
 def _prepared(tmp_path: Path, *, subject: str = "WIPRO", answers: dict[str, str] | None = None,
-              statuses: dict[str, str] | None = None):  # type: ignore[no-untyped-def]
+              statuses: dict[str, str] | None = None,
+              observed_visible_subject_identity: str | None = None,
+              visual_identity_resolver: VisualIdentityResolver | None = None):  # type: ignore[no-untyped-def]
     run = _run((_member(subject),))
     current = [run]
-    review = _application(tmp_path, current)
+    review = _application(tmp_path, current, visual_identity_resolver)
     cycle = review.start_review(run.results[0].result_identity)
     review.upload_chart(cycle.cycle_identity, media_type="image/png", payload=_png(12))
     pack, _ = review.create_question_pack(cycle.cycle_identity)
     document = _document(pack)
+    if observed_visible_subject_identity is not None:
+        document["observed_visible_subject_identity"] = observed_visible_subject_identity
     by_question = {item["question_id"]: item for item in document["answers"]}
     for question, answer in (answers or {}).items():
         by_question[question]["answer"] = answer
@@ -67,6 +76,19 @@ def _prepared(tmp_path: Path, *, subject: str = "WIPRO", answers: dict[str, str]
     return current, review, reconciliation, cycle, pack
 
 
+def _visual_evidence(review, pack):  # type: ignore[no-untyped-def]
+    pointer = review.store.load_visual_evidence_pointer(pack.review_pack_identity)
+    assert pointer is not None
+    return review.store.load_visual_evidence(pointer.visual_evidence_identity)
+
+
+def _tampered(value, **changes):  # type: ignore[no-untyped-def]
+    retained = copy(value)
+    for name, item in changes.items():
+        object.__setattr__(retained, name, item)
+    return retained
+
+
 def test_frozen_policy_identity_checksum_and_no_score_or_trading_authority() -> None:
     first = create_v1_reconciliation_policy()
     second = create_v1_reconciliation_policy()
@@ -92,6 +114,129 @@ def test_supportive_core_is_ready_promoted_and_direction_is_inherited(tmp_path: 
     assert not run.remaining_conditions
     assert not any((run.promotion.entry_authority, run.promotion.trade_construction_authority,
                     run.promotion.risk_authority, run.promotion.broker_authority))
+
+
+@pytest.mark.parametrize(
+    ("observed", "canonical"),
+    (
+        pytest.param("RBL Bank Ltd", "NSE-EQ-RBLBANK", id="rblbank"),
+        pytest.param("Nifty Bank Index", "NSE-INDEX-BANKNIFTY", id="banknifty"),
+    ),
+)
+def test_governed_visual_identity_resolution_is_consumed_without_rewriting_raw_observation(
+    tmp_path: Path,
+    observed: str,
+    canonical: str,
+) -> None:
+    resolver = _visual_resolver((
+        ("RBL Bank Ltd", "NSE-EQ-RBLBANK"),
+        ("Nifty Bank Index", "NSE-INDEX-BANKNIFTY"),
+    ))
+    _, review, app, cycle, pack = _prepared(
+        tmp_path,
+        subject=canonical,
+        observed_visible_subject_identity=observed,
+        visual_identity_resolver=resolver,
+    )
+    evidence = _visual_evidence(review, pack)
+    assert evidence.observed_visible_subject_identity == observed
+    assert evidence.resolved_canonical_subject_identity == canonical
+    assert evidence.expected_canonical_subject_identity == canonical
+
+    result = app.reconcile(cycle.cycle_identity)
+    assert result.state is ReconciliationMemberState.RECONCILED
+    reconciled = app.store.load_run(result.reconciliation_run_identity)
+    assert reconciled.canonical_subject_identity == canonical
+    assert _visual_evidence(review, pack).observed_visible_subject_identity == observed
+
+
+@pytest.mark.parametrize(
+    ("changes", "failure"),
+    (
+        ({"resolved_canonical_subject_identity": "NSE-EQ-OTHER"}, ReconciliationFailure.EVIDENCE_INVALID),
+        ({"resolved_canonical_subject_identity": None}, ReconciliationFailure.EVIDENCE_INVALID),
+        ({"visual_identity_relationship_identity": None}, ReconciliationFailure.EVIDENCE_INVALID),
+        ({"visual_identity_relationship_identity": "VISUAL-IDENTITY-RELATIONSHIP-TAMPER"}, ReconciliationFailure.INTEGRITY_INVALID),
+        ({"visual_identity_relationship_integrity_identity": None}, ReconciliationFailure.EVIDENCE_INVALID),
+        ({"visual_identity_publication_identity": "WRONG-PUBLICATION"}, ReconciliationFailure.EVIDENCE_INVALID),
+        ({"visual_identity_publication_version": "9.9.9"}, ReconciliationFailure.EVIDENCE_INVALID),
+        ({"visual_identity_publication_integrity_identity": None}, ReconciliationFailure.EVIDENCE_INVALID),
+        ({"visual_identity_source_context": "WRONG-SOURCE"}, ReconciliationFailure.EVIDENCE_INVALID),
+        ({"visual_identity_governed_observation_boundary": BOUNDARY + timedelta(seconds=1)}, ReconciliationFailure.EVIDENCE_INVALID),
+    ),
+)
+def test_visual_identity_resolution_and_lineage_fail_closed(
+    tmp_path: Path,
+    changes: dict[str, object],
+    failure: ReconciliationFailure,
+) -> None:
+    resolver = _visual_resolver((("RBL Bank Ltd", "NSE-EQ-RBLBANK"),))
+    current, review, _, cycle, pack = _prepared(
+        tmp_path,
+        subject="NSE-EQ-RBLBANK",
+        observed_visible_subject_identity="RBL Bank Ltd",
+        visual_identity_resolver=resolver,
+    )
+    evidence = _tampered(_visual_evidence(review, pack), **changes)
+    with pytest.raises(ReconciliationError, match=failure.value):
+        reconcile_native_visual_evidence(
+            policy=create_v1_reconciliation_policy(),
+            probables_run=current[0],
+            probable=current[0].results[0],
+            cycle=cycle,
+            question_pack=pack,
+            visual_evidence=evidence,
+        )
+
+
+def test_ambiguous_visual_identity_resolution_never_reaches_reconciliation(tmp_path: Path) -> None:
+    resolver = _visual_resolver(
+        (("RBL Bank Ltd", "NSE-EQ-RBLBANK"),),
+        duplicate_rblbank=True,
+    )
+    run = _run((_member("NSE-EQ-RBLBANK"),))
+    current = [run]
+    review = _application(tmp_path, current, resolver)
+    cycle = review.start_review(run.results[0].result_identity)
+    review.upload_chart(cycle.cycle_identity, media_type="image/png", payload=_png(12))
+    pack, _ = review.create_question_pack(cycle.cycle_identity)
+    document = _document(pack)
+    document["observed_visible_subject_identity"] = "RBL Bank Ltd"
+
+    imported = review.upload_answer(
+        cycle.cycle_identity,
+        media_type="application/json",
+        payload=json.dumps(document).encode(),
+    )
+    assert imported.state is AnswerImportState.IDENTITY_MISMATCH
+    assert review.store.load_visual_evidence_pointer(pack.review_pack_identity) is None
+
+
+@pytest.mark.parametrize(
+    "changes",
+    (
+        {"probables_run_identity": "INTRADAY-PROBABLES-RUN-WRONG"},
+        {"review_cycle_identity": "INTRADAY-REVIEW-CYCLE-WRONG"},
+        {"review_pack_identity": "INTRADAY-REVIEW-PACK-WRONG"},
+        {"chart_revision_identity": "INTRADAY-CHART-REVISION-WRONG"},
+        {"proposed_direction": "SHORT"},
+    ),
+)
+def test_existing_run_cycle_pack_chart_and_direction_bindings_still_fail_closed(
+    tmp_path: Path,
+    changes: dict[str, object],
+) -> None:
+    current, review, _, cycle, pack = _prepared(tmp_path)
+    evidence = _tampered(_visual_evidence(review, pack), **changes)
+    with pytest.raises(ReconciliationError, match=ReconciliationFailure.EVIDENCE_INVALID.value):
+        reconcile_native_visual_evidence(
+            policy=create_v1_reconciliation_policy(),
+            probables_run=current[0],
+            probable=current[0].results[0],
+            cycle=cycle,
+            question_pack=pack,
+            visual_evidence=evidence,
+        )
 
 
 @pytest.mark.parametrize(

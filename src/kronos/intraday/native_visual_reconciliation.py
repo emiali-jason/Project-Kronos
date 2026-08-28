@@ -16,6 +16,11 @@ from typing import Iterable, Mapping
 from kronos.intraday.probables import ProbableMemberResult, ProbableState, ProbablesRun
 from kronos.intraday.review import ObservationStatus, ReviewCycle, ReviewQuestionPack
 from kronos.intraday.review_answer import ImportedVisualEvidence
+from kronos.instrument.visual_identity import (
+    VISUAL_IDENTITY_RELATIONSHIP_PUBLICATION_V1,
+    VISUAL_IDENTITY_RELATIONSHIP_PUBLICATION_V1_VERSION,
+    VisualIdentitySourceContext,
+)
 
 
 RECONCILIATION_POLICY_IDENTITY = "KRONOS-INTRADAY-NATIVE-VISUAL-RECONCILIATION-POLICY-V1"
@@ -750,13 +755,19 @@ def _promotion_record(run_id: str, readiness: ReadinessRecord, state: Analytical
     )
 
 
-def _validate_bindings(run: ProbablesRun, probable: ProbableMemberResult, cycle: ReviewCycle, pack: ReviewQuestionPack, evidence: ImportedVisualEvidence) -> None:
+def _validate_bindings(
+    run: ProbablesRun,
+    probable: ProbableMemberResult,
+    cycle: ReviewCycle,
+    pack: ReviewQuestionPack,
+    evidence: ImportedVisualEvidence,
+) -> None:
     if probable not in run.results or probable.state not in {ProbableState.LONG_PROBABLE, ProbableState.SHORT_PROBABLE} or probable.direction is None:
         raise ReconciliationError(ReconciliationFailure.INPUT_INVALID)
     expected = (
         (probable.result_identity, cycle.probable_result_identity, pack.probable_result_identity, evidence.probable_result_identity),
         (run.run_identity, cycle.probables_run_identity, pack.probables_run_identity, evidence.probables_run_identity),
-        (probable.canonical_subject_identity, cycle.canonical_subject_identity, pack.expected_canonical_subject_identity, evidence.expected_canonical_subject_identity, evidence.observed_visible_subject_identity),
+        (probable.canonical_subject_identity, cycle.canonical_subject_identity, pack.expected_canonical_subject_identity, evidence.expected_canonical_subject_identity, evidence.resolved_canonical_subject_identity),
         (probable.direction.value, cycle.direction, pack.proposed_direction, evidence.proposed_direction),
         (cycle.cycle_identity, pack.review_cycle_identity, evidence.review_cycle_identity),
         (pack.review_pack_identity, evidence.review_pack_identity),
@@ -764,8 +775,37 @@ def _validate_bindings(run: ProbablesRun, probable: ProbableMemberResult, cycle:
         (pack.chart_revision_identity, evidence.chart_revision_identity),
         (pack.chart_artifact_identity, evidence.chart_artifact_identity),
     )
-    if any(len(set(values)) != 1 for values in expected) or evidence.global_observation_status is ObservationStatus.INVALID:
+    lineage = (
+        evidence.observed_visible_subject_identity,
+        evidence.visual_identity_relationship_identity,
+        evidence.visual_identity_relationship_integrity_identity,
+        evidence.visual_identity_publication_identity,
+        evidence.visual_identity_publication_version,
+        evidence.visual_identity_publication_integrity_identity,
+    )
+    if (
+        any(len(set(values)) != 1 for values in expected)
+        or not _texts(lineage)
+        or not evidence.visual_identity_relationship_identity.startswith("VISUAL-IDENTITY-RELATIONSHIP-")
+        or not evidence.visual_identity_relationship_integrity_identity.startswith("INTEGRITY-VISUAL-IDENTITY-RELATIONSHIP-")
+        or evidence.visual_identity_publication_identity
+        != VISUAL_IDENTITY_RELATIONSHIP_PUBLICATION_V1
+        or evidence.visual_identity_publication_version
+        != VISUAL_IDENTITY_RELATIONSHIP_PUBLICATION_V1_VERSION
+        or not evidence.visual_identity_publication_integrity_identity.startswith("INTEGRITY-VISUAL-IDENTITY-PUBLICATION-")
+        or evidence.visual_identity_source_context
+        != VisualIdentitySourceContext.TRADINGVIEW_VISUAL_CHART.value
+        or evidence.visual_identity_governed_observation_boundary
+        != pack.observation_boundary
+        or evidence.global_observation_status is ObservationStatus.INVALID
+    ):
         raise ReconciliationError(ReconciliationFailure.EVIDENCE_INVALID)
+    _verify(
+        evidence,
+        "visual_evidence_identity",
+        "INTRADAY-VISUAL-EVIDENCE-",
+        "INTEGRITY-VISUAL-EVIDENCE-",
+    )
 
 
 def _verify(value: object, identity_name: str, identity_prefix: str, integrity_prefix: str) -> None:
