@@ -29,7 +29,11 @@ from kronos.intraday.historical_qualification_persistence import (
 from kronos.intraday.market_context import CurrentMarketCalendarScheduleSource
 from kronos.intraday.probables_persistence import ProbablesStore
 from kronos.intraday.probables_v2_persistence import ProbablesV2Store
+from kronos.intraday.probables_v2_diagnostics_persistence import (
+    ProbablesV2DiagnosticsStore,
+)
 from kronos.intraday.refresh_v2_persistence import RefreshV2ProvenanceStore
+from kronos.intraday.refresh_v2 import RefreshV2Outcome
 from kronos.intraday.probables_refresh_persistence import (
     RefreshOperationalStateStore,
 )
@@ -109,6 +113,7 @@ class IntradayRuntimeComposition:
     probables_application: IntradayProbablesApplication
     probables_v2_application: IntradayProbablesV2Application
     refresh_v2_provenance_store: RefreshV2ProvenanceStore
+    probables_v2_diagnostics_store: ProbablesV2DiagnosticsStore
     refresh_state_store: RefreshOperationalStateStore
     reliance_bootstrap: RelianceIntradayBootstrap
 
@@ -219,6 +224,20 @@ def create_intraday_runtime(
         clock=clock,
     )
     refresh_v2_provenance_store = RefreshV2ProvenanceStore(Path(evidence_root))
+    probables_v2_diagnostics_store = ProbablesV2DiagnosticsStore(Path(evidence_root))
+    latest_v2_provenance = refresh_v2_provenance_store.latest()
+    if (
+        latest_v2_provenance is not None
+        and latest_v2_provenance.outcome is RefreshV2Outcome.FAILED
+        and latest_v2_provenance.failure is not None
+        and latest_v2_provenance.failure_detail_identity is not None
+    ):
+        probables_v2.record_failure(
+            latest_v2_provenance.failure,
+            failure_detail=probables_v2_diagnostics_store.load_failure(
+                latest_v2_provenance.failure_detail_identity
+            ),
+        )
     operation_v2 = IntradayDiscoveryOperationService(
         provider_runtime=provider_runtime,
         acquire_lease=access.acquire_discovery_lease,
@@ -239,6 +258,7 @@ def create_intraday_runtime(
             produce_probables_v2_facts=True,
         ),
         probables_v2=probables_v2,
+        probables_v2_diagnostics_store=probables_v2_diagnostics_store,
         refresh_admission=refresh_admission,
         active_derivative_catalogue=active_catalogue,
         active_derivative_binding_store=active_binding_store,
@@ -280,6 +300,7 @@ def create_intraday_runtime(
         probables_application=probables,
         probables_v2_application=probables_v2,
         refresh_v2_provenance_store=refresh_v2_provenance_store,
+        probables_v2_diagnostics_store=probables_v2_diagnostics_store,
         refresh_state_store=refresh_state_store,
         reliance_bootstrap=bootstrap,
     )

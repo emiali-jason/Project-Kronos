@@ -581,9 +581,20 @@ def _render_discovery_triage(
         None if probable_v2_snapshot is None else probable_v2_snapshot.run
     )
     if probable_v2_snapshot is not None and probable_v2_snapshot.current_failure is not None:
+        detail = probable_v2_snapshot.failure_detail
+        detail_projection = ""
+        if detail is not None:
+            affected = detail.affected_canonical_subject_identity or "NOT IDENTIFIED"
+            detail_projection = (
+                "<br>Stage: " + escape(_plain(detail.operation_stage))
+                + " · Reason: " + escape(_plain(detail.typed_reason_code))
+                + " · Affected: " + escape(affected)
+                + " · Diagnostic ID: " + escape(detail.failure_identity)
+            )
         failure += (
-            '<div class="intraday-failure"><strong>CURRENT PROBABLES V2 FAILURE</strong> · '
+            '<div class="intraday-failure"><strong>PROBABLES REFRESH FAILURE</strong> · '
             + escape(_plain(probable_v2_snapshot.current_failure))
+            + detail_projection
             + " · exact last successful V2 evidence remains preserved.</div>"
         )
     if probable_v2_run is not None:

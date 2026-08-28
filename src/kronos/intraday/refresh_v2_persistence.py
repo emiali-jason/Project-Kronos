@@ -92,6 +92,8 @@ def _decoded(payload: bytes) -> RefreshV2ProvenanceRecord:
                 values[name] = datetime.fromisoformat(values[name])
         values["outcome"] = RefreshV2Outcome(values["outcome"])
         values["source_class"] = RefreshV2SourceClass(values["source_class"])
+        values.setdefault("replay_envelope_identity", None)
+        values.setdefault("failure_detail_identity", None)
         return RefreshV2ProvenanceRecord(**values)
     except Exception as error:
         raise ValueError("INTRADAY_PROBABLES_V2_PROVENANCE_INVALID") from error

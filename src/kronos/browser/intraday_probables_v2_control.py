@@ -124,6 +124,11 @@ class IntradayProbablesV2OperationalControl:
                 else snapshot.last_successful_analysis.isoformat()
             ),
             "current_failure": snapshot.current_failure or latest_failure,
+            "failure_detail": (
+                None
+                if snapshot.failure_detail is None
+                else _failure_detail_document(snapshot.failure_detail)
+            ),
         }
 
     def execute_document(self, payload: object) -> dict[str, object]:
@@ -180,6 +185,8 @@ class IntradayProbablesV2OperationalControl:
             ),
             resulting_discovery_identity=result.run_identity,
             resulting_probables_identity=result.probables_run_identity,
+            replay_envelope_identity=result.replay_envelope_identity,
+            failure_detail_identity=result.failure_detail_identity,
         )
         self._store.retain(record)
         return _record_document(record, idempotent=False)
@@ -216,6 +223,8 @@ class IntradayProbablesV2OperationalControl:
         resulting_refresh_identity: str | None = None,
         resulting_discovery_identity: str | None = None,
         resulting_probables_identity: str | None = None,
+        replay_envelope_identity: str | None = None,
+        failure_detail_identity: str | None = None,
     ) -> RefreshV2ProvenanceRecord:
         return create_refresh_v2_provenance(
             request_identity=request_identity,
@@ -232,6 +241,8 @@ class IntradayProbablesV2OperationalControl:
             resulting_refresh_identity=resulting_refresh_identity,
             resulting_discovery_identity=resulting_discovery_identity,
             resulting_probables_identity=resulting_probables_identity,
+            replay_envelope_identity=replay_envelope_identity,
+            failure_detail_identity=failure_detail_identity,
             outcome=outcome,
             failure=failure,
             source_class=RefreshV2SourceClass.SPONSOR_BROWSER_CONTROL,
@@ -283,6 +294,8 @@ def _record_document(
         "resulting_refresh_identity": record.resulting_refresh_identity,
         "resulting_discovery_identity": record.resulting_discovery_identity,
         "resulting_probables_identity": record.resulting_probables_identity,
+        "replay_envelope_identity": record.replay_envelope_identity,
+        "failure_detail_identity": record.failure_detail_identity,
         "operation_completed_at": record.operation_completed_at.isoformat(),
         "idempotent": idempotent,
     }
@@ -296,6 +309,17 @@ def _operation_document(result: DiscoveryOperationResult) -> dict[str, object]:
         "failure": None if result.failure is None else result.failure.value,
         "run_identity": result.run_identity,
         "probables_run_identity": result.probables_run_identity,
+        "replay_envelope_identity": result.replay_envelope_identity,
+        "failure_detail_identity": result.failure_detail_identity,
+    }
+
+
+def _failure_detail_document(detail) -> dict[str, object]:  # type: ignore[no-untyped-def]
+    return {
+        "failure_identity": detail.failure_identity,
+        "stage": detail.operation_stage,
+        "reason": detail.typed_reason_code,
+        "affected": detail.affected_canonical_subject_identity,
     }
 
 

@@ -46,6 +46,15 @@ from kronos.intraday.probables_v2_refresh import (
     DiscoveryProbablesV2Mapping,
     map_discovery_execution_to_probables_v2,
 )
+from kronos.intraday.probables_v2_diagnostics import (
+    ProbablesV2FailureDetail,
+    ProbablesV2ReplayEnvelope,
+    create_probables_v2_failure_detail,
+    create_probables_v2_replay_envelope,
+)
+from kronos.intraday.probables_v2_diagnostics_persistence import (
+    ProbablesV2DiagnosticsStore,
+)
 from kronos.intraday.universe import (
     IntradayUniverseError,
     IntradayUniverseFailure,
@@ -116,6 +125,9 @@ class DiscoveryOperationStage(StrEnum):
     DISCOVERY_RUN_CONSTRUCTION = "DISCOVERY_RUN_CONSTRUCTION"
     PERSISTENCE = "PERSISTENCE"
     APPLICATION_SNAPSHOT = "APPLICATION_SNAPSHOT"
+    PROBABLES_REPLAY_ENVELOPE_PERSISTENCE = (
+        "PROBABLES_REPLAY_ENVELOPE_PERSISTENCE"
+    )
     PROBABLES_EVIDENCE_MAPPING = "PROBABLES_EVIDENCE_MAPPING"
     PROBABLES_INVOCATION = "PROBABLES_INVOCATION"
     REFRESH_STATE_PERSISTENCE = "REFRESH_STATE_PERSISTENCE"
@@ -159,6 +171,7 @@ class DiscoveryOperationFailure(StrEnum):
 @dataclass(frozen=True, slots=True)
 class DiscoveryOperationRequest:
     operation_identity: str
+    request_identity: str
     observation_boundary: datetime
     requested_at: datetime
 
@@ -168,6 +181,7 @@ class DiscoveryOperationRequest:
                 "KRONOS-INTRADAY-DISCOVERY-OPERATION-"
             )
             or not _aware(self.observation_boundary)
+            or not _text(self.request_identity)
             or not _aware(self.requested_at)
             or self.requested_at > self.observation_boundary
         ):
@@ -187,7 +201,7 @@ def create_discovery_operation_request(
         "observation_boundary": observation_boundary,
         "request_identity": request_identity,
     })
-    return DiscoveryOperationRequest(identity, observation_boundary, created)
+    return DiscoveryOperationRequest(identity, request_identity, observation_boundary, created)
 
 
 @dataclass(frozen=True, slots=True)
@@ -206,6 +220,8 @@ class DiscoveryOperationResult:
     run_identity: str | None
     probables_run_identity: str | None
     probables_mapping_identity: str | None
+    replay_envelope_identity: str | None
+    failure_detail_identity: str | None
     probables_invocation_count: int
     probables_provider_request_count: int
     persistence_complete: bool
@@ -242,6 +258,8 @@ class DiscoveryOperationResult:
                 self.probables_mapping_identity is not None
                 and not _text(self.probables_mapping_identity)
             )
+            or (self.replay_envelope_identity is not None and not _text(self.replay_envelope_identity))
+            or (self.failure_detail_identity is not None and not _text(self.failure_detail_identity))
             or self.probables_provider_request_count != 0
             or type(self.persistence_complete) is not bool
             or type(self.snapshot_updated) is not bool
@@ -289,6 +307,7 @@ class IntradayDiscoveryOperationService:
         factual_source_factory: FactualSourceFactory,
         probables: IntradayProbablesApplication | None = None,
         probables_v2: IntradayProbablesV2Application | None = None,
+        probables_v2_diagnostics_store: ProbablesV2DiagnosticsStore | None = None,
         refresh_state_store: RefreshOperationalStateStore | None = None,
         refresh_admission: IntradayRefreshAdmission | None = None,
         active_derivative_catalogue: InstrumentSemanticPublicationV2 | None = None,
@@ -314,6 +333,11 @@ class IntradayDiscoveryOperationService:
                 and type(probables_v2) is not IntradayProbablesV2Application
             )
             or (probables is not None and probables_v2 is not None)
+            or (
+                probables_v2_diagnostics_store is not None
+                and type(probables_v2_diagnostics_store) is not ProbablesV2DiagnosticsStore
+            )
+            or (probables_v2_diagnostics_store is not None and probables_v2 is None)
             or (
                 refresh_state_store is not None
                 and type(refresh_state_store) is not RefreshOperationalStateStore
@@ -347,6 +371,7 @@ class IntradayDiscoveryOperationService:
         self._source_factory = factual_source_factory
         self._probables = probables
         self._probables_v2 = probables_v2
+        self._probables_v2_diagnostics_store = probables_v2_diagnostics_store
         self._refresh_state_store = refresh_state_store
         self._refresh_admission = refresh_admission or IntradayRefreshAdmission()
         self._active_derivative_catalogue = active_derivative_catalogue
@@ -395,6 +420,10 @@ class IntradayDiscoveryOperationService:
         with self._lock:
             return self._last_instrument_master_read_count
 
+    @property
+    def probables_v2_diagnostics_store(self) -> ProbablesV2DiagnosticsStore | None:
+        return self._probables_v2_diagnostics_store
+
     def result_for(self, operation_identity: str) -> DiscoveryOperationResult | None:
         with self._lock:
             return self._results.get(operation_identity)
@@ -419,6 +448,7 @@ class IntradayDiscoveryOperationService:
         execution: DiscoveryRuntimeExecution | None = None
         mapping: DiscoveryProbablesMapping | DiscoveryProbablesV2Mapping | None = None
         probables_run: ProbablesRun | ProbablesRunV2 | None = None
+        replay_envelope: ProbablesV2ReplayEnvelope | None = None
         active_resolutions: ActiveDerivativeResolutionSet | None = None
         stage = DiscoveryOperationStage.CONTEXT_VERIFICATION
         try:
@@ -593,6 +623,21 @@ class IntradayDiscoveryOperationService:
                         "DISCOVERY_PROBABLES_LINKAGE_INVALID"
                     )
             elif self._probables_v2 is not None:
+                if self._probables_v2_diagnostics_store is None:
+                    raise ValueError("PROBABLES_V2_REPLAY_PERSISTENCE_UNAVAILABLE")
+                stage = DiscoveryOperationStage.PROBABLES_REPLAY_ENVELOPE_PERSISTENCE
+                replay_envelope = create_probables_v2_replay_envelope(
+                    request_identity=request.request_identity,
+                    operation_identity=request.operation_identity,
+                    execution=execution,
+                    reconciliation=self._reconciliation,
+                    created_at=self._clock(),
+                )
+                self._probables_v2_diagnostics_store.retain_envelope(replay_envelope)
+                if self._probables_v2_diagnostics_store.load_envelope(
+                    replay_envelope.envelope_identity
+                ) != replay_envelope:
+                    raise ValueError("PROBABLES_V2_REPLAY_RELOAD_MISMATCH")
                 stage = DiscoveryOperationStage.PROBABLES_EVIDENCE_MAPPING
                 mapping = map_discovery_execution_to_probables_v2(
                     execution=execution,
@@ -631,6 +676,7 @@ class IntradayDiscoveryOperationService:
                 mapping=mapping,
                 probables_run=probables_run,
                 historical_request_count=source.historical_request_count,
+                replay_envelope=replay_envelope,
             )
         except ProviderRuntimeAccessError as error:
             failure = (
@@ -658,24 +704,30 @@ class IntradayDiscoveryOperationService:
                 stage=stage,
                 failure=DiscoveryOperationFailure(error.failure.value),
             )
-        except DiscoveryProbablesMappingError:
+        except DiscoveryProbablesMappingError as error:
             return self._finish(
                 request,
                 stage=stage,
                 failure=DiscoveryOperationFailure.PROBABLES_MAPPING_FAILURE,
                 execution=execution,
+                replay_envelope=replay_envelope,
+                diagnostic_error=error,
             )
-        except ProbablesV2Error:
+        except ProbablesV2Error as error:
             return self._finish(
                 request,
                 stage=stage,
                 failure=(
                     DiscoveryOperationFailure.PROBABLES_MAPPING_FAILURE
                     if stage is DiscoveryOperationStage.PROBABLES_EVIDENCE_MAPPING
+                    else DiscoveryOperationFailure.PERSISTENCE_FAILURE
+                    if stage is DiscoveryOperationStage.PROBABLES_REPLAY_ENVELOPE_PERSISTENCE
                     else DiscoveryOperationFailure.PROBABLES_REFRESH_FAILURE
                 ),
                 execution=execution,
                 mapping=mapping,
+                replay_envelope=replay_envelope,
+                diagnostic_error=error,
             )
         except ProbablesError:
             return self._finish(
@@ -685,7 +737,7 @@ class IntradayDiscoveryOperationService:
                 execution=execution,
                 mapping=mapping,
             )
-        except Exception:
+        except Exception as error:
             failure = {
                 DiscoveryOperationStage.OBSERVATION_BOUNDARY:
                     DiscoveryOperationFailure.MARKET_SESSION_UNAVAILABLE,
@@ -697,6 +749,8 @@ class IntradayDiscoveryOperationService:
                     DiscoveryOperationFailure.PERSISTENCE_FAILURE,
                 DiscoveryOperationStage.APPLICATION_SNAPSHOT:
                     DiscoveryOperationFailure.SNAPSHOT_UPDATE_FAILURE,
+                DiscoveryOperationStage.PROBABLES_REPLAY_ENVELOPE_PERSISTENCE:
+                    DiscoveryOperationFailure.PERSISTENCE_FAILURE,
                 DiscoveryOperationStage.PROBABLES_EVIDENCE_MAPPING:
                     DiscoveryOperationFailure.PROBABLES_MAPPING_FAILURE,
                 DiscoveryOperationStage.PROBABLES_INVOCATION:
@@ -708,6 +762,8 @@ class IntradayDiscoveryOperationService:
                 failure=failure,
                 execution=execution,
                 mapping=mapping,
+                replay_envelope=replay_envelope,
+                diagnostic_error=error,
             )
         finally:
             if lease is not None:
@@ -745,9 +801,38 @@ class IntradayDiscoveryOperationService:
         mapping: DiscoveryProbablesMapping | DiscoveryProbablesV2Mapping | None = None,
         probables_run: ProbablesRun | ProbablesRunV2 | None = None,
         historical_request_count: int = 0,
+        replay_envelope: ProbablesV2ReplayEnvelope | None = None,
+        diagnostic_error: BaseException | None = None,
     ) -> DiscoveryOperationResult:
+        failure_detail: ProbablesV2FailureDetail | None = None
+        if (
+            failure is not None
+            and diagnostic_error is not None
+            and self._probables_v2 is not None
+            and self._probables_v2_diagnostics_store is not None
+        ):
+            try:
+                failure_detail = create_probables_v2_failure_detail(
+                    request_identity=request.request_identity,
+                    operation_identity=request.operation_identity,
+                    replay_envelope_identity=(
+                        None if replay_envelope is None else replay_envelope.envelope_identity
+                    ),
+                    operation_stage=stage.value,
+                    error=diagnostic_error,
+                    analysis_boundary=request.observation_boundary,
+                    created_at=self._clock(),
+                )
+                self._probables_v2_diagnostics_store.retain_failure(failure_detail)
+            except Exception:
+                failure_detail = None
         if failure is not None:
-            if failure in {
+            if self._probables_v2 is not None and failure_detail is not None:
+                self._probables_v2.record_failure(
+                    failure.value,
+                    failure_detail=failure_detail,
+                )
+            elif failure in {
                 DiscoveryOperationFailure.PROBABLES_MAPPING_FAILURE,
                 DiscoveryOperationFailure.PROBABLES_REFRESH_FAILURE,
             }:
@@ -825,6 +910,12 @@ class IntradayDiscoveryOperationService:
             probables_mapping_identity=(
                 None if mapping is None else mapping.mapping_identity
             ),
+            replay_envelope_identity=(
+                None if replay_envelope is None else replay_envelope.envelope_identity
+            ),
+            failure_detail_identity=(
+                None if failure_detail is None else failure_detail.failure_identity
+            ),
             probables_invocation_count=0 if probables_run is None else 1,
             probables_provider_request_count=0,
             persistence_complete=execution is not None,
@@ -858,6 +949,8 @@ class IntradayDiscoveryOperationService:
             run_identity=None,
             probables_run_identity=None,
             probables_mapping_identity=None,
+            replay_envelope_identity=None,
+            failure_detail_identity=None,
             probables_invocation_count=0,
             probables_provider_request_count=0,
             persistence_complete=False,

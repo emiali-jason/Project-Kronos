@@ -20,7 +20,8 @@ from kronos.intraday.probables_v2 import (
 REFRESH_V2_REQUEST_IDENTITY = "KRONOS-INTRADAY-PROBABLES-V2-REFRESH-REQUEST"
 REFRESH_V2_REQUEST_VERSION = "1.0.0"
 REFRESH_V2_PROVENANCE_IDENTITY = "KRONOS-INTRADAY-PROBABLES-V2-REQUEST-PROVENANCE"
-REFRESH_V2_PROVENANCE_VERSION = "1.0.0"
+REFRESH_V2_PROVENANCE_VERSION = "1.1.0"
+REFRESH_V2_LEGACY_PROVENANCE_VERSION = "1.0.0"
 REFRESH_V2_ROUTE = "/control/intraday-discovery/v2"
 REFRESH_V2_OPERATION_TYPE = "INTRADAY_PROBABLES_V2_REFRESH"
 
@@ -88,6 +89,8 @@ class RefreshV2ProvenanceRecord:
     resulting_refresh_identity: str | None
     resulting_discovery_identity: str | None
     resulting_probables_identity: str | None
+    replay_envelope_identity: str | None
+    failure_detail_identity: str | None
     outcome: RefreshV2Outcome
     failure: str | None
     source_class: RefreshV2SourceClass
@@ -105,6 +108,8 @@ class RefreshV2ProvenanceRecord:
             self.resulting_refresh_identity,
             self.resulting_discovery_identity,
             self.resulting_probables_identity,
+            self.replay_envelope_identity,
+            self.failure_detail_identity,
         )
         if (
             not self.provenance_identity.startswith("INTRADAY-PROBABLES-V2-REQUEST-PROVENANCE-")
@@ -130,7 +135,10 @@ class RefreshV2ProvenanceRecord:
                 self.host_validation,
             ))
             or self.contract_identity != REFRESH_V2_PROVENANCE_IDENTITY
-            or self.contract_version != REFRESH_V2_PROVENANCE_VERSION
+            or self.contract_version not in {
+                REFRESH_V2_LEGACY_PROVENANCE_VERSION,
+                REFRESH_V2_PROVENANCE_VERSION,
+            }
             or self.provenance_identity
             != _identity("INTRADAY-PROBABLES-V2-REQUEST-PROVENANCE-", core)
             or self.integrity_identity
@@ -168,6 +176,8 @@ def create_refresh_v2_request(
 
 def create_refresh_v2_provenance(**values: object) -> RefreshV2ProvenanceRecord:
     core = dict(values)
+    core.setdefault("replay_envelope_identity", None)
+    core.setdefault("failure_detail_identity", None)
     core.update({
         "contract_identity": REFRESH_V2_PROVENANCE_IDENTITY,
         "contract_version": REFRESH_V2_PROVENANCE_VERSION,
@@ -193,6 +203,9 @@ def _provenance_core(value: RefreshV2ProvenanceRecord) -> dict[str, object]:
     result = asdict(value)
     result.pop("provenance_identity")
     result.pop("integrity_identity")
+    if value.contract_version == REFRESH_V2_LEGACY_PROVENANCE_VERSION:
+        result.pop("replay_envelope_identity")
+        result.pop("failure_detail_identity")
     return result
 
 
@@ -234,6 +247,7 @@ def _component(value: object) -> bool:
 __all__ = [
     "REFRESH_V2_OPERATION_TYPE",
     "REFRESH_V2_PROVENANCE_IDENTITY",
+    "REFRESH_V2_LEGACY_PROVENANCE_VERSION",
     "REFRESH_V2_PROVENANCE_VERSION",
     "REFRESH_V2_REQUEST_IDENTITY",
     "REFRESH_V2_REQUEST_VERSION",

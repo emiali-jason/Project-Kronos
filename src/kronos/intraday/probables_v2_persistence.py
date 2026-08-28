@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, fields, is_dataclass
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from enum import StrEnum
 from hashlib import sha256
@@ -12,6 +12,7 @@ from pathlib import Path
 from threading import RLock
 from typing import Mapping
 from uuid import uuid4
+from zoneinfo import ZoneInfo
 
 from kronos.intraday.completed_evidence import (
     EvidenceSessionRole,
@@ -51,6 +52,38 @@ from kronos.intraday.probables_v2 import (
     SemanticQualificationFactV2,
 )
 from kronos.intraday.contracts import IntradayTimeframe
+from kronos.intraday.discovery import (
+    CandidateState,
+    DiscoveryMemberResult,
+    DiscoveryReason,
+    DiscoveryRunAccounting,
+    ExecutionEligibility,
+    FactFamily,
+    FactRequirement,
+    FactualEvaluability,
+    MachineFactEvidence,
+    NativeDiscoveryMachineFactBundle,
+    NativeDiscoveryRun,
+)
+from kronos.intraday.historical_qualification import HistoricalPreviousSessionFacts
+from kronos.intraday.probables_v2_diagnostics import (
+    ProbablesV2ExceptionCategory,
+    ProbablesV2FailureDetail,
+    ProbablesV2ReplayEnvelope,
+)
+from kronos.intraday.probables_v2_refresh import DiscoveryProbablesV2Facts
+from kronos.intraday.qualification import NarrowCprFact
+from kronos.intraday.reconciliation import (
+    Availability,
+    AvailabilityDimensions,
+    ReconciliationMember,
+    ReconciliationPublication,
+    ReconciliationReason,
+    ReconciliationState,
+)
+from kronos.intraday.universe import IntradayMarketFamily
+from kronos.instrument.semantic_v2 import CanonicalSemanticKind
+from kronos.market.schedule import MarketDaySchedule, MarketWindow, TradingDayStatus
 
 
 DEFAULT_PROBABLES_V2_ROOT = Path(__file__).resolve().parents[3] / "data" / "intraday"
@@ -336,6 +369,21 @@ _DATACLASSES = {
         ProbablesPopulationDiagnosticsV2,
         ProbablesRunV2,
         CurrentProbablesV2Pointer,
+        MachineFactEvidence,
+        NativeDiscoveryMachineFactBundle,
+        DiscoveryMemberResult,
+        DiscoveryRunAccounting,
+        NativeDiscoveryRun,
+        MarketWindow,
+        MarketDaySchedule,
+        NarrowCprFact,
+        HistoricalPreviousSessionFacts,
+        DiscoveryProbablesV2Facts,
+        AvailabilityDimensions,
+        ReconciliationMember,
+        ReconciliationPublication,
+        ProbablesV2ReplayEnvelope,
+        ProbablesV2FailureDetail,
     )
 }
 
@@ -357,6 +405,19 @@ _ENUMS = {
         FactualSourceKind,
         PopulationBucket,
         ProbableState,
+        FactFamily,
+        FactRequirement,
+        FactualEvaluability,
+        CandidateState,
+        DiscoveryReason,
+        ExecutionEligibility,
+        TradingDayStatus,
+        Availability,
+        ReconciliationState,
+        ReconciliationReason,
+        IntradayMarketFamily,
+        CanonicalSemanticKind,
+        ProbablesV2ExceptionCategory,
     )
 }
 
@@ -411,6 +472,8 @@ def _artifact_identity(value: object) -> str:
         "result_identity",
         "diagnostics_identity",
         "run_identity",
+        "envelope_identity",
+        "failure_identity",
     ):
         identity = getattr(value, name, None)
         if _component(identity):
@@ -429,7 +492,14 @@ def _to_wire(value: object) -> object:
     if isinstance(value, StrEnum):
         return {"$enum": type(value).__name__, "value": value.value}
     if isinstance(value, datetime):
-        return {"$datetime": value.isoformat()}
+        zone = getattr(value.tzinfo, "key", None)
+        return (
+            {"$datetime": value.isoformat()}
+            if zone is None
+            else {"$datetime": value.isoformat(), "$zone": zone}
+        )
+    if type(value) is date:
+        return {"$date": value.isoformat()}
     if isinstance(value, Decimal):
         return {"$decimal": str(value)}
     if isinstance(value, tuple):
@@ -450,6 +520,12 @@ def _from_wire(value: object) -> object:
         raise ProbablesV2Error("PROBABLES_V2_ARTIFACT_VALUE_INVALID")
     if set(value) == {"$datetime"}:
         return datetime.fromisoformat(str(value["$datetime"]))
+    if set(value) == {"$datetime", "$zone"}:
+        return datetime.fromisoformat(str(value["$datetime"])).astimezone(
+            ZoneInfo(str(value["$zone"]))
+        )
+    if set(value) == {"$date"}:
+        return date.fromisoformat(str(value["$date"]))
     if set(value) == {"$decimal"}:
         return Decimal(str(value["$decimal"]))
     if set(value) == {"$tuple"} and isinstance(value["$tuple"], list):
@@ -524,6 +600,8 @@ def _json_normalize(value: object) -> object:
     if isinstance(value, StrEnum):
         return value.value
     if isinstance(value, datetime):
+        return value.isoformat()
+    if type(value) is date:
         return value.isoformat()
     if isinstance(value, Decimal):
         return str(value)

@@ -17,6 +17,7 @@ from kronos.intraday.probables_v2 import (
     evaluate_probables_v2_run,
 )
 from kronos.intraday.probables_v2_persistence import ProbablesV2Store
+from kronos.intraday.probables_v2_diagnostics import ProbablesV2FailureDetail
 
 
 PROBABLES_V2_APPLICATION_IDENTITY = "KRONOS-INTRADAY-PROBABLES-APPLICATION-V2"
@@ -26,6 +27,7 @@ PROBABLES_V2_APPLICATION_VERSION = "2.0.0"
 @dataclass(frozen=True, slots=True)
 class IntradayProbablesV2Snapshot:
     current_failure: str | None
+    failure_detail: ProbablesV2FailureDetail | None
     last_successful_run_identity: str | None
     last_successful_discovery_run_identity: str | None
     last_successful_analysis: datetime | None
@@ -38,6 +40,8 @@ class IntradayProbablesV2Snapshot:
         absent = self.run is None
         if (
             self.current_failure is not None and not _text(self.current_failure)
+            or (self.failure_detail is not None and type(self.failure_detail) is not ProbablesV2FailureDetail)
+            or (self.failure_detail is not None and self.current_failure is None)
             or absent != (self.last_successful_run_identity is None)
             or absent != (self.last_successful_discovery_run_identity is None)
             or absent != (self.last_successful_analysis is None)
@@ -69,6 +73,7 @@ class IntradayProbablesV2Application:
         self._methodology = create_probables_v2_methodology()
         self._run: ProbablesRunV2 | None = None
         self._current_failure: str | None = None
+        self._failure_detail: ProbablesV2FailureDetail | None = None
         self._lock = RLock()
         if restore_current:
             self._run = self._store.load_current_run()
@@ -118,18 +123,28 @@ class IntradayProbablesV2Application:
                 raise RuntimeError("PROBABLES_V2_REFRESH_FAILED") from error
             self._run = run
             self._current_failure = None
+            self._failure_detail = None
             return run
 
-    def record_failure(self, failure: str) -> None:
+    def record_failure(
+        self,
+        failure: str,
+        *,
+        failure_detail: ProbablesV2FailureDetail | None = None,
+    ) -> None:
         if not _text(failure) or not failure.replace("_", "").isalnum():
+            raise ValueError("INTRADAY_PROBABLES_V2_FAILURE_INVALID")
+        if failure_detail is not None and type(failure_detail) is not ProbablesV2FailureDetail:
             raise ValueError("INTRADAY_PROBABLES_V2_FAILURE_INVALID")
         with self._lock:
             self._current_failure = failure
+            self._failure_detail = failure_detail
 
     def snapshot(self) -> IntradayProbablesV2Snapshot:
         with self._lock:
             return IntradayProbablesV2Snapshot(
                 current_failure=self._current_failure,
+                failure_detail=self._failure_detail,
                 last_successful_run_identity=(
                     None if self._run is None else self._run.run_identity
                 ),
