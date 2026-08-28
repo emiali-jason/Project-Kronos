@@ -10,6 +10,10 @@ from kronos.application.intraday_probables import (
     IntradayProbablesApplication,
     IntradayProbablesSnapshot,
 )
+from kronos.application.intraday_probables_v2 import (
+    IntradayProbablesV2Application,
+    IntradayProbablesV2Snapshot,
+)
 from kronos.intraday.discovery import (
     CandidateState,
     DiscoveryError,
@@ -126,6 +130,7 @@ class IntradayDiscoverySnapshot:
     reconciliation_identity: str
     reconciliation_version: str
     probables: IntradayProbablesSnapshot | None = None
+    probables_v2: IntradayProbablesV2Snapshot | None = None
     application_identity: str = DISCOVERY_APPLICATION_IDENTITY
     application_version: str = DISCOVERY_APPLICATION_VERSION
 
@@ -172,6 +177,10 @@ class IntradayDiscoverySnapshot:
                 self.probables is not None
                 and type(self.probables) is not IntradayProbablesSnapshot
             )
+            or (
+                self.probables_v2 is not None
+                and type(self.probables_v2) is not IntradayProbablesV2Snapshot
+            )
             or self.application_identity != DISCOVERY_APPLICATION_IDENTITY
             or self.application_version != DISCOVERY_APPLICATION_VERSION
         ):
@@ -189,6 +198,7 @@ class IntradayDiscoveryApplication:
         store: NativeDiscoveryStore,
         service: IntradayNativeDiscoveryService | None = None,
         probables: IntradayProbablesApplication | None = None,
+        probables_v2: IntradayProbablesV2Application | None = None,
         active_derivative_binding_store: ActiveDerivativeBindingStore | None = None,
         last_successful_run_identity: str | None = None,
     ) -> None:
@@ -203,6 +213,10 @@ class IntradayDiscoveryApplication:
             or (
                 probables is not None
                 and type(probables) is not IntradayProbablesApplication
+            )
+            or (
+                probables_v2 is not None
+                and type(probables_v2) is not IntradayProbablesV2Application
             )
             or (
                 active_derivative_binding_store is not None
@@ -222,6 +236,7 @@ class IntradayDiscoveryApplication:
         self._store = store
         self._service = service
         self._probables = probables
+        self._probables_v2 = probables_v2
         self._active_derivative_binding_store = active_derivative_binding_store
         self._run: NativeDiscoveryRun | None = None
         self._bundles: dict[str, NativeDiscoveryMachineFactBundle] = {}
@@ -315,6 +330,9 @@ class IntradayDiscoveryApplication:
             reconciliation_identity=self._reconciliation.publication_identity,
             reconciliation_version=self._reconciliation.publication_version,
             probables=None if self._probables is None else self._probables.snapshot(),
+            probables_v2=(
+                None if self._probables_v2 is None else self._probables_v2.snapshot()
+            ),
         )
 
     def _accept_execution(self, execution: DiscoveryRuntimeExecution) -> None:

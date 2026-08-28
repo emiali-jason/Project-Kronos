@@ -15,6 +15,7 @@ from kronos.application.intraday_discovery_operation import (
     IntradayDiscoveryOperationService,
 )
 from kronos.application.intraday_probables import IntradayProbablesApplication
+from kronos.application.intraday_probables_v2 import IntradayProbablesV2Application
 from kronos.application.intraday_historical_operation import (
     IntradayHistoricalQualificationHarness,
     IntradayHistoricalQualificationOperationService,
@@ -26,6 +27,7 @@ from kronos.intraday.historical_qualification_persistence import (
 )
 from kronos.intraday.market_context import CurrentMarketCalendarScheduleSource
 from kronos.intraday.probables_persistence import ProbablesStore
+from kronos.intraday.probables_v2_persistence import ProbablesV2Store
 from kronos.intraday.probables_refresh_persistence import (
     RefreshOperationalStateStore,
 )
@@ -101,6 +103,7 @@ class IntradayRuntimeComposition:
     historical_operation: IntradayHistoricalQualificationOperationService
     historical_invocation: IntradayHistoricalQualificationHarness
     probables_application: IntradayProbablesApplication
+    probables_v2_application: IntradayProbablesV2Application
     refresh_state_store: RefreshOperationalStateStore
     reliance_bootstrap: RelianceIntradayBootstrap
 
@@ -159,12 +162,16 @@ def create_intraday_runtime(
         store=ProbablesStore(Path(evidence_root)),
         last_successful_run_identity=restored_probables_identity,
     )
+    probables_v2 = IntradayProbablesV2Application(
+        store=ProbablesV2Store(Path(evidence_root)),
+    )
     discovery = _create_discovery_application(
         store=store,
         last_successful_run_identity=restored_discovery_identity,
         universe=universe,
         reconciliation=reconciliation,
         probables=probables,
+        probables_v2=probables_v2,
         active_derivative_binding_store=active_binding_store,
     )
     operation = IntradayDiscoveryOperationService(
@@ -223,6 +230,7 @@ def create_intraday_runtime(
             historical_operation
         ),
         probables_application=probables,
+        probables_v2_application=probables_v2,
         refresh_state_store=refresh_state_store,
         reliance_bootstrap=bootstrap,
     )
@@ -241,6 +249,7 @@ def _create_discovery_application(
     universe: IntradayUniversePublication | None = None,
     reconciliation: ReconciliationPublication | None = None,
     probables: IntradayProbablesApplication | None = None,
+    probables_v2: IntradayProbablesV2Application | None = None,
     active_derivative_binding_store: ActiveDerivativeBindingStore | None = None,
 ) -> IntradayDiscoveryApplication:
     selected_universe = universe or load_intraday_universe_publication()
@@ -253,6 +262,7 @@ def _create_discovery_application(
         reconciliation=selected_reconciliation,
         store=store,
         probables=probables,
+        probables_v2=probables_v2,
         active_derivative_binding_store=active_derivative_binding_store,
         last_successful_run_identity=last_successful_run_identity,
     )

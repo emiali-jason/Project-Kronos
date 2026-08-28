@@ -30,6 +30,7 @@ from kronos.browser.views import render_browser_page
 from kronos.intraday.contracts import CandleCompletion, IntradayTimeframe
 from kronos.intraday.discovery import FactFamily
 from kronos.intraday.probables import ProbablesRun, ProbableReason, ProbableState
+from kronos.intraday.probables_v2 import ProbablesRunV2
 from kronos.intraday.review_answer import AnswerImportState
 from kronos.intraday.telemetry import TelemetryType
 
@@ -562,6 +563,24 @@ def _render_discovery_triage(
             + " · last successful Probables remain preserved.</div>"
         )
     probable_run = None if probable_snapshot is None else probable_snapshot.run
+    probable_v2_snapshot = snapshot.probables_v2
+    probable_v2_run = (
+        None if probable_v2_snapshot is None else probable_v2_snapshot.run
+    )
+    if probable_v2_snapshot is not None and probable_v2_snapshot.current_failure is not None:
+        failure += (
+            '<div class="intraday-failure"><strong>CURRENT PROBABLES V2 FAILURE</strong> · '
+            + escape(_plain(probable_v2_snapshot.current_failure))
+            + " · exact last successful V2 evidence remains preserved.</div>"
+        )
+    if probable_v2_run is not None:
+        return _render_probables_v2_triage(
+            snapshot,
+            probable_v2_run,
+            refresh_enabled=refresh_enabled,
+            last=last,
+            failure=failure,
+        )
     if probable_snapshot is None:
         metrics = (
             ("Universe", snapshot.universe_count),
@@ -695,6 +714,89 @@ def _probable_card(item: IntradayDiscoveryMemberSnapshot) -> str:
         '<strong>' + escape(_plain(result.state.value)) + '</strong></span>'
         '<div class="native-opportunity-actions"><a class="button" href="'
         + detail + '">DETAIL →</a></div></div></article>'
+    )
+
+
+def _render_probables_v2_triage(
+    snapshot: IntradayDiscoverySnapshot,
+    run: ProbablesRunV2,
+    *,
+    refresh_enabled: bool,
+    last: str,
+    failure: str,
+) -> str:
+    """Project persisted V2 facts only; no analytical recomputation occurs."""
+
+    diagnostics = run.diagnostics
+    metrics = (
+        ("Universe", diagnostics.starting_population),
+        ("Long Probables", diagnostics.long_probables),
+        ("Short Probables", diagnostics.short_probables),
+        ("Not Admitted", diagnostics.not_admitted_count),
+        ("Unavailable", diagnostics.unavailable_count),
+        ("Population", diagnostics.population_bucket.value),
+    )
+    metric_html = '<div class="status-strip intraday-summary">' + "".join(
+        '<div class="status-item' + (' status-top' if label == 'Population' else '')
+        + '"><span>' + escape(label) + '</span><strong>' + escape(str(value))
+        + "</strong></div>"
+        for label, value in metrics
+    ) + "</div>"
+    labels = {item.canonical_identity: item.sponsor_label for item in snapshot.members}
+    cards = "".join(
+        _probable_v2_card(item, labels.get(item.canonical_subject_identity, item.canonical_subject_identity))
+        for item in sorted(run.results, key=lambda value: labels.get(value.canonical_subject_identity, value.canonical_subject_identity))
+    )
+    phase_counts = " · ".join(
+        f"{phase.value} {count}" for phase, count in diagnostics.phase_counts if count
+    ) or "NO EVALUABLE PHASE"
+    return (
+        _intraday_tabs(refresh_enabled)
+        + '<div class="analysis-batch"><span>Market analysis</span>'
+        '<div class="analysis-run-times"><strong>' + escape(last) + '</strong></div></div>'
+        + failure
+        + metric_html
+        + '<div class="intraday-methodology"><strong>'
+        + escape(run.methodology.methodology_identity)
+        + ' · ' + escape(run.methodology.methodology_version)
+        + '</strong> · ' + escape(_ist_time(run.analysis_boundary))
+        + ' · ' + escape(phase_counts)
+        + '. Phase-aware admission for deeper review only; no score, rank, confidence, trading, Risk or broker authority.</div>'
+        + '<section class="market-panel"><div class="panel-heading"><h2>PHASE-AWARE PROBABLES V2</h2><span>'
+        + str(diagnostics.total_probables) + ' current Probables</span></div>'
+        + cards
+        + '</section>'
+    )
+
+
+def _probable_v2_card(result, sponsor_label: str) -> str:  # type: ignore[no-untyped-def]
+    direction = "UNAVAILABLE" if result.direction is None else result.direction.value
+    provenance = {
+        "OPENING": "PRIOR-SESSION CONTEXT",
+        "STRUCTURE": "PRIOR-SESSION CONTEXT",
+        "FIRST_CURRENT_SESSION_1H": "FIRST-CURRENT",
+        "CURRENT_SESSION_ESTABLISHED": "ESTABLISHED-CURRENT",
+    }.get("" if result.phase is None else result.phase.value, "UNAVAILABLE")
+    nifty = (
+        "UNAVAILABLE"
+        if result.nifty_relationship is None
+        else result.nifty_relationship.value
+    )
+    reason = " · ".join(_plain(item.value) for item in result.reasons)
+    return (
+        '<article class="opportunity native-opportunity intraday-probable"><div class="opp-head">'
+        '<div class="opp-identity"><h3>' + escape(sponsor_label) + '</h3>'
+        '<span class="setup-family">' + escape(result.canonical_subject_identity) + '</span></div>'
+        '<span class="direction">' + escape(direction) + '</span></div>'
+        '<div class="summary-reason">'
+        + _card_fact("Methodology", result.methodology_version)
+        + _card_fact("Phase", "UNAVAILABLE" if result.phase is None else result.phase.value)
+        + _card_fact("Boundary", _ist_time(result.analysis_boundary))
+        + _card_fact("1H provenance", provenance)
+        + _card_fact("NIFTY", nifty)
+        + '</div><div class="summary-footer"><span class="summary-rr">Result <strong>'
+        + escape(_plain(result.state.value))
+        + '</strong></span><span>' + escape(reason) + '</span></div></article>'
     )
 
 
