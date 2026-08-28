@@ -591,7 +591,6 @@ class ProbablesUnavailableMemberV2:
             or self.reason not in {
                 ProbableReasonV2.MANDATORY_EVIDENCE_UNAVAILABLE,
                 ProbableReasonV2.SOURCE_DISCOVERY_UNAVAILABLE,
-                ProbableReasonV2.MCX_V2_EMPIRICAL_COMMISSIONING_REQUIRED,
             }
             or not _texts(self.provenance)
         ):
@@ -634,6 +633,22 @@ class ProbableMemberResultV2:
         values.pop("result_identity")
         values.pop("integrity_identity")
         admitted = self.state in {ProbableState.LONG_PROBABLE, ProbableState.SHORT_PROBABLE}
+        mapped_unavailable = (
+            self.state is ProbableState.UNAVAILABLE
+            and self.source_mapping_identity is not None
+        )
+        pre_mapping_unavailable = (
+            self.state is ProbableState.UNAVAILABLE
+            and self.source_mapping_identity is None
+        )
+        mapped_unavailable_reasons = {
+            ProbableReasonV2.NIFTY_CONTEXT_UNAVAILABLE,
+            ProbableReasonV2.MCX_V2_EMPIRICAL_COMMISSIONING_REQUIRED,
+        }
+        pre_mapping_unavailable_reasons = {
+            ProbableReasonV2.MANDATORY_EVIDENCE_UNAVAILABLE,
+            ProbableReasonV2.SOURCE_DISCOVERY_UNAVAILABLE,
+        }
         if (
             not self.result_identity.startswith("INTRADAY-PROBABLE-V2-RESULT-")
             or not _texts((
@@ -650,13 +665,49 @@ class ProbableMemberResultV2:
             or self.direction is not None and type(self.direction) is not SemanticDirection
             or self.nifty_relationship is not None
             and type(self.nifty_relationship) is not NiftyRelationship
+            or self.nifty_applicability is not None
+            and type(self.nifty_applicability) is not NiftyApplicability
             or (
                 self.state is not ProbableState.UNAVAILABLE
                 and not _text(self.source_mapping_identity)
             )
             or (
-                self.state is ProbableState.UNAVAILABLE
-                and self.source_mapping_identity is not None
+                mapped_unavailable
+                and (
+                    not _text(self.source_mapping_identity)
+                    or len(self.reasons) != 1
+                    or self.reasons[0] not in mapped_unavailable_reasons
+                    or any(item is None for item in (
+                        self.phase,
+                        self.completed_evidence_selection_identity,
+                        self.semantic_evidence_identity,
+                    ))
+                )
+            )
+            or (
+                pre_mapping_unavailable
+                and (
+                    len(self.reasons) != 1
+                    or self.reasons[0] not in pre_mapping_unavailable_reasons
+                    or any(item is not None for item in (
+                        self.phase,
+                        self.completed_evidence_selection_identity,
+                        self.semantic_evidence_identity,
+                        self.opening_semantic_evidence_identity,
+                        self.nifty_relative_evidence_identity,
+                        self.nifty_applicability,
+                        self.nifty_relationship,
+                    ))
+                )
+            )
+            or (
+                self.reasons
+                == (ProbableReasonV2.MCX_V2_EMPIRICAL_COMMISSIONING_REQUIRED,)
+                and (
+                    not mapped_unavailable
+                    or self.nifty_applicability is not NiftyApplicability.NOT_APPLICABLE
+                    or self.nifty_relationship is not NiftyRelationship.NOT_APPLICABLE
+                )
             )
             or not self.reasons
             or any(type(item) is not ProbableReasonV2 for item in self.reasons)
@@ -848,13 +899,19 @@ def evaluate_probables_v2_run(
         or any(
             type(item) is not ProbablesUnavailableMemberV2
             or item.analysis_boundary != analysis_boundary
+            or item.source_identity != source_discovery_run_identity
             for item in unavailable
         )
     ):
         raise ProbablesV2Error("PROBABLES_V2_POPULATION_INVALID")
+    mapped_results = tuple(_evaluate_member(item) for item in evidence)
+    if any(
+        not _mapped_result_lineage_valid(result, source)
+        for result, source in zip(mapped_results, evidence, strict=True)
+    ):
+        raise ProbablesV2Error("PROBABLES_V2_RESULT_MAPPING_INVALID")
     results = tuple(sorted(
-        (*(_evaluate_member(item) for item in evidence),
-         *(_unavailable_result(item) for item in unavailable)),
+        (*mapped_results, *(_unavailable_result(item) for item in unavailable)),
         key=lambda item: item.universe_member_identity,
     ))
     diagnostics = _diagnostics(results)
@@ -963,12 +1020,54 @@ def _evaluate_member(value: DiscoveryProbablesEvidenceV2) -> ProbableMemberResul
     )
 
 
+def _mapped_result_lineage_valid(
+    result: ProbableMemberResultV2,
+    source: DiscoveryProbablesEvidenceV2,
+) -> bool:
+    mapping_values = asdict(source)
+    mapping_values.pop("mapping_identity")
+    mapping_values.pop("integrity_identity")
+    return (
+        source.mapping_identity
+        == _identity("INTRADAY-DISCOVERY-PROBABLES-V2-MAPPING-", mapping_values)
+        and source.integrity_identity
+        == _identity(
+            "INTEGRITY-INTRADAY-DISCOVERY-PROBABLES-V2-MAPPING-",
+            mapping_values,
+        )
+        and result.source_mapping_identity == source.mapping_identity
+        and result.universe_member_identity == source.universe_member_identity
+        and result.canonical_subject_identity == source.canonical_subject_identity
+        and result.source_discovery_run_identity
+        == source.source_discovery_run_identity
+        and result.source_discovery_member_identity
+        == source.source_discovery_member_identity
+        and result.market_session_identity == source.market_session_identity
+        and result.analysis_boundary == source.analysis_boundary
+        and result.phase is source.phase
+        and result.completed_evidence_selection_identity
+        == source.completed_evidence.selection_identity
+        and result.semantic_evidence_identity
+        == source.semantic_evidence.evidence_identity
+        and result.methodology_identity == source.methodology_identity
+        and result.methodology_version == source.methodology_version
+        and result.methodology_publication_identity
+        == source.methodology_publication_identity
+        and result.methodology_checksum == source.methodology_checksum
+    )
+
+
 def _result(
     source: DiscoveryProbablesEvidenceV2,
     state: ProbableState,
     direction: SemanticDirection | None,
     reasons: tuple[ProbableReasonV2, ...],
 ) -> ProbableMemberResultV2:
+    mcx_mapped_unavailable = (
+        state is ProbableState.UNAVAILABLE
+        and reasons
+        == (ProbableReasonV2.MCX_V2_EMPIRICAL_COMMISSIONING_REQUIRED,)
+    )
     values = {
         "universe_member_identity": source.universe_member_identity,
         "canonical_subject_identity": source.canonical_subject_identity,
@@ -987,10 +1086,18 @@ def _result(
             None if source.nifty_relative is None else source.nifty_relative.evidence_identity
         ),
         "nifty_applicability": (
-            None if source.nifty_relative is None else source.nifty_relative.fact.applicability
+            NiftyApplicability.NOT_APPLICABLE
+            if mcx_mapped_unavailable
+            else None
+            if source.nifty_relative is None
+            else source.nifty_relative.fact.applicability
         ),
         "nifty_relationship": (
-            None if source.nifty_relative is None else source.nifty_relative.relationship
+            NiftyRelationship.NOT_APPLICABLE
+            if mcx_mapped_unavailable
+            else None
+            if source.nifty_relative is None
+            else source.nifty_relative.relationship
         ),
         "source_mapping_identity": source.mapping_identity,
         "source_discovery_run_identity": source.source_discovery_run_identity,

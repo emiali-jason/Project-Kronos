@@ -228,6 +228,26 @@ def test_probables_invocation_failure_is_sanitized_and_browser_safe(
     assert restored.failure_detail == detail
 
 
+def test_known_probables_result_contract_failure_is_schema_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _, composition, control, _, _ = _control(tmp_path)
+
+    def fail_invocation(self, **_values):  # type: ignore[no-untyped-def]
+        raise ProbablesV2Error("PROBABLES_V2_RESULT_INVALID")
+
+    monkeypatch.setattr(IntradayProbablesV2Application, "refresh_analysis", fail_invocation)
+    result = control.execute_document(_payload("FAIL-KNOWN-RESULT-CONTRACT"))
+    detail = composition.probables_v2_diagnostics_store.load_failure(
+        result["failure_detail_identity"]
+    )
+
+    assert result["failure"] == "PROBABLES_REFRESH_FAILURE"
+    assert detail.exception_category is ProbablesV2ExceptionCategory.SCHEMA_ERROR
+    assert detail.typed_reason_code == "PROBABLES_V2_SCHEMA_ERROR"
+    assert detail.sanitized_detail == "PROBABLES_V2_RESULT_INVALID"
+
+
 def test_replay_persistence_failure_stops_before_mapping_and_invocation(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:

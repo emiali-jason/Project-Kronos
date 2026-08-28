@@ -40,6 +40,8 @@ from kronos.intraday.probables_v2 import (
     PROBABLES_V2_METHODOLOGY_IDENTITY,
     PROBABLES_V2_PUBLICATION_IDENTITY,
     ProbableReasonV2,
+    ProbablesUnavailableMemberV2,
+    ProbablesV2Error,
     build_semantic_qualification_evidence_v2,
     create_discovery_probables_evidence_v2,
     create_probables_v2_methodology,
@@ -62,11 +64,11 @@ SOURCE_RUN = "INTRADAY-DISCOVERY-RUN-V2-FIXTURE"
 PROVENANCE = ("KRONOS-WO-06E-IMPLEMENT-TEST",)
 
 
-def _schedule(day: date) -> MarketDaySchedule:
+def _schedule(day: date, exchange: str = "NSE") -> MarketDaySchedule:
     return MarketDaySchedule(
-        exchange="NSE",
+        exchange=exchange,
         trading_date=day,
-        session_id=f"NSE:{day.isoformat()}:NONSTANDARD",
+        session_id=f"{exchange}:{day.isoformat()}:NONSTANDARD",
         timezone="Asia/Kolkata",
         status=TradingDayStatus.TRADING,
         windows=(MarketWindow(
@@ -99,7 +101,7 @@ def _candle(
     return create_governed_historical_candle_payload(
         canonical_subject_identity=subject,
         exchange=schedule.exchange,
-        market_identity="NSE",
+        market_identity=schedule.exchange,
         market_session_identity=schedule.session_id,
         timeframe=timeframe,
         candle_start=start,
@@ -137,12 +139,13 @@ def _narrow(subject: str, boundary: datetime, value: bool = True):
 def _opening_inputs(
     subject: str = "NSE-EQ-RELIANCE",
     *,
+    subject_exchange: str = "NSE",
     nifty_close: str = "101",
     prior_supporting: bool = True,
     narrow_qualified: bool = True,
 ):
-    current = _schedule(CURRENT_DAY)
-    previous = _schedule(PREVIOUS_DAY)
+    current = _schedule(CURRENT_DAY, subject_exchange)
+    previous = _schedule(PREVIOUS_DAY, subject_exchange)
     boundary = datetime.combine(CURRENT_DAY, time(10, 15), IST)
     prior_daily = (_candle(
         subject, previous, IntradayTimeframe.DAILY,
@@ -244,7 +247,7 @@ def _run(mapping):
         universe_version="1.0.0",
         reconciliation_identity="KRONOS-INTRADAY-RECONCILIATION-V1",
         reconciliation_version="1.0.0",
-        market_session_identity=_schedule(CURRENT_DAY).session_id,
+        market_session_identity=mapping.market_session_identity,
         analysis_boundary=mapping.analysis_boundary,
         member_evidence=(mapping,),
         unavailable_members=(),
@@ -469,6 +472,92 @@ def test_nifty_not_applicable_unavailable_and_progression_contracts() -> None:
     assert classify_relative_progression((Decimal("1"), Decimal("2"), Decimal("3"))).value == "IMPROVING"
     assert classify_relative_progression((Decimal("3"), Decimal("2"), Decimal("1"))).value == "DETERIORATING"
     assert classify_relative_progression((Decimal("1"), Decimal("1"), Decimal("1"))).value == "FLAT"
+
+
+def test_mcx_mapped_unavailable_retains_exact_lineage_and_nifty_not_applicable(
+    tmp_path: Path,
+) -> None:
+    *_, mapping = _opening_inputs(
+        subject="MCX-SUBJECT-GOLDM",
+        subject_exchange="MCX",
+    )
+
+    run = _run(mapping)
+    result = run.results[0]
+
+    assert result.state is ProbableState.UNAVAILABLE
+    assert result.reasons == (
+        ProbableReasonV2.MCX_V2_EMPIRICAL_COMMISSIONING_REQUIRED,
+    )
+    assert result.source_mapping_identity == mapping.mapping_identity
+    assert result.nifty_applicability is NiftyApplicability.NOT_APPLICABLE
+    assert result.nifty_relationship is NiftyRelationship.NOT_APPLICABLE
+    assert result.direction is None
+
+    store = ProbablesV2Store(tmp_path.resolve())
+    store.retain_complete(run=run, mappings=(mapping,))
+    assert store.load_current_run() == run
+    assert store.load_mapping(mapping.mapping_identity) == mapping
+
+
+def test_pre_mapping_unavailable_retains_no_mapping_lineage(tmp_path: Path) -> None:
+    boundary = datetime.combine(CURRENT_DAY, time(10, 15), IST)
+    unavailable = ProbablesUnavailableMemberV2(
+        universe_member_identity="INTRADAY-UNIVERSE-MEMBER:NSE-EQ-UNAVAILABLE",
+        canonical_subject_identity="NSE-EQ-UNAVAILABLE",
+        market_session_identity=_schedule(CURRENT_DAY).session_id,
+        analysis_boundary=boundary,
+        reason=ProbableReasonV2.MANDATORY_EVIDENCE_UNAVAILABLE,
+        source_identity=SOURCE_RUN,
+        provenance=PROVENANCE,
+    )
+    run = evaluate_probables_v2_run(
+        source_discovery_run_identity=SOURCE_RUN,
+        universe_identity="KRONOS-INTRADAY-NATIVE-UNIVERSE-V1",
+        universe_version="1.0.0",
+        reconciliation_identity="KRONOS-INTRADAY-RECONCILIATION-V1",
+        reconciliation_version="1.0.0",
+        market_session_identity=_schedule(CURRENT_DAY).session_id,
+        analysis_boundary=boundary,
+        member_evidence=(),
+        unavailable_members=(unavailable,),
+        provenance=PROVENANCE,
+    )
+    result = run.results[0]
+
+    assert result.state is ProbableState.UNAVAILABLE
+    assert result.source_mapping_identity is None
+    assert result.completed_evidence_selection_identity is None
+    assert result.semantic_evidence_identity is None
+
+    store = ProbablesV2Store(tmp_path.resolve())
+    store.retain_complete(run=run, mappings=())
+    assert store.load_current_run() == run
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    (
+        ("canonical_subject_identity", "MCX-SUBJECT-WRONG"),
+        ("source_discovery_run_identity", "INTRADAY-DISCOVERY-RUN-WRONG"),
+        ("source_discovery_member_identity", "INTRADAY-DISCOVERY-RESULT-WRONG"),
+        ("analysis_boundary", datetime(2026, 8, 28, 10, 16, tzinfo=IST)),
+        ("methodology_identity", "KRONOS-INTRADAY-PROBABLES-METHODOLOGY-WRONG"),
+        ("mapping_identity", "INTRADAY-DISCOVERY-PROBABLES-V2-MAPPING-TAMPERED"),
+        ("integrity_identity", "INTEGRITY-INTRADAY-DISCOVERY-PROBABLES-V2-MAPPING-TAMPERED"),
+    ),
+)
+def test_mapped_unavailable_rejects_wrong_or_tampered_mapping(
+    field: str,
+    value: object,
+) -> None:
+    *_, mapping = _opening_inputs(
+        subject="MCX-SUBJECT-GOLDM",
+        subject_exchange="MCX",
+    )
+
+    with pytest.raises(ProbablesV2Error, match="MAPPING_INVALID"):
+        replace(mapping, **{field: value})
 
 
 def test_wrong_or_forming_evidence_fails_closed() -> None:

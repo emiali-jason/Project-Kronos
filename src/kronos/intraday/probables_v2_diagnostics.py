@@ -294,6 +294,14 @@ def sanitize_failure_detail(error: BaseException, category: ProbablesV2Exception
 
 def _category(error: BaseException, stage: str) -> ProbablesV2ExceptionCategory:
     detail = str(error).upper()
+    if detail in {
+        "PROBABLES_V2_POPULATION_INVALID",
+        "PROBABLES_V2_RESULT_INVALID",
+        "PROBABLES_V2_RESULT_MAPPING_INVALID",
+        "PROBABLES_V2_RUN_INVALID",
+        "PROBABLES_V2_UNAVAILABLE_MEMBER_INVALID",
+    }:
+        return ProbablesV2ExceptionCategory.SCHEMA_ERROR
     if "NIFTY" in detail:
         return ProbablesV2ExceptionCategory.NIFTY_CONTEXT_ERROR
     if "OPENING" in detail or "SEMANTIC" in detail:
