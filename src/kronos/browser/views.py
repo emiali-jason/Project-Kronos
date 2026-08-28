@@ -142,6 +142,13 @@ from kronos.swing.v1.observation_research_ledger_v2 import (
     WebSocketPresentationState,
 )
 from kronos.swing.v1.mtf_facts import SameRunMtfFactSnapshot
+from kronos.swing.v1.relative_context import (
+    RelativeContextApplicability,
+    RelativeContextRecord,
+    RelativeContextRun,
+    RelativeContextState,
+    directional_relative_context,
+)
 from kronos.swing.v1.mcx_supporting_context import (
     MCX_CONTEXT_INSTRUMENT_FAMILIES,
     McxSupportingContextRecord,
@@ -779,6 +786,82 @@ def _kr370_no_setup_reason(value: str | None) -> str:
     }.get((value or "").upper(), "Current KR-370 criteria do not establish a setup")
 
 
+def _relative_context_review(
+    record: RelativeContextRecord | None, direction: str
+) -> str:
+    if record is None or (
+        record.applicability is RelativeContextApplicability.NOT_APPLICABLE
+    ):
+        return ""
+    values = []
+    for fact in record.horizons:
+        if fact.relative_state is RelativeContextState.UNAVAILABLE:
+            values.append(
+                f"{fact.timeframe.value} UNAVAILABLE · "
+                + " · ".join(item.value for item in fact.reason_codes)
+            )
+            continue
+        interpretation = directional_relative_context(
+            fact.relative_state, direction
+        ).value.replace("_", " ")
+        values.append(
+            f"{fact.timeframe.value} {_signed_pct(fact.relative_return_pct)} · "
+            f"{fact.relative_state.value} · {interpretation}"
+        )
+    return (
+        '<div class="v1-context-row"><span>Relative strength vs NIFTY</span>'
+        '<strong>' + "<br>".join(escape(value) for value in values)
+        + '<br><small>SUPPORTING CONTEXT ONLY · NON-VETO</small></strong></div>'
+    )
+
+
+def _relative_context_details(
+    record: RelativeContextRecord | None, direction: str
+) -> str:
+    if record is None:
+        return ""
+    if record.applicability is RelativeContextApplicability.NOT_APPLICABLE:
+        reason = record.horizons[0].reason_codes[0].value.replace("_", " ")
+        return (
+            '<section class="analysis-section"><h2>RELATIVE STRENGTH VS NIFTY</h2>'
+            '<p><strong>NOT APPLICABLE</strong> · ' + escape(reason) + '</p>'
+            '<p class="technical">Supporting context only · no decision or trade authority.</p>'
+            '</section>'
+        )
+    rows = ""
+    for fact in record.horizons:
+        if fact.relative_state is RelativeContextState.UNAVAILABLE:
+            rows += (
+                '<tr><td>' + escape(fact.timeframe.value)
+                + '</td><td colspan="4">UNAVAILABLE · '
+                + escape(" · ".join(item.value for item in fact.reason_codes))
+                + '</td></tr>'
+            )
+            continue
+        interpretation = directional_relative_context(
+            fact.relative_state, direction
+        ).value.replace("_", " ")
+        rows += (
+            '<tr><td>' + escape(fact.timeframe.value) + '</td><td>'
+            + escape(_signed_pct(fact.stock_return_pct)) + '</td><td>'
+            + escape(_signed_pct(fact.benchmark_return_pct)) + '</td><td>'
+            + escape(_signed_pct(fact.relative_return_pct)) + '</td><td>'
+            + escape(fact.relative_state.value + " · " + interpretation)
+            + '</td></tr>'
+        )
+    return (
+        '<section class="analysis-section"><h2>RELATIVE STRENGTH VS NIFTY</h2>'
+        '<table class="analysis-table"><thead><tr><th>Horizon</th><th>Stock return</th>'
+        '<th>NIFTY return</th><th>Relative return</th><th>State</th></tr></thead><tbody>'
+        + rows + '</tbody></table><p class="technical">SUPPORTING CONTEXT ONLY · '
+        'NON-VETO · NO DISCOVERY, READINESS, TRADE OR EXECUTION AUTHORITY.</p></section>'
+    )
+
+
+def _signed_pct(value: float | None) -> str:
+    return "UNAVAILABLE" if value is None else f"{value:+.2f}%"
+
+
 def render_native_analysis_details(
     snapshot: BrowserWorkspaceSnapshot,
     details: NativeAnalysisDetailsProjection,
@@ -786,8 +869,17 @@ def render_native_analysis_details(
     visual_v3: V3SponsorEvidencePresentation | None = None,
     trade_window: NativeTradeWindowProjection | None = None,
     mcx_context: McxSupportingContextRecord | None = None,
+    relative_context: RelativeContextRecord | None = None,
 ) -> str:
     """Render governed evidence without recalculation or authority."""
+
+    if relative_context is not None and (
+        type(relative_context) is not RelativeContextRecord
+        or relative_context.run_identity != details.assessment.run_identity
+        or relative_context.canonical_instrument
+        != details.assessment.canonical_instrument
+    ):
+        raise ValueError("NATIVE_ANALYSIS_DETAILS_RELATIVE_CONTEXT_BINDING_INVALID")
 
     if visual_v3 is not None:
         if (
@@ -800,7 +892,8 @@ def render_native_analysis_details(
         ):
             raise ValueError("NATIVE_ANALYSIS_DETAILS_V3_BINDING_INVALID")
         return _render_native_analysis_details_v3(
-            snapshot, details, progression, visual_v3, trade_window, mcx_context
+            snapshot, details, progression, visual_v3, trade_window, mcx_context,
+            relative_context,
         )
 
     item = details.assessment
@@ -896,6 +989,7 @@ def render_native_analysis_details(
         '<p><a class="button" href="/swing/opportunities">← Back to Opportunities</a></p>'
         '<div class="analysis-details">'
         + _analysis_disclosure("A. WHAT KITE / NATIVE DISCOVERY SAYS", native_facts)
+        + _relative_context_details(relative_context, item.direction.value)
         + '<details class="analysis-section"><summary>B. WHAT THE TRADINGVIEW CHART / CHART ANALYST SAYS</summary>'
         '<table class="analysis-table"><thead><tr><th>Timeframe</th><th>Question</th><th>Status</th><th>Observation</th><th>Level</th></tr></thead><tbody>'
         + visual_rows + '</tbody></table></details>'
@@ -932,6 +1026,7 @@ def _render_native_analysis_details_v3(
     visual_v3: V3SponsorEvidencePresentation,
     trade_window: NativeTradeWindowProjection | None,
     mcx_context: McxSupportingContextRecord | None,
+    relative_context: RelativeContextRecord | None,
 ) -> str:
     item = details.assessment
     thesis = details.requirement.thesis
@@ -1043,6 +1138,7 @@ def _render_native_analysis_details_v3(
         + kr370_summary
         + trade_window_summary
         + _analysis_disclosure("A. WHAT KITE / NATIVE DISCOVERY SAYS", native_facts)
+        + _relative_context_details(relative_context, item.direction.value)
         + '<details class="analysis-section"><summary>B. WHAT THE TRADINGVIEW CHART / CHART ANALYST SAYS</summary>'
         '<p class="technical">Independent chart observations; KRONOS numerical facts are shown separately.</p>'
         '<table class="analysis-table"><thead><tr><th>Timeframe</th><th>Observation</th><th>Chart Analyst evidence</th></tr></thead><tbody>'
@@ -3354,6 +3450,7 @@ def render_v1_review(
     native_review: NativeReviewWorkflowSnapshot | None = None,
     visual_v3_live: SwingVisualV3LiveSnapshot | None = None,
     mcx_context: McxSupportingContextSnapshot | None = None,
+    relative_context: RelativeContextRun | None = None,
 ) -> str:
     if (
         native_review is not None
@@ -3361,7 +3458,9 @@ def render_v1_review(
     ):
         body = (
             _analysis_run_strip(snapshot)
-            + _native_review_requirements(native_review, visual_v3_live)
+            + _native_review_requirements(
+                native_review, visual_v3_live, relative_context
+            )
         )
     elif review.layer1_run is None:
         body = (
@@ -3521,6 +3620,7 @@ def render_v1_review(
 def _native_review_requirements(
     review: NativeReviewWorkflowSnapshot,
     visual_v3_live: SwingVisualV3LiveSnapshot | None = None,
+    relative_context: RelativeContextRun | None = None,
 ) -> str:
     cards = ""
     slot_index = 0
@@ -3669,6 +3769,12 @@ def _native_review_requirements(
         key=lambda value: value.canonical_instrument,
     ):
         thesis = requirement.thesis
+        relative = (
+            None
+            if relative_context is None
+            or relative_context.run_identity != thesis.native_run_identity
+            else relative_context.record(thesis.canonical_instrument)
+        )
         reference = requirement.mcx_reference
         reference_result = next(
             (
@@ -3823,6 +3929,7 @@ def _native_review_requirements(
             + '<br>'
             + escape(f"{thesis.four_hour_state.value} · {thesis.one_hour_state.value}".replace("_", " "))
             + '</strong></div>'
+            + _relative_context_review(relative, thesis.direction.value)
             + (
                 ''
                 if reference is None

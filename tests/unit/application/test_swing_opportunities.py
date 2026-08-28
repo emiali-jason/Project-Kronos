@@ -22,6 +22,10 @@ from kronos.swing.v1.native_discovery import (
     NativeDiscoveryEvidenceStore,
     discover_native_mtf,
 )
+from kronos.swing.v1.relative_context import (
+    RelativeContextEvidenceStore,
+    build_relative_context_run,
+)
 from tests.unit.application.test_swing_mtf_facts import _build as _build_mtf_fixture
 from tests.unit.swing.test_swing_candidate_ranking import _plan
 from tests.unit.swing.test_swing_candidate_validation import (
@@ -518,6 +522,49 @@ def test_successful_analysis_atomically_retains_native_discovery(
     assert retained_discovery == native
 
 
+def test_successful_analysis_atomically_retains_same_run_relative_context(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    completed = _real_completed(monkeypatch)
+    facts, _ = _mtf_fact_fixture()
+    facts = replace(
+        facts,
+        run_identity=completed.evidence.swing_analysis_run_identity,
+    )
+    relative = build_relative_context_run(facts)
+    completed = replace(
+        completed,
+        mtf_fact_snapshot=facts,
+        relative_context_run=relative,
+    )
+    store = RelativeContextEvidenceStore(tmp_path)
+    service = app.SwingOpportunitiesApplication(
+        _Provider,
+        clock=lambda: NOW,
+        background_runner=_immediate,
+        relative_context_evidence_store=store,
+    )
+    assert service.connect_provider()
+    monkeypatch.setattr(
+        app,
+        "build_completed_swing_analysis",
+        lambda *_a, **_k: completed,
+    )
+
+    assert service.run_analysis()
+    assert service.relative_context_run() == relative
+    assert store.load(relative.run_identity) == relative
+
+    monkeypatch.setattr(
+        app,
+        "build_completed_swing_analysis",
+        lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("SAFE_FAILURE")),
+    )
+    assert service.run_analysis()
+    assert service.relative_context_run() == relative
+
+
 def test_native_discovery_is_recovered_for_last_successful_run(
     monkeypatch,
     tmp_path,
@@ -650,10 +697,16 @@ def test_production_run_publishes_factual_mtf_without_invoking_shadow_candidate_
 
     assert completed.mtf_fact_snapshot is not None
     assert completed.native_discovery_run is not None
+    assert completed.relative_context_run is not None
     assert (
         completed.native_discovery_run.run_identity
         == completed.mtf_fact_snapshot.run_identity
     )
+    assert (
+        completed.relative_context_run.run_identity
+        == completed.mtf_fact_snapshot.run_identity
+    )
+    assert len(completed.relative_context_run.records) == 98
     assert app.AnalysisStage.MTF_FACTS in stages
     assert app.AnalysisStage.NATIVE_DISCOVERY in stages
 

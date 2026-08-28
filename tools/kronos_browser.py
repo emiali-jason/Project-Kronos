@@ -37,6 +37,10 @@ from kronos.swing.v1.native_discovery import (
     DEFAULT_NATIVE_DISCOVERY_EVIDENCE_ROOT,
     NativeDiscoveryEvidenceStore,
 )
+from kronos.swing.v1.relative_context import (
+    DEFAULT_RELATIVE_CONTEXT_EVIDENCE_ROOT,
+    RelativeContextEvidenceStore,
+)
 from tools.provider_pilots.provider_foundation_v2_historical_proof import (
     _build_provider,
 )
@@ -54,6 +58,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     mtf_fact_store = MtfFactEvidenceStore(DEFAULT_MTF_FACT_EVIDENCE_ROOT)
     native_discovery_store = NativeDiscoveryEvidenceStore(
         DEFAULT_NATIVE_DISCOVERY_EVIDENCE_ROOT
+    )
+    relative_context_store = RelativeContextEvidenceStore(
+        DEFAULT_RELATIVE_CONTEXT_EVIDENCE_ROOT
     )
     shared_provider_runtime = SharedAuthenticatedProviderRuntime(
         _build_provider,
@@ -96,6 +103,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         market_calendar_publisher=MarketCalendarPublisher(),
         mtf_fact_evidence_store=mtf_fact_store,
         native_discovery_evidence_store=native_discovery_store,
+        relative_context_evidence_store=relative_context_store,
     )
     restart_control = BrowserBackendRestartControl.create()
     try:

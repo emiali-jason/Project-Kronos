@@ -770,6 +770,20 @@ class KronosBrowserServer(ThreadingHTTPServer):
             for item in self.visual_v3.completed_snapshot()
         )
 
+    def relative_context_for_run(self, run_identity: str):  # type: ignore[no-untyped-def]
+        """Restore only exact-run supporting context; never select global latest."""
+
+        current = self.application.relative_context_run()
+        if current is not None and current.run_identity == run_identity:
+            return current
+        store = self.application.relative_context_evidence_store()
+        if store is None:
+            return None
+        try:
+            return store.load(run_identity)
+        except ValueError:
+            return None
+
     def _provider_capability(self):  # type: ignore[no-untyped-def]
         capability_getter = getattr(
             self.application, "authenticated_read_only_capability", None
@@ -1268,6 +1282,9 @@ class _BrowserHandler(BaseHTTPRequestHandler):
                 and value.native_assessment_sha256
                 == details.assessment.result_sha256
             ), None)
+            relative_run = self.server.relative_context_for_run(
+                details.assessment.run_identity
+            )
             self._html(render_native_analysis_details(
                 snapshot,
                 details,
@@ -1280,6 +1297,9 @@ class _BrowserHandler(BaseHTTPRequestHandler):
                 self.server.mcx_supporting_context.context_for(
                     details.assessment.canonical_instrument,
                     assessment_boundary=discovery.observed_at,
+                ),
+                None if relative_run is None else relative_run.record(
+                    details.assessment.canonical_instrument
                 ),
             ))
             return
@@ -1314,6 +1334,9 @@ class _BrowserHandler(BaseHTTPRequestHandler):
                     else None
                 ),
                 self.server.mcx_supporting_context.snapshot(),
+                self.server.relative_context_for_run(
+                    review.native_run_identity
+                ) if review.native_run_identity is not None else None,
             ))
             return
         if path == "/swing/mtf-diagnostics":

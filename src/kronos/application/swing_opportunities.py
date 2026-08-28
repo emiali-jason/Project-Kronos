@@ -84,6 +84,11 @@ from kronos.swing.v1.native_discovery import (
     NativeDiscoveryRun,
     discover_native_mtf,
 )
+from kronos.swing.v1.relative_context import (
+    RelativeContextEvidenceStore,
+    RelativeContextRun,
+    build_relative_context_run,
+)
 
 
 class ProviderConnectionState(StrEnum):
@@ -541,6 +546,7 @@ class CompletedSwingAnalysis:
     evidence: SwingAnalysisEvidenceSnapshot
     mtf_fact_snapshot: SameRunMtfFactSnapshot | None = None
     native_discovery_run: NativeDiscoveryRun | None = None
+    relative_context_run: RelativeContextRun | None = None
 
     def __post_init__(self) -> None:
         if (
@@ -585,6 +591,16 @@ class CompletedSwingAnalysis:
                     != len(self.evidence.universe)
                 )
             )
+            or (
+                self.relative_context_run is not None
+                and (
+                    type(self.relative_context_run) is not RelativeContextRun
+                    or self.relative_context_run.run_identity
+                    != self.evidence.swing_analysis_run_identity
+                    or len(self.relative_context_run.records)
+                    != len(self.evidence.universe)
+                )
+            )
         ):
             raise ValueError("COMPLETED_SWING_ANALYSIS_INVALID")
 
@@ -624,6 +640,7 @@ class SwingOpportunitiesApplication:
         market_calendar_publisher: MarketCalendarPublisher | None = None,
         mtf_fact_evidence_store: MtfFactEvidenceStore | None = None,
         native_discovery_evidence_store: NativeDiscoveryEvidenceStore | None = None,
+        relative_context_evidence_store: RelativeContextEvidenceStore | None = None,
         live_monitoring_timeout_seconds: float = 15.0,
     ) -> None:
         if not all(callable(item) for item in (
@@ -649,6 +666,10 @@ class SwingOpportunitiesApplication:
             native_discovery_evidence_store is not None
             and type(native_discovery_evidence_store)
             is not NativeDiscoveryEvidenceStore
+        ) or (
+            relative_context_evidence_store is not None
+            and type(relative_context_evidence_store)
+            is not RelativeContextEvidenceStore
         ):
             raise TypeError("BROWSER_APPLICATION_DEPENDENCY_INVALID")
         if (
@@ -665,6 +686,7 @@ class SwingOpportunitiesApplication:
         self.__market_calendar_publisher = market_calendar_publisher
         self.__mtf_fact_evidence_store = mtf_fact_evidence_store
         self.__native_discovery_evidence_store = native_discovery_evidence_store
+        self.__relative_context_evidence_store = relative_context_evidence_store
         self.__live_monitoring_timeout_seconds = live_monitoring_timeout_seconds
         self.__lock = RLock()
         self.__provider: _ProviderRuntime | None = None
@@ -674,6 +696,7 @@ class SwingOpportunitiesApplication:
         self.__completed_analysis_evidence: SwingAnalysisEvidenceSnapshot | None = None
         self.__completed_mtf_fact_snapshot: SameRunMtfFactSnapshot | None = None
         self.__completed_native_discovery_run: NativeDiscoveryRun | None = None
+        self.__completed_relative_context_run: RelativeContextRun | None = None
         self.__live_monitoring_result = LiveMonitoringTestResult(
             LiveMonitoringTestState.NOT_TESTED
         )
@@ -697,6 +720,13 @@ class SwingOpportunitiesApplication:
                     try:
                         self.restore_native_discovery_run(
                             native_discovery_evidence_store.load(recovered.run_id)
+                        )
+                    except ValueError:
+                        pass
+                if relative_context_evidence_store is not None:
+                    try:
+                        self.restore_relative_context_run(
+                            relative_context_evidence_store.load(recovered.run_id)
                         )
                     except ValueError:
                         pass
@@ -829,6 +859,13 @@ class SwingOpportunitiesApplication:
     def native_discovery_evidence_store(self) -> NativeDiscoveryEvidenceStore | None:
         return self.__native_discovery_evidence_store
 
+    def relative_context_run(self) -> RelativeContextRun | None:
+        with self.__lock:
+            return self.__completed_relative_context_run
+
+    def relative_context_evidence_store(self) -> RelativeContextEvidenceStore | None:
+        return self.__relative_context_evidence_store
+
     def restore_mtf_fact_snapshot(self, snapshot: SameRunMtfFactSnapshot) -> None:
         if type(snapshot) is not SameRunMtfFactSnapshot:
             raise ValueError("MTF_FACT_SNAPSHOT_INVALID")
@@ -846,6 +883,15 @@ class SwingOpportunitiesApplication:
             if current and current != run.run_identity:
                 raise ValueError("NATIVE_DISCOVERY_RUN_BINDING_MISMATCH")
             self.__completed_native_discovery_run = run
+
+    def restore_relative_context_run(self, run: RelativeContextRun) -> None:
+        if type(run) is not RelativeContextRun:
+            raise ValueError("RELATIVE_CONTEXT_RUN_INVALID")
+        with self.__lock:
+            current = self.__snapshot.swing_analysis_run_identity
+            if current and current != run.run_identity:
+                raise ValueError("RELATIVE_CONTEXT_RUN_BINDING_MISMATCH")
+            self.__completed_relative_context_run = run
 
     def live_monitoring_result(self) -> LiveMonitoringTestResult:
         with self.__lock:
@@ -1254,6 +1300,7 @@ class SwingOpportunitiesApplication:
             )
             mtf_fact_snapshot = getattr(completed, "mtf_fact_snapshot", None)
             native_discovery_run = getattr(completed, "native_discovery_run", None)
+            relative_context_run = getattr(completed, "relative_context_run", None)
             if mtf_fact_snapshot is not None and self.__mtf_fact_evidence_store is not None:
                 self.__mtf_fact_evidence_store.retain(mtf_fact_snapshot)
             if (
@@ -1261,6 +1308,11 @@ class SwingOpportunitiesApplication:
                 and self.__native_discovery_evidence_store is not None
             ):
                 self.__native_discovery_evidence_store.retain(native_discovery_run)
+            if (
+                relative_context_run is not None
+                and self.__relative_context_evidence_store is not None
+            ):
+                self.__relative_context_evidence_store.retain(relative_context_run)
             if self.__run_provenance_store is not None:
                 self.__run_provenance_store.retain(SwingAnalysisRunProvenance(
                     run_id=completed.evidence.swing_analysis_run_identity,
@@ -1296,6 +1348,7 @@ class SwingOpportunitiesApplication:
             self.__completed_analysis_evidence = completed.evidence
             self.__completed_mtf_fact_snapshot = mtf_fact_snapshot
             self.__completed_native_discovery_run = native_discovery_run
+            self.__completed_relative_context_run = relative_context_run
             self.__snapshot = replace(
                 published_workspace,
                 provider_state=ProviderConnectionState.CONNECTED,
@@ -1465,6 +1518,7 @@ def build_completed_swing_analysis(
     selection = select_top_opportunities(ranking)
     mtf_fact_snapshot = None
     native_discovery_run = None
+    relative_context_run = None
     if market_calendar_publisher is not None:
         observe(
             AnalysisStage.MTF_FACTS,
@@ -1497,6 +1551,9 @@ def build_completed_swing_analysis(
                 else native_discovery_evidence_store.latest()
             ),
             daily_control=v1_layer1_run,
+        )
+        relative_context_run = build_relative_context_run(
+            mtf_fact_snapshot, universe
         )
     observe(
         AnalysisStage.BROWSER_PROJECTION,
@@ -1580,6 +1637,7 @@ def build_completed_swing_analysis(
         evidence=evidence,
         mtf_fact_snapshot=mtf_fact_snapshot,
         native_discovery_run=native_discovery_run,
+        relative_context_run=relative_context_run,
     )
 
 
