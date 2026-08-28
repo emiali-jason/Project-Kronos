@@ -1,6 +1,6 @@
 # KRONOS Intraday V1 Programme Roadmap
 
-**Status:** WO-06 Part-3 production commissioning candidate
+**Status:** WO-06E V2 methodology frozen; production implementation not started
 
 Native universe count is 98. RELIANCE remains the commissioning and regression
 anchor; it is not the universe owner or a privileged membership class.
@@ -42,6 +42,14 @@ exact coherence are mandatory; participation is supporting/non-blocking; 1D,
 14/7/6/17/18 with 17 Long and 45 Short. No outcome/performance claim, score,
 ranking, quota, Promotion, Trade, Risk, Entry or broker authority is introduced.
 WO-06 remains open pending WO-06V, WO-06L and WO-06E2E.
+
+WO-06E and WO-06E-RS subsequently qualify the phase-aware completed-evidence
+and Opening/NIFTY-relative research candidates. WO-06E-FREEZE publishes
+`KRONOS-INTRADAY-PROBABLES-METHODOLOGY-V2 / 2.0.0`: Opening, Structure,
+first-current-session-1H and established-current-session phases; exact
+completed-evidence selection; Opening-only aligned NIFTY context; and strict
+V1/V2 replay separation. This is a methodology freeze only. WO-06E-IMPLEMENT
+is the next separately bounded production work order.
 
 WO-06H now adds a separate historical qualification-reconstruction contract so
 the current governed membership can be used as an explicit research subject set

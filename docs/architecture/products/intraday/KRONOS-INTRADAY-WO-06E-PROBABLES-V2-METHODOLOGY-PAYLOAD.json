@@ -1,0 +1,151 @@
+{
+  "admission": {
+    "common": {
+      "narrow_cpr": "TRUE_CONTINUE;FALSE_NOT_ADMITTED;UNAVAILABLE_UNAVAILABLE",
+      "states": ["LONG_PROBABLE", "SHORT_PROBABLE", "NOT_ADMITTED", "UNAVAILABLE"]
+    },
+    "CURRENT_SESSION_ESTABLISHED": "NARROW_CPR_TRUE_AND_LATEST_TWO_CURRENT_1H_DIRECTIONAL_AND_LATEST_TWO_CURRENT_15M_DIRECTIONAL_AND_EXACT_COHERENCE",
+    "FIRST_CURRENT_SESSION_1H": "NARROW_CPR_TRUE_AND_PRIOR_LATEST_TO_FIRST_CURRENT_1H_TRANSITION_DIRECTIONAL_AND_LATEST_TWO_CURRENT_15M_DIRECTIONAL_AND_EXACT_COHERENCE",
+    "OPENING": "NARROW_CPR_TRUE_AND_FIRST_15M_DIRECTIONAL_AND_OPENING_COMBINED_RELATIONSHIP_SUPPORTING",
+    "STRUCTURE": "NARROW_CPR_TRUE_AND_PRIOR_VALID_SESSION_1H_DIRECTIONAL_AND_LATEST_TWO_CURRENT_15M_DIRECTIONAL_AND_EXACT_COHERENCE"
+  },
+  "authority": {
+    "analytical_probables": "AUTHORIZED",
+    "broker": "NONE",
+    "chart_review": "NONE",
+    "entry_timing": "NONE",
+    "paper_live": "NONE",
+    "performance_claims": "NONE",
+    "promotion": "NONE",
+    "risk": "NONE",
+    "trade_construction": "NONE",
+    "wo10_reconciliation": "NONE"
+  },
+  "benchmark": {
+    "alignment": "EXACT_TIMEFRAME_START_END_EXCHANGE_MARKET_AND_COMPLETION_BOUNDARY;PRESERVE_DISTINCT_DOMAIN_008_SESSION_IDENTITIES",
+    "applicability": {
+      "MCX": "NOT_APPLICABLE",
+      "NSE-INDEX-BANKNIFTY": "APPLICABLE_VS_NSE_INDEX_NIFTY",
+      "NSE-INDEX-NIFTY": "BENCHMARK_SELF_COMPARISON_NOT_APPLICABLE",
+      "NSE_EQUITY": "APPLICABLE_VS_NSE_INDEX_NIFTY"
+    },
+    "canonical_identity": "NSE-INDEX-NIFTY",
+    "equal_tolerance": "NONE",
+    "later_phase_current_calculation": "DEFERRED;OPENING_FACT_RETAINED_AS_HISTORICAL_LINEAGE_ONLY",
+    "opening_arithmetic": {
+      "benchmark_return_pct": "((benchmark_opening_15m_close/benchmark_session_open)-1)*100",
+      "classification": "GT_ZERO_OUTPERFORMING;LT_ZERO_UNDERPERFORMING;EQ_ZERO_EQUAL",
+      "relative_return_pct": "subject_return_pct-benchmark_return_pct",
+      "subject_return_pct": "((subject_opening_15m_close/subject_session_open)-1)*100"
+    },
+    "opening_conflict_consequence": "BLOCKING_NOT_ADMITTED_NO_DIRECTION_FLIP",
+    "opening_presence": "MANDATORY_WHEN_APPLICABLE",
+    "progression": "THREE_ALIGNED_CUMULATIVE_5M_RELATIVE_RETURNS;STRICT_INCREASE_IMPROVING;STRICT_DECREASE_DETERIORATING;ALL_EQUAL_FLAT;OTHERWISE_MIXED;SUPPORTING_NON_BLOCKING",
+    "relationship": "LONG_OUTPERFORMING_OR_SHORT_UNDERPERFORMING_SUPPORTING;OPPOSITE_CONFLICTING;EQUAL_OR_NON_DIRECTIONAL_INFORMATIONAL",
+    "unavailable": "OPENING_UNAVAILABLE_NO_STALE_OR_SUBSTITUTE_BENCHMARK"
+  },
+  "completed_evidence": {
+    "cross_session": "DOMAIN_008_PREVIOUS_VALID_SESSION_ONLY;PRESERVE_ORIGINAL_SESSION_TIMESTAMP_COMPLETION_AND_ROLE",
+    "forming_candles": "PROHIBITED",
+    "identity": "KRONOS-INTRADAY-PHASE-AWARE-COMPLETED-EVIDENCE-SELECTION-V1",
+    "required_fields": [
+      "selection_identity", "analysis_boundary", "phase", "canonical_subject_identity",
+      "market_identity", "market_session_identity", "calendar_identity", "calendar_version",
+      "selected_candle_identities", "timeframes", "original_source_session_identities",
+      "source_timestamps", "completion_boundaries", "current_or_prior_session_roles",
+      "selection_policy_identity", "selection_policy_version", "provenance", "integrity_identity"
+    ],
+    "replay": "EXPLICIT_IDENTITY_ONLY_NEVER_RESELECT_LATEST",
+    "version": "1.0.0"
+  },
+  "conflicts": {
+    "combined_relationship": "ANY_CONFLICTING_THEN_CONFLICTING;ELSE_ANY_SUPPORTING_THEN_SUPPORTING;ELSE_INFORMATIONAL",
+    "opening_5m_conflicting": "BLOCKING_NOT_ADMITTED",
+    "opening_nifty_conflicting": "BLOCKING_NOT_ADMITTED_NO_DIRECTION_FLIP",
+    "opening_prior_1h_conflicting": "BLOCKING_NOT_ADMITTED_NO_DIRECTION_FLIP"
+  },
+  "contracts": {
+    "completed_evidence_selection": ["KRONOS-INTRADAY-PHASE-AWARE-COMPLETED-EVIDENCE-SELECTION-V1", "1.0.0"],
+    "current_probables_pointer": ["KRONOS-INTRADAY-CURRENT-PROBABLES-POINTER-V2", "2.0.0"],
+    "discovery_probables_evidence": ["KRONOS-INTRADAY-DISCOVERY-PROBABLES-EVIDENCE-V2", "2.0.0"],
+    "discovery_probables_mapper": ["KRONOS-INTRADAY-DISCOVERY-PROBABLES-EVIDENCE-MAPPER-V2", "2.0.0"],
+    "nifty_relative_evidence": ["KRONOS-INTRADAY-NIFTY-RELATIVE-CONTEXT-EVIDENCE-V1", "1.0.0"],
+    "nifty_relative_fact": ["KRONOS-INTRADAY-NIFTY-RELATIVE-CONTEXT-FACT-V1", "1.0.0"],
+    "opening_semantic_evidence": ["KRONOS-INTRADAY-OPENING-SEMANTIC-EVIDENCE-V1", "1.0.0"],
+    "opening_semantic_fact": ["KRONOS-INTRADAY-OPENING-SEMANTIC-FACT-V1", "1.0.0"],
+    "population_diagnostics": ["KRONOS-INTRADAY-PROBABLES-POPULATION-DIAGNOSTICS-V2", "2.0.0"],
+    "probable_member": ["KRONOS-INTRADAY-PROBABLE-V2", "2.0.0"],
+    "probables_methodology": ["KRONOS-INTRADAY-PROBABLES-METHODOLOGY-V2", "2.0.0"],
+    "probables_run": ["KRONOS-INTRADAY-PROBABLES-RUN-V2", "2.0.0"],
+    "refresh_state": ["KRONOS-INTRADAY-DISCOVERY-PROBABLES-REFRESH-STATE-V2", "2.0.0"],
+    "semantic_evidence": ["KRONOS-INTRADAY-SEMANTIC-QUALIFICATION-EVIDENCE-V2", "2.0.0"],
+    "semantic_fact": ["KRONOS-INTRADAY-SEMANTIC-QUALIFICATION-FACT-V2", "2.0.0"]
+  },
+  "evidence_roles": {
+    "1D_CONTEXT": "MANDATORY_AVAILABILITY_INFORMATIONAL_CONSEQUENCE",
+    "1H_REGIME": "PHASE_DEPENDENT_MANDATORY_DIRECTIONAL_COHERENCE",
+    "15M_STRUCTURE": "DEFERRED_IN_OPENING;MANDATORY_FROM_STRUCTURE_ONWARD",
+    "5M_PROGRESSION": "MANDATORY_AVAILABILITY_AND_CONFLICT_INPUT_IN_OPENING;INFORMATIONAL_LATER",
+    "CLASSIC_PIVOT_RELATIONSHIPS": "INFORMATIONAL_UNAVAILABLE_TOLERANT",
+    "CPR_LOCATION": "INFORMATIONAL_UNAVAILABLE_TOLERANT",
+    "DIRECTIONAL_COHERENCE": "PHASE_ADAPTED_MANDATORY",
+    "GAP_RELATIONSHIPS": "INFORMATIONAL_UNAVAILABLE_TOLERANT",
+    "NARROW_CPR_KGS_V0": "ADMISSION_SUPPORT_REQUIRED",
+    "NIFTY_RELATIVE_CONTEXT": "MANDATORY_PRESENT_IN_OPENING_WHEN_APPLICABLE;TYPED_CONFLICT_BLOCKS;CURRENT_CALCULATION_DEFERRED_LATER",
+    "PDH_PDL_RELATIONSHIP": "INFORMATIONAL_UNAVAILABLE_TOLERANT",
+    "VOLUME_PARTICIPATION": "SUPPORTING_NON_BLOCKING_UNAVAILABLE_TOLERANT"
+  },
+  "failure_families": {
+    "nifty": ["BENCHMARK_FACT_UNAVAILABLE", "BENCHMARK_IDENTITY_INVALID", "BOUNDARY_MISMATCH", "SOURCE_INTEGRITY_INVALID", "SUBJECT_FACT_UNAVAILABLE"],
+    "phase": ["PHASE_EVIDENCE_UNAVAILABLE", "PRIOR_VALID_SESSION_UNAVAILABLE", "COMPLETED_EVIDENCE_INSUFFICIENT", "COMPLETED_EVIDENCE_MISALIGNED", "FORMING_CANDLE_REJECTED"]
+  },
+  "mcx": {
+    "browser_state": "STRUCTURALLY_SUPPORTED_NOT_EMPIRICALLY_COMMISSIONED",
+    "empirical_commissioning": "NO",
+    "nifty_context": "NOT_APPLICABLE",
+    "probables_result": "UNAVAILABLE:MCX_V2_EMPIRICAL_COMMISSIONING_REQUIRED"
+  },
+  "methodology_identity": "KRONOS-INTRADAY-PROBABLES-METHODOLOGY-V2",
+  "methodology_version": "2.0.0",
+  "opening_semantics": {
+    "direction": "CLOSE_GT_OPEN_LONG;CLOSE_LT_OPEN_SHORT;EQUAL_NON_DIRECTIONAL",
+    "five_minute_progression": "TWO_CONSECUTIVE_HIGH_LOW_CLOSE_ALL_ABOVE_TRANSITIONS_LONG;TWO_ALL_BELOW_SHORT;ONE_LONG_ONE_SHORT_CONFLICTING;OTHERWISE_NON_DIRECTIONAL",
+    "required_fields": [
+      "identity", "canonical_subject_identity", "analysis_boundary", "phase",
+      "completed_evidence_selection_identity", "opening_direction", "opening_15m_identity_and_ohlcv",
+      "three_5m_identities_and_boundaries", "five_minute_progression_state",
+      "prior_1h_context_identity_session_and_state", "prior_current_relationship",
+      "pdh_pdl_relationship_if_available", "cpr_location_if_available",
+      "classic_pivot_relationships_if_available", "participation_state_if_available",
+      "nifty_relative_context_identity_and_applicability", "source_provenance", "integrity_identity"
+    ],
+    "normal_15m_structure": "DEFERRED_IN_OPENING"
+  },
+  "persistence": {
+    "conflicting_rewrite": "FAIL_CLOSED",
+    "current_pointer": "EXPLICIT_INTEGRITY_BOUND_V2_POINTER_ONLY",
+    "immutable": true,
+    "provider_reacquisition_for_restore": "PROHIBITED",
+    "store_namespaces": ["completed-evidence-v1", "opening-semantic-v1", "nifty-relative-v1", "semantic-v2", "probables-v2", "refresh-v2"],
+    "v1_replay": "V1_CONTRACTS_AND_METHODOLOGY_ONLY",
+    "v2_replay": "EXACT_V2_PUBLICATION_AND_BOUND_SELECTION_POLICY_ONLY"
+  },
+  "phase_enum": ["OPENING", "STRUCTURE", "FIRST_CURRENT_SESSION_1H", "CURRENT_SESSION_ESTABLISHED"],
+  "phase_selection": {
+    "CURRENT_SESSION_ESTABLISHED": "CURRENT_COMPLETED_1H_COUNT_GTE_2",
+    "FIRST_CURRENT_SESSION_1H": "CURRENT_COMPLETED_1H_COUNT_EQ_1",
+    "OPENING": "CURRENT_COMPLETED_1H_COUNT_EQ_0_AND_CURRENT_COMPLETED_15M_COUNT_EQ_1",
+    "STRUCTURE": "CURRENT_COMPLETED_1H_COUNT_EQ_0_AND_CURRENT_COMPLETED_15M_COUNT_GTE_2",
+    "before_opening": "NO_V2_PHASE_SELECTED_UNAVAILABLE",
+    "priority": ["CURRENT_SESSION_ESTABLISHED", "FIRST_CURRENT_SESSION_1H", "STRUCTURE", "OPENING"]
+  },
+  "research_authorities": [
+    "INTRADAY-PHASE-AWARE-COMPLETED-EVIDENCE-RESEARCH-D55631CD05BC47A605277496C5F04ED2F75EDE7FAF87938EF5E491E84347153D",
+    "INTRADAY-OPENING-PHASE-NIFTY-RELATIVE-RESEARCH-093DAFC4CCEE6B67C8EA16CFB9C7F9974C9276FEC4A02B947C09AA1111BCE7F7"
+  ],
+  "unavailability": {
+    "definition": "MANDATORY_EVIDENCE_MISSING_INVALID_MISALIGNED_OR_INTEGRITY_FAILED",
+    "not_admitted_definition": "ALL_MANDATORY_EVIDENCE_AVAILABLE_BUT_ANALYTICAL_PREDICATE_NOT_SATISFIED",
+    "phase_independence": "ONE_BOUNDARY_DOES_NOT_PREDETERMINE_A_LATER_BOUNDARY"
+  }
+}

@@ -1,10 +1,10 @@
 # Intraday Deferred Decision Register
 
-**Status:** Amended through WO-06 Part-3; no defaults implied
+**Status:** Amended through WO-06E-FREEZE; no defaults implied
 
 | Decision | Reason deferred | Required evidence | Earliest closure | Owner |
 |---|---|---|---|---|
-| Native Discovery numerical thresholds | Not CA-frozen | Governed WO-05/WO-06 factual distributions | After WO-05 | Intraday/CA |
+| Native Discovery numerical thresholds beyond frozen Narrow CPR | No further threshold is authorized by V2 | Outcome evidence and successor authority | Successor methodology only | Intraday/CA |
 | ATR period/threshold | Need and values unproven | Native evidence and 3V comparison | After WO-05/3V | Intraday/CA |
 | Path-clearance threshold | Value unproven | Barrier/path outcome evidence | After WO-05 | Intraday/CA |
 | Extension threshold | Value unproven | Move/retracement outcome evidence | After WO-05 | Intraday/CA |
@@ -23,9 +23,14 @@
 | Qualification evidence sufficiency | No sample-size threshold is authorized | Real governed corpus review | WO-06 Part 2/3 | Intraday/CA |
 | Factual outcome-label definitions | Exact expansion/outcome semantics require approval | Versioned outcome research | WO-06 Part 2/3 | Intraday/CA |
 | Candidate score/ranking if required | Need is unproven; top-N prohibited | Evidence that non-quota ordering is necessary | WO-06 Part 2/3 | Intraday/CA |
-| Historical intraday observation boundaries beyond completed-session EOD | WO-06HA commissions EOD only; no PRE-MARKET/EARLY/MID label or equivalent | Exact governed boundary identities and semantics | Before any non-EOD acquisition | Intraday/CA |
+| Historical intraday observation boundaries beyond completed-session EOD outside WO-06E research | Production operation remains unimplemented; research alone does not create a live acquisition command | Exact governed V2 implementation and operation authority | WO-06E-IMPLEMENT or later operation | Intraday/CA |
 | Historical vs post-activation evidence weighting | Source classes are preserved but equal weight is not assumed | Real reconstruction and production evidence review | WO-06 Part 3 | Intraday/CA |
 | Additional structural timeframe | V0 timeframes approved | Evidence of material gap | After WO-03 | CA |
+| Sector-relative benchmarks | V2 freezes NIFTY only for applicable NSE subjects | Separate sector-benchmark identity and methodology evidence | Successor methodology only | Intraday/CA |
+| Relative-strength magnitude threshold | V2 freezes exact sign only and no epsilon | Outcome evidence plus explicit methodology authority | Successor methodology only | Intraday/CA |
+| Structure/first-1H/established current NIFTY interval semantics | WO-06E-RS qualifies Opening only | Phase-specific aligned real evidence and arithmetic | Successor V2 amendment or V3 | Intraday/CA |
+| Future benchmark families | Only NIFTY is frozen; MCX has no substitute | Canonical benchmark and phase-specific evidence | Successor methodology only | Intraday/CA |
+| MCX V2 empirical commissioning | Retained real MCX evidence was insufficient | Bounded real MCX phase-aware qualification | Separate MCX qualification | Intraday/CA |
 | NSE overnight carry | Policy not frozen | Lifecycle/risk evidence | Lifecycle stage | CA/DOMAIN-007 |
 | NSE forced-flat policy | Policy not frozen | Session/risk evidence | Lifecycle stage | CA/DOMAIN-007 |
 | MCX overnight carry | Policy not frozen | MCX lifecycle/risk evidence | After WO-10 | CA/DOMAIN-007 |

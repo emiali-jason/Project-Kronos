@@ -1,6 +1,6 @@
 # KRONOS Intraday Engineering, Methodology & Architecture Record
 
-**Status:** LIVING DOCUMENT — V0.1; amended through WO-09
+**Status:** LIVING DOCUMENT — V0.1; amended through WO-06E-FREEZE
 
 **Product owner:** KRONOS Intraday
 
@@ -800,7 +800,37 @@ and explicit current pointer restore without Provider access. New evidence or
 policy inputs produce a new immutable result; historical evidence is never
 rewritten. Full details are in [WO-10 Native + Visual Reconciliation](KRONOS-INTRADAY-WO-10-NATIVE-VISUAL-RECONCILIATION-V1.md).
 
-## 34. References
+## 34. WO-06E phase-aware Probables V2 methodology freeze
+
+WO-06E-FREEZE establishes
+`KRONOS-INTRADAY-PROBABLES-METHODOLOGY-V2 / 2.0.0` without changing immutable
+V1 evidence or production source. The exact phase family is `OPENING`,
+`STRUCTURE`, `FIRST_CURRENT_SESSION_1H` and
+`CURRENT_SESSION_ESTABLISHED`; selection is driven by DOMAIN-008 sessions and
+governed completed evidence, never fixed clock labels.
+
+Opening uses the prior valid session's completed 1H regime as explicit context,
+the first current-session completed 15M as direction, exactly three constituent
+completed 5M candles, and aligned `NSE-INDEX-NIFTY` relative context where
+applicable. Narrow CPR remains required admission support. Typed prior-1H,
+Opening-5M and NIFTY conflicts fail closed as not admitted without creating or
+flipping direction. Missing mandatory evidence remains unavailable.
+
+The first current-session 1H becomes primary immediately; two current 1H
+candles are required only for the established phase. Current-phase NIFTY
+calculations after Opening remain deferred. MCX is structurally supportable but
+not empirically commissioned. Score, rank, weight, quota, confidence and
+relative-strength magnitude thresholds remain absent.
+
+The deterministic publication is
+`INTRADAY-PROBABLES-METHODOLOGY-V2-PUBLICATION-7B75EE711558F706CFB97B4548952B8924A8CBD8E519EFEEE61B53828FDD9F89`,
+with canonical payload SHA-256
+`7b75ee711558f706cfb97b4548952b8924a8cbd8e519efeee61b53828fdd9f89`.
+Implementation, runtime, Review, Promotion, Entry, Trade, Risk, PAPER/LIVE and
+broker authority are not introduced. Full authority is recorded in
+[WO-06E Phase-Aware Probables V2 Methodology](KRONOS-INTRADAY-WO-06E-PHASE-AWARE-PROBABLES-V2-METHODOLOGY.md).
+
+## 35. References
 
 - [Intraday Shared-File Change Rule](../../../engineering/INTRADAY-SHARED-FILE-CHANGE-RULE.md)
 - [Platform Constitution](../../platform/PLATFORM-000-CONSTITUTION.md)
@@ -822,6 +852,8 @@ rewritten. Full details are in [WO-10 Native + Visual Reconciliation](KRONOS-INT
 - [WO-06H Historical Qualification Reconstruction](KRONOS-INTRADAY-WO-06H-HISTORICAL-QUALIFICATION-RECONSTRUCTION.md)
 - [WO-06HA Historical Research Operational Seam](KRONOS-INTRADAY-WO-06HA-HISTORICAL-RESEARCH-OPERATIONAL-SEAM.md)
 - [WO-06 Part-3 V0 Probables Methodology](KRONOS-INTRADAY-WO-06-PART-3-V0-PROBABLES-METHODOLOGY.md)
+- [WO-06E Phase-Aware Probables V2 Methodology](KRONOS-INTRADAY-WO-06E-PHASE-AWARE-PROBABLES-V2-METHODOLOGY.md)
+- [WO-06E Probables V2 Canonical Payload](KRONOS-INTRADAY-WO-06E-PROBABLES-V2-METHODOLOGY-PAYLOAD.json)
 - [WO-07 Governed Native Review](KRONOS-INTRADAY-WO-07-GOVERNED-NATIVE-REVIEW-V1.md)
 - [WO-07A Sponsor Review UX and Batch Transport](KRONOS-INTRADAY-WO-07A-SPONSOR-REVIEW-UX-AND-BATCH-TRANSPORT-V1.md)
 - [WO-10 Native + Visual Reconciliation](KRONOS-INTRADAY-WO-10-NATIVE-VISUAL-RECONCILIATION-V1.md)

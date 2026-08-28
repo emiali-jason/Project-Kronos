@@ -1,12 +1,15 @@
 # Intraday Contract and State Ownership Registry
 
-**Status:** Amended through WO-10 implementation candidate
+**Status:** Amended through WO-06E-FREEZE
 
 | Boundary | Owner | Consequence authority |
 |---|---|---|
 | Universe | Intraday | Native analytical membership only |
 | Native Discovery | Intraday | Factual evaluability, candidate-contract state, bounded reasons and run accounting; predicates deferred |
-| WO-06 Qualification / Probables | Intraday | Parts 1–2 own hypotheses, explicit research variants, research-only direction, ablation and factual outcomes; Part 3 commissions only V0 Probable admission and factual population diagnostics for deeper review |
+| WO-06 Qualification / Probables V1 | Intraday | Parts 1–2 own hypotheses, explicit research variants, research-only direction, ablation and factual outcomes; Part 3 commissions only immutable V1 Probable admission and factual population diagnostics for deeper review |
+| WO-06E Probables V2 | Intraday | Frozen phase-aware completed-evidence selection, Opening semantics, NIFTY supporting context and V2 Probable admission only; production implementation is separately gated |
+| Phase/session truth | DOMAIN-008 | Calendar, previous-valid-session, session identity and completed-boundary authority only; no Probable consequence |
+| Canonical subject/benchmark identity | DOMAIN-001 | Canonical identity only; no phase or Probable consequence |
 | WO-06H Historical Reconstruction | Intraday research boundary | Current governed membership as a research subject set, explicit historical sessions/boundaries, completed historical facts and exact corpus-binding eligibility; production Discovery and Probable authority is NONE |
 | WO-06HA Historical Operation | Intraday research operation | Bounded completed-session EOD factual acquisition, request accounting and immutable reload only; authentication, automatic corpus binding and production mutation authority are NONE |
 | Qualification outcomes | Intraday factual research boundary | Versioned subsequent-market labels only; no trade outcome |
@@ -28,6 +31,7 @@ The boundaries are explicitly non-equivalent:
 - Discovery ≠ Promotion.
 - Qualification match ≠ Probable.
 - Probable ≠ Promotion.
+- V1 Probable ≠ V2 Probable; each retains its own methodology and replay.
 - Review/Chart Ready ≠ visual analysis or Promotion.
 - Question Pack Created ≠ Answer imported.
 - Combined batch PDF ≠ shared analytical evidence or Answer import.
