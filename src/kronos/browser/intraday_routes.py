@@ -30,6 +30,7 @@ from kronos.browser.product_routes import (
 )
 from kronos.intraday.review import ReviewError, ReviewFailure
 from kronos.intraday.review_v2 import REVIEW_V2_CHART_ROUTE
+from kronos.intraday.review_v2_transport import REVIEW_V2_QUESTION_TRANSPORT_ROUTE
 from kronos.intraday.review_pdf import IntradayReviewPdfTransport
 from kronos.intraday.review_persistence import IntradayReviewStore
 from kronos.intraday.native_visual_reconciliation import ReconciliationError
@@ -170,6 +171,7 @@ class IntradayBrowserRoutes:
             "/control/intraday-discovery/v2",
             "/control/intraday-review/v2",
             REVIEW_V2_CHART_ROUTE,
+            REVIEW_V2_QUESTION_TRANSPORT_ROUTE,
             "/intraday/review/start",
             "/intraday/review/chart",
             "/intraday/review/question-pack",
@@ -259,6 +261,10 @@ class IntradayBrowserRoutes:
                     media_type=request.content_type,
                     payload=request.body,
                 )
+            elif request.path == REVIEW_V2_QUESTION_TRANSPORT_ROUTE:
+                if self._review_v2_control is None or request.query or request.body:
+                    raise ValueError
+                self._review_v2_control.application.create_combined_question_transport()
             elif request.path == "/intraday/review/start":
                 result = _one_query(request, "result")
                 if request.body:

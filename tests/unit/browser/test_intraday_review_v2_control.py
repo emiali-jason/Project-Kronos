@@ -21,6 +21,10 @@ from kronos.intraday.review_v2_operation_persistence import (
     ReviewV2OperationProvenanceStore,
 )
 from kronos.intraday.review_v2 import REVIEW_V2_CHART_ROUTE
+from kronos.intraday.review_v2_transport import (
+    REVIEW_V2_QUESTION_TRANSPORT_ROUTE,
+    IntradayReviewV2Transport,
+)
 from kronos.intraday.review_v2_persistence import IntradayReviewV2Store
 from kronos.intraday.probables_v2_persistence import ProbablesV2Store
 from tests.unit.browser.test_product_route_isolation import _snapshot
@@ -50,6 +54,10 @@ def _control(tmp_path: Path):  # type: ignore[no-untyped-def]
     application = IntradayReviewV2Application(
         probables_store=probables,
         review_store=review,
+        transport=IntradayReviewV2Transport(
+            question_outbox=(tmp_path / "questions").resolve(),
+            answer_inbox=(tmp_path / "answers").resolve(),
+        ),
     )
     clock_values = [run.analysis_boundary + timedelta(seconds=index) for index in range(20)]
     control = IntradayReviewV2OperationalControl(
@@ -262,3 +270,44 @@ def test_v2_browser_chart_route_is_exact_cycle_bound_and_uses_proven_transport(
         _snapshot,
     )
     assert invalid is not None and invalid.status.value == 400
+
+
+def test_browser_creates_one_v2_combined_question_transport_after_chart_ready(
+    tmp_path: Path,
+) -> None:
+    run, application, control = _control(tmp_path / "v2")
+    v1 = _application(tmp_path / "v1", [_run_v1((_member("V1-FIXTURE"),))])
+    routes = IntradayBrowserRoutes(
+        _Workstation(run), review=v1, review_v2_control=control
+    )
+    assert control.execute_document(_payload(run))["outcome"] == "COMPLETE"
+    cycle = application.snapshot().candidates[0].cycle_identity
+    uploaded = routes.handle_post(
+        BrowserPostRequest(
+            REVIEW_V2_CHART_ROUTE,
+            {"cycle": [cycle]},
+            "image/png",
+            _png(81),
+        ),
+        _snapshot,
+    )
+    assert uploaded is not None and uploaded.status.value == 200
+    assert "CREATE V2 COMBINED QUESTION PDF" in uploaded.body
+
+    created = routes.handle_post(
+        BrowserPostRequest(
+            REVIEW_V2_QUESTION_TRANSPORT_ROUTE,
+            {},
+            "application/x-www-form-urlencoded",
+            b"",
+        ),
+        _snapshot,
+    )
+    assert created is not None and created.status.value == 200
+    assert "V2 QUESTION TRANSPORT READY" in created.body
+    assert "CURRENT QUESTION PACK:" in created.body
+    assert "EXPECTED ANSWER:" in created.body
+    assert "CANDIDATES: 1" in created.body
+    snapshot = application.snapshot()
+    assert snapshot.review_batch_identity is not None
+    assert snapshot.question_transport_identity is not None

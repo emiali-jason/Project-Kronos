@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from hashlib import sha256
+from pathlib import Path
 from threading import RLock
 from typing import Callable
 
@@ -15,14 +16,23 @@ from kronos.intraday.review import ReviewError, ReviewFailure
 from kronos.intraday.review_v2 import (
     ChartRevisionV2,
     ReviewCycleV2,
+    ReviewQuestionBatchV2,
+    ReviewQuestionPackV2,
     create_chart_intake_request_v2,
     create_chart_revision_v2,
     create_current_chart_pointer_v2,
     create_current_review_pointer_v2,
+    create_question_batch_v2,
+    create_question_pack_v2,
     create_review_cycle_v2,
     create_review_handoff_v2,
 )
 from kronos.intraday.review_v2_persistence import IntradayReviewV2Store
+from kronos.intraday.review_v2_transport import (
+    IntradayReviewV2Transport,
+    ReviewBatchTransportV2,
+    expected_transport_identity_v2,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -54,6 +64,19 @@ class IntradayReviewV2Snapshot:
     probables_run_identity: str | None
     current_pointer_identity: str | None
     candidates: tuple[IntradayReviewV2CandidateSnapshot, ...]
+    review_batch_identity: str | None = None
+    question_transport_identity: str | None = None
+    question_filename: str | None = None
+    expected_answer_filename: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class IntradayReviewV2BatchResult:
+    batch: ReviewQuestionBatchV2
+    transport: ReviewBatchTransportV2
+    packs: tuple[ReviewQuestionPackV2, ...]
+    question_path: Path
+    answer_template_path: Path
 
 
 class IntradayReviewV2Application:
@@ -64,16 +87,19 @@ class IntradayReviewV2Application:
         *,
         probables_store: ProbablesV2Store,
         review_store: IntradayReviewV2Store,
+        transport: IntradayReviewV2Transport | None = None,
         clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
     ) -> None:
         if (
             type(probables_store) is not ProbablesV2Store
             or type(review_store) is not IntradayReviewV2Store
+            or transport is not None and type(transport) is not IntradayReviewV2Transport
             or not callable(clock)
         ):
             raise ValueError("INTRADAY_REVIEW_V2_APPLICATION_INVALID")
         self._probables = probables_store
         self._review = review_store
+        self._transport = transport or IntradayReviewV2Transport()
         self._clock = clock
         self._lock = RLock()
 
@@ -133,19 +159,72 @@ class IntradayReviewV2Application:
                 key=lambda item: _sponsor_label(item.canonical_subject_identity).casefold(),
             )
         )
+        packs: list[ReviewQuestionPackV2] = []
+        for cycle in cycles:
+            active = self._review.load_current_chart(cycle.cycle_identity)
+            if active is None:
+                continue
+            chart = self._review.load_chart(active.chart_revision_identity)
+            handoff = self._review.load_handoff(cycle.handoff_identity)
+            expected = create_question_pack_v2(handoff, cycle, chart)
+            try:
+                retained = self._review.load_pack(expected.review_pack_identity)
+            except ReviewError as error:
+                if error.failure is not ReviewFailure.ARTIFACT_UNAVAILABLE:
+                    raise
+                continue
+            if retained != expected:
+                raise ReviewError(ReviewFailure.INTEGRITY_INVALID)
+            packs.append(retained)
+        batch = None
+        transport = None
+        if packs and len(packs) == len(cycles):
+            expected_batch = create_question_batch_v2(tuple(packs))
+            try:
+                batch = self._review.load_batch(expected_batch.batch_identity)
+                transport = self._review.load_transport(
+                    expected_transport_identity_v2(expected_batch)
+                )
+            except ReviewError as error:
+                if error.failure is not ReviewFailure.ARTIFACT_UNAVAILABLE:
+                    raise
+                batch = None
+                transport = None
+            if batch is not None and batch != expected_batch:
+                raise ReviewError(ReviewFailure.INTEGRITY_INVALID)
+        ready_pack_ids = {item.review_pack_identity for item in packs}
         return IntradayReviewV2Snapshot(
             probables_run_identity=pointer.probables_run_identity,
             current_pointer_identity=pointer.integrity_identity,
             candidates=tuple(
-                self._candidate_snapshot(cycle)
+                self._candidate_snapshot(cycle, ready_pack_ids, transport is not None)
                 for cycle in cycles
+            ),
+            review_batch_identity=None if batch is None else batch.batch_identity,
+            question_transport_identity=(
+                None if transport is None else transport.transport_identity
+            ),
+            question_filename=None if transport is None else transport.question_filename,
+            expected_answer_filename=(
+                None if transport is None else transport.expected_answer_filename
             ),
         )
 
     def _candidate_snapshot(
-        self, cycle: ReviewCycleV2,
+        self,
+        cycle: ReviewCycleV2,
+        ready_pack_ids: set[str] | None = None,
+        transport_ready: bool = False,
     ) -> IntradayReviewV2CandidateSnapshot:
         active = self._review.load_current_chart(cycle.cycle_identity)
+        pack_ready = False
+        if active is not None and ready_pack_ids is not None:
+            chart = self._review.load_chart(active.chart_revision_identity)
+            handoff = self._review.load_handoff(cycle.handoff_identity)
+            pack_ready = (
+                create_question_pack_v2(handoff, cycle, chart).review_pack_identity
+                in ready_pack_ids
+            )
         return IntradayReviewV2CandidateSnapshot(
             sponsor_label=_sponsor_label(cycle.canonical_subject_identity),
             canonical_subject_identity=cycle.canonical_subject_identity,
@@ -157,8 +236,10 @@ class IntradayReviewV2Application:
             phase=cycle.phase.value,
             review_state="REVIEW_CYCLE_EXISTS",
             chart_state="CHART_REQUIRED" if active is None else "CHART_READY",
-            review_pack_state="ABSENT",
-            question_pack_state="ABSENT",
+            review_pack_state="READY" if pack_ready else "ABSENT",
+            question_pack_state=(
+                "TRANSPORT_READY" if pack_ready and transport_ready else "ABSENT"
+            ),
             answer_state=cycle.answer_state.value,
             cycle_identity=cycle.cycle_identity,
             probable_result_identity=cycle.probable_result_identity,
@@ -246,6 +327,46 @@ class IntradayReviewV2Application:
             self._review.save_current_chart(current)
             return chart
 
+    def create_combined_question_transport(self) -> IntradayReviewV2BatchResult:
+        """Create exact V2 packs and one immutable combined Question transport."""
+
+        with self._lock:
+            pointer = self._review.load_current()
+            if pointer is None or not pointer.cycles:
+                raise ReviewError(ReviewFailure.NOT_CURRENT)
+            entries: list[tuple[ReviewQuestionPackV2, bytes]] = []
+            for cycle_pointer in pointer.cycles:
+                cycle = self._review.load_cycle(cycle_pointer.cycle_identity)
+                active = self._review.load_current_chart(cycle.cycle_identity)
+                if active is None:
+                    raise ReviewError(ReviewFailure.CHART_REQUIRED)
+                chart = self._review.load_chart(active.chart_revision_identity)
+                handoff = self._review.load_handoff(cycle.handoff_identity)
+                pack = create_question_pack_v2(handoff, cycle, chart)
+                entries.append((pack, self._review.load_chart_bytes(chart)))
+            ordered = tuple(sorted(
+                entries,
+                key=lambda item: item[0].expected_canonical_subject_identity,
+            ))
+            packs = tuple(pack for pack, _ in ordered)
+            for pack in packs:
+                self._review.retain_pack(pack)
+            batch = create_question_batch_v2(packs)
+            self._review.retain_batch(batch)
+            transport, question_path, answer_path = self._transport.export(
+                batch, ordered
+            )
+            self._review.retain_transport(
+                transport, question_path.read_bytes(), answer_path.read_bytes()
+            )
+            return IntradayReviewV2BatchResult(
+                batch=batch,
+                transport=transport,
+                packs=packs,
+                question_path=question_path,
+                answer_template_path=answer_path,
+            )
+
     def create_eligible_cycles(self, run: ProbablesRunV2) -> tuple[ReviewCycleV2, ...]:
         """Retain cycles only after exact persisted V2 lineage has been proven."""
         if type(run) is not ProbablesRunV2:
@@ -317,6 +438,7 @@ def _sponsor_label(canonical_subject_identity: str) -> str:
 
 __all__ = [
     "IntradayReviewV2Application",
+    "IntradayReviewV2BatchResult",
     "IntradayReviewV2CandidateSnapshot",
     "IntradayReviewV2Snapshot",
 ]

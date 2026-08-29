@@ -22,6 +22,11 @@ from kronos.intraday.review_v2 import (
     artifact_from_bytes_v2,
 )
 from kronos.intraday.review_persistence import validate_chart_payload
+from kronos.intraday.review_v2_transport import (
+    ReviewBatchTransportV2,
+    transport_artifact_bytes_v2,
+    transport_from_bytes_v2,
+)
 
 
 DEFAULT_INTRADAY_REVIEW_V2_ROOT = (
@@ -80,6 +85,35 @@ class IntradayReviewV2Store:
     def retain_batch(self, value: ReviewQuestionBatchV2) -> Path:
         return self._retain_typed("question-batches", value.batch_identity, value)
 
+    def retain_transport(
+        self,
+        value: ReviewBatchTransportV2,
+        question_pdf: bytes,
+        answer_template: bytes,
+    ) -> Path:
+        if (
+            type(value) is not ReviewBatchTransportV2
+            or type(question_pdf) is not bytes
+            or type(answer_template) is not bytes
+            or sha256(question_pdf).hexdigest() != value.question_pdf_sha256
+            or sha256(answer_template).hexdigest() != value.answer_template_sha256
+        ):
+            raise ReviewError(ReviewFailure.INTEGRITY_INVALID)
+        manifest = self._path(
+            "question-transports", value.transport_identity
+        )
+        question = self._path(
+            "question-transport-pdfs", value.transport_identity, ".pdf"
+        )
+        answer = self._path(
+            "answer-templates", value.transport_identity
+        )
+        with self._lock:
+            self._retain(question, question_pdf)
+            self._retain(answer, answer_template)
+            self._retain(manifest, transport_artifact_bytes_v2(value))
+        return manifest
+
     def retain_visual_evidence(self, value: ImportedVisualEvidenceV2) -> Path:
         return self._retain_typed("visual-evidence", value.visual_evidence_identity, value)
 
@@ -119,6 +153,35 @@ class IntradayReviewV2Store:
         return self._load_typed(
             "question-batches", identity, ReviewQuestionBatchV2, "batch_identity"
         )
+
+    def load_transport(self, identity: str) -> ReviewBatchTransportV2:
+        value = transport_from_bytes_v2(
+            self._read(self._path("question-transports", identity))
+        )
+        if value.transport_identity != identity:
+            raise ReviewError(ReviewFailure.INTEGRITY_INVALID)
+        if self.load_batch(value.review_batch_identity).review_pack_identities != value.review_pack_identities:
+            raise ReviewError(ReviewFailure.INTEGRITY_INVALID)
+        question = self.load_transport_question_pdf(value)
+        answer = self.load_transport_answer_template(value)
+        if (
+            sha256(question).hexdigest() != value.question_pdf_sha256
+            or sha256(answer).hexdigest() != value.answer_template_sha256
+        ):
+            raise ReviewError(ReviewFailure.INTEGRITY_INVALID)
+        return value
+
+    def load_transport_question_pdf(self, value: ReviewBatchTransportV2) -> bytes:
+        if type(value) is not ReviewBatchTransportV2:
+            raise ReviewError(ReviewFailure.INPUT_INVALID)
+        return self._read(self._path(
+            "question-transport-pdfs", value.transport_identity, ".pdf"
+        ))
+
+    def load_transport_answer_template(self, value: ReviewBatchTransportV2) -> bytes:
+        if type(value) is not ReviewBatchTransportV2:
+            raise ReviewError(ReviewFailure.INPUT_INVALID)
+        return self._read(self._path("answer-templates", value.transport_identity))
 
     def load_visual_evidence(self, identity: str) -> ImportedVisualEvidenceV2:
         return self._load_typed(

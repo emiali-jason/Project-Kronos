@@ -53,6 +53,7 @@ from kronos.intraday.review_v2_operation import (
     ReviewV2OperationSource,
 )
 from kronos.intraday.review_v2 import REVIEW_V2_CHART_ROUTE
+from kronos.intraday.review_v2_transport import REVIEW_V2_QUESTION_TRANSPORT_ROUTE
 from kronos.intraday.telemetry import TelemetryType
 
 
@@ -243,13 +244,31 @@ def _review_v2_projection(
             + '">CREATE V2 REVIEW CYCLES</button><span>Exact persisted run · '
             + escape(available_run.run_identity) + '</span></div>'
         )
+    phase_b = ""
+    if snapshot.candidates and all(item.chart_state == "CHART_READY" for item in snapshot.candidates):
+        if snapshot.question_transport_identity is None:
+            phase_b = (
+                '<form class="intraday-review-v2-control" method="post" action="'
+                + REVIEW_V2_QUESTION_TRANSPORT_ROUTE
+                + '"><button type="submit">CREATE V2 COMBINED QUESTION PDF</button>'
+                '<span>Exact V2 cycles · charts · packs · one transport</span></form>'
+            )
+        else:
+            phase_b = (
+                '<div class="intraday-review-v2-control"><strong>V2 QUESTION TRANSPORT READY</strong>'
+                '<span>CURRENT QUESTION PACK: ' + escape(snapshot.question_filename or "")
+                + '<br>EXPECTED ANSWER: ' + escape(snapshot.expected_answer_filename or "")
+                + '<br>CANDIDATES: ' + str(len(snapshot.candidates))
+                + '<br>Transport · ' + escape(snapshot.question_transport_identity)
+                + '</span></div>'
+            )
     return (
         '<section class="intraday-review-v2"><div class="intraday-review-v2-head"><div>'
         '<h2>PHASE-A REVIEW · PROBABLES V2/V2.1</h2>'
         '<p>Review Cycle → Chart Required. Review Packs and Question Packs begin only after real chart intake.</p>'
         '</div><span class="intraday-review-toolbar-note">Cycles · '
         + str(len(snapshot.candidates)) + '</span></div><div class="intraday-review-v2-grid">'
-        + empty + '</div>' + control + '</section>'
+        + empty + '</div>' + control + phase_b + '</section>'
     )
 
 

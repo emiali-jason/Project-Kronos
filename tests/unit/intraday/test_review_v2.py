@@ -26,6 +26,7 @@ from kronos.intraday.review_answer import (
     ANSWER_PACK_IDENTITY,
     ANSWER_CONTRACT_VERSION,
     parse_answer_pack,
+    parse_batch_answer_transport,
 )
 from kronos.intraday.review_v2 import (
     REVIEW_CYCLE_V2_IDENTITY,
@@ -39,6 +40,10 @@ from kronos.intraday.review_v2 import (
     create_question_pack_v2,
 )
 from kronos.intraday.review_v2_persistence import IntradayReviewV2Store
+from kronos.intraday.review_v2_transport import (
+    REVIEW_BATCH_TRANSPORT_V2_IDENTITY,
+    IntradayReviewV2Transport,
+)
 from kronos.intraday.review_persistence import MAX_CHART_BYTES
 from .test_probables_v2 import (
     _later_mapping,
@@ -335,3 +340,56 @@ def test_v2_chart_intake_rejects_invalid_image_and_forged_lineage(
     ):
         with pytest.raises(ReviewError, match=ReviewFailure.CHART_INVALID.value):
             replace(request, **change)
+
+
+def test_v2_combined_transport_is_exact_bound_idempotent_and_reloadable(
+    tmp_path: Path,
+) -> None:
+    *_, mapping = _opening_inputs()
+    run, original = _application(tmp_path, mapping)
+    application = IntradayReviewV2Application(
+        probables_store=original.probables_store,
+        review_store=original.review_store,
+        transport=IntradayReviewV2Transport(
+            question_outbox=(tmp_path / "questions").resolve(),
+            answer_inbox=(tmp_path / "answers").resolve(),
+        ),
+    )
+    cycle = application.create_eligible_cycles(run)[0]
+    chart = application.upload_chart(
+        cycle.cycle_identity, media_type="image/png", payload=_png(71)
+    )
+
+    first = application.create_combined_question_transport()
+    repeated = application.create_combined_question_transport()
+
+    assert repeated == first
+    assert first.transport.schema_identity == REVIEW_BATCH_TRANSPORT_V2_IDENTITY
+    assert first.batch.review_cycle_identities == (cycle.cycle_identity,)
+    assert first.packs[0].chart_revision_identity == chart.chart_revision_identity
+    assert first.packs[0].review_cycle_identity == cycle.cycle_identity
+    assert first.question_path.read_bytes().startswith(b"%PDF")
+    parsed = parse_batch_answer_transport(first.answer_template_path.read_bytes())
+    assert parsed.review_batch_identity == first.batch.batch_identity
+    assert parsed.probables_run_identity == run.run_identity
+    assert len(parsed.candidate_documents) == 1
+    candidate = parsed.candidate_documents[0]
+    assert candidate["review_pack_identity"] == first.packs[0].review_pack_identity
+    assert candidate["review_cycle_identity"] == cycle.cycle_identity
+    assert candidate["chart_revision_identity"] == chart.chart_revision_identity
+    assert candidate["observed_visible_subject_identity"] is None
+    parsed_candidate = parse_answer_pack(json.dumps(candidate).encode())
+    assert parsed_candidate.review_pack_identity == first.packs[0].review_pack_identity
+    assert parsed_candidate.review_cycle_identity == cycle.cycle_identity
+    assert parsed_candidate.chart_revision_identity == chart.chart_revision_identity
+
+    restored = IntradayReviewV2Store(application.review_store.root)
+    assert restored.load_pack(first.packs[0].review_pack_identity) == first.packs[0]
+    assert restored.load_batch(first.batch.batch_identity) == first.batch
+    assert restored.load_transport(first.transport.transport_identity) == first.transport
+    assert restored.load_transport_question_pdf(first.transport) == first.question_path.read_bytes()
+    assert restored.load_transport_answer_template(first.transport) == first.answer_template_path.read_bytes()
+    snapshot = application.snapshot()
+    assert snapshot.candidates[0].review_pack_state == "READY"
+    assert snapshot.candidates[0].question_pack_state == "TRANSPORT_READY"
+    assert snapshot.question_transport_identity == first.transport.transport_identity
