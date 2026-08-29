@@ -9,7 +9,9 @@ from hashlib import sha256
 
 from kronos.intraday.review import ReviewError, ReviewFailure
 from kronos.intraday.review_v2 import (
+    ChartIntakeRequestV2,
     ChartRevisionV2,
+    CurrentChartPointerV2,
     CurrentReviewPointerV2,
     ImportedVisualEvidenceV2,
     ReviewCycleV2,
@@ -51,6 +53,9 @@ class IntradayReviewV2Store:
 
     def retain_cycle(self, value: ReviewCycleV2) -> Path:
         return self._retain_typed("cycles", value.cycle_identity, value)
+
+    def retain_chart_request(self, value: ChartIntakeRequestV2) -> Path:
+        return self._retain_typed("chart-requests", value.request_identity, value)
 
     def retain_chart(self, value: ChartRevisionV2, payload: bytes) -> Path:
         if type(value) is not ChartRevisionV2:
@@ -100,6 +105,11 @@ class IntradayReviewV2Store:
             "chart-revisions", identity, ChartRevisionV2, "chart_revision_identity"
         )
 
+    def load_chart_request(self, identity: str) -> ChartIntakeRequestV2:
+        return self._load_typed(
+            "chart-requests", identity, ChartIntakeRequestV2, "request_identity"
+        )
+
     def load_pack(self, identity: str) -> ReviewQuestionPackV2:
         return self._load_typed(
             "question-packs", identity, ReviewQuestionPackV2, "review_pack_identity"
@@ -130,6 +140,52 @@ class IntradayReviewV2Store:
         ):
             raise ReviewError(ReviewFailure.INTEGRITY_INVALID)
         return payload
+
+    def save_current_chart(self, value: CurrentChartPointerV2) -> Path:
+        if type(value) is not CurrentChartPointerV2:
+            raise ReviewError(ReviewFailure.INPUT_INVALID)
+        path = self._path("current-charts", value.review_cycle_identity)
+        with self._lock:
+            self._replace(path, artifact_bytes_v2(value))
+        return path
+
+    def load_current_chart(
+        self, cycle_identity: str,
+    ) -> CurrentChartPointerV2 | None:
+        path = self._path("current-charts", cycle_identity)
+        if not path.exists():
+            return None
+        value = artifact_from_bytes_v2(self._read(path))
+        if (
+            type(value) is not CurrentChartPointerV2
+            or value.review_cycle_identity != cycle_identity
+        ):
+            raise ReviewError(ReviewFailure.INTEGRITY_INVALID)
+        cycle = self.load_cycle(cycle_identity)
+        request = self.load_chart_request(value.chart_request_identity)
+        chart = self.load_chart(value.chart_revision_identity)
+        if (
+            request.review_cycle_identity != cycle_identity
+            or chart.review_cycle_identity != cycle_identity
+            or value.probables_run_identity != cycle.probables_run_identity
+            or value.probable_result_identity != cycle.probable_result_identity
+            or value.expected_canonical_subject_identity
+            != cycle.canonical_subject_identity
+            or value.direction != cycle.direction
+            or value.methodology_publication_identity
+            != cycle.methodology_publication_identity
+            or value.methodology_checksum != cycle.methodology_checksum
+            or value.phase is not cycle.phase
+            or value.analysis_boundary != cycle.analysis_boundary
+            or value.chart_artifact_identity != chart.chart_artifact_identity
+            or value.revision_ordinal != chart.revision_ordinal
+            or value.payload_sha256 != chart.payload_sha256
+            or value.media_type != chart.media_type
+            or request.payload_sha256 != chart.payload_sha256
+            or request.media_type != chart.media_type
+        ):
+            raise ReviewError(ReviewFailure.INTEGRITY_INVALID)
+        return value
 
     def save_current(self, value: CurrentReviewPointerV2) -> Path:
         if type(value) is not CurrentReviewPointerV2:

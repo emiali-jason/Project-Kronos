@@ -52,6 +52,7 @@ from kronos.intraday.review_v2_operation import (
     REVIEW_V2_CREATE_ROUTE,
     ReviewV2OperationSource,
 )
+from kronos.intraday.review_v2 import REVIEW_V2_CHART_ROUTE
 from kronos.intraday.telemetry import TelemetryType
 
 
@@ -219,36 +220,8 @@ def _review_v2_projection(
     if snapshot is None:
         return ""
     cards = "".join(
-        '<article class="intraday-review-v2-card"><h3>'
-        + escape(item.sponsor_label)
-        + '</h3><span class="direction '
-        + ("direction-long" if item.direction == "LONG" else "direction-short")
-        + '">' + escape(item.direction) + '</span><br><span class="phase-a">CHART REQUIRED</span>'
-        + '<p class="intraday-review-lineage">Canonical subject · '
-        + escape(item.canonical_subject_identity)
-        + '<br>Methodology · ' + escape(item.methodology_identity) + " / "
-        + escape(item.methodology_version)
-        + '<br>Source analysis boundary · ' + escape(_ist_time(item.analysis_boundary))
-        + '<br>Phase · ' + escape(item.phase)
-        + '<br>Review · ' + escape(item.review_state.replace("_", " "))
-        + '<br>Review Pack · ' + escape(item.review_pack_state.replace("_", " "))
-        + '<br>Question Pack · ' + escape(item.question_pack_state.replace("_", " "))
-        + '<br>Answer · ' + escape(item.answer_state.replace("_", " "))
-        + (
-            ""
-            if item.nifty_applicability is None
-            else '<br>NIFTY · ' + escape(item.nifty_applicability)
-        )
-        + (
-            ""
-            if item.mcx_commissioning_state is None
-            else '<br>MCX commissioning · ' + escape(item.mcx_commissioning_state)
-        )
-        + '</p><details class="intraday-review-diagnostics"><summary>V2 LINEAGE</summary>'
-        + 'Cycle · ' + escape(item.cycle_identity)
-        + '<br>Probables Result · ' + escape(item.probable_result_identity)
-        + '</details></article>'
-        for item in snapshot.candidates
+        _review_v2_candidate(item, index)
+        for index, item in enumerate(snapshot.candidates, start=1)
     )
     empty = (
         '<div class="empty"><div><strong>No V2 Review cycles created</strong>'
@@ -280,6 +253,69 @@ def _review_v2_projection(
     )
 
 
+def _review_v2_candidate(item, slot_index: int) -> str:  # type: ignore[no-untyped-def]
+    target_identity = f"intraday-v2-chart-slot-{slot_index}"
+    input_identity = f"intraday-v2-chart-file-{slot_index}"
+    cycle = quote(item.cycle_identity, safe="")
+    if item.chart_revision_ordinal is None:
+        chart_content = (
+            '<div><span class="paste-key">⌘V</span><strong>PASTE / UPLOAD CHART</strong>'
+            '<span>TRADINGVIEW 4-CHART IMAGE · MISSING</span>'
+            '<span class="required-panels">Required: 1D · 1H · 15M · 5M</span></div>'
+        )
+        received_class = ""
+        replace_action = ""
+    else:
+        chart_content = (
+            '<div class="intraday-chart-received"><strong>TRADINGVIEW 4-CHART IMAGE · RECEIVED</strong>'
+            '<span>' + escape(item.canonical_subject_identity) + '</span><span>Chart Revision · REV '
+            + f"{item.chart_revision_ordinal:03d}"
+            + '</span></div>'
+        )
+        received_class = " received"
+        replace_action = (
+            '<button class="intraday-replace-chart" type="button" data-target="'
+            + target_identity + '">Replace</button>'
+        )
+    upload = (
+        '<div class="intraday-review-section-title">TRADINGVIEW CHARTS</div>'
+        '<div id="' + target_identity + '" class="intraday-drop' + received_class
+        + '" role="button" tabindex="0" aria-label="Paste TradingView 1D 1H 15M 5M chart composite for '
+        + escape(item.canonical_subject_identity)
+        + '" data-upload-url="' + REVIEW_V2_CHART_ROUTE + '?cycle=' + cycle + '">'
+        + chart_content + '</div><div class="intraday-chart-slot-actions">'
+        + replace_action
+        + '<label class="intraday-file-choice" for="' + input_identity + '">Choose File</label>'
+        '<input id="' + input_identity + '" class="intraday-chart-input" type="file" '
+        'accept="image/png,image/jpeg" aria-label="Choose 1D 1H 15M 5M chart composite" '
+        'data-target="' + target_identity + '"></div>'
+    )
+    return (
+        '<article class="intraday-review-v2-card"><h3>'
+        + escape(item.sponsor_label)
+        + '</h3><span class="direction '
+        + ("direction-long" if item.direction == "LONG" else "direction-short")
+        + '">' + escape(item.direction) + '</span><br><span class="phase-a">'
+        + escape(item.chart_state.replace("_", " ")) + '</span>'
+        + '<p class="intraday-review-lineage">Canonical subject · '
+        + escape(item.canonical_subject_identity)
+        + '<br>Methodology · ' + escape(item.methodology_identity) + " / "
+        + escape(item.methodology_version)
+        + '<br>Source analysis boundary · ' + escape(_ist_time(item.analysis_boundary))
+        + '<br>Phase · ' + escape(item.phase)
+        + '<br>Review · ' + escape(item.review_state.replace("_", " "))
+        + '<br>Review Pack · ' + escape(item.review_pack_state.replace("_", " "))
+        + '<br>Question Pack · ' + escape(item.question_pack_state.replace("_", " "))
+        + '<br>Answer · ' + escape(item.answer_state.replace("_", " "))
+        + ("" if item.nifty_applicability is None else '<br>NIFTY · ' + escape(item.nifty_applicability))
+        + ("" if item.mcx_commissioning_state is None else '<br>MCX commissioning · ' + escape(item.mcx_commissioning_state))
+        + '</p>' + upload
+        + '<details class="intraday-review-diagnostics"><summary>V2 LINEAGE</summary>'
+        + 'Cycle · ' + escape(item.cycle_identity)
+        + '<br>Probables Result · ' + escape(item.probable_result_identity)
+        + ("" if item.chart_revision_identity is None else '<br>Chart Revision · ' + escape(item.chart_revision_identity))
+        + '</details></article>'
+    )
 def _review_v2_control_script() -> str:
     return (
         '<script>(()=>{const b=document.getElementById("intraday-create-review-v2");'

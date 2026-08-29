@@ -3,14 +3,21 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
+from hashlib import sha256
+from threading import RLock
+from typing import Callable
 
 from kronos.intraday.probables import ProbableState
 from kronos.intraday.probables_v2 import ProbablesRunV2, ProbablesV2Error
 from kronos.intraday.probables_v2_persistence import ProbablesV2Store
 from kronos.intraday.review import ReviewError, ReviewFailure
 from kronos.intraday.review_v2 import (
+    ChartRevisionV2,
     ReviewCycleV2,
+    create_chart_intake_request_v2,
+    create_chart_revision_v2,
+    create_current_chart_pointer_v2,
     create_current_review_pointer_v2,
     create_review_cycle_v2,
     create_review_handoff_v2,
@@ -37,6 +44,9 @@ class IntradayReviewV2CandidateSnapshot:
     probable_result_identity: str
     nifty_applicability: str | None
     mcx_commissioning_state: str | None
+    chart_revision_identity: str | None
+    chart_revision_ordinal: int | None
+    chart_payload_sha256: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -54,14 +64,18 @@ class IntradayReviewV2Application:
         *,
         probables_store: ProbablesV2Store,
         review_store: IntradayReviewV2Store,
+        clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
     ) -> None:
         if (
             type(probables_store) is not ProbablesV2Store
             or type(review_store) is not IntradayReviewV2Store
+            or not callable(clock)
         ):
             raise ValueError("INTRADAY_REVIEW_V2_APPLICATION_INVALID")
         self._probables = probables_store
         self._review = review_store
+        self._clock = clock
+        self._lock = RLock()
 
     @property
     def review_store(self) -> IntradayReviewV2Store:
@@ -123,38 +137,114 @@ class IntradayReviewV2Application:
             probables_run_identity=pointer.probables_run_identity,
             current_pointer_identity=pointer.integrity_identity,
             candidates=tuple(
-                IntradayReviewV2CandidateSnapshot(
-                    sponsor_label=_sponsor_label(cycle.canonical_subject_identity),
-                    canonical_subject_identity=cycle.canonical_subject_identity,
-                    direction=cycle.direction,
-                    methodology_identity=cycle.methodology_identity,
-                    methodology_version=cycle.methodology_version,
-                    methodology_publication_identity=(
-                        cycle.methodology_publication_identity
-                    ),
-                    analysis_boundary=cycle.analysis_boundary,
-                    phase=cycle.phase.value,
-                    review_state="REVIEW_CYCLE_EXISTS",
-                    chart_state="CHART_REQUIRED",
-                    review_pack_state="ABSENT",
-                    question_pack_state="ABSENT",
-                    answer_state=cycle.answer_state.value,
-                    cycle_identity=cycle.cycle_identity,
-                    probable_result_identity=cycle.probable_result_identity,
-                    nifty_applicability=(
-                        None
-                        if cycle.nifty_applicability is None
-                        else cycle.nifty_applicability.value
-                    ),
-                    mcx_commissioning_state=(
-                        None
-                        if cycle.mcx_commissioning is None
-                        else cycle.mcx_commissioning.state.value
-                    ),
-                )
+                self._candidate_snapshot(cycle)
                 for cycle in cycles
             ),
         )
+
+    def _candidate_snapshot(
+        self, cycle: ReviewCycleV2,
+    ) -> IntradayReviewV2CandidateSnapshot:
+        active = self._review.load_current_chart(cycle.cycle_identity)
+        return IntradayReviewV2CandidateSnapshot(
+            sponsor_label=_sponsor_label(cycle.canonical_subject_identity),
+            canonical_subject_identity=cycle.canonical_subject_identity,
+            direction=cycle.direction,
+            methodology_identity=cycle.methodology_identity,
+            methodology_version=cycle.methodology_version,
+            methodology_publication_identity=cycle.methodology_publication_identity,
+            analysis_boundary=cycle.analysis_boundary,
+            phase=cycle.phase.value,
+            review_state="REVIEW_CYCLE_EXISTS",
+            chart_state="CHART_REQUIRED" if active is None else "CHART_READY",
+            review_pack_state="ABSENT",
+            question_pack_state="ABSENT",
+            answer_state=cycle.answer_state.value,
+            cycle_identity=cycle.cycle_identity,
+            probable_result_identity=cycle.probable_result_identity,
+            nifty_applicability=(
+                None
+                if cycle.nifty_applicability is None
+                else cycle.nifty_applicability.value
+            ),
+            mcx_commissioning_state=(
+                None
+                if cycle.mcx_commissioning is None
+                else cycle.mcx_commissioning.state.value
+            ),
+            chart_revision_identity=(
+                None if active is None else active.chart_revision_identity
+            ),
+            chart_revision_ordinal=(
+                None if active is None else active.revision_ordinal
+            ),
+            chart_payload_sha256=(
+                None if active is None else active.payload_sha256
+            ),
+        )
+
+    def upload_chart(
+        self,
+        cycle_identity: str,
+        *,
+        media_type: str,
+        payload: bytes,
+    ) -> ChartRevisionV2:
+        """Retain one exact-cycle chart without mutating the Review Cycle."""
+
+        with self._lock:
+            pointer = self._review.load_current()
+            if pointer is None:
+                raise ReviewError(ReviewFailure.NOT_CURRENT)
+            cycle_pointer = next(
+                (item for item in pointer.cycles if item.cycle_identity == cycle_identity),
+                None,
+            )
+            if cycle_pointer is None:
+                raise ReviewError(ReviewFailure.NOT_CURRENT)
+            cycle = self._review.load_cycle(cycle_identity)
+            if (
+                cycle.probables_run_identity != pointer.probables_run_identity
+                or cycle.probable_result_identity
+                != cycle_pointer.probable_result_identity
+                or cycle.canonical_subject_identity
+                != cycle_pointer.canonical_subject_identity
+                or cycle.direction != cycle_pointer.direction
+            ):
+                raise ReviewError(ReviewFailure.INTEGRITY_INVALID)
+
+            request = create_chart_intake_request_v2(
+                cycle,
+                payload=payload,
+                media_type=media_type,
+                requested_at=self._clock(),
+            )
+            self._review.retain_chart_request(request)
+            active_pointer = self._review.load_current_chart(cycle_identity)
+            if (
+                active_pointer is not None
+                and active_pointer.payload_sha256 == sha256(payload).hexdigest()
+                and active_pointer.media_type == media_type
+            ):
+                return self._review.load_chart(
+                    active_pointer.chart_revision_identity
+                )
+
+            chart = create_chart_revision_v2(
+                cycle,
+                revision_ordinal=(
+                    1 if active_pointer is None
+                    else active_pointer.revision_ordinal + 1
+                ),
+                payload=payload,
+                media_type=media_type,
+                received_at=self._clock(),
+                request_identity=request.request_identity,
+            )
+            current = create_current_chart_pointer_v2(cycle, request, chart)
+            self._review.retain_chart(chart, payload)
+            self._review.save_current_chart(current)
+            return chart
 
     def create_eligible_cycles(self, run: ProbablesRunV2) -> tuple[ReviewCycleV2, ...]:
         """Retain cycles only after exact persisted V2 lineage has been proven."""

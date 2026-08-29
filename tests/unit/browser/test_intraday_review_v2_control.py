@@ -20,12 +20,14 @@ from kronos.intraday.review_v2_operation import (
 from kronos.intraday.review_v2_operation_persistence import (
     ReviewV2OperationProvenanceStore,
 )
+from kronos.intraday.review_v2 import REVIEW_V2_CHART_ROUTE
 from kronos.intraday.review_v2_persistence import IntradayReviewV2Store
 from kronos.intraday.probables_v2_persistence import ProbablesV2Store
 from tests.unit.browser.test_product_route_isolation import _snapshot
 from tests.unit.intraday.test_probables_v2 import _opening_inputs, _run
 from tests.unit.intraday.test_probables import _member, _run as _run_v1
 from tests.unit.intraday.test_review import _application
+from tests.unit.intraday.test_review import _png
 
 
 class _Workstation:
@@ -203,3 +205,60 @@ def test_concurrent_conflict_fails_closed_and_remains_retryable(tmp_path: Path) 
     completed = control.execute_document(request)
     assert completed["outcome"] == "COMPLETE"
     assert completed["cycle_count"] == 1
+
+
+def test_v2_browser_chart_route_is_exact_cycle_bound_and_uses_proven_transport(
+    tmp_path: Path,
+) -> None:
+    run, application, control = _control(tmp_path / "v2")
+    v1 = _application(tmp_path / "v1", [_run_v1((_member("V1-FIXTURE"),))])
+    routes = IntradayBrowserRoutes(
+        _Workstation(run), review=v1, review_v2_control=control
+    )
+    assert control.execute_document(_payload(run))["outcome"] == "COMPLETE"
+    cycle = application.snapshot().candidates[0].cycle_identity
+
+    page = routes.handle_get(BrowserGetRequest("/intraday/review", {}), _snapshot)
+    assert page is not None
+    assert (
+        f'data-upload-url="{REVIEW_V2_CHART_ROUTE}?cycle={cycle}"'
+        in page.body
+    )
+    assert "PASTE / UPLOAD CHART" in page.body
+    assert "target.addEventListener('paste'" in page.body
+    assert "fetch(target.dataset.uploadUrl" in page.body
+
+    uploaded = routes.handle_post(
+        BrowserPostRequest(
+            REVIEW_V2_CHART_ROUTE,
+            {"cycle": [cycle]},
+            "image/png",
+            _png(61),
+        ),
+        _snapshot,
+    )
+    assert uploaded is not None and uploaded.status.value == 200
+    assert "CHART READY" in uploaded.body
+    assert "Chart Revision · REV 001" in uploaded.body
+    assert control.status_document()["chart_required_count"] == 0
+
+    wrong = routes.handle_post(
+        BrowserPostRequest(
+            REVIEW_V2_CHART_ROUTE,
+            {"cycle": ["INTRADAY-REVIEW-V2-CYCLE-WRONG"]},
+            "image/png",
+            _png(62),
+        ),
+        _snapshot,
+    )
+    assert wrong is not None and wrong.status.value == 409
+    invalid = routes.handle_post(
+        BrowserPostRequest(
+            REVIEW_V2_CHART_ROUTE,
+            {"cycle": [cycle]},
+            "image/png",
+            b"corrupt",
+        ),
+        _snapshot,
+    )
+    assert invalid is not None and invalid.status.value == 400

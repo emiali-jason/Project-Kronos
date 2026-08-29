@@ -29,6 +29,7 @@ from kronos.browser.product_routes import (
     BrowserSnapshotProvider,
 )
 from kronos.intraday.review import ReviewError, ReviewFailure
+from kronos.intraday.review_v2 import REVIEW_V2_CHART_ROUTE
 from kronos.intraday.review_pdf import IntradayReviewPdfTransport
 from kronos.intraday.review_persistence import IntradayReviewStore
 from kronos.intraday.native_visual_reconciliation import ReconciliationError
@@ -168,6 +169,7 @@ class IntradayBrowserRoutes:
         return path in {
             "/control/intraday-discovery/v2",
             "/control/intraday-review/v2",
+            REVIEW_V2_CHART_ROUTE,
             "/intraday/review/start",
             "/intraday/review/chart",
             "/intraday/review/question-pack",
@@ -249,7 +251,15 @@ class IntradayBrowserRoutes:
                     ),
                     content_type="application/json; charset=utf-8",
                 )
-            if request.path == "/intraday/review/start":
+            if request.path == REVIEW_V2_CHART_ROUTE:
+                if self._review_v2_control is None:
+                    raise ValueError
+                self._review_v2_control.application.upload_chart(
+                    _one_query(request, "cycle"),
+                    media_type=request.content_type,
+                    payload=request.body,
+                )
+            elif request.path == "/intraday/review/start":
                 result = _one_query(request, "result")
                 if request.body:
                     raise ValueError
@@ -365,7 +375,9 @@ class IntradayBrowserRoutes:
             )
         return BrowserRouteResponse(
             render_intraday_review(
-                snapshot_provider(), self._review.snapshot(), self._reconciliation.snapshot()
+                snapshot_provider(), self._review.snapshot(), self._reconciliation.snapshot(),
+                review_v2=self._review_v2_snapshot(),
+                available_probables_v2_run=self._current_probables_v2(),
             )
         )
 

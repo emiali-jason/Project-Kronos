@@ -61,6 +61,14 @@ CURRENT_REVIEW_V2_POINTER_IDENTITY = (
     "KRONOS-INTRADAY-CURRENT-REVIEW-POINTER-V2"
 )
 REVIEW_V2_CONTRACT_VERSION = "2.0.0"
+CHART_INTAKE_REQUEST_V2_IDENTITY = (
+    "KRONOS-INTRADAY-REVIEW-V2-CHART-INTAKE-REQUEST"
+)
+CURRENT_CHART_V2_POINTER_IDENTITY = (
+    "KRONOS-INTRADAY-CURRENT-CHART-POINTER-V2"
+)
+CHART_INTAKE_V2_CONTRACT_VERSION = "1.0.0"
+REVIEW_V2_CHART_ROUTE = "/control/intraday-review/v2/chart"
 
 
 @dataclass(frozen=True, slots=True)
@@ -281,6 +289,104 @@ class ChartRevisionV2:
             != _identity("INTEGRITY-INTRADAY-CHART-REVISION-V2-", values)
         ):
             raise ReviewError(ReviewFailure.CHART_INVALID)
+
+
+@dataclass(frozen=True, slots=True)
+class ChartIntakeRequestV2:
+    request_identity: str
+    review_cycle_identity: str
+    probables_run_identity: str
+    probable_result_identity: str
+    expected_canonical_subject_identity: str
+    direction: str
+    methodology_identity: str
+    methodology_version: str
+    methodology_publication_identity: str
+    methodology_checksum: str
+    phase: IntradayAnalysisPhase
+    analysis_boundary: datetime
+    media_type: str
+    byte_count: int
+    payload_sha256: str
+    requested_at: datetime
+    source: str
+    provenance: tuple[str, ...]
+    integrity_identity: str
+    schema_identity: str = CHART_INTAKE_REQUEST_V2_IDENTITY
+    schema_version: str = CHART_INTAKE_V2_CONTRACT_VERSION
+
+    def __post_init__(self) -> None:
+        values = _without(self, "request_identity", "integrity_identity")
+        if (
+            not _texts((
+                self.review_cycle_identity, self.probables_run_identity,
+                self.probable_result_identity,
+                self.expected_canonical_subject_identity, self.direction,
+                self.methodology_identity, self.methodology_version,
+                self.methodology_publication_identity, self.methodology_checksum,
+            ))
+            or self.direction not in {"LONG", "SHORT"}
+            or type(self.phase) is not IntradayAnalysisPhase
+            or not _aware(self.analysis_boundary)
+            or self.media_type not in {"image/png", "image/jpeg"}
+            or type(self.byte_count) is not int or self.byte_count < 1
+            or re.fullmatch(r"[0-9a-f]{64}", self.payload_sha256) is None
+            or not _aware(self.requested_at)
+            or self.source != "SPONSOR_BROWSER_CONTROL"
+            or not _texts(self.provenance)
+            or self.schema_identity != CHART_INTAKE_REQUEST_V2_IDENTITY
+            or self.schema_version != CHART_INTAKE_V2_CONTRACT_VERSION
+            or self.request_identity
+            != _identity("INTRADAY-REVIEW-V2-CHART-REQUEST-", values)
+            or self.integrity_identity
+            != _identity("INTEGRITY-INTRADAY-REVIEW-V2-CHART-REQUEST-", values)
+        ):
+            raise ReviewError(ReviewFailure.CHART_INVALID)
+
+
+@dataclass(frozen=True, slots=True)
+class CurrentChartPointerV2:
+    review_cycle_identity: str
+    chart_request_identity: str
+    chart_revision_identity: str
+    chart_artifact_identity: str
+    probables_run_identity: str
+    probable_result_identity: str
+    expected_canonical_subject_identity: str
+    direction: str
+    methodology_publication_identity: str
+    methodology_checksum: str
+    phase: IntradayAnalysisPhase
+    analysis_boundary: datetime
+    revision_ordinal: int
+    payload_sha256: str
+    media_type: str
+    integrity_identity: str
+    schema_identity: str = CURRENT_CHART_V2_POINTER_IDENTITY
+    schema_version: str = CHART_INTAKE_V2_CONTRACT_VERSION
+
+    def __post_init__(self) -> None:
+        values = _without(self, "integrity_identity")
+        if (
+            not _texts((
+                self.review_cycle_identity, self.chart_request_identity,
+                self.chart_revision_identity, self.chart_artifact_identity,
+                self.probables_run_identity, self.probable_result_identity,
+                self.expected_canonical_subject_identity, self.direction,
+                self.methodology_publication_identity, self.methodology_checksum,
+            ))
+            or self.direction not in {"LONG", "SHORT"}
+            or type(self.phase) is not IntradayAnalysisPhase
+            or not _aware(self.analysis_boundary)
+            or type(self.revision_ordinal) is not int or self.revision_ordinal < 1
+            or re.fullmatch(r"[0-9a-f]{64}", self.payload_sha256) is None
+            or self.media_type not in {"image/png", "image/jpeg"}
+            or self.schema_identity != CURRENT_CHART_V2_POINTER_IDENTITY
+            or self.schema_version != CHART_INTAKE_V2_CONTRACT_VERSION
+            or self.integrity_identity
+            != _identity("INTEGRITY-CURRENT-INTRADAY-CHART-V2-POINTER-", values)
+        ):
+            raise ReviewError(ReviewFailure.INTEGRITY_INVALID)
 
 
 @dataclass(frozen=True, slots=True)
@@ -630,8 +736,12 @@ def create_chart_revision_v2(
     payload: bytes,
     media_type: str,
     received_at: datetime,
+    request_identity: str | None = None,
 ) -> ChartRevisionV2:
-    if type(cycle) is not ReviewCycleV2:
+    if (
+        type(cycle) is not ReviewCycleV2
+        or request_identity is not None and not _text(request_identity)
+    ):
         raise ReviewError(ReviewFailure.CHART_INVALID)
     from kronos.intraday.review_persistence import validate_chart_payload
 
@@ -657,7 +767,11 @@ def create_chart_revision_v2(
         "byte_count": len(payload),
         "received_at": received_at,
         "timeframe_set": CHART_TIMEFRAMES,
-        "provenance": ("KRONOS-INTRADAY-V2-REVIEW-SUCCESSOR-SEAM", cycle.cycle_identity),
+        "provenance": (
+            "KRONOS-INTRADAY-V2-REVIEW-SUCCESSOR-SEAM",
+            cycle.cycle_identity,
+            *((request_identity,) if request_identity is not None else ()),
+        ),
         "schema_identity": CHART_REVISION_V2_IDENTITY,
         "schema_version": REVIEW_V2_CONTRACT_VERSION,
     }
@@ -665,6 +779,102 @@ def create_chart_revision_v2(
         chart_revision_identity=_identity("INTRADAY-CHART-REVISION-V2-", values),
         integrity_identity=_identity(
             "INTEGRITY-INTRADAY-CHART-REVISION-V2-", values
+        ),
+        **values,
+    )
+
+
+def create_chart_intake_request_v2(
+    cycle: ReviewCycleV2,
+    *,
+    payload: bytes,
+    media_type: str,
+    requested_at: datetime,
+) -> ChartIntakeRequestV2:
+    if type(cycle) is not ReviewCycleV2 or not _aware(requested_at):
+        raise ReviewError(ReviewFailure.CHART_INVALID)
+    from kronos.intraday.review_persistence import validate_chart_payload
+
+    validate_chart_payload(media_type, payload)
+    values = {
+        "review_cycle_identity": cycle.cycle_identity,
+        "probables_run_identity": cycle.probables_run_identity,
+        "probable_result_identity": cycle.probable_result_identity,
+        "expected_canonical_subject_identity": cycle.canonical_subject_identity,
+        "direction": cycle.direction,
+        "methodology_identity": cycle.methodology_identity,
+        "methodology_version": cycle.methodology_version,
+        "methodology_publication_identity": cycle.methodology_publication_identity,
+        "methodology_checksum": cycle.methodology_checksum,
+        "phase": cycle.phase,
+        "analysis_boundary": cycle.analysis_boundary,
+        "media_type": media_type,
+        "byte_count": len(payload),
+        "payload_sha256": sha256(payload).hexdigest(),
+        "requested_at": requested_at,
+        "source": "SPONSOR_BROWSER_CONTROL",
+        "provenance": (
+            "KRONOS-INTRADAY-V2-CHART-INTAKE",
+            cycle.cycle_identity,
+        ),
+        "schema_identity": CHART_INTAKE_REQUEST_V2_IDENTITY,
+        "schema_version": CHART_INTAKE_V2_CONTRACT_VERSION,
+    }
+    return ChartIntakeRequestV2(
+        request_identity=_identity("INTRADAY-REVIEW-V2-CHART-REQUEST-", values),
+        integrity_identity=_identity(
+            "INTEGRITY-INTRADAY-REVIEW-V2-CHART-REQUEST-", values
+        ),
+        **values,
+    )
+
+
+def create_current_chart_pointer_v2(
+    cycle: ReviewCycleV2,
+    request: ChartIntakeRequestV2,
+    chart: ChartRevisionV2,
+) -> CurrentChartPointerV2:
+    if (
+        type(cycle) is not ReviewCycleV2
+        or type(request) is not ChartIntakeRequestV2
+        or type(chart) is not ChartRevisionV2
+        or request.review_cycle_identity != cycle.cycle_identity
+        or chart.review_cycle_identity != cycle.cycle_identity
+        or request.probables_run_identity != chart.probables_run_identity
+        or request.probable_result_identity != chart.probable_result_identity
+        or request.expected_canonical_subject_identity
+        != chart.expected_canonical_subject_identity
+        or request.direction != chart.direction
+        or request.methodology_publication_identity
+        != chart.methodology_publication_identity
+        or request.methodology_checksum != chart.methodology_checksum
+        or request.phase is not chart.phase
+        or request.payload_sha256 != chart.payload_sha256
+        or request.media_type != chart.media_type
+    ):
+        raise ReviewError(ReviewFailure.INTEGRITY_INVALID)
+    values = {
+        "review_cycle_identity": cycle.cycle_identity,
+        "chart_request_identity": request.request_identity,
+        "chart_revision_identity": chart.chart_revision_identity,
+        "chart_artifact_identity": chart.chart_artifact_identity,
+        "probables_run_identity": cycle.probables_run_identity,
+        "probable_result_identity": cycle.probable_result_identity,
+        "expected_canonical_subject_identity": cycle.canonical_subject_identity,
+        "direction": cycle.direction,
+        "methodology_publication_identity": cycle.methodology_publication_identity,
+        "methodology_checksum": cycle.methodology_checksum,
+        "phase": cycle.phase,
+        "analysis_boundary": cycle.analysis_boundary,
+        "revision_ordinal": chart.revision_ordinal,
+        "payload_sha256": chart.payload_sha256,
+        "media_type": chart.media_type,
+        "schema_identity": CURRENT_CHART_V2_POINTER_IDENTITY,
+        "schema_version": CHART_INTAKE_V2_CONTRACT_VERSION,
+    }
+    return CurrentChartPointerV2(
+        integrity_identity=_identity(
+            "INTEGRITY-CURRENT-INTRADAY-CHART-V2-POINTER-", values
         ),
         **values,
     )
@@ -890,6 +1100,7 @@ def artifact_bytes_v2(value: object) -> bytes:
     if type(value) not in {
         ReviewHandoffV2, ReviewCycleV2, ChartRevisionV2, ReviewQuestionPackV2,
         ReviewQuestionBatchV2, ImportedVisualEvidenceV2, CurrentReviewPointerV2,
+        ChartIntakeRequestV2, CurrentChartPointerV2,
     }:
         raise ReviewError(ReviewFailure.INPUT_INVALID)
     return _canonical(_normalize(value)) + b"\n"
@@ -909,6 +1120,8 @@ def artifact_from_bytes_v2(payload: bytes) -> object:
             REVIEW_BATCH_V2_IDENTITY: ReviewQuestionBatchV2,
             IMPORTED_VISUAL_EVIDENCE_V2_IDENTITY: ImportedVisualEvidenceV2,
             CURRENT_REVIEW_V2_POINTER_IDENTITY: CurrentReviewPointerV2,
+            CHART_INTAKE_REQUEST_V2_IDENTITY: ChartIntakeRequestV2,
+            CURRENT_CHART_V2_POINTER_IDENTITY: CurrentChartPointerV2,
         }.get(schema)
         if expected is None:
             raise ValueError
@@ -957,7 +1170,10 @@ def _decode(expected: type, value: object) -> object:
         document["cycles"] = tuple(ReviewCyclePointerV2(**item) for item in document["cycles"])
         return CurrentReviewPointerV2(**document)
     document = dict(value)  # type: ignore[arg-type]
-    for name in ("analysis_boundary", "received_at", "imported_at", "created_at"):
+    for name in (
+        "analysis_boundary", "received_at", "imported_at", "created_at",
+        "requested_at",
+    ):
         if name in document:
             document[name] = datetime.fromisoformat(document[name])
     if "phase" in document:
@@ -1050,16 +1266,20 @@ def _aware(value: object) -> bool:
 
 
 __all__ = [
+    "CHART_INTAKE_REQUEST_V2_IDENTITY", "CHART_INTAKE_V2_CONTRACT_VERSION",
     "CHART_REVISION_V2_IDENTITY", "CURRENT_REVIEW_V2_POINTER_IDENTITY",
+    "CURRENT_CHART_V2_POINTER_IDENTITY",
     "IMPORTED_VISUAL_EVIDENCE_V2_IDENTITY", "QUESTION_PACK_V2_IDENTITY",
     "REVIEW_BATCH_V2_IDENTITY", "REVIEW_CYCLE_V2_IDENTITY",
-    "REVIEW_HANDOFF_V2_IDENTITY",
-    "REVIEW_V2_CONTRACT_VERSION", "ChartRevisionV2", "CurrentReviewPointerV2",
+    "REVIEW_HANDOFF_V2_IDENTITY", "REVIEW_V2_CHART_ROUTE",
+    "REVIEW_V2_CONTRACT_VERSION", "ChartIntakeRequestV2", "ChartRevisionV2",
+    "CurrentChartPointerV2", "CurrentReviewPointerV2",
     "ImportedVisualEvidenceV2", "McxReviewCommissioningBindingV2",
     "ReviewCycleV2", "ReviewHandoffV2", "ReviewQuestionBatchV2",
     "ReviewQuestionPackV2",
     "artifact_bytes_v2", "artifact_from_bytes_v2",
     "bind_imported_visual_evidence_v2", "create_chart_revision_v2",
+    "create_chart_intake_request_v2", "create_current_chart_pointer_v2",
     "create_current_review_pointer_v2", "create_question_batch_v2",
     "create_question_pack_v2",
     "create_review_cycle_v2", "create_review_handoff_v2",

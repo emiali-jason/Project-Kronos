@@ -33,11 +33,13 @@ from kronos.intraday.review_v2 import (
     artifact_bytes_v2,
     artifact_from_bytes_v2,
     bind_imported_visual_evidence_v2,
+    create_chart_intake_request_v2,
     create_chart_revision_v2,
     create_question_batch_v2,
     create_question_pack_v2,
 )
 from kronos.intraday.review_v2_persistence import IntradayReviewV2Store
+from kronos.intraday.review_persistence import MAX_CHART_BYTES
 from .test_probables_v2 import (
     _later_mapping,
     _opening_inputs,
@@ -248,3 +250,88 @@ def test_unknown_methodology_phase_and_integrity_tampering_fail_closed(
     ):
         with pytest.raises(ReviewError, match=ReviewFailure.INTEGRITY_INVALID.value):
             replace(cycle, **changes)
+
+
+def test_v2_chart_intake_is_exact_cycle_bound_idempotent_and_restart_safe(
+    tmp_path: Path,
+) -> None:
+    *_, mapping = _opening_inputs()
+    run, application = _application(tmp_path, mapping)
+    cycle = application.create_eligible_cycles(run)[0]
+    original_cycle = artifact_bytes_v2(cycle)
+
+    first = application.upload_chart(
+        cycle.cycle_identity, media_type="image/png", payload=_png(51)
+    )
+    same = application.upload_chart(
+        cycle.cycle_identity, media_type="image/png", payload=_png(51)
+    )
+    replacement = application.upload_chart(
+        cycle.cycle_identity, media_type="image/png", payload=_png(52)
+    )
+
+    assert same == first
+    assert first.revision_ordinal == 1
+    assert replacement.revision_ordinal == 2
+    assert first.chart_revision_identity != replacement.chart_revision_identity
+    assert application.review_store.load_chart_bytes(first) == _png(51)
+    assert application.review_store.load_chart_bytes(replacement) == _png(52)
+    assert artifact_bytes_v2(application.review_store.load_cycle(cycle.cycle_identity)) == original_cycle
+    current = application.review_store.load_current_chart(cycle.cycle_identity)
+    assert current is not None
+    assert current.chart_revision_identity == replacement.chart_revision_identity
+    assert current.expected_canonical_subject_identity == cycle.canonical_subject_identity
+    assert current.direction == cycle.direction
+    assert current.methodology_publication_identity == cycle.methodology_publication_identity
+    assert current.methodology_checksum == cycle.methodology_checksum
+    assert current.phase is cycle.phase
+    assert current.analysis_boundary == cycle.analysis_boundary
+
+    restored = IntradayReviewV2Application(
+        probables_store=application.probables_store,
+        review_store=IntradayReviewV2Store(application.review_store.root),
+    )
+    candidate = restored.snapshot().candidates[0]
+    assert candidate.chart_state == "CHART_READY"
+    assert candidate.chart_revision_identity == replacement.chart_revision_identity
+    assert candidate.chart_revision_ordinal == 2
+
+
+def test_v2_chart_intake_rejects_invalid_image_and_forged_lineage(
+    tmp_path: Path,
+) -> None:
+    *_, mapping = _opening_inputs()
+    run, application = _application(tmp_path, mapping)
+    cycle = application.create_eligible_cycles(run)[0]
+
+    for media_type, payload in (
+        ("image/png", b""),
+        ("text/plain", _png(1)),
+        ("image/png", b"not-a-png"),
+        ("image/png", b"\x89PNG\r\n\x1a\n" + b"0" * MAX_CHART_BYTES),
+    ):
+        with pytest.raises(ReviewError, match=ReviewFailure.CHART_INVALID.value):
+            application.upload_chart(
+                cycle.cycle_identity, media_type=media_type, payload=payload
+            )
+    with pytest.raises(ReviewError, match=ReviewFailure.NOT_CURRENT.value):
+        application.upload_chart(
+            "INTRADAY-REVIEW-V2-CYCLE-WRONG",
+            media_type="image/png",
+            payload=_png(2),
+        )
+
+    request = create_chart_intake_request_v2(
+        cycle,
+        payload=_png(3),
+        media_type="image/png",
+        requested_at=run.analysis_boundary + timedelta(seconds=1),
+    )
+    for change in (
+        {"expected_canonical_subject_identity": "NSE-EQ-WRONG"},
+        {"direction": "SHORT"},
+        {"methodology_checksum": "0" * 64},
+        {"review_cycle_identity": "INTRADAY-REVIEW-V2-CYCLE-WRONG"},
+    ):
+        with pytest.raises(ReviewError, match=ReviewFailure.CHART_INVALID.value):
+            replace(request, **change)
