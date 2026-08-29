@@ -55,11 +55,11 @@ _INTRADAY_CSS = r"""
 .intraday-card{border:1px solid var(--line);background:#071827;border-radius:12px;padding:18px;max-width:760px}.intraday-card h2{margin:0;color:var(--green)}.intraday-card .event{border-top:1px solid var(--line);padding:10px 0}.intraday-card .detail-link{display:inline-block;margin-top:10px;color:var(--green);font-weight:800}.intraday-status{color:var(--muted);margin:8px 0 14px}.intraday-status strong{color:var(--green)}
 .intraday-warning{display:flex;justify-content:space-between;gap:16px;border:1px solid #82631f;background:#231d11;color:#f6d997;border-radius:8px;padding:12px 14px;margin-bottom:14px}.intraday-selector{display:flex;align-items:center;gap:10px;margin-bottom:14px}.intraday-selector label{font-weight:700}.intraday-selector select{border:1px solid #31506a;background:#04131f;color:var(--text);border-radius:7px;padding:9px 12px}.intraday-panel{border:1px solid var(--line);background:rgba(6,23,37,.88);border-radius:10px;padding:15px;margin-bottom:14px;min-width:0}.intraday-panel h2{margin:0 0 12px;color:var(--blue);font-size:17px}.intraday-panel h3{margin:14px 0 7px;color:var(--muted);font-size:11px;text-transform:uppercase}.intraday-facts{display:grid;grid-template-columns:minmax(140px,.35fr) minmax(0,1fr);margin:0}.intraday-facts dt,.intraday-facts dd{padding:6px 8px;border-top:1px solid var(--line);margin:0;overflow-wrap:anywhere}.intraday-facts dt{color:var(--muted)}.intraday-timeframes{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.incomplete-observation{display:grid;gap:5px;margin-top:11px;border:1px dashed #82631f;border-radius:7px;padding:9px;color:#f6d997}.incomplete-observation span{color:var(--muted);overflow-wrap:anywhere}.intraday-context{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}.intraday-table{width:100%;border-collapse:collapse;font-size:12px}.intraday-table th,.intraday-table td{text-align:left;vertical-align:top;padding:8px;border-bottom:1px solid var(--line);overflow-wrap:anywhere}.intraday-table th{color:var(--muted);white-space:nowrap}.table-scroll{overflow:auto}.intraday-unavailable{color:var(--muted)}.intraday-unavailable strong{color:var(--amber)}
 .intraday-discovery-header{border:1px solid var(--line);background:#071827;border-radius:9px;padding:13px 15px;margin-bottom:12px}.intraday-discovery-header h2{font-size:17px;color:var(--green);margin:0 0 5px}.intraday-discovery-header p{margin:3px 0;color:var(--muted);font-size:12px}.intraday-discovery-table{width:100%;border-collapse:collapse;font-size:12px}.intraday-discovery-table th,.intraday-discovery-table td{padding:7px 8px;border-bottom:1px solid var(--line);text-align:left}.intraday-discovery-table th{font-size:10px;color:var(--muted);text-transform:uppercase}.intraday-state-ready{color:var(--green)}.intraday-state-held{color:var(--amber)}.intraday-failure{border:1px solid #81502a;background:#26170d;color:#f0c08e;border-radius:7px;padding:9px 11px;margin-bottom:12px}.intraday-methodology{border:1px solid var(--line);background:#071827;color:#c2d2dd;border-radius:7px;padding:8px 11px;margin-bottom:12px;font-size:11px}.intraday-methodology strong{color:var(--green)}.intraday-detail-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
-.intraday-tabs{margin:-22px -28px 22px}.intraday-tabs a.active{border-color:var(--green)}.intraday-tab{height:61px;display:flex;align-items:center;color:var(--muted);border-bottom:2px solid transparent;white-space:nowrap}.intraday-refresh-state{margin-left:8px;color:var(--muted);font-size:10px}.intraday-summary .status-top strong{color:var(--green)}.intraday-market-panels{grid-template-columns:repeat(2,minmax(0,1fr))}.intraday-market-panels .panel-heading h2{color:var(--green)}.intraday-market-panels .market-panel{min-height:330px}.intraday-market-panels .empty{min-height:110px}.intraday-probable .summary-reason{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:7px}.intraday-card-fact{border-left:1px solid var(--line);padding-left:7px;min-width:0}.intraday-card-fact:first-child{border-left:0;padding-left:0}.intraday-card-fact span{display:block;color:var(--muted);font-size:8px;text-transform:uppercase;letter-spacing:.04em}.intraday-card-fact strong{display:block;margin-top:2px;font-size:11px;overflow-wrap:anywhere}.intraday-probable .summary-rr strong{color:#dce8f0}.intraday-panel-footer{display:flex;flex-wrap:wrap;gap:7px 14px;border-top:1px solid var(--line);margin-top:13px;padding-top:10px;color:var(--muted);font-size:10px}.intraday-panel-footer strong{color:#dce8f0}.intraday-unavailable-list{display:grid;gap:6px;margin-top:10px}.intraday-unavailable-subject{display:flex;justify-content:space-between;gap:10px;border-top:1px solid var(--line);padding-top:6px;color:var(--muted);font-size:11px}.intraday-unavailable-subject strong{color:var(--amber)}.intraday-analysis-context{display:flex;align-items:flex-start;gap:12px;border:1px solid var(--line);background:#071827;border-radius:8px;margin-top:14px;padding:8px 10px}.intraday-analysis-context>strong{flex:0 0 auto;color:var(--green);font-size:10px;text-transform:uppercase;letter-spacing:.05em}.intraday-analysis-context-detail{display:flex;align-items:center;flex-wrap:wrap;gap:5px 12px;color:var(--muted);font-size:8px;white-space:normal}.intraday-analysis-context-detail span{padding-left:12px;border-left:1px solid var(--line)}
+.intraday-tabs{margin:-22px -28px 22px}.intraday-tabs a.active{border-color:var(--green)}.intraday-tab{height:61px;display:flex;align-items:center;color:var(--muted);border-bottom:2px solid transparent;white-space:nowrap}.intraday-refresh-state{margin-left:8px;color:var(--muted);font-size:10px}.intraday-summary .status-top strong{color:var(--green)}.intraday-market-panels{grid-template-columns:repeat(2,minmax(0,1fr))}.intraday-market-panels .panel-heading h2{color:var(--green)}.intraday-market-panels .market-panel{min-height:330px}.intraday-market-panels .empty{min-height:110px}.intraday-market-accounting{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px;margin:-8px 0 14px}.intraday-market-accounting div{border:1px solid var(--line);border-radius:7px;background:#071827;padding:8px}.intraday-market-accounting span{display:block;color:var(--muted);font-size:8px;text-transform:uppercase;letter-spacing:.05em}.intraday-market-accounting strong{display:block;margin-top:2px;font-size:14px}.intraday-opportunities-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;align-items:start}.intraday-market-group{border:1px solid var(--line);background:rgba(6,23,37,.86);border-radius:11px;padding:16px;min-width:0}.intraday-market-heading{display:flex;align-items:baseline;justify-content:space-between;gap:10px;border-bottom:1px solid var(--line);padding-bottom:10px}.intraday-market-heading h2{margin:0;color:var(--green);font-size:17px}.intraday-market-heading span{color:var(--muted);font-size:11px}.intraday-direction-group{margin-top:14px}.intraday-direction-group>h3{margin:0;color:#dce8f0;font-size:12px;letter-spacing:.08em}.intraday-direction-group>p{margin:3px 0 0;color:var(--muted);font-size:10px}.intraday-direction-empty{border:1px dashed var(--line);border-radius:8px;color:var(--muted);font-size:11px;margin-top:8px;padding:11px;text-align:center}.intraday-market-empty{border-left:2px solid var(--amber);color:var(--muted);font-size:10px;margin:12px 0 0;padding:6px 9px}.intraday-probable .opp-identity h4{font-size:18px;margin:0}.intraday-probable .summary-reason{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:7px}.intraday-card-fact{border-left:1px solid var(--line);padding-left:7px;min-width:0}.intraday-card-fact:first-child{border-left:0;padding-left:0}.intraday-card-fact span{display:block;color:var(--muted);font-size:8px;text-transform:uppercase;letter-spacing:.04em}.intraday-card-fact strong{display:block;margin-top:2px;font-size:11px;overflow-wrap:anywhere}.intraday-probable .summary-rr strong{color:#dce8f0}.intraday-probables-diagnostics{border:1px solid var(--line);background:#071827;border-radius:9px;margin-top:14px;padding:10px 12px}.intraday-probables-diagnostics>summary{cursor:pointer;color:var(--muted);font-size:10px;font-weight:800;letter-spacing:.05em}.intraday-diagnostic-list{display:grid;max-height:360px;overflow:auto;margin-top:9px}.intraday-diagnostic-row{display:grid;grid-template-columns:minmax(140px,.7fr) minmax(110px,.4fr) minmax(170px,.7fr) minmax(220px,1.3fr);gap:8px;border-top:1px solid var(--line);padding:7px 0;font-size:9px}.intraday-diagnostic-row strong{color:#dce8f0}.intraday-diagnostic-row span{color:var(--muted);overflow-wrap:anywhere}.intraday-panel-footer{display:flex;flex-wrap:wrap;gap:7px 14px;border-top:1px solid var(--line);margin-top:13px;padding-top:10px;color:var(--muted);font-size:10px}.intraday-panel-footer strong{color:#dce8f0}.intraday-unavailable-list{display:grid;gap:6px;margin-top:10px}.intraday-unavailable-subject{display:flex;justify-content:space-between;gap:10px;border-top:1px solid var(--line);padding-top:6px;color:var(--muted);font-size:11px}.intraday-unavailable-subject strong{color:var(--amber)}.intraday-analysis-context{display:flex;align-items:flex-start;gap:12px;border:1px solid var(--line);background:#071827;border-radius:8px;margin-top:14px;padding:8px 10px}.intraday-analysis-context>strong{flex:0 0 auto;color:var(--green);font-size:10px;text-transform:uppercase;letter-spacing:.05em}.intraday-analysis-context-detail{display:flex;align-items:center;flex-wrap:wrap;gap:5px 12px;color:var(--muted);font-size:8px;white-space:normal}.intraday-analysis-context-detail span{padding-left:12px;border-left:1px solid var(--line)}
 .intraday-review-toolbar{display:flex;align-items:center;gap:9px;flex-wrap:wrap;border:1px solid var(--line);background:#071827;border-radius:9px;padding:10px;margin-bottom:12px}.intraday-review-toolbar form{margin:0}.intraday-review-toolbar .future-action{opacity:.62}.intraday-review-toolbar-note{color:var(--muted);font-size:10px}.intraday-batch-result{border:1px solid #2d765d;background:#08261e;border-radius:9px;padding:10px 12px;margin-bottom:12px}.intraday-batch-result h2{color:var(--green);font-size:13px;margin:0 0 6px}.intraday-batch-accounting{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}.intraday-batch-accounting span,.intraday-batch-members span{font-size:10px;color:var(--muted)}.intraday-batch-members{display:flex;flex-wrap:wrap;gap:5px 12px;margin-top:7px}.intraday-review-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:12px}.intraday-review-card{border:1px solid var(--line);background:#071827;border-radius:10px;padding:14px;min-width:0}.intraday-review-card h2{margin:0;color:var(--green);font-size:18px}.intraday-review-head{display:flex;justify-content:space-between;gap:14px;align-items:center}.intraday-review-required{display:inline-block;margin-top:7px;color:#f6d997;font-size:10px;font-weight:850}.intraday-probable-context{border-top:1px solid var(--line);border-bottom:1px solid var(--line);padding:8px 0;margin:9px 0;color:#d9e6df;font-size:10px}.intraday-probable-context strong{display:block;color:var(--green);font-size:9px;text-transform:uppercase;margin-bottom:3px}.intraday-review-section-title{color:var(--muted);font-size:9px;font-weight:850;letter-spacing:.05em;margin:10px 0 6px}.intraday-review-status{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin:12px 0}.intraday-review-status div{border:1px solid var(--line);border-radius:6px;padding:7px}.intraday-review-status span{display:block;color:var(--muted);font-size:8px;text-transform:uppercase}.intraday-review-status strong{font-size:10px;overflow-wrap:anywhere}.intraday-review-actions{display:grid;gap:8px}.intraday-drop{display:grid;place-items:center;text-align:center;min-height:160px;border:2px dashed #3d836b;border-radius:9px;padding:16px;color:var(--muted);cursor:pointer;outline:none}.intraday-drop:hover,.intraday-drop:focus-visible{border-color:var(--green);background:#09251d;box-shadow:0 0 0 3px rgba(46,212,119,.14)}.intraday-drop .paste-key{display:grid;place-items:center;width:46px;height:36px;border:1px solid #3d836b;border-radius:7px;color:var(--green);font-size:18px;font-weight:900}.intraday-drop strong{color:#e9f7f0;font-size:13px;margin-top:7px}.intraday-drop span{display:block;font-size:10px}.intraday-drop .required-panels{margin-top:7px}.intraday-chart-input{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}.intraday-file-choice{justify-self:start;display:inline-block;border:1px solid #246a52;border-radius:7px;padding:7px 10px;color:#dff7eb;font-size:10px;font-weight:750;cursor:pointer}.intraday-file-choice:hover,.intraday-file-choice:focus-visible{border-color:var(--green);outline:2px solid rgba(46,212,119,.25)}.intraday-review-actions form{margin:0}.intraday-review-lineage{font-size:9px;color:var(--muted);overflow-wrap:anywhere}.intraday-review-diagnostics{font-size:9px;color:var(--muted)}.intraday-review-diagnostics summary{cursor:pointer}.intraday-review-config{margin-top:14px;border:1px solid var(--line);border-radius:7px;padding:9px;color:var(--muted);font-size:9px;overflow-wrap:anywhere}
 .intraday-drop{cursor:text;overflow:hidden}.intraday-drop.replace-ready{border-color:var(--green);background:#09251d;box-shadow:0 0 0 3px rgba(46,212,119,.14)}.intraday-drop.received{min-height:82px;border-style:solid}.intraday-chart-received strong{color:var(--green)}.intraday-chart-received span{color:var(--muted)}.intraday-chart-slot-actions{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
-@media(max-width:900px){.intraday-detail-grid{grid-template-columns:1fr}.intraday-probable .summary-reason{grid-template-columns:repeat(3,minmax(0,1fr))}}
-@media(max-width:760px){.intraday-tabs{margin:-18px -18px 18px;padding:0 18px;gap:13px;overflow:auto}.intraday-tabs .toolbar{margin-left:0}.intraday-timeframes,.intraday-context{grid-template-columns:1fr}.intraday-warning,.intraday-selector{align-items:flex-start;flex-direction:column}.intraday-facts{grid-template-columns:1fr}.intraday-facts dd{padding-top:0}.intraday-market-panels{grid-template-columns:1fr}.intraday-probable .summary-reason{grid-template-columns:repeat(2,minmax(0,1fr))}.intraday-analysis-context{align-items:flex-start}.intraday-analysis-context-detail{flex-wrap:wrap;white-space:normal}.intraday-review-list{grid-template-columns:1fr}.intraday-batch-accounting{grid-template-columns:repeat(2,minmax(0,1fr))}.intraday-review-status{grid-template-columns:1fr}.intraday-review-toolbar{align-items:stretch;flex-direction:column}.intraday-review-toolbar button{width:100%}}
+@media(max-width:900px){.intraday-detail-grid{grid-template-columns:1fr}.intraday-probable .summary-reason{grid-template-columns:repeat(3,minmax(0,1fr))}.intraday-diagnostic-row{grid-template-columns:minmax(120px,.7fr) minmax(100px,.4fr) minmax(160px,1fr)}.intraday-diagnostic-row span:last-child{grid-column:1/-1}}
+@media(max-width:760px){.intraday-tabs{margin:-18px -18px 18px;padding:0 18px;gap:13px;overflow:auto}.intraday-tabs .toolbar{margin-left:0}.intraday-timeframes,.intraday-context{grid-template-columns:1fr}.intraday-warning,.intraday-selector{align-items:flex-start;flex-direction:column}.intraday-facts{grid-template-columns:1fr}.intraday-facts dd{padding-top:0}.intraday-market-panels,.intraday-opportunities-grid{grid-template-columns:1fr}.intraday-market-accounting{grid-template-columns:repeat(2,minmax(0,1fr))}.intraday-probable .summary-reason{grid-template-columns:repeat(2,minmax(0,1fr))}.intraday-diagnostic-row{grid-template-columns:1fr}.intraday-diagnostic-row span:last-child{grid-column:auto}.intraday-analysis-context{align-items:flex-start}.intraday-analysis-context-detail{flex-wrap:wrap;white-space:normal}.intraday-review-list{grid-template-columns:1fr}.intraday-batch-accounting{grid-template-columns:repeat(2,minmax(0,1fr))}.intraday-review-status{grid-template-columns:1fr}.intraday-review-toolbar{align-items:stretch;flex-direction:column}.intraday-review-toolbar button{width:100%}}
 """
 
 
@@ -784,10 +784,45 @@ def _render_probables_v2_triage(
         + "</strong></div>"
         for label, value in metrics
     ) + "</div>"
-    labels = {item.canonical_identity: item.sponsor_label for item in snapshot.members}
-    cards = "".join(
-        _probable_v2_card(item, labels.get(item.canonical_subject_identity, item.canonical_subject_identity))
-        for item in sorted(run.results, key=lambda value: labels.get(value.canonical_subject_identity, value.canonical_subject_identity))
+    members = {item.canonical_identity: item for item in snapshot.members}
+    admitted_states = {ProbableState.LONG_PROBABLE, ProbableState.SHORT_PROBABLE}
+    admitted = tuple(
+        item
+        for item in run.results
+        if item.state in admitted_states
+        and item.canonical_subject_identity in members
+        and members[item.canonical_subject_identity].market_family
+        in {"NSE_EQUITY", "NSE_INDEX", "MCX"}
+    )
+    equity = tuple(
+        item
+        for item in admitted
+        if members[item.canonical_subject_identity].market_family
+        in {"NSE_EQUITY", "NSE_INDEX"}
+    )
+    mcx = tuple(
+        item
+        for item in admitted
+        if members[item.canonical_subject_identity].market_family == "MCX"
+    )
+    diagnostics_results = tuple(item for item in run.results if item not in admitted)
+    equity_long = sum(item.state is ProbableState.LONG_PROBABLE for item in equity)
+    equity_short = sum(item.state is ProbableState.SHORT_PROBABLE for item in equity)
+    mcx_long = sum(item.state is ProbableState.LONG_PROBABLE for item in mcx)
+    mcx_short = sum(item.state is ProbableState.SHORT_PROBABLE for item in mcx)
+    market_accounting = (
+        '<div class="intraday-market-accounting">'
+        + _market_accounting_fact("Equity / Index Long", equity_long)
+        + _market_accounting_fact("Equity / Index Short", equity_short)
+        + _market_accounting_fact("MCX Long", mcx_long)
+        + _market_accounting_fact("MCX Short", mcx_short)
+        + "</div>"
+    )
+    market_groups = (
+        '<div class="intraday-opportunities-grid" data-layout="equity-left-mcx-right">'
+        + _render_v2_market_group("EQUITY / INDEX", equity, members)
+        + _render_v2_market_group("MCX", mcx, members)
+        + "</div>"
     )
     phase_counts = " · ".join(
         f"{phase.value} {count}" for phase, count in diagnostics.phase_counts if count
@@ -804,22 +839,32 @@ def _render_probables_v2_triage(
         + '</strong> · ' + escape(_ist_time(run.analysis_boundary))
         + ' · ' + escape(phase_counts)
         + '. Phase-aware admission for deeper review only; no score, rank, confidence, trading, Risk or broker authority.</div>'
-        + '<section class="market-panel"><div class="panel-heading"><h2>PHASE-AWARE PROBABLES V2</h2><span>'
-        + str(diagnostics.total_probables) + ' current Probables</span></div>'
-        + cards
-        + '</section>'
+        + market_accounting
+        + market_groups
+        + _render_v2_diagnostics(diagnostics_results, members)
     )
 
 
 def _probable_v2_card(result, sponsor_label: str) -> str:  # type: ignore[no-untyped-def]
+    if result.state not in {ProbableState.LONG_PROBABLE, ProbableState.SHORT_PROBABLE}:
+        return ""
     direction = "UNAVAILABLE" if result.direction is None else result.direction.value
+    direction_class = (
+        "direction-long"
+        if result.state is ProbableState.LONG_PROBABLE
+        else "direction-short"
+    )
     provenance = {
         "OPENING": "PRIOR-SESSION CONTEXT",
         "STRUCTURE": "PRIOR-SESSION CONTEXT",
         "FIRST_CURRENT_SESSION_1H": "FIRST-CURRENT",
         "CURRENT_SESSION_ESTABLISHED": "ESTABLISHED-CURRENT",
     }.get("" if result.phase is None else result.phase.value, "UNAVAILABLE")
-    nifty = (
+    nifty_applicability = getattr(result, "nifty_applicability", None)
+    nifty = "NOT APPLICABLE" if (
+        nifty_applicability is not None
+        and nifty_applicability.value == "NOT_APPLICABLE"
+    ) else (
         "UNAVAILABLE"
         if result.nifty_relationship is None
         else result.nifty_relationship.value
@@ -827,9 +872,9 @@ def _probable_v2_card(result, sponsor_label: str) -> str:  # type: ignore[no-unt
     reason = " · ".join(_plain(item.value) for item in result.reasons)
     return (
         '<article class="opportunity native-opportunity intraday-probable"><div class="opp-head">'
-        '<div class="opp-identity"><h3>' + escape(sponsor_label) + '</h3>'
+        '<div class="opp-identity"><h4>' + escape(sponsor_label) + '</h4>'
         '<span class="setup-family">' + escape(result.canonical_subject_identity) + '</span></div>'
-        '<span class="direction">' + escape(direction) + '</span></div>'
+        '<span class="direction ' + direction_class + '">' + escape(direction) + '</span></div>'
         '<div class="summary-reason">'
         + _card_fact("Methodology", result.methodology_version)
         + _card_fact("Phase", "UNAVAILABLE" if result.phase is None else result.phase.value)
@@ -839,6 +884,100 @@ def _probable_v2_card(result, sponsor_label: str) -> str:  # type: ignore[no-unt
         + '</div><div class="summary-footer"><span class="summary-rr">Result <strong>'
         + escape(_plain(result.state.value))
         + '</strong></span><span>' + escape(reason) + '</span></div></article>'
+    )
+
+
+def _market_accounting_fact(label: str, value: int) -> str:
+    return (
+        '<div><span>' + escape(label) + '</span><strong>'
+        + escape(str(value)) + '</strong></div>'
+    )
+
+
+def _v2_member_label(result, members) -> str:  # type: ignore[no-untyped-def]
+    member = members.get(result.canonical_subject_identity)
+    if member is None:
+        return result.canonical_subject_identity
+    return member.sponsor_label
+
+
+def _v2_result_sort_key(result, members) -> tuple[str, str, str]:  # type: ignore[no-untyped-def]
+    label = _v2_member_label(result, members)
+    return (label.casefold(), label, result.canonical_subject_identity)
+
+
+def _render_v2_market_group(title: str, results, members) -> str:  # type: ignore[no-untyped-def]
+    long_results = tuple(
+        sorted(
+            (item for item in results if item.state is ProbableState.LONG_PROBABLE),
+            key=lambda item: _v2_result_sort_key(item, members),
+        )
+    )
+    short_results = tuple(
+        sorted(
+            (item for item in results if item.state is ProbableState.SHORT_PROBABLE),
+            key=lambda item: _v2_result_sort_key(item, members),
+        )
+    )
+    total = len(long_results) + len(short_results)
+    market_class = "intraday-market-mcx" if title == "MCX" else "intraday-market-equity"
+    empty = (
+        '<p class="intraday-market-empty">No current admitted '
+        + escape(title if title == "MCX" else title.title()) + ' Probables.</p>'
+        if total == 0 else ""
+    )
+    return (
+        '<section class="intraday-market-group ' + market_class + '">'
+        '<div class="intraday-market-heading"><h2>' + escape(title) + '</h2><span>'
+        + escape(str(total)) + ' admitted Probables</span></div>'
+        + empty
+        + _render_v2_direction_group("LONG", long_results, members)
+        + _render_v2_direction_group("SHORT", short_results, members)
+        + '</section>'
+    )
+
+
+def _render_v2_direction_group(direction: str, results, members) -> str:  # type: ignore[no-untyped-def]
+    cards = "".join(
+        _probable_v2_card(item, _v2_member_label(item, members)) for item in results
+    )
+    if not cards:
+        cards = (
+            '<div class="intraday-direction-empty">No current '
+            + escape(direction.title()) + ' Probables</div>'
+        )
+    return (
+        '<section class="intraday-direction-group intraday-direction-'
+        + direction.casefold() + '"><h3>' + escape(direction) + '</h3>'
+        '<p>Alphabetical by Sponsor-facing name</p>' + cards + '</section>'
+    )
+
+
+def _render_v2_diagnostics(results, members) -> str:  # type: ignore[no-untyped-def]
+    ordered = sorted(results, key=lambda item: _v2_result_sort_key(item, members))
+    rows = "".join(_render_v2_diagnostic_row(item, members) for item in ordered)
+    if not rows:
+        rows = '<p class="intraday-status">No excluded V2 population diagnostics.</p>'
+    return (
+        '<details class="intraday-probables-diagnostics"><summary>DIAGNOSTICS · '
+        + escape(str(len(ordered)))
+        + ' excluded from Sponsor opportunities</summary><div class="intraday-diagnostic-list">'
+        + rows + '</div></details>'
+    )
+
+
+def _render_v2_diagnostic_row(result, members) -> str:  # type: ignore[no-untyped-def]
+    state = _plain(result.state.value)
+    direction = "UNAVAILABLE" if result.direction is None else result.direction.value
+    reasons = " · ".join(_plain(item.value) for item in result.reasons) or "NO REASON"
+    member = members.get(result.canonical_subject_identity)
+    family = "UNKNOWN" if member is None else member.market_family
+    return (
+        '<div class="intraday-diagnostic-row"><strong>'
+        + escape(_v2_member_label(result, members)) + '</strong><span>'
+        + escape(state) + '</span><span>' + escape(family)
+        + ' · Semantic direction (diagnostic) ' + escape(direction)
+        + '</span><span>' + escape(reasons) + '</span></div>'
     )
 
 
