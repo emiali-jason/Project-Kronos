@@ -10,6 +10,9 @@ from kronos.application.intraday_runtime import create_intraday_runtime
 from kronos.intraday.probables_v2_persistence import ProbablesV2Store
 from kronos.intraday.review import ReviewError, ReviewFailure
 from kronos.intraday.review_v2_persistence import IntradayReviewV2Store
+from kronos.intraday.review_v2_operation_persistence import (
+    ReviewV2OperationProvenanceStore,
+)
 from tests.unit.intraday.test_probables_v2 import _opening_inputs, _run
 from tests.unit.provider.test_shared_provider_runtime import _shared
 
@@ -33,6 +36,8 @@ def test_runtime_composes_valid_empty_v2_review_without_autonomous_work(
     assert type(composition.review_v2_application) is IntradayReviewV2Application
     assert composition.review_v2_store.root == tmp_path / "review-v2"
     assert composition.review_v2_application.review_store is composition.review_v2_store
+    assert type(composition.review_v2_operation_store) is ReviewV2OperationProvenanceStore
+    assert composition.review_v2_operation_store.root == tmp_path / "review-v2" / "operations"
     assert composition.review_v2_current is None
     assert list(tmp_path.rglob("*")) == []
     assert provider.capability.calls == 0

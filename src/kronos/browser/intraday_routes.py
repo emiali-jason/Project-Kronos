@@ -17,6 +17,11 @@ from kronos.browser.intraday_views import (
 from kronos.browser.intraday_probables_v2_control import (
     IntradayProbablesV2OperationalControl,
 )
+from kronos.browser.intraday_review_v2_control import (
+    MAX_REVIEW_V2_REQUEST_BYTES,
+    REVIEW_V2_STATUS_ROUTE,
+    IntradayReviewV2OperationalControl,
+)
 from kronos.browser.product_routes import (
     BrowserGetRequest,
     BrowserPostRequest,
@@ -44,6 +49,7 @@ class IntradayBrowserRoutes:
         review: IntradayReviewApplication | None = None,
         reconciliation: IntradayNativeVisualReconciliationApplication | None = None,
         probables_v2_control: IntradayProbablesV2OperationalControl | None = None,
+        review_v2_control: IntradayReviewV2OperationalControl | None = None,
         review_workstation: object | None = None,
     ) -> None:
         if not callable(getattr(workstation, "snapshot", None)):
@@ -60,6 +66,12 @@ class IntradayBrowserRoutes:
         ):
             raise ValueError("INTRADAY_BROWSER_ROUTES_INVALID")
         self._probables_v2_control = probables_v2_control
+        if (
+            review_v2_control is not None
+            and type(review_v2_control) is not IntradayReviewV2OperationalControl
+        ):
+            raise ValueError("INTRADAY_BROWSER_ROUTES_INVALID")
+        self._review_v2_control = review_v2_control
         self._review = review or IntradayReviewApplication(
             current_probables=self._current_probables,
             store=IntradayReviewStore(),
@@ -79,6 +91,18 @@ class IntradayBrowserRoutes:
         probables = getattr(snapshot, "probables", None)
         return None if probables is None else probables.run
 
+    def _current_probables_v2(self):  # type: ignore[no-untyped-def]
+        snapshot = self._workstation.snapshot()
+        probables = getattr(snapshot, "probables_v2", None)
+        return None if probables is None else probables.run
+
+    def _review_v2_snapshot(self):  # type: ignore[no-untyped-def]
+        return (
+            None
+            if self._review_v2_control is None
+            else self._review_v2_control.application.snapshot()
+        )
+
     def handle_get(
         self,
         request: BrowserGetRequest,
@@ -97,6 +121,8 @@ class IntradayBrowserRoutes:
                     snapshot_provider(),
                     self._review.snapshot(),
                     self._reconciliation.snapshot(),
+                    review_v2=self._review_v2_snapshot(),
+                    available_probables_v2_run=self._current_probables_v2(),
                 )
             )
         elif request.path == "/control/intraday-discovery/v2/status":
@@ -114,6 +140,21 @@ class IntradayBrowserRoutes:
                 ),
                 content_type="application/json; charset=utf-8",
             )
+        elif request.path == REVIEW_V2_STATUS_ROUTE:
+            if self._review_v2_control is None or request.query:
+                return BrowserRouteResponse(
+                    "Not found.",
+                    status=HTTPStatus.NOT_FOUND,
+                    content_type="text/plain; charset=utf-8",
+                )
+            return BrowserRouteResponse(
+                json.dumps(
+                    self._review_v2_control.status_document(),
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ),
+                content_type="application/json; charset=utf-8",
+            )
         else:
             return None
         return BrowserRouteResponse(
@@ -126,6 +167,7 @@ class IntradayBrowserRoutes:
     def owns_post(self, path: str) -> bool:
         return path in {
             "/control/intraday-discovery/v2",
+            "/control/intraday-review/v2",
             "/intraday/review/start",
             "/intraday/review/chart",
             "/intraday/review/question-pack",
@@ -168,6 +210,39 @@ class IntradayBrowserRoutes:
                         else HTTPStatus.CONFLICT
                         if document["failure"]
                         == "INTRADAY_PROBABLES_V2_REQUEST_IDENTITY_CONFLICT"
+                        else HTTPStatus.BAD_REQUEST
+                        if outcome == "REJECTED"
+                        else HTTPStatus.SERVICE_UNAVAILABLE
+                    ),
+                    content_type="application/json; charset=utf-8",
+                )
+            if request.path == "/control/intraday-review/v2":
+                if self._review_v2_control is None:
+                    raise ValueError
+                if (
+                    request.query
+                    or request.content_type != "application/json"
+                    or not request.body
+                    or len(request.body) > MAX_REVIEW_V2_REQUEST_BYTES
+                ):
+                    payload = None
+                else:
+                    try:
+                        payload = json.loads(request.body)
+                    except (UnicodeDecodeError, json.JSONDecodeError):
+                        payload = None
+                document = self._review_v2_control.execute_document(payload)
+                outcome = document["outcome"]
+                return BrowserRouteResponse(
+                    json.dumps(document, sort_keys=True, separators=(",", ":")),
+                    status=(
+                        HTTPStatus.OK
+                        if outcome == "COMPLETE" or document["idempotent"]
+                        else HTTPStatus.CONFLICT
+                        if document["failure_reason"] in {
+                            "INTRADAY_REVIEW_V2_REQUEST_IDENTITY_CONFLICT",
+                            "INTRADAY_REVIEW_V2_OPERATION_CONFLICT",
+                        }
                         else HTTPStatus.BAD_REQUEST
                         if outcome == "REJECTED"
                         else HTTPStatus.SERVICE_UNAVAILABLE

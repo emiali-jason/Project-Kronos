@@ -14,6 +14,7 @@ from kronos.application.intraday_review import (
     IntradayReviewBatchResult,
     IntradayReviewSnapshot,
 )
+from kronos.application.intraday_review_v2 import IntradayReviewV2Snapshot
 from kronos.application.intraday_native_visual_reconciliation import (
     ReconciliationBatchResult,
     ReconciliationCandidateSnapshot,
@@ -45,6 +46,12 @@ from kronos.intraday.refresh_v2 import (
     RefreshV2SourceClass,
 )
 from kronos.intraday.review_answer import AnswerImportState
+from kronos.intraday.review_v2_operation import (
+    REVIEW_V2_CREATE_REQUEST_IDENTITY,
+    REVIEW_V2_CREATE_REQUEST_VERSION,
+    REVIEW_V2_CREATE_ROUTE,
+    ReviewV2OperationSource,
+)
 from kronos.intraday.telemetry import TelemetryType
 
 
@@ -60,6 +67,10 @@ _INTRADAY_CSS = r"""
 .intraday-drop{cursor:text;overflow:hidden}.intraday-drop.replace-ready{border-color:var(--green);background:#09251d;box-shadow:0 0 0 3px rgba(46,212,119,.14)}.intraday-drop.received{min-height:82px;border-style:solid}.intraday-chart-received strong{color:var(--green)}.intraday-chart-received span{color:var(--muted)}.intraday-chart-slot-actions{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
 @media(max-width:900px){.intraday-detail-grid{grid-template-columns:1fr}.intraday-probable .summary-reason{grid-template-columns:repeat(3,minmax(0,1fr))}.intraday-diagnostic-row{grid-template-columns:minmax(120px,.7fr) minmax(100px,.4fr) minmax(160px,1fr)}.intraday-diagnostic-row span:last-child{grid-column:1/-1}}
 @media(max-width:760px){.intraday-tabs{margin:-18px -18px 18px;padding:0 18px;gap:13px;overflow:auto}.intraday-tabs .toolbar{margin-left:0}.intraday-timeframes,.intraday-context{grid-template-columns:1fr}.intraday-warning,.intraday-selector{align-items:flex-start;flex-direction:column}.intraday-facts{grid-template-columns:1fr}.intraday-facts dd{padding-top:0}.intraday-market-panels,.intraday-opportunities-grid{grid-template-columns:1fr}.intraday-market-accounting{grid-template-columns:repeat(2,minmax(0,1fr))}.intraday-probable .summary-reason{grid-template-columns:repeat(2,minmax(0,1fr))}.intraday-diagnostic-row{grid-template-columns:1fr}.intraday-diagnostic-row span:last-child{grid-column:auto}.intraday-analysis-context{align-items:flex-start}.intraday-analysis-context-detail{flex-wrap:wrap;white-space:normal}.intraday-review-list{grid-template-columns:1fr}.intraday-batch-accounting{grid-template-columns:repeat(2,minmax(0,1fr))}.intraday-review-status{grid-template-columns:1fr}.intraday-review-toolbar{align-items:stretch;flex-direction:column}.intraday-review-toolbar button{width:100%}}
+"""
+
+_REVIEW_V2_CSS = r"""
+.intraday-review-v2{border:1px solid #31506a;background:#061725;border-radius:10px;padding:15px;margin-bottom:16px}.intraday-review-v2-head{display:flex;justify-content:space-between;align-items:flex-start;gap:14px}.intraday-review-v2-head h2{margin:0;color:var(--green);font-size:17px}.intraday-review-v2-head p{margin:4px 0;color:var(--muted);font-size:11px}.intraday-review-v2-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:12px}.intraday-review-v2-card{border:1px solid var(--line);border-radius:8px;padding:12px;background:#071827}.intraday-review-v2-card h3{margin:0;color:#dce8f0}.intraday-review-v2-card .phase-a{display:inline-block;margin:7px 0;color:var(--amber);font-weight:800}.intraday-review-v2-control{display:flex;align-items:center;gap:12px;margin-top:12px}.intraday-review-v2-control span{color:var(--muted);font-size:10px;overflow-wrap:anywhere}@media(max-width:760px){.intraday-review-v2-grid{grid-template-columns:1fr}.intraday-review-v2-head{display:block}}
 """
 
 
@@ -116,6 +127,8 @@ def render_intraday_review(
     answer_batch_result: IntradayAnswerBatchResult | None = None,
     reconciliation_result: ReconciliationMemberResult | None = None,
     reconciliation_batch_result: ReconciliationBatchResult | None = None,
+    review_v2: IntradayReviewV2Snapshot | None = None,
+    available_probables_v2_run: ProbablesRunV2 | None = None,
 ) -> str:
     """Render persisted exact-current Review and WO-10 analytical state."""
 
@@ -160,7 +173,8 @@ def render_intraday_review(
         _intraday_tabs(False, active="review")
         + '<div class="intraday-warning"><strong>NATIVE + VISUAL REVIEW</strong>'
         '<span>ANALYTICAL READINESS ONLY · NO ENTRY, TRADE, RISK OR BROKER AUTHORITY</span></div>'
-        '<div class="intraday-review-toolbar"><form method="post" action="/intraday/review/question-packs">'
+        + _review_v2_projection(review_v2, available_probables_v2_run)
+        + '<div class="intraday-review-toolbar"><form method="post" action="/intraday/review/question-packs">'
         '<button class="primary" type="submit"'
         + (" disabled" if ready_count == 0 else "")
         + '>CREATE ALL REVIEW PDF</button></form>'
@@ -185,6 +199,7 @@ def render_intraday_review(
         + ' · Expected combined Answer: ' + escape(review.current_batch_answer_filename or "CREATE REVIEW PDF FIRST")
         + ' · Governed JSON Answer Pack import ACTIVE</div>'
         + _review_upload_script()
+        + _review_v2_control_script()
     )
     return render_browser_page(
         title="Intraday Native Review",
@@ -193,7 +208,95 @@ def render_intraday_review(
         active_nav="Intraday",
         active_tab="Review",
         body=body,
-        extra_styles=_INTRADAY_CSS,
+        extra_styles=_INTRADAY_CSS + _REVIEW_V2_CSS,
+    )
+
+
+def _review_v2_projection(
+    snapshot: IntradayReviewV2Snapshot | None,
+    available_run: ProbablesRunV2 | None,
+) -> str:
+    if snapshot is None:
+        return ""
+    cards = "".join(
+        '<article class="intraday-review-v2-card"><h3>'
+        + escape(item.sponsor_label)
+        + '</h3><span class="direction '
+        + ("direction-long" if item.direction == "LONG" else "direction-short")
+        + '">' + escape(item.direction) + '</span><br><span class="phase-a">CHART REQUIRED</span>'
+        + '<p class="intraday-review-lineage">Canonical subject · '
+        + escape(item.canonical_subject_identity)
+        + '<br>Methodology · ' + escape(item.methodology_identity) + " / "
+        + escape(item.methodology_version)
+        + '<br>Source analysis boundary · ' + escape(_ist_time(item.analysis_boundary))
+        + '<br>Phase · ' + escape(item.phase)
+        + '<br>Review · ' + escape(item.review_state.replace("_", " "))
+        + '<br>Review Pack · ' + escape(item.review_pack_state.replace("_", " "))
+        + '<br>Question Pack · ' + escape(item.question_pack_state.replace("_", " "))
+        + '<br>Answer · ' + escape(item.answer_state.replace("_", " "))
+        + (
+            ""
+            if item.nifty_applicability is None
+            else '<br>NIFTY · ' + escape(item.nifty_applicability)
+        )
+        + (
+            ""
+            if item.mcx_commissioning_state is None
+            else '<br>MCX commissioning · ' + escape(item.mcx_commissioning_state)
+        )
+        + '</p><details class="intraday-review-diagnostics"><summary>V2 LINEAGE</summary>'
+        + 'Cycle · ' + escape(item.cycle_identity)
+        + '<br>Probables Result · ' + escape(item.probable_result_identity)
+        + '</details></article>'
+        for item in snapshot.candidates
+    )
+    empty = (
+        '<div class="empty"><div><strong>No V2 Review cycles created</strong>'
+        'Phase A requires an explicit Sponsor operation against one exact persisted run.'
+        '</div></div>'
+        if not cards else cards
+    )
+    control = ""
+    if available_run is not None:
+        methodology = available_run.methodology
+        control = (
+            '<div class="intraday-review-v2-control"><button type="button" '
+            'id="intraday-create-review-v2" data-run="'
+            + escape(available_run.run_identity, quote=True)
+            + '" data-methodology="' + escape(methodology.methodology_identity, quote=True)
+            + '" data-methodology-version="' + escape(methodology.methodology_version, quote=True)
+            + '" data-methodology-publication="' + escape(methodology.publication_identity, quote=True)
+            + '" data-methodology-checksum="' + escape(methodology.payload_checksum, quote=True)
+            + '">CREATE V2 REVIEW CYCLES</button><span>Exact persisted run · '
+            + escape(available_run.run_identity) + '</span></div>'
+        )
+    return (
+        '<section class="intraday-review-v2"><div class="intraday-review-v2-head"><div>'
+        '<h2>PHASE-A REVIEW · PROBABLES V2/V2.1</h2>'
+        '<p>Review Cycle → Chart Required. Review Packs and Question Packs begin only after real chart intake.</p>'
+        '</div><span class="intraday-review-toolbar-note">Cycles · '
+        + str(len(snapshot.candidates)) + '</span></div><div class="intraday-review-v2-grid">'
+        + empty + '</div>' + control + '</section>'
+    )
+
+
+def _review_v2_control_script() -> str:
+    return (
+        '<script>(()=>{const b=document.getElementById("intraday-create-review-v2");'
+        'if(!b)return;b.addEventListener("click",async()=>{b.disabled=true;'
+        'const now=new Date();const stamp=now.toISOString().replace(/[^0-9A-Z]/gi,"").toUpperCase();'
+        'const suffix=crypto.getRandomValues(new Uint32Array(1))[0].toString(16).toUpperCase().padStart(8,"0");'
+        'const payload={request_identity:`INTRADAY-REVIEW-V2-${stamp}-${suffix}`,'
+        'probables_run_identity:b.dataset.run,expected_methodology_identity:b.dataset.methodology,'
+        'expected_methodology_version:b.dataset.methodologyVersion,'
+        'expected_methodology_publication_identity:b.dataset.methodologyPublication,'
+        'expected_methodology_checksum:b.dataset.methodologyChecksum,requested_at:now.toISOString(),'
+        'source:"' + ReviewV2OperationSource.SPONSOR_BROWSER_CONTROL.value + '",'
+        'contract_identity:"' + REVIEW_V2_CREATE_REQUEST_IDENTITY + '",'
+        'contract_version:"' + REVIEW_V2_CREATE_REQUEST_VERSION + '"};'
+        'try{const r=await fetch("' + REVIEW_V2_CREATE_ROUTE + '",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});'
+        'if(!r.ok)throw new Error(await r.text());location.assign("/intraday/review");}'
+        'catch(e){b.disabled=false;window.alert("V2 Review request failed: "+String(e));}});})();</script>'
     )
 
 
