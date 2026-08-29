@@ -17,6 +17,7 @@ from kronos.application.intraday_discovery_operation import (
 )
 from kronos.application.intraday_probables import IntradayProbablesApplication
 from kronos.application.intraday_probables_v2 import IntradayProbablesV2Application
+from kronos.application.intraday_review_v2 import IntradayReviewV2Application
 from kronos.application.intraday_historical_operation import (
     IntradayHistoricalQualificationHarness,
     IntradayHistoricalQualificationOperationService,
@@ -35,6 +36,8 @@ from kronos.intraday.probables_v2_diagnostics_persistence import (
 )
 from kronos.intraday.refresh_v2_persistence import RefreshV2ProvenanceStore
 from kronos.intraday.refresh_v2 import RefreshV2Outcome
+from kronos.intraday.review_v2 import CurrentReviewPointerV2
+from kronos.intraday.review_v2_persistence import IntradayReviewV2Store
 from kronos.intraday.probables_refresh_persistence import (
     RefreshOperationalStateStore,
 )
@@ -113,6 +116,9 @@ class IntradayRuntimeComposition:
     historical_invocation: IntradayHistoricalQualificationHarness
     probables_application: IntradayProbablesApplication
     probables_v2_application: IntradayProbablesV2Application
+    review_v2_store: IntradayReviewV2Store
+    review_v2_application: IntradayReviewV2Application
+    review_v2_current: CurrentReviewPointerV2 | None
     refresh_v2_provenance_store: RefreshV2ProvenanceStore
     probables_v2_diagnostics_store: ProbablesV2DiagnosticsStore
     mcx_history_store: McxContractHistoryStore
@@ -174,8 +180,13 @@ def create_intraday_runtime(
         store=ProbablesStore(Path(evidence_root)),
         last_successful_run_identity=restored_probables_identity,
     )
-    probables_v2 = IntradayProbablesV2Application(
-        store=ProbablesV2Store(Path(evidence_root)),
+    probables_v2_store = ProbablesV2Store(Path(evidence_root))
+    probables_v2 = IntradayProbablesV2Application(store=probables_v2_store)
+    review_v2_store = IntradayReviewV2Store(Path(evidence_root) / "review-v2")
+    review_v2_current = review_v2_store.load_current()
+    review_v2 = IntradayReviewV2Application(
+        probables_store=probables_v2_store,
+        review_store=review_v2_store,
     )
     discovery = _create_discovery_application(
         store=store,
@@ -303,6 +314,9 @@ def create_intraday_runtime(
         ),
         probables_application=probables,
         probables_v2_application=probables_v2,
+        review_v2_store=review_v2_store,
+        review_v2_application=review_v2,
+        review_v2_current=review_v2_current,
         refresh_v2_provenance_store=refresh_v2_provenance_store,
         probables_v2_diagnostics_store=probables_v2_diagnostics_store,
         mcx_history_store=mcx_history_store,
