@@ -16,6 +16,7 @@ from kronos.intraday.discovery_source import (
     governed_market_session_identities,
 )
 from kronos.intraday.probables_refresh import map_discovery_execution_to_probables
+from kronos.intraday.mcx_history_persistence import McxContractHistoryStore
 from kronos.intraday.reconciliation import (
     Availability,
     RECONCILIATION_IDENTITY,
@@ -41,6 +42,7 @@ def _composition(
     include_partial: bool = True,
     observed_at: datetime = OBSERVED,
     active_mcx: bool = False,
+    retain_mcx: bool = False,
 ):  # type: ignore[no-untyped-def]
     universe = load_intraday_universe_publication()
     reconciliation = IntradayReconciliationStore().load(
@@ -126,6 +128,10 @@ def _composition(
         reconciliation_version=reconciliation.publication_version,
         reconciliation=reconciliation,
         active_derivative_resolutions=resolutions,
+        produce_probables_v2_facts=retain_mcx,
+        mcx_history_store=(
+            McxContractHistoryStore(tmp_path.resolve()) if retain_mcx else None
+        ),
     )
     service = IntradayNativeDiscoveryService(
         universe=universe,
@@ -223,6 +229,23 @@ def test_active_bindings_drive_all_five_mcx_subjects_without_changing_identity(
         for bundle in execution.bundles
         for item in bundle.evidence
     )
+
+
+def test_v2_retention_reuses_the_same_acquired_mcx_candles_without_extra_reads(
+    tmp_path: Path,
+) -> None:
+    observed = datetime(2026, 8, 26, 10, 17, tzinfo=IST)
+    _, source, _, requests, _ = _composition(
+        tmp_path,
+        observed_at=observed,
+        active_mcx=True,
+        retain_mcx=True,
+    )
+    assert source.historical_request_count == len(requests) == 490
+    assert len(tuple((tmp_path / "mcx-contract-history-v1").glob("*/*/*/*.json"))) > 0
+    assert not any("token" in path.read_text().lower() for path in (
+        tmp_path / "mcx-contract-history-v1"
+    ).glob("*/*/*/*.json"))
 
 
 def test_missing_completed_member_window_is_isolated(tmp_path: Path) -> None:

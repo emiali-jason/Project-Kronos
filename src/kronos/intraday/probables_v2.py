@@ -34,6 +34,10 @@ from kronos.intraday.probables import (
     ProbableState,
 )
 from kronos.intraday.qualification import NarrowCprFact
+from kronos.intraday.mcx_commissioning import (
+    McxCommissioningState,
+    load_mcx_commissioning_publication,
+)
 
 
 PROBABLES_V2_METHODOLOGY_IDENTITY = "KRONOS-INTRADAY-PROBABLES-METHODOLOGY-V2"
@@ -44,6 +48,14 @@ PROBABLES_V2_PUBLICATION_IDENTITY = (
 )
 PROBABLES_V2_METHODOLOGY_CHECKSUM = (
     "7b75ee711558f706cfb97b4548952b8924a8cbd8e519efeee61b53828fdd9f89"
+)
+PROBABLES_V2_SUCCESSOR_METHODOLOGY_VERSION = "2.1.0"
+PROBABLES_V2_SUCCESSOR_METHODOLOGY_CHECKSUM = (
+    "32012713c2b43212bea6af3bace0fbd2491176cb0a1cb7aaf88f8de77c1e8932"
+)
+PROBABLES_V2_SUCCESSOR_PUBLICATION_IDENTITY = (
+    "INTRADAY-PROBABLES-METHODOLOGY-V2-PUBLICATION-"
+    "32012713C2B43212BEA6AF3BACE0FBD2491176CB0A1CB7AAF88F8DE77C1E8932"
 )
 SEMANTIC_FACT_V2_IDENTITY = "KRONOS-INTRADAY-SEMANTIC-QUALIFICATION-FACT-V2"
 SEMANTIC_EVIDENCE_V2_IDENTITY = (
@@ -115,10 +127,12 @@ class ProbablesMethodologyV2:
         values = asdict(self)
         values.pop("integrity_identity")
         if (
-            self.methodology_identity != PROBABLES_V2_METHODOLOGY_IDENTITY
-            or self.methodology_version != PROBABLES_V2_METHODOLOGY_VERSION
-            or self.publication_identity != PROBABLES_V2_PUBLICATION_IDENTITY
-            or self.payload_checksum != PROBABLES_V2_METHODOLOGY_CHECKSUM
+            not probables_v2_methodology_binding_supported(
+                self.methodology_identity,
+                self.methodology_version,
+                self.publication_identity,
+                self.payload_checksum,
+            )
             or self.phase_family != tuple(IntradayAnalysisPhase)
             or self.authority != "ANALYTICAL_ADMISSION_FOR_DEEPER_REVIEW_ONLY"
             or not _texts(self.provenance)
@@ -128,17 +142,55 @@ class ProbablesMethodologyV2:
             raise ProbablesV2Error("PROBABLES_V2_METHODOLOGY_INVALID")
 
 
-def create_probables_v2_methodology() -> ProbablesMethodologyV2:
+def probables_v2_methodology_binding_supported(
+    identity: str,
+    version: str,
+    publication: str,
+    checksum: str,
+) -> bool:
+    return (
+        identity == PROBABLES_V2_METHODOLOGY_IDENTITY
+        and (version, publication, checksum) in {
+            (
+                PROBABLES_V2_METHODOLOGY_VERSION,
+                PROBABLES_V2_PUBLICATION_IDENTITY,
+                PROBABLES_V2_METHODOLOGY_CHECKSUM,
+            ),
+            (
+                PROBABLES_V2_SUCCESSOR_METHODOLOGY_VERSION,
+                PROBABLES_V2_SUCCESSOR_PUBLICATION_IDENTITY,
+                PROBABLES_V2_SUCCESSOR_METHODOLOGY_CHECKSUM,
+            ),
+        }
+    )
+
+
+def create_probables_v2_methodology(
+    *, legacy: bool = False,
+) -> ProbablesMethodologyV2:
+    version, publication, checksum = (
+        (
+            PROBABLES_V2_METHODOLOGY_VERSION,
+            PROBABLES_V2_PUBLICATION_IDENTITY,
+            PROBABLES_V2_METHODOLOGY_CHECKSUM,
+        )
+        if legacy
+        else (
+            PROBABLES_V2_SUCCESSOR_METHODOLOGY_VERSION,
+            PROBABLES_V2_SUCCESSOR_PUBLICATION_IDENTITY,
+            PROBABLES_V2_SUCCESSOR_METHODOLOGY_CHECKSUM,
+        )
+    )
     values = {
         "methodology_identity": PROBABLES_V2_METHODOLOGY_IDENTITY,
-        "methodology_version": PROBABLES_V2_METHODOLOGY_VERSION,
-        "publication_identity": PROBABLES_V2_PUBLICATION_IDENTITY,
-        "payload_checksum": PROBABLES_V2_METHODOLOGY_CHECKSUM,
+        "methodology_version": version,
+        "publication_identity": publication,
+        "payload_checksum": checksum,
         "phase_family": tuple(IntradayAnalysisPhase),
         "authority": "ANALYTICAL_ADMISSION_FOR_DEEPER_REVIEW_ONLY",
         "provenance": (
-            "KRONOS-WO-06E-FREEZE",
-            PROBABLES_V2_PUBLICATION_IDENTITY,
+            "KRONOS-WO-06E-FREEZE" if legacy else "KRONOS-MCX-SUBJECT-COMMISSIONING-V1",
+            publication,
         ),
     }
     return ProbablesMethodologyV2(
@@ -485,10 +537,12 @@ class DiscoveryProbablesEvidenceV2:
                 self.market_session_identity,
             ))
             or not _aware(self.analysis_boundary)
-            or self.methodology_identity != PROBABLES_V2_METHODOLOGY_IDENTITY
-            or self.methodology_version != PROBABLES_V2_METHODOLOGY_VERSION
-            or self.methodology_publication_identity != PROBABLES_V2_PUBLICATION_IDENTITY
-            or self.methodology_checksum != PROBABLES_V2_METHODOLOGY_CHECKSUM
+            or not probables_v2_methodology_binding_supported(
+                self.methodology_identity,
+                self.methodology_version,
+                self.methodology_publication_identity,
+                self.methodology_checksum,
+            )
             or type(self.phase) is not IntradayAnalysisPhase
             or type(self.completed_evidence) is not PhaseAwareCompletedEvidenceSelection
             or type(self.semantic_evidence) is not SemanticQualificationEvidenceV2
@@ -535,7 +589,11 @@ def create_discovery_probables_evidence_v2(
     opening_semantic: OpeningSemanticEvidence | None,
     nifty_relative: NiftyRelativeContextEvidence | None,
     provenance: tuple[str, ...],
+    methodology: ProbablesMethodologyV2 | None = None,
 ) -> DiscoveryProbablesEvidenceV2:
+    selected_methodology = methodology or create_probables_v2_methodology()
+    if type(selected_methodology) is not ProbablesMethodologyV2:
+        raise ProbablesV2Error("PROBABLES_V2_METHODOLOGY_INVALID")
     values = {
         "universe_member_identity": universe_member_identity,
         "canonical_subject_identity": completed_evidence.canonical_subject_identity,
@@ -544,9 +602,9 @@ def create_discovery_probables_evidence_v2(
         "market_session_identity": market_session_identity,
         "analysis_boundary": completed_evidence.analysis_boundary,
         "methodology_identity": PROBABLES_V2_METHODOLOGY_IDENTITY,
-        "methodology_version": PROBABLES_V2_METHODOLOGY_VERSION,
-        "methodology_publication_identity": PROBABLES_V2_PUBLICATION_IDENTITY,
-        "methodology_checksum": PROBABLES_V2_METHODOLOGY_CHECKSUM,
+        "methodology_version": selected_methodology.methodology_version,
+        "methodology_publication_identity": selected_methodology.publication_identity,
+        "methodology_checksum": selected_methodology.payload_checksum,
         "phase": completed_evidence.phase,
         "completed_evidence": completed_evidence,
         "semantic_evidence": semantic_evidence,
@@ -711,10 +769,12 @@ class ProbableMemberResultV2:
             )
             or not self.reasons
             or any(type(item) is not ProbableReasonV2 for item in self.reasons)
-            or self.methodology_identity != PROBABLES_V2_METHODOLOGY_IDENTITY
-            or self.methodology_version != PROBABLES_V2_METHODOLOGY_VERSION
-            or self.methodology_publication_identity != PROBABLES_V2_PUBLICATION_IDENTITY
-            or self.methodology_checksum != PROBABLES_V2_METHODOLOGY_CHECKSUM
+            or not probables_v2_methodology_binding_supported(
+                self.methodology_identity,
+                self.methodology_version,
+                self.methodology_publication_identity,
+                self.methodology_checksum,
+            )
             or self.execution_eligibility != "NOT_ESTABLISHED"
             or (
                 self.state is ProbableState.LONG_PROBABLE
@@ -843,6 +903,11 @@ class ProbablesRunV2:
             or any(
                 item.analysis_boundary != self.analysis_boundary
                 or item.source_discovery_run_identity != self.source_discovery_run_identity
+                or item.methodology_identity != self.methodology.methodology_identity
+                or item.methodology_version != self.methodology.methodology_version
+                or item.methodology_publication_identity
+                != self.methodology.publication_identity
+                or item.methodology_checksum != self.methodology.payload_checksum
                 for item in self.results
             )
             or type(self.diagnostics) is not ProbablesPopulationDiagnosticsV2
@@ -869,8 +934,9 @@ def evaluate_probables_v2_run(
     member_evidence: Sequence[DiscoveryProbablesEvidenceV2],
     unavailable_members: Sequence[ProbablesUnavailableMemberV2],
     provenance: tuple[str, ...],
+    methodology: ProbablesMethodologyV2 | None = None,
 ) -> ProbablesRunV2:
-    methodology = create_probables_v2_methodology()
+    selected_methodology = methodology or create_probables_v2_methodology()
     if (
         not _texts((
             source_discovery_run_identity,
@@ -882,6 +948,7 @@ def evaluate_probables_v2_run(
         ))
         or not _aware(analysis_boundary)
         or not _texts(provenance)
+        or type(selected_methodology) is not ProbablesMethodologyV2
     ):
         raise ProbablesV2Error("PROBABLES_V2_RUN_INPUT_INVALID")
     evidence = tuple(member_evidence)
@@ -894,6 +961,11 @@ def evaluate_probables_v2_run(
             type(item) is not DiscoveryProbablesEvidenceV2
             or item.source_discovery_run_identity != source_discovery_run_identity
             or item.analysis_boundary != analysis_boundary
+            or item.methodology_identity != selected_methodology.methodology_identity
+            or item.methodology_version != selected_methodology.methodology_version
+            or item.methodology_publication_identity
+            != selected_methodology.publication_identity
+            or item.methodology_checksum != selected_methodology.payload_checksum
             for item in evidence
         )
         or any(
@@ -911,7 +983,9 @@ def evaluate_probables_v2_run(
     ):
         raise ProbablesV2Error("PROBABLES_V2_RESULT_MAPPING_INVALID")
     results = tuple(sorted(
-        (*mapped_results, *(_unavailable_result(item) for item in unavailable)),
+        (*mapped_results, *(
+            _unavailable_result(item, selected_methodology) for item in unavailable
+        )),
         key=lambda item: item.universe_member_identity,
     ))
     diagnostics = _diagnostics(results)
@@ -924,7 +998,7 @@ def evaluate_probables_v2_run(
         "reconciliation_version": reconciliation_version,
         "market_session_identity": market_session_identity,
         "analysis_boundary": analysis_boundary,
-        "methodology": methodology,
+        "methodology": selected_methodology,
         "results": results,
         "diagnostics": diagnostics,
         "provenance": provenance,
@@ -941,10 +1015,14 @@ def evaluate_probables_v2_run(
 def _evaluate_member(value: DiscoveryProbablesEvidenceV2) -> ProbableMemberResultV2:
     semantic = value.semantic_evidence
     if value.completed_evidence.market_identity == "MCX":
-        return _result(
-            value, ProbableState.UNAVAILABLE, None,
-            (ProbableReasonV2.MCX_V2_EMPIRICAL_COMMISSIONING_REQUIRED,),
+        commissioning = load_mcx_commissioning_publication().subject(
+            value.canonical_subject_identity
         )
+        if commissioning.state is McxCommissioningState.HELD:
+            return _result(
+                value, ProbableState.UNAVAILABLE, None,
+                (ProbableReasonV2.MCX_V2_EMPIRICAL_COMMISSIONING_REQUIRED,),
+            )
     if value.phase is IntradayAnalysisPhase.OPENING:
         assert value.opening_semantic is not None and value.nifty_relative is not None
         opening = value.opening_semantic.fact
@@ -1103,12 +1181,12 @@ def _result(
         "source_discovery_run_identity": source.source_discovery_run_identity,
         "source_discovery_member_identity": source.source_discovery_member_identity,
         "methodology_identity": PROBABLES_V2_METHODOLOGY_IDENTITY,
-        "methodology_version": PROBABLES_V2_METHODOLOGY_VERSION,
-        "methodology_publication_identity": PROBABLES_V2_PUBLICATION_IDENTITY,
-        "methodology_checksum": PROBABLES_V2_METHODOLOGY_CHECKSUM,
+        "methodology_version": source.methodology_version,
+        "methodology_publication_identity": source.methodology_publication_identity,
+        "methodology_checksum": source.methodology_checksum,
         "participation_state": source.semantic_evidence.participation_state,
         "execution_eligibility": "NOT_ESTABLISHED",
-        "provenance": source.provenance,
+        "provenance": source.provenance + _mcx_commissioning_provenance(source),
         "schema_identity": PROBABLE_V2_IDENTITY,
         "schema_version": V2_CONTRACT_VERSION,
     }
@@ -1133,7 +1211,10 @@ def _coherent_direction(
     return SemanticDirection.NON_DIRECTIONAL
 
 
-def _unavailable_result(value: ProbablesUnavailableMemberV2) -> ProbableMemberResultV2:
+def _unavailable_result(
+    value: ProbablesUnavailableMemberV2,
+    methodology: ProbablesMethodologyV2,
+) -> ProbableMemberResultV2:
     values = {
         "universe_member_identity": value.universe_member_identity,
         "canonical_subject_identity": value.canonical_subject_identity,
@@ -1153,9 +1234,9 @@ def _unavailable_result(value: ProbablesUnavailableMemberV2) -> ProbableMemberRe
         "source_discovery_run_identity": value.source_identity,
         "source_discovery_member_identity": value.source_identity,
         "methodology_identity": PROBABLES_V2_METHODOLOGY_IDENTITY,
-        "methodology_version": PROBABLES_V2_METHODOLOGY_VERSION,
-        "methodology_publication_identity": PROBABLES_V2_PUBLICATION_IDENTITY,
-        "methodology_checksum": PROBABLES_V2_METHODOLOGY_CHECKSUM,
+        "methodology_version": methodology.methodology_version,
+        "methodology_publication_identity": methodology.publication_identity,
+        "methodology_checksum": methodology.payload_checksum,
         "participation_state": "UNAVAILABLE",
         "execution_eligibility": "NOT_ESTABLISHED",
         "provenance": value.provenance,
@@ -1166,6 +1247,24 @@ def _unavailable_result(value: ProbablesUnavailableMemberV2) -> ProbableMemberRe
         result_identity=_identity("INTRADAY-PROBABLE-V2-RESULT-", values),
         integrity_identity=_identity("INTEGRITY-INTRADAY-PROBABLE-V2-RESULT-", values),
         **values,
+    )
+
+
+def _mcx_commissioning_provenance(
+    source: DiscoveryProbablesEvidenceV2,
+) -> tuple[str, ...]:
+    if source.completed_evidence.market_identity != "MCX":
+        return ()
+    publication = load_mcx_commissioning_publication()
+    entry = publication.subject(source.canonical_subject_identity)
+    return (
+        publication.publication_identity,
+        publication.integrity_identity,
+        entry.qualification_evidence_identity,
+        entry.qualification_integrity_identity,
+        entry.family_expiry_evidence_identity,
+        entry.family_expiry_evidence_integrity,
+        f"MCX_COMMISSIONING_STATE:{entry.state.value}",
     )
 
 
@@ -1352,6 +1451,9 @@ __all__ = [
     "PROBABLES_V2_METHODOLOGY_IDENTITY",
     "PROBABLES_V2_METHODOLOGY_VERSION",
     "PROBABLES_V2_PUBLICATION_IDENTITY",
+    "PROBABLES_V2_SUCCESSOR_METHODOLOGY_CHECKSUM",
+    "PROBABLES_V2_SUCCESSOR_METHODOLOGY_VERSION",
+    "PROBABLES_V2_SUCCESSOR_PUBLICATION_IDENTITY",
     "PROBABLE_V2_IDENTITY",
     "SEMANTIC_EVIDENCE_V2_IDENTITY",
     "SEMANTIC_FACT_V2_IDENTITY",
@@ -1370,4 +1472,5 @@ __all__ = [
     "create_discovery_probables_evidence_v2",
     "create_probables_v2_methodology",
     "evaluate_probables_v2_run",
+    "probables_v2_methodology_binding_supported",
 ]

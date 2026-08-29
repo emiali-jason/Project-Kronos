@@ -37,6 +37,8 @@ from kronos.intraday.probables_refresh import (
     create_discovery_probables_facts,
 )
 from kronos.intraday.probables_v2 import ProbablesV2Error
+from kronos.intraday.mcx_history import create_retained_mcx_candles
+from kronos.intraday.mcx_history_persistence import McxContractHistoryStore
 from kronos.intraday.probables_v2_refresh import (
     create_discovery_probables_v2_facts,
 )
@@ -82,6 +84,7 @@ class ProviderDiscoveryFactualSource:
         reconciliation: ReconciliationPublication,
         active_derivative_resolutions: ActiveDerivativeResolutionSet | None = None,
         produce_probables_v2_facts: bool = False,
+        mcx_history_store: McxContractHistoryStore | None = None,
     ) -> None:
         if (
             type(lease) is not ReadOnlyProviderLease
@@ -93,6 +96,10 @@ class ProviderDiscoveryFactualSource:
                 is not ActiveDerivativeResolutionSet
             )
             or type(produce_probables_v2_facts) is not bool
+            or (
+                mcx_history_store is not None
+                and type(mcx_history_store) is not McxContractHistoryStore
+            )
             or not all(_text(item) for item in (
                 universe_identity,
                 universe_version,
@@ -110,6 +117,7 @@ class ProviderDiscoveryFactualSource:
         self._reconciliation = reconciliation
         self._active_derivative_resolutions = active_derivative_resolutions
         self._produce_probables_v2_facts = produce_probables_v2_facts
+        self._mcx_history_store = mcx_history_store
         self._records: dict[str, tuple[InstrumentRecord, ...]] = {}
         self._session_identities: dict[datetime, tuple[str, str]] = {}
         self._historical_requests = 0
@@ -303,6 +311,38 @@ class ProviderDiscoveryFactualSource:
                     schedule=previous,
                     observed_at=boundary.observation_boundary,
                 )
+                if active_binding is not None and self._mcx_history_store is not None:
+                    retained = tuple(
+                        candle
+                        for timeframe, retained_schedule, candles in (
+                            (IntradayTimeframe.DAILY, previous, previous_daily),
+                            (IntradayTimeframe.ONE_HOUR, previous, previous_one_hour),
+                            (
+                                IntradayTimeframe.ONE_HOUR,
+                                schedule,
+                                completed_by_timeframe[IntradayTimeframe.ONE_HOUR],
+                            ),
+                            (
+                                IntradayTimeframe.FIFTEEN_MINUTES,
+                                schedule,
+                                completed_by_timeframe[IntradayTimeframe.FIFTEEN_MINUTES],
+                            ),
+                            (
+                                IntradayTimeframe.FIVE_MINUTES,
+                                schedule,
+                                completed_by_timeframe[IntradayTimeframe.FIVE_MINUTES],
+                            ),
+                        )
+                        for candle in create_retained_mcx_candles(
+                            active_binding=active_binding,
+                            timeframe=timeframe,
+                            schedule=retained_schedule,
+                            candles=candles,
+                            observation_boundary=boundary.observation_boundary,
+                            source_operation_identity=bundle.bundle_identity,
+                        )
+                    )
+                    self._mcx_history_store.retain_many(retained)
                 probables_v2_facts = create_discovery_probables_v2_facts(
                     universe_member_identity=member.universe_member_identity,
                     canonical_subject_identity=member.canonical_identity,

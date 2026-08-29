@@ -15,6 +15,7 @@ from kronos.intraday.probables_v2 import (
     ProbablesV2Error,
     create_probables_v2_methodology,
     evaluate_probables_v2_run,
+    probables_v2_methodology_binding_supported,
 )
 from kronos.intraday.probables_v2_persistence import ProbablesV2Store
 from kronos.intraday.probables_v2_diagnostics import ProbablesV2FailureDetail
@@ -77,7 +78,12 @@ class IntradayProbablesV2Application:
         self._lock = RLock()
         if restore_current:
             self._run = self._store.load_current_run()
-            if self._run is not None and self._run.methodology != self._methodology:
+            if self._run is not None and not probables_v2_methodology_binding_supported(
+                self._run.methodology.methodology_identity,
+                self._run.methodology.methodology_version,
+                self._run.methodology.publication_identity,
+                self._run.methodology.payload_checksum,
+            ):
                 raise ProbablesV2Error("PROBABLES_V2_RESTART_METHODOLOGY_MISMATCH")
 
     def refresh_analysis(

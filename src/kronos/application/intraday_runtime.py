@@ -27,6 +27,7 @@ from kronos.intraday.historical_qualification_persistence import (
     HistoricalQualificationStore,
 )
 from kronos.intraday.market_context import CurrentMarketCalendarScheduleSource
+from kronos.intraday.mcx_history_persistence import McxContractHistoryStore
 from kronos.intraday.probables_persistence import ProbablesStore
 from kronos.intraday.probables_v2_persistence import ProbablesV2Store
 from kronos.intraday.probables_v2_diagnostics_persistence import (
@@ -114,6 +115,7 @@ class IntradayRuntimeComposition:
     probables_v2_application: IntradayProbablesV2Application
     refresh_v2_provenance_store: RefreshV2ProvenanceStore
     probables_v2_diagnostics_store: ProbablesV2DiagnosticsStore
+    mcx_history_store: McxContractHistoryStore
     refresh_state_store: RefreshOperationalStateStore
     reliance_bootstrap: RelianceIntradayBootstrap
 
@@ -225,6 +227,7 @@ def create_intraday_runtime(
     )
     refresh_v2_provenance_store = RefreshV2ProvenanceStore(Path(evidence_root))
     probables_v2_diagnostics_store = ProbablesV2DiagnosticsStore(Path(evidence_root))
+    mcx_history_store = McxContractHistoryStore(Path(evidence_root))
     latest_v2_provenance = refresh_v2_provenance_store.latest()
     if (
         latest_v2_provenance is not None
@@ -256,6 +259,7 @@ def create_intraday_runtime(
             reconciliation=reconciliation,
             active_derivative_resolutions=resolutions,
             produce_probables_v2_facts=True,
+            mcx_history_store=mcx_history_store,
         ),
         probables_v2=probables_v2,
         probables_v2_diagnostics_store=probables_v2_diagnostics_store,
@@ -301,6 +305,7 @@ def create_intraday_runtime(
         probables_v2_application=probables_v2,
         refresh_v2_provenance_store=refresh_v2_provenance_store,
         probables_v2_diagnostics_store=probables_v2_diagnostics_store,
+        mcx_history_store=mcx_history_store,
         refresh_state_store=refresh_state_store,
         reliance_bootstrap=bootstrap,
     )

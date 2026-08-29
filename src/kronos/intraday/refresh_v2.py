@@ -10,10 +10,11 @@ import json
 from typing import Mapping
 
 from kronos.intraday.probables_v2 import (
-    PROBABLES_V2_METHODOLOGY_CHECKSUM,
     PROBABLES_V2_METHODOLOGY_IDENTITY,
-    PROBABLES_V2_METHODOLOGY_VERSION,
-    PROBABLES_V2_PUBLICATION_IDENTITY,
+    PROBABLES_V2_SUCCESSOR_METHODOLOGY_CHECKSUM as PROBABLES_V2_METHODOLOGY_CHECKSUM,
+    PROBABLES_V2_SUCCESSOR_METHODOLOGY_VERSION as PROBABLES_V2_METHODOLOGY_VERSION,
+    PROBABLES_V2_SUCCESSOR_PUBLICATION_IDENTITY as PROBABLES_V2_PUBLICATION_IDENTITY,
+    probables_v2_methodology_binding_supported,
 )
 
 
@@ -61,10 +62,12 @@ class RefreshV2Request:
             or type(self.source_class) is not RefreshV2SourceClass
             or self.contract_identity != REFRESH_V2_REQUEST_IDENTITY
             or self.contract_version != REFRESH_V2_REQUEST_VERSION
-            or self.methodology_identity != PROBABLES_V2_METHODOLOGY_IDENTITY
-            or self.methodology_version != PROBABLES_V2_METHODOLOGY_VERSION
-            or self.methodology_publication_identity != PROBABLES_V2_PUBLICATION_IDENTITY
-            or self.methodology_checksum != PROBABLES_V2_METHODOLOGY_CHECKSUM
+            or not probables_v2_methodology_binding_supported(
+                self.methodology_identity,
+                self.methodology_version,
+                self.methodology_publication_identity,
+                self.methodology_checksum,
+            )
             or self.operation_type != REFRESH_V2_OPERATION_TYPE
             or self.integrity_identity
             != _identity("INTEGRITY-INTRADAY-PROBABLES-V2-REFRESH-REQUEST-", core)
@@ -116,10 +119,12 @@ class RefreshV2ProvenanceRecord:
             or not _component(self.request_identity)
             or not _component(self.request_integrity_identity)
             or self.route_identity != REFRESH_V2_ROUTE
-            or self.methodology_identity != PROBABLES_V2_METHODOLOGY_IDENTITY
-            or self.methodology_version != PROBABLES_V2_METHODOLOGY_VERSION
-            or self.methodology_publication_identity != PROBABLES_V2_PUBLICATION_IDENTITY
-            or self.methodology_checksum != PROBABLES_V2_METHODOLOGY_CHECKSUM
+            or not probables_v2_methodology_binding_supported(
+                self.methodology_identity,
+                self.methodology_version,
+                self.methodology_publication_identity,
+                self.methodology_checksum,
+            )
             or (self.observation_boundary is not None and not _aware(self.observation_boundary))
             or not _aware(self.received_at)
             or (self.operation_started_at is not None and not _aware(self.operation_started_at))

@@ -38,7 +38,11 @@ from kronos.intraday.probables import ProbableState
 from kronos.intraday.probables_v2 import (
     PROBABLES_V2_METHODOLOGY_CHECKSUM,
     PROBABLES_V2_METHODOLOGY_IDENTITY,
+    PROBABLES_V2_METHODOLOGY_VERSION,
     PROBABLES_V2_PUBLICATION_IDENTITY,
+    PROBABLES_V2_SUCCESSOR_METHODOLOGY_CHECKSUM,
+    PROBABLES_V2_SUCCESSOR_METHODOLOGY_VERSION,
+    PROBABLES_V2_SUCCESSOR_PUBLICATION_IDENTITY,
     ProbableReasonV2,
     ProbablesUnavailableMemberV2,
     ProbablesV2Error,
@@ -143,6 +147,7 @@ def _opening_inputs(
     nifty_close: str = "101",
     prior_supporting: bool = True,
     narrow_qualified: bool = True,
+    methodology=None,
 ):
     current = _schedule(CURRENT_DAY, subject_exchange)
     previous = _schedule(PREVIOUS_DAY, subject_exchange)
@@ -200,7 +205,7 @@ def _opening_inputs(
     )
     nifty = build_nifty_relative_context(
         canonical_subject_identity=subject,
-        subject_exchange="NSE",
+        subject_exchange=subject_exchange,
         opening_direction="LONG",
         analysis_boundary=boundary,
         subject_candle=opening[0],
@@ -236,6 +241,7 @@ def _opening_inputs(
         opening_semantic=opening_semantic,
         nifty_relative=nifty,
         provenance=PROVENANCE,
+        methodology=methodology,
     )
     return selection, nifty, opening_semantic, semantic, mapping
 
@@ -252,6 +258,11 @@ def _run(mapping):
         member_evidence=(mapping,),
         unavailable_members=(),
         provenance=PROVENANCE,
+        methodology=(
+            create_probables_v2_methodology(legacy=True)
+            if mapping.methodology_version == PROBABLES_V2_METHODOLOGY_VERSION
+            else None
+        ),
     )
 
 
@@ -340,8 +351,13 @@ def _later_mapping(
 def test_frozen_methodology_and_completion_driven_phase_family() -> None:
     methodology = create_probables_v2_methodology()
     assert methodology.methodology_identity == PROBABLES_V2_METHODOLOGY_IDENTITY
-    assert methodology.publication_identity == PROBABLES_V2_PUBLICATION_IDENTITY
-    assert methodology.payload_checksum == PROBABLES_V2_METHODOLOGY_CHECKSUM
+    assert methodology.methodology_version == PROBABLES_V2_SUCCESSOR_METHODOLOGY_VERSION
+    assert methodology.publication_identity == PROBABLES_V2_SUCCESSOR_PUBLICATION_IDENTITY
+    assert methodology.payload_checksum == PROBABLES_V2_SUCCESSOR_METHODOLOGY_CHECKSUM
+    legacy = create_probables_v2_methodology(legacy=True)
+    assert legacy.methodology_version == PROBABLES_V2_METHODOLOGY_VERSION
+    assert legacy.publication_identity == PROBABLES_V2_PUBLICATION_IDENTITY
+    assert legacy.payload_checksum == PROBABLES_V2_METHODOLOGY_CHECKSUM
     assert select_intraday_analysis_phase(current_completed_15m_count=0, current_completed_1h_count=0) is None
     assert select_intraday_analysis_phase(current_completed_15m_count=1, current_completed_1h_count=0) is IntradayAnalysisPhase.OPENING
     assert select_intraday_analysis_phase(current_completed_15m_count=2, current_completed_1h_count=0) is IntradayAnalysisPhase.STRUCTURE
@@ -442,6 +458,20 @@ def test_multi_boundary_assessments_have_independent_immutable_identities(tmp_pa
         assert store.load_run(identity).run_identity == identity
 
 
+def test_historical_v2_2_0_run_reloads_under_original_publication(tmp_path: Path) -> None:
+    legacy = create_probables_v2_methodology(legacy=True)
+    *_, mapping = _opening_inputs(methodology=legacy)
+    run = _run(mapping)
+    store = ProbablesV2Store(tmp_path.resolve())
+    store.retain_complete(run=run, mappings=(mapping,))
+    restored = store.load_run(run.run_identity)
+    assert restored.methodology == legacy
+    assert restored.methodology.methodology_version == "2.0.0"
+    assert restored.methodology.payload_checksum == PROBABLES_V2_METHODOLOGY_CHECKSUM
+    application = IntradayProbablesV2Application(store=store)
+    assert application.snapshot().run == run
+
+
 def test_nifty_not_applicable_unavailable_and_progression_contracts() -> None:
     selection, _, _, _, _ = _opening_inputs()
     mcx = build_nifty_relative_context(
@@ -474,30 +504,53 @@ def test_nifty_not_applicable_unavailable_and_progression_contracts() -> None:
     assert classify_relative_progression((Decimal("1"), Decimal("1"), Decimal("1"))).value == "FLAT"
 
 
-def test_mcx_mapped_unavailable_retains_exact_lineage_and_nifty_not_applicable(
-    tmp_path: Path,
+@pytest.mark.parametrize("family", ("GOLDM", "SILVERM", "COPPER", "CRUDE"))
+def test_mcx_commissioned_subject_is_evaluated_and_retains_exact_lineage(
+    tmp_path: Path, family: str,
 ) -> None:
     *_, mapping = _opening_inputs(
-        subject="MCX-SUBJECT-GOLDM",
+        subject=f"MCX-SUBJECT-{family}",
         subject_exchange="MCX",
     )
 
     run = _run(mapping)
     result = run.results[0]
 
-    assert result.state is ProbableState.UNAVAILABLE
-    assert result.reasons == (
-        ProbableReasonV2.MCX_V2_EMPIRICAL_COMMISSIONING_REQUIRED,
-    )
+    assert result.state is ProbableState.LONG_PROBABLE
+    assert result.reasons == (ProbableReasonV2.V2_CONDITIONS_SATISFIED,)
     assert result.source_mapping_identity == mapping.mapping_identity
     assert result.nifty_applicability is NiftyApplicability.NOT_APPLICABLE
     assert result.nifty_relationship is NiftyRelationship.NOT_APPLICABLE
-    assert result.direction is None
+    assert result.direction is SemanticDirection.LONG
+    assert any(item == "MCX_COMMISSIONING_STATE:COMMISSIONED" for item in result.provenance)
 
     store = ProbablesV2Store(tmp_path.resolve())
     store.retain_complete(run=run, mappings=(mapping,))
     assert store.load_current_run() == run
     assert store.load_mapping(mapping.mapping_identity) == mapping
+
+
+def test_mcx_natgas_remains_held_and_unavailable() -> None:
+    *_, mapping = _opening_inputs(
+        subject="MCX-SUBJECT-NATGAS",
+        subject_exchange="MCX",
+    )
+    result = _run(mapping).results[0]
+    assert result.state is ProbableState.UNAVAILABLE
+    assert result.reasons == (
+        ProbableReasonV2.MCX_V2_EMPIRICAL_COMMISSIONING_REQUIRED,
+    )
+    assert result.nifty_applicability is NiftyApplicability.NOT_APPLICABLE
+    assert result.nifty_relationship is NiftyRelationship.NOT_APPLICABLE
+
+
+def test_unknown_mcx_subject_fails_closed() -> None:
+    *_, mapping = _opening_inputs(
+        subject="MCX-SUBJECT-UNKNOWN",
+        subject_exchange="MCX",
+    )
+    with pytest.raises(ValueError, match="MCX_SUBJECT_COMMISSIONING_UNKNOWN"):
+        _run(mapping)
 
 
 def test_pre_mapping_unavailable_retains_no_mapping_lineage(tmp_path: Path) -> None:

@@ -14,10 +14,11 @@ from typing import Mapping
 from kronos.intraday.discovery import NativeDiscoveryMachineFactBundle, NativeDiscoveryRun
 from kronos.intraday.discovery_runtime import DiscoveryRuntimeExecution
 from kronos.intraday.probables_v2 import (
-    PROBABLES_V2_METHODOLOGY_CHECKSUM,
     PROBABLES_V2_METHODOLOGY_IDENTITY,
-    PROBABLES_V2_METHODOLOGY_VERSION,
-    PROBABLES_V2_PUBLICATION_IDENTITY,
+    PROBABLES_V2_SUCCESSOR_METHODOLOGY_CHECKSUM as PROBABLES_V2_METHODOLOGY_CHECKSUM,
+    PROBABLES_V2_SUCCESSOR_METHODOLOGY_VERSION as PROBABLES_V2_METHODOLOGY_VERSION,
+    PROBABLES_V2_SUCCESSOR_PUBLICATION_IDENTITY as PROBABLES_V2_PUBLICATION_IDENTITY,
+    probables_v2_methodology_binding_supported,
 )
 from kronos.intraday.probables_v2_refresh import (
     DISCOVERY_PROBABLES_V2_REFRESH_IDENTITY,
@@ -107,10 +108,12 @@ class ProbablesV2ReplayEnvelope:
                 self.timeframe_fact_requests,
                 self.source_operation_count,
             ))
-            or self.methodology_identity != PROBABLES_V2_METHODOLOGY_IDENTITY
-            or self.methodology_version != PROBABLES_V2_METHODOLOGY_VERSION
-            or self.methodology_publication_identity != PROBABLES_V2_PUBLICATION_IDENTITY
-            or self.methodology_checksum != PROBABLES_V2_METHODOLOGY_CHECKSUM
+            or not probables_v2_methodology_binding_supported(
+                self.methodology_identity,
+                self.methodology_version,
+                self.methodology_publication_identity,
+                self.methodology_checksum,
+            )
             or self.mapping_policy_identity != DISCOVERY_PROBABLES_V2_REFRESH_IDENTITY
             or self.mapping_policy_version != DISCOVERY_PROBABLES_V2_REFRESH_VERSION
             or not _aware(self.created_at)
@@ -161,10 +164,12 @@ class ProbablesV2FailureDetail:
                 self.affected_result_identity,
             ))
             or not _aware(self.analysis_boundary)
-            or self.methodology_identity != PROBABLES_V2_METHODOLOGY_IDENTITY
-            or self.methodology_version != PROBABLES_V2_METHODOLOGY_VERSION
-            or self.methodology_publication_identity != PROBABLES_V2_PUBLICATION_IDENTITY
-            or self.methodology_checksum != PROBABLES_V2_METHODOLOGY_CHECKSUM
+            or not probables_v2_methodology_binding_supported(
+                self.methodology_identity,
+                self.methodology_version,
+                self.methodology_publication_identity,
+                self.methodology_checksum,
+            )
             or not _aware(self.created_at)
             or self.contract_identity != PROBABLES_V2_FAILURE_DETAIL_IDENTITY
             or self.contract_version != PROBABLES_V2_FAILURE_DETAIL_VERSION

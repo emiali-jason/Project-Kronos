@@ -78,7 +78,7 @@ def test_status_get_is_read_only_and_v2_specific(tmp_path: Path) -> None:
     assert response is not None and response.status is HTTPStatus.OK
     assert document["state"] == "NOT_YET_RUN"
     assert document["route_identity"] == REFRESH_V2_ROUTE
-    assert document["methodology_version"] == "2.0.0"
+    assert document["methodology_version"] == "2.1.0"
     assert composition.discovery_v2_operation.last_result is None
     assert factory_calls == []
     assert provider_requests == [0]

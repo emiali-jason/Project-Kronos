@@ -1,0 +1,66 @@
+{
+  "authority": {
+    "analytical_probables": "AUTHORIZED_FOR_COMMISSIONED_SUBJECTS_ONLY",
+    "broker": "NONE",
+    "entry_timing": "NONE",
+    "paper_live": "NONE",
+    "risk": "NONE",
+    "trade_construction": "NONE"
+  },
+  "commissioning": {
+    "authority": "MCX_SUBJECT_ANALYTICAL_COMMISSIONING_ONLY",
+    "registry": [
+      "KRONOS-INTRADAY-MCX-SUBJECT-COMMISSIONING-REGISTRY-V1",
+      "1.0.0"
+    ],
+    "states": {
+      "MCX-SUBJECT-COPPER": "COMMISSIONED",
+      "MCX-SUBJECT-CRUDE": "COMMISSIONED",
+      "MCX-SUBJECT-GOLDM": "COMMISSIONED",
+      "MCX-SUBJECT-NATGAS": "HELD",
+      "MCX-SUBJECT-SILVERM": "COMMISSIONED"
+    },
+    "unknown_subject": "FAIL_CLOSED"
+  },
+  "completed_evidence": {
+    "forming_candles": "PROHIBITED",
+    "phases": [
+      "OPENING",
+      "STRUCTURE",
+      "FIRST_CURRENT_SESSION_1H",
+      "CURRENT_SESSION_ESTABLISHED"
+    ]
+  },
+  "historical_retention": {
+    "back_adjustment": "NONE",
+    "candle_contract": [
+      "KRONOS-INTRADAY-MCX-HISTORICAL-CONTRACT-CANDLE-V1",
+      "1.0.0"
+    ],
+    "construction": "KRONOS_CONSTRUCTED_EXACT_CONTRACT_SEGMENTS",
+    "continuous_view_contract": [
+      "KRONOS-INTRADAY-MCX-CONTINUOUS-ANALYTICAL-VIEW-V1",
+      "1.0.0"
+    ],
+    "provider_reacquisition": "PROHIBITED",
+    "retention": "PROSPECTIVE_APPEND_ONLY_EXACT_CONTRACT_LINEAGE"
+  },
+  "mcx": {
+    "nifty_context": "NOT_APPLICABLE",
+    "roll_boundaries": "EXPLICIT_NOT_AUTOMATIC_MARKET_GAPS"
+  },
+  "methodology_identity": "KRONOS-INTRADAY-PROBABLES-METHODOLOGY-V2",
+  "methodology_version": "2.1.0",
+  "nse_semantics": "IDENTICAL_TO_2.0.0",
+  "predecessor": {
+    "checksum": "7b75ee711558f706cfb97b4548952b8924a8cbd8e519efeee61b53828fdd9f89",
+    "identity": "KRONOS-INTRADAY-PROBABLES-METHODOLOGY-V2",
+    "publication": "INTRADAY-PROBABLES-METHODOLOGY-V2-PUBLICATION-7B75EE711558F706CFB97B4548952B8924A8CBD8E519EFEEE61B53828FDD9F89",
+    "replay": "PRESERVED_EXACTLY",
+    "version": "2.0.0"
+  },
+  "qualification_evidence": {
+    "continuous": "INTRADAY-MCX-CONTINUOUS-RESEARCH-9D9603E2E00EF693A58898215F9C24CB9FEC0C1B01DF63D1984274A5C4D2F125",
+    "family_expiry": "INTRADAY-MCX-EXPIRY-CONTINUITY-6317B1DC4A64472FD414856B44544C78776F3681199188B222EACB97BA6E74C7"
+  }
+}

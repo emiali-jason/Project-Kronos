@@ -19,6 +19,9 @@ from kronos.intraday.probables_v2 import (
     PROBABLES_V2_METHODOLOGY_CHECKSUM,
     PROBABLES_V2_METHODOLOGY_IDENTITY,
     PROBABLES_V2_METHODOLOGY_VERSION,
+    PROBABLES_V2_SUCCESSOR_METHODOLOGY_VERSION,
+    PROBABLES_V2_SUCCESSOR_METHODOLOGY_CHECKSUM,
+    PROBABLES_V2_SUCCESSOR_PUBLICATION_IDENTITY,
     PROBABLES_V2_PUBLICATION_IDENTITY,
 )
 from kronos.intraday.completed_evidence import (
@@ -63,9 +66,9 @@ def _payload(
         "contract_identity": REFRESH_V2_REQUEST_IDENTITY,
         "contract_version": REFRESH_V2_REQUEST_VERSION,
         "methodology_identity": PROBABLES_V2_METHODOLOGY_IDENTITY,
-        "methodology_version": PROBABLES_V2_METHODOLOGY_VERSION,
-        "methodology_publication_identity": PROBABLES_V2_PUBLICATION_IDENTITY,
-        "methodology_checksum": PROBABLES_V2_METHODOLOGY_CHECKSUM,
+        "methodology_version": PROBABLES_V2_SUCCESSOR_METHODOLOGY_VERSION,
+        "methodology_publication_identity": PROBABLES_V2_SUCCESSOR_PUBLICATION_IDENTITY,
+        "methodology_checksum": PROBABLES_V2_SUCCESSOR_METHODOLOGY_CHECKSUM,
         "operation_type": REFRESH_V2_OPERATION_TYPE,
     }
 
@@ -237,7 +240,7 @@ def test_v2_execution_produces_v2_only(tmp_path: Path) -> None:
     assert result["outcome"] == "SUCCESS"
     assert v2.run is not None
     assert v2.run.methodology.methodology_identity == PROBABLES_V2_METHODOLOGY_IDENTITY
-    assert v2.run.methodology.methodology_version == PROBABLES_V2_METHODOLOGY_VERSION
+    assert v2.run.methodology.methodology_version == PROBABLES_V2_SUCCESSOR_METHODOLOGY_VERSION
     assert composition.probables_application.snapshot().run is None
     assert composition.discovery_operation.last_result is None
     assert provider_requests == [465]
