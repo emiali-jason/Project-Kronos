@@ -29,7 +29,11 @@ from kronos.browser.product_routes import (
     BrowserSnapshotProvider,
 )
 from kronos.intraday.review import ReviewError, ReviewFailure
-from kronos.intraday.review_v2 import REVIEW_V2_CHART_ROUTE
+from kronos.intraday.review_answer import MAX_ANSWER_BYTES
+from kronos.intraday.review_v2 import (
+    REVIEW_V2_ANSWER_IMPORT_ROUTE,
+    REVIEW_V2_CHART_ROUTE,
+)
 from kronos.intraday.review_v2_transport import REVIEW_V2_QUESTION_TRANSPORT_ROUTE
 from kronos.intraday.review_pdf import IntradayReviewPdfTransport
 from kronos.intraday.review_persistence import IntradayReviewStore
@@ -172,6 +176,7 @@ class IntradayBrowserRoutes:
             "/control/intraday-review/v2",
             REVIEW_V2_CHART_ROUTE,
             REVIEW_V2_QUESTION_TRANSPORT_ROUTE,
+            REVIEW_V2_ANSWER_IMPORT_ROUTE,
             "/intraday/review/start",
             "/intraday/review/chart",
             "/intraday/review/question-pack",
@@ -265,6 +270,18 @@ class IntradayBrowserRoutes:
                 if self._review_v2_control is None or request.query or request.body:
                     raise ValueError
                 self._review_v2_control.application.create_combined_question_transport()
+            elif request.path == REVIEW_V2_ANSWER_IMPORT_ROUTE:
+                if (
+                    self._review_v2_control is None
+                    or request.query
+                    or request.content_type != "application/json"
+                    or not request.body
+                    or len(request.body) > MAX_ANSWER_BYTES
+                ):
+                    raise ValueError
+                self._review_v2_control.application.import_combined_answer(
+                    request.body
+                )
             elif request.path == "/intraday/review/start":
                 result = _one_query(request, "result")
                 if request.body:

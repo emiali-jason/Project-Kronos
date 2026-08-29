@@ -153,7 +153,7 @@ def test_intraday_review_clipboard_targets_are_candidate_bound_and_share_upload_
     assert "document.getElementById(input.dataset.target)" in rendered.body
     assert "if(target&&file)receiveChart(target,file)" in rendered.body
     assert "location.reload()" in rendered.body
-    assert rendered.body.count("document.write(await response.text())") == 2
+    assert rendered.body.count("document.write(await response.text())") == 3
     assert "Chart could not be accepted." in rendered.body
     assert "intraday-replace-chart" in rendered.body
     assert "target.classList.add('replace-ready');target.focus()" in rendered.body

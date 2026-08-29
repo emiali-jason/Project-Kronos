@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from hashlib import sha256
 import json
 from pathlib import Path
 
@@ -8,6 +9,7 @@ import pytest
 
 from kronos.instrument.visual_identity import (
     VISUAL_IDENTITY_RELATIONSHIP_PUBLICATION_V1,
+    VISUAL_IDENTITY_RELATIONSHIP_PUBLICATION_V1_SUCCESSOR_VERSION,
     GovernedVisualIdentityRelationship,
     VisualIdentityRelationshipStatus,
     VisualIdentityResolutionError,
@@ -20,7 +22,10 @@ from kronos.instrument.visual_identity import (
     parse_visual_identity_publication,
 )
 from kronos.instrument.visual_identity_persistence import VisualIdentityRelationshipStore
-from kronos.instrument.visual_identity_persistence import load_default_visual_identity_resolver
+from kronos.instrument.visual_identity_persistence import (
+    load_default_visual_identity_resolver,
+    load_visual_identity_resolver,
+)
 
 
 BOUNDARY = datetime(2026, 8, 27, 10, 59, 49, 164000, tzinfo=UTC)
@@ -268,3 +273,72 @@ def test_repository_default_publication_loads_against_canonical_catalogue() -> N
         source_context=VisualIdentitySourceContext.TRADINGVIEW_VISUAL_CHART,
         governed_observation_boundary=BOUNDARY,
     ).canonical_subject_identity == "NSE-INDEX-BANKNIFTY"
+
+
+def test_successor_1_1_0_resolves_exact_v2_labels_and_preserves_1_0_0() -> None:
+    historical = Path(
+        "data/instruments/"
+        "KRONOS-GOVERNED-VISUAL-IDENTITY-RELATIONSHIP-PUBLICATION-V1/1.0.0.json"
+    ).read_bytes()
+    assert sha256(historical).hexdigest() == (
+        "da0412ade5eb2961fa0fd08857f551db64a67abef941cd4ba24e4023aed5c1e4"
+    )
+    historical_resolver = load_default_visual_identity_resolver()
+    assert historical_resolver.publication.publication_version == "1.0.0"
+    assert historical_resolver.resolve(
+        observed_visible_subject_identity="RBL Bank Ltd",
+        source_context=VisualIdentitySourceContext.TRADINGVIEW_VISUAL_CHART,
+        governed_observation_boundary=BOUNDARY,
+    ).canonical_subject_identity == "NSE-EQ-RBLBANK"
+
+    successor = load_visual_identity_resolver(
+        publication_version=(
+            VISUAL_IDENTITY_RELATIONSHIP_PUBLICATION_V1_SUCCESSOR_VERSION
+        )
+    )
+    assert successor.publication.publication_version == "1.1.0"
+    assert {
+        observed: successor.resolve(
+            observed_visible_subject_identity=observed,
+            source_context=VisualIdentitySourceContext.TRADINGVIEW_VISUAL_CHART,
+            governed_observation_boundary=datetime.fromisoformat(
+                "2026-08-28T17:18:48.326000+00:00"
+            ),
+        ).canonical_subject_identity
+        for observed in (
+            "Apollo Hospitals Enterprise Limited",
+            "Bajaj Auto Limited",
+            "Hero Motocorp Limited",
+            "PB Fintech Limited",
+        )
+    } == {
+        "Apollo Hospitals Enterprise Limited": "NSE-EQ-APOLLOHOSP",
+        "Bajaj Auto Limited": "NSE-EQ-BAJAJ-AUTO",
+        "Hero Motocorp Limited": "NSE-EQ-HEROMOTOCO",
+        "PB Fintech Limited": "NSE-EQ-POLICYBZR",
+    }
+
+
+def test_unknown_successor_version_and_wrong_context_fail_closed() -> None:
+    with pytest.raises(VisualIdentityResolutionError, match="INTEGRITY_INVALID"):
+        create_visual_identity_publication(
+            canonical_subject_identities=CANONICAL,
+            publication_identity=VISUAL_IDENTITY_RELATIONSHIP_PUBLICATION_V1,
+            publication_version="1.2.0",
+            effective_from=BOUNDARY,
+            effective_through=END,
+            source_identities=("ADR-0018",),
+            provenance=("ADR-0018",),
+            relationships=(_relationship(),),
+            supersedes=None,
+            schema_identity=VISUAL_IDENTITY_RELATIONSHIP_PUBLICATION_V1,
+        )
+    successor = load_visual_identity_resolver(publication_version="1.1.0")
+    with pytest.raises(VisualIdentityResolutionError, match="UNAVAILABLE"):
+        successor.resolve(
+            observed_visible_subject_identity="Apollo Hospitals Enterprise Limited",
+            source_context="WRONG_SOURCE",  # type: ignore[arg-type]
+            governed_observation_boundary=datetime.fromisoformat(
+                "2026-08-28T17:18:48.326000+00:00"
+            ),
+        )

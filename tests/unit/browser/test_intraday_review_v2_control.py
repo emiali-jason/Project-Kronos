@@ -20,7 +20,10 @@ from kronos.intraday.review_v2_operation import (
 from kronos.intraday.review_v2_operation_persistence import (
     ReviewV2OperationProvenanceStore,
 )
-from kronos.intraday.review_v2 import REVIEW_V2_CHART_ROUTE
+from kronos.intraday.review_v2 import (
+    REVIEW_V2_ANSWER_IMPORT_ROUTE,
+    REVIEW_V2_CHART_ROUTE,
+)
 from kronos.intraday.review_v2_transport import (
     REVIEW_V2_QUESTION_TRANSPORT_ROUTE,
     IntradayReviewV2Transport,
@@ -32,6 +35,10 @@ from tests.unit.intraday.test_probables_v2 import _opening_inputs, _run
 from tests.unit.intraday.test_probables import _member, _run as _run_v1
 from tests.unit.intraday.test_review import _application
 from tests.unit.intraday.test_review import _png
+from tests.unit.intraday.test_review_v2 import (
+    _completed_batch_payload,
+    _resolver,
+)
 
 
 class _Workstation:
@@ -58,6 +65,7 @@ def _control(tmp_path: Path):  # type: ignore[no-untyped-def]
             question_outbox=(tmp_path / "questions").resolve(),
             answer_inbox=(tmp_path / "answers").resolve(),
         ),
+        visual_identity_resolver=_resolver(run.analysis_boundary),
     )
     clock_values = [run.analysis_boundary + timedelta(seconds=index) for index in range(20)]
     control = IntradayReviewV2OperationalControl(
@@ -311,3 +319,48 @@ def test_browser_creates_one_v2_combined_question_transport_after_chart_ready(
     snapshot = application.snapshot()
     assert snapshot.review_batch_identity is not None
     assert snapshot.question_transport_identity is not None
+
+
+def test_browser_imports_one_exact_v2_batch_and_projects_visual_readiness(
+    tmp_path: Path,
+) -> None:
+    run, application, control = _control(tmp_path / "v2")
+    v1 = _application(tmp_path / "v1", [_run_v1((_member("V1-FIXTURE"),))])
+    routes = IntradayBrowserRoutes(
+        _Workstation(run), review=v1, review_v2_control=control
+    )
+    assert control.execute_document(_payload(run))["outcome"] == "COMPLETE"
+    cycle = application.snapshot().candidates[0].cycle_identity
+    application.upload_chart(
+        cycle, media_type="image/png", payload=_png(93)
+    )
+    transport = application.create_combined_question_transport()
+    payload = _completed_batch_payload(
+        transport.answer_template_path, "Reliance Industries Ltd"
+    )
+    response = routes.handle_post(
+        BrowserPostRequest(
+            REVIEW_V2_ANSWER_IMPORT_ROUTE,
+            {},
+            "application/json",
+            payload,
+        ),
+        _snapshot,
+    )
+    assert response is not None and response.status.value == 200
+    assert "Answer · IMPORTED" in response.body
+    assert "Visual Identity · MATCH" in response.body
+    assert "Visual Evidence · READY" in response.body
+    assert "Reliance Industries Ltd" in response.body
+    assert "NSE-EQ-RELIANCE" in response.body
+
+    rejected = routes.handle_post(
+        BrowserPostRequest(
+            REVIEW_V2_ANSWER_IMPORT_ROUTE,
+            {"filename": ["not-authority.json"]},
+            "application/json",
+            payload,
+        ),
+        _snapshot,
+    )
+    assert rejected is not None and rejected.status.value == 400

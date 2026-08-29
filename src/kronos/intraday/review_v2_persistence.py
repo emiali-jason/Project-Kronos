@@ -14,12 +14,14 @@ from kronos.intraday.review_v2 import (
     CurrentChartPointerV2,
     CurrentReviewPointerV2,
     ImportedVisualEvidenceV2,
+    VisualEvidencePointerV2,
     ReviewCycleV2,
     ReviewHandoffV2,
     ReviewQuestionBatchV2,
     ReviewQuestionPackV2,
     artifact_bytes_v2,
     artifact_from_bytes_v2,
+    create_visual_evidence_pointer_v2,
 )
 from kronos.intraday.review_persistence import validate_chart_payload
 from kronos.intraday.review_v2_transport import (
@@ -128,6 +130,34 @@ class IntradayReviewV2Store:
             self._retain(path, payload)
         return path
 
+    def retain_batch_answer_transport(
+        self, review_batch_identity: str, payload: bytes,
+    ) -> Path:
+        if not _component(review_batch_identity) or type(payload) is not bytes or not payload:
+            raise ReviewError(ReviewFailure.INPUT_INVALID)
+        digest = sha256(payload).hexdigest()
+        path = self._path(
+            "batch-answer-transports", f"{review_batch_identity}-{digest}"
+        )
+        with self._lock:
+            self._retain(path, payload)
+        return path
+
+    def save_visual_evidence_pointer(
+        self, value: VisualEvidencePointerV2,
+    ) -> Path:
+        if type(value) is not VisualEvidencePointerV2:
+            raise ReviewError(ReviewFailure.INPUT_INVALID)
+        path = self._path("current-visual-evidence", value.review_pack_identity)
+        with self._lock:
+            if path.exists():
+                existing = artifact_from_bytes_v2(self._read(path))
+                if existing != value:
+                    raise ReviewError(ReviewFailure.ANSWER_CONFLICT)
+                return path
+            self._retain(path, artifact_bytes_v2(value))
+        return path
+
     def load_handoff(self, identity: str) -> ReviewHandoffV2:
         return self._load_typed("handoffs", identity, ReviewHandoffV2, "handoff_identity")
 
@@ -188,6 +218,34 @@ class IntradayReviewV2Store:
             "visual-evidence", identity, ImportedVisualEvidenceV2,
             "visual_evidence_identity",
         )
+
+    def load_visual_evidence_for_pack(
+        self, review_pack_identity: str,
+    ) -> ImportedVisualEvidenceV2 | None:
+        path = self._path("current-visual-evidence", review_pack_identity)
+        if not path.exists():
+            return None
+        pointer = artifact_from_bytes_v2(self._read(path))
+        if (
+            type(pointer) is not VisualEvidencePointerV2
+            or pointer.review_pack_identity != review_pack_identity
+        ):
+            raise ReviewError(ReviewFailure.INTEGRITY_INVALID)
+        evidence = self.load_visual_evidence(pointer.visual_evidence_identity)
+        pack = self.load_pack(review_pack_identity)
+        if (
+            pointer != create_visual_evidence_pointer_v2(evidence)
+            or evidence.review_pack_identity != pack.review_pack_identity
+            or evidence.review_cycle_identity != pack.review_cycle_identity
+            or evidence.chart_revision_identity != pack.chart_revision_identity
+            or evidence.expected_canonical_subject_identity
+            != pack.expected_canonical_subject_identity
+            or evidence.proposed_direction != pack.proposed_direction
+            or evidence.probables_run_identity != pack.probables_run_identity
+            or evidence.probable_result_identity != pack.probable_result_identity
+        ):
+            raise ReviewError(ReviewFailure.INTEGRITY_INVALID)
+        return evidence
 
     def load_chart_bytes(self, value: ChartRevisionV2) -> bytes:
         if type(value) is not ChartRevisionV2:

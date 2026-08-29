@@ -52,7 +52,10 @@ from kronos.intraday.review_v2_operation import (
     REVIEW_V2_CREATE_ROUTE,
     ReviewV2OperationSource,
 )
-from kronos.intraday.review_v2 import REVIEW_V2_CHART_ROUTE
+from kronos.intraday.review_v2 import (
+    REVIEW_V2_ANSWER_IMPORT_ROUTE,
+    REVIEW_V2_CHART_ROUTE,
+)
 from kronos.intraday.review_v2_transport import REVIEW_V2_QUESTION_TRANSPORT_ROUTE
 from kronos.intraday.telemetry import TelemetryType
 
@@ -260,7 +263,13 @@ def _review_v2_projection(
                 + '<br>EXPECTED ANSWER: ' + escape(snapshot.expected_answer_filename or "")
                 + '<br>CANDIDATES: ' + str(len(snapshot.candidates))
                 + '<br>Transport · ' + escape(snapshot.question_transport_identity)
-                + '</span></div>'
+                + '</span><label class="intraday-file-choice" tabindex="0" '
+                'for="intraday-v2-batch-answer">UPLOAD V2 ANSWERS</label>'
+                '<input id="intraday-v2-batch-answer" class="intraday-batch-answer-input" '
+                'type="file" accept="application/json,.json" '
+                'data-review-v2-batch-answer-upload="'
+                + REVIEW_V2_ANSWER_IMPORT_ROUTE
+                + '"></div>'
             )
     return (
         '<section class="intraday-review-v2"><div class="intraday-review-v2-head"><div>'
@@ -326,6 +335,8 @@ def _review_v2_candidate(item, slot_index: int) -> str:  # type: ignore[no-untyp
         + '<br>Review Pack · ' + escape(item.review_pack_state.replace("_", " "))
         + '<br>Question Pack · ' + escape(item.question_pack_state.replace("_", " "))
         + '<br>Answer · ' + escape(item.answer_state.replace("_", " "))
+        + '<br>Visual Identity · ' + escape(item.visual_identity_state.replace("_", " "))
+        + '<br>Visual Evidence · ' + escape(item.visual_evidence_state.replace("_", " "))
         + ("" if item.nifty_applicability is None else '<br>NIFTY · ' + escape(item.nifty_applicability))
         + ("" if item.mcx_commissioning_state is None else '<br>MCX commissioning · ' + escape(item.mcx_commissioning_state))
         + '</p>' + upload
@@ -333,6 +344,11 @@ def _review_v2_candidate(item, slot_index: int) -> str:  # type: ignore[no-untyp
         + 'Cycle · ' + escape(item.cycle_identity)
         + '<br>Probables Result · ' + escape(item.probable_result_identity)
         + ("" if item.chart_revision_identity is None else '<br>Chart Revision · ' + escape(item.chart_revision_identity))
+        + ("" if item.answer_pack_identity is None else '<br>Answer Pack · ' + escape(item.answer_pack_identity))
+        + ("" if item.visual_evidence_identity is None else '<br>Visual Evidence · ' + escape(item.visual_evidence_identity))
+        + ("" if item.observed_visible_subject_identity is None else '<br>Observed identity · ' + escape(item.observed_visible_subject_identity))
+        + ("" if item.resolved_canonical_subject_identity is None else '<br>Resolved canonical · ' + escape(item.resolved_canonical_subject_identity))
+        + ("" if item.visual_identity_publication_version is None else '<br>DOMAIN-001 publication · ' + escape(item.visual_identity_publication_identity or "") + ' / ' + escape(item.visual_identity_publication_version))
         + '</details></article>'
     )
 def _review_v2_control_script() -> str:
@@ -655,6 +671,15 @@ document.querySelectorAll('[data-review-batch-answer-upload]').forEach(input=>{
     const uploadUrl=input.dataset.reviewBatchAnswerUpload+'?filename='+encodeURIComponent(file.name);
     const response=await fetch(uploadUrl,{method:'POST',headers:{'Content-Type':'application/json'},body:file});
     if(!response.ok){alert('Combined Answer upload rejected.');return;}
+    document.open();document.write(await response.text());document.close();
+  });
+});
+document.querySelectorAll('[data-review-v2-batch-answer-upload]').forEach(input=>{
+  input.addEventListener('change',async()=>{
+    const file=input.files[0];
+    if(!file||(!file.name.toLowerCase().endsWith('.json')&&!['application/json','text/json'].includes(file.type))){alert('Choose one combined V2 JSON Answer Pack.');return;}
+    const response=await fetch(input.dataset.reviewV2BatchAnswerUpload,{method:'POST',headers:{'Content-Type':'application/json'},body:file});
+    if(!response.ok){alert('V2 combined Answer upload rejected.');return;}
     document.open();document.write(await response.text());document.close();
   });
 });

@@ -117,6 +117,23 @@ def _resolver(boundary: datetime) -> VisualIdentityResolver:
     ))
 
 
+def _completed_batch_payload(path: Path, observed: str) -> bytes:
+    document = json.loads(path.read_bytes())
+    candidate = document["candidates"][0]
+    candidate["observed_visible_subject_identity"] = observed
+    candidate["global_observation_status"] = "OBSERVED"
+    for question, answer in zip(QUESTIONS, candidate["answers"], strict=True):
+        answer.update(
+            observation_status="OBSERVED",
+            answer=question.allowed_answers[0],
+            visible_timeframes=list(question.timeframe_scope),
+            visible_basis="Visible completed chart evidence.",
+            status_detail=None,
+            why_not_covered_elsewhere=None,
+        )
+    return json.dumps(document, sort_keys=True, separators=(",", ":")).encode()
+
+
 @pytest.mark.parametrize("legacy", (True, False))
 def test_exact_v2_methodology_lineage_creates_and_restores_separate_cycle(
     tmp_path: Path, legacy: bool,
@@ -393,3 +410,125 @@ def test_v2_combined_transport_is_exact_bound_idempotent_and_reloadable(
     assert snapshot.candidates[0].review_pack_state == "READY"
     assert snapshot.candidates[0].question_pack_state == "TRANSPORT_READY"
     assert snapshot.question_transport_identity == first.transport.transport_identity
+
+
+def test_v2_combined_answer_validates_imports_and_restores_exact_evidence(
+    tmp_path: Path,
+) -> None:
+    *_, mapping = _opening_inputs()
+    run, original = _application(tmp_path, mapping)
+    application = IntradayReviewV2Application(
+        probables_store=original.probables_store,
+        review_store=original.review_store,
+        transport=IntradayReviewV2Transport(
+            question_outbox=(tmp_path / "questions").resolve(),
+            answer_inbox=(tmp_path / "answers").resolve(),
+        ),
+        visual_identity_resolver=_resolver(run.analysis_boundary),
+    )
+    cycle = application.create_eligible_cycles(run)[0]
+    application.upload_chart(
+        cycle.cycle_identity, media_type="image/png", payload=_png(91)
+    )
+    transport = application.create_combined_question_transport()
+    payload = _completed_batch_payload(
+        transport.answer_template_path, "Reliance Industries Ltd"
+    )
+
+    validation = application.validate_combined_answer(payload)
+    assert validation.candidate_count == validation.exact_match_count == 1
+    assert (
+        validation.identity_mismatch_count,
+        validation.schema_invalid_count,
+        validation.conflict_count,
+        validation.duplicate_count,
+        validation.missing_count,
+        validation.extra_count,
+    ) == (0, 0, 0, 0, 0, 0)
+    result = application.import_combined_answer(payload)
+    assert result.state == "IMPORTED" and result.imported_count == 1
+    assert result.review_batch_identity == transport.batch.batch_identity
+    member = result.members[0]
+    assert member.canonical_subject_identity == "NSE-EQ-RELIANCE"
+    assert member.observed_visible_subject_identity == "Reliance Industries Ltd"
+    assert member.resolved_canonical_subject_identity == "NSE-EQ-RELIANCE"
+
+    restored = IntradayReviewV2Application(
+        probables_store=application.probables_store,
+        review_store=IntradayReviewV2Store(application.review_store.root),
+    )
+    candidate = restored.snapshot().candidates[0]
+    assert candidate.answer_state == "IMPORTED"
+    assert candidate.visual_identity_state == "MATCH"
+    assert candidate.visual_evidence_state == "READY"
+    assert candidate.visual_evidence_identity == member.visual_evidence_identity
+    evidence = restored.review_store.load_visual_evidence_for_pack(
+        transport.packs[0].review_pack_identity
+    )
+    assert evidence is not None
+    assert evidence.visual_evidence_identity == member.visual_evidence_identity
+
+
+def test_v2_combined_answer_duplicate_wrong_identity_and_wrong_mapping_fail_closed(
+    tmp_path: Path,
+) -> None:
+    *_, mapping = _opening_inputs()
+    run, original = _application(tmp_path, mapping)
+    application = IntradayReviewV2Application(
+        probables_store=original.probables_store,
+        review_store=original.review_store,
+        transport=IntradayReviewV2Transport(
+            question_outbox=(tmp_path / "questions").resolve(),
+            answer_inbox=(tmp_path / "answers").resolve(),
+        ),
+        visual_identity_resolver=_resolver(run.analysis_boundary),
+    )
+    cycle = application.create_eligible_cycles(run)[0]
+    application.upload_chart(
+        cycle.cycle_identity, media_type="image/png", payload=_png(92)
+    )
+    transport = application.create_combined_question_transport()
+    payload = _completed_batch_payload(
+        transport.answer_template_path, "Reliance Industries Ltd"
+    )
+    duplicate = json.loads(payload)
+    duplicate["candidates"].append(dict(duplicate["candidates"][0]))
+    with pytest.raises(ReviewError, match=ReviewFailure.ANSWER_IDENTITY_MISMATCH.value):
+        application.validate_combined_answer(json.dumps(duplicate).encode())
+
+    wrong = json.loads(payload)
+    wrong["candidates"][0]["chart_revision_identity"] = "WRONG"
+    with pytest.raises(ReviewError, match=ReviewFailure.ANSWER_IDENTITY_MISMATCH.value):
+        application.validate_combined_answer(json.dumps(wrong).encode())
+
+    relationship = create_visual_identity_relationship(
+        canonical_subject_identity="NSE-EQ-OTHER",
+        observed_visible_subject_identity="Reliance Industries Ltd",
+        source_context=VisualIdentitySourceContext.TRADINGVIEW_VISUAL_CHART,
+        effective_from=run.analysis_boundary - timedelta(days=1),
+        effective_through=run.analysis_boundary + timedelta(days=1),
+        status=VisualIdentityRelationshipStatus.ACTIVE,
+        source_identity="TEST-TRADINGVIEW",
+        provenance=("TEST", "ADR-0018"),
+        supersedes=None,
+    )
+    wrong_mapping = VisualIdentityResolver(create_visual_identity_publication(
+        canonical_subject_identities=("NSE-EQ-RELIANCE", "NSE-EQ-OTHER"),
+        publication_identity=VISUAL_IDENTITY_RELATIONSHIP_PUBLICATION_V1,
+        publication_version="1.1.0",
+        effective_from=run.analysis_boundary - timedelta(days=1),
+        effective_through=run.analysis_boundary + timedelta(days=1),
+        source_identities=("TEST-ADR-0018",),
+        provenance=("TEST", "DOMAIN-001"),
+        relationships=(relationship,),
+        supersedes=None,
+        schema_identity=VISUAL_IDENTITY_RELATIONSHIP_PUBLICATION_V1,
+    ))
+    mismatched_application = IntradayReviewV2Application(
+        probables_store=application.probables_store,
+        review_store=application.review_store,
+        transport=application._transport,  # noqa: SLF001
+        visual_identity_resolver=wrong_mapping,
+    )
+    with pytest.raises(ReviewError, match=ReviewFailure.ANSWER_IDENTITY_MISMATCH.value):
+        mismatched_application.validate_combined_answer(payload)

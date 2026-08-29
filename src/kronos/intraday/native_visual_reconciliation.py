@@ -18,7 +18,7 @@ from kronos.intraday.review import ObservationStatus, ReviewCycle, ReviewQuestio
 from kronos.intraday.review_answer import ImportedVisualEvidence
 from kronos.instrument.visual_identity import (
     VISUAL_IDENTITY_RELATIONSHIP_PUBLICATION_V1,
-    VISUAL_IDENTITY_RELATIONSHIP_PUBLICATION_V1_VERSION,
+    VISUAL_IDENTITY_RELATIONSHIP_PUBLICATION_V1_SUPPORTED_VERSIONS,
     VisualIdentitySourceContext,
 )
 
@@ -791,7 +791,7 @@ def _validate_bindings(
         or evidence.visual_identity_publication_identity
         != VISUAL_IDENTITY_RELATIONSHIP_PUBLICATION_V1
         or evidence.visual_identity_publication_version
-        != VISUAL_IDENTITY_RELATIONSHIP_PUBLICATION_V1_VERSION
+        not in VISUAL_IDENTITY_RELATIONSHIP_PUBLICATION_V1_SUPPORTED_VERSIONS
         or not evidence.visual_identity_publication_integrity_identity.startswith("INTEGRITY-VISUAL-IDENTITY-PUBLICATION-")
         or evidence.visual_identity_source_context
         != VisualIdentitySourceContext.TRADINGVIEW_VISUAL_CHART.value

@@ -110,6 +110,14 @@ class VisualIdentityRelationshipStore:
 
 
 def load_default_visual_identity_resolver() -> VisualIdentityResolver:
+    return load_visual_identity_resolver(
+        publication_version=VISUAL_IDENTITY_RELATIONSHIP_PUBLICATION_V1_VERSION
+    )
+
+
+def load_visual_identity_resolver(
+    *, publication_version: str,
+) -> VisualIdentityResolver:
     canonical = InstrumentSemanticV2Store(DEFAULT_INSTRUMENT_SEMANTIC_V2_ROOT).load(
         publication_identity="KRONOS-CANONICAL-INSTRUMENT-CATALOGUE-V2",
         publication_version=VISUAL_IDENTITY_CANONICAL_CATALOGUE_VERSION,
@@ -119,7 +127,7 @@ def load_default_visual_identity_resolver() -> VisualIdentityResolver:
     )
     publication = VisualIdentityRelationshipStore().load(
         publication_identity=VISUAL_IDENTITY_RELATIONSHIP_PUBLICATION_V1,
-        publication_version=VISUAL_IDENTITY_RELATIONSHIP_PUBLICATION_V1_VERSION,
+        publication_version=publication_version,
         canonical_subject_identities=canonical_subjects,
     )
     return VisualIdentityResolver(publication)
@@ -141,4 +149,5 @@ __all__ = [
     "VISUAL_IDENTITY_CANONICAL_CATALOGUE_VERSION",
     "VisualIdentityRelationshipStore",
     "load_default_visual_identity_resolver",
+    "load_visual_identity_resolver",
 ]

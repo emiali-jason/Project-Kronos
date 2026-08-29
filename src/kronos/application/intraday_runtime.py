@@ -62,6 +62,12 @@ from kronos.instrument.semantic_v2_persistence import (
     DEFAULT_INSTRUMENT_SEMANTIC_V2_ROOT,
     InstrumentSemanticV2Store,
 )
+from kronos.instrument.visual_identity import (
+    VISUAL_IDENTITY_RELATIONSHIP_PUBLICATION_V1_SUCCESSOR_VERSION,
+)
+from kronos.instrument.visual_identity_persistence import (
+    load_visual_identity_resolver,
+)
 from kronos.market.calendar import MarketCalendarPublisher
 from kronos.provider.contracts.provider_authentication import ReadOnlyProviderOperation
 from kronos.provider.runtime import (
@@ -191,6 +197,11 @@ def create_intraday_runtime(
     review_v2 = IntradayReviewV2Application(
         probables_store=probables_v2_store,
         review_store=review_v2_store,
+        visual_identity_resolver=load_visual_identity_resolver(
+            publication_version=(
+                VISUAL_IDENTITY_RELATIONSHIP_PUBLICATION_V1_SUCCESSOR_VERSION
+            )
+        ),
     )
     review_v2_operation_store = ReviewV2OperationProvenanceStore(
         review_v2_store.root

@@ -98,6 +98,7 @@ def _visual_resolver(
     mappings: tuple[tuple[str, str], ...],
     *,
     duplicate_rblbank: bool = False,
+    publication_version: str = "1.0.0",
 ) -> VisualIdentityResolver:
     relationships = tuple(
         create_visual_identity_relationship(
@@ -131,7 +132,7 @@ def _visual_resolver(
     return VisualIdentityResolver(create_visual_identity_publication(
         canonical_subject_identities=canonical,
         publication_identity=VISUAL_IDENTITY_RELATIONSHIP_PUBLICATION_V1,
-        publication_version="1.0.0",
+        publication_version=publication_version,
         effective_from=BOUNDARY - timedelta(days=1),
         effective_through=BOUNDARY + timedelta(days=1),
         source_identities=("ADR-0018",),

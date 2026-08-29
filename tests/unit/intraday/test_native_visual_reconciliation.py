@@ -150,6 +150,24 @@ def test_governed_visual_identity_resolution_is_consumed_without_rewriting_raw_o
     assert _visual_evidence(review, pack).observed_visible_subject_identity == observed
 
 
+def test_successor_1_1_0_visual_identity_evidence_is_accepted_without_v1_rewrite(
+    tmp_path: Path,
+) -> None:
+    resolver = _visual_resolver(
+        (("RBL Bank Ltd", "NSE-EQ-RBLBANK"),),
+        publication_version="1.1.0",
+    )
+    _, review, app, cycle, pack = _prepared(
+        tmp_path,
+        subject="NSE-EQ-RBLBANK",
+        observed_visible_subject_identity="RBL Bank Ltd",
+        visual_identity_resolver=resolver,
+    )
+    evidence = _visual_evidence(review, pack)
+    assert evidence.visual_identity_publication_version == "1.1.0"
+    assert app.reconcile(cycle.cycle_identity).state is ReconciliationMemberState.RECONCILED
+
+
 @pytest.mark.parametrize(
     ("changes", "failure"),
     (

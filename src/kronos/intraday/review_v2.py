@@ -57,6 +57,9 @@ REVIEW_BATCH_V2_IDENTITY = "KRONOS-INTRADAY-REVIEW-BATCH-V2"
 IMPORTED_VISUAL_EVIDENCE_V2_IDENTITY = (
     "KRONOS-INTRADAY-IMPORTED-VISUAL-EVIDENCE-V2"
 )
+VISUAL_EVIDENCE_V2_POINTER_IDENTITY = (
+    "KRONOS-INTRADAY-VISUAL-EVIDENCE-POINTER-V2"
+)
 CURRENT_REVIEW_V2_POINTER_IDENTITY = (
     "KRONOS-INTRADAY-CURRENT-REVIEW-POINTER-V2"
 )
@@ -69,6 +72,7 @@ CURRENT_CHART_V2_POINTER_IDENTITY = (
 )
 CHART_INTAKE_V2_CONTRACT_VERSION = "1.0.0"
 REVIEW_V2_CHART_ROUTE = "/control/intraday-review/v2/chart"
+REVIEW_V2_ANSWER_IMPORT_ROUTE = "/intraday/review/v2/answers"
 
 
 @dataclass(frozen=True, slots=True)
@@ -559,6 +563,35 @@ class ImportedVisualEvidenceV2:
             != _identity("INTEGRITY-INTRADAY-VISUAL-EVIDENCE-V2-", values)
         ):
             raise ReviewError(ReviewFailure.ANSWER_INVALID)
+
+
+@dataclass(frozen=True, slots=True)
+class VisualEvidencePointerV2:
+    review_pack_identity: str
+    review_cycle_identity: str
+    chart_revision_identity: str
+    answer_pack_identity: str
+    visual_evidence_identity: str
+    integrity_identity: str
+    schema_identity: str = VISUAL_EVIDENCE_V2_POINTER_IDENTITY
+    schema_version: str = REVIEW_V2_CONTRACT_VERSION
+
+    def __post_init__(self) -> None:
+        values = _without(self, "integrity_identity")
+        if (
+            not _texts((
+                self.review_pack_identity,
+                self.review_cycle_identity,
+                self.chart_revision_identity,
+                self.answer_pack_identity,
+                self.visual_evidence_identity,
+            ))
+            or self.schema_identity != VISUAL_EVIDENCE_V2_POINTER_IDENTITY
+            or self.schema_version != REVIEW_V2_CONTRACT_VERSION
+            or self.integrity_identity
+            != _identity("INTEGRITY-INTRADAY-VISUAL-EVIDENCE-V2-POINTER-", values)
+        ):
+            raise ReviewError(ReviewFailure.INTEGRITY_INVALID)
 
 
 @dataclass(frozen=True, slots=True)
@@ -1066,6 +1099,28 @@ def create_question_batch_v2(
     )
 
 
+def create_visual_evidence_pointer_v2(
+    evidence: ImportedVisualEvidenceV2,
+) -> VisualEvidencePointerV2:
+    if type(evidence) is not ImportedVisualEvidenceV2:
+        raise ReviewError(ReviewFailure.INPUT_INVALID)
+    values = {
+        "review_pack_identity": evidence.review_pack_identity,
+        "review_cycle_identity": evidence.review_cycle_identity,
+        "chart_revision_identity": evidence.chart_revision_identity,
+        "answer_pack_identity": evidence.answer_pack_identity,
+        "visual_evidence_identity": evidence.visual_evidence_identity,
+        "schema_identity": VISUAL_EVIDENCE_V2_POINTER_IDENTITY,
+        "schema_version": REVIEW_V2_CONTRACT_VERSION,
+    }
+    return VisualEvidencePointerV2(
+        integrity_identity=_identity(
+            "INTEGRITY-INTRADAY-VISUAL-EVIDENCE-V2-POINTER-", values
+        ),
+        **values,
+    )
+
+
 def create_current_review_pointer_v2(
     run: ProbablesRunV2,
     cycles: tuple[ReviewCycleV2, ...],
@@ -1099,7 +1154,8 @@ def create_current_review_pointer_v2(
 def artifact_bytes_v2(value: object) -> bytes:
     if type(value) not in {
         ReviewHandoffV2, ReviewCycleV2, ChartRevisionV2, ReviewQuestionPackV2,
-        ReviewQuestionBatchV2, ImportedVisualEvidenceV2, CurrentReviewPointerV2,
+        ReviewQuestionBatchV2, ImportedVisualEvidenceV2, VisualEvidencePointerV2,
+        CurrentReviewPointerV2,
         ChartIntakeRequestV2, CurrentChartPointerV2,
     }:
         raise ReviewError(ReviewFailure.INPUT_INVALID)
@@ -1119,6 +1175,7 @@ def artifact_from_bytes_v2(payload: bytes) -> object:
             QUESTION_PACK_V2_IDENTITY: ReviewQuestionPackV2,
             REVIEW_BATCH_V2_IDENTITY: ReviewQuestionBatchV2,
             IMPORTED_VISUAL_EVIDENCE_V2_IDENTITY: ImportedVisualEvidenceV2,
+            VISUAL_EVIDENCE_V2_POINTER_IDENTITY: VisualEvidencePointerV2,
             CURRENT_REVIEW_V2_POINTER_IDENTITY: CurrentReviewPointerV2,
             CHART_INTAKE_REQUEST_V2_IDENTITY: ChartIntakeRequestV2,
             CURRENT_CHART_V2_POINTER_IDENTITY: CurrentChartPointerV2,
@@ -1270,17 +1327,21 @@ __all__ = [
     "CHART_REVISION_V2_IDENTITY", "CURRENT_REVIEW_V2_POINTER_IDENTITY",
     "CURRENT_CHART_V2_POINTER_IDENTITY",
     "IMPORTED_VISUAL_EVIDENCE_V2_IDENTITY", "QUESTION_PACK_V2_IDENTITY",
+    "VISUAL_EVIDENCE_V2_POINTER_IDENTITY",
     "REVIEW_BATCH_V2_IDENTITY", "REVIEW_CYCLE_V2_IDENTITY",
     "REVIEW_HANDOFF_V2_IDENTITY", "REVIEW_V2_CHART_ROUTE",
+    "REVIEW_V2_ANSWER_IMPORT_ROUTE",
     "REVIEW_V2_CONTRACT_VERSION", "ChartIntakeRequestV2", "ChartRevisionV2",
     "CurrentChartPointerV2", "CurrentReviewPointerV2",
-    "ImportedVisualEvidenceV2", "McxReviewCommissioningBindingV2",
+    "ImportedVisualEvidenceV2", "VisualEvidencePointerV2",
+    "McxReviewCommissioningBindingV2",
     "ReviewCycleV2", "ReviewHandoffV2", "ReviewQuestionBatchV2",
     "ReviewQuestionPackV2",
     "artifact_bytes_v2", "artifact_from_bytes_v2",
     "bind_imported_visual_evidence_v2", "create_chart_revision_v2",
     "create_chart_intake_request_v2", "create_current_chart_pointer_v2",
     "create_current_review_pointer_v2", "create_question_batch_v2",
+    "create_visual_evidence_pointer_v2",
     "create_question_pack_v2",
     "create_review_cycle_v2", "create_review_handoff_v2",
 ]
