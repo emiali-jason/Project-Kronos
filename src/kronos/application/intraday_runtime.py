@@ -30,6 +30,10 @@ from kronos.application.intraday_wo10_runtime import (
     RuntimeWo10EvidenceAssembler,
     RuntimeWo10PolicyRegistry,
 )
+from kronos.application.intraday_wo11 import (
+    IntradayWo11Application,
+    IntradayWo11RuntimeService,
+)
 from kronos.application.intraday_historical_operation import (
     IntradayHistoricalQualificationHarness,
     IntradayHistoricalQualificationOperationService,
@@ -70,6 +74,7 @@ from kronos.intraday.universe import (
     load_intraday_universe_publication,
 )
 from kronos.intraday.wo10_persistence import Wo10Store
+from kronos.intraday.wo11_persistence import Wo11Store
 from kronos.instrument.active_derivative import ACTIVE_DERIVATIVE_CATALOGUE_VERSION
 from kronos.instrument.active_derivative_persistence import (
     ActiveDerivativeBindingStore,
@@ -152,6 +157,9 @@ class IntradayRuntimeComposition:
     wo10_policy_registry: RuntimeWo10PolicyRegistry
     wo10_application: IntradayWo10Application
     wo10_runtime: IntradayWo10RuntimeService
+    wo11_store: Wo11Store
+    wo11_application: IntradayWo11Application
+    wo11_runtime: IntradayWo11RuntimeService
     refresh_v2_provenance_store: RefreshV2ProvenanceStore
     probables_v2_diagnostics_store: ProbablesV2DiagnosticsStore
     mcx_history_store: McxContractHistoryStore
@@ -250,6 +258,13 @@ def create_intraday_runtime(
         backend_identity="KRONOS-INTRADAY-BROWSER",
     )
     wo10_runtime = IntradayWo10RuntimeService(wo10_application, wo10_store)
+    wo11_store = Wo11Store(Path(evidence_root) / "wo11-promotion-publication-v1")
+    wo11_application = IntradayWo11Application(
+        wo10_store=wo10_store,
+        store=wo11_store,
+        backend_identity="KRONOS-INTRADAY-BROWSER",
+    )
+    wo11_runtime = IntradayWo11RuntimeService(wo11_application)
     discovery = _create_discovery_application(
         store=store,
         last_successful_run_identity=restored_discovery_identity,
@@ -387,6 +402,9 @@ def create_intraday_runtime(
         wo10_policy_registry=wo10_registry,
         wo10_application=wo10_application,
         wo10_runtime=wo10_runtime,
+        wo11_store=wo11_store,
+        wo11_application=wo11_application,
+        wo11_runtime=wo11_runtime,
         refresh_v2_provenance_store=refresh_v2_provenance_store,
         probables_v2_diagnostics_store=probables_v2_diagnostics_store,
         mcx_history_store=mcx_history_store,

@@ -298,6 +298,107 @@ def _wo10_result_card(item: dict[str, object]) -> str:
     )
 
 
+def render_intraday_wo11(
+    snapshot: BrowserWorkspaceSnapshot,
+    status: dict[str, object],
+) -> str:
+    """Render persisted WO-11 publication state without collation or evaluation."""
+
+    publication = status.get("publication")
+    if type(publication) is not dict:
+        content = (
+            '<div class="empty"><div><strong>'
+            + escape(str(status.get("state", "NOT_YET_PUBLISHED")))
+            + "</strong><br>No persisted WO-11 promotion publication.</div></div>"
+        )
+    else:
+        members = publication.get("members", [])
+        family_sections = []
+        for family in ("NSE_EQUITY", "NSE_INDEX", "MCX"):
+            family_members = [
+                item for item in members
+                if type(item) is dict and item.get("market_family") == family
+            ] if type(members) is list else []
+            cards = "".join(_wo11_member_card(item) for item in family_members)
+            family_sections.append(
+                '<section class="panel"><div class="panel-head"><div><h2>'
+                + escape(family)
+                + "</h2><p>Exact WO-10 lineage; presentation order has no authority.</p></div>"
+                '<span class="status neutral">'
+                + (str(len(family_members)) if family_members else "ABSENT")
+                + "</span></div>"
+                + (cards or '<div class="empty"><div>NOT YET PUBLISHED</div></div>')
+                + "</section>"
+            )
+        state_counts = publication.get("state_counts", {})
+        state_text = " · ".join(
+            f"{name} {count}" for name, count in state_counts.items()
+        ) if type(state_counts) is dict else "UNAVAILABLE"
+        batches = publication.get("source_wo10_batches", [])
+        batch_text = " | ".join(str(item) for item in batches) if type(batches) is list else "UNAVAILABLE"
+        content = (
+            '<section class="panel"><div class="panel-head"><div><h2>Publication</h2>'
+            '<p>Zero-discretion validation, collation and publication.</p></div>'
+            '<span class="status neutral">LOADED</span></div>'
+            '<dl class="detail-list"><dt>Identity</dt><dd>'
+            + escape(str(publication.get("publication_identity", "UNAVAILABLE")))
+            + "</dd><dt>Boundary</dt><dd>"
+            + escape(str(publication.get("publication_boundary", "UNAVAILABLE")))
+            + "</dd><dt>Source WO-10 batches</dt><dd>" + escape(batch_text)
+            + "</dd><dt>Members / eligible</dt><dd>"
+            + escape(str(publication.get("member_count", 0))) + " / "
+            + escape(str(publication.get("eligible_count", 0)))
+            + "</dd><dt>Seven-state population</dt><dd>" + escape(state_text)
+            + "</dd></dl></section>"
+            + "".join(family_sections)
+        )
+    body = (
+        _intraday_tabs(False, active="wo11")
+        + '<div class="intraday-warning"><strong>WO-11 PROMOTION PUBLICATION</strong>'
+        "<span>PRE-KR-370 · READ-ONLY RESTORED STATE · NO ENTRY OR TRADE AUTHORITY</span></div>"
+        + content
+        + '<div class="intraday-review-config"><strong>Contract:</strong> '
+        + escape(str(status.get("publication_contract_identity", "UNAVAILABLE")))
+        + " / " + escape(str(status.get("publication_contract_version", "UNAVAILABLE")))
+        + "<br><strong>Active operation:</strong> "
+        + escape(str(status.get("active_operation_identity") or "NONE"))
+        + "</div>"
+    )
+    return render_browser_page(
+        title="Intraday WO-11",
+        subtitle="Persisted exact WO-10 results and mechanical downstream eligibility.",
+        snapshot=snapshot,
+        active_nav="Intraday",
+        active_tab="WO-11",
+        body=body,
+        extra_styles=_INTRADAY_CSS,
+    )
+
+
+def _wo11_member_card(item: dict[str, object]) -> str:
+    reasons = item.get("wo10_reasons", [])
+    reason_text = ", ".join(str(value) for value in reasons) if type(reasons) is list else "UNAVAILABLE"
+    return (
+        '<article class="intraday-review-card"><div class="intraday-review-card-head"><div><strong>'
+        + escape(str(item.get("canonical_subject_identity", "UNAVAILABLE")))
+        + "</strong><br><span>Direction "
+        + escape(str(item.get("inherited_direction", "UNAVAILABLE")))
+        + '</span></div><span class="status neutral">'
+        + escape(str(item.get("wo10_state", "UNAVAILABLE")))
+        + '</span></div><dl class="detail-list"><dt>Eligibility</dt><dd>'
+        + escape(str(item.get("downstream_eligibility", "UNAVAILABLE")))
+        + "</dd><dt>Reason codes</dt><dd>" + escape(reason_text or "NONE")
+        + "</dd><dt>Policy</dt><dd>"
+        + escape(str(item.get("wo10_policy_identity", "UNAVAILABLE"))) + " / "
+        + escape(str(item.get("wo10_policy_version", "UNAVAILABLE")))
+        + "</dd><dt>WO-10 result</dt><dd>"
+        + escape(str(item.get("wo10_result_identity", "UNAVAILABLE")))
+        + "</dd><dt>WO-11 member</dt><dd>"
+        + escape(str(item.get("member_identity", "UNAVAILABLE")))
+        + "</dd></dl></article>"
+    )
+
+
 def _review_v2_projection(
     snapshot: IntradayReviewV2Snapshot | None,
     available_run: ProbablesRunV2 | None,
@@ -1379,6 +1480,7 @@ def _intraday_tabs(refresh_enabled: bool, *, active: str = "opportunities") -> s
         '<a class="' + ('active' if active == 'opportunities' else '') + '" href="/intraday">Opportunities</a>'
         '<a class="' + ('active' if active == 'review' else '') + '" href="/intraday/review">Review</a>'
         '<a class="' + ('active' if active == 'wo10' else '') + '" href="/intraday/wo10">WO-10</a>'
+        '<a class="' + ('active' if active == 'wo11' else '') + '" href="/intraday/wo11">WO-11</a>'
         '<span class="intraday-tab">Trade Candidates</span>'
         '<span class="intraday-tab">Active</span>'
         '<span class="intraday-tab">Closed</span>'
@@ -1835,5 +1937,7 @@ __all__ = [
     "render_intraday_body",
     "render_intraday_detail",
     "render_intraday_triage",
+    "render_intraday_wo10",
+    "render_intraday_wo11",
     "render_intraday_workstation",
 ]
