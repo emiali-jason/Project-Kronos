@@ -38,6 +38,7 @@ from kronos.intraday.wo10_evidence import (
     Wo10EquityEvidenceExtension,
     Wo10EvidenceReference,
     Wo10EvidenceSnapshot,
+    Wo10IndexEvidenceExtension,
 )
 from kronos.intraday.wo10_facts import (
     Wo10RsiFact,
@@ -105,6 +106,61 @@ WO10_EQUITY_POLICY_CHECKSUM = sha256(json.dumps(
     separators=(",", ":"),
 ).encode("utf-8")).hexdigest()
 
+WO10_INDEX_POLICY_IDENTITY = (
+    "KRONOS-INTRADAY-WO10I-INDEX-RECONCILIATION-POLICY-V1"
+)
+WO10_INDEX_POLICY_VERSION = "1.0.0"
+WO10_INDEX_POLICY_PUBLICATION_IDENTITY = (
+    "KRONOS-INTRADAY-WO-10-E-I-M-FROZEN-ARCHITECTURE-V1"
+)
+WO10_INDEX_POLICY_AUTHORITY_VERSION = "1.0.0"
+WO10_INDEX_POLICY_EVIDENCE_IDENTITY = (
+    "KRONOS-INTRADAY-WO10I-INDEX-POLICY-EVIDENCE-V1"
+)
+WO10_INDEX_POLICY_EVIDENCE_VERSION = "1.0.0"
+WO10_INDEX_SUBJECTS = frozenset({"NSE-INDEX-NIFTY", "NSE-INDEX-BANKNIFTY"})
+WO10_INDEX_POLICY_UNRESOLVED = (
+    ("CONFLUENCE_DISTANCE", "INFORMATIONAL_DEFERRED"),
+    ("EXTENSION_CHASE_THRESHOLD", "INFORMATIONAL_DEFERRED"),
+    ("FLAT_TANGLED_SMA_THRESHOLD", "INFORMATIONAL_DEFERRED"),
+    ("MATERIAL_RAILWAY_SEPARATION_CRISSCROSS", "INFORMATIONAL_DEFERRED"),
+    ("MIDDLE_OF_RANGE_THRESHOLD", "INFORMATIONAL_DEFERRED"),
+    ("NARROW_WIDE_CPR_PREDICTIVE_CONSEQUENCE", "INFORMATIONAL_DEFERRED"),
+    ("VOLUME_CONSEQUENCE_THRESHOLD", "INFORMATIONAL_DEFERRED"),
+    ("WEEKLY_DAILY_LOCATION_CONSEQUENCE_THRESHOLD", "INFORMATIONAL_DEFERRED"),
+)
+
+_INDEX_POLICY_DOCUMENT = {
+    "authority_identity": WO10_INDEX_POLICY_PUBLICATION_IDENTITY,
+    "authority_version": WO10_INDEX_POLICY_AUTHORITY_VERSION,
+    "market_family": IntradayMarketFamily.NSE_INDEX.value,
+    "subjects": tuple(sorted(WO10_INDEX_SUBJECTS)),
+    "policy_identity": WO10_INDEX_POLICY_IDENTITY,
+    "policy_version": WO10_INDEX_POLICY_VERSION,
+    "precedence": tuple(item.value for item in Wo10State),
+    "timeframe_authority": {
+        "1W": "HIGHER_ORDER_STRUCTURAL_LOCATION_MAP",
+        "1D": "CURRENT_SESSION_STRUCTURAL_CONTEXT",
+        "1H": "INTRADAY_REGIME",
+        "15M": "PRIMARY_INDEX_DIRECTIONAL_SETUP_STRUCTURE",
+        "5M": "IMMEDIATE_ANALYTICAL_PROGRESSION",
+    },
+    "underlying": "SOLE_WO10I_DIRECTION_AUTHORITY",
+    "option_premium": "NO_AUTHORITY",
+    "rsi": "FACTUAL_ONLY_NO_DIRECTION_OR_STATE_AUTHORITY",
+    "railway": "EXACT_LOWER_LEVEL_FACTS_ONLY_NO_SCORE",
+    "structural_location": "FACTUAL_ONLY_NO_PROXIMITY_CONSEQUENCE",
+    "narrow_cpr": "PRESERVE_SOURCE_AUTHORITY_NO_NEW_PREDICTION",
+    "volume": "RAW_INFORMATIONAL_NO_THRESHOLD",
+    "visual": "OBSERVATION_RECONCILED_WITH_NATIVE_NO_PROMOTION_AUTHORITY",
+    "unresolved": WO10_INDEX_POLICY_UNRESOLVED,
+}
+WO10_INDEX_POLICY_CHECKSUM = sha256(json.dumps(
+    _INDEX_POLICY_DOCUMENT,
+    sort_keys=True,
+    separators=(",", ":"),
+).encode("utf-8")).hexdigest()
+
 
 def wo10_equity_policy_binding() -> Wo10PolicyBinding:
     """Return the exact immutable WO-10E publication binding."""
@@ -115,6 +171,18 @@ def wo10_equity_policy_binding() -> Wo10PolicyBinding:
         publication_identity=WO10_EQUITY_POLICY_PUBLICATION_IDENTITY,
         policy_checksum=WO10_EQUITY_POLICY_CHECKSUM,
         supported_market_family=IntradayMarketFamily.NSE_EQUITY,
+    )
+
+
+def wo10_index_policy_binding() -> Wo10PolicyBinding:
+    """Return the exact immutable WO-10I publication binding."""
+
+    return create_wo10_policy_binding(
+        policy_identity=WO10_INDEX_POLICY_IDENTITY,
+        policy_version=WO10_INDEX_POLICY_VERSION,
+        publication_identity=WO10_INDEX_POLICY_PUBLICATION_IDENTITY,
+        policy_checksum=WO10_INDEX_POLICY_CHECKSUM,
+        supported_market_family=IntradayMarketFamily.NSE_INDEX,
     )
 
 
@@ -222,6 +290,106 @@ def create_wo10_equity_policy_evidence(
         ),
         integrity_identity=_identity(
             "INTEGRITY-INTRADAY-WO10E-POLICY-EVIDENCE-", identity_values
+        ),
+        **values,
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class Wo10IndexPolicyEvidence:
+    """Exact loaded artifacts used by the pure Index policy adapter."""
+
+    evidence_identity: str
+    integrity_identity: str
+    snapshot: Wo10EvidenceSnapshot
+    source_semantic_evidence: SemanticQualificationEvidenceV2 | None
+    weekly_structural_map: SemanticQualificationFactV2 | None
+    daily_structural_map: SemanticQualificationFactV2 | None
+    one_day_context: SemanticQualificationFactV2 | None
+    one_hour_regime: SemanticQualificationFactV2 | None
+    fifteen_minute_structure: SemanticQualificationFactV2 | None
+    five_minute_progression: SemanticQualificationFactV2 | None
+    rsi: Wo10RsiFact | None
+    railway_track: Wo10SmaFacts | None
+    structural_location: Wo10StructuralLocationFacts | None
+    volume_telemetry: Wo10VolumeFact | None
+    imported_visual_evidence: ImportedVisualEvidenceV2 | None
+    schema_identity: str = WO10_INDEX_POLICY_EVIDENCE_IDENTITY
+    schema_version: str = WO10_INDEX_POLICY_EVIDENCE_VERSION
+
+    def __post_init__(self) -> None:
+        values = _index_evidence_values(self)
+        typed = (
+            (self.source_semantic_evidence, SemanticQualificationEvidenceV2),
+            (self.weekly_structural_map, SemanticQualificationFactV2),
+            (self.daily_structural_map, SemanticQualificationFactV2),
+            (self.one_day_context, SemanticQualificationFactV2),
+            (self.one_hour_regime, SemanticQualificationFactV2),
+            (self.fifteen_minute_structure, SemanticQualificationFactV2),
+            (self.five_minute_progression, SemanticQualificationFactV2),
+            (self.rsi, Wo10RsiFact),
+            (self.railway_track, Wo10SmaFacts),
+            (self.structural_location, Wo10StructuralLocationFacts),
+            (self.volume_telemetry, Wo10VolumeFact),
+            (self.imported_visual_evidence, ImportedVisualEvidenceV2),
+        )
+        if (
+            type(self.snapshot) is not Wo10EvidenceSnapshot
+            or self.snapshot.market_family is not IntradayMarketFamily.NSE_INDEX
+            or any(
+                item is not None and type(item) is not expected
+                for item, expected in typed
+            )
+            or self.schema_identity != WO10_INDEX_POLICY_EVIDENCE_IDENTITY
+            or self.schema_version != WO10_INDEX_POLICY_EVIDENCE_VERSION
+            or self.evidence_identity
+            != _identity("INTRADAY-WO10I-POLICY-EVIDENCE-", values)
+            or self.integrity_identity
+            != _identity("INTEGRITY-INTRADAY-WO10I-POLICY-EVIDENCE-", values)
+        ):
+            raise Wo10ContractError("WO10_INDEX_POLICY_EVIDENCE_INVALID")
+
+
+def create_wo10_index_policy_evidence(
+    *,
+    snapshot: Wo10EvidenceSnapshot,
+    source_semantic_evidence: SemanticQualificationEvidenceV2 | None,
+    weekly_structural_map: SemanticQualificationFactV2 | None,
+    daily_structural_map: SemanticQualificationFactV2 | None,
+    one_day_context: SemanticQualificationFactV2 | None,
+    one_hour_regime: SemanticQualificationFactV2 | None,
+    fifteen_minute_structure: SemanticQualificationFactV2 | None,
+    five_minute_progression: SemanticQualificationFactV2 | None,
+    rsi: Wo10RsiFact | None,
+    railway_track: Wo10SmaFacts | None,
+    structural_location: Wo10StructuralLocationFacts | None,
+    volume_telemetry: Wo10VolumeFact | None,
+    imported_visual_evidence: ImportedVisualEvidenceV2 | None,
+) -> Wo10IndexPolicyEvidence:
+    values = {
+        "snapshot": snapshot,
+        "source_semantic_evidence": source_semantic_evidence,
+        "weekly_structural_map": weekly_structural_map,
+        "daily_structural_map": daily_structural_map,
+        "one_day_context": one_day_context,
+        "one_hour_regime": one_hour_regime,
+        "fifteen_minute_structure": fifteen_minute_structure,
+        "five_minute_progression": five_minute_progression,
+        "rsi": rsi,
+        "railway_track": railway_track,
+        "structural_location": structural_location,
+        "volume_telemetry": volume_telemetry,
+        "imported_visual_evidence": imported_visual_evidence,
+        "schema_identity": WO10_INDEX_POLICY_EVIDENCE_IDENTITY,
+        "schema_version": WO10_INDEX_POLICY_EVIDENCE_VERSION,
+    }
+    identity_values = _equity_evidence_payload(values)
+    return Wo10IndexPolicyEvidence(
+        evidence_identity=_identity(
+            "INTRADAY-WO10I-POLICY-EVIDENCE-", identity_values
+        ),
+        integrity_identity=_identity(
+            "INTEGRITY-INTRADAY-WO10I-POLICY-EVIDENCE-", identity_values
         ),
         **values,
     )
@@ -373,6 +541,60 @@ class Wo10EquityPolicy:
         )
 
 
+class Wo10IndexPolicy:
+    """Pure exact-artifact WO-10I policy with no product or Provider action."""
+
+    def __init__(self, evidence: tuple[Wo10IndexPolicyEvidence, ...]) -> None:
+        retained: dict[str, Wo10IndexPolicyEvidence] = {}
+        for item in evidence:
+            if (
+                type(item) is not Wo10IndexPolicyEvidence
+                or item.snapshot.snapshot_identity in retained
+            ):
+                raise Wo10ContractError("WO10_INDEX_POLICY_INPUT_INVALID")
+            retained[item.snapshot.snapshot_identity] = item
+        self._evidence = retained
+
+    @property
+    def binding(self) -> Wo10PolicyBinding:
+        return wo10_index_policy_binding()
+
+    def evaluate(
+        self,
+        *,
+        request: Wo10ReconciliationRequest,
+        evidence: Wo10EvidenceSnapshot,
+    ) -> Wo10PolicyDecision:
+        if (
+            type(request) is not Wo10ReconciliationRequest
+            or type(evidence) is not Wo10EvidenceSnapshot
+            or request.market_family is not IntradayMarketFamily.NSE_INDEX
+            or evidence.market_family is not IntradayMarketFamily.NSE_INDEX
+            or evidence.canonical_subject_identity not in WO10_INDEX_SUBJECTS
+            or request.policy != self.binding
+            or evidence.policy != self.binding
+        ):
+            raise Wo10ContractError("WO10_INDEX_POLICY_FAMILY_INVALID")
+        try:
+            loaded = self._evidence[evidence.snapshot_identity]
+        except KeyError as error:
+            raise Wo10ContractError("WO10_INDEX_POLICY_EVIDENCE_NOT_LOADED") from error
+        if loaded.snapshot != evidence:
+            raise Wo10ContractError("WO10_INDEX_POLICY_EVIDENCE_CONFLICT")
+        state, code = _evaluate_index(request, loaded)
+        reason = Wo10ReasonCode(
+            scope=Wo10ReasonScope.INDEX,
+            code=code,
+            policy_identity=self.binding.policy_identity,
+        )
+        return Wo10PolicyDecision(
+            canonical_subject_identity=evidence.canonical_subject_identity,
+            inherited_direction=evidence.inherited_direction,
+            state=state,
+            reasons=(reason,),
+        )
+
+
 def _evaluate_equity(
     request: Wo10ReconciliationRequest,
     loaded: Wo10EquityPolicyEvidence,
@@ -430,6 +652,74 @@ def _evaluate_equity(
             _opposes(hourly.direction, inherited)
             or q2 == "OPPOSING"
             or q4 == "OPPOSING"
+        )
+    ):
+        return Wo10State.HELD_BY_CONTRADICTION, "AUTHORITATIVE_EVIDENCE_CONFLICT"
+
+    if (
+        fifteen.direction is SemanticDirection.NON_DIRECTIONAL
+        or hourly.direction is SemanticDirection.NON_DIRECTIONAL
+    ):
+        return Wo10State.WAIT_SETUP_DEVELOPMENT, "PRIMARY_SETUP_DEVELOPING"
+
+    if five.direction is not inherited:
+        return Wo10State.WAIT_IMMEDIATE_CONFIRMATION, "IMMEDIATE_PROGRESSION_PENDING"
+
+    return Wo10State.PROMOTION_READY, "GOVERNED_EVIDENCE_COHERENT"
+
+
+def _evaluate_index(
+    request: Wo10ReconciliationRequest,
+    loaded: Wo10IndexPolicyEvidence,
+) -> tuple[Wo10State, str]:
+    snapshot = loaded.snapshot
+    binding = next((
+        item for item in request.probable_bindings
+        if item.probable_result_identity == snapshot.probable_result_identity
+    ), None)
+    if (
+        binding is None
+        or binding.canonical_subject_identity != snapshot.canonical_subject_identity
+        or binding.inherited_direction is not snapshot.inherited_direction
+        or binding.analysis_boundary != snapshot.analysis_boundary
+        or binding.persisted_phase is not snapshot.persisted_phase
+        or request.probables_run_identity != snapshot.probables_run_identity
+        or not _index_evidence_complete(loaded)
+    ):
+        return Wo10State.CONTEXT_INCOMPLETE, "REQUIRED_EVIDENCE_INCOMPLETE"
+
+    inherited = snapshot.inherited_direction
+    hourly = loaded.one_hour_regime
+    fifteen = loaded.fifteen_minute_structure
+    five = loaded.five_minute_progression
+    visual = loaded.imported_visual_evidence
+    assert hourly is not None and fifteen is not None and five is not None
+    assert visual is not None
+
+    # Governing completed 15M structure has precedence over every map,
+    # indicator, visual observation, and lower-timeframe progression.
+    if _opposes(fifteen.direction, inherited):
+        return Wo10State.INVALIDATED, "GOVERNING_STRUCTURE_FAILED"
+
+    answers = {item.question_id: item for item in visual.answers}
+    visual_deterioration = (
+        answers["Q5"].answer in {
+            "STALLING_OR_FAILED_CONTINUATION",
+            "OPPOSING_STRUCTURE_VISIBLE",
+            "BOTH",
+        }
+        or answers["Q6"].answer in {"STALLING", "OPPOSING"}
+        or answers["Q9"].answer == "REJECTION_AGAINST_DIRECTION"
+    )
+    if _opposes(five.direction, inherited) and visual_deterioration:
+        return Wo10State.WEAKENING, "NATIVE_VISUAL_DETERIORATION"
+
+    if (
+        fifteen.direction is inherited
+        and (
+            _opposes(hourly.direction, inherited)
+            or answers["Q2"].answer == "OPPOSING"
+            or answers["Q4"].answer == "OPPOSING"
         )
     ):
         return Wo10State.HELD_BY_CONTRADICTION, "AUTHORITATIVE_EVIDENCE_CONFLICT"
@@ -560,6 +850,135 @@ def _equity_evidence_complete(value: Wo10EquityPolicyEvidence) -> bool:
     return True
 
 
+def _index_evidence_complete(value: Wo10IndexPolicyEvidence) -> bool:
+    snapshot = value.snapshot
+    extension = snapshot.family_extension
+    if (
+        type(extension) is not Wo10IndexEvidenceExtension
+        or snapshot.canonical_subject_identity not in WO10_INDEX_SUBJECTS
+    ):
+        return False
+    required = (
+        value.source_semantic_evidence,
+        value.daily_structural_map,
+        value.one_day_context,
+        value.one_hour_regime,
+        value.fifteen_minute_structure,
+        value.five_minute_progression,
+        value.rsi,
+        value.railway_track,
+        value.structural_location,
+        value.volume_telemetry,
+        value.imported_visual_evidence,
+    )
+    if any(item is None for item in required):
+        return False
+    semantic = value.source_semantic_evidence
+    visual = value.imported_visual_evidence
+    assert semantic is not None and visual is not None
+    index_facts = (
+        (value.one_day_context, "1D_CONTEXT"),
+        (value.one_hour_regime, "1H_REGIME"),
+        (value.fifteen_minute_structure, "15M_STRUCTURE"),
+        (value.five_minute_progression, "5M_PROGRESSION"),
+    )
+    if (
+        semantic.evidence_identity != snapshot.semantic_evidence_identity
+        or semantic.integrity_identity != snapshot.semantic_evidence_integrity
+        or semantic.canonical_subject_identity != snapshot.canonical_subject_identity
+        or semantic.analysis_boundary != snapshot.analysis_boundary
+        or semantic.phase is not snapshot.persisted_phase
+        or visual.visual_evidence_identity != snapshot.imported_visual_evidence_identity
+        or visual.integrity_identity != snapshot.imported_visual_evidence_integrity
+        or visual.resolved_canonical_subject_identity
+        != snapshot.canonical_subject_identity
+        or visual.proposed_direction != snapshot.inherited_direction.value
+        or visual.analysis_boundary != snapshot.analysis_boundary
+        or visual.global_observation_status
+        not in {ObservationStatus.OBSERVED, ObservationStatus.PARTIAL}
+        or any(
+            fact is None
+            or fact.canonical_subject_identity != snapshot.canonical_subject_identity
+            or fact.analysis_boundary != snapshot.analysis_boundary
+            or fact.phase is not snapshot.persisted_phase
+            or fact.family != family
+            or fact.availability != "AVAILABLE"
+            or fact.direction is SemanticDirection.UNAVAILABLE
+            for fact, family in index_facts
+        )
+    ):
+        return False
+
+    common = snapshot.common_facts
+    if not all((
+        _reference_matches(common.one_day_structure, value.one_day_context),
+        _reference_matches(common.one_hour_structure, value.one_hour_regime),
+        _reference_matches(common.fifteen_minute_structure, value.fifteen_minute_structure),
+        _reference_matches(common.five_minute_progression, value.five_minute_progression),
+        _reference_matches(common.rsi, value.rsi),
+        _reference_matches(common.railway_track, value.railway_track),
+        _reference_matches(common.structural_location, value.structural_location),
+        _reference_matches(common.volume_telemetry, value.volume_telemetry),
+        _reference_matches(extension.daily_structural_map, value.daily_structural_map),
+    )):
+        return False
+
+    daily_map = value.daily_structural_map
+    weekly_map = value.weekly_structural_map
+    assert daily_map is not None
+    if (
+        daily_map.canonical_subject_identity != snapshot.canonical_subject_identity
+        or daily_map.analysis_boundary != snapshot.analysis_boundary
+        or daily_map.phase is not snapshot.persisted_phase
+        or daily_map.family != "DAILY_STRUCTURAL_MAP"
+        or daily_map.availability != "AVAILABLE"
+        or daily_map.direction is not SemanticDirection.NON_DIRECTIONAL
+        or (extension.weekly_structural_map is None) != (weekly_map is None)
+        or (
+            weekly_map is not None
+            and (
+                not _reference_matches(extension.weekly_structural_map, weekly_map)
+                or weekly_map.canonical_subject_identity
+                != snapshot.canonical_subject_identity
+                or weekly_map.analysis_boundary != snapshot.analysis_boundary
+                or weekly_map.phase is not snapshot.persisted_phase
+                or weekly_map.family != "WEEKLY_STRUCTURAL_MAP"
+                or weekly_map.availability != "AVAILABLE"
+                or weekly_map.direction is not SemanticDirection.NON_DIRECTIONAL
+            )
+        )
+        or extension.underlying_authority is None
+        or extension.underlying_authority.evidence_identity
+        != snapshot.probable_result_identity
+        or extension.underlying_authority.evidence_integrity
+        != snapshot.probable_result_integrity
+    ):
+        return False
+
+    if (
+        value.rsi.canonical_subject_identity != snapshot.canonical_subject_identity
+        or value.rsi.market_family is not IntradayMarketFamily.NSE_INDEX
+        or value.rsi.observation_boundary != snapshot.analysis_boundary
+        or value.rsi.timeframe is not IntradayTimeframe.FIFTEEN_MINUTES
+        or value.railway_track.canonical_subject_identity
+        != snapshot.canonical_subject_identity
+        or value.railway_track.market_family is not IntradayMarketFamily.NSE_INDEX
+        or value.railway_track.observation_boundary != snapshot.analysis_boundary
+        or value.railway_track.timeframe is not IntradayTimeframe.ONE_HOUR
+        or value.structural_location.canonical_subject_identity
+        != snapshot.canonical_subject_identity
+        or value.structural_location.market_family is not IntradayMarketFamily.NSE_INDEX
+        or value.structural_location.observation_boundary != snapshot.analysis_boundary
+        or value.volume_telemetry.canonical_subject_identity
+        != snapshot.canonical_subject_identity
+        or value.volume_telemetry.market_family is not IntradayMarketFamily.NSE_INDEX
+        or value.volume_telemetry.observation_boundary != snapshot.analysis_boundary
+        or value.volume_telemetry.timeframe is not IntradayTimeframe.FIFTEEN_MINUTES
+    ):
+        return False
+    return True
+
+
 def _reference_matches(reference: Wo10EvidenceReference | None, value: object) -> bool:
     if reference is None or value is None:
         return False
@@ -577,6 +996,14 @@ def _opposes(value: SemanticDirection, inherited: SemanticDirection) -> bool:
 
 
 def _equity_evidence_values(value: Wo10EquityPolicyEvidence) -> dict[str, object]:
+    return _equity_evidence_payload({
+        name: getattr(value, name)
+        for name in value.__dataclass_fields__
+        if name not in {"evidence_identity", "integrity_identity"}
+    })
+
+
+def _index_evidence_values(value: Wo10IndexPolicyEvidence) -> dict[str, object]:
     return _equity_evidence_payload({
         name: getattr(value, name)
         for name in value.__dataclass_fields__
@@ -617,11 +1044,24 @@ __all__ = [
     "WO10_EQUITY_POLICY_PUBLICATION_IDENTITY",
     "WO10_EQUITY_POLICY_UNRESOLVED",
     "WO10_EQUITY_POLICY_VERSION",
+    "WO10_INDEX_POLICY_AUTHORITY_VERSION",
+    "WO10_INDEX_POLICY_CHECKSUM",
+    "WO10_INDEX_POLICY_EVIDENCE_IDENTITY",
+    "WO10_INDEX_POLICY_EVIDENCE_VERSION",
+    "WO10_INDEX_POLICY_IDENTITY",
+    "WO10_INDEX_POLICY_PUBLICATION_IDENTITY",
+    "WO10_INDEX_POLICY_UNRESOLVED",
+    "WO10_INDEX_POLICY_VERSION",
+    "WO10_INDEX_SUBJECTS",
     "Wo10EquityPolicy",
     "Wo10EquityPolicyEvidence",
     "Wo10FamilyPolicy",
+    "Wo10IndexPolicy",
+    "Wo10IndexPolicyEvidence",
     "Wo10PolicyDecision",
     "Wo10PolicyRegistry",
     "create_wo10_equity_policy_evidence",
+    "create_wo10_index_policy_evidence",
     "wo10_equity_policy_binding",
+    "wo10_index_policy_binding",
 ]
