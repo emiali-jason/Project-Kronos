@@ -63,16 +63,21 @@ from kronos.swing.v1.visual_evidence_v3 import (
     VisualSetupQuality,
     VisualV3SetupQualityObservation,
 )
+from kronos.validation.kr370 import (
+    KR370_OWNER_IDENTITY,
+    KR370_PROMOTION_AUTHORITY,
+    KR370_PROMOTION_CONTRACT_ID,
+    KR370_PROMOTION_CONTRACT_VERSION,
+    KR370_STATE_FAMILY_IDENTITY,
+    Kr370AnalyticalClassification,
+    Kr370CriterionState,
+    classify_five_criteria,
+)
 
 
-KR370_PROMOTION_CONTRACT_ID = "KRONOS-KR-370-ANALYTICAL-PROMOTION-V1"
-KR370_PROMOTION_CONTRACT_VERSION = "1"
 KR370_PROMOTION_POLICY_ID = "KR-370-V1-ANALYTICAL-PROMOTION-POLICY"
 KR370_PROMOTION_POLICY_VERSION = "1"
 KR370_PROMOTION_SCHEMA = "KRONOS-KR-370-ANALYTICAL-PROMOTION-RECORD-V1"
-KR370_PROMOTION_AUTHORITY = "ANALYTICAL_PROMOTION_ONLY"
-KR370_OWNER_IDENTITY = "KR-370"
-KR370_STATE_FAMILY_IDENTITY = "KR370_ANALYTICAL_PROMOTION"
 DEFAULT_KR370_PROMOTION_ROOT = (
     Path.home() / "Library" / "Application Support" / "KRONOS" / "evidence"
     / "swing-v1" / "kr370-analytical-promotion-v1"
@@ -85,22 +90,6 @@ class Kr370CriterionIdentity(StrEnum):
     K3_PATH_CLEARANCE = "K3_IMMEDIATE_PATH_CLEARANCE"
     K4_SETUP_QUALITY = "K4_SETUP_QUALITY"
     K5_NON_EXTENSION = "K5_NON_EXTENSION"
-
-
-class Kr370CriterionState(StrEnum):
-    SATISFIED = "SATISFIED"
-    UNSATISFIED = "UNSATISFIED"
-    UNAVAILABLE = "UNAVAILABLE"
-
-
-class Kr370AnalyticalClassification(StrEnum):
-    BUY_NOW = "BUY_NOW"
-    SELL_NOW = "SELL_NOW"
-    BUY_READY = "BUY_READY"
-    SELL_READY = "SELL_READY"
-    POTENTIAL_BUY_SETUP = "POTENTIAL_BUY_SETUP"
-    POTENTIAL_SELL_SETUP = "POTENTIAL_SELL_SETUP"
-    NO_SETUP = "NO_SETUP"
 
 
 class Kr370Watchability(StrEnum):
@@ -325,31 +314,10 @@ def classify_kr370(
         or any(item.state is Kr370CriterionState.UNAVAILABLE for item in criteria)
     ):
         raise ValueError("KR370_CLASSIFICATION_INPUT_INVALID")
-    satisfied = sum(
-        item.state is Kr370CriterionState.SATISFIED for item in criteria
+    return classify_five_criteria(
+        direction.value,
+        tuple(item.state for item in criteria),
     )
-    missing = 5 - satisfied
-    if missing == 0:
-        state = (
-            Kr370AnalyticalClassification.BUY_NOW
-            if direction is V1Direction.LONG
-            else Kr370AnalyticalClassification.SELL_NOW
-        )
-    elif missing == 1:
-        state = (
-            Kr370AnalyticalClassification.BUY_READY
-            if direction is V1Direction.LONG
-            else Kr370AnalyticalClassification.SELL_READY
-        )
-    elif missing in {2, 3}:
-        state = (
-            Kr370AnalyticalClassification.POTENTIAL_BUY_SETUP
-            if direction is V1Direction.LONG
-            else Kr370AnalyticalClassification.POTENTIAL_SELL_SETUP
-        )
-    else:
-        state = Kr370AnalyticalClassification.NO_SETUP
-    return state, satisfied, missing
 
 
 def evaluate_kr370_analytical_promotion(
