@@ -8,7 +8,9 @@ from uuid import uuid4
 
 from kronos.instrument.visual_identity import (
     VISUAL_IDENTITY_RELATIONSHIP_PUBLICATION_V1,
+    VISUAL_IDENTITY_RELATIONSHIP_PUBLICATION_V1_MCX_REFERENCE_VERSION,
     VISUAL_IDENTITY_RELATIONSHIP_PUBLICATION_V1_VERSION,
+    VISUAL_IDENTITY_REFERENCE_ANALYTICAL_SUBJECTS,
     VisualIdentityRelationshipPublication,
     VisualIdentityResolutionError,
     VisualIdentityResolutionFailure,
@@ -125,6 +127,8 @@ def load_visual_identity_resolver(
     canonical_subjects = tuple(
         item.canonical_id for item in canonical.semantic_objects
     )
+    if publication_version == VISUAL_IDENTITY_RELATIONSHIP_PUBLICATION_V1_MCX_REFERENCE_VERSION:
+        canonical_subjects += VISUAL_IDENTITY_REFERENCE_ANALYTICAL_SUBJECTS
     publication = VisualIdentityRelationshipStore().load(
         publication_identity=VISUAL_IDENTITY_RELATIONSHIP_PUBLICATION_V1,
         publication_version=publication_version,

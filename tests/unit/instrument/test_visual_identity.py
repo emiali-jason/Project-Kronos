@@ -324,7 +324,7 @@ def test_unknown_successor_version_and_wrong_context_fail_closed() -> None:
         create_visual_identity_publication(
             canonical_subject_identities=CANONICAL,
             publication_identity=VISUAL_IDENTITY_RELATIONSHIP_PUBLICATION_V1,
-            publication_version="1.2.0",
+            publication_version="1.3.0",
             effective_from=BOUNDARY,
             effective_through=END,
             source_identities=("ADR-0018",),
