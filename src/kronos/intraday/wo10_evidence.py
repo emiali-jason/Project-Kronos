@@ -28,6 +28,12 @@ from kronos.intraday.wo10 import (
     _without,
     market_family_for_subject,
 )
+from kronos.intraday.wo10_facts import (
+    Wo10RsiFact,
+    Wo10SmaFacts,
+    Wo10StructuralLocationFacts,
+    Wo10VolumeFact,
+)
 
 
 WO10_EVIDENCE_SNAPSHOT_IDENTITY = "KRONOS-INTRADAY-WO10-EVIDENCE-SNAPSHOT-V1"
@@ -127,6 +133,47 @@ def create_wo10_common_fact_bindings(
         ),
         **values,
     )
+
+
+def create_wo10_common_fact_bindings_from_facts(
+    *,
+    one_day_structure: Wo10EvidenceReference | None,
+    one_hour_structure: Wo10EvidenceReference | None,
+    fifteen_minute_structure: Wo10EvidenceReference | None,
+    five_minute_progression: Wo10EvidenceReference | None,
+    rsi: Wo10RsiFact | None,
+    railway_track: Wo10SmaFacts | None,
+    structural_location: Wo10StructuralLocationFacts | None,
+    volume_telemetry: Wo10VolumeFact | None,
+) -> Wo10CommonFactBindings:
+    """Adapt typed Slice-2 artifacts into the Slice-1 evidence envelope."""
+
+    typed = (
+        (rsi, Wo10RsiFact),
+        (railway_track, Wo10SmaFacts),
+        (structural_location, Wo10StructuralLocationFacts),
+        (volume_telemetry, Wo10VolumeFact),
+    )
+    if any(value is not None and type(value) is not expected for value, expected in typed):
+        raise Wo10ContractError("WO10_COMMON_FACT_ARTIFACT_INVALID")
+    return create_wo10_common_fact_bindings(
+        one_day_structure=one_day_structure,
+        one_hour_structure=one_hour_structure,
+        fifteen_minute_structure=fifteen_minute_structure,
+        five_minute_progression=five_minute_progression,
+        rsi=_fact_reference(rsi),
+        railway_track=_fact_reference(railway_track),
+        structural_location=_fact_reference(structural_location),
+        volume_telemetry=_fact_reference(volume_telemetry),
+    )
+
+
+def _fact_reference(
+    value: Wo10RsiFact | Wo10SmaFacts | Wo10StructuralLocationFacts | Wo10VolumeFact | None,
+) -> Wo10EvidenceReference | None:
+    if value is None:
+        return None
+    return Wo10EvidenceReference(value.evidence_identity, value.integrity_identity)
 
 
 @dataclass(frozen=True, slots=True)
@@ -618,6 +665,7 @@ __all__ = [
     "Wo10IndexEvidenceExtension",
     "Wo10McxEvidenceExtension",
     "create_wo10_common_fact_bindings",
+    "create_wo10_common_fact_bindings_from_facts",
     "create_wo10_equity_extension",
     "create_wo10_evidence_snapshot",
     "create_wo10_index_extension",
