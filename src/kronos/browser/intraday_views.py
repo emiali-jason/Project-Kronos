@@ -217,6 +217,87 @@ def render_intraday_review(
     )
 
 
+def render_intraday_wo10(
+    snapshot: BrowserWorkspaceSnapshot,
+    status: dict[str, object],
+) -> str:
+    """Render restored WO-10 V2 state without evaluation or acquisition."""
+
+    family_sections: list[str] = []
+    for family in status.get("families", []):
+        if type(family) is not dict:
+            continue
+        results = family.get("results", [])
+        cards = "".join(_wo10_result_card(item) for item in results if type(item) is dict)
+        if not cards:
+            cards = (
+                '<div class="empty"><div><strong>'
+                + escape(str(family.get("state", "NOT_YET_RUN")))
+                + "</strong><br>No restored WO-10 V2 result for this family.</div></div>"
+            )
+        family_sections.append(
+            '<section class="panel"><div class="panel-head"><div><h2>'
+            + escape(str(family.get("market_family", "UNAVAILABLE")))
+            + "</h2><p>Restored persisted analytical reconciliation only.</p></div>"
+            '<span class="status neutral">'
+            + escape(str(family.get("state", "UNAVAILABLE")))
+            + "</span></div>"
+            + cards
+            + "</section>"
+        )
+    body = (
+        _intraday_tabs(False, active="wo10")
+        + '<div class="intraday-warning"><strong>WO-10 ANALYTICAL RECONCILIATION</strong>'
+        "<span>READ-ONLY RESTORED STATE · EXPLICIT SPONSOR CONTROL ONLY</span></div>"
+        + "".join(family_sections)
+        + '<div class="intraday-review-config"><strong>Contract:</strong> '
+        + escape(str(status.get("request_contract_identity", "UNAVAILABLE")))
+        + " / "
+        + escape(str(status.get("request_contract_version", "UNAVAILABLE")))
+        + "<br><strong>Active operation:</strong> "
+        + escape(str(status.get("active_operation_identity") or "NONE"))
+        + "</div>"
+    )
+    return render_browser_page(
+        title="Intraday WO-10",
+        subtitle="Persisted family results; rendering performs no analytical work.",
+        snapshot=snapshot,
+        active_nav="Intraday",
+        active_tab="WO-10",
+        body=body,
+        extra_styles=_INTRADAY_CSS,
+    )
+
+
+def _wo10_result_card(item: dict[str, object]) -> str:
+    state = str(item.get("state", "CONTEXT_INCOMPLETE"))
+    consequence = (
+        "Eligible to progress beyond WO-10 analytical reconciliation."
+        if state == "PROMOTION_READY"
+        else "Retained WO-10 analytical state."
+    )
+    reasons = item.get("reasons", [])
+    reason_text = ", ".join(str(value) for value in reasons) if type(reasons) is list else "UNAVAILABLE"
+    return (
+        '<article class="intraday-review-card"><div class="intraday-review-card-head">'
+        "<div><strong>" + escape(str(item.get("canonical_subject_identity", "UNAVAILABLE")))
+        + "</strong><br><span>" + escape(str(item.get("market_family", "UNAVAILABLE")))
+        + " · Direction " + escape(str(item.get("inherited_direction", "UNAVAILABLE")))
+        + '</span></div><span class="status neutral">' + escape(state) + "</span></div>"
+        + "<p>" + escape(consequence) + "</p>"
+        '<dl class="detail-list"><dt>Policy</dt><dd>'
+        + escape(str(item.get("policy_identity", "UNAVAILABLE"))) + " / "
+        + escape(str(item.get("policy_version", "UNAVAILABLE")))
+        + "</dd><dt>Source run</dt><dd>" + escape(str(item.get("source_probables_run_identity", "UNAVAILABLE")))
+        + "</dd><dt>Boundary / phase</dt><dd>" + escape(str(item.get("analysis_boundary", "UNAVAILABLE")))
+        + " · " + escape(str(item.get("persisted_phase", "UNAVAILABLE")))
+        + "</dd><dt>Reason codes</dt><dd>" + escape(reason_text or "NONE")
+        + "</dd><dt>Evidence lineage</dt><dd>" + escape(str(item.get("evidence_snapshot_identity", "UNAVAILABLE")))
+        + "</dd><dt>Result identity</dt><dd>" + escape(str(item.get("result_identity", "UNAVAILABLE")))
+        + "</dd></dl></article>"
+    )
+
+
 def _review_v2_projection(
     snapshot: IntradayReviewV2Snapshot | None,
     available_run: ProbablesRunV2 | None,
@@ -1297,6 +1378,7 @@ def _intraday_tabs(refresh_enabled: bool, *, active: str = "opportunities") -> s
         '<nav class="tabs intraday-tabs" aria-label="Intraday workflow">'
         '<a class="' + ('active' if active == 'opportunities' else '') + '" href="/intraday">Opportunities</a>'
         '<a class="' + ('active' if active == 'review' else '') + '" href="/intraday/review">Review</a>'
+        '<a class="' + ('active' if active == 'wo10' else '') + '" href="/intraday/wo10">WO-10</a>'
         '<span class="intraday-tab">Trade Candidates</span>'
         '<span class="intraday-tab">Active</span>'
         '<span class="intraday-tab">Closed</span>'

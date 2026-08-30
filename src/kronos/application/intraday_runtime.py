@@ -18,6 +18,18 @@ from kronos.application.intraday_discovery_operation import (
 from kronos.application.intraday_probables import IntradayProbablesApplication
 from kronos.application.intraday_probables_v2 import IntradayProbablesV2Application
 from kronos.application.intraday_review_v2 import IntradayReviewV2Application
+from kronos.application.intraday_review_mcx_paired import (
+    IntradayMcxPairedReviewApplication,
+)
+from kronos.application.intraday_wo10 import (
+    IntradayWo10Application,
+)
+from kronos.application.intraday_wo10_runtime import (
+    IntradayWo10RuntimeService,
+    RetainedWo10EvidenceLoader,
+    RuntimeWo10EvidenceAssembler,
+    RuntimeWo10PolicyRegistry,
+)
 from kronos.application.intraday_historical_operation import (
     IntradayHistoricalQualificationHarness,
     IntradayHistoricalQualificationOperationService,
@@ -38,6 +50,9 @@ from kronos.intraday.refresh_v2_persistence import RefreshV2ProvenanceStore
 from kronos.intraday.refresh_v2 import RefreshV2Outcome
 from kronos.intraday.review_v2 import CurrentReviewPointerV2
 from kronos.intraday.review_v2_persistence import IntradayReviewV2Store
+from kronos.intraday.review_mcx_paired_persistence import (
+    IntradayMcxPairedReviewStore,
+)
 from kronos.intraday.review_v2_operation_persistence import (
     ReviewV2OperationProvenanceStore,
 )
@@ -54,6 +69,7 @@ from kronos.intraday.universe import (
     IntradayUniversePublication,
     load_intraday_universe_publication,
 )
+from kronos.intraday.wo10_persistence import Wo10Store
 from kronos.instrument.active_derivative import ACTIVE_DERIVATIVE_CATALOGUE_VERSION
 from kronos.instrument.active_derivative_persistence import (
     ActiveDerivativeBindingStore,
@@ -125,10 +141,17 @@ class IntradayRuntimeComposition:
     historical_invocation: IntradayHistoricalQualificationHarness
     probables_application: IntradayProbablesApplication
     probables_v2_application: IntradayProbablesV2Application
+    probables_v2_store: ProbablesV2Store
     review_v2_store: IntradayReviewV2Store
     review_v2_application: IntradayReviewV2Application
     review_v2_current: CurrentReviewPointerV2 | None
     review_v2_operation_store: ReviewV2OperationProvenanceStore
+    mcx_paired_review_store: IntradayMcxPairedReviewStore
+    mcx_paired_review_application: IntradayMcxPairedReviewApplication
+    wo10_store: Wo10Store
+    wo10_policy_registry: RuntimeWo10PolicyRegistry
+    wo10_application: IntradayWo10Application
+    wo10_runtime: IntradayWo10RuntimeService
     refresh_v2_provenance_store: RefreshV2ProvenanceStore
     probables_v2_diagnostics_store: ProbablesV2DiagnosticsStore
     mcx_history_store: McxContractHistoryStore
@@ -206,6 +229,27 @@ def create_intraday_runtime(
     review_v2_operation_store = ReviewV2OperationProvenanceStore(
         review_v2_store.root
     )
+    mcx_paired_review_store = IntradayMcxPairedReviewStore(
+        Path(evidence_root) / "review-mcx-paired-v1"
+    )
+    mcx_paired_review = IntradayMcxPairedReviewApplication(
+        store=mcx_paired_review_store
+    )
+    wo10_store = Wo10Store(Path(evidence_root) / "wo10-reconciliation-v2")
+    wo10_registry = RuntimeWo10PolicyRegistry()
+    wo10_loader = RetainedWo10EvidenceLoader(
+        probables=probables_v2_store,
+        review=review_v2_store,
+        registry=wo10_registry,
+    )
+    wo10_application = IntradayWo10Application(
+        run_store=probables_v2_store,
+        store=wo10_store,
+        policy_registry=wo10_registry,
+        evidence_assembler=RuntimeWo10EvidenceAssembler(wo10_loader),
+        backend_identity="KRONOS-INTRADAY-BROWSER",
+    )
+    wo10_runtime = IntradayWo10RuntimeService(wo10_application, wo10_store)
     discovery = _create_discovery_application(
         store=store,
         last_successful_run_identity=restored_discovery_identity,
@@ -332,10 +376,17 @@ def create_intraday_runtime(
         ),
         probables_application=probables,
         probables_v2_application=probables_v2,
+        probables_v2_store=probables_v2_store,
         review_v2_store=review_v2_store,
         review_v2_application=review_v2,
         review_v2_current=review_v2_current,
         review_v2_operation_store=review_v2_operation_store,
+        mcx_paired_review_store=mcx_paired_review_store,
+        mcx_paired_review_application=mcx_paired_review,
+        wo10_store=wo10_store,
+        wo10_policy_registry=wo10_registry,
+        wo10_application=wo10_application,
+        wo10_runtime=wo10_runtime,
         refresh_v2_provenance_store=refresh_v2_provenance_store,
         probables_v2_diagnostics_store=probables_v2_diagnostics_store,
         mcx_history_store=mcx_history_store,

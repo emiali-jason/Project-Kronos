@@ -168,7 +168,7 @@ class IntradayWo10Application:
         if (
             type(run_store) is not ProbablesV2Store
             or type(store) is not Wo10Store
-            or type(policy_registry) is not Wo10PolicyRegistry
+            or not isinstance(policy_registry, Wo10PolicyRegistry)
             or not isinstance(evidence_assembler, Wo10EvidenceAssembler)
             or (backend_identity is not None and not _text(backend_identity))
             or (process_identity is not None and not _text(process_identity))
