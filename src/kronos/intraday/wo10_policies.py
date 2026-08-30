@@ -1,14 +1,21 @@
-"""Fail-closed policy protocol and deterministic WO-10 Equity policy."""
+"""Fail-closed family policies for deterministic WO-10 reconciliation."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import StrEnum
 from hashlib import sha256
 import json
 from typing import Protocol, runtime_checkable
 
+from kronos.instrument.active_derivative import ActiveDerivativeBindingArtifact
 from kronos.intraday.contracts import IntradayTimeframe
 from kronos.intraday.historical_semantic import SemanticDirection
+from kronos.intraday.mcx_commissioning import (
+    McxCommissioningPublication,
+    McxCommissioningState,
+    load_mcx_commissioning_publication,
+)
 from kronos.intraday.nifty_relative_context import (
     NiftyApplicability,
     NiftyRelativeContextEvidence,
@@ -20,6 +27,15 @@ from kronos.intraday.probables_v2 import (
 )
 from kronos.intraday.review import ObservationStatus
 from kronos.intraday.review_v2 import ImportedVisualEvidenceV2
+from kronos.intraday.review_mcx_paired import (
+    MCX_PAIRED_ARCHITECTURE_IDENTITY,
+    MCX_PAIRED_ARCHITECTURE_VERSION,
+    McxPairedChartBundle,
+    relationship_for_subject,
+)
+from kronos.intraday.review_mcx_paired_answer import (
+    McxPairedImportedVisualEvidence,
+)
 from kronos.intraday.universe import IntradayMarketFamily
 from kronos.intraday.wo10 import (
     Wo10ContractError,
@@ -39,6 +55,7 @@ from kronos.intraday.wo10_evidence import (
     Wo10EvidenceReference,
     Wo10EvidenceSnapshot,
     Wo10IndexEvidenceExtension,
+    Wo10McxEvidenceExtension,
 )
 from kronos.intraday.wo10_facts import (
     Wo10RsiFact,
@@ -161,6 +178,126 @@ WO10_INDEX_POLICY_CHECKSUM = sha256(json.dumps(
     separators=(",", ":"),
 ).encode("utf-8")).hexdigest()
 
+WO10_MCX_POLICY_IDENTITY = "KRONOS-INTRADAY-WO10M-MCX-RECONCILIATION-POLICY-V1"
+WO10_MCX_POLICY_VERSION = "1.0.0"
+WO10_MCX_POLICY_PUBLICATION_IDENTITY = (
+    "KRONOS-INTRADAY-WO-10-E-I-M-FROZEN-ARCHITECTURE-V1"
+)
+WO10_MCX_POLICY_AUTHORITY_VERSION = "1.0.0"
+WO10_MCX_USDINR_AMENDMENT_IDENTITY = (
+    "KRONOS-INTRADAY-WO-10M-USDINR-BOUNDED-AMENDMENT-V1"
+)
+WO10_MCX_USDINR_AMENDMENT_VERSION = "1.0.0"
+WO10_MCX_POLICY_EVIDENCE_IDENTITY = (
+    "KRONOS-INTRADAY-WO10M-MCX-POLICY-EVIDENCE-V1"
+)
+WO10_MCX_POLICY_EVIDENCE_VERSION = "1.0.0"
+WO10_MCX_SUBJECTS = frozenset({
+    "MCX-SUBJECT-GOLDM",
+    "MCX-SUBJECT-SILVERM",
+    "MCX-SUBJECT-COPPER",
+    "MCX-SUBJECT-NATGAS",
+    "MCX-SUBJECT-CRUDE",
+})
+WO10_MCX_POLICY_UNRESOLVED = (
+    ("CONFLUENCE_DISTANCE", "INFORMATIONAL_DEFERRED"),
+    ("EXTENSION_CHASE", "INFORMATIONAL_DEFERRED"),
+    ("FLAT_TANGLED", "INFORMATIONAL_DEFERRED"),
+    ("INTERNATIONAL_OVERLAP", "INFORMATIONAL_DEFERRED"),
+    ("MATERIAL_RAILWAY_SEPARATION_CRISSCROSS", "INFORMATIONAL_DEFERRED"),
+    ("REFERENCE_DIVERGENCE_DURATION", "INFORMATIONAL_DEFERRED"),
+    ("REFERENCE_DIVERGENCE_MATERIALITY", "INFORMATIONAL_DEFERRED"),
+    ("SAME_TIME_VOLUME_MATERIALITY", "INFORMATIONAL_DEFERRED"),
+    ("VOLUME_CONSEQUENCE", "INFORMATIONAL_DEFERRED"),
+    ("FUTURE_METALS_ENERGY_POLICY_SPLIT", "INFORMATIONAL_DEFERRED"),
+)
+
+_MCX_POLICY_DOCUMENT = {
+    "authority_identity": WO10_MCX_POLICY_PUBLICATION_IDENTITY,
+    "authority_version": WO10_MCX_POLICY_AUTHORITY_VERSION,
+    "usdinr_amendment_identity": WO10_MCX_USDINR_AMENDMENT_IDENTITY,
+    "usdinr_amendment_version": WO10_MCX_USDINR_AMENDMENT_VERSION,
+    "paired_architecture_identity": MCX_PAIRED_ARCHITECTURE_IDENTITY,
+    "paired_architecture_version": MCX_PAIRED_ARCHITECTURE_VERSION,
+    "market_family": IntradayMarketFamily.MCX.value,
+    "subjects": tuple(sorted(WO10_MCX_SUBJECTS)),
+    "policy_identity": WO10_MCX_POLICY_IDENTITY,
+    "policy_version": WO10_MCX_POLICY_VERSION,
+    "precedence": tuple(item.value for item in Wo10State),
+    "timeframe_authority": {
+        "machine_1D": "BROADER_CONTEXT",
+        "machine_1H": "INTRADAY_REGIME",
+        "machine_15M": "PRIMARY_DIRECTIONAL_SETUP_STRUCTURE",
+        "machine_5M": "IMMEDIATE_ANALYTICAL_PROGRESSION",
+        "visual_4H": "HIGHER_ORDER_VISUAL_CONTEXT_NOT_MACHINE_1H",
+    },
+    "direction": "INHERITED_NATIVE_MCX_ONLY",
+    "reference": "CONTEXT_ONLY_NO_INDEPENDENT_STATE_AUTHORITY",
+    "nifty": "NOT_APPLICABLE",
+    "usdinr": "OPTIONAL_INFORMATIONAL_NO_STATE_AUTHORITY",
+    "rsi": "FACTUAL_ONLY_NO_DIRECTION_OR_STATE_AUTHORITY",
+    "railway": "FACTUAL_ONLY_NO_SCORE_OR_THRESHOLD",
+    "volume": "RAW_INFORMATIONAL_15M_PRIMARY_NO_THRESHOLD",
+    "roll": "EXACT_CONTRACT_AND_SESSION_NO_BACK_ADJUSTMENT",
+    "natgas": "HELD_FAIL_CLOSED_BEFORE_ANALYTICAL_CONSEQUENCE",
+    "score_weight_rank": "NONE",
+    "unresolved": WO10_MCX_POLICY_UNRESOLVED,
+}
+WO10_MCX_POLICY_CHECKSUM = sha256(json.dumps(
+    _MCX_POLICY_DOCUMENT,
+    sort_keys=True,
+    separators=(",", ":"),
+).encode("utf-8")).hexdigest()
+
+
+class Wo10McxReferenceContext(StrEnum):
+    """Bounded factual synthesis with no independent state authority."""
+
+    SUPPORTIVE = "SUPPORTIVE"
+    DIVERGENT = "DIVERGENT"
+    MIXED = "MIXED"
+    UNCLEAR = "UNCLEAR"
+    UNAVAILABLE = "UNAVAILABLE"
+
+
+def derive_wo10_mcx_reference_context(
+    evidence: McxPairedImportedVisualEvidence,
+    inherited_direction: SemanticDirection,
+) -> Wo10McxReferenceContext:
+    """Derive contextual alignment from independent R01-R06 observations."""
+
+    if (
+        type(evidence) is not McxPairedImportedVisualEvidence
+        or inherited_direction not in {SemanticDirection.LONG, SemanticDirection.SHORT}
+    ):
+        raise Wo10ContractError("WO10_MCX_REFERENCE_CONTEXT_INVALID")
+    answers = {item.question_id: item.answer for item in evidence.reference_answers}
+    if tuple(sorted(answers)) != tuple(f"R{number:02d}" for number in range(1, 7)):
+        raise Wo10ContractError("WO10_MCX_REFERENCE_CONTEXT_INVALID")
+    direction = answers["R03"]
+    progression = answers["R04"]
+    expected_direction = (
+        "BULLISH" if inherited_direction is SemanticDirection.LONG else "BEARISH"
+    )
+    opposing_direction = (
+        "BEARISH" if inherited_direction is SemanticDirection.LONG else "BULLISH"
+    )
+    expected_progression = (
+        "ADVANCING" if inherited_direction is SemanticDirection.LONG else "DECLINING"
+    )
+    opposing_progression = (
+        "DECLINING" if inherited_direction is SemanticDirection.LONG else "ADVANCING"
+    )
+    if direction == "NOT_VISIBLE" and progression == "NOT_VISIBLE":
+        return Wo10McxReferenceContext.UNAVAILABLE
+    if direction == expected_direction and progression == expected_progression:
+        return Wo10McxReferenceContext.SUPPORTIVE
+    if direction == opposing_direction and progression == opposing_progression:
+        return Wo10McxReferenceContext.DIVERGENT
+    if direction in {"UNCLEAR", "NOT_VISIBLE"} or progression in {"UNCLEAR", "NOT_VISIBLE"}:
+        return Wo10McxReferenceContext.UNCLEAR
+    return Wo10McxReferenceContext.MIXED
+
 
 def wo10_equity_policy_binding() -> Wo10PolicyBinding:
     """Return the exact immutable WO-10E publication binding."""
@@ -183,6 +320,18 @@ def wo10_index_policy_binding() -> Wo10PolicyBinding:
         publication_identity=WO10_INDEX_POLICY_PUBLICATION_IDENTITY,
         policy_checksum=WO10_INDEX_POLICY_CHECKSUM,
         supported_market_family=IntradayMarketFamily.NSE_INDEX,
+    )
+
+
+def wo10_mcx_policy_binding() -> Wo10PolicyBinding:
+    """Return the exact immutable WO-10M publication binding."""
+
+    return create_wo10_policy_binding(
+        policy_identity=WO10_MCX_POLICY_IDENTITY,
+        policy_version=WO10_MCX_POLICY_VERSION,
+        publication_identity=WO10_MCX_POLICY_PUBLICATION_IDENTITY,
+        policy_checksum=WO10_MCX_POLICY_CHECKSUM,
+        supported_market_family=IntradayMarketFamily.MCX,
     )
 
 
@@ -396,6 +545,110 @@ def create_wo10_index_policy_evidence(
 
 
 @dataclass(frozen=True, slots=True)
+class Wo10McxPolicyEvidence:
+    """Exact loaded artifacts used by the pure MCX policy adapter."""
+
+    evidence_identity: str
+    integrity_identity: str
+    snapshot: Wo10EvidenceSnapshot
+    source_semantic_evidence: SemanticQualificationEvidenceV2 | None
+    one_day_context: SemanticQualificationFactV2 | None
+    one_hour_regime: SemanticQualificationFactV2 | None
+    fifteen_minute_structure: SemanticQualificationFactV2 | None
+    five_minute_progression: SemanticQualificationFactV2 | None
+    rsi: Wo10RsiFact | None
+    railway_track: Wo10SmaFacts | None
+    structural_location: Wo10StructuralLocationFacts | None
+    volume_telemetry: Wo10VolumeFact | None
+    active_derivative_binding: ActiveDerivativeBindingArtifact | None
+    commissioning_publication: McxCommissioningPublication | None
+    paired_chart_bundle: McxPairedChartBundle | None
+    paired_visual_evidence: McxPairedImportedVisualEvidence | None
+    schema_identity: str = WO10_MCX_POLICY_EVIDENCE_IDENTITY
+    schema_version: str = WO10_MCX_POLICY_EVIDENCE_VERSION
+
+    def __post_init__(self) -> None:
+        values = _mcx_evidence_values(self)
+        typed = (
+            (self.source_semantic_evidence, SemanticQualificationEvidenceV2),
+            (self.one_day_context, SemanticQualificationFactV2),
+            (self.one_hour_regime, SemanticQualificationFactV2),
+            (self.fifteen_minute_structure, SemanticQualificationFactV2),
+            (self.five_minute_progression, SemanticQualificationFactV2),
+            (self.rsi, Wo10RsiFact),
+            (self.railway_track, Wo10SmaFacts),
+            (self.structural_location, Wo10StructuralLocationFacts),
+            (self.volume_telemetry, Wo10VolumeFact),
+            (self.active_derivative_binding, ActiveDerivativeBindingArtifact),
+            (self.commissioning_publication, McxCommissioningPublication),
+            (self.paired_chart_bundle, McxPairedChartBundle),
+            (self.paired_visual_evidence, McxPairedImportedVisualEvidence),
+        )
+        if (
+            type(self.snapshot) is not Wo10EvidenceSnapshot
+            or self.snapshot.market_family is not IntradayMarketFamily.MCX
+            or any(
+                item is not None and type(item) is not expected
+                for item, expected in typed
+            )
+            or self.schema_identity != WO10_MCX_POLICY_EVIDENCE_IDENTITY
+            or self.schema_version != WO10_MCX_POLICY_EVIDENCE_VERSION
+            or self.evidence_identity
+            != _identity("INTRADAY-WO10M-POLICY-EVIDENCE-", values)
+            or self.integrity_identity
+            != _identity("INTEGRITY-INTRADAY-WO10M-POLICY-EVIDENCE-", values)
+        ):
+            raise Wo10ContractError("WO10_MCX_POLICY_EVIDENCE_INVALID")
+
+
+def create_wo10_mcx_policy_evidence(
+    *,
+    snapshot: Wo10EvidenceSnapshot,
+    source_semantic_evidence: SemanticQualificationEvidenceV2 | None,
+    one_day_context: SemanticQualificationFactV2 | None,
+    one_hour_regime: SemanticQualificationFactV2 | None,
+    fifteen_minute_structure: SemanticQualificationFactV2 | None,
+    five_minute_progression: SemanticQualificationFactV2 | None,
+    rsi: Wo10RsiFact | None,
+    railway_track: Wo10SmaFacts | None,
+    structural_location: Wo10StructuralLocationFacts | None,
+    volume_telemetry: Wo10VolumeFact | None,
+    active_derivative_binding: ActiveDerivativeBindingArtifact | None,
+    commissioning_publication: McxCommissioningPublication | None,
+    paired_chart_bundle: McxPairedChartBundle | None,
+    paired_visual_evidence: McxPairedImportedVisualEvidence | None,
+) -> Wo10McxPolicyEvidence:
+    values = {
+        "snapshot": snapshot,
+        "source_semantic_evidence": source_semantic_evidence,
+        "one_day_context": one_day_context,
+        "one_hour_regime": one_hour_regime,
+        "fifteen_minute_structure": fifteen_minute_structure,
+        "five_minute_progression": five_minute_progression,
+        "rsi": rsi,
+        "railway_track": railway_track,
+        "structural_location": structural_location,
+        "volume_telemetry": volume_telemetry,
+        "active_derivative_binding": active_derivative_binding,
+        "commissioning_publication": commissioning_publication,
+        "paired_chart_bundle": paired_chart_bundle,
+        "paired_visual_evidence": paired_visual_evidence,
+        "schema_identity": WO10_MCX_POLICY_EVIDENCE_IDENTITY,
+        "schema_version": WO10_MCX_POLICY_EVIDENCE_VERSION,
+    }
+    identity_values = _equity_evidence_payload(values)
+    return Wo10McxPolicyEvidence(
+        evidence_identity=_identity(
+            "INTRADAY-WO10M-POLICY-EVIDENCE-", identity_values
+        ),
+        integrity_identity=_identity(
+            "INTEGRITY-INTRADAY-WO10M-POLICY-EVIDENCE-", identity_values
+        ),
+        **values,
+    )
+
+
+@dataclass(frozen=True, slots=True)
 class Wo10PolicyDecision:
     canonical_subject_identity: str
     inherited_direction: SemanticDirection
@@ -595,6 +848,65 @@ class Wo10IndexPolicy:
         )
 
 
+class Wo10McxPolicy:
+    """Pure WO-10M policy over exact retained Native and paired evidence."""
+
+    def __init__(self, evidence: tuple[Wo10McxPolicyEvidence, ...]) -> None:
+        retained: dict[str, Wo10McxPolicyEvidence] = {}
+        for item in evidence:
+            if (
+                type(item) is not Wo10McxPolicyEvidence
+                or item.snapshot.snapshot_identity in retained
+            ):
+                raise Wo10ContractError("WO10_MCX_POLICY_INPUT_INVALID")
+            retained[item.snapshot.snapshot_identity] = item
+        self._evidence = retained
+
+    @property
+    def binding(self) -> Wo10PolicyBinding:
+        return wo10_mcx_policy_binding()
+
+    def evaluate(
+        self,
+        *,
+        request: Wo10ReconciliationRequest,
+        evidence: Wo10EvidenceSnapshot,
+    ) -> Wo10PolicyDecision:
+        if (
+            type(request) is not Wo10ReconciliationRequest
+            or type(evidence) is not Wo10EvidenceSnapshot
+            or request.market_family is not IntradayMarketFamily.MCX
+            or evidence.market_family is not IntradayMarketFamily.MCX
+            or evidence.canonical_subject_identity not in WO10_MCX_SUBJECTS
+            or request.policy != self.binding
+            or evidence.policy != self.binding
+        ):
+            raise Wo10ContractError("WO10_MCX_POLICY_FAMILY_INVALID")
+
+        # Commissioning is checked before a policy state can be produced.
+        # NATGAS therefore cannot receive even CONTEXT_INCOMPLETE as an
+        # analytical consequence while its governed publication is HELD.
+        _require_mcx_commissioned(evidence.canonical_subject_identity)
+        try:
+            loaded = self._evidence[evidence.snapshot_identity]
+        except KeyError as error:
+            raise Wo10ContractError("WO10_MCX_POLICY_EVIDENCE_NOT_LOADED") from error
+        if loaded.snapshot != evidence:
+            raise Wo10ContractError("WO10_MCX_POLICY_EVIDENCE_CONFLICT")
+        state, code = _evaluate_mcx(request, loaded)
+        reason = Wo10ReasonCode(
+            scope=Wo10ReasonScope.MCX,
+            code=code,
+            policy_identity=self.binding.policy_identity,
+        )
+        return Wo10PolicyDecision(
+            canonical_subject_identity=evidence.canonical_subject_identity,
+            inherited_direction=evidence.inherited_direction,
+            state=state,
+            reasons=(reason,),
+        )
+
+
 def _evaluate_equity(
     request: Wo10ReconciliationRequest,
     loaded: Wo10EquityPolicyEvidence,
@@ -734,6 +1046,101 @@ def _evaluate_index(
         return Wo10State.WAIT_IMMEDIATE_CONFIRMATION, "IMMEDIATE_PROGRESSION_PENDING"
 
     return Wo10State.PROMOTION_READY, "GOVERNED_EVIDENCE_COHERENT"
+
+
+def _evaluate_mcx(
+    request: Wo10ReconciliationRequest,
+    loaded: Wo10McxPolicyEvidence,
+) -> tuple[Wo10State, str]:
+    snapshot = loaded.snapshot
+    binding = next((
+        item for item in request.probable_bindings
+        if item.probable_result_identity == snapshot.probable_result_identity
+    ), None)
+    if (
+        binding is None
+        or binding.canonical_subject_identity != snapshot.canonical_subject_identity
+        or binding.inherited_direction is not snapshot.inherited_direction
+        or binding.analysis_boundary != snapshot.analysis_boundary
+        or binding.persisted_phase is not snapshot.persisted_phase
+        or request.probables_run_identity != snapshot.probables_run_identity
+        or not _mcx_evidence_complete(loaded)
+    ):
+        return Wo10State.CONTEXT_INCOMPLETE, "REQUIRED_EVIDENCE_INCOMPLETE"
+
+    inherited = snapshot.inherited_direction
+    hourly = loaded.one_hour_regime
+    fifteen = loaded.fifteen_minute_structure
+    five = loaded.five_minute_progression
+    visual = loaded.paired_visual_evidence
+    assert hourly is not None and fifteen is not None and five is not None
+    assert visual is not None
+
+    # Completed Native MCX 15M structure is the governing authority. Neither
+    # international-reference evidence nor indicators can rescue its failure.
+    if _opposes(fifteen.direction, inherited):
+        return Wo10State.INVALIDATED, "GOVERNING_STRUCTURE_FAILED"
+
+    native_answers = {item.question_id: item.answer for item in visual.native_answers}
+    # Derived by KRONOS, never supplied by Chart Analyst. It is deliberately
+    # retained as context and never branches the seven-state decision.
+    reference_context = derive_wo10_mcx_reference_context(visual, inherited)
+    assert type(reference_context) is Wo10McxReferenceContext
+    expected_progression = (
+        "ADVANCING" if inherited is SemanticDirection.LONG else "DECLINING"
+    )
+    native_visual_deterioration = (
+        native_answers["M04"] == "PRESENT"
+        or native_answers["M05"]
+        not in {expected_progression, "UNCLEAR", "NOT_VISIBLE"}
+    )
+    if _opposes(five.direction, inherited) and native_visual_deterioration:
+        return Wo10State.WEAKENING, "NATIVE_VISUAL_DETERIORATION"
+
+    expected_visual = (
+        "BULLISH" if inherited is SemanticDirection.LONG else "BEARISH"
+    )
+    opposing_visual = (
+        "BEARISH" if inherited is SemanticDirection.LONG else "BULLISH"
+    )
+    if (
+        fifteen.direction is inherited
+        and (
+            _opposes(hourly.direction, inherited)
+            or native_answers["M03"] == opposing_visual
+        )
+    ):
+        return Wo10State.HELD_BY_CONTRADICTION, "AUTHORITATIVE_EVIDENCE_CONFLICT"
+
+    if (
+        fifteen.direction is SemanticDirection.NON_DIRECTIONAL
+        or hourly.direction is SemanticDirection.NON_DIRECTIONAL
+        or native_answers["M03"]
+        in {"NEUTRAL", "MIXED", "UNCLEAR", "NOT_VISIBLE"}
+    ):
+        return Wo10State.WAIT_SETUP_DEVELOPMENT, "PRIMARY_SETUP_DEVELOPING"
+
+    if (
+        five.direction is not inherited
+        or native_answers["M05"] != expected_progression
+    ):
+        return Wo10State.WAIT_IMMEDIATE_CONFIRMATION, "IMMEDIATE_PROGRESSION_PENDING"
+
+    # Reference, USDINR, RSI, Railway, volume, and 4H visual observations have
+    # no independent promotion authority. Promotion follows only after all
+    # authoritative Native gates above are coherent.
+    assert native_answers["M03"] == expected_visual
+    return Wo10State.PROMOTION_READY, "GOVERNED_EVIDENCE_COHERENT"
+
+
+def _require_mcx_commissioned(canonical_subject_identity: str) -> None:
+    if (
+        canonical_subject_identity not in WO10_MCX_SUBJECTS
+        or load_mcx_commissioning_publication()
+        .subject(canonical_subject_identity).state
+        is not McxCommissioningState.COMMISSIONED
+    ):
+        raise Wo10ContractError("WO10_MCX_COMMISSIONING_HELD")
 
 
 def _equity_evidence_complete(value: Wo10EquityPolicyEvidence) -> bool:
@@ -979,6 +1386,206 @@ def _index_evidence_complete(value: Wo10IndexPolicyEvidence) -> bool:
     return True
 
 
+def _mcx_evidence_complete(value: Wo10McxPolicyEvidence) -> bool:
+    snapshot = value.snapshot
+    extension = snapshot.family_extension
+    if (
+        type(extension) is not Wo10McxEvidenceExtension
+        or snapshot.canonical_subject_identity not in WO10_MCX_SUBJECTS
+    ):
+        return False
+    required = (
+        value.source_semantic_evidence,
+        value.one_day_context,
+        value.one_hour_regime,
+        value.fifteen_minute_structure,
+        value.five_minute_progression,
+        value.rsi,
+        value.railway_track,
+        value.structural_location,
+        value.volume_telemetry,
+        value.active_derivative_binding,
+        value.commissioning_publication,
+        value.paired_chart_bundle,
+        value.paired_visual_evidence,
+    )
+    if any(item is None for item in required):
+        return False
+    semantic = value.source_semantic_evidence
+    active = value.active_derivative_binding
+    publication = value.commissioning_publication
+    bundle = value.paired_chart_bundle
+    visual = value.paired_visual_evidence
+    location = value.structural_location
+    assert semantic is not None and active is not None and publication is not None
+    assert bundle is not None and visual is not None and location is not None
+
+    facts = (
+        (value.one_day_context, "1D_CONTEXT"),
+        (value.one_hour_regime, "1H_REGIME"),
+        (value.fifteen_minute_structure, "15M_STRUCTURE"),
+        (value.five_minute_progression, "5M_PROGRESSION"),
+    )
+    if (
+        semantic.evidence_identity != snapshot.semantic_evidence_identity
+        or semantic.integrity_identity != snapshot.semantic_evidence_integrity
+        or semantic.canonical_subject_identity != snapshot.canonical_subject_identity
+        or semantic.analysis_boundary != snapshot.analysis_boundary
+        or semantic.phase is not snapshot.persisted_phase
+        or any(
+            fact is None
+            or fact.canonical_subject_identity != snapshot.canonical_subject_identity
+            or fact.analysis_boundary != snapshot.analysis_boundary
+            or fact.phase is not snapshot.persisted_phase
+            or fact.family != family
+            or fact.availability != "AVAILABLE"
+            or fact.direction is SemanticDirection.UNAVAILABLE
+            for fact, family in facts
+        )
+    ):
+        return False
+
+    common = snapshot.common_facts
+    if not all((
+        _reference_matches(common.one_day_structure, value.one_day_context),
+        _reference_matches(common.one_hour_structure, value.one_hour_regime),
+        _reference_matches(common.fifteen_minute_structure, value.fifteen_minute_structure),
+        _reference_matches(common.five_minute_progression, value.five_minute_progression),
+        _reference_matches(common.rsi, value.rsi),
+        _reference_matches(common.railway_track, value.railway_track),
+        _reference_matches(common.structural_location, value.structural_location),
+        _reference_matches(common.volume_telemetry, value.volume_telemetry),
+    )):
+        return False
+
+    if (
+        value.rsi.canonical_subject_identity != snapshot.canonical_subject_identity
+        or value.rsi.market_family is not IntradayMarketFamily.MCX
+        or value.rsi.observation_boundary != snapshot.analysis_boundary
+        or value.rsi.timeframe is not IntradayTimeframe.FIFTEEN_MINUTES
+        or value.railway_track.canonical_subject_identity
+        != snapshot.canonical_subject_identity
+        or value.railway_track.market_family is not IntradayMarketFamily.MCX
+        or value.railway_track.observation_boundary != snapshot.analysis_boundary
+        or value.railway_track.timeframe is not IntradayTimeframe.ONE_HOUR
+        or location.canonical_subject_identity != snapshot.canonical_subject_identity
+        or location.market_family is not IntradayMarketFamily.MCX
+        or location.observation_boundary != snapshot.analysis_boundary
+        or value.volume_telemetry.canonical_subject_identity
+        != snapshot.canonical_subject_identity
+        or value.volume_telemetry.market_family is not IntradayMarketFamily.MCX
+        or value.volume_telemetry.observation_boundary != snapshot.analysis_boundary
+        or value.volume_telemetry.timeframe is not IntradayTimeframe.FIFTEEN_MINUTES
+    ):
+        return False
+
+    expected_relationship = relationship_for_subject(snapshot.canonical_subject_identity)
+    native = bundle.native_identity_binding
+    if (
+        bundle.architecture_identity != MCX_PAIRED_ARCHITECTURE_IDENTITY
+        or bundle.architecture_version != MCX_PAIRED_ARCHITECTURE_VERSION
+        or bundle.canonical_mcx_subject_identity != snapshot.canonical_subject_identity
+        or bundle.probables_run_identity != snapshot.probables_run_identity
+        or bundle.probable_result_identity != snapshot.probable_result_identity
+        or bundle.review_cycle_identity != snapshot.review_cycle_identity
+        or bundle.direction != snapshot.inherited_direction.value
+        or bundle.phase != snapshot.persisted_phase.value
+        or bundle.analysis_boundary != snapshot.analysis_boundary
+        or bundle.reference_relationship != expected_relationship
+        or native.canonical_subject_identity != snapshot.canonical_subject_identity
+        or native.observation_boundary != snapshot.analysis_boundary
+        or native.commissioning_state is not McxCommissioningState.COMMISSIONED
+        or active.canonical_subject_id != snapshot.canonical_subject_identity
+        or active.observation_boundary != snapshot.analysis_boundary
+        or active.binding_identity != native.active_binding_identity
+        or active.integrity_identity != native.active_binding_integrity_identity
+        or active.active_binding.derivative_contract_id
+        != native.actual_derivative_contract_identity
+        or active.provider_symbol != native.provider_symbol
+        or active.contract_expiry.isoformat() != native.contract_expiry
+        or location.actual_contract_identity
+        != native.actual_derivative_contract_identity
+        or location.roll_lineage_identity != native.roll_history_identity
+    ):
+        return False
+
+    try:
+        commissioned = publication.subject(snapshot.canonical_subject_identity)
+    except Exception:
+        return False
+    if (
+        publication != load_mcx_commissioning_publication()
+        or commissioned.state is not McxCommissioningState.COMMISSIONED
+        or publication.publication_identity
+        != native.commissioning_publication_identity
+        or publication.integrity_identity
+        != native.commissioning_publication_integrity_identity
+    ):
+        return False
+
+    if (
+        visual.paired_bundle_identity != bundle.bundle_identity
+        or visual.review_cycle_identity != bundle.review_cycle_identity
+        or visual.canonical_mcx_subject_identity != snapshot.canonical_subject_identity
+        or visual.actual_derivative_contract_identity
+        != native.actual_derivative_contract_identity
+        or visual.active_binding_identity != native.active_binding_identity
+        or visual.direction != snapshot.inherited_direction.value
+        or visual.phase != snapshot.persisted_phase.value
+        or visual.analysis_boundary != snapshot.analysis_boundary
+        or visual.native_resolution.canonical_subject_identity
+        != snapshot.canonical_subject_identity
+        or visual.reference_resolution.canonical_subject_identity
+        != expected_relationship.reference_analytical_subject_identity
+        or visual.reference_observed_visible_identity
+        != expected_relationship.governed_visible_identity
+        or tuple(item.question_id for item in visual.native_answers)
+        != tuple(f"M{number:02d}" for number in range(1, 11))
+        or tuple(item.question_id for item in visual.reference_answers)
+        != tuple(f"R{number:02d}" for number in range(1, 7))
+        or visual.escape_hatch_answer.question_id != "X01"
+    ):
+        return False
+
+    if not all((
+        _reference_exact(
+            extension.actual_contract,
+            active.binding_identity,
+            active.integrity_identity,
+        ),
+        _reference_exact(
+            extension.commissioning_publication,
+            publication.publication_identity,
+            publication.integrity_identity,
+        ),
+        _reference_exact(
+            extension.roll_history,
+            native.roll_history_identity,
+            active.integrity_identity,
+        ),
+        _reference_exact(
+            extension.reference_relationship,
+            visual.reference_resolution.relationship_identity,
+            visual.reference_resolution.relationship_integrity_identity,
+        ),
+        _reference_exact(
+            extension.paired_visual_evidence,
+            visual.visual_evidence_identity,
+            visual.integrity_identity,
+        ),
+    )):
+        return False
+
+    usdinr = bundle.usdinr_evidence
+    if usdinr is None:
+        return extension.session_reference_context is None
+    return _reference_exact(
+        extension.session_reference_context,
+        usdinr.evidence_identity,
+        usdinr.integrity_identity,
+    )
+
+
 def _reference_matches(reference: Wo10EvidenceReference | None, value: object) -> bool:
     if reference is None or value is None:
         return False
@@ -988,6 +1595,18 @@ def _reference_matches(reference: Wo10EvidenceReference | None, value: object) -
     return (
         reference.evidence_identity == identity
         and reference.evidence_integrity == getattr(value, "integrity_identity", None)
+    )
+
+
+def _reference_exact(
+    reference: Wo10EvidenceReference | None,
+    identity: str,
+    integrity: str,
+) -> bool:
+    return (
+        reference is not None
+        and reference.evidence_identity == identity
+        and reference.evidence_integrity == integrity
     )
 
 
@@ -1004,6 +1623,14 @@ def _equity_evidence_values(value: Wo10EquityPolicyEvidence) -> dict[str, object
 
 
 def _index_evidence_values(value: Wo10IndexPolicyEvidence) -> dict[str, object]:
+    return _equity_evidence_payload({
+        name: getattr(value, name)
+        for name in value.__dataclass_fields__
+        if name not in {"evidence_identity", "integrity_identity"}
+    })
+
+
+def _mcx_evidence_values(value: Wo10McxPolicyEvidence) -> dict[str, object]:
     return _equity_evidence_payload({
         name: getattr(value, name)
         for name in value.__dataclass_fields__
@@ -1053,15 +1680,32 @@ __all__ = [
     "WO10_INDEX_POLICY_UNRESOLVED",
     "WO10_INDEX_POLICY_VERSION",
     "WO10_INDEX_SUBJECTS",
+    "WO10_MCX_POLICY_AUTHORITY_VERSION",
+    "WO10_MCX_POLICY_CHECKSUM",
+    "WO10_MCX_POLICY_EVIDENCE_IDENTITY",
+    "WO10_MCX_POLICY_EVIDENCE_VERSION",
+    "WO10_MCX_POLICY_IDENTITY",
+    "WO10_MCX_POLICY_PUBLICATION_IDENTITY",
+    "WO10_MCX_POLICY_UNRESOLVED",
+    "WO10_MCX_POLICY_VERSION",
+    "WO10_MCX_SUBJECTS",
+    "WO10_MCX_USDINR_AMENDMENT_IDENTITY",
+    "WO10_MCX_USDINR_AMENDMENT_VERSION",
+    "Wo10McxReferenceContext",
     "Wo10EquityPolicy",
     "Wo10EquityPolicyEvidence",
     "Wo10FamilyPolicy",
     "Wo10IndexPolicy",
     "Wo10IndexPolicyEvidence",
+    "Wo10McxPolicy",
+    "Wo10McxPolicyEvidence",
     "Wo10PolicyDecision",
     "Wo10PolicyRegistry",
     "create_wo10_equity_policy_evidence",
     "create_wo10_index_policy_evidence",
+    "create_wo10_mcx_policy_evidence",
+    "derive_wo10_mcx_reference_context",
     "wo10_equity_policy_binding",
     "wo10_index_policy_binding",
+    "wo10_mcx_policy_binding",
 ]
