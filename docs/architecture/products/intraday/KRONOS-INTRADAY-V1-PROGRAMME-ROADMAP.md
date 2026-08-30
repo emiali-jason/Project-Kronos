@@ -1,6 +1,6 @@
 # KRONOS Intraday V1 Programme Roadmap
 
-**Status:** WO-06E V2 methodology frozen; production implementation not started
+**Status:** WO-10 E/I/M architecture and pre-KR-370 boundary frozen; Slice 1 not started
 
 Native universe count is 98. RELIANCE remains the commissioning and regression
 anchor; it is not the universe owner or a privileged membership class.
@@ -71,13 +71,20 @@ WO-05A/WO-05B preserve current V1/1.0.0 at exactly 98 members.
 
 ## Track B — Promotion and construction
 
-WO-07 → WO-08 if required → WO-09.
+WO-07 → WO-08 if required → WO-09 → WO-10 E/I/M → WO-11.
 
 WO-08 is conditional on bounded prerequisite gaps discovered by WO-07.
 
+WO-10E, WO-10I and WO-10M are independent Intraday product-local analytical-
+reconciliation policies sharing one seven-state consequence family. WO-11 has
+zero analytical discretion and only validates, collates and publishes exact
+WO-10 results. Neither stage instantiates ADR-0011 KR-370 semantics. The exact
+boundary is governed by [ADR-0019](../../adr/ADR-0019-INTRADAY-WO10-WO11-PRE-KR370-SEMANTIC-BOUNDARY.md).
+
 ## Track C — MCX readiness
 
-MCX prerequisites → WO-10.
+MCX prerequisites → WO-10M. A paired MCX/reference Chart Analyst successor is
+still required before operational WO-10M.
 
 ## Governed downstream sequence
 

@@ -800,6 +800,26 @@ and explicit current pointer restore without Provider access. New evidence or
 policy inputs produce a new immutable result; historical evidence is never
 rewritten. Full details are in [WO-10 Native + Visual Reconciliation](KRONOS-INTRADAY-WO-10-NATIVE-VISUAL-RECONCILIATION-V1.md).
 
+### 33A. WO-10 E/I/M successor-governance amendment
+
+The preceding section remains the historical WO-10 V1 Q1–Q10 implementation
+record. It does not govern the frozen WO-10E/WO-10I/WO-10M successor.
+
+The successor uses a product-local seven-state analytical-reconciliation
+family: `CONTEXT_INCOMPLETE`, `INVALIDATED`, `WEAKENING`,
+`HELD_BY_CONTRADICTION`, `WAIT_SETUP_DEVELOPMENT`,
+`WAIT_IMMEDIATE_CONFIRMATION` and `PROMOTION_READY`, in that precedence order.
+The states are pre-KR-370 product states. No state is equivalent or
+automatically mapped to ADR-0011 `BUY_NOW`, `SELL_NOW`, `BUY_READY`,
+`SELL_READY`, a potential state or `NO_SETUP`.
+
+WO-10E, WO-10I and WO-10M decide independently. WO-11 only validates,
+collates and publishes exact results with zero analytical discretion. Exact
+frozen family policy, empirical deferrals and downstream exclusions are in
+[WO-10 E/I/M Frozen Architecture V1](KRONOS-INTRADAY-WO-10-E-I-M-FROZEN-ARCHITECTURE-V1.md)
+and [ADR-0019](../../adr/ADR-0019-INTRADAY-WO10-WO11-PRE-KR370-SEMANTIC-BOUNDARY.md).
+No classifier or operation is authorized by this amendment.
+
 ## 34. WO-06E phase-aware Probables V2 methodology freeze
 
 WO-06E-FREEZE establishes
@@ -857,5 +877,7 @@ broker authority are not introduced. Full authority is recorded in
 - [WO-07 Governed Native Review](KRONOS-INTRADAY-WO-07-GOVERNED-NATIVE-REVIEW-V1.md)
 - [WO-07A Sponsor Review UX and Batch Transport](KRONOS-INTRADAY-WO-07A-SPONSOR-REVIEW-UX-AND-BATCH-TRANSPORT-V1.md)
 - [WO-10 Native + Visual Reconciliation](KRONOS-INTRADAY-WO-10-NATIVE-VISUAL-RECONCILIATION-V1.md)
+- [WO-10 E/I/M Frozen Architecture V1](KRONOS-INTRADAY-WO-10-E-I-M-FROZEN-ARCHITECTURE-V1.md)
+- [ADR-0019 — Intraday WO-10/WO-11 Pre-KR-370 Semantic Boundary](../../adr/ADR-0019-INTRADAY-WO10-WO11-PRE-KR370-SEMANTIC-BOUNDARY.md)
 - [WO-09 Governed Chart Analyst Answer Import](KRONOS-INTRADAY-WO-09-GOVERNED-CHART-ANALYST-ANSWER-IMPORT-V1.md)
 - [ADR-0017 Governed Active Derivative Contract Selection](../../adr/ADR-0017-GOVERNED-ACTIVE-DERIVATIVE-CONTRACT-SELECTION-V1.md)

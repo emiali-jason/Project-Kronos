@@ -1,6 +1,6 @@
 # Intraday Deferred Decision Register
 
-**Status:** Amended through WO-06E-FREEZE; no defaults implied
+**Status:** Amended through WO-10 Slice 0 governance; no defaults implied
 
 | Decision | Reason deferred | Required evidence | Earliest closure | Owner |
 |---|---|---|---|---|
@@ -10,7 +10,11 @@
 | Extension threshold | Value unproven | Move/retracement outcome evidence | After WO-05 | Intraday/CA |
 | Participation threshold/veto consequence beyond V0 | V0 is supporting/non-blocking without threshold | PAPER observation and outcome evidence | Successor methodology only | Intraday/CA |
 | Setup-quality semantics | Families approved, quality scale not | Discovery outcome evidence | WO-05 | Intraday/CA |
-| Analytical Promotion criteria | Separate boundary not frozen | Discovery-to-promotion evidence | WO-07 | Intraday/CA |
+| WO-10 E/I/M consequence predicates beyond frozen precedence | Product-local seven-state family and precedence are frozen, but not every evidence combination has a qualified consequence | Family-specific factual and outcome evidence plus successor authority | WO-10 family policy slices | Intraday/CA |
+| Railway Track material separation/crisscross | No new distance or materiality threshold is authorized | Exact reproducible factual grammar or empirical successor decision | WO-10 factual/policy slices | Intraday/CA |
+| Index weekly/daily location consequence | Weekly/Daily levels are map facts, not signals | Index outcome evidence and successor authority | WO-10I successor policy | Intraday/CA |
+| MCX international divergence materiality/duration | International reference is contextual and cannot independently invalidate | Paired MCX/reference evidence and successor authority | WO-10M successor policy | Intraday/CA |
+| MCX same-time-session volume materiality | Raw telemetry is required before consequence | MCX session-phase evidence and outcomes | WO-10M successor policy | Intraday/CA |
 | Trade Construction numerical predicates | Construction contract pending | Promoted-candidate evidence | WO-09 | Intraday/CA |
 | Risk numerical limits | DOMAIN-007 authority | Construction and capacity evidence | WO-11+ | DOMAIN-007/CA |
 | Entry Timing beyond frozen cutoffs | DOMAIN-004 authority | Risk-approved plan evidence | WO-13+ | DOMAIN-004/CA |

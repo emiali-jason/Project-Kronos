@@ -5,6 +5,12 @@
 **Contract version:** 1.0.0
 **Trading authority:** None
 
+> **Historical-scope notice (2026-08-30):** This document governs the retained
+> WO-10 V1 Q1–Q10 implementation and its immutable artifacts. It does not govern
+> the frozen WO-10E/WO-10I/WO-10M successor family. The successor architecture
+> is [WO-10 E/I/M Frozen Architecture V1](KRONOS-INTRADAY-WO-10-E-I-M-FROZEN-ARCHITECTURE-V1.md),
+> governed by [ADR-0019](../../adr/ADR-0019-INTRADAY-WO10-WO11-PRE-KR370-SEMANTIC-BOUNDARY.md).
+
 ## Purpose and authority
 
 WO-10 deterministically relates one exact-current Native Probable to the

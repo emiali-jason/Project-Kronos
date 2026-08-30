@@ -102,6 +102,14 @@ chart, Answer, import or reconciliation.
 
 ## WO-10 future mechanical adapter
 
+**Governance clarification (2026-08-30):** the four mechanical requirements
+below remain valid for exact V2 lineage. The earlier requirement to feed the
+unchanged V1 Q1–Q10 consequence policy is not authority for the frozen
+WO-10E/WO-10I/WO-10M successor. Successor consequence semantics are governed
+by [WO-10 E/I/M Frozen Architecture V1](KRONOS-INTRADAY-WO-10-E-I-M-FROZEN-ARCHITECTURE-V1.md)
+and [ADR-0019](../../adr/ADR-0019-INTRADAY-WO10-WO11-PRE-KR370-SEMANTIC-BOUNDARY.md).
+The historical V1 policy and artifacts remain unchanged.
+
 Current WO-10 `_validate_bindings` accepts exact V1 `ProbablesRun`,
 `ProbableMemberResult`, `ReviewCycle`, `ReviewQuestionPack` and
 `ImportedVisualEvidence` types. It must not be overloaded. A future separately
@@ -110,8 +118,8 @@ authorized V2 reconciliation adapter/successor must:
 1. accept only exact V2 run/result/cycle/pack/imported-evidence types;
 2. validate the additional methodology, phase, completed-evidence, semantic,
    NIFTY and MCX commissioning bindings;
-3. feed the unchanged frozen Q1–Q10 reconciliation policy without translating
-   V2 evidence into V1 artifacts or changing any consequence predicate;
+3. never translate V2 evidence into V1 artifacts; any successor consequence
+   policy must use its own identity, version, publication and checksum;
 4. persist a separately versioned reconciliation run/pointer if the existing
    schema cannot represent V2 lineage.
 
