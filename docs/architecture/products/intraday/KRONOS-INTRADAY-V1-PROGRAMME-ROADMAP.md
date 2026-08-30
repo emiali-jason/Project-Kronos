@@ -1,6 +1,6 @@
 # KRONOS Intraday V1 Programme Roadmap
 
-**Status:** WO-10 E/I/M architecture and pre-KR-370 boundary frozen; Slice 1 not started
+**Status:** WO-12 KR-370 governance authorized; bounded source implementation not started
 
 Native universe count is 98. RELIANCE remains the commissioning and regression
 anchor; it is not the universe owner or a privileged membership class.
@@ -71,7 +71,7 @@ WO-05A/WO-05B preserve current V1/1.0.0 at exactly 98 members.
 
 ## Track B — Promotion and construction
 
-WO-07 → WO-08 if required → WO-09 → WO-10 E/I/M → WO-11.
+WO-07 → WO-08 if required → WO-09 → WO-10 E/I/M → WO-11 → WO-12.
 
 WO-08 is conditional on bounded prerequisite gaps discovered by WO-07.
 
@@ -80,6 +80,14 @@ reconciliation policies sharing one seven-state consequence family. WO-11 has
 zero analytical discretion and only validates, collates and publishes exact
 WO-10 results. Neither stage instantiates ADR-0011 KR-370 semantics. The exact
 boundary is governed by [ADR-0019](../../adr/ADR-0019-INTRADAY-WO10-WO11-PRE-KR370-SEMANTIC-BOUNDARY.md).
+
+[ADR-0020](../../adr/ADR-0020-INTRADAY-WO11-WO12-KR370-ANALYTICAL-PROMOTION-BOUNDARY.md)
+adds the distinct versioned WO-11 → WO-12 crossing without changing that
+non-equivalence. WO-12 is the subsequent KR-370 analytical-promotion layer and
+reuses the common state family through five Intraday 15M criteria. Bounded
+source engineering is authorized; K5 material-extension threshold and full NOW
+commissioning remain held. No real WO-12 operation or WO-13 work is authorized
+by the governance publication.
 
 ## Track C — MCX readiness
 
@@ -91,5 +99,6 @@ still required before operational WO-10M.
 WO-11 → WO-12 → WO-13 → WO-14 → WO-15 → WO-16 → WO-17 → WO-18 →
 WO-19 → WO-20 → WO-21 → WO-22 → WO-23 → WO-24.
 
-The roadmap names sequence only. It grants no unstated implementation,
-trading, Risk, entry, lifecycle, broker, or production authority.
+The roadmap names sequence only. ADR-0020 supplies the stated bounded WO-12
+implementation authority and no further unstated trading, Risk, entry,
+lifecycle, broker, runtime or production authority.

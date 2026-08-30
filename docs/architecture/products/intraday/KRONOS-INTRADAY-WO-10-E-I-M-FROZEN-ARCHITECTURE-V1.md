@@ -385,10 +385,10 @@ They are not the frozen E/I/M successor state family.
 WO-10E / WO-10I / WO-10M
         ↓ independent exact results
 WO-11 zero-discretion validation, collation and publication
-        ↓ only PROMOTION_READY eligible for later governed handoff
-Later separately governed analytical / construction / timing stages
-        ↓
-KR-370 only through a future explicit versioned boundary
+        ↓ only PROMOTION_READY eligible for exact versioned admission
+WO-12 KR-370 Analytical Promotion under ADR-0020
+        ↓ only exact current BUY_NOW / SELL_NOW eligible
+Later separately governed WO-13 construction and timing stages
 ```
 
 No arrow grants unstated authority.
@@ -396,7 +396,9 @@ No arrow grants unstated authority.
 ## 19. Related documents
 
 - [ADR-0019](../../adr/ADR-0019-INTRADAY-WO10-WO11-PRE-KR370-SEMANTIC-BOUNDARY.md)
+- [ADR-0020](../../adr/ADR-0020-INTRADAY-WO11-WO12-KR370-ANALYTICAL-PROMOTION-BOUNDARY.md)
 - [ADR-0011](../../adr/ADR-0011-KR-370-ANALYTICAL-PROMOTION-AND-KR-380-ENTRY-OUTCOME-SEMANTICS.md)
+- [WO-12 KR-370 Analytical Promotion V1](KRONOS-INTRADAY-WO-12-KR370-ANALYTICAL-PROMOTION-V1.md)
 - [Historical WO-10 V1](KRONOS-INTRADAY-WO-10-NATIVE-VISUAL-RECONCILIATION-V1.md)
 - [V2 Review Successor Seam](KRONOS-INTRADAY-V2-REVIEW-SUCCESSOR-SEAM-V1.md)
 - [Contract and State Ownership Registry](KRONOS-INTRADAY-CONTRACT-STATE-OWNERSHIP-REGISTRY.md)

@@ -1,6 +1,6 @@
 # KRONOS Intraday Engineering, Methodology & Architecture Record
 
-**Status:** LIVING DOCUMENT — V0.1; amended through WO-06E-FREEZE
+**Status:** LIVING DOCUMENT — V0.1; amended through WO-12 governance authorization
 
 **Product owner:** KRONOS Intraday
 
@@ -385,6 +385,12 @@ Sponsor / Chief Architect authorization
 
 The Swing programme may contribute architecture, infrastructure, failure lessons, testing patterns, and presentation patterns. It does not contribute Intraday trading predicates by implication.
 
+[ADR-0020](../../adr/ADR-0020-INTRADAY-WO11-WO12-KR370-ANALYTICAL-PROMOTION-BOUNDARY.md)
+now supplies the separately governed Chief-Architect authority for a distinct
+Intraday WO-12 layer. It authorizes product-specific 15M K1–K5 adapters under
+the common KR-370 state family; it does not retroactively transfer Swing's 1H,
+weekly, 4H, path-distance, extension-threshold or visual-literal policy.
+
 ## 14. Current programme state
 
 | Programme item | State |
@@ -395,10 +401,10 @@ The Swing programme may contribute architecture, infrastructure, failure lessons
 | Intraday factual publication checkpoint | `8cb3b3e3632107dae585a60fceb4f88be90194d0` |
 | Native universe | 98 governed subjects; P5 reconciliation published |
 | Native factual evaluability | 93 available; 5 prerequisite unavailable |
-| Next stage | WO-05 scanner implementation after WO-03 publication; WO-04 not required |
+| Next stage | Bounded WO-12 source implementation under ADR-0020; no real operation |
 | Slice 3V authority | VALIDATION ONLY |
 | Slice 4 | NOT STARTED |
-| Intraday analytical state family | NOT FROZEN |
+| Intraday WO-12 analytical state family | Common `KR370_ANALYTICAL_PROMOTION` reuse frozen by ADR-0020 |
 | Trade Construction | NOT STARTED |
 | Risk | NOT STARTED |
 | Entry Timing | NOT STARTED |
@@ -418,7 +424,7 @@ then proceed in order. RELIANCE remains the commissioning/regression anchor.
 The following remain unresolved or unimplemented and must not be inferred from factual foundations:
 
 - exact NSE new-entry semantics at `15:00:00`;
-- the Intraday analytical state family and classification predicates;
+- the WO-12 K5 material-extension threshold and full NOW commissioning;
 - Trade Construction contracts and geometry;
 - Intraday DOMAIN-007 Risk policy;
 - entry-timing semantics;
@@ -818,7 +824,10 @@ collates and publishes exact results with zero analytical discretion. Exact
 frozen family policy, empirical deferrals and downstream exclusions are in
 [WO-10 E/I/M Frozen Architecture V1](KRONOS-INTRADAY-WO-10-E-I-M-FROZEN-ARCHITECTURE-V1.md)
 and [ADR-0019](../../adr/ADR-0019-INTRADAY-WO10-WO11-PRE-KR370-SEMANTIC-BOUNDARY.md).
-No classifier or operation is authorized by this amendment.
+No classifier or operation is authorized by this amendment itself. The later
+additive [ADR-0020](../../adr/ADR-0020-INTRADAY-WO11-WO12-KR370-ANALYTICAL-PROMOTION-BOUNDARY.md)
+authorizes a distinct WO-12 evaluation layer without changing any WO-10 or
+WO-11 state meaning.
 
 ## 34. WO-06E phase-aware Probables V2 methodology freeze
 
@@ -850,7 +859,51 @@ Implementation, runtime, Review, Promotion, Entry, Trade, Risk, PAPER/LIVE and
 broker authority are not introduced. Full authority is recorded in
 [WO-06E Phase-Aware Probables V2 Methodology](KRONOS-INTRADAY-WO-06E-PHASE-AWARE-PROBABLES-V2-METHODOLOGY.md).
 
-## 35. References
+## 35. WO-12 KR-370 analytical-promotion governance amendment
+
+ADR-0020 establishes WO-12 as the distinct KR-370 analytical-promotion layer
+after WO-11. ADR-0019 remains valid: no WO-10 state and no WO-11 eligibility
+value is a KR-370 state. WO-12 must evaluate newly bound evidence rather than
+rename or remap an upstream result.
+
+WO-12 reuses `KRONOS-KR-370-ANALYTICAL-PROMOTION-V1`, owner `KR-370`, state
+family `KR370_ANALYTICAL_PROMOTION` and the seven common analytical states. The
+Intraday V1 criteria are exactly:
+
+1. `K1_15M_DIRECTIONAL_PROGRESSION`;
+2. `K2_15M_CPR_ACCEPTANCE`;
+3. `K3_15M_IMMEDIATE_PATH_CLEARANCE`;
+4. `K4_15M_SETUP_QUALITY`; and
+5. `K5_15M_NON_EXTENSION`.
+
+The criterion frame is 15M. 1H remains upstream context and 5M remains outside
+WO-12 under WO-15 / KR-380 final timing. K2 uses the strict completed-15M-close
+relationship to CPR upper/TC for LONG and lower/BC for SHORT. K3 is
+structure-only and has no distance, ATR, R:R or trade-geometry threshold. K4
+adapts already-governed Intraday Native/visual reconciliation without a new
+Chart Analyst operation or copied Swing literals.
+
+K5 authorizes only factual ATR-normalized measurement from an exact governed
+15M structural origin. `MATERIAL_EXTENSION_THRESHOLD = POLICY_UNRESOLVED`, so
+K5 consequence remains `UNAVAILABLE` and full NOW commissioning remains held.
+Swing's `>2 × 1H ATR` is not copied.
+
+Exactly five available criteria use the common maturity grammar: five
+satisfied → NOW, four → READY, two or three → POTENTIAL, zero or one →
+`NO_SETUP`. Any unavailable mandatory criterion fails closed to `NO_SETUP`.
+The only universal hard gates are invalid exact binding, mandatory criterion
+unavailable, governing 15M structure failure and authoritative governed
+directional conflict.
+
+Only exact current `BUY_NOW` / `SELL_NOW` may establish eligibility for the
+separately governed WO-13 boundary. WO-12 has no Entry, Stop, Target, R:R,
+Risk, Sponsor-decision, 5M timing or broker authority. Bounded source
+engineering is authorized; runtime/control/Browser integration remains
+separately sliced and no real WO-12 operation is authorized by this amendment.
+The complete product architecture is recorded in [WO-12 KR-370 Analytical
+Promotion V1](KRONOS-INTRADAY-WO-12-KR370-ANALYTICAL-PROMOTION-V1.md).
+
+## 36. References
 
 - [Intraday Shared-File Change Rule](../../../engineering/INTRADAY-SHARED-FILE-CHANGE-RULE.md)
 - [Platform Constitution](../../platform/PLATFORM-000-CONSTITUTION.md)
@@ -879,5 +932,7 @@ broker authority are not introduced. Full authority is recorded in
 - [WO-10 Native + Visual Reconciliation](KRONOS-INTRADAY-WO-10-NATIVE-VISUAL-RECONCILIATION-V1.md)
 - [WO-10 E/I/M Frozen Architecture V1](KRONOS-INTRADAY-WO-10-E-I-M-FROZEN-ARCHITECTURE-V1.md)
 - [ADR-0019 — Intraday WO-10/WO-11 Pre-KR-370 Semantic Boundary](../../adr/ADR-0019-INTRADAY-WO10-WO11-PRE-KR370-SEMANTIC-BOUNDARY.md)
+- [ADR-0020 — Intraday WO-11 to WO-12 KR-370 Analytical Promotion Boundary](../../adr/ADR-0020-INTRADAY-WO11-WO12-KR370-ANALYTICAL-PROMOTION-BOUNDARY.md)
+- [WO-12 KR-370 Analytical Promotion V1](KRONOS-INTRADAY-WO-12-KR370-ANALYTICAL-PROMOTION-V1.md)
 - [WO-09 Governed Chart Analyst Answer Import](KRONOS-INTRADAY-WO-09-GOVERNED-CHART-ANALYST-ANSWER-IMPORT-V1.md)
 - [ADR-0017 Governed Active Derivative Contract Selection](../../adr/ADR-0017-GOVERNED-ACTIVE-DERIVATIVE-CONTRACT-SELECTION-V1.md)

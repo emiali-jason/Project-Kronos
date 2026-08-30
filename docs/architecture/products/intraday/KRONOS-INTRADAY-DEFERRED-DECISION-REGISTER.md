@@ -1,15 +1,15 @@
 # Intraday Deferred Decision Register
 
-**Status:** Amended through WO-10 Slice 0 governance; no defaults implied
+**Status:** Amended through WO-12 governance authorization; no defaults implied
 
 | Decision | Reason deferred | Required evidence | Earliest closure | Owner |
 |---|---|---|---|---|
 | Native Discovery numerical thresholds beyond frozen Narrow CPR | No further threshold is authorized by V2 | Outcome evidence and successor authority | Successor methodology only | Intraday/CA |
 | ATR period/threshold | Need and values unproven | Native evidence and 3V comparison | After WO-05/3V | Intraday/CA |
-| Path-clearance threshold | Value unproven | Barrier/path outcome evidence | After WO-05 | Intraday/CA |
-| Extension threshold | Value unproven | Move/retracement outcome evidence | After WO-05 | Intraday/CA |
+| Path-clearance distance threshold | Not required or authorized for WO-12 V1 structure-only K3; any future distance consequence remains unproven | Barrier/path outcome evidence and successor authority | Successor methodology only | Intraday/CA |
+| WO-12 K5 material-extension threshold | `POLICY_UNRESOLVED`; factual 15M ATR-normalized measurement is authorized but no consequence threshold exists | Governed structural-origin/ATR measurements plus move/retracement outcome evidence and separate threshold publication | Separate K5 commissioning after WO-12 measurement evidence | Intraday/CA |
 | Participation threshold/veto consequence beyond V0 | V0 is supporting/non-blocking without threshold | PAPER observation and outcome evidence | Successor methodology only | Intraday/CA |
-| Setup-quality semantics | Families approved, quality scale not | Discovery outcome evidence | WO-05 | Intraday/CA |
+| New subjective setup-quality scale | WO-12 K4 reuses exact governed Native/visual reconciliation evidence and authorizes no new scale | Outcome evidence plus successor authority if the frozen evidence grammar proves insufficient | Successor methodology only | Intraday/CA |
 | WO-10 E/I/M consequence predicates beyond frozen precedence | Product-local seven-state family and precedence are frozen, but not every evidence combination has a qualified consequence | Family-specific factual and outcome evidence plus successor authority | WO-10 family policy slices | Intraday/CA |
 | Railway Track material separation/crisscross | No new distance or materiality threshold is authorized | Exact reproducible factual grammar or empirical successor decision | WO-10 factual/policy slices | Intraday/CA |
 | Index weekly/daily location consequence | Weekly/Daily levels are map facts, not signals | Index outcome evidence and successor authority | WO-10I successor policy | Intraday/CA |

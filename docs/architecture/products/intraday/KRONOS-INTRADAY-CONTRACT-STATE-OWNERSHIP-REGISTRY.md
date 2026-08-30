@@ -1,6 +1,6 @@
 # Intraday Contract and State Ownership Registry
 
-**Status:** Amended through WO-10 Slice 0 governance
+**Status:** Amended through WO-12 governance authorization
 
 | Boundary | Owner | Consequence authority |
 |---|---|---|
@@ -18,7 +18,7 @@
 | Historical WO-10 Native + Visual Reconciliation V1 | Intraday | Immutable Q1-Q10, two-state Readiness/Promotion implementation history only; it is not the frozen WO-10 E/I/M successor family |
 | WO-10E / WO-10I / WO-10M analytical reconciliation | Intraday | Independent family policy produces exactly one product-local seven-state result with inherited direction; no KR-370, Entry, Trade, Risk or broker authority |
 | WO-11 analytical promotion consolidation/publication | Intraday | Validates, collates and publishes exact WO-10 results with zero analytical discretion; only `PROMOTION_READY` may be eligible for a later separately governed handoff |
-| KR-370 analytical promotion | KR-370 / DOMAIN-003 Validation | Later semantic layer governed by ADR-0011; no WO-10/WO-11 state is equivalent or automatically mapped to a KR-370 state |
+| WO-12 / KR-370 analytical promotion | KR-370 / DOMAIN-003 Validation | Distinct subsequent layer governed by ADR-0020; consumes only exact eligible WO-11 lineage and evaluates five Intraday 15M criteria under the common `KRONOS-KR-370-ANALYTICAL-PROMOTION-V1` state family; no upstream state is remapped |
 | Trade Construction | Intraday | Plan construction only; no Risk permission |
 | Risk | DOMAIN-007 | Risk permission/denial only |
 | Entry Timing | DOMAIN-004 | Entry-timing state only |
@@ -40,6 +40,8 @@ The boundaries are explicitly non-equivalent:
 - Answer imported ≠ reconciled.
 - Review Complete ≠ WO-10 reconciliation complete.
 - `PROMOTION_READY` ≠ KR-370 `BUY_NOW`, `SELL_NOW`, `BUY_READY` or `SELL_READY`.
+- WO-11 downstream eligibility ≠ KR-370 state; it only admits exact lineage to WO-12 evaluation.
+- WO-12 KR-370 `BUY_NOW` / `SELL_NOW` = analytical promotion only, not Entry, Risk, Sponsor decision or execution.
 - WO-10/WO-11 product publication ≠ Entry.
 - Construction ≠ Risk.
 - Risk ≠ Entry Timing.
