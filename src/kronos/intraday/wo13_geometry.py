@@ -141,6 +141,9 @@ _FIELD_ROLES = {
     Wo13GeometryField.THESIS_INVALIDATION_REFERENCE: {
         Wo13StructuralRole.THESIS_INVALIDATION_REFERENCE,
     },
+    Wo13GeometryField.SETUP_NATIVE_TARGET: {
+        Wo13StructuralRole.SETUP_NATIVE_TARGET,
+    },
     Wo13GeometryField.CANONICAL_TARGET: {
         Wo13StructuralRole.SETUP_NATIVE_TARGET,
         Wo13StructuralRole.TARGET_CONSTRAINT,
