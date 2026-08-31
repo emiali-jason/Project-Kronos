@@ -14,14 +14,16 @@
 ## Ownership Boundaries
 
 DOMAIN-001 owns canonical identity; DOMAIN-006 owns Provider context;
-DOMAIN-008 owns market/session truth; DOMAIN-007 owns Risk. Product membership
-does not transfer any of those authorities.
+DOMAIN-008 owns market/session truth; DOMAIN-007 owns Risk. For Intraday,
+ADR-0023 freezes that Risk authority as advisory loss-exposure observation
+only. Product membership does not transfer any of those authorities.
 
 ## Responsibilities Not Owned
 
 Swing product state and policy, canonical Instrument meaning, Provider lifecycle,
-market schedules, Risk permission, broker execution, and reference-market
-trading consequence are not Intraday-owned.
+market schedules, DOMAIN-007 Risk-observation meaning, broker execution, and
+reference-market trading consequence are not Intraday-owned. The Intraday
+adapter owns product composition only and cannot create Risk permission.
 
 ## Governing ADRs
 

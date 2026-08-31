@@ -1,18 +1,23 @@
 # DOMAIN-007 — Risk Domain
 Status: Approved
 Owner: Chief Architect
-Version: 1.3
+Version: 1.4
 
 ## Purpose
 
-Own the authoritative decision of whether an approved Business Judgment is allowed given the applicable Portfolio State.
+Own authoritative Risk semantics under exact product-specific contracts: Risk
+permission where explicitly commissioned and advisory loss-exposure observation
+where explicitly commissioned.
 
 ## Responsibilities
 
-- Own Risk Approval as the single platform semantic responsibility.
-- Consume Business Judgment and the previously established Portfolio State.
-- Publish permission or refusal for Execution without changing the underlying judgment.
-- Keep risk permission distinct from execution timing and position ownership.
+- Own Risk Approval and Risk Observation as distinct, explicitly versioned
+  DOMAIN-007 semantic responsibilities.
+- Consume only the facts required by the exact product contract.
+- Publish permission/refusal only under a permission contract; publish no
+  permission under an observation contract.
+- Keep Risk semantics distinct from geometry, execution timing, Sponsor choice
+  and position ownership.
 
 ## Non-Responsibilities
 
@@ -25,6 +30,7 @@ Own the authoritative decision of whether an approved Business Judgment is allow
 
 - Risk Approval Contract — the authoritative permission decision consumed by Execution.
 - Swing V1 Risk Permission Contract — `KRONOS-SWING-DOMAIN-007-RISK-PERMISSION-V1`, commissioned by ADR-0013 for objective entry-timing permission only.
+- Intraday V1 Risk Observation Contract — `KRONOS-INTRADAY-DOMAIN-007-RISK-OBSERVATION-V1`, commissioned by ADR-0023 for advisory loss-exposure observation only; it grants no permission and creates no veto.
 
 ## Consumed Contracts
 
@@ -33,7 +39,8 @@ Own the authoritative decision of whether an approved Business Judgment is allow
 
 ## Architectural Constraints
 
-- Risk answers whether action is allowed and must not answer what happened, what it means, or whether execution occurred.
+- Risk answers only the question authorized by the exact product contract. It
+  must not translate permission and observation state families.
 - Risk must not recreate Validation judgment or Portfolio state.
 - Risk permission alone must produce neither KR-370 analytical promotion nor a KR-380 Entry Outcome.
 - No current engine responsibility is silently reassigned by this domain-level approval.
@@ -60,6 +67,21 @@ separately identified Paper Observation Track only as non-position research
 evidence. The Track receives no Risk approval, override, or bypass, and cannot
 create a Sponsor Position or objective activation. It preserves the immutable
 decision-time Risk result as evidence.
+
+## Intraday Product Conformance
+
+[ADR-0023](../../../adr/ADR-0023-INTRADAY-DOMAIN-007-ADVISORY-RISK-OBSERVATION-BOUNDARY.md)
+creates an explicit product-specific successor contract for Intraday only.
+Intraday WO-14 reports factual loss exposure and availability through
+`RISK_OBSERVED`, `RISK_ALERT` and `RISK_UNAVAILABLE`. Those states are advisory
+and cannot approve, reject, block or bypass progression to WO-15. Sponsor owns
+participation and actual quantity; WO-13 owns immutable geometry; WO-15 owns
+final 5M timing.
+
+This product-specific contract does not weaken, supersede or reinterpret the
+Swing permission contract or the general Risk Approval Contract. A consumer
+must bind the exact product contract and may not translate states between the
+Swing and Intraday families.
 
 ## Approved Constitutional References
 

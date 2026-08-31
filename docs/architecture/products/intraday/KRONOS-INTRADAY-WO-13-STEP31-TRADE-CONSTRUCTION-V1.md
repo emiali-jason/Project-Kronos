@@ -1,6 +1,6 @@
 # KRONOS Intraday WO-13 — Step 31 Trade Construction V1
 
-**Status:** APPROVED ARCHITECTURE — GOVERNANCE PUBLICATION REQUIRED BEFORE CORE ENGINEERING
+**Status:** APPROVED ARCHITECTURE — GOVERNANCE PUBLISHED; BOUNDED CORE ENGINEERING AUTHORIZED
 
 **Identity:** `KRONOS-INTRADAY-WO-13-STEP31-TRADE-CONSTRUCTION-V1`
 
@@ -170,8 +170,9 @@ Runtime, Browser and real WO-13 operation are not authorized by this document.
 
 ## Downstream boundary
 
-WO-14 alone owns DOMAIN-007 Risk. WO-15 alone owns final 5M Entry timing.
-Neither may rewrite geometry. Sponsor participation and broker execution remain
+WO-14 alone owns advisory DOMAIN-007 Risk observation under ADR-0023. It cannot
+approve, reject or block the trade and cannot rewrite geometry. WO-15 alone
+owns final 5M Entry timing. Sponsor participation and broker execution remain
 separate and unauthorized here.
 
 ## Historical and Swing isolation

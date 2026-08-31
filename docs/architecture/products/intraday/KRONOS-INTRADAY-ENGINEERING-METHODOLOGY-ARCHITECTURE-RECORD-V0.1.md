@@ -302,8 +302,8 @@ Ordinary Intraday work then stops. Engineering must use a separate bounded Platf
 | Intraday Machine Facts | Deterministic facts | Analytical or trading consequence |
 | Slice 3V | Validation and comparison only | Trading authority |
 | Future Intraday analytical engine | Analytical classification only | Geometry, Risk, execution |
-| Future Trade Construction | Geometry only | Risk permission or entry timing |
-| Future DOMAIN-007 policy | Risk permission only | Entry timing or broker execution |
+| Future Trade Construction | Geometry only | Risk observation or entry timing |
+| Intraday DOMAIN-007 / WO-14 | Advisory Risk/loss-exposure observation only | Trade permission/veto, final quantity, Entry timing or broker execution |
 | Future Entry Timing | Entry timing only | Risk reinterpretation or broker execution |
 | Future lifecycle | Objective lifecycle; Sponsor position represented separately | Cross-product state mutation |
 | Notifications | Delivery only | Analytical, Risk, lifecycle, or execution authority |
@@ -949,6 +949,29 @@ WO-15. WO-14 remains DOMAIN-007 Risk. Runtime, Browser and real operation are
 separately gated. The complete product record is [WO-13 Step-31 Trade
 Construction V1](KRONOS-INTRADAY-WO-13-STEP31-TRADE-CONSTRUCTION-V1.md).
 
+## 35.3 WO-14 advisory Risk-observation governance amendment
+
+[ADR-0023](../../adr/ADR-0023-INTRADAY-DOMAIN-007-ADVISORY-RISK-OBSERVATION-BOUNDARY.md)
+supersedes only ADR-0022's permission-oriented downstream WO-14 clause. For
+Intraday, DOMAIN-007 answers what observable downside exposure would exist if
+an exact immutable WO-13 plan were taken. Its authority is
+`RISK_OBSERVATION_ONLY`; it cannot approve, reject, constrain, block or execute
+the trade and cannot alter WO-13 geometry.
+
+The successor contract
+`KRONOS-INTRADAY-DOMAIN-007-RISK-OBSERVATION-V1 / 1.0.0` uses
+`RISK_OBSERVED`, informational `RISK_ALERT`, and `RISK_UNAVAILABLE`. Initial
+severity is `UNCLASSIFIED`; no numerical alert threshold or veto is frozen.
+Sponsor owns participation and actual quantity. WO-15 remains the exclusive 5M
+timing and extension/chase owner. Swing DOMAIN-007 permission semantics remain
+unchanged.
+
+Architecture and factual methodology are frozen, but source engineering must
+wait for the actual published WO-13 Trade Plan/handoff contracts and a separate
+instruction. Runtime, Browser, Provider calls, real observation and WO-15 are
+not authorized. The complete product record is [WO-14 DOMAIN-007 Risk
+Observation V1](KRONOS-INTRADAY-WO-14-DOMAIN-007-RISK-OBSERVATION-V1.md).
+
 ## 36. References
 
 - [Intraday Shared-File Change Rule](../../../engineering/INTRADAY-SHARED-FILE-CHANGE-RULE.md)
@@ -981,8 +1004,10 @@ Construction V1](KRONOS-INTRADAY-WO-13-STEP31-TRADE-CONSTRUCTION-V1.md).
 - [ADR-0020 — Intraday WO-11 to WO-12 KR-370 Analytical Promotion Boundary](../../adr/ADR-0020-INTRADAY-WO11-WO12-KR370-ANALYTICAL-PROMOTION-BOUNDARY.md)
 - [ADR-0021 — Intraday WO-12 Four-Criterion Promotion and WO-15 Extension Ownership](../../adr/ADR-0021-INTRADAY-WO12-FOUR-CRITERION-PROMOTION-AND-WO15-EXTENSION-OWNERSHIP.md)
 - [ADR-0022 — Intraday WO-12 to WO-13 Step-31 Trade Construction Boundary](../../adr/ADR-0022-INTRADAY-WO12-WO13-STEP31-TRADE-CONSTRUCTION-BOUNDARY.md)
+- [ADR-0023 — Intraday DOMAIN-007 Advisory Risk Observation Boundary](../../adr/ADR-0023-INTRADAY-DOMAIN-007-ADVISORY-RISK-OBSERVATION-BOUNDARY.md)
 - [WO-12 KR-370 Analytical Promotion V1](KRONOS-INTRADAY-WO-12-KR370-ANALYTICAL-PROMOTION-V1.md)
 - [WO-12 KR-370 Analytical Promotion V2](KRONOS-INTRADAY-WO-12-KR370-ANALYTICAL-PROMOTION-V2.md)
 - [WO-13 Step-31 Trade Construction V1](KRONOS-INTRADAY-WO-13-STEP31-TRADE-CONSTRUCTION-V1.md)
+- [WO-14 DOMAIN-007 Risk Observation V1](KRONOS-INTRADAY-WO-14-DOMAIN-007-RISK-OBSERVATION-V1.md)
 - [WO-09 Governed Chart Analyst Answer Import](KRONOS-INTRADAY-WO-09-GOVERNED-CHART-ANALYST-ANSWER-IMPORT-V1.md)
 - [ADR-0017 Governed Active Derivative Contract Selection](../../adr/ADR-0017-GOVERNED-ACTIVE-DERIVATIVE-CONTRACT-SELECTION-V1.md)

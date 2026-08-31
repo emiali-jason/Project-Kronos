@@ -69,6 +69,7 @@ Provide navigation to the approved KRONOS Platform Architecture v1.0 documents a
 - [ADR-0016 — Swing Paper Observation Track Authority](../adr/ADR-0016-SWING-PAPER-OBSERVATION-TRACK-AUTHORITY.md)
 - [ADR-0017 — KRONOS Platform Governed Active Derivative Contract Selection V1](../adr/ADR-0017-GOVERNED-ACTIVE-DERIVATIVE-CONTRACT-SELECTION-V1.md)
 - [ADR-0018 — DOMAIN-001 Governed Visual Identity Relationship V1](../adr/ADR-0018-DOMAIN-001-GOVERNED-VISUAL-IDENTITY-RELATIONSHIP-V1.md)
+- [ADR-0023 — Intraday DOMAIN-007 Advisory Risk Observation Boundary](../adr/ADR-0023-INTRADAY-DOMAIN-007-ADVISORY-RISK-OBSERVATION-BOUNDARY.md)
 - [KR-370 / KR-380 state-family contracts](../interfaces/KR-370-KR-380-STATE-FAMILY-CONTRACTS.md)
 - [PP-007 — Execution Semantics Across Markets](../principles/PP-007-Execution-Semantics-Across-Markets.md)
 

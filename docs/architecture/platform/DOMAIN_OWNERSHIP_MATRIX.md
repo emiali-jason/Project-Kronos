@@ -2,7 +2,7 @@
 
 Status: Approved
 Owner: Chief Architect
-Version: 1.1
+Version: 1.2
 
 ## Purpose
 
@@ -60,6 +60,7 @@ Assign each platform-level semantic responsibility to exactly one KRONOS domain 
 | Validation Programmes | Validation |
 | Validation Outcomes | Validation |
 | Risk Approval | Risk |
+| Risk Observation and Loss-Exposure Semantics | Risk |
 | Risk Semantics | Risk |
 | Orders | Execution |
 | Positions | Portfolio |

@@ -1,6 +1,6 @@
 # Intraday Deferred Decision Register
 
-**Status:** Amended through WO-13 governance authorization; no defaults implied
+**Status:** Amended through WO-14 governance authorization; no defaults implied
 
 | Decision | Reason deferred | Required evidence | Earliest closure | Owner |
 |---|---|---|---|---|
@@ -16,8 +16,15 @@
 | MCX international divergence materiality/duration | International reference is contextual and cannot independently invalidate | Paired MCX/reference evidence and successor authority | WO-10M successor policy | Intraday/CA |
 | MCX same-time-session volume materiality | Raw telemetry is required before consequence | MCX session-phase evidence and outcomes | WO-10M successor policy | Intraday/CA |
 | Minimum R:R gate / `RR_UNFAVOURABLE` consequence | WO-13 V1 calculates and retains Model R:R but authorizes no threshold or gate | Real immutable WO-13 geometry and later outcome evidence | Successor WO-13 methodology only | Intraday/CA |
-| Risk numerical limits | DOMAIN-007 authority | Construction and capacity evidence | WO-11+ | DOMAIN-007/CA |
-| Entry Timing beyond frozen cutoffs | DOMAIN-004 authority | Risk-approved plan evidence | WO-13+ | DOMAIN-004/CA |
+| Intraday Risk capital-reference amount/source | Sponsor configuration is not broker cash, margin, NAV, net worth or bank balance by default | Sponsor-configured reference and governance | WO-14 successor configuration | Sponsor/DOMAIN-007/CA |
+| Reference Risk fraction and per-trade alert bands | No numerical Risk threshold or veto is commissioned | Factual WO-14 observations and separately approved threshold evidence | Successor WO-14 methodology only | DOMAIN-007/CA |
+| Aggregate-open-Risk, notional and margin alert bands | No reference band or enforcement threshold is authorized | Authoritative portfolio/account facts and observed outcomes | Successor WO-14 methodology only | DOMAIN-007/CA |
+| Risk severity thresholds | Initial severity is `UNCLASSIFIED`; normal/elevated/high semantics are ungoverned | Factual observations and Sponsor-approved bands | Successor WO-14 methodology only | DOMAIN-007/CA |
+| Concurrency, sector, concentration and correlation methodology | V1 owns no quantitative engine or veto | Portfolio evidence and successor methodology | Later Risk methodology | DOMAIN-007/CA |
+| Daily-loss and losing-trade references | Actual P&L/lifecycle facts and enforcement semantics are absent | Governed execution/lifecycle evidence | Later Risk/lifecycle methodology | DOMAIN-007/CA |
+| Liquidity/slippage Risk model | No friction assumption is authorized | Provider/execution evidence and successor methodology | Later Risk methodology | DOMAIN-007/CA |
+| Index execution-vehicle and multi-leg option Risk methodology | Underlying geometry cannot determine option monetary Risk; WO-14 cannot select the vehicle | Separately governed option-selection and instrument-economics contracts | Execution-vehicle successor boundary | CA / execution-vehicle owner / DOMAIN-007 |
+| Entry Timing beyond frozen cutoffs | DOMAIN-004 authority | WO-13 plan plus Sponsor-visible Risk observation evidence | WO-15+ | DOMAIN-004/CA |
 | MCX reference trading consequence | Reference is validation-only | MCX validation evidence and CA decision | After WO-10 | CA |
 | Real-market acceptance thresholds | Not yet measured | Governed live factual evidence | Later commissioning | Intraday/CA |
 | SMA requirement/timeframe/period/consequence | Need and use unproven | WO-06 qualification evidence | WO-06 Part 2/3 | Intraday/CA |
