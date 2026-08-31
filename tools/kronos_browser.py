@@ -31,6 +31,7 @@ from kronos.browser.intraday_wo11_control import (
 from kronos.browser.intraday_wo12_v2_control import (
     IntradayWo12V2OperationalControl,
 )
+from kronos.browser.intraday_wo13_control import IntradayWo13OperationalControl
 from kronos.browser.intraday_routes import IntradayBrowserRoutes
 from kronos.browser.product_routes import ProductBrowserRoutes
 from kronos.browser.intraday_historical_control import (
@@ -119,6 +120,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     intraday_wo12_v2_control = IntradayWo12V2OperationalControl(
         intraday_runtime.wo12_v2_runtime,
     )
+    intraday_wo13_control = IntradayWo13OperationalControl(
+        intraday_runtime.wo13_application,
+        intraday_runtime.wo13_restoration,
+        intraday_runtime.wo12_v2_store,
+    )
     product_routes = ProductBrowserRoutes((IntradayBrowserRoutes(
         intraday_runtime.discovery_v2_application,
         probables_v2_control=intraday_probables_v2_control,
@@ -126,6 +132,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         wo10_control=intraday_wo10_control,
         wo11_control=intraday_wo11_control,
         wo12_v2_control=intraday_wo12_v2_control,
+        wo13_control=intraday_wo13_control,
         review_workstation=intraday_runtime.discovery_application,
     ),))
     intraday_historical_control = (

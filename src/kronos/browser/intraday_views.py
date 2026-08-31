@@ -481,6 +481,134 @@ def render_intraday_wo12(
     )
 
 
+def render_intraday_wo13(
+    snapshot: BrowserWorkspaceSnapshot,
+    status: dict[str, object],
+) -> str:
+    """Render only the restored authoritative WO-13 Trade Plan projection."""
+
+    plan = status.get("current_plan")
+    if type(plan) is not dict:
+        content = (
+            '<div class="empty"><div><strong>'
+            + escape(str(status.get("restoration_state", "NOT_YET_RUN")))
+            + "</strong><br>No persisted WO-13 Step-31 Trade Plan.</div></div>"
+        )
+    else:
+        availability = plan.get("field_availability", [])
+        availability_rows = "".join(
+            "<tr><td>" + escape(str(item.get("field", "UNAVAILABLE")))
+            + "</td><td>" + escape(str(item.get("availability", "UNAVAILABLE")))
+            + "</td><td>" + escape(str(item.get("reason", "UNAVAILABLE")))
+            + "</td></tr>"
+            for item in availability
+            if type(item) is dict
+        )
+        warnings = plan.get("warnings", [])
+        warning_text = _list_text(warnings)
+        content = (
+            '<section class="panel"><div class="panel-head"><div><h2>'
+            + escape(str(plan.get("canonical_subject_identity", "UNAVAILABLE")))
+            + "</h2><p>" + escape(str(plan.get("market_family", "UNAVAILABLE")))
+            + " · " + escape(str(plan.get("direction", "UNAVAILABLE")))
+            + " · " + escape(str(plan.get("setup_family", "UNAVAILABLE")))
+            + '</p></div><span class="status neutral">'
+            + escape(str(plan.get("geometry_availability", "UNAVAILABLE")))
+            + "</span></div>"
+            '<dl class="detail-list"><dt>Analysis boundary / phase</dt><dd>'
+            + escape(str(plan.get("analysis_boundary", "UNAVAILABLE"))) + " · "
+            + escape(str(plan.get("phase", "UNAVAILABLE")))
+            + "</dd><dt>Instrument / actual contract</dt><dd>"
+            + escape(str(plan.get("instrument_identity", "UNAVAILABLE"))) + " · "
+            + escape(_wo13_value(plan.get("actual_contract_identity")))
+            + "</dd><dt>Entry Reference</dt><dd>"
+            + escape(_wo13_value(plan.get("entry_reference")))
+            + "</dd><dt>Entry Condition</dt><dd>"
+            + escape(_wo13_value(plan.get("entry_condition")))
+            + "</dd><dt>Stop</dt><dd>"
+            + escape(_wo13_value(plan.get("stop"))) + " · "
+            + escape(_wo13_value(plan.get("stop_structural_basis")))
+            + "</dd><dt>Thesis Invalidation</dt><dd>"
+            + escape(_wo13_value(plan.get("thesis_invalidation_reference"))) + " · "
+            + escape(_wo13_value(plan.get("thesis_invalidation_event")))
+            + "</dd><dt>Setup-native Target</dt><dd>"
+            + escape(_wo13_value(plan.get("setup_native_target")))
+            + "</dd><dt>Canonical Target</dt><dd>"
+            + escape(_wo13_value(plan.get("canonical_target"))) + " · "
+            + escape(_wo13_value(plan.get("target_structural_basis")))
+            + "</dd><dt>Constraining Objective / Confluence</dt><dd>"
+            + escape(_wo13_value(plan.get("constraining_objective")))
+            + "</dd><dt>Risk Distance</dt><dd>"
+            + escape(_wo13_value(plan.get("risk_distance")))
+            + "</dd><dt>Reward Distance</dt><dd>"
+            + escape(_wo13_value(plan.get("reward_distance")))
+            + "</dd><dt>Model R:R</dt><dd>"
+            + escape(_wo13_value(plan.get("model_rr")))
+            + "</dd><dt>Mathematical warnings</dt><dd>" + escape(warning_text)
+            + "</dd></dl>"
+            '<div class="table-wrap"><table><thead><tr><th>Geometry field</th>'
+            "<th>Availability</th><th>Persisted reason</th></tr></thead><tbody>"
+            + availability_rows + "</tbody></table></div></section>"
+            '<section class="panel"><div class="panel-head"><div><h2>Lineage / Policy</h2>'
+            "<p>Persisted immutable identities; Browser performs no reconstruction.</p>"
+            '</div><span class="status neutral">READ ONLY</span></div>'
+            '<dl class="detail-list"><dt>Trade Plan</dt><dd>'
+            + escape(str(plan.get("trade_plan_identity", "UNAVAILABLE")))
+            + "</dd><dt>Source WO-12 result</dt><dd>"
+            + escape(str(plan.get("source_wo12_result_identity", "UNAVAILABLE")))
+            + "</dd><dt>WO-13 handoff</dt><dd>"
+            + escape(str(plan.get("source_handoff_identity", "UNAVAILABLE")))
+            + "</dd><dt>Policy</dt><dd>"
+            + escape(str(plan.get("policy_identity", "UNAVAILABLE"))) + " / "
+            + escape(str(plan.get("policy_version", "UNAVAILABLE"))) + " / "
+            + escape(str(plan.get("policy_checksum", "UNAVAILABLE")))
+            + "</dd><dt>Current pointer</dt><dd>"
+            + escape(str(plan.get("pointer_identity", "UNAVAILABLE")))
+            + "</dd><dt>Supersession lineage</dt><dd>"
+            + escape(_wo13_value(plan.get("supersession_lineage_identity")))
+            + "</dd></dl></section>"
+        )
+    last = status.get("last_operation")
+    if type(last) is dict and last.get("failure_reason") is not None:
+        last_operation = (
+            '<section class="intraday-panel intraday-unavailable"><h2>Last Operation Failure</h2>'
+            "<strong>" + escape(str(last.get("outcome", "FAILED"))) + "</strong><p>"
+            + escape(str(last.get("failure_stage", "UNAVAILABLE"))) + " · "
+            + escape(str(last.get("failure_reason", "WO13_OPERATION_FAILED")))
+            + "</p></section>"
+        )
+    else:
+        last_operation = ""
+    body = (
+        _intraday_tabs(False, active="wo13")
+        + '<div class="intraday-warning"><strong>WO-13 STEP-31 TRADE CONSTRUCTION</strong>'
+        "<span>ANALYTICAL GEOMETRY ONLY · NO TIMING, RISK, SPONSOR OR EXECUTION AUTHORITY</span></div>"
+        + content + last_operation
+        + '<div class="intraday-review-config"><strong>Control:</strong> '
+        + escape(str(status.get("control_identity", "UNAVAILABLE"))) + " / "
+        + escape(str(status.get("control_version", "UNAVAILABLE")))
+        + "<br><strong>Runtime:</strong> "
+        + ("LOADED" if status.get("runtime_loaded") is True else "UNAVAILABLE")
+        + " · " + escape(str(status.get("restoration_state", "UNAVAILABLE")))
+        + " · Operation " + escape(str(status.get("operation_state", "UNAVAILABLE")))
+        + "<br><strong>Authority boundary:</strong> This page answers what geometry Step-31 constructed; it does not recommend or execute a trade."
+        + "</div>"
+    )
+    return render_browser_page(
+        title="Intraday WO-13",
+        subtitle="Persisted Step-31 Trade Plan; rendering performs no geometry work.",
+        snapshot=snapshot,
+        active_nav="Intraday",
+        active_tab="WO-13",
+        body=body,
+        extra_styles=_INTRADAY_CSS,
+    )
+
+
+def _wo13_value(value: object) -> str:
+    return "UNAVAILABLE" if value is None else str(value)
+
+
 def _list_text(value: object) -> str:
     return ", ".join(str(item) for item in value) if type(value) is list and value else "NONE"
 
@@ -1568,6 +1696,7 @@ def _intraday_tabs(refresh_enabled: bool, *, active: str = "opportunities") -> s
         '<a class="' + ('active' if active == 'wo10' else '') + '" href="/intraday/wo10">WO-10</a>'
         '<a class="' + ('active' if active == 'wo11' else '') + '" href="/intraday/wo11">WO-11</a>'
         '<a class="' + ('active' if active == 'wo12' else '') + '" href="/intraday/wo12">WO-12</a>'
+        '<a class="' + ('active' if active == 'wo13' else '') + '" href="/intraday/wo13">WO-13</a>'
         '<span class="intraday-tab">Trade Candidates</span>'
         '<span class="intraday-tab">Active</span>'
         '<span class="intraday-tab">Closed</span>'
@@ -2027,5 +2156,6 @@ __all__ = [
     "render_intraday_wo10",
     "render_intraday_wo11",
     "render_intraday_wo12",
+    "render_intraday_wo13",
     "render_intraday_workstation",
 ]
