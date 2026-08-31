@@ -67,6 +67,10 @@ class IntradayWo12V2Application:
     def store(self) -> Wo12V2Store:
         return self._store
 
+    @property
+    def wo11_store(self) -> Wo11Store:
+        return self._wo11
+
     def execute(self, request: Wo12RequestV2, inputs: Wo12EvidenceInputsV2) -> Wo12V2Execution:
         if type(request) is not Wo12RequestV2 or type(inputs) is not Wo12EvidenceInputsV2:
             raise Wo12V2ApplicationError("WO12_V2_REQUEST_INVALID")

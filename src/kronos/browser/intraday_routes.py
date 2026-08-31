@@ -14,6 +14,7 @@ from kronos.browser.intraday_views import (
     render_intraday_review,
     render_intraday_wo10,
     render_intraday_wo11,
+    render_intraday_wo12,
     render_intraday_workstation,
 )
 from kronos.browser.intraday_probables_v2_control import (
@@ -37,6 +38,13 @@ from kronos.browser.intraday_wo11_control import (
     WO11_PRODUCT_ROUTE,
     WO11_STATUS_ROUTE,
     IntradayWo11OperationalControl,
+)
+from kronos.browser.intraday_wo12_v2_control import (
+    MAX_WO12_V2_REQUEST_BYTES,
+    WO12_V2_CONTROL_ROUTE,
+    WO12_V2_PRODUCT_ROUTE,
+    WO12_V2_STATUS_ROUTE,
+    IntradayWo12V2OperationalControl,
 )
 from kronos.browser.product_routes import (
     BrowserGetRequest,
@@ -74,6 +82,7 @@ class IntradayBrowserRoutes:
         review_v2_control: IntradayReviewV2OperationalControl | None = None,
         wo10_control: IntradayWo10OperationalControl | None = None,
         wo11_control: IntradayWo11OperationalControl | None = None,
+        wo12_v2_control: IntradayWo12V2OperationalControl | None = None,
         review_workstation: object | None = None,
     ) -> None:
         if not callable(getattr(workstation, "snapshot", None)):
@@ -108,6 +117,12 @@ class IntradayBrowserRoutes:
         ):
             raise ValueError("INTRADAY_BROWSER_ROUTES_INVALID")
         self._wo11_control = wo11_control
+        if (
+            wo12_v2_control is not None
+            and type(wo12_v2_control) is not IntradayWo12V2OperationalControl
+        ):
+            raise ValueError("INTRADAY_BROWSER_ROUTES_INVALID")
+        self._wo12_v2_control = wo12_v2_control
         self._review = review or IntradayReviewApplication(
             current_probables=self._current_probables,
             store=IntradayReviewStore(),
@@ -185,6 +200,18 @@ class IntradayBrowserRoutes:
                     snapshot_provider(), self._wo11_control.status_document()
                 )
             )
+        elif request.path == WO12_V2_PRODUCT_ROUTE:
+            if self._wo12_v2_control is None or request.query:
+                return BrowserRouteResponse(
+                    "Not found.",
+                    status=HTTPStatus.NOT_FOUND,
+                    content_type="text/plain; charset=utf-8",
+                )
+            return BrowserRouteResponse(
+                render_intraday_wo12(
+                    snapshot_provider(), self._wo12_v2_control.status_document()
+                )
+            )
         elif request.path == "/control/intraday-discovery/v2/status":
             if self._probables_v2_control is None or request.query:
                 return BrowserRouteResponse(
@@ -245,6 +272,21 @@ class IntradayBrowserRoutes:
                 ),
                 content_type="application/json; charset=utf-8",
             )
+        elif request.path == WO12_V2_STATUS_ROUTE:
+            if self._wo12_v2_control is None or request.query:
+                return BrowserRouteResponse(
+                    "Not found.",
+                    status=HTTPStatus.NOT_FOUND,
+                    content_type="text/plain; charset=utf-8",
+                )
+            return BrowserRouteResponse(
+                json.dumps(
+                    self._wo12_v2_control.status_document(),
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ),
+                content_type="application/json; charset=utf-8",
+            )
         else:
             return None
         return BrowserRouteResponse(
@@ -260,6 +302,7 @@ class IntradayBrowserRoutes:
             "/control/intraday-review/v2",
             WO10_CONTROL_ROUTE,
             WO11_CONTROL_ROUTE,
+            WO12_V2_CONTROL_ROUTE,
             REVIEW_V2_CHART_ROUTE,
             REVIEW_V2_QUESTION_TRANSPORT_ROUTE,
             REVIEW_V2_ANSWER_IMPORT_ROUTE,
@@ -406,6 +449,38 @@ class IntradayBrowserRoutes:
                             "WO11_OPERATION_BUSY",
                             "WO11_REQUEST_IDENTITY_CONFLICT",
                         }
+                        else HTTPStatus.BAD_REQUEST
+                        if outcome == "REJECTED"
+                        else HTTPStatus.SERVICE_UNAVAILABLE
+                    ),
+                    content_type="application/json; charset=utf-8",
+                )
+            if request.path == WO12_V2_CONTROL_ROUTE:
+                if self._wo12_v2_control is None:
+                    raise ValueError
+                if (
+                    request.query
+                    or request.content_type != "application/json"
+                    or not request.body
+                    or len(request.body) > MAX_WO12_V2_REQUEST_BYTES
+                ):
+                    payload = None
+                else:
+                    try:
+                        payload = json.loads(request.body)
+                    except (UnicodeDecodeError, json.JSONDecodeError):
+                        payload = None
+                document = self._wo12_v2_control.execute_document(payload)
+                outcome = document["outcome"]
+                return BrowserRouteResponse(
+                    json.dumps(document, sort_keys=True, separators=(",", ":")),
+                    status=(
+                        HTTPStatus.OK
+                        if outcome in {"COMPLETED", "RETAINED"}
+                        else HTTPStatus.CONFLICT
+                        if outcome == "BUSY"
+                        or document["failure_reason"]
+                        == "WO12_V2_REQUEST_IDENTITY_CONFLICT"
                         else HTTPStatus.BAD_REQUEST
                         if outcome == "REJECTED"
                         else HTTPStatus.SERVICE_UNAVAILABLE

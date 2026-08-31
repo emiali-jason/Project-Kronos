@@ -399,6 +399,92 @@ def _wo11_member_card(item: dict[str, object]) -> str:
     )
 
 
+def render_intraday_wo12(
+    snapshot: BrowserWorkspaceSnapshot,
+    status: dict[str, object],
+) -> str:
+    """Render restored four-criterion analytical promotion without evaluation."""
+
+    restored = status.get("restored_result")
+    if type(restored) is not dict:
+        content = (
+            '<div class="empty"><div><strong>'
+            + escape(str(status.get("state", "NOT_YET_RUN")))
+            + "</strong><br>No persisted WO-12 V2 analytical-promotion result.</div></div>"
+        )
+    else:
+        criteria = restored.get("criteria", [])
+        criterion_rows = "".join(
+            "<tr><td>" + escape(str(item.get("identity", "UNAVAILABLE")))
+            + "</td><td>" + escape(str(item.get("state", "UNAVAILABLE")))
+            + "</td><td>" + escape(str(item.get("reason", "UNAVAILABLE")))
+            + "</td></tr>"
+            for item in criteria
+            if type(item) is dict
+        )
+        unavailable = restored.get("unavailable_criteria", [])
+        gates = restored.get("hard_gates", [])
+        content = (
+            '<section class="panel"><div class="panel-head"><div><h2>'
+            + escape(str(restored.get("canonical_subject_identity", "UNAVAILABLE")))
+            + "</h2><p>" + escape(str(restored.get("market_family", "UNAVAILABLE")))
+            + " · Direction " + escape(str(restored.get("inherited_direction", "UNAVAILABLE")))
+            + '</p></div><span class="status neutral">'
+            + escape(str(restored.get("classification", "NO_SETUP")))
+            + "</span></div>"
+            '<dl class="detail-list"><dt>Source WO-11 publication</dt><dd>'
+            + escape(str(restored.get("source_wo11_publication_identity", "UNAVAILABLE")))
+            + "</dd><dt>Source WO-11 member</dt><dd>"
+            + escape(str(restored.get("source_wo11_member_identity", "UNAVAILABLE")))
+            + "</dd><dt>Boundary / phase</dt><dd>"
+            + escape(str(restored.get("analysis_boundary", "UNAVAILABLE")))
+            + " · " + escape(str(restored.get("phase", "UNAVAILABLE")))
+            + "</dd><dt>Satisfied criteria</dt><dd>"
+            + escape(str(restored.get("satisfied_count", 0))) + " / 4"
+            + "</dd><dt>Unavailable criteria</dt><dd>"
+            + escape(_list_text(unavailable))
+            + "</dd><dt>Hard gate</dt><dd>" + escape(_list_text(gates))
+            + "</dd><dt>WO-13 eligibility</dt><dd>"
+            + escape(str(restored.get("wo13_eligibility", "NOT_ELIGIBLE_FOR_WO13_STEP31")))
+            + "</dd><dt>Policy</dt><dd>"
+            + escape(str(restored.get("policy_identity", "UNAVAILABLE"))) + " / "
+            + escape(str(restored.get("policy_version", "UNAVAILABLE")))
+            + "</dd><dt>Result identity / integrity</dt><dd>"
+            + escape(str(restored.get("result_identity", "UNAVAILABLE"))) + " · "
+            + escape(str(restored.get("result_integrity", "UNAVAILABLE")))
+            + "</dd></dl>"
+            '<div class="table-wrap"><table><thead><tr><th>Criterion</th><th>State</th>'
+            "<th>Factual reason</th></tr></thead><tbody>" + criterion_rows
+            + "</tbody></table></div></section>"
+        )
+    body = (
+        _intraday_tabs(False, active="wo12")
+        + '<div class="intraday-warning"><strong>WO-12 KR-370 ANALYTICAL PROMOTION</strong>'
+        "<span>FOUR COMPLETED-15M CRITERIA · READ-ONLY RESTORED STATE · EXPLICIT SPONSOR CONTROL ONLY</span></div>"
+        + content
+        + '<div class="intraday-review-config"><strong>Contract:</strong> '
+        + escape(str(status.get("request_contract_identity", "UNAVAILABLE")))
+        + " / " + escape(str(status.get("request_contract_version", "UNAVAILABLE")))
+        + "<br><strong>Active operation:</strong> "
+        + escape(str(status.get("active_operation_identity") or "NONE"))
+        + "<br><strong>Progression boundary:</strong> Only NOW classifications are eligible to progress to WO-13 / Step 31 Trade Construction."
+        + "</div>"
+    )
+    return render_browser_page(
+        title="Intraday WO-12",
+        subtitle="Persisted four-criterion analytical promotion; rendering performs no analytical work.",
+        snapshot=snapshot,
+        active_nav="Intraday",
+        active_tab="WO-12",
+        body=body,
+        extra_styles=_INTRADAY_CSS,
+    )
+
+
+def _list_text(value: object) -> str:
+    return ", ".join(str(item) for item in value) if type(value) is list and value else "NONE"
+
+
 def _review_v2_projection(
     snapshot: IntradayReviewV2Snapshot | None,
     available_run: ProbablesRunV2 | None,
@@ -1481,6 +1567,7 @@ def _intraday_tabs(refresh_enabled: bool, *, active: str = "opportunities") -> s
         '<a class="' + ('active' if active == 'review' else '') + '" href="/intraday/review">Review</a>'
         '<a class="' + ('active' if active == 'wo10' else '') + '" href="/intraday/wo10">WO-10</a>'
         '<a class="' + ('active' if active == 'wo11' else '') + '" href="/intraday/wo11">WO-11</a>'
+        '<a class="' + ('active' if active == 'wo12' else '') + '" href="/intraday/wo12">WO-12</a>'
         '<span class="intraday-tab">Trade Candidates</span>'
         '<span class="intraday-tab">Active</span>'
         '<span class="intraday-tab">Closed</span>'
@@ -1939,5 +2026,6 @@ __all__ = [
     "render_intraday_triage",
     "render_intraday_wo10",
     "render_intraday_wo11",
+    "render_intraday_wo12",
     "render_intraday_workstation",
 ]
