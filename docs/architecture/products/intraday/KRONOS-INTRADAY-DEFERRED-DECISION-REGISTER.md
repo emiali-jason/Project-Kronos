@@ -1,13 +1,13 @@
 # Intraday Deferred Decision Register
 
-**Status:** Amended through WO-12 governance authorization; no defaults implied
+**Status:** Amended through WO-12 V2 governance authorization; no defaults implied
 
 | Decision | Reason deferred | Required evidence | Earliest closure | Owner |
 |---|---|---|---|---|
 | Native Discovery numerical thresholds beyond frozen Narrow CPR | No further threshold is authorized by V2 | Outcome evidence and successor authority | Successor methodology only | Intraday/CA |
 | ATR period/threshold | Need and values unproven | Native evidence and 3V comparison | After WO-05/3V | Intraday/CA |
 | Path-clearance distance threshold | Not required or authorized for WO-12 V1 structure-only K3; any future distance consequence remains unproven | Barrier/path outcome evidence and successor authority | Successor methodology only | Intraday/CA |
-| WO-12 K5 material-extension threshold | `POLICY_UNRESOLVED`; factual 15M ATR-normalized measurement is authorized but no consequence threshold exists | Governed structural-origin/ATR measurements plus move/retracement outcome evidence and separate threshold publication | Separate K5 commissioning after WO-12 measurement evidence | Intraday/CA |
+| WO-15 extension/chase and 5M ATR/reference methodology | K5 is removed from WO-12 V2; retained 15M origin/ATR/outcome facts are supporting research only and no 5M consequence exists | Governed structural-origin/ATR measurements, move/retracement outcomes and separately approved WO-15 methodology | WO-15 / KR-380 successor methodology only | DOMAIN-004 / Intraday / CA |
 | Participation threshold/veto consequence beyond V0 | V0 is supporting/non-blocking without threshold | PAPER observation and outcome evidence | Successor methodology only | Intraday/CA |
 | New subjective setup-quality scale | WO-12 K4 reuses exact governed Native/visual reconciliation evidence and authorizes no new scale | Outcome evidence plus successor authority if the frozen evidence grammar proves insufficient | Successor methodology only | Intraday/CA |
 | WO-10 E/I/M consequence predicates beyond frozen precedence | Product-local seven-state family and precedence are frozen, but not every evidence combination has a qualified consequence | Family-specific factual and outcome evidence plus successor authority | WO-10 family policy slices | Intraday/CA |

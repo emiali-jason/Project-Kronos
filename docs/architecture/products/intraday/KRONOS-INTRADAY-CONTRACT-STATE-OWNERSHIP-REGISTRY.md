@@ -1,6 +1,6 @@
 # Intraday Contract and State Ownership Registry
 
-**Status:** Amended through WO-12 governance authorization
+**Status:** Amended through WO-12 V2 governance authorization
 
 | Boundary | Owner | Consequence authority |
 |---|---|---|
@@ -18,7 +18,8 @@
 | Historical WO-10 Native + Visual Reconciliation V1 | Intraday | Immutable Q1-Q10, two-state Readiness/Promotion implementation history only; it is not the frozen WO-10 E/I/M successor family |
 | WO-10E / WO-10I / WO-10M analytical reconciliation | Intraday | Independent family policy produces exactly one product-local seven-state result with inherited direction; no KR-370, Entry, Trade, Risk or broker authority |
 | WO-11 analytical promotion consolidation/publication | Intraday | Validates, collates and publishes exact WO-10 results with zero analytical discretion; only `PROMOTION_READY` may be eligible for a later separately governed handoff |
-| WO-12 / KR-370 analytical promotion | KR-370 / DOMAIN-003 Validation | Distinct subsequent layer governed by ADR-0020; consumes only exact eligible WO-11 lineage and evaluates five Intraday 15M criteria under the common `KRONOS-KR-370-ANALYTICAL-PROMOTION-V1` state family; no upstream state is remapped |
+| WO-12 / KR-370 analytical promotion V2 | KR-370 / DOMAIN-003 Validation | Distinct subsequent layer governed by ADR-0020 and current ADR-0021; consumes only exact eligible WO-11 lineage and evaluates exactly K1–K4 on Intraday 15M evidence under the common `KRONOS-KR-370-ANALYTICAL-PROMOTION-V1` state family; no upstream state is remapped |
+| Extension/chase research and future consequence | WO-15 / KR-380 | Retained WO-12 K5 fact-foundation artifacts are supporting research/telemetry only; any future extension/chase or 5M ATR/reference consequence requires separate WO-15 methodology |
 | Trade Construction | Intraday | Plan construction only; no Risk permission |
 | Risk | DOMAIN-007 | Risk permission/denial only |
 | Entry Timing | DOMAIN-004 | Entry-timing state only |
@@ -42,6 +43,7 @@ The boundaries are explicitly non-equivalent:
 - `PROMOTION_READY` ≠ KR-370 `BUY_NOW`, `SELL_NOW`, `BUY_READY` or `SELL_READY`.
 - WO-11 downstream eligibility ≠ KR-370 state; it only admits exact lineage to WO-12 evaluation.
 - WO-12 KR-370 `BUY_NOW` / `SELL_NOW` = analytical promotion only, not Entry, Risk, Sponsor decision or execution.
+- WO-12 V2 K5/ATR telemetry ≠ criterion, hard gate, veto, trigger or rejection.
 - WO-10/WO-11 product publication ≠ Entry.
 - Construction ≠ Risk.
 - Risk ≠ Entry Timing.

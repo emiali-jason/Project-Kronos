@@ -1,12 +1,14 @@
-# KRONOS Intraday WO-12 K5 Fact Foundation V1
+# KRONOS Intraday Historical K5 Fact Foundation V1
 
-Status: FACTUAL FOUNDATION / RESEARCH-ONLY OUTCOME CONTRACT
+Status: SUPPORTING RESEARCH / TELEMETRY FOR FUTURE WO-15 DESIGN
 
 Version: 1.0.0
 
-The K5 material-extension threshold remains `POLICY_UNRESOLVED`. This contract
-does not make a WO-12 promotion decision and is not wired into production
-runtime composition.
+ADR-0021 removes K5 from current Intraday WO-12. This historical identity and
+its retained facts remain immutable supporting research/telemetry for future
+WO-15 extension/chase design. They are not production WO-15 authority and have
+no independent WO-12 decision, veto, trigger, rejection or mandatory-
+availability consequence.
 
 ## Contract identities
 
@@ -87,9 +89,9 @@ The existing formula is unchanged:
 - LONG: `(completed_close - structural_origin) / ATR`
 - SHORT: `(structural_origin - completed_close) / ATR`
 
-These facts can populate the existing measurement contract. They cannot turn
-K5 into `SATISFIED` or `UNSATISFIED` while the material-extension threshold is
-unresolved.
+These facts can populate the historical measurement contract. Current WO-12 V2
+does not consume them as a criterion. Future WO-15 methodology, including any
+5M ATR/reference treatment, remains separately unresolved and uncommissioned.
 
 ## Qualification-corpus audit
 

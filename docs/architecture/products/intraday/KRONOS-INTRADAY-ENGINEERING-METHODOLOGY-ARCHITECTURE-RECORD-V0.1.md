@@ -1,6 +1,6 @@
 # KRONOS Intraday Engineering, Methodology & Architecture Record
 
-**Status:** LIVING DOCUMENT — V0.1; amended through WO-12 governance authorization
+**Status:** LIVING DOCUMENT — V0.1; amended through WO-12 V2 governance authorization
 
 **Product owner:** KRONOS Intraday
 
@@ -900,8 +900,30 @@ separately governed WO-13 boundary. WO-12 has no Entry, Stop, Target, R:R,
 Risk, Sponsor-decision, 5M timing or broker authority. Bounded source
 engineering is authorized; runtime/control/Browser integration remains
 separately sliced and no real WO-12 operation is authorized by this amendment.
-The complete product architecture is recorded in [WO-12 KR-370 Analytical
-Promotion V1](KRONOS-INTRADAY-WO-12-KR370-ANALYTICAL-PROMOTION-V1.md).
+The complete historical product architecture is recorded in [WO-12 KR-370
+Analytical Promotion V1](KRONOS-INTRADAY-WO-12-KR370-ANALYTICAL-PROMOTION-V1.md).
+
+### 35.1 WO-12 V2 successor correction
+
+[ADR-0021](../../adr/ADR-0021-INTRADAY-WO12-FOUR-CRITERION-PROMOTION-AND-WO15-EXTENSION-OWNERSHIP.md)
+supersedes only the Intraday five-criterion/K5 clauses above. It preserves this
+section as V1 history and establishes the current four-criterion WO-12 V2:
+
+1. `K1_15M_DIRECTIONAL_PROGRESSION`;
+2. `K2_15M_CPR_ACCEPTANCE`;
+3. `K3_15M_IMMEDIATE_PATH_CLEARANCE`; and
+4. `K4_15M_SETUP_QUALITY`.
+
+Four satisfied means NOW, three READY, two POTENTIAL, and zero or one
+`NO_SETUP`; unavailable K1–K4 fails closed. The public KR-370 state family is
+unchanged. K5 is no longer a WO-12 criterion or mandatory gate. Its historical
+origin, completed-15M ATR, extension and forward-outcome artifacts remain
+supporting research/telemetry for future WO-15 extension/chase design only.
+WO-15 owns any future 5M ATR/reference methodology and no such consequence is
+commissioned here. Swing retains its independent five-criterion semantics.
+
+The current product architecture is [WO-12 KR-370 Analytical Promotion
+V2](KRONOS-INTRADAY-WO-12-KR370-ANALYTICAL-PROMOTION-V2.md).
 
 ## 36. References
 
