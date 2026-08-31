@@ -43,6 +43,7 @@ WO13_SUPERSESSION_REFERENCE_IDENTITY = (
 WO13_SUPERSESSION_LINEAGE_IDENTITY = (
     "KRONOS-INTRADAY-WO13-SUPERSESSION-LINEAGE-V1"
 )
+WO13_CURRENT_POINTER_IDENTITY = "KRONOS-INTRADAY-CURRENT-WO13-POINTER-V1"
 
 
 class Wo13ContractError(ValueError):
@@ -437,12 +438,28 @@ def create_wo13_trade_plan_contract(
     warnings: tuple[Wo13WarningCode, ...],
     supersession: Wo13SupersessionReference | None,
     provenance: tuple[str, ...],
+    additional_source_identities: tuple[str, ...] = (),
+    additional_source_integrities: tuple[str, ...] = (),
 ) -> Wo13TradePlan:
     """Materialize validated contract content; performs no geometry calculation."""
 
     if type(request) is not Wo13ConstructionRequest:
         raise Wo13ContractError("WO13_TRADE_PLAN_REQUEST_INVALID")
     handoff = request.handoff
+    if len(additional_source_identities) != len(additional_source_integrities):
+        raise Wo13ContractError("WO13_TRADE_PLAN_SOURCE_BINDING_INVALID")
+    source_pairs: dict[str, str] = dict(zip(
+        handoff.source_identities, handoff.source_integrities, strict=True
+    ))
+    for identity, integrity in zip(
+        additional_source_identities, additional_source_integrities, strict=True
+    ):
+        if not _texts((identity, integrity)) or (
+            identity in source_pairs and source_pairs[identity] != integrity
+        ):
+            raise Wo13ContractError("WO13_TRADE_PLAN_SOURCE_BINDING_INVALID")
+        source_pairs[identity] = integrity
+    ordered_sources = tuple(sorted(source_pairs.items()))
     values = {
         "request_identity": request.request_identity,
         "request_integrity": request.request_integrity,
@@ -475,8 +492,8 @@ def create_wo13_trade_plan_contract(
         "field_availability": field_availability,
         "warnings": warnings,
         "policy": request.policy,
-        "source_evidence_identities": handoff.source_identities,
-        "source_evidence_integrities": handoff.source_integrities,
+        "source_evidence_identities": tuple(item[0] for item in ordered_sources),
+        "source_evidence_integrities": tuple(item[1] for item in ordered_sources),
         "supersession": supersession,
         "provenance": provenance,
         "schema_identity": WO13_TRADE_PLAN_IDENTITY,
@@ -643,6 +660,117 @@ def create_wo13_operation_provenance(
     return Wo13OperationProvenance(
         operation_identity=_identity("INTRADAY-WO13-OPERATION-", values),
         operation_integrity=_identity("INTEGRITY-INTRADAY-WO13-OPERATION-", values),
+        **values,
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class CurrentWo13Pointer:
+    pointer_identity: str
+    pointer_integrity: str
+    trade_plan_identity: str
+    trade_plan_integrity: str
+    request_identity: str
+    request_integrity: str
+    handoff_identity: str
+    handoff_integrity: str
+    operation_identity: str
+    operation_integrity: str
+    source_wo12_result_identity: str
+    canonical_subject_identity: str
+    market_family: IntradayMarketFamily
+    direction: SemanticDirection
+    setup_family: Wo13SetupFamily
+    analysis_boundary: datetime
+    policy: Wo13PolicyBinding
+    published_at: datetime
+    supersession_lineage_identity: str | None
+    schema_identity: str = WO13_CURRENT_POINTER_IDENTITY
+    schema_version: str = WO13_CONTRACT_VERSION
+
+    def __post_init__(self) -> None:
+        values = _without(self, "pointer_identity", "pointer_integrity")
+        if (
+            not _texts((
+                self.trade_plan_identity, self.trade_plan_integrity,
+                self.request_identity, self.request_integrity,
+                self.handoff_identity, self.handoff_integrity,
+                self.operation_identity, self.operation_integrity,
+                self.source_wo12_result_identity, self.canonical_subject_identity,
+            ))
+            or type(self.market_family) is not IntradayMarketFamily
+            or self.direction not in {SemanticDirection.LONG, SemanticDirection.SHORT}
+            or type(self.setup_family) is not Wo13SetupFamily
+            or not _aware(self.analysis_boundary)
+            or type(self.policy) is not Wo13PolicyBinding
+            or not _aware(self.published_at)
+            or self.supersession_lineage_identity is not None
+            and not _text(self.supersession_lineage_identity)
+            or self.schema_identity != WO13_CURRENT_POINTER_IDENTITY
+            or self.schema_version != WO13_CONTRACT_VERSION
+            or self.pointer_identity != _identity("CURRENT-INTRADAY-WO13-V1-", values)
+            or self.pointer_integrity
+            != _identity("INTEGRITY-CURRENT-INTRADAY-WO13-V1-", values)
+        ):
+            raise Wo13ContractError("WO13_CURRENT_POINTER_INVALID")
+
+
+def create_current_wo13_pointer(
+    *,
+    request: Wo13ConstructionRequest,
+    trade_plan: Wo13TradePlan,
+    operation: Wo13OperationProvenance,
+    published_at: datetime,
+    supersession_lineage: Wo13SupersessionLineage | None = None,
+) -> CurrentWo13Pointer:
+    if (
+        type(request) is not Wo13ConstructionRequest
+        or type(trade_plan) is not Wo13TradePlan
+        or trade_plan.request_identity != request.request_identity
+        or trade_plan.request_integrity != request.request_integrity
+        or trade_plan.source_handoff_identity != request.handoff.handoff_identity
+        or trade_plan.source_handoff_integrity != request.handoff.handoff_integrity
+        or type(operation) is not Wo13OperationProvenance
+        or operation.outcome is not Wo13OperationOutcome.COMPLETED
+        or operation.trade_plan_identity != trade_plan.trade_plan_identity
+        or operation.request_identity != request.request_identity
+        or supersession_lineage is not None
+        and (
+            type(supersession_lineage) is not Wo13SupersessionLineage
+            or supersession_lineage.successor_trade_plan_identity
+            != trade_plan.trade_plan_identity
+            or supersession_lineage.successor_trade_plan_integrity
+            != trade_plan.trade_plan_integrity
+        )
+    ):
+        raise Wo13ContractError("WO13_CURRENT_POINTER_INPUT_INVALID")
+    handoff = request.handoff
+    values = {
+        "trade_plan_identity": trade_plan.trade_plan_identity,
+        "trade_plan_integrity": trade_plan.trade_plan_integrity,
+        "request_identity": request.request_identity,
+        "request_integrity": request.request_integrity,
+        "handoff_identity": handoff.handoff_identity,
+        "handoff_integrity": handoff.handoff_integrity,
+        "operation_identity": operation.operation_identity,
+        "operation_integrity": operation.operation_integrity,
+        "source_wo12_result_identity": handoff.wo12_result_identity,
+        "canonical_subject_identity": handoff.canonical_subject_identity,
+        "market_family": handoff.market_family,
+        "direction": handoff.inherited_direction,
+        "setup_family": handoff.setup_family,
+        "analysis_boundary": handoff.analysis_boundary,
+        "policy": request.policy,
+        "published_at": published_at,
+        "supersession_lineage_identity": (
+            None if supersession_lineage is None else supersession_lineage.lineage_identity
+        ),
+        "schema_identity": WO13_CURRENT_POINTER_IDENTITY,
+        "schema_version": WO13_CONTRACT_VERSION,
+    }
+    return CurrentWo13Pointer(
+        pointer_identity=_identity("CURRENT-INTRADAY-WO13-V1-", values),
+        pointer_integrity=_identity("INTEGRITY-CURRENT-INTRADAY-WO13-V1-", values),
         **values,
     )
 
