@@ -1,0 +1,68 @@
+{
+  "artifact_identity": "KRONOS-INTRADAY-WO12-K5-15M-EXTENSION-COMMISSIONING-EVIDENCE-V1",
+  "artifact_version": "1.0.0",
+  "authority": "RESEARCH_ONLY_NON_AUTHORITATIVE",
+  "repository_head": "3384429f89839620612256870e490e895a445148",
+  "status": "INSUFFICIENT_EVIDENCE",
+  "source_corpus": {
+    "identity": "INTRADAY-QUALIFICATION-CORPUS-f70fadc6b256f3e6d5424598228c73e352684e2e789ba328de56c69f0cf5029f",
+    "version": "0.2.0",
+    "integrity_identity": "INTEGRITY-QUALIFICATION-CORPUS-f70fadc6b256f3e6d5424598228c73e352684e2e789ba328de56c69f0cf5029f",
+    "file_sha256": "85b66542b809564289a0acf45b454ece53dcecf600268dc2890ef4af0ff897fc"
+  },
+  "provider_calls": 0,
+  "candidate_observations_considered": 465,
+  "qualified_observations": 0,
+  "family_counts": {
+    "NSE_EQUITY": 455,
+    "NSE_INDEX": 10,
+    "MCX": 0
+  },
+  "retained_15m_structure_direction_counts": {
+    "LONG": 51,
+    "SHORT": 165,
+    "NON_DIRECTIONAL": 249
+  },
+  "qualified_direction_counts": {
+    "LONG": 0,
+    "SHORT": 0
+  },
+  "overlapping_exclusion_counts": {
+    "GOVERNED_15M_STRUCTURAL_ORIGIN_UNAVAILABLE": 465,
+    "GOVERNED_15M_ATR_UNAVAILABLE": 465,
+    "GOVERNED_SUBSEQUENT_OUTCOME_UNAVAILABLE": 465,
+    "EXACT_LONG_OR_SHORT_15M_STRUCTURE_ABSENT": 249
+  },
+  "governed_historical_candle_counts": {
+    "1D": 465,
+    "1H": 2800,
+    "15M": 11170,
+    "5M": 33510,
+    "total": 47945
+  },
+  "research_bins": {
+    "LT_0_75": "NOT_ESTIMABLE",
+    "0_75_TO_1_00": "NOT_ESTIMABLE",
+    "1_00_TO_1_25": "NOT_ESTIMABLE",
+    "1_25_TO_1_50": "NOT_ESTIMABLE",
+    "1_50_TO_1_75": "NOT_ESTIMABLE",
+    "1_75_TO_2_00": "NOT_ESTIMABLE",
+    "2_00_TO_2_50": "NOT_ESTIMABLE",
+    "GT_2_50": "NOT_ESTIMABLE"
+  },
+  "candidate_cut_points": {
+    "1.00": "NOT_ESTIMABLE",
+    "1.25": "NOT_ESTIMABLE",
+    "1.50": "NOT_ESTIMABLE",
+    "1.75": "NOT_ESTIMABLE",
+    "2.00": "NOT_ESTIMABLE",
+    "2.25": "NOT_ESTIMABLE",
+    "2.50": "NOT_ESTIMABLE"
+  },
+  "common_vs_family_specific": "INSUFFICIENT_EVIDENCE",
+  "swing_like_2_atr_support": "NO_INDEPENDENT_INTRADAY_EVIDENCE",
+  "k5_threshold_still_unresolved": true,
+  "k5_commissioning_evidence_ready": false,
+  "production_policy_changed": false,
+  "runtime_operation_performed": false
+}
