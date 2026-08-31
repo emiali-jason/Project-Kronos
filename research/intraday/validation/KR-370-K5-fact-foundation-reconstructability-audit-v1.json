@@ -1,0 +1,68 @@
+{
+  "artifact_identity": "KRONOS-INTRADAY-WO12-K5-FACT-FOUNDATION-RECONSTRUCTABILITY-AUDIT-V1",
+  "artifact_version": "1.0.0",
+  "authority": "RESEARCH_ONLY_NON_AUTHORITATIVE",
+  "source_corpus_identity": "INTRADAY-QUALIFICATION-CORPUS-f70fadc6b256f3e6d5424598228c73e352684e2e789ba328de56c69f0cf5029f",
+  "source_corpus_version": "0.2.0",
+  "provider_calls": 0,
+  "observations_considered": 465,
+  "structural_origin_available": 0,
+  "atr_14_available": 465,
+  "forward_outcome_available": {
+    "4_completed_15m_bars": 0,
+    "8_completed_15m_bars": 0,
+    "12_completed_15m_bars": 0
+  },
+  "fully_qualified": {
+    "4_completed_15m_bars": 0,
+    "8_completed_15m_bars": 0,
+    "12_completed_15m_bars": 0
+  },
+  "market_family": {
+    "NSE_EQUITY": {
+      "considered": 455,
+      "structural_origin_available": 0,
+      "atr_14_available": 455,
+      "forward_outcome_4": 0,
+      "forward_outcome_8": 0,
+      "forward_outcome_12": 0
+    },
+    "NSE_INDEX": {
+      "considered": 10,
+      "structural_origin_available": 0,
+      "atr_14_available": 10,
+      "forward_outcome_4": 0,
+      "forward_outcome_8": 0,
+      "forward_outcome_12": 0
+    },
+    "MCX": {
+      "considered": 0,
+      "structural_origin_available": 0,
+      "atr_14_available": 0,
+      "forward_outcome_4": 0,
+      "forward_outcome_8": 0,
+      "forward_outcome_12": 0
+    }
+  },
+  "retained_15m_structure_direction": {
+    "LONG": 51,
+    "SHORT": 165,
+    "NON_DIRECTIONAL": 249
+  },
+  "setup_family": {
+    "INTRADAY_PULLBACK_CONTINUATION": 0,
+    "INTRADAY_RANGE_BREAKOUT": 0,
+    "UNAVAILABLE": 465
+  },
+  "exclusion_reasons": {
+    "GOVERNED_SETUP_TO_EXPLICIT_STRUCTURAL_ORIGIN_BINDING_UNAVAILABLE": 465,
+    "SAME_SESSION_FORWARD_4_BAR_TERMINAL_STRUCTURE_UNAVAILABLE": 465,
+    "SAME_SESSION_FORWARD_8_BAR_TERMINAL_STRUCTURE_UNAVAILABLE": 465,
+    "SAME_SESSION_FORWARD_12_BAR_TERMINAL_STRUCTURE_UNAVAILABLE": 465,
+    "EXACT_LONG_OR_SHORT_15M_STRUCTURE_ABSENT": 249
+  },
+  "k5_threshold_still_unresolved": true,
+  "k5_corpus_reconstruction_ready": false,
+  "production_policy_changed": false,
+  "runtime_operation_performed": false
+}
