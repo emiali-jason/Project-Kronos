@@ -1,6 +1,6 @@
 # KRONOS Intraday V1 Programme Roadmap
 
-**Status:** WO-12 V2 four-criterion governance authorized; bounded engineering active
+**Status:** WO-12 closed; WO-13 governance publication prepared; core engineering gated on publication
 
 Native universe count is 98. RELIANCE remains the commissioning and regression
 anchor; it is not the universe owner or a privileged membership class.
@@ -88,8 +88,13 @@ supersedes only its Intraday five-criterion/K5 clauses. Current WO-12 V2 reuses
 the common state family through exactly four Intraday 15M criteria. K5
 extension/chase consequence belongs to future WO-15 / KR-380; the retained
 origin/ATR/outcome foundation is supporting research only. Bounded contracts,
-persistence, runtime and Browser engineering are authorized. No WO-13, WO-14
-or WO-15 implementation is authorized.
+persistence, runtime and Browser engineering are authorized for WO-12.
+[ADR-0022](../../adr/ADR-0022-INTRADAY-WO12-WO13-STEP31-TRADE-CONSTRUCTION-BOUNDARY.md)
+now freezes the exact WO-12 NOW-only crossing and Intraday 15M Step-31
+geometry. Its governance publication must complete before bounded WO-13 core
+contracts, setup-specific constructors, persistence and application
+engineering. Runtime, Browser, real WO-13 operation, WO-14 and WO-15 remain
+unauthorized.
 
 ## Track C — MCX readiness
 
@@ -101,6 +106,7 @@ still required before operational WO-10M.
 WO-11 → WO-12 → WO-13 → WO-14 → WO-15 → WO-16 → WO-17 → WO-18 →
 WO-19 → WO-20 → WO-21 → WO-22 → WO-23 → WO-24.
 
-The roadmap names sequence only. ADR-0021 supplies the current bounded WO-12
-V2 implementation/runtime authority and no further unstated trading, Risk,
-entry, lifecycle, broker or production authority.
+The roadmap names sequence only. ADR-0022 supplies bounded WO-13 core authority
+only after its governance publication. It grants no runtime, Browser, real
+operation, Risk, entry-timing, lifecycle, Sponsor, broker or production
+authority.

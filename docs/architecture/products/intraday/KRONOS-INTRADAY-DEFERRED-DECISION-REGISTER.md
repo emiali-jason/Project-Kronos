@@ -1,6 +1,6 @@
 # Intraday Deferred Decision Register
 
-**Status:** Amended through WO-12 V2 governance authorization; no defaults implied
+**Status:** Amended through WO-13 governance authorization; no defaults implied
 
 | Decision | Reason deferred | Required evidence | Earliest closure | Owner |
 |---|---|---|---|---|
@@ -15,7 +15,7 @@
 | Index weekly/daily location consequence | Weekly/Daily levels are map facts, not signals | Index outcome evidence and successor authority | WO-10I successor policy | Intraday/CA |
 | MCX international divergence materiality/duration | International reference is contextual and cannot independently invalidate | Paired MCX/reference evidence and successor authority | WO-10M successor policy | Intraday/CA |
 | MCX same-time-session volume materiality | Raw telemetry is required before consequence | MCX session-phase evidence and outcomes | WO-10M successor policy | Intraday/CA |
-| Trade Construction numerical predicates | Construction contract pending | Promoted-candidate evidence | WO-09 | Intraday/CA |
+| Minimum R:R gate / `RR_UNFAVOURABLE` consequence | WO-13 V1 calculates and retains Model R:R but authorizes no threshold or gate | Real immutable WO-13 geometry and later outcome evidence | Successor WO-13 methodology only | Intraday/CA |
 | Risk numerical limits | DOMAIN-007 authority | Construction and capacity evidence | WO-11+ | DOMAIN-007/CA |
 | Entry Timing beyond frozen cutoffs | DOMAIN-004 authority | Risk-approved plan evidence | WO-13+ | DOMAIN-004/CA |
 | MCX reference trading consequence | Reference is validation-only | MCX validation evidence and CA decision | After WO-10 | CA |

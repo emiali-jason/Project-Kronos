@@ -1,6 +1,6 @@
 # Intraday Contract and State Ownership Registry
 
-**Status:** Amended through WO-12 V2 governance authorization
+**Status:** Amended through WO-13 governance authorization
 
 | Boundary | Owner | Consequence authority |
 |---|---|---|
@@ -20,7 +20,7 @@
 | WO-11 analytical promotion consolidation/publication | Intraday | Validates, collates and publishes exact WO-10 results with zero analytical discretion; only `PROMOTION_READY` may be eligible for a later separately governed handoff |
 | WO-12 / KR-370 analytical promotion V2 | KR-370 / DOMAIN-003 Validation | Distinct subsequent layer governed by ADR-0020 and current ADR-0021; consumes only exact eligible WO-11 lineage and evaluates exactly K1–K4 on Intraday 15M evidence under the common `KRONOS-KR-370-ANALYTICAL-PROMOTION-V1` state family; no upstream state is remapped |
 | Extension/chase research and future consequence | WO-15 / KR-380 | Retained WO-12 K5 fact-foundation artifacts are supporting research/telemetry only; any future extension/chase or 5M ATR/reference consequence requires separate WO-15 methodology |
-| Trade Construction | Intraday | Plan construction only; no Risk permission |
+| WO-13 / Step-31 Trade Construction | Intraday | Exact current WO-12 NOW admission and immutable 15M setup-specific Entry Reference, Stop, invalidation, one Target, risk/reward distance, Model R:R, availability and warnings only; no Risk permission or 5M timing |
 | Risk | DOMAIN-007 | Risk permission/denial only |
 | Entry Timing | DOMAIN-004 | Entry-timing state only |
 | Objective Lifecycle | DOMAIN-005 | Model-trade lifecycle only |
@@ -44,6 +44,8 @@ The boundaries are explicitly non-equivalent:
 - WO-11 downstream eligibility ≠ KR-370 state; it only admits exact lineage to WO-12 evaluation.
 - WO-12 KR-370 `BUY_NOW` / `SELL_NOW` = analytical promotion only, not Entry, Risk, Sponsor decision or execution.
 - WO-12 V2 K5/ATR telemetry ≠ criterion, hard gate, veto, trigger or rejection.
+- WO-13 Entry Condition ≠ WO-15 Entry trigger or Entry Outcome.
+- WO-13 risk distance ≠ DOMAIN-007 Risk permission.
 - WO-10/WO-11 product publication ≠ Entry.
 - Construction ≠ Risk.
 - Risk ≠ Entry Timing.

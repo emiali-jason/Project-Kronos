@@ -1,0 +1,59 @@
+{
+  "admission_states": [
+    "BUY_NOW",
+    "SELL_NOW"
+  ],
+  "authority": "TRADE_CONSTRUCTION_ONLY",
+  "entry_buffer": "NONE",
+  "geometry_frame": "15M",
+  "market_authority": {
+    "EQUITY": "STOCK_LOCAL_15M",
+    "INDEX": "UNDERLYING_LOCAL_15M",
+    "MCX": "ACTIVE_CONTRACT_LOCAL_15M_ROLL_SAFE"
+  },
+  "model_rr": {
+    "gate": "NONE",
+    "long_reward": "TARGET_MINUS_ENTRY",
+    "long_risk": "ENTRY_MINUS_STOP",
+    "short_reward": "ENTRY_MINUS_TARGET",
+    "short_risk": "STOP_MINUS_ENTRY"
+  },
+  "policy_identity": "KRONOS-INTRADAY-WO13-STEP31-TRADE-CONSTRUCTION-POLICY-V1",
+  "policy_version": "1.0.0",
+  "setup_families": [
+    "INTRADAY_PULLBACK_CONTINUATION",
+    "INTRADAY_RANGE_BREAKOUT"
+  ],
+  "setup_geometry": {
+    "INTRADAY_PULLBACK_CONTINUATION": {
+      "long_entry": "QUALIFICATION_RESUMPTION_CANDLE_HIGH",
+      "long_invalidation": "COMPLETED_15M_STRUCTURAL_FAILURE_THROUGH_PULLBACK_LOW",
+      "long_stop": "GOVERNING_COMPLETED_15M_PULLBACK_LOW",
+      "long_target": "PRIOR_DIRECTIONAL_15M_IMPULSE_SWING_HIGH",
+      "short_entry": "QUALIFICATION_RESUMPTION_CANDLE_LOW",
+      "short_invalidation": "COMPLETED_15M_STRUCTURAL_FAILURE_THROUGH_PULLBACK_HIGH",
+      "short_stop": "GOVERNING_COMPLETED_15M_PULLBACK_HIGH",
+      "short_target": "PRIOR_DIRECTIONAL_15M_IMPULSE_SWING_LOW"
+    },
+    "INTRADAY_RANGE_BREAKOUT": {
+      "long_entry": "ORIGINAL_15M_RANGE_HIGH",
+      "long_invalidation": "COMPLETED_15M_CLOSE_BACK_AT_OR_INSIDE_ORIGINAL_RANGE",
+      "long_stop": "BREAKOUT_QUALIFICATION_CANDLE_LOW",
+      "long_target": "RANGE_HIGH_PLUS_RANGE_WIDTH",
+      "short_entry": "ORIGINAL_15M_RANGE_LOW",
+      "short_invalidation": "COMPLETED_15M_CLOSE_BACK_AT_OR_INSIDE_ORIGINAL_RANGE",
+      "short_stop": "BREAKOUT_QUALIFICATION_CANDLE_HIGH",
+      "short_target": "RANGE_LOW_MINUS_RANGE_WIDTH"
+    }
+  },
+  "stop_buffer": "NONE",
+  "target_constraint": "NEAREST_AUTHORITATIVE_FORWARD_OBJECTIVE_WITHIN_SETUP_NATIVE_TARGET",
+  "target_count": 1,
+  "timeframe_roles": {
+    "1H": "CONTEXT_ONLY",
+    "15M": "PRIMARY_GEOMETRY",
+    "5M": "WO15_KR380_ONLY"
+  },
+  "wo14_authority": "DOMAIN_007_RISK_ONLY",
+  "wo15_authority": "FINAL_5M_ENTRY_TIMING_ONLY"
+}

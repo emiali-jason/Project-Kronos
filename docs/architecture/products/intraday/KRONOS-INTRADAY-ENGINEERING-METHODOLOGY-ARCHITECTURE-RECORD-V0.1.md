@@ -1,6 +1,6 @@
 # KRONOS Intraday Engineering, Methodology & Architecture Record
 
-**Status:** LIVING DOCUMENT — V0.1; amended through WO-12 V2 governance authorization
+**Status:** LIVING DOCUMENT — V0.1; amended through WO-13 governance authorization
 
 **Product owner:** KRONOS Intraday
 
@@ -925,6 +925,30 @@ commissioned here. Swing retains its independent five-criterion semantics.
 The current product architecture is [WO-12 KR-370 Analytical Promotion
 V2](KRONOS-INTRADAY-WO-12-KR370-ANALYTICAL-PROMOTION-V2.md).
 
+## 35.2 WO-13 Step-31 trade-construction governance amendment
+
+[ADR-0022](../../adr/ADR-0022-INTRADAY-WO12-WO13-STEP31-TRADE-CONSTRUCTION-BOUNDARY.md)
+supplies the separately governed Intraday WO-12 → WO-13 crossing that
+ADR-0020 explicitly left unauthorized. Only an exact current integrity-valid
+WO-12 V2 `BUY_NOW` or `SELL_NOW` may enter. Direction and setup family are
+inherited and immutable.
+
+WO-13 owns 15M Trade Plan geometry only. The two explicit setup families are
+`INTRADAY_PULLBACK_CONTINUATION` and `INTRADAY_RANGE_BREAKOUT`. Pullback
+geometry uses the exact 15M qualification/resumption candle, governing pullback
+structure and prior directional impulse extreme. Range-breakout geometry uses
+the immutable original range and exact breakout qualification candle. A
+setup-native Target is derived before the nearest legitimate forward
+structural objective may constrain it. R:R evaluates the resulting geometry
+and has no minimum V1 gate.
+
+Equity remains stock-local, Index underlying-local and MCX exact active-
+contract-local/roll-safe. NIFTY, option premium, COMEX/NYMEX and USDINR cannot
+replace local geometry. 1H is context only; 5M and extension/chase remain
+WO-15. WO-14 remains DOMAIN-007 Risk. Runtime, Browser and real operation are
+separately gated. The complete product record is [WO-13 Step-31 Trade
+Construction V1](KRONOS-INTRADAY-WO-13-STEP31-TRADE-CONSTRUCTION-V1.md).
+
 ## 36. References
 
 - [Intraday Shared-File Change Rule](../../../engineering/INTRADAY-SHARED-FILE-CHANGE-RULE.md)
@@ -955,6 +979,10 @@ V2](KRONOS-INTRADAY-WO-12-KR370-ANALYTICAL-PROMOTION-V2.md).
 - [WO-10 E/I/M Frozen Architecture V1](KRONOS-INTRADAY-WO-10-E-I-M-FROZEN-ARCHITECTURE-V1.md)
 - [ADR-0019 — Intraday WO-10/WO-11 Pre-KR-370 Semantic Boundary](../../adr/ADR-0019-INTRADAY-WO10-WO11-PRE-KR370-SEMANTIC-BOUNDARY.md)
 - [ADR-0020 — Intraday WO-11 to WO-12 KR-370 Analytical Promotion Boundary](../../adr/ADR-0020-INTRADAY-WO11-WO12-KR370-ANALYTICAL-PROMOTION-BOUNDARY.md)
+- [ADR-0021 — Intraday WO-12 Four-Criterion Promotion and WO-15 Extension Ownership](../../adr/ADR-0021-INTRADAY-WO12-FOUR-CRITERION-PROMOTION-AND-WO15-EXTENSION-OWNERSHIP.md)
+- [ADR-0022 — Intraday WO-12 to WO-13 Step-31 Trade Construction Boundary](../../adr/ADR-0022-INTRADAY-WO12-WO13-STEP31-TRADE-CONSTRUCTION-BOUNDARY.md)
 - [WO-12 KR-370 Analytical Promotion V1](KRONOS-INTRADAY-WO-12-KR370-ANALYTICAL-PROMOTION-V1.md)
+- [WO-12 KR-370 Analytical Promotion V2](KRONOS-INTRADAY-WO-12-KR370-ANALYTICAL-PROMOTION-V2.md)
+- [WO-13 Step-31 Trade Construction V1](KRONOS-INTRADAY-WO-13-STEP31-TRADE-CONSTRUCTION-V1.md)
 - [WO-09 Governed Chart Analyst Answer Import](KRONOS-INTRADAY-WO-09-GOVERNED-CHART-ANALYST-ANSWER-IMPORT-V1.md)
 - [ADR-0017 Governed Active Derivative Contract Selection](../../adr/ADR-0017-GOVERNED-ACTIVE-DERIVATIVE-CONTRACT-SELECTION-V1.md)
