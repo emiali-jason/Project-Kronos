@@ -486,7 +486,10 @@ def test_v3_answer_persists_v3_evidence_and_readiness_without_v2_store(
 ) -> None:
     native, facts, live = _live(tmp_path)
     record = live.generate(native.snapshot(), facts, native.original_chart_bytes)
-    answer = live.transport.configuration.answer_directory / record.expected_answer_filename
+    answer = (
+        live.transport.configuration.answer_directory
+        / record.expected_answer_filename
+    )
     _answer_pdf(answer, _payload(live, native, facts, record))
 
     imports = live.upload(native.snapshot(), facts, native.original_chart_bytes)
@@ -510,6 +513,208 @@ def test_v3_answer_persists_v3_evidence_and_readiness_without_v2_store(
         for item in completed
     )
     assert not tuple(native.evidence_root.rglob("*visual-v2*"))
+
+
+def test_successful_v3_import_advances_browser_projection_without_new_analysis(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    native, facts, live = _live(tmp_path)
+    record = live.generate(native.snapshot(), facts, native.original_chart_bytes)
+    answer = live.transport.configuration.answer_directory / record.expected_answer_filename
+    _answer_pdf(answer, _payload(live, native, facts, record))
+    run = _evidence_run()[1]
+    application = SwingOpportunitiesApplication(
+        _Provider,
+        initial_snapshot=replace(
+            _ready(), swing_analysis_run_identity=run.run_identity
+        ),
+    )
+    application.restore_mtf_fact_snapshot(facts)
+    application.restore_native_discovery_run(run)
+
+    def analysis_must_not_run() -> None:
+        raise AssertionError("REFRESH_ANALYSIS_MUST_NOT_RUN")
+
+    monkeypatch.setattr(application, "run_analysis", analysis_must_not_run)
+    server = create_browser_server(
+        application,
+        port=0,
+        v1_review=SwingV1ReviewWorkflow(
+            LocalTradingViewEvidenceStore(tmp_path / "legacy")
+        ),
+        native_review=native,
+        visual_v3_live=live,
+    )
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    authority = f"127.0.0.1:{server.server_port}"
+    completed_at = application.snapshot().completed_at
+    analysis_run_identity = application.snapshot().swing_analysis_run_identity
+    try:
+        before = server.swing_projection_revision()
+        status, _, opportunities = _browser_request(
+            server, "GET", "/swing/opportunities"
+        )
+        assert status == 200
+        assert "CHART RECEIVED" in opportunities
+        assert "KR-370" not in opportunities
+        assert f'data-swing-projection-revision="{before}"' in opportunities
+        assert "s.swing_projection_revision" in opportunities
+        assert "location.reload()" in opportunities
+        assert json.loads(_browser_request(server, "GET", "/status")[2])[
+            "swing_projection_revision"
+        ] == before
+
+        status, headers, _ = _browser_request(
+            server,
+            "POST",
+            "/swing/v1/native-review-answer",
+            headers={"Host": authority, "Origin": f"http://{authority}"},
+        )
+        assert status == 303
+        assert headers["Location"] == "/swing/v1-review"
+
+        after = server.swing_projection_revision()
+        assert after != before
+        assert application.snapshot().completed_at == completed_at
+        assert (
+            application.snapshot().swing_analysis_run_identity
+            == analysis_run_identity
+        )
+        assert application.native_discovery_run() is run
+        assert live.snapshot(run.run_identity).answer_imports[-1].consumed
+        assert json.loads(_browser_request(server, "GET", "/status")[2])[
+            "swing_projection_revision"
+        ] == after
+        _, _, refreshed = _browser_request(server, "GET", "/swing/opportunities")
+        assert f'data-swing-projection-revision="{after}"' in refreshed
+        assert "KR-370" in refreshed
+        assert any(
+            label in refreshed
+            for label in (
+                "BUY NOW", "SELL NOW", "BUY READY", "SELL READY",
+                "POTENTIAL BUY SETUP", "POTENTIAL SELL SETUP", "NO SETUP",
+                "NOT EVALUABLE",
+            )
+        )
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+
+def test_failed_v3_import_does_not_advance_browser_projection_revision(
+    tmp_path: Path,
+) -> None:
+    native, facts, live = _live(tmp_path)
+    record = live.generate(native.snapshot(), facts, native.original_chart_bytes)
+    payload = _payload(live, native, facts, record)
+    payload["manifest"]["native_run_identity"] = "SWING-RUN-" + "F" * 32
+    answer = (
+        live.transport.configuration.answer_directory
+        / record.expected_answer_filename
+    )
+    _answer_pdf(answer, payload)
+    run = _evidence_run()[1]
+    application = SwingOpportunitiesApplication(
+        _Provider,
+        initial_snapshot=replace(
+            _ready(), swing_analysis_run_identity=run.run_identity
+        ),
+    )
+    application.restore_mtf_fact_snapshot(facts)
+    application.restore_native_discovery_run(run)
+    server = create_browser_server(
+        application,
+        port=0,
+        v1_review=SwingV1ReviewWorkflow(
+            LocalTradingViewEvidenceStore(tmp_path / "legacy")
+        ),
+        native_review=native,
+        visual_v3_live=live,
+    )
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    authority = f"127.0.0.1:{server.server_port}"
+    completed_at = application.snapshot().completed_at
+    try:
+        before = server.swing_projection_revision()
+        status, _, _ = _browser_request(
+            server,
+            "POST",
+            "/swing/v1/native-review-answer",
+            headers={"Host": authority, "Origin": f"http://{authority}"},
+        )
+        assert status == 303
+        assert server.swing_projection_revision() == before
+        assert application.snapshot().completed_at == completed_at
+        assert not live.cycle.completed_snapshot()
+        failed = live.snapshot(run.run_identity).answer_imports[-1]
+        assert failed.state is VisualV3AnswerImportState.ANSWER_PACK_REJECTED
+        assert not failed.consumed
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+
+def test_browser_projection_revision_reconstructs_after_v3_restart(
+    tmp_path: Path,
+) -> None:
+    native, facts, live = _live(tmp_path)
+    record = live.generate(native.snapshot(), facts, native.original_chart_bytes)
+    answer = (
+        live.transport.configuration.answer_directory
+        / record.expected_answer_filename
+    )
+    _answer_pdf(answer, _payload(live, native, facts, record))
+    live.upload(native.snapshot(), facts, native.original_chart_bytes)
+    run = _evidence_run()[1]
+
+    def build_server(restored_live: SwingVisualV3LiveWorkflow):
+        application = SwingOpportunitiesApplication(
+            _Provider,
+            initial_snapshot=replace(
+                _ready(), swing_analysis_run_identity=run.run_identity
+            ),
+        )
+        application.restore_mtf_fact_snapshot(facts)
+        application.restore_native_discovery_run(run)
+        return create_browser_server(
+            application,
+            port=0,
+            v1_review=SwingV1ReviewWorkflow(
+                LocalTradingViewEvidenceStore(tmp_path / "legacy")
+            ),
+            native_review=native,
+            visual_v3_live=restored_live,
+        )
+
+    first = build_server(live)
+    expected = first.swing_projection_revision()
+    expected_completed = len(first.visual_v3.completed_snapshot())
+    first.server_close()
+
+    restored_live = SwingVisualV3LiveWorkflow(
+        SwingVisualV3ReviewCycle(
+            LocalVisualEvidenceV3Store((tmp_path / "visual-v3").resolve()),
+            NativeLayer2ReadinessV3Store((tmp_path / "readiness-v3").resolve()),
+        ),
+        VisualV3PdfReviewTransport(
+            live.transport.configuration,
+            VisualV3PdfRecordStore((tmp_path / "v3-pdf-records").resolve()),
+            clock=lambda: NOW,
+        ),
+        clock=lambda: NOW,
+    )
+    restarted = build_server(restored_live)
+    try:
+        assert restarted.swing_projection_revision() == expected
+        assert len(restarted.visual_v3.completed_snapshot()) == expected_completed
+        assert restarted.application.native_discovery_run() is run
+        assert restarted.application.snapshot().completed_at == _ready().completed_at
+    finally:
+        restarted.server_close()
 
 
 def test_post_validation_failure_is_sanitized_and_identical_retry_is_idempotent(

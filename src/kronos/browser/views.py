@@ -372,6 +372,7 @@ def render_opportunities(
     visual_v3: tuple[V3SponsorEvidencePresentation, ...] = (),
     trade_windows: tuple[NativeTradeWindowProjection, ...] = (),
     refresh_reminders: K5RefreshReminderSnapshot | None = None,
+    projection_revision: str | None = None,
 ) -> str:
     """Render the current successful Native Discovery opportunity population."""
 
@@ -439,6 +440,7 @@ def render_opportunities(
         active_nav="Swing",
         active_tab="Opportunities",
         body=body,
+        swing_projection_revision=projection_revision,
     )
 
 
@@ -5419,6 +5421,7 @@ def _page(
     body: str,
     back_link: str = "",
     extra_styles: str = "",
+    swing_projection_revision: str | None = None,
 ) -> str:
     nav = "".join(
         f'<a class="{"active" if name == active_nav else ""}" href="{href}">'
@@ -5440,22 +5443,31 @@ def _page(
         if active_tab not in {"Layer-1 History", "Control vs Native", "MTF Data"}:
             tabs += '<div class="toolbar">' + _analysis_form(snapshot) + "</div>"
         tabs += "</nav>"
-    signature = "|".join((
+    signature_parts = [
         snapshot.provider_state.value,
         snapshot.analysis_state.value,
         snapshot.completed_at.isoformat() if snapshot.completed_at else "",
-    ))
+    ]
+    projection_attribute = ""
+    if swing_projection_revision is not None:
+        signature_parts.append(swing_projection_revision)
+        projection_attribute = (
+            ' data-swing-projection-revision="'
+            + escape(swing_projection_revision)
+            + '"'
+        )
+    signature = "|".join(signature_parts)
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{escape(title)} · KRONOS</title><link rel="icon" type="image/png" sizes="64x64" href="/favicon.png"><style>{_CSS}{extra_styles}</style></head>
-<body data-status-signature="{escape(signature)}"><div class="app"><aside class="sidebar">
+<body data-status-signature="{escape(signature)}"{projection_attribute}><div class="app"><aside class="sidebar">
 <div class="brand"><img class="brandmark" src="/assets/brand/kronos-brand-mark.png" alt="KRONOS" title="KRONOS" width="35" height="35"><span class="brandword">KRONOS</span></div><nav class="nav">{nav}</nav>
 <div class="system"><strong>● LOCAL · READ ONLY</strong>Provider capability stays inside this process.<br>Order capability: NONE
 <details class="exit-control"><summary>EXIT KRONOS</summary><div class="exit-confirm"><p><b>EXIT KRONOS?</b><br>This will safely stop KRONOS and its runtime services.<br>No trade or broker order will be created.</p><div class="exit-actions"><a class="exit-cancel" href="">CANCEL</a><form method="post" action="/control/exit"><button type="submit">EXIT KRONOS</button></form></div></div></details></div>
 </aside><main class="main"><header class="topbar"><div class="title">{back_link}<h1>{escape(title)}</h1><p>{escape(subtitle)}</p></div>
 <div class="kite"><span class="dot {snapshot.provider_state.value}"></span><strong>Kite: {snapshot.provider_state.value}</strong>{_connect_form(snapshot)}</div></header>
 {tabs}<div class="content">{body}</div><div class="footer">KRONOS Browser V1 · Local Mode</div></main></div>
-<script>const initial=document.body.dataset.statusSignature;setInterval(async()=>{{try{{const r=await fetch('/status',{{cache:'no-store'}});if(!r.ok)return;const s=await r.json();const next=[s.provider,s.analysis,s.completed_at||''].join('|');if(next!==initial)location.reload();}}catch(_e){{}}}},1500);</script>
+<script>const initial=document.body.dataset.statusSignature;const swingRevision=document.body.dataset.swingProjectionRevision;setInterval(async()=>{{try{{const r=await fetch('/status',{{cache:'no-store'}});if(!r.ok)return;const parts=[s.provider,s.analysis,s.completed_at||''];if(swingRevision!==undefined)parts.push(s.swing_projection_revision||'');if(parts.join('|')!==initial)location.reload();}}catch(_e){{}}}},1500);</script>
 </body></html>"""
 
 

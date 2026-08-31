@@ -331,9 +331,12 @@ def test_status_endpoint_is_small_and_sanitized() -> None:
         assert status == 200
         assert set(__import__("json").loads(body)) == {
             "service", "provider", "analysis", "completed_at", "v1_probables",
-            "analysis_diagnostic", "live_monitoring",
+            "analysis_diagnostic", "live_monitoring", "swing_projection_revision",
         }
         assert __import__("json").loads(body)["service"] == "KRONOS_BROWSER_V1"
+        assert len(
+            __import__("json").loads(body)["swing_projection_revision"]
+        ) == 64
         assert "HDFCBANK" not in body
     finally:
         server.shutdown(); server.server_close(); thread.join()

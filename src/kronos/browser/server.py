@@ -374,6 +374,7 @@ class KronosBrowserServer(ThreadingHTTPServer):
         self.intraday_discovery_control = intraday_discovery_control
         self.intraday_historical_control = intraday_historical_control
         self._shutdown_lock = Lock()
+        self._swing_projection_lock = Lock()
         self._shutdown_started = False
         self._active_sponsor_work = 0
         self.product_routes = (
@@ -605,6 +606,9 @@ class KronosBrowserServer(ThreadingHTTPServer):
         self.progression_snapshot()
         self.restore_sponsor_operability()
         self.ux10_notifications.retry_pending()
+        self._swing_projection_revision_value = (
+            self._derive_swing_projection_revision()
+        )
         super().__init__(address, _BrowserHandler)
 
     def server_close(self) -> None:
@@ -769,6 +773,64 @@ class KronosBrowserServer(ThreadingHTTPServer):
             present_visual_v3_review(item)
             for item in self.visual_v3.completed_snapshot()
         )
+
+    def swing_projection_revision(self) -> str:
+        """Return the last atomically published Swing presentation revision."""
+
+        with self._swing_projection_lock:
+            return self._swing_projection_revision_value
+
+    def refresh_swing_projection_revision(self) -> str:
+        """Publish a revision only after a governed state-changing route succeeds."""
+
+        revision = self._derive_swing_projection_revision()
+        with self._swing_projection_lock:
+            self._swing_projection_revision_value = revision
+        return revision
+
+    def _derive_swing_projection_revision(self) -> str:
+        """Derive deterministic presentation metadata from restored authority.
+
+        The revision is derived only from immutable, restored V3/KR-370 records
+        for the current Native run.  It is presentation synchronization metadata;
+        it neither evaluates analysis nor advances any domain state.
+        """
+
+        _, discovery = self.application.opportunities_projection()
+        run_identity = None if discovery is None else discovery.run_identity
+        completed = tuple(
+            item for item in self.visual_v3.completed_snapshot()
+            if item.requirement.native_run_identity == run_identity
+        )
+        payload = {
+            "native_run_identity": run_identity,
+            "completed": [
+                {
+                    "canonical_instrument": item.requirement.canonical_instrument,
+                    "native_assessment_sha256": (
+                        item.requirement.thesis.native_assessment_sha256
+                    ),
+                    "readiness_identity": item.readiness.result_sha256,
+                    "review_pack_identity": (
+                        None if item.review_pack is None
+                        else item.review_pack.review_pack_id
+                    ),
+                    "promotion_identity": (
+                        None if item.promotion is None
+                        else item.promotion.integrity_sha256
+                    ),
+                }
+                for item in sorted(
+                    completed,
+                    key=lambda value: value.requirement.canonical_instrument,
+                )
+            ],
+        }
+        return sha256(
+            json.dumps(
+                payload, sort_keys=True, separators=(",", ":")
+            ).encode("utf-8")
+        ).hexdigest()
 
     def relative_context_for_run(self, run_identity: str):  # type: ignore[no-untyped-def]
         """Restore only exact-run supporting context; never select global latest."""
@@ -1203,14 +1265,20 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             snapshot, discovery = (
                 self.server.application.opportunities_projection()
             )
+            review = self.server.native_review.snapshot()
+            progression = self.server.progression_snapshot()
+            visual_v3 = self.server.visual_v3_presentations()
+            trade_windows = self.server.trade_window.projections()
+            refresh_reminders = self.server.refresh_reminders.snapshot()
             self._html(render_opportunities(
                 snapshot,
                 discovery,
-                self.server.native_review.snapshot(),
-                self.server.progression_snapshot(),
-                self.server.visual_v3_presentations(),
-                self.server.trade_window.projections(),
-                self.server.refresh_reminders.snapshot(),
+                review,
+                progression,
+                visual_v3,
+                trade_windows,
+                refresh_reminders,
+                self.server.swing_projection_revision(),
             ))
             return
         if path in {"/notifications", "/notifications/swing", "/notifications/intraday"}:
@@ -1675,6 +1743,9 @@ class _BrowserHandler(BaseHTTPRequestHandler):
                 "analysis": snapshot.analysis_state.value,
                 "completed_at": (
                     snapshot.completed_at.isoformat() if snapshot.completed_at else None
+                ),
+                "swing_projection_revision": (
+                    self.server.swing_projection_revision()
                 ),
                 "v1_probables": len(snapshot.v1_probables),
                 "analysis_diagnostic": None,
@@ -3542,6 +3613,7 @@ class _BrowserHandler(BaseHTTPRequestHandler):
                     self.server.visual_v3.completed_snapshot()
                 )
                 self.server.progression_snapshot()
+                self.server.refresh_swing_projection_revision()
             else:
                 self.server.native_review.upload_review_answer()
         except (
