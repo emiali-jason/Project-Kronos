@@ -32,10 +32,10 @@ from kronos.intraday.contracts import CandleCompletion, IntradayTimeframe
 from kronos.intraday.discovery import FactFamily
 from kronos.intraday.probables import ProbablesRun, ProbableReason, ProbableState
 from kronos.intraday.probables_v2 import (
-    PROBABLES_V2_METHODOLOGY_CHECKSUM,
     PROBABLES_V2_METHODOLOGY_IDENTITY,
-    PROBABLES_V2_METHODOLOGY_VERSION,
-    PROBABLES_V2_PUBLICATION_IDENTITY,
+    PROBABLES_V2_SUCCESSOR_METHODOLOGY_CHECKSUM as PROBABLES_V2_METHODOLOGY_CHECKSUM,
+    PROBABLES_V2_SUCCESSOR_METHODOLOGY_VERSION as PROBABLES_V2_METHODOLOGY_VERSION,
+    PROBABLES_V2_SUCCESSOR_PUBLICATION_IDENTITY as PROBABLES_V2_PUBLICATION_IDENTITY,
     ProbablesRunV2,
 )
 from kronos.intraday.refresh_v2 import (
