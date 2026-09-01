@@ -82,3 +82,9 @@ The prospective non-position Paper Observation Track is governed by
 an explicitly started factual research track for blocked PAPER decisions while
 leaving DOMAIN-007, Sponsor Position, KR-380, KR-390, LIVE, and broker authority
 unchanged. PAPER-OBS-01 and PAPER-OBS-LEDGER-01 are not started by publication.
+
+Swing Step-31 forward target eligibility is governed prospectively by
+[ADR-0024](adr/ADR-0024-SWING-STEP31-FORWARD-TARGET-ELIGIBILITY-GOVERNANCE.md).
+The successor policy requires strict positive forward reward against the
+immutable rounded Step-31 Entry, preserves rejected structural candidates as
+historical context, and authorizes no fallback search or runtime change.

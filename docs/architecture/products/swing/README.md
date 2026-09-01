@@ -53,6 +53,7 @@ The architecture migration, engineering publication, repository synchronization,
 - [ADR-0012 / SWING-UX-GOV-01 — Remaining Swing UX/OPS Scope and Disposition](../../adr/ADR-0012-SWING-UX-GOV-01-REMAINING-SWING-UX-OPS-SCOPE-AND-DISPOSITION.md) — Approved remaining Swing UX/OPS definitions, dispositions, dependencies, and sequence
 - [ADR-0015 — Swing Sponsor Observation-Phase Authority and Step-31 Evidence Governance](../../adr/ADR-0015-SWING-SPONSOR-OBSERVATION-PHASE-AUTHORITY-AND-STEP-31-EVIDENCE-GOVERNANCE.md) — Approved observation decision and evidence governance
 - [ADR-0016 — Swing Paper Observation Track Authority](../../adr/ADR-0016-SWING-PAPER-OBSERVATION-TRACK-AUTHORITY.md) — Approved prospective non-position research tracking for blocked PAPER decisions; runtime not started
+- [ADR-0024 — Swing Step-31 Forward Target Eligibility Governance](../../adr/ADR-0024-SWING-STEP31-FORWARD-TARGET-ELIGIBILITY-GOVERNANCE.md) — Approved successor policy for strict post-rounding forward target eligibility, rejected structural context, and no automatic fallback; publication pending
 - [Paper Observation Track V1](../../interfaces/KRONOS-SWING-PAPER-OBSERVATION-TRACK-V1.md)
 - [Sponsor Observation Projection V2](../../interfaces/KRONOS-SWING-SPONSOR-OBSERVATION-PROJECTION-V2.md)
 - [Observation Research Ledger V2](../../interfaces/KRONOS-SWING-OBSERVATION-RESEARCH-LEDGER-V2.md)
