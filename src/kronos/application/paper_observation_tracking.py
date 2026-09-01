@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from hashlib import sha256
 from threading import RLock
 from typing import Callable
 from zoneinfo import ZoneInfo
@@ -254,10 +255,7 @@ class PaperObservationTrackingWorkflow:
         current = self._store.projection(track_identity)
         if current.track_state is PaperObservationTrackState.COMPLETE:
             return current
-        source_identity = (
-            f"{tick.source}:{tick.connection_id}:"
-            f"{tick.source_sequence if tick.source_sequence is not None else 'NO_SEQUENCE'}"
-        )
+        source_identity = _tick_source_identity(tick)
         fact = make_market_fact(
             track,
             last_price=tick.last_price,
@@ -293,18 +291,43 @@ class PaperObservationTrackingWorkflow:
                 f"{tick.source}:{tick.connection_id}:"
             )
         )
+        previous = None if not previous_facts else previous_facts[-1]
+        # A prior ordering conflict holds outcome authority until the governed
+        # connection/reconciliation path explicitly restores monitoring.
+        ordering_authority_held = (
+            current.monitoring_state is PaperObservationMonitoringState.INTERRUPTED
+            and current.monitoring_reason in {
+                "ORDERED_LIVE_FACTS_UNAVAILABLE",
+                "PROVIDER_SEQUENCE_CONFLICT",
+            }
+        )
+        equal_time_order_unavailable = (
+            previous is not None
+            and tick.observed_at == previous.observed_at
+            and (
+                tick.source_sequence is None
+                or previous.source_sequence is None
+                or not previous.source_identity.startswith(
+                    f"{tick.source}:{tick.connection_id}:"
+                )
+                or tick.source_sequence <= previous.source_sequence
+            )
+        )
         if (
             tick.ordering_deterministic is not True
             or tick.recovered is True
+            or ordering_authority_held
+            or (
+                previous is not None
+                and tick.observed_at < previous.observed_at
+            )
+            or equal_time_order_unavailable
             or (
                 prior_connection
                 and (
-                    tick.observed_at < prior_connection[-1].observed_at
-                    or (
-                        tick.source_sequence is not None
-                        and prior_connection[-1].source_sequence is not None
-                        and tick.source_sequence <= prior_connection[-1].source_sequence
-                    )
+                    tick.source_sequence is not None
+                    and prior_connection[-1].source_sequence is not None
+                    and tick.source_sequence <= prior_connection[-1].source_sequence
                 )
             )
         ):
@@ -313,13 +336,16 @@ class PaperObservationTrackingWorkflow:
             self._retain_monitoring(
                 track_identity,
                 PaperObservationMonitoringState.INTERRUPTED,
-                "ORDERED_LIVE_FACTS_UNAVAILABLE",
+                (
+                    current.monitoring_reason
+                    if ordering_authority_held
+                    else "ORDERED_LIVE_FACTS_UNAVAILABLE"
+                ),
                 self._clock(),
             )
             return self._store.projection(track_identity)
         if not self._store.append_fact(fact):
             return self._store.projection(track_identity)
-        previous = None if not previous_facts else previous_facts[-1]
         if current.entry_state is PaperObservationOutcome.ENTRY_NOT_OBSERVED:
             if track.observation_entry_reference is not None and _entry_observed(
                 track.direction,
@@ -672,6 +698,35 @@ def _entry_observed(
         previous_price < entry <= price
         if direction is V1Direction.LONG
         else previous_price > entry >= price
+    )
+
+
+def _tick_source_identity(tick: ProviderMarketTick) -> str:
+    """Return the immutable identity of one factual Provider observation.
+
+    A genuine Provider sequence remains the identity key scoped by its source
+    and connection.  When it is absent, KRONOS owns a clearly labelled digest
+    of the governed observation timestamp and normalized price, while the
+    persisted Provider sequence remains ``None``.  Thus equal timestamp/price
+    is an exact replay, equal price at another time is another observation, and
+    equal-time price changes remain distinct facts whose chronology is handled
+    fail-closed by :meth:`observe_tick`.
+    """
+
+    if tick.source_sequence is not None:
+        return f"{tick.source}:{tick.connection_id}:{tick.source_sequence}"
+    observed_at = tick.observed_at.astimezone(UTC).isoformat()
+    price = (
+        "0"
+        if tick.last_price == 0
+        else format(tick.last_price.normalize(), "f")
+    )
+    observation_identity = sha256(
+        f"{observed_at}:{price}".encode("utf-8")
+    ).hexdigest()
+    return (
+        f"{tick.source}:{tick.connection_id}:"
+        f"KRONOS_UNSEQUENCED_OBSERVATION:{observation_identity}"
     )
 
 
