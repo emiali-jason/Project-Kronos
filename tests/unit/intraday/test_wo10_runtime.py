@@ -16,6 +16,7 @@ from kronos.intraday.universe import IntradayMarketFamily
 from kronos.intraday.wo10_persistence import Wo10Store
 from kronos.intraday.wo12_v2_persistence import Wo12V2Store
 from kronos.intraday.wo13_persistence import Wo13Store
+from kronos.intraday.wo14_persistence import Wo14Store
 from kronos.intraday.wo10_policies import (
     Wo10PolicyRegistry,
     wo10_equity_policy_binding,
@@ -56,6 +57,10 @@ def test_central_runtime_owns_single_reused_v2_and_wo10_composition(tmp_path) ->
     assert type(composition.wo13_store) is Wo13Store
     assert composition.wo13_application.store is composition.wo13_store
     assert composition.wo13_restoration.restore().state == "NOT_YET_RUN"
+    assert type(composition.wo14_store) is Wo14Store
+    assert composition.wo14_application.store is composition.wo14_store
+    assert composition.wo14_application.wo13_store is composition.wo13_store
+    assert composition.wo14_restoration.restore().state == "NOT_YET_RUN"
     assert type(composition.wo10_policy_registry) is RuntimeWo10PolicyRegistry
     assert type(composition.mcx_paired_review_store) is IntradayMcxPairedReviewStore
     assert composition.mcx_paired_review_application._store is composition.mcx_paired_review_store

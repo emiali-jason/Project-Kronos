@@ -605,7 +605,153 @@ def render_intraday_wo13(
     )
 
 
+def render_intraday_wo14(
+    snapshot: BrowserWorkspaceSnapshot,
+    status: dict[str, object],
+) -> str:
+    """Render restored WO-14 loss/exposure facts without permission semantics."""
+
+    observation = status.get("current_observation")
+    if type(observation) is not dict:
+        content = (
+            '<div class="empty"><div><strong>'
+            + escape(str(status.get("restoration_state", "NOT_YET_RUN")))
+            + "</strong><br>No persisted WO-14 risk/loss observation.</div></div>"
+        )
+    else:
+        availability = observation.get("field_availability", [])
+        availability_rows = "".join(
+            "<tr><td>" + escape(str(item.get("field", "UNAVAILABLE")))
+            + "</td><td>" + escape(str(item.get("availability", "UNAVAILABLE")))
+            + "</td><td>" + escape(str(item.get("reason", "UNAVAILABLE")))
+            + "</td></tr>"
+            for item in availability
+            if type(item) is dict
+        )
+        family = str(observation.get("market_family", "UNAVAILABLE"))
+        family_note = (
+            "Underlying point risk is independent factual context; monetary execution-vehicle risk remains unavailable."
+            if family == "NSE_INDEX"
+            else "Exact active-contract economics only; no external reference market is a sizing authority."
+            if family == "MCX"
+            else "Stock-local loss/exposure facts only."
+        )
+        content = (
+            '<section class="panel"><div class="panel-head"><div><h2>'
+            + escape(str(observation.get("canonical_subject_identity", "UNAVAILABLE")))
+            + "</h2><p>" + escape(family) + " · "
+            + escape(str(observation.get("direction", "UNAVAILABLE")))
+            + " · " + escape(str(observation.get("setup_family", "UNAVAILABLE")))
+            + '</p></div><span class="status neutral">'
+            + escape(str(observation.get("state", "RISK_UNAVAILABLE")))
+            + "</span></div>"
+            '<dl class="detail-list"><dt>Structural risk / price unit</dt><dd>'
+            + escape(_wo14_value(observation.get("structural_risk_per_price_unit")))
+            + "</dd><dt>Risk per share</dt><dd>"
+            + escape(_wo14_value(observation.get("risk_per_share")))
+            + "</dd><dt>Underlying point risk</dt><dd>"
+            + escape(_wo14_value(observation.get("underlying_point_risk")))
+            + "</dd><dt>Monetary risk / tradable unit</dt><dd>"
+            + escape(_wo14_value(observation.get("monetary_risk_per_tradable_unit")))
+            + "</dd><dt>Reference quantity / semantics</dt><dd>"
+            + escape(_wo14_value(observation.get("reference_quantity"))) + " · "
+            + escape(_wo14_value(observation.get("reference_quantity_semantics")))
+            + " · source "
+            + escape(_wo14_value(observation.get("reference_quantity_source_identity")))
+            + "</dd><dt>Loss at Stop</dt><dd>"
+            + escape(_wo14_value(observation.get("loss_at_stop")))
+            + "</dd><dt>Reference notional</dt><dd>"
+            + escape(_wo14_value(observation.get("reference_notional")))
+            + "</dd><dt>Capital reference / fraction</dt><dd>"
+            + escape(_wo14_value(observation.get("capital_reference"))) + " · "
+            + escape(_wo14_value(observation.get("capital_at_risk_fraction")))
+            + " · source "
+            + escape(_wo14_value(observation.get("capital_source_identity")))
+            + "</dd><dt>Existing / aggregate open risk</dt><dd>"
+            + escape(_wo14_value(observation.get("existing_open_risk"))) + " · "
+            + escape(_wo14_value(observation.get("aggregate_open_risk_after_reference")))
+            + " · source "
+            + escape(_wo14_value(observation.get("portfolio_source_identity")))
+            + "</dd><dt>Margin context</dt><dd>"
+            + escape(_wo14_value(observation.get("margin_context")))
+            + " · source "
+            + escape(_wo14_value(observation.get("margin_source_identity")))
+            + "</dd><dt>Monetary currency</dt><dd>"
+            + escape(_wo14_value(observation.get("currency")))
+            + "</dd><dt>WO-13 Model R:R (context only)</dt><dd>"
+            + escape(_wo14_value(observation.get("model_rr")))
+            + "</dd><dt>Alert severity</dt><dd>"
+            + escape(str(observation.get("alert_severity", "UNCLASSIFIED")))
+            + "</dd><dt>Market-family treatment</dt><dd>" + escape(family_note)
+            + "</dd><dt>Unavailable reasons</dt><dd>"
+            + escape(_list_text(observation.get("unavailable_reasons")))
+            + "</dd></dl>"
+            '<div class="table-wrap"><table><thead><tr><th>Risk field</th>'
+            "<th>Availability</th><th>Persisted reason</th></tr></thead><tbody>"
+            + availability_rows + "</tbody></table></div></section>"
+            '<section class="panel"><div class="panel-head"><div><h2>Lineage / Policy</h2>'
+            "<p>Immutable WO-13 binding and persisted factual provenance.</p>"
+            '</div><span class="status neutral">READ ONLY</span></div>'
+            '<dl class="detail-list"><dt>WO-14 observation</dt><dd>'
+            + escape(str(observation.get("observation_identity", "UNAVAILABLE")))
+            + "</dd><dt>WO-13 Trade Plan</dt><dd>"
+            + escape(str(observation.get("trade_plan_identity", "UNAVAILABLE")))
+            + "</dd><dt>Instrument / actual contract</dt><dd>"
+            + escape(str(observation.get("instrument_identity", "UNAVAILABLE"))) + " · "
+            + escape(_wo14_value(observation.get("actual_contract_identity")))
+            + "</dd><dt>Analysis boundary</dt><dd>"
+            + escape(str(observation.get("analysis_boundary", "UNAVAILABLE")))
+            + "</dd><dt>Policy</dt><dd>"
+            + escape(str(observation.get("policy_identity", "UNAVAILABLE"))) + " / "
+            + escape(str(observation.get("policy_version", "UNAVAILABLE")))
+            + "</dd><dt>Authority</dt><dd>"
+            + escape(str(observation.get("authority", "RISK_OBSERVATION_ONLY")))
+            + "</dd><dt>Current pointer</dt><dd>"
+            + escape(str(observation.get("pointer_identity", "UNAVAILABLE")))
+            + "</dd></dl></section>"
+        )
+    last = status.get("last_operation")
+    if type(last) is dict and last.get("failure_reason") is not None:
+        last_operation = (
+            '<section class="intraday-panel intraday-unavailable"><h2>Last Operation Failure</h2>'
+            "<strong>" + escape(str(last.get("outcome", "FAILED"))) + "</strong><p>"
+            + escape(str(last.get("failure_stage", "UNAVAILABLE"))) + " · "
+            + escape(str(last.get("failure_reason", "WO14_OPERATION_FAILED")))
+            + "</p></section>"
+        )
+    else:
+        last_operation = ""
+    body = (
+        _intraday_tabs(False, active="wo14")
+        + '<div class="intraday-warning"><strong>WO-14 DOMAIN-007 LOSS / EXPOSURE OBSERVATION</strong>'
+        "<span>ADVISORY FACTS ONLY · NO TRADE, TIMING, QUANTITY, SPONSOR OR EXECUTION AUTHORITY</span></div>"
+        + content + last_operation
+        + '<div class="intraday-review-config"><strong>Control:</strong> '
+        + escape(str(status.get("control_identity", "UNAVAILABLE"))) + " / "
+        + escape(str(status.get("control_version", "UNAVAILABLE")))
+        + "<br><strong>Runtime:</strong> "
+        + ("LOADED" if status.get("runtime_loaded") is True else "UNAVAILABLE")
+        + " · " + escape(str(status.get("restoration_state", "UNAVAILABLE")))
+        + " · Operation " + escape(str(status.get("operation_state", "UNAVAILABLE")))
+        + "<br><strong>Boundary:</strong> This page reports available risk/loss facts for one immutable WO-13 plan. It provides no timing or trade consequence."
+        + "</div>"
+    )
+    return render_browser_page(
+        title="Intraday WO-14",
+        subtitle="Persisted DOMAIN-007 advisory observation; rendering performs no calculation.",
+        snapshot=snapshot,
+        active_nav="Intraday",
+        active_tab="WO-14",
+        body=body,
+        extra_styles=_INTRADAY_CSS,
+    )
+
+
 def _wo13_value(value: object) -> str:
+    return "UNAVAILABLE" if value is None else str(value)
+
+
+def _wo14_value(value: object) -> str:
     return "UNAVAILABLE" if value is None else str(value)
 
 
@@ -1697,6 +1843,7 @@ def _intraday_tabs(refresh_enabled: bool, *, active: str = "opportunities") -> s
         '<a class="' + ('active' if active == 'wo11' else '') + '" href="/intraday/wo11">WO-11</a>'
         '<a class="' + ('active' if active == 'wo12' else '') + '" href="/intraday/wo12">WO-12</a>'
         '<a class="' + ('active' if active == 'wo13' else '') + '" href="/intraday/wo13">WO-13</a>'
+        '<a class="' + ('active' if active == 'wo14' else '') + '" href="/intraday/wo14">WO-14</a>'
         '<span class="intraday-tab">Trade Candidates</span>'
         '<span class="intraday-tab">Active</span>'
         '<span class="intraday-tab">Closed</span>'
@@ -2157,5 +2304,6 @@ __all__ = [
     "render_intraday_wo11",
     "render_intraday_wo12",
     "render_intraday_wo13",
+    "render_intraday_wo14",
     "render_intraday_workstation",
 ]
