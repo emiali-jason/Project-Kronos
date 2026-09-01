@@ -1,6 +1,6 @@
 # KRONOS Intraday Engineering, Methodology & Architecture Record
 
-**Status:** LIVING DOCUMENT — V0.1; amended through WO-13 governance authorization
+**Status:** LIVING DOCUMENT — V0.1; amended through WO-15 governance authorization
 
 **Product owner:** KRONOS Intraday
 
@@ -401,13 +401,14 @@ weekly, 4H, path-distance, extension-threshold or visual-literal policy.
 | Intraday factual publication checkpoint | `8cb3b3e3632107dae585a60fceb4f88be90194d0` |
 | Native universe | 98 governed subjects; P5 reconciliation published |
 | Native factual evaluability | 93 available; 5 prerequisite unavailable |
-| Next stage | Bounded WO-12 source implementation under ADR-0020; no real operation |
+| Next stage | WO-15 source engineering only after ADR-0025 governance publication and synchronization |
 | Slice 3V authority | VALIDATION ONLY |
 | Slice 4 | NOT STARTED |
 | Intraday WO-12 analytical state family | Common `KR370_ANALYTICAL_PROMOTION` reuse frozen by ADR-0020 |
-| Trade Construction | NOT STARTED |
-| Risk | NOT STARTED |
-| Entry Timing | NOT STARTED |
+| Trade Construction / WO-13 | ENGINEERING CLOSED |
+| Risk Observation / WO-14 | ENGINEERING CLOSED; `RISK_OBSERVATION_ONLY` |
+| Review Intake Correction | CLOSED; current Review bound to current Probables V2 |
+| Entry Timing / WO-15 | ARCHITECTURE GOVERNED; SOURCE ENGINEERING HELD PENDING PUBLICATION |
 | PAPER / LIVE | NOT STARTED |
 | Autonomous broker execution | NOT AUTHORIZED |
 
@@ -424,10 +425,10 @@ then proceed in order. RELIANCE remains the commissioning/regression anchor.
 The following remain unresolved or unimplemented and must not be inferred from factual foundations:
 
 - exact NSE new-entry semantics at `15:00:00`;
-- the WO-12 K5 material-extension threshold and full NOW commissioning;
-- Trade Construction contracts and geometry;
-- Intraday DOMAIN-007 Risk policy;
-- entry-timing semantics;
+- WO-15 extension/chase threshold and severity bands;
+- ATR veto, volume, RSI, Railway/SMA and level-proximity timing consequences;
+- N-bar/time-based timing expiry and extension-alert threshold;
+- option-premium execution timing and any new Entry indicator gates;
 - Intraday watch, notification, trade, position, and journal contracts;
 - PAPER / LIVE admission and acceptance policy;
 - any future forced MCX exit policy; and
@@ -972,6 +973,62 @@ instruction. Runtime, Browser, Provider calls, real observation and WO-15 are
 not authorized. The complete product record is [WO-14 DOMAIN-007 Risk
 Observation V1](KRONOS-INTRADAY-WO-14-DOMAIN-007-RISK-OBSERVATION-V1.md).
 
+## 35.4 WO-15 KR-380 completed-5M Entry Timing governance amendment
+
+[ADR-0025](../../adr/ADR-0025-INTRADAY-WO15-KR380-COMPLETED-5M-ENTRY-TIMING-BOUNDARY.md)
+freezes `KRONOS-INTRADAY-WO15-ENTRY-TIMING-V1 / 1.0.0` as the complete WO-15
+A/B/C/D architecture. Authority is exactly
+`COMPLETED_5M_ENTRY_TIMING_QUALIFICATION_ONLY` against one exact current
+immutable `KRONOS-INTRADAY-WO13-TRADE-PLAN-V1`.
+
+WO-15A owns the WO-13 handoff/trust boundary; WO-15B owns exact completed-5M
+Pullback and Range-Breakout Direct/Retest/Resumption timing grammar; WO-15C
+owns advisory extension and research telemetry; WO-15D owns immutable timing
+cycles, append-only transitions and the versioned
+`KRONOS-INTRADAY-WO15-TIMING-HANDOFF-V1 / 1.0.0` boundary. Direction, setup,
+Entry, Stop, Target, invalidation and Model R:R remain immutable WO-13 facts.
+
+The six states are `TIMING_NOT_EVALUATED`, `TIMING_WAITING`,
+`TIMING_QUALIFIED`, `TIMING_FAILED`, `TIMING_EXPIRED` and
+`TIMING_UNAVAILABLE`. Trust failure precedes expiry, explicit failure,
+qualification and waiting. Completed governed 5M candles alone carry timing
+authority; incomplete candles, LTP and wick-only crossings do not.
+
+LONG requires a strict completed Close above Entry plus aligned governed 5M
+progression; SHORT is strict below Entry plus aligned progression. Equality
+does not qualify. One completed close is sufficient; there is no Entry buffer,
+two-close requirement, mandatory retest, volume, RSI or Railway gate.
+Pullback failure requires explicit opposing governed progression. Range
+Breakout permits both Direct Acceptance and Retest/Resumption with exact
+zero-tolerance candle rules. Timing failure never rewrites the 15M thesis.
+
+Every opportunity owns immutable `timing_cycle_id`; the first cycle begins at
+the first valid post-plan completed-5M evaluation boundary, not first Entry
+interaction. Multiple cycles require a terminal failed predecessor and exact
+deterministic reset. Qualification is historical truth; later failure or expiry
+is a new immutable transition. There is no cooldown, maximum attempt count,
+N-bar/minute TTL or overnight carry.
+
+Completed-5M directional/absolute extension and Wilder/RMA ATR-14 normalized
+extension are `ADVISORY_RESEARCH_ONLY`. Invalid ATR makes normalization
+unavailable. Severity remains `UNCLASSIFIED`; thresholds and veto authority are
+none. Existing volume, RSI, SMA/Railway, CPR, PDH/PDL and Pivot facts remain
+context/research only.
+
+WO-14 is independent advisory context and never a timing prerequisite or veto.
+The timing handoff may preserve a Risk observation reference for audit/context
+only. Equity timing is stock-local, Index timing is underlying-local and MCX
+timing is exact active-contract-local/roll-safe; option premium and
+COMEX/NYMEX/USDINR cannot substitute. NATGAS remains operationally held.
+
+`TIMING_QUALIFIED` is not execution. Sponsor Decision, PAPER/LIVE/IGNORE,
+position, order, fill and broker authority remain downstream and absent. The
+canonical policy payload is
+[KRONOS-INTRADAY-WO15-ENTRY-TIMING-POLICY-V1.json](KRONOS-INTRADAY-WO15-ENTRY-TIMING-POLICY-V1.json),
+SHA-256 `d36386a98e2f1b78e5b70d0c27079c056951fd76a5b70ec2e9fa1bc1615a3f26`.
+No WO-15 production source, persistence, runtime, Browser, Provider operation
+or real timing evaluation is authorized by this amendment.
+
 ## 36. References
 
 - [Intraday Shared-File Change Rule](../../../engineering/INTRADAY-SHARED-FILE-CHANGE-RULE.md)
@@ -1005,9 +1062,11 @@ Observation V1](KRONOS-INTRADAY-WO-14-DOMAIN-007-RISK-OBSERVATION-V1.md).
 - [ADR-0021 — Intraday WO-12 Four-Criterion Promotion and WO-15 Extension Ownership](../../adr/ADR-0021-INTRADAY-WO12-FOUR-CRITERION-PROMOTION-AND-WO15-EXTENSION-OWNERSHIP.md)
 - [ADR-0022 — Intraday WO-12 to WO-13 Step-31 Trade Construction Boundary](../../adr/ADR-0022-INTRADAY-WO12-WO13-STEP31-TRADE-CONSTRUCTION-BOUNDARY.md)
 - [ADR-0023 — Intraday DOMAIN-007 Advisory Risk Observation Boundary](../../adr/ADR-0023-INTRADAY-DOMAIN-007-ADVISORY-RISK-OBSERVATION-BOUNDARY.md)
+- [ADR-0025 — Intraday WO-15 / KR-380 Completed-5M Entry Timing Boundary](../../adr/ADR-0025-INTRADAY-WO15-KR380-COMPLETED-5M-ENTRY-TIMING-BOUNDARY.md)
 - [WO-12 KR-370 Analytical Promotion V1](KRONOS-INTRADAY-WO-12-KR370-ANALYTICAL-PROMOTION-V1.md)
 - [WO-12 KR-370 Analytical Promotion V2](KRONOS-INTRADAY-WO-12-KR370-ANALYTICAL-PROMOTION-V2.md)
 - [WO-13 Step-31 Trade Construction V1](KRONOS-INTRADAY-WO-13-STEP31-TRADE-CONSTRUCTION-V1.md)
 - [WO-14 DOMAIN-007 Risk Observation V1](KRONOS-INTRADAY-WO-14-DOMAIN-007-RISK-OBSERVATION-V1.md)
+- [WO-15 KR-380 Entry Timing V1](KRONOS-INTRADAY-WO-15-KR380-ENTRY-TIMING-V1.md)
 - [WO-09 Governed Chart Analyst Answer Import](KRONOS-INTRADAY-WO-09-GOVERNED-CHART-ANALYST-ANSWER-IMPORT-V1.md)
 - [ADR-0017 Governed Active Derivative Contract Selection](../../adr/ADR-0017-GOVERNED-ACTIVE-DERIVATIVE-CONTRACT-SELECTION-V1.md)

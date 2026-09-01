@@ -20,6 +20,7 @@ Provide navigation to the approved KRONOS Platform Architecture v1.0 documents a
 - [Intraday Living Architecture Record](../products/intraday/KRONOS-INTRADAY-ENGINEERING-METHODOLOGY-ARCHITECTURE-RECORD-V0.1.md)
 - [Intraday Native Universe V1](../products/intraday/KRONOS-INTRADAY-NATIVE-UNIVERSE-V1.md)
 - [Intraday Programme Roadmap](../products/intraday/KRONOS-INTRADAY-V1-PROGRAMME-ROADMAP.md)
+- [Intraday WO-15 KR-380 Entry Timing V1](../products/intraday/KRONOS-INTRADAY-WO-15-KR380-ENTRY-TIMING-V1.md)
 
 ## Approved Domain Architectures
 
@@ -71,6 +72,7 @@ Provide navigation to the approved KRONOS Platform Architecture v1.0 documents a
 - [ADR-0018 — DOMAIN-001 Governed Visual Identity Relationship V1](../adr/ADR-0018-DOMAIN-001-GOVERNED-VISUAL-IDENTITY-RELATIONSHIP-V1.md)
 - [ADR-0023 — Intraday DOMAIN-007 Advisory Risk Observation Boundary](../adr/ADR-0023-INTRADAY-DOMAIN-007-ADVISORY-RISK-OBSERVATION-BOUNDARY.md)
 - [ADR-0024 — Swing Step-31 Forward Target Eligibility Governance](../adr/ADR-0024-SWING-STEP31-FORWARD-TARGET-ELIGIBILITY-GOVERNANCE.md)
+- [ADR-0025 — Intraday WO-15 / KR-380 Completed-5M Entry Timing Boundary](../adr/ADR-0025-INTRADAY-WO15-KR380-COMPLETED-5M-ENTRY-TIMING-BOUNDARY.md)
 - [KR-370 / KR-380 state-family contracts](../interfaces/KR-370-KR-380-STATE-FAMILY-CONTRACTS.md)
 - [PP-007 — Execution Semantics Across Markets](../principles/PP-007-Execution-Semantics-Across-Markets.md)
 

@@ -1,0 +1,287 @@
+{
+  "authority": "COMPLETED_5M_ENTRY_TIMING_QUALIFICATION_ONLY",
+  "canonical_evidence": {
+    "authoritative": "COMPLETED_GOVERNED_5M_CANDLES_ONLY",
+    "incomplete_candle_authority": "NONE",
+    "live_ltp_authority": "DISPLAY_CONTEXT_ONLY",
+    "wick_only_authority": "NONE"
+  },
+  "cycle": {
+    "active_non_terminal_per_wo13_plan": 1,
+    "creation": "FIRST_VALID_COMPLETED_5M_EVALUATION_BOUNDARY_STRICTLY_AFTER_WO13_EFFECTIVE_BOUNDARY",
+    "creation_and_first_evaluation": "ATOMIC",
+    "failed_cycle_rewrite": "PROHIBITED",
+    "multiple_cycles_same_plan_session": "ALLOWED_AFTER_TERMINAL_FAILURE_AND_DETERMINISTIC_RESET",
+    "reset_common_requirements": [
+      "PRIOR_CYCLE_TERMINALLY_FAILED",
+      "BOUNDARY_STRICTLY_LATER_THAN_FAILURE",
+      "SAME_CURRENT_NON_SUPERSEDED_WO13_PLAN",
+      "SESSION_VALID",
+      "INSTRUMENT_CONTRACT_ROLL_UNCHANGED",
+      "DIRECTION_UNCHANGED",
+      "SETUP_FAMILY_UNCHANGED",
+      "PRIOR_FAILURE_PREDICATE_NO_LONGER_SATISFIED",
+      "PROGRESSION_ALIGNED_OR_NON_DIRECTIONAL_FORMING",
+      "PROGRESSION_NOT_CONTRADICTORY"
+    ],
+    "reset_cooldown": "NONE",
+    "reset_maximum_attempts": "NONE"
+  },
+  "expiry": {
+    "arbitrary_bar_expiry": "NONE",
+    "arbitrary_time_expiry": "NONE",
+    "causes": [
+      "SESSION_END",
+      "WO13_PLAN_SUPERSEDED",
+      "UPSTREAM_CYCLE_SUPERSEDED",
+      "INSTRUMENT_CONTRACT_SUPERSEDED",
+      "DOMAIN_008_MARKET_SESSION_INVALID_OR_CLOSED"
+    ],
+    "overnight_cycle_carry": "PROHIBITED"
+  },
+  "extension": {
+    "absolute_formula": "ABS(COMPLETED_5M_CLOSE_MINUS_ENTRY_REFERENCE)",
+    "authority": "ADVISORY_RESEARCH_ONLY",
+    "atr": {
+      "calculation": "WILDER_RMA",
+      "invalid_normalized_result": "UNAVAILABLE",
+      "lineage": "SAME_INSTRUMENT_CONTRACT_ROLL_5M_BOUNDARY",
+      "period": 14,
+      "seed": "MEAN_OF_FIRST_14_TRUE_RANGES",
+      "timeframe": "COMPLETED_GOVERNED_5M"
+    },
+    "long_directional_formula": "COMPLETED_5M_CLOSE_MINUS_ENTRY_REFERENCE",
+    "normalized_formula": "DIRECTIONAL_EXTENSION_DIVIDED_BY_ATR14_5M",
+    "severity": "UNCLASSIFIED",
+    "short_directional_formula": "ENTRY_REFERENCE_MINUS_COMPLETED_5M_CLOSE",
+    "threshold": "POLICY_UNRESOLVED",
+    "timing_veto": "NONE",
+    "trade_veto": "NONE"
+  },
+  "handoff": {
+    "authority": "TIMING_EVIDENCE_ONLY",
+    "timing_evidence_authority": true,
+    "contract_identity": "KRONOS-INTRADAY-WO15-TIMING-HANDOFF-V1",
+    "contract_version": "1.0.0",
+    "creation_states": [
+      "TIMING_QUALIFIED",
+      "TIMING_FAILED",
+      "TIMING_EXPIRED",
+      "TIMING_UNAVAILABLE"
+    ],
+    "mandatory_contents": [
+      "HANDOFF_IDENTITY",
+      "HANDOFF_CONTRACT_IDENTITY_VERSION",
+      "WO13_TRADE_PLAN_IDENTITY_INTEGRITY",
+      "TIMING_CYCLE_IDENTITY",
+      "TIMING_OBSERVATION_IDENTITY",
+      "TIMING_TRANSITION_IDENTITY",
+      "PRIOR_CURRENT_STATE_AND_CAUSE",
+      "DIRECTION_SETUP_ENTRY_REFERENCE",
+      "QUALIFICATION_PATH",
+      "QUALIFYING_FAILING_5M_EVIDENCE_AND_BOUNDARY",
+      "TIMING_LIFECYCLE_TIMESTAMPS",
+      "EXTENSION_AND_APPROVED_RESEARCH_REFERENCES",
+      "SESSION_CALENDAR_IDENTITY_VERSION",
+      "CANONICAL_INSTRUMENT_CONTRACT_ROLL_IDENTITY",
+      "WO15_POLICY_IDENTITY_VERSION",
+      "OPTIONAL_WO14_RISK_REFERENCE",
+      "CREATION_TIMESTAMP_PROVENANCE_INTEGRITY",
+      "SUPERSESSION_LINEAGE"
+    ],
+    "repeated_waiting_handoff": "NOT_REQUIRED",
+    "risk_reference_semantics": "AUDIT_CONTEXT_ONLY",
+    "sponsor_decision_authority": "NONE",
+    "paper_authority": "NONE",
+    "live_authority": "NONE",
+    "ignore_authority": "NONE",
+    "position_authority": "NONE",
+    "broker_authority": "NONE"
+  },
+  "market_family_authority": {
+    "EQUITY": "STOCK_LOCAL_COMPLETED_5M",
+    "INDEX": "UNDERLYING_INDEX_COMPLETED_5M",
+    "MCX": "EXACT_ACTIVE_FUTURES_CONTRACT_COMPLETED_5M",
+    "NATGAS": "STRUCTURALLY_SUPPORTED_OPERATIONALLY_HELD",
+    "option_premium_substitution": "PROHIBITED",
+    "reference_market_substitution": "PROHIBITED"
+  },
+  "non_authorities": [
+    "DIRECTION",
+    "SETUP_FAMILY",
+    "ENTRY_REFERENCE",
+    "ENTRY_CONDITION",
+    "STOP",
+    "THESIS_INVALIDATION",
+    "NATIVE_TARGET",
+    "CANONICAL_TARGET",
+    "RISK_DISTANCE",
+    "REWARD_DISTANCE",
+    "MODEL_RR",
+    "RISK_OBSERVATION",
+    "SPONSOR_PARTICIPATION",
+    "PAPER",
+    "LIVE",
+    "IGNORE",
+    "QUANTITY",
+    "POSITION",
+    "ORDER",
+    "FILL",
+    "BROKER_EXECUTION"
+  ],
+  "policy_identity": "KRONOS-INTRADAY-WO15-ENTRY-TIMING-POLICY-V1",
+  "policy_version": "1.0.0",
+  "progression_adapter": {
+    "allowed_outputs": [
+      "ALIGNED",
+      "NON_DIRECTIONAL_FORMING",
+      "CONTRADICTORY",
+      "UNAVAILABLE"
+    ],
+    "new_price_algorithm": "PROHIBITED"
+  },
+  "prohibited": [
+    "WO13_GEOMETRY_MUTATION",
+    "LIVE_LTP_TIMING_TRIGGER",
+    "WICK_ONLY_QUALIFICATION",
+    "ARBITRARY_ENTRY_BUFFER",
+    "MANDATORY_TWO_CLOSE_CONFIRMATION",
+    "MANDATORY_RETEST",
+    "MANDATORY_VOLUME_CONFIRMATION",
+    "MANDATORY_RSI_CONFIRMATION",
+    "MANDATORY_RAILWAY_CONFIRMATION",
+    "ATR_VETO",
+    "RR_TIMING_GATE",
+    "NEW_INDICATOR_STACK",
+    "AI_TIMING_SCORE",
+    "REFERENCE_MARKET_MCX_TRIGGER",
+    "OPTION_PREMIUM_INDEX_TIMING_SUBSTITUTION",
+    "WO14_RISK_REWRITES_TIMING",
+    "SPONSOR_MANUAL_TRADE_REWRITES_TIMING",
+    "BROKER_ACTION"
+  ],
+  "qualification_paths": [
+    "PULLBACK_CONTINUATION",
+    "DIRECT_ACCEPTANCE",
+    "RETEST_RESUMPTION",
+    "NOT_APPLICABLE"
+  ],
+  "research_only": [
+    "ATR14_5M",
+    "DIRECTIONAL_EXTENSION",
+    "ABSOLUTE_EXTENSION",
+    "NORMALIZED_DIRECTIONAL_EXTENSION",
+    "MAXIMUM_FAVORABLE_EXTENSION",
+    "MAXIMUM_ADVERSE_EXTENSION",
+    "MAXIMUM_EXTENSION_BEFORE_QUALIFICATION",
+    "VOLUME_RATIO_PERCENTILE",
+    "RSI14",
+    "SMA_RAILWAY_STATE",
+    "CPR_PDH_PDL_PIVOT_CONTEXT",
+    "SESSION_PHASE",
+    "TIMING_LATENCY",
+    "RETEST_OCCURRENCE",
+    "QUALIFICATION_PATH",
+    "WO14_REFERENCE",
+    "FUTURE_OUTCOME_REFERENCE"
+  ],
+  "risk_relationship": {
+    "prerequisite": false,
+    "risk_alert_timing_veto": false,
+    "risk_observed_timing_veto": false,
+    "risk_unavailable_timing_veto": false
+  },
+  "setup_grammar": {
+    "INTRADAY_PULLBACK_CONTINUATION": {
+      "failure": "AUTHORITATIVE_OPPOSING_GOVERNED_5M_STRUCTURAL_PROGRESSION",
+      "long": "CLOSE_GT_ENTRY_AND_LONG_ALIGNED_PROGRESSION",
+      "mandatory_retest": false,
+      "qualifying_closes": 1,
+      "reset": "LATER_ALIGNED_OR_FORMING_AND_NOT_OPPOSING",
+      "short": "CLOSE_LT_ENTRY_AND_SHORT_ALIGNED_PROGRESSION"
+    },
+    "INTRADAY_RANGE_BREAKOUT": {
+      "direct_long": "CLOSE_GT_ORIGINAL_RANGE_HIGH_AND_LONG_ALIGNED_PROGRESSION",
+      "direct_short": "CLOSE_LT_ORIGINAL_RANGE_LOW_AND_SHORT_ALIGNED_PROGRESSION",
+      "failure_long": "AFTER_ACTIVE_INTERACTION_CLOSE_LT_ORIGINAL_RANGE_HIGH",
+      "failure_short": "AFTER_ACTIVE_INTERACTION_CLOSE_GT_ORIGINAL_RANGE_LOW",
+      "long_retest": "LOW_LTE_ENTRY_AND_CLOSE_GTE_ENTRY",
+      "long_resumption": "SUBSEQUENT_CLOSE_GT_RETEST_HIGH_AND_LONG_ALIGNED_PROGRESSION",
+      "mandatory_retest": false,
+      "reset_long": "LATER_CLOSE_GTE_RANGE_HIGH_AND_NON_OPPOSING_PROGRESSION",
+      "reset_short": "LATER_CLOSE_LTE_RANGE_LOW_AND_NON_OPPOSING_PROGRESSION",
+      "retest_tolerance": "NONE",
+      "short_retest": "HIGH_GTE_ENTRY_AND_CLOSE_LTE_ENTRY",
+      "short_resumption": "SUBSEQUENT_CLOSE_LT_RETEST_LOW_AND_SHORT_ALIGNED_PROGRESSION"
+    }
+  },
+  "state_precedence": [
+    "TIMING_UNAVAILABLE",
+    "TIMING_EXPIRED",
+    "TIMING_FAILED",
+    "TIMING_QUALIFIED",
+    "TIMING_WAITING"
+  ],
+  "states": [
+    "TIMING_NOT_EVALUATED",
+    "TIMING_WAITING",
+    "TIMING_QUALIFIED",
+    "TIMING_FAILED",
+    "TIMING_EXPIRED",
+    "TIMING_UNAVAILABLE"
+  ],
+  "statefulness": {
+    "qualified_is_historical_truth": true,
+    "qualified_to_waiting_stateless_flicker": "PROHIBITED",
+    "qualified_to_failed": "NEW_IMMUTABLE_TRANSITION",
+    "qualified_to_expired": "NEW_IMMUTABLE_TRANSITION"
+  },
+  "timeframe_roles": {
+    "1H": "UPSTREAM_REGIME_CONTEXT",
+    "15M": "IMMUTABLE_WO13_TRADE_CONSTRUCTION",
+    "5M": "WO15_FINAL_ENTRY_TIMING"
+  },
+  "trust_failure_consequence": "TIMING_UNAVAILABLE",
+  "trust_failures": [
+    "FOREIGN_WO13_PLAN",
+    "SUPERSEDED_WO13_PLAN",
+    "DIRECTION_MISMATCH",
+    "SETUP_FAMILY_MISMATCH",
+    "INSTRUMENT_MISMATCH",
+    "ACTIVE_CONTRACT_MISMATCH",
+    "ROLL_LINEAGE_MISMATCH",
+    "STALE_MANDATORY_5M_EVIDENCE",
+    "INCOMPLETE_CANDLE_AS_COMPLETED",
+    "OBSERVATION_BOUNDARY_MISMATCH",
+    "CORRUPT_EVIDENCE",
+    "POLICY_VERSION_MISMATCH",
+    "SESSION_CALENDAR_MISMATCH",
+    "INTEGRITY_FAILURE"
+  ],
+  "unresolved_policy": [
+    "EXTENSION_CHASE_THRESHOLD",
+    "EXTENSION_SEVERITY_BANDS",
+    "ATR_VETO_THRESHOLD",
+    "VOLUME_CONFIRMATION_THRESHOLD",
+    "VOLUME_TIMING_CONSEQUENCE",
+    "RSI_TIMING_CONSEQUENCE",
+    "RAILWAY_SMA_TIMING_CONSEQUENCE",
+    "CPR_PDH_PDL_PIVOT_PROXIMITY_CONSEQUENCE",
+    "N_BAR_EXPIRY",
+    "TIME_BASED_EXPIRY",
+    "EXTENSION_ALERT_THRESHOLD",
+    "OPTION_PREMIUM_EXECUTION_TIMING",
+    "NEW_INDICATOR_GATES"
+  ],
+  "wo13_input": {
+    "contract_identity": "KRONOS-INTRADAY-WO13-TRADE-PLAN-V1",
+    "geometry_mutation": "PROHIBITED",
+    "required_currentness": [
+      "CURRENT",
+      "NOT_SUPERSEDED",
+      "INTEGRITY_VALID",
+      "SESSION_COMPATIBLE",
+      "INSTRUMENT_CONTRACT_COMPATIBLE"
+    ]
+  }
+}

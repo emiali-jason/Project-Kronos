@@ -1,6 +1,6 @@
 # KRONOS Intraday V1 Programme Roadmap
 
-**Status:** WO-12 closed; WO-13 governance published; WO-14 advisory architecture prepared with source gated on WO-13 contracts
+**Status:** WO-13 CLOSED; WO-14 CLOSED; Review Intake Correction CLOSED; WO-15 architecture governed locally with engineering next only after publication
 
 Native universe count is 98. RELIANCE remains the commissioning and regression
 anchor; it is not the universe owner or a privileged membership class.
@@ -99,10 +99,17 @@ operation remain separately gated.
 [ADR-0023](../../adr/ADR-0023-INTRADAY-DOMAIN-007-ADVISORY-RISK-OBSERVATION-BOUNDARY.md)
 freezes WO-14 as advisory DOMAIN-007 Risk/loss-exposure observation with no
 trade veto, final quantity, geometry, 5M timing, Sponsor or broker authority.
-Its factual methodology needs no numerical alert threshold, but source
-engineering must wait for the actual published WO-13 Trade Plan/handoff
-contracts and a separate instruction. WO-14 runtime/Browser/real operation and
-all WO-15 engineering remain unauthorized.
+WO-13 and WO-14 engineering are now closed. The Review Intake Correction is
+closed and Review is current against the exact current Probables V2 run.
+
+[ADR-0025](../../adr/ADR-0025-INTRADAY-WO15-KR380-COMPLETED-5M-ENTRY-TIMING-BOUNDARY.md)
+freezes WO-15 A/B/C/D architecture: exact WO-13 trust boundary, completed-5M
+Pullback/Breakout timing grammar, advisory extension/research telemetry, and
+immutable timing cycles/transitions with a versioned downstream handoff.
+WO-14 remains independent non-veto context. WO-15 source engineering is next
+only after the exact governance commit is reviewed, authorized, published and
+repository synchronization is verified. This governance record starts no
+production implementation, runtime, Browser or real timing operation.
 
 ## Track C — MCX readiness
 
@@ -114,8 +121,8 @@ still required before operational WO-10M.
 WO-11 → WO-12 → WO-13 → WO-14 → WO-15 → WO-16 → WO-17 → WO-18 →
 WO-19 → WO-20 → WO-21 → WO-22 → WO-23 → WO-24.
 
-The roadmap names sequence only. ADR-0022 supplies bounded WO-13 core authority
-after its completed governance publication. ADR-0023 supplies WO-14
-architecture but no source authority until the WO-13 dependency and a separate
-engineering instruction are satisfied. Neither grants runtime, Browser, real
-operation, entry-timing, lifecycle, Sponsor, broker or production authority.
+The roadmap names sequence only. ADR-0022 and ADR-0023 remain the immutable
+WO-13 geometry and WO-14 advisory-Risk authorities. ADR-0025 freezes WO-15
+architecture but grants no source, runtime, Browser, Provider, Sponsor,
+lifecycle, broker or real-operation authority before separate publication and
+engineering gates.

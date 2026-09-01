@@ -1,6 +1,6 @@
 # Intraday Contract and State Ownership Registry
 
-**Status:** Amended through WO-14 governance authorization
+**Status:** Amended through WO-15 governance authorization
 
 | Boundary | Owner | Consequence authority |
 |---|---|---|
@@ -19,10 +19,10 @@
 | WO-10E / WO-10I / WO-10M analytical reconciliation | Intraday | Independent family policy produces exactly one product-local seven-state result with inherited direction; no KR-370, Entry, Trade, Risk or broker authority |
 | WO-11 analytical promotion consolidation/publication | Intraday | Validates, collates and publishes exact WO-10 results with zero analytical discretion; only `PROMOTION_READY` may be eligible for a later separately governed handoff |
 | WO-12 / KR-370 analytical promotion V2 | KR-370 / DOMAIN-003 Validation | Distinct subsequent layer governed by ADR-0020 and current ADR-0021; consumes only exact eligible WO-11 lineage and evaluates exactly K1–K4 on Intraday 15M evidence under the common `KRONOS-KR-370-ANALYTICAL-PROMOTION-V1` state family; no upstream state is remapped |
-| Extension/chase research and future consequence | WO-15 / KR-380 | Retained WO-12 K5 fact-foundation artifacts are supporting research/telemetry only; any future extension/chase or 5M ATR/reference consequence requires separate WO-15 methodology |
+| Extension/chase research and future consequence | WO-15 / KR-380 | Completed-5M directional/absolute/ATR-normalized extension and bounded contextual facts are advisory research only; no threshold, severity band, timing veto or trade veto is commissioned |
 | WO-13 / Step-31 Trade Construction | Intraday | Exact current WO-12 NOW admission and immutable 15M setup-specific Entry Reference, Stop, invalidation, one Target, risk/reward distance, Model R:R, availability and warnings only; no Risk permission or 5M timing |
 | WO-14 / Risk Observation | DOMAIN-007 with Intraday-owned adapter | Exact immutable WO-13-plan-bound advisory loss-exposure facts, availability, freshness, provenance and optional authoritative capital/portfolio/margin context only; no permission, veto, final quantity or timing authority |
-| Entry Timing | DOMAIN-004 | Entry-timing state only |
+| WO-15 / KR-380 Entry Timing | DOMAIN-004 with Intraday-owned adapter | Completed-governed-5M qualification only against exact immutable WO-13 geometry; six-state lifecycle, deterministic Pullback/Breakout paths, immutable timing cycles and versioned timing handoff; WO-14 is independent non-veto context |
 | Objective Lifecycle | DOMAIN-005 | Model-trade lifecycle only |
 | Sponsor Position | DOMAIN-005 sponsor-position boundary | PAPER/LIVE/IGNORE position record only |
 | Notifications | Product adapter over Platform notification capability | Intraday notification projection only |
@@ -48,6 +48,11 @@ The boundaries are explicitly non-equivalent:
 - WO-13 risk distance ≠ WO-14 monetary Risk observation.
 - `RISK_OBSERVED` / `RISK_ALERT` / `RISK_UNAVAILABLE` ≠ trade permission or veto.
 - WO-14 reference quantity ≠ Sponsor actual quantity or maximum permitted quantity.
+- `TIMING_QUALIFIED` ≠ execute, Sponsor participation, PAPER/LIVE/IGNORE,
+  position or broker action.
+- WO-15 timing failure ≠ WO-13 thesis invalidation.
+- WO-15 timing-local retest evidence ≠ Entry/Stop/Target/R:R mutation.
+- Extension/ATR/volume/RSI/Railway/level telemetry ≠ timing qualification or veto.
 - WO-10/WO-11 product publication ≠ Entry.
 - Construction ≠ Risk.
 - Risk ≠ Entry Timing.

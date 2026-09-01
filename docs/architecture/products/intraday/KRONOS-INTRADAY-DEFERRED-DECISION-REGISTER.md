@@ -1,13 +1,23 @@
 # Intraday Deferred Decision Register
 
-**Status:** Amended through WO-14 governance authorization; no defaults implied
+**Status:** Amended through WO-15 governance authorization; no defaults implied
 
 | Decision | Reason deferred | Required evidence | Earliest closure | Owner |
 |---|---|---|---|---|
 | Native Discovery numerical thresholds beyond frozen Narrow CPR | No further threshold is authorized by V2 | Outcome evidence and successor authority | Successor methodology only | Intraday/CA |
 | ATR period/threshold | Need and values unproven | Native evidence and 3V comparison | After WO-05/3V | Intraday/CA |
 | Path-clearance distance threshold | Not required or authorized for WO-12 V1 structure-only K3; any future distance consequence remains unproven | Barrier/path outcome evidence and successor authority | Successor methodology only | Intraday/CA |
-| WO-15 extension/chase and 5M ATR/reference methodology | K5 is removed from WO-12 V2; retained 15M origin/ATR/outcome facts are supporting research only and no 5M consequence exists | Governed structural-origin/ATR measurements, move/retracement outcomes and separately approved WO-15 methodology | WO-15 / KR-380 successor methodology only | DOMAIN-004 / Intraday / CA |
+| WO-15 extension/chase threshold | WO-15 V1 freezes completed-5M extension telemetry but no threshold or chase consequence | Governed extension and later outcome evidence | Successor WO-15 methodology only | DOMAIN-004 / Intraday / CA |
+| WO-15 extension severity bands | Initial severity is `UNCLASSIFIED` | Governed extension distribution/outcomes and Sponsor-approved bands | Successor WO-15 methodology only | DOMAIN-004 / Intraday / CA |
+| WO-15 ATR veto threshold | ATR-14 normalizes research telemetry only and owns no veto | Governed completed-5M extension/outcome evidence | Successor WO-15 methodology only | DOMAIN-004 / Intraday / CA |
+| WO-15 volume confirmation threshold/consequence | Existing volume facts are research only | Completed-5M participation/outcome evidence | Successor WO-15 methodology only | DOMAIN-004 / Intraday / CA |
+| WO-15 RSI timing consequence | RSI-14 is contextual research only | Timing/outcome evidence and successor authority | Successor WO-15 methodology only | DOMAIN-004 / Intraday / CA |
+| WO-15 Railway/SMA timing consequence | Existing SMA/Railway facts are contextual research only | Timing/outcome evidence and successor authority | Successor WO-15 methodology only | DOMAIN-004 / Intraday / CA |
+| WO-15 CPR/PDH/PDL/Pivot proximity consequence | Levels remain context unless already immutable WO-13 geometry | Timing/outcome evidence and exact successor predicate | Successor WO-15 methodology only | DOMAIN-004 / Intraday / CA |
+| WO-15 N-bar/time-based expiry | V1 expiry is session/supersession/contract governed; arbitrary TTL is unproven | Timing-cycle and outcome evidence | Successor WO-15 methodology only | DOMAIN-004 / Intraday / CA |
+| WO-15 extension-alert threshold | No threshold is commissioned | Extension/outcome evidence and notification governance | Successor WO-15 methodology only | DOMAIN-004 / Intraday / CA |
+| Future option-premium execution timing | Underlying Index owns V1 analytical timing; execution vehicle is separate | Governed option-vehicle selection and timing evidence | Execution-vehicle successor boundary | CA / DOMAIN-004 |
+| New Entry-timing indicator gates | Need and value are unproven; V1 prohibits a new indicator stack | Governed evidence and successor methodology | Successor WO-15 methodology only | DOMAIN-004 / Intraday / CA |
 | Participation threshold/veto consequence beyond V0 | V0 is supporting/non-blocking without threshold | PAPER observation and outcome evidence | Successor methodology only | Intraday/CA |
 | New subjective setup-quality scale | WO-12 K4 reuses exact governed Native/visual reconciliation evidence and authorizes no new scale | Outcome evidence plus successor authority if the frozen evidence grammar proves insufficient | Successor methodology only | Intraday/CA |
 | WO-10 E/I/M consequence predicates beyond frozen precedence | Product-local seven-state family and precedence are frozen, but not every evidence combination has a qualified consequence | Family-specific factual and outcome evidence plus successor authority | WO-10 family policy slices | Intraday/CA |
@@ -24,7 +34,6 @@
 | Daily-loss and losing-trade references | Actual P&L/lifecycle facts and enforcement semantics are absent | Governed execution/lifecycle evidence | Later Risk/lifecycle methodology | DOMAIN-007/CA |
 | Liquidity/slippage Risk model | No friction assumption is authorized | Provider/execution evidence and successor methodology | Later Risk methodology | DOMAIN-007/CA |
 | Index execution-vehicle and multi-leg option Risk methodology | Underlying geometry cannot determine option monetary Risk; WO-14 cannot select the vehicle | Separately governed option-selection and instrument-economics contracts | Execution-vehicle successor boundary | CA / execution-vehicle owner / DOMAIN-007 |
-| Entry Timing beyond frozen cutoffs | DOMAIN-004 authority | WO-13 plan plus Sponsor-visible Risk observation evidence | WO-15+ | DOMAIN-004/CA |
 | MCX reference trading consequence | Reference is validation-only | MCX validation evidence and CA decision | After WO-10 | CA |
 | Real-market acceptance thresholds | Not yet measured | Governed live factual evidence | Later commissioning | Intraday/CA |
 | SMA requirement/timeframe/period/consequence | Need and use unproven | WO-06 qualification evidence | WO-06 Part 2/3 | Intraday/CA |
