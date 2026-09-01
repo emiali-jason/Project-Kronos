@@ -173,15 +173,25 @@ class IntradayBrowserRoutes:
         return None if probables is None else probables.run
 
     def _current_probables_v2(self):  # type: ignore[no-untyped-def]
-        snapshot = self._workstation.snapshot()
-        probables = getattr(snapshot, "probables_v2", None)
-        return None if probables is None else probables.run
+        if self._review_v2_control is None:
+            return None
+        try:
+            return self._review_v2_control.application.current_probables_run()
+        except ReviewError:
+            return None
 
     def _review_v2_snapshot(self):  # type: ignore[no-untyped-def]
         return (
             None
             if self._review_v2_control is None
             else self._review_v2_control.application.snapshot()
+        )
+
+    def _review_v2_status(self):  # type: ignore[no-untyped-def]
+        return (
+            None
+            if self._review_v2_control is None
+            else self._review_v2_control.status_document()
         )
 
     def handle_get(
@@ -204,6 +214,7 @@ class IntradayBrowserRoutes:
                     self._reconciliation.snapshot(),
                     review_v2=self._review_v2_snapshot(),
                     available_probables_v2_run=self._current_probables_v2(),
+                    review_v2_status=self._review_v2_status(),
                 )
             )
         elif request.path == WO10_PRODUCT_ROUTE:
@@ -782,6 +793,7 @@ class IntradayBrowserRoutes:
                 snapshot_provider(), self._review.snapshot(), self._reconciliation.snapshot(),
                 review_v2=self._review_v2_snapshot(),
                 available_probables_v2_run=self._current_probables_v2(),
+                review_v2_status=self._review_v2_status(),
             )
         )
 

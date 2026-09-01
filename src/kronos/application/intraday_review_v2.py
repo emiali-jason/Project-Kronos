@@ -11,7 +11,11 @@ from threading import RLock
 from typing import Callable
 
 from kronos.intraday.probables import ProbableState
-from kronos.intraday.probables_v2 import ProbablesRunV2, ProbablesV2Error
+from kronos.intraday.probables_v2 import (
+    ProbableMemberResultV2,
+    ProbablesRunV2,
+    ProbablesV2Error,
+)
 from kronos.intraday.probables_v2_persistence import ProbablesV2Store
 from kronos.intraday.review import ReviewError, ReviewFailure
 from kronos.intraday.review_answer import (
@@ -24,6 +28,7 @@ from kronos.intraday.review_v2 import (
     ChartRevisionV2,
     ImportedVisualEvidenceV2,
     ReviewCycleV2,
+    ReviewHandoffV2,
     ReviewQuestionBatchV2,
     ReviewQuestionPackV2,
     create_chart_intake_request_v2,
@@ -88,6 +93,27 @@ class IntradayReviewV2Snapshot:
     question_transport_identity: str | None = None
     question_filename: str | None = None
     expected_answer_filename: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class IntradayReviewV2Currentness:
+    state: str
+    current_probables_run_identity: str | None
+    current_probables_pointer_integrity: str | None
+    current_probables_publication_identity: str | None
+    current_probables_analysis_boundary: datetime | None
+    current_probables_candidate_population_identity: str | None
+    current_probables_candidate_count: int
+    current_review_probables_run_identity: str | None
+    current_review_analysis_boundary: datetime | None
+    current_review_candidate_count: int
+    is_review_current: bool
+
+
+@dataclass(frozen=True, slots=True)
+class IntradayReviewV2Currentization:
+    cycles: tuple[ReviewCycleV2, ...]
+    retained: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -214,6 +240,138 @@ class IntradayReviewV2Application:
         ):
             raise ReviewError(ReviewFailure.NOT_ELIGIBLE)
         return self.create_eligible_cycles(run)
+
+    def current_probables_run(self) -> ProbablesRunV2 | None:
+        """Reload the explicit current Probables pointer and its full lineage."""
+
+        _, run = self._load_current_probables()
+        return run
+
+    def currentness(self) -> IntradayReviewV2Currentness:
+        """Compare exact governed identities; timestamps have no authority."""
+
+        probables_pointer, run = self._load_current_probables()
+        review_pointer = self._review.load_current()
+        review_cycles = self._cycles_for_pointer(review_pointer)
+        if probables_pointer is None or run is None:
+            return IntradayReviewV2Currentness(
+                state="NO_CURRENT_PROBABLES",
+                current_probables_run_identity=None,
+                current_probables_pointer_integrity=None,
+                current_probables_publication_identity=None,
+                current_probables_analysis_boundary=None,
+                current_probables_candidate_population_identity=None,
+                current_probables_candidate_count=0,
+                current_review_probables_run_identity=(
+                    None
+                    if review_pointer is None
+                    else review_pointer.probables_run_identity
+                ),
+                current_review_analysis_boundary=(
+                    None if not review_cycles else review_cycles[0].analysis_boundary
+                ),
+                current_review_candidate_count=len(review_cycles),
+                is_review_current=False,
+            )
+        eligible = _eligible_results(run)
+        is_current = (
+            review_pointer is not None
+            and review_pointer.probables_run_identity == run.run_identity
+            and self._review_cycles_match_run(run, review_cycles)
+        )
+        if (
+            review_pointer is not None
+            and review_pointer.probables_run_identity == run.run_identity
+            and not is_current
+        ):
+            raise ReviewError(ReviewFailure.INTEGRITY_INVALID)
+        return IntradayReviewV2Currentness(
+            state=(
+                "REVIEW_CURRENT"
+                if is_current
+                else "NO_REVIEW_CANDIDATES"
+                if not eligible
+                else "REVIEW_ABSENT"
+                if review_pointer is None
+                else "NEW_PROBABLES_AVAILABLE"
+            ),
+            current_probables_run_identity=run.run_identity,
+            current_probables_pointer_integrity=(
+                probables_pointer.integrity_identity
+            ),
+            current_probables_publication_identity=(
+                run.methodology.publication_identity
+            ),
+            current_probables_analysis_boundary=run.analysis_boundary,
+            current_probables_candidate_population_identity=(
+                _candidate_population_identity(run)
+            ),
+            current_probables_candidate_count=len(eligible),
+            current_review_probables_run_identity=(
+                None
+                if review_pointer is None
+                else review_pointer.probables_run_identity
+            ),
+            current_review_analysis_boundary=(
+                None if not review_cycles else review_cycles[0].analysis_boundary
+            ),
+            current_review_candidate_count=len(review_cycles),
+            is_review_current=is_current,
+        )
+
+    def currentize_eligible_cycles_for_run_identity(
+        self,
+        *,
+        probables_run_identity: str,
+        methodology_identity: str,
+        methodology_version: str,
+        methodology_publication_identity: str,
+        methodology_checksum: str,
+    ) -> IntradayReviewV2Currentization:
+        """Currentize Review only from the explicit current Probables pointer."""
+
+        with self._lock:
+            pointer, run = self._load_current_probables()
+            if pointer is None or run is None:
+                raise ReviewError(ReviewFailure.ARTIFACT_UNAVAILABLE)
+            expected = (
+                probables_run_identity,
+                methodology_identity,
+                methodology_version,
+                methodology_publication_identity,
+                methodology_checksum,
+            )
+            actual = (
+                pointer.run_identity,
+                run.methodology.methodology_identity,
+                run.methodology.methodology_version,
+                run.methodology.publication_identity,
+                run.methodology.payload_checksum,
+            )
+            if actual != expected:
+                raise ReviewError(ReviewFailure.NOT_CURRENT)
+            if not _eligible_results(run):
+                raise ReviewError(ReviewFailure.NOT_ELIGIBLE)
+            review_pointer = self._review.load_current()
+            if (
+                review_pointer is not None
+                and review_pointer.probables_run_identity == run.run_identity
+            ):
+                cycles = self._cycles_for_pointer(review_pointer)
+                if not self._review_cycles_match_run(run, cycles):
+                    raise ReviewError(ReviewFailure.INTEGRITY_INVALID)
+                return IntradayReviewV2Currentization(cycles, True)
+            cycles = self._retain_eligible_cycles(run)
+            current_pointer, current_run = self._load_current_probables()
+            if (
+                current_pointer is None
+                or current_run is None
+                or current_pointer.run_identity != pointer.run_identity
+                or current_run != run
+            ):
+                raise ReviewError(ReviewFailure.NOT_CURRENT)
+            self._publish_current_review(run, cycles)
+            return IntradayReviewV2Currentization(cycles, False)
 
     def snapshot(self) -> IntradayReviewV2Snapshot:
         """Project persisted Phase-A facts without creating or advancing Review."""
@@ -641,8 +799,17 @@ class IntradayReviewV2Application:
         if persisted != run:
             raise ReviewError(ReviewFailure.INTEGRITY_INVALID)
 
+        retained = self._retain_eligible_cycles(run)
+        self._publish_current_review(run, retained)
+        return retained
+
+    def _retain_eligible_cycles(
+        self, run: ProbablesRunV2
+    ) -> tuple[ReviewCycleV2, ...]:
         existing = self._review.cycles_for_run(run.run_identity)
         if existing:
+            if not self._review_cycles_match_run(run, existing):
+                raise ReviewError(ReviewFailure.INTEGRITY_INVALID)
             return existing
 
         cycles: list[ReviewCycleV2] = []
@@ -652,44 +819,107 @@ class IntradayReviewV2Application:
                 ProbableState.SHORT_PROBABLE,
             }:
                 continue
-            if result.source_mapping_identity is None:
-                raise ReviewError(ReviewFailure.INTEGRITY_INVALID)
-            try:
-                persisted_result = self._probables.load_result(result.result_identity)
-                mapping = self._probables.load_mapping(result.source_mapping_identity)
-                selection = self._probables.load_selection(
-                    result.completed_evidence_selection_identity or ""
-                )
-                semantic = self._probables.load_semantic(
-                    result.semantic_evidence_identity or ""
-                )
-            except (ProbablesV2Error, ValueError) as error:
-                raise ReviewError(ReviewFailure.ARTIFACT_UNAVAILABLE) from error
-            if (
-                persisted_result != result
-                or mapping.completed_evidence != selection
-                or mapping.semantic_evidence != semantic
-            ):
-                raise ReviewError(ReviewFailure.INTEGRITY_INVALID)
-            if result.nifty_relative_evidence_identity is not None:
-                try:
-                    nifty = self._probables.load_nifty(
-                        result.nifty_relative_evidence_identity
-                    )
-                except (ProbablesV2Error, ValueError) as error:
-                    raise ReviewError(ReviewFailure.ARTIFACT_UNAVAILABLE) from error
-                if mapping.nifty_relative != nifty:
-                    raise ReviewError(ReviewFailure.INTEGRITY_INVALID)
-
-            handoff = create_review_handoff_v2(run, result, mapping)
-            cycle = create_review_cycle_v2(handoff)
+            handoff, cycle = self._build_cycle(run, result)
             self._review.retain_handoff(handoff)
             self._review.retain_cycle(cycle)
             cycles.append(cycle)
 
         retained = tuple(sorted(cycles, key=lambda item: item.probable_result_identity))
-        self._review.save_current(create_current_review_pointer_v2(run, retained))
+        if not self._review_cycles_match_run(run, retained):
+            raise ReviewError(ReviewFailure.INTEGRITY_INVALID)
+        for cycle in retained:
+            if self._review.load_cycle(cycle.cycle_identity) != cycle:
+                raise ReviewError(ReviewFailure.INTEGRITY_INVALID)
         return retained
+
+    def _publish_current_review(
+        self, run: ProbablesRunV2, retained: tuple[ReviewCycleV2, ...]
+    ) -> None:
+        pointer = create_current_review_pointer_v2(run, retained)
+        self._review.save_current(pointer)
+        if self._review.load_current() != pointer:
+            raise ReviewError(ReviewFailure.INTEGRITY_INVALID)
+
+    def _load_current_probables(self):  # type: ignore[no-untyped-def]
+        try:
+            pointer = self._probables.load_current()
+            run = self._probables.load_current_run()
+        except (ProbablesV2Error, ValueError) as error:
+            raise ReviewError(ReviewFailure.INTEGRITY_INVALID) from error
+        if (pointer is None) != (run is None):
+            raise ReviewError(ReviewFailure.INTEGRITY_INVALID)
+        if pointer is not None and run is not None and (
+            pointer.run_identity != run.run_identity
+            or pointer.analysis_boundary != run.analysis_boundary
+            or pointer.methodology_publication_identity
+            != run.methodology.publication_identity
+        ):
+            raise ReviewError(ReviewFailure.INTEGRITY_INVALID)
+        return pointer, run
+
+    def _build_cycle(
+        self,
+        run: ProbablesRunV2,
+        result: ProbableMemberResultV2,
+    ) -> tuple[ReviewHandoffV2, ReviewCycleV2]:
+        if result.source_mapping_identity is None:
+            raise ReviewError(ReviewFailure.INTEGRITY_INVALID)
+        try:
+            persisted_result = self._probables.load_result(result.result_identity)
+            mapping = self._probables.load_mapping(result.source_mapping_identity)
+            selection = self._probables.load_selection(
+                result.completed_evidence_selection_identity or ""
+            )
+            semantic = self._probables.load_semantic(
+                result.semantic_evidence_identity or ""
+            )
+        except (ProbablesV2Error, ValueError) as error:
+            raise ReviewError(ReviewFailure.ARTIFACT_UNAVAILABLE) from error
+        if (
+            persisted_result != result
+            or mapping.completed_evidence != selection
+            or mapping.semantic_evidence != semantic
+        ):
+            raise ReviewError(ReviewFailure.INTEGRITY_INVALID)
+        if result.nifty_relative_evidence_identity is not None:
+            try:
+                nifty = self._probables.load_nifty(
+                    result.nifty_relative_evidence_identity
+                )
+            except (ProbablesV2Error, ValueError) as error:
+                raise ReviewError(ReviewFailure.ARTIFACT_UNAVAILABLE) from error
+            if mapping.nifty_relative != nifty:
+                raise ReviewError(ReviewFailure.INTEGRITY_INVALID)
+        handoff = create_review_handoff_v2(run, result, mapping)
+        return handoff, create_review_cycle_v2(handoff)
+
+    def _review_cycles_match_run(
+        self, run: ProbablesRunV2, cycles: tuple[ReviewCycleV2, ...]
+    ) -> bool:
+        eligible = _eligible_results(run)
+        if tuple(item.probable_result_identity for item in cycles) != tuple(
+            item.result_identity for item in eligible
+        ):
+            return False
+        try:
+            return all(
+                self._build_cycle(run, result)
+                == (
+                    self._review.load_handoff(cycle.handoff_identity),
+                    cycle,
+                )
+                for result, cycle in zip(eligible, cycles, strict=True)
+            )
+        except ReviewError:
+            return False
+
+    def _cycles_for_pointer(self, pointer):  # type: ignore[no-untyped-def]
+        if pointer is None:
+            return ()
+        return tuple(
+            self._review.load_cycle(item.cycle_identity)
+            for item in pointer.cycles
+        )
 
 
 def _sponsor_label(canonical_subject_identity: str) -> str:
@@ -697,6 +927,36 @@ def _sponsor_label(canonical_subject_identity: str) -> str:
         if canonical_subject_identity.startswith(prefix):
             return canonical_subject_identity.removeprefix(prefix)
     return canonical_subject_identity
+
+
+def _eligible_results(run: ProbablesRunV2) -> tuple[ProbableMemberResultV2, ...]:
+    return tuple(
+        sorted(
+            (
+                item
+                for item in run.results
+                if item.state in {
+                    ProbableState.LONG_PROBABLE,
+                    ProbableState.SHORT_PROBABLE,
+                }
+            ),
+            key=lambda item: item.result_identity,
+        )
+    )
+
+
+def _candidate_population_identity(run: ProbablesRunV2) -> str:
+    values = tuple(
+        (
+            item.result_identity,
+            item.canonical_subject_identity,
+            item.direction.value if item.direction is not None else None,
+        )
+        for item in _eligible_results(run)
+    )
+    return "INTRADAY-REVIEW-V2-CANDIDATE-POPULATION-" + sha256(
+        json.dumps(values, separators=(",", ":")).encode()
+    ).hexdigest().upper()
 
 
 def _answer_document(answer: ChartAnalystAnswerPack) -> dict[str, object]:

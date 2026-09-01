@@ -64,6 +64,21 @@ def _application(tmp_path: Path, mapping):  # type: ignore[no-untyped-def]
     )
 
 
+def _retain_later_current_run(
+    application: IntradayReviewV2Application,
+    *,
+    boundary: datetime | None = None,
+):  # type: ignore[no-untyped-def]
+    mapping = _later_mapping(
+        8,
+        2,
+        boundary=boundary or datetime.fromisoformat("2026-08-28T12:00:00+05:30"),
+    )
+    run = _run(mapping)
+    application.probables_store.retain_complete(run=run, mappings=(mapping,))
+    return run
+
+
 def _answer(pack):  # type: ignore[no-untyped-def]
     document = {
         "schema_identity": ANSWER_PACK_IDENTITY,
@@ -171,6 +186,204 @@ def test_later_phase_is_bound_not_recomputed(tmp_path: Path) -> None:
     cycle = application.create_eligible_cycles(run)[0]
     assert cycle.phase is IntradayAnalysisPhase.CURRENT_SESSION_ESTABLISHED
     assert cycle.nifty_evidence_identity is None
+
+
+def test_currentization_uses_exact_current_run_and_preserves_old_review_evidence(
+    tmp_path: Path,
+) -> None:
+    *_, mapping = _opening_inputs()
+    run_a, original = _application(tmp_path, mapping)
+    application = IntradayReviewV2Application(
+        probables_store=original.probables_store,
+        review_store=original.review_store,
+        transport=IntradayReviewV2Transport(
+            question_outbox=(tmp_path / "questions").resolve(),
+            answer_inbox=(tmp_path / "answers").resolve(),
+        ),
+        visual_identity_resolver=_resolver(run_a.analysis_boundary),
+    )
+    first = application.currentize_eligible_cycles_for_run_identity(
+        probables_run_identity=run_a.run_identity,
+        methodology_identity=run_a.methodology.methodology_identity,
+        methodology_version=run_a.methodology.methodology_version,
+        methodology_publication_identity=run_a.methodology.publication_identity,
+        methodology_checksum=run_a.methodology.payload_checksum,
+    )
+    old_cycle = first.cycles[0]
+    old_cycle_bytes = artifact_bytes_v2(old_cycle)
+    old_chart = application.upload_chart(
+        old_cycle.cycle_identity,
+        media_type="image/png",
+        payload=_png(101),
+    )
+    old_transport = application.create_combined_question_transport()
+    old_answer = application.import_combined_answer(
+        _completed_batch_payload(
+            old_transport.answer_template_path,
+            "Reliance Industries Ltd",
+        )
+    )
+
+    run_b = _retain_later_current_run(application)
+    mismatch = application.currentness()
+    assert mismatch.state == "NEW_PROBABLES_AVAILABLE"
+    assert mismatch.current_probables_run_identity == run_b.run_identity
+    assert mismatch.current_review_probables_run_identity == run_a.run_identity
+    assert mismatch.current_probables_candidate_count == 1
+    assert mismatch.current_probables_candidate_population_identity is not None
+    with pytest.raises(ReviewError, match=ReviewFailure.NOT_CURRENT.value):
+        application.currentize_eligible_cycles_for_run_identity(
+            probables_run_identity=run_a.run_identity,
+            methodology_identity=run_a.methodology.methodology_identity,
+            methodology_version=run_a.methodology.methodology_version,
+            methodology_publication_identity=run_a.methodology.publication_identity,
+            methodology_checksum=run_a.methodology.payload_checksum,
+        )
+
+    currentized = application.currentize_eligible_cycles_for_run_identity(
+        probables_run_identity=run_b.run_identity,
+        methodology_identity=run_b.methodology.methodology_identity,
+        methodology_version=run_b.methodology.methodology_version,
+        methodology_publication_identity=run_b.methodology.publication_identity,
+        methodology_checksum=run_b.methodology.payload_checksum,
+    )
+    assert currentized.retained is False
+    assert len(currentized.cycles) == len(
+        tuple(
+            item for item in run_b.results
+            if item.state in {ProbableState.LONG_PROBABLE, ProbableState.SHORT_PROBABLE}
+        )
+    ) == 1
+    new_cycle = currentized.cycles[0]
+    assert new_cycle.cycle_identity != old_cycle.cycle_identity
+    assert new_cycle.canonical_subject_identity == old_cycle.canonical_subject_identity
+    assert new_cycle.direction == run_b.results[0].direction.value
+    assert new_cycle.canonical_subject_identity.startswith("NSE-EQ-")
+    assert application.review_store.load_current().probables_run_identity == run_b.run_identity  # type: ignore[union-attr]
+    assert artifact_bytes_v2(
+        application.review_store.load_cycle(old_cycle.cycle_identity)
+    ) == old_cycle_bytes
+    assert application.review_store.load_chart(old_chart.chart_revision_identity) == old_chart
+    assert application.review_store.load_visual_evidence(
+        old_answer.members[0].visual_evidence_identity
+    ).review_cycle_identity == old_cycle.cycle_identity
+
+    candidate = application.snapshot().candidates[0]
+    assert candidate.cycle_identity == new_cycle.cycle_identity
+    assert candidate.chart_state == "CHART_REQUIRED"
+    assert candidate.chart_revision_identity is None
+    assert candidate.answer_state == "NOT_IMPORTED"
+    assert candidate.visual_evidence_state == "ABSENT"
+    repeated = application.currentize_eligible_cycles_for_run_identity(
+        probables_run_identity=run_b.run_identity,
+        methodology_identity=run_b.methodology.methodology_identity,
+        methodology_version=run_b.methodology.methodology_version,
+        methodology_publication_identity=run_b.methodology.publication_identity,
+        methodology_checksum=run_b.methodology.payload_checksum,
+    )
+    assert repeated.retained is True
+    assert repeated.cycles == currentized.cycles
+    assert application.currentness().state == "REVIEW_CURRENT"
+
+
+def test_absent_current_probables_preserves_existing_review_pointer(
+    tmp_path: Path,
+) -> None:
+    *_, mapping = _opening_inputs()
+    run, original = _application(tmp_path, mapping)
+    old_cycles = original.create_eligible_cycles(run)
+    old_pointer = original.review_store.load_current()
+    application = IntradayReviewV2Application(
+        probables_store=ProbablesV2Store((tmp_path / "empty-probables").resolve()),
+        review_store=original.review_store,
+    )
+    currentness = application.currentness()
+    assert currentness.state == "NO_CURRENT_PROBABLES"
+    assert currentness.current_review_probables_run_identity == run.run_identity
+    with pytest.raises(ReviewError, match=ReviewFailure.ARTIFACT_UNAVAILABLE.value):
+        application.currentize_eligible_cycles_for_run_identity(
+            probables_run_identity=run.run_identity,
+            methodology_identity=run.methodology.methodology_identity,
+            methodology_version=run.methodology.methodology_version,
+            methodology_publication_identity=run.methodology.publication_identity,
+            methodology_checksum=run.methodology.payload_checksum,
+        )
+    assert application.review_store.load_current() == old_pointer
+    assert application.review_store.load_cycle(old_cycles[0].cycle_identity) == old_cycles[0]
+
+
+def test_pointer_publication_failure_preserves_prior_current_review(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    *_, mapping = _opening_inputs()
+    run_a, application = _application(tmp_path, mapping)
+    application.create_eligible_cycles(run_a)
+    old_pointer = application.review_store.load_current()
+    run_b = _retain_later_current_run(application)
+
+    def fail_pointer_publication(_value):  # type: ignore[no-untyped-def]
+        raise OSError("CONTROLLED_POINTER_PUBLICATION_FAILURE")
+
+    monkeypatch.setattr(
+        application.review_store,
+        "save_current",
+        fail_pointer_publication,
+    )
+    with pytest.raises(OSError, match="CONTROLLED_POINTER_PUBLICATION_FAILURE"):
+        application.currentize_eligible_cycles_for_run_identity(
+            probables_run_identity=run_b.run_identity,
+            methodology_identity=run_b.methodology.methodology_identity,
+            methodology_version=run_b.methodology.methodology_version,
+            methodology_publication_identity=run_b.methodology.publication_identity,
+            methodology_checksum=run_b.methodology.payload_checksum,
+        )
+    assert application.review_store.load_current() == old_pointer
+
+
+def test_probables_change_before_pointer_publication_fails_closed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    *_, mapping = _opening_inputs()
+    run_a, application = _application(tmp_path, mapping)
+    application.create_eligible_cycles(run_a)
+    old_pointer = application.review_store.load_current()
+    run_b = _retain_later_current_run(application)
+    mapping_c = _later_mapping(
+        8,
+        2,
+        boundary=datetime.fromisoformat("2026-08-28T13:00:00+05:30"),
+    )
+    run_c = _run(mapping_c)
+    load_current = application._load_current_probables  # noqa: SLF001
+    calls = 0
+
+    def advance_before_publication():  # type: ignore[no-untyped-def]
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            application.probables_store.retain_complete(
+                run=run_c,
+                mappings=(mapping_c,),
+            )
+        return load_current()
+
+    monkeypatch.setattr(
+        application,
+        "_load_current_probables",
+        advance_before_publication,
+    )
+    with pytest.raises(ReviewError, match=ReviewFailure.NOT_CURRENT.value):
+        application.currentize_eligible_cycles_for_run_identity(
+            probables_run_identity=run_b.run_identity,
+            methodology_identity=run_b.methodology.methodology_identity,
+            methodology_version=run_b.methodology.methodology_version,
+            methodology_publication_identity=run_b.methodology.publication_identity,
+            methodology_checksum=run_b.methodology.payload_checksum,
+        )
+    assert application.review_store.load_current() == old_pointer
+    assert application.probables_store.load_current_run() == run_c
 
 
 @pytest.mark.parametrize("family", ("GOLDM", "SILVERM", "COPPER", "CRUDE"))

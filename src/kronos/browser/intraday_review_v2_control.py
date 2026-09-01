@@ -30,7 +30,7 @@ from kronos.intraday.review_v2_operation_persistence import (
 INTRADAY_REVIEW_V2_CONTROL_IDENTITY = (
     "KRONOS-INTRADAY-REVIEW-V2-OPERATIONAL-CONTROL"
 )
-INTRADAY_REVIEW_V2_CONTROL_VERSION = "1.0.0"
+INTRADAY_REVIEW_V2_CONTROL_VERSION = "1.1.0"
 REVIEW_V2_STATUS_ROUTE = "/control/intraday-review/v2/status"
 MAX_REVIEW_V2_REQUEST_BYTES = 8192
 _REQUEST_IDENTITY = re.compile(r"[A-Z0-9][A-Z0-9._:-]{0,95}\Z")
@@ -83,6 +83,12 @@ class IntradayReviewV2OperationalControl:
             active = self._active_operation_identity
         latest = self._store.latest()
         snapshot = self._application.snapshot()
+        try:
+            currentness = self._application.currentness()
+            currentness_failure = None
+        except ReviewError as error:
+            currentness = None
+            currentness_failure = error.failure.value
         state = (
             "RUNNING"
             if active is not None
@@ -106,6 +112,53 @@ class IntradayReviewV2OperationalControl:
             "chart_required_count": sum(
                 item.chart_state == "CHART_REQUIRED" for item in snapshot.candidates
             ),
+            "currentness_state": (
+                "INTEGRITY_INVALID" if currentness is None else currentness.state
+            ),
+            "currentness_failure": currentness_failure,
+            "current_probables_run_identity": (
+                None if currentness is None
+                else currentness.current_probables_run_identity
+            ),
+            "current_probables_pointer_integrity": (
+                None if currentness is None
+                else currentness.current_probables_pointer_integrity
+            ),
+            "current_probables_publication_identity": (
+                None if currentness is None
+                else currentness.current_probables_publication_identity
+            ),
+            "current_probables_analysis_boundary": (
+                None
+                if currentness is None
+                or currentness.current_probables_analysis_boundary is None
+                else currentness.current_probables_analysis_boundary.isoformat()
+            ),
+            "current_probables_candidate_population_identity": (
+                None if currentness is None
+                else currentness.current_probables_candidate_population_identity
+            ),
+            "current_probables_candidate_count": (
+                0 if currentness is None
+                else currentness.current_probables_candidate_count
+            ),
+            "current_review_probables_run_identity": (
+                None if currentness is None
+                else currentness.current_review_probables_run_identity
+            ),
+            "current_review_analysis_boundary": (
+                None
+                if currentness is None
+                or currentness.current_review_analysis_boundary is None
+                else currentness.current_review_analysis_boundary.isoformat()
+            ),
+            "current_review_candidate_count": (
+                0 if currentness is None
+                else currentness.current_review_candidate_count
+            ),
+            "is_review_current": (
+                False if currentness is None else currentness.is_review_current
+            ),
             "last_operation": None if latest is None else _record_document(latest, False),
         }
 
@@ -121,7 +174,7 @@ class IntradayReviewV2OperationalControl:
         existing = self._store.load_for_request(request.request_identity)
         if existing is not None:
             if existing.request_integrity_identity == request.integrity_identity:
-                return _record_document(existing, True)
+                return _record_document(existing, True, "REQUEST_REPLAY")
             record = self._record(
                 request=request,
                 received_at=received,
@@ -151,7 +204,7 @@ class IntradayReviewV2OperationalControl:
             self._active_operation_identity = request.request_identity
         started = self._clock()
         try:
-            cycles = self._application.create_eligible_cycles_for_run_identity(
+            result = self._application.currentize_eligible_cycles_for_run_identity(
                 probables_run_identity=request.probables_run_identity,
                 methodology_identity=request.expected_methodology_identity,
                 methodology_version=request.expected_methodology_version,
@@ -166,18 +219,31 @@ class IntradayReviewV2OperationalControl:
                 started_at=started,
                 completed_at=self._clock(),
                 outcome=ReviewV2OperationOutcome.COMPLETE,
-                cycle_identities=tuple(cycle.cycle_identity for cycle in cycles),
+                cycle_identities=tuple(
+                    cycle.cycle_identity for cycle in result.cycles
+                ),
             )
             self._store.retain(record)
-            return _record_document(record, False)
+            return _record_document(
+                record,
+                result.retained,
+                "ALREADY_CURRENT" if result.retained else "CURRENTIZED",
+            )
         except ReviewError as error:
+            stage = {
+                "INTRADAY_REVIEW_NOT_CURRENT": "PROBABLES_CURRENTNESS",
+                "INTRADAY_REVIEW_ARTIFACT_UNAVAILABLE": "PROBABLES_RELOAD",
+                "INTRADAY_REVIEW_INTEGRITY_INVALID": "PROBABLES_RELOAD",
+                "INTRADAY_REVIEW_NOT_ELIGIBLE": "REVIEW_INTAKE_CONSTRUCTION",
+                "INTRADAY_REVIEW_PERSISTENCE_CONFLICT": "PERSISTENCE",
+            }.get(error.failure.value, "REVIEW_INTAKE_CONSTRUCTION")
             record = self._record(
                 request=request,
                 received_at=received,
                 started_at=started,
                 completed_at=self._clock(),
                 outcome=ReviewV2OperationOutcome.FAILED,
-                failure_stage="REVIEW_APPLICATION",
+                failure_stage=stage,
                 failure_reason=error.failure.value,
             )
             self._store.retain(record)
@@ -293,7 +359,11 @@ def _parse_request(payload: object) -> ReviewV2CreateRequest:
         raise ValueError("INTRADAY_REVIEW_V2_REQUEST_CONTRACT_INVALID") from error
 
 
-def _record_document(record, idempotent: bool) -> dict[str, object]:  # type: ignore[no-untyped-def]
+def _record_document(
+    record,
+    idempotent: bool,
+    currentization_state: str | None = None,
+) -> dict[str, object]:  # type: ignore[no-untyped-def]
     return {
         "provenance_identity": record.provenance_identity,
         "request_identity": record.request_identity,
@@ -312,6 +382,7 @@ def _record_document(record, idempotent: bool) -> dict[str, object]:  # type: ig
         "failure_stage": record.failure_stage,
         "failure_reason": record.failure_reason,
         "idempotent": idempotent,
+        "currentization_state": currentization_state,
         "completed_at": record.operation_completed_at.isoformat(),
     }
 

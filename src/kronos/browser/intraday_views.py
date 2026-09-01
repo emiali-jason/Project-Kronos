@@ -76,6 +76,7 @@ _INTRADAY_CSS = r"""
 
 _REVIEW_V2_CSS = r"""
 .intraday-review-v2{border:1px solid #31506a;background:#061725;border-radius:10px;padding:15px;margin-bottom:16px}.intraday-review-v2-head{display:flex;justify-content:space-between;align-items:flex-start;gap:14px}.intraday-review-v2-head h2{margin:0;color:var(--green);font-size:17px}.intraday-review-v2-head p{margin:4px 0;color:var(--muted);font-size:11px}.intraday-review-v2-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:12px}.intraday-review-v2-card{border:1px solid var(--line);border-radius:8px;padding:12px;background:#071827}.intraday-review-v2-card h3{margin:0;color:#dce8f0}.intraday-review-v2-card .phase-a{display:inline-block;margin:7px 0;color:var(--amber);font-weight:800}.intraday-review-v2-control{display:flex;align-items:center;gap:12px;margin-top:12px}.intraday-review-v2-control span{color:var(--muted);font-size:10px;overflow-wrap:anywhere}@media(max-width:760px){.intraday-review-v2-grid{grid-template-columns:1fr}.intraday-review-v2-head{display:block}}
+.intraday-review-currentness{border:1px solid var(--line);border-radius:8px;background:#071827;margin-top:12px;padding:10px 12px}.intraday-review-currentness strong{color:var(--green)}.intraday-review-currentness.outdated{border-color:#82631f}.intraday-review-currentness.outdated strong{color:#f6d997}.intraday-review-currentness.invalid{border-color:#81502a}.intraday-review-currentness.invalid strong{color:#f0c08e}.intraday-review-currentness-facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px 12px;margin-top:7px;color:var(--muted);font-size:10px}.intraday-review-currentness-facts span{overflow-wrap:anywhere}@media(max-width:760px){.intraday-review-currentness-facts{grid-template-columns:1fr}}
 """
 
 
@@ -134,6 +135,7 @@ def render_intraday_review(
     reconciliation_batch_result: ReconciliationBatchResult | None = None,
     review_v2: IntradayReviewV2Snapshot | None = None,
     available_probables_v2_run: ProbablesRunV2 | None = None,
+    review_v2_status: dict[str, object] | None = None,
 ) -> str:
     """Render persisted exact-current Review and WO-10 analytical state."""
 
@@ -178,7 +180,9 @@ def render_intraday_review(
         _intraday_tabs(False, active="review")
         + '<div class="intraday-warning"><strong>NATIVE + VISUAL REVIEW</strong>'
         '<span>ANALYTICAL READINESS ONLY · NO ENTRY, TRADE, RISK OR BROKER AUTHORITY</span></div>'
-        + _review_v2_projection(review_v2, available_probables_v2_run)
+        + _review_v2_projection(
+            review_v2, available_probables_v2_run, review_v2_status
+        )
         + '<div class="intraday-review-toolbar"><form method="post" action="/intraday/review/question-packs">'
         '<button class="primary" type="submit"'
         + (" disabled" if ready_count == 0 else "")
@@ -762,6 +766,7 @@ def _list_text(value: object) -> str:
 def _review_v2_projection(
     snapshot: IntradayReviewV2Snapshot | None,
     available_run: ProbablesRunV2 | None,
+    status: dict[str, object] | None,
 ) -> str:
     if snapshot is None:
         return ""
@@ -775,8 +780,58 @@ def _review_v2_projection(
         '</div></div>'
         if not cards else cards
     )
+    currentness = "NO_CURRENT_PROBABLES" if status is None else str(
+        status.get("currentness_state", "NO_CURRENT_PROBABLES")
+    )
+    current_review_run = None if status is None else status.get(
+        "current_review_probables_run_identity"
+    )
+    current_review_boundary = None if status is None else status.get(
+        "current_review_analysis_boundary"
+    )
+    current_review_count = 0 if status is None else status.get(
+        "current_review_candidate_count", 0
+    )
+    current_probables_count = 0 if status is None else status.get(
+        "current_probables_candidate_count", 0
+    )
+    banner_label = {
+        "REVIEW_CURRENT": "REVIEW CURRENT",
+        "REVIEW_ABSENT": "NEW PROBABLES AVAILABLE",
+        "NEW_PROBABLES_AVAILABLE": "NEW PROBABLES AVAILABLE",
+        "NO_REVIEW_CANDIDATES": "NO REVIEW CANDIDATES",
+        "INTEGRITY_INVALID": "REVIEW CURRENTNESS UNAVAILABLE",
+    }.get(currentness, "NO CURRENT PROBABLES AVAILABLE")
+    banner_class = (
+        "outdated"
+        if currentness in {"REVIEW_ABSENT", "NEW_PROBABLES_AVAILABLE"}
+        else "invalid"
+        if currentness == "INTEGRITY_INVALID"
+        else "current"
+    )
+    currentness_banner = (
+        '<div class="intraday-review-currentness ' + banner_class + '"><strong>'
+        + escape(banner_label) + '</strong><div class="intraday-review-currentness-facts">'
+        '<span>LATEST PROBABLES · '
+        + escape(
+            "UNAVAILABLE"
+            if available_run is None
+            else _ist_time(available_run.analysis_boundary)
+        )
+        + ' · ' + escape(str(current_probables_count)) + ' candidates<br>'
+        + escape("UNAVAILABLE" if available_run is None else available_run.run_identity)
+        + '</span><span>CURRENT REVIEW · '
+        + escape(_review_v2_status_time(current_review_boundary))
+        + ' · ' + escape(str(current_review_count)) + ' candidates<br>'
+        + escape("UNAVAILABLE" if current_review_run is None else str(current_review_run))
+        + '</span></div></div>'
+    )
     control = ""
-    if available_run is not None:
+    if (
+        available_run is not None
+        and currentness in {"REVIEW_ABSENT", "NEW_PROBABLES_AVAILABLE"}
+        and bool(current_probables_count)
+    ):
         methodology = available_run.methodology
         control = (
             '<div class="intraday-review-v2-control"><button type="button" '
@@ -786,8 +841,13 @@ def _review_v2_projection(
             + '" data-methodology-version="' + escape(methodology.methodology_version, quote=True)
             + '" data-methodology-publication="' + escape(methodology.publication_identity, quote=True)
             + '" data-methodology-checksum="' + escape(methodology.payload_checksum, quote=True)
-            + '">CREATE V2 REVIEW CYCLES</button><span>Exact persisted run · '
+            + '">LOAD LATEST PROBABLES</button><span>Review intake only · exact current persisted run · '
             + escape(available_run.run_identity) + '</span></div>'
+        )
+    elif currentness == "REVIEW_CURRENT":
+        control = (
+            '<div class="intraday-review-v2-control"><button type="button" disabled>'
+            'REVIEW CURRENT</button><span>No duplicate Review intake will be created.</span></div>'
         )
     phase_b = ""
     if snapshot.candidates and all(item.chart_state == "CHART_READY" for item in snapshot.candidates):
@@ -818,9 +878,19 @@ def _review_v2_projection(
         '<h2>PHASE-A REVIEW · PROBABLES V2/V2.1</h2>'
         '<p>Review Cycle → Chart Required. Review Packs and Question Packs begin only after real chart intake.</p>'
         '</div><span class="intraday-review-toolbar-note">Cycles · '
-        + str(len(snapshot.candidates)) + '</span></div><div class="intraday-review-v2-grid">'
+        + str(len(snapshot.candidates)) + '</span></div>' + currentness_banner
+        + '<div class="intraday-review-v2-grid">'
         + empty + '</div>' + control + phase_b + '</section>'
     )
+
+
+def _review_v2_status_time(value: object) -> str:
+    if type(value) is not str:
+        return "UNAVAILABLE"
+    try:
+        return _ist_time(datetime.fromisoformat(value))
+    except ValueError:
+        return "UNAVAILABLE"
 
 
 def _review_v2_candidate(item, slot_index: int) -> str:  # type: ignore[no-untyped-def]
@@ -909,7 +979,7 @@ def _review_v2_control_script() -> str:
         'contract_version:"' + REVIEW_V2_CREATE_REQUEST_VERSION + '"};'
         'try{const r=await fetch("' + REVIEW_V2_CREATE_ROUTE + '",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});'
         'if(!r.ok)throw new Error(await r.text());location.assign("/intraday/review");}'
-        'catch(e){b.disabled=false;window.alert("V2 Review request failed: "+String(e));}});})();</script>'
+        'catch(e){b.disabled=false;window.alert("Review intake currentization failed: "+String(e));}});})();</script>'
     )
 
 
