@@ -3,9 +3,13 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from kronos.swing.v1.native_trade_construction import TRADE_PLAN_CONTRACT_ID
+from kronos.swing.v1.native_trade_construction import (
+    TRADE_PLAN_CONTRACT_ID,
+    TRADE_PLAN_CONTRACT_ID_V0,
+)
 from kronos.swing.v1.step31_observation import (
     STEP31_OBSERVATION_CONTRACT_ID,
+    STEP31_OBSERVATION_CONTRACT_ID_V1,
     STEP31_OBSERVATION_POLICY_ID,
 )
 
@@ -94,7 +98,7 @@ def test_observation_phase_keeps_decision_activation_and_objective_truth_distinc
     assert "not sufficient by itself to retain every LIVE, PAPER, and IGNORE" in step33
 
 
-def test_step31_observation_contract_is_versioned_without_weakening_trade_plan() -> None:
+def test_step31_observation_contract_preserves_v1_and_routes_new_v2_records() -> None:
     contracts = (
         ARCHITECTURE / "interfaces" / "SWING-V1-STEP-32-VERSIONED-CONTRACTS.md"
     ).read_text(encoding="utf-8")
@@ -110,11 +114,15 @@ def test_step31_observation_contract_is_versioned_without_weakening_trade_plan()
     ):
         assert required in contracts
     assert "Warning or incomplete evidence is never\n  promoted into that Trade Plan contract" in contracts
-    assert STEP31_OBSERVATION_CONTRACT_ID == (
+    assert STEP31_OBSERVATION_CONTRACT_ID_V1 == (
         "KRONOS-SWING-STEP31-OBSERVATION-EVIDENCE-V1"
     )
+    assert STEP31_OBSERVATION_CONTRACT_ID == (
+        "KRONOS-SWING-STEP31-OBSERVATION-EVIDENCE-V2"
+    )
     assert STEP31_OBSERVATION_POLICY_ID == "SWING-STEP31-OBSERVATION-PHASE-V1"
-    assert TRADE_PLAN_CONTRACT_ID == "KRONOS-SWING-V1-TRADE-PLAN-RECORD-V0"
+    assert TRADE_PLAN_CONTRACT_ID_V0 == "KRONOS-SWING-V1-TRADE-PLAN-RECORD-V0"
+    assert TRADE_PLAN_CONTRACT_ID == "KRONOS-SWING-V1-TRADE-PLAN-RECORD-V1"
 
 
 def test_future_work_orders_are_bounded_and_runtime_is_not_started() -> None:

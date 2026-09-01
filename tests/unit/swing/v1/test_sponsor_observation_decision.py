@@ -54,8 +54,8 @@ def _red(tmp_path):  # type: ignore[no-untyped-def]
     completed = _completed(tmp_path)
     evidence = _package(
         completed,
-        prior_directional_swing_high=_price(
-            "RED-TARGET", "95", completed.promotion.analysis_boundary
+        governing_structural_low=_price(
+            "RED-NON-POSITIVE-RISK", "105", completed.promotion.analysis_boundary
         ),
     )
     return completed, _observe(completed, evidence)
@@ -130,7 +130,7 @@ def test_red_decision_is_recorded_but_risk_unavailable_blocks_activation(
     assert result.decision.choice is choice
     assert result.decision.warning_acknowledged
     assert result.snapshot.step31_severity is Step31WarningSeverity.RED
-    assert result.snapshot.target == Decimal("95.00")
+    assert result.snapshot.target == Decimal("120.00")
     assert result.snapshot.risk_reward_state == "INVALID"
     assert result.activation.disposition is SponsorActivationDisposition.BLOCKED_RISK_UNAVAILABLE
     assert result.activation.sponsor_position_identity is None

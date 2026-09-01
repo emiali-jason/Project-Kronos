@@ -46,12 +46,15 @@ from kronos.swing.v1.native_trade_construction import (
     TradeConstructionEvidencePackage,
     TradePlanRecord,
     TradePlanStatus,
+    TradePlanUnavailableReason,
     TradeSetupIdentity,
+    TRADE_CONSTRUCTION_POLICY_ID,
     construct_trade_plan,
     create_trade_construction_evidence_package,
 )
 from kronos.swing.v1.step31_observation import (
     LocalStep31ObservationStore,
+    STEP31_OBSERVATION_CONTRACT_ID,
     Step31ObservationEvidence,
     Step31SponsorObservationHandoff,
     construct_step31_observation,
@@ -1225,12 +1228,22 @@ class SwingTradeWindowWorkflow:
                 and handoff.handoff_identity in plan.provenance
                 and handoff.integrity_sha256 in plan.provenance
             )
-            if len(matches) > 1:
+            current_matches = tuple(
+                item for item in matches
+                if item.trade_construction_policy_identity == TRADE_CONSTRUCTION_POLICY_ID
+            )
+            legacy_matches = tuple(item for item in matches if item not in current_matches)
+            if len(current_matches) > 1 or len(legacy_matches) > 1:
                 raise ValueError("SWING_TRADE_WINDOW_PLAN_RESTORE_AMBIGUOUS")
-            if matches:
-                plan = matches[0]
-                self._plans[key] = plan
-                self._restore_production_records(plan)
+            selected_plan = (
+                current_matches[0] if current_matches else
+                legacy_matches[0] if legacy_matches else None
+            )
+            if selected_plan is not None:
+                plan = selected_plan
+                if plan.geometry_viability is TradePlanStatus.TRADE_PLAN_READY:
+                    self._plans[key] = plan
+                    self._restore_production_records(plan)
             observation_matches = tuple(
                 record for record in stored_observations
                 if record.native_run_identity == promotion.run_identity
@@ -1240,17 +1253,28 @@ class SwingTradeWindowWorkflow:
                 and record.kr370_handoff_identity == handoff.handoff_identity
                 and record.kr370_handoff_integrity_sha256 == handoff.integrity_sha256
             )
-            if len(observation_matches) > 1:
+            current_observations = tuple(
+                item for item in observation_matches
+                if item.contract_identity == STEP31_OBSERVATION_CONTRACT_ID
+            )
+            legacy_observations = tuple(
+                item for item in observation_matches if item not in current_observations
+            )
+            if len(current_observations) > 1 or len(legacy_observations) > 1:
                 raise ValueError("SWING_TRADE_WINDOW_OBSERVATION_RESTORE_AMBIGUOUS")
-            if observation_matches:
-                observation = observation_matches[0]
+            selected_observation = (
+                current_observations[0] if current_observations else
+                legacy_observations[0] if legacy_observations else None
+            )
+            if selected_observation is not None:
+                observation = selected_observation
                 if (
                     observation.conventional_trade_plan_id is not None
                     and (
-                        not matches
-                        or matches[0].trade_plan_id
+                        selected_plan is None
+                        or selected_plan.trade_plan_id
                         != observation.conventional_trade_plan_id
-                        or matches[0].integrity_hash
+                        or selected_plan.integrity_hash
                         != observation.conventional_trade_plan_sha256
                     )
                 ):
@@ -1498,8 +1522,13 @@ class SwingTradeWindowWorkflow:
         )
         self._completed[key] = completed
         self._handoffs[key] = handoff
-        if plan.geometry_viability is TradePlanStatus.TRADE_PLAN_READY:
+        if (
+            plan.geometry_viability is TradePlanStatus.TRADE_PLAN_READY
+            or plan.unavailable_reason
+            is TradePlanUnavailableReason.TARGET_NOT_FORWARD_OF_ENTRY
+        ):
             self._trade_plan_store.retain(plan)
+        if plan.geometry_viability is TradePlanStatus.TRADE_PLAN_READY:
             self._plans[key] = plan
             self._failures.pop(key, None)
         else:
@@ -2228,7 +2257,7 @@ def build_current_trade_construction_evidence(
             *thesis.provider_provenance,
             *thesis.calendar_provenance,
             completed.promotion.integrity_sha256,
-            "SWING-V1-TRADE-CONSTRUCTION-V0",
+            "SWING-V1-TRADE-CONSTRUCTION-V1",
         ))),
         qualification_candle=qualification,
         governing_structural_low=(

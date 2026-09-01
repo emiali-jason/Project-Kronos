@@ -1223,7 +1223,8 @@ def render_native_trade_window(
         "NON_POSITIVE_REWARD": "Reward is zero or negative.",
         "NON_POSITIVE_RISK": "Risk geometry is zero or negative.",
         "RR_UNFAVOURABLE": "Risk/reward is unfavourable under governed policy.",
-        "TARGET_UNAVAILABLE": "Target evidence is unavailable.",
+        "TARGET_UNAVAILABLE": "Canonical target is unavailable.",
+        "TARGET_NOT_FORWARD_OF_ENTRY": "Historical target candidate is not forward of immutable Entry.",
         "STOP_UNAVAILABLE": "Stop evidence is unavailable.",
         "ENTRY_UNAVAILABLE": "Entry evidence is unavailable.",
         "STRUCTURAL_GEOMETRY_WARNING": "Structural invalidation evidence is incomplete.",
@@ -1267,7 +1268,19 @@ def render_native_trade_window(
                 + escape(value) + '</strong></div>'
                 for label, value, adverse in math_values
             )
-            + '</div></section>'
+            + '</div>'
+            + (
+                '<div class="trade-warning"><span class="trade-warning-title">'
+                'REJECTED HISTORICAL TARGET CANDIDATE</span><p><strong>'
+                + escape(money(observation.rejected_target_candidate_price))
+                + '</strong> · NOT FORWARD OF ENTRY</p><p class="trade-muted">'
+                + escape(observation.rejected_target_candidate_timeframe or "UNAVAILABLE")
+                + ' · ' + escape(observation.rejected_target_candidate_source or "UNAVAILABLE")
+                + '</p></div>'
+                if observation.target_rejection_reason == "TARGET_NOT_FORWARD_OF_ENTRY"
+                else ''
+            )
+            + '</section>'
         )
         severity = observation.severity.value.lower()
         warnings = (

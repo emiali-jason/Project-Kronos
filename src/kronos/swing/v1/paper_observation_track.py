@@ -27,7 +27,9 @@ from kronos.swing.v1.sponsor_observation_decision import (
 )
 from kronos.swing.v1.step31_observation import (
     STEP31_OBSERVATION_CONTRACT_ID,
+    STEP31_OBSERVATION_CONTRACT_ID_V1,
     STEP31_OBSERVATION_CONTRACT_VERSION,
+    STEP31_OBSERVATION_CONTRACT_VERSION_V1,
     STEP31_OBSERVATION_POLICY_ID,
     STEP31_OBSERVATION_POLICY_VERSION,
     Step31WarningSeverity,
@@ -150,8 +152,10 @@ class PaperObservationTrackV1:
             or self.direction not in {V1Direction.LONG, V1Direction.SHORT}
             or not _identity(self.step31_observation_identity)
             or not _digest(self.step31_observation_sha256)
-            or self.step31_contract_identity != STEP31_OBSERVATION_CONTRACT_ID
-            or self.step31_contract_version != STEP31_OBSERVATION_CONTRACT_VERSION
+            or (self.step31_contract_identity, self.step31_contract_version) not in {
+                (STEP31_OBSERVATION_CONTRACT_ID_V1, STEP31_OBSERVATION_CONTRACT_VERSION_V1),
+                (STEP31_OBSERVATION_CONTRACT_ID, STEP31_OBSERVATION_CONTRACT_VERSION),
+            }
             or self.step31_policy_identity != STEP31_OBSERVATION_POLICY_ID
             or self.step31_policy_version != STEP31_OBSERVATION_POLICY_VERSION
             or any(

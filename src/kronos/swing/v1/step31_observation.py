@@ -25,14 +25,22 @@ from kronos.swing.v1.native_trade_construction import (
     TradePlanRecord,
     TradePlanStatus,
     TradeSetupIdentity,
+    TRADE_CONSTRUCTION_POLICY_ID,
+    TRADE_CONSTRUCTION_POLICY_ID_V0,
+    TRADE_CONSTRUCTION_POLICY_VERSION,
+    TRADE_CONSTRUCTION_POLICY_VERSION_V0,
+    _target_candidate_lineage,
 )
 
 
-STEP31_OBSERVATION_CONTRACT_ID = "KRONOS-SWING-STEP31-OBSERVATION-EVIDENCE-V1"
-STEP31_OBSERVATION_CONTRACT_VERSION = "1"
+STEP31_OBSERVATION_CONTRACT_ID_V1 = "KRONOS-SWING-STEP31-OBSERVATION-EVIDENCE-V1"
+STEP31_OBSERVATION_CONTRACT_VERSION_V1 = "1"
+STEP31_OBSERVATION_SCHEMA_V1 = "KRONOS-SWING-STEP31-OBSERVATION-STORE-V1"
+STEP31_OBSERVATION_CONTRACT_ID = "KRONOS-SWING-STEP31-OBSERVATION-EVIDENCE-V2"
+STEP31_OBSERVATION_CONTRACT_VERSION = "2"
 STEP31_OBSERVATION_POLICY_ID = "SWING-STEP31-OBSERVATION-PHASE-V1"
 STEP31_OBSERVATION_POLICY_VERSION = "1"
-STEP31_OBSERVATION_SCHEMA = "KRONOS-SWING-STEP31-OBSERVATION-STORE-V1"
+STEP31_OBSERVATION_SCHEMA = "KRONOS-SWING-STEP31-OBSERVATION-STORE-V2"
 STEP31_OBSERVATION_AUTHORITY = (
     "ADVISORY_GEOMETRY_EVIDENCE_ONLY_NO_RISK_SPONSOR_EXECUTION_OR_BROKER_AUTHORITY"
 )
@@ -56,6 +64,7 @@ class Step31ObservationWarning(StrEnum):
     NON_POSITIVE_RISK = "NON_POSITIVE_RISK"
     RR_UNFAVOURABLE = "RR_UNFAVOURABLE"
     TARGET_UNAVAILABLE = "TARGET_UNAVAILABLE"
+    TARGET_NOT_FORWARD_OF_ENTRY = "TARGET_NOT_FORWARD_OF_ENTRY"
     STOP_UNAVAILABLE = "STOP_UNAVAILABLE"
     ENTRY_UNAVAILABLE = "ENTRY_UNAVAILABLE"
     STRUCTURAL_GEOMETRY_WARNING = "STRUCTURAL_GEOMETRY_WARNING"
@@ -118,6 +127,16 @@ class Step31ObservationEvidence:
     reward_per_unit: Decimal | None
     risk_reward_ratio: Decimal | None
     risk_reward_state: Step31RiskRewardState
+    trade_construction_policy_identity: str
+    trade_construction_policy_version: str
+    rejected_target_candidate_identity: str | None
+    rejected_target_candidate_price: Decimal | None
+    rejected_target_candidate_timeframe: str | None
+    rejected_target_candidate_source: str | None
+    rejected_target_candidate_boundary: datetime | None
+    rejected_target_candidate_evidence_sha256: str | None
+    rejected_target_candidate_provenance: tuple[str, ...]
+    target_rejection_reason: str | None
     warnings: tuple[Step31ObservationWarning, ...]
     severity: Step31WarningSeverity
     geometry_status: Step31GeometryStatus
@@ -138,9 +157,21 @@ class Step31ObservationEvidence:
             (self.canonical_target, self.target_availability),
         )
         plan_bound = self.conventional_trade_plan_id is not None
+        legacy = (
+            self.contract_identity == STEP31_OBSERVATION_CONTRACT_ID_V1
+            and self.contract_version == STEP31_OBSERVATION_CONTRACT_VERSION_V1
+            and self.trade_construction_policy_identity == TRADE_CONSTRUCTION_POLICY_ID_V0
+            and self.trade_construction_policy_version == TRADE_CONSTRUCTION_POLICY_VERSION_V0
+        )
+        current = (
+            self.contract_identity == STEP31_OBSERVATION_CONTRACT_ID
+            and self.contract_version == STEP31_OBSERVATION_CONTRACT_VERSION
+            and self.trade_construction_policy_identity == TRADE_CONSTRUCTION_POLICY_ID
+            and self.trade_construction_policy_version == TRADE_CONSTRUCTION_POLICY_VERSION
+        )
+        rejected = self.target_rejection_reason == "TARGET_NOT_FORWARD_OF_ENTRY"
         if (
-            self.contract_identity != STEP31_OBSERVATION_CONTRACT_ID
-            or self.contract_version != STEP31_OBSERVATION_CONTRACT_VERSION
+            not (legacy or current)
             or not _identity(self.observation_evidence_id)
             or not self.native_run_identity
             or not self.canonical_instrument
@@ -176,6 +207,48 @@ class Step31ObservationEvidence:
             or (self.risk_reward_ratio is not None and not _positive_decimal(self.risk_reward_ratio))
             or type(self.risk_reward_state) is not Step31RiskRewardState
             or ((self.risk_reward_ratio is not None) != (self.risk_reward_state is Step31RiskRewardState.AVAILABLE))
+            or (legacy and any((
+                self.rejected_target_candidate_identity,
+                self.rejected_target_candidate_price,
+                self.rejected_target_candidate_timeframe,
+                self.rejected_target_candidate_source,
+                self.rejected_target_candidate_boundary,
+                self.rejected_target_candidate_evidence_sha256,
+                self.rejected_target_candidate_provenance,
+                self.target_rejection_reason,
+            )))
+            or rejected != all((
+                self.rejected_target_candidate_identity is not None,
+                self.rejected_target_candidate_price is not None,
+                self.rejected_target_candidate_timeframe is not None,
+                self.rejected_target_candidate_source is not None,
+                self.rejected_target_candidate_boundary is not None,
+                self.rejected_target_candidate_evidence_sha256 is not None,
+                bool(self.rejected_target_candidate_provenance),
+            ))
+            or (not rejected and any((
+                self.rejected_target_candidate_identity,
+                self.rejected_target_candidate_price,
+                self.rejected_target_candidate_timeframe,
+                self.rejected_target_candidate_source,
+                self.rejected_target_candidate_boundary,
+                self.rejected_target_candidate_evidence_sha256,
+                self.rejected_target_candidate_provenance,
+                self.target_rejection_reason,
+            )))
+            or (rejected and (
+                not _identity(self.rejected_target_candidate_identity)
+                or not _positive_decimal(self.rejected_target_candidate_price)
+                or not self.rejected_target_candidate_timeframe
+                or not self.rejected_target_candidate_source
+                or not _aware(self.rejected_target_candidate_boundary)
+                or not _digest(self.rejected_target_candidate_evidence_sha256)
+                or self.canonical_target is not None
+                or self.reward_per_unit is not None
+                or self.risk_reward_ratio is not None
+                or self.risk_reward_state is not Step31RiskRewardState.UNAVAILABLE
+                or Step31ObservationWarning.TARGET_NOT_FORWARD_OF_ENTRY not in self.warnings
+            ))
             or type(self.warnings) is not tuple
             or any(type(item) is not Step31ObservationWarning for item in self.warnings)
             or len(set(self.warnings)) != len(self.warnings)
@@ -253,7 +326,12 @@ class LocalStep31ObservationStore:
         if type(record) is not Step31ObservationEvidence:
             raise TypeError("STEP31_OBSERVATION_EVIDENCE_INVALID")
         path = self.root / record.native_run_identity / record.canonical_instrument / f"{record.observation_evidence_id}.json"
-        payload = {"schema": STEP31_OBSERVATION_SCHEMA, "record": _primitive(record)}
+        schema = (
+            STEP31_OBSERVATION_SCHEMA_V1
+            if record.contract_identity == STEP31_OBSERVATION_CONTRACT_ID_V1
+            else STEP31_OBSERVATION_SCHEMA
+        )
+        payload = {"schema": schema, "record": _primitive(record)}
         with self._lock:
             if path.exists():
                 if _read(path) != payload:
@@ -274,7 +352,7 @@ class LocalStep31ObservationStore:
         values: list[Step31ObservationEvidence] = []
         for path in sorted(root.glob("*/*.json")):
             payload = _read(path)
-            if payload.get("schema") != STEP31_OBSERVATION_SCHEMA:
+            if payload.get("schema") not in {STEP31_OBSERVATION_SCHEMA_V1, STEP31_OBSERVATION_SCHEMA}:
                 raise ValueError("STEP31_OBSERVATION_RESTART_INTEGRITY_INVALID")
             record = _record_from_dict(payload.get("record"))
             requirement = expected.get(record.canonical_instrument)
@@ -381,10 +459,16 @@ def construct_step31_observation(
         _round_tick(invalidation_evidence.price, execution_context,
                     up=direction is V1Direction.SHORT)
     )
-    target = (
+    target_candidate = (
         None if raw_target is None or raw_target <= 0 else
         _round_tick(raw_target, execution_context, up=direction is V1Direction.SHORT)
     )
+    target_rejected = (
+        entry is not None
+        and target_candidate is not None
+        and not _forward_target(entry, target_candidate, direction)
+    )
+    target = None if target_rejected else target_candidate
     barrier = (
         None if entry is None or target is None else
         _nearest_barrier(evidence, entry, target, direction)
@@ -419,15 +503,10 @@ def construct_step31_observation(
         warnings.append(Step31ObservationWarning.STOP_UNAVAILABLE)
     if target is None:
         warnings.append(Step31ObservationWarning.TARGET_UNAVAILABLE)
+    if target_rejected:
+        warnings.append(Step31ObservationWarning.TARGET_NOT_FORWARD_OF_ENTRY)
     if invalidation is None:
         warnings.append(Step31ObservationWarning.STRUCTURAL_GEOMETRY_WARNING)
-    if entry is not None and target is not None:
-        if direction is V1Direction.LONG and target <= entry:
-            warnings.extend((Step31ObservationWarning.TARGET_BELOW_ENTRY,
-                             Step31ObservationWarning.NON_POSITIVE_REWARD))
-        if direction is V1Direction.SHORT and target >= entry:
-            warnings.extend((Step31ObservationWarning.TARGET_ABOVE_ENTRY,
-                             Step31ObservationWarning.NON_POSITIVE_REWARD))
     if risk is not None and risk <= 0:
         warnings.append(Step31ObservationWarning.NON_POSITIVE_RISK)
     warning_tuple = tuple(dict.fromkeys(warnings))
@@ -471,8 +550,14 @@ def construct_step31_observation(
         "evidence": evidence.package_sha256,
         "context": execution_context.identity,
         "policy": STEP31_OBSERVATION_POLICY_ID,
+        "trade_construction_policy": TRADE_CONSTRUCTION_POLICY_ID,
     }
     observation_id = "STEP31-OBSERVATION-" + sha256(_canonical(seed)).hexdigest()
+    rejected_lineage = (
+        None
+        if not target_rejected or target_evidence is None or raw_target is None
+        else _target_candidate_lineage(evidence, target_evidence, raw_target)
+    )
     fields = dict(
         contract_identity=STEP31_OBSERVATION_CONTRACT_ID,
         contract_version=STEP31_OBSERVATION_CONTRACT_VERSION,
@@ -515,6 +600,28 @@ def construct_step31_observation(
         reward_per_unit=reward,
         risk_reward_ratio=ratio,
         risk_reward_state=rr_state,
+        trade_construction_policy_identity=TRADE_CONSTRUCTION_POLICY_ID,
+        trade_construction_policy_version=TRADE_CONSTRUCTION_POLICY_VERSION,
+        rejected_target_candidate_identity=(
+            None if rejected_lineage is None else rejected_lineage[0]
+        ),
+        rejected_target_candidate_price=(None if not target_rejected else target_candidate),
+        rejected_target_candidate_timeframe=(
+            None if rejected_lineage is None else _timeframe_from_source(rejected_lineage[1])
+        ),
+        rejected_target_candidate_source=(
+            None if rejected_lineage is None else rejected_lineage[1]
+        ),
+        rejected_target_candidate_boundary=(
+            None if rejected_lineage is None else rejected_lineage[2]
+        ),
+        rejected_target_candidate_evidence_sha256=(
+            None if rejected_lineage is None else rejected_lineage[3]
+        ),
+        rejected_target_candidate_provenance=(
+            () if rejected_lineage is None else rejected_lineage[4]
+        ),
+        target_rejection_reason=("TARGET_NOT_FORWARD_OF_ENTRY" if target_rejected else None),
         warnings=warning_tuple,
         severity=severity,
         geometry_status=geometry_status,
@@ -528,6 +635,7 @@ def construct_step31_observation(
             handoff.integrity_sha256,
             execution_context.identity,
             STEP31_OBSERVATION_POLICY_ID,
+            TRADE_CONSTRUCTION_POLICY_ID,
             "DOMAIN-001",
             "DOMAIN-008",
         ))),
@@ -625,8 +733,34 @@ def _nearest_barrier(evidence, entry, target, direction):  # type: ignore[no-unt
     return None if not barriers else min(barriers, key=lambda item: abs(item.price - entry))
 
 
+def _forward_target(entry: Decimal, target: Decimal, direction: V1Direction) -> bool:
+    return target > entry if direction is V1Direction.LONG else target < entry
+
+
+def _timeframe_from_source(source: str) -> str | None:
+    upper = source.upper()
+    for token in ("4H", "1H", "DAILY", "WEEKLY"):
+        if token in upper:
+            return token
+    return None
+
+
 def _record_digest(record: Step31ObservationEvidence) -> str:
     payload = _primitive(record)
+    if record.contract_identity == STEP31_OBSERVATION_CONTRACT_ID_V1:
+        for key in (
+            "trade_construction_policy_identity",
+            "trade_construction_policy_version",
+            "rejected_target_candidate_identity",
+            "rejected_target_candidate_price",
+            "rejected_target_candidate_timeframe",
+            "rejected_target_candidate_source",
+            "rejected_target_candidate_boundary",
+            "rejected_target_candidate_evidence_sha256",
+            "rejected_target_candidate_provenance",
+            "target_rejection_reason",
+        ):
+            payload.pop(key)
     payload["integrity_sha256"] = ""
     return sha256(_canonical(payload)).hexdigest()
 
@@ -662,8 +796,27 @@ def _record_from_dict(value: object) -> Step31ObservationEvidence:
             "entry", "stop", "invalidation_reference", "setup_native_raw_target",
             "canonical_target", "material_barrier_reference", "risk_per_unit",
             "reward_per_unit", "risk_reward_ratio",
+            "rejected_target_candidate_price",
         ):
+            if name not in data:
+                data[name] = None
             data[name] = None if data[name] is None else Decimal(data[name])
+        legacy = data.get("contract_identity") == STEP31_OBSERVATION_CONTRACT_ID_V1
+        data.setdefault(
+            "trade_construction_policy_identity",
+            TRADE_CONSTRUCTION_POLICY_ID_V0 if legacy else TRADE_CONSTRUCTION_POLICY_ID,
+        )
+        data.setdefault(
+            "trade_construction_policy_version",
+            TRADE_CONSTRUCTION_POLICY_VERSION_V0 if legacy else TRADE_CONSTRUCTION_POLICY_VERSION,
+        )
+        data.setdefault("rejected_target_candidate_identity", None)
+        data.setdefault("rejected_target_candidate_timeframe", None)
+        data.setdefault("rejected_target_candidate_source", None)
+        data.setdefault("rejected_target_candidate_boundary", None)
+        data.setdefault("rejected_target_candidate_evidence_sha256", None)
+        data.setdefault("rejected_target_candidate_provenance", ())
+        data.setdefault("target_rejection_reason", None)
         data["native_direction"] = V1Direction(data["native_direction"])
         data["native_opportunity_identity"] = NativeOpportunityIdentity(data["native_opportunity_identity"])
         data["setup_identity"] = TradeSetupIdentity(data["setup_identity"])
@@ -675,7 +828,14 @@ def _record_from_dict(value: object) -> Step31ObservationEvidence:
         data["geometry_status"] = Step31GeometryStatus(data["geometry_status"])
         data["observation_boundary"] = datetime.fromisoformat(data["observation_boundary"])
         data["created_at"] = datetime.fromisoformat(data["created_at"])
+        if data["rejected_target_candidate_boundary"] is not None:
+            data["rejected_target_candidate_boundary"] = datetime.fromisoformat(
+                data["rejected_target_candidate_boundary"]
+            )
         data["provenance"] = tuple(data["provenance"])
+        data["rejected_target_candidate_provenance"] = tuple(
+            data["rejected_target_candidate_provenance"]
+        )
         return Step31ObservationEvidence(**data)
     except (KeyError, TypeError, ValueError) as error:
         raise ValueError("STEP31_OBSERVATION_STORED_RECORD_INVALID") from error

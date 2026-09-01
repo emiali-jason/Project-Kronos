@@ -12,11 +12,12 @@ from kronos.application.swing_opportunities import (
     SwingOpportunitiesApplication,
     V1ProbableSnapshot,
 )
-from kronos.application.swing_v1_review import SwingV1ReviewWorkflow
+from kronos.application.swing_native_review import NativeReviewWorkflow
 from kronos.application.swing_v1_browser import (
     BrowserCandidateRecord,
     SwingV1BrowserOperationalization,
 )
+from kronos.application.swing_v1_review import SwingV1ReviewWorkflow
 from kronos.browser.server import KronosBrowserServer, create_browser_server
 from kronos.browser.restart_control import BrowserBackendRestartControl
 from kronos.browser.product_routes import BrowserRouteResponse, ProductBrowserRoutes
@@ -25,6 +26,7 @@ from kronos.swing.v1 import (
     V1Direction,
     V1Setup,
 )
+from kronos.swing.v1.native_review import NativeReviewEvidenceStore
 from kronos.swing.v1.step32 import create_business_judgment
 from tests.unit.swing.v1.test_step32_lifecycle import _entry_fixture
 from tests.unit.application.test_swing_opportunities import (
@@ -513,7 +515,7 @@ def test_sponsor_exit_is_bounded_and_blocks_new_work(tmp_path) -> None:
 
 
 def test_status_exposes_only_bounded_sanitized_analysis_diagnostic(
-    monkeypatch,
+    monkeypatch, tmp_path,
 ) -> None:
     application = SwingOpportunitiesApplication(
         _Provider,
@@ -527,7 +529,12 @@ def test_status_exposes_only_bounded_sanitized_analysis_diagnostic(
         ),
     )
     assert application.run_analysis()
-    server = create_browser_server(application, port=0)
+    server = create_browser_server(
+        application,
+        port=0,
+        v1_review=SwingV1ReviewWorkflow(LocalTradingViewEvidenceStore(tmp_path)),
+        native_review=NativeReviewWorkflow(NativeReviewEvidenceStore(tmp_path / "native")),
+    )
     thread = Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
@@ -552,8 +559,16 @@ def test_status_exposes_only_bounded_sanitized_analysis_diagnostic(
         "/swing/analysis",
     ),
 )
-def test_post_accepts_exact_running_loopback_origin(path: str) -> None:
-    server, thread = _running_server()
+def test_post_accepts_exact_running_loopback_origin(path: str, tmp_path) -> None:  # type: ignore[no-untyped-def]
+    application = SwingOpportunitiesApplication(_Provider)
+    server = create_browser_server(
+        application,
+        port=0,
+        v1_review=SwingV1ReviewWorkflow(LocalTradingViewEvidenceStore(tmp_path)),
+        native_review=NativeReviewWorkflow(NativeReviewEvidenceStore(tmp_path / "native")),
+    )
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
     try:
         authority = f"127.0.0.1:{server.server_port}"
         status, headers, _ = _request(
@@ -569,7 +584,7 @@ def test_post_accepts_exact_running_loopback_origin(path: str) -> None:
 
 
 def test_live_monitoring_settings_control_invokes_current_process_capability(
-    monkeypatch,
+    monkeypatch, tmp_path,
 ) -> None:
     from datetime import UTC, datetime
     from kronos.application.live_monitoring_e2e import (
@@ -592,7 +607,12 @@ def test_live_monitoring_settings_control_invokes_current_process_capability(
             observed_at=datetime(2026, 8, 13, 9, 15, tzinfo=UTC),
         ),
     )
-    server = create_browser_server(application, port=0)
+    server = create_browser_server(
+        application,
+        port=0,
+        v1_review=SwingV1ReviewWorkflow(LocalTradingViewEvidenceStore(tmp_path)),
+        native_review=NativeReviewWorkflow(NativeReviewEvidenceStore(tmp_path / "native")),
+    )
     thread = Thread(target=server.serve_forever, daemon=True)
     thread.start()
     authority = f"127.0.0.1:{server.server_port}"

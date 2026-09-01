@@ -256,11 +256,32 @@ def test_historical_geometry_failure_exposes_prospective_observation_action_with
 
     assert first.step31_observation is not None
     assert repeated.step31_observation == first.step31_observation
-    assert first.step31_observation.severity.value == "RED"
+    assert first.step31_observation.severity.value == "AMBER"
+    html = render_native_trade_window(_ready(), first)
+    assert "Target</span><strong>UNAVAILABLE" in html
+    assert "REJECTED HISTORICAL TARGET CANDIDATE" in html
+    assert "₹95" in html
+    assert "NOT FORWARD OF ENTRY" in html
     assert first.trade_plan is None
     assert historical_path.read_bytes() == historical_bytes
     assert workflow.sponsor_observation_decisions() == ()
     assert workflow.observation_research_snapshot() == ()
+
+    restored = SwingTradeWindowWorkflow(
+        LocalKr370Step31HandoffStore(tmp_path / "handoffs"),
+        LocalTradePlanStore(tmp_path / "plans"),
+        diagnostic_store=diagnostic_store,
+    )
+    restored.restore((completed,))
+    recovered = restored.project(
+        completed.requirement.native_run_identity,
+        completed.requirement.canonical_instrument,
+    )
+    assert recovered.trade_plan is None
+    assert recovered.step31_observation == first.step31_observation
+    assert "REJECTED HISTORICAL TARGET CANDIDATE" in render_native_trade_window(
+        _ready(), recovered
+    )
 
 
 def test_step31_geometry_failure_preserves_handoff_and_blocks_actions(tmp_path) -> None:

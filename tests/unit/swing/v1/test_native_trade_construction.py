@@ -3,6 +3,8 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from hashlib import sha256
 from pathlib import Path
+import inspect
+import json
 
 import pytest
 
@@ -32,6 +34,7 @@ from tests.unit.swing.v1.test_native_review import _evidence_run
 from kronos.swing.v1.native_review import NativeLayer2EvidenceState
 from kronos.swing.v1.native_review import NativeReviewEvidenceStore
 from kronos.application.swing_native_review import NativeReviewWorkflow
+import kronos.swing.v1.native_trade_construction as trade_construction_module
 
 
 NOW = datetime(2026, 8, 17, 8, 0, tzinfo=UTC)
@@ -68,7 +71,7 @@ def _inverse_ready():  # type: ignore[no-untyped-def]
 def _price(identity: str, value: str, boundary: datetime) -> AuthoritativePriceEvidence:
     return AuthoritativePriceEvidence(
         identity, sha256(identity.encode()).hexdigest(),
-        Decimal(value), boundary, f"GOVERNED:{identity}", ("KITE:HISTORICAL",),
+        Decimal(value), boundary, f"GOVERNED:COMPLETED_4H:{identity}", ("KITE:HISTORICAL",),
     )
 
 
@@ -237,7 +240,12 @@ def test_invalid_long_geometry_fails_closed(changes) -> None:  # type: ignore[no
         for name, value in changes.items()
     }
     plan = construct_trade_plan(requirement, readiness, _package(requirement, readiness, **kwargs), _context(requirement.canonical_instrument), created_at=NOW)
-    assert plan.unavailable_reason is TradePlanUnavailableReason.GEOMETRY_INVALID
+    expected = (
+        TradePlanUnavailableReason.TARGET_NOT_FORWARD_OF_ENTRY
+        if "prior_directional_swing_high" in changes
+        else TradePlanUnavailableReason.GEOMETRY_INVALID
+    )
+    assert plan.unavailable_reason is expected
 
 
 def test_invalid_short_stop_and_target_geometry_fail_closed() -> None:
@@ -253,7 +261,7 @@ def test_invalid_short_stop_and_target_geometry_fail_closed() -> None:
         _package(requirement, readiness, prior_directional_swing_low=_price("BAD-TARGET", "96", readiness.observation_boundary)),
         _context(requirement.canonical_instrument), created_at=NOW,
     )
-    assert bad_target.unavailable_reason is TradePlanUnavailableReason.GEOMETRY_INVALID
+    assert bad_target.unavailable_reason is TradePlanUnavailableReason.TARGET_NOT_FORWARD_OF_ENTRY
 
 
 @pytest.mark.parametrize("source", ("OPENAI_LEVEL", "PINE_CPR", "COMEX_REFERENCE", "NYMEX_REFERENCE"))
@@ -379,3 +387,224 @@ def test_native_review_workflow_constructs_idempotently_and_restores_plan(tmp_pa
 
     restored = NativeReviewWorkflow(NativeReviewEvidenceStore(root)).restore(run, facts)
     assert restored.trade_plans == (first,)
+
+
+@pytest.mark.parametrize(
+    ("direction", "candidate", "eligible"),
+    (
+        (V1Direction.LONG, "100", False),
+        (V1Direction.LONG, "99", False),
+        (V1Direction.LONG, "101", True),
+        (V1Direction.SHORT, "95", False),
+        (V1Direction.SHORT, "96", False),
+        (V1Direction.SHORT, "94", True),
+    ),
+)
+def test_v1_forward_target_gate_is_strict_and_symmetric(
+    direction: V1Direction, candidate: str, eligible: bool,
+) -> None:
+    readiness, requirement = _ready() if direction is V1Direction.LONG else _inverse_ready()
+    change = (
+        {"prior_directional_swing_high": _price("CANDIDATE", candidate, readiness.observation_boundary)}
+        if direction is V1Direction.LONG else
+        {"prior_directional_swing_low": _price("CANDIDATE", candidate, readiness.observation_boundary)}
+    )
+    plan = construct_trade_plan(
+        requirement, readiness, _package(requirement, readiness, **change),
+        _context(requirement.canonical_instrument), created_at=NOW,
+    )
+    assert (plan.geometry_viability is TradePlanStatus.TRADE_PLAN_READY) is eligible
+    if not eligible:
+        assert plan.unavailable_reason is TradePlanUnavailableReason.TARGET_NOT_FORWARD_OF_ENTRY
+        assert plan.canonical_target is None
+        assert plan.reward_per_unit is None
+        assert plan.risk_reward_ratio is None
+        assert plan.rejected_target_candidate_price is not None
+
+
+def test_v1_forward_gate_uses_rounded_entry_and_target_and_has_no_ltp_input() -> None:
+    readiness, requirement = _ready()
+    plan = construct_trade_plan(
+        requirement,
+        readiness,
+        _package(
+            requirement,
+            readiness,
+            qualification_candle=_candle(readiness.observation_boundary, high="100.021"),
+            prior_directional_swing_high=_price("ROUNDING-CANDIDATE", "100.049", readiness.observation_boundary),
+        ),
+        _context(requirement.canonical_instrument),
+        created_at=NOW,
+    )
+    assert plan.entry == Decimal("100.05")
+    assert plan.rejected_target_candidate_price == Decimal("100.00")
+    assert plan.unavailable_reason is TradePlanUnavailableReason.TARGET_NOT_FORWARD_OF_ENTRY
+    assert "ltp" not in inspect.signature(construct_trade_plan).parameters
+
+
+def test_rejected_candidate_does_not_search_barriers_as_fallback(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    readiness, requirement = _ready()
+
+    def forbidden(*_args, **_kwargs):  # type: ignore[no-untyped-def]
+        raise AssertionError("BARRIER_SEARCH_MUST_NOT_RUN")
+
+    monkeypatch.setattr(trade_construction_module, "_nearest_barrier", forbidden)
+    plan = construct_trade_plan(
+        requirement,
+        readiness,
+        _package(
+            requirement,
+            readiness,
+            prior_directional_swing_high=_price("REJECTED", "99", readiness.observation_boundary),
+        ),
+        _context(requirement.canonical_instrument),
+        created_at=NOW,
+    )
+    assert plan.unavailable_reason is TradePlanUnavailableReason.TARGET_NOT_FORWARD_OF_ENTRY
+
+
+def test_equal_or_behind_barrier_cannot_replace_valid_forward_target() -> None:
+    readiness, requirement = _ready()
+    barriers = (
+        MaterialPricedBarrier(
+            "AT-ENTRY", "1" * 64, Decimal("100"), readiness.observation_boundary,
+            "GOVERNED:COMPLETED_4H:BARRIER", ("LAYER2",),
+        ),
+        MaterialPricedBarrier(
+            "BEHIND-ENTRY", "2" * 64, Decimal("99"), readiness.observation_boundary,
+            "GOVERNED:COMPLETED_4H:BARRIER", ("LAYER2",),
+        ),
+    )
+    plan = construct_trade_plan(
+        requirement, readiness,
+        _package(requirement, readiness, material_barriers=barriers),
+        _context(requirement.canonical_instrument), created_at=NOW,
+    )
+    assert plan.canonical_target == Decimal("120.00")
+    assert plan.material_barrier_identity is None
+
+
+def test_breakout_non_forward_projection_fails_closed_without_hierarchy_change() -> None:
+    readiness, requirement = _ready()
+    plan = construct_trade_plan(
+        requirement,
+        readiness,
+        _package(
+            requirement,
+            readiness,
+            TradeSetupIdentity.CONSOLIDATION_BREAKOUT,
+            qualification_candle=_candle(readiness.observation_boundary, high="120", low="115"),
+        ),
+        _context(requirement.canonical_instrument),
+        created_at=NOW,
+    )
+    assert plan.setup_native_raw_target == Decimal("110")
+    assert plan.rejected_target_candidate_identity.startswith("BREAKOUT-PROJECTION:")
+    assert plan.unavailable_reason is TradePlanUnavailableReason.TARGET_NOT_FORWARD_OF_ENTRY
+
+
+def test_vbl_and_mcx_controlled_replays_are_symmetric_rejected_context() -> None:
+    short_readiness, short_requirement = _inverse_ready()
+    vbl = construct_trade_plan(
+        short_requirement,
+        short_readiness,
+        _package(
+            short_requirement,
+            short_readiness,
+            qualification_candle=_candle(short_readiness.observation_boundary, high="420", low="408.75"),
+            governing_structural_high=_price("VBL-STOP", "447.90", short_readiness.observation_boundary),
+            prior_directional_swing_low=_price("VBL-CANDIDATE", "432.25", short_readiness.observation_boundary),
+        ),
+        _context(short_requirement.canonical_instrument),
+        created_at=NOW,
+    )
+    long_readiness, long_requirement = _ready()
+    mcx = construct_trade_plan(
+        long_requirement,
+        long_readiness,
+        _package(
+            long_requirement,
+            long_readiness,
+            qualification_candle=_candle(long_readiness.observation_boundary, high="3211.4", low="3100"),
+            governing_structural_low=_price("MCX-STOP", "2892.1", long_readiness.observation_boundary),
+            prior_directional_swing_high=_price("MCX-CANDIDATE", "3023.7", long_readiness.observation_boundary),
+        ),
+        _context(long_requirement.canonical_instrument, tick="0.1"),
+        created_at=NOW,
+    )
+    assert (vbl.entry, vbl.rejected_target_candidate_price, vbl.canonical_target) == (
+        Decimal("408.75"), Decimal("432.25"), None,
+    )
+    assert (mcx.entry, mcx.rejected_target_candidate_price, mcx.canonical_target) == (
+        Decimal("3211.40"), Decimal("3023.70"), None,
+    )
+    assert vbl.reward_per_unit is mcx.reward_per_unit is None
+
+
+def test_v0_and_v1_trade_plans_coexist_and_unknown_policy_fails_closed(tmp_path: Path) -> None:
+    readiness, requirement = _ready()
+    current = construct_trade_plan(
+        requirement, readiness, _package(requirement, readiness),
+        _context(requirement.canonical_instrument), created_at=NOW,
+    )
+    current_data = trade_construction_module._primitive(current)  # noqa: SLF001
+    assert isinstance(current_data, dict)
+    legacy_data = dict(current_data)
+    legacy_data.update(
+        contract_identity="KRONOS-SWING-V1-TRADE-PLAN-RECORD-V0",
+        contract_version="0",
+        trade_plan_id="TRADE-PLAN-LEGACY-V0",
+        trade_construction_policy_identity="SWING-V1-TRADE-CONSTRUCTION-V0",
+        trade_construction_policy_version="0",
+        integrity_hash="",
+    )
+    for key in (
+        "rejected_target_candidate_identity", "rejected_target_candidate_price",
+        "rejected_target_candidate_timeframe", "rejected_target_candidate_source",
+        "rejected_target_candidate_boundary", "rejected_target_candidate_evidence_sha256",
+        "rejected_target_candidate_provenance", "target_rejection_reason",
+    ):
+        legacy_data.pop(key)
+    legacy_data["integrity_hash"] = sha256(
+        trade_construction_module._canonical(legacy_data)  # noqa: SLF001
+    ).hexdigest()
+    root = tmp_path / requirement.native_run_identity / requirement.canonical_instrument
+    root.mkdir(parents=True)
+    (root / "legacy.json").write_text(json.dumps({
+        "schema": "KRONOS-SWING-V1-TRADE-PLAN-STORE-V0",
+        "record": legacy_data,
+    }))
+    store = LocalTradePlanStore(tmp_path.resolve())
+    store.retain(current)
+    restored = store.load_for_requirements((requirement,))
+    assert {item.trade_construction_policy_identity for item in restored} == {
+        "SWING-V1-TRADE-CONSTRUCTION-V0", "SWING-V1-TRADE-CONSTRUCTION-V1",
+    }
+
+    corrupt = dict(current_data)
+    corrupt["trade_construction_policy_version"] = "UNKNOWN"
+    corrupt["integrity_hash"] = sha256(
+        trade_construction_module._canonical(corrupt | {"integrity_hash": ""})  # noqa: SLF001
+    ).hexdigest()
+    (root / "unknown.json").write_text(json.dumps({
+        "schema": "KRONOS-SWING-V1-TRADE-PLAN-STORE-V1", "record": corrupt,
+    }))
+    with pytest.raises(ValueError, match="STORED_RECORD_INVALID"):
+        store.load_for_requirements((requirement,))
+
+
+def test_rejected_v1_plan_restart_preserves_exact_unavailability(tmp_path: Path) -> None:
+    readiness, requirement = _ready()
+    rejected = construct_trade_plan(
+        requirement, readiness,
+        _package(
+            requirement, readiness,
+            prior_directional_swing_high=_price("RESTART-REJECTED", "99", readiness.observation_boundary),
+        ),
+        _context(requirement.canonical_instrument), created_at=NOW,
+    )
+    store = LocalTradePlanStore(tmp_path.resolve())
+    store.retain(rejected)
+    assert store.load_for_requirements((requirement,)) == (rejected,)
+    assert rejected.trade_construction_policy_identity == "SWING-V1-TRADE-CONSTRUCTION-V1"
+    assert rejected.canonical_target is rejected.reward_per_unit is rejected.risk_reward_ratio is None

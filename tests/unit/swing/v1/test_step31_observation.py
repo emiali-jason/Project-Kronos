@@ -1,7 +1,10 @@
 from dataclasses import replace
 from decimal import Decimal
+from hashlib import sha256
+import json
 
 import pytest
+import kronos.swing.v1.step31_observation as observation_module
 
 from kronos.instrument.facts import InstrumentContextStatus
 from kronos.swing.v1.models import V1Direction
@@ -108,7 +111,7 @@ def test_valid_short_preserves_inverse_geometry(tmp_path) -> None:  # type: igno
     assert observation.severity is Step31WarningSeverity.GREEN
 
 
-def test_warning_long_retains_negative_reward_and_no_trade_plan(tmp_path) -> None:  # type: ignore[no-untyped-def]
+def test_non_forward_long_retains_rejected_candidate_not_canonical_target(tmp_path) -> None:  # type: ignore[no-untyped-def]
     completed = _completed(tmp_path)
     boundary = completed.promotion.analysis_boundary
     evidence = _package(
@@ -118,21 +121,25 @@ def test_warning_long_retains_negative_reward_and_no_trade_plan(tmp_path) -> Non
     observation = _observe(completed, evidence)
 
     assert (observation.entry, observation.stop, observation.canonical_target) == (
-        Decimal("100.00"), Decimal("90.00"), Decimal("95.00")
+        Decimal("100.00"), Decimal("90.00"), None
     )
-    assert observation.reward_per_unit == Decimal("-5.00")
+    assert observation.rejected_target_candidate_price == Decimal("95.00")
+    assert observation.reward_per_unit is None
     assert observation.risk_reward_ratio is None
-    assert observation.risk_reward_state is Step31RiskRewardState.INVALID
+    assert observation.risk_reward_state is Step31RiskRewardState.UNAVAILABLE
     assert observation.warnings == (
-        Step31ObservationWarning.TARGET_BELOW_ENTRY,
-        Step31ObservationWarning.NON_POSITIVE_REWARD,
+        Step31ObservationWarning.TARGET_UNAVAILABLE,
+        Step31ObservationWarning.TARGET_NOT_FORWARD_OF_ENTRY,
     )
-    assert observation.severity is Step31WarningSeverity.RED
-    assert observation.geometry_status is Step31GeometryStatus.COMPLETE_WARNING
+    assert observation.severity is Step31WarningSeverity.AMBER
+    assert observation.geometry_status is Step31GeometryStatus.INCOMPLETE_WARNING
     assert observation.conventional_trade_plan_id is None
+    store = LocalStep31ObservationStore(tmp_path / "rejected-observations")
+    store.retain(observation)
+    assert store.load_for_requirements((completed.requirement,)) == (observation,)
 
 
-def test_warning_short_retains_negative_reward(tmp_path) -> None:  # type: ignore[no-untyped-def]
+def test_non_forward_short_retains_rejected_candidate(tmp_path) -> None:  # type: ignore[no-untyped-def]
     completed = _completed(tmp_path, direction=V1Direction.SHORT)
     boundary = completed.promotion.analysis_boundary
     base = _evidence(completed)
@@ -145,12 +152,13 @@ def test_warning_short_retains_negative_reward(tmp_path) -> None:  # type: ignor
     observation = _observe(completed, evidence)
 
     assert (observation.entry, observation.stop, observation.canonical_target) == (
-        Decimal("100.00"), Decimal("110.00"), Decimal("105.00")
+        Decimal("100.00"), Decimal("110.00"), None
     )
-    assert observation.reward_per_unit == Decimal("-5.00")
+    assert observation.rejected_target_candidate_price == Decimal("105.00")
+    assert observation.reward_per_unit is None
     assert observation.warnings == (
-        Step31ObservationWarning.TARGET_ABOVE_ENTRY,
-        Step31ObservationWarning.NON_POSITIVE_REWARD,
+        Step31ObservationWarning.TARGET_UNAVAILABLE,
+        Step31ObservationWarning.TARGET_NOT_FORWARD_OF_ENTRY,
     )
 
 
@@ -227,7 +235,7 @@ def test_hard_binding_staleness_and_execution_context_fail_closed(tmp_path) -> N
         )
 
 
-def test_real_mcx_clone_is_red_observation_not_trade_or_risk_authority(tmp_path) -> None:  # type: ignore[no-untyped-def]
+def test_real_mcx_clone_is_rejected_context_not_trade_or_risk_authority(tmp_path) -> None:  # type: ignore[no-untyped-def]
     completed = _completed(tmp_path)
     boundary = completed.promotion.analysis_boundary
     base = _evidence(completed)
@@ -255,10 +263,11 @@ def test_real_mcx_clone_is_red_observation_not_trade_or_risk_authority(tmp_path)
     )
 
     assert (observation.entry, observation.stop, observation.canonical_target) == (
-        Decimal("3211.4"), Decimal("2892.1"), Decimal("3023.7")
+        Decimal("3211.4"), Decimal("2892.1"), None
     )
-    assert observation.reward_per_unit == Decimal("-187.7")
-    assert observation.severity is Step31WarningSeverity.RED
+    assert observation.rejected_target_candidate_price == Decimal("3023.7")
+    assert observation.reward_per_unit is None
+    assert observation.severity is Step31WarningSeverity.AMBER
     assert observation.conventional_trade_plan_id is None
     sponsor = create_sponsor_observation_handoff(
         observation,
@@ -281,3 +290,47 @@ def test_observation_store_is_immutable_restart_safe_and_rejects_corruption(tmp_
     path.write_text(path.read_text().replace('"severity":"GREEN"', '"severity":"RED"'))
     with pytest.raises(ValueError, match="STORED_RECORD_INVALID"):
         store.load_for_requirements((completed.requirement,))
+
+
+def test_v1_and_v2_observations_restore_without_reinterpretation(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    completed = _completed(tmp_path)
+    current = _observe(completed, _evidence(completed), plan=True)
+    current_data = observation_module._primitive(current)  # noqa: SLF001
+    assert isinstance(current_data, dict)
+    legacy_data = dict(current_data)
+    legacy_data.update(
+        contract_identity="KRONOS-SWING-STEP31-OBSERVATION-EVIDENCE-V1",
+        contract_version="1",
+        observation_evidence_id="STEP31-OBSERVATION-LEGACY-V1",
+        integrity_sha256="",
+    )
+    for key in (
+        "trade_construction_policy_identity", "trade_construction_policy_version",
+        "rejected_target_candidate_identity", "rejected_target_candidate_price",
+        "rejected_target_candidate_timeframe", "rejected_target_candidate_source",
+        "rejected_target_candidate_boundary", "rejected_target_candidate_evidence_sha256",
+        "rejected_target_candidate_provenance", "target_rejection_reason",
+    ):
+        legacy_data.pop(key)
+    legacy_data["integrity_sha256"] = sha256(
+        observation_module._canonical(legacy_data)  # noqa: SLF001
+    ).hexdigest()
+    root = (
+        tmp_path / "coexist" / completed.requirement.native_run_identity
+        / completed.requirement.canonical_instrument
+    )
+    root.mkdir(parents=True)
+    (root / "legacy.json").write_text(json.dumps({
+        "schema": "KRONOS-SWING-STEP31-OBSERVATION-STORE-V1",
+        "record": legacy_data,
+    }))
+    store = LocalStep31ObservationStore((tmp_path / "coexist").resolve())
+    store.retain(current)
+    restored = store.load_for_requirements((completed.requirement,))
+    assert {item.contract_identity for item in restored} == {
+        "KRONOS-SWING-STEP31-OBSERVATION-EVIDENCE-V1",
+        "KRONOS-SWING-STEP31-OBSERVATION-EVIDENCE-V2",
+    }
+    legacy = next(item for item in restored if item.contract_version == "1")
+    assert legacy.canonical_target == Decimal("120.00")
+    assert legacy.trade_construction_policy_identity == "SWING-V1-TRADE-CONSTRUCTION-V0"

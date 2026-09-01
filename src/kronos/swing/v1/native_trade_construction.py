@@ -21,12 +21,18 @@ from kronos.swing.v1.native_readiness import NativeLayer2ReadinessRecord, Native
 from kronos.swing.v1.native_review import NativeReviewRequirement
 
 
-TRADE_CONSTRUCTION_POLICY_ID = "SWING-V1-TRADE-CONSTRUCTION-V0"
-TRADE_CONSTRUCTION_POLICY_VERSION = "0"
+TRADE_CONSTRUCTION_POLICY_ID_V0 = "SWING-V1-TRADE-CONSTRUCTION-V0"
+TRADE_CONSTRUCTION_POLICY_VERSION_V0 = "0"
+TRADE_PLAN_CONTRACT_ID_V0 = "KRONOS-SWING-V1-TRADE-PLAN-RECORD-V0"
+TRADE_PLAN_CONTRACT_VERSION_V0 = "0"
+TRADE_PLAN_SCHEMA_V0 = "KRONOS-SWING-V1-TRADE-PLAN-STORE-V0"
+
+TRADE_CONSTRUCTION_POLICY_ID = "SWING-V1-TRADE-CONSTRUCTION-V1"
+TRADE_CONSTRUCTION_POLICY_VERSION = "1.0"
 TRADE_CONSTRUCTION_POLICY_STATUS = "FROZEN"
-TRADE_PLAN_CONTRACT_ID = "KRONOS-SWING-V1-TRADE-PLAN-RECORD-V0"
-TRADE_PLAN_CONTRACT_VERSION = "0"
-TRADE_PLAN_SCHEMA = "KRONOS-SWING-V1-TRADE-PLAN-STORE-V0"
+TRADE_PLAN_CONTRACT_ID = "KRONOS-SWING-V1-TRADE-PLAN-RECORD-V1"
+TRADE_PLAN_CONTRACT_VERSION = "1"
+TRADE_PLAN_SCHEMA = "KRONOS-SWING-V1-TRADE-PLAN-STORE-V1"
 TRADE_PLAN_AUTHORITY = "MODEL_TRADE_GEOMETRY_ONLY_NO_SPONSOR_OR_EXECUTION_AUTHORITY"
 
 
@@ -45,6 +51,7 @@ class TradePlanUnavailableReason(StrEnum):
     STOP_AUTHORITY_UNAVAILABLE = "STOP_AUTHORITY_UNAVAILABLE"
     INVALIDATION_AUTHORITY_UNAVAILABLE = "INVALIDATION_AUTHORITY_UNAVAILABLE"
     TARGET_AUTHORITY_UNAVAILABLE = "TARGET_AUTHORITY_UNAVAILABLE"
+    TARGET_NOT_FORWARD_OF_ENTRY = "TARGET_NOT_FORWARD_OF_ENTRY"
     CURRENT_QUOTE_REQUIRED_BUT_UNAVAILABLE = "CURRENT_QUOTE_REQUIRED_BUT_UNAVAILABLE"
     EVIDENCE_BINDING_INVALID = "EVIDENCE_BINDING_INVALID"
     EVIDENCE_STALE = "EVIDENCE_STALE"
@@ -232,6 +239,14 @@ class TradePlanRecord:
     risk_per_unit: Decimal | None
     reward_per_unit: Decimal | None
     risk_reward_ratio: Decimal | None
+    rejected_target_candidate_identity: str | None
+    rejected_target_candidate_price: Decimal | None
+    rejected_target_candidate_timeframe: str | None
+    rejected_target_candidate_source: str | None
+    rejected_target_candidate_boundary: datetime | None
+    rejected_target_candidate_evidence_sha256: str | None
+    rejected_target_candidate_provenance: tuple[str, ...]
+    target_rejection_reason: TradePlanUnavailableReason | None
     execution_context_identity: str
     tick_size: Decimal | None
     price_precision: int | None
@@ -245,6 +260,19 @@ class TradePlanRecord:
 
     def __post_init__(self) -> None:
         ready = self.geometry_viability is TradePlanStatus.TRADE_PLAN_READY
+        legacy = (
+            self.contract_identity == TRADE_PLAN_CONTRACT_ID_V0
+            and self.contract_version == TRADE_PLAN_CONTRACT_VERSION_V0
+            and self.trade_construction_policy_identity == TRADE_CONSTRUCTION_POLICY_ID_V0
+            and self.trade_construction_policy_version == TRADE_CONSTRUCTION_POLICY_VERSION_V0
+        )
+        current = (
+            self.contract_identity == TRADE_PLAN_CONTRACT_ID
+            and self.contract_version == TRADE_PLAN_CONTRACT_VERSION
+            and self.trade_construction_policy_identity == TRADE_CONSTRUCTION_POLICY_ID
+            and self.trade_construction_policy_version == TRADE_CONSTRUCTION_POLICY_VERSION
+        )
+        rejected = self.target_rejection_reason is TradePlanUnavailableReason.TARGET_NOT_FORWARD_OF_ENTRY
         geometry = (
             self.entry,
             self.stop,
@@ -256,8 +284,7 @@ class TradePlanRecord:
             self.risk_reward_ratio,
         )
         if (
-            self.contract_identity != TRADE_PLAN_CONTRACT_ID
-            or self.contract_version != TRADE_PLAN_CONTRACT_VERSION
+            not (legacy or current)
             or not _identity(self.trade_plan_id)
             or not self.native_run_identity
             or type(self.native_opportunity_identity) is not NativeOpportunityIdentity
@@ -266,8 +293,6 @@ class TradePlanRecord:
             or not _digest(self.native_assessment_sha256)
             or not _identity(self.readiness_record_identity)
             or not _digest(self.readiness_record_sha256)
-            or self.trade_construction_policy_identity != TRADE_CONSTRUCTION_POLICY_ID
-            or self.trade_construction_policy_version != TRADE_CONSTRUCTION_POLICY_VERSION
             or not _aware(self.observation_boundary)
             or not _identity(self.evidence_package_identity)
             or not _digest(self.evidence_package_sha256)
@@ -282,6 +307,49 @@ class TradePlanRecord:
             or self.authority != TRADE_PLAN_AUTHORITY
             or (ready and (any(item is None for item in geometry) or self.unavailable_reason is not None))
             or (not ready and self.unavailable_reason is None)
+            or (legacy and any((
+                self.rejected_target_candidate_identity,
+                self.rejected_target_candidate_price,
+                self.rejected_target_candidate_timeframe,
+                self.rejected_target_candidate_source,
+                self.rejected_target_candidate_boundary,
+                self.rejected_target_candidate_evidence_sha256,
+                self.rejected_target_candidate_provenance,
+                self.target_rejection_reason,
+            )))
+            or rejected != (self.unavailable_reason is TradePlanUnavailableReason.TARGET_NOT_FORWARD_OF_ENTRY)
+            or rejected != all((
+                self.rejected_target_candidate_identity is not None,
+                self.rejected_target_candidate_price is not None,
+                self.rejected_target_candidate_timeframe is not None,
+                self.rejected_target_candidate_source is not None,
+                self.rejected_target_candidate_boundary is not None,
+                self.rejected_target_candidate_evidence_sha256 is not None,
+                bool(self.rejected_target_candidate_provenance),
+            ))
+            or (not rejected and any((
+                self.rejected_target_candidate_identity,
+                self.rejected_target_candidate_price,
+                self.rejected_target_candidate_timeframe,
+                self.rejected_target_candidate_source,
+                self.rejected_target_candidate_boundary,
+                self.rejected_target_candidate_evidence_sha256,
+                self.rejected_target_candidate_provenance,
+                self.target_rejection_reason,
+            )))
+            or (rejected and (
+                not _identity(self.rejected_target_candidate_identity)
+                or not _positive_decimal(self.rejected_target_candidate_price)
+                or not self.rejected_target_candidate_timeframe
+                or not self.rejected_target_candidate_source
+                or not _aware(self.rejected_target_candidate_boundary)
+                or not _digest(self.rejected_target_candidate_evidence_sha256)
+                or self.canonical_target is not None
+                or self.reward_per_unit is not None
+                or self.risk_reward_ratio is not None
+                or self.material_barrier_identity is not None
+                or self.material_barrier_reference is not None
+            ))
             or (ready and not all((self.entry_condition, self.entry_authority_source,
                                    self.stop_authority_source, self.invalidation_condition,
                                    self.invalidation_authority_source, self.target_authority_source)))
@@ -313,7 +381,8 @@ class LocalTradePlanStore:
         if type(record) is not TradePlanRecord:
             raise TypeError("TRADE_PLAN_RECORD_INVALID")
         path = self.root / record.native_run_identity / record.canonical_instrument / f"{record.trade_plan_id}.json"
-        payload = {"schema": TRADE_PLAN_SCHEMA, "record": _primitive(record)}
+        schema = TRADE_PLAN_SCHEMA_V0 if record.contract_identity == TRADE_PLAN_CONTRACT_ID_V0 else TRADE_PLAN_SCHEMA
+        payload = {"schema": schema, "record": _primitive(record)}
         with self._lock:
             if path.exists():
                 if _read(path) != payload:
@@ -332,7 +401,7 @@ class LocalTradePlanStore:
         values: list[TradePlanRecord] = []
         for path in sorted(root.glob("*/*.json")):
             payload = _read(path)
-            if payload.get("schema") != TRADE_PLAN_SCHEMA:
+            if payload.get("schema") not in {TRADE_PLAN_SCHEMA_V0, TRADE_PLAN_SCHEMA}:
                 raise ValueError("TRADE_PLAN_RESTART_INTEGRITY_INVALID")
             record = _record_from_dict(payload.get("record"))
             requirement = expected.get(record.canonical_instrument)
@@ -395,7 +464,7 @@ def construct_trade_plan(
     *,
     created_at: datetime,
 ) -> TradePlanRecord:
-    """Construct frozen V0 geometry; no readiness or review is recalculated."""
+    """Construct governed V1 geometry; no readiness or review is recalculated."""
 
     if type(requirement) is not NativeReviewRequirement or type(readiness) not in {
         NativeLayer2ReadinessRecord,
@@ -504,6 +573,25 @@ def construct_trade_plan(
         invalidation_evidence.price, execution_context, up=direction is V1Direction.SHORT,
     )
     target = _round_tick(raw_target, execution_context, up=direction is V1Direction.SHORT)
+    if not _forward_target(entry, target, direction):
+        return _target_rejected(
+            requirement=requirement,
+            readiness=readiness,
+            evidence=evidence,
+            context=execution_context,
+            created_at=created_at,
+            entry=entry,
+            entry_condition=entry_condition,
+            entry_source=candle.source,
+            stop=stop,
+            stop_source=stop_source,
+            invalidation_reference=invalidation_reference,
+            invalidation_condition=invalidation_condition,
+            invalidation_source=invalidation_evidence.source,
+            raw_target=raw_target,
+            rounded_target=target,
+            target_evidence=target_evidence,
+        )
     barrier = _nearest_barrier(evidence.material_barriers, entry, target, direction)
     if barrier is not None:
         target = _round_tick(barrier.price, execution_context, up=direction is V1Direction.SHORT)
@@ -543,6 +631,14 @@ def construct_trade_plan(
         risk_per_unit=risk,
         reward_per_unit=reward,
         risk_reward_ratio=ratio,
+        rejected_target_candidate_identity=None,
+        rejected_target_candidate_price=None,
+        rejected_target_candidate_timeframe=None,
+        rejected_target_candidate_source=None,
+        rejected_target_candidate_boundary=None,
+        rejected_target_candidate_evidence_sha256=None,
+        rejected_target_candidate_provenance=(),
+        target_rejection_reason=None,
         geometry_viability=TradePlanStatus.TRADE_PLAN_READY,
         unavailable_reason=None,
     )
@@ -683,10 +779,125 @@ def _unavailable(requirement, readiness, evidence, context, created_at, reason):
         canonical_target=None, target_authority_source=None,
         material_barrier_identity=None, material_barrier_reference=None,
         risk_per_unit=None, reward_per_unit=None, risk_reward_ratio=None,
+        rejected_target_candidate_identity=None,
+        rejected_target_candidate_price=None,
+        rejected_target_candidate_timeframe=None,
+        rejected_target_candidate_source=None,
+        rejected_target_candidate_boundary=None,
+        rejected_target_candidate_evidence_sha256=None,
+        rejected_target_candidate_provenance=(),
+        target_rejection_reason=None,
         geometry_viability=TradePlanStatus.TRADE_PLAN_UNAVAILABLE,
         unavailable_reason=reason,
     )
     return _record(fields)
+
+
+def _target_rejected(
+    *,
+    requirement: NativeReviewRequirement,
+    readiness: NativeLayer2ReadinessRecord | Kr370Step31EligibilityHandoff,
+    evidence: TradeConstructionEvidencePackage,
+    context: CanonicalInstrumentContext,
+    created_at: datetime,
+    entry: Decimal,
+    entry_condition: str,
+    entry_source: str,
+    stop: Decimal,
+    stop_source: str,
+    invalidation_reference: Decimal,
+    invalidation_condition: str,
+    invalidation_source: str,
+    raw_target: Decimal,
+    rounded_target: Decimal,
+    target_evidence: AuthoritativePriceEvidence,
+) -> TradePlanRecord:
+    """Retain a non-forward candidate as context without granting target authority."""
+
+    (
+        candidate_identity,
+        candidate_source,
+        candidate_boundary,
+        candidate_sha256,
+        candidate_provenance,
+    ) = _target_candidate_lineage(evidence, target_evidence, raw_target)
+    timeframe = _timeframe_from_source(candidate_source)
+    if timeframe is None:
+        raise TradeConstructionInputRejected("STEP31_TARGET_TIMEFRAME_UNAVAILABLE")
+    fields = _base_fields(requirement, readiness, evidence, context, created_at)
+    fields.update(
+        entry=entry,
+        entry_condition=entry_condition,
+        entry_authority_source=entry_source,
+        stop=stop,
+        stop_authority_source=stop_source,
+        invalidation_reference=invalidation_reference,
+        invalidation_condition=invalidation_condition,
+        invalidation_authority_source=invalidation_source,
+        setup_native_raw_target=raw_target,
+        canonical_target=None,
+        target_authority_source=None,
+        material_barrier_identity=None,
+        material_barrier_reference=None,
+        risk_per_unit=(
+            entry - stop if requirement.thesis.direction is V1Direction.LONG
+            else stop - entry
+        ),
+        reward_per_unit=None,
+        risk_reward_ratio=None,
+        rejected_target_candidate_identity=candidate_identity,
+        rejected_target_candidate_price=rounded_target,
+        rejected_target_candidate_timeframe=timeframe,
+        rejected_target_candidate_source=candidate_source,
+        rejected_target_candidate_boundary=candidate_boundary,
+        rejected_target_candidate_evidence_sha256=candidate_sha256,
+        rejected_target_candidate_provenance=candidate_provenance,
+        target_rejection_reason=TradePlanUnavailableReason.TARGET_NOT_FORWARD_OF_ENTRY,
+        geometry_viability=TradePlanStatus.TRADE_PLAN_UNAVAILABLE,
+        unavailable_reason=TradePlanUnavailableReason.TARGET_NOT_FORWARD_OF_ENTRY,
+    )
+    return _record(fields)
+
+
+def _forward_target(entry: Decimal, target: Decimal, direction: V1Direction) -> bool:
+    return target > entry if direction is V1Direction.LONG else target < entry
+
+
+def _timeframe_from_source(source: str) -> str | None:
+    upper = source.upper()
+    for token in ("4H", "1H", "DAILY", "WEEKLY"):
+        if token in upper:
+            return token
+    return None
+
+
+def _target_candidate_lineage(
+    evidence: TradeConstructionEvidencePackage,
+    source_evidence: AuthoritativePriceEvidence,
+    raw_target: Decimal,
+) -> tuple[str, str, datetime, str, tuple[str, ...]]:
+    if evidence.setup_identity is TradeSetupIdentity.PULLBACK_CONTINUATION:
+        return (
+            source_evidence.identity,
+            source_evidence.source,
+            source_evidence.observation_boundary,
+            source_evidence.evidence_sha256,
+            source_evidence.provenance,
+        )
+    identity = f"BREAKOUT-PROJECTION:{evidence.package_identity}"
+    digest = sha256(_canonical({
+        "identity": identity,
+        "raw_target": str(raw_target),
+        "source_evidence": source_evidence.evidence_sha256,
+        "setup": evidence.setup_identity.value,
+    })).hexdigest()
+    return (
+        identity,
+        source_evidence.source,
+        evidence.observation_boundary,
+        digest,
+        tuple(dict.fromkeys((*source_evidence.provenance, evidence.package_sha256))),
+    )
 
 
 def _record(fields: dict[str, object]) -> TradePlanRecord:
@@ -724,6 +935,18 @@ def _package_digest(package: TradeConstructionEvidencePackage) -> str:
 
 def _record_digest(record: TradePlanRecord) -> str:
     payload = _primitive(record)
+    if record.contract_identity == TRADE_PLAN_CONTRACT_ID_V0:
+        for key in (
+            "rejected_target_candidate_identity",
+            "rejected_target_candidate_price",
+            "rejected_target_candidate_timeframe",
+            "rejected_target_candidate_source",
+            "rejected_target_candidate_boundary",
+            "rejected_target_candidate_evidence_sha256",
+            "rejected_target_candidate_provenance",
+            "target_rejection_reason",
+        ):
+            payload.pop(key)
     payload["integrity_hash"] = ""
     return sha256(_canonical(payload)).hexdigest()
 
@@ -753,8 +976,18 @@ def _record_from_dict(value: object) -> TradePlanRecord:
             "entry", "stop", "invalidation_reference", "setup_native_raw_target",
             "canonical_target", "material_barrier_reference", "risk_per_unit",
             "reward_per_unit", "risk_reward_ratio", "tick_size",
+            "rejected_target_candidate_price",
         ):
+            if name not in data:
+                data[name] = None
             data[name] = None if data[name] is None else Decimal(data[name])
+        data.setdefault("rejected_target_candidate_identity", None)
+        data.setdefault("rejected_target_candidate_timeframe", None)
+        data.setdefault("rejected_target_candidate_source", None)
+        data.setdefault("rejected_target_candidate_boundary", None)
+        data.setdefault("rejected_target_candidate_evidence_sha256", None)
+        data.setdefault("rejected_target_candidate_provenance", ())
+        data.setdefault("target_rejection_reason", None)
         data["native_opportunity_identity"] = NativeOpportunityIdentity(data["native_opportunity_identity"])
         data["native_direction"] = V1Direction(data["native_direction"])
         data["setup_identity"] = TradeSetupIdentity(data["setup_identity"])
@@ -763,9 +996,20 @@ def _record_from_dict(value: object) -> TradePlanRecord:
             None if data["unavailable_reason"] is None
             else TradePlanUnavailableReason(data["unavailable_reason"])
         )
+        data["target_rejection_reason"] = (
+            None if data["target_rejection_reason"] is None
+            else TradePlanUnavailableReason(data["target_rejection_reason"])
+        )
         data["observation_boundary"] = datetime.fromisoformat(data["observation_boundary"])
         data["created_at"] = datetime.fromisoformat(data["created_at"])
-        for name in ("evidence_identities", "evidence_hashes", "provenance"):
+        if data["rejected_target_candidate_boundary"] is not None:
+            data["rejected_target_candidate_boundary"] = datetime.fromisoformat(
+                data["rejected_target_candidate_boundary"]
+            )
+        for name in (
+            "evidence_identities", "evidence_hashes", "provenance",
+            "rejected_target_candidate_provenance",
+        ):
             data[name] = tuple(data[name])
         return TradePlanRecord(**data)
     except (KeyError, TypeError, ValueError) as error:

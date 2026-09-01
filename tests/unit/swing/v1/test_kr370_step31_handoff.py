@@ -100,7 +100,7 @@ def _price(identity: str, value: str, boundary: datetime) -> AuthoritativePriceE
         sha256(identity.encode()).hexdigest(),
         Decimal(value),
         boundary,
-        f"GOVERNED:{identity}",
+        f"GOVERNED:COMPLETED_4H:{identity}",
         ("KITE:HISTORICAL",),
     )
 
