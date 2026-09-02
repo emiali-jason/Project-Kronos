@@ -46,6 +46,11 @@ from kronos.application.intraday_wo14 import (
     IntradayWo14Application,
     IntradayWo14RestorationService,
 )
+from kronos.application.intraday_wo15 import (
+    IntradayWo15Application,
+    IntradayWo15RestorationService,
+    Wo15RestorationStatus,
+)
 from kronos.application.intraday_historical_operation import (
     IntradayHistoricalQualificationHarness,
     IntradayHistoricalQualificationOperationService,
@@ -90,6 +95,7 @@ from kronos.intraday.wo11_persistence import Wo11Store
 from kronos.intraday.wo12_v2_persistence import Wo12V2Store
 from kronos.intraday.wo13_persistence import Wo13Store
 from kronos.intraday.wo14_persistence import Wo14Store
+from kronos.intraday.wo15_persistence import Wo15Store
 from kronos.instrument.active_derivative import ACTIVE_DERIVATIVE_CATALOGUE_VERSION
 from kronos.instrument.active_derivative_persistence import (
     ActiveDerivativeBindingStore,
@@ -184,6 +190,10 @@ class IntradayRuntimeComposition:
     wo14_store: Wo14Store
     wo14_application: IntradayWo14Application
     wo14_restoration: IntradayWo14RestorationService
+    wo15_store: Wo15Store
+    wo15_application: IntradayWo15Application
+    wo15_restoration: IntradayWo15RestorationService
+    wo15_restored: Wo15RestorationStatus
     refresh_v2_provenance_store: RefreshV2ProvenanceStore
     probables_v2_diagnostics_store: ProbablesV2DiagnosticsStore
     mcx_history_store: McxContractHistoryStore
@@ -409,6 +419,13 @@ def create_intraday_runtime(
         store=HistoricalQualificationStore(Path(evidence_root)),
         clock=clock,
     )
+    wo15_store = Wo15Store(Path(evidence_root) / "wo15-entry-timing-v1")
+    wo15_application = IntradayWo15Application(
+        wo13_store=wo13_store,
+        store=wo15_store,
+    )
+    wo15_restoration = IntradayWo15RestorationService(store=wo15_store)
+    wo15_restored = wo15_restoration.restore()
     if refresh_state is not None and refresh_state.current_failure is not None:
         if refresh_state.current_failure_stage in {
             "PROBABLES_EVIDENCE_MAPPING",
@@ -453,6 +470,10 @@ def create_intraday_runtime(
         wo14_store=wo14_store,
         wo14_application=wo14_application,
         wo14_restoration=wo14_restoration,
+        wo15_store=wo15_store,
+        wo15_application=wo15_application,
+        wo15_restoration=wo15_restoration,
+        wo15_restored=wo15_restored,
         refresh_v2_provenance_store=refresh_v2_provenance_store,
         probables_v2_diagnostics_store=probables_v2_diagnostics_store,
         mcx_history_store=mcx_history_store,

@@ -751,6 +751,232 @@ def render_intraday_wo14(
     )
 
 
+def render_intraday_wo15(
+    snapshot: BrowserWorkspaceSnapshot,
+    status: dict[str, object],
+) -> str:
+    """Render persisted WO-15 timing evidence without timing recomputation."""
+
+    current = status.get("current_timing")
+    if type(current) is not dict:
+        content = (
+            '<div class="empty"><div><strong>'
+            + escape(str(status.get("restoration_state", "NOT_YET_RUN")))
+            + "</strong><br>No persisted WO-15 completed-5M timing evidence.</div></div>"
+        )
+    else:
+        result = _dict(current.get("timing_result"))
+        telemetry = _dict(current.get("telemetry"))
+        handoff = _dict(current.get("timing_handoff"))
+        pointer = _dict(current.get("current_pointer"))
+        operation = _dict(current.get("operation"))
+        atr = _dict(telemetry.get("atr14"))
+        latency = _dict(telemetry.get("latency"))
+        timing = (
+            '<section class="panel wo15-current"><div class="panel-head"><div><h2>'
+            + escape(_wo15_value(current.get("canonical_subject_identity")))
+            + "</h2><p>" + escape(_wo15_value(current.get("market_family")))
+            + " · " + escape(_wo15_value(current.get("direction")))
+            + " · " + escape(_wo15_value(current.get("setup_family")))
+            + '</p></div><span class="status neutral">'
+            + escape(_wo15_value(result.get("current_state")))
+            + "</span></div><dl class=\"detail-list\">"
+            "<dt>Prior state / transition cause</dt><dd>"
+            + escape(_wo15_value(result.get("prior_state"))) + " · "
+            + escape(_wo15_value(result.get("cause")))
+            + "</dd><dt>Qualification path</dt><dd>"
+            + escape(_wo15_value(result.get("qualification_path")))
+            + "</dd><dt>Evidence boundary</dt><dd>"
+            + escape(_wo15_value(result.get("observation_boundary")))
+            + "</dd><dt>Completed 5M close / Entry Reference</dt><dd>"
+            + escape(_wo15_value(current.get("completed_five_minute_close")))
+            + " · " + escape(_wo15_value(current.get("entry_reference")))
+            + "</dd><dt>Timing cycle</dt><dd>"
+            + escape(_wo15_value(result.get("timing_cycle_id")))
+            + "</dd><dt>Observation / transition</dt><dd>"
+            + escape(_wo15_value(_nested(result, "cycle_evaluation", "observation", "observation_identity")))
+            + " · "
+            + escape(_wo15_value(_nested(result, "cycle_evaluation", "transition", "transition_identity")))
+            + "</dd></dl></section>"
+        )
+        telemetry_panel = (
+            '<section class="panel wo15-telemetry"><div class="panel-head"><div>'
+            "<h2>WO-15C Advisory Research Telemetry</h2>"
+            "<p>Research-only factual measurements; no timing consequence.</p>"
+            '</div><span class="status neutral">RESEARCH ONLY</span></div>'
+            '<dl class="detail-list"><dt>Directional / absolute extension</dt><dd>'
+            + escape(_wo15_value(telemetry.get("directional_extension"))) + " · "
+            + escape(_wo15_value(telemetry.get("absolute_extension")))
+            + "</dd><dt>ATR-14 availability / value</dt><dd>"
+            + escape(_wo15_value(atr.get("availability"))) + " · "
+            + escape(_wo15_value(atr.get("value")))
+            + "</dd><dt>Normalized directional extension</dt><dd>"
+            + escape(_wo15_value(telemetry.get("normalized_directional_extension")))
+            + "</dd><dt>Severity</dt><dd>"
+            + escape(_wo15_value(telemetry.get("extension_severity")))
+            + "</dd><dt>Maximum favourable / adverse / pre-qualification</dt><dd>"
+            + escape(_wo15_value(telemetry.get("maximum_favourable_extension"))) + " · "
+            + escape(_wo15_value(telemetry.get("maximum_adverse_distance"))) + " · "
+            + escape(_wo15_value(telemetry.get("maximum_extension_before_qualification")))
+            + "</dd><dt>Retest occurred</dt><dd>"
+            + escape(_wo15_value(telemetry.get("retest_occurred")))
+            + "</dd><dt>Latency seconds</dt><dd>"
+            + escape(_wo15_value(latency.get("plan_to_first_evaluation"))) + " · "
+            + escape(_wo15_value(latency.get("first_evaluation_to_qualification")))
+            + "</dd><dt>Research references</dt><dd>"
+            + escape(_wo15_list(telemetry.get("research_references")))
+            + "</dd></dl></section>"
+        )
+        handoff_panel = (
+            '<section class="panel wo15-handoff"><div class="panel-head"><div>'
+            "<h2>Timing Handoff</h2><p>Immutable timing evidence boundary.</p>"
+            '</div><span class="status neutral">'
+            + escape(_wo15_value(handoff.get("current_state")))
+            + '</span></div><dl class="detail-list"><dt>Identity / integrity</dt><dd>'
+            + escape(_wo15_value(handoff.get("handoff_identity"))) + " · "
+            + escape(_wo15_value(handoff.get("handoff_integrity")))
+            + "</dd><dt>Predecessor / supersession</dt><dd>"
+            + escape(_wo15_value(handoff.get("predecessor_handoff_identity"))) + " · "
+            + escape(_wo15_value(handoff.get("supersession_lineage_identity")))
+            + "</dd><dt>Research references</dt><dd>"
+            + escape(_wo15_list(handoff.get("research_references")))
+            + "</dd><dt>WO-14 audit context</dt><dd>"
+            + escape(_wo15_value(handoff.get("wo14_observation_identity")))
+            + " · RISK OBSERVATION ONLY"
+            + "</dd><dt>Downstream authorities</dt><dd>Sponsor "
+            + escape(_wo15_value(handoff.get("sponsor_decision_authority")))
+            + " · PAPER " + escape(_wo15_value(handoff.get("paper_authority")))
+            + " · LIVE " + escape(_wo15_value(handoff.get("live_authority")))
+            + " · Position " + escape(_wo15_value(handoff.get("position_authority")))
+            + " · Broker " + escape(_wo15_value(handoff.get("broker_authority")))
+            + "</dd></dl></section>"
+        )
+        lineage = (
+            '<section class="panel wo15-lineage"><div class="panel-head"><div><h2>Lineage / Policy</h2>'
+            "<p>Persisted identities; Browser performs no reconstruction.</p>"
+            '</div><span class="status neutral">READ ONLY</span></div>'
+            '<dl class="detail-list"><dt>WO-13 Trade Plan / integrity</dt><dd>'
+            + escape(_wo15_value(current.get("wo13_trade_plan_identity"))) + " · "
+            + escape(_wo15_value(current.get("wo13_trade_plan_integrity")))
+            + "</dd><dt>Instrument / actual contract / roll</dt><dd>"
+            + escape(_wo15_value(current.get("instrument_identity"))) + " · "
+            + escape(_wo15_value(current.get("actual_contract_identity"))) + " · "
+            + escape(_wo15_value(current.get("roll_lineage_identity")))
+            + "</dd><dt>Session / calendar</dt><dd>"
+            + escape(_wo15_value(current.get("session_identity"))) + " · "
+            + escape(_wo15_value(current.get("calendar_identity"))) + " / "
+            + escape(_wo15_value(current.get("calendar_version")))
+            + "</dd><dt>Policy</dt><dd>"
+            + escape(_wo15_value(_nested(result, "policy", "policy_identity"))) + " / "
+            + escape(_wo15_value(_nested(result, "policy", "policy_version"))) + " / "
+            + escape(_wo15_value(_nested(result, "policy", "policy_checksum")))
+            + "</dd><dt>Operation</dt><dd>"
+            + escape(_wo15_value(operation.get("operation_identity"))) + " · "
+            + escape(_wo15_value(operation.get("outcome")))
+            + "</dd><dt>Timing result</dt><dd>"
+            + escape(_wo15_value(result.get("result_identity")))
+            + "</dd><dt>Current pointer / supersession</dt><dd>"
+            + escape(_wo15_value(pointer.get("pointer_identity"))) + " · "
+            + escape(_wo15_value(pointer.get("supersession_lineage_identity")))
+            + "</dd></dl></section>"
+        )
+        content = '<div class="wo15-grid">' + timing + telemetry_panel + handoff_panel + lineage + "</div>"
+
+    history = status.get("timing_history")
+    history_rows = ""
+    if type(history) is list:
+        history_rows = "".join(
+            "<tr><td>" + escape(_wo15_value(item.get("event")))
+            + "</td><td>" + escape(_wo15_value(item.get("boundary")))
+            + "</td><td>" + escape(_wo15_value(item.get("evidence_identity")))
+            + "</td><td>" + escape(_wo15_value(item.get("timing_cycle_id")))
+            + "</td></tr>"
+            for item in history if type(item) is dict
+        )
+    history_panel = (
+        '<section class="panel wo15-history"><div class="panel-head"><div><h2>Immutable Timing History</h2>'
+        "<p>Persisted milestone order; complete evidence remains in the WO-15 store.</p>"
+        '</div><span class="status neutral">' + str(len(history) if type(history) is list else 0)
+        + " EVENTS</span></div><div class=\"table-wrap\"><table><thead><tr><th>Event</th>"
+        "<th>Boundary</th><th>Evidence</th><th>Cycle</th></tr></thead><tbody>"
+        + (history_rows or '<tr><td colspan="4">UNAVAILABLE</td></tr>')
+        + "</tbody></table></div></section>"
+    )
+    last = status.get("last_operation")
+    persisted_failure = status.get("latest_persisted_failure")
+    failure = ""
+    if type(last) is dict and last.get("failure_reason") is not None:
+        failure += _wo15_failure("Last Operation Failure", last)
+    if type(persisted_failure) is dict:
+        failure += _wo15_failure("Latest Persisted Failure", persisted_failure)
+    body = (
+        _intraday_tabs(False, active="wo15")
+        + '<div class="intraday-warning"><strong>WO-15 COMPLETED-5M ENTRY TIMING</strong>'
+        "<span>TIMING EVIDENCE ONLY<br>NO SPONSOR, PAPER, LIVE, POSITION, EXECUTION OR BROKER AUTHORITY</span></div>"
+        + content + history_panel + failure
+        + '<div class="intraday-review-config"><strong>Control:</strong> '
+        + escape(str(status.get("control_identity", "UNAVAILABLE"))) + " / "
+        + escape(str(status.get("control_version", "UNAVAILABLE")))
+        + "<br><strong>Runtime:</strong> "
+        + ("LOADED" if status.get("runtime_loaded") is True else "UNAVAILABLE")
+        + " · " + escape(str(status.get("restoration_state", "UNAVAILABLE")))
+        + " · Operation " + escape(str(status.get("operation_state", "UNAVAILABLE")))
+        + "<br><strong>Boundary:</strong> An explicit exact-contract POST is the only operation seam; startup and GET are inert."
+        + "</div>"
+    )
+    return render_browser_page(
+        title="Intraday WO-15",
+        subtitle="Persisted completed-5M timing evidence; rendering performs no timing work.",
+        snapshot=snapshot,
+        active_nav="Intraday",
+        active_tab="WO-15",
+        body=body,
+        extra_styles=_INTRADAY_CSS + _WO15_CSS,
+    )
+
+
+def _dict(value: object) -> dict[str, object]:
+    return value if type(value) is dict else {}
+
+
+def _nested(value: dict[str, object], *path: str) -> object:
+    current: object = value
+    for key in path:
+        if type(current) is not dict:
+            return None
+        current = current.get(key)
+    return current
+
+
+def _wo15_value(value: object) -> str:
+    return "UNAVAILABLE" if value is None else str(value)
+
+
+def _wo15_list(value: object) -> str:
+    if type(value) is not list or not value:
+        return "UNAVAILABLE"
+    return " · ".join(
+        str(item.get("reference_identity", "UNAVAILABLE"))
+        if type(item) is dict else str(item) for item in value
+    )
+
+
+def _wo15_failure(title: str, value: dict[str, object]) -> str:
+    return (
+        '<section class="intraday-panel intraday-unavailable wo15-failure"><h2>'
+        + escape(title) + "</h2><strong>"
+        + escape(_wo15_value(value.get("outcome") or "FAILED")) + "</strong><p>"
+        + escape(_wo15_value(value.get("failure_stage") or value.get("stage")))
+        + " · " + escape(_wo15_value(value.get("failure_reason") or value.get("reason")))
+        + "</p></section>"
+    )
+
+
+_WO15_CSS = r"""
+.wo15-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.wo15-grid .panel{min-width:0}.wo15-grid dd,.wo15-history td{overflow-wrap:anywhere}.wo15-telemetry{border-color:#6b5f31}.wo15-handoff{border-color:#315d54}.wo15-history{margin-top:14px}.wo15-failure{margin-top:14px}@media(max-width:760px){.wo15-grid{grid-template-columns:1fr}.wo15-history .table-wrap{overflow-x:auto}.wo15-history table{min-width:680px}}
+"""
+
+
 def _wo13_value(value: object) -> str:
     return "UNAVAILABLE" if value is None else str(value)
 
@@ -1914,6 +2140,7 @@ def _intraday_tabs(refresh_enabled: bool, *, active: str = "opportunities") -> s
         '<a class="' + ('active' if active == 'wo12' else '') + '" href="/intraday/wo12">WO-12</a>'
         '<a class="' + ('active' if active == 'wo13' else '') + '" href="/intraday/wo13">WO-13</a>'
         '<a class="' + ('active' if active == 'wo14' else '') + '" href="/intraday/wo14">WO-14</a>'
+        '<a class="' + ('active' if active == 'wo15' else '') + '" href="/intraday/wo15">WO-15</a>'
         '<span class="intraday-tab">Trade Candidates</span>'
         '<span class="intraday-tab">Active</span>'
         '<span class="intraday-tab">Closed</span>'
@@ -2375,5 +2602,6 @@ __all__ = [
     "render_intraday_wo12",
     "render_intraday_wo13",
     "render_intraday_wo14",
+    "render_intraday_wo15",
     "render_intraday_workstation",
 ]
