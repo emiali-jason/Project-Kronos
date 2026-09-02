@@ -1,0 +1,164 @@
+{
+  "admission": {
+    "IGNORE": "NOT_APPLICABLE_IGNORE",
+    "LIVE": "PENDING_POSITION_EVIDENCE",
+    "PAPER": "PENDING_POSITION_EVIDENCE",
+    "position_created": false
+  },
+  "authority": "EXPLICIT_SPONSOR_DECISION_AND_FACTUAL_LIFECYCLE_ADMISSION_ONLY",
+  "browser": {
+    "actual_facts_missing_value": "UNAVAILABLE",
+    "broker_copy": "NO_BROKER_ORDER_WAS_PLACED",
+    "current_history_latest_failure_separate": true,
+    "get_side_effects": "NONE",
+    "ownership": "INTRADAY_PRODUCT_ROUTES_AND_VIEWS"
+  },
+  "decision": {
+    "choices": [
+      "PAPER",
+      "LIVE",
+      "IGNORE"
+    ],
+    "free_text_note": "NOT_SUPPORTED_V1",
+    "person_identity": "NOT_RECORDED_V1",
+    "reason_vocabulary": "NONE_V1",
+    "source": "LOCAL_SPONSOR_BROWSER_ACTION"
+  },
+  "eligibility": {
+    "canonical_lineage": "EXACT_MATCH_REQUIRED",
+    "domain_008": {
+      "required": true,
+      "session_end": false,
+      "state": "OPEN"
+    },
+    "mcx_contract_roll_lineage": "EXACT_MATCH_WHEN_APPLICABLE",
+    "older_qualified_handoff_selection": "PROHIBITED",
+    "wo13": {
+      "current_non_superseded": true,
+      "geometry_state": "GEOMETRY_COMPLETE",
+      "integrity_required": true
+    },
+    "wo14": {
+      "allowed_states": [
+        "RISK_OBSERVED",
+        "RISK_ALERT",
+        "RISK_UNAVAILABLE"
+      ],
+      "final_quantity_authority": false,
+      "required": true,
+      "trade_permission_authority": false,
+      "trade_veto_authority": false
+    },
+    "wo15": {
+      "current_non_superseded": true,
+      "integrity_required": true,
+      "timing_state": "TIMING_QUALIFIED"
+    }
+  },
+  "future_authority": {
+    "closure": "SEPARATE_GOVERNANCE_REQUIRED",
+    "journal_analytics": "SEPARATE_GOVERNANCE_REQUIRED",
+    "monitoring": "SEPARATE_GOVERNANCE_REQUIRED",
+    "notifications": "SEPARATE_GOVERNANCE_REQUIRED",
+    "position": "SEPARATE_GOVERNANCE_REQUIRED"
+  },
+  "identity": {
+    "admission_contract": "KRONOS-INTRADAY-WO16-LIFECYCLE-ADMISSION-V1",
+    "current_pointer_contract": "KRONOS-INTRADAY-CURRENT-WO16-DECISION-V1",
+    "decision_contract": "KRONOS-INTRADAY-WO16-SPONSOR-DECISION-V1",
+    "invalid_operation_contract": "KRONOS-INTRADAY-WO16-INVALID-OPERATION-V1",
+    "snapshot_contract": "KRONOS-INTRADAY-WO16-SPONSOR-DECISION-SNAPSHOT-V1"
+  },
+  "persistence": {
+    "append_only_families": [
+      "SNAPSHOTS",
+      "DECISIONS",
+      "ADMISSIONS",
+      "OPERATIONS",
+      "INVALID",
+      "SUPERSESSIONS"
+    ],
+    "current_cardinality": "ONE_PER_CANONICAL_SUBJECT",
+    "current_pointer": "ATOMIC_ALIAS_TO_IMMUTABLE_GRAPH",
+    "evidence_root": "INTRADAY_PRODUCT_LOCAL_WO16",
+    "latest_failure": "SEPARATE_ATOMIC_ALIAS",
+    "later_failure_replaces_current": false,
+    "restore_recalculation": false,
+    "restore_side_effects": "NONE"
+  },
+  "policy_identity": "KRONOS-INTRADAY-WO16-SPONSOR-DECISION-LIFECYCLE-ADMISSION-POLICY-V1",
+  "policy_status": "APPROVED_PUBLICATION_PENDING",
+  "policy_version": "1.0.0",
+  "prohibited": [
+    "WO13_GEOMETRY_RECALCULATION",
+    "WO14_PERMISSION_OR_VETO",
+    "WO15_TIMING_INFERENCE_OR_RERUN",
+    "AUTONOMOUS_PROVIDER_CALL",
+    "SPONSOR_POSITION_CREATION",
+    "PAPER_SIMULATED_FILL",
+    "LIVE_FILL_INFERENCE",
+    "QUANTITY_INFERENCE",
+    "PNL_OR_REALISED_R_CREATION",
+    "MONITORING_OR_CLOSURE",
+    "BROKER_ORDER_MUTATION",
+    "SWING_STATE_OR_POLICY_REUSE"
+  ],
+  "replay": {
+    "conflicting_bytes": "FAIL_CLOSED",
+    "exact_same_request_bytes": "RETURN_RETAINED_RESULT",
+    "final_decisions_per_timing_handoff": 1,
+    "mode_revision_same_handoff": "PROHIBITED"
+  },
+  "security": {
+    "body": "REQUIRED_NON_EMPTY",
+    "concurrency": "NONBLOCKING_BOUNDED_BUSY",
+    "content_type": "APPLICATION_JSON_ONLY",
+    "fields": "EXACT_REQUIRED_AND_EXTRA_REJECTED",
+    "host": "EXACT_LOOPBACK_HOST_VALIDATION",
+    "origin": "EXACT_SAME_ORIGIN_VALIDATION",
+    "query": "PROHIBITED",
+    "request_size": "BOUNDED_NOT_ABOVE_SHARED_OUTER_LIMIT",
+    "sanitized_failures": true,
+    "sponsor_work_admission": "REQUIRED"
+  },
+  "session": {
+    "closed_or_ended_operation": "REJECT_BEFORE_DECISION",
+    "existing_records": "IMMUTABLE_HISTORICAL",
+    "forced_exit_authority": "NONE",
+    "overnight_carry_authority": "NONE",
+    "session_or_lineage_not_current": "CURRENT_PROJECTION_INELIGIBLE"
+  },
+  "supersession": {
+    "ignore_scope": "EXACT_BOUND_LINEAGE_ONLY",
+    "new_current_triggers": [
+      "WO13_PLAN",
+      "WO15_TIMING_HANDOFF",
+      "MARKET_SESSION",
+      "MCX_ACTIVE_CONTRACT_OR_ROLL_LINEAGE"
+    ],
+    "predecessor_reference": "REQUIRED_WHEN_APPLICABLE",
+    "prior_record_mutation": "PROHIBITED"
+  },
+  "truth": {
+    "LIVE": {
+      "actual_fill_price": "UNAVAILABLE",
+      "actual_fill_timestamp": "UNAVAILABLE",
+      "broker_execution_state": "UNAVAILABLE",
+      "broker_order_identity": "UNAVAILABLE",
+      "fees": "UNAVAILABLE",
+      "monetary_pnl": "UNAVAILABLE",
+      "quantity": "UNAVAILABLE",
+      "realised_r": "UNAVAILABLE"
+    },
+    "PAPER": {
+      "actual_fill_price": "UNAVAILABLE",
+      "actual_fill_timestamp": "UNAVAILABLE",
+      "broker_execution_state": "UNAVAILABLE",
+      "broker_order_identity": "UNAVAILABLE",
+      "fees": "UNAVAILABLE",
+      "monetary_pnl": "UNAVAILABLE",
+      "quantity": "UNAVAILABLE",
+      "realised_r": "UNAVAILABLE"
+    }
+  }
+}

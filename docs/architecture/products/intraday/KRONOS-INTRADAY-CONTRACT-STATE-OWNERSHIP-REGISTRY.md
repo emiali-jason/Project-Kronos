@@ -1,6 +1,6 @@
 # Intraday Contract and State Ownership Registry
 
-**Status:** Amended through WO-15 governance authorization
+**Status:** Amended through WO-16 Slice 0 governance authorization
 
 | Boundary | Owner | Consequence authority |
 |---|---|---|
@@ -23,6 +23,7 @@
 | WO-13 / Step-31 Trade Construction | Intraday | Exact current WO-12 NOW admission and immutable 15M setup-specific Entry Reference, Stop, invalidation, one Target, risk/reward distance, Model R:R, availability and warnings only; no Risk permission or 5M timing |
 | WO-14 / Risk Observation | DOMAIN-007 with Intraday-owned adapter | Exact immutable WO-13-plan-bound advisory loss-exposure facts, availability, freshness, provenance and optional authoritative capital/portfolio/margin context only; no permission, veto, final quantity or timing authority |
 | WO-15 / KR-380 Entry Timing | DOMAIN-004 with Intraday-owned adapter | Completed-governed-5M qualification only against exact immutable WO-13 geometry; six-state lifecycle, deterministic Pullback/Breakout paths, immutable timing cycles and versioned timing handoff; WO-14 is independent non-veto context |
+| WO-16 / Sponsor Decision and Lifecycle Admission | KRONOS Intraday Sponsor-decision boundary | Exact current WO-13/14/15 and DOMAIN-008 bound PAPER/LIVE/IGNORE decision receipt plus separate `PENDING_POSITION_EVIDENCE` or `NOT_APPLICABLE_IGNORE` admission; no position, execution, monitoring, closure or broker authority |
 | Objective Lifecycle | DOMAIN-005 | Model-trade lifecycle only |
 | Sponsor Position | DOMAIN-005 sponsor-position boundary | PAPER/LIVE/IGNORE position record only |
 | Notifications | Product adapter over Platform notification capability | Intraday notification projection only |
@@ -57,6 +58,10 @@ The boundaries are explicitly non-equivalent:
 - Construction ≠ Risk.
 - Risk ≠ Entry Timing.
 - Entry Timing ≠ Lifecycle.
+- Timing Qualified ≠ Sponsor Decision.
+- Sponsor Decision ≠ Lifecycle Admission.
+- Lifecycle Admission ≠ Sponsor Actual Position.
+- `PENDING_POSITION_EVIDENCE` ≠ position, fill or execution.
 - Objective Lifecycle ≠ Sponsor Position.
 
 This registry does not invent unfrozen states, transition predicates, or

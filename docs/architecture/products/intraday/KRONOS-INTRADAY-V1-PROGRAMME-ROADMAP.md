@@ -1,6 +1,6 @@
 # KRONOS Intraday V1 Programme Roadmap
 
-**Status:** WO-13 CLOSED; WO-14 CLOSED; Review Intake Correction CLOSED; WO-15 architecture governed locally with engineering next only after publication
+**Status:** WO-13 CLOSED; WO-14 CLOSED; Review Intake Correction CLOSED; WO-15 CLOSED; WO-16 Slice 0 governance approved for publication with source engineering held
 
 Native universe count is 98. RELIANCE remains the commissioning and regression
 anchor; it is not the universe owner or a privileged membership class.
@@ -126,3 +126,12 @@ WO-13 geometry and WO-14 advisory-Risk authorities. ADR-0025 freezes WO-15
 architecture but grants no source, runtime, Browser, Provider, Sponsor,
 lifecycle, broker or real-operation authority before separate publication and
 engineering gates.
+
+[ADR-0026](../../adr/ADR-0026-INTRADAY-WO16-SPONSOR-DECISION-AND-SESSION-BOUNDED-LIFECYCLE-ADMISSION.md)
+freezes WO-16 as exact-session Sponsor PAPER/LIVE/IGNORE decision receipt and a
+separate factual lifecycle-admission disposition. Only the exact current
+`TIMING_QUALIFIED` handoff is eligible; WO-14 remains bound non-veto context.
+PAPER/LIVE produce `PENDING_POSITION_EVIDENCE`, IGNORE produces
+`NOT_APPLICABLE_IGNORE`, and no position, fill, monitoring, closure, P&L,
+realised R or broker authority exists. Production source and runtime work remain
+separately gated.

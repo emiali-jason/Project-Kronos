@@ -12,6 +12,9 @@
 - Fail closed per member when required runtime evidence is unavailable.
 - Own completed-governed-5M Entry Timing qualification through WO-15 without
   rewriting immutable WO-13 geometry or treating WO-14 advisory Risk as veto.
+- Own WO-16 exact-session Sponsor PAPER/LIVE/IGNORE decision receipt and a
+  separate factual lifecycle-admission disposition without creating a Sponsor
+  Actual Position, fill, execution or broker fact.
 
 ## Ownership Boundaries
 
@@ -30,6 +33,10 @@ reference-market trading consequence are not Intraday-owned. The Intraday
 adapter owns product composition only and cannot create Risk permission.
 WO-15 also does not own Sponsor Decision, PAPER/LIVE/IGNORE, positions,
 notifications, lifecycle outcomes or broker execution.
+
+WO-16 owns decision and admission evidence only. Actual positions, PAPER
+simulation, LIVE execution attestation, monitoring, closure, P&L, realised R,
+notifications and Journal/Analytics remain outside WO-16 V1.
 
 ## Governing ADRs
 

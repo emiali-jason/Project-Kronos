@@ -88,3 +88,10 @@ Swing Step-31 forward target eligibility is governed prospectively by
 The successor policy requires strict positive forward reward against the
 immutable rounded Step-31 Entry, preserves rejected structural candidates as
 historical context, and authorizes no fallback search or runtime change.
+
+Intraday WO-16 Sponsor Decision and Session-Bounded Lifecycle Admission is
+governed prospectively by [ADR-0026](adr/ADR-0026-INTRADAY-WO16-SPONSOR-DECISION-AND-SESSION-BOUNDED-LIFECYCLE-ADMISSION.md).
+It records exact-session PAPER/LIVE/IGNORE intent and a separate factual
+admission disposition without creating a position, fill, Risk veto, execution
+or broker authority. Production source and runtime work remain separately
+gated.

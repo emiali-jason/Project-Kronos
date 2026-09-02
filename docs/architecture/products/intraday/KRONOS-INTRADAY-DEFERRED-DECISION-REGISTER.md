@@ -1,6 +1,6 @@
 # Intraday Deferred Decision Register
 
-**Status:** Amended through WO-15 governance authorization; no defaults implied
+**Status:** Amended through WO-16 Slice 0 governance authorization; no defaults implied
 
 | Decision | Reason deferred | Required evidence | Earliest closure | Owner |
 |---|---|---|---|---|
@@ -55,3 +55,7 @@
 | NSE forced-flat policy | Policy not frozen | Session/risk evidence | Lifecycle stage | CA/DOMAIN-007 |
 | MCX overnight carry | Policy not frozen | MCX lifecycle/risk evidence | After WO-10 | CA/DOMAIN-007 |
 | MCX forced-exit policy | Policy not frozen | MCX session/risk evidence | After WO-10 | CA/DOMAIN-007 |
+| Intraday PAPER simulation and position model | WO-16 V1 records intent only and expressly leaves fill, timestamp, quantity and economics unavailable | Separately governed simulation evidence and truth contract | Post-WO-16 position/lifecycle work | Sponsor / Intraday / DOMAIN-005 |
+| Intraday LIVE actual-position attestation | WO-16 V1 does not treat a LIVE choice as execution or fill evidence | Approved Sponsor-attestation or broker-factual position contract | Post-WO-16 position/lifecycle work | Sponsor / DOMAIN-005 |
+| Intraday position monitoring and closure | WO-16 V1 ends at factual admission and creates no position | Position truth, market-observation admission and session-expiry policy | Later lifecycle work | DOMAIN-002 / DOMAIN-005 / DOMAIN-008 |
+| Intraday monetary P&L and realised R | No authoritative Intraday entry, exit, quantity or fee evidence exists in WO-16 V1 | Complete position and closure evidence plus approved arithmetic contract | Later Journal/Analytics work | DOMAIN-005 / Intraday Journal |
