@@ -51,6 +51,11 @@ from kronos.application.intraday_wo15 import (
     IntradayWo15RestorationService,
     Wo15RestorationStatus,
 )
+from kronos.application.intraday_wo16 import (
+    IntradayWo16PersistenceApplication,
+    IntradayWo16RestorationService,
+    Wo16RestorationStatus,
+)
 from kronos.application.intraday_historical_operation import (
     IntradayHistoricalQualificationHarness,
     IntradayHistoricalQualificationOperationService,
@@ -96,6 +101,7 @@ from kronos.intraday.wo12_v2_persistence import Wo12V2Store
 from kronos.intraday.wo13_persistence import Wo13Store
 from kronos.intraday.wo14_persistence import Wo14Store
 from kronos.intraday.wo15_persistence import Wo15Store
+from kronos.intraday.wo16_persistence import Wo16Store
 from kronos.instrument.active_derivative import ACTIVE_DERIVATIVE_CATALOGUE_VERSION
 from kronos.instrument.active_derivative_persistence import (
     ActiveDerivativeBindingStore,
@@ -194,6 +200,10 @@ class IntradayRuntimeComposition:
     wo15_application: IntradayWo15Application
     wo15_restoration: IntradayWo15RestorationService
     wo15_restored: Wo15RestorationStatus
+    wo16_store: Wo16Store
+    wo16_application: IntradayWo16PersistenceApplication
+    wo16_restoration: IntradayWo16RestorationService
+    wo16_restored: Wo16RestorationStatus
     refresh_v2_provenance_store: RefreshV2ProvenanceStore
     probables_v2_diagnostics_store: ProbablesV2DiagnosticsStore
     mcx_history_store: McxContractHistoryStore
@@ -426,6 +436,13 @@ def create_intraday_runtime(
     )
     wo15_restoration = IntradayWo15RestorationService(store=wo15_store)
     wo15_restored = wo15_restoration.restore()
+    wo16_store = Wo16Store(
+        Path(evidence_root)
+        / "wo16-sponsor-decision-lifecycle-admission-v1"
+    )
+    wo16_application = IntradayWo16PersistenceApplication(store=wo16_store)
+    wo16_restoration = IntradayWo16RestorationService(store=wo16_store)
+    wo16_restored = wo16_restoration.restore()
     if refresh_state is not None and refresh_state.current_failure is not None:
         if refresh_state.current_failure_stage in {
             "PROBABLES_EVIDENCE_MAPPING",
@@ -474,6 +491,10 @@ def create_intraday_runtime(
         wo15_application=wo15_application,
         wo15_restoration=wo15_restoration,
         wo15_restored=wo15_restored,
+        wo16_store=wo16_store,
+        wo16_application=wo16_application,
+        wo16_restoration=wo16_restoration,
+        wo16_restored=wo16_restored,
         refresh_v2_provenance_store=refresh_v2_provenance_store,
         probables_v2_diagnostics_store=probables_v2_diagnostics_store,
         mcx_history_store=mcx_history_store,

@@ -935,6 +935,209 @@ def render_intraday_wo15(
     )
 
 
+def render_intraday_wo16(
+    snapshot: BrowserWorkspaceSnapshot,
+    status: dict[str, object],
+) -> str:
+    """Render restored WO-16 decisions without creating or evaluating facts."""
+
+    currents = status.get("current_decisions")
+    current_items = currents if type(currents) is list else []
+    cards = "".join(
+        _wo16_current_card(item) for item in current_items if type(item) is dict
+    )
+    if not cards:
+        cards = (
+            '<div class="empty"><div><strong>'
+            + escape(_wo16_value(status.get("restoration_state")))
+            + "</strong><br>No persisted WO-16 Sponsor decision is current.</div></div>"
+        )
+
+    history = status.get("decision_history")
+    history_items = history if type(history) is list else []
+    history_rows = "".join(
+        "<tr><td>" + escape(_wo16_value(item.get("canonical_subject_identity")))
+        + "</td><td>" + escape(_wo16_value(item.get("choice")))
+        + "</td><td>" + escape(_wo16_value(item.get("decision_timestamp")))
+        + "</td><td>" + escape(_wo16_value(item.get("decision_identity")))
+        + "</td><td>" + escape(_wo16_value(item.get("predecessor_decision_identity")))
+        + "</td></tr>"
+        for item in history_items if type(item) is dict
+    )
+    history_panel = (
+        '<section class="panel wo16-history"><div class="panel-head"><div>'
+        "<h2>Immutable Decision History</h2>"
+        "<p>Append-only Sponsor choices; prior decisions are never rewritten.</p>"
+        '</div><span class="status neutral">'
+        + str(len(history_items))
+        + ' RECORDS</span></div><div class="table-wrap"><table><thead><tr>'
+        "<th>Subject</th><th>Choice</th><th>Timestamp</th><th>Decision</th>"
+        "<th>Predecessor</th></tr></thead><tbody>"
+        + (history_rows or '<tr><td colspan="5">UNAVAILABLE</td></tr>')
+        + "</tbody></table></div></section>"
+    )
+
+    failures = status.get("latest_persisted_failures")
+    failure_items = failures if type(failures) is list else []
+    failure_cards = "".join(
+        _wo16_failure("Latest Persisted Failure", item)
+        for item in failure_items if type(item) is dict
+    )
+    last = status.get("last_operation")
+    if type(last) is dict and last.get("failure_reason") is not None:
+        failure_cards = _wo16_failure("Last Operation Failure", last) + failure_cards
+
+    choices = ""
+    if status.get("decision_controls_available") is True:
+        choices = (
+            '<section class="panel wo16-choices"><div class="panel-head"><div>'
+            "<h2>Sponsor Decision</h2><p>Exact current qualified lineage only.</p>"
+            '</div><span class="status neutral">EXPLICIT ACTION</span></div>'
+            '<div class="wo16-choice-row"><button type="button" data-choice="PAPER">'
+            "PAPER</button><button type=\"button\" data-choice=\"LIVE\">LIVE</button>"
+            '<button type="button" data-choice="IGNORE">IGNORE</button></div></section>'
+        )
+
+    body = (
+        _intraday_tabs(False, active="wo16")
+        + '<div class="intraday-warning"><strong>WO-16 SPONSOR DECISION</strong>'
+        "<span>EXPLICIT INTENT AND FACTUAL LIFECYCLE ADMISSION ONLY<br>"
+        "NO POSITION, FILL, QUANTITY, EXECUTION OR BROKER AUTHORITY</span></div>"
+        + choices
+        + '<div class="wo16-current-list">' + cards + "</div>"
+        + history_panel + failure_cards
+        + '<div class="intraday-review-config"><strong>Policy:</strong> '
+        + escape(_wo16_value(status.get("policy_identity"))) + " / "
+        + escape(_wo16_value(status.get("policy_version"))) + " / "
+        + escape(_wo16_value(status.get("policy_checksum")))
+        + "<br><strong>Runtime:</strong> "
+        + ("LOADED" if status.get("runtime_loaded") is True else "UNAVAILABLE")
+        + " · " + escape(_wo16_value(status.get("restoration_state")))
+        + " · Operation " + escape(_wo16_value(status.get("operation_state")))
+        + "<br><strong>Restoration failure:</strong> "
+        + escape(_wo16_value(status.get("failure_reason")))
+        + "<br><strong>Decision vocabulary:</strong> PAPER · LIVE · IGNORE"
+        + "<br><strong>Boundary:</strong> The exact governed JSON POST is the only "
+        + "Sponsor operation seam. Startup and GET are inert.</div>"
+    )
+    return render_browser_page(
+        title="Intraday WO-16",
+        subtitle=(
+            "Persisted Sponsor decision and lifecycle-admission evidence; "
+            "rendering performs no upstream work."
+        ),
+        snapshot=snapshot,
+        active_nav="Intraday",
+        active_tab="WO-16",
+        body=body,
+        extra_styles=_INTRADAY_CSS + _WO16_CSS,
+    )
+
+
+def _wo16_current_card(item: dict[str, object]) -> str:
+    plan = _dict(item.get("trade_plan"))
+    risk = _dict(item.get("risk_observation"))
+    timing = _dict(item.get("timing_handoff"))
+    session = _dict(item.get("session"))
+    decision = _dict(item.get("sponsor_decision"))
+    admission = _dict(item.get("lifecycle_admission"))
+    pointer = _dict(item.get("current_pointer"))
+    return (
+        '<article class="wo16-current"><div class="panel-head"><div><h2>'
+        + escape(_wo16_value(item.get("canonical_subject_identity")))
+        + "</h2><p>" + escape(_wo16_value(item.get("market_family")))
+        + " · " + escape(_wo16_value(plan.get("direction")))
+        + " · " + escape(_wo16_value(plan.get("setup_family")))
+        + '</p></div><span class="status neutral">'
+        + escape(_wo16_value(decision.get("choice"))) + "</span></div>"
+        '<div class="wo16-grid">'
+        + _wo16_panel("WO-13 Trade Plan", (
+            ("Identity", plan.get("trade_plan_identity")),
+            ("Entry Reference", plan.get("entry_reference")),
+            ("Stop", plan.get("stop")),
+            ("Canonical Target", plan.get("canonical_target")),
+            ("Model R:R", plan.get("model_rr")),
+        ))
+        + _wo16_panel("WO-14 Risk Observation — ADVISORY ONLY", (
+            ("Identity", risk.get("observation_identity")),
+            ("State", risk.get("state")),
+            ("Authority", risk.get("authority")),
+            ("Permission / veto", "NONE / NONE"),
+        ))
+        + _wo16_panel("WO-15 Timing Handoff", (
+            ("Identity", timing.get("handoff_identity")),
+            ("State", timing.get("current_state")),
+            ("Qualification path", timing.get("qualification_path")),
+            ("Completed-5M boundary", timing.get("evidence_boundary")),
+        ))
+        + _wo16_panel("WO-16 Sponsor Decision", (
+            ("Decision", decision.get("decision_identity")),
+            ("Choice", decision.get("choice")),
+            ("Source", decision.get("source")),
+            ("Timestamp", decision.get("decision_timestamp")),
+        ))
+        + _wo16_panel("Lifecycle Admission", (
+            ("Admission", admission.get("admission_identity")),
+            ("Disposition", admission.get("disposition")),
+            ("Reason", admission.get("reason")),
+            ("Position consequence", admission.get("position_consequence")),
+        ))
+        + _wo16_panel("Current Session and Lineage", (
+            ("Session", session.get("session_identity")),
+            ("Trading date", item.get("trading_date")),
+            ("Instrument", item.get("instrument_identity")),
+            ("Actual contract", item.get("actual_contract_identity")),
+            ("Roll lineage", item.get("roll_lineage_identity")),
+            ("Current pointer", pointer.get("pointer_identity")),
+        ))
+        + _wo16_panel("Actual Position Facts", (
+            ("Position created", "NO"),
+            ("Broker order placed", "NO"),
+            ("Fill", item.get("actual_fill")),
+            ("Quantity", item.get("quantity")),
+            ("P&L", item.get("pnl")),
+            ("Realised R", item.get("realised_r")),
+        ))
+        + "</div></article>"
+    )
+
+
+def _wo16_panel(title: str, values: tuple[tuple[str, object], ...]) -> str:
+    facts = "".join(
+        "<dt>" + escape(label) + "</dt><dd>" + escape(_wo16_value(value))
+        + "</dd>" for label, value in values
+    )
+    return '<section class="panel"><h3>' + escape(title) + "</h3><dl>" + facts + "</dl></section>"
+
+
+def _wo16_failure(title: str, value: dict[str, object]) -> str:
+    return (
+        '<section class="intraday-panel intraday-unavailable wo16-failure"><h2>'
+        + escape(title) + "</h2><strong>FAILED</strong><p>"
+        + escape(_wo16_value(value.get("failure_stage") or value.get("stage")))
+        + " · "
+        + escape(_wo16_value(value.get("failure_reason") or value.get("reason")))
+        + "</p></section>"
+    )
+
+
+def _wo16_value(value: object) -> str:
+    return "UNAVAILABLE" if value is None else str(value)
+
+
+_WO16_CSS = r"""
+.wo16-current{border:1px solid var(--line);border-radius:12px;padding:14px;
+margin-bottom:14px;background:var(--panel)}
+.wo16-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.wo16-grid .panel{min-width:0}
+.wo16-grid dd,.wo16-history td{overflow-wrap:anywhere}
+.wo16-history,.wo16-failure,.wo16-choices{margin-top:14px}
+.wo16-choice-row{display:flex;gap:10px;flex-wrap:wrap}
+@media(max-width:760px){.wo16-grid{grid-template-columns:1fr}
+.wo16-history .table-wrap{overflow-x:auto}.wo16-history table{min-width:760px}}
+"""
+
+
 def _dict(value: object) -> dict[str, object]:
     return value if type(value) is dict else {}
 
@@ -2141,6 +2344,7 @@ def _intraday_tabs(refresh_enabled: bool, *, active: str = "opportunities") -> s
         '<a class="' + ('active' if active == 'wo13' else '') + '" href="/intraday/wo13">WO-13</a>'
         '<a class="' + ('active' if active == 'wo14' else '') + '" href="/intraday/wo14">WO-14</a>'
         '<a class="' + ('active' if active == 'wo15' else '') + '" href="/intraday/wo15">WO-15</a>'
+        '<a class="' + ('active' if active == 'wo16' else '') + '" href="/intraday/wo16">WO-16</a>'
         '<span class="intraday-tab">Trade Candidates</span>'
         '<span class="intraday-tab">Active</span>'
         '<span class="intraday-tab">Closed</span>'
@@ -2603,5 +2807,6 @@ __all__ = [
     "render_intraday_wo13",
     "render_intraday_wo14",
     "render_intraday_wo15",
+    "render_intraday_wo16",
     "render_intraday_workstation",
 ]

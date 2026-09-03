@@ -18,6 +18,7 @@ from kronos.browser.intraday_views import (
     render_intraday_wo13,
     render_intraday_wo14,
     render_intraday_wo15,
+    render_intraday_wo16,
     render_intraday_workstation,
 )
 from kronos.browser.intraday_probables_v2_control import (
@@ -70,6 +71,13 @@ from kronos.browser.intraday_wo15_control import (
     WO15_STATUS_ROUTE,
     IntradayWo15OperationalControl,
 )
+from kronos.browser.intraday_wo16_control import (
+    MAX_WO16_REQUEST_BYTES,
+    WO16_CONTROL_ROUTE,
+    WO16_PRODUCT_ROUTE,
+    WO16_STATUS_ROUTE,
+    IntradayWo16OperationalControl,
+)
 from kronos.browser.product_routes import (
     BrowserGetRequest,
     BrowserPostRequest,
@@ -110,6 +118,7 @@ class IntradayBrowserRoutes:
         wo13_control: IntradayWo13OperationalControl | None = None,
         wo14_control: IntradayWo14OperationalControl | None = None,
         wo15_control: IntradayWo15OperationalControl | None = None,
+        wo16_control: IntradayWo16OperationalControl | None = None,
         review_workstation: object | None = None,
     ) -> None:
         if not callable(getattr(workstation, "snapshot", None)):
@@ -168,6 +177,12 @@ class IntradayBrowserRoutes:
         ):
             raise ValueError("INTRADAY_BROWSER_ROUTES_INVALID")
         self._wo15_control = wo15_control
+        if (
+            wo16_control is not None
+            and type(wo16_control) is not IntradayWo16OperationalControl
+        ):
+            raise ValueError("INTRADAY_BROWSER_ROUTES_INVALID")
+        self._wo16_control = wo16_control
         self._review = review or IntradayReviewApplication(
             current_probables=self._current_probables,
             store=IntradayReviewStore(),
@@ -304,6 +319,18 @@ class IntradayBrowserRoutes:
                     snapshot_provider(), self._wo15_control.status_document()
                 )
             )
+        elif request.path == WO16_PRODUCT_ROUTE:
+            if self._wo16_control is None or request.query:
+                return BrowserRouteResponse(
+                    "Not found.",
+                    status=HTTPStatus.NOT_FOUND,
+                    content_type="text/plain; charset=utf-8",
+                )
+            return BrowserRouteResponse(
+                render_intraday_wo16(
+                    snapshot_provider(), self._wo16_control.status_document()
+                )
+            )
         elif request.path == "/control/intraday-discovery/v2/status":
             if self._probables_v2_control is None or request.query:
                 return BrowserRouteResponse(
@@ -424,6 +451,21 @@ class IntradayBrowserRoutes:
                 ),
                 content_type="application/json; charset=utf-8",
             )
+        elif request.path == WO16_STATUS_ROUTE:
+            if self._wo16_control is None or request.query:
+                return BrowserRouteResponse(
+                    "Not found.",
+                    status=HTTPStatus.NOT_FOUND,
+                    content_type="text/plain; charset=utf-8",
+                )
+            return BrowserRouteResponse(
+                json.dumps(
+                    self._wo16_control.status_document(),
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ),
+                content_type="application/json; charset=utf-8",
+            )
         else:
             return None
         return BrowserRouteResponse(
@@ -443,6 +485,7 @@ class IntradayBrowserRoutes:
             WO13_CONTROL_ROUTE,
             WO14_CONTROL_ROUTE,
             WO15_CONTROL_ROUTE,
+            WO16_CONTROL_ROUTE,
             REVIEW_V2_CHART_ROUTE,
             REVIEW_V2_QUESTION_TRANSPORT_ROUTE,
             REVIEW_V2_ANSWER_IMPORT_ROUTE,
@@ -721,6 +764,61 @@ class IntradayBrowserRoutes:
                             "WO15_SUPERSEDED_WO13_REJECTED",
                             "WO15_REQUEST_IDENTITY_CONFLICT",
                         }
+                        else HTTPStatus.BAD_REQUEST
+                        if outcome == "REJECTED"
+                        else HTTPStatus.SERVICE_UNAVAILABLE
+                    ),
+                    content_type="application/json; charset=utf-8",
+                )
+            if request.path == WO16_CONTROL_ROUTE:
+                if self._wo16_control is None:
+                    raise ValueError
+                if (
+                    request.query
+                    or request.content_type != "application/json"
+                    or not request.body
+                    or len(request.body) > MAX_WO16_REQUEST_BYTES
+                ):
+                    payload = None
+                else:
+                    try:
+                        payload = json.loads(request.body)
+                    except (UnicodeDecodeError, json.JSONDecodeError):
+                        payload = None
+                document = self._wo16_control.execute_document(payload)
+                outcome = document["outcome"]
+                reason = document["failure_reason"]
+                conflicts = {
+                    "WO16_OPERATION_BUSY",
+                    "WO16_IDEMPOTENT_REPLAY_CONFLICT",
+                    "WO16_DECISION_ALREADY_FINAL",
+                    "WO16_RETAINED_STATE_LINEAGE_MISMATCH",
+                    "WO13_NOT_CURRENT",
+                    "WO14_NOT_CURRENT",
+                    "WO15_NOT_CURRENT",
+                    "WO15_TIMING_NOT_QUALIFIED",
+                    "WO15_SESSION_STALE",
+                    "DOMAIN_008_UNAVAILABLE",
+                    "DOMAIN_008_NON_TRADING_DAY",
+                    "DOMAIN_008_NOT_OPEN",
+                    "DOMAIN_008_SESSION_ENDED",
+                    "EXCHANGE_MISMATCH",
+                    "TRADING_DATE_MISMATCH",
+                    "SESSION_IDENTITY_MISMATCH",
+                    "CALENDAR_IDENTITY_MISMATCH",
+                    "CALENDAR_VERSION_MISMATCH",
+                    "CANONICAL_LINEAGE_MISMATCH",
+                    "INSTRUMENT_LINEAGE_MISMATCH",
+                    "MCX_CONTRACT_LINEAGE_MISSING",
+                    "MCX_CONTRACT_LINEAGE_MISMATCH",
+                }
+                return BrowserRouteResponse(
+                    json.dumps(document, sort_keys=True, separators=(",", ":")),
+                    status=(
+                        HTTPStatus.OK
+                        if outcome in {"COMPLETED", "RETAINED"}
+                        else HTTPStatus.CONFLICT
+                        if outcome == "BUSY" or reason in conflicts
                         else HTTPStatus.BAD_REQUEST
                         if outcome == "REJECTED"
                         else HTTPStatus.SERVICE_UNAVAILABLE
