@@ -27,11 +27,14 @@ from kronos.intraday.wo16 import (
     Wo16SponsorDecision,
     Wo16SponsorDecisionRecord,
     Wo16SponsorDecisionSnapshot,
+    Wo16SuccessorLineage,
+    Wo16SuccessorTrigger,
     Wo16UpstreamLineage,
     canonical_document_bytes,
     create_wo16_lifecycle_admission_record,
     create_wo16_sponsor_decision_record,
     create_wo16_sponsor_decision_snapshot,
+    create_wo16_successor_lineage,
 )
 from kronos.intraday.wo16_adapters import (
     Wo16BindingRejected,
@@ -44,6 +47,20 @@ from kronos.intraday.wo16_adapters import (
     is_wo16_risk_state_admissible,
 )
 from kronos.market.schedule import MarketSessionFact
+from kronos.intraday.wo16_persistence import (
+    CurrentWo16Pointer,
+    RestoredWo16State,
+    Wo16InvalidOperationProvenance,
+    Wo16OperationProvenance,
+    Wo16OperationStage,
+    Wo16PersistedOperationOutcome,
+    Wo16PersistenceError,
+    Wo16RestorationState,
+    Wo16Store,
+    create_current_wo16_pointer,
+    create_wo16_invalid_operation,
+    create_wo16_operation_provenance,
+)
 
 
 WO16_OPERATION_REQUEST_IDENTITY = "KRONOS-INTRADAY-WO16-OPERATION-REQUEST-V1"
@@ -344,6 +361,301 @@ class IntradayWo16Application:
             self._lock.release()
 
 
+@dataclass(frozen=True, slots=True)
+class Wo16PersistedExecution:
+    """Committed immutable graph and projection returned by Slice 3."""
+
+    execution: Wo16Execution
+    pointer: CurrentWo16Pointer
+    operation: Wo16OperationProvenance
+    successor: Wo16SuccessorLineage | None
+    replayed: bool = False
+
+    def __post_init__(self) -> None:
+        if (
+            type(self.execution) is not Wo16Execution
+            or type(self.pointer) is not CurrentWo16Pointer
+            or type(self.operation) is not Wo16OperationProvenance
+            or self.successor is not None
+            and type(self.successor) is not Wo16SuccessorLineage
+            or self.pointer.request_identity != self.execution.request_identity
+            or self.pointer.request_integrity != self.execution.request_integrity
+            or self.pointer.decision_identity
+            != self.execution.decision.decision_identity
+            or self.pointer.admission_identity
+            != self.execution.admission.admission_identity
+            or self.pointer.operation_identity != self.operation.operation_identity
+            or self.replayed != self.execution.replayed
+        ):
+            raise Wo16ApplicationError("WO16_PERSISTED_EXECUTION_INVALID")
+
+
+@dataclass(frozen=True, slots=True)
+class Wo16RestorationStatus:
+    """Inert multi-subject restoration result."""
+
+    state: Wo16RestorationState
+    restored: tuple[RestoredWo16State, ...]
+    latest_failures: tuple[Wo16InvalidOperationProvenance, ...]
+    failure_stage: str | None = None
+    failure_reason: str | None = None
+
+
+class IntradayWo16PersistenceApplication:
+    """Persist exact Slice-2 results without acquiring or recalculating facts."""
+
+    def __init__(self, *, store: Wo16Store) -> None:
+        if type(store) is not Wo16Store:
+            raise ValueError("WO16_APPLICATION_CONFIGURATION_INVALID")
+        self._store = store
+        self._decision_service = IntradayWo16Application()
+        self._lock = Lock()
+
+    @property
+    def store(self) -> Wo16Store:
+        return self._store
+
+    def execute(
+        self, request: Wo16OperationRequest
+    ) -> Wo16PersistedExecution | Wo16BusyOutcome:
+        if type(request) is not Wo16OperationRequest:
+            raise Wo16ApplicationError("WO16_REQUEST_INVALID")
+        try:
+            request.__post_init__()
+        except (AttributeError, TypeError, ValueError) as error:
+            raise Wo16ApplicationError("WO16_REQUEST_INVALID") from error
+        if not self._lock.acquire(blocking=False):
+            return Wo16BusyOutcome(request.request_identity)
+
+        stage = Wo16OperationStage.REQUEST_VALIDATION
+        started_at = request.domain_008_session_fact.observed_at
+        provenance = (*request.provenance, "WO16_PERSISTENCE_APPLICATION_V1")
+        try:
+            stage = Wo16OperationStage.REPLAY_VALIDATION
+            retained = self._store.find_completed_request(
+                request.request_identity
+            )
+            if retained is not None:
+                replay = self._decision_service.execute(
+                    request, retained=_execution_from_restored(retained)
+                )
+                if type(replay) is not Wo16Execution or not replay.replayed:
+                    raise Wo16ApplicationError("WO16_IDEMPOTENT_REPLAY_INVALID")
+                return Wo16PersistedExecution(
+                    replay,
+                    retained.pointer,
+                    retained.operation,
+                    retained.successor,
+                    True,
+                )
+
+            subject = request.wo13_trade_plan.canonical_subject_identity
+            current = self._store.restore_current(subject)
+            retained_current = (
+                None if current is None else _execution_from_restored(current)
+            )
+
+            stage = Wo16OperationStage.UPSTREAM_BINDING
+            if (
+                retained_current is not None
+                and retained_current.decision.timing_handoff_identity
+                == request.wo15_timing_handoff.handoff_identity
+            ):
+                # The Slice-2 conflict boundary owns the final-decision rule.
+                self._decision_service.execute(
+                    request, retained=retained_current
+                )
+                raise Wo16ApplicationError("WO16_DECISION_ALREADY_FINAL")
+            candidate = self._decision_service.execute(request)
+            if type(candidate) is not Wo16Execution:
+                raise Wo16ApplicationError("WO16_UNEXPECTED_BUSY_OUTCOME")
+
+            stage = Wo16OperationStage.SUCCESSOR_BINDING
+            successor = None
+            if current is not None:
+                trigger = _successor_trigger(current.pointer, candidate)
+                successor = create_wo16_successor_lineage(
+                    predecessor=current.decision,
+                    successor_snapshot=candidate.snapshot,
+                    trigger=trigger,
+                    provenance=(*provenance, trigger.value),
+                )
+                decision = create_wo16_sponsor_decision_record(
+                    snapshot=candidate.snapshot,
+                    request_identity=request.request_identity,
+                    request_integrity=request.request_integrity,
+                    choice=request.choice,
+                    decision_timestamp=request.decision_timestamp,
+                    predecessor_decision_identity=(
+                        current.decision.decision_identity
+                    ),
+                    supersession_lineage_identity=successor.lineage_identity,
+                    provenance=(*provenance, "IMMUTABLE_SUCCESSOR"),
+                )
+                admission = create_wo16_lifecycle_admission_record(
+                    decision=decision,
+                    recorded_at=request.admission_recorded_at,
+                    provenance=(*provenance, "FACTUAL_ADMISSION"),
+                )
+                candidate = Wo16Execution(
+                    request_identity=request.request_identity,
+                    request_integrity=request.request_integrity,
+                    upstream_lineage=candidate.upstream_lineage,
+                    snapshot=candidate.snapshot,
+                    decision=decision,
+                    admission=admission,
+                    outcome=Wo16ApplicationOutcome.COMPLETED,
+                    replayed=False,
+                )
+
+            stage = Wo16OperationStage.PERSISTENCE
+            self._store.retain_request(request)
+            self._store.retain_snapshot(candidate.snapshot)
+            self._store.retain_decision(candidate.decision)
+            self._store.retain_admission(candidate.admission)
+            if successor is not None:
+                self._store.retain_successor(successor)
+            completed = create_wo16_operation_provenance(
+                request=request,
+                stage=Wo16OperationStage.POINTER_PUBLICATION,
+                outcome=Wo16PersistedOperationOutcome.COMPLETED,
+                started_at=started_at,
+                completed_at=request.admission_recorded_at,
+                snapshot=candidate.snapshot,
+                decision=candidate.decision,
+                admission=candidate.admission,
+                successor=successor,
+                provenance=(*provenance, "FULL_GRAPH_RELOAD_REQUIRED"),
+            )
+            self._store.retain_operation(completed)
+            pointer = create_current_wo16_pointer(
+                request=request,
+                snapshot=candidate.snapshot,
+                decision=candidate.decision,
+                admission=candidate.admission,
+                operation=completed,
+                successor=successor,
+                published_at=request.admission_recorded_at,
+            )
+            # The immutable pointer snapshot is not an alias and may safely
+            # precede publication.  It enables validation of the full history.
+            self._store.retain_pointer_snapshot(pointer)
+            staged = self._store.restore_pointer(pointer)
+            if (
+                staged.request != request
+                or staged.snapshot != candidate.snapshot
+                or staged.decision != candidate.decision
+                or staged.admission != candidate.admission
+                or staged.operation != completed
+                or staged.successor != successor
+            ):
+                raise Wo16ApplicationError("WO16_PRE_PUBLICATION_RELOAD_INVALID")
+
+            stage = Wo16OperationStage.POINTER_PUBLICATION
+            self._store.publish_current(pointer)
+            stage = Wo16OperationStage.RESTORATION
+            restored = self._store.restore_current(subject)
+            if (
+                restored is None
+                or restored.pointer != pointer
+                or restored.request != request
+                or restored.snapshot != candidate.snapshot
+                or restored.decision != candidate.decision
+                or restored.admission != candidate.admission
+                or restored.operation != completed
+                or restored.successor != successor
+            ):
+                raise Wo16ApplicationError("WO16_POST_PUBLICATION_RELOAD_INVALID")
+            return Wo16PersistedExecution(
+                candidate, pointer, completed, successor
+            )
+        except Exception as error:
+            reason = _persistent_failure_code(error)
+            self._record_failure(
+                request,
+                stage,
+                started_at,
+                reason,
+                provenance,
+            )
+            raise Wo16ApplicationError(reason) from error
+        finally:
+            self._lock.release()
+
+    def restore_current(
+        self, canonical_subject_identity: str
+    ) -> RestoredWo16State | None:
+        return self._store.restore_current(canonical_subject_identity)
+
+    def _record_failure(
+        self,
+        request: Wo16OperationRequest,
+        stage: Wo16OperationStage,
+        started_at: datetime,
+        reason: str,
+        provenance: tuple[str, ...],
+    ) -> None:
+        try:
+            failed = create_wo16_operation_provenance(
+                request=request,
+                stage=stage,
+                outcome=Wo16PersistedOperationOutcome.FAILED,
+                started_at=started_at,
+                failed_at=request.admission_recorded_at,
+                failure_reason=reason,
+                provenance=(*provenance, "CURRENT_WO16_POINTER_PRESERVED"),
+            )
+            invalid = create_wo16_invalid_operation(
+                request=request,
+                stage=stage,
+                reason=reason,
+                failed_at=request.admission_recorded_at,
+            )
+            self._store.retain_operation(failed)
+            self._store.publish_latest_failure(invalid)
+        except (OSError, TypeError, ValueError):
+            # Secondary provenance failure must never replace the original
+            # sanitized application failure or move the current pointer.
+            return
+
+
+class IntradayWo16RestorationService:
+    """Provider-independent restoration with no evaluation or writes."""
+
+    def __init__(self, *, store: Wo16Store) -> None:
+        if type(store) is not Wo16Store:
+            raise ValueError("WO16_RESTORATION_CONFIGURATION_INVALID")
+        self._store = store
+
+    def restore(self) -> Wo16RestorationStatus:
+        try:
+            restored = self._store.restore_all()
+            failure_subjects = self._store.failure_subjects()
+            failures = tuple(
+                failure
+                for subject in failure_subjects
+                if (failure := self._store.load_latest_failure(subject))
+                is not None
+            )
+        except (Wo16PersistenceError, Wo16ContractError, OSError, ValueError):
+            return Wo16RestorationStatus(
+                Wo16RestorationState.CORRUPT,
+                (),
+                (),
+                "RESTORATION",
+                "WO16_RESTORATION_FAILED",
+            )
+        return Wo16RestorationStatus(
+            (
+                Wo16RestorationState.NOT_YET_RUN
+                if not restored
+                else Wo16RestorationState.LOADED
+            ),
+            restored,
+            failures,
+        )
+
+
 def _replay_or_conflict(
     request: Wo16OperationRequest,
     snapshot: Wo16SponsorDecisionSnapshot,
@@ -382,6 +694,81 @@ def _replay_or_conflict(
     if same_handoff or same_lineage:
         raise Wo16ApplicationError("WO16_DECISION_ALREADY_FINAL")
     raise Wo16ApplicationError("WO16_RETAINED_STATE_LINEAGE_MISMATCH")
+
+
+def _execution_from_restored(value: RestoredWo16State) -> Wo16Execution:
+    return Wo16Execution(
+        request_identity=value.request.request_identity,
+        request_integrity=value.request.request_integrity,
+        upstream_lineage=value.snapshot.upstream_lineage,
+        snapshot=value.snapshot,
+        decision=value.decision,
+        admission=value.admission,
+        outcome=Wo16ApplicationOutcome.COMPLETED,
+        replayed=False,
+    )
+
+
+def _successor_trigger(
+    predecessor: CurrentWo16Pointer,
+    successor: Wo16Execution,
+) -> Wo16SuccessorTrigger:
+    trade = successor.upstream_lineage.trade_plan
+    session = successor.upstream_lineage.session
+    timing = successor.upstream_lineage.timing_handoff
+    if (
+        predecessor.actual_contract_identity != trade.actual_contract_identity
+        or predecessor.roll_lineage_identity != trade.roll_lineage_identity
+        or (
+            predecessor.instrument_identity != trade.instrument_identity
+            and trade.market_family.value == "MCX"
+        )
+    ):
+        return Wo16SuccessorTrigger.MCX_ACTIVE_CONTRACT_OR_ROLL_LINEAGE
+    if (
+        predecessor.session_identity != session.session_identity
+        or predecessor.trading_date != session.trading_date
+        or predecessor.calendar_identity != session.calendar_identity
+        or predecessor.calendar_version != session.calendar_version
+    ):
+        return Wo16SuccessorTrigger.MARKET_SESSION
+    if predecessor.wo13_trade_plan_identity != trade.trade_plan_identity:
+        return Wo16SuccessorTrigger.WO13_PLAN
+    if predecessor.wo15_handoff_identity != timing.handoff_identity:
+        return Wo16SuccessorTrigger.WO15_TIMING_HANDOFF
+    raise Wo16ApplicationError("WO16_SUCCESSOR_TRIGGER_UNAVAILABLE")
+
+
+def _persistent_failure_code(error: Exception) -> str:
+    value = error.args[0] if error.args else None
+    allowed_prefixes = (
+        "WO13_",
+        "WO14_",
+        "WO15_",
+        "WO16_",
+        "DOMAIN_008_",
+        "CALENDAR_",
+        "SESSION_",
+        "EXCHANGE_",
+        "INSTRUMENT_",
+        "CONTRACT_",
+        "ROLL_",
+    )
+    if (
+        type(value) is str
+        and value.startswith(allowed_prefixes)
+        and len(value) <= 128
+        and all(
+            character.isupper()
+            or character.isdigit()
+            or character == "_"
+            for character in value
+        )
+    ):
+        return value
+    if isinstance(error, Wo16PersistenceError):
+        return "WO16_PERSISTENCE_FAILURE"
+    return "WO16_APPLICATION_FAILURE"
 
 
 def _request_values(value: Wo16OperationRequest) -> dict[str, object]:
@@ -444,6 +831,8 @@ def _texts(values: tuple[object, ...]) -> bool:
 
 __all__ = [
     "IntradayWo16Application",
+    "IntradayWo16PersistenceApplication",
+    "IntradayWo16RestorationService",
     "WO16_APPLICATION_IDENTITY",
     "WO16_OPERATION_REQUEST_IDENTITY",
     "Wo16ApplicationError",
@@ -451,5 +840,7 @@ __all__ = [
     "Wo16BusyOutcome",
     "Wo16Execution",
     "Wo16OperationRequest",
+    "Wo16PersistedExecution",
+    "Wo16RestorationStatus",
     "create_wo16_operation_request",
 ]
