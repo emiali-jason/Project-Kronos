@@ -56,6 +56,14 @@ from kronos.application.intraday_wo16 import (
     IntradayWo16RestorationService,
     Wo16RestorationStatus,
 )
+from kronos.application.intraday_wo17 import (
+    IntradayWo17Application,
+    IntradayWo17RestorationService,
+    Wo17RestorationStatus,
+)
+from kronos.application.intraday_wo17_monitoring import (
+    IntradayWo17MonitoringCoordinator,
+)
 from kronos.application.intraday_historical_operation import (
     IntradayHistoricalQualificationHarness,
     IntradayHistoricalQualificationOperationService,
@@ -102,6 +110,7 @@ from kronos.intraday.wo13_persistence import Wo13Store
 from kronos.intraday.wo14_persistence import Wo14Store
 from kronos.intraday.wo15_persistence import Wo15Store
 from kronos.intraday.wo16_persistence import Wo16Store
+from kronos.intraday.wo17_persistence import Wo17Store
 from kronos.instrument.active_derivative import ACTIVE_DERIVATIVE_CATALOGUE_VERSION
 from kronos.instrument.active_derivative_persistence import (
     ActiveDerivativeBindingStore,
@@ -136,6 +145,7 @@ _DISCOVERY_READ_OPERATIONS = frozenset({
     ReadOnlyProviderOperation.INSTRUMENTS,
     ReadOnlyProviderOperation.HISTORICAL_DATA,
 })
+_MONITORING_READ_OPERATIONS = frozenset({ReadOnlyProviderOperation.MONITORING})
 
 
 class IntradayProviderRuntimeAccess:
@@ -158,6 +168,12 @@ class IntradayProviderRuntimeAccess:
         return self._runtime.acquire_lease(
             consumer_identity="INTRADAY_NATIVE_DISCOVERY",
             operations=_DISCOVERY_READ_OPERATIONS,
+        )
+
+    def acquire_monitoring_lease(self) -> ReadOnlyProviderLease:
+        return self._runtime.acquire_lease(
+            consumer_identity="INTRADAY_WO17_MONITORING",
+            operations=_MONITORING_READ_OPERATIONS,
         )
 
 
@@ -204,6 +220,11 @@ class IntradayRuntimeComposition:
     wo16_application: IntradayWo16PersistenceApplication
     wo16_restoration: IntradayWo16RestorationService
     wo16_restored: Wo16RestorationStatus
+    wo17_store: Wo17Store
+    wo17_application: IntradayWo17Application
+    wo17_restoration: IntradayWo17RestorationService
+    wo17_restored: Wo17RestorationStatus
+    wo17_monitoring: IntradayWo17MonitoringCoordinator
     refresh_v2_provenance_store: RefreshV2ProvenanceStore
     probables_v2_diagnostics_store: ProbablesV2DiagnosticsStore
     mcx_history_store: McxContractHistoryStore
@@ -443,6 +464,19 @@ def create_intraday_runtime(
     wo16_application = IntradayWo16PersistenceApplication(store=wo16_store)
     wo16_restoration = IntradayWo16RestorationService(store=wo16_store)
     wo16_restored = wo16_restoration.restore()
+    wo17_store = Wo17Store(
+        Path(evidence_root)
+        / "wo17-position-evidence-active-lifecycle-monitoring-v1"
+    )
+    wo17_application = IntradayWo17Application(store=wo17_store)
+    wo17_restoration = IntradayWo17RestorationService(store=wo17_store)
+    wo17_restored = wo17_restoration.restore()
+    wo17_monitoring = IntradayWo17MonitoringCoordinator(
+        wo17_application,
+        wo17_restoration,
+        access.acquire_monitoring_lease,
+        clock=clock,
+    )
     if refresh_state is not None and refresh_state.current_failure is not None:
         if refresh_state.current_failure_stage in {
             "PROBABLES_EVIDENCE_MAPPING",
@@ -495,6 +529,11 @@ def create_intraday_runtime(
         wo16_application=wo16_application,
         wo16_restoration=wo16_restoration,
         wo16_restored=wo16_restored,
+        wo17_store=wo17_store,
+        wo17_application=wo17_application,
+        wo17_restoration=wo17_restoration,
+        wo17_restored=wo17_restored,
+        wo17_monitoring=wo17_monitoring,
         refresh_v2_provenance_store=refresh_v2_provenance_store,
         probables_v2_diagnostics_store=probables_v2_diagnostics_store,
         mcx_history_store=mcx_history_store,

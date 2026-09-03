@@ -1034,6 +1034,121 @@ def render_intraday_wo16(
     )
 
 
+def render_intraday_wo17(
+    snapshot: BrowserWorkspaceSnapshot,
+    status: dict[str, object],
+) -> str:
+    """Render persisted WO-17 position and lifecycle facts only."""
+
+    currents = status.get("current_positions")
+    current_items = currents if type(currents) is list else []
+    cards = "".join(
+        _wo17_current_card(item) for item in current_items if type(item) is dict
+    )
+    if not cards:
+        cards = (
+            '<div class="empty"><div><strong>'
+            + escape(_wo16_value(status.get("restoration_state")))
+            + "</strong><br>No persisted WO-17 position evidence is current.</div></div>"
+        )
+    history = status.get("position_history")
+    history_items = history if type(history) is list else []
+    history_rows = "".join(
+        "<tr><td>" + escape(_wo16_value(item.get("canonical_subject_identity")))
+        + "</td><td>" + escape(_wo16_value(item.get("position_state")))
+        + "</td><td>" + escape(_wo16_value(item.get("monitoring_availability")))
+        + "</td><td>" + escape(_wo16_value(item.get("closure_state")))
+        + "</td><td>" + escape(_wo16_value(item.get("published_at")))
+        + "</td></tr>"
+        for item in history_items if type(item) is dict
+    )
+    failures = status.get("latest_persisted_failures")
+    failure_items = failures if type(failures) is list else []
+    failure_cards = "".join(
+        _wo16_failure("Latest Persisted Failure", item)
+        for item in failure_items if type(item) is dict
+    )
+    last = status.get("last_operation")
+    if type(last) is dict and last.get("failure_reason") is not None:
+        failure_cards = _wo16_failure("Last Operation Failure", last) + failure_cards
+    monitoring = _dict(status.get("monitoring"))
+    body = (
+        _intraday_tabs(False, active="wo17")
+        + '<div class="intraday-warning"><strong>FACTUAL POSITION EVIDENCE AND READ-ONLY MONITORING ONLY</strong>'
+        "<span>PAPER EVIDENCE IS MODEL EVIDENCE · LIVE EVIDENCE IS SPONSOR-ATTESTED<br>"
+        "NO BROKER ORDER, BROKER FILL, QUANTITY, FEES, MONETARY P&amp;L OR REALISED-R AUTHORITY</span></div>"
+        + '<div class="wo17-current-list">' + cards + "</div>"
+        + '<section class="panel wo17-history"><div class="panel-head"><div>'
+        "<h2>Immutable Lifecycle History</h2><p>Current state, history and latest failure remain separate.</p>"
+        '</div><span class="status neutral">' + str(len(history_items))
+        + ' RECORDS</span></div><div class="table-wrap"><table><thead><tr>'
+        "<th>Subject</th><th>Position</th><th>Monitoring</th><th>Closure</th><th>Published</th>"
+        "</tr></thead><tbody>" + (history_rows or '<tr><td colspan="5">UNAVAILABLE</td></tr>')
+        + "</tbody></table></div></section>" + failure_cards
+        + '<div class="intraday-review-config"><strong>Policy:</strong> '
+        + escape(_wo16_value(status.get("policy_identity"))) + " / "
+        + escape(_wo16_value(status.get("policy_version"))) + " / "
+        + escape(_wo16_value(status.get("policy_checksum")))
+        + "<br><strong>Runtime:</strong> "
+        + ("LOADED" if status.get("runtime_loaded") is True else "UNAVAILABLE")
+        + " · " + escape(_wo16_value(status.get("restoration_state")))
+        + " · Operation " + escape(_wo16_value(status.get("operation_state")))
+        + "<br><strong>Monitoring:</strong> " + escape(_wo16_value(monitoring.get("state")))
+        + " · bindings " + escape(str(len(monitoring.get("bindings", [])) if type(monitoring.get("bindings")) is list else 0))
+        + "<br><strong>Notification-worthy events:</strong> facts only; not delivery confirmations."
+        + "<br><strong>Boundary:</strong> startup and GET are inert. Exact governed POST is the only Sponsor operation seam.</div>"
+    )
+    return render_browser_page(
+        title="Intraday WO-17",
+        subtitle="Persisted position evidence and read-only lifecycle monitoring.",
+        snapshot=snapshot,
+        active_nav="Intraday",
+        active_tab="WO-17",
+        body=body,
+        extra_styles=_INTRADAY_CSS + _WO17_CSS,
+    )
+
+
+def _wo17_current_card(item: dict[str, object]) -> str:
+    plan = _dict(item.get("trade_plan"))
+    risk = _dict(item.get("risk_observation"))
+    timing = _dict(item.get("timing_handoff"))
+    decision = _dict(item.get("sponsor_decision"))
+    admission = _dict(item.get("lifecycle_admission"))
+    entry = _dict(item.get("entry_evidence"))
+    closure = _dict(item.get("closure"))
+    assessments = item.get("lifecycle_assessments")
+    assessment_items = assessments if type(assessments) is list else []
+    latest_assessment = _dict(assessment_items[-1]) if assessment_items else {}
+    return (
+        '<article class="wo17-current"><div class="panel-head"><div><h2>'
+        + escape(_wo16_value(item.get("canonical_subject_identity")))
+        + "</h2><p>" + escape(_wo16_value(item.get("market_family")))
+        + " · " + escape(_wo16_value(plan.get("direction")))
+        + '</p></div><span class="status neutral">'
+        + escape(_wo16_value(item.get("position_state"))) + "</span></div>"
+        '<div class="wo17-grid">'
+        + _wo16_panel("WO-13 Trade Plan", (("Identity", plan.get("trade_plan_identity")), ("Entry", plan.get("entry_reference")), ("Stop", plan.get("stop")), ("Target", plan.get("canonical_target"))))
+        + _wo16_panel("WO-14 Advisory Risk Observation", (("Identity", risk.get("observation_identity")), ("State", risk.get("state")), ("Permission / veto", "NONE / NONE")))
+        + _wo16_panel("WO-15 Timing Handoff", (("Identity", timing.get("handoff_identity")), ("State", timing.get("current_state")), ("Evidence boundary", timing.get("evidence_boundary"))))
+        + _wo16_panel("WO-16 Decision and Admission", (("Decision identity", decision.get("decision_identity")), ("Decision", decision.get("choice")), ("Admission identity", admission.get("admission_identity")), ("Admission", admission.get("disposition"))))
+        + _wo16_panel("Position Evidence", (("Role", item.get("position_evidence_role")), ("Entry price", entry.get("entry_price")), ("Entry timestamp", entry.get("entry_timestamp")), ("Broker fill", "UNAVAILABLE")))
+        + _wo16_panel("Lifecycle Observation", (("Monitoring", item.get("monitoring_availability")), ("Assessment", latest_assessment.get("assessment_code")), ("Stop observed", latest_assessment.get("stop_observed")), ("Target observed", latest_assessment.get("target_observed")), ("Invalidation observed", latest_assessment.get("invalidation_observed"))))
+        + _wo16_panel("Closure / Exit", (("Closure", closure.get("closure_state")), ("Exit price", closure.get("exit_price")), ("Exit timestamp", closure.get("exit_timestamp")), ("Attestation", item.get("live_exit_attestation"))))
+        + _wo16_panel("Session and Exact Lineage", (("Session", item.get("session_identity")), ("Trading date", item.get("trading_date")), ("Instrument", item.get("instrument_identity")), ("Actual contract", item.get("actual_contract_identity")), ("Contract expiry", item.get("contract_expiry")), ("Roll lineage", item.get("roll_lineage_identity"))))
+        + _wo16_panel("Economics and Delivery", (("Quantity", "UNAVAILABLE"), ("Fees", "UNAVAILABLE"), ("Monetary P&L", "UNAVAILABLE"), ("Realised R", "UNAVAILABLE"), ("Notifications delivered", "NO"), ("Broker order", "NONE")))
+        + "</div></article>"
+    )
+
+
+_WO17_CSS = r"""
+.wo17-current{border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:14px;background:var(--panel)}
+.wo17-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.wo17-grid .panel{min-width:0}
+.wo17-grid dd,.wo17-history td{overflow-wrap:anywhere}.wo17-history{margin-top:14px}
+@media(max-width:760px){.wo17-grid{grid-template-columns:1fr}.wo17-history .table-wrap{overflow-x:auto}.wo17-history table{min-width:680px}}
+"""
+
+
 def _wo16_current_card(item: dict[str, object]) -> str:
     plan = _dict(item.get("trade_plan"))
     risk = _dict(item.get("risk_observation"))
@@ -2345,6 +2460,7 @@ def _intraday_tabs(refresh_enabled: bool, *, active: str = "opportunities") -> s
         '<a class="' + ('active' if active == 'wo14' else '') + '" href="/intraday/wo14">WO-14</a>'
         '<a class="' + ('active' if active == 'wo15' else '') + '" href="/intraday/wo15">WO-15</a>'
         '<a class="' + ('active' if active == 'wo16' else '') + '" href="/intraday/wo16">WO-16</a>'
+        '<a class="' + ('active' if active == 'wo17' else '') + '" href="/intraday/wo17">WO-17</a>'
         '<span class="intraday-tab">Trade Candidates</span>'
         '<span class="intraday-tab">Active</span>'
         '<span class="intraday-tab">Closed</span>'
@@ -2808,5 +2924,6 @@ __all__ = [
     "render_intraday_wo14",
     "render_intraday_wo15",
     "render_intraday_wo16",
+    "render_intraday_wo17",
     "render_intraday_workstation",
 ]

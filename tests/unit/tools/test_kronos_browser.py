@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from kronos.application.shared_monitoring import SharedSwingMonitoringHub
 from tools import kronos_browser
 
 
@@ -9,15 +10,20 @@ def test_launcher_uses_loopback_server_and_opens_swing_workspace(monkeypatch) ->
 
     class _Server:
         server_port = 9123
+        swing_monitoring_hub = SharedSwingMonitoringHub()
         def serve_forever(self, **kwargs):  # type: ignore[no-untyped-def]
             events.append(("serve", kwargs))
         def server_close(self):
             events.append("close")
 
+    class _Application:
+        def authenticated_read_only_capability(self):
+            return None
+
     monkeypatch.setattr(
         kronos_browser,
         "SwingOpportunitiesApplication",
-        lambda factory, **kwargs: events.append((factory, kwargs)) or object(),
+        lambda factory, **kwargs: events.append((factory, kwargs)) or _Application(),
     )
     monkeypatch.setattr(
         kronos_browser.BrowserBackendRestartControl,
@@ -84,12 +90,18 @@ def test_developer_no_browser_mode_does_not_open_browser(monkeypatch) -> None:
     control = object()
     class _Server:
         server_port = 9123
+        swing_monitoring_hub = SharedSwingMonitoringHub()
         def serve_forever(self, **_kwargs): pass  # type: ignore[no-untyped-def]
         def server_close(self): pass
+
+    class _Application:
+        def authenticated_read_only_capability(self):
+            return None
+
     monkeypatch.setattr(
         kronos_browser,
         "SwingOpportunitiesApplication",
-        lambda _factory, **_kwargs: object(),
+        lambda _factory, **_kwargs: _Application(),
     )
     monkeypatch.setattr(
         kronos_browser.BrowserBackendRestartControl,

@@ -35,6 +35,7 @@ from kronos.browser.intraday_wo13_control import IntradayWo13OperationalControl
 from kronos.browser.intraday_wo14_control import IntradayWo14OperationalControl
 from kronos.browser.intraday_wo15_control import IntradayWo15OperationalControl
 from kronos.browser.intraday_wo16_control import IntradayWo16OperationalControl
+from kronos.browser.intraday_wo17_control import IntradayWo17OperationalControl
 from kronos.browser.intraday_routes import IntradayBrowserRoutes
 from kronos.browser.product_routes import ProductBrowserRoutes
 from kronos.browser.intraday_historical_control import (
@@ -143,6 +144,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         wo14_store=intraday_runtime.wo14_store,
         wo15_store=intraday_runtime.wo15_store,
     )
+    intraday_wo17_control = IntradayWo17OperationalControl(
+        intraday_runtime.wo17_application,
+        intraday_runtime.wo17_restoration,
+        wo16_store=intraday_runtime.wo16_store,
+        monitoring=intraday_runtime.wo17_monitoring,
+    )
     product_routes = ProductBrowserRoutes((IntradayBrowserRoutes(
         intraday_runtime.discovery_v2_application,
         probables_v2_control=intraday_probables_v2_control,
@@ -154,6 +161,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         wo14_control=intraday_wo14_control,
         wo15_control=intraday_wo15_control,
         wo16_control=intraday_wo16_control,
+        wo17_control=intraday_wo17_control,
         review_workstation=intraday_runtime.discovery_application,
     ),))
     intraday_historical_control = (
@@ -191,6 +199,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             ),
             intraday_discovery_control=intraday_discovery_control,
             intraday_historical_control=intraday_historical_control,
+        )
+        intraday_runtime.wo17_monitoring.set_shared_monitoring_hub(
+            server.swing_monitoring_hub
+        )
+        intraday_runtime.wo17_monitoring.set_monitoring_capability_supplier(
+            application.authenticated_read_only_capability
         )
     except Exception:
         restart_control.remove()
