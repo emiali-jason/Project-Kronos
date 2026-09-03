@@ -1,0 +1,203 @@
+{
+  "authority": "FACTUAL_POSITION_EVIDENCE_AND_READ_ONLY_LIFECYCLE_MONITORING_ONLY",
+  "cutoffs": {
+    "LIVE": {
+      "both_timestamps_must_precede_cutoff": true,
+      "required_timestamps": [
+        "ACTUAL_ENTRY_TIMESTAMP",
+        "SPONSOR_ATTESTATION_OPERATION_TIMESTAMP"
+      ]
+    },
+    "MCX": {
+      "comparison": "STRICTLY_BEFORE",
+      "cutoff_ist": "23:00:00",
+      "entry_or_attestation_at_cutoff": "REJECT"
+    },
+    "NSE": {
+      "comparison": "STRICTLY_BEFORE",
+      "cutoff_ist": "15:00:00",
+      "entry_or_attestation_at_cutoff": "REJECT"
+    },
+    "exceptional_sessions_owner": "DOMAIN_008",
+    "global_cutoff": "NONE"
+  },
+  "entry": {
+    "gap_crossing_consequence": "ENTRY_SEQUENCE_UNRESOLVED",
+    "pre_entry_invalidation": "ENTRY_INVALIDATED_BEFORE_POSITION",
+    "window_expiry": "ENTRY_WINDOW_EXPIRED"
+  },
+  "identity": {
+    "interface": "KRONOS-INTRADAY-WO17-POSITION-EVIDENCE-AND-ACTIVE-LIFECYCLE-MONITORING-V1",
+    "product": "KRONOS-INTRADAY-WO17-POSITION-EVIDENCE-AND-ACTIVE-LIFECYCLE-MONITORING-V1"
+  },
+  "live": {
+    "activation_state": "LIVE_ACTIVE",
+    "actual_entry_required": [
+      "WO16_DECISION_ADMISSION_IDENTITY",
+      "EXACT_INSTRUMENT_OR_MCX_CONTRACT",
+      "DIRECTION",
+      "ACTUAL_ENTRY_PRICE",
+      "ACTUAL_ENTRY_TIMESTAMP",
+      "BOUNDED_MANUAL_ACTION_PROVENANCE",
+      "EXACT_LINEAGE"
+    ],
+    "armed_state": "LIVE_AWAITING_SPONSOR_ENTRY_EVIDENCE",
+    "broker_acknowledgement": false,
+    "closure": "SPONSOR_ATTESTED_ACTUAL_EXIT_EVIDENCE_ONLY",
+    "entry_event": "LIVE_ENTRY_ATTESTED",
+    "market_observation_auto_close": false,
+    "monetary_pnl": "UNAVAILABLE",
+    "quantity": "UNAVAILABLE",
+    "realised_r": "UNAVAILABLE"
+  },
+  "monitoring": {
+    "availability_separate_from_position_state": true,
+    "availability_states": [
+      "NOT_APPLICABLE",
+      "AVAILABLE",
+      "INTERRUPTED",
+      "RECOVERING",
+      "SESSION_ENDED",
+      "UNAVAILABLE"
+    ],
+    "fresh_baseline_after_recovery": true,
+    "missed_crossing_inference": "PROHIBITED",
+    "observation_binding": [
+      "PROVIDER_IDENTITY",
+      "CANONICAL_SUBJECT",
+      "INSTRUMENT",
+      "ACTUAL_MCX_CONTRACT_WHEN_APPLICABLE",
+      "ROLL_LINEAGE",
+      "SESSION",
+      "POSITION",
+      "DIRECTION",
+      "TIMESTAMP"
+    ],
+    "order_updates_create_lifecycle_truth": false,
+    "provider_transport": "SHARED_DOMAIN_006_READ_ONLY_KITE_WEBSOCKET",
+    "recovery_event_required": true,
+    "state_preserved_on_interruption": true
+  },
+  "notification": {
+    "delivery_authority": "WO_18_ONLY",
+    "notification_worthy_events": [
+      "PAPER_ENTRY_OBSERVED",
+      "LIVE_ENTRY_ATTESTED",
+      "STOP_OBSERVED",
+      "TARGET_OBSERVED",
+      "INVALIDATION_OBSERVED",
+      "MONITORING_INTERRUPTED",
+      "MONITORING_RECOVERED",
+      "LIFECYCLE_EVENT_ORDER_UNRESOLVED",
+      "SESSION_ENDED",
+      "PAPER_CLOSED",
+      "LIVE_CLOSURE_ATTESTED"
+    ],
+    "notifications_are_lifecycle_authority": false
+  },
+  "paper": {
+    "activation_state": "PAPER_ACTIVE",
+    "armed_state": "PAPER_ARMED",
+    "broker_fill": false,
+    "closure": "UNAMBIGUOUS_ORDERED_STOP_OR_TARGET_CROSSING_ONLY",
+    "entry_event": "PAPER_ENTRY_OBSERVED",
+    "first_observation": "BASELINE_ONLY",
+    "long_crossing": {
+      "current": "PRICE_GREATER_THAN_OR_EQUAL_TO_ENTRY_REFERENCE",
+      "previous": "PRICE_LESS_THAN_ENTRY_REFERENCE"
+    },
+    "manual_closure": "EXCLUDED_V1",
+    "monetary_pnl": "UNAVAILABLE",
+    "quantity": "UNAVAILABLE",
+    "realised_r": "UNAVAILABLE",
+    "required_observation_count": 2,
+    "required_observation_relation": "ORDERED_CONSECUTIVE_CONTINUOUS",
+    "short_crossing": {
+      "current": "PRICE_LESS_THAN_OR_EQUAL_TO_ENTRY_REFERENCE",
+      "previous": "PRICE_GREATER_THAN_ENTRY_REFERENCE"
+    },
+    "starts_beyond_entry": "ENTRY_SEQUENCE_UNRESOLVED"
+  },
+  "persistence": {
+    "canonical_serialization": true,
+    "conflicting_bytes": "REJECT",
+    "current_pointer": "ATOMIC_SUBJECT_SCOPED_ALIAS",
+    "identities_owner": "KRONOS_INTRADAY",
+    "immutable_append_only": true,
+    "integrity": "SHA_256",
+    "latest_failure": "SEPARATE_ATOMIC_ALIAS",
+    "nonblocking_locks": true,
+    "restart_event_manufacture": "PROHIBITED",
+    "restoration_recalculation": false
+  },
+  "policy_identity": "KRONOS-INTRADAY-WO17-POSITION-EVIDENCE-AND-ACTIVE-LIFECYCLE-MONITORING-POLICY-V1",
+  "policy_status": "APPROVED_PUBLICATION_PENDING",
+  "policy_version": "1.0.0",
+  "position_cardinality": {
+    "current_pointer_scope": "CANONICAL_SUBJECT",
+    "maximum_non_closed_per_subject": 1,
+    "mcx_automatic_contract_migration": "PROHIBITED",
+    "pointer_binding": [
+      "EXACT_INSTRUMENT",
+      "ACTUAL_MCX_CONTRACT_WHEN_APPLICABLE",
+      "ROLL_LINEAGE",
+      "ENTRY_SESSION",
+      "LIFECYCLE"
+    ],
+    "prior_session_non_closed_remains_current": true,
+    "successor_activation_while_non_closed": "REJECT_FAIL_CLOSED",
+    "successor_wo16_evidence_mutation": "PROHIBITED"
+  },
+  "prohibited": [
+    "WO13_GEOMETRY_CHANGE",
+    "WO14_PERMISSION_OR_VETO",
+    "WO15_TIMING_RECALCULATION",
+    "WO16_SPONSOR_CHOICE",
+    "BROKER_ORDER_OR_EXECUTION",
+    "QUANTITY_OR_SIZING",
+    "MONETARY_PNL",
+    "REALISED_R",
+    "NOTIFICATION_DELIVERY",
+    "JOURNAL_OR_ANALYTICS",
+    "OVERNIGHT_CARRY",
+    "FORCED_EXIT",
+    "SWING_PRODUCT_STATE_OR_IDENTITY_REUSE"
+  ],
+  "session_end": {
+    "assumed_exit": false,
+    "automatic_later_session_reactivation": false,
+    "force_close": false,
+    "monitoring": "STOP",
+    "overnight_carry_permission": false,
+    "position_and_history": "PRESERVE",
+    "record_event": "SESSION_ENDED"
+  },
+  "stop_target_invalidation": {
+    "invalidation_after_entry": "INVALIDATION_OBSERVED_NO_AUTOMATIC_CLOSE",
+    "levels": "EXACT_IMMUTABLE_WO13",
+    "long_stop": "PRICE_LESS_THAN_OR_EQUAL_TO_STOP",
+    "long_target": "PRICE_GREATER_THAN_OR_EQUAL_TO_TARGET",
+    "same_observation_or_gap_both_crossed": "LIFECYCLE_EVENT_ORDER_UNRESOLVED",
+    "short_stop": "PRICE_GREATER_THAN_OR_EQUAL_TO_STOP",
+    "short_target": "PRICE_LESS_THAN_OR_EQUAL_TO_TARGET"
+  },
+  "upstream": {
+    "admission_disposition": "PENDING_POSITION_EVIDENCE",
+    "allowed_sponsor_choices": [
+      "PAPER",
+      "LIVE"
+    ],
+    "bindings": [
+      "WO13_TRADE_PLAN",
+      "WO14_RISK_OBSERVATION",
+      "WO15_TIMING_HANDOFF",
+      "WO16_SPONSOR_DECISION",
+      "WO16_LIFECYCLE_ADMISSION",
+      "DOMAIN_008_SESSION",
+      "CANONICAL_SUBJECT_INSTRUMENT_CONTRACT_ROLL_LINEAGE"
+    ],
+    "ignore": "EXCLUDED",
+    "recalculation": "PROHIBITED",
+    "wo14_authority": "ADVISORY_NON_VETO"
+  }
+}

@@ -1,6 +1,6 @@
 # KRONOS Intraday Engineering, Methodology & Architecture Record
 
-**Status:** LIVING DOCUMENT — V0.1; amended through WO-15 governance authorization
+**Status:** LIVING DOCUMENT — V0.1; amended through WO-17 Slice 0 governance authorization
 
 **Product owner:** KRONOS Intraday
 
@@ -214,22 +214,31 @@ Ordinary continuous 1H, 15m, and 5m expectations stop at 15:15. KRONOS must not 
 
 DOMAIN-008 owns market and session truth. These session facts do not themselves define an Intraday entry or exit policy.
 
-## 7. Future product trading clocks — not implemented
+## 7. Governed product trading clocks — WO-17 source not implemented
 
-These are **FUTURE POLICY — NOT IMPLEMENTED**. They are separate from DOMAIN-008 market/session truth.
+ADR-0027 freezes these product clocks prospectively. Production WO-17 source
+remains unimplemented. The clocks remain separate from DOMAIN-008
+market/session truth.
 
 ### 7.1 NSE
 
-- New entry: not permitted after 15:00 IST.
-- Existing-position exit: permitted through 15:15 IST.
-- Exact semantics at precisely `15:00:00`: **DEFERRED / UNRESOLVED**.
+- New PAPER entry and LIVE entry attestation require a timestamp strictly
+  before `15:00:00 IST`.
+- Action at or after `15:00:00 IST` is rejected. For LIVE, both actual-entry
+  and attestation-operation timestamps must precede the cutoff.
+- Existing active-position monitoring may continue through the applicable
+  DOMAIN-008 continuous-session boundary; session end does not assume an exit.
 
 ### 7.2 MCX
 
-- New entry: not permitted after 23:00 IST.
-- An existing position may remain active after 23:00.
-- Exit may occur after 23:00.
-- Forced MCX exit time: **NONE APPROVED**.
+- New PAPER entry and LIVE entry attestation require a timestamp strictly
+  before `23:00:00 IST`.
+- Action at or after `23:00:00 IST` is rejected. For LIVE, both actual-entry
+  and attestation-operation timestamps must precede the cutoff.
+- Existing active-position monitoring may continue while DOMAIN-008 reports
+  the applicable session open. Session end does not force-close the position.
+- Forced MCX exit time and later-session automatic reactivation: **NONE
+  APPROVED**.
 
 ### 7.3 Clock separation
 
@@ -409,7 +418,7 @@ weekly, 4H, path-distance, extension-threshold or visual-literal policy.
 | Risk Observation / WO-14 | ENGINEERING CLOSED; `RISK_OBSERVATION_ONLY` |
 | Review Intake Correction | CLOSED; current Review bound to current Probables V2 |
 | Entry Timing / WO-15 | ARCHITECTURE GOVERNED; SOURCE ENGINEERING HELD PENDING PUBLICATION |
-| PAPER / LIVE | NOT STARTED |
+| PAPER / LIVE position evidence and lifecycle / WO-17 | ARCHITECTURE GOVERNED; SOURCE ENGINEERING HELD PENDING PUBLICATION |
 | Autonomous broker execution | NOT AUTHORIZED |
 
 ## 15. Governed work sequence
@@ -424,13 +433,13 @@ then proceed in order. RELIANCE remains the commissioning/regression anchor.
 
 The following remain unresolved or unimplemented and must not be inferred from factual foundations:
 
-- exact NSE new-entry semantics at `15:00:00`;
 - WO-15 extension/chase threshold and severity bands;
 - ATR veto, volume, RSI, Railway/SMA and level-proximity timing consequences;
 - N-bar/time-based timing expiry and extension-alert threshold;
 - option-premium execution timing and any new Entry indicator gates;
-- Intraday watch, notification, trade, position, and journal contracts;
-- PAPER / LIVE admission and acceptance policy;
+- WO-18 notification delivery and later Journal/Analytics contracts;
+- any successor manual PAPER close, later-session carry/reactivation, quantity,
+  monetary P&L or realised-R policy;
 - any future forced MCX exit policy; and
 - the governed Slice 3V contract for reference-market comparison.
 
@@ -1029,6 +1038,51 @@ SHA-256 `d36386a98e2f1b78e5b70d0c27079c056951fd76a5b70ec2e9fa1bc1615a3f26`.
 No WO-15 production source, persistence, runtime, Browser, Provider operation
 or real timing evaluation is authorized by this amendment.
 
+## 35.5 WO-17 position evidence and lifecycle-monitoring governance amendment
+
+[ADR-0027](../../adr/ADR-0027-INTRADAY-WO17-POSITION-EVIDENCE-AND-ACTIVE-LIFECYCLE-MONITORING.md)
+freezes
+`KRONOS-INTRADAY-WO17-POSITION-EVIDENCE-AND-ACTIVE-LIFECYCLE-MONITORING-V1 / 1.0.0`
+with authority exactly
+`FACTUAL_POSITION_EVIDENCE_AND_READ_ONLY_LIFECYCLE_MONITORING_ONLY`.
+
+Only an exact WO-16 PAPER or LIVE decision plus
+`PENDING_POSITION_EVIDENCE` enters WO-17; IGNORE is excluded. The complete
+WO-13/14/15/16, DOMAIN-008, canonical Instrument and MCX contract/roll graph is
+bound without recalculation. WO-14 remains advisory and non-veto.
+
+PAPER begins `PAPER_ARMED`; the first factual observation is baseline only and
+two ordered, consecutive, continuous observations must prove a directional
+Entry Reference crossing before `PAPER_ENTRY_OBSERVED` and `PAPER_ACTIVE` can
+exist. LIVE begins `LIVE_AWAITING_SPONSOR_ENTRY_EVIDENCE` and requires exact
+Sponsor-attested actual entry price/time and lineage before
+`LIVE_ENTRY_ATTESTED` and `LIVE_ACTIVE`. Neither is broker truth. Quantity,
+monetary P&L and realised R remain `UNAVAILABLE`.
+
+NSE entry and LIVE attestation require all applicable timestamps strictly
+before `15:00:00 IST`; MCX requires strictly before `23:00:00 IST`. At or after
+the cutoff is rejected. This supersedes the former deferred exact-NSE-cutoff
+wording. DOMAIN-008 continues to own session truth.
+
+There is at most one non-closed WO-17 position per canonical subject. A
+preserved prior-session position blocks activation of a successor WO-16
+decision without mutating that decision. MCX position lineage cannot migrate
+automatically to a new contract or roll.
+
+Active monitoring may reuse the shared DOMAIN-006 read-only Kite WebSocket, but
+all position/event/history identities are Intraday-owned. Availability is
+separate from position state. Interruption preserves position; recovery
+requires a fresh baseline; missed crossings are never inferred. Ambiguous Stop
+and Target order remains `LIFECYCLE_EVENT_ORDER_UNRESOLVED` and does not close
+or create economics.
+
+PAPER closes only from an unambiguous ordered Stop or Target crossing. LIVE
+closes only from Sponsor-attested actual exit evidence. Session end preserves
+position/history and grants no forced exit, carry or automatic later-session
+reactivation. WO-17 may publish notification-worthy facts, while delivery
+belongs exclusively to WO-18. Production contracts, source, runtime, Browser,
+position creation and monitoring remain separately gated.
+
 ## 36. References
 
 - [Intraday Shared-File Change Rule](../../../engineering/INTRADAY-SHARED-FILE-CHANGE-RULE.md)
@@ -1063,10 +1117,14 @@ or real timing evaluation is authorized by this amendment.
 - [ADR-0022 — Intraday WO-12 to WO-13 Step-31 Trade Construction Boundary](../../adr/ADR-0022-INTRADAY-WO12-WO13-STEP31-TRADE-CONSTRUCTION-BOUNDARY.md)
 - [ADR-0023 — Intraday DOMAIN-007 Advisory Risk Observation Boundary](../../adr/ADR-0023-INTRADAY-DOMAIN-007-ADVISORY-RISK-OBSERVATION-BOUNDARY.md)
 - [ADR-0025 — Intraday WO-15 / KR-380 Completed-5M Entry Timing Boundary](../../adr/ADR-0025-INTRADAY-WO15-KR380-COMPLETED-5M-ENTRY-TIMING-BOUNDARY.md)
+- [ADR-0026 — Intraday WO-16 Sponsor Decision and Session-Bounded Lifecycle Admission](../../adr/ADR-0026-INTRADAY-WO16-SPONSOR-DECISION-AND-SESSION-BOUNDED-LIFECYCLE-ADMISSION.md)
+- [ADR-0027 — Intraday WO-17 Position Evidence and Active Lifecycle Monitoring](../../adr/ADR-0027-INTRADAY-WO17-POSITION-EVIDENCE-AND-ACTIVE-LIFECYCLE-MONITORING.md)
 - [WO-12 KR-370 Analytical Promotion V1](KRONOS-INTRADAY-WO-12-KR370-ANALYTICAL-PROMOTION-V1.md)
 - [WO-12 KR-370 Analytical Promotion V2](KRONOS-INTRADAY-WO-12-KR370-ANALYTICAL-PROMOTION-V2.md)
 - [WO-13 Step-31 Trade Construction V1](KRONOS-INTRADAY-WO-13-STEP31-TRADE-CONSTRUCTION-V1.md)
 - [WO-14 DOMAIN-007 Risk Observation V1](KRONOS-INTRADAY-WO-14-DOMAIN-007-RISK-OBSERVATION-V1.md)
 - [WO-15 KR-380 Entry Timing V1](KRONOS-INTRADAY-WO-15-KR380-ENTRY-TIMING-V1.md)
+- [WO-16 Sponsor Decision and Session-Bounded Lifecycle Admission V1](KRONOS-INTRADAY-WO-16-SPONSOR-DECISION-AND-LIFECYCLE-ADMISSION-V1.md)
+- [WO-17 Position Evidence and Active Lifecycle Monitoring V1](KRONOS-INTRADAY-WO-17-POSITION-EVIDENCE-AND-ACTIVE-LIFECYCLE-MONITORING-V1.md)
 - [WO-09 Governed Chart Analyst Answer Import](KRONOS-INTRADAY-WO-09-GOVERNED-CHART-ANALYST-ANSWER-IMPORT-V1.md)
 - [ADR-0017 Governed Active Derivative Contract Selection](../../adr/ADR-0017-GOVERNED-ACTIVE-DERIVATIVE-CONTRACT-SELECTION-V1.md)

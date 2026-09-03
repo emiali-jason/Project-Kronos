@@ -95,3 +95,10 @@ It records exact-session PAPER/LIVE/IGNORE intent and a separate factual
 admission disposition without creating a position, fill, Risk veto, execution
 or broker authority. Production source and runtime work remain separately
 gated.
+
+Intraday WO-17 Position Evidence and Active Lifecycle Monitoring is governed
+prospectively by [ADR-0027](adr/ADR-0027-INTRADAY-WO17-POSITION-EVIDENCE-AND-ACTIVE-LIFECYCLE-MONITORING.md).
+It freezes PAPER model-entry and LIVE Sponsor-attestation truth, subject-scoped
+position cardinality, read-only lifecycle observation and fail-closed recovery
+without quantity, monetary P&L, realised R, notification delivery, Journal or
+broker authority. Production source and runtime work remain separately gated.

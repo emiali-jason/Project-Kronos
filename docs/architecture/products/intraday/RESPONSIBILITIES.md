@@ -15,6 +15,10 @@
 - Own WO-16 exact-session Sponsor PAPER/LIVE/IGNORE decision receipt and a
   separate factual lifecycle-admission disposition without creating a Sponsor
   Actual Position, fill, execution or broker fact.
+- Own prospective WO-17 PAPER model-entry evidence, LIVE Sponsor-attested
+  position evidence, subject-scoped position identity, read-only lifecycle
+  events, monitoring availability and immutable restoration without broker or
+  economic authority.
 
 ## Ownership Boundaries
 
@@ -37,6 +41,11 @@ notifications, lifecycle outcomes or broker execution.
 WO-16 owns decision and admission evidence only. Actual positions, PAPER
 simulation, LIVE execution attestation, monitoring, closure, P&L, realised R,
 notifications and Journal/Analytics remain outside WO-16 V1.
+
+WO-17 owns only the later factual position-evidence and read-only lifecycle
+boundary. Quantity, monetary P&L, realised R, notification delivery,
+Journal/Analytics, overnight carry, forced exit and broker execution remain
+outside WO-17 V1. WO-18 owns notification delivery.
 
 ## Governing ADRs
 

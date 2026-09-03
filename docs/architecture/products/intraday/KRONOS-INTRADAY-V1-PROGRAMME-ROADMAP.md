@@ -1,6 +1,6 @@
 # KRONOS Intraday V1 Programme Roadmap
 
-**Status:** WO-13 CLOSED; WO-14 CLOSED; Review Intake Correction CLOSED; WO-15 CLOSED; WO-16 Slice 0 governance approved for publication with source engineering held
+**Status:** WO-13 CLOSED; WO-14 CLOSED; Review Intake Correction CLOSED; WO-15 CLOSED; WO-16 CLOSED; WO-17 Slice 0 governance approved for publication with source engineering held
 
 Native universe count is 98. RELIANCE remains the commissioning and regression
 anchor; it is not the universe owner or a privileged membership class.
@@ -135,3 +135,12 @@ PAPER/LIVE produce `PENDING_POSITION_EVIDENCE`, IGNORE produces
 `NOT_APPLICABLE_IGNORE`, and no position, fill, monitoring, closure, P&L,
 realised R or broker authority exists. Production source and runtime work remain
 separately gated.
+
+[ADR-0027](../../adr/ADR-0027-INTRADAY-WO17-POSITION-EVIDENCE-AND-ACTIVE-LIFECYCLE-MONITORING.md)
+freezes WO-17 as factual PAPER model-position or Sponsor-attested LIVE position
+evidence plus read-only lifecycle monitoring. It establishes exact NSE/MCX
+entry cutoffs, one non-closed position per canonical subject, interruption and
+fresh-baseline recovery, non-inferred event order and session-end preservation.
+Quantity, monetary P&L, realised R, notification delivery, Journal and broker
+authority remain absent. Source engineering begins only under separately
+authorized bounded slices.

@@ -13,6 +13,8 @@
   `KRONOS-INTRADAY-WO16-SPONSOR-DECISION-V1`, and
   `KRONOS-INTRADAY-WO16-LIFECYCLE-ADMISSION-V1` after their separately
   authorized source implementation.
+- `KRONOS-INTRADAY-WO17-POSITION-EVIDENCE-AND-ACTIVE-LIFECYCLE-MONITORING-V1`
+  after separately authorized production-contract implementation.
 
 ## Interfaces Consumed
 
@@ -24,6 +26,10 @@
 - Exact current WO-13 Trade Plan, WO-14 Risk Observation, WO-15 Timing Handoff
   and session binding, DOMAIN-008 session fact, and canonical
   subject/Instrument/contract/roll lineage for WO-16.
+- Exact WO-13/14/15/16 lineage, DOMAIN-008 session facts and canonical
+  subject/Instrument/contract/roll lineage for WO-17.
+- Shared DOMAIN-006 read-only Kite WebSocket transport for active WO-17
+  monitoring without sharing Swing product state.
 
 ## Interface Ownership
 

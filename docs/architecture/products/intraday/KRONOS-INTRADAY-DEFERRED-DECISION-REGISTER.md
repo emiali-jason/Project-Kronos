@@ -1,6 +1,16 @@
 # Intraday Deferred Decision Register
 
-**Status:** Amended through WO-16 Slice 0 governance authorization; no defaults implied
+**Status:** Amended through WO-17 Slice 0 governance authorization; no defaults implied
+
+WO-17 prospectively resolves these earlier WO-16 deferrals within its exact
+factual V1 boundary:
+
+- Intraday PAPER simulation and position model
+- Intraday LIVE actual-position attestation
+- Intraday position monitoring and closure
+
+Intraday monetary P&L and realised R remains deferred below. This preserves
+WO-16 decision history without retaining resolved items as open rows.
 
 | Decision | Reason deferred | Required evidence | Earliest closure | Owner |
 |---|---|---|---|---|
@@ -51,11 +61,11 @@
 | Structure/first-1H/established current NIFTY interval semantics | WO-06E-RS qualifies Opening only | Phase-specific aligned real evidence and arithmetic | Successor V2 amendment or V3 | Intraday/CA |
 | Future benchmark families | Only NIFTY is frozen; MCX has no substitute | Canonical benchmark and phase-specific evidence | Successor methodology only | Intraday/CA |
 | MCX V2 empirical commissioning | Retained real MCX evidence was insufficient | Bounded real MCX phase-aware qualification | Separate MCX qualification | Intraday/CA |
-| NSE overnight carry | Policy not frozen | Lifecycle/risk evidence | Lifecycle stage | CA/DOMAIN-007 |
-| NSE forced-flat policy | Policy not frozen | Session/risk evidence | Lifecycle stage | CA/DOMAIN-007 |
-| MCX overnight carry | Policy not frozen | MCX lifecycle/risk evidence | After WO-10 | CA/DOMAIN-007 |
-| MCX forced-exit policy | Policy not frozen | MCX session/risk evidence | After WO-10 | CA/DOMAIN-007 |
-| Intraday PAPER simulation and position model | WO-16 V1 records intent only and expressly leaves fill, timestamp, quantity and economics unavailable | Separately governed simulation evidence and truth contract | Post-WO-16 position/lifecycle work | Sponsor / Intraday / DOMAIN-005 |
-| Intraday LIVE actual-position attestation | WO-16 V1 does not treat a LIVE choice as execution or fill evidence | Approved Sponsor-attestation or broker-factual position contract | Post-WO-16 position/lifecycle work | Sponsor / DOMAIN-005 |
-| Intraday position monitoring and closure | WO-16 V1 ends at factual admission and creates no position | Position truth, market-observation admission and session-expiry policy | Later lifecycle work | DOMAIN-002 / DOMAIN-005 / DOMAIN-008 |
-| Intraday monetary P&L and realised R | No authoritative Intraday entry, exit, quantity or fee evidence exists in WO-16 V1 | Complete position and closure evidence plus approved arithmetic contract | Later Journal/Analytics work | DOMAIN-005 / Intraday Journal |
+| NSE later-session carry/reactivation | WO-17 freezes session-end preservation with no carry permission or automatic reactivation | Position revalidation, lifecycle and Risk evidence | Successor WO-17 policy only | Sponsor / Intraday / DOMAIN-007 / DOMAIN-008 |
+| NSE forced-exit successor policy | WO-17 explicitly freezes no forced close at session end | Session, lifecycle and Risk evidence | Successor WO-17 policy only | CA / DOMAIN-007 / DOMAIN-008 |
+| MCX later-session carry/reactivation | WO-17 freezes session-end preservation with no carry permission or automatic reactivation | MCX contract/session, lifecycle and Risk evidence | Successor WO-17 policy only | Sponsor / Intraday / DOMAIN-007 / DOMAIN-008 |
+| MCX forced-exit successor policy | WO-17 explicitly freezes no forced close at session end | MCX session, lifecycle and Risk evidence | Successor WO-17 policy only | CA / DOMAIN-007 / DOMAIN-008 |
+| Intraday PAPER manual closure | WO-17 V1 permits only unambiguous ordered Stop/Target closure | Sponsor truth contract and lifecycle evidence | Successor WO-17 policy only | Sponsor / Intraday / DOMAIN-005 |
+| Intraday LIVE broker-factual confirmation | WO-17 V1 accepts Sponsor attestation but does not claim broker acknowledgement | Approved broker-factual position contract | Later broker-factual boundary | Sponsor / DOMAIN-005 / broker boundary owner |
+| Intraday monetary P&L and realised R | WO-17 retains entry/exit evidence but quantity, fees and approved arithmetic authority remain unavailable | Complete quantity/fee evidence and approved arithmetic contract | Later Journal/Analytics work | DOMAIN-005 / Intraday Journal |
+| Intraday notification delivery | WO-17 publishes notification-worthy lifecycle facts only | WO-18 delivery architecture and channel policy | WO-18 | Intraday / notification capability owner |

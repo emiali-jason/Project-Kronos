@@ -22,6 +22,7 @@ Provide navigation to the approved KRONOS Platform Architecture v1.0 documents a
 - [Intraday Programme Roadmap](../products/intraday/KRONOS-INTRADAY-V1-PROGRAMME-ROADMAP.md)
 - [Intraday WO-15 KR-380 Entry Timing V1](../products/intraday/KRONOS-INTRADAY-WO-15-KR380-ENTRY-TIMING-V1.md)
 - [Intraday WO-16 Sponsor Decision and Session-Bounded Lifecycle Admission V1](../products/intraday/KRONOS-INTRADAY-WO-16-SPONSOR-DECISION-AND-LIFECYCLE-ADMISSION-V1.md)
+- [Intraday WO-17 Position Evidence and Active Lifecycle Monitoring V1](../products/intraday/KRONOS-INTRADAY-WO-17-POSITION-EVIDENCE-AND-ACTIVE-LIFECYCLE-MONITORING-V1.md)
 
 ## Approved Domain Architectures
 
@@ -75,6 +76,7 @@ Provide navigation to the approved KRONOS Platform Architecture v1.0 documents a
 - [ADR-0024 — Swing Step-31 Forward Target Eligibility Governance](../adr/ADR-0024-SWING-STEP31-FORWARD-TARGET-ELIGIBILITY-GOVERNANCE.md)
 - [ADR-0025 — Intraday WO-15 / KR-380 Completed-5M Entry Timing Boundary](../adr/ADR-0025-INTRADAY-WO15-KR380-COMPLETED-5M-ENTRY-TIMING-BOUNDARY.md)
 - [ADR-0026 — Intraday WO-16 Sponsor Decision and Session-Bounded Lifecycle Admission](../adr/ADR-0026-INTRADAY-WO16-SPONSOR-DECISION-AND-SESSION-BOUNDED-LIFECYCLE-ADMISSION.md)
+- [ADR-0027 — Intraday WO-17 Position Evidence and Active Lifecycle Monitoring](../adr/ADR-0027-INTRADAY-WO17-POSITION-EVIDENCE-AND-ACTIVE-LIFECYCLE-MONITORING.md)
 - [KR-370 / KR-380 state-family contracts](../interfaces/KR-370-KR-380-STATE-FAMILY-CONTRACTS.md)
 - [PP-007 — Execution Semantics Across Markets](../principles/PP-007-Execution-Semantics-Across-Markets.md)
 
