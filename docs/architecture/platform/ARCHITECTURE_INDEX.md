@@ -23,6 +23,7 @@ Provide navigation to the approved KRONOS Platform Architecture v1.0 documents a
 - [Intraday WO-15 KR-380 Entry Timing V1](../products/intraday/KRONOS-INTRADAY-WO-15-KR380-ENTRY-TIMING-V1.md)
 - [Intraday WO-16 Sponsor Decision and Session-Bounded Lifecycle Admission V1](../products/intraday/KRONOS-INTRADAY-WO-16-SPONSOR-DECISION-AND-LIFECYCLE-ADMISSION-V1.md)
 - [Intraday WO-17 Position Evidence and Active Lifecycle Monitoring V1](../products/intraday/KRONOS-INTRADAY-WO-17-POSITION-EVIDENCE-AND-ACTIVE-LIFECYCLE-MONITORING-V1.md)
+- [Intraday WO-B Operational Readiness Review V1](../products/intraday/KRONOS-INTRADAY-WO-B-OPERATIONAL-READINESS-REVIEW-V1.md)
 
 ## Approved Domain Architectures
 
@@ -78,6 +79,7 @@ Provide navigation to the approved KRONOS Platform Architecture v1.0 documents a
 - [ADR-0026 — Intraday WO-16 Sponsor Decision and Session-Bounded Lifecycle Admission](../adr/ADR-0026-INTRADAY-WO16-SPONSOR-DECISION-AND-SESSION-BOUNDED-LIFECYCLE-ADMISSION.md)
 - [ADR-0027 — Intraday WO-17 Position Evidence and Active Lifecycle Monitoring](../adr/ADR-0027-INTRADAY-WO17-POSITION-EVIDENCE-AND-ACTIVE-LIFECYCLE-MONITORING.md)
 - [ADR-0028 — DOMAIN-008 MCX Cross-Schedule Compatibility](../adr/ADR-0028-DOMAIN-008-MCX-CROSS-SCHEDULE-COMPATIBILITY.md)
+- [ADR-0029 — Intraday WO-B Operational Readiness Review](../adr/ADR-0029-INTRADAY-WO-B-OPERATIONAL-READINESS-REVIEW.md)
 - [KR-370 / KR-380 state-family contracts](../interfaces/KR-370-KR-380-STATE-FAMILY-CONTRACTS.md)
 - [PP-007 — Execution Semantics Across Markets](../principles/PP-007-Execution-Semantics-Across-Markets.md)
 

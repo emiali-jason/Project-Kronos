@@ -102,3 +102,9 @@ It freezes PAPER model-entry and LIVE Sponsor-attestation truth, subject-scoped
 position cardinality, read-only lifecycle observation and fail-closed recovery
 without quantity, monetary P&L, realised R, notification delivery, Journal or
 broker authority. Production source and runtime work remain separately gated.
+
+Intraday WO-B Operational Readiness Review is governed by
+[ADR-0029](adr/ADR-0029-INTRADAY-WO-B-OPERATIONAL-READINESS-REVIEW.md).
+It composes exact producer-domain facts into immutable multi-state review
+snapshots and projection-only current aliases without analytical, Risk, Timing,
+Sponsor, position, lifecycle, Provider, Journal/P&L or broker authority.

@@ -19,6 +19,9 @@
   position evidence, subject-scoped position identity, read-only lifecycle
   events, monitoring availability and immutable restoration without broker or
   economic authority.
+- Own WO-B read-only operational-review composition, immutable review
+  snapshots, projection-only current aliases and bounded failure projection
+  without replacing producer-domain state or creating trading readiness.
 
 ## Ownership Boundaries
 
@@ -46,6 +49,10 @@ WO-17 owns only the later factual position-evidence and read-only lifecycle
 boundary. Quantity, monetary P&L, realised R, notification delivery,
 Journal/Analytics, overnight carry, forced exit and broker execution remain
 outside WO-17 V1. WO-18 owns notification delivery.
+
+WO-B owns no producer semantics. It cannot create or reinterpret analytical,
+Risk, Timing, Sponsor, position, lifecycle, Provider, notification, Journal,
+P&L or broker state.
 
 ## Governing ADRs
 

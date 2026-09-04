@@ -25,6 +25,7 @@
 | WO-15 / KR-380 Entry Timing | DOMAIN-004 with Intraday-owned adapter | Completed-governed-5M qualification only against exact immutable WO-13 geometry; six-state lifecycle, deterministic Pullback/Breakout paths, immutable timing cycles and versioned timing handoff; WO-14 is independent non-veto context |
 | WO-16 / Sponsor Decision and Lifecycle Admission | KRONOS Intraday Sponsor-decision boundary | Exact current WO-13/14/15 and DOMAIN-008 bound PAPER/LIVE/IGNORE decision receipt plus separate `PENDING_POSITION_EVIDENCE` or `NOT_APPLICABLE_IGNORE` admission; no position, execution, monitoring, closure or broker authority |
 | WO-17 / Position Evidence and Active Lifecycle Monitoring | KRONOS Intraday lifecycle boundary over shared Platform facts | Exact PAPER model-entry or Sponsor-attested LIVE position evidence, one non-closed position per subject, read-only lifecycle observation, interruption/recovery, factual closure and immutable history; no quantity, monetary P&L, realised R, notification delivery, Journal or broker authority |
+| WO-B / Operational Readiness Review | KRONOS Intraday product composition/presentation boundary | Read-only exact-state composition, immutable multi-state review snapshots, projection-only current aliases and bounded diagnostics; no producer-state replacement, global readiness boolean, second lifecycle, analytical, trading or broker authority |
 | Objective Lifecycle | DOMAIN-005 | Model-trade lifecycle only |
 | Sponsor Position | DOMAIN-005 sponsor-position boundary | PAPER/LIVE/IGNORE position record only |
 | Notifications | Product adapter over Platform notification capability | Intraday notification projection only |
@@ -67,6 +68,7 @@ The boundaries are explicitly non-equivalent:
 - `LIVE_ENTRY_ATTESTED` ≠ broker acknowledgement or exchange confirmation.
 - Monitoring availability ≠ position lifecycle state.
 - Notification-worthy event ≠ notification delivery or lifecycle authority.
+- WO-B review classification ≠ producer-domain state or trading readiness.
 - Objective Lifecycle ≠ Sponsor Position.
 
 This registry does not invent unfrozen states, transition predicates, or

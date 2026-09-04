@@ -15,6 +15,8 @@
   authorized source implementation.
 - `KRONOS-INTRADAY-WO17-POSITION-EVIDENCE-AND-ACTIVE-LIFECYCLE-MONITORING-V1`
   after separately authorized production-contract implementation.
+- `KRONOS-INTRADAY-OPERATIONAL-READINESS-REVIEW-V1` immutable read-only
+  composition snapshots after WO-B1 publication.
 
 ## Interfaces Consumed
 
@@ -30,6 +32,9 @@
   subject/Instrument/contract/roll lineage for WO-17.
 - Shared DOMAIN-006 read-only Kite WebSocket transport for active WO-17
   monitoring without sharing Swing product state.
+- Exact immutable references to Probables, analytical promotion, WO-13,
+  WO-14, WO-15, WO-16, WO-17, DOMAIN-001 and DOMAIN-008 producer artifacts for
+  future WO-B composition; WO-B1 executes none of those producers.
 
 ## Interface Ownership
 
