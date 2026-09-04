@@ -160,6 +160,42 @@ def test_browser_projects_v2_phase_lineage_nifty_and_bounded_result() -> None:
     assert "V2 Conditions Satisfied" in html
 
 
+def test_established_phase_labels_nifty_as_not_evaluated_without_changing_result() -> None:
+    for phase in (
+        IntradayAnalysisPhase.STRUCTURE,
+        IntradayAnalysisPhase.FIRST_CURRENT_SESSION_1H,
+        IntradayAnalysisPhase.CURRENT_SESSION_ESTABLISHED,
+    ):
+        result = _result(
+            "HDFCAMC", ProbableState.SHORT_PROBABLE, SemanticDirection.SHORT
+        )
+        result.phase = phase
+        result.nifty_relationship = None
+        state_before = result.state
+
+        html = _probable_v2_card(result, "HDFCAMC")
+
+        assert phase.value in html
+        assert "NIFTY</span><strong>NOT EVALUATED IN THIS PHASE" in html
+        assert "OPENING LINEAGE RETAINED" in html
+        assert "NIFTY</span><strong>UNAVAILABLE" not in html
+        assert result.state is state_before
+
+
+def test_opening_phase_with_missing_nifty_relationship_remains_unavailable() -> None:
+    result = _result(
+        "RELIANCE", ProbableState.LONG_PROBABLE, SemanticDirection.LONG
+    )
+    result.nifty_relationship = None
+
+    html = _probable_v2_card(result, "RELIANCE")
+
+    assert "OPENING" in html
+    assert "NIFTY</span><strong>UNAVAILABLE" in html
+    assert "NOT EVALUATED IN THIS PHASE" not in html
+    assert "OPENING LINEAGE RETAINED" not in html
+
+
 def test_v2_opportunities_show_only_admitted_grouped_and_sorted_candidates() -> None:
     members = [
         _member("ZETA", "NSE_EQUITY"),
@@ -251,6 +287,7 @@ def test_v2_projection_is_responsive_and_does_not_compute_analytical_state() -> 
     assert 'data-layout="equity-left-mcx-right"' in html
     assert ".intraday-opportunities-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr)" in _INTRADAY_CSS
     assert ".intraday-market-panels,.intraday-opportunities-grid{grid-template-columns:1fr}" in _INTRADAY_CSS
+    assert ".intraday-card-fact small{display:block" in _INTRADAY_CSS
     assert "evaluate" not in _render_probables_v2_triage.__code__.co_names
     assert "publish" not in _render_probables_v2_triage.__code__.co_names
     assert _render(members, results) == html
