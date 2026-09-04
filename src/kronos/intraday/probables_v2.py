@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, is_dataclass
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from enum import StrEnum
 from hashlib import sha256
@@ -1415,7 +1415,7 @@ def _normalize(value: object) -> object:
         return {name: _normalize(item) for name, item in asdict(value).items()}
     if isinstance(value, StrEnum):
         return value.value
-    if isinstance(value, datetime):
+    if isinstance(value, (datetime, date)):
         return value.isoformat()
     if isinstance(value, Decimal):
         return str(value)

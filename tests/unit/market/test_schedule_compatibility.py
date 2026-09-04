@@ -8,8 +8,10 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
+import kronos.intraday.probables_v2 as probables_v2_contracts
 from kronos.intraday.completed_evidence import (
     CompletedEvidenceError,
+    EvidenceSessionRole,
     PhaseAwareCompletedEvidenceSelection,
     PhaseAwareCompletedEvidenceSelectionV2,
     build_completed_evidence_selection,
@@ -21,9 +23,19 @@ from kronos.intraday.historical_semantic import (
     create_governed_historical_candle_payload,
 )
 from kronos.intraday.market_context import CurrentMarketCalendarScheduleSource
+from kronos.intraday.nifty_relative_context import build_nifty_relative_context
+from kronos.intraday.opening_semantic import build_opening_semantic_evidence
+from kronos.intraday.probables_v2 import (
+    build_semantic_qualification_evidence_v2,
+    create_discovery_probables_evidence_v2,
+)
 from kronos.intraday.probables_v2_persistence import (
     ProbablesV2Store,
     _artifact_bytes,
+)
+from kronos.intraday.qualification import (
+    PreviousCompletedDailyCandle,
+    create_narrow_cpr_fact,
 )
 from kronos.market.calendar import MarketCalendarPublisher
 from kronos.market.schedule import (
@@ -361,6 +373,104 @@ def test_v2_selection_persists_both_lineages_and_replays_deterministically(
     assert store.load_selection(selection.selection_identity) == selection
     assert store.retain_schedule_compatibility(artifact) == compatibility_path
     assert store.retain_selection(selection) == selection_path
+
+
+def test_goldm_v2_probables_mapping_serializes_exact_schedule_dates(
+    tmp_path: Path,
+) -> None:
+    _, boundary, current, previous, artifact = _pair(
+        "GOLDM", date(2026, 9, 4)
+    )
+    selection = _selection(
+        current=current,
+        previous=previous,
+        boundary=boundary,
+        compatibility=artifact,
+    )
+    daily = selection.candles(
+        IntradayTimeframe.DAILY,
+        EvidenceSessionRole.PREVIOUS_SESSION_DAILY,
+    )[0]
+    narrow = create_narrow_cpr_fact(PreviousCompletedDailyCandle(
+        canonical_subject_identity=selection.canonical_subject_identity,
+        previous_session_identity=previous.session_id,
+        observation_session_identity=current.session_id,
+        source_daily_candle_identity=daily.candle_identity,
+        completed_at=daily.candle_end,
+        observation_boundary=boundary,
+        high=daily.high,
+        low=daily.low,
+        close=daily.close,
+        completed=True,
+        source_integrity_identity=daily.integrity_identity,
+        provenance=("ADR-0028",),
+    ))
+    nifty = build_nifty_relative_context(
+        canonical_subject_identity=selection.canonical_subject_identity,
+        subject_exchange="MCX",
+        opening_direction="LONG",
+        analysis_boundary=boundary,
+        subject_candle=None,
+        benchmark_candle=None,
+        subject_session_open=None,
+        benchmark_session_open=None,
+        provenance=("ADR-0028",),
+    )
+    opening = build_opening_semantic_evidence(
+        selection=selection,
+        narrow_cpr_fact=narrow,
+        nifty_relative_evidence=nifty,
+        provenance=("ADR-0028",),
+    )
+    semantic = build_semantic_qualification_evidence_v2(
+        selection=selection,
+        narrow_cpr_fact=narrow,
+        opening_semantic=opening,
+        nifty_relative=nifty,
+        provenance=("ADR-0028",),
+    )
+    inputs = {
+        "universe_member_identity": "INTRADAY-UNIVERSE-MEMBER:GOLDM",
+        "source_discovery_run_identity": "INTRADAY-DISCOVERY-RUN:GOLDM",
+        "source_discovery_member_identity": "INTRADAY-DISCOVERY-RESULT:GOLDM",
+        "market_session_identity": current.session_id,
+        "completed_evidence": selection,
+        "semantic_evidence": semantic,
+        "opening_semantic": opening,
+        "nifty_relative": nifty,
+        "provenance": ("ADR-0028",),
+    }
+
+    mapping = create_discovery_probables_evidence_v2(**inputs)
+    replay = create_discovery_probables_evidence_v2(**inputs)
+    encoded = probables_v2_contracts._encode(mapping)
+
+    assert mapping.mapping_identity == replay.mapping_identity
+    assert mapping.integrity_identity == replay.integrity_identity
+    assert b'"trading_date":"2026-09-04"' in encoded
+    assert b'"previous_trading_date":"2026-09-03"' in encoded
+    assert (
+        f'"effective_from":"{artifact.effective_from.isoformat()}"'.encode()
+        in encoded
+    )
+    assert (
+        f'"effective_through":"{artifact.effective_through.isoformat()}"'.encode()
+        in encoded
+    )
+    assert current.session_id.encode() in encoded
+    assert previous.session_id.encode() in encoded
+    assert artifact.compatibility_identity.encode() in encoded
+    assert probables_v2_contracts._identity(
+        "DATE-", {"trading_date": date(2026, 9, 4)}
+    ) != probables_v2_contracts._identity(
+        "DATE-", {"trading_date": date(2026, 9, 5)}
+    )
+
+    store = ProbablesV2Store(tmp_path.resolve())
+    store.retain_mapping(mapping)
+    assert store.load_mapping(mapping.mapping_identity) == mapping
+    with pytest.raises(TypeError, match="not JSON serializable"):
+        probables_v2_contracts._encode({"unsupported": object()})
 
 
 def test_v1_selection_schema_and_serialized_shape_remain_unchanged() -> None:
