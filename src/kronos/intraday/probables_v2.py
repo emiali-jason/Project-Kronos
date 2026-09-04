@@ -11,9 +11,10 @@ import json
 from typing import Mapping, Sequence
 
 from kronos.intraday.completed_evidence import (
+    CompletedEvidenceSelection,
     EvidenceSessionRole,
     IntradayAnalysisPhase,
-    PhaseAwareCompletedEvidenceSelection,
+    is_completed_evidence_selection,
 )
 from kronos.intraday.historical_semantic import (
     GovernedHistoricalCandlePayload,
@@ -320,7 +321,7 @@ class SemanticQualificationEvidenceV2:
 
 def build_semantic_qualification_evidence_v2(
     *,
-    selection: PhaseAwareCompletedEvidenceSelection,
+    selection: CompletedEvidenceSelection,
     narrow_cpr_fact: NarrowCprFact,
     opening_semantic: OpeningSemanticEvidence | None = None,
     nifty_relative: NiftyRelativeContextEvidence | None = None,
@@ -331,7 +332,7 @@ def build_semantic_qualification_evidence_v2(
     """Adapt exact selected candles into phase-specific V2 semantic facts."""
 
     if (
-        type(selection) is not PhaseAwareCompletedEvidenceSelection
+        not is_completed_evidence_selection(selection)
         or type(narrow_cpr_fact) is not NarrowCprFact
         or narrow_cpr_fact.canonical_subject_identity
         != selection.canonical_subject_identity
@@ -512,7 +513,7 @@ class DiscoveryProbablesEvidenceV2:
     methodology_publication_identity: str
     methodology_checksum: str
     phase: IntradayAnalysisPhase
-    completed_evidence: PhaseAwareCompletedEvidenceSelection
+    completed_evidence: CompletedEvidenceSelection
     semantic_evidence: SemanticQualificationEvidenceV2
     opening_semantic: OpeningSemanticEvidence | None
     nifty_relative: NiftyRelativeContextEvidence | None
@@ -544,7 +545,7 @@ class DiscoveryProbablesEvidenceV2:
                 self.methodology_checksum,
             )
             or type(self.phase) is not IntradayAnalysisPhase
-            or type(self.completed_evidence) is not PhaseAwareCompletedEvidenceSelection
+            or not is_completed_evidence_selection(self.completed_evidence)
             or type(self.semantic_evidence) is not SemanticQualificationEvidenceV2
             or self.completed_evidence.canonical_subject_identity != self.canonical_subject_identity
             or self.completed_evidence.analysis_boundary != self.analysis_boundary
@@ -584,7 +585,7 @@ def create_discovery_probables_evidence_v2(
     source_discovery_run_identity: str,
     source_discovery_member_identity: str,
     market_session_identity: str,
-    completed_evidence: PhaseAwareCompletedEvidenceSelection,
+    completed_evidence: CompletedEvidenceSelection,
     semantic_evidence: SemanticQualificationEvidenceV2,
     opening_semantic: OpeningSemanticEvidence | None,
     nifty_relative: NiftyRelativeContextEvidence | None,
@@ -1309,7 +1310,7 @@ def _diagnostics(
 def _fact(
     *,
     family: str,
-    selection: PhaseAwareCompletedEvidenceSelection,
+    selection: CompletedEvidenceSelection,
     direction: SemanticDirection,
     role: SemanticEvidenceRoleV2,
     sources: tuple[str, ...],

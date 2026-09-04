@@ -11,9 +11,10 @@ import json
 from typing import Mapping, Sequence
 
 from kronos.intraday.completed_evidence import (
+    CompletedEvidenceSelection,
     EvidenceSessionRole,
     IntradayAnalysisPhase,
-    PhaseAwareCompletedEvidenceSelection,
+    is_completed_evidence_selection,
 )
 from kronos.intraday.historical_semantic import (
     GovernedHistoricalCandlePayload,
@@ -211,7 +212,7 @@ class OpeningSemanticEvidence:
 
 def build_opening_semantic_evidence(
     *,
-    selection: PhaseAwareCompletedEvidenceSelection,
+    selection: CompletedEvidenceSelection,
     narrow_cpr_fact: NarrowCprFact,
     nifty_relative_evidence: NiftyRelativeContextEvidence,
     reference_fact_identities: tuple[tuple[str, str], ...] = (),
@@ -221,7 +222,7 @@ def build_opening_semantic_evidence(
     """Derive the exact frozen Opening facts without creating admission authority."""
 
     if (
-        type(selection) is not PhaseAwareCompletedEvidenceSelection
+        not is_completed_evidence_selection(selection)
         or selection.phase is not IntradayAnalysisPhase.OPENING
         or type(narrow_cpr_fact) is not NarrowCprFact
         or narrow_cpr_fact.canonical_subject_identity

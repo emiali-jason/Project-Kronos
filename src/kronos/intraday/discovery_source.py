@@ -55,6 +55,11 @@ from kronos.market.schedule import (
     MarketWindow,
     TradingDayStatus,
 )
+from kronos.market.schedule_compatibility import (
+    MarketScheduleCompatibilityArtifact,
+    MarketScheduleCompatibilityError,
+    publish_mcx_schedule_compatibility,
+)
 from kronos.provider.contracts.instrument import InstrumentRecord
 from kronos.provider.contracts.market_data import (
     HistoricalCandle,
@@ -225,6 +230,34 @@ class ProviderDiscoveryFactualSource:
                     provider_symbol=record.trading_symbol,
                 ),
             ) from error
+        schedule_compatibility: MarketScheduleCompatibilityArtifact | None = None
+        if (
+            active_binding is not None
+            and (
+                schedule.source_identity != previous.source_identity
+                or schedule.source_version != previous.source_version
+            )
+        ):
+            try:
+                schedule_compatibility = publish_mcx_schedule_compatibility(
+                    calendar_publisher=self._calendar,
+                    contract_family=active_binding.provider_contract_family,
+                    contract_expiry=active_binding.contract_expiry,
+                    current_schedule=schedule,
+                    previous_schedule=previous,
+                    analysis_boundary=boundary.observation_boundary,
+                )
+            except MarketScheduleCompatibilityError as error:
+                raise DiscoveryMemberFactError(
+                    DiscoveryReason.MACHINE_FACT_BUNDLE_INCOMPLETE,
+                    _failure_detail(
+                        MachineFactFailureStage.BUNDLE_VALIDATION,
+                        MachineFactFailureComponent.MACHINE_FACT_BUNDLE,
+                        MachineFactFailureAvailability.INVALID,
+                        "DOMAIN008_SCHEDULE_COMPATIBILITY_INVALID",
+                        provider_symbol=record.trading_symbol,
+                    ),
+                ) from error
 
         evidence: list[MachineFactEvidence] = [MachineFactEvidence(
             family=FactFamily.MARKET_SESSION_BOUNDARY,
@@ -428,6 +461,7 @@ class ProviderDiscoveryFactualSource:
                     current_five_minute=completed_by_timeframe[
                         IntradayTimeframe.FIVE_MINUTES
                     ],
+                    schedule_compatibility=schedule_compatibility,
                 )
             except DiscoveryMemberFactError as error:
                 diagnostic_failure_detail = error.detail or _failure_detail(

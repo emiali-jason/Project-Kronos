@@ -36,7 +36,10 @@ from kronos.intraday.discovery_failure_provenance import (
     create_discovery_failure_provenance,
 )
 from kronos.intraday.probables_refresh import DiscoveryProbablesFacts
-from kronos.intraday.probables_v2_refresh import DiscoveryProbablesV2Facts
+from kronos.intraday.probables_v2_refresh import (
+    DiscoveryProbablesV2FactSet,
+    is_discovery_probables_v2_facts,
+)
 from kronos.intraday.reconciliation import (
     Availability,
     RECONCILIATION_IDENTITY,
@@ -87,7 +90,7 @@ class DiscoveryFactAcquisition:
     bundle: NativeDiscoveryMachineFactBundle
     evidence: IntradayEvidenceBundle | None = None
     probables_facts: DiscoveryProbablesFacts | None = None
-    probables_v2_facts: DiscoveryProbablesV2Facts | None = None
+    probables_v2_facts: DiscoveryProbablesV2FactSet | None = None
     diagnostic_failure_detail: MachineFactFailureDetail | None = None
 
     def __post_init__(self) -> None:
@@ -121,7 +124,7 @@ class DiscoveryFactAcquisition:
             or (
                 self.probables_v2_facts is not None
                 and (
-                    type(self.probables_v2_facts) is not DiscoveryProbablesV2Facts
+                    not is_discovery_probables_v2_facts(self.probables_v2_facts)
                     or self.probables_v2_facts.universe_member_identity
                     != self.universe_member_identity
                     or self.probables_v2_facts.canonical_subject_identity
@@ -187,7 +190,7 @@ class DiscoveryRuntimeExecution:
     prerequisite_unavailable_count: int
     timeframe_fact_requests: int
     source_operation_count: int
-    probables_v2_facts: tuple[DiscoveryProbablesV2Facts, ...] = ()
+    probables_v2_facts: tuple[DiscoveryProbablesV2FactSet, ...] = ()
     failure_provenance: tuple[DiscoveryMachineFactFailureProvenance, ...] = ()
     runtime_identity: str = DISCOVERY_RUNTIME_IDENTITY
     runtime_version: str = DISCOVERY_RUNTIME_VERSION
@@ -218,7 +221,7 @@ class DiscoveryRuntimeExecution:
             )
             or len(set(probables_ids)) != len(probables_ids)
             or any(
-                type(item) is not DiscoveryProbablesV2Facts
+                not is_discovery_probables_v2_facts(item)
                 or item.observation_boundary != self.run.observation_boundary
                 for item in self.probables_v2_facts
             )
@@ -317,7 +320,7 @@ class IntradayNativeDiscoveryService:
         failure_details: dict[str, MachineFactFailureDetail] = {}
         evidence: list[tuple[str, IntradayEvidenceBundle]] = []
         probables_facts: list[DiscoveryProbablesFacts] = []
-        probables_v2_facts: list[DiscoveryProbablesV2Facts] = []
+        probables_v2_facts: list[DiscoveryProbablesV2FactSet] = []
         source_operations = 0
         for member in self._reconciliation.members:
             if (

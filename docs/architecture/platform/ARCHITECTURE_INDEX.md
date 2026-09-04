@@ -77,6 +77,7 @@ Provide navigation to the approved KRONOS Platform Architecture v1.0 documents a
 - [ADR-0025 — Intraday WO-15 / KR-380 Completed-5M Entry Timing Boundary](../adr/ADR-0025-INTRADAY-WO15-KR380-COMPLETED-5M-ENTRY-TIMING-BOUNDARY.md)
 - [ADR-0026 — Intraday WO-16 Sponsor Decision and Session-Bounded Lifecycle Admission](../adr/ADR-0026-INTRADAY-WO16-SPONSOR-DECISION-AND-SESSION-BOUNDED-LIFECYCLE-ADMISSION.md)
 - [ADR-0027 — Intraday WO-17 Position Evidence and Active Lifecycle Monitoring](../adr/ADR-0027-INTRADAY-WO17-POSITION-EVIDENCE-AND-ACTIVE-LIFECYCLE-MONITORING.md)
+- [ADR-0028 — DOMAIN-008 MCX Cross-Schedule Compatibility](../adr/ADR-0028-DOMAIN-008-MCX-CROSS-SCHEDULE-COMPATIBILITY.md)
 - [KR-370 / KR-380 state-family contracts](../interfaces/KR-370-KR-380-STATE-FAMILY-CONTRACTS.md)
 - [PP-007 — Execution Semantics Across Markets](../principles/PP-007-Execution-Semantics-Across-Markets.md)
 

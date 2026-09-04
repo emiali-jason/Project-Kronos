@@ -16,6 +16,7 @@ from kronos.intraday.discovery_source import (
     governed_market_session_identities,
 )
 from kronos.intraday.probables_refresh import map_discovery_execution_to_probables
+from kronos.intraday.probables_v2_refresh import DiscoveryProbablesV2FactsV2
 from kronos.intraday.mcx_history_persistence import McxContractHistoryStore
 from kronos.intraday.reconciliation import (
     Availability,
@@ -242,13 +243,21 @@ def test_v2_retention_reuses_the_same_acquired_mcx_candles_without_extra_reads(
     tmp_path: Path,
 ) -> None:
     observed = datetime(2026, 8, 26, 10, 17, tzinfo=IST)
-    _, source, _, requests, _ = _composition(
+    execution, source, _, requests, _ = _composition(
         tmp_path,
         observed_at=observed,
         active_mcx=True,
         retain_mcx=True,
     )
     assert source.historical_request_count == len(requests) == 490
+    natural_gas = next(
+        item
+        for item in execution.probables_v2_facts
+        if item.canonical_subject_identity == "MCX-SUBJECT-NATGAS"
+    )
+    assert type(natural_gas) is DiscoveryProbablesV2FactsV2
+    assert natural_gas.schedule_compatibility.contract_family == "NATURALGAS"
+    assert natural_gas.schedule_compatibility.roll_continuity_authority is False
     assert len(tuple((tmp_path / "mcx-contract-history-v1").glob("*/*/*/*.json"))) > 0
     assert not any("token" in path.read_text().lower() for path in (
         tmp_path / "mcx-contract-history-v1"

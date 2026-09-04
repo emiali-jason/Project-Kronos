@@ -15,10 +15,14 @@ from uuid import uuid4
 from zoneinfo import ZoneInfo
 
 from kronos.intraday.completed_evidence import (
+    CompletedEvidenceScheduleLineage,
+    CompletedEvidenceSelection,
     EvidenceSessionRole,
     IntradayAnalysisPhase,
     PhaseAwareCompletedEvidenceSelection,
+    PhaseAwareCompletedEvidenceSelectionV2,
     SelectedCompletedCandle,
+    is_completed_evidence_selection,
 )
 from kronos.intraday.historical_semantic import (
     GovernedHistoricalCandlePayload,
@@ -72,6 +76,7 @@ from kronos.intraday.probables_v2_diagnostics import (
     ProbablesV2ReplayEnvelope,
 )
 from kronos.intraday.probables_v2_refresh import DiscoveryProbablesV2Facts
+from kronos.intraday.probables_v2_refresh import DiscoveryProbablesV2FactsV2
 from kronos.intraday.qualification import NarrowCprFact
 from kronos.intraday.reconciliation import (
     Availability,
@@ -84,6 +89,10 @@ from kronos.intraday.reconciliation import (
 from kronos.intraday.universe import IntradayMarketFamily
 from kronos.instrument.semantic_v2 import CanonicalSemanticKind
 from kronos.market.schedule import MarketDaySchedule, MarketWindow, TradingDayStatus
+from kronos.market.schedule_compatibility import (
+    MarketScheduleCompatibilityArtifact,
+    MarketScheduleCompatibilityStatus,
+)
 
 
 DEFAULT_PROBABLES_V2_ROOT = Path(__file__).resolve().parents[3] / "data" / "intraday"
@@ -159,8 +168,25 @@ class ProbablesV2Store:
     def retain_methodology(self, value: ProbablesMethodologyV2) -> Path:
         return self._retain_typed("methodologies", value.publication_identity, value)
 
-    def retain_selection(self, value: PhaseAwareCompletedEvidenceSelection) -> Path:
-        return self._retain_typed("completed-evidence", value.selection_identity, value)
+    def retain_selection(self, value: CompletedEvidenceSelection) -> Path:
+        if not is_completed_evidence_selection(value):
+            raise ProbablesV2Error("PROBABLES_V2_PERSISTENCE_INPUT_INVALID")
+        family = (
+            "completed-evidence-v2"
+            if type(value) is PhaseAwareCompletedEvidenceSelectionV2
+            else "completed-evidence"
+        )
+        return self._retain_typed(family, value.selection_identity, value)
+
+    def retain_schedule_compatibility(
+        self,
+        value: MarketScheduleCompatibilityArtifact,
+    ) -> Path:
+        if type(value) is not MarketScheduleCompatibilityArtifact:
+            raise ProbablesV2Error("PROBABLES_V2_PERSISTENCE_INPUT_INVALID")
+        return self._retain_typed(
+            "schedule-compatibility", value.compatibility_identity, value
+        )
 
     def retain_nifty(self, value: NiftyRelativeContextEvidence) -> Path:
         return self._retain_typed("nifty-relative", value.evidence_identity, value)
@@ -199,6 +225,10 @@ class ProbablesV2Store:
         with self._lock:
             self.retain_methodology(run.methodology)
             for item in mappings:
+                if type(item.completed_evidence) is PhaseAwareCompletedEvidenceSelectionV2:
+                    self.retain_schedule_compatibility(
+                        item.completed_evidence.schedule_compatibility
+                    )
                 self.retain_selection(item.completed_evidence)
                 if item.nifty_relative is not None:
                     self.retain_nifty(item.nifty_relative)
@@ -216,8 +246,32 @@ class ProbablesV2Store:
     def load_methodology(self, identity: str) -> ProbablesMethodologyV2:
         return self._load_typed("methodologies", identity, ProbablesMethodologyV2, "publication_identity")
 
-    def load_selection(self, identity: str) -> PhaseAwareCompletedEvidenceSelection:
-        return self._load_typed("completed-evidence", identity, PhaseAwareCompletedEvidenceSelection, "selection_identity")
+    def load_selection(self, identity: str) -> CompletedEvidenceSelection:
+        v2_path = self._path("completed-evidence-v2", identity)
+        if v2_path.exists():
+            return self._load_typed(
+                "completed-evidence-v2",
+                identity,
+                PhaseAwareCompletedEvidenceSelectionV2,
+                "selection_identity",
+            )
+        return self._load_typed(
+            "completed-evidence",
+            identity,
+            PhaseAwareCompletedEvidenceSelection,
+            "selection_identity",
+        )
+
+    def load_schedule_compatibility(
+        self,
+        identity: str,
+    ) -> MarketScheduleCompatibilityArtifact:
+        return self._load_typed(
+            "schedule-compatibility",
+            identity,
+            MarketScheduleCompatibilityArtifact,
+            "compatibility_identity",
+        )
 
     def load_nifty(self, identity: str) -> NiftyRelativeContextEvidence:
         return self._load_typed("nifty-relative", identity, NiftyRelativeContextEvidence, "evidence_identity")
@@ -327,6 +381,15 @@ class ProbablesV2Store:
                 mapping.semantic_evidence.evidence_identity
             ) != mapping.semantic_evidence:
                 raise ProbablesV2Error("PROBABLES_V2_RESTART_LINEAGE_INVALID")
+            if (
+                type(mapping.completed_evidence)
+                is PhaseAwareCompletedEvidenceSelectionV2
+                and self.load_schedule_compatibility(
+                    mapping.completed_evidence.schedule_compatibility.compatibility_identity
+                )
+                != mapping.completed_evidence.schedule_compatibility
+            ):
+                raise ProbablesV2Error("PROBABLES_V2_RESTART_LINEAGE_INVALID")
             if mapping.opening_semantic is not None and self.load_opening(
                 mapping.opening_semantic.evidence_identity
             ) != mapping.opening_semantic:
@@ -355,6 +418,11 @@ class ProbablesV2Store:
         namespaces = {
             "methodologies": ("probables-v2", "methodologies"),
             "completed-evidence": ("completed-evidence-v1", "selections"),
+            "completed-evidence-v2": ("completed-evidence-v2", "selections"),
+            "schedule-compatibility": (
+                "market-schedule-compatibility-v1",
+                "artifacts",
+            ),
             "nifty-relative": ("nifty-relative-v1", "evidence"),
             "opening-semantic": ("opening-semantic-v1", "evidence"),
             "semantic": ("semantic-v2", "evidence"),
@@ -374,7 +442,10 @@ _DATACLASSES = {
     for item in (
         GovernedHistoricalCandlePayload,
         SelectedCompletedCandle,
+        CompletedEvidenceScheduleLineage,
         PhaseAwareCompletedEvidenceSelection,
+        PhaseAwareCompletedEvidenceSelectionV2,
+        MarketScheduleCompatibilityArtifact,
         NiftyRelativeContextFact,
         NiftyRelativeContextEvidence,
         OpeningSemanticFact,
@@ -397,6 +468,7 @@ _DATACLASSES = {
         NarrowCprFact,
         HistoricalPreviousSessionFacts,
         DiscoveryProbablesV2Facts,
+        DiscoveryProbablesV2FactsV2,
         AvailabilityDimensions,
         ReconciliationMember,
         ReconciliationPublication,
@@ -436,6 +508,7 @@ _ENUMS = {
         IntradayMarketFamily,
         CanonicalSemanticKind,
         ProbablesV2ExceptionCategory,
+        MarketScheduleCompatibilityStatus,
     )
 }
 
@@ -492,6 +565,7 @@ def _artifact_identity(value: object) -> str:
         "run_identity",
         "envelope_identity",
         "failure_identity",
+        "compatibility_identity",
     ):
         identity = getattr(value, name, None)
         if _component(identity):

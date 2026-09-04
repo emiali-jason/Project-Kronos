@@ -23,8 +23,9 @@ from kronos.intraday.probables_v2 import (
 from kronos.intraday.probables_v2_refresh import (
     DISCOVERY_PROBABLES_V2_REFRESH_IDENTITY,
     DISCOVERY_PROBABLES_V2_REFRESH_VERSION,
-    DiscoveryProbablesV2Facts,
+    DiscoveryProbablesV2FactSet,
     DiscoveryProbablesV2Mapping,
+    is_discovery_probables_v2_facts,
     map_discovery_execution_to_probables_v2,
 )
 from kronos.intraday.reconciliation import ReconciliationPublication
@@ -66,7 +67,7 @@ class ProbablesV2ReplayEnvelope:
     analysis_boundary: datetime
     discovery_run: NativeDiscoveryRun
     machine_fact_bundles: tuple[NativeDiscoveryMachineFactBundle, ...]
-    probables_v2_facts: tuple[DiscoveryProbablesV2Facts, ...]
+    probables_v2_facts: tuple[DiscoveryProbablesV2FactSet, ...]
     reconciliation: ReconciliationPublication
     pre_evaluable_count: int
     prerequisite_unavailable_count: int
@@ -97,7 +98,10 @@ class ProbablesV2ReplayEnvelope:
             or self.discovery_run.observation_boundary != self.analysis_boundary
             or any(type(item) is not NativeDiscoveryMachineFactBundle for item in self.machine_fact_bundles)
             or len(bundle_ids) != len(set(bundle_ids))
-            or any(type(item) is not DiscoveryProbablesV2Facts for item in self.probables_v2_facts)
+            or any(
+                not is_discovery_probables_v2_facts(item)
+                for item in self.probables_v2_facts
+            )
             or len(member_ids) != len(set(member_ids))
             or any(item.observation_boundary != self.analysis_boundary for item in self.probables_v2_facts)
             or type(self.reconciliation) is not ReconciliationPublication

@@ -7,7 +7,7 @@ already-completed Intraday evidence for one subject and analysis boundary.
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, is_dataclass
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from enum import StrEnum
 from hashlib import sha256
@@ -18,6 +18,11 @@ from kronos.intraday.candles import expected_candle_boundaries
 from kronos.intraday.contracts import IntradayTimeframe
 from kronos.intraday.historical_semantic import GovernedHistoricalCandlePayload
 from kronos.market.schedule import MarketDaySchedule, TradingDayStatus
+from kronos.market.schedule_compatibility import (
+    MarketScheduleCompatibilityArtifact,
+    MarketScheduleCompatibilityError,
+    require_mcx_schedule_compatibility,
+)
 
 
 COMPLETED_EVIDENCE_SELECTION_IDENTITY = (
@@ -28,6 +33,18 @@ COMPLETED_EVIDENCE_SELECTION_POLICY = (
     "KRONOS-INTRADAY-PHASE-AWARE-COMPLETED-EVIDENCE-SELECTION-POLICY-V1"
 )
 COMPLETED_EVIDENCE_SELECTION_POLICY_VERSION = "1.0.0"
+COMPLETED_EVIDENCE_SELECTION_V2_IDENTITY = (
+    "KRONOS-INTRADAY-PHASE-AWARE-COMPLETED-EVIDENCE-SELECTION-V2"
+)
+COMPLETED_EVIDENCE_SELECTION_V2_VERSION = "2.0.0"
+COMPLETED_EVIDENCE_SELECTION_V2_POLICY = (
+    "KRONOS-INTRADAY-PHASE-AWARE-COMPLETED-EVIDENCE-SELECTION-POLICY-V2"
+)
+COMPLETED_EVIDENCE_SELECTION_V2_POLICY_VERSION = "2.0.0"
+COMPLETED_EVIDENCE_SCHEDULE_LINEAGE_IDENTITY = (
+    "KRONOS-INTRADAY-COMPLETED-EVIDENCE-SCHEDULE-LINEAGE-V1"
+)
+COMPLETED_EVIDENCE_SCHEDULE_LINEAGE_VERSION = "1.0.0"
 
 
 class CompletedEvidenceError(ValueError):
@@ -145,6 +162,184 @@ class PhaseAwareCompletedEvidenceSelection:
         )
 
 
+@dataclass(frozen=True, slots=True)
+class CompletedEvidenceScheduleLineage:
+    """Exact flattened schedule plus deterministic provenance for V2 replay."""
+
+    lineage_identity: str
+    schedule: MarketDaySchedule
+    provenance: tuple[str, ...]
+    integrity_identity: str
+    schema_identity: str = COMPLETED_EVIDENCE_SCHEDULE_LINEAGE_IDENTITY
+    schema_version: str = COMPLETED_EVIDENCE_SCHEDULE_LINEAGE_VERSION
+
+    def __post_init__(self) -> None:
+        values = asdict(self)
+        values.pop("lineage_identity")
+        values.pop("integrity_identity")
+        if (
+            not self.lineage_identity.startswith(
+                "INTRADAY-COMPLETED-EVIDENCE-SCHEDULE-LINEAGE-"
+            )
+            or type(self.schedule) is not MarketDaySchedule
+            or not _texts(self.provenance)
+            or self.provenance
+            != (
+                self.schedule.session_id,
+                self.schedule.source_identity,
+                self.schedule.source_version,
+            )
+            or self.schema_identity
+            != COMPLETED_EVIDENCE_SCHEDULE_LINEAGE_IDENTITY
+            or self.schema_version
+            != COMPLETED_EVIDENCE_SCHEDULE_LINEAGE_VERSION
+            or self.lineage_identity
+            != _identity(
+                "INTRADAY-COMPLETED-EVIDENCE-SCHEDULE-LINEAGE-", values
+            )
+            or self.integrity_identity
+            != _identity(
+                "INTEGRITY-INTRADAY-COMPLETED-EVIDENCE-SCHEDULE-LINEAGE-",
+                values,
+            )
+        ):
+            raise CompletedEvidenceError(
+                "COMPLETED_EVIDENCE_SCHEDULE_LINEAGE_INVALID"
+            )
+
+
+@dataclass(frozen=True, slots=True)
+class PhaseAwareCompletedEvidenceSelectionV2:
+    """Dual-lineage successor used only for proven cross-source schedules."""
+
+    selection_identity: str
+    canonical_subject_identity: str
+    analysis_boundary: datetime
+    phase: IntradayAnalysisPhase
+    calendar_identity: str
+    calendar_version: str
+    market_identity: str
+    current_market_session_identity: str
+    previous_market_session_identity: str
+    current_schedule_lineage: CompletedEvidenceScheduleLineage
+    previous_schedule_lineage: CompletedEvidenceScheduleLineage
+    schedule_compatibility: MarketScheduleCompatibilityArtifact
+    selected_candles: tuple[SelectedCompletedCandle, ...]
+    source_operation_identities: tuple[str, ...]
+    provenance: tuple[str, ...]
+    integrity_identity: str
+    selection_policy_identity: str = COMPLETED_EVIDENCE_SELECTION_V2_POLICY
+    selection_policy_version: str = COMPLETED_EVIDENCE_SELECTION_V2_POLICY_VERSION
+    schema_identity: str = COMPLETED_EVIDENCE_SELECTION_V2_IDENTITY
+    schema_version: str = COMPLETED_EVIDENCE_SELECTION_V2_VERSION
+
+    def __post_init__(self) -> None:
+        values = asdict(self)
+        values.pop("selection_identity")
+        values.pop("integrity_identity")
+        candles = tuple(item.candle for item in self.selected_candles)
+        if (
+            not self.selection_identity.startswith("INTRADAY-COMPLETED-EVIDENCE-")
+            or not _texts(
+                (
+                    self.canonical_subject_identity,
+                    self.calendar_identity,
+                    self.calendar_version,
+                    self.market_identity,
+                    self.current_market_session_identity,
+                    self.previous_market_session_identity,
+                )
+            )
+            or not _aware(self.analysis_boundary)
+            or type(self.phase) is not IntradayAnalysisPhase
+            or type(self.current_schedule_lineage)
+            is not CompletedEvidenceScheduleLineage
+            or type(self.previous_schedule_lineage)
+            is not CompletedEvidenceScheduleLineage
+            or type(self.schedule_compatibility)
+            is not MarketScheduleCompatibilityArtifact
+            or self.current_schedule_lineage.schedule.session_id
+            != self.current_market_session_identity
+            or self.previous_schedule_lineage.schedule.session_id
+            != self.previous_market_session_identity
+            or self.current_schedule_lineage.schedule.source_identity
+            != self.calendar_identity
+            or self.current_schedule_lineage.schedule.source_version
+            != self.calendar_version
+            or self.current_schedule_lineage.schedule.exchange != self.market_identity
+            or not self.selected_candles
+            or any(
+                type(item) is not SelectedCompletedCandle
+                for item in self.selected_candles
+            )
+            or len(
+                {item.candle.candle_identity for item in self.selected_candles}
+            )
+            != len(self.selected_candles)
+            or any(
+                item.candle.canonical_subject_identity
+                != self.canonical_subject_identity
+                or item.candle.candle_end > self.analysis_boundary
+                for item in self.selected_candles
+            )
+            or tuple(sorted(self.selected_candles, key=_selected_key))
+            != self.selected_candles
+            or not _texts(self.source_operation_identities)
+            or tuple(sorted(set(self.source_operation_identities)))
+            != self.source_operation_identities
+            or set(self.source_operation_identities)
+            != {item.source_operation_identity for item in candles}
+            or not _texts(self.provenance)
+            or self.selection_policy_identity
+            != COMPLETED_EVIDENCE_SELECTION_V2_POLICY
+            or self.selection_policy_version
+            != COMPLETED_EVIDENCE_SELECTION_V2_POLICY_VERSION
+            or self.schema_identity != COMPLETED_EVIDENCE_SELECTION_V2_IDENTITY
+            or self.schema_version != COMPLETED_EVIDENCE_SELECTION_V2_VERSION
+            or self.selection_identity
+            != _identity("INTRADAY-COMPLETED-EVIDENCE-", values)
+            or self.integrity_identity
+            != _identity("INTEGRITY-INTRADAY-COMPLETED-EVIDENCE-", values)
+        ):
+            raise CompletedEvidenceError("COMPLETED_EVIDENCE_SELECTION_INVALID")
+        try:
+            require_mcx_schedule_compatibility(
+                self.schedule_compatibility,
+                current_schedule=self.current_schedule_lineage.schedule,
+                previous_schedule=self.previous_schedule_lineage.schedule,
+                analysis_boundary=self.analysis_boundary,
+            )
+        except MarketScheduleCompatibilityError as error:
+            raise CompletedEvidenceError(
+                "COMPLETED_EVIDENCE_SCHEDULE_INVALID"
+            ) from error
+        _require_phase_shape(self)
+
+    def candles(
+        self,
+        timeframe: IntradayTimeframe,
+        role: EvidenceSessionRole | None = None,
+    ) -> tuple[GovernedHistoricalCandlePayload, ...]:
+        return tuple(
+            item.candle
+            for item in self.selected_candles
+            if item.candle.timeframe is timeframe
+            and (role is None or item.session_role is role)
+        )
+
+
+CompletedEvidenceSelection = (
+    PhaseAwareCompletedEvidenceSelection | PhaseAwareCompletedEvidenceSelectionV2
+)
+
+
+def is_completed_evidence_selection(value: object) -> bool:
+    return type(value) in {
+        PhaseAwareCompletedEvidenceSelection,
+        PhaseAwareCompletedEvidenceSelectionV2,
+    }
+
+
 def select_intraday_analysis_phase(
     *,
     current_completed_15m_count: int,
@@ -175,10 +370,16 @@ def phase_aware_historical_window(
     current_schedule: MarketDaySchedule,
     previous_schedule: MarketDaySchedule,
     observation_boundary: datetime,
+    schedule_compatibility: MarketScheduleCompatibilityArtifact | None = None,
 ) -> tuple[datetime, datetime]:
     """Return the minimum governed window spanning prior context and now."""
 
-    _require_schedule_pair(current_schedule, previous_schedule, observation_boundary)
+    _require_schedule_pair(
+        current_schedule,
+        previous_schedule,
+        observation_boundary,
+        schedule_compatibility=schedule_compatibility,
+    )
     end = min(
         observation_boundary.astimezone(current_schedule.windows[-1].closes_at.tzinfo),
         current_schedule.windows[-1].closes_at,
@@ -201,12 +402,22 @@ def build_completed_evidence_selection(
     current_fifteen_minute: Sequence[GovernedHistoricalCandlePayload],
     current_five_minute: Sequence[GovernedHistoricalCandlePayload],
     provenance: tuple[str, ...],
-) -> PhaseAwareCompletedEvidenceSelection:
+    schedule_compatibility: MarketScheduleCompatibilityArtifact | None = None,
+) -> CompletedEvidenceSelection:
     """Select one immutable phase-specific evidence set or fail closed."""
 
     if not _text(canonical_subject_identity) or not _texts(provenance):
         raise CompletedEvidenceError("COMPLETED_EVIDENCE_INPUT_INVALID")
-    _require_schedule_pair(current_schedule, previous_schedule, analysis_boundary)
+    cross_source = (
+        current_schedule.source_identity != previous_schedule.source_identity
+        or current_schedule.source_version != previous_schedule.source_version
+    )
+    _require_schedule_pair(
+        current_schedule,
+        previous_schedule,
+        analysis_boundary,
+        schedule_compatibility=schedule_compatibility,
+    )
     groups = {
         "previous_daily": tuple(previous_daily),
         "previous_one_hour": tuple(previous_one_hour),
@@ -300,7 +511,7 @@ def build_completed_evidence_selection(
         ))
 
     ordered = tuple(sorted(selected, key=_selected_key))
-    values = {
+    values: dict[str, object] = {
         "canonical_subject_identity": canonical_subject_identity,
         "analysis_boundary": analysis_boundary,
         "phase": phase,
@@ -319,16 +530,64 @@ def build_completed_evidence_selection(
         "schema_identity": COMPLETED_EVIDENCE_SELECTION_IDENTITY,
         "schema_version": COMPLETED_EVIDENCE_SELECTION_VERSION,
     }
-    return PhaseAwareCompletedEvidenceSelection(
-        selection_identity=_identity("INTRADAY-COMPLETED-EVIDENCE-", values),
+    if not cross_source:
+        return PhaseAwareCompletedEvidenceSelection(
+            selection_identity=_identity(
+                "INTRADAY-COMPLETED-EVIDENCE-", values
+            ),
+            integrity_identity=_identity(
+                "INTEGRITY-INTRADAY-COMPLETED-EVIDENCE-", values
+            ),
+            **values,
+        )
+    assert schedule_compatibility is not None
+    successor_values = {
+        **values,
+        "current_schedule_lineage": _schedule_lineage(current_schedule),
+        "previous_schedule_lineage": _schedule_lineage(previous_schedule),
+        "schedule_compatibility": schedule_compatibility,
+        "selection_policy_identity": COMPLETED_EVIDENCE_SELECTION_V2_POLICY,
+        "selection_policy_version": COMPLETED_EVIDENCE_SELECTION_V2_POLICY_VERSION,
+        "schema_identity": COMPLETED_EVIDENCE_SELECTION_V2_IDENTITY,
+        "schema_version": COMPLETED_EVIDENCE_SELECTION_V2_VERSION,
+    }
+    return PhaseAwareCompletedEvidenceSelectionV2(
+        selection_identity=_identity(
+            "INTRADAY-COMPLETED-EVIDENCE-", successor_values
+        ),
         integrity_identity=_identity(
-            "INTEGRITY-INTRADAY-COMPLETED-EVIDENCE-", values
+            "INTEGRITY-INTRADAY-COMPLETED-EVIDENCE-", successor_values
+        ),
+        **successor_values,
+    )
+
+
+def _schedule_lineage(
+    schedule: MarketDaySchedule,
+) -> CompletedEvidenceScheduleLineage:
+    values = {
+        "schedule": schedule,
+        "provenance": (
+            schedule.session_id,
+            schedule.source_identity,
+            schedule.source_version,
+        ),
+        "schema_identity": COMPLETED_EVIDENCE_SCHEDULE_LINEAGE_IDENTITY,
+        "schema_version": COMPLETED_EVIDENCE_SCHEDULE_LINEAGE_VERSION,
+    }
+    return CompletedEvidenceScheduleLineage(
+        lineage_identity=_identity(
+            "INTRADAY-COMPLETED-EVIDENCE-SCHEDULE-LINEAGE-", values
+        ),
+        integrity_identity=_identity(
+            "INTEGRITY-INTRADAY-COMPLETED-EVIDENCE-SCHEDULE-LINEAGE-",
+            values,
         ),
         **values,
     )
 
 
-def _require_phase_shape(value: PhaseAwareCompletedEvidenceSelection) -> None:
+def _require_phase_shape(value: CompletedEvidenceSelection) -> None:
     roles = tuple(item.session_role for item in value.selected_candles)
     counts = {role: roles.count(role) for role in EvidenceSessionRole}
     if (
@@ -371,6 +630,8 @@ def _require_schedule_pair(
     current: MarketDaySchedule,
     previous: MarketDaySchedule,
     boundary: datetime,
+    *,
+    schedule_compatibility: MarketScheduleCompatibilityArtifact | None = None,
 ) -> None:
     if (
         type(current) is not MarketDaySchedule
@@ -380,10 +641,29 @@ def _require_schedule_pair(
         or previous.status is not TradingDayStatus.TRADING
         or current.exchange != previous.exchange
         or previous.trading_date >= current.trading_date
-        or current.source_identity != previous.source_identity
-        or current.source_version != previous.source_version
     ):
         raise CompletedEvidenceError("COMPLETED_EVIDENCE_SCHEDULE_INVALID")
+    same_source = (
+        current.source_identity == previous.source_identity
+        and current.source_version == previous.source_version
+    )
+    if same_source:
+        if schedule_compatibility is not None:
+            raise CompletedEvidenceError("COMPLETED_EVIDENCE_SCHEDULE_INVALID")
+        return
+    if schedule_compatibility is None:
+        raise CompletedEvidenceError("COMPLETED_EVIDENCE_SCHEDULE_INVALID")
+    try:
+        require_mcx_schedule_compatibility(
+            schedule_compatibility,
+            current_schedule=current,
+            previous_schedule=previous,
+            analysis_boundary=boundary,
+        )
+    except MarketScheduleCompatibilityError as error:
+        raise CompletedEvidenceError(
+            "COMPLETED_EVIDENCE_SCHEDULE_INVALID"
+        ) from error
 
 
 def _require_schedule_candles(
@@ -476,7 +756,7 @@ def _normalize(value: object) -> object:
         return {name: _normalize(item) for name, item in asdict(value).items()}
     if isinstance(value, StrEnum):
         return value.value
-    if isinstance(value, datetime):
+    if isinstance(value, (datetime, date)):
         return value.isoformat()
     if isinstance(value, Decimal):
         return str(value)
@@ -505,16 +785,26 @@ def _texts(values: Sequence[object]) -> bool:
 
 
 __all__ = [
+    "COMPLETED_EVIDENCE_SCHEDULE_LINEAGE_IDENTITY",
+    "COMPLETED_EVIDENCE_SCHEDULE_LINEAGE_VERSION",
     "COMPLETED_EVIDENCE_SELECTION_IDENTITY",
     "COMPLETED_EVIDENCE_SELECTION_POLICY",
     "COMPLETED_EVIDENCE_SELECTION_POLICY_VERSION",
     "COMPLETED_EVIDENCE_SELECTION_VERSION",
+    "COMPLETED_EVIDENCE_SELECTION_V2_IDENTITY",
+    "COMPLETED_EVIDENCE_SELECTION_V2_POLICY",
+    "COMPLETED_EVIDENCE_SELECTION_V2_POLICY_VERSION",
+    "COMPLETED_EVIDENCE_SELECTION_V2_VERSION",
+    "CompletedEvidenceScheduleLineage",
+    "CompletedEvidenceSelection",
     "CompletedEvidenceError",
     "EvidenceSessionRole",
     "IntradayAnalysisPhase",
     "PhaseAwareCompletedEvidenceSelection",
+    "PhaseAwareCompletedEvidenceSelectionV2",
     "SelectedCompletedCandle",
     "build_completed_evidence_selection",
+    "is_completed_evidence_selection",
     "phase_aware_historical_window",
     "select_intraday_analysis_phase",
 ]

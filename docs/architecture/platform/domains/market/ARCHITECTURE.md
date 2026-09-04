@@ -25,6 +25,9 @@ Own the authoritative semantic meaning of market schedules and explicit market a
 
 - Market Schedule Contract — the authoritative platform meaning of applicable market schedule.
 - EAIC-001 Exchange Availability Contract — the current approved presentation-facing availability meaning.
+- `KRONOS-MARKET-SCHEDULE-COMPATIBILITY-V1 / 1.0.0` — immutable,
+  directional proof that one exact family-specific MCX expiry schedule
+  specializes one exact governed base schedule for a bounded analysis context.
 
 ## Consumed Contracts
 
@@ -36,6 +39,11 @@ Own the authoritative semantic meaning of market schedules and explicit market a
 - OPEN and CLOSED may be published only under EAIC-001 and only from an approved authoritative source.
 - Exchange Availability must not alter KR-370, KR-380, Execution Context, alerts, trade management, or data readiness.
 - KR-200's Instrument Identity and Market Schedule responsibilities remain semantically separate even where one engine currently publishes both.
+- Clock equality, exchange equality or family equality cannot establish schedule
+  compatibility. Cross-authority use requires the exact current DOMAIN-008
+  compatibility artifact; wildcard and arbitrary mixed schedules fail closed.
+- Schedule compatibility is neither schedule equivalence nor contract-roll
+  continuity and grants no analytical or trading authority.
 
 ## Approved Constitutional References
 
@@ -56,3 +64,4 @@ Own the authoritative semantic meaning of market schedules and explicit market a
 - [EAIC-001 — Exchange Availability Interface Contract](../../../interfaces/EAIC-001-Exchange-Availability-Interface-Contract.md)
 - [KRONOS Engine Ownership](../../../ENGINE_OWNERSHIP.md)
 - [Project KRONOS Data Flow](../../../DATA_FLOW.md)
+- [ADR-0028 — DOMAIN-008 MCX Cross-Schedule Compatibility](../../../adr/ADR-0028-DOMAIN-008-MCX-CROSS-SCHEDULE-COMPATIBILITY.md)

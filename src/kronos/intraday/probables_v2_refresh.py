@@ -12,9 +12,9 @@ import json
 
 from kronos.intraday.candles import expected_candle_boundaries
 from kronos.intraday.completed_evidence import (
+    CompletedEvidenceSelection,
     CompletedEvidenceError,
     IntradayAnalysisPhase,
-    PhaseAwareCompletedEvidenceSelection,
     build_completed_evidence_selection,
 )
 from kronos.intraday.contracts import IntradayTimeframe
@@ -41,6 +41,9 @@ from kronos.intraday.probables_v2 import (
 )
 from kronos.intraday.reconciliation import ReconciliationPublication
 from kronos.market.schedule import MarketDaySchedule
+from kronos.market.schedule_compatibility import (
+    MarketScheduleCompatibilityArtifact,
+)
 from kronos.provider.contracts.market_data import HistoricalCandle
 
 
@@ -112,6 +115,34 @@ class DiscoveryProbablesV2Facts:
 
 
 @dataclass(frozen=True, slots=True)
+class DiscoveryProbablesV2FactsV2(DiscoveryProbablesV2Facts):
+    """Successor facts retaining exact DOMAIN-008 schedule compatibility."""
+
+    schedule_compatibility: MarketScheduleCompatibilityArtifact
+
+    def __post_init__(self) -> None:
+        DiscoveryProbablesV2Facts.__post_init__(self)
+        if (
+            type(self.schedule_compatibility)
+            is not MarketScheduleCompatibilityArtifact
+            or self.schedule_compatibility.analysis_boundary
+            != self.observation_boundary
+            or self.schedule_compatibility.current_session_identity
+            != self.current_schedule.session_id
+            or self.schedule_compatibility.previous_session_identity
+            != self.previous_schedule.session_id
+        ):
+            raise ProbablesV2Error("DISCOVERY_PROBABLES_V2_FACTS_INVALID")
+
+
+DiscoveryProbablesV2FactSet = DiscoveryProbablesV2Facts | DiscoveryProbablesV2FactsV2
+
+
+def is_discovery_probables_v2_facts(value: object) -> bool:
+    return type(value) in {DiscoveryProbablesV2Facts, DiscoveryProbablesV2FactsV2}
+
+
+@dataclass(frozen=True, slots=True)
 class DiscoveryProbablesV2Mapping:
     mapping_identity: str
     discovery_run_identity: str
@@ -163,7 +194,8 @@ def create_discovery_probables_v2_facts(
     current_one_hour: Sequence[HistoricalCandle],
     current_fifteen_minute: Sequence[HistoricalCandle],
     current_five_minute: Sequence[HistoricalCandle],
-) -> DiscoveryProbablesV2Facts:
+    schedule_compatibility: MarketScheduleCompatibilityArtifact | None = None,
+) -> DiscoveryProbablesV2FactSet:
     """Create the exact cross-session candle surface required by V2."""
 
     if (
@@ -256,7 +288,12 @@ def create_discovery_probables_v2_facts(
         "current_five_minute": current_five_payloads,
         "provenance": provenance,
     }
-    return DiscoveryProbablesV2Facts(
+    if schedule_compatibility is not None:
+        values["schedule_compatibility"] = schedule_compatibility
+        fact_type = DiscoveryProbablesV2FactsV2
+    else:
+        fact_type = DiscoveryProbablesV2Facts
+    return fact_type(
         facts_identity=_identity("INTRADAY-DISCOVERY-PROBABLES-V2-FACTS-", values),
         integrity_identity=_identity("INTEGRITY-DISCOVERY-PROBABLES-V2-FACTS-", values),
         **values,
@@ -278,7 +315,7 @@ def map_discovery_execution_to_probables_v2(
         raise ProbablesV2Error("DISCOVERY_PROBABLES_V2_DUPLICATE_FACTS")
     members = {item.universe_member_identity: item for item in reconciliation.members}
     results = {item.universe_member_identity: item for item in run.results}
-    selections: dict[str, PhaseAwareCompletedEvidenceSelection] = {}
+    selections: dict[str, CompletedEvidenceSelection] = {}
     for identity, item in facts.items():
         try:
             selections[identity] = build_completed_evidence_selection(
@@ -292,6 +329,11 @@ def map_discovery_execution_to_probables_v2(
                 current_fifteen_minute=item.current_fifteen_minute,
                 current_five_minute=item.current_five_minute,
                 provenance=(DISCOVERY_PROBABLES_V2_REFRESH_IDENTITY, item.facts_identity),
+                schedule_compatibility=(
+                    item.schedule_compatibility
+                    if type(item) is DiscoveryProbablesV2FactsV2
+                    else None
+                ),
             )
         except CompletedEvidenceError:
             continue
@@ -480,7 +522,10 @@ __all__ = [
     "DISCOVERY_PROBABLES_V2_REFRESH_IDENTITY",
     "DISCOVERY_PROBABLES_V2_REFRESH_VERSION",
     "DiscoveryProbablesV2Facts",
+    "DiscoveryProbablesV2FactsV2",
+    "DiscoveryProbablesV2FactSet",
     "DiscoveryProbablesV2Mapping",
     "create_discovery_probables_v2_facts",
+    "is_discovery_probables_v2_facts",
     "map_discovery_execution_to_probables_v2",
 ]

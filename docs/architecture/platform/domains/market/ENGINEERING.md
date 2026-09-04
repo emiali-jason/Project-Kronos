@@ -98,3 +98,19 @@ changes require an immutable successor publication and cannot rewrite the
 DOMAIN-008 supplies session authority only. The separately governed WO-06MCX
 resolver owns active-contract selection; Intraday Discovery and Probables own
 neither authority.
+
+## WO-A4 Cross-Schedule Compatibility
+
+DOMAIN-008 publishes the immutable, directional
+`KRONOS-MARKET-SCHEDULE-COMPATIBILITY-V1 / 1.0.0` contract under
+`KRONOS-DOMAIN-008-MCX-FAMILY-SCHEDULE-DERIVATION-POLICY-V1 / 1.0.0`.
+It proves that an exact current family-expiry session schedule is the governed
+specialization of the exact base MCX calendar publication while preserving the
+ordinary previous-session base schedule as separate provenance.
+
+The proof is family-, publication-, digest-, session-, date- and
+analysis-boundary-specific. It must be current and intact. Matching clocks do
+not suffice; missing, foreign, stale, superseded or tampered proofs fail closed.
+The compatibility contract cannot bridge a contract roll, select a derivative,
+alter a methodology or grant analytical, trading or broker authority. See
+[ADR-0028](../../../adr/ADR-0028-DOMAIN-008-MCX-CROSS-SCHEDULE-COMPATIBILITY.md).
