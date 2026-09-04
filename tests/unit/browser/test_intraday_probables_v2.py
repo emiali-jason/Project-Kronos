@@ -20,6 +20,12 @@ from kronos.intraday.nifty_relative_context import (
 from kronos.intraday.probables import ProbableState
 from kronos.intraday.probables_v2 import ProbableReasonV2
 from kronos.market.calendar import MarketCalendarPublisher
+from kronos.intraday.contracts import IntradayTimeframe
+from kronos.intraday.discovery_failure_provenance import (
+    MachineFactFailureAvailability,
+    MachineFactFailureComponent,
+    MachineFactFailureStage,
+)
 
 
 _BOUNDARY = datetime(2026, 8, 28, 10, 15, tzinfo=ZoneInfo("Asia/Kolkata"))
@@ -34,7 +40,29 @@ def _member(label: str, family: str) -> SimpleNamespace:
         sponsor_label=label,
         canonical_identity=f"SUBJECT-{label}",
         market_family=family,
+        failure_provenance=None,
     )
+
+
+def test_machine_fact_failure_is_visible_only_inside_collapsed_diagnostics() -> None:
+    member = _member("NIFTY", "NSE_INDEX")
+    member.failure_provenance = SimpleNamespace(
+        failure_stage=MachineFactFailureStage.REQUIRED_TIMEFRAME_ABSENCE,
+        required_component=MachineFactFailureComponent.CURRENT_OPENING_15M_EVIDENCE,
+        required_timeframe=IntradayTimeframe.FIFTEEN_MINUTES,
+        expected_candle_interval="15minute",
+        availability_failure=MachineFactFailureAvailability.NOT_COMPLETED,
+        sanitized_failure_code="COMPLETED_CANDLE_MISSING",
+    )
+    html = _render([member], [_result("NIFTY", ProbableState.UNAVAILABLE)])
+    primary, diagnostics = html.split(
+        '<details class="intraday-probables-diagnostics">', maxsplit=1
+    )
+
+    assert "COMPLETED_CANDLE_MISSING" not in primary
+    assert "REQUIRED_TIMEFRAME_ABSENCE" in diagnostics
+    assert "CURRENT_OPENING_15M_EVIDENCE" in diagnostics
+    assert "15minute" in diagnostics
 
 
 def _result(

@@ -2485,12 +2485,37 @@ def _render_v2_diagnostic_row(result, members) -> str:  # type: ignore[no-untype
     reasons = " · ".join(_plain(item.value) for item in result.reasons) or "NO REASON"
     member = members.get(result.canonical_subject_identity)
     family = "UNKNOWN" if member is None else member.market_family
+    failure = ""
+    provenance = None if member is None else getattr(
+        member, "failure_provenance", None
+    )
+    if provenance is not None:
+        timeframe = (
+            "NOT_APPLICABLE"
+            if provenance.required_timeframe is None
+            else provenance.required_timeframe.value
+        )
+        interval = provenance.expected_candle_interval or "NOT_APPLICABLE"
+        failure = (
+            " · Machine fact failure: "
+            + provenance.failure_stage.value
+            + " / "
+            + provenance.required_component.value
+            + " / "
+            + timeframe
+            + " / "
+            + interval
+            + " / "
+            + provenance.availability_failure.value
+            + " / "
+            + provenance.sanitized_failure_code
+        )
     return (
         '<div class="intraday-diagnostic-row"><strong>'
         + escape(_v2_member_label(result, members)) + '</strong><span>'
         + escape(state) + '</span><span>' + escape(family)
         + ' · Semantic direction (diagnostic) ' + escape(direction)
-        + '</span><span>' + escape(reasons) + '</span></div>'
+        + '</span><span>' + escape(reasons + failure) + '</span></div>'
     )
 
 
@@ -2758,6 +2783,36 @@ def _render_discovery_detail(snapshot: IntradayDiscoverySnapshot) -> str:
         ("Coherence fact", probable.lineage.coherence_fact_identity or "UNAVAILABLE"),
         ("Participation", probable.participation_state),
     )
+    failure = item.failure_provenance
+    failure_detail = ""
+    if failure is not None:
+        failure_detail = (
+            '<details class="intraday-probables-diagnostics"><summary>'
+            'MACHINE-FACT FAILURE PROVENANCE</summary>'
+            + _facts((
+                ("Failure stage", failure.failure_stage.value),
+                ("Required component", failure.required_component.value),
+                (
+                    "Required timeframe",
+                    "NOT APPLICABLE"
+                    if failure.required_timeframe is None
+                    else failure.required_timeframe.value,
+                ),
+                (
+                    "Expected interval",
+                    failure.expected_candle_interval or "NOT APPLICABLE",
+                ),
+                ("Availability / completion", failure.availability_failure.value),
+                ("Sanitized failure code", failure.sanitized_failure_code),
+                ("Provider symbol binding", failure.provider_symbol_binding or "UNAVAILABLE"),
+                ("Trading date", failure.trading_date.isoformat()),
+                ("Session", failure.market_session_identity),
+                ("Operation", failure.operation_identity),
+                ("Policy", failure.policy_identity + " / " + failure.policy_version),
+                ("Integrity", failure.integrity_hash),
+            ))
+            + '</details>'
+        )
     lineage = '<section class="intraday-panel"><h2>Evidence / Timestamp</h2>' + _facts((
         (
             "Observation boundary",
@@ -2772,7 +2827,7 @@ def _render_discovery_detail(snapshot: IntradayDiscoverySnapshot) -> str:
         ("Source identities", source),
         *probable_lineage,
     )) + "</section></div>"
-    return header + lineage + factual + detail
+    return header + lineage + failure_detail + factual + detail
 
 
 def _plain(value: str) -> str:

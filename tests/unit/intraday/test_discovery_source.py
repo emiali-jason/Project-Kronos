@@ -43,6 +43,8 @@ def _composition(
     observed_at: datetime = OBSERVED,
     active_mcx: bool = False,
     retain_mcx: bool = False,
+    operation_identity: str | None = None,
+    historical_error_target: str | None = None,
 ):  # type: ignore[no-untyped-def]
     universe = load_intraday_universe_publication()
     reconciliation = IntradayReconciliationStore().load(
@@ -75,6 +77,10 @@ def _composition(
 
     def historical_candles(request):  # type: ignore[no-untyped-def]
         historical_requests.append(request)
+        if request.instrument.trading_symbol == historical_error_target:
+            raise RuntimeError(
+                "credential_material=SENSITIVE_VALUE /sensitive/provider-response.json"
+            )
         if request.interval is HistoricalInterval.DAY:
             return (_candle(request.start),)
         step = {
@@ -159,6 +165,7 @@ def _composition(
         observation_boundary=observed_at,
         market_session_identity=session,
         market_session_boundary_identity=boundary_identity,
+        operation_identity=operation_identity,
     ))
     lease.release()
     return execution, source, record_requests, historical_requests, factory_calls

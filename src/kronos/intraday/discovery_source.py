@@ -20,6 +20,12 @@ from kronos.intraday.discovery_runtime import (
     DiscoveryMemberFactError,
     DiscoveryRunBoundary,
 )
+from kronos.intraday.discovery_failure_provenance import (
+    MachineFactFailureAvailability,
+    MachineFactFailureComponent,
+    MachineFactFailureDetail,
+    MachineFactFailureStage,
+)
 from kronos.intraday.discovery import DiscoveryReason
 from kronos.intraday.market_context import CurrentMarketCalendarScheduleSource
 from kronos.intraday.reconciliation import (
@@ -134,7 +140,13 @@ class ProviderDiscoveryFactualSource:
     ) -> DiscoveryFactAcquisition:
         if type(member) is not ReconciliationMember or type(boundary) is not DiscoveryRunBoundary:
             raise DiscoveryMemberFactError(
-                DiscoveryReason.MACHINE_FACT_BUNDLE_INCOMPLETE
+                DiscoveryReason.MACHINE_FACT_BUNDLE_INCOMPLETE,
+                _failure_detail(
+                    MachineFactFailureStage.BUNDLE_VALIDATION,
+                    MachineFactFailureComponent.MACHINE_FACT_BUNDLE,
+                    MachineFactFailureAvailability.INVALID,
+                    "MACHINE_FACT_BUNDLE_INPUT_INVALID",
+                ),
             )
         active_binding = self._active_binding(member)
         record = self._record(member, active_binding=active_binding)
@@ -144,22 +156,40 @@ class ProviderDiscoveryFactualSource:
             observed_at=boundary.observation_boundary,
             canonical_instrument_id=member.canonical_identity,
         )
-        schedule = (
-            calendar.schedule_for(member.exchange, local.date())
-            if active_binding is None
-            else self._binding_schedule(active_binding, boundary.observation_boundary)
-        )
-        if boundary.observation_boundary not in self._session_identities:
-            self._session_identities[boundary.observation_boundary] = (
-                governed_market_session_identities(
-                    calendar_publisher=self._calendar,
-                    reconciliation=self._reconciliation,
-                    observed_at=boundary.observation_boundary,
-                    active_derivative_resolutions=(
-                        self._active_derivative_resolutions
-                    ),
-                )
+        try:
+            schedule = (
+                calendar.schedule_for(member.exchange, local.date())
+                if active_binding is None
+                else self._binding_schedule(active_binding, boundary.observation_boundary)
             )
+            if boundary.observation_boundary not in self._session_identities:
+                self._session_identities[boundary.observation_boundary] = (
+                    governed_market_session_identities(
+                        calendar_publisher=self._calendar,
+                        reconciliation=self._reconciliation,
+                        observed_at=boundary.observation_boundary,
+                        active_derivative_resolutions=(
+                            self._active_derivative_resolutions
+                        ),
+                    )
+                )
+        except DiscoveryMemberFactError:
+            raise
+        except Exception as error:
+            raise DiscoveryMemberFactError(
+                DiscoveryReason.MACHINE_FACT_BUNDLE_INCOMPLETE,
+                _failure_detail(
+                    MachineFactFailureStage.SCHEDULE_SESSION_BINDING,
+                    MachineFactFailureComponent.MARKET_SESSION,
+                    MachineFactFailureAvailability.UNAVAILABLE,
+                    "MARKET_SESSION_BINDING_FAILED",
+                    provider_symbol=(
+                        member.provider_symbol
+                        if active_binding is None
+                        else active_binding.provider_symbol
+                    ),
+                ),
+            ) from error
         governed_session, governed_boundary = self._session_identities[
             boundary.observation_boundary
         ]
@@ -168,12 +198,32 @@ class ProviderDiscoveryFactualSource:
             or boundary.market_session_identity != governed_session
             or boundary.market_session_boundary_identity != governed_boundary
         ):
-            raise DiscoveryMemberFactError(DiscoveryReason.MARKET_SESSION_UNAVAILABLE)
+            raise DiscoveryMemberFactError(
+                DiscoveryReason.MARKET_SESSION_UNAVAILABLE,
+                _failure_detail(
+                    MachineFactFailureStage.SCHEDULE_SESSION_BINDING,
+                    MachineFactFailureComponent.MARKET_SESSION,
+                    MachineFactFailureAvailability.UNAVAILABLE,
+                    "MARKET_SESSION_BINDING_UNAVAILABLE",
+                    provider_symbol=(
+                        member.provider_symbol
+                        if active_binding is None
+                        else active_binding.provider_symbol
+                    ),
+                ),
+            )
         try:
             previous = calendar.previous_trading_schedule(member.exchange, local.date())
         except ValueError as error:
             raise DiscoveryMemberFactError(
-                DiscoveryReason.MARKET_SESSION_UNAVAILABLE
+                DiscoveryReason.MARKET_SESSION_UNAVAILABLE,
+                _failure_detail(
+                    MachineFactFailureStage.SCHEDULE_SESSION_BINDING,
+                    MachineFactFailureComponent.MARKET_SESSION,
+                    MachineFactFailureAvailability.UNAVAILABLE,
+                    "PREVIOUS_TRADING_SESSION_UNAVAILABLE",
+                    provider_symbol=record.trading_symbol,
+                ),
             ) from error
 
         evidence: list[MachineFactEvidence] = [MachineFactEvidence(
@@ -259,31 +309,43 @@ class ProviderDiscoveryFactualSource:
             completed_by_timeframe[IntradayTimeframe.FIVE_MINUTES],
             timeframe=IntradayTimeframe.FIVE_MINUTES,
         ))
-        bundle = create_machine_fact_bundle(
-            canonical_identity=member.canonical_identity,
-            universe_identity=self._universe_identity,
-            universe_version=self._universe_version,
-            reconciliation_identity=self._reconciliation_identity,
-            reconciliation_version=self._reconciliation_version,
-            market_session_identity=boundary.market_session_identity,
-            market_session_boundary_identity=boundary.market_session_boundary_identity,
-            observation_boundary=boundary.observation_boundary,
-            evidence=tuple(evidence),
-            source_identities=tuple(
-                f"DOMAIN-006:KITE:HISTORICAL:{provider_interval(item).value}"
-                for item in _TIMEFRAMES
-            ) + (() if active_binding is None else (
-                active_binding.binding_identity,
-                active_binding.provider_snapshot_identity,
-            )),
-            provenance=(
-                DISCOVERY_FACTUAL_SOURCE_IDENTITY,
-                member.reconciliation_member_identity,
-            ) + (() if active_binding is None else (
-                active_binding.integrity_identity,
-                active_binding.domain008_session_identity,
-            )),
-        )
+        try:
+            bundle = create_machine_fact_bundle(
+                canonical_identity=member.canonical_identity,
+                universe_identity=self._universe_identity,
+                universe_version=self._universe_version,
+                reconciliation_identity=self._reconciliation_identity,
+                reconciliation_version=self._reconciliation_version,
+                market_session_identity=boundary.market_session_identity,
+                market_session_boundary_identity=boundary.market_session_boundary_identity,
+                observation_boundary=boundary.observation_boundary,
+                evidence=tuple(evidence),
+                source_identities=tuple(
+                    f"DOMAIN-006:KITE:HISTORICAL:{provider_interval(item).value}"
+                    for item in _TIMEFRAMES
+                ) + (() if active_binding is None else (
+                    active_binding.binding_identity,
+                    active_binding.provider_snapshot_identity,
+                )),
+                provenance=(
+                    DISCOVERY_FACTUAL_SOURCE_IDENTITY,
+                    member.reconciliation_member_identity,
+                ) + (() if active_binding is None else (
+                    active_binding.integrity_identity,
+                    active_binding.domain008_session_identity,
+                )),
+            )
+        except Exception as error:
+            raise DiscoveryMemberFactError(
+                DiscoveryReason.MACHINE_FACT_BUNDLE_INCOMPLETE,
+                _failure_detail(
+                    MachineFactFailureStage.BUNDLE_CONSTRUCTION,
+                    MachineFactFailureComponent.MACHINE_FACT_BUNDLE,
+                    MachineFactFailureAvailability.INVALID,
+                    "MACHINE_FACT_BUNDLE_CONSTRUCTION_FAILED",
+                    provider_symbol=record.trading_symbol,
+                ),
+            ) from error
         try:
             probables_facts = create_discovery_probables_facts(
                 universe_member_identity=member.universe_member_identity,
@@ -304,6 +366,7 @@ class ProviderDiscoveryFactualSource:
         except DiscoveryProbablesMappingError:
             probables_facts = None
         probables_v2_facts = None
+        diagnostic_failure_detail = None
         if self._produce_probables_v2_facts:
             try:
                 previous_one_hour = self._acquire_previous_one_hour(
@@ -366,7 +429,21 @@ class ProviderDiscoveryFactualSource:
                         IntradayTimeframe.FIVE_MINUTES
                     ],
                 )
-            except (ProbablesV2Error, DiscoveryMemberFactError):
+            except DiscoveryMemberFactError as error:
+                diagnostic_failure_detail = error.detail or _failure_detail(
+                    MachineFactFailureStage.BUNDLE_VALIDATION,
+                    MachineFactFailureComponent.MACHINE_FACT_BUNDLE,
+                    MachineFactFailureAvailability.INVALID,
+                    "PROBABLES_V2_FACT_BUNDLE_INVALID",
+                )
+                probables_v2_facts = None
+            except ProbablesV2Error:
+                diagnostic_failure_detail = _failure_detail(
+                    MachineFactFailureStage.BUNDLE_VALIDATION,
+                    MachineFactFailureComponent.MACHINE_FACT_BUNDLE,
+                    MachineFactFailureAvailability.INVALID,
+                    "PROBABLES_V2_FACT_BUNDLE_INVALID",
+                )
                 probables_v2_facts = None
         return DiscoveryFactAcquisition(
             universe_member_identity=member.universe_member_identity,
@@ -374,6 +451,7 @@ class ProviderDiscoveryFactualSource:
             bundle=bundle,
             probables_facts=probables_facts,
             probables_v2_facts=probables_v2_facts,
+            diagnostic_failure_detail=diagnostic_failure_detail,
         )
 
     def _acquire_previous_one_hour(
@@ -384,17 +462,37 @@ class ProviderDiscoveryFactualSource:
         observed_at: datetime,
     ) -> tuple[HistoricalCandle, ...]:
         self._historical_requests += 1
-        candles = tuple(self._lease.historical_candles(HistoricalCandleRequest(
-            instrument=record,
-            start=schedule.windows[0].opens_at,
-            end=schedule.windows[-1].closes_at - timedelta(microseconds=1),
-            interval=provider_interval(IntradayTimeframe.ONE_HOUR),
-        )))
+        interval = _interval_or_failure(
+            IntradayTimeframe.ONE_HOUR,
+            MachineFactFailureComponent.PRIOR_SESSION_1H_EVIDENCE,
+        )
+        try:
+            candles = tuple(self._lease.historical_candles(HistoricalCandleRequest(
+                instrument=record,
+                start=schedule.windows[0].opens_at,
+                end=schedule.windows[-1].closes_at - timedelta(microseconds=1),
+                interval=interval,
+            )))
+        except Exception as error:
+            raise DiscoveryMemberFactError(
+                DiscoveryReason.MACHINE_FACT_BUNDLE_INCOMPLETE,
+                _failure_detail(
+                    MachineFactFailureStage.CANDLE_ACQUISITION,
+                    MachineFactFailureComponent.PRIOR_SESSION_1H_EVIDENCE,
+                    MachineFactFailureAvailability.UNAVAILABLE,
+                    "PROVIDER_CANDLE_ACQUISITION_FAILED",
+                    timeframe=IntradayTimeframe.ONE_HOUR,
+                    interval=interval.value,
+                    provider_symbol=record.trading_symbol,
+                ),
+            ) from error
         return _completed_intraday(
             candles=candles,
             schedule=schedule,
             timeframe=IntradayTimeframe.ONE_HOUR,
             observed_at=observed_at,
+            component=MachineFactFailureComponent.PRIOR_SESSION_1H_EVIDENCE,
+            provider_symbol=record.trading_symbol,
         )
 
     def _active_binding(
@@ -444,10 +542,31 @@ class ProviderDiscoveryFactualSource:
             )
         if member.provider_symbol is None:
             raise DiscoveryMemberFactError(
-                DiscoveryReason.MACHINE_FACT_BUNDLE_INCOMPLETE
+                DiscoveryReason.MACHINE_FACT_BUNDLE_INCOMPLETE,
+                _failure_detail(
+                    MachineFactFailureStage.PROVIDER_SYMBOL_BINDING,
+                    MachineFactFailureComponent.PROVIDER_SYMBOL,
+                    MachineFactFailureAvailability.UNAVAILABLE,
+                    "PROVIDER_SYMBOL_UNAVAILABLE",
+                    provider_symbol=member.provider_symbol,
+                ),
             )
         if member.exchange not in self._records:
-            self._records[member.exchange] = self._lease.instrument_records(member.exchange)
+            try:
+                self._records[member.exchange] = self._lease.instrument_records(
+                    member.exchange
+                )
+            except Exception as error:
+                raise DiscoveryMemberFactError(
+                    DiscoveryReason.MACHINE_FACT_BUNDLE_INCOMPLETE,
+                    _failure_detail(
+                        MachineFactFailureStage.PROVIDER_SYMBOL_BINDING,
+                        MachineFactFailureComponent.PROVIDER_SYMBOL,
+                        MachineFactFailureAvailability.UNAVAILABLE,
+                        "PROVIDER_INSTRUMENT_ACQUISITION_FAILED",
+                        provider_symbol=member.provider_symbol,
+                    ),
+                ) from error
         matches = tuple(
             item for item in self._records[member.exchange]
             if item.provider == "KITE"
@@ -456,7 +575,22 @@ class ProviderDiscoveryFactualSource:
         )
         if len(matches) != 1:
             raise DiscoveryMemberFactError(
-                DiscoveryReason.MACHINE_FACT_BUNDLE_INCOMPLETE
+                DiscoveryReason.MACHINE_FACT_BUNDLE_INCOMPLETE,
+                _failure_detail(
+                    MachineFactFailureStage.PROVIDER_SYMBOL_BINDING,
+                    MachineFactFailureComponent.PROVIDER_SYMBOL,
+                    (
+                        MachineFactFailureAvailability.UNAVAILABLE
+                        if not matches
+                        else MachineFactFailureAvailability.CONFLICTING
+                    ),
+                    (
+                        "PROVIDER_RECORD_UNAVAILABLE"
+                        if not matches
+                        else "PROVIDER_RECORD_AMBIGUOUS"
+                    ),
+                    provider_symbol=member.provider_symbol,
+                ),
             )
         return matches[0]
 
@@ -511,14 +645,39 @@ class ProviderDiscoveryFactualSource:
             schedule.windows[-1].closes_at,
         )
         if start >= end:
-            raise DiscoveryMemberFactError(DiscoveryReason.MARKET_SESSION_UNAVAILABLE)
+            raise DiscoveryMemberFactError(
+                DiscoveryReason.MARKET_SESSION_UNAVAILABLE,
+                _failure_detail(
+                    MachineFactFailureStage.SCHEDULE_SESSION_BINDING,
+                    MachineFactFailureComponent.MARKET_SESSION,
+                    MachineFactFailureAvailability.UNAVAILABLE,
+                    "ANALYSIS_BOUNDARY_OUTSIDE_SESSION",
+                    timeframe=timeframe,
+                ),
+            )
+        component = _component_for(timeframe)
+        interval = _interval_or_failure(timeframe, component)
         self._historical_requests += 1
-        candles = tuple(self._lease.historical_candles(HistoricalCandleRequest(
-            instrument=record,
-            start=start,
-            end=end,
-            interval=provider_interval(timeframe),
-        )))
+        try:
+            candles = tuple(self._lease.historical_candles(HistoricalCandleRequest(
+                instrument=record,
+                start=start,
+                end=end,
+                interval=interval,
+            )))
+        except Exception as error:
+            raise DiscoveryMemberFactError(
+                DiscoveryReason.MACHINE_FACT_BUNDLE_INCOMPLETE,
+                _failure_detail(
+                    MachineFactFailureStage.CANDLE_ACQUISITION,
+                    component,
+                    MachineFactFailureAvailability.UNAVAILABLE,
+                    "PROVIDER_CANDLE_ACQUISITION_FAILED",
+                    timeframe=timeframe,
+                    interval=interval.value,
+                    provider_symbol=record.trading_symbol,
+                ),
+            ) from error
         if timeframe is IntradayTimeframe.DAILY:
             selected = tuple(
                 item for item in candles
@@ -527,7 +686,16 @@ class ProviderDiscoveryFactualSource:
             )
             if len(selected) != 1:
                 raise DiscoveryMemberFactError(
-                    DiscoveryReason.MACHINE_FACT_BUNDLE_INCOMPLETE
+                    DiscoveryReason.MACHINE_FACT_BUNDLE_INCOMPLETE,
+                    _failure_detail(
+                        MachineFactFailureStage.REQUIRED_TIMEFRAME_ABSENCE,
+                        component,
+                        MachineFactFailureAvailability.INCOMPLETE,
+                        "REQUIRED_DAILY_CANDLE_MISSING",
+                        timeframe=timeframe,
+                        interval=interval.value,
+                        provider_symbol=record.trading_symbol,
+                    ),
                 )
             return selected
         return _completed_intraday(
@@ -539,7 +707,66 @@ class ProviderDiscoveryFactualSource:
                 self._produce_probables_v2_facts
                 and timeframe is IntradayTimeframe.ONE_HOUR
             ),
+            component=component,
+            provider_symbol=record.trading_symbol,
         )
+
+
+def _component_for(timeframe: IntradayTimeframe) -> MachineFactFailureComponent:
+    return {
+        IntradayTimeframe.DAILY: (
+            MachineFactFailureComponent.PREVIOUS_COMPLETED_DAILY_EVIDENCE
+        ),
+        IntradayTimeframe.ONE_HOUR: (
+            MachineFactFailureComponent.CURRENT_SESSION_1H_EVIDENCE
+        ),
+        IntradayTimeframe.FIFTEEN_MINUTES: (
+            MachineFactFailureComponent.CURRENT_OPENING_15M_EVIDENCE
+        ),
+        IntradayTimeframe.FIVE_MINUTES: (
+            MachineFactFailureComponent.CURRENT_CONSTITUENT_5M_EVIDENCE
+        ),
+    }[timeframe]
+
+
+def _interval_or_failure(
+    timeframe: IntradayTimeframe,
+    component: MachineFactFailureComponent,
+):  # type: ignore[no-untyped-def]
+    try:
+        return provider_interval(timeframe)
+    except Exception as error:
+        raise DiscoveryMemberFactError(
+            DiscoveryReason.MACHINE_FACT_BUNDLE_INCOMPLETE,
+            _failure_detail(
+                MachineFactFailureStage.INTERVAL_SELECTION,
+                component,
+                MachineFactFailureAvailability.UNAVAILABLE,
+                "PROVIDER_INTERVAL_UNAVAILABLE",
+                timeframe=timeframe,
+            ),
+        ) from error
+
+
+def _failure_detail(
+    stage: MachineFactFailureStage,
+    component: MachineFactFailureComponent,
+    availability: MachineFactFailureAvailability,
+    code: str,
+    *,
+    timeframe: IntradayTimeframe | None = None,
+    interval: str | None = None,
+    provider_symbol: str | None = None,
+) -> MachineFactFailureDetail:
+    return MachineFactFailureDetail(
+        stage=stage,
+        component=component,
+        required_timeframe=timeframe,
+        expected_candle_interval=interval,
+        availability_failure=availability,
+        sanitized_failure_code=code,
+        provider_symbol_binding=provider_symbol,
+    )
 
 
 def _completed_intraday(
@@ -549,14 +776,40 @@ def _completed_intraday(
     timeframe: IntradayTimeframe,
     observed_at: datetime,
     allow_domain008_empty: bool = False,
+    component: MachineFactFailureComponent | None = None,
+    provider_symbol: str | None = None,
 ) -> tuple[HistoricalCandle, ...]:
+    component = component or _component_for(timeframe)
+    interval = _interval_or_failure(timeframe, component)
     if type(allow_domain008_empty) is not bool:
-        raise DiscoveryMemberFactError(DiscoveryReason.MACHINE_FACT_BUNDLE_INCOMPLETE)
+        raise DiscoveryMemberFactError(
+            DiscoveryReason.MACHINE_FACT_BUNDLE_INCOMPLETE,
+            _failure_detail(
+                MachineFactFailureStage.COMPLETION_VALIDATION,
+                component,
+                MachineFactFailureAvailability.INVALID,
+                "COMPLETION_POLICY_INVALID",
+                timeframe=timeframe,
+                interval=interval.value,
+                provider_symbol=provider_symbol,
+            ),
+        )
     if any(
         current.timestamp <= previous.timestamp
         for previous, current in zip(candles, candles[1:])
     ):
-        raise DiscoveryMemberFactError(DiscoveryReason.MACHINE_FACT_BUNDLE_INCOMPLETE)
+        raise DiscoveryMemberFactError(
+            DiscoveryReason.MACHINE_FACT_BUNDLE_INCOMPLETE,
+            _failure_detail(
+                MachineFactFailureStage.COMPLETION_VALIDATION,
+                component,
+                MachineFactFailureAvailability.INVALID,
+                "CANDLE_TIMESTAMP_ORDER_INVALID",
+                timeframe=timeframe,
+                interval=interval.value,
+                provider_symbol=provider_symbol,
+            ),
+        )
     expected = expected_candle_boundaries(schedule, timeframe)
     eligible = tuple(
         item for item in expected
@@ -564,7 +817,18 @@ def _completed_intraday(
     )
     supplied = {item.timestamp: item for item in candles}
     if len(supplied) != len(candles):
-        raise DiscoveryMemberFactError(DiscoveryReason.MACHINE_FACT_BUNDLE_INCOMPLETE)
+        raise DiscoveryMemberFactError(
+            DiscoveryReason.MACHINE_FACT_BUNDLE_INCOMPLETE,
+            _failure_detail(
+                MachineFactFailureStage.COMPLETION_VALIDATION,
+                component,
+                MachineFactFailureAvailability.CONFLICTING,
+                "CANDLE_TIMESTAMP_DUPLICATE",
+                timeframe=timeframe,
+                interval=interval.value,
+                provider_symbol=provider_symbol,
+            ),
+        )
     completed = tuple(supplied[item.start] for item in eligible if item.start in supplied)
     expected_starts = {item.start for item in expected}
     if (
@@ -573,7 +837,30 @@ def _completed_intraday(
         or any(item.timestamp not in expected_starts for item in candles)
     ):
         raise DiscoveryMemberFactError(
-            DiscoveryReason.MACHINE_FACT_BUNDLE_INCOMPLETE
+            DiscoveryReason.MACHINE_FACT_BUNDLE_INCOMPLETE,
+            _failure_detail(
+                (
+                    MachineFactFailureStage.REQUIRED_TIMEFRAME_ABSENCE
+                    if not eligible or len(completed) != len(eligible)
+                    else MachineFactFailureStage.COMPLETION_VALIDATION
+                ),
+                component,
+                (
+                    MachineFactFailureAvailability.NOT_COMPLETED
+                    if not eligible or len(completed) != len(eligible)
+                    else MachineFactFailureAvailability.INVALID
+                ),
+                (
+                    "NO_COMPLETED_CANDLE_BOUNDARY"
+                    if not eligible
+                    else "COMPLETED_CANDLE_MISSING"
+                    if len(completed) != len(eligible)
+                    else "CANDLE_BOUNDARY_UNEXPECTED"
+                ),
+                timeframe=timeframe,
+                interval=interval.value,
+                provider_symbol=provider_symbol,
+            ),
         )
     return completed
 

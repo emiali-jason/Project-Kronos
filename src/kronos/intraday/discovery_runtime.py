@@ -27,6 +27,14 @@ from kronos.intraday.discovery import (
     create_machine_fact_bundle,
 )
 from kronos.intraday.discovery_persistence import NativeDiscoveryStore
+from kronos.intraday.discovery_failure_provenance import (
+    DiscoveryMachineFactFailureProvenance,
+    MachineFactFailureAvailability,
+    MachineFactFailureComponent,
+    MachineFactFailureDetail,
+    MachineFactFailureStage,
+    create_discovery_failure_provenance,
+)
 from kronos.intraday.probables_refresh import DiscoveryProbablesFacts
 from kronos.intraday.probables_v2_refresh import DiscoveryProbablesV2Facts
 from kronos.intraday.reconciliation import (
@@ -52,12 +60,22 @@ class DiscoveryRunBoundary:
     observation_boundary: datetime
     market_session_identity: str
     market_session_boundary_identity: str
+    operation_identity: str | None = None
 
     def __post_init__(self) -> None:
         if (
             not _aware(self.observation_boundary)
             or not _text(self.market_session_identity)
             or not _text(self.market_session_boundary_identity)
+            or (
+                self.operation_identity is not None
+                and (
+                    not _text(self.operation_identity)
+                    or not self.operation_identity.startswith(
+                        "KRONOS-INTRADAY-DISCOVERY-OPERATION-"
+                    )
+                )
+            )
         ):
             raise DiscoveryError(DiscoveryFailure.OBSERVATION_BOUNDARY_INVALID)
 
@@ -70,6 +88,7 @@ class DiscoveryFactAcquisition:
     evidence: IntradayEvidenceBundle | None = None
     probables_facts: DiscoveryProbablesFacts | None = None
     probables_v2_facts: DiscoveryProbablesV2Facts | None = None
+    diagnostic_failure_detail: MachineFactFailureDetail | None = None
 
     def __post_init__(self) -> None:
         if (
@@ -113,6 +132,11 @@ class DiscoveryFactAcquisition:
                     != self.bundle.observation_boundary
                 )
             )
+            or (
+                self.diagnostic_failure_detail is not None
+                and type(self.diagnostic_failure_detail)
+                is not MachineFactFailureDetail
+            )
         ):
             raise DiscoveryError(DiscoveryFailure.INTEGRITY_INVALID)
 
@@ -130,7 +154,11 @@ class DiscoveryFactualSource(Protocol):
 class DiscoveryMemberFactError(RuntimeError):
     """Bounded per-member factual failure; arbitrary exception text is excluded."""
 
-    def __init__(self, reason: DiscoveryReason) -> None:
+    def __init__(
+        self,
+        reason: DiscoveryReason,
+        detail: MachineFactFailureDetail | None = None,
+    ) -> None:
         if reason not in {
             DiscoveryReason.MARKET_SESSION_UNAVAILABLE,
             DiscoveryReason.MACHINE_FACT_BUNDLE_INCOMPLETE,
@@ -142,7 +170,10 @@ class DiscoveryMemberFactError(RuntimeError):
             DiscoveryReason.PROVIDER_CONTRACT_UNAVAILABLE,
         }:
             raise ValueError("DISCOVERY_MEMBER_FAILURE_REASON_INVALID")
+        if detail is not None and type(detail) is not MachineFactFailureDetail:
+            raise ValueError("DISCOVERY_MEMBER_FAILURE_DETAIL_INVALID")
         self.reason = reason
+        self.detail = detail
         super().__init__(reason.value)
 
 
@@ -157,6 +188,7 @@ class DiscoveryRuntimeExecution:
     timeframe_fact_requests: int
     source_operation_count: int
     probables_v2_facts: tuple[DiscoveryProbablesV2Facts, ...] = ()
+    failure_provenance: tuple[DiscoveryMachineFactFailureProvenance, ...] = ()
     runtime_identity: str = DISCOVERY_RUNTIME_IDENTITY
     runtime_version: str = DISCOVERY_RUNTIME_VERSION
 
@@ -169,6 +201,7 @@ class DiscoveryRuntimeExecution:
         probables_v2_ids = tuple(
             item.universe_member_identity for item in self.probables_v2_facts
         )
+        failure_ids = tuple(item.failure_identity for item in self.failure_provenance)
         if (
             type(self.run) is not NativeDiscoveryRun
             or any(type(item) is not NativeDiscoveryMachineFactBundle for item in self.bundles)
@@ -190,6 +223,12 @@ class DiscoveryRuntimeExecution:
                 for item in self.probables_v2_facts
             )
             or len(set(probables_v2_ids)) != len(probables_v2_ids)
+            or any(
+                type(item) is not DiscoveryMachineFactFailureProvenance
+                or item.discovery_run_identity != self.run.run_identity
+                for item in self.failure_provenance
+            )
+            or len(set(failure_ids)) != len(failure_ids)
             or any(
                 type(value) is not int or value < 0
                 for value in (
@@ -275,6 +314,7 @@ class IntradayNativeDiscoveryService:
 
         bundles: dict[str, NativeDiscoveryMachineFactBundle] = {}
         failures: dict[str, DiscoveryReason] = {}
+        failure_details: dict[str, MachineFactFailureDetail] = {}
         evidence: list[tuple[str, IntradayEvidenceBundle]] = []
         probables_facts: list[DiscoveryProbablesFacts] = []
         probables_v2_facts: list[DiscoveryProbablesV2Facts] = []
@@ -298,7 +338,10 @@ class IntradayNativeDiscoveryService:
                     != boundary.observation_boundary
                 ):
                     raise DiscoveryMemberFactError(
-                        DiscoveryReason.MACHINE_FACT_BUNDLE_INCOMPLETE
+                        DiscoveryReason.MACHINE_FACT_BUNDLE_INCOMPLETE,
+                        _fallback_failure_detail(
+                            "MACHINE_FACT_BUNDLE_VALIDATION_FAILED"
+                        ),
                     )
                 bundles[member.universe_member_identity] = acquired.bundle
                 if acquired.evidence is not None:
@@ -307,15 +350,33 @@ class IntradayNativeDiscoveryService:
                     probables_facts.append(acquired.probables_facts)
                 if acquired.probables_v2_facts is not None:
                     probables_v2_facts.append(acquired.probables_v2_facts)
+                if acquired.diagnostic_failure_detail is not None:
+                    failure_details[member.universe_member_identity] = (
+                        acquired.diagnostic_failure_detail
+                    )
             except DiscoveryMemberFactError as error:
                 failures[member.universe_member_identity] = error.reason
+                if error.detail is not None:
+                    failure_details[member.universe_member_identity] = error.detail
+                elif error.reason is DiscoveryReason.MACHINE_FACT_BUNDLE_INCOMPLETE:
+                    failure_details[member.universe_member_identity] = (
+                        _fallback_failure_detail(
+                            "MACHINE_FACT_BUNDLE_VALIDATION_FAILED"
+                        )
+                    )
             except DiscoveryError as error:
-                failures[member.universe_member_identity] = _reason_for_failure(
-                    error.failure
-                )
+                reason = _reason_for_failure(error.failure)
+                failures[member.universe_member_identity] = reason
+                if reason is DiscoveryReason.MACHINE_FACT_BUNDLE_INCOMPLETE:
+                    failure_details[member.universe_member_identity] = (
+                        _fallback_failure_detail("MACHINE_FACT_BUNDLE_VALIDATION_FAILED")
+                    )
             except Exception:
                 failures[member.universe_member_identity] = (
                     DiscoveryReason.MACHINE_FACT_BUNDLE_INCOMPLETE
+                )
+                failure_details[member.universe_member_identity] = (
+                    _fallback_failure_detail("UNEXPECTED_SOURCE_BOUNDARY_FAILURE")
                 )
 
         run = create_discovery_runtime_run(
@@ -335,7 +396,26 @@ class IntradayNativeDiscoveryService:
         retained = tuple(
             sorted(bundles.values(), key=lambda item: item.canonical_identity)
         )
-        self._store.retain_run(run, bundles=retained)
+        operation_identity = boundary.operation_identity or _source_operation_identity(
+            boundary
+        )
+        provenance = tuple(sorted((
+            create_discovery_failure_provenance(
+                member=member,
+                discovery_run_identity=run.run_identity,
+                analysis_boundary=boundary.observation_boundary,
+                market_session_identity=boundary.market_session_identity,
+                operation_identity=operation_identity,
+                detail=failure_details[member.universe_member_identity],
+            )
+            for member in self._reconciliation.members
+            if member.universe_member_identity in failure_details
+        ), key=lambda item: item.universe_member_identity))
+        self._store.retain_run(
+            run,
+            bundles=retained,
+            failure_provenance=provenance,
+        )
         return DiscoveryRuntimeExecution(
             run=run,
             bundles=retained,
@@ -352,7 +432,34 @@ class IntradayNativeDiscoveryService:
             prerequisite_unavailable_count=run.accounting.prerequisite_unavailable,
             timeframe_fact_requests=(len(bundles) + len(failures)) * 4,
             source_operation_count=source_operations,
+            failure_provenance=provenance,
         )
+
+
+def _fallback_failure_detail(code: str) -> MachineFactFailureDetail:
+    return MachineFactFailureDetail(
+        stage=MachineFactFailureStage.BUNDLE_VALIDATION,
+        component=MachineFactFailureComponent.MACHINE_FACT_BUNDLE,
+        required_timeframe=None,
+        expected_candle_interval=None,
+        availability_failure=MachineFactFailureAvailability.INVALID,
+        sanitized_failure_code=code,
+    )
+
+
+def _source_operation_identity(boundary: DiscoveryRunBoundary) -> str:
+    encoded = json.dumps(
+        {
+            "observation_boundary": boundary.observation_boundary.isoformat(),
+            "market_session_identity": boundary.market_session_identity,
+            "market_session_boundary_identity": (
+                boundary.market_session_boundary_identity
+            ),
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode()
+    return "KRONOS-INTRADAY-DISCOVERY-OPERATION-" + sha256(encoded).hexdigest()
 
 
 def assemble_machine_fact_bundle(

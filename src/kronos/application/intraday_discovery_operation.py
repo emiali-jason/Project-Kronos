@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from enum import StrEnum
 from hashlib import sha256
@@ -483,7 +483,10 @@ class IntradayDiscoveryOperationService:
                     failure=DiscoveryOperationFailure.PUBLICATION_STALE,
                 )
             stage = DiscoveryOperationStage.OBSERVATION_BOUNDARY
-            boundary = self._boundary(request.observation_boundary)
+            boundary = replace(
+                self._boundary(request.observation_boundary),
+                operation_identity=request.operation_identity,
+            )
             if self._active_derivative_catalogue is not None:
                 assert self._active_derivative_binding_store is not None
                 assert self._provider_snapshot_store is not None
@@ -550,9 +553,12 @@ class IntradayDiscoveryOperationService:
                 )
             if active_resolutions is not None:
                 stage = DiscoveryOperationStage.OBSERVATION_BOUNDARY
-                boundary = self._boundary(
-                    request.observation_boundary,
-                    active_resolutions=active_resolutions,
+                boundary = replace(
+                    self._boundary(
+                        request.observation_boundary,
+                        active_resolutions=active_resolutions,
+                    ),
+                    operation_identity=request.operation_identity,
                 )
             stage = DiscoveryOperationStage.FACTUAL_SOURCE_ACQUISITION
             source = (

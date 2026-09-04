@@ -23,6 +23,9 @@ from kronos.intraday.discovery import (
     NativeDiscoveryRun,
 )
 from kronos.intraday.discovery_persistence import NativeDiscoveryStore
+from kronos.intraday.discovery_failure_provenance import (
+    DiscoveryMachineFactFailureProvenance,
+)
 from kronos.intraday.discovery_runtime import (
     DiscoveryRunBoundary,
     DiscoveryRuntimeExecution,
@@ -66,6 +69,7 @@ class IntradayDiscoveryMemberSnapshot:
     analysis_contract: str | None = None
     contract_expiry: str | None = None
     active_binding_identity: str | None = None
+    failure_provenance: DiscoveryMachineFactFailureProvenance | None = None
 
     def __post_init__(self) -> None:
         if (
@@ -104,6 +108,15 @@ class IntradayDiscoveryMemberSnapshot:
                     self.contract_expiry,
                     self.active_binding_identity,
                 ))
+            )
+            or (
+                self.failure_provenance is not None
+                and (
+                    type(self.failure_provenance)
+                    is not DiscoveryMachineFactFailureProvenance
+                    or self.failure_provenance.canonical_subject_identity
+                    != self.canonical_identity
+                )
             )
         ):
             raise ValueError("INTRADAY_DISCOVERY_MEMBER_SNAPSHOT_INVALID")
@@ -241,6 +254,9 @@ class IntradayDiscoveryApplication:
         self._run: NativeDiscoveryRun | None = None
         self._bundles: dict[str, NativeDiscoveryMachineFactBundle] = {}
         self._evidence: dict[str, IntradayEvidenceBundle] = {}
+        self._failure_provenance: dict[
+            str, DiscoveryMachineFactFailureProvenance
+        ] = {}
         self._active_bindings: dict[str, ActiveDerivativeBindingArtifact] = {}
         self._current_failure: str | None = None
         if last_successful_run_identity is not None:
@@ -282,6 +298,11 @@ class IntradayDiscoveryApplication:
         retained = self._store.load_run(run_identity=execution.run.run_identity)
         if retained != execution.run:
             raise ValueError("INTRADAY_DISCOVERY_PERSISTED_RUN_MISMATCH")
+        retained_failures = self._store.load_failure_provenance_for_run(
+            run_identity=execution.run.run_identity
+        )
+        if retained_failures != execution.failure_provenance:
+            raise ValueError("INTRADAY_DISCOVERY_FAILURE_PROVENANCE_MISMATCH")
         self._accept_execution(execution)
         self._current_failure = None
 
@@ -339,6 +360,10 @@ class IntradayDiscoveryApplication:
         self._run = execution.run
         self._bundles = {item.bundle_identity: item for item in execution.bundles}
         self._evidence = dict(execution.evidence)
+        self._failure_provenance = {
+            item.universe_member_identity: item
+            for item in execution.failure_provenance
+        }
         self._load_active_bindings(execution.run)
 
     def _restore(self, run_identity: str) -> None:
@@ -360,6 +385,12 @@ class IntradayDiscoveryApplication:
         }
         self._run = run
         self._bundles = bundles
+        self._failure_provenance = {
+            item.universe_member_identity: item
+            for item in self._store.load_failure_provenance_for_run(
+                run_identity=run.run_identity
+            )
+        }
         self._load_active_bindings(run)
 
     def _load_active_bindings(self, run: NativeDiscoveryRun) -> None:
@@ -451,6 +482,9 @@ class IntradayDiscoveryApplication:
                     None
                     if active_binding is None
                     else active_binding.binding_identity
+                ),
+                failure_provenance=self._failure_provenance.get(
+                    member.universe_member_identity
                 ),
             ))
         return tuple(sorted(items, key=lambda item: (item.canonical_identity, item.sponsor_label)))
