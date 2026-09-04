@@ -8,6 +8,9 @@ from kronos.browser.intraday_views import (
     _probable_v2_card,
     _render_probables_v2_triage,
 )
+from kronos.browser.intraday_market_availability import (
+    project_intraday_market_availability,
+)
 from kronos.intraday.completed_evidence import IntradayAnalysisPhase
 from kronos.intraday.historical_semantic import SemanticDirection
 from kronos.intraday.nifty_relative_context import (
@@ -16,6 +19,7 @@ from kronos.intraday.nifty_relative_context import (
 )
 from kronos.intraday.probables import ProbableState
 from kronos.intraday.probables_v2 import ProbableReasonV2
+from kronos.market.calendar import MarketCalendarPublisher
 
 
 _BOUNDARY = datetime(2026, 8, 28, 10, 15, tzinfo=ZoneInfo("Asia/Kolkata"))
@@ -57,7 +61,12 @@ def _result(
     )
 
 
-def _render(members: list[SimpleNamespace], results: list[SimpleNamespace]) -> str:
+def _render(
+    members: list[SimpleNamespace],
+    results: list[SimpleNamespace],
+    *,
+    observed_at: datetime | None = None,
+) -> str:
     long_count = sum(item.state is ProbableState.LONG_PROBABLE for item in results)
     short_count = sum(item.state is ProbableState.SHORT_PROBABLE for item in results)
     unavailable_count = sum(item.state is ProbableState.UNAVAILABLE for item in results)
@@ -69,10 +78,12 @@ def _render(members: list[SimpleNamespace], results: list[SimpleNamespace]) -> s
         total_probables=long_count + short_count,
         not_admitted_count=not_admitted_count,
         unavailable_count=unavailable_count,
+        evaluable_count=len(results) - unavailable_count,
         population_bucket=SimpleNamespace(value="VIABLE"),
         phase_counts=((IntradayAnalysisPhase.OPENING, len(results)),),
     )
     run = SimpleNamespace(
+        run_identity="INTRADAY-PROBABLES-V2-RUN-CURRENT",
         diagnostics=diagnostics,
         results=tuple(results),
         methodology=SimpleNamespace(
@@ -88,6 +99,14 @@ def _render(members: list[SimpleNamespace], results: list[SimpleNamespace]) -> s
         refresh_enabled=False,
         last="28 Aug 2026 · 10:15 IST",
         failure="",
+        market_availability=(
+            ()
+            if observed_at is None
+            else project_intraday_market_availability(
+                MarketCalendarPublisher(), observed_at=observed_at
+            )
+        ),
+        refresh_status={} if observed_at is not None else None,
     )
 
 
@@ -208,3 +227,109 @@ def test_v2_projection_is_responsive_and_does_not_compute_analytical_state() -> 
     assert "publish" not in _render_probables_v2_triage.__code__.co_names
     assert _render(members, results) == html
     assert tuple(item.state for item in results) == states_before
+
+
+def test_non_evaluable_refresh_preserves_prior_projection_and_separates_freshness() -> None:
+    members = [_member("RELIANCE", "NSE_EQUITY")]
+    prior_result = _result(
+        "RELIANCE", ProbableState.SHORT_PROBABLE, SemanticDirection.SHORT
+    )
+    current_result = _result("RELIANCE", ProbableState.UNAVAILABLE)
+    prior_diagnostics = SimpleNamespace(
+        starting_population=1,
+        long_probables=0,
+        short_probables=1,
+        total_probables=1,
+        not_admitted_count=0,
+        unavailable_count=0,
+        evaluable_count=1,
+        population_bucket=SimpleNamespace(value="STARVED"),
+        phase_counts=((IntradayAnalysisPhase.OPENING, 1),),
+    )
+    current_diagnostics = SimpleNamespace(
+        starting_population=1,
+        long_probables=0,
+        short_probables=0,
+        total_probables=0,
+        not_admitted_count=0,
+        unavailable_count=1,
+        evaluable_count=0,
+        population_bucket=SimpleNamespace(value="STARVED"),
+        phase_counts=(),
+    )
+    methodology = SimpleNamespace(
+        methodology_identity="KRONOS-INTRADAY-PROBABLES-METHODOLOGY-V2",
+        methodology_version="2.1.0",
+    )
+    prior = SimpleNamespace(
+        run_identity="INTRADAY-PROBABLES-V2-RUN-PRIOR",
+        diagnostics=prior_diagnostics,
+        results=(prior_result,),
+        methodology=methodology,
+        analysis_boundary=datetime(
+            2026, 8, 28, 14, 45, tzinfo=ZoneInfo("Asia/Kolkata")
+        ),
+    )
+    current = SimpleNamespace(
+        run_identity="INTRADAY-PROBABLES-V2-RUN-CURRENT",
+        diagnostics=current_diagnostics,
+        results=(current_result,),
+        methodology=methodology,
+        analysis_boundary=datetime(
+            2026, 9, 4, 8, 45, tzinfo=ZoneInfo("Asia/Kolkata")
+        ),
+    )
+    html = _render_probables_v2_triage(
+        SimpleNamespace(members=tuple(members)),
+        current,
+        refresh_enabled=False,
+        last="04 Sep 2026 · 08:45 IST",
+        failure="",
+        refresh_status={
+            "last_refresh_attempt": {
+                "attempted_at": "2026-09-04T08:45:03+05:30",
+                "outcome": "SUCCESS",
+            }
+        },
+        latest_evaluable_run=prior,
+    )
+
+    assert "Last refresh attempt" in html
+    assert "04 SEP 2026 08:45 IST · Success" in html
+    assert "Last successful evaluable analysis" in html
+    assert "28 AUG 2026 14:45 IST" in html
+    assert "NOT YET EVALUABLE — WAITING FOR MARKET WINDOW" in html
+    assert "PRIOR SESSION / REFERENCE ONLY" in html
+    assert "Original trading date: 2026-08-28" in html
+    assert "STALE — NOT NEWLY QUALIFIED OR ACTIONABLE TODAY" in html
+    primary = html.split('<details class="intraday-probables-diagnostics">', 1)[0]
+    assert "RELIANCE" in primary
+    assert "NO EVALUABLE PHASE" not in primary
+    assert "NO EVALUABLE PHASE" in html
+
+
+def test_refresh_presentation_tracks_available_market_families() -> None:
+    members = [_member("RELIANCE", "NSE_EQUITY")]
+    results = [_result("RELIANCE", ProbableState.LONG_PROBABLE, SemanticDirection.LONG)]
+
+    mcx_only = _render(
+        members,
+        results,
+        observed_at=datetime(2026, 8, 28, 15, 30, tzinfo=ZoneInfo("Asia/Kolkata")),
+    )
+    both = _render(
+        members,
+        results,
+        observed_at=datetime(2026, 8, 28, 10, 0, tzinfo=ZoneInfo("Asia/Kolkata")),
+    )
+    neither = _render(
+        members,
+        results,
+        observed_at=datetime(2026, 8, 28, 23, 0, tzinfo=ZoneInfo("Asia/Kolkata")),
+    )
+
+    assert "REFRESH AVAILABLE FOR: MCX" in mcx_only
+    assert "REFRESH AVAILABLE FOR: EQUITY / INDEX + MCX" in both
+    assert "REFRESH UNAVAILABLE — NO MARKET IS CURRENTLY EVALUABLE" in neither
+    assert "ANALYSIS WINDOW CLOSED" in neither
+    assert ".intraday-availability-grid,.intraday-freshness-grid{grid-template-columns:1fr}" in _INTRADAY_CSS

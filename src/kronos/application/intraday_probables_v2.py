@@ -86,6 +86,12 @@ class IntradayProbablesV2Application:
             ):
                 raise ProbablesV2Error("PROBABLES_V2_RESTART_METHODOLOGY_MISMATCH")
 
+    @property
+    def store(self) -> ProbablesV2Store:
+        """Return the bound immutable store for read-only historical projection."""
+
+        return self._store
+
     def refresh_analysis(
         self,
         *,

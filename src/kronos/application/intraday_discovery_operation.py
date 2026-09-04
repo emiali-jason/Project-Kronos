@@ -394,6 +394,12 @@ class IntradayDiscoveryOperationService:
         return self._runtime.lifecycle_state.value
 
     @property
+    def calendar_publisher(self) -> MarketCalendarPublisher:
+        """Expose the existing DOMAIN-008 publisher for read-only projection."""
+
+        return self._calendar
+
+    @property
     def active_operation_identity(self) -> str | None:
         """Expose only the sanitized identity of current bounded work."""
 

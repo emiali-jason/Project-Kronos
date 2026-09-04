@@ -53,8 +53,18 @@ def test_normal_sponsor_control_targets_exact_v2_and_has_no_auto_trigger(
     tmp_path: Path,
 ) -> None:
     routes, composition, factory_calls, provider_requests = _routes(tmp_path)
+    before = {
+        path.relative_to(tmp_path): path.read_bytes()
+        for path in tmp_path.rglob("*")
+        if path.is_file()
+    }
 
     page = routes.handle_get(BrowserGetRequest("/intraday", {}), _snapshot)
+    after = {
+        path.relative_to(tmp_path): path.read_bytes()
+        for path in tmp_path.rglob("*")
+        if path.is_file()
+    }
 
     assert page is not None and page.status is HTTPStatus.OK
     assert "Refresh Analysis · V2 Phase-Aware" in page.body
@@ -68,6 +78,10 @@ def test_normal_sponsor_control_targets_exact_v2_and_has_no_auto_trigger(
     assert "addEventListener('visibilitychange'" not in page.body
     assert "addEventListener('focus'" not in page.body
     assert "<button type=\"button\" id=\"intraday-refresh-analysis\"" in page.body
+    assert "EQUITY / INDEX" in page.body
+    assert "MCX" in page.body
+    assert "ANALYSIS FRESHNESS" in page.body
+    assert before == after
     assert composition.discovery_operation.last_result is None
     assert composition.discovery_v2_operation.last_result is None
     assert factory_calls == []

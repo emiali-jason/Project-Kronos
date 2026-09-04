@@ -27,6 +27,7 @@ from kronos.application.intraday_discovery import (
 )
 from kronos.application.intraday_workstation import IntradayWorkstationSnapshot
 from kronos.application.swing_opportunities import BrowserWorkspaceSnapshot
+from kronos.browser.intraday_market_availability import IntradayMarketAvailability
 from kronos.browser.views import render_browser_page
 from kronos.intraday.contracts import CandleCompletion, IntradayTimeframe
 from kronos.intraday.discovery import FactFamily
@@ -68,10 +69,11 @@ _INTRADAY_CSS = r"""
 .intraday-warning{display:flex;justify-content:space-between;gap:16px;border:1px solid #82631f;background:#231d11;color:#f6d997;border-radius:8px;padding:12px 14px;margin-bottom:14px}.intraday-selector{display:flex;align-items:center;gap:10px;margin-bottom:14px}.intraday-selector label{font-weight:700}.intraday-selector select{border:1px solid #31506a;background:#04131f;color:var(--text);border-radius:7px;padding:9px 12px}.intraday-panel{border:1px solid var(--line);background:rgba(6,23,37,.88);border-radius:10px;padding:15px;margin-bottom:14px;min-width:0}.intraday-panel h2{margin:0 0 12px;color:var(--blue);font-size:17px}.intraday-panel h3{margin:14px 0 7px;color:var(--muted);font-size:11px;text-transform:uppercase}.intraday-facts{display:grid;grid-template-columns:minmax(140px,.35fr) minmax(0,1fr);margin:0}.intraday-facts dt,.intraday-facts dd{padding:6px 8px;border-top:1px solid var(--line);margin:0;overflow-wrap:anywhere}.intraday-facts dt{color:var(--muted)}.intraday-timeframes{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.incomplete-observation{display:grid;gap:5px;margin-top:11px;border:1px dashed #82631f;border-radius:7px;padding:9px;color:#f6d997}.incomplete-observation span{color:var(--muted);overflow-wrap:anywhere}.intraday-context{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}.intraday-table{width:100%;border-collapse:collapse;font-size:12px}.intraday-table th,.intraday-table td{text-align:left;vertical-align:top;padding:8px;border-bottom:1px solid var(--line);overflow-wrap:anywhere}.intraday-table th{color:var(--muted);white-space:nowrap}.table-scroll{overflow:auto}.intraday-unavailable{color:var(--muted)}.intraday-unavailable strong{color:var(--amber)}
 .intraday-discovery-header{border:1px solid var(--line);background:#071827;border-radius:9px;padding:13px 15px;margin-bottom:12px}.intraday-discovery-header h2{font-size:17px;color:var(--green);margin:0 0 5px}.intraday-discovery-header p{margin:3px 0;color:var(--muted);font-size:12px}.intraday-discovery-table{width:100%;border-collapse:collapse;font-size:12px}.intraday-discovery-table th,.intraday-discovery-table td{padding:7px 8px;border-bottom:1px solid var(--line);text-align:left}.intraday-discovery-table th{font-size:10px;color:var(--muted);text-transform:uppercase}.intraday-state-ready{color:var(--green)}.intraday-state-held{color:var(--amber)}.intraday-failure{border:1px solid #81502a;background:#26170d;color:#f0c08e;border-radius:7px;padding:9px 11px;margin-bottom:12px}.intraday-methodology{border:1px solid var(--line);background:#071827;color:#c2d2dd;border-radius:7px;padding:8px 11px;margin-bottom:12px;font-size:11px}.intraday-methodology strong{color:var(--green)}.intraday-detail-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
 .intraday-tabs{margin:-22px -28px 22px}.intraday-tabs a.active{border-color:var(--green)}.intraday-tab{height:61px;display:flex;align-items:center;color:var(--muted);border-bottom:2px solid transparent;white-space:nowrap}.intraday-refresh-state{margin-left:8px;color:var(--muted);font-size:10px}.intraday-summary .status-top strong{color:var(--green)}.intraday-market-panels{grid-template-columns:repeat(2,minmax(0,1fr))}.intraday-market-panels .panel-heading h2{color:var(--green)}.intraday-market-panels .market-panel{min-height:330px}.intraday-market-panels .empty{min-height:110px}.intraday-market-accounting{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px;margin:-8px 0 14px}.intraday-market-accounting div{border:1px solid var(--line);border-radius:7px;background:#071827;padding:8px}.intraday-market-accounting span{display:block;color:var(--muted);font-size:8px;text-transform:uppercase;letter-spacing:.05em}.intraday-market-accounting strong{display:block;margin-top:2px;font-size:14px}.intraday-opportunities-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;align-items:start}.intraday-market-group{border:1px solid var(--line);background:rgba(6,23,37,.86);border-radius:11px;padding:16px;min-width:0}.intraday-market-heading{display:flex;align-items:baseline;justify-content:space-between;gap:10px;border-bottom:1px solid var(--line);padding-bottom:10px}.intraday-market-heading h2{margin:0;color:var(--green);font-size:17px}.intraday-market-heading span{color:var(--muted);font-size:11px}.intraday-direction-group{margin-top:14px}.intraday-direction-group>h3{margin:0;color:#dce8f0;font-size:12px;letter-spacing:.08em}.intraday-direction-group>p{margin:3px 0 0;color:var(--muted);font-size:10px}.intraday-direction-empty{border:1px dashed var(--line);border-radius:8px;color:var(--muted);font-size:11px;margin-top:8px;padding:11px;text-align:center}.intraday-market-empty{border-left:2px solid var(--amber);color:var(--muted);font-size:10px;margin:12px 0 0;padding:6px 9px}.intraday-probable .opp-identity h4{font-size:18px;margin:0}.intraday-probable .summary-reason{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:7px}.intraday-card-fact{border-left:1px solid var(--line);padding-left:7px;min-width:0}.intraday-card-fact:first-child{border-left:0;padding-left:0}.intraday-card-fact span{display:block;color:var(--muted);font-size:8px;text-transform:uppercase;letter-spacing:.04em}.intraday-card-fact strong{display:block;margin-top:2px;font-size:11px;overflow-wrap:anywhere}.intraday-probable .summary-rr strong{color:#dce8f0}.intraday-probables-diagnostics{border:1px solid var(--line);background:#071827;border-radius:9px;margin-top:14px;padding:10px 12px}.intraday-probables-diagnostics>summary{cursor:pointer;color:var(--muted);font-size:10px;font-weight:800;letter-spacing:.05em}.intraday-diagnostic-list{display:grid;max-height:360px;overflow:auto;margin-top:9px}.intraday-diagnostic-row{display:grid;grid-template-columns:minmax(140px,.7fr) minmax(110px,.4fr) minmax(170px,.7fr) minmax(220px,1.3fr);gap:8px;border-top:1px solid var(--line);padding:7px 0;font-size:9px}.intraday-diagnostic-row strong{color:#dce8f0}.intraday-diagnostic-row span{color:var(--muted);overflow-wrap:anywhere}.intraday-panel-footer{display:flex;flex-wrap:wrap;gap:7px 14px;border-top:1px solid var(--line);margin-top:13px;padding-top:10px;color:var(--muted);font-size:10px}.intraday-panel-footer strong{color:#dce8f0}.intraday-unavailable-list{display:grid;gap:6px;margin-top:10px}.intraday-unavailable-subject{display:flex;justify-content:space-between;gap:10px;border-top:1px solid var(--line);padding-top:6px;color:var(--muted);font-size:11px}.intraday-unavailable-subject strong{color:var(--amber)}.intraday-analysis-context{display:flex;align-items:flex-start;gap:12px;border:1px solid var(--line);background:#071827;border-radius:8px;margin-top:14px;padding:8px 10px}.intraday-analysis-context>strong{flex:0 0 auto;color:var(--green);font-size:10px;text-transform:uppercase;letter-spacing:.05em}.intraday-analysis-context-detail{display:flex;align-items:center;flex-wrap:wrap;gap:5px 12px;color:var(--muted);font-size:8px;white-space:normal}.intraday-analysis-context-detail span{padding-left:12px;border-left:1px solid var(--line)}
+.intraday-availability-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-bottom:12px}.intraday-availability-card{border:1px solid var(--line);border-radius:9px;background:#071827;padding:11px 13px}.intraday-availability-card span{display:block;color:var(--muted);font-size:9px;letter-spacing:.06em}.intraday-availability-card strong{display:block;margin-top:4px;color:#dce8f0;font-size:12px}.intraday-availability-card.available{border-color:#2d765d}.intraday-availability-card.available strong{color:var(--green)}.intraday-availability-card.closed strong,.intraday-availability-card.pre-market strong{color:var(--amber)}.intraday-freshness{border:1px solid var(--line);border-radius:9px;background:#061725;padding:11px 13px;margin-bottom:12px}.intraday-freshness h2{margin:0 0 8px;color:var(--green);font-size:13px}.intraday-freshness-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px 14px}.intraday-freshness-grid span{color:var(--muted);font-size:9px}.intraday-freshness-grid strong{display:block;color:#dce8f0;font-size:11px;margin-top:2px}.intraday-prior-projection{border:1px solid #82631f;background:#231d11;color:#f6d997;border-radius:8px;padding:10px 12px;margin-bottom:12px}.intraday-prior-projection strong{display:block}.intraday-prior-projection span{display:block;color:#d7c79b;font-size:10px;margin-top:3px}
 .intraday-review-toolbar{display:flex;align-items:center;gap:9px;flex-wrap:wrap;border:1px solid var(--line);background:#071827;border-radius:9px;padding:10px;margin-bottom:12px}.intraday-review-toolbar form{margin:0}.intraday-review-toolbar .future-action{opacity:.62}.intraday-review-toolbar-note{color:var(--muted);font-size:10px}.intraday-batch-result{border:1px solid #2d765d;background:#08261e;border-radius:9px;padding:10px 12px;margin-bottom:12px}.intraday-batch-result h2{color:var(--green);font-size:13px;margin:0 0 6px}.intraday-batch-accounting{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}.intraday-batch-accounting span,.intraday-batch-members span{font-size:10px;color:var(--muted)}.intraday-batch-members{display:flex;flex-wrap:wrap;gap:5px 12px;margin-top:7px}.intraday-review-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:12px}.intraday-review-card{border:1px solid var(--line);background:#071827;border-radius:10px;padding:14px;min-width:0}.intraday-review-card h2{margin:0;color:var(--green);font-size:18px}.intraday-review-head{display:flex;justify-content:space-between;gap:14px;align-items:center}.intraday-review-required{display:inline-block;margin-top:7px;color:#f6d997;font-size:10px;font-weight:850}.intraday-probable-context{border-top:1px solid var(--line);border-bottom:1px solid var(--line);padding:8px 0;margin:9px 0;color:#d9e6df;font-size:10px}.intraday-probable-context strong{display:block;color:var(--green);font-size:9px;text-transform:uppercase;margin-bottom:3px}.intraday-review-section-title{color:var(--muted);font-size:9px;font-weight:850;letter-spacing:.05em;margin:10px 0 6px}.intraday-review-status{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin:12px 0}.intraday-review-status div{border:1px solid var(--line);border-radius:6px;padding:7px}.intraday-review-status span{display:block;color:var(--muted);font-size:8px;text-transform:uppercase}.intraday-review-status strong{font-size:10px;overflow-wrap:anywhere}.intraday-review-actions{display:grid;gap:8px}.intraday-drop{display:grid;place-items:center;text-align:center;min-height:160px;border:2px dashed #3d836b;border-radius:9px;padding:16px;color:var(--muted);cursor:pointer;outline:none}.intraday-drop:hover,.intraday-drop:focus-visible{border-color:var(--green);background:#09251d;box-shadow:0 0 0 3px rgba(46,212,119,.14)}.intraday-drop .paste-key{display:grid;place-items:center;width:46px;height:36px;border:1px solid #3d836b;border-radius:7px;color:var(--green);font-size:18px;font-weight:900}.intraday-drop strong{color:#e9f7f0;font-size:13px;margin-top:7px}.intraday-drop span{display:block;font-size:10px}.intraday-drop .required-panels{margin-top:7px}.intraday-chart-input{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}.intraday-file-choice{justify-self:start;display:inline-block;border:1px solid #246a52;border-radius:7px;padding:7px 10px;color:#dff7eb;font-size:10px;font-weight:750;cursor:pointer}.intraday-file-choice:hover,.intraday-file-choice:focus-visible{border-color:var(--green);outline:2px solid rgba(46,212,119,.25)}.intraday-review-actions form{margin:0}.intraday-review-lineage{font-size:9px;color:var(--muted);overflow-wrap:anywhere}.intraday-review-diagnostics{font-size:9px;color:var(--muted)}.intraday-review-diagnostics summary{cursor:pointer}.intraday-review-config{margin-top:14px;border:1px solid var(--line);border-radius:7px;padding:9px;color:var(--muted);font-size:9px;overflow-wrap:anywhere}
 .intraday-drop{cursor:text;overflow:hidden}.intraday-drop.replace-ready{border-color:var(--green);background:#09251d;box-shadow:0 0 0 3px rgba(46,212,119,.14)}.intraday-drop.received{min-height:82px;border-style:solid}.intraday-chart-received strong{color:var(--green)}.intraday-chart-received span{color:var(--muted)}.intraday-chart-slot-actions{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
 @media(max-width:900px){.intraday-detail-grid{grid-template-columns:1fr}.intraday-probable .summary-reason{grid-template-columns:repeat(3,minmax(0,1fr))}.intraday-diagnostic-row{grid-template-columns:minmax(120px,.7fr) minmax(100px,.4fr) minmax(160px,1fr)}.intraday-diagnostic-row span:last-child{grid-column:1/-1}}
-@media(max-width:760px){.intraday-tabs{margin:-18px -18px 18px;padding:0 18px;gap:13px;overflow:auto}.intraday-tabs .toolbar{margin-left:0}.intraday-timeframes,.intraday-context{grid-template-columns:1fr}.intraday-warning,.intraday-selector{align-items:flex-start;flex-direction:column}.intraday-facts{grid-template-columns:1fr}.intraday-facts dd{padding-top:0}.intraday-market-panels,.intraday-opportunities-grid{grid-template-columns:1fr}.intraday-market-accounting{grid-template-columns:repeat(2,minmax(0,1fr))}.intraday-probable .summary-reason{grid-template-columns:repeat(2,minmax(0,1fr))}.intraday-diagnostic-row{grid-template-columns:1fr}.intraday-diagnostic-row span:last-child{grid-column:auto}.intraday-analysis-context{align-items:flex-start}.intraday-analysis-context-detail{flex-wrap:wrap;white-space:normal}.intraday-review-list{grid-template-columns:1fr}.intraday-batch-accounting{grid-template-columns:repeat(2,minmax(0,1fr))}.intraday-review-status{grid-template-columns:1fr}.intraday-review-toolbar{align-items:stretch;flex-direction:column}.intraday-review-toolbar button{width:100%}}
+@media(max-width:760px){.intraday-tabs{margin:-18px -18px 18px;padding:0 18px;gap:13px;overflow:auto}.intraday-tabs .toolbar{margin-left:0}.intraday-timeframes,.intraday-context,.intraday-availability-grid,.intraday-freshness-grid{grid-template-columns:1fr}.intraday-warning,.intraday-selector{align-items:flex-start;flex-direction:column}.intraday-facts{grid-template-columns:1fr}.intraday-facts dd{padding-top:0}.intraday-market-panels,.intraday-opportunities-grid{grid-template-columns:1fr}.intraday-market-accounting{grid-template-columns:repeat(2,minmax(0,1fr))}.intraday-probable .summary-reason{grid-template-columns:repeat(2,minmax(0,1fr))}.intraday-diagnostic-row{grid-template-columns:1fr}.intraday-diagnostic-row span:last-child{grid-column:auto}.intraday-analysis-context{align-items:flex-start}.intraday-analysis-context-detail{flex-wrap:wrap;white-space:normal}.intraday-review-list{grid-template-columns:1fr}.intraday-batch-accounting{grid-template-columns:repeat(2,minmax(0,1fr))}.intraday-review-status{grid-template-columns:1fr}.intraday-review-toolbar{align-items:stretch;flex-direction:column}.intraday-review-toolbar button{width:100%}}
 """
 
 _REVIEW_V2_CSS = r"""
@@ -83,6 +85,10 @@ _REVIEW_V2_CSS = r"""
 def render_intraday_workstation(
     snapshot: BrowserWorkspaceSnapshot,
     intraday: IntradayWorkstationSnapshot | IntradayDiscoverySnapshot,
+    *,
+    market_availability: tuple[IntradayMarketAvailability, ...] = (),
+    refresh_status: dict[str, object] | None = None,
+    latest_evaluable_run: ProbablesRunV2 | None = None,
 ) -> str:
     """Render the complete Intraday page through the stable Browser shell."""
 
@@ -94,7 +100,16 @@ def render_intraday_workstation(
         active_tab="",
         body=render_intraday_triage(
             intraday,
-            refresh_enabled=snapshot.provider_state.value == "CONNECTED",
+            refresh_enabled=(
+                snapshot.provider_state.value == "CONNECTED"
+                and (
+                    not market_availability
+                    or any(item.available for item in market_availability)
+                )
+            ),
+            market_availability=market_availability,
+            refresh_status=refresh_status,
+            latest_evaluable_run=latest_evaluable_run,
         ),
         extra_styles=_INTRADAY_CSS,
     )
@@ -1847,9 +1862,18 @@ def render_intraday_triage(
     snapshot: IntradayWorkstationSnapshot | IntradayDiscoverySnapshot,
     *,
     refresh_enabled: bool = False,
+    market_availability: tuple[IntradayMarketAvailability, ...] = (),
+    refresh_status: dict[str, object] | None = None,
+    latest_evaluable_run: ProbablesRunV2 | None = None,
 ) -> str:
     if isinstance(snapshot, IntradayDiscoverySnapshot):
-        return _render_discovery_triage(snapshot, refresh_enabled=refresh_enabled)
+        return _render_discovery_triage(
+            snapshot,
+            refresh_enabled=refresh_enabled,
+            market_availability=market_availability,
+            refresh_status=refresh_status,
+            latest_evaluable_run=latest_evaluable_run,
+        )
     warning = ('<div class="intraday-warning"><strong>ENGINEERING / EVIDENCE</strong>'
                '<span>NO TRADING CONCLUSION — EVIDENCE WORKSTATION</span></div>')
     if snapshot.selected_instrument is None:
@@ -1895,6 +1919,9 @@ def _render_discovery_triage(
     snapshot: IntradayDiscoverySnapshot,
     *,
     refresh_enabled: bool,
+    market_availability: tuple[IntradayMarketAvailability, ...] = (),
+    refresh_status: dict[str, object] | None = None,
+    latest_evaluable_run: ProbablesRunV2 | None = None,
 ) -> str:
     last = _analysis_time(snapshot.last_successful_analysis)
     failure_text = {
@@ -1943,6 +1970,9 @@ def _render_discovery_triage(
             refresh_enabled=refresh_enabled,
             last=last,
             failure=failure,
+            market_availability=market_availability,
+            refresh_status=refresh_status,
+            latest_evaluable_run=latest_evaluable_run,
         )
     if probable_v2_snapshot is not None:
         legacy = (
@@ -1955,6 +1985,13 @@ def _render_discovery_triage(
         )
         return (
             _intraday_tabs(refresh_enabled)
+            + _render_market_availability(market_availability)
+            + _render_analysis_freshness(
+                market_availability,
+                refresh_status,
+                current_run=None,
+                latest_evaluable_run=latest_evaluable_run,
+            )
             + failure
             + '<div class="intraday-methodology"><strong>PHASE-AWARE V2 · '
             'NOT YET RUN</strong> No commissioned V2 analytical run is loaded.'
@@ -2105,10 +2142,25 @@ def _render_probables_v2_triage(
     refresh_enabled: bool,
     last: str,
     failure: str,
+    market_availability: tuple[IntradayMarketAvailability, ...] = (),
+    refresh_status: dict[str, object] | None = None,
+    latest_evaluable_run: ProbablesRunV2 | None = None,
 ) -> str:
     """Project persisted V2 facts only; no analytical recomputation occurs."""
 
-    diagnostics = run.diagnostics
+    current_run = run
+    current_is_evaluable = current_run.diagnostics.evaluable_count > 0
+    projection_run = (
+        current_run
+        if current_is_evaluable
+        else latest_evaluable_run
+    )
+    reference_only = (
+        projection_run is not None
+        and projection_run.run_identity != current_run.run_identity
+    )
+    presented_run = current_run if projection_run is None else projection_run
+    diagnostics = presented_run.diagnostics
     metrics = (
         ("Universe", diagnostics.starting_population),
         ("Long Probables", diagnostics.long_probables),
@@ -2127,7 +2179,7 @@ def _render_probables_v2_triage(
     admitted_states = {ProbableState.LONG_PROBABLE, ProbableState.SHORT_PROBABLE}
     admitted = tuple(
         item
-        for item in run.results
+        for item in presented_run.results
         if item.state in admitted_states
         and item.canonical_subject_identity in members
         and members[item.canonical_subject_identity].market_family
@@ -2144,7 +2196,9 @@ def _render_probables_v2_triage(
         for item in admitted
         if members[item.canonical_subject_identity].market_family == "MCX"
     )
-    diagnostics_results = tuple(item for item in run.results if item not in admitted)
+    diagnostics_results = tuple(
+        item for item in current_run.results if item not in admitted
+    )
     equity_long = sum(item.state is ProbableState.LONG_PROBABLE for item in equity)
     equity_short = sum(item.state is ProbableState.SHORT_PROBABLE for item in equity)
     mcx_long = sum(item.state is ProbableState.LONG_PROBABLE for item in mcx)
@@ -2165,23 +2219,143 @@ def _render_probables_v2_triage(
     )
     phase_counts = " · ".join(
         f"{phase.value} {count}" for phase, count in diagnostics.phase_counts if count
-    ) or "NO EVALUABLE PHASE"
+    ) or "PHASE UNAVAILABLE"
+    prior_projection = ""
+    if reference_only:
+        prior_projection = (
+            '<div class="intraday-prior-projection"><strong>'
+            'PRIOR SESSION / REFERENCE ONLY</strong><span>Original analysis timestamp: '
+            + escape(_ist_time(presented_run.analysis_boundary))
+            + ' · Original trading date: '
+            + escape(presented_run.analysis_boundary.astimezone(_KOLKATA).date().isoformat())
+            + '</span><span>STALE — NOT NEWLY QUALIFIED OR ACTIONABLE TODAY</span></div>'
+        )
+    current_diagnostic_note = ""
+    if not current_is_evaluable:
+        current_diagnostic_note = (
+            '<details class="intraday-probables-diagnostics"><summary>'
+            'TECHNICAL DIAGNOSTICS</summary><p class="intraday-status">'
+            'NO EVALUABLE PHASE · Current refresh produced zero evaluable instruments. '
+            'The immutable prior evaluable projection, if present, remains separate.</p></details>'
+        )
     return (
         _intraday_tabs(refresh_enabled)
+        + _render_market_availability(market_availability)
+        + _render_analysis_freshness(
+            market_availability,
+            refresh_status,
+            current_run=current_run,
+            latest_evaluable_run=latest_evaluable_run,
+        )
         + '<div class="analysis-batch"><span>Market analysis</span>'
-        '<div class="analysis-run-times"><strong>' + escape(last) + '</strong></div></div>'
+        '<div class="analysis-run-times"><strong>'
+        + escape(
+            "NOT YET EVALUABLE — WAITING FOR MARKET WINDOW"
+            if not current_is_evaluable
+            else last
+        )
+        + '</strong></div></div>'
         + failure
+        + prior_projection
         + metric_html
         + '<div class="intraday-methodology"><strong>'
-        + escape(run.methodology.methodology_identity)
-        + ' · ' + escape(run.methodology.methodology_version)
-        + '</strong> · ' + escape(_ist_time(run.analysis_boundary))
+        + escape(presented_run.methodology.methodology_identity)
+        + ' · ' + escape(presented_run.methodology.methodology_version)
+        + '</strong> · ' + escape(_ist_time(presented_run.analysis_boundary))
         + ' · ' + escape(phase_counts)
         + '. Phase-aware admission for deeper review only; no score, rank, confidence, trading, Risk or broker authority.</div>'
         + market_accounting
         + market_groups
+        + current_diagnostic_note
         + _render_v2_diagnostics(diagnostics_results, members)
     )
+
+
+def _render_market_availability(
+    market_availability: tuple[IntradayMarketAvailability, ...],
+) -> str:
+    if not market_availability:
+        return ""
+    cards = "".join(
+        '<article class="intraday-availability-card '
+        + escape(item.state.value.lower().replace("_", "-"))
+        + '"><span>' + escape(item.market_family) + '</span><strong>'
+        + escape(item.display) + '</strong></article>'
+        for item in market_availability
+    )
+    return '<div class="intraday-availability-grid">' + cards + "</div>"
+
+
+def _render_analysis_freshness(
+    market_availability: tuple[IntradayMarketAvailability, ...],
+    refresh_status: dict[str, object] | None,
+    *,
+    current_run: ProbablesRunV2 | None,
+    latest_evaluable_run: ProbablesRunV2 | None,
+) -> str:
+    if (
+        not market_availability
+        and refresh_status is None
+        and latest_evaluable_run is None
+    ):
+        return ""
+    status = {} if refresh_status is None else refresh_status
+    attempt = status.get("last_refresh_attempt")
+    if type(attempt) is dict:
+        attempt_time = _status_time(attempt.get("attempted_at"))
+        attempt_outcome = _plain(str(attempt.get("outcome") or "UNAVAILABLE"))
+        last_attempt = attempt_time + " · " + attempt_outcome
+    else:
+        last_attempt = "NOT YET RUN"
+    evaluable = latest_evaluable_run
+    if current_run is not None and current_run.diagnostics.evaluable_count > 0:
+        evaluable = current_run
+    last_evaluable = (
+        "NOT YET AVAILABLE"
+        if evaluable is None
+        else _ist_time(evaluable.analysis_boundary)
+    )
+    available = tuple(item.market_family for item in market_availability if item.available)
+    if not market_availability:
+        current_window = "UNAVAILABLE"
+    elif not available:
+        current_window = "REFRESH UNAVAILABLE — NO MARKET IS CURRENTLY EVALUABLE"
+    else:
+        current_window = "REFRESH AVAILABLE FOR: " + " + ".join(available)
+    if current_run is None:
+        analysis_status = "NOT YET RUN"
+    elif current_run.diagnostics.evaluable_count == 0:
+        analysis_status = "NOT YET EVALUABLE — WAITING FOR MARKET WINDOW"
+    else:
+        analysis_status = "EVALUABLE ANALYSIS AVAILABLE"
+    facts = (
+        ("Last refresh attempt", last_attempt),
+        ("Last successful evaluable analysis", last_evaluable),
+        ("Current market window", current_window),
+        ("Current analysis status", analysis_status),
+    )
+    return (
+        '<section class="intraday-freshness"><h2>ANALYSIS FRESHNESS</h2>'
+        '<div class="intraday-freshness-grid">'
+        + "".join(
+            '<div><span>' + escape(label) + '</span><strong>'
+            + escape(value) + '</strong></div>'
+            for label, value in facts
+        )
+        + "</div></section>"
+    )
+
+
+def _status_time(value: object) -> str:
+    if not isinstance(value, str):
+        return "UNAVAILABLE"
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return "UNAVAILABLE"
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        return "UNAVAILABLE"
+    return _ist_time(parsed)
 
 
 def _probable_v2_card(result, sponsor_label: str) -> str:  # type: ignore[no-untyped-def]

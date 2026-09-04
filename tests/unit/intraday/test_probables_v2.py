@@ -527,6 +527,7 @@ def test_mcx_commissioned_subject_is_evaluated_and_retains_exact_lineage(
     store = ProbablesV2Store(tmp_path.resolve())
     store.retain_complete(run=run, mappings=(mapping,))
     assert store.load_current_run() == run
+    assert store.load_latest_evaluable_run() == run
     assert store.load_mapping(mapping.mapping_identity) == mapping
 
 
@@ -586,6 +587,43 @@ def test_pre_mapping_unavailable_retains_no_mapping_lineage(tmp_path: Path) -> N
     store = ProbablesV2Store(tmp_path.resolve())
     store.retain_complete(run=run, mappings=())
     assert store.load_current_run() == run
+    assert store.load_latest_evaluable_run() is None
+
+
+def test_non_evaluable_current_pointer_preserves_latest_evaluable_run(
+    tmp_path: Path,
+) -> None:
+    *_, mapping = _opening_inputs()
+    evaluable = _run(mapping)
+    later_boundary = evaluable.analysis_boundary + timedelta(minutes=15)
+    unavailable_member = ProbablesUnavailableMemberV2(
+        universe_member_identity=mapping.universe_member_identity,
+        canonical_subject_identity=mapping.canonical_subject_identity,
+        market_session_identity=evaluable.market_session_identity,
+        analysis_boundary=later_boundary,
+        reason=ProbableReasonV2.MANDATORY_EVIDENCE_UNAVAILABLE,
+        source_identity=SOURCE_RUN,
+        provenance=PROVENANCE,
+    )
+    unavailable = evaluate_probables_v2_run(
+        source_discovery_run_identity=SOURCE_RUN,
+        universe_identity=evaluable.universe_identity,
+        universe_version=evaluable.universe_version,
+        reconciliation_identity=evaluable.reconciliation_identity,
+        reconciliation_version=evaluable.reconciliation_version,
+        market_session_identity=evaluable.market_session_identity,
+        analysis_boundary=later_boundary,
+        member_evidence=(),
+        unavailable_members=(unavailable_member,),
+        provenance=PROVENANCE,
+    )
+    store = ProbablesV2Store(tmp_path.resolve())
+    store.retain_complete(run=evaluable, mappings=(mapping,))
+    store.retain_complete(run=unavailable, mappings=())
+
+    assert store.load_current_run() == unavailable
+    assert store.load_current_run().diagnostics.evaluable_count == 0  # type: ignore[union-attr]
+    assert store.load_latest_evaluable_run() == evaluable
 
 
 @pytest.mark.parametrize(

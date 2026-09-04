@@ -247,7 +247,27 @@ class IntradayBrowserRoutes:
         detail_prefix = "/intraday/evidence/"
         if request.path == "/intraday":
             selected = request.query.get("instrument", [None])[0]
-            renderer = render_intraday_workstation
+            control = self._probables_v2_control
+            latest_evaluable = (
+                None if control is None else control.latest_evaluable_run()
+            )
+            return BrowserRouteResponse(
+                render_intraday_workstation(
+                    snapshot_provider(),
+                    self._workstation.snapshot(selected),
+                    market_availability=(
+                        () if control is None else control.market_availability()
+                    ),
+                    refresh_status=(
+                        None
+                        if control is None
+                        else control.status_document(
+                            latest_evaluable_run=latest_evaluable
+                        )
+                    ),
+                    latest_evaluable_run=latest_evaluable,
+                )
+            )
         elif request.path.startswith(detail_prefix):
             selected = request.path.removeprefix(detail_prefix)
             renderer = render_intraday_detail

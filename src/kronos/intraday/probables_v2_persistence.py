@@ -273,6 +273,24 @@ class ProbablesV2Store:
         self._verify_run_lineage(run)
         return run
 
+    def load_latest_evaluable_run(self) -> ProbablesRunV2 | None:
+        """Return the newest immutable run that evaluated at least one member."""
+
+        paths = self._root.joinpath("probables-v2", "runs").glob("*.json")
+        evaluable: list[ProbablesRunV2] = []
+        for path in paths:
+            run = self.load_run(path.stem)
+            if run.diagnostics.evaluable_count > 0:
+                evaluable.append(run)
+        selected = max(
+            evaluable,
+            key=lambda item: (item.analysis_boundary, item.run_identity),
+            default=None,
+        )
+        if selected is not None:
+            self._verify_run_lineage(selected)
+        return selected
+
     def _verify_run_lineage(self, run: ProbablesRunV2) -> None:
         if (
             self.load_methodology(run.methodology.publication_identity)

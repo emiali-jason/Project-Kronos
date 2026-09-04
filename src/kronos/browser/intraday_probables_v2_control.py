@@ -16,11 +16,16 @@ from kronos.application.intraday_discovery_operation import (
     create_discovery_operation_request,
 )
 from kronos.application.intraday_probables_v2 import IntradayProbablesV2Application
+from kronos.browser.intraday_market_availability import (
+    IntradayMarketAvailability,
+    project_intraday_market_availability,
+)
 from kronos.intraday.probables_v2 import (
     PROBABLES_V2_METHODOLOGY_IDENTITY,
     PROBABLES_V2_SUCCESSOR_METHODOLOGY_CHECKSUM as PROBABLES_V2_METHODOLOGY_CHECKSUM,
     PROBABLES_V2_SUCCESSOR_METHODOLOGY_VERSION as PROBABLES_V2_METHODOLOGY_VERSION,
     PROBABLES_V2_SUCCESSOR_PUBLICATION_IDENTITY as PROBABLES_V2_PUBLICATION_IDENTITY,
+    ProbablesRunV2,
 )
 from kronos.intraday.refresh_v2 import (
     REFRESH_V2_OPERATION_TYPE,
@@ -54,6 +59,7 @@ _REQUEST_FIELDS = {
     "methodology_checksum",
     "operation_type",
 }
+_LATEST_EVALUABLE_UNSET = object()
 
 
 class IntradayProbablesV2OperationalControl:
@@ -86,8 +92,19 @@ class IntradayProbablesV2OperationalControl:
     def operation_service(self) -> IntradayDiscoveryOperationService:
         return self._operation
 
-    def status_document(self) -> dict[str, object]:
+    def status_document(
+        self,
+        *,
+        latest_evaluable_run: ProbablesRunV2 | None | object = _LATEST_EVALUABLE_UNSET,
+    ) -> dict[str, object]:
         snapshot = self._probables.snapshot()
+        evaluable = (
+            self.latest_evaluable_run()
+            if latest_evaluable_run is _LATEST_EVALUABLE_UNSET
+            else latest_evaluable_run
+        )
+        if evaluable is not None and type(evaluable) is not ProbablesRunV2:
+            raise ValueError("INTRADAY_PROBABLES_V2_STATUS_INPUT_INVALID")
         last = self._operation.last_result
         latest_provenance = self._store.latest()
         latest_failure = (
@@ -112,16 +129,44 @@ class IntradayProbablesV2OperationalControl:
                 if self._operation.active_operation_identity is not None
                 else "LAST_FAILURE"
                 if snapshot.current_failure is not None or latest_failure is not None
-                else "LAST_SUCCESSFUL_ANALYSIS"
+                else "LAST_SUCCESSFUL_EVALUABLE_ANALYSIS"
+                if snapshot.run is not None
+                and snapshot.run.diagnostics.evaluable_count > 0
+                else "NOT_YET_EVALUABLE"
                 if snapshot.run is not None
                 else "NOT_YET_RUN"
             ),
             "last_result": None if last is None else _operation_document(last),
+            "last_refresh_attempt": (
+                None
+                if latest_provenance is None
+                else {
+                    "request_identity": latest_provenance.request_identity,
+                    "attempted_at": latest_provenance.operation_completed_at.isoformat(),
+                    "observation_boundary": (
+                        None
+                        if latest_provenance.observation_boundary is None
+                        else latest_provenance.observation_boundary.isoformat()
+                    ),
+                    "outcome": latest_provenance.outcome.value,
+                    "failure": latest_provenance.failure,
+                }
+            ),
             "last_successful_discovery_identity": snapshot.last_successful_discovery_run_identity,
-            "last_successful_probables_identity": snapshot.last_successful_run_identity,
+            "last_successful_probables_identity": (
+                None if evaluable is None else evaluable.run_identity
+            ),
             "last_successful_analysis": (
-                None if snapshot.last_successful_analysis is None
-                else snapshot.last_successful_analysis.isoformat()
+                None if evaluable is None else evaluable.analysis_boundary.isoformat()
+            ),
+            "current_analysis_identity": (
+                None if snapshot.run is None else snapshot.run.run_identity
+            ),
+            "current_analysis_boundary": (
+                None if snapshot.run is None else snapshot.run.analysis_boundary.isoformat()
+            ),
+            "current_evaluable_count": (
+                0 if snapshot.run is None else snapshot.run.diagnostics.evaluable_count
             ),
             "current_failure": snapshot.current_failure or latest_failure,
             "failure_detail": (
@@ -130,6 +175,19 @@ class IntradayProbablesV2OperationalControl:
                 else _failure_detail_document(snapshot.failure_detail)
             ),
         }
+
+    def latest_evaluable_run(self) -> ProbablesRunV2 | None:
+        """Return immutable prior projection evidence without moving a pointer."""
+
+        return self._probables.store.load_latest_evaluable_run()
+
+    def market_availability(self) -> tuple[IntradayMarketAvailability, ...]:
+        """Project DOMAIN-008 market truth at the current read boundary."""
+
+        return project_intraday_market_availability(
+            self._operation.calendar_publisher,
+            observed_at=self._clock(),
+        )
 
     def execute_document(self, payload: object) -> dict[str, object]:
         received = self._clock()
