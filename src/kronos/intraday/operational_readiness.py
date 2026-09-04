@@ -214,19 +214,25 @@ class WoBReviewItem:
             self.classification_basis
             is WoBClassificationBasis.EXPECTED_DOWNSTREAM_ABSENCE
         )
+        missing_required = (
+            self.classification_basis is WoBClassificationBasis.SOURCE_UNAVAILABLE
+            and self.source_reference_identity is None
+        )
         if (
             type(self.source_boundary) is not WoBSourceBoundary
             or type(self.review_classification) is not WoBReviewClassification
             or type(self.classification_basis) is not WoBClassificationBasis
             or self.review_classification
             is not _CLASSIFICATION_BY_BASIS[self.classification_basis]
-            or not_reached != (self.source_reference_identity is None)
+            or (self.source_reference_identity is None)
+            != (not_reached or missing_required)
             or not _optional_text(self.source_reference_identity)
             or not _code(self.exact_source_state)
             or not _optional_code(self.exact_source_reason)
             or not _optional_code(self.bounded_diagnostic)
             or not _optional_code(self.next_governed_stage)
             or not_reached and self.exact_source_state != "NOT_REACHED"
+            or missing_required and self.exact_source_state != "UNAVAILABLE"
             or self.schema_identity != WO_B_REVIEW_ITEM_IDENTITY
             or self.schema_version != WO_B_CONTRACT_VERSION
             or self.review_item_identity
@@ -323,7 +329,10 @@ class WoBOperationalReviewSnapshot:
         if type(item) is not WoBReviewItem:
             return False
         if item.source_reference_identity is None:
-            return item.review_classification is WoBReviewClassification.NOT_REACHED
+            return item.review_classification in {
+                WoBReviewClassification.NOT_REACHED,
+                WoBReviewClassification.UNAVAILABLE,
+            }
         reference = references.get(item.source_reference_identity)
         return (
             reference is not None
@@ -360,12 +369,24 @@ def create_review_item(
     classification_basis: WoBClassificationBasis,
     source_reference: WoBSourceArtifactReference | None = None,
     next_governed_stage: str | None = None,
+    missing_source_reason: str | None = None,
+    missing_source_diagnostic: str | None = None,
 ) -> WoBReviewItem:
     not_reached = (
         classification_basis
         is WoBClassificationBasis.EXPECTED_DOWNSTREAM_ABSENCE
     )
-    if not_reached != (source_reference is None):
+    missing_required = (
+        classification_basis is WoBClassificationBasis.SOURCE_UNAVAILABLE
+        and source_reference is None
+    )
+    if (source_reference is None) != (not_reached or missing_required):
+        raise WoBContractError("WO_B_REVIEW_SOURCE_BINDING_INVALID")
+    if missing_required and not _code(missing_source_reason):
+        raise WoBContractError("WO_B_REVIEW_SOURCE_BINDING_INVALID")
+    if source_reference is not None and (
+        missing_source_reason is not None or missing_source_diagnostic is not None
+    ):
         raise WoBContractError("WO_B_REVIEW_SOURCE_BINDING_INVALID")
     values = {
         "source_boundary": source_boundary,
@@ -376,14 +397,24 @@ def create_review_item(
         ),
         "exact_source_state": (
             "NOT_REACHED"
-            if source_reference is None
+            if not_reached
+            else "UNAVAILABLE"
+            if missing_required
             else source_reference.exact_source_state
         ),
         "exact_source_reason": (
-            None if source_reference is None else source_reference.exact_source_reason
+            missing_source_reason
+            if missing_required
+            else None
+            if source_reference is None
+            else source_reference.exact_source_reason
         ),
         "bounded_diagnostic": (
-            None if source_reference is None else source_reference.bounded_diagnostic
+            missing_source_diagnostic
+            if missing_required
+            else None
+            if source_reference is None
+            else source_reference.bounded_diagnostic
         ),
         "next_governed_stage": next_governed_stage,
         "schema_identity": WO_B_REVIEW_ITEM_IDENTITY,
