@@ -48,6 +48,13 @@ class RefreshV2ProvenanceStore:
     def load(self, provenance_identity: str) -> RefreshV2ProvenanceRecord:
         return _decoded(self._path(provenance_identity).read_bytes())
 
+    def load_for_probables_run(self, run_identity: str) -> tuple[RefreshV2ProvenanceRecord, ...]:
+        """Read exact resulting-run provenance without latest-state substitution."""
+        _component(run_identity)
+        records = self._root / "records"
+        values = (self.load(path.stem) for path in sorted(records.glob("*.json")))
+        return tuple(value for value in values if value.resulting_probables_identity == run_identity)
+
     def latest(self) -> RefreshV2ProvenanceRecord | None:
         records = self._root / "records"
         if not records.exists():

@@ -42,7 +42,11 @@ from kronos.intraday.operational_readiness_persistence import (
     wo_b_exception_reason,
 )
 from kronos.intraday.probables import ProbableState
-from kronos.intraday.probables_v2 import ProbableMemberResultV2, ProbablesRunV2
+from kronos.intraday.probables_v2 import (
+    DiscoveryProbablesEvidenceV2, ProbableMemberResultV2, ProbablesRunV2,
+)
+from kronos.intraday.probables_v2_diagnostics import ProbablesV2ReplayEnvelope
+from kronos.intraday.probables_v2_session_lineage import probables_result_session_bound
 from kronos.intraday.probables_v2_persistence import CurrentProbablesV2Pointer
 from kronos.intraday.universe import IntradayMarketFamily
 from kronos.intraday.wo12 import Wo12Handoff
@@ -202,6 +206,8 @@ def adapt_probables_source(
     canonical_instrument_identity: str,
     active_contract_identity: str | None,
     opportunity_identity: str | None = None,
+    source_mapping: DiscoveryProbablesEvidenceV2 | None = None,
+    replay_envelope: ProbablesV2ReplayEnvelope | None = None,
 ) -> tuple[WoBCompositionAnchor, WoBAdaptedSource]:
     _revalidate(run, ProbablesRunV2, "WO_B_PROBABLES_SOURCE_INVALID")
     _revalidate(result, ProbableMemberResultV2, "WO_B_PROBABLES_SOURCE_INVALID")
@@ -209,6 +215,9 @@ def adapt_probables_source(
         current_pointer,
         CurrentProbablesV2Pointer,
         "WO_B_PROBABLES_POINTER_INVALID",
+    )
+    session_bound = probables_result_session_bound(
+        run=run, result=result, mapping=source_mapping, envelope=replay_envelope,
     )
     retained = next(
         (item for item in run.results if item.result_identity == result.result_identity),
@@ -221,7 +230,9 @@ def adapt_probables_source(
         != run.source_discovery_run_identity
         or current_pointer.analysis_boundary != run.analysis_boundary
         or result.source_discovery_run_identity != run.source_discovery_run_identity
-        or result.market_session_identity != run.market_session_identity
+        or current_pointer.methodology_publication_identity
+        != run.methodology.publication_identity
+        or not session_bound
         or result.analysis_boundary != run.analysis_boundary
     ):
         raise WoBCompositionError("WO_B_PROBABLES_CURRENT_BINDING_MISMATCH")

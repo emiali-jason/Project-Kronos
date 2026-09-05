@@ -44,7 +44,8 @@ from kronos.intraday.wo16_persistence import Wo16Store
 from kronos.intraday.wo17_lifecycle import create_wo17_lifecycle_machine
 from kronos.validation.kr370 import Kr370AnalyticalClassification
 
-from .test_probables_v2 import _opening_inputs, _run
+from .test_probables_v2 import _opening_inputs
+from .test_probables_v2_session_lineage import mixed, _args
 from .test_wo13_contracts import _artifacts, _mcx_artifacts
 from .test_wo16_application import _request as _wo16_request
 from .test_wo16_contracts import _chain
@@ -342,10 +343,11 @@ def test_publish_replay_newer_projection_and_failure_preservation(tmp_path) -> N
     assert restored.latest_failure is not None
 
 
-def test_real_probables_and_domain_adapters_bind_current_source_contracts() -> None:
-    selection, _, _, _, mapping = _opening_inputs()
-    run = _run(mapping)
-    result = run.results[0]
+def test_real_probables_and_domain_adapters_bind_current_source_contracts(mixed) -> None:
+    lineage = _args(mixed)
+    run, result = lineage["run"], lineage["result"]
+    mapping, envelope = lineage["mapping"], lineage["envelope"]
+    selection = mapping.completed_evidence
     pointer = create_current_probables_v2_pointer(run)
     anchor, probable = adapt_probables_source(
         run=run,
@@ -353,6 +355,8 @@ def test_real_probables_and_domain_adapters_bind_current_source_contracts() -> N
         current_pointer=pointer,
         canonical_instrument_identity=result.canonical_subject_identity,
         active_contract_identity=None,
+        source_mapping=mapping,
+        replay_envelope=envelope,
     )
     instrument = create_canonical_instrument(
         canonical_instrument_id=anchor.canonical_instrument_identity,
@@ -381,6 +385,8 @@ def test_real_probables_and_domain_adapters_bind_current_source_contracts() -> N
             current_pointer=pointer,
             canonical_instrument_identity=result.canonical_subject_identity,
             active_contract_identity=None,
+            source_mapping=mapping,
+            replay_envelope=envelope,
         )
 
 

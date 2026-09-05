@@ -48,6 +48,7 @@ from kronos.intraday.operational_readiness_persistence import (
 )
 from kronos.intraday.probables import ProbableState
 from kronos.intraday.probables_v2_persistence import ProbablesV2Store
+from kronos.intraday.probables_v2_session_lineage import load_probables_session_envelope
 from kronos.intraday.universe import IntradayMarketFamily
 from kronos.intraday.wo12_v2_persistence import Wo12V2Store
 from kronos.intraday.wo13_persistence import Wo13Store
@@ -112,11 +113,20 @@ class PersistedWoBRequestLoader:
         run = self._probables.load_current_run()
         if pointer is None or run is None:
             return ()
+        admitted = tuple(
+            result for result in run.results
+            if result.state in {ProbableState.LONG_PROBABLE, ProbableState.SHORT_PROBABLE}
+        )
+        try:
+            envelope = (
+                load_probables_session_envelope(self._probables.root, run)
+                if admitted else None
+            )
+        except (ValueError, OSError) as error:
+            raise WoBCompositionError("WO_B_PROBABLES_CURRENT_BINDING_MISMATCH") from error
         downstream = self._restore_downstream()
         requests = []
-        for result in run.results:
-            if result.state not in {ProbableState.LONG_PROBABLE, ProbableState.SHORT_PROBABLE}:
-                continue
+        for result in admitted:
             family = _family(result.canonical_subject_identity)
             active = (
                 self._active_derivatives.load_current(
@@ -139,6 +149,12 @@ class PersistedWoBRequestLoader:
                     else active.active_binding.derivative_contract_id
                 ),
                 opportunity_identity=result.result_identity,
+                source_mapping=(
+                    self._probables.load_mapping(result.source_mapping_identity)
+                    if result.source_mapping_identity is not None
+                    else None
+                ),
+                replay_envelope=envelope,
             )
             sources = [probable]
             if active is not None:
