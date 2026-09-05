@@ -184,7 +184,9 @@ class PersistedWoBRequestLoader:
                     self._calendar,
                     active=active,
                     trading_date=trading_date,
-                    observed_at=observed_at,
+                    # Resolve the retained session at its historical boundary;
+                    # session_facts below still evaluates currentness at review time.
+                    observed_at=run.analysis_boundary,
                 )
                 if active is not None
                 else CurrentMarketCalendarScheduleSource(
