@@ -237,6 +237,18 @@ class IntradayBrowserRoutes:
         except ReviewError:
             return None
 
+    def _opportunity_review_snapshot(self):  # type: ignore[no-untyped-def]
+        """Read only the exact current Review population, without WO-B composition."""
+        if self._review_v2_control is None:
+            return None
+        application = self._review_v2_control.application
+        try:
+            if not application.currentness().is_review_current:
+                return None
+            return application.snapshot()
+        except ReviewError:
+            return None
+
     def _review_v2_snapshot(self):  # type: ignore[no-untyped-def]
         return (
             None
@@ -278,10 +290,7 @@ class IntradayBrowserRoutes:
                         )
                     ),
                     latest_evaluable_run=latest_evaluable,
-                    operational_review=(
-                        None if self._operational_readiness is None
-                        else self._operational_readiness.status_document()
-                    ),
+                    review_v2=self._opportunity_review_snapshot(),
                 )
             )
         elif request.path.startswith(detail_prefix):
@@ -296,6 +305,7 @@ class IntradayBrowserRoutes:
                     review_v2=self._review_v2_snapshot(),
                     available_probables_v2_run=self._current_probables_v2(),
                     review_v2_status=self._review_v2_status(),
+                    focused_candidate=request.query.get("candidate", [None])[0],
                 )
             )
         elif request.path == WO10_PRODUCT_ROUTE:

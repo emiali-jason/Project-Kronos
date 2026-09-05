@@ -73,6 +73,7 @@ def _result(
     nifty_applicability: NiftyApplicability | None = NiftyApplicability.APPLICABLE,
 ) -> SimpleNamespace:
     return SimpleNamespace(
+        result_identity=f"INTRADAY-PROBABLE-V2-RESULT-{label}",
         canonical_subject_identity=f"SUBJECT-{label}",
         methodology_version="2.0.0",
         phase=IntradayAnalysisPhase.OPENING,
@@ -141,6 +142,7 @@ def _render(
 def test_browser_projects_v2_phase_lineage_nifty_and_bounded_result() -> None:
     result = SimpleNamespace(
         canonical_subject_identity="NSE-EQ-RELIANCE",
+        result_identity="INTRADAY-PROBABLE-V2-RESULT-RELIANCE",
         methodology_version="2.0.0",
         phase=IntradayAnalysisPhase.OPENING,
         analysis_boundary=datetime(

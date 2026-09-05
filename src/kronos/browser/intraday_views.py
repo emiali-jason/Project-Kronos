@@ -65,6 +65,9 @@ _KOLKATA = ZoneInfo("Asia/Kolkata")
 
 
 _INTRADAY_CSS = r"""
+.intraday-opportunity-review{display:flex;flex-wrap:wrap;justify-content:space-between;gap:10px;margin-top:10px;font-size:11px}.intraday-opportunity-review strong{color:var(--green)}.intraday-review-v2-card:target{outline:2px solid var(--green);scroll-margin-top:16px}.intraday-review-focus-notice{color:var(--amber);overflow-wrap:anywhere}
+@media(max-width:760px){.app,.sidebar,.main,.topbar,.content{min-width:0;max-width:100%}.nav{grid-template-columns:repeat(2,minmax(0,1fr))}.nav a,.title,.kite{min-width:0}.title h1,.title p,.intraday-warning,.intraday-review-v2-control,.intraday-review-v2-head{overflow-wrap:anywhere}.topbar{align-items:flex-start;flex-direction:column}.intraday-review-v2-grid,.intraday-review-list{grid-template-columns:minmax(0,1fr)}.intraday-review-v2-card,.intraday-review-v2-control,.intraday-review-v2-head{min-width:0}.intraday-review-v2-control{flex-wrap:wrap}.intraday-review-currentness-facts{grid-template-columns:minmax(0,1fr)}.intraday-opportunity-review a{padding:8px 0}}
+
 .intraday-card{border:1px solid var(--line);background:#071827;border-radius:12px;padding:18px;max-width:760px}.intraday-card h2{margin:0;color:var(--green)}.intraday-card .event{border-top:1px solid var(--line);padding:10px 0}.intraday-card .detail-link{display:inline-block;margin-top:10px;color:var(--green);font-weight:800}.intraday-status{color:var(--muted);margin:8px 0 14px}.intraday-status strong{color:var(--green)}
 .intraday-warning{display:flex;justify-content:space-between;gap:16px;border:1px solid #82631f;background:#231d11;color:#f6d997;border-radius:8px;padding:12px 14px;margin-bottom:14px}.intraday-selector{display:flex;align-items:center;gap:10px;margin-bottom:14px}.intraday-selector label{font-weight:700}.intraday-selector select{border:1px solid #31506a;background:#04131f;color:var(--text);border-radius:7px;padding:9px 12px}.intraday-panel{border:1px solid var(--line);background:rgba(6,23,37,.88);border-radius:10px;padding:15px;margin-bottom:14px;min-width:0}.intraday-panel h2{margin:0 0 12px;color:var(--blue);font-size:17px}.intraday-panel h3{margin:14px 0 7px;color:var(--muted);font-size:11px;text-transform:uppercase}.intraday-facts{display:grid;grid-template-columns:minmax(140px,.35fr) minmax(0,1fr);margin:0}.intraday-facts dt,.intraday-facts dd{padding:6px 8px;border-top:1px solid var(--line);margin:0;overflow-wrap:anywhere}.intraday-facts dt{color:var(--muted)}.intraday-timeframes{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.incomplete-observation{display:grid;gap:5px;margin-top:11px;border:1px dashed #82631f;border-radius:7px;padding:9px;color:#f6d997}.incomplete-observation span{color:var(--muted);overflow-wrap:anywhere}.intraday-context{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}.intraday-table{width:100%;border-collapse:collapse;font-size:12px}.intraday-table th,.intraday-table td{text-align:left;vertical-align:top;padding:8px;border-bottom:1px solid var(--line);overflow-wrap:anywhere}.intraday-table th{color:var(--muted);white-space:nowrap}.table-scroll{overflow:auto}.intraday-unavailable{color:var(--muted)}.intraday-unavailable strong{color:var(--amber)}
 .intraday-discovery-header{border:1px solid var(--line);background:#071827;border-radius:9px;padding:13px 15px;margin-bottom:12px}.intraday-discovery-header h2{font-size:17px;color:var(--green);margin:0 0 5px}.intraday-discovery-header p{margin:3px 0;color:var(--muted);font-size:12px}.intraday-discovery-table{width:100%;border-collapse:collapse;font-size:12px}.intraday-discovery-table th,.intraday-discovery-table td{padding:7px 8px;border-bottom:1px solid var(--line);text-align:left}.intraday-discovery-table th{font-size:10px;color:var(--muted);text-transform:uppercase}.intraday-state-ready{color:var(--green)}.intraday-state-held{color:var(--amber)}.intraday-failure{border:1px solid #81502a;background:#26170d;color:#f0c08e;border-radius:7px;padding:9px 11px;margin-bottom:12px}.intraday-methodology{border:1px solid var(--line);background:#071827;color:#c2d2dd;border-radius:7px;padding:8px 11px;margin-bottom:12px;font-size:11px}.intraday-methodology strong{color:var(--green)}.intraday-detail-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
@@ -79,6 +82,9 @@ _INTRADAY_CSS = r"""
 _REVIEW_V2_CSS = r"""
 .intraday-review-v2{border:1px solid #31506a;background:#061725;border-radius:10px;padding:15px;margin-bottom:16px}.intraday-review-v2-head{display:flex;justify-content:space-between;align-items:flex-start;gap:14px}.intraday-review-v2-head h2{margin:0;color:var(--green);font-size:17px}.intraday-review-v2-head p{margin:4px 0;color:var(--muted);font-size:11px}.intraday-review-v2-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:12px}.intraday-review-v2-card{border:1px solid var(--line);border-radius:8px;padding:12px;background:#071827}.intraday-review-v2-card h3{margin:0;color:#dce8f0}.intraday-review-v2-card .phase-a{display:inline-block;margin:7px 0;color:var(--amber);font-weight:800}.intraday-review-v2-control{display:flex;align-items:center;gap:12px;margin-top:12px}.intraday-review-v2-control span{color:var(--muted);font-size:10px;overflow-wrap:anywhere}@media(max-width:760px){.intraday-review-v2-grid{grid-template-columns:1fr}.intraday-review-v2-head{display:block}}
 .intraday-review-currentness{border:1px solid var(--line);border-radius:8px;background:#071827;margin-top:12px;padding:10px 12px}.intraday-review-currentness strong{color:var(--green)}.intraday-review-currentness.outdated{border-color:#82631f}.intraday-review-currentness.outdated strong{color:#f6d997}.intraday-review-currentness.invalid{border-color:#81502a}.intraday-review-currentness.invalid strong{color:#f0c08e}.intraday-review-currentness-facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px 12px;margin-top:7px;color:var(--muted);font-size:10px}.intraday-review-currentness-facts span{overflow-wrap:anywhere}@media(max-width:760px){.intraday-review-currentness-facts{grid-template-columns:1fr}}
+
+.intraday-drop.intraday-drop-empty{display:flex;justify-content:space-between;gap:10px;min-height:88px;padding:12px;text-align:left;cursor:default}.intraday-drop-empty .intraday-intake-copy{min-width:0}.intraday-drop-empty strong{display:block;margin:0;font-size:11px;overflow-wrap:anywhere}.intraday-drop-empty .required-panels{margin-top:6px}.intraday-drop-empty .intraday-chart-slot-actions{flex-shrink:0}.intraday-drop-empty .intraday-chart-slot-actions:focus-within .intraday-file-choice{outline:2px solid var(--green);outline-offset:2px}
+@media(max-width:760px){.intraday-drop.intraday-drop-empty{min-height:96px;padding:10px;gap:8px}.intraday-drop-empty .intraday-file-choice{padding:9px 8px}}
 """
 
 
@@ -89,7 +95,7 @@ def render_intraday_workstation(
     market_availability: tuple[IntradayMarketAvailability, ...] = (),
     refresh_status: dict[str, object] | None = None,
     latest_evaluable_run: ProbablesRunV2 | None = None,
-    operational_review: dict[str, object] | None = None,
+    review_v2: IntradayReviewV2Snapshot | None = None,
 ) -> str:
     """Render the complete Intraday page through the stable Browser shell."""
 
@@ -111,7 +117,8 @@ def render_intraday_workstation(
             market_availability=market_availability,
             refresh_status=refresh_status,
             latest_evaluable_run=latest_evaluable_run,
-        ) + ("" if operational_review is None else _wo_b_summary(operational_review)),
+            review_v2=review_v2,
+        ),
         extra_styles=_INTRADAY_CSS,
     )
 
@@ -287,6 +294,7 @@ def render_intraday_review(
     review_v2: IntradayReviewV2Snapshot | None = None,
     available_probables_v2_run: ProbablesRunV2 | None = None,
     review_v2_status: dict[str, object] | None = None,
+    focused_candidate: str | None = None,
 ) -> str:
     """Render persisted exact-current Review and WO-10 analytical state."""
 
@@ -332,9 +340,10 @@ def render_intraday_review(
         + '<div class="intraday-warning"><strong>NATIVE + VISUAL REVIEW</strong>'
         '<span>ANALYTICAL READINESS ONLY · NO ENTRY, TRADE, RISK OR BROKER AUTHORITY</span></div>'
         + _review_v2_projection(
-            review_v2, available_probables_v2_run, review_v2_status
+            review_v2, available_probables_v2_run, review_v2_status, focused_candidate
         )
-        + '<div class="intraday-review-toolbar"><form method="post" action="/intraday/review/question-packs">'
+        + ("" if review_v2 is not None and not review.candidates else (
+        '<div class="intraday-review-toolbar"><form method="post" action="/intraday/review/question-packs">'
         '<button class="primary" type="submit"'
         + (" disabled" if ready_count == 0 else "")
         + '>CREATE ALL REVIEW PDF</button></form>'
@@ -358,8 +367,14 @@ def render_intraday_review(
         + escape(review.answer_inbox)
         + ' · Expected combined Answer: ' + escape(review.current_batch_answer_filename or "CREATE REVIEW PDF FIRST")
         + ' · Governed JSON Answer Pack import ACTIVE</div>'
+        ))
         + _review_upload_script()
         + _review_v2_control_script()
+        + '<script>window.addEventListener("pageshow",()=>{requestAnimationFrame(()=>{'
+        'const card=document.getElementById(location.hash.slice(1));'
+        'if(card&&card.classList.contains("intraday-review-v2-card")){'
+        'card.focus({preventScroll:true});card.scrollIntoView({block:"start"});}'
+        '});});</script>'
     )
     return render_browser_page(
         title="Intraday Native Review",
@@ -1462,6 +1477,7 @@ def _review_v2_projection(
     snapshot: IntradayReviewV2Snapshot | None,
     available_run: ProbablesRunV2 | None,
     status: dict[str, object] | None,
+    focused_candidate: str | None = None,
 ) -> str:
     if snapshot is None:
         return ""
@@ -1521,6 +1537,21 @@ def _review_v2_projection(
         + escape("UNAVAILABLE" if current_review_run is None else str(current_review_run))
         + '</span></div></div>'
     )
+    focus_notice = ""
+    if focused_candidate is not None and not any(
+        item.probable_result_identity == focused_candidate for item in snapshot.candidates
+    ):
+        in_latest = available_run is not None and any(
+            item.result_identity == focused_candidate
+            and item.state in {ProbableState.LONG_PROBABLE, ProbableState.SHORT_PROBABLE}
+            for item in available_run.results
+        )
+        focus_notice = (
+            '<p class="intraday-review-focus-notice" role="status">'
+            + ("Candidate is in latest Probables but not current Review. Load Fresh Review required."
+               if in_latest else "Requested candidate is not in latest Probables or current Review.")
+            + '</p>'
+        )
     control = ""
     if (
         available_run is not None
@@ -1536,7 +1567,7 @@ def _review_v2_projection(
             + '" data-methodology-version="' + escape(methodology.methodology_version, quote=True)
             + '" data-methodology-publication="' + escape(methodology.publication_identity, quote=True)
             + '" data-methodology-checksum="' + escape(methodology.payload_checksum, quote=True)
-            + '">LOAD LATEST PROBABLES</button><span>Review intake only · exact current persisted run · '
+            + '">LOAD FRESH REVIEW</button><span>Review intake only · exact current persisted run · '
             + escape(available_run.run_identity) + '</span></div>'
         )
     elif currentness == "REVIEW_CURRENT":
@@ -1573,9 +1604,9 @@ def _review_v2_projection(
         '<h2>PHASE-A REVIEW · PROBABLES V2/V2.1</h2>'
         '<p>Review Cycle → Chart Required. Review Packs and Question Packs begin only after real chart intake.</p>'
         '</div><span class="intraday-review-toolbar-note">Cycles · '
-        + str(len(snapshot.candidates)) + '</span></div>' + currentness_banner
+        + str(len(snapshot.candidates)) + '</span></div>' + currentness_banner + focus_notice + control
         + '<div class="intraday-review-v2-grid">'
-        + empty + '</div>' + control + phase_b + '</section>'
+        + empty + '</div>' + phase_b + '</section>'
     )
 
 
@@ -1594,8 +1625,7 @@ def _review_v2_candidate(item, slot_index: int) -> str:  # type: ignore[no-untyp
     cycle = quote(item.cycle_identity, safe="")
     if item.chart_revision_ordinal is None:
         chart_content = (
-            '<div><span class="paste-key">⌘V</span><strong>PASTE / UPLOAD CHART</strong>'
-            '<span>TRADINGVIEW 4-CHART IMAGE · MISSING</span>'
+            '<div class="intraday-intake-copy"><strong>UPLOAD TRADINGVIEW CHART</strong>'
             '<span class="required-panels">Required: 1D · 1H · 15M · 5M</span></div>'
         )
         received_class = ""
@@ -1612,21 +1642,27 @@ def _review_v2_candidate(item, slot_index: int) -> str:  # type: ignore[no-untyp
             '<button class="intraday-replace-chart" type="button" data-target="'
             + target_identity + '">Replace</button>'
         )
-    upload = (
-        '<div class="intraday-review-section-title">TRADINGVIEW CHARTS</div>'
-        '<div id="' + target_identity + '" class="intraday-drop' + received_class
-        + '" role="button" tabindex="0" aria-label="Paste TradingView 1D 1H 15M 5M chart composite for '
-        + escape(item.canonical_subject_identity)
-        + '" data-upload-url="' + REVIEW_V2_CHART_ROUTE + '?cycle=' + cycle + '">'
-        + chart_content + '</div><div class="intraday-chart-slot-actions">'
-        + replace_action
+    file_choice = (
+        '<div class="intraday-chart-slot-actions">' + replace_action
         + '<label class="intraday-file-choice" for="' + input_identity + '">Choose File</label>'
         '<input id="' + input_identity + '" class="intraday-chart-input" type="file" '
         'accept="image/png,image/jpeg" aria-label="Choose 1D 1H 15M 5M chart composite" '
         'data-target="' + target_identity + '"></div>'
     )
+    empty_chart = item.chart_revision_ordinal is None
+    upload = (
+        '<div class="intraday-review-section-title">TRADINGVIEW CHARTS</div>'
+        '<div id="' + target_identity + '" class="intraday-drop'
+        + (' intraday-drop-empty' if empty_chart else received_class)
+        + '" role="group" tabindex="0" aria-label="Upload TradingView 1D 1H 15M 5M chart composite for '
+        + escape(item.canonical_subject_identity)
+        + '" data-upload-url="' + REVIEW_V2_CHART_ROUTE + '?cycle=' + cycle + '">'
+        + chart_content + (file_choice if empty_chart else '') + '</div>'
+        + ('' if empty_chart else file_choice)
+    )
     return (
-        '<article class="intraday-review-v2-card"><h3>'
+        '<article class="intraday-review-v2-card" tabindex="-1" id="review-candidate-'
+        + escape(item.probable_result_identity, quote=True) + '"><h3>'
         + escape(item.sponsor_label)
         + '</h3><span class="direction '
         + ("direction-long" if item.direction == "LONG" else "direction-short")
@@ -1673,7 +1709,9 @@ def _review_v2_control_script() -> str:
         'contract_identity:"' + REVIEW_V2_CREATE_REQUEST_IDENTITY + '",'
         'contract_version:"' + REVIEW_V2_CREATE_REQUEST_VERSION + '"};'
         'try{const r=await fetch("' + REVIEW_V2_CREATE_ROUTE + '",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});'
-        'if(!r.ok)throw new Error(await r.text());location.assign("/intraday/review");}'
+        'const d=await r.json();if(!r.ok||d.outcome!=="COMPLETE"||'
+        '! ["CURRENTIZED","ALREADY_CURRENT"].includes(d.currentization_state))'
+        'throw new Error("Reload Review to check the exact current Probables.");location.reload();}'
         'catch(e){b.disabled=false;window.alert("Review intake currentization failed: "+String(e));}});})();</script>'
     )
 
@@ -2001,6 +2039,7 @@ def render_intraday_triage(
     market_availability: tuple[IntradayMarketAvailability, ...] = (),
     refresh_status: dict[str, object] | None = None,
     latest_evaluable_run: ProbablesRunV2 | None = None,
+    review_v2: IntradayReviewV2Snapshot | None = None,
 ) -> str:
     if isinstance(snapshot, IntradayDiscoverySnapshot):
         return _render_discovery_triage(
@@ -2009,6 +2048,7 @@ def render_intraday_triage(
             market_availability=market_availability,
             refresh_status=refresh_status,
             latest_evaluable_run=latest_evaluable_run,
+            review_v2=review_v2,
         )
     warning = ('<div class="intraday-warning"><strong>ENGINEERING / EVIDENCE</strong>'
                '<span>NO TRADING CONCLUSION — EVIDENCE WORKSTATION</span></div>')
@@ -2058,6 +2098,7 @@ def _render_discovery_triage(
     market_availability: tuple[IntradayMarketAvailability, ...] = (),
     refresh_status: dict[str, object] | None = None,
     latest_evaluable_run: ProbablesRunV2 | None = None,
+    review_v2: IntradayReviewV2Snapshot | None = None,
 ) -> str:
     last = _analysis_time(snapshot.last_successful_analysis)
     failure_text = {
@@ -2109,6 +2150,7 @@ def _render_discovery_triage(
             market_availability=market_availability,
             refresh_status=refresh_status,
             latest_evaluable_run=latest_evaluable_run,
+            review_v2=review_v2,
         )
     if probable_v2_snapshot is not None:
         legacy = (
@@ -2281,6 +2323,7 @@ def _render_probables_v2_triage(
     market_availability: tuple[IntradayMarketAvailability, ...] = (),
     refresh_status: dict[str, object] | None = None,
     latest_evaluable_run: ProbablesRunV2 | None = None,
+    review_v2: IntradayReviewV2Snapshot | None = None,
 ) -> str:
     """Project persisted V2 facts only; no analytical recomputation occurs."""
 
@@ -2347,10 +2390,14 @@ def _render_probables_v2_triage(
         + _market_accounting_fact("MCX Short", mcx_short)
         + "</div>"
     )
+    current_review = (
+        review_v2 if review_v2 is not None
+        and review_v2.probables_run_identity == presented_run.run_identity else None
+    )
     market_groups = (
         '<div class="intraday-opportunities-grid" data-layout="equity-left-mcx-right">'
-        + _render_v2_market_group("EQUITY / INDEX", equity, members)
-        + _render_v2_market_group("MCX", mcx, members)
+        + _render_v2_market_group("EQUITY / INDEX", equity, members, current_review)
+        + _render_v2_market_group("MCX", mcx, members, current_review)
         + "</div>"
     )
     phase_counts = " · ".join(
@@ -2494,7 +2541,22 @@ def _status_time(value: object) -> str:
     return _ist_time(parsed)
 
 
-def _probable_v2_card(result, sponsor_label: str) -> str:  # type: ignore[no-untyped-def]
+def _opportunity_review_status(result, snapshot) -> str:  # type: ignore[no-untyped-def]
+    """Present exact current Review facts; never infer analytical readiness."""
+    candidate = next((item for item in (() if snapshot is None else snapshot.candidates)
+                      if item.probable_result_identity == result.result_identity), None)
+    if candidate is None:
+        return "NOT LOADED"
+    if candidate.chart_state == "CHART_REQUIRED":
+        return "CHART REQUIRED"
+    facts = [candidate.chart_state.replace("_", " ")]
+    if candidate.question_pack_state != "ABSENT":
+        facts.append("QUESTION PACK " + candidate.question_pack_state.replace("_", " "))
+    facts.append("ANSWER " + candidate.answer_state.replace("_", " "))
+    return " · ".join(facts)
+
+
+def _probable_v2_card(result, sponsor_label: str, review_v2=None) -> str:  # type: ignore[no-untyped-def]
     if result.state not in {ProbableState.LONG_PROBABLE, ProbableState.SHORT_PROBABLE}:
         return ""
     direction = "UNAVAILABLE" if result.direction is None else result.direction.value
@@ -2511,6 +2573,9 @@ def _probable_v2_card(result, sponsor_label: str) -> str:  # type: ignore[no-unt
     }.get("" if result.phase is None else result.phase.value, "UNAVAILABLE")
     nifty, nifty_detail = _probable_v2_nifty_projection(result)
     reason = " · ".join(_plain(item.value) for item in result.reasons)
+    review_status = _opportunity_review_status(result, review_v2)
+    target = quote(result.result_identity, safe="")
+    review_href = "/intraday/review?candidate=" + target + "#review-candidate-" + target
     return (
         '<article class="opportunity native-opportunity intraday-probable"><div class="opp-head">'
         '<div class="opp-identity"><h4>' + escape(sponsor_label) + '</h4>'
@@ -2524,7 +2589,10 @@ def _probable_v2_card(result, sponsor_label: str) -> str:  # type: ignore[no-unt
         + _card_fact("NIFTY", nifty, detail=nifty_detail)
         + '</div><div class="summary-footer"><span class="summary-rr">Result <strong>'
         + escape(_plain(result.state.value))
-        + '</strong></span><span>' + escape(reason) + '</span></div></article>'
+        + '</strong></span><span>' + escape(reason) + '</span></div>'
+        + '<div class="intraday-opportunity-review"><span>Review · <strong>'
+        + escape(review_status) + '</strong></span><a class="detail-link" href="'
+        + escape(review_href, quote=True) + '">Open Native Review →</a></div></article>'
     )
 
 
@@ -2547,7 +2615,7 @@ def _v2_result_sort_key(result, members) -> tuple[str, str, str]:  # type: ignor
     return (label.casefold(), label, result.canonical_subject_identity)
 
 
-def _render_v2_market_group(title: str, results, members) -> str:  # type: ignore[no-untyped-def]
+def _render_v2_market_group(title: str, results, members, review_v2=None) -> str:  # type: ignore[no-untyped-def]
     long_results = tuple(
         sorted(
             (item for item in results if item.state is ProbableState.LONG_PROBABLE),
@@ -2572,15 +2640,15 @@ def _render_v2_market_group(title: str, results, members) -> str:  # type: ignor
         '<div class="intraday-market-heading"><h2>' + escape(title) + '</h2><span>'
         + escape(str(total)) + ' admitted Probables</span></div>'
         + empty
-        + _render_v2_direction_group("LONG", long_results, members)
-        + _render_v2_direction_group("SHORT", short_results, members)
+        + _render_v2_direction_group("LONG", long_results, members, review_v2)
+        + _render_v2_direction_group("SHORT", short_results, members, review_v2)
         + '</section>'
     )
 
 
-def _render_v2_direction_group(direction: str, results, members) -> str:  # type: ignore[no-untyped-def]
+def _render_v2_direction_group(direction: str, results, members, review_v2=None) -> str:  # type: ignore[no-untyped-def]
     cards = "".join(
-        _probable_v2_card(item, _v2_member_label(item, members)) for item in results
+        _probable_v2_card(item, _v2_member_label(item, members), review_v2) for item in results
     )
     if not cards:
         cards = (
@@ -2800,7 +2868,6 @@ def _intraday_tabs(refresh_enabled: bool, *, active: str = "opportunities") -> s
     return (
         '<nav class="tabs intraday-tabs" aria-label="Intraday workflow">'
         '<a class="' + ('active' if active == 'opportunities' else '') + '" href="/intraday">Opportunities</a>'
-        '<a class="' + ('active' if active == 'wo-b' else '') + '" href="/intraday/operational-review">Operational Review</a>'
         '<a class="' + ('active' if active == 'review' else '') + '" href="/intraday/review">Review</a>'
         '<a class="' + ('active' if active == 'wo10' else '') + '" href="/intraday/wo10">WO-10</a>'
         '<a class="' + ('active' if active == 'wo11' else '') + '" href="/intraday/wo11">WO-11</a>'

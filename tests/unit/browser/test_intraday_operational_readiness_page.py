@@ -74,11 +74,12 @@ def test_operational_review_route_preserves_source_and_review_truth(tmp_path) ->
     assert store.root.exists() is before
 
 
-def test_intraday_main_integrates_read_only_review_summary(tmp_path) -> None:  # type: ignore[no-untyped-def]
+def test_intraday_main_keeps_operational_review_internal(tmp_path) -> None:  # type: ignore[no-untyped-def]
     routes, store = _routes(tmp_path)
     body = _get(routes, "/intraday")
-    assert 'href="/intraday/operational-review"' in body
-    assert "Current admitted opportunities reviewed" in body
+    assert 'href="/intraday/operational-review"' not in body
+    assert "Current admitted opportunities reviewed" not in body
+    assert 'href="/intraday/review"' in body
     assert not store.root.exists()
 
 
