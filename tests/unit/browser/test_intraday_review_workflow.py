@@ -166,14 +166,14 @@ def test_chart_intake_compacts_only_missing_evidence_and_preserves_file_binding(
     assert "Choose File" in html
     if revision is None:
         assert any("intraday-drop-empty" in parent for parent in labels[0][1])
-        assert "UPLOAD TRADINGVIEW CHART" in html
-        assert "Required: 1D · 1H · 15M · 5M" in html
-        assert "PASTE" not in html and "⌘V" not in html
+        assert "PASTE TRADINGVIEW CHART" in html
+        assert "Cmd+V / Ctrl+V · ONE COMPOSITE" in html
+        assert 'data-review-v2-chart="true"' in html
         assert "Replace</button>" not in html
     else:
         assert "intraday-drop-empty" not in html
         assert 'class="intraday-drop received"' in html
-        assert "TRADINGVIEW 4-CHART IMAGE · RECEIVED" in html
+        assert "TRADINGVIEW COMPOSITE · RECEIVED" in html
         assert "Chart Revision · REV 001" in html
         assert "Replace</button>" in html
     assert _fingerprints(tmp_path) == before

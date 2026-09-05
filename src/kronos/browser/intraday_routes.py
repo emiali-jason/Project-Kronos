@@ -105,7 +105,7 @@ from kronos.intraday.review_v2 import (
 )
 from kronos.intraday.review_v2_transport import REVIEW_V2_QUESTION_TRANSPORT_ROUTE
 from kronos.intraday.review_pdf import IntradayReviewPdfTransport
-from kronos.intraday.review_persistence import IntradayReviewStore
+from kronos.intraday.review_persistence import MAX_CHART_BYTES, IntradayReviewStore
 from kronos.intraday.native_visual_reconciliation import ReconciliationError
 from kronos.intraday.native_visual_reconciliation_persistence import (
     IntradayNativeVisualReconciliationStore,
@@ -968,13 +968,7 @@ class IntradayBrowserRoutes:
                     content_type="application/json; charset=utf-8",
                 )
             if request.path == REVIEW_V2_CHART_ROUTE:
-                if self._review_v2_control is None:
-                    raise ValueError
-                self._review_v2_control.application.upload_chart(
-                    _one_query(request, "cycle"),
-                    media_type=request.content_type,
-                    payload=request.body,
-                )
+                return self._receive_review_v2_chart(request)
             elif request.path == REVIEW_V2_QUESTION_TRANSPORT_ROUTE:
                 if self._review_v2_control is None or request.query or request.body:
                     raise ValueError
@@ -1112,6 +1106,45 @@ class IntradayBrowserRoutes:
                 available_probables_v2_run=self._current_probables_v2(),
                 review_v2_status=self._review_v2_status(),
             )
+        )
+
+
+    def _receive_review_v2_chart(self, request: BrowserPostRequest) -> BrowserRouteResponse:
+        """Clipboard and file bytes enter the same exact-current chart seam."""
+        reason, status = "CHART_PERSISTENCE_FAILURE", HTTPStatus.SERVICE_UNAVAILABLE
+        try:
+            cycle_identity = _one_query(request, "cycle")
+            if self._review_v2_control is None:
+                raise ValueError
+            if request.content_type not in {"image/png", "image/jpeg"}:
+                reason, status = "UNSUPPORTED_IMAGE_TYPE", HTTPStatus.BAD_REQUEST
+            elif len(request.body) > MAX_CHART_BYTES:
+                reason, status = "IMAGE_TOO_LARGE", HTTPStatus.REQUEST_ENTITY_TOO_LARGE
+            elif not self._review_v2_control.application.currentness().is_review_current:
+                reason, status = "STALE_REVIEW_CYCLE", HTTPStatus.CONFLICT
+            else:
+                chart = self._review_v2_control.application.upload_chart(
+                    cycle_identity, media_type=request.content_type, payload=request.body,
+                )
+                return BrowserRouteResponse(
+                    json.dumps({"outcome": "CHART_RECEIVED", "cycle_identity": cycle_identity,
+                                "chart_revision_identity": chart.chart_revision_identity}),
+                    content_type="application/json; charset=utf-8",
+                )
+        except ValueError:
+            reason, status = "INVALID_CANDIDATE_BINDING", HTTPStatus.BAD_REQUEST
+        except ReviewError as error:
+            if error.failure == ReviewFailure.NOT_CURRENT:
+                reason, status = "STALE_REVIEW_CYCLE", HTTPStatus.CONFLICT
+            elif error.failure in {ReviewFailure.INTEGRITY_INVALID, ReviewFailure.CYCLE_UNAVAILABLE}:
+                reason, status = "INVALID_CANDIDATE_BINDING", HTTPStatus.CONFLICT
+            elif error.failure == ReviewFailure.CHART_INVALID:
+                reason, status = "INVALID_CHART_IMAGE", HTTPStatus.BAD_REQUEST
+        except OSError:
+            pass
+        return BrowserRouteResponse(
+            json.dumps({"outcome": "REJECTED", "reason": reason}), status=status,
+            content_type="application/json; charset=utf-8",
         )
 
 

@@ -366,8 +366,11 @@ def test_v2_browser_chart_route_is_exact_cycle_bound_and_uses_proven_transport(
         _snapshot,
     )
     assert uploaded is not None and uploaded.status.value == 200
-    assert "CHART READY" in uploaded.body
-    assert "Chart Revision · REV 001" in uploaded.body
+    assert json.loads(uploaded.body)["outcome"] == "CHART_RECEIVED"
+    assert json.loads(uploaded.body)["cycle_identity"] == cycle
+    restored = routes.handle_get(BrowserGetRequest("/intraday/review", {}), _snapshot)
+    assert "CHART READY" in restored.body
+    assert "Chart Revision · REV 001" in restored.body
     assert control.status_document()["chart_required_count"] == 0
 
     wrong = routes.handle_post(
@@ -412,7 +415,9 @@ def test_browser_creates_one_v2_combined_question_transport_after_chart_ready(
         _snapshot,
     )
     assert uploaded is not None and uploaded.status.value == 200
-    assert "CREATE V2 COMBINED QUESTION PDF" in uploaded.body
+    assert json.loads(uploaded.body)["outcome"] == "CHART_RECEIVED"
+    restored = routes.handle_get(BrowserGetRequest("/intraday/review", {}), _snapshot)
+    assert "CREATE V2 COMBINED QUESTION PDF" in restored.body
 
     created = routes.handle_post(
         BrowserPostRequest(

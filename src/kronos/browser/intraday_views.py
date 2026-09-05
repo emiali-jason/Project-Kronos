@@ -61,6 +61,8 @@ from kronos.intraday.review_v2_transport import REVIEW_V2_QUESTION_TRANSPORT_ROU
 from kronos.intraday.telemetry import TelemetryType
 
 
+from kronos.intraday.review_persistence import MAX_CHART_BYTES
+
 _KOLKATA = ZoneInfo("Asia/Kolkata")
 
 
@@ -369,6 +371,7 @@ def render_intraday_review(
         + ' · Governed JSON Answer Pack import ACTIVE</div>'
         ))
         + _review_upload_script()
+        + _review_v2_chart_script()
         + _review_v2_control_script()
         + '<script>window.addEventListener("pageshow",()=>{requestAnimationFrame(()=>{'
         'const card=document.getElementById(location.hash.slice(1));'
@@ -378,7 +381,7 @@ def render_intraday_review(
     )
     return render_browser_page(
         title="Intraday Native Review",
-        subtitle="Exact-current Probables · manual 1D | 1H | 15M | 5M chart intake.",
+        subtitle="Exact-current Probables · one complete TradingView composite per candidate.",
         snapshot=snapshot,
         active_nav="Intraday",
         active_tab="Review",
@@ -1625,14 +1628,14 @@ def _review_v2_candidate(item, slot_index: int) -> str:  # type: ignore[no-untyp
     cycle = quote(item.cycle_identity, safe="")
     if item.chart_revision_ordinal is None:
         chart_content = (
-            '<div class="intraday-intake-copy"><strong>UPLOAD TRADINGVIEW CHART</strong>'
-            '<span class="required-panels">Required: 1D · 1H · 15M · 5M</span></div>'
+            '<div class="intraday-intake-copy"><strong>PASTE TRADINGVIEW CHART</strong>'
+            '<span class="required-panels">Cmd+V / Ctrl+V · ONE COMPOSITE</span></div>'
         )
         received_class = ""
         replace_action = ""
     else:
         chart_content = (
-            '<div class="intraday-chart-received"><strong>TRADINGVIEW 4-CHART IMAGE · RECEIVED</strong>'
+            '<div class="intraday-chart-received"><strong>TRADINGVIEW COMPOSITE · RECEIVED</strong>'
             '<span>' + escape(item.canonical_subject_identity) + '</span><span>Chart Revision · REV '
             + f"{item.chart_revision_ordinal:03d}"
             + '</span></div>'
@@ -1646,7 +1649,7 @@ def _review_v2_candidate(item, slot_index: int) -> str:  # type: ignore[no-untyp
         '<div class="intraday-chart-slot-actions">' + replace_action
         + '<label class="intraday-file-choice" for="' + input_identity + '">Choose File</label>'
         '<input id="' + input_identity + '" class="intraday-chart-input" type="file" '
-        'accept="image/png,image/jpeg" aria-label="Choose 1D 1H 15M 5M chart composite" '
+        'accept="image/png,image/jpeg" aria-label="Choose one complete TradingView composite" '
         'data-target="' + target_identity + '"></div>'
     )
     empty_chart = item.chart_revision_ordinal is None
@@ -1654,11 +1657,12 @@ def _review_v2_candidate(item, slot_index: int) -> str:  # type: ignore[no-untyp
         '<div class="intraday-review-section-title">TRADINGVIEW CHARTS</div>'
         '<div id="' + target_identity + '" class="intraday-drop'
         + (' intraday-drop-empty' if empty_chart else received_class)
-        + '" role="group" tabindex="0" aria-label="Upload TradingView 1D 1H 15M 5M chart composite for '
+        + '" role="group" tabindex="0" aria-label="Paste or choose one TradingView composite for '
         + escape(item.canonical_subject_identity)
-        + '" data-upload-url="' + REVIEW_V2_CHART_ROUTE + '?cycle=' + cycle + '">'
+        + '" data-review-v2-chart="true" data-upload-url="' + REVIEW_V2_CHART_ROUTE + '?cycle=' + cycle + '">'
         + chart_content + (file_choice if empty_chart else '') + '</div>'
         + ('' if empty_chart else file_choice)
+        + '<p id="' + target_identity + '-feedback" role="status" aria-live="polite" hidden></p>'
     )
     return (
         '<article class="intraday-review-v2-card" tabindex="-1" id="review-candidate-'
@@ -1968,6 +1972,63 @@ def _reconciliation_result(
     )
 
 
+def _review_v2_chart_script() -> str:
+    """Explicit image-only paste; original bytes share the file intake path."""
+    script = r"""<script>
+(()=>{
+const accepted=new Set(['image/png','image/jpeg']);
+const failures=new Set(['NO_IMAGE_IN_CLIPBOARD','UNSUPPORTED_IMAGE_TYPE','AMBIGUOUS_CLIPBOARD_IMAGES',
+ 'IMAGE_TOO_LARGE','INVALID_CANDIDATE_BINDING','STALE_REVIEW_CYCLE','INVALID_CHART_IMAGE','CHART_PERSISTENCE_FAILURE']);
+function report(target,reason){
+ const feedback=document.getElementById(target.id+'-feedback');
+ if(feedback){feedback.hidden=false;feedback.textContent=failures.has(reason)?reason:'CHART_PERSISTENCE_FAILURE';}
+}
+async function receive(target,file){
+ if(target.getAttribute('aria-busy')==='true')return;
+ if(!file){report(target,'NO_IMAGE_IN_CLIPBOARD');return;}
+ if(!accepted.has(file.type)){report(target,'UNSUPPORTED_IMAGE_TYPE');return;}
+ if(file.size>__MAX_CHART_BYTES__){report(target,'IMAGE_TOO_LARGE');return;}
+ const url=new URL(target.dataset.uploadUrl,location.href);
+ if(url.origin!==location.origin||url.pathname!=='__CHART_ROUTE__'||
+    url.searchParams.getAll('cycle').length!==1||[...url.searchParams.keys()].length!==1){
+   report(target,'INVALID_CANDIDATE_BINDING');return;}
+ const cycle=url.searchParams.get('cycle');
+ target.setAttribute('aria-busy','true');
+ try{
+  const response=await fetch(url.pathname+url.search,{method:'POST',headers:{'Content-Type':file.type},body:file});
+  const result=await response.json();
+  if(!response.ok){report(target,result.reason);return;}
+  if(result.outcome!=='CHART_RECEIVED'||result.cycle_identity!==cycle){report(target,'INVALID_CANDIDATE_BINDING');return;}
+  const card=target.closest('.intraday-review-v2-card');
+  if(card)history.replaceState(null,'',location.pathname+location.search+'#'+card.id);
+  location.reload();
+ }catch(_error){report(target,'CHART_PERSISTENCE_FAILURE');}
+ finally{target.removeAttribute('aria-busy');}
+}
+for(const target of document.querySelectorAll('[data-review-v2-chart]')){
+ target.addEventListener('click',()=>target.focus());
+ target.addEventListener('paste',event=>{
+  event.preventDefault();
+  if(document.activeElement!==target){report(target,'INVALID_CANDIDATE_BINDING');return;}
+  const files=Array.from(event.clipboardData?.items||[]).filter(item=>item.kind==='file');
+  if(files.length===0){report(target,'NO_IMAGE_IN_CLIPBOARD');return;}
+  if(files.length!==1){report(target,'AMBIGUOUS_CLIPBOARD_IMAGES');return;}
+  if(!accepted.has(files[0].type)){report(target,'UNSUPPORTED_IMAGE_TYPE');return;}
+  receive(target,files[0].getAsFile());
+ });
+}
+for(const input of document.querySelectorAll('.intraday-chart-input')){
+ const target=document.getElementById(input.dataset.target);
+ if(!target?.hasAttribute('data-review-v2-chart'))continue;
+ input.addEventListener('change',()=>{
+  if(input.files?.length===1)receive(target,input.files[0]);
+  else if(input.files?.length>1)report(target,'AMBIGUOUS_CLIPBOARD_IMAGES');
+ });
+}
+})();</script>"""
+    return script.replace("__MAX_CHART_BYTES__", str(MAX_CHART_BYTES)).replace("__CHART_ROUTE__", REVIEW_V2_CHART_ROUTE)
+
+
 def _review_upload_script() -> str:
     return """<script>
 (()=>{
@@ -1980,6 +2041,7 @@ async function receiveChart(target,file){
   }catch(_error){target.removeAttribute('aria-busy');alert('Chart could not be accepted.');}
 }
 for(const target of document.querySelectorAll('.intraday-drop')){
+  if(target.hasAttribute('data-review-v2-chart'))continue;
   target.addEventListener('click',()=>target.focus());
   target.addEventListener('paste',event=>{
     const items=event.clipboardData&&Array.from(event.clipboardData.items||[]);
@@ -1995,6 +2057,7 @@ for(const button of document.querySelectorAll('.intraday-replace-chart')){
   });
 }
 for(const input of document.querySelectorAll('.intraday-chart-input')){
+  if(document.getElementById(input.dataset.target)?.hasAttribute('data-review-v2-chart'))continue;
   input.addEventListener('change',()=>{
     const target=document.getElementById(input.dataset.target);
     const file=input.files&&input.files[0];if(target&&file)receiveChart(target,file);
