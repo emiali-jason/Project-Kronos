@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import timedelta
 from types import SimpleNamespace
 
 from kronos.application.intraday_wo10 import IntradayWo10Application
@@ -14,12 +15,12 @@ from kronos.browser.intraday_wo10_control import (
 )
 from kronos.browser.product_routes import BrowserGetRequest, BrowserPostRequest
 from kronos.intraday.probables_v2_persistence import ProbablesV2Store
-from kronos.intraday.wo10 import Wo10State
+from kronos.intraday.wo10 import Wo10State, create_wo10_batch_result
 from kronos.intraday.wo10_persistence import Wo10Store
 from kronos.intraday.wo10_policies import Wo10PolicyRegistry
 from tests.unit.browser.test_product_route_isolation import _snapshot
 from tests.unit.intraday.test_wo10_application import _Assembler, _Policy
-from tests.unit.intraday.test_wo10_contracts import _bundle
+from tests.unit.intraday.test_wo10_contracts import PROVENANCE, REQUESTED_AT, _bundle
 
 
 class _Workstation:
@@ -115,6 +116,63 @@ def test_exact_post_is_explicit_idempotent_and_restores_without_reevaluation(tmp
     restored = runtime.family_statuses[0]
     assert restored.state == "LOADED"
     assert restored.restored is not None
+
+
+def test_same_family_requests_replay_only_their_exact_candidate(tmp_path) -> None:
+    bundles = tuple(_bundle(f"NSE-EQ-{subject}") for subject in (
+        "EICHERMOT", "NTPC", "TITAN"
+    ))
+    probables = ProbablesV2Store((tmp_path / "probables").resolve())
+    store = Wo10Store((tmp_path / "wo10").resolve())
+    for run, probable, request, snapshot, result in bundles:
+        probables.retain_result(probable)
+        probables.retain_run(run)
+        batch = create_wo10_batch_result(
+            request=request,
+            results=(result,),
+            completed_at=REQUESTED_AT + timedelta(minutes=1),
+            provenance=PROVENANCE,
+        )
+        store.retain_request(request)
+        store.retain_evidence_snapshot(snapshot)
+        store.retain_result(result)
+        store.retain_batch(batch)
+
+    policy = _Policy(bundles[0][2].policy)
+    registry = Wo10PolicyRegistry((policy,))
+    application = IntradayWo10Application(
+        run_store=probables,
+        store=store,
+        policy_registry=registry,
+        evidence_assembler=_Assembler(bundles[0][3]),
+    )
+    control = IntradayWo10OperationalControl(
+        IntradayWo10RuntimeService(application, store), probables, registry
+    )
+
+    for _, _, request, _, _ in bundles:
+        first = control.execute_document(_payload(request))
+        second = control.execute_document(_payload(request))
+        expected = request.probable_bindings[0].canonical_subject_identity
+        assert first["idempotent"] is second["idempotent"] is True
+        assert first["outcome"] == second["outcome"] == "RETAINED"
+        assert [item["canonical_subject_identity"] for item in first["candidates"]] == [expected]
+        assert [item["canonical_subject_identity"] for item in second["candidates"]] == [expected]
+    assert policy.calls == 0
+
+
+def test_exact_replay_rejects_tampered_persisted_result(tmp_path) -> None:
+    request, _, _, control = _control(tmp_path)
+    first = control.execute_document(_payload(request))
+    result_identity = first["candidates"][0]["result_identity"]
+    path = control.runtime.store.root / "results" / f"{result_identity}.json"
+    path.write_bytes(path.read_bytes().replace(b"RELIANCE", b"TAMPERED", 1))
+
+    rejected = control.execute_document(_payload(request))
+
+    assert rejected["outcome"] == "REJECTED"
+    assert rejected["failure_stage"] == "RESTORATION"
+    assert rejected["failure_reason"] == "WO10_REPLAY_BINDING_INVALID"
 
 
 def test_wrong_family_policy_or_member_fails_before_operation(tmp_path) -> None:

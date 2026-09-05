@@ -205,6 +205,72 @@ class IntradayReviewV2Application:
     def probables_store(self) -> ProbablesV2Store:
         return self._probables
 
+    def current_reconciliation(self):
+        """Read-only exact-pointer contract adaptation; never invokes WO-10."""
+        from kronos.application.intraday_review_wo10 import select_current_review
+
+        with self._lock:
+            probables_pointer, run = self._load_current_probables()
+            pointer = self._review.load_current()
+            if run is None or pointer is None or pointer.probables_run_identity != run.run_identity:
+                raise ReviewError(ReviewFailure.NOT_CURRENT)
+            if not self._review_cycles_match_run(run, self._cycles_for_pointer(pointer)):
+                raise ReviewError(ReviewFailure.INTEGRITY_INVALID)
+            selected = select_current_review(
+                store=self._review, run=run, pointer=pointer,
+                resolver=self._visual_identity_resolver,
+            )
+            if self._probables.load_current() != probables_pointer or self._review.load_current() != pointer:
+                raise ReviewError(ReviewFailure.NOT_CURRENT)
+            return selected
+
+    def reconcile_current_ready(self, control):
+        """Explicit current-only dispatch; retain WO-10's per-request semantics."""
+        from kronos.application.intraday_review_wo10 import request_document
+
+        with self._lock:
+            selected = self.current_reconciliation()
+            outcomes = []
+            source_changed = False
+            if control is not None:
+                for request in selected.requests:
+                    try:
+                        if self.current_reconciliation() != selected:
+                            raise ReviewError(ReviewFailure.NOT_CURRENT)
+                    except (ReviewError, OSError):
+                        source_changed = True
+                        break
+                    outcomes.append(control.execute_document(request_document(request)))
+            succeeded = sum(item.get("outcome") in {"COMPLETED", "RETAINED"} for item in outcomes)
+            return {
+                **selected.status_document(),
+                "outcome": (
+                    "SOURCE_CHANGED" if source_changed else "GATED" if not outcomes
+                    else "COMPLETED" if succeeded == len(outcomes) else "PARTIAL_FAILURE"
+                ),
+                "invocation_count": len(outcomes),
+                "success_count": succeeded,
+                "failure_count": len(outcomes) - succeeded,
+                "not_dispatched_count": len(selected.requests) - len(outcomes),
+                "results": outcomes,
+            }
+
+    def maintain_current_review(self):
+        """Explicit reference-safe maintenance after current Review restoration.
+
+        Neither GET nor startup invokes this path. Failure is separate from
+        currentization and never makes a valid current Review unsuccessful.
+        """
+        from kronos.intraday.review_v2_gc import collect_review_components, ReviewGCResult
+        with self._lock:
+            try:
+                if not self.currentness().is_review_current:
+                    return ReviewGCResult(status="GC_DEFERRED_NOT_CURRENT")
+                self.snapshot()
+                return collect_review_components(self._review, self._transport)
+            except (ReviewError, OSError, ValueError):
+                return ReviewGCResult(status="GC_DEFERRED_INTEGRITY_OR_IO")
+
     def create_eligible_cycles_for_run_identity(
         self,
         *,

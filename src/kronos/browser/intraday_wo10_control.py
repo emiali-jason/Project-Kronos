@@ -115,8 +115,13 @@ class IntradayWo10OperationalControl:
 
         try:
             existing = self._runtime.store.load_request(request.request_identity)
-        except (Wo10PersistenceError, OSError):
-            existing = None
+        except Wo10PersistenceError as error:
+            if isinstance(error.__cause__, FileNotFoundError):
+                existing = None
+            else:
+                return _failure_document(payload, "RESTORATION", "WO10_REPLAY_BINDING_INVALID", "REJECTED")
+        except OSError:
+            return _failure_document(payload, "RESTORATION", "WO10_REPLAY_BINDING_INVALID", "REJECTED")
         if existing is not None:
             if existing != request:
                 return _failure_document(
@@ -125,16 +130,11 @@ class IntradayWo10OperationalControl:
                     "WO10_REQUEST_IDENTITY_CONFLICT",
                     "REJECTED",
                 )
-            family = next(
-                item for item in self._runtime.family_statuses
-                if item.market_family is request.market_family
-            )
-            return _execution_document(
-                request,
-                None,
-                idempotent=True,
-                restored=family.restored,
-            )
+            try:
+                restored = self._runtime.store.restore_request(request.request_identity)
+            except (Wo10PersistenceError, OSError):
+                return _failure_document(payload, "RESTORATION", "WO10_REPLAY_BINDING_INVALID", "REJECTED")
+            return _execution_document(request, None, idempotent=True, restored=restored)
 
         try:
             execution = self._runtime.execute(request)

@@ -257,11 +257,16 @@ class IntradayBrowserRoutes:
         )
 
     def _review_v2_status(self):  # type: ignore[no-untyped-def]
-        return (
-            None
-            if self._review_v2_control is None
-            else self._review_v2_control.status_document()
-        )
+        if self._review_v2_control is None:
+            return None
+        status = self._review_v2_control.status_document()
+        try:
+            selected = self._review_v2_control.application.current_reconciliation()
+            status["reconciliation"] = selected.status_document()
+        except (ReviewError, OSError):
+            status["reconciliation"] = {"eligible_count": 0, "answer_ready_count": 0}
+        status["reconciliation_control_available"] = self._wo10_control is not None
+        return status
 
     def handle_get(
         self,
@@ -967,6 +972,28 @@ class IntradayBrowserRoutes:
                     ),
                     content_type="application/json; charset=utf-8",
                 )
+            # Old bulk URLs cannot dispatch a historical V1 population while
+            # the Sponsor workspace selects the V2 current pointer.
+            if self._review_v2_control is not None:
+                if request.path == "/intraday/review/question-packs":
+                    if request.query or request.body:
+                        raise ValueError
+                    self._review_v2_control.application.create_combined_question_transport()
+                    return self.handle_get(BrowserGetRequest("/intraday/review", {}), snapshot_provider)
+                if request.path == "/intraday/review/answers":
+                    if request.query or request.content_type != "application/json" or not request.body:
+                        raise ValueError
+                    self._review_v2_control.application.import_combined_answer(request.body)
+                    return self.handle_get(BrowserGetRequest("/intraday/review", {}), snapshot_provider)
+                if request.path == "/intraday/review/reconcile-all":
+                    if request.query or request.body:
+                        raise ValueError
+                    result = self._review_v2_control.application.reconcile_current_ready(self._wo10_control)
+                    return BrowserRouteResponse(
+                        json.dumps(result),
+                        status=HTTPStatus.OK if result["outcome"] == "COMPLETED" else HTTPStatus.CONFLICT,
+                        content_type="application/json; charset=utf-8",
+                    )
             if request.path == REVIEW_V2_CHART_ROUTE:
                 return self._receive_review_v2_chart(request)
             elif request.path == REVIEW_V2_QUESTION_TRANSPORT_ROUTE:

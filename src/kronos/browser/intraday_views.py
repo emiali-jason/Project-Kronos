@@ -344,7 +344,7 @@ def render_intraday_review(
         + _review_v2_projection(
             review_v2, available_probables_v2_run, review_v2_status, focused_candidate
         )
-        + ("" if review_v2 is not None and not review.candidates else (
+        + ("" if review_v2 is not None else (
         '<div class="intraday-review-toolbar"><form method="post" action="/intraday/review/question-packs">'
         '<button class="primary" type="submit"'
         + (" disabled" if ready_count == 0 else "")
@@ -1578,38 +1578,51 @@ def _review_v2_projection(
             '<div class="intraday-review-v2-control"><button type="button" disabled>'
             'REVIEW CURRENT</button><span>No duplicate Review intake will be created.</span></div>'
         )
-    phase_b = ""
-    if snapshot.candidates and all(item.chart_state == "CHART_READY" for item in snapshot.candidates):
-        if snapshot.question_transport_identity is None:
-            phase_b = (
-                '<form class="intraday-review-v2-control" method="post" action="'
-                + REVIEW_V2_QUESTION_TRANSPORT_ROUTE
-                + '"><button type="submit">CREATE V2 COMBINED QUESTION PDF</button>'
-                '<span>Exact V2 cycles · charts · packs · one transport</span></form>'
-            )
-        else:
-            phase_b = (
-                '<div class="intraday-review-v2-control"><strong>V2 QUESTION TRANSPORT READY</strong>'
-                '<span>CURRENT QUESTION PACK: ' + escape(snapshot.question_filename or "")
-                + '<br>EXPECTED ANSWER: ' + escape(snapshot.expected_answer_filename or "")
-                + '<br>CANDIDATES: ' + str(len(snapshot.candidates))
-                + '<br>Transport · ' + escape(snapshot.question_transport_identity)
-                + '</span><label class="intraday-file-choice" tabindex="0" '
-                'for="intraday-v2-batch-answer">UPLOAD V2 ANSWERS</label>'
-                '<input id="intraday-v2-batch-answer" class="intraday-batch-answer-input" '
-                'type="file" accept="application/json,.json" '
-                'data-review-v2-batch-answer-upload="'
-                + REVIEW_V2_ANSWER_IMPORT_ROUTE
-                + '"></div>'
-            )
+    ready_count = sum(item.chart_state == "CHART_READY" for item in snapshot.candidates)
+    all_ready = bool(snapshot.candidates) and ready_count == len(snapshot.candidates)
+    transport_ready = snapshot.question_transport_identity is not None
+    reconciliation = {} if status is None else status.get("reconciliation", {})
+    exact_reconciliation = (
+        reconciliation.get("current_review_pointer") == snapshot.current_pointer_identity
+        and currentness == "REVIEW_CURRENT"
+    )
+    eligible_count = reconciliation.get("eligible_count", 0) if exact_reconciliation else 0
+    answer_count = reconciliation.get("answer_ready_count", 0) if exact_reconciliation else 0
+    phase_b = (
+        '<div class="intraday-review-toolbar" data-current-review-bulk="true">'
+        '<form method="post" action="' + REVIEW_V2_QUESTION_TRANSPORT_ROUTE + '">'
+        '<button class="primary" type="submit"' + ("" if all_ready else " disabled")
+        + '>CREATE ALL REVIEW PDF</button></form>'
+        '<button type="button" data-choose-v2-answer="true"' + ("" if transport_ready else " disabled")
+        + '>UPLOAD ALL ANSWERS</button>'
+        '<label class="intraday-file-choice" tabindex="0" for="intraday-v2-batch-answer">CHOOSE COMBINED ANSWER</label>'
+        '<input id="intraday-v2-batch-answer" class="intraday-batch-answer-input" '
+        'type="file" accept="application/json,.json"' + ("" if transport_ready else " disabled")
+        + ' data-review-v2-batch-answer-upload="' + REVIEW_V2_ANSWER_IMPORT_ROUTE + '">'
+        '<form method="post" action="/intraday/review/reconcile-all">'
+        '<button type="submit"' + (
+            "" if eligible_count and status and status.get("reconciliation_control_available")
+            else ' disabled'
+        ) + '>RECONCILE ALL READY REVIEWS</button></form>'
+        '<span class="intraday-review-toolbar-note">Chart ready: '
+        + str(ready_count) + ' / ' + str(len(snapshot.candidates))
+        + ' · Answer ready: ' + str(answer_count) + ' / ' + str(len(snapshot.candidates))
+        + ' · Reconcile eligible: ' + str(eligible_count) + ' / ' + str(len(snapshot.candidates))
+        + ("" if all_ready else ' · CURRENT BATCH INCOMPLETE')
+        + ('' if not transport_ready else '<br>CURRENT QUESTION PACK: ' + escape(snapshot.question_filename or '')
+           + '<br>EXPECTED ANSWER: ' + escape(snapshot.expected_answer_filename or ''))
+        + '</span></div>'
+        '<script>document.querySelector("[data-choose-v2-answer]")?.addEventListener("click",()=>'
+        'document.getElementById("intraday-v2-batch-answer").click());</script>'
+    )
     return (
         '<section class="intraday-review-v2"><div class="intraday-review-v2-head"><div>'
         '<h2>PHASE-A REVIEW · PROBABLES V2/V2.1</h2>'
         '<p>Review Cycle → Chart Required. Review Packs and Question Packs begin only after real chart intake.</p>'
         '</div><span class="intraday-review-toolbar-note">Cycles · '
         + str(len(snapshot.candidates)) + '</span></div>' + currentness_banner + focus_notice + control
-        + '<div class="intraday-review-v2-grid">'
-        + empty + '</div>' + phase_b + '</section>'
+        + phase_b + '<div class="intraday-review-v2-grid">'
+        + empty + '</div></section>'
     )
 
 

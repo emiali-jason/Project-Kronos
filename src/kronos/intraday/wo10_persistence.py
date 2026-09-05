@@ -17,6 +17,9 @@ from kronos.intraday.completed_evidence import IntradayAnalysisPhase
 from kronos.intraday.historical_semantic import SemanticDirection
 from kronos.intraday.universe import IntradayMarketFamily
 from kronos.intraday.wo10 import (
+    create_current_wo10_pointer,
+    create_wo10_batch_result,
+    create_wo10_reconciliation_result,
     CurrentWo10ReconciliationPointer,
     Wo10BatchResult,
     Wo10ContractError,
@@ -184,6 +187,51 @@ class Wo10Store:
             )
         ):
             raise Wo10PersistenceError("WO10_RESTORATION_BINDING_INVALID")
+        return RestoredWo10State(pointer, request, batch, results, snapshots)
+
+    def restore_request(self, request_identity: str) -> RestoredWo10State | None:
+        """Restore an exact immutable request, independently of the family alias.
+
+        Historical stores have no request-to-batch index. Inspect retained batch
+        identities and accept only one complete, integrity-bound exact request
+        chain. The derived pointer is an in-memory view and is never published.
+        """
+        request = self.load_request(request_identity)
+        matches = []
+        for path in sorted((self._root / "batches").glob("*.json")):
+            batch = self.load_batch(path.stem)
+            if batch.request_identity == request_identity:
+                matches.append(batch)
+        if not matches:
+            return None
+        if len(matches) != 1:
+            raise Wo10PersistenceError("WO10_REPLAY_BINDING_AMBIGUOUS")
+        batch = matches[0]
+        try:
+            results = tuple(self.load_result(item.result_identity) for item in batch.result_bindings)
+            snapshots = tuple(self.load_evidence_snapshot(item.evidence_snapshot_identity) for item in results)
+            expected_batch = create_wo10_batch_result(
+                request=request, results=results, completed_at=batch.completed_at,
+                provenance=batch.provenance,
+            )
+            if expected_batch != batch:
+                raise Wo10PersistenceError("WO10_REPLAY_BINDING_INVALID")
+            bindings = {item.probable_result_identity: item for item in request.probable_bindings}
+            for result, snapshot in zip(results, snapshots, strict=True):
+                binding = bindings.get(snapshot.probable_result_identity)
+                if (
+                    binding is None
+                    or snapshot.probable_result_integrity != binding.probable_result_integrity
+                    or snapshot.probables_run_integrity != request.probables_run_integrity
+                    or create_wo10_reconciliation_result(
+                        request=request, evidence=snapshot, state=result.state,
+                        reasons=result.reasons, provenance=result.provenance,
+                    ) != result
+                ):
+                    raise Wo10PersistenceError("WO10_REPLAY_BINDING_INVALID")
+            pointer = create_current_wo10_pointer(request, batch)
+        except Wo10ContractError as error:
+            raise Wo10PersistenceError("WO10_REPLAY_BINDING_INVALID") from error
         return RestoredWo10State(pointer, request, batch, results, snapshots)
 
     def _retain_typed(self, family: str, identity: str, value: object) -> Path:

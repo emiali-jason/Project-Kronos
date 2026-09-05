@@ -352,7 +352,7 @@ def test_v2_browser_chart_route_is_exact_cycle_bound_and_uses_proven_transport(
         f'data-upload-url="{REVIEW_V2_CHART_ROUTE}?cycle={cycle}"'
         in page.body
     )
-    assert "PASTE / UPLOAD CHART" in page.body
+    assert "PASTE TRADINGVIEW CHART" in page.body
     assert "target.addEventListener('paste'" in page.body
     assert "fetch(target.dataset.uploadUrl" in page.body
 
@@ -417,7 +417,7 @@ def test_browser_creates_one_v2_combined_question_transport_after_chart_ready(
     assert uploaded is not None and uploaded.status.value == 200
     assert json.loads(uploaded.body)["outcome"] == "CHART_RECEIVED"
     restored = routes.handle_get(BrowserGetRequest("/intraday/review", {}), _snapshot)
-    assert "CREATE V2 COMBINED QUESTION PDF" in restored.body
+    assert "CREATE ALL REVIEW PDF" in restored.body
 
     created = routes.handle_post(
         BrowserPostRequest(
@@ -429,10 +429,10 @@ def test_browser_creates_one_v2_combined_question_transport_after_chart_ready(
         _snapshot,
     )
     assert created is not None and created.status.value == 200
-    assert "V2 QUESTION TRANSPORT READY" in created.body
+    assert "CURRENT QUESTION PACK:" in created.body
     assert "CURRENT QUESTION PACK:" in created.body
     assert "EXPECTED ANSWER:" in created.body
-    assert "CANDIDATES: 1" in created.body
+    assert "Chart ready: 1 / 1" in created.body
     snapshot = application.snapshot()
     assert snapshot.review_batch_identity is not None
     assert snapshot.question_transport_identity is not None
