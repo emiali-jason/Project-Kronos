@@ -22,6 +22,10 @@ from kronos.intraday.operational_readiness_persistence import (
     create_wo_b_failure,
 )
 import kronos.intraday.operational_readiness_persistence as persistence_module
+from tests.unit.application.test_intraday_operational_readiness import (
+    SAFE_FALLBACK,
+    UNSAFE_FAILURE_INPUTS,
+)
 from kronos.intraday.universe import IntradayMarketFamily
 
 from .test_operational_readiness import BOUNDARY
@@ -210,6 +214,54 @@ def test_restoration_is_inert_and_deterministic(tmp_path) -> None:
     second = store.restore_current(snapshot.candidate_identity)
     assert first == second
     assert _fingerprints(store.root) == before
+
+
+def test_current_candidate_enumeration_validates_aliases_without_writes(tmp_path) -> None:
+    store = WoBStore((tmp_path / "wo-b").resolve())
+    first = _snapshot(candidate="INTRADAY-CANDIDATE-A")
+    second = _snapshot(candidate="INTRADAY-CANDIDATE-B")
+    store.publish_current(second)
+    store.publish_current(first)
+    before = _fingerprints(store.root)
+    assert store.current_candidates() == (
+        "INTRADAY-CANDIDATE-A",
+        "INTRADAY-CANDIDATE-B",
+    )
+    assert _fingerprints(store.root) == before
+
+
+@pytest.mark.parametrize("raw", UNSAFE_FAILURE_INPUTS)
+def test_failure_factory_rejects_unapproved_reasons(raw) -> None:  # type: ignore[no-untyped-def]
+    with pytest.raises(WoBPersistenceError, match="^WO_B_FAILURE_INVALID$"):
+        create_wo_b_failure(
+            candidate_identity="INTRADAY-CANDIDATE-1",
+            analysis_run_identity=None,
+            stage=WoBFailureStage.SOURCE_BINDING,
+            reason=raw,
+            failed_at=BOUNDARY,
+        )
+
+
+@pytest.mark.parametrize("raw", UNSAFE_FAILURE_INPUTS)
+def test_composition_failure_persists_only_generic_code(tmp_path, raw) -> None:  # type: ignore[no-untyped-def]
+    from kronos.intraday.operational_readiness_composition import _failure_for
+    from tests.unit.intraday.test_operational_readiness_composition import _composition, _foundation
+
+    store = WoBStore((tmp_path / "wo-b").resolve())
+    request = _composition(*_foundation())
+    failure = _failure_for(request, RuntimeError(raw))
+    assert failure.reason == SAFE_FALLBACK
+    store.publish_latest_failure(failure)
+    before = _fingerprints(store.root)
+    store.publish_latest_failure(_failure_for(request, RuntimeError(raw)))
+    assert _fingerprints(store.root) == before
+    assert store.load_latest_failure(failure.candidate_identity) == failure
+    assert store.load_current(failure.candidate_identity) is None
+    for path in store.root.rglob("*.json"):
+        document = path.read_text()
+        assert raw not in document
+        assert "TEST_ONLY" not in document
+        assert SAFE_FALLBACK in document
 
 
 def test_corrupt_current_pointer_and_foreign_target_fail_closed(tmp_path) -> None:

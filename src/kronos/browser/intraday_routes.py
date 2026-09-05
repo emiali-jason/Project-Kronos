@@ -20,7 +20,12 @@ from kronos.browser.intraday_views import (
     render_intraday_wo15,
     render_intraday_wo16,
     render_intraday_wo17,
+    render_intraday_operational_readiness,
     render_intraday_workstation,
+)
+from kronos.browser.intraday_operational_readiness import (
+    IntradayOperationalReadinessProjection,
+    WO_B_PRODUCT_ROUTE,
 )
 from kronos.browser.intraday_probables_v2_control import (
     IntradayProbablesV2OperationalControl,
@@ -128,6 +133,7 @@ class IntradayBrowserRoutes:
         wo15_control: IntradayWo15OperationalControl | None = None,
         wo16_control: IntradayWo16OperationalControl | None = None,
         wo17_control: IntradayWo17OperationalControl | None = None,
+        operational_readiness: IntradayOperationalReadinessProjection | None = None,
         review_workstation: object | None = None,
     ) -> None:
         if not callable(getattr(workstation, "snapshot", None)):
@@ -198,6 +204,12 @@ class IntradayBrowserRoutes:
         ):
             raise ValueError("INTRADAY_BROWSER_ROUTES_INVALID")
         self._wo17_control = wo17_control
+        if (
+            operational_readiness is not None
+            and type(operational_readiness) is not IntradayOperationalReadinessProjection
+        ):
+            raise ValueError("INTRADAY_BROWSER_ROUTES_INVALID")
+        self._operational_readiness = operational_readiness
         self._review = review or IntradayReviewApplication(
             current_probables=self._current_probables,
             store=IntradayReviewStore(),
@@ -266,6 +278,10 @@ class IntradayBrowserRoutes:
                         )
                     ),
                     latest_evaluable_run=latest_evaluable,
+                    operational_review=(
+                        None if self._operational_readiness is None
+                        else self._operational_readiness.status_document()
+                    ),
                 )
             )
         elif request.path.startswith(detail_prefix):
@@ -376,6 +392,19 @@ class IntradayBrowserRoutes:
             return BrowserRouteResponse(
                 render_intraday_wo17(
                     snapshot_provider(), self._wo17_control.status_document()
+                )
+            )
+        elif request.path == WO_B_PRODUCT_ROUTE:
+            if self._operational_readiness is None or request.query:
+                return BrowserRouteResponse(
+                    "Not found.",
+                    status=HTTPStatus.NOT_FOUND,
+                    content_type="text/plain; charset=utf-8",
+                )
+            return BrowserRouteResponse(
+                render_intraday_operational_readiness(
+                    snapshot_provider(),
+                    self._operational_readiness.status_document(),
                 )
             )
         elif request.path == "/control/intraday-discovery/v2/status":

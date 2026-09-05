@@ -89,6 +89,7 @@ def render_intraday_workstation(
     market_availability: tuple[IntradayMarketAvailability, ...] = (),
     refresh_status: dict[str, object] | None = None,
     latest_evaluable_run: ProbablesRunV2 | None = None,
+    operational_review: dict[str, object] | None = None,
 ) -> str:
     """Render the complete Intraday page through the stable Browser shell."""
 
@@ -110,9 +111,144 @@ def render_intraday_workstation(
             market_availability=market_availability,
             refresh_status=refresh_status,
             latest_evaluable_run=latest_evaluable_run,
-        ),
+        ) + ("" if operational_review is None else _wo_b_summary(operational_review)),
         extra_styles=_INTRADAY_CSS,
     )
+
+
+def render_intraday_operational_readiness(
+    snapshot: BrowserWorkspaceSnapshot,
+    status: dict[str, object],
+) -> str:
+    """Render exact source states and WO-B review classifications side by side."""
+
+    reviews = status.get("reviews")
+    review_items = reviews if type(reviews) in {tuple, list} else ()
+    cards = "".join(
+        _wo_b_review_card(item) for item in review_items if type(item) is dict
+    )
+    if not cards:
+        cards = (
+            '<div class="empty"><div><strong>'
+            + escape(_wo16_value(status.get("restoration_state")))
+            + "</strong><br>No current admitted opportunity review is available.</div></div>"
+        )
+    current_reason = status.get("failure_reason")
+    current_failure_html = (
+        '<section class="intraday-failure wo-b-failure" aria-label="Current review failure">'
+        "<strong>Current review failure</strong><br>Status: "
+        + escape(_wo16_value(status.get("restoration_state")))
+        + "<br>Reason: " + escape(current_reason) + "</section>"
+        if type(current_reason) is str and current_reason else ""
+    )
+    failures = status.get("latest_failures")
+    failure_items = failures if type(failures) in {tuple, list} else ()
+    failure_html = "".join(
+        '<div class="intraday-failure wo-b-failure"><strong>Latest persisted WO-B failure · '
+        + escape(_wo16_value(item.get("candidate_identity")))
+        + "</strong><br>" + escape(_wo16_value(item.get("stage")))
+        + " · " + escape(_wo16_value(item.get("reason")))
+        + " · " + escape(_wo16_value(item.get("failed_at"))) + "</div>"
+        for item in failure_items if type(item) is dict
+    )
+    body = (
+        _intraday_tabs(False, active="wo-b")
+        + '<div class="intraday-warning"><strong>OPERATIONAL READINESS REVIEW</strong>'
+        "<span>READ-ONLY CROSS-DOMAIN COMPOSITION<br>"
+        "NO GLOBAL READINESS, EXECUTION, POSITION, MONITORING OR BROKER AUTHORITY</span></div>"
+        + current_failure_html + cards + failure_html
+        + '<div class="intraday-review-config"><strong>Product:</strong> '
+        + escape(_wo16_value(status.get("product_identity"))) + " / "
+        + escape(_wo16_value(status.get("product_version")))
+        + "<br><strong>Policy:</strong> "
+        + escape(_wo16_value(status.get("policy_identity"))) + " / "
+        + escape(_wo16_value(status.get("policy_version")))
+        + "<br><strong>Runtime:</strong> "
+        + ("LOADED" if status.get("runtime_loaded") is True else "UNAVAILABLE")
+        + " · " + escape(_wo16_value(status.get("restoration_state")))
+        + " · Operation " + escape(_wo16_value(status.get("operation_state")))
+        + "<br><strong>Boundary:</strong> Browser GET composes persisted facts in memory; "
+        + "it invokes no producer and writes no evidence.</div>"
+    )
+    return render_browser_page(
+        title="Intraday Operational Readiness Review",
+        subtitle="Current source truth and deterministic stage classification.",
+        snapshot=snapshot,
+        active_nav="Intraday",
+        active_tab="Operational Review",
+        body=body,
+        extra_styles=_INTRADAY_CSS + _WO_B_CSS,
+    )
+
+
+def _wo_b_summary(status: dict[str, object]) -> str:
+    reviews = status.get("reviews")
+    count = len(reviews) if type(reviews) in {tuple, list} else 0
+    return (
+        '<section class="intraday-panel wo-b-summary"><h2>Operational Readiness Review</h2>'
+        "<p>Current admitted opportunities reviewed: <strong>" + str(count)
+        + "</strong> · " + escape(_wo16_value(status.get("restoration_state")))
+        + '</p><a class="detail-link" href="/intraday/operational-review">'
+        "Inspect source states and next governed stages →</a></section>"
+    )
+
+
+def _wo_b_review_card(item: dict[str, object]) -> str:
+    rows = item.get("items")
+    review_rows = rows if type(rows) in {tuple, list} else ()
+    table = "".join(
+        "<tr><td>" + escape(_wo16_value(row.get("source_boundary")))
+        + "</td><td><strong>" + escape(_wo16_value(row.get("source_state")))
+        + "</strong><br>" + escape(_wo16_value(row.get("source_reason")))
+        + "</td><td>" + escape(_wo16_value(row.get("classification")))
+        + "</td><td>" + escape(_wo16_value(row.get("next_governed_stage")))
+        + "</td></tr>"
+        for row in review_rows if type(row) is dict
+    )
+    references = item.get("source_references")
+    reference_items = references if type(references) in {tuple, list} else ()
+    details = "".join(
+        "<li><strong>" + escape(_wo16_value(ref.get("source_boundary")))
+        + "</strong> · " + escape(_wo16_value(ref.get("artifact_identity")))
+        + " · " + escape(_wo16_value(ref.get("schema")))
+        + " · " + escape(_wo16_value(ref.get("policy")))
+        + " · " + escape(_wo16_value(ref.get("observed_at")))
+        + " · current " + escape(_wo16_value(ref.get("current")))
+        + " · superseded " + escape(_wo16_value(ref.get("superseded"))) + "</li>"
+        for ref in reference_items if type(ref) is dict
+    )
+    attention = (
+        '<span class="status neutral">SPONSOR ATTENTION AVAILABLE</span>'
+        if item.get("sponsor_attention_available") is True else ""
+    )
+    return (
+        '<article class="wo-b-card"><div class="panel-head"><div><h2>'
+        + escape(_wo16_value(item.get("canonical_subject_identity")))
+        + "</h2><p>" + escape(_wo16_value(item.get("market_family")))
+        + " · " + escape(_wo16_value(item.get("direction")))
+        + " · instrument " + escape(_wo16_value(item.get("canonical_instrument_identity")))
+        + " · contract " + escape(_wo16_value(item.get("active_contract_identity")))
+        + "</p></div>" + attention + "</div>"
+        '<div class="table-wrap"><table class="intraday-table"><thead><tr>'
+        "<th>Boundary</th><th>Exact Source State / Reason</th>"
+        "<th>WO-B Classification</th><th>Next Governed Stage</th>"
+        "</tr></thead><tbody>" + table + "</tbody></table></div>"
+        '<details class="wo-b-details"><summary>Exact identities and currentness</summary><ul>'
+        + details + "</ul><p>Candidate "
+        + escape(_wo16_value(item.get("candidate_identity"))) + " · Run "
+        + escape(_wo16_value(item.get("analysis_run_identity"))) + " · Review "
+        + escape(_wo16_value(item.get("review_snapshot_identity"))) + " · Boundary "
+        + escape(_wo16_value(item.get("review_boundary"))) + "</p></details></article>"
+    )
+
+
+_WO_B_CSS = r"""
+.wo-b-summary{margin-top:16px}.wo-b-summary p{color:var(--muted)}.wo-b-summary strong{color:var(--green)}
+.wo-b-failure{min-width:0;overflow-wrap:anywhere}
+.wo-b-card{border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:14px;background:var(--panel);min-width:0}
+.wo-b-card h2{margin:0;color:var(--green)}.wo-b-card p{color:var(--muted);overflow-wrap:anywhere}.wo-b-details{margin-top:12px;color:var(--muted);font-size:10px}.wo-b-details summary{cursor:pointer;color:#dce8f0}.wo-b-details li{margin:5px 0;overflow-wrap:anywhere}
+@media(max-width:760px){.app,.sidebar,.main,.topbar,.content,.wo-b-card{width:100%;min-width:0;max-width:100%}.nav{grid-template-columns:repeat(2,minmax(0,1fr))}.nav a,.title,.kite,.wo-b-card .panel-head>div{min-width:0}.nav a,.title h1,.title p,.intraday-warning{overflow-wrap:anywhere}.topbar,.wo-b-card .panel-head{align-items:flex-start;flex-direction:column}.kite{justify-content:flex-start}.wo-b-card .table-wrap{width:100%;max-width:100%;overflow-x:auto}.wo-b-card table{min-width:680px}}
+"""
 
 
 def render_intraday_detail(
@@ -2664,6 +2800,7 @@ def _intraday_tabs(refresh_enabled: bool, *, active: str = "opportunities") -> s
     return (
         '<nav class="tabs intraday-tabs" aria-label="Intraday workflow">'
         '<a class="' + ('active' if active == 'opportunities' else '') + '" href="/intraday">Opportunities</a>'
+        '<a class="' + ('active' if active == 'wo-b' else '') + '" href="/intraday/operational-review">Operational Review</a>'
         '<a class="' + ('active' if active == 'review' else '') + '" href="/intraday/review">Review</a>'
         '<a class="' + ('active' if active == 'wo10' else '') + '" href="/intraday/wo10">WO-10</a>'
         '<a class="' + ('active' if active == 'wo11' else '') + '" href="/intraday/wo11">WO-11</a>'

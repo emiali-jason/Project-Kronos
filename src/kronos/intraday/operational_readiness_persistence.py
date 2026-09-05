@@ -47,6 +47,100 @@ WO_B_FAILURE_IDENTITY = (
 )
 
 
+# WO-B-owned diagnostic codes already emitted by the contract, adapters and
+# persistence boundary. Exact membership only: never admit a prefix or transform
+# arbitrary exception text. Source-owned review reasons are a separate contract.
+WO_B_INTERNAL_PROJECTION_FAILURE = "WO_B_INTERNAL_PROJECTION_FAILURE"
+_SAFE_WO_B_FAILURE_REASONS = {
+    "WO_B_ADAPTED_SOURCE_INVALID": "WO_B_ADAPTED_SOURCE_INVALID",
+    "WO_B_ARTIFACT_ENCODING_INVALID": "WO_B_ARTIFACT_ENCODING_INVALID",
+    "WO_B_ARTIFACT_IDENTITY_INVALID": "WO_B_ARTIFACT_IDENTITY_INVALID",
+    "WO_B_ARTIFACT_INTEGRITY_INVALID": "WO_B_ARTIFACT_INTEGRITY_INVALID",
+    "WO_B_ARTIFACT_PATH_INVALID": "WO_B_ARTIFACT_PATH_INVALID",
+    "WO_B_ARTIFACT_UNAVAILABLE": "WO_B_ARTIFACT_UNAVAILABLE",
+    "WO_B_CANONICAL_DOCUMENT_INVALID": "WO_B_CANONICAL_DOCUMENT_INVALID",
+    "WO_B_CANONICAL_KEY_INVALID": "WO_B_CANONICAL_KEY_INVALID",
+    "WO_B_CANONICAL_SUBJECT_FAMILY_UNAVAILABLE": "WO_B_CANONICAL_SUBJECT_FAMILY_UNAVAILABLE",
+    "WO_B_CANONICAL_VALUE_INVALID": "WO_B_CANONICAL_VALUE_INVALID",
+    "WO_B_COMPOSITION_ANCHOR_INVALID": "WO_B_COMPOSITION_ANCHOR_INVALID",
+    "WO_B_COMPOSITION_FAILED": "WO_B_COMPOSITION_FAILED",
+    "WO_B_COMPOSITION_REQUEST_INVALID": "WO_B_COMPOSITION_REQUEST_INVALID",
+    "WO_B_CONTRACT_FIELDS_INVALID": "WO_B_CONTRACT_FIELDS_INVALID",
+    "WO_B_CROSS_SOURCE_BINDING_MISMATCH": "WO_B_CROSS_SOURCE_BINDING_MISMATCH",
+    "WO_B_CURRENT_ALIAS_INVALID": "WO_B_CURRENT_ALIAS_INVALID",
+    "WO_B_CURRENT_POINTER_CONFLICT": "WO_B_CURRENT_POINTER_CONFLICT",
+    "WO_B_CURRENT_POINTER_INTEGRITY_INVALID": "WO_B_CURRENT_POINTER_INTEGRITY_INVALID",
+    "WO_B_CURRENT_POINTER_INVALID": "WO_B_CURRENT_POINTER_INVALID",
+    "WO_B_CURRENT_POINTER_UNAVAILABLE": "WO_B_CURRENT_POINTER_UNAVAILABLE",
+    "WO_B_CURRENT_SNAPSHOT_NOT_NEWER": "WO_B_CURRENT_SNAPSHOT_NOT_NEWER",
+    "WO_B_DOMAIN_001_BINDING_INVALID": "WO_B_DOMAIN_001_BINDING_INVALID",
+    "WO_B_DOMAIN_001_BINDING_MISMATCH": "WO_B_DOMAIN_001_BINDING_MISMATCH",
+    "WO_B_DOMAIN_001_BINDING_UNAVAILABLE": "WO_B_DOMAIN_001_BINDING_UNAVAILABLE",
+    "WO_B_DOMAIN_001_PUBLICATION_INVALID": "WO_B_DOMAIN_001_PUBLICATION_INVALID",
+    "WO_B_DOMAIN_008_SCHEDULE_UNAVAILABLE": "WO_B_DOMAIN_008_SCHEDULE_UNAVAILABLE",
+    "WO_B_DOMAIN_008_SESSION_INVALID": "WO_B_DOMAIN_008_SESSION_INVALID",
+    "WO_B_DOMAIN_008_SESSION_MISMATCH": "WO_B_DOMAIN_008_SESSION_MISMATCH",
+    "WO_B_FAILURE_INVALID": "WO_B_FAILURE_INVALID",
+    "WO_B_FAILURE_POINTER_INTEGRITY_INVALID": "WO_B_FAILURE_POINTER_INTEGRITY_INVALID",
+    "WO_B_FLOAT_PROHIBITED": "WO_B_FLOAT_PROHIBITED",
+    "WO_B_IMMUTABLE_CONFLICT": "WO_B_IMMUTABLE_CONFLICT",
+    "WO_B_INTERNAL_PROJECTION_FAILURE": "WO_B_INTERNAL_PROJECTION_FAILURE",
+    "WO_B_NSE_CONTRACT_LINEAGE_PROHIBITED": "WO_B_NSE_CONTRACT_LINEAGE_PROHIBITED",
+    "WO_B_POLICY_BINDING_INVALID": "WO_B_POLICY_BINDING_INVALID",
+    "WO_B_PROBABLES_CURRENT_BINDING_MISMATCH": "WO_B_PROBABLES_CURRENT_BINDING_MISMATCH",
+    "WO_B_PROBABLES_POINTER_INVALID": "WO_B_PROBABLES_POINTER_INVALID",
+    "WO_B_PROBABLES_SOURCE_INVALID": "WO_B_PROBABLES_SOURCE_INVALID",
+    "WO_B_PROMOTION_LINEAGE_MISMATCH": "WO_B_PROMOTION_LINEAGE_MISMATCH",
+    "WO_B_PROMOTION_POINTER_INVALID": "WO_B_PROMOTION_POINTER_INVALID",
+    "WO_B_PROMOTION_SOURCE_INVALID": "WO_B_PROMOTION_SOURCE_INVALID",
+    "WO_B_REQUIRED_FOUNDATION_SOURCE_MISSING": "WO_B_REQUIRED_FOUNDATION_SOURCE_MISSING",
+    "WO_B_REQUIRED_IDENTITY_MISSING": "WO_B_REQUIRED_IDENTITY_MISSING",
+    "WO_B_REQUIRED_SOURCE_MISSING": "WO_B_REQUIRED_SOURCE_MISSING",
+    "WO_B_RESTORATION_BINDING_INVALID": "WO_B_RESTORATION_BINDING_INVALID",
+    "WO_B_REVIEW_ITEM_INVALID": "WO_B_REVIEW_ITEM_INVALID",
+    "WO_B_REVIEW_SNAPSHOT_INVALID": "WO_B_REVIEW_SNAPSHOT_INVALID",
+    "WO_B_REVIEW_SOURCE_BINDING_INVALID": "WO_B_REVIEW_SOURCE_BINDING_INVALID",
+    "WO_B_SOURCE_AFTER_TERMINAL_PROHIBITED": "WO_B_SOURCE_AFTER_TERMINAL_PROHIBITED",
+    "WO_B_SOURCE_CODE_INVALID": "WO_B_SOURCE_CODE_INVALID",
+    "WO_B_SOURCE_INTEGRITY_MISMATCH": "WO_B_SOURCE_INTEGRITY_MISMATCH",
+    "WO_B_SOURCE_REFERENCE_INVALID": "WO_B_SOURCE_REFERENCE_INVALID",
+    "WO_B_SOURCE_STAGE_LINEAGE_INCOMPLETE": "WO_B_SOURCE_STAGE_LINEAGE_INCOMPLETE",
+    "WO_B_STORE_INVALID": "WO_B_STORE_INVALID",
+    "WO_B_STORE_ROOT_INVALID": "WO_B_STORE_ROOT_INVALID",
+    "WO_B_TIMESTAMP_TIMEZONE_REQUIRED": "WO_B_TIMESTAMP_TIMEZONE_REQUIRED",
+    "WO_B_WO13_CURRENT_BINDING_MISMATCH": "WO_B_WO13_CURRENT_BINDING_MISMATCH",
+    "WO_B_WO13_POINTER_INVALID": "WO_B_WO13_POINTER_INVALID",
+    "WO_B_WO13_SOURCE_INVALID": "WO_B_WO13_SOURCE_INVALID",
+    "WO_B_WO14_CURRENT_BINDING_MISMATCH": "WO_B_WO14_CURRENT_BINDING_MISMATCH",
+    "WO_B_WO14_POINTER_INVALID": "WO_B_WO14_POINTER_INVALID",
+    "WO_B_WO14_SOURCE_INVALID": "WO_B_WO14_SOURCE_INVALID",
+    "WO_B_WO15_CURRENT_BINDING_MISMATCH": "WO_B_WO15_CURRENT_BINDING_MISMATCH",
+    "WO_B_WO15_HANDOFF_REQUIRED": "WO_B_WO15_HANDOFF_REQUIRED",
+    "WO_B_WO15_POINTER_INVALID": "WO_B_WO15_POINTER_INVALID",
+    "WO_B_WO15_SOURCE_INVALID": "WO_B_WO15_SOURCE_INVALID",
+    "WO_B_WO16_CURRENT_BINDING_MISMATCH": "WO_B_WO16_CURRENT_BINDING_MISMATCH",
+    "WO_B_WO16_SOURCE_INVALID": "WO_B_WO16_SOURCE_INVALID",
+    "WO_B_WO17_CURRENT_BINDING_MISMATCH": "WO_B_WO17_CURRENT_BINDING_MISMATCH",
+    "WO_B_WO17_POINTER_INVALID": "WO_B_WO17_POINTER_INVALID",
+    "WO_B_WO17_SOURCE_INVALID": "WO_B_WO17_SOURCE_INVALID",
+}
+
+
+def safe_wo_b_failure_reason(value: object) -> str:
+    """Project only an exact approved code; all other content is discarded."""
+
+    if type(value) is not str:
+        return WO_B_INTERNAL_PROJECTION_FAILURE
+    return _SAFE_WO_B_FAILURE_REASONS.get(value, WO_B_INTERNAL_PROJECTION_FAILURE)
+
+
+def wo_b_exception_reason(error: Exception) -> str:
+    """Read a single code argument without invoking exception serializers."""
+
+    arguments = BaseException.args.__get__(error)
+    return safe_wo_b_failure_reason(arguments[0] if len(arguments) == 1 else None)
+
+
 class WoBPersistenceError(WoBContractError):
     """Sanitized WO-B persistence or restoration failure."""
 
@@ -154,6 +248,8 @@ def create_wo_b_failure(
     failed_at: datetime,
     source_identities: tuple[str, ...] = (),
 ) -> WoBReviewFailure:
+    if type(reason) is not str or reason != safe_wo_b_failure_reason(reason):
+        raise WoBPersistenceError("WO_B_FAILURE_INVALID")
     values = {
         "candidate_identity": candidate_identity,
         "analysis_run_identity": analysis_run_identity,
@@ -270,6 +366,8 @@ class WoBStore:
     def publish_latest_failure(self, value: WoBReviewFailure) -> Path:
         if type(value) is not WoBReviewFailure:
             raise WoBPersistenceError("WO_B_FAILURE_INVALID")
+        if value.reason != safe_wo_b_failure_reason(value.reason):
+            raise WoBPersistenceError("WO_B_FAILURE_INVALID")
         path = self._failure_path(value.candidate_identity)
         with self._lock:
             self._retain("failures", value.failure_identity, value)
@@ -329,6 +427,25 @@ class WoBStore:
             snapshot=self.restore_pointer(pointer),
             latest_failure=self.load_latest_failure(candidate_identity),
         )
+
+    def current_candidates(self) -> tuple[str, ...]:
+        """Return candidate scopes from validated current aliases only."""
+
+        directory = self._root / "current"
+        if not directory.exists():
+            return ()
+        candidates: list[str] = []
+        for path in sorted(directory.glob("CURRENT-WO-B-*.json")):
+            value = _artifact_from_bytes(_read(path))
+            if type(value) is not CurrentWoBPointer:
+                raise WoBPersistenceError("WO_B_CURRENT_POINTER_INTEGRITY_INVALID")
+            if self._current_path(value.candidate_identity) != path:
+                raise WoBPersistenceError("WO_B_CURRENT_POINTER_INTEGRITY_INVALID")
+            self.restore_pointer(value)
+            candidates.append(value.candidate_identity)
+        if len(candidates) != len(set(candidates)):
+            raise WoBPersistenceError("WO_B_CURRENT_POINTER_CONFLICT")
+        return tuple(sorted(candidates))
 
     def _retain(self, family: str, identity: str, value: object) -> Path:
         path = self._path(family, identity)

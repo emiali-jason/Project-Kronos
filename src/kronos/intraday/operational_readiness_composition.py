@@ -16,6 +16,11 @@ from typing import Iterable, Mapping
 
 from kronos.instrument.active_derivative import ActiveDerivativeBindingArtifact
 from kronos.instrument.runtime import CanonicalInstrument
+from kronos.instrument.semantic_v2 import (
+    AnalyticalSubjectV2,
+    DirectListedInstrumentV2,
+    InstrumentSemanticPublicationV2,
+)
 from kronos.intraday.operational_readiness import (
     WoBClassificationBasis,
     WoBContractError,
@@ -34,6 +39,7 @@ from kronos.intraday.operational_readiness_persistence import (
     WoBReviewFailure,
     WoBStore,
     create_wo_b_failure,
+    wo_b_exception_reason,
 )
 from kronos.intraday.probables import ProbableState
 from kronos.intraday.probables_v2 import ProbableMemberResultV2, ProbablesRunV2
@@ -598,6 +604,55 @@ def adapt_domain_001_source(
     )
 
 
+def adapt_domain_001_v2_source(
+    *,
+    anchor: WoBCompositionAnchor,
+    publication: InstrumentSemanticPublicationV2,
+    semantic_object: DirectListedInstrumentV2 | AnalyticalSubjectV2,
+    review_boundary: datetime,
+) -> WoBAdaptedSource:
+    """Bind an NSE candidate to the exact current DOMAIN-001 V2 object."""
+
+    _revalidate(
+        publication,
+        InstrumentSemanticPublicationV2,
+        "WO_B_DOMAIN_001_PUBLICATION_INVALID",
+    )
+    if type(semantic_object) not in {DirectListedInstrumentV2, AnalyticalSubjectV2}:
+        raise WoBCompositionError("WO_B_DOMAIN_001_BINDING_INVALID")
+    _revalidate(
+        semantic_object,
+        type(semantic_object),
+        "WO_B_DOMAIN_001_BINDING_INVALID",
+    )
+    if (
+        anchor.market_family is IntradayMarketFamily.MCX
+        or anchor.active_contract_identity is not None
+        or semantic_object.canonical_id != anchor.canonical_subject_identity
+        or semantic_object.canonical_id != anchor.canonical_instrument_identity
+        or semantic_object.exchange != "NSE"
+        or semantic_object not in publication.semantic_objects
+        or not publication.effective_from <= review_boundary <= publication.effective_through
+        or not semantic_object.valid_from <= review_boundary <= semantic_object.valid_through
+    ):
+        raise WoBCompositionError("WO_B_DOMAIN_001_BINDING_MISMATCH")
+    return _adapted(
+        anchor=anchor,
+        boundary=WoBSourceBoundary.DOMAIN_001_INSTRUMENT,
+        artifact_identity=semantic_object.canonical_id,
+        schema_identity=publication.schema_identity,
+        schema_version=publication.publication_version,
+        policy_identity=publication.publication_identity,
+        policy_version=publication.publication_version,
+        integrity=semantic_object.integrity_identity,
+        state="CANONICAL_INSTRUMENT_CURRENT",
+        reason=None,
+        diagnostic=semantic_object.semantic_kind.value,
+        observed_at=publication.effective_from,
+        basis=WoBClassificationBasis.CURRENT_VALID_SOURCE,
+    )
+
+
 def adapt_domain_008_source(
     *, anchor: WoBCompositionAnchor, fact: MarketSessionFact,
 ) -> WoBAdaptedSource:
@@ -852,7 +907,7 @@ def _next_attention_boundary(
 def _failure_for(
     request: WoBCompositionRequest, error: Exception
 ) -> WoBReviewFailure:
-    reason = _safe_code(str(error)) or "WO_B_COMPOSITION_FAILED"
+    reason = wo_b_exception_reason(error)
     stage = (
         WoBFailureStage.POINTER_PUBLICATION
         if reason.startswith("WO_B_CURRENT_")

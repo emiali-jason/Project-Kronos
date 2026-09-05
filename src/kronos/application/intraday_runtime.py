@@ -64,6 +64,10 @@ from kronos.application.intraday_wo17 import (
 from kronos.application.intraday_wo17_monitoring import (
     IntradayWo17MonitoringCoordinator,
 )
+from kronos.application.intraday_operational_readiness import (
+    IntradayOperationalReadinessRuntimeService,
+    PersistedWoBRequestLoader,
+)
 from kronos.application.intraday_historical_operation import (
     IntradayHistoricalQualificationHarness,
     IntradayHistoricalQualificationOperationService,
@@ -111,6 +115,7 @@ from kronos.intraday.wo14_persistence import Wo14Store
 from kronos.intraday.wo15_persistence import Wo15Store
 from kronos.intraday.wo16_persistence import Wo16Store
 from kronos.intraday.wo17_persistence import Wo17Store
+from kronos.intraday.operational_readiness_persistence import WoBStore
 from kronos.instrument.active_derivative import ACTIVE_DERIVATIVE_CATALOGUE_VERSION
 from kronos.instrument.active_derivative_persistence import (
     ActiveDerivativeBindingStore,
@@ -225,6 +230,8 @@ class IntradayRuntimeComposition:
     wo17_restoration: IntradayWo17RestorationService
     wo17_restored: Wo17RestorationStatus
     wo17_monitoring: IntradayWo17MonitoringCoordinator
+    wo_b_store: WoBStore
+    wo_b_runtime: IntradayOperationalReadinessRuntimeService
     refresh_v2_provenance_store: RefreshV2ProvenanceStore
     probables_v2_diagnostics_store: ProbablesV2DiagnosticsStore
     mcx_history_store: McxContractHistoryStore
@@ -477,6 +484,25 @@ def create_intraday_runtime(
         access.acquire_monitoring_lease,
         clock=clock,
     )
+    wo_b_store = WoBStore(
+        Path(evidence_root) / "wo-b-operational-readiness-review-v1"
+    )
+    wo_b_runtime = IntradayOperationalReadinessRuntimeService(
+        loader=PersistedWoBRequestLoader(
+            probables=probables_v2_store,
+            catalogue=active_catalogue,
+            active_derivatives=active_binding_store,
+            calendar=calendar,
+            wo12=wo12_v2_store,
+            wo13=wo13_store,
+            wo14=wo14_store,
+            wo15=wo15_store,
+            wo16=wo16_store,
+            wo17=wo17_store,
+        ),
+        store=wo_b_store,
+        clock=clock,
+    )
     if refresh_state is not None and refresh_state.current_failure is not None:
         if refresh_state.current_failure_stage in {
             "PROBABLES_EVIDENCE_MAPPING",
@@ -534,6 +560,8 @@ def create_intraday_runtime(
         wo17_restoration=wo17_restoration,
         wo17_restored=wo17_restored,
         wo17_monitoring=wo17_monitoring,
+        wo_b_store=wo_b_store,
+        wo_b_runtime=wo_b_runtime,
         refresh_v2_provenance_store=refresh_v2_provenance_store,
         probables_v2_diagnostics_store=probables_v2_diagnostics_store,
         mcx_history_store=mcx_history_store,
