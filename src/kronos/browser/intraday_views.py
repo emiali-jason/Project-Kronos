@@ -94,8 +94,8 @@ _REVIEW_V2_CSS = r"""
 """
 
 _INTRADAY_STATISTICS_CSS = r"""
-.intraday-statistics-export{display:inline-flex;align-items:center;justify-content:center;border:1px solid #246a52;border-radius:7px;padding:7px 10px;color:#dff7eb;font-size:10px;font-weight:750;white-space:nowrap}.intraday-statistics-export:hover,.intraday-statistics-export:focus-visible{border-color:var(--green);outline:2px solid rgba(46,212,119,.25)}
-@media(max-width:760px){.intraday-tabs .toolbar{display:flex;width:100%;flex-wrap:wrap}.intraday-statistics-export{flex:1 1 100%;width:100%}}
+.intraday-statistics-shell{display:grid;grid-template-columns:minmax(0,1fr) auto;margin:-22px -28px 22px;border-bottom:1px solid var(--line)}.intraday-statistics-shell>.intraday-tabs{box-sizing:border-box;min-width:0;margin:0;border-bottom:0;padding-right:12px;overflow-x:auto}.intraday-statistics-actions{box-sizing:border-box;height:61px;padding-right:28px;display:flex;align-items:center;gap:8px}.intraday-statistics-export{display:inline-flex;align-items:center;justify-content:center;border:1px solid #246a52;border-radius:7px;padding:7px 10px;color:#dff7eb;font-size:10px;font-weight:750;white-space:nowrap}.intraday-statistics-export:hover,.intraday-statistics-export:focus-visible{border-color:var(--green);outline:2px solid rgba(46,212,119,.25)}
+@media(max-width:760px){.intraday-statistics-shell{display:block;margin:-18px -18px 18px}.intraday-statistics-shell>.intraday-tabs{margin:0;padding:0 18px;overflow-x:auto}.intraday-statistics-actions{height:auto;min-width:0;padding:8px 18px 10px;display:flex;flex-wrap:wrap;gap:8px}.intraday-statistics-export{box-sizing:border-box;flex:1 1 100%;width:100%}.intraday-statistics-actions button{min-width:0;flex:1 1 auto}.intraday-statistics-actions .intraday-refresh-state{min-width:0;overflow-wrap:anywhere}}
 """
 
 
@@ -3038,7 +3038,7 @@ def _intraday_tabs(
         'STATISTICS / EXCEL</a>'
         if statistics else ""
     )
-    return (
+    navigation = (
         '<nav class="tabs intraday-tabs" aria-label="Intraday workflow">'
         '<a class="' + ('active' if active == 'opportunities' else '') + '" href="/intraday">Opportunities</a>'
         '<a class="' + ('active' if active == 'review' else '') + '" href="/intraday/review">Review</a>'
@@ -3053,10 +3053,27 @@ def _intraday_tabs(
         '<span class="intraday-tab">Trade Candidates</span>'
         '<span class="intraday-tab">Active</span>'
         '<span class="intraday-tab">Closed</span>'
-        '<div class="toolbar">' + statistics_control
-        + '<button type="button" id="intraday-refresh-analysis"'
+    )
+    refresh_control = (
+        '<button type="button" id="intraday-refresh-analysis"'
         + disabled + '>Refresh Analysis · V2 Phase-Aware</button><span class="intraday-refresh-state" '
-        'id="intraday-refresh-state" aria-live="polite"></span></div></nav>'
+        'id="intraday-refresh-state" aria-live="polite"></span>'
+    )
+    if statistics:
+        return (
+            '<div class="intraday-statistics-shell">'
+            + navigation
+            + '</nav><div class="intraday-statistics-actions">'
+            + statistics_control
+            + refresh_control
+            + "</div></div>"
+            + _refresh_script()
+        )
+    return (
+        navigation
+        + '<div class="toolbar">'
+        + refresh_control
+        + "</div></nav>"
         + _refresh_script()
     )
 

@@ -153,8 +153,27 @@ def test_opportunities_control_is_compact_mobile_safe_and_get_is_inert() -> None
     assert type(response.body) is str
     assert "STATISTICS / EXCEL" in response.body
     assert 'href="/reports/export.xlsx?product=INTRADAY"' in response.body
-    assert "intraday-statistics-export{flex:1 1 100%;width:100%}" in response.body
-    assert "intraday-statistics-export" in response.body
+    assert response.body.count("intraday-statistics-export\"") == 1
+    navigation = response.body.split(
+        '<nav class="tabs intraday-tabs" aria-label="Intraday workflow">', 1
+    )[1].split("</nav>", 1)[0]
+    assert "STATISTICS / EXCEL" not in navigation
+    assert (
+        '<div class="intraday-statistics-actions"><a '
+        'class="intraday-statistics-export"'
+    ) in response.body
+    assert (
+        ".intraday-statistics-shell{display:grid;"
+        "grid-template-columns:minmax(0,1fr) auto"
+    ) in response.body
+    assert (
+        "@media(max-width:760px){.intraday-statistics-shell{display:block;"
+        "margin:-18px -18px 18px}"
+    ) in response.body
+    assert (
+        ".intraday-statistics-export{box-sizing:border-box;"
+        "flex:1 1 100%;width:100%}"
+    ) in response.body
     assert calls == []
 
     review_page = routes.handle_get(
@@ -162,7 +181,7 @@ def test_opportunities_control_is_compact_mobile_safe_and_get_is_inert() -> None
     )
     assert review_page is not None
     assert "STATISTICS / EXCEL" not in review_page.body
-    assert "Statistics" not in response.body.split('aria-label="Intraday workflow"', 1)[1].split("</nav>", 1)[0].replace("STATISTICS / EXCEL", "")
+    assert "Statistics" not in navigation
 
 
 def test_download_route_returns_exact_attachment_without_persistence(tmp_path) -> None:
