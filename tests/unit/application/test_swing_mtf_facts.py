@@ -1,4 +1,4 @@
-from dataclasses import fields
+from dataclasses import fields, replace
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 import inspect
@@ -151,7 +151,10 @@ def _dataset(publisher: MarketCalendarPublisher) -> SwingDailyDataset:
     return SwingDailyDataset(30, tuple(records))
 
 
-def _build(short_nse_identity: str | None = None):  # type: ignore[no-untyped-def]
+def _build(
+    short_nse_identity: str | None = None, *, without_nse_remainder: bool = False,
+    retain_completed_series: bool = False,
+):  # type: ignore[no-untyped-def]
     publisher = MarketCalendarPublisher()
     dataset = _dataset(publisher)
     daily = {
@@ -172,6 +175,16 @@ def _build(short_nse_identity: str | None = None):  # type: ignore[no-untyped-de
             else hourly[request.instrument.exchange]
         )
         if (
+            without_nse_remainder
+            and request.interval is HistoricalInterval.SIXTY_MINUTE
+            and request.instrument.exchange == "NSE"
+            and request.instrument.trading_symbol != "NIFTY"
+        ):
+            result = tuple(bar for bar in result if not (
+                bar.timestamp.date() == NOW.date()
+                and bar.timestamp.hour == 15 and bar.timestamp.minute == 15
+            ))
+        if (
             short_nse_identity is not None
             and request.instrument.trading_symbol == short_nse_identity
             and request.interval is HistoricalInterval.DAY
@@ -186,7 +199,56 @@ def _build(short_nse_identity: str | None = None):  # type: ignore[no-untyped-de
         calendar_publisher=publisher,
         observed_at=NOW,
     )
+    if not retain_completed_series:
+        # Legacy analytical fixtures intentionally replace latest OHLC/pivots.
+        # Keep those scenarios latest-only, not paired with contradictory
+        # original history. The producer/RS proof below tests full retention.
+        snapshot = replace(snapshot, instruments=tuple(
+            replace(instrument, completed_series=()) for instrument in snapshot.instruments
+        ))
     return snapshot, requests
+
+
+def test_rs_uses_retained_production_series_without_changing_native_inputs(tmp_path):
+    from kronos.swing.v1.native_discovery import discover_native_mtf
+    from kronos.swing.v1.relative_context import build_relative_context_run, RelativeContextState
+
+    snapshot, requests = _build(without_nse_remainder=True, retain_completed_series=True)
+    stock = snapshot.instrument("RELIANCE")
+    nifty = snapshot.instrument("NIFTY")
+    assert stock.fact(FactualTimeframe.ONE_HOUR).source_timestamp.hour == 14
+    assert nifty.fact(FactualTimeframe.ONE_HOUR).source_timestamp.hour == 15
+    assert stock.fact(FactualTimeframe.FOUR_HOUR).source_timestamp.hour == 9
+    assert nifty.fact(FactualTimeframe.FOUR_HOUR).source_timestamp.hour == 13
+    assert all(bar.observation_boundary <= NOW
+               for instrument in snapshot.instruments for bar in instrument.completed_series)
+    legacy = replace(snapshot, instruments=tuple(
+        replace(instrument, completed_series=()) for instrument in snapshot.instruments
+    ))
+    # Exact analytical result/digests and latest facts remain identical.
+    assert discover_native_mtf(snapshot) == discover_native_mtf(legacy)
+    before = tuple(requests)
+    relative = build_relative_context_run(snapshot)
+    for timeframe, start_hour, end_hour in (
+        (FactualTimeframe.ONE_HOUR, 14, 15),
+        (FactualTimeframe.FOUR_HOUR, 9, 13),
+    ):
+        horizon = relative.record("RELIANCE").horizon(timeframe)
+        assert horizon.relative_state is RelativeContextState.EQUAL
+        assert horizon.stock_start_boundary == horizon.benchmark_start_boundary
+        assert horizon.stock_end_boundary == horizon.benchmark_end_boundary
+        assert horizon.stock_start_boundary == NOW.replace(hour=start_hour, minute=15)
+        assert horizon.stock_end_boundary == NOW.replace(hour=end_hour, minute=15)
+    store = MtfFactEvidenceStore(tmp_path / "facts")
+    path = store.retain(snapshot)
+    original = path.read_bytes()
+    restored = MtfFactEvidenceStore(tmp_path / "facts").load(RUN_ID)
+    assert restored == snapshot
+    assert build_relative_context_run(restored) == relative
+    assert path.read_bytes() == original
+    assert tuple(requests) == before
+    assert len(requests) == 196  # existing DAY + 60minute calls only
+    assert snapshot.provider_source_identity == legacy.provider_source_identity
 
 
 def test_same_run_factual_mtf_snapshot_uses_fresh_same_98_provider_histories() -> None:

@@ -30,6 +30,7 @@ from kronos.swing.universe import SwingUniverseAssetClass
 from kronos.swing.v1.evidence import factual_pivot_candidates
 from kronos.swing.v1.mtf_facts import (
     CompletedOneHourAtrFact,
+    CompletedTimeframeBar,
     CompletedTimeframeFact,
     FactualMovingAverageFacts,
     FactualPivotSeries,
@@ -167,6 +168,34 @@ def build_same_run_mtf_fact_snapshot(
                 hour_boundary, hourly_candles, "60minute",
             ),
         )
+        # Retain only bars already admitted by the existing DOMAIN-008 paths.
+        # No additional retrieval, completion rule, or analytical calculation.
+        completed_series = (
+            *(
+                _retained_derived_bar(FactualTimeframe.WEEKLY, bar, week_id, "DAY")
+                for bar, week_id in weekly
+            ),
+            *(
+                _retained_source_bar(
+                    FactualTimeframe.DAILY, bar, schedule,
+                    schedule.windows[-1].window_close, daily_candles[-1].timestamp, "DAY",
+                )
+                for bar, schedule in completed_daily
+            ),
+            *(
+                _retained_derived_bar(
+                    FactualTimeframe.FOUR_HOUR, bar, bar.session_identity or "", "60minute"
+                )
+                for bar in four_hour
+            ),
+            *(
+                _retained_source_bar(
+                    FactualTimeframe.ONE_HOUR, bar, schedule, boundary,
+                    hourly_candles[-1].timestamp, "60minute",
+                )
+                for bar, schedule, boundary in completed_hourly
+            ),
+        )
         effective_analysis_boundary = (
             analysis_boundary
             if analysis_boundary is not None
@@ -198,6 +227,7 @@ def build_same_run_mtf_fact_snapshot(
             weekly_foundation,
             reference_facts,
             one_hour_atr,
+            completed_series,
         ))
         source_material.append({
             "instrument": record.canonical_identity,
@@ -382,6 +412,58 @@ def _source_fact(
         structural_measurements=_structural_measurements(series),
         moving_averages=_moving_average_facts(series),
         volume_facts=_volume_facts(series),
+    )
+
+
+def _retained_source_bar(
+    timeframe: FactualTimeframe,
+    candle: HistoricalCandle,
+    schedule: object,
+    boundary: datetime,
+    source_boundary: datetime,
+    interval: str,
+) -> CompletedTimeframeBar:
+    return CompletedTimeframeBar(
+        timeframe=timeframe,
+        observation_boundary=boundary,
+        source_timestamp=candle.timestamp,
+        open=candle.open, high=candle.high, low=candle.low,
+        close=candle.close, volume=candle.volume,
+        calendar_identity=schedule.calendar_identity,
+        calendar_version=schedule.calendar_version,
+        session_identity=schedule.session_identity,
+        exchange_timezone=schedule.timezone,
+        source_interval=interval,
+        source_provider_identity=_PROVIDER_SOURCE,
+        source_market_data_boundary=source_boundary,
+        provenance=tuple(schedule.provenance),
+    )
+
+
+def _retained_derived_bar(
+    timeframe: FactualTimeframe,
+    evidence: DerivedBarEvidence,
+    session_identity: str,
+    interval: str,
+) -> CompletedTimeframeBar:
+    if evidence.status is not DerivedBarStatus.COMPLETE:
+        raise ValueError("MTF_FACT_COMPLETED_EVIDENCE_UNAVAILABLE")
+    return CompletedTimeframeBar(
+        timeframe=timeframe,
+        observation_boundary=evidence.derived_end,
+        source_timestamp=evidence.derived_start,
+        open=evidence.open, high=evidence.high, low=evidence.low,
+        close=evidence.close, volume=evidence.volume,
+        calendar_identity=evidence.calendar_identity,
+        calendar_version=evidence.calendar_version,
+        session_identity=session_identity,
+        exchange_timezone=evidence.exchange_timezone,
+        source_interval=interval,
+        source_provider_identity=evidence.source_provider_identity,
+        source_market_data_boundary=evidence.source_market_data_boundary,
+        provenance=evidence.provenance,
+        bucket_class=(evidence.bucket_class.value
+                      if timeframe is FactualTimeframe.FOUR_HOUR else None),
     )
 
 

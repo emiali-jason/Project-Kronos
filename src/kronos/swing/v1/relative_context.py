@@ -20,6 +20,7 @@ from kronos.swing.universe import (
     SwingUniverseMember,
 )
 from kronos.swing.v1.mtf_facts import (
+    CompletedTimeframeBar,
     CompletedTimeframeFact,
     FactualTimeframe,
     InstrumentMtfFactSnapshot,
@@ -432,8 +433,9 @@ def build_relative_context_record(
             )
         else:
             horizons = tuple(
-                _compare_horizon(
-                    instrument.fact(timeframe), benchmark.fact(timeframe)
+                _compare_common_horizon(
+                    timeframe, instrument.completed_bars(timeframe),
+                    benchmark.completed_bars(timeframe), created_at,
                 )
                 for timeframe in FactualTimeframe
             )
@@ -472,9 +474,41 @@ def directional_relative_context(
     )
 
 
+def _boundary_identity(fact: CompletedTimeframeBar | CompletedTimeframeFact) -> tuple:
+    return (
+        fact.timeframe, fact.source_timestamp, fact.observation_boundary,
+        fact.calendar_identity, fact.calendar_version, fact.session_identity,
+        fact.source_interval,
+    )
+
+
+def _compare_common_horizon(
+    timeframe: FactualTimeframe,
+    stock_series: tuple[CompletedTimeframeBar | CompletedTimeframeFact, ...],
+    benchmark_series: tuple[CompletedTimeframeBar | CompletedTimeframeFact, ...],
+    observed_at: datetime,
+) -> RelativeContextHorizonFact:
+    def completed_by_boundary(series: tuple) -> dict:
+        return {
+            _boundary_identity(bar): bar for bar in series
+            if bar.timeframe is timeframe and bar.observation_boundary <= observed_at
+        }
+
+    stocks = completed_by_boundary(stock_series)
+    benchmarks = completed_by_boundary(benchmark_series)
+    common = stocks.keys() & benchmarks.keys()
+    if not common:
+        return _unavailable_horizon(
+            timeframe, RelativeContextState.UNAVAILABLE,
+            RelativeContextReason.BOUNDARY_MISMATCH,
+        )
+    selected = max(common, key=lambda boundary: (boundary[2], boundary[1]))
+    return _compare_horizon(stocks[selected], benchmarks[selected])
+
+
 def _compare_horizon(
-    stock: CompletedTimeframeFact,
-    benchmark: CompletedTimeframeFact,
+    stock: CompletedTimeframeBar | CompletedTimeframeFact,
+    benchmark: CompletedTimeframeBar | CompletedTimeframeFact,
 ) -> RelativeContextHorizonFact:
     if stock.timeframe is not benchmark.timeframe:
         return _unavailable_horizon(
@@ -542,7 +576,7 @@ def _unavailable_horizon(
     )
 
 
-def _source_identity(fact: CompletedTimeframeFact) -> str:
+def _source_identity(fact: CompletedTimeframeBar | CompletedTimeframeFact) -> str:
     payload = {
         "timeframe": fact.timeframe.value,
         "start": fact.source_timestamp.isoformat(),

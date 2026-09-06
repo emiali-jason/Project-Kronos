@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, fields
 from datetime import UTC, datetime
 from enum import StrEnum
 from hashlib import sha256
@@ -298,6 +298,67 @@ class CompletedTimeframeFact:
 
 
 @dataclass(frozen=True, slots=True)
+class CompletedTimeframeBar:
+    """Retained completed OHLCV/provenance, without analytical measurements.
+
+    WO-SWING-RS-ENG-03: retain the producer's already-governed series for
+    exact-boundary intersection; never replace the latest Discovery facts.
+    """
+
+    timeframe: FactualTimeframe
+    observation_boundary: datetime
+    source_timestamp: datetime
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: int
+    calendar_identity: str
+    calendar_version: str
+    session_identity: str
+    exchange_timezone: str
+    source_interval: str
+    source_provider_identity: str
+    source_market_data_boundary: datetime
+    provenance: tuple[str, ...]
+    bucket_class: str | None = None
+    authority: str = MTF_FACT_AUTHORITY
+
+    def __post_init__(self) -> None:
+        prices = (self.open, self.high, self.low, self.close)
+        if (
+            type(self.timeframe) is not FactualTimeframe
+            or not _aware(self.observation_boundary)
+            or not _aware(self.source_timestamp)
+            or self.source_timestamp >= self.observation_boundary
+            or any(type(item) is not float or not math.isfinite(item) or item < 0.0 for item in prices)
+            or self.high < max(self.open, self.low, self.close)
+            or self.low > min(self.open, self.high, self.close)
+            or type(self.volume) is not int or self.volume < 0
+            or not self.calendar_identity or not self.calendar_version
+            or not self.session_identity
+            or self.exchange_timezone != "Asia/Kolkata"
+            or self.source_interval != (
+                "DAY" if self.timeframe in (FactualTimeframe.WEEKLY, FactualTimeframe.DAILY)
+                else "60minute"
+            )
+            or not self.source_provider_identity
+            or not _aware(self.source_market_data_boundary)
+            or type(self.provenance) is not tuple or not self.provenance
+            or self.authority != MTF_FACT_AUTHORITY
+            or (self.timeframe is FactualTimeframe.FOUR_HOUR
+                and self.bucket_class not in {"FULL_DURATION", "SESSION_REMAINDER"})
+            or (self.timeframe is not FactualTimeframe.FOUR_HOUR
+                and self.bucket_class is not None)
+        ):
+            raise ValueError("COMPLETED_TIMEFRAME_BAR_INVALID")
+
+    @classmethod
+    def from_fact(cls, fact: CompletedTimeframeFact) -> CompletedTimeframeBar:
+        return cls(**{field.name: getattr(fact, field.name) for field in fields(cls)})
+
+
+@dataclass(frozen=True, slots=True)
 class InstrumentMtfFactSnapshot:
     canonical_instrument: str
     exchange: str
@@ -305,6 +366,7 @@ class InstrumentMtfFactSnapshot:
     nse_weekly_foundation: NseWeeklyFactualFoundation | None = None
     reference_facts: tuple[SwingReferenceCprMachineFact, ...] = ()
     one_hour_atr: CompletedOneHourAtrFact | None = None
+    completed_series: tuple[CompletedTimeframeBar, ...] = ()
 
     def __post_init__(self) -> None:
         if (
@@ -342,9 +404,32 @@ class InstrumentMtfFactSnapshot:
             )
         ):
             raise ValueError("INSTRUMENT_MTF_FACT_SNAPSHOT_INVALID")
+        if type(self.completed_series) is not tuple or any(
+            type(bar) is not CompletedTimeframeBar for bar in self.completed_series
+        ):
+            raise ValueError("MTF_FACT_COMPLETED_SERIES_INVALID")
+        if self.completed_series:
+            for timeframe in FactualTimeframe:
+                series = self.completed_bars(timeframe)
+                boundaries = tuple((bar.observation_boundary, bar.source_timestamp) for bar in series)
+                if (
+                    not series
+                    or boundaries != tuple(sorted(set(boundaries)))
+                    or series[-1] != CompletedTimeframeBar.from_fact(self.fact(timeframe))
+                ):
+                    raise ValueError("MTF_FACT_COMPLETED_SERIES_INVALID")
 
     def fact(self, timeframe: FactualTimeframe) -> CompletedTimeframeFact:
         return next(item for item in self.timeframes if item.timeframe is timeframe)
+
+    def completed_bars(
+        self, timeframe: FactualTimeframe
+    ) -> tuple[CompletedTimeframeBar | CompletedTimeframeFact, ...]:
+        # Historical snapshots retain only their original latest fact. Do not
+        # synthesize missing history or migrate already-published evidence.
+        if not self.completed_series:
+            return (self.fact(timeframe),)
+        return tuple(bar for bar in self.completed_series if bar.timeframe is timeframe)
 
     def reference_fact(
         self, timeframe: SwingReferenceChartTimeframe
@@ -393,6 +478,11 @@ class SameRunMtfFactSnapshot:
                 and instrument.one_hour_atr.run_identity != self.run_identity
                 for instrument in self.instruments
             )
+            or any(
+                bar.observation_boundary > self.observed_at
+                for instrument in self.instruments
+                for bar in instrument.completed_series
+            )
             or self.quote_context is not None
             or self.quote_authority != QUOTE_FACT_AUTHORITY
             or self.authority != MTF_FACT_AUTHORITY
@@ -425,6 +515,10 @@ class MtfFactEvidenceStore:
             raise ValueError("MTF_FACT_SNAPSHOT_INVALID")
         path = self._path(snapshot.run_identity)
         payload = {"schema": MTF_FACT_SNAPSHOT_SCHEMA, "snapshot": _json_value(asdict(snapshot))}
+        # Keep legacy snapshot serialization/idempotent retention unchanged.
+        for instrument in payload["snapshot"]["instruments"]:
+            if not instrument["completed_series"]:
+                del instrument["completed_series"]
         with self._lock:
             if path.exists():
                 if _read(path) != payload:
@@ -503,7 +597,19 @@ def _instrument(value: object) -> InstrumentMtfFactSnapshot:
             if value.get("one_hour_atr") is None
             else _one_hour_atr(value["one_hour_atr"])
         ),
+        tuple(_completed_bar(item) for item in value.get("completed_series", ())),
     )
+
+
+def _completed_bar(value: object) -> CompletedTimeframeBar:
+    if type(value) is not dict:
+        raise ValueError("MTF_FACT_COMPLETED_SERIES_INVALID")
+    values = dict(value)
+    values["timeframe"] = FactualTimeframe(values["timeframe"])
+    for name in ("observation_boundary", "source_timestamp", "source_market_data_boundary"):
+        values[name] = datetime.fromisoformat(values[name])
+    values["provenance"] = tuple(values["provenance"])
+    return CompletedTimeframeBar(**values)
 
 
 def _weekly_foundation(value: object) -> NseWeeklyFactualFoundation:
