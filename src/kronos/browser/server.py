@@ -1228,8 +1228,13 @@ class _BrowserHandler(BaseHTTPRequestHandler):
         if product_response is not None:
             self._respond(
                 product_response.status,
-                product_response.body.encode("utf-8"),
+                (
+                    product_response.body.encode("utf-8")
+                    if type(product_response.body) is str
+                    else product_response.body
+                ),
                 product_response.content_type,
+                filename=product_response.filename,
             )
             return
         if path == "/dashboard":

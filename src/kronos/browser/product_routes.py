@@ -39,16 +39,19 @@ class BrowserPostRequest:
 
 @dataclass(frozen=True, slots=True)
 class BrowserRouteResponse:
-    body: str
+    body: str | bytes
     status: HTTPStatus = HTTPStatus.OK
     content_type: str = "text/html; charset=utf-8"
+    filename: str | None = None
 
     def __post_init__(self) -> None:
         if (
-            type(self.body) is not str
+            type(self.body) not in {str, bytes}
             or type(self.status) is not HTTPStatus
             or type(self.content_type) is not str
             or not self.content_type
+            or self.filename is not None
+            and (type(self.filename) is not str or not self.filename)
         ):
             raise ValueError("BROWSER_ROUTE_RESPONSE_INVALID")
 

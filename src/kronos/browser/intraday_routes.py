@@ -9,6 +9,10 @@ from kronos.application.intraday_native_visual_reconciliation import (
     IntradayNativeVisualReconciliationApplication,
 )
 from kronos.application.intraday_review import IntradayReviewApplication
+from kronos.application.intraday_statistics import (
+    IntradayStatisticsApplication,
+    IntradayStatisticsError,
+)
 from kronos.browser.intraday_views import (
     render_intraday_detail,
     render_intraday_review,
@@ -26,6 +30,12 @@ from kronos.browser.intraday_views import (
 from kronos.browser.intraday_operational_readiness import (
     IntradayOperationalReadinessProjection,
     WO_B_PRODUCT_ROUTE,
+)
+from kronos.browser.intraday_statistics import (
+    INTRADAY_STATISTICS_EXPORT_ROUTE,
+    INTRADAY_XLSX_MIME,
+    export_intraday_statistics_xlsx,
+    intraday_statistics_filename,
 )
 from kronos.browser.intraday_probables_v2_control import (
     IntradayProbablesV2OperationalControl,
@@ -133,6 +143,7 @@ class IntradayBrowserRoutes:
         wo16_control: IntradayWo16OperationalControl | None = None,
         wo17_control: IntradayWo17OperationalControl | None = None,
         operational_readiness: IntradayOperationalReadinessProjection | None = None,
+        statistics: IntradayStatisticsApplication | None = None,
         review_workstation: object | None = None,
     ) -> None:
         if not callable(getattr(workstation, "snapshot", None)):
@@ -209,6 +220,9 @@ class IntradayBrowserRoutes:
         ):
             raise ValueError("INTRADAY_BROWSER_ROUTES_INVALID")
         self._operational_readiness = operational_readiness
+        if statistics is not None and type(statistics) is not IntradayStatisticsApplication:
+            raise ValueError("INTRADAY_BROWSER_ROUTES_INVALID")
+        self._statistics = statistics
         self._review = review or IntradayReviewApplication(
             current_probables=self._current_probables,
             store=IntradayReviewStore(),
@@ -273,6 +287,33 @@ class IntradayBrowserRoutes:
         snapshot_provider: BrowserSnapshotProvider,
     ) -> BrowserRouteResponse | None:
         detail_prefix = "/intraday/evidence/"
+        if (
+            request.path == INTRADAY_STATISTICS_EXPORT_ROUTE
+            and request.query.get("product") == ["INTRADAY"]
+        ):
+            if set(request.query) != {"product"}:
+                return BrowserRouteResponse(
+                    "Intraday export request is invalid.",
+                    status=HTTPStatus.BAD_REQUEST,
+                    content_type="text/plain; charset=utf-8",
+                )
+            if self._statistics is None:
+                return None
+            try:
+                projection = self._statistics.project()
+                payload = export_intraday_statistics_xlsx(projection)
+                filename = intraday_statistics_filename(projection.generated_at)
+            except (IntradayStatisticsError, OSError, TypeError, ValueError):
+                return BrowserRouteResponse(
+                    "Intraday current operational snapshot could not be generated.",
+                    status=HTTPStatus.CONFLICT,
+                    content_type="text/plain; charset=utf-8",
+                )
+            return BrowserRouteResponse(
+                payload,
+                content_type=INTRADAY_XLSX_MIME,
+                filename=filename,
+            )
         if request.path == "/intraday":
             selected = request.query.get("instrument", [None])[0]
             control = self._probables_v2_control

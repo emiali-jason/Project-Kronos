@@ -12,6 +12,7 @@ from kronos.application.provider_instrument_master_operation import (
 )
 from kronos.application.swing_opportunities import SwingOpportunitiesApplication
 from kronos.application.intraday_runtime import create_intraday_runtime
+from kronos.application.intraday_statistics import IntradayStatisticsApplication
 from kronos.browser.server import create_browser_server
 from kronos.browser.intraday_discovery_control import (
     IntradayDiscoveryOperationalControl,
@@ -156,6 +157,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     intraday_operational_readiness = IntradayOperationalReadinessProjection(
         intraday_runtime.wo_b_runtime
     )
+    intraday_statistics = IntradayStatisticsApplication(
+        current_probables=intraday_runtime.probables_v2_store.load_current_run,
+        current_review=intraday_runtime.review_v2_application.snapshot,
+        operational_readiness=intraday_runtime.wo_b_runtime.status_document,
+    )
     product_routes = ProductBrowserRoutes((IntradayBrowserRoutes(
         intraday_runtime.discovery_v2_application,
         probables_v2_control=intraday_probables_v2_control,
@@ -169,6 +175,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         wo16_control=intraday_wo16_control,
         wo17_control=intraday_wo17_control,
         operational_readiness=intraday_operational_readiness,
+        statistics=intraday_statistics,
         review_workstation=intraday_runtime.discovery_application,
     ),))
     intraday_historical_control = (

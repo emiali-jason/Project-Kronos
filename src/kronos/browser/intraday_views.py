@@ -93,6 +93,11 @@ _REVIEW_V2_CSS = r"""
 @media(max-width:760px){.intraday-drop.intraday-drop-empty{min-height:96px;padding:10px;gap:8px}.intraday-drop-empty .intraday-file-choice{padding:9px 8px}}
 """
 
+_INTRADAY_STATISTICS_CSS = r"""
+.intraday-statistics-export{display:inline-flex;align-items:center;justify-content:center;border:1px solid #246a52;border-radius:7px;padding:7px 10px;color:#dff7eb;font-size:10px;font-weight:750;white-space:nowrap}.intraday-statistics-export:hover,.intraday-statistics-export:focus-visible{border-color:var(--green);outline:2px solid rgba(46,212,119,.25)}
+@media(max-width:760px){.intraday-tabs .toolbar{display:flex;width:100%;flex-wrap:wrap}.intraday-statistics-export{flex:1 1 100%;width:100%}}
+"""
+
 
 def render_intraday_workstation(
     snapshot: BrowserWorkspaceSnapshot,
@@ -125,7 +130,7 @@ def render_intraday_workstation(
             latest_evaluable_run=latest_evaluable_run,
             review_v2=review_v2,
         ),
-        extra_styles=_INTRADAY_CSS,
+        extra_styles=_INTRADAY_CSS + _INTRADAY_STATISTICS_CSS,
     )
 
 
@@ -2319,7 +2324,7 @@ def _render_discovery_triage(
             else ""
         )
         return (
-            _intraday_tabs(refresh_enabled)
+            _intraday_tabs(refresh_enabled, statistics=True)
             + _render_market_availability(market_availability)
             + _render_analysis_freshness(
                 market_availability,
@@ -2415,7 +2420,7 @@ def _render_discovery_triage(
     mcx_not_admitted = tuple(item for item in not_admitted if item.market_family == "MCX")
     diagnostics = None if probable_run is None else probable_run.diagnostics
     return (
-        _intraday_tabs(refresh_enabled)
+        _intraday_tabs(refresh_enabled, statistics=True)
         + '<div class="analysis-batch"><span>Market analysis</span>'
         '<div class="analysis-run-times"><strong>' + escape(last) + '</strong></div></div>'
         + failure
@@ -2579,7 +2584,7 @@ def _render_probables_v2_triage(
             'The immutable prior evaluable projection, if present, remains separate.</p></details>'
         )
     return (
-        _intraday_tabs(refresh_enabled)
+        _intraday_tabs(refresh_enabled, statistics=True)
         + _render_market_availability(market_availability)
         + _render_analysis_freshness(
             market_availability,
@@ -3020,8 +3025,19 @@ def _ist_time(value: datetime) -> str:
     return value.astimezone(_KOLKATA).strftime("%d %b %Y %H:%M IST").upper()
 
 
-def _intraday_tabs(refresh_enabled: bool, *, active: str = "opportunities") -> str:
+def _intraday_tabs(
+    refresh_enabled: bool,
+    *,
+    active: str = "opportunities",
+    statistics: bool = False,
+) -> str:
     disabled = "" if refresh_enabled else " disabled"
+    statistics_control = (
+        '<a class="intraday-statistics-export" '
+        'href="/reports/export.xlsx?product=INTRADAY" download>'
+        'STATISTICS / EXCEL</a>'
+        if statistics else ""
+    )
     return (
         '<nav class="tabs intraday-tabs" aria-label="Intraday workflow">'
         '<a class="' + ('active' if active == 'opportunities' else '') + '" href="/intraday">Opportunities</a>'
@@ -3037,7 +3053,8 @@ def _intraday_tabs(refresh_enabled: bool, *, active: str = "opportunities") -> s
         '<span class="intraday-tab">Trade Candidates</span>'
         '<span class="intraday-tab">Active</span>'
         '<span class="intraday-tab">Closed</span>'
-        '<div class="toolbar"><button type="button" id="intraday-refresh-analysis"'
+        '<div class="toolbar">' + statistics_control
+        + '<button type="button" id="intraday-refresh-analysis"'
         + disabled + '>Refresh Analysis · V2 Phase-Aware</button><span class="intraday-refresh-state" '
         'id="intraday-refresh-state" aria-live="polite"></span></div></nav>'
         + _refresh_script()
