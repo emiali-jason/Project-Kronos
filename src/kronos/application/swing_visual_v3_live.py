@@ -78,6 +78,10 @@ class SwingVisualV3LiveWorkflow:
         return self._pack is not None and self._pack.native_run_identity == run_identity
 
     def snapshot(self, run_identity: str | None) -> SwingVisualV3LiveSnapshot:
+        with self.transport.record_store.cycle_lock:
+            return self._snapshot(run_identity)
+
+    def _snapshot(self, run_identity: str | None) -> SwingVisualV3LiveSnapshot:
         return SwingVisualV3LiveSnapshot(
             self._pack,
             self._imports,
@@ -96,14 +100,20 @@ class SwingVisualV3LiveWorkflow:
         chart_bytes,  # type: ignore[no-untyped-def]
         instrument: str | None = None,
     ) -> VisualV3LiveReviewPack:
+        # Include preparation and the in-memory selection in the same critical
+        # section as PDF/record publication (ThreadingHTTPServer callers).
+        with self.transport.record_store.cycle_lock:
+            return self._generate(review, facts, chart_bytes, instrument)
+
+    def _generate(self, review, facts, chart_bytes, instrument):  # type: ignore[no-untyped-def]
         prepared, skipped = self._prepare(review, facts, chart_bytes, instrument)
         record = self.transport.generate(
             prepared,
             scope="INDIVIDUAL" if instrument is not None else "ALL_ELIGIBLE",
             skipped=() if instrument is not None else skipped,
         )
-        self._pack = record
-        self._imports = ()
+        imports = self.transport.record_store.load_imports(record.review_pack_id)
+        self._pack, self._imports = record, imports
         return record
 
     def upload(
@@ -112,7 +122,13 @@ class SwingVisualV3LiveWorkflow:
         facts: SameRunMtfFactSnapshot,
         chart_bytes,  # type: ignore[no-untyped-def]
     ) -> tuple[VisualV3AnswerImportRecord, ...]:
+        with self.transport.record_store.cycle_lock:
+            return self._upload(review, facts, chart_bytes)
+
+    def _upload(self, review, facts, chart_bytes):  # type: ignore[no-untyped-def]
         record = self._require_current(review.native_run_identity)
+        if self.transport.record_store.load_current() != record:
+            raise PdfReviewTransportError("VISUAL_V3_REVIEW_PACK_SUPERSEDED")
         prepared, _ = self._prepare_for_record(review, facts, chart_bytes, record)
         try:
             answer = self.transport.find_and_validate_answer(record, prepared)

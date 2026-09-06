@@ -180,12 +180,19 @@ class ValidatedVisualV3Answer:
 class VisualV3PdfRecordStore:
     """Immutable V3 Review Pack selection and Answer-import records."""
 
+    _locks_guard = RLock()
+    _cycle_locks: dict[Path, RLock] = {}
+
     def __init__(self, root: Path) -> None:
         root = Path(root).expanduser()
         if not root.is_absolute():
             raise ValueError("VISUAL_V3_PDF_STORE_INVALID")
         self.root = root
-        self._lock = RLock()
+        # Component re-instantiation must not create another lock for the same
+        # store in the threaded Browser process.
+        with self._locks_guard:
+            self.cycle_lock = self._cycle_locks.setdefault(root.resolve(), RLock())
+        self._lock = self.cycle_lock
 
     def retain_pack(self, value: VisualV3LiveReviewPack) -> Path:
         path = self.root / "review-packs" / f"{value.review_pack_id}.json"
@@ -204,6 +211,11 @@ class VisualV3PdfRecordStore:
         return path
 
     def load_current(self) -> VisualV3LiveReviewPack | None:
+        with self._lock:
+            self._recover_publication()
+            return self._load_current()
+
+    def _load_current(self) -> VisualV3LiveReviewPack | None:
         path = self.root / "current-review-pack.json"
         if not path.exists():
             return None
@@ -214,7 +226,104 @@ class VisualV3PdfRecordStore:
         payload = _read(pack_path)
         if payload.get("schema") != VISUAL_V3_LIVE_REVIEW_SCHEMA:
             raise ValueError("VISUAL_V3_REVIEW_PACK_RESTORE_INVALID")
-        return _pack_from_dict(payload.get("record"))
+        record = _pack_from_dict(payload.get("record"))
+        if record.review_pack_id != selection.get("review_pack_id"):
+            raise ValueError("VISUAL_V3_REVIEW_PACK_RESTORE_INVALID")
+        _verify_question_pdf(Path(record.question_path), record)
+        return record
+
+    def publish(self, record: VisualV3LiveReviewPack, temporary: Path) -> None:
+        """Selection is the commit point; the pending intent permits rollback.
+
+        Only this cycle's owned PDF/record may be removed on failure. Historical
+        records and the previous selection are never rewritten by recovery.
+        """
+        with self._lock:
+            self._recover_publication()
+            _verify_question_pdf(temporary, record)
+            final = Path(record.question_path)
+            record_path = self.root / "review-packs" / f"{record.review_pack_id}.json"
+            if final.exists() or record_path.exists():
+                raise PdfReviewTransportError("REVIEW_PACK_PUBLICATION_CONFLICT")
+            pending = self.root / "pending-publication.json"
+            _atomic_json(pending, {
+                "record": _primitive(record), "temporary": str(temporary),
+            })
+            try:
+                # Same-filesystem, atomic, no-clobber publication; unlike
+                # exists()+replace(), another PDF can never be overwritten.
+                os.link(temporary, final)
+                self.select_current(record)
+            except Exception:
+                self._recover_publication()
+                raise
+            self._recover_publication()
+
+    def _recover_publication(self) -> None:
+        pending = self.root / "pending-publication.json"
+        if not pending.exists():
+            return
+        payload = _read(pending)
+        record = _pack_from_dict(payload.get("record"))
+        final = Path(record.question_path)
+        temporary = Path(str(payload.get("temporary")))
+        if (
+            not final.is_absolute()
+            or temporary.parent != final.parent
+            or not temporary.name.startswith(f".{record.review_pack_id}.")
+            or temporary.suffix != ".tmp"
+        ):
+            raise ValueError("VISUAL_V3_PUBLICATION_RECOVERY_INVALID")
+        selection_path = self.root / "current-review-pack.json"
+        selected = _read(selection_path) if selection_path.exists() else {}
+        record_path = self.root / "review-packs" / f"{record.review_pack_id}.json"
+        if selected.get("review_pack_id") == record.review_pack_id:
+            # Commit succeeded even if the process stopped before cleanup.
+            if _pack_from_dict(_read(record_path).get("record")) != record:
+                raise ValueError("VISUAL_V3_PUBLICATION_RECOVERY_INVALID")
+            _verify_question_pdf(final, record)
+        else:
+            if final.exists():
+                _verify_question_pdf(final, record)
+                final.unlink()
+            if record_path.exists():
+                if _pack_from_dict(_read(record_path).get("record")) != record:
+                    raise ValueError("VISUAL_V3_PUBLICATION_RECOVERY_INVALID")
+                record_path.unlink()
+        temporary.unlink(missing_ok=True)
+        pending.unlink()
+
+    def replay(self, ordered, scope, skipped):  # type: ignore[no-untyped-def]
+        """The same run/request-time/scope/population identifies an exact replay."""
+        self._recover_publication()
+        first = ordered[0][0]
+        population = tuple(item[0].requirement.canonical_instrument for item in ordered)
+        for path in sorted((self.root / "review-packs").glob("*.json")):
+            record = _pack_from_dict(_read(path).get("record"))
+            if (
+                record.native_run_identity != first.requirement.native_run_identity
+                or record.created_at != first.request_timestamp
+                or record.scope != scope
+                or tuple(item.canonical_instrument for item in record.candidate_packs) != population
+            ):
+                continue
+            if record.skipped != skipped or record.observation_boundary != max(
+                request.observation_boundary for requests in ordered for request in requests
+            ) or any(
+                pack.native_assessment_sha256 != requests[0].requirement.thesis.native_assessment_sha256
+                or pack.chart_revisions != tuple((r.timeframe.value, r.chart_revision_sha256) for r in requests)
+                or pack.machine_fact_bindings != tuple((r.timeframe.value, r.machine_fact.integrity_sha256) for r in requests)
+                or pack.question_set_version != requests[0].question_set_version
+                for pack, requests in zip(record.candidate_packs, ordered, strict=True)
+            ):
+                raise PdfReviewTransportError("REVIEW_PACK_REPLAY_CONFLICT")
+            _verify_question_pdf(Path(record.question_path), record)
+            # An old replay must never silently re-select a superseded cycle.
+            current = self._load_current()
+            if current != record:
+                raise PdfReviewTransportError("VISUAL_V3_REVIEW_PACK_SUPERSEDED")
+            return record
+        return None
 
     def retain_import(self, value: VisualV3AnswerImportRecord) -> Path:
         path = (
@@ -272,6 +381,10 @@ class VisualV3PdfReviewTransport:
         scope: str,
         skipped: tuple[tuple[str, str], ...],
     ) -> VisualV3LiveReviewPack:
+        with self.record_store.cycle_lock:
+            return self._generate(prepared, scope=scope, skipped=skipped)
+
+    def _generate(self, prepared, *, scope, skipped):  # type: ignore[no-untyped-def]
         if (
             not prepared
             or any(len(item) != 4 for item in prepared)
@@ -287,13 +400,14 @@ class VisualV3PdfReviewTransport:
         ):
             raise PdfReviewTransportError("VISUAL_V3_REQUEST_TIMESTAMP_MISMATCH")
         stamp = now.astimezone(_IST).strftime("%Y%m%d_%H%M%S")
-        base = f"KRONOS_V3_REVIEW_{stamp}_IST"
+        replay = self.record_store.replay(ordered, scope, skipped)
+        if replay is not None:
+            return replay
+        review_pack_id = f"KRONOS-V3-REVIEW-{uuid4().hex.upper()}"
+        base = f"KRONOS_V3_REVIEW_{stamp}_IST_{review_pack_id.removeprefix('KRONOS-V3-REVIEW-')}"
         question_filename = f"{base}_QUESTIONS.pdf"
         answer_filename = f"{base}_ANSWERS.pdf"
         question_path = self.configuration.question_directory / question_filename
-        if question_path.exists():
-            raise PdfReviewTransportError("REVIEW_PACK_FILENAME_EXISTS")
-        review_pack_id = f"KRONOS-V3-REVIEW-{uuid4().hex.upper()}"
         writer = PdfWriter()
         with tempfile.TemporaryDirectory(prefix="kronos-v3-review-") as directory:
             temporary_root = Path(directory)
@@ -311,12 +425,10 @@ class VisualV3PdfReviewTransport:
             for page in PdfReader(contract).pages:
                 writer.add_page(page)
             question_path.parent.mkdir(parents=True, exist_ok=True)
-            temporary_output = question_path.with_suffix(".tmp")
-            with temporary_output.open("wb") as stream:
-                writer.write(stream)
-            os.chmod(temporary_output, 0o600)
-            os.replace(temporary_output, question_path)
-        digest = sha256(question_path.read_bytes()).hexdigest()
+            # Build before any final artifact/record is visible.
+            output = BytesIO()
+            writer.write(output)
+        digest = sha256(output.getvalue()).hexdigest()
         candidate_packs = tuple(
             VisualV3ReviewPackRecord(
                 review_pack_id=review_pack_id,
@@ -349,7 +461,18 @@ class VisualV3PdfReviewTransport:
             scope,
             skipped,
         )
-        self.record_store.select_current(record)
+        with tempfile.NamedTemporaryFile(
+            dir=question_path.parent, prefix=f".{review_pack_id}.", suffix=".tmp",
+            delete=False,
+        ) as stream:
+            temporary_output = Path(stream.name)
+            try:
+                stream.write(output.getvalue())
+                stream.flush()
+                os.fsync(stream.fileno())
+                self.record_store.publish(record, temporary_output)
+            finally:
+                temporary_output.unlink(missing_ok=True)
         return record
 
     def find_and_validate_answer(
@@ -360,17 +483,28 @@ class VisualV3PdfReviewTransport:
         self.configuration.ensure_directories()
         expected = self.configuration.answer_directory / record.expected_answer_filename
         matches: list[tuple[Path, dict[str, object]]] = []
-        for path in sorted(self.configuration.answer_directory.glob("*_ANSWERS.pdf")):
+        foreign = False
+        extraction_error: PdfReviewTransportError | None = None
+        for path in sorted(self.configuration.answer_directory.glob("*.pdf")):
             try:
                 payload = _extract_governed_payload(path)
-            except PdfReviewTransportError:
+            except PdfReviewTransportError as error:
                 if path == expected:
                     raise
+                extraction_error = error
                 continue
             manifest = payload.get("manifest")
             if type(manifest) is dict and manifest.get("review_pack_id") == record.review_pack_id:
                 matches.append((path, payload))
+            else:
+                foreign = True
+                if path == expected:
+                    raise PdfReviewTransportError("REVIEW_PACK_ID_MISMATCH")
         if not matches:
+            if foreign:
+                raise PdfReviewTransportError("REVIEW_PACK_ID_MISMATCH")
+            if extraction_error is not None:
+                raise extraction_error
             raise PdfReviewTransportError("ANSWER_PACK_NOT_FOUND")
         if len(matches) != 1:
             raise PdfReviewTransportError("AMBIGUOUS_ANSWER_PACK")
@@ -378,11 +512,13 @@ class VisualV3PdfReviewTransport:
         if path.name != record.expected_answer_filename:
             raise PdfReviewTransportError("ANSWER_FILENAME_MISMATCH")
         digest = sha256(path.read_bytes()).hexdigest()
-        imported = tuple(
+        consumed = tuple(
             item for item in self.record_store.load_imports(record.review_pack_id)
-            if item.answer_pdf_sha256 == digest and item.consumed
+            if item.consumed
         )
-        if imported:
+        if any(item.answer_pdf_sha256 != digest for item in consumed):
+            raise PdfReviewTransportError("ANSWER_REPLAY_CONFLICT")
+        if consumed:
             return ValidatedVisualV3Answer(path, digest, ())
         validated = _validate_answer(record, requests, payload)
         return ValidatedVisualV3Answer(path, digest, validated)
@@ -420,6 +556,14 @@ class VisualV3PdfReviewTransport:
             "answer_sha256": answer.answer_sha256,
             "evidence_hashes": evidence_hashes,
         })).hexdigest()
+        for existing in self.record_store.load_imports(record.review_pack_id):
+            if existing.consumed:
+                if (
+                    existing.answer_pdf_sha256 != answer.answer_sha256
+                    or existing.evidence_import_identity != identity
+                ):
+                    raise PdfReviewTransportError("ANSWER_REPLAY_CONFLICT")
+                return existing
         value = VisualV3AnswerImportRecord(
             record.review_pack_id,
             answer.answer_path.name,
@@ -483,8 +627,9 @@ def _validate_answer(
     manifest = payload.get("manifest")
     if type(manifest) is not dict:
         raise PdfReviewTransportError("ANSWER_FORMAT_INVALID")
+    if manifest.get("review_pack_id") != record.review_pack_id:
+        raise PdfReviewTransportError("REVIEW_PACK_ID_MISMATCH")
     for key, expected in (
-        ("review_pack_id", record.review_pack_id),
         ("native_run_identity", record.native_run_identity),
         ("question_set_identity", VISUAL_QUESTION_SET_V3_ID),
         ("question_set_version", record.question_set_version),
@@ -564,6 +709,20 @@ def _validate_answer(
             responses.append(response)
         results.append(ValidatedVisualV3Candidate(instrument, tuple(responses)))
     return tuple(results)
+
+
+def _verify_question_pdf(path: Path, record: VisualV3LiveReviewPack) -> None:
+    try:
+        payload = path.read_bytes()
+        text = "\n".join(page.extract_text() or "" for page in PdfReader(BytesIO(payload)).pages)
+    except Exception:
+        raise PdfReviewTransportError("VISUAL_V3_REVIEW_PDF_BINDING_INVALID") from None
+    if (
+        sha256(payload).hexdigest() != record.question_pdf_sha256
+        or set(re.findall(r"KRONOS-V3-REVIEW-[A-F0-9]{32}", text)) != {record.review_pack_id}
+        or set(re.findall(r"SWING-RUN-[A-F0-9]{32}", text)) != {record.native_run_identity}
+    ):
+        raise PdfReviewTransportError("VISUAL_V3_REVIEW_PDF_BINDING_INVALID")
 
 
 def _write_answer_contract(
