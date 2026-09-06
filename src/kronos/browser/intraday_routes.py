@@ -98,7 +98,6 @@ from kronos.browser.product_routes import (
     BrowserSnapshotProvider,
 )
 from kronos.intraday.review import ReviewError, ReviewFailure
-from kronos.intraday.review_answer import MAX_ANSWER_BYTES
 from kronos.intraday.review_v2 import (
     REVIEW_V2_ANSWER_IMPORT_ROUTE,
     REVIEW_V2_CHART_ROUTE,
@@ -981,10 +980,14 @@ class IntradayBrowserRoutes:
                     self._review_v2_control.application.create_combined_question_transport()
                     return self.handle_get(BrowserGetRequest("/intraday/review", {}), snapshot_provider)
                 if request.path == "/intraday/review/answers":
-                    if request.query or request.content_type != "application/json" or not request.body:
+                    if request.query or request.body:
                         raise ValueError
-                    self._review_v2_control.application.import_combined_answer(request.body)
-                    return self.handle_get(BrowserGetRequest("/intraday/review", {}), snapshot_provider)
+                    answer_inbox_result = (
+                        self._review_v2_control.application.import_all_expected_answers()
+                    )
+                    return self._render_review_v2_result(
+                        snapshot_provider, answer_inbox_result
+                    )
                 if request.path == "/intraday/review/reconcile-all":
                     if request.query or request.body:
                         raise ValueError
@@ -997,20 +1000,26 @@ class IntradayBrowserRoutes:
             if request.path == REVIEW_V2_CHART_ROUTE:
                 return self._receive_review_v2_chart(request)
             elif request.path == REVIEW_V2_QUESTION_TRANSPORT_ROUTE:
-                if self._review_v2_control is None or request.query or request.body:
+                if self._review_v2_control is None or request.body:
                     raise ValueError
-                self._review_v2_control.application.create_combined_question_transport()
+                if request.query:
+                    self._review_v2_control.application.create_individual_question_transport(
+                        _one_query(request, "cycle")
+                    )
+                else:
+                    self._review_v2_control.application.create_combined_question_transport()
             elif request.path == REVIEW_V2_ANSWER_IMPORT_ROUTE:
-                if (
-                    self._review_v2_control is None
-                    or request.query
-                    or request.content_type != "application/json"
-                    or not request.body
-                    or len(request.body) > MAX_ANSWER_BYTES
-                ):
+                if self._review_v2_control is None or request.body:
                     raise ValueError
-                self._review_v2_control.application.import_combined_answer(
-                    request.body
+                answer_inbox_result = (
+                    self._review_v2_control.application.import_expected_answer(
+                        _one_query(request, "cycle")
+                    )
+                    if request.query
+                    else self._review_v2_control.application.import_all_expected_answers()
+                )
+                return self._render_review_v2_result(
+                    snapshot_provider, answer_inbox_result
                 )
             elif request.path == "/intraday/review/start":
                 result = _one_query(request, "result")
@@ -1135,12 +1144,33 @@ class IntradayBrowserRoutes:
             )
         )
 
+    def _render_review_v2_result(
+        self, snapshot_provider: BrowserSnapshotProvider, answer_inbox_result: object,
+    ) -> BrowserRouteResponse:
+        return BrowserRouteResponse(render_intraday_review(
+            snapshot_provider(),
+            self._review.snapshot(),
+            self._reconciliation.snapshot(),
+            review_v2=self._review_v2_snapshot(),
+            available_probables_v2_run=self._current_probables_v2(),
+            review_v2_status=self._review_v2_status(),
+            review_v2_answer_result=answer_inbox_result,
+        ))
+
 
     def _receive_review_v2_chart(self, request: BrowserPostRequest) -> BrowserRouteResponse:
         """Clipboard and file bytes enter the same exact-current chart seam."""
         reason, status = "CHART_PERSISTENCE_FAILURE", HTTPStatus.SERVICE_UNAVAILABLE
         try:
-            cycle_identity = _one_query(request, "cycle")
+            keys = {"native_binding_identity", "native_contract_identity", "reference_context_identity"}
+            if set(request.query) not in ({"cycle"}, {"cycle"} | keys):
+                raise ValueError
+            if any(len(values) != 1 or not values[0] or values[0] != values[0].strip()
+                   or "/" in values[0] or "\\" in values[0] for values in request.query.values()):
+                raise ValueError
+            cycle_identity = request.query["cycle"][0]
+            metadata = ({key: request.query[key][0] for key in keys}
+                        if keys <= set(request.query) else None)
             if self._review_v2_control is None:
                 raise ValueError
             if request.content_type not in {"image/png", "image/jpeg"}:
@@ -1152,6 +1182,7 @@ class IntradayBrowserRoutes:
             else:
                 chart = self._review_v2_control.application.upload_chart(
                     cycle_identity, media_type=request.content_type, payload=request.body,
+                    paired_metadata=metadata,
                 )
                 return BrowserRouteResponse(
                     json.dumps({"outcome": "CHART_RECEIVED", "cycle_identity": cycle_identity,

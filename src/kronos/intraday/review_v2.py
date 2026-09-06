@@ -269,6 +269,8 @@ class ChartRevisionV2:
     schema_identity: str = CHART_REVISION_V2_IDENTITY
     schema_version: str = REVIEW_V2_CONTRACT_VERSION
 
+    paired_bundle_identity: str | None = None
+
     def __post_init__(self) -> None:
         values = _without(self, "chart_revision_identity", "integrity_identity")
         if (
@@ -283,10 +285,13 @@ class ChartRevisionV2:
             or self.media_type not in {"image/png", "image/jpeg"}
             or type(self.byte_count) is not int or self.byte_count < 1
             or not _aware(self.received_at)
-            or self.timeframe_set != CHART_TIMEFRAMES
+            or self.timeframe_set != (("1D", "4H", "15M", "5M") if self.paired_bundle_identity is not None else CHART_TIMEFRAMES)
             or not _texts(self.provenance)
             or self.schema_identity != CHART_REVISION_V2_IDENTITY
-            or self.schema_version != REVIEW_V2_CONTRACT_VERSION
+            or self.schema_version != ("2.1.0" if self.paired_bundle_identity is not None else REVIEW_V2_CONTRACT_VERSION)
+            or self.paired_bundle_identity is not None and (
+                not self.expected_canonical_subject_identity.startswith("MCX-SUBJECT-")
+                or not self.paired_bundle_identity.startswith("INTRADAY-MCX-PAIRED-CHART-BUNDLE-"))
             or self.chart_revision_identity
             != _identity("INTRADAY-CHART-REVISION-V2-", values)
             or self.integrity_identity
@@ -770,6 +775,7 @@ def create_chart_revision_v2(
     media_type: str,
     received_at: datetime,
     request_identity: str | None = None,
+    paired_bundle_identity: str | None = None,
 ) -> ChartRevisionV2:
     if (
         type(cycle) is not ReviewCycleV2
@@ -808,6 +814,9 @@ def create_chart_revision_v2(
         "schema_identity": CHART_REVISION_V2_IDENTITY,
         "schema_version": REVIEW_V2_CONTRACT_VERSION,
     }
+    if paired_bundle_identity is not None:
+        values.update(paired_bundle_identity=paired_bundle_identity,
+                      schema_version="2.1.0", timeframe_set=("1D", "4H", "15M", "5M"))
     return ChartRevisionV2(
         chart_revision_identity=_identity("INTRADAY-CHART-REVISION-V2-", values),
         integrity_identity=_identity(
@@ -1285,7 +1294,7 @@ def _decode(expected: type, value: object) -> object:
 
 
 def _without(value: object, *names: str) -> dict[str, object]:
-    return {name: item for name, item in asdict(value).items() if name not in names}
+    return {name: item for name, item in asdict(value).items() if name not in names and not (name == "paired_bundle_identity" and item is None)}
 
 
 def _identity(prefix: str, value: object) -> str:
@@ -1304,7 +1313,7 @@ def _normalize(value: object) -> object:
     if isinstance(value, datetime):
         return value.isoformat()
     if isinstance(value, Mapping):
-        return {str(name): _normalize(item) for name, item in value.items()}
+        return {str(name): _normalize(item) for name, item in value.items() if not (name == "paired_bundle_identity" and item is None)}
     if isinstance(value, (tuple, list)):
         return [_normalize(item) for item in value]
     return value

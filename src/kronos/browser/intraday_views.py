@@ -14,7 +14,10 @@ from kronos.application.intraday_review import (
     IntradayReviewBatchResult,
     IntradayReviewSnapshot,
 )
-from kronos.application.intraday_review_v2 import IntradayReviewV2Snapshot
+from kronos.application.intraday_review_v2 import (
+    IntradayReviewV2InboxImportResult,
+    IntradayReviewV2Snapshot,
+)
 from kronos.application.intraday_native_visual_reconciliation import (
     ReconciliationBatchResult,
     ReconciliationCandidateSnapshot,
@@ -86,6 +89,7 @@ _REVIEW_V2_CSS = r"""
 .intraday-review-currentness{border:1px solid var(--line);border-radius:8px;background:#071827;margin-top:12px;padding:10px 12px}.intraday-review-currentness strong{color:var(--green)}.intraday-review-currentness.outdated{border-color:#82631f}.intraday-review-currentness.outdated strong{color:#f6d997}.intraday-review-currentness.invalid{border-color:#81502a}.intraday-review-currentness.invalid strong{color:#f0c08e}.intraday-review-currentness-facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px 12px;margin-top:7px;color:var(--muted);font-size:10px}.intraday-review-currentness-facts span{overflow-wrap:anywhere}@media(max-width:760px){.intraday-review-currentness-facts{grid-template-columns:1fr}}
 
 .intraday-drop.intraday-drop-empty{display:flex;justify-content:space-between;gap:10px;min-height:88px;padding:12px;text-align:left;cursor:default}.intraday-drop-empty .intraday-intake-copy{min-width:0}.intraday-drop-empty strong{display:block;margin:0;font-size:11px;overflow-wrap:anywhere}.intraday-drop-empty .required-panels{margin-top:6px}.intraday-drop-empty .intraday-chart-slot-actions{flex-shrink:0}.intraday-drop-empty .intraday-chart-slot-actions:focus-within .intraday-file-choice{outline:2px solid var(--green);outline-offset:2px}
+.intraday-review-v2-pack-actions{display:flex;flex-wrap:wrap;align-items:center;gap:7px;margin-top:9px}.intraday-review-v2-pack-actions form{margin:0}.intraday-review-v2-pack-actions span{color:var(--muted);font-size:9px;overflow-wrap:anywhere}.intraday-review-v2-pack-actions button{padding:7px 10px}.intraday-v2-inbox-result{border:1px solid #2d765d;background:#08261e;border-radius:9px;padding:10px 12px;margin-bottom:12px}.intraday-v2-inbox-result h2{color:var(--green);font-size:13px;margin:0 0 6px}.intraday-v2-inbox-result p{margin:0;color:var(--muted);font-size:10px;overflow-wrap:anywhere}
 @media(max-width:760px){.intraday-drop.intraday-drop-empty{min-height:96px;padding:10px;gap:8px}.intraday-drop-empty .intraday-file-choice{padding:9px 8px}}
 """
 
@@ -297,6 +301,7 @@ def render_intraday_review(
     available_probables_v2_run: ProbablesRunV2 | None = None,
     review_v2_status: dict[str, object] | None = None,
     focused_candidate: str | None = None,
+    review_v2_answer_result: IntradayReviewV2InboxImportResult | None = None,
 ) -> str:
     """Render persisted exact-current Review and WO-10 analytical state."""
 
@@ -342,7 +347,11 @@ def render_intraday_review(
         + '<div class="intraday-warning"><strong>NATIVE + VISUAL REVIEW</strong>'
         '<span>ANALYTICAL READINESS ONLY · NO ENTRY, TRADE, RISK OR BROKER AUTHORITY</span></div>'
         + _review_v2_projection(
-            review_v2, available_probables_v2_run, review_v2_status, focused_candidate
+            review_v2,
+            available_probables_v2_run,
+            review_v2_status,
+            focused_candidate,
+            review_v2_answer_result,
         )
         + ("" if review_v2 is not None else (
         '<div class="intraday-review-toolbar"><form method="post" action="/intraday/review/question-packs">'
@@ -1481,6 +1490,7 @@ def _review_v2_projection(
     available_run: ProbablesRunV2 | None,
     status: dict[str, object] | None,
     focused_candidate: str | None = None,
+    answer_result: IntradayReviewV2InboxImportResult | None = None,
 ) -> str:
     if snapshot is None:
         return ""
@@ -1581,24 +1591,21 @@ def _review_v2_projection(
     ready_count = sum(item.chart_state == "CHART_READY" for item in snapshot.candidates)
     all_ready = bool(snapshot.candidates) and ready_count == len(snapshot.candidates)
     transport_ready = snapshot.question_transport_identity is not None
+    import_feedback = _review_v2_inbox_result(answer_result)
     reconciliation = {} if status is None else status.get("reconciliation", {})
     exact_reconciliation = (
         reconciliation.get("current_review_pointer") == snapshot.current_pointer_identity
         and currentness == "REVIEW_CURRENT"
     )
     eligible_count = reconciliation.get("eligible_count", 0) if exact_reconciliation else 0
-    answer_count = reconciliation.get("answer_ready_count", 0) if exact_reconciliation else 0
+    answer_count = sum(item.answer_state == "IMPORTED" for item in snapshot.candidates)
     phase_b = (
         '<div class="intraday-review-toolbar" data-current-review-bulk="true">'
         '<form method="post" action="' + REVIEW_V2_QUESTION_TRANSPORT_ROUTE + '">'
         '<button class="primary" type="submit"' + ("" if all_ready else " disabled")
         + '>CREATE ALL REVIEW PDF</button></form>'
-        '<button type="button" data-choose-v2-answer="true"' + ("" if transport_ready else " disabled")
-        + '>UPLOAD ALL ANSWERS</button>'
-        '<label class="intraday-file-choice" tabindex="0" for="intraday-v2-batch-answer">CHOOSE COMBINED ANSWER</label>'
-        '<input id="intraday-v2-batch-answer" class="intraday-batch-answer-input" '
-        'type="file" accept="application/json,.json"' + ("" if transport_ready else " disabled")
-        + ' data-review-v2-batch-answer-upload="' + REVIEW_V2_ANSWER_IMPORT_ROUTE + '">'
+        '<form method="post" action="' + REVIEW_V2_ANSWER_IMPORT_ROUTE + '">'
+        '<button type="submit">IMPORT ALL EXPECTED ANSWERS</button></form>'
         '<form method="post" action="/intraday/review/reconcile-all">'
         '<button type="submit"' + (
             "" if eligible_count and status and status.get("reconciliation_control_available")
@@ -1612,8 +1619,6 @@ def _review_v2_projection(
         + ('' if not transport_ready else '<br>CURRENT QUESTION PACK: ' + escape(snapshot.question_filename or '')
            + '<br>EXPECTED ANSWER: ' + escape(snapshot.expected_answer_filename or ''))
         + '</span></div>'
-        '<script>document.querySelector("[data-choose-v2-answer]")?.addEventListener("click",()=>'
-        'document.getElementById("intraday-v2-batch-answer").click());</script>'
     )
     return (
         '<section class="intraday-review-v2"><div class="intraday-review-v2-head"><div>'
@@ -1621,8 +1626,34 @@ def _review_v2_projection(
         '<p>Review Cycle → Chart Required. Review Packs and Question Packs begin only after real chart intake.</p>'
         '</div><span class="intraday-review-toolbar-note">Cycles · '
         + str(len(snapshot.candidates)) + '</span></div>' + currentness_banner + focus_notice + control
-        + phase_b + '<div class="intraday-review-v2-grid">'
+        + phase_b + import_feedback + '<div class="intraday-review-v2-grid">'
         + empty + '</div></section>'
+    )
+
+
+def _review_v2_inbox_result(
+    result: IntradayReviewV2InboxImportResult | None,
+) -> str:
+    if result is None:
+        return ""
+    states = " · ".join(
+        escape(item.canonical_subject_identity)
+        + " " + escape(item.state.replace("_", " "))
+        + ("" if item.reason is None else " (" + escape(item.reason) + ")")
+        for item in result.members
+    )
+    return (
+        '<section class="intraday-v2-inbox-result" role="status"><h2>'
+        'ANSWER INBOX · ' + escape(result.mode) + '</h2><p>'
+        'CURRENT REVIEW: ' + str(result.current_review_count)
+        + ' · EXPECTED: ' + str(result.expected_count)
+        + ' · FOUND: ' + str(result.found_count)
+        + ' · IMPORTED: ' + str(result.imported_count)
+        + ' · ALREADY IMPORTED: ' + str(result.already_imported_count)
+        + ' · NOT FOUND: ' + str(result.not_found_count)
+        + ' · REJECTED: ' + str(result.rejected_count)
+        + ("" if not states else '<br>' + states)
+        + '</p></section>'
     )
 
 
@@ -1666,8 +1697,47 @@ def _review_v2_candidate(item, slot_index: int) -> str:  # type: ignore[no-untyp
         'data-target="' + target_identity + '"></div>'
     )
     empty_chart = item.chart_revision_ordinal is None
+    pack_actions = ""
+    if not empty_chart and not item.paired_metadata_required:
+        if item.question_transport_identity is None:
+            pack_actions = (
+                '<div class="intraday-review-v2-pack-actions"><form method="post" action="'
+                + REVIEW_V2_QUESTION_TRANSPORT_ROUTE + '?cycle=' + cycle + '">'
+                '<button class="primary" type="submit">CREATE REVIEW PDF</button></form></div>'
+            )
+        else:
+            pack_actions = (
+                '<div class="intraday-review-v2-pack-actions"><strong>QUESTION PACK READY</strong>'
+                '<form method="post" action="' + REVIEW_V2_ANSWER_IMPORT_ROUTE
+                + '?cycle=' + cycle + '"><button type="submit">IMPORT EXPECTED ANSWER</button></form>'
+                '<span>QUESTION: ' + escape(item.question_filename or "UNAVAILABLE")
+                + '<br>EXPECTED ANSWER: '
+                + escape(item.expected_answer_filename or "UNAVAILABLE")
+                + '</span></div>'
+            )
+    metadata_controls = ""
+    if item.canonical_subject_identity.startswith("MCX-SUBJECT-"):
+        native_option = ("" if item.native_contract_identity is None else
+            '<option value="' + escape(item.native_contract_identity, quote=True)
+            + '" data-binding="' + escape(item.native_binding_identity or "", quote=True)
+            + '">' + escape(item.native_contract_identity) + '</option>')
+        reference_option = ("" if item.reference_context_identity is None else
+            '<option value="' + escape(item.reference_context_identity, quote=True)
+            + '">' + escape(item.reference_context_identity) + '</option>')
+        metadata_controls = (
+            '<div class="intraday-paired-metadata" style="display:grid;gap:8px;min-width:0;margin:8px 0">'
+            '<label>NATIVE CONTRACT<select data-native-contract style="display:block;max-width:100%;width:100%">'
+            '<option value="">Select governed native contract</option>' + native_option + '</select></label>'
+            '<label>REFERENCE CONTEXT<select data-reference-context style="display:block;max-width:100%;width:100%">'
+            '<option value="">Select supporting reference context</option>' + reference_option + '</select></label>'
+            '<small>Reference context is supporting only. Listed constituent membership is not established.</small></div>'
+            + ('<p>Chart present; paired metadata required. Confirm both selections and replace the composite.</p>'
+               if item.paired_metadata_required and not empty_chart else '')
+            + ('<p>Observed reference visual fact: ' + escape(item.reference_observed_identity)
+               + ' · supporting only; no constituent membership claim.</p>' if item.reference_observed_identity else '')
+        )
     upload = (
-        '<div class="intraday-review-section-title">TRADINGVIEW CHARTS</div>'
+        metadata_controls + '<div class="intraday-review-section-title">TRADINGVIEW CHARTS</div>'
         '<div id="' + target_identity + '" class="intraday-drop'
         + (' intraday-drop-empty' if empty_chart else received_class)
         + '" role="group" tabindex="0" aria-label="Paste or choose one TradingView composite for '
@@ -1676,6 +1746,7 @@ def _review_v2_candidate(item, slot_index: int) -> str:  # type: ignore[no-untyp
         + chart_content + (file_choice if empty_chart else '') + '</div>'
         + ('' if empty_chart else file_choice)
         + '<p id="' + target_identity + '-feedback" role="status" aria-live="polite" hidden></p>'
+        + pack_actions
     )
     return (
         '<article class="intraday-review-v2-card" tabindex="-1" id="review-candidate-'
@@ -2006,6 +2077,16 @@ async function receive(target,file){
     url.searchParams.getAll('cycle').length!==1||[...url.searchParams.keys()].length!==1){
    report(target,'INVALID_CANDIDATE_BINDING');return;}
  const cycle=url.searchParams.get('cycle');
+ const card=target.closest('.intraday-review-v2-card');
+ const native=card&&card.querySelector('[data-native-contract]');
+ const reference=card&&card.querySelector('[data-reference-context]');
+ if(native||reference){
+  if(!native||!reference||!native.value||!reference.value||!native.selectedOptions[0].dataset.binding){
+   report(target,'INVALID_CANDIDATE_BINDING');return;}
+  url.searchParams.set('native_contract_identity',native.value);
+  url.searchParams.set('native_binding_identity',native.selectedOptions[0].dataset.binding);
+  url.searchParams.set('reference_context_identity',reference.value);
+ }
  target.setAttribute('aria-busy','true');
  try{
   const response=await fetch(url.pathname+url.search,{method:'POST',headers:{'Content-Type':file.type},body:file});

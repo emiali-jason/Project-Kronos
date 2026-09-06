@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from threading import RLock
 from uuid import uuid4
@@ -65,6 +66,53 @@ class IntradayMcxPairedReviewStore:
             self._retain(self._path("question-pdfs", value.transport_identity, ".pdf"), pdf)
             self._retain(self._path("answer-templates", value.transport_identity), template)
             return self._retain(self._path("transports", value.transport_identity), artifact_bytes(value))
+
+    def retain_transport_pointer(self, value: McxPairedReviewTransport) -> Path:
+        fields = {"review_pack_identity": value.review_pack_identity,
+                  "transport_identity": value.transport_identity}
+        fields["integrity"] = sha256(json.dumps(fields, sort_keys=True).encode()).hexdigest()
+        return self._retain(self._path("pack-transports", value.review_pack_identity),
+                            json.dumps(fields, sort_keys=True).encode())
+
+    def load_transport_for_pack(self, identity: str) -> McxPairedReviewTransport:
+        try:
+            fields = json.loads(self.load_bytes("pack-transports", identity))
+            integrity = fields.pop("integrity")
+            if (set(fields) != {"review_pack_identity", "transport_identity"}
+                or fields["review_pack_identity"] != identity
+                or integrity != sha256(json.dumps(fields, sort_keys=True).encode()).hexdigest()):
+                raise ValueError
+            value = self.load_transport(fields["transport_identity"])
+            if value.review_pack_identity != identity:
+                raise ValueError
+            return value
+        except (ValueError, KeyError, TypeError) as error:
+            raise ReviewError(ReviewFailure.INTEGRITY_INVALID) from error
+
+    def retain_evidence_pointer(self, value: McxPairedImportedVisualEvidence) -> Path:
+        fields = {"review_pack_identity": value.review_pack_identity,
+                  "visual_evidence_identity": value.visual_evidence_identity}
+        fields["integrity"] = sha256(json.dumps(fields, sort_keys=True).encode()).hexdigest()
+        return self._retain(self._path("current-imports", value.review_pack_identity),
+                            json.dumps(fields, sort_keys=True).encode())
+
+    def load_evidence_for_pack(self, identity: str) -> McxPairedImportedVisualEvidence | None:
+        path = self._path("current-imports", identity)
+        if not path.exists():
+            return None
+        try:
+            fields = json.loads(self._read(path))
+            integrity = fields.pop("integrity")
+            if (set(fields) != {"review_pack_identity", "visual_evidence_identity"}
+                or fields["review_pack_identity"] != identity
+                or integrity != sha256(json.dumps(fields, sort_keys=True).encode()).hexdigest()):
+                raise ValueError
+            value = self.load_evidence(fields["visual_evidence_identity"])
+            if value.review_pack_identity != identity:
+                raise ValueError
+            return value
+        except (ValueError, KeyError, TypeError) as error:
+            raise ReviewError(ReviewFailure.INTEGRITY_INVALID) from error
 
     def load_bytes(self, namespace: str, identity: str, suffix: str = ".json") -> bytes:
         """Explicit identity only; callers validate the reconstructed typed artifact."""

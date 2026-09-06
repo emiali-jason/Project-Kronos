@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+from contextlib import ExitStack, contextmanager
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from hashlib import sha256
 from io import BytesIO
 import json
+import os
 from pathlib import Path
+import re
+import stat
 from typing import Mapping, Sequence
 from uuid import uuid4
 from xml.sax.saxutils import escape
@@ -25,6 +29,7 @@ from kronos.intraday.review_answer import (
     ANSWER_CONTRACT_VERSION,
     ANSWER_PACK_IDENTITY,
     BATCH_ANSWER_PACK_IDENTITY,
+    MAX_ANSWER_BYTES,
 )
 from kronos.intraday.review_pdf import DEFAULT_ANSWER_INBOX, DEFAULT_QUESTION_OUTBOX
 from kronos.intraday.review_v2 import ReviewQuestionBatchV2, ReviewQuestionPackV2
@@ -34,6 +39,9 @@ REVIEW_BATCH_TRANSPORT_V2_IDENTITY = "KRONOS-INTRADAY-REVIEW-BATCH-TRANSPORT-V2"
 REVIEW_BATCH_TRANSPORT_V2_VERSION = "2.0.0"
 REVIEW_V2_QUESTION_TRANSPORT_ROUTE = "/intraday/review/v2/question-transport"
 _IST = ZoneInfo("Asia/Kolkata")
+_EXPECTED_ANSWER_NAME = re.compile(
+    r"KRONOS_INTRADAY_REVIEW_V2_[0-9]{8}_[0-9]{6}_IST_[A-F0-9]{8}_ANSWERS\.json"
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -132,8 +140,110 @@ class IntradayReviewV2Transport:
         self.question_outbox.mkdir(parents=True, exist_ok=True)
         self.answer_inbox.mkdir(parents=True, exist_ok=True)
         question_path = _retain(self.question_outbox / question_filename, pdf)
-        answer_path = _retain(self.answer_inbox / answer_filename, template)
+        # Templates accompany Question PDFs. The governed Answer inbox is
+        # reserved for completed Answers under their exact expected names.
+        answer_path = _retain(self.question_outbox / answer_filename, template)
         return transport, question_path, answer_path
+
+    def export_paired(self, transport, pdf: bytes, template: bytes) -> tuple[Path, Path]:
+        from kronos.intraday.review_mcx_paired_transport import McxPairedReviewTransport
+        if (type(transport) is not McxPairedReviewTransport
+            or sha256(pdf).hexdigest() != transport.question_pdf_sha256
+            or sha256(template).hexdigest() != transport.answer_template_sha256):
+            raise ReviewError(ReviewFailure.INTEGRITY_INVALID)
+        self.question_outbox.mkdir(parents=True, exist_ok=True)
+        self.answer_inbox.mkdir(parents=True, exist_ok=True)
+        return (_retain(self.question_outbox / transport.question_filename, pdf),
+                _retain(self.question_outbox / transport.expected_answer_filename, template))
+
+    def read_expected_answer(self, expected_filename: str) -> bytes | None:
+        """Read one exact regular Answer file without exposing path access."""
+
+        if (
+            type(expected_filename) is not str
+            or (_EXPECTED_ANSWER_NAME.fullmatch(expected_filename) is None
+                and re.fullmatch(r"KRONOS_INTRADAY_MCX_PAIRED_REVIEW_[0-9A-F]{12}_ANSWERS\.json", expected_filename) is None)
+            or Path(expected_filename).name != expected_filename
+        ):
+            raise ReviewError(ReviewFailure.INPUT_INVALID)
+        try:
+            with _trusted_answer_directory(self.answer_inbox) as directory:
+                try:
+                    metadata = os.stat(expected_filename, dir_fd=directory, follow_symlinks=False)
+                except FileNotFoundError:
+                    return None
+                if not stat.S_ISREG(metadata.st_mode):
+                    raise ReviewError(ReviewFailure.INTEGRITY_INVALID)
+                descriptor = os.open(
+                    expected_filename, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK,
+                    dir_fd=directory,
+                )
+                try:
+                    opened = os.fstat(descriptor)
+                    if (
+                        not stat.S_ISREG(opened.st_mode)
+                        or _answer_file_state(opened) != _answer_file_state(metadata)
+                        or not 0 < opened.st_size <= MAX_ANSWER_BYTES
+                    ):
+                        raise ReviewError(ReviewFailure.INTEGRITY_INVALID)
+                    payload = os.read(descriptor, MAX_ANSWER_BYTES + 1)
+                    retained = os.stat(expected_filename, dir_fd=directory, follow_symlinks=False)
+                    if (
+                        _answer_file_state(os.fstat(descriptor)) != _answer_file_state(opened)
+                        or _answer_file_state(retained) != _answer_file_state(opened)
+                        or len(payload) != opened.st_size
+                    ):
+                        raise ReviewError(ReviewFailure.INTEGRITY_INVALID)
+                finally:
+                    os.close(descriptor)
+                if not 0 < len(payload) <= MAX_ANSWER_BYTES:
+                    raise ReviewError(ReviewFailure.ANSWER_SCHEMA_INVALID)
+                return payload
+
+        except ReviewError:
+            raise
+        except OSError as error:
+            raise ReviewError(ReviewFailure.ARTIFACT_UNAVAILABLE) from error
+
+
+def _answer_file_state(metadata: os.stat_result) -> tuple[int, ...]:
+    return (metadata.st_dev, metadata.st_ino, metadata.st_mode, metadata.st_size,
+            metadata.st_mtime_ns, metadata.st_ctime_ns)
+
+
+@contextmanager
+def _trusted_answer_directory(root: Path):
+    """Apply Review GC's no-symlink-ancestor rule without resolving aliases.
+
+    Each component is opened relative to its retained parent descriptor. A
+    replacement cannot redirect subsequent opens; changed names fail closed
+    before any successfully read Answer is returned to its validator.
+    """
+    if not _safe_directory(root):
+        raise ReviewError(ReviewFailure.INTEGRITY_INVALID)
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+    with ExitStack() as opened_directories:
+        directory = os.open(root.anchor, flags)
+        opened_directories.callback(os.close, directory)
+        chain = []
+        for component in root.parts[1:]:
+            metadata = os.stat(component, dir_fd=directory, follow_symlinks=False)
+            if not stat.S_ISDIR(metadata.st_mode):
+                raise ReviewError(ReviewFailure.INTEGRITY_INVALID)
+            child = os.open(component, flags, dir_fd=directory)
+            opened_directories.callback(os.close, child)
+            retained = os.fstat(child)
+            identity = (retained.st_dev, retained.st_ino)
+            if identity != (metadata.st_dev, metadata.st_ino):
+                raise ReviewError(ReviewFailure.INTEGRITY_INVALID)
+            chain.append((directory, component, identity))
+            directory = child
+        yield directory
+        for parent, component, identity in chain:
+            metadata = os.stat(component, dir_fd=parent, follow_symlinks=False)
+            if (not stat.S_ISDIR(metadata.st_mode)
+                or (metadata.st_dev, metadata.st_ino) != identity):
+                raise ReviewError(ReviewFailure.INTEGRITY_INVALID)
 
 
 def answer_template_v2(

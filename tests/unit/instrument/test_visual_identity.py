@@ -324,7 +324,7 @@ def test_unknown_successor_version_and_wrong_context_fail_closed() -> None:
         create_visual_identity_publication(
             canonical_subject_identities=CANONICAL,
             publication_identity=VISUAL_IDENTITY_RELATIONSHIP_PUBLICATION_V1,
-            publication_version="1.3.0",
+            publication_version="9.9.9",
             effective_from=BOUNDARY,
             effective_through=END,
             source_identities=("ADR-0018",),
@@ -342,3 +342,54 @@ def test_unknown_successor_version_and_wrong_context_fail_closed() -> None:
                 "2026-08-28T17:18:48.326000+00:00"
             ),
         )
+
+
+REVIEW_LABELS = {
+    "Eicher Motors Limited": "NSE-EQ-EICHERMOT",
+    "Max Healthcare Institute Ltd": "NSE-EQ-MAXHEALTH",
+    "NTPC Limited": "NSE-EQ-NTPC",
+    "Tata Power Company Limited": "NSE-EQ-TATAPOWER",
+    "Titan Company Limited": "NSE-EQ-TITAN",
+    "Tata Motors Passenger Vehicles Ltd": "NSE-EQ-TMPV",
+    "Bharat Dynamics Ltd.": "NSE-EQ-BDL",
+    "Srf Limited": "NSE-EQ-SRF",
+}
+
+
+@pytest.mark.parametrize("observed,canonical", REVIEW_LABELS.items())
+def test_review_publication_exact_evidenced_boundary(observed, canonical):
+    resolver = load_visual_identity_resolver(publication_version="1.3.0")
+    boundary = datetime.fromisoformat("2026-09-04T13:47:57+00:00")
+    def resolve(at):
+        return resolver.resolve(observed_visible_subject_identity=observed,
+            source_context=VisualIdentitySourceContext.TRADINGVIEW_VISUAL_CHART,
+            governed_observation_boundary=at)
+    with pytest.raises(VisualIdentityResolutionError, match="UNAVAILABLE"):
+        resolve(boundary - timedelta(microseconds=1))
+    result = resolve(boundary)
+    assert result.canonical_subject_identity == canonical
+    assert result.observed_visible_subject_identity == observed
+    assert result.publication_version == "1.3.0"
+    matches = [r for r in resolver.publication.relationships
+               if r.observed_visible_subject_identity == observed and r.active_at(boundary)]
+    assert len(matches) == 1
+    assert "OBSERVATION-BOUNDARY-2026-09-04T13:47:57+00:00" in matches[0].provenance
+
+
+@pytest.mark.parametrize("observed", ["Bharat Dynamics Ltd", "SRF Limited",
+    "Eicher Motors Limited ", "NTPC LIMITED", "NSE-EQ-TITAN"])
+def test_review_publication_does_not_normalize_current_answers(observed):
+    resolver = load_visual_identity_resolver(publication_version="1.3.0")
+    with pytest.raises(VisualIdentityResolutionError, match="UNAVAILABLE"):
+        resolver.resolve(observed_visible_subject_identity=observed,
+            source_context=VisualIdentitySourceContext.TRADINGVIEW_VISUAL_CHART,
+            governed_observation_boundary=datetime.fromisoformat("2026-09-04T13:47:57+00:00"))
+
+
+def test_review_publication_preserves_previous_relationships_and_explicit_selection():
+    previous = load_visual_identity_resolver(publication_version="1.1.0").publication
+    current = load_visual_identity_resolver(publication_version="1.3.0").publication
+    assert all(item in current.relationships for item in previous.relationships)
+    assert current.supersedes == previous.integrity_identity
+    assert len(current.relationships) == len(previous.relationships) + 8
+    assert load_default_visual_identity_resolver().publication.publication_version == "1.0.0"

@@ -5,6 +5,8 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 from kronos.application.intraday_review_v2 import IntradayReviewV2Application
 from kronos.browser.intraday_review_v2_control import (
     REVIEW_V2_STATUS_ROUTE,
@@ -438,6 +440,67 @@ def test_browser_creates_one_v2_combined_question_transport_after_chart_ready(
     assert snapshot.question_transport_identity is not None
 
 
+def test_browser_exposes_individual_pdf_and_exact_inbox_controls_without_picker(
+    tmp_path: Path,
+) -> None:
+    run, application, control = _control(tmp_path / "v2")
+    v1 = _application(tmp_path / "v1", [_run_v1((_member("V1-FIXTURE"),))])
+    routes = IntradayBrowserRoutes(
+        _Workstation(run), review=v1, review_v2_control=control
+    )
+    control.execute_document(_payload(run))
+    cycle = application.snapshot().candidates[0].cycle_identity
+    initial = routes.handle_get(BrowserGetRequest("/intraday/review", {}), _snapshot)
+    assert "CREATE REVIEW PDF" not in initial.body
+    assert "IMPORT ALL EXPECTED ANSWERS" in initial.body
+    assert "CHOOSE COMBINED ANSWER" not in initial.body
+    assert "intraday-v2-batch-answer" not in initial.body
+    application.upload_chart(cycle, media_type="image/png", payload=_png(82))
+    ready = routes.handle_get(BrowserGetRequest("/intraday/review", {}), _snapshot)
+    assert ready.body.count("CREATE REVIEW PDF") == 1
+    created = routes.handle_post(BrowserPostRequest(
+        REVIEW_V2_QUESTION_TRANSPORT_ROUTE,
+        {"cycle": [cycle]},
+        "application/x-www-form-urlencoded",
+        b"",
+    ), _snapshot)
+    assert created.status.value == 200
+    assert "QUESTION PACK READY" in created.body
+    assert "IMPORT EXPECTED ANSWER" in created.body
+    expected = application.snapshot().candidates[0].expected_answer_filename
+    assert expected is not None and expected in created.body
+    missing = routes.handle_post(BrowserPostRequest(
+        REVIEW_V2_ANSWER_IMPORT_ROUTE,
+        {"cycle": [cycle]},
+        "application/x-www-form-urlencoded",
+        b"",
+    ), _snapshot)
+    assert missing.status.value == 200
+    assert "NOT FOUND: 1" in missing.body
+
+
+def test_review_get_never_reads_or_polls_answer_inbox(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run, application, control = _control(tmp_path / "v2")
+    v1 = _application(tmp_path / "v1", [_run_v1((_member("V1-FIXTURE"),))])
+    routes = IntradayBrowserRoutes(
+        _Workstation(run), review=v1, review_v2_control=control
+    )
+    control.execute_document(_payload(run))
+    cycle = application.snapshot().candidates[0].cycle_identity
+    application.upload_chart(cycle, media_type="image/png", payload=_png(83))
+    application.create_individual_question_transport(cycle)
+    monkeypatch.setattr(
+        application._transport,  # noqa: SLF001
+        "read_expected_answer",
+        lambda *_: pytest.fail("GET polled governed Answer inbox"),
+    )
+    response = routes.handle_get(BrowserGetRequest("/intraday/review", {}), _snapshot)
+    assert response.status.value == 200
+    assert "IMPORT EXPECTED ANSWER" in response.body
+
+
 def test_browser_imports_one_exact_v2_batch_and_projects_visual_readiness(
     tmp_path: Path,
 ) -> None:
@@ -455,12 +518,16 @@ def test_browser_imports_one_exact_v2_batch_and_projects_visual_readiness(
     payload = _completed_batch_payload(
         transport.answer_template_path, "Reliance Industries Ltd"
     )
+    expected = application._transport.answer_inbox / (  # noqa: SLF001
+        transport.transport.expected_answer_filename
+    )
+    expected.write_bytes(payload)
     response = routes.handle_post(
         BrowserPostRequest(
             REVIEW_V2_ANSWER_IMPORT_ROUTE,
             {},
-            "application/json",
-            payload,
+            "",
+            b"",
         ),
         _snapshot,
     )
@@ -475,8 +542,8 @@ def test_browser_imports_one_exact_v2_batch_and_projects_visual_readiness(
         BrowserPostRequest(
             REVIEW_V2_ANSWER_IMPORT_ROUTE,
             {"filename": ["not-authority.json"]},
-            "application/json",
-            payload,
+            "",
+            b"",
         ),
         _snapshot,
     )

@@ -20,7 +20,7 @@ from kronos.intraday.review_mcx_paired import (
     McxPairedChartBundle,
     McxPairedReviewPack,
 )
-from kronos.intraday.review_mcx_paired_answer import answer_template
+from kronos.intraday.review_mcx_paired_answer import answer_template, MCX_REFERENCE_OBSERVATION_PLACEHOLDER
 
 
 MCX_PAIRED_TRANSPORT_IDENTITY = "KRONOS-INTRADAY-MCX-PAIRED-REVIEW-TRANSPORT-V1"
@@ -60,6 +60,7 @@ def create_paired_transport(
     *, pack: McxPairedReviewPack, bundle: McxPairedChartBundle,
     native_chart_payload: bytes, reference_chart_payload: bytes,
     generated_at: datetime,
+    supporting_reference_only: bool = False,
 ) -> tuple[McxPairedReviewTransport, bytes, bytes]:
     if (
         pack.paired_bundle_identity != bundle.bundle_identity
@@ -69,7 +70,11 @@ def create_paired_transport(
     ):
         raise ReviewError(ReviewFailure.INTEGRITY_INVALID)
     answer = answer_template(pack, bundle)
-    pdf = _render_pdf(pack, bundle, native_chart_payload, reference_chart_payload)
+    if supporting_reference_only:
+        document = json.loads(answer)
+        document["reference_observed_visible_identity"] = MCX_REFERENCE_OBSERVATION_PLACEHOLDER
+        answer = _canonical(document) + b"\n"
+    pdf = _render_pdf(pack, bundle, native_chart_payload, reference_chart_payload, supporting_reference_only)
     stem = f"KRONOS_INTRADAY_MCX_PAIRED_REVIEW_{pack.review_pack_identity[-12:]}"
     values = {
         "review_pack_identity": pack.review_pack_identity,
@@ -105,7 +110,7 @@ def transport_from_bytes(payload: bytes) -> McxPairedReviewTransport:
         raise ReviewError(ReviewFailure.INTEGRITY_INVALID) from error
 
 
-def _render_pdf(pack: McxPairedReviewPack, bundle: McxPairedChartBundle, native: bytes, reference: bytes) -> bytes:
+def _render_pdf(pack: McxPairedReviewPack, bundle: McxPairedChartBundle, native: bytes, reference: bytes, supporting_reference_only: bool = False) -> bytes:
     output = BytesIO()
     document = SimpleDocTemplate(output, pagesize=A4, leftMargin=15*mm, rightMargin=15*mm,
                                  topMargin=14*mm, bottomMargin=14*mm,
@@ -121,6 +126,8 @@ def _render_pdf(pack: McxPairedReviewPack, bundle: McxPairedChartBundle, native:
         Image(BytesIO(reference), width=175*mm, height=105*mm),
         PageBreak(), Paragraph("INDEPENDENT OBSERVATION QUESTIONS", styles["Heading1"]),
     ]
+    if supporting_reference_only:
+        story.insert(3, Paragraph("Observe native and reference visible series independently. The reference is supporting context only; no listed-contract membership is asserted or requested. Do not copy the governed native identity as a visual observation.", styles["BodyText"]))
     for question in MCX_PAIRED_QUESTIONS:
         story.append(Paragraph(f"{question.question_id} · {question.side} · {question.timeframe} · {question.observation}<br/>Allowed: {', '.join(question.allowed_answers)}", styles["BodyText"]))
         story.append(Spacer(1, 2*mm))

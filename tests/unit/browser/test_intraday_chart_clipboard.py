@@ -114,7 +114,7 @@ const test=process.argv[1], listeners={}, feedback={hidden:true,textContent:''},
 const target={id:'chart-1',dataset:{uploadUrl:'/control/intraday-review/v2/chart?cycle=CYCLE-1'},
  attrs:{},addEventListener:(n,f)=>listeners[n]=f,focus:()=>document.activeElement=target,
  getAttribute:n=>target.attrs[n],setAttribute:(n,v)=>target.attrs[n]=v,removeAttribute:n=>delete target.attrs[n],
- hasAttribute:n=>n==='data-review-v2-chart',closest:()=>({id:'review-candidate-RESULT-1'})};
+ hasAttribute:n=>n==='data-review-v2-chart',closest:()=>({id:'review-candidate-RESULT-1',querySelector:()=>null})};
 const file={type:test==='jpeg'?'image/jpeg':test==='unsupported'?'image/gif':'image/png',
  size:test==='large'?26214401:100};
 const input={dataset:{target:'chart-1'},files:[file],addEventListener:(n,f)=>listeners['file-'+n]=f};

@@ -33,6 +33,7 @@ from kronos.intraday.review_mcx_paired import (
 MCX_PAIRED_ANSWER_PACK_IDENTITY = "KRONOS-INTRADAY-MCX-PAIRED-ANSWER-PACK-V1"
 MCX_PAIRED_ANSWER_PACK_VERSION = "1.0.0"
 MAX_MCX_PAIRED_ANSWER_BYTES = 1_000_000
+MCX_REFERENCE_OBSERVATION_PLACEHOLDER = "REPLACE_WITH_EXACT_OBSERVED_REFERENCE_IDENTITY"
 _TOP_LEVEL = frozenset({
     "schema_identity", "schema_version", "question_set_identity",
     "question_set_version", "review_pack_identity", "paired_bundle_identity",
@@ -123,7 +124,7 @@ class McxPairedImportedVisualEvidence:
     native_resolution: VisualIdentityResolution
     reference_expected_visible_identity: str
     reference_observed_visible_identity: str
-    reference_resolution: VisualIdentityResolution
+    reference_resolution: VisualIdentityResolution | None
     native_answers: tuple[McxPairedAnswer, ...]
     reference_answers: tuple[McxPairedAnswer, ...]
     escape_hatch_answer: McxPairedAnswer
@@ -148,17 +149,27 @@ class McxPairedImportedVisualEvidence:
             or self.direction not in {"LONG", "SHORT"}
             or not _aware(self.analysis_boundary) or not _aware(self.imported_at)
             or type(self.native_resolution) is not VisualIdentityResolution
-            or type(self.reference_resolution) is not VisualIdentityResolution
-            or self.native_resolution.canonical_subject_identity != self.canonical_mcx_subject_identity
+            or (self.schema_version == MCX_PAIRED_CONTRACT_VERSION and type(self.reference_resolution) is not VisualIdentityResolution)
+            or (self.schema_version == "1.1.0" and self.reference_resolution is not None)
+            or self.native_resolution.canonical_subject_identity != (self.actual_derivative_contract_identity if self.schema_version == "1.1.0" else self.canonical_mcx_subject_identity)
             or self.native_resolution.observed_visible_subject_identity != self.native_observed_visible_identity
-            or self.reference_resolution.observed_visible_subject_identity != self.reference_observed_visible_identity
+            or (self.reference_resolution is not None and self.reference_resolution.observed_visible_subject_identity != self.reference_observed_visible_identity)
             or self.authority != "INDEPENDENT_VISUAL_OBSERVATION_ONLY"
             or self.schema_identity != MCX_PAIRED_IMPORTED_EVIDENCE_IDENTITY
-            or self.schema_version != MCX_PAIRED_CONTRACT_VERSION
+            or self.schema_version not in {MCX_PAIRED_CONTRACT_VERSION, "1.1.0"}
             or self.visual_evidence_identity != _identity("INTRADAY-MCX-PAIRED-VISUAL-EVIDENCE-", values)
             or self.integrity_identity != _identity("INTEGRITY-INTRADAY-MCX-PAIRED-VISUAL-EVIDENCE-", values)
         ):
             raise ReviewError(ReviewFailure.INTEGRITY_INVALID)
+
+
+    @property
+    def reference_constituent_relationship(self) -> str:
+        return "NOT_ESTABLISHED"
+
+    @property
+    def reference_role(self) -> str:
+        return "SUPPORTING_ONLY"
 
 
 def parse_mcx_paired_answer(payload: bytes) -> McxPairedAnswerPack:
@@ -197,6 +208,7 @@ def bind_mcx_paired_import(
     native_chart: McxPairedChartRevision, reference_chart: McxPairedChartRevision,
     answer: McxPairedAnswerPack, native_resolver: VisualIdentityResolver,
     reference_resolver: VisualIdentityResolver, imported_at: datetime,
+    supporting_reference_only: bool = False,
 ) -> McxPairedImportedVisualEvidence:
     if (
         type(pack) is not McxPairedReviewPack or type(bundle) is not McxPairedChartBundle
@@ -211,21 +223,24 @@ def bind_mcx_paired_import(
         or not _aware(imported_at)
     ):
         raise ReviewError(ReviewFailure.ANSWER_IDENTITY_MISMATCH)
+    if supporting_reference_only and answer.reference_observed_visible_identity == MCX_REFERENCE_OBSERVATION_PLACEHOLDER:
+        raise ReviewError(ReviewFailure.ANSWER_SCHEMA_INVALID)
     native = native_resolver.resolve(
         observed_visible_subject_identity=answer.native_observed_visible_identity,
         source_context=VisualIdentitySourceContext.TRADINGVIEW_VISUAL_CHART,
-        governed_observation_boundary=bundle.analysis_boundary,
+        governed_observation_boundary=(native_chart.received_at if supporting_reference_only else bundle.analysis_boundary),
     )
-    reference = reference_resolver.resolve(
+    reference = None if supporting_reference_only else reference_resolver.resolve(
         observed_visible_subject_identity=answer.reference_observed_visible_identity,
         source_context=VisualIdentitySourceContext.TRADINGVIEW_VISUAL_CHART,
         governed_observation_boundary=bundle.analysis_boundary,
     )
-    if (
-        native.canonical_subject_identity != bundle.canonical_mcx_subject_identity
-        or reference.canonical_subject_identity != bundle.reference_relationship.reference_analytical_subject_identity
-        or answer.reference_observed_visible_identity != bundle.reference_relationship.governed_visible_identity
-    ):
+    expected_native = (bundle.native_identity_binding.actual_derivative_contract_identity
+                       if supporting_reference_only else bundle.canonical_mcx_subject_identity)
+    if (native.canonical_subject_identity != expected_native
+        or not supporting_reference_only and (
+            reference.canonical_subject_identity != bundle.reference_relationship.reference_analytical_subject_identity
+            or answer.reference_observed_visible_identity != bundle.reference_relationship.governed_visible_identity)):
         raise ReviewError(ReviewFailure.ANSWER_IDENTITY_MISMATCH)
     values = {
         "answer_pack_identity": answer.answer_pack_identity,
@@ -251,7 +266,7 @@ def bind_mcx_paired_import(
         "imported_at": imported_at,
         "authority": "INDEPENDENT_VISUAL_OBSERVATION_ONLY",
         "schema_identity": MCX_PAIRED_IMPORTED_EVIDENCE_IDENTITY,
-        "schema_version": MCX_PAIRED_CONTRACT_VERSION,
+        "schema_version": "1.1.0" if supporting_reference_only else MCX_PAIRED_CONTRACT_VERSION,
     }
     return McxPairedImportedVisualEvidence(
         visual_evidence_identity=_identity("INTRADAY-MCX-PAIRED-VISUAL-EVIDENCE-", values),
@@ -300,6 +315,8 @@ def answer_artifact_from_bytes(payload: bytes) -> McxPairedAnswerPack | McxPaire
             values["imported_at"] = datetime.fromisoformat(values["imported_at"])
             for name in ("native_resolution", "reference_resolution"):
                 resolution = values[name]
+                if resolution is None:
+                    continue
                 resolution["source_context"] = VisualIdentitySourceContext(resolution["source_context"])
                 resolution["governed_observation_boundary"] = datetime.fromisoformat(resolution["governed_observation_boundary"])
                 values[name] = VisualIdentityResolution(**resolution)

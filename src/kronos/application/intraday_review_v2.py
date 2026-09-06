@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from hashlib import sha256
 import json
@@ -49,6 +49,7 @@ from kronos.intraday.review_v2_transport import (
     expected_transport_identity_v2,
 )
 from kronos.instrument.visual_identity import VisualIdentityResolver
+from kronos.application.intraday_review_v2_paired import IntradayReviewV2PairedAdapter
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,6 +74,9 @@ class IntradayReviewV2CandidateSnapshot:
     chart_revision_identity: str | None
     chart_revision_ordinal: int | None
     chart_payload_sha256: str | None
+    question_transport_identity: str | None = None
+    question_filename: str | None = None
+    expected_answer_filename: str | None = None
     answer_pack_identity: str | None = None
     visual_evidence_identity: str | None = None
     observed_visible_subject_identity: str | None = None
@@ -82,6 +86,11 @@ class IntradayReviewV2CandidateSnapshot:
     visual_identity_publication_version: str | None = None
     visual_identity_state: str = "NOT_RESOLVED"
     visual_evidence_state: str = "ABSENT"
+    native_contract_identity: str | None = None
+    native_binding_identity: str | None = None
+    reference_context_identity: str | None = None
+    paired_metadata_required: bool = False
+    reference_observed_identity: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -163,10 +172,33 @@ class IntradayReviewV2BatchImportResult:
 
 
 @dataclass(frozen=True, slots=True)
+class IntradayReviewV2InboxMemberResult:
+    canonical_subject_identity: str
+    expected_answer_filename: str
+    state: str
+    reason: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class IntradayReviewV2InboxImportResult:
+    mode: str
+    current_review_count: int
+    expected_count: int
+    found_count: int
+    imported_count: int
+    already_imported_count: int
+    not_found_count: int
+    rejected_count: int
+    members: tuple[IntradayReviewV2InboxMemberResult, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class _PreparedV2Import:
     validation: IntradayReviewV2PreImportValidation
     answers: tuple[ChartAnalystAnswerPack, ...]
     evidence: tuple[ImportedVisualEvidenceV2, ...]
+    already_imported: tuple[bool, ...] = ()
+    rejected: tuple[IntradayReviewV2InboxMemberResult, ...] = ()
 
 
 class IntradayReviewV2Application:
@@ -196,6 +228,7 @@ class IntradayReviewV2Application:
         self._visual_identity_resolver = visual_identity_resolver
         self._clock = clock
         self._lock = RLock()
+        self._paired = IntradayReviewV2PairedAdapter(review_store, self._transport)
 
     @property
     def review_store(self) -> IntradayReviewV2Store:
@@ -452,44 +485,31 @@ class IntradayReviewV2Application:
             )
         )
         packs: list[ReviewQuestionPackV2] = []
+        individual_transports: dict[str, ReviewBatchTransportV2] = {}
         for cycle in cycles:
-            active = self._review.load_current_chart(cycle.cycle_identity)
-            if active is None:
-                continue
-            chart = self._review.load_chart(active.chart_revision_identity)
-            handoff = self._review.load_handoff(cycle.handoff_identity)
-            expected = create_question_pack_v2(handoff, cycle, chart)
-            try:
-                retained = self._review.load_pack(expected.review_pack_identity)
-            except ReviewError as error:
-                if error.failure is not ReviewFailure.ARTIFACT_UNAVAILABLE:
-                    raise
-                continue
-            if retained != expected:
-                raise ReviewError(ReviewFailure.INTEGRITY_INVALID)
-            packs.append(retained)
+            retained = self._load_retained_current_pack(cycle)
+            if retained is not None:
+                packs.append(retained)
+                individual = self._load_retained_transport((retained,))
+                if individual is not None:
+                    individual_transports[cycle.cycle_identity] = individual
         batch = None
         transport = None
         if packs and len(packs) == len(cycles):
             expected_batch = create_question_batch_v2(tuple(packs))
-            try:
+            transport = self._load_retained_transport(tuple(packs))
+            if transport is not None:
                 batch = self._review.load_batch(expected_batch.batch_identity)
-                transport = self._review.load_transport(
-                    expected_transport_identity_v2(expected_batch)
-                )
-            except ReviewError as error:
-                if error.failure is not ReviewFailure.ARTIFACT_UNAVAILABLE:
-                    raise
-                batch = None
-                transport = None
-            if batch is not None and batch != expected_batch:
-                raise ReviewError(ReviewFailure.INTEGRITY_INVALID)
         ready_pack_ids = {item.review_pack_identity for item in packs}
         return IntradayReviewV2Snapshot(
             probables_run_identity=pointer.probables_run_identity,
             current_pointer_identity=pointer.integrity_identity,
             candidates=tuple(
-                self._candidate_snapshot(cycle, ready_pack_ids, transport is not None)
+                self._candidate_snapshot(
+                    cycle,
+                    ready_pack_ids,
+                    individual_transports.get(cycle.cycle_identity),
+                )
                 for cycle in cycles
             ),
             review_batch_identity=None if batch is None else batch.batch_identity,
@@ -506,11 +526,11 @@ class IntradayReviewV2Application:
         self,
         cycle: ReviewCycleV2,
         ready_pack_ids: set[str] | None = None,
-        transport_ready: bool = False,
+        transport: ReviewBatchTransportV2 | None = None,
     ) -> IntradayReviewV2CandidateSnapshot:
         active = self._review.load_current_chart(cycle.cycle_identity)
         pack_ready = False
-        if active is not None and ready_pack_ids is not None:
+        if active is not None and ready_pack_ids is not None and not cycle.canonical_subject_identity.startswith("MCX-SUBJECT-"):
             chart = self._review.load_chart(active.chart_revision_identity)
             handoff = self._review.load_handoff(cycle.handoff_identity)
             pack_ready = (
@@ -526,7 +546,7 @@ class IntradayReviewV2Application:
                     self._review.load_chart(active.chart_revision_identity),
                 ).review_pack_identity
             )
-        return IntradayReviewV2CandidateSnapshot(
+        candidate = IntradayReviewV2CandidateSnapshot(
             sponsor_label=_sponsor_label(cycle.canonical_subject_identity),
             canonical_subject_identity=cycle.canonical_subject_identity,
             direction=cycle.direction,
@@ -539,7 +559,8 @@ class IntradayReviewV2Application:
             chart_state="CHART_REQUIRED" if active is None else "CHART_READY",
             review_pack_state="READY" if pack_ready else "ABSENT",
             question_pack_state=(
-                "TRANSPORT_READY" if pack_ready and transport_ready else "ABSENT"
+                "TRANSPORT_READY" if pack_ready and transport is not None
+                else "CREATED" if pack_ready else "ABSENT"
             ),
             answer_state="IMPORTED" if evidence is not None else cycle.answer_state.value,
             cycle_identity=cycle.cycle_identity,
@@ -562,6 +583,15 @@ class IntradayReviewV2Application:
             ),
             chart_payload_sha256=(
                 None if active is None else active.payload_sha256
+            ),
+            question_transport_identity=(
+                None if transport is None else transport.transport_identity
+            ),
+            question_filename=(
+                None if transport is None else transport.question_filename
+            ),
+            expected_answer_filename=(
+                None if transport is None else transport.expected_answer_filename
             ),
             answer_pack_identity=(
                 None if evidence is None else evidence.answer_pack_identity
@@ -593,6 +623,79 @@ class IntradayReviewV2Application:
             visual_identity_state="MATCH" if evidence is not None else "NOT_RESOLVED",
             visual_evidence_state="READY" if evidence is not None else "ABSENT",
         )
+
+        if not cycle.canonical_subject_identity.startswith("MCX-SUBJECT-"):
+            return candidate
+        options = {}
+        try:
+            options = self._paired.options(cycle)
+        except ReviewError:
+            pass
+        candidate = replace(candidate, paired_metadata_required=True,
+            chart_state="CHART_REQUIRED", **options)
+        if active is None:
+            return candidate
+        chart = self._review.load_chart(active.chart_revision_identity)
+        if chart.paired_bundle_identity is None:
+            return candidate
+        self._paired.restore(cycle, chart)
+        candidate = replace(candidate, chart_state="CHART_READY", paired_metadata_required=False)
+        retained = self._paired.retained(cycle, chart)
+        if retained is None:
+            return candidate
+        pack, transport = retained[3:5]
+        evidence = self._paired.store.load_evidence_for_pack(pack.review_pack_identity)
+        return replace(candidate, review_pack_state="READY", question_pack_state="TRANSPORT_READY",
+            question_transport_identity=transport.transport_identity,
+            question_filename=transport.question_filename, expected_answer_filename=transport.expected_answer_filename,
+            answer_state="IMPORTED" if evidence else "NOT_IMPORTED",
+            answer_pack_identity=evidence.answer_pack_identity if evidence else None,
+            visual_evidence_identity=evidence.visual_evidence_identity if evidence else None,
+            visual_identity_state="MATCH" if evidence else "NOT_RESOLVED",
+            visual_evidence_state="READY" if evidence else "ABSENT",
+            observed_visible_subject_identity=evidence.native_observed_visible_identity if evidence else None,
+            resolved_canonical_subject_identity=cycle.canonical_subject_identity if evidence else None,
+            reference_observed_identity=evidence.reference_observed_visible_identity if evidence else None)
+
+    def _load_retained_current_pack(
+        self, cycle: ReviewCycleV2,
+    ) -> ReviewQuestionPackV2 | None:
+        if cycle.canonical_subject_identity.startswith("MCX-SUBJECT-"):
+            return None
+        active = self._review.load_current_chart(cycle.cycle_identity)
+        if active is None:
+            return None
+        expected = create_question_pack_v2(
+            self._review.load_handoff(cycle.handoff_identity),
+            cycle,
+            self._review.load_chart(active.chart_revision_identity),
+        )
+        try:
+            retained = self._review.load_pack(expected.review_pack_identity)
+        except ReviewError as error:
+            if error.failure is ReviewFailure.ARTIFACT_UNAVAILABLE:
+                return None
+            raise
+        if retained != expected:
+            raise ReviewError(ReviewFailure.INTEGRITY_INVALID)
+        return retained
+
+    def _load_retained_transport(
+        self, packs: tuple[ReviewQuestionPackV2, ...],
+    ) -> ReviewBatchTransportV2 | None:
+        expected_batch = create_question_batch_v2(packs)
+        try:
+            batch = self._review.load_batch(expected_batch.batch_identity)
+            transport = self._review.load_transport(
+                expected_transport_identity_v2(expected_batch)
+            )
+        except ReviewError as error:
+            if error.failure is ReviewFailure.ARTIFACT_UNAVAILABLE:
+                return None
+            raise
+        if batch != expected_batch or transport.review_batch_identity != batch.batch_identity:
+            raise ReviewError(ReviewFailure.INTEGRITY_INVALID)
+        return transport
 
     def validate_combined_answer(
         self, payload: bytes,
@@ -663,6 +766,393 @@ class IntradayReviewV2Application:
                 members=tuple(members),
             )
 
+    def _current_cycle_chart(self, cycle_identity):
+        pointer = self._review.load_current()
+        if pointer is None or cycle_identity not in {item.cycle_identity for item in pointer.cycles}:
+            raise ReviewError(ReviewFailure.NOT_CURRENT)
+        cycle = self._review.load_cycle(cycle_identity)
+        active = self._review.load_current_chart(cycle_identity)
+        if active is None:
+            raise ReviewError(ReviewFailure.CHART_REQUIRED)
+        return cycle, self._review.load_chart(active.chart_revision_identity)
+
+    def _include_paired_imports(self, result, cycles):
+        members = {item.canonical_subject_identity: item for item in result.members}
+        for cycle in cycles:
+            if not cycle.canonical_subject_identity.startswith("MCX-SUBJECT-"):
+                continue
+            active = self._review.load_current_chart(cycle.cycle_identity)
+            if active is None:
+                continue
+            chart = self._review.load_chart(active.chart_revision_identity)
+            if chart.paired_bundle_identity is None or self._paired.retained(cycle, chart) is None:
+                continue
+            paired = self._paired.import_expected(cycle, chart, self._clock())
+            members.update({item.canonical_subject_identity: item for item in paired.members})
+        values = tuple(members.values())
+        return replace(result, members=values, expected_count=len(values),
+            found_count=sum(x.state != "NOT_FOUND" for x in values),
+            imported_count=sum(x.state == "IMPORTED" for x in values),
+            already_imported_count=sum(x.state == "ALREADY_IMPORTED" for x in values),
+            not_found_count=sum(x.state == "NOT_FOUND" for x in values),
+            rejected_count=sum(x.state == "REJECTED" for x in values))
+
+    def import_expected_answer(
+        self, cycle_identity: str,
+    ) -> IntradayReviewV2InboxImportResult:
+        """Import only one current candidate's exact expected inbox file."""
+
+        with self._lock:
+            cycle, chart = self._current_cycle_chart(cycle_identity)
+            if cycle.canonical_subject_identity.startswith("MCX-SUBJECT-"):
+                return self._paired.import_expected(cycle, chart, self._clock())
+            pack = self._current_pack(cycle_identity, require_retained=True)
+            transport = self._load_retained_transport((pack,))
+            if transport is None:
+                raise ReviewError(ReviewFailure.ARTIFACT_UNAVAILABLE)
+            return self._import_inbox_transport(transport, current_review_count=1)
+
+    def import_all_expected_answers(self) -> IntradayReviewV2InboxImportResult:
+        """Import exact current Answers on Sponsor request; never poll the inbox."""
+
+        with self._lock:
+            pointer = self._review.load_current()
+            if pointer is None:
+                raise ReviewError(ReviewFailure.NOT_CURRENT)
+            cycles = tuple(
+                self._review.load_cycle(item.cycle_identity) for item in pointer.cycles
+            )
+            packs = tuple(
+                pack for cycle in cycles
+                if (pack := self._load_retained_current_pack(cycle)) is not None
+            )
+            # Existing governed combined mode has precedence only when its exact
+            # expected file is present. Otherwise independent current Answers
+            # are considered, so partial availability remains useful.
+            combined = self._current_run_combined_transport(cycles)
+            if combined is not None:
+                try:
+                    payload = self._transport.read_expected_answer(
+                        combined.expected_answer_filename
+                    )
+                except ReviewError as error:
+                    return IntradayReviewV2InboxImportResult(
+                        mode="COMBINED",
+                        current_review_count=len(cycles),
+                        expected_count=len(cycles),
+                        found_count=len(cycles),
+                        imported_count=0,
+                        already_imported_count=0,
+                        not_found_count=0,
+                        rejected_count=len(cycles),
+                        members=tuple(
+                            IntradayReviewV2InboxMemberResult(
+                                item.canonical_subject_identity,
+                                combined.expected_answer_filename,
+                                "REJECTED",
+                                error.failure.value,
+                            ) for item in cycles
+                        ),
+                    )
+                if payload is not None:
+                    return self._include_paired_imports(self._import_inbox_transport(
+                        combined, current_review_count=len(cycles), payload=payload, mode="COMBINED"), cycles)
+            totals = {
+                "expected_count": 0,
+                "found_count": 0,
+                "imported_count": 0,
+                "already_imported_count": 0,
+                "not_found_count": 0,
+                "rejected_count": 0,
+            }
+            members: list[IntradayReviewV2InboxMemberResult] = []
+            for pack in packs:
+                transport = self._load_retained_transport((pack,))
+                if transport is None:
+                    continue
+                result = self._import_inbox_transport(
+                    transport, current_review_count=len(cycles)
+                )
+                for name in totals:
+                    totals[name] += getattr(result, name)
+                members.extend(result.members)
+            return self._include_paired_imports(IntradayReviewV2InboxImportResult(
+                mode="INDIVIDUAL",
+                current_review_count=len(cycles),
+                members=tuple(members),
+                **totals,
+            ), cycles)
+
+    def _current_run_combined_transport(self, cycles):
+        """Unique retained full-population transport; stale members reject individually.
+
+        No filename, mtime or directory-order preference is used. Multiple
+        matching transports are ambiguous and fail closed.
+        """
+        # Mixed batches retain one ordinary NSE transport plus independent paired
+        # transports. Select the exact current NSE population deterministically.
+        nse_cycles = tuple(cycle for cycle in cycles
+                           if not cycle.canonical_subject_identity.startswith("MCX-SUBJECT-"))
+        current_packs = tuple(self._load_retained_current_pack(cycle) for cycle in nse_cycles)
+        if current_packs and all(pack is not None for pack in current_packs):
+            current = self._load_retained_transport(current_packs)
+            if current is not None:
+                return current
+        expected = {item.cycle_identity: item.canonical_subject_identity for item in cycles}
+        matches = []
+        for path in (self._review.root / "question-batches").glob("*.json"):
+            batch = self._review.load_batch(path.stem)
+            if (not cycles or batch.probables_run_identity != cycles[0].probables_run_identity
+                or dict(zip(batch.review_cycle_identities, batch.candidate_identities, strict=True)) != expected):
+                continue
+            try:
+                transport = self._review.load_transport(expected_transport_identity_v2(batch))
+            except ReviewError as error:
+                if error.failure is ReviewFailure.ARTIFACT_UNAVAILABLE:
+                    continue
+                raise
+            if transport.review_batch_identity != batch.batch_identity:
+                raise ReviewError(ReviewFailure.INTEGRITY_INVALID)
+            matches.append(transport)
+        if len(matches) > 1:
+            raise ReviewError(ReviewFailure.ANSWER_CONFLICT)
+        return matches[0] if matches else None
+
+    def _import_inbox_transport(
+        self,
+        transport: ReviewBatchTransportV2,
+        *,
+        current_review_count: int,
+        payload: bytes | None = None,
+        mode: str = "INDIVIDUAL",
+    ) -> IntradayReviewV2InboxImportResult:
+        filename = transport.expected_answer_filename
+        candidate_count = transport.candidate_count
+        candidate_names = tuple(
+            self._review.load_batch(transport.review_batch_identity).candidate_identities
+        )
+        try:
+            supplied = (
+                payload if payload is not None
+                else self._transport.read_expected_answer(filename)
+            )
+            if supplied is None:
+                return IntradayReviewV2InboxImportResult(
+                    mode=mode,
+                    current_review_count=current_review_count,
+                    expected_count=candidate_count,
+                    found_count=0,
+                    imported_count=0,
+                    already_imported_count=0,
+                    not_found_count=candidate_count,
+                    rejected_count=0,
+                    members=tuple(
+                        IntradayReviewV2InboxMemberResult(
+                            item, filename, "NOT_FOUND"
+                        ) for item in candidate_names
+                    ),
+                )
+            prepared = self._prepare_transport_answer(transport, supplied)
+            if prepared.evidence:
+                self._persist_prepared_answer(prepared, supplied)
+            members = tuple(
+                IntradayReviewV2InboxMemberResult(
+                    evidence.expected_canonical_subject_identity,
+                    filename,
+                    "ALREADY_IMPORTED" if already else "IMPORTED",
+                )
+                for evidence, already in zip(
+                    prepared.evidence, prepared.already_imported, strict=True
+                )
+            )
+            members += prepared.rejected
+            already_count = sum(prepared.already_imported)
+            return IntradayReviewV2InboxImportResult(
+                mode=mode,
+                current_review_count=current_review_count,
+                expected_count=candidate_count,
+                found_count=candidate_count,
+                imported_count=len(prepared.evidence) - already_count,
+                already_imported_count=already_count,
+                not_found_count=0,
+                rejected_count=len(prepared.rejected),
+                members=members,
+            )
+        except ReviewError as error:
+            return IntradayReviewV2InboxImportResult(
+                mode=mode,
+                current_review_count=current_review_count,
+                expected_count=candidate_count,
+                found_count=candidate_count,
+                imported_count=0,
+                already_imported_count=0,
+                not_found_count=0,
+                rejected_count=candidate_count,
+                members=tuple(
+                    IntradayReviewV2InboxMemberResult(
+                        item, filename, "REJECTED", error.failure.value
+                    ) for item in candidate_names
+                ),
+            )
+
+    def _prepare_transport_answer(
+        self, transport: ReviewBatchTransportV2, payload: bytes,
+    ) -> _PreparedV2Import:
+        if (
+            type(payload) is not bytes
+            or not 0 < len(payload) <= MAX_ANSWER_BYTES
+            or self._visual_identity_resolver is None
+            or self._review.load_transport(transport.transport_identity) != transport
+        ):
+            raise ReviewError(ReviewFailure.ANSWER_SCHEMA_INVALID)
+        batch = self._review.load_batch(transport.review_batch_identity)
+        answer_transport = parse_batch_answer_transport(payload)
+        pointer = self._review.load_current()
+        if (
+            pointer is None
+            or pointer.probables_run_identity != batch.probables_run_identity
+            or answer_transport.review_batch_identity != batch.batch_identity
+            or answer_transport.probables_run_identity != batch.probables_run_identity
+        ):
+            raise ReviewError(ReviewFailure.ANSWER_IDENTITY_MISMATCH)
+        current_members = {item.cycle_identity: item for item in pointer.cycles}
+        packs: list[ReviewQuestionPackV2] = []
+        for cycle_identity, pack_identity, candidate_identity in zip(
+            batch.review_cycle_identities,
+            batch.review_pack_identities,
+            batch.candidate_identities,
+            strict=True,
+        ):
+            member = current_members.get(cycle_identity)
+            if member is None or member.canonical_subject_identity != candidate_identity:
+                raise ReviewError(ReviewFailure.ANSWER_IDENTITY_MISMATCH)
+            pack = self._review.load_pack(pack_identity)
+            if (pack.review_cycle_identity != cycle_identity
+                or pack.expected_canonical_subject_identity != candidate_identity
+                or pack.probables_run_identity != batch.probables_run_identity):
+                raise ReviewError(ReviewFailure.ANSWER_IDENTITY_MISMATCH)
+            packs.append(pack)
+        documents = answer_transport.candidate_documents
+        parsed = tuple(
+            parse_answer_pack(json.dumps(
+                document, sort_keys=True, separators=(",", ":")
+            ).encode())
+            for document in documents
+        )
+        identities = tuple(item.review_pack_identity for item in parsed)
+        if (
+            len(identities) != len(set(identities))
+            or set(identities) != set(batch.review_pack_identities)
+        ):
+            raise ReviewError(ReviewFailure.ANSWER_IDENTITY_MISMATCH)
+        pack_by_identity = {item.review_pack_identity: item for item in packs}
+        prepared = []
+        rejected = []
+        imported_at = self._clock()
+        for answer in parsed:
+            pack = pack_by_identity[answer.review_pack_identity]
+            try:
+                # The generic V2 pack cannot qualify paired MCX contract evidence.
+                # Retained generic packs remain available only for exact transport
+                # accounting and history, never as a native acceptance fallback.
+                if pack.expected_canonical_subject_identity.startswith("MCX-SUBJECT-"):
+                    raise ReviewError(ReviewFailure.CHART_INVALID)
+                if self._current_pack(pack.review_cycle_identity, require_retained=True) != pack:
+                    raise ReviewError(ReviewFailure.NOT_CURRENT)
+                existing = self._review.load_visual_evidence_for_pack(
+                    pack.review_pack_identity
+                )
+                if existing is not None:
+                    if existing.answer_pack_identity != answer.answer_pack_identity:
+                        raise ReviewError(ReviewFailure.ANSWER_CONFLICT)
+                    prepared.append((answer, existing, True))
+                    continue
+                evidence = bind_imported_visual_evidence_v2(
+                    pack,
+                    answer,
+                    imported_at=imported_at,
+                    visual_identity_resolver=self._visual_identity_resolver,
+                )
+                prepared.append((answer, evidence, False))
+            except ReviewError as error:
+                rejected.append(IntradayReviewV2InboxMemberResult(
+                    pack.expected_canonical_subject_identity,
+                    transport.expected_answer_filename,
+                    "REJECTED",
+                    error.failure.value,
+                ))
+        ordered = tuple(sorted(
+            prepared, key=lambda item: item[1].expected_canonical_subject_identity
+        ))
+        validation = IntradayReviewV2PreImportValidation(
+            review_batch_identity=batch.batch_identity,
+            source_sha256=answer_transport.source_sha256,
+            candidate_count=len(parsed),
+            exact_match_count=len(ordered),
+            identity_mismatch_count=len(rejected),
+            schema_invalid_count=0,
+            conflict_count=0,
+            duplicate_count=0,
+            missing_count=0,
+            extra_count=0,
+        )
+        return _PreparedV2Import(
+            validation=validation,
+            answers=tuple(item[0] for item in ordered),
+            evidence=tuple(item[1] for item in ordered),
+            already_imported=tuple(item[2] for item in ordered),
+            rejected=tuple(rejected),
+        )
+
+    def _persist_prepared_answer(
+        self, prepared: _PreparedV2Import, payload: bytes,
+    ) -> None:
+        self._review.retain_batch_answer_transport(
+            prepared.validation.review_batch_identity, payload
+        )
+        for answer, evidence, already in zip(
+            prepared.answers,
+            prepared.evidence,
+            prepared.already_imported,
+            strict=True,
+        ):
+            if already:
+                continue
+            self._review.retain_answer_transport(
+                evidence.review_pack_identity,
+                json.dumps(
+                    _answer_document(answer), sort_keys=True, separators=(",", ":")
+                ).encode(),
+            )
+            self._review.retain_visual_evidence(evidence)
+            self._review.save_visual_evidence_pointer(
+                create_visual_evidence_pointer_v2(evidence)
+            )
+
+    def _current_pack(
+        self, cycle_identity: str, *, require_retained: bool,
+    ) -> ReviewQuestionPackV2:
+        pointer = self._review.load_current()
+        if pointer is None or not any(
+            item.cycle_identity == cycle_identity for item in pointer.cycles
+        ):
+            raise ReviewError(ReviewFailure.NOT_CURRENT)
+        cycle = self._review.load_cycle(cycle_identity)
+        active = self._review.load_current_chart(cycle_identity)
+        if active is None:
+            raise ReviewError(ReviewFailure.CHART_REQUIRED)
+        expected = create_question_pack_v2(
+            self._review.load_handoff(cycle.handoff_identity),
+            cycle,
+            self._review.load_chart(active.chart_revision_identity),
+        )
+        if not require_retained:
+            return expected
+        retained = self._review.load_pack(expected.review_pack_identity)
+        if retained != expected:
+            raise ReviewError(ReviewFailure.INTEGRITY_INVALID)
+        return retained
+
     def _prepare_combined_answer(self, payload: bytes) -> _PreparedV2Import:
         if (
             type(payload) is not bytes
@@ -721,6 +1211,8 @@ class IntradayReviewV2Application:
                 raise ReviewError(ReviewFailure.ANSWER_IDENTITY_MISMATCH)
             if self._review.load_visual_evidence_for_pack(pack.review_pack_identity) is not None:
                 raise ReviewError(ReviewFailure.ANSWER_CONFLICT)
+            if pack.expected_canonical_subject_identity.startswith("MCX-SUBJECT-"):
+                raise ReviewError(ReviewFailure.CHART_INVALID)
             bound = bind_imported_visual_evidence_v2(
                 pack,
                 answer,
@@ -757,6 +1249,7 @@ class IntradayReviewV2Application:
         *,
         media_type: str,
         payload: bytes,
+        paired_metadata: dict[str, str] | None = None,
     ) -> ChartRevisionV2:
         """Retain one exact-cycle chart without mutating the Review Cycle."""
 
@@ -781,6 +1274,11 @@ class IntradayReviewV2Application:
             ):
                 raise ReviewError(ReviewFailure.INTEGRITY_INVALID)
 
+            is_mcx = cycle.canonical_subject_identity.startswith("MCX-SUBJECT-")
+            if is_mcx:
+                self._paired.validate_metadata(cycle, paired_metadata)
+            elif paired_metadata is not None:
+                raise ReviewError(ReviewFailure.CHART_INVALID)
             request = create_chart_intake_request_v2(
                 cycle,
                 payload=payload,
@@ -793,11 +1291,21 @@ class IntradayReviewV2Application:
                 active_pointer is not None
                 and active_pointer.payload_sha256 == sha256(payload).hexdigest()
                 and active_pointer.media_type == media_type
+                and (not is_mcx or self._review.load_chart(active_pointer.chart_revision_identity).paired_bundle_identity is not None)
             ):
-                return self._review.load_chart(
-                    active_pointer.chart_revision_identity
-                )
+                retained = self._review.load_chart(active_pointer.chart_revision_identity)
+                if not is_mcx:
+                    return retained
+                bundle, _, _ = self._paired.restore(cycle, retained)
+                if (bundle.native_identity_binding.active_binding_identity == paired_metadata["native_binding_identity"]
+                    and bundle.native_identity_binding.actual_derivative_contract_identity == paired_metadata["native_contract_identity"]
+                    and bundle.reference_relationship.governed_visible_identity == paired_metadata["reference_context_identity"]):
+                    return retained
 
+            ordinal = 1 if active_pointer is None else active_pointer.revision_ordinal + 1
+            received_at = self._clock()
+            bundle = (self._paired.prepare(cycle, paired_metadata, payload, media_type, ordinal, received_at)
+                      if is_mcx else None)
             chart = create_chart_revision_v2(
                 cycle,
                 revision_ordinal=(
@@ -806,7 +1314,8 @@ class IntradayReviewV2Application:
                 ),
                 payload=payload,
                 media_type=media_type,
-                received_at=self._clock(),
+                received_at=received_at,
+                paired_bundle_identity=bundle.bundle_identity if bundle else None,
                 request_identity=request.request_identity,
             )
             current = create_current_chart_pointer_v2(cycle, request, chart)
@@ -822,37 +1331,80 @@ class IntradayReviewV2Application:
             if pointer is None or not pointer.cycles:
                 raise ReviewError(ReviewFailure.NOT_CURRENT)
             entries: list[tuple[ReviewQuestionPackV2, bytes]] = []
+            paired_results = []
             for cycle_pointer in pointer.cycles:
                 cycle = self._review.load_cycle(cycle_pointer.cycle_identity)
                 active = self._review.load_current_chart(cycle.cycle_identity)
                 if active is None:
                     raise ReviewError(ReviewFailure.CHART_REQUIRED)
                 chart = self._review.load_chart(active.chart_revision_identity)
+                if cycle.canonical_subject_identity.startswith("MCX-SUBJECT-"):
+                    paired_results.append(self._paired.create(cycle, chart))
+                    continue
                 handoff = self._review.load_handoff(cycle.handoff_identity)
                 pack = create_question_pack_v2(handoff, cycle, chart)
                 entries.append((pack, self._review.load_chart_bytes(chart)))
-            ordered = tuple(sorted(
-                entries,
-                key=lambda item: item[0].expected_canonical_subject_identity,
-            ))
-            packs = tuple(pack for pack, _ in ordered)
-            for pack in packs:
-                self._review.retain_pack(pack)
-            batch = create_question_batch_v2(packs)
-            self._review.retain_batch(batch)
-            transport, question_path, answer_path = self._transport.export(
-                batch, ordered
+            return self._create_question_transport(tuple(entries)) if entries else paired_results[0]
+
+    def create_individual_question_transport(
+        self, cycle_identity: str,
+    ) -> IntradayReviewV2BatchResult:
+        """Create one exact-current candidate transport using batch primitives."""
+
+        with self._lock:
+            pointer = self._review.load_current()
+            if pointer is None:
+                raise ReviewError(ReviewFailure.NOT_CURRENT)
+            member = next(
+                (item for item in pointer.cycles if item.cycle_identity == cycle_identity),
+                None,
             )
-            self._review.retain_transport(
-                transport, question_path.read_bytes(), answer_path.read_bytes()
+            if member is None:
+                raise ReviewError(ReviewFailure.NOT_CURRENT)
+            cycle = self._review.load_cycle(cycle_identity)
+            if (
+                cycle.probables_run_identity != pointer.probables_run_identity
+                or cycle.probable_result_identity != member.probable_result_identity
+                or cycle.canonical_subject_identity != member.canonical_subject_identity
+                or cycle.direction != member.direction
+            ):
+                raise ReviewError(ReviewFailure.INTEGRITY_INVALID)
+            active = self._review.load_current_chart(cycle_identity)
+            if active is None:
+                raise ReviewError(ReviewFailure.CHART_REQUIRED)
+            chart = self._review.load_chart(active.chart_revision_identity)
+            if cycle.canonical_subject_identity.startswith("MCX-SUBJECT-"):
+                return self._paired.create(cycle, chart)
+            pack = create_question_pack_v2(
+                self._review.load_handoff(cycle.handoff_identity), cycle, chart
             )
-            return IntradayReviewV2BatchResult(
-                batch=batch,
-                transport=transport,
-                packs=packs,
-                question_path=question_path,
-                answer_template_path=answer_path,
+            return self._create_question_transport(
+                ((pack, self._review.load_chart_bytes(chart)),)
             )
+
+    def _create_question_transport(
+        self, entries: tuple[tuple[ReviewQuestionPackV2, bytes], ...],
+    ) -> IntradayReviewV2BatchResult:
+        ordered = tuple(sorted(
+            entries,
+            key=lambda item: item[0].expected_canonical_subject_identity,
+        ))
+        packs = tuple(pack for pack, _ in ordered)
+        for pack in packs:
+            self._review.retain_pack(pack)
+        batch = create_question_batch_v2(packs)
+        self._review.retain_batch(batch)
+        transport, question_path, answer_path = self._transport.export(batch, ordered)
+        self._review.retain_transport(
+            transport, question_path.read_bytes(), answer_path.read_bytes()
+        )
+        return IntradayReviewV2BatchResult(
+            batch=batch,
+            transport=transport,
+            packs=packs,
+            question_path=question_path,
+            answer_template_path=answer_path,
+        )
 
     def create_eligible_cycles(self, run: ProbablesRunV2) -> tuple[ReviewCycleV2, ...]:
         """Retain cycles only after exact persisted V2 lineage has been proven."""
@@ -1057,6 +1609,8 @@ __all__ = [
     "IntradayReviewV2PreImportValidation",
     "IntradayReviewV2ImportMemberResult",
     "IntradayReviewV2BatchImportResult",
+    "IntradayReviewV2InboxImportResult",
+    "IntradayReviewV2InboxMemberResult",
     "IntradayReviewV2CandidateSnapshot",
     "IntradayReviewV2Snapshot",
 ]
