@@ -1951,6 +1951,11 @@ class SwingTradeWindowWorkflow:
     def mark_paper_observation_monitoring_unavailable(self, reason: str) -> None:
         self._paper_observation_tracking.mark_monitoring_unavailable(reason)
 
+    def record_paper_observation_monitoring_failure(
+        self, track_identity: str, reason: str
+    ) -> None:
+        self._paper_observation_tracking.record_monitoring_failure(track_identity, reason)
+
     def paper_observation_projections(
         self,
     ) -> tuple[PaperObservationTrackProjectionV1, ...]:

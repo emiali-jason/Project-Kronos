@@ -6,6 +6,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime
 from enum import StrEnum
+import logging
 import re
 from threading import RLock, Thread
 import time
@@ -689,6 +690,11 @@ class SwingOpportunitiesApplication:
         self.__relative_context_evidence_store = relative_context_evidence_store
         self.__live_monitoring_timeout_seconds = live_monitoring_timeout_seconds
         self.__lock = RLock()
+        self.__authentication_lock = RLock()
+        self.__connection_transition_lock = RLock()
+        self.__connection_generation = 0
+        self.__connection_started_generation = 0
+        self.__sponsor_operability_restorer: Callable[[object], None] | None = None
         self.__provider: _ProviderRuntime | None = None
         self.__progression_watch_workflow: object | None = None
         self.__analysis_attempt_count = 0
@@ -972,6 +978,10 @@ class SwingOpportunitiesApplication:
     def connect_provider(self) -> bool:
         """Begin one explicit Sponsor connection without blocking HTTP serving."""
 
+        with self.__connection_transition_lock:
+            return self.__connect_provider()
+
+    def __connect_provider(self) -> bool:
         with self.__lock:
             if self.__snapshot.provider_state in {
                 ProviderConnectionState.CONNECTING,
@@ -986,8 +996,21 @@ class SwingOpportunitiesApplication:
             self.__live_monitoring_result = LiveMonitoringTestResult(
                 LiveMonitoringTestState.NOT_TESTED
             )
-        self.__background_runner(self.__complete_connection, "kronos-browser-auth")
+            self.__connection_generation += 1
+            generation = self.__connection_generation
+        self.__background_runner(
+            lambda: self.__complete_connection(generation), "kronos-browser-auth"
+        )
         return True
+
+    def register_sponsor_operability_restorer(
+        self, restorer: Callable[[object], None]
+    ) -> None:
+        """Bind the existing Browser restoration boundary, not monitoring authority."""
+        if not callable(restorer):
+            raise TypeError("BROWSER_APPLICATION_DEPENDENCY_INVALID")
+        with self.__lock:
+            self.__sponsor_operability_restorer = restorer
 
     def register_progression_watch_workflow(self, workflow: object) -> None:
         """Bind the product-local watch lifecycle without exposing Provider state."""
@@ -1134,6 +1157,10 @@ class SwingOpportunitiesApplication:
     def disconnect_provider(self) -> bool:
         """Release the authenticated Provider context outside an active analysis."""
 
+        with self.__connection_transition_lock:
+            return self.__disconnect_provider()
+
+    def __disconnect_provider(self) -> bool:
         with self.__lock:
             if (
                 self.__snapshot.provider_state is not ProviderConnectionState.CONNECTED
@@ -1143,6 +1170,7 @@ class SwingOpportunitiesApplication:
                 return False
             provider = self.__provider
             workflow = self.__progression_watch_workflow
+            self.__connection_generation += 1
             self.__provider = None
             self.__snapshot = replace(
                 self.__snapshot,
@@ -1162,7 +1190,12 @@ class SwingOpportunitiesApplication:
         return True
 
     def close(self) -> None:
+        with self.__connection_transition_lock:
+            self.__close()
+
+    def __close(self) -> None:
         with self.__lock:
+            self.__connection_generation += 1
             provider = self.__provider
             workflow = self.__progression_watch_workflow
             self.__provider = None
@@ -1178,7 +1211,21 @@ class SwingOpportunitiesApplication:
             except Exception:
                 pass
 
-    def __complete_connection(self) -> None:
+    def __complete_connection(self, generation: int) -> None:
+        # Serialize candidate contexts too: disposing an obsolete candidate must
+        # never dispose a newer connection on the shared Provider runtime.
+        with self.__authentication_lock:
+            with self.__lock:
+                if (
+                    generation != self.__connection_generation
+                    or generation == self.__connection_started_generation
+                    or self.__snapshot.provider_state is not ProviderConnectionState.CONNECTING
+                ):
+                    return
+                self.__connection_started_generation = generation
+            self.__authenticate_connection(generation)
+
+    def __authenticate_connection(self, generation: int) -> None:
         provider: _ProviderRuntime | None = None
         try:
             provider = self.__provider_factory()
@@ -1202,6 +1249,8 @@ class SwingOpportunitiesApplication:
                 except Exception:
                     pass
             with self.__lock:
+                if generation != self.__connection_generation:
+                    return
                 self.__provider = None
                 self.__snapshot = replace(
                     self.__snapshot,
@@ -1209,19 +1258,48 @@ class SwingOpportunitiesApplication:
                     provider_failure="PROVIDER_CONNECTION_FAILED",
                 )
             return
-        with self.__lock:
-            self.__provider = provider
-            workflow = self.__progression_watch_workflow
-            self.__snapshot = replace(
-                self.__snapshot,
-                provider_state=ProviderConnectionState.CONNECTED,
-                provider_failure="",
-            )
-        if workflow is not None:
-            try:
-                workflow.restore_active(capability)
-            except Exception:
-                workflow.close_monitoring()
+        with self.__connection_transition_lock:
+            with self.__lock:
+                current = (
+                    generation == self.__connection_generation
+                    and self.__snapshot.provider_state is ProviderConnectionState.CONNECTING
+                )
+                if current:
+                    self.__provider = provider
+                    workflow = self.__progression_watch_workflow
+                    restorer = self.__sponsor_operability_restorer
+                    self.__snapshot = replace(
+                        self.__snapshot,
+                        provider_state=ProviderConnectionState.CONNECTED,
+                        provider_failure="",
+                    )
+            if not current:
+                try:
+                    provider.end_kronos_session()
+                except Exception:
+                    pass
+                return
+            if workflow is not None:
+                try:
+                    workflow.restore_active(capability)
+                except Exception:
+                    workflow.close_monitoring()
+            if restorer is not None:
+                with self.__lock:
+                    if (
+                        generation != self.__connection_generation
+                        or self.__provider is not provider
+                        or getattr(capability, "active", False) is not True
+                    ):
+                        return
+                try:
+                    restorer(capability)
+                except Exception:
+                    # Authentication success is not monitoring success. Do not
+                    # publish raw Provider exceptions or undo valid authentication.
+                    logging.getLogger(__name__).warning(
+                        "Sponsor monitoring restoration did not complete"
+                    )
 
     def __complete_live_monitoring_test(self, canonical_instrument: str) -> None:
         with self.__lock:

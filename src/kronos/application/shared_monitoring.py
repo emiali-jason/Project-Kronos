@@ -212,6 +212,29 @@ class _SharedRegistration:
         self._connected = False
 
     @property
+    def active(self) -> bool:
+        """Current registration/subscription evidence, not a connection claim."""
+        with self._hub._lock:
+            return (
+                self._connected
+                and self._hub._registrations.get(id(self)) is self
+                and self._hub._session is not None
+                and self._hub._capability is self._capability
+                and getattr(self._capability, "active", False) is True
+                and bool(self._instruments)
+                and all(
+                    id(self) in self._hub._by_instrument.get(instrument, ())
+                    for instrument in self._instruments
+                )
+            )
+
+    @property
+    def connection_state(self) -> MonitoringConnectionState | None:
+        """Only the shared session's observed callback state can be CONNECTED."""
+        with self._hub._lock:
+            return self._hub._connection_state if self.active else None
+
+    @property
     def owner_identity(self) -> str:
         value = getattr(self._consumer, "owner_identity", type(self._consumer).__name__)
         return value if type(value) is str and value else "UNIDENTIFIED_CONSUMER"

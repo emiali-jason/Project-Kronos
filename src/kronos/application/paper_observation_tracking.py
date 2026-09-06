@@ -11,7 +11,7 @@ from zoneinfo import ZoneInfo
 
 from kronos.application.shared_monitoring import SharedSwingMonitoringHub
 from kronos.market.calendar import MarketCalendarPublisher
-from kronos.provider.contracts.instrument import InstrumentRecord
+from kronos.provider.contracts.instrument import InstrumentRecord, InstrumentResolutionError
 from kronos.provider.contracts.market_data import (
     HistoricalCandle,
     HistoricalCandleRequest,
@@ -19,6 +19,8 @@ from kronos.provider.contracts.market_data import (
 )
 from kronos.provider.contracts.monitoring import (
     MonitoringConnectionState,
+    MonitoringError,
+    MonitoringFailure,
     ProviderMarketTick,
     ProviderOrderUpdateEvidence,
 )
@@ -42,6 +44,18 @@ from kronos.swing.v1.sponsor_observation_decision import (
 
 
 PAPER_OBSERVATION_TRACK_OWNER_IDENTITY = "PAPER_OBSERVATION_TRACK"
+
+
+def paper_monitoring_failure_reason(error: Exception) -> str:
+    """Allowlisted existing vocabulary only; never retain arbitrary exceptions."""
+    if isinstance(error, (MonitoringError, InstrumentResolutionError)):
+        return error.failure.value
+    value = str(error)
+    if value in {"KITE_READ_ONLY_CAPABILITY_UNAVAILABLE", "SHARED_MONITORING_CAPABILITY_UNAVAILABLE"}:
+        return "PROVIDER_CAPABILITY_NOT_ACTIVE"
+    if value in {item.value for item in MonitoringFailure}:
+        return value
+    return "FACTUAL_MONITORING_REGISTRATION_FAILED"
 
 
 class PaperObservationTrackingWorkflow:
@@ -111,6 +125,9 @@ class PaperObservationTrackingWorkflow:
         projection = self._store.projection(track_identity)
         if projection.track_state is PaperObservationTrackState.COMPLETE:
             return projection
+        if getattr(capability, "active", False) is not True:
+            self.record_monitoring_failure(track_identity, "PROVIDER_CAPABILITY_NOT_ACTIVE")
+            return self._store.projection(track_identity)
         if (
             type(instrument) is not InstrumentRecord
             or (
@@ -127,6 +144,13 @@ class PaperObservationTrackingWorkflow:
             return self._store.projection(track_identity)
         with self._lock:
             if track_identity in self._registrations:
+                if self._consumers[track_identity]._capability is not capability:
+                    self.record_monitoring_failure(track_identity, "CAPABILITY_UNAVAILABLE")
+                    return self._store.projection(track_identity)
+                if self._consumers[track_identity]._instrument != instrument:
+                    self.record_monitoring_failure(track_identity, "GOVERNED_INSTRUMENT_BINDING_INVALID")
+                    return self._store.projection(track_identity)
+                self._reconcile_registration(track_identity)
                 return self._store.projection(track_identity)
             hub = self._hub
             if hub is None:
@@ -149,25 +173,67 @@ class PaperObservationTrackingWorkflow:
                 registration = hub.open(capability, consumer)
                 registration.subscribe((instrument,))
                 registration.connect()
-            except (TypeError, ValueError):
+            except Exception as error:
                 if registration is not None:
-                    registration.disconnect()
-                self._retain_monitoring(
-                    track_identity,
-                    PaperObservationMonitoringState.NOT_ACTIVE,
-                    "FACTUAL_MONITORING_REGISTRATION_FAILED",
-                    self._clock(),
-                )
+                    try:
+                        registration.disconnect()
+                    except Exception:
+                        pass
+                self.record_monitoring_failure(track_identity, paper_monitoring_failure_reason(error))
                 return self._store.projection(track_identity)
             self._consumers[track_identity] = consumer
             self._registrations[track_identity] = registration
-            self._retain_monitoring(
-                track_identity,
-                PaperObservationMonitoringState.ACTIVE,
-                "SHARED_HUB_REGISTRATION_ACTIVE",
-                self._clock(),
-            )
+            self._reconcile_registration(track_identity)
         return self._store.projection(track_identity)
+
+    def _reconcile_registration(self, track_identity: str) -> None:
+        registration = self._registrations[track_identity]
+        current = self._store.projection(track_identity)
+        # Transport repair must not erase factual ordering/gap failures.
+        repairable = {
+            "MONITORING_CAPABILITY_NOT_YET_REGISTERED", "PROVIDER_CAPABILITY_NOT_ACTIVE",
+            "CAPABILITY_UNAVAILABLE", "PROVIDER_DISCONNECTED",
+            "SHARED_MONITORING_HUB_UNAVAILABLE", "FACTUAL_MONITORING_REGISTRATION_FAILED",
+            "GOVERNED_INSTRUMENT_RESOLUTION_UNAVAILABLE", "INSTRUMENT_NOT_RESOLVED",
+            "SHARED_HUB_REGISTRATION_ACTIVE", "SHARED_MONITORING_CONNECTED",
+            "OBSERVATION_MONITORING_INTERRUPTED",
+        }
+        if current.monitoring_reason not in repairable:
+            return
+        # An authentication marker may have overwritten an ordering/gap failure.
+        # A still-connected socket from before that failure is not its resolution.
+        for record in reversed(self._store.monitoring(track_identity)):
+            if record.reason == "SHARED_MONITORING_CONNECTED":
+                break
+            if record.reason not in repairable:
+                self._retain_monitoring(
+                    track_identity, record.state, record.reason, self._clock()
+                )
+                return
+        if not registration.active:
+            self.record_monitoring_failure(track_identity, "OBSERVATION_MONITORING_INTERRUPTED")
+            return
+        state = registration.connection_state
+        if state is not None:
+            self.observe_connection_state(track_identity, state)
+        else:
+            self._retain_monitoring(
+                track_identity, PaperObservationMonitoringState.ACTIVE,
+                "SHARED_HUB_REGISTRATION_ACTIVE", self._clock(),
+            )
+
+    def record_monitoring_failure(self, track_identity: str, reason: str) -> None:
+        """Record failure for the affected Track only, preserving immutable history."""
+        current = self._store.projection(track_identity)
+        if current.track_state is PaperObservationTrackState.COMPLETE:
+            return
+        state = (
+            PaperObservationMonitoringState.INTERRUPTED
+            if current.monitoring_state in {
+                PaperObservationMonitoringState.ACTIVE, PaperObservationMonitoringState.INTERRUPTED,
+            } else PaperObservationMonitoringState.NOT_ACTIVE
+        )
+        self._retain_monitoring(track_identity, state, reason, self._clock())
 
     def restore_monitoring(
         self,
@@ -176,6 +242,9 @@ class PaperObservationTrackingWorkflow:
     ) -> tuple[str, ...]:
         if not callable(resolver):
             raise TypeError("PAPER_OBSERVATION_INSTRUMENT_RESOLVER_INVALID")
+        if getattr(capability, "active", False) is not True:
+            self.mark_monitoring_unavailable("PROVIDER_CAPABILITY_NOT_ACTIVE")
+            return ()
         restored = []
         for track in self._store.load_all_tracks():
             projection = self._store.projection(track.track_identity)
@@ -183,12 +252,9 @@ class PaperObservationTrackingWorkflow:
                 continue
             try:
                 instrument = resolver(track.canonical_instrument)
-            except (TypeError, ValueError):
-                self._retain_monitoring(
-                    track.track_identity,
-                    PaperObservationMonitoringState.NOT_ACTIVE,
-                    "GOVERNED_INSTRUMENT_RESOLUTION_UNAVAILABLE",
-                    self._clock(),
+            except Exception as error:
+                self.record_monitoring_failure(
+                    track.track_identity, paper_monitoring_failure_reason(error)
                 )
                 continue
             result = self.attach_monitoring(
@@ -622,14 +688,15 @@ class PaperObservationTrackingWorkflow:
         reason: str,
         recorded_at: datetime,
     ) -> None:
-        current = self._store.monitoring(track_identity)
-        if current and current[-1].state is state and current[-1].reason == reason:
-            return
-        if current and recorded_at <= current[-1].recorded_at:
-            recorded_at = current[-1].recorded_at + timedelta(microseconds=1)
-        self._store.append_monitoring(
-            make_monitoring_record(track_identity, state, reason, recorded_at)
-        )
+        with self._lock:
+            current = self._store.monitoring(track_identity)
+            if current and current[-1].state is state and current[-1].reason == reason:
+                return
+            if current and recorded_at <= current[-1].recorded_at:
+                recorded_at = current[-1].recorded_at + timedelta(microseconds=1)
+            self._store.append_monitoring(
+                make_monitoring_record(track_identity, state, reason, recorded_at)
+            )
 
     def _complete_registration(self, track_identity: str) -> None:
         with self._lock:

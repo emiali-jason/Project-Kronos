@@ -11,10 +11,11 @@ import json
 import logging
 from pathlib import Path
 import re
-from threading import Lock, Thread
+from threading import Lock, RLock, Thread
 from urllib.parse import parse_qs, quote, unquote, urlencode, urlsplit
 from uuid import uuid4
 
+from kronos.application.paper_observation_tracking import paper_monitoring_failure_reason
 from kronos.application.swing_opportunities import SwingOpportunitiesApplication
 from kronos.application.provider_instrument_master_operation import (
     ProviderInstrumentMasterOperationalComposition,
@@ -375,6 +376,7 @@ class KronosBrowserServer(ThreadingHTTPServer):
         self.intraday_historical_control = intraday_historical_control
         self._shutdown_lock = Lock()
         self._swing_projection_lock = Lock()
+        self._sponsor_restoration_lock = RLock()
         self._shutdown_started = False
         self._active_sponsor_work = 0
         self.product_routes = (
@@ -604,6 +606,9 @@ class KronosBrowserServer(ThreadingHTTPServer):
         self.trade_window.restore(self.visual_v3.completed_snapshot())
         self.trade_window.synchronize_downstream(self.native_review.snapshot())
         self.progression_snapshot()
+        self.application.register_sponsor_operability_restorer(
+            self.restore_sponsor_operability
+        )
         self.restore_sponsor_operability()
         self.ux10_notifications.retry_pending()
         self._swing_projection_revision_value = (
@@ -612,13 +617,14 @@ class KronosBrowserServer(ThreadingHTTPServer):
         super().__init__(address, _BrowserHandler)
 
     def server_close(self) -> None:
+        # Invalidate pending authentication before disposing its restoration owners.
+        self.application.close()
         self.refresh_reminders.close()
         self.progression_watches.close_monitoring()
         self.native_review.close()
         self.trade_window.close_monitoring()
         self.swing_monitoring_hub.close()
         self.step32_workflow.close()
-        self.application.close()
         if self.restart_control is not None:
             self.restart_control.remove()
         super().server_close()
@@ -1070,13 +1076,19 @@ class KronosBrowserServer(ThreadingHTTPServer):
             safe_bounded_reason=reason,
         )
 
-    def restore_sponsor_operability(self) -> None:
+    def restore_sponsor_operability(self, completed_capability: object | None = None) -> None:
         """Restore persisted controls and shared monitoring without creating analysis."""
 
+        with self._sponsor_restoration_lock:
+            self._restore_sponsor_operability(completed_capability)
+
+    def _restore_sponsor_operability(self, completed_capability: object | None) -> None:
         capability_getter = getattr(
             self.application, "authenticated_read_only_capability", None
         )
         capability = capability_getter() if callable(capability_getter) else None
+        if completed_capability is not None and capability is not completed_capability:
+            return
         if capability is None or getattr(capability, "active", False) is not True:
             self.trade_window.mark_paper_observation_monitoring_unavailable(
                 "PROVIDER_CAPABILITY_NOT_ACTIVE"
@@ -1098,14 +1110,15 @@ class KronosBrowserServer(ThreadingHTTPServer):
                 )
                 self.native_review.bind_operability_inputs(plan, risk, context)
                 self.trade_window.mark_sponsor_controls_available(plan.trade_plan_id)
-            except ValueError:
+            except Exception as error:
+                _LOG.warning("Sponsor operability restoration not active: %s", paper_monitoring_failure_reason(error))
                 continue
         try:
             self.trade_window.restore_current_entry_monitoring(
                 capability, resolve_governed_monitoring_instrument
             )
-        except ValueError as error:
-            _LOG.warning("KR380 restoration not active: %s", error)
+        except Exception as error:
+            _LOG.warning("KR380 restoration not active: %s", paper_monitoring_failure_reason(error))
         try:
             self.trade_window.restore_paper_observation_monitoring(
                 capability,
@@ -1113,8 +1126,8 @@ class KronosBrowserServer(ThreadingHTTPServer):
                     capability, instrument, datetime.now().astimezone().date()
                 ),
             )
-        except ValueError as error:
-            _LOG.warning("Paper observation restoration not active: %s", error)
+        except Exception as error:
+            _LOG.warning("Paper observation restoration not active: %s", paper_monitoring_failure_reason(error))
         try:
             restored = self.native_review.restore_lifecycle_monitoring(
                 capability,
@@ -1122,9 +1135,9 @@ class KronosBrowserServer(ThreadingHTTPServer):
                     capability, instrument, datetime.now().astimezone().date()
                 ),
             )
-        except ValueError as error:
+        except Exception as error:
             restored = ()
-            _LOG.warning("Active lifecycle restoration not active: %s", error)
+            _LOG.warning("Active lifecycle restoration not active: %s", paper_monitoring_failure_reason(error))
         lifecycle = self.native_review.snapshot().active_lifecycle
         for position_id in restored:
             position = next(
@@ -1815,7 +1828,6 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             return
         if path == "/provider/connect":
             self.server.application.connect_provider()
-            self.server.restore_sponsor_operability()
             self._redirect("/swing/opportunities")
             return
         if path == "/provider/disconnect":
@@ -2790,9 +2802,9 @@ class _BrowserHandler(BaseHTTPRequestHandler):
                 self.server.trade_window.attach_paper_observation_monitoring(
                     track.track.track_identity, capability, governed_instrument
                 )
-            except ValueError:
-                self.server.trade_window.mark_paper_observation_monitoring_unavailable(
-                    "PROVIDER_CAPABILITY_NOT_ACTIVE"
+            except Exception as error:
+                self.server.trade_window.record_paper_observation_monitoring_failure(
+                    track.track.track_identity, paper_monitoring_failure_reason(error)
                 )
             self.server._synchronize_trade_window()
         except (UnicodeDecodeError, ValueError):
