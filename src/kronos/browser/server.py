@@ -1151,6 +1151,9 @@ class KronosBrowserServer(ThreadingHTTPServer):
     def native_review_version(self) -> str:
         """Select by the persisted current Review identity, never module presence."""
 
+        if self.visual_v3_live.restoration_error is not None:
+            # Failed V3 restoration must not silently activate historical V2.
+            return "V3"
         review = self.native_review.snapshot()
         run_identity = review.native_run_identity
         if self.visual_v3_live.is_current_run(run_identity):

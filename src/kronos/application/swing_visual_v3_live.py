@@ -47,6 +47,7 @@ class SwingVisualV3LiveSnapshot:
     answer_imports: tuple[VisualV3AnswerImportRecord, ...]
     current_run: bool
     completed_instruments: tuple[str, ...]
+    restoration_error: str | None = None
 
 
 class SwingVisualV3LiveWorkflow:
@@ -68,11 +69,21 @@ class SwingVisualV3LiveWorkflow:
         self.cycle = cycle
         self.transport = transport
         self._clock = clock
-        self._pack = transport.record_store.load_current()
-        self._imports = (
-            () if self._pack is None
-            else transport.record_store.load_imports(self._pack.review_pack_id)
-        )
+        self.restoration_error: str | None = None
+        self._pack: VisualV3LiveReviewPack | None = None
+        self._imports: tuple[VisualV3AnswerImportRecord, ...] = ()
+        try:
+            pack = transport.record_store.load_current()
+            imports = (
+                () if pack is None
+                else transport.record_store.load_imports(pack.review_pack_id)
+            )
+        except (OSError, ValueError):
+            # Retained evidence remains invalid and untouched. An unavailable
+            # Review must not prevent unrelated Browser workflows from starting.
+            self.restoration_error = "VISUAL_V3_RESTORATION_UNAVAILABLE"
+        else:
+            self._pack, self._imports = pack, imports
 
     def is_current_run(self, run_identity: str | None) -> bool:
         return self._pack is not None and self._pack.native_run_identity == run_identity
@@ -91,6 +102,7 @@ class SwingVisualV3LiveWorkflow:
                 for item in self.cycle.completed_snapshot()
                 if item.requirement.native_run_identity == run_identity
             ),
+            self.restoration_error,
         )
 
     def generate(
@@ -114,6 +126,7 @@ class SwingVisualV3LiveWorkflow:
         )
         imports = self.transport.record_store.load_imports(record.review_pack_id)
         self._pack, self._imports = record, imports
+        self.restoration_error = None
         return record
 
     def upload(
@@ -362,6 +375,8 @@ class SwingVisualV3LiveWorkflow:
         return selected, skipped
 
     def _require_current(self, run_identity: str | None) -> VisualV3LiveReviewPack:
+        if self.restoration_error is not None:
+            raise PdfReviewTransportError(self.restoration_error)
         if self._pack is None:
             raise PdfReviewTransportError("VISUAL_V3_REVIEW_PACK_UNAVAILABLE")
         if self._pack.native_run_identity != run_identity:

@@ -3621,6 +3621,15 @@ def render_v1_review(
         )
     if mcx_context is not None:
         body = _mcx_context_strip(mcx_context) + body
+    if visual_v3_live is not None and visual_v3_live.restoration_error is not None:
+        body = (
+            '<div class="review-note batch-preflight" role="alert">'
+            '<strong>SAVED V3 REVIEW UNAVAILABLE</strong><br>'
+            'The saved Review Pack could not be validated. '
+            'Its evidence has been preserved and Answer import is unavailable. '
+            'Create a new Review Pack from the current valid charts to continue.'
+            '</div>' + body
+        )
     body += _chart_upload_script()
     return _page(
         title="Review",
