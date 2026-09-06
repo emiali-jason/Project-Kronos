@@ -5489,7 +5489,7 @@ def _page(
 </aside><main class="main"><header class="topbar"><div class="title">{back_link}<h1>{escape(title)}</h1><p>{escape(subtitle)}</p></div>
 <div class="kite"><span class="dot {snapshot.provider_state.value}"></span><strong>Kite: {snapshot.provider_state.value}</strong>{_connect_form(snapshot)}</div></header>
 {tabs}<div class="content">{body}</div><div class="footer">KRONOS Browser V1 · Local Mode</div></main></div>
-<script>const initial=document.body.dataset.statusSignature;const swingRevision=document.body.dataset.swingProjectionRevision;setInterval(async()=>{{try{{const r=await fetch('/status',{{cache:'no-store'}});if(!r.ok)return;const parts=[s.provider,s.analysis,s.completed_at||''];if(swingRevision!==undefined)parts.push(s.swing_projection_revision||'');if(parts.join('|')!==initial)location.reload();}}catch(_e){{}}}},1500);</script>
+<script>const initial=document.body.dataset.statusSignature;const swingRevision=document.body.dataset.swingProjectionRevision;setInterval(async()=>{{try{{const r=await fetch('/status',{{cache:'no-store'}});if(!r.ok)return;const s=await r.json();const parts=[s.provider,s.analysis,s.completed_at||''];if(swingRevision!==undefined)parts.push(s.swing_projection_revision||'');if(parts.join('|')!==initial)location.reload();}}catch(_e){{}}}},1500);</script>
 </body></html>"""
 
 
