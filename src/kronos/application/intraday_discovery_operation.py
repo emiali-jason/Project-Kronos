@@ -13,6 +13,9 @@ from typing import Callable
 from kronos.application.intraday_discovery import IntradayDiscoveryApplication
 from kronos.application.intraday_probables import IntradayProbablesApplication
 from kronos.application.intraday_probables_v2 import IntradayProbablesV2Application
+from kronos.intraday.analysis_time import (
+    AnalysisTimeAdmissionError, admit_analysis_time, trusted_now,
+)
 from kronos.intraday.discovery import DiscoveryError, DiscoveryFailure
 from kronos.intraday.discovery_persistence import NativeDiscoveryStore
 from kronos.intraday.discovery_runtime import (
@@ -149,6 +152,7 @@ class DiscoveryOperationFailure(StrEnum):
     PUBLICATION_UNAVAILABLE = "PUBLICATION_UNAVAILABLE"
     MARKET_SESSION_UNAVAILABLE = "MARKET_SESSION_UNAVAILABLE"
     OBSERVATION_BOUNDARY_INVALID = "OBSERVATION_BOUNDARY_INVALID"
+    OBSERVATION_BOUNDARY_FUTURE = "OBSERVATION_BOUNDARY_FUTURE"
     PROVIDER_ACQUISITION_FAILURE = "PROVIDER_ACQUISITION_FAILURE"
     MANDATORY_TIMEFRAME_UNAVAILABLE = "MANDATORY_TIMEFRAME_UNAVAILABLE"
     INCOMPLETE_CANDLE_UNAUTHORIZED = "INCOMPLETE_CANDLE_UNAUTHORIZED"
@@ -228,6 +232,7 @@ class DiscoveryOperationResult:
     snapshot_updated: bool
     failure: DiscoveryOperationFailure | None
     completed_at: datetime
+    trusted_admission_time: datetime | None = None
 
     def __post_init__(self) -> None:
         if (
@@ -239,6 +244,8 @@ class DiscoveryOperationResult:
             or type(self.stage) is not DiscoveryOperationStage
             or not _aware(self.observation_boundary)
             or not _aware(self.completed_at)
+            or (self.trusted_admission_time is not None
+                and not _aware(self.trusted_admission_time))
             or any(type(value) is not int or value < 0 for value in (
                 self.universe_count,
                 self.pre_evaluable_count,
@@ -313,7 +320,7 @@ class IntradayDiscoveryOperationService:
         active_derivative_catalogue: InstrumentSemanticPublicationV2 | None = None,
         active_derivative_binding_store: ActiveDerivativeBindingStore | None = None,
         provider_snapshot_store: ProviderInstrumentSnapshotStore | None = None,
-        clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
+        clock: Callable[[], datetime] = trusted_now,
     ) -> None:
         if (
             type(provider_runtime) is not SharedAuthenticatedProviderRuntime
@@ -441,10 +448,23 @@ class IntradayDiscoveryOperationService:
             completed = self._results.get(request.operation_identity)
             if completed is not None:
                 return completed
+            try:
+                trusted_admission_at = admit_analysis_time(
+                    request.observation_boundary, self._clock,
+                )
+            except AnalysisTimeAdmissionError as error:
+                if error.failure is not DiscoveryFailure.OBSERVATION_BOUNDARY_FUTURE:
+                    raise
+                return self._unstarted(
+                    request, state=DiscoveryOperationState.FAILED,
+                    stage=DiscoveryOperationStage.OBSERVATION_BOUNDARY,
+                    failure=DiscoveryOperationFailure.OBSERVATION_BOUNDARY_FUTURE,
+                    trusted_admission_time=error.trusted_admission_time,
+                )
             if self._active_identity is not None:
-                return self._conflict(request)
+                return self._unstarted(request)
             if not self._refresh_admission.begin(request.operation_identity):
-                return self._conflict(request)
+                return self._unstarted(request)
             self._active_identity = request.operation_identity
             self._last_active_derivative_resolutions = None
             self._last_provider_snapshot_identity = None
@@ -465,7 +485,12 @@ class IntradayDiscoveryOperationService:
                     if lifecycle is SharedProviderRuntimeLifecycle.EXPIRED
                     else DiscoveryOperationFailure.CONTEXT_UNAVAILABLE
                 )
-                return self._finish(request, stage=stage, failure=failure)
+                return self._finish(
+                    request,
+                    trusted_admission_time=trusted_admission_at,
+                    stage=stage,
+                    failure=failure,
+                )
             stage = DiscoveryOperationStage.UNIVERSE_RESOLUTION
             self._universe.require_current(request.observation_boundary)
             stage = DiscoveryOperationStage.RECONCILIATION_RESOLUTION
@@ -479,6 +504,7 @@ class IntradayDiscoveryOperationService:
             ):
                 return self._finish(
                     request,
+                    trusted_admission_time=trusted_admission_at,
                     stage=stage,
                     failure=DiscoveryOperationFailure.PUBLICATION_STALE,
                 )
@@ -548,6 +574,7 @@ class IntradayDiscoveryOperationService:
             if not lease.active:
                 return self._finish(
                     request,
+                    trusted_admission_time=trusted_admission_at,
                     stage=stage,
                     failure=DiscoveryOperationFailure.LEASE_UNAVAILABLE,
                 )
@@ -591,6 +618,7 @@ class IntradayDiscoveryOperationService:
                 store=self._store,
                 runtime_evaluable_member_ids=runtime_mcx_member_ids,
                 additional_source_identities=active_sources,
+                clock=lambda: trusted_admission_at,
             )
             stage = DiscoveryOperationStage.DISCOVERY_RUN_CONSTRUCTION
             execution = service.execute(boundary)
@@ -598,6 +626,7 @@ class IntradayDiscoveryOperationService:
             if self._store.load_run(run_identity=execution.run.run_identity) != execution.run:
                 return self._finish(
                     request,
+                    trusted_admission_time=trusted_admission_at,
                     stage=stage,
                     failure=DiscoveryOperationFailure.PERSISTENCE_FAILURE,
                 )
@@ -683,6 +712,7 @@ class IntradayDiscoveryOperationService:
                     )
             return self._finish(
                 request,
+                trusted_admission_time=trusted_admission_at,
                 stage=DiscoveryOperationStage.COMPLETE,
                 execution=execution,
                 mapping=mapping,
@@ -696,10 +726,16 @@ class IntradayDiscoveryOperationService:
                 if error.failure is ProviderRuntimeFailure.CONTEXT_EXPIRED
                 else DiscoveryOperationFailure.LEASE_UNAVAILABLE
             )
-            return self._finish(request, stage=stage, failure=failure)
+            return self._finish(
+                request,
+                trusted_admission_time=trusted_admission_at,
+                stage=stage,
+                failure=failure,
+            )
         except ProviderInstrumentMasterError:
             return self._finish(
                 request,
+                trusted_admission_time=trusted_admission_at,
                 stage=stage,
                 failure=DiscoveryOperationFailure.PROVIDER_ACQUISITION_FAILURE,
             )
@@ -709,16 +745,23 @@ class IntradayDiscoveryOperationService:
                 if error.failure is IntradayUniverseFailure.PUBLICATION_STALE
                 else DiscoveryOperationFailure.OPERATION_UNAVAILABLE
             )
-            return self._finish(request, stage=stage, failure=failure)
+            return self._finish(
+                request,
+                trusted_admission_time=trusted_admission_at,
+                stage=stage,
+                failure=failure,
+            )
         except DiscoveryError as error:
             return self._finish(
                 request,
+                trusted_admission_time=trusted_admission_at,
                 stage=stage,
                 failure=DiscoveryOperationFailure(error.failure.value),
             )
         except DiscoveryProbablesMappingError as error:
             return self._finish(
                 request,
+                trusted_admission_time=trusted_admission_at,
                 stage=stage,
                 failure=DiscoveryOperationFailure.PROBABLES_MAPPING_FAILURE,
                 execution=execution,
@@ -728,6 +771,7 @@ class IntradayDiscoveryOperationService:
         except ProbablesV2Error as error:
             return self._finish(
                 request,
+                trusted_admission_time=trusted_admission_at,
                 stage=stage,
                 failure=(
                     DiscoveryOperationFailure.PROBABLES_MAPPING_FAILURE
@@ -744,6 +788,7 @@ class IntradayDiscoveryOperationService:
         except ProbablesError:
             return self._finish(
                 request,
+                trusted_admission_time=trusted_admission_at,
                 stage=stage,
                 failure=DiscoveryOperationFailure.PROBABLES_REFRESH_FAILURE,
                 execution=execution,
@@ -770,6 +815,7 @@ class IntradayDiscoveryOperationService:
             }.get(stage, DiscoveryOperationFailure.OPERATION_UNAVAILABLE)
             return self._finish(
                 request,
+                trusted_admission_time=trusted_admission_at,
                 stage=stage,
                 failure=failure,
                 execution=execution,
@@ -815,6 +861,7 @@ class IntradayDiscoveryOperationService:
         historical_request_count: int = 0,
         replay_envelope: ProbablesV2ReplayEnvelope | None = None,
         diagnostic_error: BaseException | None = None,
+        trusted_admission_time: datetime | None = None,
     ) -> DiscoveryOperationResult:
         failure_detail: ProbablesV2FailureDetail | None = None
         if (
@@ -934,21 +981,29 @@ class IntradayDiscoveryOperationService:
             snapshot_updated=execution is not None,
             failure=failure,
             completed_at=completed_at,
+            trusted_admission_time=trusted_admission_time,
         )
         with self._lock:
             self._results[request.operation_identity] = result
         return result
 
-    def _conflict(self, request: DiscoveryOperationRequest) -> DiscoveryOperationResult:
+    def _unstarted(
+        self, request: DiscoveryOperationRequest, *,
+        state: DiscoveryOperationState = DiscoveryOperationState.CONFLICT,
+        stage: DiscoveryOperationStage = DiscoveryOperationStage.CONTEXT_VERIFICATION,
+        failure: DiscoveryOperationFailure = DiscoveryOperationFailure.OPERATION_CONFLICT,
+        trusted_admission_time: datetime | None = None,
+    ) -> DiscoveryOperationResult:
+        """Admission rejection: no run, market failure or current-pointer write."""
         pre_evaluable = sum(
             item.dimensions.machine_fact_consumability is Availability.AVAILABLE
             for item in self._reconciliation.members
         )
         return DiscoveryOperationResult(
             operation_identity=request.operation_identity,
-            state=DiscoveryOperationState.CONFLICT,
+            state=state,
             context_state=self._runtime.lifecycle_state.value,
-            stage=DiscoveryOperationStage.CONTEXT_VERIFICATION,
+            stage=stage,
             observation_boundary=request.observation_boundary,
             universe_count=len(self._universe.members),
             pre_evaluable_count=pre_evaluable,
@@ -967,8 +1022,9 @@ class IntradayDiscoveryOperationService:
             probables_provider_request_count=0,
             persistence_complete=False,
             snapshot_updated=False,
-            failure=DiscoveryOperationFailure.OPERATION_CONFLICT,
+            failure=failure,
             completed_at=self._clock(),
+            trusted_admission_time=trusted_admission_time,
         )
 
 

@@ -159,6 +159,7 @@ def operation_result_document(result: DiscoveryOperationResult) -> dict[str, obj
         "snapshot_updated": result.snapshot_updated,
         "failure": None if result.failure is None else result.failure.value,
         "completed_at": result.completed_at.isoformat(),
+        "trusted_admission_time": _timestamp(result.trusted_admission_time),
     }
 
 

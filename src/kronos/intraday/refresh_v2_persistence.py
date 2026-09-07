@@ -10,6 +10,7 @@ from threading import RLock
 from uuid import uuid4
 
 from kronos.intraday.refresh_v2 import (
+    REFRESH_V2_PROVENANCE_VERSION,
     RefreshV2Outcome,
     RefreshV2ProvenanceRecord,
     RefreshV2SourceClass,
@@ -78,8 +79,11 @@ class RefreshV2ProvenanceStore:
 
 
 def _encoded(record: RefreshV2ProvenanceRecord) -> bytes:
+    values = asdict(record)
+    if record.contract_version != REFRESH_V2_PROVENANCE_VERSION:
+        values.pop("trusted_admission_time")
     return (json.dumps(
-        asdict(record),
+        values,
         default=lambda value: value.value if hasattr(value, "value") else value.isoformat(),
         sort_keys=True,
         separators=(",", ":"),
@@ -99,6 +103,9 @@ def _decoded(payload: bytes) -> RefreshV2ProvenanceRecord:
                 values[name] = datetime.fromisoformat(values[name])
         values["outcome"] = RefreshV2Outcome(values["outcome"])
         values["source_class"] = RefreshV2SourceClass(values["source_class"])
+        values.setdefault("trusted_admission_time", None)
+        if values["trusted_admission_time"] is not None:
+            values["trusted_admission_time"] = datetime.fromisoformat(values["trusted_admission_time"])
         values.setdefault("replay_envelope_identity", None)
         values.setdefault("failure_detail_identity", None)
         return RefreshV2ProvenanceRecord(**values)

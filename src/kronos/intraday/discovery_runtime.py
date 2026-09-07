@@ -7,6 +7,9 @@ Risk, notification, monitoring, or Browser authority.
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from kronos.intraday.analysis_time import admit_analysis_time, trusted_now
+
 from dataclasses import dataclass
 from datetime import datetime
 from hashlib import sha256
@@ -264,9 +267,11 @@ class IntradayNativeDiscoveryService:
         store: NativeDiscoveryStore,
         runtime_evaluable_member_ids: tuple[str, ...] = (),
         additional_source_identities: tuple[str, ...] = (),
+        clock: Callable[[], datetime] = trusted_now,
     ) -> None:
         if (
-            type(universe) is not IntradayUniversePublication
+            not callable(clock)
+            or type(universe) is not IntradayUniversePublication
             or type(reconciliation) is not ReconciliationPublication
             or not callable(getattr(factual_source, "acquire", None))
             or type(store) is not NativeDiscoveryStore
@@ -291,6 +296,7 @@ class IntradayNativeDiscoveryService:
             != tuple(item.sponsor_label for item in universe.members)
         ):
             raise DiscoveryError(DiscoveryFailure.PUBLICATION_STALE)
+        self._clock = clock
         self._universe = universe
         self._reconciliation = reconciliation
         self._source = factual_source
@@ -310,6 +316,7 @@ class IntradayNativeDiscoveryService:
     def execute(self, boundary: DiscoveryRunBoundary) -> DiscoveryRuntimeExecution:
         if type(boundary) is not DiscoveryRunBoundary:
             raise DiscoveryError(DiscoveryFailure.OBSERVATION_BOUNDARY_INVALID)
+        admit_analysis_time(boundary.observation_boundary, self._clock)
         try:
             self._universe.require_current(boundary.observation_boundary)
         except Exception as error:

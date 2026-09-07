@@ -10,6 +10,7 @@ import re
 from typing import Callable
 
 from kronos.application.intraday_discovery_operation import (
+    DiscoveryOperationFailure,
     DiscoveryOperationResult,
     DiscoveryOperationState,
     IntradayDiscoveryOperationService,
@@ -221,12 +222,13 @@ class IntradayProbablesV2OperationalControl:
         )
         result = self._operation.execute(operation_request)
         completed = self._clock()
+        future_rejected = result.failure is DiscoveryOperationFailure.OBSERVATION_BOUNDARY_FUTURE
         success = result.state is DiscoveryOperationState.COMPLETE
         outcome = (
             RefreshV2Outcome.SUCCESS
             if success
             else RefreshV2Outcome.REJECTED
-            if result.state is DiscoveryOperationState.CONFLICT
+            if future_rejected or result.state is DiscoveryOperationState.CONFLICT
             else RefreshV2Outcome.FAILED
         )
         record = self._record(
@@ -234,7 +236,8 @@ class IntradayProbablesV2OperationalControl:
             request_integrity_identity=request.integrity_identity,
             observation_boundary=request.observation_boundary,
             received_at=received,
-            operation_started_at=started,
+            operation_started_at=None if future_rejected else started,
+            trusted_admission_time=result.trusted_admission_time,
             operation_completed_at=completed,
             outcome=outcome,
             failure=None if result.failure is None else result.failure.value,
@@ -283,6 +286,7 @@ class IntradayProbablesV2OperationalControl:
         resulting_probables_identity: str | None = None,
         replay_envelope_identity: str | None = None,
         failure_detail_identity: str | None = None,
+        trusted_admission_time: datetime | None = None,
     ) -> RefreshV2ProvenanceRecord:
         return create_refresh_v2_provenance(
             request_identity=request_identity,
@@ -293,6 +297,7 @@ class IntradayProbablesV2OperationalControl:
             methodology_publication_identity=PROBABLES_V2_PUBLICATION_IDENTITY,
             methodology_checksum=PROBABLES_V2_METHODOLOGY_CHECKSUM,
             observation_boundary=observation_boundary,
+            trusted_admission_time=trusted_admission_time,
             received_at=received_at,
             operation_started_at=operation_started_at,
             operation_completed_at=operation_completed_at,
@@ -355,6 +360,10 @@ def _record_document(
         "replay_envelope_identity": record.replay_envelope_identity,
         "failure_detail_identity": record.failure_detail_identity,
         "operation_completed_at": record.operation_completed_at.isoformat(),
+        "trusted_admission_time": (
+            None if record.trusted_admission_time is None
+            else record.trusted_admission_time.isoformat()
+        ),
         "idempotent": idempotent,
     }
 
