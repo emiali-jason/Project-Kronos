@@ -444,3 +444,35 @@ def test_future_governed_mcx_recovery_uses_same_generic_runtime(tmp_path: Path) 
     assert run.accounting.prerequisite_unavailable == 4
     assert run.lookup("GOLDM").machine_fact_bundle_identity is not None
     assert "GOLDM" in source.labels
+
+
+@pytest.mark.parametrize("failures, available, failed", [((), 93, 0), (("RELIANCE",), 92, 1)])
+def test_nse_first_audit_view_preserves_run_and_failed_member(
+    tmp_path, failures, available, failed
+):
+    """WO-03: focus projection is not a new producer run or an admission list."""
+    from kronos.intraday.discovery import discovery_run_bytes
+
+    service, source, store, reconciliation = _service(tmp_path, failures=failures)
+    run = service.execute(BOUNDARY).run
+    original = discovery_run_bytes(run)
+    focus_ids = {
+        member.universe_member_identity
+        for member in reconciliation.members
+        if member.market_family in {
+            IntradayMarketFamily.NSE_EQUITY, IntradayMarketFamily.NSE_INDEX
+        }
+    }
+    focus = tuple(row for row in run.results if row.universe_member_identity in focus_ids)
+    assert len(focus) == 93
+    assert sum(row.evaluability is FactualEvaluability.FACTUALLY_EVALUABLE for row in focus) == available
+    assert sum(row.evaluability is FactualEvaluability.FACTUAL_FAILURE for row in focus) == failed
+    assert available + failed == len(focus)
+    assert {row.sponsor_label for row in run.results if row not in focus} == {
+        "GOLDM", "SILVERM", "COPPER", "NATGAS", "CRUDE"
+    }
+    assert run.accounting.universe_members == len(run.results) == 98
+    assert run.accounting.evaluated == run.accounting.candidate_results == 0
+    assert all(row.execution_eligibility is ExecutionEligibility.NOT_ESTABLISHED for row in focus)
+    assert discovery_run_bytes(run) == original
+    assert discovery_run_bytes(store.load_run(run_identity=run.run_identity)) == original
