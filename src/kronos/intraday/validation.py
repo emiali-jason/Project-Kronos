@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, fields, is_dataclass
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from enum import StrEnum
@@ -11,6 +11,19 @@ import json
 import re
 
 from kronos.intraday.contracts import IntradayTimeframe
+from kronos.instrument.visual_identity import (
+    VisualIdentityResolver, VisualIdentityResolution, VisualIdentityResolutionError,
+    VisualIdentitySourceContext,
+)
+from kronos.intraday.contracts import (
+    CandleBoundary, CandleCompletion, GovernedCandle, ObservationBoundary, SourceProvenance,
+)
+from kronos.intraday.candles import expected_candle_boundaries
+from kronos.market.calendar import MarketCalendarPublisher
+from kronos.market.schedule import (
+    MarketSchedule, MarketDaySchedule, MarketWindow, MarketSessionWindow,
+    TradingDayStatus, MarketAvailability, ScheduleFreshness, ScheduleIntegrity,
+)
 
 
 SLICE3V_QUESTION_SET = "KRONOS-INTRADAY-SLICE-3V-QUESTION-SET-V1"
@@ -1026,4 +1039,554 @@ __all__ = [
     "validation_statistics",
     "visual_answer_payload",
     "visual_answer_payload_from_dict",
+]
+
+
+# WO-02B: additive V2 contracts. V1 serialization and interpretation stay frozen.
+
+PANEL_VALIDATION_CONTRACT = "KRONOS-INTRADAY-SLICE-3V-PANEL-VALIDATION-V2"
+PANEL_VALIDATION_VERSION = "2.0.0"
+
+
+class ValidationState(StrEnum):
+    VALIDATED = "VALIDATED"
+    PARTIALLY_VALIDATED = "PARTIALLY_VALIDATED"
+    NOT_VALIDATED = "NOT_VALIDATED"
+    UNVERIFIABLE = "UNVERIFIABLE"
+
+
+class RequiredFactCoverage(StrEnum):
+    COMPLETE = "COMPLETE_REQUIRED_FACT_COVERAGE"
+    PARTIAL = "PARTIAL_REQUIRED_FACT_COVERAGE"
+    NONE = "NO_REQUIRED_FACT_COVERAGE"
+
+
+class FactObservability(StrEnum):
+    EXACT = "EXACT"
+    APPROXIMATE = "APPROXIMATE"
+    RELATIONAL = "RELATIONAL"
+    NOT_VISIBLE = "NOT_VISIBLE"
+    UNVERIFIABLE = "UNVERIFIABLE"
+    NOT_APPLICABLE = "NOT_APPLICABLE"
+
+
+class FactDisposition(StrEnum):
+    OBSERVED = "OBSERVED"
+    NOT_VISIBLE = "NOT_VISIBLE"
+    UNVERIFIABLE = "UNVERIFIABLE"
+    NOT_APPLICABLE = "NOT_APPLICABLE"
+    MISSING = "MISSING"
+
+
+# Independent of the supplied machine/visual subset. Applicability is machine-owned.
+PANEL_REQUIRED_FACTS = (
+    *((f"candle.{k}", ValidationQuestion.COMPLETED_CANDLE) for k in ("open", "high", "low", "close")),
+    *((f"previous.{k}", ValidationQuestion.PREVIOUS_SESSION) for k in ("high", "low", "close", "pdh", "pdl")),
+    *((f"pivot.{k}", ValidationQuestion.CLASSIC_PIVOTS) for k in ("p", "r1", "r2", "r3", "r4", "s1", "s2", "s3", "s4")),
+    *((f"cpr.{k}", ValidationQuestion.CPR) for k in ("pivot", "lower", "upper", "width")),
+    *((f"structure.{k}", ValidationQuestion.STRUCTURAL_EVENTS) for k in
+      ("local_high", "local_low", "range", "break", "retest", "return_through", "boundary_interaction")),
+    ("volume.participation", ValidationQuestion.VOLUME_PARTICIPATION),
+)
+_PANEL_FACT_KEYS = tuple(k for k, _ in PANEL_REQUIRED_FACTS)
+_PANEL_QUESTIONS = dict(PANEL_REQUIRED_FACTS)
+
+
+@dataclass(frozen=True, slots=True)
+class PanelSource:
+    context_key: str
+    machine_source_identity: str
+    candle: GovernedCandle
+
+    def __post_init__(self) -> None:
+        if not _key(self.context_key) or not _text(self.machine_source_identity, 256) or type(self.candle) is not GovernedCandle:
+            raise ValueError("SLICE3V_PANEL_SOURCE_INVALID")
+
+
+@dataclass(frozen=True, slots=True)
+class RequiredPanelFact:
+    fact_key: str
+    context_key: str
+    applicable: bool = True
+    applicability_provenance: str | None = None
+    relational_permitted: bool = False
+
+    def __post_init__(self) -> None:
+        if (
+            self.fact_key not in _PANEL_FACT_KEYS or not _key(self.context_key)
+            or type(self.applicable) is not bool or type(self.relational_permitted) is not bool
+            or (not self.applicable and not _text(self.applicability_provenance, 256))
+        ):
+            raise ValueError("SLICE3V_REQUIRED_FACT_INVALID")
+
+
+@dataclass(frozen=True, slots=True)
+class PanelValidationRequest:
+    machine: MachineEvidence
+    chart_revision_identity: str
+    chart_payload_sha256: str
+    chart_received_at: datetime
+    panel_context_key: str
+    sources: tuple[PanelSource, ...]
+    required_facts: tuple[RequiredPanelFact, ...]
+    provenance: tuple[str, ...]
+    contract_identity: str = PANEL_VALIDATION_CONTRACT
+    contract_version: str = PANEL_VALIDATION_VERSION
+
+    def __post_init__(self) -> None:
+        source_keys = tuple(s.context_key for s in self.sources)
+        if (
+            type(self.machine) is not MachineEvidence
+            or self.machine.state is not MachineEvidenceState.FROZEN
+            or self.machine.frozen_at < self.machine.observation_boundary
+            or self.machine.exchange != "NSE"
+            or self.machine.evidence_family is not ValidationEvidenceFamily.NATIVE_CHART
+            or not _text(self.chart_revision_identity, 256)
+            or not _panel_digest(self.chart_payload_sha256)
+            or not _aware(self.chart_received_at)
+            or type(self.sources) is not tuple or not self.sources
+            or any(type(s) is not PanelSource for s in self.sources)
+            or len(set(source_keys)) != len(source_keys)
+            or self.panel_context_key not in source_keys
+            or any(s.candle.canonical_instrument_id != self.machine.canonical_instrument_id
+                   or s.candle.observation_boundary.observed_at > self.machine.frozen_at
+                   or s.candle.provenance.retrieved_at > self.machine.frozen_at for s in self.sources)
+            or type(self.required_facts) is not tuple
+            or tuple(f.fact_key for f in self.required_facts) != _PANEL_FACT_KEYS
+            or any(type(f) is not RequiredPanelFact or f.context_key not in source_keys for f in self.required_facts)
+            or not self.provenance or type(self.provenance) is not tuple
+            or any(not _text(p, 256) for p in self.provenance)
+            or self.contract_identity != PANEL_VALIDATION_CONTRACT
+            or self.contract_version != PANEL_VALIDATION_VERSION
+        ):
+            raise ValueError("SLICE3V_PANEL_REQUEST_INVALID")
+        panel = next(s.candle for s in self.sources if s.context_key == self.panel_context_key)
+        if panel.boundary.timeframe is not self.machine.timeframe or any(
+            f.fact_key.startswith("candle.") and f.context_key != self.panel_context_key for f in self.required_facts
+        ):
+            raise ValueError("SLICE3V_PANEL_TIMEFRAME_INVALID")
+        if any(f.fact_key not in _PANEL_QUESTIONS or f.question is not _PANEL_QUESTIONS[f.fact_key] for f in self.machine.facts):
+            raise ValueError("SLICE3V_PANEL_MACHINE_FACT_INVALID")
+
+
+@dataclass(frozen=True, slots=True)
+class ObservedPanelTime:
+    context_key: str
+    trading_date: date | None = None
+    session: str | None = None
+    timezone: str | None = None
+    timeframe: IntradayTimeframe | None = None
+    candle_start: datetime | None = None
+    candle_end: datetime | None = None
+    completion: CandleCompletion | None = None
+
+    def __post_init__(self) -> None:
+        if (
+            not _key(self.context_key)
+            or (self.trading_date is not None and type(self.trading_date) is not date)
+            or (self.timeframe is not None and type(self.timeframe) is not IntradayTimeframe)
+            or (self.completion is not None and type(self.completion) is not CandleCompletion)
+            or any(x is not None and not _aware(x) for x in (self.candle_start, self.candle_end))
+            or any(x is not None and not _text(x, 256) for x in (self.session, self.timezone))
+        ):
+            raise ValueError("SLICE3V_OBSERVED_TIME_INVALID")
+
+
+@dataclass(frozen=True, slots=True)
+class PanelFactObservation:
+    fact_key: str
+    observability: FactObservability
+    value_kind: FactualValueKind | None = None
+    value: FactValue | None = None
+
+    def __post_init__(self) -> None:
+        if self.fact_key not in _PANEL_FACT_KEYS or type(self.observability) is not FactObservability:
+            raise ValueError("SLICE3V_PANEL_OBSERVATION_INVALID")
+        if self.observability in (FactObservability.NOT_VISIBLE, FactObservability.UNVERIFIABLE, FactObservability.NOT_APPLICABLE):
+            if self.value is not None or self.value_kind is not None:
+                raise ValueError("SLICE3V_UNOBSERVABLE_VALUE_PROHIBITED")
+        else:
+            if self.value_kind is FactualValueKind.RELATION and self.observability is not FactObservability.RELATIONAL:
+                raise ValueError("SLICE3V_RELATIONAL_PRECISION_REQUIRED")
+            precision = {
+                FactObservability.EXACT: VisualPrecision.EXACT,
+                FactObservability.APPROXIMATE: VisualPrecision.APPROXIMATE,
+                FactObservability.RELATIONAL: VisualPrecision.RELATIONAL_ONLY,
+            }[self.observability]
+            observation = VisualObservation(_PANEL_QUESTIONS[self.fact_key], self.fact_key, precision, self.value_kind, self.value)
+            object.__setattr__(self, "value", observation.value)
+
+
+@dataclass(frozen=True, slots=True)
+class PanelVisualObservation:
+    """Observer-only facts: no canonical ID, machine values, run ID or conclusions."""
+    observed_subject: str
+    exchange: str
+    timeframe: IntradayTimeframe
+    chart_captured_at: datetime | None
+    answered_at: datetime
+    temporal_contexts: tuple[ObservedPanelTime, ...]
+    facts: tuple[PanelFactObservation, ...]
+    contract_identity: str = PANEL_VALIDATION_CONTRACT
+    contract_version: str = PANEL_VALIDATION_VERSION
+
+    def __post_init__(self) -> None:
+        if (
+            (not isinstance(self.observed_subject, str) or not self.observed_subject or len(self.observed_subject) > 192) or not _text(self.exchange, 32)
+            or type(self.timeframe) is not IntradayTimeframe
+            or not _aware(self.answered_at)
+            or (self.chart_captured_at is not None and not _aware(self.chart_captured_at))
+            or type(self.temporal_contexts) is not tuple or type(self.facts) is not tuple
+            or any(type(t) is not ObservedPanelTime for t in self.temporal_contexts)
+            or any(type(f) is not PanelFactObservation for f in self.facts)
+            or len({t.context_key for t in self.temporal_contexts}) != len(self.temporal_contexts)
+            or len({f.fact_key for f in self.facts}) != len(self.facts)
+            or self.contract_identity != PANEL_VALIDATION_CONTRACT
+            or self.contract_version != PANEL_VALIDATION_VERSION
+        ):
+            raise ValueError("SLICE3V_PANEL_VISUAL_SCHEMA_INVALID")
+
+
+@dataclass(frozen=True, slots=True)
+class PanelFactResult:
+    fact_key: str
+    context_key: str
+    expected: bool
+    disposition: FactDisposition
+    result: ValidationState
+    reason: str
+
+    def __post_init__(self) -> None:
+        if (self.fact_key not in _PANEL_FACT_KEYS or not _key(self.context_key)
+            or self.expected is not True or type(self.disposition) is not FactDisposition
+            or type(self.result) is not ValidationState or not _text(self.reason, 256)):
+            raise ValueError("SLICE3V_PANEL_FACT_RESULT_INVALID")
+
+
+@dataclass(frozen=True, slots=True)
+class PanelTemporalResult:
+    context_key: str
+    schedule: MarketSchedule | None
+    result: ValidationState
+    reason: str
+
+
+@dataclass(frozen=True, slots=True)
+class PanelValidationRecord:
+    request: PanelValidationRequest
+    visual: PanelVisualObservation
+    actual_chart_sha256: str
+    bound_chart_revision_identity: str
+    visual_identity: VisualIdentityResolution | None
+    visual_identity_failure: str | None
+    temporal_results: tuple[PanelTemporalResult, ...]
+    fact_results: tuple[PanelFactResult, ...]
+    file_identity: ValidationState
+    visual_identity_state: ValidationState
+    temporal_correspondence: ValidationState
+    factual_correspondence: ValidationState
+    answer_import: ValidationState
+    visual_reliability: ValidationState
+    coverage: RequiredFactCoverage
+    overall: ValidationState
+    compared_at: datetime
+    imported_at: datetime | None
+    visual_observation_identity: str
+    validation_record_identity: str
+    integrity_identity: str
+
+    def __post_init__(self) -> None:
+        payload = _panel_record_payload(self)
+        if (
+            self.validation_record_identity != _identity("SLICE3V-PANEL-RECORD-", payload)
+            or self.integrity_identity != _identity("SHA256-", payload)
+            or self.visual_observation_identity != _identity("SLICE3V-PANEL-OBSERVATION-", _panel_encode(self.visual))
+            or tuple(r.fact_key for r in self.fact_results) != _PANEL_FACT_KEYS
+            or self.imported_at is not None
+            or self.answer_import is not ValidationState.NOT_VALIDATED
+            or self.visual_reliability is not ValidationState.NOT_VALIDATED
+        ):
+            raise ValueError("SLICE3V_PANEL_RECORD_INTEGRITY_INVALID")
+
+
+def _panel_digest(value: object) -> bool:
+    return isinstance(value, str) and re.fullmatch(r"[0-9a-f]{64}", value) is not None
+
+
+def _panel_temporal(
+    source: PanelSource, observed: ObservedPanelTime | None, schedule: MarketSchedule | None,
+    request: PanelValidationRequest, visual: PanelVisualObservation,
+) -> PanelTemporalResult:
+    def result(state: ValidationState, reason: str) -> PanelTemporalResult:
+        return PanelTemporalResult(source.context_key, schedule, state, reason)
+
+    boundary = source.candle.boundary
+    if schedule is None:
+        return result(ValidationState.UNVERIFIABLE, "SESSION_AUTHORITY_UNAVAILABLE")
+    day = MarketDaySchedule(
+        exchange=schedule.exchange, trading_date=schedule.trading_date,
+        session_id=schedule.session_identity, timezone=schedule.timezone,
+        status=TradingDayStatus.TRADING,
+        windows=tuple(MarketWindow(w.window_open, w.window_close) for w in schedule.windows),
+        source_identity=schedule.source_identity, source_version=schedule.calendar_version,
+    )
+    if boundary not in expected_candle_boundaries(day, boundary.timeframe):
+        return result(ValidationState.NOT_VALIDATED, "SOURCE_CANDLE_SESSION_MISMATCH")
+    if source.candle.completion is not CandleCompletion.COMPLETE or boundary.end > request.machine.observation_boundary:
+        return result(ValidationState.UNVERIFIABLE, "COMPLETED_CANDLE_NOT_PROVEN")
+    if observed is None or any(getattr(observed, f) is None for f in (
+        "trading_date", "session", "timezone", "timeframe", "candle_start", "candle_end", "completion",
+    )) or visual.chart_captured_at is None:
+        return result(ValidationState.UNVERIFIABLE, "TEMPORAL_EVIDENCE_MISSING")
+    if observed.completion is not CandleCompletion.COMPLETE:
+        return result(ValidationState.UNVERIFIABLE, "OBSERVED_CANDLE_INCOMPLETE")
+    for label, actual, expected in (
+        ("TRADING_DATE", observed.trading_date, boundary.trading_date),
+        ("SESSION", observed.session, schedule.session_type),
+        ("TIMEZONE", observed.timezone, schedule.timezone),
+        ("TIMEFRAME", observed.timeframe, boundary.timeframe),
+        ("CANDLE_START", observed.candle_start, boundary.start),
+        ("CANDLE_END", observed.candle_end, boundary.end),
+    ):
+        if actual != expected:
+            return result(ValidationState.NOT_VALIDATED, label + "_MISMATCH")
+    if not (
+        boundary.end <= visual.chart_captured_at <= request.chart_received_at
+        and max(request.machine.frozen_at, request.chart_received_at) <= visual.answered_at
+    ):
+        return result(ValidationState.UNVERIFIABLE, "CAPTURE_OR_ANSWER_CHRONOLOGY_UNPROVEN")
+    return result(ValidationState.VALIDATED, "EXACT_COMPLETED_SOURCE_CONTEXT")
+
+
+def _panel_rollup(states: tuple[ValidationState, ...]) -> ValidationState:
+    if not states:
+        return ValidationState.NOT_VALIDATED
+    if all(s is ValidationState.VALIDATED for s in states):
+        return ValidationState.VALIDATED
+    if ValidationState.NOT_VALIDATED in states:
+        return ValidationState.NOT_VALIDATED
+    if ValidationState.VALIDATED in states or ValidationState.PARTIALLY_VALIDATED in states:
+        return ValidationState.PARTIALLY_VALIDATED
+    return ValidationState.UNVERIFIABLE
+
+
+def validate_panel(
+    request: PanelValidationRequest, visual: PanelVisualObservation, *,
+    chart_payload: bytes, bound_chart_revision_identity: str,
+    identity_resolver: VisualIdentityResolver, calendar: MarketCalendarPublisher,
+    compared_at: datetime,
+) -> PanelValidationRecord:
+    """Read-only V2 comparison. No imports, currentization, capture or authority writes."""
+    if type(request) is not PanelValidationRequest or type(visual) is not PanelVisualObservation:
+        raise ValueError("SLICE3V_PANEL_INPUT_INVALID")
+    if (
+        type(chart_payload) is not bytes or not _aware(compared_at)
+        or compared_at < max(request.machine.frozen_at, visual.answered_at, request.chart_received_at)
+        or visual.answered_at < request.machine.frozen_at
+    ):
+        raise ValueError("SLICE3V_PANEL_CHRONOLOGY_INVALID")
+    if any(t.context_key not in {s.context_key for s in request.sources} for t in visual.temporal_contexts):
+        raise ValueError("SLICE3V_UNEXPECTED_TEMPORAL_CONTEXT")
+    digest = sha256(chart_payload).hexdigest()
+    file_state = (ValidationState.VALIDATED if digest == request.chart_payload_sha256
+                  and bound_chart_revision_identity == request.chart_revision_identity else ValidationState.NOT_VALIDATED)
+    resolution = None
+    failure = None
+    try:
+        resolution = identity_resolver.resolve(
+            observed_visible_subject_identity=visual.observed_subject,
+            source_context=VisualIdentitySourceContext.TRADINGVIEW_VISUAL_CHART,
+            governed_observation_boundary=request.machine.observation_boundary,
+        )
+    except VisualIdentityResolutionError as error:
+        failure = error.failure.value
+    identity_state = ValidationState.VALIDATED if (
+        resolution is not None
+        and resolution.canonical_subject_identity == request.machine.canonical_instrument_id
+        and visual.exchange == request.machine.exchange and visual.timeframe is request.machine.timeframe
+    ) else ValidationState.NOT_VALIDATED
+    if identity_state is ValidationState.NOT_VALIDATED and failure is None:
+        failure = "PANEL_IDENTITY_MISMATCH"
+
+    contexts = {t.context_key: t for t in visual.temporal_contexts}
+    temporal = []
+    for source in request.sources:
+        schedule = None
+        try:
+            profile = calendar.instrument_session_profile(
+                request.machine.exchange, source.candle.boundary.trading_date,
+                canonical_instrument_id=request.machine.canonical_instrument_id,
+                observed_at=request.machine.observation_boundary,
+            )
+            if profile is not None:
+                schedule = next((s for s in (profile.continuous_trading, profile.closing_auction_session)
+                                 if s is not None and s.session_identity == source.candle.boundary.session_id), None)
+        except ValueError:
+            pass  # Explicit unavailable result; never invent a replacement session.
+        temporal.append(_panel_temporal(source, contexts.get(source.context_key), schedule, request, visual))
+    times = {t.context_key: t for t in temporal}
+    observations = {f.fact_key: f for f in visual.facts}
+    machine_facts = {f.fact_key: f for f in request.machine.facts}
+    rows = []
+    try:
+        previous_date = max(d for d in calendar.publication("NSE").trading_dates if d < request.machine.trading_date)
+    except (ValueError, KeyError):
+        previous_date = None
+    for required in request.required_facts:
+        obs = observations.get(required.fact_key)
+        fact = machine_facts.get(required.fact_key)
+        source = next(s.candle for s in request.sources if s.context_key == required.context_key)
+        source_field = required.fact_key.split(".")[1]
+        if required.fact_key.startswith("previous."):
+            source_field = {"pdh": "high", "pdl": "low"}.get(source_field, source_field)
+        source_mismatch = (fact is not None and required.fact_key.startswith(("candle.", "previous."))
+                           and (fact.value_kind is not FactualValueKind.NUMERIC or fact.value != getattr(source, source_field)))
+        disposition = FactDisposition.MISSING if obs is None else (
+            FactDisposition.OBSERVED if obs.observability in (
+                FactObservability.EXACT, FactObservability.APPROXIMATE, FactObservability.RELATIONAL
+            ) else FactDisposition(obs.observability.value)
+        )
+        state, reason = ValidationState.UNVERIFIABLE, "VISUAL_FACT_MISSING"
+        if not required.applicable:
+            state = ValidationState.NOT_VALIDATED
+            reason = "NOT_APPLICABLE"
+            if obs is not None and obs.observability is not FactObservability.NOT_APPLICABLE:
+                reason = "APPLICABILITY_CONFLICT"
+        elif file_state is not ValidationState.VALIDATED or identity_state is not ValidationState.VALIDATED:
+            state, reason = ValidationState.NOT_VALIDATED, "PANEL_IDENTITY_NOT_VALIDATED"
+        elif times[required.context_key].result is not ValidationState.VALIDATED:
+            state, reason = times[required.context_key].result, times[required.context_key].reason
+        elif obs is not None and obs.observability is FactObservability.NOT_APPLICABLE:
+            state, reason = ValidationState.NOT_VALIDATED, "APPLICABILITY_CONFLICT"
+        elif fact is None:
+            reason = "MACHINE_FACT_UNAVAILABLE"
+        elif required.fact_key.startswith(("previous.", "pivot.", "cpr.")) and (
+            source.boundary.timeframe is not IntradayTimeframe.DAILY or source.boundary.trading_date != previous_date
+        ):
+            state, reason = ValidationState.NOT_VALIDATED, "PREVIOUS_SESSION_SOURCE_MISMATCH"
+        elif source_mismatch:
+            state, reason = ValidationState.NOT_VALIDATED, "MACHINE_SOURCE_FACT_MISMATCH"
+        elif obs is not None and disposition is FactDisposition.OBSERVED:
+            if obs.observability is FactObservability.RELATIONAL and not required.relational_permitted:
+                state, reason = ValidationState.NOT_VALIDATED, "RELATIONAL_COMPARISON_NOT_PERMITTED"
+            else:
+                precision = {
+                    FactObservability.EXACT: VisualPrecision.EXACT,
+                    FactObservability.APPROXIMATE: VisualPrecision.APPROXIMATE,
+                    FactObservability.RELATIONAL: VisualPrecision.RELATIONAL_ONLY,
+                }[obs.observability]
+                observed = VisualObservation(fact.question, fact.fact_key, precision, obs.value_kind, obs.value)
+                comparison = _compare_fact(fact, VisualQuestionAnswer(fact.question, QuestionAnswerState.OBSERVED, (observed,)), observed)
+                state = {ComparisonResult.MATCH: ValidationState.VALIDATED,
+                         ComparisonResult.MISMATCH: ValidationState.NOT_VALIDATED,
+                         ComparisonResult.NOT_VISUALLY_VERIFIABLE: ValidationState.UNVERIFIABLE}[comparison.result]
+                reason = comparison.result.value
+        elif obs is not None:
+            reason = obs.observability.value
+        rows.append(PanelFactResult(required.fact_key, required.context_key, True, disposition, state, reason))
+    accounted = sum((r.disposition is FactDisposition.OBSERVED and r.fact_key in machine_facts)
+                    or (r.disposition is FactDisposition.NOT_APPLICABLE and r.reason == "NOT_APPLICABLE") for r in rows)
+    coverage = RequiredFactCoverage.COMPLETE if accounted == len(rows) else (
+        RequiredFactCoverage.PARTIAL if accounted else RequiredFactCoverage.NONE)
+    applicable_states = tuple(r.result for r, f in zip(rows, request.required_facts)
+                              if f.applicable or r.reason == "APPLICABILITY_CONFLICT")
+    factual = _panel_rollup(applicable_states)
+    temporal_state = _panel_rollup(tuple(t.result for t in temporal))
+    overall = factual
+    if temporal_state is ValidationState.NOT_VALIDATED:
+        overall = ValidationState.NOT_VALIDATED
+    elif factual is ValidationState.VALIDATED and temporal_state is not ValidationState.VALIDATED:
+        overall = temporal_state
+    if factual is ValidationState.NOT_VALIDATED or identity_state is ValidationState.NOT_VALIDATED or file_state is ValidationState.NOT_VALIDATED:
+        overall = ValidationState.NOT_VALIDATED
+    values = dict(
+        request=request, visual=visual, actual_chart_sha256=digest,
+        bound_chart_revision_identity=bound_chart_revision_identity,
+        visual_identity=resolution, visual_identity_failure=failure,
+        temporal_results=tuple(temporal), fact_results=tuple(rows),
+        file_identity=file_state, visual_identity_state=identity_state,
+        temporal_correspondence=temporal_state, factual_correspondence=factual,
+        answer_import=ValidationState.NOT_VALIDATED, visual_reliability=ValidationState.NOT_VALIDATED,
+        coverage=coverage, overall=overall, compared_at=compared_at, imported_at=None,
+        visual_observation_identity=_identity("SLICE3V-PANEL-OBSERVATION-", _panel_encode(visual)),
+    )
+    payload = {k: _panel_encode(v) for k, v in values.items()}
+    return PanelValidationRecord(
+        **values,
+        validation_record_identity=_identity("SLICE3V-PANEL-RECORD-", payload),
+        integrity_identity=_identity("SHA256-", payload),
+    )
+
+
+def _panel_encode(value: object) -> object:
+    """Closed tagged codec preserves Decimal precision and immutable tuple types."""
+    if is_dataclass(value):
+        return {"type": type(value).__name__, "fields": {f.name: _panel_encode(getattr(value, f.name)) for f in fields(value)}}
+    if isinstance(value, StrEnum):
+        return {"enum": type(value).__name__, "value": value.value}
+    if type(value) in (datetime, date, Decimal):
+        return {"scalar": type(value).__name__, "value": str(value)}
+    if type(value) is tuple:
+        return [_panel_encode(v) for v in value]
+    if value is None or type(value) in (str, int, bool):
+        return value
+    raise ValueError("SLICE3V_PANEL_ENCODING_INVALID")
+
+
+def _panel_decode(value: object) -> object:
+    if type(value) is list:
+        return tuple(_panel_decode(v) for v in value)
+    if value is None or type(value) in (str, int, bool):
+        return value
+    if type(value) is not dict:
+        raise ValueError("SLICE3V_PANEL_DOCUMENT_INVALID")
+    if set(value) == {"scalar", "value"}:
+        return {"datetime": datetime.fromisoformat, "date": date.fromisoformat, "Decimal": Decimal}[value["scalar"]](value["value"])
+    if set(value) == {"enum", "value"}:
+        enums = (IntradayTimeframe, CandleCompletion, ValidationQuestion, FactualValueKind,
+                 DiscrepancyFamily, MachineEvidenceState, ValidationEvidenceFamily,
+                 VisualIdentitySourceContext, MarketAvailability, ScheduleFreshness, ScheduleIntegrity,
+                 ValidationState, RequiredFactCoverage, FactObservability, FactDisposition)
+        cls = next(c for c in enums if c.__name__ == value["enum"])
+        return cls(value["value"])
+    if set(value) == {"type", "fields"}:
+        classes = (PanelSource, RequiredPanelFact, PanelValidationRequest, ObservedPanelTime,
+                   PanelFactObservation, PanelVisualObservation, PanelFactResult, PanelTemporalResult,
+                   PanelValidationRecord, MachineEvidence, MachineFact, GovernedCandle, CandleBoundary,
+                   SourceProvenance, ObservationBoundary, VisualIdentityResolution, MarketSchedule,
+                   MarketSessionWindow)
+        cls = next(c for c in classes if c.__name__ == value["type"])
+        if type(value["fields"]) is not dict or set(value["fields"]) != {f.name for f in fields(cls)}:
+            raise ValueError("SLICE3V_PANEL_DOCUMENT_INVALID")
+        return cls(**{k: _panel_decode(v) for k, v in value["fields"].items()})
+    raise ValueError("SLICE3V_PANEL_DOCUMENT_INVALID")
+
+
+def _panel_record_payload(value: PanelValidationRecord) -> dict[str, object]:
+    return {f.name: _panel_encode(getattr(value, f.name)) for f in fields(value)
+            if f.name not in ("validation_record_identity", "integrity_identity")}
+
+
+def panel_validation_document(value: PanelValidationRecord) -> dict[str, object]:
+    if type(value) is not PanelValidationRecord:
+        raise ValueError("SLICE3V_PANEL_RECORD_INVALID")
+    return _panel_encode(value)
+
+
+def panel_validation_from_document(document: object) -> PanelValidationRecord:
+    try:
+        value = _panel_decode(document)
+        if type(value) is not PanelValidationRecord or panel_validation_document(value) != document:
+            raise ValueError
+        return value
+    except (ValueError, TypeError, KeyError, StopIteration, AttributeError, InvalidOperation) as error:
+        raise ValueError("SLICE3V_PANEL_DOCUMENT_INVALID") from error
+
+
+__all__ += [
+    "PANEL_VALIDATION_CONTRACT", "PANEL_VALIDATION_VERSION", "PANEL_REQUIRED_FACTS",
+    "ValidationState", "RequiredFactCoverage", "FactObservability", "FactDisposition",
+    "PanelSource", "RequiredPanelFact", "PanelValidationRequest", "ObservedPanelTime",
+    "PanelFactObservation", "PanelVisualObservation", "PanelFactResult", "PanelTemporalResult",
+    "PanelValidationRecord", "validate_panel", "panel_validation_document", "panel_validation_from_document",
 ]

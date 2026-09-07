@@ -13,6 +13,7 @@ from uuid import uuid4
 
 from kronos.intraday.contracts import IntradayTimeframe
 from kronos.intraday.validation import (
+    PanelValidationRecord,
     ComparisonItem,
     ComparisonResult,
     DiscrepancyFamily,
@@ -133,6 +134,51 @@ class LocalSlice3VValidationStore:
         ) != encoded:
             raise ValueError("SLICE3V_VALIDATION_RECORD_INTEGRITY_MISMATCH")
         return value
+
+    def retain_panel_record(self, value: "PanelValidationRecord") -> None:
+        """V2 namespace; never upgrades or overwrites V1 evidence."""
+        from kronos.intraday.validation import panel_validation_document, panel_validation_from_document
+        document = panel_validation_document(value)
+        panel_validation_from_document(document)
+        path = self._root / "panel-validation-v2" / f"{value.validation_record_identity}.json"
+        encoded = _encode(document)
+        with self._lock:
+            path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+            # Atomic no-clobber publication across separate store/process instances.
+            temporary = path.with_name(f".{path.name}.{uuid4().hex}.tmp")
+            try:
+                descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+                with os.fdopen(descriptor, "wb") as handle:
+                    handle.write(encoded)
+                    handle.flush()
+                    os.fsync(handle.fileno())
+                try:
+                    os.link(temporary, path)
+                except FileExistsError:
+                    if path.is_symlink() or path.read_bytes() != encoded:
+                        raise ValueError("SLICE3V_PANEL_RECORD_IMMUTABLE")
+            finally:
+                temporary.unlink(missing_ok=True)
+
+    def load_panel_record(self, *, validation_record_identity: str) -> "PanelValidationRecord":
+        import re
+        from kronos.intraday.validation import panel_validation_document, panel_validation_from_document
+        if not isinstance(validation_record_identity, str) or re.fullmatch(
+            r"SLICE3V-PANEL-RECORD-[0-9a-f]{64}", validation_record_identity
+        ) is None:
+            raise ValueError("SLICE3V_PANEL_RECORD_IDENTITY_INVALID")
+        path = self._root / "panel-validation-v2" / f"{validation_record_identity}.json"
+        with self._lock:
+            if path.is_symlink():
+                raise ValueError("SLICE3V_PANEL_RECORD_INVALID")
+            encoded = _read(path, "SLICE3V_PANEL_RECORD_UNAVAILABLE")
+            try:
+                value = panel_validation_from_document(json.loads(encoded))
+            except (ValueError, TypeError, UnicodeDecodeError) as error:
+                raise ValueError("SLICE3V_PANEL_RECORD_INVALID") from error
+            if value.validation_record_identity != validation_record_identity or _encode(panel_validation_document(value)) != encoded:
+                raise ValueError("SLICE3V_PANEL_RECORD_INVALID")
+            return value
 
 
 def visual_answer_binding_identity(value: VisualAnswer) -> str:
