@@ -1,0 +1,41 @@
+{
+  "authority": "ANALYTICAL_ADMISSION_FOR_DEEPER_REVIEW_ONLY",
+  "authorization": "SPONSOR_EA_WO_06A_OPENING_ADMISSION_POLICY_IMPLEMENTATION_CORRECTION",
+  "historical_evidence": "IMMUTABLE_NO_REWRITE",
+  "historical_versions": [
+    "2.0.0",
+    "2.1.0"
+  ],
+  "methodology_identity": "KRONOS-INTRADAY-PROBABLES-METHODOLOGY-V2",
+  "methodology_version": "2.2.0",
+  "opening": {
+    "admission": "VALID_MANDATORY_EVIDENCE_AND_NARROW_CPR_AND_DIRECTIONAL_15M_AND_COMBINED_SUPPORT",
+    "combined_relationship": "ANY_CONFLICT_ELSE_ANY_SUPPORT_ELSE_INFORMATIONAL",
+    "direction": "FIRST_COMPLETED_15M_LONG_OR_SHORT",
+    "independent_5m_support_required": false,
+    "mandatory_evidence": "UNCHANGED",
+    "narrow_cpr": "UNCHANGED",
+    "nifty_self_reference": "NOT_APPLICABLE_UNCHANGED",
+    "relationship_set": [
+      "PRIOR_COMPLETED_1H",
+      "OPENING_5M",
+      "APPLICABLE_NIFTY"
+    ]
+  },
+  "predecessor": {
+    "checksum": "32012713c2b43212bea6af3bace0fbd2491176cb0a1cb7aaf88f8de77c1e8932",
+    "replay": "PRESERVED_EXACTLY",
+    "version": "2.1.0"
+  },
+  "status": "APPROVED_POLICY_CORRECTION_IMPLEMENTATION_CANDIDATE",
+  "trading_performance_claim": "NONE",
+  "unchanged": [
+    "COMPLETED_EVIDENCE",
+    "PHASE_BOUNDARIES",
+    "LATER_PHASE_ADMISSION",
+    "MCX_COMMISSIONING",
+    "PROVIDER_ACQUISITION",
+    "CPR_FORMULA_AND_THRESHOLD",
+    "DIRECTION_AUTHORITY"
+  ]
+}

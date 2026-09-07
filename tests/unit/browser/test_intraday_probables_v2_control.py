@@ -14,9 +14,9 @@ from kronos.intraday.probables_v2 import (
     PROBABLES_V2_METHODOLOGY_CHECKSUM,
     PROBABLES_V2_METHODOLOGY_VERSION,
     PROBABLES_V2_PUBLICATION_IDENTITY,
-    PROBABLES_V2_SUCCESSOR_METHODOLOGY_CHECKSUM,
-    PROBABLES_V2_SUCCESSOR_METHODOLOGY_VERSION,
-    PROBABLES_V2_SUCCESSOR_PUBLICATION_IDENTITY,
+    PROBABLES_V2_CORRECTION_METHODOLOGY_CHECKSUM,
+    PROBABLES_V2_CORRECTION_METHODOLOGY_VERSION,
+    PROBABLES_V2_CORRECTION_PUBLICATION_IDENTITY,
 )
 from kronos.intraday.refresh_v2 import REFRESH_V2_ROUTE
 from tests.unit.application.test_intraday_discovery_operation import (
@@ -70,7 +70,7 @@ def test_normal_sponsor_control_targets_exact_v2_and_has_no_auto_trigger(
     assert "Refresh Analysis · V2 Phase-Aware" in page.body
     assert "PHASE-AWARE V2 · NOT YET RUN" in page.body
     assert "fetch('/control/intraday-discovery/v2'" in page.body
-    assert PROBABLES_V2_SUCCESSOR_METHODOLOGY_CHECKSUM in page.body
+    assert PROBABLES_V2_CORRECTION_METHODOLOGY_CHECKSUM in page.body
     assert page.body.count("fetch('/control/intraday-discovery/v2'") == 1
     assert page.body.index("intradayRefresh.addEventListener('click'") < page.body.index(
         "fetch('/control/intraday-discovery/v2'"
@@ -108,12 +108,12 @@ def test_rendered_refresh_binding_matches_backend_active_binding(
         "methodology_checksum",
     ):
         assert f"{field}:'{status[field]}'" in page.body
-    assert status["methodology_version"] == PROBABLES_V2_SUCCESSOR_METHODOLOGY_VERSION
+    assert status["methodology_version"] == PROBABLES_V2_CORRECTION_METHODOLOGY_VERSION
     assert (
         status["methodology_publication_identity"]
-        == PROBABLES_V2_SUCCESSOR_PUBLICATION_IDENTITY
+        == PROBABLES_V2_CORRECTION_PUBLICATION_IDENTITY
     )
-    assert status["methodology_checksum"] == PROBABLES_V2_SUCCESSOR_METHODOLOGY_CHECKSUM
+    assert status["methodology_checksum"] == PROBABLES_V2_CORRECTION_METHODOLOGY_CHECKSUM
     assert factory_calls == []
     assert provider_requests == [0]
 
@@ -129,7 +129,7 @@ def test_status_get_is_read_only_and_v2_specific(tmp_path: Path) -> None:
     assert response is not None and response.status is HTTPStatus.OK
     assert document["state"] == "NOT_YET_RUN"
     assert document["route_identity"] == REFRESH_V2_ROUTE
-    assert document["methodology_version"] == "2.1.0"
+    assert document["methodology_version"] == "2.2.0"
     assert composition.discovery_v2_operation.last_result is None
     assert factory_calls == []
     assert provider_requests == [0]

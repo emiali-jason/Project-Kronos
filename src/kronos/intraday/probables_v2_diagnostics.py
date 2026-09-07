@@ -15,10 +15,11 @@ from kronos.intraday.discovery import NativeDiscoveryMachineFactBundle, NativeDi
 from kronos.intraday.discovery_runtime import DiscoveryRuntimeExecution
 from kronos.intraday.probables_v2 import (
     PROBABLES_V2_METHODOLOGY_IDENTITY,
-    PROBABLES_V2_SUCCESSOR_METHODOLOGY_CHECKSUM as PROBABLES_V2_METHODOLOGY_CHECKSUM,
-    PROBABLES_V2_SUCCESSOR_METHODOLOGY_VERSION as PROBABLES_V2_METHODOLOGY_VERSION,
-    PROBABLES_V2_SUCCESSOR_PUBLICATION_IDENTITY as PROBABLES_V2_PUBLICATION_IDENTITY,
+    PROBABLES_V2_CORRECTION_METHODOLOGY_CHECKSUM as PROBABLES_V2_METHODOLOGY_CHECKSUM,
+    PROBABLES_V2_CORRECTION_METHODOLOGY_VERSION as PROBABLES_V2_METHODOLOGY_VERSION,
+    PROBABLES_V2_CORRECTION_PUBLICATION_IDENTITY as PROBABLES_V2_PUBLICATION_IDENTITY,
     probables_v2_methodology_binding_supported,
+    create_probables_v2_methodology,
 )
 from kronos.intraday.probables_v2_refresh import (
     DISCOVERY_PROBABLES_V2_REFRESH_IDENTITY,
@@ -244,6 +245,7 @@ def reconstruct_v2_execution(envelope: ProbablesV2ReplayEnvelope) -> DiscoveryRu
 def replay_v2_mapping(envelope: ProbablesV2ReplayEnvelope) -> DiscoveryProbablesV2Mapping:
     return map_discovery_execution_to_probables_v2(
         execution=reconstruct_v2_execution(envelope),
+        methodology=create_probables_v2_methodology(version=envelope.methodology_version),
         reconciliation=envelope.reconciliation,
     )
 

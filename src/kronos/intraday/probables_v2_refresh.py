@@ -36,6 +36,7 @@ from kronos.intraday.probables_v2 import (
     ProbableReasonV2,
     ProbablesUnavailableMemberV2,
     ProbablesV2Error,
+    ProbablesMethodologyV2,
     build_semantic_qualification_evidence_v2,
     create_discovery_probables_evidence_v2,
 )
@@ -302,6 +303,7 @@ def create_discovery_probables_v2_facts(
 
 def map_discovery_execution_to_probables_v2(
     *, execution: object, reconciliation: ReconciliationPublication,
+    methodology: ProbablesMethodologyV2 | None = None,
 ) -> DiscoveryProbablesV2Mapping:
     """Bind one exact Discovery execution to phase-aware V2 inputs."""
 
@@ -413,6 +415,7 @@ def map_discovery_execution_to_probables_v2(
             market_session_identity=selection.current_market_session_identity,
             completed_evidence=selection,
             semantic_evidence=semantic,
+            methodology=methodology,
             opening_semantic=opening,
             nifty_relative=nifty,
             provenance=provenance,

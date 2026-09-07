@@ -76,6 +76,17 @@ PROBABLES_RUN_V2_IDENTITY = "KRONOS-INTRADAY-PROBABLES-RUN-V2"
 V2_CONTRACT_VERSION = "2.0.0"
 
 
+# WO-06A corrects admission only; both prior publications retain exact replay.
+PROBABLES_V2_CORRECTION_METHODOLOGY_VERSION = "2.2.0"
+PROBABLES_V2_CORRECTION_METHODOLOGY_CHECKSUM = (
+    "e7f8bd9316571148b39183e47220e97982d9a956e0309469d3aa9d4e8573a0e9"
+)
+PROBABLES_V2_CORRECTION_PUBLICATION_IDENTITY = (
+    "INTRADAY-PROBABLES-METHODOLOGY-V2-PUBLICATION-"
+    "E7F8BD9316571148B39183E47220E97982D9A956E0309469D3AA9D4E8573A0E9"
+)
+
+
 class ProbablesV2Error(ValueError):
     """Sanitized V2 contract, linkage, or integrity failure."""
 
@@ -162,26 +173,46 @@ def probables_v2_methodology_binding_supported(
                 PROBABLES_V2_SUCCESSOR_PUBLICATION_IDENTITY,
                 PROBABLES_V2_SUCCESSOR_METHODOLOGY_CHECKSUM,
             ),
+            (
+                PROBABLES_V2_CORRECTION_METHODOLOGY_VERSION,
+                PROBABLES_V2_CORRECTION_PUBLICATION_IDENTITY,
+                PROBABLES_V2_CORRECTION_METHODOLOGY_CHECKSUM,
+            ),
         }
     )
 
 
 def create_probables_v2_methodology(
-    *, legacy: bool = False,
+    *, legacy: bool = False, version: str | None = None,
 ) -> ProbablesMethodologyV2:
-    version, publication, checksum = (
-        (
-            PROBABLES_V2_METHODOLOGY_VERSION,
-            PROBABLES_V2_PUBLICATION_IDENTITY,
-            PROBABLES_V2_METHODOLOGY_CHECKSUM,
-        )
-        if legacy
-        else (
-            PROBABLES_V2_SUCCESSOR_METHODOLOGY_VERSION,
+    """Select current correction or an exact retained publication for replay."""
+
+    if type(legacy) is not bool or (legacy and version not in {None, "2.0.0"}):
+        raise ProbablesV2Error("PROBABLES_V2_METHODOLOGY_INVALID")
+    selected = version if version is not None else (
+        PROBABLES_V2_METHODOLOGY_VERSION if legacy
+        else PROBABLES_V2_CORRECTION_METHODOLOGY_VERSION
+    )
+    publications = {
+        PROBABLES_V2_METHODOLOGY_VERSION: (
+            PROBABLES_V2_PUBLICATION_IDENTITY, PROBABLES_V2_METHODOLOGY_CHECKSUM,
+            "KRONOS-WO-06E-FREEZE",
+        ),
+        PROBABLES_V2_SUCCESSOR_METHODOLOGY_VERSION: (
             PROBABLES_V2_SUCCESSOR_PUBLICATION_IDENTITY,
             PROBABLES_V2_SUCCESSOR_METHODOLOGY_CHECKSUM,
-        )
-    )
+            "KRONOS-MCX-SUBJECT-COMMISSIONING-V1",
+        ),
+        PROBABLES_V2_CORRECTION_METHODOLOGY_VERSION: (
+            PROBABLES_V2_CORRECTION_PUBLICATION_IDENTITY,
+            PROBABLES_V2_CORRECTION_METHODOLOGY_CHECKSUM,
+            "KRONOS-WO-06A-OPENING-ADMISSION-CORRECTION",
+        ),
+    }
+    if type(selected) is not str or selected not in publications:
+        raise ProbablesV2Error("PROBABLES_V2_METHODOLOGY_INVALID")
+    version = selected
+    publication, checksum, authority = publications[selected]
     values = {
         "methodology_identity": PROBABLES_V2_METHODOLOGY_IDENTITY,
         "methodology_version": version,
@@ -190,7 +221,7 @@ def create_probables_v2_methodology(
         "phase_family": tuple(IntradayAnalysisPhase),
         "authority": "ANALYTICAL_ADMISSION_FOR_DEEPER_REVIEW_ONLY",
         "provenance": (
-            "KRONOS-WO-06E-FREEZE" if legacy else "KRONOS-MCX-SUBJECT-COMMISSIONING-V1",
+            authority,
             publication,
         ),
     }
@@ -1049,7 +1080,12 @@ def _evaluate_member(value: DiscoveryProbablesEvidenceV2) -> ProbableMemberResul
         reasons: list[ProbableReasonV2] = []
         if opening.prior_one_hour_relationship is OpeningRelationship.CONFLICTING:
             reasons.append(ProbableReasonV2.PRIOR_1H_CONFLICTING_NO_DIRECTION_FLIP)
-        if opening.five_minute_relationship is not OpeningRelationship.SUPPORTING:
+        # Historical publications preserve the extra 5M support gate exactly.
+        # The correction uses the already validated combined relationship below.
+        if (
+            value.methodology_version != PROBABLES_V2_CORRECTION_METHODOLOGY_VERSION
+            and opening.five_minute_relationship is not OpeningRelationship.SUPPORTING
+        ):
             reasons.append(ProbableReasonV2.OPENING_5M_NOT_SUPPORTING)
         if value.nifty_relative.relationship is NiftyRelationship.CONFLICTING:
             reasons.append(ProbableReasonV2.NIFTY_CONTEXT_CONFLICTING_NO_DIRECTION_FLIP)
@@ -1452,6 +1488,9 @@ __all__ = [
     "PROBABLES_V2_METHODOLOGY_IDENTITY",
     "PROBABLES_V2_METHODOLOGY_VERSION",
     "PROBABLES_V2_PUBLICATION_IDENTITY",
+    "PROBABLES_V2_CORRECTION_METHODOLOGY_CHECKSUM",
+    "PROBABLES_V2_CORRECTION_METHODOLOGY_VERSION",
+    "PROBABLES_V2_CORRECTION_PUBLICATION_IDENTITY",
     "PROBABLES_V2_SUCCESSOR_METHODOLOGY_CHECKSUM",
     "PROBABLES_V2_SUCCESSOR_METHODOLOGY_VERSION",
     "PROBABLES_V2_SUCCESSOR_PUBLICATION_IDENTITY",

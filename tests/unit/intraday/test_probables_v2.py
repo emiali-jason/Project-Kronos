@@ -40,9 +40,9 @@ from kronos.intraday.probables_v2 import (
     PROBABLES_V2_METHODOLOGY_IDENTITY,
     PROBABLES_V2_METHODOLOGY_VERSION,
     PROBABLES_V2_PUBLICATION_IDENTITY,
-    PROBABLES_V2_SUCCESSOR_METHODOLOGY_CHECKSUM,
-    PROBABLES_V2_SUCCESSOR_METHODOLOGY_VERSION,
-    PROBABLES_V2_SUCCESSOR_PUBLICATION_IDENTITY,
+    PROBABLES_V2_CORRECTION_METHODOLOGY_CHECKSUM,
+    PROBABLES_V2_CORRECTION_METHODOLOGY_VERSION,
+    PROBABLES_V2_CORRECTION_PUBLICATION_IDENTITY,
     ProbableReasonV2,
     ProbablesUnavailableMemberV2,
     ProbablesV2Error,
@@ -351,9 +351,9 @@ def _later_mapping(
 def test_frozen_methodology_and_completion_driven_phase_family() -> None:
     methodology = create_probables_v2_methodology()
     assert methodology.methodology_identity == PROBABLES_V2_METHODOLOGY_IDENTITY
-    assert methodology.methodology_version == PROBABLES_V2_SUCCESSOR_METHODOLOGY_VERSION
-    assert methodology.publication_identity == PROBABLES_V2_SUCCESSOR_PUBLICATION_IDENTITY
-    assert methodology.payload_checksum == PROBABLES_V2_SUCCESSOR_METHODOLOGY_CHECKSUM
+    assert methodology.methodology_version == PROBABLES_V2_CORRECTION_METHODOLOGY_VERSION
+    assert methodology.publication_identity == PROBABLES_V2_CORRECTION_PUBLICATION_IDENTITY
+    assert methodology.payload_checksum == PROBABLES_V2_CORRECTION_METHODOLOGY_CHECKSUM
     legacy = create_probables_v2_methodology(legacy=True)
     assert legacy.methodology_version == PROBABLES_V2_METHODOLOGY_VERSION
     assert legacy.publication_identity == PROBABLES_V2_PUBLICATION_IDENTITY
