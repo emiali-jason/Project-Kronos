@@ -1,0 +1,2414 @@
+{
+  "manifest_id": "KRONOS-INTRADAY-CURRENT-AUTHORITY-MANIFEST",
+  "manifest_version": "1.0.0",
+  "document_status": "Approved",
+  "review_state": "WO-01C QUALIFIED / APPROVED PUBLICATION EDITION",
+  "owner": "KRONOS Intraday Sponsor / EA",
+  "qualified_on": "2026-09-07",
+  "scope": "Documentation/governance through WO-09. Not a runtime input and grants no correction implementation or production authority.",
+  "qualification_baseline": {
+    "repository": "/Users/imranali/Documents/GitHub/Project-Kronos",
+    "branch": "develop",
+    "local_head": "782e51e52ed621d03881f59f13412a21d41b4f14",
+    "origin_develop": "782e51e52ed621d03881f59f13412a21d41b4f14",
+    "remote_develop_verified": "782e51e52ed621d03881f59f13412a21d41b4f14",
+    "ahead": 0,
+    "behind": 0,
+    "starting_worktree": "CLEAN",
+    "latest_commit_subject": "fix(browser): restore asynchronous status polling",
+    "advancement_from_wo01a": "NONE",
+    "baseline_meaning": "Code revision inspected for this candidate; not a loaded-runtime claim and not a SHA that automatically tracks future develop."
+  },
+  "status_dimensions": [
+    "APPROVED_POLICY",
+    "IMPLEMENTED",
+    "PUBLISHED",
+    "RUNTIME_ACCEPTED",
+    "OPERATIONALLY_PROVEN",
+    "EMPIRICALLY_QUALIFIED"
+  ],
+  "status_vocabulary": {
+    "YES": "Direct evidence supports this exact capability and dimension; read the associated evidence field.",
+    "NO": "Explicitly absent, unimplemented, unpublished or not accepted for this exact capability.",
+    "PARTIAL": "Only the stated subset is evidenced; remaining work stays open.",
+    "NOT_ESTABLISHED": "Evidence inspected does not establish this dimension; not proof it never happened.",
+    "NOT_APPLICABLE": "Dimension does not apply, e.g. skipped implementation or obsolete status wording."
+  },
+  "status_interpretation": [
+    "Each dimension is independently recorded; no dimension implies the next.",
+    "PUBLISHED measures the stated capability/correction in deployed source history, not whether this candidate manifest has been committed.",
+    "A publication_commit may identify a conflicting/partial predecessor implementation; it is not proof the correction is published.",
+    "Runtime/operational entries are dated retained evidence, not new WO-01B executions or a claim of current process health.",
+    "EMPIRICALLY_QUALIFIED concerns the stated market/usefulness claim; deterministic tests and operational success do not establish it.",
+    "Classification is a set: CONTRADICTORY or MISSING may also be OPEN_CORRECTION. Counts overlap and are not a partition.",
+    "SUPERSEDED records preserve original wording/history; they are not edited source decisions."
+  ],
+  "classification_vocabulary": [
+    "CURRENT",
+    "SUPERSEDED",
+    "CONTRADICTORY",
+    "MISSING",
+    "OPEN_CORRECTION"
+  ],
+  "work_orders": [
+    "WO-01",
+    "WO-02",
+    "WO-03",
+    "WO-03A",
+    "WO-04",
+    "WO-05",
+    "WO-06",
+    "WO-07",
+    "WO-08",
+    "WO-09"
+  ],
+  "empirical_discipline": {
+    "never_infer": [
+      "profitability",
+      "Win Rate",
+      "tradability",
+      "Futures suitability",
+      "Options suitability",
+      "Risk suitability",
+      "execution eligibility"
+    ],
+    "from": [
+      "test PASS",
+      "publication",
+      "runtime acceptance",
+      "candidate counts",
+      "Review success",
+      "Answer import success",
+      "chart correspondence",
+      "engineering qualification"
+    ],
+    "requirement": "Each requires separately governed evidence; no such inference is authorized by this manifest."
+  },
+  "programme": {
+    "WO-01A": "COMPLETE / PASS",
+    "WO-01B": "COMPLETE / PASS / PUBLISHED",
+    "WO-01C": "QUALIFIED / FINAL CLOSURE RECORDED IN LIVING MASTER",
+    "STATISTICS": "HELD",
+    "WO-10 REVALIDATION": "HELD",
+    "WO-18": "HELD",
+    "BR2": "CLOSED_WITH_SPONSOR_INPUT_PENDING",
+    "AUTONOMOUS BROKER EXECUTION": "NONE"
+  },
+  "producer_advance_policy": {
+    "authority": "SPONSOR-09",
+    "currentness": "Review is CURRENT only while its bound Probables Run equals the current authoritative Probables Run. Probables N -> Review N -> Probables N+1 makes Review N NON_CURRENT.",
+    "new_import_after_divergence": "BLOCKED in current operational workflow.",
+    "already_imported": "PRESERVE IMMUTABLY. Do not delete, rewrite or invalidate historical identity because the producer advanced.",
+    "identical_replay": "ALLOWED ONLY AS IDEMPOTENT REPLAY of evidence successfully imported before divergence.",
+    "replay_must_not_create": [
+      "new evidence",
+      "new authority",
+      "new revision",
+      "new current pointer",
+      "new analytical consequence"
+    ],
+    "batch_checks": [
+      "At batch start verify selected Review alignment with current Probables.",
+      "Before persisting each not-yet-imported member re-check currentness.",
+      "Before final current-workflow publication/currentization re-check currentness."
+    ],
+    "producer_advance_during_batch": [
+      "STOP ACCEPTING NEW MEMBERS.",
+      "Preserve already successfully persisted members immutably.",
+      "Reject not-yet-imported members with typed producer-advanced / non-current-Review results.",
+      "Explicitly report partial completion caused by producer advancement.",
+      "A stale Review never becomes current because part of its batch completed."
+    ],
+    "fresh_review": "New Review bound to N+1 required for current operational processing; Review N is historical evidence only.",
+    "historical_review_ui": "NOT AUTHORIZED",
+    "historical_research_import": "NOT AUTHORIZED; future completion needs separately governed NON_CURRENT_RESEARCH authority, never normal current-workflow import.",
+    "br2": "CLOSED_WITH_SPONSOR_INPUT_PENDING; no wholesale reopening.",
+    "required_future_tests": [
+      "producer advances before individual import",
+      "producer advances before batch import",
+      "producer advances during batch",
+      "producer advances before final batch publication/currentization",
+      "identical replay after divergence",
+      "conflicting replay after divergence",
+      "fresh Review N+1 replacement",
+      "already-imported evidence preservation",
+      "independently failed batch members",
+      "restart/restoration after partial producer-advance batch"
+    ],
+    "downstream_authority": "NONE: no Readiness, Promotion, Trade Construction, Risk, Entry, PAPER/LIVE or broker execution change."
+  },
+  "evidence_registry": {
+    "SPONSOR-01B": {
+      "kind": "SPONSOR_DECISION",
+      "location": "WO-01B Current Authority Manifest, accepted work order, 2026-09-07",
+      "detail": "WO-01A PASS accepted. Documentation/governance only. This candidate records the approved policy; it does not approve itself or implement corrections. Full controlling policy requirements are retained in this manifest."
+    },
+    "SPONSOR-09": {
+      "kind": "SPONSOR_DECISION",
+      "location": "WO-09 Producer-Advance / Review Transition, Sponsor decision following WO-01A, recorded 2026-09-07",
+      "detail": "Authorizes policy only. Exact rule is retained in producer_advance_policy below. Supersedes the unresolved transition recommendation, not BR2 closure."
+    },
+    "SPONSOR-BR2": {
+      "kind": "SPONSOR_DECISION",
+      "location": "WO-BR2 Formal Closure, 2026-09-06",
+      "detail": "CLOSED_WITH_SPONSOR_INPUT_PENDING at 19f583f; 4,903/4,903 engineering PASS retained; runtime acceptance and six equity imports recorded. BDL, SRF corrected Answers and CRUDE REV004 paired Answer pending at closure. No assertion of later current runtime state."
+    },
+    "RECONCILIATION": {
+      "kind": "ACCEPTED_RECONCILIATION",
+      "location": "WO-01A Current Authority Reconciliation, accepted by Sponsor in WO-01B",
+      "detail": "Inspected develop 782e51e, source/tests, live Drive chronology and read-only retained production evidence. Passed once Sponsor resolved WO-09 policy. Findings summarized per capability; no new runtime or empirical qualification in WO-01B."
+    },
+    "LIVING-MASTER": {
+      "kind": "DOCUMENT",
+      "location": "https://docs.google.com/document/d/1o5sv4Yukldeqe32bRObgEorKl3PhUwhqV8ZwowpTxmU/edit",
+      "detail": "Living Master, inspected revision 2026-09-06T15:19:15.027Z. Final Sep 6 improvement register supersedes earlier research recommendations. P1142-1147 historical index acceptance; P1248-1253 selected Review presentation; P1403 no embedded build SHA; P1469-1506 admission price/time ledger meaning."
+    },
+    "TRACKER": {
+      "kind": "DOCUMENT",
+      "location": "https://docs.google.com/document/d/1OpAMKyWE-Fwlh55vO_vMUzDHl1z_9tkdfaJClsI0Kt8/edit",
+      "detail": "Programme Tracker, Aug 28 record: historical sequence, not current branch/runtime authority."
+    },
+    "DIARY": {
+      "kind": "DOCUMENT",
+      "location": "https://docs.google.com/document/d/1VDiVB7ttFZM88pZD7vX06b2IOMA_fPa1jG0C1wKeguc/edit",
+      "detail": "Work Order Diary, Aug 28: historical BANKNIFTY/RBLBANK acceptance and gates."
+    },
+    "BR1-RECORD": {
+      "kind": "DOCUMENT",
+      "location": "https://docs.google.com/document/d/1jY2cd_vRl2yhcdrEIPMEpc-MAmwXBgR0DRNxoLbwo-A/edit",
+      "detail": "Sep 5 continuity through BR1: currentization, historical evidence preservation and page-latency acceptance. BR2 not-started statement is historical."
+    },
+    "CA-SEP4": {
+      "kind": "DOCUMENT",
+      "location": "https://docs.google.com/document/d/1nxDMIfYhE9recXnBAlAi1jZ1_ud6WWrU1SdB0CSnP8E/edit",
+      "detail": "CA methodology decisions Sep 4; no unapproved numerical/visual trading authority."
+    },
+    "ENGINEERING-SEP4": {
+      "kind": "DOCUMENT",
+      "location": "https://docs.google.com/document/d/1ngvUSa1wOxmtwpyyCDn9cCiPjikvA0QOnn27BpaRPDU/edit",
+      "detail": "Sep 4 runtime failures/recovery, availability correction, later-phase NIFTY label correction; successful-run actual request count not retained."
+    },
+    "FINAL-RESEARCH": {
+      "kind": "RESEARCH",
+      "location": "https://github.com/emiali-jason/Project-Kronos/tree/345e766fe8912ac8e700b6aaba1416547c1c65f1",
+      "detail": "Accepted report: KRONOS_DRIVE_GITHUB_RECOMMENDATIONS_THROUGH_WO09_2026_09_06.md, retained in local output/intraday-wo01-09-review and summarized in Living Master final improvement register. This URL pins the examined source baseline, not the report publication. 325 focused tests retained, not rerun by WO-01B. Source unchanged for assessed Intraday scope through 782e51e. Synthetic reproductions are not live incidents."
+    },
+    "OPENING-RESEARCH": {
+      "kind": "RETAINED_EVIDENCE",
+      "location": "INTRADAY-OPENING-PHASE-NIFTY-RELATIVE-RESEARCH-093DAFC4CCEE6B67C8EA16CFB9C7F9974C9276FEC4A02B947C09AA1111BCE7F7",
+      "detail": "WO-01A verified SHA256 91e53e11870174db1607d2b660b5a97cd52f7d454ae529c21129599e7dc6bc9e: 372 rows, 93 subjects x 4 sessions Aug18-21. Combined supporting: 190 informational 5M + 51 supporting 5M. No final CPR admission gate or outcomes; not 190 lost/profitable candidates."
+    },
+    "RETAINED-REVIEW": {
+      "kind": "RETAINED_EVIDENCE",
+      "location": "review-v2/current/CURRENT-REVIEW-V2-POINTER.json and refresh-v2/CURRENT-PROBABLES-V2.json, WO-01A read-only inspection",
+      "detail": "Both bind INTRADAY-PROBABLES-V2-RUN-8DC2835D0D7A53490F8ABA536B74706858E47F49FDCFB51156DD08D17CF6D372; analysis boundary 2026-09-04T13:47:57+00:00; methodology 2.1.0. Nine candidates: BDL, CRUDE, EICHERMOT, MAXHEALTH, NTPC, SRF, TATAPOWER, TITAN, TMPV. All nine exact chart payload hashes verified. CRUDE REV004; other eight REV001. Six imports on 2026-09-06T08:00:49.832117+00:00: EICHERMOT, MAXHEALTH, NTPC, TATAPOWER, TITAN, TMPV. No fresh production reads by WO-01B."
+    },
+    "RETAINED-V1": {
+      "kind": "RETAINED_EVIDENCE",
+      "location": "review-v1 historical visual evidence and import receipts, WO-01A read-only inspection",
+      "detail": "BANKNIFTY raw Nifty Bank Index and RBLBANK raw RBL Bank Ltd imported Aug28. 53 historical receipts: 2 imported, 51 unsuccessful (21 missing, 20 visual relationship unavailable, 6 Answer identity mismatch, 4 schema invalid). Therefore neither no-index-evidence nor no-rejection-receipts-ever is true."
+    },
+    "ARCHITECTURE": {
+      "kind": "REPOSITORY",
+      "location": "docs/architecture/products/intraday/KRONOS-INTRADAY-ENGINEERING-METHODOLOGY-ARCHITECTURE-RECORD-V0.1.md",
+      "detail": "Inspected repository source at qualification baseline; historical status wording must be read with the supersession entries in this manifest."
+    },
+    "ROADMAP": {
+      "kind": "REPOSITORY",
+      "location": "docs/architecture/products/intraday/KRONOS-INTRADAY-V1-PROGRAMME-ROADMAP.md",
+      "detail": "Inspected repository source at qualification baseline; historical status wording must be read with the supersession entries in this manifest."
+    },
+    "VALIDATION": {
+      "kind": "REPOSITORY",
+      "location": "docs/architecture/products/intraday/KRONOS-INTRADAY-SLICE-3V-FACTUAL-VISUAL-VALIDATION-CONTRACT-V1.md",
+      "detail": "Inspected repository source at qualification baseline; historical status wording must be read with the supersession entries in this manifest."
+    },
+    "UNIVERSE": {
+      "kind": "REPOSITORY",
+      "location": "docs/architecture/products/intraday/KRONOS-INTRADAY-NATIVE-UNIVERSE-V1.md",
+      "detail": "Inspected repository source at qualification baseline; historical status wording must be read with the supersession entries in this manifest."
+    },
+    "DISCOVERY": {
+      "kind": "REPOSITORY",
+      "location": "docs/architecture/products/intraday/KRONOS-INTRADAY-WO-05-NATIVE-DISCOVERY-RUNTIME.md",
+      "detail": "Inspected repository source at qualification baseline; historical status wording must be read with the supersession entries in this manifest."
+    },
+    "METHODOLOGY": {
+      "kind": "REPOSITORY",
+      "location": "docs/architecture/products/intraday/KRONOS-INTRADAY-WO-06E-PHASE-AWARE-PROBABLES-V2-METHODOLOGY.md",
+      "detail": "Inspected repository source at qualification baseline; historical status wording must be read with the supersession entries in this manifest."
+    },
+    "METHODOLOGY-21": {
+      "kind": "REPOSITORY",
+      "location": "docs/architecture/products/intraday/KRONOS-INTRADAY-MCX-COMMISSIONED-PROBABLES-V2.1-METHODOLOGY-PAYLOAD.json",
+      "detail": "Inspected repository source at qualification baseline; historical status wording must be read with the supersession entries in this manifest."
+    },
+    "REVIEW": {
+      "kind": "REPOSITORY",
+      "location": "docs/architecture/products/intraday/KRONOS-INTRADAY-WO-07-GOVERNED-NATIVE-REVIEW-V1.md",
+      "detail": "Inspected repository source at qualification baseline; historical status wording must be read with the supersession entries in this manifest."
+    },
+    "REVIEW-V2": {
+      "kind": "REPOSITORY",
+      "location": "docs/architecture/products/intraday/KRONOS-INTRADAY-V2-REVIEW-SUCCESSOR-SEAM-V1.md",
+      "detail": "Inspected repository source at qualification baseline; historical status wording must be read with the supersession entries in this manifest."
+    },
+    "ANSWER": {
+      "kind": "REPOSITORY",
+      "location": "docs/architecture/products/intraday/KRONOS-INTRADAY-WO-09-GOVERNED-CHART-ANALYST-ANSWER-IMPORT-V1.md",
+      "detail": "Inspected repository source at qualification baseline; historical status wording must be read with the supersession entries in this manifest."
+    },
+    "DOMAIN001": {
+      "kind": "REPOSITORY",
+      "location": "docs/architecture/adr/ADR-0014-DOMAIN-001-CANONICAL-INSTRUMENT-V2-SEMANTIC-LAYERING-PROVIDER-CLASSIFICATION-AND-ACTIVE-DERIVATIVE-BINDING.md",
+      "detail": "Inspected repository source at qualification baseline; historical status wording must be read with the supersession entries in this manifest."
+    },
+    "VISUAL-IDENTITY": {
+      "kind": "REPOSITORY",
+      "location": "docs/architecture/adr/ADR-0018-DOMAIN-001-GOVERNED-VISUAL-IDENTITY-RELATIONSHIP-V1.md",
+      "detail": "Inspected repository source at qualification baseline; historical status wording must be read with the supersession entries in this manifest."
+    },
+    "ACTIVE-CONTRACT": {
+      "kind": "REPOSITORY",
+      "location": "docs/architecture/adr/ADR-0017-GOVERNED-ACTIVE-DERIVATIVE-CONTRACT-SELECTION-V1.md",
+      "detail": "Inspected repository source at qualification baseline; historical status wording must be read with the supersession entries in this manifest."
+    },
+    "PROBABLES-CODE": {
+      "kind": "REPOSITORY",
+      "location": "src/kronos/intraday/probables_v2.py",
+      "detail": "Inspected repository source at qualification baseline; historical status wording must be read with the supersession entries in this manifest."
+    },
+    "OPENING-CODE": {
+      "kind": "REPOSITORY",
+      "location": "src/kronos/intraday/opening_semantic.py",
+      "detail": "Inspected repository source at qualification baseline; historical status wording must be read with the supersession entries in this manifest."
+    },
+    "RELATIVE-CODE": {
+      "kind": "REPOSITORY",
+      "location": "src/kronos/intraday/nifty_relative_context.py",
+      "detail": "Inspected repository source at qualification baseline; historical status wording must be read with the supersession entries in this manifest."
+    },
+    "REFRESH-CODE": {
+      "kind": "REPOSITORY",
+      "location": "src/kronos/intraday/probables_v2_refresh.py",
+      "detail": "Inspected repository source at qualification baseline; historical status wording must be read with the supersession entries in this manifest."
+    },
+    "DISCOVERY-CODE": {
+      "kind": "REPOSITORY",
+      "location": "src/kronos/intraday/discovery_runtime.py",
+      "detail": "Inspected repository source at qualification baseline; historical status wording must be read with the supersession entries in this manifest."
+    },
+    "SOURCE-CODE": {
+      "kind": "REPOSITORY",
+      "location": "src/kronos/intraday/discovery_source.py",
+      "detail": "Inspected repository source at qualification baseline; historical status wording must be read with the supersession entries in this manifest."
+    },
+    "REVIEW-CODE": {
+      "kind": "REPOSITORY",
+      "location": "src/kronos/application/intraday_review_v2.py",
+      "detail": "Inspected repository source at qualification baseline; historical status wording must be read with the supersession entries in this manifest."
+    },
+    "INBOX-CODE": {
+      "kind": "REPOSITORY",
+      "location": "src/kronos/intraday/review_v2_transport.py",
+      "detail": "Inspected repository source at qualification baseline; historical status wording must be read with the supersession entries in this manifest."
+    },
+    "PAIRED-CODE": {
+      "kind": "REPOSITORY",
+      "location": "src/kronos/application/intraday_review_v2_paired.py",
+      "detail": "Inspected repository source at qualification baseline; historical status wording must be read with the supersession entries in this manifest."
+    },
+    "VALIDATION-TEST": {
+      "kind": "REPOSITORY",
+      "location": "tests/unit/intraday/test_validation.py",
+      "detail": "Inspected repository source at qualification baseline; historical status wording must be read with the supersession entries in this manifest."
+    },
+    "UNIVERSE-TEST": {
+      "kind": "REPOSITORY",
+      "location": "tests/unit/intraday/test_universe.py",
+      "detail": "Inspected repository source at qualification baseline; historical status wording must be read with the supersession entries in this manifest."
+    },
+    "DISCOVERY-TEST": {
+      "kind": "REPOSITORY",
+      "location": "tests/unit/intraday/test_discovery_runtime.py",
+      "detail": "Inspected repository source at qualification baseline; historical status wording must be read with the supersession entries in this manifest."
+    },
+    "PROBABLES-TEST": {
+      "kind": "REPOSITORY",
+      "location": "tests/unit/intraday/test_probables_v2.py",
+      "detail": "Inspected repository source at qualification baseline; historical status wording must be read with the supersession entries in this manifest."
+    },
+    "REVIEW-TEST": {
+      "kind": "REPOSITORY",
+      "location": "tests/unit/intraday/test_review_v2.py",
+      "detail": "Inspected repository source at qualification baseline; historical status wording must be read with the supersession entries in this manifest."
+    },
+    "INBOX-TEST": {
+      "kind": "REPOSITORY",
+      "location": "tests/unit/intraday/test_review_v2_individual_inbox.py",
+      "detail": "Inspected repository source at qualification baseline; historical status wording must be read with the supersession entries in this manifest."
+    },
+    "PAIRED-TEST": {
+      "kind": "REPOSITORY",
+      "location": "tests/unit/intraday/test_review_v2_paired_generic.py",
+      "detail": "Inspected repository source at qualification baseline; historical status wording must be read with the supersession entries in this manifest."
+    }
+  },
+  "capabilities": [
+    {
+      "capability_id": "01-authority-map",
+      "work_order": "WO-01",
+      "capability": "Living Architecture and programme control",
+      "current_policy_contract": "develop is the active engineering branch. This manifest reconciles authority through WO-09; historical source status headers and repository SHAs remain historical. Source-specific approved decisions retain ownership.",
+      "effective_version": "Manifest 1.0.0; qualification baseline 782e51e52ed621d03881f59f13412a21d41b4f14",
+      "status_dimensions": {
+        "APPROVED_POLICY": "YES",
+        "IMPLEMENTED": "YES",
+        "PUBLISHED": "YES",
+        "RUNTIME_ACCEPTED": "NOT_APPLICABLE",
+        "OPERATIONALLY_PROVEN": "NOT_APPLICABLE",
+        "EMPIRICALLY_QUALIFIED": "NOT_APPLICABLE"
+      },
+      "implementation": "WO-01B manifest and bounded validator qualified by WO-01C; approved publication edition.",
+      "publication_commit": [],
+      "test_evidence": "WO-01C: manifest validator PASS; focused manifest and affected architecture/governance tests PASS. Exact test totals and publication SHA are recorded in the dated Living Master closure entry.",
+      "runtime_acceptance": "Not established for this specific capability.",
+      "operational_evidence": "Not established for this specific capability.",
+      "empirical_qualification": "Not applicable to a governance index.",
+      "current_classification": [
+        "CURRENT"
+      ],
+      "supersedes": [
+        "01-old-baselines"
+      ],
+      "superseded_by": [],
+      "open_correction": null,
+      "evidence_reference": [
+        "SPONSOR-01B",
+        "RECONCILIATION",
+        "ARCHITECTURE",
+        "ROADMAP",
+        "LIVING-MASTER"
+      ],
+      "notes": "Roadmap WO17 Slice0, early main/bootstrap and Aug28 next-WO12 statements are dated records. Current programme gates appear in metadata, not inferred from those headers. Manifest publication is represented by the containing Git commit, subject to publication_record.effective_condition. Other capability statuses are unchanged."
+    },
+    {
+      "capability_id": "02-numerical-visual-boundary",
+      "work_order": "WO-02",
+      "capability": "Factual and visual authority",
+      "current_policy_contract": "KRONOS governed facts own machine numbers. Chart Analyst supplies VISUAL EVIDENCE ONLY. File/pack identity is not factual market correspondence; factual correspondence is not temporal correspondence; successful import is not visual reliability.",
+      "effective_version": "Slice 3V V1; Review Q1-Q10 retains its separate contract",
+      "status_dimensions": {
+        "APPROVED_POLICY": "YES",
+        "IMPLEMENTED": "YES",
+        "PUBLISHED": "YES",
+        "RUNTIME_ACCEPTED": "NOT_ESTABLISHED",
+        "OPERATIONALLY_PROVEN": "NOT_ESTABLISHED",
+        "EMPIRICALLY_QUALIFIED": "NOT_ESTABLISHED"
+      },
+      "implementation": "Typed exact/relational/approximate/unobservable validation and persistence exist.",
+      "publication_commit": [
+        "542c84fbacbd9f1bfb2997255b90f00495ba4544"
+      ],
+      "test_evidence": "Retained tests/unit/intraday/test_validation.py covers validation contract.",
+      "runtime_acceptance": "Not established for this specific capability.",
+      "operational_evidence": "Not established for this specific capability.",
+      "empirical_qualification": "Not established; engineering evidence does not establish market usefulness.",
+      "current_classification": [
+        "CURRENT"
+      ],
+      "supersedes": [],
+      "superseded_by": [],
+      "open_correction": null,
+      "evidence_reference": [
+        "VALIDATION",
+        "VALIDATION-TEST",
+        "REVIEW-V2",
+        "CA-SEP4"
+      ],
+      "notes": "No new runtime, acquisition, import or downstream authority."
+    },
+    {
+      "capability_id": "02-coverage",
+      "work_order": "WO-02",
+      "capability": "Factual/visual coverage inventory",
+      "current_policy_contract": "Inventory exact subject/timeframe/fact comparison coverage and explicit unverifiable cases; no blanket proof from transport checks.",
+      "effective_version": "Qualification protocol not yet established",
+      "status_dimensions": {
+        "APPROVED_POLICY": "YES",
+        "IMPLEMENTED": "NO",
+        "PUBLISHED": "NO",
+        "RUNTIME_ACCEPTED": "NO",
+        "OPERATIONALLY_PROVEN": "NO",
+        "EMPIRICALLY_QUALIFIED": "NOT_ESTABLISHED"
+      },
+      "implementation": "Existing validators are not a complete factual/visual coverage inventory.",
+      "publication_commit": [],
+      "test_evidence": "No capability-specific execution in WO-01B; retained evidence only.",
+      "runtime_acceptance": "Not established for this specific capability.",
+      "operational_evidence": "Not established for this specific capability.",
+      "empirical_qualification": "Not established; engineering evidence does not establish market usefulness.",
+      "current_classification": [
+        "OPEN_CORRECTION"
+      ],
+      "supersedes": [],
+      "superseded_by": [],
+      "open_correction": {
+        "owner": "WO-02",
+        "status": "OPEN",
+        "description": "Complete factual/visual coverage inventory across the immediate NSE/index focus."
+      },
+      "evidence_reference": [
+        "SPONSOR-01B",
+        "FINAL-RESEARCH",
+        "VALIDATION-TEST"
+      ],
+      "notes": "No new runtime, acquisition, import or downstream authority."
+    },
+    {
+      "capability_id": "02-temporal-coverage",
+      "work_order": "WO-02",
+      "capability": "Temporal correspondence coverage",
+      "current_policy_contract": "Qualify session/timezone/completed-bar endpoint correspondence where applicable, preserving legitimate prior-session context.",
+      "effective_version": "Qualification pending",
+      "status_dimensions": {
+        "APPROVED_POLICY": "YES",
+        "IMPLEMENTED": "NO",
+        "PUBLISHED": "NO",
+        "RUNTIME_ACCEPTED": "NO",
+        "OPERATIONALLY_PROVEN": "NO",
+        "EMPIRICALLY_QUALIFIED": "NOT_ESTABLISHED"
+      },
+      "implementation": "Full market-time coverage inventory absent from accepted evidence.",
+      "publication_commit": [],
+      "test_evidence": "No capability-specific execution in WO-01B; retained evidence only.",
+      "runtime_acceptance": "Not established for this specific capability.",
+      "operational_evidence": "Not established for this specific capability.",
+      "empirical_qualification": "Not established; engineering evidence does not establish market usefulness.",
+      "current_classification": [
+        "OPEN_CORRECTION"
+      ],
+      "supersedes": [],
+      "superseded_by": [],
+      "open_correction": {
+        "owner": "WO-02",
+        "status": "OPEN",
+        "description": "Inventory temporal comparison coverage; coordinate chart evidence extension with WO-07."
+      },
+      "evidence_reference": [
+        "FINAL-RESEARCH",
+        "SPONSOR-01B"
+      ],
+      "notes": "No new runtime, acquisition, import or downstream authority."
+    },
+    {
+      "capability_id": "03-membership",
+      "work_order": "WO-03",
+      "capability": "Native analytical membership",
+      "current_policy_contract": "98 governed members = 91 NSE equities + NIFTY + BANKNIFTY + five MCX subjects. Immediate Sponsor focus is the 93 NSE/index subjects; 93 is not architecture capacity or acquisition authority. Preserve MCX architecture/history; immediate MCX improvement work DEFERRED.",
+      "effective_version": "KRONOS-INTRADAY-NATIVE-UNIVERSE-V1 / 1.0.0",
+      "status_dimensions": {
+        "APPROVED_POLICY": "YES",
+        "IMPLEMENTED": "YES",
+        "PUBLISHED": "YES",
+        "RUNTIME_ACCEPTED": "YES",
+        "OPERATIONALLY_PROVEN": "YES",
+        "EMPIRICALLY_QUALIFIED": "NOT_ESTABLISHED"
+      },
+      "implementation": "Immutable Intraday-owned universe, independent of Swing/Provider membership.",
+      "publication_commit": [
+        "a53782c1da709e4119ae13662b1bc8374e8c9b92"
+      ],
+      "test_evidence": "Retained universe tests and discovery successor-capacity fixture.",
+      "runtime_acceptance": "WO-05/06 controlled runtime records account for governed membership.",
+      "operational_evidence": "Accepted Discovery records retain all members including typed unavailable results.",
+      "empirical_qualification": "Not established; engineering evidence does not establish market usefulness.",
+      "current_classification": [
+        "CURRENT"
+      ],
+      "supersedes": [],
+      "superseded_by": [],
+      "open_correction": null,
+      "evidence_reference": [
+        "UNIVERSE",
+        "UNIVERSE-TEST",
+        "SPONSOR-01B"
+      ],
+      "notes": "No new runtime, acquisition, import or downstream authority."
+    },
+    {
+      "capability_id": "03a-canonical-identity",
+      "work_order": "WO-03A",
+      "capability": "Canonical identity",
+      "current_policy_contract": "DOMAIN-001 owns persistent subjects and derivative identities; Provider symbols do not create canonical identity.",
+      "effective_version": "ADR-0014; governed canonical/runtime reconciliation V1",
+      "status_dimensions": {
+        "APPROVED_POLICY": "YES",
+        "IMPLEMENTED": "YES",
+        "PUBLISHED": "YES",
+        "RUNTIME_ACCEPTED": "YES",
+        "OPERATIONALLY_PROVEN": "YES",
+        "EMPIRICALLY_QUALIFIED": "NOT_ESTABLISHED"
+      },
+      "implementation": "Commissioned canonical prerequisites supersede RELIANCE-only initial coverage.",
+      "publication_commit": [
+        "24173e6bf254fb7fe3769860c1065418f9fb3e5d",
+        "a48b2fb2c17db2408c677a7efc13085cad4057cd",
+        "a5cd37f623de0755469d23f095192dd5d93db542",
+        "76f97da9934aebff9b4de653bd028f2a26f11dfc"
+      ],
+      "test_evidence": "No capability-specific execution in WO-01B; retained evidence only.",
+      "runtime_acceptance": "Accepted later Discovery and Review identity binding.",
+      "operational_evidence": "Retained current NSE and CRUDE Review lineage; not a claim of execution eligibility.",
+      "empirical_qualification": "Not established; engineering evidence does not establish market usefulness.",
+      "current_classification": [
+        "CURRENT"
+      ],
+      "supersedes": [
+        "03-reliance-only",
+        "03-missing97"
+      ],
+      "superseded_by": [],
+      "open_correction": null,
+      "evidence_reference": [
+        "DOMAIN001",
+        "ACTIVE-CONTRACT",
+        "RECONCILIATION"
+      ],
+      "notes": "No new runtime, acquisition, import or downstream authority."
+    },
+    {
+      "capability_id": "03a-availability",
+      "work_order": "WO-03A",
+      "capability": "Per-run availability",
+      "current_policy_contract": "Availability is per governed run, session and active binding; five MCX unavailability was a dated prerequisite condition, not permanent policy.",
+      "effective_version": "Active derivative selection V1 / 1.0.0; per-run Discovery",
+      "status_dimensions": {
+        "APPROVED_POLICY": "YES",
+        "IMPLEMENTED": "YES",
+        "PUBLISHED": "YES",
+        "RUNTIME_ACCEPTED": "YES",
+        "OPERATIONALLY_PROVEN": "YES",
+        "EMPIRICALLY_QUALIFIED": "NOT_ESTABLISHED"
+      },
+      "implementation": "Canonical identity, factual availability and commissioning remain separate. Four MCX commissioned in methodology 2.1; NATGAS admission held.",
+      "publication_commit": [
+        "23d19a54958ca72a983c359d6afbb29795a50873"
+      ],
+      "test_evidence": "No capability-specific execution in WO-01B; retained evidence only.",
+      "runtime_acceptance": "Sep4 recovery/availability qualification retained.",
+      "operational_evidence": "Current retained CRUDE candidate proves permanent-five-unavailable statement obsolete; no universal availability inferred.",
+      "empirical_qualification": "Not established; engineering evidence does not establish market usefulness.",
+      "current_classification": [
+        "CURRENT"
+      ],
+      "supersedes": [
+        "03-five-mcx-unavailable"
+      ],
+      "superseded_by": [],
+      "open_correction": null,
+      "evidence_reference": [
+        "ACTIVE-CONTRACT",
+        "METHODOLOGY-21",
+        "ENGINEERING-SEP4"
+      ],
+      "notes": "No new runtime, acquisition, import or downstream authority."
+    },
+    {
+      "capability_id": "03a-execution-eligibility",
+      "work_order": "WO-03A",
+      "capability": "Execution eligibility separation",
+      "current_policy_contract": "Membership, canonical identity, availability and successful Review confer no execution eligibility.",
+      "effective_version": "Native Universe V1 boundary",
+      "status_dimensions": {
+        "APPROVED_POLICY": "YES",
+        "IMPLEMENTED": "YES",
+        "PUBLISHED": "YES",
+        "RUNTIME_ACCEPTED": "NOT_ESTABLISHED",
+        "OPERATIONALLY_PROVEN": "NOT_ESTABLISHED",
+        "EMPIRICALLY_QUALIFIED": "NOT_ESTABLISHED"
+      },
+      "implementation": "Execution eligibility remains NOT_ESTABLISHED in Discovery output.",
+      "publication_commit": [
+        "db7195396c29eb03a3a42d3f84ba285fabe0af9f",
+        "caab4f76023efad5b1d25571d5ddea463af8267f"
+      ],
+      "test_evidence": "No capability-specific execution in WO-01B; retained evidence only.",
+      "runtime_acceptance": "Not established for this specific capability.",
+      "operational_evidence": "Not established for this specific capability.",
+      "empirical_qualification": "No tradability, Futures/Options, Risk or execution suitability established.",
+      "current_classification": [
+        "CURRENT"
+      ],
+      "supersedes": [],
+      "superseded_by": [],
+      "open_correction": null,
+      "evidence_reference": [
+        "UNIVERSE",
+        "DISCOVERY",
+        "DISCOVERY-CODE"
+      ],
+      "notes": "No new runtime, acquisition, import or downstream authority."
+    },
+    {
+      "capability_id": "04-skip",
+      "work_order": "WO-04",
+      "capability": "Mandatory fact gap decision",
+      "current_policy_contract": "REQUIRED = NO; DISPOSITION = SKIPPED; CURRENT STATUS = SKIPPED / NO CHANGE. Reopen only for a specific proven mandatory fact gap approved by governing authority.",
+      "effective_version": "Accepted WO-04 decision, unchanged",
+      "status_dimensions": {
+        "APPROVED_POLICY": "YES",
+        "IMPLEMENTED": "NOT_APPLICABLE",
+        "PUBLISHED": "NOT_APPLICABLE",
+        "RUNTIME_ACCEPTED": "NOT_APPLICABLE",
+        "OPERATIONALLY_PROVEN": "NOT_APPLICABLE",
+        "EMPIRICALLY_QUALIFIED": "NOT_APPLICABLE"
+      },
+      "implementation": "No implementation required. Source-binding corrections do not invent a mandatory fact family.",
+      "publication_commit": [],
+      "test_evidence": "No capability-specific execution in WO-01B; retained evidence only.",
+      "runtime_acceptance": "Not established for this specific capability.",
+      "operational_evidence": "Not established for this specific capability.",
+      "empirical_qualification": "Not applicable.",
+      "current_classification": [
+        "CURRENT"
+      ],
+      "supersedes": [],
+      "superseded_by": [],
+      "open_correction": null,
+      "evidence_reference": [
+        "ROADMAP",
+        "SPONSOR-01B"
+      ],
+      "notes": "WO-04 remains skipped."
+    },
+    {
+      "capability_id": "05-runtime",
+      "work_order": "WO-05",
+      "capability": "Discovery/runtime composition",
+      "current_policy_contract": "Explicit bounded invocation consumes one governed Provider lease, completed facts, immutable run evidence and per-member failure isolation. Retain prior successful evidence when a new attempt fails.",
+      "effective_version": "Native Discovery Runtime V0 / 0.1.0 plus governed V2 Refresh composition",
+      "status_dimensions": {
+        "APPROVED_POLICY": "YES",
+        "IMPLEMENTED": "YES",
+        "PUBLISHED": "YES",
+        "RUNTIME_ACCEPTED": "YES",
+        "OPERATIONALLY_PROVEN": "YES",
+        "EMPIRICALLY_QUALIFIED": "NOT_ESTABLISHED"
+      },
+      "implementation": "Product-owned services, adapters, immutable stores and failure projection exist.",
+      "publication_commit": [
+        "caab4f76023efad5b1d25571d5ddea463af8267f",
+        "89c1c17436a34bd5cf6d8eb1c64b183b0ca51501",
+        "73916ce7013038c25a92b69cfa593842eef723c1",
+        "4c023bf748b99ee0ca6d6a3a963bab2bb8732ec7",
+        "3d0397d45156a0f403e70c2573d933e030b4b5ce"
+      ],
+      "test_evidence": "Retained discovery runtime/source and Probables refresh-control tests.",
+      "runtime_acceptance": "WO-05 operational gates and Sep4 controlled recovery records accepted.",
+      "operational_evidence": "Sep4 retained real Discovery/Probables run; no new call during WO-01B.",
+      "empirical_qualification": "Not established; engineering evidence does not establish market usefulness.",
+      "current_classification": [
+        "CURRENT"
+      ],
+      "supersedes": [],
+      "superseded_by": [],
+      "open_correction": null,
+      "evidence_reference": [
+        "DISCOVERY",
+        "DISCOVERY-CODE",
+        "SOURCE-CODE",
+        "DISCOVERY-TEST",
+        "ENGINEERING-SEP4"
+      ],
+      "notes": "No new runtime, acquisition, import or downstream authority."
+    },
+    {
+      "capability_id": "05-trusted-time",
+      "work_order": "WO-05",
+      "capability": "Trusted analysis/server time",
+      "current_policy_contract": "Reject future client analysis boundaries against trusted server time before Provider acquisition; preserve separately governed historical analysis. No invented drift tolerance.",
+      "effective_version": "Correction version not yet assigned",
+      "status_dimensions": {
+        "APPROVED_POLICY": "YES",
+        "IMPLEMENTED": "NO",
+        "PUBLISHED": "NO",
+        "RUNTIME_ACCEPTED": "NO",
+        "OPERATIONALLY_PROVEN": "NO",
+        "EMPIRICALLY_QUALIFIED": "NOT_ESTABLISHED"
+      },
+      "implementation": "Existing parser records receipt time but does not enforce the required comparison before acquisition. Synthetic 09:29 server / 09:30 request can classify 09:15-09:30 candle completed.",
+      "publication_commit": [],
+      "test_evidence": "No capability-specific execution in WO-01B; retained evidence only.",
+      "runtime_acceptance": "Not established for this specific capability.",
+      "operational_evidence": "Not established for this specific capability.",
+      "empirical_qualification": "Not established; engineering evidence does not establish market usefulness.",
+      "current_classification": [
+        "OPEN_CORRECTION"
+      ],
+      "supersedes": [],
+      "superseded_by": [],
+      "open_correction": {
+        "owner": "WO-05",
+        "status": "OPEN",
+        "description": "Trusted-time validation and future-boundary rejection before acquisition."
+      },
+      "evidence_reference": [
+        "REFRESH-CODE",
+        "FINAL-RESEARCH",
+        "SPONSOR-01B"
+      ],
+      "notes": "Synthetic source/parser exposure; no live Provider incident established."
+    },
+    {
+      "capability_id": "05-request-accounting",
+      "work_order": "WO-05",
+      "capability": "Actual versus nominal Provider requests",
+      "current_policy_contract": "Distinguish actual network requests from nominal member count x four timeframe facts, including failures and extra prior-session hourly acquisition.",
+      "effective_version": "Accounting correction pending",
+      "status_dimensions": {
+        "APPROVED_POLICY": "YES",
+        "IMPLEMENTED": "PARTIAL",
+        "PUBLISHED": "PARTIAL",
+        "RUNTIME_ACCEPTED": "NOT_ESTABLISHED",
+        "OPERATIONALLY_PROVEN": "NOT_ESTABLISHED",
+        "EMPIRICALLY_QUALIFIED": "NOT_ESTABLISHED"
+      },
+      "implementation": "timeframe_fact_requests is nominal; historical_request_count exists in factual adapter. Sep4 successful actual count was not retained.",
+      "publication_commit": [],
+      "test_evidence": "No capability-specific execution in WO-01B; retained evidence only.",
+      "runtime_acceptance": "Not established for this specific capability.",
+      "operational_evidence": "Not established for this specific capability.",
+      "empirical_qualification": "Not established; engineering evidence does not establish market usefulness.",
+      "current_classification": [
+        "OPEN_CORRECTION"
+      ],
+      "supersedes": [],
+      "superseded_by": [],
+      "open_correction": {
+        "owner": "WO-05",
+        "status": "OPEN",
+        "description": "Reconcile/expose truthful actual and nominal accounting."
+      },
+      "evidence_reference": [
+        "DISCOVERY-CODE",
+        "SOURCE-CODE",
+        "ENGINEERING-SEP4",
+        "FINAL-RESEARCH"
+      ],
+      "notes": "No new runtime, acquisition, import or downstream authority."
+    },
+    {
+      "capability_id": "05-operation-timing",
+      "work_order": "WO-05",
+      "capability": "Operation timing/accounting",
+      "current_policy_contract": "Reuse received_at, operation_started_at and operation_completed_at; clarify elapsed/accounting meanings. Do not say all operation timestamps are absent.",
+      "effective_version": "Existing timestamp fields; clarification pending",
+      "status_dimensions": {
+        "APPROVED_POLICY": "YES",
+        "IMPLEMENTED": "PARTIAL",
+        "PUBLISHED": "PARTIAL",
+        "RUNTIME_ACCEPTED": "NOT_ESTABLISHED",
+        "OPERATIONALLY_PROVEN": "NOT_ESTABLISHED",
+        "EMPIRICALLY_QUALIFIED": "NOT_ESTABLISHED"
+      },
+      "implementation": "Timestamps already exist; complete accounting/latency qualification remains unresolved.",
+      "publication_commit": [],
+      "test_evidence": "No capability-specific execution in WO-01B; retained evidence only.",
+      "runtime_acceptance": "Not established for this specific capability.",
+      "operational_evidence": "Not established for this specific capability.",
+      "empirical_qualification": "Not established; engineering evidence does not establish market usefulness.",
+      "current_classification": [
+        "OPEN_CORRECTION"
+      ],
+      "supersedes": [
+        "05-no-timestamps"
+      ],
+      "superseded_by": [],
+      "open_correction": {
+        "owner": "WO-05",
+        "status": "OPEN",
+        "description": "Clarify and qualify existing timing/accounting."
+      },
+      "evidence_reference": [
+        "REFRESH-CODE",
+        "FINAL-RESEARCH",
+        "ENGINEERING-SEP4"
+      ],
+      "notes": "No new runtime, acquisition, import or downstream authority."
+    },
+    {
+      "capability_id": "05-loaded-identity",
+      "work_order": "WO-05",
+      "capability": "Loaded build/source/runtime provenance",
+      "current_policy_contract": "A running process must identify its actual loaded build independently of later checkout changes and market-data freshness.",
+      "effective_version": "Prospective runtime proof, no contract version assigned",
+      "status_dimensions": {
+        "APPROVED_POLICY": "YES",
+        "IMPLEMENTED": "NO",
+        "PUBLISHED": "NO",
+        "RUNTIME_ACCEPTED": "NO",
+        "OPERATIONALLY_PROVEN": "NO",
+        "EMPIRICALLY_QUALIFIED": "NOT_ESTABLISHED"
+      },
+      "implementation": "No immutable startup build/source manifest established in the accepted audit. Launch/checkout/feature inference is not embedded build proof.",
+      "publication_commit": [],
+      "test_evidence": "No capability-specific execution in WO-01B; retained evidence only.",
+      "runtime_acceptance": "Not established for this specific capability.",
+      "operational_evidence": "Not established for this specific capability.",
+      "empirical_qualification": "Not established; engineering evidence does not establish market usefulness.",
+      "current_classification": [
+        "MISSING",
+        "OPEN_CORRECTION"
+      ],
+      "supersedes": [],
+      "superseded_by": [],
+      "open_correction": {
+        "owner": "WO-05",
+        "status": "OPEN",
+        "description": "Add and qualify loaded build/source/runtime identity proof in a later WO-05 correction."
+      },
+      "evidence_reference": [
+        "LIVING-MASTER",
+        "FINAL-RESEARCH",
+        "SPONSOR-01B"
+      ],
+      "notes": "No new runtime, acquisition, import or downstream authority."
+    },
+    {
+      "capability_id": "06-phase-aware",
+      "work_order": "WO-06",
+      "capability": "Current phase-aware Probables",
+      "current_policy_contract": "Completed evidence selects OPENING, STRUCTURE, FIRST_CURRENT_SESSION_1H, CURRENT_SESSION_ESTABLISHED. No clock-only phase inference. Phase outputs immutable; NIFTY consequence Opening-only. See separately identified Opening contradiction.",
+      "effective_version": "KRONOS-INTRADAY-PROBABLES-METHODOLOGY-V2 / 2.1.0; NSE semantics same as 2.0.0",
+      "status_dimensions": {
+        "APPROVED_POLICY": "YES",
+        "IMPLEMENTED": "YES",
+        "PUBLISHED": "YES",
+        "RUNTIME_ACCEPTED": "YES",
+        "OPERATIONALLY_PROVEN": "YES",
+        "EMPIRICALLY_QUALIFIED": "NOT_ESTABLISHED"
+      },
+      "implementation": "Current phase-aware engine and persistence; 2.1 adds governed MCX commissioning.",
+      "publication_commit": [
+        "918c6a082ae30d119ecf66ef2515bfa7cdc21622",
+        "23d19a54958ca72a983c359d6afbb29795a50873"
+      ],
+      "test_evidence": "Retained test_probables_v2.py; 325 focused research checks passed at assessed baseline, not new WO-01B tests.",
+      "runtime_acceptance": "Phase-aware operational acceptance retained in Sep4 records.",
+      "operational_evidence": "Current retained Sep4 run uses 2.1.0; nine admitted candidates.",
+      "empirical_qualification": "Not established; engineering evidence does not establish market usefulness.",
+      "current_classification": [
+        "CURRENT"
+      ],
+      "supersedes": [
+        "06-v1-only",
+        "06-v20-only"
+      ],
+      "superseded_by": [],
+      "open_correction": null,
+      "evidence_reference": [
+        "METHODOLOGY",
+        "METHODOLOGY-21",
+        "PROBABLES-CODE",
+        "PROBABLES-TEST",
+        "RETAINED-REVIEW",
+        "CA-SEP4"
+      ],
+      "notes": "No new runtime, acquisition, import or downstream authority."
+    },
+    {
+      "capability_id": "06-opening",
+      "work_order": "WO-06",
+      "capability": "Opening admission truth table",
+      "current_policy_contract": "Mandatory valid evidence + Narrow CPR + directional first15M + combined support. Conflict wins; otherwise applicable support may support admission. Opening 5M may be informational when another applicable relationship supports.",
+      "effective_version": "Approved Opening semantics 2.0.0, retained in 2.1.0; corrective version pending",
+      "status_dimensions": {
+        "APPROVED_POLICY": "YES",
+        "IMPLEMENTED": "NO",
+        "PUBLISHED": "NO",
+        "RUNTIME_ACCEPTED": "NO",
+        "OPERATIONALLY_PROVEN": "NO",
+        "EMPIRICALLY_QUALIFIED": "NOT_ESTABLISHED"
+      },
+      "implementation": "Confirmed extra independent five_minute_relationship == SUPPORTING restriction rejects otherwise valid informational-5M cases in 2.0 and 2.1.",
+      "publication_commit": [
+        "918c6a082ae30d119ecf66ef2515bfa7cdc21622",
+        "23d19a54958ca72a983c359d6afbb29795a50873"
+      ],
+      "test_evidence": "Saved synthetic full-support control passed; informational-5M/supporting-context case rejected in both versions. Full corrected LONG/SHORT truth-table qualification pending.",
+      "runtime_acceptance": "Not established for this specific capability.",
+      "operational_evidence": "Not established for this specific capability.",
+      "empirical_qualification": "Not established; engineering evidence does not establish market usefulness.",
+      "current_classification": [
+        "CONTRADICTORY",
+        "OPEN_CORRECTION"
+      ],
+      "supersedes": [],
+      "superseded_by": [],
+      "open_correction": {
+        "owner": "WO-06",
+        "status": "OPEN",
+        "description": "Implement approved truth table under explicit correction version and preserve historical replay."
+      },
+      "evidence_reference": [
+        "METHODOLOGY",
+        "PROBABLES-CODE",
+        "PROBABLES-TEST",
+        "FINAL-RESEARCH",
+        "OPENING-RESEARCH"
+      ],
+      "notes": "Publication commits identify the conflicting implementation, not publication of a completed correction. 190 research rows are not 190 lost opportunities."
+    },
+    {
+      "capability_id": "06-relative-binding",
+      "work_order": "WO-06",
+      "capability": "Relative-context subject binding",
+      "current_policy_contract": "Requested canonical subject must bind to actual subject evidence; preserve separately valid benchmark/source-session identities.",
+      "effective_version": "Defensive correction pending",
+      "status_dimensions": {
+        "APPROVED_POLICY": "YES",
+        "IMPLEMENTED": "NO",
+        "PUBLISHED": "NO",
+        "RUNTIME_ACCEPTED": "NO",
+        "OPERATIONALLY_PROVEN": "NO",
+        "EMPIRICALLY_QUALIFIED": "NOT_ESTABLISHED"
+      },
+      "implementation": "Builder checks benchmark but lacks exact requested-subject/source binding. Synthetic foreign subject candles changed admission; ordinary production mapper supplies matching evidence.",
+      "publication_commit": [],
+      "test_evidence": "No capability-specific execution in WO-01B; retained evidence only.",
+      "runtime_acceptance": "Not established for this specific capability.",
+      "operational_evidence": "Not established for this specific capability.",
+      "empirical_qualification": "Not established; engineering evidence does not establish market usefulness.",
+      "current_classification": [
+        "OPEN_CORRECTION"
+      ],
+      "supersedes": [],
+      "superseded_by": [],
+      "open_correction": {
+        "owner": "WO-06",
+        "status": "OPEN",
+        "description": "Validate exact subject source/integrity before relative-context use."
+      },
+      "evidence_reference": [
+        "RELATIVE-CODE",
+        "FINAL-RESEARCH"
+      ],
+      "notes": "No live source corruption established."
+    },
+    {
+      "capability_id": "06-cpr-binding",
+      "work_order": "WO-06",
+      "capability": "CPR previous-day source/session binding",
+      "current_policy_contract": "Bind CPR to exact selected previous completed daily source/session/integrity, preserving lawful same-session stable-CPR reuse.",
+      "effective_version": "Defensive correction pending",
+      "status_dimensions": {
+        "APPROVED_POLICY": "YES",
+        "IMPLEMENTED": "NO",
+        "PUBLISHED": "NO",
+        "RUNTIME_ACCEPTED": "NO",
+        "OPERATIONALLY_PROVEN": "NO",
+        "EMPIRICALLY_QUALIFIED": "NOT_ESTABLISHED"
+      },
+      "implementation": "Current subject/nonfuture checks do not establish exact prior-day source binding; synthetic older-day CPR changed admission.",
+      "publication_commit": [],
+      "test_evidence": "No capability-specific execution in WO-01B; retained evidence only.",
+      "runtime_acceptance": "Not established for this specific capability.",
+      "operational_evidence": "Not established for this specific capability.",
+      "empirical_qualification": "Not established; engineering evidence does not establish market usefulness.",
+      "current_classification": [
+        "OPEN_CORRECTION"
+      ],
+      "supersedes": [],
+      "superseded_by": [],
+      "open_correction": {
+        "owner": "WO-06",
+        "status": "OPEN",
+        "description": "Qualify and enforce exact previous-day source/session/integrity."
+      },
+      "evidence_reference": [
+        "OPENING-CODE",
+        "PROBABLES-CODE",
+        "FINAL-RESEARCH"
+      ],
+      "notes": "Ordinary mapper supplies matching evidence; no live corruption established."
+    },
+    {
+      "capability_id": "06-assessment-observation",
+      "work_order": "WO-06",
+      "capability": "Assessment Price and Time provenance",
+      "current_policy_contract": "Assessment Price is authoritative price recorded at opportunity admission. Assessment Time is the matching observation time of that same governed price observation. Never substitute Review price, later LTP, arbitrary candle close or analysis boundary without exact proof.",
+      "effective_version": "Sponsor-approved meaning; complete provenance qualification pending",
+      "status_dimensions": {
+        "APPROVED_POLICY": "YES",
+        "IMPLEMENTED": "PARTIAL",
+        "PUBLISHED": "PARTIAL",
+        "RUNTIME_ACCEPTED": "NOT_ESTABLISHED",
+        "OPERATIONALLY_PROVEN": "NOT_ESTABLISHED",
+        "EMPIRICALLY_QUALIFIED": "NOT_ESTABLISHED"
+      },
+      "implementation": "Per-run outputs and source references exist; inventory must classify EXACT_PRICE_PERSISTED, EXACT_PRICE_DERIVABLE_FROM_SAME_GOVERNED_ASSESSMENT_EVIDENCE or PRICE_NOT_RETAINED.",
+      "publication_commit": [],
+      "test_evidence": "No capability-specific execution in WO-01B; retained evidence only.",
+      "runtime_acceptance": "Not established for this specific capability.",
+      "operational_evidence": "Not established for this specific capability.",
+      "empirical_qualification": "Not established; engineering evidence does not establish market usefulness.",
+      "current_classification": [
+        "OPEN_CORRECTION"
+      ],
+      "supersedes": [],
+      "superseded_by": [],
+      "open_correction": {
+        "owner": "WO-06",
+        "status": "OPEN",
+        "description": "Trace every candidate price/time to exact same governed admission observation; report missing data honestly."
+      },
+      "evidence_reference": [
+        "SPONSOR-01B",
+        "LIVING-MASTER",
+        "PROBABLES-CODE",
+        "FINAL-RESEARCH"
+      ],
+      "notes": "Absence of a named price field alone does not prove price is lost. Statistics remains held."
+    },
+    {
+      "capability_id": "06-cpr-usefulness",
+      "work_order": "WO-06",
+      "capability": "Narrow CPR incremental usefulness",
+      "current_policy_contract": "Compare frozen baseline with/without CPR on matching eligible evidence, predeclared outcomes and chronological evaluation. Current formula remains governed; usefulness NOT ESTABLISHED.",
+      "effective_version": "Empirical qualification pending",
+      "status_dimensions": {
+        "APPROVED_POLICY": "YES",
+        "IMPLEMENTED": "NO",
+        "PUBLISHED": "NO",
+        "RUNTIME_ACCEPTED": "NO",
+        "OPERATIONALLY_PROVEN": "NO",
+        "EMPIRICALLY_QUALIFIED": "NOT_ESTABLISHED"
+      },
+      "implementation": "Existing engineering/relationship research does not qualify predictive outcomes.",
+      "publication_commit": [],
+      "test_evidence": "No capability-specific execution in WO-01B; retained evidence only.",
+      "runtime_acceptance": "Not established for this specific capability.",
+      "operational_evidence": "Not established for this specific capability.",
+      "empirical_qualification": "Not established; engineering evidence does not establish market usefulness.",
+      "current_classification": [
+        "OPEN_CORRECTION"
+      ],
+      "supersedes": [],
+      "superseded_by": [],
+      "open_correction": {
+        "owner": "WO-06",
+        "status": "OPEN",
+        "description": "Separately govern and perform narrow cpr incremental usefulness qualification."
+      },
+      "evidence_reference": [
+        "SPONSOR-01B",
+        "FINAL-RESEARCH",
+        "OPENING-RESEARCH"
+      ],
+      "notes": "No new runtime, acquisition, import or downstream authority."
+    },
+    {
+      "capability_id": "06-phase-contribution",
+      "work_order": "WO-06",
+      "capability": "Phase contribution",
+      "current_policy_contract": "Contribution of each phase is NOT ESTABLISHED. Distinct phase horizons and dependent same-security/day observations require honest research design.",
+      "effective_version": "Empirical qualification pending",
+      "status_dimensions": {
+        "APPROVED_POLICY": "YES",
+        "IMPLEMENTED": "NO",
+        "PUBLISHED": "NO",
+        "RUNTIME_ACCEPTED": "NO",
+        "OPERATIONALLY_PROVEN": "NO",
+        "EMPIRICALLY_QUALIFIED": "NOT_ESTABLISHED"
+      },
+      "implementation": "Existing engineering/relationship research does not qualify predictive outcomes.",
+      "publication_commit": [],
+      "test_evidence": "No capability-specific execution in WO-01B; retained evidence only.",
+      "runtime_acceptance": "Not established for this specific capability.",
+      "operational_evidence": "Not established for this specific capability.",
+      "empirical_qualification": "Not established; engineering evidence does not establish market usefulness.",
+      "current_classification": [
+        "OPEN_CORRECTION"
+      ],
+      "supersedes": [],
+      "superseded_by": [],
+      "open_correction": {
+        "owner": "WO-06",
+        "status": "OPEN",
+        "description": "Separately govern and perform phase contribution qualification."
+      },
+      "evidence_reference": [
+        "SPONSOR-01B",
+        "FINAL-RESEARCH",
+        "OPENING-RESEARCH"
+      ],
+      "notes": "No new runtime, acquisition, import or downstream authority."
+    },
+    {
+      "capability_id": "06-candidate-outcomes",
+      "work_order": "WO-06",
+      "capability": "Candidate outcome usefulness",
+      "current_policy_contract": "Candidate outcome usefulness is NOT ESTABLISHED. Preserve per-run populations; define recurrence/disappearance/re-entry episodes before research aggregation. No invented fills, profit, Win Rate or trading suitability.",
+      "effective_version": "Empirical qualification pending",
+      "status_dimensions": {
+        "APPROVED_POLICY": "YES",
+        "IMPLEMENTED": "NO",
+        "PUBLISHED": "NO",
+        "RUNTIME_ACCEPTED": "NO",
+        "OPERATIONALLY_PROVEN": "NO",
+        "EMPIRICALLY_QUALIFIED": "NOT_ESTABLISHED"
+      },
+      "implementation": "Existing engineering/relationship research does not qualify predictive outcomes.",
+      "publication_commit": [],
+      "test_evidence": "No capability-specific execution in WO-01B; retained evidence only.",
+      "runtime_acceptance": "Not established for this specific capability.",
+      "operational_evidence": "Not established for this specific capability.",
+      "empirical_qualification": "Not established; engineering evidence does not establish market usefulness.",
+      "current_classification": [
+        "OPEN_CORRECTION"
+      ],
+      "supersedes": [],
+      "superseded_by": [],
+      "open_correction": {
+        "owner": "WO-06",
+        "status": "OPEN",
+        "description": "Separately govern and perform candidate outcome usefulness qualification."
+      },
+      "evidence_reference": [
+        "SPONSOR-01B",
+        "FINAL-RESEARCH",
+        "OPENING-RESEARCH"
+      ],
+      "notes": "No new runtime, acquisition, import or downstream authority."
+    },
+    {
+      "capability_id": "06-later-nifty-label",
+      "work_order": "WO-06",
+      "capability": "Later-phase NIFTY presentation",
+      "current_policy_contract": "After Opening NIFTY has no newly commissioned admission consequence. Later-phase applicability must not appear as missing mandatory NIFTY evidence.",
+      "effective_version": "Published correction d3473ec",
+      "status_dimensions": {
+        "APPROVED_POLICY": "YES",
+        "IMPLEMENTED": "YES",
+        "PUBLISHED": "YES",
+        "RUNTIME_ACCEPTED": "YES",
+        "OPERATIONALLY_PROVEN": "YES",
+        "EMPIRICALLY_QUALIFIED": "NOT_ESTABLISHED"
+      },
+      "implementation": "Misleading later-phase label already corrected; no new label defect established.",
+      "publication_commit": [
+        "d3473ec5013d5b31576a3b238cdb0d7587fbe130"
+      ],
+      "test_evidence": "No capability-specific execution in WO-01B; retained evidence only.",
+      "runtime_acceptance": "Sep4 operational correction retained.",
+      "operational_evidence": "Engineering Sep4 record reports corrected presentation.",
+      "empirical_qualification": "Not established; engineering evidence does not establish market usefulness.",
+      "current_classification": [
+        "CURRENT"
+      ],
+      "supersedes": [],
+      "superseded_by": [],
+      "open_correction": null,
+      "evidence_reference": [
+        "ENGINEERING-SEP4",
+        "CA-SEP4"
+      ],
+      "notes": "No new runtime, acquisition, import or downstream authority."
+    },
+    {
+      "capability_id": "07-chart-revisions",
+      "work_order": "WO-07",
+      "capability": "Original chart bytes, revisions and lineage",
+      "current_policy_contract": "Retain immutable original PNG/JPEG payloads and revisions; exact candidate/run/cycle/chart/pack linkage. Failed replacement preserves existing pointer.",
+      "effective_version": "Review V2 cycle 2.0.0; chart revision 2.0.0 / paired metadata 2.1.0",
+      "status_dimensions": {
+        "APPROVED_POLICY": "YES",
+        "IMPLEMENTED": "YES",
+        "PUBLISHED": "YES",
+        "RUNTIME_ACCEPTED": "YES",
+        "OPERATIONALLY_PROVEN": "YES",
+        "EMPIRICALLY_QUALIFIED": "NOT_ESTABLISHED"
+      },
+      "implementation": "Clipboard and file paths converge on validated immutable intake; legacy bytes restored without fabricated metadata.",
+      "publication_commit": [
+        "31ad9efd31940ac0f3315490ab407e7a1606da0a",
+        "49b8c4d4c8a67bb4c6b0db5f43df532d2e00f173",
+        "1059fb8dbcae668f83c2323caae4645c414d3d7e",
+        "19f583fda2ef9a41fee62af8beb966fdbc96a4f9"
+      ],
+      "test_evidence": "Retained Review V2, paired intake and BR2 qualification.",
+      "runtime_acceptance": "BR2 final controlled acceptance and formal closure retained.",
+      "operational_evidence": "WO-01A verified all nine current chart hashes; CRUDE REV004 retained.",
+      "empirical_qualification": "Not established; engineering evidence does not establish market usefulness.",
+      "current_classification": [
+        "CURRENT"
+      ],
+      "supersedes": [
+        "07-v1-only"
+      ],
+      "superseded_by": [],
+      "open_correction": null,
+      "evidence_reference": [
+        "REVIEW",
+        "REVIEW-V2",
+        "REVIEW-TEST",
+        "RETAINED-REVIEW",
+        "SPONSOR-BR2"
+      ],
+      "notes": "No new runtime, acquisition, import or downstream authority."
+    },
+    {
+      "capability_id": "07-visual-identity",
+      "work_order": "WO-07",
+      "capability": "Q1-Q10 and independent visual identity",
+      "current_policy_contract": "Q1-Q10 visual-only. Analyst returns raw observed identity independently. DOMAIN-001 exact source/effective/integrity relationship must resolve to separate expected subject. No fuzzy label-to-canonical equality substitute.",
+      "effective_version": "Review V2 envelope 2.0.0; Q1-Q10 V1; ADR-0018 relationship 1.0.0",
+      "status_dimensions": {
+        "APPROVED_POLICY": "YES",
+        "IMPLEMENTED": "YES",
+        "PUBLISHED": "YES",
+        "RUNTIME_ACCEPTED": "YES",
+        "OPERATIONALLY_PROVEN": "YES",
+        "EMPIRICALLY_QUALIFIED": "NOT_ESTABLISHED"
+      },
+      "implementation": "Independent observed identity and governed resolver consumed; Slice3V comparison schema is separate.",
+      "publication_commit": [
+        "74bff4d9962231aa7d63a09dd4762f10cde2df7d",
+        "4d56fce0443769bff78827716f25d9710bba07bb",
+        "ed43f25e6f47e684fd6b0187500dda2fa37bcae9",
+        "19f583fda2ef9a41fee62af8beb966fdbc96a4f9"
+      ],
+      "test_evidence": "No capability-specific execution in WO-01B; retained evidence only.",
+      "runtime_acceptance": "Historical and BR2 identity acceptance retained.",
+      "operational_evidence": "BANKNIFTY/RBLBANK historical and six current equity imports.",
+      "empirical_qualification": "Not established; engineering evidence does not establish market usefulness.",
+      "current_classification": [
+        "CURRENT"
+      ],
+      "supersedes": [
+        "07-literal-identity"
+      ],
+      "superseded_by": [],
+      "open_correction": null,
+      "evidence_reference": [
+        "VISUAL-IDENTITY",
+        "REVIEW-V2",
+        "RETAINED-V1",
+        "RETAINED-REVIEW"
+      ],
+      "notes": "No new runtime, acquisition, import or downstream authority."
+    },
+    {
+      "capability_id": "07-generic-mcx",
+      "work_order": "WO-07",
+      "capability": "Generic paired MCX handling",
+      "current_policy_contract": "Generic registry/native active-binding/reference-context path; native metadata is intended contract, independent visual evidence must agree. Native/reference remain separate. Paired 1D/4H/15M/5M; ordinary NSE 1D/1H/15M/5M. No listed-reference constituent membership invented.",
+      "effective_version": "BR2 paired chart metadata 2.1.0; governed native relationship effective interval",
+      "status_dimensions": {
+        "APPROVED_POLICY": "YES",
+        "IMPLEMENTED": "YES",
+        "PUBLISHED": "YES",
+        "RUNTIME_ACCEPTED": "YES",
+        "OPERATIONALLY_PROVEN": "PARTIAL",
+        "EMPIRICALLY_QUALIFIED": "NOT_ESTABLISHED"
+      },
+      "implementation": "CRUDE and NGAS use same generic architecture; NGAS fixture does not change current population or grant new native visual relationships. Native CRUDEOILU2026 relationship is exact/effective-dated; June CRUDEOILM2026 rejected.",
+      "publication_commit": [
+        "19f583fda2ef9a41fee62af8beb966fdbc96a4f9"
+      ],
+      "test_evidence": "Retained paired generic/intake tests; BR2 4,903/4,903.",
+      "runtime_acceptance": "BR2 paired intake/Question Pack acceptance retained.",
+      "operational_evidence": "CRUDE REV004 paired Question Pack created; new paired Answer remained pending at closure. NGAS is qualification fixture only.",
+      "empirical_qualification": "Not established; engineering evidence does not establish market usefulness.",
+      "current_classification": [
+        "CURRENT"
+      ],
+      "supersedes": [],
+      "superseded_by": [],
+      "open_correction": null,
+      "evidence_reference": [
+        "PAIRED-CODE",
+        "PAIRED-TEST",
+        "SPONSOR-BR2",
+        "RETAINED-REVIEW",
+        "ACTIVE-CONTRACT"
+      ],
+      "notes": "CLV2026 / NGV2026 remain observed reference facts, not proven constituents of NYMEX:CL1! / governed natural-gas continuous context. MCX improvement deferred."
+    },
+    {
+      "capability_id": "07-chart-time",
+      "work_order": "WO-07",
+      "capability": "Chart temporal correspondence",
+      "current_policy_contract": "Record/qualify observable session, timezone and completed-bar endpoints or explicit unverifiable status; preserve legitimate prior-session evidence.",
+      "effective_version": "Qualification pending",
+      "status_dimensions": {
+        "APPROVED_POLICY": "YES",
+        "IMPLEMENTED": "NO",
+        "PUBLISHED": "NO",
+        "RUNTIME_ACCEPTED": "NO",
+        "OPERATIONALLY_PROVEN": "NO",
+        "EMPIRICALLY_QUALIFIED": "NOT_ESTABLISHED"
+      },
+      "implementation": "Existing immutable evidence and successful transport do not establish this qualification.",
+      "publication_commit": [],
+      "test_evidence": "No capability-specific execution in WO-01B; retained evidence only.",
+      "runtime_acceptance": "Not established for this specific capability.",
+      "operational_evidence": "Not established for this specific capability.",
+      "empirical_qualification": "Not established; engineering evidence does not establish market usefulness.",
+      "current_classification": [
+        "OPEN_CORRECTION"
+      ],
+      "supersedes": [],
+      "superseded_by": [],
+      "open_correction": {
+        "owner": "WO-07",
+        "status": "OPEN",
+        "description": "Qualify chart temporal correspondence through a separately authorized correction/research step."
+      },
+      "evidence_reference": [
+        "SPONSOR-01B",
+        "FINAL-RESEARCH",
+        "BR1-RECORD"
+      ],
+      "notes": "No new runtime, acquisition, import or downstream authority."
+    },
+    {
+      "capability_id": "07-visual-reliability",
+      "work_order": "WO-07",
+      "capability": "Visual observation reliability",
+      "current_policy_contract": "Repeated observations on fixed images require governed research, disagreement retention and bounded unclear/not-visible semantics. Successful import alone is not reliability.",
+      "effective_version": "Qualification pending",
+      "status_dimensions": {
+        "APPROVED_POLICY": "YES",
+        "IMPLEMENTED": "NO",
+        "PUBLISHED": "NO",
+        "RUNTIME_ACCEPTED": "NO",
+        "OPERATIONALLY_PROVEN": "NO",
+        "EMPIRICALLY_QUALIFIED": "NOT_ESTABLISHED"
+      },
+      "implementation": "Existing immutable evidence and successful transport do not establish this qualification.",
+      "publication_commit": [],
+      "test_evidence": "No capability-specific execution in WO-01B; retained evidence only.",
+      "runtime_acceptance": "Not established for this specific capability.",
+      "operational_evidence": "Not established for this specific capability.",
+      "empirical_qualification": "Not established; engineering evidence does not establish market usefulness.",
+      "current_classification": [
+        "OPEN_CORRECTION"
+      ],
+      "supersedes": [],
+      "superseded_by": [],
+      "open_correction": {
+        "owner": "WO-07",
+        "status": "OPEN",
+        "description": "Qualify visual observation reliability through a separately authorized correction/research step."
+      },
+      "evidence_reference": [
+        "SPONSOR-01B",
+        "FINAL-RESEARCH",
+        "BR1-RECORD"
+      ],
+      "notes": "No new runtime, acquisition, import or downstream authority."
+    },
+    {
+      "capability_id": "07-turnaround",
+      "work_order": "WO-07",
+      "capability": "Manual chart-to-Answer/import turnaround",
+      "current_policy_contract": "Measure actual chart capture, Analyst answer and import chronology. Existing deterministic artifact times and page latency are not complete manual-turnaround measurements; no invented five-minute SLA.",
+      "effective_version": "Qualification pending",
+      "status_dimensions": {
+        "APPROVED_POLICY": "YES",
+        "IMPLEMENTED": "NO",
+        "PUBLISHED": "NO",
+        "RUNTIME_ACCEPTED": "NO",
+        "OPERATIONALLY_PROVEN": "NO",
+        "EMPIRICALLY_QUALIFIED": "NOT_ESTABLISHED"
+      },
+      "implementation": "Existing immutable evidence and successful transport do not establish this qualification.",
+      "publication_commit": [],
+      "test_evidence": "No capability-specific execution in WO-01B; retained evidence only.",
+      "runtime_acceptance": "Not established for this specific capability.",
+      "operational_evidence": "Not established for this specific capability.",
+      "empirical_qualification": "Not established; engineering evidence does not establish market usefulness.",
+      "current_classification": [
+        "OPEN_CORRECTION"
+      ],
+      "supersedes": [],
+      "superseded_by": [],
+      "open_correction": {
+        "owner": "WO-07",
+        "status": "OPEN",
+        "description": "Qualify manual chart-to-answer/import turnaround through a separately authorized correction/research step."
+      },
+      "evidence_reference": [
+        "SPONSOR-01B",
+        "FINAL-RESEARCH",
+        "BR1-RECORD"
+      ],
+      "notes": "No new runtime, acquisition, import or downstream authority."
+    },
+    {
+      "capability_id": "08-conditional",
+      "work_order": "WO-08",
+      "capability": "Conditional prerequisite correction",
+      "current_policy_contract": "CONDITIONAL / SKIPPED. No current independent WO-08 defect established. Do not transfer WO-06 corrections to WO-08.",
+      "effective_version": "Existing conditional gate",
+      "status_dimensions": {
+        "APPROVED_POLICY": "YES",
+        "IMPLEMENTED": "NOT_APPLICABLE",
+        "PUBLISHED": "NOT_APPLICABLE",
+        "RUNTIME_ACCEPTED": "NOT_APPLICABLE",
+        "OPERATIONALLY_PROVEN": "NOT_APPLICABLE",
+        "EMPIRICALLY_QUALIFIED": "NOT_APPLICABLE"
+      },
+      "implementation": "No independent implementation required.",
+      "publication_commit": [],
+      "test_evidence": "No capability-specific execution in WO-01B; retained evidence only.",
+      "runtime_acceptance": "Not established for this specific capability.",
+      "operational_evidence": "Not established for this specific capability.",
+      "empirical_qualification": "Not applicable.",
+      "current_classification": [
+        "CURRENT"
+      ],
+      "supersedes": [],
+      "superseded_by": [],
+      "open_correction": null,
+      "evidence_reference": [
+        "ROADMAP",
+        "SPONSOR-01B"
+      ],
+      "notes": "No new runtime, acquisition, import or downstream authority."
+    },
+    {
+      "capability_id": "09-exact-import",
+      "work_order": "WO-09",
+      "capability": "Exact Answer binding and individual/batch isolation",
+      "current_policy_contract": "Exact Answer/run/cycle/candidate/chart revision/Question Pack/schema/integrity binding. Individual and batch transports isolate members; available valid members can succeed despite independently invalid/missing members. Producer-advance transition is separately OPEN_CORRECTION.",
+      "effective_version": "Review/visual envelope V2 2.0.0; BR2 individual and combined transport",
+      "status_dimensions": {
+        "APPROVED_POLICY": "YES",
+        "IMPLEMENTED": "YES",
+        "PUBLISHED": "YES",
+        "RUNTIME_ACCEPTED": "YES",
+        "OPERATIONALLY_PROVEN": "YES",
+        "EMPIRICALLY_QUALIFIED": "NOT_ESTABLISHED"
+      },
+      "implementation": "Existing V2 Question/Answer machinery; individual CREATE REVIEW PDF/IMPORT EXPECTED ANSWER and batch equivalents.",
+      "publication_commit": [
+        "624af19646085a29cf25842ab9d6571f488bdd78",
+        "9e44b5a249e0064180744a26c2724450f526a71c",
+        "19f583fda2ef9a41fee62af8beb966fdbc96a4f9"
+      ],
+      "test_evidence": "Retained test_review_v2.py and test_review_v2_individual_inbox.py; BR2 suite 4,903.",
+      "runtime_acceptance": "BR2 controlled runtime acceptance retained.",
+      "operational_evidence": "Six current equity Answers imported; pending Sponsor inputs do not reopen engineering.",
+      "empirical_qualification": "Not established; engineering evidence does not establish market usefulness.",
+      "current_classification": [
+        "CURRENT"
+      ],
+      "supersedes": [
+        "09-individual-only",
+        "09-import-disabled"
+      ],
+      "superseded_by": [],
+      "open_correction": null,
+      "evidence_reference": [
+        "ANSWER",
+        "REVIEW-V2",
+        "REVIEW-CODE",
+        "REVIEW-TEST",
+        "INBOX-TEST",
+        "SPONSOR-BR2",
+        "RETAINED-REVIEW"
+      ],
+      "notes": "No new runtime, acquisition, import or downstream authority."
+    },
+    {
+      "capability_id": "09-replay-conflict",
+      "work_order": "WO-09",
+      "capability": "Replay and conflict handling",
+      "current_policy_contract": "Exact valid replay is idempotent; conflicting bytes cannot replace trusted evidence. New chart revision needs new pack/Answer. Replay after producer divergence has separate approved, unimplemented transition requirements.",
+      "effective_version": "Existing V1/V2 replay contracts; transition successor pending",
+      "status_dimensions": {
+        "APPROVED_POLICY": "YES",
+        "IMPLEMENTED": "YES",
+        "PUBLISHED": "YES",
+        "RUNTIME_ACCEPTED": "YES",
+        "OPERATIONALLY_PROVEN": "NOT_ESTABLISHED",
+        "EMPIRICALLY_QUALIFIED": "NOT_ESTABLISHED"
+      },
+      "implementation": "Idempotency/conflict tests exist. Do not infer complete producer-advance coverage from normal replay tests.",
+      "publication_commit": [
+        "624af19646085a29cf25842ab9d6571f488bdd78",
+        "19f583fda2ef9a41fee62af8beb966fdbc96a4f9"
+      ],
+      "test_evidence": "Retained V1 Answer and V2 individual inbox replay/conflict tests.",
+      "runtime_acceptance": "Normal BR2 workflow qualification retained.",
+      "operational_evidence": "No separately retained real conflicting-replay experiment claimed.",
+      "empirical_qualification": "Not established; engineering evidence does not establish market usefulness.",
+      "current_classification": [
+        "CURRENT"
+      ],
+      "supersedes": [],
+      "superseded_by": [],
+      "open_correction": null,
+      "evidence_reference": [
+        "ANSWER",
+        "INBOX-TEST",
+        "REVIEW-CODE",
+        "SPONSOR-09"
+      ],
+      "notes": "No new runtime, acquisition, import or downstream authority."
+    },
+    {
+      "capability_id": "09-secure-inbox",
+      "work_order": "WO-09",
+      "capability": "Secure governed expected-file inbox",
+      "current_policy_contract": "Exact expected filename only; no newest/first/fuzzy/historical fallback and no normal Finder. Reject traversal, ancestor/leaf symlinks, nonregular files, oversize/races, schema/integrity/identity mismatch.",
+      "effective_version": "BR2 governed inbox including ancestor containment correction",
+      "status_dimensions": {
+        "APPROVED_POLICY": "YES",
+        "IMPLEMENTED": "YES",
+        "PUBLISHED": "YES",
+        "RUNTIME_ACCEPTED": "YES",
+        "OPERATIONALLY_PROVEN": "YES",
+        "EMPIRICALLY_QUALIFIED": "NOT_ESTABLISHED"
+      },
+      "implementation": "Descriptor-relative no-follow ancestor traversal and leaf opening; before/after file identity checks reused by individual/batch imports.",
+      "publication_commit": [
+        "19f583fda2ef9a41fee62af8beb966fdbc96a4f9"
+      ],
+      "test_evidence": "Retained tests for ancestors, leaf links, file replacement/races, malformed/schema/identity failures and all intake modes.",
+      "runtime_acceptance": "BR2 controlled automatic-inbox acceptance retained.",
+      "operational_evidence": "Six exact current Answers imported automatically; adversarial containment is engineering-tested, not a claim of production attacks.",
+      "empirical_qualification": "Not established; engineering evidence does not establish market usefulness.",
+      "current_classification": [
+        "CURRENT"
+      ],
+      "supersedes": [
+        "09-finder"
+      ],
+      "superseded_by": [],
+      "open_correction": null,
+      "evidence_reference": [
+        "INBOX-CODE",
+        "INBOX-TEST",
+        "SPONSOR-BR2",
+        "RETAINED-REVIEW"
+      ],
+      "notes": "No new runtime, acquisition, import or downstream authority."
+    },
+    {
+      "capability_id": "09-historical-acceptance",
+      "work_order": "WO-09",
+      "capability": "Historical BANKNIFTY and RBLBANK acceptance",
+      "current_policy_contract": "Historical successful imports remain immutable operational evidence under their original V1 contract. Do not relabel them current V2 acceptance.",
+      "effective_version": "V1 1.0.0, Aug28 acceptance",
+      "status_dimensions": {
+        "APPROVED_POLICY": "YES",
+        "IMPLEMENTED": "YES",
+        "PUBLISHED": "YES",
+        "RUNTIME_ACCEPTED": "YES",
+        "OPERATIONALLY_PROVEN": "YES",
+        "EMPIRICALLY_QUALIFIED": "NOT_ESTABLISHED"
+      },
+      "implementation": "Historical records restored by exact identities.",
+      "publication_commit": [
+        "74bff4d9962231aa7d63a09dd4762f10cde2df7d",
+        "4d56fce0443769bff78827716f25d9710bba07bb"
+      ],
+      "test_evidence": "No capability-specific execution in WO-01B; retained evidence only.",
+      "runtime_acceptance": "Aug28 controlled acceptance recorded in Diary/Living Master.",
+      "operational_evidence": "BANKNIFTY Nifty Bank Index; RBLBANK RBL Bank Ltd, exact retained imports verified in WO-01A.",
+      "empirical_qualification": "Not established; engineering evidence does not establish market usefulness.",
+      "current_classification": [
+        "CURRENT"
+      ],
+      "supersedes": [
+        "09-no-index-evidence"
+      ],
+      "superseded_by": [],
+      "open_correction": null,
+      "evidence_reference": [
+        "RETAINED-V1",
+        "DIARY",
+        "LIVING-MASTER",
+        "VISUAL-IDENTITY"
+      ],
+      "notes": "No new runtime, acquisition, import or downstream authority."
+    },
+    {
+      "capability_id": "09-current-equity-acceptance",
+      "work_order": "WO-09",
+      "capability": "Retained current equity imports",
+      "current_policy_contract": "Preserve six successfully imported Answers and their exact original run/revision bindings.",
+      "effective_version": "BR2 V2 current-run acceptance, Sep6",
+      "status_dimensions": {
+        "APPROVED_POLICY": "YES",
+        "IMPLEMENTED": "YES",
+        "PUBLISHED": "YES",
+        "RUNTIME_ACCEPTED": "YES",
+        "OPERATIONALLY_PROVEN": "YES",
+        "EMPIRICALLY_QUALIFIED": "NOT_ESTABLISHED"
+      },
+      "implementation": "EICHERMOT, MAXHEALTH, NTPC, TATAPOWER, TITAN, TMPV imported.",
+      "publication_commit": [
+        "19f583fda2ef9a41fee62af8beb966fdbc96a4f9"
+      ],
+      "test_evidence": "No capability-specific execution in WO-01B; retained evidence only.",
+      "runtime_acceptance": "BR2 controlled final acceptance.",
+      "operational_evidence": "WO-01A read-only exact retained imports verified; no new import during WO-01B.",
+      "empirical_qualification": "Not established; engineering evidence does not establish market usefulness.",
+      "current_classification": [
+        "CURRENT"
+      ],
+      "supersedes": [],
+      "superseded_by": [],
+      "open_correction": null,
+      "evidence_reference": [
+        "RETAINED-REVIEW",
+        "SPONSOR-BR2"
+      ],
+      "notes": "No new runtime, acquisition, import or downstream authority."
+    },
+    {
+      "capability_id": "09-br2-closure",
+      "work_order": "WO-09",
+      "capability": "BR2 formal closure",
+      "current_policy_contract": "CLOSED_WITH_SPONSOR_INPUT_PENDING. BDL corrected Bharat Dynamics Ltd. Answer; SRF corrected Srf Limited Answer; CRUDE REV004 paired Answer pending at closure. These are operational inputs, not BR2 engineering blockers.",
+      "effective_version": "Sponsor formal closure 2026-09-06; published 19f583f",
+      "status_dimensions": {
+        "APPROVED_POLICY": "YES",
+        "IMPLEMENTED": "YES",
+        "PUBLISHED": "YES",
+        "RUNTIME_ACCEPTED": "YES",
+        "OPERATIONALLY_PROVEN": "YES",
+        "EMPIRICALLY_QUALIFIED": "NOT_ESTABLISHED"
+      },
+      "implementation": "Qualified Review pack/inbox workflow preserved. This policy clarification does not reopen BR2 wholesale.",
+      "publication_commit": [
+        "19f583fda2ef9a41fee62af8beb966fdbc96a4f9"
+      ],
+      "test_evidence": "Retained 4,903/4,903 BR2 complete governed suite; not rerun in WO-01B.",
+      "runtime_acceptance": "Formal controlled runtime acceptance reported at closure; not a claim about current process PID.",
+      "operational_evidence": "Individual/batch PDF and inbox workflows; six imported equities and CRUDE paired Question Pack.",
+      "empirical_qualification": "Not established; engineering evidence does not establish market usefulness.",
+      "current_classification": [
+        "CURRENT"
+      ],
+      "supersedes": [
+        "09-br2-not-started",
+        "09-br2-unpublished",
+        "09-br2-runtime-pending"
+      ],
+      "superseded_by": [],
+      "open_correction": null,
+      "evidence_reference": [
+        "SPONSOR-BR2",
+        "LIVING-MASTER",
+        "RETAINED-REVIEW"
+      ],
+      "notes": "No new runtime, acquisition, import or downstream authority."
+    },
+    {
+      "capability_id": "09-producer-advance",
+      "work_order": "WO-09",
+      "capability": "Producer advancement / Review transition",
+      "current_policy_contract": "Review CURRENT iff its bound Probables Run is current authoritative producer. Full approved rule is producer_advance_policy. After divergence block NEW current-workflow imports; preserve imported history; permit exact replay only with no new consequences.",
+      "effective_version": "Sponsor-approved WO-09 transition decision recorded 2026-09-07; runtime contract version pending",
+      "status_dimensions": {
+        "APPROVED_POLICY": "YES",
+        "IMPLEMENTED": "NO",
+        "PUBLISHED": "NO",
+        "RUNTIME_ACCEPTED": "NO",
+        "OPERATIONALLY_PROVEN": "NO",
+        "EMPIRICALLY_QUALIFIED": "NOT_ESTABLISHED"
+      },
+      "implementation": "NOT IMPLEMENTED. Selected Review checks and separate reconciliation guards do not enforce producer currentness for each new import. Existing synthetic individual/batch imports can accept old Review after producer advancement.",
+      "publication_commit": [],
+      "test_evidence": "Required transition test matrix retained in producer_advance_policy.required_future_tests; not executed or claimed passed.",
+      "runtime_acceptance": "NO acceptance of this correction.",
+      "operational_evidence": "NO operational proof of this correction.",
+      "empirical_qualification": "Not established; engineering evidence does not establish market usefulness.",
+      "current_classification": [
+        "OPEN_CORRECTION"
+      ],
+      "supersedes": [
+        "09-retroactive-defect"
+      ],
+      "superseded_by": [],
+      "open_correction": {
+        "owner": "WO-09",
+        "status": "OPEN",
+        "description": "Implement producer-advance policy and complete transition/restoration qualification under later authority."
+      },
+      "evidence_reference": [
+        "SPONSOR-09",
+        "SPONSOR-01B",
+        "REVIEW-CODE",
+        "FINAL-RESEARCH"
+      ],
+      "notes": "New approved policy, not retroactive proof BR2 violated its earlier ambiguous transition authority. No historical/research import authority."
+    },
+    {
+      "capability_id": "09-rejected-receipts",
+      "work_order": "WO-09",
+      "capability": "Durable V2 rejected-import receipts",
+      "current_policy_contract": "Retain sanitized failed-attempt evidence without raw exception exposure or displacement of successful immutable evidence.",
+      "effective_version": "V2 receipt extension pending",
+      "status_dimensions": {
+        "APPROVED_POLICY": "YES",
+        "IMPLEMENTED": "NO",
+        "PUBLISHED": "NO",
+        "RUNTIME_ACCEPTED": "NO",
+        "OPERATIONALLY_PROVEN": "NO",
+        "EMPIRICALLY_QUALIFIED": "NOT_ESTABLISHED"
+      },
+      "implementation": "V1 rejection receipts exist. Current all-rejected V2 inbox batch returns response-only failure and persists operation only when prepared evidence exists.",
+      "publication_commit": [],
+      "test_evidence": "No capability-specific execution in WO-01B; retained evidence only.",
+      "runtime_acceptance": "Not established for this specific capability.",
+      "operational_evidence": "Not established for this specific capability.",
+      "empirical_qualification": "Not established; engineering evidence does not establish market usefulness.",
+      "current_classification": [
+        "MISSING",
+        "OPEN_CORRECTION"
+      ],
+      "supersedes": [],
+      "superseded_by": [],
+      "open_correction": {
+        "owner": "WO-09",
+        "status": "OPEN",
+        "description": "Add bounded durable V2 rejected-import receipts, preserving V1 history and trusted pointers."
+      },
+      "evidence_reference": [
+        "REVIEW-CODE",
+        "RETAINED-V1",
+        "FINAL-RESEARCH"
+      ],
+      "notes": "No new runtime, acquisition, import or downstream authority."
+    },
+    {
+      "capability_id": "09-current-index-acceptance",
+      "work_order": "WO-09",
+      "capability": "Legitimate current NIFTY/BANKNIFTY successor acceptance",
+      "current_policy_contract": "Qualify current V2 index paths only when legitimately eligible; never force Probables admission. Historical BANKNIFTY proof remains valid but is not current successor proof.",
+      "effective_version": "Current Review V2; real index acceptance pending",
+      "status_dimensions": {
+        "APPROVED_POLICY": "YES",
+        "IMPLEMENTED": "YES",
+        "PUBLISHED": "YES",
+        "RUNTIME_ACCEPTED": "NOT_ESTABLISHED",
+        "OPERATIONALLY_PROVEN": "NO",
+        "EMPIRICALLY_QUALIFIED": "NOT_ESTABLISHED"
+      },
+      "implementation": "Generic V2 machinery exists; no current V2 index Answer operational evidence established.",
+      "publication_commit": [],
+      "test_evidence": "No capability-specific execution in WO-01B; retained evidence only.",
+      "runtime_acceptance": "Not established for this specific capability.",
+      "operational_evidence": "Not established for this specific capability.",
+      "empirical_qualification": "Not established; engineering evidence does not establish market usefulness.",
+      "current_classification": [
+        "OPEN_CORRECTION"
+      ],
+      "supersedes": [],
+      "superseded_by": [],
+      "open_correction": {
+        "owner": "WO-09",
+        "status": "OPEN",
+        "description": "Retain legitimate current NIFTY/BANKNIFTY successor acceptance evidence when candidates exist."
+      },
+      "evidence_reference": [
+        "RETAINED-V1",
+        "RETAINED-REVIEW",
+        "FINAL-RESEARCH"
+      ],
+      "notes": "No new runtime, acquisition, import or downstream authority."
+    },
+    {
+      "capability_id": "01-old-baselines",
+      "work_order": "WO-01",
+      "capability": "Historical statement: Old repository SHA / roadmap next-work status is current",
+      "current_policy_contract": "SUPERSEDED as a current-authority statement. Successor: 01-authority-map",
+      "effective_version": "Historical boundary only; see successor effective version",
+      "status_dimensions": {
+        "APPROVED_POLICY": "NOT_APPLICABLE",
+        "IMPLEMENTED": "NOT_APPLICABLE",
+        "PUBLISHED": "NOT_APPLICABLE",
+        "RUNTIME_ACCEPTED": "NOT_APPLICABLE",
+        "OPERATIONALLY_PROVEN": "NOT_APPLICABLE",
+        "EMPIRICALLY_QUALIFIED": "NOT_APPLICABLE"
+      },
+      "implementation": "Historical source preserved; no old decision rewritten.",
+      "publication_commit": [],
+      "test_evidence": "No capability-specific execution in WO-01B; retained evidence only.",
+      "runtime_acceptance": "Historical claim only; see successor.",
+      "operational_evidence": "Historical claim only; see successor.",
+      "empirical_qualification": "Not applicable to obsolete status wording.",
+      "current_classification": [
+        "SUPERSEDED"
+      ],
+      "supersedes": [],
+      "superseded_by": [
+        "01-authority-map"
+      ],
+      "open_correction": null,
+      "evidence_reference": [
+        "ARCHITECTURE",
+        "SPONSOR-01B"
+      ],
+      "notes": "Historical source baseline only; WO-01B qualifies 782e51e on develop."
+    },
+    {
+      "capability_id": "03-reliance-only",
+      "work_order": "WO-03A",
+      "capability": "Historical statement: RELIANCE-only commissioning as current universe",
+      "current_policy_contract": "SUPERSEDED as a current-authority statement. Successor: 03a-canonical-identity",
+      "effective_version": "Historical boundary only; see successor effective version",
+      "status_dimensions": {
+        "APPROVED_POLICY": "NOT_APPLICABLE",
+        "IMPLEMENTED": "NOT_APPLICABLE",
+        "PUBLISHED": "NOT_APPLICABLE",
+        "RUNTIME_ACCEPTED": "NOT_APPLICABLE",
+        "OPERATIONALLY_PROVEN": "NOT_APPLICABLE",
+        "EMPIRICALLY_QUALIFIED": "NOT_APPLICABLE"
+      },
+      "implementation": "Historical source preserved; no old decision rewritten.",
+      "publication_commit": [],
+      "test_evidence": "No capability-specific execution in WO-01B; retained evidence only.",
+      "runtime_acceptance": "Historical claim only; see successor.",
+      "operational_evidence": "Historical claim only; see successor.",
+      "empirical_qualification": "Not applicable to obsolete status wording.",
+      "current_classification": [
+        "SUPERSEDED"
+      ],
+      "supersedes": [],
+      "superseded_by": [
+        "03a-canonical-identity"
+      ],
+      "open_correction": null,
+      "evidence_reference": [
+        "UNIVERSE",
+        "SPONSOR-01B"
+      ],
+      "notes": "Initial canonical coverage, never the complete membership."
+    },
+    {
+      "capability_id": "03-missing97",
+      "work_order": "WO-03A",
+      "capability": "Historical statement: 97 canonical identities missing",
+      "current_policy_contract": "SUPERSEDED as a current-authority statement. Successor: 03a-canonical-identity",
+      "effective_version": "Historical boundary only; see successor effective version",
+      "status_dimensions": {
+        "APPROVED_POLICY": "NOT_APPLICABLE",
+        "IMPLEMENTED": "NOT_APPLICABLE",
+        "PUBLISHED": "NOT_APPLICABLE",
+        "RUNTIME_ACCEPTED": "NOT_APPLICABLE",
+        "OPERATIONALLY_PROVEN": "NOT_APPLICABLE",
+        "EMPIRICALLY_QUALIFIED": "NOT_APPLICABLE"
+      },
+      "implementation": "Historical source preserved; no old decision rewritten.",
+      "publication_commit": [],
+      "test_evidence": "No capability-specific execution in WO-01B; retained evidence only.",
+      "runtime_acceptance": "Historical claim only; see successor.",
+      "operational_evidence": "Historical claim only; see successor.",
+      "empirical_qualification": "Not applicable to obsolete status wording.",
+      "current_classification": [
+        "SUPERSEDED"
+      ],
+      "supersedes": [],
+      "superseded_by": [
+        "03a-canonical-identity"
+      ],
+      "open_correction": null,
+      "evidence_reference": [
+        "DOMAIN001",
+        "SPONSOR-01B"
+      ],
+      "notes": "True at initial prerequisite boundary; later commissioning superseded it."
+    },
+    {
+      "capability_id": "03-five-mcx-unavailable",
+      "work_order": "WO-03A",
+      "capability": "Historical statement: Permanent five-MCX unavailability",
+      "current_policy_contract": "SUPERSEDED as a current-authority statement. Successor: 03a-availability",
+      "effective_version": "Historical boundary only; see successor effective version",
+      "status_dimensions": {
+        "APPROVED_POLICY": "NOT_APPLICABLE",
+        "IMPLEMENTED": "NOT_APPLICABLE",
+        "PUBLISHED": "NOT_APPLICABLE",
+        "RUNTIME_ACCEPTED": "NOT_APPLICABLE",
+        "OPERATIONALLY_PROVEN": "NOT_APPLICABLE",
+        "EMPIRICALLY_QUALIFIED": "NOT_APPLICABLE"
+      },
+      "implementation": "Historical source preserved; no old decision rewritten.",
+      "publication_commit": [],
+      "test_evidence": "No capability-specific execution in WO-01B; retained evidence only.",
+      "runtime_acceptance": "Historical claim only; see successor.",
+      "operational_evidence": "Historical claim only; see successor.",
+      "empirical_qualification": "Not applicable to obsolete status wording.",
+      "current_classification": [
+        "SUPERSEDED"
+      ],
+      "supersedes": [],
+      "superseded_by": [
+        "03a-availability"
+      ],
+      "open_correction": null,
+      "evidence_reference": [
+        "DISCOVERY",
+        "SPONSOR-01B"
+      ],
+      "notes": "Dated five-prerequisite-unavailable runtime state cannot be made permanent policy."
+    },
+    {
+      "capability_id": "06-v1-only",
+      "work_order": "WO-06",
+      "capability": "Historical statement: V1-only active Probables",
+      "current_policy_contract": "SUPERSEDED as a current-authority statement. Successor: 06-phase-aware",
+      "effective_version": "Historical boundary only; see successor effective version",
+      "status_dimensions": {
+        "APPROVED_POLICY": "NOT_APPLICABLE",
+        "IMPLEMENTED": "NOT_APPLICABLE",
+        "PUBLISHED": "NOT_APPLICABLE",
+        "RUNTIME_ACCEPTED": "NOT_APPLICABLE",
+        "OPERATIONALLY_PROVEN": "NOT_APPLICABLE",
+        "EMPIRICALLY_QUALIFIED": "NOT_APPLICABLE"
+      },
+      "implementation": "Historical source preserved; no old decision rewritten.",
+      "publication_commit": [],
+      "test_evidence": "No capability-specific execution in WO-01B; retained evidence only.",
+      "runtime_acceptance": "Historical claim only; see successor.",
+      "operational_evidence": "Historical claim only; see successor.",
+      "empirical_qualification": "Not applicable to obsolete status wording.",
+      "current_classification": [
+        "SUPERSEDED"
+      ],
+      "supersedes": [],
+      "superseded_by": [
+        "06-phase-aware"
+      ],
+      "open_correction": null,
+      "evidence_reference": [
+        "METHODOLOGY",
+        "SPONSOR-01B"
+      ],
+      "notes": "Historical methodology V1 / 1.0.0 is immutable; current run uses V2 / 2.1.0."
+    },
+    {
+      "capability_id": "06-v20-only",
+      "work_order": "WO-06",
+      "capability": "Historical statement: V2 / 2.0.0 is the only current methodology",
+      "current_policy_contract": "SUPERSEDED as a current-authority statement. Successor: 06-phase-aware",
+      "effective_version": "Historical boundary only; see successor effective version",
+      "status_dimensions": {
+        "APPROVED_POLICY": "NOT_APPLICABLE",
+        "IMPLEMENTED": "NOT_APPLICABLE",
+        "PUBLISHED": "NOT_APPLICABLE",
+        "RUNTIME_ACCEPTED": "NOT_APPLICABLE",
+        "OPERATIONALLY_PROVEN": "NOT_APPLICABLE",
+        "EMPIRICALLY_QUALIFIED": "NOT_APPLICABLE"
+      },
+      "implementation": "Historical source preserved; no old decision rewritten.",
+      "publication_commit": [],
+      "test_evidence": "No capability-specific execution in WO-01B; retained evidence only.",
+      "runtime_acceptance": "Historical claim only; see successor.",
+      "operational_evidence": "Historical claim only; see successor.",
+      "empirical_qualification": "Not applicable to obsolete status wording.",
+      "current_classification": [
+        "SUPERSEDED"
+      ],
+      "supersedes": [],
+      "superseded_by": [
+        "06-phase-aware"
+      ],
+      "open_correction": null,
+      "evidence_reference": [
+        "METHODOLOGY",
+        "SPONSOR-01B"
+      ],
+      "notes": "2.0.0 historical replay remains supported; 2.1.0 preserves NSE semantics and adds governed MCX commissioning."
+    },
+    {
+      "capability_id": "07-v1-only",
+      "work_order": "WO-07",
+      "capability": "Historical statement: V1-only active Review",
+      "current_policy_contract": "SUPERSEDED as a current-authority statement. Successor: 07-chart-revisions",
+      "effective_version": "Historical boundary only; see successor effective version",
+      "status_dimensions": {
+        "APPROVED_POLICY": "NOT_APPLICABLE",
+        "IMPLEMENTED": "NOT_APPLICABLE",
+        "PUBLISHED": "NOT_APPLICABLE",
+        "RUNTIME_ACCEPTED": "NOT_APPLICABLE",
+        "OPERATIONALLY_PROVEN": "NOT_APPLICABLE",
+        "EMPIRICALLY_QUALIFIED": "NOT_APPLICABLE"
+      },
+      "implementation": "Historical source preserved; no old decision rewritten.",
+      "publication_commit": [],
+      "test_evidence": "No capability-specific execution in WO-01B; retained evidence only.",
+      "runtime_acceptance": "Historical claim only; see successor.",
+      "operational_evidence": "Historical claim only; see successor.",
+      "empirical_qualification": "Not applicable to obsolete status wording.",
+      "current_classification": [
+        "SUPERSEDED"
+      ],
+      "supersedes": [],
+      "superseded_by": [
+        "07-chart-revisions"
+      ],
+      "open_correction": null,
+      "evidence_reference": [
+        "REVIEW",
+        "SPONSOR-01B"
+      ],
+      "notes": "V1 evidence retained; separately versioned V2 current Review seam."
+    },
+    {
+      "capability_id": "07-literal-identity",
+      "work_order": "WO-07",
+      "capability": "Historical statement: Literal observed-label = canonical-ID requirement",
+      "current_policy_contract": "SUPERSEDED as a current-authority statement. Successor: 07-visual-identity",
+      "effective_version": "Historical boundary only; see successor effective version",
+      "status_dimensions": {
+        "APPROVED_POLICY": "NOT_APPLICABLE",
+        "IMPLEMENTED": "NOT_APPLICABLE",
+        "PUBLISHED": "NOT_APPLICABLE",
+        "RUNTIME_ACCEPTED": "NOT_APPLICABLE",
+        "OPERATIONALLY_PROVEN": "NOT_APPLICABLE",
+        "EMPIRICALLY_QUALIFIED": "NOT_APPLICABLE"
+      },
+      "implementation": "Historical source preserved; no old decision rewritten.",
+      "publication_commit": [],
+      "test_evidence": "No capability-specific execution in WO-01B; retained evidence only.",
+      "runtime_acceptance": "Historical claim only; see successor.",
+      "operational_evidence": "Historical claim only; see successor.",
+      "empirical_qualification": "Not applicable to obsolete status wording.",
+      "current_classification": [
+        "SUPERSEDED"
+      ],
+      "supersedes": [],
+      "superseded_by": [
+        "07-visual-identity"
+      ],
+      "open_correction": null,
+      "evidence_reference": [
+        "VISUAL-IDENTITY",
+        "SPONSOR-01B"
+      ],
+      "notes": "Exact source-qualified DOMAIN-001 relationship, not raw label equality."
+    },
+    {
+      "capability_id": "09-individual-only",
+      "work_order": "WO-09",
+      "capability": "Historical statement: Individual-only Answer transport",
+      "current_policy_contract": "SUPERSEDED as a current-authority statement. Successor: 09-exact-import",
+      "effective_version": "Historical boundary only; see successor effective version",
+      "status_dimensions": {
+        "APPROVED_POLICY": "NOT_APPLICABLE",
+        "IMPLEMENTED": "NOT_APPLICABLE",
+        "PUBLISHED": "NOT_APPLICABLE",
+        "RUNTIME_ACCEPTED": "NOT_APPLICABLE",
+        "OPERATIONALLY_PROVEN": "NOT_APPLICABLE",
+        "EMPIRICALLY_QUALIFIED": "NOT_APPLICABLE"
+      },
+      "implementation": "Historical source preserved; no old decision rewritten.",
+      "publication_commit": [],
+      "test_evidence": "No capability-specific execution in WO-01B; retained evidence only.",
+      "runtime_acceptance": "Historical claim only; see successor.",
+      "operational_evidence": "Historical claim only; see successor.",
+      "empirical_qualification": "Not applicable to obsolete status wording.",
+      "current_classification": [
+        "SUPERSEDED"
+      ],
+      "supersedes": [],
+      "superseded_by": [
+        "09-exact-import"
+      ],
+      "open_correction": null,
+      "evidence_reference": [
+        "ANSWER",
+        "SPONSOR-01B"
+      ],
+      "notes": "V2 individual and combined transport coexist with isolated candidate validation."
+    },
+    {
+      "capability_id": "09-import-disabled",
+      "work_order": "WO-09",
+      "capability": "Historical statement: Answer import disabled",
+      "current_policy_contract": "SUPERSEDED as a current-authority statement. Successor: 09-exact-import",
+      "effective_version": "Historical boundary only; see successor effective version",
+      "status_dimensions": {
+        "APPROVED_POLICY": "NOT_APPLICABLE",
+        "IMPLEMENTED": "NOT_APPLICABLE",
+        "PUBLISHED": "NOT_APPLICABLE",
+        "RUNTIME_ACCEPTED": "NOT_APPLICABLE",
+        "OPERATIONALLY_PROVEN": "NOT_APPLICABLE",
+        "EMPIRICALLY_QUALIFIED": "NOT_APPLICABLE"
+      },
+      "implementation": "Historical source preserved; no old decision rewritten.",
+      "publication_commit": [],
+      "test_evidence": "No capability-specific execution in WO-01B; retained evidence only.",
+      "runtime_acceptance": "Historical claim only; see successor.",
+      "operational_evidence": "Historical claim only; see successor.",
+      "empirical_qualification": "Not applicable to obsolete status wording.",
+      "current_classification": [
+        "SUPERSEDED"
+      ],
+      "supersedes": [],
+      "superseded_by": [
+        "09-exact-import"
+      ],
+      "open_correction": null,
+      "evidence_reference": [
+        "REVIEW",
+        "SPONSOR-01B"
+      ],
+      "notes": "Historical pre-WO09 restriction; governed import is operational."
+    },
+    {
+      "capability_id": "09-finder",
+      "work_order": "WO-09",
+      "capability": "Historical statement: Normal Finder selection",
+      "current_policy_contract": "SUPERSEDED as a current-authority statement. Successor: 09-secure-inbox",
+      "effective_version": "Historical boundary only; see successor effective version",
+      "status_dimensions": {
+        "APPROVED_POLICY": "NOT_APPLICABLE",
+        "IMPLEMENTED": "NOT_APPLICABLE",
+        "PUBLISHED": "NOT_APPLICABLE",
+        "RUNTIME_ACCEPTED": "NOT_APPLICABLE",
+        "OPERATIONALLY_PROVEN": "NOT_APPLICABLE",
+        "EMPIRICALLY_QUALIFIED": "NOT_APPLICABLE"
+      },
+      "implementation": "Historical source preserved; no old decision rewritten.",
+      "publication_commit": [],
+      "test_evidence": "No capability-specific execution in WO-01B; retained evidence only.",
+      "runtime_acceptance": "Historical claim only; see successor.",
+      "operational_evidence": "Historical claim only; see successor.",
+      "empirical_qualification": "Not applicable to obsolete status wording.",
+      "current_classification": [
+        "SUPERSEDED"
+      ],
+      "supersedes": [],
+      "superseded_by": [
+        "09-secure-inbox"
+      ],
+      "open_correction": null,
+      "evidence_reference": [
+        "SPONSOR-BR2",
+        "SPONSOR-01B"
+      ],
+      "notes": "Governed exact-file inbox replaces normal manual selection."
+    },
+    {
+      "capability_id": "09-br2-not-started",
+      "work_order": "WO-09",
+      "capability": "Historical statement: BR2 not started",
+      "current_policy_contract": "SUPERSEDED as a current-authority statement. Successor: 09-br2-closure",
+      "effective_version": "Historical boundary only; see successor effective version",
+      "status_dimensions": {
+        "APPROVED_POLICY": "NOT_APPLICABLE",
+        "IMPLEMENTED": "NOT_APPLICABLE",
+        "PUBLISHED": "NOT_APPLICABLE",
+        "RUNTIME_ACCEPTED": "NOT_APPLICABLE",
+        "OPERATIONALLY_PROVEN": "NOT_APPLICABLE",
+        "EMPIRICALLY_QUALIFIED": "NOT_APPLICABLE"
+      },
+      "implementation": "Historical source preserved; no old decision rewritten.",
+      "publication_commit": [],
+      "test_evidence": "No capability-specific execution in WO-01B; retained evidence only.",
+      "runtime_acceptance": "Historical claim only; see successor.",
+      "operational_evidence": "Historical claim only; see successor.",
+      "empirical_qualification": "Not applicable to obsolete status wording.",
+      "current_classification": [
+        "SUPERSEDED"
+      ],
+      "supersedes": [],
+      "superseded_by": [
+        "09-br2-closure"
+      ],
+      "open_correction": null,
+      "evidence_reference": [
+        "BR1-RECORD",
+        "SPONSOR-01B"
+      ],
+      "notes": "Historical BR1 handover status."
+    },
+    {
+      "capability_id": "09-br2-unpublished",
+      "work_order": "WO-09",
+      "capability": "Historical statement: BR2 unpublished",
+      "current_policy_contract": "SUPERSEDED as a current-authority statement. Successor: 09-br2-closure",
+      "effective_version": "Historical boundary only; see successor effective version",
+      "status_dimensions": {
+        "APPROVED_POLICY": "NOT_APPLICABLE",
+        "IMPLEMENTED": "NOT_APPLICABLE",
+        "PUBLISHED": "NOT_APPLICABLE",
+        "RUNTIME_ACCEPTED": "NOT_APPLICABLE",
+        "OPERATIONALLY_PROVEN": "NOT_APPLICABLE",
+        "EMPIRICALLY_QUALIFIED": "NOT_APPLICABLE"
+      },
+      "implementation": "Historical source preserved; no old decision rewritten.",
+      "publication_commit": [],
+      "test_evidence": "No capability-specific execution in WO-01B; retained evidence only.",
+      "runtime_acceptance": "Historical claim only; see successor.",
+      "operational_evidence": "Historical claim only; see successor.",
+      "empirical_qualification": "Not applicable to obsolete status wording.",
+      "current_classification": [
+        "SUPERSEDED"
+      ],
+      "supersedes": [],
+      "superseded_by": [
+        "09-br2-closure"
+      ],
+      "open_correction": null,
+      "evidence_reference": [
+        "SPONSOR-BR2",
+        "SPONSOR-01B"
+      ],
+      "notes": "Published 19f583f and formally closed."
+    },
+    {
+      "capability_id": "09-br2-runtime-pending",
+      "work_order": "WO-09",
+      "capability": "Historical statement: BR2 runtime acceptance pending",
+      "current_policy_contract": "SUPERSEDED as a current-authority statement. Successor: 09-br2-closure",
+      "effective_version": "Historical boundary only; see successor effective version",
+      "status_dimensions": {
+        "APPROVED_POLICY": "NOT_APPLICABLE",
+        "IMPLEMENTED": "NOT_APPLICABLE",
+        "PUBLISHED": "NOT_APPLICABLE",
+        "RUNTIME_ACCEPTED": "NOT_APPLICABLE",
+        "OPERATIONALLY_PROVEN": "NOT_APPLICABLE",
+        "EMPIRICALLY_QUALIFIED": "NOT_APPLICABLE"
+      },
+      "implementation": "Historical source preserved; no old decision rewritten.",
+      "publication_commit": [],
+      "test_evidence": "No capability-specific execution in WO-01B; retained evidence only.",
+      "runtime_acceptance": "Historical claim only; see successor.",
+      "operational_evidence": "Historical claim only; see successor.",
+      "empirical_qualification": "Not applicable to obsolete status wording.",
+      "current_classification": [
+        "SUPERSEDED"
+      ],
+      "supersedes": [],
+      "superseded_by": [
+        "09-br2-closure"
+      ],
+      "open_correction": null,
+      "evidence_reference": [
+        "SPONSOR-BR2",
+        "SPONSOR-01B"
+      ],
+      "notes": "Formal BR2 closure records acceptance; new WO09 transition has none."
+    },
+    {
+      "capability_id": "09-retroactive-defect",
+      "work_order": "WO-09",
+      "capability": "Historical statement: Producer-advance import = proven BR2 defect",
+      "current_policy_contract": "SUPERSEDED as a current-authority statement. Successor: 09-producer-advance",
+      "effective_version": "Historical boundary only; see successor effective version",
+      "status_dimensions": {
+        "APPROVED_POLICY": "NOT_APPLICABLE",
+        "IMPLEMENTED": "NOT_APPLICABLE",
+        "PUBLISHED": "NOT_APPLICABLE",
+        "RUNTIME_ACCEPTED": "NOT_APPLICABLE",
+        "OPERATIONALLY_PROVEN": "NOT_APPLICABLE",
+        "EMPIRICALLY_QUALIFIED": "NOT_APPLICABLE"
+      },
+      "implementation": "Historical source preserved; no old decision rewritten.",
+      "publication_commit": [],
+      "test_evidence": "No capability-specific execution in WO-01B; retained evidence only.",
+      "runtime_acceptance": "Historical claim only; see successor.",
+      "operational_evidence": "Historical claim only; see successor.",
+      "empirical_qualification": "Not applicable to obsolete status wording.",
+      "current_classification": [
+        "SUPERSEDED"
+      ],
+      "supersedes": [],
+      "superseded_by": [
+        "09-producer-advance"
+      ],
+      "open_correction": null,
+      "evidence_reference": [
+        "FINAL-RESEARCH",
+        "SPONSOR-01B"
+      ],
+      "notes": "Earlier recommendation required Sponsor policy resolution. Now explicitly approved future correction, not retroactive BR2 reopening."
+    },
+    {
+      "capability_id": "09-no-index-evidence",
+      "work_order": "WO-09",
+      "capability": "Historical statement: No index import evidence",
+      "current_policy_contract": "SUPERSEDED as a current-authority statement. Successor: 09-historical-acceptance",
+      "effective_version": "Historical boundary only; see successor effective version",
+      "status_dimensions": {
+        "APPROVED_POLICY": "NOT_APPLICABLE",
+        "IMPLEMENTED": "NOT_APPLICABLE",
+        "PUBLISHED": "NOT_APPLICABLE",
+        "RUNTIME_ACCEPTED": "NOT_APPLICABLE",
+        "OPERATIONALLY_PROVEN": "NOT_APPLICABLE",
+        "EMPIRICALLY_QUALIFIED": "NOT_APPLICABLE"
+      },
+      "implementation": "Historical source preserved; no old decision rewritten.",
+      "publication_commit": [],
+      "test_evidence": "No capability-specific execution in WO-01B; retained evidence only.",
+      "runtime_acceptance": "Historical claim only; see successor.",
+      "operational_evidence": "Historical claim only; see successor.",
+      "empirical_qualification": "Not applicable to obsolete status wording.",
+      "current_classification": [
+        "SUPERSEDED"
+      ],
+      "supersedes": [],
+      "superseded_by": [
+        "09-historical-acceptance"
+      ],
+      "open_correction": null,
+      "evidence_reference": [
+        "RETAINED-V1",
+        "SPONSOR-01B"
+      ],
+      "notes": "Historical BANKNIFTY acceptance exists; current V2 index successor proof remains open."
+    },
+    {
+      "capability_id": "05-no-timestamps",
+      "work_order": "WO-05",
+      "capability": "Historical statement: No operation timestamps",
+      "current_policy_contract": "SUPERSEDED as a current-authority statement. Successor: 05-operation-timing",
+      "effective_version": "Historical boundary only; see successor effective version",
+      "status_dimensions": {
+        "APPROVED_POLICY": "NOT_APPLICABLE",
+        "IMPLEMENTED": "NOT_APPLICABLE",
+        "PUBLISHED": "NOT_APPLICABLE",
+        "RUNTIME_ACCEPTED": "NOT_APPLICABLE",
+        "OPERATIONALLY_PROVEN": "NOT_APPLICABLE",
+        "EMPIRICALLY_QUALIFIED": "NOT_APPLICABLE"
+      },
+      "implementation": "Historical source preserved; no old decision rewritten.",
+      "publication_commit": [],
+      "test_evidence": "No capability-specific execution in WO-01B; retained evidence only.",
+      "runtime_acceptance": "Historical claim only; see successor.",
+      "operational_evidence": "Historical claim only; see successor.",
+      "empirical_qualification": "Not applicable to obsolete status wording.",
+      "current_classification": [
+        "SUPERSEDED"
+      ],
+      "supersedes": [],
+      "superseded_by": [
+        "05-operation-timing"
+      ],
+      "open_correction": null,
+      "evidence_reference": [
+        "REFRESH-CODE",
+        "SPONSOR-01B"
+      ],
+      "notes": "Receipt/start/completion fields already exist; accounting/meaning clarification remains open."
+    }
+  ],
+  "publication_record": {
+    "authority": "Sponsor/EA WO-01C Qualification, Publication & Closure, 2026-09-07",
+    "identity": "First Git commit introducing this manifest at origin/develop; obtain its exact SHA from Git history. No self-referential commit hash is embedded.",
+    "effective_condition": "Publication statements in this edition apply when its containing commit is published to origin/develop; an uncommitted or unpushed candidate alone is not publication.",
+    "qualification_snapshot": "qualification_baseline and capability evidence retain the WO-01B inspected baseline. Publication of the manifest promotes only its own publication dimension.",
+    "closure_record": "The dated WO-01 closure entry in the Intraday Living Master records publication, final repository verification and programme closure after Drive readback."
+  }
+}

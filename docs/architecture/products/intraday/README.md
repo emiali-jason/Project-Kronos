@@ -10,6 +10,42 @@ This directory indexes the governed Intraday product records. Source documents
 retain their own authority and status; this index grants no additional trading,
 Risk, execution, or broker authority.
 
+## Current authority through WO-09
+
+The [WO-01B Current Authority Manifest V1](KRONOS-INTRADAY-CURRENT-AUTHORITY-MANIFEST-V1.json)
+is the **Approved WO-01C publication edition**, qualified against develop
+`782e51e52ed621d03881f59f13412a21d41b4f14` on 2026-09-07. It records the accepted
+WO-01A reconciliation and subsequent Sponsor WO-09 producer-advance decision.
+Its own publication is established by its containing commit on origin/develop;
+Git history supplies the exact SHA. An unpushed copy is not publication.
+The dated Living Master closure records final publication and closure proof.
+The baseline identifies inspected source, not the currently loaded runtime.
+
+Its six independent dimensions are APPROVED_POLICY, IMPLEMENTED, PUBLISHED,
+RUNTIME_ACCEPTED, OPERATIONALLY_PROVEN and EMPIRICALLY_QUALIFIED. Historical
+statements remain visible with explicit successors. Classification counts may
+overlap: an OPEN_CORRECTION can also be CONTRADICTORY or MISSING. Evidence
+references distinguish repository code, retained operational evidence, Sponsor
+decisions and research; engineering success does not imply predictive usefulness.
+
+The WO-09 producer-advance rule is approved policy only: implementation,
+publication, runtime acceptance and operational proof remain NO. WO-05/06/07
+corrections remain open. WO-04 is skipped; WO-08 remains conditional/skipped.
+BR2 remains CLOSED_WITH_SPONSOR_INPUT_PENDING. This manifest grants no runtime,
+import, acquisition, trading or broker authority and is not consumed by runtime.
+
+Validate from the repository root without loading production composition:
+
+```sh
+python3 tools/validate_intraday_authority_manifest.py
+python3 -m pytest tests/unit/architecture/test_intraday_current_authority_manifest.py
+```
+
+The validator is a bounded executable schema for manifest version 1.0.0. It
+requires all material capabilities, explicit statuses, evidence and owned open
+corrections. Later approved reconciliations must revise the version and gates
+explicitly; old decisions and evidence are not silently rewritten.
+
 ## Documents
 
 - [Responsibilities](RESPONSIBILITIES.md)
