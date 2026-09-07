@@ -135,7 +135,7 @@ from kronos.instrument.visual_identity_persistence import (
 from kronos.market.calendar import MarketCalendarPublisher
 from kronos.provider.contracts.provider_authentication import ReadOnlyProviderOperation
 from kronos.provider.runtime import (
-    ReadOnlyProviderLease,
+    ReadOnlyProviderLease, ProviderRuntimeAccessError, ProviderRuntimeFailure,
     SharedAuthenticatedProviderRuntime,
 )
 from kronos.provider.instrument_master_persistence import (
@@ -176,6 +176,20 @@ class IntradayProviderRuntimeAccess:
             consumer_identity="INTRADAY_NATIVE_DISCOVERY",
             operations=_DISCOVERY_READ_OPERATIONS,
         )
+
+    def acquire_admission_discovery_lease(self) -> ReadOnlyProviderLease:
+        """V2 admission measurement adds QUOTE without making it a prerequisite."""
+        try:
+            return self._runtime.acquire_lease(
+                consumer_identity="INTRADAY_NATIVE_DISCOVERY",
+                operations=_DISCOVERY_READ_OPERATIONS | {ReadOnlyProviderOperation.QUOTE},
+            )
+        except ProviderRuntimeAccessError as error:
+            if error.failure is not ProviderRuntimeFailure.OPERATION_NOT_AUTHORIZED:
+                raise
+            # Missing optional quote capability cannot remove an opportunity.
+            # This is local lease negotiation, not a retried Provider request.
+            return self.acquire_discovery_lease()
 
     def acquire_monitoring_lease(self) -> ReadOnlyProviderLease:
         return self._runtime.acquire_lease(
@@ -424,7 +438,7 @@ def create_intraday_runtime(
         )
     operation_v2 = IntradayDiscoveryOperationService(
         provider_runtime=provider_runtime,
-        acquire_lease=access.acquire_discovery_lease,
+        acquire_lease=access.acquire_admission_discovery_lease,
         universe=universe,
         reconciliation=reconciliation,
         application=discovery_v2,

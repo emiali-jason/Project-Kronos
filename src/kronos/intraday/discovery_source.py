@@ -134,9 +134,16 @@ class ProviderDiscoveryFactualSource:
         self._produce_probables_v2_facts = produce_probables_v2_facts
         self._mcx_history_store = mcx_history_store
         self._records: dict[str, tuple[InstrumentRecord, ...]] = {}
+        self._admission_records: dict[str, tuple[str, InstrumentRecord]] = {}
         self._session_identities: dict[datetime, tuple[str, str]] = {}
         self._historical_requests = 0
         self._request_counter = ProviderRequestCounter(trusted_now)
+
+    def capture_assessments(self, run, *, operation_identity, clock):
+        from kronos.intraday.assessment_capture import capture_admission_observations
+        return capture_admission_observations(run, operation_identity=operation_identity,
+            records=self._admission_records, quote=self._lease.quote,
+            counter=self._request_counter, clock=clock)
 
     def bind_request_counter(self, counter: ProviderRequestCounter) -> None:
         if type(counter) is not ProviderRequestCounter:
@@ -169,6 +176,7 @@ class ProviderDiscoveryFactualSource:
             )
         active_binding = self._active_binding(member)
         record = self._record(member, active_binding=active_binding)
+        self._admission_records[member.universe_member_identity] = (member.canonical_identity, record)
         local = boundary.observation_boundary.astimezone(ZoneInfo("Asia/Kolkata"))
         calendar = CurrentMarketCalendarScheduleSource(
             self._calendar,

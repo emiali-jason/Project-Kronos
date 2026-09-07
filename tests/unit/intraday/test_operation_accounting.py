@@ -71,7 +71,7 @@ def test_success_separates_real_requests_nominal_coverage_and_population(tmp_pat
     assert a.actual_provider_requests == 467
     assert dict(a.request_categories) == {Category.CURRENT_SESSION_CANDLE_REQUEST:279,
         Category.PREVIOUS_SESSION_DAILY_REQUEST:93, Category.PREVIOUS_SESSION_INTRADAY_REQUEST:93,
-        Category.INSTRUMENT_BINDING_REQUEST:2}
+        Category.INSTRUMENT_BINDING_REQUEST:2, Category.ASSESSMENT_OBSERVATION_REQUEST:0}
     assert sum(n for _,n in a.request_categories) == len(events)
     assert c.discovery_v2_operation.last_result.historical_request_count == 465
     assert response["operation_accounting"]["actual_provider_requests"] == 467
@@ -357,3 +357,18 @@ def test_later_invocation_cannot_fabricate_missing_first_request_time(first):
     assert counter.snapshot()["actual_provider_requests"] == 2
     assert counter.snapshot()["provider_acquisition_started_at"] is None
     assert next(ticks) == NOW
+
+
+@pytest.mark.parametrize("unknown",[False,True])
+def test_pre_assessment_accounting_bytes_restore_without_new_category(unknown):
+    from kronos.intraday.operation_accounting import DiscoveryOperationAccounting, _identity as accounting_identity
+    values=_values()
+    values.update(contract_identity="KRONOS-INTRADAY-DISCOVERY-OPERATION-ACCOUNTING",contract_version="1.0.0",
+        request_categories=tuple((c,0) for c in Category if c is not Category.ASSESSMENT_OBSERVATION_REQUEST))
+    if unknown:values.update(actual_provider_requests=None,request_categories=None,benchmark_subject_requests=None)
+    old=DiscoveryOperationAccounting(accounting_identity=accounting_identity("INTRADAY-OPERATION-ACCOUNTING-",values),
+        integrity_identity=accounting_identity("INTEGRITY-INTRADAY-OPERATION-ACCOUNTING-",values),**values)
+    payload=accounting_bytes(old)
+    assert b"ASSESSMENT_OBSERVATION_REQUEST" not in payload
+    assert accounting_bytes(restore_accounting(payload))==payload
+    assert restore_accounting(payload).actual_provider_requests==(None if unknown else 0)

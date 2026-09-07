@@ -5,7 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from threading import RLock
-from typing import Sequence
+from typing import Callable, Sequence
+
+from kronos.intraday.assessment_observation import ProbablesAssessmentObservations
 
 from kronos.intraday.probables_v2 import (
     DiscoveryProbablesEvidenceV2,
@@ -65,7 +67,7 @@ class IntradayProbablesV2Snapshot:
 
 
 class IntradayProbablesV2Application:
-    """Evaluate, persist, and restore exact V2 runs without Provider access."""
+    """Evaluate and retain V2 runs; optional post-decision measurement capture."""
 
     def __init__(self, *, store: ProbablesV2Store, restore_current: bool = True) -> None:
         if type(store) is not ProbablesV2Store or type(restore_current) is not bool:
@@ -105,8 +107,9 @@ class IntradayProbablesV2Application:
         member_evidence: Sequence[DiscoveryProbablesEvidenceV2],
         unavailable_members: Sequence[ProbablesUnavailableMemberV2],
         provenance: tuple[str, ...],
+        assessment_capture: Callable[[ProbablesRunV2], ProbablesAssessmentObservations] | None = None,
     ) -> ProbablesRunV2:
-        """Create one immutable V2 assessment; no Provider operation occurs."""
+        """Determine admission, optionally capture measurement, then publish once."""
 
         with self._lock:
             try:
@@ -123,7 +126,13 @@ class IntradayProbablesV2Application:
                     unavailable_members=tuple(unavailable_members),
                     provenance=provenance,
                 )
-                self._store.retain_complete(run=run, mappings=mappings)
+                assessment = None
+                if assessment_capture is not None and not self._store.has_run(run.run_identity):
+                    assessment = self._store.pending_assessment_observations(run)
+                    if assessment is None:
+                        assessment = assessment_capture(run)
+                self._store.retain_complete(run=run, mappings=mappings,
+                    assessment_observations=assessment)
                 restored = self._store.load_current_run()
                 if restored != run:
                     raise ProbablesV2Error("PROBABLES_V2_RELOAD_MISMATCH")

@@ -96,7 +96,7 @@ from kronos.market.schedule_compatibility import (
 
 
 from kronos.intraday.assessment_observation import (
-    AdmissionPriceProof, AdmissionAssessment, ProbablesAssessmentObservations,
+    AdmissionPriceProof, AdmissionMarketPriceProof, AdmissionAssessment, ProbablesAssessmentObservations,
     AssessmentPriceAuthority, create_missing_assessment_observations, validate_assessment_run,
 )
 
@@ -250,6 +250,7 @@ class ProbablesV2Store:
         *,
         run: ProbablesRunV2,
         mappings: tuple[DiscoveryProbablesEvidenceV2, ...],
+        assessment_observations: ProbablesAssessmentObservations | None = None,
     ) -> Path:
         if (
             type(run) is not ProbablesRunV2
@@ -277,7 +278,8 @@ class ProbablesV2Store:
             self.retain_diagnostics(run.diagnostics)
             # A companion is prospective only: never backfill an existing run.
             if not self._path("runs", run.run_identity).exists():
-                assessment = create_missing_assessment_observations(run)
+                assessment = assessment_observations or create_missing_assessment_observations(run)
+                validate_assessment_run(assessment, run)
                 self._retain_typed("assessments", run.run_identity, assessment)
             path = self.retain_run(run)
             assessment = self.load_assessment_observations(run.run_identity)
@@ -286,6 +288,16 @@ class ProbablesV2Store:
             self.save_current(create_current_probables_v2_pointer(run) if assessment is None
                 else create_assessment_bound_pointer(run, assessment))
         return path
+
+    def has_run(self, run_identity: str) -> bool:
+        return self._path("runs", run_identity).exists()
+
+    def pending_assessment_observations(self, run: ProbablesRunV2) -> ProbablesAssessmentObservations | None:
+        if not self._path("assessments", run.run_identity).exists():
+            return None
+        value = self._load_typed("assessments", run.run_identity, ProbablesAssessmentObservations, "run_identity")
+        validate_assessment_run(value, run)
+        return value
 
     def load_assessment_observations(self, run_identity: str) -> ProbablesAssessmentObservations | None:
         """Absent historical companion is truthful missing provenance, never a write."""
@@ -499,6 +511,7 @@ _DATACLASSES = {
     item.__name__: item
     for item in (
         AdmissionPriceProof,
+        AdmissionMarketPriceProof,
         AdmissionAssessment,
         ProbablesAssessmentObservations,
         GovernedHistoricalCandlePayload,

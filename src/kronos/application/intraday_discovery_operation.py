@@ -275,7 +275,9 @@ class DiscoveryOperationResult:
             or (self.failure_detail_identity is not None and not _text(self.failure_detail_identity))
             or (self.accounting is not None and (type(self.accounting) is not DiscoveryOperationAccounting
                 or self.accounting.operation_identity != self.operation_identity))
-            or self.probables_provider_request_count != 0
+            or (self.accounting is not None and self.accounting.request_categories is not None
+                and self.probables_provider_request_count != dict(self.accounting.request_categories).get(
+                    ProviderRequestCategory.ASSESSMENT_OBSERVATION_REQUEST, 0))
             or type(self.persistence_complete) is not bool
             or type(self.snapshot_updated) is not bool
             or (self.failure is not None and type(self.failure) is not DiscoveryOperationFailure)
@@ -721,6 +723,10 @@ class IntradayDiscoveryOperationService:
                     reconciliation_version=execution.run.reconciliation_version,
                     market_session_identity=execution.run.market_session_identity,
                     analysis_boundary=execution.run.observation_boundary,
+                    assessment_capture=(
+                        (lambda run: source.capture_assessments(run,
+                            operation_identity=request.operation_identity, clock=self._clock))
+                        if isinstance(source, ProviderDiscoveryFactualSource) else None),
                     member_evidence=mapping.member_evidence,
                     unavailable_members=mapping.unavailable_members,
                     provenance=(
@@ -1018,7 +1024,8 @@ class IntradayDiscoveryOperationService:
                 None if failure_detail is None else failure_detail.failure_identity
             ),
             probables_invocation_count=0 if probables_run is None else 1,
-            probables_provider_request_count=0,
+            probables_provider_request_count=(0 if accounting is None or accounting.request_categories is None
+                else dict(accounting.request_categories).get(ProviderRequestCategory.ASSESSMENT_OBSERVATION_REQUEST, 0)),
             persistence_complete=execution is not None,
             snapshot_updated=execution is not None,
             failure=failure,

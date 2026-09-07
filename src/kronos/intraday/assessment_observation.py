@@ -1,15 +1,16 @@
 """WO-06C immutable admission measurement provenance; never admission policy.
 
-The current producer has no designated price observation. Positive contracts
-represent a supplied governed proof, not an authority to acquire/select prices.
-No positive production adapter is installed by this module.
+The approved Sponsor capture policy designates the same-operation Provider
+quote pair. Legacy proofs retain their original chronology and validation.
 """
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 from datetime import datetime
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from enum import StrEnum
+from hashlib import sha256
+import json
 
 from kronos.intraday.probables import ProbableState
 from kronos.intraday.probables_v2 import ProbablesRunV2, ProbablesV2Error, _identity
@@ -40,7 +41,7 @@ class AdmissionPriceProof:
 
     A hash proves integrity, not source authority. The publication identity must
     be established by the producing governed adapter, never supplied by a UI.
-    No current adapter produces this type; fixtures cannot commission one.
+    This base type retains the original pre-boundary proof contract.
     """
     canonical_subject_identity: str
     run_identity: str
@@ -72,6 +73,52 @@ class AdmissionPriceProof:
             or self.integrity_identity != _identity("INTEGRITY-ADMISSION-PRICE-PROOF-", core)
         ):
             raise ProbablesV2Error("ASSESSMENT_PRICE_PROOF_INVALID")
+
+
+ASSESSMENT_CAPTURE_POLICY = "KRONOS-INTRADAY-SPONSOR-ADMISSION-MARKET-OBSERVATION-V1"
+
+
+@dataclass(frozen=True, slots=True)
+class AdmissionMarketPriceProof(AdmissionPriceProof):
+    """Same-operation Provider quote; receipt bounds never become price time."""
+    operation_identity: str
+    observation_identity: str
+    capture_started_at: datetime
+    capture_completed_at: datetime
+    provider_instrument_identity: str
+    source_document: str
+
+    def __post_init__(self) -> None:
+        core = asdict(self)
+        core.pop("integrity_identity")
+        if (
+            not _text(self.operation_identity) or not _text(self.observation_identity)
+            or not _text(self.provider_instrument_identity)
+            or self.authority_publication_identity != ASSESSMENT_CAPTURE_POLICY
+            or not _aware(self.capture_started_at) or not _aware(self.capture_completed_at)
+            or self.capture_started_at > self.capture_completed_at
+            or self.available_at != self.capture_completed_at
+            or self.integrity_identity != _identity("INTEGRITY-ADMISSION-MARKET-PRICE-PROOF-", core)
+        ):
+            raise ProbablesV2Error("ASSESSMENT_CAPTURE_PROOF_INVALID")
+        try:
+            source = json.loads(self.source_document)
+            if (
+                Decimal(str(source["last_price"])) != self.price
+                or datetime.fromisoformat(source["timestamp"]) != self.observation_time
+                or _identity("PROVIDER-QUOTE-INSTRUMENT-", source["instrument"]) != self.provider_instrument_identity
+                or sha256(self.source_document.encode()).hexdigest() != self.source_artifact_digest
+                or self.source_identity != "DOMAIN006-QUOTE:" + self.provider_instrument_identity
+                or self.observation_identity != _identity("INTRADAY-ADMISSION-QUOTE-OBSERVATION-", {
+                    "operation": self.operation_identity, "run": self.run_identity,
+                    "admission": self.admission_identity, "source_digest": self.source_artifact_digest})
+            ):
+                raise ValueError
+        except (ValueError, TypeError, KeyError, InvalidOperation):
+            raise ProbablesV2Error("ASSESSMENT_QUOTE_SOURCE_INVALID") from None
+        legacy = {field: core[field] for field in AdmissionPriceProof.__dataclass_fields__
+            if field != "integrity_identity"}
+        AdmissionPriceProof(integrity_identity=_identity("INTEGRITY-ADMISSION-PRICE-PROOF-", legacy), **legacy)
 
 
 @dataclass(frozen=True, slots=True)
@@ -112,7 +159,7 @@ class AdmissionAssessment:
                 raise ProbablesV2Error("ASSESSMENT_MISSING_AUTHORITY_HAS_VALUES")
             return
         proof = self.proof
-        if type(proof) is not AdmissionPriceProof:
+        if type(proof) not in (AdmissionPriceProof, AdmissionMarketPriceProof):
             raise ProbablesV2Error("ASSESSMENT_PRICE_PROOF_REQUIRED")
         proof.__post_init__()
         if (
@@ -125,7 +172,10 @@ class AdmissionAssessment:
             or not _aware(self.assessment_time)
             or self.assessment_time != proof.observation_time
             or self.assessment_source_identity != proof.source_identity
-            or proof.available_at > self.analysis_boundary
+            or (type(proof) is AdmissionPriceProof and proof.available_at > self.analysis_boundary)
+            or (type(proof) is AdmissionMarketPriceProof and (
+                proof.capture_started_at < self.analysis_boundary
+                or self.classification is not AssessmentPriceAuthority.EXACT_PRICE_PERSISTED))
             or (self.classification is AssessmentPriceAuthority.EXACT_PRICE_PERSISTED
                 and self.derivation_rule is not None)
             or (self.classification is AssessmentPriceAuthority.EXACT_PRICE_DERIVABLE_FROM_SAME_GOVERNED_ASSESSMENT_EVIDENCE
@@ -148,13 +198,15 @@ class ProbablesAssessmentObservations:
         if (
             not _text(self.run_identity) or not _text(self.run_integrity_identity)
             or type(self.observations) is not tuple
-            or self.schema_identity != ASSESSMENT_SCHEMA or self.schema_version != ASSESSMENT_VERSION
+            or self.schema_identity != ASSESSMENT_SCHEMA or self.schema_version not in (ASSESSMENT_VERSION, "1.1.0")
         ):
             raise ProbablesV2Error("ASSESSMENT_MANIFEST_INVALID")
         for item in self.observations:
             if type(item) is not AdmissionAssessment or item.run_identity != self.run_identity:
                 raise ProbablesV2Error("ASSESSMENT_MANIFEST_BINDING_INVALID")
             item.__post_init__()
+            if type(item.proof) is AdmissionMarketPriceProof and self.schema_version != "1.1.0":
+                raise ProbablesV2Error("ASSESSMENT_CAPTURE_VERSION_INVALID")
         if len({item.admission_identity for item in self.observations}) != len(self.observations):
             raise ProbablesV2Error("ASSESSMENT_DUPLICATE_ADMISSION")
         core = asdict(self)
