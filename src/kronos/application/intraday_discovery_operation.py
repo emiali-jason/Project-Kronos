@@ -16,6 +16,11 @@ from kronos.application.intraday_probables_v2 import IntradayProbablesV2Applicat
 from kronos.intraday.analysis_time import (
     AnalysisTimeAdmissionError, admit_analysis_time, trusted_now,
 )
+from kronos.intraday.operation_accounting import (
+    DiscoveryOperationAccounting, ProviderRequestCounter, ProviderRequestCategory,
+    create_operation_accounting,
+)
+from kronos.intraday.operation_accounting_persistence import DiscoveryOperationAccountingStore
 from kronos.intraday.discovery import DiscoveryError, DiscoveryFailure
 from kronos.intraday.discovery_persistence import NativeDiscoveryStore
 from kronos.intraday.discovery_runtime import (
@@ -233,6 +238,7 @@ class DiscoveryOperationResult:
     failure: DiscoveryOperationFailure | None
     completed_at: datetime
     trusted_admission_time: datetime | None = None
+    accounting: DiscoveryOperationAccounting | None = None
 
     def __post_init__(self) -> None:
         if (
@@ -267,6 +273,8 @@ class DiscoveryOperationResult:
             )
             or (self.replay_envelope_identity is not None and not _text(self.replay_envelope_identity))
             or (self.failure_detail_identity is not None and not _text(self.failure_detail_identity))
+            or (self.accounting is not None and (type(self.accounting) is not DiscoveryOperationAccounting
+                or self.accounting.operation_identity != self.operation_identity))
             or self.probables_provider_request_count != 0
             or type(self.persistence_complete) is not bool
             or type(self.snapshot_updated) is not bool
@@ -374,6 +382,7 @@ class IntradayDiscoveryOperationService:
         self._reconciliation = reconciliation
         self._application = application
         self._store = store
+        self._accounting_store = DiscoveryOperationAccountingStore(store.root)
         self._calendar = calendar_publisher
         self._source_factory = factual_source_factory
         self._probables = probables
@@ -437,6 +446,14 @@ class IntradayDiscoveryOperationService:
     def probables_v2_diagnostics_store(self) -> ProbablesV2DiagnosticsStore | None:
         return self._probables_v2_diagnostics_store
 
+    @property
+    def accounting_store(self):
+        return self._accounting_store
+
+    @property
+    def latest_accounting(self):
+        return self._accounting_store.latest("V2" if self._probables_v2 is not None else "LEGACY")
+
     def result_for(self, operation_identity: str) -> DiscoveryOperationResult | None:
         with self._lock:
             return self._results.get(operation_identity)
@@ -462,9 +479,11 @@ class IntradayDiscoveryOperationService:
                     trusted_admission_time=error.trusted_admission_time,
                 )
             if self._active_identity is not None:
-                return self._unstarted(request)
+                return self._unstarted(request, trusted_admission_time=trusted_admission_at)
             if not self._refresh_admission.begin(request.operation_identity):
-                return self._unstarted(request)
+                return self._unstarted(request, trusted_admission_time=trusted_admission_at)
+            started_at = self._clock()
+            counter = ProviderRequestCounter(self._clock)
             self._active_identity = request.operation_identity
             self._last_active_derivative_resolutions = None
             self._last_provider_snapshot_identity = None
@@ -488,6 +507,7 @@ class IntradayDiscoveryOperationService:
                 return self._finish(
                     request,
                     trusted_admission_time=trusted_admission_at,
+                    counter=counter, started_at=started_at,
                     stage=stage,
                     failure=failure,
                 )
@@ -505,6 +525,7 @@ class IntradayDiscoveryOperationService:
                 return self._finish(
                     request,
                     trusted_admission_time=trusted_admission_at,
+                    counter=counter, started_at=started_at,
                     stage=stage,
                     failure=DiscoveryOperationFailure.PUBLICATION_STALE,
                 )
@@ -518,7 +539,7 @@ class IntradayDiscoveryOperationService:
                 assert self._provider_snapshot_store is not None
                 stage = DiscoveryOperationStage.INSTRUMENT_MASTER_ACQUISITION
                 snapshot = ProviderInstrumentMasterAcquisitionService(
-                    self._runtime,
+                    _AccountingInstrumentRuntime(self._runtime, counter),
                     clock=self._clock,
                 ).acquire(
                     source_boundary=request.observation_boundary,
@@ -575,6 +596,7 @@ class IntradayDiscoveryOperationService:
                 return self._finish(
                     request,
                     trusted_admission_time=trusted_admission_at,
+                    counter=counter, started_at=started_at,
                     stage=stage,
                     failure=DiscoveryOperationFailure.LEASE_UNAVAILABLE,
                 )
@@ -593,6 +615,10 @@ class IntradayDiscoveryOperationService:
                 if active_resolutions is None
                 else self._source_factory(lease, active_resolutions)
             )
+            if isinstance(source, ProviderDiscoveryFactualSource):
+                source.bind_request_counter(counter)
+            else:
+                counter.mark_unknown()
             runtime_mcx_member_ids = (
                 ()
                 if active_resolutions is None
@@ -619,6 +645,7 @@ class IntradayDiscoveryOperationService:
                 runtime_evaluable_member_ids=runtime_mcx_member_ids,
                 additional_source_identities=active_sources,
                 clock=lambda: trusted_admission_at,
+                population_observer=counter.record_population,
             )
             stage = DiscoveryOperationStage.DISCOVERY_RUN_CONSTRUCTION
             execution = service.execute(boundary)
@@ -627,6 +654,7 @@ class IntradayDiscoveryOperationService:
                 return self._finish(
                     request,
                     trusted_admission_time=trusted_admission_at,
+                    counter=counter, started_at=started_at,
                     stage=stage,
                     failure=DiscoveryOperationFailure.PERSISTENCE_FAILURE,
                 )
@@ -713,6 +741,7 @@ class IntradayDiscoveryOperationService:
             return self._finish(
                 request,
                 trusted_admission_time=trusted_admission_at,
+                counter=counter, started_at=started_at,
                 stage=DiscoveryOperationStage.COMPLETE,
                 execution=execution,
                 mapping=mapping,
@@ -729,6 +758,7 @@ class IntradayDiscoveryOperationService:
             return self._finish(
                 request,
                 trusted_admission_time=trusted_admission_at,
+                counter=counter, started_at=started_at,
                 stage=stage,
                 failure=failure,
             )
@@ -736,6 +766,7 @@ class IntradayDiscoveryOperationService:
             return self._finish(
                 request,
                 trusted_admission_time=trusted_admission_at,
+                counter=counter, started_at=started_at,
                 stage=stage,
                 failure=DiscoveryOperationFailure.PROVIDER_ACQUISITION_FAILURE,
             )
@@ -748,6 +779,7 @@ class IntradayDiscoveryOperationService:
             return self._finish(
                 request,
                 trusted_admission_time=trusted_admission_at,
+                counter=counter, started_at=started_at,
                 stage=stage,
                 failure=failure,
             )
@@ -755,6 +787,7 @@ class IntradayDiscoveryOperationService:
             return self._finish(
                 request,
                 trusted_admission_time=trusted_admission_at,
+                counter=counter, started_at=started_at,
                 stage=stage,
                 failure=DiscoveryOperationFailure(error.failure.value),
             )
@@ -762,6 +795,7 @@ class IntradayDiscoveryOperationService:
             return self._finish(
                 request,
                 trusted_admission_time=trusted_admission_at,
+                counter=counter, started_at=started_at,
                 stage=stage,
                 failure=DiscoveryOperationFailure.PROBABLES_MAPPING_FAILURE,
                 execution=execution,
@@ -772,6 +806,7 @@ class IntradayDiscoveryOperationService:
             return self._finish(
                 request,
                 trusted_admission_time=trusted_admission_at,
+                counter=counter, started_at=started_at,
                 stage=stage,
                 failure=(
                     DiscoveryOperationFailure.PROBABLES_MAPPING_FAILURE
@@ -789,6 +824,7 @@ class IntradayDiscoveryOperationService:
             return self._finish(
                 request,
                 trusted_admission_time=trusted_admission_at,
+                counter=counter, started_at=started_at,
                 stage=stage,
                 failure=DiscoveryOperationFailure.PROBABLES_REFRESH_FAILURE,
                 execution=execution,
@@ -816,6 +852,7 @@ class IntradayDiscoveryOperationService:
             return self._finish(
                 request,
                 trusted_admission_time=trusted_admission_at,
+                counter=counter, started_at=started_at,
                 stage=stage,
                 failure=failure,
                 execution=execution,
@@ -862,6 +899,8 @@ class IntradayDiscoveryOperationService:
         replay_envelope: ProbablesV2ReplayEnvelope | None = None,
         diagnostic_error: BaseException | None = None,
         trusted_admission_time: datetime | None = None,
+        counter: ProviderRequestCounter | None = None,
+        started_at: datetime | None = None,
     ) -> DiscoveryOperationResult:
         failure_detail: ProbablesV2FailureDetail | None = None
         if (
@@ -930,8 +969,11 @@ class IntradayDiscoveryOperationService:
                     DiscoveryOperationFailure.REFRESH_STATE_PERSISTENCE_FAILURE
                 )
                 stage = DiscoveryOperationStage.REFRESH_STATE_PERSISTENCE
+        accounting = self._retain_accounting(request, counter or ProviderRequestCounter(self._clock),
+            trusted_admission_time, started_at, completed_at, execution)
         result = DiscoveryOperationResult(
             operation_identity=request.operation_identity,
+            accounting=accounting,
             state=(
                 DiscoveryOperationState.COMPLETE
                 if failure is None
@@ -999,8 +1041,12 @@ class IntradayDiscoveryOperationService:
             item.dimensions.machine_fact_consumability is Availability.AVAILABLE
             for item in self._reconciliation.members
         )
+        completed_at = self._clock()
+        accounting = self._retain_accounting(request, ProviderRequestCounter(self._clock),
+            trusted_admission_time, None, completed_at, None)
         return DiscoveryOperationResult(
             operation_identity=request.operation_identity,
+            accounting=accounting,
             state=state,
             context_state=self._runtime.lifecycle_state.value,
             stage=stage,
@@ -1023,9 +1069,63 @@ class IntradayDiscoveryOperationService:
             persistence_complete=False,
             snapshot_updated=False,
             failure=failure,
-            completed_at=self._clock(),
+            completed_at=completed_at,
             trusted_admission_time=trusted_admission_time,
         )
+
+    def _retain_accounting(self, request, counter, admitted, started, completed, execution):
+        counts = counter.snapshot()
+        population = len(self._universe.members)
+        planned = (population if self._active_derivative_catalogue is not None else sum(
+            x.dimensions.machine_fact_consumability is Availability.AVAILABLE for x in self._reconciliation.members))
+        if execution is not None:
+            outcomes = dict(factually_evaluable=execution.run.accounting.factually_evaluable,
+                factual_failures=execution.run.accounting.factual_failures,
+                prerequisite_unavailable=execution.prerequisite_unavailable_count, not_reached_members=0)
+        elif counter.population is not None:
+            outcomes = counter.population
+        else:
+            outcomes = dict(factually_evaluable=0, factual_failures=0,
+                prerequisite_unavailable=0, not_reached_members=population)
+        try:
+            value = create_operation_accounting(operation_identity=request.operation_identity,
+                operation_kind="V2" if self._probables_v2 is not None else "LEGACY",
+                analysis_boundary=request.observation_boundary, trusted_admission_time=admitted,
+                operation_started_at=started, operation_completed_at=completed,
+                discovery_run_identity=None if execution is None else execution.run.run_identity,
+                governed_members=population, nse_index_focus_members=sum(
+                    x.exchange == "NSE" for x in self._reconciliation.members),
+                nominal_evaluation_members=planned, nominal_timeframe_coverage=planned * 4,
+                **outcomes, **counts)
+            self._accounting_store.retain(value)
+            return value
+        except (OSError, ValueError):
+            # Accounting is not new analytical authority. Missing is never zero.
+            return None
+
+
+class _AccountingInstrumentRuntime:
+    """Narrow existing Provider protocol delegation; no shared-runtime mutation."""
+    def __init__(self, runtime, counter):
+        self._runtime = runtime
+        self._counter = counter
+
+    @property
+    def provider_identity(self):
+        return self._runtime.provider_identity
+
+    @property
+    def lifecycle_state(self):
+        return self._runtime.lifecycle_state
+
+    @property
+    def authenticated_context_identity(self):
+        return self._runtime.authenticated_context_identity
+
+    def acquire_provider_instrument_master_records(self, *, operation_identity):
+        return self._counter.invoke(ProviderRequestCategory.INSTRUMENT_BINDING_REQUEST,
+            self._runtime.acquire_provider_instrument_master_records,
+            operation_identity=operation_identity)
 
 
 def _identity(payload: object) -> str:

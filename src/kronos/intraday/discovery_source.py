@@ -68,6 +68,10 @@ from kronos.provider.contracts.market_data import (
 from kronos.provider.runtime import ReadOnlyProviderLease
 
 
+from kronos.intraday.analysis_time import trusted_now
+from kronos.intraday.operation_accounting import ProviderRequestCounter, ProviderRequestCategory
+
+
 DISCOVERY_FACTUAL_SOURCE_IDENTITY = (
     "KRONOS-INTRADAY-DISCOVERY-PROVIDER-FACTUAL-SOURCE-V0"
 )
@@ -132,6 +136,16 @@ class ProviderDiscoveryFactualSource:
         self._records: dict[str, tuple[InstrumentRecord, ...]] = {}
         self._session_identities: dict[datetime, tuple[str, str]] = {}
         self._historical_requests = 0
+        self._request_counter = ProviderRequestCounter(trusted_now)
+
+    def bind_request_counter(self, counter: ProviderRequestCounter) -> None:
+        if type(counter) is not ProviderRequestCounter:
+            raise ValueError("INTRADAY_REQUEST_COUNTER_INVALID")
+        self._request_counter = counter
+
+    @property
+    def actual_request_accounting(self):
+        return self._request_counter.snapshot()
 
     @property
     def historical_request_count(self) -> int:
@@ -279,6 +293,7 @@ class ProviderDiscoveryFactualSource:
                 schedule=schedule,
                 previous=previous,
                 observed_at=boundary.observation_boundary,
+                benchmark=member.canonical_identity == "NSE-INDEX-NIFTY",
             )
             completed_by_timeframe[timeframe] = completed
             fact_identity = _candle_evidence_identity(
@@ -406,6 +421,7 @@ class ProviderDiscoveryFactualSource:
                     record=record,
                     schedule=previous,
                     observed_at=boundary.observation_boundary,
+                    benchmark=member.canonical_identity == "NSE-INDEX-NIFTY",
                 )
                 if active_binding is not None and self._mcx_history_store is not None:
                     retained = tuple(
@@ -494,6 +510,7 @@ class ProviderDiscoveryFactualSource:
         record: InstrumentRecord,
         schedule: MarketDaySchedule,
         observed_at: datetime,
+        benchmark: bool = False,
     ) -> tuple[HistoricalCandle, ...]:
         self._historical_requests += 1
         interval = _interval_or_failure(
@@ -501,12 +518,14 @@ class ProviderDiscoveryFactualSource:
             MachineFactFailureComponent.PRIOR_SESSION_1H_EVIDENCE,
         )
         try:
-            candles = tuple(self._lease.historical_candles(HistoricalCandleRequest(
+            candles = tuple(self._request_counter.invoke(
+                ProviderRequestCategory.PREVIOUS_SESSION_INTRADAY_REQUEST,
+                self._lease.historical_candles, HistoricalCandleRequest(
                 instrument=record,
                 start=schedule.windows[0].opens_at,
                 end=schedule.windows[-1].closes_at - timedelta(microseconds=1),
                 interval=interval,
-            )))
+            ), benchmark=benchmark))
         except Exception as error:
             raise DiscoveryMemberFactError(
                 DiscoveryReason.MACHINE_FACT_BUNDLE_INCOMPLETE,
@@ -587,8 +606,9 @@ class ProviderDiscoveryFactualSource:
             )
         if member.exchange not in self._records:
             try:
-                self._records[member.exchange] = self._lease.instrument_records(
-                    member.exchange
+                self._records[member.exchange] = self._request_counter.invoke(
+                    ProviderRequestCategory.INSTRUMENT_BINDING_REQUEST,
+                    self._lease.instrument_records, member.exchange
                 )
             except Exception as error:
                 raise DiscoveryMemberFactError(
@@ -665,6 +685,7 @@ class ProviderDiscoveryFactualSource:
         schedule: MarketDaySchedule,
         previous: MarketDaySchedule,
         observed_at: datetime,
+        benchmark: bool = False,
     ) -> tuple[HistoricalCandle, ...]:
         if timeframe is IntradayTimeframe.DAILY:
             start = datetime.combine(
@@ -693,12 +714,16 @@ class ProviderDiscoveryFactualSource:
         interval = _interval_or_failure(timeframe, component)
         self._historical_requests += 1
         try:
-            candles = tuple(self._lease.historical_candles(HistoricalCandleRequest(
+            candles = tuple(self._request_counter.invoke(
+                (ProviderRequestCategory.PREVIOUS_SESSION_DAILY_REQUEST
+                 if timeframe is IntradayTimeframe.DAILY
+                 else ProviderRequestCategory.CURRENT_SESSION_CANDLE_REQUEST),
+                self._lease.historical_candles, HistoricalCandleRequest(
                 instrument=record,
                 start=start,
                 end=end,
                 interval=interval,
-            )))
+            ), benchmark=benchmark))
         except Exception as error:
             raise DiscoveryMemberFactError(
                 DiscoveryReason.MACHINE_FACT_BUNDLE_INCOMPLETE,

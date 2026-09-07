@@ -21,7 +21,8 @@ from kronos.intraday.probables_v2 import (
 REFRESH_V2_REQUEST_IDENTITY = "KRONOS-INTRADAY-PROBABLES-V2-REFRESH-REQUEST"
 REFRESH_V2_REQUEST_VERSION = "1.0.0"
 REFRESH_V2_PROVENANCE_IDENTITY = "KRONOS-INTRADAY-PROBABLES-V2-REQUEST-PROVENANCE"
-REFRESH_V2_PROVENANCE_VERSION = "1.2.0"
+REFRESH_V2_PROVENANCE_VERSION = "1.3.0"
+REFRESH_V2_TRUSTED_TIME_PROVENANCE_VERSION = "1.2.0"
 REFRESH_V2_DIAGNOSTIC_PROVENANCE_VERSION = "1.1.0"
 REFRESH_V2_LEGACY_PROVENANCE_VERSION = "1.0.0"
 REFRESH_V2_ROUTE = "/control/intraday-discovery/v2"
@@ -106,10 +107,12 @@ class RefreshV2ProvenanceRecord:
     contract_identity: str = REFRESH_V2_PROVENANCE_IDENTITY
     contract_version: str = REFRESH_V2_PROVENANCE_VERSION
     trusted_admission_time: datetime | None = None
+    operation_accounting_identity: str | None = None
 
     def __post_init__(self) -> None:
         core = _provenance_core(self)
         identities = (
+            self.operation_accounting_identity,
             self.resulting_refresh_identity,
             self.resulting_discovery_identity,
             self.resulting_probables_identity,
@@ -130,8 +133,9 @@ class RefreshV2ProvenanceRecord:
             or (self.observation_boundary is not None and not _aware(self.observation_boundary))
             or (self.trusted_admission_time is not None
                 and not _aware(self.trusted_admission_time))
-            or (self.contract_version != REFRESH_V2_PROVENANCE_VERSION
+            or (self.contract_version not in {REFRESH_V2_TRUSTED_TIME_PROVENANCE_VERSION, REFRESH_V2_PROVENANCE_VERSION}
                 and self.trusted_admission_time is not None)
+            or (self.contract_version != REFRESH_V2_PROVENANCE_VERSION and self.operation_accounting_identity is not None)
             or not _aware(self.received_at)
             or (self.operation_started_at is not None and not _aware(self.operation_started_at))
             or not _aware(self.operation_completed_at)
@@ -149,6 +153,7 @@ class RefreshV2ProvenanceRecord:
             or self.contract_version not in {
                 REFRESH_V2_LEGACY_PROVENANCE_VERSION,
                 REFRESH_V2_DIAGNOSTIC_PROVENANCE_VERSION,
+                REFRESH_V2_TRUSTED_TIME_PROVENANCE_VERSION,
                 REFRESH_V2_PROVENANCE_VERSION,
             }
             or self.provenance_identity
@@ -189,6 +194,7 @@ def create_refresh_v2_request(
 def create_refresh_v2_provenance(**values: object) -> RefreshV2ProvenanceRecord:
     core = dict(values)
     core.setdefault("trusted_admission_time", None)
+    core.setdefault("operation_accounting_identity", None)
     core.setdefault("replay_envelope_identity", None)
     core.setdefault("failure_detail_identity", None)
     core.update({
@@ -217,6 +223,8 @@ def _provenance_core(value: RefreshV2ProvenanceRecord) -> dict[str, object]:
     result.pop("provenance_identity")
     result.pop("integrity_identity")
     if value.contract_version != REFRESH_V2_PROVENANCE_VERSION:
+        result.pop("operation_accounting_identity")
+    if value.contract_version not in {REFRESH_V2_TRUSTED_TIME_PROVENANCE_VERSION, REFRESH_V2_PROVENANCE_VERSION}:
         result.pop("trusted_admission_time")
     if value.contract_version == REFRESH_V2_LEGACY_PROVENANCE_VERSION:
         result.pop("replay_envelope_identity")

@@ -6,6 +6,7 @@ from datetime import datetime
 import re
 
 from kronos.application.intraday_discovery import IntradayDiscoveryApplication
+from kronos.intraday.operation_accounting import accounting_document
 from kronos.application.intraday_discovery_operation import (
     DISCOVERY_PROBABLES_REFRESH_ORCHESTRATION_IDENTITY,
     DISCOVERY_PROBABLES_REFRESH_ORCHESTRATION_VERSION,
@@ -81,6 +82,7 @@ class IntradayDiscoveryOperationalControl:
             "operation_available": self._operation.operation_available,
             "context_state": self._operation.actual_context_state,
             "active_operation_identity": self._operation.active_operation_identity,
+            "last_operation_accounting": accounting_document(self._operation.latest_accounting),
             "last_result": (
                 None if last_result is None else operation_result_document(last_result)
             ),
@@ -140,6 +142,9 @@ def operation_result_document(result: DiscoveryOperationResult) -> dict[str, obj
         raise ValueError("INTRADAY_DISCOVERY_CONTROL_RESULT_INVALID")
     return {
         "operation_identity": result.operation_identity,
+        "operation_accounting": accounting_document(result.accounting),
+        "request_received_at": "NOT_RETAINED",
+        "historical_request_count_semantics": "LEGACY_SOURCE_COUNTER_NOT_OPERATION_TOTAL",
         "state": result.state.value,
         "context_state": result.context_state,
         "stage": result.stage.value,

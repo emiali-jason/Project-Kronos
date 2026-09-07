@@ -9,6 +9,7 @@ import os
 import re
 from typing import Callable
 
+from kronos.intraday.operation_accounting import accounting_document
 from kronos.application.intraday_discovery_operation import (
     DiscoveryOperationFailure,
     DiscoveryOperationResult,
@@ -138,6 +139,7 @@ class IntradayProbablesV2OperationalControl:
                 else "NOT_YET_RUN"
             ),
             "last_result": None if last is None else _operation_document(last),
+            "operation_accounting": self._accounting_document(latest_provenance),
             "last_refresh_attempt": (
                 None
                 if latest_provenance is None
@@ -197,11 +199,11 @@ class IntradayProbablesV2OperationalControl:
         except ValueError as error:
             record = self._rejection(payload, received, str(error))
             self._store.retain(record, primary=False)
-            return _record_document(record, idempotent=False)
+            return self._response_document(record, idempotent=False)
         existing = self._store.load_for_request(request.request_identity)
         if existing is not None:
             if existing.request_integrity_identity == request.integrity_identity:
-                return _record_document(existing, idempotent=True)
+                return self._response_document(existing, idempotent=True)
             record = self._record(
                 request_identity=request.request_identity,
                 request_integrity_identity=request.integrity_identity,
@@ -213,7 +215,7 @@ class IntradayProbablesV2OperationalControl:
                 failure="INTRADAY_PROBABLES_V2_REQUEST_IDENTITY_CONFLICT",
             )
             self._store.retain(record, primary=False)
-            return _record_document(record, idempotent=False)
+            return self._response_document(record, idempotent=False)
         started = self._clock()
         operation_request = create_discovery_operation_request(
             observation_boundary=request.observation_boundary,
@@ -238,6 +240,7 @@ class IntradayProbablesV2OperationalControl:
             received_at=received,
             operation_started_at=None if future_rejected else started,
             trusted_admission_time=result.trusted_admission_time,
+            operation_accounting_identity=None if result.accounting is None else result.accounting.accounting_identity,
             operation_completed_at=completed,
             outcome=outcome,
             failure=None if result.failure is None else result.failure.value,
@@ -250,7 +253,17 @@ class IntradayProbablesV2OperationalControl:
             failure_detail_identity=result.failure_detail_identity,
         )
         self._store.retain(record)
-        return _record_document(record, idempotent=False)
+        return self._response_document(record, idempotent=False)
+
+    def _accounting_document(self, record):
+        identity = None if record is None else record.operation_accounting_identity
+        if identity is None:
+            return accounting_document(None)
+        return accounting_document(self._operation.accounting_store.load(identity))
+
+    def _response_document(self, record, *, idempotent):
+        return {**_record_document(record, idempotent=idempotent),
+            "operation_accounting": self._accounting_document(record)}
 
     def _rejection(
         self, payload: object, received: datetime, failure: str
@@ -287,6 +300,7 @@ class IntradayProbablesV2OperationalControl:
         replay_envelope_identity: str | None = None,
         failure_detail_identity: str | None = None,
         trusted_admission_time: datetime | None = None,
+        operation_accounting_identity: str | None = None,
     ) -> RefreshV2ProvenanceRecord:
         return create_refresh_v2_provenance(
             request_identity=request_identity,
@@ -298,6 +312,7 @@ class IntradayProbablesV2OperationalControl:
             methodology_checksum=PROBABLES_V2_METHODOLOGY_CHECKSUM,
             observation_boundary=observation_boundary,
             trusted_admission_time=trusted_admission_time,
+            operation_accounting_identity=operation_accounting_identity,
             received_at=received_at,
             operation_started_at=operation_started_at,
             operation_completed_at=operation_completed_at,
@@ -359,7 +374,13 @@ def _record_document(
         "resulting_probables_identity": record.resulting_probables_identity,
         "replay_envelope_identity": record.replay_envelope_identity,
         "failure_detail_identity": record.failure_detail_identity,
+        "request_received_at": record.received_at.isoformat(),
+        "control_dispatch_started_at": (
+            None if record.operation_started_at is None else record.operation_started_at.isoformat()
+        ),
+        "control_returned_at": record.operation_completed_at.isoformat(),
         "operation_completed_at": record.operation_completed_at.isoformat(),
+        "operation_accounting_identity": record.operation_accounting_identity,
         "trusted_admission_time": (
             None if record.trusted_admission_time is None
             else record.trusted_admission_time.isoformat()
@@ -371,6 +392,7 @@ def _record_document(
 def _operation_document(result: DiscoveryOperationResult) -> dict[str, object]:
     return {
         "operation_identity": result.operation_identity,
+        "operation_accounting": accounting_document(result.accounting),
         "state": result.state.value,
         "stage": result.stage.value,
         "failure": None if result.failure is None else result.failure.value,

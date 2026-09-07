@@ -38,6 +38,10 @@ class NativeDiscoveryStore:
         self._root = root
         self._lock = RLock()
 
+    @property
+    def root(self) -> Path:
+        return self._root
+
     def retain_run(
         self,
         run: NativeDiscoveryRun,

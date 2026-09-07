@@ -11,6 +11,7 @@ from uuid import uuid4
 
 from kronos.intraday.refresh_v2 import (
     REFRESH_V2_PROVENANCE_VERSION,
+    REFRESH_V2_TRUSTED_TIME_PROVENANCE_VERSION,
     RefreshV2Outcome,
     RefreshV2ProvenanceRecord,
     RefreshV2SourceClass,
@@ -81,6 +82,8 @@ class RefreshV2ProvenanceStore:
 def _encoded(record: RefreshV2ProvenanceRecord) -> bytes:
     values = asdict(record)
     if record.contract_version != REFRESH_V2_PROVENANCE_VERSION:
+        values.pop("operation_accounting_identity")
+    if record.contract_version not in {REFRESH_V2_TRUSTED_TIME_PROVENANCE_VERSION, REFRESH_V2_PROVENANCE_VERSION}:
         values.pop("trusted_admission_time")
     return (json.dumps(
         values,
@@ -103,6 +106,7 @@ def _decoded(payload: bytes) -> RefreshV2ProvenanceRecord:
                 values[name] = datetime.fromisoformat(values[name])
         values["outcome"] = RefreshV2Outcome(values["outcome"])
         values["source_class"] = RefreshV2SourceClass(values["source_class"])
+        values.setdefault("operation_accounting_identity", None)
         values.setdefault("trusted_admission_time", None)
         if values["trusted_admission_time"] is not None:
             values["trusted_admission_time"] = datetime.fromisoformat(values["trusted_admission_time"])

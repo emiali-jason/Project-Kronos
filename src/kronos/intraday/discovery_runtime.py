@@ -191,7 +191,7 @@ class DiscoveryRuntimeExecution:
     probables_facts: tuple[DiscoveryProbablesFacts, ...]
     pre_evaluable_count: int
     prerequisite_unavailable_count: int
-    timeframe_fact_requests: int
+    timeframe_fact_requests: int  # Historical nominal coverage, never a Provider request total.
     source_operation_count: int
     probables_v2_facts: tuple[DiscoveryProbablesV2FactSet, ...] = ()
     failure_provenance: tuple[DiscoveryMachineFactFailureProvenance, ...] = ()
@@ -268,9 +268,11 @@ class IntradayNativeDiscoveryService:
         runtime_evaluable_member_ids: tuple[str, ...] = (),
         additional_source_identities: tuple[str, ...] = (),
         clock: Callable[[], datetime] = trusted_now,
+        population_observer: Callable[[int, int, int], None] | None = None,
     ) -> None:
         if (
-            not callable(clock)
+            (population_observer is not None and not callable(population_observer))
+            or not callable(clock)
             or type(universe) is not IntradayUniversePublication
             or type(reconciliation) is not ReconciliationPublication
             or not callable(getattr(factual_source, "acquire", None))
@@ -297,6 +299,7 @@ class IntradayNativeDiscoveryService:
         ):
             raise DiscoveryError(DiscoveryFailure.PUBLICATION_STALE)
         self._clock = clock
+        self._population_observer = population_observer
         self._universe = universe
         self._reconciliation = reconciliation
         self._source = factual_source
@@ -388,6 +391,10 @@ class IntradayNativeDiscoveryService:
                 failure_details[member.universe_member_identity] = (
                     _fallback_failure_detail("UNEXPECTED_SOURCE_BOUNDARY_FAILURE")
                 )
+
+        if self._population_observer is not None:
+            self._population_observer(len(bundles), len(failures),
+                len(self._reconciliation.members) - source_operations)
 
         run = create_discovery_runtime_run(
             reconciliation=self._reconciliation,

@@ -106,7 +106,7 @@ def test_every_operation_path_rejects_before_any_acquisition(tmp_path, path, mon
         assert retained.operation_started_at is None
         assert retained.resulting_discovery_identity is None
         assert retained.resulting_probables_identity is None
-        assert retained.contract_version == "1.2.0"
+        assert retained.contract_version == "1.3.0"
         assert _decoded(_encoded(retained)) == retained
     elif path == "legacy-control":
         result = IntradayDiscoveryOperationalControl(operation, composition.discovery_application).execute_document({
@@ -130,7 +130,7 @@ def test_every_operation_path_rejects_before_any_acquisition(tmp_path, path, mon
     assert composition.discovery_application.snapshot().last_successful_run_identity is None
     assert all(Path(p).read_bytes() == value for p, value in before.items())
     new_paths = {str(p) for p in tmp_path.rglob("*.json")} - set(before)
-    assert all("request-provenance" in p for p in new_paths)
+    assert all("request-provenance" in p or "operation-accounting" in p for p in new_paths)
 
 
 @pytest.mark.parametrize("through_application", [False, True])
@@ -235,6 +235,7 @@ def test_old_provenance_restores_without_fabricated_admission_time(tmp_path, ver
     record = c.refresh_v2_provenance_store.load_for_request("FUTURE-OLD")
     values = json.loads(_encoded(record))
     values.pop("trusted_admission_time")
+    values.pop("operation_accounting_identity")
     values["contract_version"] = version
     values["failure"] = "HISTORICAL-FAILURE"
     core = {k: v for k, v in values.items() if k not in {"provenance_identity", "integrity_identity"}}
