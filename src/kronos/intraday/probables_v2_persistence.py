@@ -95,6 +95,12 @@ from kronos.market.schedule_compatibility import (
 )
 
 
+from kronos.intraday.assessment_observation import (
+    AdmissionPriceProof, AdmissionAssessment, ProbablesAssessmentObservations,
+    AssessmentPriceAuthority, create_missing_assessment_observations, validate_assessment_run,
+)
+
+
 DEFAULT_PROBABLES_V2_ROOT = Path(__file__).resolve().parents[3] / "data" / "intraday"
 CURRENT_POINTER_IDENTITY = "KRONOS-INTRADAY-CURRENT-PROBABLES-POINTER-V2"
 CURRENT_POINTER_VERSION = "2.0.0"
@@ -131,6 +137,36 @@ class CurrentProbablesV2Pointer:
             != _identity("INTEGRITY-INTRADAY-PROBABLES-V2-POINTER-", core)
         ):
             raise ProbablesV2Error("PROBABLES_V2_POINTER_INVALID")
+
+
+@dataclass(frozen=True, slots=True)
+class AssessmentBoundProbablesV2Pointer(CurrentProbablesV2Pointer):
+    assessment_evidence_identity: str = ""
+    schema_version: str = "2.1.0"
+
+    def __post_init__(self) -> None:
+        core = {field.name: getattr(self, field.name) for field in fields(self)
+            if field.name != "integrity_identity"}
+        if (
+            not _component(self.assessment_evidence_identity)
+            or self.schema_version != "2.1.0"
+            or self.integrity_identity != _identity("INTEGRITY-INTRADAY-PROBABLES-V2-POINTER-", core)
+        ):
+            raise ProbablesV2Error("PROBABLES_V2_POINTER_INVALID")
+        legacy = {key: value for key, value in core.items() if key != "assessment_evidence_identity"}
+        legacy["schema_version"] = CURRENT_POINTER_VERSION
+        CurrentProbablesV2Pointer(integrity_identity=_identity(
+            "INTEGRITY-INTRADAY-PROBABLES-V2-POINTER-", legacy), **legacy)
+
+
+def create_assessment_bound_pointer(run: ProbablesRunV2, assessment: ProbablesAssessmentObservations) -> AssessmentBoundProbablesV2Pointer:
+    validate_assessment_run(assessment, run)
+    legacy = create_current_probables_v2_pointer(run)
+    core = {field.name: getattr(legacy, field.name) for field in fields(legacy)
+        if field.name != "integrity_identity"}
+    core.update(schema_version="2.1.0", assessment_evidence_identity=assessment.evidence_identity)
+    return AssessmentBoundProbablesV2Pointer(integrity_identity=_identity(
+        "INTEGRITY-INTRADAY-PROBABLES-V2-POINTER-", core), **core)
 
 
 def create_current_probables_v2_pointer(run: ProbablesRunV2) -> CurrentProbablesV2Pointer:
@@ -239,9 +275,25 @@ class ProbablesV2Store:
             for item in run.results:
                 self.retain_result(item)
             self.retain_diagnostics(run.diagnostics)
+            # A companion is prospective only: never backfill an existing run.
+            if not self._path("runs", run.run_identity).exists():
+                assessment = create_missing_assessment_observations(run)
+                self._retain_typed("assessments", run.run_identity, assessment)
             path = self.retain_run(run)
-            self.save_current(create_current_probables_v2_pointer(run))
+            assessment = self.load_assessment_observations(run.run_identity)
+            # A previously bound current pointer cannot silently downgrade after loss.
+            self.load_current()
+            self.save_current(create_current_probables_v2_pointer(run) if assessment is None
+                else create_assessment_bound_pointer(run, assessment))
         return path
+
+    def load_assessment_observations(self, run_identity: str) -> ProbablesAssessmentObservations | None:
+        """Absent historical companion is truthful missing provenance, never a write."""
+        if not self._path("assessments", run_identity).exists():
+            return None
+        value = self._load_typed("assessments", run_identity, ProbablesAssessmentObservations, "run_identity")
+        validate_assessment_run(value, self.load_run(run_identity))
+        return value
 
     def load_methodology(self, identity: str) -> ProbablesMethodologyV2:
         return self._load_typed("methodologies", identity, ProbablesMethodologyV2, "publication_identity")
@@ -295,7 +347,7 @@ class ProbablesV2Store:
         return self._load_typed("runs", identity, ProbablesRunV2, "run_identity")
 
     def save_current(self, value: CurrentProbablesV2Pointer) -> Path:
-        if type(value) is not CurrentProbablesV2Pointer:
+        if type(value) not in (CurrentProbablesV2Pointer, AssessmentBoundProbablesV2Pointer):
             raise ProbablesV2Error("PROBABLES_V2_POINTER_INVALID")
         path = self._root / "refresh-v2" / "CURRENT-PROBABLES-V2.json"
         with self._lock:
@@ -307,9 +359,13 @@ class ProbablesV2Store:
         if not path.exists():
             return None
         value = _artifact_from_bytes(_read(path))
-        if type(value) is not CurrentProbablesV2Pointer:
+        if type(value) not in (CurrentProbablesV2Pointer, AssessmentBoundProbablesV2Pointer):
             raise ProbablesV2Error("PROBABLES_V2_POINTER_INVALID")
         run = self.load_run(value.run_identity)
+        if type(value) is AssessmentBoundProbablesV2Pointer:
+            assessment = self.load_assessment_observations(value.run_identity)
+            if assessment is None or assessment.evidence_identity != value.assessment_evidence_identity:
+                raise ProbablesV2Error("ASSESSMENT_POINTER_BINDING_INVALID")
         if (
             run.source_discovery_run_identity != value.source_discovery_run_identity
             or run.analysis_boundary != value.analysis_boundary
@@ -346,6 +402,7 @@ class ProbablesV2Store:
         return selected
 
     def _verify_run_lineage(self, run: ProbablesRunV2) -> None:
+        self.load_assessment_observations(run.run_identity)
         if (
             self.load_methodology(run.methodology.publication_identity)
             != run.methodology
@@ -430,6 +487,7 @@ class ProbablesV2Store:
             "results": ("probables-v2", "results"),
             "diagnostics": ("probables-v2", "diagnostics"),
             "runs": ("probables-v2", "runs"),
+            "assessments": ("probables-v2", "assessment-observations-v1"),
         }
         namespace = namespaces.get(family)
         if namespace is None:
@@ -440,6 +498,9 @@ class ProbablesV2Store:
 _DATACLASSES = {
     item.__name__: item
     for item in (
+        AdmissionPriceProof,
+        AdmissionAssessment,
+        ProbablesAssessmentObservations,
         GovernedHistoricalCandlePayload,
         SelectedCompletedCandle,
         CompletedEvidenceScheduleLineage,
@@ -458,6 +519,7 @@ _DATACLASSES = {
         ProbablesPopulationDiagnosticsV2,
         ProbablesRunV2,
         CurrentProbablesV2Pointer,
+        AssessmentBoundProbablesV2Pointer,
         MachineFactEvidence,
         NativeDiscoveryMachineFactBundle,
         DiscoveryMemberResult,
@@ -480,6 +542,7 @@ _DATACLASSES = {
 _ENUMS = {
     item.__name__: item
     for item in (
+        AssessmentPriceAuthority,
         IntradayTimeframe,
         EvidenceSessionRole,
         IntradayAnalysisPhase,

@@ -102,3 +102,5 @@ execution eligibility.
 ## Change control
 
 Follow the [Intraday Shared-File Change Rule](../../../engineering/INTRADAY-SHARED-FILE-CHANGE-RULE.md).
+
+- [WO-06C Assessment observation provenance](KRONOS-INTRADAY-WO-06C-ASSESSMENT-OBSERVATION.md) — prospective immutable measurement provenance; historical missing authority preserved.
