@@ -140,6 +140,20 @@ def _narrow(subject: str, boundary: datetime, value: bool = True):
     ))
 
 
+def _narrow_from_daily(daily, current_session, boundary):
+    return create_narrow_cpr_fact(PreviousCompletedDailyCandle(
+        canonical_subject_identity=daily.canonical_subject_identity,
+        previous_session_identity=daily.market_session_identity,
+        observation_session_identity=current_session,
+        source_daily_candle_identity=daily.candle_identity,
+        completed_at=daily.available_at,
+        observation_boundary=boundary,
+        high=daily.high, low=daily.low, close=daily.close,
+        completed=True, source_integrity_identity=daily.integrity_identity,
+        provenance=PROVENANCE,
+    ))
+
+
 def _opening_inputs(
     subject: str = "NSE-EQ-RELIANCE",
     *,
@@ -148,7 +162,13 @@ def _opening_inputs(
     prior_supporting: bool = True,
     narrow_qualified: bool = True,
     methodology=None,
+    source_binding_version=None,
 ):
+    if source_binding_version is None:
+        source_binding_version = (
+            "1.0.0" if methodology is not None and methodology.methodology_version in {"2.0.0", "2.1.0"}
+            else "1.1.0"
+        )
     current = _schedule(CURRENT_DAY, subject_exchange)
     previous = _schedule(PREVIOUS_DAY, subject_exchange)
     boundary = datetime.combine(CURRENT_DAY, time(10, 15), IST)
@@ -156,6 +176,7 @@ def _opening_inputs(
         subject, previous, IntradayTimeframe.DAILY,
         datetime.combine(PREVIOUS_DAY, OPEN, IST),
         observation_boundary=boundary,
+        close="101" if source_binding_version == "1.0.0" else "100" if narrow_qualified else "103",
     ),)
     prior_values = (
         (("100", "101"), ("101", "102"))
@@ -204,6 +225,8 @@ def _opening_inputs(
         opening="100", close=nifty_close, observation_boundary=boundary,
     )
     nifty = build_nifty_relative_context(
+        source_binding_version=source_binding_version,
+        subject_schedule=current, benchmark_schedule=current,
         canonical_subject_identity=subject,
         subject_exchange=subject_exchange,
         opening_direction="LONG",
@@ -214,8 +237,12 @@ def _opening_inputs(
         benchmark_session_open=Decimal("100"),
         provenance=PROVENANCE,
     )
-    narrow = _narrow(subject, boundary, narrow_qualified)
+    narrow = (
+        _narrow(subject, boundary, narrow_qualified) if source_binding_version == "1.0.0"
+        else _narrow_from_daily(prior_daily[0], current.session_id, boundary)
+    )
     opening_semantic = build_opening_semantic_evidence(
+        source_binding_version=source_binding_version,
         selection=selection,
         narrow_cpr_fact=narrow,
         nifty_relative_evidence=nifty,
@@ -223,6 +250,7 @@ def _opening_inputs(
         provenance=PROVENANCE,
     )
     semantic = build_semantic_qualification_evidence_v2(
+        source_binding_version=source_binding_version,
         selection=selection,
         narrow_cpr_fact=narrow,
         opening_semantic=opening_semantic,
@@ -278,7 +306,7 @@ def _later_mapping(
     prior_daily = (_candle(
         subject, previous, IntradayTimeframe.DAILY,
         datetime.combine(PREVIOUS_DAY, OPEN, IST),
-        observation_boundary=boundary,
+        observation_boundary=boundary, close="100",
     ),)
     prior_hours = tuple(
         _candle(
@@ -328,7 +356,7 @@ def _later_mapping(
         current_five_minute=five,
         provenance=PROVENANCE,
     )
-    narrow = _narrow(subject, boundary)
+    narrow = _narrow_from_daily(prior_daily[0], current.session_id, boundary)
     semantic = build_semantic_qualification_evidence_v2(
         selection=selection,
         narrow_cpr_fact=narrow,

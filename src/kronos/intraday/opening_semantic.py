@@ -27,6 +27,11 @@ from kronos.intraday.nifty_relative_context import (
 )
 from kronos.intraday.qualification import NarrowCprFact
 
+from kronos.intraday.source_binding import (
+    SOURCE_BINDING_VERSION, require_cpr_source_binding, strict_source_binding,
+    SourceBindingError,
+)
+
 
 OPENING_SEMANTIC_FACT_IDENTITY = "KRONOS-INTRADAY-OPENING-SEMANTIC-FACT-V1"
 OPENING_SEMANTIC_EVIDENCE_IDENTITY = (
@@ -160,9 +165,9 @@ class OpeningSemanticFact:
             or type(self.nifty_relationship) is not NiftyRelationship
             or not _texts(self.source_provenance)
             or self.policy_identity != OPENING_SEMANTIC_POLICY
-            or self.policy_version != OPENING_SEMANTIC_VERSION
+            or self.policy_version != self.schema_version
             or self.schema_identity != OPENING_SEMANTIC_FACT_IDENTITY
-            or self.schema_version != OPENING_SEMANTIC_VERSION
+            or self.schema_version not in {OPENING_SEMANTIC_VERSION, SOURCE_BINDING_VERSION}
             or self.fact_identity
             != _identity("INTRADAY-OPENING-SEMANTIC-FACT-", values)
             or self.integrity_identity
@@ -200,8 +205,10 @@ class OpeningSemanticEvidence:
             or not _aware(self.available_at)
             or self.available_at > self.fact.analysis_boundary
             or not _texts(self.provenance)
+            or (self.schema_version == SOURCE_BINDING_VERSION
+                and self.fact.schema_version != SOURCE_BINDING_VERSION)
             or self.schema_identity != OPENING_SEMANTIC_EVIDENCE_IDENTITY
-            or self.schema_version != OPENING_SEMANTIC_VERSION
+            or self.schema_version not in {OPENING_SEMANTIC_VERSION, SOURCE_BINDING_VERSION}
             or self.evidence_identity
             != _identity("INTRADAY-OPENING-SEMANTIC-EVIDENCE-", values)
             or self.integrity_identity
@@ -218,6 +225,7 @@ def build_opening_semantic_evidence(
     reference_fact_identities: tuple[tuple[str, str], ...] = (),
     participation_state: str = "UNAVAILABLE",
     provenance: tuple[str, ...],
+    source_binding_version: str = SOURCE_BINDING_VERSION,
 ) -> OpeningSemanticEvidence:
     """Derive the exact frozen Opening facts without creating admission authority."""
 
@@ -237,6 +245,25 @@ def build_opening_semantic_evidence(
         or not _texts(provenance)
     ):
         raise OpeningSemanticError("OPENING_SEMANTIC_INPUT_INVALID")
+    if strict_source_binding(source_binding_version):
+        require_cpr_source_binding(selection, narrow_cpr_fact)
+        try:
+            nifty_relative_evidence.__post_init__()
+            nifty_relative_evidence.fact.__post_init__()
+        except (ValueError, TypeError, AttributeError) as error:
+            raise SourceBindingError("RELATIVE_SOURCE_INTEGRITY_INVALID") from error
+        selected_opening = selection.candles(_fifteen(), EvidenceSessionRole.CURRENT_SESSION_15M)
+        fact = nifty_relative_evidence.fact
+        if (
+            nifty_relative_evidence.schema_version != SOURCE_BINDING_VERSION
+            or (fact.subject_candle_identity is not None and (
+                len(selected_opening) != 1
+                or fact.subject_candle_identity != selected_opening[0].candle_identity
+                or fact.subject_market_session_identity != selected_opening[0].market_session_identity
+                or fact.subject_close != selected_opening[0].close
+            ))
+        ):
+            raise SourceBindingError("RELATIVE_SOURCE_BINDING_MISMATCH")
     opening = selection.candles(
         timeframe=_fifteen(), role=EvidenceSessionRole.CURRENT_SESSION_15M
     )
@@ -293,9 +320,9 @@ def build_opening_semantic_evidence(
         "nifty_relationship": nifty_relative_evidence.relationship,
         "source_provenance": provenance,
         "policy_identity": OPENING_SEMANTIC_POLICY,
-        "policy_version": OPENING_SEMANTIC_VERSION,
+        "policy_version": source_binding_version,
         "schema_identity": OPENING_SEMANTIC_FACT_IDENTITY,
-        "schema_version": OPENING_SEMANTIC_VERSION,
+        "schema_version": source_binding_version,
     }
     fact = OpeningSemanticFact(
         fact_identity=_identity("INTRADAY-OPENING-SEMANTIC-FACT-", values),
@@ -315,7 +342,7 @@ def build_opening_semantic_evidence(
         "available_at": max(item.candle_end for item in (*opening, *five, *prior)),
         "provenance": provenance,
         "schema_identity": OPENING_SEMANTIC_EVIDENCE_IDENTITY,
-        "schema_version": OPENING_SEMANTIC_VERSION,
+        "schema_version": source_binding_version,
     }
     return OpeningSemanticEvidence(
         evidence_identity=_identity(

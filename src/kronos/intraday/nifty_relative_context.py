@@ -15,6 +15,12 @@ import json
 from typing import Mapping, Sequence
 
 from kronos.intraday.contracts import IntradayTimeframe
+from kronos.intraday.candles import expected_candle_boundaries
+from kronos.intraday.source_binding import (
+    SOURCE_BINDING_VERSION, LEGACY_SOURCE_BINDING_VERSION,
+    SourceBindingError, require_candle_integrity, strict_source_binding,
+)
+from kronos.market.schedule import MarketDaySchedule, TradingDayStatus
 from kronos.intraday.historical_semantic import GovernedHistoricalCandlePayload
 
 
@@ -62,6 +68,7 @@ class NiftyFailure(StrEnum):
     BOUNDARY_MISMATCH = "BOUNDARY_MISMATCH"
     SOURCE_INTEGRITY_INVALID = "SOURCE_INTEGRITY_INVALID"
     SUBJECT_FACT_UNAVAILABLE = "SUBJECT_FACT_UNAVAILABLE"
+    SUBJECT_IDENTITY_INVALID = "SUBJECT_IDENTITY_INVALID"
     BENCHMARK_SELF_COMPARISON_NOT_APPLICABLE = (
         "BENCHMARK_SELF_COMPARISON_NOT_APPLICABLE"
     )
@@ -143,9 +150,9 @@ class NiftyRelativeContextFact:
             or any(item is not None and not _aware(item) for item in boundaries)
             or not _texts(self.source_provenance)
             or self.policy_identity != NIFTY_RELATIVE_CONTEXT_POLICY
-            or self.policy_version != NIFTY_RELATIVE_CONTEXT_VERSION
+            or self.policy_version != self.schema_version
             or self.schema_identity != NIFTY_RELATIVE_CONTEXT_FACT_IDENTITY
-            or self.schema_version != NIFTY_RELATIVE_CONTEXT_VERSION
+            or self.schema_version not in {NIFTY_RELATIVE_CONTEXT_VERSION, SOURCE_BINDING_VERSION}
             or (
                 available
                 and (
@@ -218,8 +225,10 @@ class NiftyRelativeContextEvidence:
             or self.relationship != _relationship(self.fact.state, self.opening_direction)
             or self.authority != "SUPPORTING_CONTEXT_ONLY"
             or not _texts(self.provenance)
+            or (self.schema_version == SOURCE_BINDING_VERSION
+                and self.fact.schema_version != SOURCE_BINDING_VERSION)
             or self.schema_identity != NIFTY_RELATIVE_CONTEXT_EVIDENCE_IDENTITY
-            or self.schema_version != NIFTY_RELATIVE_CONTEXT_VERSION
+            or self.schema_version not in {NIFTY_RELATIVE_CONTEXT_VERSION, SOURCE_BINDING_VERSION}
             or self.evidence_identity
             != _identity("INTRADAY-NIFTY-RELATIVE-EVIDENCE-", values)
             or self.integrity_identity
@@ -241,6 +250,9 @@ def build_nifty_relative_context(
     subject_session_open: Decimal | None,
     benchmark_session_open: Decimal | None,
     provenance: tuple[str, ...],
+    source_binding_version: str = SOURCE_BINDING_VERSION,
+    subject_schedule: MarketDaySchedule | None = None,
+    benchmark_schedule: MarketDaySchedule | None = None,
 ) -> NiftyRelativeContextEvidence:
     """Build exact Opening relative context or a typed fail-closed state."""
 
@@ -251,7 +263,26 @@ def build_nifty_relative_context(
         or not _texts(provenance)
     ):
         raise NiftyRelativeContextError("NIFTY_RELATIVE_CONTEXT_INPUT_INVALID")
-    if subject_exchange == "MCX":
+    strict = strict_source_binding(source_binding_version)
+    binding_failure = None
+    if strict:
+        try:
+            for candle in (subject_candle, benchmark_candle):
+                if candle is not None:
+                    require_candle_integrity(candle)
+        except SourceBindingError:
+            binding_failure = NiftyFailure.SOURCE_INTEGRITY_INVALID
+        if binding_failure is None and subject_candle is not None and (
+            subject_candle.canonical_subject_identity != canonical_subject_identity
+        ):
+            binding_failure = NiftyFailure.SUBJECT_IDENTITY_INVALID
+    if binding_failure is not None:
+        fact = _unavailable(
+            canonical_subject_identity, analysis_boundary,
+            NiftyApplicability.APPLICABLE, NiftyRelativeState.UNAVAILABLE,
+            binding_failure, provenance, source_binding_version=source_binding_version,
+        )
+    elif subject_exchange == "MCX":
         fact = _unavailable(
             canonical_subject_identity,
             analysis_boundary,
@@ -259,6 +290,7 @@ def build_nifty_relative_context(
             NiftyRelativeState.NOT_APPLICABLE,
             NiftyFailure.NOT_APPLICABLE_MARKET,
             provenance,
+            source_binding_version=source_binding_version,
         )
     elif canonical_subject_identity == NIFTY_CANONICAL_IDENTITY:
         fact = _unavailable(
@@ -268,6 +300,7 @@ def build_nifty_relative_context(
             NiftyRelativeState.NOT_APPLICABLE,
             NiftyFailure.BENCHMARK_SELF_COMPARISON_NOT_APPLICABLE,
             provenance,
+            source_binding_version=source_binding_version,
         )
     elif subject_exchange != "NSE":
         fact = _unavailable(
@@ -277,6 +310,7 @@ def build_nifty_relative_context(
             NiftyRelativeState.NOT_APPLICABLE,
             NiftyFailure.NOT_APPLICABLE_MARKET,
             provenance,
+            source_binding_version=source_binding_version,
         )
     elif subject_candle is None:
         fact = _unavailable(
@@ -286,6 +320,7 @@ def build_nifty_relative_context(
             NiftyRelativeState.UNAVAILABLE,
             NiftyFailure.SUBJECT_FACT_UNAVAILABLE,
             provenance,
+            source_binding_version=source_binding_version,
         )
     elif benchmark_candle is None:
         fact = _unavailable(
@@ -295,6 +330,7 @@ def build_nifty_relative_context(
             NiftyRelativeState.UNAVAILABLE,
             NiftyFailure.BENCHMARK_FACT_UNAVAILABLE,
             provenance,
+            source_binding_version=source_binding_version,
         )
     elif benchmark_candle.canonical_subject_identity != NIFTY_CANONICAL_IDENTITY:
         fact = _unavailable(
@@ -304,8 +340,14 @@ def build_nifty_relative_context(
             NiftyRelativeState.UNAVAILABLE,
             NiftyFailure.BENCHMARK_IDENTITY_INVALID,
             provenance,
+            source_binding_version=source_binding_version,
         )
-    elif not _aligned(subject_candle, benchmark_candle, analysis_boundary):
+    elif (
+        not _aligned(subject_candle, benchmark_candle, analysis_boundary)
+        or (strict and not _governed_intervals(
+            subject_candle, benchmark_candle, subject_schedule, benchmark_schedule,
+        ))
+    ):
         fact = _unavailable(
             canonical_subject_identity,
             analysis_boundary,
@@ -313,12 +355,17 @@ def build_nifty_relative_context(
             NiftyRelativeState.UNAVAILABLE,
             NiftyFailure.BOUNDARY_MISMATCH,
             provenance,
+            source_binding_version=source_binding_version,
         )
     elif (
         type(subject_session_open) is not Decimal
         or type(benchmark_session_open) is not Decimal
         or subject_session_open <= 0
         or benchmark_session_open <= 0
+        or (strict and (
+            subject_session_open != subject_candle.open
+            or benchmark_session_open != benchmark_candle.open
+        ))
     ):
         fact = _unavailable(
             canonical_subject_identity,
@@ -327,6 +374,7 @@ def build_nifty_relative_context(
             NiftyRelativeState.UNAVAILABLE,
             NiftyFailure.SOURCE_INTEGRITY_INVALID,
             provenance,
+            source_binding_version=source_binding_version,
         )
     else:
         subject_return = ((subject_candle.close / subject_session_open) - Decimal(1)) * Decimal(100)
@@ -362,9 +410,9 @@ def build_nifty_relative_context(
             "relative_return_pct": relative_return,
             "source_provenance": provenance,
             "policy_identity": NIFTY_RELATIVE_CONTEXT_POLICY,
-            "policy_version": NIFTY_RELATIVE_CONTEXT_VERSION,
+            "policy_version": source_binding_version,
             "schema_identity": NIFTY_RELATIVE_CONTEXT_FACT_IDENTITY,
-            "schema_version": NIFTY_RELATIVE_CONTEXT_VERSION,
+            "schema_version": source_binding_version,
         }
         fact = NiftyRelativeContextFact(
             fact_identity=_identity("INTRADAY-NIFTY-RELATIVE-FACT-", values),
@@ -380,7 +428,7 @@ def build_nifty_relative_context(
         "authority": "SUPPORTING_CONTEXT_ONLY",
         "provenance": provenance,
         "schema_identity": NIFTY_RELATIVE_CONTEXT_EVIDENCE_IDENTITY,
-        "schema_version": NIFTY_RELATIVE_CONTEXT_VERSION,
+        "schema_version": source_binding_version,
     }
     return NiftyRelativeContextEvidence(
         evidence_identity=_identity("INTRADAY-NIFTY-RELATIVE-EVIDENCE-", values),
@@ -413,6 +461,7 @@ def _unavailable(
     state: NiftyRelativeState,
     reason: NiftyFailure,
     provenance: tuple[str, ...],
+    *, source_binding_version: str = LEGACY_SOURCE_BINDING_VERSION,
 ) -> NiftyRelativeContextFact:
     values = {
         "canonical_subject_identity": subject,
@@ -437,9 +486,9 @@ def _unavailable(
         "relative_return_pct": None,
         "source_provenance": provenance,
         "policy_identity": NIFTY_RELATIVE_CONTEXT_POLICY,
-        "policy_version": NIFTY_RELATIVE_CONTEXT_VERSION,
+        "policy_version": source_binding_version,
         "schema_identity": NIFTY_RELATIVE_CONTEXT_FACT_IDENTITY,
-        "schema_version": NIFTY_RELATIVE_CONTEXT_VERSION,
+        "schema_version": source_binding_version,
     }
     return NiftyRelativeContextFact(
         fact_identity=_identity("INTRADAY-NIFTY-RELATIVE-FACT-", values),
@@ -448,6 +497,29 @@ def _unavailable(
         ),
         **values,
     )
+
+
+def _governed_intervals(subject, benchmark, subject_schedule, benchmark_schedule) -> bool:
+    # Each candle binds to its own DOMAIN-008 schedule. The approved NIFTY
+    # comparison permits distinct subject/benchmark sessions at the same interval.
+    for candle, schedule in ((subject, subject_schedule), (benchmark, benchmark_schedule)):
+        if type(schedule) is not MarketDaySchedule:
+            return False
+        try:
+            schedule.__post_init__()
+            intervals = expected_candle_boundaries(schedule, IntradayTimeframe.FIFTEEN_MINUTES)
+        except (ValueError, TypeError):
+            return False
+        if (
+            schedule.status is not TradingDayStatus.TRADING
+            or schedule.exchange != candle.exchange
+            or schedule.session_id != candle.market_session_identity
+            or schedule.trading_date != candle.candle_start.date()
+            or not intervals
+            or (intervals[0].start, intervals[0].end) != (candle.candle_start, candle.candle_end)
+        ):
+            return False
+    return True
 
 
 def _aligned(

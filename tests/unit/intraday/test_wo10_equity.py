@@ -263,6 +263,7 @@ def _fixture(
         observation_boundary=BOUNDARY,
     )[0]
     nifty_relationship = build_nifty_relative_context(
+        source_binding_version="1.0.0",  # Retained WO-10 fixture, not new Discovery.
         canonical_subject_identity=SUBJECT,
         subject_exchange="NSE",
         opening_direction="LONG",

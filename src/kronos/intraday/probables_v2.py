@@ -40,6 +40,11 @@ from kronos.intraday.mcx_commissioning import (
     load_mcx_commissioning_publication,
 )
 
+from kronos.intraday.source_binding import (
+    SOURCE_BINDING_VERSION, SourceBindingError,
+    strict_source_binding, require_cpr_source_binding,
+)
+
 
 PROBABLES_V2_METHODOLOGY_IDENTITY = "KRONOS-INTRADAY-PROBABLES-METHODOLOGY-V2"
 PROBABLES_V2_METHODOLOGY_VERSION = "2.0.0"
@@ -335,7 +340,7 @@ class SemanticQualificationEvidenceV2:
             != self.reference_fact_identities
             or not _texts(self.provenance)
             or self.schema_identity != SEMANTIC_EVIDENCE_V2_IDENTITY
-            or self.schema_version != V2_CONTRACT_VERSION
+            or self.schema_version not in {V2_CONTRACT_VERSION, "2.1.0"}
             or self.evidence_identity
             != _identity("INTRADAY-SEMANTIC-V2-EVIDENCE-", values)
             or self.integrity_identity
@@ -359,6 +364,7 @@ def build_semantic_qualification_evidence_v2(
     reference_fact_identities: tuple[tuple[str, str], ...] = (),
     participation_state: str = "UNAVAILABLE",
     provenance: tuple[str, ...],
+    source_binding_version: str = SOURCE_BINDING_VERSION,
 ) -> SemanticQualificationEvidenceV2:
     """Adapt exact selected candles into phase-specific V2 semantic facts."""
 
@@ -372,6 +378,24 @@ def build_semantic_qualification_evidence_v2(
         or not _texts(provenance)
     ):
         raise ProbablesV2Error("SEMANTIC_V2_INPUT_INVALID")
+    strict = strict_source_binding(source_binding_version)
+    if strict:
+        require_cpr_source_binding(selection, narrow_cpr_fact)
+        if selection.phase is IntradayAnalysisPhase.OPENING:
+            try:
+                for evidence in (opening_semantic, nifty_relative):
+                    evidence.__post_init__()
+                    evidence.fact.__post_init__()
+            except (ValueError, TypeError, AttributeError) as error:
+                raise SourceBindingError("SEMANTIC_V2_SOURCE_INTEGRITY_INVALID") from error
+        if selection.phase is IntradayAnalysisPhase.OPENING and (
+            opening_semantic is None or nifty_relative is None
+            or opening_semantic.schema_version != SOURCE_BINDING_VERSION
+            or nifty_relative.schema_version != SOURCE_BINDING_VERSION
+            or opening_semantic.fact.narrow_cpr_fact_identity != narrow_cpr_fact.fact_identity
+            or opening_semantic.fact.nifty_relative_evidence_identity != nifty_relative.evidence_identity
+        ):
+            raise SourceBindingError("SEMANTIC_V2_SOURCE_BINDING_MISMATCH")
     facts: list[SemanticQualificationFactV2] = []
     daily = selection.candles(_daily(), EvidenceSessionRole.PREVIOUS_SESSION_DAILY)
     facts.append(_fact(
@@ -519,7 +543,7 @@ def build_semantic_qualification_evidence_v2(
         "reference_fact_identities": tuple(sorted(reference_fact_identities)),
         "provenance": provenance,
         "schema_identity": SEMANTIC_EVIDENCE_V2_IDENTITY,
-        "schema_version": V2_CONTRACT_VERSION,
+        "schema_version": "2.1.0" if strict else V2_CONTRACT_VERSION,
     }
     return SemanticQualificationEvidenceV2(
         evidence_identity=_identity("INTRADAY-SEMANTIC-V2-EVIDENCE-", values),

@@ -47,6 +47,7 @@ from tests.unit.intraday.test_probables_v2 import (
     _candle,
     _later_mapping,
     _narrow,
+    _narrow_from_daily,
     _schedule,
 )
 
@@ -54,7 +55,10 @@ from tests.unit.intraday.test_probables_v2 import (
 def opening_mapping(
     methodology, direction='LONG', prior='SUPPORTING', five='INFORMATIONAL',
     nifty='INFORMATIONAL', subject='NSE-EQ-RELIANCE', missing=None, narrow=True,
+    source_binding_version=None,
 ):
+    if source_binding_version is None:
+        source_binding_version = "1.0.0" if methodology.methodology_version in {"2.0.0", "2.1.0"} else "1.1.0"
     (current, previous) = (_schedule(CURRENT_DAY), _schedule(PREVIOUS_DAY))
     boundary = datetime.combine(CURRENT_DAY, time(10, 15), IST)
     sign = 1 if direction == 'LONG' else -1 if direction == 'SHORT' else 0
@@ -69,7 +73,8 @@ def opening_mapping(
             close=str(cl),
             observation_boundary=boundary,
         )
-    daily = (candle(previous, TF.DAILY, OPEN, 100, 101),)
+    daily_close = 101 if source_binding_version == "1.0.0" else 100 if narrow else 103
+    daily = (candle(previous, TF.DAILY, OPEN, 100, daily_close),)
 
     def pairs(relationship, count):
         step = sign if relationship == 'SUPPORTING' else -sign if relationship == 'CONFLICTING' else 0
@@ -102,6 +107,8 @@ def opening_mapping(
         observation_boundary=boundary,
     )
     relative = build_nifty_relative_context(
+        source_binding_version=source_binding_version,
+        subject_schedule=current, benchmark_schedule=current,
         canonical_subject_identity=subject,
         subject_exchange='NSE',
         opening_direction=direction,
@@ -112,8 +119,14 @@ def opening_mapping(
         benchmark_session_open=Decimal('100'),
         provenance=PROVENANCE,
     )
-    cpr = None if missing == 'CPR' else _narrow(subject, boundary, narrow)
+    cpr = (
+        _narrow(subject, boundary, narrow) if source_binding_version == "1.0.0"
+        else _narrow_from_daily(daily[0], current.session_id, boundary)
+    )
+    if missing == "CPR":
+        cpr = None
     opening = build_opening_semantic_evidence(
+        source_binding_version=source_binding_version,
         selection=selection,
         narrow_cpr_fact=cpr,
         nifty_relative_evidence=relative,
@@ -121,6 +134,7 @@ def opening_mapping(
         provenance=PROVENANCE,
     )
     semantic = build_semantic_qualification_evidence_v2(
+        source_binding_version=source_binding_version,
         selection=selection,
         narrow_cpr_fact=cpr,
         opening_semantic=opening,

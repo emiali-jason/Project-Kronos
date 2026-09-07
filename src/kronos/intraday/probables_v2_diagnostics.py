@@ -24,6 +24,7 @@ from kronos.intraday.probables_v2 import (
 from kronos.intraday.probables_v2_refresh import (
     DISCOVERY_PROBABLES_V2_REFRESH_IDENTITY,
     DISCOVERY_PROBABLES_V2_REFRESH_VERSION,
+    DISCOVERY_PROBABLES_V2_BINDING_VERSION,
     DiscoveryProbablesV2FactSet,
     DiscoveryProbablesV2Mapping,
     is_discovery_probables_v2_facts,
@@ -120,7 +121,7 @@ class ProbablesV2ReplayEnvelope:
                 self.methodology_checksum,
             )
             or self.mapping_policy_identity != DISCOVERY_PROBABLES_V2_REFRESH_IDENTITY
-            or self.mapping_policy_version != DISCOVERY_PROBABLES_V2_REFRESH_VERSION
+            or self.mapping_policy_version not in {DISCOVERY_PROBABLES_V2_REFRESH_VERSION, DISCOVERY_PROBABLES_V2_BINDING_VERSION}
             or not _aware(self.created_at)
             or not _texts(self.provenance)
             or self.contract_identity != PROBABLES_V2_REPLAY_ENVELOPE_IDENTITY
@@ -208,7 +209,7 @@ def create_probables_v2_replay_envelope(
         "methodology_publication_identity": PROBABLES_V2_PUBLICATION_IDENTITY,
         "methodology_checksum": PROBABLES_V2_METHODOLOGY_CHECKSUM,
         "mapping_policy_identity": DISCOVERY_PROBABLES_V2_REFRESH_IDENTITY,
-        "mapping_policy_version": DISCOVERY_PROBABLES_V2_REFRESH_VERSION,
+        "mapping_policy_version": DISCOVERY_PROBABLES_V2_BINDING_VERSION,
         "created_at": created_at,
         "provenance": (
             "KRONOS-INTRADAY-V2-LIVE-DIAGNOSTIC-INSTRUMENTATION",
@@ -246,6 +247,7 @@ def replay_v2_mapping(envelope: ProbablesV2ReplayEnvelope) -> DiscoveryProbables
     return map_discovery_execution_to_probables_v2(
         execution=reconstruct_v2_execution(envelope),
         methodology=create_probables_v2_methodology(version=envelope.methodology_version),
+        mapping_policy_version=envelope.mapping_policy_version,
         reconciliation=envelope.reconciliation,
     )
 

@@ -41,6 +41,10 @@ from kronos.intraday.probables_v2 import (
     create_discovery_probables_evidence_v2,
 )
 from kronos.intraday.reconciliation import ReconciliationPublication
+from kronos.intraday.source_binding import (
+    SOURCE_BINDING_VERSION, LEGACY_SOURCE_BINDING_VERSION,
+    SourceBindingError, require_cpr_source_binding,
+)
 from kronos.market.schedule import MarketDaySchedule
 from kronos.market.schedule_compatibility import (
     MarketScheduleCompatibilityArtifact,
@@ -52,6 +56,7 @@ DISCOVERY_PROBABLES_V2_REFRESH_IDENTITY = (
     "KRONOS-INTRADAY-DISCOVERY-PROBABLES-EVIDENCE-MAPPER-V2"
 )
 DISCOVERY_PROBABLES_V2_REFRESH_VERSION = "2.0.0"
+DISCOVERY_PROBABLES_V2_BINDING_VERSION = "2.1.0"
 
 
 @dataclass(frozen=True, slots=True)
@@ -153,7 +158,7 @@ class DiscoveryProbablesV2Mapping:
     provenance: tuple[str, ...]
     integrity_identity: str
     mapper_identity: str = DISCOVERY_PROBABLES_V2_REFRESH_IDENTITY
-    mapper_version: str = DISCOVERY_PROBABLES_V2_REFRESH_VERSION
+    mapper_version: str = DISCOVERY_PROBABLES_V2_BINDING_VERSION
 
     def __post_init__(self) -> None:
         values = asdict(self)
@@ -171,7 +176,7 @@ class DiscoveryProbablesV2Mapping:
             or len(population) != len(set(population))
             or not _texts(self.provenance)
             or self.mapper_identity != DISCOVERY_PROBABLES_V2_REFRESH_IDENTITY
-            or self.mapper_version != DISCOVERY_PROBABLES_V2_REFRESH_VERSION
+            or self.mapper_version not in {DISCOVERY_PROBABLES_V2_REFRESH_VERSION, DISCOVERY_PROBABLES_V2_BINDING_VERSION}
             or self.mapping_identity
             != _identity("INTRADAY-DISCOVERY-PROBABLES-V2-REFRESH-", values)
             or self.integrity_identity
@@ -304,6 +309,7 @@ def create_discovery_probables_v2_facts(
 def map_discovery_execution_to_probables_v2(
     *, execution: object, reconciliation: ReconciliationPublication,
     methodology: ProbablesMethodologyV2 | None = None,
+    mapping_policy_version: str = DISCOVERY_PROBABLES_V2_BINDING_VERSION,
 ) -> DiscoveryProbablesV2Mapping:
     """Bind one exact Discovery execution to phase-aware V2 inputs."""
 
@@ -311,6 +317,15 @@ def map_discovery_execution_to_probables_v2(
 
     if type(execution) is not DiscoveryRuntimeExecution or type(reconciliation) is not ReconciliationPublication:
         raise ProbablesV2Error("DISCOVERY_PROBABLES_V2_MAPPING_INPUT_INVALID")
+    if mapping_policy_version not in {
+        DISCOVERY_PROBABLES_V2_REFRESH_VERSION, DISCOVERY_PROBABLES_V2_BINDING_VERSION,
+    }:
+        raise ProbablesV2Error("DISCOVERY_PROBABLES_V2_MAPPING_POLICY_INVALID")
+    source_binding_version = (
+        LEGACY_SOURCE_BINDING_VERSION
+        if mapping_policy_version == DISCOVERY_PROBABLES_V2_REFRESH_VERSION
+        else SOURCE_BINDING_VERSION
+    )
     run = execution.run
     facts = {item.universe_member_identity: item for item in execution.probables_v2_facts}
     if len(facts) != len(execution.probables_v2_facts):
@@ -369,6 +384,20 @@ def map_discovery_execution_to_probables_v2(
                 ),
             ))
             continue
+        if source_binding_version == SOURCE_BINDING_VERSION:
+            try:
+                require_cpr_source_binding(selection, item.previous_session_facts.narrow_cpr)
+            except SourceBindingError as error:
+                unavailable.append(ProbablesUnavailableMemberV2(
+                    universe_member_identity=result.universe_member_identity,
+                    canonical_subject_identity=result.canonical_identity,
+                    market_session_identity=selection.current_market_session_identity,
+                    analysis_boundary=run.observation_boundary,
+                    reason=ProbableReasonV2.MANDATORY_EVIDENCE_UNAVAILABLE,
+                    source_identity=run.run_identity,
+                    provenance=(DISCOVERY_PROBABLES_V2_REFRESH_IDENTITY, str(error)),
+                ))
+                continue
         provenance = (DISCOVERY_PROBABLES_V2_REFRESH_IDENTITY, item.facts_identity, item.integrity_identity)
         nifty = None
         opening = None
@@ -386,6 +415,9 @@ def map_discovery_execution_to_probables_v2(
             )
             nifty = build_nifty_relative_context(
                 canonical_subject_identity=item.canonical_subject_identity,
+                source_binding_version=source_binding_version,
+                subject_schedule=item.current_schedule,
+                benchmark_schedule=(None if benchmark_identity is None else facts[benchmark_identity].current_schedule),
                 subject_exchange=item.subject_exchange,
                 opening_direction=direction.value,
                 analysis_boundary=run.observation_boundary,
@@ -398,12 +430,14 @@ def map_discovery_execution_to_probables_v2(
             opening = build_opening_semantic_evidence(
                 selection=selection,
                 narrow_cpr_fact=item.previous_session_facts.narrow_cpr,
+                source_binding_version=source_binding_version,
                 nifty_relative_evidence=nifty,
                 provenance=provenance,
             )
         semantic = build_semantic_qualification_evidence_v2(
             selection=selection,
             narrow_cpr_fact=item.previous_session_facts.narrow_cpr,
+            source_binding_version=source_binding_version,
             opening_semantic=opening,
             nifty_relative=nifty,
             provenance=provenance,
@@ -429,7 +463,7 @@ def map_discovery_execution_to_probables_v2(
         "unavailable_members": tuple(unavailable),
         "provenance": (DISCOVERY_PROBABLES_V2_REFRESH_IDENTITY, run.integrity_identity),
         "mapper_identity": DISCOVERY_PROBABLES_V2_REFRESH_IDENTITY,
-        "mapper_version": DISCOVERY_PROBABLES_V2_REFRESH_VERSION,
+        "mapper_version": mapping_policy_version,
     }
     return DiscoveryProbablesV2Mapping(
         mapping_identity=_identity("INTRADAY-DISCOVERY-PROBABLES-V2-REFRESH-", values),
@@ -524,6 +558,7 @@ def _texts(values: Sequence[object]) -> bool:
 __all__ = [
     "DISCOVERY_PROBABLES_V2_REFRESH_IDENTITY",
     "DISCOVERY_PROBABLES_V2_REFRESH_VERSION",
+    "DISCOVERY_PROBABLES_V2_BINDING_VERSION",
     "DiscoveryProbablesV2Facts",
     "DiscoveryProbablesV2FactsV2",
     "DiscoveryProbablesV2FactSet",

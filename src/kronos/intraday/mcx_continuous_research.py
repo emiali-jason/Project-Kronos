@@ -829,6 +829,7 @@ def _assess_session(
                 else SemanticDirection.NON_DIRECTIONAL
             )
             nifty = build_nifty_relative_context(
+                source_binding_version="1.0.0",  # Frozen historical research contract.
                 canonical_subject_identity=session.canonical_subject_identity,
                 subject_exchange="MCX",
                 opening_direction=direction.value,
@@ -840,12 +841,14 @@ def _assess_session(
                 provenance=(MCX_CONTINUOUS_CONSTRUCTION_POLICY, "NIFTY_NOT_APPLICABLE"),
             )
             opening = build_opening_semantic_evidence(
+                source_binding_version="1.0.0",  # Frozen historical research contract.
                 selection=selection,
                 narrow_cpr_fact=facts.previous_session_facts.narrow_cpr,
                 nifty_relative_evidence=nifty,
                 provenance=(MCX_CONTINUOUS_CONSTRUCTION_POLICY, facts.facts_identity),
             )
         semantic = build_semantic_qualification_evidence_v2(
+            source_binding_version="1.0.0",  # Frozen historical research contract.
             selection=selection,
             narrow_cpr_fact=facts.previous_session_facts.narrow_cpr,
             opening_semantic=opening,
