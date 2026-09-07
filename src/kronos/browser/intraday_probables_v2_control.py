@@ -10,6 +10,8 @@ import re
 from typing import Callable
 
 from kronos.intraday.operation_accounting import accounting_document
+from kronos.intraday.runtime_identity import runtime_document
+from kronos.application.intraday_runtime_identity import compose_runtime_manifest
 from kronos.application.intraday_discovery_operation import (
     DiscoveryOperationFailure,
     DiscoveryOperationResult,
@@ -73,6 +75,8 @@ class IntradayProbablesV2OperationalControl:
         probables: IntradayProbablesV2Application,
         provenance_store: RefreshV2ProvenanceStore,
         *,
+        startup_evidence=None,
+        launcher_configuration=None,
         clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
         process_identity: Callable[[], str] = lambda: f"KRONOS-BACKEND-PID-{os.getpid()}",
     ) -> None:
@@ -89,6 +93,7 @@ class IntradayProbablesV2OperationalControl:
         self._store = provenance_store
         self._clock = clock
         self._process_identity = process_identity
+        self._runtime_manifest = compose_runtime_manifest(startup_evidence, launcher_configuration, operation, self)
 
     @property
     def operation_service(self) -> IntradayDiscoveryOperationService:
@@ -116,6 +121,7 @@ class IntradayProbablesV2OperationalControl:
             else latest_provenance.failure
         )
         return {
+            "runtime_identity": runtime_document(self._runtime_manifest),
             "control_identity": INTRADAY_PROBABLES_V2_CONTROL_IDENTITY,
             "control_version": INTRADAY_PROBABLES_V2_CONTROL_VERSION,
             "route_identity": REFRESH_V2_ROUTE,

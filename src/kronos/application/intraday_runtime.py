@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from kronos.intraday.runtime_identity import StartupEvidence
+
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -237,11 +239,13 @@ class IntradayRuntimeComposition:
     mcx_history_store: McxContractHistoryStore
     refresh_state_store: RefreshOperationalStateStore
     reliance_bootstrap: RelianceIntradayBootstrap
+    startup_evidence: StartupEvidence | None = None
 
 
 def create_intraday_runtime(
     provider_runtime: SharedAuthenticatedProviderRuntime,
     *,
+    startup_evidence: StartupEvidence | None = None,
     calendar_publisher: MarketCalendarPublisher | None = None,
     evidence_root: Path = DEFAULT_INTRADAY_EVIDENCE_ROOT,
     last_successful_discovery_run_identity: str | None = None,
@@ -250,6 +254,8 @@ def create_intraday_runtime(
 ) -> IntradayRuntimeComposition:
     """Compose Intraday without moving product policy into shared modules."""
 
+    if startup_evidence is not None and type(startup_evidence) is not StartupEvidence:
+        raise ValueError("INTRADAY_STARTUP_EVIDENCE_INVALID")
     access = IntradayProviderRuntimeAccess(provider_runtime)
     calendar = calendar_publisher or MarketCalendarPublisher()
     bootstrap = RelianceIntradayBootstrap(
@@ -567,6 +573,7 @@ def create_intraday_runtime(
         mcx_history_store=mcx_history_store,
         refresh_state_store=refresh_state_store,
         reliance_bootstrap=bootstrap,
+        startup_evidence=startup_evidence,
     )
 
 

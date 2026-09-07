@@ -7,69 +7,76 @@ from collections.abc import Sequence
 from datetime import UTC, datetime
 import webbrowser
 
-from kronos.application.provider_instrument_master_operation import (
-    ProviderInstrumentMasterOperationalComposition,
-)
-from kronos.application.swing_opportunities import SwingOpportunitiesApplication
-from kronos.application.intraday_runtime import create_intraday_runtime
-from kronos.application.intraday_statistics import IntradayStatisticsApplication
-from kronos.browser.server import create_browser_server
-from kronos.browser.intraday_discovery_control import (
-    IntradayDiscoveryOperationalControl,
-)
-from kronos.browser.intraday_probables_v2_control import (
-    IntradayProbablesV2OperationalControl,
-)
-from kronos.browser.intraday_review_v2_control import (
-    IntradayReviewV2OperationalControl,
-)
-from kronos.browser.intraday_wo10_control import (
-    IntradayWo10OperationalControl,
-)
-from kronos.browser.intraday_wo11_control import (
-    IntradayWo11OperationalControl,
-)
-from kronos.browser.intraday_wo12_v2_control import (
-    IntradayWo12V2OperationalControl,
-)
-from kronos.browser.intraday_wo13_control import IntradayWo13OperationalControl
-from kronos.browser.intraday_wo14_control import IntradayWo14OperationalControl
-from kronos.browser.intraday_wo15_control import IntradayWo15OperationalControl
-from kronos.browser.intraday_wo16_control import IntradayWo16OperationalControl
-from kronos.browser.intraday_wo17_control import IntradayWo17OperationalControl
-from kronos.browser.intraday_operational_readiness import (
-    IntradayOperationalReadinessProjection,
-)
-from kronos.browser.intraday_routes import IntradayBrowserRoutes
-from kronos.browser.product_routes import ProductBrowserRoutes
-from kronos.browser.intraday_historical_control import (
-    IntradayHistoricalQualificationOperationalControl,
-)
-from kronos.browser.restart_control import BrowserBackendRestartControl
-from kronos.market.calendar import MarketCalendarPublisher
-from kronos.intraday.universe import load_intraday_universe_publication
-from kronos.provider.contracts.provider_authentication import ReadOnlyProviderOperation
-from kronos.provider.instrument_master_persistence import (
-    DEFAULT_PROVIDER_INSTRUMENT_SNAPSHOT_ROOT,
-    ProviderInstrumentSnapshotStore,
-)
-from kronos.provider.runtime import SharedAuthenticatedProviderRuntime
-from kronos.swing.run_provenance import LocalSwingRunProvenanceStore
-from kronos.swing.v1.mtf_facts import (
-    DEFAULT_MTF_FACT_EVIDENCE_ROOT,
-    MtfFactEvidenceStore,
-)
-from kronos.swing.v1.native_discovery import (
-    DEFAULT_NATIVE_DISCOVERY_EVIDENCE_ROOT,
-    NativeDiscoveryEvidenceStore,
-)
-from kronos.swing.v1.relative_context import (
-    DEFAULT_RELATIVE_CONTEXT_EVIDENCE_ROOT,
-    RelativeContextEvidenceStore,
-)
-from tools.provider_pilots.provider_foundation_v2_historical_proof import (
-    _build_provider,
-)
+from pathlib import Path
+from kronos.intraday.runtime_identity import StartupCapture, LauncherConfiguration
+
+# Capture before application imports. Never replace this with a later HEAD lookup.
+with StartupCapture(Path(__file__).resolve().parents[1], keep_sources_pinned=True) as _startup_capture:
+    from kronos.application.provider_instrument_master_operation import (
+        ProviderInstrumentMasterOperationalComposition,
+    )
+    from kronos.application.swing_opportunities import SwingOpportunitiesApplication
+    from kronos.application.intraday_runtime import create_intraday_runtime
+    from kronos.application.intraday_statistics import IntradayStatisticsApplication
+    from kronos.browser.server import create_browser_server
+    from kronos.browser.intraday_discovery_control import (
+        IntradayDiscoveryOperationalControl,
+    )
+    from kronos.browser.intraday_probables_v2_control import (
+        IntradayProbablesV2OperationalControl,
+    )
+    from kronos.browser.intraday_review_v2_control import (
+        IntradayReviewV2OperationalControl,
+    )
+    from kronos.browser.intraday_wo10_control import (
+        IntradayWo10OperationalControl,
+    )
+    from kronos.browser.intraday_wo11_control import (
+        IntradayWo11OperationalControl,
+    )
+    from kronos.browser.intraday_wo12_v2_control import (
+        IntradayWo12V2OperationalControl,
+    )
+    from kronos.browser.intraday_wo13_control import IntradayWo13OperationalControl
+    from kronos.browser.intraday_wo14_control import IntradayWo14OperationalControl
+    from kronos.browser.intraday_wo15_control import IntradayWo15OperationalControl
+    from kronos.browser.intraday_wo16_control import IntradayWo16OperationalControl
+    from kronos.browser.intraday_wo17_control import IntradayWo17OperationalControl
+    from kronos.browser.intraday_operational_readiness import (
+        IntradayOperationalReadinessProjection,
+    )
+    from kronos.browser.intraday_routes import IntradayBrowserRoutes
+    from kronos.browser.product_routes import ProductBrowserRoutes
+    from kronos.browser.intraday_historical_control import (
+        IntradayHistoricalQualificationOperationalControl,
+    )
+    from kronos.browser.restart_control import BrowserBackendRestartControl
+    from kronos.market.calendar import MarketCalendarPublisher
+    from kronos.intraday.universe import load_intraday_universe_publication
+    from kronos.provider.contracts.provider_authentication import ReadOnlyProviderOperation
+    from kronos.provider.instrument_master_persistence import (
+        DEFAULT_PROVIDER_INSTRUMENT_SNAPSHOT_ROOT,
+        ProviderInstrumentSnapshotStore,
+    )
+    from kronos.provider.runtime import SharedAuthenticatedProviderRuntime
+    from kronos.swing.run_provenance import LocalSwingRunProvenanceStore
+    from kronos.swing.v1.mtf_facts import (
+        DEFAULT_MTF_FACT_EVIDENCE_ROOT,
+        MtfFactEvidenceStore,
+    )
+    from kronos.swing.v1.native_discovery import (
+        DEFAULT_NATIVE_DISCOVERY_EVIDENCE_ROOT,
+        NativeDiscoveryEvidenceStore,
+    )
+    from kronos.swing.v1.relative_context import (
+        DEFAULT_RELATIVE_CONTEXT_EVIDENCE_ROOT,
+        RelativeContextEvidenceStore,
+    )
+    from tools.provider_pilots.provider_foundation_v2_historical_proof import (
+        _build_provider,
+    )
+    _STARTUP_EVIDENCE = _startup_capture.finish()
+del _startup_capture
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -103,7 +110,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             ReadOnlyProviderOperation.MONITORING,
         }),
     )
-    intraday_runtime = create_intraday_runtime(shared_provider_runtime)
+    intraday_runtime = create_intraday_runtime(
+        shared_provider_runtime, startup_evidence=_STARTUP_EVIDENCE
+    )
     intraday_discovery_control = IntradayDiscoveryOperationalControl(
         intraday_runtime.discovery_operation,
         intraday_runtime.discovery_application,
@@ -112,6 +121,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         intraday_runtime.discovery_v2_operation,
         intraday_runtime.probables_v2_application,
         intraday_runtime.refresh_v2_provenance_store,
+        startup_evidence=intraday_runtime.startup_evidence,
+        launcher_configuration=LauncherConfiguration(args.port, not args.no_browser),
     )
     intraday_review_v2_control = IntradayReviewV2OperationalControl(
         intraday_runtime.review_v2_application,
