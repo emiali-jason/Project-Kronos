@@ -19,3 +19,7 @@ Carry the seven accepted activation files, two additional historical interruptio
 **Status:** Direct Sponsor authorization for SPH-001/002/003 engineering only; runtime unchanged.
 
 The shared maintenance prerequisite is advanced from the deferred programme gate under [ADR-0030](../../adr/ADR-0030-CONTROLLED-MAINTENANCE-PROVIDER-CONNECTION-GOVERNANCE.md) and the existing shared register. Swing consumes the same shared request attribution and guard. Its exact planned disconnect alert is suppressed while monitoring interruption truth remains; normal restoration resumes only after maintenance exit and a subsequent valid explicit Provider connection. No unrelated Swing improvement, lifecycle redesign or historical evidence rewrite is included. Installation/publication/restart require separate approval.
+
+## Legacy bootstrap consumer disposition — 8 September 2026
+
+SPH is published at `dc964704937921a46dad8c125fc490ff4f46078a`. The shared [ADR-0031](../../adr/ADR-0031-ONE-TIME-LEGACY-MAINTENANCE-BOOTSTRAP.md) engineering candidate supplies the one-time legacy deployment bridge and package qualification. Swing source/monitoring/lifecycle semantics are unchanged in this bridge. Preserve any old-code shutdown alert and interruption evidence under the explicit legacy side-effect classification, separately from guarded replacement inertness. Installation, migration and runtime acceptance remain pending; historical actor attribution stays NOT_ESTABLISHED.

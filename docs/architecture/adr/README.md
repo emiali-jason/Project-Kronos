@@ -54,3 +54,7 @@ The existing approved `ADL-*` records remain at their established paths under [`
 ## Shared maintenance prerequisite — 8 September 2026
 
 [ADR-0030](ADR-0030-CONTROLLED-MAINTENANCE-PROVIDER-CONNECTION-GOVERNANCE.md) records the direct Sponsor-authorized SPH-001/002/003 engineering decision. Candidate review, publication and runtime acceptance remain pending. It preserves ADR-010 and ADR-0016 outside the explicit maintenance boundary.
+
+## One-time legacy deployment bridge — 8 September 2026
+
+[ADR-0031](ADR-0031-ONE-TIME-LEGACY-MAINTENANCE-BOOTSTRAP.md) records the direct Sponsor-authorized bootstrap/package engineering candidate. It leaves the normal ADR-0030 protocol intact. Installation, migration and runtime acceptance require separate gates.

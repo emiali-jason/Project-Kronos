@@ -54,7 +54,7 @@ with StartupCapture(Path(__file__).resolve().parents[1], keep_sources_pinned=Tru
     )
     from kronos.browser.restart_control import BrowserBackendRestartControl, DEFAULT_BACKEND_CONTROL_PATH
     from kronos.common.connection_governance import ConnectionProcess, ConnectionAuditStore, ConnectionGovernance
-    from kronos.common.maintenance import consume_handoff
+    from kronos.common.legacy_bootstrap import consume_startup_context
     from kronos.market.calendar import MarketCalendarPublisher
     from kronos.intraday.universe import load_intraday_universe_publication
     from kronos.provider.contracts.provider_authentication import ReadOnlyProviderOperation
@@ -93,7 +93,9 @@ def _parser() -> argparse.ArgumentParser:
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     process_identity = sha256(_STARTUP_EVIDENCE.evidence_identity.encode()).hexdigest()
-    maintenance = consume_handoff(DEFAULT_BACKEND_CONTROL_PATH.parent / "maintenance", os.environ,
+    maintenance = consume_startup_context(DEFAULT_BACKEND_CONTROL_PATH.parent, os.environ,
+        revision=_STARTUP_EVIDENCE.source_revision, source_state=_STARTUP_EVIDENCE.source_state,
+        repository=Path(__file__).resolve().parents[1],
         runtime_identity=process_identity, now=datetime.now(UTC))
     governance = ConnectionGovernance(ConnectionProcess(
         _STARTUP_EVIDENCE.process_id, _STARTUP_EVIDENCE.startup_boundary_at.isoformat(),

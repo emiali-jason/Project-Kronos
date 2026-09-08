@@ -358,6 +358,24 @@ static int start_backend(
 }
 
 int main(void) {
+    const char *mode = getenv("KRONOS_LAUNCH_MODE");
+    /* Signed-package execution check: no filesystem, runtime, or Browser action. */
+    if (mode != NULL && strcmp(mode, "PACKAGE_VERIFY") == 0) {
+        puts("KRONOS_LAUNCHER_PACKAGE_V1_OK");
+        return 0;
+    }
+    int bootstrap = mode != NULL && strcmp(mode, "LEGACY_BOOTSTRAP") == 0;
+    const char *migration = getenv("KRONOS_LEGACY_BOOTSTRAP_ID");
+    const char *migration_proof = getenv("KRONOS_LEGACY_BOOTSTRAP_PROOF");
+    if ((mode != NULL && !bootstrap) ||
+        (!bootstrap && (migration != NULL || migration_proof != NULL))) return 1;
+    if (bootstrap && (migration == NULL || migration_proof == NULL ||
+        strlen(migration) != 64 || strlen(migration_proof) != 64 ||
+        strspn(migration, "0123456789abcdef") != 64 ||
+        strspn(migration_proof, "0123456789abcdef") != 64 ||
+        getenv("KRONOS_MAINTENANCE_GENERATION") != NULL ||
+        getenv("KRONOS_MAINTENANCE_PARENT") != NULL ||
+        getenv("KRONOS_MAINTENANCE_PROOF") != NULL)) return 1;
     const char *home = getenv("HOME");
     if (home == NULL || home[0] == '\0') return show_not_ready();
 
@@ -394,6 +412,7 @@ int main(void) {
     int socket_connected = connect_backend();
     if (socket_connected >= 0) {
         (void)close(socket_connected);
+        if (bootstrap) return 1; /* Coordinator alone may stop legacy. */
         if (
             !read_control_record(control_path, &backend_pid, token) ||
             !request_graceful_shutdown(backend_pid, token, generation) ||
@@ -409,5 +428,5 @@ int main(void) {
     if (!started) {
         return show_restart_failed();
     }
-    return open_workspace();
+    return bootstrap ? 0 : open_workspace();
 }
