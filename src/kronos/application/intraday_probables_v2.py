@@ -75,6 +75,7 @@ class IntradayProbablesV2Application:
         self._store = store
         self._methodology = create_probables_v2_methodology()
         self._run: ProbablesRunV2 | None = None
+        self.research_capture_failure: str | None = None
         self._current_failure: str | None = None
         self._failure_detail: ProbablesV2FailureDetail | None = None
         self._lock = RLock()
@@ -108,6 +109,7 @@ class IntradayProbablesV2Application:
         unavailable_members: Sequence[ProbablesUnavailableMemberV2],
         provenance: tuple[str, ...],
         assessment_capture: Callable[[ProbablesRunV2], ProbablesAssessmentObservations] | None = None,
+        research_capture: Callable | None = None,
     ) -> ProbablesRunV2:
         """Determine admission, optionally capture measurement, then publish once."""
 
@@ -127,7 +129,8 @@ class IntradayProbablesV2Application:
                     provenance=provenance,
                 )
                 assessment = None
-                if assessment_capture is not None and not self._store.has_run(run.run_identity):
+                newly_published = not self._store.has_run(run.run_identity)
+                if assessment_capture is not None and newly_published:
                     assessment = self._store.pending_assessment_observations(run)
                     if assessment is None:
                         assessment = assessment_capture(run)
@@ -145,6 +148,13 @@ class IntradayProbablesV2Application:
             self._run = run
             self._current_failure = None
             self._failure_detail = None
+            self.research_capture_failure = None
+            if research_capture is not None:
+                # Already published: research cannot reject or replace this decision.
+                try:
+                    research_capture(run, mappings, self._store.load_assessment_observations(run.run_identity), newly_published)
+                except Exception:
+                    self.research_capture_failure = "SHADOW_CAPTURE_INCOMPLETE"
             return run
 
     def record_failure(

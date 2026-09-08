@@ -330,6 +330,7 @@ class IntradayDiscoveryOperationService:
         active_derivative_catalogue: InstrumentSemanticPublicationV2 | None = None,
         active_derivative_binding_store: ActiveDerivativeBindingStore | None = None,
         provider_snapshot_store: ProviderInstrumentSnapshotStore | None = None,
+        live_shadow=None,
         clock: Callable[[], datetime] = trusted_now,
     ) -> None:
         if (
@@ -388,6 +389,7 @@ class IntradayDiscoveryOperationService:
         self._calendar = calendar_publisher
         self._source_factory = factual_source_factory
         self._probables = probables
+        self.live_shadow = live_shadow
         self._probables_v2 = probables_v2
         self._probables_v2_diagnostics_store = probables_v2_diagnostics_store
         self._refresh_state_store = refresh_state_store
@@ -611,6 +613,8 @@ class IntradayDiscoveryOperationService:
                     ),
                     operation_identity=request.operation_identity,
                 )
+            if self.live_shadow is not None:
+                self.live_shadow.begin_operation(request.operation_identity, started_at)
             stage = DiscoveryOperationStage.FACTUAL_SOURCE_ACQUISITION
             source = (
                 self._source_factory(lease)
@@ -723,6 +727,11 @@ class IntradayDiscoveryOperationService:
                     reconciliation_version=execution.run.reconciliation_version,
                     market_session_identity=execution.run.market_session_identity,
                     analysis_boundary=execution.run.observation_boundary,
+                    research_capture=(
+                        (lambda run, mappings, assessments, new: self.live_shadow.capture_published(
+                            run, mappings, assessments, facts=execution.probables_v2_facts, source=source,
+                            operation=request.operation_identity, operation_start=started_at, newly_published=new))
+                        if self.live_shadow is not None else None),
                     assessment_capture=(
                         (lambda run: source.capture_assessments(run,
                             operation_identity=request.operation_identity, clock=self._clock))

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from kronos.intraday.runtime_identity import StartupEvidence
+from kronos.application.intraday_live_shadow import IntradayLiveShadowService
+from kronos.intraday.live_shadow_persistence import ShadowStore
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -436,6 +438,7 @@ def create_intraday_runtime(
                 latest_v2_provenance.failure_detail_identity
             ),
         )
+    live_shadow = IntradayLiveShadowService(store=ShadowStore(Path(evidence_root)), clock=clock, mcx_history_store=mcx_history_store, probables_store=probables_v2_store)
     operation_v2 = IntradayDiscoveryOperationService(
         provider_runtime=provider_runtime,
         acquire_lease=access.acquire_admission_discovery_lease,
@@ -457,6 +460,7 @@ def create_intraday_runtime(
             mcx_history_store=mcx_history_store,
         ),
         probables_v2=probables_v2,
+        live_shadow=live_shadow,
         probables_v2_diagnostics_store=probables_v2_diagnostics_store,
         refresh_admission=refresh_admission,
         active_derivative_catalogue=active_catalogue,

@@ -17,6 +17,7 @@ class ProviderRequestCategory(StrEnum):
     PREVIOUS_SESSION_INTRADAY_REQUEST = "PREVIOUS_SESSION_INTRADAY_REQUEST"
     INSTRUMENT_BINDING_REQUEST = "INSTRUMENT_BINDING_REQUEST"
     ASSESSMENT_OBSERVATION_REQUEST = "ASSESSMENT_OBSERVATION_REQUEST"
+    COHORT_B_SHADOW_OBSERVATION_REQUEST = "COHORT_B_SHADOW_OBSERVATION_REQUEST"
 
 
 @dataclass(frozen=True, slots=True)
@@ -63,7 +64,7 @@ class DiscoveryOperationAccounting:
                 or sum(outcomes) != self.governed_members))
             or (self.discovery_run_identity is not None and not self.discovery_run_identity.startswith("INTRADAY-DISCOVERY-RUN-"))
             or self.contract_identity != "KRONOS-INTRADAY-DISCOVERY-OPERATION-ACCOUNTING"
-            or self.contract_version not in ("1.0.0", "1.1.0")):
+            or self.contract_version not in ("1.0.0", "1.1.0", "1.2.0")):
             raise ValueError("INTRADAY_OPERATION_ACCOUNTING_INVALID")
         times = [x for x in (self.trusted_admission_time, self.operation_started_at,
             self.provider_acquisition_started_at, self.operation_completed_at) if x is not None]
@@ -77,8 +78,7 @@ class DiscoveryOperationAccounting:
         elif (type(self.actual_provider_requests) is not int or self.actual_provider_requests < 0
             or type(self.request_categories) is not tuple
             or any(type(k) is not ProviderRequestCategory for k, _ in self.request_categories)
-            or tuple(x[0] for x in self.request_categories) != tuple(k for k in ProviderRequestCategory if self.contract_version == "1.1.0"
-                or k is not ProviderRequestCategory.ASSESSMENT_OBSERVATION_REQUEST)
+            or tuple(x[0] for x in self.request_categories) != tuple(ProviderRequestCategory)[:{"1.0.0":4,"1.1.0":5,"1.2.0":6}[self.contract_version]]
             or any(type(n) is not int or n < 0 for _,n in self.request_categories)
             or sum(n for _,n in self.request_categories) != self.actual_provider_requests
             or type(self.benchmark_subject_requests) is not int
@@ -99,7 +99,7 @@ class DiscoveryOperationAccounting:
 
 
 def create_operation_accounting(**values) -> DiscoveryOperationAccounting:
-    core = dict(values, contract_identity="KRONOS-INTRADAY-DISCOVERY-OPERATION-ACCOUNTING", contract_version="1.1.0")
+    core = dict(values, contract_identity="KRONOS-INTRADAY-DISCOVERY-OPERATION-ACCOUNTING", contract_version="1.2.0")
     return DiscoveryOperationAccounting(
         accounting_identity=_identity("INTRADAY-OPERATION-ACCOUNTING-", core),
         integrity_identity=_identity("INTEGRITY-INTRADAY-OPERATION-ACCOUNTING-", core), **core)

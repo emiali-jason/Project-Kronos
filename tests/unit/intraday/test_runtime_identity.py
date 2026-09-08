@@ -211,7 +211,7 @@ def test_actual_composition_and_status_declare_loaded_capabilities(tmp_path):
         c.refresh_v2_provenance_store,startup_evidence=_seed(),launcher_configuration=LauncherConfiguration(8947,False))
     identity=control.status_document()["runtime_identity"]
     assert {x["identity"] for x in identity["capabilities"]}=={
-        "INTRADAY_DISCOVERY_OPERATION","WO_05A_TRUSTED_TIME_ADMISSION","WO_05B_OPERATION_ACCOUNTING","INTRADAY_V2_OPERATIONAL_CONTROL"}
+        "INTRADAY_DISCOVERY_OPERATION","WO_05A_TRUSTED_TIME_ADMISSION","WO_05B_OPERATION_ACCOUNTING","INTRADAY_V2_OPERATIONAL_CONTROL","WO_06H_LIVE_SHADOW"}
     routes=IntradayBrowserRoutes(c.discovery_v2_application,probables_v2_control=control)
     response=routes.handle_get(BrowserGetRequest('/control/intraday-discovery/v2/status', {}), lambda:None)
     assert json.loads(response.body)["runtime_identity"]==identity

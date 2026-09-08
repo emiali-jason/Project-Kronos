@@ -94,10 +94,38 @@ class IntradayProbablesV2OperationalControl:
         self._clock = clock
         self._process_identity = process_identity
         self._runtime_manifest = compose_runtime_manifest(startup_evidence, launcher_configuration, operation, self)
+        if operation.live_shadow is not None:
+            operation.live_shadow.bind_runtime(self._runtime_manifest)
 
     @property
     def operation_service(self) -> IntradayDiscoveryOperationService:
         return self._operation
+
+    def shadow_document(self, payload):
+        """Explicit future acceptance/completion surface; never invoked by polling."""
+        from kronos.intraday.live_shadow import SCHEMA
+        try:
+            shadow = self.operation_service.live_shadow
+            if shadow is None or type(payload) is not dict or self._runtime_manifest is None:
+                raise ValueError
+            if (payload.get("runtime") != self._runtime_manifest.manifest_identity
+                    or payload.get("schema") != SCHEMA):
+                raise ValueError
+            if payload.get("action") == "ACCEPT_RUNTIME":
+                if set(payload) != {"action", "runtime", "schema", "revision", "request_identity"}:
+                    raise ValueError
+                shadow.accept_runtime(expected_revision=payload["revision"], request_identity=payload["request_identity"])
+                result = shadow.status()
+            elif payload.get("action") == "COMPLETE_RETAINED_EOD":
+                if set(payload) != {"action", "runtime", "schema", "observation", "envelope"}:
+                    raise ValueError
+                envelope = self.operation_service._probables_v2_diagnostics_store.load_envelope(payload["envelope"])
+                result = {"outcome_identity": shadow.complete_from_envelope(payload["observation"], envelope=envelope).key}
+            else:
+                raise ValueError
+            return {"outcome": "COMPLETE", "result": result, "production_authority": "NONE"}
+        except Exception:
+            return {"outcome": "REJECTED", "failure": "SHADOW_CONTROL_REJECTED", "production_authority": "NONE"}
 
     def status_document(
         self,
@@ -122,6 +150,9 @@ class IntradayProbablesV2OperationalControl:
         )
         return {
             "runtime_identity": runtime_document(self._runtime_manifest),
+            "live_shadow": None if self.operation_service.live_shadow is None else {
+                **self.operation_service.live_shadow.status(),
+                "publication_hook_failure": self._probables.research_capture_failure},
             "control_identity": INTRADAY_PROBABLES_V2_CONTROL_IDENTITY,
             "control_version": INTRADAY_PROBABLES_V2_CONTROL_VERSION,
             "route_identity": REFRESH_V2_ROUTE,

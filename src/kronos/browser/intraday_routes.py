@@ -623,6 +623,7 @@ class IntradayBrowserRoutes:
 
     def owns_post(self, path: str) -> bool:
         return path in {
+            "/control/intraday-live-shadow/v1",
             "/control/intraday-discovery/v2",
             "/control/intraday-review/v2",
             WO10_CONTROL_ROUTE,
@@ -654,6 +655,20 @@ class IntradayBrowserRoutes:
         if not self.owns_post(request.path):
             return None
         try:
+            if request.path == "/control/intraday-live-shadow/v1":
+                if self._probables_v2_control is None:
+                    raise ValueError
+                payload = None
+                if (not request.query and request.content_type == "application/json"
+                        and request.body and len(request.body) <= 4096):
+                    try:
+                        payload = json.loads(request.body)
+                    except (UnicodeDecodeError, json.JSONDecodeError):
+                        pass
+                document = self._probables_v2_control.shadow_document(payload)
+                return BrowserRouteResponse(json.dumps(document, sort_keys=True),
+                    status=HTTPStatus.OK if document["outcome"] == "COMPLETE" else HTTPStatus.BAD_REQUEST,
+                    content_type="application/json; charset=utf-8")
             if request.path == "/control/intraday-discovery/v2":
                 if self._probables_v2_control is None:
                     raise ValueError
