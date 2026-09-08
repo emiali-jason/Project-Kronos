@@ -4968,7 +4968,7 @@ def render_settings(
             + '</section>'
         )
     kite_controls = (
-        '<form method="post" action="/provider/connect"><button class="primary" type="submit">CONNECT</button></form>'
+        '<form method="post" action="/provider/connect" data-provider-control="SETTINGS"><button class="primary" type="submit">CONNECT</button></form>'
         if snapshot.provider_state is not ProviderConnectionState.CONNECTED else (
             '<div class="safety-warning"><strong>LIVE MONITORING IS ACTIVE</strong>'
             'Disconnecting Kite will interrupt active watches and may create a monitoring gap requiring reconciliation.'
@@ -5522,7 +5522,7 @@ def _connect_form(snapshot: BrowserWorkspaceSnapshot) -> str:
     if snapshot.provider_state is ProviderConnectionState.CONNECTED:
         return '<form method="post" action="/provider/disconnect"><button>Disconnect</button></form>'
     disabled = " disabled" if snapshot.provider_state is ProviderConnectionState.CONNECTING else ""
-    return f'<form method="post" action="/provider/connect"><button class="primary"{disabled}>Connect</button></form>'
+    return f'<form method="post" action="/provider/connect" data-provider-control="HEADER"><button class="primary"{disabled}>Connect</button></form>'
 
 
 def _tab_link(name: str, href: str, active_tab: str) -> str:

@@ -33,6 +33,7 @@ class KiteReadOnlyMonitoringSession:
     """Opaque read/observe session; raw Kite identity never crosses this seam."""
 
     __slots__ = (
+        "__local_close_requested",
         "__clock",
         "__connection_id",
         "__consumer",
@@ -71,6 +72,7 @@ class KiteReadOnlyMonitoringSession:
         self.__gap_instruments: set[InstrumentRecord] = set()
         self.__last_observed_at: datetime | None = None
         self.__last_disconnect: MonitoringDisconnect | None = None
+        self.__local_close_requested = False
         self.__ever_connected = False
         self.__wire_callbacks()
 
@@ -87,6 +89,7 @@ class KiteReadOnlyMonitoringSession:
         return self.__last_disconnect
 
     def connect(self) -> None:
+        self.__local_close_requested = False
         if self.__state is not MonitoringConnectionState.DISCONNECTED:
             raise MonitoringError(MonitoringFailure.INVALID_REQUEST)
         endpoint = getattr(self.__socket, "connect", None)
@@ -138,6 +141,7 @@ class KiteReadOnlyMonitoringSession:
                 raise MonitoringError(MonitoringFailure.PROVIDER_FAILURE) from None
 
     def disconnect(self) -> None:
+        self.__local_close_requested = True
         endpoint = getattr(self.__socket, "close", None)
         try:
             if callable(endpoint):
@@ -145,6 +149,7 @@ class KiteReadOnlyMonitoringSession:
         except Exception:
             raise MonitoringError(MonitoringFailure.PROVIDER_FAILURE) from None
         finally:
+            self.__record_disconnect()
             self.__set_state(MonitoringConnectionState.DISCONNECTED)
 
     def recover_interval(self, interval: RecoveredMarketInterval) -> None:
@@ -210,6 +215,10 @@ class KiteReadOnlyMonitoringSession:
         self.__consumer.on_order_update(self.__normalize_order_update(raw))
 
     def __on_close(self, _socket: object, _code: object, _reason: object) -> None:
+        # A normal acknowledgement of our explicit close is published once by
+        # disconnect(), on the cause-owning thread. Abnormal closes still alert.
+        if self.__local_close_requested and _code == 1000:
+            return
         self.__record_disconnect()
         self.__set_state(MonitoringConnectionState.RECONNECTING)
 

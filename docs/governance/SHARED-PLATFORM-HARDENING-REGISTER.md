@@ -33,3 +33,13 @@ WO-06D initiated zero Intraday production operations, Refreshes, Provider/OpenAI
 | Further additions during the WO-06D engineering window | 6 |
 
 Actor/initiating cause for the additional writes: NOT_ESTABLISHED. Sponsor disposition: PRESERVE + CARRY TO SWING/SHARED HARDENING. This resolves the WO-06D production-inertness classification; it does not claim that the running platform produced no files. Preserve every file. No deletion, attribution, WO-06C reopening or Swing redesign is authorized inside WO-06D. Shared investigation/implementation remains deferred under SPH-001/SPH-002 and the existing post-Intraday gate.
+
+## SPH-001/002/003 engineering gate — direct Sponsor override, 8 September 2026
+
+**Status:** Bounded engineering authorized; candidate review/publication/runtime acceptance pending.
+
+The direct Sponsor SPH authorization supersedes the prior deferred implementation gate for these exact requirements. Historical dispositions above remain retained. No automatic authentication authority is granted and no historical actor is newly attributed.
+
+SPH-003 adds validated process-owned maintenance generation/handoff, startup guards and explicit exit. It is the shared enforcement prerequisite accompanying SPH-001 attribution and SPH-002 expected-maintenance notification suppression; it is not a separate product implementation. [ADR-0030](../architecture/adr/ADR-0030-CONTROLLED-MAINTENANCE-PROVIDER-CONNECTION-GOVERNANCE.md) records the bounded design and deployment gates.
+
+Engineering must remain offline. Staging, commit, push, installed-launcher update, production restart, Provider operations and WO-06H runtime retry are not authorized by this entry. WO-06H remains published with runtime acceptance blocked, live shadow inactive and month clock not started. Retain all baseline files and classify concurrent Swing additions separately without actor attribution.

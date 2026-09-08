@@ -9,6 +9,8 @@ from pathlib import Path
 import re
 import secrets
 from uuid import uuid4
+from datetime import UTC, datetime
+from kronos.common.maintenance import publish_handoff
 
 
 BACKEND_CONTROL_SCHEMA = "KRONOS_BROWSER_BACKEND_CONTROL_V1"
@@ -75,6 +77,13 @@ class BrowserBackendRestartControl:
             )
         except OSError:
             return False
+
+    def maintenance_handoff(self, generation: str, runtime_identity: str) -> None:
+        if not self.owns_current_process():
+            raise ValueError("MAINTENANCE_FOREIGN_PROCESS")
+        publish_handoff(self.path.parent / "maintenance", generation=generation,
+            parent_pid=self.process_id, proof=self._token,
+            runtime_identity=runtime_identity, now=datetime.now(UTC))
 
     def remove(self) -> None:
         """Remove only this process's still-matching control record."""

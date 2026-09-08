@@ -6,6 +6,8 @@ import argparse
 from collections.abc import Sequence
 from datetime import UTC, datetime
 import webbrowser
+import os
+from hashlib import sha256
 
 from pathlib import Path
 from kronos.intraday.runtime_identity import StartupCapture, LauncherConfiguration
@@ -50,7 +52,9 @@ with StartupCapture(Path(__file__).resolve().parents[1], keep_sources_pinned=Tru
     from kronos.browser.intraday_historical_control import (
         IntradayHistoricalQualificationOperationalControl,
     )
-    from kronos.browser.restart_control import BrowserBackendRestartControl
+    from kronos.browser.restart_control import BrowserBackendRestartControl, DEFAULT_BACKEND_CONTROL_PATH
+    from kronos.common.connection_governance import ConnectionProcess, ConnectionAuditStore, ConnectionGovernance
+    from kronos.common.maintenance import consume_handoff
     from kronos.market.calendar import MarketCalendarPublisher
     from kronos.intraday.universe import load_intraday_universe_publication
     from kronos.provider.contracts.provider_authentication import ReadOnlyProviderOperation
@@ -88,6 +92,14 @@ def _parser() -> argparse.ArgumentParser:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
+    process_identity = sha256(_STARTUP_EVIDENCE.evidence_identity.encode()).hexdigest()
+    maintenance = consume_handoff(DEFAULT_BACKEND_CONTROL_PATH.parent / "maintenance", os.environ,
+        runtime_identity=process_identity, now=datetime.now(UTC))
+    governance = ConnectionGovernance(ConnectionProcess(
+        _STARTUP_EVIDENCE.process_id, _STARTUP_EVIDENCE.startup_boundary_at.isoformat(),
+        process_identity, _STARTUP_EVIDENCE.source_revision, _STARTUP_EVIDENCE.source_state),
+        ConnectionAuditStore(Path.home() / "Library/Application Support/KRONOS/evidence/shared/provider-connection-v1"),
+        maintenance_identity=maintenance)
     mtf_fact_store = MtfFactEvidenceStore(DEFAULT_MTF_FACT_EVIDENCE_ROOT)
     native_discovery_store = NativeDiscoveryEvidenceStore(
         DEFAULT_NATIVE_DISCOVERY_EVIDENCE_ROOT
@@ -98,6 +110,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     shared_provider_runtime = SharedAuthenticatedProviderRuntime(
         _build_provider,
         provider_identity="KITE",
+        connection_governance=governance,
     )
     swing_provider_factory = lambda: shared_provider_runtime.compatibility_facade(
         consumer_identity="SWING",
@@ -206,6 +219,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     application = SwingOpportunitiesApplication(
         swing_provider_factory,
+        connection_governance=governance,
         run_provenance_store=LocalSwingRunProvenanceStore(),
         market_calendar_publisher=MarketCalendarPublisher(),
         mtf_fact_evidence_store=mtf_fact_store,

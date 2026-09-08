@@ -50,3 +50,7 @@ This directory is the canonical location for new KRONOS Architecture Decision Re
 | [ADR-0029](ADR-0029-INTRADAY-WO-B-OPERATIONAL-READINESS-REVIEW.md) | Intraday WO-B Operational Readiness Review | Approved — publication pending | 2026-09-04 | Chief Architect / KRONOS Intraday | None — additive read-only product composition | None | [WO-B product record](../products/intraday/KRONOS-INTRADAY-WO-B-OPERATIONAL-READINESS-REVIEW-V1.md); [Intraday ownership registry](../products/intraday/KRONOS-INTRADAY-CONTRACT-STATE-OWNERSHIP-REGISTRY.md) |
 
 The existing approved `ADL-*` records remain at their established paths under [`../`](../) and are indexed in [`../KNOWLEDGE_BASE.md`](../KNOWLEDGE_BASE.md). They have not been converted, renumbered, or moved.
+
+## Shared maintenance prerequisite — 8 September 2026
+
+[ADR-0030](ADR-0030-CONTROLLED-MAINTENANCE-PROVIDER-CONNECTION-GOVERNANCE.md) records the direct Sponsor-authorized SPH-001/002/003 engineering decision. Candidate review, publication and runtime acceptance remain pending. It preserves ADR-010 and ADR-0016 outside the explicit maintenance boundary.

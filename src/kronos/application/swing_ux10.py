@@ -6,6 +6,8 @@ lifecycle, and Provider-connection events; it creates no trading decision.
 
 from __future__ import annotations
 
+from kronos.common.maintenance import defer_expected_disconnect
+
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
@@ -401,6 +403,14 @@ class SwingUx10NotificationService:
         occurred_at: datetime | None = None,
     ) -> Ux10NotificationRecord | None:
         now = occurred_at or self._clock()
+        if state is MonitoringConnectionState.DISCONNECTED:
+            def complete(expected):
+                if expected:
+                    self._connection_state[watch_identity] = (state, now)
+                else:
+                    self.observe_connection_state(watch_identity, instrument, state, occurred_at=now)
+            if defer_expected_disconnect(complete):
+                return None
         previous = self._connection_state.get(watch_identity)
         self._connection_state[watch_identity] = (state, now)
         if previous is not None and previous[0] is state:

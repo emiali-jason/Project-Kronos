@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from contextlib import nullcontext
+
 from collections.abc import Callable
 from datetime import datetime, timezone
 from enum import StrEnum
@@ -105,6 +107,7 @@ class SharedAuthenticatedProviderRuntime:
     """Own exactly one authenticated context and all product lease lifecycle."""
 
     __slots__ = (
+        "__governance",
         "__availability",
         "__capability",
         "__clock",
@@ -126,6 +129,7 @@ class SharedAuthenticatedProviderRuntime:
         provider_factory: Callable[[], _AuthenticatedRuntime],
         *,
         provider_identity: str,
+        connection_governance=None,
         clock: _Clock = lambda: datetime.now(timezone.utc),
         identity_factory: _IdentityFactory = (
             lambda: f"PROVIDER-LEASE-{uuid4().hex.upper()}"
@@ -138,6 +142,7 @@ class SharedAuthenticatedProviderRuntime:
             or not _text(provider_identity)
         ):
             raise ValueError("SHARED_PROVIDER_RUNTIME_DEPENDENCY_INVALID")
+        self.__governance = connection_governance
         self.__provider_factory = provider_factory
         self.__provider_identity = provider_identity
         self.__clock = clock
@@ -194,6 +199,8 @@ class SharedAuthenticatedProviderRuntime:
     def begin_login(self) -> object:
         """Begin one explicit authentication attempt through the sole runtime."""
 
+        if self.__governance is not None:
+            self.__governance.require_authentication()
         with self.__lock:
             self.__synchronize_locked()
             if self.__lifecycle in {
@@ -211,6 +218,10 @@ class SharedAuthenticatedProviderRuntime:
             provider = self.__provider
             self.__lifecycle = SharedProviderRuntimeLifecycle.ABSENT
             self.__failure = ""
+        if self.__governance is not None:
+            with self.__governance.lock:
+                self.__governance.require_authentication()
+                return provider.begin_login()
         return provider.begin_login()
 
     def complete_callback(self, attempt: object) -> object:
@@ -222,7 +233,11 @@ class SharedAuthenticatedProviderRuntime:
             raise ProviderRuntimeAccessError(
                 ProviderRuntimeFailure.CONTEXT_UNAVAILABLE
             )
+        if self.__governance is not None:
+            self.__governance.require_authentication()
         outcome = provider.complete_callback(attempt)
+        if self.__governance is not None:
+            self.__governance.require_authentication()
         state = getattr(outcome, "state", None)
         binding = getattr(outcome, "binding_result", None)
         capability = provider.authenticated_read_only_capability()
@@ -244,36 +259,39 @@ class SharedAuthenticatedProviderRuntime:
             and _aware(valid_through)
             and self.__now() < valid_through
         )
-        with self.__lock:
-            if not active:
-                self.__capability = None
+        with (self.__governance.lock if self.__governance else nullcontext()):
+            if self.__governance is not None:
+                self.__governance.require_authentication()
+            with self.__lock:
+                if not active:
+                    self.__capability = None
+                    self.__principal_binding = binding
+                    self.__availability = getattr(
+                        status,
+                        "provider_availability",
+                        ProviderAvailabilityState.INDETERMINATE,
+                    )
+                    failure = getattr(outcome, "failure_code", None)
+                    self.__failure = getattr(
+                        failure,
+                        "value",
+                        ProviderRuntimeFailure.PRINCIPAL_NOT_MATCHED.value,
+                    )
+                    self.__revoke_locked()
+                    self.__lifecycle = SharedProviderRuntimeLifecycle.ABSENT
+                    return outcome
+                self.__capability = capability
+                self.__context_identity = context_identity
                 self.__principal_binding = binding
                 self.__availability = getattr(
                     status,
                     "provider_availability",
-                    ProviderAvailabilityState.INDETERMINATE,
+                    ProviderAvailabilityState.NOT_VERIFIED,
                 )
-                failure = getattr(outcome, "failure_code", None)
-                self.__failure = getattr(
-                    failure,
-                    "value",
-                    ProviderRuntimeFailure.PRINCIPAL_NOT_MATCHED.value,
-                )
-                self.__revoke_locked()
-                self.__lifecycle = SharedProviderRuntimeLifecycle.ABSENT
-                return outcome
-            self.__capability = capability
-            self.__context_identity = context_identity
-            self.__principal_binding = binding
-            self.__availability = getattr(
-                status,
-                "provider_availability",
-                ProviderAvailabilityState.NOT_VERIFIED,
-            )
-            self.__valid_through = valid_through
-            self.__failure = ""
-            self.__lifecycle = SharedProviderRuntimeLifecycle.ACTIVE
-        return outcome
+                self.__valid_through = valid_through
+                self.__failure = ""
+                self.__lifecycle = SharedProviderRuntimeLifecycle.ACTIVE
+            return outcome
 
     def acquire_lease(
         self,
@@ -385,6 +403,8 @@ class SharedAuthenticatedProviderRuntime:
         )
 
     def __require_active_locked(self) -> None:
+        if self.__governance is not None:
+            self.__governance.require_operations()
         self.__synchronize_locked()
         if self.__lifecycle is SharedProviderRuntimeLifecycle.ACTIVE:
             return

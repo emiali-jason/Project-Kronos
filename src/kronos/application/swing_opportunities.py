@@ -643,6 +643,7 @@ class SwingOpportunitiesApplication:
         native_discovery_evidence_store: NativeDiscoveryEvidenceStore | None = None,
         relative_context_evidence_store: RelativeContextEvidenceStore | None = None,
         live_monitoring_timeout_seconds: float = 15.0,
+        connection_governance=None,
     ) -> None:
         if not all(callable(item) for item in (
             provider_factory,
@@ -678,6 +679,8 @@ class SwingOpportunitiesApplication:
             or not 0.0 < live_monitoring_timeout_seconds <= 60.0
         ):
             raise TypeError("BROWSER_APPLICATION_DEPENDENCY_INVALID")
+        self.connection_governance = connection_governance
+        self.__connection_requests = {}
         self.__provider_factory = provider_factory
         self.__clock = clock
         self.__pace = pace
@@ -975,13 +978,25 @@ class SwingOpportunitiesApplication:
             self.__snapshot = replace(self.__snapshot, **updates)
             return self.__snapshot
 
-    def connect_provider(self) -> bool:
+    def connect_provider(self, *, action_reference: str | None = None,
+                         request_route: str = "SHARED_PROVIDER_API", received_at: str | None = None) -> bool:
         """Begin one explicit Sponsor connection without blocking HTTP serving."""
 
         with self.__connection_transition_lock:
-            return self.__connect_provider()
+            governance = self.connection_governance
+            request = governance.request(reference=action_reference, route=request_route, received_at=received_at) if governance else None
+            if governance and not governance.admit(request, already_connected=(
+                self.snapshot().provider_state in {ProviderConnectionState.CONNECTING, ProviderConnectionState.CONNECTED}
+            )):
+                return False
+            try:
+                return self.__connect_provider(request)
+            except Exception:
+                if governance:
+                    governance.finish(request, False)
+                raise
 
-    def __connect_provider(self) -> bool:
+    def __connect_provider(self, request=None) -> bool:
         with self.__lock:
             if self.__snapshot.provider_state in {
                 ProviderConnectionState.CONNECTING,
@@ -998,6 +1013,8 @@ class SwingOpportunitiesApplication:
             )
             self.__connection_generation += 1
             generation = self.__connection_generation
+            if request is not None:
+                self.__connection_requests[generation] = request
         self.__background_runner(
             lambda: self.__complete_connection(generation), "kronos-browser-auth"
         )
@@ -1189,6 +1206,14 @@ class SwingOpportunitiesApplication:
                 pass
         return True
 
+    def enter_controlled_maintenance(self, generation: str) -> None:
+        with self.__connection_transition_lock:
+            if self.connection_governance is None:
+                raise ValueError("MAINTENANCE_GOVERNANCE_UNAVAILABLE")
+            self.connection_governance.enter_maintenance(generation)
+            with self.__lock:
+                self.__connection_generation += 1
+
     def close(self) -> None:
         with self.__connection_transition_lock:
             self.__close()
@@ -1223,7 +1248,20 @@ class SwingOpportunitiesApplication:
                 ):
                     return
                 self.__connection_started_generation = generation
-            self.__authenticate_connection(generation)
+            request = self.__connection_requests.pop(generation, None)
+            governance = self.connection_governance
+            if governance is None:
+                self.__authenticate_connection(generation)
+                return
+            try:
+                with governance.dispatch(request):
+                    self.__authenticate_connection(generation)
+                governance.finish(request, self.snapshot().provider_state is ProviderConnectionState.CONNECTED)
+            except Exception:
+                governance.finish(request, False)
+                with self.__lock:
+                    if generation == self.__connection_generation:
+                        self.__snapshot = replace(self.__snapshot, provider_state=ProviderConnectionState.ERROR, provider_failure="PROVIDER_CONNECTION_FAILED")
 
     def __authenticate_connection(self, generation: int) -> None:
         provider: _ProviderRuntime | None = None
@@ -1259,6 +1297,12 @@ class SwingOpportunitiesApplication:
                 )
             return
         with self.__connection_transition_lock:
+            if self.connection_governance is not None:
+                try:
+                    self.connection_governance.require_authentication()
+                except ValueError:
+                    provider.end_kronos_session()
+                    return
             with self.__lock:
                 current = (
                     generation == self.__connection_generation

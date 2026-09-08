@@ -240,7 +240,25 @@ static int read_control_record(
     return 1;
 }
 
-static int request_graceful_shutdown(pid_t backend_pid, const char *token) {
+static int backend_supports_maintenance(void) {
+    int socket_fd = connect_backend();
+    if (socket_fd < 0) return 0;
+    static const char request[] =
+        "GET /status HTTP/1.0\r\nHost: 127.0.0.1:8947\r\nConnection: close\r\n\r\n";
+    if (send(socket_fd, request, sizeof(request) - 1, 0) != (ssize_t)(sizeof(request) - 1)) {
+        (void)close(socket_fd);
+        return 0;
+    }
+    char response[4096] = {0};
+    (void)read_response(socket_fd, response, sizeof(response));
+    (void)close(socket_fd);
+    return strstr(response, "HTTP/1.0 200") != NULL &&
+        strstr(response, "\"protocol\":\"KRONOS_MAINTENANCE_HANDOFF_V1\"") != NULL;
+}
+
+static int request_graceful_shutdown(pid_t backend_pid, const char *token, const char *generation) {
+    /* Never stop a legacy backend that cannot mint the required handoff. */
+    if (!backend_supports_maintenance()) return 0;
     if (kill(backend_pid, 0) != 0) return 0;
     int socket_fd = connect_backend();
     if (socket_fd < 0) return 0;
@@ -252,10 +270,12 @@ static int request_graceful_shutdown(pid_t backend_pid, const char *token) {
         "Host: 127.0.0.1:8947\r\n"
         "X-Kronos-Backend-Pid: %ld\r\n"
         "X-Kronos-Restart-Token: %s\r\n"
+        "X-Kronos-Maintenance-Generation: %s\r\n"
         "Content-Length: 0\r\n"
         "Connection: close\r\n\r\n",
         (long)backend_pid,
-        token
+        token,
+        generation
     );
     if (
         length < 1 ||
@@ -289,7 +309,10 @@ static int start_backend(
     const char *repository,
     const char *python,
     const char *browser_entry,
-    const char *python_path
+    const char *python_path,
+    pid_t previous_pid,
+    const char *previous_token,
+    const char *generation
 ) {
     pid_t child = fork();
     if (child < 0) return 0;
@@ -308,6 +331,17 @@ static int start_backend(
         }
         if (chdir(repository) != 0 || setenv("PYTHONPATH", python_path, 1) != 0) {
             _exit(1);
+        }
+        if (previous_pid > 0) {
+            char parent[32];
+            (void)snprintf(parent, sizeof(parent), "%ld", (long)previous_pid);
+            if (setenv("KRONOS_MAINTENANCE_GENERATION", generation, 1) != 0 ||
+                setenv("KRONOS_MAINTENANCE_PARENT", parent, 1) != 0 ||
+                setenv("KRONOS_MAINTENANCE_PROOF", previous_token, 1) != 0) _exit(1);
+        } else {
+            (void)unsetenv("KRONOS_MAINTENANCE_GENERATION");
+            (void)unsetenv("KRONOS_MAINTENANCE_PARENT");
+            (void)unsetenv("KRONOS_MAINTENANCE_PROOF");
         }
         execl(python, python, browser_entry, "--no-browser", (char *)NULL);
         _exit(1);
@@ -350,23 +384,29 @@ int main(void) {
         return show_not_ready();
     }
 
+    pid_t backend_pid = 0;
+    char token[65] = {0};
+    char generation[65] = {0};
+    unsigned char random_bytes[32];
+    arc4random_buf(random_bytes, sizeof(random_bytes));
+    for (size_t i = 0; i < sizeof(random_bytes); ++i)
+        (void)snprintf(generation + i * 2, 3, "%02x", random_bytes[i]);
     int socket_connected = connect_backend();
     if (socket_connected >= 0) {
         (void)close(socket_connected);
-        pid_t backend_pid = 0;
-        char token[65] = {0};
         if (
             !read_control_record(control_path, &backend_pid, token) ||
-            !request_graceful_shutdown(backend_pid, token) ||
+            !request_graceful_shutdown(backend_pid, token, generation) ||
             !wait_for_backend_stop(backend_pid)
         ) {
             (void)memset(token, 0, sizeof(token));
             return show_restart_failed();
         }
-        (void)memset(token, 0, sizeof(token));
     }
 
-    if (!start_backend(repository, python, browser_entry, python_path)) {
+    int started = start_backend(repository, python, browser_entry, python_path, backend_pid, token, generation);
+    (void)memset(token, 0, sizeof(token));
+    if (!started) {
         return show_restart_failed();
     }
     return open_workspace();

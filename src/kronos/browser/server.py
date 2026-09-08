@@ -254,6 +254,7 @@ _PLACEHOLDERS = {
 
 
 class KronosBrowserServer(ThreadingHTTPServer):
+    connection_governance = None
     daemon_threads = True
     allow_reuse_address = True
 
@@ -369,6 +370,7 @@ class KronosBrowserServer(ThreadingHTTPServer):
             chart_analyst_activation or ChartAnalystV2ActivationService()
         )
         self.restart_control = restart_control
+        self.connection_governance = getattr(application, "connection_governance", None)
         self.provider_instrument_master_operation = (
             provider_instrument_master_operation
         )
@@ -531,6 +533,7 @@ class KronosBrowserServer(ThreadingHTTPServer):
         )
         self.telegram = telegram or _telegram_security()
         self.swing_monitoring_hub = SharedSwingMonitoringHub()
+        self.swing_monitoring_hub.maintenance_governance = self.connection_governance
         self.swing_monitoring_hub.set_connection_listener(
             lambda state: self.ux10_notifications.observe_connection_state(
                 "SHARED-SWING-MONITORING", "SWING MONITORING", state
@@ -610,7 +613,8 @@ class KronosBrowserServer(ThreadingHTTPServer):
             self.restore_sponsor_operability
         )
         self.restore_sponsor_operability()
-        self.ux10_notifications.retry_pending()
+        if not (self.connection_governance and self.connection_governance.maintenance_active):
+            self.ux10_notifications.retry_pending()
         self._swing_projection_revision_value = (
             self._derive_swing_projection_revision()
         )
@@ -1080,6 +1084,8 @@ class KronosBrowserServer(ThreadingHTTPServer):
         """Restore persisted controls and shared monitoring without creating analysis."""
 
         with self._sponsor_restoration_lock:
+            if self.connection_governance and self.connection_governance.maintenance_active:
+                return
             self._restore_sponsor_operability(completed_capability)
 
     def _restore_sponsor_operability(self, completed_capability: object | None) -> None:
@@ -1204,6 +1210,11 @@ class KronosBrowserServer(ThreadingHTTPServer):
                 )
             ):
                 return "SPONSOR_WORK_IN_PROGRESS"
+            if self.connection_governance is not None:
+                try:
+                    self.application.enter_controlled_maintenance(sha256(uuid4().bytes).hexdigest())
+                except (OSError, ValueError):
+                    return "MAINTENANCE_GOVERNANCE_UNAVAILABLE"
             self._shutdown_started = True
             return "SHUTDOWN_ACCEPTED"
 
@@ -1772,6 +1783,10 @@ class _BrowserHandler(BaseHTTPRequestHandler):
                 "analysis_diagnostic": None,
                 "live_monitoring": live_monitoring.state.value,
             }
+            if self.server.connection_governance is not None:
+                payload["maintenance"] = {"protocol": "KRONOS_MAINTENANCE_HANDOFF_V1",
+                    "active": self.server.connection_governance.maintenance_active,
+                    "generation": self.server.connection_governance.maintenance_identity}
             if diagnostic is not None:
                 payload["analysis_diagnostic"] = {
                     "attempt_id": diagnostic.attempt_id,
@@ -1797,17 +1812,22 @@ class _BrowserHandler(BaseHTTPRequestHandler):
         self._text(HTTPStatus.NOT_FOUND, "Not found.")
 
     def do_POST(self) -> None:  # noqa: N802
+        self._connection_received_at = datetime.now().astimezone().isoformat()
         path = urlsplit(self.path).path
         if path == "/control/shutdown":
             self._graceful_backend_shutdown()
             return
         if not self._same_origin():
+            if path == "/provider/connect" and not self._audit_rejected_connection():
+                return
             self._text(HTTPStatus.FORBIDDEN, "Request rejected.")
             return
         if path == "/control/exit":
             self._sponsor_exit()
             return
         if not self.server.admit_sponsor_work():
+            if path == "/provider/connect" and not self._audit_rejected_connection():
+                return
             self._text(HTTPStatus.SERVICE_UNAVAILABLE, "KRONOS is shutting down.")
             return
         try:
@@ -1816,6 +1836,17 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             self.server.finish_sponsor_work()
 
     def _dispatch_post(self, path: str) -> None:
+        governance = self.server.connection_governance
+        if path == "/control/maintenance/exit":
+            reference = self._connection_action_reference()
+            if governance is None or not governance.exit_maintenance(reference):
+                self._text(HTTPStatus.CONFLICT, "Maintenance transition rejected.")
+            else:
+                self._redirect("/swing/opportunities")
+            return
+        if governance and governance.maintenance_active and path != "/provider/connect":
+            self._text(HTTPStatus.SERVICE_UNAVAILABLE, "Controlled maintenance is active.")
+            return
         if self.server.product_routes.owns_post(path):
             self._dispatch_product_post(path)
             return
@@ -1830,7 +1861,15 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             self._run_provider_instrument_master()
             return
         if path == "/provider/connect":
-            self.server.application.connect_provider()
+            try:
+                if governance is None:
+                    self.server.application.connect_provider()
+                else:
+                    self.server.application.connect_provider(action_reference=self._connection_action_reference(),
+                        request_route="/provider/connect", received_at=self._connection_received_at)
+            except (OSError, ValueError):
+                self._text(HTTPStatus.SERVICE_UNAVAILABLE, "Provider connection not admitted.")
+                return
             self._redirect("/swing/opportunities")
             return
         if path == "/provider/disconnect":
@@ -2968,6 +3007,28 @@ class _BrowserHandler(BaseHTTPRequestHandler):
         ):
             self._text(HTTPStatus.FORBIDDEN, "Request rejected.")
             return
+        governance = self.server.connection_governance
+        if governance is not None:
+            generation = self.headers.get("X-Kronos-Maintenance-Generation")
+            if generation is None:
+                self._text(HTTPStatus.CONFLICT, "Governed maintenance launcher required.")
+                return
+            try:
+                with self.server._shutdown_lock:
+                    snapshot = self.server.application.snapshot()
+                    if (self.server._active_sponsor_work
+                        or snapshot.provider_state.value == "CONNECTING"
+                        or snapshot.analysis_state.value == "RUNNING"
+                        or self.server.application.live_monitoring_result().state.value == "TESTING"):
+                        raise ValueError("MAINTENANCE_WORK_IN_PROGRESS")
+                    if self.server._shutdown_started:
+                        raise ValueError("MAINTENANCE_ALREADY_SHUTTING_DOWN")
+                    control.maintenance_handoff(generation, governance.process.runtime_identity)
+                    self.server.application.enter_controlled_maintenance(generation)
+                    self.server._shutdown_started = True
+            except (OSError, ValueError):
+                self._text(HTTPStatus.CONFLICT, "Maintenance validation failed.")
+                return
         self.send_response(HTTPStatus.ACCEPTED)
         self._security_headers()
         body = b'{"status":"STOPPING"}'
@@ -3744,7 +3805,43 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             f"{_LOOPBACK_HOST}:{self.server.server_port}"
         )
 
+    def _audit_rejected_connection(self) -> bool:
+        governance = self.server.connection_governance
+        if governance is not None:
+            try:
+                request = governance.request(received_at=self._connection_received_at)
+                governance.result(request, "admission", "REJECTED")
+            except (OSError, ValueError):
+                self._text(HTTPStatus.SERVICE_UNAVAILABLE, "Provider connection not admitted.")
+                return False
+        return True
+
+    def _connection_action_reference(self) -> str | None:
+        try:
+            size = int(self.headers.get("Content-Length", "0"))
+            if not 0 <= size <= 256:
+                raise ValueError
+            if size == 0:
+                return None
+            fields = parse_qs(self.rfile.read(size).decode("ascii"), strict_parsing=True)
+            if set(fields) != {"action_reference"} or len(fields["action_reference"]) != 1:
+                raise ValueError
+            return fields["action_reference"][0]
+        except (UnicodeError, ValueError):
+            return None
+
     def _html(self, body: str) -> None:
+        governance = self.server.connection_governance
+        if governance is not None:
+            for surface in ("HEADER", "SETTINGS"):
+                marker = f'data-provider-control="{surface}"'
+                body = body.replace(marker + ">", marker + '><input type="hidden" name="action_reference" value="' + governance.action_reference(surface) + '">')
+            if governance.maintenance_active:
+                banner = ('<aside role="status"><p>Controlled maintenance: Provider disconnected. '
+                    'End maintenance before explicitly connecting Provider.</p><form method="post" '
+                    'action="/control/maintenance/exit"><input type="hidden" name="action_reference" value="'
+                    + governance.action_reference("MAINTENANCE_EXIT") + '"><button type="submit">END MAINTENANCE</button></form></aside>')
+                body = re.sub(r"<body\b[^>]*>", lambda match: match.group(0) + banner, body, count=1)
         self._respond(HTTPStatus.OK, body.encode("utf-8"), "text/html; charset=utf-8")
 
     def _png_asset(self, path: Path) -> None:

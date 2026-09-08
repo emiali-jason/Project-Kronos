@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from kronos.common.maintenance import expected_transport_close
+
 from collections import defaultdict
 from threading import RLock
 from typing import Callable
@@ -23,6 +25,7 @@ class SharedSwingMonitoringHub:
         self._session = None
         self._registrations: dict[int, _SharedRegistration] = {}
         self._by_instrument: dict[InstrumentRecord, set[int]] = defaultdict(set)
+        self.maintenance_governance = None
         self._connection_listener: Callable[[MonitoringConnectionState], None] | None = None
         self._connection_state: MonitoringConnectionState | None = None
         self._latest_ticks: dict[InstrumentRecord, ProviderMarketTick] = {}
@@ -36,6 +39,8 @@ class SharedSwingMonitoringHub:
             self._connection_listener = listener
 
     def open(self, capability: object, consumer: object) -> "_SharedRegistration":
+        if self.maintenance_governance is not None:
+            self.maintenance_governance.require_operations()
         if getattr(capability, "active", False) is not True:
             raise ValueError("SHARED_MONITORING_CAPABILITY_UNAVAILABLE")
         if not all(callable(getattr(consumer, name, None)) for name in (
@@ -161,13 +166,18 @@ class SharedSwingMonitoringHub:
                 self._connection_state = MonitoringConnectionState.DISCONNECTED
                 self._latest_ticks.clear()
             registration._connected = False
+        if self.maintenance_governance is not None and self.maintenance_governance.shutting_down:
+            registration._consumer.on_connection_state(MonitoringConnectionState.DISCONNECTED)
         if session is not None:
             if removals:
                 session.unsubscribe(tuple(removals))
             if last:
-                session.disconnect()
+                with expected_transport_close(self.maintenance_governance):
+                    session.disconnect()
 
     def on_market_tick(self, tick: ProviderMarketTick) -> None:
+        if self.maintenance_governance is not None and self.maintenance_governance.maintenance_active:
+            return
         with self._lock:
             self._latest_ticks[tick.instrument] = tick
             consumers = tuple(
