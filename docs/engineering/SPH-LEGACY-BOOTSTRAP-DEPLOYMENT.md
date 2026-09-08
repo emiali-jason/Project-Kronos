@@ -44,3 +44,12 @@ Stop after guarded replacement proof. END MAINTENANCE is a separate explicit act
 Before shutdown, failed preparation leaves the old runtime untouched. After shutdown, failed/expired startup remains stopped; no automatic retry. The permanent reservation/consumed marker is not purgeable operational research evidence. Retain it to render this deployment's bootstrap path unusable. Subsequent normal restarts must use SPH-003, with its own process-owned handoff and controlled-notification semantics. Removing the one-time code later requires a separate source review; do not remove the marker while it remains shipped.
 
 Qualification must include focused migration/package cases, existing SPH/Provider/Browser/Swing/UX10/launcher tests, WO-06H/runtime/Intraday preservation, complete active repository suite, syntax, strict C build, signing, changed-scope secret scan and baseline evidence hashes. Engineering reports record actual counts and artifacts rather than declaring runtime acceptance.
+
+
+## HTTP wrapper correction qualification
+
+Status: Sponsor-authorized bounded correction candidate; publication and migration retry remain separately gated.
+
+The coordinator uses the explicit `http_client` stdlib alias so its `http()` helper cannot shadow the transport module. The five-second timeout, fixed loopback endpoint, response/status limits and bounded error remain unchanged. Qualification exercises the actual wrapper with real HTTP/socket I/O against an ephemeral fake server; only the connection destination is redirected by the test. It rejects production port 8947 and external connections, and covers successful GET/POST, wrong status, redirects, malformed HTTP/JSON, oversized bodies, connection refusal, timeout and connection closure. The success test reproduces the published name-collision failure before the correction.
+
+This Python-only correction changes no launcher build input or signed bundle byte. Retain the separately qualified archive, signed executable and bundle identities; do not rebuild, install, create a bootstrap context or retry migration during correction qualification.

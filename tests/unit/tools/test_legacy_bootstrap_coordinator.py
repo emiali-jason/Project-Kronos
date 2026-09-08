@@ -1,4 +1,8 @@
 from dataclasses import replace
+import http.client as http_client
+from http.server import BaseHTTPRequestHandler, HTTPServer
+import socket
+from threading import Thread
 import os
 from pathlib import Path
 
@@ -121,3 +125,104 @@ def test_exact_listener_address_required_even_when_pid_matches(address):
 def test_exact_listener_address_and_duplicate_ownership_retained():
     assert tool.listener_owners('p39393\nf8\nn127.0.0.1:8947\n')==(39393,)
     assert tool.listener_owners('p39393\nn127.0.0.1:8947\np39394\nn127.0.0.1:8947\n')==(39393,39394)
+
+
+@pytest.fixture
+def local_http_wrapper(monkeypatch):
+    """Redirect only the wrapper's fixed endpoint; use real stdlib HTTP/socket I/O."""
+    requests, connections, destinations = [], [], []
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            requests.append((self.command, self.path))
+            if self.path == '/bad-http':
+                self.wfile.write(b'not-an-http-response\r\n\r\n')
+                return
+            code, body = {
+                '/status': (200, b'{"service":"ISOLATED_FAKE"}'),
+                '/wrong-status': (503, b'{"secret":"must-not-escape"}'),
+                '/redirect': (302, b'{}'),
+                '/bad-json': (200, b'not-json: must-not-escape'),
+                '/oversized': (200, b' ' * 2_000_001),
+            }[self.path]
+            self.send_response(code)
+            self.send_header('Content-Length', str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def do_POST(self):
+            requests.append((self.command, self.path))
+            self.send_response(202)
+            self.end_headers()
+            self.wfile.write(b'{"status":"ISOLATED_ACCEPTED"}')
+
+        def log_message(self, *args):
+            pass
+
+    server = HTTPServer(('127.0.0.1', 0), Handler)
+    assert server.server_port != 8947
+    target = ('127.0.0.1', server.server_port)
+    real_connect = socket.create_connection
+    real_connection = http_client.HTTPConnection
+
+    def only_isolated_socket(address, *args, **kwargs):
+        assert address == target  # Reject production port and all external hosts.
+        destinations.append(address)
+        return real_connect(address, *args, **kwargs)
+
+    def redirected_connection(host, port, *, timeout):
+        assert (host, port, timeout) == ('127.0.0.1', 8947, 5)
+        connection = real_connection(*target, timeout=timeout)
+        connections.append(connection)
+        return connection
+
+    monkeypatch.setattr(socket, 'create_connection', only_isolated_socket)
+    monkeypatch.setattr(http_client, 'HTTPConnection', redirected_connection)
+    thread = Thread(target=server.serve_forever, kwargs={'poll_interval': 0.01}, daemon=True)
+    thread.start()
+    try:
+        yield requests, connections, destinations
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+        assert not thread.is_alive()
+        assert all(c.sock is None for c in connections)
+
+
+@pytest.mark.parametrize('method,route,expected', [
+    ('GET', '/status', {'service': 'ISOLATED_FAKE'}),
+    ('POST', '/isolated-control', {'status': 'ISOLATED_ACCEPTED'}),
+])
+def test_real_http_wrapper_success(local_http_wrapper, method, route, expected):
+    requests, connections, destinations = local_http_wrapper
+    assert tool.http(method, route) == expected
+    assert requests == [(method, route)]
+    assert len(connections) == len(destinations) == 1
+    assert connections[0].timeout == 5
+
+
+@pytest.mark.parametrize('route', [
+    '/wrong-status', '/redirect', '/bad-json', '/bad-http', '/oversized',
+])
+def test_real_http_wrapper_rejects_invalid_responses(local_http_wrapper, route):
+    with pytest.raises(BootstrapError, match='^BOOTSTRAP_HTTP_REJECTED$'):
+        tool.http('GET', route)
+    assert local_http_wrapper[0] == [('GET', route)]  # No redirect or retry.
+
+
+@pytest.mark.parametrize('failure', [ConnectionRefusedError, TimeoutError])
+def test_real_http_wrapper_connection_failure_and_timeout(local_http_wrapper, monkeypatch, failure):
+    destinations = []
+
+    def fail_connect(address, timeout, *args, **kwargs):
+        assert address[0] == '127.0.0.1' and address[1] != 8947
+        assert timeout == 5
+        destinations.append(address)
+        raise failure('must-not-escape')
+
+    monkeypatch.setattr(socket, 'create_connection', fail_connect)
+    with pytest.raises(BootstrapError, match='^BOOTSTRAP_HTTP_REJECTED$'):
+        tool.http('GET', '/status')
+    assert len(destinations) == 1
+    assert local_http_wrapper[0] == []

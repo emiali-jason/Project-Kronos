@@ -9,7 +9,7 @@ import argparse
 from dataclasses import replace
 from datetime import datetime, UTC
 from hashlib import sha256
-import http.client
+import http.client as http_client
 import json
 import os
 from pathlib import Path
@@ -31,7 +31,7 @@ MASTER = '/control/provider-instrument-master/status'
 def http(method, route, headers=None):
     # Fixed loopback endpoint, no redirects, no proxies, no arbitrary route input
     # from the plan. Never serialize/log private shutdown headers or HTTP errors.
-    connection = http.client.HTTPConnection('127.0.0.1', 8947, timeout=5)
+    connection = http_client.HTTPConnection('127.0.0.1', 8947, timeout=5)
     try:
         connection.request(method, route, headers=headers or {})
         response = connection.getresponse()
@@ -39,7 +39,7 @@ def http(method, route, headers=None):
         if len(data) > 2_000_000 or response.status != (202 if method == 'POST' else 200):
             raise BootstrapError('BOOTSTRAP_HTTP_REJECTED')
         return json.loads(data)
-    except (OSError, ValueError, http.client.HTTPException):
+    except (OSError, ValueError, http_client.HTTPException):
         raise BootstrapError('BOOTSTRAP_HTTP_REJECTED') from None
     finally:
         connection.close()
