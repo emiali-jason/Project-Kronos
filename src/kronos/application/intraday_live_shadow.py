@@ -34,7 +34,7 @@ REQUIRED={'WO_05A_TRUSTED_TIME_ADMISSION','WO_05B_OPERATION_ACCOUNTING',
 class IntradayLiveShadowService:
     def __init__(self,*,store:ShadowStore,clock,mcx_history_store=None,probables_store=None):
         self.store=store;self.clock=clock;self._mcx_history_store=mcx_history_store;self._probables_store=probables_store;self._manifest=None;self._accepted=None
-        self._lock=RLock();self._failure=None;self._last=None
+        self._lock=RLock();self._failure=None;self._last=None;self._restored_acceptance=None;self._restoration_failure=None
         self._summary=dict(cohort_a=0,cohort_b=0,expected_a=0,expected_b=0,missing_rows=0,
                            assessment_available=0,eod_available=0,classification_failures=0)
         self._window=None
@@ -50,7 +50,7 @@ class IntradayLiveShadowService:
         if type(manifest) is not RuntimeManifest:raise ShadowError('SHADOW_RUNTIME_INVALID')
         replace(manifest);replace(manifest.startup)
         if self._manifest is not None and self._manifest!=manifest:raise ShadowError('SHADOW_RUNTIME_IMMUTABLE')
-        self._manifest=manifest
+        self._manifest=manifest;self._restore_acceptance()
 
     def accept_runtime(self,*,expected_revision,request_identity):
         """Explicit future Sponsor acceptance only. No capture on acceptance/startup."""
@@ -296,9 +296,9 @@ class IntradayLiveShadowService:
         if obs:self._last=max((a.body['captured_at'] for a in obs),key=instant)
 
     def status(self):
-        return dict(enabled=self._active(self.clock()),runtime_accepted=self._accepted is not None,
+        return dict(enabled=self._active(self.clock()),runtime_accepted=self._accepted is not None,acceptance_disposition=('EXISTING_ACCEPTANCE_RESTORED' if self._restored_acceptance else 'NEW_ACCEPTANCE_GRANTED') if self._accepted else 'NOT_ACCEPTED',acceptance_identity=self._restored_acceptance or (key('acceptance',self._window.key,self._accepted) if self._accepted else None),
             window=None if self._window is None else dict(identity=self._window.key,start=self._window.body['start'],end=self._window.body['end']),
-            schema=SCHEMA,runtime_proof=None if self._manifest is None else self._runtime_proof(),counts=dict(self._summary),last_capture=self._last,failure=self._failure,
+            schema=SCHEMA,runtime_proof=None if self._manifest is None else self._runtime_proof(),counts=dict(self._summary),last_capture=self._last,failure=self._failure or (self._restoration_failure if self._accepted is None else None),
             eod_scheduling_authority='EXPLICIT_RETAINED_EVIDENCE_ONLY',production_authority='NONE')
 
     def monthly_ledger(self,month):
@@ -328,3 +328,90 @@ class IntradayLiveShadowService:
             subject_session_groups=len({r['group'] for r in rows}),predictive_value=NE,final_excel=False,
             visible_columns=['security','cohort','phase','direction','assessment_price','assessment_time','assessment_state','eod_price','eod_time','directional_move_pct','outcome','features','feature_availability'],
             retention='TEMPORARY_CURRENT_MONTH_PLUS_5_DAYS',purge='NOT_IMPLEMENTED')
+
+
+    def _restore_acceptance(self):
+        """Bind retained authority to this process, without creating any artifact.
+
+        Kept outside the frozen research functions: compatible process/revision
+        changes must not change the accepted calculation capability identity.
+        """
+        with self._lock:
+            if self._accepted is not None:
+                return
+            try:
+                if self._failure is not None:
+                    return
+                windows = self.store.all('window')
+                acceptances = self.store.all('acceptance')
+                if not windows and not acceptances:
+                    return  # Fresh installation has no authority to restore.
+                if len(windows) != 1 or len(acceptances) != 1:
+                    raise ShadowError('SHADOW_RESTORATION_AUTHORITY_MISSING_OR_AMBIGUOUS')
+                window, acceptance = windows[0], acceptances[0]
+                if self._window is None or window.payload != self._window.payload:
+                    raise ShadowError('SHADOW_RESTORATION_WINDOW_CHANGED')
+                w, a = window.body, acceptance.body
+                if (window.key != key('window', 'INITIAL_ONE_MONTH')
+                        or a['window'] != window.key
+                        or acceptance.key != key('acceptance', window.key, a['runtime'])
+                        or w['definitions'] != DEFINITIONS):
+                    raise ShadowError('SHADOW_RESTORATION_BINDING_INVALID')
+                initial = self._validate_acceptance_proof(w['runtime_proof'], w['runtime'])
+                accepted = self._validate_acceptance_proof(a['runtime_proof'], a['runtime'])
+                m = self._manifest
+                replace(m); replace(m.startup)
+                if (m.startup.process_id != os.getpid()
+                        or m.startup.source_state != 'CLEAN_COMMIT'
+                        or not REQUIRED.issubset({c.identity for c in m.capabilities})):
+                    raise ShadowError('SHADOW_RESTORATION_RUNTIME_INVALID')
+                current = self._validate_acceptance_proof(self._runtime_proof(), m.manifest_identity)
+                # Revision/PID/manifest legitimately change on restart. Exact
+                # configuration and composed governed capabilities may not.
+                for proof in (accepted, current):
+                    if (proof['configuration'] != initial['configuration']
+                            or proof['capabilities'] != initial['capabilities']):
+                        raise ShadowError('SHADOW_RESTORATION_RUNTIME_INCOMPATIBLE')
+                if (a['runtime'] == w['runtime'] and a['runtime_proof'] != w['runtime_proof']):
+                    raise ShadowError('SHADOW_RESTORATION_BINDING_INVALID')
+                start, end, at, now = instant(w['start']), instant(w['end']), instant(a['accepted_at']), self.clock()
+                if (not re.fullmatch(''.join(('[A-Za-z0-9_-]', '{1,128}')), w['request'])
+                        or not re.fullmatch(''.join(('[A-Za-z0-9_-]', '{1,128}')), a['request'])
+                        or instant(w['runtime_proof']['startup']) > start
+                        or instant(a['runtime_proof']['startup']) > at
+                        or not start <= at < end
+                        or instant(current['startup']) > now
+                        or at > now):
+                    raise ShadowError('SHADOW_RESTORATION_TIME_INVALID')
+                if now < start:
+                    raise ShadowError('SHADOW_RESTORATION_WINDOW_NOT_STARTED')
+                if now >= end:
+                    raise ShadowError('SHADOW_RESTORATION_WINDOW_EXPIRED')
+                self._restored_acceptance = acceptance.key
+                self._accepted = m.manifest_identity
+                self._restoration_failure = None
+            except ShadowError as error:
+                self._restoration_failure = str(error)
+            except (OSError, ValueError, TypeError, KeyError, AttributeError):
+                self._restoration_failure = 'SHADOW_RESTORATION_AUTHORITY_INVALID'
+
+    @staticmethod
+    def _validate_acceptance_proof(proof, runtime):
+        """Validate the existing persisted proof shape and composed declarations."""
+        from kronos.intraday.runtime_identity import LoadedCapability
+        if (type(proof) is not dict
+                or set(proof) != {'manifest','pid','revision','source_state','startup','configuration','capabilities'}
+                or proof['manifest'] != runtime
+                or re.fullmatch(r'INTRADAY-RUNTIME-[a-f0-9]{64}', runtime) is None
+                or type(proof['pid']) is not int or proof['pid'] < 1
+                or proof['source_state'] != 'CLEAN_COMMIT'
+                or re.fullmatch(''.join(('[a-f0-9]', '{40}')), proof['revision']) is None
+                or re.fullmatch(r'INTRADAY-LAUNCHER-CONFIG-[a-f0-9]{64}', proof['configuration']) is None
+                or type(proof['capabilities']) is not list):
+            raise ShadowError('SHADOW_RESTORATION_PROOF_INVALID')
+        instant(proof['startup'])
+        declarations = [LoadedCapability(**c) for c in proof['capabilities']]
+        capabilities = {c.identity: c for c in declarations}
+        if len(capabilities) != len(declarations) or not REQUIRED.issubset(capabilities):
+            raise ShadowError('SHADOW_RESTORATION_CAPABILITY_INVALID')
+        return dict(proof, capabilities=capabilities)

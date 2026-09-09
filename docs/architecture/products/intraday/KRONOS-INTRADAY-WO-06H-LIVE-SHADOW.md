@@ -143,3 +143,72 @@ All qualification uses deterministic fixtures, fake Provider responses, isolated
 The complete engineering evidence pack records exact source/test hashes, focused/affected/full repository outcomes, syntax, diff checks, changed-scope secret scan, baseline production preservation and any concurrent unclassified Swing additions. No generated production evidence is rewritten or removed. Concurrent additions are preserved and are not attributed to WO-06H without evidence.
 
 Sequence: Sponsor/EA engineering review → separately authorized exact commit → separately authorized publication → separately authorized governed restart/activation acceptance → separately authorized real operation if required → actual WO-06 closure. WO-07 onward, final Statistics/Excel, purge and shared/Swing hardening do not start automatically.
+
+## Accepted-authority restoration correction — 9 September 2026
+
+Status: Sponsor-authorized engineering correction; publication and runtime
+acceptance remain separately gated. This section supersedes the earlier
+replacement-process reacceptance requirement for an already-valid, unambiguous
+active acceptance/window pair. It does not grant initial acceptance.
+
+Root cause: `IntradayLiveShadowService.__init__` read `ShadowStore.all('window')`
+and reconciled counts but initialized `_accepted=None`. The composed
+`IntradayProbablesV2OperationalControl` passed its frozen manifest into
+`bind_runtime`, which only assigned the manifest. Although `ShadowStore` could
+read immutable acceptance artifacts, no startup caller read/bound them.
+
+The same binding seam now performs read-only restoration. It uses the existing
+`ShadowStore.all`, `Artifact` canonical/schema/integrity and body validation,
+`key`, `instant`, `RuntimeManifest`/`StartupEvidence` validation and
+`LoadedCapability` declarations. Exactly one window and one acceptance must
+exist. Their logical keys, runtime-proof identities, research-only authority,
+request identities, original interval, methodology 2.2.0, frozen research inputs
+and feature definitions must agree. The accepted timestamp must belong to the
+window and follow its process startup. The current process must own a valid
+CLEAN_COMMIT manifest and must not claim a future startup boundary.
+
+A new process legitimately has a different PID, startup, manifest and possibly
+published revision. These values are never copied from the old process. All
+retained/current composed capability declarations and non-secret launcher
+configuration must match exactly. Missing or changed capabilities, configuration,
+malformed source proofs, foreign bindings or tampered identities fail closed.
+The persisted proof contains a manifest identity plus its original bounded
+projection, not the full startup manifest; restoration validates the retained
+projection and existing artifact integrity without inventing unavailable proof.
+
+No acceptance-creation method is called. The restored acceptance ID is retained
+in process-local state while the current manifest identifies the running
+process. Read-only status distinguishes `NEW_ACCEPTANCE_GRANTED`,
+`EXISTING_ACCEPTANCE_RESTORED` and `NOT_ACCEPTED`, and reports the original
+`acceptance_identity`. The persisted schema remains 1.0.0. Initial explicit
+acceptance remains a separate action. Repeated binding/status reads do not
+write, duplicate, rewrite, migrate or currentize any evidence.
+
+Missing, malformed, tampered, conflicting, duplicate or schema-incompatible
+authority is explicit and inactive. No-authority fresh installation remains
+inactive. Before the start and at/after the end, restoration cannot activate
+collection or extend the month. A failure during existing count reconciliation
+also prevents restored authority. Expiry of an already-running accepted process
+still disables collection through the existing half-open interval check.
+
+The correction preserves the existing frozen research function code, line
+metadata and marshaled capability identity. The restoration helper is appended
+outside those functions. Its request/revision patterns are assembled separately
+to avoid compiler constant pooling changing the original marshaled code digest.
+Qualification compares original function code/metadata and, independently, the
+actual composed capability against a read-only copy of the retained acceptance.
+This is not a relaxed capability comparison or a new implementation allowlist.
+
+The known backend gap, 9 September 2026 07:56:03.186–09:30:40.076267 IST,
+remains missing observations; disabled collection after that start remains
+unobserved too. No Cohort A/B, Assessment or EOD backfill, later-price substitution
+or synthetic operation is created. Existing counts and unfinished-operation
+facts restore truthfully. Future observation still requires its separate lawful
+operation authority; acceptance restoration supplies no Provider authentication,
+WebSocket restoration, historical acquisition, Refresh, Discovery, Review,
+OpenAI or broker authority.
+
+Engineering uses the published kernel-isolated test runner and temporary stores.
+The two retained Swing `PROVIDER_CAPABILITY_NOT_ACTIVE` monitoring records are
+preserved. This correction changes no Swing implementation, monitoring policy,
+WO-07B/07B1 workflow, production Narrow CPR, methodology, or trading authority.

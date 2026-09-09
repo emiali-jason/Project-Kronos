@@ -132,7 +132,7 @@ def test_month_starts_only_at_explicit_acceptance_and_not_restart(tmp_path):
     s,clock,m=service(tmp_path)
     before={p:p.read_bytes() for p in tmp_path.rglob('*.json')}
     restored,c2,_=service(tmp_path,now=NOW+timedelta(days=1),accept=False)
-    assert not restored.status()['enabled'] and restored.status()['window']==s.status()['window']
+    assert restored.status()['enabled'] and restored.status()['window']==s.status()['window']
     assert before=={p:p.read_bytes() for p in tmp_path.rglob('*.json')}
     restored.accept_runtime(expected_revision='a'*40,request_identity='ACCEPT_NEW_PROCESS')
     assert restored.status()['window']==s.status()['window']
@@ -219,7 +219,7 @@ def test_restoration_and_monthly_completeness(tmp_path,cohort):
     restored,_,_=service(tmp_path,accept=False)
     assert restored.status()['counts']['assessment_available']==0
     assert restored.status()['counts']['eod_available']==0
-    assert not restored.status()['enabled']
+    assert restored.status()['enabled']
     assert len(restored.monthly_ledger('2026-09')['rows'])==1
     assert before=={p:p.read_bytes() for p in tmp_path.rglob('*.json')}
 
