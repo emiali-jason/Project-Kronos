@@ -42,6 +42,10 @@ DEFAULT_INTRADAY_REVIEW_V2_ROOT = (
 )
 
 
+_WORKSPACE_LOCKS: dict[Path, object] = {}
+_WORKSPACE_LOCKS_LOCK = RLock()
+
+
 class IntradayReviewV2Store:
     """Explicit-identity V2 store; it never reads or writes review-v1."""
 
@@ -49,7 +53,13 @@ class IntradayReviewV2Store:
         if not isinstance(root, Path) or not root.is_absolute() or root == Path("/"):
             raise ValueError("INTRADAY_REVIEW_V2_STORE_ROOT_INVALID")
         self._root = root
-        self._lock = RLock()
+        with _WORKSPACE_LOCKS_LOCK:
+            self._lock = _WORKSPACE_LOCKS.setdefault(root.resolve(), RLock())
+
+    @property
+    def workspace_lock(self):
+        """Process-owned serialization shared by applications for this store."""
+        return self._lock
 
     @property
     def root(self) -> Path:

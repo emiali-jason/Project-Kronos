@@ -10,7 +10,7 @@ import re
 from threading import Lock
 from typing import Callable
 
-from kronos.application.intraday_review_v2 import IntradayReviewV2Application
+from kronos.application.intraday_review_v2 import IntradayReviewV2Application, IntradayReviewV2Snapshot
 from kronos.intraday.review import ReviewError
 from kronos.intraday.review_v2_operation import (
     REVIEW_V2_CREATE_REQUEST_IDENTITY,
@@ -82,11 +82,15 @@ class IntradayReviewV2OperationalControl:
         with self._state_lock:
             active = self._active_operation_identity
         latest = self._store.latest()
-        snapshot = self._application.snapshot()
         try:
+            snapshot = self._application.snapshot()
             currentness = self._application.currentness()
+            if (not currentness.is_review_current
+                or snapshot.probables_run_identity != currentness.current_probables_run_identity):
+                snapshot = IntradayReviewV2Snapshot(None, None, ())
             currentness_failure = None
         except ReviewError as error:
+            snapshot = IntradayReviewV2Snapshot(None, None, ())
             currentness = None
             currentness_failure = error.failure.value
         state = (
@@ -116,6 +120,10 @@ class IntradayReviewV2OperationalControl:
                 "INTEGRITY_INVALID" if currentness is None else currentness.state
             ),
             "currentness_failure": currentness_failure,
+            "workspace_state": ("INTEGRITY_INVALID" if currentness is None else
+                "CURRENT_REVIEW_LOADED" if currentness.is_review_current else
+                "NO_REVIEW_LOADED" if currentness.current_review_probables_run_identity is None else
+                "REVIEW_NON_CURRENT"),
             "current_probables_run_identity": (
                 None if currentness is None
                 else currentness.current_probables_run_identity

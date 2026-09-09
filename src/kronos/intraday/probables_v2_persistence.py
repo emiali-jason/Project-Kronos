@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from dataclasses import dataclass, fields, is_dataclass
 from datetime import date, datetime
 from decimal import Decimal
@@ -188,6 +189,12 @@ def create_current_probables_v2_pointer(run: ProbablesRunV2) -> CurrentProbables
     )
 
 
+# The governed runtime has one writer process. Stores composed for the same
+# producer root share its publication lock, including independently restored stores.
+_PRODUCER_LOCKS: dict[Path, object] = {}
+_PRODUCER_LOCKS_LOCK = RLock()
+
+
 class ProbablesV2Store:
     """Append-only V2 artifacts plus one integrity-bound explicit pointer."""
 
@@ -195,7 +202,8 @@ class ProbablesV2Store:
         if not isinstance(root, Path) or not root.is_absolute() or root == Path("/"):
             raise ValueError("INTRADAY_PROBABLES_V2_STORE_ROOT_INVALID")
         self._root = root
-        self._lock = RLock()
+        with _PRODUCER_LOCKS_LOCK:
+            self._lock = _PRODUCER_LOCKS.setdefault(root.resolve(), RLock())
 
     @property
     def root(self) -> Path:
@@ -357,6 +365,16 @@ class ProbablesV2Store:
 
     def load_run(self, identity: str) -> ProbablesRunV2:
         return self._load_typed("runs", identity, ProbablesRunV2, "run_identity")
+
+    @contextmanager
+    def current_generation_guard(self):
+        """Serialize an exact-current consumer commit with producer publication.
+
+        No pointer or evidence is created by acquiring this process-owned guard.
+        Consumers must reload/validate currentness inside the guard.
+        """
+        with self._lock:
+            yield
 
     def save_current(self, value: CurrentProbablesV2Pointer) -> Path:
         if type(value) not in (CurrentProbablesV2Pointer, AssessmentBoundProbablesV2Pointer):

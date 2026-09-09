@@ -1499,6 +1499,12 @@ def _review_v2_projection(
 ) -> str:
     if snapshot is None:
         return ""
+    if status is not None and (
+        status.get("currentness_state") != "REVIEW_CURRENT"
+        or (status.get("current_probables_run_identity") is not None
+            and status["current_probables_run_identity"] != snapshot.probables_run_identity)
+    ):
+        snapshot = IntradayReviewV2Snapshot(None, None, ())
     cards = "".join(
         _review_v2_candidate(item, index)
         for index, item in enumerate(snapshot.candidates, start=1)
@@ -1540,7 +1546,9 @@ def _review_v2_projection(
     )
     currentness_banner = (
         '<div class="intraday-review-currentness ' + banner_class + '"><strong>'
-        + escape(banner_label) + '</strong><div class="intraday-review-currentness-facts">'
+        + escape(banner_label) + '</strong><p>'
+        + escape(str((status or {}).get("workspace_state", "NO_REVIEW_LOADED")).replace("_", " "))
+        + '</p><div class="intraday-review-currentness-facts">'
         '<span>LATEST PROBABLES · '
         + escape(
             "UNAVAILABLE"
@@ -1573,8 +1581,7 @@ def _review_v2_projection(
     control = ""
     if (
         available_run is not None
-        and currentness in {"REVIEW_ABSENT", "NEW_PROBABLES_AVAILABLE"}
-        and bool(current_probables_count)
+        and currentness in {"REVIEW_ABSENT", "NEW_PROBABLES_AVAILABLE", "NO_REVIEW_CANDIDATES"}
     ):
         methodology = available_run.methodology
         control = (
@@ -1631,7 +1638,7 @@ def _review_v2_projection(
         '<p>Review Cycle → Chart Required. Review Packs and Question Packs begin only after real chart intake.</p>'
         '</div><span class="intraday-review-toolbar-note">Cycles · '
         + str(len(snapshot.candidates)) + '</span></div>' + currentness_banner + focus_notice + control
-        + phase_b + import_feedback + '<div class="intraday-review-v2-grid">'
+        + (phase_b if currentness == "REVIEW_CURRENT" else "") + import_feedback + '<div class="intraday-review-v2-grid">'
         + empty + '</div></section>'
     )
 
@@ -1650,6 +1657,7 @@ def _review_v2_inbox_result(
     return (
         '<section class="intraday-v2-inbox-result" role="status"><h2>'
         'ANSWER INBOX · ' + escape(result.mode) + '</h2><p>'
+        + escape(result.state.replace('_', ' ')) + ' · '
         'CURRENT REVIEW: ' + str(result.current_review_count)
         + ' · EXPECTED: ' + str(result.expected_count)
         + ' · FOUND: ' + str(result.found_count)

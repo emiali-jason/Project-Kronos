@@ -262,12 +262,14 @@ class IntradayBrowserRoutes:
         except ReviewError:
             return None
 
-    def _review_v2_snapshot(self):  # type: ignore[no-untyped-def]
-        return (
-            None
-            if self._review_v2_control is None
-            else self._review_v2_control.application.snapshot()
-        )
+    def _review_v2_snapshot(self):
+        if self._review_v2_control is None:
+            return None
+        try:
+            return self._review_v2_control.application.snapshot()
+        except ReviewError:
+            from kronos.application.intraday_review_v2 import IntradayReviewV2Snapshot
+            return IntradayReviewV2Snapshot(None, None, ())
 
     def _review_v2_status(self):  # type: ignore[no-untyped-def]
         if self._review_v2_control is None:

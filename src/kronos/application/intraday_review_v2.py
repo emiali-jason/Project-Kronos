@@ -7,7 +7,6 @@ from datetime import datetime, timezone
 from hashlib import sha256
 import json
 from pathlib import Path
-from threading import RLock
 from typing import Callable
 
 from kronos.intraday.probables import ProbableState
@@ -170,6 +169,8 @@ class IntradayReviewV2BatchImportResult:
     state: str
     imported_count: int
     members: tuple[IntradayReviewV2ImportMemberResult, ...]
+    already_imported_count: int = 0
+    rejected: tuple[IntradayReviewV2InboxMemberResult, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -191,6 +192,14 @@ class IntradayReviewV2InboxImportResult:
     not_found_count: int
     rejected_count: int
     members: tuple[IntradayReviewV2InboxMemberResult, ...]
+    producer_advanced: bool = False
+
+    @property
+    def state(self) -> str:
+        advanced = self.producer_advanced or any(item.reason == ReviewFailure.NOT_CURRENT.value for item in self.members)
+        if advanced:
+            return "PARTIAL_PRODUCER_ADVANCED" if self.imported_count else "REVIEW_NON_CURRENT"
+        return "COMPLETE"
 
 
 @dataclass(frozen=True, slots=True)
@@ -228,7 +237,7 @@ class IntradayReviewV2Application:
         self._transport = transport or IntradayReviewV2Transport()
         self._visual_identity_resolver = visual_identity_resolver
         self._clock = clock
-        self._lock = RLock()
+        self._lock = review_store.workspace_lock
         self._chart_input = IntradayChartInputGate(review_store, probables_store, visual_identity_resolver, clock=lambda: self._clock())
         self._paired = IntradayReviewV2PairedAdapter(review_store, self._transport, chart_input=self._chart_input)
 
@@ -351,6 +360,10 @@ class IntradayReviewV2Application:
     def currentness(self) -> IntradayReviewV2Currentness:
         """Compare exact governed identities; timestamps have no authority."""
 
+        with self._lock, self._probables.current_generation_guard():
+            return self._currentness_locked()
+
+    def _currentness_locked(self) -> IntradayReviewV2Currentness:
         probables_pointer, run = self._load_current_probables()
         review_pointer = self._review.load_current()
         review_cycles = self._cycles_for_pointer(review_pointer)
@@ -420,6 +433,24 @@ class IntradayReviewV2Application:
             is_review_current=is_current,
         )
 
+    def workspace_state(self) -> str:
+        currentness = self.currentness()
+        if currentness.is_review_current:
+            return "CURRENT_REVIEW_LOADED"
+        return ("NO_REVIEW_LOADED" if currentness.current_review_probables_run_identity is None
+                else "REVIEW_NON_CURRENT")
+
+    def _require_current_workspace(self, run_identity=None, cycle_identity=None):
+        currentness = self.currentness()
+        pointer = self._review.load_current()
+        if (not currentness.is_review_current or pointer is None
+            or pointer.probables_run_identity != currentness.current_probables_run_identity
+            or (run_identity is not None and pointer.probables_run_identity != run_identity)
+            or (cycle_identity is not None and cycle_identity not in
+                {item.cycle_identity for item in pointer.cycles})):
+            raise ReviewError(ReviewFailure.NOT_CURRENT)
+        return pointer
+
     def currentize_eligible_cycles_for_run_identity(
         self,
         *,
@@ -451,8 +482,6 @@ class IntradayReviewV2Application:
             )
             if actual != expected:
                 raise ReviewError(ReviewFailure.NOT_CURRENT)
-            if not _eligible_results(run):
-                raise ReviewError(ReviewFailure.NOT_ELIGIBLE)
             review_pointer = self._review.load_current()
             if (
                 review_pointer is not None
@@ -461,7 +490,9 @@ class IntradayReviewV2Application:
                 cycles = self._cycles_for_pointer(review_pointer)
                 if not self._review_cycles_match_run(run, cycles):
                     raise ReviewError(ReviewFailure.INTEGRITY_INVALID)
-                return IntradayReviewV2Currentization(cycles, True)
+                with self._probables.current_generation_guard():
+                    self._require_current_workspace(run.run_identity)
+                    return IntradayReviewV2Currentization(cycles, True)
             cycles = self._retain_eligible_cycles(run)
             current_pointer, current_run = self._load_current_probables()
             if (
@@ -477,9 +508,13 @@ class IntradayReviewV2Application:
     def snapshot(self) -> IntradayReviewV2Snapshot:
         """Project persisted Phase-A facts without creating or advancing Review."""
 
-        pointer = self._review.load_current()
-        if pointer is None:
-            return IntradayReviewV2Snapshot(None, None, ())
+        with self._lock, self._probables.current_generation_guard():
+            if not self.currentness().is_review_current:
+                return IntradayReviewV2Snapshot(None, None, ())
+            return self._loaded_snapshot()
+
+    def _loaded_snapshot(self) -> IntradayReviewV2Snapshot:
+        pointer = self._require_current_workspace()
         cycles = tuple(
             sorted(
                 (self._review.load_cycle(item.cycle_identity) for item in pointer.cycles),
@@ -714,28 +749,12 @@ class IntradayReviewV2Application:
 
         with self._lock:
             prepared = self._prepare_combined_answer(payload)
-            self._review.retain_batch_answer_transport(
-                prepared.validation.review_batch_identity, payload
-            )
+            prepared = self._persist_prepared_answer(prepared, payload)
             members = []
-            for answer, evidence in zip(
-                prepared.answers, prepared.evidence, strict=True
-            ):
-                self._review.retain_answer_transport(
-                    evidence.review_pack_identity,
-                    json.dumps(
-                        _answer_document(answer),
-                        sort_keys=True,
-                        separators=(",", ":"),
-                    ).encode(),
-                )
-                self._review.retain_visual_evidence(evidence)
-                self._review.save_visual_evidence_pointer(
-                    create_visual_evidence_pointer_v2(evidence)
-                )
+            for evidence, already in zip(prepared.evidence, prepared.already_imported, strict=True):
                 members.append(IntradayReviewV2ImportMemberResult(
                     canonical_subject_identity=evidence.expected_canonical_subject_identity,
-                    state="IMPORTED",
+                    state="ALREADY_IMPORTED" if already else "IMPORTED",
                     answer_pack_identity=evidence.answer_pack_identity,
                     visual_evidence_identity=evidence.visual_evidence_identity,
                     observed_visible_subject_identity=evidence.observed_visible_subject_identity,
@@ -763,20 +782,27 @@ class IntradayReviewV2Application:
                 operation_identity=operation_identity,
                 review_batch_identity=prepared.validation.review_batch_identity,
                 source_sha256=prepared.validation.source_sha256,
-                state="IMPORTED",
-                imported_count=len(members),
+                state=("ALREADY_IMPORTED" if prepared.evidence and all(prepared.already_imported)
+                       else "PARTIAL_PRODUCER_ADVANCED" if prepared.rejected or not self.currentness().is_review_current
+                       else "IMPORTED"),
+                imported_count=sum(not value for value in prepared.already_imported),
+                already_imported_count=sum(prepared.already_imported),
+                rejected=prepared.rejected,
                 members=tuple(members),
             )
 
     def _current_cycle_chart(self, cycle_identity):
-        pointer = self._review.load_current()
-        if pointer is None or cycle_identity not in {item.cycle_identity for item in pointer.cycles}:
-            raise ReviewError(ReviewFailure.NOT_CURRENT)
         cycle = self._review.load_cycle(cycle_identity)
         active = self._review.load_current_chart(cycle_identity)
         if active is None:
             raise ReviewError(ReviewFailure.CHART_REQUIRED)
         return cycle, self._review.load_chart(active.chart_revision_identity)
+
+    def _import_paired_expected(self, cycle, chart):
+        with self._probables.current_generation_guard():
+            return self._paired.import_expected(cycle, chart, self._clock(),
+                require_current=lambda: self._require_current_workspace(
+                    cycle.probables_run_identity, cycle.cycle_identity))
 
     def _include_paired_imports(self, result, cycles):
         members = {item.canonical_subject_identity: item for item in result.members}
@@ -789,7 +815,7 @@ class IntradayReviewV2Application:
             chart = self._review.load_chart(active.chart_revision_identity)
             if chart.paired_bundle_identity is None or self._paired.retained(cycle, chart) is None:
                 continue
-            paired = self._paired.import_expected(cycle, chart, self._clock())
+            paired = self._import_paired_expected(cycle, chart)
             members.update({item.canonical_subject_identity: item for item in paired.members})
         values = tuple(members.values())
         return replace(result, members=values, expected_count=len(values),
@@ -797,7 +823,8 @@ class IntradayReviewV2Application:
             imported_count=sum(x.state == "IMPORTED" for x in values),
             already_imported_count=sum(x.state == "ALREADY_IMPORTED" for x in values),
             not_found_count=sum(x.state == "NOT_FOUND" for x in values),
-            rejected_count=sum(x.state == "REJECTED" for x in values))
+            rejected_count=sum(x.state == "REJECTED" for x in values),
+            producer_advanced=not self.currentness().is_review_current)
 
     def import_expected_answer(
         self, cycle_identity: str,
@@ -807,8 +834,10 @@ class IntradayReviewV2Application:
         with self._lock:
             cycle, chart = self._current_cycle_chart(cycle_identity)
             if cycle.canonical_subject_identity.startswith("MCX-SUBJECT-"):
-                return self._paired.import_expected(cycle, chart, self._clock())
-            pack = self._current_pack(cycle_identity, require_retained=True)
+                return self._import_paired_expected(cycle, chart)
+            pack = self._load_retained_current_pack(cycle)
+            if pack is None:
+                raise ReviewError(ReviewFailure.ARTIFACT_UNAVAILABLE)
             transport = self._load_retained_transport((pack,))
             if transport is None:
                 raise ReviewError(ReviewFailure.ARTIFACT_UNAVAILABLE)
@@ -818,7 +847,7 @@ class IntradayReviewV2Application:
         """Import exact current Answers on Sponsor request; never poll the inbox."""
 
         with self._lock:
-            pointer = self._review.load_current()
+            pointer = self._require_current_workspace()
             if pointer is None:
                 raise ReviewError(ReviewFailure.NOT_CURRENT)
             cycles = tuple(
@@ -882,6 +911,7 @@ class IntradayReviewV2Application:
                 mode="INDIVIDUAL",
                 current_review_count=len(cycles),
                 members=tuple(members),
+                producer_advanced=not self.currentness().is_review_current,
                 **totals,
             ), cycles)
 
@@ -956,7 +986,7 @@ class IntradayReviewV2Application:
                 )
             prepared = self._prepare_transport_answer(transport, supplied)
             if prepared.evidence:
-                self._persist_prepared_answer(prepared, supplied)
+                prepared = self._persist_prepared_answer(prepared, supplied)
             members = tuple(
                 IntradayReviewV2InboxMemberResult(
                     evidence.expected_canonical_subject_identity,
@@ -967,7 +997,7 @@ class IntradayReviewV2Application:
                     prepared.evidence, prepared.already_imported, strict=True
                 )
             )
-            members += prepared.rejected
+            members += tuple(replace(item, expected_answer_filename=filename) for item in prepared.rejected)
             already_count = sum(prepared.already_imported)
             return IntradayReviewV2InboxImportResult(
                 mode=mode,
@@ -978,6 +1008,7 @@ class IntradayReviewV2Application:
                 already_imported_count=already_count,
                 not_found_count=0,
                 rejected_count=len(prepared.rejected),
+                producer_advanced=not self.currentness().is_review_current,
                 members=members,
             )
         except ReviewError as error:
@@ -1009,15 +1040,13 @@ class IntradayReviewV2Application:
             raise ReviewError(ReviewFailure.ANSWER_SCHEMA_INVALID)
         batch = self._review.load_batch(transport.review_batch_identity)
         answer_transport = parse_batch_answer_transport(payload)
-        pointer = self._review.load_current()
         if (
-            pointer is None
-            or pointer.probables_run_identity != batch.probables_run_identity
-            or answer_transport.review_batch_identity != batch.batch_identity
+            answer_transport.review_batch_identity != batch.batch_identity
             or answer_transport.probables_run_identity != batch.probables_run_identity
         ):
             raise ReviewError(ReviewFailure.ANSWER_IDENTITY_MISMATCH)
-        current_members = {item.cycle_identity: item for item in pointer.cycles}
+        current_members = {identity: self._review.load_cycle(identity)
+                           for identity in batch.review_cycle_identities}
         packs: list[ReviewQuestionPackV2] = []
         for cycle_identity, pack_identity, candidate_identity in zip(
             batch.review_cycle_identities,
@@ -1034,6 +1063,8 @@ class IntradayReviewV2Application:
                 or pack.probables_run_identity != batch.probables_run_identity):
                 raise ReviewError(ReviewFailure.ANSWER_IDENTITY_MISMATCH)
             packs.append(pack)
+        if create_question_batch_v2(tuple(packs)) != batch:
+            raise ReviewError(ReviewFailure.INTEGRITY_INVALID)
         documents = answer_transport.candidate_documents
         parsed = tuple(
             parse_answer_pack(json.dumps(
@@ -1059,8 +1090,6 @@ class IntradayReviewV2Application:
                 # accounting and history, never as a native acceptance fallback.
                 if pack.expected_canonical_subject_identity.startswith("MCX-SUBJECT-"):
                     raise ReviewError(ReviewFailure.CHART_INVALID)
-                if self._current_pack(pack.review_cycle_identity, require_retained=True) != pack:
-                    raise ReviewError(ReviewFailure.NOT_CURRENT)
                 existing = self._review.load_visual_evidence_for_pack(
                     pack.review_pack_identity
                 )
@@ -1069,6 +1098,9 @@ class IntradayReviewV2Application:
                         raise ReviewError(ReviewFailure.ANSWER_CONFLICT)
                     prepared.append((answer, existing, True))
                     continue
+                self._require_current_workspace(pack.probables_run_identity, pack.review_cycle_identity)
+                if self._current_pack(pack.review_cycle_identity, require_retained=True) != pack:
+                    raise ReviewError(ReviewFailure.NOT_CURRENT)
                 evidence = bind_imported_visual_evidence_v2(
                     pack,
                     answer,
@@ -1113,34 +1145,45 @@ class IntradayReviewV2Application:
 
     def _persist_prepared_answer(
         self, prepared: _PreparedV2Import, payload: bytes,
-    ) -> None:
-        self._review.retain_batch_answer_transport(
-            prepared.validation.review_batch_identity, payload
-        )
+    ) -> _PreparedV2Import:
+        accepted = []
+        rejected = list(prepared.rejected)
         for answer, evidence, already in zip(
-            prepared.answers,
-            prepared.evidence,
-            prepared.already_imported,
-            strict=True,
+            prepared.answers, prepared.evidence, prepared.already_imported, strict=True
         ):
             if already:
+                accepted.append((answer, evidence, True))
                 continue
-            pack = self._review.load_pack(evidence.review_pack_identity)
-            self._chart_input.require(
-                self._review.load_cycle(pack.review_cycle_identity),
-                self._review.load_chart(pack.chart_revision_identity),
-                observed_native=answer.observed_visible_subject_identity,
-            )
-            self._review.retain_answer_transport(
-                evidence.review_pack_identity,
-                json.dumps(
-                    _answer_document(answer), sort_keys=True, separators=(",", ":")
-                ).encode(),
-            )
-            self._review.retain_visual_evidence(evidence)
-            self._review.save_visual_evidence_pointer(
-                create_visual_evidence_pointer_v2(evidence)
-            )
+            try:
+                with self._probables.current_generation_guard():
+                    pack = self._review.load_pack(evidence.review_pack_identity)
+                    self._chart_input.require(
+                        self._review.load_cycle(pack.review_cycle_identity),
+                        self._review.load_chart(pack.chart_revision_identity),
+                        observed_native=answer.observed_visible_subject_identity,
+                    )
+                    self._require_current_workspace(pack.probables_run_identity, pack.review_cycle_identity)
+                    if self._current_pack(pack.review_cycle_identity, require_retained=True) != pack:
+                        raise ReviewError(ReviewFailure.NOT_CURRENT)
+                    self._review.retain_batch_answer_transport(
+                        prepared.validation.review_batch_identity, payload)
+                    self._review.retain_answer_transport(
+                        evidence.review_pack_identity,
+                        json.dumps(_answer_document(answer), sort_keys=True, separators=(",", ":")).encode(),
+                    )
+                    self._review.retain_visual_evidence(evidence)
+                    self._review.save_visual_evidence_pointer(create_visual_evidence_pointer_v2(evidence))
+                    accepted.append((answer, evidence, False))
+            except ReviewError as error:
+                if error.failure is not ReviewFailure.NOT_CURRENT:
+                    raise
+                rejected.append(IntradayReviewV2InboxMemberResult(
+                    evidence.expected_canonical_subject_identity, "", "REJECTED", error.failure.value))
+        # There is no batch currentization. Each accepted member is immutable;
+        # the caller reports partial completion and currentness at final return.
+        return replace(prepared, answers=tuple(x[0] for x in accepted),
+                       evidence=tuple(x[1] for x in accepted),
+                       already_imported=tuple(x[2] for x in accepted), rejected=tuple(rejected))
 
     def _current_pack(
         self, cycle_identity: str, *, require_retained: bool,
@@ -1174,29 +1217,11 @@ class IntradayReviewV2Application:
         ):
             raise ReviewError(ReviewFailure.ANSWER_SCHEMA_INVALID)
         transport_answer = parse_batch_answer_transport(payload)
-        pointer = self._review.load_current()
-        if pointer is None:
-            raise ReviewError(ReviewFailure.NOT_CURRENT)
-        cycles = tuple(
-            self._review.load_cycle(item.cycle_identity) for item in pointer.cycles
-        )
-        packs = []
-        for cycle in cycles:
-            active = self._review.load_current_chart(cycle.cycle_identity)
-            if active is None:
-                raise ReviewError(ReviewFailure.CHART_REQUIRED)
-            pack = create_question_pack_v2(
-                self._review.load_handoff(cycle.handoff_identity),
-                cycle,
-                self._review.load_chart(active.chart_revision_identity),
-            )
-            packs.append(self._review.load_pack(pack.review_pack_identity))
-        batch = self._review.load_batch(create_question_batch_v2(tuple(packs)).batch_identity)
-        if (
-            transport_answer.review_batch_identity != batch.batch_identity
-            or transport_answer.probables_run_identity != batch.probables_run_identity
-            or pointer.probables_run_identity != batch.probables_run_identity
-        ):
+        batch = self._review.load_batch(transport_answer.review_batch_identity)
+        packs = tuple(self._review.load_pack(identity) for identity in batch.review_pack_identities)
+        if create_question_batch_v2(packs) != batch:
+            raise ReviewError(ReviewFailure.INTEGRITY_INVALID)
+        if transport_answer.probables_run_identity != batch.probables_run_identity:
             raise ReviewError(ReviewFailure.ANSWER_IDENTITY_MISMATCH)
 
         documents = transport_answer.candidate_documents
@@ -1222,8 +1247,16 @@ class IntradayReviewV2Application:
             pack = pack_by_identity.get(answer.review_pack_identity)
             if pack is None:
                 raise ReviewError(ReviewFailure.ANSWER_IDENTITY_MISMATCH)
-            if self._review.load_visual_evidence_for_pack(pack.review_pack_identity) is not None:
-                raise ReviewError(ReviewFailure.ANSWER_CONFLICT)
+            existing = self._review.load_visual_evidence_for_pack(pack.review_pack_identity)
+            if existing is not None:
+                if existing.answer_pack_identity != answer.answer_pack_identity:
+                    raise ReviewError(ReviewFailure.ANSWER_CONFLICT)
+                answers.append(answer)
+                evidence.append(existing)
+                continue
+            self._require_current_workspace(pack.probables_run_identity, pack.review_cycle_identity)
+            if self._current_pack(pack.review_cycle_identity, require_retained=True) != pack:
+                raise ReviewError(ReviewFailure.NOT_CURRENT)
             if pack.expected_canonical_subject_identity.startswith("MCX-SUBJECT-"):
                 raise ReviewError(ReviewFailure.CHART_INVALID)
             bound = bind_imported_visual_evidence_v2(
@@ -1259,6 +1292,8 @@ class IntradayReviewV2Application:
             validation=validation,
             answers=tuple(item[0] for item in ordered),
             evidence=tuple(item[1] for item in ordered),
+            already_imported=tuple(self._review.load_visual_evidence_for_pack(item[1].review_pack_identity) is not None
+                                   for item in ordered),
         )
 
     def upload_chart(
@@ -1271,8 +1306,8 @@ class IntradayReviewV2Application:
     ) -> ChartRevisionV2:
         """Retain one exact-cycle chart without mutating the Review Cycle."""
 
-        with self._lock:
-            pointer = self._review.load_current()
+        with self._lock, self._probables.current_generation_guard():
+            pointer = self._require_current_workspace()
             if pointer is None:
                 raise ReviewError(ReviewFailure.NOT_CURRENT)
             cycle_pointer = next(
@@ -1303,6 +1338,7 @@ class IntradayReviewV2Application:
                 media_type=media_type,
                 requested_at=self._clock(),
             )
+            self._require_current_workspace(cycle.probables_run_identity, cycle_identity)
             self._review.retain_chart_request(request)
             active_pointer = self._review.load_current_chart(cycle_identity)
             if (
@@ -1337,6 +1373,7 @@ class IntradayReviewV2Application:
                 request_identity=request.request_identity,
             )
             current = create_current_chart_pointer_v2(cycle, request, chart)
+            self._require_current_workspace(cycle.probables_run_identity, cycle_identity)
             self._review.retain_chart(chart, payload)
             self._review.save_current_chart(current)
             return chart
@@ -1344,8 +1381,8 @@ class IntradayReviewV2Application:
     def create_combined_question_transport(self) -> IntradayReviewV2BatchResult:
         """Create exact V2 packs and one immutable combined Question transport."""
 
-        with self._lock:
-            pointer = self._review.load_current()
+        with self._lock, self._probables.current_generation_guard():
+            pointer = self._require_current_workspace()
             if pointer is None or not pointer.cycles:
                 raise ReviewError(ReviewFailure.NOT_CURRENT)
             entries: list[tuple[ReviewQuestionPackV2, bytes]] = []
@@ -1357,7 +1394,8 @@ class IntradayReviewV2Application:
                     raise ReviewError(ReviewFailure.CHART_REQUIRED)
                 chart = self._review.load_chart(active.chart_revision_identity)
                 if cycle.canonical_subject_identity.startswith("MCX-SUBJECT-"):
-                    paired_results.append(self._paired.create(cycle, chart))
+                    paired_results.append(self._paired.create(cycle, chart, require_current=lambda: self._require_current_workspace(
+                        cycle.probables_run_identity, cycle.cycle_identity)))
                     continue
                 handoff = self._review.load_handoff(cycle.handoff_identity)
                 pack = create_question_pack_v2(handoff, cycle, chart)
@@ -1369,8 +1407,8 @@ class IntradayReviewV2Application:
     ) -> IntradayReviewV2BatchResult:
         """Create one exact-current candidate transport using batch primitives."""
 
-        with self._lock:
-            pointer = self._review.load_current()
+        with self._lock, self._probables.current_generation_guard():
+            pointer = self._require_current_workspace()
             if pointer is None:
                 raise ReviewError(ReviewFailure.NOT_CURRENT)
             member = next(
@@ -1392,7 +1430,8 @@ class IntradayReviewV2Application:
                 raise ReviewError(ReviewFailure.CHART_REQUIRED)
             chart = self._review.load_chart(active.chart_revision_identity)
             if cycle.canonical_subject_identity.startswith("MCX-SUBJECT-"):
-                return self._paired.create(cycle, chart)
+                return self._paired.create(cycle, chart, require_current=lambda: self._require_current_workspace(
+                        cycle.probables_run_identity, cycle.cycle_identity))
             pack = create_question_pack_v2(
                 self._review.load_handoff(cycle.handoff_identity), cycle, chart
             )
@@ -1408,6 +1447,8 @@ class IntradayReviewV2Application:
             key=lambda item: item[0].expected_canonical_subject_identity,
         ))
         packs = tuple(pack for pack, _ in ordered)
+        for pack in packs:
+            self._require_current_workspace(pack.probables_run_identity, pack.review_cycle_identity)
         for pack in packs:
             self._review.retain_pack(pack)
         batch = create_question_batch_v2(packs)
@@ -1426,18 +1467,19 @@ class IntradayReviewV2Application:
 
     def create_eligible_cycles(self, run: ProbablesRunV2) -> tuple[ReviewCycleV2, ...]:
         """Retain cycles only after exact persisted V2 lineage has been proven."""
-        if type(run) is not ProbablesRunV2:
-            raise ReviewError(ReviewFailure.INPUT_INVALID)
-        try:
-            persisted = self._probables.load_run(run.run_identity)
-        except (ProbablesV2Error, ValueError) as error:
-            raise ReviewError(ReviewFailure.ARTIFACT_UNAVAILABLE) from error
-        if persisted != run:
-            raise ReviewError(ReviewFailure.INTEGRITY_INVALID)
+        with self._lock:
+            if type(run) is not ProbablesRunV2:
+                raise ReviewError(ReviewFailure.INPUT_INVALID)
+            try:
+                persisted = self._probables.load_run(run.run_identity)
+            except (ProbablesV2Error, ValueError) as error:
+                raise ReviewError(ReviewFailure.ARTIFACT_UNAVAILABLE) from error
+            if persisted != run:
+                raise ReviewError(ReviewFailure.INTEGRITY_INVALID)
 
-        retained = self._retain_eligible_cycles(run)
-        self._publish_current_review(run, retained)
-        return retained
+            retained = self._retain_eligible_cycles(run)
+            self._publish_current_review(run, retained)
+            return retained
 
     def _retain_eligible_cycles(
         self, run: ProbablesRunV2
@@ -1471,10 +1513,14 @@ class IntradayReviewV2Application:
     def _publish_current_review(
         self, run: ProbablesRunV2, retained: tuple[ReviewCycleV2, ...]
     ) -> None:
-        pointer = create_current_review_pointer_v2(run, retained)
-        self._review.save_current(pointer)
-        if self._review.load_current() != pointer:
-            raise ReviewError(ReviewFailure.INTEGRITY_INVALID)
+        with self._probables.current_generation_guard():
+            _, current_run = self._load_current_probables()
+            if current_run != run:
+                raise ReviewError(ReviewFailure.NOT_CURRENT)
+            pointer = create_current_review_pointer_v2(run, retained)
+            self._review.save_current(pointer)
+            if self._review.load_current() != pointer:
+                raise ReviewError(ReviewFailure.INTEGRITY_INVALID)
 
     def _load_current_probables(self):  # type: ignore[no-untyped-def]
         try:

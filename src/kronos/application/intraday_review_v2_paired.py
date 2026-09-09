@@ -116,8 +116,9 @@ class IntradayReviewV2PairedAdapter:
             generated_at=chart.received_at, supporting_reference_only=True)
         return bundle, native, reference, pack, transport, pdf, template
 
-    def create(self, cycle, chart):
+    def create(self, cycle, chart, *, require_current):
         bundle, native, reference, pack, transport, pdf, template = self.expected(cycle, chart)
+        require_current()
         self.store.retain_pack(pack)
         self.store.retain_transport(transport, pdf, template)
         self.store.retain_transport_pointer(transport)
@@ -139,7 +140,7 @@ class IntradayReviewV2PairedAdapter:
             raise
         return bundle, native, reference, pack, transport, None, None
 
-    def import_expected(self, cycle, chart, imported_at):
+    def import_expected(self, cycle, chart, imported_at, *, require_current):
         from kronos.application.intraday_review_v2 import IntradayReviewV2InboxImportResult, IntradayReviewV2InboxMemberResult
         retained = self.retained(cycle, chart)
         if retained is None:
@@ -158,6 +159,7 @@ class IntradayReviewV2PairedAdapter:
                         raise ReviewError(ReviewFailure.ANSWER_CONFLICT)
                     state = "ALREADY_IMPORTED"
                 else:
+                    require_current()
                     resolver = self.native_resolver or load_visual_identity_resolver(publication_version=VISUAL_IDENTITY_NATIVE_CONTRACT_VERSION)
                     # Preserve envelope/native-identity failure precedence. This
                     # pure comparison writes no Answer or evidence.
@@ -170,6 +172,7 @@ class IntradayReviewV2PairedAdapter:
                     self.chart_input.require(cycle, chart, bundle=bundle, resolver=resolver,
                         observed_native=parsed.native_observed_visible_identity,
                         observed_reference=parsed.reference_observed_visible_identity)
+                    require_current()
                     _, evidence = self.engine.import_answer(payload=payload, pack=pack, bundle=bundle,
                         native_chart=native, reference_chart=reference, native_resolver=resolver,
                         reference_resolver=resolver, imported_at=imported_at, supporting_reference_only=True)

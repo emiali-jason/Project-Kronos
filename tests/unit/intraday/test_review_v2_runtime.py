@@ -54,7 +54,6 @@ def test_runtime_restores_exact_v2_review_pointer_without_creating_review(
     run = _run(mapping)
     probables_store = ProbablesV2Store(root)
     probables_store.retain_complete(run=run, mappings=(mapping,))
-    (root / "refresh-v2" / "CURRENT-PROBABLES-V2.json").unlink()
     review_store = IntradayReviewV2Store(root / "review-v2")
     review_application = IntradayReviewV2Application(
         probables_store=probables_store,
@@ -62,6 +61,8 @@ def test_runtime_restores_exact_v2_review_pointer_without_creating_review(
     )
     expected_cycles = review_application.create_eligible_cycles(run)
     expected_pointer = review_store.load_current()
+    # Historical Review was created lawfully before its producer pointer disappeared.
+    (root / "refresh-v2" / "CURRENT-PROBABLES-V2.json").unlink()
     before = _fingerprints(root)
     shared, provider, factory_calls = _shared()
 
@@ -74,7 +75,10 @@ def test_runtime_restores_exact_v2_review_pointer_without_creating_review(
     assert composition.review_v2_current == expected_pointer
     assert composition.review_v2_store.load_current() == expected_pointer
     assert composition.review_v2_store.cycles_for_run(run.run_identity) == expected_cycles
-    assert composition.review_v2_application.create_eligible_cycles(run) == expected_cycles
+    assert composition.review_v2_application.workspace_state() == "REVIEW_NON_CURRENT"
+    assert composition.review_v2_application.snapshot().candidates == ()
+    with pytest.raises(ReviewError, match=ReviewFailure.NOT_CURRENT.value):
+        composition.review_v2_application.create_eligible_cycles(run)
     assert _fingerprints(root) == before
     assert provider.capability.calls == 0
     assert provider.begin_count == 0
