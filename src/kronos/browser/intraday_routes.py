@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from kronos.browser.intraday_chart_preview import CHART_PREVIEW_ROUTE, current_chart_preview
+
 from http import HTTPStatus
 import json
 
@@ -288,6 +290,16 @@ class IntradayBrowserRoutes:
         request: BrowserGetRequest,
         snapshot_provider: BrowserSnapshotProvider,
     ) -> BrowserRouteResponse | None:
+        if request.path == CHART_PREVIEW_ROUTE:
+            try:
+                if self._review_v2_control is None:
+                    raise ReviewError(ReviewFailure.ARTIFACT_UNAVAILABLE)
+                media_type, payload = current_chart_preview(
+                    self._review_v2_control.application, request.query)
+                return BrowserRouteResponse(payload, content_type=media_type)
+            except (ReviewError, OSError, ValueError):
+                return BrowserRouteResponse("Exact current chart preview unavailable.",
+                    status=HTTPStatus.NOT_FOUND, content_type="text/plain; charset=utf-8")
         detail_prefix = "/intraday/evidence/"
         if (
             request.path == INTRADAY_STATISTICS_EXPORT_ROUTE

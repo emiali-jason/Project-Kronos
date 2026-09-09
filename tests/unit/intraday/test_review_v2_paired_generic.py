@@ -113,7 +113,8 @@ def test_both_commodities_use_identical_intake_pack_and_import(paired_case):
     from kronos.browser.intraday_views import _review_v2_candidate
     html = _review_v2_candidate(app.snapshot().candidates[0], 1)
     assert contract in html and continuous in html and reference in html
-    assert 'IMPORT EXPECTED ANSWER' in html
+    assert 'disabled>ANSWER IMPORTED</button>' in html
+    assert 'IMPORT EXPECTED ANSWER</button>' not in html
 
 
 @pytest.mark.parametrize('field,value', (

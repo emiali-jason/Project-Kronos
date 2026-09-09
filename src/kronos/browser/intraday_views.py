@@ -91,6 +91,37 @@ _REVIEW_V2_CSS = r"""
 .intraday-drop.intraday-drop-empty{display:flex;justify-content:space-between;gap:10px;min-height:88px;padding:12px;text-align:left;cursor:default}.intraday-drop-empty .intraday-intake-copy{min-width:0}.intraday-drop-empty strong{display:block;margin:0;font-size:11px;overflow-wrap:anywhere}.intraday-drop-empty .required-panels{margin-top:6px}.intraday-drop-empty .intraday-chart-slot-actions{flex-shrink:0}.intraday-drop-empty .intraday-chart-slot-actions:focus-within .intraday-file-choice{outline:2px solid var(--green);outline-offset:2px}
 .intraday-review-v2-pack-actions{display:flex;flex-wrap:wrap;align-items:center;gap:7px;margin-top:9px}.intraday-review-v2-pack-actions form{margin:0}.intraday-review-v2-pack-actions span{color:var(--muted);font-size:9px;overflow-wrap:anywhere}.intraday-review-v2-pack-actions button{padding:7px 10px}.intraday-v2-inbox-result{border:1px solid #2d765d;background:#08261e;border-radius:9px;padding:10px 12px;margin-bottom:12px}.intraday-v2-inbox-result h2{color:var(--green);font-size:13px;margin:0 0 6px}.intraday-v2-inbox-result p{margin:0;color:var(--muted);font-size:10px;overflow-wrap:anywhere}
 @media(max-width:760px){.intraday-drop.intraday-drop-empty{min-height:96px;padding:10px;gap:8px}.intraday-drop-empty .intraday-file-choice{padding:9px 8px}}
+/* WO-07D: Review page only; normal grid tab order with independent card heights. */
+.intraday-review-v2-grid{grid-template-columns:repeat(2,minmax(0,1fr));align-items:start}
+.intraday-review-v2-card{min-width:0;overflow-wrap:anywhere;padding:12px}
+.intraday-review-v2-card h3{font-size:17px;line-height:1.25;margin-bottom:7px}
+.intraday-review-v2-card .phase-a{font-size:11px;margin:7px 0}
+.intraday-card-state{display:flex;flex-wrap:wrap;gap:5px 12px;font-size:11px}
+.intraday-card-state strong{color:var(--text)}
+.intraday-card-context{font-size:11px;color:var(--muted);margin:7px 0}
+.intraday-card-warning{font-size:12px;color:var(--amber);border-left:3px solid var(--amber);padding-left:8px}
+.intraday-review-v2-card .intraday-review-lineage{font-size:11px}
+.intraday-review-v2-card details{margin-top:10px;max-width:100%;font-size:11px;color:var(--muted);overflow-wrap:anywhere}
+.intraday-review-v2-card summary{cursor:pointer;min-height:32px;align-content:center}
+.intraday-review-v2-card button,.intraday-review-v2-card .intraday-file-choice{min-height:36px;box-sizing:border-box}
+.intraday-review-v2-card .intraday-drop-empty{flex-wrap:wrap;padding:10px}
+.intraday-review-v2-card .intraday-drop.received{min-height:0;padding:8px;border:1px solid var(--line)}
+.intraday-review-v2-card .intraday-chart-received span:first-of-type{display:none}
+.intraday-review-v2-card .intraday-review-v2-pack-actions{display:block}
+.intraday-review-v2-card .intraday-review-v2-pack-actions button{width:100%;margin-top:6px}
+.intraday-chart-preview{display:block;margin:10px 0 5px;color:var(--green);font-size:11px}
+.intraday-chart-preview img{display:block;width:100%;height:auto;object-fit:contain;border:1px solid var(--line);border-radius:5px;box-sizing:border-box}
+.intraday-chart-preview span{display:block;padding:8px 0;min-height:20px}
+.intraday-review-v2-card small{display:block;font-size:10px;color:var(--muted)}
+.intraday-review-v2-card select{min-height:36px;font-size:11px}
+.intraday-review-toolbar{margin-top:12px}
+.intraday-review-toolbar-note{overflow-wrap:anywhere;min-width:0}
+.intraday-tabs{flex-wrap:wrap;height:auto;gap:0 18px;min-width:0}
+.intraday-tabs a{white-space:nowrap}
+@media(min-width:1200px){.intraday-review-v2-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(min-width:1480px){.intraday-review-v2-grid{grid-template-columns:repeat(4,minmax(0,1fr))}}
+@media(max-width:760px){.intraday-review-v2-grid{grid-template-columns:minmax(0,1fr)}.intraday-review-v2{padding:10px}.intraday-tabs{flex-wrap:nowrap;overflow-x:auto;max-width:100%;margin:0 0 12px;padding:0;gap:14px}.intraday-review-v2-control{flex-wrap:wrap}.intraday-review-toolbar form{width:100%}}
+
 """
 
 _INTRADAY_STATISTICS_CSS = r"""
@@ -1506,12 +1537,12 @@ def _review_v2_projection(
     ):
         snapshot = IntradayReviewV2Snapshot(None, None, ())
     cards = "".join(
-        _review_v2_candidate(item, index)
+        _review_v2_candidate(item, index, snapshot.probables_run_identity)
         for index, item in enumerate(snapshot.candidates, start=1)
     )
     empty = (
-        '<div class="empty"><div><strong>No V2 Review cycles created</strong>'
-        'Phase A requires an explicit Sponsor operation against one exact persisted run.'
+        '<div class="empty"><div><strong>No active Review cards</strong>'
+        'Load Fresh Review explicitly from the current Opportunities population.'
         '</div></div>'
         if not cards else cards
     )
@@ -1532,8 +1563,8 @@ def _review_v2_projection(
     )
     banner_label = {
         "REVIEW_CURRENT": "REVIEW CURRENT",
-        "REVIEW_ABSENT": "NEW PROBABLES AVAILABLE",
-        "NEW_PROBABLES_AVAILABLE": "NEW PROBABLES AVAILABLE",
+        "REVIEW_ABSENT": "NO REVIEW LOADED",
+        "NEW_PROBABLES_AVAILABLE": "REVIEW NON-CURRENT",
         "NO_REVIEW_CANDIDATES": "NO REVIEW CANDIDATES",
         "INTEGRITY_INVALID": "REVIEW CURRENTNESS UNAVAILABLE",
     }.get(currentness, "NO CURRENT PROBABLES AVAILABLE")
@@ -1555,13 +1586,13 @@ def _review_v2_projection(
             if available_run is None
             else _ist_time(available_run.analysis_boundary)
         )
-        + ' · ' + escape(str(current_probables_count)) + ' candidates<br>'
+        + ' · ' + escape(str(current_probables_count)) + ' candidates<details><summary>Opportunities lineage</summary>'
         + escape("UNAVAILABLE" if available_run is None else available_run.run_identity)
-        + '</span><span>CURRENT REVIEW · '
+        + '</details></span><span>CURRENT REVIEW · '
         + escape(_review_v2_status_time(current_review_boundary))
-        + ' · ' + escape(str(current_review_count)) + ' candidates<br>'
+        + ' · ' + escape(str(len(snapshot.candidates))) + ' active candidates<details><summary>Review lineage</summary>'
         + escape("UNAVAILABLE" if current_review_run is None else str(current_review_run))
-        + '</span></div></div>'
+        + '</details></span></div></div>'
     )
     focus_notice = ""
     if focused_candidate is not None and not any(
@@ -1592,8 +1623,7 @@ def _review_v2_projection(
             + '" data-methodology-version="' + escape(methodology.methodology_version, quote=True)
             + '" data-methodology-publication="' + escape(methodology.publication_identity, quote=True)
             + '" data-methodology-checksum="' + escape(methodology.payload_checksum, quote=True)
-            + '">LOAD FRESH REVIEW</button><span>Review intake only · exact current persisted run · '
-            + escape(available_run.run_identity) + '</span></div>'
+            + '">LOAD FRESH REVIEW</button><span>Load this exact Opportunities population into the working Review.</span></div>'
         )
     elif currentness == "REVIEW_CURRENT":
         control = (
@@ -1617,7 +1647,7 @@ def _review_v2_projection(
         '<button class="primary" type="submit"' + ("" if all_ready else " disabled")
         + '>CREATE ALL REVIEW PDF</button></form>'
         '<form method="post" action="' + REVIEW_V2_ANSWER_IMPORT_ROUTE + '">'
-        '<button type="submit">IMPORT ALL EXPECTED ANSWERS</button></form>'
+        '<button type="submit"' + ('' if any(item.question_transport_identity is not None and item.answer_state != 'IMPORTED' for item in snapshot.candidates) else ' disabled') + '>IMPORT ALL EXPECTED ANSWERS</button></form>'
         '<form method="post" action="/intraday/review/reconcile-all">'
         '<button type="submit"' + (
             "" if eligible_count and status and status.get("reconciliation_control_available")
@@ -1626,16 +1656,18 @@ def _review_v2_projection(
         '<span class="intraday-review-toolbar-note">Chart ready: '
         + str(ready_count) + ' / ' + str(len(snapshot.candidates))
         + ' · Answer ready: ' + str(answer_count) + ' / ' + str(len(snapshot.candidates))
+        + ' · Questions ready: ' + str(sum(item.question_transport_identity is not None for item in snapshot.candidates))
+        + ' · Answers rejected: ' + str(sum(item.answer_state == 'REJECTED' for item in snapshot.candidates))
         + ' · Reconcile eligible: ' + str(eligible_count) + ' / ' + str(len(snapshot.candidates))
         + ("" if all_ready else ' · CURRENT BATCH INCOMPLETE')
-        + ('' if not transport_ready else '<br>CURRENT QUESTION PACK: ' + escape(snapshot.question_filename or '')
-           + '<br>EXPECTED ANSWER: ' + escape(snapshot.expected_answer_filename or ''))
+        + ('' if not transport_ready else '<details><summary>Current batch filenames</summary>CURRENT QUESTION PACK: ' + escape(snapshot.question_filename or '')
+           + '<br>EXPECTED ANSWER: ' + escape(snapshot.expected_answer_filename or '') + '</details>')
         + '</span></div>'
     )
     return (
         '<section class="intraday-review-v2"><div class="intraday-review-v2-head"><div>'
-        '<h2>PHASE-A REVIEW · PROBABLES V2/V2.1</h2>'
-        '<p>Review Cycle → Chart Required. Review Packs and Question Packs begin only after real chart intake.</p>'
+        '<h2>Current Review workspace</h2>'
+        '<p>Chart → Review PDF → Expected Answer. Each step is an explicit action.</p>'
         '</div><span class="intraday-review-toolbar-note">Cycles · '
         + str(len(snapshot.candidates)) + '</span></div>' + currentness_banner + focus_notice + control
         + (phase_b if currentness == "REVIEW_CURRENT" else "") + import_feedback + '<div class="intraday-review-v2-grid">'
@@ -1679,7 +1711,7 @@ def _review_v2_status_time(value: object) -> str:
         return "UNAVAILABLE"
 
 
-def _review_v2_candidate(item, slot_index: int) -> str:  # type: ignore[no-untyped-def]
+def _review_v2_candidate(item, slot_index: int, run_identity: str | None = None) -> str:  # type: ignore[no-untyped-def]
     target_identity = f"intraday-v2-chart-slot-{slot_index}"
     input_identity = f"intraday-v2-chart-file-{slot_index}"
     cycle = quote(item.cycle_identity, safe="")
@@ -1711,7 +1743,7 @@ def _review_v2_candidate(item, slot_index: int) -> str:  # type: ignore[no-untyp
     )
     empty_chart = item.chart_revision_ordinal is None
     pack_actions = ""
-    if not empty_chart and not item.paired_metadata_required:
+    if not empty_chart and item.chart_state == "CHART_READY" and not item.paired_metadata_required:
         if item.question_transport_identity is None:
             pack_actions = (
                 '<div class="intraday-review-v2-pack-actions"><form method="post" action="'
@@ -1722,11 +1754,11 @@ def _review_v2_candidate(item, slot_index: int) -> str:  # type: ignore[no-untyp
             pack_actions = (
                 '<div class="intraday-review-v2-pack-actions"><strong>QUESTION PACK READY</strong>'
                 '<form method="post" action="' + REVIEW_V2_ANSWER_IMPORT_ROUTE
-                + '?cycle=' + cycle + '"><button type="submit">IMPORT EXPECTED ANSWER</button></form>'
-                '<span>QUESTION: ' + escape(item.question_filename or "UNAVAILABLE")
+                + '?cycle=' + cycle + '"><button class="primary" type="submit"' + (' disabled' if item.answer_state == 'IMPORTED' else '') + ('>ANSWER IMPORTED</button></form>' if item.answer_state == 'IMPORTED' else '>IMPORT EXPECTED ANSWER</button></form>')
+                + '<details><summary>Expected Question / Answer filenames</summary><span>QUESTION: ' + escape(item.question_filename or "UNAVAILABLE")
                 + '<br>EXPECTED ANSWER: '
                 + escape(item.expected_answer_filename or "UNAVAILABLE")
-                + '</span></div>'
+                + '</span></details></div>'
             )
     metadata_controls = ""
     if item.canonical_subject_identity.startswith("MCX-SUBJECT-"):
@@ -1744,10 +1776,25 @@ def _review_v2_candidate(item, slot_index: int) -> str:  # type: ignore[no-untyp
             '<label>REFERENCE CONTEXT<select data-reference-context style="display:block;max-width:100%;width:100%">'
             '<option value="">Select supporting reference context</option>' + reference_option + '</select></label>'
             '<small>Reference context is supporting only. Listed constituent membership is not established.</small></div>'
+            + ('<p role="status" class="intraday-card-warning">NO GOVERNED CONTRACT AVAILABLE AT THIS REVIEW BOUNDARY</p>' if not native_option else '')
+            + ('<p role="status" class="intraday-card-warning">NO GOVERNED REFERENCE CONTEXT AVAILABLE</p>' if not reference_option else '')
             + ('<p>Chart present; paired metadata required. Confirm both selections and replace the composite.</p>'
                if item.paired_metadata_required and not empty_chart else '')
             + ('<p>Observed reference visual fact: ' + escape(item.reference_observed_identity)
                + ' · supporting only; no constituent membership claim.</p>' if item.reference_observed_identity else '')
+        )
+    preview = ""
+    if not empty_chart and run_identity is not None and item.chart_revision_identity is not None:
+        url = ("/intraday/review/v2/chart-preview?run=" + quote(run_identity, safe="")
+               + "&cycle=" + cycle + "&revision=" + quote(item.chart_revision_identity, safe=""))
+        preview = (
+            '<a class="intraday-chart-preview" target="_blank" rel="noopener" href="'
+            + escape(url, quote=True) + '" aria-label="Open original chart for '
+            + escape(item.sponsor_label, quote=True) + '"><img loading="lazy" src="'
+            + escape(url, quote=True) + '" alt="Retained composite for '
+            + escape(item.sponsor_label, quote=True) + '"><span>Open original · REV '
+            + f"{item.chart_revision_ordinal:03d}" + '</span></a>'
+            '<small>Received chart bytes; receipt alone is not visual or temporal validation.</small>'
         )
     upload = (
         metadata_controls + '<div class="intraday-review-section-title">TRADINGVIEW CHARTS</div>'
@@ -1769,6 +1816,15 @@ def _review_v2_candidate(item, slot_index: int) -> str:  # type: ignore[no-untyp
         + ("direction-long" if item.direction == "LONG" else "direction-short")
         + '">' + escape(item.direction) + '</span><br><span class="phase-a">'
         + escape(item.chart_state.replace("_", " ")) + '</span>'
+        + '<div class="intraday-card-state"><span>Questions · <strong>'
+        + escape({'ABSENT':'NOT CREATED','TRANSPORT_READY':'READY'}.get(item.question_pack_state, item.question_pack_state.replace('_', ' '))) + '</strong></span>'
+        + '<span>Answer · <strong>' + escape(('EXPECTED' if item.question_transport_identity is not None else 'NOT REQUESTED') if item.answer_state == 'NOT_IMPORTED' else item.answer_state.replace('_', ' ')) + '</strong></span></div>'
+        + ('<p class="intraday-card-warning">' + escape(item.chart_state.replace('_', ' ')) + '</p>'
+           if item.chart_state not in {'CHART_READY', 'CHART_REQUIRED'} else '')
+        + '<p class="intraday-card-context">' + escape(item.phase) + ' · '
+        + escape(_ist_time(item.analysis_boundary)) + '</p>'
+        + preview + upload
+        + '<details class="intraday-review-diagnostics"><summary>V2 LINEAGE</summary>'
         + '<p class="intraday-review-lineage">Canonical subject · '
         + escape(item.canonical_subject_identity)
         + '<br>Methodology · ' + escape(item.methodology_identity) + " / "
@@ -1783,8 +1839,7 @@ def _review_v2_candidate(item, slot_index: int) -> str:  # type: ignore[no-untyp
         + '<br>Visual Evidence · ' + escape(item.visual_evidence_state.replace("_", " "))
         + ("" if item.nifty_applicability is None else '<br>NIFTY · ' + escape(item.nifty_applicability))
         + ("" if item.mcx_commissioning_state is None else '<br>MCX commissioning · ' + escape(item.mcx_commissioning_state))
-        + '</p>' + upload
-        + '<details class="intraday-review-diagnostics"><summary>V2 LINEAGE</summary>'
+        + '</p>'
         + 'Cycle · ' + escape(item.cycle_identity)
         + '<br>Probables Result · ' + escape(item.probable_result_identity)
         + ("" if item.chart_revision_identity is None else '<br>Chart Revision · ' + escape(item.chart_revision_identity))

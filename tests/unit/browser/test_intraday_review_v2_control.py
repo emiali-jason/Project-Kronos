@@ -174,9 +174,9 @@ def test_browser_get_is_inert_and_explicit_json_post_uses_v2_control(
     status = routes.handle_get(BrowserGetRequest(REVIEW_V2_STATUS_ROUTE, {}), _snapshot)
 
     assert page is not None and "LOAD FRESH REVIEW" in page.body
-    assert "NEW PROBABLES AVAILABLE" in page.body
+    assert "NO REVIEW LOADED" in page.body
     assert run.run_identity in page.body
-    assert "PHASE-A REVIEW · PROBABLES V2/V2.1" in page.body
+    assert "Current Review workspace" in page.body
     assert application.snapshot().candidates == ()
     assert status is not None and json.loads(status.body)["state"] == "NOT_YET_RUN"
     status_document = json.loads(status.body)
@@ -243,7 +243,7 @@ def test_browser_detects_new_current_probables_from_store_not_workstation_cache(
 
     page = routes.handle_get(BrowserGetRequest("/intraday/review", {}), _snapshot)
     assert page is not None
-    assert "NEW PROBABLES AVAILABLE" in page.body
+    assert "REVIEW NON-CURRENT" in page.body
     assert "LOAD FRESH REVIEW" in page.body
     assert run_a.run_identity in page.body
     assert run_b.run_identity in page.body
