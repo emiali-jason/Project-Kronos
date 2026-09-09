@@ -170,6 +170,8 @@ def migrate(expected, launcher, bundle_identity, authorization_reference, *, obs
     if not _hex(bundle_identity):
         raise BootstrapError('BOOTSTRAP_APPROVED_PACKAGE_IDENTITY_REQUIRED')
     launcher = safe_path(launcher)
+    if launcher != Path('/Applications/KRONOS.app'):
+        raise BootstrapError('BOOTSTRAP_NONCANONICAL_LAUNCHER')
     verify(launcher, bundle_identity)
     control = Path.home() / 'Library/Application Support/KRONOS/runtime/browser-backend-v1.control'
     c = coordinator or LegacyBootstrapCoordinator(control.parent/'legacy-bootstrap-v1', expected)

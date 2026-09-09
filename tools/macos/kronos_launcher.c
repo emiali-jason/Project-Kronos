@@ -3,6 +3,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
+#include <mach-o/dyld.h>
 #include <netinet/in.h>
 #include <signal.h>
 #include <stdio.h>
@@ -14,6 +15,46 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
+
+/* APP-01A: an app location is authority only after resolving the actual image.
+ * PACKAGE_VERIFY below is an inert build probe, never an operational bypass. */
+static const char *canonical_bundle = "/Applications/KRONOS.app";
+static const char *canonical_executable = "/Applications/KRONOS.app/Contents/MacOS/KRONOS";
+
+static int canonical_image_path(const char *image) {
+    char resolved_image[PATH_MAX];
+    char resolved_canonical[PATH_MAX];
+    struct stat metadata;
+    if (image == NULL || realpath(image, resolved_image) == NULL ||
+        realpath(canonical_executable, resolved_canonical) == NULL ||
+        strcmp(resolved_canonical, canonical_executable) != 0 ||
+        strcmp(resolved_image, canonical_executable) != 0 ||
+        stat(resolved_image, &metadata) != 0 || !S_ISREG(metadata.st_mode)) return 0;
+    return 1;
+}
+
+static int canonical_signature_valid(void) {
+    pid_t child = fork();
+    if (child < 0) return 0;
+    if (child == 0) {
+        execl("/usr/bin/codesign", "codesign", "--verify", "--deep", "--strict",
+              "-R", "=identifier \"com.project-kronos.browser-v1\"",
+              canonical_bundle, (char *)NULL);
+        _exit(1);
+    }
+    int status = 0;
+    while (waitpid(child, &status, 0) < 0) {
+        if (errno != EINTR) return 0;
+    }
+    return WIFEXITED(status) && WEXITSTATUS(status) == 0;
+}
+
+static int canonical_operational_image(void) {
+    char image[PATH_MAX];
+    uint32_t capacity = sizeof(image);
+    return _NSGetExecutablePath(image, &capacity) == 0 &&
+        canonical_image_path(image) && canonical_signature_valid();
+}
 
 static const char *workspace_url = "http://127.0.0.1:8947/swing/opportunities";
 static const char *control_schema = "KRONOS_BROWSER_BACKEND_CONTROL_V1";
@@ -364,6 +405,7 @@ int main(void) {
         puts("KRONOS_LAUNCHER_PACKAGE_V1_OK");
         return 0;
     }
+    if (!canonical_operational_image()) return 1;
     int bootstrap = mode != NULL && strcmp(mode, "LEGACY_BOOTSTRAP") == 0;
     const char *migration = getenv("KRONOS_LEGACY_BOOTSTRAP_ID");
     const char *migration_proof = getenv("KRONOS_LEGACY_BOOTSTRAP_PROOF");

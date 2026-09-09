@@ -61,6 +61,7 @@ def test_replacement_environment_carries_no_provider_or_legacy_authority(monkeyp
 
 
 def test_complete_coordinator_orders_preparation_shutdown_consumption_guard_stop(tmp_path,monkeypatch):
+    monkeypatch.setattr(tool,'safe_path',lambda path:path)
     c=coordinator(tmp_path);events=[]
     monkeypatch.setattr(tool,'verify',lambda *a:events.append('package-verified'))
     def observe_():events.append('observe');return snapshot()
@@ -72,7 +73,7 @@ def test_complete_coordinator_orders_preparation_shutdown_consumption_guard_stop
         assert (c.root/'stopped.json').exists()
         consume(c,Ticket(env[ENV_ID],env[ENV_PROOF]));events.append('guarded-start')
     def accept(t):events.append('verify-guard');return {'pid':999999}
-    r=tool.migrate(binding(),tmp_path,'a'*64,'SPONSOR_AUTH',observe=observe_,shutdown=shutdown,
+    r=tool.migrate(binding(),Path('/Applications/KRONOS.app'),'a'*64,'SPONSOR_AUTH',observe=observe_,shutdown=shutdown,
         launch=launch,accept=accept,alive=lambda pid:False,free=lambda:True,coordinator=c)
     assert events==['package-verified','observe','observe','shutdown','package-verified','guarded-start','verify-guard']
     assert r['bootstrap']=='PERMANENTLY_CONSUMED' and r['end_maintenance']=='NOT_INVOKED'
@@ -80,17 +81,19 @@ def test_complete_coordinator_orders_preparation_shutdown_consumption_guard_stop
 
 
 def test_preparation_failure_never_shutdown_or_launch(tmp_path,monkeypatch):
+    monkeypatch.setattr(tool,'safe_path',lambda path:path)
     monkeypatch.setattr(tool,'verify',lambda *a:None);calls=[]
     with pytest.raises(BootstrapError):
-        tool.migrate(binding(),tmp_path,'a'*64,'AUTH',observe=lambda:replace(snapshot(),authentication_inflight=True),
+        tool.migrate(binding(),Path('/Applications/KRONOS.app'),'a'*64,'AUTH',observe=lambda:replace(snapshot(),authentication_inflight=True),
             shutdown=lambda:calls.append('stop'),launch=lambda e:calls.append('start'),coordinator=coordinator(tmp_path))
     assert calls==[]
 
 
 def test_stop_timeout_does_not_kill_or_retry(tmp_path,monkeypatch):
+    monkeypatch.setattr(tool,'safe_path',lambda path:path)
     monkeypatch.setattr(tool,'verify',lambda *a:None);calls=[]
     with pytest.raises(BootstrapError,match='TIMEOUT'):
-        tool.migrate(binding(),tmp_path,'a'*64,'AUTH',observe=snapshot,shutdown=lambda:calls.append('stop'),
+        tool.migrate(binding(),Path('/Applications/KRONOS.app'),'a'*64,'AUTH',observe=snapshot,shutdown=lambda:calls.append('stop'),
             launch=lambda e:calls.append('start'),alive=lambda pid:True,free=lambda:False,
             sleep=lambda t:None,coordinator=coordinator(tmp_path))
     assert calls==['stop']
@@ -226,3 +229,14 @@ def test_real_http_wrapper_connection_failure_and_timeout(local_http_wrapper, mo
         tool.http('GET', '/status')
     assert len(destinations) == 1
     assert local_http_wrapper[0] == []
+
+
+@pytest.mark.parametrize('name', ['repository', 'output', 'rollback', 'installer'])
+def test_noncanonical_migration_rejected_before_package_or_shutdown(tmp_path, monkeypatch, name):
+    calls = []
+    monkeypatch.setattr(tool, 'verify', lambda *a: calls.append('verify'))
+    with pytest.raises(BootstrapError, match='NONCANONICAL_LAUNCHER'):
+        tool.migrate(binding(), tmp_path / name / 'KRONOS.app', 'a'*64, 'AUTH',
+                     observe=lambda: calls.append('observe'),
+                     shutdown=lambda: calls.append('shutdown'), launch=lambda e: calls.append('launch'))
+    assert calls == []
