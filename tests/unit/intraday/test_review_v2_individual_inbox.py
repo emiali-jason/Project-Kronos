@@ -41,7 +41,7 @@ SUBJECTS = (
 )
 
 
-def _fixture(tmp_path: Path, subjects=SUBJECTS):  # type: ignore[no-untyped-def]
+def _fixture(tmp_path: Path, subjects=SUBJECTS, *, correspondence=True):  # type: ignore[no-untyped-def]
     mappings = tuple(
         _opening_inputs(subject=f"NSE-EQ-{subject}")[-1] for subject in subjects
     )
@@ -105,6 +105,11 @@ def _fixture(tmp_path: Path, subjects=SUBJECTS):  # type: ignore[no-untyped-def]
         clock=lambda: run.analysis_boundary + timedelta(minutes=1),
     )
     app.create_eligible_cycles(run)
+    from tests.unit.intraday.chart_input_fixtures import configure_fixture_calendar
+    configure_fixture_calendar(app)
+    if correspondence:
+        from tests.unit.intraday.chart_input_fixtures import observe_fixture_uploads
+        observe_fixture_uploads(app)
     return run, app
 
 

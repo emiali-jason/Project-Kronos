@@ -514,6 +514,8 @@ def test_browser_imports_one_exact_v2_batch_and_projects_visual_readiness(
     application.upload_chart(
         cycle, media_type="image/png", payload=_png(93)
     )
+    from tests.unit.intraday.chart_input_fixtures import retain_current_fixture_receipts
+    retain_current_fixture_receipts(application, "Reliance Industries Ltd")
     transport = application.create_combined_question_transport()
     payload = _completed_batch_payload(
         transport.answer_template_path, "Reliance Industries Ltd"

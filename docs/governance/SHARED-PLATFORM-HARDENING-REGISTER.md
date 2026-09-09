@@ -47,3 +47,13 @@ Engineering must remain offline. Staging, commit, push, installed-launcher updat
 ## Published SPH and legacy bootstrap prerequisite — 8 September 2026
 
 SPH-001/002/003 was published as `dc964704937921a46dad8c125fc490ff4f46078a`; the earlier pending-publication entry remains historical. Legacy PID 39393 still lacks the SPH handoff. [ADR-0031](../architecture/adr/ADR-0031-ONE-TIME-LEGACY-MAINTENANCE-BOOTSTRAP.md) is the bounded Sponsor-authorized engineering bridge: separate one-use migration context plus strictly sealed launcher packaging. It neither legitimizes automatic authentication nor weakens the ordinary SPH path. The legacy alert, if emitted, is preserved as EXPECTED_LEGACY_BOOTSTRAP_NOTIFICATION_SIDE_EFFECT; unprovable monitoring quiescence remains LEGACY_SHUTDOWN_SIDE_EFFECT_RISK. Installation/restart/END MAINTENANCE/WO-06H retry are not authorized by this candidate. This remains part of the existing shared hardening requirement, not a duplicate product issue.
+
+## WO-07B reusable correspondence finding — 8 September 2026
+
+**Status:** Recorded for post-Intraday review only; no Swing/shared implementation authorized here.
+
+Byte/Review association is separate from visible temporal correspondence. The
+[Intraday WO-07B gate](../architecture/products/intraday/KRONOS-INTRADAY-WO-07B-CHART-INPUT-CORRESPONDENCE.md) reuses the existing panel time comparator and
+DOMAIN-001/008 without changing Swing. Any future Swing adoption must first audit
+its own source/observer contract and obtain separate shared/product authority;
+do not create a parallel alias map, session clock or blanket acceptance flag.

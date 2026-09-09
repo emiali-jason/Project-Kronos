@@ -23,3 +23,13 @@ The shared maintenance prerequisite is advanced from the deferred programme gate
 ## Legacy bootstrap consumer disposition — 8 September 2026
 
 SPH is published at `dc964704937921a46dad8c125fc490ff4f46078a`. The shared [ADR-0031](../../adr/ADR-0031-ONE-TIME-LEGACY-MAINTENANCE-BOOTSTRAP.md) engineering candidate supplies the one-time legacy deployment bridge and package qualification. Swing source/monitoring/lifecycle semantics are unchanged in this bridge. Preserve any old-code shutdown alert and interruption evidence under the explicit legacy side-effect classification, separately from guarded replacement inertness. Installation, migration and runtime acceptance remain pending; historical actor attribution stays NOT_ESTABLISHED.
+
+## WO-07B reusable correspondence finding — 8 September 2026
+
+**Status:** Recorded for post-Intraday review only; no Swing/shared implementation authorized here.
+
+Byte/Review association is separate from visible temporal correspondence. The
+[Intraday WO-07B gate](../intraday/KRONOS-INTRADAY-WO-07B-CHART-INPUT-CORRESPONDENCE.md) reuses the existing panel time comparator and
+DOMAIN-001/008 without changing Swing. Any future Swing adoption must first audit
+its own source/observer contract and obtain separate shared/product authority;
+do not create a parallel alias map, session clock or blanket acceptance flag.

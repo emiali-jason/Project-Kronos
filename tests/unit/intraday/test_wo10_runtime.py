@@ -170,6 +170,8 @@ def test_retained_v2_loader_executes_exact_equity_request_without_provider(
     )
     cycle = review.create_eligible_cycles(run)[0]
     review.upload_chart(cycle.cycle_identity, media_type="image/png", payload=_png(93))
+    from tests.unit.intraday.chart_input_fixtures import retain_current_fixture_receipts
+    retain_current_fixture_receipts(review, "Reliance Industries Ltd")
     transport = review.create_combined_question_transport()
     review.import_combined_answer(
         _completed_batch_payload(

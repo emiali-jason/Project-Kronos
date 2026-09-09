@@ -217,6 +217,8 @@ def test_currentization_uses_exact_current_run_and_preserves_old_review_evidence
         payload=_png(101),
     )
     old_transport = application.create_combined_question_transport()
+    from tests.unit.intraday.chart_input_fixtures import retain_current_fixture_receipts
+    retain_current_fixture_receipts(application, "Reliance Industries Ltd")
     old_answer = application.import_combined_answer(
         _completed_batch_payload(
             old_transport.answer_template_path,
@@ -648,6 +650,8 @@ def test_v2_combined_answer_validates_imports_and_restores_exact_evidence(
         transport.answer_template_path, "Reliance Industries Ltd"
     )
 
+    from tests.unit.intraday.chart_input_fixtures import retain_current_fixture_receipts
+    retain_current_fixture_receipts(application, "Reliance Industries Ltd")
     validation = application.validate_combined_answer(payload)
     assert validation.candidate_count == validation.exact_match_count == 1
     assert (

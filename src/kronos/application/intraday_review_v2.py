@@ -49,6 +49,7 @@ from kronos.intraday.review_v2_transport import (
     expected_transport_identity_v2,
 )
 from kronos.instrument.visual_identity import VisualIdentityResolver
+from kronos.application.intraday_chart_input import IntradayChartInputGate
 from kronos.application.intraday_review_v2_paired import IntradayReviewV2PairedAdapter
 
 
@@ -228,7 +229,8 @@ class IntradayReviewV2Application:
         self._visual_identity_resolver = visual_identity_resolver
         self._clock = clock
         self._lock = RLock()
-        self._paired = IntradayReviewV2PairedAdapter(review_store, self._transport)
+        self._chart_input = IntradayChartInputGate(review_store, probables_store, visual_identity_resolver, clock=lambda: self._clock())
+        self._paired = IntradayReviewV2PairedAdapter(review_store, self._transport, chart_input=self._chart_input)
 
     @property
     def review_store(self) -> IntradayReviewV2Store:
@@ -1073,6 +1075,11 @@ class IntradayReviewV2Application:
                     imported_at=imported_at,
                     visual_identity_resolver=self._visual_identity_resolver,
                 )
+                self._chart_input.require(
+                    self._review.load_cycle(pack.review_cycle_identity),
+                    self._review.load_chart(pack.chart_revision_identity),
+                    observed_native=answer.observed_visible_subject_identity,
+                )
                 prepared.append((answer, evidence, False))
             except ReviewError as error:
                 rejected.append(IntradayReviewV2InboxMemberResult(
@@ -1118,6 +1125,12 @@ class IntradayReviewV2Application:
         ):
             if already:
                 continue
+            pack = self._review.load_pack(evidence.review_pack_identity)
+            self._chart_input.require(
+                self._review.load_cycle(pack.review_cycle_identity),
+                self._review.load_chart(pack.chart_revision_identity),
+                observed_native=answer.observed_visible_subject_identity,
+            )
             self._review.retain_answer_transport(
                 evidence.review_pack_identity,
                 json.dumps(
@@ -1218,6 +1231,11 @@ class IntradayReviewV2Application:
                 answer,
                 imported_at=imported_at,
                 visual_identity_resolver=self._visual_identity_resolver,
+            )
+            self._chart_input.require(
+                self._review.load_cycle(pack.review_cycle_identity),
+                self._review.load_chart(pack.chart_revision_identity),
+                observed_native=answer.observed_visible_subject_identity,
             )
             answers.append(answer)
             evidence.append(bound)

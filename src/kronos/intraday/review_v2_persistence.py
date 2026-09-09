@@ -81,6 +81,101 @@ class IntradayReviewV2Store:
             self._retain(manifest_path, artifact_bytes_v2(value))
         return manifest_path
 
+    @staticmethod
+    def validate_chart_input_binding(value, chart, payload):
+        from kronos.intraday.chart_input import ChartInputObservation
+        if (type(value) is not ChartInputObservation
+            or value.chart_revision_identity != chart.chart_revision_identity
+            or value.review_cycle_identity != chart.review_cycle_identity
+            or value.probables_run_identity != chart.probables_run_identity
+            or value.probable_result_identity != chart.probable_result_identity
+            or value.chart_payload_sha256 != chart.payload_sha256
+            or sha256(payload).hexdigest() != chart.payload_sha256):
+            raise ReviewError(ReviewFailure.INTEGRITY_INVALID)
+
+    def retain_chart_input(self, value):
+        """Explicit independent observations only. No Browser/Answer-derived proof.
+
+        A single immutable receipt per revision; contradictory observations need
+        a new chart revision. This writes neither a chart nor a current pointer.
+        """
+        import os
+        from kronos.intraday.chart_input import observation_bytes
+        from kronos.intraday.review_v2_transport import _trusted_answer_directory
+        chart = self.load_chart(value.chart_revision_identity)
+        self.validate_chart_input_binding(value, chart, self.load_chart_bytes(chart))
+        import json
+        payload = json.dumps({"observation_identity": value.identity,
+            "observation": json.loads(observation_bytes(value))}, sort_keys=True,
+            separators=(",", ":")).encode() + b"\n"
+        if len(payload) > 131072:
+            raise ReviewError(ReviewFailure.INPUT_INVALID)
+        family = self.root / 'chart-input-observations'
+        try:
+            with self._lock, _trusted_answer_directory(self.root) as root:
+                try:
+                    os.mkdir('chart-input-observations', mode=0o700, dir_fd=root)
+                except FileExistsError:
+                    pass
+                with _trusted_answer_directory(family) as directory:
+                    filename = chart.chart_revision_identity + '.json'
+                    temporary = '.' + uuid4().hex + '.tmp'
+                    descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                                         0o600, dir_fd=directory)
+                    try:
+                        with os.fdopen(descriptor, 'wb') as handle:
+                            handle.write(payload)
+                            handle.flush()
+                            os.fsync(handle.fileno())
+                        try:
+                            os.link(temporary, filename, src_dir_fd=directory,
+                                    dst_dir_fd=directory, follow_symlinks=False)
+                        except FileExistsError:
+                            if self.load_chart_input(chart) != value:
+                                raise ReviewError(ReviewFailure.PERSISTENCE_CONFLICT)
+                    finally:
+                        os.unlink(temporary, dir_fd=directory)
+        except OSError as error:
+            raise ReviewError(ReviewFailure.INTEGRITY_INVALID) from error
+        return value.identity
+
+    def load_chart_input(self, chart):
+        import os
+        import stat
+        from kronos.intraday.chart_input import observation_from_bytes
+        from kronos.intraday.review_v2_transport import _trusted_answer_directory
+        # Validate the selected chart identity before constructing the filename.
+        self._path('chart-input-observations', chart.chart_revision_identity)
+        try:
+            with _trusted_answer_directory(self.root / 'chart-input-observations') as directory:
+                name = chart.chart_revision_identity + '.json'
+                descriptor = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory)
+                with os.fdopen(descriptor, 'rb') as handle:
+                    before = os.fstat(handle.fileno())
+                    if not stat.S_ISREG(before.st_mode) or before.st_size > 131072:
+                        raise ReviewError(ReviewFailure.INTEGRITY_INVALID)
+                    payload = handle.read(131073)
+                    after = os.fstat(handle.fileno())
+                    named = os.stat(name, dir_fd=directory, follow_symlinks=False)
+                    signature = lambda s: (s.st_dev, s.st_ino, s.st_size, s.st_mtime_ns, s.st_ctime_ns)
+                    if signature(before) != signature(after) or signature(after) != signature(named):
+                        raise ReviewError(ReviewFailure.INTEGRITY_INVALID)
+                import json
+                document = json.loads(payload)
+                if (set(document) != {"observation_identity", "observation"}
+                    or json.dumps(document, sort_keys=True, separators=(",", ":")).encode() + b"\n" != payload):
+                    raise ReviewError(ReviewFailure.INTEGRITY_INVALID)
+                value = observation_from_bytes(json.dumps(document["observation"],
+                    sort_keys=True, separators=(",", ":")).encode() + b"\n")
+                if value.identity != document["observation_identity"]:
+                    raise ReviewError(ReviewFailure.INTEGRITY_INVALID)
+                self.validate_chart_input_binding(value, chart, self.load_chart_bytes(chart))
+                return value
+        except FileNotFoundError:
+            return None
+        except (OSError, ValueError, TypeError, KeyError) as error:
+            raise ReviewError(ReviewFailure.INTEGRITY_INVALID) from error
+
     def retain_pack(self, value: ReviewQuestionPackV2) -> Path:
         return self._retain_typed("question-packs", value.review_pack_identity, value)
 

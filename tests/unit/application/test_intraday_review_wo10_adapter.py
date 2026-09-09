@@ -22,6 +22,7 @@ from tests.unit.browser.test_intraday_review_workflow import _routes, _fingerpri
 from tests.unit.browser.test_intraday_review_v2_control import _control, _payload
 from tests.unit.browser.test_product_route_isolation import _snapshot
 from tests.unit.intraday.test_review import _png
+from tests.unit.intraday.chart_input_fixtures import retain_current_fixture_receipts
 from tests.unit.intraday.test_review_v2 import _completed_batch_payload, _retain_later_current_run
 
 
@@ -31,6 +32,7 @@ def _ready(tmp_path):
     app.upload_chart(app.snapshot().candidates[0].cycle_identity,
                      media_type="image/png", payload=_png(12))
     batch = app.create_combined_question_transport()
+    retain_current_fixture_receipts(app, "Reliance Industries Ltd")
     app.import_combined_answer(_completed_batch_payload(batch.answer_template_path, "Reliance Industries Ltd"))
     return run, app, batch
 
@@ -194,6 +196,7 @@ def test_current_counts_and_browser_dispatch_use_only_ready_v2_candidate(tmp_pat
     control.execute_document(_payload(run))
     app.upload_chart(app.snapshot().candidates[0].cycle_identity, media_type="image/png", payload=_png(15))
     batch = app.create_combined_question_transport()
+    retain_current_fixture_receipts(app, "Reliance Industries Ltd")
     app.import_combined_answer(_completed_batch_payload(batch.answer_template_path, "Reliance Industries Ltd"))
     review_before = _fingerprints(app.review_store.root)
     wo10 = _wo10(app, tmp_path / "offline-browser-wo10")

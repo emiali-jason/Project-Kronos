@@ -92,7 +92,11 @@ def test_both_commodities_use_identical_intake_pack_and_import(paired_case):
         assert '1H' not in timeframes
     complete_paired(app, question, native=native, reference=reference)
     result = app.import_expected_answer(cycle.cycle_identity)
-    assert (result.imported_count, result.rejected_count) == (1, 0)
+    assert (result.imported_count, result.rejected_count) == (0, 1)
+    assert result.members[0].reason == ReviewFailure.CHART_CORRESPONDENCE_UNVERIFIABLE.value
+    from tests.unit.intraday.chart_input_fixtures import retain_legacy_paired_fixture
+    retain_legacy_paired_fixture(app, cycle, chart)
+    assert app.import_expected_answer(cycle.cycle_identity).already_imported_count == 1
     evidence = app._paired.store.load_evidence_for_pack(pack.review_pack_identity)
     assert evidence.native_observed_visible_identity == native
     assert evidence.native_resolution.canonical_subject_identity == contract

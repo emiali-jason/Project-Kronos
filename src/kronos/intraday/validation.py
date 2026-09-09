@@ -1334,28 +1334,48 @@ def _panel_temporal(
         return result(ValidationState.NOT_VALIDATED, "SOURCE_CANDLE_SESSION_MISMATCH")
     if source.candle.completion is not CandleCompletion.COMPLETE or boundary.end > request.machine.observation_boundary:
         return result(ValidationState.UNVERIFIABLE, "COMPLETED_CANDLE_NOT_PROVEN")
-    if observed is None or any(getattr(observed, f) is None for f in (
-        "trading_date", "session", "timezone", "timeframe", "candle_start", "candle_end", "completion",
-    )) or visual.chart_captured_at is None:
-        return result(ValidationState.UNVERIFIABLE, "TEMPORAL_EVIDENCE_MISSING")
-    if observed.completion is not CandleCompletion.COMPLETE:
-        return result(ValidationState.UNVERIFIABLE, "OBSERVED_CANDLE_INCOMPLETE")
-    for label, actual, expected in (
-        ("TRADING_DATE", observed.trading_date, boundary.trading_date),
-        ("SESSION", observed.session, schedule.session_type),
-        ("TIMEZONE", observed.timezone, schedule.timezone),
-        ("TIMEFRAME", observed.timeframe, boundary.timeframe),
-        ("CANDLE_START", observed.candle_start, boundary.start),
-        ("CANDLE_END", observed.candle_end, boundary.end),
+    state, reason = compare_completed_panel_time(
+        expected=(boundary.trading_date, schedule.session_type, schedule.timezone,
+                  boundary.timeframe, boundary.start, boundary.end),
+        observed=None if observed is None else (
+            observed.trading_date, observed.session, observed.timezone,
+            observed.timeframe, observed.candle_start, observed.candle_end),
+        completion=None if observed is None else observed.completion,
+        captured_at=visual.chart_captured_at, received_at=request.chart_received_at,
+        frozen_at=request.machine.frozen_at, observed_at=visual.answered_at,
+    )
+    return result(state, reason)
+
+
+def compare_completed_panel_time(
+    *, expected: tuple, observed: tuple | None, completion: CandleCompletion | None,
+    captured_at: datetime | None, received_at: datetime, frozen_at: datetime,
+    observed_at: datetime,
+) -> tuple[ValidationState, str]:
+    """Existing exact temporal comparison, shared by factual and chart-input gates.
+
+    Expected endpoints must already be bound to completed governed sources and
+    DOMAIN-008 by the caller. This primitive creates no schedule or timestamp.
+    """
+    if len(expected) != 6 or not all(_aware(t) for t in (
+        expected[4], expected[5], received_at, frozen_at, observed_at,
+    )):
+        raise ValueError("SLICE3V_PANEL_TEMPORAL_INPUT_INVALID")
+    if (observed is None or len(observed) != 6 or any(t is None for t in observed)
+        or completion is None or captured_at is None):
+        return ValidationState.UNVERIFIABLE, "TEMPORAL_EVIDENCE_MISSING"
+    if completion is not CandleCompletion.COMPLETE:
+        return ValidationState.UNVERIFIABLE, "OBSERVED_CANDLE_INCOMPLETE"
+    for label, actual, wanted in zip(
+        ("TRADING_DATE", "SESSION", "TIMEZONE", "TIMEFRAME", "CANDLE_START", "CANDLE_END"),
+        observed, expected, strict=True,
     ):
-        if actual != expected:
-            return result(ValidationState.NOT_VALIDATED, label + "_MISMATCH")
-    if not (
-        boundary.end <= visual.chart_captured_at <= request.chart_received_at
-        and max(request.machine.frozen_at, request.chart_received_at) <= visual.answered_at
-    ):
-        return result(ValidationState.UNVERIFIABLE, "CAPTURE_OR_ANSWER_CHRONOLOGY_UNPROVEN")
-    return result(ValidationState.VALIDATED, "EXACT_COMPLETED_SOURCE_CONTEXT")
+        if actual != wanted:
+            return ValidationState.NOT_VALIDATED, label + "_MISMATCH"
+    if not (_aware(captured_at) and expected[5] <= captured_at <= received_at
+            and max(frozen_at, received_at) <= observed_at):
+        return ValidationState.UNVERIFIABLE, "CAPTURE_OR_ANSWER_CHRONOLOGY_UNPROVEN"
+    return ValidationState.VALIDATED, "EXACT_COMPLETED_SOURCE_CONTEXT"
 
 
 def _panel_rollup(states: tuple[ValidationState, ...]) -> ValidationState:

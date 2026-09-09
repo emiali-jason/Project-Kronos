@@ -17,7 +17,7 @@ from kronos.intraday.review_mcx_paired import (
 )
 from kronos.intraday.review_mcx_paired_persistence import IntradayMcxPairedReviewStore
 from kronos.intraday.review_mcx_paired_transport import create_paired_transport
-from kronos.intraday.review_mcx_paired_answer import parse_mcx_paired_answer
+from kronos.intraday.review_mcx_paired_answer import parse_mcx_paired_answer, bind_mcx_paired_import
 from kronos.intraday.review_v2 import ChartRevisionV2, ReviewCycleV2
 
 
@@ -29,13 +29,14 @@ class PairedQuestionResult:
 
 
 class IntradayReviewV2PairedAdapter:
-    def __init__(self, review_store, transport, *, native_resolver=None):
+    def __init__(self, review_store, transport, *, native_resolver=None, chart_input=None):
         self.review = review_store
         self.transport = transport
         self.bindings = ActiveDerivativeBindingStore(review_store.root.parent / "active-derivative-bindings")
         self.store = IntradayMcxPairedReviewStore(review_store.root.parent / "review-mcx-paired-v1")
         self.engine = IntradayMcxPairedReviewApplication(store=self.store)
         self.native_resolver = native_resolver
+        self.chart_input = chart_input
 
     def options(self, cycle: ReviewCycleV2) -> dict[str, str]:
         try:
@@ -158,6 +159,17 @@ class IntradayReviewV2PairedAdapter:
                     state = "ALREADY_IMPORTED"
                 else:
                     resolver = self.native_resolver or load_visual_identity_resolver(publication_version=VISUAL_IDENTITY_NATIVE_CONTRACT_VERSION)
+                    # Preserve envelope/native-identity failure precedence. This
+                    # pure comparison writes no Answer or evidence.
+                    bind_mcx_paired_import(pack=pack, bundle=bundle,
+                        native_chart=native, reference_chart=reference, answer=parsed,
+                        native_resolver=resolver, reference_resolver=resolver,
+                        imported_at=imported_at, supporting_reference_only=True)
+                    if self.chart_input is None:
+                        raise ReviewError(ReviewFailure.CHART_CORRESPONDENCE_UNVERIFIABLE)
+                    self.chart_input.require(cycle, chart, bundle=bundle, resolver=resolver,
+                        observed_native=parsed.native_observed_visible_identity,
+                        observed_reference=parsed.reference_observed_visible_identity)
                     _, evidence = self.engine.import_answer(payload=payload, pack=pack, bundle=bundle,
                         native_chart=native, reference_chart=reference, native_resolver=resolver,
                         reference_resolver=resolver, imported_at=imported_at, supporting_reference_only=True)

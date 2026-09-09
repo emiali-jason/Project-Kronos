@@ -97,7 +97,10 @@ def test_paired_answer_observation_needs_no_constituent_authority(tmp_path):
     assert document['reference_observed_visible_identity'].startswith('REPLACE_')
     complete_paired(app, result, reference="CLV2026 (observed only)")
     outcome = app.import_expected_answer(cycle.cycle_identity)
-    assert (outcome.imported_count, outcome.rejected_count) == (1, 0)
+    assert (outcome.imported_count, outcome.rejected_count) == (0, 1)
+    assert outcome.members[0].reason == ReviewFailure.CHART_CORRESPONDENCE_UNVERIFIABLE.value
+    from tests.unit.intraday.chart_input_fixtures import retain_legacy_paired_fixture
+    retain_legacy_paired_fixture(app, cycle, chart)
     pack = app._paired.retained(cycle, chart)[3]
     evidence = app._paired.store.load_evidence_for_pack(pack.review_pack_identity)
     assert evidence.reference_resolution is None
@@ -231,15 +234,16 @@ def test_mixed_batch_create_and_import_exact_nse_and_paired_answers(tmp_path, mo
     complete_paired(app, paired)
     result = app.import_all_expected_answers()
     assert result.expected_count == 2 and result.found_count == 2
-    assert result.imported_count == 1 and result.already_imported_count == 1
-    assert result.rejected_count == 0
+    assert result.imported_count == 0 and result.already_imported_count == 1
+    assert result.rejected_count == 1
+    assert any(m.reason == ReviewFailure.CHART_CORRESPONDENCE_UNVERIFIABLE.value for m in result.members)
     # Imported paired Review evidence does not silently enter the generic WO-10 adapter.
     selected = app.current_reconciliation()
     assert len(selected.requests) == 1
     from kronos.browser.intraday_views import _review_v2_projection
     page = _review_v2_projection(app.snapshot(), run, {
         'currentness_state':'REVIEW_CURRENT', 'reconciliation':selected.status_document()})
-    assert 'Answer ready: 2 / 2' in page
+    assert 'Answer ready: 1 / 2' in page
     assert 'Reconcile eligible: 1 / 2' in page
 
 
