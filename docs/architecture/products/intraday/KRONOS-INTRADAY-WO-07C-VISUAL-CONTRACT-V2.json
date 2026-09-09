@@ -1,0 +1,474 @@
+{
+  "status": "Engineering candidate; Sponsor publication review pending",
+  "authority": "Direct Sponsor WO-07C three-part work order and explicit source/transport/restoration authorization",
+  "version": "2.0.0",
+  "nse_question_set": "KRONOS-INTRADAY-CHART-ANALYST-QUESTION-SET-V2",
+  "nse_answer_schema": "KRONOS-INTRADAY-CHART-ANALYST-ANSWER-PACK-V2",
+  "nse_batch_answer_schema": "KRONOS-INTRADAY-CHART-ANALYST-BATCH-ANSWER-PACK-V2",
+  "mcx_question_set": "KRONOS-INTRADAY-MCX-PAIRED-QUESTION-SET-V2",
+  "mcx_answer_schema": "KRONOS-INTRADAY-MCX-PAIRED-ANSWER-PACK-V2",
+  "observation_fields": [
+    "question_id",
+    "observation_status",
+    "answer",
+    "visible_timeframes",
+    "visible_basis",
+    "status_detail",
+    "why_not_covered_elsewhere"
+  ],
+  "observation_statuses": [
+    "OBSERVED",
+    "PARTIAL",
+    "NOT_VISIBLE",
+    "NOT_APPLICABLE",
+    "UNAVAILABLE",
+    "INVALID"
+  ],
+  "questions": [
+    {
+      "family": "NSE",
+      "question_id": "Q1",
+      "wording": "What broader completed 1D visual context is visible relative to the proposed Intraday direction?",
+      "allowed_answers": [
+        "SUPPORTIVE",
+        "OPPOSING",
+        "MIXED",
+        "UNCLEAR"
+      ],
+      "timeframes": [
+        "1D"
+      ],
+      "instruction": null
+    },
+    {
+      "family": "NSE",
+      "question_id": "Q2",
+      "wording": "How clearly organized is the surrounding completed 1H price structure?",
+      "allowed_answers": [
+        "CLEAN_DIRECTIONAL_STRUCTURE",
+        "MIXED_STRUCTURE",
+        "CONGESTED_STRUCTURE",
+        "UNCLEAR"
+      ],
+      "timeframes": [
+        "1H"
+      ],
+      "instruction": null
+    },
+    {
+      "family": "NSE",
+      "question_id": "Q3",
+      "wording": "Does completed 15M evidence show an organized base or consolidation relevant to the current move?",
+      "allowed_answers": [
+        "CLEAR_BASE_OR_CONSOLIDATION",
+        "WEAK_OR_MIXED_BASE",
+        "NO_CLEAR_BASE",
+        "UNCLEAR"
+      ],
+      "timeframes": [
+        "15M"
+      ],
+      "instruction": null
+    },
+    {
+      "family": "NSE",
+      "question_id": "Q4",
+      "wording": "What does permitted completed 15M evidence show about establishment, follow-through or failure of the visible move?",
+      "allowed_answers": [
+        "CLEAR_FOLLOW_THROUGH",
+        "WEAK_OR_STALLING",
+        "FAILED_OR_RETURNED_THROUGH",
+        "MIXED",
+        "UNCLEAR"
+      ],
+      "timeframes": [
+        "15M"
+      ],
+      "instruction": null
+    },
+    {
+      "family": "NSE",
+      "question_id": "Q5",
+      "wording": "How orderly is the permitted completed 5M pullback or progression within the current move?",
+      "allowed_answers": [
+        "ORDERLY",
+        "MIXED",
+        "DISORDERLY",
+        "NO_CLEAR_PULLBACK_OR_PROGRESSION",
+        "UNCLEAR"
+      ],
+      "timeframes": [
+        "5M"
+      ],
+      "instruction": null
+    },
+    {
+      "family": "NSE",
+      "question_id": "Q6",
+      "wording": "How does permitted completed price action interact with the supplied governed level or zone?",
+      "allowed_answers": [
+        "CLEAN_INTERACTION",
+        "REPEATED_OR_CONGESTED_INTERACTION",
+        "CLEAR_REJECTION",
+        "CLEAR_ACCEPTANCE",
+        "NO_CLEAR_INTERACTION",
+        "UNCLEAR",
+        "NOT_OBSERVABLE"
+      ],
+      "timeframes": [
+        "15M",
+        "5M"
+      ],
+      "instruction": "Use only an explicitly supplied governed level/zone and qualified visible anchor; otherwise report NOT_OBSERVABLE or unavailable. Never invent a barrier."
+    },
+    {
+      "family": "NSE",
+      "question_id": "Q7",
+      "wording": "What visible structural space exists in the proposed direction before the next clearly relevant obstacle?",
+      "allowed_answers": [
+        "CLEAR_SPACE",
+        "LIMITED_SPACE",
+        "OBSTACLE_CLOSE",
+        "UNCLEAR",
+        "NOT_OBSERVABLE"
+      ],
+      "timeframes": [
+        "1D",
+        "1H",
+        "15M",
+        "5M"
+      ],
+      "instruction": "Describe visual space only; do not calculate a Target, Stop, Entry, R:R or profit forecast."
+    },
+    {
+      "family": "NSE",
+      "question_id": "Q8",
+      "wording": "Relative to the most recent clearly visible base or structure, is permitted completed price action visibly extended?",
+      "allowed_answers": [
+        "NOT_VISIBLY_EXTENDED",
+        "VISIBLY_EXTENDED",
+        "MIXED",
+        "UNCLEAR"
+      ],
+      "timeframes": [
+        "15M",
+        "5M"
+      ],
+      "instruction": null
+    },
+    {
+      "family": "NSE",
+      "question_id": "Q9",
+      "wording": "At the relevant governed structure or level, what acceptance, rejection, retest-hold or return-through is visible?",
+      "allowed_answers": [
+        "CLEAR_ACCEPTANCE",
+        "CLEAR_REJECTION",
+        "CLEAR_RETEST_HOLD",
+        "CLEAR_RETURN_THROUGH",
+        "MIXED",
+        "NO_CLEAR_STATE",
+        "UNCLEAR",
+        "NOT_OBSERVABLE"
+      ],
+      "timeframes": [
+        "15M",
+        "5M"
+      ],
+      "instruction": "Use only an explicitly supplied governed level/zone and qualified visible anchor; otherwise report NOT_OBSERVABLE or unavailable. Never invent a barrier."
+    },
+    {
+      "family": "NSE",
+      "question_id": "Q10",
+      "wording": "Is there a material visible condition not adequately represented by Q1-Q9?",
+      "allowed_answers": [
+        "NONE",
+        "MATERIAL_OBSERVATION"
+      ],
+      "timeframes": [
+        "1D",
+        "1H",
+        "15M",
+        "5M"
+      ],
+      "instruction": "NONE requires a null explanation. MATERIAL_OBSERVATION requires why_not_covered_elsewhere; do not repeat Q1-Q9."
+    },
+    {
+      "family": "MCX",
+      "question_id": "R1",
+      "wording": "What broader completed 1D international benchmark context is visible relative to the proposed direction?",
+      "allowed_answers": [
+        "SUPPORTIVE",
+        "OPPOSING",
+        "MIXED",
+        "UNCLEAR"
+      ],
+      "timeframes": [
+        "1D"
+      ],
+      "instruction": null
+    },
+    {
+      "family": "MCX",
+      "question_id": "R2",
+      "wording": "How organized is the completed 4H international benchmark structure?",
+      "allowed_answers": [
+        "CLEAN_DIRECTIONAL_STRUCTURE",
+        "MIXED_STRUCTURE",
+        "CONGESTED_STRUCTURE",
+        "UNCLEAR"
+      ],
+      "timeframes": [
+        "4H"
+      ],
+      "instruction": null
+    },
+    {
+      "family": "MCX",
+      "question_id": "R3",
+      "wording": "What completed 15M benchmark base or consolidation is visible?",
+      "allowed_answers": [
+        "CLEAR_BASE_OR_CONSOLIDATION",
+        "WEAK_OR_MIXED_BASE",
+        "NO_CLEAR_BASE",
+        "UNCLEAR"
+      ],
+      "timeframes": [
+        "15M"
+      ],
+      "instruction": null
+    },
+    {
+      "family": "MCX",
+      "question_id": "R4",
+      "wording": "How orderly is the completed 5M benchmark progression, pullback or follow-through?",
+      "allowed_answers": [
+        "ORDERLY",
+        "MIXED",
+        "DISORDERLY",
+        "NO_CLEAR_PULLBACK_OR_PROGRESSION",
+        "UNCLEAR"
+      ],
+      "timeframes": [
+        "5M"
+      ],
+      "instruction": null
+    },
+    {
+      "family": "MCX",
+      "question_id": "R5",
+      "wording": "What benchmark location, acceptance or rejection is visible at the supplied lawful structure?",
+      "allowed_answers": [
+        "CLEAR_ACCEPTANCE",
+        "CLEAR_REJECTION",
+        "CLEAR_RETEST_HOLD",
+        "CLEAR_RETURN_THROUGH",
+        "MIXED",
+        "NO_CLEAR_STATE",
+        "UNCLEAR",
+        "NOT_OBSERVABLE"
+      ],
+      "timeframes": [
+        "4H",
+        "15M",
+        "5M"
+      ],
+      "instruction": "Use only a clearly observable structure in temporally qualified evidence. If its anchor or correspondence cannot be established, report NOT_OBSERVABLE or UNCLEAR. Do not invent a break threshold."
+    },
+    {
+      "family": "MCX",
+      "question_id": "M1",
+      "wording": "What broader completed 1D native MCX context is visible relative to the proposed direction?",
+      "allowed_answers": [
+        "SUPPORTIVE",
+        "OPPOSING",
+        "MIXED",
+        "UNCLEAR"
+      ],
+      "timeframes": [
+        "1D"
+      ],
+      "instruction": null
+    },
+    {
+      "family": "MCX",
+      "question_id": "M2",
+      "wording": "How organized is the completed 4H native MCX structure?",
+      "allowed_answers": [
+        "CLEAN_DIRECTIONAL_STRUCTURE",
+        "MIXED_STRUCTURE",
+        "CONGESTED_STRUCTURE",
+        "UNCLEAR"
+      ],
+      "timeframes": [
+        "4H"
+      ],
+      "instruction": null
+    },
+    {
+      "family": "MCX",
+      "question_id": "M3",
+      "wording": "What does completed 15M native setup context show about follow-through, stalling or failure?",
+      "allowed_answers": [
+        "CLEAR_FOLLOW_THROUGH",
+        "WEAK_OR_STALLING",
+        "FAILED_OR_RETURNED_THROUGH",
+        "MIXED",
+        "UNCLEAR"
+      ],
+      "timeframes": [
+        "15M"
+      ],
+      "instruction": null
+    },
+    {
+      "family": "MCX",
+      "question_id": "M4",
+      "wording": "How orderly is the permitted completed 5M native MCX pullback or progression?",
+      "allowed_answers": [
+        "ORDERLY",
+        "MIXED",
+        "DISORDERLY",
+        "NO_CLEAR_PULLBACK_OR_PROGRESSION",
+        "UNCLEAR"
+      ],
+      "timeframes": [
+        "5M"
+      ],
+      "instruction": null
+    },
+    {
+      "family": "MCX",
+      "question_id": "M5",
+      "wording": "How does native MCX interact with the supplied governed level through acceptance, rejection, retest or return-through?",
+      "allowed_answers": [
+        "CLEAR_ACCEPTANCE",
+        "CLEAR_REJECTION",
+        "CLEAR_RETEST_HOLD",
+        "CLEAR_RETURN_THROUGH",
+        "MIXED",
+        "NO_CLEAR_STATE",
+        "UNCLEAR",
+        "NOT_OBSERVABLE"
+      ],
+      "timeframes": [
+        "15M",
+        "5M"
+      ],
+      "instruction": "Use only an explicitly supplied governed level/zone and qualified visible anchor; otherwise report NOT_OBSERVABLE or unavailable. Never invent a barrier."
+    },
+    {
+      "family": "MCX",
+      "question_id": "X1",
+      "wording": "Does native MCX structure confirm, partially confirm or conflict with the international benchmark structure?",
+      "allowed_answers": [
+        "CONFIRMS_REFERENCE",
+        "PARTIAL_CONFIRMATION",
+        "CONFLICTS_WITH_REFERENCE",
+        "UNCLEAR"
+      ],
+      "timeframes": [
+        "1D",
+        "4H",
+        "15M",
+        "5M"
+      ],
+      "instruction": null
+    },
+    {
+      "family": "MCX",
+      "question_id": "X2",
+      "wording": "Within comparable permitted evidence, is the benchmark apparently leading, moving with MCX, or is MCX leading or diverging?",
+      "allowed_answers": [
+        "REFERENCE_LEADING",
+        "MOVING_TOGETHER",
+        "MCX_LEADING_OR_DIVERGING",
+        "UNCLEAR",
+        "NOT_OBSERVABLE"
+      ],
+      "timeframes": [
+        "1D",
+        "4H",
+        "15M",
+        "5M"
+      ],
+      "instruction": "Visual contemporaneous observation only, not measured latency or causality. Insufficient timing correspondence is NOT_OBSERVABLE."
+    },
+    {
+      "family": "MCX",
+      "question_id": "X3",
+      "wording": "Where a lawful structural break or acceptance exists, does corresponding benchmark behaviour confirm native MCX behaviour?",
+      "allowed_answers": [
+        "CONFIRMED",
+        "PARTIALLY_CONFIRMED",
+        "NOT_CONFIRMED",
+        "CONFLICTING",
+        "NOT_OBSERVABLE",
+        "UNCLEAR"
+      ],
+      "timeframes": [
+        "1D",
+        "4H",
+        "15M",
+        "5M"
+      ],
+      "instruction": "Use only a clearly observable structure in temporally qualified evidence. If its anchor or correspondence cannot be established, report NOT_OBSERVABLE or UNCLEAR. Do not invent a break threshold."
+    },
+    {
+      "family": "MCX",
+      "question_id": "X4",
+      "wording": "Is there material visible structural disagreement between the benchmark and native MCX?",
+      "allowed_answers": [
+        "NO_MATERIAL_DIVERGENCE_VISIBLE",
+        "PARTIAL_DIVERGENCE",
+        "MATERIAL_DIVERGENCE",
+        "UNCLEAR",
+        "NOT_OBSERVABLE"
+      ],
+      "timeframes": [
+        "1D",
+        "4H",
+        "15M",
+        "5M"
+      ],
+      "instruction": "Currency, basis, contract timing and sessions may differ. Divergence is not a trade rejection or proof either market is wrong."
+    },
+    {
+      "family": "MCX",
+      "question_id": "X5",
+      "wording": "Is there a material native/reference observation not represented by R1-R5, M1-M5 or X1-X4?",
+      "allowed_answers": [
+        "NONE",
+        "MATERIAL_OBSERVATION"
+      ],
+      "timeframes": [
+        "1D",
+        "4H",
+        "15M",
+        "5M"
+      ],
+      "instruction": "NONE requires a null explanation. MATERIAL_OBSERVATION requires why_not_covered_elsewhere; do not repeat earlier observations."
+    }
+  ],
+  "downstream_consequence": "NONE; WO-07F vocabulary and policy remain separately governed",
+  "future_reliability_corpus": [
+    "identity",
+    "timeframe",
+    "temporal boundary",
+    "observability",
+    "uncertainty",
+    "NSE Q1-Q10 consistency",
+    "MCX R/M/X consistency",
+    "reference/native distinction",
+    "cropped/missing/loading",
+    "wrong subject",
+    "wrong contract",
+    "future/forming",
+    "cross-market ambiguity"
+  ],
+  "review_artifact_versions": {
+    "NSE_historical_workflow_V2_visual_V1": "2.0.0",
+    "NSE_new_workflow_V2_visual_V2": "3.0.0",
+    "MCX_historical_visual_V1": "1.0.0",
+    "MCX_new_visual_V2": "2.0.0"
+  }
+}

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from kronos.intraday import visual_contract_v2 as visual_v2
+
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from hashlib import sha256
@@ -111,6 +113,23 @@ def transport_from_bytes(payload: bytes) -> McxPairedReviewTransport:
 
 
 def _render_pdf(pack: McxPairedReviewPack, bundle: McxPairedChartBundle, native: bytes, reference: bytes, supporting_reference_only: bool = False) -> bytes:
+    if pack.question_set_version == visual_v2.VERSION:
+        from kronos.intraday.visual_review_pdf import render_visual_review
+        from kronos.intraday.visual_machine_context import usdinr_futures_context
+        currency = usdinr_futures_context(boundary=pack.analysis_boundary)
+        orientation = (
+            f"{pack.canonical_mcx_subject_identity} | {pack.direction}",
+            f"Analysis boundary: {pack.analysis_boundary.isoformat()} | Each row: 1D / 4H / 15M / 5M",
+            f"Native contract: {bundle.native_identity_binding.actual_derivative_contract_identity}",
+            f"Reference: {bundle.reference_relationship.reference_name} | {bundle.reference_relationship.governed_visible_identity} | SUPPORTING ONLY",
+            "Listed reference series is independently observed; no continuous-series constituent membership or causality is asserted.",
+            f"Chart revision: {pack.native_chart_revision_identity}",
+            f"Question set: {pack.question_set_identity} / {pack.question_set_version}",
+            f"USDINR FUTURES (Kite): {currency.state} / {currency.reason}. No spot substitute or ninth panel.",
+            "Native governed levels: " + ("; ".join(f"{name} = {value}" for name, value, _ in pack.native_governed_levels) or "NOT_ESTABLISHED") + ". Reference anchors remain independently visible; comparison requires lawful completed temporal evidence.",
+        )
+        return render_visual_review(((orientation, (native,) if native == reference else (reference, native), pack.questions),),
+            expected_filename=f"KRONOS_INTRADAY_MCX_PAIRED_REVIEW_{pack.review_pack_identity[-12:]}_ANSWERS.json", paired=True)
     output = BytesIO()
     document = SimpleDocTemplate(output, pagesize=A4, leftMargin=15*mm, rightMargin=15*mm,
                                  topMargin=14*mm, bottomMargin=14*mm,

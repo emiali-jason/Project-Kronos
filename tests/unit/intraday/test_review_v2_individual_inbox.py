@@ -24,6 +24,7 @@ from kronos.intraday.probables_v2 import (
 )
 from kronos.intraday.probables_v2_persistence import ProbablesV2Store
 from kronos.intraday.review import QUESTIONS, ReviewError, ReviewFailure
+from kronos.intraday.visual_contract_v2 import NSE_QUESTIONS
 from kronos.intraday.review_v2_persistence import IntradayReviewV2Store
 from kronos.intraday.review_v2_transport import IntradayReviewV2Transport
 from tests.unit.intraday.test_probables_v2 import (
@@ -120,10 +121,10 @@ def _completed(path: Path) -> bytes:
             "expected_canonical_subject_identity"
         ]
         candidate["global_observation_status"] = "OBSERVED"
-        for question, answer in zip(QUESTIONS, candidate["answers"], strict=True):
+        for question, answer in zip((NSE_QUESTIONS if candidate["question_set_version"] == "2.0.0" else QUESTIONS), candidate["answers"], strict=True):
             answer.update(
                 observation_status="OBSERVED",
-                answer=question.allowed_answers[0],
+                answer=("NOT_OBSERVABLE" if candidate["question_set_version"] == "2.0.0" and question.question_id in {"Q6", "Q9"} else question.allowed_answers[0]),
                 visible_timeframes=list(question.timeframe_scope),
                 visible_basis="Visible completed chart evidence.",
                 status_detail=None,

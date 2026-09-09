@@ -82,13 +82,13 @@ def test_both_commodities_use_identical_intake_pack_and_import(paired_case):
     assert bundle.reference_relationship.governed_visible_identity == continuous
     question = app.create_individual_question_transport(cycle.cycle_identity)
     document = json.loads(question.answer_template_path.read_bytes())
-    assert document['schema_identity'] == 'KRONOS-INTRADAY-MCX-PAIRED-ANSWER-PACK-V1'
+    assert document['schema_identity'] == 'KRONOS-INTRADAY-MCX-PAIRED-ANSWER-PACK-V2'
     assert document['native_observed_visible_identity'].startswith('REPLACE_')
     assert document['reference_observed_visible_identity'].startswith('REPLACE_')
     pack = app._paired.retained(cycle, chart)[3]
     for side in ('NATIVE_MCX', 'INTERNATIONAL_REFERENCE'):
-        timeframes = {q.timeframe for q in pack.questions if q.side == side}
-        assert timeframes == {'1D', '4H', '15M', '5M', 'MULTI'}
+        timeframes = {t for q in pack.questions if q.side == side for t in q.timeframe_scope}
+        assert timeframes == {'1D', '4H', '15M', '5M'}
         assert '1H' not in timeframes
     complete_paired(app, question, native=native, reference=reference)
     result = app.import_expected_answer(cycle.cycle_identity)

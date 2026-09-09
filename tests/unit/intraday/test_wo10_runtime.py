@@ -172,7 +172,12 @@ def test_retained_v2_loader_executes_exact_equity_request_without_provider(
     review.upload_chart(cycle.cycle_identity, media_type="image/png", payload=_png(93))
     from tests.unit.intraday.chart_input_fixtures import retain_current_fixture_receipts
     retain_current_fixture_receipts(review, "Reliance Industries Ltd")
-    transport = review.create_combined_question_transport()
+    # Retained workflow V2 / visual V1 compatibility; visual V2 reconciliation
+    # remains a later WO-07F contract, outside this downstream regression.
+    from kronos.intraday.review_v2 import create_question_pack_v2
+    chart = review_store.load_chart(review_store.load_current_chart(cycle.cycle_identity).chart_revision_identity)
+    pack = create_question_pack_v2(review_store.load_handoff(cycle.handoff_identity), cycle, chart)
+    transport = review._create_question_transport(((pack, review_store.load_chart_bytes(chart)),))
     review.import_combined_answer(
         _completed_batch_payload(
             transport.answer_template_path, "Reliance Industries Ltd"

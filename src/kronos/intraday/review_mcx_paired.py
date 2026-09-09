@@ -6,6 +6,8 @@ cross-market synthesis, promotion, trading, Risk, or execution consequence.
 
 from __future__ import annotations
 
+from kronos.intraday import visual_contract_v2 as visual_v2
+
 from dataclasses import asdict, dataclass, is_dataclass
 from datetime import datetime
 from enum import StrEnum
@@ -20,7 +22,8 @@ from kronos.intraday.mcx_commissioning import (
     load_mcx_commissioning_publication,
 )
 from kronos.intraday.review import ReviewError, ReviewFailure
-from kronos.intraday.review_v2 import ReviewCycleV2
+from kronos.intraday.review_v2 import ReviewCycleV2, _validate_levels
+from kronos.intraday.completed_evidence import is_completed_evidence_selection
 
 
 MCX_PAIRED_CONTRACT_VERSION = "1.0.0"
@@ -415,8 +418,11 @@ class McxPairedReviewPack:
     integrity_identity: str
     schema_identity: str = MCX_PAIRED_REVIEW_PACK_IDENTITY
     schema_version: str = MCX_PAIRED_CONTRACT_VERSION
+    native_governed_levels: tuple[tuple[str, str, str], ...] | None = None
 
     def __post_init__(self) -> None:
+        identity, questions = _visual_questions(self.schema_version)
+        _validate_levels(self.native_governed_levels, self.schema_version)
         values = _without(self, "review_pack_identity", "integrity_identity")
         if (
             not _texts((self.paired_bundle_identity, self.review_cycle_identity,
@@ -425,19 +431,19 @@ class McxPairedReviewPack:
                         self.native_chart_revision_identity, self.reference_chart_revision_identity))
             or self.direction not in {"LONG", "SHORT"}
             or not _aware(self.analysis_boundary) or not _aware(self.created_at)
-            or self.question_set_identity != MCX_PAIRED_QUESTION_SET_IDENTITY
-            or self.question_set_version != MCX_PAIRED_QUESTION_SET_VERSION
-            or self.questions != MCX_PAIRED_QUESTIONS
+            or self.question_set_identity != identity
+            or self.question_set_version != self.schema_version
+            or self.questions != questions
             or self.authority != PAIRED_REVIEW_AUTHORITY
             or self.schema_identity != MCX_PAIRED_REVIEW_PACK_IDENTITY
-            or self.schema_version != MCX_PAIRED_CONTRACT_VERSION
             or self.review_pack_identity != _identity("INTRADAY-MCX-PAIRED-REVIEW-PACK-", values)
             or self.integrity_identity != _identity("INTEGRITY-INTRADAY-MCX-PAIRED-REVIEW-PACK-", values)
         ):
             raise ReviewError(ReviewFailure.INTEGRITY_INVALID)
 
 
-def create_paired_review_pack(bundle: McxPairedChartBundle, *, created_at: datetime) -> McxPairedReviewPack:
+def create_paired_review_pack(bundle: McxPairedChartBundle, *, created_at: datetime, question_version: str = MCX_PAIRED_CONTRACT_VERSION, completed_selection=None) -> McxPairedReviewPack:
+    identity, questions = _visual_questions(question_version)
     if type(bundle) is not McxPairedChartBundle or not _aware(created_at):
         raise ReviewError(ReviewFailure.INPUT_INVALID)
     values = {
@@ -451,14 +457,26 @@ def create_paired_review_pack(bundle: McxPairedChartBundle, *, created_at: datet
         "analysis_boundary": bundle.analysis_boundary,
         "native_chart_revision_identity": bundle.native_chart_revision_identity,
         "reference_chart_revision_identity": bundle.reference_chart_revision_identity,
-        "question_set_identity": MCX_PAIRED_QUESTION_SET_IDENTITY,
-        "question_set_version": MCX_PAIRED_QUESTION_SET_VERSION,
-        "questions": MCX_PAIRED_QUESTIONS,
+        "question_set_identity": identity,
+        "question_set_version": question_version,
+        "questions": questions,
         "created_at": created_at,
         "authority": PAIRED_REVIEW_AUTHORITY,
         "schema_identity": MCX_PAIRED_REVIEW_PACK_IDENTITY,
-        "schema_version": MCX_PAIRED_CONTRACT_VERSION,
+        "schema_version": question_version,
     }
+    if question_version == visual_v2.VERSION:
+        values["native_governed_levels"] = ()
+        if completed_selection is not None:
+            if (not is_completed_evidence_selection(completed_selection)
+                or completed_selection.canonical_subject_identity != bundle.canonical_mcx_subject_identity
+                or completed_selection.analysis_boundary != bundle.analysis_boundary):
+                raise ReviewError(ReviewFailure.INTEGRITY_INVALID)
+            daily = tuple(x.candle for x in completed_selection.selected_candles if x.candle.timeframe.value == "1D")
+            if len(daily) == 1:
+                candle = daily[0]
+                values["native_governed_levels"] = (("PREVIOUS_COMPLETED_DAILY_HIGH", str(candle.high), candle.candle_identity),
+                    ("PREVIOUS_COMPLETED_DAILY_LOW", str(candle.low), candle.candle_identity))
     return McxPairedReviewPack(
         review_pack_identity=_identity("INTRADAY-MCX-PAIRED-REVIEW-PACK-", values),
         integrity_identity=_identity("INTEGRITY-INTRADAY-MCX-PAIRED-REVIEW-PACK-", values),
@@ -502,12 +520,21 @@ def artifact_from_bytes(payload: bytes) -> object:
                 values["usdinr_evidence"] = UsdinrEvidenceBinding(**usd)
             value = McxPairedChartBundle(**values)
         elif schema == MCX_PAIRED_REVIEW_PACK_IDENTITY:
+            if values.get("native_governed_levels") is not None:
+                values["native_governed_levels"] = tuple(tuple(x) for x in values["native_governed_levels"])
             values["analysis_boundary"] = datetime.fromisoformat(values["analysis_boundary"])
             values["created_at"] = datetime.fromisoformat(values["created_at"])
-            values["questions"] = tuple(McxPairedQuestion(
-                question_id=item["question_id"], side=item["side"], observation=item["observation"],
-                timeframe=item["timeframe"], allowed_answers=tuple(item["allowed_answers"]), authority=item["authority"],
-            ) for item in values["questions"])
+            if values["schema_version"] == visual_v2.VERSION:
+                values["questions"] = tuple(visual_v2.PairedVisualQuestion(
+                    **{**item, "allowed_answers": tuple(item["allowed_answers"]),
+                       "timeframe_scope": tuple(item["timeframe_scope"]),
+                       "constraints": tuple(item["constraints"])}
+                ) for item in values["questions"])
+            else:
+                values["questions"] = tuple(McxPairedQuestion(
+                    question_id=item["question_id"], side=item["side"], observation=item["observation"],
+                    timeframe=item["timeframe"], allowed_answers=tuple(item["allowed_answers"]), authority=item["authority"],
+                ) for item in values["questions"])
             value = McxPairedReviewPack(**values)
         else:
             raise ValueError
@@ -519,7 +546,7 @@ def artifact_from_bytes(payload: bytes) -> object:
 
 
 def _without(value: object, *names: str) -> dict[str, object]:
-    return {name: item for name, item in asdict(value).items() if name not in names}
+    return {name: item for name, item in asdict(value).items() if name not in names and not (name == "native_governed_levels" and item is None)}
 
 
 def _identity(prefix: str, value: object) -> str:
@@ -538,7 +565,7 @@ def _normalize(value: object) -> object:
     if isinstance(value, datetime):
         return value.isoformat()
     if isinstance(value, Mapping):
-        return {str(name): _normalize(item) for name, item in value.items()}
+        return {str(name): _normalize(item) for name, item in value.items() if not (name in {"cross_market_answers", "native_governed_levels"} and item is None)}
     if isinstance(value, (tuple, list)):
         return [_normalize(item) for item in value]
     return value
@@ -559,3 +586,11 @@ __all__ = [name for name in globals() if name.startswith("MCX_") or name in {
     "relationship_for_subject", "bind_native_identity", "create_paired_chart_revision",
     "create_paired_chart_bundle", "create_paired_review_pack", "artifact_bytes", "artifact_from_bytes",
 }]
+
+
+def _visual_questions(version):
+    if version == MCX_PAIRED_CONTRACT_VERSION:
+        return MCX_PAIRED_QUESTION_SET_IDENTITY, MCX_PAIRED_QUESTIONS
+    if version == visual_v2.VERSION:
+        return visual_v2.MCX_QUESTION_SET, visual_v2.MCX_QUESTIONS
+    raise ReviewError(ReviewFailure.ANSWER_SCHEMA_INVALID)

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from kronos.intraday import visual_contract_v2 as visual_v2
+
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from hashlib import sha256
@@ -567,22 +569,10 @@ class IntradayReviewV2Application:
     ) -> IntradayReviewV2CandidateSnapshot:
         active = self._review.load_current_chart(cycle.cycle_identity)
         pack_ready = False
-        if active is not None and ready_pack_ids is not None and not cycle.canonical_subject_identity.startswith("MCX-SUBJECT-"):
-            chart = self._review.load_chart(active.chart_revision_identity)
-            handoff = self._review.load_handoff(cycle.handoff_identity)
-            pack_ready = (
-                create_question_pack_v2(handoff, cycle, chart).review_pack_identity
-                in ready_pack_ids
-            )
-        evidence = None
-        if active is not None and pack_ready:
-            evidence = self._review.load_visual_evidence_for_pack(
-                create_question_pack_v2(
-                    self._review.load_handoff(cycle.handoff_identity),
-                    cycle,
-                    self._review.load_chart(active.chart_revision_identity),
-                ).review_pack_identity
-            )
+        retained_pack = self._load_retained_current_pack(cycle) if active is not None else None
+        if retained_pack is not None and ready_pack_ids is not None:
+            pack_ready = retained_pack.review_pack_identity in ready_pack_ids
+        evidence = self._review.load_visual_evidence_for_pack(retained_pack.review_pack_identity) if pack_ready else None
         candidate = IntradayReviewV2CandidateSnapshot(
             sponsor_label=_sponsor_label(cycle.canonical_subject_identity),
             canonical_subject_identity=cycle.canonical_subject_identity,
@@ -694,6 +684,10 @@ class IntradayReviewV2Application:
             resolved_canonical_subject_identity=cycle.canonical_subject_identity if evidence else None,
             reference_observed_identity=evidence.reference_observed_visible_identity if evidence else None)
 
+    def _review_selection(self, cycle):
+        handoff = self._review.load_handoff(cycle.handoff_identity)
+        return self._probables.load_selection(handoff.completed_evidence_selection_identity)
+
     def _load_retained_current_pack(
         self, cycle: ReviewCycleV2,
     ) -> ReviewQuestionPackV2 | None:
@@ -702,20 +696,22 @@ class IntradayReviewV2Application:
         active = self._review.load_current_chart(cycle.cycle_identity)
         if active is None:
             return None
-        expected = create_question_pack_v2(
-            self._review.load_handoff(cycle.handoff_identity),
-            cycle,
-            self._review.load_chart(active.chart_revision_identity),
-        )
-        try:
-            retained = self._review.load_pack(expected.review_pack_identity)
-        except ReviewError as error:
-            if error.failure is ReviewFailure.ARTIFACT_UNAVAILABLE:
-                return None
-            raise
-        if retained != expected:
-            raise ReviewError(ReviewFailure.INTEGRITY_INVALID)
-        return retained
+        # Probe only the two exact governed identities for this current chart.
+        # A newly retained V2 pack supersedes the V1 working pack, never its evidence.
+        for version in (visual_v2.VERSION, "1.0.0"):
+            expected = create_question_pack_v2(
+                self._review.load_handoff(cycle.handoff_identity), cycle,
+                self._review.load_chart(active.chart_revision_identity), question_version=version, completed_selection=self._review_selection(cycle))
+            try:
+                retained = self._review.load_pack(expected.review_pack_identity)
+            except ReviewError as error:
+                if error.failure is ReviewFailure.ARTIFACT_UNAVAILABLE:
+                    continue
+                raise
+            if retained != expected:
+                raise ReviewError(ReviewFailure.INTEGRITY_INVALID)
+            return retained
+        return None
 
     def _load_retained_transport(
         self, packs: tuple[ReviewQuestionPackV2, ...],
@@ -1066,21 +1062,22 @@ class IntradayReviewV2Application:
         if create_question_batch_v2(tuple(packs)) != batch:
             raise ReviewError(ReviewFailure.INTEGRITY_INVALID)
         documents = answer_transport.candidate_documents
-        parsed = tuple(
-            parse_answer_pack(json.dumps(
-                document, sort_keys=True, separators=(",", ":")
-            ).encode())
-            for document in documents
-        )
-        identities = tuple(item.review_pack_identity for item in parsed)
-        if (
-            len(identities) != len(set(identities))
-            or set(identities) != set(batch.review_pack_identities)
-        ):
+        identities = tuple(item.get("review_pack_identity") for item in documents)
+        if (any(type(item) is not str for item in identities)
+            or len(identities) != len(set(identities))
+            or set(identities) != set(batch.review_pack_identities)):
             raise ReviewError(ReviewFailure.ANSWER_IDENTITY_MISMATCH)
         pack_by_identity = {item.review_pack_identity: item for item in packs}
-        prepared = []
-        rejected = []
+        prepared, rejected, parsed = [], [], []
+        schema_invalid = 0
+        for document in documents:
+            try:
+                parsed.append(parse_answer_pack(json.dumps(document, sort_keys=True, separators=(",", ":")).encode()))
+            except ReviewError as error:
+                schema_invalid += 1
+                pack = pack_by_identity[document["review_pack_identity"]]
+                rejected.append(IntradayReviewV2InboxMemberResult(pack.expected_canonical_subject_identity,
+                    transport.expected_answer_filename, "REJECTED", error.failure.value))
         imported_at = self._clock()
         for answer in parsed:
             pack = pack_by_identity[answer.review_pack_identity]
@@ -1110,7 +1107,7 @@ class IntradayReviewV2Application:
                 self._chart_input.require(
                     self._review.load_cycle(pack.review_cycle_identity),
                     self._review.load_chart(pack.chart_revision_identity),
-                    observed_native=answer.observed_visible_subject_identity,
+                    observed_native=answer.observed_visible_subject_identity, visual_answers=answer.answers,
                 )
                 prepared.append((answer, evidence, False))
             except ReviewError as error:
@@ -1126,10 +1123,10 @@ class IntradayReviewV2Application:
         validation = IntradayReviewV2PreImportValidation(
             review_batch_identity=batch.batch_identity,
             source_sha256=answer_transport.source_sha256,
-            candidate_count=len(parsed),
+            candidate_count=len(documents),
             exact_match_count=len(ordered),
-            identity_mismatch_count=len(rejected),
-            schema_invalid_count=0,
+            identity_mismatch_count=len(rejected) - schema_invalid,
+            schema_invalid_count=schema_invalid,
             conflict_count=0,
             duplicate_count=0,
             missing_count=0,
@@ -1160,7 +1157,7 @@ class IntradayReviewV2Application:
                     self._chart_input.require(
                         self._review.load_cycle(pack.review_cycle_identity),
                         self._review.load_chart(pack.chart_revision_identity),
-                        observed_native=answer.observed_visible_subject_identity,
+                        observed_native=answer.observed_visible_subject_identity, visual_answers=answer.answers,
                     )
                     self._require_current_workspace(pack.probables_run_identity, pack.review_cycle_identity)
                     if self._current_pack(pack.review_cycle_identity, require_retained=True) != pack:
@@ -1200,13 +1197,13 @@ class IntradayReviewV2Application:
         expected = create_question_pack_v2(
             self._review.load_handoff(cycle.handoff_identity),
             cycle,
-            self._review.load_chart(active.chart_revision_identity),
+            self._review.load_chart(active.chart_revision_identity), question_version=visual_v2.VERSION, completed_selection=self._review_selection(cycle),
         )
         if not require_retained:
             return expected
-        retained = self._review.load_pack(expected.review_pack_identity)
-        if retained != expected:
-            raise ReviewError(ReviewFailure.INTEGRITY_INVALID)
+        retained = self._load_retained_current_pack(cycle)
+        if retained is None:
+            raise ReviewError(ReviewFailure.ARTIFACT_UNAVAILABLE)
         return retained
 
     def _prepare_combined_answer(self, payload: bytes) -> _PreparedV2Import:
@@ -1268,7 +1265,7 @@ class IntradayReviewV2Application:
             self._chart_input.require(
                 self._review.load_cycle(pack.review_cycle_identity),
                 self._review.load_chart(pack.chart_revision_identity),
-                observed_native=answer.observed_visible_subject_identity,
+                observed_native=answer.observed_visible_subject_identity, visual_answers=answer.answers,
             )
             answers.append(answer)
             evidence.append(bound)
@@ -1398,7 +1395,7 @@ class IntradayReviewV2Application:
                         cycle.probables_run_identity, cycle.cycle_identity)))
                     continue
                 handoff = self._review.load_handoff(cycle.handoff_identity)
-                pack = create_question_pack_v2(handoff, cycle, chart)
+                pack = create_question_pack_v2(handoff, cycle, chart, question_version=visual_v2.VERSION, completed_selection=self._review_selection(cycle))
                 entries.append((pack, self._review.load_chart_bytes(chart)))
             return self._create_question_transport(tuple(entries)) if entries else paired_results[0]
 
@@ -1433,7 +1430,7 @@ class IntradayReviewV2Application:
                 return self._paired.create(cycle, chart, require_current=lambda: self._require_current_workspace(
                         cycle.probables_run_identity, cycle.cycle_identity))
             pack = create_question_pack_v2(
-                self._review.load_handoff(cycle.handoff_identity), cycle, chart
+                self._review.load_handoff(cycle.handoff_identity), cycle, chart, question_version=visual_v2.VERSION, completed_selection=self._review_selection(cycle)
             )
             return self._create_question_transport(
                 ((pack, self._review.load_chart_bytes(chart)),)

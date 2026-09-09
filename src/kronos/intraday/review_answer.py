@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from kronos.intraday import visual_contract_v2 as visual_v2
+
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from enum import StrEnum
@@ -130,16 +132,15 @@ def parse_batch_answer_transport(payload: bytes) -> ChartAnalystBatchAnswerTrans
     if (
         type(document) is not dict
         or set(document) != _BATCH_TOP_LEVEL_FIELDS
-        or document["schema_identity"] != BATCH_ANSWER_PACK_IDENTITY
-        or document["schema_version"] != ANSWER_CONTRACT_VERSION
-        or document["question_set_identity"] != QUESTION_SET_IDENTITY
-        or document["question_set_version"] != REVIEW_CONTRACT_VERSION
         or not _text(document["review_batch_identity"])
         or not _text(document["probables_run_identity"])
         or type(document["candidates"]) is not list
         or not document["candidates"]
         or any(type(item) is not dict for item in document["candidates"])
     ):
+        raise ReviewError(ReviewFailure.ANSWER_SCHEMA_INVALID)
+    _answer_contract(document["schema_identity"], document["schema_version"], document["question_set_identity"], document["question_set_version"], batch=True)
+    if any((item.get("question_set_identity"), item.get("question_set_version")) != (document["question_set_identity"], document["question_set_version"]) for item in document["candidates"]):
         raise ReviewError(ReviewFailure.ANSWER_SCHEMA_INVALID)
     return ChartAnalystBatchAnswerTransport(
         review_batch_identity=document["review_batch_identity"],
@@ -216,19 +217,17 @@ class ChartAnalystAnswerPack:
     schema_version: str = ANSWER_CONTRACT_VERSION
 
     def __post_init__(self) -> None:
+        questions, observation_type = _answer_contract(self.schema_identity, self.schema_version, self.question_set_identity, self.question_set_version)
         if (
             not self.answer_pack_identity.startswith("INTRADAY-ANSWER-PACK-")
-            or self.question_set_identity != QUESTION_SET_IDENTITY
-            or self.question_set_version != REVIEW_CONTRACT_VERSION
             or not _texts((self.review_pack_identity, self.review_cycle_identity, self.review_request_identity,
                            self.chart_revision_identity, self.expected_canonical_subject_identity, self.proposed_direction))
             or self.observed_visible_subject_identity is not None and not _text(self.observed_visible_subject_identity)
             or self.proposed_direction not in {"LONG", "SHORT"}
             or type(self.global_observation_status) is not ObservationStatus
-            or tuple(item.question_id for item in self.answers) != tuple(item.question_id for item in QUESTIONS)
+            or tuple(item.question_id for item in self.answers) != tuple(item.question_id for item in questions)
             or re.fullmatch(r"[0-9a-f]{64}", self.source_sha256) is None
-            or self.schema_identity != ANSWER_PACK_IDENTITY
-            or self.schema_version != ANSWER_CONTRACT_VERSION
+            or any(type(item) is not observation_type for item in self.answers)
         ):
             raise ReviewError(ReviewFailure.ANSWER_SCHEMA_INVALID)
         statuses = tuple(item.observation_status for item in self.answers)
@@ -465,7 +464,8 @@ def parse_answer_pack(payload: bytes) -> ChartAnalystAnswerPack:
     if type(document) is not dict or set(document) != _TOP_LEVEL_FIELDS or type(document["answers"]) is not list:
         raise ReviewError(ReviewFailure.ANSWER_SCHEMA_INVALID)
     try:
-        answers = tuple(_parse_answer(item) for item in document["answers"])
+        _, observation_type = _answer_contract(document["schema_identity"], document["schema_version"], document["question_set_identity"], document["question_set_version"])
+        answers = tuple(_parse_answer(item, observation_type) for item in document["answers"])
         normalized = dict(document)
         normalized["answers"] = [_normalize(item) for item in answers]
         source = _canonical(normalized)
@@ -650,7 +650,8 @@ def answer_artifact_from_bytes(payload: bytes) -> object:
         kind, raw = document["artifact_type"], dict(document["value"])
         if kind == "ChartAnalystAnswerPack":
             raw["global_observation_status"] = ObservationStatus(raw["global_observation_status"])
-            raw["answers"] = tuple(_restore_answer(item) for item in raw["answers"])
+            _, observation_type = _answer_contract(raw["schema_identity"], raw["schema_version"], raw["question_set_identity"], raw["question_set_version"])
+            raw["answers"] = tuple(_restore_answer(item, observation_type) for item in raw["answers"])
             return ChartAnalystAnswerPack(**raw)
         if kind == "ImportedVisualEvidence":
             raw["global_observation_status"] = ObservationStatus(raw["global_observation_status"])
@@ -674,10 +675,10 @@ def answer_artifact_from_bytes(payload: bytes) -> object:
     raise ReviewError(ReviewFailure.INTEGRITY_INVALID)
 
 
-def _parse_answer(value: object) -> ChartAnalystAnswer:
+def _parse_answer(value: object, observation_type=ChartAnalystAnswer) -> ChartAnalystAnswer:
     if type(value) is not dict or set(value) != _ANSWER_FIELDS or type(value["visible_timeframes"]) is not list:
         raise ReviewError(ReviewFailure.ANSWER_SCHEMA_INVALID)
-    return ChartAnalystAnswer(
+    return observation_type(
         question_id=value["question_id"],
         observation_status=ObservationStatus(value["observation_status"]),
         answer=value["answer"],
@@ -688,11 +689,11 @@ def _parse_answer(value: object) -> ChartAnalystAnswer:
     )
 
 
-def _restore_answer(value: Mapping[str, object]) -> ChartAnalystAnswer:
+def _restore_answer(value: Mapping[str, object], observation_type=ChartAnalystAnswer) -> ChartAnalystAnswer:
     raw = dict(value)
     raw["observation_status"] = ObservationStatus(raw["observation_status"])
     raw["visible_timeframes"] = tuple(raw["visible_timeframes"])
-    return ChartAnalystAnswer(**raw)
+    return observation_type(**raw)
 
 
 def _verify(value: object, identity_name: str, identity_prefix: str, integrity_prefix: str) -> None:
@@ -778,3 +779,14 @@ __all__ = [
     "bind_imported_evidence", "create_import_record", "create_visual_evidence_pointer",
     "parse_answer_pack", "parse_batch_answer_transport",
 ]
+
+
+def _answer_contract(schema, version, questions, question_version, *, batch=False):
+    signature = (schema, version, questions, question_version)
+    if signature == (BATCH_ANSWER_PACK_IDENTITY if batch else ANSWER_PACK_IDENTITY,
+                     ANSWER_CONTRACT_VERSION, QUESTION_SET_IDENTITY, REVIEW_CONTRACT_VERSION):
+        return QUESTIONS, ChartAnalystAnswer
+    if signature == (visual_v2.NSE_BATCH_ANSWER_SCHEMA if batch else visual_v2.NSE_ANSWER_SCHEMA,
+                     visual_v2.VERSION, visual_v2.NSE_QUESTION_SET, visual_v2.VERSION):
+        return visual_v2.NSE_QUESTIONS, visual_v2.VisualObservationV2
+    raise ReviewError(ReviewFailure.ANSWER_SCHEMA_INVALID)

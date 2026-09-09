@@ -1,6 +1,8 @@
 """Review V2 adapter to the existing paired MCX engine; no analytical authority."""
 from __future__ import annotations
 
+from kronos.intraday import visual_contract_v2 as visual_v2
+
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -107,9 +109,16 @@ class IntradayReviewV2PairedAdapter:
         self.review.load_chart_bytes(chart)  # validate retained payload, not only the manifest
         return bundle, native, reference
 
+    def _selection(self, cycle):
+        handoff = self.review.load_handoff(cycle.handoff_identity)
+        selection = self.chart_input.probables.load_selection(handoff.completed_evidence_selection_identity)
+        if selection.integrity_identity != handoff.completed_evidence_integrity_identity:
+            raise ReviewError(ReviewFailure.INTEGRITY_INVALID)
+        return selection
+
     def expected(self, cycle, chart):
         bundle, native, reference = self.restore(cycle, chart)
-        pack = create_paired_review_pack(bundle, created_at=chart.received_at)
+        pack = create_paired_review_pack(bundle, created_at=chart.received_at, question_version=visual_v2.VERSION, completed_selection=self._selection(cycle))
         payload = self.review.load_chart_bytes(chart)
         transport, pdf, template = create_paired_transport(pack=pack, bundle=bundle,
             native_chart_payload=payload, reference_chart_payload=payload,
@@ -127,18 +136,20 @@ class IntradayReviewV2PairedAdapter:
 
     def retained(self, cycle, chart):
         bundle, native, reference = self.restore(cycle, chart)
-        pack = create_paired_review_pack(bundle, created_at=chart.received_at)
-        try:
-            retained_pack = self.store.load_pack(pack.review_pack_identity)
-            transport = self.store.load_transport_for_pack(pack.review_pack_identity)
-            if (retained_pack != pack or transport.paired_bundle_identity != bundle.bundle_identity
-                or transport.generated_at != chart.received_at):
-                raise ReviewError(ReviewFailure.INTEGRITY_INVALID)
-        except ReviewError as error:
-            if error.failure is ReviewFailure.ARTIFACT_UNAVAILABLE:
-                return None
-            raise
-        return bundle, native, reference, pack, transport, None, None
+        for version in (visual_v2.VERSION, "1.0.0"):
+            pack = create_paired_review_pack(bundle, created_at=chart.received_at, question_version=version, completed_selection=self._selection(cycle))
+            try:
+                retained_pack = self.store.load_pack(pack.review_pack_identity)
+                transport = self.store.load_transport_for_pack(pack.review_pack_identity)
+                if (retained_pack != pack or transport.paired_bundle_identity != bundle.bundle_identity
+                    or transport.generated_at != chart.received_at):
+                    raise ReviewError(ReviewFailure.INTEGRITY_INVALID)
+            except ReviewError as error:
+                if error.failure is ReviewFailure.ARTIFACT_UNAVAILABLE:
+                    continue
+                raise
+            return bundle, native, reference, pack, transport, None, None
+        return None
 
     def import_expected(self, cycle, chart, imported_at, *, require_current):
         from kronos.application.intraday_review_v2 import IntradayReviewV2InboxImportResult, IntradayReviewV2InboxMemberResult
@@ -171,7 +182,8 @@ class IntradayReviewV2PairedAdapter:
                         raise ReviewError(ReviewFailure.CHART_CORRESPONDENCE_UNVERIFIABLE)
                     self.chart_input.require(cycle, chart, bundle=bundle, resolver=resolver,
                         observed_native=parsed.native_observed_visible_identity,
-                        observed_reference=parsed.reference_observed_visible_identity)
+                        observed_reference=parsed.reference_observed_visible_identity,
+                        visual_answers=(*parsed.reference_answers, *parsed.native_answers, *(parsed.cross_market_answers or ()), parsed.escape_hatch_answer))
                     require_current()
                     _, evidence = self.engine.import_answer(payload=payload, pack=pack, bundle=bundle,
                         native_chart=native, reference_chart=reference, native_resolver=resolver,

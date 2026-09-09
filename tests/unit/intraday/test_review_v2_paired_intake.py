@@ -50,6 +50,14 @@ def complete_paired(app, result, native="TEST-EXACT-NATIVE-SERIES", reference="O
     doc = json.loads(result.answer_template_path.read_bytes())
     doc["native_observed_visible_identity"] = native
     doc["reference_observed_visible_identity"] = reference
+    if doc["schema_version"] == "2.0.0":
+        from kronos.intraday.visual_contract_v2 import MCX_QUESTIONS
+        by_id = {q.question_id: q for q in MCX_QUESTIONS}
+        for item in (*doc["reference_answers"], *doc["native_answers"], *doc["cross_market_answers"], doc["escape_hatch_answer"]):
+            q = by_id[item["question_id"]]
+            item.update(observation_status="OBSERVED", answer="NOT_OBSERVABLE" if q.question_id in {"R5", "M5", "X3"} else q.allowed_answers[0],
+                        visible_timeframes=list(q.timeframe_scope), visible_basis="Synthetic completed fixture observation.",
+                        status_detail=None, why_not_covered_elsewhere=None)
     payload = json.dumps(doc, sort_keys=True).encode()
     (app._transport.answer_inbox / result.transport.expected_answer_filename).write_bytes(payload)
     return payload
@@ -93,7 +101,7 @@ def test_paired_answer_observation_needs_no_constituent_authority(tmp_path):
     result = app.create_individual_question_transport(cycle.cycle_identity)
     assert result == app.create_individual_question_transport(cycle.cycle_identity)
     document = json.loads(result.answer_template_path.read_bytes())
-    assert document['schema_identity'] == 'KRONOS-INTRADAY-MCX-PAIRED-ANSWER-PACK-V1'
+    assert document['schema_identity'] == 'KRONOS-INTRADAY-MCX-PAIRED-ANSWER-PACK-V2'
     assert document['reference_observed_visible_identity'].startswith('REPLACE_')
     complete_paired(app, result, reference="CLV2026 (observed only)")
     outcome = app.import_expected_answer(cycle.cycle_identity)
@@ -239,12 +247,12 @@ def test_mixed_batch_create_and_import_exact_nse_and_paired_answers(tmp_path, mo
     assert any(m.reason == ReviewFailure.CHART_CORRESPONDENCE_UNVERIFIABLE.value for m in result.members)
     # Imported paired Review evidence does not silently enter the generic WO-10 adapter.
     selected = app.current_reconciliation()
-    assert len(selected.requests) == 1
+    assert len(selected.requests) == 0  # V2 visual vocabulary awaits separately governed WO-07F adaptation.
     from kronos.browser.intraday_views import _review_v2_projection
     page = _review_v2_projection(app.snapshot(), run, {
         'currentness_state':'REVIEW_CURRENT', 'reconciliation':selected.status_document()})
     assert 'Answer ready: 1 / 2' in page
-    assert 'Reconcile eligible: 1 / 2' in page
+    assert 'Reconcile eligible: 0 / 2' in page
 
 
 @pytest.mark.parametrize('mime', ['image/png', 'image/jpeg'])

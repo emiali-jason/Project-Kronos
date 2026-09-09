@@ -92,7 +92,7 @@ class IntradayChartInputGate:
                      for e in expected)
 
     def require(self, cycle, chart, *, observed_native, observed_reference=None,
-                bundle=None, resolver=None):
+                bundle=None, resolver=None, visual_answers=()):
         results = self.evaluate(cycle, chart, bundle=bundle, resolver=resolver)
         if any(r.overall is ValidationState.NOT_VALIDATED for r in results):
             raise ReviewError(ReviewFailure.CHART_CORRESPONDENCE_INVALID)
@@ -104,4 +104,7 @@ class IntradayChartInputGate:
              p.observed_series != observed_reference) for p in receipt.panels
         ):
             raise ReviewError(ReviewFailure.ANSWER_IDENTITY_MISMATCH)
+        if visual_answers:
+            from kronos.intraday.visual_contract_v2 import require_question_content
+            require_question_content(visual_answers, receipt.panels)
         return results

@@ -7,6 +7,9 @@ or updates a V1 Review artifact.
 
 from __future__ import annotations
 
+from kronos.intraday import visual_contract_v2 as visual_v2
+from kronos.intraday.completed_evidence import is_completed_evidence_selection
+
 from dataclasses import asdict, dataclass, is_dataclass
 from datetime import datetime
 from enum import StrEnum
@@ -64,6 +67,7 @@ CURRENT_REVIEW_V2_POINTER_IDENTITY = (
     "KRONOS-INTRADAY-CURRENT-REVIEW-POINTER-V2"
 )
 REVIEW_V2_CONTRACT_VERSION = "2.0.0"
+VISUAL_V2_ARTIFACT_VERSION = "3.0.0"
 CHART_INTAKE_REQUEST_V2_IDENTITY = (
     "KRONOS-INTRADAY-REVIEW-V2-CHART-INTAKE-REQUEST"
 )
@@ -433,12 +437,15 @@ class ReviewQuestionPackV2:
     integrity_identity: str
     schema_identity: str = QUESTION_PACK_V2_IDENTITY
     schema_version: str = REVIEW_V2_CONTRACT_VERSION
+    governed_levels: tuple[tuple[str, str, str], ...] | None = None
 
     def __post_init__(self) -> None:
+        question_identity, questions = _visual_questions(self.schema_version)
+        _validate_levels(self.governed_levels, self.question_set_version)
         values = _without(self, "review_pack_identity", "integrity_identity")
         if (
-            self.question_set_identity != QUESTION_SET_IDENTITY
-            or self.question_set_version != REVIEW_CONTRACT_VERSION
+            self.question_set_identity != question_identity
+            or self.question_set_version != (visual_v2.VERSION if self.schema_version == VISUAL_V2_ARTIFACT_VERSION else REVIEW_CONTRACT_VERSION)
             or not _texts((self.probables_run_identity, self.probable_result_identity,
                            self.discovery_run_identity, self.discovery_result_identity,
                            self.expected_canonical_subject_identity, self.proposed_direction,
@@ -453,13 +460,12 @@ class ReviewQuestionPackV2:
             or not _aware(self.analysis_boundary) or not _aware(self.created_at)
             or type(self.phase) is not IntradayAnalysisPhase
             or re.fullmatch(r"[0-9a-f]{64}", self.chart_payload_sha256) is None
-            or self.questions != QUESTIONS
+            or self.questions != questions
             or self.observation_statuses != tuple(ObservationStatus)
             or self.trust_boundary != TRUST_BOUNDARY
             or self.trading_authority_prohibition != TRADING_PROHIBITION
             or not _texts(self.provenance)
             or self.schema_identity != QUESTION_PACK_V2_IDENTITY
-            or self.schema_version != REVIEW_V2_CONTRACT_VERSION
             or self.review_pack_identity
             != _identity("INTRADAY-REVIEW-PACK-V2-", values)
             or self.integrity_identity
@@ -536,6 +542,8 @@ class ImportedVisualEvidenceV2:
     schema_version: str = REVIEW_V2_CONTRACT_VERSION
 
     def __post_init__(self) -> None:
+        _, questions = _visual_questions(self.schema_version)
+        observation_type = visual_v2.VisualObservationV2 if self.schema_version == VISUAL_V2_ARTIFACT_VERSION else ChartAnalystAnswer
         values = _without(self, "visual_evidence_identity", "integrity_identity")
         if (
             not _texts((self.answer_pack_identity, self.answer_source_sha256,
@@ -558,10 +566,10 @@ class ImportedVisualEvidenceV2:
             or type(self.phase) is not IntradayAnalysisPhase
             or self.global_observation_status is ObservationStatus.INVALID
             or tuple(item.question_id for item in self.answers)
-            != tuple(item.question_id for item in QUESTIONS)
+            != tuple(item.question_id for item in questions)
             or not _texts(self.provenance)
             or self.schema_identity != IMPORTED_VISUAL_EVIDENCE_V2_IDENTITY
-            or self.schema_version != REVIEW_V2_CONTRACT_VERSION
+            or any(type(item) is not observation_type for item in self.answers)
             or self.visual_evidence_identity
             != _identity("INTRADAY-VISUAL-EVIDENCE-V2-", values)
             or self.integrity_identity
@@ -926,7 +934,11 @@ def create_question_pack_v2(
     handoff: ReviewHandoffV2,
     cycle: ReviewCycleV2,
     chart: ChartRevisionV2,
+    *, question_version: str = REVIEW_CONTRACT_VERSION, completed_selection=None,
 ) -> ReviewQuestionPackV2:
+    question_identity, questions = _visual_questions(VISUAL_V2_ARTIFACT_VERSION if question_version == visual_v2.VERSION else REVIEW_V2_CONTRACT_VERSION)
+    if question_version not in (REVIEW_CONTRACT_VERSION, visual_v2.VERSION):
+        raise ReviewError(ReviewFailure.ANSWER_SCHEMA_INVALID)
     if (
         type(handoff) is not ReviewHandoffV2
         or type(cycle) is not ReviewCycleV2
@@ -942,8 +954,8 @@ def create_question_pack_v2(
     ):
         raise ReviewError(ReviewFailure.INTEGRITY_INVALID)
     values = {
-        "question_set_identity": QUESTION_SET_IDENTITY,
-        "question_set_version": REVIEW_CONTRACT_VERSION,
+        "question_set_identity": question_identity,
+        "question_set_version": question_version,
         "probables_run_identity": handoff.probables_run_identity,
         "probable_result_identity": handoff.probable_result_identity,
         "discovery_run_identity": handoff.source_discovery_run_identity,
@@ -965,7 +977,7 @@ def create_question_pack_v2(
         "chart_revision_identity": chart.chart_revision_identity,
         "chart_artifact_identity": chart.chart_artifact_identity,
         "chart_payload_sha256": chart.payload_sha256,
-        "questions": QUESTIONS,
+        "questions": questions,
         "observation_statuses": tuple(ObservationStatus),
         "trust_boundary": TRUST_BOUNDARY,
         "trading_authority_prohibition": TRADING_PROHIBITION,
@@ -976,8 +988,23 @@ def create_question_pack_v2(
             chart.chart_revision_identity,
         ),
         "schema_identity": QUESTION_PACK_V2_IDENTITY,
-        "schema_version": REVIEW_V2_CONTRACT_VERSION,
+        "schema_version": VISUAL_V2_ARTIFACT_VERSION if question_version == visual_v2.VERSION else REVIEW_V2_CONTRACT_VERSION,
     }
+    if question_version == visual_v2.VERSION:
+        levels = ()
+        if completed_selection is not None:
+            if (not is_completed_evidence_selection(completed_selection)
+                or completed_selection.selection_identity != handoff.completed_evidence_selection_identity
+                or completed_selection.integrity_identity != handoff.completed_evidence_integrity_identity
+                or completed_selection.canonical_subject_identity != handoff.canonical_subject_identity
+                or completed_selection.analysis_boundary != handoff.analysis_boundary):
+                raise ReviewError(ReviewFailure.INTEGRITY_INVALID)
+            daily = tuple(x.candle for x in completed_selection.selected_candles if x.candle.timeframe.value == "1D")
+            if len(daily) == 1:
+                candle = daily[0]
+                levels = (("PREVIOUS_COMPLETED_DAILY_HIGH", str(candle.high), candle.candle_identity),
+                          ("PREVIOUS_COMPLETED_DAILY_LOW", str(candle.low), candle.candle_identity))
+        values["governed_levels"] = levels
     return ReviewQuestionPackV2(
         review_pack_identity=_identity("INTRADAY-REVIEW-PACK-V2-", values),
         integrity_identity=_identity(
@@ -1017,6 +1044,10 @@ def bind_imported_visual_evidence_v2(
         or answer.global_observation_status is ObservationStatus.INVALID
     ):
         raise ReviewError(ReviewFailure.ANSWER_IDENTITY_MISMATCH)
+    if pack.question_set_version == visual_v2.VERSION and not pack.governed_levels:
+        for item in answer.answers:
+            if item.question_id in {"Q6", "Q9"} and item.answer not in {None, "UNCLEAR", "NOT_OBSERVABLE"}:
+                raise ReviewError(ReviewFailure.CHART_CORRESPONDENCE_UNVERIFIABLE)
     try:
         resolution = visual_identity_resolver.resolve(
             observed_visible_subject_identity=answer.observed_visible_subject_identity,
@@ -1062,7 +1093,7 @@ def bind_imported_visual_evidence_v2(
             answer.answer_pack_identity,
         ),
         "schema_identity": IMPORTED_VISUAL_EVIDENCE_V2_IDENTITY,
-        "schema_version": REVIEW_V2_CONTRACT_VERSION,
+        "schema_version": VISUAL_V2_ARTIFACT_VERSION if pack.question_set_version == visual_v2.VERSION else REVIEW_V2_CONTRACT_VERSION,
     }
     return ImportedVisualEvidenceV2(
         visual_evidence_identity=_identity("INTRADAY-VISUAL-EVIDENCE-V2-", values),
@@ -1269,6 +1300,8 @@ def _decode(expected: type, value: object) -> object:
         document["observation_statuses"] = tuple(
             ObservationStatus(item) for item in document["observation_statuses"]
         )
+    if document.get("governed_levels") is not None:
+        document["governed_levels"] = tuple(tuple(item) for item in document["governed_levels"])
     if "questions" in document:
         from kronos.intraday.review import ReviewQuestion
         document["questions"] = tuple(ReviewQuestion(
@@ -1281,7 +1314,8 @@ def _decode(expected: type, value: object) -> object:
             constraints=tuple(item["constraints"]),
         ) for item in document["questions"])
     if "answers" in document:
-        document["answers"] = tuple(ChartAnalystAnswer(
+        observation_type = visual_v2.VisualObservationV2 if document["schema_version"] == VISUAL_V2_ARTIFACT_VERSION else ChartAnalystAnswer
+        document["answers"] = tuple(observation_type(
             question_id=item["question_id"],
             observation_status=ObservationStatus(item["observation_status"]),
             answer=item["answer"],
@@ -1294,7 +1328,7 @@ def _decode(expected: type, value: object) -> object:
 
 
 def _without(value: object, *names: str) -> dict[str, object]:
-    return {name: item for name, item in asdict(value).items() if name not in names and not (name == "paired_bundle_identity" and item is None)}
+    return {name: item for name, item in asdict(value).items() if name not in names and not (name in {"paired_bundle_identity", "governed_levels"} and item is None)}
 
 
 def _identity(prefix: str, value: object) -> str:
@@ -1313,7 +1347,7 @@ def _normalize(value: object) -> object:
     if isinstance(value, datetime):
         return value.isoformat()
     if isinstance(value, Mapping):
-        return {str(name): _normalize(item) for name, item in value.items() if not (name == "paired_bundle_identity" and item is None)}
+        return {str(name): _normalize(item) for name, item in value.items() if not (name in {"paired_bundle_identity", "governed_levels"} and item is None)}
     if isinstance(value, (tuple, list)):
         return [_normalize(item) for item in value]
     return value
@@ -1354,3 +1388,29 @@ __all__ = [
     "create_question_pack_v2",
     "create_review_cycle_v2", "create_review_handoff_v2",
 ]
+
+
+def _visual_questions(version):
+    if version == REVIEW_V2_CONTRACT_VERSION:
+        return QUESTION_SET_IDENTITY, QUESTIONS
+    if version == VISUAL_V2_ARTIFACT_VERSION:
+        return visual_v2.NSE_QUESTION_SET, visual_v2.NSE_QUESTIONS
+    raise ReviewError(ReviewFailure.ANSWER_SCHEMA_INVALID)
+
+
+def _validate_levels(levels, version):
+    from decimal import Decimal, InvalidOperation
+    if version != visual_v2.VERSION:
+        if levels is not None:
+            raise ReviewError(ReviewFailure.INTEGRITY_INVALID)
+        return
+    try:
+        if type(levels) is not tuple or (levels and (
+            tuple(x[0] for x in levels) != ("PREVIOUS_COMPLETED_DAILY_HIGH", "PREVIOUS_COMPLETED_DAILY_LOW")
+            or any(type(x) is not tuple or len(x) != 3 or not _texts(x) for x in levels)
+            or len({x[2] for x in levels}) != 1
+            or any(not Decimal(x[1]).is_finite() or Decimal(x[1]) < 0 for x in levels)
+            or Decimal(levels[0][1]) < Decimal(levels[1][1]))):
+            raise ValueError
+    except (TypeError, ValueError, IndexError, InvalidOperation) as error:
+        raise ReviewError(ReviewFailure.INTEGRITY_INVALID) from error

@@ -31,7 +31,13 @@ def _ready(tmp_path):
     control.execute_document(_payload(run))
     app.upload_chart(app.snapshot().candidates[0].cycle_identity,
                      media_type="image/png", payload=_png(12))
-    batch = app.create_combined_question_transport()
+    # WO-07C visual V2 has no WO-07F/WO-10 adapter authority. This corpus
+    # qualifies the unchanged historical V1 adapter using its exact pack engine.
+    from kronos.intraday.review_v2 import create_question_pack_v2
+    cycle = app.review_store.load_cycle(app.snapshot().candidates[0].cycle_identity)
+    chart = app.review_store.load_chart(app.review_store.load_current_chart(cycle.cycle_identity).chart_revision_identity)
+    pack = create_question_pack_v2(app.review_store.load_handoff(cycle.handoff_identity), cycle, chart)
+    batch = app._create_question_transport(((pack, app.review_store.load_chart_bytes(chart)),))
     retain_current_fixture_receipts(app, "Reliance Industries Ltd")
     app.import_combined_answer(_completed_batch_payload(batch.answer_template_path, "Reliance Industries Ltd"))
     return run, app, batch
@@ -195,7 +201,12 @@ def test_current_counts_and_browser_dispatch_use_only_ready_v2_candidate(tmp_pat
     run, app, control, routes = _routes(tmp_path)
     control.execute_document(_payload(run))
     app.upload_chart(app.snapshot().candidates[0].cycle_identity, media_type="image/png", payload=_png(15))
-    batch = app.create_combined_question_transport()
+    # Downstream reconciliation remains on its existing visual V1 contract.
+    from kronos.intraday.review_v2 import create_question_pack_v2
+    cycle = app.review_store.load_cycle(app.snapshot().candidates[0].cycle_identity)
+    chart = app.review_store.load_chart(app.review_store.load_current_chart(cycle.cycle_identity).chart_revision_identity)
+    pack = create_question_pack_v2(app.review_store.load_handoff(cycle.handoff_identity), cycle, chart)
+    batch = app._create_question_transport(((pack, app.review_store.load_chart_bytes(chart)),))
     retain_current_fixture_receipts(app, "Reliance Industries Ltd")
     app.import_combined_answer(_completed_batch_payload(batch.answer_template_path, "Reliance Industries Ltd"))
     review_before = _fingerprints(app.review_store.root)

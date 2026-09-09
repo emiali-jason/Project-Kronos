@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from kronos.intraday import visual_contract_v2 as visual_v2
+
 from contextlib import ExitStack, contextmanager
 from dataclasses import asdict, dataclass
 from datetime import datetime
@@ -251,9 +253,12 @@ def answer_template_v2(
     packs: tuple[ReviewQuestionPackV2, ...],
 ) -> bytes:
     ordered = _ordered_packs(batch, packs)
+    if len({p.question_set_version for p in ordered}) != 1:
+        raise ReviewError(ReviewFailure.ANSWER_SCHEMA_INVALID)
+    modern = ordered[0].question_set_version == visual_v2.VERSION
     document = {
-        "schema_identity": BATCH_ANSWER_PACK_IDENTITY,
-        "schema_version": ANSWER_CONTRACT_VERSION,
+        "schema_identity": visual_v2.NSE_BATCH_ANSWER_SCHEMA if modern else BATCH_ANSWER_PACK_IDENTITY,
+        "schema_version": ordered[0].question_set_version,
         "question_set_identity": ordered[0].question_set_identity,
         "question_set_version": ordered[0].question_set_version,
         "review_batch_identity": batch.batch_identity,
@@ -282,6 +287,17 @@ def render_review_batch_v2_pdf(
     retained = _validate_entries(batch, entries)
     if not transport_identity.startswith("INTRADAY-REVIEW-BATCH-TRANSPORT-V2-"):
         raise ReviewError(ReviewFailure.INTEGRITY_INVALID)
+    if all(pack.question_set_version == visual_v2.VERSION for pack, _ in retained):
+        from kronos.intraday.visual_review_pdf import render_visual_review
+        return render_visual_review(tuple((
+            (f"{pack.expected_canonical_subject_identity} | {pack.proposed_direction}",
+             f"Analysis boundary: {pack.analysis_boundary.isoformat()} | 1D / 1H / 15M / 5M",
+             f"Chart revision: {pack.chart_revision_identity}",
+             f"Question set: {pack.question_set_identity} / {pack.question_set_version}",
+             "Governed levels: " + ("; ".join(f"{name} = {value}" for name, value, _ in pack.governed_levels) or "NOT_ESTABLISHED") + ". "
+             "Prior completed 1H may be lawful at Opening; forming current-day 1H is excluded."),
+            (payload,), pack.questions) for pack, payload in retained),
+            expected_filename=expected_answer_filename)
     output = BytesIO()
     document = SimpleDocTemplate(
         output, pagesize=A4, leftMargin=16 * mm, rightMargin=16 * mm,
@@ -399,8 +415,8 @@ def transport_from_bytes_v2(payload: bytes) -> ReviewBatchTransportV2:
 
 def _answer_candidate(pack: ReviewQuestionPackV2) -> dict[str, object]:
     return {
-        "schema_identity": ANSWER_PACK_IDENTITY,
-        "schema_version": ANSWER_CONTRACT_VERSION,
+        "schema_identity": visual_v2.NSE_ANSWER_SCHEMA if pack.question_set_version == visual_v2.VERSION else ANSWER_PACK_IDENTITY,
+        "schema_version": pack.question_set_version,
         "question_set_identity": pack.question_set_identity,
         "question_set_version": pack.question_set_version,
         "review_pack_identity": pack.review_pack_identity,
@@ -419,7 +435,7 @@ def _answer_candidate(pack: ReviewQuestionPackV2) -> dict[str, object]:
             "visible_basis": None,
             "status_detail": "REPLACE WITH GOVERNED OBSERVATION",
             "why_not_covered_elsewhere": None,
-        } for question in QUESTIONS],
+        } for question in pack.questions],
     }
 
 
