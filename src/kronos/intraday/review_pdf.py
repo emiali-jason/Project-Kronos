@@ -29,12 +29,8 @@ from kronos.intraday.review_answer import (
 )
 
 
-DEFAULT_QUESTION_OUTBOX = Path(
-    "/Users/imranali/Documents/Project-KRONOS/KRONOS REVIEW PACK/Intraday/KRONOS QUESTIONS"
-)
-DEFAULT_ANSWER_INBOX = Path(
-    "/Users/imranali/Documents/Project-KRONOS/KRONOS REVIEW PACK/Intraday/CHATGPT ANSWERS"
-)
+DEFAULT_QUESTION_OUTBOX = Path.home() / "Documents/Project-KRONOS/KRONOS REVIEW PACK/Intraday/KRONOS QUESTIONS"
+DEFAULT_ANSWER_INBOX = Path.home() / "Documents/Project-KRONOS/KRONOS REVIEW PACK/Intraday/CHATGPT ANSWERS"
 _IST = ZoneInfo("Asia/Kolkata")
 
 

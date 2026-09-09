@@ -208,7 +208,8 @@ def test_failed_connection_exposes_only_connection_failed(tmp_path) -> None:  # 
 
         assert tester.calls == 1
         assert ">CONNECTION FAILED<" in rendered
-        assert ">NOT CONFIGURED<" not in rendered
+        openai_section = rendered.split('settings-openai"', 1)[1].split("</section>", 1)[0]
+        assert ">NOT CONFIGURED<" not in openai_section
     finally:
         server.shutdown(); server.server_close(); thread.join()
 

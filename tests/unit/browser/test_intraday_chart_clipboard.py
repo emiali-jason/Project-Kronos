@@ -69,8 +69,8 @@ def test_original_composite_common_intake_replacement_restoration_and_question_t
     assert batch is not None
     assert list((tmp_path / "v2" / "questions").glob("*.pdf"))
     assert app.review_store.load_chart_bytes(app.review_store.load_chart(second.chart_revision_identity)) == data2
-    assert DEFAULT_QUESTION_OUTBOX == Path("/Users/imranali/Documents/Project-KRONOS/KRONOS REVIEW PACK/Intraday/KRONOS QUESTIONS")
-    assert DEFAULT_ANSWER_INBOX == Path("/Users/imranali/Documents/Project-KRONOS/KRONOS REVIEW PACK/Intraday/CHATGPT ANSWERS")
+    assert DEFAULT_QUESTION_OUTBOX == Path.home() / "Documents/Project-KRONOS/KRONOS REVIEW PACK/Intraday/KRONOS QUESTIONS"
+    assert DEFAULT_ANSWER_INBOX == Path.home() / "Documents/Project-KRONOS/KRONOS REVIEW PACK/Intraday/CHATGPT ANSWERS"
 
 
 def test_chart_browser_failures_are_bounded_and_preserve_current_pointer(tmp_path, monkeypatch):
