@@ -6,6 +6,9 @@ from kronos.intraday.validation import ValidationState
 from kronos.intraday.review import ReviewError, ReviewFailure
 from kronos.market.calendar import MarketCalendarPublisher
 from datetime import datetime, timezone
+from kronos.instrument.active_derivative_persistence import ActiveDerivativeBindingStore
+from kronos.intraday.mcx_history_persistence import McxContractHistoryStore
+from kronos.application.intraday_mcx_chart_source import native_four_hour
 
 
 class IntradayChartInputGate:
@@ -13,6 +16,8 @@ class IntradayChartInputGate:
         self.review, self.probables, self.resolver = review, probables, resolver
         self.calendar = calendar or MarketCalendarPublisher()
         self.clock = clock or (lambda: datetime.now(timezone.utc))
+        self.native_history = McxContractHistoryStore(review.root.parent)
+        self.native_bindings = ActiveDerivativeBindingStore(review.root.parent / "active-derivative-bindings")
 
     def expectations(self, cycle, chart, bundle=None):
         handoff = self.review.load_handoff(cycle.handoff_identity)
@@ -45,8 +50,7 @@ class IntradayChartInputGate:
             target = (subject if role == 'REFERENCE' or bundle is None else
                       bundle.native_identity_binding.actual_derivative_contract_identity)
             venue = reference.venue.value if role == 'REFERENCE' else ('MCX' if bundle else 'NSE')
-            # Existing selected evidence has no reference-series or 4H candle.
-            # Never relabel native/1H evidence to fill those slots.
+            # Reference context is visual only; no reference market source is invented.
             candles = tuple(x.candle for x in selection.selected_candles
                             if x.candle.canonical_subject_identity == subject
                             and x.candle.timeframe.value == timeframe)
@@ -62,11 +66,20 @@ class IntradayChartInputGate:
                                          if s and s.session_identity == source.market_session_identity), None)
                 except ValueError:
                     pass
+            if bundle and role == "REFERENCE":
+                source, schedule = None, None
+            if bundle and role == "NATIVE" and timeframe == "4H":
+                binding = self.native_bindings.load(binding_identity=bundle.native_identity_binding.active_binding_identity)
+                if binding.integrity_identity != bundle.native_identity_binding.active_binding_integrity_identity:
+                    raise ReviewError(ReviewFailure.INTEGRITY_INVALID)
+                source, schedule = native_four_hour(cycle=cycle, binding=binding,
+                    selection=selection, history=self.native_history, calendar=self.calendar)
             result.append(ExpectedChartPanel(role, timeframe, subject, target, venue,
                 cycle.analysis_boundary,
                 chart.received_at if bundle and role == 'NATIVE' else cycle.analysis_boundary,
                 source, schedule,
-                'INR' if bundle and role == 'NATIVE' else 'USD' if role == 'REFERENCE' else None))
+                'INR' if bundle and role == 'NATIVE' else 'USD' if role == 'REFERENCE' else None,
+                supporting_visual_only=bool(bundle and role == 'REFERENCE')))
         return tuple(result)
 
     def evaluate(self, cycle, chart, *, bundle=None, resolver=None):
@@ -96,7 +109,13 @@ class IntradayChartInputGate:
         results = self.evaluate(cycle, chart, bundle=bundle, resolver=resolver)
         if any(r.overall is ValidationState.NOT_VALIDATED for r in results):
             raise ReviewError(ReviewFailure.CHART_CORRESPONDENCE_INVALID)
-        if not results or any(r.overall is not ValidationState.VALIDATED for r in results):
+        native = tuple(r for r in results if r.role == "NATIVE")
+        reference = tuple(r for r in results if r.role == "REFERENCE")
+        if (not native or any(r.overall is not ValidationState.VALIDATED for r in native)
+            or any(r.identity is not ValidationState.VALIDATED
+                   or r.core_content is not ValidationState.VALIDATED
+                   or r.authority != "SUPPORTING_VISUAL_CONTEXT_ONLY"
+                   or r.independent_correspondence != "NOT_INDEPENDENTLY_ESTABLISHED" for r in reference)):
             raise ReviewError(ReviewFailure.CHART_CORRESPONDENCE_UNVERIFIABLE)
         receipt = self.review.load_chart_input(chart)
         if receipt is None or any(

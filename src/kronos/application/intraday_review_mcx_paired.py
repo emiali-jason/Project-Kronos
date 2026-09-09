@@ -69,6 +69,7 @@ class IntradayMcxPairedReviewApplication:
         reference_resolver: VisualIdentityResolver,
         imported_at: datetime,
         supporting_reference_only: bool = False,
+        chart_correspondence=None,
     ) -> tuple[McxPairedAnswerPack, McxPairedImportedVisualEvidence]:
         answer = parse_mcx_paired_answer(payload)
         evidence = bind_mcx_paired_import(
@@ -77,6 +78,7 @@ class IntradayMcxPairedReviewApplication:
             native_resolver=native_resolver, reference_resolver=reference_resolver,
             imported_at=imported_at,
             supporting_reference_only=supporting_reference_only,
+            chart_correspondence=chart_correspondence,
         )
         self._store.retain_answer(answer, payload)
         self._store.retain_evidence(evidence)

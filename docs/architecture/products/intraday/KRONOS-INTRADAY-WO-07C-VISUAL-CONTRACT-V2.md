@@ -434,3 +434,28 @@ Timeframes: 1D / 4H / 15M / 5M.
 Allowed: `NONE`, `MATERIAL_OBSERVATION`.
 
 NONE requires a null explanation. MATERIAL_OBSERVATION requires why_not_covered_elsewhere; do not repeat earlier observations.
+
+
+## WO-07B-MCX supporting-reference authority amendment (9 September 2026)
+
+**Status:** Sponsor-approved bounded engineering requirement; candidate pending qualification/publication review.
+
+For paired MCX V2 workflows, the Sponsor classifies NYMEX/COMEX reference panels as
+SUPPORTING_VISUAL_CONTEXT_ONLY. Independent international machine correspondence is
+NOT_INDEPENDENTLY_ESTABLISHED and must never be labelled VALID or VERIFIED. Native
+MCX remains primary and requires independent correspondence on 1D/4H/15M/5M.
+
+R1-R5 and X1-X5 retain their existing V2 questions, enums, uncertainty and timing
+restrictions. Their answers are supporting visual observations; import does not
+establish independent reference prices, sessions, latency, causality, constituent
+membership, Promotion, Risk or trading authority. When comparable visible timing
+or a lawful anchor is missing, the existing NOT_OBSERVABLE/UNCLEAR rules still apply.
+USDINR remains a separate authority. No new Answer field or Analyst prompt is added.
+
+The existing imported paired evidence optionally retains an integrity-bound ordered
+panel correspondence tuple produced by KRONOS after the gate. Reference rows carry
+SUPPORTING_VISUAL_CONTEXT_ONLY / NOT_INDEPENDENTLY_ESTABLISHED / no source identity;
+native rows carry independently validated source identities. This is machine
+provenance, not an Analyst assertion. Historical artifacts omit the optional field
+and restore byte-identically without backfilled validation. See
+[WO-07B-MCX](KRONOS-INTRADAY-WO-07B-MCX-ASYMMETRIC-CORRESPONDENCE.md).

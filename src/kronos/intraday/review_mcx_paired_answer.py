@@ -138,9 +138,21 @@ class McxPairedImportedVisualEvidence:
     schema_identity: str = MCX_PAIRED_IMPORTED_EVIDENCE_IDENTITY
     schema_version: str = MCX_PAIRED_CONTRACT_VERSION
     cross_market_answers: tuple[visual_v2.VisualObservationV2, ...] | None = None
+    chart_correspondence: tuple[tuple[str, str, str, str, str | None], ...] | None = None
 
     def __post_init__(self) -> None:
         _validate_observations(self)
+        if self.chart_correspondence is not None:
+            from kronos.intraday.chart_input import MCX_PANELS
+            if (self.schema_version != visual_v2.VERSION or type(self.chart_correspondence) is not tuple
+                or any(type(x) is not tuple or len(x) != 5 for x in self.chart_correspondence)
+                or tuple(x[:2] for x in self.chart_correspondence) != MCX_PANELS
+                or any(type(x) is not tuple or len(x) != 5 or
+                    (x[2:] != ("SUPPORTING_VISUAL_CONTEXT_ONLY", "NOT_INDEPENDENTLY_ESTABLISHED", None)
+                     if x[0] == "REFERENCE" else
+                     x[2] != "INDEPENDENT_MACHINE_CORRESPONDENCE" or x[3] != "VALIDATED" or not _texts((x[4],)))
+                    for x in self.chart_correspondence)):
+                raise ReviewError(ReviewFailure.INTEGRITY_INVALID)
         values = _without(self, "visual_evidence_identity", "integrity_identity")
         if (
             not _texts((self.answer_pack_identity, self.review_pack_identity,
@@ -175,7 +187,11 @@ class McxPairedImportedVisualEvidence:
 
     @property
     def reference_role(self) -> str:
-        return "SUPPORTING_ONLY"
+        return "SUPPORTING_VISUAL_CONTEXT_ONLY" if self.chart_correspondence is not None else "SUPPORTING_ONLY"
+
+    @property
+    def reference_independent_correspondence(self) -> str:
+        return "NOT_INDEPENDENTLY_ESTABLISHED" if self.chart_correspondence is not None else "NOT_RETAINED"
 
 
 def parse_mcx_paired_answer(payload: bytes) -> McxPairedAnswerPack:
@@ -224,6 +240,7 @@ def bind_mcx_paired_import(
     answer: McxPairedAnswerPack, native_resolver: VisualIdentityResolver,
     reference_resolver: VisualIdentityResolver, imported_at: datetime,
     supporting_reference_only: bool = False,
+    chart_correspondence=None,
 ) -> McxPairedImportedVisualEvidence:
     if (
         type(pack) is not McxPairedReviewPack or type(bundle) is not McxPairedChartBundle
@@ -291,6 +308,8 @@ def bind_mcx_paired_import(
     }
     if answer.cross_market_answers is not None:
         values["cross_market_answers"] = answer.cross_market_answers
+    if chart_correspondence is not None:
+        values["chart_correspondence"] = chart_correspondence
     return McxPairedImportedVisualEvidence(
         visual_evidence_identity=_identity("INTRADAY-MCX-PAIRED-VISUAL-EVIDENCE-", values),
         integrity_identity=_identity("INTEGRITY-INTRADAY-MCX-PAIRED-VISUAL-EVIDENCE-", values),
@@ -350,6 +369,8 @@ def answer_artifact_from_bytes(payload: bytes) -> McxPairedAnswerPack | McxPaire
         if values.get("schema_identity") in {MCX_PAIRED_ANSWER_PACK_IDENTITY, visual_v2.MCX_ANSWER_SCHEMA}:
             value: McxPairedAnswerPack | McxPairedImportedVisualEvidence = McxPairedAnswerPack(**values)
         elif values.get("schema_identity") == MCX_PAIRED_IMPORTED_EVIDENCE_IDENTITY:
+            if "chart_correspondence" in values:
+                values["chart_correspondence"] = tuple(tuple(x) for x in values["chart_correspondence"])
             values["analysis_boundary"] = datetime.fromisoformat(values["analysis_boundary"])
             values["imported_at"] = datetime.fromisoformat(values["imported_at"])
             for name in ("native_resolution", "reference_resolution"):
@@ -390,7 +411,7 @@ def _question(identity: str) -> McxPairedQuestion:
 
 
 def _without(value: object, *names: str) -> dict[str, object]:
-    return {name: item for name, item in asdict(value).items() if name not in names and not (name == "cross_market_answers" and item is None)}
+    return {name: item for name, item in asdict(value).items() if name not in names and not (name in {"cross_market_answers", "chart_correspondence"} and item is None)}
 
 
 def _identity(prefix: str, value: object) -> str:
@@ -405,7 +426,7 @@ def _normalize(value: object) -> object:
     if is_dataclass(value): return _normalize(asdict(value))
     if isinstance(value, StrEnum): return value.value
     if isinstance(value, datetime): return value.isoformat()
-    if isinstance(value, Mapping): return {str(k): _normalize(v) for k, v in value.items() if not (k == "cross_market_answers" and v is None)}
+    if isinstance(value, Mapping): return {str(k): _normalize(v) for k, v in value.items() if not (k in {"cross_market_answers", "chart_correspondence"} and v is None)}
     if isinstance(value, (tuple, list)): return [_normalize(item) for item in value]
     return value
 

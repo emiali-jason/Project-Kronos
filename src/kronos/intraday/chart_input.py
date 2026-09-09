@@ -127,6 +127,7 @@ class ExpectedChartPanel:
     schedule: MarketSchedule | None
     currency: str | None = None
     unit: str | None = None
+    supporting_visual_only: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -141,6 +142,8 @@ class ChartPanelResult:
     content: tuple[tuple[str, ContentRequirement, FactObservability], ...]
     source_identity: str | None
     visual_relationship_identity: str | None
+    authority: str = "INDEPENDENT_MACHINE_CORRESPONDENCE"
+    independent_correspondence: str = "NOT_INDEPENDENTLY_ESTABLISHED"
 
 
 def content_projection(panel, question_required=()):
@@ -224,11 +227,37 @@ def compare_chart_panel(expected, observed, *, resolver, received_at, observed_a
                S.VALIDATED if all(x is S.VALIDATED for x in (identity, temporal, core)) else
                S.UNVERIFIABLE)
     source = expected.source
+    if expected.supporting_visual_only:
+        if expected.role != "REFERENCE" or source is not None or expected.schedule is not None:
+            raise ValueError("SUPPORTING_REFERENCE_SOURCE_FORBIDDEN")
+        # Visible identity/core and known contradictions are still checked. No
+        # absent independent source/session is converted into verified truth.
+        if observed is not None and observed.completion is CandleCompletion.INCOMPLETE:
+            temporal = S.NOT_VALIDATED
+            reasons.append("REFERENCE_VISIBLE_FORMING_CANDLE")
+        if observed is not None and (
+            any(t is not None and t > expected.analysis_boundary for t in
+                (observed.candle_start, observed.candle_end, observed.latest_visible_end))
+            or observed.candle_start is not None and observed.candle_end is not None
+                and observed.candle_start >= observed.candle_end
+            or observed.candle_end is not None and observed.captured_at is not None
+                and observed.candle_end > observed.captured_at
+            or observed.captured_at is not None and observed.captured_at > received_at):
+            temporal = S.NOT_VALIDATED
+            reasons.append("REFERENCE_VISIBLE_TIME_CONTRADICTION")
+        if temporal is S.NOT_VALIDATED:
+            overall = S.NOT_VALIDATED
+        elif overall is not S.NOT_VALIDATED:
+            overall = S.UNVERIFIABLE
+        reasons.append("NOT_INDEPENDENTLY_ESTABLISHED")
+    source_identity = (source.candle_identity if type(source) is GovernedHistoricalCandlePayload else
+        "MCX-DERIVED-SOURCE-" + sha256(json.dumps(asdict(source), sort_keys=True, default=str).encode()).hexdigest()
+        if type(source) is DerivedBarEvidence else None)
     return ChartPanelResult(expected.role, expected.timeframe, identity, temporal, core,
         overall, tuple(reasons), content,
-        source.candle_identity if type(source) is GovernedHistoricalCandlePayload else
-        source.provenance[0] if type(source) is DerivedBarEvidence and source.provenance else None,
-        relation)
+        source_identity, relation,
+        "SUPPORTING_VISUAL_CONTEXT_ONLY" if expected.supporting_visual_only else "INDEPENDENT_MACHINE_CORRESPONDENCE",
+        "VALIDATED" if not expected.supporting_visual_only and overall is S.VALIDATED else "NOT_INDEPENDENTLY_ESTABLISHED")
 
 
 def _compare_source_time(expected, observed, received_at, observed_at):

@@ -189,3 +189,24 @@ Record exact counts/durations and static/security checks externally. Retired
 `archive/` tests are not part of the active suite. Production baseline is inventoried
 before/after; concurrent additions are separately preserved and never attributed
 without evidence. Publication and runtime acceptance require separate Sponsor gates.
+
+
+## WO-07B-MCX — Sponsor asymmetric authority correction (9 September 2026)
+
+**Status:** Sponsor-approved bounded engineering requirement; candidate pending qualification/publication review.
+
+This decision supersedes the earlier requirement above for independent machine
+correspondence on all eight MCX panels. Native MCX remains primary: all four
+native 1D/4H/15M/5M panels require independent machine correspondence. International
+reference panels remain present as SUPPORTING_VISUAL_CONTEXT_ONLY. Their independent
+correspondence is explicitly NOT_INDEPENDENTLY_ESTABLISHED, never VALID/VERIFIED.
+Exact reference commodity/venue/visible identity and core observability still apply;
+known future/forming, wrong or cropped evidence cannot pass by being a reference.
+Missing international market-source/session evidence is not fabricated or promoted.
+
+Native 4H now consumes exact contract-bound retained native hourly candles through
+the existing governed Market aggregation path. It never relabels one hourly candle
+as four hours. See [the bounded source/authority contract](KRONOS-INTRADAY-WO-07B-MCX-ASYMMETRIC-CORRESPONDENCE.md)
+for constituent, calendar, cutoff, partial-bucket and persistence rules. The prior
+source-gap finding remains historically true; this correction supplies native 4H
+and changes only the reference authority requirement by direct Sponsor decision.

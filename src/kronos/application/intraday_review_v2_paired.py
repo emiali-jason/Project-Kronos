@@ -180,14 +180,15 @@ class IntradayReviewV2PairedAdapter:
                         imported_at=imported_at, supporting_reference_only=True)
                     if self.chart_input is None:
                         raise ReviewError(ReviewFailure.CHART_CORRESPONDENCE_UNVERIFIABLE)
-                    self.chart_input.require(cycle, chart, bundle=bundle, resolver=resolver,
+                    correspondence = self.chart_input.require(cycle, chart, bundle=bundle, resolver=resolver,
                         observed_native=parsed.native_observed_visible_identity,
                         observed_reference=parsed.reference_observed_visible_identity,
                         visual_answers=(*parsed.reference_answers, *parsed.native_answers, *(parsed.cross_market_answers or ()), parsed.escape_hatch_answer))
                     require_current()
                     _, evidence = self.engine.import_answer(payload=payload, pack=pack, bundle=bundle,
                         native_chart=native, reference_chart=reference, native_resolver=resolver,
-                        reference_resolver=resolver, imported_at=imported_at, supporting_reference_only=True)
+                        reference_resolver=resolver, imported_at=imported_at, supporting_reference_only=True,
+                        chart_correspondence=tuple((r.role, r.timeframe, r.authority, r.independent_correspondence, r.source_identity) for r in correspondence))
                     self.store.retain_evidence_pointer(evidence)
                     state = "IMPORTED"
         except (ReviewError, VisualIdentityResolutionError) as error:
