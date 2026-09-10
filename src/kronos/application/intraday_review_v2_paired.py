@@ -127,7 +127,7 @@ class IntradayReviewV2PairedAdapter:
 
     def create(self, cycle, chart, *, require_current):
         retained = self.retained(cycle, chart)
-        if retained is not None and retained[3].question_set_version == visual_v2.VERSION and retained[4].schema_version == "1.1.0":
+        if retained is not None and retained[3].question_set_version == visual_v2.VERSION and retained[4].schema_version == "1.2.0":
             bundle, native, reference, pack, transport, _, _ = retained
             pdf = self.store.load_bytes("question-pdfs", transport.transport_identity, ".pdf")
             template = self.store.load_bytes("answer-templates", transport.transport_identity)
@@ -157,6 +157,16 @@ class IntradayReviewV2PairedAdapter:
             return bundle, native, reference, pack, transport, None, None
         return None
 
+    def retained_evidence(self, pack, chart):
+        evidence = self.store.load_evidence_for_pack(pack.review_pack_identity)
+        if evidence is not None:
+            from kronos.intraday.analyst_chart_observation import verify_retained
+            answer = self.store.load_answer(evidence.answer_pack_identity)
+            if answer.source_sha256 != evidence.answer_source_sha256:
+                raise ReviewError(ReviewFailure.INTEGRITY_INVALID)
+            verify_retained(answer, pack, chart, self.review, imported_at=evidence.imported_at, paired=True)
+        return evidence
+
     def import_expected(self, cycle, chart, imported_at, *, require_current):
         from kronos.application.intraday_review_v2 import IntradayReviewV2InboxImportResult, IntradayReviewV2InboxMemberResult
         retained = self.retained(cycle, chart)
@@ -170,7 +180,7 @@ class IntradayReviewV2PairedAdapter:
             if payload is not None:
                 found = 1
                 parsed = parse_mcx_paired_answer(payload)
-                existing = self.store.load_evidence_for_pack(pack.review_pack_identity)
+                existing = self.retained_evidence(pack, chart)
                 if existing is not None:
                     if existing.answer_pack_identity != parsed.answer_pack_identity:
                         raise ReviewError(ReviewFailure.ANSWER_CONFLICT)
@@ -186,11 +196,15 @@ class IntradayReviewV2PairedAdapter:
                         imported_at=imported_at, supporting_reference_only=True)
                     if self.chart_input is None:
                         raise ReviewError(ReviewFailure.CHART_CORRESPONDENCE_UNVERIFIABLE)
-                    correspondence = self.chart_input.require(cycle, chart, bundle=bundle, resolver=resolver,
+                    from kronos.intraday.analyst_chart_observation import receipt as prepare_receipt
+                    observation = prepare_receipt(parsed, pack, chart, self.review, imported_at=imported_at, paired=True)
+                    correspondence = self.chart_input.require(cycle, chart, bundle=bundle, resolver=resolver, receipt=observation,
                         observed_native=parsed.native_observed_visible_identity,
                         observed_reference=parsed.reference_observed_visible_identity,
                         visual_answers=(*parsed.reference_answers, *parsed.native_answers, *(parsed.cross_market_answers or ()), parsed.escape_hatch_answer))
                     require_current()
+                    if observation is not None:
+                        self.review.retain_chart_input(observation)
                     _, evidence = self.engine.import_answer(payload=payload, pack=pack, bundle=bundle,
                         native_chart=native, reference_chart=reference, native_resolver=resolver,
                         reference_resolver=resolver, imported_at=imported_at, supporting_reference_only=True,

@@ -88,10 +88,15 @@ class McxPairedAnswerPack:
     schema_identity: str = MCX_PAIRED_ANSWER_PACK_IDENTITY
     schema_version: str = MCX_PAIRED_ANSWER_PACK_VERSION
     cross_market_answers: tuple[visual_v2.VisualObservationV2, ...] | None = None
+    chart_observation_header: str | None = None
 
     def __post_init__(self) -> None:
         _validate_observations(self)
         modern = self.schema_version == visual_v2.VERSION
+        if self.chart_observation_header is not None:
+            from kronos.intraday.analyst_chart_observation import parse
+            if not modern or parse(json.loads(self.chart_observation_header), paired=True) != self.chart_observation_header:
+                raise ReviewError(ReviewFailure.ANSWER_SCHEMA_INVALID)
         values = _without(self, "answer_pack_identity")
         if (
             not _sha(self.source_sha256)
@@ -200,7 +205,7 @@ def parse_mcx_paired_answer(payload: bytes) -> McxPairedAnswerPack:
     try:
         document = json.loads(payload.decode("utf-8"))
         modern = type(document) is dict and document.get("schema_version") == visual_v2.VERSION
-        if type(document) is not dict or frozenset(document) != (_TOP_LEVEL | {"cross_market_answers"} if modern else _TOP_LEVEL):
+        if type(document) is not dict or frozenset(document) not in ((_TOP_LEVEL | {"cross_market_answers"}, _TOP_LEVEL | {"cross_market_answers", "chart_observation_header"}) if modern else (_TOP_LEVEL,)):
             raise ValueError
         if modern:
             native = tuple(_parse_answer(item, visual_v2.VisualObservationV2) for item in document["native_answers"])
@@ -226,6 +231,9 @@ def parse_mcx_paired_answer(payload: bytes) -> McxPairedAnswerPack:
         }
         if modern:
             values["cross_market_answers"] = cross
+            if "chart_observation_header" in document:
+                from kronos.intraday.analyst_chart_observation import parse
+                values["chart_observation_header"] = parse(document["chart_observation_header"], paired=True)
         return McxPairedAnswerPack(
             answer_pack_identity=_identity("INTRADAY-MCX-PAIRED-ANSWER-PACK-", values),
             **values,
@@ -349,6 +357,9 @@ def answer_template(pack: McxPairedReviewPack, bundle: McxPairedChartBundle) -> 
                         cross_market_answers=[observation(q) for q in pack.questions[10:14]],
                         escape_hatch_answer=observation(pack.questions[14]),
                         reference_observed_visible_identity=MCX_REFERENCE_OBSERVATION_PLACEHOLDER)
+    if pack.question_set_version == visual_v2.VERSION:
+        from kronos.intraday.analyst_chart_observation import template, FIELD
+        document[FIELD] = template(pack, paired=True)
     return _canonical(document) + b"\n"
 
 
@@ -411,7 +422,7 @@ def _question(identity: str) -> McxPairedQuestion:
 
 
 def _without(value: object, *names: str) -> dict[str, object]:
-    return {name: item for name, item in asdict(value).items() if name not in names and not (name in {"cross_market_answers", "chart_correspondence"} and item is None)}
+    return {name: item for name, item in asdict(value).items() if name not in names and not (name in {"cross_market_answers", "chart_correspondence", "chart_observation_header"} and item is None)}
 
 
 def _identity(prefix: str, value: object) -> str:
@@ -426,7 +437,7 @@ def _normalize(value: object) -> object:
     if is_dataclass(value): return _normalize(asdict(value))
     if isinstance(value, StrEnum): return value.value
     if isinstance(value, datetime): return value.isoformat()
-    if isinstance(value, Mapping): return {str(k): _normalize(v) for k, v in value.items() if not (k in {"cross_market_answers", "chart_correspondence"} and v is None)}
+    if isinstance(value, Mapping): return {str(k): _normalize(v) for k, v in value.items() if not (k in {"cross_market_answers", "chart_correspondence", "chart_observation_header"} and v is None)}
     if isinstance(value, (tuple, list)): return [_normalize(item) for item in value]
     return value
 

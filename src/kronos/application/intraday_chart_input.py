@@ -82,9 +82,9 @@ class IntradayChartInputGate:
                 supporting_visual_only=bool(bundle and role == 'REFERENCE')))
         return tuple(result)
 
-    def evaluate(self, cycle, chart, *, bundle=None, resolver=None):
+    def evaluate(self, cycle, chart, *, bundle=None, resolver=None, receipt=None):
         payload = self.review.load_chart_bytes(chart)
-        receipt = self.review.load_chart_input(chart)
+        receipt = receipt if receipt is not None else self.review.load_chart_input(chart)
         try:
             expected = self.expectations(cycle, chart, bundle)
         except ReviewError:
@@ -105,8 +105,8 @@ class IntradayChartInputGate:
                      for e in expected)
 
     def require(self, cycle, chart, *, observed_native, observed_reference=None,
-                bundle=None, resolver=None, visual_answers=()):
-        results = self.evaluate(cycle, chart, bundle=bundle, resolver=resolver)
+                bundle=None, resolver=None, visual_answers=(), receipt=None):
+        results = self.evaluate(cycle, chart, bundle=bundle, resolver=resolver, receipt=receipt)
         if any(r.overall is ValidationState.NOT_VALIDATED for r in results):
             raise ReviewError(ReviewFailure.CHART_CORRESPONDENCE_INVALID)
         native = tuple(r for r in results if r.role == "NATIVE")
@@ -117,7 +117,7 @@ class IntradayChartInputGate:
                    or r.authority != "SUPPORTING_VISUAL_CONTEXT_ONLY"
                    or r.independent_correspondence != "NOT_INDEPENDENTLY_ESTABLISHED" for r in reference)):
             raise ReviewError(ReviewFailure.CHART_CORRESPONDENCE_UNVERIFIABLE)
-        receipt = self.review.load_chart_input(chart)
+        receipt = receipt if receipt is not None else self.review.load_chart_input(chart)
         if receipt is None or any(
             (p.observed_subject != observed_native if p.role == 'NATIVE' else
              p.observed_series != observed_reference) for p in receipt.panels

@@ -355,6 +355,15 @@ class IntradayReviewV2Store:
             or evidence.probable_result_identity != pack.probable_result_identity
         ):
             raise ReviewError(ReviewFailure.INTEGRITY_INVALID)
+        if "CHART-ANALYST-CORRESPONDENCE:" + evidence.answer_source_sha256 in evidence.provenance:
+            from kronos.intraday.review_answer import parse_answer_pack
+            from kronos.intraday.analyst_chart_observation import verify_retained
+            answer = parse_answer_pack(self._read(self._path("answer-transports",
+                f"{review_pack_identity}-{evidence.answer_source_sha256}")))
+            if answer.answer_pack_identity != evidence.answer_pack_identity:
+                raise ReviewError(ReviewFailure.INTEGRITY_INVALID)
+            verify_retained(answer, pack, self.load_chart(pack.chart_revision_identity), self,
+                            imported_at=evidence.imported_at)
         return evidence
 
     def load_chart_bytes(self, value: ChartRevisionV2) -> bytes:

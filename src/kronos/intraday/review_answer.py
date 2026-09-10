@@ -215,6 +215,7 @@ class ChartAnalystAnswerPack:
     source_sha256: str
     schema_identity: str = ANSWER_PACK_IDENTITY
     schema_version: str = ANSWER_CONTRACT_VERSION
+    chart_observation_header: str | None = None
 
     def __post_init__(self) -> None:
         questions, observation_type = _answer_contract(self.schema_identity, self.schema_version, self.question_set_identity, self.question_set_version)
@@ -273,6 +274,13 @@ class ChartAnalystAnswerPack:
             "schema_identity": self.schema_identity,
             "schema_version": self.schema_version,
         }
+        if self.chart_observation_header is not None:
+            from kronos.intraday.analyst_chart_observation import parse, FIELD
+            raw = json.loads(self.chart_observation_header)
+            if self.schema_version != "2.0.0" or parse(raw) != self.chart_observation_header:
+                raise ReviewError(ReviewFailure.ANSWER_SCHEMA_INVALID)
+            source_document[FIELD] = raw
+            identity_values[FIELD] = self.chart_observation_header
         if (
             self.source_sha256 != sha256(_canonical(_normalize(source_document))).hexdigest()
             or self.answer_pack_identity != _identity("INTRADAY-ANSWER-PACK-", identity_values)
@@ -461,7 +469,7 @@ def parse_answer_pack(payload: bytes) -> ChartAnalystAnswerPack:
         document = json.loads(payload.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError) as error:
         raise ReviewError(ReviewFailure.ANSWER_SCHEMA_INVALID) from error
-    if type(document) is not dict or set(document) != _TOP_LEVEL_FIELDS or type(document["answers"]) is not list:
+    if type(document) is not dict or set(document) not in (_TOP_LEVEL_FIELDS, _TOP_LEVEL_FIELDS | {"chart_observation_header"}) or type(document["answers"]) is not list:
         raise ReviewError(ReviewFailure.ANSWER_SCHEMA_INVALID)
     try:
         _, observation_type = _answer_contract(document["schema_identity"], document["schema_version"], document["question_set_identity"], document["question_set_version"])
@@ -485,6 +493,11 @@ def parse_answer_pack(payload: bytes) -> ChartAnalystAnswerPack:
             "schema_identity": document["schema_identity"],
             "schema_version": document["schema_version"],
         }
+        if "chart_observation_header" in document:
+            from kronos.intraday.analyst_chart_observation import parse
+            if document["schema_version"] != "2.0.0":
+                raise ReviewError(ReviewFailure.ANSWER_SCHEMA_INVALID)
+            values["chart_observation_header"] = parse(document["chart_observation_header"])
         identity_values = dict(values)
         identity_values.pop("source_sha256")
         return ChartAnalystAnswerPack(
@@ -748,7 +761,7 @@ def _normalize(value: object) -> object:
     if isinstance(value, datetime):
         return value.isoformat()
     if isinstance(value, Mapping):
-        return {str(name): _normalize(item) for name, item in value.items()}
+        return {str(name): _normalize(item) for name, item in value.items() if not (name == "chart_observation_header" and item is None)}
     if isinstance(value, (tuple, list)):
         return [_normalize(item) for item in value]
     return value

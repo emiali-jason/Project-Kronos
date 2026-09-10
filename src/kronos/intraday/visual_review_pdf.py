@@ -92,6 +92,7 @@ def answer_protocol(*, paired):
             "Each NSE candidate global_observation_status must be OBSERVED only when every Q1-Q10 status is OBSERVED. It must be PARTIAL when at least one question is OBSERVED or PARTIAL, not all are OBSERVED, and none is INVALID. Any other global status requires every question to have exactly that same status. An INVALID question cannot be hidden under global PARTIAL. Do not add a batch-global status key; candidates remain independent.",
             "Q10: NONE means no additional material condition after assessing the required scope; it still requires OBSERVED full scope or truthful PARTIAL scope/status_detail and visible_basis. why_not_covered_elsewhere must be null for NONE. MATERIAL_OBSERVATION requires truthful nonempty why_not_covered_elsewhere explaining why Q1-Q9 do not cover it; do not duplicate them. Unobservable scope is not NONE.",
         )
-    return common + family + (
+    from kronos.intraday.analyst_chart_observation import PROTOCOL
+    return common + family + tuple(rule.replace("1D/1H/4H/15M/5M", "1D/4H/15M/5M" if paired else "1D/1H/15M/5M") for rule in PROTOCOL) + (
         "why_not_covered_elsewhere must be null on every question except Q10/X5 with answer MATERIAL_OBSERVATION. Neither NONE nor MATERIAL_OBSERVATION relaxes scope, status or visible_basis requirements. No vote, score, trade recommendation or new analytical consequence is requested.",
     )

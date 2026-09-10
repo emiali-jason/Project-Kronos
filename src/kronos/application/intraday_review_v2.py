@@ -671,7 +671,7 @@ class IntradayReviewV2Application:
         if retained is None:
             return candidate
         pack, transport = retained[3:5]
-        evidence = self._paired.store.load_evidence_for_pack(pack.review_pack_identity)
+        evidence = self._paired.retained_evidence(pack, chart)
         return replace(candidate, review_pack_state="READY", question_pack_state="TRANSPORT_READY",
             question_transport_identity=transport.transport_identity,
             question_filename=transport.question_filename, expected_answer_filename=transport.expected_answer_filename,
@@ -718,7 +718,7 @@ class IntradayReviewV2Application:
     ) -> ReviewBatchTransportV2 | None:
         expected_batch = create_question_batch_v2(packs)
         modern = all(pack.question_set_version == visual_v2.VERSION for pack in packs)
-        versions = ("2.1.0",) if current_edition_only and modern else ("2.1.0", "2.0.0")
+        versions = ("2.2.0",) if current_edition_only and modern else ("2.2.0", "2.1.0", "2.0.0")
         for version in versions:
             try:
                 batch = self._review.load_batch(expected_batch.batch_identity)
@@ -1105,10 +1105,13 @@ class IntradayReviewV2Application:
                     imported_at=imported_at,
                     visual_identity_resolver=self._visual_identity_resolver,
                 )
+                from kronos.intraday.analyst_chart_observation import receipt as prepare_receipt
+                chart = self._review.load_chart(pack.chart_revision_identity)
+                observation = prepare_receipt(answer, pack, chart, self._review, imported_at=imported_at)
                 self._chart_input.require(
                     self._review.load_cycle(pack.review_cycle_identity),
                     self._review.load_chart(pack.chart_revision_identity),
-                    observed_native=answer.observed_visible_subject_identity, visual_answers=answer.answers,
+                    observed_native=answer.observed_visible_subject_identity, visual_answers=answer.answers, receipt=observation,
                 )
                 prepared.append((answer, evidence, False))
             except ReviewError as error:
@@ -1155,14 +1158,19 @@ class IntradayReviewV2Application:
             try:
                 with self._probables.current_generation_guard():
                     pack = self._review.load_pack(evidence.review_pack_identity)
+                    from kronos.intraday.analyst_chart_observation import receipt as prepare_receipt
+                    chart = self._review.load_chart(pack.chart_revision_identity)
+                    observation = prepare_receipt(answer, pack, chart, self._review, imported_at=evidence.imported_at)
                     self._chart_input.require(
                         self._review.load_cycle(pack.review_cycle_identity),
                         self._review.load_chart(pack.chart_revision_identity),
-                        observed_native=answer.observed_visible_subject_identity, visual_answers=answer.answers,
+                        observed_native=answer.observed_visible_subject_identity, visual_answers=answer.answers, receipt=observation,
                     )
                     self._require_current_workspace(pack.probables_run_identity, pack.review_cycle_identity)
                     if self._current_pack(pack.review_cycle_identity, require_retained=True) != pack:
                         raise ReviewError(ReviewFailure.NOT_CURRENT)
+                    if observation is not None:
+                        self._review.retain_chart_input(observation)
                     self._review.retain_batch_answer_transport(
                         prepared.validation.review_batch_identity, payload)
                     self._review.retain_answer_transport(
@@ -1263,10 +1271,13 @@ class IntradayReviewV2Application:
                 imported_at=imported_at,
                 visual_identity_resolver=self._visual_identity_resolver,
             )
+            from kronos.intraday.analyst_chart_observation import receipt as prepare_receipt
+            chart = self._review.load_chart(pack.chart_revision_identity)
+            observation = prepare_receipt(answer, pack, chart, self._review, imported_at=imported_at)
             self._chart_input.require(
                 self._review.load_cycle(pack.review_cycle_identity),
                 self._review.load_chart(pack.chart_revision_identity),
-                observed_native=answer.observed_visible_subject_identity, visual_answers=answer.answers,
+                observed_native=answer.observed_visible_subject_identity, visual_answers=answer.answers, receipt=observation,
             )
             answers.append(answer)
             evidence.append(bound)
@@ -1661,6 +1672,7 @@ def _candidate_population_identity(run: ProbablesRunV2) -> str:
 
 def _answer_document(answer: ChartAnalystAnswerPack) -> dict[str, object]:
     return {
+        **({"chart_observation_header": json.loads(answer.chart_observation_header)} if answer.chart_observation_header is not None else {}),
         "schema_identity": answer.schema_identity,
         "schema_version": answer.schema_version,
         "question_set_identity": answer.question_set_identity,

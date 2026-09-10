@@ -210,3 +210,12 @@ as four hours. See [the bounded source/authority contract](KRONOS-INTRADAY-WO-07
 for constituent, calendar, cutoff, partial-bucket and persistence rules. The prior
 source-gap finding remains historically true; this correction supplies native 4H
 and changes only the reference authority requirement by direct Sponsor decision.
+
+## WO-07E source decision successor - 10 September 2026
+
+The separate pre-Answer producer prerequisite above is superseded by
+[ADR-0032](../../adr/ADR-0032-INTRADAY-CHART-ANALYST-CORRESPONDENCE-SOURCE.md).
+The Sponsor-assisted Chart Analyst Answer supplies the independent observations.
+After exact import-time validation, KRONOS retains them through the existing
+immutable receipt store. Upload itself supplies no independent visual facts.
+All comparison, identity, temporal and MCX asymmetric boundaries remain in force.

@@ -1091,6 +1091,8 @@ def bind_imported_visual_evidence_v2(
             "KRONOS-INTRADAY-V2-REVIEW-SUCCESSOR-SEAM",
             pack.review_pack_identity,
             answer.answer_pack_identity,
+            *(("CHART-ANALYST-CORRESPONDENCE:" + answer.source_sha256,)
+              if answer.chart_observation_header is not None else ()),
         ),
         "schema_identity": IMPORTED_VISUAL_EVIDENCE_V2_IDENTITY,
         "schema_version": VISUAL_V2_ARTIFACT_VERSION if pack.question_set_version == visual_v2.VERSION else REVIEW_V2_CONTRACT_VERSION,

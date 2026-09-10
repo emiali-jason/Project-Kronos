@@ -117,6 +117,7 @@ def _fixture(tmp_path: Path, subjects=SUBJECTS, *, correspondence=True):  # type
 def _completed(path: Path) -> bytes:
     document = json.loads(path.read_bytes())
     for candidate in document["candidates"]:
+        candidate.pop("chart_observation_header", None)  # Retained pre-header observer fixture.
         candidate["observed_visible_subject_identity"] = candidate[
             "expected_canonical_subject_identity"
         ]

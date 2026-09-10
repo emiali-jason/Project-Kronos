@@ -21,7 +21,7 @@ from .test_probables_v2 import _schedule, PREVIOUS_DAY
 from .chart_input_fixtures import configure_fixture_calendar
 
 
-def fixture(tmp_path, family="GOLDM"):
+def fixture(tmp_path, family="GOLDM", *, retain_observation=True):
     app, cycle, metadata = paired_fixture(tmp_path, family=family)
     configure_fixture_calendar(app)
     chart = app.upload_chart(cycle.cycle_identity, media_type="image/png", payload=_png(88), paired_metadata=metadata)
@@ -56,7 +56,8 @@ def fixture(tmp_path, family="GOLDM"):
             tuple((key,FactObservability.EXACT) for key in CORE_CONTENT)))
     receipt=ChartInputObservation(chart.chart_revision_identity,chart.payload_sha256,cycle.cycle_identity,
         cycle.probables_run_identity,cycle.probable_result_identity,"ISOLATED-INDEPENDENT-OBSERVATION",chart.received_at,tuple(panels))
-    app.review_store.retain_chart_input(receipt)
+    if retain_observation:
+        app.review_store.retain_chart_input(receipt)
     result=app.create_individual_question_transport(cycle.cycle_identity)
     complete_paired(app,result,reference="TEST-LISTED-"+family)
     return app,cycle,chart,bundle,receipt,result,rows

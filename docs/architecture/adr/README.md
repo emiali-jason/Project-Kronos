@@ -58,3 +58,7 @@ The existing approved `ADL-*` records remain at their established paths under [`
 ## One-time legacy deployment bridge — 8 September 2026
 
 [ADR-0031](ADR-0031-ONE-TIME-LEGACY-MAINTENANCE-BOOTSTRAP.md) records the direct Sponsor-authorized bootstrap/package engineering candidate. It leaves the normal ADR-0030 protocol intact. Installation, migration and runtime acceptance require separate gates.
+
+## Intraday Chart Analyst correspondence source
+
+[ADR-0032](ADR-0032-INTRADAY-CHART-ANALYST-CORRESPONDENCE-SOURCE.md) records the Sponsor-approved WO-07E product decision: independently returned Answer observations feed the existing strict gate and immutable receipt store. Publication remains gated.

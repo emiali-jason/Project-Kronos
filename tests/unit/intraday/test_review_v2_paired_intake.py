@@ -48,6 +48,7 @@ def paired_fixture(tmp_path, *, family="GOLDM", visible="TEST-EXACT-NATIVE-SERIE
 
 def complete_paired(app, result, native="TEST-EXACT-NATIVE-SERIES", reference="Observed listed series - not a membership claim"):
     doc = json.loads(result.answer_template_path.read_bytes())
+    doc.pop("chart_observation_header", None)  # Retained pre-header observer fixture.
     doc["native_observed_visible_identity"] = native
     doc["reference_observed_visible_identity"] = reference
     if doc["schema_version"] == "2.0.0":

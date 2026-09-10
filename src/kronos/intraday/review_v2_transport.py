@@ -38,7 +38,7 @@ from kronos.intraday.review_v2 import ReviewQuestionBatchV2, ReviewQuestionPackV
 
 
 REVIEW_BATCH_TRANSPORT_V2_IDENTITY = "KRONOS-INTRADAY-REVIEW-BATCH-TRANSPORT-V2"
-REVIEW_BATCH_TRANSPORT_V2_VERSION = "2.1.0"
+REVIEW_BATCH_TRANSPORT_V2_VERSION = "2.2.0"
 REVIEW_BATCH_TRANSPORT_LEGACY_VERSION = "2.0.0"
 REVIEW_V2_QUESTION_TRANSPORT_ROUTE = "/intraday/review/v2/question-transport"
 _IST = ZoneInfo("Asia/Kolkata")
@@ -80,7 +80,7 @@ class ReviewBatchTransportV2:
             or not _sha(self.answer_template_sha256)
             or not self.provenance
             or self.schema_identity != REVIEW_BATCH_TRANSPORT_V2_IDENTITY
-            or self.schema_version not in {REVIEW_BATCH_TRANSPORT_LEGACY_VERSION, REVIEW_BATCH_TRANSPORT_V2_VERSION}
+            or self.schema_version not in {REVIEW_BATCH_TRANSPORT_LEGACY_VERSION, "2.1.0", REVIEW_BATCH_TRANSPORT_V2_VERSION}
             or self.transport_identity
             != _identity("INTRADAY-REVIEW-BATCH-TRANSPORT-V2-", core)
             or self.integrity_identity
@@ -274,6 +274,10 @@ def answer_template_v2(
         "probables_run_identity": batch.probables_run_identity,
         "candidates": [_answer_candidate(pack) for pack in ordered],
     }
+    if modern:
+        from kronos.intraday.analyst_chart_observation import template, FIELD
+        for candidate, pack in zip(document["candidates"], ordered, strict=True):
+            candidate[FIELD] = template(pack)
     return _canonical(document) + b"\n"
 
 

@@ -136,6 +136,7 @@ def _resolver(boundary: datetime) -> VisualIdentityResolver:
 def _completed_batch_payload(path: Path, observed: str) -> bytes:
     document = json.loads(path.read_bytes())
     candidate = document["candidates"][0]
+    candidate.pop("chart_observation_header", None)  # Retained pre-header observer fixture.
     candidate["observed_visible_subject_identity"] = observed
     candidate["global_observation_status"] = "OBSERVED"
     for question, answer in zip((NSE_QUESTIONS if candidate["question_set_version"] == "2.0.0" else QUESTIONS), candidate["answers"], strict=True):

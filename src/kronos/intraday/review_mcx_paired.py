@@ -565,7 +565,7 @@ def _normalize(value: object) -> object:
     if isinstance(value, datetime):
         return value.isoformat()
     if isinstance(value, Mapping):
-        return {str(name): _normalize(item) for name, item in value.items() if not (name in {"cross_market_answers", "native_governed_levels", "chart_correspondence"} and item is None)}
+        return {str(name): _normalize(item) for name, item in value.items() if not (name in {"cross_market_answers", "native_governed_levels", "chart_correspondence", "chart_observation_header"} and item is None)}
     if isinstance(value, (tuple, list)):
         return [_normalize(item) for item in value]
     return value
