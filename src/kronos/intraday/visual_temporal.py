@@ -98,9 +98,19 @@ def compare_visible_time(expected, observed, *, received_at, machine_context):
         return S.NOT_VALIDATED, "PROHIBITED_VISIBLE_FORMING_EVIDENCE"
     if (c.context_sufficient is not True or not c.visible_labels or not c.basis
         or c.later_evidence != "ABSENT" or c.other_contradiction != "ABSENT"
-        or c.forming_evidence == "UNKNOWN" or observed.entire_panel_observed is not True):
+        or observed.entire_panel_observed is not True):
         return S.UNVERIFIABLE, "INSUFFICIENT_VISUAL_TEMPORAL_CONTEXT"
-    if c.forming_evidence == "PRESENT":
+    # ADR-0035: UNKNOWN pixel completion is not a contradiction and cannot
+    # replace (or defeat) independently validated native machine completion.
+    # A context is provided only by _machine_source_context after validation.
+    # References have no such authority; keep their existing fail-closed rule.
+    if c.forming_evidence == "UNKNOWN":
+        if machine_context is None or expected.supporting_visual_only:
+            return S.UNVERIFIABLE, "MACHINE_COMPLETION_AUTHORITY_NOT_ESTABLISHED"
+        if (c.forming_excluded is not None or c.excluded_forming_date is not None
+            or c.exclusion_basis is not None):
+            return S.UNVERIFIABLE, "INCONSISTENT_FORMING_SCOPE"
+    elif c.forming_evidence == "PRESENT":
         if not c.exclusion_basis or c.excluded_forming_date != boundary_day:
             return S.UNVERIFIABLE, "FORMING_EXCLUSION_NOT_ESTABLISHED"
     elif c.forming_excluded is not False or c.excluded_forming_date is not None or c.exclusion_basis is not None:

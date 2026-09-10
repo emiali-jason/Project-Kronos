@@ -281,8 +281,11 @@ def compare_chart_panel(expected, observed, *, resolver, received_at, observed_a
         "FAMILY_VISUAL_MACHINE_TEMPORAL_CORRESPONDENCE" if uses_family_visual_authority(resolver) and expected.venue == "MCX" else "INDEPENDENT_MACHINE_CORRESPONDENCE",
         "VALIDATED" if not expected.supporting_visual_only and overall is S.VALIDATED else "NOT_INDEPENDENTLY_ESTABLISHED",
         None if observed is None or observed.temporal_context is None else
-        TemporalCompatibility.VISIBLY_CONTRADICTED.value if temporal is S.NOT_VALIDATED else
-        TemporalCompatibility.CONFIRMED_COMPATIBLE.value if visual_temporal is S.VALIDATED else
+        TemporalCompatibility.VISIBLY_CONTRADICTED.value if visual_temporal is S.NOT_VALIDATED else
+        TemporalCompatibility.CONFIRMED_COMPATIBLE.value if (
+            visual_temporal is S.VALIDATED
+            and (overall is S.VALIDATED or expected.supporting_visual_only
+                 and identity is S.VALIDATED and core is S.VALIDATED)) else
         TemporalCompatibility.INSUFFICIENT_VISUAL_EVIDENCE.value)
 
 

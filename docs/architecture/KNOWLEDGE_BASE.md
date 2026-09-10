@@ -169,3 +169,7 @@ Older relationships retain their intervals; export-only labels begin on 10 Septe
 ## WO-07E stable MCX families and complete visual identities
 
 [ADR-0034](adr/ADR-0034-INTRADAY-STABLE-MCX-VISUAL-FAMILY.md) records the Sponsor-approved family/venue/role boundary with separate exact machine contracts. [The 98-identity candidate](products/intraday/KRONOS-INTRADAY-WO-07E-COMPLETE-98-IDENTITY.md) preserves 1.6.0 and historical evidence; publication/runtime activation remain separate.
+
+## WO-07E final temporal authority composition
+
+[ADR-0035](adr/ADR-0035-INTRADAY-TEMPORAL-AUTHORITY-COMPOSITION.md) records the Sponsor-approved bounded composition correction: native machine completion permits forming UNKNOWN only with sufficient independent visible contradiction context. Explicit false remains fail-closed. Engineering candidate; publication and runtime remain separately gated.

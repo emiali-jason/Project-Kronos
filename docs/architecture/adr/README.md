@@ -66,3 +66,7 @@ The existing approved `ADL-*` records remain at their established paths under [`
 ## Intraday independent temporal contradiction evidence
 
 [ADR-0033](ADR-0033-INTRADAY-VISUAL-TEMPORAL-CONTRADICTION.md) records the Sponsor-approved temporal correction, with immutable legacy behavior and successor transport. Engineering candidate; publication remains gated.
+
+## WO-07E final temporal authority composition
+
+[ADR-0035](ADR-0035-INTRADAY-TEMPORAL-AUTHORITY-COMPOSITION.md) records the Sponsor-approved bounded composition correction: native machine completion permits forming UNKNOWN only with sufficient independent visible contradiction context. Explicit false remains fail-closed. Engineering candidate; publication and runtime remain separately gated.

@@ -113,7 +113,7 @@ def test_equivalent_image_through_fresh_import(tmp_path,symbol,label,scenario):
 
 @pytest.mark.parametrize('field,value',[
  ('context_sufficient',None),('context_sufficient',False),('visible_labels',[]),('basis',None),
- ('later_evidence','UNKNOWN'),('other_contradiction','UNKNOWN'),('forming_evidence','UNKNOWN'),
+ ('later_evidence','UNKNOWN'),('other_contradiction','UNKNOWN'),
  ('later_evidence','PRESENT'),('other_contradiction','PRESENT'),('forming_evidence','PRESENT'),
  ('forming_excluded',True),('forming_excluded',None),('exclusion_basis','Unjustified exclusion'),
  ('excluded_forming_date','2026-08-29')])
