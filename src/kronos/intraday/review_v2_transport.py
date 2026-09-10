@@ -107,6 +107,7 @@ class IntradayReviewV2Transport:
         self,
         batch: ReviewQuestionBatchV2,
         entries: Sequence[tuple[ReviewQuestionPackV2, bytes]],
+        *, internal_directory: Path | None = None,
     ) -> tuple[ReviewBatchTransportV2, Path, bytes]:
         retained = _validate_entries(batch, entries)
         generated_at = batch.created_at
@@ -141,9 +142,11 @@ class IntradayReviewV2Transport:
             ),
             **values,
         )
-        self.question_outbox.mkdir(parents=True, exist_ok=True)
-        self.answer_inbox.mkdir(parents=True, exist_ok=True)
-        question_path = _retain(self.question_outbox / question_filename, pdf)
+        destination = internal_directory or self.question_outbox
+        destination.mkdir(parents=True, exist_ok=True)
+        if internal_directory is None:
+            self.answer_inbox.mkdir(parents=True, exist_ok=True)
+        question_path = _retain(destination / question_filename, pdf)
         # The PDF contains the exact template. Only the evidence store retains
         # its structured bytes; the Sponsor outbox contains no JSON input file.
         return transport, question_path, template
@@ -173,6 +176,7 @@ class IntradayReviewV2Transport:
         if (
             type(expected_filename) is not str
             or (_EXPECTED_ANSWER_NAME.fullmatch(expected_filename) is None
+                and re.fullmatch(r"KRONOS_INTRADAY_ORDERED_BATCH_[0-9A-F]{64}_ANSWERS\.json", expected_filename) is None
                 and re.fullmatch(r"KRONOS_INTRADAY_MCX_PAIRED_REVIEW_[0-9A-F]{12}_ANSWERS\.json", expected_filename) is None)
             or Path(expected_filename).name != expected_filename
         ):
@@ -290,6 +294,21 @@ def expected_transport_identity_v2(batch: ReviewQuestionBatchV2, *, version: str
     )
 
 
+def visual_review_entry(pack, payload):
+    """Shared immutable NSE orientation for individual and ordered batch PDFs."""
+    return (
+            (f"{pack.expected_canonical_subject_identity} | {pack.proposed_direction}",
+             f"Analysis boundary: {pack.analysis_boundary.isoformat()} | 1D / 1H / 15M / 5M",
+             f"Chart revision: {pack.chart_revision_identity}",
+             f"Question set: {pack.question_set_identity} / {pack.question_set_version}",
+             "Governed levels: " + ("; ".join(f"{name} = {value} [source {source}]" for name, value, source in pack.governed_levels) or "NOT_ESTABLISHED") + ".",
+             "SELECTED_Q6_Q9_ANCHOR = NOT_ESTABLISHED. These HIGH/LOW values are governed orientation, "
+             "not a machine-selected barrier. Do not choose one from direction or chart geometry; "
+             "where a relevant governed anchor is not established, report NOT_OBSERVABLE or UNCLEAR. "
+             "Prior completed 1H may be lawful at Opening; forming current-day 1H is excluded."),
+            (payload,), pack.questions)
+
+
 def render_review_batch_v2_pdf(
     batch: ReviewQuestionBatchV2,
     entries: Sequence[tuple[ReviewQuestionPackV2, bytes]],
@@ -302,17 +321,7 @@ def render_review_batch_v2_pdf(
         raise ReviewError(ReviewFailure.INTEGRITY_INVALID)
     if all(pack.question_set_version == visual_v2.VERSION for pack, _ in retained):
         from kronos.intraday.visual_review_pdf import render_visual_review
-        return render_visual_review(tuple((
-            (f"{pack.expected_canonical_subject_identity} | {pack.proposed_direction}",
-             f"Analysis boundary: {pack.analysis_boundary.isoformat()} | 1D / 1H / 15M / 5M",
-             f"Chart revision: {pack.chart_revision_identity}",
-             f"Question set: {pack.question_set_identity} / {pack.question_set_version}",
-             "Governed levels: " + ("; ".join(f"{name} = {value} [source {source}]" for name, value, source in pack.governed_levels) or "NOT_ESTABLISHED") + ".",
-             "SELECTED_Q6_Q9_ANCHOR = NOT_ESTABLISHED. These HIGH/LOW values are governed orientation, "
-             "not a machine-selected barrier. Do not choose one from direction or chart geometry; "
-             "where a relevant governed anchor is not established, report NOT_OBSERVABLE or UNCLEAR. "
-             "Prior completed 1H may be lawful at Opening; forming current-day 1H is excluded."),
-            (payload,), pack.questions) for pack, payload in retained),
+        return render_visual_review(tuple(visual_review_entry(pack, payload) for pack, payload in retained),
             expected_filename=expected_answer_filename,
             answer_template=answer_template_v2(batch, tuple(pack for pack, _ in retained)))
     output = BytesIO()

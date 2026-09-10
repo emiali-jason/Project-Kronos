@@ -14,7 +14,7 @@ def chart_dimensions(width, height):
     return width * scale, height * scale
 
 
-def render_visual_review(entries, *, expected_filename, answer_template, paired=False):
+def render_visual_review(entries, *, expected_filename, answer_template, paired=False, paired_flags=None):
     """entries: exact machine orientation, immutable chart bytes, frozen questions."""
     output = BytesIO()
     styles = getSampleStyleSheet()
@@ -35,7 +35,7 @@ def render_visual_review(entries, *, expected_filename, answer_template, paired=
         for text in orientation[1:]:
             story.append(paragraph(text, "Binding"))
         story.append(paragraph("Expected Answer: " + expected_filename, "Binding"))
-        if paired:
+        if paired if paired_flags is None else paired_flags[index]:
             story.append(paragraph("TOP = INTERNATIONAL BENCHMARK / REFERENCE   |   BOTTOM = NATIVE MCX CONTRACT"))
         for number, payload in enumerate(payloads):
             if number:
@@ -52,8 +52,14 @@ def render_visual_review(entries, *, expected_filename, answer_template, paired=
                 items.append(paragraph(question.conditional_instruction))
             story.append(KeepTogether(items + [Spacer(1, 2*mm)]))
     story.extend((PageBreak(), paragraph("Chart Analyst Answer Protocol", "Heading1")))
-    for rule in answer_protocol(paired=paired):
-        story.extend((paragraph(rule), Spacer(1, 2*mm)))
+    families = (paired,) if paired_flags is None else tuple(dict.fromkeys(paired_flags))
+    for family in families:
+        if paired_flags is not None:
+            story.append(paragraph("MCX candidate protocol" if family else "NSE candidate protocol", "Heading2"))
+        for rule in answer_protocol(paired=family):
+            story.extend((paragraph(rule), Spacer(1, 2*mm)))
+    if paired_flags is not None:
+        story.append(paragraph("BATCH: preserve the ordered member bindings and each nested answer schema. Return ONE file. global_observation_status is per member: agree with NSE candidate status; for MCX use OBSERVED when all R/M/X are OBSERVED, PARTIAL when assessed and unavailable scopes coexist without INVALID, or the uniform unavailable status. INVALID cannot be hidden. No member may be omitted, added, duplicated or reordered."))
     story.extend((PageBreak(), paragraph("Exact bound Answer template", "Heading1"),
         paragraph("Return one UTF-8 JSON file named exactly " + expected_filename +
                   ". This PDF is the only Question input artifact. The template below is part of this PDF. "

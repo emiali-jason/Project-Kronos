@@ -201,6 +201,11 @@ class IntradayReviewV2InboxImportResult:
         advanced = self.producer_advanced or any(item.reason == ReviewFailure.NOT_CURRENT.value for item in self.members)
         if advanced:
             return "PARTIAL_PRODUCER_ADVANCED" if self.imported_count else "REVIEW_NON_CURRENT"
+        if self.mode == "ORDERED_BATCH":
+            if self.rejected_count:
+                return "PARTIAL" if self.imported_count or self.already_imported_count else "REJECTED"
+            if self.not_found_count:
+                return "NOT_FOUND"
         return "COMPLETE"
 
 
@@ -519,12 +524,8 @@ class IntradayReviewV2Application:
 
     def _loaded_snapshot(self) -> IntradayReviewV2Snapshot:
         pointer = self._require_current_workspace()
-        cycles = tuple(
-            sorted(
-                (self._review.load_cycle(item.cycle_identity) for item in pointer.cycles),
-                key=lambda item: _sponsor_label(item.canonical_subject_identity).casefold(),
-            )
-        )
+        # Display and batch transport share the governed retained Review order.
+        cycles = tuple(self._review.load_cycle(item.cycle_identity) for item in pointer.cycles)
         packs: list[ReviewQuestionPackV2] = []
         individual_transports: dict[str, ReviewBatchTransportV2] = {}
         for cycle in cycles:
@@ -541,6 +542,11 @@ class IntradayReviewV2Application:
             transport = self._load_retained_transport(tuple(packs))
             if transport is not None:
                 batch = self._review.load_batch(expected_batch.batch_identity)
+        from kronos.application.intraday_review_ordered_batch import load
+        ordered_batch = load(self, pointer, require_current=False)
+        if ordered_batch is not None:
+            _, transport, _ = ordered_batch
+            batch = None
         ready_pack_ids = {item.review_pack_identity for item in packs}
         return IntradayReviewV2Snapshot(
             probables_run_identity=pointer.probables_run_identity,
@@ -553,7 +559,8 @@ class IntradayReviewV2Application:
                 )
                 for cycle in cycles
             ),
-            review_batch_identity=None if batch is None else batch.batch_identity,
+            review_batch_identity=(transport.transport_identity if ordered_batch is not None
+                                   else None if batch is None else batch.batch_identity),
             question_transport_identity=(
                 None if transport is None else transport.transport_identity
             ),
@@ -851,6 +858,10 @@ class IntradayReviewV2Application:
             pointer = self._require_current_workspace()
             if pointer is None:
                 raise ReviewError(ReviewFailure.NOT_CURRENT)
+            from kronos.application.intraday_review_ordered_batch import import_expected
+            ordered = import_expected(self, pointer)
+            if ordered is not None:
+                return ordered
             cycles = tuple(
                 self._review.load_cycle(item.cycle_identity) for item in pointer.cycles
             )
@@ -1393,19 +1404,9 @@ class IntradayReviewV2Application:
             return chart
 
     def create_all_question_transports(self) -> tuple:
-        """Sponsor batch action: one exact individual PDF/Answer identity per cycle."""
-        with self._lock, self._probables.current_generation_guard():
-            pointer = self._require_current_workspace()
-            if pointer is None or not pointer.cycles:
-                raise ReviewError(ReviewFailure.NOT_CURRENT)
-            # Preserve batch chart prerequisites before publishing any member.
-            for member in pointer.cycles:
-                active = self._review.load_current_chart(member.cycle_identity)
-                if active is None:
-                    raise ReviewError(ReviewFailure.CHART_REQUIRED)
-                self._review.load_chart_bytes(self._review.load_chart(active.chart_revision_identity))
-            return tuple(self.create_individual_question_transport(member.cycle_identity)
-                         for member in pointer.cycles)
+        """Compile one ordered mixed-family Sponsor PDF and one Answer binding."""
+        from kronos.application.intraday_review_ordered_batch import create
+        return (create(self),)
 
     def create_combined_question_transport(self) -> IntradayReviewV2BatchResult:
         """Create exact V2 packs and one immutable combined Question transport."""
@@ -1469,7 +1470,7 @@ class IntradayReviewV2Application:
             )
 
     def _create_question_transport(
-        self, entries: tuple[tuple[ReviewQuestionPackV2, bytes], ...],
+        self, entries: tuple[tuple[ReviewQuestionPackV2, bytes], ...], *, export=True,
     ) -> IntradayReviewV2BatchResult:
         ordered = tuple(sorted(
             entries,
@@ -1483,12 +1484,14 @@ class IntradayReviewV2Application:
         batch = create_question_batch_v2(packs)
         self._review.retain_batch(batch)
         transport = self._load_retained_transport(packs, current_edition_only=True)
-        if transport is not None:
+        if transport is not None and not export:
+            question_path = self._review.root / "question-pdfs" / (transport.transport_identity + ".pdf")
+        elif transport is not None:
             question_path = self._transport.export_retained(
                 transport, self._review.load_transport_question_pdf(transport),
                 self._review.load_transport_answer_template(transport))
         else:
-            transport, question_path, template = self._transport.export(batch, ordered)
+            transport, question_path, template = self._transport.export(batch, ordered, internal_directory=None if export else self._review.root / "batch-components")
             self._review.retain_transport(transport, question_path.read_bytes(), template)
         answer_path = self._review.transport_answer_template_path(transport)
         return IntradayReviewV2BatchResult(

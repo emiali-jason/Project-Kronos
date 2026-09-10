@@ -122,23 +122,28 @@ def _transport_stem(pack_identity: str, version: str) -> str:
     return f"KRONOS_INTRADAY_MCX_PAIRED_REVIEW_{suffix}"
 
 
+def paired_visual_entry(pack, bundle, native, reference, *, family_visual=False):
+    """Shared paired authority and chart presentation, with no Sponsor export."""
+    from kronos.intraday.visual_machine_context import usdinr_futures_context
+    currency = usdinr_futures_context(boundary=pack.analysis_boundary)
+    orientation = (("MCX visual identity: exact visible FAMILY + VENUE + ROLE. Report the generic native/reference family label independently. Do not infer invisible expiry or copy the machine contract. Exact expiry remains machine-selected and relies on Sponsor opening the requested chart; same-family wrong-expiry pixels may be indistinguishable. Family validation is NOT independent expiry proof. Listed series may be retained separately but is not required as family identity.",) if family_visual else ()) + (
+        f"{pack.canonical_mcx_subject_identity} | {pack.direction}",
+        f"Analysis boundary: {pack.analysis_boundary.isoformat()} | Each row: 1D / 4H / 15M / 5M",
+        f"Native contract: {bundle.native_identity_binding.actual_derivative_contract_identity}",
+        f"Reference: {bundle.reference_relationship.reference_name} | {bundle.reference_relationship.governed_visible_identity} | SUPPORTING ONLY",
+        "Listed reference series is independently observed; no continuous-series constituent membership or causality is asserted.",
+        f"Chart revision: {pack.native_chart_revision_identity}",
+        f"Question set: {pack.question_set_identity} / {pack.question_set_version}",
+        f"USDINR FUTURES (Kite): {currency.state} / {currency.reason}. No spot substitute or ninth panel.",
+        "Native governed levels: " + ("; ".join(f"{name} = {value} [source {source}]" for name, value, source in pack.native_governed_levels) or "NOT_ESTABLISHED") + ". M5 selected single anchor: NOT_ESTABLISHED; these HIGH/LOW values are orientation, not a selected barrier. Do not select a barrier from direction. Missing relevant anchor requires NOT_OBSERVABLE or UNCLEAR. R5/X3 reference structures remain independently visible; comparison requires lawful completed temporal evidence.",
+    )
+    return orientation, (native,) if native == reference else (reference, native), pack.questions
+
+
 def _render_pdf(pack: McxPairedReviewPack, bundle: McxPairedChartBundle, native: bytes, reference: bytes, supporting_reference_only: bool = False, *, expected_filename: str | None = None, family_visual: bool = False) -> bytes:
     if pack.question_set_version == visual_v2.VERSION:
         from kronos.intraday.visual_review_pdf import render_visual_review
-        from kronos.intraday.visual_machine_context import usdinr_futures_context
-        currency = usdinr_futures_context(boundary=pack.analysis_boundary)
-        orientation = (("MCX visual identity: exact visible FAMILY + VENUE + ROLE. Report the generic native/reference family label independently. Do not infer invisible expiry or copy the machine contract. Exact expiry remains machine-selected and relies on Sponsor opening the requested chart; same-family wrong-expiry pixels may be indistinguishable. Family validation is NOT independent expiry proof. Listed series may be retained separately but is not required as family identity.",) if family_visual else ()) + (
-            f"{pack.canonical_mcx_subject_identity} | {pack.direction}",
-            f"Analysis boundary: {pack.analysis_boundary.isoformat()} | Each row: 1D / 4H / 15M / 5M",
-            f"Native contract: {bundle.native_identity_binding.actual_derivative_contract_identity}",
-            f"Reference: {bundle.reference_relationship.reference_name} | {bundle.reference_relationship.governed_visible_identity} | SUPPORTING ONLY",
-            "Listed reference series is independently observed; no continuous-series constituent membership or causality is asserted.",
-            f"Chart revision: {pack.native_chart_revision_identity}",
-            f"Question set: {pack.question_set_identity} / {pack.question_set_version}",
-            f"USDINR FUTURES (Kite): {currency.state} / {currency.reason}. No spot substitute or ninth panel.",
-            "Native governed levels: " + ("; ".join(f"{name} = {value} [source {source}]" for name, value, source in pack.native_governed_levels) or "NOT_ESTABLISHED") + ". M5 selected single anchor: NOT_ESTABLISHED; these HIGH/LOW values are orientation, not a selected barrier. Do not select a barrier from direction. Missing relevant anchor requires NOT_OBSERVABLE or UNCLEAR. R5/X3 reference structures remain independently visible; comparison requires lawful completed temporal evidence.",
-        )
-        return render_visual_review(((orientation, (native,) if native == reference else (reference, native), pack.questions),),
+        return render_visual_review((paired_visual_entry(pack, bundle, native, reference, family_visual=family_visual),),
             expected_filename=expected_filename,
             paired=True, answer_template=answer_template(pack, bundle))
     output = BytesIO()

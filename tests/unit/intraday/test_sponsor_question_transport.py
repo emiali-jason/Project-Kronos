@@ -107,19 +107,24 @@ def test_individual_pdf_only_roundtrip_exact_inbox_and_internal_retention(tmp_pa
     assert app.create_individual_question_transport(cycle) == result
 
 
-def test_batch_produces_one_pdf_per_candidate_and_individual_imports(tmp_path):
+def test_batch_produces_one_pdf_and_one_combined_answer(tmp_path):
     _,app=_fixture(tmp_path,('BDL','SRF','TITAN'))
-    cycles=_cycles(app)
-    for n,c in enumerate(cycles.values()):app.upload_chart(c.cycle_identity,media_type='image/png',payload=_png(n))
-    results=app.create_all_question_transports()
-    assert len(results)==3 and len({r.transport.expected_answer_filename for r in results})==3
-    assert {p.name for p in app._transport.question_outbox.iterdir()}=={r.question_path.name for r in results}
-    assert all(len(extract_template(r.question_path.read_bytes())[1]['candidates'])==1 for r in results)
-    assert app.create_all_question_transports()==results
-    first=results[0];(app._transport.answer_inbox/first.transport.expected_answer_filename).write_bytes(_completed(first.answer_template_path))
-    imported=app.import_all_expected_answers()
-    assert imported.imported_count==1 and imported.not_found_count==2
-    assert len(list(app._transport.question_outbox.iterdir()))==3
+    for n,c in enumerate(_cycles(app).values()):
+        app.upload_chart(c.cycle_identity,media_type='image/png',payload=_png(n))
+    result,=app.create_all_question_transports()
+    assert list(app._transport.question_outbox.iterdir())==[result.question_path]
+    assert len(extract_template(result.question_path.read_bytes())[1]['candidates'])==3
+    assert app.create_all_question_transports()==(result,)
+    document=json.loads(result.answer_template_path.read_bytes())
+    # Historical pre-header observer fixtures remain valid under unchanged gates.
+    for member in document['candidates']:
+        path=tmp_path/'isolated-candidate.json'
+        path.write_text(json.dumps({'candidates':[member['answer']]}))
+        member['answer']=json.loads(_completed(path))['candidates'][0]
+        member['global_observation_status']='OBSERVED'
+    (app._transport.answer_inbox/result.transport.expected_answer_filename).write_text(json.dumps(document))
+    assert app.import_all_expected_answers().imported_count==3
+    assert len(list(app._transport.answer_inbox.iterdir()))==1
 
 
 def test_batch_missing_chart_does_not_publish_other_candidates(tmp_path):
@@ -171,7 +176,8 @@ def test_five_family_pdf_only_transport_real_gate(tmp_path, synthetic_commission
     assert doc == json.loads(result.answer_template_path.read_bytes())
     assert doc['canonical_mcx_subject_identity'] == cycle.canonical_subject_identity
     assert 'NOT_INDEPENDENTLY_ESTABLISHED' in text
-    assert app.create_all_question_transports() == (result,)
+    batch, = app.create_all_question_transports()
+    assert len(extract_template(batch.question_path.read_bytes())[1]["candidates"]) == 1
     assert app.import_expected_answer(cycle.cycle_identity).imported_count==1
     evidence=app._paired.store.load_evidence_for_pack(result.transport.review_pack_identity)
     assert all(row[3]=='NOT_INDEPENDENTLY_ESTABLISHED' and row[4] is None

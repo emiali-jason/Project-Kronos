@@ -127,7 +127,7 @@ class IntradayReviewV2PairedAdapter:
             family_visual=uses_family_visual_authority(self.native_resolver))
         return bundle, native, reference, pack, transport, pdf, template
 
-    def create(self, cycle, chart, *, require_current):
+    def create(self, cycle, chart, *, require_current, export=True):
         retained = self.retained(cycle, chart)
         if retained is not None and retained[3].question_set_version == visual_v2.VERSION and retained[4].schema_version == ("1.4.0" if uses_family_visual_authority(self.native_resolver) else "1.3.0"):
             bundle, native, reference, pack, transport, _, _ = retained
@@ -139,7 +139,8 @@ class IntradayReviewV2PairedAdapter:
         self.store.retain_pack(pack)
         self.store.retain_transport(transport, pdf, template)
         self.store.retain_transport_pointer(transport)
-        question = self.transport.export_paired(transport, pdf, template)
+        question = (self.transport.export_paired(transport, pdf, template) if export
+                    else self.store.root / "question-pdfs" / (transport.transport_identity + ".pdf"))
         return PairedQuestionResult(transport, question, self.store.transport_answer_template_path(transport))
 
     def retained(self, cycle, chart):
@@ -169,7 +170,7 @@ class IntradayReviewV2PairedAdapter:
             verify_retained(answer, pack, chart, self.review, imported_at=evidence.imported_at, paired=True)
         return evidence
 
-    def import_expected(self, cycle, chart, imported_at, *, require_current):
+    def import_expected(self, cycle, chart, imported_at, *, require_current, payload=None):
         from kronos.application.intraday_review_v2 import IntradayReviewV2InboxImportResult, IntradayReviewV2InboxMemberResult
         retained = self.retained(cycle, chart)
         if retained is None:
@@ -178,7 +179,7 @@ class IntradayReviewV2PairedAdapter:
         filename = transport.expected_answer_filename
         state, reason, found = "NOT_FOUND", None, 0
         try:
-            payload = self.transport.read_expected_answer(filename)
+            payload = payload if payload is not None else self.transport.read_expected_answer(filename)
             if payload is not None:
                 found = 1
                 parsed = parse_mcx_paired_answer(payload)
