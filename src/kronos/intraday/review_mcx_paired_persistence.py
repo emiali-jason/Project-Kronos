@@ -67,16 +67,25 @@ class IntradayMcxPairedReviewStore:
             self._retain(self._path("answer-templates", value.transport_identity), template)
             return self._retain(self._path("transports", value.transport_identity), artifact_bytes(value))
 
+    def transport_answer_template_path(self, value: McxPairedReviewTransport) -> Path:
+        """Internal retained template, outside the Sponsor Question directory."""
+        path = self._path("answer-templates", value.transport_identity)
+        if sha256(path.read_bytes()).hexdigest() != value.answer_template_sha256:
+            raise ReviewError(ReviewFailure.INTEGRITY_INVALID)
+        return path
+
     def retain_transport_pointer(self, value: McxPairedReviewTransport) -> Path:
         fields = {"review_pack_identity": value.review_pack_identity,
                   "transport_identity": value.transport_identity}
         fields["integrity"] = sha256(json.dumps(fields, sort_keys=True).encode()).hexdigest()
-        return self._retain(self._path("pack-transports", value.review_pack_identity),
+        namespace = "pack-transports-pdf-only" if value.schema_version == "1.1.0" else "pack-transports"
+        return self._retain(self._path(namespace, value.review_pack_identity),
                             json.dumps(fields, sort_keys=True).encode())
 
     def load_transport_for_pack(self, identity: str) -> McxPairedReviewTransport:
         try:
-            fields = json.loads(self.load_bytes("pack-transports", identity))
+            namespace = "pack-transports-pdf-only" if self._path("pack-transports-pdf-only", identity).exists() else "pack-transports"
+            fields = json.loads(self.load_bytes(namespace, identity))
             integrity = fields.pop("integrity")
             if (set(fields) != {"review_pack_identity", "transport_identity"}
                 or fields["review_pack_identity"] != identity

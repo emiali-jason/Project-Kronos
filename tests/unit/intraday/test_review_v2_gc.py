@@ -153,7 +153,7 @@ def test_published_compressed_pdf_alone_protects_transport_component(tmp_path):
     old = app.snapshot().candidates[0].cycle_identity
     app.upload_chart(old, media_type="image/png", payload=_png(1))
     batch = app.create_combined_question_transport()
-    batch.answer_template_path.unlink()  # Only the exported compressed PDF survives.
+    assert not tuple(app._transport.question_outbox.glob("*.json"))  # Only PDFs are exported.
     later = _retain_later_current_run(app)
     control.execute_document(_payload(later, "REVIEW-V2-REQUEST-SECOND"))
     before = fingerprints(tmp_path)

@@ -1,10 +1,11 @@
 """WO-07C presentation helper; governed templates and stores retain authority."""
 from io import BytesIO
+import json
 from xml.sax.saxutils import escape
 from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import mm
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Image, Spacer, PageBreak, KeepTogether
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Image, Spacer, PageBreak, KeepTogether, Preformatted
 from kronos.intraday.visual_contract_v2 import BOUNDARY
 
 
@@ -13,11 +14,12 @@ def chart_dimensions(width, height):
     return width * scale, height * scale
 
 
-def render_visual_review(entries, *, expected_filename, paired=False):
+def render_visual_review(entries, *, expected_filename, answer_template, paired=False):
     """entries: exact machine orientation, immutable chart bytes, frozen questions."""
     output = BytesIO()
     styles = getSampleStyleSheet()
     styles.add(ParagraphStyle("Binding", parent=styles["BodyText"], fontSize=7, leading=9, wordWrap="CJK"))
+    styles.add(ParagraphStyle("JSON", fontName="Courier", fontSize=7, leading=9))
     styles["BodyText"].fontSize = 10
     styles["BodyText"].leading = 13
     document = SimpleDocTemplate(output, pagesize=landscape(A4), leftMargin=14*mm,
@@ -49,6 +51,47 @@ def render_visual_review(entries, *, expected_filename, paired=False):
             if question.conditional_instruction:
                 items.append(paragraph(question.conditional_instruction))
             story.append(KeepTogether(items + [Spacer(1, 2*mm)]))
-        story.append(paragraph("Complete the accompanying prepopulated JSON template. Preserve all machine binding fields; supply observed identities independently. No trade recommendation or aggregate score is requested."))
+    story.extend((PageBreak(), paragraph("Chart Analyst Answer Protocol", "Heading1")))
+    for rule in answer_protocol(paired=paired):
+        story.extend((paragraph(rule), Spacer(1, 2*mm)))
+    story.extend((PageBreak(), paragraph("Exact bound Answer template", "Heading1"),
+        paragraph("Return one UTF-8 JSON file named exactly " + expected_filename +
+                  ". This PDF is the only Question input artifact. The template below is part of this PDF. "
+                  "Replace observation placeholders only; preserve every envelope key, identity, question order and candidate population. "
+                  "Use JSON null, not the string null; no markdown fences, comments, extra keys or prose outside JSON.", "Binding"),
+        paragraph("BEGIN EXACT ANSWER JSON", "Binding")))
+    # One complete JSON line per flowable keeps long identities intact when
+    # copying/extracting text; no arbitrary chunk split can corrupt a token.
+    template = json.dumps(json.loads(answer_template), indent=2, ensure_ascii=True)
+    for line in template.splitlines():
+        story.append(Preformatted(line, styles["JSON"]))
+    story.append(paragraph("END EXACT ANSWER JSON", "Binding"))
     document.build(story)
     return output.getvalue()
+
+
+def answer_protocol(*, paired):
+    """Explain the published validator without creating a second validator."""
+    common = (
+        "Every question has exactly seven fields: question_id, observation_status, answer, visible_timeframes, visible_basis, status_detail, why_not_covered_elsewhere. Use the exact allowed answer vocabulary printed for that question.",
+        "OBSERVED requires every governed required timeframe/evidence scope listed for that question to be genuinely assessed. answer must be an allowed value; visible_basis must be truthful nonempty text; visible_timeframes must equal the complete listed scope in its governed order.",
+        "PARTIAL is required when only part of that scope can genuinely be assessed. Supply an allowed answer, truthful nonempty visible_basis and truthful nonempty status_detail explaining what is missing or limited. visible_timeframes lists only genuinely assessed qualified panels, in the governed question order, without duplicates. Never append a timeframe merely to satisfy validation. PARTIAL may also describe a genuine limitation within panels that are all listed.",
+        "NOT_VISIBLE, UNAVAILABLE and INVALID require answer=null, visible_timeframes=[], visible_basis=null and truthful nonempty status_detail. NOT_APPLICABLE also requires answer=null, visible_timeframes=[] and visible_basis=null; status_detail may be null. Do not report unavailable evidence as neutral or use INVALID placeholders as a completed Answer. Invalid evidence is rejected by import.",
+        "All non-null text fields must be nonempty, trimmed text of at most 2000 characters. Explain only qualified completed evidence; omit forming, future, stale, cropped or unobservable panels from visible_timeframes. Expected identity is orientation, never a substitute for independently observed visible identity.",
+    )
+    if paired:
+        family = (
+            "MCX envelope: reference_answers contains R1-R5, native_answers M1-M5, cross_market_answers X1-X4, and escape_hatch_answer X5. There is no candidate/global status key in the published MCX envelope: do not add one. Preserve each question-level status truthfully.",
+            "R questions assess REFERENCE panels only; M questions NATIVE panels only; X questions compare BOTH roles at each listed timeframe. Governed order is 1D, 4H, 15M, 5M, restricted to the printed question scope. R5 requires 4H/15M/5M; M5 requires 15M/5M; every X1-X5 requires all four timeframes on both sides for OBSERVED. A timeframe in a cross-market answer must be genuinely assessed on both sides, not the union of unrelated panels. Otherwise use PARTIAL with a nonempty limitation or the appropriate unavailable status.",
+            "Native MCX is primary and independently machine-corresponded. NYMEX/COMEX is SUPPORTING_VISUAL_CONTEXT_ONLY; independent reference correspondence remains NOT_INDEPENDENTLY_ESTABLISHED, never VALID/VERIFIED. R/X visual observations do not create Promotion or trading authority, reference constituent membership, measured latency or causality. Do not put these explanatory authority labels into new JSON keys.",
+            "X5: NONE means no additional material condition after assessing the required scope; it still requires OBSERVED full scope or truthful PARTIAL scope/status_detail and visible_basis. why_not_covered_elsewhere must be null for NONE. MATERIAL_OBSERVATION requires truthful nonempty why_not_covered_elsewhere explaining why R1-R5/M1-M5/X1-X4 do not cover it; do not duplicate them. Unobservable scope is not NONE.",
+        )
+    else:
+        family = (
+            "NSE governed order is 1D, 1H, 15M, 5M, restricted to each question's listed scope. Q6/Q8/Q9 require 15M and 5M; Q7/Q10 require all four timeframes for OBSERVED. Q7 with only 15M/5M is not OBSERVED: use truthful PARTIAL, status_detail and consistent candidate status, or report unavailable evidence. Genuine assessment of all four qualified panels may be OBSERVED. Do not add the missing panels without assessment.",
+            "Each NSE candidate global_observation_status must be OBSERVED only when every Q1-Q10 status is OBSERVED. It must be PARTIAL when at least one question is OBSERVED or PARTIAL, not all are OBSERVED, and none is INVALID. Any other global status requires every question to have exactly that same status. An INVALID question cannot be hidden under global PARTIAL. Do not add a batch-global status key; candidates remain independent.",
+            "Q10: NONE means no additional material condition after assessing the required scope; it still requires OBSERVED full scope or truthful PARTIAL scope/status_detail and visible_basis. why_not_covered_elsewhere must be null for NONE. MATERIAL_OBSERVATION requires truthful nonempty why_not_covered_elsewhere explaining why Q1-Q9 do not cover it; do not duplicate them. Unobservable scope is not NONE.",
+        )
+    return common + family + (
+        "why_not_covered_elsewhere must be null on every question except Q10/X5 with answer MATERIAL_OBSERVATION. Neither NONE nor MATERIAL_OBSERVATION relaxes scope, status or visible_basis requirements. No vote, score, trade recommendation or new analytical consequence is requested.",
+    )

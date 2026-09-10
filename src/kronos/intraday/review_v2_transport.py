@@ -38,7 +38,8 @@ from kronos.intraday.review_v2 import ReviewQuestionBatchV2, ReviewQuestionPackV
 
 
 REVIEW_BATCH_TRANSPORT_V2_IDENTITY = "KRONOS-INTRADAY-REVIEW-BATCH-TRANSPORT-V2"
-REVIEW_BATCH_TRANSPORT_V2_VERSION = "2.0.0"
+REVIEW_BATCH_TRANSPORT_V2_VERSION = "2.1.0"
+REVIEW_BATCH_TRANSPORT_LEGACY_VERSION = "2.0.0"
 REVIEW_V2_QUESTION_TRANSPORT_ROUTE = "/intraday/review/v2/question-transport"
 _IST = ZoneInfo("Asia/Kolkata")
 _EXPECTED_ANSWER_NAME = re.compile(
@@ -79,7 +80,7 @@ class ReviewBatchTransportV2:
             or not _sha(self.answer_template_sha256)
             or not self.provenance
             or self.schema_identity != REVIEW_BATCH_TRANSPORT_V2_IDENTITY
-            or self.schema_version != REVIEW_BATCH_TRANSPORT_V2_VERSION
+            or self.schema_version not in {REVIEW_BATCH_TRANSPORT_LEGACY_VERSION, REVIEW_BATCH_TRANSPORT_V2_VERSION}
             or self.transport_identity
             != _identity("INTRADAY-REVIEW-BATCH-TRANSPORT-V2-", core)
             or self.integrity_identity
@@ -89,7 +90,7 @@ class ReviewBatchTransportV2:
 
 
 class IntradayReviewV2Transport:
-    """Write one immutable V2 Question PDF and its exact Answer template."""
+    """Export the Question PDF; return the template for internal retention only."""
 
     def __init__(
         self,
@@ -106,12 +107,13 @@ class IntradayReviewV2Transport:
         self,
         batch: ReviewQuestionBatchV2,
         entries: Sequence[tuple[ReviewQuestionPackV2, bytes]],
-    ) -> tuple[ReviewBatchTransportV2, Path, Path]:
+    ) -> tuple[ReviewBatchTransportV2, Path, bytes]:
         retained = _validate_entries(batch, entries)
         generated_at = batch.created_at
-        core = _core_values(batch, generated_at)
-        transport_identity = expected_transport_identity_v2(batch)
-        stem = _stem_from(batch.batch_identity, generated_at)
+        version = REVIEW_BATCH_TRANSPORT_V2_VERSION if all(pack.question_set_version == visual_v2.VERSION for pack, _ in retained) else REVIEW_BATCH_TRANSPORT_LEGACY_VERSION
+        core = _core_values(batch, generated_at, version=version)
+        transport_identity = expected_transport_identity_v2(batch, version=version)
+        stem = _stem_from(batch.batch_identity, generated_at, version=version)
         question_filename = f"{stem}_QUESTIONS.pdf"
         answer_filename = f"{stem}_ANSWERS.json"
         template = answer_template_v2(batch, tuple(pack for pack, _ in retained))
@@ -142,12 +144,20 @@ class IntradayReviewV2Transport:
         self.question_outbox.mkdir(parents=True, exist_ok=True)
         self.answer_inbox.mkdir(parents=True, exist_ok=True)
         question_path = _retain(self.question_outbox / question_filename, pdf)
-        # Templates accompany Question PDFs. The governed Answer inbox is
-        # reserved for completed Answers under their exact expected names.
-        answer_path = _retain(self.question_outbox / answer_filename, template)
-        return transport, question_path, answer_path
+        # The PDF contains the exact template. Only the evidence store retains
+        # its structured bytes; the Sponsor outbox contains no JSON input file.
+        return transport, question_path, template
 
-    def export_paired(self, transport, pdf: bytes, template: bytes) -> tuple[Path, Path]:
+    def export_retained(self, transport: ReviewBatchTransportV2, pdf: bytes, template: bytes) -> Path:
+        """Re-export immutable history without rerendering or replacing bytes."""
+        if (type(transport) is not ReviewBatchTransportV2
+            or sha256(pdf).hexdigest() != transport.question_pdf_sha256
+            or sha256(template).hexdigest() != transport.answer_template_sha256):
+            raise ReviewError(ReviewFailure.INTEGRITY_INVALID)
+        self.question_outbox.mkdir(parents=True, exist_ok=True)
+        return _retain(self.question_outbox / transport.question_filename, pdf)
+
+    def export_paired(self, transport, pdf: bytes, template: bytes) -> Path:
         from kronos.intraday.review_mcx_paired_transport import McxPairedReviewTransport
         if (type(transport) is not McxPairedReviewTransport
             or sha256(pdf).hexdigest() != transport.question_pdf_sha256
@@ -155,8 +165,7 @@ class IntradayReviewV2Transport:
             raise ReviewError(ReviewFailure.INTEGRITY_INVALID)
         self.question_outbox.mkdir(parents=True, exist_ok=True)
         self.answer_inbox.mkdir(parents=True, exist_ok=True)
-        return (_retain(self.question_outbox / transport.question_filename, pdf),
-                _retain(self.question_outbox / transport.expected_answer_filename, template))
+        return _retain(self.question_outbox / transport.question_filename, pdf)
 
     def read_expected_answer(self, expected_filename: str) -> bytes | None:
         """Read one exact regular Answer file without exposing path access."""
@@ -268,12 +277,12 @@ def answer_template_v2(
     return _canonical(document) + b"\n"
 
 
-def expected_transport_identity_v2(batch: ReviewQuestionBatchV2) -> str:
+def expected_transport_identity_v2(batch: ReviewQuestionBatchV2, *, version: str = REVIEW_BATCH_TRANSPORT_V2_VERSION) -> str:
     if type(batch) is not ReviewQuestionBatchV2:
         raise ReviewError(ReviewFailure.INPUT_INVALID)
     return _identity(
         "INTRADAY-REVIEW-BATCH-TRANSPORT-V2-",
-        _core_values(batch, batch.created_at),
+        _core_values(batch, batch.created_at, version=version),
     )
 
 
@@ -294,10 +303,14 @@ def render_review_batch_v2_pdf(
              f"Analysis boundary: {pack.analysis_boundary.isoformat()} | 1D / 1H / 15M / 5M",
              f"Chart revision: {pack.chart_revision_identity}",
              f"Question set: {pack.question_set_identity} / {pack.question_set_version}",
-             "Governed levels: " + ("; ".join(f"{name} = {value}" for name, value, _ in pack.governed_levels) or "NOT_ESTABLISHED") + ". "
+             "Governed levels: " + ("; ".join(f"{name} = {value} [source {source}]" for name, value, source in pack.governed_levels) or "NOT_ESTABLISHED") + ".",
+             "SELECTED_Q6_Q9_ANCHOR = NOT_ESTABLISHED. These HIGH/LOW values are governed orientation, "
+             "not a machine-selected barrier. Do not choose one from direction or chart geometry; "
+             "where a relevant governed anchor is not established, report NOT_OBSERVABLE or UNCLEAR. "
              "Prior completed 1H may be lawful at Opening; forming current-day 1H is excluded."),
             (payload,), pack.questions) for pack, payload in retained),
-            expected_filename=expected_answer_filename)
+            expected_filename=expected_answer_filename,
+            answer_template=answer_template_v2(batch, tuple(pack for pack, _ in retained)))
     output = BytesIO()
     document = SimpleDocTemplate(
         output, pagesize=A4, leftMargin=16 * mm, rightMargin=16 * mm,
@@ -476,7 +489,7 @@ def _ordered_packs(
     return ordered
 
 
-def _core_values(batch: ReviewQuestionBatchV2, generated_at: datetime) -> dict[str, object]:
+def _core_values(batch: ReviewQuestionBatchV2, generated_at: datetime, *, version: str = REVIEW_BATCH_TRANSPORT_V2_VERSION) -> dict[str, object]:
     return {
         "review_batch_identity": batch.batch_identity,
         "probables_run_identity": batch.probables_run_identity,
@@ -484,7 +497,7 @@ def _core_values(batch: ReviewQuestionBatchV2, generated_at: datetime) -> dict[s
         "generated_at": generated_at,
         "candidate_count": len(batch.candidate_identities),
         "schema_identity": REVIEW_BATCH_TRANSPORT_V2_IDENTITY,
-        "schema_version": REVIEW_BATCH_TRANSPORT_V2_VERSION,
+        "schema_version": version,
     }
 
 
@@ -501,12 +514,13 @@ def _transport_core(value: ReviewBatchTransportV2) -> dict[str, object]:
 
 
 def _stem(value: ReviewBatchTransportV2) -> str:
-    return _stem_from(value.review_batch_identity, value.generated_at)
+    return _stem_from(value.review_batch_identity, value.generated_at, version=value.schema_version)
 
 
-def _stem_from(batch_identity: str, generated_at: datetime) -> str:
+def _stem_from(batch_identity: str, generated_at: datetime, *, version: str = REVIEW_BATCH_TRANSPORT_LEGACY_VERSION) -> str:
     stamp = generated_at.astimezone(_IST).strftime("%Y%m%d_%H%M%S")
-    suffix = batch_identity.rsplit("-", 1)[-1][:8]
+    suffix = (batch_identity.rsplit("-", 1)[-1][:8] if version == REVIEW_BATCH_TRANSPORT_LEGACY_VERSION
+              else sha256((batch_identity + ":PDF-ONLY:" + version).encode()).hexdigest()[:8].upper())
     return f"KRONOS_INTRADAY_REVIEW_V2_{stamp}_IST_{suffix}"
 
 

@@ -714,21 +714,24 @@ class IntradayReviewV2Application:
         return None
 
     def _load_retained_transport(
-        self, packs: tuple[ReviewQuestionPackV2, ...],
+        self, packs: tuple[ReviewQuestionPackV2, ...], *, current_edition_only: bool = False,
     ) -> ReviewBatchTransportV2 | None:
         expected_batch = create_question_batch_v2(packs)
-        try:
-            batch = self._review.load_batch(expected_batch.batch_identity)
-            transport = self._review.load_transport(
-                expected_transport_identity_v2(expected_batch)
-            )
-        except ReviewError as error:
-            if error.failure is ReviewFailure.ARTIFACT_UNAVAILABLE:
-                return None
-            raise
-        if batch != expected_batch or transport.review_batch_identity != batch.batch_identity:
-            raise ReviewError(ReviewFailure.INTEGRITY_INVALID)
-        return transport
+        modern = all(pack.question_set_version == visual_v2.VERSION for pack in packs)
+        versions = ("2.1.0",) if current_edition_only and modern else ("2.1.0", "2.0.0")
+        for version in versions:
+            try:
+                batch = self._review.load_batch(expected_batch.batch_identity)
+                transport = self._review.load_transport(
+                    expected_transport_identity_v2(expected_batch, version=version))
+            except ReviewError as error:
+                if error.failure is ReviewFailure.ARTIFACT_UNAVAILABLE:
+                    continue
+                raise
+            if batch != expected_batch or transport.review_batch_identity != batch.batch_identity:
+                raise ReviewError(ReviewFailure.INTEGRITY_INVALID)
+            return transport
+        return None
 
     def validate_combined_answer(
         self, payload: bytes,
@@ -933,12 +936,10 @@ class IntradayReviewV2Application:
             if (not cycles or batch.probables_run_identity != cycles[0].probables_run_identity
                 or dict(zip(batch.review_cycle_identities, batch.candidate_identities, strict=True)) != expected):
                 continue
-            try:
-                transport = self._review.load_transport(expected_transport_identity_v2(batch))
-            except ReviewError as error:
-                if error.failure is ReviewFailure.ARTIFACT_UNAVAILABLE:
-                    continue
-                raise
+            transport = self._load_retained_transport(tuple(
+                self._review.load_pack(identity) for identity in batch.review_pack_identities))
+            if transport is None:
+                continue
             if transport.review_batch_identity != batch.batch_identity:
                 raise ReviewError(ReviewFailure.INTEGRITY_INVALID)
             matches.append(transport)
@@ -1375,6 +1376,21 @@ class IntradayReviewV2Application:
             self._review.save_current_chart(current)
             return chart
 
+    def create_all_question_transports(self) -> tuple:
+        """Sponsor batch action: one exact individual PDF/Answer identity per cycle."""
+        with self._lock, self._probables.current_generation_guard():
+            pointer = self._require_current_workspace()
+            if pointer is None or not pointer.cycles:
+                raise ReviewError(ReviewFailure.NOT_CURRENT)
+            # Preserve batch chart prerequisites before publishing any member.
+            for member in pointer.cycles:
+                active = self._review.load_current_chart(member.cycle_identity)
+                if active is None:
+                    raise ReviewError(ReviewFailure.CHART_REQUIRED)
+                self._review.load_chart_bytes(self._review.load_chart(active.chart_revision_identity))
+            return tuple(self.create_individual_question_transport(member.cycle_identity)
+                         for member in pointer.cycles)
+
     def create_combined_question_transport(self) -> IntradayReviewV2BatchResult:
         """Create exact V2 packs and one immutable combined Question transport."""
 
@@ -1450,10 +1466,15 @@ class IntradayReviewV2Application:
             self._review.retain_pack(pack)
         batch = create_question_batch_v2(packs)
         self._review.retain_batch(batch)
-        transport, question_path, answer_path = self._transport.export(batch, ordered)
-        self._review.retain_transport(
-            transport, question_path.read_bytes(), answer_path.read_bytes()
-        )
+        transport = self._load_retained_transport(packs, current_edition_only=True)
+        if transport is not None:
+            question_path = self._transport.export_retained(
+                transport, self._review.load_transport_question_pdf(transport),
+                self._review.load_transport_answer_template(transport))
+        else:
+            transport, question_path, template = self._transport.export(batch, ordered)
+            self._review.retain_transport(transport, question_path.read_bytes(), template)
+        answer_path = self._review.transport_answer_template_path(transport)
         return IntradayReviewV2BatchResult(
             batch=batch,
             transport=transport,

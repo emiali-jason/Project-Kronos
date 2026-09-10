@@ -313,6 +313,11 @@ class IntradayReviewV2Store:
             "question-transport-pdfs", value.transport_identity, ".pdf"
         ))
 
+    def transport_answer_template_path(self, value: ReviewBatchTransportV2) -> Path:
+        """Internal retained binding, never a Sponsor input artifact."""
+        self.load_transport_answer_template(value)
+        return self._path("answer-templates", value.transport_identity)
+
     def load_transport_answer_template(self, value: ReviewBatchTransportV2) -> bytes:
         if type(value) is not ReviewBatchTransportV2:
             raise ReviewError(ReviewFailure.INPUT_INVALID)

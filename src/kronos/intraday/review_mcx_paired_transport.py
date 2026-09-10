@@ -26,7 +26,8 @@ from kronos.intraday.review_mcx_paired_answer import answer_template, MCX_REFERE
 
 
 MCX_PAIRED_TRANSPORT_IDENTITY = "KRONOS-INTRADAY-MCX-PAIRED-REVIEW-TRANSPORT-V1"
-MCX_PAIRED_TRANSPORT_VERSION = "1.0.0"
+MCX_PAIRED_TRANSPORT_VERSION = "1.1.0"
+MCX_PAIRED_TRANSPORT_LEGACY_VERSION = "1.0.0"
 
 
 @dataclass(frozen=True, slots=True)
@@ -45,13 +46,13 @@ class McxPairedReviewTransport:
 
     def __post_init__(self) -> None:
         values = _without(self, "transport_identity", "integrity_identity")
-        stem = f"KRONOS_INTRADAY_MCX_PAIRED_REVIEW_{self.review_pack_identity[-12:]}"
+        stem = _transport_stem(self.review_pack_identity, self.schema_version)
         if (
             self.question_filename != f"{stem}_QUESTIONS.pdf"
             or self.expected_answer_filename != f"{stem}_ANSWERS.json"
             or not _aware(self.generated_at)
             or self.schema_identity != MCX_PAIRED_TRANSPORT_IDENTITY
-            or self.schema_version != MCX_PAIRED_TRANSPORT_VERSION
+            or self.schema_version not in {MCX_PAIRED_TRANSPORT_LEGACY_VERSION, MCX_PAIRED_TRANSPORT_VERSION}
             or self.transport_identity != _identity("INTRADAY-MCX-PAIRED-TRANSPORT-", values)
             or self.integrity_identity != _identity("INTEGRITY-INTRADAY-MCX-PAIRED-TRANSPORT-", values)
         ):
@@ -76,8 +77,10 @@ def create_paired_transport(
         document = json.loads(answer)
         document["reference_observed_visible_identity"] = MCX_REFERENCE_OBSERVATION_PLACEHOLDER
         answer = _canonical(document) + b"\n"
-    pdf = _render_pdf(pack, bundle, native_chart_payload, reference_chart_payload, supporting_reference_only)
-    stem = f"KRONOS_INTRADAY_MCX_PAIRED_REVIEW_{pack.review_pack_identity[-12:]}"
+    version = MCX_PAIRED_TRANSPORT_VERSION if pack.question_set_version == visual_v2.VERSION else MCX_PAIRED_TRANSPORT_LEGACY_VERSION
+    stem = _transport_stem(pack.review_pack_identity, version)
+    pdf = _render_pdf(pack, bundle, native_chart_payload, reference_chart_payload,
+                      supporting_reference_only, expected_filename=f"{stem}_ANSWERS.json")
     values = {
         "review_pack_identity": pack.review_pack_identity,
         "paired_bundle_identity": bundle.bundle_identity,
@@ -87,7 +90,7 @@ def create_paired_transport(
         "question_pdf_sha256": sha256(pdf).hexdigest(),
         "answer_template_sha256": sha256(answer).hexdigest(),
         "schema_identity": MCX_PAIRED_TRANSPORT_IDENTITY,
-        "schema_version": MCX_PAIRED_TRANSPORT_VERSION,
+        "schema_version": version,
     }
     transport = McxPairedReviewTransport(
         transport_identity=_identity("INTRADAY-MCX-PAIRED-TRANSPORT-", values),
@@ -112,7 +115,13 @@ def transport_from_bytes(payload: bytes) -> McxPairedReviewTransport:
         raise ReviewError(ReviewFailure.INTEGRITY_INVALID) from error
 
 
-def _render_pdf(pack: McxPairedReviewPack, bundle: McxPairedChartBundle, native: bytes, reference: bytes, supporting_reference_only: bool = False) -> bytes:
+def _transport_stem(pack_identity: str, version: str) -> str:
+    suffix = (pack_identity[-12:] if version == MCX_PAIRED_TRANSPORT_LEGACY_VERSION
+              else sha256((pack_identity + ":PDF-ONLY:" + version).encode()).hexdigest()[:12].upper())
+    return f"KRONOS_INTRADAY_MCX_PAIRED_REVIEW_{suffix}"
+
+
+def _render_pdf(pack: McxPairedReviewPack, bundle: McxPairedChartBundle, native: bytes, reference: bytes, supporting_reference_only: bool = False, *, expected_filename: str | None = None) -> bytes:
     if pack.question_set_version == visual_v2.VERSION:
         from kronos.intraday.visual_review_pdf import render_visual_review
         from kronos.intraday.visual_machine_context import usdinr_futures_context
@@ -126,10 +135,11 @@ def _render_pdf(pack: McxPairedReviewPack, bundle: McxPairedChartBundle, native:
             f"Chart revision: {pack.native_chart_revision_identity}",
             f"Question set: {pack.question_set_identity} / {pack.question_set_version}",
             f"USDINR FUTURES (Kite): {currency.state} / {currency.reason}. No spot substitute or ninth panel.",
-            "Native governed levels: " + ("; ".join(f"{name} = {value}" for name, value, _ in pack.native_governed_levels) or "NOT_ESTABLISHED") + ". Reference anchors remain independently visible; comparison requires lawful completed temporal evidence.",
+            "Native governed levels: " + ("; ".join(f"{name} = {value} [source {source}]" for name, value, source in pack.native_governed_levels) or "NOT_ESTABLISHED") + ". M5 selected single anchor: NOT_ESTABLISHED; these HIGH/LOW values are orientation, not a selected barrier. Do not select a barrier from direction. Missing relevant anchor requires NOT_OBSERVABLE or UNCLEAR. R5/X3 reference structures remain independently visible; comparison requires lawful completed temporal evidence.",
         )
         return render_visual_review(((orientation, (native,) if native == reference else (reference, native), pack.questions),),
-            expected_filename=f"KRONOS_INTRADAY_MCX_PAIRED_REVIEW_{pack.review_pack_identity[-12:]}_ANSWERS.json", paired=True)
+            expected_filename=expected_filename,
+            paired=True, answer_template=answer_template(pack, bundle))
     output = BytesIO()
     document = SimpleDocTemplate(output, pagesize=A4, leftMargin=15*mm, rightMargin=15*mm,
                                  topMargin=14*mm, bottomMargin=14*mm,

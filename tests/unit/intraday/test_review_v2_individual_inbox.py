@@ -192,7 +192,7 @@ def test_exact_individual_inbox_missing_import_idempotency_and_tamper(
     cycle = _cycles(app)["BDL"].cycle_identity
     app.upload_chart(cycle, media_type="image/png", payload=_png(21))
     result = app.create_individual_question_transport(cycle)
-    assert result.answer_template_path.parent == app._transport.question_outbox  # noqa: SLF001
+    assert result.answer_template_path.parent == app.review_store.root / "answer-templates"
     assert not (app._transport.answer_inbox / result.transport.expected_answer_filename).exists()  # noqa: SLF001
     missing = app.import_expected_answer(cycle)
     assert missing.not_found_count == 1 and missing.members[0].state == "NOT_FOUND"

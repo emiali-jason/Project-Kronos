@@ -126,13 +126,19 @@ class IntradayReviewV2PairedAdapter:
         return bundle, native, reference, pack, transport, pdf, template
 
     def create(self, cycle, chart, *, require_current):
-        bundle, native, reference, pack, transport, pdf, template = self.expected(cycle, chart)
+        retained = self.retained(cycle, chart)
+        if retained is not None and retained[3].question_set_version == visual_v2.VERSION and retained[4].schema_version == "1.1.0":
+            bundle, native, reference, pack, transport, _, _ = retained
+            pdf = self.store.load_bytes("question-pdfs", transport.transport_identity, ".pdf")
+            template = self.store.load_bytes("answer-templates", transport.transport_identity)
+        else:
+            bundle, native, reference, pack, transport, pdf, template = self.expected(cycle, chart)
         require_current()
         self.store.retain_pack(pack)
         self.store.retain_transport(transport, pdf, template)
         self.store.retain_transport_pointer(transport)
-        question, answer = self.transport.export_paired(transport, pdf, template)
-        return PairedQuestionResult(transport, question, answer)
+        question = self.transport.export_paired(transport, pdf, template)
+        return PairedQuestionResult(transport, question, self.store.transport_answer_template_path(transport))
 
     def retained(self, cycle, chart):
         bundle, native, reference = self.restore(cycle, chart)

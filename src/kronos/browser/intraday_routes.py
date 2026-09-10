@@ -1047,7 +1047,7 @@ class IntradayBrowserRoutes:
                 if request.path == "/intraday/review/question-packs":
                     if request.query or request.body:
                         raise ValueError
-                    self._review_v2_control.application.create_combined_question_transport()
+                    self._review_v2_control.application.create_all_question_transports()
                     return self.handle_get(BrowserGetRequest("/intraday/review", {}), snapshot_provider)
                 if request.path == "/intraday/review/answers":
                     if request.query or request.body:
@@ -1077,7 +1077,7 @@ class IntradayBrowserRoutes:
                         _one_query(request, "cycle")
                     )
                 else:
-                    self._review_v2_control.application.create_combined_question_transport()
+                    self._review_v2_control.application.create_all_question_transports()
             elif request.path == REVIEW_V2_ANSWER_IMPORT_ROUTE:
                 if self._review_v2_control is None or request.body:
                     raise ValueError
