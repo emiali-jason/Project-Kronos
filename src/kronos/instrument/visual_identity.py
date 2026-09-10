@@ -24,6 +24,7 @@ VISUAL_IDENTITY_RELATIONSHIP_PUBLICATION_V1_REVIEW_VERSION = "1.3.0"
 VISUAL_IDENTITY_NATIVE_CONTRACT_VERSION = "1.4.0"
 VISUAL_IDENTITY_NSE_COVERAGE_VERSION = "1.5.0"
 VISUAL_IDENTITY_NSE_EXPORT_VERSION = "1.6.0"
+VISUAL_IDENTITY_COMPLETE_VERSION = "1.7.0"
 VISUAL_IDENTITY_REFERENCE_ANALYTICAL_SUBJECTS = (
     "REFERENCE-SUBJECT-COMEX-COPPER",
     "REFERENCE-SUBJECT-COMEX-GOLD",
@@ -39,11 +40,15 @@ VISUAL_IDENTITY_RELATIONSHIP_PUBLICATION_V1_SUPPORTED_VERSIONS = frozenset({
     VISUAL_IDENTITY_NATIVE_CONTRACT_VERSION,
     VISUAL_IDENTITY_NSE_COVERAGE_VERSION,
     VISUAL_IDENTITY_NSE_EXPORT_VERSION,
+    VISUAL_IDENTITY_COMPLETE_VERSION,
 })
 
 
 class VisualIdentitySourceContext(StrEnum):
     TRADINGVIEW_VISUAL_CHART = "TRADINGVIEW_VISUAL_CHART"
+    TRADINGVIEW_MCX_NATIVE_FAMILY = "TRADINGVIEW_MCX_NATIVE_FAMILY"
+    TRADINGVIEW_NYMEX_REFERENCE_FAMILY = "TRADINGVIEW_NYMEX_REFERENCE_FAMILY"
+    TRADINGVIEW_COMEX_REFERENCE_FAMILY = "TRADINGVIEW_COMEX_REFERENCE_FAMILY"
 
 
 class VisualIdentityRelationshipStatus(StrEnum):
@@ -458,3 +463,21 @@ __all__ = [
     "encode_visual_identity_publication",
     "parse_visual_identity_publication",
 ]
+
+
+def uses_family_visual_authority(resolver) -> bool:
+    """Only explicitly selected 1.7.0 opts into the Sponsor family boundary."""
+    return (type(resolver) is VisualIdentityResolver
+            and resolver.publication.publication_version == VISUAL_IDENTITY_COMPLETE_VERSION)
+
+
+def family_visual_context(role: str, venue: str) -> VisualIdentitySourceContext:
+    contexts = {
+        ("NATIVE", "MCX"): VisualIdentitySourceContext.TRADINGVIEW_MCX_NATIVE_FAMILY,
+        ("REFERENCE", "NYMEX"): VisualIdentitySourceContext.TRADINGVIEW_NYMEX_REFERENCE_FAMILY,
+        ("REFERENCE", "COMEX"): VisualIdentitySourceContext.TRADINGVIEW_COMEX_REFERENCE_FAMILY,
+    }
+    try:
+        return contexts[(role, venue)]
+    except (KeyError, TypeError) as error:
+        raise VisualIdentityResolutionError(VisualIdentityResolutionFailure.RELATIONSHIP_UNAVAILABLE) from error

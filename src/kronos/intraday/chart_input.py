@@ -15,6 +15,7 @@ import json
 
 from kronos.instrument.visual_identity import (
     VisualIdentityResolver, VisualIdentityResolutionError, VisualIdentitySourceContext,
+    uses_family_visual_authority, family_visual_context,
 )
 from kronos.intraday.candles import expected_candle_boundaries
 from kronos.intraday.contracts import CandleBoundary, CandleCompletion
@@ -186,7 +187,9 @@ def compare_chart_panel(expected, observed, *, resolver, received_at, observed_a
             try:
                 resolved = resolver.resolve(
                     observed_visible_subject_identity=observed.observed_subject,
-                    source_context=VisualIdentitySourceContext.TRADINGVIEW_VISUAL_CHART,
+                    source_context=(family_visual_context(observed.role, observed.venue)
+                        if uses_family_visual_authority(resolver) and expected.venue != "NSE"
+                        else VisualIdentitySourceContext.TRADINGVIEW_VISUAL_CHART),
                     governed_observation_boundary=expected.relationship_boundary,
                 )
                 relation = resolved.relationship_identity
@@ -274,7 +277,8 @@ def compare_chart_panel(expected, observed, *, resolver, received_at, observed_a
     return ChartPanelResult(expected.role, expected.timeframe, identity, temporal, core,
         overall, tuple(reasons), content,
         source_identity, relation,
-        "SUPPORTING_VISUAL_CONTEXT_ONLY" if expected.supporting_visual_only else "INDEPENDENT_MACHINE_CORRESPONDENCE",
+        "SUPPORTING_VISUAL_CONTEXT_ONLY" if expected.supporting_visual_only else
+        "FAMILY_VISUAL_MACHINE_TEMPORAL_CORRESPONDENCE" if uses_family_visual_authority(resolver) and expected.venue == "MCX" else "INDEPENDENT_MACHINE_CORRESPONDENCE",
         "VALIDATED" if not expected.supporting_visual_only and overall is S.VALIDATED else "NOT_INDEPENDENTLY_ESTABLISHED",
         None if observed is None or observed.temporal_context is None else
         TemporalCompatibility.VISIBLY_CONTRADICTED.value if temporal is S.NOT_VALIDATED else

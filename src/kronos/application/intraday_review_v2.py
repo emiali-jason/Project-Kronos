@@ -241,7 +241,9 @@ class IntradayReviewV2Application:
         self._clock = clock
         self._lock = review_store.workspace_lock
         self._chart_input = IntradayChartInputGate(review_store, probables_store, visual_identity_resolver, clock=lambda: self._clock())
-        self._paired = IntradayReviewV2PairedAdapter(review_store, self._transport, chart_input=self._chart_input)
+        from kronos.instrument.visual_identity import uses_family_visual_authority
+        self._paired = IntradayReviewV2PairedAdapter(review_store, self._transport, chart_input=self._chart_input,
+            native_resolver=visual_identity_resolver if uses_family_visual_authority(visual_identity_resolver) else None)
 
     @property
     def review_store(self) -> IntradayReviewV2Store:

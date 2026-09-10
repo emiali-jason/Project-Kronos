@@ -1,0 +1,536 @@
+{
+  "status": "SPONSOR_AUTHORIZED_ENGINEERING_CANDIDATE",
+  "source_classification": "SPONSOR_PROVIDED_TRADINGVIEW_CHART",
+  "authority": "MCX stable family/venue/role; exact expiry is machine-selection plus Sponsor chart-selection authority",
+  "historical_review_backdating": false,
+  "sources": [
+    {
+      "original_path": "/var/folders/t6/y8wycddx2tv3swhcw_ccqjcw0000gn/T/codex-clipboard-345f7c29-7d9f-46ba-8851-708d15adf832.png",
+      "retained_path": "/Users/imranali/Documents/Project-KRONOS/output/WO-07E-SPONSOR-CHART-SOURCES-20260910/originals/codex-clipboard-345f7c29-7d9f-46ba-8851-708d15adf832.png",
+      "sha256": "2ea503e73ffdec4e9687f4e02ce265f060f84b157c080535af0832ac422adf89",
+      "bytes": 231194,
+      "source_classification": "SPONSOR_PROVIDED_TRADINGVIEW_CHART",
+      "canonical_subject_association": "NSE-INDEX-BANKNIFTY",
+      "association_basis": "Visible exact index/commodity label and venue matched to existing canonical catalogue subject; NOT an inferred derivative-contract binding. Uploaded batch text names different equities; association is not assigned by upload order.",
+      "visible_creation_label": "ImranAli_a81 created with TradingView.com, Sep 10, 2026 17:26 UTC+5:30",
+      "visible_creation_at_minute": "2026-09-10T17:26+05:30",
+      "capture_seconds": "NOT_ESTABLISHED",
+      "file_birth_at": "2026-09-10T11:56:28.732093+00:00",
+      "file_modified_at": "2026-09-10T11:56:28.732381+00:00",
+      "source_supported_not_before": "2026-09-10T11:56:28.732381+00:00",
+      "timestamp_rule": "Conservative file-retention bound; minute-resolution visible capture label retained separately. No historical backdating.",
+      "primary_panels": [
+        {
+          "subject_label": "Nifty Bank Index",
+          "venue": "NSE",
+          "visible_symbol": null,
+          "visible_timeframe": "1D"
+        },
+        {
+          "subject_label": "Nifty Bank Index",
+          "venue": "NSE",
+          "visible_symbol": null,
+          "visible_timeframe": "15"
+        },
+        {
+          "subject_label": "Nifty Bank Index",
+          "venue": "NSE",
+          "visible_symbol": null,
+          "visible_timeframe": "1h"
+        },
+        {
+          "subject_label": "Nifty Bank Index",
+          "venue": "NSE",
+          "visible_symbol": null,
+          "visible_timeframe": "5"
+        }
+      ],
+      "supporting_reference_panels": [],
+      "reference_authority": "NOT_APPLICABLE",
+      "independent_reference_correspondence": "NOT_APPLICABLE",
+      "reference_listed_to_continuous_membership": "NOT_APPLICABLE",
+      "equity_csv_comparison": "NOT_APPLICABLE: supplied chart is not one of the 91 CSV equity rows",
+      "new_chart_supports_1703_review": false,
+      "existing_resolution_at_1703": {
+        "result": "RESOLVED",
+        "canonical_identity": "NSE-INDEX-BANKNIFTY",
+        "relationship_identity": "VISUAL-IDENTITY-RELATIONSHIP-B739288766CFADB544EB7533EC414BB26E2414D61F4AC5CBEA3152EB4BC8330E",
+        "publication_version": "1.6.0"
+      },
+      "existing_resolution_at_file_boundary": {
+        "result": "RESOLVED",
+        "canonical_identity": "NSE-INDEX-BANKNIFTY",
+        "relationship_identity": "VISUAL-IDENTITY-RELATIONSHIP-B739288766CFADB544EB7533EC414BB26E2414D61F4AC5CBEA3152EB4BC8330E",
+        "publication_version": "1.6.0"
+      },
+      "native_title_resolution_at_file_boundary": {
+        "result": "RESOLVED",
+        "canonical_identity": "NSE-INDEX-BANKNIFTY",
+        "relationship_identity": "VISUAL-IDENTITY-RELATIONSHIP-B739288766CFADB544EB7533EC414BB26E2414D61F4AC5CBEA3152EB4BC8330E",
+        "publication_version": "1.6.0"
+      },
+      "panel_coverage_gap": null,
+      "q1_q10_answer_usage": false,
+      "publication_effective_start": "NOT_PUBLISHED_FROM_THIS_NEW_SOURCE"
+    },
+    {
+      "original_path": "/var/folders/t6/y8wycddx2tv3swhcw_ccqjcw0000gn/T/codex-clipboard-1bb4611d-adb2-4d44-8287-c9f397d284ee.png",
+      "retained_path": "/Users/imranali/Documents/Project-KRONOS/output/WO-07E-SPONSOR-CHART-SOURCES-20260910/originals/codex-clipboard-1bb4611d-adb2-4d44-8287-c9f397d284ee.png",
+      "sha256": "170f0a45c7005bf528e36d4ea1a97b1f8bcd3b5a97c979aaefe7b2e07e3e6382",
+      "bytes": 226837,
+      "source_classification": "SPONSOR_PROVIDED_TRADINGVIEW_CHART",
+      "canonical_subject_association": "NSE-INDEX-NIFTY",
+      "association_basis": "Visible exact index/commodity label and venue matched to existing canonical catalogue subject; NOT an inferred derivative-contract binding. Uploaded batch text names different equities; association is not assigned by upload order.",
+      "visible_creation_label": "ImranAli_a81 created with TradingView.com, Sep 10, 2026 17:26 UTC+5:30",
+      "visible_creation_at_minute": "2026-09-10T17:26+05:30",
+      "capture_seconds": "NOT_ESTABLISHED",
+      "file_birth_at": "2026-09-10T11:56:50.251794+00:00",
+      "file_modified_at": "2026-09-10T11:56:50.252121+00:00",
+      "source_supported_not_before": "2026-09-10T11:56:50.252121+00:00",
+      "timestamp_rule": "Conservative file-retention bound; minute-resolution visible capture label retained separately. No historical backdating.",
+      "primary_panels": [
+        {
+          "subject_label": "Nifty 50 Index",
+          "venue": "NSE",
+          "visible_symbol": null,
+          "visible_timeframe": "1D"
+        },
+        {
+          "subject_label": "Nifty 50 Index",
+          "venue": "NSE",
+          "visible_symbol": null,
+          "visible_timeframe": "15"
+        },
+        {
+          "subject_label": "Nifty 50 Index",
+          "venue": "NSE",
+          "visible_symbol": null,
+          "visible_timeframe": "1h"
+        },
+        {
+          "subject_label": "Nifty 50 Index",
+          "venue": "NSE",
+          "visible_symbol": null,
+          "visible_timeframe": "5"
+        }
+      ],
+      "supporting_reference_panels": [],
+      "reference_authority": "NOT_APPLICABLE",
+      "independent_reference_correspondence": "NOT_APPLICABLE",
+      "reference_listed_to_continuous_membership": "NOT_APPLICABLE",
+      "equity_csv_comparison": "NOT_APPLICABLE: supplied chart is not one of the 91 CSV equity rows",
+      "new_chart_supports_1703_review": false,
+      "existing_resolution_at_1703": {
+        "result": "VISUAL_IDENTITY_RELATIONSHIP_UNAVAILABLE",
+        "publication_version": "1.6.0"
+      },
+      "existing_resolution_at_file_boundary": {
+        "result": "VISUAL_IDENTITY_RELATIONSHIP_UNAVAILABLE",
+        "publication_version": "1.6.0"
+      },
+      "native_title_resolution_at_file_boundary": {
+        "result": "VISUAL_IDENTITY_RELATIONSHIP_UNAVAILABLE",
+        "publication_version": "1.6.0"
+      },
+      "panel_coverage_gap": null,
+      "q1_q10_answer_usage": false,
+      "publication_effective_start": "NOT_PUBLISHED_FROM_THIS_NEW_SOURCE"
+    },
+    {
+      "original_path": "/var/folders/t6/y8wycddx2tv3swhcw_ccqjcw0000gn/T/codex-clipboard-d4be9de0-4b89-434b-ba5b-08892633fbf1.png",
+      "retained_path": "/Users/imranali/Documents/Project-KRONOS/output/WO-07E-SPONSOR-CHART-SOURCES-20260910/originals/codex-clipboard-d4be9de0-4b89-434b-ba5b-08892633fbf1.png",
+      "sha256": "7f1cd3b5e016ae54e63027bbdf788444783eee6d1658efa10fcf177fc36856e0",
+      "bytes": 213226,
+      "source_classification": "SPONSOR_PROVIDED_TRADINGVIEW_CHART",
+      "canonical_subject_association": "MCX-SUBJECT-NATGAS",
+      "association_basis": "Visible exact index/commodity label and venue matched to existing canonical catalogue subject; NOT an inferred derivative-contract binding. Uploaded batch text names different equities; association is not assigned by upload order.",
+      "visible_creation_label": "ImranAli_a81 created with TradingView.com, Sep 10, 2026 17:26 UTC+5:30",
+      "visible_creation_at_minute": "2026-09-10T17:26+05:30",
+      "capture_seconds": "NOT_ESTABLISHED",
+      "file_birth_at": "2026-09-10T11:56:57.828750+00:00",
+      "file_modified_at": "2026-09-10T11:56:57.829206+00:00",
+      "source_supported_not_before": "2026-09-10T11:56:57.829206+00:00",
+      "timestamp_rule": "Conservative file-retention bound; minute-resolution visible capture label retained separately. No historical backdating.",
+      "primary_panels": [
+        {
+          "subject_label": "Natural Gas Futures",
+          "venue": "MCX",
+          "visible_symbol": "NATURALGASU2026",
+          "visible_timeframe": "1D"
+        },
+        {
+          "subject_label": "Natural Gas Futures",
+          "venue": "MCX",
+          "visible_symbol": "NATURALGASU2026",
+          "visible_timeframe": "4h"
+        },
+        {
+          "subject_label": "Natural Gas Futures",
+          "venue": "MCX",
+          "visible_symbol": "NATURALGASU2026",
+          "visible_timeframe": "15"
+        },
+        {
+          "subject_label": "Natural Gas Futures",
+          "venue": "MCX",
+          "visible_symbol": "NATURALGASU2026",
+          "visible_timeframe": "5"
+        }
+      ],
+      "supporting_reference_panels": [
+        {
+          "subject_label": "Natural Gas Futures",
+          "venue": "NYMEX",
+          "visible_symbol": "NGV2026",
+          "visible_timeframe": "1D"
+        },
+        {
+          "subject_label": "Natural Gas Futures",
+          "venue": "NYMEX",
+          "visible_symbol": "NGV2026",
+          "visible_timeframe": "4h"
+        },
+        {
+          "subject_label": "Natural Gas Futures",
+          "venue": "NYMEX",
+          "visible_symbol": "NGV2026",
+          "visible_timeframe": "15"
+        },
+        {
+          "subject_label": "Natural Gas Futures",
+          "venue": "NYMEX",
+          "visible_symbol": "NGV2026",
+          "visible_timeframe": "5"
+        }
+      ],
+      "reference_authority": "SUPPORTING_VISUAL_CONTEXT_ONLY",
+      "independent_reference_correspondence": "NOT_INDEPENDENTLY_ESTABLISHED",
+      "reference_listed_to_continuous_membership": "NOT_ESTABLISHED",
+      "equity_csv_comparison": "NOT_APPLICABLE: supplied chart is not one of the 91 CSV equity rows",
+      "new_chart_supports_1703_review": false,
+      "existing_resolution_at_1703": {
+        "result": "VISUAL_IDENTITY_RELATIONSHIP_UNAVAILABLE",
+        "publication_version": "1.4.0"
+      },
+      "existing_resolution_at_file_boundary": {
+        "result": "VISUAL_IDENTITY_RELATIONSHIP_UNAVAILABLE",
+        "publication_version": "1.4.0"
+      },
+      "native_title_resolution_at_file_boundary": {
+        "result": "VISUAL_IDENTITY_RELATIONSHIP_UNAVAILABLE",
+        "publication_version": "1.4.0"
+      },
+      "panel_coverage_gap": null,
+      "q1_q10_answer_usage": false,
+      "publication_effective_start": "NOT_PUBLISHED_FROM_THIS_NEW_SOURCE"
+    },
+    {
+      "original_path": "/var/folders/t6/y8wycddx2tv3swhcw_ccqjcw0000gn/T/codex-clipboard-fa9c6f48-fbbe-44e0-a9c2-500f8162759b.png",
+      "retained_path": "/Users/imranali/Documents/Project-KRONOS/output/WO-07E-SPONSOR-CHART-SOURCES-20260910/originals/codex-clipboard-fa9c6f48-fbbe-44e0-a9c2-500f8162759b.png",
+      "sha256": "28d6e8c2f1cad773bffdc6dd317c56bdb85b150579b78d53f898a335431c3a2d",
+      "bytes": 206000,
+      "source_classification": "SPONSOR_PROVIDED_TRADINGVIEW_CHART",
+      "canonical_subject_association": "MCX-SUBJECT-CRUDE",
+      "association_basis": "Visible exact index/commodity label and venue matched to existing canonical catalogue subject; NOT an inferred derivative-contract binding. Uploaded batch text names different equities; association is not assigned by upload order.",
+      "visible_creation_label": "ImranAli_a81 created with TradingView.com, Sep 10, 2026 17:27 UTC+5:30",
+      "visible_creation_at_minute": "2026-09-10T17:27+05:30",
+      "capture_seconds": "NOT_ESTABLISHED",
+      "file_birth_at": "2026-09-10T11:57:37.942670+00:00",
+      "file_modified_at": "2026-09-10T11:57:37.943045+00:00",
+      "source_supported_not_before": "2026-09-10T11:57:37.943045+00:00",
+      "timestamp_rule": "Conservative file-retention bound; minute-resolution visible capture label retained separately. No historical backdating.",
+      "primary_panels": [
+        {
+          "subject_label": "Crude Oil Futures",
+          "venue": "MCX",
+          "visible_symbol": "CRUDEOILU2026",
+          "visible_timeframe": "1D"
+        },
+        {
+          "subject_label": "Crude Oil Futures",
+          "venue": "MCX",
+          "visible_symbol": "CRUDEOILU2026",
+          "visible_timeframe": "4h"
+        },
+        {
+          "subject_label": "Crude Oil Futures",
+          "venue": "MCX",
+          "visible_symbol": "CRUDEOILU2026",
+          "visible_timeframe": "15"
+        },
+        {
+          "subject_label": "Crude Oil Futures",
+          "venue": "MCX",
+          "visible_symbol": "CRUDEOILU2026",
+          "visible_timeframe": "5"
+        }
+      ],
+      "supporting_reference_panels": [
+        {
+          "subject_label": "Light Crude Oil Futures",
+          "venue": "NYMEX",
+          "visible_symbol": "CLV2026",
+          "visible_timeframe": "1D"
+        },
+        {
+          "subject_label": "Light Crude Oil Futures",
+          "venue": "NYMEX",
+          "visible_symbol": "CLV2026",
+          "visible_timeframe": "4h"
+        },
+        {
+          "subject_label": "Light Crude Oil Futures",
+          "venue": "NYMEX",
+          "visible_symbol": "CLV2026",
+          "visible_timeframe": "15"
+        },
+        {
+          "subject_label": "Light Crude Oil Futures",
+          "venue": "NYMEX",
+          "visible_symbol": "CLV2026",
+          "visible_timeframe": "5"
+        }
+      ],
+      "reference_authority": "SUPPORTING_VISUAL_CONTEXT_ONLY",
+      "independent_reference_correspondence": "NOT_INDEPENDENTLY_ESTABLISHED",
+      "reference_listed_to_continuous_membership": "NOT_ESTABLISHED",
+      "equity_csv_comparison": "NOT_APPLICABLE: supplied chart is not one of the 91 CSV equity rows",
+      "new_chart_supports_1703_review": false,
+      "existing_resolution_at_1703": {
+        "result": "RESOLVED",
+        "canonical_identity": "MCX-FUT-CRUDE-2026-09-21",
+        "relationship_identity": "VISUAL-IDENTITY-RELATIONSHIP-F4313FDF3CE5D3D41211638614F8851F852B57EA6B1485D514124BF7B90D4C68",
+        "publication_version": "1.4.0"
+      },
+      "existing_resolution_at_file_boundary": {
+        "result": "RESOLVED",
+        "canonical_identity": "MCX-FUT-CRUDE-2026-09-21",
+        "relationship_identity": "VISUAL-IDENTITY-RELATIONSHIP-F4313FDF3CE5D3D41211638614F8851F852B57EA6B1485D514124BF7B90D4C68",
+        "publication_version": "1.4.0"
+      },
+      "native_title_resolution_at_file_boundary": {
+        "result": "VISUAL_IDENTITY_RELATIONSHIP_UNAVAILABLE",
+        "publication_version": "1.4.0"
+      },
+      "panel_coverage_gap": null,
+      "q1_q10_answer_usage": false,
+      "publication_effective_start": "NOT_PUBLISHED_FROM_THIS_NEW_SOURCE"
+    },
+    {
+      "original_path": "/var/folders/t6/y8wycddx2tv3swhcw_ccqjcw0000gn/T/codex-clipboard-fd6f2e0f-565b-45a1-a850-9e8ae271cdde.png",
+      "retained_path": "/Users/imranali/Documents/Project-KRONOS/output/WO-07E-SPONSOR-CHART-SOURCES-20260910/originals/codex-clipboard-fd6f2e0f-565b-45a1-a850-9e8ae271cdde.png",
+      "sha256": "f61d3e2c371471117f02b5f399d5f2853a161960255335f161a68af9811d7441",
+      "bytes": 229776,
+      "source_classification": "SPONSOR_PROVIDED_TRADINGVIEW_CHART",
+      "canonical_subject_association": "MCX-SUBJECT-COPPER",
+      "association_basis": "Visible exact index/commodity label and venue matched to existing canonical catalogue subject; NOT an inferred derivative-contract binding. Uploaded batch text names different equities; association is not assigned by upload order.",
+      "visible_creation_label": "ImranAli_a81 created with TradingView.com, Sep 10, 2026 17:27 UTC+5:30",
+      "visible_creation_at_minute": "2026-09-10T17:27+05:30",
+      "capture_seconds": "NOT_ESTABLISHED",
+      "file_birth_at": "2026-09-10T11:58:01.794197+00:00",
+      "file_modified_at": "2026-09-10T11:58:01.794521+00:00",
+      "source_supported_not_before": "2026-09-10T11:58:01.794521+00:00",
+      "timestamp_rule": "Conservative file-retention bound; minute-resolution visible capture label retained separately. No historical backdating.",
+      "primary_panels": [
+        {
+          "subject_label": "Copper Futures",
+          "venue": "MCX",
+          "visible_symbol": "COPPERU2026",
+          "visible_timeframe": "1D"
+        },
+        {
+          "subject_label": "Copper Futures",
+          "venue": "MCX",
+          "visible_symbol": "COPPERU2026",
+          "visible_timeframe": "4h"
+        },
+        {
+          "subject_label": "Copper Futures",
+          "venue": "MCX",
+          "visible_symbol": "COPPERU2026",
+          "visible_timeframe": "15"
+        },
+        {
+          "subject_label": "Copper Futures",
+          "venue": "MCX",
+          "visible_symbol": "COPPERU2026",
+          "visible_timeframe": "5"
+        }
+      ],
+      "supporting_reference_panels": [
+        {
+          "subject_label": "Copper Futures",
+          "venue": "COMEX",
+          "visible_symbol": "HGZ2026",
+          "visible_timeframe": "1D"
+        },
+        {
+          "subject_label": "Copper Futures",
+          "venue": "COMEX",
+          "visible_symbol": "HGZ2026",
+          "visible_timeframe": "4h"
+        },
+        {
+          "subject_label": "Copper Futures",
+          "venue": "COMEX",
+          "visible_symbol": "HGZ2026",
+          "visible_timeframe": "15"
+        },
+        {
+          "subject_label": "Copper Futures",
+          "venue": "COMEX",
+          "visible_symbol": "HGZ2026",
+          "visible_timeframe": "5"
+        }
+      ],
+      "reference_authority": "SUPPORTING_VISUAL_CONTEXT_ONLY",
+      "independent_reference_correspondence": "NOT_INDEPENDENTLY_ESTABLISHED",
+      "reference_listed_to_continuous_membership": "NOT_ESTABLISHED",
+      "equity_csv_comparison": "NOT_APPLICABLE: supplied chart is not one of the 91 CSV equity rows",
+      "new_chart_supports_1703_review": false,
+      "existing_resolution_at_1703": {
+        "result": "VISUAL_IDENTITY_RELATIONSHIP_UNAVAILABLE",
+        "publication_version": "1.4.0"
+      },
+      "existing_resolution_at_file_boundary": {
+        "result": "VISUAL_IDENTITY_RELATIONSHIP_UNAVAILABLE",
+        "publication_version": "1.4.0"
+      },
+      "native_title_resolution_at_file_boundary": {
+        "result": "VISUAL_IDENTITY_RELATIONSHIP_UNAVAILABLE",
+        "publication_version": "1.4.0"
+      },
+      "panel_coverage_gap": null,
+      "q1_q10_answer_usage": false,
+      "publication_effective_start": "NOT_PUBLISHED_FROM_THIS_NEW_SOURCE"
+    },
+    {
+      "original_path": "/var/folders/t6/y8wycddx2tv3swhcw_ccqjcw0000gn/T/codex-clipboard-16037bfd-2c97-422c-a00f-5f0e35a449ec.png",
+      "retained_path": "/Users/imranali/Documents/Project-KRONOS/output/WO-07E-SPONSOR-CHART-SOURCES-20260910/originals/codex-clipboard-16037bfd-2c97-422c-a00f-5f0e35a449ec.png",
+      "sha256": "d81a5ddc17450168d383f3740b641dee2967165ae71d02c7b5095646911b71dc",
+      "bytes": 236684,
+      "source_classification": "SPONSOR_PROVIDED_TRADINGVIEW_CHART",
+      "canonical_subject_association": "MCX-SUBJECT-GOLDM",
+      "association_basis": "Visible exact index/commodity label and venue matched to existing canonical catalogue subject; NOT an inferred derivative-contract binding. Uploaded batch text names different equities; association is not assigned by upload order.",
+      "visible_creation_label": "ImranAli_a81 created with TradingView.com, Sep 10, 2026 17:28 UTC+5:30",
+      "visible_creation_at_minute": "2026-09-10T17:28+05:30",
+      "capture_seconds": "NOT_ESTABLISHED",
+      "file_birth_at": "2026-09-10T11:58:25.538783+00:00",
+      "file_modified_at": "2026-09-10T11:58:25.539199+00:00",
+      "source_supported_not_before": "2026-09-10T11:58:25.539199+00:00",
+      "timestamp_rule": "Conservative file-retention bound; minute-resolution visible capture label retained separately. No historical backdating.",
+      "primary_panels": [
+        {
+          "subject_label": "Gold Mini Futures",
+          "venue": "MCX",
+          "visible_symbol": "GOLDMV2026",
+          "visible_timeframe": "1h"
+        }
+      ],
+      "supporting_reference_panels": [
+        {
+          "subject_label": "Gold Futures",
+          "venue": "COMEX",
+          "visible_symbol": "GCZ2026",
+          "visible_timeframe": "1D"
+        },
+        {
+          "subject_label": "Gold Futures",
+          "venue": "COMEX",
+          "visible_symbol": "GCZ2026",
+          "visible_timeframe": "1h"
+        },
+        {
+          "subject_label": "Gold Futures",
+          "venue": "COMEX",
+          "visible_symbol": "GCZ2026",
+          "visible_timeframe": "4h"
+        }
+      ],
+      "reference_authority": "SUPPORTING_VISUAL_CONTEXT_ONLY",
+      "independent_reference_correspondence": "NOT_INDEPENDENTLY_ESTABLISHED",
+      "reference_listed_to_continuous_membership": "NOT_ESTABLISHED",
+      "equity_csv_comparison": "NOT_APPLICABLE: supplied chart is not one of the 91 CSV equity rows",
+      "new_chart_supports_1703_review": false,
+      "existing_resolution_at_1703": {
+        "result": "VISUAL_IDENTITY_RELATIONSHIP_UNAVAILABLE",
+        "publication_version": "1.4.0"
+      },
+      "existing_resolution_at_file_boundary": {
+        "result": "VISUAL_IDENTITY_RELATIONSHIP_UNAVAILABLE",
+        "publication_version": "1.4.0"
+      },
+      "native_title_resolution_at_file_boundary": {
+        "result": "VISUAL_IDENTITY_RELATIONSHIP_UNAVAILABLE",
+        "publication_version": "1.4.0"
+      },
+      "panel_coverage_gap": "Native 1D/4H/15M/5M and reference 15M/5M not supplied. Identity evidence only; not a qualified paired Question/Answer composite.",
+      "q1_q10_answer_usage": false,
+      "publication_effective_start": "NOT_PUBLISHED_FROM_THIS_NEW_SOURCE"
+    },
+    {
+      "original_path": "/var/folders/t6/y8wycddx2tv3swhcw_ccqjcw0000gn/T/codex-clipboard-d083094e-74ac-4796-804e-28ae5a5e6728.png",
+      "retained_path": "/Users/imranali/Documents/Project-KRONOS/output/WO-07E-SPONSOR-CHART-SOURCES-20260910/originals/codex-clipboard-d083094e-74ac-4796-804e-28ae5a5e6728.png",
+      "sha256": "0c14c2f744d26dfaf2ff9a5ce034840f25618abf8fc0a1a2d4d6558b0dd5b37c",
+      "bytes": 266474,
+      "source_classification": "SPONSOR_PROVIDED_TRADINGVIEW_CHART",
+      "canonical_subject_association": "MCX-SUBJECT-SILVERM",
+      "association_basis": "Visible exact index/commodity label and venue matched to existing canonical catalogue subject; NOT an inferred derivative-contract binding. Uploaded batch text names different equities; association is not assigned by upload order.",
+      "visible_creation_label": "ImranAli_a81 created with TradingView.com, Sep 10, 2026 17:28 UTC+5:30",
+      "visible_creation_at_minute": "2026-09-10T17:28+05:30",
+      "capture_seconds": "NOT_ESTABLISHED",
+      "file_birth_at": "2026-09-10T11:58:32.250740+00:00",
+      "file_modified_at": "2026-09-10T11:58:32.251415+00:00",
+      "source_supported_not_before": "2026-09-10T11:58:32.251415+00:00",
+      "timestamp_rule": "Conservative file-retention bound; minute-resolution visible capture label retained separately. No historical backdating.",
+      "primary_panels": [
+        {
+          "subject_label": "Silver Mini Futures",
+          "venue": "MCX",
+          "visible_symbol": "SILVERMX2026",
+          "visible_timeframe": "1h"
+        }
+      ],
+      "supporting_reference_panels": [
+        {
+          "subject_label": "Silver Futures",
+          "venue": "COMEX",
+          "visible_symbol": "SIZ2026",
+          "visible_timeframe": "1D"
+        },
+        {
+          "subject_label": "Silver Futures",
+          "venue": "COMEX",
+          "visible_symbol": "SIZ2026",
+          "visible_timeframe": "1h"
+        },
+        {
+          "subject_label": "Silver Futures",
+          "venue": "COMEX",
+          "visible_symbol": "SIZ2026",
+          "visible_timeframe": "4h"
+        }
+      ],
+      "reference_authority": "SUPPORTING_VISUAL_CONTEXT_ONLY",
+      "independent_reference_correspondence": "NOT_INDEPENDENTLY_ESTABLISHED",
+      "reference_listed_to_continuous_membership": "NOT_ESTABLISHED",
+      "equity_csv_comparison": "NOT_APPLICABLE: supplied chart is not one of the 91 CSV equity rows",
+      "new_chart_supports_1703_review": false,
+      "existing_resolution_at_1703": {
+        "result": "VISUAL_IDENTITY_RELATIONSHIP_UNAVAILABLE",
+        "publication_version": "1.4.0"
+      },
+      "existing_resolution_at_file_boundary": {
+        "result": "VISUAL_IDENTITY_RELATIONSHIP_UNAVAILABLE",
+        "publication_version": "1.4.0"
+      },
+      "native_title_resolution_at_file_boundary": {
+        "result": "VISUAL_IDENTITY_RELATIONSHIP_UNAVAILABLE",
+        "publication_version": "1.4.0"
+      },
+      "panel_coverage_gap": "Native 1D/4H/15M/5M and reference 15M/5M not supplied. Identity evidence only; not a qualified paired Question/Answer composite.",
+      "q1_q10_answer_usage": false,
+      "publication_effective_start": "NOT_PUBLISHED_FROM_THIS_NEW_SOURCE"
+    }
+  ]
+}

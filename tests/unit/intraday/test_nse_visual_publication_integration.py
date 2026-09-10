@@ -19,8 +19,8 @@ from tests.unit.provider.test_shared_provider_runtime import _shared
 def test_current_runtime_explicitly_composes_nse_successor_inertly(tmp_path):
     shared, provider, calls = _shared()
     runtime = create_intraday_runtime(shared, evidence_root=tmp_path.resolve())
-    assert runtime.review_v2_application._visual_identity_resolver.publication.publication_version == '1.6.0'
-    assert runtime.review_v2_application._chart_input.resolver.publication.publication_version == '1.6.0'
+    assert runtime.review_v2_application._visual_identity_resolver.publication.publication_version == '1.7.0'
+    assert runtime.review_v2_application._chart_input.resolver.publication.publication_version == '1.7.0'
     assert provider.begin_count == 0 and provider.capability.calls == 0 and calls == []
     assert list(tmp_path.rglob('*')) == []
 

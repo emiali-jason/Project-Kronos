@@ -12,6 +12,7 @@ from kronos.instrument.visual_identity import (
     VISUAL_IDENTITY_RELATIONSHIP_PUBLICATION_V1_VERSION,
     VISUAL_IDENTITY_RELATIONSHIP_PUBLICATION_V1_SUPPORTED_VERSIONS,
     VISUAL_IDENTITY_REFERENCE_ANALYTICAL_SUBJECTS,
+    VISUAL_IDENTITY_COMPLETE_VERSION,
     VisualIdentityRelationshipPublication,
     VisualIdentityResolutionError,
     VisualIdentityResolutionFailure,
@@ -128,7 +129,7 @@ def load_visual_identity_resolver(
     canonical_subjects = tuple(
         item.canonical_id for item in canonical.semantic_objects
     )
-    if publication_version == VISUAL_IDENTITY_RELATIONSHIP_PUBLICATION_V1_MCX_REFERENCE_VERSION:
+    if publication_version in {VISUAL_IDENTITY_RELATIONSHIP_PUBLICATION_V1_MCX_REFERENCE_VERSION, VISUAL_IDENTITY_COMPLETE_VERSION}:
         canonical_subjects += VISUAL_IDENTITY_REFERENCE_ANALYTICAL_SUBJECTS
     publication = VisualIdentityRelationshipStore().load(
         publication_identity=VISUAL_IDENTITY_RELATIONSHIP_PUBLICATION_V1,

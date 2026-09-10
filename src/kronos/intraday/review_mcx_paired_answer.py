@@ -15,6 +15,7 @@ import re
 from typing import Mapping
 
 from kronos.instrument.visual_identity import (
+    uses_family_visual_authority,
     VisualIdentityResolution,
     VisualIdentityResolver,
     VisualIdentitySourceContext,
@@ -155,7 +156,7 @@ class McxPairedImportedVisualEvidence:
                 or any(type(x) is not tuple or len(x) != 5 or
                     (x[2:] != ("SUPPORTING_VISUAL_CONTEXT_ONLY", "NOT_INDEPENDENTLY_ESTABLISHED", None)
                      if x[0] == "REFERENCE" else
-                     x[2] != "INDEPENDENT_MACHINE_CORRESPONDENCE" or x[3] != "VALIDATED" or not _texts((x[4],)))
+                     x[2] != ("FAMILY_VISUAL_MACHINE_TEMPORAL_CORRESPONDENCE" if self.native_resolution.source_context is VisualIdentitySourceContext.TRADINGVIEW_MCX_NATIVE_FAMILY else "INDEPENDENT_MACHINE_CORRESPONDENCE") or x[3] != "VALIDATED" or not _texts((x[4],)))
                     for x in self.chart_correspondence)):
                 raise ReviewError(ReviewFailure.INTEGRITY_INVALID)
         values = _without(self, "visual_evidence_identity", "integrity_identity")
@@ -174,7 +175,7 @@ class McxPairedImportedVisualEvidence:
             or type(self.native_resolution) is not VisualIdentityResolution
             or (self.schema_version == MCX_PAIRED_CONTRACT_VERSION and type(self.reference_resolution) is not VisualIdentityResolution)
             or (self.schema_version in {"1.1.0", visual_v2.VERSION} and self.reference_resolution is not None)
-            or self.native_resolution.canonical_subject_identity != (self.actual_derivative_contract_identity if self.schema_version in {"1.1.0", visual_v2.VERSION} else self.canonical_mcx_subject_identity)
+            or self.native_resolution.canonical_subject_identity != (self.canonical_mcx_subject_identity if self.native_resolution.source_context is VisualIdentitySourceContext.TRADINGVIEW_MCX_NATIVE_FAMILY and self.schema_version == visual_v2.VERSION else self.actual_derivative_contract_identity if self.schema_version in {"1.1.0", visual_v2.VERSION} else self.canonical_mcx_subject_identity)
             or self.native_resolution.observed_visible_subject_identity != self.native_observed_visible_identity
             or (self.reference_resolution is not None and self.reference_resolution.observed_visible_subject_identity != self.reference_observed_visible_identity)
             or self.authority != "INDEPENDENT_VISUAL_OBSERVATION_ONLY"
@@ -273,15 +274,16 @@ def bind_mcx_paired_import(
         raise ReviewError(ReviewFailure.ANSWER_SCHEMA_INVALID)
     native = native_resolver.resolve(
         observed_visible_subject_identity=answer.native_observed_visible_identity,
-        source_context=VisualIdentitySourceContext.TRADINGVIEW_VISUAL_CHART,
-        governed_observation_boundary=(native_chart.received_at if supporting_reference_only else bundle.analysis_boundary),
+        source_context=(VisualIdentitySourceContext.TRADINGVIEW_MCX_NATIVE_FAMILY if uses_family_visual_authority(native_resolver) else VisualIdentitySourceContext.TRADINGVIEW_VISUAL_CHART),
+        governed_observation_boundary=(bundle.analysis_boundary if uses_family_visual_authority(native_resolver) else native_chart.received_at if supporting_reference_only else bundle.analysis_boundary),
     )
     reference = None if supporting_reference_only else reference_resolver.resolve(
         observed_visible_subject_identity=answer.reference_observed_visible_identity,
         source_context=VisualIdentitySourceContext.TRADINGVIEW_VISUAL_CHART,
         governed_observation_boundary=bundle.analysis_boundary,
     )
-    expected_native = (bundle.native_identity_binding.actual_derivative_contract_identity
+    expected_native = (bundle.canonical_mcx_subject_identity if uses_family_visual_authority(native_resolver)
+                       else bundle.native_identity_binding.actual_derivative_contract_identity
                        if supporting_reference_only else bundle.canonical_mcx_subject_identity)
     if (native.canonical_subject_identity != expected_native
         or not supporting_reference_only and (

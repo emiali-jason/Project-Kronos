@@ -52,7 +52,7 @@ class McxPairedReviewTransport:
             or self.expected_answer_filename != f"{stem}_ANSWERS.json"
             or not _aware(self.generated_at)
             or self.schema_identity != MCX_PAIRED_TRANSPORT_IDENTITY
-            or self.schema_version not in {MCX_PAIRED_TRANSPORT_LEGACY_VERSION, "1.1.0", "1.2.0", MCX_PAIRED_TRANSPORT_VERSION}
+            or self.schema_version not in {MCX_PAIRED_TRANSPORT_LEGACY_VERSION, "1.1.0", "1.2.0", "1.4.0", MCX_PAIRED_TRANSPORT_VERSION}
             or self.transport_identity != _identity("INTRADAY-MCX-PAIRED-TRANSPORT-", values)
             or self.integrity_identity != _identity("INTEGRITY-INTRADAY-MCX-PAIRED-TRANSPORT-", values)
         ):
@@ -64,6 +64,7 @@ def create_paired_transport(
     native_chart_payload: bytes, reference_chart_payload: bytes,
     generated_at: datetime,
     supporting_reference_only: bool = False,
+    family_visual: bool = False,
 ) -> tuple[McxPairedReviewTransport, bytes, bytes]:
     if (
         pack.paired_bundle_identity != bundle.bundle_identity
@@ -77,10 +78,10 @@ def create_paired_transport(
         document = json.loads(answer)
         document["reference_observed_visible_identity"] = MCX_REFERENCE_OBSERVATION_PLACEHOLDER
         answer = _canonical(document) + b"\n"
-    version = MCX_PAIRED_TRANSPORT_VERSION if pack.question_set_version == visual_v2.VERSION else MCX_PAIRED_TRANSPORT_LEGACY_VERSION
+    version = "1.4.0" if family_visual else MCX_PAIRED_TRANSPORT_VERSION if pack.question_set_version == visual_v2.VERSION else MCX_PAIRED_TRANSPORT_LEGACY_VERSION
     stem = _transport_stem(pack.review_pack_identity, version)
     pdf = _render_pdf(pack, bundle, native_chart_payload, reference_chart_payload,
-                      supporting_reference_only, expected_filename=f"{stem}_ANSWERS.json")
+                      supporting_reference_only, expected_filename=f"{stem}_ANSWERS.json", family_visual=family_visual)
     values = {
         "review_pack_identity": pack.review_pack_identity,
         "paired_bundle_identity": bundle.bundle_identity,
@@ -121,12 +122,12 @@ def _transport_stem(pack_identity: str, version: str) -> str:
     return f"KRONOS_INTRADAY_MCX_PAIRED_REVIEW_{suffix}"
 
 
-def _render_pdf(pack: McxPairedReviewPack, bundle: McxPairedChartBundle, native: bytes, reference: bytes, supporting_reference_only: bool = False, *, expected_filename: str | None = None) -> bytes:
+def _render_pdf(pack: McxPairedReviewPack, bundle: McxPairedChartBundle, native: bytes, reference: bytes, supporting_reference_only: bool = False, *, expected_filename: str | None = None, family_visual: bool = False) -> bytes:
     if pack.question_set_version == visual_v2.VERSION:
         from kronos.intraday.visual_review_pdf import render_visual_review
         from kronos.intraday.visual_machine_context import usdinr_futures_context
         currency = usdinr_futures_context(boundary=pack.analysis_boundary)
-        orientation = (
+        orientation = (("MCX visual identity: exact visible FAMILY + VENUE + ROLE. Report the generic native/reference family label independently. Do not infer invisible expiry or copy the machine contract. Exact expiry remains machine-selected and relies on Sponsor opening the requested chart; same-family wrong-expiry pixels may be indistinguishable. Family validation is NOT independent expiry proof. Listed series may be retained separately but is not required as family identity.",) if family_visual else ()) + (
             f"{pack.canonical_mcx_subject_identity} | {pack.direction}",
             f"Analysis boundary: {pack.analysis_boundary.isoformat()} | Each row: 1D / 4H / 15M / 5M",
             f"Native contract: {bundle.native_identity_binding.actual_derivative_contract_identity}",

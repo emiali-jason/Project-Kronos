@@ -165,3 +165,7 @@ Sponsor-authorized successor 1.6.0 and exact CSV source qualification are docume
 [the 91-equity identity contract](products/intraday/KRONOS-INTRADAY-WO-07E-TRADINGVIEW-91-IDENTITY.md).
 Older relationships retain their intervals; export-only labels begin on 10 September
 2026 at 17:18:30.613955 IST. NIFTY and final 98/98 closure remain separate.
+
+## WO-07E stable MCX families and complete visual identities
+
+[ADR-0034](adr/ADR-0034-INTRADAY-STABLE-MCX-VISUAL-FAMILY.md) records the Sponsor-approved family/venue/role boundary with separate exact machine contracts. [The 98-identity candidate](products/intraday/KRONOS-INTRADAY-WO-07E-COMPLETE-98-IDENTITY.md) preserves 1.6.0 and historical evidence; publication/runtime activation remain separate.

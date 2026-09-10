@@ -11,7 +11,7 @@ import json
 from kronos.application.intraday_review_mcx_paired import IntradayMcxPairedReviewApplication
 from kronos.instrument.active_derivative_persistence import ActiveDerivativeBindingStore
 from kronos.instrument.active_derivative import ActiveDerivativeSelectionError
-from kronos.instrument.visual_identity import VisualIdentityResolutionError, VISUAL_IDENTITY_NATIVE_CONTRACT_VERSION
+from kronos.instrument.visual_identity import VisualIdentityResolutionError, VISUAL_IDENTITY_NATIVE_CONTRACT_VERSION, uses_family_visual_authority
 from kronos.instrument.visual_identity_persistence import load_visual_identity_resolver
 from kronos.intraday.review import ReviewError, ReviewFailure
 from kronos.intraday.review_mcx_paired import (
@@ -123,12 +123,13 @@ class IntradayReviewV2PairedAdapter:
         payload = self.review.load_chart_bytes(chart)
         transport, pdf, template = create_paired_transport(pack=pack, bundle=bundle,
             native_chart_payload=payload, reference_chart_payload=payload,
-            generated_at=chart.received_at, supporting_reference_only=True)
+            generated_at=chart.received_at, supporting_reference_only=True,
+            family_visual=uses_family_visual_authority(self.native_resolver))
         return bundle, native, reference, pack, transport, pdf, template
 
     def create(self, cycle, chart, *, require_current):
         retained = self.retained(cycle, chart)
-        if retained is not None and retained[3].question_set_version == visual_v2.VERSION and retained[4].schema_version == "1.3.0":
+        if retained is not None and retained[3].question_set_version == visual_v2.VERSION and retained[4].schema_version == ("1.4.0" if uses_family_visual_authority(self.native_resolver) else "1.3.0"):
             bundle, native, reference, pack, transport, _, _ = retained
             pdf = self.store.load_bytes("question-pdfs", transport.transport_identity, ".pdf")
             template = self.store.load_bytes("answer-templates", transport.transport_identity)
@@ -188,7 +189,10 @@ class IntradayReviewV2PairedAdapter:
                     state = "ALREADY_IMPORTED"
                 else:
                     require_current()
-                    resolver = self.native_resolver or load_visual_identity_resolver(publication_version=VISUAL_IDENTITY_NATIVE_CONTRACT_VERSION)
+                    resolver = (self.native_resolver if transport.schema_version == "1.4.0"
+                        else load_visual_identity_resolver(publication_version=VISUAL_IDENTITY_NATIVE_CONTRACT_VERSION)
+                        if uses_family_visual_authority(self.native_resolver) else self.native_resolver)
+                    resolver = resolver or load_visual_identity_resolver(publication_version=VISUAL_IDENTITY_NATIVE_CONTRACT_VERSION)
                     # Preserve envelope/native-identity failure precedence. This
                     # pure comparison writes no Answer or evidence.
                     bind_mcx_paired_import(pack=pack, bundle=bundle,
@@ -199,7 +203,7 @@ class IntradayReviewV2PairedAdapter:
                         raise ReviewError(ReviewFailure.CHART_CORRESPONDENCE_UNVERIFIABLE)
                     from kronos.intraday.analyst_chart_observation import receipt as prepare_receipt
                     header = json.loads(parsed.chart_observation_header) if parsed.chart_observation_header else None
-                    if header and header["schema_version"] == "1.1.0" and transport.schema_version != "1.3.0":
+                    if header and header["schema_version"] == "1.1.0" and transport.schema_version not in {"1.3.0", "1.4.0"}:
                         raise ReviewError(ReviewFailure.ANSWER_SCHEMA_INVALID)
                     observation = prepare_receipt(parsed, pack, chart, self.review, imported_at=imported_at, paired=True)
                     correspondence = self.chart_input.require(cycle, chart, bundle=bundle, resolver=resolver, receipt=observation,

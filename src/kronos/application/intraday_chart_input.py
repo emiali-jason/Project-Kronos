@@ -19,7 +19,7 @@ class IntradayChartInputGate:
         self.native_history = McxContractHistoryStore(review.root.parent)
         self.native_bindings = ActiveDerivativeBindingStore(review.root.parent / "active-derivative-bindings")
 
-    def expectations(self, cycle, chart, bundle=None):
+    def expectations(self, cycle, chart, bundle=None, *, family_visual=False):
         handoff = self.review.load_handoff(cycle.handoff_identity)
         mapping = self.probables.load_mapping(handoff.source_mapping_identity)
         selection = self.probables.load_selection(handoff.completed_evidence_selection_identity)
@@ -47,7 +47,7 @@ class IntradayChartInputGate:
             reference = bundle.reference_relationship if bundle else None
             subject = (reference.reference_analytical_subject_identity if role == 'REFERENCE'
                        else cycle.canonical_subject_identity)
-            target = (subject if role == 'REFERENCE' or bundle is None else
+            target = (subject if role == 'REFERENCE' or bundle is None or family_visual else
                       bundle.native_identity_binding.actual_derivative_contract_identity)
             venue = reference.venue.value if role == 'REFERENCE' else ('MCX' if bundle else 'NSE')
             # Reference context is visual only; no reference market source is invented.
@@ -76,7 +76,7 @@ class IntradayChartInputGate:
                     selection=selection, history=self.native_history, calendar=self.calendar)
             result.append(ExpectedChartPanel(role, timeframe, subject, target, venue,
                 cycle.analysis_boundary,
-                chart.received_at if bundle and role == 'NATIVE' else cycle.analysis_boundary,
+                chart.received_at if bundle and role == 'NATIVE' and not family_visual else cycle.analysis_boundary,
                 source, schedule,
                 'INR' if bundle and role == 'NATIVE' else 'USD' if role == 'REFERENCE' else None,
                 supporting_visual_only=bool(bundle and role == 'REFERENCE')))
@@ -86,7 +86,8 @@ class IntradayChartInputGate:
         payload = self.review.load_chart_bytes(chart)
         receipt = receipt if receipt is not None else self.review.load_chart_input(chart)
         try:
-            expected = self.expectations(cycle, chart, bundle)
+            from kronos.instrument.visual_identity import uses_family_visual_authority
+            expected = self.expectations(cycle, chart, bundle, family_visual=uses_family_visual_authority(resolver or self.resolver))
         except ReviewError:
             raise
         except (ValueError, OSError) as error:
@@ -106,6 +107,7 @@ class IntradayChartInputGate:
 
     def require(self, cycle, chart, *, observed_native, observed_reference=None,
                 bundle=None, resolver=None, visual_answers=(), receipt=None):
+        from kronos.instrument.visual_identity import uses_family_visual_authority
         results = self.evaluate(cycle, chart, bundle=bundle, resolver=resolver, receipt=receipt)
         if any(r.overall is ValidationState.NOT_VALIDATED for r in results):
             raise ReviewError(ReviewFailure.CHART_CORRESPONDENCE_INVALID)
@@ -121,7 +123,7 @@ class IntradayChartInputGate:
         receipt = receipt if receipt is not None else self.review.load_chart_input(chart)
         if receipt is None or any(
             (p.observed_subject != observed_native if p.role == 'NATIVE' else
-             p.observed_series != observed_reference) for p in receipt.panels
+             (p.observed_subject if uses_family_visual_authority(resolver or self.resolver) else p.observed_series) != observed_reference) for p in receipt.panels
         ):
             raise ReviewError(ReviewFailure.ANSWER_IDENTITY_MISMATCH)
         if visual_answers:
