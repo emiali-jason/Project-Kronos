@@ -1,0 +1,2804 @@
+{
+  "schema": "WO-07E-NSE-VISUAL-COVERAGE-AUDIT-V1",
+  "status": "ENGINEERING_CANDIDATE_NOT_PUBLISHED",
+  "source_catalogue_sha256": "b5916affa58cb153e76847495d8d8e6ac281cf8384ad4c68212a67bd3c321d44",
+  "review_boundary": "2026-09-09T15:40:05.435000+00:00",
+  "publication_integrity": "INTEGRITY-VISUAL-IDENTITY-PUBLICATION-1689763376D1A492F216D4499E03C34A5743FD7729D2C20BD56EDDD137C72EA1",
+  "universe_count": 93,
+  "supported_count": 49,
+  "unavailable_count": 44,
+  "new_chart_sources": [
+    {
+      "canonical_identity": "NSE-EQ-ADANIENT",
+      "exact_visible_label": "Adani Enterprises Limited",
+      "source_context": "TRADINGVIEW_VISUAL_CHART",
+      "chart_sha256": "01b23f0276a4910e8603ecaf6fe031a0f0f7dc953c291e96c63629e7dd2f111c",
+      "chart_manifest_sha256": "b31720a9060f6f4fcf2f02681778f387a8796f7b1853e3ff1f77eda33fd0b27c",
+      "chart_relative_path": "swing-v1/native-review-composite-charts/SWING-RUN-915BCB97344540B3B708FDCF8335FC7F/ADANIENT/ade80c521227f85743d40c71c52842a94cfc6c5636e72b1d6072b330d147192f/native/ADANIENT/composite/r0001-original.png",
+      "manifest_relative_path": "swing-v1/native-review-composite-charts/SWING-RUN-915BCB97344540B3B708FDCF8335FC7F/ADANIENT/ade80c521227f85743d40c71c52842a94cfc6c5636e72b1d6072b330d147192f/native/ADANIENT/manifest.json",
+      "retained_at": "2026-08-17T09:41:32.861593+00:00",
+      "effective_from": "2026-08-23T00:00:00+05:30",
+      "evidence_class": "SPONSOR_TRADINGVIEW_UPLOAD_HEADER_INSPECTED",
+      "canonical_integrity_identity": "V2-DIRECT-04d77d7f1a778cafc890df773024c5153a527d337132c6d1c9f5c34ced328691"
+    },
+    {
+      "canonical_identity": "NSE-EQ-ADANIGREEN",
+      "exact_visible_label": "Adani Green Energy Limited",
+      "source_context": "TRADINGVIEW_VISUAL_CHART",
+      "chart_sha256": "b1dcab115b5d1b71ec0d07c63bd8e60966b63fd174621403d709ec3383225384",
+      "chart_manifest_sha256": "4d803d876080c324224761c3d3aca0e92ab9572abaabf0d53b50582146a93f12",
+      "chart_relative_path": "swing-v1/native-review-composite-charts/SWING-RUN-915BCB97344540B3B708FDCF8335FC7F/ADANIGREEN/85223b82f63b7f51664ac67b1a5cc03fb0eafaac37e3b4ae5fda6c65f109f0ab/native/ADANIGREEN/composite/r0001-original.png",
+      "manifest_relative_path": "swing-v1/native-review-composite-charts/SWING-RUN-915BCB97344540B3B708FDCF8335FC7F/ADANIGREEN/85223b82f63b7f51664ac67b1a5cc03fb0eafaac37e3b4ae5fda6c65f109f0ab/native/ADANIGREEN/manifest.json",
+      "retained_at": "2026-08-17T09:41:42.883957+00:00",
+      "effective_from": "2026-08-23T00:00:00+05:30",
+      "evidence_class": "SPONSOR_TRADINGVIEW_UPLOAD_HEADER_INSPECTED",
+      "canonical_integrity_identity": "V2-DIRECT-495379185159cc792bb098f7dd7592d335060906026ced2f65f64bd88e6335ce"
+    },
+    {
+      "canonical_identity": "NSE-EQ-ASIANPAINT",
+      "exact_visible_label": "Asian Paints Ltd.",
+      "source_context": "TRADINGVIEW_VISUAL_CHART",
+      "chart_sha256": "9ed4525d62b07255df04964005fb366bf8dc762ce1d18e8c84840e0d1ab42bdf",
+      "chart_manifest_sha256": "eb8dfa038a13247e47de85085b3ed50fdf3f26ad97f3c0da428f991ce9707481",
+      "chart_relative_path": "swing-v1/native-review-composite-charts/SWING-RUN-2DD7C518634D4C1AB5FCC223A5FAEC7C/ASIANPAINT/108fd807d1ec1210d8086f97ea79933bf6e2ba641cc0078161408e670b86b8ea/native/ASIANPAINT/composite/r0001-original.png",
+      "manifest_relative_path": "swing-v1/native-review-composite-charts/SWING-RUN-2DD7C518634D4C1AB5FCC223A5FAEC7C/ASIANPAINT/108fd807d1ec1210d8086f97ea79933bf6e2ba641cc0078161408e670b86b8ea/native/ASIANPAINT/manifest.json",
+      "retained_at": "2026-08-31T03:51:32.398210+00:00",
+      "effective_from": "2026-08-31T03:51:32.398210+00:00",
+      "evidence_class": "SPONSOR_TRADINGVIEW_UPLOAD_HEADER_INSPECTED",
+      "canonical_integrity_identity": "V2-DIRECT-0e0cc14dea1813523173605bbe69deea288d9e2d64f46494642780649fbbfdb2"
+    },
+    {
+      "canonical_identity": "NSE-EQ-BAJAJFINSV",
+      "exact_visible_label": "Bajaj Finserv Limited",
+      "source_context": "TRADINGVIEW_VISUAL_CHART",
+      "chart_sha256": "61feee526f7d52d2fd2e81803905d85e6bc3cdd45cde00282255dee477f7ac54",
+      "chart_manifest_sha256": "7a318af0054c0789d9091b2e59d7dde84ed751d1b2f745d5628b8676cd641090",
+      "chart_relative_path": "swing-v1/native-review-composite-charts/SWING-RUN-A5A7A1070DD04CE8ABF103BC1F123FE6/BAJAJFINSV/8ab4e1bf0a48ca57d788267981114b6d6ed7a11cbc8ef9e9fcbd425dc64b9543/native/BAJAJFINSV/composite/r0001-original.png",
+      "manifest_relative_path": "swing-v1/native-review-composite-charts/SWING-RUN-A5A7A1070DD04CE8ABF103BC1F123FE6/BAJAJFINSV/8ab4e1bf0a48ca57d788267981114b6d6ed7a11cbc8ef9e9fcbd425dc64b9543/native/BAJAJFINSV/manifest.json",
+      "retained_at": "2026-08-24T04:57:36.382259+00:00",
+      "effective_from": "2026-08-24T04:57:36.382259+00:00",
+      "evidence_class": "SPONSOR_TRADINGVIEW_UPLOAD_HEADER_INSPECTED",
+      "canonical_integrity_identity": "V2-DIRECT-c0b8694e46eb4c79557c1e97a6a28a591f07b2ce59b0ce5529c067286d3d4339"
+    },
+    {
+      "canonical_identity": "NSE-EQ-BAJAJ-AUTO",
+      "exact_visible_label": "Bajaj Auto Limited",
+      "source_context": "TRADINGVIEW_VISUAL_CHART",
+      "chart_sha256": "ba3f8bc62f4aeb17c322e5123e674c4b66ebd2d62b740b0b10eafbe3a172d12d",
+      "chart_manifest_sha256": "af905f52dc69e2532535698c1fac5bc7b777216506de6228144c6f4c15e1e0f8",
+      "chart_relative_path": "swing-v1/native-review-composite-charts/SWING-RUN-BAB1145F35A0427191DBE2E77033DA48/BAJAJ_AUTO/a49f02d2e31c3e4de7c1452362f07b0798f6a7173cc3d900306a55e29f131e68/native/BAJAJ_AUTO/composite/r0001-original.png",
+      "manifest_relative_path": "swing-v1/native-review-composite-charts/SWING-RUN-BAB1145F35A0427191DBE2E77033DA48/BAJAJ_AUTO/a49f02d2e31c3e4de7c1452362f07b0798f6a7173cc3d900306a55e29f131e68/native/BAJAJ_AUTO/manifest.json",
+      "retained_at": "2026-08-28T03:34:28.304214+00:00",
+      "effective_from": "2026-08-28T03:34:28.304214+00:00",
+      "evidence_class": "SPONSOR_TRADINGVIEW_UPLOAD_HEADER_INSPECTED",
+      "canonical_integrity_identity": "V2-DIRECT-fdd7238943b8e1d9eaebf02b9d4e3654cbd5e7173feca2bfdc70051f4ca3fc14"
+    },
+    {
+      "canonical_identity": "NSE-EQ-BAJFINANCE",
+      "exact_visible_label": "Bajaj Finance Limited",
+      "source_context": "TRADINGVIEW_VISUAL_CHART",
+      "chart_sha256": "1a88124cafb736bc8530b2257096407ae14e9b170799e9e540c2f602dabf0872",
+      "chart_manifest_sha256": "014417a478865cb1a40859cb8c80cc24678e2ace99e4aaf21579f717bd5af692",
+      "chart_relative_path": "swing-v1/native-review-composite-charts/SWING-RUN-AE08FE2F11634708AD8AD9F1A9630B30/BAJFINANCE/1cad0b2a2c5fc3df329f28d40a0df50041b029cb7595ca9c8c9505f5336cc513/native/BAJFINANCE/composite/r0001-original.png",
+      "manifest_relative_path": "swing-v1/native-review-composite-charts/SWING-RUN-AE08FE2F11634708AD8AD9F1A9630B30/BAJFINANCE/1cad0b2a2c5fc3df329f28d40a0df50041b029cb7595ca9c8c9505f5336cc513/native/BAJFINANCE/manifest.json",
+      "retained_at": "2026-08-18T03:17:50.919185+00:00",
+      "effective_from": "2026-08-23T00:00:00+05:30",
+      "evidence_class": "SPONSOR_TRADINGVIEW_UPLOAD_HEADER_INSPECTED",
+      "canonical_integrity_identity": "V2-DIRECT-626346f9fce1959e38c0c0ae5f97e9e347ec44bd2b2127f63d905907b8225432"
+    },
+    {
+      "canonical_identity": "NSE-EQ-BDL",
+      "exact_visible_label": "Bharat Dynamics Ltd.",
+      "source_context": "TRADINGVIEW_VISUAL_CHART",
+      "chart_sha256": "7e747e9288d544cca1df2494298e09e67a7d122eb678e99a314a37cb78bcfa0f",
+      "chart_manifest_sha256": "b22f5952c35ef5459dcec13cacf3c4fef86cb8be4b3ef6ef56ef0d73b0e0d999",
+      "chart_relative_path": "swing-v1/native-review-composite-charts/SWING-RUN-805D363D6B3F4C5798C891202377973C/BDL/483f71cc4accdbc680b3c486d416cfc49caf487a28a80c113481bee6214877e6/native/BDL/composite/r0001-original.png",
+      "manifest_relative_path": "swing-v1/native-review-composite-charts/SWING-RUN-805D363D6B3F4C5798C891202377973C/BDL/483f71cc4accdbc680b3c486d416cfc49caf487a28a80c113481bee6214877e6/native/BDL/manifest.json",
+      "retained_at": "2026-08-27T04:08:47.648003+00:00",
+      "effective_from": "2026-08-27T04:08:47.648003+00:00",
+      "evidence_class": "SPONSOR_TRADINGVIEW_UPLOAD_HEADER_INSPECTED",
+      "canonical_integrity_identity": "V2-DIRECT-c23f061283c65d8d4f663d93084b40e047f436a957c154d4f780a145a6ff6697"
+    },
+    {
+      "canonical_identity": "NSE-EQ-BEL",
+      "exact_visible_label": "Bharat Electronics Limited",
+      "source_context": "TRADINGVIEW_VISUAL_CHART",
+      "chart_sha256": "ac893a8f24e93445cb8615e385722f4412a24fa7b11a41211ec0eb6564865713",
+      "chart_manifest_sha256": "1d4c5024c93f0970d559bd115b865e098989633e4578eaf8457c0354a177aa9b",
+      "chart_relative_path": "swing-v1/native-review-composite-charts/SWING-RUN-85E44F6715DC4EE8A454AA645A77CBBC/BEL/d47bb052b650c4be7de3ef9c5d79aad7950f1190dd6200c37648abddde8d89f9/native/BEL/composite/r0001-original.png",
+      "manifest_relative_path": "swing-v1/native-review-composite-charts/SWING-RUN-85E44F6715DC4EE8A454AA645A77CBBC/BEL/d47bb052b650c4be7de3ef9c5d79aad7950f1190dd6200c37648abddde8d89f9/native/BEL/manifest.json",
+      "retained_at": "2026-08-25T13:32:21.739718+00:00",
+      "effective_from": "2026-08-25T13:32:21.739718+00:00",
+      "evidence_class": "SPONSOR_TRADINGVIEW_UPLOAD_HEADER_INSPECTED",
+      "canonical_integrity_identity": "V2-DIRECT-846e7a533b4c87e386bc1082db60ad6e8ba4139a4368c3f659a822986b918d40"
+    },
+    {
+      "canonical_identity": "NSE-EQ-CANBK",
+      "exact_visible_label": "Canara Bank",
+      "source_context": "TRADINGVIEW_VISUAL_CHART",
+      "chart_sha256": "15825123d546a49331b2285ab4eea391324a9856e3e822cc6f9c7a8e5eafbeac",
+      "chart_manifest_sha256": "6d9e1060f009b3d3fe4190bce706cde721756bd6bf5962a23b1c543702590d18",
+      "chart_relative_path": "swing-v1/native-review-composite-charts/SWING-RUN-3FDE9883176C4F489DCF36A2FA960027/CANBK/867e1cfcfafa131f9fd5cdd204f12603f0aed276beb3cba2de19884f2754ed78/native/CANBK/composite/r0001-original.png",
+      "manifest_relative_path": "swing-v1/native-review-composite-charts/SWING-RUN-3FDE9883176C4F489DCF36A2FA960027/CANBK/867e1cfcfafa131f9fd5cdd204f12603f0aed276beb3cba2de19884f2754ed78/native/CANBK/manifest.json",
+      "retained_at": "2026-08-16T08:47:37.537994+00:00",
+      "effective_from": "2026-08-23T00:00:00+05:30",
+      "evidence_class": "SPONSOR_TRADINGVIEW_UPLOAD_HEADER_INSPECTED",
+      "canonical_integrity_identity": "V2-DIRECT-d2056361fe21972e9eccb415146145c84622147f265f7b963b7cf70b26851a9d"
+    },
+    {
+      "canonical_identity": "NSE-EQ-CDSL",
+      "exact_visible_label": "Central Depository Services (India) Limited",
+      "source_context": "TRADINGVIEW_VISUAL_CHART",
+      "chart_sha256": "e63e87ffc46045eec10256567eb8a4f00bedfa2a813df18ae641b531de348b07",
+      "chart_manifest_sha256": "c4e001921beb0495eae3c4922831d3f9dd20d1ae19c74d91fb45d3144a927866",
+      "chart_relative_path": "swing-v1/native-review-composite-charts/SWING-RUN-3FDE9883176C4F489DCF36A2FA960027/CDSL/ed3f9f5501e31cfe2d7cff9e5a4bcc89ad004e9148bdb562ece7c898331f9ab0/native/CDSL/composite/r0001-original.png",
+      "manifest_relative_path": "swing-v1/native-review-composite-charts/SWING-RUN-3FDE9883176C4F489DCF36A2FA960027/CDSL/ed3f9f5501e31cfe2d7cff9e5a4bcc89ad004e9148bdb562ece7c898331f9ab0/native/CDSL/manifest.json",
+      "retained_at": "2026-08-16T08:47:47.064580+00:00",
+      "effective_from": "2026-08-23T00:00:00+05:30",
+      "evidence_class": "SPONSOR_TRADINGVIEW_UPLOAD_HEADER_INSPECTED",
+      "canonical_integrity_identity": "V2-DIRECT-aba7776707e2f36f3962b9578b7a4d4b3b7341c6118c788565994eb268337881"
+    },
+    {
+      "canonical_identity": "NSE-EQ-DIVISLAB",
+      "exact_visible_label": "Divis Laboratories Limited",
+      "source_context": "TRADINGVIEW_VISUAL_CHART",
+      "chart_sha256": "5f0d3f06475ab2eb7e4e4b2af212d8c464b9d8b92c132524668a125287d80262",
+      "chart_manifest_sha256": "ec6b98dd9c0e3ffafc367b074fb19c363d8845b5dfd43e7b539af144cfddc30e",
+      "chart_relative_path": "swing-v1/native-review-composite-charts/SWING-RUN-805D363D6B3F4C5798C891202377973C/DIVISLAB/fe5039e68c99b0887a147418c5322da9f8461834f7348b8052c1ff473d93f400/native/DIVISLAB/composite/r0001-original.png",
+      "manifest_relative_path": "swing-v1/native-review-composite-charts/SWING-RUN-805D363D6B3F4C5798C891202377973C/DIVISLAB/fe5039e68c99b0887a147418c5322da9f8461834f7348b8052c1ff473d93f400/native/DIVISLAB/manifest.json",
+      "retained_at": "2026-08-27T04:12:42.329199+00:00",
+      "effective_from": "2026-08-27T04:12:42.329199+00:00",
+      "evidence_class": "SPONSOR_TRADINGVIEW_UPLOAD_HEADER_INSPECTED",
+      "canonical_integrity_identity": "V2-DIRECT-df4436f574f583c3c563470462830c69e2a6423b2de39a1d85d4e6e1ed778fe5"
+    },
+    {
+      "canonical_identity": "NSE-EQ-EICHERMOT",
+      "exact_visible_label": "Eicher Motors Limited",
+      "source_context": "TRADINGVIEW_VISUAL_CHART",
+      "chart_sha256": "ee038d535fa72d793ffe8a71ca4bd90d555947eb7af58c53367c6fab71f53bf2",
+      "chart_manifest_sha256": "8e77184a484327891c83038b52b9299f765f4d34b73bc905b4c3e1ccbfa9a972",
+      "chart_relative_path": "swing-v1/native-review-composite-charts/SWING-RUN-3FDE9883176C4F489DCF36A2FA960027/EICHERMOT/99f5c533266e0b56ceaccc2bdd10e6a0f228d7a2434a93065e48d26e5022335a/native/EICHERMOT/composite/r0001-original.png",
+      "manifest_relative_path": "swing-v1/native-review-composite-charts/SWING-RUN-3FDE9883176C4F489DCF36A2FA960027/EICHERMOT/99f5c533266e0b56ceaccc2bdd10e6a0f228d7a2434a93065e48d26e5022335a/native/EICHERMOT/manifest.json",
+      "retained_at": "2026-08-16T08:47:09.746290+00:00",
+      "effective_from": "2026-08-23T00:00:00+05:30",
+      "evidence_class": "SPONSOR_TRADINGVIEW_UPLOAD_HEADER_INSPECTED",
+      "canonical_integrity_identity": "V2-DIRECT-29c538309e938d8ad105ee8a86e3d17d7e5b3363fa0a7059f1f9e616342530c6"
+    },
+    {
+      "canonical_identity": "NSE-EQ-ETERNAL",
+      "exact_visible_label": "Eternal Limited",
+      "source_context": "TRADINGVIEW_VISUAL_CHART",
+      "chart_sha256": "9a4eea0ca7175bc1c2fafd399440e2bdc8b3dcf88b53207b1776538b85e940c4",
+      "chart_manifest_sha256": "01a8a61b3bdb959787e715051b293547457795fcac919e27ca7f95ece8eacf3f",
+      "chart_relative_path": "swing-v1/native-review-composite-charts/SWING-RUN-927F458B00334D488C9833163B160B58/ETERNAL/0e56ad2990e989fb706b449238f1c53d0ce669f8878b248b07382bdd29771ace/native/ETERNAL/composite/r0001-original.png",
+      "manifest_relative_path": "swing-v1/native-review-composite-charts/SWING-RUN-927F458B00334D488C9833163B160B58/ETERNAL/0e56ad2990e989fb706b449238f1c53d0ce669f8878b248b07382bdd29771ace/native/ETERNAL/manifest.json",
+      "retained_at": "2026-08-21T03:01:27.268301+00:00",
+      "effective_from": "2026-08-23T00:00:00+05:30",
+      "evidence_class": "SPONSOR_TRADINGVIEW_UPLOAD_HEADER_INSPECTED",
+      "canonical_integrity_identity": "V2-DIRECT-4fdfb1183c3db64cbd80a7b18f8979cac532b9f2dee8d5d9df8977d41c1e858b"
+    },
+    {
+      "canonical_identity": "NSE-EQ-HAL",
+      "exact_visible_label": "Hindustan Aeronautics Limited",
+      "source_context": "TRADINGVIEW_VISUAL_CHART",
+      "chart_sha256": "ad54758abdaee3b0aa42befd1dcd40ef6bddec578497fe632477f3e9ead19ae5",
+      "chart_manifest_sha256": "bc3929fa1280e9f08fcb2774f98c0b6b70dae5aca213882aca87ca0794f2d2f0",
+      "chart_relative_path": "swing-v1/native-review-composite-charts/SWING-RUN-915BCB97344540B3B708FDCF8335FC7F/HAL/d4e6a61562c47ad63014519309c483272928908e7a023b35d1ee8f88e8f30a71/native/HAL/composite/r0001-original.png",
+      "manifest_relative_path": "swing-v1/native-review-composite-charts/SWING-RUN-915BCB97344540B3B708FDCF8335FC7F/HAL/d4e6a61562c47ad63014519309c483272928908e7a023b35d1ee8f88e8f30a71/native/HAL/manifest.json",
+      "retained_at": "2026-08-17T09:42:25.501240+00:00",
+      "effective_from": "2026-08-23T00:00:00+05:30",
+      "evidence_class": "SPONSOR_TRADINGVIEW_UPLOAD_HEADER_INSPECTED",
+      "canonical_integrity_identity": "V2-DIRECT-003fa8de8e11c1c8e32859812a620c4eb5dc0a725d44148837b4e4622f83f9d6"
+    },
+    {
+      "canonical_identity": "NSE-EQ-HDFCBANK",
+      "exact_visible_label": "HDFC Bank Limited",
+      "source_context": "TRADINGVIEW_VISUAL_CHART",
+      "chart_sha256": "fcabb4e9389e845c70ca927272984d74faa86f80ef2720b9b9f0c60e7b793678",
+      "chart_manifest_sha256": "14921deae729063ccabe824f35ce1acabfe5d8d61b24b73e1f456df49c12d3b5",
+      "chart_relative_path": "swing-v1/native-review-composite-charts/SWING-RUN-BAB1145F35A0427191DBE2E77033DA48/HDFCBANK/b6f39e30cd8fff5e130290e622df45b1c95a55c869d9c46779c0842a2ff7038c/native/HDFCBANK/composite/r0001-original.png",
+      "manifest_relative_path": "swing-v1/native-review-composite-charts/SWING-RUN-BAB1145F35A0427191DBE2E77033DA48/HDFCBANK/b6f39e30cd8fff5e130290e622df45b1c95a55c869d9c46779c0842a2ff7038c/native/HDFCBANK/manifest.json",
+      "retained_at": "2026-08-28T03:37:53.897587+00:00",
+      "effective_from": "2026-08-28T03:37:53.897587+00:00",
+      "evidence_class": "SPONSOR_TRADINGVIEW_UPLOAD_HEADER_INSPECTED",
+      "canonical_integrity_identity": "V2-DIRECT-cd8ace607b2770d4faa9a8d288c34344a059021681c07c2c3ec3e1adaa93a0b5"
+    },
+    {
+      "canonical_identity": "NSE-EQ-HINDALCO",
+      "exact_visible_label": "Hindalco Industries Limited",
+      "source_context": "TRADINGVIEW_VISUAL_CHART",
+      "chart_sha256": "61b00f5ebd47a6e8719da9085d372a02ebc0b87919070026072ab0c3826ded07",
+      "chart_manifest_sha256": "342fa8415efbe261bac9a1881d406fc16d5ecd1ca9e48cdbf16b356f3f11a236",
+      "chart_relative_path": "swing-v1/native-review-composite-charts/SWING-RUN-927F458B00334D488C9833163B160B58/HINDALCO/286ba134905141daccd22059f7e26a4db8045d92bff411c9c8e12cc3bd614a0d/native/HINDALCO/composite/r0001-original.png",
+      "manifest_relative_path": "swing-v1/native-review-composite-charts/SWING-RUN-927F458B00334D488C9833163B160B58/HINDALCO/286ba134905141daccd22059f7e26a4db8045d92bff411c9c8e12cc3bd614a0d/native/HINDALCO/manifest.json",
+      "retained_at": "2026-08-21T03:01:43.076720+00:00",
+      "effective_from": "2026-08-23T00:00:00+05:30",
+      "evidence_class": "SPONSOR_TRADINGVIEW_UPLOAD_HEADER_INSPECTED",
+      "canonical_integrity_identity": "V2-DIRECT-2cac6a1ade9c015dd61e306019c2dc30b12823dbd32cb699b45e23ee8daf1255"
+    },
+    {
+      "canonical_identity": "NSE-EQ-HINDUNILVR",
+      "exact_visible_label": "Hindustan Unilever Limited",
+      "source_context": "TRADINGVIEW_VISUAL_CHART",
+      "chart_sha256": "1e7cd77cafe39f8fa04d9010c58b9589ece439f35883ebc648462324a5ba0474",
+      "chart_manifest_sha256": "027d9fa623bf84f9260bbe052256c97cd0d61d827b89e3c84c11dc63da1252c1",
+      "chart_relative_path": "swing-v1/native-review-composite-charts/SWING-RUN-8A2B3DC405264D388E04799AEF8D245E/HINDUNILVR/702174cc216478bda63654f286c32583cc783affcaf5b1f3e7f3fa762c8c3be4/native/HINDUNILVR/composite/r0001-original.png",
+      "manifest_relative_path": "swing-v1/native-review-composite-charts/SWING-RUN-8A2B3DC405264D388E04799AEF8D245E/HINDUNILVR/702174cc216478bda63654f286c32583cc783affcaf5b1f3e7f3fa762c8c3be4/native/HINDUNILVR/manifest.json",
+      "retained_at": "2026-08-19T17:49:36.692148+00:00",
+      "effective_from": "2026-08-23T00:00:00+05:30",
+      "evidence_class": "SPONSOR_TRADINGVIEW_UPLOAD_HEADER_INSPECTED",
+      "canonical_integrity_identity": "V2-DIRECT-7c278b4a04bb9d755e25d6f1341290d01ca865c23d8c0291bb5b8cf377930214"
+    },
+    {
+      "canonical_identity": "NSE-EQ-INDIANB",
+      "exact_visible_label": "Indian Bank",
+      "source_context": "TRADINGVIEW_VISUAL_CHART",
+      "chart_sha256": "a8243834ef5641bb2e11c3114fb4e846f8bd0bacef610908b8cefc057d4a6492",
+      "chart_manifest_sha256": "638fe7d28423e234b285dc57da431360d82d5eb971eee80547f097ab13ccb84d",
+      "chart_relative_path": "swing-v1/native-review-composite-charts/SWING-RUN-915BCB97344540B3B708FDCF8335FC7F/INDIANB/7aefbff739e5b89a7bcffe76fac10e4226c6569777f167ea793830ad683e9ec4/native/INDIANB/composite/r0001-original.png",
+      "manifest_relative_path": "swing-v1/native-review-composite-charts/SWING-RUN-915BCB97344540B3B708FDCF8335FC7F/INDIANB/7aefbff739e5b89a7bcffe76fac10e4226c6569777f167ea793830ad683e9ec4/native/INDIANB/manifest.json",
+      "retained_at": "2026-08-17T09:42:40.662941+00:00",
+      "effective_from": "2026-08-23T00:00:00+05:30",
+      "evidence_class": "SPONSOR_TRADINGVIEW_UPLOAD_HEADER_INSPECTED",
+      "canonical_integrity_identity": "V2-DIRECT-5fa7790ff814a8b689c7499bcf0278fe91b8063440aa3620d016554c41121d9f"
+    },
+    {
+      "canonical_identity": "NSE-EQ-INDIGO",
+      "exact_visible_label": "InterGlobe Aviation Ltd",
+      "source_context": "TRADINGVIEW_VISUAL_CHART",
+      "chart_sha256": "a04d9059ff2eb4d70a3192f78ccc3fa65599e0f406c126785c34f830033b54dc",
+      "chart_manifest_sha256": "0bf3821c4a8ac4649643e0c2c89a03d9a51188526184a462f0292d68f55b626c",
+      "chart_relative_path": "swing-v1/native-review-composite-charts/SWING-RUN-915BCB97344540B3B708FDCF8335FC7F/INDIGO/5c519ded4b7d928cf1df19702cfc9f30c364bbe5326a6238374d4b5882301b7c/native/INDIGO/composite/r0001-original.png",
+      "manifest_relative_path": "swing-v1/native-review-composite-charts/SWING-RUN-915BCB97344540B3B708FDCF8335FC7F/INDIGO/5c519ded4b7d928cf1df19702cfc9f30c364bbe5326a6238374d4b5882301b7c/native/INDIGO/manifest.json",
+      "retained_at": "2026-08-17T09:44:18.626224+00:00",
+      "effective_from": "2026-08-23T00:00:00+05:30",
+      "evidence_class": "SPONSOR_TRADINGVIEW_UPLOAD_HEADER_INSPECTED",
+      "canonical_integrity_identity": "V2-DIRECT-88bcdc5874ae5ae92cb4f268f0cc382a3bd1db91c2dcb8d889c634c03f4da1c0"
+    },
+    {
+      "canonical_identity": "NSE-EQ-ITC",
+      "exact_visible_label": "ITC Limited",
+      "source_context": "TRADINGVIEW_VISUAL_CHART",
+      "chart_sha256": "ec65452e672ebdbfdf33f4668157c26c15c5945d89b37ce0210ef6ca5adb729f",
+      "chart_manifest_sha256": "f7ee01f7fd7e344d05c96e9cea0097c93d7b40b8dceb8113c0843e699c85d767",
+      "chart_relative_path": "swing-v1/native-review-composite-charts/SWING-RUN-2DD7C518634D4C1AB5FCC223A5FAEC7C/ITC/81cea2f4bd63785b7f058fc65ac21a03666857b001e6153458b501f99323ba92/native/ITC/composite/r0001-original.png",
+      "manifest_relative_path": "swing-v1/native-review-composite-charts/SWING-RUN-2DD7C518634D4C1AB5FCC223A5FAEC7C/ITC/81cea2f4bd63785b7f058fc65ac21a03666857b001e6153458b501f99323ba92/native/ITC/manifest.json",
+      "retained_at": "2026-08-31T03:53:29.512375+00:00",
+      "effective_from": "2026-08-31T03:53:29.512375+00:00",
+      "evidence_class": "SPONSOR_TRADINGVIEW_UPLOAD_HEADER_INSPECTED",
+      "canonical_integrity_identity": "V2-DIRECT-8ea19a985e6f4327aaf93c97f9616d6c79c42330ad1f14cec0f1f1fc3ff187b8"
+    },
+    {
+      "canonical_identity": "NSE-EQ-KOTAKBANK",
+      "exact_visible_label": "Kotak Mahindra Bank Limited",
+      "source_context": "TRADINGVIEW_VISUAL_CHART",
+      "chart_sha256": "b1a74a40b4ce884937be8d8670a593c7ebdf019c3aac4ba4c7fe032c49eab161",
+      "chart_manifest_sha256": "db0a8d5fe4bac28543295c228704ead265ef10251f0cd00d429f99b2cbe13575",
+      "chart_relative_path": "swing-v1/native-review-composite-charts/SWING-RUN-3FDE9883176C4F489DCF36A2FA960027/KOTAKBANK/404e85d7fc23a18d1dda8f5b14a97bdf6c545c5e28f41f0b3ce5fa757ae7069b/native/KOTAKBANK/composite/r0001-original.png",
+      "manifest_relative_path": "swing-v1/native-review-composite-charts/SWING-RUN-3FDE9883176C4F489DCF36A2FA960027/KOTAKBANK/404e85d7fc23a18d1dda8f5b14a97bdf6c545c5e28f41f0b3ce5fa757ae7069b/native/KOTAKBANK/manifest.json",
+      "retained_at": "2026-08-16T08:49:22.016023+00:00",
+      "effective_from": "2026-08-23T00:00:00+05:30",
+      "evidence_class": "SPONSOR_TRADINGVIEW_UPLOAD_HEADER_INSPECTED",
+      "canonical_integrity_identity": "V2-DIRECT-714ade79413775f283569596f46f00413e2b9ed044138399f3f4af9913e34ed9"
+    },
+    {
+      "canonical_identity": "NSE-EQ-LICI",
+      "exact_visible_label": "Life Insurance Corp. of India",
+      "source_context": "TRADINGVIEW_VISUAL_CHART",
+      "chart_sha256": "33824e8b384efecceb9ce0fb1c12730c62cf482db7234d92b971bee3f43ffde1",
+      "chart_manifest_sha256": "79e097e1382bb70697f47df0f8b903199418aebf53018988474761efe1efbcab",
+      "chart_relative_path": "swing-v1/native-review-composite-charts/SWING-RUN-915BCB97344540B3B708FDCF8335FC7F/LICI/25f213b00f5b5ed68f96c490707d966fdb3fb856e6c7b1d2edf6c968782fa9d8/native/LICI/composite/r0001-original.png",
+      "manifest_relative_path": "swing-v1/native-review-composite-charts/SWING-RUN-915BCB97344540B3B708FDCF8335FC7F/LICI/25f213b00f5b5ed68f96c490707d966fdb3fb856e6c7b1d2edf6c968782fa9d8/native/LICI/manifest.json",
+      "retained_at": "2026-08-17T09:43:10.588967+00:00",
+      "effective_from": "2026-08-23T00:00:00+05:30",
+      "evidence_class": "SPONSOR_TRADINGVIEW_UPLOAD_HEADER_INSPECTED",
+      "canonical_integrity_identity": "V2-DIRECT-ab3f43c670a9849770d5b2ee4715336e8dbb3d4e15a6d7cc24a69b4387d7842a"
+    },
+    {
+      "canonical_identity": "NSE-EQ-LT",
+      "exact_visible_label": "Larsen & Toubro Limited",
+      "source_context": "TRADINGVIEW_VISUAL_CHART",
+      "chart_sha256": "1ebc9dba2d7f4e57f89ddd2555c82b8c0733e1d61e530b4f8117dbdf0d6e7673",
+      "chart_manifest_sha256": "3274066a923052d57033f13cb1bf5a2ab9c852182ac32140db221e0dfc1511d9",
+      "chart_relative_path": "swing-v1/native-review-composite-charts/SWING-RUN-805D363D6B3F4C5798C891202377973C/LT/3e9846ef5fb13c636e90c7715151579da7dba8d71ebc0986c0836f62745e67e5/native/LT/composite/r0001-original.png",
+      "manifest_relative_path": "swing-v1/native-review-composite-charts/SWING-RUN-805D363D6B3F4C5798C891202377973C/LT/3e9846ef5fb13c636e90c7715151579da7dba8d71ebc0986c0836f62745e67e5/native/LT/manifest.json",
+      "retained_at": "2026-08-27T04:13:50.860904+00:00",
+      "effective_from": "2026-08-27T04:13:50.860904+00:00",
+      "evidence_class": "SPONSOR_TRADINGVIEW_UPLOAD_HEADER_INSPECTED",
+      "canonical_integrity_identity": "V2-DIRECT-5b1c249b470fdbca0476e9308f942671d8085e7856dc7d7c3f937743255e3ad3"
+    },
+    {
+      "canonical_identity": "NSE-EQ-M&M",
+      "exact_visible_label": "Mahindra & Mahindra Ltd.",
+      "source_context": "TRADINGVIEW_VISUAL_CHART",
+      "chart_sha256": "aa12e58cf8ca89d79f9ee4f074eb4ce54016e8dbc9e051230979516c2b06bb2d",
+      "chart_manifest_sha256": "d7a8a6966904f70f09c45304d65e564b7f02e8c91fce69e9b125176d7a1a9d01",
+      "chart_relative_path": "swing-v1/native-review-composite-charts/SWING-RUN-3FDE9883176C4F489DCF36A2FA960027/M&M/46cc0943d76e27751322d2be9f39a60a634af487228bb5ad2d2f1dc9706a93db/native/M&M/composite/r0001-original.png",
+      "manifest_relative_path": "swing-v1/native-review-composite-charts/SWING-RUN-3FDE9883176C4F489DCF36A2FA960027/M&M/46cc0943d76e27751322d2be9f39a60a634af487228bb5ad2d2f1dc9706a93db/native/M&M/manifest.json",
+      "retained_at": "2026-08-16T08:48:28.734712+00:00",
+      "effective_from": "2026-08-23T00:00:00+05:30",
+      "evidence_class": "SPONSOR_TRADINGVIEW_UPLOAD_HEADER_INSPECTED",
+      "canonical_integrity_identity": "V2-DIRECT-0e8424af7c3731a7f39fd25f4e24cf8f89b1ef1d9b9b8610dc00c6b993afd921"
+    },
+    {
+      "canonical_identity": "NSE-EQ-MAZDOCK",
+      "exact_visible_label": "Mazagon Dock Shipbuilders Ltd.",
+      "source_context": "TRADINGVIEW_VISUAL_CHART",
+      "chart_sha256": "9331c46d927b6ad6e36412ead690fd10974d4720b9eeac225fc8f48849921f13",
+      "chart_manifest_sha256": "82f8a3de191459ca8680693463d9cd6c601b90390db9ececa1e0d7a6bf78fd5a",
+      "chart_relative_path": "swing-v1/native-review-composite-charts/SWING-RUN-805D363D6B3F4C5798C891202377973C/MAZDOCK/90c63c8333d0dbc0a723dd6a6270f087330d0242adf4c45d8a038bec73ce3d3c/native/MAZDOCK/composite/r0001-original.png",
+      "manifest_relative_path": "swing-v1/native-review-composite-charts/SWING-RUN-805D363D6B3F4C5798C891202377973C/MAZDOCK/90c63c8333d0dbc0a723dd6a6270f087330d0242adf4c45d8a038bec73ce3d3c/native/MAZDOCK/manifest.json",
+      "retained_at": "2026-08-27T04:14:08.241532+00:00",
+      "effective_from": "2026-08-27T04:14:08.241532+00:00",
+      "evidence_class": "SPONSOR_TRADINGVIEW_UPLOAD_HEADER_INSPECTED",
+      "canonical_integrity_identity": "V2-DIRECT-0e94aea0aebe84bf9ec3c6068ca7fc6bdcc165a09bc04a43f801a788a96e274f"
+    },
+    {
+      "canonical_identity": "NSE-EQ-MCX",
+      "exact_visible_label": "Multi Commodity Exchange of India Limited",
+      "source_context": "TRADINGVIEW_VISUAL_CHART",
+      "chart_sha256": "6ba22e6d71eb5a1d9d8bd72c2ab890f56efd7074d282a0061a9c24b837dc493f",
+      "chart_manifest_sha256": "0df256b5ae39bf90ccee5525ce60de1f2d01b86282b387368ae8f25ccb9321a7",
+      "chart_relative_path": "swing-v1/native-review-composite-charts/SWING-RUN-927F458B00334D488C9833163B160B58/MCX/605ababa1170a080d351cde25b9b36eeee3abf8b671280faa783751fb3628fef/native/MCX/composite/r0001-original.png",
+      "manifest_relative_path": "swing-v1/native-review-composite-charts/SWING-RUN-927F458B00334D488C9833163B160B58/MCX/605ababa1170a080d351cde25b9b36eeee3abf8b671280faa783751fb3628fef/native/MCX/manifest.json",
+      "retained_at": "2026-08-21T03:02:54.508114+00:00",
+      "effective_from": "2026-08-23T00:00:00+05:30",
+      "evidence_class": "SPONSOR_TRADINGVIEW_UPLOAD_HEADER_INSPECTED",
+      "canonical_integrity_identity": "V2-DIRECT-e17d7c5c115fcc177b046d99c445f653d57a75efdb61e6700e1cd4405ba8ea2d"
+    },
+    {
+      "canonical_identity": "NSE-EQ-NAUKRI",
+      "exact_visible_label": "Info Edge India Ltd.",
+      "source_context": "TRADINGVIEW_VISUAL_CHART",
+      "chart_sha256": "12816ab069a79451734a926dfa23953c90740d89978539d2d4e7c0ff87b84667",
+      "chart_manifest_sha256": "7927f58b52460505cd42c55b7b54c7030ee7f4154e0000a552f5931c9a5c3d0f",
+      "chart_relative_path": "swing-v1/native-review-composite-charts/SWING-RUN-85E44F6715DC4EE8A454AA645A77CBBC/NAUKRI/83d2e7ddfea59312f40c86f0e71728e3a00e12e6cf0da188dd9382e97992963b/native/NAUKRI/composite/r0001-original.png",
+      "manifest_relative_path": "swing-v1/native-review-composite-charts/SWING-RUN-85E44F6715DC4EE8A454AA645A77CBBC/NAUKRI/83d2e7ddfea59312f40c86f0e71728e3a00e12e6cf0da188dd9382e97992963b/native/NAUKRI/manifest.json",
+      "retained_at": "2026-08-25T13:42:33.618433+00:00",
+      "effective_from": "2026-08-25T13:42:33.618433+00:00",
+      "evidence_class": "SPONSOR_TRADINGVIEW_UPLOAD_HEADER_INSPECTED",
+      "canonical_integrity_identity": "V2-DIRECT-252f294c83b42a74aabd71c638bbfe7ecd48354c0094c1cd8f3433d188b350fb"
+    },
+    {
+      "canonical_identity": "NSE-EQ-NTPC",
+      "exact_visible_label": "NTPC Limited",
+      "source_context": "TRADINGVIEW_VISUAL_CHART",
+      "chart_sha256": "456b8117e4145fc4d3ad8723f937b8f480dff36d60174fb581bb0d9fa7c191f1",
+      "chart_manifest_sha256": "0ff4ebc7e94f91465a108219541665b43f2b8880c87a38c57505446d9803e8ac",
+      "chart_relative_path": "swing-v1/native-review-composite-charts/SWING-RUN-A5A7A1070DD04CE8ABF103BC1F123FE6/NTPC/8161d086a76bf45208bb33db8ef7999f1f3ef00e66cfa13864330cf821d8202c/native/NTPC/composite/r0001-original.png",
+      "manifest_relative_path": "swing-v1/native-review-composite-charts/SWING-RUN-A5A7A1070DD04CE8ABF103BC1F123FE6/NTPC/8161d086a76bf45208bb33db8ef7999f1f3ef00e66cfa13864330cf821d8202c/native/NTPC/manifest.json",
+      "retained_at": "2026-08-24T04:58:45.223733+00:00",
+      "effective_from": "2026-08-24T04:58:45.223733+00:00",
+      "evidence_class": "SPONSOR_TRADINGVIEW_UPLOAD_HEADER_INSPECTED",
+      "canonical_integrity_identity": "V2-DIRECT-7a3eebf6a43184aa2ba525bdfb3f26c1e3843a94f7d9387e8278334914fb0d4d"
+    },
+    {
+      "canonical_identity": "NSE-EQ-PERSISTENT",
+      "exact_visible_label": "Persistent Systems Ltd.",
+      "source_context": "TRADINGVIEW_VISUAL_CHART",
+      "chart_sha256": "6464f4165bc46f3764dc9e8452965da6cbcafb108550e6df501c6f726b9f68d8",
+      "chart_manifest_sha256": "1fcdd8059b180ee5df6d35c9f362bab6e9e30c86a4d22b0e51c01c59ff61a798",
+      "chart_relative_path": "swing-v1/native-review-composite-charts/SWING-RUN-927F458B00334D488C9833163B160B58/PERSISTENT/9140a3976e8b3745fd1af826ce99d54ca59c680e9fdef5faa12dc58aeec5ef70/native/PERSISTENT/composite/r0001-original.png",
+      "manifest_relative_path": "swing-v1/native-review-composite-charts/SWING-RUN-927F458B00334D488C9833163B160B58/PERSISTENT/9140a3976e8b3745fd1af826ce99d54ca59c680e9fdef5faa12dc58aeec5ef70/native/PERSISTENT/manifest.json",
+      "retained_at": "2026-08-21T03:02:20.638934+00:00",
+      "effective_from": "2026-08-23T00:00:00+05:30",
+      "evidence_class": "SPONSOR_TRADINGVIEW_UPLOAD_HEADER_INSPECTED",
+      "canonical_integrity_identity": "V2-DIRECT-e889d2426af9ce60005064410042a57fd45f7b7c00c6787a4ebe9b635bac5e35"
+    },
+    {
+      "canonical_identity": "NSE-EQ-PNB",
+      "exact_visible_label": "Punjab National Bank",
+      "source_context": "TRADINGVIEW_VISUAL_CHART",
+      "chart_sha256": "f55c1bb5f73e8af8e57ad3315af3b7ea5d1365d8aee7fbe7db3354784a236d97",
+      "chart_manifest_sha256": "cbfeebbbaf48087d4ca5bed98d5c974fb22492bf54769c98cc6045e96427f6ef",
+      "chart_relative_path": "swing-v1/native-review-composite-charts/SWING-RUN-85E44F6715DC4EE8A454AA645A77CBBC/PNB/43c2aaaa6e7ae997920293094d57fe0add6c0c06dc84eb5c52c5f70342dbfcf4/native/PNB/composite/r0001-original.png",
+      "manifest_relative_path": "swing-v1/native-review-composite-charts/SWING-RUN-85E44F6715DC4EE8A454AA645A77CBBC/PNB/43c2aaaa6e7ae997920293094d57fe0add6c0c06dc84eb5c52c5f70342dbfcf4/native/PNB/manifest.json",
+      "retained_at": "2026-08-25T13:43:08.791081+00:00",
+      "effective_from": "2026-08-25T13:43:08.791081+00:00",
+      "evidence_class": "SPONSOR_TRADINGVIEW_UPLOAD_HEADER_INSPECTED",
+      "canonical_integrity_identity": "V2-DIRECT-c24f8c4fcb172c9b32e4f135993aa8e26fa3bce34080e173a2a5b3e1f7b2f39f"
+    },
+    {
+      "canonical_identity": "NSE-EQ-POLICYBZR",
+      "exact_visible_label": "PB Fintech Limited",
+      "source_context": "TRADINGVIEW_VISUAL_CHART",
+      "chart_sha256": "87e000d80870d3604937141975e5c2be0f3b5d1affc8ae349622c5e5e9ca8dc8",
+      "chart_manifest_sha256": "ff95d45e645ccce6bc7c8655a147a71a6db36f1bae855329cc949e5ffe9dc852",
+      "chart_relative_path": "swing-v1/native-review-composite-charts/SWING-RUN-8A2B3DC405264D388E04799AEF8D245E/POLICYBZR/8c448bbafcf7fd99018a77f434f590d28eb4f67bc67317115a08c560e2760072/native/POLICYBZR/composite/r0001-original.png",
+      "manifest_relative_path": "swing-v1/native-review-composite-charts/SWING-RUN-8A2B3DC405264D388E04799AEF8D245E/POLICYBZR/8c448bbafcf7fd99018a77f434f590d28eb4f67bc67317115a08c560e2760072/native/POLICYBZR/manifest.json",
+      "retained_at": "2026-08-19T17:49:50.897331+00:00",
+      "effective_from": "2026-08-23T00:00:00+05:30",
+      "evidence_class": "SPONSOR_TRADINGVIEW_UPLOAD_HEADER_INSPECTED",
+      "canonical_integrity_identity": "V2-DIRECT-603e9d301c8090ae80757b25742d0ac4cf4e301fbfbac5083f78160b192dc545"
+    },
+    {
+      "canonical_identity": "NSE-EQ-POWERINDIA",
+      "exact_visible_label": "Hitachi Energy India Limited",
+      "source_context": "TRADINGVIEW_VISUAL_CHART",
+      "chart_sha256": "5a9a09de4fa3b4137c9bf98133c49cccf705c81ea55fcbb2b2f5ff1e4fb265a9",
+      "chart_manifest_sha256": "192da52425ef9b21e3b65a74006be71696d4e474c1d678de77e5c3d7e4b7db42",
+      "chart_relative_path": "swing-v1/native-review-composite-charts/SWING-RUN-BAB1145F35A0427191DBE2E77033DA48/POWERINDIA/f9038bde325b969a89179a4db5d94e79be076e851fa4ef91dbf7180309a374d6/native/POWERINDIA/composite/r0001-original.png",
+      "manifest_relative_path": "swing-v1/native-review-composite-charts/SWING-RUN-BAB1145F35A0427191DBE2E77033DA48/POWERINDIA/f9038bde325b969a89179a4db5d94e79be076e851fa4ef91dbf7180309a374d6/native/POWERINDIA/manifest.json",
+      "retained_at": "2026-08-28T03:38:59.653389+00:00",
+      "effective_from": "2026-08-28T03:38:59.653389+00:00",
+      "evidence_class": "SPONSOR_TRADINGVIEW_UPLOAD_HEADER_INSPECTED",
+      "canonical_integrity_identity": "V2-DIRECT-4406d5a7b750def05363bfbdf9856799a4f18dab7112a19bdcebd32a4ae385a4"
+    },
+    {
+      "canonical_identity": "RELIANCE",
+      "exact_visible_label": "Reliance Industries Limited",
+      "source_context": "TRADINGVIEW_VISUAL_CHART",
+      "chart_sha256": "6ee4f96ee2e47add1700b12578d2829250260da681ff85673e5d1e49c07e7ed8",
+      "chart_manifest_sha256": "6462f33f2d0b7ba6022763fd60d2d8a60539b75acf88db64ff4847c21efcadea",
+      "chart_relative_path": "swing-v1/native-review-composite-charts/SWING-RUN-3FDE9883176C4F489DCF36A2FA960027/RELIANCE/d6a8ce9de88974a60d6298ef6af6170a16fe92229ae8643c8bfe592cacbd5429/native/RELIANCE/composite/r0001-original.png",
+      "manifest_relative_path": "swing-v1/native-review-composite-charts/SWING-RUN-3FDE9883176C4F489DCF36A2FA960027/RELIANCE/d6a8ce9de88974a60d6298ef6af6170a16fe92229ae8643c8bfe592cacbd5429/native/RELIANCE/manifest.json",
+      "retained_at": "2026-08-16T08:48:41.394488+00:00",
+      "effective_from": "2026-08-23T00:00:00+05:30",
+      "evidence_class": "SPONSOR_TRADINGVIEW_UPLOAD_HEADER_INSPECTED",
+      "canonical_integrity_identity": "V2-DIRECT-da0be2f36e8b9167a5263e36171a210c14d5bfb8f9452caec7a5793af1e87fe8"
+    },
+    {
+      "canonical_identity": "NSE-EQ-RVNL",
+      "exact_visible_label": "Rail Vikas Nigam Ltd.",
+      "source_context": "TRADINGVIEW_VISUAL_CHART",
+      "chart_sha256": "84c41e97e604d47cb6d6321ff48a21f47fd82d6ba18e65c7104a6c0c90184cd8",
+      "chart_manifest_sha256": "4ce1fa4e87c2a9435be0f9d3ffa8e410fea9df9561be68430072324b4b6e5276",
+      "chart_relative_path": "swing-v1/native-review-composite-charts/SWING-RUN-3FDE9883176C4F489DCF36A2FA960027/RVNL/65c622267a988c8b6b32d64cb4ec434a64d19234b2d7aeb231838e5071e0df37/native/RVNL/composite/r0001-original.png",
+      "manifest_relative_path": "swing-v1/native-review-composite-charts/SWING-RUN-3FDE9883176C4F489DCF36A2FA960027/RVNL/65c622267a988c8b6b32d64cb4ec434a64d19234b2d7aeb231838e5071e0df37/native/RVNL/manifest.json",
+      "retained_at": "2026-08-16T08:48:55.733886+00:00",
+      "effective_from": "2026-08-23T00:00:00+05:30",
+      "evidence_class": "SPONSOR_TRADINGVIEW_UPLOAD_HEADER_INSPECTED",
+      "canonical_integrity_identity": "V2-DIRECT-710a9c5eb69eabb932c342e8a512d2fcf4b97b57d58ce9a0b6279c6f24c10ec2"
+    },
+    {
+      "canonical_identity": "NSE-EQ-SAIL",
+      "exact_visible_label": "Steel Authority of India Limited",
+      "source_context": "TRADINGVIEW_VISUAL_CHART",
+      "chart_sha256": "2cbb81c197c8b36488fa8842b8aa78a339f91e398341167590fa7fc6fdf56e70",
+      "chart_manifest_sha256": "4ae620d31bfb89104430cc22aaeb4b618d33bb739be85a64f2fb96eeed4d646c",
+      "chart_relative_path": "swing-v1/native-review-composite-charts/SWING-RUN-AE08FE2F11634708AD8AD9F1A9630B30/SAIL/a2a00df9b446de83557e689198f00dba2005cf46976b67738cb01b312682e281/native/SAIL/composite/r0001-original.png",
+      "manifest_relative_path": "swing-v1/native-review-composite-charts/SWING-RUN-AE08FE2F11634708AD8AD9F1A9630B30/SAIL/a2a00df9b446de83557e689198f00dba2005cf46976b67738cb01b312682e281/native/SAIL/manifest.json",
+      "retained_at": "2026-08-18T03:19:15.607296+00:00",
+      "effective_from": "2026-08-23T00:00:00+05:30",
+      "evidence_class": "SPONSOR_TRADINGVIEW_UPLOAD_HEADER_INSPECTED",
+      "canonical_integrity_identity": "V2-DIRECT-0d7db06fe17c6ea75e87dc14fc032c114fd5afe8819361f53d0db575c59ef443"
+    },
+    {
+      "canonical_identity": "NSE-EQ-SBIN",
+      "exact_visible_label": "State Bank of India",
+      "source_context": "TRADINGVIEW_VISUAL_CHART",
+      "chart_sha256": "75878be0aeecefb79d573eb8e479043df97cf2c4b29c5a509e742377290deb14",
+      "chart_manifest_sha256": "b074b63d0650896721bcc8578228bc5b00f72319d206d5e86b9310c1dd4b217b",
+      "chart_relative_path": "swing-v1/native-review-composite-charts/SWING-RUN-915BCB97344540B3B708FDCF8335FC7F/SBIN/8848050b536f1fff6699ca56cf75c58f5060d0fd5b49b45f721cfa6a13b4dc28/native/SBIN/composite/r0001-original.png",
+      "manifest_relative_path": "swing-v1/native-review-composite-charts/SWING-RUN-915BCB97344540B3B708FDCF8335FC7F/SBIN/8848050b536f1fff6699ca56cf75c58f5060d0fd5b49b45f721cfa6a13b4dc28/native/SBIN/manifest.json",
+      "retained_at": "2026-08-17T09:43:44.924137+00:00",
+      "effective_from": "2026-08-23T00:00:00+05:30",
+      "evidence_class": "SPONSOR_TRADINGVIEW_UPLOAD_HEADER_INSPECTED",
+      "canonical_integrity_identity": "V2-DIRECT-ee9c62b7c7202830b579801113108ea6c8bab520e291a25bbe13045929efd5c9"
+    },
+    {
+      "canonical_identity": "NSE-EQ-TATASTEEL",
+      "exact_visible_label": "Tata Steel Limited",
+      "source_context": "TRADINGVIEW_VISUAL_CHART",
+      "chart_sha256": "722c9329a4e32cc2079fccfa2ca7909518edc621608297ebb0429f7a65f46f42",
+      "chart_manifest_sha256": "8c22bb95c023e8e66520c663bad04335c2b70ab88658291064fcb0b1fd6b1760",
+      "chart_relative_path": "swing-v1/native-review-composite-charts/SWING-RUN-85E44F6715DC4EE8A454AA645A77CBBC/TATASTEEL/8a18350c16b4b686ffbff71354275ded547e8c8bf3a1ceb9988297dc6ff9122a/native/TATASTEEL/composite/r0001-original.png",
+      "manifest_relative_path": "swing-v1/native-review-composite-charts/SWING-RUN-85E44F6715DC4EE8A454AA645A77CBBC/TATASTEEL/8a18350c16b4b686ffbff71354275ded547e8c8bf3a1ceb9988297dc6ff9122a/native/TATASTEEL/manifest.json",
+      "retained_at": "2026-08-25T13:43:22.711270+00:00",
+      "effective_from": "2026-08-25T13:43:22.711270+00:00",
+      "evidence_class": "SPONSOR_TRADINGVIEW_UPLOAD_HEADER_INSPECTED",
+      "canonical_integrity_identity": "V2-DIRECT-2aa1a99def1947dec83d6bd11d5986533080bcf189d7b84ea40eb5c7513873c8"
+    },
+    {
+      "canonical_identity": "NSE-EQ-VBL",
+      "exact_visible_label": "Varun Beverages Ltd.",
+      "source_context": "TRADINGVIEW_VISUAL_CHART",
+      "chart_sha256": "01c4e93af1d21cf4673de6a99b3bcd8547512d7a9188439c0bd1f8ed870b85af",
+      "chart_manifest_sha256": "4981827c8764495223ee79e1218a29dd3632472c286732820523a89ebe84f861",
+      "chart_relative_path": "swing-v1/native-review-composite-charts/SWING-RUN-A5A7A1070DD04CE8ABF103BC1F123FE6/VBL/301b1b2a450dab93ec1b03751402449b4f4918c442c2b3f01b9ae1140146306c/native/VBL/composite/r0001-original.png",
+      "manifest_relative_path": "swing-v1/native-review-composite-charts/SWING-RUN-A5A7A1070DD04CE8ABF103BC1F123FE6/VBL/301b1b2a450dab93ec1b03751402449b4f4918c442c2b3f01b9ae1140146306c/native/VBL/manifest.json",
+      "retained_at": "2026-08-24T04:59:22.765562+00:00",
+      "effective_from": "2026-08-24T04:59:22.765562+00:00",
+      "evidence_class": "SPONSOR_TRADINGVIEW_UPLOAD_HEADER_INSPECTED",
+      "canonical_integrity_identity": "V2-DIRECT-108f1a82126302d337bdaa4c89a1ccf367e87f20005d967ee768d006d16edc3b"
+    },
+    {
+      "canonical_identity": "NSE-EQ-VEDL",
+      "exact_visible_label": "Vedanta Limited",
+      "source_context": "TRADINGVIEW_VISUAL_CHART",
+      "chart_sha256": "e2756c84a06c42cebecb76f478889ce165a9ad6526425adc71f932c4335a3106",
+      "chart_manifest_sha256": "df22fd9c3a95fd2828d32869a4699b39b02d61f1a6cd830dd0a1bb0fea76ab3d",
+      "chart_relative_path": "swing-v1/native-review-composite-charts/SWING-RUN-A5A7A1070DD04CE8ABF103BC1F123FE6/VEDL/18f0508125fddcc1fa2ba3bb7b8d08a949755f1c1af2024344a28309a59cec10/native/VEDL/composite/r0001-original.png",
+      "manifest_relative_path": "swing-v1/native-review-composite-charts/SWING-RUN-A5A7A1070DD04CE8ABF103BC1F123FE6/VEDL/18f0508125fddcc1fa2ba3bb7b8d08a949755f1c1af2024344a28309a59cec10/native/VEDL/manifest.json",
+      "retained_at": "2026-08-24T04:59:29.948931+00:00",
+      "effective_from": "2026-08-24T04:59:29.948931+00:00",
+      "evidence_class": "SPONSOR_TRADINGVIEW_UPLOAD_HEADER_INSPECTED",
+      "canonical_integrity_identity": "V2-DIRECT-d3be2dd1d910689c089363750829f5d7634601bf060ab0510f68875626e59c60"
+    },
+    {
+      "canonical_identity": "NSE-EQ-WIPRO",
+      "exact_visible_label": "Wipro Limited",
+      "source_context": "TRADINGVIEW_VISUAL_CHART",
+      "chart_sha256": "fabd78410df5fdf8af5718e5c29b125c182863b5e26ed00d2757a9188a273184",
+      "chart_manifest_sha256": "3ffdfaa823112583f3ac39165dd371d54ba4f3ff26eec055ddd4f590fc89c52d",
+      "chart_relative_path": "swing-v1/native-review-composite-charts/SWING-RUN-85E44F6715DC4EE8A454AA645A77CBBC/WIPRO/09175794de7f3f5d323fc5fd45f1d65e6e2b40399d67894ce538059fe076b954/native/WIPRO/composite/r0001-original.png",
+      "manifest_relative_path": "swing-v1/native-review-composite-charts/SWING-RUN-85E44F6715DC4EE8A454AA645A77CBBC/WIPRO/09175794de7f3f5d323fc5fd45f1d65e6e2b40399d67894ce538059fe076b954/native/WIPRO/manifest.json",
+      "retained_at": "2026-08-25T13:43:47.733267+00:00",
+      "effective_from": "2026-08-25T13:43:47.733267+00:00",
+      "evidence_class": "SPONSOR_TRADINGVIEW_UPLOAD_HEADER_INSPECTED",
+      "canonical_integrity_identity": "V2-DIRECT-8d9d929603294dad3d7cbd57fc32aa24848bcb0e80859d6cb8ae2e31553a306d"
+    }
+  ],
+  "coverage": [
+    {
+      "canonical_identity": "NSE-EQ-ADANIENT",
+      "expected_tradingview_symbol": "NSE:ADANIENT",
+      "existing_labels": [],
+      "verified_chart_labels": [
+        "Adani Enterprises Limited"
+      ],
+      "relationship_currently_published": false,
+      "evidence_supported_candidate_coverage": true,
+      "unavailable_reason": null,
+      "candidate_publication_version": "1.5.0",
+      "candidate_relationship_published": true,
+      "relationships": [
+        {
+          "exact_visible_label": "Adani Enterprises Limited",
+          "source_context": "TRADINGVIEW_VISUAL_CHART",
+          "effective_from": "2026-08-23T00:00:00+05:30",
+          "effective_through": "9999-12-31T23:59:59.999999+00:00",
+          "relationship_identity": "VISUAL-IDENTITY-RELATIONSHIP-06A5053A0796C7DA900D16D18422E21A8AAE1F642F5AD398BE920BD13D7DC349",
+          "provenance": [
+            "ADR-0018",
+            "WO-07E-NSE-VISUAL-IDENTITY-SPONSOR-AUTHORIZATION",
+            "CHART-SHA256-01b23f0276a4910e8603ecaf6fe031a0f0f7dc953c291e96c63629e7dd2f111c",
+            "CHART-MANIFEST-SHA256-b31720a9060f6f4fcf2f02681778f387a8796f7b1853e3ff1f77eda33fd0b27c",
+            "SPONSOR-TRADINGVIEW-UPLOAD-2026-08-17T09:41:32.861593+00:00",
+            "V2-DIRECT-04d77d7f1a778cafc890df773024c5153a527d337132c6d1c9f5c34ced328691",
+            "CATALOGUE-V2-1.2.0-SHA256-b5916affa58cb153e76847495d8d8e6ac281cf8384ad4c68212a67bd3c321d44",
+            "EXACT-VISIBLE-NSE-HEADER-INSPECTED;NO-NAME-INFERENCE"
+          ]
+        }
+      ],
+      "effective_at_review_boundary": true,
+      "resolution_result": "RESOLVES_EXACT_REGISTERED_LABEL"
+    },
+    {
+      "canonical_identity": "NSE-EQ-ADANIGREEN",
+      "expected_tradingview_symbol": "NSE:ADANIGREEN",
+      "existing_labels": [],
+      "verified_chart_labels": [
+        "Adani Green Energy Limited"
+      ],
+      "relationship_currently_published": false,
+      "evidence_supported_candidate_coverage": true,
+      "unavailable_reason": null,
+      "candidate_publication_version": "1.5.0",
+      "candidate_relationship_published": true,
+      "relationships": [
+        {
+          "exact_visible_label": "Adani Green Energy Limited",
+          "source_context": "TRADINGVIEW_VISUAL_CHART",
+          "effective_from": "2026-08-23T00:00:00+05:30",
+          "effective_through": "9999-12-31T23:59:59.999999+00:00",
+          "relationship_identity": "VISUAL-IDENTITY-RELATIONSHIP-D26DC3B37D3B0B356A39F72044BA0D4D981BE8DF984BE6DE349200C3F25AEA4E",
+          "provenance": [
+            "ADR-0018",
+            "WO-07E-NSE-VISUAL-IDENTITY-SPONSOR-AUTHORIZATION",
+            "CHART-SHA256-b1dcab115b5d1b71ec0d07c63bd8e60966b63fd174621403d709ec3383225384",
+            "CHART-MANIFEST-SHA256-4d803d876080c324224761c3d3aca0e92ab9572abaabf0d53b50582146a93f12",
+            "SPONSOR-TRADINGVIEW-UPLOAD-2026-08-17T09:41:42.883957+00:00",
+            "V2-DIRECT-495379185159cc792bb098f7dd7592d335060906026ced2f65f64bd88e6335ce",
+            "CATALOGUE-V2-1.2.0-SHA256-b5916affa58cb153e76847495d8d8e6ac281cf8384ad4c68212a67bd3c321d44",
+            "EXACT-VISIBLE-NSE-HEADER-INSPECTED;NO-NAME-INFERENCE"
+          ]
+        }
+      ],
+      "effective_at_review_boundary": true,
+      "resolution_result": "RESOLVES_EXACT_REGISTERED_LABEL"
+    },
+    {
+      "canonical_identity": "NSE-EQ-ADANIPORTS",
+      "expected_tradingview_symbol": "NSE:ADANIPORTS",
+      "existing_labels": [],
+      "verified_chart_labels": [],
+      "relationship_currently_published": false,
+      "evidence_supported_candidate_coverage": false,
+      "unavailable_reason": "NO_RETAINED_SOURCE_QUALIFIED_VISUAL_LABEL_ESTABLISHED; catalogue/provider/company-name data alone not sufficient",
+      "candidate_publication_version": "1.5.0",
+      "candidate_relationship_published": false,
+      "relationships": [],
+      "effective_at_review_boundary": false,
+      "resolution_result": "VISUAL_IDENTITY_RELATIONSHIP_UNAVAILABLE"
+    },
+    {
+      "canonical_identity": "NSE-EQ-ALKEM",
+      "expected_tradingview_symbol": "NSE:ALKEM",
+      "existing_labels": [],
+      "verified_chart_labels": [],
+      "relationship_currently_published": false,
+      "evidence_supported_candidate_coverage": false,
+      "unavailable_reason": "NO_RETAINED_SOURCE_QUALIFIED_VISUAL_LABEL_ESTABLISHED; catalogue/provider/company-name data alone not sufficient",
+      "candidate_publication_version": "1.5.0",
+      "candidate_relationship_published": false,
+      "relationships": [],
+      "effective_at_review_boundary": false,
+      "resolution_result": "VISUAL_IDENTITY_RELATIONSHIP_UNAVAILABLE"
+    },
+    {
+      "canonical_identity": "NSE-EQ-APOLLOHOSP",
+      "expected_tradingview_symbol": "NSE:APOLLOHOSP",
+      "existing_labels": [
+        "Apollo Hospitals Enterprise Limited"
+      ],
+      "verified_chart_labels": [],
+      "relationship_currently_published": true,
+      "evidence_supported_candidate_coverage": true,
+      "unavailable_reason": null,
+      "candidate_publication_version": "1.5.0",
+      "candidate_relationship_published": true,
+      "relationships": [
+        {
+          "exact_visible_label": "Apollo Hospitals Enterprise Limited",
+          "source_context": "TRADINGVIEW_VISUAL_CHART",
+          "effective_from": "2026-08-28T17:18:48.326000+00:00",
+          "effective_through": "9999-12-31T23:59:59.999999+00:00",
+          "relationship_identity": "VISUAL-IDENTITY-RELATIONSHIP-7691DF8287DA6A081A0D6779A49D4C2C1FE07D521B6AE319FB14F43F96E6D67F",
+          "provenance": [
+            "ADR-0018",
+            "INTRADAY-CHART-REVISION-V2-C7D624C192E3FF2522F5316A44298882628FC77F56E53BCD555F3EED0DFF8977",
+            "INTRADAY-CHART-ARTIFACT-V2-0AABEA4AA15F38E0338394F820EA1876D1683E71B8FC7580C9FE4C613E497DB4",
+            "CHART-PAYLOAD-SHA256-3eaba63dd8cff63f5dae1ce4b1fb205bcc39800cd63f2b95e2391ab76a684fec",
+            "ANALYST-ANSWER-SHA256-63419e99ad91bb0670d263b1f6e1f289d96ed2ea87ca61e0d19af19a623b12a4",
+            "INTRADAY-V2-CHART-ANALYST-OPERATION-38569841F5DE513B99C9B705A9284196CA58E0C24B888BC3BDD0A8C212E9677A"
+          ]
+        }
+      ],
+      "effective_at_review_boundary": true,
+      "resolution_result": "RESOLVES_EXACT_REGISTERED_LABEL"
+    },
+    {
+      "canonical_identity": "NSE-EQ-ASIANPAINT",
+      "expected_tradingview_symbol": "NSE:ASIANPAINT",
+      "existing_labels": [],
+      "verified_chart_labels": [
+        "Asian Paints Ltd."
+      ],
+      "relationship_currently_published": false,
+      "evidence_supported_candidate_coverage": true,
+      "unavailable_reason": null,
+      "candidate_publication_version": "1.5.0",
+      "candidate_relationship_published": true,
+      "relationships": [
+        {
+          "exact_visible_label": "Asian Paints Ltd.",
+          "source_context": "TRADINGVIEW_VISUAL_CHART",
+          "effective_from": "2026-08-31T03:51:32.398210+00:00",
+          "effective_through": "9999-12-31T23:59:59.999999+00:00",
+          "relationship_identity": "VISUAL-IDENTITY-RELATIONSHIP-534DC059EB9449DFF345086B3A5C35570C4424A2F3953590AD96B1809E1411ED",
+          "provenance": [
+            "ADR-0018",
+            "WO-07E-NSE-VISUAL-IDENTITY-SPONSOR-AUTHORIZATION",
+            "CHART-SHA256-9ed4525d62b07255df04964005fb366bf8dc762ce1d18e8c84840e0d1ab42bdf",
+            "CHART-MANIFEST-SHA256-eb8dfa038a13247e47de85085b3ed50fdf3f26ad97f3c0da428f991ce9707481",
+            "SPONSOR-TRADINGVIEW-UPLOAD-2026-08-31T03:51:32.398210+00:00",
+            "V2-DIRECT-0e0cc14dea1813523173605bbe69deea288d9e2d64f46494642780649fbbfdb2",
+            "CATALOGUE-V2-1.2.0-SHA256-b5916affa58cb153e76847495d8d8e6ac281cf8384ad4c68212a67bd3c321d44",
+            "EXACT-VISIBLE-NSE-HEADER-INSPECTED;NO-NAME-INFERENCE"
+          ]
+        }
+      ],
+      "effective_at_review_boundary": true,
+      "resolution_result": "RESOLVES_EXACT_REGISTERED_LABEL"
+    },
+    {
+      "canonical_identity": "NSE-EQ-AXISBANK",
+      "expected_tradingview_symbol": "NSE:AXISBANK",
+      "existing_labels": [],
+      "verified_chart_labels": [],
+      "relationship_currently_published": false,
+      "evidence_supported_candidate_coverage": false,
+      "unavailable_reason": "NO_RETAINED_SOURCE_QUALIFIED_VISUAL_LABEL_ESTABLISHED; catalogue/provider/company-name data alone not sufficient",
+      "candidate_publication_version": "1.5.0",
+      "candidate_relationship_published": false,
+      "relationships": [],
+      "effective_at_review_boundary": false,
+      "resolution_result": "VISUAL_IDENTITY_RELATIONSHIP_UNAVAILABLE"
+    },
+    {
+      "canonical_identity": "NSE-EQ-BAJAJ-AUTO",
+      "expected_tradingview_symbol": "NSE:BAJAJ_AUTO",
+      "existing_labels": [
+        "Bajaj Auto Limited"
+      ],
+      "verified_chart_labels": [
+        "Bajaj Auto Limited"
+      ],
+      "relationship_currently_published": true,
+      "evidence_supported_candidate_coverage": true,
+      "unavailable_reason": null,
+      "candidate_publication_version": "1.5.0",
+      "candidate_relationship_published": true,
+      "relationships": [
+        {
+          "exact_visible_label": "Bajaj Auto Limited",
+          "source_context": "TRADINGVIEW_VISUAL_CHART",
+          "effective_from": "2026-08-28T17:18:48.326000+00:00",
+          "effective_through": "9999-12-31T23:59:59.999999+00:00",
+          "relationship_identity": "VISUAL-IDENTITY-RELATIONSHIP-BFC8D944DEA3E80936772FCBDD90ECC4FB741B2948927F7D49D1B5519685A550",
+          "provenance": [
+            "ADR-0018",
+            "INTRADAY-CHART-REVISION-V2-9EA3273BE8C2B85D99EC2A1906A80F0ED08AB8545AE9E6A6E2F66A6D8A920B2E",
+            "INTRADAY-CHART-ARTIFACT-V2-230ACF0D5246CFC058E45979ABB0CBADC12406A89E3367699DB8D7950CAC5093",
+            "CHART-PAYLOAD-SHA256-c60740d7050677a7542313b95a2ffa9402856f0aa8b2efd7e920895ed3c8e8f3",
+            "ANALYST-ANSWER-SHA256-63419e99ad91bb0670d263b1f6e1f289d96ed2ea87ca61e0d19af19a623b12a4",
+            "INTRADAY-V2-CHART-ANALYST-OPERATION-38569841F5DE513B99C9B705A9284196CA58E0C24B888BC3BDD0A8C212E9677A"
+          ]
+        }
+      ],
+      "effective_at_review_boundary": true,
+      "resolution_result": "RESOLVES_EXACT_REGISTERED_LABEL"
+    },
+    {
+      "canonical_identity": "NSE-EQ-BAJAJFINSV",
+      "expected_tradingview_symbol": "NSE:BAJAJFINSV",
+      "existing_labels": [],
+      "verified_chart_labels": [
+        "Bajaj Finserv Limited"
+      ],
+      "relationship_currently_published": false,
+      "evidence_supported_candidate_coverage": true,
+      "unavailable_reason": null,
+      "candidate_publication_version": "1.5.0",
+      "candidate_relationship_published": true,
+      "relationships": [
+        {
+          "exact_visible_label": "Bajaj Finserv Limited",
+          "source_context": "TRADINGVIEW_VISUAL_CHART",
+          "effective_from": "2026-08-24T04:57:36.382259+00:00",
+          "effective_through": "9999-12-31T23:59:59.999999+00:00",
+          "relationship_identity": "VISUAL-IDENTITY-RELATIONSHIP-B6FA5AB08596CC15DCD456F727D349860D85EB07C86C266056E8B9295BB94E37",
+          "provenance": [
+            "ADR-0018",
+            "WO-07E-NSE-VISUAL-IDENTITY-SPONSOR-AUTHORIZATION",
+            "CHART-SHA256-61feee526f7d52d2fd2e81803905d85e6bc3cdd45cde00282255dee477f7ac54",
+            "CHART-MANIFEST-SHA256-7a318af0054c0789d9091b2e59d7dde84ed751d1b2f745d5628b8676cd641090",
+            "SPONSOR-TRADINGVIEW-UPLOAD-2026-08-24T04:57:36.382259+00:00",
+            "V2-DIRECT-c0b8694e46eb4c79557c1e97a6a28a591f07b2ce59b0ce5529c067286d3d4339",
+            "CATALOGUE-V2-1.2.0-SHA256-b5916affa58cb153e76847495d8d8e6ac281cf8384ad4c68212a67bd3c321d44",
+            "EXACT-VISIBLE-NSE-HEADER-INSPECTED;NO-NAME-INFERENCE"
+          ]
+        }
+      ],
+      "effective_at_review_boundary": true,
+      "resolution_result": "RESOLVES_EXACT_REGISTERED_LABEL"
+    },
+    {
+      "canonical_identity": "NSE-EQ-BAJFINANCE",
+      "expected_tradingview_symbol": "NSE:BAJFINANCE",
+      "existing_labels": [],
+      "verified_chart_labels": [
+        "Bajaj Finance Limited"
+      ],
+      "relationship_currently_published": false,
+      "evidence_supported_candidate_coverage": true,
+      "unavailable_reason": null,
+      "candidate_publication_version": "1.5.0",
+      "candidate_relationship_published": true,
+      "relationships": [
+        {
+          "exact_visible_label": "Bajaj Finance Limited",
+          "source_context": "TRADINGVIEW_VISUAL_CHART",
+          "effective_from": "2026-08-23T00:00:00+05:30",
+          "effective_through": "9999-12-31T23:59:59.999999+00:00",
+          "relationship_identity": "VISUAL-IDENTITY-RELATIONSHIP-DC77905AD582CCDA845C9C27048D430E1D094A41A57A3CAAF5740DE823546AB6",
+          "provenance": [
+            "ADR-0018",
+            "WO-07E-NSE-VISUAL-IDENTITY-SPONSOR-AUTHORIZATION",
+            "CHART-SHA256-1a88124cafb736bc8530b2257096407ae14e9b170799e9e540c2f602dabf0872",
+            "CHART-MANIFEST-SHA256-014417a478865cb1a40859cb8c80cc24678e2ace99e4aaf21579f717bd5af692",
+            "SPONSOR-TRADINGVIEW-UPLOAD-2026-08-18T03:17:50.919185+00:00",
+            "V2-DIRECT-626346f9fce1959e38c0c0ae5f97e9e347ec44bd2b2127f63d905907b8225432",
+            "CATALOGUE-V2-1.2.0-SHA256-b5916affa58cb153e76847495d8d8e6ac281cf8384ad4c68212a67bd3c321d44",
+            "EXACT-VISIBLE-NSE-HEADER-INSPECTED;NO-NAME-INFERENCE"
+          ]
+        }
+      ],
+      "effective_at_review_boundary": true,
+      "resolution_result": "RESOLVES_EXACT_REGISTERED_LABEL"
+    },
+    {
+      "canonical_identity": "NSE-EQ-BDL",
+      "expected_tradingview_symbol": "NSE:BDL",
+      "existing_labels": [
+        "Bharat Dynamics Ltd."
+      ],
+      "verified_chart_labels": [
+        "Bharat Dynamics Ltd."
+      ],
+      "relationship_currently_published": true,
+      "evidence_supported_candidate_coverage": true,
+      "unavailable_reason": null,
+      "candidate_publication_version": "1.5.0",
+      "candidate_relationship_published": true,
+      "relationships": [
+        {
+          "exact_visible_label": "Bharat Dynamics Ltd.",
+          "source_context": "TRADINGVIEW_VISUAL_CHART",
+          "effective_from": "2026-09-04T13:47:57+00:00",
+          "effective_through": "9999-12-31T23:59:59.999999+00:00",
+          "relationship_identity": "VISUAL-IDENTITY-RELATIONSHIP-D24498428495102AC5F53BBCE1E841EB4BA26978B5161FC072FC66CEA0DE9F38",
+          "provenance": [
+            "ADR-0018",
+            "WO-BR2-PROVABLE-VISUAL-IDENTITY-COVERAGE-2026-09-06",
+            "INTRADAY-REVIEW-V2-CYCLE-4632BA233512181CE319F4A6A1BDE36AEF776C2B9CA0F9C8F365C5DAF0E44BE9",
+            "INTRADAY-CHART-REVISION-V2-92C6BC53AA7B4C92391CA0280A7EFFE9FE0B172FF8E167A90B6C57C104597D29",
+            "CHART-PAYLOAD-SHA256-6e2028da09e2689f6b20c3be2f9a3ea960c9b08260750339dccd3a46fe080125",
+            "OBSERVATION-BOUNDARY-2026-09-04T13:47:57+00:00",
+            "KRONOS-CANONICAL-INSTRUMENT-CATALOGUE-V2:1.2.0"
+          ]
+        }
+      ],
+      "effective_at_review_boundary": true,
+      "resolution_result": "RESOLVES_EXACT_REGISTERED_LABEL"
+    },
+    {
+      "canonical_identity": "NSE-EQ-BEL",
+      "expected_tradingview_symbol": "NSE:BEL",
+      "existing_labels": [],
+      "verified_chart_labels": [
+        "Bharat Electronics Limited"
+      ],
+      "relationship_currently_published": false,
+      "evidence_supported_candidate_coverage": true,
+      "unavailable_reason": null,
+      "candidate_publication_version": "1.5.0",
+      "candidate_relationship_published": true,
+      "relationships": [
+        {
+          "exact_visible_label": "Bharat Electronics Limited",
+          "source_context": "TRADINGVIEW_VISUAL_CHART",
+          "effective_from": "2026-08-25T13:32:21.739718+00:00",
+          "effective_through": "9999-12-31T23:59:59.999999+00:00",
+          "relationship_identity": "VISUAL-IDENTITY-RELATIONSHIP-C962E5E5AFD9E78FD32683145D5144409C8D4CCE064971A57900229111B30156",
+          "provenance": [
+            "ADR-0018",
+            "WO-07E-NSE-VISUAL-IDENTITY-SPONSOR-AUTHORIZATION",
+            "CHART-SHA256-ac893a8f24e93445cb8615e385722f4412a24fa7b11a41211ec0eb6564865713",
+            "CHART-MANIFEST-SHA256-1d4c5024c93f0970d559bd115b865e098989633e4578eaf8457c0354a177aa9b",
+            "SPONSOR-TRADINGVIEW-UPLOAD-2026-08-25T13:32:21.739718+00:00",
+            "V2-DIRECT-846e7a533b4c87e386bc1082db60ad6e8ba4139a4368c3f659a822986b918d40",
+            "CATALOGUE-V2-1.2.0-SHA256-b5916affa58cb153e76847495d8d8e6ac281cf8384ad4c68212a67bd3c321d44",
+            "EXACT-VISIBLE-NSE-HEADER-INSPECTED;NO-NAME-INFERENCE"
+          ]
+        }
+      ],
+      "effective_at_review_boundary": true,
+      "resolution_result": "RESOLVES_EXACT_REGISTERED_LABEL"
+    },
+    {
+      "canonical_identity": "NSE-EQ-BHARATFORG",
+      "expected_tradingview_symbol": "NSE:BHARATFORG",
+      "existing_labels": [],
+      "verified_chart_labels": [],
+      "relationship_currently_published": false,
+      "evidence_supported_candidate_coverage": false,
+      "unavailable_reason": "NO_RETAINED_SOURCE_QUALIFIED_VISUAL_LABEL_ESTABLISHED; catalogue/provider/company-name data alone not sufficient",
+      "candidate_publication_version": "1.5.0",
+      "candidate_relationship_published": false,
+      "relationships": [],
+      "effective_at_review_boundary": false,
+      "resolution_result": "VISUAL_IDENTITY_RELATIONSHIP_UNAVAILABLE"
+    },
+    {
+      "canonical_identity": "NSE-EQ-BHARTIARTL",
+      "expected_tradingview_symbol": "NSE:BHARTIARTL",
+      "existing_labels": [],
+      "verified_chart_labels": [],
+      "relationship_currently_published": false,
+      "evidence_supported_candidate_coverage": false,
+      "unavailable_reason": "NO_RETAINED_SOURCE_QUALIFIED_VISUAL_LABEL_ESTABLISHED; catalogue/provider/company-name data alone not sufficient",
+      "candidate_publication_version": "1.5.0",
+      "candidate_relationship_published": false,
+      "relationships": [],
+      "effective_at_review_boundary": false,
+      "resolution_result": "VISUAL_IDENTITY_RELATIONSHIP_UNAVAILABLE"
+    },
+    {
+      "canonical_identity": "NSE-EQ-BHEL",
+      "expected_tradingview_symbol": "NSE:BHEL",
+      "existing_labels": [],
+      "verified_chart_labels": [],
+      "relationship_currently_published": false,
+      "evidence_supported_candidate_coverage": false,
+      "unavailable_reason": "NO_RETAINED_SOURCE_QUALIFIED_VISUAL_LABEL_ESTABLISHED; catalogue/provider/company-name data alone not sufficient",
+      "candidate_publication_version": "1.5.0",
+      "candidate_relationship_published": false,
+      "relationships": [],
+      "effective_at_review_boundary": false,
+      "resolution_result": "VISUAL_IDENTITY_RELATIONSHIP_UNAVAILABLE"
+    },
+    {
+      "canonical_identity": "NSE-EQ-BPCL",
+      "expected_tradingview_symbol": "NSE:BPCL",
+      "existing_labels": [],
+      "verified_chart_labels": [],
+      "relationship_currently_published": false,
+      "evidence_supported_candidate_coverage": false,
+      "unavailable_reason": "NO_RETAINED_SOURCE_QUALIFIED_VISUAL_LABEL_ESTABLISHED; catalogue/provider/company-name data alone not sufficient",
+      "candidate_publication_version": "1.5.0",
+      "candidate_relationship_published": false,
+      "relationships": [],
+      "effective_at_review_boundary": false,
+      "resolution_result": "VISUAL_IDENTITY_RELATIONSHIP_UNAVAILABLE"
+    },
+    {
+      "canonical_identity": "NSE-EQ-BSE",
+      "expected_tradingview_symbol": "NSE:BSE",
+      "existing_labels": [],
+      "verified_chart_labels": [],
+      "relationship_currently_published": false,
+      "evidence_supported_candidate_coverage": false,
+      "unavailable_reason": "NO_RETAINED_SOURCE_QUALIFIED_VISUAL_LABEL_ESTABLISHED; catalogue/provider/company-name data alone not sufficient",
+      "candidate_publication_version": "1.5.0",
+      "candidate_relationship_published": false,
+      "relationships": [],
+      "effective_at_review_boundary": false,
+      "resolution_result": "VISUAL_IDENTITY_RELATIONSHIP_UNAVAILABLE"
+    },
+    {
+      "canonical_identity": "NSE-EQ-CANBK",
+      "expected_tradingview_symbol": "NSE:CANBK",
+      "existing_labels": [],
+      "verified_chart_labels": [
+        "Canara Bank"
+      ],
+      "relationship_currently_published": false,
+      "evidence_supported_candidate_coverage": true,
+      "unavailable_reason": null,
+      "candidate_publication_version": "1.5.0",
+      "candidate_relationship_published": true,
+      "relationships": [
+        {
+          "exact_visible_label": "Canara Bank",
+          "source_context": "TRADINGVIEW_VISUAL_CHART",
+          "effective_from": "2026-08-23T00:00:00+05:30",
+          "effective_through": "9999-12-31T23:59:59.999999+00:00",
+          "relationship_identity": "VISUAL-IDENTITY-RELATIONSHIP-A493EBFD145C26A3855677CD6C1B89C52524FBA0A4C2B2005F84A5FE764A277A",
+          "provenance": [
+            "ADR-0018",
+            "WO-07E-NSE-VISUAL-IDENTITY-SPONSOR-AUTHORIZATION",
+            "CHART-SHA256-15825123d546a49331b2285ab4eea391324a9856e3e822cc6f9c7a8e5eafbeac",
+            "CHART-MANIFEST-SHA256-6d9e1060f009b3d3fe4190bce706cde721756bd6bf5962a23b1c543702590d18",
+            "SPONSOR-TRADINGVIEW-UPLOAD-2026-08-16T08:47:37.537994+00:00",
+            "V2-DIRECT-d2056361fe21972e9eccb415146145c84622147f265f7b963b7cf70b26851a9d",
+            "CATALOGUE-V2-1.2.0-SHA256-b5916affa58cb153e76847495d8d8e6ac281cf8384ad4c68212a67bd3c321d44",
+            "EXACT-VISIBLE-NSE-HEADER-INSPECTED;NO-NAME-INFERENCE"
+          ]
+        }
+      ],
+      "effective_at_review_boundary": true,
+      "resolution_result": "RESOLVES_EXACT_REGISTERED_LABEL"
+    },
+    {
+      "canonical_identity": "NSE-EQ-CDSL",
+      "expected_tradingview_symbol": "NSE:CDSL",
+      "existing_labels": [],
+      "verified_chart_labels": [
+        "Central Depository Services (India) Limited"
+      ],
+      "relationship_currently_published": false,
+      "evidence_supported_candidate_coverage": true,
+      "unavailable_reason": null,
+      "candidate_publication_version": "1.5.0",
+      "candidate_relationship_published": true,
+      "relationships": [
+        {
+          "exact_visible_label": "Central Depository Services (India) Limited",
+          "source_context": "TRADINGVIEW_VISUAL_CHART",
+          "effective_from": "2026-08-23T00:00:00+05:30",
+          "effective_through": "9999-12-31T23:59:59.999999+00:00",
+          "relationship_identity": "VISUAL-IDENTITY-RELATIONSHIP-BE8ACEFFF59D3447322C636AEA3367AD83CD6EAB07DF3701D4D8D4B3C8B855E8",
+          "provenance": [
+            "ADR-0018",
+            "WO-07E-NSE-VISUAL-IDENTITY-SPONSOR-AUTHORIZATION",
+            "CHART-SHA256-e63e87ffc46045eec10256567eb8a4f00bedfa2a813df18ae641b531de348b07",
+            "CHART-MANIFEST-SHA256-c4e001921beb0495eae3c4922831d3f9dd20d1ae19c74d91fb45d3144a927866",
+            "SPONSOR-TRADINGVIEW-UPLOAD-2026-08-16T08:47:47.064580+00:00",
+            "V2-DIRECT-aba7776707e2f36f3962b9578b7a4d4b3b7341c6118c788565994eb268337881",
+            "CATALOGUE-V2-1.2.0-SHA256-b5916affa58cb153e76847495d8d8e6ac281cf8384ad4c68212a67bd3c321d44",
+            "EXACT-VISIBLE-NSE-HEADER-INSPECTED;NO-NAME-INFERENCE"
+          ]
+        }
+      ],
+      "effective_at_review_boundary": true,
+      "resolution_result": "RESOLVES_EXACT_REGISTERED_LABEL"
+    },
+    {
+      "canonical_identity": "NSE-EQ-CIPLA",
+      "expected_tradingview_symbol": "NSE:CIPLA",
+      "existing_labels": [],
+      "verified_chart_labels": [],
+      "relationship_currently_published": false,
+      "evidence_supported_candidate_coverage": false,
+      "unavailable_reason": "NO_RETAINED_SOURCE_QUALIFIED_VISUAL_LABEL_ESTABLISHED; catalogue/provider/company-name data alone not sufficient",
+      "candidate_publication_version": "1.5.0",
+      "candidate_relationship_published": false,
+      "relationships": [],
+      "effective_at_review_boundary": false,
+      "resolution_result": "VISUAL_IDENTITY_RELATIONSHIP_UNAVAILABLE"
+    },
+    {
+      "canonical_identity": "NSE-EQ-COALINDIA",
+      "expected_tradingview_symbol": "NSE:COALINDIA",
+      "existing_labels": [],
+      "verified_chart_labels": [],
+      "relationship_currently_published": false,
+      "evidence_supported_candidate_coverage": false,
+      "unavailable_reason": "NO_RETAINED_SOURCE_QUALIFIED_VISUAL_LABEL_ESTABLISHED; catalogue/provider/company-name data alone not sufficient",
+      "candidate_publication_version": "1.5.0",
+      "candidate_relationship_published": false,
+      "relationships": [],
+      "effective_at_review_boundary": false,
+      "resolution_result": "VISUAL_IDENTITY_RELATIONSHIP_UNAVAILABLE"
+    },
+    {
+      "canonical_identity": "NSE-EQ-COFORGE",
+      "expected_tradingview_symbol": "NSE:COFORGE",
+      "existing_labels": [],
+      "verified_chart_labels": [],
+      "relationship_currently_published": false,
+      "evidence_supported_candidate_coverage": false,
+      "unavailable_reason": "NO_RETAINED_SOURCE_QUALIFIED_VISUAL_LABEL_ESTABLISHED; catalogue/provider/company-name data alone not sufficient",
+      "candidate_publication_version": "1.5.0",
+      "candidate_relationship_published": false,
+      "relationships": [],
+      "effective_at_review_boundary": false,
+      "resolution_result": "VISUAL_IDENTITY_RELATIONSHIP_UNAVAILABLE"
+    },
+    {
+      "canonical_identity": "NSE-EQ-CONCOR",
+      "expected_tradingview_symbol": "NSE:CONCOR",
+      "existing_labels": [],
+      "verified_chart_labels": [],
+      "relationship_currently_published": false,
+      "evidence_supported_candidate_coverage": false,
+      "unavailable_reason": "NO_RETAINED_SOURCE_QUALIFIED_VISUAL_LABEL_ESTABLISHED; catalogue/provider/company-name data alone not sufficient",
+      "candidate_publication_version": "1.5.0",
+      "candidate_relationship_published": false,
+      "relationships": [],
+      "effective_at_review_boundary": false,
+      "resolution_result": "VISUAL_IDENTITY_RELATIONSHIP_UNAVAILABLE"
+    },
+    {
+      "canonical_identity": "NSE-EQ-CUMMINSIND",
+      "expected_tradingview_symbol": "NSE:CUMMINSIND",
+      "existing_labels": [],
+      "verified_chart_labels": [],
+      "relationship_currently_published": false,
+      "evidence_supported_candidate_coverage": false,
+      "unavailable_reason": "NO_RETAINED_SOURCE_QUALIFIED_VISUAL_LABEL_ESTABLISHED; catalogue/provider/company-name data alone not sufficient",
+      "candidate_publication_version": "1.5.0",
+      "candidate_relationship_published": false,
+      "relationships": [],
+      "effective_at_review_boundary": false,
+      "resolution_result": "VISUAL_IDENTITY_RELATIONSHIP_UNAVAILABLE"
+    },
+    {
+      "canonical_identity": "NSE-EQ-DIVISLAB",
+      "expected_tradingview_symbol": "NSE:DIVISLAB",
+      "existing_labels": [],
+      "verified_chart_labels": [
+        "Divis Laboratories Limited"
+      ],
+      "relationship_currently_published": false,
+      "evidence_supported_candidate_coverage": true,
+      "unavailable_reason": null,
+      "candidate_publication_version": "1.5.0",
+      "candidate_relationship_published": true,
+      "relationships": [
+        {
+          "exact_visible_label": "Divis Laboratories Limited",
+          "source_context": "TRADINGVIEW_VISUAL_CHART",
+          "effective_from": "2026-08-27T04:12:42.329199+00:00",
+          "effective_through": "9999-12-31T23:59:59.999999+00:00",
+          "relationship_identity": "VISUAL-IDENTITY-RELATIONSHIP-5F0716089A4AF101C800AF41C442BA4D377BD1C240976F3D0B4FBD055B7621B1",
+          "provenance": [
+            "ADR-0018",
+            "WO-07E-NSE-VISUAL-IDENTITY-SPONSOR-AUTHORIZATION",
+            "CHART-SHA256-5f0d3f06475ab2eb7e4e4b2af212d8c464b9d8b92c132524668a125287d80262",
+            "CHART-MANIFEST-SHA256-ec6b98dd9c0e3ffafc367b074fb19c363d8845b5dfd43e7b539af144cfddc30e",
+            "SPONSOR-TRADINGVIEW-UPLOAD-2026-08-27T04:12:42.329199+00:00",
+            "V2-DIRECT-df4436f574f583c3c563470462830c69e2a6423b2de39a1d85d4e6e1ed778fe5",
+            "CATALOGUE-V2-1.2.0-SHA256-b5916affa58cb153e76847495d8d8e6ac281cf8384ad4c68212a67bd3c321d44",
+            "EXACT-VISIBLE-NSE-HEADER-INSPECTED;NO-NAME-INFERENCE"
+          ]
+        }
+      ],
+      "effective_at_review_boundary": true,
+      "resolution_result": "RESOLVES_EXACT_REGISTERED_LABEL"
+    },
+    {
+      "canonical_identity": "NSE-EQ-DIXON",
+      "expected_tradingview_symbol": "NSE:DIXON",
+      "existing_labels": [],
+      "verified_chart_labels": [],
+      "relationship_currently_published": false,
+      "evidence_supported_candidate_coverage": false,
+      "unavailable_reason": "NO_RETAINED_SOURCE_QUALIFIED_VISUAL_LABEL_ESTABLISHED; catalogue/provider/company-name data alone not sufficient",
+      "candidate_publication_version": "1.5.0",
+      "candidate_relationship_published": false,
+      "relationships": [],
+      "effective_at_review_boundary": false,
+      "resolution_result": "VISUAL_IDENTITY_RELATIONSHIP_UNAVAILABLE"
+    },
+    {
+      "canonical_identity": "NSE-EQ-DRREDDY",
+      "expected_tradingview_symbol": "NSE:DRREDDY",
+      "existing_labels": [],
+      "verified_chart_labels": [],
+      "relationship_currently_published": false,
+      "evidence_supported_candidate_coverage": false,
+      "unavailable_reason": "NO_RETAINED_SOURCE_QUALIFIED_VISUAL_LABEL_ESTABLISHED; catalogue/provider/company-name data alone not sufficient",
+      "candidate_publication_version": "1.5.0",
+      "candidate_relationship_published": false,
+      "relationships": [],
+      "effective_at_review_boundary": false,
+      "resolution_result": "VISUAL_IDENTITY_RELATIONSHIP_UNAVAILABLE"
+    },
+    {
+      "canonical_identity": "NSE-EQ-EICHERMOT",
+      "expected_tradingview_symbol": "NSE:EICHERMOT",
+      "existing_labels": [
+        "Eicher Motors Limited"
+      ],
+      "verified_chart_labels": [
+        "Eicher Motors Limited"
+      ],
+      "relationship_currently_published": true,
+      "evidence_supported_candidate_coverage": true,
+      "unavailable_reason": null,
+      "candidate_publication_version": "1.5.0",
+      "candidate_relationship_published": true,
+      "relationships": [
+        {
+          "exact_visible_label": "Eicher Motors Limited",
+          "source_context": "TRADINGVIEW_VISUAL_CHART",
+          "effective_from": "2026-09-04T13:47:57+00:00",
+          "effective_through": "9999-12-31T23:59:59.999999+00:00",
+          "relationship_identity": "VISUAL-IDENTITY-RELATIONSHIP-EF6CCE0CA3A3D236C3F135BD02D64BE5764CB2C6D121A34F5B297D0C943A2822",
+          "provenance": [
+            "ADR-0018",
+            "WO-BR2-PROVABLE-VISUAL-IDENTITY-COVERAGE-2026-09-06",
+            "INTRADAY-REVIEW-V2-CYCLE-5BFFC6C393F9F2972B2BFCE75F6064AEA29076DDC67C4209DCC116763BBC4FD6",
+            "INTRADAY-CHART-REVISION-V2-4966AE0536F352F719733582B1FE70DAB9490E1E0C5922964F9CE8F36A0F12D0",
+            "CHART-PAYLOAD-SHA256-7dff5c4ebc033db8df06af293e3c9ec70da063a131a24b81c1f4afbc0ef50881",
+            "OBSERVATION-BOUNDARY-2026-09-04T13:47:57+00:00",
+            "KRONOS-CANONICAL-INSTRUMENT-CATALOGUE-V2:1.2.0"
+          ]
+        }
+      ],
+      "effective_at_review_boundary": true,
+      "resolution_result": "RESOLVES_EXACT_REGISTERED_LABEL"
+    },
+    {
+      "canonical_identity": "NSE-EQ-ETERNAL",
+      "expected_tradingview_symbol": "NSE:ETERNAL",
+      "existing_labels": [],
+      "verified_chart_labels": [
+        "Eternal Limited"
+      ],
+      "relationship_currently_published": false,
+      "evidence_supported_candidate_coverage": true,
+      "unavailable_reason": null,
+      "candidate_publication_version": "1.5.0",
+      "candidate_relationship_published": true,
+      "relationships": [
+        {
+          "exact_visible_label": "Eternal Limited",
+          "source_context": "TRADINGVIEW_VISUAL_CHART",
+          "effective_from": "2026-08-23T00:00:00+05:30",
+          "effective_through": "9999-12-31T23:59:59.999999+00:00",
+          "relationship_identity": "VISUAL-IDENTITY-RELATIONSHIP-62855DFA379B80B294E561CA636767C8E0A2103015FFFDA9F12658404337EC4F",
+          "provenance": [
+            "ADR-0018",
+            "WO-07E-NSE-VISUAL-IDENTITY-SPONSOR-AUTHORIZATION",
+            "CHART-SHA256-9a4eea0ca7175bc1c2fafd399440e2bdc8b3dcf88b53207b1776538b85e940c4",
+            "CHART-MANIFEST-SHA256-01a8a61b3bdb959787e715051b293547457795fcac919e27ca7f95ece8eacf3f",
+            "SPONSOR-TRADINGVIEW-UPLOAD-2026-08-21T03:01:27.268301+00:00",
+            "V2-DIRECT-4fdfb1183c3db64cbd80a7b18f8979cac532b9f2dee8d5d9df8977d41c1e858b",
+            "CATALOGUE-V2-1.2.0-SHA256-b5916affa58cb153e76847495d8d8e6ac281cf8384ad4c68212a67bd3c321d44",
+            "EXACT-VISIBLE-NSE-HEADER-INSPECTED;NO-NAME-INFERENCE"
+          ]
+        }
+      ],
+      "effective_at_review_boundary": true,
+      "resolution_result": "RESOLVES_EXACT_REGISTERED_LABEL"
+    },
+    {
+      "canonical_identity": "NSE-EQ-FEDERALBNK",
+      "expected_tradingview_symbol": "NSE:FEDERALBNK",
+      "existing_labels": [],
+      "verified_chart_labels": [],
+      "relationship_currently_published": false,
+      "evidence_supported_candidate_coverage": false,
+      "unavailable_reason": "NO_RETAINED_SOURCE_QUALIFIED_VISUAL_LABEL_ESTABLISHED; catalogue/provider/company-name data alone not sufficient",
+      "candidate_publication_version": "1.5.0",
+      "candidate_relationship_published": false,
+      "relationships": [],
+      "effective_at_review_boundary": false,
+      "resolution_result": "VISUAL_IDENTITY_RELATIONSHIP_UNAVAILABLE"
+    },
+    {
+      "canonical_identity": "NSE-EQ-HAL",
+      "expected_tradingview_symbol": "NSE:HAL",
+      "existing_labels": [],
+      "verified_chart_labels": [
+        "Hindustan Aeronautics Limited"
+      ],
+      "relationship_currently_published": false,
+      "evidence_supported_candidate_coverage": true,
+      "unavailable_reason": null,
+      "candidate_publication_version": "1.5.0",
+      "candidate_relationship_published": true,
+      "relationships": [
+        {
+          "exact_visible_label": "Hindustan Aeronautics Limited",
+          "source_context": "TRADINGVIEW_VISUAL_CHART",
+          "effective_from": "2026-08-23T00:00:00+05:30",
+          "effective_through": "9999-12-31T23:59:59.999999+00:00",
+          "relationship_identity": "VISUAL-IDENTITY-RELATIONSHIP-D22F7EA62ACB194003F9B4BE5E5E5C8D8FD9F03310776F8F341738E137B87171",
+          "provenance": [
+            "ADR-0018",
+            "WO-07E-NSE-VISUAL-IDENTITY-SPONSOR-AUTHORIZATION",
+            "CHART-SHA256-ad54758abdaee3b0aa42befd1dcd40ef6bddec578497fe632477f3e9ead19ae5",
+            "CHART-MANIFEST-SHA256-bc3929fa1280e9f08fcb2774f98c0b6b70dae5aca213882aca87ca0794f2d2f0",
+            "SPONSOR-TRADINGVIEW-UPLOAD-2026-08-17T09:42:25.501240+00:00",
+            "V2-DIRECT-003fa8de8e11c1c8e32859812a620c4eb5dc0a725d44148837b4e4622f83f9d6",
+            "CATALOGUE-V2-1.2.0-SHA256-b5916affa58cb153e76847495d8d8e6ac281cf8384ad4c68212a67bd3c321d44",
+            "EXACT-VISIBLE-NSE-HEADER-INSPECTED;NO-NAME-INFERENCE"
+          ]
+        }
+      ],
+      "effective_at_review_boundary": true,
+      "resolution_result": "RESOLVES_EXACT_REGISTERED_LABEL"
+    },
+    {
+      "canonical_identity": "NSE-EQ-HCLTECH",
+      "expected_tradingview_symbol": "NSE:HCLTECH",
+      "existing_labels": [],
+      "verified_chart_labels": [],
+      "relationship_currently_published": false,
+      "evidence_supported_candidate_coverage": false,
+      "unavailable_reason": "NO_RETAINED_SOURCE_QUALIFIED_VISUAL_LABEL_ESTABLISHED; catalogue/provider/company-name data alone not sufficient",
+      "candidate_publication_version": "1.5.0",
+      "candidate_relationship_published": false,
+      "relationships": [],
+      "effective_at_review_boundary": false,
+      "resolution_result": "VISUAL_IDENTITY_RELATIONSHIP_UNAVAILABLE"
+    },
+    {
+      "canonical_identity": "NSE-EQ-HDFCAMC",
+      "expected_tradingview_symbol": "NSE:HDFCAMC",
+      "existing_labels": [],
+      "verified_chart_labels": [],
+      "relationship_currently_published": false,
+      "evidence_supported_candidate_coverage": false,
+      "unavailable_reason": "NO_RETAINED_SOURCE_QUALIFIED_VISUAL_LABEL_ESTABLISHED; catalogue/provider/company-name data alone not sufficient",
+      "candidate_publication_version": "1.5.0",
+      "candidate_relationship_published": false,
+      "relationships": [],
+      "effective_at_review_boundary": false,
+      "resolution_result": "VISUAL_IDENTITY_RELATIONSHIP_UNAVAILABLE"
+    },
+    {
+      "canonical_identity": "NSE-EQ-HDFCBANK",
+      "expected_tradingview_symbol": "NSE:HDFCBANK",
+      "existing_labels": [],
+      "verified_chart_labels": [
+        "HDFC Bank Limited"
+      ],
+      "relationship_currently_published": false,
+      "evidence_supported_candidate_coverage": true,
+      "unavailable_reason": null,
+      "candidate_publication_version": "1.5.0",
+      "candidate_relationship_published": true,
+      "relationships": [
+        {
+          "exact_visible_label": "HDFC Bank Limited",
+          "source_context": "TRADINGVIEW_VISUAL_CHART",
+          "effective_from": "2026-08-28T03:37:53.897587+00:00",
+          "effective_through": "9999-12-31T23:59:59.999999+00:00",
+          "relationship_identity": "VISUAL-IDENTITY-RELATIONSHIP-A58E70DECE68D515E198F429664767511D58B7D500BED7564372CBC3D11E1C44",
+          "provenance": [
+            "ADR-0018",
+            "WO-07E-NSE-VISUAL-IDENTITY-SPONSOR-AUTHORIZATION",
+            "CHART-SHA256-fcabb4e9389e845c70ca927272984d74faa86f80ef2720b9b9f0c60e7b793678",
+            "CHART-MANIFEST-SHA256-14921deae729063ccabe824f35ce1acabfe5d8d61b24b73e1f456df49c12d3b5",
+            "SPONSOR-TRADINGVIEW-UPLOAD-2026-08-28T03:37:53.897587+00:00",
+            "V2-DIRECT-cd8ace607b2770d4faa9a8d288c34344a059021681c07c2c3ec3e1adaa93a0b5",
+            "CATALOGUE-V2-1.2.0-SHA256-b5916affa58cb153e76847495d8d8e6ac281cf8384ad4c68212a67bd3c321d44",
+            "EXACT-VISIBLE-NSE-HEADER-INSPECTED;NO-NAME-INFERENCE"
+          ]
+        }
+      ],
+      "effective_at_review_boundary": true,
+      "resolution_result": "RESOLVES_EXACT_REGISTERED_LABEL"
+    },
+    {
+      "canonical_identity": "NSE-EQ-HDFCLIFE",
+      "expected_tradingview_symbol": "NSE:HDFCLIFE",
+      "existing_labels": [],
+      "verified_chart_labels": [],
+      "relationship_currently_published": false,
+      "evidence_supported_candidate_coverage": false,
+      "unavailable_reason": "NO_RETAINED_SOURCE_QUALIFIED_VISUAL_LABEL_ESTABLISHED; catalogue/provider/company-name data alone not sufficient",
+      "candidate_publication_version": "1.5.0",
+      "candidate_relationship_published": false,
+      "relationships": [],
+      "effective_at_review_boundary": false,
+      "resolution_result": "VISUAL_IDENTITY_RELATIONSHIP_UNAVAILABLE"
+    },
+    {
+      "canonical_identity": "NSE-EQ-HEROMOTOCO",
+      "expected_tradingview_symbol": "NSE:HEROMOTOCO",
+      "existing_labels": [
+        "Hero Motocorp Limited"
+      ],
+      "verified_chart_labels": [],
+      "relationship_currently_published": true,
+      "evidence_supported_candidate_coverage": true,
+      "unavailable_reason": null,
+      "candidate_publication_version": "1.5.0",
+      "candidate_relationship_published": true,
+      "relationships": [
+        {
+          "exact_visible_label": "Hero Motocorp Limited",
+          "source_context": "TRADINGVIEW_VISUAL_CHART",
+          "effective_from": "2026-08-28T17:18:48.326000+00:00",
+          "effective_through": "9999-12-31T23:59:59.999999+00:00",
+          "relationship_identity": "VISUAL-IDENTITY-RELATIONSHIP-998DC3FB66F9F79BC5FF24A5AF78FEEC2E890AC5EA8AB7C277A3A0465BC9E92C",
+          "provenance": [
+            "ADR-0018",
+            "INTRADAY-CHART-REVISION-V2-EFAFE697B07E89E4F3A875562F69D68F8C0AE6F39F15223239C858F19F1DCCFF",
+            "INTRADAY-CHART-ARTIFACT-V2-6B9D28BE2001ED4390EC6352C1152FE46889162378C58A9CEECECD6E772CC7A6",
+            "CHART-PAYLOAD-SHA256-83cd286b324abc0d1f625099f3aa2eed39857c6e41ec296ba1e321dcee560b7b",
+            "ANALYST-ANSWER-SHA256-63419e99ad91bb0670d263b1f6e1f289d96ed2ea87ca61e0d19af19a623b12a4",
+            "INTRADAY-V2-CHART-ANALYST-OPERATION-38569841F5DE513B99C9B705A9284196CA58E0C24B888BC3BDD0A8C212E9677A"
+          ]
+        }
+      ],
+      "effective_at_review_boundary": true,
+      "resolution_result": "RESOLVES_EXACT_REGISTERED_LABEL"
+    },
+    {
+      "canonical_identity": "NSE-EQ-HINDALCO",
+      "expected_tradingview_symbol": "NSE:HINDALCO",
+      "existing_labels": [],
+      "verified_chart_labels": [
+        "Hindalco Industries Limited"
+      ],
+      "relationship_currently_published": false,
+      "evidence_supported_candidate_coverage": true,
+      "unavailable_reason": null,
+      "candidate_publication_version": "1.5.0",
+      "candidate_relationship_published": true,
+      "relationships": [
+        {
+          "exact_visible_label": "Hindalco Industries Limited",
+          "source_context": "TRADINGVIEW_VISUAL_CHART",
+          "effective_from": "2026-08-23T00:00:00+05:30",
+          "effective_through": "9999-12-31T23:59:59.999999+00:00",
+          "relationship_identity": "VISUAL-IDENTITY-RELATIONSHIP-101718B42706D4C1ACFB0C2529734C75F2F81D6BFFA3BD21327D07E0C1C13A33",
+          "provenance": [
+            "ADR-0018",
+            "WO-07E-NSE-VISUAL-IDENTITY-SPONSOR-AUTHORIZATION",
+            "CHART-SHA256-61b00f5ebd47a6e8719da9085d372a02ebc0b87919070026072ab0c3826ded07",
+            "CHART-MANIFEST-SHA256-342fa8415efbe261bac9a1881d406fc16d5ecd1ca9e48cdbf16b356f3f11a236",
+            "SPONSOR-TRADINGVIEW-UPLOAD-2026-08-21T03:01:43.076720+00:00",
+            "V2-DIRECT-2cac6a1ade9c015dd61e306019c2dc30b12823dbd32cb699b45e23ee8daf1255",
+            "CATALOGUE-V2-1.2.0-SHA256-b5916affa58cb153e76847495d8d8e6ac281cf8384ad4c68212a67bd3c321d44",
+            "EXACT-VISIBLE-NSE-HEADER-INSPECTED;NO-NAME-INFERENCE"
+          ]
+        }
+      ],
+      "effective_at_review_boundary": true,
+      "resolution_result": "RESOLVES_EXACT_REGISTERED_LABEL"
+    },
+    {
+      "canonical_identity": "NSE-EQ-HINDPETRO",
+      "expected_tradingview_symbol": "NSE:HINDPETRO",
+      "existing_labels": [],
+      "verified_chart_labels": [],
+      "relationship_currently_published": false,
+      "evidence_supported_candidate_coverage": false,
+      "unavailable_reason": "NO_RETAINED_SOURCE_QUALIFIED_VISUAL_LABEL_ESTABLISHED; catalogue/provider/company-name data alone not sufficient",
+      "candidate_publication_version": "1.5.0",
+      "candidate_relationship_published": false,
+      "relationships": [],
+      "effective_at_review_boundary": false,
+      "resolution_result": "VISUAL_IDENTITY_RELATIONSHIP_UNAVAILABLE"
+    },
+    {
+      "canonical_identity": "NSE-EQ-HINDUNILVR",
+      "expected_tradingview_symbol": "NSE:HINDUNILVR",
+      "existing_labels": [],
+      "verified_chart_labels": [
+        "Hindustan Unilever Limited"
+      ],
+      "relationship_currently_published": false,
+      "evidence_supported_candidate_coverage": true,
+      "unavailable_reason": null,
+      "candidate_publication_version": "1.5.0",
+      "candidate_relationship_published": true,
+      "relationships": [
+        {
+          "exact_visible_label": "Hindustan Unilever Limited",
+          "source_context": "TRADINGVIEW_VISUAL_CHART",
+          "effective_from": "2026-08-23T00:00:00+05:30",
+          "effective_through": "9999-12-31T23:59:59.999999+00:00",
+          "relationship_identity": "VISUAL-IDENTITY-RELATIONSHIP-ECD771438EE4500C4A76F977153EBAE87A920DBF389E1AABCDD9139240FA6B5D",
+          "provenance": [
+            "ADR-0018",
+            "WO-07E-NSE-VISUAL-IDENTITY-SPONSOR-AUTHORIZATION",
+            "CHART-SHA256-1e7cd77cafe39f8fa04d9010c58b9589ece439f35883ebc648462324a5ba0474",
+            "CHART-MANIFEST-SHA256-027d9fa623bf84f9260bbe052256c97cd0d61d827b89e3c84c11dc63da1252c1",
+            "SPONSOR-TRADINGVIEW-UPLOAD-2026-08-19T17:49:36.692148+00:00",
+            "V2-DIRECT-7c278b4a04bb9d755e25d6f1341290d01ca865c23d8c0291bb5b8cf377930214",
+            "CATALOGUE-V2-1.2.0-SHA256-b5916affa58cb153e76847495d8d8e6ac281cf8384ad4c68212a67bd3c321d44",
+            "EXACT-VISIBLE-NSE-HEADER-INSPECTED;NO-NAME-INFERENCE"
+          ]
+        }
+      ],
+      "effective_at_review_boundary": true,
+      "resolution_result": "RESOLVES_EXACT_REGISTERED_LABEL"
+    },
+    {
+      "canonical_identity": "NSE-EQ-ICICIBANK",
+      "expected_tradingview_symbol": "NSE:ICICIBANK",
+      "existing_labels": [],
+      "verified_chart_labels": [],
+      "relationship_currently_published": false,
+      "evidence_supported_candidate_coverage": false,
+      "unavailable_reason": "NO_RETAINED_SOURCE_QUALIFIED_VISUAL_LABEL_ESTABLISHED; catalogue/provider/company-name data alone not sufficient",
+      "candidate_publication_version": "1.5.0",
+      "candidate_relationship_published": false,
+      "relationships": [],
+      "effective_at_review_boundary": false,
+      "resolution_result": "VISUAL_IDENTITY_RELATIONSHIP_UNAVAILABLE"
+    },
+    {
+      "canonical_identity": "NSE-EQ-IDEA",
+      "expected_tradingview_symbol": "NSE:IDEA",
+      "existing_labels": [],
+      "verified_chart_labels": [],
+      "relationship_currently_published": false,
+      "evidence_supported_candidate_coverage": false,
+      "unavailable_reason": "NO_RETAINED_SOURCE_QUALIFIED_VISUAL_LABEL_ESTABLISHED; catalogue/provider/company-name data alone not sufficient",
+      "candidate_publication_version": "1.5.0",
+      "candidate_relationship_published": false,
+      "relationships": [],
+      "effective_at_review_boundary": false,
+      "resolution_result": "VISUAL_IDENTITY_RELATIONSHIP_UNAVAILABLE"
+    },
+    {
+      "canonical_identity": "NSE-EQ-INDHOTEL",
+      "expected_tradingview_symbol": "NSE:INDHOTEL",
+      "existing_labels": [],
+      "verified_chart_labels": [],
+      "relationship_currently_published": false,
+      "evidence_supported_candidate_coverage": false,
+      "unavailable_reason": "NO_RETAINED_SOURCE_QUALIFIED_VISUAL_LABEL_ESTABLISHED; catalogue/provider/company-name data alone not sufficient",
+      "candidate_publication_version": "1.5.0",
+      "candidate_relationship_published": false,
+      "relationships": [],
+      "effective_at_review_boundary": false,
+      "resolution_result": "VISUAL_IDENTITY_RELATIONSHIP_UNAVAILABLE"
+    },
+    {
+      "canonical_identity": "NSE-EQ-INDIANB",
+      "expected_tradingview_symbol": "NSE:INDIANB",
+      "existing_labels": [],
+      "verified_chart_labels": [
+        "Indian Bank"
+      ],
+      "relationship_currently_published": false,
+      "evidence_supported_candidate_coverage": true,
+      "unavailable_reason": null,
+      "candidate_publication_version": "1.5.0",
+      "candidate_relationship_published": true,
+      "relationships": [
+        {
+          "exact_visible_label": "Indian Bank",
+          "source_context": "TRADINGVIEW_VISUAL_CHART",
+          "effective_from": "2026-08-23T00:00:00+05:30",
+          "effective_through": "9999-12-31T23:59:59.999999+00:00",
+          "relationship_identity": "VISUAL-IDENTITY-RELATIONSHIP-0491E67821F6151EF74678E2793BD458BC177C5770AC80503AFB5801179904BE",
+          "provenance": [
+            "ADR-0018",
+            "WO-07E-NSE-VISUAL-IDENTITY-SPONSOR-AUTHORIZATION",
+            "CHART-SHA256-a8243834ef5641bb2e11c3114fb4e846f8bd0bacef610908b8cefc057d4a6492",
+            "CHART-MANIFEST-SHA256-638fe7d28423e234b285dc57da431360d82d5eb971eee80547f097ab13ccb84d",
+            "SPONSOR-TRADINGVIEW-UPLOAD-2026-08-17T09:42:40.662941+00:00",
+            "V2-DIRECT-5fa7790ff814a8b689c7499bcf0278fe91b8063440aa3620d016554c41121d9f",
+            "CATALOGUE-V2-1.2.0-SHA256-b5916affa58cb153e76847495d8d8e6ac281cf8384ad4c68212a67bd3c321d44",
+            "EXACT-VISIBLE-NSE-HEADER-INSPECTED;NO-NAME-INFERENCE"
+          ]
+        }
+      ],
+      "effective_at_review_boundary": true,
+      "resolution_result": "RESOLVES_EXACT_REGISTERED_LABEL"
+    },
+    {
+      "canonical_identity": "NSE-EQ-INDIGO",
+      "expected_tradingview_symbol": "NSE:INDIGO",
+      "existing_labels": [],
+      "verified_chart_labels": [
+        "InterGlobe Aviation Ltd"
+      ],
+      "relationship_currently_published": false,
+      "evidence_supported_candidate_coverage": true,
+      "unavailable_reason": null,
+      "candidate_publication_version": "1.5.0",
+      "candidate_relationship_published": true,
+      "relationships": [
+        {
+          "exact_visible_label": "InterGlobe Aviation Ltd",
+          "source_context": "TRADINGVIEW_VISUAL_CHART",
+          "effective_from": "2026-08-23T00:00:00+05:30",
+          "effective_through": "9999-12-31T23:59:59.999999+00:00",
+          "relationship_identity": "VISUAL-IDENTITY-RELATIONSHIP-0F804267E9DBCD08AB2F7168838BAF623A106E3F36BCEB957785B153E4140919",
+          "provenance": [
+            "ADR-0018",
+            "WO-07E-NSE-VISUAL-IDENTITY-SPONSOR-AUTHORIZATION",
+            "CHART-SHA256-a04d9059ff2eb4d70a3192f78ccc3fa65599e0f406c126785c34f830033b54dc",
+            "CHART-MANIFEST-SHA256-0bf3821c4a8ac4649643e0c2c89a03d9a51188526184a462f0292d68f55b626c",
+            "SPONSOR-TRADINGVIEW-UPLOAD-2026-08-17T09:44:18.626224+00:00",
+            "V2-DIRECT-88bcdc5874ae5ae92cb4f268f0cc382a3bd1db91c2dcb8d889c634c03f4da1c0",
+            "CATALOGUE-V2-1.2.0-SHA256-b5916affa58cb153e76847495d8d8e6ac281cf8384ad4c68212a67bd3c321d44",
+            "EXACT-VISIBLE-NSE-HEADER-INSPECTED;NO-NAME-INFERENCE"
+          ]
+        }
+      ],
+      "effective_at_review_boundary": true,
+      "resolution_result": "RESOLVES_EXACT_REGISTERED_LABEL"
+    },
+    {
+      "canonical_identity": "NSE-EQ-INFY",
+      "expected_tradingview_symbol": "NSE:INFY",
+      "existing_labels": [],
+      "verified_chart_labels": [],
+      "relationship_currently_published": false,
+      "evidence_supported_candidate_coverage": false,
+      "unavailable_reason": "NO_RETAINED_SOURCE_QUALIFIED_VISUAL_LABEL_ESTABLISHED; catalogue/provider/company-name data alone not sufficient",
+      "candidate_publication_version": "1.5.0",
+      "candidate_relationship_published": false,
+      "relationships": [],
+      "effective_at_review_boundary": false,
+      "resolution_result": "VISUAL_IDENTITY_RELATIONSHIP_UNAVAILABLE"
+    },
+    {
+      "canonical_identity": "NSE-EQ-IOC",
+      "expected_tradingview_symbol": "NSE:IOC",
+      "existing_labels": [],
+      "verified_chart_labels": [],
+      "relationship_currently_published": false,
+      "evidence_supported_candidate_coverage": false,
+      "unavailable_reason": "NO_RETAINED_SOURCE_QUALIFIED_VISUAL_LABEL_ESTABLISHED; catalogue/provider/company-name data alone not sufficient",
+      "candidate_publication_version": "1.5.0",
+      "candidate_relationship_published": false,
+      "relationships": [],
+      "effective_at_review_boundary": false,
+      "resolution_result": "VISUAL_IDENTITY_RELATIONSHIP_UNAVAILABLE"
+    },
+    {
+      "canonical_identity": "NSE-EQ-ITC",
+      "expected_tradingview_symbol": "NSE:ITC",
+      "existing_labels": [],
+      "verified_chart_labels": [
+        "ITC Limited"
+      ],
+      "relationship_currently_published": false,
+      "evidence_supported_candidate_coverage": true,
+      "unavailable_reason": null,
+      "candidate_publication_version": "1.5.0",
+      "candidate_relationship_published": true,
+      "relationships": [
+        {
+          "exact_visible_label": "ITC Limited",
+          "source_context": "TRADINGVIEW_VISUAL_CHART",
+          "effective_from": "2026-08-31T03:53:29.512375+00:00",
+          "effective_through": "9999-12-31T23:59:59.999999+00:00",
+          "relationship_identity": "VISUAL-IDENTITY-RELATIONSHIP-80260AEB572E3D5F5F459F184721821155F8144507DE02DAF4E6CC5CE85DA1F4",
+          "provenance": [
+            "ADR-0018",
+            "WO-07E-NSE-VISUAL-IDENTITY-SPONSOR-AUTHORIZATION",
+            "CHART-SHA256-ec65452e672ebdbfdf33f4668157c26c15c5945d89b37ce0210ef6ca5adb729f",
+            "CHART-MANIFEST-SHA256-f7ee01f7fd7e344d05c96e9cea0097c93d7b40b8dceb8113c0843e699c85d767",
+            "SPONSOR-TRADINGVIEW-UPLOAD-2026-08-31T03:53:29.512375+00:00",
+            "V2-DIRECT-8ea19a985e6f4327aaf93c97f9616d6c79c42330ad1f14cec0f1f1fc3ff187b8",
+            "CATALOGUE-V2-1.2.0-SHA256-b5916affa58cb153e76847495d8d8e6ac281cf8384ad4c68212a67bd3c321d44",
+            "EXACT-VISIBLE-NSE-HEADER-INSPECTED;NO-NAME-INFERENCE"
+          ]
+        }
+      ],
+      "effective_at_review_boundary": true,
+      "resolution_result": "RESOLVES_EXACT_REGISTERED_LABEL"
+    },
+    {
+      "canonical_identity": "NSE-EQ-JIOFIN",
+      "expected_tradingview_symbol": "NSE:JIOFIN",
+      "existing_labels": [],
+      "verified_chart_labels": [],
+      "relationship_currently_published": false,
+      "evidence_supported_candidate_coverage": false,
+      "unavailable_reason": "NO_RETAINED_SOURCE_QUALIFIED_VISUAL_LABEL_ESTABLISHED; catalogue/provider/company-name data alone not sufficient",
+      "candidate_publication_version": "1.5.0",
+      "candidate_relationship_published": false,
+      "relationships": [],
+      "effective_at_review_boundary": false,
+      "resolution_result": "VISUAL_IDENTITY_RELATIONSHIP_UNAVAILABLE"
+    },
+    {
+      "canonical_identity": "NSE-EQ-JUBLFOOD",
+      "expected_tradingview_symbol": "NSE:JUBLFOOD",
+      "existing_labels": [],
+      "verified_chart_labels": [],
+      "relationship_currently_published": false,
+      "evidence_supported_candidate_coverage": false,
+      "unavailable_reason": "NO_RETAINED_SOURCE_QUALIFIED_VISUAL_LABEL_ESTABLISHED; catalogue/provider/company-name data alone not sufficient",
+      "candidate_publication_version": "1.5.0",
+      "candidate_relationship_published": false,
+      "relationships": [],
+      "effective_at_review_boundary": false,
+      "resolution_result": "VISUAL_IDENTITY_RELATIONSHIP_UNAVAILABLE"
+    },
+    {
+      "canonical_identity": "NSE-EQ-KAYNES",
+      "expected_tradingview_symbol": "NSE:KAYNES",
+      "existing_labels": [],
+      "verified_chart_labels": [],
+      "relationship_currently_published": false,
+      "evidence_supported_candidate_coverage": false,
+      "unavailable_reason": "NO_RETAINED_SOURCE_QUALIFIED_VISUAL_LABEL_ESTABLISHED; catalogue/provider/company-name data alone not sufficient",
+      "candidate_publication_version": "1.5.0",
+      "candidate_relationship_published": false,
+      "relationships": [],
+      "effective_at_review_boundary": false,
+      "resolution_result": "VISUAL_IDENTITY_RELATIONSHIP_UNAVAILABLE"
+    },
+    {
+      "canonical_identity": "NSE-EQ-KOTAKBANK",
+      "expected_tradingview_symbol": "NSE:KOTAKBANK",
+      "existing_labels": [],
+      "verified_chart_labels": [
+        "Kotak Mahindra Bank Limited"
+      ],
+      "relationship_currently_published": false,
+      "evidence_supported_candidate_coverage": true,
+      "unavailable_reason": null,
+      "candidate_publication_version": "1.5.0",
+      "candidate_relationship_published": true,
+      "relationships": [
+        {
+          "exact_visible_label": "Kotak Mahindra Bank Limited",
+          "source_context": "TRADINGVIEW_VISUAL_CHART",
+          "effective_from": "2026-08-23T00:00:00+05:30",
+          "effective_through": "9999-12-31T23:59:59.999999+00:00",
+          "relationship_identity": "VISUAL-IDENTITY-RELATIONSHIP-EE02A1CAFF79FAD200D58F155BEDB0658239294B7AAD32BA05789504157C9719",
+          "provenance": [
+            "ADR-0018",
+            "WO-07E-NSE-VISUAL-IDENTITY-SPONSOR-AUTHORIZATION",
+            "CHART-SHA256-b1a74a40b4ce884937be8d8670a593c7ebdf019c3aac4ba4c7fe032c49eab161",
+            "CHART-MANIFEST-SHA256-db0a8d5fe4bac28543295c228704ead265ef10251f0cd00d429f99b2cbe13575",
+            "SPONSOR-TRADINGVIEW-UPLOAD-2026-08-16T08:49:22.016023+00:00",
+            "V2-DIRECT-714ade79413775f283569596f46f00413e2b9ed044138399f3f4af9913e34ed9",
+            "CATALOGUE-V2-1.2.0-SHA256-b5916affa58cb153e76847495d8d8e6ac281cf8384ad4c68212a67bd3c321d44",
+            "EXACT-VISIBLE-NSE-HEADER-INSPECTED;NO-NAME-INFERENCE"
+          ]
+        }
+      ],
+      "effective_at_review_boundary": true,
+      "resolution_result": "RESOLVES_EXACT_REGISTERED_LABEL"
+    },
+    {
+      "canonical_identity": "NSE-EQ-LICI",
+      "expected_tradingview_symbol": "NSE:LICI",
+      "existing_labels": [],
+      "verified_chart_labels": [
+        "Life Insurance Corp. of India"
+      ],
+      "relationship_currently_published": false,
+      "evidence_supported_candidate_coverage": true,
+      "unavailable_reason": null,
+      "candidate_publication_version": "1.5.0",
+      "candidate_relationship_published": true,
+      "relationships": [
+        {
+          "exact_visible_label": "Life Insurance Corp. of India",
+          "source_context": "TRADINGVIEW_VISUAL_CHART",
+          "effective_from": "2026-08-23T00:00:00+05:30",
+          "effective_through": "9999-12-31T23:59:59.999999+00:00",
+          "relationship_identity": "VISUAL-IDENTITY-RELATIONSHIP-DA098241FD71C6BB30EFD0528672F1694C1954EBC3679940808CDA7DC9170131",
+          "provenance": [
+            "ADR-0018",
+            "WO-07E-NSE-VISUAL-IDENTITY-SPONSOR-AUTHORIZATION",
+            "CHART-SHA256-33824e8b384efecceb9ce0fb1c12730c62cf482db7234d92b971bee3f43ffde1",
+            "CHART-MANIFEST-SHA256-79e097e1382bb70697f47df0f8b903199418aebf53018988474761efe1efbcab",
+            "SPONSOR-TRADINGVIEW-UPLOAD-2026-08-17T09:43:10.588967+00:00",
+            "V2-DIRECT-ab3f43c670a9849770d5b2ee4715336e8dbb3d4e15a6d7cc24a69b4387d7842a",
+            "CATALOGUE-V2-1.2.0-SHA256-b5916affa58cb153e76847495d8d8e6ac281cf8384ad4c68212a67bd3c321d44",
+            "EXACT-VISIBLE-NSE-HEADER-INSPECTED;NO-NAME-INFERENCE"
+          ]
+        }
+      ],
+      "effective_at_review_boundary": true,
+      "resolution_result": "RESOLVES_EXACT_REGISTERED_LABEL"
+    },
+    {
+      "canonical_identity": "NSE-EQ-LT",
+      "expected_tradingview_symbol": "NSE:LT",
+      "existing_labels": [],
+      "verified_chart_labels": [
+        "Larsen & Toubro Limited"
+      ],
+      "relationship_currently_published": false,
+      "evidence_supported_candidate_coverage": true,
+      "unavailable_reason": null,
+      "candidate_publication_version": "1.5.0",
+      "candidate_relationship_published": true,
+      "relationships": [
+        {
+          "exact_visible_label": "Larsen & Toubro Limited",
+          "source_context": "TRADINGVIEW_VISUAL_CHART",
+          "effective_from": "2026-08-27T04:13:50.860904+00:00",
+          "effective_through": "9999-12-31T23:59:59.999999+00:00",
+          "relationship_identity": "VISUAL-IDENTITY-RELATIONSHIP-54E896D46573A9D89604E0F715065C90AF961D225ACF8D61D997332783EAAC74",
+          "provenance": [
+            "ADR-0018",
+            "WO-07E-NSE-VISUAL-IDENTITY-SPONSOR-AUTHORIZATION",
+            "CHART-SHA256-1ebc9dba2d7f4e57f89ddd2555c82b8c0733e1d61e530b4f8117dbdf0d6e7673",
+            "CHART-MANIFEST-SHA256-3274066a923052d57033f13cb1bf5a2ab9c852182ac32140db221e0dfc1511d9",
+            "SPONSOR-TRADINGVIEW-UPLOAD-2026-08-27T04:13:50.860904+00:00",
+            "V2-DIRECT-5b1c249b470fdbca0476e9308f942671d8085e7856dc7d7c3f937743255e3ad3",
+            "CATALOGUE-V2-1.2.0-SHA256-b5916affa58cb153e76847495d8d8e6ac281cf8384ad4c68212a67bd3c321d44",
+            "EXACT-VISIBLE-NSE-HEADER-INSPECTED;NO-NAME-INFERENCE"
+          ]
+        }
+      ],
+      "effective_at_review_boundary": true,
+      "resolution_result": "RESOLVES_EXACT_REGISTERED_LABEL"
+    },
+    {
+      "canonical_identity": "NSE-EQ-LUPIN",
+      "expected_tradingview_symbol": "NSE:LUPIN",
+      "existing_labels": [],
+      "verified_chart_labels": [],
+      "relationship_currently_published": false,
+      "evidence_supported_candidate_coverage": false,
+      "unavailable_reason": "NO_RETAINED_SOURCE_QUALIFIED_VISUAL_LABEL_ESTABLISHED; catalogue/provider/company-name data alone not sufficient",
+      "candidate_publication_version": "1.5.0",
+      "candidate_relationship_published": false,
+      "relationships": [],
+      "effective_at_review_boundary": false,
+      "resolution_result": "VISUAL_IDENTITY_RELATIONSHIP_UNAVAILABLE"
+    },
+    {
+      "canonical_identity": "NSE-EQ-M&M",
+      "expected_tradingview_symbol": "NSE:M&M",
+      "existing_labels": [],
+      "verified_chart_labels": [
+        "Mahindra & Mahindra Ltd."
+      ],
+      "relationship_currently_published": false,
+      "evidence_supported_candidate_coverage": true,
+      "unavailable_reason": null,
+      "candidate_publication_version": "1.5.0",
+      "candidate_relationship_published": true,
+      "relationships": [
+        {
+          "exact_visible_label": "Mahindra & Mahindra Ltd.",
+          "source_context": "TRADINGVIEW_VISUAL_CHART",
+          "effective_from": "2026-08-23T00:00:00+05:30",
+          "effective_through": "9999-12-31T23:59:59.999999+00:00",
+          "relationship_identity": "VISUAL-IDENTITY-RELATIONSHIP-41BC644ADF0F059DA757646667C121861EAC68DFC48831E673D53727D97A51DC",
+          "provenance": [
+            "ADR-0018",
+            "WO-07E-NSE-VISUAL-IDENTITY-SPONSOR-AUTHORIZATION",
+            "CHART-SHA256-aa12e58cf8ca89d79f9ee4f074eb4ce54016e8dbc9e051230979516c2b06bb2d",
+            "CHART-MANIFEST-SHA256-d7a8a6966904f70f09c45304d65e564b7f02e8c91fce69e9b125176d7a1a9d01",
+            "SPONSOR-TRADINGVIEW-UPLOAD-2026-08-16T08:48:28.734712+00:00",
+            "V2-DIRECT-0e8424af7c3731a7f39fd25f4e24cf8f89b1ef1d9b9b8610dc00c6b993afd921",
+            "CATALOGUE-V2-1.2.0-SHA256-b5916affa58cb153e76847495d8d8e6ac281cf8384ad4c68212a67bd3c321d44",
+            "EXACT-VISIBLE-NSE-HEADER-INSPECTED;NO-NAME-INFERENCE"
+          ]
+        }
+      ],
+      "effective_at_review_boundary": true,
+      "resolution_result": "RESOLVES_EXACT_REGISTERED_LABEL"
+    },
+    {
+      "canonical_identity": "NSE-EQ-MARUTI",
+      "expected_tradingview_symbol": "NSE:MARUTI",
+      "existing_labels": [],
+      "verified_chart_labels": [],
+      "relationship_currently_published": false,
+      "evidence_supported_candidate_coverage": false,
+      "unavailable_reason": "NO_RETAINED_SOURCE_QUALIFIED_VISUAL_LABEL_ESTABLISHED; catalogue/provider/company-name data alone not sufficient",
+      "candidate_publication_version": "1.5.0",
+      "candidate_relationship_published": false,
+      "relationships": [],
+      "effective_at_review_boundary": false,
+      "resolution_result": "VISUAL_IDENTITY_RELATIONSHIP_UNAVAILABLE"
+    },
+    {
+      "canonical_identity": "NSE-EQ-MAXHEALTH",
+      "expected_tradingview_symbol": "NSE:MAXHEALTH",
+      "existing_labels": [
+        "Max Healthcare Institute Ltd"
+      ],
+      "verified_chart_labels": [],
+      "relationship_currently_published": true,
+      "evidence_supported_candidate_coverage": true,
+      "unavailable_reason": null,
+      "candidate_publication_version": "1.5.0",
+      "candidate_relationship_published": true,
+      "relationships": [
+        {
+          "exact_visible_label": "Max Healthcare Institute Ltd",
+          "source_context": "TRADINGVIEW_VISUAL_CHART",
+          "effective_from": "2026-09-04T13:47:57+00:00",
+          "effective_through": "9999-12-31T23:59:59.999999+00:00",
+          "relationship_identity": "VISUAL-IDENTITY-RELATIONSHIP-A585CC6290188F8D363A546A3B31041DC0A13AA4036F7EE8F26C821B8D570DD3",
+          "provenance": [
+            "ADR-0018",
+            "WO-BR2-PROVABLE-VISUAL-IDENTITY-COVERAGE-2026-09-06",
+            "INTRADAY-REVIEW-V2-CYCLE-CD8F40B5B0A8E773C0697600E2E2FAAB9703D65D203B0B8A457ED7EA1F732B47",
+            "INTRADAY-CHART-REVISION-V2-3B3DB6A7FE3BABBD5C7250C6E4CE8379C6B92A2FAE72E0D14E784DBB6B1968A0",
+            "CHART-PAYLOAD-SHA256-1f485b371ab81e6567a3bf37974cbae7155597286d4bb3e931050779cb47b219",
+            "OBSERVATION-BOUNDARY-2026-09-04T13:47:57+00:00",
+            "KRONOS-CANONICAL-INSTRUMENT-CATALOGUE-V2:1.2.0"
+          ]
+        }
+      ],
+      "effective_at_review_boundary": true,
+      "resolution_result": "RESOLVES_EXACT_REGISTERED_LABEL"
+    },
+    {
+      "canonical_identity": "NSE-EQ-MAZDOCK",
+      "expected_tradingview_symbol": "NSE:MAZDOCK",
+      "existing_labels": [],
+      "verified_chart_labels": [
+        "Mazagon Dock Shipbuilders Ltd."
+      ],
+      "relationship_currently_published": false,
+      "evidence_supported_candidate_coverage": true,
+      "unavailable_reason": null,
+      "candidate_publication_version": "1.5.0",
+      "candidate_relationship_published": true,
+      "relationships": [
+        {
+          "exact_visible_label": "Mazagon Dock Shipbuilders Ltd.",
+          "source_context": "TRADINGVIEW_VISUAL_CHART",
+          "effective_from": "2026-08-27T04:14:08.241532+00:00",
+          "effective_through": "9999-12-31T23:59:59.999999+00:00",
+          "relationship_identity": "VISUAL-IDENTITY-RELATIONSHIP-A67EC7F6CF8BFCA7CDA66D3F2FBDAF86C2168FC9E53D07BA517D7FC72A4BBA15",
+          "provenance": [
+            "ADR-0018",
+            "WO-07E-NSE-VISUAL-IDENTITY-SPONSOR-AUTHORIZATION",
+            "CHART-SHA256-9331c46d927b6ad6e36412ead690fd10974d4720b9eeac225fc8f48849921f13",
+            "CHART-MANIFEST-SHA256-82f8a3de191459ca8680693463d9cd6c601b90390db9ececa1e0d7a6bf78fd5a",
+            "SPONSOR-TRADINGVIEW-UPLOAD-2026-08-27T04:14:08.241532+00:00",
+            "V2-DIRECT-0e94aea0aebe84bf9ec3c6068ca7fc6bdcc165a09bc04a43f801a788a96e274f",
+            "CATALOGUE-V2-1.2.0-SHA256-b5916affa58cb153e76847495d8d8e6ac281cf8384ad4c68212a67bd3c321d44",
+            "EXACT-VISIBLE-NSE-HEADER-INSPECTED;NO-NAME-INFERENCE"
+          ]
+        }
+      ],
+      "effective_at_review_boundary": true,
+      "resolution_result": "RESOLVES_EXACT_REGISTERED_LABEL"
+    },
+    {
+      "canonical_identity": "NSE-EQ-MCX",
+      "expected_tradingview_symbol": "NSE:MCX",
+      "existing_labels": [],
+      "verified_chart_labels": [
+        "Multi Commodity Exchange of India Limited"
+      ],
+      "relationship_currently_published": false,
+      "evidence_supported_candidate_coverage": true,
+      "unavailable_reason": null,
+      "candidate_publication_version": "1.5.0",
+      "candidate_relationship_published": true,
+      "relationships": [
+        {
+          "exact_visible_label": "Multi Commodity Exchange of India Limited",
+          "source_context": "TRADINGVIEW_VISUAL_CHART",
+          "effective_from": "2026-08-23T00:00:00+05:30",
+          "effective_through": "9999-12-31T23:59:59.999999+00:00",
+          "relationship_identity": "VISUAL-IDENTITY-RELATIONSHIP-42C2760E0F76FB410DD5CC9C69CE7F0DC32E37791B1AB141100FA76E90FD7A14",
+          "provenance": [
+            "ADR-0018",
+            "WO-07E-NSE-VISUAL-IDENTITY-SPONSOR-AUTHORIZATION",
+            "CHART-SHA256-6ba22e6d71eb5a1d9d8bd72c2ab890f56efd7074d282a0061a9c24b837dc493f",
+            "CHART-MANIFEST-SHA256-0df256b5ae39bf90ccee5525ce60de1f2d01b86282b387368ae8f25ccb9321a7",
+            "SPONSOR-TRADINGVIEW-UPLOAD-2026-08-21T03:02:54.508114+00:00",
+            "V2-DIRECT-e17d7c5c115fcc177b046d99c445f653d57a75efdb61e6700e1cd4405ba8ea2d",
+            "CATALOGUE-V2-1.2.0-SHA256-b5916affa58cb153e76847495d8d8e6ac281cf8384ad4c68212a67bd3c321d44",
+            "EXACT-VISIBLE-NSE-HEADER-INSPECTED;NO-NAME-INFERENCE"
+          ]
+        }
+      ],
+      "effective_at_review_boundary": true,
+      "resolution_result": "RESOLVES_EXACT_REGISTERED_LABEL"
+    },
+    {
+      "canonical_identity": "NSE-EQ-MOTHERSON",
+      "expected_tradingview_symbol": "NSE:MOTHERSON",
+      "existing_labels": [],
+      "verified_chart_labels": [],
+      "relationship_currently_published": false,
+      "evidence_supported_candidate_coverage": false,
+      "unavailable_reason": "NO_RETAINED_SOURCE_QUALIFIED_VISUAL_LABEL_ESTABLISHED; catalogue/provider/company-name data alone not sufficient",
+      "candidate_publication_version": "1.5.0",
+      "candidate_relationship_published": false,
+      "relationships": [],
+      "effective_at_review_boundary": false,
+      "resolution_result": "VISUAL_IDENTITY_RELATIONSHIP_UNAVAILABLE"
+    },
+    {
+      "canonical_identity": "NSE-EQ-MUTHOOTFIN",
+      "expected_tradingview_symbol": "NSE:MUTHOOTFIN",
+      "existing_labels": [],
+      "verified_chart_labels": [],
+      "relationship_currently_published": false,
+      "evidence_supported_candidate_coverage": false,
+      "unavailable_reason": "NO_RETAINED_SOURCE_QUALIFIED_VISUAL_LABEL_ESTABLISHED; catalogue/provider/company-name data alone not sufficient",
+      "candidate_publication_version": "1.5.0",
+      "candidate_relationship_published": false,
+      "relationships": [],
+      "effective_at_review_boundary": false,
+      "resolution_result": "VISUAL_IDENTITY_RELATIONSHIP_UNAVAILABLE"
+    },
+    {
+      "canonical_identity": "NSE-EQ-NAUKRI",
+      "expected_tradingview_symbol": "NSE:NAUKRI",
+      "existing_labels": [],
+      "verified_chart_labels": [
+        "Info Edge India Ltd."
+      ],
+      "relationship_currently_published": false,
+      "evidence_supported_candidate_coverage": true,
+      "unavailable_reason": null,
+      "candidate_publication_version": "1.5.0",
+      "candidate_relationship_published": true,
+      "relationships": [
+        {
+          "exact_visible_label": "Info Edge India Ltd.",
+          "source_context": "TRADINGVIEW_VISUAL_CHART",
+          "effective_from": "2026-08-25T13:42:33.618433+00:00",
+          "effective_through": "9999-12-31T23:59:59.999999+00:00",
+          "relationship_identity": "VISUAL-IDENTITY-RELATIONSHIP-6B5694DFC2ED8640716CAC27AE7568DFC608976A295EEFC0A384CCEDFD12042B",
+          "provenance": [
+            "ADR-0018",
+            "WO-07E-NSE-VISUAL-IDENTITY-SPONSOR-AUTHORIZATION",
+            "CHART-SHA256-12816ab069a79451734a926dfa23953c90740d89978539d2d4e7c0ff87b84667",
+            "CHART-MANIFEST-SHA256-7927f58b52460505cd42c55b7b54c7030ee7f4154e0000a552f5931c9a5c3d0f",
+            "SPONSOR-TRADINGVIEW-UPLOAD-2026-08-25T13:42:33.618433+00:00",
+            "V2-DIRECT-252f294c83b42a74aabd71c638bbfe7ecd48354c0094c1cd8f3433d188b350fb",
+            "CATALOGUE-V2-1.2.0-SHA256-b5916affa58cb153e76847495d8d8e6ac281cf8384ad4c68212a67bd3c321d44",
+            "EXACT-VISIBLE-NSE-HEADER-INSPECTED;NO-NAME-INFERENCE"
+          ]
+        }
+      ],
+      "effective_at_review_boundary": true,
+      "resolution_result": "RESOLVES_EXACT_REGISTERED_LABEL"
+    },
+    {
+      "canonical_identity": "NSE-EQ-NTPC",
+      "expected_tradingview_symbol": "NSE:NTPC",
+      "existing_labels": [
+        "NTPC Limited"
+      ],
+      "verified_chart_labels": [
+        "NTPC Limited"
+      ],
+      "relationship_currently_published": true,
+      "evidence_supported_candidate_coverage": true,
+      "unavailable_reason": null,
+      "candidate_publication_version": "1.5.0",
+      "candidate_relationship_published": true,
+      "relationships": [
+        {
+          "exact_visible_label": "NTPC Limited",
+          "source_context": "TRADINGVIEW_VISUAL_CHART",
+          "effective_from": "2026-09-04T13:47:57+00:00",
+          "effective_through": "9999-12-31T23:59:59.999999+00:00",
+          "relationship_identity": "VISUAL-IDENTITY-RELATIONSHIP-C70CFEC1C84AD50A03946DF46E9AC6BA83BB0357C0BD912A16855AA7A1588D8B",
+          "provenance": [
+            "ADR-0018",
+            "WO-BR2-PROVABLE-VISUAL-IDENTITY-COVERAGE-2026-09-06",
+            "INTRADAY-REVIEW-V2-CYCLE-73B20FF8BF3F375E7C3413AF8324384F1E9CEA26E6462E44AB2F06820F9C139F",
+            "INTRADAY-CHART-REVISION-V2-9794BE4655ED08BC1A4220A5507CE6E5BB5A385728C8C22C259772A97C4DC5EC",
+            "CHART-PAYLOAD-SHA256-658c49aca71d811319626ace5cae27bff5c8dbab009637db2d28252b8a81c514",
+            "OBSERVATION-BOUNDARY-2026-09-04T13:47:57+00:00",
+            "KRONOS-CANONICAL-INSTRUMENT-CATALOGUE-V2:1.2.0"
+          ]
+        }
+      ],
+      "effective_at_review_boundary": true,
+      "resolution_result": "RESOLVES_EXACT_REGISTERED_LABEL"
+    },
+    {
+      "canonical_identity": "NSE-EQ-PAYTM",
+      "expected_tradingview_symbol": "NSE:PAYTM",
+      "existing_labels": [],
+      "verified_chart_labels": [],
+      "relationship_currently_published": false,
+      "evidence_supported_candidate_coverage": false,
+      "unavailable_reason": "NO_RETAINED_SOURCE_QUALIFIED_VISUAL_LABEL_ESTABLISHED; catalogue/provider/company-name data alone not sufficient",
+      "candidate_publication_version": "1.5.0",
+      "candidate_relationship_published": false,
+      "relationships": [],
+      "effective_at_review_boundary": false,
+      "resolution_result": "VISUAL_IDENTITY_RELATIONSHIP_UNAVAILABLE"
+    },
+    {
+      "canonical_identity": "NSE-EQ-PERSISTENT",
+      "expected_tradingview_symbol": "NSE:PERSISTENT",
+      "existing_labels": [],
+      "verified_chart_labels": [
+        "Persistent Systems Ltd."
+      ],
+      "relationship_currently_published": false,
+      "evidence_supported_candidate_coverage": true,
+      "unavailable_reason": null,
+      "candidate_publication_version": "1.5.0",
+      "candidate_relationship_published": true,
+      "relationships": [
+        {
+          "exact_visible_label": "Persistent Systems Ltd.",
+          "source_context": "TRADINGVIEW_VISUAL_CHART",
+          "effective_from": "2026-08-23T00:00:00+05:30",
+          "effective_through": "9999-12-31T23:59:59.999999+00:00",
+          "relationship_identity": "VISUAL-IDENTITY-RELATIONSHIP-C220E28850993875ABFCCBD5CA6669F643DA036C009C5617A1C87E150AF14694",
+          "provenance": [
+            "ADR-0018",
+            "WO-07E-NSE-VISUAL-IDENTITY-SPONSOR-AUTHORIZATION",
+            "CHART-SHA256-6464f4165bc46f3764dc9e8452965da6cbcafb108550e6df501c6f726b9f68d8",
+            "CHART-MANIFEST-SHA256-1fcdd8059b180ee5df6d35c9f362bab6e9e30c86a4d22b0e51c01c59ff61a798",
+            "SPONSOR-TRADINGVIEW-UPLOAD-2026-08-21T03:02:20.638934+00:00",
+            "V2-DIRECT-e889d2426af9ce60005064410042a57fd45f7b7c00c6787a4ebe9b635bac5e35",
+            "CATALOGUE-V2-1.2.0-SHA256-b5916affa58cb153e76847495d8d8e6ac281cf8384ad4c68212a67bd3c321d44",
+            "EXACT-VISIBLE-NSE-HEADER-INSPECTED;NO-NAME-INFERENCE"
+          ]
+        }
+      ],
+      "effective_at_review_boundary": true,
+      "resolution_result": "RESOLVES_EXACT_REGISTERED_LABEL"
+    },
+    {
+      "canonical_identity": "NSE-EQ-PNB",
+      "expected_tradingview_symbol": "NSE:PNB",
+      "existing_labels": [],
+      "verified_chart_labels": [
+        "Punjab National Bank"
+      ],
+      "relationship_currently_published": false,
+      "evidence_supported_candidate_coverage": true,
+      "unavailable_reason": null,
+      "candidate_publication_version": "1.5.0",
+      "candidate_relationship_published": true,
+      "relationships": [
+        {
+          "exact_visible_label": "Punjab National Bank",
+          "source_context": "TRADINGVIEW_VISUAL_CHART",
+          "effective_from": "2026-08-25T13:43:08.791081+00:00",
+          "effective_through": "9999-12-31T23:59:59.999999+00:00",
+          "relationship_identity": "VISUAL-IDENTITY-RELATIONSHIP-EE6FA933BFE93E69C9E6BF932B89CDB16BAC9E4368D8E3E85DE5549418C99EED",
+          "provenance": [
+            "ADR-0018",
+            "WO-07E-NSE-VISUAL-IDENTITY-SPONSOR-AUTHORIZATION",
+            "CHART-SHA256-f55c1bb5f73e8af8e57ad3315af3b7ea5d1365d8aee7fbe7db3354784a236d97",
+            "CHART-MANIFEST-SHA256-cbfeebbbaf48087d4ca5bed98d5c974fb22492bf54769c98cc6045e96427f6ef",
+            "SPONSOR-TRADINGVIEW-UPLOAD-2026-08-25T13:43:08.791081+00:00",
+            "V2-DIRECT-c24f8c4fcb172c9b32e4f135993aa8e26fa3bce34080e173a2a5b3e1f7b2f39f",
+            "CATALOGUE-V2-1.2.0-SHA256-b5916affa58cb153e76847495d8d8e6ac281cf8384ad4c68212a67bd3c321d44",
+            "EXACT-VISIBLE-NSE-HEADER-INSPECTED;NO-NAME-INFERENCE"
+          ]
+        }
+      ],
+      "effective_at_review_boundary": true,
+      "resolution_result": "RESOLVES_EXACT_REGISTERED_LABEL"
+    },
+    {
+      "canonical_identity": "NSE-EQ-POLICYBZR",
+      "expected_tradingview_symbol": "NSE:POLICYBZR",
+      "existing_labels": [
+        "PB Fintech Limited"
+      ],
+      "verified_chart_labels": [
+        "PB Fintech Limited"
+      ],
+      "relationship_currently_published": true,
+      "evidence_supported_candidate_coverage": true,
+      "unavailable_reason": null,
+      "candidate_publication_version": "1.5.0",
+      "candidate_relationship_published": true,
+      "relationships": [
+        {
+          "exact_visible_label": "PB Fintech Limited",
+          "source_context": "TRADINGVIEW_VISUAL_CHART",
+          "effective_from": "2026-08-28T17:18:48.326000+00:00",
+          "effective_through": "9999-12-31T23:59:59.999999+00:00",
+          "relationship_identity": "VISUAL-IDENTITY-RELATIONSHIP-468652A74605D6C8B695A04C1BA1000EAE7DDFFC167E7E7C2732CFB1B463582C",
+          "provenance": [
+            "ADR-0018",
+            "INTRADAY-CHART-REVISION-V2-9D1241366841CB7337261B1FFB1D72E92D9AC91B8E743F628AD21B69557F07A1",
+            "INTRADAY-CHART-ARTIFACT-V2-233304D2F08B376185E19A0AA34152040D37ACC095B677F1CA7BFD8B5CF8688B",
+            "CHART-PAYLOAD-SHA256-b21906a163d54d0af8964614448178232db93b28fe912dacfb275fdf9c1ad9f0",
+            "ANALYST-ANSWER-SHA256-63419e99ad91bb0670d263b1f6e1f289d96ed2ea87ca61e0d19af19a623b12a4",
+            "INTRADAY-V2-CHART-ANALYST-OPERATION-38569841F5DE513B99C9B705A9284196CA58E0C24B888BC3BDD0A8C212E9677A"
+          ]
+        }
+      ],
+      "effective_at_review_boundary": true,
+      "resolution_result": "RESOLVES_EXACT_REGISTERED_LABEL"
+    },
+    {
+      "canonical_identity": "NSE-EQ-POWERGRID",
+      "expected_tradingview_symbol": "NSE:POWERGRID",
+      "existing_labels": [],
+      "verified_chart_labels": [],
+      "relationship_currently_published": false,
+      "evidence_supported_candidate_coverage": false,
+      "unavailable_reason": "NO_RETAINED_SOURCE_QUALIFIED_VISUAL_LABEL_ESTABLISHED; catalogue/provider/company-name data alone not sufficient",
+      "candidate_publication_version": "1.5.0",
+      "candidate_relationship_published": false,
+      "relationships": [],
+      "effective_at_review_boundary": false,
+      "resolution_result": "VISUAL_IDENTITY_RELATIONSHIP_UNAVAILABLE"
+    },
+    {
+      "canonical_identity": "NSE-EQ-POWERINDIA",
+      "expected_tradingview_symbol": "NSE:POWERINDIA",
+      "existing_labels": [],
+      "verified_chart_labels": [
+        "Hitachi Energy India Limited"
+      ],
+      "relationship_currently_published": false,
+      "evidence_supported_candidate_coverage": true,
+      "unavailable_reason": null,
+      "candidate_publication_version": "1.5.0",
+      "candidate_relationship_published": true,
+      "relationships": [
+        {
+          "exact_visible_label": "Hitachi Energy India Limited",
+          "source_context": "TRADINGVIEW_VISUAL_CHART",
+          "effective_from": "2026-08-28T03:38:59.653389+00:00",
+          "effective_through": "9999-12-31T23:59:59.999999+00:00",
+          "relationship_identity": "VISUAL-IDENTITY-RELATIONSHIP-479C12ADFEEC8D49C1718A38DA67BB94D1F66C64330AE4EC829287112378D5F0",
+          "provenance": [
+            "ADR-0018",
+            "WO-07E-NSE-VISUAL-IDENTITY-SPONSOR-AUTHORIZATION",
+            "CHART-SHA256-5a9a09de4fa3b4137c9bf98133c49cccf705c81ea55fcbb2b2f5ff1e4fb265a9",
+            "CHART-MANIFEST-SHA256-192da52425ef9b21e3b65a74006be71696d4e474c1d678de77e5c3d7e4b7db42",
+            "SPONSOR-TRADINGVIEW-UPLOAD-2026-08-28T03:38:59.653389+00:00",
+            "V2-DIRECT-4406d5a7b750def05363bfbdf9856799a4f18dab7112a19bdcebd32a4ae385a4",
+            "CATALOGUE-V2-1.2.0-SHA256-b5916affa58cb153e76847495d8d8e6ac281cf8384ad4c68212a67bd3c321d44",
+            "EXACT-VISIBLE-NSE-HEADER-INSPECTED;NO-NAME-INFERENCE"
+          ]
+        }
+      ],
+      "effective_at_review_boundary": true,
+      "resolution_result": "RESOLVES_EXACT_REGISTERED_LABEL"
+    },
+    {
+      "canonical_identity": "NSE-EQ-RBLBANK",
+      "expected_tradingview_symbol": "NSE:RBLBANK",
+      "existing_labels": [
+        "RBL Bank Ltd"
+      ],
+      "verified_chart_labels": [],
+      "relationship_currently_published": true,
+      "evidence_supported_candidate_coverage": true,
+      "unavailable_reason": null,
+      "candidate_publication_version": "1.5.0",
+      "candidate_relationship_published": true,
+      "relationships": [
+        {
+          "exact_visible_label": "RBL Bank Ltd",
+          "source_context": "TRADINGVIEW_VISUAL_CHART",
+          "effective_from": "2026-08-27T10:59:49.164000+00:00",
+          "effective_through": "9999-12-31T23:59:59.999999+00:00",
+          "relationship_identity": "VISUAL-IDENTITY-RELATIONSHIP-747F7477169C93900D1BA3E2B274867125148AF4235164EB7F14208C6A696A37",
+          "provenance": [
+            "ADR-0018",
+            "INTRADAY-CHART-REVISION-6D38C0E6AEA4170629B9FCC3D20B0C984B744F32EBCC17E1C9A84DA1F7ACE163",
+            "INTRADAY-CHART-ARTIFACT-D4869B0DE9BEAFA6EF3E81CEEEEB4BB7D61879424BB0B37AFD7DB9CF9BF12985",
+            "CHART-PAYLOAD-SHA256-0c57d6bbb17a8e19cf066ae5284b73d01e3bbf7182e85890866cc4575f0dd708",
+            "ANALYST-ANSWER-SHA256-3cbd1b77ff47dd487d194adbb27710cdb31d54d3c39cfbf7720fe04fd824be09"
+          ]
+        }
+      ],
+      "effective_at_review_boundary": true,
+      "resolution_result": "RESOLVES_EXACT_REGISTERED_LABEL"
+    },
+    {
+      "canonical_identity": "NSE-EQ-RECLTD",
+      "expected_tradingview_symbol": "NSE:RECLTD",
+      "existing_labels": [],
+      "verified_chart_labels": [],
+      "relationship_currently_published": false,
+      "evidence_supported_candidate_coverage": false,
+      "unavailable_reason": "NO_RETAINED_SOURCE_QUALIFIED_VISUAL_LABEL_ESTABLISHED; catalogue/provider/company-name data alone not sufficient",
+      "candidate_publication_version": "1.5.0",
+      "candidate_relationship_published": false,
+      "relationships": [],
+      "effective_at_review_boundary": false,
+      "resolution_result": "VISUAL_IDENTITY_RELATIONSHIP_UNAVAILABLE"
+    },
+    {
+      "canonical_identity": "NSE-EQ-RVNL",
+      "expected_tradingview_symbol": "NSE:RVNL",
+      "existing_labels": [],
+      "verified_chart_labels": [
+        "Rail Vikas Nigam Ltd."
+      ],
+      "relationship_currently_published": false,
+      "evidence_supported_candidate_coverage": true,
+      "unavailable_reason": null,
+      "candidate_publication_version": "1.5.0",
+      "candidate_relationship_published": true,
+      "relationships": [
+        {
+          "exact_visible_label": "Rail Vikas Nigam Ltd.",
+          "source_context": "TRADINGVIEW_VISUAL_CHART",
+          "effective_from": "2026-08-23T00:00:00+05:30",
+          "effective_through": "9999-12-31T23:59:59.999999+00:00",
+          "relationship_identity": "VISUAL-IDENTITY-RELATIONSHIP-E03535424900056C25059366DE93858BC91741F278FB545353DD7018DFF5A922",
+          "provenance": [
+            "ADR-0018",
+            "WO-07E-NSE-VISUAL-IDENTITY-SPONSOR-AUTHORIZATION",
+            "CHART-SHA256-84c41e97e604d47cb6d6321ff48a21f47fd82d6ba18e65c7104a6c0c90184cd8",
+            "CHART-MANIFEST-SHA256-4ce1fa4e87c2a9435be0f9d3ffa8e410fea9df9561be68430072324b4b6e5276",
+            "SPONSOR-TRADINGVIEW-UPLOAD-2026-08-16T08:48:55.733886+00:00",
+            "V2-DIRECT-710a9c5eb69eabb932c342e8a512d2fcf4b97b57d58ce9a0b6279c6f24c10ec2",
+            "CATALOGUE-V2-1.2.0-SHA256-b5916affa58cb153e76847495d8d8e6ac281cf8384ad4c68212a67bd3c321d44",
+            "EXACT-VISIBLE-NSE-HEADER-INSPECTED;NO-NAME-INFERENCE"
+          ]
+        }
+      ],
+      "effective_at_review_boundary": true,
+      "resolution_result": "RESOLVES_EXACT_REGISTERED_LABEL"
+    },
+    {
+      "canonical_identity": "NSE-EQ-SAIL",
+      "expected_tradingview_symbol": "NSE:SAIL",
+      "existing_labels": [],
+      "verified_chart_labels": [
+        "Steel Authority of India Limited"
+      ],
+      "relationship_currently_published": false,
+      "evidence_supported_candidate_coverage": true,
+      "unavailable_reason": null,
+      "candidate_publication_version": "1.5.0",
+      "candidate_relationship_published": true,
+      "relationships": [
+        {
+          "exact_visible_label": "Steel Authority of India Limited",
+          "source_context": "TRADINGVIEW_VISUAL_CHART",
+          "effective_from": "2026-08-23T00:00:00+05:30",
+          "effective_through": "9999-12-31T23:59:59.999999+00:00",
+          "relationship_identity": "VISUAL-IDENTITY-RELATIONSHIP-B7B382942CC2BCC2328288EB8C157F21FEC801E2D0694EDC0A0239249C2DF246",
+          "provenance": [
+            "ADR-0018",
+            "WO-07E-NSE-VISUAL-IDENTITY-SPONSOR-AUTHORIZATION",
+            "CHART-SHA256-2cbb81c197c8b36488fa8842b8aa78a339f91e398341167590fa7fc6fdf56e70",
+            "CHART-MANIFEST-SHA256-4ae620d31bfb89104430cc22aaeb4b618d33bb739be85a64f2fb96eeed4d646c",
+            "SPONSOR-TRADINGVIEW-UPLOAD-2026-08-18T03:19:15.607296+00:00",
+            "V2-DIRECT-0d7db06fe17c6ea75e87dc14fc032c114fd5afe8819361f53d0db575c59ef443",
+            "CATALOGUE-V2-1.2.0-SHA256-b5916affa58cb153e76847495d8d8e6ac281cf8384ad4c68212a67bd3c321d44",
+            "EXACT-VISIBLE-NSE-HEADER-INSPECTED;NO-NAME-INFERENCE"
+          ]
+        }
+      ],
+      "effective_at_review_boundary": true,
+      "resolution_result": "RESOLVES_EXACT_REGISTERED_LABEL"
+    },
+    {
+      "canonical_identity": "NSE-EQ-SBICARD",
+      "expected_tradingview_symbol": "NSE:SBICARD",
+      "existing_labels": [],
+      "verified_chart_labels": [],
+      "relationship_currently_published": false,
+      "evidence_supported_candidate_coverage": false,
+      "unavailable_reason": "NO_RETAINED_SOURCE_QUALIFIED_VISUAL_LABEL_ESTABLISHED; catalogue/provider/company-name data alone not sufficient",
+      "candidate_publication_version": "1.5.0",
+      "candidate_relationship_published": false,
+      "relationships": [],
+      "effective_at_review_boundary": false,
+      "resolution_result": "VISUAL_IDENTITY_RELATIONSHIP_UNAVAILABLE"
+    },
+    {
+      "canonical_identity": "NSE-EQ-SBIN",
+      "expected_tradingview_symbol": "NSE:SBIN",
+      "existing_labels": [],
+      "verified_chart_labels": [
+        "State Bank of India"
+      ],
+      "relationship_currently_published": false,
+      "evidence_supported_candidate_coverage": true,
+      "unavailable_reason": null,
+      "candidate_publication_version": "1.5.0",
+      "candidate_relationship_published": true,
+      "relationships": [
+        {
+          "exact_visible_label": "State Bank of India",
+          "source_context": "TRADINGVIEW_VISUAL_CHART",
+          "effective_from": "2026-08-23T00:00:00+05:30",
+          "effective_through": "9999-12-31T23:59:59.999999+00:00",
+          "relationship_identity": "VISUAL-IDENTITY-RELATIONSHIP-628CA38E5CD1826530FC3D161818DE4E1B90CA7183C070E8EA1D257F58C178B2",
+          "provenance": [
+            "ADR-0018",
+            "WO-07E-NSE-VISUAL-IDENTITY-SPONSOR-AUTHORIZATION",
+            "CHART-SHA256-75878be0aeecefb79d573eb8e479043df97cf2c4b29c5a509e742377290deb14",
+            "CHART-MANIFEST-SHA256-b074b63d0650896721bcc8578228bc5b00f72319d206d5e86b9310c1dd4b217b",
+            "SPONSOR-TRADINGVIEW-UPLOAD-2026-08-17T09:43:44.924137+00:00",
+            "V2-DIRECT-ee9c62b7c7202830b579801113108ea6c8bab520e291a25bbe13045929efd5c9",
+            "CATALOGUE-V2-1.2.0-SHA256-b5916affa58cb153e76847495d8d8e6ac281cf8384ad4c68212a67bd3c321d44",
+            "EXACT-VISIBLE-NSE-HEADER-INSPECTED;NO-NAME-INFERENCE"
+          ]
+        }
+      ],
+      "effective_at_review_boundary": true,
+      "resolution_result": "RESOLVES_EXACT_REGISTERED_LABEL"
+    },
+    {
+      "canonical_identity": "NSE-EQ-SHRIRAMFIN",
+      "expected_tradingview_symbol": "NSE:SHRIRAMFIN",
+      "existing_labels": [],
+      "verified_chart_labels": [],
+      "relationship_currently_published": false,
+      "evidence_supported_candidate_coverage": false,
+      "unavailable_reason": "NO_RETAINED_SOURCE_QUALIFIED_VISUAL_LABEL_ESTABLISHED; catalogue/provider/company-name data alone not sufficient",
+      "candidate_publication_version": "1.5.0",
+      "candidate_relationship_published": false,
+      "relationships": [],
+      "effective_at_review_boundary": false,
+      "resolution_result": "VISUAL_IDENTITY_RELATIONSHIP_UNAVAILABLE"
+    },
+    {
+      "canonical_identity": "NSE-EQ-SRF",
+      "expected_tradingview_symbol": "NSE:SRF",
+      "existing_labels": [
+        "Srf Limited"
+      ],
+      "verified_chart_labels": [],
+      "relationship_currently_published": true,
+      "evidence_supported_candidate_coverage": true,
+      "unavailable_reason": null,
+      "candidate_publication_version": "1.5.0",
+      "candidate_relationship_published": true,
+      "relationships": [
+        {
+          "exact_visible_label": "Srf Limited",
+          "source_context": "TRADINGVIEW_VISUAL_CHART",
+          "effective_from": "2026-09-04T13:47:57+00:00",
+          "effective_through": "9999-12-31T23:59:59.999999+00:00",
+          "relationship_identity": "VISUAL-IDENTITY-RELATIONSHIP-1CE8D5CDBA604CA07EBCFA9715BD41AE08E93ECC177B28EBB2629EE2D607A6BD",
+          "provenance": [
+            "ADR-0018",
+            "WO-BR2-PROVABLE-VISUAL-IDENTITY-COVERAGE-2026-09-06",
+            "INTRADAY-REVIEW-V2-CYCLE-DE7F5E497C43C4A86FD7496022E6E2F4BCC2EDAFCEB24FE5296BF64AE96ADD90",
+            "INTRADAY-CHART-REVISION-V2-6734A56A9BF8F7FDF9C5BD270623142B332418B876D0FEDAA00A95BE0D8B6427",
+            "CHART-PAYLOAD-SHA256-cd97e42e19fea3817a25e18ee1ef72b2e6bcc7227d51cf817e715dfd458d1b61",
+            "OBSERVATION-BOUNDARY-2026-09-04T13:47:57+00:00",
+            "KRONOS-CANONICAL-INSTRUMENT-CATALOGUE-V2:1.2.0"
+          ]
+        }
+      ],
+      "effective_at_review_boundary": true,
+      "resolution_result": "RESOLVES_EXACT_REGISTERED_LABEL"
+    },
+    {
+      "canonical_identity": "NSE-EQ-SUNPHARMA",
+      "expected_tradingview_symbol": "NSE:SUNPHARMA",
+      "existing_labels": [],
+      "verified_chart_labels": [],
+      "relationship_currently_published": false,
+      "evidence_supported_candidate_coverage": false,
+      "unavailable_reason": "NO_RETAINED_SOURCE_QUALIFIED_VISUAL_LABEL_ESTABLISHED; catalogue/provider/company-name data alone not sufficient",
+      "candidate_publication_version": "1.5.0",
+      "candidate_relationship_published": false,
+      "relationships": [],
+      "effective_at_review_boundary": false,
+      "resolution_result": "VISUAL_IDENTITY_RELATIONSHIP_UNAVAILABLE"
+    },
+    {
+      "canonical_identity": "NSE-EQ-TATAPOWER",
+      "expected_tradingview_symbol": "NSE:TATAPOWER",
+      "existing_labels": [
+        "Tata Power Company Limited"
+      ],
+      "verified_chart_labels": [],
+      "relationship_currently_published": true,
+      "evidence_supported_candidate_coverage": true,
+      "unavailable_reason": null,
+      "candidate_publication_version": "1.5.0",
+      "candidate_relationship_published": true,
+      "relationships": [
+        {
+          "exact_visible_label": "Tata Power Company Limited",
+          "source_context": "TRADINGVIEW_VISUAL_CHART",
+          "effective_from": "2026-09-04T13:47:57+00:00",
+          "effective_through": "9999-12-31T23:59:59.999999+00:00",
+          "relationship_identity": "VISUAL-IDENTITY-RELATIONSHIP-3E868C1DC98BF0FDB69F3D04F4EC57D68E24EEA7357FB430F5C9531DCA752BC1",
+          "provenance": [
+            "ADR-0018",
+            "WO-BR2-PROVABLE-VISUAL-IDENTITY-COVERAGE-2026-09-06",
+            "INTRADAY-REVIEW-V2-CYCLE-C454860EBC3048A7AF0B14687F9D2C90EF5444A11A1A0A79CB5D8527A30A854F",
+            "INTRADAY-CHART-REVISION-V2-EA5A5500279937B53D05853F3A69DBD9F0E109E7CF67809F9CF4E2AF0E41C05E",
+            "CHART-PAYLOAD-SHA256-66b3223feb5126558f0ff021a064158b0ba57eb217489aa4d7480ce97f89d82b",
+            "OBSERVATION-BOUNDARY-2026-09-04T13:47:57+00:00",
+            "KRONOS-CANONICAL-INSTRUMENT-CATALOGUE-V2:1.2.0"
+          ]
+        }
+      ],
+      "effective_at_review_boundary": true,
+      "resolution_result": "RESOLVES_EXACT_REGISTERED_LABEL"
+    },
+    {
+      "canonical_identity": "NSE-EQ-TATASTEEL",
+      "expected_tradingview_symbol": "NSE:TATASTEEL",
+      "existing_labels": [],
+      "verified_chart_labels": [
+        "Tata Steel Limited"
+      ],
+      "relationship_currently_published": false,
+      "evidence_supported_candidate_coverage": true,
+      "unavailable_reason": null,
+      "candidate_publication_version": "1.5.0",
+      "candidate_relationship_published": true,
+      "relationships": [
+        {
+          "exact_visible_label": "Tata Steel Limited",
+          "source_context": "TRADINGVIEW_VISUAL_CHART",
+          "effective_from": "2026-08-25T13:43:22.711270+00:00",
+          "effective_through": "9999-12-31T23:59:59.999999+00:00",
+          "relationship_identity": "VISUAL-IDENTITY-RELATIONSHIP-8691D7D3CABE47239FC30C465DE15872DAE7B8D164FDF05C3DFF91623D2B6CB2",
+          "provenance": [
+            "ADR-0018",
+            "WO-07E-NSE-VISUAL-IDENTITY-SPONSOR-AUTHORIZATION",
+            "CHART-SHA256-722c9329a4e32cc2079fccfa2ca7909518edc621608297ebb0429f7a65f46f42",
+            "CHART-MANIFEST-SHA256-8c22bb95c023e8e66520c663bad04335c2b70ab88658291064fcb0b1fd6b1760",
+            "SPONSOR-TRADINGVIEW-UPLOAD-2026-08-25T13:43:22.711270+00:00",
+            "V2-DIRECT-2aa1a99def1947dec83d6bd11d5986533080bcf189d7b84ea40eb5c7513873c8",
+            "CATALOGUE-V2-1.2.0-SHA256-b5916affa58cb153e76847495d8d8e6ac281cf8384ad4c68212a67bd3c321d44",
+            "EXACT-VISIBLE-NSE-HEADER-INSPECTED;NO-NAME-INFERENCE"
+          ]
+        }
+      ],
+      "effective_at_review_boundary": true,
+      "resolution_result": "RESOLVES_EXACT_REGISTERED_LABEL"
+    },
+    {
+      "canonical_identity": "NSE-EQ-TCS",
+      "expected_tradingview_symbol": "NSE:TCS",
+      "existing_labels": [],
+      "verified_chart_labels": [],
+      "relationship_currently_published": false,
+      "evidence_supported_candidate_coverage": false,
+      "unavailable_reason": "NO_RETAINED_SOURCE_QUALIFIED_VISUAL_LABEL_ESTABLISHED; catalogue/provider/company-name data alone not sufficient",
+      "candidate_publication_version": "1.5.0",
+      "candidate_relationship_published": false,
+      "relationships": [],
+      "effective_at_review_boundary": false,
+      "resolution_result": "VISUAL_IDENTITY_RELATIONSHIP_UNAVAILABLE"
+    },
+    {
+      "canonical_identity": "NSE-EQ-TECHM",
+      "expected_tradingview_symbol": "NSE:TECHM",
+      "existing_labels": [],
+      "verified_chart_labels": [],
+      "relationship_currently_published": false,
+      "evidence_supported_candidate_coverage": false,
+      "unavailable_reason": "NO_RETAINED_SOURCE_QUALIFIED_VISUAL_LABEL_ESTABLISHED; catalogue/provider/company-name data alone not sufficient",
+      "candidate_publication_version": "1.5.0",
+      "candidate_relationship_published": false,
+      "relationships": [],
+      "effective_at_review_boundary": false,
+      "resolution_result": "VISUAL_IDENTITY_RELATIONSHIP_UNAVAILABLE"
+    },
+    {
+      "canonical_identity": "NSE-EQ-TITAN",
+      "expected_tradingview_symbol": "NSE:TITAN",
+      "existing_labels": [
+        "Titan Company Limited"
+      ],
+      "verified_chart_labels": [],
+      "relationship_currently_published": true,
+      "evidence_supported_candidate_coverage": true,
+      "unavailable_reason": null,
+      "candidate_publication_version": "1.5.0",
+      "candidate_relationship_published": true,
+      "relationships": [
+        {
+          "exact_visible_label": "Titan Company Limited",
+          "source_context": "TRADINGVIEW_VISUAL_CHART",
+          "effective_from": "2026-09-04T13:47:57+00:00",
+          "effective_through": "9999-12-31T23:59:59.999999+00:00",
+          "relationship_identity": "VISUAL-IDENTITY-RELATIONSHIP-A12EB05BC2D9F4C58453A2CF87BF5FDE869BFCF113D156C3999B5B0DEE87D6BD",
+          "provenance": [
+            "ADR-0018",
+            "WO-BR2-PROVABLE-VISUAL-IDENTITY-COVERAGE-2026-09-06",
+            "INTRADAY-REVIEW-V2-CYCLE-CE37240D4C5EB1F8B313CBD70546FF8D9BF822B550DF03E6CA94B61898AB69AA",
+            "INTRADAY-CHART-REVISION-V2-0F1EDDAD35FC978BB7E7C48D5B7545561573B4B87AEC7E9647DDE9309B931998",
+            "CHART-PAYLOAD-SHA256-033e7784a131d7bb9b8dde43e54a7adc02641c096abb683665bfcd67b27e2dbf",
+            "OBSERVATION-BOUNDARY-2026-09-04T13:47:57+00:00",
+            "KRONOS-CANONICAL-INSTRUMENT-CATALOGUE-V2:1.2.0"
+          ]
+        }
+      ],
+      "effective_at_review_boundary": true,
+      "resolution_result": "RESOLVES_EXACT_REGISTERED_LABEL"
+    },
+    {
+      "canonical_identity": "NSE-EQ-TMPV",
+      "expected_tradingview_symbol": "NSE:TMPV",
+      "existing_labels": [
+        "Tata Motors Passenger Vehicles Ltd"
+      ],
+      "verified_chart_labels": [],
+      "relationship_currently_published": true,
+      "evidence_supported_candidate_coverage": true,
+      "unavailable_reason": null,
+      "candidate_publication_version": "1.5.0",
+      "candidate_relationship_published": true,
+      "relationships": [
+        {
+          "exact_visible_label": "Tata Motors Passenger Vehicles Ltd",
+          "source_context": "TRADINGVIEW_VISUAL_CHART",
+          "effective_from": "2026-09-04T13:47:57+00:00",
+          "effective_through": "9999-12-31T23:59:59.999999+00:00",
+          "relationship_identity": "VISUAL-IDENTITY-RELATIONSHIP-610F34A54B380A12BB0B559B0E922745B2C449402760FCB017C81412C6E72F0C",
+          "provenance": [
+            "ADR-0018",
+            "WO-BR2-PROVABLE-VISUAL-IDENTITY-COVERAGE-2026-09-06",
+            "INTRADAY-REVIEW-V2-CYCLE-85D09B7B0A4AF2C42787C85ADF0EF095713F6E2A56F505BA95107DCCFFCEE93E",
+            "INTRADAY-CHART-REVISION-V2-815914B8C85024C68A0656195B3F76561B8301F810F375AC38DC4F8E4BFE1A88",
+            "CHART-PAYLOAD-SHA256-ad744f031bee40738f0f14ef4850572d922462a0d1ec8a458ca950295304d82d",
+            "OBSERVATION-BOUNDARY-2026-09-04T13:47:57+00:00",
+            "KRONOS-CANONICAL-INSTRUMENT-CATALOGUE-V2:1.2.0"
+          ]
+        }
+      ],
+      "effective_at_review_boundary": true,
+      "resolution_result": "RESOLVES_EXACT_REGISTERED_LABEL"
+    },
+    {
+      "canonical_identity": "NSE-EQ-TRENT",
+      "expected_tradingview_symbol": "NSE:TRENT",
+      "existing_labels": [],
+      "verified_chart_labels": [],
+      "relationship_currently_published": false,
+      "evidence_supported_candidate_coverage": false,
+      "unavailable_reason": "NO_RETAINED_SOURCE_QUALIFIED_VISUAL_LABEL_ESTABLISHED; catalogue/provider/company-name data alone not sufficient",
+      "candidate_publication_version": "1.5.0",
+      "candidate_relationship_published": false,
+      "relationships": [],
+      "effective_at_review_boundary": false,
+      "resolution_result": "VISUAL_IDENTITY_RELATIONSHIP_UNAVAILABLE"
+    },
+    {
+      "canonical_identity": "NSE-EQ-UPL",
+      "expected_tradingview_symbol": "NSE:UPL",
+      "existing_labels": [],
+      "verified_chart_labels": [],
+      "relationship_currently_published": false,
+      "evidence_supported_candidate_coverage": false,
+      "unavailable_reason": "NO_RETAINED_SOURCE_QUALIFIED_VISUAL_LABEL_ESTABLISHED; catalogue/provider/company-name data alone not sufficient",
+      "candidate_publication_version": "1.5.0",
+      "candidate_relationship_published": false,
+      "relationships": [],
+      "effective_at_review_boundary": false,
+      "resolution_result": "VISUAL_IDENTITY_RELATIONSHIP_UNAVAILABLE"
+    },
+    {
+      "canonical_identity": "NSE-EQ-VBL",
+      "expected_tradingview_symbol": "NSE:VBL",
+      "existing_labels": [],
+      "verified_chart_labels": [
+        "Varun Beverages Ltd."
+      ],
+      "relationship_currently_published": false,
+      "evidence_supported_candidate_coverage": true,
+      "unavailable_reason": null,
+      "candidate_publication_version": "1.5.0",
+      "candidate_relationship_published": true,
+      "relationships": [
+        {
+          "exact_visible_label": "Varun Beverages Ltd.",
+          "source_context": "TRADINGVIEW_VISUAL_CHART",
+          "effective_from": "2026-08-24T04:59:22.765562+00:00",
+          "effective_through": "9999-12-31T23:59:59.999999+00:00",
+          "relationship_identity": "VISUAL-IDENTITY-RELATIONSHIP-DAB4F6BD5B32A1AE0612EE0AF211B9E547D3EBEA3A0AC47379A69F403CC87B17",
+          "provenance": [
+            "ADR-0018",
+            "WO-07E-NSE-VISUAL-IDENTITY-SPONSOR-AUTHORIZATION",
+            "CHART-SHA256-01c4e93af1d21cf4673de6a99b3bcd8547512d7a9188439c0bd1f8ed870b85af",
+            "CHART-MANIFEST-SHA256-4981827c8764495223ee79e1218a29dd3632472c286732820523a89ebe84f861",
+            "SPONSOR-TRADINGVIEW-UPLOAD-2026-08-24T04:59:22.765562+00:00",
+            "V2-DIRECT-108f1a82126302d337bdaa4c89a1ccf367e87f20005d967ee768d006d16edc3b",
+            "CATALOGUE-V2-1.2.0-SHA256-b5916affa58cb153e76847495d8d8e6ac281cf8384ad4c68212a67bd3c321d44",
+            "EXACT-VISIBLE-NSE-HEADER-INSPECTED;NO-NAME-INFERENCE"
+          ]
+        }
+      ],
+      "effective_at_review_boundary": true,
+      "resolution_result": "RESOLVES_EXACT_REGISTERED_LABEL"
+    },
+    {
+      "canonical_identity": "NSE-EQ-VEDL",
+      "expected_tradingview_symbol": "NSE:VEDL",
+      "existing_labels": [],
+      "verified_chart_labels": [
+        "Vedanta Limited"
+      ],
+      "relationship_currently_published": false,
+      "evidence_supported_candidate_coverage": true,
+      "unavailable_reason": null,
+      "candidate_publication_version": "1.5.0",
+      "candidate_relationship_published": true,
+      "relationships": [
+        {
+          "exact_visible_label": "Vedanta Limited",
+          "source_context": "TRADINGVIEW_VISUAL_CHART",
+          "effective_from": "2026-08-24T04:59:29.948931+00:00",
+          "effective_through": "9999-12-31T23:59:59.999999+00:00",
+          "relationship_identity": "VISUAL-IDENTITY-RELATIONSHIP-EFAD94CB11AD64ECDF10E61DB540D94ED3A1CE99EE5FC058320E62D39A1F60E2",
+          "provenance": [
+            "ADR-0018",
+            "WO-07E-NSE-VISUAL-IDENTITY-SPONSOR-AUTHORIZATION",
+            "CHART-SHA256-e2756c84a06c42cebecb76f478889ce165a9ad6526425adc71f932c4335a3106",
+            "CHART-MANIFEST-SHA256-df22fd9c3a95fd2828d32869a4699b39b02d61f1a6cd830dd0a1bb0fea76ab3d",
+            "SPONSOR-TRADINGVIEW-UPLOAD-2026-08-24T04:59:29.948931+00:00",
+            "V2-DIRECT-d3be2dd1d910689c089363750829f5d7634601bf060ab0510f68875626e59c60",
+            "CATALOGUE-V2-1.2.0-SHA256-b5916affa58cb153e76847495d8d8e6ac281cf8384ad4c68212a67bd3c321d44",
+            "EXACT-VISIBLE-NSE-HEADER-INSPECTED;NO-NAME-INFERENCE"
+          ]
+        }
+      ],
+      "effective_at_review_boundary": true,
+      "resolution_result": "RESOLVES_EXACT_REGISTERED_LABEL"
+    },
+    {
+      "canonical_identity": "NSE-EQ-WIPRO",
+      "expected_tradingview_symbol": "NSE:WIPRO",
+      "existing_labels": [],
+      "verified_chart_labels": [
+        "Wipro Limited"
+      ],
+      "relationship_currently_published": false,
+      "evidence_supported_candidate_coverage": true,
+      "unavailable_reason": null,
+      "candidate_publication_version": "1.5.0",
+      "candidate_relationship_published": true,
+      "relationships": [
+        {
+          "exact_visible_label": "Wipro Limited",
+          "source_context": "TRADINGVIEW_VISUAL_CHART",
+          "effective_from": "2026-08-25T13:43:47.733267+00:00",
+          "effective_through": "9999-12-31T23:59:59.999999+00:00",
+          "relationship_identity": "VISUAL-IDENTITY-RELATIONSHIP-056EC27E9128BC846877C36D41FB749275364FE0785703CF295948574BCA4795",
+          "provenance": [
+            "ADR-0018",
+            "WO-07E-NSE-VISUAL-IDENTITY-SPONSOR-AUTHORIZATION",
+            "CHART-SHA256-fabd78410df5fdf8af5718e5c29b125c182863b5e26ed00d2757a9188a273184",
+            "CHART-MANIFEST-SHA256-3ffdfaa823112583f3ac39165dd371d54ba4f3ff26eec055ddd4f590fc89c52d",
+            "SPONSOR-TRADINGVIEW-UPLOAD-2026-08-25T13:43:47.733267+00:00",
+            "V2-DIRECT-8d9d929603294dad3d7cbd57fc32aa24848bcb0e80859d6cb8ae2e31553a306d",
+            "CATALOGUE-V2-1.2.0-SHA256-b5916affa58cb153e76847495d8d8e6ac281cf8384ad4c68212a67bd3c321d44",
+            "EXACT-VISIBLE-NSE-HEADER-INSPECTED;NO-NAME-INFERENCE"
+          ]
+        }
+      ],
+      "effective_at_review_boundary": true,
+      "resolution_result": "RESOLVES_EXACT_REGISTERED_LABEL"
+    },
+    {
+      "canonical_identity": "NSE-EQ-YESBANK",
+      "expected_tradingview_symbol": "NSE:YESBANK",
+      "existing_labels": [],
+      "verified_chart_labels": [],
+      "relationship_currently_published": false,
+      "evidence_supported_candidate_coverage": false,
+      "unavailable_reason": "NO_RETAINED_SOURCE_QUALIFIED_VISUAL_LABEL_ESTABLISHED; catalogue/provider/company-name data alone not sufficient",
+      "candidate_publication_version": "1.5.0",
+      "candidate_relationship_published": false,
+      "relationships": [],
+      "effective_at_review_boundary": false,
+      "resolution_result": "VISUAL_IDENTITY_RELATIONSHIP_UNAVAILABLE"
+    },
+    {
+      "canonical_identity": "NSE-INDEX-BANKNIFTY",
+      "expected_tradingview_symbol": "NSE:BANKNIFTY",
+      "existing_labels": [
+        "Nifty Bank Index"
+      ],
+      "verified_chart_labels": [],
+      "relationship_currently_published": true,
+      "evidence_supported_candidate_coverage": true,
+      "unavailable_reason": null,
+      "candidate_publication_version": "1.5.0",
+      "candidate_relationship_published": true,
+      "relationships": [
+        {
+          "exact_visible_label": "Nifty Bank Index",
+          "source_context": "TRADINGVIEW_VISUAL_CHART",
+          "effective_from": "2026-08-27T10:59:49.164000+00:00",
+          "effective_through": "9999-12-31T23:59:59.999999+00:00",
+          "relationship_identity": "VISUAL-IDENTITY-RELATIONSHIP-B739288766CFADB544EB7533EC414BB26E2414D61F4AC5CBEA3152EB4BC8330E",
+          "provenance": [
+            "ADR-0018",
+            "INTRADAY-CHART-REVISION-1D1ECD8D0072DA2793165FC54A2DDBAAAA2463FAC6AC24FA754E7793CE5F13C1",
+            "INTRADAY-CHART-ARTIFACT-0CC132BAE3EBA7B156DA95E48B0DAB97D3A0CFD1A3E7CDF6B774371D75D83895",
+            "CHART-PAYLOAD-SHA256-ae07ba15d30b091144e789d8da05478b17c6f3f44cbece2af5d0a57e53f8a2dc",
+            "ANALYST-ANSWER-SHA256-3cbd1b77ff47dd487d194adbb27710cdb31d54d3c39cfbf7720fe04fd824be09"
+          ]
+        }
+      ],
+      "effective_at_review_boundary": true,
+      "resolution_result": "RESOLVES_EXACT_REGISTERED_LABEL"
+    },
+    {
+      "canonical_identity": "NSE-INDEX-NIFTY",
+      "expected_tradingview_symbol": "NSE:NIFTY",
+      "existing_labels": [],
+      "verified_chart_labels": [],
+      "relationship_currently_published": false,
+      "evidence_supported_candidate_coverage": false,
+      "unavailable_reason": "NO_RETAINED_SOURCE_QUALIFIED_VISUAL_LABEL_ESTABLISHED; catalogue/provider/company-name data alone not sufficient",
+      "candidate_publication_version": "1.5.0",
+      "candidate_relationship_published": false,
+      "relationships": [],
+      "effective_at_review_boundary": false,
+      "resolution_result": "VISUAL_IDENTITY_RELATIONSHIP_UNAVAILABLE"
+    },
+    {
+      "canonical_identity": "RELIANCE",
+      "expected_tradingview_symbol": "NSE:RELIANCE",
+      "existing_labels": [],
+      "verified_chart_labels": [
+        "Reliance Industries Limited"
+      ],
+      "relationship_currently_published": false,
+      "evidence_supported_candidate_coverage": true,
+      "unavailable_reason": null,
+      "candidate_publication_version": "1.5.0",
+      "candidate_relationship_published": true,
+      "relationships": [
+        {
+          "exact_visible_label": "Reliance Industries Limited",
+          "source_context": "TRADINGVIEW_VISUAL_CHART",
+          "effective_from": "2026-08-23T00:00:00+05:30",
+          "effective_through": "9999-12-31T23:59:59.999999+00:00",
+          "relationship_identity": "VISUAL-IDENTITY-RELATIONSHIP-82B0F5EB58602ACFF7D5BE33E9F2B789BC0B035C6D92AE54D7158FE0A7562107",
+          "provenance": [
+            "ADR-0018",
+            "WO-07E-NSE-VISUAL-IDENTITY-SPONSOR-AUTHORIZATION",
+            "CHART-SHA256-6ee4f96ee2e47add1700b12578d2829250260da681ff85673e5d1e49c07e7ed8",
+            "CHART-MANIFEST-SHA256-6462f33f2d0b7ba6022763fd60d2d8a60539b75acf88db64ff4847c21efcadea",
+            "SPONSOR-TRADINGVIEW-UPLOAD-2026-08-16T08:48:41.394488+00:00",
+            "V2-DIRECT-da0be2f36e8b9167a5263e36171a210c14d5bfb8f9452caec7a5793af1e87fe8",
+            "CATALOGUE-V2-1.2.0-SHA256-b5916affa58cb153e76847495d8d8e6ac281cf8384ad4c68212a67bd3c321d44",
+            "EXACT-VISIBLE-NSE-HEADER-INSPECTED;NO-NAME-INFERENCE"
+          ]
+        }
+      ],
+      "effective_at_review_boundary": true,
+      "resolution_result": "RESOLVES_EXACT_REGISTERED_LABEL"
+    }
+  ]
+}

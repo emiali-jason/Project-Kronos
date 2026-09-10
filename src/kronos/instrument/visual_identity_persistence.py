@@ -10,6 +10,7 @@ from kronos.instrument.visual_identity import (
     VISUAL_IDENTITY_RELATIONSHIP_PUBLICATION_V1,
     VISUAL_IDENTITY_RELATIONSHIP_PUBLICATION_V1_MCX_REFERENCE_VERSION,
     VISUAL_IDENTITY_RELATIONSHIP_PUBLICATION_V1_VERSION,
+    VISUAL_IDENTITY_RELATIONSHIP_PUBLICATION_V1_SUPPORTED_VERSIONS,
     VISUAL_IDENTITY_REFERENCE_ANALYTICAL_SUBJECTS,
     VisualIdentityRelationshipPublication,
     VisualIdentityResolutionError,
@@ -135,6 +136,31 @@ def load_visual_identity_resolver(
         canonical_subject_identities=canonical_subjects,
     )
     return VisualIdentityResolver(publication)
+
+
+def resolver_for_retained_publication(
+    current: VisualIdentityResolver,
+    *,
+    publication_identity: str,
+    publication_version: str,
+    publication_integrity_identity: str,
+) -> VisualIdentityResolver:
+    """Replay only the exact immutable authority named by retained evidence.
+
+    This is not a resolution fallback: new imports use the explicitly composed
+    publication. An unavailable or altered historical publication fails closed.
+    """
+    if (type(current) is not VisualIdentityResolver
+        or publication_identity != VISUAL_IDENTITY_RELATIONSHIP_PUBLICATION_V1
+        or publication_version not in VISUAL_IDENTITY_RELATIONSHIP_PUBLICATION_V1_SUPPORTED_VERSIONS):
+        raise VisualIdentityResolutionError(VisualIdentityResolutionFailure.INTEGRITY_INVALID)
+    selected = current
+    if current.publication.publication_version != publication_version:
+        selected = load_visual_identity_resolver(publication_version=publication_version)
+    if (selected.publication.publication_identity != publication_identity
+        or selected.publication.integrity_identity != publication_integrity_identity):
+        raise VisualIdentityResolutionError(VisualIdentityResolutionFailure.INTEGRITY_INVALID)
+    return selected
 
 
 def _component(value: object) -> bool:

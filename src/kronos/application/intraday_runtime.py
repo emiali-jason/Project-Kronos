@@ -129,7 +129,7 @@ from kronos.instrument.semantic_v2_persistence import (
     InstrumentSemanticV2Store,
 )
 from kronos.instrument.visual_identity import (
-    VISUAL_IDENTITY_RELATIONSHIP_PUBLICATION_V1_REVIEW_VERSION,
+    VISUAL_IDENTITY_NSE_COVERAGE_VERSION,
 )
 from kronos.instrument.visual_identity_persistence import (
     load_visual_identity_resolver,
@@ -324,7 +324,7 @@ def create_intraday_runtime(
         review_store=review_v2_store,
         visual_identity_resolver=load_visual_identity_resolver(
             publication_version=(
-                VISUAL_IDENTITY_RELATIONSHIP_PUBLICATION_V1_REVIEW_VERSION
+                VISUAL_IDENTITY_NSE_COVERAGE_VERSION
             )
         ),
     )

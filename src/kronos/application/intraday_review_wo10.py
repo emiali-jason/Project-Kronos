@@ -12,6 +12,8 @@ import json
 from kronos.intraday.review import ReviewError, ReviewFailure
 from kronos.intraday.review_answer import MAX_ANSWER_BYTES, parse_answer_pack
 from kronos.intraday.review_v2 import bind_imported_visual_evidence_v2, create_question_pack_v2
+from kronos.instrument.visual_identity import VisualIdentityResolutionError
+from kronos.instrument.visual_identity_persistence import resolver_for_retained_publication
 from kronos.intraday.wo10 import (
     Wo10ReconciliationRequest, create_wo10_reconciliation_request, market_family_for_subject,
 )
@@ -88,8 +90,18 @@ def select_current_review(*, store, run, pointer, resolver) -> CurrentReviewReco
         answer = parse_answer_pack(payload)
         # Reuse the governed import binding, including DOMAIN-001 publication,
         # raw visual identity, boundary, methodology and Answer integrity.
-        if resolver is None or bind_imported_visual_evidence_v2(
-            pack, answer, imported_at=visual.imported_at, visual_identity_resolver=resolver,
+        try:
+            retained_resolver = resolver_for_retained_publication(
+                resolver,
+                publication_identity=visual.visual_identity_publication_identity,
+                publication_version=visual.visual_identity_publication_version,
+                publication_integrity_identity=visual.visual_identity_publication_integrity_identity,
+            )
+        except VisualIdentityResolutionError as error:
+            raise ReviewError(ReviewFailure.INTEGRITY_INVALID) from error
+        if bind_imported_visual_evidence_v2(
+            pack, answer, imported_at=visual.imported_at,
+            visual_identity_resolver=retained_resolver,
         ) != visual:
             raise ReviewError(ReviewFailure.INTEGRITY_INVALID)
         answer_count += 1
