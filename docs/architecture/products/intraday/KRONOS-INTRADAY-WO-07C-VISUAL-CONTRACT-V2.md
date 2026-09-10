@@ -459,3 +459,7 @@ native rows carry independently validated source identities. This is machine
 provenance, not an Analyst assertion. Historical artifacts omit the optional field
 and restore byte-identically without backfilled validation. See
 [WO-07B-MCX](KRONOS-INTRADAY-WO-07B-MCX-ASYMMETRIC-CORRESPONDENCE.md).
+
+## Temporal transport successor
+
+The [WO-07E temporal contract](KRONOS-INTRADAY-WO-07E-TEMPORAL-CONTRADICTION.md) adds independent visible contradiction context to header 1.1.0, commissioned by NSE transport 2.3.0 / MCX 1.3.0. It does not change Q1–Q10 or R/M/X meaning, OBSERVED/PARTIAL scopes, Q6/Q9 anchor authority, identity publication or MCX asymmetry. Historical V1/V2 Answers remain preserved.

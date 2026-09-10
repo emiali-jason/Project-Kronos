@@ -6,6 +6,7 @@ from kronos.intraday import visual_contract_v2 as visual_v2
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+import json
 
 from kronos.application.intraday_review_mcx_paired import IntradayMcxPairedReviewApplication
 from kronos.instrument.active_derivative_persistence import ActiveDerivativeBindingStore
@@ -127,7 +128,7 @@ class IntradayReviewV2PairedAdapter:
 
     def create(self, cycle, chart, *, require_current):
         retained = self.retained(cycle, chart)
-        if retained is not None and retained[3].question_set_version == visual_v2.VERSION and retained[4].schema_version == "1.2.0":
+        if retained is not None and retained[3].question_set_version == visual_v2.VERSION and retained[4].schema_version == "1.3.0":
             bundle, native, reference, pack, transport, _, _ = retained
             pdf = self.store.load_bytes("question-pdfs", transport.transport_identity, ".pdf")
             template = self.store.load_bytes("answer-templates", transport.transport_identity)
@@ -197,6 +198,9 @@ class IntradayReviewV2PairedAdapter:
                     if self.chart_input is None:
                         raise ReviewError(ReviewFailure.CHART_CORRESPONDENCE_UNVERIFIABLE)
                     from kronos.intraday.analyst_chart_observation import receipt as prepare_receipt
+                    header = json.loads(parsed.chart_observation_header) if parsed.chart_observation_header else None
+                    if header and header["schema_version"] == "1.1.0" and transport.schema_version != "1.3.0":
+                        raise ReviewError(ReviewFailure.ANSWER_SCHEMA_INVALID)
                     observation = prepare_receipt(parsed, pack, chart, self.review, imported_at=imported_at, paired=True)
                     correspondence = self.chart_input.require(cycle, chart, bundle=bundle, resolver=resolver, receipt=observation,
                         observed_native=parsed.native_observed_visible_identity,

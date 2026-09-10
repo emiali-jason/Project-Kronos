@@ -26,7 +26,7 @@ from kronos.intraday.review_mcx_paired_answer import answer_template, MCX_REFERE
 
 
 MCX_PAIRED_TRANSPORT_IDENTITY = "KRONOS-INTRADAY-MCX-PAIRED-REVIEW-TRANSPORT-V1"
-MCX_PAIRED_TRANSPORT_VERSION = "1.2.0"
+MCX_PAIRED_TRANSPORT_VERSION = "1.3.0"
 MCX_PAIRED_TRANSPORT_LEGACY_VERSION = "1.0.0"
 
 
@@ -52,7 +52,7 @@ class McxPairedReviewTransport:
             or self.expected_answer_filename != f"{stem}_ANSWERS.json"
             or not _aware(self.generated_at)
             or self.schema_identity != MCX_PAIRED_TRANSPORT_IDENTITY
-            or self.schema_version not in {MCX_PAIRED_TRANSPORT_LEGACY_VERSION, "1.1.0", MCX_PAIRED_TRANSPORT_VERSION}
+            or self.schema_version not in {MCX_PAIRED_TRANSPORT_LEGACY_VERSION, "1.1.0", "1.2.0", MCX_PAIRED_TRANSPORT_VERSION}
             or self.transport_identity != _identity("INTRADAY-MCX-PAIRED-TRANSPORT-", values)
             or self.integrity_identity != _identity("INTEGRITY-INTRADAY-MCX-PAIRED-TRANSPORT-", values)
         ):

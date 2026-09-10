@@ -62,3 +62,7 @@ The existing approved `ADL-*` records remain at their established paths under [`
 ## Intraday Chart Analyst correspondence source
 
 [ADR-0032](ADR-0032-INTRADAY-CHART-ANALYST-CORRESPONDENCE-SOURCE.md) records the Sponsor-approved WO-07E product decision: independently returned Answer observations feed the existing strict gate and immutable receipt store. Publication remains gated.
+
+## Intraday independent temporal contradiction evidence
+
+[ADR-0033](ADR-0033-INTRADAY-VISUAL-TEMPORAL-CONTRADICTION.md) records the Sponsor-approved temporal correction, with immutable legacy behavior and successor transport. Engineering candidate; publication remains gated.

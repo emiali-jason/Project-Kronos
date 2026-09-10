@@ -25,7 +25,7 @@ ENDPOINTS = (("1D", "2026-08-27", "10:00", "16:30"),
 
 
 def observed_panel(role, timeframe, subject, venue, day=None, start=None, end=None, currency=None, series=None):
-    return dict(role=role, timeframe=timeframe, observed_subject=subject, venue=venue,
+    return dict(temporal_context=None, role=role, timeframe=timeframe, observed_subject=subject, venue=venue,
         observed_series=series, currency=currency, unit=None, trading_date=day,
         session=("REGULAR" if venue=="MCX" else "CONTINUOUS_TRADING") if day else None, timezone="Asia/Kolkata" if day else None,
         candle_start=f"{day}T{start}:00+05:30" if day else None,
@@ -37,7 +37,7 @@ def observed_panel(role, timeframe, subject, venue, day=None, start=None, end=No
         content=[[key,"EXACT"] for key in CORE_CONTENT])
 
 
-def fresh(tmp_path, symbol=LABELS[0][0], label=LABELS[0][1]):
+def fresh(tmp_path, symbol=LABELS[0][0], label=LABELS[0][1], *, payload=None):
     *_, mapping = _opening_inputs(subject=symbol)
     run, app = _application(tmp_path, mapping)
     app._clock=lambda: datetime.fromisoformat("2026-08-28T10:16:00+05:30")
@@ -47,7 +47,7 @@ def fresh(tmp_path, symbol=LABELS[0][0], label=LABELS[0][1]):
     app._chart_input.resolver=app._visual_identity_resolver
     configure_fixture_calendar(app)
     cycle=app.create_eligible_cycles(run)[0]
-    chart=app.upload_chart(cycle.cycle_identity, media_type="image/png", payload=_png(79))
+    chart=app.upload_chart(cycle.cycle_identity, media_type="image/png", payload=_png(79) if payload is None else payload)
     assert app.review_store.load_chart_input(chart) is None
     result=app.create_individual_question_transport(cycle.cycle_identity)
     doc=json.loads(result.answer_template_path.read_bytes())
@@ -140,7 +140,7 @@ def test_template_keeps_machine_orientation_out_of_observations(tmp_path):
     t=json.loads(result.answer_template_path.read_bytes())['candidates'][0][FIELD]
     assert parse(t)==canonical(t)
     for row in t['panels']:
-        assert all(v is None for k,v in row['observed'].items() if k!='content')
+        assert all(v is None for k,v in row['observed'].items() if k not in {'content','temporal_context'})
         assert all(v=='UNVERIFIABLE' for k,v in row['observed']['content'])
     from kronos.intraday.visual_review_pdf import answer_protocol
     protocol=' '.join(answer_protocol(paired=False))

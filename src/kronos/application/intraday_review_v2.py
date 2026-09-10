@@ -718,7 +718,7 @@ class IntradayReviewV2Application:
     ) -> ReviewBatchTransportV2 | None:
         expected_batch = create_question_batch_v2(packs)
         modern = all(pack.question_set_version == visual_v2.VERSION for pack in packs)
-        versions = ("2.2.0",) if current_edition_only and modern else ("2.2.0", "2.1.0", "2.0.0")
+        versions = ("2.3.0",) if current_edition_only and modern else ("2.3.0", "2.2.0", "2.1.0", "2.0.0")
         for version in versions:
             try:
                 batch = self._review.load_batch(expected_batch.batch_identity)
@@ -1106,6 +1106,9 @@ class IntradayReviewV2Application:
                     visual_identity_resolver=self._visual_identity_resolver,
                 )
                 from kronos.intraday.analyst_chart_observation import receipt as prepare_receipt
+                header = json.loads(answer.chart_observation_header) if answer.chart_observation_header else None
+                if header and header["schema_version"] == "1.1.0" and transport.schema_version != "2.3.0":
+                    raise ReviewError(ReviewFailure.ANSWER_SCHEMA_INVALID)
                 chart = self._review.load_chart(pack.chart_revision_identity)
                 observation = prepare_receipt(answer, pack, chart, self._review, imported_at=imported_at)
                 self._chart_input.require(

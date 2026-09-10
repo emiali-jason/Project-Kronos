@@ -113,6 +113,7 @@ class IntradayChartInputGate:
         reference = tuple(r for r in results if r.role == "REFERENCE")
         if (not native or any(r.overall is not ValidationState.VALIDATED for r in native)
             or any(r.identity is not ValidationState.VALIDATED
+                   or r.visual_temporal_state in {"VISIBLY_CONTRADICTED", "INSUFFICIENT_VISUAL_EVIDENCE"}
                    or r.core_content is not ValidationState.VALIDATED
                    or r.authority != "SUPPORTING_VISUAL_CONTEXT_ONLY"
                    or r.independent_correspondence != "NOT_INDEPENDENTLY_ESTABLISHED" for r in reference)):

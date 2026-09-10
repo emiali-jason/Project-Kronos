@@ -38,7 +38,7 @@ from kronos.intraday.review_v2 import ReviewQuestionBatchV2, ReviewQuestionPackV
 
 
 REVIEW_BATCH_TRANSPORT_V2_IDENTITY = "KRONOS-INTRADAY-REVIEW-BATCH-TRANSPORT-V2"
-REVIEW_BATCH_TRANSPORT_V2_VERSION = "2.2.0"
+REVIEW_BATCH_TRANSPORT_V2_VERSION = "2.3.0"
 REVIEW_BATCH_TRANSPORT_LEGACY_VERSION = "2.0.0"
 REVIEW_V2_QUESTION_TRANSPORT_ROUTE = "/intraday/review/v2/question-transport"
 _IST = ZoneInfo("Asia/Kolkata")
@@ -80,7 +80,7 @@ class ReviewBatchTransportV2:
             or not _sha(self.answer_template_sha256)
             or not self.provenance
             or self.schema_identity != REVIEW_BATCH_TRANSPORT_V2_IDENTITY
-            or self.schema_version not in {REVIEW_BATCH_TRANSPORT_LEGACY_VERSION, "2.1.0", REVIEW_BATCH_TRANSPORT_V2_VERSION}
+            or self.schema_version not in {REVIEW_BATCH_TRANSPORT_LEGACY_VERSION, "2.1.0", "2.2.0", REVIEW_BATCH_TRANSPORT_V2_VERSION}
             or self.transport_identity
             != _identity("INTRADAY-REVIEW-BATCH-TRANSPORT-V2-", core)
             or self.integrity_identity

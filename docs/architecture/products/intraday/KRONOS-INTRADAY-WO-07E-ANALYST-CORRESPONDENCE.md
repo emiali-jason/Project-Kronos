@@ -79,3 +79,7 @@ reference authority, methodology 2.2.0, Narrow CPR, 09:30 Opening, live shadow,
 producer currentness and all downstream trading boundaries. No Provider,
 OpenAI, Refresh, production Review/Question/Answer, restart, stage/commit/push,
 FB01 or WO-07F operation is part of this engineering candidate.
+
+## Temporal successor
+
+[The temporal contract](KRONOS-INTRADAY-WO-07E-TEMPORAL-CONTRADICTION.md) succeeds the temporal requirement above with header 1.1.0 / NSE transport 2.3.0 / MCX transport 1.3.0. Machine endpoints remain exact; new visual compatibility uses independently sufficient contradiction evidence. Header 1.0.0 and old transport bytes remain unchanged historical contracts.

@@ -52,3 +52,7 @@ The real Sponsor/Analyst workflow remains a post-publication operational check.
 No production operations, staging, commit or push are authorized by engineering.
 
 See the [engineering contract](../products/intraday/KRONOS-INTRADAY-WO-07E-ANALYST-CORRESPONDENCE.md).
+
+## Temporal successor — 10 September 2026
+
+[ADR-0033](ADR-0033-INTRADAY-VISUAL-TEMPORAL-CONTRADICTION.md) supersedes only the exact observed temporal-equality prerequisite prospectively. The original header/receipt contract above remains historical authority; independent Analyst source ownership is unchanged.

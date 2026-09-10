@@ -193,18 +193,19 @@ def test_existing_transport_reexport_never_rewrites_retained_pdf(tmp_path):
     assert before == {p.relative_to(app.review_store.root):p.read_bytes() for p in app.review_store.root.rglob('*') if p.is_file()}
 
 
-def test_existing_nse_pack_gets_successor_without_rewriting_history(tmp_path, monkeypatch):
+@pytest.mark.parametrize('old_version', ['2.0.0', '2.2.0'])
+def test_existing_nse_pack_gets_successor_without_rewriting_history(tmp_path, monkeypatch, old_version):
     from kronos.intraday import review_v2_transport as transport_module
     _, app = _fixture(tmp_path, ('BDL',))
     cycle = _cycles(app)['BDL'].cycle_identity
     app.upload_chart(cycle, media_type='image/png', payload=_png(22))
     with monkeypatch.context() as patch:
-        patch.setattr(transport_module, 'REVIEW_BATCH_TRANSPORT_V2_VERSION', '2.0.0')
+        patch.setattr(transport_module, 'REVIEW_BATCH_TRANSPORT_V2_VERSION', old_version)
         old = app.create_individual_question_transport(cycle)
     before = {p: p.read_bytes() for p in app.review_store.root.rglob('*') if p.is_file()}
-    assert old.transport.schema_version == '2.0.0'
+    assert old.transport.schema_version == old_version
     current = app.create_individual_question_transport(cycle)
-    assert current.transport.schema_version == '2.2.0'
+    assert current.transport.schema_version == '2.3.0'
     assert current.transport.review_pack_identities == old.transport.review_pack_identities
     assert current.transport.review_batch_identity == old.transport.review_batch_identity
     assert current.transport.expected_answer_filename != old.transport.expected_answer_filename
@@ -219,17 +220,18 @@ def test_existing_nse_pack_gets_successor_without_rewriting_history(tmp_path, mo
     assert app.import_expected_answer(cycle).imported_count == 1
 
 
-def test_existing_mcx_pack_gets_successor_without_rewriting_history(tmp_path, synthetic_commissioning, monkeypatch):
+@pytest.mark.parametrize('old_version', ['1.0.0', '1.2.0'])
+def test_existing_mcx_pack_gets_successor_without_rewriting_history(tmp_path, synthetic_commissioning, monkeypatch, old_version):
     from kronos.intraday import review_mcx_paired_transport as transport_module
     from .test_review_v2_paired_intake import complete_paired
     with monkeypatch.context() as patch:
-        patch.setattr(transport_module, 'MCX_PAIRED_TRANSPORT_VERSION', '1.0.0')
+        patch.setattr(transport_module, 'MCX_PAIRED_TRANSPORT_VERSION', old_version)
         app, cycle, chart, bundle, receipt, old, rows = mcx_fixture(tmp_path)
     store = app._paired.store
     before = {p: p.read_bytes() for p in store.root.rglob('*') if p.is_file()}
-    assert old.transport.schema_version == '1.0.0'
+    assert old.transport.schema_version == old_version
     current = app.create_individual_question_transport(cycle.cycle_identity)
-    assert current.transport.schema_version == '1.2.0'
+    assert current.transport.schema_version == '1.3.0'
     assert current.transport.review_pack_identity == old.transport.review_pack_identity
     assert current.transport.expected_answer_filename != old.transport.expected_answer_filename
     assert current.answer_template_path.read_bytes() == old.answer_template_path.read_bytes()

@@ -78,13 +78,13 @@ class IntradayMcxPairedReviewStore:
         fields = {"review_pack_identity": value.review_pack_identity,
                   "transport_identity": value.transport_identity}
         fields["integrity"] = sha256(json.dumps(fields, sort_keys=True).encode()).hexdigest()
-        namespace = "pack-transports-analyst" if value.schema_version == "1.2.0" else "pack-transports-pdf-only" if value.schema_version == "1.1.0" else "pack-transports"
+        namespace = "pack-transports-temporal" if value.schema_version == "1.3.0" else "pack-transports-analyst" if value.schema_version == "1.2.0" else "pack-transports-pdf-only" if value.schema_version == "1.1.0" else "pack-transports"
         return self._retain(self._path(namespace, value.review_pack_identity),
                             json.dumps(fields, sort_keys=True).encode())
 
     def load_transport_for_pack(self, identity: str) -> McxPairedReviewTransport:
         try:
-            namespace = "pack-transports-analyst" if self._path("pack-transports-analyst", identity).exists() else "pack-transports-pdf-only" if self._path("pack-transports-pdf-only", identity).exists() else "pack-transports"
+            namespace = "pack-transports-temporal" if self._path("pack-transports-temporal", identity).exists() else "pack-transports-analyst" if self._path("pack-transports-analyst", identity).exists() else "pack-transports-pdf-only" if self._path("pack-transports-pdf-only", identity).exists() else "pack-transports"
             fields = json.loads(self.load_bytes(namespace, identity))
             integrity = fields.pop("integrity")
             if (set(fields) != {"review_pack_identity", "transport_identity"}

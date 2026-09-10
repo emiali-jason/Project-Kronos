@@ -34,6 +34,9 @@ OPTIONAL_CONTENT = ("volume", "cpr", "sma", "vwap", "rsi", "factual_levels")
 CONTENT = CORE_CONTENT + OPTIONAL_CONTENT
 
 
+from kronos.intraday.visual_temporal import VisualTemporalContext, TemporalCompatibility, compare_visible_time
+
+
 class ContentRequirement(StrEnum):
     CORE_REQUIRED = "CORE_REQUIRED"
     QUESTION_REQUIRED = "QUESTION_REQUIRED"
@@ -62,6 +65,7 @@ class ObservedChartPanel:
     entire_panel_observed: bool | None
     opinion_overlays_present: bool | None
     content: tuple[tuple[str, FactObservability], ...]
+    temporal_context: VisualTemporalContext | None = None
 
     def __post_init__(self):
         if (self.role not in {"NATIVE", "REFERENCE"}
@@ -75,6 +79,7 @@ class ObservedChartPanel:
             or self.completion is not None and type(self.completion) is not CandleCompletion
             or any(x is not None and type(x) is not bool for x in (
                 self.entire_panel_observed, self.opinion_overlays_present))
+            or self.temporal_context is not None and type(self.temporal_context) is not VisualTemporalContext
             or type(self.content) is not tuple
             or any(type(x) is not tuple or len(x) != 2 or x[0] not in CONTENT
                    or type(x[1]) is not FactObservability for x in self.content)
@@ -106,7 +111,8 @@ class ChartInputObservation:
             or not _aware(self.observed_at) or type(self.panels) is not tuple
             or any(type(p) is not ObservedChartPanel for p in self.panels)
             or len({(p.role, p.timeframe) for p in self.panels}) != len(self.panels)
-            or self.schema_identity != CONTRACT or self.schema_version != VERSION):
+            or self.schema_identity != CONTRACT
+            or self.schema_version != ("1.1.0" if any(p.temporal_context is not None for p in self.panels) else VERSION)):
             raise ValueError("CHART_INPUT_RECEIPT_INVALID")
 
     @property
@@ -144,6 +150,7 @@ class ChartPanelResult:
     visual_relationship_identity: str | None
     authority: str = "INDEPENDENT_MACHINE_CORRESPONDENCE"
     independent_correspondence: str = "NOT_INDEPENDENTLY_ESTABLISHED"
+    visual_temporal_state: str | None = None
 
 
 def content_projection(panel, question_required=()):
@@ -167,6 +174,7 @@ def compare_chart_panel(expected, observed, *, resolver, received_at, observed_a
     reasons = []
     identity, temporal, core = S.UNVERIFIABLE, S.UNVERIFIABLE, S.UNVERIFIABLE
     relation = None
+    visual_temporal = None
     content = content_projection(observed)
     if observed is not None:
         if (observed.role, observed.timeframe) != (expected.role, expected.timeframe):
@@ -205,7 +213,17 @@ def compare_chart_panel(expected, observed, *, resolver, received_at, observed_a
         if observed.entire_panel_observed is not True:
             core = S.UNVERIFIABLE if core is not S.NOT_VALIDATED else core
             reasons.append("FULL_PANEL_COVERAGE_NOT_PROVEN")
-        if (observed.latest_visible_end is not None
+        if observed.temporal_context is not None:
+            try:
+                machine, machine_reason, context = _machine_source_context(expected)
+                visual_temporal, reason = compare_visible_time(expected, observed, received_at=received_at, machine_context=context)
+                temporal = visual_temporal
+                if temporal is not S.NOT_VALIDATED and not expected.supporting_visual_only and machine is not S.VALIDATED:
+                    temporal, reason = machine, machine_reason
+            except ValueError:
+                temporal, reason = S.UNVERIFIABLE, "SOURCE_INTEGRITY_NOT_PROVEN"
+            reasons.append(reason)
+        elif (observed.latest_visible_end is not None
             and observed.latest_visible_end > expected.analysis_boundary):
             temporal = S.NOT_VALIDATED
             reasons.append("VISIBLE_EVIDENCE_AFTER_ANALYSIS_BOUNDARY")
@@ -257,19 +275,23 @@ def compare_chart_panel(expected, observed, *, resolver, received_at, observed_a
         overall, tuple(reasons), content,
         source_identity, relation,
         "SUPPORTING_VISUAL_CONTEXT_ONLY" if expected.supporting_visual_only else "INDEPENDENT_MACHINE_CORRESPONDENCE",
-        "VALIDATED" if not expected.supporting_visual_only and overall is S.VALIDATED else "NOT_INDEPENDENTLY_ESTABLISHED")
+        "VALIDATED" if not expected.supporting_visual_only and overall is S.VALIDATED else "NOT_INDEPENDENTLY_ESTABLISHED",
+        None if observed is None or observed.temporal_context is None else
+        TemporalCompatibility.VISIBLY_CONTRADICTED.value if temporal is S.NOT_VALIDATED else
+        TemporalCompatibility.CONFIRMED_COMPATIBLE.value if visual_temporal is S.VALIDATED else
+        TemporalCompatibility.INSUFFICIENT_VISUAL_EVIDENCE.value)
 
 
-def _compare_source_time(expected, observed, received_at, observed_at):
+def _machine_source_context(expected):
     S = ValidationState
     source, schedule = expected.source, expected.schedule
     if source is None or schedule is None:
-        return S.UNVERIFIABLE, "COMPLETED_SOURCE_OR_SESSION_NOT_RETAINED"
+        return S.UNVERIFIABLE, "COMPLETED_SOURCE_OR_SESSION_NOT_RETAINED", None
     if (schedule.market_availability is MarketAvailability.UNAVAILABLE
         or schedule.freshness_status is not ScheduleFreshness.CURRENT
         or schedule.integrity_status is not ScheduleIntegrity.VALID
         or schedule.source_boundary > expected.analysis_boundary):
-        return S.UNVERIFIABLE, "SESSION_AUTHORITY_UNAVAILABLE"
+        return S.UNVERIFIABLE, "SESSION_AUTHORITY_UNAVAILABLE", None
     if type(source) is GovernedHistoricalCandlePayload:
         # Reconstruct to enforce the immutable source's own integrity contract.
         source.__post_init__()
@@ -278,15 +300,15 @@ def _compare_source_time(expected, observed, received_at, observed_at):
         completed = source.completion_state == "COMPLETE"
         if (source.available_at > expected.analysis_boundary
             or source.observation_boundary > expected.analysis_boundary):
-            return S.UNVERIFIABLE, "SOURCE_UNAVAILABLE_AT_ANALYSIS"
+            return S.UNVERIFIABLE, "SOURCE_UNAVAILABLE_AT_ANALYSIS", None
         if source.exchange != expected.venue:
-            return S.NOT_VALIDATED, "SOURCE_EXCHANGE_MISMATCH"
+            return S.NOT_VALIDATED, "SOURCE_EXCHANGE_MISMATCH", None
         day = MarketDaySchedule(schedule.exchange, schedule.trading_date,
             schedule.session_identity, schedule.timezone, TradingDayStatus.TRADING,
             tuple(MarketWindow(w.window_open, w.window_close) for w in schedule.windows),
             schedule.source_identity, schedule.calendar_version)
         if CandleBoundary(schedule.trading_date, session, source.timeframe, start, end) not in expected_candle_boundaries(day, source.timeframe):
-            return S.NOT_VALIDATED, "SOURCE_CANDLE_SESSION_MISMATCH"
+            return S.NOT_VALIDATED, "SOURCE_CANDLE_SESSION_MISMATCH", None
     elif type(source) is DerivedBarEvidence:
         source.__post_init__()
         start, end, timeframe = source.derived_start, source.derived_end, source.derived_timeframe.value
@@ -297,23 +319,30 @@ def _compare_source_time(expected, observed, received_at, observed_at):
             or source.calendar_version != schedule.calendar_version
             or source.source_market_data_boundary > expected.analysis_boundary
             or source.exchange_timezone != schedule.timezone):
-            return S.UNVERIFIABLE, "DERIVED_SOURCE_CORRESPONDENCE_NOT_PROVEN"
+            return S.UNVERIFIABLE, "DERIVED_SOURCE_CORRESPONDENCE_NOT_PROVEN", None
         buckets = derive_session_four_hour_bars(canonical_instrument=subject, schedule=schedule,
             sixty_minute_candles=(), source_provider_identity=source.source_provider_identity,
             source_market_data_boundary=source.source_market_data_boundary,
             observed_at=expected.analysis_boundary)
         if not any((b.derived_start, b.derived_end, b.constituent_boundaries) ==
                    (start, end, source.constituent_boundaries) for b in buckets):
-            return S.NOT_VALIDATED, "DERIVED_SOURCE_SESSION_MISMATCH"
+            return S.NOT_VALIDATED, "DERIVED_SOURCE_SESSION_MISMATCH", None
     else:
-        return S.UNVERIFIABLE, "SOURCE_TYPE_NOT_SUPPORTED"
+        return S.UNVERIFIABLE, "SOURCE_TYPE_NOT_SUPPORTED", None
     if (subject != expected.canonical_subject or session != schedule.session_identity
         or timeframe != expected.timeframe or schedule.exchange != expected.venue):
-        return S.NOT_VALIDATED, "SOURCE_SUBJECT_SESSION_OR_TIMEFRAME_MISMATCH"
+        return S.NOT_VALIDATED, "SOURCE_SUBJECT_SESSION_OR_TIMEFRAME_MISMATCH", None
     if not completed or end > expected.analysis_boundary:
-        return S.UNVERIFIABLE, "COMPLETED_CANDLE_NOT_PROVEN"
+        return S.UNVERIFIABLE, "COMPLETED_CANDLE_NOT_PROVEN", None
+    return S.VALIDATED, "COMPLETED_MACHINE_SOURCE", (schedule.trading_date, schedule.session_type, schedule.timezone, timeframe, start, end)
+
+
+def _compare_source_time(expected, observed, received_at, observed_at):
+    state, reason, context = _machine_source_context(expected)
+    if state is not ValidationState.VALIDATED:
+        return state, reason
     return compare_completed_panel_time(
-        expected=(schedule.trading_date, schedule.session_type, schedule.timezone, timeframe, start, end),
+        expected=context,
         observed=(observed.trading_date, observed.session, observed.timezone,
                   observed.timeframe, observed.candle_start, observed.candle_end),
         completion=observed.completion, captured_at=observed.captured_at,
@@ -325,7 +354,11 @@ def observation_bytes(value):
         if isinstance(item, (datetime, date)):
             return item.isoformat()
         raise TypeError("CHART_INPUT_SERIALIZATION_INVALID")
-    return json.dumps(asdict(value), sort_keys=True, ensure_ascii=True,
+    data = asdict(value)
+    for panel in data["panels"]:
+        if panel["temporal_context"] is None:
+            panel.pop("temporal_context")  # Preserve exact historical receipt bytes.
+    return json.dumps(data, sort_keys=True, ensure_ascii=True,
                       separators=(",", ":"), default=encode).encode() + b"\n"
 
 
@@ -339,6 +372,9 @@ def observation_from_bytes(payload):
             item['trading_date'] = date.fromisoformat(item['trading_date']) if item['trading_date'] is not None else None
             item['completion'] = CandleCompletion(item['completion']) if item['completion'] is not None else None
             item['content'] = tuple((k, FactObservability(v)) for k, v in item['content'])
+            if 'temporal_context' in item:
+                from kronos.intraday.visual_temporal import from_document
+                item['temporal_context'] = from_document(item['temporal_context'])
             panels.append(ObservedChartPanel(**item))
         data['panels'] = tuple(panels)
         data['observed_at'] = datetime.fromisoformat(data['observed_at'])

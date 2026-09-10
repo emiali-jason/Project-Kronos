@@ -219,3 +219,7 @@ The Sponsor-assisted Chart Analyst Answer supplies the independent observations.
 After exact import-time validation, KRONOS retains them through the existing
 immutable receipt store. Upload itself supplies no independent visual facts.
 All comparison, identity, temporal and MCX asymmetric boundaries remain in force.
+
+## Temporal contract successor
+
+[ADR-0033](../../adr/ADR-0033-INTRADAY-VISUAL-TEMPORAL-CONTRADICTION.md) supersedes exact invisible temporal observations for newly commissioned header 1.1.0. Machine-source validation, identity/core checks and legacy strict comparison remain; sufficient visual contradiction evidence is required.

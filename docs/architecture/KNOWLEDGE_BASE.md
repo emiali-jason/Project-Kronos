@@ -154,3 +154,7 @@ The following documents are approved canonical architecture. They grant no engin
 - [Step-33 outcome/journal architecture](products/swing/SWING-V1-STEP-33-OUTCOME-AND-JOURNAL-INTEGRATION.md)
 
 Step-32 implementation is authorized only within its current engineering scope. Active monitoring uses Kite Connect WebSocket factual Provider input; 32H and TradingView/Pine active-trade webhook transport are retired and public webhook ingress is not required. Pine changes and broker execution remain unauthorized. Authority remains SHADOW / VALIDATION ONLY.
+
+## WO-07E temporal contract successor
+
+[ADR-0033](adr/ADR-0033-INTRADAY-VISUAL-TEMPORAL-CONTRADICTION.md) and the [temporal contract](products/intraday/KRONOS-INTRADAY-WO-07E-TEMPORAL-CONTRADICTION.md) record the Sponsor-approved bounded decision; engineering candidate, publication pending. They supersede exact invisible visual timestamp requirements prospectively while preserving machine authority and historical evidence.
