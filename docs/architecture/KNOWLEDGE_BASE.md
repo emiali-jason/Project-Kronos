@@ -158,3 +158,10 @@ Step-32 implementation is authorized only within its current engineering scope. 
 ## WO-07E temporal contract successor
 
 [ADR-0033](adr/ADR-0033-INTRADAY-VISUAL-TEMPORAL-CONTRADICTION.md) and the [temporal contract](products/intraday/KRONOS-INTRADAY-WO-07E-TEMPORAL-CONTRADICTION.md) record the Sponsor-approved bounded decision; engineering candidate, publication pending. They supersede exact invisible visual timestamp requirements prospectively while preserving machine authority and historical evidence.
+
+## WO-07E TradingView 91-equity identity completion
+
+Sponsor-authorized successor 1.6.0 and exact CSV source qualification are documented in
+[the 91-equity identity contract](products/intraday/KRONOS-INTRADAY-WO-07E-TRADINGVIEW-91-IDENTITY.md).
+Older relationships retain their intervals; export-only labels begin on 10 September
+2026 at 17:18:30.613955 IST. NIFTY and final 98/98 closure remain separate.
