@@ -87,6 +87,13 @@ class ProductBrowserRoutes:
             raise ValueError("BROWSER_PRODUCT_ROUTES_INVALID")
         self._routes = routes
 
+    def commission_shadow_successor(self, payload, *, maintenance, idle):
+        handlers = [getattr(route, 'commission_shadow_successor') for route in self._routes
+                    if callable(getattr(route, 'commission_shadow_successor', None))]
+        if len(handlers) != 1:
+            raise ValueError('SHADOW_EPOCH_CONTROL_AMBIGUOUS')
+        return handlers[0](payload, maintenance=maintenance, idle=idle)
+
     def owns_post(self, path: str) -> bool:
         if type(path) is not str or not path.startswith("/"):
             raise ValueError("BROWSER_PRODUCT_POST_PATH_INVALID")

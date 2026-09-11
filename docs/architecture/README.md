@@ -131,3 +131,9 @@ Sponsor, position, lifecycle, Provider, Journal/P&L or broker authority.
 Status: Approved bounded engineering, direct Sponsor / EA 2026-09-11.
 
 [ADR-0042](adr/ADR-0042-WO10-ADVISORY-RISK-AND-FINAL-FUTURES-COMPOSITION.md) supersedes prospective Risk permission with advisory facts/reference/quantity warnings. No Risk magnitude or missing monetary fact independently vetoes Sponsor selection. Native PULLBACK V1, five-tab navigation, exact trade hard gates and historical contracts remain preserved. No WO11 lifecycle, broker margin, production operation or runtime load is commissioned.
+
+## WO-06H successor acceptance epochs — ADR-0043
+
+**Status:** Approved bounded engineering, Sponsor / EA 2026-09-11.
+
+[ADR-0043](adr/ADR-0043-WO06H-SUCCESSOR-ACCEPTANCE-EPOCHS.md) and its [interface](interfaces/KRONOS-WO06H-SUCCESSOR-EPOCH-V1.md) introduce immutable research epochs, an exact atomic current pointer and maintenance-only successor commissioning. Original acceptance/window/observations stay immutable. Research arithmetic and WO-10 ownership remain unchanged; production enrollment, commissioning and runtime load remain separately authorized.

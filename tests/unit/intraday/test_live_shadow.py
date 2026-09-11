@@ -179,7 +179,7 @@ def seed_row(s,cohort=COHORT_A,direction='LONG',price='100',subject='NSE-EQ-X'):
         cohort=cohort,assessment=pair,features=feature,grouping='GROUP',baseline_state='PROBABLE' if cohort==COHORT_A else 'REJECTED',
         narrow=cohort==COHORT_A,cpr_source='CPR',intent=key('intent',oid))
     row=artifact('observation',oid,body);s.store.retain(row);s._reconcile()
-    return row,w
+    return s.store.load('observation',row.key),w
 
 
 @pytest.mark.parametrize('direction',['LONG','SHORT'])

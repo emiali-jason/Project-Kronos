@@ -693,6 +693,16 @@ class IntradayBrowserRoutes:
             )
         )
 
+    def commission_shadow_successor(self, payload, *, maintenance, idle):
+        from kronos.application.intraday_shadow_epochs import commission
+        if self._probables_v2_control is None:
+            raise ValueError('SHADOW_EPOCH_CONTROL_UNAVAILABLE')
+        operation = self._probables_v2_control.operation_service
+        review_idle = (self._review_v2_control is None or
+            self._review_v2_control.status_document()['active_operation_identity'] is None)
+        return commission(operation.live_shadow, payload, maintenance=maintenance,
+            idle=idle and review_idle and operation.active_operation_identity is None)
+
     def owns_post(self, path: str) -> bool:
         return path in {
             FUTURES_CONTROL_ROUTE,

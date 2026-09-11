@@ -100,6 +100,9 @@ FIELDS={
 
 
 def validate_body(kind,b):
+    if kind=='observation' and {'epoch','acceptance'} & set(b):
+        if not re.fullmatch(r'WO06H-EPOCH-[a-f0-9]{64}',b.get('epoch','')) or not re.fullmatch(r'WO06H-ACCEPTANCE-[a-f0-9]{64}',b.get('acceptance','')):raise ValueError
+        b={k:v for k,v in b.items() if k not in {'epoch','acceptance'}}
     if set(b)!=set(FIELDS[kind].split()):raise ValueError
     if kind in {'batch','intent','observation','outcome','acceptance','operation','receipt'} and not KEY.fullmatch(b['window']):raise ValueError
     if kind=='operation':instant(b['started_at'])

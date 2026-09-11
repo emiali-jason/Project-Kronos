@@ -44,4 +44,7 @@ def compose_runtime_manifest(startup, configuration, operation, control):
             live_shadow_features._decision, live_shadow_features._validate_cpr, live_shadow_features._evaluate_member,
             live_shadow_features.sma.__wrapped__, live_shadow_features.vwap.__wrapped__,
             live_shadow_features.measure.__wrapped__, decimal_policy))
+    if type(shadow) is IntradayLiveShadowService:
+        from kronos.application.intraday_shadow_epochs import epoch_capability
+        capabilities.append(epoch_capability())
     return create_runtime_manifest(startup, configuration, capabilities)

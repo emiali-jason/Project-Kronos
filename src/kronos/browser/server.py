@@ -1860,6 +1860,9 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             else:
                 self._redirect("/swing/opportunities")
             return
+        if path == "/control/intraday-live-shadow/successor-epoch/v1":
+            self._commission_shadow_successor()
+            return
         if governance and governance.maintenance_active and path != "/provider/connect":
             self._text(HTTPStatus.SERVICE_UNAVAILABLE, "Controlled maintenance is active.")
             return
@@ -2077,6 +2080,27 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             self._record_sponsor_decision(decision_match.group(1))
             return
         self._text(HTTPStatus.NOT_FOUND, "Not found.")
+
+    def _commission_shadow_successor(self) -> None:
+        # Separate maintenance-only contract. Never opens normal product dispatch.
+        try:
+            length = int(self.headers.get('Content-Length', '0'))
+            if (urlsplit(self.path).query or self.headers.get('Content-Type', '').split(';')[0] != 'application/json'
+                    or not 0 < length <= 4096):
+                raise ValueError('SHADOW_EPOCH_REQUEST_INVALID')
+            payload = json.loads(self.rfile.read(length))
+            with self.server._shutdown_lock:
+                snapshot = self.server.application.snapshot()
+                idle = (not self.server._shutdown_started and self.server._active_sponsor_work == 1
+                    and snapshot.analysis_state.value != 'RUNNING' and snapshot.provider_state.value != 'CONNECTING'
+                    and self.server.application.live_monitoring_result().state.value != 'TESTING'
+                    and not any(x.state.value == 'ANALYZING' for x in self.server.native_review.snapshot().analysis_outcomes))
+                governance = self.server.connection_governance
+                result = self.server.product_routes.commission_shadow_successor(payload,
+                    maintenance=bool(governance and governance.maintenance_active), idle=idle)
+            self._respond(HTTPStatus.OK, json.dumps(result).encode(), 'application/json')
+        except Exception:
+            self._respond(HTTPStatus.CONFLICT, b'{"outcome":"REJECTED","failure":"SHADOW_SUCCESSOR_COMMISSIONING_REJECTED"}', 'application/json')
 
     def _dispatch_product_post(self, path: str) -> None:
         try:

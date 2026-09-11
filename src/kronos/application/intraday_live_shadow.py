@@ -33,13 +33,13 @@ REQUIRED={'WO_05A_TRUSTED_TIME_ADMISSION','WO_05B_OPERATION_ACCOUNTING',
 
 class IntradayLiveShadowService:
     def __init__(self,*,store:ShadowStore,clock,mcx_history_store=None,probables_store=None):
-        self.store=store;self.clock=clock;self._mcx_history_store=mcx_history_store;self._probables_store=probables_store;self._manifest=None;self._accepted=None
+        from kronos.intraday.live_shadow_epochs import EpochStore,EpochView;self._epochs=EpochStore(store);self.store=EpochView(store,self._epochs);self.clock=clock;self._mcx_history_store=mcx_history_store;self._probables_store=probables_store;self._manifest=None;self._accepted=None
         self._lock=RLock();self._failure=None;self._last=None;self._restored_acceptance=None;self._restoration_failure=None
         self._summary=dict(cohort_a=0,cohort_b=0,expected_a=0,expected_b=0,missing_rows=0,
                            assessment_available=0,eod_available=0,classification_failures=0)
         self._window=None
         try:
-            windows=store.all('window')
+            windows=self.store.all('window')
             if len(windows)>1:raise ShadowError('SHADOW_WINDOW_AMBIGUOUS')
             self._window=windows[0] if windows else None
             self._reconcile()
@@ -99,7 +99,7 @@ class IntradayLiveShadowService:
     def _active(self,operation_start):
         if self._window is None or self._manifest is None or self._accepted!=self._manifest.manifest_identity:return False
         w=self._window.body;now=self.clock()
-        return instant(w['start'])<=operation_start<=now<instant(w['end'])
+        return instant(w['start'])<=operation_start<=now<instant(w['end']) and self._epoch_current()
 
     def begin_operation(self,operation,started_at):
         if not self._active(started_at):return
@@ -296,10 +296,16 @@ class IntradayLiveShadowService:
         if obs:self._last=max((a.body['captured_at'] for a in obs),key=instant)
 
     def status(self):
-        return dict(enabled=self._active(self.clock()),runtime_accepted=self._accepted is not None,acceptance_disposition=('EXISTING_ACCEPTANCE_RESTORED' if self._restored_acceptance else 'NEW_ACCEPTANCE_GRANTED') if self._accepted else 'NOT_ACCEPTED',acceptance_identity=self._restored_acceptance or (key('acceptance',self._window.key,self._accepted) if self._accepted else None),
-            window=None if self._window is None else dict(identity=self._window.key,start=self._window.body['start'],end=self._window.body['end']),
-            schema=SCHEMA,runtime_proof=None if self._manifest is None else self._runtime_proof(),counts=dict(self._summary),last_capture=self._last,failure=self._failure or (self._restoration_failure if self._accepted is None else None),
-            eod_scheduling_authority='EXPLICIT_RETAINED_EVIDENCE_ONLY',production_authority='NONE')
+        with self._lock:
+            epochs = self.epoch_status()
+            accepted = self._accepted is not None and epochs['epoch_failure'] is None and self._epoch_current()
+            return dict(enabled=accepted and self._active(self.clock()), runtime_accepted=accepted,
+                acceptance_disposition=('EXISTING_ACCEPTANCE_RESTORED' if self._restored_acceptance else 'NEW_ACCEPTANCE_GRANTED') if accepted else 'NOT_ACCEPTED',
+                acceptance_identity=self._restored_acceptance or (key('acceptance',self._window.key,self._accepted) if accepted else None),
+                window=None if self._window is None else dict(identity=self._window.key,start=self._window.body['start'],end=self._window.body['end']),
+                schema=SCHEMA,runtime_proof=None if self._manifest is None else self._runtime_proof(),counts=dict(self._summary),last_capture=self._last,
+                failure=self._failure or epochs['epoch_failure'] or (self._restoration_failure if not accepted else None),
+                eod_scheduling_authority='EXPLICIT_RETAINED_EVIDENCE_ONLY',production_authority='NONE',**epochs)
 
     def monthly_ledger(self,month):
         """Temporary derived working projection; no final Excel or filesystem write."""
@@ -341,6 +347,10 @@ class IntradayLiveShadowService:
                 return
             try:
                 if self._failure is not None:
+                    return
+                if self._epochs.pointer() is not None:
+                    from kronos.application.intraday_shadow_epochs import restore_epoch
+                    restore_epoch(self)
                     return
                 windows = self.store.all('window')
                 acceptances = self.store.all('acceptance')
@@ -415,3 +425,20 @@ class IntradayLiveShadowService:
         if len(capabilities) != len(declarations) or not REQUIRED.issubset(capabilities):
             raise ShadowError('SHADOW_RESTORATION_CAPABILITY_INVALID')
         return dict(proof, capabilities=capabilities)
+
+
+    def epoch_status(self):
+        from kronos.application.intraday_shadow_epochs import epoch_status
+        return epoch_status(self)
+
+
+    def _epoch_current(self):
+        from kronos.intraday.live_shadow_epochs import compatible
+        try:
+            if not self._epochs.managed():
+                return True  # Preserve ordinary single-window initial acceptance.
+            epoch = self._epochs.chain()[0]['body']
+            return (self._window is not None and self._window.key == epoch['window']
+                and self._manifest is not None and compatible(epoch['proof'], self._runtime_proof()))
+        except (ValueError, OSError, KeyError, TypeError, IndexError):
+            return False
