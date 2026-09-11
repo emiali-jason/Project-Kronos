@@ -643,6 +643,12 @@ class ReadOnlyProviderLease:
                 HistoricalDataFailure.CAPABILITY_UNAVAILABLE
             ) from None
 
+    def full_quotes(self, instruments, *, request_identity, timeout=7):
+        """Existing read-only capability and maintenance checks remain authoritative."""
+        return self.__use(ReadOnlyProviderOperation.QUOTE,
+                          lambda capability: capability.full_quotes(
+                              instruments, request_identity=request_identity, timeout=timeout))
+
     def quote(self, instrument: InstrumentRecord) -> QuoteSnapshot:
         return self.__live(ReadOnlyProviderOperation.QUOTE, "quote", instrument)
 

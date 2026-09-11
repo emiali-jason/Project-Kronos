@@ -82,7 +82,8 @@ def test_kite_adapter_sdk_calls_remain_within_authorized_provider_scope() -> Non
     # One existing exchange-scoped read plus one P1 consolidated master read.
     assert invoked.count("instruments") == 2
     assert invoked.count("historical_data") == 1
-    assert invoked.count("quote") == 1
+    # Existing single-instrument call plus the bounded WO-10 full-quote batch.
+    assert invoked.count("quote") == 2
     assert invoked.count("ltp") == 1
     assert invoked.count("ohlc") == 1
     assert invoked.count("set_session_expiry_hook") == 2

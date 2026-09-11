@@ -88,6 +88,9 @@ class AuthenticatedReadOnlyProviderCapability(Protocol):
     ) -> tuple[HistoricalCandle, ...]:
         """Return normalized candles using only private Provider identity."""
 
+    def full_quotes(self, instruments, *, request_identity: str, timeout: int = 7):
+        """One attributed batch of at most two exact master records; no retries."""
+
     def quote(self, instrument: InstrumentRecord) -> QuoteSnapshot:
         """Return a normalized quote without exposing Provider identity."""
 

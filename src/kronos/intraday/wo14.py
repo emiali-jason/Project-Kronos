@@ -793,7 +793,7 @@ def calculate_wo14_observation(
                     "MCX_INSTRUMENT_ECONOMICS_MISMATCH"
                 )
             else:
-                monetary_unit = structural * economics.contract_multiplier * economics.lot_size
+                monetary_unit = monetary_lot_exposure(structural, economics.lot_size, economics.contract_multiplier)
                 values[Wo14RiskField.MONETARY_RISK_PER_TRADABLE_UNIT] = monetary_unit
                 reasons[Wo14RiskField.MONETARY_RISK_PER_TRADABLE_UNIT] = (
                     "MCX_MONETARY_RISK_PER_LOT_AVAILABLE"
@@ -1335,3 +1335,11 @@ __all__ = [
     or name.startswith("bind_wo13") or name.startswith("calculate_wo14")
     or name.startswith("create_wo14") or name.startswith("create_current_wo14")
 ]
+
+
+def monetary_lot_exposure(distance: Decimal, lot_size: int, multiplier: Decimal) -> Decimal:
+    """Shared factual arithmetic only; permission belongs to the calling policy."""
+    if (not distance.is_finite() or distance <= 0 or type(lot_size) is not int
+            or lot_size <= 0 or not multiplier.is_finite() or multiplier <= 0):
+        raise ValueError("RISK_LOT_ECONOMICS_INVALID")
+    return distance * lot_size * multiplier

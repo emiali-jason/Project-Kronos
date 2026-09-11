@@ -69,9 +69,10 @@ class IntradayProbablesV2Snapshot:
 class IntradayProbablesV2Application:
     """Evaluate and retain V2 runs; optional post-decision measurement capture."""
 
-    def __init__(self, *, store: ProbablesV2Store, restore_current: bool = True) -> None:
+    def __init__(self, *, store: ProbablesV2Store, restore_current: bool = True, native_selection=None) -> None:
         if type(store) is not ProbablesV2Store or type(restore_current) is not bool:
             raise ValueError("INTRADAY_PROBABLES_V2_APPLICATION_INVALID")
+        self.native_selection = native_selection
         self._store = store
         self._methodology = create_probables_v2_methodology()
         self._run: ProbablesRunV2 | None = None
@@ -110,6 +111,8 @@ class IntradayProbablesV2Application:
         provenance: tuple[str, ...],
         assessment_capture: Callable[[ProbablesRunV2], ProbablesAssessmentObservations] | None = None,
         research_capture: Callable | None = None,
+        native_facts=(),
+        native_bundles=(),
     ) -> ProbablesRunV2:
         """Determine admission, optionally capture measurement, then publish once."""
 
@@ -134,6 +137,8 @@ class IntradayProbablesV2Application:
                     assessment = self._store.pending_assessment_observations(run)
                     if assessment is None:
                         assessment = assessment_capture(run)
+                if self.native_selection is not None:
+                    self.native_selection.publish(run, mappings, facts=native_facts, bundles=native_bundles, newly_published=newly_published)
                 self._store.retain_complete(run=run, mappings=mappings,
                     assessment_observations=assessment)
                 restored = self._store.load_current_run()

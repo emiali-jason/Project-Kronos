@@ -14,7 +14,9 @@ def test_empty_wo17_page_is_inert_and_responsive(tmp_path) -> None:
     assert "FACTUAL POSITION EVIDENCE AND READ-ONLY MONITORING ONLY" in page
     assert "NOT_YET_RUN" in page
     assert "NO BROKER ORDER, BROKER FILL, QUANTITY, FEES" in page
-    assert 'href="/intraday/wo17"' in page
+    navigation = page.split('aria-label="Intraday workflow">', 1)[1].split("</nav>", 1)[0]
+    assert 'href="/intraday/wo17"' not in navigation
+    assert 'href="/intraday/trade-candidates"' in navigation
     assert 'action="/control/intraday-wo17"' not in page
     assert "@media(max-width:760px)" in page
 

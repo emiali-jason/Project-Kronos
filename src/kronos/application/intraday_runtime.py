@@ -25,6 +25,8 @@ from kronos.application.intraday_review_v2 import IntradayReviewV2Application
 from kronos.application.intraday_visual_reconciliation_v2 import (
     IntradayVisualReconciliationV2Application,
 )
+from kronos.application.intraday_futures import IntradayFuturesApplication
+from kronos.intraday.wo10_futures_store import FuturesStore
 from kronos.application.intraday_wo09 import IntradayWo09Application
 from kronos.application.intraday_review_mcx_paired import (
     IntradayMcxPairedReviewApplication,
@@ -201,6 +203,9 @@ class IntradayProviderRuntimeAccess:
             # This is local lease negotiation, not a retried Provider request.
             return self.acquire_discovery_lease()
 
+    def acquire_futures_quote_lease(self):
+        return self._runtime.acquire_lease(consumer_identity="INTRADAY_WO10_FUTURES", operations=frozenset({ReadOnlyProviderOperation.QUOTE}))
+
     def acquire_monitoring_lease(self) -> ReadOnlyProviderLease:
         return self._runtime.acquire_lease(
             consumer_identity="INTRADAY_WO17_MONITORING",
@@ -231,6 +236,7 @@ class IntradayRuntimeComposition:
     visual_reconciliation_v2_application: IntradayVisualReconciliationV2Application
     wo09_store: Wo09Store
     wo09_application: IntradayWo09Application
+    futures_application: IntradayFuturesApplication
     promotion_readiness_owner: str
     wo10_store: Wo10Store
     wo10_policy_registry: RuntimeWo10PolicyRegistry
@@ -329,7 +335,11 @@ def create_intraday_runtime(
         last_successful_run_identity=restored_probables_identity,
     )
     probables_v2_store = ProbablesV2Store(Path(evidence_root))
-    probables_v2 = IntradayProbablesV2Application(store=probables_v2_store)
+    from kronos.intraday.native_structural_selection import NativeStructuralLoader, NativeStructuralStore
+    from kronos.application.intraday_native_selection import NativePullbackPublication
+    native_store = NativeStructuralStore(Path(evidence_root) / "native-structural-selection-v1")
+    native_publication = NativePullbackPublication(native_store, clock=clock, commissioned_at=clock(), binding_store=active_binding_store)
+    probables_v2 = IntradayProbablesV2Application(store=probables_v2_store, native_selection=native_publication)
     review_v2_store = IntradayReviewV2Store(Path(evidence_root) / "review-v2")
     review_v2_current = review_v2_store.load_current()
     review_v2 = IntradayReviewV2Application(
@@ -362,6 +372,11 @@ def create_intraday_runtime(
     )
     wo09_store = Wo09Store(Path(evidence_root) / "wo09-promotion-readiness-v1")
     wo09_application = IntradayWo09Application(wo09_store)
+    from kronos.intraday.native_structural_selection import NativeStructuralLoader, NativeStructuralStore
+    # Exact lookup only; startup/page reads never classify or backfill a cycle.
+    structural_loader = NativeStructuralLoader(native_store)
+    futures_application = IntradayFuturesApplication(FuturesStore(Path(evidence_root) / "prospective-v2-wo10-futures"),
+        wo09_store, clock=clock, structural_loader=structural_loader)
     wo10_store = Wo10Store(Path(evidence_root) / "wo10-reconciliation-v2")
     wo10_registry = RuntimeWo10PolicyRegistry()
     wo10_loader = RetainedWo10EvidenceLoader(
@@ -497,6 +512,11 @@ def create_intraday_runtime(
         ),
         clock=clock,
     )
+    from kronos.application.intraday_futures_source import GovernedFuturesSource
+    futures_application.acquisition_source = GovernedFuturesSource(
+        master_store=ProviderInstrumentSnapshotStore(Path(evidence_root) / "provider-instrument-master"),
+        master_identity=lambda: operation_v2.last_provider_snapshot_identity,
+        binding_store=active_binding_store, calendar=calendar, provider=access.acquire_futures_quote_lease, clock=clock)
     historical_operation = IntradayHistoricalQualificationOperationService(
         provider_runtime=provider_runtime,
         universe=universe,
@@ -586,6 +606,7 @@ def create_intraday_runtime(
         visual_reconciliation_v2_application=visual_reconciliation_v2,
         wo09_store=wo09_store,
         wo09_application=wo09_application,
+        futures_application=futures_application,
         promotion_readiness_owner="INTRADAY_WO09",
         wo10_store=wo10_store,
         wo10_policy_registry=wo10_registry,

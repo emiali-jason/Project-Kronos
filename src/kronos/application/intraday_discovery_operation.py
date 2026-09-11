@@ -720,6 +720,8 @@ class IntradayDiscoveryOperationService:
                 )
                 stage = DiscoveryOperationStage.PROBABLES_INVOCATION
                 probables_run = self._probables_v2.refresh_analysis(
+                    native_facts=execution.probables_v2_facts,
+                    native_bundles=execution.bundles,
                     source_discovery_run_identity=execution.run.run_identity,
                     universe_identity=execution.run.universe_identity,
                     universe_version=execution.run.universe_version,

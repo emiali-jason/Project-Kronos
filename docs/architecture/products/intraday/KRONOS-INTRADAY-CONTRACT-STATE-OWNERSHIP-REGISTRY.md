@@ -75,3 +75,31 @@ The boundaries are explicitly non-equivalent:
 
 This registry does not invent unfrozen states, transition predicates, or
 numerical values.
+
+## Prospective programme V2 successor authority
+
+**Status:** Approved for bounded engineering under [ADR-0039](../../adr/ADR-0039-INTRADAY-PROSPECTIVE-WO09-WO16-PROGRAMME-AUTHORITY.md).
+
+The preceding historical epoch remains readable, not a concurrent prospective
+owner. Current sequence: WO09 readiness → WO10 Futures construction/Risk/selection
+→ WO11 lifecycle → WO12 research/XLSX → WO13 notifications → WO14 journal
+→ WO15 portfolio → WO16 reports. Later work orders are not implemented here.
+See [WO10 interface](KRONOS-INTRADAY-WO-10-FUTURES-INTERFACE-V1.md) and
+[historical compatibility](KRONOS-INTRADAY-HISTORICAL-WORK-ORDER-COMPATIBILITY.md).
+
+## WO-10 successor ownership — ADR-0040
+
+**Status:** Approved bounded engineering, Sponsor / EA 2026-09-11.
+
+Native owns prospective structural selection, exact sources and target completeness. WO-10 consumes approved retained authority; missing authority persists as TRADE_PLAN_UNAVAILABLE without demoting 5/5 readiness. No new Native selector is authorized; production positive commissioning remains unresolved. Trade Candidates is the Sponsor home for WO-10 and future WO-11. Primary navigation is Opportunities, Review, Trade Candidates, Active, Closed; historical WO deep links remain. Active/Closed grant no lifecycle authority.
+
+
+## Prospective Native PULLBACK V1 successor
+
+[Native structural selection policy V1](KRONOS-INTRADAY-NATIVE-STRUCTURAL-SELECTION-POLICY-V1.md), governed by ADR-0041, commissions PULLBACK-only selection and contract 1.1.0. Native owns exact roles/cycle and typed target completeness; WO-10 consumes immutable positive/NOT_ESTABLISHED decisions. BREAKOUT stays uncommissioned; earlier contracts and records remain preserved. Positive monetary execution permission still requires existing explicit Risk and instrument economics authority, never inferred defaults.
+
+## Final WO-10 Futures / advisory Risk — ADR-0042
+
+Status: Approved bounded engineering, direct Sponsor / EA 2026-09-11.
+
+[ADR-0042](../../adr/ADR-0042-WO10-ADVISORY-RISK-AND-FINAL-FUTURES-COMPOSITION.md) supersedes prospective Risk permission with advisory facts/reference/quantity warnings. No Risk magnitude or missing monetary fact independently vetoes Sponsor selection. Native PULLBACK V1, five-tab navigation, exact trade hard gates and historical contracts remain preserved. No WO11 lifecycle, broker margin, production operation or runtime load is commissioned.

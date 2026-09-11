@@ -70,7 +70,9 @@ def test_page_has_exact_timing_only_language_and_no_decision_controls() -> None:
     assert "NO SPONSOR, PAPER, LIVE, POSITION, EXECUTION OR BROKER AUTHORITY" in page
     assert "WO-15C Advisory Research Telemetry" in page
     assert "RISK OBSERVATION ONLY" in page
-    assert 'href="/intraday/wo15"' in page
+    navigation = page.split('aria-label="Intraday workflow">', 1)[1].split("</nav>", 1)[0]
+    assert 'href="/intraday/wo15"' not in navigation
+    assert 'href="/intraday/trade-candidates"' in navigation
     assert "@media(max-width:760px)" in page
     assert "PAPER/LIVE/IGNORE" not in page
     assert "RISK APPROVED" not in page

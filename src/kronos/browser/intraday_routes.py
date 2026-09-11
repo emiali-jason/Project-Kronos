@@ -17,6 +17,7 @@ from kronos.application.intraday_statistics import (
 )
 from kronos.browser.intraday_views import (
     render_intraday_detail,
+    render_intraday_lifecycle_placeholder,
     render_intraday_review,
     render_intraday_wo10,
     render_intraday_wo09,
@@ -111,6 +112,7 @@ from kronos.browser.intraday_wo17_control import (
     WO17_STATUS_ROUTE,
     IntradayWo17OperationalControl,
 )
+from kronos.browser.intraday_futures_control import IntradayFuturesControl, FUTURES_ROUTE, FUTURES_CONTROL_ROUTE, CONSTRUCTION_CONTROL_ROUTE, RISK_PREVIEW_ROUTE, render_futures
 from kronos.browser.product_routes import (
     BrowserGetRequest,
     BrowserPostRequest,
@@ -146,6 +148,8 @@ class IntradayBrowserRoutes:
         review_v2_control: IntradayReviewV2OperationalControl | None = None,
         visual_reconciliation_v2_control: IntradayVisualReconciliationV2OperationalControl | None = None,
         wo09_projection: IntradayWo09Projection | None = None,
+        futures_control: IntradayFuturesControl | None = None,
+        prospective_programme_v2: bool = False,
         wo10_control: IntradayWo10OperationalControl | None = None,
         wo11_control: IntradayWo11OperationalControl | None = None,
         wo12_v2_control: IntradayWo12V2OperationalControl | None = None,
@@ -188,6 +192,8 @@ class IntradayBrowserRoutes:
         if wo09_projection is not None and type(wo09_projection) is not IntradayWo09Projection:
             raise ValueError("INTRADAY_BROWSER_ROUTES_INVALID")
         self._wo09_projection = wo09_projection
+        self._futures_control = futures_control
+        self._prospective_programme_v2 = prospective_programme_v2
         if (
             wo10_control is not None
             and type(wo10_control) is not IntradayWo10OperationalControl
@@ -384,6 +390,7 @@ class IntradayBrowserRoutes:
                     ),
                     latest_evaluable_run=latest_evaluable,
                     review_v2=self._opportunity_review_snapshot(),
+                    readiness_status=None if self._wo09_projection is None else self._wo09_projection.status_document(),
                 )
             )
         elif request.path.startswith(detail_prefix):
@@ -413,6 +420,14 @@ class IntradayBrowserRoutes:
                     snapshot_provider(), self._wo10_control.status_document()
                 )
             )
+        elif request.path in {"/intraday/active", "/intraday/closed"}:
+            if request.query:
+                return BrowserRouteResponse("Not found.", status=HTTPStatus.NOT_FOUND)
+            return BrowserRouteResponse(render_intraday_lifecycle_placeholder(snapshot_provider(), closed=request.path.endswith("/closed")))
+        elif request.path in {FUTURES_ROUTE, "/intraday/trade-candidates"}:
+            if self._futures_control is None or request.query:
+                return BrowserRouteResponse("Not found.", status=HTTPStatus.NOT_FOUND)
+            return BrowserRouteResponse(render_futures(snapshot_provider(), self._futures_control.status_document()))
         elif request.path == WO09_PRODUCT_ROUTE:
             if self._wo09_projection is None or request.query:
                 return BrowserRouteResponse(
@@ -680,6 +695,9 @@ class IntradayBrowserRoutes:
 
     def owns_post(self, path: str) -> bool:
         return path in {
+            FUTURES_CONTROL_ROUTE,
+            CONSTRUCTION_CONTROL_ROUTE,
+            RISK_PREVIEW_ROUTE,
             "/control/intraday-live-shadow/v1",
             "/control/intraday-discovery/v2",
             "/control/intraday-review/v2",
@@ -712,6 +730,18 @@ class IntradayBrowserRoutes:
         if not self.owns_post(request.path):
             return None
         try:
+            if self._prospective_programme_v2 and request.path in {WO10_CONTROL_ROUTE, WO11_CONTROL_ROUTE, WO12_V2_CONTROL_ROUTE,
+                    WO13_CONTROL_ROUTE, WO14_CONTROL_ROUTE, WO15_CONTROL_ROUTE, WO16_CONTROL_ROUTE, WO17_CONTROL_ROUTE}:
+                return BrowserRouteResponse(json.dumps({"outcome":"REJECTED", "reason":"RETIRED_PROSPECTIVE_AUTHORITY_ADR0039"}),
+                                            status=HTTPStatus.CONFLICT, content_type="application/json; charset=utf-8")
+            if request.path in {FUTURES_CONTROL_ROUTE, CONSTRUCTION_CONTROL_ROUTE, RISK_PREVIEW_ROUTE}:
+                if self._futures_control is None or request.query or request.content_type != "application/json" or not request.body or len(request.body)>4096:
+                    raise ValueError
+                document = (self._futures_control.construct_document(json.loads(request.body)) if request.path == CONSTRUCTION_CONTROL_ROUTE
+                            else self._futures_control.preview_document(json.loads(request.body)) if request.path == RISK_PREVIEW_ROUTE
+                            else self._futures_control.execute_document(json.loads(request.body)))
+                return BrowserRouteResponse(json.dumps(document), status=HTTPStatus.OK if document["outcome"] in {"RETAINED", "PREVIEW"} else HTTPStatus.BAD_REQUEST,
+                                            content_type="application/json; charset=utf-8")
             if request.path == "/control/intraday-live-shadow/v1":
                 if self._probables_v2_control is None:
                     raise ValueError

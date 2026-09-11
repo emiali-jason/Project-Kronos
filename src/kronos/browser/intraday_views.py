@@ -138,6 +138,7 @@ def render_intraday_workstation(
     refresh_status: dict[str, object] | None = None,
     latest_evaluable_run: ProbablesRunV2 | None = None,
     review_v2: IntradayReviewV2Snapshot | None = None,
+    readiness_status: dict[str, object] | None = None,
 ) -> str:
     """Render the complete Intraday page through the stable Browser shell."""
 
@@ -160,12 +161,12 @@ def render_intraday_workstation(
             refresh_status=refresh_status,
             latest_evaluable_run=latest_evaluable_run,
             review_v2=review_v2,
-        ),
+        ) + _readiness_body(readiness_status or {}),
         extra_styles=_INTRADAY_CSS + _INTRADAY_STATISTICS_CSS,
     )
 
 
-def render_intraday_wo09(snapshot: BrowserWorkspaceSnapshot, status: dict[str, object]) -> str:
+def _readiness_body(status: dict[str, object]) -> str:
     """Render persisted WO-09 cards and details without calculating policy."""
     cards = status.get("active_attention", ())
     details = status.get("analysis_details", {})
@@ -181,12 +182,18 @@ def render_intraday_wo09(snapshot: BrowserWorkspaceSnapshot, status: dict[str, o
             f"<section><h3>{escape(str(title))}</h3><pre>{escape(str(value))}</pre></section>"
             for title, value in sections.items()
         )
+        transition = (
+            '<a href="/intraday/trade-candidates">TRADE CANDIDATES</a>'
+            if card.readiness_state in {"BUY_NOW", "SELL_NOW"}
+            and card.score == "5 / 5" and card.outstanding_count == "0"
+            and card.monitorability_state == "CURRENT" else "")
         rendered.append(
             "<article class='intraday-review-card'>"
             f"<h2>{escape(card.instrument)}</h2><p>{escape(card.direction)} · {escape(card.wo07f_state)}</p>"
-            f"<strong>{escape(card.readiness_state)} · {escape(card.score)}</strong>"
+            f"<strong>{escape(card.readiness_state.replace('_', ' '))} · {escape(card.score)}</strong>"
             f"<p>Outstanding: {escape(card.outstanding_count)} · Currentness: {escape(card.monitorability_state)}</p>"
-            f"<ul>{requirements}</ul><p>Next: {escape(card.next_action)}</p>"
+            f"<p>Priority requirements: {escape(', '.join(card.highest_priority_outstanding))}</p>"
+            f"<ul>{requirements}</ul><p>Next: {escape(card.next_action)}</p>{transition}"
             f"<details><summary>{escape(card.analysis_details_action)}</summary>"
             f"{analysis}</details></article>"
         )
@@ -196,6 +203,12 @@ def render_intraday_wo09(snapshot: BrowserWorkspaceSnapshot, status: dict[str, o
         "<p>Persisted WO-09 authority. No trade, Risk or broker authority.</p></div></div>"
         f"<div class='intraday-review-v2-grid'>{''.join(rendered) or '<p>No active-attention readiness records.</p>'}</div></section>"
     )
+    return body
+
+
+def render_intraday_wo09(snapshot: BrowserWorkspaceSnapshot, status: dict[str, object]) -> str:
+    """Historical deep link to the same persisted Opportunities projection."""
+    body = _intraday_tabs(False) + _readiness_body(status)
     return render_browser_page(
         title="Intraday — Governed Promotion & Active Readiness",
         subtitle="WO-09 persisted analytical readiness projection.", snapshot=snapshot,
@@ -3178,22 +3191,14 @@ def _intraday_tabs(
         'STATISTICS / EXCEL</a>'
         if statistics else ""
     )
-    navigation = (
-        '<nav class="tabs intraday-tabs" aria-label="Intraday workflow">'
-        '<a class="' + ('active' if active == 'opportunities' else '') + '" href="/intraday">Opportunities</a>'
-        '<a class="' + ('active' if active == 'review' else '') + '" href="/intraday/review">Review</a>'
-        '<a class="' + ('active' if active == 'wo10' else '') + '" href="/intraday/wo10">WO-10</a>'
-        '<a class="' + ('active' if active == 'wo11' else '') + '" href="/intraday/wo11">WO-11</a>'
-        '<a class="' + ('active' if active == 'wo12' else '') + '" href="/intraday/wo12">WO-12</a>'
-        '<a class="' + ('active' if active == 'wo13' else '') + '" href="/intraday/wo13">WO-13</a>'
-        '<a class="' + ('active' if active == 'wo14' else '') + '" href="/intraday/wo14">WO-14</a>'
-        '<a class="' + ('active' if active == 'wo15' else '') + '" href="/intraday/wo15">WO-15</a>'
-        '<a class="' + ('active' if active == 'wo16' else '') + '" href="/intraday/wo16">WO-16</a>'
-        '<a class="' + ('active' if active == 'wo17' else '') + '" href="/intraday/wo17">WO-17</a>'
-        '<span class="intraday-tab">Trade Candidates</span>'
-        '<span class="intraday-tab">Active</span>'
-        '<span class="intraday-tab">Closed</span>'
-    )
+    destinations = (("opportunities", "/intraday", "OPPORTUNITIES"),
+                    ("review", "/intraday/review", "REVIEW"),
+                    ("trade-candidates", "/intraday/trade-candidates", "TRADE CANDIDATES"),
+                    ("active", "/intraday/active", "ACTIVE"),
+                    ("closed", "/intraday/closed", "CLOSED"))
+    navigation = '<nav class="tabs intraday-tabs" aria-label="Intraday workflow">' + ''.join(
+        f'<a class="{"active" if active == key else ""}" href="{path}">{label}</a>'
+        for key, path, label in destinations)
     refresh_control = (
         '<button type="button" id="intraday-refresh-analysis"'
         + disabled + '>Refresh Analysis · V2 Phase-Aware</button><span class="intraday-refresh-state" '
@@ -3705,3 +3710,12 @@ __all__ = [
     "render_intraday_wo17",
     "render_intraday_workstation",
 ]
+
+
+def render_intraday_lifecycle_placeholder(snapshot: BrowserWorkspaceSnapshot, *, closed: bool) -> str:
+    """Real destinations; no prospective lifecycle has been commissioned."""
+    label = "CLOSED" if closed else "ACTIVE"
+    body = _intraday_tabs(False, active=label.lower())
+    body += f"<h2>{label}</h2><p>Prospective lifecycle is not implemented. No lifecycle authority is available.</p>"
+    return render_browser_page(title=f"Intraday — {label}", subtitle="Lifecycle unavailable",
+        snapshot=snapshot, active_nav="Intraday", active_tab="", body=body, extra_styles=_INTRADAY_CSS)

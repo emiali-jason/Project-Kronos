@@ -80,7 +80,7 @@ def test_browser_projects_probables_without_provider_calls(tmp_path: Path) -> No
     assert "Intraday Opportunities — Native Discovery" in main.body
     assert "Native Discovery — governed facts, complete accounting, no trading authority." in main.body
     assert 'class="tabs intraday-tabs"' in main.body
-    for tab in ("Opportunities", "Review", "Trade Candidates", "Active", "Closed"):
+    for tab in ("OPPORTUNITIES", "REVIEW", "TRADE CANDIDATES", "ACTIVE", "CLOSED"):
         assert tab in main.body
     assert "Refresh Analysis" in main.body
     assert "Market analysis" in main.body and "IST" in main.body

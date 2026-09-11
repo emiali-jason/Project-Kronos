@@ -1,6 +1,8 @@
 from collections.abc import Mapping
 from datetime import datetime
 import math
+from copy import copy
+from requests import Session as _RequestSession
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -168,6 +170,8 @@ class _KiteCandidateClientHandle:
         "__client",
         "__closed",
         "__principal_attempted",
+        "__full_quote_lock",
+        "__last_full_quote",
         "__session_state",
     )
 
@@ -175,6 +179,9 @@ class _KiteCandidateClientHandle:
         self.__client = client
         self.__closed = False
         self.__principal_attempted = False
+        from threading import Lock
+        self.__full_quote_lock = Lock()
+        self.__last_full_quote = None
         self.__session_state = session_state
 
     def principal_user_id_once(
@@ -249,6 +256,32 @@ class _KiteCandidateClientHandle:
             if self.__session_state.invalidated:
                 raise _KiteSessionInvalidated from None
         return candles
+
+    def full_quotes(self, instruments: tuple[str, ...], *, timeout: int = 7) -> object:
+        """One explicit bounded request; no retry and no credential transfer."""
+        if self.__closed or self.__client is None or self.__session_state.invalidated:
+            raise _KiteSessionInvalidated
+        if not 1 <= len(instruments) <= 2 or len(set(instruments)) != len(instruments) or timeout != 7:
+            raise ValueError("FULL_QUOTE_REQUEST_INVALID")
+        from time import monotonic
+        if not self.__full_quote_lock.acquire(blocking=False):
+            raise ValueError("FULL_QUOTE_BUSY")
+        if self.__last_full_quote is not None and monotonic() - self.__last_full_quote < 1:
+            self.__full_quote_lock.release()
+            raise ValueError("FULL_QUOTE_RATE_LIMIT")
+        self.__last_full_quote = monotonic()
+        try:
+            # Private request view stays inside Provider ownership. It reuses the
+            # already-authorized SDK context without changing shared transport.
+            view = copy(self.__client)
+            with _SingleQuoteSession() as transport:
+                view.reqsession = transport
+                view.timeout = timeout
+                return view.quote(list(instruments))
+        finally:
+            self.__full_quote_lock.release()
+            if self.__session_state.invalidated:
+                raise _KiteSessionInvalidated from None
 
     def quote(self, instrument: str) -> object:
         """Return one raw quote response only to the containing Kite adapter."""
@@ -407,3 +440,23 @@ def _apply_bounded_timeout(client: object, timeout_seconds: float | None) -> Non
     if type(current) in {int, float} and math.isfinite(float(current)) and current > 0:
         bounded = min(float(current), timeout_seconds)
     setattr(client, "timeout", bounded)
+
+
+class _SingleQuoteSession(_RequestSession):
+    """One physical quote request, no redirect or automatic retry transport."""
+    def __init__(self):
+        super().__init__()
+        self._attempted = False
+        if any(adapter.max_retries.total != 0 for adapter in self.adapters.values()):
+            raise ValueError("FULL_QUOTE_RETRY_TRANSPORT_PROHIBITED")
+
+    def request(self, method, url, **kwargs):
+        if self._attempted or method != "GET":
+            raise ValueError("FULL_QUOTE_REPEAT_REQUEST_PROHIBITED")
+        self._attempted = True
+        kwargs["allow_redirects"] = False
+        kwargs["timeout"] = 7
+        response = super().request(method, url, **kwargs)
+        if 300 <= response.status_code < 400:
+            raise ValueError("FULL_QUOTE_REDIRECT_PROHIBITED")
+        return response

@@ -299,7 +299,7 @@ def create_wo13_breakout_geometry_evidence(
     qualification_references: Sequence[Wo13BreakoutFactReference] = (),
     qualification_candles: Sequence[Wo13StructuralPriceFact] = (),
 ) -> Wo13BreakoutGeometryEvidence:
-    if type(handoff) is not Wo13Step31Handoff:
+    if not _governed_construction_handoff(handoff):
         raise Wo13BreakoutRejected(Wo13BreakoutFailure.EVIDENCE_CONTRACT_INVALID)
     if handoff.setup_family is not Wo13SetupFamily.INTRADAY_RANGE_BREAKOUT:
         raise Wo13BreakoutRejected(Wo13BreakoutFailure.SETUP_FAMILY_UNSUPPORTED)
@@ -827,7 +827,7 @@ def _entry_condition(
 
 def _validate_evidence(evidence: Wo13BreakoutGeometryEvidence) -> None:
     handoff = evidence.handoff
-    if type(handoff) is not Wo13Step31Handoff:
+    if not _governed_construction_handoff(handoff):
         raise Wo13BreakoutRejected(Wo13BreakoutFailure.EVIDENCE_CONTRACT_INVALID)
     if handoff.setup_family is not Wo13SetupFamily.INTRADAY_RANGE_BREAKOUT:
         raise Wo13BreakoutRejected(Wo13BreakoutFailure.SETUP_FAMILY_UNSUPPORTED)
@@ -1028,3 +1028,11 @@ def _text(value: object) -> bool:
 
 def _texts(values: Sequence[object]) -> bool:
     return bool(values) and all(_text(item) for item in values)
+
+
+def _governed_construction_handoff(value):
+    from kronos.intraday.wo10_construction import Wo10ConstructionAdapter
+    if type(value) not in {Wo13Step31Handoff, Wo10ConstructionAdapter}:
+        return False
+    value.__post_init__()
+    return True

@@ -428,6 +428,19 @@ class _KiteCandidateContext:
             ) from None
         raise HistoricalDataError(HistoricalDataFailure.PROVIDER_FAILURE) from None
 
+    def _full_quotes(self, instruments, *, request_identity, timeout=7):
+        from kronos.provider.instrument_master import ProviderInstrumentRecord
+        from kronos.provider.adapters.kite.full_quote import normalize_full_quotes
+        if not request_identity or not isinstance(instruments, tuple) or not 1 <= len(instruments) <= 2:
+            raise ValueError("FULL_QUOTE_REQUEST_INVALID")
+        for item in instruments:
+            if type(item) is not ProviderInstrumentRecord:
+                raise ValueError("FULL_QUOTE_INSTRUMENT_INVALID")
+            item.__post_init__()
+        handle = self._active_handle()
+        raw = handle.full_quotes(tuple(f"{x.exchange}:{x.trading_symbol}" for x in instruments), timeout=timeout)
+        return normalize_full_quotes(raw, instruments)
+
     def _live_snapshot(
         self,
         instrument: InstrumentRecord,
@@ -597,6 +610,11 @@ class _KiteReadOnlyProviderCapability:
                 HistoricalDataFailure.CAPABILITY_UNAVAILABLE
             )
         return self.__candidate._historical_candles(request)
+
+    def full_quotes(self, instruments, *, request_identity, timeout=7):
+        if not self.active:
+            raise LiveSnapshotError(LiveSnapshotFailure.CAPABILITY_UNAVAILABLE)
+        return self.__candidate._full_quotes(instruments, request_identity=request_identity, timeout=timeout)
 
     def quote(self, instrument: InstrumentRecord) -> QuoteSnapshot:
         if not self.active:

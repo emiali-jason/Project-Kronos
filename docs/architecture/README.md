@@ -108,3 +108,26 @@ Intraday WO-B Operational Readiness Review is governed by
 It composes exact producer-domain facts into immutable multi-state review
 snapshots and projection-only current aliases without analytical, Risk, Timing,
 Sponsor, position, lifecycle, Provider, Journal/P&L or broker authority.
+
+## Prospective programme V2 — ADR-0039
+
+**Status:** Approved for bounded engineering, Sponsor / EA 2026-09-11.
+
+[ADR-0039](adr/ADR-0039-INTRADAY-PROSPECTIVE-WO09-WO16-PROGRAMME-AUTHORITY.md) is the successor prospective ownership authority for WO09–WO16. Historical numbering, policies and records remain immutable. WO10 now owns Futures-only construction, Risk-only sizing and Sponsor selection; no options, broker margin or execution authority. Conflicting historical prospective ownership is retired only at the explicit new-programme operation boundary. Publication/runtime remain separately gated.
+
+## Native selection and Sponsor navigation successor
+
+**Status:** Approved bounded engineering, Sponsor / EA 2026-09-11.
+
+[ADR-0040](adr/ADR-0040-NATIVE-STRUCTURAL-AUTHORITY-AND-INTRADAY-NAVIGATION.md) preserves Native structural selection ownership, requires explicit unavailable construction without approved selection authority, and consolidates Intraday navigation into Opportunities / Review / Trade Candidates / Active / Closed. No Native selection algorithm is commissioned.
+
+
+## Native PULLBACK commissioning — ADR-0041
+
+[ADR-0041](adr/ADR-0041-NATIVE-PULLBACK-V1-COMMISSIONING.md) supersedes the earlier empty selector registry for prospective PULLBACK V1 only. Exact immutable decisions precede population exposure; WO-10 consumes the selected cycle and typed target manifest. BREAKOUT remains uncommissioned. No historical backfill or production operation is authorized.
+
+## Final WO-10 Futures / advisory Risk — ADR-0042
+
+Status: Approved bounded engineering, direct Sponsor / EA 2026-09-11.
+
+[ADR-0042](adr/ADR-0042-WO10-ADVISORY-RISK-AND-FINAL-FUTURES-COMPOSITION.md) supersedes prospective Risk permission with advisory facts/reference/quantity warnings. No Risk magnitude or missing monetary fact independently vetoes Sponsor selection. Native PULLBACK V1, five-tab navigation, exact trade hard gates and historical contracts remain preserved. No WO11 lifecycle, broker margin, production operation or runtime load is commissioned.

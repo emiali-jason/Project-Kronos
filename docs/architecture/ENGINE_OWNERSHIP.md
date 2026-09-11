@@ -129,3 +129,26 @@ The full adapter decision is recorded in [ADL-003](ADL-003-Execution-Context-Ada
 ## Swing V1 Step-32 Engine Extension — Approved 2026-08-13
 
 KR-380 owns Entry timing without changing Step-31 geometry or inferring fills. KR-390 owns objective model lifecycle after an accepted Risk-permitted Entry Outcome and has no pre-entry authority. Swing V1 Trade Candidate Lifecycle owns pre-entry staleness, invalidation, binding validity, and terminal state. DOMAIN-002 admits Observations; DOMAIN-009 publishes Events. Execution Context Provider remains qualification/translation only. Pine is an untrusted factual publisher; broker execution authority is NONE. See [P32 amendments](adr/ADR-SWING-STEP-32-PLATFORM-AMENDMENTS.md).
+
+## Prospective programme V2 — ADR-0039
+
+**Status:** Approved for bounded engineering, Sponsor / EA 2026-09-11.
+
+[ADR-0039](adr/ADR-0039-INTRADAY-PROSPECTIVE-WO09-WO16-PROGRAMME-AUTHORITY.md) is the successor prospective ownership authority for WO09–WO16. Historical numbering, policies and records remain immutable. WO10 now owns Futures-only construction, Risk-only sizing and Sponsor selection; no options, broker margin or execution authority. Conflicting historical prospective ownership is retired only at the explicit new-programme operation boundary. Publication/runtime remain separately gated.
+
+## WO-10 successor ownership — ADR-0040
+
+**Status:** Approved bounded engineering, Sponsor / EA 2026-09-11.
+
+Native owns prospective structural selection, exact sources and target completeness. WO-10 consumes approved retained authority; missing authority persists as TRADE_PLAN_UNAVAILABLE without demoting 5/5 readiness. No new Native selector is authorized; production positive commissioning remains unresolved. Trade Candidates is the Sponsor home for WO-10 and future WO-11. Primary navigation is Opportunities, Review, Trade Candidates, Active, Closed; historical WO deep links remain. Active/Closed grant no lifecycle authority.
+
+
+## Native PULLBACK V1 — ADR-0041
+
+Native owns the commissioned PULLBACK-only selection, exact completed 15M cycle, typed target manifest and immutable prospective decision. WO-10 consumes it without cycle search; WO-13 owns geometry and target resolution. Instrument/calendar and Risk owners retain market and monetary authority. The preceding ADR-0040 no-selector statement is superseded only for this new PULLBACK policy.
+
+## Final WO-10 Futures / advisory Risk — ADR-0042
+
+Status: Approved bounded engineering, direct Sponsor / EA 2026-09-11.
+
+[ADR-0042](adr/ADR-0042-WO10-ADVISORY-RISK-AND-FINAL-FUTURES-COMPOSITION.md) supersedes prospective Risk permission with advisory facts/reference/quantity warnings. No Risk magnitude or missing monetary fact independently vetoes Sponsor selection. Native PULLBACK V1, five-tab navigation, exact trade hard gates and historical contracts remain preserved. No WO11 lifecycle, broker margin, production operation or runtime load is commissioned.

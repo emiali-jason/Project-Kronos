@@ -15,7 +15,9 @@ def test_empty_page_is_read_only_and_responsive(tmp_path) -> None:
     assert "NOT_YET_RUN" in page
     assert "PAPER · LIVE · IGNORE" in page
     assert "NO POSITION, FILL, QUANTITY, EXECUTION OR BROKER AUTHORITY" in page
-    assert 'href="/intraday/wo16"' in page
+    navigation = page.split('aria-label="Intraday workflow">', 1)[1].split("</nav>", 1)[0]
+    assert 'href="/intraday/wo16"' not in navigation
+    assert 'href="/intraday/trade-candidates"' in navigation
     assert 'action="/control/intraday-wo16"' not in page
     assert "data-choice=\"PAPER\"" not in page
     assert "@media(max-width:760px)" in page

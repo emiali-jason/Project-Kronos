@@ -230,7 +230,7 @@ def create_wo13_pullback_geometry_evidence(
     prior_impulse_references: Sequence[Wo13PullbackFactReference] = (),
     prior_impulse_extremes: Sequence[Wo13StructuralPriceFact] = (),
 ) -> Wo13PullbackGeometryEvidence:
-    if type(handoff) is not Wo13Step31Handoff:
+    if not _governed_construction_handoff(handoff):
         raise Wo13PullbackRejected(Wo13PullbackFailure.EVIDENCE_CONTRACT_INVALID)
     if handoff.setup_family is not Wo13SetupFamily.INTRADAY_PULLBACK_CONTINUATION:
         raise Wo13PullbackRejected(Wo13PullbackFailure.SETUP_FAMILY_UNSUPPORTED)
@@ -645,7 +645,7 @@ def _derived_fact(
 
 def _validate_evidence_content(evidence: Wo13PullbackGeometryEvidence) -> None:
     handoff = evidence.handoff
-    if type(handoff) is not Wo13Step31Handoff:
+    if not _governed_construction_handoff(handoff):
         raise Wo13PullbackRejected(Wo13PullbackFailure.EVIDENCE_CONTRACT_INVALID)
     if handoff.setup_family is not Wo13SetupFamily.INTRADAY_PULLBACK_CONTINUATION:
         raise Wo13PullbackRejected(Wo13PullbackFailure.SETUP_FAMILY_UNSUPPORTED)
@@ -843,3 +843,11 @@ def _text(value: object) -> bool:
 
 def _texts(values: Sequence[object]) -> bool:
     return bool(values) and all(_text(item) for item in values)
+
+
+def _governed_construction_handoff(value):
+    from kronos.intraday.wo10_construction import Wo10ConstructionAdapter
+    if type(value) not in {Wo13Step31Handoff, Wo10ConstructionAdapter}:
+        return False
+    value.__post_init__()
+    return True

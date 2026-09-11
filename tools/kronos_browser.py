@@ -37,6 +37,7 @@ with StartupCapture(Path(__file__).resolve().parents[1], keep_sources_pinned=Tru
         IntradayWo10OperationalControl,
     )
     from kronos.browser.intraday_wo09_control import IntradayWo09Projection
+    from kronos.browser.intraday_futures_control import IntradayFuturesControl, domain008_session
     from kronos.browser.intraday_wo11_control import (
         IntradayWo11OperationalControl,
     )
@@ -158,6 +159,17 @@ def main(argv: Sequence[str] | None = None) -> int:
         intraday_runtime.wo10_policy_registry,
     )
     intraday_wo09_projection = IntradayWo09Projection(intraday_runtime.wo09_store)
+    def futures_guard():
+        governance.require_operations()
+        return True
+    intraday_runtime.futures_application.operational_guard = futures_guard
+    def futures_session(subject, now):
+        app = intraday_runtime.futures_application
+        current = app.store.current(subject)
+        contract = None if current is None else app.store.load(current.data["expression_identity"]).data["future"]
+        return domain008_session(MarketCalendarPublisher(), subject, now, contract=contract)
+    intraday_futures_control = IntradayFuturesControl(intraday_runtime.futures_application, futures_session)
+
     intraday_wo11_control = IntradayWo11OperationalControl(
         intraday_runtime.wo11_runtime,
     )
@@ -204,6 +216,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         review_v2_control=intraday_review_v2_control,
         visual_reconciliation_v2_control=intraday_visual_reconciliation_v2_control,
         wo09_projection=intraday_wo09_projection,
+        futures_control=intraday_futures_control,
+        prospective_programme_v2=True,
         wo10_control=intraday_wo10_control,
         wo11_control=intraday_wo11_control,
         wo12_v2_control=intraday_wo12_v2_control,
