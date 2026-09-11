@@ -35,3 +35,7 @@ The preserved historical boundary is `2026-09-08T20:29:02.829905+05:30` through 
 ## Capability and scope
 
 Loaded capability `WO_06H_ACCEPTANCE_EPOCH/1.0.0` declares the new infrastructure separately from the frozen `WO_06H_LIVE_SHADOW` calculation digest. It does not allowlist changed code as compatible. The successor acceptance must bind the newly loaded capability set. No WO-10 analytical source, selector, Provider, broker, launcher, Risk or navigation change is required. No maintenance exit, Provider restoration, production collection, retention/purge or Excel authority is added.
+
+## Subsequent decision — ADR-0044
+
+The cross-epoch Trusted-Time composite capability-equality condition is superseded by [ADR-0044](ADR-0044-WO06H-SUCCESSOR-CAPABILITY-BOUNDARY.md). Same-epoch restoration remains strict. The historical decision above is retained unchanged; new successor commissioning uses the exact material-change bridge.

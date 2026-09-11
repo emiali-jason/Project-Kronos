@@ -208,3 +208,9 @@ Status: Approved bounded engineering, direct Sponsor / EA 2026-09-11.
 **Status:** Approved bounded engineering, Sponsor / EA 2026-09-11.
 
 [ADR-0043](adr/ADR-0043-WO06H-SUCCESSOR-ACCEPTANCE-EPOCHS.md) and its [interface](interfaces/KRONOS-WO06H-SUCCESSOR-EPOCH-V1.md) introduce immutable research epochs, an exact atomic current pointer and maintenance-only successor commissioning. Original acceptance/window/observations stay immutable. Research arithmetic and WO-10 ownership remain unchanged; production enrollment, commissioning and runtime load remain separately authorized.
+
+## Successor capability-boundary correction — ADR-0044
+
+**Status:** Approved bounded engineering; operational enrollment/commissioning remains separately gated.
+
+[ADR-0044](adr/ADR-0044-WO06H-SUCCESSOR-CAPABILITY-BOUNDARY.md) distinguishes strict same-epoch restoration from explicit material-change successor commissioning. An immutable bridge binds predecessor and current capability identities, exact changed/unchanged declarations, reviewed semantics, diagnosis and Sponsor authorization. It cannot restore an older incompatible epoch or grant a general compatibility exception.

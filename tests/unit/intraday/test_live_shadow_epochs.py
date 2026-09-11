@@ -46,6 +46,16 @@ def authorize(s, *, request='SUCCESSOR', fault=None):
     if fault=='missing_diagnosis':a['diagnosis']='WO06H-DIAGNOSIS-'+'0'*64
     if fault=='expired':a['expires_at']=(NOW-timedelta(seconds=1)).isoformat()
     if fault=='predecessor':a['predecessor']='WO06H-EPOCH-'+'f'*64
+    from kronos.intraday.live_shadow_transition import capability_identity, capability_delta, INVARIANT_SEMANTICS
+    from kronos.intraday.live_shadow_epochs import METHOD, CPR
+    changed, unchanged = capability_delta(pred['body']['proof'], s._runtime_proof())
+    bridge = document('bridge', dict(predecessor=pred['identity'],
+        predecessor_capability=capability_identity(pred['body']['proof']), current_proof=s._runtime_proof(),
+        current_capability=capability_identity(s._runtime_proof()), diagnosis=diagnosis['identity'],
+        classification=MATERIAL, changed_capabilities=changed, unchanged_capabilities=unchanged,
+        changed_semantics=d['changed_semantics'], unchanged_semantics=list(INVARIANT_SEMANTICS),
+        methodology=METHOD, narrow_cpr=CPR, sponsor_reference=a['sponsor_reference']))
+    s._epochs.retain(bridge); a['bridge']=bridge['identity']
     auth=document('authorization',a);s._epochs.retain(auth)
     return dict(action=ACTION,request_identity=request,authorization_identity=auth['identity'])
 

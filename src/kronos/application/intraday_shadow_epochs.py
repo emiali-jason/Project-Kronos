@@ -80,12 +80,32 @@ def commission(service, payload, *, maintenance, idle, repository=repository_gat
         raise ShadowError('SHADOW_EPOCH_MAINTENANCE_OR_QUIESCENCE_REQUIRED')
     with service._lock, service._epochs.transaction():
         store = service._epochs
-        auth = store.load(payload['authorization_identity'])
+        try:
+            auth = store.load(payload['authorization_identity'])
+        except ShadowError as error:
+            raise ShadowError('SHADOW_SUCCESSOR_AUTHORIZATION_MISSING') from error
         if auth['kind'] != 'authorization': raise ShadowError('SHADOW_EPOCH_AUTHORIZATION_REQUIRED')
-        a = auth['body']; diagnosis = store.load(a['diagnosis'])
+        a = auth['body']
+        try:
+            diagnosis = store.load(a['diagnosis'])
+        except ShadowError as error:
+            raise ShadowError('SHADOW_COMPATIBILITY_DIAGNOSIS_MISSING') from error
         if diagnosis['kind'] != 'diagnosis': raise ShadowError('SHADOW_EPOCH_DIAGNOSIS_REQUIRED')
         d = diagnosis['body']; current = service._runtime_proof(); now = service.clock()
-        capabilities(current)
+        if current['source_state'] != 'CLEAN_COMMIT':
+            raise ShadowError('SHADOW_CURRENT_RUNTIME_NOT_CLEAN_COMMIT')
+        try:
+            # Revalidate the frozen process manifest, not caller-supplied JSON.
+            from dataclasses import replace
+            replace(service._manifest.startup)
+            replace(service._manifest)
+            capabilities(current)
+        except (ValueError, TypeError) as error:
+            raise ShadowError('SHADOW_CURRENT_CAPABILITY_INVALID') from error
+        if d['classification'] != MATERIAL:
+            raise ShadowError('SHADOW_COMPATIBILITY_CLASSIFICATION_NOT_MATERIAL')
+        if a['proof']['revision'] != current['revision']:
+            raise ShadowError('SHADOW_SUCCESSOR_REVISION_MISMATCH')
         if (a['request'] != payload['request_identity'] or a['proof'] != current
                 or current['pid'] != os.getpid() or current['source_state'] != 'CLEAN_COMMIT'
                 or not a['sponsor_reference'] or not d['sponsor_reference']
@@ -96,7 +116,10 @@ def commission(service, payload, *, maintenance, idle, repository=repository_gat
             raise ShadowError('SHADOW_EPOCH_AUTHORITY_MISMATCH')
         if repository(current['revision'], d['subject_revision']) is not True:
             raise ShadowError('SHADOW_EPOCH_REPOSITORY_DRIFT')
-        pointer = store.pointer(); chain = store.chain()
+        try:
+            pointer = store.pointer(); chain = store.chain()
+        except (ValueError, OSError) as error:
+            raise ShadowError('SHADOW_PREDECESSOR_EPOCH_INVALID') from error
         if pointer and pointer['body']['request'] == a['request']:
             if pointer['body']['authorization'] != auth['identity']:
                 raise ShadowError('SHADOW_EPOCH_REQUEST_CONFLICT')
@@ -114,11 +137,10 @@ def commission(service, payload, *, maintenance, idle, repository=repository_gat
             raise ShadowError('SHADOW_EPOCH_DIAGNOSIS_BINDING_INVALID')
         if compatible(old['body']['proof'], current):
             raise ShadowError('SHADOW_EPOCH_COMPATIBLE_CURRENT_EXISTS')
-        initial_calc = capabilities(old['body']['proof'])['WO_06H_LIVE_SHADOW'].implementation_digest
-        current_calc = capabilities(current)['WO_06H_LIVE_SHADOW'].implementation_digest
-        if (initial_calc != d['calculation_digest'] or current_calc != initial_calc
-                or capabilities(old['body']['proof'])['WO_05A_TRUSTED_TIME_ADMISSION'] != capabilities(current)['WO_05A_TRUSTED_TIME_ADMISSION']):
-            raise ShadowError('SHADOW_FROZEN_IMPLEMENTATION_CHANGED')
+        if 'bridge' not in a:
+            raise ShadowError('SHADOW_SUCCESSOR_CAPABILITY_NOT_BOUND')
+        from kronos.intraday.live_shadow_transition import validate_bridge
+        validate_bridge(store.load(a['bridge']), old, current, diagnosis, auth)
         # Verify historical accounting before any new acceptance/window publication.
         if service._failure is not None or epoch_status(service)['epoch_failure'] is not None:
             raise ShadowError('SHADOW_EPOCH_PREDECESSOR_INVALID')
@@ -154,7 +176,7 @@ def epoch_capability():
     import marshal
     from hashlib import sha256
     from types import FunctionType
-    from kronos.intraday import live_shadow_epochs
+    from kronos.intraday import live_shadow_epochs, live_shadow_transition
     from kronos.intraday.runtime_identity import LoadedCapability
     from kronos.intraday.population_measurement import canonical
     from kronos.intraday.live_shadow import validate_body
@@ -166,7 +188,10 @@ def epoch_capability():
             functions.append(value)
         elif isinstance(value, type) and value.__module__ == live_shadow_epochs.__name__:
             functions.extend(v for _,v in sorted(vars(value).items()) if isinstance(v, FunctionType))
+    functions.extend(value for _, value in sorted(vars(live_shadow_transition).items())
+        if isinstance(value, FunctionType) and value.__module__ == live_shadow_transition.__name__)
     payload = canonical(dict(policy=live_shadow_epochs.POLICY, methodology=live_shadow_epochs.METHOD,
-        narrow_cpr=live_shadow_epochs.CPR, fields={k:sorted(v) for k,v in live_shadow_epochs.FIELDS.items()}))
+        narrow_cpr=live_shadow_epochs.CPR, fields={k:sorted(v) for k,v in live_shadow_epochs.FIELDS.items()},
+        transition_invariants=live_shadow_transition.INVARIANT_SEMANTICS))
     payload += b''.join(marshal.dumps(f.__code__) for f in functions)
-    return LoadedCapability('WO_06H_ACCEPTANCE_EPOCH', '1.0.0', sha256(payload).hexdigest())
+    return LoadedCapability('WO_06H_ACCEPTANCE_EPOCH', '1.1.0', sha256(payload).hexdigest())

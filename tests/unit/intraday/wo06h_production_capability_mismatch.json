@@ -1,0 +1,75 @@
+{
+  "classification": "ISOLATED_FIXTURE_RETAINED_CAPABILITY_FACTS_ONLY",
+  "source_evidence_sha256": "35214009e62d0ec03e499b3f1bad15ba39b55e1fba37c8bb5b0e6a21412228a0",
+  "diagnosis_report_sha256": "df52231199aa88419aa5d770d56dfc252896b184561a976b89c6c2d74923313d",
+  "historical_revision": "a00a0a9fef0107b734fea7229d192fb95c473093",
+  "current_revision": "7159439ea68c07819a5f23d8eb9c4538c02eb54c",
+  "historical_capabilities": [
+    {
+      "identity": "INTRADAY_DISCOVERY_OPERATION",
+      "implementation_digest": "c18d1b1c778000d9096f55bd6a6ef2023246cec9313a6807d20c49269014e67f",
+      "version": "0.1.0"
+    },
+    {
+      "identity": "WO_05A_TRUSTED_TIME_ADMISSION",
+      "implementation_digest": "465e27bfa867c77aa56db08f63886ad4ffe05e341e30bae1ec2742b248d5286b",
+      "version": "1.0.0"
+    },
+    {
+      "identity": "WO_05B_OPERATION_ACCOUNTING",
+      "implementation_digest": "4b1d954893e704a3abc0d7e5440f30461545506254ace31aa18bfd171c2204cb",
+      "version": "1.0.0"
+    },
+    {
+      "identity": "INTRADAY_V2_OPERATIONAL_CONTROL",
+      "implementation_digest": "65e0963541c831159f48f271a28d0cfcffdb32bbaa609c967b80464a3d9d3bf6",
+      "version": "1.0.0"
+    },
+    {
+      "identity": "WO_06H_LIVE_SHADOW",
+      "implementation_digest": "53d5dd60f8f00aa6d8e826b0dce0204461d089ef0108d183d9a45ab85dcc18af",
+      "version": "1.0.0"
+    }
+  ],
+  "current_capabilities": [
+    {
+      "identity": "INTRADAY_DISCOVERY_OPERATION",
+      "implementation_digest": "0eac457e199958f88dcc1508493f8b101eeb2b4b58be9cf93e4893f236af7e34",
+      "version": "0.1.0"
+    },
+    {
+      "identity": "WO_05A_TRUSTED_TIME_ADMISSION",
+      "implementation_digest": "df254b7a96b600eda42aa4136f2e2b239af90a5cee5964900513a3385b6ad5bd",
+      "version": "1.0.0"
+    },
+    {
+      "identity": "WO_05B_OPERATION_ACCOUNTING",
+      "implementation_digest": "bfd58dddf57e79a5902a276d0fb0a2c6cea21c614976934f3f97ed3c0f469f11",
+      "version": "1.0.0"
+    },
+    {
+      "identity": "INTRADAY_V2_OPERATIONAL_CONTROL",
+      "implementation_digest": "65e0963541c831159f48f271a28d0cfcffdb32bbaa609c967b80464a3d9d3bf6",
+      "version": "1.0.0"
+    },
+    {
+      "identity": "WO_06H_LIVE_SHADOW",
+      "implementation_digest": "53d5dd60f8f00aa6d8e826b0dce0204461d089ef0108d183d9a45ab85dcc18af",
+      "version": "1.0.0"
+    }
+  ],
+  "historical_start": "2026-09-08T20:29:02.829905+05:30",
+  "historical_end": "2026-10-08T20:29:02.829905+05:30",
+  "historical_counts": [
+    34,
+    66,
+    0
+  ],
+  "changed_semantics": "Discovery/Probables transaction failure semantics: Native publication before Probables commit",
+  "unchanged_semantics": [
+    "METHODOLOGY_2_2_0",
+    "NARROW_CPR",
+    "TRUSTED_TIME_ADMISSION",
+    "WO_06H_CALCULATION"
+  ]
+}

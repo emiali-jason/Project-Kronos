@@ -220,3 +220,9 @@ WO-07B/07B1 workflow, production Narrow CPR, methodology, or trading authority.
 [ADR-0043](../../adr/ADR-0043-WO06H-SUCCESSOR-ACCEPTANCE-EPOCHS.md) and the [successor contract](../../interfaces/KRONOS-WO06H-SUCCESSOR-EPOCH-V1.md) extend the earlier singleton restriction. The existing acceptance/window maps deterministically to initial epoch 1 without byte migration. Explicit material-change successor commissioning creates a distinct acceptance and calendar-month window at the actual new acceptance instant, atomically advances CURRENT after immutable records validate, and starts current A/B/EOD at zero. The prior planned end remains historical metadata; supersession is represented separately.
 
 Prospective observations add epoch and acceptance identities to their existing window binding. Default accounting/ledger/status is current-only; explicit historical status and all-epoch count reporting are available. Restore only the exact current epoch when compatible, never an older compatible fallback. The existing frozen calculation identity is unchanged; separate loaded epoch infrastructure declares its own capability. Ordinary acceptance remains maintenance-blocked; the new bounded commissioning route neither exits maintenance nor restores Provider. See the interface for trusted authorization enrollment and failure handling.
+
+## Successor capability-boundary correction — ADR-0044
+
+**Status:** Approved bounded engineering; operational enrollment/commissioning remains separately gated.
+
+[ADR-0044](../../adr/ADR-0044-WO06H-SUCCESSOR-CAPABILITY-BOUNDARY.md) distinguishes strict same-epoch restoration from explicit material-change successor commissioning. An immutable bridge binds predecessor and current capability identities, exact changed/unchanged declarations, reviewed semantics, diagnosis and Sponsor authorization. It cannot restore an older incompatible epoch or grant a general compatibility exception.

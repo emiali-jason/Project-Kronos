@@ -16,17 +16,21 @@ POLICY = 'KRONOS-WO06H-ACCEPTANCE-EPOCH/1.0.0'
 METHOD = 'KRONOS-INTRADAY-PROBABLES-METHODOLOGY-V2/2.2.0'
 CPR = 'INTRADAY-PROBABLES-METHODOLOGY-V2-PUBLICATION-E7F8BD9316571148B39183E47220E97982D9A956E0309469D3AA9D4E8573A0E9'
 MATERIAL = 'ACCEPTANCE_MATERIAL_CHANGE'
-ID = re.compile(r'WO06H-(EPOCH|TRANSITION|AUTHORIZATION|DIAGNOSIS)-[a-f0-9]{64}\Z')
+ID = re.compile(r'WO06H-(EPOCH|TRANSITION|AUTHORIZATION|DIAGNOSIS|BRIDGE)-[a-f0-9]{64}\Z')
 FIELDS = {
     'epoch': {'acceptance', 'window', 'start', 'end', 'proof', 'methodology', 'narrow_cpr', 'classification', 'created_at', 'predecessor', 'diagnosis', 'request'},
     'transition': {'epoch', 'previous', 'request', 'authorization', 'effective_at'},
     'authorization': {'request', 'predecessor', 'proof', 'diagnosis', 'expires_at', 'sponsor_reference'},
+    'bridge': {'predecessor', 'predecessor_capability', 'current_proof', 'current_capability', 'diagnosis', 'classification', 'changed_capabilities', 'unchanged_capabilities', 'changed_semantics', 'unchanged_semantics', 'methodology', 'narrow_cpr', 'sponsor_reference'},
     'diagnosis': {'classification', 'subject_revision', 'predecessor_proof', 'calculation_digest', 'changed_semantics', 'report_sha256', 'sponsor_reference'},
 }
 
 
 def document(kind, body):
-    if kind not in FIELDS or set(body) != FIELDS[kind]:
+    # Old authorization envelopes remain readable; new commissioning requires
+    # the additive bridge binding. Never rewrite historical authorization bytes.
+    allowed = (FIELDS[kind], FIELDS[kind] | {'bridge'}) if kind == 'authorization' else (FIELDS.get(kind),)
+    if kind not in FIELDS or set(body) not in allowed:
         raise ShadowError('SHADOW_EPOCH_DOCUMENT_INVALID')
     core = dict(policy=POLICY, kind=kind, body=body)
     core['identity'] = identity('WO06H-' + kind.upper() + '-', core)
@@ -232,6 +236,9 @@ class EpochStore:
                     or not authority['sponsor_reference']):
                 raise ShadowError('SHADOW_EPOCH_CHAIN_INVALID')
             predecessor_epoch = self.load(eb['predecessor']); self.bound(predecessor_epoch)
+            if 'bridge' in authority:
+                from kronos.intraday.live_shadow_transition import validate_bridge
+                validate_bridge(self.load(authority['bridge']), predecessor_epoch, eb['proof'], diagnosis, auth)
             if (instant(eb['start']) <= instant(predecessor_epoch['body']['start'])
                     or diagnosis['body']['predecessor_proof'] != predecessor_epoch['body']['proof']):
                 raise ShadowError('SHADOW_EPOCH_CHAIN_INVALID')
