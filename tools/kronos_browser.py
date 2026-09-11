@@ -30,6 +30,9 @@ with StartupCapture(Path(__file__).resolve().parents[1], keep_sources_pinned=Tru
     from kronos.browser.intraday_review_v2_control import (
         IntradayReviewV2OperationalControl,
     )
+    from kronos.browser.intraday_visual_reconciliation_v2_control import (
+        IntradayVisualReconciliationV2OperationalControl,
+    )
     from kronos.browser.intraday_wo10_control import (
         IntradayWo10OperationalControl,
     )
@@ -143,6 +146,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         intraday_runtime.review_v2_application,
         intraday_runtime.review_v2_operation_store,
     )
+    intraday_visual_reconciliation_v2_control = (
+        IntradayVisualReconciliationV2OperationalControl(
+            intraday_runtime.visual_reconciliation_v2_application
+        )
+    )
     intraday_wo10_control = IntradayWo10OperationalControl(
         intraday_runtime.wo10_runtime,
         intraday_runtime.probables_v2_store,
@@ -192,6 +200,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         intraday_runtime.discovery_v2_application,
         probables_v2_control=intraday_probables_v2_control,
         review_v2_control=intraday_review_v2_control,
+        visual_reconciliation_v2_control=intraday_visual_reconciliation_v2_control,
         wo10_control=intraday_wo10_control,
         wo11_control=intraday_wo11_control,
         wo12_v2_control=intraday_wo12_v2_control,

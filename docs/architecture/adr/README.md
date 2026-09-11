@@ -70,3 +70,7 @@ The existing approved `ADL-*` records remain at their established paths under [`
 ## WO-07E final temporal authority composition
 
 [ADR-0035](ADR-0035-INTRADAY-TEMPORAL-AUTHORITY-COMPOSITION.md) records the Sponsor-approved bounded composition correction: native machine completion permits forming UNKNOWN only with sufficient independent visible contradiction context. Explicit false remains fail-closed. Engineering candidate; publication and runtime remain separately gated.
+
+## WO-07F governed visual reconciliation
+
+[ADR-0037](ADR-0037-INTRADAY-WO07F-GOVERNED-VISUAL-RECONCILIATION.md) records the Sponsor/EA-approved deterministic five-outcome reconciliation layer between correspondence-qualified WO-07E evidence and later WO-10 evaluation. It adds no trade, Risk or broker authority.

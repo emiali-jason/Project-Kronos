@@ -195,7 +195,7 @@ extension, acceptance/rejection and benchmark/native relationship. No ALIGNED,
 CONFLICT, score, weight, promotion threshold or automatic consequence is defined.
 WO-10 Promotion; WO-13 Entry/Stop/Target/R:R; WO-14 Risk; WO-15 Entry Timing;
 WO-16 Sponsor PAPER/LIVE/IGNORE; WO-17 position/monitoring retain ownership.
-WO-07G remains cancelled. WO-07D UX, WO-07E execution, WO-07F reconciliation,
+WO-07G remains cancelled. WO-07D UX and WO-07E execution remain preserved. WO-07F reconciliation is defined by [ADR-0037](../../adr/ADR-0037-INTRADAY-WO07F-GOVERNED-VISUAL-RECONCILIATION.md) and the [WO-07F product record](KRONOS-INTRADAY-WO-07F-GOVERNED-VISUAL-RECONCILIATION.md). It consumes accepted V2 observations without changing this question contract. Later
 WO-08 successor, WO-09 outcomes/Excel, retention/purge and shared/Swing hardening
 are not implemented.
 

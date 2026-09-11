@@ -22,6 +22,9 @@ from kronos.application.intraday_discovery_operation import (
 from kronos.application.intraday_probables import IntradayProbablesApplication
 from kronos.application.intraday_probables_v2 import IntradayProbablesV2Application
 from kronos.application.intraday_review_v2 import IntradayReviewV2Application
+from kronos.application.intraday_visual_reconciliation_v2 import (
+    IntradayVisualReconciliationV2Application,
+)
 from kronos.application.intraday_review_mcx_paired import (
     IntradayMcxPairedReviewApplication,
 )
@@ -94,6 +97,9 @@ from kronos.intraday.review_v2 import CurrentReviewPointerV2
 from kronos.intraday.review_v2_persistence import IntradayReviewV2Store
 from kronos.intraday.review_mcx_paired_persistence import (
     IntradayMcxPairedReviewStore,
+)
+from kronos.intraday.visual_reconciliation_v2_persistence import (
+    VisualReconciliationStore,
 )
 from kronos.intraday.review_v2_operation_persistence import (
     ReviewV2OperationProvenanceStore,
@@ -219,6 +225,8 @@ class IntradayRuntimeComposition:
     review_v2_operation_store: ReviewV2OperationProvenanceStore
     mcx_paired_review_store: IntradayMcxPairedReviewStore
     mcx_paired_review_application: IntradayMcxPairedReviewApplication
+    visual_reconciliation_v2_store: VisualReconciliationStore
+    visual_reconciliation_v2_application: IntradayVisualReconciliationV2Application
     wo10_store: Wo10Store
     wo10_policy_registry: RuntimeWo10PolicyRegistry
     wo10_application: IntradayWo10Application
@@ -336,6 +344,16 @@ def create_intraday_runtime(
     )
     mcx_paired_review = IntradayMcxPairedReviewApplication(
         store=mcx_paired_review_store
+    )
+    visual_reconciliation_v2_store = VisualReconciliationStore(
+        Path(evidence_root) / "wo07f-visual-reconciliation-v1"
+    )
+    visual_reconciliation_v2 = IntradayVisualReconciliationV2Application(
+        review=review_v2,
+        review_store=review_v2_store,
+        paired_store=mcx_paired_review_store,
+        store=visual_reconciliation_v2_store,
+        clock=clock,
     )
     wo10_store = Wo10Store(Path(evidence_root) / "wo10-reconciliation-v2")
     wo10_registry = RuntimeWo10PolicyRegistry()
@@ -555,6 +573,8 @@ def create_intraday_runtime(
         review_v2_operation_store=review_v2_operation_store,
         mcx_paired_review_store=mcx_paired_review_store,
         mcx_paired_review_application=mcx_paired_review,
+        visual_reconciliation_v2_store=visual_reconciliation_v2_store,
+        visual_reconciliation_v2_application=visual_reconciliation_v2,
         wo10_store=wo10_store,
         wo10_policy_registry=wo10_registry,
         wo10_application=wo10_application,

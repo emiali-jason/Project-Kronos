@@ -47,6 +47,9 @@ from kronos.browser.intraday_review_v2_control import (
     REVIEW_V2_STATUS_ROUTE,
     IntradayReviewV2OperationalControl,
 )
+from kronos.browser.intraday_visual_reconciliation_v2_control import (
+    IntradayVisualReconciliationV2OperationalControl,
+)
 from kronos.browser.intraday_wo10_control import (
     MAX_WO10_REQUEST_BYTES,
     WO10_CONTROL_ROUTE,
@@ -136,6 +139,7 @@ class IntradayBrowserRoutes:
         reconciliation: IntradayNativeVisualReconciliationApplication | None = None,
         probables_v2_control: IntradayProbablesV2OperationalControl | None = None,
         review_v2_control: IntradayReviewV2OperationalControl | None = None,
+        visual_reconciliation_v2_control: IntradayVisualReconciliationV2OperationalControl | None = None,
         wo10_control: IntradayWo10OperationalControl | None = None,
         wo11_control: IntradayWo11OperationalControl | None = None,
         wo12_v2_control: IntradayWo12V2OperationalControl | None = None,
@@ -168,6 +172,13 @@ class IntradayBrowserRoutes:
         ):
             raise ValueError("INTRADAY_BROWSER_ROUTES_INVALID")
         self._review_v2_control = review_v2_control
+        if (
+            visual_reconciliation_v2_control is not None
+            and type(visual_reconciliation_v2_control)
+            is not IntradayVisualReconciliationV2OperationalControl
+        ):
+            raise ValueError("INTRADAY_BROWSER_ROUTES_INVALID")
+        self._visual_reconciliation_v2_control = visual_reconciliation_v2_control
         if (
             wo10_control is not None
             and type(wo10_control) is not IntradayWo10OperationalControl
@@ -278,11 +289,25 @@ class IntradayBrowserRoutes:
             return None
         status = self._review_v2_control.status_document()
         try:
-            selected = self._review_v2_control.application.current_reconciliation()
-            status["reconciliation"] = selected.status_document()
-        except (ReviewError, OSError):
-            status["reconciliation"] = {"eligible_count": 0, "answer_ready_count": 0}
-        status["reconciliation_control_available"] = self._wo10_control is not None
+            if self._visual_reconciliation_v2_control is not None:
+                status["reconciliation"] = (
+                    self._visual_reconciliation_v2_control.status_document()
+                )
+            else:
+                selected = (
+                    self._review_v2_control.application.current_reconciliation()
+                )
+                status["reconciliation"] = selected.status_document()
+        except (ReviewError, OSError, ValueError):
+            status["reconciliation"] = {
+                "eligible_count": 0,
+                "reconciled_count": 0,
+                "candidates": (),
+            }
+        status["reconciliation_control_available"] = (
+            self._visual_reconciliation_v2_control is not None
+            or self._wo10_control is not None
+        )
         return status
 
     def handle_get(
@@ -1061,10 +1086,20 @@ class IntradayBrowserRoutes:
                 if request.path == "/intraday/review/reconcile-all":
                     if request.query or request.body:
                         raise ValueError
-                    result = self._review_v2_control.application.reconcile_current_ready(self._wo10_control)
+                    result = (
+                        self._visual_reconciliation_v2_control.reconcile_all_ready()
+                        if self._visual_reconciliation_v2_control is not None
+                        else self._review_v2_control.application.reconcile_current_ready(
+                            self._wo10_control
+                        )
+                    )
                     return BrowserRouteResponse(
                         json.dumps(result),
-                        status=HTTPStatus.OK if result["outcome"] == "COMPLETED" else HTTPStatus.CONFLICT,
+                        status=(
+                            HTTPStatus.OK
+                            if result["outcome"] == "COMPLETED"
+                            else HTTPStatus.CONFLICT
+                        ),
                         content_type="application/json; charset=utf-8",
                     )
             if request.path == REVIEW_V2_CHART_ROUTE:

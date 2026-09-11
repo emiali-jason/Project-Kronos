@@ -173,3 +173,7 @@ Older relationships retain their intervals; export-only labels begin on 10 Septe
 ## WO-07E final temporal authority composition
 
 [ADR-0035](adr/ADR-0035-INTRADAY-TEMPORAL-AUTHORITY-COMPOSITION.md) records the Sponsor-approved bounded composition correction: native machine completion permits forming UNKNOWN only with sufficient independent visible contradiction context. Explicit false remains fail-closed. Engineering candidate; publication and runtime remain separately gated.
+
+## WO-07F governed visual reconciliation
+
+[ADR-0037](adr/ADR-0037-INTRADAY-WO07F-GOVERNED-VISUAL-RECONCILIATION.md), the [interface contract](interfaces/KRONOS-INTRADAY-WO07F-VISUAL-RECONCILIATION-V1.md), and the [product record](products/intraday/KRONOS-INTRADAY-WO-07F-GOVERNED-VISUAL-RECONCILIATION.md) define the deterministic five-outcome layer between accepted WO-07E visual evidence and later WO-10 evaluation. The layer preserves the 98-identity, temporal, MCX, NATGAS and execution-authority boundaries.

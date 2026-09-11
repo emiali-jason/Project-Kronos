@@ -1536,8 +1536,19 @@ def _review_v2_projection(
             and status["current_probables_run_identity"] != snapshot.probables_run_identity)
     ):
         snapshot = IntradayReviewV2Snapshot(None, None, ())
+    reconciliation = {} if status is None else status.get("reconciliation", {})
+    reconciliation_candidates = {
+        item.get("review_cycle_identity"): item
+        for item in reconciliation.get("candidates", ())
+        if type(item) is dict
+    } if type(reconciliation) is dict else {}
     cards = "".join(
-        _review_v2_candidate(item, index, snapshot.probables_run_identity)
+        _review_v2_candidate(
+            item,
+            index,
+            snapshot.probables_run_identity,
+            reconciliation_candidates.get(item.cycle_identity),
+        )
         for index, item in enumerate(snapshot.candidates, start=1)
     )
     empty = (
@@ -1634,7 +1645,6 @@ def _review_v2_projection(
     all_ready = bool(snapshot.candidates) and ready_count == len(snapshot.candidates)
     transport_ready = snapshot.question_transport_identity is not None
     import_feedback = _review_v2_inbox_result(answer_result)
-    reconciliation = {} if status is None else status.get("reconciliation", {})
     exact_reconciliation = (
         reconciliation.get("current_review_pointer") == snapshot.current_pointer_identity
         and currentness == "REVIEW_CURRENT"
@@ -1711,7 +1721,12 @@ def _review_v2_status_time(value: object) -> str:
         return "UNAVAILABLE"
 
 
-def _review_v2_candidate(item, slot_index: int, run_identity: str | None = None) -> str:  # type: ignore[no-untyped-def]
+def _review_v2_candidate(
+    item,
+    slot_index: int,
+    run_identity: str | None = None,
+    reconciliation: dict[str, object] | None = None,
+) -> str:  # type: ignore[no-untyped-def]
     target_identity = f"intraday-v2-chart-slot-{slot_index}"
     input_identity = f"intraday-v2-chart-file-{slot_index}"
     cycle = quote(item.cycle_identity, safe="")
@@ -1808,6 +1823,30 @@ def _review_v2_candidate(item, slot_index: int, run_identity: str | None = None)
         + '<p id="' + target_identity + '-feedback" role="status" aria-live="polite" hidden></p>'
         + pack_actions
     )
+    reconciliation_panel = ""
+    if reconciliation is not None:
+        reason_codes = reconciliation.get("reason_codes", ())
+        reconciliation_panel = (
+            '<div class="intraday-card-state"><span>WO-07F · <strong>'
+            + escape(str(reconciliation.get("outcome") or reconciliation.get("readiness") or "NOT RUN"))
+            + '</strong></span><span>Downstream · <strong>'
+            + escape(str(reconciliation.get("downstream_eligibility") or "NOT ESTABLISHED"))
+            + '</strong></span></div>'
+            + (
+                ""
+                if not reason_codes
+                else '<p class="intraday-card-warning">Conditions · '
+                + escape(" · ".join(str(code) for code in reason_codes))
+                + "</p>"
+            )
+            + (
+                ""
+                if reconciliation.get("reconciliation_identity") is None
+                else '<details class="intraday-review-diagnostics"><summary>WO-07F evidence</summary>'
+                + escape(str(reconciliation["reconciliation_identity"]))
+                + "</details>"
+            )
+        )
     return (
         '<article class="intraday-review-v2-card" tabindex="-1" id="review-candidate-'
         + escape(item.probable_result_identity, quote=True) + '"><h3>'
@@ -1823,7 +1862,7 @@ def _review_v2_candidate(item, slot_index: int, run_identity: str | None = None)
            if item.chart_state not in {'CHART_READY', 'CHART_REQUIRED'} else '')
         + '<p class="intraday-card-context">' + escape(item.phase) + ' · '
         + escape(_ist_time(item.analysis_boundary)) + '</p>'
-        + preview + upload
+        + reconciliation_panel + preview + upload
         + '<details class="intraday-review-diagnostics"><summary>V2 LINEAGE</summary>'
         + '<p class="intraday-review-lineage">Canonical subject · '
         + escape(item.canonical_subject_identity)
