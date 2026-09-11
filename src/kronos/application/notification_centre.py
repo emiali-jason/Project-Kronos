@@ -1,4 +1,4 @@
-"""Durable Sponsor lifecycle over governed Swing notification sources.
+"""Durable Sponsor lifecycle over governed product notification sources.
 
 The centre owns presentation lifecycle only.  It never deletes or rewrites a
 source watch/event, evaluates analysis, creates a position, or calls a broker.
@@ -27,6 +27,10 @@ from kronos.application.swing_ux10 import (
     Ux10NotificationSnapshot,
     Ux10NotificationType,
     Ux10Priority,
+)
+from kronos.application.intraday_wo09_notifications import (
+    Wo09NotificationSource,
+    Wo09NotificationState,
 )
 
 
@@ -107,8 +111,8 @@ class SponsorNotificationRecord:
         if (
             len(self.notification_identity) != 64
             or not self.source_identity
-            or self.source_kind not in {"UX08_WATCH", "UX10_EVENT"}
-            or self.product != "SWING"
+            or self.source_kind not in {"UX08_WATCH", "UX10_EVENT", "INTRADAY_WO09"}
+            or self.product not in {"SWING", "INTRADAY"}
             or type(self.family) is not SponsorNotificationFamily
             or not self.notification_type
             or self.priority not in {"NORMAL", "HIGH"}
@@ -283,6 +287,40 @@ class SponsorNotificationCentre:
             records = tuple(sorted(self._records.values(), key=_record_order))
         return SponsorNotificationCentreSnapshot(records, websocket_state)
 
+    def synchronize_wo09(
+        self,
+        sources: tuple[Wo09NotificationSource, ...],
+        *,
+        websocket_state: str,
+    ) -> SponsorNotificationCentreSnapshot:
+        """Project WO-09 sources without analysis or Provider acquisition."""
+        if (
+            any(type(item) is not Wo09NotificationSource for item in sources)
+            or websocket_state not in {"CONNECTED", "DISCONNECTED", "IDLE"}
+        ):
+            raise TypeError("SPONSOR_NOTIFICATION_SOURCE_INVALID")
+        now = self._clock()
+        retained = {item.source_identity for item in sources}
+        with self._lock:
+            withdrawn = tuple(
+                item for item in self._records.values()
+                if item.source_kind == "INTRADAY_WO09"
+                and item.source_identity not in retained
+                and item.state is SponsorNotificationState.LIVE
+                and not item.dismissed
+            )
+        for item in withdrawn:
+            self._revise(
+                item, now, "WO09_SOURCE_WITHDRAWN",
+                state=SponsorNotificationState.EXPIRED,
+                reactivatable=False, next_reminder_at=None,
+            )
+        for source in sources:
+            self._synchronize_source(_wo09_source(source), now)
+        with self._lock:
+            records = tuple(sorted(self._records.values(), key=_record_order))
+        return SponsorNotificationCentreSnapshot(records, websocket_state)
+
     def dismiss(
         self, notification_identity: str, expected_integrity: str, *, occurred_at: datetime | None = None
     ) -> SponsorNotificationRecord:
@@ -395,7 +433,7 @@ class SponsorNotificationCentre:
         if latest is None:
             values = dict(source)
             values.update(
-                notification_identity=identity, product="SWING",
+                notification_identity=identity, product=source.get("product", "SWING"),
                 created_at=source["created_at"], updated_at=source["created_at"],
                 dismissed=False, reactivated_from=None, generation=0,
                 last_reminded_at=(
@@ -550,6 +588,25 @@ def _watch_source(item: ManagedNotification) -> dict[str, object]:
         # presentation-only recycle action reactivates monitoring authority.
         reactivatable=False,
         created_at=item.triggered_at or item.activated_at,
+    )
+
+
+def _wo09_source(item: Wo09NotificationSource) -> dict[str, object]:
+    return dict(
+        source_identity=item.source_identity,
+        source_kind="INTRADAY_WO09",
+        source_run_identity=item.readiness_identity,
+        product="INTRADAY",
+        family=SponsorNotificationFamily.ACTIONABLE,
+        notification_type=item.notification_type,
+        priority=item.priority,
+        instrument=item.canonical_subject_identity,
+        summary=item.summary,
+        action=SponsorNotificationAction.OPEN,
+        action_path="/intraday/wo09" if item.state is Wo09NotificationState.ACTIVE else "",
+        state=(SponsorNotificationState.LIVE if item.state is Wo09NotificationState.ACTIVE else SponsorNotificationState.EXPIRED),
+        reactivatable=False,
+        created_at=item.created_at,
     )
 
 

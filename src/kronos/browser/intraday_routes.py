@@ -19,6 +19,7 @@ from kronos.browser.intraday_views import (
     render_intraday_detail,
     render_intraday_review,
     render_intraday_wo10,
+    render_intraday_wo09,
     render_intraday_wo11,
     render_intraday_wo12,
     render_intraday_wo13,
@@ -28,6 +29,10 @@ from kronos.browser.intraday_views import (
     render_intraday_wo17,
     render_intraday_operational_readiness,
     render_intraday_workstation,
+)
+from kronos.browser.intraday_wo09_control import (
+    IntradayWo09Projection,
+    WO09_PRODUCT_ROUTE,
 )
 from kronos.browser.intraday_operational_readiness import (
     IntradayOperationalReadinessProjection,
@@ -140,6 +145,7 @@ class IntradayBrowserRoutes:
         probables_v2_control: IntradayProbablesV2OperationalControl | None = None,
         review_v2_control: IntradayReviewV2OperationalControl | None = None,
         visual_reconciliation_v2_control: IntradayVisualReconciliationV2OperationalControl | None = None,
+        wo09_projection: IntradayWo09Projection | None = None,
         wo10_control: IntradayWo10OperationalControl | None = None,
         wo11_control: IntradayWo11OperationalControl | None = None,
         wo12_v2_control: IntradayWo12V2OperationalControl | None = None,
@@ -179,6 +185,9 @@ class IntradayBrowserRoutes:
         ):
             raise ValueError("INTRADAY_BROWSER_ROUTES_INVALID")
         self._visual_reconciliation_v2_control = visual_reconciliation_v2_control
+        if wo09_projection is not None and type(wo09_projection) is not IntradayWo09Projection:
+            raise ValueError("INTRADAY_BROWSER_ROUTES_INVALID")
+        self._wo09_projection = wo09_projection
         if (
             wo10_control is not None
             and type(wo10_control) is not IntradayWo10OperationalControl
@@ -403,6 +412,15 @@ class IntradayBrowserRoutes:
                 render_intraday_wo10(
                     snapshot_provider(), self._wo10_control.status_document()
                 )
+            )
+        elif request.path == WO09_PRODUCT_ROUTE:
+            if self._wo09_projection is None or request.query:
+                return BrowserRouteResponse(
+                    "Not found.", status=HTTPStatus.NOT_FOUND,
+                    content_type="text/plain; charset=utf-8",
+                )
+            return BrowserRouteResponse(
+                render_intraday_wo09(snapshot_provider(), self._wo09_projection.status_document())
             )
         elif request.path == WO11_PRODUCT_ROUTE:
             if self._wo11_control is None or request.query:

@@ -25,6 +25,7 @@ from kronos.application.intraday_review_v2 import IntradayReviewV2Application
 from kronos.application.intraday_visual_reconciliation_v2 import (
     IntradayVisualReconciliationV2Application,
 )
+from kronos.application.intraday_wo09 import IntradayWo09Application
 from kronos.application.intraday_review_mcx_paired import (
     IntradayMcxPairedReviewApplication,
 )
@@ -101,6 +102,7 @@ from kronos.intraday.review_mcx_paired_persistence import (
 from kronos.intraday.visual_reconciliation_v2_persistence import (
     VisualReconciliationStore,
 )
+from kronos.intraday.wo09_persistence import Wo09Store
 from kronos.intraday.review_v2_operation_persistence import (
     ReviewV2OperationProvenanceStore,
 )
@@ -227,6 +229,9 @@ class IntradayRuntimeComposition:
     mcx_paired_review_application: IntradayMcxPairedReviewApplication
     visual_reconciliation_v2_store: VisualReconciliationStore
     visual_reconciliation_v2_application: IntradayVisualReconciliationV2Application
+    wo09_store: Wo09Store
+    wo09_application: IntradayWo09Application
+    promotion_readiness_owner: str
     wo10_store: Wo10Store
     wo10_policy_registry: RuntimeWo10PolicyRegistry
     wo10_application: IntradayWo10Application
@@ -355,6 +360,8 @@ def create_intraday_runtime(
         store=visual_reconciliation_v2_store,
         clock=clock,
     )
+    wo09_store = Wo09Store(Path(evidence_root) / "wo09-promotion-readiness-v1")
+    wo09_application = IntradayWo09Application(wo09_store)
     wo10_store = Wo10Store(Path(evidence_root) / "wo10-reconciliation-v2")
     wo10_registry = RuntimeWo10PolicyRegistry()
     wo10_loader = RetainedWo10EvidenceLoader(
@@ -383,7 +390,9 @@ def create_intraday_runtime(
         wo11_store=wo11_store,
         store=wo12_v2_store,
     )
-    wo12_v2_runtime = IntradayWo12V2RuntimeService(wo12_v2_application)
+    wo12_v2_runtime = IntradayWo12V2RuntimeService(
+        wo12_v2_application, prospective_execution_enabled=False
+    )
     wo13_store = Wo13Store(Path(evidence_root) / "wo13-step31-v1")
     wo13_application = IntradayWo13Application(store=wo13_store)
     wo13_restoration = IntradayWo13RestorationService(store=wo13_store)
@@ -575,6 +584,9 @@ def create_intraday_runtime(
         mcx_paired_review_application=mcx_paired_review,
         visual_reconciliation_v2_store=visual_reconciliation_v2_store,
         visual_reconciliation_v2_application=visual_reconciliation_v2,
+        wo09_store=wo09_store,
+        wo09_application=wo09_application,
+        promotion_readiness_owner="INTRADAY_WO09",
         wo10_store=wo10_store,
         wo10_policy_registry=wo10_registry,
         wo10_application=wo10_application,

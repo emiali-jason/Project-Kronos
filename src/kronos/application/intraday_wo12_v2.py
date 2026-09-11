@@ -182,10 +182,11 @@ class Wo12V2RuntimeStatus:
 class IntradayWo12V2RuntimeService:
     """Restore V2 pointer inertly and execute only an explicit caller request."""
 
-    def __init__(self, application: IntradayWo12V2Application) -> None:
+    def __init__(self, application: IntradayWo12V2Application, *, prospective_execution_enabled: bool = True) -> None:
         if type(application) is not IntradayWo12V2Application:
             raise ValueError("WO12_V2_RUNTIME_CONFIGURATION_INVALID")
         self._application = application
+        self._prospective_execution_enabled = prospective_execution_enabled
         self._lock = RLock()
         self._active_request_identity: str | None = None
         self._last_execution: Wo12V2Execution | None = None
@@ -214,7 +215,13 @@ class IntradayWo12V2RuntimeService:
         with self._lock:
             return self._last_execution
 
+    @property
+    def prospective_execution_enabled(self) -> bool:
+        return self._prospective_execution_enabled
+
     def execute(self, request: Wo12RequestV2, inputs: Wo12EvidenceInputsV2) -> Wo12V2Execution:
+        if not self._prospective_execution_enabled:
+            raise Wo12V2ApplicationError("WO12_V2_PROSPECTIVE_OWNER_SUPERSEDED_BY_WO09")
         with self._lock:
             self._active_request_identity = request.request_identity
         try:

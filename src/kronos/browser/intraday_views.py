@@ -165,6 +165,44 @@ def render_intraday_workstation(
     )
 
 
+def render_intraday_wo09(snapshot: BrowserWorkspaceSnapshot, status: dict[str, object]) -> str:
+    """Render persisted WO-09 cards and details without calculating policy."""
+    cards = status.get("active_attention", ())
+    details = status.get("analysis_details", {})
+    rendered = []
+    for card in cards if isinstance(cards, (tuple, list)) else ():
+        requirements = "".join(
+            f"<li><strong>{escape(str(item.get('criterion', '')))} · {escape(str(item.get('state', '')))}</strong> "
+            f"Current {escape(str(item.get('current')))} · Required {escape(str(item.get('required')))} · Gap {escape(str(item.get('gap')))}</li>"
+            for item in card.requirements
+        )
+        sections = details.get(card.readiness_identity, {}) if isinstance(details, dict) else {}
+        analysis = "".join(
+            f"<section><h3>{escape(str(title))}</h3><pre>{escape(str(value))}</pre></section>"
+            for title, value in sections.items()
+        )
+        rendered.append(
+            "<article class='intraday-review-card'>"
+            f"<h2>{escape(card.instrument)}</h2><p>{escape(card.direction)} · {escape(card.wo07f_state)}</p>"
+            f"<strong>{escape(card.readiness_state)} · {escape(card.score)}</strong>"
+            f"<p>Outstanding: {escape(card.outstanding_count)} · Currentness: {escape(card.monitorability_state)}</p>"
+            f"<ul>{requirements}</ul><p>Next: {escape(card.next_action)}</p>"
+            f"<details><summary>{escape(card.analysis_details_action)}</summary>"
+            f"{analysis}</details></article>"
+        )
+    body = (
+        "<section class='intraday-review-v2'><div class='intraday-review-v2-head'>"
+        "<div><h2>Governed Promotion &amp; Active Readiness</h2>"
+        "<p>Persisted WO-09 authority. No trade, Risk or broker authority.</p></div></div>"
+        f"<div class='intraday-review-v2-grid'>{''.join(rendered) or '<p>No active-attention readiness records.</p>'}</div></section>"
+    )
+    return render_browser_page(
+        title="Intraday — Governed Promotion & Active Readiness",
+        subtitle="WO-09 persisted analytical readiness projection.", snapshot=snapshot,
+        active_nav="Intraday", active_tab="", body=body, extra_styles=_INTRADAY_CSS,
+    )
+
+
 def render_intraday_operational_readiness(
     snapshot: BrowserWorkspaceSnapshot,
     status: dict[str, object],
@@ -3659,6 +3697,7 @@ __all__ = [
     "render_intraday_wo10",
     "render_intraday_wo11",
     "render_intraday_wo12",
+    "render_intraday_wo09",
     "render_intraday_wo13",
     "render_intraday_wo14",
     "render_intraday_wo15",

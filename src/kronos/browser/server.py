@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from http import HTTPStatus
@@ -35,6 +36,7 @@ from kronos.application.notification_centre import (
     SponsorNotificationQuery,
     project_sponsor_notifications,
 )
+from kronos.application.intraday_wo09_notifications import Wo09NotificationSource
 from kronos.application.swing_notifications import project_swing_notification_workspace
 from kronos.application.swing_ux10 import (
     SwingUx10NotificationService,
@@ -286,6 +288,9 @@ class KronosBrowserServer(ThreadingHTTPServer):
             IntradayHistoricalQualificationOperationalControl | None
         ) = None,
         mcx_supporting_context: McxSupportingContextWorkflow | None = None,
+        intraday_wo09_notification_sources: (
+            Callable[[], tuple[Wo09NotificationSource, ...]] | None
+        ) = None,
     ) -> None:
         if (
             address[0] != _LOOPBACK_HOST
@@ -357,6 +362,10 @@ class KronosBrowserServer(ThreadingHTTPServer):
             or (
                 mcx_supporting_context is not None
                 and type(mcx_supporting_context) is not McxSupportingContextWorkflow
+            )
+            or (
+                intraday_wo09_notification_sources is not None
+                and not callable(intraday_wo09_notification_sources)
             )
         ):
             raise ValueError("BROWSER_SERVER_MUST_BIND_LOOPBACK")
@@ -562,6 +571,9 @@ class KronosBrowserServer(ThreadingHTTPServer):
             ),
             reminder_boundary_resolver=self.refresh_reminders.next_repeat_boundary,
         )
+        self.intraday_wo09_notification_sources = (
+            intraday_wo09_notification_sources or (lambda: ())
+        )
         self.progression_watches.set_ux10_listeners(
             watch_listener=self.ux10_notifications.observe_progression_watch,
             connection_listener=lambda *_values: None,
@@ -762,10 +774,14 @@ class KronosBrowserServer(ThreadingHTTPServer):
             monitoring_required=self.swing_monitoring_hub.subscription_count > 0,
             connection_state=self.swing_monitoring_hub.connection_state,
         )
-        return self.notification_centre.synchronize(
+        self.notification_centre.synchronize(
             watches,
             self.ux10_notifications.snapshot(),
             current_run_identity=None if run is None else run.run_identity,
+            websocket_state=websocket.value,
+        )
+        return self.notification_centre.synchronize_wo09(
+            self.intraday_wo09_notification_sources(),
             websocket_state=websocket.value,
         )
 
@@ -3927,6 +3943,9 @@ def create_browser_server(
         IntradayHistoricalQualificationOperationalControl | None
     ) = None,
     mcx_supporting_context: McxSupportingContextWorkflow | None = None,
+    intraday_wo09_notification_sources: (
+        Callable[[], tuple[Wo09NotificationSource, ...]] | None
+    ) = None,
 ) -> KronosBrowserServer:
     if type(port) is not int or not 0 <= port <= 65535:
         raise ValueError("BROWSER_SERVER_PORT_INVALID")
@@ -3953,6 +3972,7 @@ def create_browser_server(
         intraday_discovery_control,
         intraday_historical_control,
         mcx_supporting_context,
+        intraday_wo09_notification_sources,
     )
 
 

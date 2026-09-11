@@ -36,6 +36,7 @@ with StartupCapture(Path(__file__).resolve().parents[1], keep_sources_pinned=Tru
     from kronos.browser.intraday_wo10_control import (
         IntradayWo10OperationalControl,
     )
+    from kronos.browser.intraday_wo09_control import IntradayWo09Projection
     from kronos.browser.intraday_wo11_control import (
         IntradayWo11OperationalControl,
     )
@@ -156,6 +157,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         intraday_runtime.probables_v2_store,
         intraday_runtime.wo10_policy_registry,
     )
+    intraday_wo09_projection = IntradayWo09Projection(intraday_runtime.wo09_store)
     intraday_wo11_control = IntradayWo11OperationalControl(
         intraday_runtime.wo11_runtime,
     )
@@ -201,6 +203,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         probables_v2_control=intraday_probables_v2_control,
         review_v2_control=intraday_review_v2_control,
         visual_reconciliation_v2_control=intraday_visual_reconciliation_v2_control,
+        wo09_projection=intraday_wo09_projection,
         wo10_control=intraday_wo10_control,
         wo11_control=intraday_wo11_control,
         wo12_v2_control=intraday_wo12_v2_control,
@@ -249,6 +252,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             ),
             intraday_discovery_control=intraday_discovery_control,
             intraday_historical_control=intraday_historical_control,
+        )
+        server.intraday_wo09_notification_sources = (
+            intraday_runtime.wo09_store.load_notifications
         )
         intraday_runtime.wo17_monitoring.set_shared_monitoring_hub(
             server.swing_monitoring_hub
