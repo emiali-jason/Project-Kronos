@@ -708,6 +708,16 @@ class IntradayBrowserRoutes:
         return commission(operation.live_shadow, payload, maintenance=maintenance,
             idle=idle and review_idle and operation.active_operation_identity is None)
 
+    def restore_shadow_compatibility(self, payload, *, maintenance, idle):
+        from kronos.application.intraday_shadow_compatibility import restore_compatible_epoch
+        if self._probables_v2_control is None:
+            raise ValueError("SHADOW_COMPATIBILITY_RESTORATION_CONTROL_UNAVAILABLE")
+        operation = self._probables_v2_control.operation_service
+        review_idle = (self._review_v2_control is None or
+            self._review_v2_control.status_document()["active_operation_identity"] is None)
+        return restore_compatible_epoch(operation.live_shadow, payload, maintenance=maintenance,
+            idle=idle and review_idle and operation.active_operation_identity is None)
+
     def owns_post(self, path: str) -> bool:
         return path in {
             LIFECYCLE_ROUTE,

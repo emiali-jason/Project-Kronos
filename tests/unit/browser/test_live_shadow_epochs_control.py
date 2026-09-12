@@ -8,8 +8,18 @@ import pytest
 from tests.unit.browser.test_sph_controls import running, request
 from tests.unit.intraday.test_live_shadow_epochs import service, restart, authorize, inventory
 from kronos.application.intraday_shadow_epochs import commission, ROUTE
+from kronos.application.intraday_shadow_compatibility import (
+    ROUTE as RESTORATION_ROUTE,
+    restoration_request,
+    restore_compatible_epoch,
+)
 from kronos.browser.product_routes import ProductBrowserRoutes
 from kronos.browser.intraday_routes import IntradayBrowserRoutes
+from tests.unit.intraday.test_live_shadow_epoch_deterministic_digest import (
+    accepted_service,
+    corrected_restart,
+    retain_equivalence,
+)
 
 
 def post(server,payload,*,origin=None,path=ROUTE):
@@ -56,3 +66,59 @@ def test_intraday_product_quiescence_reaches_real_gate(tmp_path,active):
     with pytest.raises(ValueError,match='QUIESCENCE'):
         IntradayBrowserRoutes.commission_shadow_successor(route,payload,maintenance=True,idle=True)
     assert s._epochs.pointer() is None
+
+
+def compatible_case(tmp_path):
+    historical = accepted_service(tmp_path)
+    successor = restart(tmp_path, historical)
+    commission(successor, authorize(successor), maintenance=True, idle=True, repository=lambda *args: True)
+    current = corrected_restart(tmp_path, successor)
+    record = retain_equivalence(current)
+    epoch = current._epochs.chain()[0]
+    payload = restoration_request(
+        epoch_identity=epoch["identity"], acceptance_identity=epoch["body"]["acceptance"],
+        window_identity=epoch["body"]["window"], current_runtime_proof=current._runtime_proof(),
+        compatibility_identity=record["identity"],
+        sponsor_authorization=record["body"]["sponsor_authorization"],
+    )
+    return current, payload
+
+
+@pytest.mark.parametrize("fault", [None, "outside_maintenance", "other_request", "cross_origin", "query", "malformed"])
+def test_real_http_compatibility_restoration_contract(running, tmp_path, fault):
+    server, governance, provider, calls, _ = running
+    shadow, payload = compatible_case(tmp_path)
+
+    class Route:
+        def handle_get(self, *args): return None
+        def restore_shadow_compatibility(self, supplied, **conditions):
+            return restore_compatible_epoch(shadow, supplied, **conditions)
+
+    server.product_routes = ProductBrowserRoutes((Route(),))
+    if fault == "outside_maintenance": governance.maintenance_active = False
+    if fault == "other_request": server._active_sponsor_work = 1
+    if fault == "malformed": payload = {"action": "RESTORE_SAME_EPOCH_COMPATIBILITY"}
+    code, body = post(server, payload,
+        origin="http://foreign.invalid" if fault == "cross_origin" else None,
+        path=RESTORATION_ROUTE + "?x=1" if fault == "query" else RESTORATION_ROUTE)
+    if fault is None:
+        assert code == 200 and json.loads(body)["outcome"] == "RESTORED"
+        assert shadow.status()["acceptance_disposition"] == "EXISTING_ACCEPTANCE_RESTORED"
+        assert governance.maintenance_active
+    else:
+        assert code >= 400 and not shadow.status()["enabled"]
+    assert calls == [] and provider.begin_count == 0
+
+
+@pytest.mark.parametrize("active", ["review", "discovery"])
+def test_intraday_product_quiescence_blocks_compatibility_restoration(tmp_path, active):
+    shadow, payload = compatible_case(tmp_path)
+    route = SimpleNamespace(
+        _probables_v2_control=SimpleNamespace(operation_service=SimpleNamespace(
+            live_shadow=shadow, active_operation_identity="X" if active == "discovery" else None)),
+        _review_v2_control=SimpleNamespace(status_document=lambda: {
+            "active_operation_identity": "X" if active == "review" else None}),
+    )
+    with pytest.raises(ValueError, match="QUIESCENCE"):
+        IntradayBrowserRoutes.restore_shadow_compatibility(route, payload, maintenance=True, idle=True)
+    assert not shadow.status()["enabled"]

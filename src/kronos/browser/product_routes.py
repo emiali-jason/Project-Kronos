@@ -94,6 +94,13 @@ class ProductBrowserRoutes:
             raise ValueError('SHADOW_EPOCH_CONTROL_AMBIGUOUS')
         return handlers[0](payload, maintenance=maintenance, idle=idle)
 
+    def restore_shadow_compatibility(self, payload, *, maintenance, idle):
+        handlers = [getattr(route, "restore_shadow_compatibility") for route in self._routes
+                    if callable(getattr(route, "restore_shadow_compatibility", None))]
+        if len(handlers) != 1:
+            raise ValueError("SHADOW_COMPATIBILITY_RESTORATION_CONTROL_AMBIGUOUS")
+        return handlers[0](payload, maintenance=maintenance, idle=idle)
+
     def owns_post(self, path: str) -> bool:
         if type(path) is not str or not path.startswith("/"):
             raise ValueError("BROWSER_PRODUCT_POST_PATH_INVALID")

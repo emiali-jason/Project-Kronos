@@ -206,6 +206,15 @@ protected source-byte identities, equivalence evidence and Sponsor authority.
 It creates no new acceptance or window and grants no compatibility to later
 semantic changes. Ordinary exact equality remains the primary restoration rule.
 
+[ADR-0048](../../adr/ADR-0048-WO06H-SAME-EPOCH-COMPATIBILITY-RESTORATION.md)
+adds the missing maintenance-only operational surface for that already-retained
+record. The surface validates the current epoch, acceptance, window, complete
+current runtime/capability proof, exact compatibility and Sponsor/EA reference,
+then uses the existing restoration operation. It does not pass through successor
+commissioning authorization and cannot create a successor epoch. Exact-match
+startup restoration and successor commissioning retain their existing rules.
+Repeated compatible restoration is read-only and idempotent.
+
 The known backend gap, 9 September 2026 07:56:03.186–09:30:40.076267 IST,
 remains missing observations; disabled collection after that start remains
 unobserved too. No Cohort A/B, Assessment or EOD backfill, later-price substitution

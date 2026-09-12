@@ -104,3 +104,9 @@ Status: Approved bounded engineering, direct Sponsor / EA 2026-09-11.
 **Status:** Approved bounded engineering; production compatibility enrollment and restoration remain separately gated.
 
 [ADR-0047](ADR-0047-WO06H-DETERMINISTIC-ACCEPTANCE-EPOCH-DIGEST.md) replaces `marshal` code-object hashing with the 1.2.0 canonical-AST capability and documents the exact protected callable allowlist and exclusions. Historical 1.1.0 proofs remain immutable; only one exact content-addressed collateral-equivalence record can bind a specific epoch's complete 1.1.0 and 1.2.0 proofs.
+
+## WO-06H same-epoch compatibility restoration — ADR-0048
+
+**Status:** Approved bounded engineering; production invocation remains separately gated.
+
+[ADR-0048](ADR-0048-WO06H-SAME-EPOCH-COMPATIBILITY-RESTORATION.md) separates compatibility restoration from successor commissioning. A maintenance-only exact request names the current retained epoch/acceptance/window, current runtime/capability proof, immutable compatibility record and Sponsor/EA authority. It restores only process-local existing authority and cannot create or migrate research records.

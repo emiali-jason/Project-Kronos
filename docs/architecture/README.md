@@ -144,6 +144,10 @@ Status: Approved bounded engineering, direct Sponsor / EA 2026-09-11.
 
 [ADR-0044](adr/ADR-0044-WO06H-SUCCESSOR-CAPABILITY-BOUNDARY.md) distinguishes strict same-epoch restoration from explicit material-change successor commissioning. An immutable bridge binds predecessor and current capability identities, exact changed/unchanged declarations, reviewed semantics, diagnosis and Sponsor authorization. It cannot restore an older incompatible epoch or grant a general compatibility exception.
 
+## WO-06H same-epoch compatibility restoration — ADR-0048
+
+[ADR-0048](adr/ADR-0048-WO06H-SAME-EPOCH-COMPATIBILITY-RESTORATION.md) adds the dedicated maintenance-only surface for restoring an existing epoch through one exact retained deterministic-digest compatibility record. Original successor authorization remains creation-only. Exact restoration, compatibility restoration and successor commissioning remain separate operations.
+
 ## Deterministic acceptance-epoch digest — ADR-0047
 
 **Status:** Approved bounded engineering; production compatibility enrollment and restoration remain separately gated.
