@@ -175,6 +175,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     intraday_wo11_control = IntradayWo11OperationalControl(
         intraday_runtime.wo11_runtime,
     )
+    from kronos.browser.intraday_research import IntradayResearchControl
+    intraday_research_control = IntradayResearchControl(
+        intraday_runtime.research_application
+    )
     intraday_wo12_v2_control = IntradayWo12V2OperationalControl(
         intraday_runtime.wo12_v2_runtime,
     )
@@ -223,6 +227,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         prospective_programme_v2=True,
         wo10_control=intraday_wo10_control,
         wo11_control=intraday_wo11_control,
+        research_control=intraday_research_control,
         wo12_v2_control=intraday_wo12_v2_control,
         wo13_control=intraday_wo13_control,
         wo14_control=intraday_wo14_control,

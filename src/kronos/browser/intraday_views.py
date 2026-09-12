@@ -125,8 +125,8 @@ _REVIEW_V2_CSS = r"""
 """
 
 _INTRADAY_STATISTICS_CSS = r"""
-.intraday-statistics-shell{display:grid;grid-template-columns:minmax(0,1fr) auto;margin:-22px -28px 22px;border-bottom:1px solid var(--line)}.intraday-statistics-shell>.intraday-tabs{box-sizing:border-box;min-width:0;margin:0;border-bottom:0;padding-right:12px;overflow-x:auto}.intraday-statistics-actions{box-sizing:border-box;height:61px;padding-right:28px;display:flex;align-items:center;gap:8px}.intraday-statistics-export{display:inline-flex;align-items:center;justify-content:center;border:1px solid #246a52;border-radius:7px;padding:7px 10px;color:#dff7eb;font-size:10px;font-weight:750;white-space:nowrap}.intraday-statistics-export:hover,.intraday-statistics-export:focus-visible{border-color:var(--green);outline:2px solid rgba(46,212,119,.25)}
-@media(max-width:760px){.intraday-statistics-shell{display:block;margin:-18px -18px 18px}.intraday-statistics-shell>.intraday-tabs{margin:0;padding:0 18px;overflow-x:auto}.intraday-statistics-actions{height:auto;min-width:0;padding:8px 18px 10px;display:flex;flex-wrap:wrap;gap:8px}.intraday-statistics-export{box-sizing:border-box;flex:1 1 100%;width:100%}.intraday-statistics-actions button{min-width:0;flex:1 1 auto}.intraday-statistics-actions .intraday-refresh-state{min-width:0;overflow-wrap:anywhere}}
+.intraday-statistics-shell{display:grid;grid-template-columns:minmax(0,1fr) auto;margin:-22px -28px 22px;border-bottom:1px solid var(--line)}.intraday-statistics-shell>.intraday-tabs{box-sizing:border-box;min-width:0;margin:0;border-bottom:0;padding-right:12px;overflow-x:auto}.intraday-statistics-actions{box-sizing:border-box;height:61px;padding-right:28px;display:flex;align-items:center;gap:8px}.intraday-statistics-export,.intraday-research-link{display:inline-flex;align-items:center;justify-content:center;border:1px solid #246a52;border-radius:7px;padding:7px 10px;color:#dff7eb;font-size:10px;font-weight:750;white-space:nowrap}.intraday-statistics-export:hover,.intraday-statistics-export:focus-visible,.intraday-research-link:hover,.intraday-research-link:focus-visible{border-color:var(--green);outline:2px solid rgba(46,212,119,.25)}
+@media(max-width:760px){.intraday-statistics-shell{display:block;margin:-18px -18px 18px}.intraday-statistics-shell>.intraday-tabs{margin:0;padding:0 18px;overflow-x:auto}.intraday-statistics-actions{height:auto;min-width:0;padding:8px 18px 10px;display:flex;flex-wrap:wrap;gap:8px}.intraday-statistics-export{box-sizing:border-box;flex:1 1 100%;width:100%}.intraday-research-link{box-sizing:border-box;flex:1 1 100%;width:100%}.intraday-statistics-actions button{min-width:0;flex:1 1 auto}.intraday-statistics-actions .intraday-refresh-state{min-width:0;overflow-wrap:anywhere}}
 """
 
 
@@ -3188,7 +3188,8 @@ def _intraday_tabs(
     statistics_control = (
         '<a class="intraday-statistics-export" '
         'href="/reports/export.xlsx?product=INTRADAY" download>'
-        'STATISTICS / EXCEL</a>'
+        'STATISTICS / EXCEL</a><a class="intraday-research-link" '
+        'href="/intraday/research">RESEARCH / ANALYSIS DETAILS</a>'
         if statistics else ""
     )
     destinations = (("opportunities", "/intraday", "OPPORTUNITIES"),

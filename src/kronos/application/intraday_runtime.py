@@ -44,6 +44,7 @@ from kronos.application.intraday_wo11 import (
     IntradayWo11Application,
     IntradayWo11RuntimeService,
 )
+from kronos.application.intraday_research import IntradayResearchApplication
 from kronos.application.intraday_wo12_v2 import (
     IntradayWo12V2Application,
     IntradayWo12V2RuntimeService,
@@ -123,6 +124,7 @@ from kronos.intraday.universe import (
 )
 from kronos.intraday.wo10_persistence import Wo10Store
 from kronos.intraday.wo11_persistence import Wo11Store
+from kronos.intraday.wo12_research_store import ResearchStore
 from kronos.intraday.wo12_v2_persistence import Wo12V2Store
 from kronos.intraday.wo13_persistence import Wo13Store
 from kronos.intraday.wo14_persistence import Wo14Store
@@ -245,6 +247,8 @@ class IntradayRuntimeComposition:
     wo11_store: Wo11Store
     wo11_application: IntradayWo11Application
     wo11_runtime: IntradayWo11RuntimeService
+    research_store: ResearchStore
+    research_application: IntradayResearchApplication
     wo12_v2_store: Wo12V2Store
     wo12_v2_application: IntradayWo12V2Application
     wo12_v2_runtime: IntradayWo12V2RuntimeService
@@ -400,6 +404,7 @@ def create_intraday_runtime(
         backend_identity="KRONOS-INTRADAY-BROWSER",
     )
     wo11_runtime = IntradayWo11RuntimeService(wo11_application)
+    research_store = ResearchStore(Path(evidence_root) / "prospective-v2-wo12-research-ledger-v1")
     wo12_v2_store = Wo12V2Store(Path(evidence_root) / "wo12-kr370-v2")
     wo12_v2_application = IntradayWo12V2Application(
         wo10_store=wo10_store,
@@ -540,11 +545,20 @@ def create_intraday_runtime(
         # ADR-0046: V1 has no analytical reassessment/exit capability. Existing
         # operational admission still applies to the commissioned lifecycle.
         return True
+    lifecycle_store = LifecycleStore(Path(evidence_root) / "prospective-v2-wo11-lifecycle")
     lifecycle_application = IntradayLifecycleApplication(futures=futures_application,
-        store=LifecycleStore(Path(evidence_root) / "prospective-v2-wo11-lifecycle"), clock=clock,
+        store=lifecycle_store, clock=clock,
         session_source=lifecycle_session, timing_source=lifecycle_timing,
         operational_guard=lifecycle_guard,
         contract_source=lambda subject: None if operation_v2.last_active_derivative_resolutions is None else operation_v2.last_active_derivative_resolutions.for_subject(subject).binding)
+    research_application = IntradayResearchApplication(
+        probables=probables_v2_store,
+        wo09=wo09_store,
+        futures=futures_application.store,
+        lifecycle=lifecycle_store,
+        store=research_store,
+        clock=clock,
+    )
     historical_operation = IntradayHistoricalQualificationOperationService(
         provider_runtime=provider_runtime,
         universe=universe,
@@ -644,6 +658,8 @@ def create_intraday_runtime(
         wo11_store=wo11_store,
         wo11_application=wo11_application,
         wo11_runtime=wo11_runtime,
+        research_store=research_store,
+        research_application=research_application,
         wo12_v2_store=wo12_v2_store,
         wo12_v2_application=wo12_v2_application,
         wo12_v2_runtime=wo12_v2_runtime,

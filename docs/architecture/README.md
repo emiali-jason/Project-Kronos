@@ -148,6 +148,17 @@ Status: Approved bounded engineering, direct Sponsor / EA 2026-09-11.
 
 [ADR-0048](adr/ADR-0048-WO06H-SAME-EPOCH-COMPATIBILITY-RESTORATION.md) adds the dedicated maintenance-only surface for restoring an existing epoch through one exact retained deterministic-digest compatibility record. Original successor authorization remains creation-only. Exact restoration, compatibility restoration and successor commissioning remain separate operations.
 
+## WO-12 local monthly research publication — ADR-0049
+
+**Status:** Approved bounded engineering; production update and runtime load remain separately gated.
+
+[ADR-0049](adr/ADR-0049-WO12-LOCAL-RESEARCH-PUBLICATION.md) defines the
+research-only prospective WO-12 ledger and one verified local monthly XLSX.
+Opportunity IDs originate at retained admitted Probables events, remain distinct
+from machine identities and persist across downstream stages. Publication is an
+explicit atomic local operation with SHA-256 readback and immutable receipts.
+Google Drive and automatic scheduling are not commissioned in V1.
+
 ## Deterministic acceptance-epoch digest — ADR-0047
 
 **Status:** Approved bounded engineering; production compatibility enrollment and restoration remain separately gated.

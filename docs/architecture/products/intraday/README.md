@@ -1,5 +1,7 @@
 # Intraday Product Architecture
 
+Prospective research publication: [WO-12 Local Research Publication V1](KRONOS-INTRADAY-WO12-LOCAL-RESEARCH-PUBLICATION-V1.md), governed by [ADR-0049](../../adr/ADR-0049-WO12-LOCAL-RESEARCH-PUBLICATION.md). Historical WO-12 analytical-promotion contracts remain preserved separately.
+
 **Status:** Living product architecture
 **Owner:** KRONOS Intraday
 **Authority:** Sponsor/EA/CA governed work orders

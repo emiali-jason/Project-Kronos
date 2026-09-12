@@ -45,6 +45,14 @@ from kronos.browser.intraday_statistics import (
     export_intraday_statistics_xlsx,
     intraday_statistics_filename,
 )
+from kronos.browser.intraday_research import (
+    RESEARCH_OPEN_ROUTE,
+    RESEARCH_ROUTE,
+    RESEARCH_UPDATE_ROUTE,
+    XLSX_MIME as RESEARCH_XLSX_MIME,
+    IntradayResearchControl,
+    render_research,
+)
 from kronos.browser.intraday_probables_v2_control import (
     IntradayProbablesV2OperationalControl,
 )
@@ -162,6 +170,7 @@ class IntradayBrowserRoutes:
         wo17_control: IntradayWo17OperationalControl | None = None,
         operational_readiness: IntradayOperationalReadinessProjection | None = None,
         statistics: IntradayStatisticsApplication | None = None,
+        research_control: IntradayResearchControl | None = None,
         review_workstation: object | None = None,
     ) -> None:
         if not callable(getattr(workstation, "snapshot", None)):
@@ -254,6 +263,9 @@ class IntradayBrowserRoutes:
         if statistics is not None and type(statistics) is not IntradayStatisticsApplication:
             raise ValueError("INTRADAY_BROWSER_ROUTES_INVALID")
         self._statistics = statistics
+        if research_control is not None and type(research_control) is not IntradayResearchControl:
+            raise ValueError("INTRADAY_BROWSER_ROUTES_INVALID")
+        self._research_control = research_control
         self._review = review or IntradayReviewApplication(
             current_probables=self._current_probables,
             store=IntradayReviewStore(),
@@ -343,6 +355,21 @@ class IntradayBrowserRoutes:
             except (ReviewError, OSError, ValueError):
                 return BrowserRouteResponse("Exact current chart preview unavailable.",
                     status=HTTPStatus.NOT_FOUND, content_type="text/plain; charset=utf-8")
+        if request.path == RESEARCH_ROUTE:
+            if self._research_control is None or request.query:
+                return BrowserRouteResponse("Not found.", status=HTTPStatus.NOT_FOUND,
+                                            content_type="text/plain; charset=utf-8")
+            return BrowserRouteResponse(render_research(snapshot_provider(), self._research_control.status_document()))
+        if request.path == RESEARCH_OPEN_ROUTE:
+            if self._research_control is None or set(request.query) != {"month"} or len(request.query["month"]) != 1:
+                return BrowserRouteResponse("Not found.", status=HTTPStatus.NOT_FOUND,
+                                            content_type="text/plain; charset=utf-8")
+            try:
+                path, payload, _ = self._research_control.application.open_current(request.query["month"][0])
+                return BrowserRouteResponse(payload, content_type=RESEARCH_XLSX_MIME, filename=path.name)
+            except (ValueError, OSError):
+                return BrowserRouteResponse("Verified monthly research workbook unavailable.",
+                                            status=HTTPStatus.CONFLICT, content_type="text/plain; charset=utf-8")
         detail_prefix = "/intraday/evidence/"
         if (
             request.path == INTRADAY_STATISTICS_EXPORT_ROUTE
@@ -720,6 +747,7 @@ class IntradayBrowserRoutes:
 
     def owns_post(self, path: str) -> bool:
         return path in {
+            RESEARCH_UPDATE_ROUTE,
             LIFECYCLE_ROUTE,
             FUTURES_CONTROL_ROUTE,
             CONSTRUCTION_CONTROL_ROUTE,
@@ -756,6 +784,15 @@ class IntradayBrowserRoutes:
         if not self.owns_post(request.path):
             return None
         try:
+            if request.path == RESEARCH_UPDATE_ROUTE:
+                if (self._research_control is None or request.query
+                        or request.content_type != "application/json" or not request.body
+                        or len(request.body) > 4096):
+                    raise ValueError
+                document = self._research_control.update_document(json.loads(request.body))
+                return BrowserRouteResponse(json.dumps(document, sort_keys=True, separators=(",", ":")),
+                    status=HTTPStatus.OK if document["outcome"] in {"PUBLISHED", "ALREADY_UP_TO_DATE"} else HTTPStatus.CONFLICT,
+                    content_type="application/json; charset=utf-8")
             if self._prospective_programme_v2 and request.path in {WO10_CONTROL_ROUTE, WO11_CONTROL_ROUTE, WO12_V2_CONTROL_ROUTE,
                     WO13_CONTROL_ROUTE, WO14_CONTROL_ROUTE, WO15_CONTROL_ROUTE, WO16_CONTROL_ROUTE, WO17_CONTROL_ROUTE}:
                 return BrowserRouteResponse(json.dumps({"outcome":"REJECTED", "reason":"RETIRED_PROSPECTIVE_AUTHORITY_ADR0039"}),

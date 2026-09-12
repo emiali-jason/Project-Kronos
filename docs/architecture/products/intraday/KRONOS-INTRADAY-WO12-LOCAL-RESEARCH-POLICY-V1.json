@@ -1,0 +1,16 @@
+{
+  "authority": "RESEARCH_ONLY_NO_TRADING_AUTHORITY",
+  "automatic_schedule": "NONE_V1",
+  "google_drive": "NOT_COMMISSIONED",
+  "opportunity_origin": "EARLIEST_RETAINED_ADMITTED_PROBABLES_EVENT",
+  "overwrite": "ATOMIC_REPLACE_AFTER_STAGED_VALIDATION",
+  "paper_lots": 1,
+  "publication": "ATOMIC_LOCAL_MONTHLY_XLSX",
+  "raw_market_data": "EXCLUDED",
+  "same_session_successor": "GOVERNED_RESET_AFTER_PRIOR_TERMINAL_ONLY",
+  "sheets": ["Opportunities", "Tracks", "Events", "Analysis", "Data_Quality", "Metadata"],
+  "sponsor_id": "CANONICAL_SYMBOL-YYYYMMDD-HHMMSS_ASIA_KOLKATA",
+  "transport": "LOCAL_FILESYSTEM_ONLY",
+  "truth_classes": ["PAPER_POSITION", "PAPER_OBSERVATION"],
+  "workbook_controls": "TABLES_AND_AUDITED_FORMULAS_ONLY"
+}

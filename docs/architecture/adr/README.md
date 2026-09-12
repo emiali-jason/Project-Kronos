@@ -110,3 +110,13 @@ Status: Approved bounded engineering, direct Sponsor / EA 2026-09-11.
 **Status:** Approved bounded engineering; production invocation remains separately gated.
 
 [ADR-0048](ADR-0048-WO06H-SAME-EPOCH-COMPATIBILITY-RESTORATION.md) separates compatibility restoration from successor commissioning. A maintenance-only exact request names the current retained epoch/acceptance/window, current runtime/capability proof, immutable compatibility record and Sponsor/EA authority. It restores only process-local existing authority and cannot create or migrate research records.
+
+## WO-12 local monthly research publication — ADR-0049
+
+**Status:** Approved bounded engineering; production operation remains separately gated.
+
+[ADR-0049](ADR-0049-WO12-LOCAL-RESEARCH-PUBLICATION.md) owns the prospective
+research ledger and verified local monthly XLSX. It adds stable Sponsor and
+machine opportunity identities, deterministic six-sheet tables/formulas,
+explicit atomic update and checksum-bound receipts. Historical WO-12 semantics
+remain preserved; Google Drive and trading authority are not commissioned.
