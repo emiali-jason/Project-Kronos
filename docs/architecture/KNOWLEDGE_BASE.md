@@ -215,6 +215,12 @@ Status: Approved bounded engineering, direct Sponsor / EA 2026-09-11.
 
 [ADR-0044](adr/ADR-0044-WO06H-SUCCESSOR-CAPABILITY-BOUNDARY.md) distinguishes strict same-epoch restoration from explicit material-change successor commissioning. An immutable bridge binds predecessor and current capability identities, exact changed/unchanged declarations, reviewed semantics, diagnosis and Sponsor authorization. It cannot restore an older incompatible epoch or grant a general compatibility exception.
 
+## WO-06H deterministic acceptance-epoch digest — ADR-0047
+
+Status: Approved bounded engineering; production evidence enrollment and runtime restoration are not authorized by the engineering candidate.
+
+[ADR-0047](adr/ADR-0047-WO06H-DETERMINISTIC-ACCEPTANCE-EPOCH-DIGEST.md) versions `WO_06H_ACCEPTANCE_EPOCH` at 1.2.0 with a startup-pinned, position-free canonical AST digest over the explicit acceptance-semantic allowlist and frozen policy/schema/calculation identities. Historical 1.1.0 proofs remain immutable. One exact content-addressed `DIGEST_SCOPE_COLLATERAL` record may bind a specific 1.1.0 proof to an equivalent 1.2.0 proof; it is non-transitive and never authorizes arbitrary drift or creates a new acceptance epoch.
+
 
 ## Prospective WO-11 lifecycle engineering — ADR-0045
 

@@ -16,20 +16,27 @@ POLICY = 'KRONOS-WO06H-ACCEPTANCE-EPOCH/1.0.0'
 METHOD = 'KRONOS-INTRADAY-PROBABLES-METHODOLOGY-V2/2.2.0'
 CPR = 'INTRADAY-PROBABLES-METHODOLOGY-V2-PUBLICATION-E7F8BD9316571148B39183E47220E97982D9A956E0309469D3AA9D4E8573A0E9'
 MATERIAL = 'ACCEPTANCE_MATERIAL_CHANGE'
-ID = re.compile(r'WO06H-(EPOCH|TRANSITION|AUTHORIZATION|DIAGNOSIS|BRIDGE)-[a-f0-9]{64}\Z')
+COLLATERAL = 'DIGEST_SCOPE_COLLATERAL'
+ID = re.compile(r'WO06H-(EPOCH|TRANSITION|AUTHORIZATION|DIAGNOSIS|BRIDGE|COMPATIBILITY)-[a-f0-9]{64}\Z')
 FIELDS = {
     'epoch': {'acceptance', 'window', 'start', 'end', 'proof', 'methodology', 'narrow_cpr', 'classification', 'created_at', 'predecessor', 'diagnosis', 'request'},
     'transition': {'epoch', 'previous', 'request', 'authorization', 'effective_at'},
     'authorization': {'request', 'predecessor', 'proof', 'diagnosis', 'expires_at', 'sponsor_reference'},
     'bridge': {'predecessor', 'predecessor_capability', 'current_proof', 'current_capability', 'diagnosis', 'classification', 'changed_capabilities', 'unchanged_capabilities', 'changed_semantics', 'unchanged_semantics', 'methodology', 'narrow_cpr', 'sponsor_reference'},
     'diagnosis': {'classification', 'subject_revision', 'predecessor_proof', 'calculation_digest', 'changed_semantics', 'report_sha256', 'sponsor_reference'},
+    'compatibility': {'epoch', 'acceptance', 'window', 'historical_proof', 'corrected_proof', 'diagnosis',
+        'classification', 'protected_sources', 'equivalence_evidence', 'sponsor_authorization'},
 }
+COLLATERAL_DIAGNOSIS_FIELDS = {'classification', 'epoch', 'acceptance', 'window', 'historical_proof',
+    'corrected_proof', 'protected_sources', 'equivalence_evidence', 'report_sha256', 'sponsor_reference'}
 
 
 def document(kind, body):
     # Old authorization envelopes remain readable; new commissioning requires
     # the additive bridge binding. Never rewrite historical authorization bytes.
-    allowed = (FIELDS[kind], FIELDS[kind] | {'bridge'}) if kind == 'authorization' else (FIELDS.get(kind),)
+    allowed = ((FIELDS[kind], FIELDS[kind] | {'bridge'}) if kind == 'authorization'
+        else (FIELDS.get(kind), COLLATERAL_DIAGNOSIS_FIELDS) if kind == 'diagnosis'
+        else (FIELDS.get(kind),))
     if kind not in FIELDS or set(body) not in allowed:
         raise ShadowError('SHADOW_EPOCH_DOCUMENT_INVALID')
     core = dict(policy=POLICY, kind=kind, body=body)
@@ -257,6 +264,33 @@ class EpochStore:
         if len({e['identity'] for e in result}) != len(result):
             raise ShadowError('SHADOW_EPOCH_CHAIN_INVALID')
         return result
+
+    def equivalence(self, epoch, current):
+        """Exact non-transitive 1.1.0 -> 1.2.0 semantic-equivalence authority."""
+        from kronos.intraday.live_shadow_transition import capability_identity, validate_equivalence
+        historical = capability_identity(epoch['body']['proof'])
+        corrected = capability_identity(current)
+        fd = self._directory()
+        if fd is None:
+            return False
+        try:
+            names = sorted(name for name in os.listdir(fd)
+                if re.fullmatch(r'WO06H-COMPATIBILITY-[a-f0-9]{64}\.json', name))
+        finally:
+            os.close(fd)
+        matches = []
+        for name in names:
+            value = self.load(name[:-5]); body = value['body']
+            if (body['epoch'], body['historical_proof'], body['corrected_proof']) == (
+                    epoch['identity'], historical, corrected):
+                matches.append(value)
+        if not matches:
+            return False
+        if len(matches) != 1:
+            raise ShadowError('SHADOW_EPOCH_COMPATIBILITY_AMBIGUOUS')
+        diagnosis = self.load(matches[0]['body']['diagnosis'])
+        validate_equivalence(matches[0], epoch, current, diagnosis)
+        return True
 
 
 class EpochView:

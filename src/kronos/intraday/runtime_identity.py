@@ -172,6 +172,11 @@ class _PinnedLoader(importlib.abc.Loader):
             self.capture._loaded[fullname] = sha256(self.payload).hexdigest()
         return compile(self.payload, self.filename, "exec", dont_inherit=True)
 
+    def get_source(self, fullname):
+        if fullname != self.name:
+            raise ImportError(fullname)
+        return self.payload.decode("utf-8")
+
     def exec_module(self, module):
         exec(self.get_code(module.__name__), module.__dict__)
 

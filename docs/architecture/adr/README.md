@@ -98,3 +98,9 @@ The existing approved `ADL-*` records remain at their established paths under [`
 Status: Approved bounded engineering, direct Sponsor / EA 2026-09-11.
 
 [ADR-0042](ADR-0042-WO10-ADVISORY-RISK-AND-FINAL-FUTURES-COMPOSITION.md) supersedes prospective Risk permission with advisory facts/reference/quantity warnings. No Risk magnitude or missing monetary fact independently vetoes Sponsor selection. Native PULLBACK V1, five-tab navigation, exact trade hard gates and historical contracts remain preserved. No WO11 lifecycle, broker margin, production operation or runtime load is commissioned.
+
+## WO-06H deterministic acceptance-epoch digest — ADR-0047
+
+**Status:** Approved bounded engineering; production compatibility enrollment and restoration remain separately gated.
+
+[ADR-0047](ADR-0047-WO06H-DETERMINISTIC-ACCEPTANCE-EPOCH-DIGEST.md) replaces `marshal` code-object hashing with the 1.2.0 canonical-AST capability and documents the exact protected callable allowlist and exclusions. Historical 1.1.0 proofs remain immutable; only one exact content-addressed collateral-equivalence record can bind a specific epoch's complete 1.1.0 and 1.2.0 proofs.

@@ -36,7 +36,7 @@ def restore_epoch(service):
     capabilities(current)
     if current['pid'] != os.getpid() or current['source_state'] != 'CLEAN_COMMIT':
         raise ShadowError('SHADOW_RESTORATION_RUNTIME_INVALID')
-    if not compatible(epoch['body']['proof'], current):
+    if not compatible(epoch['body']['proof'], current) and not service._epochs.equivalence(epoch, current):
         raise ShadowError('SHADOW_RESTORATION_RUNTIME_INCOMPATIBLE')
     now = service.clock()
     if instant(current['startup']) > now or not instant(window.body['start']) <= now < instant(window.body['end']):
@@ -61,7 +61,8 @@ def epoch_status(service):
                 start=b['start'], end=b['end'], methodology=b['methodology'], narrow_cpr=b['narrow_cpr'],
                 predecessor=b['predecessor'], successor=None if i == 0 else chain[i-1]['identity'],
                 superseded_at=None if i == 0 else chain[i-1]['body']['start'], current=i == 0,
-                compatibility='COMPATIBLE' if service._manifest and compatible(b['proof'], service._runtime_proof()) else 'INCOMPATIBLE',
+                compatibility='COMPATIBLE' if service._manifest and (compatible(b['proof'], service._runtime_proof())
+                    or service._epochs.equivalence(epoch, service._runtime_proof())) else 'INCOMPATIBLE',
                 counts=projection._summary))
         return dict(current_epoch=None if not rows else rows[0]['identity'], epochs=rows,
             all_epoch_counts={k:sum(r['counts'][k] for r in rows) for k in ('cohort_a', 'cohort_b', 'eod_available')},
@@ -171,27 +172,7 @@ def commission(service, payload, *, maintenance, idle, repository=repository_gat
         return dict(outcome='ESTABLISHED', epoch=epoch['identity'], status=service.status())
 
 
-def epoch_capability():
-    """Declare loaded epoch infrastructure separately from frozen research arithmetic."""
-    import marshal
-    from hashlib import sha256
-    from types import FunctionType
-    from kronos.intraday import live_shadow_epochs, live_shadow_transition
-    from kronos.intraday.runtime_identity import LoadedCapability
-    from kronos.intraday.population_measurement import canonical
-    from kronos.intraday.live_shadow import validate_body
-    from kronos.application.intraday_live_shadow import IntradayLiveShadowService as Service
-    functions = [restore_epoch, epoch_status, commission, repository_gate, validate_body, Service.__init__,
-        Service._active, Service._epoch_current, Service.status, Service._restore_acceptance]
-    for name, value in sorted(vars(live_shadow_epochs).items()):
-        if isinstance(value, FunctionType) and value.__module__ == live_shadow_epochs.__name__:
-            functions.append(value)
-        elif isinstance(value, type) and value.__module__ == live_shadow_epochs.__name__:
-            functions.extend(v for _,v in sorted(vars(value).items()) if isinstance(v, FunctionType))
-    functions.extend(value for _, value in sorted(vars(live_shadow_transition).items())
-        if isinstance(value, FunctionType) and value.__module__ == live_shadow_transition.__name__)
-    payload = canonical(dict(policy=live_shadow_epochs.POLICY, methodology=live_shadow_epochs.METHOD,
-        narrow_cpr=live_shadow_epochs.CPR, fields={k:sorted(v) for k,v in live_shadow_epochs.FIELDS.items()},
-        transition_invariants=live_shadow_transition.INVARIANT_SEMANTICS))
-    payload += b''.join(marshal.dumps(f.__code__) for f in functions)
-    return LoadedCapability('WO_06H_ACCEPTANCE_EPOCH', '1.1.0', sha256(payload).hexdigest())
+def epoch_capability(calculation):
+    """Declare the deterministic epoch boundary separately from research arithmetic."""
+    from kronos.intraday.live_shadow_epoch_capability import capability
+    return capability(calculation)

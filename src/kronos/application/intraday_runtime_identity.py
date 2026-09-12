@@ -38,13 +38,14 @@ def compose_runtime_manifest(startup, configuration, operation, control):
     from kronos.intraday.technical_context_research import decimal_policy
     shadow = getattr(operation, "live_shadow", None)
     if type(shadow) is IntradayLiveShadowService:
-        capabilities.append(_capability("WO_06H_LIVE_SHADOW", "1.0.0", shadow.capture_published,
+        calculation = _capability("WO_06H_LIVE_SHADOW", "1.0.0", shadow.capture_published,
             shadow._capture, shadow.complete_eod, shadow.accept_runtime, live_shadow_features.classify,
             live_shadow_features.snapshot, live_shadow_quote.capture, live_shadow_quote.native_context,
             live_shadow_features._decision, live_shadow_features._validate_cpr, live_shadow_features._evaluate_member,
             live_shadow_features.sma.__wrapped__, live_shadow_features.vwap.__wrapped__,
-            live_shadow_features.measure.__wrapped__, decimal_policy))
+            live_shadow_features.measure.__wrapped__, decimal_policy)
+        capabilities.append(calculation)
     if type(shadow) is IntradayLiveShadowService:
         from kronos.application.intraday_shadow_epochs import epoch_capability
-        capabilities.append(epoch_capability())
+        capabilities.append(epoch_capability(calculation))
     return create_runtime_manifest(startup, configuration, capabilities)

@@ -191,13 +191,20 @@ collection or extend the month. A failure during existing count reconciliation
 also prevents restored authority. Expiry of an already-running accepted process
 still disables collection through the existing half-open interval check.
 
-The correction preserves the existing frozen research function code, line
-metadata and marshaled capability identity. The restoration helper is appended
-outside those functions. Its request/revision patterns are assembled separately
-to avoid compiler constant pooling changing the original marshaled code digest.
-Qualification compares original function code/metadata and, independently, the
-actual composed capability against a read-only copy of the retained acceptance.
-This is not a relaxed capability comparison or a new implementation allowlist.
+Historical `WO_06H_ACCEPTANCE_EPOCH/1.1.0` preserves its original marshaled
+code-object identity in retained proofs. [ADR-0047](../../adr/ADR-0047-WO06H-DETERMINISTIC-ACCEPTANCE-EPOCH-DIGEST.md)
+introduces the prospective 1.2.0 semantic AST digest because code-object bytes
+also encoded non-semantic compiler and loader context. The successor binds an
+explicit acceptance-owned callable allowlist, policy/schema/invariant
+declarations and the separate live-shadow calculation identity while excluding
+paths, positions and stdlib wrapper bytecode.
+
+An immutable `DIGEST_SCOPE_COLLATERAL` compatibility record can bind one exact
+historical 1.1.0 proof to its deterministic 1.2.0 equivalent for the same epoch.
+It requires exact epoch/acceptance/window, complete old/new proof identities,
+protected source-byte identities, equivalence evidence and Sponsor authority.
+It creates no new acceptance or window and grants no compatibility to later
+semantic changes. Ordinary exact equality remains the primary restoration rule.
 
 The known backend gap, 9 September 2026 07:56:03.186–09:30:40.076267 IST,
 remains missing observations; disabled collection after that start remains

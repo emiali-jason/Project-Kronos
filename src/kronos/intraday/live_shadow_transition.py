@@ -3,7 +3,7 @@ from dataclasses import asdict
 import re
 
 from kronos.intraday.live_shadow import ShadowError
-from kronos.intraday.live_shadow_epochs import capabilities, METHOD, CPR, MATERIAL
+from kronos.intraday.live_shadow_epochs import capabilities, METHOD, CPR, MATERIAL, COLLATERAL
 from kronos.intraday.population_measurement import identity
 
 INVARIANT_SEMANTICS = ('METHODOLOGY_2_2_0', 'NARROW_CPR', 'TRUSTED_TIME_ADMISSION', 'WO_06H_CALCULATION')
@@ -69,3 +69,54 @@ def validate_bridge(bridge, predecessor, current, diagnosis, authorization):
     new_calc = capabilities(current)['WO_06H_LIVE_SHADOW']
     if old_calc != new_calc or old_calc.implementation_digest != d['calculation_digest']:
         raise ShadowError('SHADOW_FROZEN_IMPLEMENTATION_CHANGED')
+
+
+def validate_equivalence(record, epoch, current, diagnosis):
+    """Validate one exact, immutable historical-1.1 to deterministic-1.2 binding."""
+    from kronos.intraday.live_shadow_epoch_capability import PROTECTED_CALLABLES
+    from kronos.intraday.live_shadow_epochs import validate
+    validate(record); validate(diagnosis)
+    if record['kind'] != 'compatibility' or diagnosis['kind'] != 'diagnosis':
+        raise ShadowError('SHADOW_EPOCH_COMPATIBILITY_INVALID')
+    b, d, e = record['body'], diagnosis['body'], epoch['body']
+    historical, corrected = capabilities(e['proof']), capabilities(current)
+    old = historical.get('WO_06H_ACCEPTANCE_EPOCH')
+    new = corrected.get('WO_06H_ACCEPTANCE_EPOCH')
+    if (b['classification'] != COLLATERAL or d['classification'] != COLLATERAL
+            or b['diagnosis'] != diagnosis['identity']
+            or b['epoch'] != epoch['identity'] or d['epoch'] != epoch['identity']
+            or b['acceptance'] != e['acceptance'] or d['acceptance'] != e['acceptance']
+            or b['window'] != e['window'] or d['window'] != e['window']
+            or b['historical_proof'] != capability_identity(e['proof'])
+            or d['historical_proof'] != b['historical_proof']
+            or b['corrected_proof'] != capability_identity(current)
+            or d['corrected_proof'] != b['corrected_proof']
+            or b['protected_sources'] != d['protected_sources']
+            or b['equivalence_evidence'] != d['equivalence_evidence']
+            or not b['sponsor_authorization'] or not d['sponsor_reference']
+            or not re.fullmatch(r'[a-f0-9]{64}', d['report_sha256'])):
+        raise ShadowError('SHADOW_EPOCH_COMPATIBILITY_BINDING_INVALID')
+    if (old is None or new is None or old.identity != new.identity
+            or old.version != '1.1.0' or new.version != '1.2.0'):
+        raise ShadowError('SHADOW_EPOCH_COMPATIBILITY_VERSION_INVALID')
+    if (e['proof']['configuration'] != current['configuration']
+            or {key:value for key,value in historical.items() if key != old.identity}
+               != {key:value for key,value in corrected.items() if key != new.identity}):
+        raise ShadowError('SHADOW_EPOCH_COMPATIBILITY_SCOPE_INVALID')
+    old_calc = historical.get('WO_06H_LIVE_SHADOW')
+    new_calc = corrected.get('WO_06H_LIVE_SHADOW')
+    if old_calc is None or old_calc != new_calc:
+        raise ShadowError('SHADOW_FROZEN_IMPLEMENTATION_CHANGED')
+    sources = b['protected_sources']; evidence = b['equivalence_evidence']
+    protected_modules = sorted({module for module, _ in PROTECTED_CALLABLES})
+    if (type(sources) is not list or not sources
+            or any(type(row) is not dict or set(row) != {'module', 'historical_sha256', 'corrected_sha256'}
+                   or not isinstance(row['module'], str)
+                   or any(re.fullmatch(r'[a-f0-9]{64}', row[key]) is None
+                          for key in ('historical_sha256', 'corrected_sha256')) for row in sources)
+            or [row['module'] for row in sources] != protected_modules
+            or type(evidence) is not list or not evidence
+            or any(re.fullmatch(r'[a-f0-9]{64}', value) is None for value in evidence)
+            or len(evidence) != len(set(evidence))):
+        raise ShadowError('SHADOW_EPOCH_COMPATIBILITY_EVIDENCE_INVALID')
+    return True
