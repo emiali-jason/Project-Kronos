@@ -275,6 +275,7 @@ class IntradayRuntimeComposition:
     refresh_state_store: RefreshOperationalStateStore
     reliance_bootstrap: RelianceIntradayBootstrap
     startup_evidence: StartupEvidence | None = None
+    lifecycle_application: object | None = None
 
 
 def create_intraday_runtime(
@@ -517,6 +518,33 @@ def create_intraday_runtime(
         master_store=ProviderInstrumentSnapshotStore(Path(evidence_root) / "provider-instrument-master"),
         master_identity=lambda: operation_v2.last_provider_snapshot_identity,
         binding_store=active_binding_store, calendar=calendar, provider=access.acquire_futures_quote_lease, clock=clock)
+    from kronos.application.intraday_lifecycle import IntradayLifecycleApplication
+    from kronos.application.intraday_lifecycle_timing import GovernedLifecycleTimingSource
+    from kronos.intraday.wo11_lifecycle_store import LifecycleStore
+    from kronos.browser.intraday_futures_control import domain008_session
+    def lifecycle_session(subject, now):
+        current = futures_application.store.current(subject)
+        contract = None if current is None else futures_application.store.load(current.data["expression_identity"]).data["future"]
+        return domain008_session(calendar, subject, now, contract=contract)
+    lifecycle_timing = GovernedLifecycleTimingSource(
+        factory=lambda resolutions: ProviderDiscoveryFactualSource(
+            lease=access.acquire_historical_lease(), calendar_publisher=calendar,
+            universe_identity=universe.publication_identity, universe_version=universe.publication_version,
+            reconciliation_identity=reconciliation.publication_identity, reconciliation_version=reconciliation.publication_version,
+            reconciliation=reconciliation, active_derivative_resolutions=resolutions,
+            produce_probables_v2_facts=True, mcx_history_store=None),
+        calendar=calendar, reconciliation=reconciliation,
+        resolutions=lambda: operation_v2.last_active_derivative_resolutions, clock=clock)
+    def lifecycle_guard():
+        futures_application._guard()
+        # ADR-0046: V1 has no analytical reassessment/exit capability. Existing
+        # operational admission still applies to the commissioned lifecycle.
+        return True
+    lifecycle_application = IntradayLifecycleApplication(futures=futures_application,
+        store=LifecycleStore(Path(evidence_root) / "prospective-v2-wo11-lifecycle"), clock=clock,
+        session_source=lifecycle_session, timing_source=lifecycle_timing,
+        operational_guard=lifecycle_guard,
+        contract_source=lambda subject: None if operation_v2.last_active_derivative_resolutions is None else operation_v2.last_active_derivative_resolutions.for_subject(subject).binding)
     historical_operation = IntradayHistoricalQualificationOperationService(
         provider_runtime=provider_runtime,
         universe=universe,
@@ -607,6 +635,7 @@ def create_intraday_runtime(
         wo09_store=wo09_store,
         wo09_application=wo09_application,
         futures_application=futures_application,
+        lifecycle_application=lifecycle_application,
         promotion_readiness_owner="INTRADAY_WO09",
         wo10_store=wo10_store,
         wo10_policy_registry=wo10_registry,

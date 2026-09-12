@@ -1,0 +1,61 @@
+{
+  "checksum": "0442e5ea2b8dc65da3f8f42220731488039448406318d45515d5e0bd5b269974",
+  "latency_checksum": "4865f6146005e6a6e051e613c5e29149333abde8638a1e5401c2997493bf199f",
+  "latency_rules": {
+    "fallback": "NONE",
+    "inclusive": true,
+    "maximum_microseconds": 5000000,
+    "negative": "INVALID",
+    "ordering_authority": "NONE"
+  },
+  "policy_identity": "KRONOS-INTRADAY-WO11-POSITION-OBSERVATION-LIFECYCLE-POLICY",
+  "policy_version": "1.0.0",
+  "rules": {
+    "broker_authority": false,
+    "cardinality": "ONE_TRUTH_PER_OPPORTUNITY_AND_SEMANTIC_EXPRESSION",
+    "coverage": "ELIGIBLE_SAMPLES_AND_IMMUTABLE_GAPS_NO_FULL_PATH_INFERENCE",
+    "downstream": "WO12_IMMUTABLE_HANDOFF_NO_DENOMINATOR_INFLATION",
+    "entry": "FIRST_SUBSEQUENT_ELIGIBLE_FUTURE_LTP_INCLUSIVE_CROSSING",
+    "future_invalidation_capability": "POST_ENTRY_ANALYTICAL_INVALIDATION_V2",
+    "gap": "IMMUTABLE_NO_BACKFILL_FRESH_BASELINE",
+    "invalidation": "ORIGINAL_WO10_THESIS_DEFINITION_CONTEXT_ONLY",
+    "latency_checksum": "4865f6146005e6a6e051e613c5e29149333abde8638a1e5401c2997493bf199f",
+    "latency_policy": "WO11_WEBSOCKET_OBSERVATION_LATENESS_V1",
+    "live": "LIVE_POSITION_NOT_COMMISSIONED_V1",
+    "lots": 1,
+    "mae": "MAX_ZERO_NEGATIVE_DIRECTION_SIGN_TIMES_PRICE_MINUS_MODEL_ENTRY",
+    "manual_close": "SPONSOR_REQUEST_THEN_FIRST_SUBSEQUENT_ELIGIBLE_WS_PRICE",
+    "manual_price": false,
+    "mcx_entry_cutoff": "23:00 Asia/Kolkata",
+    "mfe": "MAX_ZERO_DIRECTION_SIGN_TIMES_PRICE_MINUS_MODEL_ENTRY",
+    "model_r": "DIRECTIONAL_RESULT_OVER_POSITIVE_INITIAL_MODEL_ENTRY_STOP_DISTANCE",
+    "money": "ONE_LOT_EXACT_GOVERNED_ECONOMICS_GROSS_ONLY",
+    "natgas": "HELD",
+    "notifications": "SOURCE_EVENTS_ONLY_NO_DELIVERY",
+    "nse_entry_cutoff": "15:00 Asia/Kolkata",
+    "overnight": false,
+    "post_entry_analytical_invalidation": "NOT_COMMISSIONED_V1",
+    "pricing": "WO11_WEBSOCKET_LAST_PRICE_MODEL_V1",
+    "quantity_context": "WO10_SELECTED_LOTS_UPSTREAM_ONLY",
+    "reference_authority": "SUPPORTING_ONLY",
+    "rest_price": false,
+    "restart": "INERT_RESTORE_VALID_AUTHORIZATION_EXISTING_CAPABILITY_FRESH_BASELINE",
+    "same_time_conflict": "UNORDERED_WITHOUT_GOVERNED_SEQUENCE",
+    "stop_target": "DIRECTIONAL_INCLUSIVE_ELIGIBLE_LTP_ACTUAL_PRICE",
+    "trading_exit_reasons": [
+      "STOP_LOSS",
+      "TARGET",
+      "SPONSOR_EXIT"
+    ],
+    "exit_status_separation": "TRADING_EXIT_REASON_SEPARATE_FROM_TERMINAL_DATA_STATUS",
+    "terminal": "FINAL_DOMAIN008_OR_EARLIER_CONTRACT_BOUNDARY_NO_CACHED_MARK",
+    "terminal_without_price": "CLOSED_OUTCOME_UNAVAILABLE",
+    "timing": "COMPLETED_5M_ALIGNED_PULLBACK_CANONICAL_STRICT_CLOSE",
+    "truth_classes": [
+      "PAPER_POSITION",
+      "PAPER_OBSERVATION"
+    ],
+    "upstream_context": "WO09_WO10_EXACT_OPPORTUNITY_NATIVE_PLAN_RISK_LINEAGE"
+  },
+  "status": "SPONSOR_POLICY_FROZEN_ENGINEERING_CANDIDATE"
+}

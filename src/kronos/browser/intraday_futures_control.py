@@ -13,9 +13,10 @@ FUTURES_CONTROL_ROUTE = "/control/intraday-futures/selection"
 
 
 class IntradayFuturesControl:
-    def __init__(self, application, session_source):
+    def __init__(self, application, session_source, lifecycle_control=None):
         self.application = application
         self.session_source = session_source
+        self.lifecycle_control = lifecycle_control
 
     def status_document(self):
         cards = []
@@ -91,7 +92,8 @@ class IntradayFuturesControl:
             card["selected_lots"] = selected[0].data["sponsor_selected_lots"] if len(selected) == 1 else None
             if len(selected) == 1 and card["comparison_identity"] is not None:
                 card["records"]["advisory"] = selected[0].data["advisory_risk"]
-        return {"cards": cards, "calculations": 0, "provider_calls": 0}
+        status = {"cards": cards, "calculations": 0, "provider_calls": 0}
+        return self.lifecycle_control.enrich(status) if self.lifecycle_control else status
 
     def construct_document(self, payload):
         if type(payload) is not dict or set(payload) != {"handoff_identity", "request_identity"}:
@@ -136,6 +138,7 @@ def _redact(value):
 def render_futures(snapshot, status):
     from kronos.browser.views import render_browser_page
     import json
+    from kronos.browser.intraday_lifecycle_control import actions_html, SCRIPT
     cards = []
     for card in status["cards"]:
         if card["comparison_identity"] is None:
@@ -184,8 +187,8 @@ def render_futures(snapshot, status):
                      f"<div class='risk-preview' aria-live='polite'>{render_risk_warning(advisory)}</div>"
                      f"<button name='choice' value='SELECTED_FUTURE'{disabled}>SELECT FUTURE</button>"
                      "<button name='choice' value='NONE'>NONE</button><output></output></form>"
-                     f"<details><summary>VIEW ANALYSIS DETAILS</summary>{details}</details></article>")
-    script = """<script>
+                     f"{actions_html(card)}<details><summary>VIEW ANALYSIS DETAILS</summary>{details}</details></article>")
+    script = SCRIPT + """<script>
     function showRisk(form,a){const box=form.querySelector('.risk-preview');box.className='risk-preview';
       const above=a.risk_warning_state==='ABOVE_REFERENCE'; if(above)box.classList.add('risk-above');
       const label=above?'ABOVE RISK REFERENCE':a.risk_warning_state.replaceAll('_',' ');

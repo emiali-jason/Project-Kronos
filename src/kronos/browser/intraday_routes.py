@@ -112,6 +112,7 @@ from kronos.browser.intraday_wo17_control import (
     WO17_STATUS_ROUTE,
     IntradayWo17OperationalControl,
 )
+from kronos.browser.intraday_lifecycle_control import LIFECYCLE_ROUTE, render_lifecycle
 from kronos.browser.intraday_futures_control import IntradayFuturesControl, FUTURES_ROUTE, FUTURES_CONTROL_ROUTE, CONSTRUCTION_CONTROL_ROUTE, RISK_PREVIEW_ROUTE, render_futures
 from kronos.browser.product_routes import (
     BrowserGetRequest,
@@ -149,6 +150,7 @@ class IntradayBrowserRoutes:
         visual_reconciliation_v2_control: IntradayVisualReconciliationV2OperationalControl | None = None,
         wo09_projection: IntradayWo09Projection | None = None,
         futures_control: IntradayFuturesControl | None = None,
+        lifecycle_control=None,
         prospective_programme_v2: bool = False,
         wo10_control: IntradayWo10OperationalControl | None = None,
         wo11_control: IntradayWo11OperationalControl | None = None,
@@ -164,6 +166,7 @@ class IntradayBrowserRoutes:
     ) -> None:
         if not callable(getattr(workstation, "snapshot", None)):
             raise ValueError("INTRADAY_BROWSER_ROUTES_INVALID")
+        self._lifecycle_control = lifecycle_control
         self._workstation = workstation
         self._review_workstation = (
             workstation if review_workstation is None else review_workstation
@@ -423,6 +426,8 @@ class IntradayBrowserRoutes:
         elif request.path in {"/intraday/active", "/intraday/closed"}:
             if request.query:
                 return BrowserRouteResponse("Not found.", status=HTTPStatus.NOT_FOUND)
+            if self._lifecycle_control is not None:
+                return BrowserRouteResponse(render_lifecycle(snapshot_provider(), self._lifecycle_control.application.projection(), closed=request.path.endswith("/closed")))
             return BrowserRouteResponse(render_intraday_lifecycle_placeholder(snapshot_provider(), closed=request.path.endswith("/closed")))
         elif request.path in {FUTURES_ROUTE, "/intraday/trade-candidates"}:
             if self._futures_control is None or request.query:
@@ -705,6 +710,7 @@ class IntradayBrowserRoutes:
 
     def owns_post(self, path: str) -> bool:
         return path in {
+            LIFECYCLE_ROUTE,
             FUTURES_CONTROL_ROUTE,
             CONSTRUCTION_CONTROL_ROUTE,
             RISK_PREVIEW_ROUTE,
@@ -744,6 +750,11 @@ class IntradayBrowserRoutes:
                     WO13_CONTROL_ROUTE, WO14_CONTROL_ROUTE, WO15_CONTROL_ROUTE, WO16_CONTROL_ROUTE, WO17_CONTROL_ROUTE}:
                 return BrowserRouteResponse(json.dumps({"outcome":"REJECTED", "reason":"RETIRED_PROSPECTIVE_AUTHORITY_ADR0039"}),
                                             status=HTTPStatus.CONFLICT, content_type="application/json; charset=utf-8")
+            if request.path == LIFECYCLE_ROUTE:
+                if self._lifecycle_control is None or request.query or request.content_type != "application/json" or not request.body or len(request.body)>4096:
+                    raise ValueError
+                document = self._lifecycle_control.execute_document(json.loads(request.body))
+                return BrowserRouteResponse(json.dumps(document), status=HTTPStatus.OK if document["outcome"]=="RETAINED" else HTTPStatus.BAD_REQUEST, content_type="application/json; charset=utf-8")
             if request.path in {FUTURES_CONTROL_ROUTE, CONSTRUCTION_CONTROL_ROUTE, RISK_PREVIEW_ROUTE}:
                 if self._futures_control is None or request.query or request.content_type != "application/json" or not request.body or len(request.body)>4096:
                     raise ValueError

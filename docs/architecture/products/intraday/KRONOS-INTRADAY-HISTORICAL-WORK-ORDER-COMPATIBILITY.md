@@ -16,3 +16,16 @@
 
 No rename, migration, reinterpretation, deletion or historical pointer repointing.
 Historical schemas and policies continue to decode their original immutable truth.
+
+
+## Prospective WO-11 lifecycle engineering — ADR-0045
+
+Status: Sponsor policy frozen; engineering BLOCKED pending governed analytical-invalidation source composition. PAPER Position and Observation each model exactly one lot from eligible WebSocket last_price with a five-second inclusive lateness ceiling. LIVE remains uncommissioned. Historical owners and records retain their original authority. See `ADR-0045-WO11-PROSPECTIVE-POSITION-OBSERVATION-LIFECYCLE.md` and `KRONOS-INTRADAY-WO11-PROSPECTIVE-LIFECYCLE-V1.md`. No production lifecycle activation is enabled by this candidate.
+
+## WO-11 V1 analytical capability correction — ADR-0046
+
+Status: Approved bounded Sponsor/EA correction. ADR-0046 supersedes the ADR-0045
+analytical-source blocker for V1: automatic post-entry reassessment is explicitly
+NOT_COMMISSIONED_V1. The original WO-10 thesis definition remains context; it is
+not a close trigger. Existing operational admission remains authoritative. No
+production activation, runtime transition or historical rewrite is authorized.

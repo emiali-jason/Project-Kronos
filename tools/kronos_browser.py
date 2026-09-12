@@ -168,7 +168,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         current = app.store.current(subject)
         contract = None if current is None else app.store.load(current.data["expression_identity"]).data["future"]
         return domain008_session(MarketCalendarPublisher(), subject, now, contract=contract)
-    intraday_futures_control = IntradayFuturesControl(intraday_runtime.futures_application, futures_session)
+    from kronos.browser.intraday_lifecycle_control import IntradayLifecycleControl
+    lifecycle_control = IntradayLifecycleControl(intraday_runtime.lifecycle_application)
+    intraday_futures_control = IntradayFuturesControl(intraday_runtime.futures_application, futures_session, lifecycle_control)
 
     intraday_wo11_control = IntradayWo11OperationalControl(
         intraday_runtime.wo11_runtime,
@@ -217,6 +219,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         visual_reconciliation_v2_control=intraday_visual_reconciliation_v2_control,
         wo09_projection=intraday_wo09_projection,
         futures_control=intraday_futures_control,
+        lifecycle_control=lifecycle_control,
         prospective_programme_v2=True,
         wo10_control=intraday_wo10_control,
         wo11_control=intraday_wo11_control,
@@ -270,6 +273,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         server.intraday_wo09_notification_sources = (
             intraday_runtime.wo09_store.load_notifications
         )
+        intraday_runtime.lifecycle_application.bind_monitoring(server.swing_monitoring_hub, application.authenticated_read_only_capability)
+        server.intraday_lifecycle = intraday_runtime.lifecycle_application
         intraday_runtime.wo17_monitoring.set_shared_monitoring_hub(
             server.swing_monitoring_hub
         )

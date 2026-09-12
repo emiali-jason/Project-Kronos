@@ -214,3 +214,24 @@ Status: Approved bounded engineering, direct Sponsor / EA 2026-09-11.
 **Status:** Approved bounded engineering; operational enrollment/commissioning remains separately gated.
 
 [ADR-0044](adr/ADR-0044-WO06H-SUCCESSOR-CAPABILITY-BOUNDARY.md) distinguishes strict same-epoch restoration from explicit material-change successor commissioning. An immutable bridge binds predecessor and current capability identities, exact changed/unchanged declarations, reviewed semantics, diagnosis and Sponsor authorization. It cannot restore an older incompatible epoch or grant a general compatibility exception.
+
+
+## Prospective WO-11 lifecycle engineering — ADR-0045
+
+Status: Sponsor policy frozen; the original analytical-source blocker is
+superseded by ADR-0046. PAPER Position and Observation each model exactly one
+lot from eligible WebSocket last_price with a five-second inclusive lateness
+ceiling. LIVE remains uncommissioned. Historical owners and records retain
+their original authority. See `ADR-0045-WO11-PROSPECTIVE-POSITION-OBSERVATION-LIFECYCLE.md`
+and `KRONOS-INTRADAY-WO11-PROSPECTIVE-LIFECYCLE-V1.md`. No production lifecycle
+activation is enabled by this candidate.
+
+## WO-11 V1 analytical capability correction — ADR-0046
+
+Status: Approved bounded Sponsor/EA correction. ADR-0046 supersedes the ADR-0045
+analytical-source blocker for V1: automatic post-entry reassessment is explicitly
+NOT_COMMISSIONED_V1. The original WO-10 thesis definition remains context; it is
+not a close trigger. Existing operational admission remains authoritative. No
+production activation, runtime transition or historical rewrite is authorized.
+After model Entry the only trading exit reasons are STOP_LOSS, TARGET and
+SPONSOR_EXIT; terminal/data statuses remain separate.

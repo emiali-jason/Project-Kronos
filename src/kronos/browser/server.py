@@ -632,7 +632,19 @@ class KronosBrowserServer(ThreadingHTTPServer):
         )
         super().__init__(address, _BrowserHandler)
 
+    def service_actions(self) -> None:
+        lifecycle = getattr(self, "intraday_lifecycle", None)
+        if lifecycle is not None:
+            try:
+                lifecycle.pulse()
+            except (ValueError, OSError, TypeError, KeyError, RuntimeError):
+                lifecycle.last_failure = "WO11_RUNTIME_SERVICE_UNAVAILABLE"
+        super().service_actions()
+
     def server_close(self) -> None:
+        lifecycle = getattr(self, "intraday_lifecycle", None)
+        if lifecycle is not None:
+            lifecycle.shutdown()
         # Invalidate pending authentication before disposing its restoration owners.
         self.application.close()
         self.refresh_reminders.close()

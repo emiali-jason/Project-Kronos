@@ -172,3 +172,16 @@ Native owns prospective structural selection, exact sources and target completen
 Status: Approved bounded engineering, direct Sponsor / EA 2026-09-11.
 
 [ADR-0042](../../adr/ADR-0042-WO10-ADVISORY-RISK-AND-FINAL-FUTURES-COMPOSITION.md) supersedes prospective Risk permission with advisory facts/reference/quantity warnings. No Risk magnitude or missing monetary fact independently vetoes Sponsor selection. Native PULLBACK V1, five-tab navigation, exact trade hard gates and historical contracts remain preserved. No WO11 lifecycle, broker margin, production operation or runtime load is commissioned.
+
+
+## Prospective WO-11 lifecycle engineering — ADR-0045
+
+Status: Sponsor policy frozen; engineering BLOCKED pending governed analytical-invalidation source composition. PAPER Position and Observation each model exactly one lot from eligible WebSocket last_price with a five-second inclusive lateness ceiling. LIVE remains uncommissioned. Historical owners and records retain their original authority. See `ADR-0045-WO11-PROSPECTIVE-POSITION-OBSERVATION-LIFECYCLE.md` and `KRONOS-INTRADAY-WO11-PROSPECTIVE-LIFECYCLE-V1.md`. No production lifecycle activation is enabled by this candidate.
+
+## WO-11 V1 analytical capability correction — ADR-0046
+
+Status: Approved bounded Sponsor/EA correction. ADR-0046 supersedes the ADR-0045
+analytical-source blocker for V1: automatic post-entry reassessment is explicitly
+NOT_COMMISSIONED_V1. The original WO-10 thesis definition remains context; it is
+not a close trigger. Existing operational admission remains authoritative. No
+production activation, runtime transition or historical rewrite is authorized.
