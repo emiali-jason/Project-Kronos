@@ -283,12 +283,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         intraday_runtime.lifecycle_application.bind_monitoring(server.swing_monitoring_hub, application.authenticated_read_only_capability)
         server.intraday_lifecycle = intraday_runtime.lifecycle_application
+        server.intraday_journal = intraday_runtime.journal_application
         from kronos.application.intraday_notifications import IntradayNotifications
         server.intraday_notifications = IntradayNotifications(
             centre=server.notification_centre, research=intraday_runtime.research_application,
             wo09=intraday_runtime.wo09_store, futures=intraday_runtime.futures_application.store,
             lifecycle=intraday_runtime.lifecycle_application.store, telegram=server.telegram)
         server.intraday_notifications.bind(intraday_runtime.probables_v2_store)
+        intraday_runtime.journal_application.bind()
         intraday_runtime.wo17_monitoring.set_shared_monitoring_hub(
             server.swing_monitoring_hub
         )

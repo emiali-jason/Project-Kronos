@@ -1638,11 +1638,16 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             observation_choice = query.get("observation_choice", ["ALL"])
             observation_activation = query.get("observation_activation", ["ALL"])
             observation_severity = query.get("observation_severity", ["ALL"])
+            truth = query.get("truth", ["ALL"])
+            status = query.get("status", ["ALL"])
+            monitoring = query.get("monitoring", ["ALL"])
+            scope = query.get("scope", ["ALL"])
             if (
                 set(query).difference({
                     "product", "search", "view",
                     "filter", "record", "observation_choice",
                     "observation_activation", "observation_severity",
+                    "truth", "status", "monitoring", "scope",
                 })
                 or len(product) != 1
                 or len(search) != 1
@@ -1655,8 +1660,34 @@ class _BrowserHandler(BaseHTTPRequestHandler):
                 or len(observation_choice) != 1
                 or len(observation_activation) != 1
                 or len(observation_severity) != 1
+                or len(truth) != 1
+                or len(status) != 1
+                or len(monitoring) != 1
+                or len(scope) != 1
             ):
                 self._text(HTTPStatus.BAD_REQUEST, "Journal filter is invalid.")
+                return
+            if product[0] == "INTRADAY":
+                allowed_truth = {"ALL", "PAPER_POSITION", "PAPER_OBSERVATION", "NONE", "DO_NOTHING"}
+                allowed_monitoring = {"ALL", "LIVE", "INTERRUPTED", "IDLE", "NOT_REQUIRED", "UNAVAILABLE"}
+                if (view[0] != "operational" or truth[0] not in allowed_truth
+                        or monitoring[0] not in allowed_monitoring
+                        or scope[0] not in {"ALL", "CURRENT", "HISTORY"}
+                        or len(status[0]) > 80):
+                    self._text(HTTPStatus.BAD_REQUEST, "Journal filter is invalid.")
+                    return
+                journal = getattr(self.server, "intraday_journal", None)
+                if journal is None:
+                    self._text(HTTPStatus.SERVICE_UNAVAILABLE, "Intraday Journal is unavailable.")
+                    return
+                projection = journal.snapshot(search=search[0], truth=truth[0], status=status[0],
+                                              monitoring=monitoring[0], scope=scope[0])
+                self._html(render_trade_journal(
+                    snapshot, self.server.native_review.journal_snapshot(), operational=(),
+                    selected_product="INTRADAY", search=search[0], selected_record_id=selected_record[0],
+                    intraday=projection, intraday_filters={"truth": truth[0], "status": status[0],
+                                                          "monitoring": monitoring[0], "scope": scope[0]},
+                ))
                 return
             try:
                 observation_query = ObservationResearchQueryV1(
@@ -1899,6 +1930,26 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             return
         if governance and governance.maintenance_active and path != "/provider/connect":
             self._text(HTTPStatus.SERVICE_UNAVAILABLE, "Controlled maintenance is active.")
+            return
+        if path == "/journal/intraday/delete":
+            journal = getattr(self.server, "intraday_journal", None)
+            if journal is None:
+                self._text(HTTPStatus.SERVICE_UNAVAILABLE, "Intraday Journal is unavailable.")
+                return
+            try:
+                size = int(self.headers.get("Content-Length", "0"))
+                if not 0 < size <= 2048:
+                    raise ValueError
+                fields = parse_qs(self.rfile.read(size).decode("ascii"), strict_parsing=True)
+                if set(fields) != {"journal_identity", "revision_identity", "action_identity"} or any(len(v) != 1 for v in fields.values()):
+                    raise ValueError
+                journal.suppress(journal_identity=fields["journal_identity"][0],
+                                 revision_identity=fields["revision_identity"][0],
+                                 action_identity=fields["action_identity"][0])
+            except (UnicodeError, ValueError, OSError):
+                self._text(HTTPStatus.CONFLICT, "Journal presentation suppression rejected.")
+                return
+            self._redirect("/journal?product=INTRADAY")
             return
         if self.server.product_routes.owns_post(path):
             self._dispatch_product_post(path)

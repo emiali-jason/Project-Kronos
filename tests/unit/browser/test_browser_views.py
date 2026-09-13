@@ -95,7 +95,7 @@ def test_shared_shell_uses_approved_local_kronos_brand_assets() -> None:
     favicon = brand_root / "kronos-favicon.png"
 
     assert sha256(master.read_bytes()).hexdigest() == (
-        "d5adbe98c9f93e82d3f65ef49c4634dc822c3ac30596e8cc8ac1ec3c62d75291"
+        "4a4ff75bd8a293f1f7c05b6ee94e1506375f21bf42cee2f293e6c91b861013a8"
     )
     assert unpack(">II", mark.read_bytes()[16:24]) == (512, 512)
     assert unpack(">II", favicon.read_bytes()[16:24]) == (64, 64)
@@ -103,9 +103,9 @@ def test_shared_shell_uses_approved_local_kronos_brand_assets() -> None:
     rendered = render_placeholder(_ready(), "Portfolio", active_nav="Portfolio")
     assert 'href="/favicon.png"' in rendered
     assert 'src="/assets/brand/kronos-brand-mark.png"' in rendered
-    assert 'alt="KRONOS"' in rendered
-    assert 'width="35" height="35"' in rendered
-    assert '<span class="brandword">KRONOS</span>' in rendered
+    assert 'alt="KRONOS by Imran"' in rendered
+    assert 'width="184" height="184"' in rendered
+    assert '<span class="brandword">KRONOS by Imran</span>' in rendered
     assert 'class="brandmark">K</span>' not in rendered
     assert 'src="http://' not in rendered
     assert 'src="https://' not in rendered

@@ -267,3 +267,14 @@ SPONSOR_EXIT; terminal/data statuses remain separate.
 ## Intraday WO-13 shared Notifications
 
 [ADR-0052](adr/ADR-0052-INTRADAY-WO13-SHARED-NOTIFICATIONS.md), the [interface](interfaces/KRONOS-INTRADAY-WO13-NOTIFICATIONS-V1.md) and [product contract](products/intraday/KRONOS-INTRADAY-WO13-NOTIFICATIONS-V1.md) adapt exact WO-09, WO-10 and WO-11 events into the shared Notifications lifecycle and Telegram transport. Stable opportunity origins are retained at admitted Probables persistence without running WO-12 publication. Notifications remain presentation-only and own no analytical, lifecycle, monitoring, Provider, research or broker authority. Historical WO-13 Step-31 evidence is preserved.
+
+## Intraday WO-14 shared Trading Journal and UI-BRAND-01
+
+[ADR-0053](adr/ADR-0053-INTRADAY-WO14-SHARED-TRADING-JOURNAL-AND-BRANDING.md),
+the [interface](interfaces/KRONOS-INTRADAY-WO14-TRADING-JOURNAL-V1.md) and the
+[product record](products/intraday/KRONOS-INTRADAY-WO14-TRADING-JOURNAL-V1.md)
+define the compact Intraday projection in the shared Trading Journal,
+persistent presentation-only suppression, exact WO-11 monitoring badges and
+Sponsor-approved shared local brand assets. Production use and runtime load
+remain separately gated. Historical WO-14 Risk Observation evidence remains
+unchanged.

@@ -45,6 +45,7 @@ from kronos.application.intraday_wo11 import (
     IntradayWo11RuntimeService,
 )
 from kronos.application.intraday_research import IntradayResearchApplication
+from kronos.application.intraday_journal import IntradayJournalApplication
 from kronos.application.intraday_wo12_v2 import (
     IntradayWo12V2Application,
     IntradayWo12V2RuntimeService,
@@ -125,6 +126,7 @@ from kronos.intraday.universe import (
 from kronos.intraday.wo10_persistence import Wo10Store
 from kronos.intraday.wo11_persistence import Wo11Store
 from kronos.intraday.wo12_research_store import ResearchStore
+from kronos.intraday.wo14_journal_store import JournalStore
 from kronos.intraday.wo12_v2_persistence import Wo12V2Store
 from kronos.intraday.wo13_persistence import Wo13Store
 from kronos.intraday.wo14_persistence import Wo14Store
@@ -249,6 +251,8 @@ class IntradayRuntimeComposition:
     wo11_runtime: IntradayWo11RuntimeService
     research_store: ResearchStore
     research_application: IntradayResearchApplication
+    journal_store: JournalStore
+    journal_application: IntradayJournalApplication
     wo12_v2_store: Wo12V2Store
     wo12_v2_application: IntradayWo12V2Application
     wo12_v2_runtime: IntradayWo12V2RuntimeService
@@ -559,6 +563,13 @@ def create_intraday_runtime(
         store=research_store,
         clock=clock,
     )
+    journal_store = JournalStore(Path(evidence_root) / "prospective-v2-wo14-trading-journal-v1")
+    journal_application = IntradayJournalApplication(
+        research=research_store,
+        futures=futures_application.store,
+        lifecycle=lifecycle_application,
+        store=journal_store,
+    )
     historical_operation = IntradayHistoricalQualificationOperationService(
         provider_runtime=provider_runtime,
         universe=universe,
@@ -660,6 +671,8 @@ def create_intraday_runtime(
         wo11_runtime=wo11_runtime,
         research_store=research_store,
         research_application=research_application,
+        journal_store=journal_store,
+        journal_application=journal_application,
         wo12_v2_store=wo12_v2_store,
         wo12_v2_application=wo12_v2_application,
         wo12_v2_runtime=wo12_v2_runtime,

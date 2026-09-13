@@ -120,3 +120,11 @@ research ledger and verified local monthly XLSX. It adds stable Sponsor and
 machine opportunity identities, deterministic six-sheet tables/formulas,
 explicit atomic update and checksum-bound receipts. Historical WO-12 semantics
 remain preserved; Google Drive and trading authority are not commissioned.
+
+## Intraday WO-14 shared Trading Journal and UI-BRAND-01
+
+[ADR-0053](ADR-0053-INTRADAY-WO14-SHARED-TRADING-JOURNAL-AND-BRANDING.md)
+adapts compact WO-10/11 facts into the existing shared Journal, preserves NONE
+and DO NOTHING history, defines persistent presentation-only suppression,
+reads exact WO-11 monitoring state, and governs shared local logo derivatives.
+Production use and runtime load remain separately gated.

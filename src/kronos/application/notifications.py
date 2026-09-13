@@ -85,10 +85,25 @@ __all__ = [
 
 
 def notify_persisted(store, kind, identity):
-    """Optional attention observer; failure cannot invalidate a committed source."""
-    listener = getattr(store, "notification_listener", None)
+    """Notify independent projections; failure cannot invalidate a committed source."""
+    for attribute, failure in (
+        ("notification_listener", "NOTIFICATION_PROJECTION_UNAVAILABLE"),
+        ("journal_listener", "JOURNAL_PROJECTION_UNAVAILABLE"),
+    ):
+        listener = getattr(store, attribute, None)
+        if listener is None:
+            continue
+        try:
+            listener(kind, identity)
+        except Exception:
+            setattr(store, attribute.replace("listener", "failure"), failure)
+
+
+def notify_journal_persisted(store, kind, identity):
+    """Notify only the optional Journal projection after an immutable write."""
+    listener = getattr(store, "journal_listener", None)
     if listener is not None:
         try:
             listener(kind, identity)
         except Exception:
-            store.notification_failure = "NOTIFICATION_PROJECTION_UNAVAILABLE"
+            store.journal_failure = "JOURNAL_PROJECTION_UNAVAILABLE"

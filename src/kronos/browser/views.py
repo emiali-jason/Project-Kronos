@@ -131,6 +131,7 @@ from kronos.swing.v1.native_trade_journal import (
     JournalRecordType,
     TradeJournalSnapshot,
 )
+from kronos.intraday.wo14_journal_contract import JournalSnapshot as IntradayJournalSnapshot
 from kronos.swing.v1.observation_research_ledger import (
     ObservationLinkKind,
     ObservationResearchProjectionV1,
@@ -190,7 +191,7 @@ _CSS = r"""
 a{color:inherit;text-decoration:none}.app{display:grid;grid-template-columns:218px 1fr;min-height:100vh}.sidebar{position:sticky;top:0;height:100vh;border-right:1px solid var(--line);background:rgba(3,15,26,.96);padding:22px 14px;display:flex;flex-direction:column}.brand{display:flex;align-items:center;gap:11px;font-size:25px;font-weight:800;letter-spacing:.04em;padding:2px 9px 22px}.brandmark{width:35px;height:35px;border-radius:8px;background:linear-gradient(135deg,#50b7ff,#1769c8);display:grid;place-items:center;font-weight:900}.nav{display:grid;gap:7px}.nav a{display:flex;gap:12px;align-items:center;padding:12px 13px;border-radius:8px;color:#d7e4ee}.nav a:hover,.nav a.active{background:#0c3962;color:#fff}.nav .icon{width:19px;color:#6bb9ff;text-align:center}.system{margin-top:auto;border:1px solid var(--line);border-radius:9px;padding:13px;color:var(--muted);font-size:12px}.system strong{display:block;color:var(--green);margin-bottom:6px}.main{min-width:0}.topbar{height:78px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;padding:0 28px;background:rgba(3,15,26,.78);backdrop-filter:blur(12px)}.title h1{font-size:27px;margin:0}.title p{margin:2px 0 0;color:var(--muted)}.kite{display:flex;align-items:center;gap:12px}.dot{width:9px;height:9px;border-radius:50%;background:var(--muted);box-shadow:0 0 14px currentColor}.dot.CONNECTED{background:var(--green)}.dot.CONNECTING{background:var(--amber)}.dot.ERROR{background:var(--red)}button,.button{border:1px solid #246295;background:#0b2b47;color:#e9f5ff;padding:9px 14px;border-radius:7px;font:inherit;font-weight:650;cursor:pointer}button.primary{background:linear-gradient(135deg,#178ddf,#1466b4);border-color:#35a9f5}button:disabled{opacity:.45;cursor:not-allowed}.tabs{display:flex;align-items:center;gap:22px;border-bottom:1px solid var(--line);padding:0 28px;height:61px}.tabs a{height:61px;display:flex;align-items:center;color:var(--muted);border-bottom:2px solid transparent}.tabs a.active{color:#fff;border-color:var(--blue)}.badge{font-size:11px;border-radius:999px;padding:2px 7px;background:#172b3a;margin-left:6px}.toolbar{margin-left:auto}.content{padding:22px 28px 40px}.status-grid{display:grid;grid-template-columns:repeat(6,minmax(120px,1fr));gap:10px;margin-bottom:18px}.metric{border:1px solid var(--line);background:linear-gradient(150deg,rgba(12,35,55,.9),rgba(5,20,33,.92));border-radius:9px;padding:13px}.metric label{display:block;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.05em}.metric strong{display:block;font-size:20px;margin-top:4px}.panels{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(350px,.8fr);gap:16px}.market-panel{border:1px solid var(--line);background:rgba(6,23,37,.86);border-radius:11px;padding:16px;min-height:390px}.panel-heading{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--line);padding-bottom:11px;margin-bottom:13px}.panel-heading h2{margin:0;font-size:17px;color:var(--blue)}.panel-heading span{font-size:12px;color:var(--muted)}.opportunity{border:1px solid #21425c;border-radius:10px;background:linear-gradient(145deg,#0a2033,#071622);padding:13px;margin-top:10px;box-shadow:0 12px 28px rgba(0,0,0,.16)}.opp-head{display:flex;align-items:center;gap:10px}.opp-identity{min-width:0}.opp-identity h3{font-size:20px;margin:0}.setup-family{display:block;color:var(--muted);font-size:12px;margin-top:1px}.direction{margin-left:auto;border:1px solid currentColor;padding:3px 8px;border-radius:6px;font-size:12px;font-weight:750}.direction-long{color:var(--green)}.direction-short{color:var(--red)}.summary-reason{color:#c9d8e3;margin:10px 0}.summary-footer{display:flex;align-items:center;justify-content:space-between;gap:12px;border-top:1px solid var(--line);padding-top:10px}.summary-rr{color:var(--muted);font-size:12px}.summary-rr strong{color:var(--green);font-size:15px;margin-left:3px}.rank{display:grid;place-items:center;width:29px;height:29px;background:#0c4f83;border-radius:6px;color:#8dd0ff;font-weight:800}.opp-head h3{font-size:22px;margin:0}.pill{border:1px solid #176741;color:var(--green);padding:3px 8px;border-radius:6px;font-size:12px}.trade-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin:15px 0}.field{border-left:1px solid var(--line);padding-left:10px}.field:first-child{border-left:0;padding-left:0}.field label{display:block;color:var(--muted);font-size:11px}.field strong{display:block;margin-top:3px}.positive{color:var(--green)}.negative{color:var(--red)}.why{border-top:1px solid var(--line);padding-top:12px;color:#c9d8e3}.risk{color:#f0b8ba;font-size:13px}.opp-actions{display:flex;justify-content:flex-end;margin-top:14px}.empty{display:grid;place-items:center;min-height:270px;text-align:center;color:var(--muted);padding:30px}.empty strong{display:block;color:#dce8f0;font-size:17px;margin-bottom:6px}.error{border:1px solid #793b40;background:#2c151c;color:#ffc3c6;border-radius:8px;padding:11px 14px;margin-bottom:16px}.workspace{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(330px,.7fr);gap:16px}.workspace section{border:1px solid var(--line);background:rgba(6,23,37,.88);border-radius:10px;padding:17px}.workspace h2{margin:0 0 13px;font-size:17px;color:var(--blue)}.workspace h3{margin:18px 0 8px;font-size:13px;text-transform:uppercase;letter-spacing:.05em;color:#7ec7ff}.workspace ul{margin:7px 0;padding-left:19px}.plan-strip{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}.plan-strip div{background:#081c2c;border:1px solid var(--line);border-radius:7px;padding:10px}.plan-strip label{display:block;color:var(--muted);font-size:11px}.chart-placeholder{min-height:260px;display:grid;place-items:center;border:1px dashed #31506a!important;color:var(--muted);text-align:center}.technical{font-size:12px;color:var(--muted)}.placeholder{min-height:65vh;display:grid;place-items:center;text-align:center}.placeholder div{border:1px solid var(--line);background:var(--panel);border-radius:12px;padding:38px;max-width:520px}.placeholder h2{margin-top:0}.footer{padding:0 28px 22px;color:#698294;font-size:12px;text-align:right}
 .status-grid{grid-template-columns:repeat(8,minmax(110px,1fr))}.global-empty{border:1px solid var(--line);background:#071827;color:var(--muted);border-radius:9px;padding:12px 14px;margin-bottom:16px}
 .exit-control{margin-top:12px;border-top:1px solid var(--line);padding-top:10px}.exit-control summary{cursor:pointer;color:#f0b8ba;font-weight:750;list-style:none}.exit-control summary::-webkit-details-marker{display:none}.exit-confirm{margin-top:9px}.exit-confirm p{margin:0 0 9px;color:var(--muted)}.exit-actions{display:flex;gap:7px}.exit-actions button{border-color:#793b40;background:#2c151c;color:#ffc3c6}.exit-cancel{display:inline-block;border:1px solid var(--line);border-radius:7px;padding:9px 12px;color:var(--muted)}
-.brandmark{display:block;flex:0 0 35px;width:35px;height:35px;border-radius:8px;background:transparent;object-fit:cover}.brandword{white-space:nowrap}
+.brand{padding:0 2px 18px}.brandmark{display:block;width:100%;height:auto;max-height:96px;border-radius:7px;background:#02070c;object-fit:contain}.brandword{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 .status-strip{display:flex;align-items:center;flex-wrap:wrap;border:1px solid var(--line);background:rgba(7,24,39,.72);border-radius:8px;padding:8px 10px;margin-bottom:14px}.status-item{display:flex;align-items:baseline;gap:6px;padding:0 14px;border-left:1px solid var(--line);white-space:nowrap;font-size:12px}.status-item:first-child{border-left:0;padding-left:2px}.status-item span{color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.05em}.status-item strong{font-size:13px;font-weight:650}.status-item.status-top strong{color:var(--blue)}
 .status-strip{position:relative}.eligible-control{display:block}.eligible-control summary{display:flex;align-items:baseline;gap:6px;cursor:pointer;list-style:none}.eligible-control summary::-webkit-details-marker{display:none}.eligible-control summary:focus-visible{outline:1px solid var(--blue);outline-offset:4px}.eligible-control>summary strong{color:var(--blue)}.eligible-panel{position:absolute;z-index:20;top:calc(100% + 6px);left:0;right:0;white-space:normal;border:1px solid #28506c;background:#071827;border-radius:9px;padding:14px;box-shadow:0 18px 45px rgba(0,0,0,.45)}.eligible-heading{display:flex;align-items:center;justify-content:space-between;gap:12px}.eligible-heading h2{font-size:15px;letter-spacing:.05em;margin:0;color:var(--blue)}.eligible-standard{color:var(--muted);font-size:11px;margin:3px 0 10px}.eligible-list{display:grid;gap:7px}.eligible-row{display:grid;grid-template-columns:42px minmax(120px,1fr) 70px minmax(150px,1fr) 70px 110px auto;align-items:center;gap:10px;border-top:1px solid var(--line);padding:8px 0}.eligible-row:first-child{border-top:0}.eligible-rank{color:#8dd0ff;font-weight:750}.eligible-instrument{font-weight:750}.eligible-setup{color:var(--muted);font-size:12px}.eligible-selection{font-size:11px;font-weight:750}.eligible-selection.selected{color:var(--green)}.eligible-selection.not-selected{color:var(--muted)}.eligible-reason{grid-column:2/-1;color:var(--muted);font-size:11px}.eligible-empty{color:var(--muted);padding:9px 0 3px}
 .panels{grid-template-columns:repeat(2,minmax(0,1fr))}
@@ -200,6 +201,7 @@ a{color:inherit;text-decoration:none}.app{display:grid;grid-template-columns:218
 .shadow-banner{border:1px solid #82631f;background:#241d0a;color:var(--amber);border-radius:8px;padding:8px 11px;margin-bottom:12px;font-size:11px;font-weight:800;letter-spacing:.05em}.shadow-list{display:grid;gap:10px}.shadow-card{border:1px solid var(--line);background:rgba(6,23,37,.88);border-radius:9px;padding:12px}.shadow-card summary{cursor:pointer;list-style:none;display:grid;grid-template-columns:minmax(150px,1fr) repeat(3,auto);gap:12px;align-items:center}.shadow-card summary::-webkit-details-marker{display:none}.shadow-state{color:var(--blue);font-weight:800}.shadow-comparison{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}.shadow-side{border-top:1px solid var(--line);padding-top:9px}.shadow-side h3{font-size:10px;color:var(--muted);letter-spacing:.06em;margin:0 0 7px}.shadow-timeframes{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px}.shadow-timeframe{border:1px solid var(--line);border-radius:6px;padding:7px}.shadow-timeframe span,.shadow-wait span{display:block;color:var(--muted);font-size:9px;letter-spacing:.05em}.shadow-timeframe strong{font-size:11px}.shadow-wait{margin-top:10px;border-left:2px solid var(--blue);padding:7px 9px;background:#061a29}.shadow-observation{display:flex;gap:7px;margin-top:10px}.shadow-observation input{flex:1;border:1px solid #31506a;background:#04131f;color:var(--text);border-radius:6px;padding:7px 9px}.remainder-tag{color:var(--amber);font-size:10px;margin-top:7px}
 .one-minute{display:grid;gap:12px}.one-minute h3{margin:0 0 5px;color:var(--muted);font-size:10px;letter-spacing:.07em}.one-minute-status{font-size:16px;color:var(--blue)}.one-minute p{margin:2px 0;color:#cfdee8}.one-minute-facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}.one-minute-fact{border:1px solid var(--line);border-radius:6px;padding:7px 9px;font-size:11px}.one-minute-wait{border-left:2px solid var(--amber);background:#211b0e;padding:8px 10px}.one-minute details{border-top:1px solid var(--line);padding-top:9px}.one-minute summary{cursor:pointer;color:var(--muted);font-size:11px}.native-trade-plan{margin-top:12px;border:1px solid #28506a;border-radius:8px;background:#0b1923;padding:12px}.native-trade-plan h3{margin:0;color:var(--blue);font-size:13px}.native-trade-plan-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:10px}.native-trade-plan-grid div{border:1px solid var(--line);border-radius:6px;padding:8px}.native-trade-plan-grid span{display:block;color:var(--muted);font-size:9px;letter-spacing:.08em}.native-trade-plan-grid strong{display:block;margin-top:3px;font-size:14px}.native-trade-plan .why{margin:10px 0 0;color:#cfdee8;font-size:11px}
 .journal-filters{display:flex;gap:7px;margin-bottom:12px}.journal-filters .button{font-size:11px;padding:6px 10px}.journal-filters .button.primary{background:#0c4f83;border-color:#2c9cff}
+.intraday-journal-filters{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:12px}.intraday-journal-filters select{min-width:0;max-width:100%;border:1px solid #31506a;background:#04131f;color:var(--text);border-radius:7px;padding:8px}.journal-delete summary{cursor:pointer;color:#f0b8ba;list-style:none}.journal-delete summary::-webkit-details-marker{display:none}.journal-delete form{display:flex;gap:6px;margin-top:6px}.journal-monitor-live{color:var(--green)}.journal-monitor-interrupted{color:var(--red)}.journal-monitor-idle,.journal-monitor-not-required,.journal-monitor-unavailable{color:var(--muted)}
 .journal-head{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px}.journal-products{display:flex;gap:6px}.journal-products .button{padding:6px 12px;font-size:11px}.journal-products .active{background:#0c4f83;border-color:#2c9cff}.journal-date{color:var(--muted);font-size:11px}.journal-ws{margin-left:auto;border:1px solid var(--line);border-radius:999px;padding:4px 9px;font-size:10px;font-weight:850}.journal-ws.CONNECTED{color:var(--green);border-color:#176741}.journal-ws.DISCONNECTED{color:var(--red);border-color:#793b40}.journal-ws.IDLE{color:var(--muted)}.journal-toolbar{display:flex;align-items:center;gap:8px;margin-bottom:12px}.journal-search{width:min(300px,100%);border:1px solid #31506a;background:#04131f;color:var(--text);border-radius:7px;padding:8px 10px}.journal-section{border:1px solid var(--line);border-radius:10px;background:rgba(6,23,37,.86);margin-top:12px;overflow:hidden}.journal-section.paper{border-left:3px solid #6588e8}.journal-section.live{border-left:3px solid #2ed477}.journal-section.observation{border-left:3px solid #37b8d8}.journal-section-head{display:flex;align-items:baseline;justify-content:space-between;gap:10px;padding:11px 13px;border-bottom:1px solid var(--line)}.journal-section-head h2{font-size:13px;letter-spacing:.07em;margin:0}.journal-section-head span{color:var(--muted);font-size:10px}.journal-table-wrap{overflow-x:auto}.journal-table{width:100%;border-collapse:collapse;font-size:11px}.journal-table th,.journal-table td{padding:8px 9px;text-align:left;white-space:nowrap;border-top:1px solid rgba(27,53,73,.65)}.journal-table tr:first-child td{border-top:0}.journal-table th{color:var(--muted);font-size:9px;letter-spacing:.05em;text-transform:uppercase}.journal-table tbody tr:hover{background:#0a2134}.journal-table a{color:#dce8f0;font-weight:800}.journal-side.LONG{color:var(--green)}.journal-side.SHORT{color:var(--red)}.journal-pnl.positive{color:var(--green)}.journal-pnl.negative{color:var(--red)}.journal-monitor.ACTIVE{color:var(--green)}.journal-monitor.INTERRUPTED{color:var(--red)}.journal-detail{margin-top:12px;border:1px solid #28506a;border-radius:9px;background:#071827;padding:13px}.journal-detail h2{margin:0 0 10px;color:var(--blue);font-size:15px}.journal-detail-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}.journal-detail-grid div{border:1px solid var(--line);border-radius:6px;padding:8px}.journal-detail-grid span{display:block;color:var(--muted);font-size:9px;text-transform:uppercase}.journal-detail-grid strong{display:block;margin-top:3px;font-size:12px}.journal-reports{margin-left:auto}@media(max-width:760px){.journal-ws{margin-left:0}.journal-detail-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 .reports-head{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:10px}.reports-products,.reports-views,.reports-quick{display:flex;gap:6px;flex-wrap:wrap}.reports-head .button,.reports-views .button,.reports-quick .button{padding:5px 9px;font-size:10px}.reports-head .active,.reports-views .active{background:#0c4f83;border-color:#2c9cff}.reports-date{color:var(--muted);font-size:10px}.reports-layout{display:grid;grid-template-columns:minmax(0,1fr) 245px;gap:12px;margin-top:12px}.reports-main{min-width:0}.reports-filter{border:1px solid var(--line);border-radius:9px;background:rgba(6,23,37,.88);padding:12px;height:max-content}.reports-filter h2{margin:0 0 9px;font-size:12px;color:var(--blue)}.reports-filter label{display:block;color:var(--muted);font-size:9px;margin-top:7px;text-transform:uppercase}.reports-filter input,.reports-filter select{width:100%;border:1px solid #31506a;background:#04131f;color:var(--text);border-radius:6px;padding:7px 8px;margin-top:3px}.reports-filter-actions{display:flex;gap:6px;margin-top:10px;flex-wrap:wrap}.reports-filter-actions button,.reports-filter-actions .button{padding:6px 8px;font-size:10px}.reports-summary{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:7px;margin-bottom:10px}.reports-metric{border:1px solid var(--line);border-radius:7px;background:#071827;padding:8px}.reports-metric span{display:block;color:var(--muted);font-size:8px;letter-spacing:.06em}.reports-metric strong{display:block;margin-top:2px;font-size:14px}.reports-chart{display:flex;gap:8px;align-items:flex-end;min-height:72px;border:1px solid var(--line);border-radius:8px;background:#061421;padding:10px;margin-bottom:10px}.reports-bar{flex:1;min-width:70px}.reports-bar span{display:block;color:var(--muted);font-size:9px}.reports-bar strong{display:block;color:#dce8f0;font-size:13px}.reports-bar i{display:block;height:5px;margin-top:5px;border-radius:4px;background:var(--blue)}.reports-bar.paper i{background:#6588e8}.reports-bar.live i{background:#2ed477}.reports-bar.observation i{background:#37b8d8}.reports-table-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:9px}.reports-table{width:100%;border-collapse:collapse;font-size:10px}.reports-table th,.reports-table td{text-align:left;white-space:nowrap;padding:8px;border-top:1px solid var(--line)}.reports-table th{border-top:0;color:var(--muted);font-size:8px;letter-spacing:.05em}.reports-table tbody tr:hover{background:#0a2134}.reports-family.paper{color:#9bb0ff}.reports-family.live{color:var(--green)}.reports-family.paper_observation{color:#58d2ea}.reports-pnl.positive{color:var(--green)}.reports-pnl.negative{color:var(--red)}.reports-pagination{display:flex;align-items:center;justify-content:flex-end;gap:7px;margin-top:9px;color:var(--muted);font-size:10px}.reports-detail{margin-bottom:10px}.reports-unavailable{color:var(--muted);font-size:9px;margin:7px 0}.reports-export-note{color:var(--muted);font-size:9px;margin-top:8px}@media(max-width:900px){.reports-layout{grid-template-columns:1fr}.reports-filter{order:-1}.reports-summary{grid-template-columns:repeat(3,minmax(0,1fr))}}
 .mtf-fact-banner{border:1px solid #28506c;background:#071f32;color:#8dd0ff;border-radius:8px;padding:8px 11px;margin-bottom:12px;font-size:11px;font-weight:800}.mtf-fact-list{display:grid;gap:8px}.mtf-fact-card{border:1px solid var(--line);background:rgba(6,23,37,.88);border-radius:8px;padding:10px}.mtf-fact-card summary{cursor:pointer;display:flex;justify-content:space-between;gap:12px}.mtf-fact-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px;margin-top:9px}.mtf-fact-timeframe{border:1px solid var(--line);border-radius:6px;padding:8px;min-width:0}.mtf-fact-timeframe h3{margin:0 0 5px;color:var(--blue);font-size:12px}.mtf-fact-timeframe p{margin:2px 0;font-size:10px;color:var(--muted);overflow-wrap:anywhere}.mtf-fact-timeframe strong{color:var(--text)}
@@ -2492,6 +2494,8 @@ def render_trade_journal(
     observation_choice: str = "ALL",
     observation_activation: str = "ALL",
     observation_severity: str = "ALL",
+    intraday: IntradayJournalSnapshot | None = None,
+    intraday_filters: dict[str, str] | None = None,
 ) -> str:
     """Render the operational Sponsor book or the preserved research surface."""
 
@@ -2506,6 +2510,10 @@ def render_trade_journal(
             observation_activation=observation_activation,
             observation_severity=observation_severity,
         )
+    if selected_product == "INTRADAY" and intraday is not None:
+        return _render_intraday_trade_journal(snapshot, intraday, search=search,
+                                              selected_record_id=selected_record_id,
+                                              filters=intraday_filters or {})
     return _render_operational_trade_journal(
         snapshot,
         operational,
@@ -2515,6 +2523,94 @@ def render_trade_journal(
         search=search,
         selected_record_id=selected_record_id,
     )
+
+
+def _journal_tabs(product: str) -> str:
+    return '<div class="journal-products">' + ''.join(
+        '<a class="button ' + ('active' if item == product else '')
+        + '" href="/journal?product=' + item + '">' + item + '</a>'
+        for item in ("SWING", "INTRADAY")) + '</div>'
+
+
+def _display(value: object) -> str:
+    return "—" if value is None else str(value).replace("_", " ")
+
+
+def _render_intraday_trade_journal(snapshot: BrowserWorkspaceSnapshot,
+                                   journal: IntradayJournalSnapshot, *, search: str,
+                                   selected_record_id: str | None,
+                                   filters: dict[str, str]) -> str:
+    values = {name: filters.get(name, "ALL") for name in ("truth", "status", "monitoring", "scope")}
+    monitoring_by_identity = dict(journal.monitoring)
+    filter_options = {
+        "truth": ("ALL", "PAPER_POSITION", "PAPER_OBSERVATION", "NONE", "DO_NOTHING"),
+        "status": ("ALL", "NO_TRACK_CREATED", "AWAITING_TIMING", "AWAITING_ENTRY",
+                   "AWAITING_MODEL_ENTRY", "ACTIVE", "OBSERVING_ACTIVE", "EXIT_PENDING",
+                   "OBSERVATION_CLOSE_PENDING", "CLOSED", "OBSERVATION_CLOSED",
+                   "CANCELLED_BEFORE_ENTRY", "OBSERVATION_STOPPED_BEFORE_ENTRY",
+                   "INVALIDATED_BEFORE_ENTRY", "OBSERVATION_INVALIDATED_BEFORE_ENTRY",
+                   "EXPIRED_BEFORE_ENTRY", "OBSERVATION_EXPIRED_BEFORE_ENTRY",
+                   "CLOSED_OUTCOME_UNAVAILABLE", "OBSERVATION_OUTCOME_UNAVAILABLE",
+                   "OUTCOME_AMBIGUOUS", "OBSERVATION_OUTCOME_AMBIGUOUS"),
+        "monitoring": ("ALL", "LIVE", "INTERRUPTED", "IDLE", "NOT_REQUIRED", "UNAVAILABLE"),
+        "scope": ("ALL", "CURRENT", "HISTORY"),
+    }
+    toolbar = (
+        '<div class="journal-head">' + _journal_tabs("INTRADAY")
+        + '<span class="journal-date">AUTHORITATIVE EVENT ORDER</span></div>'
+        '<form class="intraday-journal-filters" method="get" action="/journal">'
+        '<input type="hidden" name="product" value="INTRADAY">'
+        '<input class="journal-search" name="search" value="' + escape(search)
+        + '" placeholder="Search opportunity or subject...">'
+        + ''.join('<select name="' + name + '">' + ''.join(
+                  '<option value="' + escape(option) + '"' + (' selected' if option == values[name] else '')
+                  + '>' + escape(name.upper() + ': ' + option.replace('_', ' ')) + '</option>'
+                  for option in filter_options[name]) + '</select>'
+                  for name in ("truth", "status", "monitoring", "scope"))
+        + '<button type="submit">APPLY</button></form>'
+    )
+    detail = next((item for item in journal.records if item.journal_identity == selected_record_id), None)
+    if not journal.records:
+        body = '<div class="workflow-empty"><strong>NO INTRADAY JOURNAL RECORDS</strong><br>Governed Sponsor decisions will appear here without starting monitoring or research.</div>'
+    else:
+        rows = []
+        for item in journal.records:
+            data = item.data; metric = data["metrics"] or {}; entry = data["entry"] or {}; exit_value = data["exit"] or {}
+            monitoring_state = monitoring_by_identity.get(item.journal_identity, data["monitoring"])
+            status = "NO ENTRY" if data["track_identity"] and data["terminal"] and data["entry"] is None else _display(data["status"])
+            rows.append(
+                '<tr><td><a href="/journal?product=INTRADAY&amp;record=' + escape(item.journal_identity) + '">'
+                + escape(str(data["opportunity_id"])) + '</a></td><td>' + escape(str(data["subject"]))
+                + '</td><td class="journal-side ' + escape(str(data["direction"])) + '">' + escape(str(data["direction"]))
+                + '</td><td>' + escape(_display(data["truth_class"])) + '</td><td>' + escape(status)
+                + '</td><td>' + escape(_display(entry.get("price"))) + '</td><td>' + escape(_display(exit_value.get("price")))
+                + '</td><td>' + escape(_display(data["exit_reason"])) + '</td><td>' + escape(_display(metric.get("points")))
+                + '</td><td>' + escape(_display(metric.get("model_r"))) + '</td><td class="journal-monitor journal-monitor-'
+                + escape(str(monitoring_state).lower().replace('_', '-')) + '">MONITORING ' + escape(str(monitoring_state))
+                + '</td><td><details class="journal-delete"><summary>DELETE</summary><form method="post" action="/journal/intraday/delete">'
+                '<input type="hidden" name="journal_identity" value="' + escape(item.journal_identity) + '">'
+                '<input type="hidden" name="revision_identity" value="' + escape(item.revision_identity) + '">'
+                '<input type="hidden" name="action_identity" value="SPONSOR-JOURNAL-DELETE-' + escape(item.revision_identity[-16:]) + '">'
+                '<button type="submit">SUPPRESS PRESENTATION</button></form></details></td></tr>'
+            )
+        body = ('<section class="journal-section observation"><div class="journal-section-head"><h2>INTRADAY OPPORTUNITY HISTORY</h2><span>'
+                + str(len(rows)) + ' VISIBLE</span></div><div class="journal-table-wrap"><table class="journal-table"><thead><tr>'
+                '<th>Opportunity ID</th><th>Subject</th><th>Side</th><th>Truth</th><th>Status</th><th>Entry</th><th>Exit</th>'
+                '<th>Exit Reason</th><th>Points</th><th>Model R</th><th>Monitoring</th><th>Presentation</th></tr></thead><tbody>'
+                + ''.join(rows) + '</tbody></table></div></section>')
+    if detail is not None:
+        data = detail.data
+        fields = (("Opportunity identity", data["opportunity_identity"]), ("Decision", data["decision"]),
+                  ("Decision identity", data["decision_identity"]), ("Track identity", data["track_identity"]),
+                  ("Trade Plan", data["trade_plan_identity"]), ("Session", data["session_identity"]),
+                  ("Terminal status", data["terminal_status"]), ("Selected lots context", data["selected_lots_context"]))
+        body = ('<section class="journal-detail"><h2>' + escape(str(data["opportunity_id"]))
+                + ' · GOVERNED DETAIL</h2><div class="journal-detail-grid">'
+                + ''.join('<div><span>' + escape(label) + '</span><strong>' + escape(_display(value)) + '</strong></div>' for label, value in fields)
+                + '</div><details class="native-diagnostics"><summary>SOURCE IDENTITIES</summary><strong>'
+                + escape(' · '.join(data["source_identities"])) + '</strong></details></section>' + body)
+    return _page(title="Trading Journal", subtitle="Current and historical Intraday decisions.",
+                 snapshot=snapshot, active_nav="Trading Journal", active_tab="", body=toolbar + body)
 
 
 def _render_operational_trade_journal(
@@ -2528,14 +2624,7 @@ def _render_operational_trade_journal(
     selected_record_id: str | None,
 ) -> str:
     product = selected_product if selected_product in {"SWING", "INTRADAY"} else "SWING"
-    tabs = (
-        '<div class="journal-products">'
-        + ''.join(
-            '<a class="button ' + ('active' if item == product else '')
-            + '" href="/journal?product=' + item + '">' + item + '</a>'
-            for item in ("SWING", "INTRADAY")
-        ) + '</div>'
-    )
+    tabs = _journal_tabs(product)
     if product == "INTRADAY":
         body = (
             '<div class="journal-head">' + tabs + '</div>'
@@ -5502,7 +5591,7 @@ def _page(
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{escape(title)} · KRONOS</title><link rel="icon" type="image/png" sizes="64x64" href="/favicon.png"><style>{_CSS}{extra_styles}</style></head>
 <body data-status-signature="{escape(signature)}"{projection_attribute}><div class="app"><aside class="sidebar">
-<div class="brand"><img class="brandmark" src="/assets/brand/kronos-brand-mark.png" alt="KRONOS" title="KRONOS" width="35" height="35"><span class="brandword">KRONOS</span></div><nav class="nav">{nav}</nav>
+<div class="brand"><img class="brandmark" src="/assets/brand/kronos-brand-mark.png" alt="KRONOS by Imran" title="KRONOS by Imran" width="184" height="184"><span class="brandword">KRONOS by Imran</span></div><nav class="nav">{nav}</nav>
 <div class="system"><strong>● LOCAL · READ ONLY</strong>Provider capability stays inside this process.<br>Order capability: NONE
 <details class="exit-control"><summary>EXIT KRONOS</summary><div class="exit-confirm"><p><b>EXIT KRONOS?</b><br>This will safely stop KRONOS and its runtime services.<br>No trade or broker order will be created.</p><div class="exit-actions"><a class="exit-cancel" href="">CANCEL</a><form method="post" action="/control/exit"><button type="submit">EXIT KRONOS</button></form></div></div></details></div>
 </aside><main class="main"><header class="topbar"><div class="title">{back_link}<h1>{escape(title)}</h1><p>{escape(subtitle)}</p></div>

@@ -36,8 +36,11 @@ class IntradayLifecycleApplication:
         intake = load_intake(self.futures, handoff_identity, session=self.session_source(subject,now), now=now)
         if action == "DO_NOTHING":
             with self.store.transaction():
-                return self.store.retain(record("WO11_ACTION_V1", action=action,
+                retained = self.store.retain(record("WO11_ACTION_V1", action=action,
                     action_identity=action_identity, handoff_identity=handoff_identity, action_at=now))
+            from kronos.application.notifications import notify_journal_persisted
+            notify_journal_persisted(self.store, "ACTION", retained.identity)
+            return retained
         truth = "PAPER_POSITION" if action == "ACTIVATE_PAPER" else "PAPER_OBSERVATION"
         transition = arm(intake, truth_class=truth, action_identity=action_identity, action_at=now)
         claim = next(r.data["claim"] for r in transition.evidence if r.schema=="WO11_AUTHORIZATION_V1")
@@ -241,6 +244,27 @@ class IntradayLifecycleApplication:
                 original_thesis_invalidation=d["intake"].get("invalidation"),
                 post_entry_analytical_invalidation=d["post_entry_analytical_invalidation"]))
         return dict(cards=cards,last_failure=self.last_failure,live="LIVE_POSITION_NOT_COMMISSIONED_V1")
+
+    def journal_monitoring_state(self, track_identity):
+        """Read-only exact owner state for WO-14; creates no owner or subscription."""
+        if not isinstance(track_identity, str):
+            raise ValueError("WO11_TRACK_IDENTITY_REQUIRED")
+        authorization = self.store.load(track_identity)
+        current = self.store.current(authorization.data["claim"])
+        if current is None:
+            raise ValueError("WO11_TRACK_NOT_FOUND")
+        data = current.data
+        if data["state"] in TERMINAL:
+            return "NOT_REQUIRED"
+        if data["monitoring"] == "INTERRUPTED":
+            return "INTERRUPTED"
+        attached = self._registrations.get(track_identity)
+        if attached is not None:
+            return "LIVE" if getattr(attached[1], "active", False) else "INTERRUPTED"
+        capability = self._capability()
+        if self._hub is None or capability is None:
+            return "UNAVAILABLE"
+        return "IDLE" if getattr(capability, "active", False) else "INTERRUPTED"
 
     def shutdown(self):
         for registration,_ in tuple(self._registrations.values()):

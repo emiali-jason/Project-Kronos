@@ -339,6 +339,8 @@ class IntradayFuturesApplication:
                                         selection=selection.data, plan=plan.data, snapshot=snapshot.data,
                                         expression=expression.data, advisory_risk=advisory.data,
                                         selected_at=now, authority="SELECTED_TRADE_ONLY_NO_ACTIVATION"))
+            from kronos.application.notifications import notify_journal_persisted
+            notify_journal_persisted(self.store, "SELECTION", selection.identity)
             return selection
 
     def preview_risk(self, comparison_identity, *, lots=None, now=None):
