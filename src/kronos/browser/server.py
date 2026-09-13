@@ -70,6 +70,7 @@ from kronos.application.swing_trade_window import (
     build_current_trade_construction_evidence,
 )
 from kronos.swing.v1.observation_research_ledger_v2 import (
+    with_completion_trading_dates,
     CurrentMarketFactV2,
     websocket_presentation_state,
 )
@@ -1621,18 +1622,9 @@ class _BrowserHandler(BaseHTTPRequestHandler):
                 preliminary = self.server.trade_window.observation_operational_handoffs_v2(
                     governed_current_trading_date=governed_date,
                 )
-                completion_dates = {}
-                for item in preliminary:
-                    if item.completion_timestamp is None:
-                        continue
-                    completion_date = self.server.application.swing_trading_date_for(
-                        item.completion_timestamp
-                    )
-                    if completion_date is not None:
-                        completion_dates[item.decision_identity] = completion_date
-                operational = self.server.trade_window.observation_operational_handoffs_v2(
-                    governed_current_trading_date=governed_date,
-                    completion_trading_dates=completion_dates,
+                operational = with_completion_trading_dates(
+                    preliminary, governed_date,
+                    self.server.application.swing_trading_date_for,
                 )
                 projection = project_historical_reports(
                     operational,
@@ -1780,19 +1772,9 @@ class _BrowserHandler(BaseHTTPRequestHandler):
                         current_facts=facts,
                         governed_current_trading_date=governed_date,
                     )
-                    completion_dates = {}
-                    for item in preliminary:
-                        if item.completion_timestamp is None:
-                            continue
-                        completion_date = self.server.application.swing_trading_date_for(
-                            item.completion_timestamp
-                        )
-                        if completion_date is not None:
-                            completion_dates[item.decision_identity] = completion_date
-                    operational = self.server.trade_window.observation_operational_handoffs_v2(
-                        current_facts=facts,
-                        governed_current_trading_date=governed_date,
-                        completion_trading_dates=completion_dates,
+                    operational = with_completion_trading_dates(
+                        preliminary, governed_date,
+                        self.server.application.swing_trading_date_for,
                     )
                 self._html(render_trade_journal(
                     snapshot,

@@ -15,6 +15,8 @@ from typing import Mapping
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
+from kronos.common.validated_reuse import ValidatedBytesReuse
+
 from kronos.intraday.completed_evidence import (
     CompletedEvidenceScheduleLineage,
     CompletedEvidenceSelection,
@@ -202,6 +204,7 @@ class ProbablesV2Store:
         if not isinstance(root, Path) or not root.is_absolute() or root == Path("/"):
             raise ValueError("INTRADAY_PROBABLES_V2_STORE_ROOT_INVALID")
         self._root = root
+        self._validated = ValidatedBytesReuse(max_entries=4096)
         with _PRODUCER_LOCKS_LOCK:
             self._lock = _PRODUCER_LOCKS.setdefault(root.resolve(), RLock())
 
@@ -503,7 +506,15 @@ class ProbablesV2Store:
         return path
 
     def _load_typed(self, family: str, identity: str, expected: type, identity_name: str):  # type: ignore[no-untyped-def]
-        value = _artifact_from_bytes(_read(self._path(family, identity)))
+        path = self._path(family, identity)
+        encoded = _read(path)
+        # Validators and typed constructors are startup-pinned source authority.
+        # Registry replacement (including schema/constructor changes) cannot hit.
+        token = (_artifact_from_bytes, _from_wire, _identity, _encode, expected,
+                 tuple(_ENUMS.items()),
+                 tuple((name, cls, getattr(cls, "__post_init__", None))
+                       for name, cls in _DATACLASSES.items()))
+        value = self._validated.load(path, encoded, token, _artifact_from_bytes)
         if type(value) is not expected or getattr(value, identity_name, None) != identity:
             raise ProbablesV2Error("PROBABLES_V2_ARTIFACT_INTEGRITY_INVALID")
         return value

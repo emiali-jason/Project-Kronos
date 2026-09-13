@@ -18,6 +18,8 @@ from pathlib import Path
 import re
 from threading import RLock
 
+from kronos.common.validated_reuse import ValidatedBytesReuse
+
 from kronos.swing.run_identity import is_swing_analysis_run_id
 from kronos.swing.v1.models import V1Direction
 from kronos.swing.v1.native_sponsor_decision import SponsorTradeChoice
@@ -447,6 +449,7 @@ class LocalPaperObservationTrackStore:
         if not self.root.is_absolute():
             raise ValueError("PAPER_OBSERVATION_STORE_INVALID")
         self._lock = RLock()
+        self._validated_facts = ValidatedBytesReuse()
 
     def retain_track(self, track: PaperObservationTrackV1) -> PaperObservationTrackV1:
         if type(track) is not PaperObservationTrackV1:
@@ -539,12 +542,24 @@ class LocalPaperObservationTrackStore:
     def facts(self, track_identity: str) -> tuple[PaperObservationMarketFactV1, ...]:
         try:
             records = tuple(
-                _fact_from_dict(_read(path)["fact"])
+                self._load_fact(path)
                 for path in sorted((self.root / track_identity / "facts").glob("*.json"))
             )
         except (KeyError, TypeError, ValueError, AttributeError) as error:
             raise ValueError("PAPER_OBSERVATION_STORED_RECORD_INVALID") from error
         return tuple(sorted(records, key=lambda item: (item.observed_at, item.fact_identity)))
+
+    def _load_fact(self, path: Path) -> PaperObservationMarketFactV1:
+        try:
+            encoded = path.read_bytes()
+        except OSError as error:
+            raise ValueError("PAPER_OBSERVATION_STORED_RECORD_INVALID") from error
+        token = (PAPER_OBSERVATION_TRACK_STORE_SCHEMA,
+                 PAPER_OBSERVATION_TRACK_CONTRACT_VERSION,
+                 PAPER_OBSERVATION_TRACK_POLICY_VERSION,
+                 PaperObservationMarketFactV1, PaperObservationMarketFactV1.__post_init__,
+                 _fact_from_bytes, _fact_from_dict, _record_digest, _primitive)
+        return self._validated_facts.load(path, encoded, token, _fact_from_bytes)
 
     def monitoring(
         self, track_identity: str
@@ -727,6 +742,13 @@ def _track_from_dict(value: dict[str, object]) -> PaperObservationTrackV1:
     )
     data["provenance"] = tuple(data["provenance"])
     return PaperObservationTrackV1(**data)
+
+
+def _fact_from_bytes(encoded: bytes) -> PaperObservationMarketFactV1:
+    payload = json.loads(encoded.decode("utf-8"))
+    if type(payload) is not dict or payload.get("schema") != PAPER_OBSERVATION_TRACK_STORE_SCHEMA:
+        raise ValueError("PAPER_OBSERVATION_STORED_RECORD_INVALID")
+    return _fact_from_dict(payload["fact"])
 
 
 def _fact_from_dict(value: dict[str, object]) -> PaperObservationMarketFactV1:

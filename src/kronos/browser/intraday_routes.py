@@ -299,9 +299,8 @@ class IntradayBrowserRoutes:
             return None
         application = self._review_v2_control.application
         try:
-            if not application.currentness().is_review_current:
-                return None
-            return application.snapshot()
+            snapshot = application.snapshot()
+            return snapshot if snapshot.probables_run_identity is not None else None
         except ReviewError:
             return None
 
@@ -314,10 +313,14 @@ class IntradayBrowserRoutes:
             from kronos.application.intraday_review_v2 import IntradayReviewV2Snapshot
             return IntradayReviewV2Snapshot(None, None, ())
 
-    def _review_v2_status(self):  # type: ignore[no-untyped-def]
+    def _review_v2_status(self, snapshot=None):  # type: ignore[no-untyped-def]
         if self._review_v2_control is None:
             return None
-        status = self._review_v2_control.status_document()
+        # Reuse only a successfully populated projection from this GET. Failed
+        # or empty reads retain the control's original error/currentness path.
+        status = self._review_v2_control.status_document(
+            snapshot=snapshot if snapshot is not None and snapshot.probables_run_identity is not None else None
+        )
         try:
             if self._visual_reconciliation_v2_control is not None:
                 status["reconciliation"] = (
@@ -428,14 +431,15 @@ class IntradayBrowserRoutes:
             selected = request.path.removeprefix(detail_prefix)
             renderer = render_intraday_detail
         elif request.path == "/intraday/review":
+            review_snapshot = self._review_v2_snapshot()
             return BrowserRouteResponse(
                 render_intraday_review(
                     snapshot_provider(),
                     self._review.snapshot(),
                     self._reconciliation.snapshot(),
-                    review_v2=self._review_v2_snapshot(),
+                    review_v2=review_snapshot,
                     available_probables_v2_run=self._current_probables_v2(),
-                    review_v2_status=self._review_v2_status(),
+                    review_v2_status=self._review_v2_status(review_snapshot),
                     focused_candidate=request.query.get("candidate", [None])[0],
                 )
             )

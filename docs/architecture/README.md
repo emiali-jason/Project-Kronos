@@ -213,3 +213,13 @@ WO-12 remains research authority. LIVE remains uncommissioned, Observation is
 non-exposure, and NATGAS remains HELD. Source identities and presentation deletion
 boundaries are preserved. Publication/runtime/production remain separately gated;
 PERF/LAG-01 is not started.
+
+
+## PERF/LAG-01 read-mechanics engineering
+
+**Status:** Sponsor/EA authorized engineering; release separately gated.
+[ADR-0055](adr/ADR-0055-PERF-LAG-01-VALIDATED-READ-REUSE.md) records bounded exact-byte
+validation reuse and single-population presentation. It preserves current-pointer,
+lineage, Swing observation and startup authority. It supersedes only the earlier
+“PERF/LAG-01 is not started” progress statement. No deployment is authorized by
+this documentation; qualification and release gates remain separate.

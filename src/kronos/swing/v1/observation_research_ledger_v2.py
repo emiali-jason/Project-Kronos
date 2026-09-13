@@ -7,7 +7,7 @@ reinterprets historical V1 rows and never creates trading authority.
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import date, datetime
 from decimal import Decimal
 from enum import StrEnum
@@ -489,7 +489,9 @@ class ObservationResearchLedgerV2Service:
     ) -> tuple[ObservationResearchProjectionV2, ...]:
         query = query or ObservationResearchQueryV2()
         links = self.store.load_links()
-        projections = tuple(self._projection(record, links) for record in self.store.load_records())
+        records = self.store.load_records()
+        sources = self.v1.snapshot() if records else ()
+        projections = tuple(self._projection(record, links, sources) for record in records)
         return tuple(sorted(
             (item for item in projections if _matches(item, query)),
             key=lambda item: (
@@ -542,9 +544,9 @@ class ObservationResearchLedgerV2Service:
             for item in self.synchronize()
         )
 
-    def _source(self, record: ObservationResearchRecordV2) -> ObservationResearchProjectionV1:
+    def _source(self, record: ObservationResearchRecordV2, sources=None) -> ObservationResearchProjectionV1:
         matches = tuple(
-            item for item in self.v1.snapshot()
+            item for item in (self.v1.snapshot() if sources is None else sources)
             if item.record.decision_identity == record.decision_identity
         )
         if (
@@ -562,8 +564,9 @@ class ObservationResearchLedgerV2Service:
         self,
         record: ObservationResearchRecordV2,
         links: tuple[PaperObservationResearchLinkV2, ...],
+        sources=None,
     ) -> ObservationResearchProjectionV2:
-        source = self._source(record)
+        source = self._source(record, sources)
         bound = tuple(sorted(
             (link for link in links if link.record_identity == record.record_identity),
             key=lambda item: (item.source_timestamp, item.kind.value, item.link_identity),
@@ -781,6 +784,30 @@ def _export_row(item: ObservationResearchProjectionV2) -> dict[str, object]:
     }
 
 
+def with_completion_trading_dates(handoffs, current_trading_date, resolve_date):
+    """Route one validated handoff population with the governed calendar."""
+    return tuple(replace(
+        item,
+        operational_route=_operational_route(
+            item.completion_timestamp,
+            None if item.completion_timestamp is None else resolve_date(item.completion_timestamp),
+            current_trading_date,
+        ),
+    ) for item in handoffs)
+
+
+def _operational_route(completion, completion_trading_date, current_trading_date):
+    return (
+        ObservationOperationalRoute.ACTIVE
+        if completion_trading_date is None and completion is None
+        else (
+            ObservationOperationalRoute.COMPLETED_CURRENT_TRADING_DAY
+            if completion_trading_date == current_trading_date
+            else ObservationOperationalRoute.HISTORICAL
+        )
+    )
+
+
 def _operational_handoff(
     item: ObservationResearchProjectionV2,
     market: CurrentMarketFactV2 | None,
@@ -824,15 +851,7 @@ def _operational_handoff(
         if paper is not None
         else None if position_fact is None else position_fact.completion_timestamp
     )
-    route = (
-        ObservationOperationalRoute.ACTIVE
-        if completion_trading_date is None and completion is None
-        else (
-            ObservationOperationalRoute.COMPLETED_CURRENT_TRADING_DAY
-            if completion_trading_date == current_trading_date
-            else ObservationOperationalRoute.HISTORICAL
-        )
-    )
+    route = _operational_route(completion, completion_trading_date, current_trading_date)
     objective = _latest_v1(item.source.links, ObservationLinkKind.OBJECTIVE_MODEL_OUTCOME)
     model = _latest_v1(item.source.links, ObservationLinkKind.KR390_OBJECTIVE_MODEL)
     mode = (

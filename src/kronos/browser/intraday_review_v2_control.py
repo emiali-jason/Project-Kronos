@@ -78,12 +78,14 @@ class IntradayReviewV2OperationalControl:
     def application(self) -> IntradayReviewV2Application:
         return self._application
 
-    def status_document(self) -> dict[str, object]:
+    def status_document(self, *, snapshot=None) -> dict[str, object]:
+        if snapshot is not None and type(snapshot) is not IntradayReviewV2Snapshot:
+            raise ValueError("INTRADAY_REVIEW_V2_STATUS_SNAPSHOT_INVALID")
         with self._state_lock:
             active = self._active_operation_identity
         latest = self._store.latest()
         try:
-            snapshot = self._application.snapshot()
+            snapshot = self._application.snapshot() if snapshot is None else snapshot
             currentness = self._application.currentness()
             if (not currentness.is_review_current
                 or snapshot.probables_run_identity != currentness.current_probables_run_identity):

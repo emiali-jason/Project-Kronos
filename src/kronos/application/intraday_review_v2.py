@@ -449,8 +449,8 @@ class IntradayReviewV2Application:
         return ("NO_REVIEW_LOADED" if currentness.current_review_probables_run_identity is None
                 else "REVIEW_NON_CURRENT")
 
-    def _require_current_workspace(self, run_identity=None, cycle_identity=None):
-        currentness = self.currentness()
+    def _require_current_workspace(self, run_identity=None, cycle_identity=None, *, currentness=None):
+        currentness = self.currentness() if currentness is None else currentness
         pointer = self._review.load_current()
         if (not currentness.is_review_current or pointer is None
             or pointer.probables_run_identity != currentness.current_probables_run_identity
@@ -518,12 +518,13 @@ class IntradayReviewV2Application:
         """Project persisted Phase-A facts without creating or advancing Review."""
 
         with self._lock, self._probables.current_generation_guard():
-            if not self.currentness().is_review_current:
+            currentness = self._currentness_locked()
+            if not currentness.is_review_current:
                 return IntradayReviewV2Snapshot(None, None, ())
-            return self._loaded_snapshot()
+            pointer = self._require_current_workspace(currentness=currentness)
+            return self._loaded_snapshot(pointer)
 
-    def _loaded_snapshot(self) -> IntradayReviewV2Snapshot:
-        pointer = self._require_current_workspace()
+    def _loaded_snapshot(self, pointer) -> IntradayReviewV2Snapshot:
         # Display and batch transport share the governed retained Review order.
         cycles = tuple(self._review.load_cycle(item.cycle_identity) for item in pointer.cycles)
         packs: list[ReviewQuestionPackV2] = []
