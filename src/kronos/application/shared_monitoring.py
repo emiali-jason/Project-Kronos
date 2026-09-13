@@ -29,6 +29,7 @@ class SharedSwingMonitoringHub:
         self._connection_listener: Callable[[MonitoringConnectionState], None] | None = None
         self._connection_state: MonitoringConnectionState | None = None
         self._latest_ticks: dict[InstrumentRecord, ProviderMarketTick] = {}
+        self._last_interruption = None
 
     def set_connection_listener(
         self, listener: Callable[[MonitoringConnectionState], None]
@@ -106,6 +107,36 @@ class SharedSwingMonitoringHub:
                 if identity in self._registrations
             ))
 
+    def status_document(self):
+        """Bounded factual snapshot; no calls into Provider or owner consumers."""
+        with self._lock:
+            def instrument(item):
+                return {"exchange": item.exchange, "segment": item.segment,
+                        "trading_symbol": item.trading_symbol}
+            owners = []
+            for registration in self._registrations.values():
+                scopes = []
+                for item in sorted(registration._instruments, key=lambda i: (i.exchange, i.segment, i.trading_symbol)):
+                    tick = self._latest_ticks.get(item)
+                    scopes.append({**instrument(item), "latest_observation": None if tick is None else {
+                        "connection_id": tick.connection_id, "observed_at": tick.observed_at.isoformat(),
+                        "received_at": tick.received_at.isoformat(), "source_sequence": tick.source_sequence,
+                        "session_continuous": tick.session_continuous,
+                        "previous_interval_available": tick.previous_interval_available,
+                        "ordering_deterministic": tick.ordering_deterministic, "recovered": tick.recovered}})
+                owners.append({"owner_identity": registration.owner_identity,
+                    "registered": True, "subscribed": registration._connected, "instruments": scopes})
+            return {"schema": "KRONOS-SHARED-MONITORING-STATUS/1.0.0",
+                "hub_state": "REGISTERED" if owners else "IDLE",
+                "transport_state": (self._connection_state.value if self._connection_state is not None
+                                    else "CONNECTING" if self._session is not None else "IDLE"),
+                "session_count": int(self._session is not None),
+                "owner_count": len(owners), "subscription_count": len(self._by_instrument),
+                "subscriptions": [instrument(i) for i in sorted(self._by_instrument,
+                    key=lambda i: (i.exchange, i.segment, i.trading_symbol))],
+                "owners": owners, "last_interruption": self._last_interruption,
+                "continuity_authority": "PER_OWNER_LIFECYCLE_EVIDENCE_NOT_RECONSTRUCTED"}
+
     def close(self) -> None:
         with self._lock:
             registrations = tuple(self._registrations.values())
@@ -164,6 +195,7 @@ class SharedSwingMonitoringHub:
                 self._session = None
                 self._capability = None
                 self._connection_state = MonitoringConnectionState.DISCONNECTED
+                self._last_interruption = MonitoringConnectionState.DISCONNECTED.value
                 self._latest_ticks.clear()
             registration._connected = False
         if self.maintenance_governance is not None and self.maintenance_governance.shutting_down:
@@ -202,6 +234,8 @@ class SharedSwingMonitoringHub:
             raise TypeError("SHARED_MONITORING_CONNECTION_STATE_INVALID")
         with self._lock:
             self._connection_state = state
+            if state is not MonitoringConnectionState.CONNECTED:
+                self._last_interruption = state.value
             listener = self._connection_listener
             consumers = tuple(
                 registration._consumer for registration in self._registrations.values()

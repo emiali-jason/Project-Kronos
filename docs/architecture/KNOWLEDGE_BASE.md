@@ -253,3 +253,9 @@ not a close trigger. Existing operational admission remains authoritative. No
 production activation, runtime transition or historical rewrite is authorized.
 After model Entry the only trading exit reasons are STOP_LOSS, TARGET and
 SPONSOR_EXIT; terminal/data statuses remain separate.
+
+## RUNTIME-01 shared startup and state
+
+**Status:** Sponsor/EA authorized bounded engineering, candidate pending review.
+
+[ADR-0050](adr/ADR-0050-RUNTIME-01-CLEAN-STARTUP-AND-SHARED-STATE.md) establishes clean published canonical startup, health-gated automatic maintenance completion, unchanged exact/approved-compatible WO-06H restoration and inert shared-state observability. Publication, canonical deployment and runtime operations remain separately gated.

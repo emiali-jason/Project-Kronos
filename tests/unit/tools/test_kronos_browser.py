@@ -2,6 +2,14 @@ from pathlib import Path
 
 from kronos.application.shared_monitoring import SharedSwingMonitoringHub
 from tools import kronos_browser
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def isolated_composition_authority(monkeypatch):
+    # Tests compose fake servers in the kernel-isolated test home; no production bypass.
+    monkeypatch.setattr("tools.runtime_source_gate.qualify_startup", lambda *_: "a" * 40)
+    monkeypatch.setattr("kronos.browser.runtime_state.complete_startup", lambda *_: None)
 
 
 def test_launcher_uses_loopback_server_and_opens_swing_workspace(monkeypatch) -> None:

@@ -1124,11 +1124,13 @@ class KronosBrowserServer(ThreadingHTTPServer):
         if completed_capability is not None and capability is not completed_capability:
             return
         if capability is None or getattr(capability, "active", False) is not True:
+            self.monitoring_restoration_state = "DEFERRED_PROVIDER_DISCONNECTED"
             self.trade_window.mark_paper_observation_monitoring_unavailable(
                 "PROVIDER_CAPABILITY_NOT_ACTIVE"
             )
             self._synchronize_trade_window()
             return
+        self.monitoring_restoration_state = "RESTORATION_ATTEMPTED_SEE_OWNER_EVIDENCE"
         for projection in self.trade_window.projections():
             inputs = self.trade_window.current_operability_inputs(
                 projection.native_run_identity, projection.canonical_instrument
@@ -1794,6 +1796,10 @@ class _BrowserHandler(BaseHTTPRequestHandler):
                 "V0 workspaces are reference-only and are not in the active workflow.",
             )
             return
+        if path == "/runtime/status":
+            from kronos.browser.runtime_state import status_document
+            self._json(status_document(self.server))
+            return
         if path == "/status":
             diagnostic = self.server.application.analysis_diagnostic()
             live_monitoring = self.server.application.live_monitoring_result()
@@ -1812,9 +1818,10 @@ class _BrowserHandler(BaseHTTPRequestHandler):
                 "live_monitoring": live_monitoring.state.value,
             }
             if self.server.connection_governance is not None:
-                payload["maintenance"] = {"protocol": "KRONOS_MAINTENANCE_HANDOFF_V1",
-                    "active": self.server.connection_governance.maintenance_active,
-                    "generation": self.server.connection_governance.maintenance_identity}
+                payload["maintenance"] = self.server.connection_governance.maintenance_status()
+                payload["runtime_ready"] = (self.server.connection_governance.startup_state == "READY"
+                    and not self.server.connection_governance.maintenance_active
+                    and not self.server.connection_governance.shutting_down)
             if diagnostic is not None:
                 payload["analysis_diagnostic"] = {
                     "attempt_id": diagnostic.attempt_id,
@@ -3909,17 +3916,6 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             return None
 
     def _html(self, body: str) -> None:
-        governance = self.server.connection_governance
-        if governance is not None:
-            for surface in ("HEADER", "SETTINGS"):
-                marker = f'data-provider-control="{surface}"'
-                body = body.replace(marker + ">", marker + '><input type="hidden" name="action_reference" value="' + governance.action_reference(surface) + '">')
-            if governance.maintenance_active:
-                banner = ('<aside role="status"><p>Controlled maintenance: Provider disconnected. '
-                    'End maintenance before explicitly connecting Provider.</p><form method="post" '
-                    'action="/control/maintenance/exit"><input type="hidden" name="action_reference" value="'
-                    + governance.action_reference("MAINTENANCE_EXIT") + '"><button type="submit">END MAINTENANCE</button></form></aside>')
-                body = re.sub(r"<body\b[^>]*>", lambda match: match.group(0) + banner, body, count=1)
         self._respond(HTTPStatus.OK, body.encode("utf-8"), "text/html; charset=utf-8")
 
     def _png_asset(self, path: Path) -> None:
@@ -3955,6 +3951,9 @@ class _BrowserHandler(BaseHTTPRequestHandler):
         *,
         filename: str | None = None,
     ) -> None:
+        if content_type.startswith("text/html"):
+            from kronos.browser.runtime_state import decorate_html
+            body = decorate_html(body.decode("utf-8"), self.server.connection_governance).encode("utf-8")
         self.send_response(status)
         self._security_headers()
         self.send_header("Content-Type", content_type)

@@ -158,6 +158,36 @@ class SharedAuthenticatedProviderRuntime:
         self.__valid_through: datetime | None = None
         self.__failure = ""
 
+    def read_only_status(self) -> dict[str, object]:
+        """Project retained authority without synchronizing, leasing or Provider calls.
+
+        A retained unexpired capability is not revalidated operation authority.
+        Existing use/admission paths still perform their normal strict checks.
+        """
+        with self.__lock:
+            try:
+                now = self.__now()
+                expired = self.__valid_through is not None and now >= self.__valid_through
+                clock_state = "ESTABLISHED"
+            except ValueError:
+                expired = False
+                clock_state = "UNAVAILABLE"
+            state = ("ABSENT" if self.__capability is None else
+                     "UNAVAILABLE_CLOCK" if clock_state == "UNAVAILABLE" else
+                     "EXPIRED" if expired else
+                     "RETAINED_UNEXPIRED" if self.__lifecycle is SharedProviderRuntimeLifecycle.ACTIVE else
+                     "UNAVAILABLE")
+            return {"schema": "KRONOS-PROVIDER-RETAINED-STATUS/1.0.0",
+                "provider": self.__provider_identity,
+                "retained_lifecycle": self.__lifecycle.value,
+                "capability_state": state,
+                "context_identity": self.__context_identity or None,
+                "valid_through": None if self.__valid_through is None else self.__valid_through.isoformat(),
+                "clock_state": clock_state,
+                "retained_availability": self.__availability.value,
+                "retained_lease_count": len(self.__leases),
+                "operation_authority": "REVALIDATION_REQUIRED_ON_USE"}
+
     @property
     def provider_identity(self) -> str:
         return self.__provider_identity

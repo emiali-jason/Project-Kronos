@@ -174,7 +174,8 @@ static int backend_is_ready(void) {
         strstr(response, "HTTP/1.0 200") != NULL &&
         strstr(response, "\"service\":\"KRONOS_BROWSER_V1\"") != NULL &&
         strstr(response, "\"provider\"") != NULL &&
-        strstr(response, "\"analysis\"") != NULL
+        strstr(response, "\"analysis\"") != NULL &&
+        strstr(response, "\"runtime_ready\":true") != NULL
     );
 }
 
@@ -346,6 +347,19 @@ static int wait_for_backend_stop(pid_t backend_pid) {
     return 0;
 }
 
+static int qualify_source(const char *repository, const char *python) {
+    char gate[PATH_MAX];
+    if (snprintf(gate, sizeof(gate), "%s/tools/runtime_source_gate.py", repository) < 0) return 0;
+    pid_t child = fork();
+    if (child < 0) return 0;
+    if (child == 0) {
+        execl(python, python, "-B", gate, (char *)NULL);
+        _exit(1);
+    }
+    int status = 0;
+    return waitpid(child, &status, 0) == child && WIFEXITED(status) && WEXITSTATUS(status) == 0;
+}
+
 static int start_backend(
     const char *repository,
     const char *python,
@@ -359,9 +373,7 @@ static int start_backend(
     if (child < 0) return 0;
     if (child == 0) {
         if (setsid() < 0) _exit(1);
-        pid_t grandchild = fork();
-        if (grandchild < 0) _exit(1);
-        if (grandchild > 0) _exit(0);
+        /* Keep the canonical parent alive until the backend qualifies itself. */
 
         int devnull = open("/dev/null", O_RDWR);
         if (devnull >= 0) {
@@ -384,14 +396,12 @@ static int start_backend(
             (void)unsetenv("KRONOS_MAINTENANCE_PARENT");
             (void)unsetenv("KRONOS_MAINTENANCE_PROOF");
         }
-        execl(python, python, browser_entry, "--no-browser", (char *)NULL);
+        execl(python, python, "-B", browser_entry, "--no-browser", (char *)NULL);
         _exit(1);
     }
     int status = 0;
-    if (waitpid(child, &status, 0) != child || !WIFEXITED(status) || WEXITSTATUS(status) != 0) {
-        return 0;
-    }
     for (int attempt = 0; attempt < 300; ++attempt) {
+        if (waitpid(child, &status, WNOHANG) == child) return 0;
         if (backend_is_ready()) return 1;
         usleep(100000);
     }
@@ -443,6 +453,12 @@ int main(void) {
     if (access(python, X_OK) != 0 || access(browser_entry, R_OK) != 0) {
         return show_not_ready();
     }
+
+    /* Fail before touching the old runtime or publishing a handoff. */
+    if (!qualify_source(repository, python)) return show_alert(
+        "KRONOS source qualification failed",
+        "A clean published develop revision and verified source proof are required. No runtime transition was started. Contact Engineering."
+    );
 
     pid_t backend_pid = 0;
     char token[65] = {0};

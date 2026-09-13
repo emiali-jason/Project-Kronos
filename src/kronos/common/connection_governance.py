@@ -164,6 +164,8 @@ class ConnectionGovernance:
         self.maintenance_identity = maintenance_identity
         self.maintenance_active = maintenance_identity is not None
         self.shutting_down = False
+        self.startup_state = "NOT_ASSESSED"
+        self.startup_failure = None
         self._key = secrets.token_bytes(32)
         self._pending: dict[str, ConnectionRequest] = {}
         self._context = ContextVar("connection_request", default=None)
@@ -270,6 +272,33 @@ class ConnectionGovernance:
                 })
                 self.maintenance_active = False
             return True
+
+    def maintenance_status(self):
+        with self.lock:
+            state = ("FAILED_ACTIVE" if self.maintenance_active and self.startup_failure
+                     else "ACTIVE" if self.maintenance_active else "INACTIVE")
+            return {"protocol": "KRONOS_MAINTENANCE_HANDOFF_V1", "state": state,
+                    "active": self.maintenance_active, "generation": self.maintenance_identity,
+                    "startup": self.startup_state, "failure": self.startup_failure}
+
+    def complete_startup(self, failure=None):
+        """Only the startup compositor supplies this bounded health result."""
+        with self.lock:
+            if self.startup_state in {"READY", "BLOCKED"}:
+                return
+            if self.shutting_down or failure is not None:
+                self.startup_state = "BLOCKED"
+                self.startup_failure = failure or "RUNTIME_SHUTTING_DOWN"
+                self.maintenance_active = True
+                return
+            immutable_write(self.store.root / "maintenance" / f"{self.process.runtime_identity}-startup.json", {
+                "schema": "RUNTIME_STARTUP_MAINTENANCE_EXIT_V1",
+                "runtime_identity": self.process.runtime_identity,
+                "maintenance_identity": self.maintenance_identity,
+                "at": self.clock().isoformat(), "trigger": "VERIFIED_CANONICAL_STARTUP",
+            })
+            self.maintenance_active = False
+            self.startup_state = "READY"
 
     def require_operations(self):
         if self.maintenance_active or self.shutting_down:

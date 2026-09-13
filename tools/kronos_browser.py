@@ -97,6 +97,8 @@ def _parser() -> argparse.ArgumentParser:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
+    from tools.runtime_source_gate import qualify_startup
+    qualify_startup(Path(__file__).resolve().parents[1], _STARTUP_EVIDENCE)
     process_identity = sha256(_STARTUP_EVIDENCE.evidence_identity.encode()).hexdigest()
     maintenance = consume_startup_context(DEFAULT_BACKEND_CONTROL_PATH.parent, os.environ,
         revision=_STARTUP_EVIDENCE.source_revision, source_state=_STARTUP_EVIDENCE.source_state,
@@ -106,7 +108,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         _STARTUP_EVIDENCE.process_id, _STARTUP_EVIDENCE.startup_boundary_at.isoformat(),
         process_identity, _STARTUP_EVIDENCE.source_revision, _STARTUP_EVIDENCE.source_state),
         ConnectionAuditStore(Path.home() / "Library/Application Support/KRONOS/evidence/shared/provider-connection-v1"),
-        maintenance_identity=maintenance)
+        maintenance_identity=maintenance or process_identity)
     mtf_fact_store = MtfFactEvidenceStore(DEFAULT_MTF_FACT_EVIDENCE_ROOT)
     native_discovery_store = NativeDiscoveryEvidenceStore(
         DEFAULT_NATIVE_DISCOVERY_EVIDENCE_ROOT
@@ -275,6 +277,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             intraday_discovery_control=intraday_discovery_control,
             intraday_historical_control=intraday_historical_control,
         )
+        server.provider_runtime = shared_provider_runtime
         server.intraday_wo09_notification_sources = (
             intraday_runtime.wo09_store.load_notifications
         )
@@ -289,6 +292,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     except Exception:
         restart_control.remove()
         raise
+    from kronos.browser.runtime_state import complete_startup
+    complete_startup(server, intraday_runtime.discovery_v2_operation.live_shadow)
     url = f"http://127.0.0.1:{server.server_port}/swing/opportunities"
     if not args.no_browser:
         webbrowser.open_new_tab(url)
