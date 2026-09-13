@@ -259,3 +259,7 @@ SPONSOR_EXIT; terminal/data statuses remain separate.
 **Status:** Sponsor/EA authorized bounded engineering, candidate pending review.
 
 [ADR-0050](adr/ADR-0050-RUNTIME-01-CLEAN-STARTUP-AND-SHARED-STATE.md) establishes clean published canonical startup, health-gated automatic maintenance completion, unchanged exact/approved-compatible WO-06H restoration and inert shared-state observability. Publication, canonical deployment and runtime operations remain separately gated.
+
+## Swing V3 immutable rendered-artifact recovery
+
+[ADR-0051](adr/ADR-0051-SWING-V3-IMMUTABLE-ARTIFACT-RECOVERY.md) records Sponsor-authorized EVIDENCE-RECOVERY-01/01A: measured contract wrapping, exact canonical source rendering, immutable predecessor/successor lineage and isolated restoration. Question/Answer and analytical semantics remain unchanged. Production supersession and runtime operations remain separately gated.

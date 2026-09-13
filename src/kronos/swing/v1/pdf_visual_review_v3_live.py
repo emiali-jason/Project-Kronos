@@ -26,9 +26,12 @@ from zoneinfo import ZoneInfo
 from pypdf import PdfReader, PdfWriter
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet
-from reportlab.platypus import Paragraph, Preformatted, SimpleDocTemplate, Spacer
+from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer
 
 from kronos.configuration.pdf_visual_review import PdfVisualReviewConfiguration
+from kronos.swing.v1.pdf_contract_layout_v3 import (
+    PAGE_MARGIN, PARAGRAPH_SPACING, contract_block,
+)
 from kronos.swing.v1.pdf_visual_review import (
     BEGIN_GOVERNED_ANSWER_DATA,
     END_GOVERNED_ANSWER_DATA,
@@ -229,6 +232,8 @@ class VisualV3PdfRecordStore:
         record = _pack_from_dict(payload.get("record"))
         if record.review_pack_id != selection.get("review_pack_id"):
             raise ValueError("VISUAL_V3_REVIEW_PACK_RESTORE_INVALID")
+        from kronos.swing.v1.pdf_visual_review_v3_recovery import resolve_selected_artifact
+        record = resolve_selected_artifact(self, record, selection)
         _verify_question_pdf(Path(record.question_path), record)
         return record
 
@@ -317,9 +322,13 @@ class VisualV3PdfRecordStore:
                 for pack, requests in zip(record.candidate_packs, ordered, strict=True)
             ):
                 raise PdfReviewTransportError("REVIEW_PACK_REPLAY_CONFLICT")
+            # Resolve an explicitly selected rendered successor before replay.
+            # Canonical analytical bindings above still use the immutable pack.
+            current = self._load_current()
+            if current is not None and current.review_pack_id == record.review_pack_id:
+                record = current
             _verify_question_pdf(Path(record.question_path), record)
             # An old replay must never silently re-select a superseded cycle.
-            current = self._load_current()
             if current != record:
                 raise PdfReviewTransportError("VISUAL_V3_REVIEW_PACK_SUPERSEDED")
             return record
@@ -732,9 +741,9 @@ def _write_answer_contract(
     expected_answer_filename: str,
 ) -> None:
     styles = getSampleStyleSheet()
-    code_style = styles["Code"].clone("V3AnswerContractCode")
-    code_style.fontSize = 5.5
-    code_style.leading = 6.5
+    styles["BodyText"].fontSize = 9
+    styles["BodyText"].leading = 12
+    styles["BodyText"].spaceAfter = PARAGRAPH_SPACING
     first = prepared[0][0]
     population = [
         {
@@ -762,7 +771,10 @@ def _write_answer_contract(
     }
     contract = visual_evidence_v3_answer_contract()
     response_example = _complete_response_example(first)
-    document = SimpleDocTemplate(BytesIO(), pagesize=A4)
+    document = SimpleDocTemplate(
+        BytesIO(), pagesize=A4, leftMargin=PAGE_MARGIN, rightMargin=PAGE_MARGIN,
+        topMargin=PAGE_MARGIN, bottomMargin=PAGE_MARGIN, invariant=1,
+    )
     buffer = document.filename
     story = [
         Paragraph("KRONOS SWING — VISUAL V3 ANSWER CONTRACT", styles["Title"]),
@@ -776,11 +788,10 @@ def _write_answer_contract(
         Paragraph(f"Expected Answer: {expected_answer_filename}", styles["BodyText"]),
         Spacer(1, 8),
         Paragraph("Required Answer Envelope", styles["Heading2"]),
-        Preformatted(
+        contract_block(
             BEGIN_GOVERNED_ANSWER_DATA + "\n"
             + json.dumps(envelope, indent=2)
             + "\n" + END_GOVERNED_ANSWER_DATA,
-            code_style,
         ),
         Spacer(1, 8),
         Paragraph("Exact V3 Observation Contract", styles["Heading2"]),
@@ -793,7 +804,7 @@ def _write_answer_contract(
             "For Q1-Q9, why_not_covered_elsewhere is null.",
             styles["BodyText"],
         ),
-        Preformatted(json.dumps(contract, indent=2), code_style),
+        contract_block(json.dumps(contract, indent=2)),
         Spacer(1, 8),
         Paragraph("Negative and unavailable evidence", styles["Heading2"]),
         Paragraph(
@@ -843,7 +854,7 @@ def _write_answer_contract(
             "four timeframes of every candidate.",
             styles["BodyText"],
         ),
-        Preformatted(json.dumps(response_example, indent=2), code_style),
+        contract_block(json.dumps(response_example, indent=2)),
     ]
     document.build(story)
     path.write_bytes(buffer.getvalue())
