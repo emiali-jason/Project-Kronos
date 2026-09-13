@@ -29,3 +29,13 @@ Product communication must be documented through an interface contract. A Draft 
 | [Observation Research Ledger V2](KRONOS-SWING-OBSERVATION-RESEARCH-LEDGER-V2.md) | One-row Sponsor-decision population with Paper Track relationships | Approved architecture contract; runtime not started | 2 | Swing Observation Research | Decision V1 / Paper Track V1 / governed downstream evidence | Journal Observation Research / structured export | [ADR-0016](../adr/ADR-0016-SWING-PAPER-OBSERVATION-TRACK-AUTHORITY.md) |
 
 Create proposed contracts from [`INTERFACE_TEMPLATE.md`](INTERFACE_TEMPLATE.md). Do not infer interface fields, dependencies, or ownership from product names.
+
+## WO-15 / WO-16 combined engineering candidate
+
+**Status:** Sponsor/EA authorized engineering; Sponsor/EA candidate acceptance pending.
+ADR-0054 commissions bounded adaptation of the shared Portfolio and Reports
+products with separate WO-15 current-exposure and WO-16 factual-history policies.
+WO-12 remains research authority. LIVE remains uncommissioned, Observation is
+non-exposure, and NATGAS remains HELD. Source identities and presentation deletion
+boundaries are preserved. Publication/runtime/production remain separately gated;
+PERF/LAG-01 is not started.

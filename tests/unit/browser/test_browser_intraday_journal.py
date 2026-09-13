@@ -43,6 +43,6 @@ def test_swing_route_remains_shared_and_brand_is_identical():
     swing = render_trade_journal(_ready(), None, operational=(), selected_product="SWING")
     intraday = render_trade_journal(_ready(), None, operational=(), selected_product="INTRADAY",
         intraday=JournalSnapshot((), ()))
-    brand = 'src="/assets/brand/kronos-brand-mark.png" alt="KRONOS by Imran"'
+    brand = 'src="/assets/brand/kronos-sidebar-mark.png" alt=""'
     assert brand in swing and brand in intraday
     assert "NO INTRADAY JOURNAL RECORDS" not in swing

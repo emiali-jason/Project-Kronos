@@ -47,6 +47,8 @@ class ReportFamily(StrEnum):
     PAPER = "PAPER"
     LIVE = "LIVE"
     PAPER_OBSERVATION = "PAPER_OBSERVATION"
+    NONE = "NONE"
+    DO_NOTHING = "DO_NOTHING"
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,6 +62,8 @@ class ReportsQuery:
     status: str = ""
     page: int = 1
     page_size: int = 25
+    exit_reason: str = ""
+    completeness: str = ""
 
     def __post_init__(self) -> None:
         if (
@@ -74,6 +78,8 @@ class ReportsQuery:
             or type(self.instrument) is not str
             or len(self.instrument) > 80
             or self.direction not in {None, V1Direction.LONG, V1Direction.SHORT}
+            or self.exit_reason not in {"", "STOP_LOSS", "TARGET", "SPONSOR_EXIT"}
+            or self.completeness not in {"", "COMPLETE", "INCOMPLETE", "UNAVAILABLE"}
             or type(self.status) is not str
             or len(self.status) > 80
             or type(self.page) is not int or self.page < 1
@@ -105,6 +111,7 @@ class HistoricalReportRecord:
     activation_disposition: str
     source_contract_identity: str
     source_contract_version: str
+    intraday_facts: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -210,10 +217,13 @@ def export_reports_json(projection: HistoricalReportsProjection) -> bytes:
 
 def export_reports_csv(projection: HistoricalReportsProjection) -> bytes:
     target = io.StringIO()
-    fields = tuple(_export_record_fields())
+    fields = INTRADAY_FIELDS if projection.query.product is ReportProduct.INTRADAY else tuple(_export_record_fields())
     writer = csv.DictWriter(target, fieldnames=fields)
     writer.writeheader()
-    writer.writerows(_export_record(item) for item in projection.records)
+    writer.writerows(
+        {key: _safe_csv(value) for key, value in _intraday_values(item).items()}
+        if item.intraday_facts is not None else _export_record(item)
+        for item in projection.records)
     return target.getvalue().encode("utf-8")
 
 
@@ -226,15 +236,14 @@ def export_reports_xlsx(
 
     if type(projection) is not HistoricalReportsProjection:
         raise TypeError("REPORTS_EXCEL_PROJECTION_INVALID")
-    if projection.query.product is not ReportProduct.SWING:
-        raise ValueError("REPORTS_EXCEL_PRODUCT_UNAVAILABLE")
     created = datetime.now(UTC) if generated_at is None else generated_at
     if created.tzinfo is None or created.utcoffset() is None:
         raise ValueError("REPORTS_EXCEL_TIMESTAMP_INVALID")
 
     report_rows: tuple[tuple[object, ...], ...] = (
-        _xlsx_headers(),
-        *tuple(_xlsx_record(item) for item in projection.records),
+        INTRADAY_FIELDS if projection.query.product is ReportProduct.INTRADAY else _xlsx_headers(),
+        *tuple(tuple(_intraday_values(item).values()) if item.intraday_facts is not None
+               else _xlsx_record(item) for item in projection.records),
     )
     filters = _filters(projection.query)
     summary_rows: tuple[tuple[object, ...], ...] = (
@@ -271,16 +280,18 @@ def export_reports_xlsx(
         _xlsx_write(
             archive, "xl/_rels/workbook.xml.rels", _xlsx_workbook_relationships()
         )
-        _xlsx_write(archive, "xl/styles.xml", _xlsx_styles())
+        _xlsx_write(archive, "xl/styles.xml", _xlsx_styles(wrap=projection.query.product is ReportProduct.INTRADAY))
         _xlsx_write(
             archive,
             "xl/worksheets/sheet1.xml",
-            _xlsx_sheet(report_rows, header=True, auto_filter=True),
+            _xlsx_sheet(report_rows, header=True, auto_filter=True,
+                        fitted=projection.query.product is ReportProduct.INTRADAY),
         )
         _xlsx_write(
             archive,
             "xl/worksheets/sheet2.xml",
-            _xlsx_sheet(summary_rows, header=False, auto_filter=False),
+            _xlsx_sheet(summary_rows, header=False, auto_filter=False,
+                        fitted=projection.query.product is ReportProduct.INTRADAY),
         )
     return target.getvalue()
 
@@ -296,7 +307,8 @@ def reports_excel_filename(
     ):
         raise ValueError("REPORTS_EXCEL_FILENAME_INVALID")
     timestamp = generated_at.astimezone(_IST).strftime("%Y%m%d_%H%M%S")
-    return f"KRONOS_{projection.query.product.value}_REPORT_{timestamp}_IST.xlsx"
+    kind = "FACTUAL_REPORT" if projection.query.product is ReportProduct.INTRADAY else "REPORT"
+    return f"KRONOS_{projection.query.product.value}_{kind}_{timestamp}_IST.xlsx"
 
 
 def _from_operational(
@@ -400,10 +412,14 @@ def _filters(query: ReportsQuery) -> dict[str, object]:
         "instrument": query.instrument,
         "direction": None if query.direction is None else query.direction.value,
         "status": query.status,
+        **({"exit_reason": query.exit_reason, "completeness": query.completeness}
+           if query.product is ReportProduct.INTRADAY else {}),
     }
 
 
 def _export_record(item: HistoricalReportRecord) -> dict[str, object]:
+    if item.intraday_facts is not None:
+        return json.loads(item.intraday_facts)
     return {
         "record_identity": item.record_identity,
         "decision_identity": item.decision_identity,
@@ -523,20 +539,28 @@ def _xlsx_sheet(
     *,
     header: bool,
     auto_filter: bool,
+    fitted: bool = False,
 ) -> str:
     maximum = max((len(row) for row in rows), default=1)
+    fitted_widths = tuple(
+        34 if not header and index == 0 else 90 if not header else
+        34 if index == 0 else 48 if "identit" in str(rows[0][index]) or "checksum" in str(rows[0][index])
+        else max(18, min(36, len(str(rows[0][index])) + 3)) for index in range(maximum))
     xml_rows = []
     for row_number, row in enumerate(rows, start=1):
         cells = "".join(
-            _xlsx_cell(_xlsx_column(column) + str(row_number), value, header and row_number == 1)
+            _xlsx_cell(_xlsx_column(column) + str(row_number), value, header and row_number == 1, wrap=fitted)
             for column, value in enumerate(row, start=1)
         )
-        xml_rows.append(f'<row r="{row_number}">{cells}</row>')
+        import math
+        lines = max((math.ceil(len(str(value)) / max(1, fitted_widths[index] - 3)) for index, value in enumerate(row)), default=1)
+        height = f' ht="{max(24, lines * 15 + 6)}" customHeight="1"' if fitted else ''
+        xml_rows.append(f'<row r="{row_number}"{height}>{cells}</row>')
     end = f"{_xlsx_column(maximum)}{max(1, len(rows))}"
     widths = "".join(
         f'<col min="{index}" max="{index}" width="{width}" customWidth="1"/>'
         for index, width in enumerate(
-            (12, 23, 18, 11, 20, 24, 20, 14, 14, 14, 14, 25, 25, 25,
+            fitted_widths if fitted else (12, 23, 18, 11, 20, 24, 20, 14, 14, 14, 14, 25, 25, 25,
              18, 20, 22, 30, 30, 34, 18)[:maximum],
             start=1,
         )
@@ -553,8 +577,8 @@ def _xlsx_sheet(
     )
 
 
-def _xlsx_cell(reference: str, value: object, header: bool) -> str:
-    style = ' s="1"' if header else ""
+def _xlsx_cell(reference: str, value: object, header: bool, *, wrap: bool = False) -> str:
+    style = (' s="3"' if header else ' s="2"') if wrap else (' s="1"' if header else "")
     if type(value) is int or type(value) is Decimal:
         return f'<c r="{reference}"{style}><v>{xml_escape(str(value))}</v></c>'
     # inlineStr makes all Sponsor-facing text literal, including = + - @ prefixes.
@@ -629,8 +653,8 @@ def _xlsx_workbook_relationships() -> str:
     )
 
 
-def _xlsx_styles() -> str:
-    return (
+def _xlsx_styles(*, wrap: bool = False) -> str:
+    xml = (
         '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
         '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
         '<fonts count="2"><font><sz val="10"/><name val="Aptos"/></font>'
@@ -645,6 +669,14 @@ def _xlsx_styles() -> str:
         '<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>'
         '</styleSheet>'
     )
+
+    if wrap:
+        extra = ('<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyAlignment="1">'
+                 '<alignment vertical="top" wrapText="1"/></xf>'
+                 '<xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1">'
+                 '<alignment vertical="center" wrapText="1"/></xf>')
+        xml = xml.replace('<cellXfs count="2">', '<cellXfs count="4">').replace('</cellXfs>', extra + '</cellXfs>')
+    return xml
 
 
 def _xlsx_core_properties(created: datetime) -> str:
@@ -675,9 +707,95 @@ def _xlsx_app_properties() -> str:
     )
 
 
+
 __all__ = [
     "HistoricalReportRecord", "HistoricalReportsProjection", "ReportFamily",
     "ReportProduct", "ReportsOverview", "ReportsQuery", "ReportView",
     "export_reports_csv", "export_reports_json", "export_reports_xlsx",
     "project_historical_reports", "reports_excel_filename",
 ]
+
+
+# Same Reports projection, pagination and export infrastructure, exact Intraday binding.
+INTRADAY_FIELDS = (
+    "opportunity_id", "opportunity_identity", "record_identity", "decision_identity",
+    "track_identity", "source_lifecycle_identity", "truth_class", "decision", "decision_at",
+    "trading_date", "session_identity", "subject", "direction", "market_family", "contract",
+    "expiry", "setup_family", "highest_readiness", "model_lots", "entry", "entry_at",
+    "stop", "target", "planned_rr", "exit", "exit_at", "exit_reason", "terminal_status",
+    "status", "terminal", "points", "model_r", "mfe", "mae", "gross_model_result",
+    "monitoring", "completeness", "gap_count", "source_identities", "policy_identity",
+    "policy_version", "policy_checksum",
+)
+INTRADAY_NUMBERS = frozenset({"entry", "stop", "target", "planned_rr", "exit", "points",
+                             "model_r", "mfe", "mae", "gross_model_result"})
+
+
+def _safe_csv(value):
+    # Numeric negatives remain numeric. Text prefixes cannot become formulas.
+    if isinstance(value, str) and value.lstrip().startswith(("=", "+", "-", "@", "\t", "\r", "\n")):
+        return "'" + value
+    return value
+
+
+def _intraday_values(item):
+    values = json.loads(item.intraday_facts)
+    return {key: (Decimal(str(values[key])) if key in INTRADAY_NUMBERS and values[key] is not None
+                  else " | ".join(values[key]) if isinstance(values[key], list) else "UNAVAILABLE" if values[key] is None else values[key])
+            for key in INTRADAY_FIELDS}
+
+
+def project_intraday_reports(rows, query, *, governed_current_trading_date=None):
+    from kronos.intraday.wo16_reports import POLICY_IDENTITY, POLICY_VERSION, POLICY_CHECKSUM
+    from kronos.application.intraday_journal import _instant
+    if query.product is not ReportProduct.INTRADAY:
+        raise ValueError("INTRADAY_REPORT_PRODUCT_REQUIRED")
+    records = []
+    for row in rows:
+        d = row.data
+        future, geometry, metric = d["future"] or {}, d["future_geometry"] or {}, d["metrics"] or {}
+        entry, exited, observed = d["entry"] or {}, d["exit"] or {}, d["observation"] or {}
+        completion = "UNAVAILABLE" if metric.get("complete") is None else "COMPLETE" if metric["complete"] else "INCOMPLETE"
+        values = {key: d.get(key) for key in INTRADAY_FIELDS}
+        values.update(record_identity=row.identity, source_lifecycle_identity=observed.get("source_lifecycle_identity"),
+            contract=future.get("tradingsymbol") or future.get("trading_symbol"), expiry=future.get("expiry"),
+            entry=entry.get("price"), entry_at=entry.get("at"), exit=exited.get("price"), exit_at=exited.get("at"),
+            stop=geometry.get("stop"), target=geometry.get("target"),
+            **{key: metric.get(key) for key in ("points", "model_r", "mfe", "mae", "gross_model_result")},
+            completeness=completion, gap_count=observed.get("gap_count"), policy_identity=POLICY_IDENTITY,
+            policy_version=POLICY_VERSION, policy_checksum=POLICY_CHECKSUM)
+        relevant = _instant(exited.get("at") or entry.get("at") or d["decision_at"])
+        trading_date = date.fromisoformat(d["trading_date"]) if d["trading_date"] else relevant.astimezone(_IST).date()
+        family = {"PAPER_POSITION": ReportFamily.PAPER, "PAPER_OBSERVATION": ReportFamily.PAPER_OBSERVATION,
+                  "NONE": ReportFamily.NONE, "DO_NOTHING": ReportFamily.DO_NOTHING}[d["truth_class"]]
+        if query.view is ReportView.LIVE or (query.view is ReportView.PAPER and family is not ReportFamily.PAPER):
+            continue
+        if query.view is ReportView.PAPER_OBSERVATIONS and family is not ReportFamily.PAPER_OBSERVATION:
+            continue
+        if query.from_date and trading_date < query.from_date or query.to_date and trading_date > query.to_date:
+            continue
+        if query.direction and d["direction"] != query.direction.value:
+            continue
+        if query.instrument.casefold() not in " ".join(str(values[k] or "") for k in ("opportunity_id", "subject", "contract")).casefold():
+            continue
+        if query.status and query.status not in {d["status"], d["terminal_status"], d["exit_reason"], d["truth_class"]}:
+            continue
+        if query.exit_reason and query.exit_reason != d["exit_reason"]:
+            continue
+        if query.completeness and query.completeness != completion:
+            continue
+        def number(key):
+            return None if values[key] is None else Decimal(str(values[key]))
+        records.append(HistoricalReportRecord(row.identity, d["decision_identity"], trading_date, relevant,
+            d["subject"], V1Direction(d["direction"]), family, d["status"], number("entry"), number("exit"),
+            number("gross_model_result"), number("target"), number("stop"), d["exit_reason"] or "UNAVAILABLE",
+            d["terminal_status"] or "UNAVAILABLE", "UNAVAILABLE", "UNAVAILABLE", "UNAVAILABLE",
+            d["decision"], POLICY_IDENTITY, POLICY_VERSION, json.dumps(values, sort_keys=True)))
+    records = tuple(sorted(records, key=lambda r: (-r.relevant_timestamp.timestamp(), r.record_identity)))
+    total = len(records)
+    overview = ReportsOverview(total, sum(r.family is ReportFamily.PAPER for r in records), 0,
+        sum(r.family is ReportFamily.PAPER_OBSERVATION for r in records),
+        sum(json.loads(r.intraday_facts)["terminal"] for r in records), None)
+    start = (query.page - 1) * query.page_size
+    return HistoricalReportsProjection(query, governed_current_trading_date, records,
+        records[start:start + query.page_size], overview, (total + query.page_size - 1) // query.page_size, total)

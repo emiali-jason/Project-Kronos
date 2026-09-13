@@ -1,0 +1,17 @@
+{
+  "status": "Sponsor/EA authorized engineering candidate; Sponsor/EA candidate acceptance pending",
+  "policy_identity": "KRONOS-INTRADAY-WO15-PORTFOLIO-POLICY",
+  "policy_version": "1.0.0",
+  "policy_checksum": "b4e76113c7f93b5cb9e78356ac89789ddd6e6e5a172736760b4f9efabf1d5249",
+  "rules": {
+    "exposure": "WO11_ENTERED_NONTERMINAL_PAPER_POSITION",
+    "lots": 1,
+    "observation": "NON_EXPOSURE",
+    "live": "LIVE_POSITION_NOT_COMMISSIONED_V1",
+    "identity": "CONSUME_RETAINED_OPPORTUNITY_ORIGIN",
+    "price": "LATEST_PROCESS_LOCAL_WO11_ELIGIBLE_OBSERVATION_WITH_TIMESTAMP",
+    "monitoring": "EXACT_WO11_OWNER_AND_SHARED_TRANSPORT",
+    "delete": "NOT_SUPPORTED",
+    "exit": "NO_EXISTING_SHARED_PORTFOLIO_CONTROL"
+  }
+}

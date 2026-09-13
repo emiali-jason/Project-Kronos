@@ -1,0 +1,20 @@
+{
+  "status": "Sponsor/EA authorized engineering candidate; Sponsor/EA candidate acceptance pending",
+  "policy_identity": "KRONOS-INTRADAY-WO16-REPORTS-POLICY",
+  "policy_version": "1.0.0",
+  "policy_checksum": "4ed55ea343aa536fe81bb0c6bed123f7db194768501105d70afeaf8e25ad7620",
+  "rules": {
+    "authority": "CANONICAL_WO10_DECISIONS_AND_WO11_LIFECYCLE_FACTS",
+    "research": "WO12_ONLY_NO_RECALCULATION",
+    "truth": [
+      "PAPER_POSITION",
+      "PAPER_OBSERVATION",
+      "NONE",
+      "DO_NOTHING"
+    ],
+    "live": "LIVE_POSITION_NOT_COMMISSIONED_V1",
+    "presentation_deletion": "NO_EFFECT_ON_HISTORY",
+    "exports": "SHARED_FILTERED_FACTUAL_XLSX_CSV_JSON",
+    "workbook": "NOT_WO12_CANONICAL_PUBLICATION"
+  }
+}

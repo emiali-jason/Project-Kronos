@@ -231,6 +231,7 @@ _BRAND_ASSET_ROOT = (
     Path(__file__).resolve().parents[3] / "assets" / "images" / "brand"
 )
 _BRAND_MARK_ASSET = _BRAND_ASSET_ROOT / "kronos-brand-mark.png"
+_SIDEBAR_MARK_ASSET = _BRAND_ASSET_ROOT / "kronos-sidebar-mark.png"
 _FAVICON_ASSET = _BRAND_ASSET_ROOT / "kronos-favicon.png"
 _WORKSPACE_ROUTE = re.compile(r"/swing/opportunities/([1-2])\Z")
 _LOG = logging.getLogger(__name__)
@@ -1262,6 +1263,9 @@ class _BrowserHandler(BaseHTTPRequestHandler):
         if path == "/assets/brand/kronos-brand-mark.png":
             self._png_asset(_BRAND_MARK_ASSET)
             return
+        if path == "/assets/brand/kronos-sidebar-mark.png":
+            self._png_asset(_SIDEBAR_MARK_ASSET)
+            return
         if path == "/favicon.png":
             self._png_asset(_FAVICON_ASSET)
             return
@@ -1517,6 +1521,30 @@ class _BrowserHandler(BaseHTTPRequestHandler):
                 self.server.native_review.snapshot().active_lifecycle,
             ))
             return
+        if path == "/portfolio":
+            from kronos.browser.views import render_portfolio
+            query = parse_qs(urlsplit(self.path).query, keep_blank_values=True)
+            if set(query) - {"product", "search", "direction", "monitoring"} or any(len(v) != 1 for v in query.values()):
+                self._text(HTTPStatus.BAD_REQUEST, "Portfolio filter is invalid.")
+                return
+            product = query.get("product", ["SWING"])[0]
+            search = query.get("search", [""])[0]
+            direction = query.get("direction", [""])[0]
+            monitoring = query.get("monitoring", [""])[0]
+            if (product not in {"SWING", "INTRADAY"} or len(search) > 80 or direction not in {"", "LONG", "SHORT"}
+                    or monitoring not in {"", "LIVE", "INTERRUPTED", "IDLE", "UNAVAILABLE"}):
+                self._text(HTTPStatus.BAD_REQUEST, "Portfolio filter is invalid.")
+                return
+            books = getattr(self.server, "intraday_books", None)
+            try:
+                rows = () if product == "SWING" or books is None else books.portfolio(
+                    search=search, direction=direction, monitoring=monitoring)
+            except (ValueError, KeyError, TypeError, OSError):
+                self._text(HTTPStatus.SERVICE_UNAVAILABLE, "Intraday exposure source unavailable.")
+                return
+            self._html(render_portfolio(snapshot, rows, product=product, search=search,
+                                        direction=direction, monitoring=monitoring))
+            return
         if path in {
             "/reports",
             "/reports/export.xlsx",
@@ -1528,7 +1556,7 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             )
             allowed = {
                 "product", "view", "from", "to", "quick", "search",
-                "direction", "status", "page", "record",
+                "direction", "status", "page", "record", "exit_reason", "completeness",
             }
             if set(query_values).difference(allowed) or any(
                 len(value) != 1 for value in query_values.values()
@@ -1538,13 +1566,16 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             try:
                 product = ReportProduct(query_values.get("product", ["SWING"])[0])
                 view = ReportView(query_values.get("view", ["OVERVIEW"])[0])
-                governed_date = self.server.application.current_swing_trading_date()
+                governed_date = (self.server.application.current_swing_trading_date()
+                                 if product is ReportProduct.SWING else None)
                 quick = query_values.get("quick", [""])[0]
                 from_value = query_values.get("from", [""])[0]
                 to_value = query_values.get("to", [""])[0]
                 from_date = date.fromisoformat(from_value) if from_value else None
                 to_date = date.fromisoformat(to_value) if to_value else None
                 if quick:
+                    if governed_date is None:
+                        raise ValueError("REPORT_GOVERNED_CURRENT_DATE_UNAVAILABLE")
                     if quick == "TODAY":
                         from_date = to_date = governed_date
                     elif quick == "7D":
@@ -1568,6 +1599,8 @@ class _BrowserHandler(BaseHTTPRequestHandler):
                     ),
                     status=query_values.get("status", [""])[0],
                     page=int(query_values.get("page", ["1"])[0]),
+                    exit_reason=query_values.get("exit_reason", [""])[0],
+                    completeness=query_values.get("completeness", [""])[0],
                 )
                 selected_record = query_values.get("record", [None])[0]
                 if selected_record is not None and len(selected_record) > 160:
@@ -1575,35 +1608,39 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             except (TypeError, ValueError):
                 self._text(HTTPStatus.BAD_REQUEST, "Reports filter is invalid.")
                 return
-            preliminary = self.server.trade_window.observation_operational_handoffs_v2(
-                governed_current_trading_date=governed_date,
-            )
-            completion_dates = {}
-            for item in preliminary:
-                if item.completion_timestamp is None:
-                    continue
-                completion_date = self.server.application.swing_trading_date_for(
-                    item.completion_timestamp
-                )
-                if completion_date is not None:
-                    completion_dates[item.decision_identity] = completion_date
-            operational = self.server.trade_window.observation_operational_handoffs_v2(
-                governed_current_trading_date=governed_date,
-                completion_trading_dates=completion_dates,
-            )
-            projection = project_historical_reports(
-                operational,
-                self.server.native_review.journal_snapshot(),
-                reports_query,
-                governed_current_trading_date=governed_date,
-            )
-            if path == "/reports/export.xlsx":
-                if reports_query.product is ReportProduct.INTRADAY:
-                    self._text(
-                        HTTPStatus.CONFLICT,
-                        "Intraday Excel reports are not yet operational.",
-                    )
+            if reports_query.product is ReportProduct.INTRADAY:
+                from kronos.browser.reports import project_intraday_reports
+                books = getattr(self.server, "intraday_books", None)
+                try:
+                    rows = () if books is None else books.snapshot()
+                    projection = project_intraday_reports(rows, reports_query)
+                except (ValueError, OSError, KeyError, TypeError):
+                    self._text(HTTPStatus.SERVICE_UNAVAILABLE, "Intraday factual source unavailable.")
                     return
+            else:
+                preliminary = self.server.trade_window.observation_operational_handoffs_v2(
+                    governed_current_trading_date=governed_date,
+                )
+                completion_dates = {}
+                for item in preliminary:
+                    if item.completion_timestamp is None:
+                        continue
+                    completion_date = self.server.application.swing_trading_date_for(
+                        item.completion_timestamp
+                    )
+                    if completion_date is not None:
+                        completion_dates[item.decision_identity] = completion_date
+                operational = self.server.trade_window.observation_operational_handoffs_v2(
+                    governed_current_trading_date=governed_date,
+                    completion_trading_dates=completion_dates,
+                )
+                projection = project_historical_reports(
+                    operational,
+                    self.server.native_review.journal_snapshot(),
+                    reports_query,
+                    governed_current_trading_date=governed_date,
+                )
+            if path == "/reports/export.xlsx":
                 generated_at = datetime.now(UTC)
                 self._respond(
                     HTTPStatus.OK,

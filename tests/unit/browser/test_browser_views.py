@@ -102,10 +102,10 @@ def test_shared_shell_uses_approved_local_kronos_brand_assets() -> None:
 
     rendered = render_placeholder(_ready(), "Portfolio", active_nav="Portfolio")
     assert 'href="/favicon.png"' in rendered
-    assert 'src="/assets/brand/kronos-brand-mark.png"' in rendered
-    assert 'alt="KRONOS by Imran"' in rendered
-    assert 'width="184" height="184"' in rendered
-    assert '<span class="brandword">KRONOS by Imran</span>' in rendered
+    assert 'src="/assets/brand/kronos-sidebar-mark.png"' in rendered
+    assert '<span class="brandsignature">by Imran</span>' in rendered
+    assert 'width="72" height="72"' in rendered
+    assert '<span class="brandword">KRONOS</span>' in rendered
     assert 'class="brandmark">K</span>' not in rendered
     assert 'src="http://' not in rendered
     assert 'src="https://' not in rendered

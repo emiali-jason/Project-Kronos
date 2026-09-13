@@ -203,3 +203,13 @@ prospective Intraday adapter into the existing shared Notifications lifecycle,
 Browser shell and Telegram transport. Stable opportunity origins are retained
 at admitted Probables persistence; notification delivery performs no research
 publication and owns no monitoring, Provider, lifecycle or trading authority.
+
+## WO-15 / WO-16 combined engineering candidate
+
+**Status:** Sponsor/EA authorized engineering; Sponsor/EA candidate acceptance pending.
+ADR-0054 commissions bounded adaptation of the shared Portfolio and Reports
+products with separate WO-15 current-exposure and WO-16 factual-history policies.
+WO-12 remains research authority. LIVE remains uncommissioned, Observation is
+non-exposure, and NATGAS remains HELD. Source identities and presentation deletion
+boundaries are preserved. Publication/runtime/production remain separately gated;
+PERF/LAG-01 is not started.

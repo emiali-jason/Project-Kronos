@@ -245,6 +245,45 @@ class IntradayLifecycleApplication:
                 post_entry_analytical_invalidation=d["post_entry_analytical_invalidation"]))
         return dict(cards=cards,last_failure=self.last_failure,live="LIVE_POSITION_NOT_COMMISSIONED_V1")
 
+    def portfolio_observation(self, track_identity, retained):
+        """Read exact owner/latest accepted observation; never acquire market data."""
+        result = dict(monitoring="UNAVAILABLE", price=None, observed_at=None)
+        retained = retained or {}
+        with self._lock:
+            if retained.get("monitoring") == "INTERRUPTED" or retained.get("baseline_required"):
+                return dict(result, monitoring="INTERRUPTED")
+            attached = self._registrations.get(track_identity)
+            if attached is None:
+                return dict(result, monitoring="IDLE" if self._hub is not None else "UNAVAILABLE")
+            registration, capability = attached
+            if not getattr(capability, "active", False) or not registration.active:
+                return dict(result, monitoring="INTERRUPTED")
+            if getattr(registration.connection_state, "value", None) != "CONNECTED":
+                return dict(result, monitoring="INTERRUPTED")
+            result["monitoring"] = "LIVE"
+            # Match process-local fact and exact owned contract to the last fact
+            # accepted by WO11. A newer rejected tick cannot expose an old price.
+            for tick in self._hub.latest_market_ticks:
+                owners = self._hub.subscription_owner_identities(tick.instrument)
+                if "INTRADAY-WO11-LIFECYCLE:" + track_identity not in owners:
+                    continue
+                from dataclasses import asdict
+                from kronos.intraday.wo11_lifecycle_contract import digest
+                if "WO11_SOURCE_FACT-" + digest(asdict(tick)) != retained.get("last_fact_identity"):
+                    continue
+                if (tick.connection_id != retained.get("last_connection")
+                        or tick.observed_at != instant(retained.get("last_observed_at"))
+                        or tick.source_sequence != retained.get("last_sequence")
+                        or str(tick.last_price) != retained.get("last_price")
+                        or tick.recovered or not tick.session_continuous
+                        or not tick.ordering_deterministic
+                        or not tick.previous_interval_available):
+                    continue
+                lateness = (tick.received_at - tick.observed_at).total_seconds()
+                if 0 <= lateness <= 5 and retained.get("last_fact_identity"):
+                    result.update(price=retained["last_price"], observed_at=retained["last_observed_at"])
+            return result
+
     def journal_monitoring_state(self, track_identity):
         """Read-only exact owner state for WO-14; creates no owner or subscription."""
         if not isinstance(track_identity, str):

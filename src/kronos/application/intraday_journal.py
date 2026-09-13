@@ -21,8 +21,10 @@ def _compact_geometry(data: dict[str, object] | None) -> dict[str, object] | Non
     return {key: data.get(key) for key in ("entry", "stop", "target")}
 
 
-class IntradayJournalApplication:
+class IntradaySourceAdapter:
     """Consumes committed source identities and owns presentation state only."""
+
+    revision_factory = staticmethod(revision)
 
     SOURCE_KINDS = frozenset({"SELECTION", "ACTION", "TRACK"})
 
@@ -114,6 +116,9 @@ class IntradayJournalApplication:
                                comparison["expression_identity"]],
         ))
 
+    def _track_extras(self, data):
+        return {}
+
     def _track(self, current) -> None:
         data = current.data
         intake = data["intake"]
@@ -147,6 +152,7 @@ class IntradayJournalApplication:
                                                    "coverage_start", "coverage_end")
             }, future=expression.get("future"), future_geometry=_compact_geometry(expression),
             trading_date=(intake.get("contract") or {}).get("trading_date"),
+            **self._track_extras(data),
             source_identities=[origin.identity, current.identity, data["authorization_identity"], action.identity,
                                intake["opportunity_identity"], intake["plan_identity"], intake["expression_identity"],
                                *([data["metrics"]] if data["metrics"] else [])],
@@ -156,9 +162,9 @@ class IntradayJournalApplication:
                   decision_at, truth_class, comparison, plan, selected_lots, source_identities,
                   track_identity=None, status="NO_TRACK_CREATED", terminal=True, monitoring="NOT_REQUIRED",
                   entry=None, exit=None, exit_reason=None, terminal_status=None, metrics=None, future=None,
-                  future_geometry=None, trading_date=None):
+                  future_geometry=None, trading_date=None, observation=None):
         od = origin.data
-        return revision(
+        return self.revision_factory(
             opportunity_id=od["opportunity_id"], opportunity_identity=od["opportunity_identity"],
             subject=subject, direction=direction, session_identity=session, decision=decision,
             decision_identity=decision_identity, decision_at=_instant(decision_at).isoformat(),
@@ -178,7 +184,11 @@ class IntradayJournalApplication:
             highest_readiness=(plan.get("wo09") or {}).get("readiness_state")
                               if isinstance(plan.get("wo09"), dict) else None,
             decision_reason=comparison.get("reason"), holding_time=None, trading_date=trading_date,
+            **({"observation": observation} if observation is not None else {}),
         )
+
+class IntradayJournalApplication(IntradaySourceAdapter):
+    """Independent Journal presentation and suppression authority."""
 
     def snapshot(self, *, search: str = "", truth: str = "ALL", status: str = "ALL",
                  monitoring: str = "ALL", scope: str = "ALL", include_suppressed: bool = False) -> JournalSnapshot:

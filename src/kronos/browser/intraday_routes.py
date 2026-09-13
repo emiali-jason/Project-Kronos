@@ -373,6 +373,7 @@ class IntradayBrowserRoutes:
         detail_prefix = "/intraday/evidence/"
         if (
             request.path == INTRADAY_STATISTICS_EXPORT_ROUTE
+            and "view" not in request.query  # WO16 explicit factual view uses shared Reports.
             and request.query.get("product") == ["INTRADAY"]
         ):
             if set(request.query) != {"product"}:

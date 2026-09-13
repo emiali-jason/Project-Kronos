@@ -128,3 +128,13 @@ adapts compact WO-10/11 facts into the existing shared Journal, preserves NONE
 and DO NOTHING history, defines persistent presentation-only suppression,
 reads exact WO-11 monitoring state, and governs shared local logo derivatives.
 Production use and runtime load remain separately gated.
+
+## WO-15 / WO-16 combined engineering candidate
+
+**Status:** Sponsor/EA authorized engineering; Sponsor/EA candidate acceptance pending.
+ADR-0054 commissions bounded adaptation of the shared Portfolio and Reports
+products with separate WO-15 current-exposure and WO-16 factual-history policies.
+WO-12 remains research authority. LIVE remains uncommissioned, Observation is
+non-exposure, and NATGAS remains HELD. Source identities and presentation deletion
+boundaries are preserved. Publication/runtime/production remain separately gated;
+PERF/LAG-01 is not started.

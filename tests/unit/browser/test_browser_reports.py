@@ -273,7 +273,7 @@ def test_reports_excel_preserves_exact_filters_and_formula_text(tmp_path) -> Non
     assert summary["Status / Outcome Filter"] == "EXITED"
 
 
-def test_reports_excel_empty_population_is_valid_and_intraday_fails_bounded(
+def test_reports_excel_empty_populations_are_valid_and_product_separated(
     tmp_path,
 ) -> None:  # type: ignore[no-untyped-def]
     empty = project_historical_reports(
@@ -290,8 +290,7 @@ def test_reports_excel_empty_population_is_valid_and_intraday_fails_bounded(
         ReportsQuery(product=ReportProduct.INTRADAY),
         governed_current_trading_date=NOW.date(),
     )
-    with pytest.raises(ValueError, match="REPORTS_EXCEL_PRODUCT_UNAVAILABLE"):
-        export_reports_xlsx(intraday, generated_at=NOW)
+    assert len(_xlsx_rows(export_reports_xlsx(intraday, generated_at=NOW))) == 1
 
 
 def test_reports_unavailable_exit_and_position_pnl_are_not_zero(tmp_path) -> None:
@@ -364,7 +363,7 @@ def test_reports_intraday_is_bounded_and_has_no_swing_rows(tmp_path) -> None:
         governed_current_trading_date=NOW.date(),
     )
     html = render_reports(_ready(), projection)
-    assert "INTRADAY REPORTS" in html and "NOT YET OPERATIONAL" in html
+    assert "LIVE_POSITION_NOT_COMMISSIONED_V1" in html and "NO HISTORICAL RECORDS" in html
     assert "CANBK" not in html
 
 
@@ -421,10 +420,10 @@ def test_reports_browser_route_and_filtered_exports_are_read_only(tmp_path) -> N
         connection = HTTPConnection("127.0.0.1", server.server_port, timeout=3)
         connection.request("GET", "/reports/export.xlsx?product=INTRADAY")
         response = connection.getresponse()
-        body = response.read().decode("utf-8")
+        body = response.read()
         connection.close()
-        assert response.status == 409
-        assert body == "Intraday Excel reports are not yet operational."
+        assert response.status == 200
+        assert len(_xlsx_rows(body)) == 1
         assert workflow.journal_snapshot().records == ()
     finally:
         server.shutdown(); thread.join(timeout=2); server.server_close()

@@ -231,6 +231,7 @@ def test_local_brand_mark_and_favicon_routes_resolve(tmp_path) -> None:  # type:
         for path, size in (
             ("/assets/brand/kronos-brand-mark.png", (512, 512)),
             ("/favicon.png", (64, 64)),
+            ("/assets/brand/kronos-sidebar-mark.png", (192, 192)),
         ):
             status, headers, body = _request_bytes(server, "GET", path)
             assert status == 200

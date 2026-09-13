@@ -99,8 +99,19 @@ def notify_persisted(store, kind, identity):
             setattr(store, attribute.replace("listener", "failure"), failure)
 
 
+def notify_book_persisted(store, kind, identity):
+    """Read-only WO15/16 cache update after the source commit; no delivery."""
+    listener = getattr(store, "book_listener", None)
+    if listener is not None:
+        try:
+            listener(kind, identity)
+        except Exception:
+            store.book_failure = "INTRADAY_BOOK_SOURCE_UNAVAILABLE"
+
+
 def notify_journal_persisted(store, kind, identity):
-    """Notify only the optional Journal projection after an immutable write."""
+    """Notify independent presentation projections after an immutable write."""
+    notify_book_persisted(store, kind, identity)
     listener = getattr(store, "journal_listener", None)
     if listener is not None:
         try:

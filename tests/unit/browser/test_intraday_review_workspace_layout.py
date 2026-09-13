@@ -37,7 +37,7 @@ const fs=require('fs');const assert=require('assert');const {chromium}=require('
   const u=new URL(route.request().url());
   if(u.pathname==='/fixture')return route.fulfill({contentType:'text/html',body:fs.readFileSync(cfg.html,'utf8')});
   if(u.pathname.endsWith('/chart-preview'))return route.fulfill({contentType:'image/png',body:fs.readFileSync(u.searchParams.get('cycle')==='CYCLE-8'?cfg.mcx:cfg.nse)});
-  if(u.pathname==='/assets/brand/kronos-brand-mark.png'||u.pathname==='/favicon.png')return route.fulfill({contentType:'image/png',body:fs.readFileSync(cfg.brand)});
+  if(u.pathname==='/assets/brand/kronos-sidebar-mark.png'||u.pathname==='/favicon.png')return route.fulfill({contentType:'image/png',body:fs.readFileSync(cfg.brand)});
   if(u.pathname==='/status')return route.fulfill({status:503,body:'Isolated fixture'});
   return route.fulfill({status:204,body:''});
  });
@@ -88,7 +88,7 @@ def test_browser_layout(tmp_path,width,state,columns):
     html=render_intraday_review(_snapshot(),routes._review.snapshot(),review_v2=replace(current,candidates=candidates),
         available_probables_v2_run=run,review_v2_status=status)
     html=html.replace('<h2>Current Review workspace</h2>','<h2>Current Review workspace</h2><p>ISOLATED ENGINEERING FIXTURE · synthetic panel images</p>')
-    (tmp_path/'brand.png').write_bytes(Path('assets/images/brand/kronos-brand-mark.png').read_bytes())
+    (tmp_path/'brand.png').write_bytes(Path('assets/images/brand/kronos-sidebar-mark.png').read_bytes())
     (tmp_path/'page.html').write_text(html);(tmp_path/'nse.png').write_bytes(composite(800,240,1));(tmp_path/'mcx.png').write_bytes(composite(800,480,2))
     artifact=Path(os.environ.get('WO07D_ARTIFACT_DIR',str(tmp_path)));artifact.mkdir(parents=True,exist_ok=True)
     cfg={'width':width,'columns':columns,'html':str(tmp_path/'page.html'),'nse':str(tmp_path/'nse.png'),'mcx':str(tmp_path/'mcx.png'),'brand':str(tmp_path/'brand.png'),
