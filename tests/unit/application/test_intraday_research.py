@@ -82,6 +82,19 @@ def test_opportunity_id_is_stable_separate_and_origin_bound(tmp_path) -> None:
     assert len(application.store.records("WO12_OPPORTUNITY_ORIGIN_V1")) == 1
 
 
+def test_admitted_probables_origin_producer_is_idempotent_without_research_publication(tmp_path) -> None:
+    application, run = _application(tmp_path)
+    first = application.publish_admitted_origins(run)
+    second = application.publish_admitted_origins(run)
+
+    assert tuple(item.identity for item in first) == tuple(item.identity for item in second)
+    assert len(application.store.records("WO12_OPPORTUNITY_ORIGIN_V1")) == 1
+    assert not application.publication_root.exists()
+    retained = first[0].data
+    assert retained["opportunity_id"] == "RELIANCE-20260828-101500"
+    assert retained["opportunity_identity"].startswith("INTRADAY-WO12-OPPORTUNITY-")
+
+
 def test_six_sheet_workbook_has_tables_formulas_and_no_active_content(tmp_path) -> None:
     application, _ = _application(tmp_path)
     projection = application.project(ensure_origins=True)

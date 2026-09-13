@@ -48,6 +48,9 @@ class FuturesStore:
         finally:
             os.unlink(temp)
         _sync_directory(target.parent)
+        if item.schema == "WO10_CONSTRUCTION_UNAVAILABLE_V1":
+            from kronos.application.notifications import notify_persisted
+            notify_persisted(self, "UNAVAILABLE", item.identity)
         return item
 
     def load(self, identity):
@@ -99,6 +102,8 @@ class FuturesStore:
         finally:
             if os.path.exists(temp):
                 os.unlink(temp)
+        from kronos.application.notifications import notify_persisted
+        notify_persisted(self, "COMPARISON", comparison.identity)
         return pointer
 
 

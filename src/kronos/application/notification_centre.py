@@ -106,12 +106,19 @@ class SponsorNotificationRecord:
     contract_identity: str = NOTIFICATION_CENTRE_CONTRACT
     contract_version: str = NOTIFICATION_CENTRE_VERSION
     authority: str = NOTIFICATION_CENTRE_AUTHORITY
+    intraday_details: str | None = None
+    telegram_delivery: str | None = None
 
     def __post_init__(self) -> None:
+        if self.intraday_details is not None:
+            from kronos.intraday.notification_policy import validate
+            validate(json.loads(self.intraday_details))
+            if self.product != "INTRADAY" or self.source_kind != "INTRADAY_WO13":
+                raise ValueError("WO13_PRODUCT_BINDING_INVALID")
         if (
             len(self.notification_identity) != 64
             or not self.source_identity
-            or self.source_kind not in {"UX08_WATCH", "UX10_EVENT", "INTRADAY_WO09"}
+            or self.source_kind not in {"UX08_WATCH", "UX10_EVENT", "INTRADAY_WO09", "INTRADAY_WO13"}
             or self.product not in {"SWING", "INTRADAY"}
             or type(self.family) is not SponsorNotificationFamily
             or not self.notification_type
@@ -321,6 +328,53 @@ class SponsorNotificationCentre:
             records = tuple(sorted(self._records.values(), key=_record_order))
         return SponsorNotificationCentreSnapshot(records, websocket_state)
 
+    def snapshot(self, *, product: str | None = None, websocket_state: str = "IDLE"):
+        """Read-only cached projection: no source scan, synchronization or delivery."""
+        with self._lock:
+            values = tuple(sorted((r for r in self._records.values()
+                if product is None or r.product == product), key=_record_order))
+        return SponsorNotificationCentreSnapshot(values, websocket_state)
+
+    def accept_intraday(self, details):
+        from kronos.intraday.notification_policy import semantic_identity, TITLES
+        source = semantic_identity(details)
+        at = datetime.fromisoformat(details["event_at"])
+        family = details["family"]
+        summary = TITLES[family] + " · " + details["opportunity_id"] + " · " + details["direction"]
+        for key in ("truth_class", "contract", "entry", "stop", "target", "exit", "model_rr"):
+            if details.get(key) is not None:
+                summary += " · " + key.replace("_", " ") + " " + str(details[key])
+        with self._lock:
+            self._synchronize_source(dict(source_identity=source, source_kind="INTRADAY_WO13",
+                source_run_identity=details["opportunity_identity"], product="INTRADAY",
+                family=SponsorNotificationFamily.FAILURE_OPERABILITY if family in {"MONITORING_INTERRUPTED", "ACTION_REQUIRED"} else SponsorNotificationFamily.ACTIONABLE,
+                notification_type=family, priority="HIGH" if family in {"READY_FIVE", "TARGET", "STOP_LOSS", "MONITORING_INTERRUPTED"} else "NORMAL",
+                instrument=details["subject"], summary=summary, action=SponsorNotificationAction.OPEN,
+                action_path="/intraday", state=SponsorNotificationState.LIVE, reactivatable=False,
+                created_at=at, intraday_details=json.dumps(details,sort_keys=True,separators=(",", ":")),
+                telegram_delivery="PENDING"), max(self._clock(), at))
+            return self._records[sha256(f"SOURCE:{source}:0".encode()).hexdigest()]
+
+    def expire_intraday(self, opportunity_identity, families, *, at, track_identity=None):
+        with self._lock:
+            for item in tuple(self._records.values()):
+                if item.source_kind != "INTRADAY_WO13" or item.state is not SponsorNotificationState.LIVE:
+                    continue
+                d = json.loads(item.intraday_details)
+                if (d["opportunity_identity"] == opportunity_identity and d["family"] in families
+                    and (track_identity is None or d.get("track_identity") == track_identity)):
+                    self.expire(item.notification_identity,item.integrity_sha256,
+                        source_still_valid=False,occurred_at=max(at,item.updated_at))
+
+    def record_delivery(self, identity, state):
+        if state not in {"ATTEMPTING", "SENT", "FAILED", "NOT_CONFIGURED"}:
+            raise ValueError("WO13_DELIVERY_STATE_INVALID")
+        with self._lock:
+            item = self._required(identity)
+            if item.source_kind != "INTRADAY_WO13":
+                raise ValueError("WO13_DELIVERY_PRODUCT_INVALID")
+            return self._revise(item,max(self._clock(),item.updated_at),"TELEGRAM_"+state,telegram_delivery=state)
+
     def dismiss(
         self, notification_identity: str, expected_integrity: str, *, occurred_at: datetime | None = None
     ) -> SponsorNotificationRecord:
@@ -333,12 +387,13 @@ class SponsorNotificationCentre:
             dismissed=True, recurrence_cancelled=True, next_reminder_at=None,
         )
 
-    def dismiss_expired(self, *, occurred_at: datetime | None = None) -> int:
+    def dismiss_expired(self, *, occurred_at: datetime | None = None, product: str | None = None) -> int:
         now = occurred_at or self._clock()
         with self._lock:
             values = tuple(
                 item for item in self._records.values()
                 if not item.dismissed and item.state is SponsorNotificationState.EXPIRED
+                and (product is None or item.product == product)
             )
         for item in values:
             self._revise(
@@ -691,6 +746,9 @@ def _from_values(values: dict[str, object]) -> SponsorNotificationRecord:
 
 def _record_dict(record: SponsorNotificationRecord) -> dict[str, object]:
     values = asdict(record)
+    for key in ("intraday_details", "telegram_delivery"):
+        if values.get(key) is None:
+            values.pop(key, None)
     for key in ("family", "action", "state"):
         values[key] = getattr(record, key).value
     for key in ("created_at", "updated_at", "last_reminded_at", "next_reminder_at"):
@@ -734,6 +792,9 @@ def _integrity(record: SponsorNotificationRecord) -> str:
 
 def _integrity_values(values: dict[str, object]) -> str:
     material = dict(values)
+    for key in ("intraday_details", "telegram_delivery"):
+        if material.get(key) is None:
+            material.pop(key, None)
     material.setdefault("contract_identity", NOTIFICATION_CENTRE_CONTRACT)
     material.setdefault("contract_version", NOTIFICATION_CENTRE_VERSION)
     material.setdefault("authority", NOTIFICATION_CENTRE_AUTHORITY)

@@ -132,9 +132,16 @@ class IntradayResearchApplication:
                     first[key] = candidate
         return tuple(first[key] for key in sorted(first))
 
-    def _ensure_origins(self):
+    def _ensure_origins(self, *, source_events=None, tracks=None):
+        # Same identity/reset authority for explicit research and admitted persistence.
+        all_events = self._source_origins_all() if source_events is None else source_events
+        first = {}
+        for value in all_events:
+            key = (value[3].canonical_subject_identity, value[3].market_session_identity)
+            if key not in first or value[:3] < first[key][:3]:
+                first[key] = value
         origins = []
-        for at, result_identity, run_identity, result in self._source_origins():
+        for at, result_identity, run_identity, result in (first[key] for key in sorted(first)):
             existing = self.store.origin_for(result.canonical_subject_identity, result.market_session_identity)
             expected = opportunity_origin(
                 canonical_subject_identity=result.canonical_subject_identity,
@@ -160,10 +167,10 @@ class IntradayResearchApplication:
         terminal_states = {"CLOSED", "CANCELLED_BEFORE_ENTRY", "INVALIDATED_BEFORE_ENTRY",
                            "EXPIRED_BEFORE_ENTRY", "CLOSED_OUTCOME_UNAVAILABLE", "OUTCOME_AMBIGUOUS"}
         events = {}
-        for at, result_identity, run_identity, result in self._source_origins_all():
+        for at, result_identity, run_identity, result in all_events:
             events.setdefault((result.canonical_subject_identity, result.market_session_identity), []).append(
                 (at, result_identity, run_identity, result))
-        for current in self.lifecycle.restore():
+        for current in (self.lifecycle.restore() if tracks is None else tracks):
             data = current.data
             if data["state"] not in terminal_states:
                 continue
@@ -193,6 +200,31 @@ class IntradayResearchApplication:
                 raise ValueError("WO12_OPPORTUNITY_ORIGIN_CONFLICT")
             origins.append(existing[0] if existing else self.store.retain(successor))
         return tuple(origins)
+
+    def publish_admitted_origins(self, run):
+        """Source-owned origin producer, commissioned separately from XLSX update.
+
+        One initial history index, then only affected subject/session events.
+        Does not run project(), update(), workbook publication or any analysis.
+        """
+        if not hasattr(self, "_origin_events"):
+            self._origin_events = {}
+            for value in self._source_origins_all():
+                key = (value[3].canonical_subject_identity, value[3].market_session_identity)
+                self._origin_events.setdefault(key, {})[value[1]] = value
+        keys = set()
+        for item in run.results:
+            if item.state not in {ProbableState.LONG_PROBABLE, ProbableState.SHORT_PROBABLE}:
+                continue
+            key = (item.canonical_subject_identity, item.market_session_identity)
+            keys.add(key)
+            self._origin_events.setdefault(key, {})[item.result_identity] = (
+                item.analysis_boundary, item.result_identity, run.run_identity, item)
+        events = tuple(sorted((v for key in keys for v in self._origin_events[key].values()),
+                              key=lambda v: (v[0], v[1])))
+        tracks = tuple(t for t in self.lifecycle.restore()
+                       if (t.data["intake"]["subject"], t.data["intake"]["session_identity"]) in keys)
+        return self._ensure_origins(source_events=events, tracks=tracks)
 
     def _source_origins_all(self):
         values = []

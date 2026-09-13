@@ -195,3 +195,11 @@ SPONSOR_EXIT; terminal/data statuses remain separate.
 ## Swing V3 immutable rendered-artifact recovery
 
 [ADR-0051](adr/ADR-0051-SWING-V3-IMMUTABLE-ARTIFACT-RECOVERY.md) records Sponsor-authorized EVIDENCE-RECOVERY-01/01A: measured contract wrapping, exact canonical source rendering, immutable predecessor/successor lineage and isolated restoration. Question/Answer and analytical semantics remain unchanged. Production supersession and runtime operations remain separately gated.
+
+## Intraday WO-13 shared Notifications
+
+[ADR-0052](adr/ADR-0052-INTRADAY-WO13-SHARED-NOTIFICATIONS.md) governs the
+prospective Intraday adapter into the existing shared Notifications lifecycle,
+Browser shell and Telegram transport. Stable opportunity origins are retained
+at admitted Probables persistence; notification delivery performs no research
+publication and owns no monitoring, Provider, lifecycle or trading authority.

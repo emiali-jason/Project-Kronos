@@ -5085,6 +5085,7 @@ def render_notifications(
     ux10: Ux10NotificationSnapshot | None = None,
     operational: SponsorNotificationProjection | None = None,
     notice: str = "",
+    intraday_indicators: dict[str, str] | None = None,
 ) -> str:
     """Render one durable management surface over product-owned records."""
 
@@ -5095,7 +5096,7 @@ def render_notifications(
     if operational is not None:
         if type(operational) is not SponsorNotificationProjection:
             raise TypeError("SPONSOR_NOTIFICATION_PROJECTION_INVALID")
-        return _render_operational_notifications(snapshot, operational, notice)
+        return _render_operational_notifications(snapshot, operational, notice, selected_product, intraday_indicators)
     if selected_product is NotificationProduct.INTRADAY:
         return _render_intraday_notifications(snapshot)
     tabs = '<nav class="notification-tabs">' + "".join(
@@ -5156,7 +5157,11 @@ def _render_operational_notifications(
     snapshot: BrowserWorkspaceSnapshot,
     projection: SponsorNotificationProjection,
     notice: str,
+    selected_product: NotificationProduct | None = None,
+    intraday_indicators: dict[str, str] | None = None,
 ) -> str:
+    product = "INTRADAY" if selected_product is NotificationProduct.INTRADAY else "SWING"
+    route = "/notifications/" + product.lower()
     query = projection.query
     centre = projection.snapshot
     products = (
@@ -5200,9 +5205,12 @@ def _render_operational_notifications(
         'aria-label="Search notifications"><button type="submit">SEARCH</button></form>'
     )
     message = '' if not notice else '<div class="notification-centre-notice">' + escape(notice) + '</div>'
-    rows = ''.join(_operational_notification_row(item) for item in projection.page_records)
+    rows = ''.join(_operational_notification_row(item, (intraday_indicators or {}).get(item.notification_identity)) for item in projection.page_records)
     listing = (
-        '<div class="global-empty">NO NOTIFICATIONS MATCH THIS VIEW</div>'
+        '<div class="global-empty">' + (
+            'No Intraday notifications.' if product == "INTRADAY"
+            else 'NO NOTIFICATIONS MATCH THIS VIEW'
+        ) + '</div>'
         if not projection.page_records
         else '<div class="notification-centre-list">' + rows + '</div>'
     )
@@ -5228,10 +5236,20 @@ def _render_operational_notifications(
         'if(!r.ok)return;const s=await r.json();if(s.revision!==notificationRevision)location.reload();'
         '}catch(_e){}},1500);</script>'
     )
+    body = header + filters + search + message + listing + pagination + polling
+    if product == "INTRADAY":
+        body = body.replace('class="button active" href="/notifications/swing"', 'class="button" href="/notifications/swing"')
+        body = body.replace('class="button" href="/notifications/intraday"', 'class="button active" href="/notifications/intraday"')
+        body = body.replace('/notifications/swing?', route+'?').replace('action="/notifications/swing"', 'action="'+route+'"')
+        body = body.replace('value="SWING"', 'value="INTRADAY"').replace('EXPIRED SWING', 'EXPIRED INTRADAY')
+        body = body.replace('/notifications/status', '/notifications/status?product=INTRADAY')
+        # Intraday owner indicators below are authoritative; a generic centre WS
+        # lamp must not pretend that every opportunity owns a live subscription.
+        body = body.replace('WS '+ws_dot+' '+ws, 'MONITORING · SEE EACH EVENT')
     return _page(
         title="Notifications", subtitle="Current operational alerts and reminders.",
         snapshot=snapshot, active_nav="Notifications", active_tab="",
-        body=header + filters + search + message + listing + pagination + polling,
+        body=body,
     )
 
 
@@ -5251,9 +5269,10 @@ def _render_intraday_notifications(snapshot: BrowserWorkspaceSnapshot) -> str:
     )
 
 
-def _operational_notification_row(item: SponsorNotificationRecord) -> str:
+def _operational_notification_row(item: SponsorNotificationRecord, monitoring: str | None = None) -> str:
     time = item.updated_at.astimezone(_KOLKATA).strftime("%H:%M")
     subject = item.instrument or "SYSTEM"
+    monitoring_badge = '' if monitoring is None else '<span class="notification-monitoring">MONITORING · '+escape(monitoring)+'</span>'
     next_reminder = (
         '' if item.next_reminder_at is None else
         'NEXT ' + item.next_reminder_at.astimezone(_KOLKATA).strftime("%H:%M")
@@ -5295,7 +5314,7 @@ def _operational_notification_row(item: SponsorNotificationRecord) -> str:
         '<span class="notification-centre-subject">' + escape(subject) + '</span>'
         '<span class="notification-centre-message" title="' + escape(item.summary) + '">'
         + escape(item.summary) + '</span><span class="notification-centre-next">'
-        + escape(next_reminder) + '</span><span class="notification-centre-actions">'
+        + escape(next_reminder) + monitoring_badge + '</span><span class="notification-centre-actions">'
         + ''.join(actions) + '</span><details class="notification-centre-detail">'
         '<summary>GOVERNED EVIDENCE · ' + escape(item.notification_type.replace('_', ' '))
         + '</summary><ul>' + history + '</ul></details></article>'

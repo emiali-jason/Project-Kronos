@@ -92,6 +92,8 @@ class Wo09Store:
             updated_at=record.created_at,
         )
         self._atomic(self.current / f"{_safe(record.canonical_subject_identity)}.json", artifact_bytes(pointer))
+        from kronos.application.notifications import notify_persisted
+        notify_persisted(self, "READINESS", record.readiness_identity)
         return pointer
 
     def retain_handoff(self, handoff: NextWoHandoff) -> None:
@@ -146,6 +148,8 @@ class Wo09Store:
                                  superseded=prior.superseded_readiness_identity,
                                  updated_at=updated_at)
         self._atomic(self.current / f"{_safe(subject)}.json", artifact_bytes(pointer))
+        from kronos.application.notifications import notify_persisted
+        notify_persisted(self, "CURRENTNESS", subject)
         return pointer
 
     def load_readiness(self, identity: str) -> ReadinessRecord:

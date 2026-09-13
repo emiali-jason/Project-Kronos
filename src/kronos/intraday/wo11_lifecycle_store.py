@@ -146,4 +146,8 @@ class LifecycleStore:
         finally:
             if os.path.exists(temporary):
                 os.unlink(temporary)
+        from kronos.application.notifications import notify_persisted
+        keys = ("state", "entry", "exit", "monitoring")
+        if current is None or any(current.data[k] != transition.current.data[k] for k in keys):
+            notify_persisted(self, "TRACK", transition.current.identity)
         return transition.current

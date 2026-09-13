@@ -82,3 +82,13 @@ __all__ = [
     "ManagedNotification", "NotificationHistoryEvent", "NotificationProduct",
     "NotificationState", "NotificationWorkspaceSnapshot",
 ]
+
+
+def notify_persisted(store, kind, identity):
+    """Optional attention observer; failure cannot invalidate a committed source."""
+    listener = getattr(store, "notification_listener", None)
+    if listener is not None:
+        try:
+            listener(kind, identity)
+        except Exception:
+            store.notification_failure = "NOTIFICATION_PROJECTION_UNAVAILABLE"

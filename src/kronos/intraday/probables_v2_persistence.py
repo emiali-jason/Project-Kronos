@@ -295,6 +295,15 @@ class ProbablesV2Store:
             self.load_current()
             self.save_current(create_current_probables_v2_pointer(run) if assessment is None
                 else create_assessment_bound_pointer(run, assessment))
+        from kronos.application.notifications import notify_persisted
+        origin_listener = getattr(self, "opportunity_origin_listener", None)
+        if origin_listener is not None:
+            # The origin producer is part of admitted-Probables persistence,
+            # not WO-12 publication and not notification delivery.  It is
+            # idempotent, so an interrupted caller can safely replay the same
+            # retained run without minting another opportunity identity.
+            origin_listener(run)
+        notify_persisted(self, "PROBABLES", run.run_identity)
         return path
 
     def has_run(self, run_identity: str) -> bool:

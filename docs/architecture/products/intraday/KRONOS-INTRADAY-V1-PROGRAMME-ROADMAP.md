@@ -153,6 +153,12 @@ The preceding historical epoch remains readable, not a concurrent prospective
 owner. Current sequence: WO09 readiness → WO10 Futures construction/Risk/selection
 → WO11 lifecycle → WO12 research/XLSX → WO13 notifications → WO14 journal
 → WO15 portfolio → WO16 reports. Later work orders are not implemented here.
+
+WO-13 Notifications now has a Sponsor/EA-authorized engineering contract under
+[ADR-0052](../../adr/ADR-0052-INTRADAY-WO13-SHARED-NOTIFICATIONS.md). It reuses
+the shared Notifications shell and consumes stable opportunity origins retained
+at admitted Probables persistence. It does not run WO-12 UPDATE RESEARCH, own
+WebSocket monitoring, or alter the historical WO-13 Step-31 record family.
 See [WO10 interface](KRONOS-INTRADAY-WO-10-FUTURES-INTERFACE-V1.md) and
 [historical compatibility](KRONOS-INTRADAY-HISTORICAL-WORK-ORDER-COMPATIBILITY.md).
 

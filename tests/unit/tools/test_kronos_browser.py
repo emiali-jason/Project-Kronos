@@ -10,6 +10,15 @@ def isolated_composition_authority(monkeypatch):
     # Tests compose fake servers in the kernel-isolated test home; no production bypass.
     monkeypatch.setattr("tools.runtime_source_gate.qualify_startup", lambda *_: "a" * 40)
     monkeypatch.setattr("kronos.browser.runtime_state.complete_startup", lambda *_: None)
+    class _IntradayNotifications:
+        def __init__(self, **_kwargs):
+            pass
+        def bind(self, _probables):
+            pass
+    monkeypatch.setattr(
+        "kronos.application.intraday_notifications.IntradayNotifications",
+        _IntradayNotifications,
+    )
 
 
 def test_launcher_uses_loopback_server_and_opens_swing_workspace(monkeypatch) -> None:
@@ -19,6 +28,8 @@ def test_launcher_uses_loopback_server_and_opens_swing_workspace(monkeypatch) ->
     class _Server:
         server_port = 9123
         swing_monitoring_hub = SharedSwingMonitoringHub()
+        notification_centre = object()
+        telegram = None
         def serve_forever(self, **kwargs):  # type: ignore[no-untyped-def]
             events.append(("serve", kwargs))
         def server_close(self):
@@ -99,6 +110,8 @@ def test_developer_no_browser_mode_does_not_open_browser(monkeypatch) -> None:
     class _Server:
         server_port = 9123
         swing_monitoring_hub = SharedSwingMonitoringHub()
+        notification_centre = object()
+        telegram = None
         def serve_forever(self, **_kwargs): pass  # type: ignore[no-untyped-def]
         def server_close(self): pass
 

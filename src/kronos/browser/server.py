@@ -642,6 +642,9 @@ class KronosBrowserServer(ThreadingHTTPServer):
         super().service_actions()
 
     def server_close(self) -> None:
+        notifications = getattr(self, "intraday_notifications", None)
+        if notifications is not None:
+            notifications.close()
         lifecycle = getattr(self, "intraday_lifecycle", None)
         if lifecycle is not None:
             lifecycle.shutdown()
@@ -792,6 +795,8 @@ class KronosBrowserServer(ThreadingHTTPServer):
             current_run_identity=None if run is None else run.run_identity,
             websocket_state=websocket.value,
         )
+        if getattr(self, "intraday_notifications", None) is not None:
+            return self.notification_centre.snapshot(product="SWING", websocket_state=websocket.value)
         return self.notification_centre.synchronize_wo09(
             self.intraday_wo09_notification_sources(),
             websocket_state=websocket.value,
@@ -1313,7 +1318,9 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             ))
             return
         if path == "/notifications/status":
-            centre = self.server.sponsor_notification_snapshot()
+            product = parse_qs(urlsplit(self.path).query).get("product", ["SWING"])[0]
+            centre = (self.server.notification_centre.snapshot(product="INTRADAY") if product == "INTRADAY"
+                      else self.server.sponsor_notification_snapshot())
             self._json({
                 "revision": centre.revision,
                 "count": len(centre.visible),
@@ -1371,11 +1378,15 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             except (TypeError, ValueError):
                 self._text(HTTPStatus.BAD_REQUEST, "Notification filter is invalid.")
                 return
-            operational = None
-            if selected is NotificationProduct.SWING:
-                operational = project_sponsor_notifications(
-                    self.server.sponsor_notification_snapshot(), notification_query
-                )
+            centre = (self.server.notification_centre.snapshot(product="INTRADAY")
+                      if selected is NotificationProduct.INTRADAY else self.server.sponsor_notification_snapshot())
+            # Product selection cannot display or dismiss another product's cards.
+            centre = type(centre)(tuple(r for r in centre.records if r.product == selected.value), centre.websocket_state)
+            operational = project_sponsor_notifications(centre, notification_query)
+            service = getattr(self.server, "intraday_notifications", None)
+            indicators = {r.notification_identity: service.indicator(json.loads(r.intraday_details))
+                          if service is not None and r.intraday_details else "UNAVAILABLE"
+                          for r in centre.records} if selected is NotificationProduct.INTRADAY else None
             self._html(render_notifications(
                 self.server.application.snapshot(),
                 project_swing_notification_workspace(self.server.progression_snapshot()),
@@ -1383,6 +1394,7 @@ class _BrowserHandler(BaseHTTPRequestHandler):
                 ux10=self.server.ux10_notifications.snapshot(),
                 operational=operational,
                 notice=notice,
+                intraday_indicators=indicators,
             ))
             return
         details_match = _ANALYSIS_DETAILS_ROUTE.fullmatch(path)
@@ -2408,10 +2420,10 @@ class _BrowserHandler(BaseHTTPRequestHandler):
                 strict_parsing=True,
             )
             if action == "delete-expired":
-                if fields != {"product": ["SWING"], "confirm": ["DELETE"]}:
+                if fields not in ({"product": ["SWING"], "confirm": ["DELETE"]}, {"product": ["INTRADAY"], "confirm": ["DELETE"]}):
                     raise ValueError("NOTIFICATION_DELETE_EXPIRED_CONFIRMATION_INVALID")
-                count = self.server.notification_centre.dismiss_expired()
-                self._notification_redirect(f"DELETED {count} EXPIRED NOTIFICATIONS")
+                count = self.server.notification_centre.dismiss_expired(product=fields["product"][0])
+                self._notification_redirect(f"DELETED {count} EXPIRED NOTIFICATIONS", product=fields["product"][0])
                 return
             if set(fields) != {"notification_id", "revision"}:
                 raise ValueError("NOTIFICATION_ACTION_FIELDS_INVALID")
@@ -2428,7 +2440,7 @@ class _BrowserHandler(BaseHTTPRequestHandler):
                 raise ValueError("NOTIFICATION_NOT_FOUND")
             if action == "dismiss":
                 self.server.notification_centre.dismiss(identities[0], revisions[0])
-                self._notification_redirect("NOTIFICATION DELETED")
+                self._notification_redirect("NOTIFICATION DELETED", product=record.product)
                 return
             if action != "reactivate":
                 raise ValueError("NOTIFICATION_ACTION_INVALID")
@@ -2445,8 +2457,8 @@ class _BrowserHandler(BaseHTTPRequestHandler):
         except (AttributeError, UnicodeDecodeError, ValueError):
             self._notification_redirect("CANNOT RE-ACTIVATE OR DELETE · SOURCE STATE CHANGED")
 
-    def _notification_redirect(self, notice: str) -> None:
-        self._redirect("/notifications/swing?" + urlencode({"notice": notice}))
+    def _notification_redirect(self, notice: str, product: str = "SWING") -> None:
+        self._redirect("/notifications/" + product.lower() + "?" + urlencode({"notice": notice}))
 
     def _refresh_from_notification(self) -> None:
         try:

@@ -2,6 +2,8 @@
 
 Prospective research publication: [WO-12 Local Research Publication V1](KRONOS-INTRADAY-WO12-LOCAL-RESEARCH-PUBLICATION-V1.md), governed by [ADR-0049](../../adr/ADR-0049-WO12-LOCAL-RESEARCH-PUBLICATION.md). Historical WO-12 analytical-promotion contracts remain preserved separately.
 
+Prospective shared notification delivery: [WO-13 Notifications V1](KRONOS-INTRADAY-WO13-NOTIFICATIONS-V1.md), governed by [ADR-0052](../../adr/ADR-0052-INTRADAY-WO13-SHARED-NOTIFICATIONS.md). The historical WO-13 Step-31 contracts remain preserved and are not reused as notification authority.
+
 **Status:** Living product architecture
 **Owner:** KRONOS Intraday
 **Authority:** Sponsor/EA/CA governed work orders
@@ -78,6 +80,8 @@ explicitly; old decisions and evidence are not silently rewritten.
 - [WO-12 K5 Fact Foundation V1 — supporting WO-15 research](KRONOS-INTRADAY-WO12-K5-FACT-FOUNDATION-V1.md)
 - [WO-13 Step-31 Trade Construction V1](KRONOS-INTRADAY-WO-13-STEP31-TRADE-CONSTRUCTION-V1.md)
 - [WO-13 Step-31 canonical policy payload](KRONOS-INTRADAY-WO13-STEP31-TRADE-CONSTRUCTION-POLICY-V1.json)
+- [Prospective WO-13 Shared Notifications V1](KRONOS-INTRADAY-WO13-NOTIFICATIONS-V1.md)
+- [Prospective WO-13 Notifications canonical policy](KRONOS-INTRADAY-WO13-NOTIFICATIONS-POLICY-V1.json)
 - [WO-14 DOMAIN-007 Risk Observation V1](KRONOS-INTRADAY-WO-14-DOMAIN-007-RISK-OBSERVATION-V1.md)
 - [WO-15 KR-380 Entry Timing V1](KRONOS-INTRADAY-WO-15-KR380-ENTRY-TIMING-V1.md)
 - [WO-15 canonical timing policy](KRONOS-INTRADAY-WO15-ENTRY-TIMING-POLICY-V1.json)
