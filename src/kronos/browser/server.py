@@ -585,24 +585,6 @@ class KronosBrowserServer(ThreadingHTTPServer):
         )
         native_run = self.application.native_discovery_run()
         mtf_facts = self.application.mtf_fact_snapshot()
-        native_store = self.application.native_discovery_evidence_store()
-        mtf_store = self.application.mtf_fact_evidence_store()
-        if native_store is not None and mtf_store is not None:
-            latest_native = native_store.latest()
-            if (
-                latest_native is not None
-                and (
-                    native_run is None
-                    or latest_native.observed_at > native_run.observed_at
-                )
-            ):
-                try:
-                    latest_facts = mtf_store.load(latest_native.run_identity)
-                except ValueError:
-                    pass
-                else:
-                    native_run = latest_native
-                    mtf_facts = latest_facts
         self.native_review_run = native_run
         self.native_review_facts = mtf_facts
         if native_run is not None and mtf_facts is not None:
@@ -621,8 +603,9 @@ class KronosBrowserServer(ThreadingHTTPServer):
                 # independently restorable and is never converted as recovery.
                 pass
         self.trade_window.restore(self.visual_v3.completed_snapshot())
+        self.native_review.journal_snapshot()
         self.trade_window.synchronize_downstream(self.native_review.snapshot())
-        self.progression_snapshot()
+        self.reconcile_progression()
         self.application.register_sponsor_operability_restorer(
             self.restore_sponsor_operability
         )
@@ -632,6 +615,7 @@ class KronosBrowserServer(ThreadingHTTPServer):
         self._swing_projection_revision_value = (
             self._derive_swing_projection_revision()
         )
+        self.application.register_analysis_reconciliation(self.reconcile_swing)
         super().__init__(address, _BrowserHandler)
 
     def service_actions(self) -> None:
@@ -663,6 +647,28 @@ class KronosBrowserServer(ThreadingHTTPServer):
         super().server_close()
 
     def progression_snapshot(self) -> SwingProgressionWatchSnapshot:
+        """Observational access: no retention, notifications or monitoring."""
+        return self.progression_watches.snapshot()
+
+    def reconcile_swing(self):
+        """Explicit committed-analysis or authorized downstream mutation boundary."""
+        run = self.application.native_discovery_run()
+        facts = self.application.mtf_fact_snapshot()
+        if run is not None and facts is not None and run.run_identity == facts.run_identity:
+            self.native_review_run, self.native_review_facts = run, facts
+        self._synchronize_trade_window()
+        self.native_review.journal_snapshot()
+        self.reconcile_progression()
+        self.refresh_swing_projection_revision()
+
+    def swing_notification_status(self):
+        """Read-only Swing polling; never projects/retains Intraday sources."""
+        websocket = websocket_presentation_state(
+            monitoring_required=self.swing_monitoring_hub.subscription_count > 0,
+            connection_state=self.swing_monitoring_hub.connection_state)
+        return self.notification_centre.snapshot(product="SWING", websocket_state=websocket.value)
+
+    def reconcile_progression(self) -> SwingProgressionWatchSnapshot:
         """Project UX-08 requirements from one immutable Native/Review binding."""
 
         _, run = self.application.opportunities_projection()
@@ -1325,7 +1331,7 @@ class _BrowserHandler(BaseHTTPRequestHandler):
         if path == "/notifications/status":
             product = parse_qs(urlsplit(self.path).query).get("product", ["SWING"])[0]
             centre = (self.server.notification_centre.snapshot(product="INTRADAY") if product == "INTRADAY"
-                      else self.server.sponsor_notification_snapshot())
+                      else self.server.swing_notification_status())
             self._json({
                 "revision": centre.revision,
                 "count": len(centre.visible),
@@ -1335,9 +1341,8 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             })
             return
         if path == "/swing/opportunities":
-            self.server._synchronize_trade_window()
-            snapshot, discovery = (
-                self.server.application.opportunities_projection()
+            snapshot, discovery, continuity, publication = (
+                self.server.application.opportunities_bundle_projection()
             )
             review = self.server.native_review.snapshot()
             progression = self.server.progression_snapshot()
@@ -1353,6 +1358,8 @@ class _BrowserHandler(BaseHTTPRequestHandler):
                 trade_windows,
                 refresh_reminders,
                 self.server.swing_projection_revision(),
+                continuity,
+                publication,
             ))
             return
         if path in {"/notifications", "/notifications/swing", "/notifications/intraday"}:
@@ -1879,6 +1886,9 @@ class _BrowserHandler(BaseHTTPRequestHandler):
                 "analysis_diagnostic": None,
                 "live_monitoring": live_monitoring.state.value,
             }
+            publication = self.server.application.publication_status()
+            if publication["control"] is not None:
+                payload["swing_publication"] = publication
             if self.server.connection_governance is not None:
                 payload["maintenance"] = self.server.connection_governance.maintenance_status()
                 payload["runtime_ready"] = (self.server.connection_governance.startup_state == "READY"
@@ -1928,7 +1938,12 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             self._text(HTTPStatus.SERVICE_UNAVAILABLE, "KRONOS is shutting down.")
             return
         try:
+            self._swing_post_failed = False
             self._dispatch_post(path)
+            if (path.startswith("/swing/") and path not in {"/swing/analysis", "/swing/reconcile"}
+                    and not self._swing_post_failed):
+                # Read requests never enter this explicit mutation boundary.
+                self.server.application.reconcile_committed_analysis()
         finally:
             self.server.finish_sponsor_work()
 
@@ -2000,6 +2015,10 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             return
         if path == "/swing/analysis":
             self.server.application.run_analysis()
+            self._redirect("/swing/opportunities")
+            return
+        if path == "/swing/reconcile":
+            self.server.application.reconcile_committed_analysis()
             self._redirect("/swing/opportunities")
             return
         if path == "/swing/progression-watch/activate":
@@ -3809,24 +3828,6 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             return
         native_run = self.server.application.native_discovery_run()
         facts = self.server.application.mtf_fact_snapshot()
-        native_store = self.server.application.native_discovery_evidence_store()
-        mtf_store = self.server.application.mtf_fact_evidence_store()
-        if native_store is not None and mtf_store is not None:
-            latest = native_store.latest()
-            if (
-                latest is not None
-                and (
-                    native_run is None
-                    or latest.observed_at > native_run.observed_at
-                )
-            ):
-                try:
-                    latest_facts = mtf_store.load(latest.run_identity)
-                except ValueError:
-                    pass
-                else:
-                    native_run = latest
-                    facts = latest_facts
         if native_run is None or facts is None:
             self.server.native_review.record_refresh_unavailable()
             self._redirect("/swing/v1-review")
@@ -4016,6 +4017,8 @@ class _BrowserHandler(BaseHTTPRequestHandler):
         )
 
     def _text(self, status: HTTPStatus, body: str) -> None:
+        if status >= HTTPStatus.BAD_REQUEST:
+            self._swing_post_failed = True
         self._respond(status, body.encode("utf-8"), "text/plain; charset=utf-8")
 
     def _redirect(self, location: str) -> None:

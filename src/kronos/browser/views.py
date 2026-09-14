@@ -376,6 +376,8 @@ def render_opportunities(
     trade_windows: tuple[NativeTradeWindowProjection, ...] = (),
     refresh_reminders: K5RefreshReminderSnapshot | None = None,
     projection_revision: str | None = None,
+    committed_continuity=None,
+    publication_status=None,
 ) -> str:
     """Render the current successful Native Discovery opportunity population."""
 
@@ -398,7 +400,33 @@ def render_opportunities(
         and type(refresh_reminders) is not K5RefreshReminderSnapshot
     ):
         raise TypeError("NATIVE_OPPORTUNITIES_REFRESH_REMINDERS_INVALID")
+    continuity_rows = {}
+    if committed_continuity is not None:
+        from kronos.swing.v1.opportunity_continuity import CommittedContinuity
+        if (type(committed_continuity) is not CommittedContinuity
+                or discovery != committed_continuity.contribution.native_run
+                or snapshot.swing_analysis_run_identity != discovery.run_identity):
+            raise ValueError("SWING_CONTINUITY_PRESENTATION_BINDING_INVALID")
+        committed_continuity.contribution.validate()
+        continuity_rows = {r.canonical_instrument: r for r in committed_continuity.contribution.rows}
     body = _analysis_run_strip(snapshot)
+    if publication_status:
+        control = publication_status.get("control")
+        attempt = None if control is None else control["latest_attempt"]
+        labels = {"RUNNING": "Analysis running", "FAILED": "Latest attempt failed",
+                  "INTERRUPTED": "Analysis interrupted"}
+        if attempt and attempt["state"] in labels:
+            body += '<div class="status-strip">' + labels[attempt["state"]] + ' · Prior successful result retained</div>'
+        request = publication_status.get("request_result")
+        request_labels = {"DUPLICATE_RUNNING": "Duplicate request rejected; analysis already running",
+            "PROVIDER_UNAVAILABLE": "Analysis not started · Provider unavailable",
+            "PUBLICATION_UNAVAILABLE": "Current publication unavailable · Exact recovery required",
+            "ADMISSION_UNAVAILABLE": "Analysis not started · Publication unavailable"}
+        if request in request_labels:
+            body += '<div class="error">' + request_labels[request] + '</div>'
+        if publication_status.get("reconciliation_unavailable"):
+            body += '<div class="error">Downstream reconciliation unavailable · Committed analysis retained</div>'
+            body += '<form method="post" action="/swing/reconcile"><button type="submit">Retry reconciliation</button></form>'
     if discovery is None:
         body += (
             '<div class="global-empty"><strong>Native Discovery unavailable</strong><br>'
@@ -429,11 +457,11 @@ def render_opportunities(
         body += '<div class="panels">'
         body += _native_opportunity_panel(
             "EQUITIES + INDICES", equities, review, progression, visual_v3,
-            trade_windows, refresh_reminders,
+            trade_windows, refresh_reminders, continuity_rows,
         )
         body += _native_opportunity_panel(
             "COMMODITIES", commodities, review, progression, visual_v3,
-            trade_windows, refresh_reminders,
+            trade_windows, refresh_reminders, continuity_rows,
         )
         body += "</div>"
     return _page(
@@ -496,11 +524,12 @@ def _native_opportunity_metrics(counts: dict[NativeDiscoveryStatus, int]) -> str
 
 def _native_opportunity_panel(
     title, probables, review, progression=None, visual_v3=(), trade_windows=(),
-    refresh_reminders=None,
+    refresh_reminders=None, continuity_rows=None,
 ) -> str:  # type: ignore[no-untyped-def]
     cards = "".join(
         _native_opportunity_card(
-            item, review, progression, visual_v3, trade_windows, refresh_reminders
+            item, review, progression, visual_v3, trade_windows, refresh_reminders,
+            None if continuity_rows is None else continuity_rows.get(item.canonical_instrument),
         )
         for item in probables
     )
@@ -524,6 +553,7 @@ def _native_opportunity_card(
     visual_v3=(),
     trade_windows=(),
     refresh_reminders=None,
+    continuity=None,
 ) -> str:  # type: ignore[no-untyped-def]
     review_run_identity = None if review is None else review.native_run_identity
     readiness_records = () if review is None else review.readiness_records
@@ -674,7 +704,8 @@ def _native_opportunity_card(
         f'<span class="setup-family">{escape(item.opportunity_identity.value.replace("_", " "))}</span></div>'
         f'<span class="direction direction-{escape(direction.lower())}">{escape(direction)}</span>'
         '</div><p class="summary-reason">' + escape(context) + '</p>'
-        '<div class="summary-footer"><span class="summary-rr">'
+        + _swing_continuity_summary(continuity)
+        + '<div class="summary-footer"><span class="summary-rr">'
         + ('KR-370' if v3 is not None and v3.kr370 is not None
            else 'Chart / reference status' if v3 is not None else 'Review')
         + ' · <strong>'
@@ -686,6 +717,24 @@ def _native_opportunity_card(
         + trade_window_action + '</span>'
         '</div></article>'
     )
+
+
+def _swing_continuity_summary(row):
+    if row is None:
+        return ""
+    def stamp(value):
+        return value.astimezone(ZoneInfo("Asia/Kolkata")).strftime("%d %b %Y %H:%M IST")
+    lines = []
+    if row.opportunity_id is not None:
+        lines.extend(("Opportunity ID · " + row.opportunity_id,
+                      "First admitted · " + stamp(row.first_admitted)))
+    lines.extend(("Latest material evidence · " + stamp(row.latest_material_at),
+                  "Last analysis checked · " + stamp(row.last_analysis_checked)))
+    if row.disposition.value == "MANUAL_REVIEW_REQUIRED":
+        lines.append("MANUAL REVIEW REQUIRED · " + row.reason.replace("_", " "))
+    elif row.no_material_change:
+        lines.append("NO MATERIAL CHANGE")
+    return '<p class="summary-reason">' + '<br>'.join(escape(line) for line in lines) + '</p>'
 
 
 def _kr370_opportunity_summary(value, reminder=None) -> str:  # type: ignore[no-untyped-def]

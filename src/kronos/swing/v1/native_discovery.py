@@ -233,6 +233,8 @@ def discover_native_mtf(
     snapshot: SameRunMtfFactSnapshot,
     predecessor: NativeDiscoveryRun | None = None,
     daily_control: V1Layer1Run | None = None,
+    *,
+    assessment_builder=None,
 ) -> NativeDiscoveryRun:
     """Classify one immutable same-98 factual snapshot under Native V0."""
 
@@ -254,7 +256,7 @@ def discover_native_mtf(
         for item in daily_control.instruments
     }
     assessments = tuple(
-        _discover_instrument(
+        (assessment_builder or _discover_instrument)(
             snapshot,
             instrument,
             previous.get(instrument.canonical_instrument),
@@ -279,6 +281,8 @@ def _discover_instrument(
     instrument: InstrumentMtfFactSnapshot,
     predecessor: NativeInstrumentDiscovery | None,
     daily_control_probable_identities: tuple[str, ...],
+    *,
+    four_hour_resolver=None,
 ) -> NativeInstrumentDiscovery:
     daily = instrument.fact(FactualTimeframe.DAILY)
     four = instrument.fact(FactualTimeframe.FOUR_HOUR)
@@ -291,7 +295,7 @@ def _discover_instrument(
         if instrument.exchange == "NSE"
         else (Native1WState.NOT_APPLICABLE, ("MCX_1W_DISCOVERY_AUTHORITY_NONE",))
     )
-    four_state, anchor, four_reasons = classify_native_four_hour(
+    four_state, anchor, four_reasons = (four_hour_resolver or classify_native_four_hour)(
         daily, four, daily_state, direction,
         None if predecessor is None else predecessor.four_hour_state,
     )

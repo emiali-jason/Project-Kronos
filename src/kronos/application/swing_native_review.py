@@ -678,6 +678,8 @@ class NativeReviewWorkflow:
             self._layer2.clear()
             self._analysis.clear()
             self._refresh_status = "CURRENT REVIEW RESTORED"
+            # Canonical restoration owns reconciliation; snapshot/GET does not.
+            self._reconcile_journal_unlocked()
             return self._snapshot_unlocked()
 
     def ingest_layer2(
@@ -1901,7 +1903,7 @@ class NativeReviewWorkflow:
                 if key not in self._sponsor_initiations
             )),
             self._active_lifecycle.snapshot(),
-            self._reconcile_journal_unlocked(),
+            self._trade_journal.snapshot(),
             tuple(
                 self._step32_inputs[key][1]
                 for key in sorted(self._step32_inputs)

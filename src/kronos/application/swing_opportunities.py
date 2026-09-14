@@ -548,6 +548,7 @@ class CompletedSwingAnalysis:
     mtf_fact_snapshot: SameRunMtfFactSnapshot | None = None
     native_discovery_run: NativeDiscoveryRun | None = None
     relative_context_run: RelativeContextRun | None = None
+    continuity_contribution: object | None = None
 
     def __post_init__(self) -> None:
         if (
@@ -644,6 +645,7 @@ class SwingOpportunitiesApplication:
         relative_context_evidence_store: RelativeContextEvidenceStore | None = None,
         live_monitoring_timeout_seconds: float = 15.0,
         connection_governance=None,
+        run_publication=None,
     ) -> None:
         if not all(callable(item) for item in (
             provider_factory,
@@ -706,6 +708,11 @@ class SwingOpportunitiesApplication:
         self.__completed_mtf_fact_snapshot: SameRunMtfFactSnapshot | None = None
         self.__completed_native_discovery_run: NativeDiscoveryRun | None = None
         self.__completed_relative_context_run: RelativeContextRun | None = None
+        self.__publication = run_publication
+        self.__committed_run = None
+        self.__reconcile = None
+        self.__reconciliation_failure = False
+        self.__analysis_request_result = ""
         self.__live_monitoring_result = LiveMonitoringTestResult(
             LiveMonitoringTestState.NOT_TESTED
         )
@@ -714,7 +721,25 @@ class SwingOpportunitiesApplication:
         self.__snapshot = initial_snapshot or BrowserWorkspaceSnapshot(
             ProviderConnectionState.DISCONNECTED, AnalysisState.NOT_RUN, 98
         )
-        if run_provenance_store is not None:
+        if self.__publication is None and all(store is not None for store in (
+                run_provenance_store, mtf_fact_evidence_store,
+                native_discovery_evidence_store, relative_context_evidence_store)):
+            from kronos.swing.run_publication import SwingRunPublication
+            self.__publication = SwingRunPublication(
+                run_provenance_store.root.parent / "run-publication-v1",
+                mtf_store=mtf_fact_evidence_store, native_store=native_discovery_evidence_store,
+                relative_store=relative_context_evidence_store, provenance_store=run_provenance_store)
+            if not self.__publication.initialized:
+                # One successful-provenance selection for initial adoption only.
+                selected = run_provenance_store.latest()
+                if selected is None:
+                    raise ValueError("SWING_ACTIVATION_CHECKPOINT_INVALID")
+                refs = self.__publication._references(selected.run_id, continuity=False)
+                self.__publication.adopt(selected.run_id,
+                    {k: v for k, v in refs.items() if k != "continuity"})
+        if self.__publication is not None:
+            self.__install_committed(self.__publication.recover(self.__aware_now()))
+        elif run_provenance_store is not None:
             recovered = run_provenance_store.latest()
             if recovered is not None:
                 self.restore_run_provenance(recovered)
@@ -744,6 +769,63 @@ class SwingOpportunitiesApplication:
         with self.__lock:
             return self.__snapshot
 
+    def committed_continuity(self):
+        with self.__lock:
+            return None if self.__committed_run is None else self.__committed_run.continuity
+
+    def publication_status(self):
+        with self.__lock:
+            try:
+                control = None if self.__publication is None else self.__publication.status()
+                if (control is not None and self.__committed_run is not None
+                        and control["current_manifest"] != self.__committed_run.reference):
+                    return {"control": control, "request_result": "PUBLICATION_UNAVAILABLE",
+                            "reconciliation_unavailable": True}
+            except (OSError, ValueError):
+                return {"control": None, "request_result": "PUBLICATION_UNAVAILABLE",
+                        "reconciliation_unavailable": True}
+            return {"control": control, "request_result": self.__analysis_request_result,
+                    "reconciliation_unavailable": self.__reconciliation_failure}
+
+    def opportunities_bundle_projection(self):
+        """Capture card data and its exact continuity sidecar under one lock."""
+        with self.__lock:
+            snapshot, native = self.opportunities_projection()
+            continuity = self.committed_continuity() if native is not None else None
+            return snapshot, native, continuity, self.publication_status()
+
+    def register_analysis_reconciliation(self, reconcile):
+        if not callable(reconcile):
+            raise TypeError("SWING_RECONCILIATION_INVALID")
+        self.__reconcile = reconcile
+
+    def reconcile_committed_analysis(self):
+        """Explicit mutation/startup callback; never called from GET/status."""
+        with self.__lock:
+            if self.__reconcile is None:
+                return
+            try:
+                if self.__publication is not None and self.opportunities_projection()[1] is None:
+                    raise ValueError("SWING_PUBLICATION_CURRENT_UNAVAILABLE")
+                self.__reconcile()
+            except Exception:
+                self.__reconciliation_failure = True
+            else:
+                self.__reconciliation_failure = False
+
+    def __install_committed(self, bundle):
+        self.__committed_run = bundle
+        self.__completed_mtf_fact_snapshot = bundle.mtf
+        self.__completed_native_discovery_run = bundle.native
+        self.__completed_relative_context_run = bundle.relative
+        self.restore_run_provenance(bundle.provenance)
+        state = self.__publication.status()["latest_attempt"]["state"]
+        self.__snapshot = replace(self.__snapshot,
+            analysis_state=(AnalysisState.RUNNING if state == "RUNNING" else
+                            AnalysisState.READY if state == "SUCCEEDED" else AnalysisState.ERROR),
+            analysis_failure="" if state in {"SUCCEEDED", "RUNNING"} else (
+                "SWING_ANALYSIS_INTERRUPTED" if state == "INTERRUPTED" else "SWING_ANALYSIS_FAILED"))
+
     def authenticated_read_only_capability(self) -> object | None:
         """Expose only the active capability owned by the current Provider facade."""
 
@@ -764,6 +846,15 @@ class SwingOpportunitiesApplication:
         with self.__lock:
             snapshot = self.__snapshot
             discovery = self.__completed_native_discovery_run
+            if self.__publication is not None and self.__committed_run is not None:
+                # A foreign writer may have advanced authority. Never present this
+                # process's older cache as current or reconcile it during a GET.
+                try:
+                    reference = self.__publication.status()["current_manifest"]
+                except (OSError, ValueError):
+                    return snapshot, None
+                if reference != self.__committed_run.reference:
+                    return snapshot, None
             if (
                 discovery is None
                 or discovery.run_identity != snapshot.swing_analysis_run_identity
@@ -844,6 +935,8 @@ class SwingOpportunitiesApplication:
         if type(provenance) is not SwingAnalysisRunProvenance:
             raise ValueError("SWING_RUN_PROVENANCE_INVALID")
         with self.__lock:
+            if self.__committed_run is not None and provenance != self.__committed_run.provenance:
+                raise ValueError("SWING_PUBLICATION_BINDING_MISMATCH")
             self.__snapshot = replace(
                 self.__snapshot,
                 swing_analysis_run_identity=provenance.run_id,
@@ -856,6 +949,8 @@ class SwingOpportunitiesApplication:
 
     def mtf_fact_snapshot(self) -> SameRunMtfFactSnapshot | None:
         with self.__lock:
+            if self.__publication is not None and self.opportunities_projection()[1] is None:
+                return None
             return self.__completed_mtf_fact_snapshot
 
     def mtf_fact_evidence_store(self) -> MtfFactEvidenceStore | None:
@@ -863,6 +958,8 @@ class SwingOpportunitiesApplication:
 
     def native_discovery_run(self) -> NativeDiscoveryRun | None:
         with self.__lock:
+            if self.__publication is not None:
+                return self.opportunities_projection()[1]
             return self.__completed_native_discovery_run
 
     def native_discovery_evidence_store(self) -> NativeDiscoveryEvidenceStore | None:
@@ -870,6 +967,8 @@ class SwingOpportunitiesApplication:
 
     def relative_context_run(self) -> RelativeContextRun | None:
         with self.__lock:
+            if self.__publication is not None and self.opportunities_projection()[1] is None:
+                return None
             return self.__completed_relative_context_run
 
     def relative_context_evidence_store(self) -> RelativeContextEvidenceStore | None:
@@ -882,6 +981,8 @@ class SwingOpportunitiesApplication:
             current = self.__snapshot.swing_analysis_run_identity
             if current and current != snapshot.run_identity:
                 raise ValueError("MTF_FACT_RUN_BINDING_MISMATCH")
+            if self.__committed_run is not None and snapshot != self.__committed_run.mtf:
+                raise ValueError("SWING_PUBLICATION_BINDING_MISMATCH")
             self.__completed_mtf_fact_snapshot = snapshot
 
     def restore_native_discovery_run(self, run: NativeDiscoveryRun) -> None:
@@ -891,6 +992,8 @@ class SwingOpportunitiesApplication:
             current = self.__snapshot.swing_analysis_run_identity
             if current and current != run.run_identity:
                 raise ValueError("NATIVE_DISCOVERY_RUN_BINDING_MISMATCH")
+            if self.__committed_run is not None and run != self.__committed_run.native:
+                raise ValueError("SWING_PUBLICATION_BINDING_MISMATCH")
             self.__completed_native_discovery_run = run
 
     def restore_relative_context_run(self, run: RelativeContextRun) -> None:
@@ -900,6 +1003,8 @@ class SwingOpportunitiesApplication:
             current = self.__snapshot.swing_analysis_run_identity
             if current and current != run.run_identity:
                 raise ValueError("RELATIVE_CONTEXT_RUN_BINDING_MISMATCH")
+            if self.__committed_run is not None and run != self.__committed_run.relative:
+                raise ValueError("SWING_PUBLICATION_BINDING_MISMATCH")
             self.__completed_relative_context_run = run
 
     def live_monitoring_result(self) -> LiveMonitoringTestResult:
@@ -1143,29 +1248,38 @@ class SwingOpportunitiesApplication:
         """Start one complete Stage 1-9 run and reject concurrent requests."""
 
         with self.__lock:
-            if (
-                self.__snapshot.provider_state is not ProviderConnectionState.CONNECTED
-                or self.__snapshot.analysis_state is AnalysisState.RUNNING
-                or self.__live_monitoring_result.state is LiveMonitoringTestState.TESTING
-            ):
+            if self.__snapshot.analysis_state is AnalysisState.RUNNING:
+                self.__analysis_request_result = "DUPLICATE_RUNNING"
                 return False
-            self.__snapshot = replace(
-                self.__snapshot,
-                analysis_state=AnalysisState.RUNNING,
-                analysis_failure="",
-            )
+            if self.__snapshot.provider_state is not ProviderConnectionState.CONNECTED:
+                self.__analysis_request_result = "PROVIDER_UNAVAILABLE"
+                return False
+            if self.__live_monitoring_result.state is LiveMonitoringTestState.TESTING:
+                self.__analysis_request_result = "MONITORING_TEST_RUNNING"
+                return False
             self.__analysis_attempt_count += 1
             attempt_id = f"ANALYSIS-{self.__analysis_attempt_count:06d}"
             swing_run_identity = self.__swing_run_identity_factory()
             if not is_swing_analysis_run_id(swing_run_identity):
                 raise ValueError("SWING_ANALYSIS_RUN_IDENTITY_INVALID")
             run_created_at = self.__aware_now()
+            token, predecessor = None, None
+            if self.__publication is not None:
+                try:
+                    token, predecessor = self.__publication.admit(swing_run_identity, run_created_at)
+                except (OSError, ValueError):
+                    self.__analysis_request_result = "ADMISSION_UNAVAILABLE"
+                    return False
+            self.__snapshot = replace(self.__snapshot, analysis_state=AnalysisState.RUNNING, analysis_failure="")
+            self.__analysis_request_result = "RUNNING"
             self.__analysis_diagnostic = None
         self.__background_runner(
             lambda: self.__complete_analysis(
                 attempt_id,
                 swing_run_identity,
                 run_created_at,
+                token,
+                predecessor,
             ),
             "kronos-browser-swing",
         )
@@ -1385,6 +1499,8 @@ class SwingOpportunitiesApplication:
         attempt_id: str,
         swing_run_identity: str,
         run_created_at: datetime,
+        token=None,
+        predecessor=None,
     ) -> None:
         with self.__lock:
             provider = self.__provider
@@ -1401,6 +1517,9 @@ class SwingOpportunitiesApplication:
             if capability is None or getattr(capability, "active", False) is not True:
                 raise RuntimeError("READ_ONLY_CAPABILITY_UNAVAILABLE")
             progress = replace(progress, provider_capability_active=True)
+            publication_inputs = {} if self.__publication is None else {
+                "committed_predecessor": predecessor, "prepare_publication": True,
+                "completion_clock": self.__aware_now}
             completed = build_completed_swing_analysis(
                 capability,
                 analysis_run_identity=attempt_id,
@@ -1414,8 +1533,11 @@ class SwingOpportunitiesApplication:
                 native_discovery_evidence_store=(
                     self.__native_discovery_evidence_store
                 ),
+                **publication_inputs,
             )
-            successful_completed_at = self.__aware_now()
+            contribution = getattr(completed, "continuity_contribution", None)
+            successful_completed_at = (contribution.rows[0].last_analysis_checked
+                if contribution is not None else self.__aware_now())
             published_workspace = replace(
                 completed.workspace,
                 completed_at=successful_completed_at,
@@ -1423,6 +1545,24 @@ class SwingOpportunitiesApplication:
             mtf_fact_snapshot = getattr(completed, "mtf_fact_snapshot", None)
             native_discovery_run = getattr(completed, "native_discovery_run", None)
             relative_context_run = getattr(completed, "relative_context_run", None)
+            if self.__publication is not None:
+                provenance = SwingAnalysisRunProvenance(
+                    swing_run_identity, run_created_at, completed.evidence.observation_boundary,
+                    completed.evidence.market_data_snapshot_identity, successful_completed_at)
+                reference = self.__publication.prepare(token, mtf=mtf_fact_snapshot,
+                    native=native_discovery_run, relative=relative_context_run,
+                    provenance=provenance, continuity=completed.continuity_contribution)
+                with self.__lock:
+                    committed = self.__publication.publish(token, reference, successful_completed_at)
+                    if committed is None:
+                        return
+                    self.__snapshot = replace(published_workspace, provider_state=self.__snapshot.provider_state)
+                    self.__completed_analysis_evidence = completed.evidence
+                    self.__install_committed(committed)
+                    self.__analysis_diagnostic = None
+                    self.__analysis_request_result = "SUCCEEDED"
+                    self.reconcile_committed_analysis()
+                return
             if mtf_fact_snapshot is not None and self.__mtf_fact_evidence_store is not None:
                 self.__mtf_fact_evidence_store.retain(mtf_fact_snapshot)
             if (
@@ -1446,6 +1586,15 @@ class SwingOpportunitiesApplication:
                     successful_completed_at=successful_completed_at,
                 ))
         except Exception as error:
+            if self.__publication is not None:
+                # Late failures cannot overwrite a newer attempt or committed run.
+                try:
+                    if not self.__publication.fail(token, self.__aware_now()):
+                        return
+                except (OSError, ValueError):
+                    # Retain the prior projection; recovery owns uncertain state.
+                    self.__analysis_request_result = "PUBLICATION_UNAVAILABLE"
+                    return
             diagnostic = AnalysisFailureDiagnostic(
                 attempt_id=attempt_id,
                 timestamp=_diagnostic_timestamp(self.__clock),
@@ -1483,6 +1632,28 @@ class SwingOpportunitiesApplication:
         return now
 
 
+def prepare_swing_opportunity_contribution(
+    snapshot, daily_dataset, *, committed_predecessor=None, daily_control=None,
+    successful_completed_at=None, adopted_predecessor=None,
+):
+    """WO-04 pure handoff consumed by the WO-05 publication owner.
+
+    Uses already-resolved source bindings; performs no Provider acquisition or
+    current/predecessor selection. WO-05 commits and restores this contribution.
+    """
+    from kronos.swing.v1.opportunity_continuity import SourceBinding, prepare_continuity
+
+    bindings = tuple(
+        SourceBinding.from_instrument(record.canonical_identity, record._analysis_instrument)
+        for record in daily_dataset.records if record._analysis_instrument is not None
+    )
+    return prepare_continuity(
+        snapshot, bindings, predecessor=committed_predecessor, daily_control=daily_control,
+        successful_completed_at=successful_completed_at,
+        adopted_predecessor=adopted_predecessor,
+    )
+
+
 def build_completed_swing_analysis(
     capability: object,
     *,
@@ -1497,6 +1668,9 @@ def build_completed_swing_analysis(
     market_calendar_publisher: MarketCalendarPublisher | None = None,
     mtf_fact_evidence_store: MtfFactEvidenceStore | None = None,
     native_discovery_evidence_store: NativeDiscoveryEvidenceStore | None = None,
+    committed_predecessor=None,
+    prepare_publication=False,
+    completion_clock=None,
 ) -> CompletedSwingAnalysis:
     """Run Stage 1-9 once and retain evidence beside the compact projection."""
 
@@ -1641,6 +1815,7 @@ def build_completed_swing_analysis(
     mtf_fact_snapshot = None
     native_discovery_run = None
     relative_context_run = None
+    continuity_contribution = None
     if market_calendar_publisher is not None:
         observe(
             AnalysisStage.MTF_FACTS,
@@ -1655,9 +1830,7 @@ def build_completed_swing_analysis(
             observed_at=now,
             analysis_boundary=market.observation_boundary,
             predecessor_snapshot=(
-                None
-                if mtf_fact_evidence_store is None
-                else mtf_fact_evidence_store.latest()
+                None if committed_predecessor is None else committed_predecessor.mtf
             ),
         )
         observe(
@@ -1665,15 +1838,19 @@ def build_completed_swing_analysis(
             completed_instrument_count=dataset.ready_count,
             observation_boundary=market.observation_boundary,
         )
-        native_discovery_run = discover_native_mtf(
-            mtf_fact_snapshot,
-            predecessor=(
-                None
-                if native_discovery_evidence_store is None
-                else native_discovery_evidence_store.latest()
-            ),
-            daily_control=v1_layer1_run,
-        )
+        if prepare_publication:
+            continuity_contribution = prepare_swing_opportunity_contribution(
+                mtf_fact_snapshot, dataset,
+                committed_predecessor=(None if committed_predecessor is None else committed_predecessor.continuity),
+                daily_control=v1_layer1_run, successful_completed_at=now,
+                adopted_predecessor=(committed_predecessor if committed_predecessor is not None
+                    and committed_predecessor.continuity is None else None))
+            native_discovery_run = continuity_contribution.native_run
+        else:
+            native_discovery_run = discover_native_mtf(
+                mtf_fact_snapshot,
+                predecessor=None if committed_predecessor is None else committed_predecessor.native,
+                daily_control=v1_layer1_run)
         relative_context_run = build_relative_context_run(
             mtf_fact_snapshot, universe
         )
@@ -1754,12 +1931,16 @@ def build_completed_swing_analysis(
         ),
         v1_layer1_run=v1_layer1_run,
     )
+    if continuity_contribution is not None:
+        from kronos.swing.v1.opportunity_continuity import stamp_completed_contribution
+        continuity_contribution = stamp_completed_contribution(continuity_contribution, completion_clock())
     return CompletedSwingAnalysis(
         workspace=workspace,
         evidence=evidence,
         mtf_fact_snapshot=mtf_fact_snapshot,
         native_discovery_run=native_discovery_run,
         relative_context_run=relative_context_run,
+        continuity_contribution=continuity_contribution,
     )
 
 
