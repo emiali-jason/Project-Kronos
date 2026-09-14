@@ -4,6 +4,23 @@
 **Owner:** Architecture Librarian  
 **Approved By:** Not approved
 
+## Approved ADR-0056 contract — uncommissioned future capability
+
+- **Architecture status:** APPROVED — Proposal 3
+- **Approver:** Chief Architect / DOMAIN-008
+- **Approval date:** 2026-09-14
+- **Approved revision:** Proposal 3
+- **Commissioning status:** UNCOMMISSIONED
+- **Engineering status:** DEFERRED FUTURE CAPABILITY
+- **Current-production requirement:** NONE ESTABLISHED
+- **Current NSE/MCX disposition:** SAME-DATE CONFIRMED
+- **Cross-midnight successor capability:** DEFERRED
+- **Partial implementation:** Safely archived and removed from the active worktree
+- **Reactivation:** Requires an authoritative D+1 schedule or new explicit Sponsor instruction
+- **Approval verdict:** WO-SWING-03A-ARCH-APPROVAL-02 = APPROVED
+
+- [DOMAIN-008 explicit session offsets and ownership V2](KRONOS-MARKET-CROSS-MIDNIGHT-SESSION-V2.md) — Proposal 3 (REV02), APPROVED under ADR-0056 but UNCOMMISSIONED and DEFERRED. Existing manifest V3/V1 remains production authority. All 1,327 inspected production windows were same-date, zero D+1 windows were found and 231 unchanged-HEAD tests passed. The partial implementation is archived outside the repository and is not published or runtime-loaded.
+
 ## Purpose
 
 This directory contains reusable templates and approved or proposed interface contracts between KRONOS products.

@@ -4,6 +4,36 @@
 **Owner:** Architecture Librarian
 **Approved By:** Not approved
 
+## Approved, uncommissioned DOMAIN-008 cross-midnight amendment
+
+- **Architecture status:** APPROVED — Proposal 3
+- **Approver:** Chief Architect / DOMAIN-008
+- **Approval date:** 2026-09-14
+- **Approved revision:** Proposal 3
+- **Commissioning status:** UNCOMMISSIONED
+- **Engineering status:** DEFERRED FUTURE CAPABILITY
+- **Current-production requirement:** NONE ESTABLISHED
+- **Current NSE/MCX disposition:** SAME-DATE CONFIRMED
+- **Cross-midnight successor capability:** DEFERRED
+- **Partial implementation:** Safely archived and removed from the active worktree
+- **Reactivation:** Requires an authoritative D+1 schedule or new explicit Sponsor instruction
+- **Approval verdict:** WO-SWING-03A-ARCH-APPROVAL-02 = APPROVED
+
+[ADR-0056](adr/ADR-0056-DOMAIN-008-CROSS-MIDNIGHT-SESSION-FOUNDATION.md), its
+[approved, uncommissioned V2 contract](interfaces/KRONOS-MARKET-CROSS-MIDNIGHT-SESSION-V2.md) and
+[consumer/acceptance plan](products/swing/WO-SWING-03A-CONTRACT-CONSUMERS-AND-ACCEPTANCE.md)
+record WO-SWING-03A-CONTRACT, Proposal 3 (REV02). Historical V1 and ADR-0028
+remain intact. Sponsor-deferred engineering does not withdraw or supersede the
+approved contract. V2 has not been commissioned, published as a production
+capability or runtime-loaded; existing manifest V3/V1 remains production authority.
+
+WO-SWING-03B inspected 1,327 current production windows and found zero D+1
+windows. NSE and all five Swing MCX families are same-date; unchanged-HEAD
+verification passed 231 tests. No current production record requires V2.
+Synthetic D 23:00 to D+1 01:00 remains a deferred successor capability.
+Intraday source was restored byte-identically to HEAD. The partial implementation
+is preserved at `/Users/imranali/Documents/Project-KRONOS/output/swing-deferred/WO-SWING-03A-2026-09-14`.
+
 ## Purpose
 
 This is the central navigation index for KRONOS architecture knowledge. It records document purpose, repository status, stated owner, and location without changing the authority of any indexed document.

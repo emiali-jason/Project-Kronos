@@ -2,6 +2,23 @@
 Status: Draft
 Owner: Chief Architect
 
+## Approved ADR-0056 amendment — uncommissioned future capability
+
+- **Architecture status:** APPROVED — Proposal 3
+- **Approver:** Chief Architect / DOMAIN-008
+- **Approval date:** 2026-09-14
+- **Approved revision:** Proposal 3
+- **Commissioning status:** UNCOMMISSIONED
+- **Engineering status:** DEFERRED FUTURE CAPABILITY
+- **Current-production requirement:** NONE ESTABLISHED
+- **Current NSE/MCX disposition:** SAME-DATE CONFIRMED
+- **Cross-midnight successor capability:** DEFERRED
+- **Partial implementation:** Safely archived and removed from the active worktree
+- **Reactivation:** Requires an authoritative D+1 schedule or new explicit Sponsor instruction
+- **Approval verdict:** WO-SWING-03A-ARCH-APPROVAL-02 = APPROVED
+
+- [ADR-0056 — DOMAIN-008 Cross-Midnight Session Foundation](../adr/ADR-0056-DOMAIN-008-CROSS-MIDNIGHT-SESSION-FOUNDATION.md), [approved uncommissioned interface](../interfaces/KRONOS-MARKET-CROSS-MIDNIGHT-SESSION-V2.md), [consumer/acceptance plan](../products/swing/WO-SWING-03A-CONTRACT-CONSUMERS-AND-ACCEPTANCE.md). Proposal 3 (REV02) remains APPROVED. Sponsor-deferred engineering leaves V2 UNCOMMISSIONED and not runtime-loaded. WO-SWING-03B found 1,327 same-date production windows, zero D+1 windows and 231 passing unchanged-HEAD tests; current manifest V3/V1 remains production authority.
+
 ## Purpose
 
 Provide navigation to the approved KRONOS Platform Architecture v1.0 documents and the existing platform principle records.

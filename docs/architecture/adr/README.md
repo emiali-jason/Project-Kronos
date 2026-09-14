@@ -4,6 +4,23 @@
 **Owner:** Architecture Librarian  
 **Approved By:** Not approved
 
+## Approved ADR-0056 — uncommissioned future capability
+
+- **Architecture status:** APPROVED — Proposal 3
+- **Approver:** Chief Architect / DOMAIN-008
+- **Approval date:** 2026-09-14
+- **Approved revision:** Proposal 3
+- **Commissioning status:** UNCOMMISSIONED
+- **Engineering status:** DEFERRED FUTURE CAPABILITY
+- **Current-production requirement:** NONE ESTABLISHED
+- **Current NSE/MCX disposition:** SAME-DATE CONFIRMED
+- **Cross-midnight successor capability:** DEFERRED
+- **Partial implementation:** Safely archived and removed from the active worktree
+- **Reactivation:** Requires an authoritative D+1 schedule or new explicit Sponsor instruction
+- **Approval verdict:** WO-SWING-03A-ARCH-APPROVAL-02 = APPROVED
+
+- [ADR-0056 — DOMAIN-008 Cross-Midnight Session Foundation](ADR-0056-DOMAIN-008-CROSS-MIDNIGHT-SESSION-FOUNDATION.md) — Proposal 3 (REV02), APPROVED and UNCOMMISSIONED, 2026-09-14. Sponsor-deferred engineering leaves the approved contract available for future implementation. Current V3/V1 production authority covers 1,327 inspected same-date windows with zero D+1 windows; unchanged-HEAD verification passed 231 tests. The archived partial implementation is not published or runtime-loaded.
+
 ## Purpose
 
 This directory is the canonical location for new KRONOS Architecture Decision Records.
