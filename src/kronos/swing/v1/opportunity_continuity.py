@@ -156,6 +156,200 @@ class FourHourConsumption:
 
 
 @dataclass(frozen=True)
+class CausalPivotReference:
+    timeframe: str
+    radius: int
+    kind: str
+    value: float
+    centre: datetime
+    confirmation: datetime | None
+
+
+@dataclass(frozen=True)
+class QualificationEvidence:
+    """WO-06 references only; the exact Native/MTF owners retain the payloads."""
+    run: str
+    assessment: str
+    mtf: str
+    observed_at: datetime
+    policy: tuple[str, str]
+    boundaries: tuple[tuple[str, datetime], ...]
+    fingerprints: tuple[tuple[str, str], ...]
+    candles: tuple[tuple[str, str], ...]
+    history: tuple[tuple[str, int, str], ...]
+    pivots: tuple[CausalPivotReference, ...]
+    anchor: native.NativeAnchor | None
+    gaps: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class QualificationOrigin:
+    opportunity: str
+    material_revision: str
+    evidence: QualificationEvidence
+    boundary: datetime | None
+    first_detected: datetime
+    attribution: str
+
+
+@dataclass(frozen=True)
+class QualificationCorrection:
+    """Same-boundary WO-04 material correction, not a replacement detection."""
+    previous_run: str
+    previous_assessment: str
+    evidence: QualificationEvidence
+    timeframes: tuple[str, ...]
+    support: str
+
+
+@dataclass(frozen=True)
+class QualificationRecord:
+    origin: QualificationOrigin | None
+    current: QualificationEvidence
+    validity: str
+    reason: str | None
+    corrections: tuple[QualificationCorrection, ...]
+
+
+def _candle_fingerprint(bar):
+    # Acquisition boundaries/provenance remain in exact MTF references, not in
+    # the equality test for an unchanged historical completed candle.
+    return _digest({"start": getattr(bar, "source_timestamp", getattr(bar, "source_start", None)),
+        **{key: getattr(bar, key, None) for key in ("observation_boundary", "open", "high", "low",
+            "close", "volume", "calendar_identity", "calendar_version", "session_identity",
+            "trading_week_identity", "exchange_timezone", "source_interval", "source_provider_identity", "bucket_class")}})
+
+
+def _causal_evidence(snapshot, instrument, assessment, fps, mtf_sha):
+    """Reference the radii already consumed by Native; never classify or replay.
+
+    Pivot indices are relative to measurement windows, so resolve centres by
+    exact timestamp/value in retained bars, then locate the right-hand bar.
+    Absence is an evidence gap, never an inferred confirmation timestamp.
+    """
+    boundaries, candles, history, refs, gaps = [], [], [], [], []
+    for tf, radii in ((FactualTimeframe.DAILY, (2, 1)),
+                      (FactualTimeframe.FOUR_HOUR, (1, 2)),
+                      (FactualTimeframe.ONE_HOUR, (1,))):
+        fact = instrument.fact(tf)
+        bars = instrument.completed_bars(tf)
+        boundaries.append((tf.value, fact.observation_boundary))
+        candles.append((tf.value, _candle_fingerprint(bars[-1])))
+        history.append((tf.value, len(bars), _digest(tuple(_candle_fingerprint(b) for b in bars))))
+        # Daily radius 1 participates only in the existing reversal branch.
+        if tf is FactualTimeframe.DAILY and assessment.context_kind is not native.NativeContextKind.REVERSAL:
+            radii = (2,)
+        for radius in radii:
+            series = native._pivot_series(fact, radius)
+            pivots = (*series.swing_highs[-2:], *series.swing_lows[-2:])
+            if len(pivots) < 4:
+                gaps.append(tf.value + "_CAUSAL_PIVOTS_UNAVAILABLE")
+            for pivot in pivots:
+                refs.append(_pivot_reference(tf.value, radius, pivot, bars, fact.observation_boundary))
+    if instrument.exchange == "NSE":
+        weekly = instrument.nse_weekly_foundation
+        if weekly is None or not weekly.completed_weekly_bars or weekly.observation_boundary is None:
+            gaps.append("1W_CAUSAL_EVIDENCE_UNAVAILABLE")
+        else:
+            boundaries.append(("1W", weekly.observation_boundary))
+            candles.append(("1W", _candle_fingerprint(weekly.completed_weekly_bars[-1])))
+            history.append(("1W", len(weekly.completed_weekly_bars),
+                _digest(tuple(_candle_fingerprint(b) for b in weekly.completed_weekly_bars))))
+            structure = weekly.radius_2_structure
+            # Native explicitly permits NONE/incomplete Weekly structure. Only
+            # reference a directional relation actually available to its rules;
+            # do not turn a factual absence into a new Weekly eligibility gate.
+            if structure is not None and structure.high_relation is not None and structure.low_relation is not None:
+                for pivot in (structure.preceding_high, structure.latest_high,
+                              structure.preceding_low, structure.latest_low):
+                    if pivot is not None:
+                        refs.append(_pivot_reference("1W", 2, pivot,
+                            weekly.completed_weekly_bars, weekly.observation_boundary))
+    gaps.extend(p.timeframe + "_PIVOT_CONFIRMATION_UNAVAILABLE" for p in refs if p.confirmation is None)
+    if assessment.operative_anchor is None:
+        gaps.append("OPERATIVE_ANCHOR_UNAVAILABLE")
+    return QualificationEvidence(snapshot.run_identity, assessment.result_sha256, mtf_sha,
+        snapshot.observed_at, (assessment.policy_identity, assessment.policy_version),
+        tuple(boundaries), tuple(sorted(fps.items())), tuple(candles), tuple(history), tuple(refs),
+        assessment.operative_anchor, tuple(sorted(set(gaps))))
+
+
+def _pivot_reference(tf, radius, pivot, bars, boundary):
+    matches = [n for n, bar in enumerate(bars)
+               if getattr(bar, "source_timestamp", getattr(bar, "source_start", None)) == pivot.timestamp
+               and getattr(bar, "high" if pivot.kind.value == "HIGH" else "low") == pivot.value]
+    confirmation = None
+    if len(matches) == 1:
+        n = matches[0]
+        if n >= radius and n + radius < len(bars):
+            window = bars[n - radius:n + radius + 1]
+            if (all(b.observation_boundary <= boundary for b in window)
+                    and all(a.observation_boundary <= getattr(b, "source_timestamp", getattr(b, "source_start", None))
+                            for a, b in zip(window, window[1:]))):
+                confirmation = bars[n + radius].observation_boundary
+    return CausalPivotReference(tf, radius, pivot.kind.value, pivot.value, pivot.timestamp, confirmation)
+
+
+def _qualification_boundary(current, old, previous, instrument):
+    """Prove only one adjacent, retained, completed transition; no replay.
+
+    An initial snapshot, a skipped bar, newly downloaded older history, multiple
+    changed dependencies, or a correction cannot establish an earlier event.
+    """
+    if (current.gaps or old is None or old.qualification is None or previous is None
+            or old.reason is not None or old.qualification.current.gaps
+            or previous.status not in {native.NativeDiscoveryStatus.FORMING_WATCH,
+                                       native.NativeDiscoveryStatus.NO_CURRENT_OPPORTUNITY}):
+        return None
+    prior = old.qualification.current
+    changed = [tf for tf, digest in current.fingerprints if dict(prior.fingerprints).get(tf) != digest]
+    if len(changed) != 1 or current.policy != prior.policy:
+        return None
+    tf = changed[0]
+    bars = (instrument.nse_weekly_foundation.completed_weekly_bars if tf == "1W"
+            else instrument.completed_bars(FactualTimeframe(tf)))
+    boundary = dict(current.boundaries)[tf]
+    retained_history = next((count, digest) for name, count, digest in prior.history if name == tf)
+    if (len(bars) < 2 or _candle_fingerprint(bars[-2]) != dict(prior.candles).get(tf)
+            or retained_history != (len(bars) - 1, _digest(tuple(_candle_fingerprint(b) for b in bars[:-1])))
+            or bars[-2].observation_boundary != getattr(bars[-1], "source_timestamp", getattr(bars[-1], "source_start", None))
+            or not old.last_analysis_checked < boundary <= current.observed_at
+            or boundary != max(b for _, b in current.boundaries)
+            or any(p.confirmation is None or p.confirmation > boundary for p in current.pivots)):
+        return None
+    return boundary
+
+
+def _prepare_qualification(snapshot, instrument, assessment, fps, row, old, previous, mtf_sha):
+    current = _causal_evidence(snapshot, instrument, assessment, fps, mtf_sha)
+    retained = None if old is None else old.qualification
+    origin = None if retained is None else retained.origin
+    reason = row.reason
+    if current.gaps:
+        reason = reason or "QUALIFICATION_CAUSAL_EVIDENCE_UNAVAILABLE"
+    if row.opportunity_id is not None and row.origin_run == snapshot.run_identity:
+        boundary = _qualification_boundary(current, old, previous, instrument)
+        origin = QualificationOrigin(row.opportunity_id, row.material_revision, current,
+            boundary, row.first_admitted, "EXACT_COMMITTED_PREDECESSOR_TRANSITION" if boundary is not None
+            else "FIRST_RETAINED_DETECTION_EARLIER_QUALIFICATION_NOT_ESTABLISHED")
+    elif row.opportunity_id is not None and origin is None:
+        # Read old companions without migrating or backfilling their history.
+        reason = reason or "QUALIFICATION_HISTORY_UNAVAILABLE"
+    validity = ("MANUAL_REVIEW_REQUIRED" if reason else "VALID" if
+                assessment.status is native.NativeDiscoveryStatus.PROBABLE else "NOT_CURRENTLY_QUALIFIED")
+    corrections = () if retained is None else retained.corrections
+    if retained is not None and origin is not None:
+        prior = retained.current
+        corrected = tuple(tf for tf, digest in current.fingerprints
+            if dict(prior.fingerprints).get(tf) != digest
+            and dict(prior.boundaries).get(tf) == dict(current.boundaries).get(tf))
+        if corrected:
+            support = ("UNRESOLVED" if reason else "SUPPORTED" if validity == "VALID" else "NOT_SUPPORTED")
+            corrections += (QualificationCorrection(prior.run, prior.assessment, current, corrected, support),)
+    return QualificationRecord(origin, current, validity, reason, corrections)
+
+
+@dataclass(frozen=True)
 class ContinuityRow:
     canonical_instrument: str
     source_binding: SourceBinding | None
@@ -171,6 +365,7 @@ class ContinuityRow:
     last_analysis_checked: datetime
     no_material_change: bool
     consumptions: tuple[FourHourConsumption, ...]
+    qualification: QualificationRecord | None = None
 
 
 @dataclass(frozen=True)
@@ -193,6 +388,7 @@ class PreparedContinuity:
         for row in self.rows:
             assessment = next(a for a in self.native_run.assessments
                               if a.canonical_instrument == row.canonical_instrument)
+            _validate_qualification(row, assessment, self)
             if (not _hash_valid(row.material_fingerprint)
                     or row.last_analysis_checked < self.native_run.observed_at
                     or row.latest_material_at > row.last_analysis_checked
@@ -244,7 +440,15 @@ class PreparedContinuity:
 def _material(bundle):
     # Native timestamp spellings participate in its existing hashes: preserve them.
     return {"schema": SCHEMA, "native_run": native._json_value(asdict(bundle.native_run)),
-            "mtf_sha256": bundle.mtf_sha256, "rows": bundle.rows}
+            "mtf_sha256": bundle.mtf_sha256, "rows": tuple(_row_material(r) for r in bundle.rows)}
+
+
+def _row_material(row):
+    value = asdict(row)
+    if row.qualification is None:
+        # Preserve historical WO-04 bytes and integrity hashes exactly.
+        del value["qualification"]
+    return value
 
 
 def _opportunity_id(run, symbol, assessment):
@@ -314,6 +518,7 @@ def prepare_continuity(snapshot: SameRunMtfFactSnapshot, source_bindings, *,
             or set(bindings) - {i.canonical_instrument for i in snapshot.instruments}):
         raise ValueError("SWING_CONTINUITY_SOURCE_INVALID")
     rows = []
+    mtf_sha = _digest(snapshot)
 
     def build(snap, instrument, previous, control):
         binding = bindings.get(instrument.canonical_instrument)
@@ -419,19 +624,21 @@ def prepare_continuity(snapshot: SameRunMtfFactSnapshot, source_bindings, *,
         revision = None if old is None else old.material_revision
         if opportunity is not None and reason is None:
             revision = "SWMR-" + _digest({"opportunity": opportunity, "material": material})
-        rows.append(ContinuityRow(instrument.canonical_instrument, binding, disposition, reason,
+        row = ContinuityRow(instrument.canonical_instrument, binding, disposition, reason,
                                  opportunity, origin_run, origin_assessment, first_admitted, revision,
                                  material, old.latest_material_at if same else max(
                                      f.observation_boundary for f in instrument.timeframes
                                      if instrument.exchange == "NSE" or f.timeframe is not FactualTimeframe.WEEKLY),
-                                 checked_at, same, tuple(memos)))
+                                 checked_at, same, tuple(memos))
+        rows.append(replace(row, qualification=_prepare_qualification(
+            snap, instrument, assessment, fps, row, old, previous, mtf_sha)))
         return assessment
 
     previous_run = (adopted_predecessor.native if adopted_predecessor is not None else
                     None if prior is None else prior.native_run)
     run = native.discover_native_mtf(snapshot, previous_run,
                                     daily_control, assessment_builder=build)
-    result = PreparedContinuity(run, _digest(snapshot), tuple(rows), "")
+    result = PreparedContinuity(run, mtf_sha, tuple(rows), "")
     return replace(result, integrity_sha256=_digest(_material(result))).validate()
 
 
@@ -440,22 +647,148 @@ def _anchor(value):
                                                         value["price"], datetime.fromisoformat(value["source_boundary"]))
 
 
+def _shape(value, cls):
+    if type(value) is not dict or set(value) != {f.name for f in fields(cls)}:
+        raise ValueError("SWING_QUALIFICATION_SHAPE_INVALID")
+    return dict(value)
+
+
+def _qualification_evidence(value):
+    v = _shape(value, QualificationEvidence)
+    v["observed_at"] = datetime.fromisoformat(v["observed_at"])
+    v["policy"] = tuple(v["policy"])
+    v["boundaries"] = tuple((tf, datetime.fromisoformat(t)) for tf, t in v["boundaries"])
+    for key in ("fingerprints", "candles"):
+        v[key] = tuple(tuple(pair) for pair in v[key])
+    v["history"] = tuple(tuple(item) for item in v["history"])
+    refs = []
+    for p in v["pivots"]:
+        p = _shape(p, CausalPivotReference)
+        p["centre"] = datetime.fromisoformat(p["centre"])
+        p["confirmation"] = None if p["confirmation"] is None else datetime.fromisoformat(p["confirmation"])
+        refs.append(CausalPivotReference(**p))
+    v["pivots"] = tuple(refs)
+    v["anchor"] = _anchor(v["anchor"])
+    v["gaps"] = tuple(v["gaps"])
+    return QualificationEvidence(**v)
+
+
+def _qualification_record(value):
+    v = _shape(value, QualificationRecord)
+    v["current"] = _qualification_evidence(v["current"])
+    if v["origin"] is not None:
+        origin = _shape(v["origin"], QualificationOrigin)
+        origin["evidence"] = _qualification_evidence(origin["evidence"])
+        origin["first_detected"] = datetime.fromisoformat(origin["first_detected"])
+        origin["boundary"] = None if origin["boundary"] is None else datetime.fromisoformat(origin["boundary"])
+        v["origin"] = QualificationOrigin(**origin)
+    corrections = []
+    for item in v["corrections"]:
+        item = _shape(item, QualificationCorrection)
+        item["evidence"] = _qualification_evidence(item["evidence"])
+        item["timeframes"] = tuple(item["timeframes"])
+        corrections.append(QualificationCorrection(**item))
+    v["corrections"] = tuple(corrections)
+    return QualificationRecord(**v)
+
+
+def _validate_qualification(row, assessment, bundle):
+    q = row.qualification
+    if q is None:
+        return  # Legacy contract, no invented origin or migration.
+    error = "SWING_QUALIFICATION_BINDING_INVALID"
+    if (type(q) is not QualificationRecord
+            or q.validity not in {"VALID", "NOT_CURRENTLY_QUALIFIED", "MANUAL_REVIEW_REQUIRED"}
+            or (q.validity == "MANUAL_REVIEW_REQUIRED") != (q.reason is not None)
+            or q.current.run != bundle.native_run.run_identity
+            or q.current.assessment != assessment.result_sha256
+            or q.current.mtf != bundle.mtf_sha256
+            or q.current.observed_at != bundle.native_run.observed_at
+            or q.current.anchor != assessment.operative_anchor
+            or (q.validity == "VALID" and assessment.status is not native.NativeDiscoveryStatus.PROBABLE)
+            or ((q.current.gaps or row.reason) and q.validity != "MANUAL_REVIEW_REQUIRED")):
+        raise ValueError(error)
+    expected_tf = {"1D", "4H", "1H"}
+    if assessment.weekly_state is not native.Native1WState.NOT_APPLICABLE:
+        expected_tf.add("1W")
+    evidence = [q.current]
+    if q.origin is not None:
+        o = q.origin
+        evidence.append(o.evidence)
+        if (o.opportunity != row.opportunity_id or o.evidence.run != row.origin_run
+                or o.evidence.assessment != row.origin_assessment or o.first_detected != row.first_admitted
+                or o.first_detected < o.evidence.observed_at or o.first_detected > row.last_analysis_checked
+                or not o.material_revision.startswith("SWMR-") or not _hash_valid(o.material_revision[5:])
+                or (o.boundary is None) != (o.attribution == "FIRST_RETAINED_DETECTION_EARLIER_QUALIFICATION_NOT_ESTABLISHED")
+                or o.attribution not in {"FIRST_RETAINED_DETECTION_EARLIER_QUALIFICATION_NOT_ESTABLISHED",
+                                         "EXACT_COMMITTED_PREDECESSOR_TRANSITION"}
+                or (o.boundary is not None and (o.evidence.gaps or o.boundary > o.evidence.observed_at
+                    or o.boundary != max(t for _, t in o.evidence.boundaries)
+                    or any(p.confirmation is None or p.confirmation > o.boundary for p in o.evidence.pivots)))):
+            raise ValueError(error)
+        if row.origin_run == bundle.native_run.run_identity and (
+                o.evidence != q.current or assessment.status is not native.NativeDiscoveryStatus.PROBABLE):
+            raise ValueError(error)
+    elif row.opportunity_id is not None and q.validity != "MANUAL_REVIEW_REQUIRED":
+        raise ValueError(error)
+    if len({item.evidence.run for item in q.corrections}) != len(q.corrections):
+        raise ValueError(error)
+    for item in q.corrections:
+        evidence.append(item.evidence)
+        if (q.origin is None or not native.is_swing_analysis_run_id(item.previous_run)
+                or not _hash_valid(item.previous_assessment) or not item.timeframes
+                or not set(item.timeframes) <= {"1D", "4H", "1H", "1W"}
+                or item.support not in {"SUPPORTED", "NOT_SUPPORTED", "UNRESOLVED"}
+                or item.evidence.observed_at > q.current.observed_at):
+            raise ValueError(error)
+    for e in evidence:
+        if (not native.is_swing_analysis_run_id(e.run)
+                or not _hash_valid(e.assessment) or not _hash_valid(e.mtf)
+                or len(e.policy) != 2 or not all(isinstance(p, str) for p in e.policy)
+                or e.observed_at.utcoffset() is None
+                or len(dict(e.boundaries)) != len(e.boundaries)
+                or not {"1D", "4H", "1H"} <= set(dict(e.boundaries)) <= {"1D", "4H", "1H", "1W"}
+                or any(t.utcoffset() is None or t > e.observed_at for _, t in e.boundaries)
+                or set(dict(e.candles)) != set(dict(e.boundaries))
+                or {tf for tf, _, _ in e.history} != set(dict(e.boundaries))
+                or len(e.history) != len(e.boundaries)
+                or any(type(count) is not int or count < 1 or not _hash_valid(digest) for _, count, digest in e.history)
+                or set(dict(e.fingerprints)) != expected_tf
+                or any(not _hash_valid(h) for _, h in (*e.candles, *e.fingerprints))):
+            raise ValueError(error)
+        for p in e.pivots:
+            if (p.timeframe not in dict(e.boundaries) or p.radius not in {1, 2}
+                    or p.kind not in {"HIGH", "LOW"} or not math.isfinite(p.value)
+                    or p.centre.utcoffset() is None
+                    or (p.confirmation is not None and (p.confirmation.utcoffset() is None
+                        or not p.centre < p.confirmation <= dict(e.boundaries)[p.timeframe]))
+                    or (p.confirmation is None and p.timeframe + "_PIVOT_CONFIRMATION_UNAVAILABLE" not in e.gaps)):
+                raise ValueError(error)
+
+
 def stamp_completed_contribution(prepared, completed_at):
     """Publication owner supplies completion after the full analysis is built."""
     prepared.validate()
     if completed_at.utcoffset() is None or completed_at < prepared.native_run.observed_at:
         raise ValueError("SWING_CONTINUITY_TIMESTAMP_INVALID")
-    rows = tuple(replace(row, last_analysis_checked=completed_at,
-        first_admitted=(completed_at if row.origin_run == prepared.native_run.run_identity
-                        else row.first_admitted)) for row in prepared.rows)
-    result = replace(prepared, rows=rows, integrity_sha256="")
+    rows = []
+    for row in prepared.rows:
+        qualification = row.qualification
+        if qualification is not None and qualification.origin is not None and row.origin_run == prepared.native_run.run_identity:
+            qualification = replace(qualification, origin=replace(qualification.origin, first_detected=completed_at))
+        rows.append(replace(row, last_analysis_checked=completed_at, qualification=qualification,
+            first_admitted=(completed_at if row.origin_run == prepared.native_run.run_identity else row.first_admitted)))
+    result = replace(prepared, rows=tuple(rows), integrity_sha256="")
     return replace(result, integrity_sha256=_digest(_material(result))).validate()
 
 
 def _row(value):
-    if set(value) != {f.name for f in fields(ContinuityRow)}:
+    names = {f.name for f in fields(ContinuityRow)}
+    if set(value) not in (names, names - {"qualification"}):
         raise ValueError("SWING_CONTINUITY_ROW_INVALID")
     value = dict(value)
+    if "qualification" in value:
+        value["qualification"] = _qualification_record(value["qualification"])
     value["disposition"] = ContinuityDisposition(value["disposition"])
     value["source_binding"] = None if value["source_binding"] is None else SourceBinding(**value["source_binding"])
     for key in ("first_admitted", "latest_material_at", "last_analysis_checked"):

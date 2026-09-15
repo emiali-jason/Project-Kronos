@@ -728,6 +728,18 @@ def _swing_continuity_summary(row):
     if row.opportunity_id is not None:
         lines.extend(("Opportunity ID · " + row.opportunity_id,
                       "First admitted · " + stamp(row.first_admitted)))
+        qualification = row.qualification
+        origin = None if qualification is None else qualification.origin
+        lines.append("Qualified on · " + (stamp(origin.boundary) if origin is not None and origin.boundary is not None
+                     else "Earlier qualification not established"))
+        if origin is not None:
+            lines.append("First detected · " + stamp(origin.first_detected))
+        lines.append("Current validity · " + (qualification.validity.replace("_", " ")
+                     if qualification is not None else "QUALIFICATION CONTINUITY UNAVAILABLE"))
+        if qualification is not None and qualification.reason:
+            lines.append("Evidence gap / continuity · " + qualification.reason.replace("_", " "))
+        if qualification is not None and qualification.corrections:
+            lines.append("Same-boundary correction · " + qualification.corrections[-1].support)
     lines.extend(("Latest material evidence · " + stamp(row.latest_material_at),
                   "Last analysis checked · " + stamp(row.last_analysis_checked)))
     if row.disposition.value == "MANUAL_REVIEW_REQUIRED":
