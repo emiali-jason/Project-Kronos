@@ -378,11 +378,21 @@ def render_opportunities(
     projection_revision: str | None = None,
     committed_continuity=None,
     publication_status=None,
+    native_intake=None,
 ) -> str:
     """Render the current successful Native Discovery opportunity population."""
 
     if discovery is not None and type(discovery) is not NativeDiscoveryRun:
         raise TypeError("NATIVE_OPPORTUNITIES_DISCOVERY_INVALID")
+    if native_intake is not None and native_intake.get("workspace") is not None:
+        workspace = native_intake["workspace"]
+        control = None if publication_status is None else publication_status.get("control")
+        if (discovery is None or workspace["run_identity"] != discovery.run_identity
+                or (publication_status is not None and (control is None
+                    or workspace["manifest"] != control["current_manifest"]["sha256"]))):
+            # Publication may advance between the card and intake reads. Never
+            # present a newer Review workspace as belonging to older cards.
+            native_intake = dict(rows=(), packages=(), workspace=None, error="REVIEW_BINDING_STALE")
     if review is not None and type(review) is not NativeReviewWorkflowSnapshot:
         raise TypeError("NATIVE_OPPORTUNITIES_REVIEW_INVALID")
     if progression is not None and type(progression) is not SwingProgressionWatchSnapshot:
@@ -454,14 +464,16 @@ def render_opportunities(
         commodities = tuple(
             item for item in probables if item.product_path is NativeProductPath.MCX
         )
-        body += '<div class="panels">'
+        if native_intake is not None:
+            body += _intake_workspace_header(native_intake)
+        body += '<div class="wo07-markets">' if native_intake is not None else '<div class="panels">'
         body += _native_opportunity_panel(
             "EQUITIES + INDICES", equities, review, progression, visual_v3,
-            trade_windows, refresh_reminders, continuity_rows,
+            trade_windows, refresh_reminders, continuity_rows, native_intake,
         )
         body += _native_opportunity_panel(
             "COMMODITIES", commodities, review, progression, visual_v3,
-            trade_windows, refresh_reminders, continuity_rows,
+            trade_windows, refresh_reminders, continuity_rows, native_intake,
         )
         body += "</div>"
     return _page(
@@ -524,12 +536,13 @@ def _native_opportunity_metrics(counts: dict[NativeDiscoveryStatus, int]) -> str
 
 def _native_opportunity_panel(
     title, probables, review, progression=None, visual_v3=(), trade_windows=(),
-    refresh_reminders=None, continuity_rows=None,
+    refresh_reminders=None, continuity_rows=None, native_intake=None,
 ) -> str:  # type: ignore[no-untyped-def]
     cards = "".join(
         _native_opportunity_card(
             item, review, progression, visual_v3, trade_windows, refresh_reminders,
             None if continuity_rows is None else continuity_rows.get(item.canonical_instrument),
+            native_intake,
         )
         for item in probables
     )
@@ -542,7 +555,8 @@ def _native_opportunity_panel(
     return (
         '<section class="market-panel"><div class="panel-heading">'
         f'<h2>{escape(title)}</h2><span>{len(probables)} Native Probables</span>'
-        f'</div>{cards}</section>'
+        '</div>' + (f'<div class="wo07-card-grid">{cards}</div>' if native_intake is not None else cards)
+        + '</section>'
     )
 
 
@@ -554,6 +568,7 @@ def _native_opportunity_card(
     trade_windows=(),
     refresh_reminders=None,
     continuity=None,
+    native_intake=None,
 ) -> str:  # type: ignore[no-untyped-def]
     review_run_identity = None if review is None else review.native_run_identity
     readiness_records = () if review is None else review.readiness_records
@@ -698,20 +713,40 @@ def _native_opportunity_card(
         f'<a class="button" href="/swing/trade-window/{escape(item.run_identity)}/'
         f'{quote(item.canonical_instrument, safe="")}">Open Trade Window →</a>'
     )
+    review_action = '<a class="button" href="/swing/v1-review">Open Native Review →</a>'
+    intake_summary = ""
+    if native_intake is not None:
+        row = next((row for row in native_intake["rows"]
+            if row["instrument"] == item.canonical_instrument
+            and row.get("run_identity") == item.run_identity
+            and (not row.get("eligible") or row.get("assessment_sha256") == item.result_sha256)), None)
+        eligible = row is not None and row.get("eligible", False)
+        current = eligible and row.get("expected") is not None and not native_intake["error"]
+        label = ("REVIEW ELIGIBLE" if eligible else "REVIEW INELIGIBLE" if row is not None
+                 else "REVIEW BINDING UNAVAILABLE")
+        intake_summary = '<p class="summary-reason">' + label + ' · ' + (
+            'BINDING CURRENT' if current else 'Review workspace unavailable') + '</p>'
+        if not current:
+            review_action = '<span class="button" aria-disabled="true">Review workspace unavailable</span>'
+        if v3 is None and sponsor_readiness is None:
+            state_value = escape(label if current or not eligible else 'REVIEW ELIGIBLE · REVIEW BINDING UNAVAILABLE')
+        if row is not None and row.get("error"):
+            intake_summary += _intake_error(row["error"])
     return (
         '<article class="opportunity native-opportunity"><div class="opp-head">'
         f'<div class="opp-identity"><h3>{escape(item.canonical_instrument)}</h3>'
-        f'<span class="setup-family">{escape(item.opportunity_identity.value.replace("_", " "))}</span></div>'
+        f'<span class="setup-family">{escape(item.opportunity_identity.value.replace("_", " ") if item.opportunity_identity is not None else "ANALYTICAL CONTEXT UNAVAILABLE")}</span></div>'
         f'<span class="direction direction-{escape(direction.lower())}">{escape(direction)}</span>'
         '</div><p class="summary-reason">' + escape(context) + '</p>'
         + _swing_continuity_summary(continuity)
+        + intake_summary
         + '<div class="summary-footer"><span class="summary-rr">'
         + ('KR-370' if v3 is not None and v3.kr370 is not None
            else 'Chart / reference status' if v3 is not None else 'Review')
         + ' · <strong>'
         + state_value + '</strong>' + missing + progression_summary
         + active_watch_summary + kr370_summary + '</span>'
-        '<span class="native-opportunity-actions"><a class="button" href="/swing/v1-review">Open Native Review →</a>'
+        '<span class="native-opportunity-actions">' + review_action +
         f'<a class="button" href="/swing/analysis-details/{escape(item.run_identity)}/'
         f'{quote(item.canonical_instrument, safe="")}">View Analysis Details →</a>'
         + trade_window_action + '</span>'
@@ -725,6 +760,12 @@ def _swing_continuity_summary(row):
     def stamp(value):
         return value.astimezone(ZoneInfo("Asia/Kolkata")).strftime("%d %b %Y %H:%M IST")
     lines = []
+    if row.opportunity_id is None and row.qualification is not None:
+        lines.extend(("Opportunity ID · Not established", "Material revision · Not established",
+            "Current validity · " + row.qualification.validity.replace("_", " "),
+            "Qualification history · Not established"))
+        if row.qualification.reason:
+            lines.append("Evidence gap / continuity · " + row.qualification.reason.replace("_", " "))
     if row.opportunity_id is not None:
         lines.extend(("Opportunity ID · " + row.opportunity_id,
                       "First admitted · " + stamp(row.first_admitted)))
@@ -3813,6 +3854,40 @@ def render_v1_review(
     )
 
 
+def _intake_error(reason):
+    descriptions = {
+        "REVIEW_BINDING_STALE": "The selected analysis changed. Reload this workspace before continuing.",
+        "NATIVE_REVIEW_ASSESSMENT_INELIGIBLE": "This candidate does not satisfy the existing Review intake requirements.",
+        "NATIVE_REVIEW_OPPOSING_WEEKLY_CONTEXT_REJECTED": "This candidate's weekly context is not eligible for Review intake.",
+        "REVIEW_ACCEPTANCE_INCOMPLETE": "The complete required Answer or chart package is not available.",
+        "REVIEW_REQUEST_MISMATCH": "The evidence does not match this exact Review request.",
+    }
+    return ('<p role="alert">' + escape(descriptions.get(reason,
+        "Review workspace unavailable. The successful analysis and retained evidence have not been replaced."))
+        + '<br><code>' + escape(reason) + '</code></p>')
+
+
+def _intake_workspace_header(projection):
+    workspace = projection.get("workspace")
+    body = ('<style>.wo07-markets{display:grid;gap:14px;min-width:0}'
+        '.wo07-card-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,360px),1fr));gap:10px}'
+        '.wo07-card-grid>*{min-width:0;overflow-wrap:anywhere}.wo07-workspace{overflow-wrap:anywhere}'
+        '.wo07-markets .market-panel{min-height:0}.wo07-markets form{display:inline-block;margin:4px}'
+        '@media(max-width:760px){.wo07-card-grid{grid-template-columns:1fr}}</style>'
+        '<section class="review-note wo07-workspace"><h2>Current Review workspace</h2>')
+    if workspace is not None:
+        when = workspace["analysis_time"].astimezone(ZoneInfo("Asia/Kolkata")).strftime("%d %b %Y %H:%M IST")
+        body += ('<strong>BINDING ' + escape(workspace["state"]) + '</strong><p>Owning successful analysis · '
+            + escape(when) + '<br>Run · ' + escape(workspace["run_identity"])
+            + '<br>Committed manifest · ' + escape(workspace["manifest"]) + '</p>'
+            + '<p>Current candidates · ' + str(workspace["population"]) + ' · Review eligible · '
+            + str(workspace["eligible"]) + ' · Ineligible · ' + str(workspace["excluded"])
+            + ' · NSE · ' + str(workspace["nse"]) + ' · MCX · ' + str(workspace["mcx"]) + '</p>')
+    if projection["error"]:
+        body += '<strong>REVIEW BINDING UNAVAILABLE</strong>' + _intake_error(projection["error"])
+    return body + '</section>'
+
+
 def _receipt_native_review(projection):
     """Render immutable receipt applicability separately from consumer state."""
     from kronos.swing.v1.review_evidence_binding import canonical
@@ -3825,9 +3900,9 @@ def _receipt_native_review(projection):
             '<input type="hidden" name="expected" value="' + escape(canonical(expected).decode()) + '">'
             '<button type="submit">' + escape(label) + '</button></form>')
 
-    body = '<div class="review-note"><strong>NATIVE REVIEW · RECEIPT-BOUND EVIDENCE</strong></div>'
-    if projection["error"]:
-        body += '<div role="alert">' + escape(projection["error"]) + '</div>'
+    body = ('<div class="review-note"><strong>NATIVE REVIEW · RECEIPT-BOUND EVIDENCE</strong>'
+        '<p>Chart → Question Pack → Answer → immutable acceptance receipt. '
+        'Evidence intake only; no trading or execution authority.</p></div>' + _intake_workspace_header(projection))
     for market in ("NSE", "MCX"):
         ready = [row for row in projection["rows"] if row["market"] == market and row["complete"] and row["expected"]]
         if ready:
@@ -3835,28 +3910,47 @@ def _receipt_native_review(projection):
             body += action("native-review-pack", market, batch, "CREATE ALL " + market + " REVIEW PDF")
     for package in projection["packages"]:
         query = urlencode(dict(market=package["market"], publication=package["identity"]))
-        body += ('<div class="review-note"><strong>' + escape(package["market"]) + ' CURRENT REVIEW PACK</strong><br>'
+        body += ('<div class="review-note"><strong>' + escape(package["market"])
+            + (' CURRENT REVIEW PACK' if package["expected"] is not None else ' RETAINED REVIEW PACK · STALE') + '</strong><br>'
             '<a href="/swing/v1/native-request-pdf?' + escape(query) + '">'
             + escape(package["question_filename"]) + '</a><br>Answer filename: ' + escape(package["answer_filename"])
             + action("native-review-answer", package["market"], package["expected"], "UPLOAD ANSWER") + '</div>')
-    for index, row in enumerate(projection["rows"]):
+    body += '<div class="wo07-markets">'
+    ordered = sorted(projection["rows"], key=lambda row: (row["market"] != "NSE", row["instrument"]))
+    open_market = None
+    for index, row in enumerate(ordered):
         market, instrument = row["market"], row["instrument"]
+        if market != open_market:
+            if open_market is not None:
+                body += '</div></section>'
+            open_market = market
+            population = [item for item in ordered if item["market"] == market]
+            body += ('<section class="market-panel"><h2>' + escape(market) + ' REVIEW</h2><p>'
+                + str(len(population)) + ' candidates · Charts complete '
+                + str(sum(item["complete"] for item in population)) + ' · Question Pack ready '
+                + str(sum(item.get("question_ready", False) for item in population)) + ' · Evidence accepted '
+                + str(sum(item["evidence"] == "ACCEPTED" for item in population))
+                + '</p><div class="wo07-card-grid">')
         body += '<section class="review-note"><h3>' + escape(instrument) + '</h3>'
+        body += '<p>' + ('REVIEW ELIGIBLE' if row.get("eligible", True) else 'REVIEW INELIGIBLE')
+        body += ' · ' + ('BINDING CURRENT' if row["expected"] is not None else 'BINDING UNAVAILABLE') + '</p>'
+        body += _swing_continuity_summary(row.get("continuity"))
+        body += '<p>' + ('CHART RECEIVED' if row["complete"] else 'CHART MISSING') + ' · '
+        body += ('QUESTION PACK READY' if row.get("question_ready") else 'QUESTION PACK NOT CURRENT')
+        body += ' · ' + ('ANSWER ACCEPTED' if row["evidence"] == "ACCEPTED" else 'ANSWER MISSING / NOT CURRENTLY ACCEPTED') + '</p>'
         body += '<strong>' + ("MCX EVIDENCE " if market == "MCX" else "EVIDENCE · ") + escape(row["evidence"]) + '</strong>'
-        body += '<p>DOWNSTREAM ' + escape(row["downstream"].replace("_", " ")) + '</p>'
-        if row["supported_result"] is not None:
-            readiness, promotion = row["supported_result"]
-            body += '<p>Readiness · ' + escape(readiness) + '<br>KR-370 · ' + escape(promotion) + '</p>'
         if market == "MCX":
-            body += '<p>Readiness and KR-370 have not been run for this contract.</p>'
+            body += '<p>Native and mapped supporting-reference evidence are separate required packages.</p>'
             reference = row["selected"].get("SUPPORTING_REFERENCE")
             if reference is None or reference["image"] is None:
                 body += '<p>REFERENCE EVIDENCE MISSING<br>Complete MCX evidence acceptance is unavailable.</p>'
         if row["error"]:
-            body += '<p role="alert">' + escape(row["error"]) + '</p>'
+            body += _intake_error(row["error"])
         if row["replaced"]:
             body += '<details><summary>REPLACED · historical accepted evidence</summary>' + '<br>'.join(escape(v) for v in row["replaced"]) + '</details>'
         for offset, (role, selection) in enumerate(row["selected"].items()):
+            if row["expected"] is None or not row.get("eligible", True):
+                continue
             target = f'wo07-chart-{index}-{offset}'
             label = (" · ".join(row["reference"]) if role == "SUPPORTING_REFERENCE" else instrument)
             frames = "1W / 1D / 4H / 1H" if market == "NSE" else "1D / 4H / 1H"
@@ -3875,10 +3969,13 @@ def _receipt_native_review(projection):
                 + '<label class="file-choice" for="' + target + '-file">Choose File</label><input id="' + target
                 + '-file" class="chart-file" type="file" accept="image/png,image/jpeg,image/webp" data-target="' + target + '"></div></div>')
         body += action("native-review-pack", market, row["expected"] if row["complete"] else None, "CREATE PDF / SUCCESSOR")
-        if market == "NSE" and row["evidence"] == "ACCEPTED" and row["downstream"] != "SUCCEEDED":
-            body += action("native-review-handoff", market, row["expected"], "RETRY DOWNSTREAM")
         body += '</section>'
-    return body
+    if open_market is not None:
+        body += '</div></section>'
+    for market in ("NSE", "MCX"):
+        if not any(row["market"] == market for row in ordered):
+            body += '<section class="market-panel"><h2>' + market + ' REVIEW</h2><p>No current bound candidates.</p></section>'
+    return body + '</div>'
 
 
 def _native_review_requirements(

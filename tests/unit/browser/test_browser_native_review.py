@@ -5,6 +5,46 @@ from threading import Thread
 from zoneinfo import ZoneInfo
 from urllib.parse import quote
 
+
+def test_wo07_workspace_actions_are_bound_and_intake_only():
+    from kronos.browser.views import render_opportunities, _receipt_native_review
+    from tests.unit.application.test_swing_opportunities import _ready
+    from tests.unit.swing.v1.test_native_review import _evidence_run
+    facts, run, probable = _evidence_run()
+    row = dict(instrument=probable.canonical_instrument, market='NSE', eligible=True,
+        run_identity=run.run_identity, assessment_sha256=probable.result_sha256,
+        expected={'candidate': {}}, selected={}, complete=False, question_ready=False,
+        error=None, evidence='MISSING', replaced=(), continuity=None)
+    projection = dict(rows=(row,), packages=(), error=None, workspace=dict(
+        run_identity=run.run_identity, manifest='a'*64, analysis_time=facts.observed_at,
+        state='CURRENT', population=1, eligible=1, excluded=0, nse=1, mcx=0))
+    page = render_opportunities(_ready(), run, native_intake=projection)
+    assert 'REVIEW ELIGIBLE' in page and 'Open Native Review' in page
+    assert 'wo07-card-grid' in page and 'View Analysis Details' in page
+    advanced = {**projection, 'workspace': {**projection['workspace'], 'run_identity': 'SWING-RUN-' + 'F' * 32}}
+    page = render_opportunities(_ready(), run, native_intake=advanced)
+    assert 'REVIEW_BINDING_STALE' in page
+    assert 'href="/swing/v1-review">Open Native Review' not in page
+    assert advanced['workspace']['run_identity'] not in page
+    for eligible in (True, False):
+        row['eligible'] = eligible
+        row['expected'] = None
+        row['error'] = 'REVIEW_BINDING_STALE' if eligible else 'NATIVE_REVIEW_ASSESSMENT_INELIGIBLE'
+        page = render_opportunities(_ready(), run, native_intake=projection)
+        assert 'href="/swing/v1-review">Open Native Review' not in page
+        assert 'Review workspace unavailable' in page and 'View Analysis Details' in page
+        review = _receipt_native_review(projection)
+        assert 'No current bound candidates.' in review  # empty MCX section
+        assert 'data-upload-url' not in review
+        for control in ('RETRY DOWNSTREAM', 'RECONCILE', 'Readiness ·', 'KR-370 ·'):
+            assert control not in review
+    projection.update(rows=(), workspace=None, error='REVIEW_BINDING_STALE')
+    page = render_opportunities(_ready(), run, native_intake=projection)
+    assert 'REVIEW BINDING UNAVAILABLE' in page
+    assert 'selected analysis changed' in page
+    assert 'href="/swing/v1-review">Open Native Review' not in page
+    assert '@media(max-width:760px){.wo07-card-grid{grid-template-columns:1fr}}' in page
+
 from kronos.application.swing_native_review import (
     NativeReviewAnalysisOutcome,
     NativeReviewAnalysisState,

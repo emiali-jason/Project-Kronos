@@ -17,11 +17,15 @@ from kronos.swing.v1.extension import (
 )
 from kronos.swing.v1.path_clearance import evaluate_one_hour_path_clearance
 from kronos.swing.v1.mtf_facts import FactualTimeframe, SameRunMtfFactSnapshot
-from kronos.swing.v1.native_discovery import NativeProductPath
+from kronos.swing.v1.native_discovery import (
+    NativeProductPath, NativeDiscoveryRun, NativeDiscoveryStatus, Native1WState,
+)
 from kronos.swing.v1.native_review import (
     NativeIndependentLayer2Evidence,
     NativeLayer2EvidenceState,
     NativeReviewRequirement,
+    build_native_review_requirements,
+    _requirement,
 )
 from kronos.swing.v1.pdf_visual_review import PdfReviewTransportError
 from kronos.swing.v1.pdf_visual_review_v3 import VisualV3ReviewPackRecord
@@ -715,6 +719,17 @@ class SwingVisualV3LiveWorkflow:
         return value
 
 
+@dataclass(frozen=True, slots=True)
+class ProspectiveNativeReview:
+    """Read-only requirements, not a retained historical Review or a new cycle."""
+
+    native_run_identity: str
+    requirements: tuple[NativeReviewRequirement, ...]
+    excluded: tuple[tuple[str, str, str], ...]
+    analysis_time: datetime
+    continuity: object
+
+
 class NativeReviewIntakeWorkflow:
     """Prospective Browser intake. Historical review transport is not a fallback.
 
@@ -725,15 +740,80 @@ class NativeReviewIntakeWorkflow:
     def __init__(self, application, native_review, live, store):
         self.application, self.native_review, self.live, self.store = application, native_review, live, store
         self.errors = {}
+        self._prospective_cache = None
 
     def _context(self):
-        _, native, _, status = self.application.opportunities_bundle_projection()
-        facts, review = self.application.mtf_fact_snapshot(), self.native_review.snapshot()
-        require(native is not None and facts is not None and status["control"] is not None
-                and not status["reconciliation_unavailable"]
-                and native.run_identity == facts.run_identity == review.native_run_identity,
-                "REVIEW_BINDING_STALE")
-        return status["control"]["current_manifest"]["sha256"], facts, review
+        workspace, native, continuity, status = self.application.opportunities_bundle_projection()
+        require(status["control"] is not None, "SWING_PUBLICATION_CURRENT_UNAVAILABLE")
+        manifest = status["control"].get("current_manifest")
+        require(type(manifest) is dict and type(manifest.get("sha256")) is str
+                and len(manifest["sha256"]) == 64
+                and all(c in "0123456789abcdef" for c in manifest["sha256"]),
+                "SWING_PUBLICATION_BUNDLE_INVALID")
+        require(type(native) is NativeDiscoveryRun, "NATIVE_DISCOVERY_RUN_INVALID")
+        facts = self.application.mtf_fact_snapshot()
+        require(type(facts) is SameRunMtfFactSnapshot, "MTF_FACT_SNAPSHOT_INVALID")
+        require(not status["reconciliation_unavailable"], "REVIEW_BINDING_STALE")
+        require(native.run_identity == facts.run_identity
+                and native.provider_source_identity == facts.provider_source_identity,
+                "NATIVE_REVIEW_SAME_RUN_BINDING_INVALID")
+        # Use the existing exact-run store readers when supplied by production
+        # composition. No latest selector, inferred root, recovery or lock file.
+        for accessor, expected in (("native_discovery_evidence_store", native),
+                                   ("mtf_fact_evidence_store", facts)):
+            source = getattr(self.application, accessor, None)
+            store = None if source is None else source()
+            if store is not None:
+                try:
+                    retained = store.load(native.run_identity)
+                except (OSError, ValueError):
+                    require(False, "SWING_PUBLICATION_BUNDLE_INVALID")
+                require(retained == expected, "SWING_PUBLICATION_BUNDLE_INVALID")
+        # Re-read the publication projection after the separately locked factual
+        # read. A concurrent publication is unavailable, never a mixed workspace.
+        _, current, _, current_status = self.application.opportunities_bundle_projection()
+        require(current == native and current_status == status, "REVIEW_BINDING_STALE")
+        cached = self._prospective_cache
+        if (cached is not None and cached[0] is native and cached[1] is facts
+                and cached[2] is continuity and cached[3] == manifest["sha256"]):
+            return manifest["sha256"], facts, cached[4]
+        excluded = []
+        try:
+            requirements = build_native_review_requirements(native, facts)
+        except ValueError:
+            # Preserve the existing builder's per-assessment rules. One invalid
+            # requirement must not hide valid siblings or invent new eligibility.
+            values = []
+            for assessment in native.assessments:
+                if assessment.status is not NativeDiscoveryStatus.PROBABLE:
+                    continue
+                try:
+                    require(assessment.weekly_state is not Native1WState.OPPOSING,
+                            "NATIVE_REVIEW_OPPOSING_WEEKLY_CONTEXT_REJECTED")
+                    values.append(_requirement(native, assessment, facts))
+                except ValueError as error:
+                    excluded.append((assessment.canonical_instrument,
+                        "NSE" if assessment.product_path is NativeProductPath.NSE else "MCX",
+                        self._reason(error, "NATIVE_REVIEW_ASSESSMENT_INELIGIBLE")))
+            requirements = tuple(values)
+        review = ProspectiveNativeReview(native.run_identity, requirements, tuple(excluded),
+            getattr(workspace, "completed_at", None) or native.observed_at, continuity)
+        self._prospective_cache = (native, facts, continuity, manifest["sha256"], review)
+        return manifest["sha256"], facts, review
+
+    @staticmethod
+    def _reason(error, fallback):
+        # Never render unrestricted exception text, paths or incoming payloads.
+        allowed = {"REVIEW_BINDING_STALE", "REVIEW_REQUEST_MISMATCH",
+            "SWING_PUBLICATION_CURRENT_UNAVAILABLE", "SWING_PUBLICATION_BUNDLE_INVALID",
+            "NATIVE_DISCOVERY_RUN_INVALID", "MTF_FACT_SNAPSHOT_INVALID",
+            "NATIVE_REVIEW_SAME_RUN_BINDING_INVALID", "NATIVE_REVIEW_ASSESSMENT_INELIGIBLE",
+            "NATIVE_REVIEW_OPPOSING_WEEKLY_CONTEXT_REJECTED", "REVIEW_PREDECESSOR_INVALID",
+            "REVIEW_ACCEPTANCE_INCOMPLETE", "REVIEW_INTEGRITY_INVALID",
+            "REVIEW_ARTIFACT_DIGEST_MISMATCH", "REVIEW_PUBLICATION_CONFLICT",
+            "REVIEW_FIELD_TYPE_INVALID", "REVIEW_UNKNOWN_FIELD", "REVIEW_REQUIRED_FIELD_MISSING",
+            "REVIEW_DUPLICATE_KEY", "REVIEW_JSON_INVALID", "REVIEW_TIMESTAMP_INVALID"}
+        return str(error) if str(error) in allowed else fallback
 
     def _requirements(self, market, instruments=None):
         require(market in {"NSE", "MCX"}, "REVIEW_CONTRACT_UNSUPPORTED")
@@ -1062,9 +1142,10 @@ class NativeReviewIntakeWorkflow:
         from kronos.swing.v1.review_evidence_binding import ReviewEvidenceError
         from kronos.swing.v1.native_review import MCX_REFERENCE_MAPPINGS
         try:
-            _, facts, review = self._context()
-        except (OSError, ValueError):
-            return dict(rows=(), packages=(), error="REVIEW_BINDING_UNAVAILABLE")
+            manifest, facts, review = self._context()
+        except (OSError, ValueError) as error:
+            return dict(rows=(), packages=(), error=self._reason(error, "REVIEW_BINDING_UNAVAILABLE"),
+                        workspace=None)
         rows, packages = [], []
         for market in ("NSE", "MCX"):
             requirements = tuple(item for item in review.requirements if item.thesis.product_path is
@@ -1113,20 +1194,70 @@ class NativeReviewIntakeWorkflow:
                         receipt_id=receipt_id, replaced=predecessors, error=error, supported_result=supported_result,
                         reference=None if market == "NSE" else MCX_REFERENCE_MAPPINGS[instrument],
                         complete=all(value is not None and value["image"] is not None for value in selected.values())))
+                    rows[-1].update(eligible=True, run_identity=facts.run_identity,
+                        assessment_sha256=requirement.thesis.native_assessment_sha256,
+                        requirement_sha256=requirement.requirement_sha256,
+                        question_ready=self._question_current(publication, market, manifest, requirement, selected))
                 if publication is not None:
                     mapping = self._mapping(publication, market)
                     instruments = tuple(item["canonical_instrument"] for item in mapping["subjects"])
-                    current = mapping["native_run_identity"] == facts.run_identity and set(instruments).issubset(
-                        {item.canonical_instrument for item in requirements})
+                    current = bool(instruments) and all(any(row["instrument"] == instrument
+                        and row["market"] == market and row["question_ready"] for row in rows)
+                        for instrument in instruments)
                     packages.append(dict(market=market, identity=publication.identity,
                         question_filename=self.filenames(mapping)[0], answer_filename=self.filenames(mapping)[1],
                         expected=self.expected(market, instruments) if current else None))
-            except (OSError, ValueError):
+            except (OSError, ValueError) as error:
                 rows = [item for item in rows if item["market"] != market]
                 rows.extend(dict(instrument=item.canonical_instrument, market=market, selected={}, expected=None,
                     evidence="INVALID", downstream="UNAVAILABLE", receipt_id=None, replaced=(),
-                    error="REVIEW_RESTORATION_UNAVAILABLE", reference=None, complete=False, supported_result=None) for item in requirements)
-        return dict(rows=tuple(rows), packages=tuple(packages), error=None)
+                    error=self._reason(error, "REVIEW_RESTORATION_UNAVAILABLE"), reference=None,
+                    complete=False, supported_result=None, eligible=True, question_ready=False,
+                    run_identity=facts.run_identity, assessment_sha256=item.thesis.native_assessment_sha256,
+                    requirement_sha256=item.requirement_sha256) for item in requirements)
+        rows.extend(dict(instrument=instrument, market=market, eligible=False, expected=None,
+            evidence="MISSING", error=reason, selected={}, replaced=(), complete=False,
+            question_ready=False, run_identity=facts.run_identity, assessment_sha256=None,
+            requirement_sha256=None) for instrument, market, reason in review.excluded)
+        continuity_rows = (() if review.continuity is None else review.continuity.contribution.rows)
+        for row in rows:
+            row["continuity"] = next((item for item in continuity_rows
+                if item.canonical_instrument == row["instrument"]), None)
+        return dict(rows=tuple(rows), packages=tuple(packages), error=None,
+            workspace=dict(run_identity=facts.run_identity, manifest=manifest,
+                analysis_time=review.analysis_time, state="CURRENT", population=len(rows),
+                eligible=len(review.requirements), excluded=len(review.excluded),
+                nse=sum(row["market"] == "NSE" and row["eligible"] for row in rows),
+                mcx=sum(row["market"] == "MCX" and row["eligible"] for row in rows)))
+
+    def _question_current(self, publication, market, manifest, requirement, selected):
+        """Question-ready is exact current chart/request binding, not PDF presence."""
+        if publication is None:
+            return False
+        mapping = self._mapping(publication, market)
+        if (mapping["native_run_identity"] != requirement.native_run_identity
+                or mapping["committed_run_manifest_identity"] != manifest):
+            return False
+        subject = next((item for item in mapping["subjects"]
+            if item["canonical_instrument"] == requirement.canonical_instrument
+            and item["native_assessment_sha256"] == requirement.thesis.native_assessment_sha256), None)
+        if subject is None:
+            return False
+        by_role = {"NATIVE_NSE" if market == "NSE" else "NATIVE_MCX": subject}
+        if market == "MCX":
+            if subject["native_candidate_reference"] != requirement.requirement_sha256:
+                return False
+            by_role["SUPPORTING_REFERENCE"] = next((item for item in publication.reference.value["subjects"]
+                if item["native_candidate_reference"] == requirement.requirement_sha256), None)
+        for role, requested in by_role.items():
+            chart = selected.get(role)
+            if chart is None or chart["image"] is None or requested is None:
+                return False
+            if any(response["chart_revision_sha256"] != chart["image"]["sha256"]
+                   or (market == "MCX" and response["chart_revision_identity"] != chart["selection_sha256"])
+                   for response in requested["responses"]):
+                return False
+        return True
 
     def downstream_applicable(self, completed):
         """Receipt selection cannot borrow a prior cycle's successful output."""

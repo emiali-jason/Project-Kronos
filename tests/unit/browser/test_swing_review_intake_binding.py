@@ -17,16 +17,163 @@ from tests.unit.swing.v1.test_mcx_supporting_context import (
 )
 
 
+def test_workspace_diagnostics_preserve_bounded_reason_not_exception_payload():
+    from kronos.application.swing_visual_v3_live import NativeReviewIntakeWorkflow
+    from kronos.swing.v1.review_evidence_binding import ReviewEvidenceError
+    reason = NativeReviewIntakeWorkflow._reason
+    assert reason(ReviewEvidenceError('REVIEW_ARTIFACT_DIGEST_MISMATCH'), 'REVIEW_RESTORATION_UNAVAILABLE') == 'REVIEW_ARTIFACT_DIGEST_MISMATCH'
+    assert reason(ValueError('SYNTHETIC private path /not-for-display'), 'REVIEW_RESTORATION_UNAVAILABLE') == 'REVIEW_RESTORATION_UNAVAILABLE'
+
+
+def _current_twelve(workflow):
+    """Synthetic exact production-shaped population; never read live evidence."""
+    from dataclasses import replace
+    from types import SimpleNamespace
+    from hashlib import sha256
+    from kronos.swing.v1.native_discovery import NativeProductPath, Native1WState, NativeDiscoveryStatus
+    from kronos.swing.v1.models import V1Direction
+    from tests.unit.swing.v1.test_native_review import _evidence_run
+    facts, base, probable = _evidence_run()
+    names = ('DRREDDY', 'TCS', 'ASIANPAINT', 'TMPV', 'ADANIGREEN', 'ADANIENT',
+             'RELIANCE', 'BAJFINANCE', 'UPL', 'VBL', 'GOLDM', 'CRUDEOIL')
+    run_id = 'SWING-RUN-' + 'D' * 32
+    facts = replace(facts, run_identity=run_id, instruments=tuple(
+        replace(item, reference_facts=(), one_hour_atr=None) for item in facts.instruments))
+    assessments = []
+    for item in base.assessments:
+        if item.canonical_instrument not in names:
+            assessments.append(replace(item, run_identity=run_id, status=NativeDiscoveryStatus.NO_CURRENT_OPPORTUNITY))
+            continue
+        mcx = item.canonical_instrument in {'GOLDM', 'CRUDEOIL'}
+        assessments.append(replace(probable, run_identity=run_id, canonical_instrument=item.canonical_instrument,
+            product_path=NativeProductPath.MCX if mcx else NativeProductPath.NSE,
+            direction=V1Direction.LONG if mcx else V1Direction.SHORT,
+            weekly_state=Native1WState.NOT_APPLICABLE if mcx else Native1WState.NEUTRAL,
+            result_sha256=sha256(item.canonical_instrument.encode()).hexdigest()))
+    run = replace(base, run_identity=run_id, assessments=tuple(assessments))
+    roots = tuple(SimpleNamespace(canonical_instrument=name, opportunity_id=None, material_revision=None,
+        qualification=SimpleNamespace(validity='MANUAL_REVIEW_REQUIRED', reason='ANALYTICAL_ROOT_UNCERTAIN'),
+        disposition=SimpleNamespace(value='MANUAL_REVIEW_REQUIRED'), reason='ANALYTICAL_ROOT_UNCERTAIN',
+        latest_material_at=facts.observed_at, last_analysis_checked=facts.observed_at)
+        for name in ('TMPV', 'ADANIGREEN', 'BAJFINANCE'))
+    continuity = SimpleNamespace(contribution=SimpleNamespace(rows=roots))
+    state = {'native': run, 'facts': facts, 'control': {'current_manifest': {'sha256': 'a' * 64}}, 'failed': False}
+    workflow.application.opportunities_bundle_projection = lambda: (None, state['native'], continuity,
+        dict(control=state['control'], reconciliation_unavailable=state['failed']))
+    workflow.application.mtf_fact_snapshot = lambda: state['facts']
+    return state, names
+
+
+@pytest.mark.parametrize('native_intake', ['NSE'], indirect=True)
+def test_current_twelve_old_review_pure_exact_workspace(native_intake, tmp_path, monkeypatch):
+    from kronos.swing.v1.native_review import build_native_review_requirements
+    from kronos.browser.views import _receipt_native_review
+    workflow = native_intake
+    old = workflow.native_review.snapshot()
+    state, names = _current_twelve(workflow)
+    assert old.native_run_identity != state['native'].run_identity
+    before = _inventory(tmp_path)
+    for name in ('prepare', 'refresh', 'restore'):
+        monkeypatch.setattr(workflow.native_review, name, lambda *a, **k: pytest.fail('historical Review mutated'))
+    monkeypatch.setattr(workflow.live.cycle, 'complete', lambda *a, **k: pytest.fail('downstream invoked'))
+    expected = {r.canonical_instrument:r for r in build_native_review_requirements(state['native'], state['facts'])}
+    for _ in range(3):
+        result = workflow.snapshot()
+        assert result['error'] is None
+        assert result['workspace']['nse'] == 10 and result['workspace']['mcx'] == 2
+        assert {r['instrument'] for r in result['rows']} == set(names)
+        for row in result['rows']:
+            requirement = expected[row['instrument']]
+            assert row['eligible'] and row['expected'] and row['evidence'] == 'MISSING'
+            assert row['requirement_sha256'] == requirement.requirement_sha256
+            assert row['assessment_sha256'] == requirement.thesis.native_assessment_sha256
+            assert row['expected'][row['instrument']]['expected_run_identity'] == state['native'].run_identity
+            if row['instrument'] in {'TMPV', 'ADANIGREEN', 'BAJFINANCE'}:
+                assert row['continuity'].opportunity_id is None and row['continuity'].material_revision is None
+        page = _receipt_native_review(result)
+        for text in ('Current Review workspace', 'NSE REVIEW', 'MCX REVIEW', 'CHART MISSING',
+                     'ANSWER MISSING', 'ANALYTICAL ROOT UNCERTAIN', 'MANUAL REVIEW REQUIRED'):
+            assert text in page
+        for text in ('RETRY DOWNSTREAM', 'RECONCILE', 'Readiness ·', 'KR-370 ·'):
+            assert text not in page
+    assert workflow.native_review.snapshot() == old
+    assert _inventory(tmp_path) == before
+
+
+@pytest.mark.parametrize('native_intake', ['NSE'], indirect=True)
+def test_individual_ineligible_requirement_has_no_chart_target(native_intake, tmp_path):
+    from dataclasses import replace
+    from kronos.browser.views import _receipt_native_review
+    from kronos.swing.v1.review_evidence_binding import ReviewEvidenceError
+    state, _ = _current_twelve(native_intake)
+    state['native'] = replace(state['native'], assessments=tuple(
+        replace(a, operative_anchor=None) if a.canonical_instrument == 'TMPV' else a
+        for a in state['native'].assessments))
+    before = _inventory(tmp_path)
+    result = native_intake.snapshot()
+    assert result['workspace']['eligible'] == 11 and result['workspace']['excluded'] == 1
+    row = next(r for r in result['rows'] if r['instrument'] == 'TMPV')
+    assert not row['eligible'] and row['expected'] is None and not row['selected']
+    assert row['error'] == 'NATIVE_REVIEW_ASSESSMENT_INELIGIBLE'
+    page = _receipt_native_review(result)
+    assert 'REVIEW INELIGIBLE' in page and 'Paste TMPV' not in page
+    with pytest.raises(ReviewEvidenceError, match='REVIEW_REQUEST_MISMATCH'):
+        native_intake.expected('NSE', ('TMPV',))
+    assert _inventory(tmp_path) == before
+
+
+@pytest.mark.parametrize('native_intake', ['NSE'], indirect=True)
+@pytest.mark.parametrize('fault,reason', [
+    ('control', 'SWING_PUBLICATION_CURRENT_UNAVAILABLE'), ('manifest', 'SWING_PUBLICATION_BUNDLE_INVALID'),
+    ('native', 'NATIVE_DISCOVERY_RUN_INVALID'), ('facts', 'MTF_FACT_SNAPSHOT_INVALID'),
+    ('mismatch', 'NATIVE_REVIEW_SAME_RUN_BINDING_INVALID'), ('failed', 'REVIEW_BINDING_STALE'),
+    ('corrupt', 'SWING_PUBLICATION_BUNDLE_INVALID'), ('race', 'REVIEW_BINDING_STALE')])
+def test_current_workspace_invalid_binding_fails_closed(native_intake, tmp_path, fault, reason):
+    from dataclasses import replace
+    from types import SimpleNamespace
+    state, _ = _current_twelve(native_intake)
+    if fault == 'control': state['control'] = None
+    elif fault == 'manifest': state['control']['current_manifest'] = None
+    elif fault == 'native': state['native'] = None
+    elif fault == 'facts': state['facts'] = None
+    elif fault == 'mismatch': state['facts'] = replace(state['facts'], run_identity='SWING-RUN-' + 'E' * 32)
+    elif fault == 'failed': state['failed'] = True
+    elif fault == 'corrupt':
+        native_intake.application.native_discovery_evidence_store = lambda: SimpleNamespace(load=lambda _: None)
+    else:
+        original = native_intake.application.mtf_fact_snapshot
+        def raced():
+            state['control'] = {'current_manifest': {'sha256': 'b' * 64}}
+            return original()
+        native_intake.application.mtf_fact_snapshot = raced
+    before = _inventory(tmp_path)
+    result = native_intake.snapshot()
+    assert result['error'] == reason and not result['rows'] and result['workspace'] is None
+    assert _inventory(tmp_path) == before
+
+
 @pytest.fixture(params=["NSE", "GOLDM", "SILVERM", "COPPER", "CRUDEOIL", "NATURALGAS"])
 def native_intake(tmp_path, request):
     from contextlib import contextmanager
     from types import SimpleNamespace
     from kronos.application.swing_visual_v3_live import NativeReviewIntakeWorkflow
     from tests.unit.browser.test_swing_visual_v3_live import _live
+    from tests.unit.swing.v1.test_native_review import _evidence_run
     native, facts, live = _live(tmp_path)
+    run = _evidence_run()[1]
     if request.param == "NSE-BATCH":
         from tests.unit.swing.v1.test_pdf_visual_review import _workflow
         native, _ = _workflow(tmp_path / "batch-native", candidate_count=2)
+        from dataclasses import replace
+        probable = run.assessments[0]
+        run = replace(run, assessments=tuple(replace(item,
+            direction=probable.direction, weekly_state=probable.weekly_state,
+            daily_state=probable.daily_state, four_hour_state=probable.four_hour_state,
+            one_hour_state=probable.one_hour_state, status=probable.status,
+            context_kind=probable.context_kind, opportunity_identity=probable.opportunity_identity,
+            operative_anchor=probable.operative_anchor, reason_codes=("PDF_REVIEW_TEST_PROBABLE",),
+            result_sha256=f"{index:064x}") if index <= 2 else item
+            for index, item in enumerate(run.assessments, 1)), result_sha256="c" * 64)
     elif request.param != "NSE":
         from kronos.application.swing_native_review import NativeReviewWorkflow
         from kronos.swing.v1.native_review import NativeReviewEvidenceStore
@@ -42,7 +189,7 @@ def native_intake(tmp_path, request):
         yield SimpleNamespace(control={"current_manifest": {"sha256": manifest}},
                               manifest={"run_id": facts.run_identity})
     application = SimpleNamespace(
-        opportunities_bundle_projection=lambda: (None, SimpleNamespace(run_identity=facts.run_identity), None,
+        opportunities_bundle_projection=lambda: (None, run, None,
             dict(control={"current_manifest": {"sha256": manifest}}, reconciliation_unavailable=False)),
         mtf_fact_snapshot=lambda: facts, publication_mutation_guard=guard)
     workflow = NativeReviewIntakeWorkflow(application, native, live, ReviewEvidenceStore(tmp_path / "intake"))
@@ -64,6 +211,7 @@ def test_native_prospective_chart_selection_generation_and_stale_tabs(native_int
         assert _inventory(tmp_path) == before
         publication = workflow.generate(market, workflow.expected(market, (instrument,)))
         assert publication == workflow._publication(market)
+        assert workflow.snapshot()['rows'][0]['question_ready']
         mapping = workflow._mapping(publication, market)
         assert mapping["subjects"][0]["canonical_instrument"] == instrument
         frames = [item["timeframe"] for item in mapping["subjects"][0]["responses"]]
@@ -73,6 +221,12 @@ def test_native_prospective_chart_selection_generation_and_stale_tabs(native_int
             workflow.expected(market, (instrument,))
             assert workflow._publication(market) == publication
         assert _inventory(tmp_path) == before
+        # Retaining the old PDF does not make a changed chart request-ready.
+        workflow.stage(market, instrument, workflow._roles(market)[0],
+                       workflow.expected(market, (instrument,)))
+        projection = workflow.snapshot()
+        assert not projection['rows'][0]['question_ready']
+        assert projection['packages'][0]['expected'] is None
 
 
 def _native_market(workflow):
@@ -519,7 +673,9 @@ def test_native_http_wiring_paste_generate_import_stale_and_observational_get(na
             assert request("POST", url("native-chart", instrument=instrument, role=role),
                             headers=headers, body=PNG)[0] == 303
         before = _inventory(tmp_path)
-        assert request("POST", stale, headers=headers)[0] == 409
+        status, _, explanation = request("POST", stale, headers=headers)
+        assert status == 409 and 'Review intake did not complete' in explanation
+        assert 'Reason: REVIEW_BINDING_STALE' in explanation
         assert _inventory(tmp_path) == before
         page = _request(server, "GET", "/swing/v1-review")[2]
         form_url, form_body = _rendered_form(page, "native-review-pack")
@@ -539,7 +695,9 @@ def test_native_http_wiring_paste_generate_import_stale_and_observational_get(na
         for _ in range(2):
             status, _, body = _request(server, "GET", "/swing/v1-review")
             assert status == 200 and ("MCX EVIDENCE ACCEPTED" if market == "MCX" else "EVIDENCE · ACCEPTED") in body
-            assert "DOWNSTREAM UNSUPPORTED CONTRACT" in body if market == "MCX" else "DOWNSTREAM SUCCEEDED" in body
+            assert "RETRY DOWNSTREAM" not in body and "Readiness ·" not in body
+            assert workflow.snapshot()["rows"][0]["downstream"] == (
+                "UNSUPPORTED_CONTRACT" if market == "MCX" else "SUCCEEDED")
             assert "native-review-answer?market=" in body and 'name="expected"' in body
             assert _request(server, "GET", "/swing/opportunities")[0] == 200
             assert _request(server, "GET", "/status")[0] == 200

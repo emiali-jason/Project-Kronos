@@ -888,7 +888,17 @@ class KronosBrowserServer(ThreadingHTTPServer):
             ],
         }
         if self.native_intake is not None:
-            payload["native_intake"] = self.native_intake.snapshot()
+            intake = self.native_intake.snapshot()
+            workspace = intake.get("workspace")
+            payload["native_intake"] = {
+                **intake,
+                # Continuity belongs to the immutable manifest represented in
+                # workspace; do not serialize domain objects as incidental text.
+                "rows": [{key: value for key, value in row.items() if key != "continuity"}
+                         for row in intake["rows"]],
+                "workspace": None if workspace is None else {
+                    **workspace, "analysis_time": workspace["analysis_time"].isoformat()},
+            }
         return sha256(
             json.dumps(
                 payload, sort_keys=True, separators=(",", ":")
@@ -1373,6 +1383,7 @@ class _BrowserHandler(BaseHTTPRequestHandler):
                 self.server.swing_projection_revision(),
                 continuity,
                 publication,
+                None if self.server.native_intake is None else self.server.native_intake.snapshot(),
             ))
             return
         if path in {"/notifications", "/notifications/swing", "/notifications/intraday"}:
@@ -3627,10 +3638,14 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             if workflow is not None and market in {"NSE", "MCX"} and type(expected) is dict:
                 for instrument in expected:
                     workflow.errors[(market, instrument)] = error.code
-            self._text(HTTPStatus.CONFLICT, error.code)
+            self._text(HTTPStatus.CONFLICT,
+                "Review intake did not complete. Check the exact current Review workspace and its required chart/Answer package. "
+                "Retained evidence has not been rebound.\nReason: " + error.code)
             return
         except (OSError, ValueError, TypeError, KeyError):
-            self._text(HTTPStatus.BAD_REQUEST, "REVIEW_INTAKE_UNAVAILABLE")
+            self._text(HTTPStatus.BAD_REQUEST,
+                "Review intake is unavailable for this request. Return to the current Review workspace before retrying.\n"
+                "Reason: REVIEW_INTAKE_UNAVAILABLE")
             return
         self._redirect("/swing/v1-review")
 
