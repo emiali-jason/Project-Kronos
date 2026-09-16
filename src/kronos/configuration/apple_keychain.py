@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import ctypes
+import multiprocessing
 import re
 import subprocess
-import ctypes
+import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from multiprocessing.connection import Connection
 
 from kronos.configuration.credentials import (
     CredentialRetrievalOutcome,
@@ -26,6 +29,8 @@ SECURITY_EXECUTABLE = "/usr/bin/security"
 SERVICE_PREFIX = "com.project-kronos.provider-authentication."
 DEFAULT_TIMEOUT_SECONDS = 5.0
 MAX_TIMEOUT_SECONDS = 10.0
+_PROCESS_STOP_GRACE_SECONDS = 0.25
+_FRAMEWORK_RESULT_MAX_BYTES = 4101
 
 _REFERENCE_PATTERN = re.compile(r"[A-Za-z0-9._-]{1,64}\Z")
 _PRINCIPAL_PATTERN = re.compile(r"[A-Za-z0-9]{1,64}\Z")
@@ -629,19 +634,122 @@ def run_security_subprocess(request: SubprocessRequest) -> SubprocessResult:
 def run_security_framework_subprocess(
     request: SubprocessRequest,
 ) -> SubprocessResult:
-    """Retrieve through Security.framework under the KRONOS process identity."""
+    """Retrieve through an isolated, bounded Security.framework helper."""
 
     if not _valid_security_request(request):
         raise AppleKeychainCredentialError(CredentialRetrievalOutcome.MALFORMED)
     service = request.argv[4].encode("utf-8")
     account = request.argv[6].encode("utf-8")
     try:
-        status, value = _security_framework_retrieve(service, account)
+        status, value = _bounded_security_framework_retrieve(
+            service,
+            account,
+            request.timeout_seconds,
+        )
+    except TimeoutError:
+        raise
     except Exception:
         raise AppleKeychainCredentialError(
             CredentialRetrievalOutcome.BACKEND_UNAVAILABLE
         ) from None
     return SubprocessResult(status, value, b"")
+
+
+def _bounded_security_framework_retrieve(
+    service: bytes,
+    account: bytes,
+    timeout_seconds: float,
+) -> tuple[int, bytes]:
+    """Run the non-interruptible Security.framework call in one killable process."""
+
+    deadline = time.monotonic() + timeout_seconds
+    context = _security_framework_process_context()
+    receiver, sender = context.Pipe(duplex=False)
+    process = context.Process(
+        target=_security_framework_retrieval_worker,
+        args=(sender, service, account),
+        daemon=True,
+    )
+    started = False
+    timed_out = False
+    payload = b""
+    try:
+        process.start()
+        started = True
+        sender.close()
+        remaining = max(0.0, deadline - time.monotonic())
+        if not receiver.poll(remaining):
+            timed_out = True
+            raise TimeoutError
+        payload = receiver.recv_bytes(_FRAMEWORK_RESULT_MAX_BYTES)
+        if len(payload) < 4:
+            raise AppleKeychainCredentialError(
+                CredentialRetrievalOutcome.BACKEND_UNAVAILABLE
+            )
+        status = int.from_bytes(payload[:4], "big", signed=True)
+        value = payload[4:]
+        payload = b""
+        return status, value
+    finally:
+        payload = b""
+        receiver.close()
+        sender.close()
+        if started:
+            _stop_security_framework_process(process, force=timed_out)
+
+
+def _security_framework_process_context():  # type: ignore[no-untyped-def]
+    """Use spawn so a multi-threaded parent is never forked around Keychain."""
+
+    return multiprocessing.get_context("spawn")
+
+
+def _security_framework_retrieval_worker(
+    connection: Connection,
+    service: bytes,
+    account: bytes,
+) -> None:
+    """Return only an OSStatus and transient bytes; never exception material."""
+
+    value = b""
+    payload = b""
+    try:
+        status, value = _security_framework_retrieve(service, account)
+        payload = int(status).to_bytes(4, "big", signed=True) + value
+        connection.send_bytes(payload)
+    except BaseException:
+        try:
+            connection.send_bytes(b"")
+        except BaseException:
+            pass
+    finally:
+        value = b""
+        payload = b""
+        connection.close()
+
+
+def _stop_security_framework_process(process: object, *, force: bool) -> None:
+    """Bound helper cleanup even when Security.framework never returns."""
+
+    join = getattr(process, "join", None)
+    alive = getattr(process, "is_alive", None)
+    if not callable(join) or not callable(alive):
+        return
+    if not force:
+        join(_PROCESS_STOP_GRACE_SECONDS)
+    if alive():
+        terminate = getattr(process, "terminate", None)
+        if callable(terminate):
+            terminate()
+        join(_PROCESS_STOP_GRACE_SECONDS)
+    if alive():
+        kill = getattr(process, "kill", None)
+        if callable(kill):
+            kill()
+        join(_PROCESS_STOP_GRACE_SECONDS)
+    close = getattr(process, "close", None)
+    if not alive() and callable(close):
+        close()
 
 
 def run_security_provisioning_subprocess(

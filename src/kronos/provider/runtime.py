@@ -111,6 +111,8 @@ class SharedAuthenticatedProviderRuntime:
         "__availability",
         "__capability",
         "__clock",
+        "__construction_generation",
+        "__construction_in_progress",
         "__context_identity",
         "__failure",
         "__identity_factory",
@@ -148,6 +150,8 @@ class SharedAuthenticatedProviderRuntime:
         self.__clock = clock
         self.__identity_factory = identity_factory
         self.__lock = RLock()
+        self.__construction_generation = 0
+        self.__construction_in_progress: int | None = None
         self.__provider: _AuthenticatedRuntime | None = None
         self.__capability: AuthenticatedReadOnlyProviderCapability | None = None
         self.__leases: dict[str, ReadOnlyProviderLease] = {}
@@ -231,6 +235,7 @@ class SharedAuthenticatedProviderRuntime:
 
         if self.__governance is not None:
             self.__governance.require_authentication()
+        construction_generation: int | None = None
         with self.__lock:
             self.__synchronize_locked()
             if self.__lifecycle in {
@@ -241,13 +246,56 @@ class SharedAuthenticatedProviderRuntime:
                     ProviderRuntimeFailure.CONTEXT_ALREADY_ACTIVE
                 )
             if self.__provider is None:
-                provider = self.__provider_factory()
-                if not _runtime(provider):
-                    raise ValueError("SHARED_PROVIDER_RUNTIME_DEPENDENCY_INVALID")
-                self.__provider = provider
-            provider = self.__provider
+                if self.__construction_in_progress is not None:
+                    raise ProviderRuntimeAccessError(
+                        ProviderRuntimeFailure.CONTEXT_ALREADY_ACTIVE
+                    )
+                self.__construction_generation += 1
+                construction_generation = self.__construction_generation
+                self.__construction_in_progress = construction_generation
+                provider = None
+            else:
+                provider = self.__provider
             self.__lifecycle = SharedProviderRuntimeLifecycle.ABSENT
             self.__failure = ""
+        if construction_generation is not None:
+            try:
+                prepared = self.__provider_factory()
+                if not _runtime(prepared):
+                    raise ValueError("SHARED_PROVIDER_RUNTIME_DEPENDENCY_INVALID")
+            except BaseException:
+                with self.__lock:
+                    if self.__construction_in_progress == construction_generation:
+                        self.__construction_in_progress = None
+                        self.__lifecycle = SharedProviderRuntimeLifecycle.ABSENT
+                raise
+            with self.__lock:
+                current = (
+                    self.__construction_in_progress == construction_generation
+                    and self.__provider is None
+                    and self.__lifecycle
+                    not in {
+                        SharedProviderRuntimeLifecycle.ACTIVE,
+                        SharedProviderRuntimeLifecycle.ENDING,
+                        SharedProviderRuntimeLifecycle.DISPOSED,
+                    }
+                )
+                if current:
+                    self.__provider = prepared
+                    self.__construction_in_progress = None
+                    provider = prepared
+            if not current:
+                try:
+                    prepared.end_kronos_session()
+                except Exception:
+                    pass
+                raise ProviderRuntimeAccessError(
+                    ProviderRuntimeFailure.CONTEXT_UNAVAILABLE
+                )
+        if provider is None:
+            raise ProviderRuntimeAccessError(
+                ProviderRuntimeFailure.CONTEXT_UNAVAILABLE
+            )
         if self.__governance is not None:
             with self.__governance.lock:
                 self.__governance.require_authentication()
@@ -384,6 +432,8 @@ class SharedAuthenticatedProviderRuntime:
         if not _text(sanitized_failure):
             raise ValueError("PROVIDER_RUNTIME_FAILURE_INVALID")
         with self.__lock:
+            self.__construction_generation += 1
+            self.__construction_in_progress = None
             provider = self.__provider
             self.__lifecycle = SharedProviderRuntimeLifecycle.INVALIDATED
             self.__failure = sanitized_failure
@@ -402,6 +452,8 @@ class SharedAuthenticatedProviderRuntime:
         with self.__lock:
             if self.__lifecycle is SharedProviderRuntimeLifecycle.DISPOSED:
                 return
+            self.__construction_generation += 1
+            self.__construction_in_progress = None
             provider = self.__provider
             self.__lifecycle = SharedProviderRuntimeLifecycle.ENDING
             self.__failure = ProviderRuntimeFailure.CONTEXT_ENDING.value

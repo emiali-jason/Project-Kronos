@@ -1,5 +1,7 @@
 from dataclasses import asdict
+import multiprocessing
 import pickle
+import time
 from types import SimpleNamespace
 
 import pytest
@@ -279,14 +281,18 @@ def test_framework_provisioning_never_invokes_subprocess(
 def test_framework_retrieval_uses_kronos_process_identity_without_cli(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    calls: list[tuple[bytes, bytes]] = []
+    calls: list[tuple[bytes, bytes, float]] = []
 
-    def fake_retrieve(service: bytes, account: bytes) -> tuple[int, bytes]:
-        calls.append((service, account))
+    def fake_retrieve(
+        service: bytes,
+        account: bytes,
+        timeout_seconds: float,
+    ) -> tuple[int, bytes]:
+        calls.append((service, account, timeout_seconds))
         return 0, b"unit-api-key\n"
 
     monkeypatch.setattr(
-        "kronos.configuration.apple_keychain._security_framework_retrieve",
+        "kronos.configuration.apple_keychain._bounded_security_framework_retrieve",
         fake_retrieve,
     )
     monkeypatch.setattr(
@@ -313,8 +319,75 @@ def test_framework_retrieval_uses_kronos_process_identity_without_cli(
         (
             b"com.project-kronos.provider-authentication.kite",
             b"api-key:app-primary",
+            5.0,
         )
     ]
+
+
+def test_framework_retrieval_isolated_helper_has_real_wall_clock_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context = multiprocessing.get_context("fork")
+    entered = context.Event()
+    never = context.Event()
+
+    def blocked_retrieve(
+        _service: bytes,
+        _account: bytes,
+    ) -> tuple[int, bytes]:
+        entered.set()
+        never.wait()
+        return 0, b"must-not-return\n"
+
+    monkeypatch.setattr(
+        "kronos.configuration.apple_keychain._security_framework_process_context",
+        lambda: context,
+    )
+    monkeypatch.setattr(
+        "kronos.configuration.apple_keychain._security_framework_retrieve",
+        blocked_retrieve,
+    )
+    request = SubprocessRequest(
+        argv=(
+            "/usr/bin/security",
+            "find-generic-password",
+            "-w",
+            "-s",
+            "com.project-kronos.provider-authentication.kite",
+            "-a",
+            "api-key:app-primary",
+        ),
+        timeout_seconds=0.05,
+    )
+
+    started = time.monotonic()
+    with pytest.raises(TimeoutError):
+        run_security_framework_subprocess(request)
+    elapsed = time.monotonic() - started
+
+    assert entered.is_set()
+    assert elapsed < 0.75
+
+
+def test_framework_timeout_is_sanitized_and_retains_no_secret(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "kronos.configuration.apple_keychain._bounded_security_framework_retrieve",
+        lambda *_args: (_ for _ in ()).throw(TimeoutError()),
+    )
+    source = AppleKeychainApiKeySource(
+        provider="KITE",
+        runner=run_security_framework_subprocess,
+        timeout_seconds=0.05,
+    )
+
+    with pytest.raises(AppleKeychainCredentialError) as captured:
+        source.acquire("app-primary")
+
+    assert captured.value.outcome is CredentialRetrievalOutcome.TIMED_OUT
+    assert str(captured.value) == "TIMED_OUT"
+    assert "secret" not in repr(captured.value).lower()
 
 
 def test_presence_probe_never_requests_keychain_values() -> None:

@@ -11,6 +11,8 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from kronos.application.intraday_runtime import create_intraday_runtime
+from kronos.configuration.apple_keychain import AppleKeychainCredentialError
+from kronos.configuration.credentials import CredentialRetrievalOutcome
 from kronos.configuration.principals import PrincipalBindingResult
 from kronos.instrument.catalogue import load_canonical_instrument_catalogue
 from kronos.instrument.runtime import (
@@ -249,6 +251,133 @@ def test_one_context_and_swing_only_compatibility_consumer() -> None:
     ):
         shared.begin_login()
     assert factory_calls == [1]
+
+
+def test_provider_construction_is_single_flight_and_status_remains_responsive() -> None:
+    entered = Event()
+    release = Event()
+    runtime = _Runtime()
+    factory_calls: list[int] = []
+    result: list[object] = []
+
+    def factory():  # type: ignore[no-untyped-def]
+        factory_calls.append(1)
+        entered.set()
+        assert release.wait(timeout=2.0)
+        return runtime
+
+    shared = SharedAuthenticatedProviderRuntime(
+        factory,
+        provider_identity="KITE",
+        clock=lambda: NOW,
+    )
+    construction = Thread(target=lambda: result.append(shared.begin_login()))
+    construction.start()
+    assert entered.wait(timeout=2.0)
+
+    status: list[dict[str, object]] = []
+    status_read = Thread(target=lambda: status.append(shared.read_only_status()))
+    status_read.start()
+    status_read.join(timeout=0.2)
+    try:
+        assert not status_read.is_alive()
+        assert status[0]["retained_lifecycle"] == "ABSENT"
+        assert status[0]["capability_state"] == "ABSENT"
+        with pytest.raises(
+            ProviderRuntimeAccessError,
+            match=ProviderRuntimeFailure.CONTEXT_ALREADY_ACTIVE.value,
+        ):
+            shared.begin_login()
+        assert factory_calls == [1]
+    finally:
+        release.set()
+        construction.join(timeout=2.0)
+        status_read.join(timeout=2.0)
+
+    assert not construction.is_alive()
+    assert len(result) == 1
+    assert runtime.begin_count == 1
+
+
+def test_construction_timeout_releases_single_flight_for_explicit_retry() -> None:
+    runtime = _Runtime()
+    factory_calls: list[int] = []
+
+    def factory():  # type: ignore[no-untyped-def]
+        factory_calls.append(1)
+        if len(factory_calls) == 1:
+            raise AppleKeychainCredentialError(
+                CredentialRetrievalOutcome.TIMED_OUT
+            )
+        return runtime
+
+    shared = SharedAuthenticatedProviderRuntime(
+        factory,
+        provider_identity="KITE",
+        clock=lambda: NOW,
+    )
+
+    with pytest.raises(AppleKeychainCredentialError) as captured:
+        shared.begin_login()
+
+    assert captured.value.outcome is CredentialRetrievalOutcome.TIMED_OUT
+    assert runtime.begin_count == 0
+    assert shared.read_only_status()["retained_lifecycle"] == "ABSENT"
+    assert shared.read_only_status()["capability_state"] == "ABSENT"
+
+    attempt = shared.begin_login()
+    assert attempt is not None
+    assert factory_calls == [1, 1]
+    assert runtime.begin_count == 1
+
+
+def test_expired_construction_generation_cannot_publish_late_provider() -> None:
+    entered = Event()
+    release = Event()
+    stale = _Runtime()
+    current = _Runtime()
+    factory_calls: list[int] = []
+    stale_failure: list[BaseException] = []
+
+    def factory():  # type: ignore[no-untyped-def]
+        factory_calls.append(1)
+        if len(factory_calls) == 1:
+            entered.set()
+            assert release.wait(timeout=2.0)
+            return stale
+        return current
+
+    shared = SharedAuthenticatedProviderRuntime(
+        factory,
+        provider_identity="KITE",
+        clock=lambda: NOW,
+    )
+
+    def begin_stale() -> None:
+        try:
+            shared.begin_login()
+        except BaseException as error:
+            stale_failure.append(error)
+
+    first = Thread(target=begin_stale)
+    first.start()
+    assert entered.wait(timeout=2.0)
+    shared.invalidate("CONSTRUCTION_EXPIRED")
+
+    current_attempt = shared.begin_login()
+    release.set()
+    first.join(timeout=2.0)
+
+    assert not first.is_alive()
+    assert len(stale_failure) == 1
+    assert isinstance(stale_failure[0], ProviderRuntimeAccessError)
+    assert stale.end_count == 1
+    assert stale.begin_count == 0
+    assert current.begin_count == 1
+    assert factory_calls == [1, 1]
+
+    shared.complete_callback(current_attempt)
+    assert shared.lifecycle_state is SharedProviderRuntimeLifecycle.ACTIVE
 
 
 def test_intraday_only_consumer_is_operation_minimized() -> None:
