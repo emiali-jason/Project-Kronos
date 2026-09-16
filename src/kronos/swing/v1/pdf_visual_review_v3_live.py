@@ -26,9 +26,12 @@ from zoneinfo import ZoneInfo
 from pypdf import PdfReader, PdfWriter
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet
-from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer
+from reportlab.platypus import Image, PageBreak, Paragraph, SimpleDocTemplate, Spacer
+from xml.sax.saxutils import escape
 
 from kronos.configuration.pdf_visual_review import PdfVisualReviewConfiguration
+from kronos.swing.v1 import mcx_native_visual_contract as mcx_contract
+from kronos.swing.v1.review_evidence_binding import ReviewEvidenceError, require, strict_json
 from kronos.swing.v1.pdf_contract_layout_v3 import (
     PAGE_MARGIN, PARAGRAPH_SPACING, contract_block,
 )
@@ -69,6 +72,193 @@ VISUAL_V3_LIVE_SELECTION_SCHEMA = "KRONOS-SWING-V1-VISUAL-V3-CURRENT-SELECTION"
 PDF_ANSWER_PROVIDER_IDENTITY = "SPONSOR_MEDIATED_PDF"
 _DIGEST = re.compile(r"[0-9a-f]{64}\Z")
 _IST = ZoneInfo("Asia/Kolkata")
+
+
+def extract_successor_answer_pdf(payload: bytes) -> bytes:
+    """Parse the same bounded immutable bytes later retained and hashed.
+
+    This explicit successor parser does not alter historical PDF decoders.
+    Duplicate JSON keys remain visible to strict_json rather than disappearing
+    through ordinary dictionary parsing.
+    """
+    require(type(payload) is bytes and 8 < len(payload) <= 128 * 1024 * 1024
+            and payload.startswith(b"%PDF-"), "REVIEW_ACCEPTANCE_INCOMPLETE")
+    try:
+        reader = PdfReader(BytesIO(payload), strict=True)
+        require(not reader.is_encrypted, "REVIEW_ACCEPTANCE_INCOMPLETE")
+        content = "\n".join(page.extract_text() or "" for page in reader.pages)
+    except Exception as error:
+        raise ReviewEvidenceError("REVIEW_ACCEPTANCE_INCOMPLETE") from error
+    require(content.count(BEGIN_GOVERNED_ANSWER_DATA) == 1
+            and content.count(END_GOVERNED_ANSWER_DATA) == 1, "REVIEW_ACCEPTANCE_INCOMPLETE")
+    start = content.index(BEGIN_GOVERNED_ANSWER_DATA) + len(BEGIN_GOVERNED_ANSWER_DATA)
+    end = content.index(END_GOVERNED_ANSWER_DATA)
+    require(start < end, "REVIEW_ACCEPTANCE_INCOMPLETE")
+    governed = content[start:end].strip().encode("utf-8")
+    strict_json(governed)
+    return governed
+
+
+def render_mcx_successor_question_pdf(native, reference, charts: dict[str, bytes]) -> tuple:
+    """Render one physical PDF without publishing any request or historical record.
+
+    Inputs are already-issued independent pre-render mappings. Chart bytes are
+    keyed by exact revision digest; no path/latest scan or native/reference image
+    substitution occurs. Returns finalized mappings and final bytes for one
+    subsequent atomic commit under the existing WO05 -> WO07 guard.
+    """
+    request = mcx_contract.mcx_question_pack_from_mappings(native, reference)
+    packs = (request.value, request.value["supporting_reference_pack"])
+    styles = getSampleStyleSheet()
+    styles["BodyText"].fontSize, styles["BodyText"].leading = 9, 12
+    styles["BodyText"].spaceAfter = PARAGRAPH_SPACING
+    buffer = BytesIO()
+    document = SimpleDocTemplate(buffer, pagesize=A4, leftMargin=PAGE_MARGIN,
+        rightMargin=PAGE_MARGIN, topMargin=PAGE_MARGIN, bottomMargin=PAGE_MARGIN, invariant=1)
+    story = [Paragraph("KRONOS MCX - INDEPENDENT VISUAL REVIEW", styles["Title"]),
+        Paragraph("Return the Answer PDF as " + escape(native.value["review_pack_identity"] + "_ANSWERS.pdf"), styles["BodyText"]),
+        Paragraph("Native and supporting-reference extraction only. No Readiness, promotion, "
+                  "reconciliation, trade or execution authority. Independently read visible identity; "
+                  "never overwrite it with an expected label.", styles["BodyText"]),
+        contract_block(json.dumps({key: native.value[key] for key in
+            ("request_bundle_identity", "review_cycle_identity", "review_pack_identity")}, indent=2))]
+    story.extend([Paragraph("Native and supporting-reference question contracts", styles["Heading2"]),
+                  contract_block(json.dumps(request.value, indent=2))])
+    for pack in packs:
+        for subject in pack["subjects"]:
+            seen = set()
+            for chart in subject["charts"]:
+                revision = chart["chart_revision_sha256"]
+                require(revision in charts and type(charts[revision]) is bytes
+                        and sha256(charts[revision]).hexdigest() == revision, "REVIEW_ARTIFACT_DIGEST_MISMATCH")
+                if revision in seen:
+                    continue  # one original composite, not three artificial copies
+                seen.add(revision)
+                image = Image(BytesIO(charts[revision]))
+                scale = min((A4[0] - 2 * PAGE_MARGIN - 12) / image.imageWidth,
+                            (A4[1] - 2 * PAGE_MARGIN - 125) / image.imageHeight)
+                image.drawWidth, image.drawHeight = image.imageWidth * scale, image.imageHeight * scale
+                story.extend([PageBreak(), Paragraph(escape(subject["subject_identity"] + " - " + subject["role"]), styles["Heading1"]),
+                    contract_block(json.dumps({"subject_reference": subject["subject_reference"],
+                        "chart_revision_sha256": revision, "timeframes": [item["timeframe"] for item in subject["charts"]
+                        if item["chart_revision_sha256"] == revision]}, indent=2)), image])
+    story.extend([PageBreak(), Paragraph("Exact Answer contract", styles["Title"]),
+        Paragraph("Return one governed JSON block between " + BEGIN_GOVERNED_ANSWER_DATA + " and "
+                  + END_GOVERNED_ANSWER_DATA + ". All listed keys are required. No extra fields or duplicate JSON keys. "
+                  "No KRONOS provenance, run, timestamps, boundaries, machine hashes or authority fields may be supplied. "
+                  "Model identity is an untrusted nonempty attribution label up to 128 characters only. "
+                  "Answer identities are nonempty text up to 256 characters; versions are JSON strings.", styles["BodyText"])])
+    # Full closed shapes and enums are derived from the same frozen validator;
+    # no second question identity or alternative analytical rule is introduced.
+    shape = {"root_fields": ["schema", "version", "request_reference", "answer_identity", "subjects"],
+        "native_root_additional_required_field": "supporting_reference_answer",
+        "native_answer_schema": mcx_contract.NATIVE_ANSWER, "reference_answer_schema": mcx_contract.REFERENCE_ANSWER,
+        "version": "1.0", "request_reference_fields": sorted(mcx_contract.REQUEST_REFERENCE_FIELDS),
+        "subject_fields": sorted(mcx_contract.ANSWER_SUBJECT_FIELDS), "response_fields": sorted(mcx_contract.RESPONSE_FIELDS),
+        "observation_fields": sorted(mcx_contract.OBSERVATION_FIELDS),
+        "result_fields": {qid: sorted(fields) for qid, fields in zip(mcx_contract.QUESTION_IDS, mcx_contract.RESULT_FIELDS, strict=True)},
+        "observation_status": list(mcx_contract.STATUSES), "presence": list(mcx_contract.PRESENCE),
+        "price_relationship": list(mcx_contract.PRICE_RELATIONSHIP), "interaction": list(mcx_contract.INTERACTION),
+        "reference_relationship": list(mcx_contract.REFERENCE_RELATIONSHIP), "setup_quality": list(mcx_contract.QUALITY),
+        "clustering": list(mcx_contract.CLUSTERING), "native_components": list(mcx_contract.NATIVE_COMPONENTS),
+        "reference_components": list(mcx_contract.REFERENCE_COMPONENTS)}
+    story.append(contract_block(json.dumps(shape, indent=2)))
+    for paragraph in (
+        "Echo each logical request reference from its own question contract. Preserve independently identified native and reference Answers. "
+        "Preserve exact ordered subject references, candidate references, roles, subject identities, markets and reference symbols. "
+        "Return exactly 1D, 4H, 1H per subject, and exactly Q1-Q10 in order per response. Native 1W is forbidden.",
+        "Read observed_chart_identity independently. Q1 result observed_identity, observed_market and observed_timeframe must be independently "
+        "read; readability is READABLE, PARTIAL or UNREADABLE. Unreadable/unknown identity cannot pass. "
+        "chart_identity, source_chart_identity and revision echoes must remain exact; do not normalize.",
+        "visible_basis and finding are nonempty text up to 512 characters; confidence_in_extraction is nonempty text up to 64. "
+        "ambiguity_reason is text up to 512 characters and nonempty for PARTIAL, UNAVAILABLE or INVALID. "
+        "Q1-Q9 why_not_covered_elsewhere is required null. Q10 finding NONE requires null; otherwise a nonempty explanation up to 512 characters.",
+        "Native Q3/Q10 machine_coverage_comparison is COMPARISON_UNAVAILABLE. Reference Q3/Q10 is NOT_APPLICABLE. "
+        "No machine inventory was supplied. Q3/Q6 prices are either one finite nonnegative JSON number point_price, "
+        "one complete ordered nonnegative zone_low/zone_high pair, or all three null; booleans and numeric strings fail.",
+        "Q3/Q6 finding NONE or status NOT_VISIBLE, UNAVAILABLE or INVALID requires all three price fields null. "
+        "Q2 and native Q4 presence other than PRESENT requires both relationship and interaction NOT_OBSERVABLE.",
+        "Native Q4 uses the chart-declared PREVIOUS_MONTH for 1D/4H and PREVIOUS_WEEK for 1H. If the governed reference basis is UNAVAILABLE, "
+        "return UNAVAILABLE, presence NOT_IDENTIFIABLE, relationship NOT_OBSERVABLE and interaction NOT_OBSERVABLE. "
+        "Reference Q4 is NOT_APPLICABLE with not_applicable_reason REFERENCE_PERIOD_NOT_GOVERNED and all four result values null. "
+        "Every other not_applicable_reason is null; NOT_APPLICABLE status is permitted only for reference Q4.",
+        "Q5 setup_quality is a printed bounded enum; finding is visual extraction relative to supplied Native direction as orientation only. "
+        "Do not produce reconciliation, direction changes, Readiness, promotion or trading consequences. Q7/Q8 finding is bounded text. "
+        "Q8 NOT_VISIBLE or UNAVAILABLE requires finding NONE.",
+        "Q9 components are distinct and ordered according to the printed role-specific component list. CLUSTERED requires at least two "
+        "identifiable components (UNIDENTIFIED_PLOTTED_STRUCTURE does not count). NOT_CLUSTERED requires none; "
+        "PARTIAL_COMPONENT_IDENTITY requires UNIDENTIFIED_PLOTTED_STRUCTURE; NOT_OBSERVABLE requires none. "
+        "Reference components may not include native governed-reference levels or operative anchors.",
+    ):
+        story.append(Paragraph(escape(paragraph), styles["BodyText"]))
+    document.build(story)
+    pdf = buffer.getvalue()
+    finalized = tuple(type(mapping).create({**mapping.value, "review_pack_sha256": sha256(pdf).hexdigest()})
+                      for mapping in (native, reference))
+    return (*finalized, pdf)
+
+
+def render_nse_successor_question_pdf(mapping, prepared):
+    """Self-contained successor envelope; the V3.1 question semantics stay exact."""
+    from kronos.swing.v1.review_evidence_binding import NseReviewRequestMapping
+    from kronos.swing.v1.visual_evidence_v3 import VISUAL_QUESTION_SEMANTICS_V3
+    require(type(mapping) is NseReviewRequestMapping, "REVIEW_REQUEST_MISMATCH")
+    value = mapping.value
+    require(len(prepared) == len(value["subjects"]), "REVIEW_REQUEST_MISMATCH")
+    styles = getSampleStyleSheet()
+    styles["BodyText"].fontSize, styles["BodyText"].leading = 9, 12
+    out = BytesIO()
+    document = SimpleDocTemplate(out, pagesize=A4, leftMargin=PAGE_MARGIN, rightMargin=PAGE_MARGIN,
+        topMargin=PAGE_MARGIN, bottomMargin=PAGE_MARGIN, invariant=1)
+    envelope = dict(schema=value["answer_schema"], version=value["answer_version"],
+        request_reference=mapping.request_reference, answer_identity="<NEW UNIQUE ANSWER IDENTITY>", subjects=[])
+    story = [Paragraph("KRONOS NSE - VISUAL REVIEW", styles["Title"]),
+        Paragraph("Return the Answer PDF as " + escape(value["review_pack_identity"] + "_ANSWERS.pdf"), styles["BodyText"]),
+        contract_block(json.dumps({key: value[key] for key in ("review_pack_identity", "native_run_identity",
+            "question_set_identity", "question_set_version", "request_identity", "request_sha256")}, indent=2)),
+        Paragraph("Independent visual evidence only. Read observed identity independently. Do not normalize or "
+            "replace it with an expected identity. No trading, Readiness or promotion authority.", styles["BodyText"])]
+    for subject, requests in zip(value["subjects"], prepared, strict=True):
+        require(len(requests) == 4 and tuple(x.timeframe.value for x in requests) == ("1W", "1D", "4H", "1H")
+            and all(x.requirement.canonical_instrument == subject["canonical_instrument"]
+                and x.chart_revision_sha256 == subject["chart_revision_sha256"] for x in requests), "REVIEW_REQUEST_MISMATCH")
+        examples = [_complete_response_example(request) for request in requests]
+        # Keep the illustrative Q5 string on one physical PDF line. Wrapping
+        # inside a quoted JSON value would make the printed example invalid
+        # when extracted. This changes no frozen field, enum or validator.
+        for example in examples:
+            example["observations"][4]["finding"] = "ILLUSTRATIVE ONLY - replace with chart evidence"
+        envelope["subjects"].append(dict(subject_reference=subject["subject_reference"],
+            canonical_instrument=subject["canonical_instrument"], observed_chart_instrument="<READ FROM CHART>",
+            responses=examples))
+        first = requests[0]
+        image = Image(BytesIO(first.original_image))
+        scale = min((A4[0]-2*PAGE_MARGIN-12)/image.imageWidth, (A4[1]-2*PAGE_MARGIN-150)/image.imageHeight)
+        image.drawWidth, image.drawHeight = image.imageWidth*scale, image.imageHeight*scale
+        story.extend([PageBreak(), Paragraph(escape(subject["canonical_instrument"]), styles["Heading1"]),
+            Paragraph("Native direction: " + escape(first.requirement.thesis.direction.value)
+                + ". Orientation only; do not select or change direction. Answer only from the supplied chart. "
+                "Do not transcribe or infer machine CP, BC, TC or governed reference numerical values.", styles["BodyText"]),
+            contract_block(json.dumps({key: subject[key] for key in
+                ("subject_reference", "canonical_instrument", "chart_revision_sha256")}, indent=2)), image])
+        for request in requests:
+            story.append(Paragraph("TIMEFRAME " + request.timeframe.value, styles["Heading2"]))
+            for index, (question, routing) in enumerate(request.routing, 1):
+                story.append(Paragraph(escape(f"Q{index} [{routing.value}] {VISUAL_QUESTION_SEMANTICS_V3[question]}"), styles["BodyText"]))
+    story.extend([PageBreak(), Paragraph("Exact Answer contract", styles["Title"]),
+        Paragraph("Return exactly one governed block. Every printed key is required; extra fields and duplicate JSON keys fail. "
+            "Echo request_reference and subject_reference exactly. All examples are illustrative, not chart evidence. "
+            "Replace findings with independent observations for each timeframe. Never return run, assessment, "
+            "request timestamp, machine hashes or other KRONOS-owned provenance. Q1-Q9 require why_not_covered_elsewhere null; "
+            "Q10 finding NONE requires null, otherwise a bounded nonempty explanation. Preserve exact canonical punctuation.", styles["BodyText"]),
+        Paragraph("Frozen V3.1 observation fields and rules follow. These describe each response, not a second "
+            "outer Answer envelope. Use only the successor envelope printed below.", styles["BodyText"]),
+        contract_block(json.dumps({key: item for key, item in visual_evidence_v3_answer_contract().items()
+            if key not in {"schema", "authority"}}, indent=2)),
+        contract_block(BEGIN_GOVERNED_ANSWER_DATA + "\n" + json.dumps(envelope, indent=2) + "\n" + END_GOVERNED_ANSWER_DATA)])
+    document.build(story)
+    payload = out.getvalue()
+    return NseReviewRequestMapping.create({**value, "review_pack_sha256": sha256(payload).hexdigest()}), payload
 
 
 class VisualV3AnswerImportState(StrEnum):
@@ -214,6 +404,12 @@ class VisualV3PdfRecordStore:
         return path
 
     def load_current(self) -> VisualV3LiveReviewPack | None:
+        """Observational selection only; pending publications are not repaired."""
+        with self._lock:
+            return self._load_current()
+
+    def recover_pending_publications(self) -> VisualV3LiveReviewPack | None:
+        """Explicit startup/mutation recovery; never a GET/read side effect."""
         with self._lock:
             self._recover_publication()
             return self._load_current()

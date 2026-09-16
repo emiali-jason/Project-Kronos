@@ -57,7 +57,7 @@ from kronos.application.swing_native_review import (
     project_native_analysis_details,
 )
 from kronos.application.swing_visual_v3 import SwingVisualV3ReviewCycle
-from kronos.application.swing_visual_v3_live import SwingVisualV3LiveWorkflow
+from kronos.application.swing_visual_v3_live import SwingVisualV3LiveWorkflow, NativeReviewIntakeWorkflow
 from kronos.application.swing_mcx_supporting_context import (
     McxSupportingContextWorkflow,
 )
@@ -183,6 +183,8 @@ from kronos.instrument.facts import publish_instrument_context
 from kronos.swing.universe import enabled_swing_phase1_universe
 from kronos.swing.v1.native_active_trade_lifecycle import TradeExitReason
 from kronos.swing.v1.native_review import NativeReviewEvidenceStore
+from kronos.swing.v1.review_evidence_binding import ReviewMutationPrecondition, ReviewEvidenceError, strict_json
+from kronos.swing.v1.review_evidence_store import ReviewEvidenceStore
 from kronos.swing.v1.visual_evidence_v2 import (
     LocalVisualEvidenceV2DiagnosticStore,
     VisualEvidenceSubjectKind,
@@ -493,8 +495,12 @@ class KronosBrowserServer(ThreadingHTTPServer):
                     context_pdf_store,
                     clock=lambda: datetime.now(UTC),
                 ),
+                intake_store=ReviewEvidenceStore(governed_review_root),
+                publication_source=self.application,
             )
         self.mcx_supporting_context = mcx_supporting_context
+        receipt_status = self.application.publication_status()
+        receipt_intake_enabled = (receipt_status["control"] is not None or receipt_status["reconciliation_unavailable"])
         if visual_v3_live is not None:
             if visual_v3 is not None and visual_v3_live.cycle is not visual_v3:
                 raise ValueError("VISUAL_V3_LIFECYCLE_MISMATCH")
@@ -516,7 +522,10 @@ class KronosBrowserServer(ThreadingHTTPServer):
                     ),
                     clock=lambda: datetime.now(UTC),
                 ),
+                recover_historical=not receipt_intake_enabled,
             )
+        self.native_intake = (NativeReviewIntakeWorkflow(self.application, self.native_review,
+            self.visual_v3_live, ReviewEvidenceStore(governed_review_root)) if receipt_intake_enabled else None)
         self.trade_window = trade_window or SwingTradeWindowWorkflow(
             LocalKr370Step31HandoffStore(
                 governed_review_root / "kr370-step31-handoff-v1"
@@ -593,11 +602,11 @@ class KronosBrowserServer(ThreadingHTTPServer):
             except ValueError:
                 pass
             try:
-                self.visual_v3_live.restore(
-                    self.native_review.snapshot(),
-                    mtf_facts,
-                    self.native_review.original_chart_bytes,
-                )
+                if self.native_intake is not None and self.native_intake.has_control():
+                    self.native_intake.restore()
+                else:
+                    self.visual_v3_live.restore(
+                        self.native_review.snapshot(), mtf_facts, self.native_review.original_chart_bytes)
             except (ValueError, PdfReviewTransportError, TradingViewEvidenceStoreError):
                 # Versioned V3 restoration is fail-closed. Historical V2 remains
                 # independently restorable and is never converted as recovery.
@@ -823,6 +832,7 @@ class KronosBrowserServer(ThreadingHTTPServer):
         return tuple(
             present_visual_v3_review(item)
             for item in self.visual_v3.completed_snapshot()
+            if self.native_intake is None or self.native_intake.downstream_applicable(item)
         )
 
     def swing_projection_revision(self) -> str:
@@ -877,6 +887,8 @@ class KronosBrowserServer(ThreadingHTTPServer):
                 )
             ],
         }
+        if self.native_intake is not None:
+            payload["native_intake"] = self.native_intake.snapshot()
         return sha256(
             json.dumps(
                 payload, sort_keys=True, separators=(",", ":")
@@ -971,6 +983,7 @@ class KronosBrowserServer(ThreadingHTTPServer):
                 or completed.promotion is None
                 or completed.requirement.thesis.native_assessment_sha256
                 != native_assessment_sha256
+                or (self.native_intake is not None and not self.native_intake.downstream_applicable(completed))
             ):
                 raise ValueError("CURRENT_NATIVE_ASSESSMENT_MISMATCH")
 
@@ -1491,6 +1504,7 @@ class _BrowserHandler(BaseHTTPRequestHandler):
                 self.server.relative_context_for_run(
                     review.native_run_identity
                 ) if review.native_run_identity is not None else None,
+                None if self.server.native_intake is None else self.server.native_intake.snapshot(),
             ))
             return
         if path == "/swing/mtf-diagnostics":
@@ -1830,6 +1844,9 @@ class _BrowserHandler(BaseHTTPRequestHandler):
         if path == "/swing/v1/native-chart-preview":
             self._native_chart_preview()
             return
+        if path == "/swing/v1/native-request-pdf":
+            self._native_intake_pdf()
+            return
         if path == "/swing/mcx-context/image-preview":
             self._mcx_context_image_preview()
             return
@@ -2139,6 +2156,9 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             return
         if path == "/swing/v1/native-review-answer":
             self._upload_native_review_answer()
+            return
+        if path == "/swing/v1/native-review-handoff":
+            self._native_intake_mutation("HANDOFF")
             return
         if path == "/swing/mcx-context/image":
             self._receive_mcx_context_image()
@@ -3550,6 +3570,97 @@ class _BrowserHandler(BaseHTTPRequestHandler):
         except KeyError as error:
             raise ValueError("NATIVE_CHART_SUBJECT_INVALID") from error
 
+    def _native_intake_mutation(self, operation):
+        workflow = self.server.native_intake
+        market, expected = None, None
+        try:
+            if workflow is None:
+                raise ReviewEvidenceError("REVIEW_CONTRACT_UNSUPPORTED")
+            query = parse_qs(urlsplit(self.path).query, strict_parsing=True)
+            allowed = {"market", "expected", "instrument", "role"} if operation in {"STAGE", "REMOVE"} else {"market", "expected"}
+            if set(query) - allowed or any(len(values) != 1 for values in query.values()) or "market" not in query:
+                raise ValueError
+            market = query["market"][0]
+            length = int(self.headers.get("Content-Length", "0"))
+            if operation == "STAGE":
+                if not 0 < length <= 25 * 1024 * 1024 or "expected" not in query:
+                    raise ValueError
+                encoded = query["expected"][0]
+            else:
+                if not 0 <= length <= 256 * 1024:
+                    raise ValueError
+                fields = parse_qs(self.rfile.read(length).decode("utf-8"), strict_parsing=True) if length else {}
+                if fields:
+                    if set(fields) != {"expected"} or len(fields["expected"]) != 1 or "expected" in query:
+                        raise ValueError
+                    encoded = fields["expected"][0]
+                else:
+                    encoded = query["expected"][0]
+            expected = strict_json(encoded)
+            workflow._admit(market, expected)
+            if operation in {"STAGE", "REMOVE"}:
+                if not {"instrument", "role"}.issubset(query):
+                    raise ValueError
+                workflow.stage(market, query["instrument"][0], query["role"][0], expected,
+                    image=self.rfile.read(length) if operation == "STAGE" else None,
+                    content_type=self.headers.get("Content-Type", "") if operation == "STAGE" else None)
+            elif operation == "GENERATE":
+                publication = workflow.generate(market, expected)
+                workflow.export_question(market, publication)
+            elif operation == "IMPORT":
+                workflow.import_from_directory(market, expected)
+                self.server.trade_window.restore(self.server.visual_v3.completed_snapshot())
+                self.server.refresh_swing_projection_revision()
+            elif operation == "HANDOFF":
+                _, facts, _ = workflow._context()
+                history = workflow.store.native_acceptance_history(market, facts.run_identity)
+                if not history:
+                    raise ReviewEvidenceError("REVIEW_ACCEPTANCE_INCOMPLETE")
+                for receipt in history[0].receipts:
+                    if receipt.binding.value["canonical_instrument"] in expected:
+                        workflow.handoff(history[0], receipt, expected=expected)
+                self.server.trade_window.restore(self.server.visual_v3.completed_snapshot())
+                self.server.refresh_swing_projection_revision()
+            else:
+                raise ValueError
+        except ReviewEvidenceError as error:
+            if workflow is not None and market in {"NSE", "MCX"} and type(expected) is dict:
+                for instrument in expected:
+                    workflow.errors[(market, instrument)] = error.code
+            self._text(HTTPStatus.CONFLICT, error.code)
+            return
+        except (OSError, ValueError, TypeError, KeyError):
+            self._text(HTTPStatus.BAD_REQUEST, "REVIEW_INTAKE_UNAVAILABLE")
+            return
+        self._redirect("/swing/v1-review")
+
+    def _native_intake_preview(self):
+        try:
+            workflow = self.server.native_intake
+            query = parse_qs(urlsplit(self.path).query, strict_parsing=True)
+            if set(query) != {"market", "instrument", "role", "selection"} or any(len(v) != 1 for v in query.values()):
+                raise ValueError
+            requirement = workflow._requirements(query["market"][0], (query["instrument"][0],))[0]
+            selected = workflow._selection(requirement, query["role"][0])
+            if selected is None or selected["selection_sha256"] != query["selection"][0]:
+                raise ValueError
+            payload = workflow.store.native_chart_bytes(selected)
+        except (OSError, ValueError, TypeError, KeyError):
+            self._text(HTTPStatus.NOT_FOUND, "Native chart preview unavailable.")
+            return
+        self._respond(HTTPStatus.OK, payload, selected["image"]["content_type"])
+
+    def _native_intake_pdf(self):
+        try:
+            query = parse_qs(urlsplit(self.path).query, strict_parsing=True)
+            if self.server.native_intake is None or set(query) != {"market", "publication"} or any(len(v) != 1 for v in query.values()):
+                raise ValueError
+            payload = self.server.native_intake.question_bytes(query["market"][0], query["publication"][0])
+        except (OSError, ValueError, TypeError, KeyError):
+            self._text(HTTPStatus.NOT_FOUND, "Question PDF unavailable.")
+            return
+        self._respond(HTTPStatus.OK, payload, "application/pdf")
+
     def _native_chart_query(
         self, *, preview: bool = False
     ) -> tuple[str, VisualEvidenceSubjectKind, str | None]:
@@ -3569,6 +3680,9 @@ class _BrowserHandler(BaseHTTPRequestHandler):
         )
 
     def _receive_native_chart(self) -> None:
+        if self.server.native_intake is not None:
+            self._native_intake_mutation("STAGE")
+            return
         try:
             instrument, subject, _ = self._native_chart_query()
             content_length = int(self.headers.get("Content-Length", ""))
@@ -3596,6 +3710,8 @@ class _BrowserHandler(BaseHTTPRequestHandler):
     ) -> tuple[McxContextSlot, McxContextFamily | None]:
         query = parse_qs(urlsplit(self.path).query, strict_parsing=True)
         expected = {"slot", "family"} if with_family else {"slot"}
+        if self.server.mcx_supporting_context.publication_source is not None:
+            expected.add("expected")
         if set(query) != expected or any(len(query[key]) != 1 for key in expected):
             raise ValueError("MCX_CONTEXT_BINDING_INVALID")
         return (
@@ -3603,17 +3719,38 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             McxContextFamily(query["family"][0]) if with_family else None,
         )
 
+    def _mcx_context_mutation(self, slot, operation, **values):
+        workflow = self.server.mcx_supporting_context
+        if workflow.publication_source is not None:
+            query = parse_qs(urlsplit(self.path).query, strict_parsing=True)
+            raw = query.get("expected", ())
+            if len(raw) != 1 or len(raw[0]) > 8192:
+                raise ReviewEvidenceError("REVIEW_PRECONDITION_INVALID")
+            precondition = ReviewMutationPrecondition.create(strict_json(raw[0]))
+            return workflow.mutate_intake(slot, operation, precondition, **values)
+        # Explicitly injected historical workflow, never a successor fallback.
+        if operation == "STAGE":
+            return workflow.stage_image(slot=slot, **values)
+        if operation == "REMOVE":
+            return workflow.remove_image(slot=slot, **values)
+        if operation == "GENERATE":
+            return workflow.create_question_pack(slot)
+        return workflow.upload_answer(slot)
+
     def _receive_mcx_context_image(self) -> None:
         try:
             slot, family = self._mcx_context_slot_query(with_family=True)
             length = int(self.headers.get("Content-Length", ""))
             if family is None or not 0 < length <= 25 * 1024 * 1024:
                 raise ValueError
-            self.server.mcx_supporting_context.stage_image(
-                slot=slot, family=family,
+            self._mcx_context_mutation(
+                slot, "STAGE", family=family,
                 content_type=self.headers.get("Content-Type", ""),
                 payload=self.rfile.read(length),
             )
+        except ReviewEvidenceError as error:
+            self._text(HTTPStatus.CONFLICT, error.code)
+            return
         except (ValueError, PdfReviewTransportError):
             self._text(HTTPStatus.BAD_REQUEST, "MCX supporting-context image rejected.")
             return
@@ -3624,9 +3761,12 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             slot, family = self._mcx_context_slot_query(with_family=True)
             if family is None or self.headers.get("Content-Length") not in {None, "0"}:
                 raise ValueError
-            self.server.mcx_supporting_context.remove_image(
-                slot=slot, family=family,
+            self._mcx_context_mutation(
+                slot, "REMOVE", family=family,
             )
+        except ReviewEvidenceError as error:
+            self._text(HTTPStatus.CONFLICT, error.code)
+            return
         except (ValueError, PdfReviewTransportError):
             self._text(HTTPStatus.BAD_REQUEST, "MCX supporting-context image removal rejected.")
             return
@@ -3654,7 +3794,10 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             slot, _ = self._mcx_context_slot_query(with_family=False)
             if self.headers.get("Content-Length") not in {None, "0"}:
                 raise ValueError
-            self.server.mcx_supporting_context.create_question_pack(slot)
+            self._mcx_context_mutation(slot, "GENERATE")
+        except ReviewEvidenceError as error:
+            self._text(HTTPStatus.CONFLICT, error.code)
+            return
         except (ValueError, PdfReviewTransportError):
             self._redirect("/swing/v1-review")
             return
@@ -3665,13 +3808,19 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             slot, _ = self._mcx_context_slot_query(with_family=False)
             if self.headers.get("Content-Length") not in {None, "0"}:
                 raise ValueError
-            self.server.mcx_supporting_context.upload_answer(slot)
+            self._mcx_context_mutation(slot, "IMPORT")
+        except ReviewEvidenceError as error:
+            self._text(HTTPStatus.CONFLICT, error.code)
+            return
         except (ValueError, PdfReviewTransportError):
             self._redirect("/swing/v1-review")
             return
         self._redirect("/swing/v1-review")
 
     def _remove_native_chart(self) -> None:
+        if self.server.native_intake is not None:
+            self._native_intake_mutation("REMOVE")
+            return
         try:
             instrument, subject, _ = self._native_chart_query()
             self.server.native_review.remove_chart(
@@ -3684,6 +3833,9 @@ class _BrowserHandler(BaseHTTPRequestHandler):
         self._redirect("/swing/v1-review")
 
     def _native_chart_preview(self) -> None:
+        if self.server.native_intake is not None:
+            self._native_intake_preview()
+            return
         try:
             instrument, subject, digest = self._native_chart_query(
                 preview=True
@@ -3794,6 +3946,9 @@ class _BrowserHandler(BaseHTTPRequestHandler):
         self._redirect("/swing/v1-review")
 
     def _generate_native_review_pack(self) -> None:
+        if self.server.native_intake is not None:
+            self._native_intake_mutation("GENERATE")
+            return
         query = parse_qs(urlsplit(self.path).query, keep_blank_values=True)
         if set(query) - {"instrument"} or any(len(value) != 1 for value in query.values()):
             self._text(HTTPStatus.BAD_REQUEST, "Review Pack request rejected.")
@@ -3843,6 +3998,9 @@ class _BrowserHandler(BaseHTTPRequestHandler):
         self._redirect("/swing/v1-review")
 
     def _upload_native_review_answer(self) -> None:
+        if self.server.native_intake is not None:
+            self._native_intake_mutation("IMPORT")
+            return
         if urlsplit(self.path).query:
             self._text(HTTPStatus.BAD_REQUEST, "Answer Pack request rejected.")
             return

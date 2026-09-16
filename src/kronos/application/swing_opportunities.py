@@ -3,12 +3,17 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass, replace
+from contextlib import contextmanager
+from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime
 from enum import StrEnum
+from hashlib import sha256
 import logging
+import json
+from pathlib import Path
 import re
 from threading import RLock, Thread
+from types import MappingProxyType
 import time
 from typing import Protocol
 from uuid import uuid4
@@ -624,6 +629,40 @@ def _start_thread(operation: Callable[[], None], name: str) -> None:
     Thread(target=operation, name=name, daemon=True).start()
 
 
+@dataclass(frozen=True, slots=True)
+class SwingPublicationMutationSnapshot:
+    """Immutable WO-05 control/manifest facts, not a publication capability.
+
+    Projections are recursively immutable and decoded before flock; callers
+    cannot mutate the snapshot or committed objects. No persisted contract.
+    """
+
+    payload: bytes
+    _control: object = field(init=False, repr=False)
+    _manifest: object = field(init=False, repr=False)
+
+    def __post_init__(self):
+        if type(self.payload) is not bytes:
+            raise TypeError("SWING_PUBLICATION_SNAPSHOT_INVALID")
+        def freeze(value):
+            if isinstance(value, dict):
+                return MappingProxyType({key: freeze(item) for key, item in value.items()})
+            if isinstance(value, list):
+                return tuple(freeze(item) for item in value)
+            return value
+        decoded = json.loads(self.payload)
+        object.__setattr__(self, "_control", freeze(decoded["control"]))
+        object.__setattr__(self, "_manifest", freeze(decoded["manifest"]))
+
+    @property
+    def control(self):
+        return self._control
+
+    @property
+    def manifest(self):
+        return self._manifest
+
+
 class SwingOpportunitiesApplication:
     """Own Provider capability and Swing analysis inside one browser process."""
 
@@ -709,6 +748,7 @@ class SwingOpportunitiesApplication:
         self.__completed_native_discovery_run: NativeDiscoveryRun | None = None
         self.__completed_relative_context_run: RelativeContextRun | None = None
         self.__publication = run_publication
+        self.__publication_guard_active = False
         self.__committed_run = None
         self.__reconcile = None
         self.__reconciliation_failure = False
@@ -772,6 +812,51 @@ class SwingOpportunitiesApplication:
     def committed_continuity(self):
         with self.__lock:
             return None if self.__committed_run is None else self.__committed_run.continuity
+
+    @contextmanager
+    def publication_mutation_guard(self):
+        """WO-SWING-07-WO05-GUARD-01: explicit commit coordination only.
+
+        Preserve the application's existing app-lock -> WO-05 flock ordering.
+        Callers acquire WO-07 intake only *inside* this context, after preparing
+        incoming PDFs/JSON/domain objects, and release it before downstream work.
+        The exact injected coordinator owns the lock; no root is inferred here.
+        GET/status paths never enter this API. No recovery or projection install.
+        """
+        with self.__lock:
+            if self.__publication is None:
+                raise ValueError("SWING_PUBLICATION_CURRENT_UNAVAILABLE")
+            if self.__publication_guard_active:
+                raise ValueError("SWING_PUBLICATION_GUARD_REENTRY")
+            self.__publication_guard_active = True
+            try:
+                # Parse and validate retained objects before flock. Exact byte
+                # comparisons under flock fence the prepared snapshot; a race
+                # fails closed rather than retrying against newer authority.
+                control_bytes = (self.__publication.root / "control.json").read_bytes()
+                bundle = self.__publication.current()
+                control = self.__publication.status()
+                snapshot = SwingPublicationMutationSnapshot(json.dumps(
+                    {"control": control, "manifest": bundle.manifest},
+                    sort_keys=True, separators=(",", ":"),
+                    ensure_ascii=True, allow_nan=False,
+                ).encode())
+                references = (bundle.reference, *(
+                    ref for ref in bundle.manifest["artifacts"].values() if ref is not None
+                ))
+                with self.__publication._lock():
+                    if ((self.__publication.root / "control.json").read_bytes() != control_bytes
+                            or control["current_manifest"] != bundle.reference):
+                        raise ValueError("SWING_PUBLICATION_CURRENT_CHANGED")
+                    for reference in references:
+                        path = Path(reference["path"])
+                        if not path.is_absolute():
+                            path = self.__publication.root / path
+                        if sha256(path.read_bytes()).hexdigest() != reference["sha256"]:
+                            raise ValueError("SWING_PUBLICATION_BUNDLE_INVALID")
+                    yield snapshot
+            finally:
+                self.__publication_guard_active = False
 
     def publication_status(self):
         with self.__lock:

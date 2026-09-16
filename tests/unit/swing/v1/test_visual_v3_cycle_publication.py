@@ -13,6 +13,8 @@ from pathlib import Path
 import re
 from threading import Barrier, Event
 from types import SimpleNamespace
+from contextlib import contextmanager
+from io import BytesIO
 
 from pypdf import PdfReader
 import pytest
@@ -27,6 +29,256 @@ from kronos.swing.v1.pdf_visual_review_v3_live import (
 )
 import kronos.swing.v1.pdf_visual_review_v3_live as transport_module
 from tests.unit.browser.test_swing_visual_v3_live import _answer_pdf, _live, _payload
+
+
+def _accepted_successor(tmp_path):
+    from reportlab.pdfgen.canvas import Canvas
+    from kronos.swing.v1.native_discovery import NativeProductPath
+    from kronos.swing.v1.review_evidence_binding import NseReviewRequestMapping, ReviewAcceptanceReceipt, canonical, timestamp
+    from kronos.swing.v1.review_evidence_store import ReviewEvidenceStore
+    from kronos.swing.v1.visual_evidence_v3 import validate_nse_successor_answer
+    from tests.unit.swing.v1.test_review_evidence_binding import nse_mapping, nse_answer
+    from tests.unit.swing.v1.test_review_evidence_publication import acceptance_fixture
+    from tests.unit.browser.test_swing_visual_v3_live import _primitive
+
+    native, facts, live = _live(tmp_path)
+    requests = next(requests for requests in _prepared(native, facts, live)
+                    if requests[0].requirement.thesis.product_path is NativeProductPath.NSE)
+    requirement = requests[0].requirement
+    mapping = nse_mapping(requirement.canonical_instrument).value
+    mapping.update(native_run_identity=requirement.native_run_identity,
+        request_timestamp=timestamp(requests[0].request_timestamp),
+        review_pack_identity="KRONOS-V3-REVIEW-" + "A" * 32)
+    subject = mapping["subjects"][0]
+    subject.update(native_assessment_sha256=requirement.thesis.native_assessment_sha256,
+                   chart_revision_sha256=requests[0].chart_revision_sha256,
+        responses=[dict(timeframe=request.timeframe.value, expected_chart_identity=request.chart_identity,
+            chart_revision_sha256=request.chart_revision_sha256,
+            machine_fact_integrity_sha256=request.machine_fact.integrity_sha256,
+            observation_boundary=timestamp(request.observation_boundary), analysis_boundary=timestamp(request.analysis_boundary))
+            for request in requests])
+    mapping = NseReviewRequestMapping.create(mapping)
+    buffer = BytesIO()
+    pdf = Canvas(buffer, invariant=1)
+    for index, key in enumerate(("request_identity", "request_sha256", "review_pack_identity", "answer_schema")):
+        pdf.drawString(20, 800 - index * 20, mapping.value[key])
+    pdf.save()
+    question = buffer.getvalue()
+    mapping = NseReviewRequestMapping.create({**mapping.value, "review_pack_sha256": sha256(question).hexdigest()})
+    store = ReviewEvidenceStore(tmp_path / "intake")
+    publication = store.publish_nse_request(mapping, question, publication_timestamp=mapping.value["request_timestamp"],
+        expected_predecessor=None, recheck=lambda value: None)
+    answer = nse_answer(mapping)
+    for response, request in zip(answer["subjects"][0]["responses"], requests, strict=True):
+        response["chart_revision_sha256"] = request.chart_revision_sha256
+        for observation in response["observations"]:
+            observation["source_chart_revision"] = request.chart_revision_sha256
+    responses = validate_nse_successor_answer(canonical(answer), mapping)[0]
+    synthetic_pdf = tmp_path / "SYNTHETIC_SUCCESSOR_ANSWERS.pdf"
+    _answer_pdf(synthetic_pdf, answer)
+    answer_bytes = synthetic_pdf.read_bytes()
+    body = acceptance_fixture((requirement.canonical_instrument,))[0][0].body
+    body["binding"].update(analytical_run_identity=requirement.native_run_identity,
+        committed_run_manifest_identity=mapping.value["committed_run_manifest_identity"],
+        candidate_identity=requirement.requirement_sha256,
+        native_assessment_sha256=requirement.thesis.native_assessment_sha256,
+        review_cycle_identity=mapping.value["review_pack_identity"], request_identity=mapping.value["request_identity"],
+        request_timestamp=mapping.value["request_timestamp"], review_pack_identity=mapping.value["review_pack_identity"],
+        review_pack_sha256=mapping.value["review_pack_sha256"])
+    answer_hash = sha256(answer_bytes).hexdigest()
+    answer_path = "answers/" + answer_hash + ".pdf"
+    body["answer"] = dict(answer_identity=answer["answer_identity"], pdf_sha256=answer_hash,
+        byte_length=len(answer_bytes), retained_relative_path=answer_path)
+    artifacts = {answer_path: answer_bytes}
+    body["chart_revisions"], body["structured_evidence"] = [], []
+    for request, response in zip(requests, responses, strict=True):
+        chart_path = "charts/" + request.chart_revision_sha256 + ".png"
+        raw = canonical(_primitive(response))
+        checksum = sha256(raw).hexdigest()
+        path = "structured/" + checksum + ".json"
+        artifacts.update({chart_path: request.original_image, path: raw})
+        body["chart_revisions"].append(dict(role="NATIVE_NSE", subject_identity=requirement.canonical_instrument,
+            reference_market=None, reference_symbol=None, timeframe_or_panel_identity=request.timeframe.value,
+            revision_identity=request.chart_revision_sha256, sha256=request.chart_revision_sha256,
+            retained_relative_path=chart_path))
+        body["structured_evidence"].append(dict(role="NATIVE_NSE", subject_identity=requirement.canonical_instrument,
+            timeframe_or_family_identity=request.timeframe.value, schema=response.schema, version="3.1",
+            sha256=checksum, retained_relative_path=path))
+    body["contracts"] = [dict(role="NATIVE_NSE", question_contract_identity=requests[0].question_set_identity,
+        question_contract_version="3.1", answer_contract_identity=mapping.value["answer_schema"],
+        answer_contract_version="1.0", structured_evidence_schema=responses[0].schema, structured_evidence_version="3.1")]
+    from kronos.swing.v1.review_evidence_binding import ReviewMutationPrecondition
+    def state():
+        history = store.native_acceptance_history("NSE", facts.run_identity)
+        return dict(expected_committed_run_manifest=mapping.value["committed_run_manifest_identity"],
+            expected_run_identity=facts.run_identity, expected_candidate_identity=requirement.requirement_sha256,
+            expected_review_cycle_identity=mapping.value["review_pack_identity"],
+            expected_request_identity=mapping.value["request_identity"],
+            expected_revision_set_digest=sha256(canonical(body["chart_revisions"])).hexdigest(),
+            expected_acceptance_receipt_id=None if not history else history[0].receipts[0].receipt_id)
+    @contextmanager
+    def guard():
+        yield SimpleNamespace(control={"current_manifest": {"sha256": mapping.value["committed_run_manifest_identity"]}},
+                              manifest={"run_id": facts.run_identity})
+    def charts(role, canonical_instrument, timeframe):
+        assert role == "NATIVE_NSE" and canonical_instrument == requirement.canonical_instrument
+        request = next(item for item in requests if item.timeframe.value == timeframe)
+        return request.chart_revision_sha256, request.original_image
+    def accept():
+        expected = ReviewMutationPrecondition.create({**state(), "mutation_identity": "CONTROLLED-NATIVE-IMPORT"})
+        return live.accept_successor_answer(store, publication.identity, answer_bytes, market="NSE",
+            review=native.snapshot(), facts=facts, chart_reader=charts, precondition=expected,
+            current_state=state, publication_guard=guard)
+    commit = accept()
+    assert live.cycle.completed_snapshot() == ()
+    before = _digests(tmp_path)
+    assert accept() == commit
+    assert _digests(tmp_path) == before
+    return native, facts, live, store, commit
+
+
+def _handoff_successor(fixture):
+    from types import SimpleNamespace
+    native, facts, live, store, commit = fixture
+    expected_manifest = commit.receipts[0].binding.value["committed_run_manifest_identity"]
+    prepared_snapshot = SimpleNamespace(control={"current_manifest": {"sha256": expected_manifest}},
+                                        manifest={"run_id": facts.run_identity})
+    @contextmanager
+    def guard():
+        yield prepared_snapshot
+    def recheck(snapshot, receipt):
+        # Parsing validation is now a preparation callback. Keep the exact
+        # manifest/run assertions; the production bounded callback independently
+        # compares the actual immutable guard snapshot at both publications.
+        expected = prepared_snapshot if snapshot is None else snapshot
+        assert expected.control["current_manifest"]["sha256"] == receipt.binding.value["committed_run_manifest_identity"]
+        assert expected.manifest["run_id"] == facts.run_identity
+        assert receipt.binding.value["analytical_run_identity"] == facts.run_identity
+    return live.handoff_accepted_receipt(store, commit.identity, commit.receipts[0].receipt_id,
+        review=native.snapshot(), facts=facts, chart_bytes=native.original_chart_bytes,
+        publication_guard=guard, recheck=recheck)
+
+
+def test_successor_receipt_handoff_uses_existing_nse_consumer_and_restores_without_repetition(tmp_path, monkeypatch):
+    fixture = _accepted_successor(tmp_path)
+    native, facts, live, store, commit = fixture
+    calls = []
+    complete = live.cycle.complete
+    def observed(*args, **kwargs):
+        assert store.resolve_committed_receipt(commit.identity, commit.receipts[0].receipt_id, current=True) == commit.receipts[0]
+        calls.append(kwargs["created_at"])
+        return complete(*args, **kwargs)
+    monkeypatch.setattr(live.cycle, "complete", observed)
+    result = _handoff_successor(fixture)
+    assert result.value["state"] == "SUCCEEDED", result.value
+    requirement = next(item for item in native.snapshot().requirements
+        if item.canonical_instrument == commit.receipts[0].binding.value["canonical_instrument"])
+    completed = live.cycle.completed_for(facts.run_identity, requirement.canonical_instrument)
+    assert result.value["output_identities"] == [completed.readiness.result_sha256, completed.promotion.integrity_sha256]
+    assert len(calls) == 1
+    before = _digests(tmp_path)
+    assert _handoff_successor(fixture) == result
+    assert len(calls) == 1
+    assert _digests(tmp_path) == before
+
+
+def test_successor_receipt_downstream_failure_does_not_undo_acceptance(tmp_path, monkeypatch):
+    fixture = _accepted_successor(tmp_path)
+    native, facts, live, store, commit = fixture
+    complete = live.cycle.complete
+    def fail(*args, **kwargs):
+        raise ValueError("controlled NSE downstream failure")
+    monkeypatch.setattr(live.cycle, "complete", fail)
+    failed = _handoff_successor(fixture)
+    assert failed.value["state"] == "FAILED"
+    assert store.load_current_acceptance(commit.value["package_key"]) == commit
+    monkeypatch.setattr(live.cycle, "complete", complete)
+    result = _handoff_successor(fixture)
+    assert result.value["state"] == "SUCCEEDED", result.value
+    assert store.load_current_acceptance(commit.value["package_key"]) == commit
+
+
+@pytest.mark.parametrize("family", ["GOLDM", "SILVERM", "COPPER", "CRUDEOIL", "NATURALGAS"])
+def test_complete_mcx_application_intake_never_calls_nse_consumers(tmp_path, monkeypatch, family):
+    from kronos.swing.v1.review_evidence_binding import ReviewMutationPrecondition, canonical
+    from kronos.swing.v1.review_evidence_store import ReviewEvidenceStore
+    from kronos.swing.v1.mcx_native_visual_contract import mcx_question_pack_from_mappings
+    from kronos.swing.v1.pdf_visual_review_v3_live import render_mcx_successor_question_pdf
+    from tests.unit.swing.v1.test_mcx_native_visual_contract import retained_mappings, answer_for
+    from tests.unit.swing.v1.test_native_review_mcx_reference import _run_with_probables
+    from tests.unit.swing.v1.test_pdf_visual_review import _png
+    from kronos.application.swing_native_review import NativeReviewWorkflow
+    from kronos.swing.v1.native_review import NativeReviewEvidenceStore
+    from kronos.swing.v1.evidence_store import LocalTradingViewEvidenceStore
+    from kronos.swing.v1.mtf_facts import FactualTimeframe
+    import kronos.application.swing_visual_v3_live as application_module
+
+    _, _, live = _live(tmp_path)
+    native = NativeReviewWorkflow(NativeReviewEvidenceStore(tmp_path / "mcx-native"),
+        chart_store=LocalTradingViewEvidenceStore(tmp_path / "mcx-native-charts"))
+    facts, run = _run_with_probables(family)
+    native.prepare(run, facts)
+    requirement = native.snapshot().requirements[0]
+    machine = {item.chart_timeframe.value: item for item in facts.instrument(family).reference_facts}
+    images, chart_values, mappings = {}, {}, []
+    for role, mapping in zip(("NATIVE_MCX", "SUPPORTING_REFERENCE"), retained_mappings((family,)), strict=True):
+        value = mapping.value
+        value["native_run_identity"] = facts.run_identity
+        value["subjects"][0]["native_assessment_sha256"] = requirement.thesis.native_assessment_sha256
+        image = _png(family + " " + role + " SYNTHETIC")
+        checksum = sha256(image).hexdigest()
+        images[checksum] = image
+        for response in value["subjects"][0]["responses"]:
+            response["chart_revision_sha256"] = checksum
+            if role == "NATIVE_MCX":
+                response["native_machine_fact_integrity_sha256"] = machine[response["timeframe"]].integrity_sha256
+                response["analysis_boundary"] = machine[response["timeframe"]].analysis_boundary.isoformat()
+                response["observation_boundary"] = facts.instrument(family).fact(
+                    FactualTimeframe(response["timeframe"])).observation_boundary.isoformat()
+            chart_values[role, family, response["timeframe"]] = (response["chart_revision_identity"], image)
+        mappings.append(type(mapping).create(value))
+    n, r, question = render_mcx_successor_question_pdf(*mappings, images)
+    store = ReviewEvidenceStore(tmp_path / "intake")
+    publication = store.publish_mcx_request(n, r, question, publication_timestamp=n.value["request_timestamp"],
+        expected_predecessor=None, recheck=lambda *args: None)
+    answer = answer_for(mcx_question_pack_from_mappings(n, r))
+    path = tmp_path / "SYNTHETIC_MCX_ANSWERS.pdf"
+    _answer_pdf(path, answer)
+    def state():
+        history = store.native_acceptance_history("MCX", facts.run_identity)
+        return dict(expected_committed_run_manifest=n.value["committed_run_manifest_identity"],
+            expected_run_identity=facts.run_identity, expected_candidate_identity=requirement.requirement_sha256,
+            expected_review_cycle_identity=n.value["review_cycle_identity"], expected_request_identity=n.value["request_identity"],
+            expected_revision_set_digest=sha256(canonical([n.value["subjects"], r.value["subjects"]])).hexdigest(),
+            expected_acceptance_receipt_id=None if not history else history[0].receipts[0].receipt_id)
+    @contextmanager
+    def guard():
+        yield SimpleNamespace(control={"current_manifest": {"sha256": n.value["committed_run_manifest_identity"]}},
+                              manifest={"run_id": facts.run_identity})
+    def forbidden(*args, **kwargs):
+        pytest.fail("MCX acceptance must not invoke V3.1 or downstream evaluation")
+    monkeypatch.setattr(live.cycle, "prepare", forbidden)
+    monkeypatch.setattr(live.cycle, "retain", forbidden)
+    monkeypatch.setattr(live.cycle, "restore_persisted", forbidden)
+    monkeypatch.setattr(live.cycle, "complete", forbidden)
+    monkeypatch.setattr(application_module, "evaluate_completed_one_hour_extension", forbidden)
+    monkeypatch.setattr(application_module, "evaluate_one_hour_path_clearance", forbidden)
+    expected = ReviewMutationPrecondition.create({**state(), "mutation_identity": "CONTROLLED-MCX-ACCEPT"})
+    commit = live.accept_successor_answer(store, publication.identity, path.read_bytes(), market="MCX",
+        review=native.snapshot(), facts=facts, chart_reader=lambda *key: chart_values[key],
+        precondition=expected, current_state=state, publication_guard=guard)
+    receipt = commit.receipts[0]
+    assert len(commit.receipts) == 1
+    assert [(item["role"], item["timeframe_or_family_identity"]) for item in receipt.body["structured_evidence"]] == [
+        (role, tf) for role in ("NATIVE_MCX", "SUPPORTING_REFERENCE") for tf in ("1D", "4H", "1H")]
+    assert live.cycle.completed_snapshot() == ()
+    result = live.handoff_accepted_receipt(store, commit.identity, receipt.receipt_id,
+        review=native.snapshot(), facts=facts, chart_bytes=native.original_chart_bytes,
+        publication_guard=guard, recheck=lambda *args: None)
+    assert result.value["state"] == "UNSUPPORTED_CONTRACT"
+    assert result.value["output_identities"] == []
+    assert store.load_current_acceptance(commit.value["package_key"]) == commit
+    assert live.cycle.completed_snapshot() == ()
 
 
 def _prepared(native, facts, live):
@@ -279,9 +531,18 @@ def test_interruption_recovery_has_no_orphan_or_cross_cycle_binding(tmp_path, mo
     pending = json.loads((store.root / "pending-publication.json").read_text())
     interrupted = _pack_from_dict(pending["record"])
     restored_store = VisualV3PdfRecordStore(store.root)
+    def inventory():
+        return {str(p): (sha256(p.read_bytes()).hexdigest(), p.stat().st_mtime_ns)
+                for p in tmp_path.rglob('*') if p.is_file()}
+    before_reads = inventory()
     current = restored_store.load_current()
     expected = interrupted if stage == "after_selection" else old
     assert current == expected
+    for _ in range(4):
+        assert restored_store.load_current() == expected
+    assert inventory() == before_reads
+    assert (store.root / "pending-publication.json").exists()
+    assert restored_store.recover_pending_publications() == expected
     assert Path(old.question_path).read_bytes() == old_bytes
     _assert_binding(expected, restored_store)
     assert {p.name for p in live.transport.configuration.question_directory.glob("*.pdf")} == (

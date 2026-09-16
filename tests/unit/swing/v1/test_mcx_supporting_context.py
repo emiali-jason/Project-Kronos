@@ -35,6 +35,7 @@ from kronos.swing.v1.mcx_supporting_context_pdf import (
     McxContextPdfTransport,
 )
 from kronos.swing.v1.pdf_visual_review import BEGIN_GOVERNED_ANSWER_DATA, END_GOVERNED_ANSWER_DATA, PdfReviewTransportError
+from tests.unit.swing.test_run_publication import checkpoint, scenario
 
 
 PNG = base64.b64decode(
@@ -129,6 +130,170 @@ def _answer(path: Path, payload: dict[str, object]) -> None:
     SimpleDocTemplate(str(path), pagesize=A4).build([
         Preformatted(BEGIN_GOVERNED_ANSWER_DATA + "\n" + json.dumps(payload, indent=2) + "\n" + END_GOVERNED_ANSWER_DATA, styles["Code"])
     ])
+
+
+def _atomic_context(tmp_path, checkpoint, *, fault=None):
+    from hashlib import sha256
+    from kronos.application.swing_opportunities import SwingOpportunitiesApplication
+    from kronos.swing.v1.review_evidence_binding import canonical, ReviewMutationPrecondition
+    from kronos.swing.v1.review_evidence_store import ReviewEvidenceStore
+    from tests.unit.application.test_swing_opportunities import _Provider
+
+    workflow, transport, historical = _transport(tmp_path)
+    workflow.intake_store = ReviewEvidenceStore(tmp_path / "native-review", fault=fault)
+    application = SwingOpportunitiesApplication(_Provider, run_publication=checkpoint[0])
+
+    def state(slot):
+        pack = transport.store.current(DAY, slot)
+        chain = workflow.intake_store.context_acceptance_history(DAY, slot)
+        return dict(expected_committed_run_manifest=checkpoint[0].current().reference["sha256"],
+            expected_run_identity=checkpoint[0].current().native.run_identity,
+            expected_candidate_identity=None,
+            expected_review_cycle_identity=None if pack is None else pack.question_pack_identity,
+            expected_request_identity=None if pack is None else pack.question_pack_identity,
+            expected_revision_set_digest=sha256(canonical([
+                None if (image := transport.store.current_image(DAY, slot, family)) is None
+                else [family.value, image.image_sha256, image.staged_at.isoformat()]
+                for family in McxContextFamily])).hexdigest(),
+            expected_acceptance_receipt_id=None if not chain else chain[0].receipts[0].receipt_id)
+
+    def submit(slot, *, expected=None):
+        expected = state(slot) if expected is None else expected
+        return workflow.upload_answer_atomic(slot,
+            precondition=ReviewMutationPrecondition.create(dict(expected, mutation_identity="EXPLICIT-TEST")),
+            current_state=lambda: state(slot), publication_guard=application.publication_mutation_guard)
+    return workflow, transport, historical, state, submit
+
+
+def _inventory(root):
+    from hashlib import sha256
+    return {str(path.relative_to(root)): (sha256(path.read_bytes()).hexdigest(), path.stat().st_mtime_ns)
+            for path in root.rglob("*") if path.is_file()}
+
+
+def test_wo07_context_atomic_acceptance_replay_restart_and_pure_reads(tmp_path, checkpoint):
+    from kronos.swing.v1.review_evidence_store import ReviewEvidenceStore
+    workflow, transport, historical, state, submit = _atomic_context(tmp_path, checkpoint)
+    _stage(workflow, McxContextSlot.MORNING)
+    pack = workflow.create_question_pack(McxContextSlot.MORNING)
+    answer_path = transport.configuration.answer_directory / pack.expected_answer_filename
+    _answer(answer_path, _real_visible_payload(pack))
+    committed = submit(McxContextSlot.MORNING)
+    assert len(committed.receipts) == 1
+    assert historical.records() == ()
+    records = workflow.intake_store.context_records(DAY, McxContextSlot.MORNING)
+    assert tuple(item.family for item in records) == tuple(McxContextFamily)
+    assert records[0].panels[2].observed_identity == "US Government Bonds 30 YR"
+    assert records[1].panels[1].observed_timeframe == "4h"
+    before = _inventory(tmp_path)
+    assert submit(McxContextSlot.MORNING) == committed
+    assert _inventory(tmp_path) == before
+    # The retained PDF, not its working copy, is the acceptance authority.
+    answer_path.unlink()
+    workflow.intake_store = ReviewEvidenceStore(tmp_path / "native-review")
+    before = _inventory(tmp_path)
+    for _ in range(3):
+        assert workflow.intake_store.context_records(DAY, McxContextSlot.MORNING) == records
+        assert all(item.revision == 1 for item in workflow.snapshot().slots[0].families)
+        assert workflow.context_for("GOLDM", assessment_boundary=MORNING) == records[0]
+        assert workflow.context_for("SAIL", assessment_boundary=MORNING) is None
+    assert _inventory(tmp_path) == before
+
+
+def test_wo07_context_snapshot_reads_one_complete_family_bundle(tmp_path, checkpoint, monkeypatch):
+    workflow, transport, _, _, submit = _atomic_context(tmp_path, checkpoint)
+    _stage(workflow, McxContextSlot.MORNING)
+    pack = workflow.create_question_pack(McxContextSlot.MORNING)
+    _answer(transport.configuration.answer_directory / pack.expected_answer_filename, _payload(pack))
+    submit(McxContextSlot.MORNING)
+    reads = []
+    original = workflow._records
+
+    def read_bundle(*, trading_date, slot=None, family=None):
+        # A separate family lookup could observe different pointer generations.
+        assert family is None
+        reads.append(slot)
+        return original(trading_date=trading_date, slot=slot)
+
+    monkeypatch.setattr(workflow, "_records", read_bundle)
+    pointer_reads = []
+    load = workflow.intake_store.load_current_acceptance
+    def load_pointer(key):
+        pointer_reads.append(key)
+        return load(key)
+    monkeypatch.setattr(workflow.intake_store, "load_current_acceptance", load_pointer)
+    before = _inventory(tmp_path)
+    snapshot = workflow.snapshot()
+    assert reads == [McxContextSlot.MORNING, McxContextSlot.EVENING]
+    assert len(pointer_reads) == 2  # one exact pointer per complete slot, not per family
+    assert tuple(item.revision for item in snapshot.slots[0].families) == (1, 1)
+    assert _inventory(tmp_path) == before
+
+
+@pytest.mark.parametrize("fault_at", [
+    "before_acceptance_retention", "after_acceptance_artifact_0",
+    "after_acceptance_artifact_1", "after_acceptance_artifact_2",
+    "after_acceptance_artifact_3", "after_acceptance_receipt_0",
+    "after_acceptance_manifest", "before_acceptance_pointer",
+    "after_acceptance_pointer", "before_acceptance_acknowledgement",
+])
+def test_wo07_context_fault_never_exposes_one_family(tmp_path, checkpoint, fault_at):
+    def fault(stage):
+        if stage == fault_at:
+            raise OSError("controlled interruption")
+    workflow, transport, historical, state, submit = _atomic_context(tmp_path, checkpoint, fault=fault)
+    _stage(workflow, McxContextSlot.MORNING)
+    pack = workflow.create_question_pack(McxContextSlot.MORNING)
+    _answer(transport.configuration.answer_directory / pack.expected_answer_filename, _payload(pack))
+    with pytest.raises(OSError, match="controlled interruption"):
+        submit(McxContextSlot.MORNING)
+    committed = fault_at in {"after_acceptance_pointer", "before_acceptance_acknowledgement"}
+    assert len(workflow.intake_store.context_records(DAY, McxContextSlot.MORNING)) == (2 if committed else 0)
+    assert historical.records() == ()
+    before = _inventory(tmp_path)
+    workflow.snapshot()
+    assert _inventory(tmp_path) == before
+
+
+def test_wo07_context_stale_image_and_stale_request_rejected(tmp_path, checkpoint):
+    from kronos.swing.v1.review_evidence_binding import ReviewEvidenceError
+    workflow, transport, historical, state, submit = _atomic_context(tmp_path, checkpoint)
+    slot = McxContextSlot.MORNING
+    _stage(workflow, slot)
+    pack = workflow.create_question_pack(slot)
+    _answer(transport.configuration.answer_directory / pack.expected_answer_filename, _payload(pack))
+    old = state(slot)
+    workflow.remove_image(slot=slot, family=McxContextFamily.ENERGY)
+    before = _inventory(tmp_path)
+    with pytest.raises(ReviewEvidenceError, match="REVIEW_BINDING_STALE"):
+        submit(slot, expected=old)
+    assert _inventory(tmp_path) == before
+    _stage(workflow, slot)
+    old = state(slot)
+    workflow.create_question_pack(slot)
+    before = _inventory(tmp_path)
+    with pytest.raises(ReviewEvidenceError, match="REVIEW_BINDING_STALE"):
+        submit(slot, expected=old)
+    assert _inventory(tmp_path) == before
+
+
+def test_wo07_context_capture_hashes_validated_bytes_once(tmp_path, monkeypatch):
+    from hashlib import sha256
+    workflow, transport, _ = _transport(tmp_path)
+    _stage(workflow, McxContextSlot.MORNING)
+    pack = workflow.create_question_pack(McxContextSlot.MORNING)
+    path = transport.configuration.answer_directory / pack.expected_answer_filename
+    _answer(path, _payload(pack))
+    original = path.read_bytes()
+    from kronos.swing.v1 import pdf_visual_review_v3_live as pdf
+    extract = pdf.extract_successor_answer_pdf
+    def replace_after_capture(raw):
+        path.write_bytes(b"changed working Answer after capture")
+        return extract(raw)
+    monkeypatch.setattr(pdf, "extract_successor_answer_pdf", replace_after_capture)
+    result = transport.capture_and_validate(pack)
+    assert result.pdf_bytes == original
+    assert result.answer.answer_sha256 == sha256(original).hexdigest()
 
 
 def test_morning_and_evening_question_answer_revision_and_restart(tmp_path: Path) -> None:

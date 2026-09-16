@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from datetime import date, datetime
 from hashlib import sha256
+from io import BytesIO
 import json
 import os
 from pathlib import Path
@@ -136,6 +137,14 @@ class McxContextValidatedAnswer:
     families: tuple[McxContextValidatedFamily, McxContextValidatedFamily]
 
 
+@dataclass(frozen=True, slots=True)
+class McxContextCapturedAnswer:
+    """One immutable capture; parsing and retention use these same bytes."""
+
+    answer: McxContextValidatedAnswer
+    pdf_bytes: bytes
+
+
 class McxContextPdfStore:
     def __init__(self, root: Path) -> None:
         root = Path(root).expanduser()
@@ -151,11 +160,26 @@ class McxContextPdfStore:
 
     def current(self, trading_date: date, slot: McxContextSlot) -> McxContextQuestionPack | None:
         path = self.root / "current" / trading_date.isoformat() / f"{slot.value}.json"
-        if not path.exists(): return None
+        if not path.exists():
+            from kronos.swing.v1.review_evidence_store import record_prepared_read
+            record_prepared_read(path, None)
+            return None
         selection = _read(path)
         identity = selection.get("question_pack_identity")
         if type(identity) is not str: raise ValueError("MCX_CONTEXT_SELECTION_INVALID")
         return _pack_from_dict(_read(self.root / "question-packs" / f"{identity}.json"))
+
+    def load_exact(self, identity: str) -> McxContextQuestionPack:
+        """Exact retained authority, with no current/latest fallback."""
+        if type(identity) is not str or re.fullmatch(r"MCX-CONTEXT-PACK-[A-F0-9]{32}", identity) is None:
+            raise ValueError("MCX_CONTEXT_SELECTION_INVALID")
+        path = self.root / "question-packs" / f"{identity}.json"
+        if path.is_symlink():
+            raise ValueError("MCX_CONTEXT_SELECTION_INVALID")
+        pack = _pack_from_dict(_read(path))
+        if pack.question_pack_identity != identity:
+            raise ValueError("MCX_CONTEXT_SELECTION_INVALID")
+        return pack
 
     def retain_image(self, value: McxContextStagedImage, payload: bytes) -> None:
         suffix = ".png" if value.content_type == "image/png" else ".jpg"
@@ -172,7 +196,11 @@ class McxContextPdfStore:
         self, trading_date: date, slot: McxContextSlot, family: McxContextFamily,
     ) -> McxContextStagedImage | None:
         path = self.root / "staged-current" / trading_date.isoformat() / slot.value / f"{family.value}.json"
-        return None if not path.exists() else _image_from_dict(_read(path))
+        if not path.exists():
+            from kronos.swing.v1.review_evidence_store import record_prepared_read
+            record_prepared_read(path, None)
+            return None
+        return _image_from_dict(_read(path))
 
     def select_image(self, value: McxContextStagedImage) -> None:
         path = self.root / "staged-current" / value.trading_date.isoformat() / value.slot.value / f"{value.family.value}.json"
@@ -196,6 +224,8 @@ class McxContextPdfStore:
         except (FileNotFoundError, ValueError):
             raise ValueError("MCX_CONTEXT_IMAGE_BINDING_INVALID") from None
         payload = resolved.read_bytes()
+        from kronos.swing.v1.review_evidence_store import record_prepared_read
+        record_prepared_read(resolved, payload)
         if sha256(payload).hexdigest() != value.image_sha256:
             raise ValueError("MCX_CONTEXT_IMAGE_BINDING_INVALID")
         return payload
@@ -222,6 +252,83 @@ class McxContextPdfTransport:
         value = McxContextStagedImage(trading_date, slot, family, normalized, digest, self._now(), str(path))
         self.store.retain_image(value, payload); self.store.select_image(value)
         return value
+
+    def prepare_intake_publication(self, trading_date, slot, operation, **values):
+        """Build the existing record bytes outside both publication guards."""
+        def encoded(value):
+            return (json.dumps(value, indent=2, sort_keys=True) + "\n").encode("utf-8")
+
+        if operation == "GENERATE":
+            if values:
+                raise ValueError("REVIEW_PRECONDITION_INVALID")
+            record, raw = self.prepare_question_pack(trading_date, slot)
+            pdf_path = Path(record.question_path)
+            if pdf_path.exists():
+                raise PdfReviewTransportError("MCX_CONTEXT_QUESTION_FILENAME_EXISTS")
+            writes = ((pdf_path, raw, False),
+                (self.store.root / "question-packs" / (record.question_pack_identity + ".json"), encoded(_primitive(record)), False),
+                (self.store.root / "current" / trading_date.isoformat() / (slot.value + ".json"),
+                 encoded({"question_pack_identity": record.question_pack_identity}), True))
+            return record, writes, None, (self.configuration.question_directory, self.configuration.answer_directory)
+        family = values.get("family")
+        if not isinstance(family, McxContextFamily):
+            raise ValueError("REVIEW_PRECONDITION_INVALID")
+        pointer = self.store.root / "staged-current" / trading_date.isoformat() / slot.value / (family.value + ".json")
+        if operation == "REMOVE":
+            if set(values) != {"family"}:
+                raise ValueError("REVIEW_PRECONDITION_INVALID")
+            return None, (), pointer, ()
+        if operation != "STAGE" or set(values) != {"family", "content_type", "payload"}:
+            raise ValueError("REVIEW_PRECONDITION_INVALID")
+        payload = values["payload"]
+        if type(payload) is not bytes or not 0 < len(payload) <= 25 * 1024 * 1024:
+            raise PdfReviewTransportError("MCX_CONTEXT_IMAGE_SIZE_INVALID")
+        normalized = values["content_type"].split(";", 1)[0].lower()
+        if not _valid_image(normalized, payload):
+            raise PdfReviewTransportError("MCX_CONTEXT_IMAGE_FORMAT_INVALID")
+        digest = sha256(payload).hexdigest()
+        path = self.store.root / "images" / trading_date.isoformat() / slot.value / family.value / (
+            digest + (".png" if normalized == "image/png" else ".jpg"))
+        record = McxContextStagedImage(trading_date, slot, family, normalized, digest, self._now(), str(path))
+        return record, ((path, payload, False), (pointer, encoded(_primitive(record)), True)), None, ()
+
+    def commit_intake_publication(self, prepared):
+        """Only prepared bytes/existence checks; the final write is the control."""
+        result, writes, removal, directories = prepared
+        # Check every immutable destination before retaining any prepared bytes.
+        for path, raw, replace in writes:
+            if path.is_symlink() or any(parent.is_symlink() for parent in path.parents):
+                raise ValueError("REVIEW_ARTIFACT_REFERENCE_INVALID")
+            if not replace and path.exists() and path.read_bytes() != raw:
+                raise ValueError("REVIEW_PUBLICATION_CONFLICT")
+        for directory in directories:
+            if directory.is_symlink() or any(parent.is_symlink() for parent in directory.parents) or (
+                    directory.exists() and not directory.is_dir()):
+                raise ValueError("PDF_VISUAL_REVIEW_DIRECTORY_INVALID")
+        # Preserve the existing CREATE PDF provisioning of both governed output
+        # directories, after admission, without invoking configuration parsing.
+        for directory in directories:
+            directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+            os.chmod(directory, 0o700)
+        for path, raw, replace in writes:
+            if not replace and path.exists():
+                continue
+            path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+            _atomic_bytes(path, raw)
+            descriptor = os.open(path.parent, os.O_RDONLY)
+            try:
+                os.fsync(descriptor)
+            finally:
+                os.close(descriptor)
+        if removal is not None:
+            removal.unlink(missing_ok=True)
+            if removal.parent.exists():
+                descriptor = os.open(removal.parent, os.O_RDONLY)
+                try:
+                    os.fsync(descriptor)
+                finally:
+                    os.close(descriptor)
+        return result
 
     def remove_image(
         self, *, trading_date: date, slot: McxContextSlot, family: McxContextFamily,
@@ -262,6 +369,40 @@ class McxContextPdfTransport:
         )
         self.store.retain_pack(value); return value
 
+    def prepare_question_pack(self, trading_date: date, slot: McxContextSlot):
+        """Prepare without publishing a PDF, request record or selection."""
+        images = tuple(self.store.current_image(trading_date, slot, family) for family in McxContextFamily)
+        if any(item is None for item in images):
+            raise PdfReviewTransportError("MCX_CONTEXT_IMAGES_INCOMPLETE")
+        for image in images:
+            self.store.image_bytes(image)
+        identity = "MCX-CONTEXT-PACK-" + uuid4().hex.upper()
+        base = f"MCX_CONTEXT_{trading_date.strftime('%Y%m%d')}_{slot.value}_V1_{identity.removeprefix('MCX-CONTEXT-PACK-')[:12]}"
+        question, answer = base + "_QUESTIONS.pdf", base + "_ANSWERS.pdf"
+        buffer = BytesIO()
+        _write_question_pdf(buffer, identity, trading_date, slot, images,
+                            _answer_template(identity, trading_date, slot, answer))
+        raw = buffer.getvalue()
+        return McxContextQuestionPack(identity, trading_date, slot, self._now(), question,
+            str(self.configuration.question_directory / question), answer,
+            sha256(raw).hexdigest(), images), raw
+
+    def publish_prepared_question_pack(self, record: McxContextQuestionPack, raw: bytes):
+        """Unguarded legacy helper; governed intake uses its prepared-byte plan."""
+        if sha256(raw).hexdigest() != record.question_pdf_sha256:
+            raise PdfReviewTransportError("MCX_CONTEXT_QUESTION_PACK_INVALID")
+        for image in record.images:
+            if self.store.current_image(record.trading_date, record.slot, image.family) != image:
+                raise PdfReviewTransportError("REVIEW_BINDING_STALE")
+            self.store.image_bytes(image)
+        path = self.configuration.question_directory / record.question_filename
+        if str(path) != record.question_path or path.exists():
+            raise PdfReviewTransportError("MCX_CONTEXT_QUESTION_FILENAME_EXISTS")
+        self.configuration.ensure_directories()
+        _atomic_bytes(path, raw)
+        self.store.retain_pack(record)
+        return record
+
     def find_and_validate(self, record: McxContextQuestionPack) -> McxContextValidatedAnswer:
         self.configuration.ensure_directories(); matches = []
         for path in sorted(self.configuration.answer_directory.glob("*_ANSWERS.pdf")):
@@ -277,13 +418,36 @@ class McxContextPdfTransport:
             raise PdfReviewTransportError("MCX_CONTEXT_ANSWER_FILENAME_MISMATCH")
         return _validate_answer(record, path, payload)
 
+    def capture_and_validate(self, record: McxContextQuestionPack) -> McxContextCapturedAnswer:
+        """Successor intake: exact governed filename, no latest-file selection.
+
+        This does not create directories, publish evidence or reopen the Answer
+        after validation. Historical find_and_validate remains unchanged.
+        """
+        from kronos.swing.v1.pdf_visual_review_v3_live import extract_successor_answer_pdf
+        from kronos.swing.v1.review_evidence_binding import strict_json
+
+        name = record.expected_answer_filename
+        if Path(name).name != name or not name.endswith("_ANSWERS.pdf"):
+            raise PdfReviewTransportError("MCX_CONTEXT_ANSWER_FILENAME_MISMATCH")
+        path = self.configuration.answer_directory / name
+        try:
+            descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+            with os.fdopen(descriptor, "rb") as stream:
+                raw = stream.read(128 * 1024 * 1024 + 1)
+        except OSError as error:
+            raise PdfReviewTransportError("MCX_CONTEXT_ANSWER_NOT_FOUND") from error
+        payload = strict_json(extract_successor_answer_pdf(raw))
+        answer = _validate_answer(record, path, payload, pdf_bytes=raw)
+        return McxContextCapturedAnswer(answer, raw)
+
     def _now(self) -> datetime:
         value = self._clock()
         if not _aware(value): raise PdfReviewTransportError("MCX_CONTEXT_CLOCK_INVALID")
         return value
 
 
-def _validate_answer(record: McxContextQuestionPack, path: Path, payload: dict[str, object]) -> McxContextValidatedAnswer:
+def _validate_answer(record: McxContextQuestionPack, path: Path, payload: dict[str, object], *, pdf_bytes: bytes | None = None) -> McxContextValidatedAnswer:
     if type(payload) is not dict or set(payload) != {"schema", "manifest", "families"}:
         raise PdfReviewTransportError("MCX_CONTEXT_ANSWER_FORMAT_INVALID")
     if payload["schema"] != MCX_CONTEXT_ANSWER_SCHEMA:
@@ -344,11 +508,13 @@ def _validate_answer(record: McxContextQuestionPack, path: Path, payload: dict[s
         except ValueError as error:
             raise PdfReviewTransportError("MCX_CONTEXT_ALIGNMENT_INVALID") from error
         families.append(McxContextValidatedFamily(family, tuple(observations), wti, gas))
-    return McxContextValidatedAnswer(answer_identity, path, sha256(path.read_bytes()).hexdigest(), captured_at, tuple(families))  # type: ignore[arg-type]
+    captured_bytes = path.read_bytes() if pdf_bytes is None else pdf_bytes
+    return McxContextValidatedAnswer(answer_identity, path, sha256(captured_bytes).hexdigest(), captured_at, tuple(families))  # type: ignore[arg-type]
 
 
-def _write_question_pdf(path: Path, identity: str, trading_date: date, slot: McxContextSlot, images: tuple[McxContextStagedImage, McxContextStagedImage], template: dict[str, object]) -> None:
-    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+def _write_question_pdf(path: Path | BytesIO, identity: str, trading_date: date, slot: McxContextSlot, images: tuple[McxContextStagedImage, McxContextStagedImage], template: dict[str, object]) -> None:
+    if isinstance(path, Path):
+        path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     styles = getSampleStyleSheet(); story = [
         Paragraph("KRONOS MCX TWICE-DAILY SUPPORTING CONTEXT V1", styles["Title"]),
         Paragraph(f"{trading_date.isoformat()} · {slot.value} · {identity}", styles["Heading2"]),
@@ -384,9 +550,12 @@ def _write_question_pdf(path: Path, identity: str, trading_date: date, slot: Mcx
     story += [PageBreak(), Paragraph("GOVERNED ANSWER CONTRACT", styles["Heading1"]),
               Paragraph("Return only the JSON document between the markers. No additional fields or prose.", styles["BodyText"]),
               Preformatted(BEGIN_GOVERNED_ANSWER_DATA + "\n" + json.dumps(template, indent=2) + "\n" + END_GOVERNED_ANSWER_DATA, styles["Code"])]
-    temporary = path.with_suffix(".tmp")
-    SimpleDocTemplate(str(temporary), pagesize=A4).build(story)
-    os.chmod(temporary, 0o600); os.replace(temporary, path)
+    if isinstance(path, BytesIO):
+        SimpleDocTemplate(path, pagesize=A4).build(story)
+    else:
+        temporary = path.with_suffix(".tmp")
+        SimpleDocTemplate(str(temporary), pagesize=A4).build(story)
+        os.chmod(temporary, 0o600); os.replace(temporary, path)
 
 
 def _answer_template(identity: str, trading_date: date, slot: McxContextSlot, _filename: str) -> dict[str, object]:
@@ -425,7 +594,10 @@ def _image_from_dict(value: dict[str, object]) -> McxContextStagedImage:
 
 
 def _read(path: Path) -> dict[str, object]:
-    value = json.loads(path.read_text(encoding="utf-8"))
+    raw = path.read_bytes()
+    from kronos.swing.v1.review_evidence_store import record_prepared_read
+    record_prepared_read(path, raw)
+    value = json.loads(raw.decode("utf-8"))
     if type(value) is not dict: raise ValueError("MCX_CONTEXT_PDF_RECORD_INVALID")
     return value
 

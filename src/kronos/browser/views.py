@@ -3486,11 +3486,13 @@ def _mcx_context_strip(snapshot: McxSupportingContextSnapshot) -> str:
                 else item.availability.value.replace("_", " ")
             ) for item in slot.families
         }
-        slot_query = urlencode({"slot": slot.slot.value})
+        mutation = {} if slot.intake_precondition is None else {"expected": slot.intake_precondition}
+        mutation_available = slot.evidence_state is None or slot.intake_precondition is not None
+        slot_query = urlencode({"slot": slot.slot.value, **mutation})
         targets = ""
         for family_status in slot.families:
             family = family_status.family
-            query = urlencode({"slot": slot.slot.value, "family": family.value})
+            query = urlencode({"slot": slot.slot.value, "family": family.value, **mutation})
             target_id = f"mcx-context-{slot.slot.value.lower()}-{family.value.lower()}"
             file_id = f"{target_id}-file"
             if family_status.image_sha256 is None:
@@ -3523,6 +3525,7 @@ def _mcx_context_strip(snapshot: McxSupportingContextSnapshot) -> str:
                 ' CONTEXT</h3>',
                 f'<div id="{target_id}" class="chart-paste-target{received_class}" ',
                 'role="button" tabindex="0" ',
+                ('' if mutation_available else 'aria-disabled="true" '),
                 f'aria-label="Paste {escape(family.value.title())} TradingView context image" ',
                 f'data-upload-url="/swing/mcx-context/image?{escape(query)}">{content}</div>',
                 '<div class="chart-slot-actions">', actions,
@@ -3539,17 +3542,19 @@ def _mcx_context_strip(snapshot: McxSupportingContextSnapshot) -> str:
         )
         parts.append(
             '<span class="mcx-context-slot"><b>' + slot.slot.value + '</b>'
-            '<span class="mcx-context-status">Metals ' + escape(statuses["METALS"])
+            + ('' if slot.evidence_state is None else '<span class="mcx-context-evidence">EVIDENCE · '
+               + escape(slot.evidence_state) + '</span>')
+            + '<span class="mcx-context-status">Metals ' + escape(statuses["METALS"])
             + ' · Energy ' + escape(statuses["ENERGY"]) + '</span>'
             f'<details class="mcx-context-prep"{open_preparation}><summary>PREPARE</summary>'
             '<div class="mcx-context-targets">' + targets + '</div></details>'
             '<form method="post" action="/swing/mcx-context/question-pack?'
             + escape(slot_query) + '"><button type="submit"'
-            + ("" if required and all(item.image_staged for item in slot.families) else " disabled")
+            + ("" if required and mutation_available and all(item.image_staged for item in slot.families) else " disabled")
             + '>CREATE PDF</button></form>'
             '<form method="post" action="/swing/mcx-context/answer?'
             + escape(slot_query) + '"><button type="submit"'
-            + ("" if required and slot.question_pack is not None else " disabled")
+            + ("" if required and mutation_available and slot.question_pack is not None else " disabled")
             + '>UPLOAD ANSWER</button></form>'
             + _mcx_context_failure(slot.last_error)
             + '</span>'
@@ -3630,8 +3635,11 @@ def render_v1_review(
     visual_v3_live: SwingVisualV3LiveSnapshot | None = None,
     mcx_context: McxSupportingContextSnapshot | None = None,
     relative_context: RelativeContextRun | None = None,
+    native_intake: dict | None = None,
 ) -> str:
-    if (
+    if native_intake is not None:
+        body = _analysis_run_strip(snapshot) + _receipt_native_review(native_intake)
+    elif (
         native_review is not None
         and native_review.state is NativeReviewRunState.REVIEW_REQUIRED
     ):
@@ -3785,7 +3793,7 @@ def render_v1_review(
         )
     if mcx_context is not None:
         body = _mcx_context_strip(mcx_context) + body
-    if visual_v3_live is not None and visual_v3_live.restoration_error is not None:
+    if native_intake is None and visual_v3_live is not None and visual_v3_live.restoration_error is not None:
         body = (
             '<div class="review-note batch-preflight" role="alert">'
             '<strong>SAVED V3 REVIEW UNAVAILABLE</strong><br>'
@@ -3803,6 +3811,74 @@ def render_v1_review(
         active_tab="Review",
         body=body,
     )
+
+
+def _receipt_native_review(projection):
+    """Render immutable receipt applicability separately from consumer state."""
+    from kronos.swing.v1.review_evidence_binding import canonical
+
+    def action(endpoint, market, expected, label, extra=None):
+        if expected is None:
+            return '<button disabled>' + escape(label) + '</button>'
+        query = urlencode(dict(market=market, **(extra or {})))
+        return ('<form method="post" action="/swing/v1/' + endpoint + '?' + escape(query) + '">'
+            '<input type="hidden" name="expected" value="' + escape(canonical(expected).decode()) + '">'
+            '<button type="submit">' + escape(label) + '</button></form>')
+
+    body = '<div class="review-note"><strong>NATIVE REVIEW · RECEIPT-BOUND EVIDENCE</strong></div>'
+    if projection["error"]:
+        body += '<div role="alert">' + escape(projection["error"]) + '</div>'
+    for market in ("NSE", "MCX"):
+        ready = [row for row in projection["rows"] if row["market"] == market and row["complete"] and row["expected"]]
+        if ready:
+            batch = {key: value for row in ready for key, value in row["expected"].items()}
+            body += action("native-review-pack", market, batch, "CREATE ALL " + market + " REVIEW PDF")
+    for package in projection["packages"]:
+        query = urlencode(dict(market=package["market"], publication=package["identity"]))
+        body += ('<div class="review-note"><strong>' + escape(package["market"]) + ' CURRENT REVIEW PACK</strong><br>'
+            '<a href="/swing/v1/native-request-pdf?' + escape(query) + '">'
+            + escape(package["question_filename"]) + '</a><br>Answer filename: ' + escape(package["answer_filename"])
+            + action("native-review-answer", package["market"], package["expected"], "UPLOAD ANSWER") + '</div>')
+    for index, row in enumerate(projection["rows"]):
+        market, instrument = row["market"], row["instrument"]
+        body += '<section class="review-note"><h3>' + escape(instrument) + '</h3>'
+        body += '<strong>' + ("MCX EVIDENCE " if market == "MCX" else "EVIDENCE · ") + escape(row["evidence"]) + '</strong>'
+        body += '<p>DOWNSTREAM ' + escape(row["downstream"].replace("_", " ")) + '</p>'
+        if row["supported_result"] is not None:
+            readiness, promotion = row["supported_result"]
+            body += '<p>Readiness · ' + escape(readiness) + '<br>KR-370 · ' + escape(promotion) + '</p>'
+        if market == "MCX":
+            body += '<p>Readiness and KR-370 have not been run for this contract.</p>'
+            reference = row["selected"].get("SUPPORTING_REFERENCE")
+            if reference is None or reference["image"] is None:
+                body += '<p>REFERENCE EVIDENCE MISSING<br>Complete MCX evidence acceptance is unavailable.</p>'
+        if row["error"]:
+            body += '<p role="alert">' + escape(row["error"]) + '</p>'
+        if row["replaced"]:
+            body += '<details><summary>REPLACED · historical accepted evidence</summary>' + '<br>'.join(escape(v) for v in row["replaced"]) + '</details>'
+        for offset, (role, selection) in enumerate(row["selected"].items()):
+            target = f'wo07-chart-{index}-{offset}'
+            label = (" · ".join(row["reference"]) if role == "SUPPORTING_REFERENCE" else instrument)
+            frames = "1W / 1D / 4H / 1H" if market == "NSE" else "1D / 4H / 1H"
+            received = selection is not None and selection["image"] is not None
+            query = dict(market=market, instrument=instrument, role=role)
+            upload = urlencode(dict(query, expected=canonical(row["expected"]).decode()))
+            content = '<strong>' + escape(label) + '</strong><span>' + frames + '</span><span>Click and paste TradingView image with ⌘V</span>'
+            if received:
+                preview = urlencode(dict(query, selection=selection["selection_sha256"]))
+                content = '<img src="/swing/v1/native-chart-preview?' + escape(preview) + '" alt="' + escape(label) + '"><strong>CHART RECEIVED</strong>' + content
+            body += ('<div class="chart-slot"><div id="' + target + '" class="chart-paste-target'
+                + (' received' if received else '') + '" role="button" tabindex="0" aria-label="Paste '
+                + escape(label) + '" data-upload-url="/swing/v1/native-chart?' + escape(upload) + '">' + content + '</div>'
+                '<div class="chart-slot-actions"><button class="replace-chart" type="button" data-target="' + target + '">Replace</button>'
+                + action("native-chart/remove", market, row["expected"], "Remove", dict(instrument=instrument, role=role))
+                + '<label class="file-choice" for="' + target + '-file">Choose File</label><input id="' + target
+                + '-file" class="chart-file" type="file" accept="image/png,image/jpeg,image/webp" data-target="' + target + '"></div></div>')
+        body += action("native-review-pack", market, row["expected"] if row["complete"] else None, "CREATE PDF / SUCCESSOR")
+        if market == "NSE" and row["evidence"] == "ACCEPTED" and row["downstream"] != "SUCCEEDED":
+            body += action("native-review-handoff", market, row["expected"], "RETRY DOWNSTREAM")
+        body += '</section>'
+    return body
 
 
 def _native_review_requirements(

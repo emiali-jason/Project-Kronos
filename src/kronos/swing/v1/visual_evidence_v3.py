@@ -927,6 +927,117 @@ def _observation_from_dict(
         raise ValueError("VISUAL_V3_OBSERVATION_INVALID") from error
 
 
+def validate_nse_successor_answer(payload, mapping):
+    """WO-07 prospective strict transport; historical loaders above are unchanged.
+
+    Pure schema/domain validation only. The intake coordinator must resolve and
+    verify the complete committed request publication before calling this, and
+    recheck it under the commit lock. This function does not accept/persist evidence.
+    """
+    from kronos.swing.v1.review_evidence_binding import (
+        NseReviewRequestMapping, NSE_ANSWER_SCHEMA, NSE_TIMEFRAMES,
+        ReviewEvidenceError, closed, require, strict_json, text,
+    )
+    require(type(mapping) is NseReviewRequestMapping, "REVIEW_REQUEST_MISMATCH")
+    answer = strict_json(payload)
+    forbidden = {
+        "provider_identity", "native_run_identity", "committed_run_manifest_identity",
+        "native_assessment_sha256", "native_canonical_instrument", "machine_fact_integrity_sha256",
+        "request_timestamp", "observation_boundary", "analysis_boundary", "source_provenance",
+        "authority", "receipt_id", "acceptance_timestamp", "readiness", "promotion",
+    }
+
+    def fields(value, expected, path):
+        require(type(value) is dict, "REVIEW_FIELD_TYPE_INVALID", path)
+        bad = sorted((set(value) - expected) & forbidden)
+        require(not bad, "REVIEW_PROVENANCE_FORBIDDEN", path + "." + bad[0] if bad else path)
+        return closed(value, expected, path)
+
+    fields(answer, {"schema", "version", "request_reference", "answer_identity", "subjects"}, "$")
+    require(answer["schema"] == NSE_ANSWER_SCHEMA and answer["version"] == "1.0", "REVIEW_CONTRACT_UNSUPPORTED")
+    fields(answer["request_reference"], {"request_identity", "request_sha256"}, "$.request_reference")
+    require(text(answer["answer_identity"]), "REVIEW_FIELD_TYPE_INVALID", "$.answer_identity")
+    subjects = answer["subjects"]
+    require(type(subjects) is list and bool(subjects), "REVIEW_ACCEPTANCE_INCOMPLETE", "$.subjects")
+    common = {"question_id", "timeframe", "observation_status", "visible_basis", "confidence_in_extraction",
+              "ambiguity_reason", "source_chart_identity", "source_chart_revision", "why_not_covered_elsewhere"}
+    question_fields = {
+        VisualQuestionV3.CPR_VISUAL_RELATIONSHIP.value: {"presence", "price_relationship", "interaction"},
+        VisualQuestionV3.GOVERNED_REFERENCE_VISUAL_CONTEXT.value: {"presence", "relationship", "interaction"},
+        VisualQuestionV3.PRICE_ACTION_QUALITY.value: {"setup_quality", "finding"},
+        VisualQuestionV3.VISUAL_COMPONENT_CLUSTERING.value: {"clustering", "components"},
+    }
+    level_questions = {VisualQuestionV3.VISUAL_SUPPORT_RESISTANCE_GAP.value, VisualQuestionV3.VISUAL_OBSTACLE_EVIDENCE.value}
+    questions = tuple(q.value for q in VisualQuestionV3)
+    # Exhaust the closed-field check before resolving any Analyst request echo.
+    for si, subject in enumerate(subjects):
+        sp = f"$.subjects[{si}]"
+        fields(subject, {"subject_reference", "canonical_instrument", "observed_chart_instrument", "responses"}, sp)
+        require(type(subject["responses"]) is list and len(subject["responses"]) == 4,
+                "REVIEW_ACCEPTANCE_INCOMPLETE", sp + ".responses")
+        for ri, response in enumerate(subject["responses"]):
+            rp = f"{sp}.responses[{ri}]"
+            fields(response, {"model_identity", "timeframe", "chart_identity", "chart_revision_sha256",
+                "observations", "question_set_identity", "question_set_version"}, rp)
+            observations = response["observations"]
+            require(type(observations) is list and len(observations) == 10, "REVIEW_QUESTION_COUNT_INVALID", rp + ".observations")
+            for qi, observation in enumerate(observations):
+                op = f"{rp}.observations[{qi}]"
+                require(type(observation) is dict, "REVIEW_FIELD_TYPE_INVALID", op)
+                question = observation.get("question_id")
+                require(type(question) is str and question in questions, "REVIEW_QUESTION_ORDER_INVALID", op + ".question_id")
+                specific = question_fields.get(question, {"finding"})
+                if question in level_questions:
+                    # V3.1 has a qualitative branch and a level branch with
+                    # nullable/omittable unused level keys. Do not tighten those
+                    # historical numerical semantics in the successor transport.
+                    specific = specific | (set(observation) & {"point_price", "zone_low", "zone_high"})
+                fields(observation, common | specific, op)
+                why = observation["why_not_covered_elsewhere"]
+                if question != VisualQuestionV3.VISUAL_FACTS_NOT_CAPTURED_BY_KRONOS.value or observation.get("finding") == "NONE":
+                    require(why is None, "VISUAL_V3_OBSERVATION_INVALID", op + ".why_not_covered_elsewhere")
+                else:
+                    require(text(why, 512), "VISUAL_V3_OBSERVATION_INVALID", op + ".why_not_covered_elsewhere")
+    trusted = mapping.value
+    require(answer["request_reference"] == mapping.request_reference, "REVIEW_REQUEST_MISMATCH", "$.request_reference")
+    require(len(subjects) == len(trusted["subjects"]), "REVIEW_ACCEPTANCE_INCOMPLETE", "$.subjects")
+    result = []
+    for si, (subject, requested_subject) in enumerate(zip(subjects, trusted["subjects"], strict=True)):
+        sp = f"$.subjects[{si}]"
+        instrument = requested_subject["canonical_instrument"]
+        require(subject["subject_reference"] == requested_subject["subject_reference"], "REVIEW_REQUEST_MISMATCH", sp + ".subject_reference")
+        for key in ("canonical_instrument", "observed_chart_instrument"):
+            require(subject[key] == instrument, "CHART_IDENTITY_MISMATCH", sp + "." + key)
+        candidate = []
+        for ri, (response, requested_response, tf) in enumerate(zip(subject["responses"], requested_subject["responses"], NSE_TIMEFRAMES, strict=True)):
+            rp = f"{sp}.responses[{ri}]"
+            require(response["timeframe"] == tf, "REVIEW_REQUEST_MISMATCH", rp + ".timeframe")
+            require(response["question_set_identity"] == VISUAL_QUESTION_SET_V3_ID
+                    and response["question_set_version"] == VISUAL_QUESTION_SET_V3_VERSION, "REVIEW_CONTRACT_UNSUPPORTED", rp)
+            require(response["chart_identity"] == requested_response["expected_chart_identity"], "CHART_IDENTITY_MISMATCH", rp + ".chart_identity")
+            require(response["chart_revision_sha256"] == requested_response["chart_revision_sha256"], "REVIEW_REQUEST_MISMATCH", rp + ".chart_revision_sha256")
+            for qi, (observation, question) in enumerate(zip(response["observations"], questions, strict=True)):
+                op = f"{rp}.observations[{qi}]"
+                require(observation["question_id"] == question, "REVIEW_QUESTION_ORDER_INVALID", op + ".question_id")
+                require(observation["source_chart_identity"] == requested_response["expected_chart_identity"], "CHART_IDENTITY_MISMATCH", op + ".source_chart_identity")
+                require(observation["source_chart_revision"] == requested_response["chart_revision_sha256"], "REVIEW_REQUEST_MISMATCH", op + ".source_chart_revision")
+            # Closed transport validated first; all provenance comes exclusively
+            # from the retained mapping, never from Analyst-supplied properties.
+            bound = dict(response)
+            bound.update(provider_identity="SPONSOR_MEDIATED_PDF", request_timestamp=trusted["request_timestamp"],
+                native_run_identity=trusted["native_run_identity"], native_assessment_sha256=requested_subject["native_assessment_sha256"],
+                native_canonical_instrument=instrument, observation_boundary=requested_response["observation_boundary"],
+                analysis_boundary=requested_response["analysis_boundary"], machine_fact_integrity_sha256=requested_response["machine_fact_integrity_sha256"],
+                source_provenance=(NSE_ANSWER_SCHEMA, trusted["review_pack_identity"], trusted["request_identity"]),
+                schema=VISUAL_EVIDENCE_V3_SCHEMA, authority=VISUAL_EVIDENCE_V3_AUTHORITY)
+            try:
+                candidate.append(visual_evidence_v3_response_from_dict(bound))
+            except ValueError as error:
+                raise ReviewEvidenceError(str(error), rp) from error
+        result.append(tuple(candidate))
+    return tuple(result)
+
+
 _SUPPORTED_VISUAL_V3_VERSIONS = {
     VISUAL_QUESTION_SET_V3_LEGACY_VERSION,
     VISUAL_QUESTION_SET_V3_VERSION,

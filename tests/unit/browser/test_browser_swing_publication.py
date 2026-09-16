@@ -1,4 +1,5 @@
 from unittest.mock import Mock
+from threading import Event
 
 from tests.unit.browser.test_browser_server import _running_server, _request
 
@@ -40,6 +41,12 @@ def test_15_only_authorized_swing_mutation_reconciles(monkeypatch):
     try:
         from kronos.browser.server import _BrowserHandler
         original = _BrowserHandler._dispatch_post
+        completed = Event()
+        finish = server.finish_sponsor_work
+        def finish_work():
+            finish()
+            completed.set()
+        monkeypatch.setattr(server, 'finish_sponsor_work', finish_work)
         calls = []
         def dispatch(handler, path):
             if path == '/swing/review/controlled-mutation':
@@ -52,9 +59,16 @@ def test_15_only_authorized_swing_mutation_reconciles(monkeypatch):
         origin = {'Origin':f'http://127.0.0.1:{server.server_port}'}
         assert _request(server,'POST',path,headers={'Origin':'http://foreign.invalid'})[0] == 403
         assert not calls
-        assert _request(server,'POST',path,headers=origin)[0] == 303
+        status, headers, _ = _request(server,'POST',path,headers=origin)
+        assert completed.wait(5), 'WO-05 controlled mutation did not finish Sponsor work'
+        assert status == 303
+        assert headers['Location'] == '/swing/opportunities'
         assert calls == [True]
-        assert _request(server,'POST','/swing/reconcile',headers=origin)[0] == 303
+        completed.clear()
+        status, headers, _ = _request(server,'POST','/swing/reconcile',headers=origin)
+        assert completed.wait(5), 'WO-05 explicit reconciliation did not finish Sponsor work'
+        assert status == 303
+        assert headers['Location'] == '/swing/opportunities'
         assert calls == [True,True]
     finally:
         server.shutdown(); server.server_close(); thread.join(timeout=5)

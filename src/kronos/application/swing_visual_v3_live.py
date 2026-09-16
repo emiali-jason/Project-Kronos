@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from hashlib import sha256
 
 from kronos.application.swing_native_review import NativeReviewWorkflowSnapshot
 from kronos.application.swing_visual_v3 import (
@@ -16,16 +17,25 @@ from kronos.swing.v1.extension import (
 )
 from kronos.swing.v1.path_clearance import evaluate_one_hour_path_clearance
 from kronos.swing.v1.mtf_facts import FactualTimeframe, SameRunMtfFactSnapshot
+from kronos.swing.v1.native_discovery import NativeProductPath
 from kronos.swing.v1.native_review import (
     NativeIndependentLayer2Evidence,
     NativeLayer2EvidenceState,
     NativeReviewRequirement,
 )
 from kronos.swing.v1.pdf_visual_review import PdfReviewTransportError
+from kronos.swing.v1.pdf_visual_review_v3 import VisualV3ReviewPackRecord
+from kronos.swing.v1.review_evidence_binding import (
+    ReviewAcceptanceReceipt, ReviewMutationPrecondition, canonical, require, strict_json, timestamp,
+)
+from kronos.swing.v1.review_evidence_store import (
+    ReviewEvidenceStore, PreparedReadFence, capture_prepared_reads,
+)
 from kronos.swing.v1.pdf_visual_review_v3_live import (
     VisualV3AnswerImportRecord,
     VisualV3LiveReviewPack,
     VisualV3PdfReviewTransport,
+    extract_successor_answer_pdf,
 )
 from kronos.swing.v1.visual_evidence_v2 import (
     VisualEvidenceSubjectKind,
@@ -38,6 +48,9 @@ from kronos.swing.v1.visual_evidence_v3 import (
     VisualEvidenceV3Request,
     VisualEvidenceV3Response,
     VisualQuestionV3,
+    visual_evidence_v3_response_from_dict,
+    validate_nse_successor_answer,
+    _primitive,
 )
 
 
@@ -59,6 +72,7 @@ class SwingVisualV3LiveWorkflow:
         transport: VisualV3PdfReviewTransport,
         *,
         clock=lambda: datetime.now(UTC),  # type: ignore[no-untyped-def]
+        recover_historical=True,
     ) -> None:
         if (
             type(cycle) is not SwingVisualV3ReviewCycle
@@ -73,7 +87,10 @@ class SwingVisualV3LiveWorkflow:
         self._pack: VisualV3LiveReviewPack | None = None
         self._imports: tuple[VisualV3AnswerImportRecord, ...] = ()
         try:
-            pack = transport.record_store.load_current()
+            # This constructor is the explicit startup-restoration boundary.
+            # Subsequent load_current/GET calls are strictly observational.
+            pack = (transport.record_store.recover_pending_publications() if recover_historical
+                    else transport.record_store.load_current())
             imports = (
                 () if pack is None
                 else transport.record_store.load_imports(pack.review_pack_id)
@@ -137,6 +154,314 @@ class SwingVisualV3LiveWorkflow:
     ) -> tuple[VisualV3AnswerImportRecord, ...]:
         with self.transport.record_store.cycle_lock:
             return self._upload(review, facts, chart_bytes)
+
+    def handoff_accepted_receipt(self, store, commit_identity, receipt_identity, *,
+                                 review, facts, chart_bytes, publication_guard, recheck,
+                                 prepared_requests=None, restore_only=False):
+        """WO07 explicit handoff. Never called from snapshot or historical restore.
+
+        Resolve acceptance before consulting the downstream stores. MCX returns
+        an immutable unsupported disposition without preparing four-frame NSE
+        inputs or invoking either consumer. NSE derives its inputs exclusively
+        from the retained mapping and accepted response bytes, then validates
+        them against the current exact run/assessment/factual request.
+        """
+        require(type(store) is ReviewEvidenceStore, "REVIEW_REQUEST_MISMATCH")
+        receipt = store.resolve_committed_receipt(commit_identity, receipt_identity, current=True)
+        commit = store.load_acceptance(commit_identity)
+        binding = receipt.binding.value
+        require(receipt.binding.scope == "NATIVE_REVIEW", "REVIEW_CONTRACT_UNSUPPORTED")
+        prepared_inputs = None
+
+        def nse_inputs():
+            if prepared_inputs is not None:
+                return prepared_inputs
+            publication = store.load_request(commit.value["request_publication_identity"])
+            require(store.load_current_request() == publication, "REVIEW_BINDING_STALE")
+            mapping = publication.mapping.value
+            require(binding["market"] == "NSE"
+                    and binding["analytical_run_identity"] == mapping["native_run_identity"]
+                    and binding["committed_run_manifest_identity"] == mapping["committed_run_manifest_identity"]
+                    and binding["request_identity"] == mapping["request_identity"]
+                    and binding["request_timestamp"] == mapping["request_timestamp"]
+                    and binding["review_pack_identity"] == mapping["review_pack_identity"]
+                    and binding["review_pack_sha256"] == mapping["review_pack_sha256"],
+                    "REVIEW_REQUEST_MISMATCH")
+            if prepared_requests is None:
+                prepared, _ = self._prepare(review, facts, chart_bytes, binding["canonical_instrument"],
+                    request_timestamp=datetime.fromisoformat(mapping["request_timestamp"]),
+                    question_set_version=mapping["question_set_version"])
+            else:
+                prepared = (prepared_requests(binding["canonical_instrument"],
+                    datetime.fromisoformat(mapping["request_timestamp"])),)
+            require(len(prepared) == 1, "REVIEW_ACCEPTANCE_INCOMPLETE")
+            requests = prepared[0]
+            requirement = requests[0].requirement
+            require(requirement.thesis.product_path is NativeProductPath.NSE
+                    and requirement.thesis.native_assessment_sha256 == binding["native_assessment_sha256"],
+                    "REVIEW_REQUEST_MISMATCH")
+            subjects = [item for item in mapping["subjects"]
+                        if item["canonical_instrument"] == binding["canonical_instrument"]
+                        and item["native_assessment_sha256"] == binding["native_assessment_sha256"]]
+            require(len(subjects) == 1, "REVIEW_REQUEST_MISMATCH")
+            for request, expected in zip(requests, subjects[0]["responses"], strict=True):
+                require({key: value for key, value in expected.items()
+                    if key not in {"observation_boundary", "analysis_boundary"}} == dict(timeframe=request.timeframe.value,
+                    expected_chart_identity=request.chart_identity,
+                    chart_revision_sha256=request.chart_revision_sha256,
+                    machine_fact_integrity_sha256=request.machine_fact.integrity_sha256)
+                    and datetime.fromisoformat(expected["observation_boundary"]) == request.observation_boundary
+                    and datetime.fromisoformat(expected["analysis_boundary"]) == request.analysis_boundary,
+                    "REVIEW_REQUEST_MISMATCH")
+            require(tuple((item["role"], item["timeframe_or_family_identity"])
+                    for item in receipt.body["structured_evidence"]) ==
+                    tuple(("NATIVE_NSE", tf.value) for tf in VisualTimeframe),
+                    "REVIEW_CONTRACT_UNSUPPORTED")
+            responses = tuple(visual_evidence_v3_response_from_dict(strict_json(raw))
+                for raw in store.structured_evidence_for(commit_identity, receipt_identity))
+            for request, response in zip(requests, responses, strict=True):
+                response.validate_binding(request)
+            pack = VisualV3ReviewPackRecord(mapping["review_pack_identity"], mapping["native_run_identity"],
+                requirement.canonical_instrument, requirement.thesis.native_assessment_sha256,
+                datetime.fromisoformat(mapping["request_timestamp"]),
+                str(store.root / publication.value["question_pdf_artifact"]["relative_path"]),
+                mapping["review_pack_sha256"],
+                tuple((item.timeframe.value, item.chart_revision_sha256) for item in requests),
+                tuple((item.timeframe.value, item.machine_fact.integrity_sha256) for item in requests))
+            return requirement, requests, responses, pack
+
+        def identities(completed, responses):
+            if completed is None or completed.promotion is None:
+                return None
+            require(completed.responses == responses, "REVIEW_ARTIFACT_DIGEST_MISMATCH")
+            return (completed.readiness.result_sha256, completed.promotion.integrity_sha256)
+
+        def restore(_receipt):
+            requirement, requests, responses, pack = nse_inputs()
+            try:
+                completed = self.cycle.restore_persisted(requirement, facts, requests, review_pack=pack)
+            except ValueError as error:
+                if str(error) != "VISUAL_V3_RESTORE_READINESS_MISSING":
+                    raise
+                return None
+            return identities(completed, responses)
+
+        def consume(_receipt):
+            requirement, requests, responses, pack = nse_inputs()
+            extension = evaluate_completed_one_hour_extension(requirement, facts)
+            path = evaluate_one_hour_path_clearance(run_identity=requirement.native_run_identity,
+                instrument=facts.instrument(requirement.canonical_instrument), direction=requirement.thesis.direction)
+            for request, response in zip(requests, responses, strict=True):
+                self.cycle.retain(request, response)
+            # A resumed attempt uses this original acceptance time. Rebuilding
+            # after partial output cannot manufacture a later result identity.
+            self.cycle.complete(requirement, _v3_layer2(requirement, responses), facts, responses,
+                created_at=datetime.fromisoformat(receipt.body["accepted_at"]),
+                inputs=extension_native_condition_inputs(extension, requirement),
+                review_pack=pack, path_clearance=path, extension=extension)
+            return identities(self.cycle.completed_for(requirement.native_run_identity,
+                requirement.canonical_instrument), responses)
+
+        def exact_recheck(snapshot, accepted):
+            selected = store.load_current_request() if binding["market"] == "NSE" else store.load_current_mcx_request()
+            require(selected is not None and selected.identity == commit.value["request_publication_identity"],
+                    "REVIEW_BINDING_STALE")
+            recheck(snapshot, accepted)
+
+        def prepare_recheck(accepted):
+            nonlocal prepared_inputs
+            with capture_prepared_reads() as reads:
+                exact_recheck(None, accepted)
+                if binding["market"] == "NSE":
+                    prepared_inputs = nse_inputs()
+            fence = PreparedReadFence(tuple(reads.items()))
+            expected_manifest = binding["committed_run_manifest_identity"]
+            expected_run = binding["analytical_run_identity"]
+
+            def bounded_check(snapshot, _accepted):
+                fence.check()
+                require(snapshot.control["current_manifest"]["sha256"] == expected_manifest
+                        and snapshot.manifest["run_id"] == expected_run, "REVIEW_BINDING_STALE")
+            return bounded_check
+
+        exact_recheck.prepare = prepare_recheck
+
+        if restore_only:
+            # Startup restores a selected successful output, never starts or
+            # retries a consumer and never creates an attempt or receipt.
+            exact_recheck(None, receipt)
+            attempts = store.downstream_attempts(commit_identity, receipt_identity,
+                VISUAL_QUESTION_SET_V3_ID, VISUAL_QUESTION_SET_V3_VERSION)
+            if attempts and attempts[0].value["state"] == "SUCCEEDED":
+                require(binding["market"] == "NSE" and restore(receipt) ==
+                    tuple(attempts[0].value["output_identities"]), "REVIEW_ARTIFACT_DIGEST_MISMATCH")
+            return None if not attempts else attempts[0]
+        return store.handoff_committed(commit_identity, receipt_identity,
+            consumer_identity=VISUAL_QUESTION_SET_V3_ID, consumer_version=VISUAL_QUESTION_SET_V3_VERSION,
+            clock=lambda: timestamp(self._now()), publication_guard=publication_guard,
+            recheck=exact_recheck, restore=restore, consume=consume)
+
+    def accept_successor_answer(self, store, publication_identity, answer_pdf, *, market,
+                                review, facts, chart_reader, precondition, current_state, publication_guard):
+        """Prepare the complete native package, then publish acceptance only.
+
+        The Browser/application owner supplies its exact-state resolver and
+        original chart reader. Incoming PDF bytes are captured once by that
+        owner. This method never searches an Answers directory, calls a consumer,
+        or changes historical visual/Readiness stores. Handoff is a separate
+        explicit operation on the returned committed receipt.
+        """
+        from kronos.swing.v1.mcx_native_visual_contract import mcx_structured_evidence
+        require(type(store) is ReviewEvidenceStore and market in {"NSE", "MCX"}
+                and type(precondition) is ReviewMutationPrecondition
+                and all(callable(fn) for fn in (chart_reader, current_state, publication_guard)),
+                "REVIEW_PRECONDITION_INVALID")
+        precondition.validate(current_state())
+        load = store.load_current_request if market == "NSE" else store.load_current_mcx_request
+        publication = load()
+        require(publication is not None and publication.identity == publication_identity,
+                "REVIEW_BINDING_STALE")
+        mapping = publication.mapping.value if market == "NSE" else publication.native.value
+        require(review.native_run_identity == facts.run_identity == mapping["native_run_identity"],
+                "REVIEW_BINDING_STALE")
+        extracted = extract_successor_answer_pdf(answer_pdf)
+        answer = strict_json(extracted)
+        checksum = sha256(answer_pdf).hexdigest()
+        if market == "NSE":
+            validated = validate_nse_successor_answer(extracted, publication.mapping)
+            structured = tuple(canonical(_primitive(response)) for candidate in validated for response in candidate)
+        else:
+            structured = mcx_structured_evidence(extracted, publication.native, publication.reference, checksum)
+        requirements = {}
+        for subject in mapping["subjects"]:
+            instrument = subject["canonical_instrument"]
+            matches = [item for item in review.requirements if item.canonical_instrument == instrument
+                and item.native_run_identity == facts.run_identity
+                and item.thesis.native_assessment_sha256 == subject["native_assessment_sha256"]]
+            require(len(matches) == 1, "REVIEW_REQUEST_MISMATCH")
+            requirement = matches[0]
+            require(requirement.thesis.product_path is (NativeProductPath.NSE if market == "NSE" else NativeProductPath.MCX),
+                    "REVIEW_CONTRACT_UNSUPPORTED")
+            if market == "MCX":
+                require(subject["supplied_native_direction"] == requirement.thesis.direction.value,
+                        "REVIEW_REQUEST_MISMATCH")
+            machine = {item.chart_timeframe.value: item for item in facts.instrument(instrument).reference_facts}
+            for requested in subject["responses"]:
+                fact = machine.get(requested["timeframe"])
+                fact_key = "machine_fact_integrity_sha256" if market == "NSE" else "native_machine_fact_integrity_sha256"
+                require(fact is not None and fact.integrity_sha256 == requested[fact_key]
+                        and datetime.fromisoformat(requested["analysis_boundary"]) == fact.analysis_boundary
+                        and datetime.fromisoformat(requested["observation_boundary"]) ==
+                        facts.instrument(instrument).fact(FactualTimeframe(requested["timeframe"])).observation_boundary,
+                        "REVIEW_REQUEST_MISMATCH")
+            requirements[instrument] = requirement
+        history = store.native_acceptance_history(market, facts.run_identity)
+        previous = history[0] if history else None
+        prior = {receipt.binding.lineage_key: receipt for commit in reversed(history) for receipt in commit.receipts}
+        captured_charts = {}
+        prepared_fence = None
+
+        def recheck(_receipts=None, identity=None):
+            nonlocal prepared_fence
+            if prepared_fence is None:
+                with capture_prepared_reads() as reads:
+                    precondition.validate(current_state())
+                    require(load() == publication, "REVIEW_BINDING_STALE")
+                    require(store.native_acceptance_history(market, facts.run_identity) == history,
+                            "REVIEW_BINDING_STALE")
+                    for key, captured in captured_charts.items():
+                        require(chart_reader(*key) == captured, "REVIEW_BINDING_STALE")
+                prepared_fence = PreparedReadFence(tuple(reads.items()))
+            require(identity is None or identity == publication_identity, "REVIEW_BINDING_STALE")
+            prepared_fence.check()
+
+        def guarded_recheck(snapshot):
+            recheck()
+            require(snapshot.control["current_manifest"]["sha256"] == mapping["committed_run_manifest_identity"]
+                    and snapshot.manifest["run_id"] == mapping["native_run_identity"], "REVIEW_BINDING_STALE")
+
+        # Replay is a read of the exact committed package, not a new timestamp
+        # or a new set of downstream evidence. Validate before returning it.
+        for commit in history:
+            if any(item.body["answer"]["answer_identity"] == answer["answer_identity"] for item in commit.receipts):
+                require(commit == previous and commit.value["request_publication_identity"] == publication_identity
+                        and all(item.body["answer"]["pdf_sha256"] == checksum for item in commit.receipts),
+                        "REVIEW_ANSWER_IDENTITY_CONFLICT")
+                for receipt in commit.receipts:
+                    for chart in receipt.body["chart_revisions"]:
+                        key = (chart["role"], receipt.binding.value["canonical_instrument"], chart["timeframe_or_panel_identity"])
+                        captured_charts[key] = chart_reader(*key)
+                        require(captured_charts[key][0] == chart["revision_identity"]
+                                and sha256(captured_charts[key][1]).hexdigest() == chart["sha256"], "REVIEW_BINDING_STALE")
+                recheck()
+                with store.publication_commit_guard(publication_guard, guarded_recheck):
+                    prepared_fence.check()
+                return previous
+        if previous is not None:
+            require(previous.value["request_publication_identity"] != publication_identity,
+                    "REVIEW_PREDECESSOR_INVALID")
+        accepted_at = timestamp(self._now())
+        answer_path = "answer-pdfs/" + checksum + ".pdf"
+        artifacts, receipts = {answer_path: answer_pdf}, []
+        decoded = tuple(strict_json(raw) for raw in structured)
+        for subject in mapping["subjects"]:
+            instrument = subject["canonical_instrument"]
+            requirement = requirements[instrument]
+            binding = dict(market=market, analytical_run_identity=facts.run_identity,
+                committed_run_manifest_identity=mapping["committed_run_manifest_identity"],
+                candidate_identity=requirement.requirement_sha256, canonical_instrument=instrument,
+                native_assessment_sha256=requirement.thesis.native_assessment_sha256,
+                review_cycle_identity=mapping["review_pack_identity"] if market == "NSE" else mapping["review_cycle_identity"],
+                request_identity=mapping["request_identity"], request_timestamp=mapping["request_timestamp"],
+                review_pack_identity=mapping["review_pack_identity"], review_pack_sha256=mapping["review_pack_sha256"])
+            charts, evidence, contracts = [], [], []
+            for raw, value in zip(structured, decoded, strict=True):
+                value_binding = value if market == "NSE" else value["binding"]
+                if value_binding["native_canonical_instrument"] != instrument:
+                    continue
+                role = "NATIVE_NSE" if market == "NSE" else value_binding["role"]
+                tf = value_binding["timeframe"]
+                key = (role, instrument, tf)
+                revision, image = chart_reader(*key)
+                captured_charts[key] = (revision, image)
+                chart_sha = value_binding["chart_revision_sha256"]
+                require(type(image) is bytes and sha256(image).hexdigest() == chart_sha,
+                        "REVIEW_ARTIFACT_DIGEST_MISMATCH")
+                if market == "MCX":
+                    require(revision == value_binding["chart_revision_identity"], "REVIEW_BINDING_STALE")
+                chart_path = "chart-images/" + chart_sha
+                artifacts[chart_path] = image
+                reference = role == "SUPPORTING_REFERENCE"
+                identity = value_binding["chart_identity"] if market == "NSE" else value_binding["subject_identity"]
+                charts.append(dict(role=role, subject_identity=identity,
+                    reference_market=value_binding["market"] if reference else None,
+                    reference_symbol=value_binding["reference_symbol"] if reference else None,
+                    timeframe_or_panel_identity=tf, revision_identity=revision,
+                    sha256=chart_sha, retained_relative_path=chart_path))
+                sha = sha256(raw).hexdigest()
+                path = "structured-evidence/" + sha + ".json"
+                artifacts[path] = raw
+                evidence.append(dict(role=role, subject_identity=identity, timeframe_or_family_identity=tf,
+                    schema=value["schema"], version="3.1" if market == "NSE" else value["version"],
+                    sha256=sha, retained_relative_path=path))
+                if not any(item["role"] == role for item in contracts):
+                    provenance = mapping if market == "NSE" else value["provenance"]
+                    contracts.append(dict(role=role,
+                        question_contract_identity=provenance["question_set_identity"] if market == "NSE" else provenance["question_contract_identity"],
+                        question_contract_version="3.1" if market == "NSE" else provenance["question_contract_version"],
+                        answer_contract_identity=provenance["answer_schema"] if market == "NSE" else provenance["answer_contract_identity"],
+                        answer_contract_version="1.0", structured_evidence_schema=value["schema"],
+                        structured_evidence_version="3.1" if market == "NSE" else value["version"]))
+            from kronos.swing.v1.review_evidence_binding import ReviewEvidenceBinding
+            predecessor = prior.get(ReviewEvidenceBinding.create("NATIVE_REVIEW", binding).lineage_key)
+            receipts.append(ReviewAcceptanceReceipt.create(dict(scope="NATIVE_REVIEW", binding=binding,
+                contracts=contracts, chart_revisions=charts, structured_evidence=evidence,
+                answer=dict(answer_identity=answer["answer_identity"], pdf_sha256=checksum,
+                    byte_length=len(answer_pdf), retained_relative_path=answer_path), accepted_at=accepted_at,
+                predecessor_receipt_id=None if predecessor is None else predecessor.receipt_id)))
+        return store.publish_acceptance(tuple(receipts), artifacts, request_publication_identity=publication_identity,
+            expected_predecessor=None if previous is None else previous.identity, committed_at=accepted_at,
+            recheck=recheck, publication_guard=publication_guard, guarded_recheck=guarded_recheck)
 
     def _upload(self, review, facts, chart_bytes):  # type: ignore[no-untyped-def]
         record = self._require_current(review.native_run_identity)
@@ -388,6 +713,489 @@ class SwingVisualV3LiveWorkflow:
         if not isinstance(value, datetime) or value.tzinfo is None or value.utcoffset() is None:
             raise ValueError("VISUAL_V3_LIVE_CLOCK_INVALID")
         return value
+
+
+class NativeReviewIntakeWorkflow:
+    """Prospective Browser intake. Historical review transport is not a fallback.
+
+    Batch actions carry one complete, exact envelope per candidate. No synthetic
+    aggregate candidate identity replaces the existing requirement identities.
+    """
+
+    def __init__(self, application, native_review, live, store):
+        self.application, self.native_review, self.live, self.store = application, native_review, live, store
+        self.errors = {}
+
+    def _context(self):
+        _, native, _, status = self.application.opportunities_bundle_projection()
+        facts, review = self.application.mtf_fact_snapshot(), self.native_review.snapshot()
+        require(native is not None and facts is not None and status["control"] is not None
+                and not status["reconciliation_unavailable"]
+                and native.run_identity == facts.run_identity == review.native_run_identity,
+                "REVIEW_BINDING_STALE")
+        return status["control"]["current_manifest"]["sha256"], facts, review
+
+    def _requirements(self, market, instruments=None):
+        require(market in {"NSE", "MCX"}, "REVIEW_CONTRACT_UNSUPPORTED")
+        _, _, review = self._context()
+        values = tuple(sorted((item for item in review.requirements
+            if item.thesis.product_path is (NativeProductPath.NSE if market == "NSE" else NativeProductPath.MCX)
+            and (instruments is None or item.canonical_instrument in instruments)),
+            key=lambda item: item.canonical_instrument))
+        require(values and (instruments is None or tuple(item.canonical_instrument for item in values)
+                == tuple(sorted(instruments))), "REVIEW_REQUEST_MISMATCH")
+        return values
+
+    def _publication(self, market):
+        require(market in {"NSE", "MCX"}, "REVIEW_CONTRACT_UNSUPPORTED")
+        return self.store.load_current_request() if market == "NSE" else self.store.load_current_mcx_request()
+
+    def has_control(self):
+        _, facts, _ = self._context()
+        names = ["current-request.json", "current-mcx-request.json"]
+        names.extend("acceptance-current/" + sha256(canonical(["NATIVE_REVIEW", market, facts.run_identity])).hexdigest()
+                     + ".json" for market in ("NSE", "MCX"))
+        return any((self.store.root / name).exists() for name in names)
+
+    def _history(self, market, run_identity):
+        """Verify retained request/PDF/role bindings for the complete pointer ancestry."""
+        history = self.store.native_acceptance_history(market, run_identity)
+        for commit in history:
+            publication = (self.store.load_request(commit.value["request_publication_identity"]) if market == "NSE"
+                           else self.store.load_mcx_request(commit.value["request_publication_identity"]))
+            mapping = self._mapping(publication, market)
+            require(mapping["native_run_identity"] == run_identity
+                and {item.binding.value["canonical_instrument"] for item in commit.receipts}
+                    == {item["canonical_instrument"] for item in mapping["subjects"]}, "REVIEW_REQUEST_MISMATCH")
+            for receipt in commit.receipts:
+                binding = receipt.binding.value
+                subject = next(item for item in mapping["subjects"] if item["canonical_instrument"] == binding["canonical_instrument"])
+                require(binding["analytical_run_identity"] == run_identity and binding["market"] == market
+                    and binding["committed_run_manifest_identity"] == mapping["committed_run_manifest_identity"]
+                    and binding["native_assessment_sha256"] == subject["native_assessment_sha256"]
+                    and binding["request_identity"] == mapping["request_identity"]
+                    and binding["request_timestamp"] == mapping["request_timestamp"]
+                    and binding["review_pack_identity"] == mapping["review_pack_identity"]
+                    and binding["review_pack_sha256"] == mapping["review_pack_sha256"]
+                    and binding["review_cycle_identity"] == mapping.get("review_cycle_identity", mapping["review_pack_identity"]),
+                    "REVIEW_REQUEST_MISMATCH")
+                expected = {("NATIVE_NSE" if market == "NSE" else "NATIVE_MCX", item["timeframe"]): item
+                            for item in subject["responses"]}
+                if market == "MCX":
+                    reference = next(item for item in publication.reference.value["subjects"]
+                        if item["native_candidate_reference"] == subject["native_candidate_reference"])
+                    expected.update({("SUPPORTING_REFERENCE", item["timeframe"]): item for item in reference["responses"]})
+                for chart in receipt.body["chart_revisions"]:
+                    requested = expected[(chart["role"], chart["timeframe_or_panel_identity"])]
+                    require(chart["sha256"] == requested["chart_revision_sha256"]
+                        and (market == "NSE" or chart["revision_identity"] == requested["chart_revision_identity"]),
+                        "REVIEW_REQUEST_MISMATCH")
+                    if chart["role"] == "SUPPORTING_REFERENCE":
+                        require((chart["subject_identity"], chart["reference_market"], chart["reference_symbol"])
+                            == (reference["reference_subject_identity"], reference["reference_market"], reference["reference_symbol"]),
+                            "REVIEW_REQUEST_MISMATCH")
+                    else:
+                        require(chart["subject_identity"] == subject["canonical_instrument"]
+                            and chart["reference_market"] is None and chart["reference_symbol"] is None,
+                            "REVIEW_REQUEST_MISMATCH")
+                    matching = [item for item in receipt.body["structured_evidence"] if item["role"] == chart["role"]
+                        and item["timeframe_or_family_identity"] == chart["timeframe_or_panel_identity"]]
+                    require(len(matching) == 1 and matching[0]["subject_identity"] == chart["subject_identity"],
+                            "REVIEW_REQUEST_MISMATCH")
+        return history
+
+    @staticmethod
+    def _mapping(publication, market):
+        return publication.mapping.value if market == "NSE" else publication.native.value
+
+    @staticmethod
+    def _roles(market):
+        return ("NATIVE_NSE",) if market == "NSE" else ("NATIVE_MCX", "SUPPORTING_REFERENCE")
+
+    @staticmethod
+    def _chart_binding(requirement, role):
+        return dict(run_identity=requirement.native_run_identity,
+            candidate_identity=requirement.requirement_sha256, instrument=requirement.canonical_instrument,
+            market="NSE" if requirement.thesis.product_path is NativeProductPath.NSE else "MCX", role=role)
+
+    def _selection(self, requirement, role):
+        return self.store.native_chart_selection(self._chart_binding(requirement, role))
+
+    def current_state(self, market, instrument):
+        manifest, facts, _ = self._context()
+        requirement = self._requirements(market, (instrument,))[0]
+        publication = self._publication(market)
+        mapping = None if publication is None else self._mapping(publication, market)
+        history = self._history(market, facts.run_identity)
+        receipt = next((item for commit in history for item in commit.receipts
+            if item.binding.value["candidate_identity"] == requirement.requirement_sha256), None)
+        revisions = [self._selection(requirement, role) for role in self._roles(market)]
+        return dict(expected_committed_run_manifest=manifest, expected_run_identity=facts.run_identity,
+            expected_candidate_identity=requirement.requirement_sha256,
+            expected_review_cycle_identity=None if mapping is None else mapping.get("review_cycle_identity", mapping["review_pack_identity"]),
+            expected_request_identity=None if mapping is None else mapping["request_identity"],
+            expected_revision_set_digest=sha256(canonical(revisions)).hexdigest(),
+            expected_acceptance_receipt_id=None if receipt is None else receipt.receipt_id)
+
+    def expected(self, market, instruments):
+        # A GET emits no new UUID, cycle, request, receipt or storage object.
+        return {instrument: {**self.current_state(market, instrument), "mutation_identity": "BROWSER-EXPLICIT-MUTATION"}
+                for instrument in instruments}
+
+    def _admit(self, market, expected):
+        require(type(expected) is dict and bool(expected), "REVIEW_PRECONDITION_INVALID")
+        self._requirements(market, tuple(expected))
+        envelopes = {instrument: ReviewMutationPrecondition.create(value) for instrument, value in expected.items()}
+
+        with capture_prepared_reads() as reads:
+            states = []
+            for instrument, envelope in envelopes.items():
+                state = self.current_state(market, instrument)
+                envelope.validate(state)
+                states.append((state["expected_committed_run_manifest"], state["expected_run_identity"]))
+        fence = PreparedReadFence(tuple(reads.items()))
+        expected_publications = tuple(states)
+
+        def recheck(snapshot=None):
+            fence.check()
+            if snapshot is not None:
+                for manifest, run in expected_publications:
+                    require(snapshot.control["current_manifest"]["sha256"] == manifest
+                            and snapshot.manifest["run_id"] == run, "REVIEW_BINDING_STALE")
+        recheck()
+        return recheck
+
+    def chart_reader(self, role, instrument, timeframe):
+        market = "NSE" if role == "NATIVE_NSE" else "MCX"
+        require(role in self._roles(market) and timeframe in
+                (("1W", "1D", "4H", "1H") if market == "NSE" else ("1D", "4H", "1H")),
+                "REVIEW_CONTRACT_UNSUPPORTED")
+        requirement = self._requirements(market, (instrument,))[0]
+        selected = self._selection(requirement, role)
+        require(selected is not None and selected["image"] is not None, "REVIEW_ACCEPTANCE_INCOMPLETE")
+        return selected["selection_sha256"], self.store.native_chart_bytes(selected)
+
+    def stage(self, market, instrument, role, expected, *, image=None, content_type=None):
+        require(set(expected) == {instrument} and role in self._roles(market), "REVIEW_PRECONDITION_INVALID")
+        recheck = self._admit(market, expected)
+        requirement = self._requirements(market, (instrument,))[0]
+        previous = self._selection(requirement, role)
+        result = self.store.select_native_chart(self._chart_binding(requirement, role), image, content_type,
+            selected_at=timestamp(self.live._now()), expected_selection=None if previous is None else previous["selection_sha256"],
+            publication_guard=self.application.publication_mutation_guard, recheck=recheck)
+        self.errors.pop((market, instrument), None)
+        return result
+
+    def _prepared(self, instrument, requested_at):
+        _, facts, _ = self._context()
+        requirement = self._requirements("NSE", (instrument,))[0]
+        selected = self._selection(requirement, "NATIVE_NSE")
+        image = self.store.native_chart_bytes(selected)
+        return self.live.cycle.prepare(requirement, facts,
+            chart_inputs_from_requirement(requirement, chart_identity=instrument,
+                content_type=selected["image"]["content_type"], images=(image,) * 4),
+            request_timestamp=requested_at, question_set_version="3.1")
+
+    def generate(self, market, expected):
+        from uuid import uuid4
+        from kronos.swing.v1.review_evidence_binding import NseReviewRequestMapping, NSE_REQUEST_SCHEMA, NSE_ANSWER_SCHEMA
+        from kronos.swing.v1 import mcx_native_visual_contract as mcx
+        from kronos.swing.v1.pdf_visual_review_v3_live import render_nse_successor_question_pdf, render_mcx_successor_question_pdf
+        from kronos.swing.v1.native_review import MCX_REFERENCE_MAPPINGS
+
+        recheck = self._admit(market, expected)
+        manifest, facts, _ = self._context()
+        requirements = self._requirements(market, tuple(expected))
+        previous = self._publication(market)
+        now = self.live._now()
+        pack_id = "KRONOS-V3-REVIEW-" + uuid4().hex.upper()
+        request_id = "SWING-REVIEW-REQUEST-" + uuid4().hex.upper()
+        common = dict(request_identity=request_id, request_sha256="0" * 64,
+            review_pack_identity=pack_id, review_pack_sha256="0" * 64,
+            native_run_identity=facts.run_identity, committed_run_manifest_identity=manifest,
+            request_timestamp=timestamp(now))
+        if market == "NSE":
+            prepared = tuple(self._prepared(item.canonical_instrument, now) for item in requirements)
+            subjects = [dict(subject_reference="SUBJECT-" + uuid4().hex.upper(),
+                canonical_instrument=requests[0].requirement.canonical_instrument,
+                native_assessment_sha256=requests[0].requirement.thesis.native_assessment_sha256,
+                chart_revision_sha256=requests[0].chart_revision_sha256,
+                responses=[dict(timeframe=item.timeframe.value, expected_chart_identity=item.chart_identity,
+                    chart_revision_sha256=item.chart_revision_sha256,
+                    machine_fact_integrity_sha256=item.machine_fact.integrity_sha256,
+                    observation_boundary=timestamp(item.observation_boundary), analysis_boundary=timestamp(item.analysis_boundary))
+                    for item in requests]) for requests in prepared]
+            mapping = NseReviewRequestMapping.create(dict(**common, schema=NSE_REQUEST_SCHEMA, version="1.0",
+                question_set_identity=VISUAL_QUESTION_SET_V3_ID, question_set_version="3.1",
+                answer_schema=NSE_ANSWER_SCHEMA, answer_version="1.0", subjects=subjects))
+            mapping, pdf = render_nse_successor_question_pdf(mapping, prepared)
+            return self.store.publish_nse_request(mapping, pdf, publication_timestamp=timestamp(now),
+                expected_predecessor=None if previous is None else previous.identity, recheck=lambda *_: recheck(),
+                publication_guard=self.application.publication_mutation_guard, guarded_recheck=recheck)
+        common.update(request_bundle_identity="SWING-REVIEW-BUNDLE-" + uuid4().hex.upper(),
+                      review_cycle_identity=pack_id)
+        native_subjects, reference_subjects, images = [], [], {}
+        for requirement in requirements:
+            instrument = requirement.canonical_instrument
+            reference_identity, reference_market, reference_symbol = MCX_REFERENCE_MAPPINGS[instrument]
+            candidate_reference = requirement.requirement_sha256
+            base = dict(native_candidate_reference=candidate_reference,
+                native_assessment_sha256=requirement.thesis.native_assessment_sha256,
+                supplied_native_direction=requirement.thesis.direction.value)
+            for role in self._roles(market):
+                revision, image = self.chart_reader(role, instrument, "1D")
+                checksum = sha256(image).hexdigest()
+                images[checksum] = image
+                responses = []
+                for tf in ("1D", "4H", "1H"):
+                    response = dict(timeframe=tf, expected_chart_identity=instrument if role == "NATIVE_MCX" else reference_symbol,
+                        chart_revision_identity=revision, chart_revision_sha256=checksum)
+                    if role == "NATIVE_MCX":
+                        fact = next(item for item in facts.instrument(instrument).reference_facts if item.chart_timeframe.value == tf)
+                        response.update(native_machine_fact_integrity_sha256=fact.integrity_sha256,
+                            governed_reference_period=fact.reference_period_type.value,
+                            governed_reference_basis_availability=fact.availability.value,
+                            observation_boundary=timestamp(facts.instrument(instrument).fact(FactualTimeframe(tf)).observation_boundary),
+                            analysis_boundary=timestamp(fact.analysis_boundary))
+                    responses.append(response)
+                subject = dict(**base, subject_reference="SUBJECT-" + uuid4().hex.upper(), responses=responses)
+                if role == "NATIVE_MCX":
+                    native_subjects.append(dict(**subject, canonical_instrument=instrument))
+                else:
+                    reference_subjects.append(dict(**subject, native_canonical_instrument=instrument,
+                        reference_subject_identity=reference_identity, reference_market=reference_market, reference_symbol=reference_symbol))
+        native = mcx.McxNativeReviewRequestMapping.create(dict(**common,
+            schema="KRONOS-SWING-MCX-NATIVE-REVIEW-REQUEST-V1", version="1.0",
+            question_contract_identity=mcx.NATIVE_QUESTIONS, question_contract_version="1.0",
+            answer_contract_identity=mcx.NATIVE_ANSWER, answer_contract_version="1.0", subjects=native_subjects))
+        reference = mcx.McxReferenceReviewRequestMapping.create(dict(common,
+            request_identity="SWING-REVIEW-REQUEST-" + uuid4().hex.upper(),
+            schema="KRONOS-SWING-MCX-REFERENCE-REVIEW-REQUEST-V1", version="1.0",
+            question_contract_identity=mcx.REFERENCE_QUESTIONS, question_contract_version="1.0",
+            answer_contract_identity=mcx.REFERENCE_ANSWER, answer_contract_version="1.0", subjects=reference_subjects))
+        native, reference, pdf = render_mcx_successor_question_pdf(native, reference, images)
+        return self.store.publish_mcx_request(native, reference, pdf, publication_timestamp=timestamp(now),
+            expected_predecessor=None if previous is None else previous.identity, recheck=lambda *_: recheck(),
+            publication_guard=self.application.publication_mutation_guard, guarded_recheck=recheck)
+
+    def import_answer(self, market, expected, pdf):
+        recheck = self._admit(market, expected)
+        publication = self._publication(market)
+        require(publication is not None, "REVIEW_REQUEST_MISMATCH")
+        mapping = self._mapping(publication, market)
+        require(set(expected) == {item["canonical_instrument"] for item in mapping["subjects"]},
+                "REVIEW_PRECONDITION_INVALID")
+        _, facts, review = self._context()
+        first = next(iter(expected))
+        def state():
+            recheck()
+            return self.current_state(market, first)
+        commit = self.live.accept_successor_answer(self.store, publication.identity, pdf, market=market,
+            review=review, facts=facts, chart_reader=self.chart_reader,
+            precondition=ReviewMutationPrecondition.create(expected[first]), current_state=state,
+            publication_guard=self.application.publication_mutation_guard)
+        for receipt in commit.receipts:
+            self.handoff(commit, receipt)
+            self.errors.pop((market, receipt.binding.value["canonical_instrument"]), None)
+        self.errors.pop((market, None), None)
+        return commit
+
+    @staticmethod
+    def filenames(mapping):
+        # Exact request-owned filename, never a newest-file selector.
+        from re import fullmatch
+        identity = mapping["review_pack_identity"]
+        require(fullmatch(r"KRONOS-V3-REVIEW-[A-F0-9]{32}", identity) is not None, "REVIEW_REQUEST_MISMATCH")
+        return identity + "_QUESTIONS.pdf", identity + "_ANSWERS.pdf"
+
+    def question_bytes(self, market, identity):
+        publication = self._publication(market)
+        require(publication is not None and publication.identity == identity, "REVIEW_BINDING_STALE")
+        relative = (publication.value["question_pdf_artifact"]["relative_path"] if market == "NSE"
+                    else publication.value["question_pdf_relative_path"])
+        payload = (self.store.root / relative).read_bytes()
+        require(sha256(payload).hexdigest() == self._mapping(publication, market)["review_pack_sha256"],
+                "REVIEW_ARTIFACT_DIGEST_MISMATCH")
+        return payload
+
+    def export_question(self, market, publication):
+        """Explicit output copy only. Committed artifact remains authority."""
+        import os
+        import tempfile
+        from pathlib import Path
+        mapping = self._mapping(publication, market)
+        configuration = self.live.transport.configuration
+        configuration.ensure_directories()
+        path = configuration.question_directory / self.filenames(mapping)[0]
+        payload = self.question_bytes(market, publication.identity)
+        if path.exists():
+            require(not path.is_symlink() and path.read_bytes() == payload, "REVIEW_PUBLICATION_CONFLICT")
+            return path
+        with tempfile.NamedTemporaryFile(dir=path.parent, prefix=".prepared-", delete=False) as stream:
+            pending = Path(stream.name)
+            stream.write(payload)
+            stream.flush()
+            os.fsync(stream.fileno())
+        try:
+            try:
+                os.link(pending, path)
+            except FileExistsError:
+                require(not path.is_symlink() and path.read_bytes() == payload, "REVIEW_PUBLICATION_CONFLICT")
+        finally:
+            pending.unlink(missing_ok=True)
+        return path
+
+    def import_from_directory(self, market, expected):
+        self._admit(market, expected)
+        publication = self._publication(market)
+        require(publication is not None, "REVIEW_REQUEST_MISMATCH")
+        directory = self.live.transport.configuration.answer_directory
+        filename = self.filenames(self._mapping(publication, market))[1]
+        path = directory / filename
+        require(not directory.is_symlink() and path.is_file() and not path.is_symlink(), "REVIEW_ACCEPTANCE_INCOMPLETE")
+        with path.open("rb") as stream:
+            pdf = stream.read(128 * 1024 * 1024 + 1)
+        return self.import_answer(market, expected, pdf)
+
+    def snapshot(self):
+        """Observational projection; invalid selected graphs do not fall back."""
+        from kronos.swing.v1.review_evidence_binding import ReviewEvidenceError
+        from kronos.swing.v1.native_review import MCX_REFERENCE_MAPPINGS
+        try:
+            _, facts, review = self._context()
+        except (OSError, ValueError):
+            return dict(rows=(), packages=(), error="REVIEW_BINDING_UNAVAILABLE")
+        rows, packages = [], []
+        for market in ("NSE", "MCX"):
+            requirements = tuple(item for item in review.requirements if item.thesis.product_path is
+                (NativeProductPath.NSE if market == "NSE" else NativeProductPath.MCX))
+            if not requirements:
+                continue
+            try:
+                publication = self._publication(market)
+                history = self._history(market, facts.run_identity)
+                latest = {}
+                for commit in history:
+                    for receipt in commit.receipts:
+                        latest.setdefault(receipt.binding.value["candidate_identity"], (commit, receipt))
+                for requirement in requirements:
+                    instrument = requirement.canonical_instrument
+                    selected = {role: self._selection(requirement, role) for role in self._roles(market)}
+                    evidence, downstream, receipt_id = "MISSING", "NOT_RUN", None
+                    supported_result = None
+                    retained = latest.get(requirement.requirement_sha256)
+                    if retained is not None:
+                        commit, receipt = retained
+                        receipt_id = receipt.receipt_id
+                        try:
+                            self._verify_receipt_current(receipt)
+                            evidence = "ACCEPTED"
+                        except ReviewEvidenceError as error:
+                            evidence = "STALE" if error.code in {"REVIEW_BINDING_STALE", "REVIEW_ACCEPTANCE_INCOMPLETE"} else "INVALID"
+                        attempts = self.store.downstream_attempts(commit.identity, receipt_id,
+                            VISUAL_QUESTION_SET_V3_ID, VISUAL_QUESTION_SET_V3_VERSION)
+                        if attempts:
+                            downstream = attempts[0].value["state"]
+                            completed = self.live.cycle.completed_for(facts.run_identity, instrument) if market == "NSE" else None
+                            if (evidence == "ACCEPTED" and downstream == "SUCCEEDED" and completed is not None
+                                    and completed.promotion is not None and completed.review_pack is not None
+                                    and completed.review_pack.review_pack_id == receipt.binding.value["review_pack_identity"]
+                                    and [completed.readiness.result_sha256, completed.promotion.integrity_sha256]
+                                        == attempts[0].value["output_identities"]):
+                                supported_result = (completed.readiness.readiness.value, completed.promotion.classification.value)
+                    error = self.errors.get((market, instrument)) or self.errors.get((market, None))
+                    if error and evidence == "MISSING":
+                        evidence = "INVALID"
+                    predecessors = tuple(item.receipt_id for previous in history for item in previous.receipts
+                        if item.binding.value["candidate_identity"] == requirement.requirement_sha256 and item.receipt_id != receipt_id)
+                    rows.append(dict(instrument=instrument, market=market, selected=selected,
+                        expected=self.expected(market, (instrument,)), evidence=evidence, downstream=downstream,
+                        receipt_id=receipt_id, replaced=predecessors, error=error, supported_result=supported_result,
+                        reference=None if market == "NSE" else MCX_REFERENCE_MAPPINGS[instrument],
+                        complete=all(value is not None and value["image"] is not None for value in selected.values())))
+                if publication is not None:
+                    mapping = self._mapping(publication, market)
+                    instruments = tuple(item["canonical_instrument"] for item in mapping["subjects"])
+                    current = mapping["native_run_identity"] == facts.run_identity and set(instruments).issubset(
+                        {item.canonical_instrument for item in requirements})
+                    packages.append(dict(market=market, identity=publication.identity,
+                        question_filename=self.filenames(mapping)[0], answer_filename=self.filenames(mapping)[1],
+                        expected=self.expected(market, instruments) if current else None))
+            except (OSError, ValueError):
+                rows = [item for item in rows if item["market"] != market]
+                rows.extend(dict(instrument=item.canonical_instrument, market=market, selected={}, expected=None,
+                    evidence="INVALID", downstream="UNAVAILABLE", receipt_id=None, replaced=(),
+                    error="REVIEW_RESTORATION_UNAVAILABLE", reference=None, complete=False, supported_result=None) for item in requirements)
+        return dict(rows=tuple(rows), packages=tuple(packages), error=None)
+
+    def downstream_applicable(self, completed):
+        """Receipt selection cannot borrow a prior cycle's successful output."""
+        if completed is None:
+            return False
+        try:
+            _, facts, _ = self._context()
+            if completed.requirement.native_run_identity != facts.run_identity or not self.has_control():
+                return True  # Original historical loader and binding remain intact.
+            row = next((item for item in self.snapshot()["rows"]
+                if item["instrument"] == completed.requirement.canonical_instrument), None)
+            return (row is not None and row["evidence"] == "ACCEPTED" and row["downstream"] == "SUCCEEDED"
+                and row["supported_result"] is not None and completed == self.live.cycle.completed_for(
+                    facts.run_identity, completed.requirement.canonical_instrument))
+        except (OSError, ValueError):
+            return False
+
+    def _verify_receipt_current(self, receipt):
+        value = receipt.binding.value
+        manifest, facts, _ = self._context()
+        market, instrument = value["market"], value["canonical_instrument"]
+        requirement = self._requirements(market, (instrument,))[0]
+        require(value["committed_run_manifest_identity"] == manifest
+            and value["analytical_run_identity"] == facts.run_identity
+            and value["candidate_identity"] == requirement.requirement_sha256
+            and value["native_assessment_sha256"] == requirement.thesis.native_assessment_sha256,
+            "REVIEW_BINDING_STALE")
+        publication = self._publication(market)
+        require(publication is not None, "REVIEW_BINDING_STALE")
+        mapping = self._mapping(publication, market)
+        require(value["request_identity"] == mapping["request_identity"]
+            and value["review_pack_identity"] == mapping["review_pack_identity"]
+            and value["review_pack_sha256"] == mapping["review_pack_sha256"]
+            and value["review_cycle_identity"] == mapping.get("review_cycle_identity", mapping["review_pack_identity"]),
+            "REVIEW_BINDING_STALE")
+        for chart in receipt.body["chart_revisions"]:
+            revision, image = self.chart_reader(chart["role"], instrument, chart["timeframe_or_panel_identity"])
+            require(revision == chart["revision_identity"] and sha256(image).hexdigest() == chart["sha256"],
+                    "REVIEW_BINDING_STALE")
+
+    def handoff(self, commit, receipt, *, restore_only=False, expected=None):
+        _, facts, review = self._context()
+        admission = None if expected is None else self._admit(receipt.binding.value["market"], expected)
+        def recheck(snapshot, accepted):
+            if admission is not None:
+                admission(snapshot)
+            self._verify_receipt_current(accepted)
+            if snapshot is not None:
+                require(snapshot.control["current_manifest"]["sha256"] == accepted.binding.value["committed_run_manifest_identity"],
+                        "REVIEW_BINDING_STALE")
+        return self.live.handoff_accepted_receipt(self.store, commit.identity, receipt.receipt_id,
+            review=review, facts=facts, chart_bytes=None, prepared_requests=self._prepared,
+            publication_guard=self.application.publication_mutation_guard, recheck=recheck, restore_only=restore_only)
+
+    def restore(self):
+        # Read/verify the whole committed graph first, before any memory projection.
+        _, facts, _ = self._context()
+        for market in ("NSE", "MCX"):
+            try:
+                history = self._history(market, facts.run_identity)
+                if not history:
+                    continue
+                commit = history[0]
+                for receipt in commit.receipts:
+                    self._verify_receipt_current(receipt)
+                for receipt in commit.receipts:
+                    self.handoff(commit, receipt, restore_only=True)
+            except (OSError, ValueError):
+                self.errors[(market, None)] = "REVIEW_RESTORATION_UNAVAILABLE"
 
 
 def _sanitized_post_validation_failure(error: BaseException) -> str:
