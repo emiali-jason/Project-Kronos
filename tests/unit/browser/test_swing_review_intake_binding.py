@@ -94,6 +94,16 @@ def test_current_twelve_old_review_pure_exact_workspace(native_intake, tmp_path,
         for text in ('Current Review workspace', 'NSE REVIEW', 'MCX REVIEW', 'CHART MISSING',
                      'ANSWER MISSING', 'ANALYTICAL ROOT UNCERTAIN', 'MANUAL REVIEW REQUIRED'):
             assert text in page
+        assert page.count('aria-label="Paste MCX SIX-PANEL COMPOSITE"') == 2
+        assert page.count('market=MCX&amp;instrument=GOLDM&amp;role=NATIVE_MCX') >= 1
+        assert 'role=SUPPORTING_REFERENCE' not in page
+        assert 'SUPPORTING COMEX: 1D / 4H / 1H' in page
+        assert 'COMEX Gold / COMEX:GC1!' in page
+        assert 'SUPPORTING NYMEX: 1D / 4H / 1H' in page
+        assert 'NYMEX Crude Oil / NYMEX:CL1!' in page
+        assert '@media(min-width:1500px){.wo07-card-grid{grid-template-columns:repeat(5' in page
+        assert '@media(max-width:1150px){.wo07-card-grid{grid-template-columns:repeat(2' in page
+        assert '<summary>Details</summary>' in page
         for text in ('RETRY DOWNSTREAM', 'RECONCILE', 'Readiness ·', 'KR-370 ·'):
             assert text not in page
     assert workflow.native_review.snapshot() == old
@@ -216,6 +226,18 @@ def test_native_prospective_chart_selection_generation_and_stale_tabs(native_int
         assert mapping["subjects"][0]["canonical_instrument"] == instrument
         frames = [item["timeframe"] for item in mapping["subjects"][0]["responses"]]
         assert frames == (["1W", "1D", "4H", "1H"] if market == "NSE" else ["1D", "4H", "1H"])
+        if market == "MCX":
+            native_responses = publication.native.value["subjects"][0]["responses"]
+            reference_responses = publication.reference.value["subjects"][0]["responses"]
+            assert len(native_responses) + len(reference_responses) == 6
+            assert len({item["chart_revision_sha256"]
+                        for item in (*native_responses, *reference_responses)}) == 1
+            reference = workflow._requirements(market, (instrument,))[0].mcx_reference
+            assert (publication.reference.value["subjects"][0]["reference_subject_identity"],
+                    publication.reference.value["subjects"][0]["reference_market"],
+                    publication.reference.value["subjects"][0]["reference_symbol"]) == (
+                        reference.reference_subject_identity, reference.reference_market.value,
+                        reference.reference_symbol)
         before = _inventory(tmp_path)
         for _ in range(3):
             workflow.expected(market, (instrument,))
@@ -330,6 +352,15 @@ def test_native_guard_scope_parsers_constructors_and_downstream_are_unlocked(nat
     row = workflow.snapshot()["rows"][0]
     assert row["evidence"] == "ACCEPTED"
     assert row["downstream"] == ("SUCCEEDED" if market == "NSE" else "UNSUPPORTED_CONTRACT")
+    if market == "MCX":
+        receipt = workflow.store.native_acceptance_history(market,
+            workflow._context()[1].run_identity)[0].receipts[0]
+        charts = receipt.body["chart_revisions"]
+        assert len(charts) == 6
+        assert {(item["role"], item["timeframe_or_panel_identity"]) for item in charts} == {
+            (role, timeframe) for role in ("NATIVE_MCX", "SUPPORTING_REFERENCE")
+            for timeframe in ("1D", "4H", "1H")}
+        assert len({item["sha256"] for item in charts}) == 1
     before = _inventory(tmp_path)
     assert workflow.import_answer(market, workflow.expected(market, (instrument,)), path.read_bytes()) == commit
     workflow.restore()

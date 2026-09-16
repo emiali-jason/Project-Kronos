@@ -222,6 +222,86 @@ def inventory(root):
             for path in root.rglob("*") if path.is_file()}
 
 
+def _mcx_chart_bindings(instrument="GOLDM"):
+    common = dict(run_identity="SWING-RUN-" + "A" * 32,
+        candidate_identity="b" * 64, instrument=instrument, market="MCX")
+    return {role: {**common, "role": role}
+            for role in ("NATIVE_MCX", "SUPPORTING_REFERENCE")}
+
+
+@contextmanager
+def _chart_guard():
+    yield object()
+
+
+def _select_composite(store, bindings, image, expected=None):
+    expected = expected or {role: None for role in bindings}
+    return store.select_mcx_composite(bindings, image,
+        None if image is None else "image/png", selected_at="2026-09-15T00:00:00.000000Z",
+        expected_selections=expected, publication_guard=_chart_guard, recheck=lambda *_: None)
+
+
+def test_mcx_composite_is_one_physical_image_with_two_atomic_logical_roles(tmp_path):
+    store = ReviewEvidenceStore(tmp_path)
+    bindings = _mcx_chart_bindings()
+    image = b"\x89PNG\r\n\x1a\none-six-panel-composite"
+    selected = _select_composite(store, bindings, image)
+    assert {item["binding"]["role"] for item in selected.values()} == set(bindings)
+    assert {item["image"]["sha256"] for item in selected.values()} == {sha256(image).hexdigest()}
+    assert len(tuple((store.root / "chart-images").iterdir())) == 1
+    before = inventory(store.root)
+    replay = _select_composite(store, bindings, image,
+        {role: selected[role]["selection_sha256"] for role in bindings})
+    assert replay == selected and inventory(store.root) == before
+
+
+@pytest.mark.parametrize("phase", [
+    "after_mcx_composite_selection_retention", "before_mcx_composite_pointer_replace", "before_pointer_replace"])
+def test_mcx_composite_fault_before_atomic_pointer_exposes_neither_role(tmp_path, phase):
+    bindings = _mcx_chart_bindings()
+    def fault(point):
+        if point == phase:
+            raise RuntimeError("controlled composite fault")
+    store = ReviewEvidenceStore(tmp_path, fault=fault)
+    with pytest.raises(RuntimeError, match="controlled composite fault"):
+        _select_composite(store, bindings, b"\x89PNG\r\n\x1a\nfaulted-composite")
+    reader = ReviewEvidenceStore(tmp_path)
+    assert all(reader.native_chart_selection(binding) is None for binding in bindings.values())
+
+
+def test_mcx_composite_replace_remove_and_stale_role_are_whole_pair_mutations(tmp_path):
+    store = ReviewEvidenceStore(tmp_path)
+    bindings = _mcx_chart_bindings("CRUDEOIL")
+    first = _select_composite(store, bindings, b"\x89PNG\r\n\x1a\nfirst-composite")
+    expected = {role: first[role]["selection_sha256"] for role in bindings}
+    with pytest.raises(ReviewEvidenceError, match="REVIEW_BINDING_STALE"):
+        _select_composite(store, bindings, b"\x89PNG\r\n\x1a\nstale-composite",
+            {**expected, "SUPPORTING_REFERENCE": None})
+    assert {role: store.native_chart_selection(bindings[role]) for role in bindings} == first
+    second = _select_composite(store, bindings, b"\x89PNG\r\n\x1a\nsecond-composite", expected)
+    assert len({item["image"]["sha256"] for item in second.values()}) == 1
+    removed = _select_composite(store, bindings, None,
+        {role: second[role]["selection_sha256"] for role in bindings})
+    assert all(item["image"] is None for item in removed.values())
+
+
+def test_historical_two_image_mcx_selections_remain_readable_and_unchanged(tmp_path):
+    store = ReviewEvidenceStore(tmp_path)
+    bindings = _mcx_chart_bindings()
+    images = {"NATIVE_MCX": b"\x89PNG\r\n\x1a\nlegacy-native",
+              "SUPPORTING_REFERENCE": b"\x89PNG\r\n\x1a\nlegacy-reference"}
+    retained = {}
+    for role, binding in bindings.items():
+        retained[role] = store.select_native_chart(binding, images[role], "image/png",
+            selected_at="2026-09-15T00:00:00.000000Z", expected_selection=None,
+            publication_guard=_chart_guard, recheck=lambda *_: None)
+    before = inventory(store.root)
+    for role, binding in bindings.items():
+        assert store.native_chart_selection(binding) == retained[role]
+        assert store.native_chart_bytes(retained[role]) == images[role]
+    assert inventory(store.root) == before
+
+
 def test_request_mapping_and_pdf_have_non_circular_complete_publication(tmp_path):
     store = ReviewEvidenceStore(tmp_path)
     assert not store.root.exists()

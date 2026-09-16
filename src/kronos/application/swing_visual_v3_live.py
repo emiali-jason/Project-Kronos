@@ -959,6 +959,18 @@ class NativeReviewIntakeWorkflow:
         require(set(expected) == {instrument} and role in self._roles(market), "REVIEW_PRECONDITION_INVALID")
         recheck = self._admit(market, expected)
         requirement = self._requirements(market, (instrument,))[0]
+        if market == "MCX":
+            bindings = {logical_role: self._chart_binding(requirement, logical_role)
+                        for logical_role in self._roles(market)}
+            previous = {logical_role: self._selection(requirement, logical_role)
+                        for logical_role in self._roles(market)}
+            results = self.store.select_mcx_composite(bindings, image, content_type,
+                selected_at=timestamp(self.live._now()),
+                expected_selections={logical_role: None if previous[logical_role] is None
+                    else previous[logical_role]["selection_sha256"] for logical_role in self._roles(market)},
+                publication_guard=self.application.publication_mutation_guard, recheck=recheck)
+            self.errors.pop((market, instrument), None)
+            return results[role]
         previous = self._selection(requirement, role)
         result = self.store.select_native_chart(self._chart_binding(requirement, role), image, content_type,
             selected_at=timestamp(self.live._now()), expected_selection=None if previous is None else previous["selection_sha256"],

@@ -3870,19 +3870,29 @@ def _intake_error(reason):
 def _intake_workspace_header(projection):
     workspace = projection.get("workspace")
     body = ('<style>.wo07-markets{display:grid;gap:14px;min-width:0}'
-        '.wo07-card-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,360px),1fr));gap:10px}'
-        '.wo07-card-grid>*{min-width:0;overflow-wrap:anywhere}.wo07-workspace{overflow-wrap:anywhere}'
+        '.wo07-card-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px}'
+        '.wo07-card-grid>*{min-width:0;overflow-wrap:anywhere}.wo07-workspace{display:flex;align-items:center;'
+        'justify-content:space-between;gap:12px;flex-wrap:wrap;overflow-wrap:anywhere;padding:8px 12px}'
+        '.wo07-workspace h2,.wo07-workspace p{margin:0}.wo07-summary{display:flex;gap:10px;flex-wrap:wrap;align-items:center}'
+        '.wo07-chip{display:inline-block;border:1px solid #38536b;border-radius:999px;padding:2px 7px;font-size:10px}'
+        '.wo07-card{padding:9px}.wo07-card h3{margin:0}.wo07-card-status{display:flex;gap:5px;flex-wrap:wrap;margin:6px 0}'
+        '.wo07-card details{margin-top:7px}.wo07-card details summary{cursor:pointer;color:var(--muted);font-size:10px}'
+        '.wo07-card details code{display:block;white-space:normal;overflow-wrap:anywhere;user-select:text;margin-top:4px}'
+        '.wo07-continuity-warning{border-left:3px solid var(--amber);padding-left:7px;color:#f6d997;font-size:11px}'
         '.wo07-markets .market-panel{min-height:0}.wo07-markets form{display:inline-block;margin:4px}'
+        '@media(min-width:1500px){.wo07-card-grid{grid-template-columns:repeat(5,minmax(0,1fr))}}'
+        '@media(max-width:1150px){.wo07-card-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}'
         '@media(max-width:760px){.wo07-card-grid{grid-template-columns:1fr}}</style>'
         '<section class="review-note wo07-workspace"><h2>Current Review workspace</h2>')
     if workspace is not None:
         when = workspace["analysis_time"].astimezone(ZoneInfo("Asia/Kolkata")).strftime("%d %b %Y %H:%M IST")
-        body += ('<strong>BINDING ' + escape(workspace["state"]) + '</strong><p>Owning successful analysis · '
-            + escape(when) + '<br>Run · ' + escape(workspace["run_identity"])
-            + '<br>Committed manifest · ' + escape(workspace["manifest"]) + '</p>'
-            + '<p>Current candidates · ' + str(workspace["population"]) + ' · Review eligible · '
-            + str(workspace["eligible"]) + ' · Ineligible · ' + str(workspace["excluded"])
-            + ' · NSE · ' + str(workspace["nse"]) + ' · MCX · ' + str(workspace["mcx"]) + '</p>')
+        body += ('<div class="wo07-summary"><strong>BINDING ' + escape(workspace["state"]) + '</strong>'
+            '<span>' + str(workspace["eligible"]) + ' eligible / ' + str(workspace["population"]) + ' current</span>'
+            '<span>NSE ' + str(workspace["nse"]) + ' · MCX ' + str(workspace["mcx"]) + '</span></div>'
+            '<details><summary>Workspace details</summary><p>Owning successful analysis · ' + escape(when)
+            + '<br>Run · <code>' + escape(workspace["run_identity"]) + '</code>'
+            + '<br>Committed manifest · <code>' + escape(workspace["manifest"]) + '</code>'
+            + '<br>Ineligible · ' + str(workspace["excluded"]) + '</p></details>')
     if projection["error"]:
         body += '<strong>REVIEW BINDING UNAVAILABLE</strong>' + _intake_error(projection["error"])
     return body + '</section>'
@@ -3931,29 +3941,39 @@ def _receipt_native_review(projection):
                 + str(sum(item.get("question_ready", False) for item in population)) + ' · Evidence accepted '
                 + str(sum(item["evidence"] == "ACCEPTED" for item in population))
                 + '</p><div class="wo07-card-grid">')
-        body += '<section class="review-note"><h3>' + escape(instrument) + '</h3>'
-        body += '<p>' + ('REVIEW ELIGIBLE' if row.get("eligible", True) else 'REVIEW INELIGIBLE')
-        body += ' · ' + ('BINDING CURRENT' if row["expected"] is not None else 'BINDING UNAVAILABLE') + '</p>'
-        body += _swing_continuity_summary(row.get("continuity"))
-        body += '<p>' + ('CHART RECEIVED' if row["complete"] else 'CHART MISSING') + ' · '
-        body += ('QUESTION PACK READY' if row.get("question_ready") else 'QUESTION PACK NOT CURRENT')
-        body += ' · ' + ('ANSWER ACCEPTED' if row["evidence"] == "ACCEPTED" else 'ANSWER MISSING / NOT CURRENTLY ACCEPTED') + '</p>'
+        body += '<section class="review-note wo07-card"><h3>' + escape(instrument) + '</h3>'
+        body += '<div class="wo07-card-status"><span class="wo07-chip">' + ('REVIEW ELIGIBLE' if row.get("eligible", True) else 'REVIEW INELIGIBLE') + '</span>'
+        body += '<span class="wo07-chip">' + ('BINDING CURRENT' if row["expected"] is not None else 'BINDING UNAVAILABLE') + '</span></div>'
+        continuity = row.get("continuity")
+        if (continuity is not None and continuity.opportunity_id is None
+                and continuity.qualification is not None):
+            body += ('<p class="wo07-continuity-warning">ANALYTICAL ROOT UNCERTAIN · '
+                + escape(continuity.disposition.value.replace("_", " ")) + '</p>')
+        body += '<div class="wo07-card-status"><span class="wo07-chip">' + ('CHART RECEIVED' if row["complete"] else 'CHART MISSING') + '</span>'
+        body += '<span class="wo07-chip">' + ('QUESTION PACK READY' if row.get("question_ready") else 'QUESTION PACK NOT CURRENT') + '</span>'
+        body += '<span class="wo07-chip">' + ('ANSWER ACCEPTED' if row["evidence"] == "ACCEPTED" else 'ANSWER MISSING') + '</span></div>'
         body += '<strong>' + ("MCX EVIDENCE " if market == "MCX" else "EVIDENCE · ") + escape(row["evidence"]) + '</strong>'
         if market == "MCX":
-            body += '<p>Native and mapped supporting-reference evidence are separate required packages.</p>'
+            body += '<p>One physical composite · six separate logical panel bindings.</p>'
             reference = row["selected"].get("SUPPORTING_REFERENCE")
             if reference is None or reference["image"] is None:
                 body += '<p>REFERENCE EVIDENCE MISSING<br>Complete MCX evidence acceptance is unavailable.</p>'
         if row["error"]:
             body += _intake_error(row["error"])
-        if row["replaced"]:
-            body += '<details><summary>REPLACED · historical accepted evidence</summary>' + '<br>'.join(escape(v) for v in row["replaced"]) + '</details>'
-        for offset, (role, selection) in enumerate(row["selected"].items()):
+        visible_selections = (("NATIVE_MCX", row["selected"].get("NATIVE_MCX")),) if market == "MCX" else tuple(row["selected"].items())
+        for offset, (role, selection) in enumerate(visible_selections):
             if row["expected"] is None or not row.get("eligible", True):
                 continue
             target = f'wo07-chart-{index}-{offset}'
-            label = (" · ".join(row["reference"]) if role == "SUPPORTING_REFERENCE" else instrument)
-            frames = "1W / 1D / 4H / 1H" if market == "NSE" else "1D / 4H / 1H"
+            if market == "MCX":
+                reference_subject, reference_market, reference_symbol = row["reference"]
+                reference_market = reference_market.value
+                label = "MCX SIX-PANEL COMPOSITE"
+                frames = ("SUPPORTING " + escape(reference_market) + ": 1D / 4H / 1H<br>"
+                    "NATIVE MCX: 1D / 4H / 1H<br>" + escape(reference_subject)
+                    + " / " + escape(reference_symbol))
+            else:
+                label, frames = instrument, "1W / 1D / 4H / 1H"
             received = selection is not None and selection["image"] is not None
             query = dict(market=market, instrument=instrument, role=role)
             upload = urlencode(dict(query, expected=canonical(row["expected"]).decode()))
@@ -3969,6 +3989,20 @@ def _receipt_native_review(projection):
                 + '<label class="file-choice" for="' + target + '-file">Choose File</label><input id="' + target
                 + '-file" class="chart-file" type="file" accept="image/png,image/jpeg,image/webp" data-target="' + target + '"></div></div>')
         body += action("native-review-pack", market, row["expected"] if row["complete"] else None, "CREATE PDF / SUCCESSOR")
+        detail_lines = ["Run · " + str(row.get("run_identity")),
+            "Assessment SHA-256 · " + str(row.get("assessment_sha256")),
+            "Requirement SHA-256 · " + str(row.get("requirement_sha256")),
+            "Acceptance receipt · " + str(row.get("receipt_id"))]
+        for role, selection in row["selected"].items():
+            if selection is not None:
+                detail_lines.append(role + " revision · " + selection["selection_sha256"])
+                if selection["image"] is not None:
+                    detail_lines.append(role + " image SHA-256 · " + selection["image"]["sha256"])
+        body += '<details><summary>Details</summary>' + _swing_continuity_summary(continuity)
+        body += ''.join('<code>' + escape(value) + '</code>' for value in detail_lines)
+        if row["replaced"]:
+            body += '<p>Replaced accepted evidence</p>' + ''.join('<code>' + escape(value) + '</code>' for value in row["replaced"])
+        body += '</details>'
         body += '</section>'
     if open_market is not None:
         body += '</div></section>'
@@ -4372,7 +4406,9 @@ def _native_chart_slot(
     target_id = f"native-chart-slot-{slot_index}"
     file_id = f"native-chart-file-{slot_index}"
     panel_labels = (
-        ("COMEX 1D", "COMEX 4H", "COMEX 1H", f"MCX {instrument} 1H")
+        tuple(f"{shared_reference.reference_market.value} {timeframe}"
+              for timeframe in ("1D", "4H", "1H"))
+        + tuple(f"MCX {timeframe}" for timeframe in ("1D", "4H", "1H"))
         if shared_reference is not None and subject == "native"
         else tuple(
             "1D" if item.value == "DAILY" else item.value
@@ -4381,7 +4417,7 @@ def _native_chart_slot(
     )
     required = " · ".join(panel_labels)
     chart_label = (
-        f"{instrument} TRADINGVIEW COMPOSITE"
+        "MCX SIX-PANEL COMPOSITE"
         if shared_reference is not None and subject == "native"
         else "TRADINGVIEW 4-CHART IMAGE"
         if subject == "native"

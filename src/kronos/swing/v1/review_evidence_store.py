@@ -486,8 +486,9 @@ class ReviewEvidenceStore:
     def native_chart_selection(self, binding):
         """Prospective chart staging only; never a receipt or analytical fact.
 
-        Each exact run/candidate/role has a separate pointer. Tombstones retain
-        their predecessor so removal/re-paste cannot make an old tab current.
+        NSE roles retain separate pointers. MCX roles resolve through one shared
+        composite pointer. Tombstones retain their predecessors so removal or
+        re-paste cannot make an old tab current.
         Historical composite/DAILY carriers are intentionally not consulted.
         """
         closed(binding, {"run_identity", "candidate_identity", "instrument", "market", "role"})
@@ -495,12 +496,34 @@ class ReviewEvidenceStore:
                 and binding["market"] in {"NSE", "MCX"}
                 and binding["role"] in ({"NATIVE_NSE"} if binding["market"] == "NSE"
                     else {"NATIVE_MCX", "SUPPORTING_REFERENCE"}), "REVIEW_REQUEST_MISMATCH")
+        if binding["market"] == "MCX":
+            common = {key: binding[key] for key in
+                      ("run_identity", "candidate_identity", "instrument", "market")}
+            shared_path = "current-mcx-composite-" + _hash(canonical(common)) + ".json"
+            shared_payload = self._optional_read(shared_path)
+            if shared_payload is not None:
+                pointer = closed(strict_json(shared_payload), {"NATIVE_MCX", "SUPPORTING_REFERENCE"})
+                selections = {}
+                for role in ("NATIVE_MCX", "SUPPORTING_REFERENCE"):
+                    role_binding = {**common, "role": role}
+                    selections[role] = self._load_native_chart_selection(
+                        role_binding, pointer[role])
+                native, reference = selections["NATIVE_MCX"], selections["SUPPORTING_REFERENCE"]
+                require((native["image"] is None) == (reference["image"] is None),
+                        "REVIEW_PUBLICATION_CONFLICT")
+                if native["image"] is not None:
+                    require(native["image"] == reference["image"],
+                            "REVIEW_PUBLICATION_CONFLICT")
+                return selections[binding["role"]]
         path = "current-chart-" + _hash(canonical(binding)) + ".json"
         payload = self._optional_read(path)
         if payload is None:
             return None
         pointer = closed(strict_json(payload), {"selection_sha256"})
-        current, seen, selected = pointer["selection_sha256"], set(), None
+        return self._load_native_chart_selection(binding, pointer["selection_sha256"])
+
+    def _load_native_chart_selection(self, binding, selection_sha256):
+        current, seen, selected = selection_sha256, set(), None
         while current is not None:
             require(digest(current) and current not in seen, "REVIEW_PUBLICATION_CONFLICT")
             seen.add(current)
@@ -520,6 +543,64 @@ class ReviewEvidenceStore:
                 selected = {**value, "selection_sha256": current}
             current = value["predecessor"]
         return selected
+
+    def select_mcx_composite(self, bindings, image, content_type, *, selected_at,
+                             expected_selections, publication_guard, recheck):
+        """Publish both MCX logical roles through one atomic composite pointer."""
+        roles = ("NATIVE_MCX", "SUPPORTING_REFERENCE")
+        require(type(bindings) is dict and set(bindings) == set(roles)
+                and type(expected_selections) is dict and set(expected_selections) == set(roles),
+                "REVIEW_REQUEST_MISMATCH")
+        common = {key: bindings[roles[0]][key] for key in
+                  ("run_identity", "candidate_identity", "instrument", "market")}
+        require(common["market"] == "MCX"
+                and all(bindings[role] == {**common, "role": role} for role in roles),
+                "REVIEW_REQUEST_MISMATCH")
+        require(valid_timestamp(selected_at), "REVIEW_TIMESTAMP_INVALID")
+        if image is not None:
+            from kronos.swing.v1.evidence_store import _CONTENT_TYPES, _MAX_CHART_BYTES
+            suffix, magic = _CONTENT_TYPES.get(content_type, (None, None))
+            require(type(image) is bytes and 0 < len(image) <= _MAX_CHART_BYTES
+                    and suffix is not None and image.startswith(magic)
+                    and (content_type != "image/webp" or image[8:12] == b"WEBP"),
+                    "REVIEW_ACCEPTANCE_INCOMPLETE")
+        with capture_prepared_reads() as reads:
+            previous = {role: self.native_chart_selection(bindings[role]) for role in roles}
+            require(all((None if previous[role] is None else previous[role]["selection_sha256"])
+                        == expected_selections[role] for role in roles), "REVIEW_BINDING_STALE")
+        fence = PreparedReadFence(tuple(reads.items()))
+        image_hash = None if image is None else _hash(image)
+        image_record = None if image is None else dict(sha256=image_hash, content_type=content_type)
+        # An exact replay is observationally idempotent. It neither creates a
+        # new revision identity nor advances either logical role.
+        if all(previous[role] is not None and previous[role]["image"] == image_record for role in roles):
+            with self.publication_commit_guard(publication_guard, recheck):
+                fence.check()
+                recheck(None)
+            return previous
+        selections, artifacts = {}, []
+        for role in roles:
+            value = dict(schema="KRONOS-SWING-REVIEW-CHART-SELECTION-V1", version="1.0",
+                binding=bindings[role], predecessor=expected_selections[role], selected_at=selected_at,
+                image=image_record)
+            raw = canonical(value)
+            selected_hash = _hash(raw)
+            selections[role] = {**value, "selection_sha256": selected_hash}
+            artifacts.append(("chart-selections/" + selected_hash + ".json", raw))
+        if image is not None:
+            artifacts.insert(0, ("chart-images/" + image_hash, image))
+        pointer_path = "current-mcx-composite-" + _hash(canonical(common)) + ".json"
+        pointer_bytes = canonical({role: selections[role]["selection_sha256"] for role in roles})
+        with self.publication_commit_guard(publication_guard, recheck):
+            fence.check()
+            self._preflight_immutable(tuple(artifacts))
+            for relative, payload in artifacts:
+                self._immutable(relative, payload)
+            self._fault("after_mcx_composite_selection_retention")
+            recheck(None)
+            self._fault("before_mcx_composite_pointer_replace")
+            self._replace_pointer(pointer_bytes, pointer_path)
+        return {role: self.native_chart_selection(bindings[role]) for role in roles}
 
     def select_native_chart(self, binding, image, content_type, *, selected_at,
                             expected_selection, publication_guard, recheck):

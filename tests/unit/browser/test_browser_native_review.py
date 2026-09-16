@@ -1183,10 +1183,10 @@ def test_goldm_review_uses_one_shared_composite_upload_control(tmp_path: Path) -
 
     html = render_v1_review(_ready(), legacy, native.snapshot())
 
-    assert html.count("GOLDM TRADINGVIEW COMPOSITE") == 1
+    assert html.count("MCX SIX-PANEL COMPOSITE") == 1
     assert html.count("subject=native") >= 1
     assert "subject=reference" not in html
-    assert "COMEX 1D · COMEX 4H · COMEX 1H · MCX GOLDM 1H" in html
+    assert "COMEX 1D · COMEX 4H · COMEX 1H · MCX 1D · MCX 4H · MCX 1H" in html
 
 
 def test_goldm_review_presents_received_reference_without_second_upload(
