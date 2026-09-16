@@ -14,6 +14,7 @@
 #include <sys/time.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <time.h>
 #include <unistd.h>
 
 /* APP-01A: an app location is authority only after resolving the actual image.
@@ -215,10 +216,31 @@ static int show_not_ready(void) {
     );
 }
 
-static int show_restart_failed(void) {
+static int show_restart_blocked(void) {
     return show_alert(
-        "KRONOS restart failed",
-        "The existing KRONOS backend could not be stopped safely. It was not reused. Contact Engineering."
+        "KRONOS restart blocked",
+        "The existing KRONOS backend could not be stopped through the authenticated maintenance handoff. No replacement was started. Contact Engineering."
+    );
+}
+
+static int show_replacement_child_exited(void) {
+    return show_alert(
+        "KRONOS replacement failed",
+        "The previous backend stopped safely, but the replacement process exited before becoming ready. Do not relaunch KRONOS. Contact Engineering."
+    );
+}
+
+static int show_replacement_ready_timeout(void) {
+    return show_alert(
+        "KRONOS is still starting",
+        "The previous backend stopped safely and the replacement was started, but it did not become ready within 120 seconds. Do not relaunch KRONOS. Contact Engineering."
+    );
+}
+
+static int show_replacement_internal_failure(void) {
+    return show_alert(
+        "KRONOS replacement failed",
+        "The previous backend stopped safely, but the replacement could not be started or monitored safely. Do not relaunch KRONOS. Contact Engineering."
     );
 }
 
@@ -360,7 +382,122 @@ static int qualify_source(const char *repository, const char *python) {
     return waitpid(child, &status, 0) == child && WIFEXITED(status) && WEXITSTATUS(status) == 0;
 }
 
-static int start_backend(
+typedef enum BackendStartResult {
+    BACKEND_START_READY,
+    BACKEND_START_CHILD_EXITED,
+    BACKEND_START_READY_TIMEOUT,
+    BACKEND_START_INTERNAL_FAILURE,
+} BackendStartResult;
+
+typedef struct BackendStartMonitor {
+    int (*monotonic_now)(struct timespec *value);
+    pid_t (*observe_child)(pid_t child, int *status);
+    int (*ready)(void);
+    int (*pause)(const struct timespec *duration, struct timespec *remaining);
+} BackendStartMonitor;
+
+#define BACKEND_START_READY_TIMEOUT_SECONDS 120
+#define BACKEND_START_POLL_NANOSECONDS 100000000L
+
+static int monotonic_now(struct timespec *value) {
+    return clock_gettime(CLOCK_MONOTONIC, value);
+}
+
+static pid_t observe_backend_child(pid_t child, int *status) {
+    return waitpid(child, status, WNOHANG);
+}
+
+static int pause_backend_monitor(
+    const struct timespec *duration,
+    struct timespec *remaining
+) {
+    return nanosleep(duration, remaining);
+}
+
+static const BackendStartMonitor production_backend_start_monitor = {
+    .monotonic_now = monotonic_now,
+    .observe_child = observe_backend_child,
+    .ready = backend_is_ready,
+    .pause = pause_backend_monitor,
+};
+
+static int time_reached(
+    const struct timespec *value,
+    const struct timespec *deadline
+) {
+    return value->tv_sec > deadline->tv_sec ||
+        (value->tv_sec == deadline->tv_sec && value->tv_nsec >= deadline->tv_nsec);
+}
+
+static struct timespec time_until(
+    const struct timespec *value,
+    const struct timespec *deadline
+) {
+    struct timespec remaining = {
+        .tv_sec = deadline->tv_sec - value->tv_sec,
+        .tv_nsec = deadline->tv_nsec - value->tv_nsec,
+    };
+    if (remaining.tv_nsec < 0) {
+        --remaining.tv_sec;
+        remaining.tv_nsec += 1000000000L;
+    }
+    if (remaining.tv_sec > 0 || remaining.tv_nsec > BACKEND_START_POLL_NANOSECONDS) {
+        remaining.tv_sec = 0;
+        remaining.tv_nsec = BACKEND_START_POLL_NANOSECONDS;
+    }
+    return remaining;
+}
+
+static BackendStartResult monitor_backend_start(
+    pid_t child,
+    int timeout_seconds,
+    const BackendStartMonitor *monitor
+) {
+    if (
+        monitor == NULL ||
+        monitor->monotonic_now == NULL ||
+        monitor->observe_child == NULL ||
+        monitor->ready == NULL ||
+        monitor->pause == NULL ||
+        timeout_seconds < 1
+    ) {
+        return BACKEND_START_INTERNAL_FAILURE;
+    }
+
+    struct timespec started;
+    if (monitor->monotonic_now(&started) != 0) {
+        return BACKEND_START_INTERNAL_FAILURE;
+    }
+    struct timespec deadline = started;
+    deadline.tv_sec += timeout_seconds;
+
+    for (;;) {
+        int status = 0;
+        errno = 0;
+        pid_t observed = monitor->observe_child(child, &status);
+        if (observed == child) return BACKEND_START_CHILD_EXITED;
+        if (observed != 0 && !(observed < 0 && errno == EINTR)) {
+            return BACKEND_START_INTERNAL_FAILURE;
+        }
+
+        struct timespec current;
+        if (monitor->monotonic_now(&current) != 0) {
+            return BACKEND_START_INTERNAL_FAILURE;
+        }
+        if (time_reached(&current, &deadline)) {
+            return BACKEND_START_READY_TIMEOUT;
+        }
+        if (monitor->ready()) return BACKEND_START_READY;
+
+        struct timespec duration = time_until(&current, &deadline);
+        struct timespec remaining;
+        if (monitor->pause(&duration, &remaining) != 0 && errno != EINTR) {
+            return BACKEND_START_INTERNAL_FAILURE;
+        }
+    }
+}
+
+static BackendStartResult start_backend(
     const char *repository,
     const char *python,
     const char *browser_entry,
@@ -370,7 +507,7 @@ static int start_backend(
     const char *generation
 ) {
     pid_t child = fork();
-    if (child < 0) return 0;
+    if (child < 0) return BACKEND_START_INTERNAL_FAILURE;
     if (child == 0) {
         if (setsid() < 0) _exit(1);
         /* Keep the canonical parent alive until the backend qualifies itself. */
@@ -399,13 +536,11 @@ static int start_backend(
         execl(python, python, "-B", browser_entry, "--no-browser", (char *)NULL);
         _exit(1);
     }
-    int status = 0;
-    for (int attempt = 0; attempt < 300; ++attempt) {
-        if (waitpid(child, &status, WNOHANG) == child) return 0;
-        if (backend_is_ready()) return 1;
-        usleep(100000);
-    }
-    return 0;
+    return monitor_backend_start(
+        child,
+        BACKEND_START_READY_TIMEOUT_SECONDS,
+        &production_backend_start_monitor
+    );
 }
 
 int main(void) {
@@ -477,14 +612,29 @@ int main(void) {
             !wait_for_backend_stop(backend_pid)
         ) {
             (void)memset(token, 0, sizeof(token));
-            return show_restart_failed();
+            return show_restart_blocked();
         }
     }
 
-    int started = start_backend(repository, python, browser_entry, python_path, backend_pid, token, generation);
+    BackendStartResult start_result = start_backend(
+        repository,
+        python,
+        browser_entry,
+        python_path,
+        backend_pid,
+        token,
+        generation
+    );
     (void)memset(token, 0, sizeof(token));
-    if (!started) {
-        return show_restart_failed();
+    switch (start_result) {
+        case BACKEND_START_READY:
+            return bootstrap ? 0 : open_workspace();
+        case BACKEND_START_CHILD_EXITED:
+            return show_replacement_child_exited();
+        case BACKEND_START_READY_TIMEOUT:
+            return show_replacement_ready_timeout();
+        case BACKEND_START_INTERNAL_FAILURE:
+            return show_replacement_internal_failure();
     }
-    return bootstrap ? 0 : open_workspace();
+    return show_replacement_internal_failure();
 }

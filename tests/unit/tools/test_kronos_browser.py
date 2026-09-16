@@ -162,13 +162,15 @@ def test_macos_launcher_is_minimal_double_click_app_without_credentials() -> Non
     assert ".rc02-publication-worktree" not in source
     assert ".venv/bin/python" in source
     assert "tools/kronos_browser.py" in source
-    assert "backend_is_ready()" in source
+    assert ".ready = backend_is_ready" in source
     assert "GET /status HTTP/1.0" in source
     assert "POST /control/shutdown HTTP/1.0" in source
     assert "request_graceful_shutdown" in source
     assert "wait_for_backend_stop" in source
     assert "if (backend_is_ready()) return open_workspace();" not in source
-    assert "It was not reused" in source
+    assert "It was not reused" not in source
+    assert "KRONOS restart blocked" in source
+    assert "KRONOS is still starting" in source
     assert "http://127.0.0.1:8947/swing/opportunities" in source
     assert '"/usr/bin/open"' in source
     assert '"Google Chrome"' in source
