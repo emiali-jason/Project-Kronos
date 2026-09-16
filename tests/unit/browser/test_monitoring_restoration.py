@@ -19,6 +19,7 @@ from kronos.provider.contracts.instrument import InstrumentResolutionError, Inst
 from kronos.swing.v1.paper_observation_track import LocalPaperObservationTrackStore
 from tests.unit.application.test_swing_opportunities import _Provider
 from tests.unit.application.test_paper_observation_tracking import _started, _Capability, NOW
+from tests.unit.provider.test_connection_governance import governance
 
 
 def _composition(tmp_path, monkeypatch):
@@ -51,6 +52,11 @@ def _composition(tmp_path, monkeypatch):
                            queue=queued, cap=capability, app=application, server=server)
 
 
+def _drain(queue):
+    while queue:
+        queue.pop(0)()
+
+
 def test_real_server_registers_completion_boundary(tmp_path):
     application = SwingOpportunitiesApplication(_Provider, background_runner=lambda op, name: None)
     server = create_browser_server(application, port=0)
@@ -75,6 +81,10 @@ def test_async_route_restores_all_existing_owner_boundaries_after_auth(tmp_path,
     complete()
     assert c.app.snapshot().provider_state is ProviderConnectionState.CONNECTED
     assert c.app.authenticated_read_only_capability() is c.cap
+    assert c.app.sponsor_operability_restoration_status()['state'] == 'PENDING'
+    assert c.w.active_monitoring_count == 0
+    _drain(c.queue)
+    assert c.app.sponsor_operability_restoration_status()['state'] == 'SUCCEEDED'
     assert c.w.active_monitoring_count == 1
     assert c.w.projection(c.t.track.track_identity).monitoring_reason == 'SHARED_HUB_REGISTRATION_ACTIVE'
     assert c.hub.connection_state is None  # Auth/registration is NOT WebSocket proof.
@@ -87,10 +97,88 @@ def test_async_route_restores_all_existing_owner_boundaries_after_auth(tmp_path,
     assert len(c.cap.sessions) == 1
 
 
+def test_connection_finishes_before_blocked_restoration_and_releases_all_locks(tmp_path):
+    jobs = []
+    provider = _Provider()
+    connection_governance = governance(tmp_path)
+    entered, release = Event(), Event()
+    lock_observations = []
+    app = SwingOpportunitiesApplication(
+        lambda: provider,
+        connection_governance=connection_governance,
+        background_runner=lambda operation, name: jobs.append((name, operation)),
+    )
+
+    def blocked_restorer(capability):
+        assert capability is provider.capability
+        request_identity = next(connection_governance.store.root.iterdir()).name
+        retained = connection_governance.store.read(request_identity)
+        assert retained['completion']['state'] == 'SUCCESS'
+        assert app.snapshot().provider_state is ProviderConnectionState.CONNECTED
+        for lock in (
+            app._SwingOpportunitiesApplication__authentication_lock,
+            app._SwingOpportunitiesApplication__connection_transition_lock,
+            app._SwingOpportunitiesApplication__lock,
+            connection_governance.lock,
+        ):
+            acquired = lock.acquire(blocking=False)
+            lock_observations.append(acquired)
+            if acquired:
+                lock.release()
+        entered.set()
+        assert release.wait(5)
+
+    app.register_sponsor_operability_restorer(blocked_restorer)
+    assert app.connect_provider()
+    name, authenticate = jobs.pop(0)
+    assert name == 'kronos-browser-auth'
+    authenticate()
+    assert app.snapshot().provider_state is ProviderConnectionState.CONNECTED
+    assert app.sponsor_operability_restoration_status()['state'] == 'PENDING'
+    name, restore = jobs.pop(0)
+    assert name == 'kronos-browser-restoration'
+    thread = Thread(target=restore)
+    thread.start()
+    try:
+        assert entered.wait(5)
+        assert lock_observations == [True, True, True, True]
+        assert app.sponsor_operability_restoration_status()['state'] == 'RUNNING'
+    finally:
+        release.set()
+        thread.join(5)
+    assert not thread.is_alive()
+    assert app.sponsor_operability_restoration_status()['state'] == 'SUCCEEDED'
+
+
+def test_restoration_failure_is_bounded_and_does_not_reauthenticate():
+    jobs = []
+    provider = _Provider()
+    factory = Mock(return_value=provider)
+    restorer = Mock(side_effect=RuntimeError('PRIVATE-RESTORATION-CONTENT'))
+    app = SwingOpportunitiesApplication(
+        factory, background_runner=lambda operation, name: jobs.append((name, operation)),
+    )
+    app.register_sponsor_operability_restorer(restorer)
+    assert app.connect_provider()
+    jobs.pop(0)[1]()
+    restoration = jobs.pop(0)[1]
+    restoration(); restoration()
+    assert app.snapshot().provider_state is ProviderConnectionState.CONNECTED
+    assert app.authenticated_read_only_capability() is provider.capability
+    assert app.sponsor_operability_restoration_status() == {
+        'state': 'FAILED',
+        'connection_generation': 1,
+        'failure': 'SPONSOR_OPERABILITY_RESTORATION_FAILED',
+    }
+    assert not app.connect_provider()
+    factory.assert_called_once_with()
+    restorer.assert_called_once_with(provider.capability)
+
+
 def test_existing_registration_repairs_only_transport_status_without_duplicates(tmp_path, monkeypatch):
     c = _composition(tmp_path, monkeypatch)
     c.cap.historical_candles = Mock(return_value=())
-    c.app.connect_provider(); c.queue.pop()()
+    c.app.connect_provider(); _drain(c.queue)
     c.cap.sessions[0].consumer.on_connection_state(MonitoringConnectionState.CONNECTED)
     registration = c.w._registrations[c.t.track.track_identity]
     c.w.mark_monitoring_unavailable('PROVIDER_CAPABILITY_NOT_ACTIVE')
@@ -111,7 +199,7 @@ def test_existing_registration_repairs_only_transport_status_without_duplicates(
 @pytest.mark.parametrize('state', [None, MonitoringConnectionState.DISCONNECTED, MonitoringConnectionState.RECONNECTING])
 def test_auth_does_not_invent_websocket_connection(tmp_path, monkeypatch, state):
     c = _composition(tmp_path, monkeypatch)
-    c.app.connect_provider(); c.queue.pop()()
+    c.app.connect_provider(); _drain(c.queue)
     if state is not None:
         c.cap.sessions[0].consumer.on_connection_state(state)
     c.w.mark_monitoring_unavailable('PROVIDER_CAPABILITY_NOT_ACTIVE')
@@ -122,7 +210,7 @@ def test_auth_does_not_invent_websocket_connection(tmp_path, monkeypatch, state)
 
 def test_reconciliation_preserves_ordering_failure_and_provenance(tmp_path, monkeypatch):
     c = _composition(tmp_path, monkeypatch)
-    c.app.connect_provider(); c.queue.pop()()
+    c.app.connect_provider(); _drain(c.queue)
     c.cap.sessions[0].consumer.on_connection_state(MonitoringConnectionState.CONNECTED)
     c.w.mark_monitoring_unavailable('ORDERED_LIVE_FACTS_UNAVAILABLE')
     before = c.store.monitoring(c.t.track.track_identity)
@@ -142,7 +230,7 @@ def test_restart_reconciles_persisted_evidence_only_after_valid_capability(tmp_p
     c.server.restore_sponsor_operability()
     assert restored.active_monitoring_count == 0
     assert restored.projection(c.t.track.track_identity).monitoring_reason == 'PROVIDER_CAPABILITY_NOT_ACTIVE'
-    c.app.connect_provider(); c.queue.pop()()
+    c.app.connect_provider(); _drain(c.queue)
     assert restored.active_monitoring_count == 1
     assert restored.projection(c.t.track.track_identity).track == c.t.track
     assert c.store.events(c.t.track.track_identity) == ()
@@ -151,7 +239,7 @@ def test_restart_reconciles_persisted_evidence_only_after_valid_capability(tmp_p
 def test_failed_owner_restore_does_not_skip_other_owners(tmp_path, monkeypatch, caplog):
     c = _composition(tmp_path, monkeypatch)
     c.server.trade_window.restore_current_entry_monitoring.side_effect = RuntimeError('PRIVATE-EXCEPTION-CONTENT')
-    c.app.connect_provider(); c.queue.pop()()
+    c.app.connect_provider(); _drain(c.queue)
     assert c.w.active_monitoring_count == 1
     c.server.native_review.restore_lifecycle_monitoring.assert_called_once()
     assert 'PRIVATE-EXCEPTION-CONTENT' not in caplog.text
@@ -167,7 +255,7 @@ def test_failed_owner_restore_does_not_skip_other_owners(tmp_path, monkeypatch, 
 def test_registration_failures_keep_bounded_reasons(tmp_path, monkeypatch, error, expected):
     c = _composition(tmp_path, monkeypatch)
     c.cap.open_monitoring_session = Mock(side_effect=error)
-    c.app.connect_provider(); c.queue.pop()()
+    c.app.connect_provider(); _drain(c.queue)
     assert c.w.projection(c.t.track.track_identity).monitoring_reason == expected
     assert c.w.active_monitoring_count == 0
     assert c.hub.active_session_count == 0
@@ -178,7 +266,7 @@ def test_registration_failures_keep_bounded_reasons(tmp_path, monkeypatch, error
 def test_missing_master_is_not_inactive_authentication(tmp_path, monkeypatch):
     c = _composition(tmp_path, monkeypatch)
     monkeypatch.setattr('kronos.browser.server.resolve_governed_monitoring_instrument', Mock(side_effect=MonitoringError(MonitoringFailure.INSTRUMENT_NOT_RESOLVED)))
-    c.app.connect_provider(); c.queue.pop()()
+    c.app.connect_provider(); _drain(c.queue)
     assert c.cap.active
     assert c.w.projection(c.t.track.track_identity).monitoring_reason == 'INSTRUMENT_NOT_RESOLVED'
     assert not c.cap.sessions
@@ -204,6 +292,7 @@ def test_obsolete_queued_completion_cannot_restore_new_context():
     old()
     factory.assert_not_called()
     new(); old(); new()
+    _drain(queue)
     assert restored == [provider.capability]
     factory.assert_called_once()
 
@@ -233,7 +322,7 @@ def test_obsolete_inflight_completion_cannot_overwrite_new_attempt():
     assert not thread.is_alive()
     assert first.ended and not restored
     assert app.snapshot().provider_state is ProviderConnectionState.CONNECTING
-    queue.pop()()
+    _drain(queue)
     assert restored == [second.capability]
 
 
@@ -243,10 +332,13 @@ def test_disconnect_reconnect_uses_new_capability_only():
     providers = iter((first, second))
     app = SwingOpportunitiesApplication(lambda: next(providers), background_runner=lambda op, name: queue.append(op))
     app.register_sponsor_operability_restorer(restored.append)
-    app.connect_provider(); old = queue.pop(); old()
+    app.connect_provider(); queue.pop(0)()
+    old_restoration = queue.pop(0)
     assert app.disconnect_provider()
-    app.connect_provider(); queue.pop()(); old()
-    assert restored == [first.capability, second.capability]
+    app.connect_provider(); queue.pop(0)()
+    new_restoration = queue.pop(0)
+    old_restoration(); new_restoration()
+    assert restored == [second.capability]
     assert not first.capability.active and second.capability.active
 
 
@@ -311,7 +403,7 @@ def test_restored_kr380_eligible_owner_is_attached_once(tmp_path, monkeypatch):
     restored.restore((completed,))
     restored.set_shared_monitoring_hub(c.hub)
     c.server.trade_window.restore_current_entry_monitoring = lambda capability, resolver: restored.restore_current_entry_monitoring(capability, lambda *args: instrument, clock=lambda: nt.NOW)
-    c.app.connect_provider(); c.queue.pop()()
+    c.app.connect_provider(); _drain(c.queue)
     assert plan.trade_plan_id in restored._monitoring_registrations
     before = c.hub.subscription_reference_count(instrument)
     c.server.restore_sponsor_operability(c.cap)
@@ -336,7 +428,7 @@ def test_restored_sponsor_position_owner_is_attached_without_new_position(tmp_pa
     c.server.native_review.snapshot = lambda: SimpleNamespace(active_lifecycle=restored.snapshot())
     c.server.ux10_notifications = SimpleNamespace(observe_active_trade_monitoring_activation=Mock())
     before = restored.snapshot()
-    c.app.connect_provider(); c.queue.pop()()
+    c.app.connect_provider(); _drain(c.queue)
     assert coordinator.active_position_ids == (position.position_id,)
     c.server.restore_sponsor_operability(c.cap)
     assert coordinator.active_position_ids == (position.position_id,)

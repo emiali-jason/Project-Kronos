@@ -404,6 +404,27 @@ class BrowserWorkspaceSnapshot:
 
 
 @dataclass(frozen=True, slots=True)
+class _SponsorRestorationGeneration:
+    connection_generation: int
+    provider: object
+    capability: object
+    progression_workflow: object | None
+    restorer: Callable[[object], None] | None
+
+
+@dataclass(frozen=True, slots=True)
+class _OpportunitiesProjectionAuthority:
+    snapshot: BrowserWorkspaceSnapshot
+    native_source: NativeDiscoveryRun | None
+    native: NativeDiscoveryRun | None
+    continuity: object | None
+    publication: object | None
+    committed_run: object | None
+    request_result: str
+    reconciliation_unavailable: bool
+
+
+@dataclass(frozen=True, slots=True)
 class SwingAnalysisEvidenceSnapshot:
     """Complete provider-neutral evidence retained for one successful run."""
 
@@ -739,6 +760,12 @@ class SwingOpportunitiesApplication:
         self.__connection_generation = 0
         self.__connection_started_generation = 0
         self.__sponsor_operability_restorer: Callable[[object], None] | None = None
+        self.__sponsor_restoration_generation: (
+            _SponsorRestorationGeneration | None
+        ) = None
+        self.__sponsor_restoration_state = "NOT_REQUESTED"
+        self.__sponsor_restoration_status_generation: int | None = None
+        self.__sponsor_restoration_failure = ""
         self.__provider: _ProviderRuntime | None = None
         self.__progression_watch_workflow: object | None = None
         self.__analysis_attempt_count = 0
@@ -859,25 +886,94 @@ class SwingOpportunitiesApplication:
                 self.__publication_guard_active = False
 
     def publication_status(self):
-        with self.__lock:
-            try:
-                control = None if self.__publication is None else self.__publication.status()
-                if (control is not None and self.__committed_run is not None
-                        and control["current_manifest"] != self.__committed_run.reference):
-                    return {"control": control, "request_result": "PUBLICATION_UNAVAILABLE",
-                            "reconciliation_unavailable": True}
-            except (OSError, ValueError):
-                return {"control": None, "request_result": "PUBLICATION_UNAVAILABLE",
-                        "reconciliation_unavailable": True}
-            return {"control": control, "request_result": self.__analysis_request_result,
-                    "reconciliation_unavailable": self.__reconciliation_failure}
+        return self.__prepare_opportunities_projection()[3]
 
     def opportunities_bundle_projection(self):
-        """Capture card data and its exact continuity sidecar under one lock."""
+        """Prepare one authority-bound projection without lock-held file reads."""
+
+        return self.__prepare_opportunities_projection()
+
+    def __capture_opportunities_projection(self) -> _OpportunitiesProjectionAuthority:
         with self.__lock:
-            snapshot, native = self.opportunities_projection()
-            continuity = self.committed_continuity() if native is not None else None
-            return snapshot, native, continuity, self.publication_status()
+            snapshot = self.__snapshot
+            native_source = self.__completed_native_discovery_run
+            native = native_source
+            if (
+                native is None
+                or native.run_identity != snapshot.swing_analysis_run_identity
+            ):
+                native = None
+            committed_run = self.__committed_run
+            return _OpportunitiesProjectionAuthority(
+                snapshot=snapshot,
+                native_source=native_source,
+                native=native,
+                continuity=(
+                    None
+                    if native is None or committed_run is None
+                    else committed_run.continuity
+                ),
+                publication=self.__publication,
+                committed_run=committed_run,
+                request_result=self.__analysis_request_result,
+                reconciliation_unavailable=self.__reconciliation_failure,
+            )
+
+    def __projection_authority_current_locked(
+        self, authority: _OpportunitiesProjectionAuthority
+    ) -> bool:
+        return (
+            self.__snapshot is authority.snapshot
+            and self.__completed_native_discovery_run is authority.native_source
+            and self.__publication is authority.publication
+            and self.__committed_run is authority.committed_run
+            and self.__analysis_request_result == authority.request_result
+            and self.__reconciliation_failure
+            is authority.reconciliation_unavailable
+        )
+
+    def __prepare_opportunities_projection(self):
+        authority = self.__capture_opportunities_projection()
+        control = None
+        unavailable = False
+        if authority.publication is not None:
+            try:
+                control = authority.publication.status()
+                if (
+                    authority.committed_run is not None
+                    and control["current_manifest"]
+                    != authority.committed_run.reference
+                ):
+                    unavailable = True
+            except (OSError, ValueError):
+                unavailable = True
+                control = None
+
+        with self.__lock:
+            current = self.__projection_authority_current_locked(authority)
+        if unavailable or not current:
+            return (
+                authority.snapshot,
+                None,
+                None,
+                {
+                    "control": control,
+                    "request_result": "PUBLICATION_UNAVAILABLE",
+                    "reconciliation_unavailable": True,
+                },
+            )
+        return (
+            authority.snapshot,
+            authority.native,
+            authority.continuity,
+            {
+                "control": control,
+                "request_result": authority.request_result,
+                "reconciliation_unavailable": (
+                    authority.reconciliation_unavailable
+                ),
+            },
+        )
 
     def register_analysis_reconciliation(self, reconcile):
         if not callable(reconcile):
@@ -887,16 +983,21 @@ class SwingOpportunitiesApplication:
     def reconcile_committed_analysis(self):
         """Explicit mutation/startup callback; never called from GET/status."""
         with self.__lock:
-            if self.__reconcile is None:
-                return
-            try:
-                if self.__publication is not None and self.opportunities_projection()[1] is None:
-                    raise ValueError("SWING_PUBLICATION_CURRENT_UNAVAILABLE")
-                self.__reconcile()
-            except Exception:
-                self.__reconciliation_failure = True
-            else:
-                self.__reconciliation_failure = False
+            reconcile = self.__reconcile
+            publication = self.__publication
+        if reconcile is None:
+            return
+        try:
+            if publication is not None and self.opportunities_projection()[1] is None:
+                raise ValueError("SWING_PUBLICATION_CURRENT_UNAVAILABLE")
+            reconcile()
+        except Exception:
+            failure = True
+        else:
+            failure = False
+        with self.__lock:
+            if self.__reconcile is reconcile and self.__publication is publication:
+                self.__reconciliation_failure = failure
 
     def __install_committed(self, bundle):
         self.__committed_run = bundle
@@ -928,24 +1029,8 @@ class SwingOpportunitiesApplication:
     ) -> tuple[BrowserWorkspaceSnapshot, NativeDiscoveryRun | None]:
         """Return one atomically bound successful Opportunities projection."""
 
-        with self.__lock:
-            snapshot = self.__snapshot
-            discovery = self.__completed_native_discovery_run
-            if self.__publication is not None and self.__committed_run is not None:
-                # A foreign writer may have advanced authority. Never present this
-                # process's older cache as current or reconcile it during a GET.
-                try:
-                    reference = self.__publication.status()["current_manifest"]
-                except (OSError, ValueError):
-                    return snapshot, None
-                if reference != self.__committed_run.reference:
-                    return snapshot, None
-            if (
-                discovery is None
-                or discovery.run_identity != snapshot.swing_analysis_run_identity
-            ):
-                discovery = None
-            return snapshot, discovery
+        snapshot, native, _, _ = self.__prepare_opportunities_projection()
+        return snapshot, native
 
     def analysis_diagnostic(self) -> AnalysisFailureDiagnostic | None:
         with self.__lock:
@@ -1034,27 +1119,51 @@ class SwingOpportunitiesApplication:
 
     def mtf_fact_snapshot(self) -> SameRunMtfFactSnapshot | None:
         with self.__lock:
-            if self.__publication is not None and self.opportunities_projection()[1] is None:
-                return None
-            return self.__completed_mtf_fact_snapshot
+            publication = self.__publication
+            result = self.__completed_mtf_fact_snapshot
+        if publication is None:
+            return result
+        if self.opportunities_projection()[1] is None:
+            return None
+        with self.__lock:
+            return result if (
+                self.__publication is publication
+                and self.__completed_mtf_fact_snapshot is result
+            ) else None
 
     def mtf_fact_evidence_store(self) -> MtfFactEvidenceStore | None:
         return self.__mtf_fact_evidence_store
 
     def native_discovery_run(self) -> NativeDiscoveryRun | None:
         with self.__lock:
-            if self.__publication is not None:
-                return self.opportunities_projection()[1]
-            return self.__completed_native_discovery_run
+            publication = self.__publication
+            result = self.__completed_native_discovery_run
+        if publication is None:
+            return result
+        if self.opportunities_projection()[1] is None:
+            return None
+        with self.__lock:
+            return result if (
+                self.__publication is publication
+                and self.__completed_native_discovery_run is result
+            ) else None
 
     def native_discovery_evidence_store(self) -> NativeDiscoveryEvidenceStore | None:
         return self.__native_discovery_evidence_store
 
     def relative_context_run(self) -> RelativeContextRun | None:
         with self.__lock:
-            if self.__publication is not None and self.opportunities_projection()[1] is None:
-                return None
-            return self.__completed_relative_context_run
+            publication = self.__publication
+            result = self.__completed_relative_context_run
+        if publication is None:
+            return result
+        if self.opportunities_projection()[1] is None:
+            return None
+        with self.__lock:
+            return result if (
+                self.__publication is publication
+                and self.__completed_relative_context_run is result
+            ) else None
 
     def relative_context_evidence_store(self) -> RelativeContextEvidenceStore | None:
         return self.__relative_context_evidence_store
@@ -1172,27 +1281,47 @@ class SwingOpportunitiesApplication:
                          request_route: str = "SHARED_PROVIDER_API", received_at: str | None = None) -> bool:
         """Begin one explicit Sponsor connection without blocking HTTP serving."""
 
+        governance = self.connection_governance
+        request = None
         with self.__connection_transition_lock:
-            governance = self.connection_governance
             request = governance.request(reference=action_reference, route=request_route, received_at=received_at) if governance else None
             if governance and not governance.admit(request, already_connected=(
                 self.snapshot().provider_state in {ProviderConnectionState.CONNECTING, ProviderConnectionState.CONNECTED}
             )):
                 return False
             try:
-                return self.__connect_provider(request)
+                generation = self.__connect_provider(request)
             except Exception:
                 if governance:
                     governance.finish(request, False)
                 raise
+        if generation is None:
+            return False
+        try:
+            self.__background_runner(
+                lambda: self.__complete_connection(generation),
+                "kronos-browser-auth",
+            )
+        except Exception:
+            if governance:
+                governance.finish(request, False)
+            with self.__lock:
+                if generation == self.__connection_generation:
+                    self.__snapshot = replace(
+                        self.__snapshot,
+                        provider_state=ProviderConnectionState.ERROR,
+                        provider_failure="PROVIDER_CONNECTION_FAILED",
+                    )
+            raise
+        return True
 
-    def __connect_provider(self, request=None) -> bool:
+    def __connect_provider(self, request=None) -> int | None:
         with self.__lock:
             if self.__snapshot.provider_state in {
                 ProviderConnectionState.CONNECTING,
                 ProviderConnectionState.CONNECTED,
             }:
-                return False
+                return None
             self.__snapshot = replace(
                 self.__snapshot,
                 provider_state=ProviderConnectionState.CONNECTING,
@@ -1203,12 +1332,13 @@ class SwingOpportunitiesApplication:
             )
             self.__connection_generation += 1
             generation = self.__connection_generation
+            self.__sponsor_restoration_generation = None
+            self.__sponsor_restoration_state = "NOT_REQUESTED"
+            self.__sponsor_restoration_status_generation = generation
+            self.__sponsor_restoration_failure = ""
             if request is not None:
                 self.__connection_requests[generation] = request
-        self.__background_runner(
-            lambda: self.__complete_connection(generation), "kronos-browser-auth"
-        )
-        return True
+        return generation
 
     def register_sponsor_operability_restorer(
         self, restorer: Callable[[object], None]
@@ -1218,6 +1348,28 @@ class SwingOpportunitiesApplication:
             raise TypeError("BROWSER_APPLICATION_DEPENDENCY_INVALID")
         with self.__lock:
             self.__sponsor_operability_restorer = restorer
+
+    def sponsor_operability_restoration_status(self):
+        """Return bounded in-process restoration state without Provider work."""
+
+        with self.__lock:
+            return MappingProxyType({
+                "state": self.__sponsor_restoration_state,
+                "connection_generation": (
+                    self.__sponsor_restoration_status_generation
+                ),
+                "failure": self.__sponsor_restoration_failure,
+            })
+
+    def __invalidate_sponsor_restoration_locked(self) -> None:
+        restoration = self.__sponsor_restoration_generation
+        if restoration is not None:
+            self.__sponsor_restoration_status_generation = (
+                restoration.connection_generation
+            )
+            self.__sponsor_restoration_state = "STALE"
+            self.__sponsor_restoration_failure = ""
+        self.__sponsor_restoration_generation = None
 
     def register_progression_watch_workflow(self, workflow: object) -> None:
         """Bind the product-local watch lifecycle without exposing Provider state."""
@@ -1387,6 +1539,7 @@ class SwingOpportunitiesApplication:
             provider = self.__provider
             workflow = self.__progression_watch_workflow
             self.__connection_generation += 1
+            self.__invalidate_sponsor_restoration_locked()
             self.__provider = None
             self.__snapshot = replace(
                 self.__snapshot,
@@ -1412,6 +1565,7 @@ class SwingOpportunitiesApplication:
             self.connection_governance.enter_maintenance(generation)
             with self.__lock:
                 self.__connection_generation += 1
+                self.__invalidate_sponsor_restoration_locked()
 
     def close(self) -> None:
         with self.__connection_transition_lock:
@@ -1420,6 +1574,7 @@ class SwingOpportunitiesApplication:
     def __close(self) -> None:
         with self.__lock:
             self.__connection_generation += 1
+            self.__invalidate_sponsor_restoration_locked()
             provider = self.__provider
             workflow = self.__progression_watch_workflow
             self.__provider = None
@@ -1438,6 +1593,7 @@ class SwingOpportunitiesApplication:
     def __complete_connection(self, generation: int) -> None:
         # Serialize candidate contexts too: disposing an obsolete candidate must
         # never dispose a newer connection on the shared Provider runtime.
+        restoration = None
         with self.__authentication_lock:
             with self.__lock:
                 if (
@@ -1449,20 +1605,29 @@ class SwingOpportunitiesApplication:
                 self.__connection_started_generation = generation
             request = self.__connection_requests.pop(generation, None)
             governance = self.connection_governance
-            if governance is None:
-                self.__authenticate_connection(generation)
-                return
             try:
-                with governance.dispatch(request):
-                    self.__authenticate_connection(generation)
-                governance.finish(request, self.snapshot().provider_state is ProviderConnectionState.CONNECTED)
+                if governance is None:
+                    success, restoration = self.__authenticate_connection(generation)
+                else:
+                    with governance.dispatch(request):
+                        success, restoration = self.__authenticate_connection(generation)
+                    governance.finish(request, success)
             except Exception:
-                governance.finish(request, False)
+                restoration = None
+                if governance is not None:
+                    try:
+                        governance.finish(request, False)
+                    except Exception:
+                        pass
                 with self.__lock:
                     if generation == self.__connection_generation:
                         self.__snapshot = replace(self.__snapshot, provider_state=ProviderConnectionState.ERROR, provider_failure="PROVIDER_CONNECTION_FAILED")
+        if restoration is not None:
+            self.__dispatch_sponsor_restoration(restoration)
 
-    def __authenticate_connection(self, generation: int) -> None:
+    def __authenticate_connection(
+        self, generation: int
+    ) -> tuple[bool, _SponsorRestorationGeneration | None]:
         provider: _ProviderRuntime | None = None
         try:
             provider = self.__provider_factory()
@@ -1494,14 +1659,15 @@ class SwingOpportunitiesApplication:
                     provider_state=ProviderConnectionState.ERROR,
                     provider_failure="PROVIDER_CONNECTION_FAILED",
                 )
-            return
+            return False, None
+        restoration = None
         with self.__connection_transition_lock:
             if self.connection_governance is not None:
                 try:
                     self.connection_governance.require_authentication()
                 except ValueError:
                     provider.end_kronos_session()
-                    return
+                    return False, None
             with self.__lock:
                 current = (
                     generation == self.__connection_generation
@@ -1516,33 +1682,121 @@ class SwingOpportunitiesApplication:
                         provider_state=ProviderConnectionState.CONNECTED,
                         provider_failure="",
                     )
+                    if workflow is not None or restorer is not None:
+                        restoration = _SponsorRestorationGeneration(
+                            connection_generation=generation,
+                            provider=provider,
+                            capability=capability,
+                            progression_workflow=workflow,
+                            restorer=restorer,
+                        )
+                        self.__sponsor_restoration_generation = restoration
+                        self.__sponsor_restoration_state = "PENDING"
+                        self.__sponsor_restoration_status_generation = generation
+                        self.__sponsor_restoration_failure = ""
             if not current:
                 try:
                     provider.end_kronos_session()
                 except Exception:
                     pass
+                return False, None
+        return True, restoration
+
+    def __restoration_current_locked(
+        self, restoration: _SponsorRestorationGeneration
+    ) -> bool:
+        return (
+            self.__sponsor_restoration_generation is restoration
+            and self.__connection_generation
+            == restoration.connection_generation
+            and self.__provider is restoration.provider
+            and self.__snapshot.provider_state
+            is ProviderConnectionState.CONNECTED
+        )
+
+    def __restoration_current(
+        self, restoration: _SponsorRestorationGeneration
+    ) -> bool:
+        with self.__lock:
+            return self.__restoration_current_locked(restoration)
+
+    def __restoration_capability_current(
+        self, restoration: _SponsorRestorationGeneration
+    ) -> bool:
+        try:
+            capability = restoration.provider.authenticated_read_only_capability()
+        except Exception:
+            return False
+        return (
+            capability is restoration.capability
+            and getattr(capability, "active", False) is True
+            and self.__restoration_current(restoration)
+        )
+
+    def __finish_sponsor_restoration(
+        self,
+        restoration: _SponsorRestorationGeneration,
+        *,
+        failed: bool,
+    ) -> None:
+        with self.__lock:
+            if not self.__restoration_current_locked(restoration):
                 return
-            if workflow is not None:
+            self.__sponsor_restoration_state = "FAILED" if failed else "SUCCEEDED"
+            self.__sponsor_restoration_failure = (
+                "SPONSOR_OPERABILITY_RESTORATION_FAILED" if failed else ""
+            )
+
+    def __dispatch_sponsor_restoration(
+        self, restoration: _SponsorRestorationGeneration
+    ) -> None:
+        try:
+            self.__background_runner(
+                lambda: self.__restore_sponsor_operability(restoration),
+                "kronos-browser-restoration",
+            )
+        except Exception:
+            self.__finish_sponsor_restoration(restoration, failed=True)
+
+    def __restore_sponsor_operability(
+        self, restoration: _SponsorRestorationGeneration
+    ) -> None:
+        with self.__lock:
+            if (
+                not self.__restoration_current_locked(restoration)
+                or self.__sponsor_restoration_state != "PENDING"
+            ):
+                return
+            self.__sponsor_restoration_state = "RUNNING"
+
+        failed = False
+        if not self.__restoration_capability_current(restoration):
+            self.__finish_sponsor_restoration(restoration, failed=True)
+            return
+        workflow = restoration.progression_workflow
+        if workflow is not None:
+            try:
+                workflow.restore_active(restoration.capability)
+            except Exception:
+                failed = True
                 try:
-                    workflow.restore_active(capability)
-                except Exception:
                     workflow.close_monitoring()
-            if restorer is not None:
-                with self.__lock:
-                    if (
-                        generation != self.__connection_generation
-                        or self.__provider is not provider
-                        or getattr(capability, "active", False) is not True
-                    ):
-                        return
-                try:
-                    restorer(capability)
                 except Exception:
-                    # Authentication success is not monitoring success. Do not
-                    # publish raw Provider exceptions or undo valid authentication.
+                    pass
+
+        restorer = restoration.restorer
+        if restorer is not None:
+            if not self.__restoration_capability_current(restoration):
+                failed = True
+            else:
+                try:
+                    restorer(restoration.capability)
+                except Exception:
+                    failed = True
                     logging.getLogger(__name__).warning(
                         "Sponsor monitoring restoration did not complete"
                     )
+        self.__finish_sponsor_restoration(restoration, failed=failed)
 
     def __complete_live_monitoring_test(self, canonical_instrument: str) -> None:
         with self.__lock:

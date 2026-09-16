@@ -1,5 +1,6 @@
 """Shared runtime authority qualification with fake Providers and isolated stores."""
 from pathlib import Path
+from threading import Event, Thread
 from types import SimpleNamespace
 from unittest.mock import Mock
 import json
@@ -7,6 +8,7 @@ import pytest
 
 from kronos.browser.runtime_state import complete_startup, decorate_html, status_document
 from kronos.application.shared_monitoring import SharedSwingMonitoringHub
+from kronos.application.swing_opportunities import ProviderConnectionState
 from kronos.provider.contracts.monitoring import MonitoringConnectionState
 from tests.unit.provider.test_connection_governance import governance, GENERATION
 from tests.unit.application.test_shared_monitoring import Capability, Consumer, ONE, TWO, tick
@@ -154,3 +156,78 @@ def test_failed_startup_cannot_be_retried_into_automatic_exit(tmp_path):
     g.complete_startup('ACCEPTANCE_RESTORATION_NOT_ESTABLISHED');g.complete_startup()
     assert g.maintenance_status()['state']=='FAILED_ACTIVE'
     assert not list((tmp_path/'audit').rglob('*.json'))
+
+
+def test_status_routes_respond_while_sponsor_restoration_is_blocked(running):
+    server, governance, provider, calls, root = running
+    assert governance.exit_maintenance(
+        governance.action_reference('MAINTENANCE_EXIT')
+    )
+    entered, release = Event(), Event()
+
+    def blocked_restorer(capability):
+        assert capability is not None
+        entered.set()
+        assert release.wait(5)
+
+    server.application.register_sponsor_operability_restorer(blocked_restorer)
+    result = []
+    thread = Thread(target=lambda: result.append(server.application.connect_provider()))
+    thread.start()
+    try:
+        assert entered.wait(5)
+        assert server.application.snapshot().provider_state is ProviderConnectionState.CONNECTED
+        before = inventory(root)
+        assert request(server, '/status')[0] == 200
+        assert request(server, '/runtime/status')[0] == 200
+        assert inventory(root) == before
+        assert server.application.sponsor_operability_restoration_status()['state'] == 'RUNNING'
+    finally:
+        release.set()
+        thread.join(5)
+    assert not thread.is_alive()
+    assert result == [True]
+    assert server.application.sponsor_operability_restoration_status()['state'] == 'SUCCEEDED'
+
+
+def test_blocked_publication_read_does_not_hold_status_lock_and_stale_result_fails_closed(running):
+    server, governance, provider, calls, root = running
+    entered, release = Event(), Event()
+    status_calls = []
+
+    def publication_status():
+        status_calls.append(1)
+        if len(status_calls) == 1:
+            entered.set()
+            assert release.wait(5)
+        return {'current_manifest': None, 'latest_attempt': None}
+
+    publication = SimpleNamespace(status=publication_status)
+    application_lock = server.application._SwingOpportunitiesApplication__lock
+    with application_lock:
+        server.application._SwingOpportunitiesApplication__publication = publication
+    result = []
+    thread = Thread(
+        target=lambda: result.append(
+            server.application.opportunities_bundle_projection()
+        )
+    )
+    thread.start()
+    try:
+        assert entered.wait(5)
+        before = inventory(root)
+        assert server.application.snapshot() is not None
+        assert request(server, '/status')[0] == 200
+        assert request(server, '/runtime/status')[0] == 200
+        assert inventory(root) == before
+        with application_lock:
+            server.application._SwingOpportunitiesApplication__analysis_request_result = 'AUTHORITY_CHANGED'
+    finally:
+        release.set()
+        thread.join(5)
+    assert not thread.is_alive()
+    assert len(status_calls) >= 2
+    _, native, continuity, publication_result = result[0]
+    assert native is None and continuity is None
+    assert publication_result['request_result'] == 'PUBLICATION_UNAVAILABLE'
+    assert publication_result['reconciliation_unavailable'] is True
