@@ -112,6 +112,14 @@ class HistoricalReportRecord:
     source_contract_identity: str
     source_contract_version: str
     intraday_facts: str | None = None
+    paper_history_representation: str = "NOT_APPLICABLE"
+    paper_raw_detail_availability: str = "NOT_APPLICABLE"
+    paper_first_observation_at: datetime | None = None
+    paper_last_observation_at: datetime | None = None
+    paper_fact_count: int | None = None
+    paper_source_count: int | None = None
+    paper_consolidation_identity: str | None = None
+    paper_history_detail_reason: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -361,6 +369,14 @@ def _from_operational(
         activation_disposition=item.activation_disposition.value,
         source_contract_identity=item.projection_contract_identity,
         source_contract_version=item.projection_contract_version,
+        paper_history_representation=item.paper_history_representation if observation else "NOT_APPLICABLE",
+        paper_raw_detail_availability=item.paper_raw_detail_availability if observation else "NOT_APPLICABLE",
+        paper_first_observation_at=item.paper_first_observation_at if observation else None,
+        paper_last_observation_at=item.paper_last_observation_at if observation else None,
+        paper_fact_count=item.paper_fact_count if observation else None,
+        paper_source_count=item.paper_source_count if observation else None,
+        paper_consolidation_identity=item.paper_consolidation_identity if observation else None,
+        paper_history_detail_reason=item.paper_history_detail_reason if observation else None,
     )
 
 
@@ -441,6 +457,14 @@ def _export_record(item: HistoricalReportRecord) -> dict[str, object]:
         "risk_state": item.risk_state,
         "source_contract_identity": item.source_contract_identity,
         "source_contract_version": item.source_contract_version,
+        "paper_history_representation": item.paper_history_representation,
+        "paper_raw_detail_availability": item.paper_raw_detail_availability,
+        "paper_first_observation_at": "UNAVAILABLE" if item.paper_first_observation_at is None else item.paper_first_observation_at.isoformat(),
+        "paper_last_observation_at": "UNAVAILABLE" if item.paper_last_observation_at is None else item.paper_last_observation_at.isoformat(),
+        "paper_fact_count": "UNAVAILABLE" if item.paper_fact_count is None else item.paper_fact_count,
+        "paper_source_count": "UNAVAILABLE" if item.paper_source_count is None else item.paper_source_count,
+        "paper_consolidation_identity": item.paper_consolidation_identity or "UNAVAILABLE",
+        "paper_history_detail_reason": item.paper_history_detail_reason or "NONE",
     }
 
 
@@ -451,6 +475,9 @@ def _export_record_fields() -> tuple[str, ...]:
         "pnl", "target", "stop", "sponsor_position_outcome",
         "paper_track_outcome", "objective_outcome", "step31_severity",
         "risk_state", "source_contract_identity", "source_contract_version",
+        "paper_history_representation", "paper_raw_detail_availability",
+        "paper_first_observation_at", "paper_last_observation_at", "paper_fact_count",
+        "paper_source_count", "paper_consolidation_identity", "paper_history_detail_reason",
     )
 
 

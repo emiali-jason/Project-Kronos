@@ -1,5 +1,6 @@
 """MON-ENG-04: deterministic restoration with no live Provider operations."""
 from datetime import timedelta
+from decimal import Decimal
 from io import BytesIO
 from threading import Event, RLock, Thread
 from types import SimpleNamespace
@@ -7,6 +8,36 @@ from unittest.mock import Mock
 from urllib.parse import urlencode
 
 import pytest
+
+
+def test_compact_connect_callback_is_write_free_until_first_factual_tick(tmp_path):
+    from tests.unit.application.test_paper_observation_tracking import _compact_started, _inventory, _tick
+    workflow, store, started, instrument = _compact_started(tmp_path)
+    workflow.set_shared_monitoring_hub(SharedSwingMonitoringHub())
+    capability = _Capability()
+    identity = started.track.track_identity
+    before = _inventory(store.root)
+    assert workflow.restore_monitoring(capability, lambda _: instrument,
+        lambda _: _monitoring_authority(started.track)) == (identity,)
+    consumer = workflow._consumers[identity]
+    consumer.on_connection_state(MonitoringConnectionState.CONNECTED)
+    consumer.on_connection_state(MonitoringConnectionState.CONNECTED)
+    assert _inventory(store.root) == before
+    capability.active = False
+    consumer.on_connection_state(MonitoringConnectionState.DISCONNECTED)
+    assert consumer._detached and identity not in workflow._registrations
+    assert _inventory(store.root) == before
+    capability.active = True
+    assert workflow.restore_monitoring(capability, lambda _: instrument,
+        lambda _: _monitoring_authority(started.track)) == (identity,)
+    consumer = workflow._consumers[identity]
+    assert workflow.projection(identity).monitoring_state.value == "ACTIVE"
+    consumer.on_market_tick(_tick(instrument, started.track.observation_entry_reference - 1, 1, NOW))
+    current = store.load_compact(identity)
+    assert current.material_count == 1 and current.monitoring_state.value == "ACTIVE"
+    assert len(capability.sessions) == 2
+    assert workflow._hub.active_session_count == 1
+    workflow.close()
 
 from kronos.application.paper_observation_tracking import (
     PaperObservationTrackingWorkflow, paper_monitoring_failure_reason,
@@ -16,14 +47,24 @@ from kronos.application.swing_opportunities import SwingOpportunitiesApplication
 from kronos.browser.server import KronosBrowserServer, _BrowserHandler, create_browser_server
 from kronos.provider.contracts.monitoring import MonitoringConnectionState, MonitoringError, MonitoringFailure
 from kronos.provider.contracts.instrument import InstrumentResolutionError, InstrumentResolutionFailure
-from kronos.swing.v1.paper_observation_track import LocalPaperObservationTrackStore
+from kronos.swing.v1.paper_observation_track import (
+    LocalPaperObservationTrackStore,
+    make_market_fact,
+)
 from tests.unit.application.test_swing_opportunities import _Provider
-from tests.unit.application.test_paper_observation_tracking import _started, _Capability, NOW
+from tests.unit.application.test_paper_observation_tracking import (
+    NOW,
+    _Capability,
+    _monitoring_authority,
+    _retain_open_applicability,
+    _started,
+)
 from tests.unit.provider.test_connection_governance import governance
 
 
 def _composition(tmp_path, monkeypatch):
     workflow, store, track, instrument = _started(tmp_path)
+    authority = _retain_open_applicability(store, track.track)
     hub = SharedSwingMonitoringHub()
     workflow.set_shared_monitoring_hub(hub)
     queued = []
@@ -38,9 +79,13 @@ def _composition(tmp_path, monkeypatch):
     server._synchronize_trade_window = Mock()
     server.trade_window = SimpleNamespace(
         mark_paper_observation_monitoring_unavailable=workflow.mark_monitoring_unavailable,
-        restore_paper_observation_monitoring=workflow.restore_monitoring,
+        restore_paper_observation_monitoring=lambda capability, resolver, _current=None, capability_is_current=lambda: True: workflow.restore_monitoring(
+            capability, resolver, lambda _track: authority, lambda: True
+        ),
+        paper_observation_restoration_status=workflow.restoration_status,
         restore_current_entry_monitoring=Mock(return_value=()),
-        projections=lambda: (),
+        sponsor_control_restoration_inputs=lambda: (),
+        projections=Mock(side_effect=AssertionError("presentation projection forbidden")),
     )
     server.native_review = SimpleNamespace(
         restore_lifecycle_monitoring=Mock(return_value=()),
@@ -49,7 +94,8 @@ def _composition(tmp_path, monkeypatch):
     monkeypatch.setattr('kronos.browser.server.resolve_governed_monitoring_instrument', lambda *args: instrument)
     application.register_sponsor_operability_restorer(server.restore_sponsor_operability)
     return SimpleNamespace(w=workflow, store=store, t=track, instrument=instrument, hub=hub,
-                           queue=queued, cap=capability, app=application, server=server)
+                           authority=authority, queue=queued, cap=capability,
+                           app=application, server=server)
 
 
 def _drain(queue):
@@ -71,7 +117,7 @@ def test_async_route_restores_all_existing_owner_boundaries_after_auth(tmp_path,
     progression = SimpleNamespace(restore_active=Mock(), close_monitoring=Mock(), activate_requirement=Mock())
     c.app.register_progression_watch_workflow(progression)
     c.server.restore_sponsor_operability()
-    assert c.w.projection(c.t.track.track_identity).monitoring_reason == 'PROVIDER_CAPABILITY_NOT_ACTIVE'
+    assert c.w.projection(c.t.track.track_identity).monitoring_reason == 'MONITORING_CAPABILITY_NOT_YET_REGISTERED'
     handler = SimpleNamespace(server=c.server, _redirect=Mock())
     _BrowserHandler._dispatch_post(handler, '/provider/connect')
     assert c.app.snapshot().provider_state is ProviderConnectionState.CONNECTING
@@ -95,6 +141,64 @@ def test_async_route_restores_all_existing_owner_boundaries_after_auth(tmp_path,
     progression.restore_active.assert_called_once()
     c.server.native_review.restore_lifecycle_monitoring.assert_called_once()
     assert len(c.cap.sessions) == 1
+    assert c.server.monitoring_restoration_state["open_compatible"] == 1
+    assert c.server.monitoring_restoration_state["restored"] == 1
+
+
+def test_connection_restoration_skips_large_paper_fact_history(tmp_path, monkeypatch):
+    c = _composition(tmp_path, monkeypatch)
+    for sequence in range(256):
+        c.store.append_fact(make_market_fact(
+            c.t.track,
+            last_price=c.t.track.observation_entry_reference or Decimal("100"),
+            observed_at=NOW + timedelta(microseconds=sequence + 1),
+            received_at=NOW + timedelta(microseconds=sequence + 1),
+            source_identity=f"KITE:BROWSER-RESTORE:{sequence}",
+            source_sequence=sequence,
+            ordering_deterministic=True,
+            recovered=False,
+        ))
+    reads = []
+    original = LocalPaperObservationTrackStore._load_fact
+
+    def forbidden(self, path):  # type: ignore[no-untyped-def]
+        reads.append(path)
+        return original(self, path)
+
+    monkeypatch.setattr(LocalPaperObservationTrackStore, "_load_fact", forbidden)
+    assert c.app.connect_provider()
+    _drain(c.queue)
+    assert reads == []
+    assert c.app.snapshot().provider_state is ProviderConnectionState.CONNECTED
+    assert c.app.sponsor_operability_restoration_status()["state"] == "SUCCEEDED"
+    assert c.w.active_monitoring_count == 1
+    assert len(c.cap.sessions) == 1
+
+
+def test_control_restoration_uses_retained_bindings_without_presentation_projection(
+    tmp_path, monkeypatch
+):
+    c = _composition(tmp_path, monkeypatch)
+    plan = SimpleNamespace(canonical_instrument=c.instrument.name, trade_plan_id="PLAN-1")
+    risk = SimpleNamespace(permits_entry=True)
+    c.server.trade_window.sponsor_control_restoration_inputs = Mock(
+        return_value=((plan, risk),)
+    )
+    c.server.trade_window.mark_sponsor_controls_available = Mock()
+    c.server.native_review.bind_operability_inputs = Mock()
+    context = object()
+    c.server._operability_context = Mock(
+        return_value=(c.cap, c.instrument, context)
+    )
+    c.app.connect_provider()
+    _drain(c.queue)
+    c.server.trade_window.projections.assert_not_called()
+    c.server.native_review.bind_operability_inputs.assert_called_once_with(
+        plan, risk, context
+    )
+    c.server.trade_window.mark_sponsor_controls_available.assert_called_once_with(
+        plan.trade_plan_id
+    )
 
 
 def test_connection_finishes_before_blocked_restoration_and_releases_all_locks(tmp_path):
@@ -229,7 +333,12 @@ def test_restart_reconciles_persisted_evidence_only_after_valid_capability(tmp_p
     c.server.trade_window.mark_paper_observation_monitoring_unavailable = restored.mark_monitoring_unavailable
     c.server.restore_sponsor_operability()
     assert restored.active_monitoring_count == 0
-    assert restored.projection(c.t.track.track_identity).monitoring_reason == 'PROVIDER_CAPABILITY_NOT_ACTIVE'
+    assert restored.projection(c.t.track.track_identity).monitoring_reason == 'MONITORING_CAPABILITY_NOT_YET_REGISTERED'
+    c.server.trade_window.restore_paper_observation_monitoring = (
+        lambda capability, resolver, _current=None, capability_is_current=lambda: True: restored.restore_monitoring(
+            capability, resolver, lambda _track: c.authority, lambda: True
+        )
+    )
     c.app.connect_provider(); _drain(c.queue)
     assert restored.active_monitoring_count == 1
     assert restored.projection(c.t.track.track_identity).track == c.t.track
@@ -268,15 +377,45 @@ def test_missing_master_is_not_inactive_authentication(tmp_path, monkeypatch):
     monkeypatch.setattr('kronos.browser.server.resolve_governed_monitoring_instrument', Mock(side_effect=MonitoringError(MonitoringFailure.INSTRUMENT_NOT_RESOLVED)))
     c.app.connect_provider(); _drain(c.queue)
     assert c.cap.active
-    assert c.w.projection(c.t.track.track_identity).monitoring_reason == 'INSTRUMENT_NOT_RESOLVED'
+    assert c.w.projection(c.t.track.track_identity).monitoring_reason == 'MONITORING_CAPABILITY_NOT_YET_REGISTERED'
     assert not c.cap.sessions
+
+
+def test_startup_connect_and_status_create_no_applicability_or_recovery_records(
+    tmp_path, monkeypatch
+):
+    c = _composition(tmp_path, monkeypatch)
+    applicability_before = {
+        path: path.read_bytes()
+        for path in c.store.root.rglob("applicability/*.json")
+    }
+    pointers_before = {
+        path: path.read_bytes()
+        for path in c.store.root.rglob("current-applicability.json")
+    }
+    assert len(applicability_before) == 1
+    c.server.restore_sponsor_operability()
+    c.app.snapshot()
+    c.app.sponsor_operability_restoration_status()
+    c.app.connect_provider()
+    _drain(c.queue)
+    applicability_after = {
+        path: path.read_bytes()
+        for path in c.store.root.rglob("applicability/*.json")
+    }
+    assert applicability_after == applicability_before
+    assert {
+        path: path.read_bytes()
+        for path in c.store.root.rglob("current-applicability.json")
+    } == pointers_before
+    assert not tuple(c.store.root.rglob("recovery/*.json"))
 
 
 def test_inactive_capability_is_fail_closed(tmp_path, monkeypatch):
     c = _composition(tmp_path, monkeypatch)
     c.cap.active = False
     assert c.w.restore_monitoring(c.cap, Mock(side_effect=AssertionError('must not resolve'))) == ()
-    assert c.w.projection(c.t.track.track_identity).monitoring_reason == 'PROVIDER_CAPABILITY_NOT_ACTIVE'
+    assert c.w.projection(c.t.track.track_identity).monitoring_reason == 'MONITORING_CAPABILITY_NOT_YET_REGISTERED'
     assert c.hub.active_session_count == 0
 
 
@@ -352,13 +491,31 @@ def test_paper_start_route_records_failure_for_affected_track_only(error, expect
     fields = dict(run_identity='RUN', canonical_instrument='VBL', native_assessment_sha256='SHA', decision_identity='DECISION', track_confirmed='YES')
     body = urlencode(fields).encode()
     failure = Mock()
+    row = SimpleNamespace(
+        canonical_instrument='VBL', opportunity_id='SWO-VBL',
+        material_revision='SWMR-VBL', material_fingerprint='f' * 64,
+        source_binding=SimpleNamespace(
+            provider='KITE', exchange='NSE', segment='NSE',
+            trading_symbol='VBL', instrument_type='EQ', expiry=None,
+        ),
+    )
+    continuity = SimpleNamespace(
+        integrity_sha256='c' * 64,
+        contribution=SimpleNamespace(rows=(row,)),
+    )
     server = SimpleNamespace(
         trade_window=SimpleNamespace(
             project=lambda *args: SimpleNamespace(native_assessment_sha256='SHA', sponsor_observation_decision_id='DECISION', sponsor_observation_choice='PAPER', paper_observation_track_start_available=True, activation_disposition='BLOCKED_RISK_UNAVAILABLE'),
+            prepare_paper_observation_monitoring_authority=Mock(return_value=object()),
             start_paper_observation_track=lambda *args, **kw: SimpleNamespace(track=SimpleNamespace(track_identity='TRACK')),
             record_paper_observation_monitoring_failure=failure,
         ),
-        application=SimpleNamespace(opportunities_projection=lambda: (None, SimpleNamespace(run_identity='RUN'))),
+        application=SimpleNamespace(
+            opportunities_bundle_projection=lambda: (
+                None, SimpleNamespace(run_identity='RUN'), continuity, None
+            ),
+            committed_continuity=lambda: None,
+        ),
         _operability_context=Mock(side_effect=error), _synchronize_trade_window=Mock(),
     )
     handler = SimpleNamespace(server=server, path='/swing/trade-window/paper-observation/start', headers={'Content-Length':str(len(body)), 'Content-Type':'application/x-www-form-urlencoded'}, rfile=BytesIO(body), _redirect=Mock())
@@ -445,7 +602,9 @@ def test_restart_does_not_reuse_old_connected_callback(tmp_path, monkeypatch):
     restarted = PaperObservationTrackingWorkflow(LocalPaperObservationTrackStore(c.store.root), clock=lambda: NOW + timedelta(seconds=10))
     restarted.set_shared_monitoring_hub(SharedSwingMonitoringHub())
     fresh = _Capability()
-    restarted.restore_monitoring(fresh, lambda symbol: c.instrument)
+    restarted.restore_monitoring(
+        fresh, lambda symbol: c.instrument, lambda _track: c.authority
+    )
     assert restarted.projection(c.t.track.track_identity).monitoring_reason == 'SHARED_HUB_REGISTRATION_ACTIVE'
     assert restarted._hub.connection_state is None
 

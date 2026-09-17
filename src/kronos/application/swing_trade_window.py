@@ -124,6 +124,9 @@ from kronos.swing.v1.observation_research_ledger_v2 import (
 from kronos.swing.v1.paper_observation_track import (
     LocalPaperObservationTrackStore,
     PaperObservationTrackProjectionV1,
+    PaperObservationMonitoringAuthorityV1,
+    PaperObservationTrackV1,
+    paper_observation_instrument_contract_identity,
 )
 from kronos.swing.v1.step32 import (
     MonitoringAdmissionContext,
@@ -977,6 +980,18 @@ class SwingTradeWindowWorkflow:
             return None
         risk = self._production_risks.get(plan.trade_plan_id)
         return None if risk is None else (plan, risk)
+
+    def sponsor_control_restoration_inputs(
+        self,
+    ) -> tuple[tuple[TradePlanRecord, RiskPermissionV1], ...]:
+        """Return exact retained control bindings without presentation projection."""
+
+        values: list[tuple[TradePlanRecord, RiskPermissionV1]] = []
+        for key, plan in sorted(self._plans.items()):
+            risk = self._production_risks.get(plan.trade_plan_id)
+            if risk is not None:
+                values.append((plan, risk))
+        return tuple(values)
 
     def mark_sponsor_controls_available(self, trade_plan_id: str) -> None:
         if trade_plan_id not in {item.trade_plan_id for item in self._plans.values()}:
@@ -1909,6 +1924,8 @@ class SwingTradeWindowWorkflow:
         *,
         current_run_identity: str,
         started_at: datetime,
+        monitoring_authority: PaperObservationMonitoringAuthorityV1,
+        authority_is_current: Callable[[], bool],
     ) -> PaperObservationTrackProjectionV1:
         """Start one explicit non-position Track from the exact blocked decision."""
 
@@ -1925,6 +1942,8 @@ class SwingTradeWindowWorkflow:
             result,
             current_run_identity=current_run_identity,
             started_at=started_at,
+            monitoring_authority=monitoring_authority,
+            authority_is_current=authority_is_current,
         )
         self._observation_research_v2.synchronize()
         return projection
@@ -1934,19 +1953,104 @@ class SwingTradeWindowWorkflow:
         track_identity: str,
         capability: object,
         instrument: InstrumentRecord,
+        *,
+        current_authority: PaperObservationMonitoringAuthorityV1 | None = None,
+        authority_is_current: Callable[[], bool] = lambda: True,
     ) -> PaperObservationTrackProjectionV1:
         return self._paper_observation_tracking.attach_monitoring(
-            track_identity, capability, instrument
+            track_identity,
+            capability,
+            instrument,
+            current_authority=current_authority,
+            authority_is_current=authority_is_current,
         )
 
     def restore_paper_observation_monitoring(
         self,
         capability: object,
         resolver: Callable[[str], InstrumentRecord],
+        current_authority_resolver: (
+            Callable[[PaperObservationTrackV1], PaperObservationMonitoringAuthorityV1 | None]
+            | None
+        ) = None,
+        capability_is_current: Callable[[], bool] = lambda: True,
     ) -> tuple[str, ...]:
         return self._paper_observation_tracking.restore_monitoring(
-            capability, resolver
+            capability,
+            resolver,
+            current_authority_resolver,
+            capability_is_current,
         )
+
+    def prepare_paper_observation_monitoring_authority(
+        self,
+        run_identity: str,
+        canonical_instrument: str,
+        *,
+        opportunity_identity: str,
+        material_revision: str,
+        source_binding: object,
+    ) -> PaperObservationMonitoringAuthorityV1:
+        """Prepare exact prospective authority from retained admission inputs."""
+
+        key = (run_identity, canonical_instrument)
+        result = self._observation_decisions.get(key)
+        observation = self._observations.get(key)
+        required = (
+            "provider", "exchange", "segment", "trading_symbol",
+            "instrument_type", "expiry",
+        )
+        if (
+            result is None
+            or observation is None
+            or any(not hasattr(source_binding, name) for name in required)
+            or result.snapshot.step31_observation_identity
+            != observation.observation_evidence_id
+            or result.snapshot.step31_observation_sha256
+            != observation.integrity_sha256
+        ):
+            raise ValueError("PAPER_OBSERVATION_ADMISSION_AUTHORITY_INVALID")
+        expiry = getattr(source_binding, "expiry")
+        contract = paper_observation_instrument_contract_identity(
+            canonical_instrument=canonical_instrument,
+            provider=getattr(source_binding, "provider"),
+            exchange=getattr(source_binding, "exchange"),
+            segment=getattr(source_binding, "segment"),
+            trading_symbol=getattr(source_binding, "trading_symbol"),
+            instrument_type=getattr(source_binding, "instrument_type"),
+            expiry=(
+                None if expiry is None else
+                expiry if type(expiry) is str else expiry.isoformat()
+            ),
+        )
+        boundary = "PAPER-OBSERVATION-BOUNDARY-" + sha256(
+            observation.observation_boundary.isoformat().encode("utf-8")
+        ).hexdigest()
+        return PaperObservationMonitoringAuthorityV1(
+            native_run_identity=run_identity,
+            sponsor_decision_identity=result.decision.decision_identity,
+            opportunity_identity=opportunity_identity,
+            material_revision=material_revision,
+            native_assessment_sha256=result.snapshot.native_assessment_sha256,
+            direction=result.snapshot.direction,
+            geometry_identity=observation.observation_evidence_id,
+            geometry_sha256=observation.integrity_sha256,
+            review_authority_identity=result.snapshot.visual_evidence_identity,
+            decision_authority_identity=result.snapshot.snapshot_identity,
+            canonical_instrument=canonical_instrument,
+            instrument_contract_identity=contract,
+            monitoring_boundary_identity=boundary,
+            monitoring_window_identity="FROM_OBSERVATION_BOUNDARY_UNTIL_TERMINAL",
+            capability_requirements=("KITE_READ_ONLY", "ORDERED_LIVE_TICKS"),
+            policy_identity=result.decision.policy_identity,
+            policy_version=result.decision.policy_version,
+        )
+
+    def paper_observation_restoration_status(self) -> dict[str, object]:
+        return self._paper_observation_tracking.restoration_status()
+
+    def paper_observation_compact_status(self) -> dict[str, object]:
+        return self._paper_observation_tracking.compact_status()
 
     def mark_paper_observation_monitoring_unavailable(self, reason: str) -> None:
         self._paper_observation_tracking.mark_monitoring_unavailable(reason)
@@ -1959,7 +2063,9 @@ class SwingTradeWindowWorkflow:
     def paper_observation_projections(
         self,
     ) -> tuple[PaperObservationTrackProjectionV1, ...]:
-        return self._paper_observation_tracking.projections()
+        # Used only by the runtime startup owner snapshot. Evidence/decision
+        # projections retain their explicit full-history validation path.
+        return self._paper_observation_tracking.startup_projections()
 
     @staticmethod
     def _paper_projection_values(

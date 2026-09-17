@@ -177,6 +177,13 @@ def test_status_routes_respond_while_sponsor_restoration_is_blocked(running):
     try:
         assert entered.wait(5)
         assert server.application.snapshot().provider_state is ProviderConnectionState.CONNECTED
+        request_identity = next(
+            path.name
+            for path in governance.store.root.iterdir()
+            if len(path.name) == 32
+            and all(character in "0123456789abcdef" for character in path.name)
+        )
+        assert governance.store.read(request_identity)['completion']['state'] == 'SUCCESS'
         before = inventory(root)
         assert request(server, '/status')[0] == 200
         assert request(server, '/runtime/status')[0] == 200
@@ -231,3 +238,120 @@ def test_blocked_publication_read_does_not_hold_status_lock_and_stale_result_fai
     assert native is None and continuity is None
     assert publication_result['request_result'] == 'PUBLICATION_UNAVAILABLE'
     assert publication_result['reconciliation_unavailable'] is True
+
+
+def test_status_and_intraday_respond_during_compact_tick_publication(running, tmp_path, monkeypatch):
+    from datetime import timedelta
+    from kronos.swing.v1 import paper_observation_track as domain
+    from tests.unit.application.test_paper_observation_tracking import _compact_started, _tick, NOW, _inventory
+    server, governance, provider, calls, root = running
+    workflow, store, started, instrument = _compact_started(tmp_path / 'compact')
+    server.trade_window._paper_observation_tracking = workflow
+    identity, entry = started.track.track_identity, started.track.observation_entry_reference
+    entered, release = Event(), Event()
+    original = domain._atomic_encoded
+    writes, failures = [], []
+    def delayed(path, encoded):
+        if path.name == 'current-state.json':
+            writes.append(1)
+            if len(writes) == 500:
+                entered.set()
+                assert release.wait(10)
+        return original(path, encoded)
+    monkeypatch.setattr(domain, '_atomic_encoded', delayed)
+    def work():
+        try:
+            for sequence in range(1000):
+                workflow.observe_tick(identity, _tick(instrument, entry - 1, sequence,
+                    NOW + timedelta(microseconds=sequence)))
+        except Exception as error:
+            failures.append(error)
+    worker = Thread(target=work)
+    worker.start()
+    try:
+        assert entered.wait(10)
+        before = _inventory(store.root)
+        for route in ('/status', '/runtime/status', '/intraday'):
+            assert request(server, route)[0] == 200
+        assert _inventory(store.root) == before
+        assert workflow.compact_status()['ordinary_ticks_accepted'] == 499
+        assert worker.is_alive()
+    finally:
+        release.set()
+        worker.join(15)
+    assert not worker.is_alive() and not failures
+    assert len(writes) == 1000
+    assert len(_inventory(store.root)) == 4
+    assert provider.begin_count == 0 and calls == []
+
+
+def test_status_and_intraday_are_observational_during_inflight_detach(running,tmp_path,monkeypatch):
+    from tests.unit.application.test_paper_observation_tracking import _registered_compact,_inventory,PaperObservationMonitoringApplicabilityState
+    server,governance,provider,calls,root=running
+    workflow,store,started,instrument,hub,capability,consumer=_registered_compact(tmp_path/'detach')
+    server.trade_window._paper_observation_tracking=workflow
+    server.swing_monitoring_hub=hub
+    entered,release=Event(),Event()
+    original=capability.sessions[0].unsubscribe
+    errors=[]
+    def blocked(values):
+        entered.set();assert release.wait(10);return original(values)
+    monkeypatch.setattr(capability.sessions[0],'unsubscribe',blocked)
+    def detach():
+        try:workflow.change_monitoring_applicability(started.track.track_identity,
+            PaperObservationMonitoringApplicabilityState.SUSPENDED,'SPONSOR_STOPPED_MONITORING')
+        except Exception as error:errors.append(error)
+    worker=Thread(target=detach);worker.start()
+    try:
+        assert entered.wait(5)
+        before=_inventory(store.root)
+        for route in ('/status','/runtime/status','/intraday'):
+            assert request(server,route)[0]==200
+        assert _inventory(store.root)==before
+        assert workflow.detachment_status()['active_owners']==0
+        assert worker.is_alive()
+    finally:release.set();worker.join(5)
+    assert not worker.is_alive() and not errors
+    assert capability.sessions[0].disconnections==1
+    assert provider.begin_count==0 and calls==[]
+
+
+def test_slice8_compact_history_real_http_consumers_are_read_only(running, tmp_path, monkeypatch):
+    from datetime import timedelta
+    from tests.unit.swing.v1.test_observation_research_ledger_v2 import _selected_history_service, NOW
+    from kronos.application.paper_observation_tracking import PaperObservationTrackingWorkflow
+    from kronos.intraday.wo14_journal_contract import JournalSnapshot
+    server, governance, provider, calls, root = running
+    service, paper, track = _selected_history_service(tmp_path / 'selected')
+    server.trade_window._observation_research_v2 = service
+    server.trade_window._paper_observation_tracking = PaperObservationTrackingWorkflow(paper)
+    server.intraday_journal = SimpleNamespace(snapshot=lambda **_: JournalSnapshot((), ()))
+    monkeypatch.setattr(server.application, 'current_swing_trading_date', lambda: NOW.date())
+    monkeypatch.setattr(server.application, 'swing_trading_date_for', lambda timestamp: timestamp.date())
+    for name in ('facts', '_load_fact', 'prepare_historical_consolidation', 'publish_historical_consolidation'):
+        monkeypatch.setattr(paper, name, lambda *_a, **_k: pytest.fail('GET invoked raw history or maintenance'))
+    original_read = Path.read_bytes
+    def no_raw_read(path):
+        assert path.parent.name != 'facts', 'compact GET reconstructed raw facts'
+        return original_read(path)
+    monkeypatch.setattr(Path, 'read_bytes', no_raw_read)
+    before = inventory(root), inventory(tmp_path / 'selected')
+    paths = (
+        '/journal?product=SWING&record=' + track.sponsor_decision_identity,
+        '/reports?product=SWING&record=' + track.track_identity,
+        '/reports/export.json?product=SWING',
+        '/reports/export.csv?product=SWING',
+    )
+    for path in paths:
+        code, body = request(server, path)
+        assert code == 200
+        assert 'COMPACT_HISTORICAL' in body and 'HISTORICAL_DETAIL_UNAVAILABLE' in body
+        assert (NOW + timedelta(seconds=1)).isoformat() in body
+    for path in ('/status', '/runtime/status', '/journal?product=INTRADAY',
+                 '/reports?product=INTRADAY', '/reports/export.json?product=INTRADAY'):
+        code, body = request(server, path)
+        assert code == 200
+        if 'INTRADAY' in path:
+            assert 'COMPACT_HISTORICAL' not in body and 'paper_history_representation' not in body
+    assert (inventory(root), inventory(tmp_path / 'selected')) == before
+    assert provider.begin_count == 0 and calls == []

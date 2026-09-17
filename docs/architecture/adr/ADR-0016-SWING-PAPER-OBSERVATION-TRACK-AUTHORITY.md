@@ -178,21 +178,84 @@ model, order, nor fill.
 The track must detect disconnects, preserve `MONITORING_INTERRUPTED`, and use
 bounded historical reconciliation after reconnect where governed facts permit.
 Missing intervals or ambiguous reconstruction never manufacture ordering.
-Restart restores immutable state and subscriptions idempotently; it never
-manufactures an Entry, level touch, or outcome.
+Restart may restore a subscription only when the separate monitoring-
+applicability contract proves an exact compatible `OPEN` authority. It never
+manufactures an Entry, level touch, or outcome. Startup, Kite Connect, GET,
+status, and ordinary monitoring callbacks do not reconstruct full history,
+recover, migrate, rebuild a ledger, clean up, delete, or fallback-scan the
+historical fact estate.
 
-### 10. Expiry and supersession
+### 10. Monitoring applicability, currentness, and supersession
+
+Monitoring applicability is operational authority independent of factual
+market outcome. Its states are exactly:
+
+- `OPEN`: exact current opportunity, material revision, Native assessment,
+  direction, geometry, Review/decision authority, canonical instrument,
+  derivative contract, monitoring boundary, and capability requirements are
+  compatible; automatic attachment is eligible;
+- `SUSPENDED`: Provider is temporarily unavailable, currentness cannot be
+  proved, compact state is missing/stale/corrupt, or explicit recovery is
+  required; automatic attachment is prohibited; and
+- `CLOSED`: governed operational monitoring has ended and is detached.
+
+Applicability cannot fabricate or change `EXPIRED`,
+`OUTCOME_NOT_ESTABLISHED`, Stop/Target touches, win/loss, analytical direction,
+opportunity history, or Sponsor-position closure. A changed run identity alone
+does not close a compatible hypothesis. Any incompatible material revision,
+assessment, direction, geometry, contract, or governing authority suspends
+automatic restoration.
+
+This contract is prospective. Legacy tracks receive no fabricated
+applicability record or backfill. When present applicability cannot be proved,
+the read-only projection is `SUSPENDED / RECOVERY_REQUIRED` with
+`automatic_restoration = false`. That projection is ephemeral and creates no
+recovery record. Historical records, including the two retained VBL tracks,
+remain immutable and are not automatically restored without exact compatible
+current authority. They are not labelled completed, expired, stopped, failed,
+or invalid merely because they are historical.
+
+### 11. Expiry
 
 `EXPIRY POLICY UNRESOLVED`. No automatic expiry threshold is authorized.
 Open tracks may remain `ENTRY_NOT_OBSERVED` or `OUTCOME_NOT_ESTABLISHED`.
 
 A later Native analysis run does not rewrite or terminate an existing Paper
-Track. The original decision-time hypothesis continues to be observed because
-the research purpose is prospective market-path evidence. Run supersession is
-recorded as later context only. Trust or integrity failure in the track's own
-lineage fails the track closed.
+Track. Continued automatic monitoring nevertheless requires the currentness
+proof above. Trust or integrity failure in the track's own lineage fails
+closed as recovery-required operational authority without inventing a factual
+outcome.
 
-### 11. Objective, position, LIVE, and broker isolation
+### 12. Prospective retention and cleanup
+
+The analytical-tool retention policy carries forward only genuine current
+opportunities. Securities that do not become opportunities are not retained
+operationally after Refresh. One compact current state is retained per active
+opportunity. Ordinary ticks do not create individual immutable files.
+
+Persisted material transitions are limited to monitoring opened, Entry
+activated, Stop touched, Target touched, ordering ambiguity,
+Provider/monitoring gap, authority superseded, Sponsor stopped monitoring, and
+monitoring closed. Final compact results are retained in the Swing ledger and
+monthly Excel. Full historical validation remains available only through
+explicit evidence inspection, audit, research, governed recovery, or
+reference-safe cleanup preparation.
+
+Obsolete detailed evidence becomes purge-eligible only after finalization,
+reconciliation, integrity verification, and reference proof. Historical VBL
+deletion is not authorized here. A later cleanup must follow this sequence:
+
+```text
+compact verified ledger
+-> exact external-reference scan
+-> dry-run deletion manifest
+-> Sponsor authorization
+-> rollback staging
+-> deletion
+-> final verification
+```
+
+### 13. Objective, position, LIVE, and broker isolation
 
 Paper Track cannot create or emulate a KR-380 state, KR-390 model, objective
 lifecycle, `PAPER_ARMED`, `PAPER_ACTIVE`, LIVE position, Sponsor Position,
@@ -203,7 +266,7 @@ the Research Ledger when their own authority produces them.
 LIVE authority is unchanged. ADR-0016 authorizes no LIVE Observation Track.
 Broker authority remains `NONE`; autonomous trading remains prohibited.
 
-### 12. P&L, actual R, and notifications
+### 14. P&L, actual R, and notifications
 
 Paper Track monetary P&L and actual R are `UNAVAILABLE`. The track does not
 calculate account economics or reuse Sponsor Position accounting. Any future
@@ -212,7 +275,7 @@ research metric requires STEP31-RESEARCH-01 authority.
 No Telegram or other notification event is authorized by this ADR. Potential
 track notifications require a later bounded runtime work order.
 
-### 13. Research Ledger and Journal
+### 15. Research Ledger and Journal
 
 `KRONOS-SWING-OBSERVATION-RESEARCH-LEDGER-V2`, Version 2, preserves the one
 decision population and adds Paper Track and Paper Track outcome relationships.
@@ -236,7 +299,7 @@ The Trade Window may expose `START PAPER OBSERVATION` separately from `PAPER
 TRADE ENTRY` and `POSITION ACTIVATION`. JOURNAL-UX-01 may consume the final
 track semantics only after PAPER-OBS-01 and PAPER-OBS-LEDGER-01 close.
 
-### 14. Historical compatibility
+### 16. Historical compatibility
 
 This authority is prospective. Existing Sponsor Observation Decision V1,
 Research Ledger V1, blocked PAPER decisions, positions, objective models,
@@ -248,7 +311,18 @@ blocked PAPER decision when—and only when—the monitoring is performed by the
 separately identified Paper Observation Track V1. It does not change the
 prohibition for Sponsor Position, KR-380, KR-390, LIVE, or any other consumer.
 
-### 15. Authority matrix
+Prospective admissions publish monitoring authority pointer-last. The retained
+`OPEN` generation binds the exact continuity opportunity/material revision,
+assessment, direction, Step-31 geometry, Review and Sponsor-decision authority,
+instrument contract, monitoring window, capability class, and policy. A Track
+or prepared applicability record without the validated current pointer has no
+automatic restoration authority. Exact replay is idempotent; conflicting or
+stale publication fails closed. Restoration ignores a run-only change but
+rejects every material authority mismatch and validates the resolved derivative
+contract before registration. Historical tracks remain unmodified and have no
+automatic restoration authority.
+
+### 17. Authority matrix
 
 | Owner | Owns | Does not own |
 | --- | --- | --- |
@@ -263,7 +337,7 @@ prohibition for Sponsor Position, KR-380, KR-390, LIVE, or any other consumer.
 | Research Ledger | Immutable joins and raw projection | Source outcomes, analytics, authority feedback |
 | Broker | No KRONOS authority granted | All Paper Track activity |
 
-### 16. Canonical data flow
+### 18. Canonical data flow
 
 ```text
 KR-370 BUY NOW / SELL NOW
@@ -318,6 +392,46 @@ STEP31-RESEARCH-01 remains future-only and is not authorized to begin.
 - Monetary P&L and actual R are unavailable.
 - Historical records are not reinterpreted.
 - Runtime, Browser, WebSocket, Telegram, Provider, and Pine remain unchanged.
+
+## Slice 3 bounded prospective state decision
+
+Sponsor-approved prospective monitoring replaces ordinary immutable tick files with
+one compact current checkpoint per OPEN Track. Exact applicability and capability
+fences remain authoritative. Immutable retention is limited to governed material
+changes; high/low and ordinary price/time updates replace only the checkpoint.
+The checkpoint is the atomic visibility boundary after any material transition.
+Unproven restart continuity fails closed without reconstruction or automatic repair.
+
+The complete latest accepted observation is retained. Equal-sequence exact replay
+is inert; differing equal-sequence evidence retains existing conflict/interruption
+semantics. Older sequences are `PROVIDER_HISTORICAL_REPLAY_UNVERIFIABLE`: they cannot
+change analytical state, files, applicability or interrupt solely due to age.
+Generation changes still require governed continuity checks. This deliberate bounded
+retention guarantees exact latest replay/conflict recognition, not arbitrary historical
+recognition. Legacy explicit full-history semantics and integrity validation remain
+unchanged; no legacy migration, deletion, applicability backfill or checkpoint is
+authorized. The interface defines the complete compact schema and material registry.
+
+Numeric MFE/MAE remains unavailable where Track V1 has no existing definition; this
+decision adds no analytical arithmetic. Monthly ledger/Excel, finalization/retention
+cleanup and lifecycle expiry policy remain separate work. Status is memory-only for
+tick counters and cannot trigger historical reads or persistence.
+
+## Slice 4 Sponsor-authorized operational cleanup
+
+Registration lifetime follows exact current OPEN authority independently of factual
+outcome. SUSPENDED preserves factual state; CLOSED prevents automatic resumption.
+Factual terminal publication precedes CLOSED applicability and resource release.
+Explicit compatible resumption requires a new OPEN generation and established gap
+continuity. No expiry rule, outcome, historical currentness or closure is fabricated.
+
+Last-owner safety remains exclusively with the shared-monitoring hub. Desired
+membership and external subscription operations are reconciled by generation so
+an old unsubscribe cannot strand a new Swing or Intraday owner. Provider operations
+and callbacks occur outside the hub state lock. Cache eviction is per final
+instrument owner; owner references and obsolete accumulators are released only
+after exact-generation fencing. GET/status/startup are observational. Existing
+legacy facts, Provider contracts and Intraday semantics remain unchanged.
 
 ## Related documents
 

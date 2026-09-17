@@ -1161,24 +1161,15 @@ class KronosBrowserServer(ThreadingHTTPServer):
             return
         if capability is None or getattr(capability, "active", False) is not True:
             self.monitoring_restoration_state = "DEFERRED_PROVIDER_DISCONNECTED"
-            self.trade_window.mark_paper_observation_monitoring_unavailable(
-                "PROVIDER_CAPABILITY_NOT_ACTIVE"
-            )
             self._synchronize_trade_window()
             return
         self.monitoring_restoration_state = "RESTORATION_ATTEMPTED_SEE_OWNER_EVIDENCE"
-        for projection in self.trade_window.projections():
-            inputs = self.trade_window.current_operability_inputs(
-                projection.native_run_identity, projection.canonical_instrument
-            )
-            if inputs is None:
-                continue
-            plan, risk = inputs
+        for plan, risk in self.trade_window.sponsor_control_restoration_inputs():
             if not risk.permits_entry:
                 continue
             try:
                 _, _, context = self._operability_context(
-                    projection.canonical_instrument
+                    plan.canonical_instrument
                 )
                 self.native_review.bind_operability_inputs(plan, risk, context)
                 self.trade_window.mark_sponsor_controls_available(plan.trade_plan_id)
@@ -1192,11 +1183,57 @@ class KronosBrowserServer(ThreadingHTTPServer):
         except Exception as error:
             _LOG.warning("KR380 restoration not active: %s", paper_monitoring_failure_reason(error))
         try:
+            committed = self.application.committed_continuity()
+            committed_identity = (
+                None if committed is None else
+                committed.contribution.integrity_sha256
+            )
+
+            def current_paper_authority(track):
+                if committed is None:
+                    return None
+                row = next((
+                    item for item in committed.contribution.rows
+                    if item.canonical_instrument == track.canonical_instrument
+                ), None)
+                if (
+                    row is None
+                    or row.opportunity_id is None
+                    or row.material_revision is None
+                    or row.source_binding is None
+                ):
+                    return None
+                try:
+                    return self.trade_window.prepare_paper_observation_monitoring_authority(
+                        committed.contribution.native_run.run_identity,
+                        track.canonical_instrument,
+                        opportunity_identity=row.opportunity_id,
+                        material_revision=row.material_revision,
+                        source_binding=row.source_binding,
+                    )
+                except (TypeError, ValueError):
+                    return None
+
+            def paper_generation_is_current() -> bool:
+                current = self.application.committed_continuity()
+                return (
+                    self.application.authenticated_read_only_capability()
+                    is capability
+                    and current is not None
+                    and current.contribution.integrity_sha256
+                    == committed_identity
+                )
+
             self.trade_window.restore_paper_observation_monitoring(
                 capability,
                 lambda instrument: resolve_governed_monitoring_instrument(
                     capability, instrument, datetime.now().astimezone().date()
                 ),
+                current_paper_authority,
+                paper_generation_is_current,
+            )
+            self.monitoring_restoration_state = (
+                self.trade_window.paper_observation_restoration_status()
             )
         except Exception as error:
             _LOG.warning("Paper observation restoration not active: %s", paper_monitoring_failure_reason(error))
@@ -1895,7 +1932,9 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             return
         if path == "/runtime/status":
             from kronos.browser.runtime_state import status_document
-            self._json(status_document(self.server))
+            payload = status_document(self.server)
+            payload["paper_observation_compact"] = self.server.trade_window.paper_observation_compact_status()
+            self._json(payload)
             return
         if path == "/status":
             diagnostic = self.server.application.analysis_diagnostic()
@@ -1914,6 +1953,7 @@ class _BrowserHandler(BaseHTTPRequestHandler):
                 "analysis_diagnostic": None,
                 "live_monitoring": live_monitoring.state.value,
             }
+            payload["paper_observation_compact"] = self.server.trade_window.paper_observation_compact_status()
             publication = self.server.application.publication_status()
             if publication["control"] is not None:
                 payload["swing_publication"] = publication
@@ -3034,10 +3074,20 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             if fields["track_confirmed"][0] != "YES":
                 raise ValueError("PAPER_OBSERVATION_START_CONFIRMATION_REQUIRED")
             projection = self.server.trade_window.project(run_identity, instrument)
-            _, current = self.server.application.opportunities_projection()
+            _, current, continuity, _ = (
+                self.server.application.opportunities_bundle_projection()
+            )
+            row = None if continuity is None else next((
+                item for item in continuity.contribution.rows
+                if item.canonical_instrument == instrument
+            ), None)
             if (
                 projection is None
                 or current is None
+                or row is None
+                or row.opportunity_id is None
+                or row.material_revision is None
+                or row.source_binding is None
                 or current.run_identity != run_identity
                 or projection.native_assessment_sha256 != assessment
                 or projection.sponsor_observation_decision_id != decision_identity
@@ -3046,6 +3096,50 @@ class _BrowserHandler(BaseHTTPRequestHandler):
                 or not projection.activation_disposition.startswith("BLOCKED_")
             ):
                 raise ValueError("PAPER_OBSERVATION_TRACK_CURRENT_BINDING_INVALID")
+            authority = self.server.trade_window.prepare_paper_observation_monitoring_authority(
+                run_identity,
+                instrument,
+                opportunity_identity=row.opportunity_id,
+                material_revision=row.material_revision,
+                source_binding=row.source_binding,
+            )
+            authority_token = (
+                continuity.integrity_sha256,
+                row.opportunity_id,
+                row.material_revision,
+                row.material_fingerprint,
+                row.source_binding,
+                authority,
+            )
+
+            def authority_is_current() -> bool:
+                committed = self.server.application.committed_continuity()
+                if committed is None:
+                    return False
+                candidate = next((
+                    item for item in committed.contribution.rows
+                    if item.canonical_instrument == instrument
+                ), None)
+                if candidate is None:
+                    return False
+                try:
+                    prepared = self.server.trade_window.prepare_paper_observation_monitoring_authority(
+                        committed.contribution.native_run.run_identity,
+                        instrument,
+                        opportunity_identity=candidate.opportunity_id,
+                        material_revision=candidate.material_revision,
+                        source_binding=candidate.source_binding,
+                    )
+                except (TypeError, ValueError):
+                    return False
+                return (
+                    committed.contribution.integrity_sha256,
+                    candidate.opportunity_id,
+                    candidate.material_revision,
+                    candidate.material_fingerprint,
+                    candidate.source_binding,
+                    prepared,
+                ) == authority_token
             track = self.server.trade_window.start_paper_observation_track(
                 run_identity,
                 instrument,
@@ -3053,13 +3147,19 @@ class _BrowserHandler(BaseHTTPRequestHandler):
                 decision_identity,
                 current_run_identity=current.run_identity,
                 started_at=datetime.now(UTC),
+                monitoring_authority=authority,
+                authority_is_current=authority_is_current,
             )
             try:
                 capability, governed_instrument, _ = self.server._operability_context(
                     instrument
                 )
                 self.server.trade_window.attach_paper_observation_monitoring(
-                    track.track.track_identity, capability, governed_instrument
+                    track.track.track_identity,
+                    capability,
+                    governed_instrument,
+                    current_authority=authority,
+                    authority_is_current=authority_is_current,
                 )
             except Exception as error:
                 self.server.trade_window.record_paper_observation_monitoring_failure(

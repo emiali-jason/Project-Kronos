@@ -1,5 +1,6 @@
 from dataclasses import asdict, replace
 from datetime import timedelta
+import json
 from decimal import Decimal
 
 import pytest
@@ -59,6 +60,61 @@ def _blocked(tmp_path):  # type: ignore[no-untyped-def]
         risk_state="RISK_UNAVAILABLE",
         acknowledged=True,
     )
+
+
+def _selected_history_service(tmp_path):
+    from kronos.swing.v1.paper_observation_track import make_market_fact, make_monitoring_record, PaperObservationMonitoringState
+    result=_blocked(tmp_path)
+    service,paper=_v2(tmp_path,result)
+    track=create_paper_observation_track(result,current_run_identity=result.snapshot.native_run_identity,created_at=NOW)
+    paper.retain_track(track)
+    for index in range(2):
+        paper.append_fact(make_market_fact(track,last_price=Decimal(100+index),
+            observed_at=NOW+timedelta(seconds=index),received_at=NOW+timedelta(seconds=index),
+            source_identity=f'TEST:GEN:{index}',source_sequence=index,ordering_deterministic=True,recovered=False))
+    paper.append_monitoring(make_monitoring_record(track.track_identity,
+        PaperObservationMonitoringState.INTERRUPTED,'RECOVERY_REQUIRED',NOW))
+    service.synchronize()
+    record=paper.prepare_historical_consolidation(track.track_identity,created_at=NOW+timedelta(days=1))
+    paper.publish_historical_consolidation(record,maintenance_identity='ISOLATED-SLICE6A',published_at=NOW+timedelta(days=2))
+    for path in (paper.root/track.track_identity/'facts').iterdir():path.unlink()
+    return service,paper,track
+
+
+def test_selected_history_actual_ledger_handoff_and_exports_preserve_disclosure(tmp_path):
+    from kronos.swing.v1.observation_research_ledger_v2 import with_completion_trading_dates
+    service,paper,track=_selected_history_service(tmp_path)
+    before={str(p):p.read_bytes() for p in tmp_path.rglob('*') if p.is_file()}
+    row=service.snapshot()[0]
+    assert row.paper_track.history_representation=='COMPACT_HISTORICAL'
+    assert row.paper_track.outcome_state is PaperObservationOutcome.OUTCOME_NOT_ESTABLISHED
+    assert row.paper_track.last_factual_observation_at==NOW+timedelta(seconds=1)
+    exported=json.loads(service.export_json())['records'][0]
+    assert exported['paper_history_representation']=='COMPACT_HISTORICAL'
+    assert exported['paper_raw_detail_availability']=='HISTORICAL_DETAIL_UNAVAILABLE'
+    assert exported['paper_track_last_observation_at']==(NOW+timedelta(seconds=1)).isoformat()
+    assert exported['paper_fact_count']==2
+    assert 'COMPACT_SUMMARY_ONLY_RAW_FACTS_NOT_REVALIDATED' in service.export_csv()
+    handoff=service.operational_handoffs(governed_current_trading_date=NOW.date())[0]
+    assert handoff.operational_route is ObservationOperationalRoute.HISTORICAL
+    assert handoff.completion_timestamp is None
+    assert handoff.paper_last_observation_at==NOW+timedelta(seconds=1)
+    assert with_completion_trading_dates((handoff,),NOW.date(),lambda _:NOW.date())[0].operational_route is ObservationOperationalRoute.HISTORICAL
+    with pytest.raises(ValueError,match='HISTORICAL_DETAIL_UNAVAILABLE'):paper.facts(track.track_identity)
+    assert before=={str(p):p.read_bytes() for p in tmp_path.rglob('*') if p.is_file()}
+
+
+def test_corrupt_selected_history_ledger_remains_bounded_and_unavailable(tmp_path):
+    service,paper,track=_selected_history_service(tmp_path)
+    next((paper.root/track.track_identity/'historical-consolidations').iterdir()).write_bytes(b'corrupt')
+    row=service.snapshot()[0]
+    assert row.paper_track.history_representation=='HISTORY_UNAVAILABLE'
+    assert row.paper_track.historical_fact_count is None
+    assert row.paper_track.last_factual_observation_at is None
+    exported=json.loads(service.export_json())['records'][0]
+    assert exported['paper_raw_detail_availability']=='HISTORICAL_DETAIL_UNAVAILABLE'
+    assert exported['paper_fact_count']=='UNAVAILABLE'
+    assert exported['paper_history_detail_reason']=='PAPER_OBSERVATION_HISTORICAL_EVIDENCE_UNAVAILABLE'
 
 
 def test_blocked_paper_is_one_row_and_late_track_is_linked_idempotently(tmp_path) -> None:

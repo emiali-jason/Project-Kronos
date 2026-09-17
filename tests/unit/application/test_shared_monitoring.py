@@ -2,6 +2,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 
 import pytest
+from threading import Event, Thread
 
 from kronos.application.shared_monitoring import SharedSwingMonitoringHub
 from kronos.provider.contracts.instrument import InstrumentRecord
@@ -14,6 +15,122 @@ from kronos.provider.contracts.monitoring import (
 ONE = InstrumentRecord("KITE", "NSE", "NSE", "ONE", "ONE", "EQ", None)
 TWO = InstrumentRecord("KITE", "NSE", "NSE", "TWO", "TWO", "EQ", None)
 NOW = datetime(2026, 8, 21, 8, 0, tzinfo=UTC)
+
+
+@pytest.mark.parametrize('old_product,new_product', [('SWING','SWING'), ('SWING','INTRADAY'), ('INTRADAY','SWING')])
+def test_detach_inflight_unsubscribe_reconciles_new_owner_without_duplicate_subscription(old_product,new_product):
+    entered, release = Event(), Event()
+    class WireSession(Session):
+        def __init__(self, consumer):
+            super().__init__(consumer)
+            self.wire = set()
+        def subscribe(self, values):
+            assert not self.wire.intersection(values), 'duplicate active underlying subscription'
+            self.wire.update(values)
+            super().subscribe(values)
+        def unsubscribe(self, values):
+            entered.set()
+            assert release.wait(5)
+            self.wire.difference_update(values)
+            super().unsubscribe(values)
+    class WireCapability(Capability):
+        def open_monitoring_session(self, consumer):
+            session = WireSession(consumer)
+            self.sessions.append(session)
+            return session
+    hub, capability = SharedSwingMonitoringHub(), WireCapability()
+    def attach(instrument, product):
+        consumer = Consumer(); consumer.owner_identity = product
+        registration = hub.open(capability, consumer)
+        registration.subscribe((instrument,)); registration.connect()
+        return registration
+    old = attach(ONE, old_product)
+    other = attach(TWO, 'UNRELATED')
+    hub.on_market_tick(tick(ONE)); hub.on_market_tick(tick(TWO))
+    failures=[]
+    def detach():
+        try: old.disconnect()
+        except Exception as error: failures.append(error)
+    worker=Thread(target=detach);worker.start()
+    try:
+        assert entered.wait(5)
+        assert hub.subscription_reference_count(ONE) == 0
+        assert hub.latest_market_ticks == (tick(TWO),)
+        new = attach(ONE, new_product)
+        new.subscribe((ONE,)); new.connect()
+        assert hub.status_document()['owner_count'] == 2
+        assert new.active and other.active
+    finally:
+        release.set();worker.join(5)
+    assert not worker.is_alive() and not failures
+    session=capability.sessions[0]
+    assert session.wire == {ONE,TWO}
+    assert session.unsubscribed == [(ONE,)]
+    assert session.subscribed.count((ONE,)) == 2  # original, then exact reconciliation
+    assert len(capability.sessions) == 1 and session.connections == 1
+    assert hub.subscription_reference_count(ONE) == 1
+    assert hub.status_document()['release_counts']['final_owner_subscription_releases'] == 1
+    old.disconnect()
+    assert session.unsubscribed == [(ONE,)]
+    assert old._consumer is None and old._capability is None and old._instruments == set()
+
+
+def test_nonfinal_owner_preserves_cache_and_final_instrument_owner_evicts_only_its_tick():
+    hub, capability = SharedSwingMonitoringHub(), Capability()
+    registrations=[]
+    for instrument in (ONE,ONE,TWO):
+        registration=hub.open(capability,Consumer());registration.subscribe((instrument,));registration.connect()
+        registrations.append(registration)
+    hub.on_market_tick(tick(ONE));hub.on_market_tick(tick(TWO))
+    registrations[0].disconnect()
+    assert len(hub.latest_market_ticks)==2 and capability.sessions[0].unsubscribed==[]
+    registrations[1].disconnect()
+    assert hub.latest_market_ticks==(tick(TWO),)
+    assert capability.sessions[0].unsubscribed==[(ONE,)]
+    hub.on_market_tick(tick(ONE))
+    assert hub.latest_market_ticks==(tick(TWO),)
+    assert registrations[2].active
+
+
+def test_concurrent_detach_is_one_release_and_retired_session_callbacks_are_inert():
+    hub, capability=SharedSwingMonitoringHub(),Capability()
+    old=hub.open(capability,Consumer());old.subscribe((ONE,));old.connect()
+    workers=[Thread(target=old.disconnect) for _ in range(8)]
+    for worker in workers:worker.start()
+    for worker in workers:worker.join(3)
+    assert all(not worker.is_alive() for worker in workers)
+    assert capability.sessions[0].unsubscribed==[(ONE,)]
+    assert capability.sessions[0].disconnections==1
+    current=Consumer()
+    new=hub.open(capability,current);new.subscribe((ONE,));new.connect()
+    capability.sessions[0].consumer.on_market_tick(tick(ONE))
+    capability.sessions[0].consumer.on_connection_state(MonitoringConnectionState.DISCONNECTED)
+    assert current.ticks==[] and current.states==[] and hub.latest_market_ticks==()
+
+
+@pytest.mark.parametrize('product', ['SWING', 'INTRADAY'])
+def test_slice8_failed_final_unsubscribe_still_closes_retired_transport(monkeypatch, product):
+    hub, capability = SharedSwingMonitoringHub(), Capability()
+    consumer = Consumer(); consumer.owner_identity = product
+    owner = hub.open(capability, consumer)
+    owner.subscribe((ONE,)); owner.connect()
+    old = capability.sessions[0]
+    hub.on_market_tick(tick(ONE))
+    monkeypatch.setattr(old, 'unsubscribe', lambda _: (_ for _ in ()).throw(OSError('isolated unsubscribe')))
+    with pytest.raises(OSError, match='isolated unsubscribe'):
+        owner.disconnect()
+    assert old.disconnections == 1 and not owner.active
+    assert hub.active_session_count == 0 and hub.subscription_count == 0
+    assert hub.latest_market_ticks == () and not hub._transport_lock.locked()
+    owner.disconnect()
+    assert old.disconnections == 1
+    new_consumer = Consumer()
+    new = hub.open(capability, new_consumer)
+    new.subscribe((ONE,)); new.connect()
+    old.consumer.on_market_tick(tick(ONE))
+    old.consumer.on_connection_state(MonitoringConnectionState.DISCONNECTED)
+    assert new.active and new_consumer.ticks == [] and new_consumer.states == []
+    assert len(capability.sessions) == 2
 
 
 class Consumer:

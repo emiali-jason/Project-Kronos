@@ -332,14 +332,36 @@ def test_status_endpoint_is_small_and_sanitized() -> None:
     try:
         status, _, body = _request(server, "GET", "/status")
         assert status == 200
-        assert set(__import__("json").loads(body)) == {
+        payload = __import__("json").loads(body)
+        assert set(payload) == {
             "service", "provider", "analysis", "completed_at", "v1_probables",
             "analysis_diagnostic", "live_monitoring", "swing_projection_revision",
+            "paper_observation_compact",
         }
-        assert __import__("json").loads(body)["service"] == "KRONOS_BROWSER_V1"
-        assert len(
-            __import__("json").loads(body)["swing_projection_revision"]
-        ) == 64
+        assert payload["service"] == "KRONOS_BROWSER_V1"
+        assert len(payload["swing_projection_revision"]) == 64
+        assert payload["paper_observation_compact"] == {
+            "ordinary_ticks_accepted": 0,
+            "material_transitions_retained": 0,
+            "duplicate_ticks_ignored": 0,
+            "incompatible_ticks_rejected": 0,
+            "historical_replays_unverifiable": 0,
+            "detachment": {
+                "suspended_detached": 0,
+                "closed_detached": 0,
+                "terminal_detachments": 0,
+                "stale_generation_detachments": 0,
+                "already_detached": 0,
+                "stale_callbacks_rejected": 0,
+                "shared_subscription_retained": 0,
+                "final_owner_subscription_releases": 0,
+                "active_owners": 0,
+            },
+            "latest_tick_disposition": "NOT_OBSERVED",
+            "active_compact_checkpoints": 0,
+            "recovery_required_tracks": 0,
+            "legacy_tracks_inactive": 0,
+        }
         assert "HDFCBANK" not in body
     finally:
         server.shutdown(); server.server_close(); thread.join()

@@ -94,6 +94,30 @@ def _record(
     )
 
 
+def test_selected_history_actual_reports_html_and_json_csv_disclose_summary(tmp_path):
+    from tests.unit.swing.v1.test_observation_research_ledger_v2 import _selected_history_service, NOW as FACT_TIME
+    service,paper,track=_selected_history_service(tmp_path)
+    operational=service.operational_handoffs(governed_current_trading_date=FACT_TIME.date())
+    projection=project_historical_reports(operational,_empty_journal(tmp_path/'journal'),
+        ReportsQuery(),governed_current_trading_date=FACT_TIME.date())
+    assert len(projection.records)==1
+    item=projection.records[0]
+    assert item.status=='OUTCOME NOT ESTABLISHED'
+    assert item.paper_history_representation=='COMPACT_HISTORICAL'
+    assert item.paper_last_observation_at==FACT_TIME+timedelta(seconds=1)
+    assert item.pnl is None and item.exit is None
+    before={str(p):p.read_bytes() for p in tmp_path.rglob('*') if p.is_file()}
+    html=render_reports(_ready(),projection,selected_record_id=item.record_identity)
+    assert 'COMPACT_HISTORICAL' in html and 'HISTORICAL_DETAIL_UNAVAILABLE' in html
+    assert item.paper_last_observation_at.isoformat() in html
+    assert 'Recorded decision boundary' in html
+    rows=json.loads(export_reports_json(projection))['records']
+    assert rows[0]['paper_last_observation_at']==item.paper_last_observation_at.isoformat()
+    assert rows[0]['paper_fact_count']==2
+    assert 'COMPACT_SUMMARY_ONLY_RAW_FACTS_NOT_REVALIDATED' in export_reports_csv(projection).decode()
+    assert before=={str(p):p.read_bytes() for p in tmp_path.rglob('*') if p.is_file()}
+
+
 def _xlsx_rows(payload: bytes, sheet: str = "sheet1.xml") -> list[list[str]]:
     with ZipFile(BytesIO(payload)) as archive:
         root = ElementTree.fromstring(archive.read("xl/worksheets/" + sheet))

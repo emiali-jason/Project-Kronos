@@ -2554,6 +2554,22 @@ def _report_row(
     )
 
 
+def _paper_history_fields(item):
+    """Swing Paper disclosure only; Intraday renderers retain their own mappings."""
+    if item.paper_history_representation == "NOT_APPLICABLE":
+        return ()
+    return (
+        ("History representation", item.paper_history_representation),
+        ("Raw factual detail", item.paper_raw_detail_availability),
+        ("First factual observation", "UNAVAILABLE" if item.paper_first_observation_at is None else item.paper_first_observation_at.isoformat()),
+        ("Last factual observation", "UNAVAILABLE" if item.paper_last_observation_at is None else item.paper_last_observation_at.isoformat()),
+        ("Retained factual observations", "UNAVAILABLE" if item.paper_fact_count is None else str(item.paper_fact_count)),
+        ("Validated source coverage", "UNAVAILABLE" if item.paper_source_count is None else str(item.paper_source_count)),
+        ("Historical consolidation", item.paper_consolidation_identity or "UNAVAILABLE"),
+        ("Historical detail disclosure", item.paper_history_detail_reason or "NONE"),
+    )
+
+
 def _report_detail(item: HistoricalReportRecord) -> str:
     if item.intraday_facts is not None:
         import json
@@ -2564,7 +2580,7 @@ def _report_detail(item: HistoricalReportRecord) -> str:
             for key, value in data.items()) + '</dl></section>'
     values = (
         ("Family", item.family.value.replace('_', ' ')), ("Status", item.status),
-        ("Completed / exited at", item.relevant_timestamp.astimezone(_KOLKATA).strftime(
+        (("Recorded decision boundary" if item.paper_history_representation in {"COMPACT_HISTORICAL", "HISTORY_UNAVAILABLE"} and item.status != "COMPLETE" else "Completed / exited at"), item.relevant_timestamp.astimezone(_KOLKATA).strftime(
             "%d %b %Y · %H:%M IST"
         )),
         ("Decision", item.decision_identity), ("Step-31 severity", item.step31_severity),
@@ -2576,6 +2592,7 @@ def _report_detail(item: HistoricalReportRecord) -> str:
         ("Paper Track outcome", item.paper_track_outcome),
         ("Objective model", item.objective_outcome),
     )
+    values += _paper_history_fields(item)
     fields = ''.join(
         '<div><span>' + escape(label) + '</span><strong>' + escape(value) + '</strong></div>'
         for label, value in values
@@ -2801,7 +2818,9 @@ def _render_operational_trade_journal(
         and item.paper_track_identity is not None
     )
     detail = next(
-        (item for item in current if item.decision_identity == selected_record_id),
+        (item for item in records if item.decision_identity == selected_record_id
+         and (item in current or (item.mode is ObservationMode.PAPER_OBSERVATION
+              and item.paper_history_representation in {"COMPACT_HISTORICAL", "HISTORY_UNAVAILABLE"}))),
         None,
     )
     content = ''.join((
@@ -2935,6 +2954,7 @@ def _journal_detail(item: ObservationOperationalHandoffV2) -> str:
         ("Latest event", item.paper_track_latest_event), ("Track outcome", item.paper_track_outcome),
         ("Monitoring", _journal_monitoring(item)), ("Status", _journal_status(item)),
     )
+    values += _paper_history_fields(item)
     fields = ''.join(
         '<div><span>' + escape(label) + '</span><strong>' + escape(value) + '</strong></div>'
         for label, value in values

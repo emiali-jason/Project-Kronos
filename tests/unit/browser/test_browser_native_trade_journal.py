@@ -136,6 +136,23 @@ def test_actual_browser_journal_route_restores_records_and_filters_without_mutat
         server.shutdown(); thread.join(timeout=2); server.server_close()
 
 
+def test_selected_historical_journal_detail_uses_actual_ledger_without_active_owner(tmp_path):
+    from tests.unit.swing.v1.test_observation_research_ledger_v2 import _selected_history_service, NOW
+    service,paper,track=_selected_history_service(tmp_path)
+    records=service.operational_handoffs(governed_current_trading_date=NOW.date())
+    before={str(p):p.read_bytes() for p in tmp_path.rglob('*') if p.is_file()}
+    html=render_trade_journal(_ready(),object(),operational=records,
+        governed_trading_date=NOW.date(),selected_record_id=track.sponsor_decision_identity)
+    assert 'COMPACT_HISTORICAL' in html
+    assert 'HISTORICAL_DETAIL_UNAVAILABLE' in html
+    assert records[0].paper_last_observation_at.isoformat() in html
+    assert 'OUTCOME_NOT_ESTABLISHED' in html
+    assert 'NO ACTIVE SWING TRADES OR OBSERVATIONS' in html
+    assert before=={str(p):p.read_bytes() for p in tmp_path.rglob('*') if p.is_file()}
+    intraday=render_trade_journal(_ready(),object(),operational=records,selected_product='INTRADAY')
+    assert 'COMPACT_HISTORICAL' not in intraday and 'Last factual observation' not in intraday
+
+
 def test_operational_journal_is_compact_product_separated_and_current_day_only() -> None:
     # The operational view consumes only the V2 handoff; no Journal service mutation occurs.
     records = (

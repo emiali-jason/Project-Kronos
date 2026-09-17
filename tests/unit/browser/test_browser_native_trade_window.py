@@ -1,4 +1,7 @@
 from dataclasses import replace
+from hashlib import sha256
+
+import pytest
 
 from kronos.application.swing_trade_window import (
     LocalTradePlanConstructionDiagnosticStore,
@@ -24,6 +27,7 @@ from kronos.swing.v1.native_entry_timing import (
     LocalRiskPermissionV1Store,
 )
 from kronos.swing.v1.native_sponsor_decision import SponsorTradeChoice
+from kronos.swing.v1.opportunity_continuity import SourceBinding
 from kronos.swing.v1.sponsor_observation_decision import (
     LocalSponsorObservationDecisionStore,
     SponsorActivationDisposition,
@@ -607,6 +611,57 @@ def test_blocked_paper_decision_exposes_distinct_explicit_track_control(tmp_path
     assert html.index("SPONSOR DECISION") < html.index("POSITION ACTIVATION")
     assert html.index("POSITION ACTIVATION") < html.index("PAPER OBSERVATION TRACK")
 
+    source_binding = SourceBinding(
+        projected.canonical_instrument,
+        "NSE",
+        "KITE",
+        "NSE",
+        projected.canonical_instrument,
+        "EQ",
+        None,
+    )
+    monitoring_authority = workflow.prepare_paper_observation_monitoring_authority(
+        projected.native_run_identity,
+        projected.canonical_instrument,
+        opportunity_identity="SWO-" + sha256(
+            (
+                f"{projected.native_run_identity}:"
+                f"{projected.canonical_instrument}:"
+                f"{projected.native_assessment_sha256}"
+            ).encode()
+        ).hexdigest(),
+        material_revision="SWMR-" + sha256(
+            (
+                f"{observation.observation_evidence_id}:"
+                f"{observation.integrity_sha256}"
+            ).encode()
+        ).hexdigest(),
+        source_binding=source_binding,
+    )
+    with pytest.raises(TypeError, match="monitoring_authority"):
+        workflow.start_paper_observation_track(
+            projected.native_run_identity,
+            projected.canonical_instrument,
+            projected.native_assessment_sha256,
+            decision.decision.decision_identity,
+            current_run_identity=projected.native_run_identity,
+            started_at=NOW,
+        )
+    with pytest.raises(ValueError, match="PAPER_OBSERVATION_ADMISSION_AUTHORITY_INVALID"):
+        workflow.start_paper_observation_track(
+            projected.native_run_identity,
+            projected.canonical_instrument,
+            projected.native_assessment_sha256,
+            decision.decision.decision_identity,
+            current_run_identity=projected.native_run_identity,
+            started_at=NOW,
+            monitoring_authority=replace(
+                monitoring_authority,
+                native_assessment_sha256="0" * 64,
+            ),
+            authority_is_current=lambda: True,
+        )
+
     started = workflow.start_paper_observation_track(
         projected.native_run_identity,
         projected.canonical_instrument,
@@ -614,6 +669,8 @@ def test_blocked_paper_decision_exposes_distinct_explicit_track_control(tmp_path
         decision.decision.decision_identity,
         current_run_identity=projected.native_run_identity,
         started_at=NOW,
+        monitoring_authority=monitoring_authority,
+        authority_is_current=lambda: True,
     )
     assert started.track.track_identity
     active_html = render_native_trade_window(

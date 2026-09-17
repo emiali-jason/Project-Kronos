@@ -5,7 +5,7 @@ from __future__ import annotations
 from kronos.common.maintenance import expected_transport_close
 
 from collections import defaultdict
-from threading import RLock
+from threading import Lock, RLock
 from typing import Callable
 
 from kronos.provider.contracts.instrument import InstrumentRecord
@@ -30,6 +30,13 @@ class SharedSwingMonitoringHub:
         self._connection_state: MonitoringConnectionState | None = None
         self._latest_ticks: dict[InstrumentRecord, ProviderMarketTick] = {}
         self._last_interruption = None
+        self._transport_lock = Lock()
+        self._ownership_generation = 0
+        self._session_generation = None
+        self._subscribed: set[InstrumentRecord] = set()
+        self._release_counts = dict(shared_subscription_retained=0,
+            final_owner_subscription_releases=0, already_detached=0,
+            stale_callbacks_rejected=0)
 
     def set_connection_listener(
         self, listener: Callable[[MonitoringConnectionState], None]
@@ -135,7 +142,12 @@ class SharedSwingMonitoringHub:
                 "subscriptions": [instrument(i) for i in sorted(self._by_instrument,
                     key=lambda i: (i.exchange, i.segment, i.trading_symbol))],
                 "owners": owners, "last_interruption": self._last_interruption,
+                "release_counts": dict(self._release_counts),
                 "continuity_authority": "PER_OWNER_LIFECYCLE_EVIDENCE_NOT_RECONSTRUCTED"}
+
+    def release_status(self):
+        with self._lock:
+            return dict(self._release_counts)
 
     def close(self) -> None:
         with self._lock:
@@ -152,35 +164,109 @@ class SharedSwingMonitoringHub:
             if id(registration) not in self._registrations:
                 raise ValueError("SHARED_MONITORING_REGISTRATION_CLOSED")
             registration._instruments.update(instruments)
+            connected = registration._connected
+            if connected:
+                for instrument in instruments:
+                    self._by_instrument[instrument].add(id(registration))
+                self._ownership_generation += 1
+        if connected:
+            self._reconcile_transport()
 
     def _connect(self, registration: "_SharedRegistration") -> None:
         with self._lock:
+            if self._registrations.get(id(registration)) is not registration:
+                raise ValueError("SHARED_MONITORING_REGISTRATION_CLOSED")
             if registration._connected:
                 return
-            if self._capability is not None and self._capability is not registration._capability:
+            if any(owner._connected and owner._capability is not registration._capability
+                   for owner in self._registrations.values()):
                 raise ValueError("SHARED_MONITORING_CAPABILITY_MISMATCH")
-            additions = tuple(
-                instrument for instrument in registration._instruments
-                if instrument not in self._by_instrument
-            )
             for instrument in registration._instruments:
                 self._by_instrument[instrument].add(id(registration))
             registration._connected = True
-            if self._session is None:
-                self._capability = registration._capability
-                self._session = registration._capability.open_monitoring_session(self)
-                first = tuple(self._by_instrument)
-                self._session.subscribe(first)
-                self._session.connect()
-            elif additions:
-                self._session.subscribe(additions)
+            self._ownership_generation += 1
+        self._reconcile_transport()
+
+    def _count_release(self, name, count=1):
+        self._release_counts[name] = min((1 << 63) - 1, self._release_counts[name] + count)
+
+    def _reconcile_transport(self):
+        """Drain ownership changes, never holding the state lock in Provider code.
+
+        Contending/reentrant callers publish desired state and return. The one
+        drainer reconciles each observed generation, including changes made
+        while an external operation is in flight. This is event-driven work,
+        not a timer/retry loop; no ownership history or per-request queue grows.
+        """
+        with self._lock:
+            if not self._transport_lock.acquire(blocking=False):
+                return
+        try:
+            while True:
+                with self._lock:
+                    generation = self._ownership_generation
+                    desired = set(self._by_instrument)
+                    capability = next((r._capability for r in self._registrations.values()
+                                       if r._connected and r._instruments), None)
+                    session, current_capability = self._session, self._capability
+                    subscribed = set(self._subscribed)
+                if session is not None and (not desired or capability is not current_capability):
+                    with self._lock:
+                        self._session = None
+                        self._capability = None
+                        self._session_generation = None
+                        self._subscribed.clear()
+                        self._connection_state = MonitoringConnectionState.DISCONNECTED
+                        self._last_interruption = MonitoringConnectionState.DISCONNECTED.value
+                    try:
+                        if subscribed:
+                            session.unsubscribe(tuple(subscribed))
+                            with self._lock:
+                                self._count_release('final_owner_subscription_releases', len(subscribed))
+                    finally:
+                        # A failed unsubscribe must not strand the retired
+                        # transport. Its callbacks are already generation-fenced.
+                        with expected_transport_close(self.maintenance_governance):
+                            session.disconnect()
+                    session = None
+                if desired and session is None:
+                    token = object()
+                    session = capability.open_monitoring_session(_SessionCallbacks(self, token))
+                    with self._lock:
+                        self._session, self._capability = session, capability
+                        self._session_generation = token
+                    session.subscribe(tuple(desired))
+                    with self._lock:
+                        self._subscribed = set(desired)
+                    session.connect()
+                elif session is not None:
+                    removals, additions = subscribed - desired, desired - subscribed
+                    if removals:
+                        session.unsubscribe(tuple(removals))
+                        with self._lock:
+                            self._subscribed.difference_update(removals)
+                            self._count_release('final_owner_subscription_releases', len(removals))
+                    if additions:
+                        session.subscribe(tuple(additions))
+                        with self._lock:
+                            self._subscribed.update(additions)
+                with self._lock:
+                    if generation == self._ownership_generation:
+                        self._transport_lock.release()
+                        return
+        except BaseException:
+            with self._lock:
+                self._transport_lock.release()
+            raise
 
     def _disconnect(self, registration: "_SharedRegistration") -> None:
         with self._lock:
             if id(registration) not in self._registrations:
-                return
+                self._count_release('already_detached')
+                return registration._detached_result
             self._registrations.pop(id(registration), None)
             removals = []
+            retained = 0
             for instrument in registration._instruments:
                 identities = self._by_instrument.get(instrument)
                 if identities is None:
@@ -188,29 +274,33 @@ class SharedSwingMonitoringHub:
                 identities.discard(id(registration))
                 if not identities:
                     self._by_instrument.pop(instrument, None)
+                    self._latest_ticks.pop(instrument, None)
                     removals.append(instrument)
-            session = self._session
-            last = not self._registrations
-            if last:
-                self._session = None
-                self._capability = None
-                self._connection_state = MonitoringConnectionState.DISCONNECTED
-                self._last_interruption = MonitoringConnectionState.DISCONNECTED.value
-                self._latest_ticks.clear()
+                else:
+                    retained += 1
+            self._count_release('shared_subscription_retained', retained)
+            consumer = registration._consumer
             registration._connected = False
+            registration._consumer = None
+            registration._capability = None
+            registration._instruments.clear()
+            registration._detached_result = (len(removals), retained)
+            self._ownership_generation += 1
         if self.maintenance_governance is not None and self.maintenance_governance.shutting_down:
-            registration._consumer.on_connection_state(MonitoringConnectionState.DISCONNECTED)
-        if session is not None:
-            if removals:
-                session.unsubscribe(tuple(removals))
-            if last:
-                with expected_transport_close(self.maintenance_governance):
-                    session.disconnect()
+            consumer.on_connection_state(MonitoringConnectionState.DISCONNECTED)
+        self._reconcile_transport()
+        return registration._detached_result
 
-    def on_market_tick(self, tick: ProviderMarketTick) -> None:
+    def on_market_tick(self, tick: ProviderMarketTick, *, _generation=None) -> None:
         if self.maintenance_governance is not None and self.maintenance_governance.maintenance_active:
             return
         with self._lock:
+            if _generation is not None and self._session_generation is not _generation:
+                self._count_release('stale_callbacks_rejected')
+                return
+            if tick.instrument not in self._by_instrument:
+                self._count_release('stale_callbacks_rejected')
+                return
             self._latest_ticks[tick.instrument] = tick
             consumers = tuple(
                 self._registrations[identity]._consumer
@@ -220,8 +310,11 @@ class SharedSwingMonitoringHub:
         for consumer in consumers:
             consumer.on_market_tick(tick)
 
-    def on_order_update(self, update: ProviderOrderUpdateEvidence) -> None:
+    def on_order_update(self, update: ProviderOrderUpdateEvidence, *, _generation=None) -> None:
         with self._lock:
+            if _generation is not None and self._session_generation is not _generation:
+                self._count_release('stale_callbacks_rejected')
+                return
             consumers = tuple(
                 registration._consumer for registration in self._registrations.values()
                 if registration._connected
@@ -229,10 +322,13 @@ class SharedSwingMonitoringHub:
         for consumer in consumers:
             consumer.on_order_update(update)
 
-    def on_connection_state(self, state: MonitoringConnectionState) -> None:
+    def on_connection_state(self, state: MonitoringConnectionState, *, _generation=None) -> None:
         if type(state) is not MonitoringConnectionState:
             raise TypeError("SHARED_MONITORING_CONNECTION_STATE_INVALID")
         with self._lock:
+            if _generation is not None and self._session_generation is not _generation:
+                self._count_release('stale_callbacks_rejected')
+                return
             self._connection_state = state
             if state is not MonitoringConnectionState.CONNECTED:
                 self._last_interruption = state.value
@@ -254,17 +350,21 @@ class _SharedRegistration:
         self._consumer = consumer
         self._instruments: set[InstrumentRecord] = set()
         self._connected = False
+        self._detached_result = (0, 0)
 
     @property
     def active(self) -> bool:
         """Current registration/subscription evidence, not a connection claim."""
+        capability = self._capability
+        if capability is None or getattr(capability, "active", False) is not True:
+            return False
         with self._hub._lock:
             return (
                 self._connected
                 and self._hub._registrations.get(id(self)) is self
                 and self._hub._session is not None
                 and self._hub._capability is self._capability
-                and getattr(self._capability, "active", False) is True
+                and self._capability is capability
                 and bool(self._instruments)
                 and all(
                     id(self) in self._hub._by_instrument.get(instrument, ())
@@ -275,8 +375,10 @@ class _SharedRegistration:
     @property
     def connection_state(self) -> MonitoringConnectionState | None:
         """Only the shared session's observed callback state can be CONNECTED."""
+        active = self.active
         with self._hub._lock:
-            return self._hub._connection_state if self.active else None
+            return (self._hub._connection_state if active
+                    and self._hub._registrations.get(id(self)) is self else None)
 
     @property
     def owner_identity(self) -> str:
@@ -294,7 +396,24 @@ class _SharedRegistration:
         self._hub._connect(self)
 
     def disconnect(self) -> None:
-        self._hub._disconnect(self)
+        return self._hub._disconnect(self)
+
+
+class _SessionCallbacks:
+    """Fence a retired Provider session before dispatching to current owners."""
+    def __init__(self, hub, generation):
+        self._hub, self._generation = hub, generation
+
+    def _dispatch(self, name, value):
+        with self._hub._lock:
+            if self._hub._session_generation is not self._generation:
+                self._hub._count_release('stale_callbacks_rejected')
+                return
+        getattr(self._hub, name)(value, _generation=self._generation)
+
+    def on_market_tick(self, value): self._dispatch('on_market_tick', value)
+    def on_order_update(self, value): self._dispatch('on_order_update', value)
+    def on_connection_state(self, value): self._dispatch('on_connection_state', value)
 
 
 __all__ = ["SharedSwingMonitoringHub"]

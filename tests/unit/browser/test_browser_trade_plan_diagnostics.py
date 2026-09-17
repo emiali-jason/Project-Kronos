@@ -1,6 +1,8 @@
 from dataclasses import replace
+from hashlib import sha256
 from pathlib import Path
 from threading import Thread
+from types import SimpleNamespace
 from urllib.parse import urlencode
 
 import pytest
@@ -12,6 +14,7 @@ from kronos.swing.v1.evidence_store import LocalTradingViewEvidenceStore
 from kronos.swing.v1.native_trade_construction import (
     create_trade_construction_evidence_package,
 )
+from kronos.swing.v1.opportunity_continuity import SourceBinding
 from tests.unit.application.test_swing_opportunities import _Provider, _immediate, _ready
 from tests.unit.browser.test_browser_server import _request
 from tests.unit.browser.test_swing_visual_v3_live import (
@@ -330,18 +333,77 @@ def test_step31_geometry_warning_redirects_and_reuses_one_handoff(
             body=track_body,
         )
         assert rejected[0] == 403
-        started_response = _request(
-            server,
-            "POST",
-            "/swing/trade-window/paper-observation/start",
-            headers={
-                "Host": authority,
-                "Origin": f"http://{authority}",
-                "Referer": f"http://{authority}{first[1]['Location']}",
-                "Content-Type": "application/x-www-form-urlencoded",
-            },
-            body=track_body,
+        source_binding = SourceBinding(
+            projection.canonical_instrument,
+            "NSE",
+            "KITE",
+            "NSE",
+            projection.canonical_instrument,
+            "EQ",
+            None,
         )
+        row = SimpleNamespace(
+            canonical_instrument=projection.canonical_instrument,
+            opportunity_id="SWO-" + sha256(
+                (
+                    f"{projection.native_run_identity}:"
+                    f"{projection.canonical_instrument}:"
+                    f"{projection.native_assessment_sha256}"
+                ).encode()
+            ).hexdigest(),
+            material_revision="SWMR-" + sha256(
+                (
+                    f"{projection.step31_observation.observation_evidence_id}:"
+                    f"{projection.step31_observation.integrity_sha256}"
+                ).encode()
+            ).hexdigest(),
+            material_fingerprint=sha256(
+                f"{projection.native_run_identity}:{projection.canonical_instrument}".encode()
+            ).hexdigest(),
+            source_binding=source_binding,
+        )
+        continuity = SimpleNamespace(
+            integrity_sha256=sha256(
+                (
+                    f"{row.opportunity_id}:{row.material_revision}:"
+                    f"{row.material_fingerprint}"
+                ).encode()
+            ).hexdigest(),
+            contribution=SimpleNamespace(
+                integrity_sha256=sha256(
+                    (
+                        f"{row.opportunity_id}:{row.material_revision}:"
+                        f"{row.material_fingerprint}"
+                    ).encode()
+                ).hexdigest(),
+                native_run=SimpleNamespace(run_identity=projection.native_run_identity),
+                rows=(row,),
+            ),
+        )
+        current_run = SimpleNamespace(run_identity=projection.native_run_identity)
+        with monkeypatch.context() as patch:
+            patch.setattr(
+                server.application,
+                "opportunities_bundle_projection",
+                lambda: (server.application.snapshot(), current_run, continuity, {}),
+            )
+            patch.setattr(
+                server.application,
+                "committed_continuity",
+                lambda: continuity,
+            )
+            started_response = _request(
+                server,
+                "POST",
+                "/swing/trade-window/paper-observation/start",
+                headers={
+                    "Host": authority,
+                    "Origin": f"http://{authority}",
+                    "Referer": f"http://{authority}{first[1]['Location']}",
+                    "Content-Type": "application/x-www-form-urlencoded",
+                },
+                body=track_body,
+            )
         assert started_response[0] == 303
         tracked = server.trade_window.project(
             projection.native_run_identity, projection.canonical_instrument

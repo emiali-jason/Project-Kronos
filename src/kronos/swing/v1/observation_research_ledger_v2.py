@@ -337,6 +337,14 @@ class ObservationOperationalHandoffV2:
     websocket_state: WebSocketPresentationState
     projection_contract_identity: str = SPONSOR_OBSERVATION_PROJECTION_V2_CONTRACT_ID
     projection_contract_version: str = SPONSOR_OBSERVATION_PROJECTION_V2_CONTRACT_VERSION
+    paper_history_representation: str = "NOT_APPLICABLE"
+    paper_raw_detail_availability: str = "NOT_APPLICABLE"
+    paper_first_observation_at: datetime | None = None
+    paper_last_observation_at: datetime | None = None
+    paper_fact_count: int | None = None
+    paper_source_count: int | None = None
+    paper_consolidation_identity: str | None = None
+    paper_history_detail_reason: str | None = None
 
 
 class LocalObservationResearchLedgerV2Store:
@@ -728,6 +736,9 @@ def _export_row_fields() -> tuple[str, ...]:
         "paper_track_monetary_pnl", "objective_kr380_state",
         "objective_kr390_state", "objective_outcome",
         "objective_outcome_available", "paper_link_identities",
+        "paper_history_representation", "paper_raw_detail_availability",
+        "paper_first_observation_at", "paper_fact_count", "paper_source_count",
+        "paper_consolidation_identity", "paper_history_detail_reason",
     )
 
 
@@ -781,6 +792,13 @@ def _export_row(item: ObservationResearchProjectionV2) -> dict[str, object]:
         "objective_outcome": "UNAVAILABLE" if objective is None else objective.source_state,
         "objective_outcome_available": "AVAILABLE" if item.objective_outcome_available else "UNAVAILABLE",
         "paper_link_identities": "|".join(link.link_identity for link in item.paper_links) or "UNAVAILABLE",
+        "paper_history_representation": "NOT_APPLICABLE" if paper is None else paper.history_representation,
+        "paper_raw_detail_availability": "NOT_APPLICABLE" if paper is None else paper.raw_detail_availability,
+        "paper_first_observation_at": "UNAVAILABLE" if paper is None or paper.first_factual_observation_at is None else paper.first_factual_observation_at.isoformat(),
+        "paper_fact_count": "UNAVAILABLE" if paper is None or paper.historical_fact_count is None else paper.historical_fact_count,
+        "paper_source_count": "UNAVAILABLE" if paper is None or paper.historical_source_count is None else paper.historical_source_count,
+        "paper_consolidation_identity": "UNAVAILABLE" if paper is None else paper.historical_consolidation_identity or "UNAVAILABLE",
+        "paper_history_detail_reason": "UNAVAILABLE" if paper is None else paper.historical_detail_reason or "NONE",
     }
 
 
@@ -788,11 +806,13 @@ def with_completion_trading_dates(handoffs, current_trading_date, resolve_date):
     """Route one validated handoff population with the governed calendar."""
     return tuple(replace(
         item,
-        operational_route=_operational_route(
+        operational_route=(ObservationOperationalRoute.HISTORICAL
+            if item.mode is ObservationMode.PAPER_OBSERVATION and item.paper_history_representation in {"COMPACT_HISTORICAL", "HISTORY_UNAVAILABLE"}
+            else _operational_route(
             item.completion_timestamp,
             None if item.completion_timestamp is None else resolve_date(item.completion_timestamp),
             current_trading_date,
-        ),
+        )),
     ) for item in handoffs)
 
 
@@ -852,6 +872,8 @@ def _operational_handoff(
         else None if position_fact is None else position_fact.completion_timestamp
     )
     route = _operational_route(completion, completion_trading_date, current_trading_date)
+    if paper is not None and paper.history_representation in {"COMPACT_HISTORICAL", "HISTORY_UNAVAILABLE"}:
+        route = ObservationOperationalRoute.HISTORICAL
     objective = _latest_v1(item.source.links, ObservationLinkKind.OBJECTIVE_MODEL_OUTCOME)
     model = _latest_v1(item.source.links, ObservationLinkKind.KR390_OBJECTIVE_MODEL)
     mode = (
@@ -914,6 +936,14 @@ def _operational_handoff(
         completion_timestamp=completion,
         operational_route=route,
         websocket_state=websocket_state,
+        paper_history_representation="NOT_APPLICABLE" if paper is None else paper.history_representation,
+        paper_raw_detail_availability="NOT_APPLICABLE" if paper is None else paper.raw_detail_availability,
+        paper_first_observation_at=None if paper is None else paper.first_factual_observation_at,
+        paper_last_observation_at=None if paper is None else paper.last_factual_observation_at,
+        paper_fact_count=None if paper is None else paper.historical_fact_count,
+        paper_source_count=None if paper is None else paper.historical_source_count,
+        paper_consolidation_identity=None if paper is None else paper.historical_consolidation_identity,
+        paper_history_detail_reason=None if paper is None else paper.historical_detail_reason,
     )
 
 
