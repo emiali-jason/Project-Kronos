@@ -416,6 +416,18 @@ class _ConnectionCompletionGeneration:
     disposition: str | None = None
 
 
+@dataclass(slots=True)
+class _AnalysisWorkGeneration:
+    generation: int
+    attempt_id: str
+    run_identity: str
+    provider: object
+    token: object | None
+    predecessor: object | None
+    phase: str = "RUNNING"
+    cancellation_requested: bool = False
+
+
 @dataclass(frozen=True, slots=True)
 class _SponsorRestorationGeneration:
     connection_generation: int
@@ -796,6 +808,8 @@ class SwingOpportunitiesApplication:
         self.__provider: _ProviderRuntime | None = None
         self.__progression_watch_workflow: object | None = None
         self.__analysis_attempt_count = 0
+        self.__analysis_work_generation = 0
+        self.__analysis_work: _AnalysisWorkGeneration | None = None
         self.__analysis_diagnostic: AnalysisFailureDiagnostic | None = None
         self.__completed_analysis_evidence: SwingAnalysisEvidenceSnapshot | None = None
         self.__completed_mtf_fact_snapshot: SameRunMtfFactSnapshot | None = None
@@ -863,6 +877,39 @@ class SwingOpportunitiesApplication:
         with self.__lock:
             return self.__snapshot
 
+    def analysis_work_status(self):
+        """Return bounded ownership facts without waiting for the worker."""
+
+        with self.__lock:
+            work = self.__analysis_work
+            retained = int(
+                self.__committed_run is not None
+                or self.__completed_analysis_evidence is not None
+                or self.__snapshot.analysis_state is AnalysisState.READY
+            )
+            state = "IDLE" if work is None else work.phase
+            if (
+                work is not None
+                and work.cancellation_requested
+                and work.phase != "CLEANUP_FAILED"
+            ):
+                state = "CANCELLATION_REQUESTED"
+            return MappingProxyType({
+                "state": state,
+                "generation": None if work is None else work.generation,
+                "run_identity": None if work is None else work.run_identity,
+                "owned_work_count": int(work is not None),
+                "maximum_owned_work": 1,
+                "queued_jobs": 0,
+                "maximum_queued_jobs": 0,
+                "queued_bytes": 0,
+                "maximum_result_instruments": 98,
+                "active_local_generations": int(work is not None),
+                "retained_generations": retained,
+                "maximum_retained_generations": 1,
+                "maximum_live_generations": 2,
+            })
+
     def committed_continuity(self):
         with self.__lock:
             return None if self.__committed_run is None else self.__committed_run.continuity
@@ -913,7 +960,9 @@ class SwingOpportunitiesApplication:
                 self.__publication_guard_active = False
 
     def publication_status(self):
-        return self.__prepare_opportunities_projection()[3]
+        status = dict(self.__prepare_opportunities_projection()[3])
+        status["analysis_work"] = dict(self.analysis_work_status())
+        return status
 
     def opportunities_bundle_projection(self):
         """Prepare one authority-bound projection without lock-held file reads."""
@@ -1493,7 +1542,6 @@ class SwingOpportunitiesApplication:
             workflow = self.__progression_watch_workflow
             allowed = (
                 self.__snapshot.provider_state is ProviderConnectionState.CONNECTED
-                and self.__snapshot.analysis_state is not AnalysisState.RUNNING
                 and provider is not None
                 and workflow is not None
             )
@@ -1528,10 +1576,7 @@ class SwingOpportunitiesApplication:
 
         with self.__lock:
             workflow = self.__progression_watch_workflow
-            allowed = (
-                self.__snapshot.analysis_state is not AnalysisState.RUNNING
-                and workflow is not None
-            )
+            allowed = workflow is not None
         if not allowed:
             return False
         try:
@@ -1548,7 +1593,6 @@ class SwingOpportunitiesApplication:
             workflow = self.__progression_watch_workflow
             allowed = (
                 self.__snapshot.provider_state is ProviderConnectionState.CONNECTED
-                and self.__snapshot.analysis_state is not AnalysisState.RUNNING
                 and provider is not None
                 and workflow is not None
             )
@@ -1568,10 +1612,7 @@ class SwingOpportunitiesApplication:
 
         with self.__lock:
             workflow = self.__progression_watch_workflow
-            allowed = (
-                self.__snapshot.analysis_state is not AnalysisState.RUNNING
-                and workflow is not None
-            )
+            allowed = workflow is not None
         if not allowed:
             return False
         try:
@@ -1581,11 +1622,15 @@ class SwingOpportunitiesApplication:
         return True
 
     def run_analysis(self) -> bool:
-        """Start one complete Stage 1-9 run and reject concurrent requests."""
+        """Admit one owned Stage 1-9 job with a zero-capacity queue."""
 
         with self.__lock:
-            if self.__snapshot.analysis_state is AnalysisState.RUNNING:
-                self.__analysis_request_result = "DUPLICATE_RUNNING"
+            if self.__analysis_work is not None:
+                self.__analysis_request_result = (
+                    "WORKER_DRAINING"
+                    if self.__analysis_work.cancellation_requested
+                    else "DUPLICATE_RUNNING"
+                )
                 return False
             if self.__snapshot.provider_state is not ProviderConnectionState.CONNECTED:
                 self.__analysis_request_result = "PROVIDER_UNAVAILABLE"
@@ -1599,30 +1644,135 @@ class SwingOpportunitiesApplication:
             if not is_swing_analysis_run_id(swing_run_identity):
                 raise ValueError("SWING_ANALYSIS_RUN_IDENTITY_INVALID")
             run_created_at = self.__aware_now()
-            token, predecessor = None, None
-            if self.__publication is not None:
-                try:
-                    token, predecessor = self.__publication.admit(swing_run_identity, run_created_at)
-                except (OSError, ValueError):
-                    self.__analysis_request_result = "ADMISSION_UNAVAILABLE"
-                    return False
-            self.__snapshot = replace(self.__snapshot, analysis_state=AnalysisState.RUNNING, analysis_failure="")
-            self.__analysis_request_result = "RUNNING"
-            self.__analysis_diagnostic = None
-        self.__background_runner(
-            lambda: self.__complete_analysis(
+            provider = self.__provider
+            if provider is None:
+                self.__analysis_request_result = "PROVIDER_UNAVAILABLE"
+                return False
+            self.__analysis_work_generation += 1
+            work = _AnalysisWorkGeneration(
+                self.__analysis_work_generation,
                 attempt_id,
                 swing_run_identity,
-                run_created_at,
-                token,
-                predecessor,
-            ),
-            "kronos-browser-swing",
-        )
+                provider,
+                None,
+                None,
+                phase="ADMITTING",
+            )
+            self.__analysis_work = work
+        if self.__publication is not None:
+            try:
+                token, predecessor = self.__publication.admit(
+                    swing_run_identity, run_created_at
+                )
+            except (OSError, ValueError):
+                with self.__lock:
+                    if self.__analysis_work is work:
+                        self.__analysis_work = None
+                        self.__analysis_request_result = "ADMISSION_UNAVAILABLE"
+                return False
+            with self.__lock:
+                work.token = token
+                work.predecessor = predecessor
+                current = self.__analysis_work_current_locked(work)
+            if not current:
+                self.__finish_analysis_work(work)
+                return False
+        with self.__lock:
+            current = self.__analysis_work_current_locked(work)
+            if current:
+                work.phase = "RUNNING"
+                self.__snapshot = replace(
+                    self.__snapshot,
+                    analysis_state=AnalysisState.RUNNING,
+                    analysis_failure="",
+                )
+                self.__analysis_request_result = "RUNNING"
+                self.__analysis_diagnostic = None
+        if not current:
+            self.__finish_analysis_work(work)
+            return False
+        try:
+            self.__background_runner(
+                lambda: self.__complete_analysis(work, run_created_at),
+                "kronos-browser-swing",
+            )
+        except Exception:
+            self.__finish_analysis_dispatch_failure(work)
+            return False
         return True
 
+    def cancel_analysis(self) -> bool:
+        """Fence one admitted generation while retaining ownership until exit."""
+
+        with self.__lock:
+            work = self.__request_analysis_cancellation_locked()
+        return work is not None
+
+    def __request_analysis_cancellation_locked(
+        self,
+    ) -> _AnalysisWorkGeneration | None:
+        work = self.__analysis_work
+        if work is None or work.cancellation_requested:
+            return None
+        work.cancellation_requested = True
+        if work.phase != "RECONCILING":
+            self.__snapshot = replace(
+                self.__snapshot,
+                analysis_state=AnalysisState.ERROR,
+                analysis_failure="SWING_ANALYSIS_INTERRUPTED",
+            )
+            self.__analysis_request_result = "CANCELLATION_REQUESTED"
+        return work
+
+    def __finish_analysis_dispatch_failure(
+        self, work: _AnalysisWorkGeneration
+    ) -> None:
+        cleanup_failed = False
+        if self.__publication is not None and work.token is not None:
+            try:
+                self.__publication.fail(work.token, self.__aware_now())
+            except (OSError, ValueError):
+                cleanup_failed = True
+        with self.__lock:
+            if self.__analysis_work is work:
+                if cleanup_failed:
+                    work.phase = "CLEANUP_FAILED"
+                    self.__analysis_request_result = "PUBLICATION_UNAVAILABLE"
+                    return
+                self.__analysis_work = None
+                self.__analysis_request_result = "DISPATCH_FAILED"
+                self.__snapshot = replace(
+                    self.__snapshot,
+                    analysis_state=AnalysisState.ERROR,
+                    analysis_failure="SWING_ANALYSIS_FAILED",
+                )
+
+    def __finish_analysis_work(self, work: _AnalysisWorkGeneration) -> None:
+        cleanup_failed = False
+        if (
+            work.cancellation_requested
+            and work.phase not in {"RECONCILING", "CLEANUP_FAILED"}
+            and self.__publication is not None
+            and work.token is not None
+        ):
+            try:
+                self.__publication.fail(
+                    work.token,
+                    self.__aware_now(),
+                    reason="SWING_ANALYSIS_INTERRUPTED",
+                )
+            except (OSError, ValueError):
+                cleanup_failed = True
+        with self.__lock:
+            if self.__analysis_work is work:
+                if cleanup_failed:
+                    work.phase = "CLEANUP_FAILED"
+                    self.__analysis_request_result = "PUBLICATION_UNAVAILABLE"
+                elif work.phase != "CLEANUP_FAILED":
+                    self.__analysis_work = None
+
     def disconnect_provider(self) -> bool:
-        """Release the authenticated Provider context outside an active analysis."""
+        """Fence analysis and release Provider ownership without waiting for it."""
 
         with self.__connection_transition_lock:
             return self.__disconnect_provider()
@@ -1631,10 +1781,10 @@ class SwingOpportunitiesApplication:
         with self.__lock:
             if (
                 self.__snapshot.provider_state is not ProviderConnectionState.CONNECTED
-                or self.__snapshot.analysis_state is AnalysisState.RUNNING
                 or self.__live_monitoring_result.state is LiveMonitoringTestState.TESTING
             ):
                 return False
+            work = self.__request_analysis_cancellation_locked()
             deadline = self.__connection_deadline
             provider = self.__provider
             workflow = self.__progression_watch_workflow
@@ -1663,6 +1813,7 @@ class SwingOpportunitiesApplication:
             with self.__lock:
                 self.__connection_generation += 1
                 self.__invalidate_sponsor_restoration_locked()
+                work = self.__request_analysis_cancellation_locked()
                 deadline = self.__connection_deadline
                 if self.__snapshot.provider_state is ProviderConnectionState.CONNECTING:
                     self.__snapshot = replace(self.__snapshot,
@@ -1681,6 +1832,7 @@ class SwingOpportunitiesApplication:
             queued = self.__connection_generation != self.__connection_started_generation
             self.__connection_generation += 1
             self.__invalidate_sponsor_restoration_locked()
+            work = self.__request_analysis_cancellation_locked()
             provider = self.__provider
             workflow = self.__progression_watch_workflow
             self.__provider = None
@@ -1985,16 +2137,25 @@ class SwingOpportunitiesApplication:
         with self.__lock:
             self.__live_monitoring_result = result
 
+    def __analysis_work_current_locked(
+        self, work: _AnalysisWorkGeneration
+    ) -> bool:
+        return (
+            self.__analysis_work is work
+            and not work.cancellation_requested
+            and self.__provider is work.provider
+            and self.__snapshot.provider_state is ProviderConnectionState.CONNECTED
+        )
+
+    def __analysis_work_current(self, work: _AnalysisWorkGeneration) -> bool:
+        with self.__lock:
+            return self.__analysis_work_current_locked(work)
+
     def __complete_analysis(
         self,
-        attempt_id: str,
-        swing_run_identity: str,
+        work: _AnalysisWorkGeneration,
         run_created_at: datetime,
-        token=None,
-        predecessor=None,
     ) -> None:
-        with self.__lock:
-            provider = self.__provider
         progress = AnalysisProgress(AnalysisStage.PROVIDER_CAPABILITY)
 
         def observe(updated: AnalysisProgress) -> None:
@@ -2002,6 +2163,9 @@ class SwingOpportunitiesApplication:
             progress = updated
 
         try:
+            if not self.__analysis_work_current(work):
+                return
+            provider = work.provider
             if provider is None:
                 raise RuntimeError("READ_ONLY_CAPABILITY_UNAVAILABLE")
             capability = provider.authenticated_read_only_capability()
@@ -2009,12 +2173,13 @@ class SwingOpportunitiesApplication:
                 raise RuntimeError("READ_ONLY_CAPABILITY_UNAVAILABLE")
             progress = replace(progress, provider_capability_active=True)
             publication_inputs = {} if self.__publication is None else {
-                "committed_predecessor": predecessor, "prepare_publication": True,
+                "committed_predecessor": work.predecessor,
+                "prepare_publication": True,
                 "completion_clock": self.__aware_now}
             completed = build_completed_swing_analysis(
                 capability,
-                analysis_run_identity=attempt_id,
-                swing_analysis_run_identity=swing_run_identity,
+                analysis_run_identity=work.attempt_id,
+                swing_analysis_run_identity=work.run_identity,
                 run_created_at=run_created_at,
                 now=run_created_at,
                 pace=self.__pace,
@@ -2026,6 +2191,8 @@ class SwingOpportunitiesApplication:
                 ),
                 **publication_inputs,
             )
+            if not self.__analysis_work_current(work):
+                return
             contribution = getattr(completed, "continuity_contribution", None)
             successful_completed_at = (contribution.rows[0].last_analysis_checked
                 if contribution is not None else self.__aware_now())
@@ -2038,21 +2205,36 @@ class SwingOpportunitiesApplication:
             relative_context_run = getattr(completed, "relative_context_run", None)
             if self.__publication is not None:
                 provenance = SwingAnalysisRunProvenance(
-                    swing_run_identity, run_created_at, completed.evidence.observation_boundary,
+                    work.run_identity,
+                    run_created_at,
+                    completed.evidence.observation_boundary,
                     completed.evidence.market_data_snapshot_identity, successful_completed_at)
-                reference = self.__publication.prepare(token, mtf=mtf_fact_snapshot,
+                reference = self.__publication.prepare(work.token, mtf=mtf_fact_snapshot,
                     native=native_discovery_run, relative=relative_context_run,
                     provenance=provenance, continuity=completed.continuity_contribution)
                 with self.__lock:
-                    committed = self.__publication.publish(token, reference, successful_completed_at)
-                    if committed is None:
+                    if not self.__analysis_work_current_locked(work):
+                        return
+                    work.phase = "PUBLISHING"
+                committed = self.__publication.publish(
+                    work.token, reference, successful_completed_at
+                )
+                if committed is None:
+                    return
+                with self.__lock:
+                    if self.__analysis_work is not work:
                         return
                     self.__snapshot = replace(published_workspace, provider_state=self.__snapshot.provider_state)
                     self.__completed_analysis_evidence = completed.evidence
                     self.__install_committed(committed)
                     self.__analysis_diagnostic = None
                     self.__analysis_request_result = "SUCCEEDED"
-                    self.reconcile_committed_analysis()
+                    work.phase = "RECONCILING"
+                # Downstream restoration/projection can be expensive. It must
+                # never inherit the application lock from the publication path.
+                self.reconcile_committed_analysis()
+                return
+            if not self.__analysis_work_current(work):
                 return
             if mtf_fact_snapshot is not None and self.__mtf_fact_evidence_store is not None:
                 self.__mtf_fact_evidence_store.retain(mtf_fact_snapshot)
@@ -2076,18 +2258,37 @@ class SwingOpportunitiesApplication:
                     ),
                     successful_completed_at=successful_completed_at,
                 ))
+            with self.__lock:
+                if not self.__analysis_work_current_locked(work):
+                    return
+                self.__analysis_diagnostic = None
+                self.__completed_analysis_evidence = completed.evidence
+                self.__completed_mtf_fact_snapshot = mtf_fact_snapshot
+                self.__completed_native_discovery_run = native_discovery_run
+                self.__completed_relative_context_run = relative_context_run
+                self.__snapshot = replace(
+                    published_workspace,
+                    provider_state=ProviderConnectionState.CONNECTED,
+                )
         except Exception as error:
+            with self.__lock:
+                current = self.__analysis_work_current_locked(work)
+            if not current:
+                return
             if self.__publication is not None:
                 # Late failures cannot overwrite a newer attempt or committed run.
                 try:
-                    if not self.__publication.fail(token, self.__aware_now()):
+                    if not self.__publication.fail(work.token, self.__aware_now()):
                         return
                 except (OSError, ValueError):
                     # Retain the prior projection; recovery owns uncertain state.
-                    self.__analysis_request_result = "PUBLICATION_UNAVAILABLE"
+                    with self.__lock:
+                        if self.__analysis_work is work:
+                            work.phase = "CLEANUP_FAILED"
+                            self.__analysis_request_result = "PUBLICATION_UNAVAILABLE"
                     return
             diagnostic = AnalysisFailureDiagnostic(
-                attempt_id=attempt_id,
+                attempt_id=work.attempt_id,
                 timestamp=_diagnostic_timestamp(self.__clock),
                 failing_stage=progress.stage,
                 exception_class=_safe_exception_class(error),
@@ -2098,6 +2299,8 @@ class SwingOpportunitiesApplication:
                 provider_capability_active=progress.provider_capability_active,
             )
             with self.__lock:
+                if not self.__analysis_work_current_locked(work):
+                    return
                 self.__analysis_diagnostic = diagnostic
                 self.__snapshot = replace(
                     self.__snapshot,
@@ -2105,16 +2308,8 @@ class SwingOpportunitiesApplication:
                     analysis_failure="SWING_ANALYSIS_FAILED",
                 )
             return
-        with self.__lock:
-            self.__analysis_diagnostic = None
-            self.__completed_analysis_evidence = completed.evidence
-            self.__completed_mtf_fact_snapshot = mtf_fact_snapshot
-            self.__completed_native_discovery_run = native_discovery_run
-            self.__completed_relative_context_run = relative_context_run
-            self.__snapshot = replace(
-                published_workspace,
-                provider_state=ProviderConnectionState.CONNECTED,
-            )
+        finally:
+            self.__finish_analysis_work(work)
 
     def __aware_now(self) -> datetime:
         now = self.__clock()

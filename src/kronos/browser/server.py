@@ -1513,9 +1513,6 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             return
         details_match = _ANALYSIS_DETAILS_ROUTE.fullmatch(path)
         if details_match:
-            self.server.trade_window.synchronize_downstream(
-                self.server.native_review.snapshot()
-            )
             snapshot, discovery = self.server.application.opportunities_projection()
             details = (
                 None
@@ -1561,7 +1558,6 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             return
         trade_window_match = _TRADE_WINDOW_ROUTE.fullmatch(path)
         if trade_window_match:
-            self.server._synchronize_trade_window()
             projection = self.server.trade_window.project(
                 trade_window_match.group(1), unquote(trade_window_match.group(2))
             )

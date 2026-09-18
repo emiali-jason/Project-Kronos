@@ -96,6 +96,7 @@ def test_14_get_and_status_do_not_call_mutation_owners(monkeypatch):
             (server.ux10_notifications,'observe_promotions'),
             (server.notification_centre,'synchronize'),
             (server.notification_centre,'synchronize_wo09'),
+            (server.trade_window,'synchronize_downstream'),
             (server.native_review,'_reconcile_journal_unlocked'),
             (server.application,'reconcile_committed_analysis')):
             monkeypatch.setattr(owner,name,reject)
@@ -103,6 +104,9 @@ def test_14_get_and_status_do_not_call_mutation_owners(monkeypatch):
             assert _request(server,'GET','/swing/opportunities')[0]==200
             assert _request(server,'GET','/status')[0]==200
             assert _request(server,'GET','/notifications/status?product=SWING')[0]==200
+            run = 'SWING-RUN-' + 'A' * 32
+            assert _request(server,'GET',f'/swing/analysis-details/{run}/RELIANCE')[0]==404
+            assert _request(server,'GET',f'/swing/trade-window/{run}/RELIANCE')[0]==404
         assert not denied
     finally:
         server.shutdown();server.server_close();thread.join(timeout=5)

@@ -1,4 +1,6 @@
 from dataclasses import replace
+from threading import Event, Thread
+from time import perf_counter
 from types import SimpleNamespace
 
 import pytest
@@ -81,6 +83,220 @@ def test_01_15_committed_predecessor_and_reconciliation_failure(checkpoint, monk
     service.reconcile_committed_analysis()
     assert not service.publication_status()['reconciliation_unavailable']
     assert co.current().native==prepared.native_run
+
+
+def _completed_successor(service, snapshot, bindings, predecessor):
+    continuity = c.prepare_continuity(
+        snapshot,
+        bindings,
+        adopted_predecessor=predecessor,
+    )
+    return SimpleNamespace(
+        workspace=replace(
+            service.snapshot(),
+            analysis_state=app.AnalysisState.READY,
+            analysis_run_identity="ANALYSIS-000001",
+            swing_analysis_run_identity=snapshot.run_identity,
+            v1_layer1_run_identity="V1-LAYER1-PREPARED",
+            run_created_at=snapshot.observed_at,
+            market_data_snapshot_identity="SWING-MARKET-DATA-SNAPSHOT-" + "a" * 64,
+            observation_boundary=snapshot.observed_at,
+            completed_at=snapshot.observed_at,
+        ),
+        evidence=SimpleNamespace(
+            analysis_run_identity="ANALYSIS-000001",
+            swing_analysis_run_identity=snapshot.run_identity,
+            run_created_at=snapshot.observed_at,
+            observation_boundary=snapshot.observed_at,
+            market_data_snapshot_identity="SWING-MARKET-DATA-SNAPSHOT-" + "a" * 64,
+        ),
+        mtf_fact_snapshot=snapshot,
+        native_discovery_run=continuity.native_run,
+        relative_context_run=build_relative_context_run(
+            snapshot, SWING_PHASE1_UNIVERSE
+        ),
+        continuity_contribution=continuity,
+    )
+
+
+def test_cancelled_worker_remains_owned_and_cannot_publish_late(
+    checkpoint, monkeypatch
+):
+    service, queued, snapshot = service_for(checkpoint)
+    co, _, bindings, prior = checkpoint
+    started, release = Event(), Event()
+    completed = _completed_successor(service, snapshot, bindings, prior)
+
+    def build(*_args, **_kwargs):
+        started.set()
+        assert release.wait(5)
+        return completed
+
+    monkeypatch.setattr(app, "build_completed_swing_analysis", build)
+    assert service.run_analysis()
+    worker = Thread(target=queued.pop())
+    worker.start()
+    assert started.wait(2)
+
+    assert service.disconnect_provider()
+    attempt = co.status()["latest_attempt"]
+    assert attempt["state"] == "RUNNING"
+    assert attempt["failure_reason"] is None
+    assert service.analysis_work_status()["owned_work_count"] == 1
+    assert not service.run_analysis()
+    release.set()
+    worker.join(5)
+
+    assert not worker.is_alive()
+    assert service.analysis_work_status()["state"] == "IDLE"
+    attempt = co.status()["latest_attempt"]
+    assert attempt["state"] == "FAILED"
+    assert attempt["failure_reason"] == "SWING_ANALYSIS_INTERRUPTED"
+    assert co.current().reference == prior.reference
+    assert not co._paths(snapshot.run_identity)["native"].exists()
+
+
+def test_failed_cancellation_cleanup_remains_owned_and_fenced(
+    checkpoint, monkeypatch
+):
+    service, queued, snapshot = service_for(checkpoint)
+    co, _, _, prior = checkpoint
+    started, release = Event(), Event()
+
+    def build(*_args, **_kwargs):
+        started.set()
+        assert release.wait(5)
+        raise RuntimeError("CONTROLLED_WORKER_FAILURE")
+
+    monkeypatch.setattr(app, "build_completed_swing_analysis", build)
+    assert service.run_analysis()
+    worker = Thread(target=queued.pop())
+    worker.start()
+    assert started.wait(2)
+    assert service.disconnect_provider()
+
+    def fail_control(phase):
+        if phase == "before_control_replace":
+            raise OSError("CONTROLLED_CLEANUP_FAILURE")
+
+    co.fault = fail_control
+    release.set()
+    worker.join(5)
+
+    assert not worker.is_alive()
+    status = service.analysis_work_status()
+    assert status["state"] == "CLEANUP_FAILED"
+    assert status["owned_work_count"] == 1
+    assert service.publication_status()["request_result"] == "PUBLICATION_UNAVAILABLE"
+    assert co.status()["latest_attempt"]["state"] == "RUNNING"
+    assert co.current().reference == prior.reference
+    assert not service.run_analysis()
+    assert service.publication_status()["request_result"] == "WORKER_DRAINING"
+    assert not co._paths(snapshot.run_identity)["native"].exists()
+
+
+def test_reconciliation_never_holds_application_lock_or_blocks_disconnect(
+    checkpoint, monkeypatch
+):
+    service, queued, snapshot = service_for(checkpoint)
+    co, _, bindings, prior = checkpoint
+    completed = _completed_successor(service, snapshot, bindings, prior)
+    entered, release = Event(), Event()
+    monkeypatch.setattr(
+        app, "build_completed_swing_analysis", lambda *_a, **_k: completed
+    )
+
+    def reconcile():
+        entered.set()
+        assert release.wait(5)
+
+    service.register_analysis_reconciliation(reconcile)
+    assert service.run_analysis()
+    worker = Thread(target=queued.pop())
+    worker.start()
+    assert entered.wait(20)
+
+    before = perf_counter()
+    assert service.snapshot().analysis_state is app.AnalysisState.READY
+    assert service.publication_status()["control"]["current_manifest"] != prior.reference
+    assert perf_counter() - before < 0.5
+    assert service.disconnect_provider()
+    assert service.analysis_work_status()["owned_work_count"] == 1
+
+    release.set()
+    worker.join(5)
+    assert not worker.is_alive()
+    assert service.analysis_work_status()["state"] == "IDLE"
+    assert co.current().native.run_identity == snapshot.run_identity
+
+
+def test_durable_publication_never_holds_application_lock(
+    checkpoint, monkeypatch
+):
+    service, queued, snapshot = service_for(checkpoint)
+    co, _, bindings, prior = checkpoint
+    completed = _completed_successor(service, snapshot, bindings, prior)
+    entered, release = Event(), Event()
+    monkeypatch.setattr(
+        app, "build_completed_swing_analysis", lambda *_a, **_k: completed
+    )
+    publish = co.publish
+
+    def blocked_publish(*args, **kwargs):
+        entered.set()
+        assert release.wait(5)
+        return publish(*args, **kwargs)
+
+    monkeypatch.setattr(co, "publish", blocked_publish)
+    assert service.run_analysis()
+    worker = Thread(target=queued.pop())
+    worker.start()
+    assert entered.wait(20)
+
+    before = perf_counter()
+    assert service.snapshot().analysis_state is app.AnalysisState.RUNNING
+    assert service.publication_status()["control"]["current_manifest"] == prior.reference
+    assert perf_counter() - before < 0.5
+    release.set()
+    worker.join(5)
+    assert not worker.is_alive()
+    assert service.analysis_work_status()["state"] == "IDLE"
+    assert co.current().native.run_identity == snapshot.run_identity
+
+
+def test_durable_admission_never_holds_application_lock_or_lifecycle(
+    checkpoint, monkeypatch
+):
+    service, _, _ = service_for(checkpoint)
+    co, _, _, prior = checkpoint
+    entered, release = Event(), Event()
+    admit = co.admit
+
+    def blocked_admit(*args, **kwargs):
+        entered.set()
+        assert release.wait(5)
+        return admit(*args, **kwargs)
+
+    monkeypatch.setattr(co, "admit", blocked_admit)
+    results = []
+    requester = Thread(target=lambda: results.append(service.run_analysis()))
+    requester.start()
+    assert entered.wait(2)
+
+    before = perf_counter()
+    assert service.snapshot().provider_state is app.ProviderConnectionState.CONNECTED
+    assert service.analysis_work_status()["state"] == "ADMITTING"
+    assert service.publication_status()["control"]["current_manifest"] == prior.reference
+    assert perf_counter() - before < 0.5
+    assert service.disconnect_provider()
+
+    release.set()
+    requester.join(15)
+    assert not requester.is_alive()
+    assert results == [False]
+    assert service.analysis_work_status()["state"] == "IDLE"
+    assert co.status()["latest_attempt"]["state"] == "FAILED"
+    assert co.current().reference == prior.reference
 
 
 def test_10_no_latest_fallback_in_builder():

@@ -1,6 +1,9 @@
 from dataclasses import fields, replace
 from datetime import UTC, date, datetime, timedelta
 import inspect
+from threading import Event, Thread
+from time import perf_counter
+import tracemalloc
 from types import SimpleNamespace
 
 import pytest
@@ -364,9 +367,132 @@ def test_concurrent_analysis_is_rejected_and_publication_is_atomic(monkeypatch) 
     assert service.run_analysis()
     assert service.snapshot().analysis_state is app.AnalysisState.RUNNING
     assert service.snapshot().opportunities == ()
+    assert dict(service.analysis_work_status()) == {
+        "state": "RUNNING",
+        "generation": 1,
+        "run_identity": service.analysis_work_status()["run_identity"],
+        "owned_work_count": 1,
+        "maximum_owned_work": 1,
+        "queued_jobs": 0,
+        "maximum_queued_jobs": 0,
+        "queued_bytes": 0,
+        "maximum_result_instruments": 98,
+        "active_local_generations": 1,
+        "retained_generations": 0,
+        "maximum_retained_generations": 1,
+        "maximum_live_generations": 2,
+    }
     assert service.run_analysis() is False
+    assert service.publication_status()["request_result"] == "DUPLICATE_RUNNING"
     queued.pop(0)()
     assert service.snapshot() == completed
+    assert service.analysis_work_status()["state"] == "IDLE"
+
+
+def test_blocked_analysis_is_owned_cancelled_and_cannot_delay_lifecycle(
+    monkeypatch,
+) -> None:
+    started, release = Event(), Event()
+    threads: list[Thread] = []
+    provider = _Provider()
+    previous = _ready(_opportunity())
+    completed = _ready(_opportunity(1))
+
+    def build(*_args, **_kwargs):  # type: ignore[no-untyped-def]
+        started.set()
+        assert release.wait(5)
+        return _completed(completed)
+
+    def runner(operation, name):  # type: ignore[no-untyped-def]
+        thread = Thread(target=operation, name=name)
+        threads.append(thread)
+        thread.start()
+
+    class Monitoring:
+        def __init__(self) -> None:
+            self.activated: list[str] = []
+            self.closed = 0
+
+        def activate_requirement(self, identity, capability):  # type: ignore[no-untyped-def]
+            assert capability is provider.capability
+            self.activated.append(identity)
+
+        def restore_active(self, _capability):  # type: ignore[no-untyped-def]
+            return None
+
+        def close_monitoring(self):
+            self.closed += 1
+
+    monitoring = Monitoring()
+    monkeypatch.setattr(app, "build_completed_swing_analysis", build)
+    service = app.SwingOpportunitiesApplication(
+        lambda: provider,
+        clock=lambda: NOW,
+        background_runner=runner,
+        initial_snapshot=previous,
+    )
+    service._SwingOpportunitiesApplication__provider = provider
+    service.register_progression_watch_workflow(monitoring)
+
+    assert service.run_analysis() and started.wait(2)
+    before = perf_counter()
+    assert service.snapshot().opportunities == previous.opportunities
+    assert perf_counter() - before < 0.5
+    assert service.activate_progression_watch("WATCH-1")
+    assert monitoring.activated == ["WATCH-1"]
+    assert service.cancel_analysis()
+    assert service.disconnect_provider()
+    status = service.analysis_work_status()
+    assert status["state"] == "CANCELLATION_REQUESTED"
+    assert status["owned_work_count"] == 1
+    assert not service.run_analysis()
+    assert service.publication_status()["request_result"] == "WORKER_DRAINING"
+    assert service.snapshot().opportunities == previous.opportunities
+    assert service.completed_analysis_evidence() is None
+
+    release.set()
+    for thread in threads:
+        thread.join(5)
+    assert not any(thread.is_alive() for thread in threads)
+    assert service.analysis_work_status()["state"] == "IDLE"
+    assert service.snapshot().provider_state is app.ProviderConnectionState.DISCONNECTED
+    assert service.snapshot().analysis_failure == "SWING_ANALYSIS_INTERRUPTED"
+    assert service.completed_analysis_evidence() is None
+
+
+def test_repeated_failed_analysis_cycles_retain_no_jobs_or_generations(
+    monkeypatch,
+) -> None:
+    provider = _Provider()
+    service = app.SwingOpportunitiesApplication(
+        lambda: provider,
+        clock=lambda: NOW,
+        background_runner=_immediate,
+        initial_snapshot=app.BrowserWorkspaceSnapshot(
+            app.ProviderConnectionState.CONNECTED,
+            app.AnalysisState.NOT_RUN,
+            98,
+        ),
+    )
+    service._SwingOpportunitiesApplication__provider = provider
+    monkeypatch.setattr(
+        app,
+        "build_completed_swing_analysis",
+        lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("BOUNDED_FAILURE")),
+    )
+
+    tracemalloc.start()
+    for _ in range(64):
+        assert service.run_analysis()
+        status = service.analysis_work_status()
+        assert status["state"] == "IDLE"
+        assert status["owned_work_count"] == 0
+        assert status["retained_generations"] == 0
+    retained, peak = tracemalloc.get_traced_memory()
+    tracemalloc.stop()
+
+    assert retained < 512_000
+    assert peak < 2_000_000
 
 
 @pytest.mark.parametrize("stage", tuple(app.AnalysisStage))
@@ -991,7 +1117,7 @@ def test_disconnect_disposes_provider_and_old_capability_fails_closed(monkeypatc
     assert service.disconnect_provider() is False
 
 
-def test_disconnect_is_rejected_while_analysis_is_running() -> None:
+def test_disconnect_cancels_queued_analysis_without_delaying_provider() -> None:
     queued: list[callable] = []
     provider = _Provider()
     service = app.SwingOpportunitiesApplication(
@@ -1002,10 +1128,14 @@ def test_disconnect_is_rejected_while_analysis_is_running() -> None:
     queued.pop(0)()
     assert service.run_analysis()
 
-    assert service.disconnect_provider() is False
-    assert provider.ended is False
-    assert service.snapshot().provider_state is app.ProviderConnectionState.CONNECTED
-    assert service.snapshot().analysis_state is app.AnalysisState.RUNNING
+    assert service.disconnect_provider()
+    assert provider.ended
+    assert service.snapshot().provider_state is app.ProviderConnectionState.DISCONNECTED
+    assert service.snapshot().analysis_failure == "SWING_ANALYSIS_INTERRUPTED"
+    assert service.analysis_work_status()["state"] == "CANCELLATION_REQUESTED"
+    queued.pop(0)()
+    assert service.analysis_work_status()["state"] == "IDLE"
+    assert service.completed_analysis_evidence() is None
 
 
 def test_browser_authority_source_exposes_no_order_or_raw_client_path() -> None:
