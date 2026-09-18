@@ -13,6 +13,7 @@ from typing import get_args, get_origin, get_type_hints
 from kronos.application.intraday_wo17 import (
     IntradayWo17Application,
     IntradayWo17RestorationService,
+    Wo17RestorationStatus,
     Wo17ApplicationError,
     Wo17BusyOutcome,
     Wo17OperationRequest,
@@ -65,7 +66,14 @@ class IntradayWo17OperationalControl:
         self._wo16_store = wo16_store
         self._monitoring = monitoring
         self._lock = RLock()
-        self._restoration = restoration.restore()
+        initial = restoration.restore()
+        self._restoration_state = initial.state
+        self._restoration_failure_stage = initial.failure_stage
+        self._restoration_failure_reason = initial.failure_reason
+        self._prepared_restoration = _restoration_document(initial)
+        self._application.set_restoration_observer(
+            self._refresh_prepared_restoration
+        )
         self._active_request_identity: str | None = None
         self._last_operation: dict[str, object] | None = None
         self._sponsor_operations = 0
@@ -77,22 +85,16 @@ class IntradayWo17OperationalControl:
         return self._application
 
     def status_document(self) -> dict[str, object]:
-        latest_restoration = self._restoration_service.restore()
         with self._lock:
-            self._restoration = latest_restoration
-            restoration = latest_restoration
+            restoration_state = self._restoration_state
+            failure_stage = self._restoration_failure_stage
+            failure_reason = self._restoration_failure_reason
+            prepared = self._prepared_restoration
             active = self._active_request_identity
             last = self._last_operation
             sponsor_operations = self._sponsor_operations
             positions_created = self._positions_created
             positions_closed = self._positions_closed
-        currents = [_state_document(item) for item in restoration.restored]
-        history = [
-            _history_document(pointer)
-            for item in restoration.restored
-            for pointer in item.history
-        ]
-        failures = [_failure_projection(item) for item in restoration.latest_failures]
         monitoring = (
             self._monitoring.status_document()
             if callable(getattr(self._monitoring, "status_document", None))
@@ -104,25 +106,21 @@ class IntradayWo17OperationalControl:
                 "autonomous_operations": 0,
             }
         )
-        event_count = sum(
-            0 if item.closure is None else len(item.closure.events)
-            for item in restoration.restored
-        )
         return {
             "control_identity": WO17_CONTROL_IDENTITY,
             "control_version": WO17_CONTROL_VERSION,
             "runtime_loaded": True,
-            "restoration_state": restoration.state.value,
+            "restoration_state": restoration_state.value,
             "operation_state": "BUSY" if active is not None else "IDLE",
             "busy": active is not None,
             "active_request_identity": active,
-            "current_positions": currents,
-            "position_history": history,
-            "immutable_event_count": event_count,
+            "current_positions": prepared["current_positions"],
+            "position_history": prepared["position_history"],
+            "immutable_event_count": prepared["immutable_event_count"],
             "last_operation": last,
-            "latest_persisted_failures": failures,
-            "failure_stage": restoration.failure_stage,
-            "failure_reason": restoration.failure_reason,
+            "latest_persisted_failures": prepared["latest_persisted_failures"],
+            "failure_stage": failure_stage,
+            "failure_reason": failure_reason,
             "monitoring": monitoring,
             "policy_identity": WO17_POLICY_IDENTITY,
             "policy_version": WO17_POLICY_VERSION,
@@ -136,6 +134,15 @@ class IntradayWo17OperationalControl:
             "positions_closed": positions_closed,
             "persistence_writes_from_get": 0,
         }
+
+    def _refresh_prepared_restoration(self) -> None:
+        restoration = self._restoration_service.restore()
+        prepared = _restoration_document(restoration)
+        with self._lock:
+            self._restoration_state = restoration.state
+            self._restoration_failure_stage = restoration.failure_stage
+            self._restoration_failure_reason = restoration.failure_reason
+            self._prepared_restoration = prepared
 
     def execute_document(self, payload: object) -> dict[str, object]:
         try:
@@ -166,25 +173,25 @@ class IntradayWo17OperationalControl:
                     payload, "CONCURRENCY", "WO17_OPERATION_BUSY", "BUSY"
                 )
             else:
-                restoration = self._restoration_service.restore()
+                with self._lock:
+                    restoration_state = self._restoration_state
+                    positions = self._prepared_restoration["current_positions"]
                 restored = next(
                     (
                         item
-                        for item in restoration.restored
-                        if item.pointer.canonical_subject_identity
+                        for item in positions
+                        if item["canonical_subject_identity"]
                         == request.canonical_subject_identity
                     ),
                     None,
                 )
                 if (
-                    restoration.state is not Wo17RestorationState.LOADED
+                    restoration_state is not Wo17RestorationState.LOADED
                     or restored is None
-                    or restored.pointer != execution.pointer
-                    or restored.request != request
+                    or restored["current_pointer"] != _wire(execution.pointer)
                 ):
                     raise Wo17ApplicationError("WO17_POST_EXECUTION_RESTORE_FAILED")
                 with self._lock:
-                    self._restoration = restoration
                     if not execution.replayed:
                         if (
                             previous is None
@@ -202,13 +209,10 @@ class IntradayWo17OperationalControl:
                     "idempotent": execution.replayed,
                     "failure_stage": None,
                     "failure_reason": None,
-                    "position": _state_document(restored),
+                    "position": restored,
                 }
         except Exception as error:
             reason = _failure_code(error)
-            restoration = self._restoration_service.restore()
-            with self._lock:
-                self._restoration = restoration
             document = _failure_document(
                 payload,
                 "CONCURRENCY" if reason == "WO17_OPERATION_BUSY" else "APPLICATION",
@@ -350,6 +354,28 @@ def _wire(value: object) -> object:
     if value is None or type(value) in {str, int, bool}:
         return value
     raise ValueError("WO17_OPERATION_DOCUMENT_INVALID")
+
+
+def _restoration_document(
+    restoration: Wo17RestorationStatus,
+) -> dict[str, object]:
+    return {
+        "current_positions": [
+            _state_document(item) for item in restoration.restored
+        ],
+        "position_history": [
+            _history_document(pointer)
+            for item in restoration.restored
+            for pointer in item.history
+        ],
+        "immutable_event_count": sum(
+            0 if item.closure is None else len(item.closure.events)
+            for item in restoration.restored
+        ),
+        "latest_persisted_failures": [
+            _failure_projection(item) for item in restoration.latest_failures
+        ],
+    }
 
 
 def _state_document(restored: RestoredWo17State) -> dict[str, object]:

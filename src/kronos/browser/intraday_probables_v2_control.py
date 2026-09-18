@@ -219,7 +219,7 @@ class IntradayProbablesV2OperationalControl:
     def latest_evaluable_run(self) -> ProbablesRunV2 | None:
         """Return immutable prior projection evidence without moving a pointer."""
 
-        return self._probables.store.load_latest_evaluable_run()
+        return self._probables.latest_evaluable_run()
 
     def market_availability(self) -> tuple[IntradayMarketAvailability, ...]:
         """Project DOMAIN-008 market truth at the current read boundary."""

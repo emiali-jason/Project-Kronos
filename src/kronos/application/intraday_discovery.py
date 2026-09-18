@@ -261,6 +261,11 @@ class IntradayDiscoveryApplication:
         self._current_failure: str | None = None
         if last_successful_run_identity is not None:
             self._restore(last_successful_run_identity)
+        self._prepared_generation = (self._run, self._member_snapshots())
+        if self._probables is not None:
+            self._probables.set_publication_observer(
+                self._refresh_prepared_generation
+            )
 
     @property
     def operational_invocation_available(self) -> bool:
@@ -309,7 +314,7 @@ class IntradayDiscoveryApplication:
     def snapshot(
         self, selected_canonical_instrument_id: str | None = None
     ) -> IntradayDiscoverySnapshot:
-        members = self._member_snapshots()
+        run, members = self._prepared_generation
         selected = None
         if selected_canonical_instrument_id:
             selected = next((
@@ -320,12 +325,12 @@ class IntradayDiscoveryApplication:
         return IntradayDiscoverySnapshot(
             system_status=(
                 "NO_SUCCESSFUL_DISCOVERY_RUN_AVAILABLE"
-                if self._run is None
+                if run is None
                 else "LAST_SUCCESSFUL_DISCOVERY_RUN_AVAILABLE"
             ),
             current_failure=self._current_failure,
-            last_successful_run_identity=None if self._run is None else self._run.run_identity,
-            last_successful_analysis=None if self._run is None else self._run.observation_boundary,
+            last_successful_run_identity=None if run is None else run.run_identity,
+            last_successful_analysis=None if run is None else run.observation_boundary,
             universe_count=len(members),
             pre_evaluable_count=sum(item.prerequisite_ready for item in members),
             prerequisite_unavailable_count=sum(not item.prerequisite_ready for item in members),
@@ -365,6 +370,10 @@ class IntradayDiscoveryApplication:
             for item in execution.failure_provenance
         }
         self._load_active_bindings(execution.run)
+        self._refresh_prepared_generation()
+
+    def _refresh_prepared_generation(self) -> None:
+        self._prepared_generation = (self._run, self._member_snapshots())
 
     def _restore(self, run_identity: str) -> None:
         run = self._store.load_run(run_identity=run_identity)

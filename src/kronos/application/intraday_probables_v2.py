@@ -76,6 +76,7 @@ class IntradayProbablesV2Application:
         self._store = store
         self._methodology = create_probables_v2_methodology()
         self._run: ProbablesRunV2 | None = None
+        self._latest_evaluable_run: ProbablesRunV2 | None = None
         self.research_capture_failure: str | None = None
         self._current_failure: str | None = None
         self._failure_detail: ProbablesV2FailureDetail | None = None
@@ -89,6 +90,12 @@ class IntradayProbablesV2Application:
                 self._run.methodology.payload_checksum,
             ):
                 raise ProbablesV2Error("PROBABLES_V2_RESTART_METHODOLOGY_MISMATCH")
+            if self._run is not None:
+                self._latest_evaluable_run = (
+                    self._run
+                    if self._run.diagnostics.evaluable_count > 0
+                    else self._store.load_latest_evaluable_run()
+                )
 
     @property
     def store(self) -> ProbablesV2Store:
@@ -151,6 +158,8 @@ class IntradayProbablesV2Application:
                 self._current_failure = "PROBABLES_V2_REFRESH_FAILED"
                 raise RuntimeError("PROBABLES_V2_REFRESH_FAILED") from error
             self._run = run
+            if run.diagnostics.evaluable_count > 0:
+                self._latest_evaluable_run = run
             self._current_failure = None
             self._failure_detail = None
             self.research_capture_failure = None
@@ -195,6 +204,12 @@ class IntradayProbablesV2Application:
                 results=() if self._run is None else self._run.results,
                 run=self._run,
             )
+
+    def latest_evaluable_run(self) -> ProbablesRunV2 | None:
+        """Return the bounded prepared evaluable generation."""
+
+        with self._lock:
+            return self._latest_evaluable_run
 
 
 def _text(value: object) -> bool:

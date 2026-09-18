@@ -16,8 +16,16 @@ class IntradayLifecycleApplication:
         self._capability = lambda: None
         self._registrations = {}
         self._lock = RLock()
+        self._projection_lock = RLock()
+        self._prepared_cards = {}
+        self._attached_track_identities = frozenset()
         self._timing_boundaries = {}
         self.last_failure = None
+        try:
+            for current in self.store.restore():
+                self._prepare_current(current)
+        except (KeyError, OSError, TypeError, ValueError):
+            self.last_failure = "WO11_RESTORATION_FAILED"
 
     def bind_monitoring(self, hub, capability):
         self._hub, self._capability = hub, capability
@@ -53,6 +61,7 @@ class IntradayLifecycleApplication:
                     return current
                 raise ValueError("WO11_OPPORTUNITY_EXPRESSION_ALREADY_CLAIMED")
             result = self.store.publish(transition, claim=claim, previous=None)
+        self._prepare_current(result)
         self._attach(result, restored=False)
         return result
 
@@ -70,6 +79,7 @@ class IntradayLifecycleApplication:
                 authorization_identity=result.data["authorization_identity"], at=result.data["updated_at"],
                 state=result.data["display_state"], exit=result.data["exit"],
                 exit_reason=result.data["exit_reason"], terminal_status=result.data["terminal_status"]))
+        self._prepare_current(result)
         return result
 
     def close_track(self, *, claim, action_identity):
@@ -94,6 +104,7 @@ class IntradayLifecycleApplication:
         registration = self._hub.open(capability, consumer)
         registration.subscribe((instrument_record(current.data["intake"]["future"]),))
         self._registrations[consumer.track_identity] = (registration, capability)
+        self._attached_track_identities = frozenset(self._registrations)
         try:
             if restored:
                 with self.store.transaction():
@@ -106,6 +117,7 @@ class IntradayLifecycleApplication:
             registration.connect()
         except Exception:
             self._registrations.pop(consumer.track_identity,None)
+            self._attached_track_identities = frozenset(self._registrations)
             registration.disconnect()
             raise
 
@@ -147,6 +159,7 @@ class IntradayLifecycleApplication:
                 attached = self._registrations.get(current.data["track_identity"])
                 if attached is not None and (now >= terminal_at(current) or not getattr(attached[1], "active", False) or self._capability() is not attached[1]):
                     self._registrations.pop(current.data["track_identity"])
+                    self._attached_track_identities = frozenset(self._registrations)
                     attached[0].disconnect()
                     current = self._current_for(current)
                 if current.data["state"] in TERMINAL:
@@ -230,20 +243,39 @@ class IntradayLifecycleApplication:
                 self._commit(current,gap(current,at=self.clock(),reason=str(state)))
 
     def projection(self):
-        cards=[]
-        for current in self.store.restore():
-            d=current.data;auth=self.store.load(d["authorization_identity"])
-            metric=None if d["metrics"] is None else self.store.load(d["metrics"]).data
-            cards.append(dict(identity=current.identity,claim=auth.data["claim"],subject=d["intake"]["subject"],
-                comparison_identity=d["intake"]["comparison_identity"],truth_class=d["truth_class"],lots=1,
-                state=d["display_state"],terminal=d["state"] in TERMINAL,entry=d["entry"],exit=d["exit"],
-                exit_reason=d["exit_reason"],terminal_status=d["terminal_status"],
-                stop=d["intake"]["stop"],target=d["intake"]["target"],metrics=metric,
-                monitoring=d["monitoring"] if d["track_identity"] in self._registrations else "UNATTACHED",
-                gaps=d["gaps"],selected_lots_context=d["intake"]["selected_lots"],
-                original_thesis_invalidation=d["intake"].get("invalidation"),
-                post_entry_analytical_invalidation=d["post_entry_analytical_invalidation"]))
+        with self._projection_lock:
+            prepared = tuple(self._prepared_cards.values())
+        attached = self._attached_track_identities
+        cards = [
+            dict(
+                card,
+                monitoring=(
+                    card["retained_monitoring"]
+                    if card["track_identity"] in attached
+                    else "UNATTACHED"
+                ),
+            )
+            for card in prepared
+        ]
+        for card in cards:
+            card.pop("retained_monitoring")
+            card.pop("track_identity")
         return dict(cards=cards,last_failure=self.last_failure,live="LIVE_POSITION_NOT_COMMISSIONED_V1")
+
+    def _prepare_current(self, current):
+        d=current.data;auth=self.store.load(d["authorization_identity"])
+        metric=None if d["metrics"] is None else self.store.load(d["metrics"]).data
+        card=dict(identity=current.identity,claim=auth.data["claim"],subject=d["intake"]["subject"],
+            comparison_identity=d["intake"]["comparison_identity"],truth_class=d["truth_class"],lots=1,
+            state=d["display_state"],terminal=d["state"] in TERMINAL,entry=d["entry"],exit=d["exit"],
+            exit_reason=d["exit_reason"],terminal_status=d["terminal_status"],
+            stop=d["intake"]["stop"],target=d["intake"]["target"],metrics=metric,
+            retained_monitoring=d["monitoring"],track_identity=d["track_identity"],
+            gaps=d["gaps"],selected_lots_context=d["intake"]["selected_lots"],
+            original_thesis_invalidation=d["intake"].get("invalidation"),
+            post_entry_analytical_invalidation=d["post_entry_analytical_invalidation"])
+        with self._projection_lock:
+            self._prepared_cards[auth.data["claim"]] = card
 
     def portfolio_observation(self, track_identity, retained):
         """Read exact owner/latest accepted observation; never acquire market data."""
@@ -309,6 +341,7 @@ class IntradayLifecycleApplication:
         for registration,_ in tuple(self._registrations.values()):
             registration.disconnect()
         self._registrations.clear()
+        self._attached_track_identities = frozenset()
 
 
 class _Consumer:

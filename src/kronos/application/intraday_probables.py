@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from threading import RLock
-from typing import Sequence
+from typing import Callable, Sequence
 
 from kronos.intraday.probables import (
     FactualSourceKind,
@@ -69,6 +69,7 @@ class IntradayProbablesApplication:
         self._methodology = create_v0_probables_methodology()
         self._run: ProbablesRun | None = None
         self._current_failure: str | None = None
+        self._publication_observer: Callable[[], None] | None = None
         self._lock = RLock()
         if last_successful_run_identity is not None:
             self._run = store.load_run(run_identity=last_successful_run_identity)
@@ -119,7 +120,19 @@ class IntradayProbablesApplication:
                 raise RuntimeError("PROBABLES_REFRESH_FAILED") from error
             self._run = run
             self._current_failure = None
-            return run
+        observer = self._publication_observer
+        if observer is not None:
+            observer()
+        return run
+
+    def set_publication_observer(self, observer: Callable[[], None]) -> None:
+        """Bind the single owner of the process-local presentation view."""
+
+        if not callable(observer):
+            raise ValueError("INTRADAY_PROBABLES_OBSERVER_INVALID")
+        if self._publication_observer not in (None, observer):
+            raise ValueError("INTRADAY_PROBABLES_OBSERVER_CONFLICT")
+        self._publication_observer = observer
 
     def record_failure(self, failure: str) -> None:
         if not _text(failure) or not failure.replace("_", "").isalnum():

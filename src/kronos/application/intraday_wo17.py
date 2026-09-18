@@ -11,7 +11,7 @@ from dataclasses import dataclass, fields
 from datetime import datetime
 from hashlib import sha256
 from threading import Lock
-from typing import Sequence
+from typing import Callable, Sequence
 
 from kronos.intraday.wo17 import (
     WO17_CONTRACT_VERSION,
@@ -231,10 +231,20 @@ class IntradayWo17Application:
             raise ValueError("WO17_APPLICATION_CONFIGURATION_INVALID")
         self._store = store
         self._lock = Lock()
+        self._restoration_observer: Callable[[], None] | None = None
 
     @property
     def store(self) -> Wo17Store:
         return self._store
+
+    def set_restoration_observer(self, observer: Callable[[], None]) -> None:
+        """Bind the single process-local view refreshed after owned work."""
+
+        if not callable(observer):
+            raise ValueError("WO17_RESTORATION_OBSERVER_INVALID")
+        if self._restoration_observer not in (None, observer):
+            raise ValueError("WO17_RESTORATION_OBSERVER_CONFLICT")
+        self._restoration_observer = observer
 
     def execute(
         self, request: Wo17OperationRequest
@@ -324,6 +334,9 @@ class IntradayWo17Application:
             raise Wo17ApplicationError(reason) from error
         finally:
             self._lock.release()
+            observer = self._restoration_observer
+            if observer is not None:
+                observer()
 
     def _record_failure(
         self,
