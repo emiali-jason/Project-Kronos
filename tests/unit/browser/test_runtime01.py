@@ -23,7 +23,10 @@ def server_for(g):
     return SimpleNamespace(connection_governance=g, provider_runtime=SimpleNamespace(read_only_status=lambda:dict(capability_state="ABSENT")), trade_window=SimpleNamespace(paper_observation_projections=lambda:()), visual_v3_live=SimpleNamespace(restoration_error=None),
         application=SimpleNamespace(authenticated_read_only_capability=lambda:None,
             snapshot=lambda:SimpleNamespace(provider_state=SimpleNamespace(value='DISCONNECTED'))),
-        swing_monitoring_hub=SharedSwingMonitoringHub())
+        swing_monitoring_hub=SharedSwingMonitoringHub(),
+        request_capacity_status=lambda: {
+            "state": "AVAILABLE", "active": 0, "maximum": 32, "refusals": 0,
+        })
 
 
 def test_exact_automatic_restoration_and_maintenance_exit(tmp_path):
@@ -98,6 +101,7 @@ def test_browser_status_is_inert_and_cross_product_truth_consistent(running):
             d=json.loads(body)
             assert d['maintenance']['active'] and d['rest_authentication']=='DISCONNECTED'
             assert d['rest_capability']=='NOT_EXPOSED' and d['monitoring']['transport_state']=='IDLE'  # legacy fixture lacks the pure Provider projection
+            assert d['browser_requests']['maximum']==32
     assert p.begin_count==0 and calls==[]
     assert inventory(root)==before
 

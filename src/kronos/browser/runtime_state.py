@@ -85,6 +85,7 @@ def status_document(server):
             "work_owned": restoration["work_owned"],
             "cleanup_state": restoration["cleanup_state"],
         },
+        "browser_requests": server.request_capacity_status(),
         "monitoring": server.swing_monitoring_hub.status_document(),
         "owner_restoration": getattr(server, "monitoring_restoration_state", "NOT_ASSESSED"),
         "startup_retained_owner_evidence": getattr(server, "startup_monitoring_owners", []),

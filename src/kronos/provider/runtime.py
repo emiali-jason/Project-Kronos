@@ -71,6 +71,7 @@ class ProviderRuntimeFailure(StrEnum):
     CAPABILITY_UNAVAILABLE = "CAPABILITY_UNAVAILABLE"
     OPERATION_NOT_AUTHORIZED = "OPERATION_NOT_AUTHORIZED"
     LEASE_RELEASED = "LEASE_RELEASED"
+    LEASE_CAPACITY_UNAVAILABLE = "LEASE_CAPACITY_UNAVAILABLE"
     CONTEXT_EXPIRED = "CONTEXT_EXPIRED"
     CONTEXT_INVALIDATED = "CONTEXT_INVALIDATED"
     CONTEXT_ENDING = "CONTEXT_ENDING"
@@ -102,6 +103,8 @@ class _AuthenticatedRuntime(Protocol):
 _Result = TypeVar("_Result")
 _Clock = Callable[[], datetime]
 _IdentityFactory = Callable[[], str]
+_MAX_PROVIDER_RUNTIME_LEASES = 64
+_MAX_PROVIDER_RUNTIME_LEASE_BYTES = 64 * 1024
 
 
 class SharedAuthenticatedProviderRuntime:
@@ -123,6 +126,8 @@ class SharedAuthenticatedProviderRuntime:
         "__failure",
         "__identity_factory",
         "__leases",
+        "__lease_bytes",
+        "__lease_refusals",
         "__lifecycle",
         "__lock",
         "__principal_binding",
@@ -166,6 +171,8 @@ class SharedAuthenticatedProviderRuntime:
         self.__provider: _AuthenticatedRuntime | None = None
         self.__capability: AuthenticatedReadOnlyProviderCapability | None = None
         self.__leases: dict[str, ReadOnlyProviderLease] = {}
+        self.__lease_bytes: dict[str, int] = {}
+        self.__lease_refusals = 0
         self.__lifecycle = SharedProviderRuntimeLifecycle.ABSENT
         self.__context_identity = ""
         self.__principal_binding: PrincipalBindingResult | None = None
@@ -210,6 +217,10 @@ class SharedAuthenticatedProviderRuntime:
                 "clock_state": clock_state,
                 "retained_availability": self.__availability.value,
                 "retained_lease_count": len(self.__leases),
+                "retained_lease_bytes": sum(self.__lease_bytes.values()),
+                "maximum_retained_leases": _MAX_PROVIDER_RUNTIME_LEASES,
+                "maximum_retained_lease_bytes": _MAX_PROVIDER_RUNTIME_LEASE_BYTES,
+                "lease_capacity_refusals": self.__lease_refusals,
                 "cleanup_state": cleanup_state,
                 "owned_work_count": owned_work_count,
                 "unresolved_cleanup_count": int(self.__unresolved_provider is not None),
@@ -523,6 +534,21 @@ class SharedAuthenticatedProviderRuntime:
                     self.__governance.require_operations()
                 if not _text(lease_identity) or lease_identity in self.__leases:
                     raise ValueError("PROVIDER_RUNTIME_LEASE_IDENTITY_INVALID")
+                lease_bytes = (
+                    256
+                    + len(lease_identity.encode("utf-8"))
+                    + len(consumer_identity.encode("utf-8"))
+                    + sum(len(operation.value.encode("utf-8")) for operation in operations)
+                )
+                if (
+                    len(self.__leases) >= _MAX_PROVIDER_RUNTIME_LEASES
+                    or sum(self.__lease_bytes.values()) + lease_bytes
+                    > _MAX_PROVIDER_RUNTIME_LEASE_BYTES
+                ):
+                    self.__lease_refusals += 1
+                    raise ProviderRuntimeAccessError(
+                        ProviderRuntimeFailure.LEASE_CAPACITY_UNAVAILABLE
+                    )
                 lease = ReadOnlyProviderLease(
                     self,
                     lease_identity=lease_identity,
@@ -530,6 +556,7 @@ class SharedAuthenticatedProviderRuntime:
                     operations=operations,
                 )
                 self.__leases[lease_identity] = lease
+                self.__lease_bytes[lease_identity] = lease_bytes
                 return lease
 
     def acquire_provider_instrument_master_records(
@@ -717,6 +744,7 @@ class SharedAuthenticatedProviderRuntime:
     def __revoke_locked(self) -> None:
         leases = tuple(self.__leases.values())
         self.__leases.clear()
+        self.__lease_bytes.clear()
         for lease in leases:
             lease._revoke()
 
@@ -760,6 +788,7 @@ class SharedAuthenticatedProviderRuntime:
     def _release(self, lease_identity: str) -> None:
         with self.__lock:
             self.__leases.pop(lease_identity, None)
+            self.__lease_bytes.pop(lease_identity, None)
 
     def _use(
         self,

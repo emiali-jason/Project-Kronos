@@ -836,6 +836,23 @@ def test_browser_decline_cancels_before_credentials_or_exchange() -> None:
     assert harness.adapter.exchange_count == 0
 
 
+def test_clean_terminal_attempts_release_obsolete_generation_records() -> None:
+    harness = _Harness(browser_category=BrowserOpenCategory.DECLINED)
+    harness.identities = iter(f"attempt-{index}" for index in range(1, 258))
+    first = harness.service.begin_login()
+    assert harness.service.authentication_attempt_status(first) is not None
+    latest = first
+    for _ in range(256):
+        latest = harness.service.begin_login()
+    assert harness.service.authentication_attempt_status(first) is None
+    evidence = harness.service.authentication_attempt_status(latest)
+    assert evidence is not None
+    assert evidence.state is AuthenticationAttemptState.CANCELLED
+    records = harness.service._ProviderAuthenticationService__records
+    assert len(records) == 1
+    assert harness.service._ProviderAuthenticationService__unresolved_cleanup == {}
+
+
 def test_unknown_handle_discloses_no_attempt_and_performs_no_operation() -> None:
     harness = _Harness()
     unknown = object()

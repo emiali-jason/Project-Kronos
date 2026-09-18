@@ -14,7 +14,7 @@ import json
 import logging
 from pathlib import Path
 import re
-from threading import Lock, RLock, Thread
+from threading import BoundedSemaphore, Lock, RLock, Thread
 from urllib.parse import parse_qs, quote, unquote, urlencode, urlsplit
 from uuid import uuid4
 
@@ -232,6 +232,7 @@ from kronos.swing.v1.progression_watch import (
 _LOOPBACK_HOST = "127.0.0.1"
 _MAX_CREDENTIAL_FORM_BYTES = 4096
 _MAX_PRODUCT_POST_BYTES = 25 * 1024 * 1024
+_MAX_ACTIVE_BROWSER_REQUESTS = 32
 _BRAND_ASSET_ROOT = (
     Path(__file__).resolve().parents[3] / "assets" / "images" / "brand"
 )
@@ -617,6 +618,10 @@ class KronosBrowserServer(ThreadingHTTPServer):
         self.native_review.journal_snapshot()
         self.trade_window.synchronize_downstream(self.native_review.snapshot())
         self.reconcile_progression()
+        self._request_slots = BoundedSemaphore(_MAX_ACTIVE_BROWSER_REQUESTS)
+        self._request_capacity_lock = Lock()
+        self._active_request_count = 0
+        self._request_capacity_refusals = 0
         self.application.register_sponsor_operability_restorer(
             self.restore_sponsor_operability
         )
@@ -630,6 +635,60 @@ class KronosBrowserServer(ThreadingHTTPServer):
             self.native_intake.prepare_page_state()
         self.application.register_analysis_reconciliation(self.reconcile_swing)
         super().__init__(address, _BrowserHandler)
+
+    def process_request(self, request, client_address) -> None:  # type: ignore[no-untyped-def]
+        """Admit a bounded number of request owners before creating threads."""
+
+        if not self._request_slots.acquire(blocking=False):
+            with self._request_capacity_lock:
+                self._request_capacity_refusals += 1
+            body = b'{"failure":"BROWSER_REQUEST_CAPACITY_UNAVAILABLE"}'
+            response = (
+                b"HTTP/1.1 503 Service Unavailable\r\n"
+                b"Content-Type: application/json; charset=utf-8\r\n"
+                b"Cache-Control: no-store\r\n"
+                b"Connection: close\r\n"
+                + f"Content-Length: {len(body)}\r\n\r\n".encode("ascii")
+                + body
+            )
+            try:
+                request.sendall(response)
+            finally:
+                self.shutdown_request(request)
+            return
+        with self._request_capacity_lock:
+            self._active_request_count += 1
+        try:
+            super().process_request(request, client_address)
+        except BaseException:
+            self._finish_request_owner()
+            raise
+
+    def process_request_thread(self, request, client_address) -> None:  # type: ignore[no-untyped-def]
+        try:
+            super().process_request_thread(request, client_address)
+        finally:
+            self._finish_request_owner()
+
+    def _finish_request_owner(self) -> None:
+        with self._request_capacity_lock:
+            self._active_request_count -= 1
+        self._request_slots.release()
+
+    def request_capacity_status(self) -> dict[str, int | str]:
+        """Return local admission facts without waiting on application work."""
+
+        with self._request_capacity_lock:
+            return {
+                "state": (
+                    "SATURATED"
+                    if self._active_request_count >= _MAX_ACTIVE_BROWSER_REQUESTS
+                    else "AVAILABLE"
+                ),
+                "active": self._active_request_count,
+                "maximum": _MAX_ACTIVE_BROWSER_REQUESTS,
+                "refusals": self._request_capacity_refusals,
+            }
 
     def service_actions(self) -> None:
         lifecycle = getattr(self, "intraday_lifecycle", None)

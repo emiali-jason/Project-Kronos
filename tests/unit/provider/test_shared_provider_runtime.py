@@ -194,7 +194,7 @@ def _shared(
 ) -> tuple[SharedAuthenticatedProviderRuntime, _Runtime, list[int]]:
     selected = runtime or _Runtime()
     factory_calls: list[int] = []
-    identities = iter(f"LEASE-{number}" for number in range(1, 50))
+    identities = iter(f"LEASE-{number}" for number in range(1, 100))
 
     def factory():  # type: ignore[no-untyped-def]
         factory_calls.append(1)
@@ -861,6 +861,41 @@ def test_repeated_runtime_cycles_leave_no_cleanup_owner_or_lease():
         assert status["retained_lease_count"] == 0
         assert provider.end_count == 1
     assert len(factory_calls) == 20
+
+
+def test_lease_entries_and_bytes_are_bounded_then_released():
+    shared, _, _ = _shared()
+    _authenticate(shared)
+    leases = [_lease(shared, f"OWNER-{index}") for index in range(64)]
+    with pytest.raises(
+        ProviderRuntimeAccessError,
+        match=ProviderRuntimeFailure.LEASE_CAPACITY_UNAVAILABLE.value,
+    ):
+        _lease(shared, "EXCESS")
+    status = shared.read_only_status()
+    assert status["retained_lease_count"] == 64
+    assert 0 < status["retained_lease_bytes"] <= status["maximum_retained_lease_bytes"]
+    assert status["lease_capacity_refusals"] == 1
+    leases[0].release()
+    replacement = _lease(shared, "REPLACEMENT")
+    assert replacement.active
+    shared.end_kronos_session()
+    status = shared.read_only_status()
+    assert status["retained_lease_count"] == 0
+    assert status["retained_lease_bytes"] == 0
+
+
+def test_oversized_lease_identity_is_refused_without_retention():
+    shared, _, _ = _shared()
+    _authenticate(shared)
+    with pytest.raises(
+        ProviderRuntimeAccessError,
+        match=ProviderRuntimeFailure.LEASE_CAPACITY_UNAVAILABLE.value,
+    ):
+        _lease(shared, "X" * (64 * 1024))
+    status = shared.read_only_status()
+    assert status["retained_lease_count"] == 0
+    assert status["retained_lease_bytes"] == 0
 
 
 def test_deadline_expired_factory_result_is_disposed_without_beginning_login() -> None:

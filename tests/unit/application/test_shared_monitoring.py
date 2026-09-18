@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import UTC, datetime
 from decimal import Decimal
 
@@ -5,6 +6,7 @@ import pytest
 from threading import Event, Thread
 
 from kronos.application.shared_monitoring import SharedSwingMonitoringHub
+from kronos.application import shared_monitoring as monitoring_module
 from kronos.provider.contracts.instrument import InstrumentRecord
 from kronos.provider.contracts.monitoring import (
     MonitoringConnectionState,
@@ -442,6 +444,70 @@ def test_close_is_idempotent_and_releases_one_socket() -> None:
     hub.close()
     hub.close()
     assert capability.sessions[0].disconnections == 1
+
+
+def test_owner_and_subscription_capacity_refusal_is_atomic_and_releasable(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    monkeypatch.setattr(monitoring_module, "_MAX_MONITORING_OWNERS", 2)
+    monkeypatch.setattr(monitoring_module, "_MAX_MONITORING_SUBSCRIPTIONS", 1)
+    hub, capability = SharedSwingMonitoringHub(), Capability()
+    first = hub.open(capability, Consumer())
+    first.subscribe((ONE,))
+    assert hub.status_document()["capacity"]["instrument_count"] == 1
+    second = hub.open(capability, Consumer())
+    with pytest.raises(ValueError, match="SHARED_MONITORING_CAPACITY_UNAVAILABLE"):
+        second.subscribe((TWO,))
+    with pytest.raises(ValueError, match="SHARED_MONITORING_CAPACITY_UNAVAILABLE"):
+        hub.open(capability, Consumer())
+    status = hub.status_document()
+    assert status["capacity"]["subscription_owner_count"] == 1
+    assert status["capacity"]["refusals"] == 2
+    assert second._instruments == set()
+    first.disconnect(); second.disconnect()
+    released = hub.open(capability, Consumer())
+    released.subscribe((TWO,))
+    assert hub.status_document()["capacity"]["subscription_owner_count"] == 1
+
+
+def test_failed_cleanup_memory_remains_owned_and_fences_capacity(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    class FailedSession(Session):
+        def disconnect(self):
+            raise OSError("INJECTED-CLEANUP-FAILURE")
+
+    class FailedCapability(Capability):
+        def open_monitoring_session(self, consumer):
+            value = FailedSession(consumer)
+            self.sessions.append(value)
+            return value
+
+    monkeypatch.setattr(monitoring_module, "_MAX_MONITORING_INSTRUMENTS", 1)
+    hub, capability = SharedSwingMonitoringHub(), FailedCapability()
+    owner = hub.open(capability, Consumer())
+    owner.subscribe((ONE,)); owner.connect()
+    with pytest.raises(OSError, match="INJECTED-CLEANUP-FAILURE"):
+        owner.disconnect()
+    retained = hub.status_document()["capacity"]["retained_bytes"]
+    replacement = hub.open(capability, Consumer())
+    with pytest.raises(ValueError, match="SHARED_MONITORING_CAPACITY_UNAVAILABLE"):
+        replacement.subscribe((TWO,))
+    status = hub.status_document()
+    assert status["transport_cleanup"]["retired_session_owned"] is True
+    assert status["capacity"]["retained_bytes"] >= retained
+
+
+def test_oversized_tick_is_dispatched_but_not_retained_as_latest() -> None:
+    hub, capability, consumer = SharedSwingMonitoringHub(), Capability(), Consumer()
+    owner = hub.open(capability, consumer)
+    owner.subscribe((ONE,)); owner.connect()
+    oversized = replace(tick(ONE), connection_id="X" * 4096)
+    hub.on_market_tick(oversized)
+    assert consumer.ticks == [oversized]
+    assert hub.latest_market_ticks == ()
+    status = hub.status_document()["capacity"]
+    assert status["tick_cache_failure_count"] == 1
+    assert status["refusals"] == 1
+    hub.on_market_tick(tick(ONE))
+    assert hub.latest_market_ticks == (tick(ONE),)
+    assert hub.status_document()["capacity"]["tick_cache_failure_count"] == 0
 
 
 def test_actual_connection_state_is_read_only_websocket_authority() -> None:

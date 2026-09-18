@@ -1,6 +1,6 @@
 from dataclasses import replace
 from http.client import HTTPConnection
-from threading import Thread
+from threading import Event, Lock, Thread, get_ident
 import json
 import os
 import socket
@@ -19,6 +19,7 @@ from kronos.application.swing_v1_browser import (
 )
 from kronos.application.swing_v1_review import SwingV1ReviewWorkflow
 from kronos.browser.server import KronosBrowserServer, create_browser_server
+from kronos.browser import server as server_module
 from kronos.browser.restart_control import BrowserBackendRestartControl
 from kronos.browser.product_routes import BrowserRouteResponse, ProductBrowserRoutes
 from kronos.swing.v1 import (
@@ -78,6 +79,66 @@ def _request_bytes(server, method: str, path: str):  # type: ignore[no-untyped-d
     body = response.read()
     connection.close()
     return response.status, dict(response.headers), body
+
+
+def test_request_threads_are_bounded_and_capacity_refusal_is_immediate(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    entered, release = Event(), Event()
+    active = set()
+    active_lock = Lock()
+
+    def blocked_get(handler):  # type: ignore[no-untyped-def]
+        with active_lock:
+            active.add(get_ident())
+            if len(active) == server_module._MAX_ACTIVE_BROWSER_REQUESTS:
+                entered.set()
+        assert release.wait(5)
+        handler.send_response(200)
+        handler.send_header("Content-Length", "0")
+        handler.end_headers()
+
+    monkeypatch.setattr(server_module._BrowserHandler, "do_GET", blocked_get)
+    server, serving = _running_server()
+    first_results = []
+    first = [
+        Thread(
+            target=lambda: first_results.append(_request(server, "GET", "/blocked")[0]),
+            daemon=True,
+        )
+        for _ in range(server_module._MAX_ACTIVE_BROWSER_REQUESTS)
+    ]
+    excess_results = []
+    excess = [
+        Thread(
+            target=lambda: excess_results.append(_request(server, "GET", "/blocked")[0]),
+            daemon=True,
+        )
+        for _ in range(8)
+    ]
+    try:
+        for worker in first:
+            worker.start()
+        assert entered.wait(3)
+        assert server.request_capacity_status() == {
+            "state": "SATURATED",
+            "active": server_module._MAX_ACTIVE_BROWSER_REQUESTS,
+            "maximum": server_module._MAX_ACTIVE_BROWSER_REQUESTS,
+            "refusals": 0,
+        }
+        for worker in excess:
+            worker.start()
+        for worker in excess:
+            worker.join(3)
+        assert not any(worker.is_alive() for worker in excess)
+        assert excess_results == [503] * 8
+        assert server.request_capacity_status()["refusals"] == 8
+    finally:
+        release.set()
+        for worker in first:
+            worker.join(3)
+        assert _request(server, "GET", "/fresh")[0] == 200
+        server.shutdown(); server.server_close(); serving.join(3)
+    assert first_results == [200] * server_module._MAX_ACTIVE_BROWSER_REQUESTS
+    assert server.request_capacity_status()["active"] == 0
 
 
 def test_product_post_seam_preserves_same_origin_and_body_controls(tmp_path) -> None:  # type: ignore[no-untyped-def]

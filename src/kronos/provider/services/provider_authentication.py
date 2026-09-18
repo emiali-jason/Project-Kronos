@@ -681,6 +681,10 @@ class ProviderAuthenticationService:
             record.monotonic_expires_at = (
                 monotonic_started_at + attempt_lifetime.total_seconds()
             )
+            # Admission above proves that every older attempt is terminal and
+            # owns no unresolved cleanup. Its sanitized handle is obsolete once
+            # this fresh generation is ready for publication.
+            self.__records.clear()
             self.__records[handle] = record
             self.__active_handle = handle
             self.__latest_handle = handle

@@ -16,6 +16,45 @@ from kronos.provider.contracts.monitoring import (
 )
 
 
+_MAX_MONITORING_OWNERS = 256
+_MAX_MONITORING_SUBSCRIPTIONS = 2_048
+_MAX_MONITORING_INSTRUMENTS = 512
+_MAX_MONITORING_RETAINED_BYTES = 512 * 1024
+_MAX_MONITORING_TICK_BYTES = 2 * 1024
+
+
+def _instrument_retained_bytes(instrument: InstrumentRecord) -> int:
+    values = (
+        instrument.provider,
+        instrument.exchange,
+        instrument.segment,
+        instrument.trading_symbol,
+        instrument.name,
+        instrument.instrument_type,
+        "" if instrument.expiry is None else instrument.expiry.isoformat(),
+        "" if instrument.tick_size is None else str(instrument.tick_size),
+        "" if instrument.lot_size is None else str(instrument.lot_size),
+    )
+    # Includes a fixed allowance for the immutable record and set entry.
+    return 256 + sum(len(value.encode("utf-8")) for value in values)
+
+
+def _owner_retained_bytes(identity: str) -> int:
+    return 128 + len(identity.encode("utf-8"))
+
+
+def _tick_retained_bytes(tick: ProviderMarketTick) -> int:
+    values = (
+        str(tick.last_price),
+        tick.observed_at.isoformat(),
+        tick.received_at.isoformat(),
+        tick.source,
+        tick.connection_id,
+        "" if tick.source_sequence is None else str(tick.source_sequence),
+    )
+    return 192 + sum(len(value.encode("utf-8")) for value in values)
+
+
 class SharedSwingMonitoringHub:
     """Multiplex one authenticated read-only Provider session without authority."""
 
@@ -29,6 +68,7 @@ class SharedSwingMonitoringHub:
         self._connection_listener: Callable[[MonitoringConnectionState], None] | None = None
         self._connection_state: MonitoringConnectionState | None = None
         self._latest_ticks: dict[InstrumentRecord, ProviderMarketTick] = {}
+        self._tick_cache_failures: set[InstrumentRecord] = set()
         self._last_interruption = None
         self._transport_lock = Lock()
         self._ownership_generation = 0
@@ -40,7 +80,8 @@ class SharedSwingMonitoringHub:
         self._cleanup_instruments: set[InstrumentRecord] = set()
         self._release_counts = dict(shared_subscription_retained=0,
             final_owner_subscription_releases=0, already_detached=0,
-            stale_callbacks_rejected=0, cleanup_failures=0)
+            stale_callbacks_rejected=0, cleanup_failures=0,
+            capacity_refusals=0)
 
     def set_connection_listener(
         self, listener: Callable[[MonitoringConnectionState], None]
@@ -61,6 +102,15 @@ class SharedSwingMonitoringHub:
             raise TypeError("SHARED_MONITORING_CONSUMER_INVALID")
         registration = _SharedRegistration(self, capability, consumer)
         with self._lock:
+            retained_bytes = self._retained_bytes_locked()
+            if (
+                len(self._registrations) >= _MAX_MONITORING_OWNERS
+                or retained_bytes + _owner_retained_bytes(
+                    registration.owner_identity
+                ) > _MAX_MONITORING_RETAINED_BYTES
+            ):
+                self._count_release("capacity_refusals")
+                raise ValueError("SHARED_MONITORING_CAPACITY_UNAVAILABLE")
             self._registrations[id(registration)] = registration
         return registration
 
@@ -153,6 +203,16 @@ class SharedSwingMonitoringHub:
                 self._cleanup_instruments,
                 key=lambda i: (i.exchange, i.segment, i.trading_symbol),
             ))
+            retained_bytes = self._retained_bytes_locked()
+            subscription_owners = sum(
+                len(registration._instruments)
+                for registration in self._registrations.values()
+            )
+            retained_instruments = {
+                item
+                for registration in self._registrations.values()
+                for item in registration._instruments
+            } | self._cleanup_instruments
             return {"schema": "KRONOS-SHARED-MONITORING-STATUS/1.0.0",
                 "hub_state": "REGISTERED" if owners else "IDLE",
                 "transport_state": (self._connection_state.value if self._connection_state is not None
@@ -164,6 +224,19 @@ class SharedSwingMonitoringHub:
                     key=lambda i: (i.exchange, i.segment, i.trading_symbol))],
                 "owners": owners, "last_interruption": self._last_interruption,
                 "release_counts": dict(self._release_counts),
+                "capacity": {
+                    "owner_count": len(owners),
+                    "maximum_owners": _MAX_MONITORING_OWNERS,
+                    "subscription_owner_count": subscription_owners,
+                    "maximum_subscription_owners": _MAX_MONITORING_SUBSCRIPTIONS,
+                    "instrument_count": len(retained_instruments),
+                    "maximum_instruments": _MAX_MONITORING_INSTRUMENTS,
+                    "retained_bytes": retained_bytes,
+                    "maximum_retained_bytes": _MAX_MONITORING_RETAINED_BYTES,
+                    "maximum_tick_bytes": _MAX_MONITORING_TICK_BYTES,
+                    "tick_cache_failure_count": len(self._tick_cache_failures),
+                    "refusals": self._release_counts["capacity_refusals"],
+                },
                 "transport_cleanup": {
                     "state": self._transport_cleanup_state,
                     "retired_session_owned": self._retired_session is not None,
@@ -191,6 +264,22 @@ class SharedSwingMonitoringHub:
         with self._lock:
             if id(registration) not in self._registrations:
                 raise ValueError("SHARED_MONITORING_REGISTRATION_CLOSED")
+            additions = set(instruments) - registration._instruments
+            retained_instruments = {
+                item
+                for owner in self._registrations.values()
+                for item in owner._instruments
+            } | self._cleanup_instruments
+            if (
+                sum(len(owner._instruments) for owner in self._registrations.values())
+                + len(additions) > _MAX_MONITORING_SUBSCRIPTIONS
+                or len(retained_instruments | additions) > _MAX_MONITORING_INSTRUMENTS
+                or self._retained_bytes_locked()
+                + sum(_instrument_retained_bytes(item) for item in additions)
+                > _MAX_MONITORING_RETAINED_BYTES
+            ):
+                self._count_release("capacity_refusals")
+                raise ValueError("SHARED_MONITORING_CAPACITY_UNAVAILABLE")
             registration._instruments.update(instruments)
             connected = registration._connected
             if connected:
@@ -219,6 +308,25 @@ class SharedSwingMonitoringHub:
 
     def _count_release(self, name, count=1):
         self._release_counts[name] = min((1 << 63) - 1, self._release_counts[name] + count)
+
+    def _retained_bytes_locked(self) -> int:
+        owner_bytes = sum(
+            _owner_retained_bytes(registration.owner_identity)
+            for registration in self._registrations.values()
+        )
+        subscription_bytes = sum(
+            _instrument_retained_bytes(instrument)
+            for registration in self._registrations.values()
+            for instrument in registration._instruments
+        )
+        cleanup_bytes = sum(
+            _instrument_retained_bytes(instrument)
+            for instrument in self._cleanup_instruments
+        )
+        tick_bytes = sum(
+            _tick_retained_bytes(tick) for tick in self._latest_ticks.values()
+        )
+        return owner_bytes + subscription_bytes + cleanup_bytes + tick_bytes
 
     def _reconcile_transport(self):
         """Drain ownership changes, never holding the state lock in Provider code.
@@ -392,6 +500,7 @@ class SharedSwingMonitoringHub:
                 if not identities:
                     self._by_instrument.pop(instrument, None)
                     self._latest_ticks.pop(instrument, None)
+                    self._tick_cache_failures.discard(instrument)
                     removals.append(instrument)
                 else:
                     retained += 1
@@ -418,7 +527,18 @@ class SharedSwingMonitoringHub:
             if tick.instrument not in self._by_instrument:
                 self._count_release('stale_callbacks_rejected')
                 return
-            self._latest_ticks[tick.instrument] = tick
+            self._latest_ticks.pop(tick.instrument, None)
+            tick_bytes = _tick_retained_bytes(tick)
+            retained_bytes = self._retained_bytes_locked()
+            if (
+                tick_bytes > _MAX_MONITORING_TICK_BYTES
+                or retained_bytes + tick_bytes > _MAX_MONITORING_RETAINED_BYTES
+            ):
+                self._tick_cache_failures.add(tick.instrument)
+                self._count_release("capacity_refusals")
+            else:
+                self._latest_ticks[tick.instrument] = tick
+                self._tick_cache_failures.discard(tick.instrument)
             consumers = tuple(
                 self._registrations[identity]._consumer
                 for identity in self._by_instrument.get(tick.instrument, ())
@@ -465,6 +585,10 @@ class _SharedRegistration:
         self._hub = hub
         self._capability = capability
         self._consumer = consumer
+        value = getattr(consumer, "owner_identity", type(consumer).__name__)
+        self._owner_identity = (
+            value if type(value) is str and value else "UNIDENTIFIED_CONSUMER"
+        )
         self._instruments: set[InstrumentRecord] = set()
         self._connected = False
         self._detached_result = (0, 0)
@@ -500,8 +624,7 @@ class _SharedRegistration:
 
     @property
     def owner_identity(self) -> str:
-        value = getattr(self._consumer, "owner_identity", type(self._consumer).__name__)
-        return value if type(value) is str and value else "UNIDENTIFIED_CONSUMER"
+        return self._owner_identity
 
     def subscribe(self, instruments: tuple[InstrumentRecord, ...]) -> None:
         self._hub._subscribe(self, instruments)
