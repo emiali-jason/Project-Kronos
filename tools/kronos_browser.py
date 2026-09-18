@@ -17,6 +17,11 @@ with StartupCapture(Path(__file__).resolve().parents[1], keep_sources_pinned=Tru
     from kronos.application.provider_instrument_master_operation import (
         ProviderInstrumentMasterOperationalComposition,
     )
+    from kronos.application.housekeeping import (
+        BoundedHousekeeping,
+        intraday_research_staging_scope,
+        review_preparation_scope,
+    )
     from kronos.application.swing_opportunities import SwingOpportunitiesApplication
     from kronos.application.intraday_runtime import create_intraday_runtime
     from kronos.application.intraday_statistics import IntradayStatisticsApplication
@@ -86,6 +91,31 @@ with StartupCapture(Path(__file__).resolve().parents[1], keep_sources_pinned=Tru
     )
     _STARTUP_EVIDENCE = _startup_capture.finish()
 del _startup_capture
+
+
+CANONICAL_HOUSEKEEPING_ACTIVATION = True
+
+
+def _compose_housekeeping(
+    server,
+    intraday_runtime,
+    *,
+    production_activation: bool = CANONICAL_HOUSEKEEPING_ACTIVATION,
+    **testing,
+):
+    intake = getattr(server, "native_intake", None)
+    store = None if intake is None else getattr(intake, "store", None)
+    research = getattr(intraday_runtime, "research_application", None)
+    if store is None or research is None:
+        raise ValueError("CANONICAL_HOUSEKEEPING_OWNER_UNAVAILABLE")
+    return BoundedHousekeeping(
+        (
+            review_preparation_scope(store),
+            intraday_research_staging_scope(research),
+        ),
+        production_activation=production_activation,
+        **testing,
+    )
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -277,6 +307,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             intraday_discovery_control=intraday_discovery_control,
             intraday_historical_control=intraday_historical_control,
         )
+        server.housekeeping = _compose_housekeeping(server, intraday_runtime)
         server.provider_runtime = shared_provider_runtime
         server.intraday_wo09_notification_sources = (
             intraday_runtime.wo09_store.load_notifications

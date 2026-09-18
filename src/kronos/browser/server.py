@@ -691,6 +691,12 @@ class KronosBrowserServer(ThreadingHTTPServer):
             }
 
     def service_actions(self) -> None:
+        housekeeping = getattr(self, "housekeeping", None)
+        if housekeeping is not None:
+            try:
+                housekeeping.trigger_periodic()
+            except (ValueError, OSError, TypeError, RuntimeError):
+                housekeeping.record_trigger_failure()
         lifecycle = getattr(self, "intraday_lifecycle", None)
         if lifecycle is not None:
             try:
@@ -700,6 +706,9 @@ class KronosBrowserServer(ThreadingHTTPServer):
         super().service_actions()
 
     def server_close(self) -> None:
+        housekeeping = getattr(self, "housekeeping", None)
+        if housekeeping is not None:
+            housekeeping.shutdown()
         notifications = getattr(self, "intraday_notifications", None)
         if notifications is not None:
             notifications.close()
@@ -2036,6 +2045,9 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             wo17 = getattr(self.server, "intraday_wo17_monitoring", None)
             if wo17 is not None:
                 payload["intraday_wo17_work"] = wo17.work_status()
+            housekeeping = getattr(self.server, "housekeeping", None)
+            if housekeeping is not None:
+                payload["housekeeping"] = housekeeping.status_document()
             self._json(payload)
             return
         if path == "/status":
@@ -2062,6 +2074,9 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             wo17 = getattr(self.server, "intraday_wo17_monitoring", None)
             if wo17 is not None:
                 payload["intraday_wo17_work"] = wo17.work_status()
+            housekeeping = getattr(self.server, "housekeeping", None)
+            if housekeeping is not None:
+                payload["housekeeping"] = housekeeping.status_document()
             publication = self.server.application.publication_status()
             if publication["control"] is not None:
                 payload["swing_publication"] = publication

@@ -1,7 +1,7 @@
 """Bounded cleanup of explicitly disposable application-owned artifacts.
 
-The pass is deliberately not wired into production composition.  Callers may
-enable the periodic trigger only at an explicit application-owned boundary.
+Canonical composition owns the bounded scheduler.  Standalone construction
+remains disabled unless an owning composition explicitly activates it.
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ import json
 import os
 from pathlib import Path
 import stat
-from threading import Lock, Thread
+from threading import Event, Lock, Thread
 import time
 from typing import Callable, Iterable
 
@@ -22,6 +22,7 @@ from kronos.intraday.wo12_research_contract import ResearchRecord, digest
 
 
 DEFAULT_INTERVAL_SECONDS = 6 * 60 * 60
+DEFAULT_SHUTDOWN_WAIT_SECONDS = 0.25
 _READ_CHUNK_BYTES = 64 * 1024
 
 
@@ -600,16 +601,31 @@ class BoundedHousekeeping:
         now = self._clock()
         self._next_due = now + interval_seconds
         self._periodic_pending = False
+        self._worker_running = False
+        self._worker_generation = 0
+        self._active_worker_generation: int | None = None
+        self._owned_workers = 0
+        self._shutdown_requested = False
+        self._last_trigger = "NOT_DUE"
+        self._last_failure: str | None = None
         self._last_result: HousekeepingResult | None = None
+        self._worker_done = Event()
+        self._worker_done.set()
+        self._pass_done = Event()
+        self._pass_done.set()
 
     @staticmethod
     def _thread_runner(callback: Callable[[], None]) -> None:
         Thread(target=callback, name="kronos-housekeeping", daemon=True).start()
 
     def run_once(self) -> HousekeepingResult:
+        with self._state_lock:
+            if self._shutdown_requested:
+                return HousekeepingResult(outcome="SHUTDOWN")
         started = self._clock()
         if not self._pass_lock.acquire(blocking=False):
             return HousekeepingResult(outcome="OVERLAP_SKIPPED")
+        self._pass_done.clear()
         budget = _Budget(self.limits, self._clock, started)
         try:
             for scope in self.scopes:
@@ -624,40 +640,148 @@ class BoundedHousekeeping:
             return result
         finally:
             self._pass_lock.release()
+            self._pass_done.set()
 
     def trigger_periodic(self, *, now: float | None = None) -> str:
         observed = self._clock() if now is None else now
         with self._state_lock:
+            if self._shutdown_requested:
+                self._last_trigger = "SHUTDOWN"
+                return "SHUTDOWN"
             if not self.production_activation:
+                self._last_trigger = "DISABLED"
                 return "DISABLED"
             if self._periodic_pending:
+                self._last_trigger = "PENDING"
                 return "PENDING"
             if observed < self._next_due:
+                self._last_trigger = "NOT_DUE"
                 return "NOT_DUE"
             self._periodic_pending = True
+            self._worker_generation += 1
+            generation = self._worker_generation
+            self._active_worker_generation = generation
+            self._owned_workers = 1
+            self._worker_running = False
+            self._worker_done.clear()
+            self._last_trigger = "SCHEDULED"
             scheduled = observed
-        self._background_runner(lambda: self._periodic_run(scheduled))
+        try:
+            self._background_runner(
+                lambda: self._periodic_run(scheduled, generation)
+            )
+        except Exception:
+            with self._state_lock:
+                if self._active_worker_generation == generation:
+                    self._periodic_pending = False
+                    self._active_worker_generation = None
+                    self._owned_workers = 0
+                    self._next_due = max(
+                        scheduled + self.interval_seconds,
+                        self._clock() + self.interval_seconds,
+                    )
+                    self._last_trigger = "FAILED"
+                    self._last_failure = "HOUSEKEEPING_SCHEDULE_FAILED"
+                    self._worker_done.set()
+            return "FAILED"
         return "SCHEDULED"
 
-    def _periodic_run(self, scheduled: float) -> None:
+    def _periodic_run(self, scheduled: float, generation: int) -> None:
+        with self._state_lock:
+            if self._active_worker_generation != generation:
+                return
+            if self._shutdown_requested:
+                self._finish_worker_locked(generation)
+                return
+            self._worker_running = True
         try:
             self.run_once()
+        except Exception:
+            with self._state_lock:
+                if self._active_worker_generation == generation:
+                    self._last_failure = "HOUSEKEEPING_PASS_FAILED"
         finally:
             with self._state_lock:
-                self._periodic_pending = False
-                self._next_due = max(scheduled + self.interval_seconds, self._clock() + self.interval_seconds)
+                if self._active_worker_generation == generation:
+                    if not self._shutdown_requested:
+                        self._next_due = max(
+                            scheduled + self.interval_seconds,
+                            self._clock() + self.interval_seconds,
+                        )
+                    self._finish_worker_locked(generation)
+
+    def _finish_worker_locked(self, generation: int) -> None:
+        if self._active_worker_generation != generation:
+            return
+        self._periodic_pending = False
+        self._worker_running = False
+        self._active_worker_generation = None
+        self._owned_workers = 0
+        self._worker_done.set()
+
+    def record_trigger_failure(self) -> None:
+        """Expose a composition-level trigger failure without raising in serve_forever."""
+
+        with self._state_lock:
+            self._last_trigger = "FAILED"
+            self._last_failure = "HOUSEKEEPING_TRIGGER_UNAVAILABLE"
+            self._next_due = max(
+                self._next_due,
+                self._clock() + self.interval_seconds,
+            )
+
+    def shutdown(
+        self, *, timeout_seconds: float = DEFAULT_SHUTDOWN_WAIT_SECONDS
+    ) -> dict[str, object]:
+        """Fence new work and wait a bounded time for an already owned pass."""
+
+        if type(timeout_seconds) not in {int, float} or timeout_seconds < 0:
+            raise ValueError("HOUSEKEEPING_SHUTDOWN_TIMEOUT_INVALID")
+        with self._state_lock:
+            self._shutdown_requested = True
+            self._last_trigger = "SHUTDOWN"
+            worker_owned = self._owned_workers > 0
+        deadline = time.monotonic() + float(timeout_seconds)
+        if worker_owned:
+            self._worker_done.wait(max(0.0, deadline - time.monotonic()))
+        if self._pass_lock.locked():
+            self._pass_done.wait(max(0.0, deadline - time.monotonic()))
+        return self.status_document()
 
     def status_document(self) -> dict[str, object]:
         with self._state_lock:
             last = None if self._last_result is None else self._last_result.document()
             pending = self._periodic_pending
             next_due = self._next_due
+            shutdown = self._shutdown_requested
+            owned = self._owned_workers
+            running = self._worker_running
+            generation = self._active_worker_generation
+            last_trigger = self._last_trigger
+            last_failure = self._last_failure
+        pass_active = self._pass_lock.locked()
+        if shutdown:
+            lifecycle = "SHUTDOWN_PENDING" if owned or pass_active else "STOPPED"
+        elif not self.production_activation:
+            lifecycle = "DISABLED"
+        elif running:
+            lifecycle = "RUNNING"
+        elif owned:
+            lifecycle = "SCHEDULED"
+        else:
+            lifecycle = "IDLE"
         return {
             "production_activation": self.production_activation,
             "interval_seconds": self.interval_seconds,
-            "pass_active": self._pass_lock.locked(),
+            "lifecycle_state": lifecycle,
+            "shutdown_requested": shutdown,
+            "owned_workers": owned,
+            "worker_generation": generation,
+            "pass_active": pass_active,
             "periodic_pending": pending,
             "next_due_monotonic": next_due,
+            "last_trigger": last_trigger,
+            "last_failure": last_failure,
             "last_result": last,
         }
 
@@ -725,6 +849,7 @@ class BoundedHousekeeping:
 __all__ = [
     "BoundedHousekeeping",
     "DEFAULT_INTERVAL_SECONDS",
+    "DEFAULT_SHUTDOWN_WAIT_SECONDS",
     "HousekeepingArtifactClass",
     "HousekeepingLimits",
     "HousekeepingResult",

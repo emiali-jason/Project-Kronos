@@ -373,6 +373,104 @@ def test_periodic_trigger_is_fixed_interval_single_pending_work(tmp_path) -> Non
     assert worker.trigger_periodic(now=20) == "SCHEDULED"
 
 
+def test_shutdown_retains_queued_owner_until_fenced_callback_finishes(tmp_path) -> None:
+    store = _review_store(tmp_path)
+    queued = []
+    cleaned = []
+
+    class Scope:
+        def clean(self, _owner, _budget) -> None:
+            cleaned.append(True)
+
+    worker = _housekeeper(
+        Scope(),
+        production_activation=True,
+        interval_seconds=10,
+        clock=lambda: 0.0,
+        background_runner=queued.append,
+    )
+
+    assert worker.trigger_periodic(now=10) == "SCHEDULED"
+    assert worker.status_document()["lifecycle_state"] == "SCHEDULED"
+    stopped = worker.shutdown(timeout_seconds=0)
+
+    assert stopped["lifecycle_state"] == "SHUTDOWN_PENDING"
+    assert stopped["owned_workers"] == 1
+    assert worker.trigger_periodic(now=100) == "SHUTDOWN"
+    queued.pop()()
+    final = worker.status_document()
+    assert final["lifecycle_state"] == "STOPPED"
+    assert final["owned_workers"] == 0
+    assert cleaned == []
+
+
+def test_shutdown_is_bounded_while_uninterruptible_pass_remains_owned(tmp_path) -> None:
+    entered, release = Event(), Event()
+
+    class Scope:
+        def clean(self, _owner, _budget) -> None:
+            entered.set()
+            assert release.wait(5)
+
+    worker = _housekeeper(
+        Scope(),
+        production_activation=True,
+        interval_seconds=1,
+    )
+    assert worker.trigger_periodic(now=10**9) == "SCHEDULED"
+    assert entered.wait(2)
+
+    started = time.monotonic()
+    pending = worker.shutdown(timeout_seconds=0.02)
+    elapsed = time.monotonic() - started
+
+    assert elapsed < 0.2
+    assert pending["lifecycle_state"] == "SHUTDOWN_PENDING"
+    assert pending["owned_workers"] == 1
+    assert pending["pass_active"] is True
+    release.set()
+    deadline = time.monotonic() + 2
+    while worker.status_document()["owned_workers"] and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert worker.status_document()["lifecycle_state"] == "STOPPED"
+
+
+def test_periodic_worker_and_schedule_failures_are_visible_without_immediate_retry(
+    tmp_path,
+) -> None:
+    class FailedScope:
+        def clean(self, _owner, _budget) -> None:
+            raise RuntimeError("private failure detail")
+
+    worker = _housekeeper(
+        FailedScope(), production_activation=True, interval_seconds=60
+    )
+    assert worker.trigger_periodic(now=10**9) == "SCHEDULED"
+    deadline = time.monotonic() + 2
+    while worker.status_document()["owned_workers"] and time.monotonic() < deadline:
+        time.sleep(0.01)
+    status = worker.status_document()
+    assert status["last_failure"] == "HOUSEKEEPING_PASS_FAILED"
+    assert status["owned_workers"] == 0
+    assert worker.trigger_periodic(now=status["next_due_monotonic"] - 1) == "NOT_DUE"
+    assert "private failure detail" not in repr(status)
+
+    def reject(_callback) -> None:
+        raise RuntimeError("runner unavailable")
+
+    rejected = _housekeeper(
+        FailedScope(),
+        production_activation=True,
+        interval_seconds=1,
+        background_runner=reject,
+    )
+    assert rejected.trigger_periodic(now=10**9) == "FAILED"
+    rejected_status = rejected.status_document()
+    assert rejected_status["last_failure"] == "HOUSEKEEPING_SCHEDULE_FAILED"
+    assert rejected_status["owned_workers"] == 0
+    assert rejected.trigger_periodic(now=10**9) == "NOT_DUE"
+
+
 def test_reference_caps_prevent_deletion_when_complete_proof_cannot_be_read(tmp_path) -> None:
     application, _ = _application(tmp_path)
     operation_identity = "PF08-REFERENCE-CAP"

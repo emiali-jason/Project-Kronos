@@ -4,11 +4,13 @@ from threading import Event, Thread
 from types import SimpleNamespace
 from unittest.mock import Mock
 import json
+import time
 import pytest
 
 from kronos.browser.runtime_state import complete_startup, decorate_html, status_document
 from kronos.browser.server import KronosBrowserServer
 from kronos.application.shared_monitoring import SharedSwingMonitoringHub
+from kronos.application.housekeeping import BoundedHousekeeping, HousekeepingLimits
 from kronos.application.swing_opportunities import ProviderConnectionState
 from kronos.provider.contracts.monitoring import MonitoringConnectionState
 from tests.unit.provider.test_connection_governance import governance, GENERATION
@@ -117,6 +119,79 @@ def test_service_loop_admits_intraday_pulse_without_executing_it_inline():
     server.service_actions()
     lifecycle.request_pulse.assert_called_once_with()
     lifecycle.pulse.assert_not_called()
+
+
+def test_service_loop_only_triggers_owned_housekeeping_boundary():
+    server=object.__new__(KronosBrowserServer)
+    housekeeping=SimpleNamespace(
+        trigger_periodic=Mock(return_value="DISABLED"),
+        record_trigger_failure=Mock(),
+    )
+    server.housekeeping=housekeeping
+    server.service_actions()
+    housekeeping.trigger_periodic.assert_called_once_with()
+    housekeeping.record_trigger_failure.assert_not_called()
+
+
+def test_server_close_shuts_housekeeping_before_other_owned_lifecycles(monkeypatch):
+    server=object.__new__(KronosBrowserServer)
+    events=[]
+    server.housekeeping=SimpleNamespace(shutdown=lambda:events.append("housekeeping"))
+    server.intraday_notifications=SimpleNamespace(close=lambda:events.append("notifications"))
+    server.intraday_lifecycle=SimpleNamespace(shutdown=lambda:events.append("intraday"))
+    server.intraday_wo17_monitoring=SimpleNamespace(shutdown=lambda:events.append("wo17"))
+    server.application=SimpleNamespace(close=lambda:events.append("application"))
+    server.refresh_reminders=SimpleNamespace(close=lambda:events.append("reminders"))
+    server.progression_watches=SimpleNamespace(close_monitoring=lambda:events.append("progression"))
+    server.native_review=SimpleNamespace(close=lambda:events.append("native"))
+    server.trade_window=SimpleNamespace(close_monitoring=lambda:events.append("trade"))
+    server.swing_monitoring_hub=SimpleNamespace(close=lambda:events.append("monitoring"))
+    server.step32_workflow=SimpleNamespace(close=lambda:events.append("step32"))
+    server.restart_control=None
+    monkeypatch.setattr(
+        "socketserver.TCPServer.server_close",
+        lambda _server: events.append("socket"),
+    )
+
+    server.server_close()
+
+    assert events[0] == "housekeeping"
+    assert events[-1] == "socket"
+
+
+def test_housekeeping_status_remains_responsive_during_blocked_cleanup(running):
+    server,_,provider,calls,root=running
+    entered,release=Event(),Event()
+
+    class BlockedScope:
+        def clean(self,_owner,_budget):
+            entered.set()
+            assert release.wait(5)
+
+    worker=BoundedHousekeeping(
+        (BlockedScope(),),
+        limits=HousekeepingLimits(max_elapsed_seconds=5),
+        production_activation=True,
+        interval_seconds=1,
+    )
+    server.housekeeping=worker
+    assert worker.trigger_periodic(now=10**9)=="SCHEDULED"
+    assert entered.wait(2)
+    before=inventory(root)
+    started=time.monotonic()
+    for route in ("/status","/runtime/status"):
+        code,body=request(server,route)
+        assert code==200
+        status=json.loads(body)["housekeeping"]
+        assert status["lifecycle_state"]=="RUNNING"
+        assert status["owned_workers"]==1 and status["pass_active"] is True
+    assert time.monotonic()-started<1
+    assert inventory(root)==before and provider.begin_count==0 and calls==[]
+    release.set()
+    deadline=time.monotonic()+2
+    while worker.status_document()["owned_workers"] and time.monotonic()<deadline:
+        time.sleep(0.01)
+    assert worker.status_document()["lifecycle_state"]=="IDLE"
 
 
 def test_status_surfaces_bounded_intraday_owners_without_writes(running):

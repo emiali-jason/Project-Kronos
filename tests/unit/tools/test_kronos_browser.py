@@ -1,4 +1,6 @@
 from pathlib import Path
+from types import SimpleNamespace
+import shutil
 
 from kronos.application.shared_monitoring import SharedSwingMonitoringHub
 from tools import kronos_browser
@@ -35,6 +37,8 @@ def test_launcher_uses_loopback_server_and_opens_swing_workspace(monkeypatch) ->
         def server_close(self):
             events.append("close")
 
+    server = _Server()
+
     class _Application:
         def authenticated_read_only_capability(self):
             return None
@@ -63,8 +67,14 @@ def test_launcher_uses_loopback_server_and_opens_swing_workspace(monkeypatch) ->
                 provider_instrument_master_operation,
                 intraday_discovery_control,
                 intraday_historical_control,
-            )) or _Server()
+            )) or server
         ),
+    )
+    housekeeping = SimpleNamespace(production_activation=True)
+    monkeypatch.setattr(
+        kronos_browser,
+        "_compose_housekeeping",
+        lambda _server, _runtime: housekeeping,
     )
     monkeypatch.setattr(
         kronos_browser.webbrowser,
@@ -101,6 +111,8 @@ def test_launcher_uses_loopback_server_and_opens_swing_workspace(monkeypatch) ->
     assert historical_control.operation_service._runtime is operation._runtime
     assert historical_control.operation_service.last_result is None
     assert historical_control.operation_service.active_operation_identity is None
+    assert server.housekeeping is housekeeping
+    assert housekeeping.production_activation is True
     source = Path(kronos_browser.__file__).read_text(encoding="utf-8")
     assert source.count("SharedAuthenticatedProviderRuntime(") == 1
 
@@ -137,11 +149,62 @@ def test_developer_no_browser_mode_does_not_open_browser(monkeypatch) -> None:
         intraday_historical_control: _Server(),
     )
     monkeypatch.setattr(
+        kronos_browser,
+        "_compose_housekeeping",
+        lambda _server, _runtime: SimpleNamespace(production_activation=True),
+    )
+    monkeypatch.setattr(
         kronos_browser.webbrowser,
         "open_new_tab",
         lambda _url: (_ for _ in ()).throw(AssertionError),
     )
     assert kronos_browser.main(["--no-browser"]) == 0
+
+
+def test_canonical_housekeeping_composes_enabled_actual_owned_stores(
+    tmp_path,
+) -> None:
+    from kronos.swing.v1.review_evidence_store import ReviewEvidenceStore
+    from tests.unit.application.test_intraday_research import _application
+
+    review = ReviewEvidenceStore(tmp_path / "review")
+    review.root.mkdir(parents=True)
+    (review.root / "receipts").mkdir()
+    pending = review.root / "receipts" / ".prepared-canonical"
+    pending.write_bytes(b"disposable")
+    research, _ = _application(tmp_path / "research")
+    publication = research.update(operation_identity="PF10-CANONICAL-HOUSEKEEPING")
+    stage = research.store.root / "staging" / __import__(
+        "kronos.intraday.wo12_research_contract", fromlist=["digest"]
+    ).digest("PF10-CANONICAL-HOUSEKEEPING")
+    stage.mkdir(parents=True)
+    shutil.copyfile(publication.workbook_path, stage / publication.workbook_path.name)
+    server = SimpleNamespace(native_intake=SimpleNamespace(store=review))
+    runtime = SimpleNamespace(research_application=research)
+
+    queued = []
+    clock = [0.0]
+    canonical = kronos_browser._compose_housekeeping(
+        server,
+        runtime,
+        clock=lambda: clock[0],
+        background_runner=queued.append,
+    )
+    status = canonical.status_document()
+    assert status["production_activation"] is True
+    assert status["lifecycle_state"] == "IDLE"
+    assert status["interval_seconds"] == 6 * 60 * 60
+    assert canonical.trigger_periodic(now=(6 * 60 * 60) - 1) == "NOT_DUE"
+    assert pending.exists() and stage.exists()
+    assert canonical.trigger_periodic(now=6 * 60 * 60) == "SCHEDULED"
+    assert canonical.trigger_periodic(now=6 * 60 * 60) == "PENDING"
+    clock[0] = 6 * 60 * 60
+    queued.pop()()
+    assert not pending.exists() and not stage.exists()
+    assert research.open_current("2026_08")[1] == publication.workbook_path.read_bytes()
+    result = canonical.status_document()
+    assert result["last_result"]["removed_files"] == 2
+    assert result["next_due_monotonic"] == 2 * 6 * 60 * 60
 
 
 def test_macos_launcher_is_minimal_double_click_app_without_credentials() -> None:
