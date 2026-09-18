@@ -364,9 +364,18 @@ def test_expired_construction_generation_cannot_publish_late_provider() -> None:
     assert entered.wait(timeout=2.0)
     shared.invalidate("CONSTRUCTION_EXPIRED")
 
+    try:
+        with pytest.raises(
+            ProviderRuntimeAccessError,
+            match=ProviderRuntimeFailure.CONTEXT_ALREADY_ACTIVE.value,
+        ):
+            shared.begin_login()
+        assert factory_calls == [1]
+    finally:
+        release.set()
+        first.join(timeout=2.0)
+
     current_attempt = shared.begin_login()
-    release.set()
-    first.join(timeout=2.0)
 
     assert not first.is_alive()
     assert len(stale_failure) == 1
@@ -521,6 +530,8 @@ def test_ending_state_fails_closed_before_shared_disposal_completes() -> None:
     assert entered.wait(timeout=2.0)
 
     assert shared.lifecycle_state is SharedProviderRuntimeLifecycle.ENDING
+    assert shared.read_only_status()["cleanup_state"] == "PENDING"
+    assert shared.read_only_status()["owned_work_count"] == 1
     assert not lease.active
     with pytest.raises(HistoricalDataError, match="CAPABILITY_UNAVAILABLE"):
         lease.historical_candles(_historical_request())
@@ -529,6 +540,7 @@ def test_ending_state_fails_closed_before_shared_disposal_completes() -> None:
     thread.join(timeout=2.0)
     assert not thread.is_alive()
     assert shared.lifecycle_state is SharedProviderRuntimeLifecycle.DISPOSED
+    assert shared.read_only_status()["cleanup_state"] == "COMPLETE"
     assert runtime.end_count == 1
 
 
@@ -741,3 +753,261 @@ def test_restart_requires_new_authentication_and_does_not_restore_objects() -> N
     assert factory_calls == []
     with pytest.raises(ProviderRuntimeAccessError, match="CONTEXT_UNAVAILABLE"):
         _lease(restarted, "INTRADAY")
+
+
+def test_invalidated_callback_keeps_worker_owned_and_cannot_publish_late_success() -> None:
+    entered = Event()
+    release = Event()
+
+    class BlockedRuntime(_Runtime):
+        def complete_callback(self, attempt):  # type: ignore[no-untyped-def]
+            entered.set()
+            assert release.wait(timeout=2.0)
+            return super().complete_callback(attempt)
+
+    stale = BlockedRuntime()
+    current = _Runtime()
+    providers = iter((stale, current))
+    factory_calls: list[int] = []
+
+    def factory():  # type: ignore[no-untyped-def]
+        factory_calls.append(1)
+        return next(providers)
+
+    shared = SharedAuthenticatedProviderRuntime(
+        factory, provider_identity="KITE", clock=lambda: NOW,
+    )
+    attempt = shared.begin_login()
+    failures: list[BaseException] = []
+
+    def complete() -> None:
+        try:
+            shared.complete_callback(attempt)
+        except BaseException as error:
+            failures.append(error)
+
+    thread = Thread(target=complete)
+    thread.start()
+    assert entered.wait(timeout=2.0)
+    try:
+        shared.invalidate("AUTHENTICATION_GENERATION_EXPIRED")
+        with pytest.raises(
+            ProviderRuntimeAccessError,
+            match=ProviderRuntimeFailure.CONTEXT_ALREADY_ACTIVE.value,
+        ):
+            shared.begin_login()
+        assert factory_calls == [1]
+        assert shared.read_only_status()["capability_state"] == "ABSENT"
+    finally:
+        release.set()
+        thread.join(timeout=2.0)
+
+    assert not thread.is_alive()
+    assert len(failures) == 1
+    assert isinstance(failures[0], ProviderRuntimeAccessError)
+    assert shared.read_only_status()["capability_state"] == "ABSENT"
+    assert stale.end_count == 1
+    next_attempt = shared.begin_login()
+    shared.complete_callback(next_attempt)
+    assert shared.lifecycle_state is SharedProviderRuntimeLifecycle.ACTIVE
+    assert factory_calls == [1, 1]
+
+
+def test_failed_provider_cleanup_retains_ownership_and_denies_retry() -> None:
+    class UnclosedRuntime(_Runtime):
+        def end_kronos_session(self) -> None:
+            self.end_count += 1
+            raise RuntimeError("INJECTED_LOCAL_DISPOSAL_FAILURE")
+
+    shared, provider, factory_calls = _shared(UnclosedRuntime())
+    shared.begin_login()
+    shared.end_kronos_session()
+    assert provider.end_count == 1
+    status = shared.read_only_status()
+    assert status["capability_state"] == "ABSENT"
+    assert status["retained_lifecycle"] == "ENDING"
+    assert status["cleanup_state"] == "FAILED"
+    assert status["owned_work_count"] == 0
+    assert status["unresolved_cleanup_count"] == 1
+    shared.end_kronos_session()
+    assert shared.read_only_status()["retained_lifecycle"] == "ENDING"
+    assert provider.end_count == 1
+    with pytest.raises(
+        ProviderRuntimeAccessError,
+        match=ProviderRuntimeFailure.CONTEXT_ALREADY_ACTIVE.value,
+    ):
+        shared.begin_login()
+    assert factory_calls == [1]
+
+
+def test_repeated_runtime_cycles_leave_no_cleanup_owner_or_lease():
+    providers = [_Runtime() for _ in range(20)]
+    factory_calls = []
+    shared = SharedAuthenticatedProviderRuntime(
+        lambda: (factory_calls.append(1), providers[len(factory_calls) - 1])[1],
+        provider_identity="KITE",
+        clock=lambda: NOW,
+    )
+    for provider in providers:
+        _authenticate(shared)
+        swing = _lease(shared, "SWING")
+        intraday = _lease(shared, "INTRADAY")
+        shared.end_kronos_session()
+        assert not swing.active and not intraday.active
+        status = shared.read_only_status()
+        assert status["cleanup_state"] == "COMPLETE"
+        assert status["owned_work_count"] == 0
+        assert status["unresolved_cleanup_count"] == 0
+        assert status["retained_lease_count"] == 0
+        assert provider.end_count == 1
+    assert len(factory_calls) == 20
+
+
+def test_deadline_expired_factory_result_is_disposed_without_beginning_login() -> None:
+    from kronos.provider.services.provider_authentication import (
+        ConnectionAttemptDeadline,
+        connection_deadline_scope,
+    )
+
+    monotonic = [10.0]
+    deadline = ConnectionAttemptDeadline(
+        generation=1,
+        timeout_seconds=5.0,
+        monotonic_clock=lambda: monotonic[0],
+    )
+    provider = _Runtime()
+
+    def factory():  # type: ignore[no-untyped-def]
+        monotonic[0] += 6.0
+        return provider
+
+    shared = SharedAuthenticatedProviderRuntime(
+        factory, provider_identity="KITE", clock=lambda: NOW,
+    )
+    with connection_deadline_scope(deadline):
+        with pytest.raises(TimeoutError):
+            shared.begin_login()
+    assert provider.begin_count == 0
+    assert provider.end_count == 1
+    assert shared.read_only_status()["capability_state"] == "ABSENT"
+
+
+def test_expired_deadline_rejects_lease_publication_and_preserves_committed_success() -> None:
+    from kronos.provider.services.provider_authentication import (
+        ConnectionAttemptDeadline,
+        connection_deadline_scope,
+    )
+
+    monotonic = [10.0]
+    deadline = ConnectionAttemptDeadline(
+        generation=1,
+        timeout_seconds=5.0,
+        monotonic_clock=lambda: monotonic[0],
+    )
+    shared, _, _ = _shared()
+    with connection_deadline_scope(deadline):
+        _authenticate(shared)
+    monotonic[0] = 16.0
+    assert shared.read_only_status()["capability_state"] == "UNAVAILABLE"
+    with pytest.raises(ProviderRuntimeAccessError):
+        _lease(shared, "SWING")
+
+    committed = ConnectionAttemptDeadline(
+        generation=2,
+        timeout_seconds=5.0,
+        monotonic_clock=lambda: monotonic[0],
+    )
+    other, _, _ = _shared()
+    with connection_deadline_scope(committed):
+        _authenticate(other)
+        committed.commit(lambda: None)
+    monotonic[0] = 100.0
+    assert other.read_only_status()["capability_state"] == "RETAINED_UNEXPIRED"
+    assert _lease(other, "SWING").active
+
+
+def test_duplicate_begin_between_navigation_and_callback_preserves_pending_owner() -> None:
+    shared, provider, factory_calls = _shared()
+    attempt = shared.begin_login()
+    with pytest.raises(
+        ProviderRuntimeAccessError,
+        match=ProviderRuntimeFailure.CONTEXT_ALREADY_ACTIVE.value,
+    ):
+        shared.begin_login()
+    with pytest.raises(
+        ProviderRuntimeAccessError,
+        match=ProviderRuntimeFailure.CONTEXT_UNAVAILABLE.value,
+    ):
+        shared.complete_callback(object())
+    assert provider.begin_count == 1
+    assert provider.end_count == 0
+    assert factory_calls == [1]
+    shared.complete_callback(attempt)
+    assert shared.lifecycle_state is SharedProviderRuntimeLifecycle.ACTIVE
+
+
+def test_delayed_old_deadline_projection_cannot_invalidate_replacement_context():
+    from kronos.provider.services.provider_authentication import (
+        ConnectionAttemptDeadline,
+        connection_deadline_scope,
+    )
+    from threading import current_thread
+
+    first_provider, replacement_provider = _Runtime(), _Runtime()
+    providers = iter((first_provider, replacement_provider))
+    shared = SharedAuthenticatedProviderRuntime(
+        lambda: next(providers), provider_identity="KITE", clock=lambda: NOW,
+    )
+    expired = ConnectionAttemptDeadline(generation=1, monotonic_clock=lambda: 0.0)
+    with connection_deadline_scope(expired):
+        _authenticate(shared)
+        stale_lease = _lease(shared, "SWING")
+    expired.finish("FAILED")
+    expired.worker_finished()
+
+    sampled, release = Event(), Event()
+    original_snapshot = expired.snapshot
+
+    def delayed_snapshot():
+        projection = original_snapshot()
+        if current_thread().name == "stale-deadline-lease-projection":
+            sampled.set()
+            assert release.wait(2.0), "stale deadline projection was not released"
+        return projection
+
+    expired.snapshot = delayed_snapshot
+    old_results, errors = [], []
+
+    def inspect_old_lease():
+        try:
+            old_results.append(stale_lease.active)
+        except BaseException as error:
+            errors.append(error)
+
+    reader = Thread(target=inspect_old_lease, name="stale-deadline-lease-projection")
+    reader.start()
+    try:
+        assert sampled.wait(2.0)
+        shared.end_kronos_session()
+        replacement = ConnectionAttemptDeadline(
+            generation=2, monotonic_clock=lambda: 0.0,
+        )
+        with connection_deadline_scope(replacement):
+            _authenticate(shared)
+            replacement.commit(lambda: None)
+            current_lease = _lease(shared, "INTRADAY")
+        replacement.worker_finished()
+        assert current_lease.active
+        release.set()
+        reader.join(timeout=2.0)
+        assert not reader.is_alive()
+        assert not errors
+        assert old_results == [False]
+        assert current_lease.active
+        assert shared.lifecycle_state is SharedProviderRuntimeLifecycle.ACTIVE
+        assert shared.read_only_status()["capability_state"] == "RETAINED_UNEXPIRED"
+        assert replacement_provider.end_count == 0
+    finally:
+        release.set()
+        reader.join(timeout=2.0)
+        shared.end_kronos_session()

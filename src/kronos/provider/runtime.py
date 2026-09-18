@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from contextlib import nullcontext
+from contextlib import contextmanager, nullcontext
 
 from collections.abc import Callable
 from datetime import datetime, timezone
@@ -43,6 +43,7 @@ from kronos.provider.contracts.provider_authentication import (
     AuthenticatedReadOnlyProviderCapability,
     ReadOnlyProviderOperation,
 )
+from kronos.provider.services.provider_authentication import current_connection_deadline
 from kronos.provider.models.authentication import (
     AuthenticatedContextState,
     AuthenticationAttemptState,
@@ -113,6 +114,11 @@ class SharedAuthenticatedProviderRuntime:
         "__clock",
         "__construction_generation",
         "__construction_in_progress",
+        "__authentication_worker",
+        "__pending_attempt",
+        "__cleanup_in_progress",
+        "__connection_deadline",
+        "__unresolved_provider",
         "__context_identity",
         "__failure",
         "__identity_factory",
@@ -152,6 +158,11 @@ class SharedAuthenticatedProviderRuntime:
         self.__lock = RLock()
         self.__construction_generation = 0
         self.__construction_in_progress: int | None = None
+        self.__authentication_worker: object | None = None
+        self.__pending_attempt: object | None = None
+        self.__cleanup_in_progress = 0
+        self.__connection_deadline = None
+        self.__unresolved_provider: object | None = None
         self.__provider: _AuthenticatedRuntime | None = None
         self.__capability: AuthenticatedReadOnlyProviderCapability | None = None
         self.__leases: dict[str, ReadOnlyProviderLease] = {}
@@ -168,7 +179,7 @@ class SharedAuthenticatedProviderRuntime:
         A retained unexpired capability is not revalidated operation authority.
         Existing use/admission paths still perform their normal strict checks.
         """
-        with self.__lock:
+        with self.__deadline_state_locked() as deadline_available:
             try:
                 now = self.__now()
                 expired = self.__valid_through is not None and now >= self.__valid_through
@@ -177,10 +188,19 @@ class SharedAuthenticatedProviderRuntime:
                 expired = False
                 clock_state = "UNAVAILABLE"
             state = ("ABSENT" if self.__capability is None else
+                     "UNAVAILABLE" if not deadline_available else
                      "UNAVAILABLE_CLOCK" if clock_state == "UNAVAILABLE" else
                      "EXPIRED" if expired else
                      "RETAINED_UNEXPIRED" if self.__lifecycle is SharedProviderRuntimeLifecycle.ACTIVE else
                      "UNAVAILABLE")
+            owned_work_count = (
+                self.__cleanup_in_progress
+                + int(self.__authentication_worker is not None)
+            )
+            cleanup_state = (
+                "FAILED" if self.__unresolved_provider is not None else
+                "PENDING" if owned_work_count else "COMPLETE"
+            )
             return {"schema": "KRONOS-PROVIDER-RETAINED-STATUS/1.0.0",
                 "provider": self.__provider_identity,
                 "retained_lifecycle": self.__lifecycle.value,
@@ -190,6 +210,9 @@ class SharedAuthenticatedProviderRuntime:
                 "clock_state": clock_state,
                 "retained_availability": self.__availability.value,
                 "retained_lease_count": len(self.__leases),
+                "cleanup_state": cleanup_state,
+                "owned_work_count": owned_work_count,
+                "unresolved_cleanup_count": int(self.__unresolved_provider is not None),
                 "operation_authority": "REVALIDATION_REQUIRED_ON_USE"}
 
     @property
@@ -198,16 +221,16 @@ class SharedAuthenticatedProviderRuntime:
 
     @property
     def lifecycle_state(self) -> SharedProviderRuntimeLifecycle:
-        with self.__lock:
-            self.__synchronize_locked()
+        with self.__deadline_state_locked() as deadline_available:
+            self.__synchronize_locked(deadline_available)
             return self.__lifecycle
 
     @property
     def provider_instrument_master_operation_available(self) -> bool:
         """Report capability availability without exposing the capability itself."""
 
-        with self.__lock:
-            self.__synchronize_locked()
+        with self.__deadline_state_locked() as deadline_available:
+            self.__synchronize_locked(deadline_available)
             return (
                 self.__lifecycle is SharedProviderRuntimeLifecycle.ACTIVE
                 and self.__capability is not None
@@ -220,24 +243,45 @@ class SharedAuthenticatedProviderRuntime:
     def authenticated_context_identity(self) -> str:
         """Expose only the already-sanitized governed context identity."""
 
-        with self.__lock:
-            self.__require_active_locked()
+        with self.__deadline_state_locked() as deadline_available:
+            self.__require_active_locked(deadline_available)
             return self.__context_identity
 
     @property
     def active_lease_count(self) -> int:
-        with self.__lock:
-            self.__synchronize_locked()
+        with self.__deadline_state_locked() as deadline_available:
+            self.__synchronize_locked(deadline_available)
             return len(self.__leases)
 
     def begin_login(self) -> object:
-        """Begin one explicit authentication attempt through the sole runtime."""
+        """Begin one explicit attempt without abandoning an older worker."""
 
+        deadline = current_connection_deadline()
+        if deadline is not None:
+            deadline.require()
         if self.__governance is not None:
             self.__governance.require_authentication()
-        construction_generation: int | None = None
-        with self.__lock:
-            self.__synchronize_locked()
+        previous_deadline = self.__connection_deadline
+        if (
+            previous_deadline is not None
+            and previous_deadline is not deadline
+            and not previous_deadline.retry_ready
+        ):
+            raise ProviderRuntimeAccessError(
+                ProviderRuntimeFailure.CONTEXT_ALREADY_ACTIVE
+            )
+        worker = object()
+        with self.__deadline_state_locked() as deadline_available:
+            if (
+                self.__authentication_worker is not None
+                or self.__pending_attempt is not None
+                or self.__cleanup_in_progress
+                or self.__unresolved_provider is not None
+            ):
+                raise ProviderRuntimeAccessError(
+                    ProviderRuntimeFailure.CONTEXT_ALREADY_ACTIVE
+                )
+            self.__synchronize_locked(deadline_available)
             if self.__lifecycle in {
                 SharedProviderRuntimeLifecycle.ACTIVE,
                 SharedProviderRuntimeLifecycle.ENDING,
@@ -245,131 +289,198 @@ class SharedAuthenticatedProviderRuntime:
                 raise ProviderRuntimeAccessError(
                     ProviderRuntimeFailure.CONTEXT_ALREADY_ACTIVE
                 )
+            self.__authentication_worker = worker
+            self.__connection_deadline = deadline
             if self.__provider is None:
-                if self.__construction_in_progress is not None:
-                    raise ProviderRuntimeAccessError(
-                        ProviderRuntimeFailure.CONTEXT_ALREADY_ACTIVE
-                    )
                 self.__construction_generation += 1
-                construction_generation = self.__construction_generation
-                self.__construction_in_progress = construction_generation
-                provider = None
-            else:
-                provider = self.__provider
+                self.__construction_in_progress = self.__construction_generation
+            generation = self.__construction_generation
+            provider = self.__provider
             self.__lifecycle = SharedProviderRuntimeLifecycle.ABSENT
             self.__failure = ""
-        if construction_generation is not None:
-            try:
+        prepared = None
+        adopted = provider is not None
+        try:
+            if provider is None:
+                if deadline is not None:
+                    deadline.require()
                 prepared = self.__provider_factory()
                 if not _runtime(prepared):
                     raise ValueError("SHARED_PROVIDER_RUNTIME_DEPENDENCY_INVALID")
-            except BaseException:
-                with self.__lock:
-                    if self.__construction_in_progress == construction_generation:
+                with (deadline.guard() if deadline is not None else nullcontext()):
+                    with self.__lock:
+                        if (
+                            self.__construction_generation != generation
+                            or self.__construction_in_progress != generation
+                            or self.__provider is not None
+                        ):
+                            raise ProviderRuntimeAccessError(
+                                ProviderRuntimeFailure.CONTEXT_UNAVAILABLE
+                            )
+                        self.__provider = prepared
+                        adopted = True
                         self.__construction_in_progress = None
-                        self.__lifecycle = SharedProviderRuntimeLifecycle.ABSENT
-                raise
+                        provider = prepared
+            if self.__governance is not None:
+                self.__governance.require_authentication()
+            if deadline is not None:
+                deadline.require()
+            # External browser/SDK work must not monopolize governance/status locks.
+            attempt = provider.begin_login()
+            if self.__governance is not None:
+                self.__governance.require_authentication()
+            with (deadline.guard() if deadline is not None else nullcontext()):
+                with self.__lock:
+                    if (
+                        self.__construction_generation != generation
+                        or self.__provider is not provider
+                    ):
+                        raise ProviderRuntimeAccessError(
+                            ProviderRuntimeFailure.CONTEXT_UNAVAILABLE
+                        )
+                    self.__pending_attempt = attempt
+            return attempt
+        except BaseException:
             with self.__lock:
-                current = (
-                    self.__construction_in_progress == construction_generation
-                    and self.__provider is None
-                    and self.__lifecycle
-                    not in {
-                        SharedProviderRuntimeLifecycle.ACTIVE,
-                        SharedProviderRuntimeLifecycle.ENDING,
-                        SharedProviderRuntimeLifecycle.DISPOSED,
-                    }
-                )
-                if current:
-                    self.__provider = prepared
+                if self.__construction_in_progress == generation:
                     self.__construction_in_progress = None
-                    provider = prepared
-            if not current:
-                try:
-                    prepared.end_kronos_session()
-                except Exception:
-                    pass
+                # Do not erase a later generation's state.
+                if self.__construction_generation == generation:
+                    if self.__provider is provider or self.__provider is prepared:
+                        self.__provider = None
+                    self.__capability = None
+                    self.__revoke_locked()
+                    self.__lifecycle = SharedProviderRuntimeLifecycle.ABSENT
+            # A constructor may return after invalidation without ever publishing;
+            # that worker remains its sole cleanup owner. Once published, the
+            # invalidating generation owns disposal and a late worker must not
+            # close the same Provider a second time.
+            stale = provider if provider is not None else prepared
+            if stale is not None and (
+                not adopted or self.__construction_generation == generation
+            ):
+                self.__dispose_provider(stale, deadline)
+            raise
+        finally:
+            with self.__lock:
+                if self.__authentication_worker is worker:
+                    self.__authentication_worker = None
+
+    def complete_callback(self, attempt: object) -> object:
+        """Publish only a current, unexpired matched authentication result."""
+
+        worker = object()
+        with self.__lock:
+            if self.__authentication_worker is not None or self.__cleanup_in_progress:
+                raise ProviderRuntimeAccessError(
+                    ProviderRuntimeFailure.CONTEXT_ALREADY_ACTIVE
+                )
+            provider = self.__provider
+            generation = self.__construction_generation
+            deadline = self.__connection_deadline
+            if (
+                provider is None
+                or self.__pending_attempt is None
+                or attempt != self.__pending_attempt
+            ):
                 raise ProviderRuntimeAccessError(
                     ProviderRuntimeFailure.CONTEXT_UNAVAILABLE
                 )
-        if provider is None:
-            raise ProviderRuntimeAccessError(
-                ProviderRuntimeFailure.CONTEXT_UNAVAILABLE
-            )
-        if self.__governance is not None:
-            with self.__governance.lock:
-                self.__governance.require_authentication()
-                return provider.begin_login()
-        return provider.begin_login()
-
-    def complete_callback(self, attempt: object) -> object:
-        """Publish only a matched, active context after callback completion."""
-
-        with self.__lock:
-            provider = self.__provider
-        if provider is None:
-            raise ProviderRuntimeAccessError(
-                ProviderRuntimeFailure.CONTEXT_UNAVAILABLE
-            )
-        if self.__governance is not None:
-            self.__governance.require_authentication()
-        outcome = provider.complete_callback(attempt)
-        if self.__governance is not None:
-            self.__governance.require_authentication()
-        state = getattr(outcome, "state", None)
-        binding = getattr(outcome, "binding_result", None)
-        capability = provider.authenticated_read_only_capability()
-        context = provider.current_context()
-        status = provider.session_status()
-        context_identity = getattr(context, "context_id", "")
-        context_provider = getattr(context, "provider", "")
-        valid_through = getattr(context, "valid_until", None)
-        active = (
-            state is AuthenticationAttemptState.SUCCEEDED
-            and binding is PrincipalBindingResult.MATCHED
-            and capability is not None
-            and getattr(capability, "active", False) is True
-            and getattr(status, "context_state", None)
-            is AuthenticatedContextState.ACTIVE
-            and context is not None
-            and _text(context_identity)
-            and context_provider == self.__provider_identity
-            and _aware(valid_through)
-            and self.__now() < valid_through
-        )
-        with (self.__governance.lock if self.__governance else nullcontext()):
+            self.__authentication_worker = worker
+        try:
+            if deadline is not None:
+                deadline.require()
             if self.__governance is not None:
                 self.__governance.require_authentication()
+            outcome = provider.complete_callback(attempt)
+            if deadline is not None:
+                deadline.require()
+            if self.__governance is not None:
+                self.__governance.require_authentication()
+            state = getattr(outcome, "state", None)
+            binding = getattr(outcome, "binding_result", None)
+            capability = provider.authenticated_read_only_capability()
+            if deadline is not None:
+                deadline.require()
+            context = provider.current_context()
+            if deadline is not None:
+                deadline.require()
+            status = provider.session_status()
+            if deadline is not None:
+                deadline.require()
+            context_identity = getattr(context, "context_id", "")
+            context_provider = getattr(context, "provider", "")
+            valid_through = getattr(context, "valid_until", None)
+            active = (
+                state is AuthenticationAttemptState.SUCCEEDED
+                and binding is PrincipalBindingResult.MATCHED
+                and capability is not None
+                and getattr(capability, "active", False) is True
+                and getattr(status, "context_state", None)
+                is AuthenticatedContextState.ACTIVE
+                and context is not None
+                and _text(context_identity)
+                and context_provider == self.__provider_identity
+                and _aware(valid_through)
+                and self.__now() < valid_through
+            )
+            # Governance remains authority; the deadline only restricts publication.
+            with (self.__governance.lock if self.__governance else nullcontext()):
+                if self.__governance is not None:
+                    self.__governance.require_authentication()
+                with (deadline.guard() if deadline is not None else nullcontext()):
+                    with self.__lock:
+                        if (
+                            self.__construction_generation != generation
+                            or self.__provider is not provider
+                        ):
+                            raise ProviderRuntimeAccessError(
+                                ProviderRuntimeFailure.CONTEXT_UNAVAILABLE
+                            )
+                        if not active:
+                            self.__capability = None
+                            self.__principal_binding = binding
+                            self.__availability = getattr(
+                                status, "provider_availability",
+                                ProviderAvailabilityState.INDETERMINATE,
+                            )
+                            failure = getattr(outcome, "failure_code", None)
+                            self.__failure = getattr(
+                                failure, "value",
+                                ProviderRuntimeFailure.PRINCIPAL_NOT_MATCHED.value,
+                            )
+                            self.__revoke_locked()
+                            self.__lifecycle = SharedProviderRuntimeLifecycle.ABSENT
+                        else:
+                            self.__capability = capability
+                            self.__context_identity = context_identity
+                            self.__principal_binding = binding
+                            self.__availability = getattr(
+                                status, "provider_availability",
+                                ProviderAvailabilityState.NOT_VERIFIED,
+                            )
+                            self.__valid_through = valid_through
+                            self.__failure = ""
+                            self.__lifecycle = SharedProviderRuntimeLifecycle.ACTIVE
+            return outcome
+        except BaseException:
+            dispose = False
             with self.__lock:
-                if not active:
+                if self.__construction_generation == generation:
+                    if self.__provider is provider:
+                        self.__provider = None
+                        dispose = True
                     self.__capability = None
-                    self.__principal_binding = binding
-                    self.__availability = getattr(
-                        status,
-                        "provider_availability",
-                        ProviderAvailabilityState.INDETERMINATE,
-                    )
-                    failure = getattr(outcome, "failure_code", None)
-                    self.__failure = getattr(
-                        failure,
-                        "value",
-                        ProviderRuntimeFailure.PRINCIPAL_NOT_MATCHED.value,
-                    )
                     self.__revoke_locked()
                     self.__lifecycle = SharedProviderRuntimeLifecycle.ABSENT
-                    return outcome
-                self.__capability = capability
-                self.__context_identity = context_identity
-                self.__principal_binding = binding
-                self.__availability = getattr(
-                    status,
-                    "provider_availability",
-                    ProviderAvailabilityState.NOT_VERIFIED,
-                )
-                self.__valid_through = valid_through
-                self.__failure = ""
-                self.__lifecycle = SharedProviderRuntimeLifecycle.ACTIVE
-            return outcome
+            if dispose:
+                self.__dispose_provider(provider, deadline)
+            raise
+        finally:
+            with self.__lock:
+                if self.__authentication_worker is worker:
+                    self.__authentication_worker = None
+                    self.__pending_attempt = None
 
     def acquire_lease(
         self,
@@ -386,24 +497,40 @@ class SharedAuthenticatedProviderRuntime:
             or any(type(item) is not ReadOnlyProviderOperation for item in operations)
         ):
             raise ValueError("PROVIDER_RUNTIME_LEASE_REQUEST_INVALID")
-        with self.__lock:
-            self.__require_active_locked()
+        with self.__deadline_state_locked() as deadline_available:
+            self.__require_active_locked(deadline_available)
+            deadline = self.__connection_deadline
             capability = self.__capability
+            generation = self.__construction_generation
             if capability is None or not operations.issubset(capability.operations):
                 raise ProviderRuntimeAccessError(
                     ProviderRuntimeFailure.OPERATION_NOT_AUTHORIZED
                 )
-            lease_identity = self.__identity_factory()
-            if not _text(lease_identity) or lease_identity in self.__leases:
-                raise ValueError("PROVIDER_RUNTIME_LEASE_IDENTITY_INVALID")
-            lease = ReadOnlyProviderLease(
-                self,
-                lease_identity=lease_identity,
-                consumer_identity=consumer_identity,
-                operations=operations,
-            )
-            self.__leases[lease_identity] = lease
-            return lease
+        lease_identity = self.__identity_factory()
+        # Status synchronization above may call the Provider. Only the final
+        # local adoption is serialized with expiry, never those external reads.
+        with (deadline.guard() if deadline is not None else nullcontext()):
+            with self.__lock:
+                if (
+                    self.__construction_generation != generation
+                    or self.__capability is not capability
+                    or self.__lifecycle is not SharedProviderRuntimeLifecycle.ACTIVE
+                ):
+                    raise ProviderRuntimeAccessError(
+                        ProviderRuntimeFailure.CONTEXT_UNAVAILABLE
+                    )
+                if self.__governance is not None:
+                    self.__governance.require_operations()
+                if not _text(lease_identity) or lease_identity in self.__leases:
+                    raise ValueError("PROVIDER_RUNTIME_LEASE_IDENTITY_INVALID")
+                lease = ReadOnlyProviderLease(
+                    self,
+                    lease_identity=lease_identity,
+                    consumer_identity=consumer_identity,
+                    operations=operations,
+                )
+                self.__leases[lease_identity] = lease
+                return lease
 
     def acquire_provider_instrument_master_records(
         self,
@@ -416,14 +543,17 @@ class SharedAuthenticatedProviderRuntime:
             raise ProviderRuntimeAccessError(
                 ProviderRuntimeFailure.OPERATION_NOT_AUTHORIZED
             )
-        with self.__lock:
-            self.__require_active_locked()
+        with self.__deadline_state_locked() as deadline_available:
+            self.__require_active_locked(deadline_available)
             capability = self.__capability
             operation = getattr(capability, "instrument_master_records", None)
+            deadline = self.__connection_deadline
             if capability is None or not callable(operation):
                 raise ProviderRuntimeAccessError(
                     ProviderRuntimeFailure.CAPABILITY_UNAVAILABLE
                 )
+        if deadline is not None:
+            deadline.require()
         return operation()
 
     def invalidate(self, sanitized_failure: str = "CONTEXT_INVALIDATED") -> None:
@@ -434,43 +564,97 @@ class SharedAuthenticatedProviderRuntime:
         with self.__lock:
             self.__construction_generation += 1
             self.__construction_in_progress = None
+            self.__pending_attempt = None
             provider = self.__provider
+            deadline = self.__connection_deadline
+            self.__cleanup_in_progress += 1
             self.__lifecycle = SharedProviderRuntimeLifecycle.INVALIDATED
             self.__failure = sanitized_failure
             self.__capability = None
             self.__revoke_locked()
             self.__provider = None
-        if provider is not None:
-            try:
-                provider.end_kronos_session()
-            except Exception:
-                pass
+        try:
+            if provider is not None:
+                self.__dispose_provider(provider, deadline)
+        finally:
+            with self.__lock:
+                self.__cleanup_in_progress -= 1
 
     def end_kronos_session(self) -> None:
-        """End the shared context once and revoke every product lease."""
+        """End the shared context once and retain unresolved cleanup ownership."""
 
         with self.__lock:
-            if self.__lifecycle is SharedProviderRuntimeLifecycle.DISPOSED:
+            if (
+                self.__lifecycle is SharedProviderRuntimeLifecycle.DISPOSED
+                or self.__unresolved_provider is not None
+            ):
                 return
             self.__construction_generation += 1
+            generation = self.__construction_generation
             self.__construction_in_progress = None
+            self.__pending_attempt = None
             provider = self.__provider
+            deadline = self.__connection_deadline
+            self.__cleanup_in_progress += 1
             self.__lifecycle = SharedProviderRuntimeLifecycle.ENDING
             self.__failure = ProviderRuntimeFailure.CONTEXT_ENDING.value
             self.__capability = None
             self.__revoke_locked()
             self.__provider = None
         try:
+            cleaned = True
             if provider is not None:
-                try:
-                    provider.end_kronos_session()
-                except Exception:
-                    pass
+                cleaned = self.__dispose_provider(provider, deadline)
         finally:
             with self.__lock:
-                self.__lifecycle = SharedProviderRuntimeLifecycle.DISPOSED
-                self.__failure = ProviderRuntimeFailure.CONTEXT_DISPOSED.value
-                self.__availability = ProviderAvailabilityState.NOT_VERIFIED
+                self.__cleanup_in_progress -= 1
+                if self.__construction_generation == generation:
+                    self.__lifecycle = (
+                        SharedProviderRuntimeLifecycle.DISPOSED if cleaned else
+                        SharedProviderRuntimeLifecycle.ENDING
+                    )
+                    self.__failure = (
+                        ProviderRuntimeFailure.CONTEXT_DISPOSED.value if cleaned else
+                        ProviderRuntimeFailure.CONTEXT_ENDING.value
+                    )
+                    self.__availability = ProviderAvailabilityState.NOT_VERIFIED
+
+    def __dispose_provider(self, provider: object, deadline) -> bool:
+        try:
+            provider.end_kronos_session()
+        except Exception:
+            # A failed close is not cleanup evidence. Keep a strong reference and
+            # prevent fresh construction; the deadline exposes that ownership.
+            with self.__lock:
+                self.__unresolved_provider = provider
+            if deadline is not None:
+                deadline.hold_resource("shared_provider", provider)
+            return False
+        return True
+
+    @contextmanager
+    def __deadline_state_locked(self):
+        # Snapshot outside the runtime lock to preserve publication lock order.
+        # Recheck its owner after acquiring the runtime lock: a delayed read of
+        # an older deadline must never expire/revoke a replacement generation.
+        while True:
+            deadline = self.__connection_deadline
+            if deadline is None:
+                available = True
+            else:
+                snapshot = deadline.snapshot()
+                available = snapshot["state"] == "SUCCEEDED" or (
+                    snapshot["state"] == "ACTIVE"
+                    and snapshot["remaining_seconds"] > 0
+                )
+            self.__lock.acquire()
+            if deadline is self.__connection_deadline:
+                break
+            self.__lock.release()
+        try:
+            yield available
+        finally:
+            self.__lock.release()
 
     def compatibility_facade(
         self,
@@ -484,16 +668,19 @@ class SharedAuthenticatedProviderRuntime:
             operations=operations,
         )
 
-    def __require_active_locked(self) -> None:
+    def __require_active_locked(self, deadline_available: bool) -> None:
         if self.__governance is not None:
             self.__governance.require_operations()
-        self.__synchronize_locked()
+        self.__synchronize_locked(deadline_available)
         if self.__lifecycle is SharedProviderRuntimeLifecycle.ACTIVE:
             return
         raise ProviderRuntimeAccessError(_failure_for(self.__lifecycle))
 
-    def __synchronize_locked(self) -> None:
+    def __synchronize_locked(self, deadline_available: bool) -> None:
         if self.__lifecycle is not SharedProviderRuntimeLifecycle.ACTIVE:
+            return
+        if not deadline_available:
+            self.__expire_locked(SharedProviderRuntimeLifecycle.INVALIDATED)
             return
         provider = self.__provider
         capability = self.__capability
@@ -540,8 +727,8 @@ class SharedAuthenticatedProviderRuntime:
         return value
 
     def _lease_active(self, lease_identity: str) -> bool:
-        with self.__lock:
-            self.__synchronize_locked()
+        with self.__deadline_state_locked() as deadline_available:
+            self.__synchronize_locked(deadline_available)
             return (
                 self.__lifecycle is SharedProviderRuntimeLifecycle.ACTIVE
                 and lease_identity in self.__leases
@@ -558,8 +745,8 @@ class SharedAuthenticatedProviderRuntime:
         datetime | None,
         str,
     ]:
-        with self.__lock:
-            self.__synchronize_locked()
+        with self.__deadline_state_locked() as deadline_available:
+            self.__synchronize_locked(deadline_available)
             return (
                 self.__provider_identity,
                 self.__context_identity,
@@ -580,10 +767,11 @@ class SharedAuthenticatedProviderRuntime:
         operation: ReadOnlyProviderOperation,
         call: Callable[[AuthenticatedReadOnlyProviderCapability], _Result],
     ) -> _Result:
-        with self.__lock:
-            self.__require_active_locked()
+        with self.__deadline_state_locked() as deadline_available:
+            self.__require_active_locked(deadline_available)
             lease = self.__leases.get(lease_identity)
             capability = self.__capability
+            deadline = self.__connection_deadline
             if lease is None:
                 raise ProviderRuntimeAccessError(
                     ProviderRuntimeFailure.LEASE_RELEASED
@@ -596,6 +784,8 @@ class SharedAuthenticatedProviderRuntime:
                 raise ProviderRuntimeAccessError(
                     ProviderRuntimeFailure.CAPABILITY_UNAVAILABLE
                 )
+        if deadline is not None:
+            deadline.require()
         return call(capability)
 
     def __repr__(self) -> str:

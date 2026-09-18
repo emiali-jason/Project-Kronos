@@ -362,6 +362,11 @@ class _Navigator:
 
 
 class _Adapter:
+    def dispose_local(self) -> None:
+        # Match the explicit adapter contract; real ownership is tested below
+        # and through the production factory with only the SDK replaced.
+        pass
+
     def __init__(self, candidate: _Candidate) -> None:
         self.candidate = candidate
         self.login_count = 0
@@ -785,7 +790,7 @@ def test_absolute_attempt_deadline_prevents_late_accepted_callback_exchange() ->
     assert harness.credentials.acquire_count == 0
     assert harness.adapter.exchange_count == 0
     assert harness.listener.close_count == 1
-    assert harness.callback.close_count == 1
+    assert harness.callback.close_count == 0
 
 
 def test_credential_failure_is_terminal_before_exchange() -> None:
@@ -1237,3 +1242,730 @@ def test_governed_terminal_state_retains_no_raw_transient_material() -> None:
     assert harness.callback.close_count == 1
     assert harness.credentials.lease.close_count == 1
     assert harness.candidate.evidence.close_count >= 1
+
+
+
+def _ordinary_deadline_service_harness():
+    from tests.unit.tools.test_provider_foundation_v2_authentication import (
+        _ManualConnectionTimer,
+    )
+
+    harness = _Harness()
+    harness.monotonic_now = [0.0]
+    harness.timers = []
+    harness.adapter.dispose_count = 0
+
+    def dispose_adapter():
+        harness.adapter.dispose_count += 1
+
+    harness.adapter.dispose_local = dispose_adapter
+
+    def timer_factory(seconds, callback):
+        timer = _ManualConnectionTimer(seconds, callback)
+        harness.timers.append(timer)
+        return timer
+
+    harness.deadline = service_module.ConnectionAttemptDeadline(
+        generation=1,
+        request_identity="0" * 32,
+        timeout_seconds=10.0,
+        monotonic_clock=lambda: harness.monotonic_now[0],
+        timer_factory=timer_factory,
+    )
+    harness.deadline.arm(lambda: None)
+    harness.service = ProviderAuthenticationService(
+        harness.configuration,
+        **harness.service_arguments,
+        ordinary_deadline=harness.deadline,
+    )
+
+    def receive_once(*, deadline):
+        assert deadline == _NOW + timedelta(seconds=10)
+        harness.listener.receive_count += 1
+        return harness.callback
+
+    harness.listener.receive_once = receive_once
+    return harness
+
+
+@pytest.mark.parametrize("phase", ["callback", "exchange", "binding"])
+def test_ordinary_deadline_cancel_race_retains_single_flight_until_worker_returns(phase):
+    harness = _ordinary_deadline_service_harness()
+    entered, release = threading.Event(), threading.Event()
+
+    def wait_for_release():
+        entered.set()
+        assert release.wait(5), "test authentication boundary was not released"
+
+    if phase == "callback":
+        original = harness.listener.receive_once
+
+        def receive_once(*, deadline):
+            wait_for_release()
+            return original(deadline=deadline)
+
+        harness.listener.receive_once = receive_once
+    elif phase == "binding":
+        original = harness.resolver.use_resolved_once
+
+        def resolve_once(reference, operation):
+            wait_for_release()
+            return original(reference, operation)
+
+        harness.resolver.use_resolved_once = resolve_once
+    else:
+        def exchange_once(request_token, api_secret):
+            harness.adapter.exchange_count += 1
+
+            def use_token(_token):
+                def use_secret(_secret):
+                    wait_for_release()
+                    return harness.candidate
+
+                return api_secret.reveal_for_call(use_secret)
+
+            return request_token.consume_for_call(use_token)
+
+        harness.adapter.exchange_once = exchange_once
+
+    handle = harness.service.begin_login()
+    results, errors = [], []
+
+    def complete():
+        try:
+            results.append(harness.service.complete_callback(handle))
+        except BaseException as error:
+            errors.append(error)
+        finally:
+            harness.deadline.worker_finished()
+
+    worker = threading.Thread(target=complete)
+    worker.start()
+    try:
+        assert entered.wait(2)
+        assert harness.service.cancel_authentication_attempt(handle) is (
+            AuthenticationAttemptCancellationResult.CANCELLED
+        )
+        assert harness.service.cancel_authentication_attempt(handle) is (
+            AuthenticationAttemptCancellationResult.ALREADY_CANCELLED
+        )
+        assert worker.is_alive()
+        assert harness.service.current_context() is None
+        assert harness.service.authenticated_read_only_capability() is None
+        with pytest.raises(TimeoutError, match="CONNECTION_ATTEMPT_TERMINAL"):
+            harness.service.begin_login()
+        assert harness.listener.start_count == 1
+        # Expiry arriving after cancellation cannot publish or replace the
+        # service's already established terminal cancellation disposition.
+        harness.monotonic_now[0] = 10.0
+        for timer in tuple(harness.timers):
+            timer.fire()
+        release.set()
+        worker.join(2)
+        assert not worker.is_alive() and not errors
+        assert len(results) == 1
+        assert results[0].state is AuthenticationAttemptState.CANCELLED
+        assert harness.service.authentication_attempt_status(handle).state is (
+            AuthenticationAttemptState.CANCELLED
+        )
+        assert harness.service.current_context() is None
+        assert harness.service.authenticated_read_only_capability() is None
+        assert harness.candidate.capability_issue_count == 0
+        assert harness.listener.close_count == 1
+        assert harness.callback.token.close_count == 1
+        if phase in {"exchange", "binding"}:
+            assert harness.candidate.dispose_count == 1
+            assert harness.credentials.lease.close_count == 1
+        else:
+            assert harness.credentials.acquire_count == 0
+            assert harness.adapter.exchange_count == 0
+    finally:
+        release.set()
+        worker.join(2)
+        harness.deadline.cancel()
+        harness.service.end_kronos_session()
+
+
+def test_ordinary_deadline_expiry_at_capability_issuance_cannot_commit_context(monkeypatch):
+    harness = _ordinary_deadline_service_harness()
+    original_issue = type(harness.candidate).issue_read_only_capability
+
+    def issue_at_deadline(candidate):
+        harness.monotonic_now[0] = 10.0
+        return original_issue(candidate)
+
+    monkeypatch.setattr(type(harness.candidate), "issue_read_only_capability", issue_at_deadline)
+    try:
+        handle = harness.service.begin_login()
+        result = harness.service.complete_callback(handle)
+        harness.deadline.worker_finished()
+        assert result.state is AuthenticationAttemptState.TIMED_OUT
+        assert harness.deadline.snapshot()["state"] == "TIMED_OUT"
+        assert harness.candidate.capability_issue_count == 1
+        assert harness.candidate.dispose_count == 1
+        assert harness.service.current_context() is None
+        assert harness.service.authenticated_read_only_capability() is None
+        assert harness.listener.close_count == 1
+        assert harness.credentials.lease.close_count == 1
+        assert harness.callback.token.close_count == 1
+    finally:
+        harness.deadline.cancel()
+        harness.service.end_kronos_session()
+
+
+@pytest.mark.parametrize("disposal", ["available", "missing", "failed", "raising_contract"])
+def test_malformed_exchange_handoff_is_disposed_or_retained_without_publication(disposal):
+    harness = _ordinary_deadline_service_harness()
+
+    class MalformedCandidate:
+        def __init__(self):
+            self.dispose_count = 0
+
+        @property
+        def principal_evidence(self):
+            if disposal == "raising_contract":
+                raise RuntimeError("INJECTED_CONTRACT_LOOKUP_FAILURE")
+            return None
+
+        def dispose_local(self):
+            self.dispose_count += 1
+            if disposal == "failed":
+                raise RuntimeError("INJECTED_CANDIDATE_DISPOSAL_FAILURE")
+
+    malformed = object() if disposal == "missing" else MalformedCandidate()
+    harness.adapter.candidate = malformed
+    try:
+        handle = harness.service.begin_login()
+        outcome = harness.service.complete_callback(handle)
+        harness.deadline.worker_finished()
+        assert outcome.state is AuthenticationAttemptState.FAILED
+        assert outcome.failure_code is AuthenticationFailureCode.INTERNAL_FAILURE
+        assert harness.service.current_context() is None
+        assert harness.service.authenticated_read_only_capability() is None
+        assert harness.adapter.exchange_count == 1
+        assert harness.adapter.dispose_count == 1
+        assert harness.candidate.capability_issue_count == 0
+        assert harness.listener.close_count == 1
+        assert harness.credentials.lease.close_count == 1
+        assert harness.callback.token.close_count == 1
+        if disposal != "missing":
+            assert malformed.dispose_count == 1
+        unresolved = disposal in {"missing", "failed"}
+        disposition = harness.deadline.snapshot()
+        assert disposition["resources_pending"] is unresolved
+        assert disposition["cleanup_state"] == ("PENDING" if unresolved else "COMPLETE")
+        assert disposition["unresolved_resources"] == (("CANDIDATE",) if unresolved else ())
+        assert harness.deadline.retry_ready is not unresolved
+    finally:
+        harness.deadline.cancel()
+        harness.service.end_kronos_session()
+
+
+def test_failed_principal_evidence_disposal_retains_owner_and_blocks_fresh_retry():
+    harness = _ordinary_deadline_service_harness()
+
+    class UnclosedEvidence(_Evidence):
+        def compare_expected(self, expected):
+            self.compare_count += 1
+            return (PrincipalBindingResult.MATCHED if expected == self._principal
+                    else PrincipalBindingResult.MISMATCHED)
+
+        def close(self):
+            self.close_count += 1
+            raise RuntimeError("INJECTED_PRINCIPAL_EVIDENCE_DISPOSAL_FAILURE")
+
+    evidence = UnclosedEvidence()
+    harness.candidate.evidence = evidence
+    try:
+        handle = harness.service.begin_login()
+        outcome = harness.service.complete_callback(handle)
+        assert outcome.state is AuthenticationAttemptState.FAILED
+        assert outcome.binding_result is PrincipalBindingResult.UNAVAILABLE
+        assert evidence.compare_count == 1
+        assert evidence.close_count == 2
+        harness.deadline.worker_finished()
+        harness.service.end_kronos_session()
+        disposition = harness.deadline.snapshot()
+        assert disposition["state"] == "FAILED"
+        assert disposition["resources_pending"] is True
+        assert disposition["cleanup_state"] == "PENDING"
+        assert disposition["unresolved_resources"] == ("PRINCIPAL_EVIDENCE",)
+        assert harness.deadline.retry_ready is False
+        assert harness.candidate.dispose_count == 1
+        assert _PROVIDER_PRINCIPAL not in repr(disposition)
+    finally:
+        harness.deadline.cancel()
+        harness.service.end_kronos_session()
+
+
+def test_principal_verifier_default_constructor_preserves_existing_cleanup_policy():
+    class UnclosedEvidence(_Evidence):
+        def close(self):
+            self.close_count += 1
+            raise RuntimeError("INJECTED_PRINCIPAL_EVIDENCE_DISPOSAL_FAILURE")
+
+    evidence = UnclosedEvidence()
+    verifier = service_module.ProtectedPrincipalBindingVerifier(_PrincipalResolver())
+    assert verifier.verify_principal_binding(evidence, _REGISTRATION_REF) is (
+        PrincipalBindingResult.UNAVAILABLE
+    )
+    assert evidence.close_count == 2
+
+
+def test_ordinary_deadline_default_ceiling_cannot_be_extended_or_reset():
+    from tests.unit.tools.test_provider_foundation_v2_authentication import (
+        _ManualConnectionTimer,
+    )
+
+    now, timers, terminal = [0.0], [], []
+
+    def timer_factory(seconds, callback):
+        timer = _ManualConnectionTimer(seconds, callback)
+        timers.append(timer)
+        return timer
+
+    deadline = service_module.ConnectionAttemptDeadline(
+        generation=7, request_identity="7" * 32,
+        monotonic_clock=lambda: now[0], timer_factory=timer_factory,
+    )
+    deadline.arm(lambda: terminal.append("terminal"))
+    assert deadline.snapshot()["remaining_seconds"] == 330.0
+    assert timers[-1].seconds == 330.0
+    try:
+        for invalid in (0, -1, 331, float("inf"), float("nan"), True):
+            with pytest.raises(ValueError):
+                service_module.ConnectionAttemptDeadline(8, timeout_seconds=invalid)
+        now[0] = 100.0
+        deadline.shorten(330.0)
+        for _ in range(3):
+            assert deadline.snapshot()["remaining_seconds"] == 230.0
+            assert deadline.snapshot()["generation"] == 7
+        with pytest.raises(RuntimeError):
+            deadline.arm(lambda: terminal.append("duplicate"))
+        now[0] = 329.0
+        deadline.require()
+        assert deadline.snapshot()["remaining_seconds"] == 1.0
+        now[0] = 330.0
+        with pytest.raises(TimeoutError):
+            with deadline.guard():
+                raise AssertionError("expired publication guard was entered")
+        assert timers[-1].cancelled
+        assert deadline.snapshot()["state"] == "TIMED_OUT"
+        assert terminal == ["terminal"]
+        for timer in timers:
+            timer.fire()
+        assert terminal == ["terminal"]
+    finally:
+        deadline.cancel()
+        deadline.worker_finished()
+
+
+def test_ordinary_deadline_exact_expiry_wins_concurrent_commit_and_timer():
+    from tests.unit.tools.test_provider_foundation_v2_authentication import (
+        _ManualConnectionTimer,
+    )
+
+    now, timers, terminal, publication, errors = [0.0], [], [], [], []
+
+    def timer_factory(seconds, callback):
+        timer = _ManualConnectionTimer(seconds, callback)
+        timers.append(timer)
+        return timer
+
+    deadline = service_module.ConnectionAttemptDeadline(
+        generation=1, timeout_seconds=10.0,
+        monotonic_clock=lambda: now[0], timer_factory=timer_factory,
+    )
+    deadline.arm(lambda: terminal.append("TIMED_OUT"))
+    barrier = threading.Barrier(3)
+
+    def try_commit():
+        try:
+            barrier.wait(2)
+            deadline.commit(lambda: publication.append("SUCCESS"))
+        except BaseException as error:
+            errors.append(error)
+
+    def expire():
+        try:
+            barrier.wait(2)
+            timers[-1].fire()
+        except BaseException as error:
+            errors.append(error)
+
+    commit_worker = threading.Thread(target=try_commit)
+    expiry_worker = threading.Thread(target=expire)
+    now[0] = 10.0
+    commit_worker.start()
+    expiry_worker.start()
+    try:
+        # Both operations race for the same publication lock at the exact
+        # monotonic boundary. Either lock order must reject success.
+        barrier.wait(2)
+        commit_worker.join(2)
+        expiry_worker.join(2)
+        assert not commit_worker.is_alive() and not expiry_worker.is_alive()
+        assert len(errors) == 1 and isinstance(errors[0], TimeoutError)
+        assert publication == []
+        assert terminal == ["TIMED_OUT"]
+        assert deadline.snapshot()["state"] == "TIMED_OUT"
+    finally:
+        barrier.abort()
+        commit_worker.join(2)
+        expiry_worker.join(2)
+        deadline.cancel()
+        deadline.worker_finished()
+
+
+def test_ordinary_deadline_expiry_after_begin_cleans_resources_when_session_ends():
+    harness = _ordinary_deadline_service_harness()
+    try:
+        handle = harness.service.begin_login()
+        assert harness.listener.start_count == 1
+        assert harness.listener.close_count == 0
+        assert harness.adapter.dispose_count == 0
+        assert harness.listener.receive_count == 0
+        harness.monotonic_now[0] = 10.0
+        with pytest.raises(TimeoutError):
+            harness.deadline.require()
+        assert harness.timers[-1].cancelled
+        assert harness.service.authentication_attempt_status(handle).state is (
+            AuthenticationAttemptState.TIMED_OUT
+        )
+        # This is the real application disposal path when expiry is discovered
+        # between begin_login returning and complete_callback being invoked.
+        harness.service.end_kronos_session()
+        harness.deadline.worker_finished()
+        assert harness.listener.close_count == 1
+        assert harness.adapter.dispose_count == 1
+        assert harness.listener.receive_count == 0
+        assert harness.credentials.acquire_count == 0
+        assert harness.adapter.exchange_count == 0
+        assert harness.service.current_context() is None
+        assert harness.service.authenticated_read_only_capability() is None
+        status = harness.deadline.snapshot()
+        assert status["state"] == "TIMED_OUT"
+        assert status["cleanup_state"] == "COMPLETE"
+        assert status["resources_pending"] is False
+        assert harness.deadline.retry_ready
+        harness.service.end_kronos_session()
+        assert harness.listener.close_count == 1
+        assert harness.adapter.dispose_count == 1
+    finally:
+        harness.deadline.cancel()
+        harness.service.end_kronos_session()
+        harness.deadline.worker_finished()
+
+
+@pytest.mark.parametrize("mode", ["ordinary", "governed"])
+def test_pf02b_failed_cleanup_stays_owned_when_late_resource_returns(mode):
+    import weakref
+
+    harness = (
+        _ordinary_deadline_service_harness()
+        if mode == "ordinary"
+        else _Harness(governed=True)
+    )
+    entered, release = threading.Event(), threading.Event()
+
+    class ReturningListener(_Listener):
+        def start(self):
+            self.start_count += 1
+            entered.set()
+            assert release.wait(5), "test listener start was not released"
+            # A late external return can make the original local owner appear
+            # ready again. It cannot erase a failed physical cleanup result.
+            self._readiness = CallbackReadiness.READY
+
+        def close(self):
+            self.close_count += 1
+            if self.close_count == 1:
+                raise RuntimeError("pf02b-private-first-close-failure")
+            # A second call would look successful: the service must never use
+            # this accidental result to silently repair failed quarantine.
+            self._readiness = CallbackReadiness.CLOSED
+
+    listener = ReturningListener(harness.callback)
+    harness.listener = listener
+    retained = weakref.ref(listener)
+    handles, errors = [], []
+
+    def begin():
+        try:
+            handles.append(harness.service.begin_login())
+        except BaseException as error:
+            errors.append(error)
+
+    worker = threading.Thread(target=begin)
+    worker.start()
+    try:
+        assert entered.wait(2)
+        harness.service.end_kronos_session()
+        assert listener.close_count == 1
+        assert worker.is_alive()
+        assert harness.service.session_status().attempt_state is (
+            AuthenticationAttemptState.CANCELLED
+        )
+        assert harness.adapter_factory_count == 0
+        release.set()
+        worker.join(2)
+        assert not worker.is_alive() and not errors
+        assert len(handles) == 1
+        outcome = harness.service.complete_callback(handles[0])
+        assert outcome.state is AuthenticationAttemptState.CANCELLED
+        assert listener.close_count == 1
+        harness.service.end_kronos_session()
+        harness.service.end_kronos_session()
+        assert listener.close_count == 1
+        assert harness.service.current_context() is None
+        assert harness.service.authenticated_read_only_capability() is None
+        assert harness.adapter_factory_count == 0
+        assert harness.credentials.acquire_count == 0
+
+        if mode == "ordinary":
+            harness.deadline.worker_finished()
+            status = harness.deadline.snapshot()
+            assert status["state"] == "CANCELLED"
+            assert status["worker_active"] is False
+            assert status["resources_pending"] is True
+            assert status["cleanup_state"] == "PENDING"
+            assert status["unresolved_resources"] == ("LISTENER",)
+            assert harness.deadline.retry_ready is False
+            assert "pf02b-private-first-close-failure" not in repr(status)
+        else:
+            assert harness.recorder.snapshot().count_for(
+                GovernedAuthenticationOperation.LOCAL_CLEANUP
+            ) == 1
+            assert "pf02b-private-first-close-failure" not in repr(outcome)
+
+        # Remove the test harness's ordinary ownership. The service's failed
+        # cleanup quarantine must still strongly own this unresolved resource,
+        # including when no ordinary ConnectionAttemptDeadline exists.
+        harness.listener = None
+        del listener
+        gc.collect()
+        assert retained() is not None
+        assert retained().close_count == 1
+    finally:
+        release.set()
+        worker.join(2)
+        harness.service.end_kronos_session()
+        if mode == "ordinary":
+            harness.deadline.cancel()
+            harness.deadline.worker_finished()
+
+
+@pytest.mark.parametrize("governed", [False, True])
+@pytest.mark.parametrize("owner", ["adapter", "candidate"])
+def test_pf02b_real_failed_owner_blocks_service_readmission_without_deadline(
+    monkeypatch, governed, owner,
+):
+    import weakref
+    from kronos.provider.models.context import ContextValidity
+    from kronos.provider.adapters.kite import client as kite_client
+    from kronos.provider.adapters.kite.authentication import create_kite_authentication_adapter
+    from tests.unit.tools.test_provider_foundation_v2_authentication import _PF02BKiteSDK
+
+    harness = _Harness(
+        governed=governed,
+        browser_category=(BrowserOpenCategory.FAILED if owner == "adapter"
+                          else BrowserOpenCategory.OPENED),
+    )
+    clients = []
+
+    def sdk_factory(**arguments):
+        sdk = _PF02BKiteSDK(
+            **arguments, principal=_PROVIDER_PRINCIPAL,
+            close_error=RuntimeError("pf02b-private-disposal-failure"),
+        )
+        clients.append(sdk)
+        return sdk
+
+    def adapter_factory(api_key):
+        harness.adapter_factory_count += 1
+        arguments = {}
+        if governed:
+            arguments = {
+                "operation_recorder": harness.recorder.record,
+                "remaining_budget": harness.remaining_budget,
+            }
+        return create_kite_authentication_adapter(api_key, **arguments)
+
+    monkeypatch.setattr(kite_client, "_KiteConnect", sdk_factory)
+    arguments = dict(harness.service_arguments, adapter_factory=adapter_factory)
+    if governed:
+        arguments.update(
+            proven_consumption=harness.proof,
+            remaining_budget=harness.remaining_budget,
+            operation_recorder=harness.recorder,
+        )
+    harness.service = ProviderAuthenticationService(harness.configuration, **arguments)
+    attempt = harness.service.begin_login()
+    if owner == "candidate":
+        evidence = harness.service.complete_callback(attempt)
+        assert evidence.state is AuthenticationAttemptState.SUCCEEDED
+        capability = harness.service.authenticated_read_only_capability()
+        assert capability is not None and capability.active
+    harness.service.end_kronos_session()
+    client = clients[0]
+    retained = weakref.ref(client)
+    session = client.reqsession
+    assert session.close_count == 1
+    assert client.remote_logout_count == 0
+    assert client.api_key is None and client.access_token is None
+    context = harness.service.current_context()
+    if owner == "candidate":
+        assert context is not None and context.validity is ContextValidity.TERMINATED
+    else:
+        assert context is None
+    assert harness.service.authenticated_read_only_capability() is None
+    if owner == "candidate":
+        assert not capability.active
+        del capability
+    for _ in range(2):
+        harness.service.end_kronos_session()
+        expected = ("GOVERNED_OPERATION_CARDINALITY_REJECTED" if governed
+                    else "ATTEMPT_ALREADY_ACTIVE")
+        with pytest.raises(RuntimeError, match=expected):
+            harness.service.begin_login()
+    assert harness.adapter_factory_count == harness.listener_factory_count == 1
+    assert session.close_count == 1
+    clients.clear()
+    del client
+    gc.collect()
+    assert retained() is not None
+
+
+def test_pf02c_real_service_reuses_admission_only_after_owned_callback_release(monkeypatch):
+    from kronos.provider.adapters.kite import client as kite_client
+    from kronos.provider.adapters.kite.authentication import create_kite_authentication_adapter
+    from kronos.provider.callbacks import loopback as transport
+    from tests.unit.provider.test_loopback_authentication_callback import (
+        _pf02c_real_listener, _pf02c_request_bytes, _pf02c_assert_released, _pf02c_release,
+    )
+    from tests.unit.tools.test_provider_foundation_v2_authentication import _PF02BKiteSDK
+
+    harness = _Harness()
+    case = _pf02c_real_listener(monkeypatch, clock=harness.clock)
+    factory = case.listener._server_factory
+    listeners, clients = [], []
+
+    def listener_factory():
+        listener = (case.listener if not listeners else
+                    transport.LoopbackAuthenticationCallbackListener(server_factory=factory, clock=harness.clock))
+        listeners.append(listener)
+        case.listener = listener
+        return listener
+
+    def sdk_factory(**arguments):
+        sdk = _PF02BKiteSDK(**arguments, principal=_PROVIDER_PRINCIPAL)
+        clients.append(sdk)
+        return sdk
+
+    monkeypatch.setattr(kite_client, "_KiteConnect", sdk_factory)
+    arguments = dict(harness.service_arguments, listener_factory=listener_factory,
+                     adapter_factory=create_kite_authentication_adapter)
+    service = ProviderAuthenticationService(harness.configuration, **arguments)
+    peer = None
+    try:
+        first = service.begin_login()
+        first_server = case.servers[0]
+        assert first_server._thread.is_alive()
+        assert service.cancel_authentication_attempt(first) is AuthenticationAttemptCancellationResult.CANCELLED
+        assert listeners[0].local_cleanup_state == "COMPLETE"
+        assert not first_server._thread.is_alive()
+        assert first_server._server.socket.fileno() == -1
+        assert clients[0].reqsession.close_count == 1
+        second = service.begin_login()
+        assert second is not first and len(clients) == len(listeners) == 2
+        second_server = case.servers[1]
+        listeners[0].close()
+        assert second_server._thread.is_alive()
+        assert second_server._server.socket.fileno() >= 0
+        peer = case.connect()
+        peer.sendall(_pf02c_request_bytes(target="/kite/callback?request_token=service-request-token"))
+        outcome = service.complete_callback(second)
+        assert outcome.state is AuthenticationAttemptState.SUCCEEDED
+        capability = service.authenticated_read_only_capability()
+        assert capability is not None and capability.active
+        _pf02c_assert_released(case)
+        assert clients[0].exchange_count == 0
+        assert clients[1].exchange_count == clients[1].profile_count == 1
+        assert clients[0].reqsession.close_count == 1 and clients[1].reqsession.close_count == 0
+        assert all(client.remote_logout_count == 0 for client in clients)
+        service.end_kronos_session()
+        assert not capability.active
+        assert clients[0].reqsession.close_count == clients[1].reqsession.close_count == 1
+    finally:
+        service.end_kronos_session()
+        _pf02c_release(case, peer)
+
+
+@pytest.mark.parametrize('failed_cleanup', [False, True])
+def test_pf02d_service_without_ordinary_authority_owns_browser_helper(monkeypatch, failed_cleanup):
+    from kronos.provider.adapters.kite.navigation import KiteLoginNavigator
+    from tests.unit.provider.test_kite_login_navigator import _pf02d_process_fixture, _pf02d_finish
+    case = _pf02d_process_fixture(monkeypatch, mode='blocked')
+    harness = _Harness()
+    navigator = KiteLoginNavigator()
+    service = ProviderAuthenticationService(harness.configuration,
+        **dict(harness.service_arguments, navigator=navigator))
+    handles = []
+    thread = threading.Thread(target=lambda: handles.append(service.begin_login()))
+    try:
+        thread.start()
+        assert case.entered.wait(2)
+        process = case.records[0].process
+        terminate, kill = process.terminate, process.kill
+        if failed_cleanup:
+            process.terminate = process.kill = lambda: None
+        service.end_kronos_session()
+        thread.join(2)
+        assert not thread.is_alive()
+        assert service.authenticated_read_only_capability() is None
+        if failed_cleanup:
+            assert process.is_alive()
+            assert navigator._owner.local_cleanup_state == 'FAILED'
+            with pytest.raises(RuntimeError, match='ATTEMPT_ALREADY_ACTIVE'):
+                service.begin_login()
+            process.terminate, process.kill = terminate, kill
+            case.release.set(); process.join(1)
+            assert not process.is_alive()
+            with pytest.raises(RuntimeError, match='ATTEMPT_ALREADY_ACTIVE'):
+                service.begin_login()
+        else:
+            assert navigator._owner.local_cleanup_state == 'COMPLETE'
+            # An eligible new explicit service attempt is admitted and dispatches.
+            case.release.set()
+            second = service.begin_login()
+            assert second is not handles[0] and len(case.records) == 2
+            assert navigator._owner.local_cleanup_state == 'COMPLETE'
+            assert service.complete_callback(second).state is AuthenticationAttemptState.SUCCEEDED
+    finally:
+        if 'terminate' in locals():
+            process.terminate, process.kill = terminate, kill
+        case.release.set(); thread.join(2)
+        service.end_kronos_session()
+        _pf02d_finish(case)
+
+
+def test_pf02d_helper_construction_cannot_extend_existing_attempt(monkeypatch):
+    now = [0.0]
+    original_deadline = service_module.ConnectionAttemptDeadline
+    class DelayedBudgetConstruction(original_deadline):
+        def __init__(self, *args, **kwargs):
+            now[0] += 1.0
+            super().__init__(*args, **kwargs)
+    monkeypatch.setattr(service_module, 'ConnectionAttemptDeadline', DelayedBudgetConstruction)
+    harness = _Harness()
+    budgets = []
+    harness.navigator.bind_attempt = budgets.append
+    service = ProviderAuthenticationService(harness.configuration,
+        **harness.service_arguments, monotonic_clock=lambda: now[0])
+    try:
+        service.begin_login()
+        # One second elapsed constructing helper custody after the 300-second
+        # attempt began. A relative timeout must not reset that elapsed second.
+        assert budgets[0].remaining_seconds() == 299.0
+    finally:
+        service.end_kronos_session()

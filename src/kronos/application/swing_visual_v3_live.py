@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from contextlib import contextmanager
+from copy import deepcopy
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from hashlib import sha256
+from threading import Lock
 
 from kronos.application.swing_native_review import NativeReviewWorkflowSnapshot
 from kronos.application.swing_visual_v3 import (
@@ -33,7 +36,7 @@ from kronos.swing.v1.review_evidence_binding import (
     ReviewAcceptanceReceipt, ReviewMutationPrecondition, canonical, require, strict_json, timestamp,
 )
 from kronos.swing.v1.review_evidence_store import (
-    ReviewEvidenceStore, PreparedReadFence, capture_prepared_reads,
+    ReviewEvidenceStore, PreparedReadFence, capture_prepared_reads, record_prepared_read,
 )
 from kronos.swing.v1.pdf_visual_review_v3_live import (
     VisualV3AnswerImportRecord,
@@ -730,6 +733,36 @@ class ProspectiveNativeReview:
     continuity: object
 
 
+@dataclass(slots=True)
+class _NativeIntakeResponse:
+    """One GET preparation only; never passed to mutation admission."""
+
+    owner: object
+    active: bool = True
+    context: tuple | None = None
+    authority: tuple | None = None
+    values: dict = field(default_factory=dict)
+
+    def read(self, key, load):
+        require(self.active, "REVIEW_BINDING_STALE")
+        if key not in self.values:
+            self.values[key] = load()
+        return self.values[key]
+
+
+@dataclass(frozen=True, slots=True)
+class _CompactNativePageState:
+    """One validated current presentation generation; never mutation authority."""
+
+    context: tuple
+    authority: tuple
+    projection: dict
+    has_control: bool
+    component_fence: PreparedReadFence
+    current_fence: PreparedReadFence
+    identity: str
+
+
 class NativeReviewIntakeWorkflow:
     """Prospective Browser intake. Historical review transport is not a fallback.
 
@@ -741,8 +774,195 @@ class NativeReviewIntakeWorkflow:
         self.application, self.native_review, self.live, self.store = application, native_review, live, store
         self.errors = {}
         self._prospective_cache = None
+        self._page_prepare_lock = Lock()
+        self._page_state_lock = Lock()
+        self._page_state = None
+        self._page_state_failure = "SWING_PAGE_PREPARATION_MISSING"
 
-    def _context(self):
+    @contextmanager
+    def _validated_response(self):
+        with capture_prepared_reads() as reads:
+            prepared = _NativeIntakeResponse(self)
+            try:
+                prepared.context = self._context(_response=prepared)
+                yield prepared, reads
+                PreparedReadFence(tuple(reads.items())).check()
+                self.recheck_response(prepared)
+            finally:
+                prepared.active = False
+                prepared.context = prepared.authority = None
+                prepared.values.clear()
+
+    @contextmanager
+    def response(self):
+        """Validate once, reuse within this response, then fence exact inputs.
+
+        The component byte reads bracket the unchanged owning typed loaders.
+        Neither file metadata nor the process-wide prospective cache substitutes
+        for validation. No lock is held over projection I/O or rendering.
+        """
+        with self._validated_response() as (prepared, _reads):
+            yield prepared
+
+    def prepare_page_state(self) -> bool:
+        """Prepare one current UI projection only at an explicit owner boundary."""
+
+        try:
+            with self._page_prepare_lock:
+                with self._validated_response() as (prepared, reads):
+                    projection = self.snapshot(_response=prepared)
+                    context = prepared.context
+                    authority = prepared.authority
+                    has_control = self.has_control(_response=prepared)
+                    component_fence, current_fence = self._compact_page_fences(reads)
+                    identity = self._compact_page_identity(
+                        context, authority, projection, has_control,
+                        component_fence, current_fence,
+                    )
+                state = _CompactNativePageState(
+                    context, authority, projection, has_control,
+                    component_fence, current_fence, identity,
+                )
+        except (OSError, ValueError) as error:
+            with self._page_state_lock:
+                self._page_state = None
+                self._page_state_failure = self._reason(
+                    error, "SWING_PAGE_PREPARATION_UNAVAILABLE"
+                )
+            return False
+        with self._page_state_lock:
+            self._page_state = state
+            self._page_state_failure = ""
+        return True
+
+    @contextmanager
+    def page_response(self):
+        """Serve the retained generation without reconstruction or recovery."""
+
+        with self._page_state_lock:
+            state = self._page_state
+            failure = self._page_state_failure
+        require(state is not None, failure or "SWING_PAGE_PREPARATION_MISSING")
+        require(
+            state.identity == self._compact_page_identity(
+                state.context,
+                state.authority,
+                state.projection,
+                state.has_control,
+                state.component_fence,
+                state.current_fence,
+            ),
+            "SWING_PAGE_PREPARATION_CORRUPT",
+        )
+        state.current_fence.check()
+        self._check_compact_components(state)
+        prepared = _NativeIntakeResponse(
+            self,
+            context=state.context,
+            authority=state.authority,
+            values={"snapshot": state.projection, ("has_control",): state.has_control},
+        )
+        try:
+            self.recheck_response(prepared)
+            yield prepared
+            state.current_fence.check()
+            self._check_compact_components(state)
+            self.recheck_response(prepared)
+        finally:
+            prepared.active = False
+            prepared.context = prepared.authority = None
+            prepared.values.clear()
+
+    @staticmethod
+    def _check_compact_components(state):
+        try:
+            state.component_fence.check()
+        except ValueError as error:
+            raise ValueError("SWING_PUBLICATION_BUNDLE_INVALID") from error
+
+    def page_state_status(self):
+        """Return local preparation facts without filesystem or Provider work."""
+
+        with self._page_state_lock:
+            state = self._page_state
+            failure = self._page_state_failure
+        return {
+            "state": "READY" if state is not None else (
+                "MISSING" if failure == "SWING_PAGE_PREPARATION_MISSING" else "FAILED"
+            ),
+            "failure": failure,
+            "retained_generations": 0 if state is None else 1,
+            "retained_input_count": 0 if state is None else (
+                len(state.component_fence.entries) + len(state.current_fence.entries)
+            ),
+            "retained_input_bytes": 0 if state is None else sum(
+                0 if payload is None else len(payload)
+                for fence in (state.component_fence, state.current_fence)
+                for _, payload in fence.entries
+            ),
+        }
+
+    def _compact_page_fences(self, reads):
+        """Retain exact current controls/components, never immutable ancestry."""
+
+        root = self.store.root
+        components, current = [], []
+        for path, payload in reads.items():
+            try:
+                relative = path.relative_to(root)
+            except ValueError:
+                # Native and MTF exact component bytes remain C1's final fence.
+                components.append((path, payload))
+                continue
+            if (
+                (len(relative.parts) == 1 and relative.name.startswith("current-"))
+                or relative.parts[0] in {"acceptance-current", "downstream-current"}
+            ):
+                current.append((path, payload))
+        return PreparedReadFence(tuple(components)), PreparedReadFence(tuple(current))
+
+    @staticmethod
+    def _compact_page_identity(
+        context, authority, projection, has_control, component_fence, current_fence
+    ):
+        manifest, facts, review = context
+        native, bound_facts, continuity, status = authority
+        inputs = tuple(
+            (
+                str(path),
+                None if payload is None else len(payload),
+                None if payload is None else sha256(payload).hexdigest(),
+            )
+            for fence in (component_fence, current_fence)
+            for path, payload in fence.entries
+        )
+        return sha256(repr((
+            "KRONOS-SWING-COMPACT-PAGE-V1",
+            manifest,
+            facts.run_identity,
+            review.native_run_identity,
+            native.run_identity,
+            bound_facts.run_identity,
+            id(continuity),
+            status,
+            has_control,
+            projection,
+            inputs,
+        )).encode("utf-8")).hexdigest()
+
+    def recheck_response(self, prepared):
+        require(prepared.active and prepared.owner is self, "REVIEW_BINDING_STALE")
+        native, facts, continuity, status = prepared.authority
+        _, current, current_continuity, current_status = self.application.opportunities_bundle_projection()
+        require(current is native and current_continuity is continuity
+                and self.application.mtf_fact_snapshot() is facts
+                and current_status == status, "REVIEW_BINDING_STALE")
+
+    def _context(self, *, _response=None):
+        if _response is not None:
+            require(_response.active and _response.owner is self, "REVIEW_BINDING_STALE")
+        if _response is not None and _response.context is not None:
+            return _response.context
         workspace, native, continuity, status = self.application.opportunities_bundle_projection()
         require(status["control"] is not None, "SWING_PUBLICATION_CURRENT_UNAVAILABLE")
         manifest = status["control"].get("current_manifest")
@@ -757,6 +977,8 @@ class NativeReviewIntakeWorkflow:
         require(native.run_identity == facts.run_identity
                 and native.provider_source_identity == facts.provider_source_identity,
                 "NATIVE_REVIEW_SAME_RUN_BINDING_INVALID")
+        if _response is not None:
+            _response.authority = (native, facts, continuity, deepcopy(status))
         # Use the existing exact-run store readers when supplied by production
         # composition. No latest selector, inferred root, recovery or lock file.
         for accessor, expected in (("native_discovery_evidence_store", native),
@@ -765,6 +987,17 @@ class NativeReviewIntakeWorkflow:
             store = None if source is None else source()
             if store is not None:
                 try:
+                    if _response is not None:
+                        from kronos.swing.v1.native_discovery import NativeDiscoveryEvidenceStore
+                        from kronos.swing.v1.mtf_facts import MtfFactEvidenceStore
+                        # These are the exact component paths used by WO-05's
+                        # publication owner, not a latest/history selector.
+                        if type(store) is NativeDiscoveryEvidenceStore:
+                            path = store._root / "complete-runs" / (native.run_identity + ".json")
+                            record_prepared_read(path, path.read_bytes())
+                        elif type(store) is MtfFactEvidenceStore:
+                            path = store._path(native.run_identity)
+                            record_prepared_read(path, path.read_bytes())
                     retained = store.load(native.run_identity)
                 except (OSError, ValueError):
                     require(False, "SWING_PUBLICATION_BUNDLE_INVALID")
@@ -801,10 +1034,16 @@ class NativeReviewIntakeWorkflow:
         self._prospective_cache = (native, facts, continuity, manifest["sha256"], review)
         return manifest["sha256"], facts, review
 
+    def unavailable(self, error):
+        return dict(rows=(), packages=(), error=self._reason(error, "REVIEW_BINDING_UNAVAILABLE"),
+                    workspace=None)
+
     @staticmethod
     def _reason(error, fallback):
         # Never render unrestricted exception text, paths or incoming payloads.
-        allowed = {"REVIEW_BINDING_STALE", "REVIEW_REQUEST_MISMATCH",
+        allowed = {"SWING_TRADE_WINDOW_SELECTION_STALE", "SWING_TRADE_WINDOW_SELECTION_CORRUPT",
+            "SWING_TRADE_WINDOW_SELECTION_AMBIGUOUS", "SWING_TRADE_WINDOW_SELECTION_INVALID",
+            "REVIEW_BINDING_STALE", "REVIEW_REQUEST_MISMATCH",
             "SWING_PUBLICATION_CURRENT_UNAVAILABLE", "SWING_PUBLICATION_BUNDLE_INVALID",
             "NATIVE_DISCOVERY_RUN_INVALID", "MTF_FACT_SNAPSHOT_INVALID",
             "NATIVE_REVIEW_SAME_RUN_BINDING_INVALID", "NATIVE_REVIEW_ASSESSMENT_INELIGIBLE",
@@ -812,12 +1051,14 @@ class NativeReviewIntakeWorkflow:
             "REVIEW_ACCEPTANCE_INCOMPLETE", "REVIEW_INTEGRITY_INVALID",
             "REVIEW_ARTIFACT_DIGEST_MISMATCH", "REVIEW_PUBLICATION_CONFLICT",
             "REVIEW_FIELD_TYPE_INVALID", "REVIEW_UNKNOWN_FIELD", "REVIEW_REQUIRED_FIELD_MISSING",
-            "REVIEW_DUPLICATE_KEY", "REVIEW_JSON_INVALID", "REVIEW_TIMESTAMP_INVALID"}
+            "REVIEW_DUPLICATE_KEY", "REVIEW_JSON_INVALID", "REVIEW_TIMESTAMP_INVALID",
+            "SWING_PAGE_PREPARATION_MISSING", "SWING_PAGE_PREPARATION_UNAVAILABLE",
+            "SWING_PAGE_PREPARATION_CORRUPT"}
         return str(error) if str(error) in allowed else fallback
 
-    def _requirements(self, market, instruments=None):
+    def _requirements(self, market, instruments=None, *, _response=None):
         require(market in {"NSE", "MCX"}, "REVIEW_CONTRACT_UNSUPPORTED")
-        _, _, review = self._context()
+        _, _, review = self._context(_response=_response)
         values = tuple(sorted((item for item in review.requirements
             if item.thesis.product_path is (NativeProductPath.NSE if market == "NSE" else NativeProductPath.MCX)
             and (instruments is None or item.canonical_instrument in instruments)),
@@ -826,18 +1067,35 @@ class NativeReviewIntakeWorkflow:
                 == tuple(sorted(instruments))), "REVIEW_REQUEST_MISMATCH")
         return values
 
-    def _publication(self, market):
+    def _publication(self, market, *, _response=None):
+        if _response is not None:
+            return _response.read(("publication", market), lambda: self._publication(market))
         require(market in {"NSE", "MCX"}, "REVIEW_CONTRACT_UNSUPPORTED")
         return self.store.load_current_request() if market == "NSE" else self.store.load_current_mcx_request()
 
-    def has_control(self):
-        _, facts, _ = self._context()
+    def has_control(self, *, _response=None):
+        _, facts, _ = self._context(_response=_response)
         names = ["current-request.json", "current-mcx-request.json"]
         names.extend("acceptance-current/" + sha256(canonical(["NATIVE_REVIEW", market, facts.run_identity])).hexdigest()
                      + ".json" for market in ("NSE", "MCX"))
+        if _response is not None:
+            def selected():
+                present = False
+                for name in names:
+                    path = self.store.root / name
+                    try:
+                        payload = path.read_bytes()
+                    except FileNotFoundError:
+                        payload = None
+                    record_prepared_read(path, payload)
+                    present = present or payload is not None
+                return present
+            return _response.read(("has_control",), selected)
         return any((self.store.root / name).exists() for name in names)
 
-    def _history(self, market, run_identity):
+    def _history(self, market, run_identity, *, _response=None):
+        if _response is not None:
+            return _response.read(("history", market, run_identity), lambda: self._history(market, run_identity))
         """Verify retained request/PDF/role bindings for the complete pointer ancestry."""
         history = self.store.native_acceptance_history(market, run_identity)
         for commit in history:
@@ -898,18 +1156,20 @@ class NativeReviewIntakeWorkflow:
             candidate_identity=requirement.requirement_sha256, instrument=requirement.canonical_instrument,
             market="NSE" if requirement.thesis.product_path is NativeProductPath.NSE else "MCX", role=role)
 
-    def _selection(self, requirement, role):
+    def _selection(self, requirement, role, *, _response=None):
+        if _response is not None:
+            return _response.read(("selection", requirement.requirement_sha256, role), lambda: self._selection(requirement, role))
         return self.store.native_chart_selection(self._chart_binding(requirement, role))
 
-    def current_state(self, market, instrument):
-        manifest, facts, _ = self._context()
-        requirement = self._requirements(market, (instrument,))[0]
-        publication = self._publication(market)
+    def current_state(self, market, instrument, *, _response=None):
+        manifest, facts, _ = self._context(_response=_response)
+        requirement = self._requirements(market, (instrument,), _response=_response)[0]
+        publication = self._publication(market, _response=_response)
         mapping = None if publication is None else self._mapping(publication, market)
-        history = self._history(market, facts.run_identity)
+        history = self._history(market, facts.run_identity, _response=_response)
         receipt = next((item for commit in history for item in commit.receipts
             if item.binding.value["candidate_identity"] == requirement.requirement_sha256), None)
-        revisions = [self._selection(requirement, role) for role in self._roles(market)]
+        revisions = [self._selection(requirement, role, _response=_response) for role in self._roles(market)]
         return dict(expected_committed_run_manifest=manifest, expected_run_identity=facts.run_identity,
             expected_candidate_identity=requirement.requirement_sha256,
             expected_review_cycle_identity=None if mapping is None else mapping.get("review_cycle_identity", mapping["review_pack_identity"]),
@@ -917,9 +1177,9 @@ class NativeReviewIntakeWorkflow:
             expected_revision_set_digest=sha256(canonical(revisions)).hexdigest(),
             expected_acceptance_receipt_id=None if receipt is None else receipt.receipt_id)
 
-    def expected(self, market, instruments):
+    def expected(self, market, instruments, *, _response=None):
         # A GET emits no new UUID, cycle, request, receipt or storage object.
-        return {instrument: {**self.current_state(market, instrument), "mutation_identity": "BROWSER-EXPLICIT-MUTATION"}
+        return {instrument: {**self.current_state(market, instrument, _response=_response), "mutation_identity": "BROWSER-EXPLICIT-MUTATION"}
                 for instrument in instruments}
 
     def _admit(self, market, expected):
@@ -945,15 +1205,18 @@ class NativeReviewIntakeWorkflow:
         recheck()
         return recheck
 
-    def chart_reader(self, role, instrument, timeframe):
+    def chart_reader(self, role, instrument, timeframe, *, _response=None):
         market = "NSE" if role == "NATIVE_NSE" else "MCX"
         require(role in self._roles(market) and timeframe in
                 (("1W", "1D", "4H", "1H") if market == "NSE" else ("1D", "4H", "1H")),
                 "REVIEW_CONTRACT_UNSUPPORTED")
-        requirement = self._requirements(market, (instrument,))[0]
-        selected = self._selection(requirement, role)
+        requirement = self._requirements(market, (instrument,), _response=_response)[0]
+        selected = self._selection(requirement, role, _response=_response)
         require(selected is not None and selected["image"] is not None, "REVIEW_ACCEPTANCE_INCOMPLETE")
-        return selected["selection_sha256"], self.store.native_chart_bytes(selected)
+        image = (self.store.native_chart_bytes(selected) if _response is None else
+                 _response.read(("chart", selected["selection_sha256"]),
+                                lambda: self.store.native_chart_bytes(selected)))
+        return selected["selection_sha256"], image
 
     def stage(self, market, instrument, role, expected, *, image=None, content_type=None):
         require(set(expected) == {instrument} and role in self._roles(market), "REVIEW_PRECONDITION_INVALID")
@@ -1149,12 +1412,20 @@ class NativeReviewIntakeWorkflow:
             pdf = stream.read(128 * 1024 * 1024 + 1)
         return self.import_answer(market, expected, pdf)
 
-    def snapshot(self):
+    def snapshot(self, *, _response=None):
         """Observational projection; invalid selected graphs do not fall back."""
+        if _response is None:
+            try:
+                with self.response() as prepared:
+                    return self.snapshot(_response=prepared)
+            except (OSError, ValueError) as error:
+                return self.unavailable(error)
+        if "snapshot" in _response.values:
+            return _response.values["snapshot"]
         from kronos.swing.v1.review_evidence_binding import ReviewEvidenceError
         from kronos.swing.v1.native_review import MCX_REFERENCE_MAPPINGS
         try:
-            manifest, facts, review = self._context()
+            manifest, facts, review = self._context(_response=_response)
         except (OSError, ValueError) as error:
             return dict(rows=(), packages=(), error=self._reason(error, "REVIEW_BINDING_UNAVAILABLE"),
                         workspace=None)
@@ -1165,15 +1436,15 @@ class NativeReviewIntakeWorkflow:
             if not requirements:
                 continue
             try:
-                publication = self._publication(market)
-                history = self._history(market, facts.run_identity)
+                publication = self._publication(market, _response=_response)
+                history = self._history(market, facts.run_identity, _response=_response)
                 latest = {}
                 for commit in history:
                     for receipt in commit.receipts:
                         latest.setdefault(receipt.binding.value["candidate_identity"], (commit, receipt))
                 for requirement in requirements:
                     instrument = requirement.canonical_instrument
-                    selected = {role: self._selection(requirement, role) for role in self._roles(market)}
+                    selected = {role: self._selection(requirement, role, _response=_response) for role in self._roles(market)}
                     evidence, downstream, receipt_id = "MISSING", "NOT_RUN", None
                     supported_result = None
                     retained = latest.get(requirement.requirement_sha256)
@@ -1181,7 +1452,7 @@ class NativeReviewIntakeWorkflow:
                         commit, receipt = retained
                         receipt_id = receipt.receipt_id
                         try:
-                            self._verify_receipt_current(receipt)
+                            self._verify_receipt_current(receipt, _response=_response)
                             evidence = "ACCEPTED"
                         except ReviewEvidenceError as error:
                             evidence = "STALE" if error.code in {"REVIEW_BINDING_STALE", "REVIEW_ACCEPTANCE_INCOMPLETE"} else "INVALID"
@@ -1202,7 +1473,7 @@ class NativeReviewIntakeWorkflow:
                     predecessors = tuple(item.receipt_id for previous in history for item in previous.receipts
                         if item.binding.value["candidate_identity"] == requirement.requirement_sha256 and item.receipt_id != receipt_id)
                     rows.append(dict(instrument=instrument, market=market, selected=selected,
-                        expected=self.expected(market, (instrument,)), evidence=evidence, downstream=downstream,
+                        expected=self.expected(market, (instrument,), _response=_response), evidence=evidence, downstream=downstream,
                         receipt_id=receipt_id, replaced=predecessors, error=error, supported_result=supported_result,
                         reference=None if market == "NSE" else MCX_REFERENCE_MAPPINGS[instrument],
                         complete=all(value is not None and value["image"] is not None for value in selected.values())))
@@ -1218,7 +1489,7 @@ class NativeReviewIntakeWorkflow:
                         for instrument in instruments)
                     packages.append(dict(market=market, identity=publication.identity,
                         question_filename=self.filenames(mapping)[0], answer_filename=self.filenames(mapping)[1],
-                        expected=self.expected(market, instruments) if current else None))
+                        expected=self.expected(market, instruments, _response=_response) if current else None))
             except (OSError, ValueError) as error:
                 rows = [item for item in rows if item["market"] != market]
                 rows.extend(dict(instrument=item.canonical_instrument, market=market, selected={}, expected=None,
@@ -1235,12 +1506,14 @@ class NativeReviewIntakeWorkflow:
         for row in rows:
             row["continuity"] = next((item for item in continuity_rows
                 if item.canonical_instrument == row["instrument"]), None)
-        return dict(rows=tuple(rows), packages=tuple(packages), error=None,
+        result = dict(rows=tuple(rows), packages=tuple(packages), error=None,
             workspace=dict(run_identity=facts.run_identity, manifest=manifest,
                 analysis_time=review.analysis_time, state="CURRENT", population=len(rows),
                 eligible=len(review.requirements), excluded=len(review.excluded),
                 nse=sum(row["market"] == "NSE" and row["eligible"] for row in rows),
                 mcx=sum(row["market"] == "MCX" and row["eligible"] for row in rows)))
+        _response.values["snapshot"] = result
+        return result
 
     def _question_current(self, publication, market, manifest, requirement, selected):
         """Question-ready is exact current chart/request binding, not PDF presence."""
@@ -1271,33 +1544,35 @@ class NativeReviewIntakeWorkflow:
                 return False
         return True
 
-    def downstream_applicable(self, completed):
+    def downstream_applicable(self, completed, *, _response=None):
         """Receipt selection cannot borrow a prior cycle's successful output."""
         if completed is None:
             return False
         try:
-            _, facts, _ = self._context()
-            if completed.requirement.native_run_identity != facts.run_identity or not self.has_control():
+            _, facts, _ = self._context(_response=_response)
+            if completed.requirement.native_run_identity != facts.run_identity or not self.has_control(_response=_response):
                 return True  # Original historical loader and binding remain intact.
-            row = next((item for item in self.snapshot()["rows"]
+            row = next((item for item in self.snapshot(_response=_response)["rows"]
                 if item["instrument"] == completed.requirement.canonical_instrument), None)
             return (row is not None and row["evidence"] == "ACCEPTED" and row["downstream"] == "SUCCEEDED"
                 and row["supported_result"] is not None and completed == self.live.cycle.completed_for(
                     facts.run_identity, completed.requirement.canonical_instrument))
         except (OSError, ValueError):
+            if _response is not None:
+                raise
             return False
 
-    def _verify_receipt_current(self, receipt):
+    def _verify_receipt_current(self, receipt, *, _response=None):
         value = receipt.binding.value
-        manifest, facts, _ = self._context()
+        manifest, facts, _ = self._context(_response=_response)
         market, instrument = value["market"], value["canonical_instrument"]
-        requirement = self._requirements(market, (instrument,))[0]
+        requirement = self._requirements(market, (instrument,), _response=_response)[0]
         require(value["committed_run_manifest_identity"] == manifest
             and value["analytical_run_identity"] == facts.run_identity
             and value["candidate_identity"] == requirement.requirement_sha256
             and value["native_assessment_sha256"] == requirement.thesis.native_assessment_sha256,
             "REVIEW_BINDING_STALE")
-        publication = self._publication(market)
+        publication = self._publication(market, _response=_response)
         require(publication is not None, "REVIEW_BINDING_STALE")
         mapping = self._mapping(publication, market)
         require(value["request_identity"] == mapping["request_identity"]
@@ -1306,7 +1581,7 @@ class NativeReviewIntakeWorkflow:
             and value["review_cycle_identity"] == mapping.get("review_cycle_identity", mapping["review_pack_identity"]),
             "REVIEW_BINDING_STALE")
         for chart in receipt.body["chart_revisions"]:
-            revision, image = self.chart_reader(chart["role"], instrument, chart["timeframe_or_panel_identity"])
+            revision, image = self.chart_reader(chart["role"], instrument, chart["timeframe_or_panel_identity"], _response=_response)
             require(revision == chart["revision_identity"] and sha256(image).hexdigest() == chart["sha256"],
                     "REVIEW_BINDING_STALE")
 

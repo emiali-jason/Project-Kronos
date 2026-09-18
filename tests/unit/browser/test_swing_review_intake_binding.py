@@ -974,3 +974,257 @@ def test_context_browser_corrupt_selection_is_bounded_invalid_and_read_only(inta
         assert "controlled corrupt selection" not in body
     assert workflow.snapshot().slots[0].intake_precondition is None
     assert _inventory(tmp_path) == before
+
+
+# STAGE 10B-C1: real isolated component readers, not in-memory loader substitutes.
+def _page_load_population(workflow, tmp_path, population=12):
+    from dataclasses import replace
+    from kronos.swing.v1 import native_discovery as native
+    from kronos.swing.v1.mtf_facts import MtfFactEvidenceStore
+    state, names = _current_twelve(workflow)
+    state["control"]["latest_attempt"] = {"state": "SUCCEEDED"}
+    run = state["native"]
+    members = set(names[:population])
+    assessments = tuple(replace(item, status=(item.status if item.canonical_instrument in members
+        else native.NativeDiscoveryStatus.NO_CURRENT_OPPORTUNITY)) for item in run.assessments)
+    assessments = tuple(replace(item, result_sha256=native._assessment_digest(item)) for item in assessments)
+    run = replace(run, assessments=assessments)
+    run = replace(run, result_sha256=native._digest(dict(run_identity=run.run_identity,
+        provider_source_identity=run.provider_source_identity, observed_at=run.observed_at,
+        assessments=run.assessments)))
+    state["native"] = run
+    stores = (native.NativeDiscoveryEvidenceStore(tmp_path / "page-native"),
+              MtfFactEvidenceStore(tmp_path / "page-mtf"))
+    paths = (stores[0].retain(run), stores[1].retain(state["facts"]))
+    assert stores[0].load(run.run_identity) == run
+    assert stores[1].load(run.run_identity) == state["facts"]
+    workflow.application.native_discovery_evidence_store = lambda: stores[0]
+    workflow.application.mtf_fact_evidence_store = lambda: stores[1]
+    from contextlib import contextmanager
+    from types import SimpleNamespace
+    @contextmanager
+    def guard():
+        yield SimpleNamespace(control=state["control"], manifest={"run_id": state["native"].run_identity})
+    workflow.application.publication_mutation_guard = guard
+    return state, stores, paths
+
+
+def _page_load_counts(monkeypatch, stores, paths):
+    from collections import Counter
+    from pathlib import Path
+    from kronos.swing.v1 import native_discovery as native, mtf_facts as mtf
+    counts = Counter()
+    def wrap(owner, name, label):
+        original = getattr(owner, name)
+        def counted(*args, **kwargs):
+            counts[label] += 1
+            return original(*args, **kwargs)
+        monkeypatch.setattr(owner, name, counted)
+    for label, store, module, decoder, cls in (
+        ("native", stores[0], native, "_run", native.NativeDiscoveryRun),
+        ("mtf", stores[1], mtf, "_snapshot", mtf.SameRunMtfFactSnapshot)):
+        wrap(store, "load", label + "_typed_loads")
+        wrap(module, "_read", label + "_json_reconstructions")
+        wrap(module, decoder, label + "_typed_reconstructions")
+        wrap(cls, "__post_init__", label + "_root_validations")
+        wrap(module, "sha256", label + "_hash_passes")
+    original_open = Path.open
+    labels = dict(zip(paths, ("native", "mtf")))
+    def counted_open(path, mode="r", *args, **kwargs):
+        if path in labels and "r" in mode:
+            counts[labels[path] + "_file_reads"] += 1
+        return original_open(path, mode, *args, **kwargs)
+    monkeypatch.setattr(Path, "open", counted_open)
+    import os
+    original_os_open = os.open
+    def counted_os_open(path, flags, *args, **kwargs):
+        candidate = Path(path)
+        if candidate in labels and not flags & (os.O_WRONLY | os.O_RDWR):
+            counts[labels[candidate] + "_file_reads"] += 1
+            counts[labels[candidate] + "_byte_fence_passes"] += 1
+        return original_os_open(path, flags, *args, **kwargs)
+    monkeypatch.setattr(os, "open", counted_os_open)
+    return counts
+
+
+@pytest.mark.parametrize("native_intake", ["NSE"], indirect=True)
+@pytest.mark.parametrize("population", [1, 12])
+def test_page_intake_reconstructs_each_bundle_once(native_intake, tmp_path, monkeypatch, population):
+    import json
+    state, stores, paths = _page_load_population(native_intake, tmp_path, population)
+    before = _inventory(tmp_path)
+    counts = _page_load_counts(monkeypatch, stores, paths)
+    result = native_intake.snapshot()
+    assert result["error"] is None
+    assert result["workspace"]["eligible"] == population
+    print("C1_COUNTS " + json.dumps(dict(population=population, counts=dict(counts)), sort_keys=True))
+    assert _inventory(tmp_path) == before
+    assert counts["native_typed_loads"] == counts["mtf_typed_loads"] == 1
+    assert counts["native_json_reconstructions"] == counts["mtf_json_reconstructions"] == 1
+    assert counts["native_typed_reconstructions"] == counts["mtf_typed_reconstructions"] == 1
+
+
+def _page_load_server(workflow, state):
+    from dataclasses import replace
+    from tests.unit.browser.test_browser_views import _ready
+    application = SwingOpportunitiesApplication(_Provider, initial_snapshot=replace(
+        _ready(), swing_analysis_run_identity=state["native"].run_identity))
+    application.restore_native_discovery_run(state["native"])
+    application.restore_mtf_fact_snapshot(state["facts"])
+    server = create_browser_server(application, port=0, native_review=workflow.native_review,
+                                   visual_v3_live=workflow.live)
+    server.native_intake = workflow
+    original = workflow.application.opportunities_bundle_projection
+    def projection():
+        _, native, continuity, status = original()
+        return application.snapshot(), native, None, status
+    application.opportunities_bundle_projection = projection
+    assert workflow.prepare_page_state()
+    return server
+
+
+@pytest.mark.parametrize("native_intake", ["NSE"], indirect=True)
+@pytest.mark.parametrize("component", [0, 1])
+@pytest.mark.parametrize("fault", ["missing", "json", "schema", "mismatch"])
+def test_page_context_rejects_selected_component_fault(native_intake, tmp_path, component, fault):
+    import json
+    state, _, paths = _page_load_population(native_intake, tmp_path)
+    target = paths[component]
+    if fault == "missing":
+        target.unlink()
+    elif fault == "json":
+        target.write_text("not JSON")
+    else:
+        payload = json.loads(target.read_text())
+        if fault == "schema":
+            payload["schema"] = "UNSUPPORTED"
+        else:
+            payload["run" if component == 0 else "snapshot"]["run_identity"] = "SWING-RUN-" + "E" * 32
+        target.write_text(json.dumps(payload))
+    before = _inventory(tmp_path)
+    result = native_intake.snapshot()
+    assert result["error"] == "SWING_PUBLICATION_BUNDLE_INVALID"
+    assert not result["rows"] and result["workspace"] is None
+    assert _inventory(tmp_path) == before
+
+
+@pytest.mark.parametrize("native_intake", ["NSE"], indirect=True)
+@pytest.mark.parametrize("change", ["native_bytes", "mtf_bytes", "publication", "chart_pointer"])
+def test_page_context_final_fence_rejects_mid_projection_change(native_intake, tmp_path, monkeypatch, change):
+    state, _, paths = _page_load_population(native_intake, tmp_path)
+    original = native_intake._selection
+    changed = []
+    def raced(requirement, role, **kwargs):
+        value = original(requirement, role, **kwargs)
+        if not changed and kwargs.get("_response") is not None:
+            changed.append(True)
+            if change.endswith("_bytes"):
+                target = paths[0 if change == "native_bytes" else 1]
+                target.write_bytes(target.read_bytes() + b" ")  # Valid JSON, changed exact bytes.
+            elif change == "publication":
+                state["control"]["current_manifest"]["sha256"] = "b" * 64
+            else:
+                # A separate explicit writer has an independent ContextVar readset.
+                failures = []
+                def publish():
+                    try:
+                        native_intake.stage("NSE", requirement.canonical_instrument, role,
+                            native_intake.expected("NSE", (requirement.canonical_instrument,)),
+                            image=PNG, content_type="image/png")
+                    except Exception as error:
+                        failures.append(error)
+                writer = Thread(target=publish); writer.start(); writer.join(10)
+                assert not writer.is_alive() and not failures
+        return value
+    monkeypatch.setattr(native_intake, "_selection", raced)
+    result = native_intake.snapshot()
+    assert result["error"] == "REVIEW_BINDING_STALE"
+    assert result["rows"] == () and result["workspace"] is None
+
+
+@pytest.mark.parametrize("native_intake", ["NSE"], indirect=True)
+def test_get_context_never_authorizes_later_mutation(native_intake, tmp_path):
+    from kronos.swing.v1.review_evidence_binding import ReviewEvidenceError
+    state, _, _ = _page_load_population(native_intake, tmp_path)
+    row = native_intake.snapshot()["rows"][0]
+    state["control"]["current_manifest"]["sha256"] = "b" * 64
+    before = _inventory(tmp_path)
+    with pytest.raises(ReviewEvidenceError, match="REVIEW_BINDING_STALE"):
+        native_intake.stage(row["market"], row["instrument"], "NATIVE_NSE", row["expected"],
+                            image=PNG, content_type="image/png")
+    assert _inventory(tmp_path) == before
+
+
+@pytest.mark.parametrize("native_intake", ["NSE", "GOLDM"], indirect=True)
+def test_response_receipt_package_helpers_share_validated_components(native_intake, tmp_path, monkeypatch):
+    import json
+    from dataclasses import replace
+    from kronos.swing.v1 import native_discovery as native
+    from kronos.swing.v1.mtf_facts import MtfFactEvidenceStore
+    _, facts, _ = native_intake._context()
+    _, run, continuity, status = native_intake.application.opportunities_bundle_projection()
+    assessments = tuple(replace(item, result_sha256=native._assessment_digest(item)) for item in run.assessments)
+    run = replace(run, assessments=assessments)
+    run = replace(run, result_sha256=native._digest(dict(run_identity=run.run_identity,
+        provider_source_identity=run.provider_source_identity, observed_at=run.observed_at,
+        assessments=run.assessments)))
+    native_intake.application.opportunities_bundle_projection = lambda: (None, run, continuity, status)
+    stores = (native.NativeDiscoveryEvidenceStore(tmp_path / "components-native"),
+              MtfFactEvidenceStore(tmp_path / "components-mtf"))
+    paths = (stores[0].retain(run), stores[1].retain(facts))
+    native_intake.application.native_discovery_evidence_store = lambda: stores[0]
+    native_intake.application.mtf_fact_evidence_store = lambda: stores[1]
+    market, instrument, publication, _, _, commit = _accepted_native(native_intake, tmp_path)
+    before = _inventory(tmp_path)
+    counts = _page_load_counts(monkeypatch, stores, paths)
+    with native_intake.response() as prepared:
+        result = native_intake.snapshot(_response=prepared)
+        assert native_intake.snapshot(_response=prepared) is result
+        receipt = commit.receipts[0]
+        native_intake._verify_receipt_current(receipt, _response=prepared)
+        native_intake.expected(market, (instrument,), _response=prepared)
+    print("C1_RECEIPT_COUNTS " + json.dumps(dict(market=market, counts=dict(counts)), sort_keys=True))
+    assert counts["native_typed_loads"] == counts["mtf_typed_loads"] == 1
+    assert counts["native_file_reads"] == counts["mtf_file_reads"] == 3
+    assert result["packages"] and result["rows"][0]["evidence"] == "ACCEPTED"
+    assert _inventory(tmp_path) == before
+    assert not prepared.active and not prepared.values
+    assert native_intake.snapshot(_response=prepared)["error"] == "REVIEW_BINDING_STALE"
+
+
+@pytest.mark.parametrize("native_intake", ["NSE"], indirect=True)
+def test_compact_page_uses_prepared_actual_history_and_inert_status(
+    native_intake, tmp_path, monkeypatch
+):
+    market, instrument, _, _, _, _ = _accepted_native(native_intake, tmp_path)
+    assert market == "NSE"
+    assert native_intake.prepare_page_state()
+    status = native_intake.page_state_status()
+    assert status["state"] == "READY"
+    assert status["retained_generations"] == 1
+    assert status["retained_input_count"] > 0
+    monkeypatch.setattr(native_intake, "_history",
+                        lambda *a, **k: pytest.fail("GET reconstructed history"))
+    monkeypatch.setattr(native_intake, "_publication",
+                        lambda *a, **k: pytest.fail("GET reconstructed publication"))
+    with native_intake.page_response() as prepared:
+        projection = native_intake.snapshot(_response=prepared)
+        row = next(item for item in projection["rows"]
+                   if item["instrument"] == instrument)
+        assert row["evidence"] == "ACCEPTED"
+    from pathlib import Path
+    monkeypatch.setattr(Path, "open", lambda *a, **k: pytest.fail("status performed I/O"))
+    assert native_intake.page_state_status() == status
+
+
+@pytest.mark.parametrize("native_intake", ["NSE"], indirect=True)
+def test_compact_page_current_pointer_change_is_stale_without_recovery(
+    native_intake, tmp_path
+):
+    _accepted_native(native_intake, tmp_path)
+    assert native_intake.prepare_page_state()
+    pointer = native_intake.store.root / "current-request.json"
+    pointer.write_bytes(pointer.read_bytes() + b" ")
+    with pytest.raises(ValueError, match="REVIEW_BINDING_STALE"):
+        with native_intake.page_response() as prepared:
+            assert native_intake.snapshot(_response=prepared)["rows"]

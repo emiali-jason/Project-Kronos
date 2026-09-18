@@ -109,6 +109,51 @@ def test_rest_connected_does_not_imply_websocket_live(tmp_path):
     d=status_document(s)
     assert d['rest_capability']=='RETAINED_UNEXPIRED' and d['monitoring']['transport_state']=='IDLE'
     assert d['maintenance']['state']=='INACTIVE'
+    assert d['restoration_readiness']['state']=='NOT_EXPOSED'
+    assert not d['restoration_readiness']['ready']
+
+
+def test_runtime_status_exposes_failed_completion_without_writes_or_restoration(
+    tmp_path, monkeypatch
+):
+    from kronos.browser.server import create_browser_server
+    from tests.unit.tools.test_provider_foundation_v2_authentication import (
+        _timed_production_connection,
+    )
+
+    case = _timed_production_connection(tmp_path, monkeypatch)
+    completion_attempts = []
+    original_result = case.governance.store.result
+
+    def fail_completion(request_value, phase, state, at):
+        if phase == 'completion':
+            completion_attempts.append(state)
+            raise OSError('INJECTED-COMPLETION-WRITE-FAILURE')
+        return original_result(request_value, phase, state, at)
+
+    monkeypatch.setattr(case.governance.store, 'result', fail_completion)
+    server = create_browser_server(case.app, port=0)
+    server.provider_runtime = case.shared
+    serving = Thread(target=server.serve_forever, daemon=True)
+    serving.start()
+    try:
+        assert case.app.connect_provider()
+        case.jobs.pop(0)[1]()
+        before = inventory(case.governance.store.root)
+        code, body = request(server, '/runtime/status')
+        assert code == 200
+        document = json.loads(body)
+        assert document['rest_authentication'] == 'ERROR'
+        assert document['connection_attempt']['durable_completion'] == {
+            'state': 'FAILED', 'disposition': 'SUCCESS', 'generation': 1,
+        }
+        assert document['connection_attempt']['cleanup_state'] == 'PENDING'
+        assert document['restoration_readiness']['state'] == 'STALE'
+        assert not document['restoration_readiness']['ready']
+        assert inventory(case.governance.store.root) == before
+        assert completion_attempts == ['SUCCESS']
+    finally:
+        server.shutdown(); server.server_close(); serving.join(2); case.app.close()
 
 
 def test_monitoring_status_owner_subscriptions_continuity_and_inertness():
@@ -355,3 +400,95 @@ def test_slice8_compact_history_real_http_consumers_are_read_only(running, tmp_p
             assert 'COMPACT_HISTORICAL' not in body and 'paper_history_representation' not in body
     assert (inventory(root), inventory(tmp_path / 'selected')) == before
     assert provider.begin_count == 0 and calls == []
+
+
+# Reuse the owning production-factory fixture: this is a native browser route
+# test with actual factory/runtime/application and isolated external boundaries.
+from tests.unit.tools.test_provider_foundation_v2_authentication import (
+    _timed_production_connection,
+)
+
+@pytest.mark.parametrize("product_route", ["/swing/opportunities", "/intraday"])
+def test_both_product_controls_share_production_deadline_and_inert_status(
+    tmp_path, monkeypatch, product_route
+):
+    import json
+    from threading import Event, Thread
+    from kronos.browser.server import create_browser_server
+    from tests.unit.browser.test_sph_controls import request
+
+    entered, release = Event(), Event()
+
+    def block_configuration():
+        entered.set()
+        assert release.wait(5), "test configuration boundary was not released"
+
+    case = _timed_production_connection(
+        tmp_path, monkeypatch, configuration_hook=block_configuration
+    )
+    server = create_browser_server(case.app, port=0)
+    server.provider_runtime = case.shared
+    serving = Thread(target=server.serve_forever, daemon=True)
+    serving.start()
+    worker = None
+    errors = []
+    try:
+        code, page = request(server, product_route)
+        assert code == 200
+        assert 'action="/provider/connect"' in page
+        reference = case.governance.action_reference("HEADER")
+        assert reference in page
+        assert case.events == []
+        code, _ = request(
+            server, "/provider/connect", method="POST", fields={"action_reference": reference}
+        )
+        assert code == 303
+        assert case.app.snapshot().provider_state.value == "CONNECTING"
+        assert len(case.jobs) == 1
+        name, authenticate = case.jobs.pop(0)
+        assert name == "kronos-browser-auth"
+
+        def work():
+            try:
+                authenticate()
+            except BaseException as error:
+                errors.append(error)
+
+        worker = Thread(target=work)
+        worker.start()
+        assert entered.wait(2)
+        identity = case.app.connection_attempt_status()["request_identity"]
+        case.monotonic_now[0] = 10.0
+        case.timers[-1].fire()
+        before = {
+            path.relative_to(case.governance.store.root): path.read_bytes()
+            for path in case.governance.store.root.rglob("*.json")
+        }
+        for route in ("/runtime/status", "/status", "/runtime/status"):
+            code, body = request(server, route)
+            assert code == 200
+            data = json.loads(body)
+            if route == "/runtime/status":
+                assert data["rest_authentication"] == "ERROR"
+                assert data["connection_attempt"]["state"] == "TIMED_OUT"
+                assert data["connection_attempt"]["cleanup_state"] == "PENDING"
+        assert {
+            path.relative_to(case.governance.store.root): path.read_bytes()
+            for path in case.governance.store.root.rglob("*.json")
+        } == before
+        assert worker.is_alive()
+        assert case.governance.store.read(identity)["completion"]["state"] == "FAILURE"
+        assert case.events == ["configuration"]
+        release.set()
+        worker.join(2)
+        assert not worker.is_alive() and not errors
+        assert case.app.authenticated_read_only_capability() is None
+        assert case.jobs == []
+    finally:
+        release.set()
+        if worker is not None:
+            worker.join(2)
+        server.shutdown()
+        server.server_close()
+        serving.join(2)
+        case.app.close()

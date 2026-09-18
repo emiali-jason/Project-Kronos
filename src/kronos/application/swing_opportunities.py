@@ -41,6 +41,10 @@ from kronos.provider.kite.marketdata.kite_market_data_provider import (
     KiteMarketDataProvider,
 )
 from kronos.provider.models.authentication import AuthenticationAttemptState
+from kronos.provider.services.provider_authentication import (
+    ConnectionAttemptDeadline,
+    connection_deadline_scope,
+)
 from kronos.swing.candidate_ranking import (
     SWING_PHASE1_CANDIDATE_RANKING_POLICY_ID,
     CandidateRanking,
@@ -403,6 +407,15 @@ class BrowserWorkspaceSnapshot:
         )
 
 
+@dataclass(slots=True)
+class _ConnectionCompletionGeneration:
+    connection_generation: int
+    request: object
+    deadline: object
+    state: str = "PENDING"
+    disposition: str | None = None
+
+
 @dataclass(frozen=True, slots=True)
 class _SponsorRestorationGeneration:
     connection_generation: int
@@ -410,6 +423,7 @@ class _SponsorRestorationGeneration:
     capability: object
     progression_workflow: object | None
     restorer: Callable[[object], None] | None
+    deadline: object
 
 
 @dataclass(frozen=True, slots=True)
@@ -706,6 +720,9 @@ class SwingOpportunitiesApplication:
         live_monitoring_timeout_seconds: float = 15.0,
         connection_governance=None,
         run_publication=None,
+        connection_timeout_seconds: float = 330.0,
+        connection_monotonic_clock=None,
+        connection_timer_factory=None,
     ) -> None:
         if not all(callable(item) for item in (
             provider_factory,
@@ -741,8 +758,17 @@ class SwingOpportunitiesApplication:
             or not 0.0 < live_monitoring_timeout_seconds <= 60.0
         ):
             raise TypeError("BROWSER_APPLICATION_DEPENDENCY_INVALID")
+        if (isinstance(connection_timeout_seconds, bool)
+                or not isinstance(connection_timeout_seconds, (int, float))
+                or not 0 < connection_timeout_seconds <= 330):
+            raise TypeError("BROWSER_APPLICATION_DEPENDENCY_INVALID")
+        self.__connection_timeout_seconds = float(connection_timeout_seconds)
+        self.__connection_monotonic_clock = connection_monotonic_clock or time.monotonic
+        self.__connection_timer_factory = connection_timer_factory
+        self.__connection_deadline = None
+        self.__restoration_workers = 0
+        self.__restoration_work_owned: set[int] = set()
         self.connection_governance = connection_governance
-        self.__connection_requests = {}
         self.__provider_factory = provider_factory
         self.__clock = clock
         self.__pace = pace
@@ -759,6 +785,7 @@ class SwingOpportunitiesApplication:
         self.__connection_transition_lock = RLock()
         self.__connection_generation = 0
         self.__connection_started_generation = 0
+        self.__connection_completion: _ConnectionCompletionGeneration | None = None
         self.__sponsor_operability_restorer: Callable[[object], None] | None = None
         self.__sponsor_restoration_generation: (
             _SponsorRestorationGeneration | None
@@ -1277,68 +1304,135 @@ class SwingOpportunitiesApplication:
             self.__snapshot = replace(self.__snapshot, **updates)
             return self.__snapshot
 
+    def connection_attempt_status(self):
+        """Inert, sanitized disposition; no Provider work or deadline renewal."""
+        with self.__lock:
+            deadline = self.__connection_deadline
+            restoration_active = self.__restoration_workers > 0
+            completion = self.__connection_completion
+            restoration_state = self.__sponsor_restoration_state
+            restoration_generation = self.__sponsor_restoration_status_generation
+        if deadline is None:
+            return None
+        status = deadline.snapshot()
+        status["restoration_worker_active"] = restoration_active
+        if restoration_active:
+            status["cleanup_state"] = "PENDING"
+        status["durable_completion"] = {
+            "state": "NOT_GOVERNED" if completion is None else completion.state,
+            "disposition": None if completion is None else completion.disposition,
+            "generation": None if completion is None else completion.connection_generation,
+        }
+        status["restoration_readiness"] = {
+            "state": restoration_state,
+            "ready": restoration_state == "SUCCEEDED",
+            "generation": restoration_generation,
+        }
+        return status
+
     def connect_provider(self, *, action_reference: str | None = None,
                          request_route: str = "SHARED_PROVIDER_API", received_at: str | None = None) -> bool:
-        """Begin one explicit Sponsor connection without blocking HTTP serving."""
-
+        """Admit one explicit request, including ownership of its blocked work."""
         governance = self.connection_governance
-        request = None
         with self.__connection_transition_lock:
             request = governance.request(reference=action_reference, route=request_route, received_at=received_at) if governance else None
-            if governance and not governance.admit(request, already_connected=(
-                self.snapshot().provider_state in {ProviderConnectionState.CONNECTING, ProviderConnectionState.CONNECTED}
-            )):
-                return False
-            try:
-                generation = self.__connect_provider(request)
-            except Exception:
-                if governance:
-                    governance.finish(request, False)
-                raise
-        if generation is None:
-            return False
-        try:
-            self.__background_runner(
-                lambda: self.__complete_connection(generation),
-                "kronos-browser-auth",
-            )
-        except Exception:
-            if governance:
-                governance.finish(request, False)
             with self.__lock:
-                if generation == self.__connection_generation:
-                    self.__snapshot = replace(
-                        self.__snapshot,
-                        provider_state=ProviderConnectionState.ERROR,
-                        provider_failure="PROVIDER_CONNECTION_FAILED",
-                    )
-            raise
+                previous = self.__connection_deadline
+                restoration_active = self.__restoration_workers > 0
+                connected = self.__snapshot.provider_state in {
+                    ProviderConnectionState.CONNECTING, ProviderConnectionState.CONNECTED}
+                generation = self.__connection_generation + 1
+            # A terminal UI state is not evidence that external work stopped.
+            if not connected and (restoration_active or (previous is not None and not previous.retry_ready)):
+                if governance:
+                    governance.result(request, "admission", "REJECTED")
+                return False
+            if connected:
+                if governance:
+                    governance.admit(request, already_connected=True)
+                return False
+            # Anchor before the durable admission write: time spent accepting
+            # the request can never extend the allowance beyond 330 seconds.
+            deadline = ConnectionAttemptDeadline(
+                generation,
+                request_identity=None if request is None else request.connection_request_id,
+                timeout_seconds=self.__connection_timeout_seconds,
+                monotonic_clock=self.__connection_monotonic_clock,
+                timer_factory=self.__connection_timer_factory,
+            )
+            if governance and not governance.admit(request):
+                return False
+            completion = (
+                None if governance is None else _ConnectionCompletionGeneration(
+                    connection_generation=generation,
+                    request=request,
+                    deadline=deadline,
+                )
+            )
+            with self.__lock:
+                self.__connection_deadline = deadline
+                self.__connection_completion = completion
+                self.__snapshot = replace(self.__snapshot,
+                    provider_state=ProviderConnectionState.CONNECTING, provider_failure="")
+                self.__live_monitoring_result = LiveMonitoringTestResult(LiveMonitoringTestState.NOT_TESTED)
+                self.__connection_generation = generation
+                self.__sponsor_restoration_generation = None
+                self.__sponsor_restoration_state = "NOT_REQUESTED"
+                self.__sponsor_restoration_status_generation = generation
+                self.__sponsor_restoration_failure = ""
+            try:
+                deadline.arm(
+                    lambda: self.__connection_terminal(deadline, completion)
+                )
+                self.__background_runner(
+                    lambda: self.__complete_connection(
+                        generation, deadline, request, completion
+                    ),
+                    "kronos-browser-auth",
+                )
+            except Exception:
+                deadline.finish()
+                deadline.worker_finished()
+                raise
         return True
 
-    def __connect_provider(self, request=None) -> int | None:
+    def __connection_terminal(self, deadline, completion):
+        disposition = deadline.snapshot()["state"]
         with self.__lock:
-            if self.__snapshot.provider_state in {
-                ProviderConnectionState.CONNECTING,
-                ProviderConnectionState.CONNECTED,
-            }:
-                return None
-            self.__snapshot = replace(
-                self.__snapshot,
-                provider_state=ProviderConnectionState.CONNECTING,
-                provider_failure="",
+            if (deadline is self.__connection_deadline
+                    and deadline.generation == self.__connection_generation
+                    and self.__snapshot.provider_state is ProviderConnectionState.CONNECTING):
+                self.__snapshot = replace(self.__snapshot,
+                    provider_state=ProviderConnectionState.ERROR,
+                    provider_failure=("PROVIDER_CONNECTION_TIMED_OUT" if disposition == "TIMED_OUT"
+                                      else "PROVIDER_CONNECTION_FAILED"))
+        self.__persist_connection_completion(completion, success=False)
+
+    def __persist_connection_completion(self, completion, *, success: bool) -> bool:
+        """Attempt exactly one durable terminal disposition for a generation."""
+
+        if completion is None:
+            return True
+        disposition = "SUCCESS" if success else "FAILURE"
+        with self.__lock:
+            if completion.state == "PERSISTED":
+                return completion.disposition == disposition
+            if completion.state != "PENDING":
+                return False
+            completion.state = "WRITING"
+            completion.disposition = disposition
+        try:
+            self.connection_governance.finish(completion.request, success)
+        except Exception:
+            with self.__lock:
+                completion.state = "FAILED"
+            completion.deadline.hold_resource(
+                "connection_completion", completion
             )
-            self.__live_monitoring_result = LiveMonitoringTestResult(
-                LiveMonitoringTestState.NOT_TESTED
-            )
-            self.__connection_generation += 1
-            generation = self.__connection_generation
-            self.__sponsor_restoration_generation = None
-            self.__sponsor_restoration_state = "NOT_REQUESTED"
-            self.__sponsor_restoration_status_generation = generation
-            self.__sponsor_restoration_failure = ""
-            if request is not None:
-                self.__connection_requests[generation] = request
-        return generation
+            return False
+        with self.__lock:
+            completion.state = "PERSISTED"
+        return True
 
     def register_sponsor_operability_restorer(
         self, restorer: Callable[[object], None]
@@ -1359,6 +1453,11 @@ class SwingOpportunitiesApplication:
                     self.__sponsor_restoration_status_generation
                 ),
                 "failure": self.__sponsor_restoration_failure,
+                "work_owned": self.__restoration_workers > 0,
+                "owned_work_count": self.__restoration_workers,
+                "cleanup_state": (
+                    "PENDING" if self.__restoration_workers > 0 else "COMPLETE"
+                ),
             })
 
     def __invalidate_sponsor_restoration_locked(self) -> None:
@@ -1536,6 +1635,7 @@ class SwingOpportunitiesApplication:
                 or self.__live_monitoring_result.state is LiveMonitoringTestState.TESTING
             ):
                 return False
+            deadline = self.__connection_deadline
             provider = self.__provider
             workflow = self.__progression_watch_workflow
             self.__connection_generation += 1
@@ -1550,12 +1650,9 @@ class SwingOpportunitiesApplication:
                 LiveMonitoringTestState.NOT_TESTED
             )
         if workflow is not None:
-            workflow.close_monitoring()
+            self.__close_progression_monitoring(workflow, deadline)
         if provider is not None:
-            try:
-                provider.end_kronos_session()
-            except Exception:
-                pass
+            self.__dispose_connection_candidate(provider, deadline)
         return True
 
     def enter_controlled_maintenance(self, generation: str) -> None:
@@ -1566,6 +1663,13 @@ class SwingOpportunitiesApplication:
             with self.__lock:
                 self.__connection_generation += 1
                 self.__invalidate_sponsor_restoration_locked()
+                deadline = self.__connection_deadline
+                if self.__snapshot.provider_state is ProviderConnectionState.CONNECTING:
+                    self.__snapshot = replace(self.__snapshot,
+                        provider_state=ProviderConnectionState.ERROR,
+                        provider_failure="PROVIDER_CONNECTION_FAILED")
+            if deadline is not None:
+                deadline.cancel()
 
     def close(self) -> None:
         with self.__connection_transition_lock:
@@ -1573,6 +1677,8 @@ class SwingOpportunitiesApplication:
 
     def __close(self) -> None:
         with self.__lock:
+            deadline = self.__connection_deadline
+            queued = self.__connection_generation != self.__connection_started_generation
             self.__connection_generation += 1
             self.__invalidate_sponsor_restoration_locked()
             provider = self.__provider
@@ -1582,125 +1688,141 @@ class SwingOpportunitiesApplication:
                 self.__snapshot,
                 provider_state=ProviderConnectionState.DISCONNECTED,
             )
+        if deadline is not None:
+            deadline.cancel()
+            if queued:
+                # A canceled queued callback is fenced before factory entry.
+                deadline.worker_finished()
         if workflow is not None:
-            workflow.close_monitoring()
+            self.__close_progression_monitoring(workflow, deadline)
         if provider is not None:
-            try:
-                provider.end_kronos_session()
-            except Exception:
-                pass
+            self.__dispose_connection_candidate(provider, deadline)
 
-    def __complete_connection(self, generation: int) -> None:
-        # Serialize candidate contexts too: disposing an obsolete candidate must
-        # never dispose a newer connection on the shared Provider runtime.
+    def __complete_connection(
+        self, generation, deadline, request, completion
+    ) -> None:
+        # A generation keeps ownership through external return and cleanup.
         restoration = None
-        with self.__authentication_lock:
-            with self.__lock:
-                if (
-                    generation != self.__connection_generation
-                    or generation == self.__connection_started_generation
-                    or self.__snapshot.provider_state is not ProviderConnectionState.CONNECTING
-                ):
-                    return
-                self.__connection_started_generation = generation
-            request = self.__connection_requests.pop(generation, None)
-            governance = self.connection_governance
+        with self.__authentication_lock, connection_deadline_scope(deadline):
             try:
+                with self.__lock:
+                    current = (generation == self.__connection_generation
+                        and generation != self.__connection_started_generation
+                        and self.__snapshot.provider_state is ProviderConnectionState.CONNECTING)
+                    if current:
+                        self.__connection_started_generation = generation
+                if not current:
+                    deadline.finish()
+                    return
+                deadline.require()
+                governance = self.connection_governance
                 if governance is None:
-                    success, restoration = self.__authenticate_connection(generation)
+                    success, restoration = self.__authenticate_connection(generation, deadline)
                 else:
                     with governance.dispatch(request):
-                        success, restoration = self.__authenticate_connection(generation)
-                    governance.finish(request, success)
+                        success, restoration = self.__authenticate_connection(generation, deadline)
+                    if not self.__persist_connection_completion(
+                        completion, success=success
+                    ):
+                        raise RuntimeError("CONNECTION_COMPLETION_NOT_PERSISTED")
+                if not success:
+                    deadline.finish()
             except Exception:
                 restoration = None
-                if governance is not None:
-                    try:
-                        governance.finish(request, False)
-                    except Exception:
-                        pass
+                deadline.finish()
+                disposition = deadline.snapshot()["state"]
                 with self.__lock:
+                    provider = None
                     if generation == self.__connection_generation:
-                        self.__snapshot = replace(self.__snapshot, provider_state=ProviderConnectionState.ERROR, provider_failure="PROVIDER_CONNECTION_FAILED")
+                        provider, self.__provider = self.__provider, None
+                        self.__invalidate_sponsor_restoration_locked()
+                        self.__snapshot = replace(self.__snapshot,
+                            provider_state=ProviderConnectionState.ERROR,
+                            provider_failure=("PROVIDER_CONNECTION_TIMED_OUT"
+                                if disposition == "TIMED_OUT"
+                                else "PROVIDER_CONNECTION_FAILED"))
+                if provider is not None:
+                    self.__dispose_connection_candidate(provider, deadline)
+                self.__persist_connection_completion(completion, success=False)
+            finally:
+                deadline.worker_finished()
+        # Authentication and governance have completed before restoration runs.
         if restoration is not None:
             self.__dispatch_sponsor_restoration(restoration)
 
-    def __authenticate_connection(
-        self, generation: int
-    ) -> tuple[bool, _SponsorRestorationGeneration | None]:
-        provider: _ProviderRuntime | None = None
+    @staticmethod
+    def __dispose_connection_candidate(provider, deadline):
+        if deadline is not None:
+            deadline.hold_resource("provider", provider)
         try:
-            provider = self.__provider_factory()
-            attempt = provider.begin_login()
-            outcome = provider.complete_callback(attempt)
-            capability = provider.authenticated_read_only_capability()
-            success = (
-                getattr(outcome, "state", None)
-                is AuthenticationAttemptState.SUCCEEDED
-                and getattr(outcome, "binding_result", None)
-                is PrincipalBindingResult.MATCHED
-                and capability is not None
-                and getattr(capability, "active", False) is True
-            )
-            if not success:
-                raise RuntimeError("PROVIDER_CONNECTION_FAILED")
+            provider.end_kronos_session()
         except Exception:
-            if provider is not None:
-                try:
-                    provider.end_kronos_session()
-                except Exception:
-                    pass
-            with self.__lock:
-                if generation != self.__connection_generation:
-                    return
-                self.__provider = None
-                self.__snapshot = replace(
-                    self.__snapshot,
-                    provider_state=ProviderConnectionState.ERROR,
-                    provider_failure="PROVIDER_CONNECTION_FAILED",
-                )
-            return False, None
-        restoration = None
-        with self.__connection_transition_lock:
-            if self.connection_governance is not None:
-                try:
-                    self.connection_governance.require_authentication()
-                except ValueError:
-                    provider.end_kronos_session()
-                    return False, None
-            with self.__lock:
-                current = (
-                    generation == self.__connection_generation
-                    and self.__snapshot.provider_state is ProviderConnectionState.CONNECTING
-                )
-                if current:
+            if deadline is None:
+                return
+        else:
+            if deadline is not None:
+                deadline._resolve_pending_resource(provider)
+
+    @staticmethod
+    def __close_progression_monitoring(workflow, deadline):
+        if deadline is not None:
+            deadline.hold_resource("progression_monitoring", workflow)
+        try:
+            workflow.close_monitoring()
+        except Exception:
+            return
+        if deadline is not None:
+            deadline._resolve_pending_resource(workflow)
+
+    def __authenticate_connection(self, generation, deadline):
+        provider = None
+        try:
+            deadline.require()
+            provider = self.__provider_factory()
+            deadline.require()
+            attempt = provider.begin_login()
+            deadline.require()
+            outcome = provider.complete_callback(attempt)
+            deadline.require()
+            capability = provider.authenticated_read_only_capability()
+            deadline.require()
+            if not (getattr(outcome, "state", None) is AuthenticationAttemptState.SUCCEEDED
+                    and getattr(outcome, "binding_result", None) is PrincipalBindingResult.MATCHED
+                    and capability is not None and getattr(capability, "active", False) is True):
+                raise RuntimeError("PROVIDER_CONNECTION_FAILED")
+
+            def publish():
+                with self.__lock:
+                    if (generation != self.__connection_generation
+                            or self.__snapshot.provider_state is not ProviderConnectionState.CONNECTING):
+                        raise RuntimeError("PROVIDER_CONNECTION_SUPERSEDED")
                     self.__provider = provider
+                    self.__snapshot = replace(self.__snapshot,
+                        provider_state=ProviderConnectionState.CONNECTED, provider_failure="")
                     workflow = self.__progression_watch_workflow
                     restorer = self.__sponsor_operability_restorer
-                    self.__snapshot = replace(
-                        self.__snapshot,
-                        provider_state=ProviderConnectionState.CONNECTED,
-                        provider_failure="",
-                    )
+                    restoration = None
                     if workflow is not None or restorer is not None:
                         restoration = _SponsorRestorationGeneration(
-                            connection_generation=generation,
-                            provider=provider,
-                            capability=capability,
-                            progression_workflow=workflow,
-                            restorer=restorer,
-                        )
+                            connection_generation=generation, provider=provider,
+                            capability=capability, progression_workflow=workflow,
+                            restorer=restorer, deadline=deadline)
                         self.__sponsor_restoration_generation = restoration
                         self.__sponsor_restoration_state = "PENDING"
                         self.__sponsor_restoration_status_generation = generation
                         self.__sponsor_restoration_failure = ""
-            if not current:
-                try:
-                    provider.end_kronos_session()
-                except Exception:
-                    pass
-                return False, None
-        return True, restoration
+                    return restoration
+
+            with self.__connection_transition_lock:
+                if self.connection_governance is not None:
+                    self.connection_governance.require_authentication()
+                restoration = deadline.commit(publish)
+            return True, restoration
+        except Exception:
+            deadline.finish()
+            if provider is not None:
+                self.__dispose_connection_candidate(provider, deadline)
+            return False, None
 
     def __restoration_current_locked(
         self, restoration: _SponsorRestorationGeneration
@@ -1750,25 +1872,53 @@ class SwingOpportunitiesApplication:
     def __dispatch_sponsor_restoration(
         self, restoration: _SponsorRestorationGeneration
     ) -> None:
+        identity = id(restoration)
+        with self.__lock:
+            if not self.__restoration_current_locked(restoration):
+                return
+            self.__restoration_work_owned.add(identity)
+            self.__restoration_workers = len(self.__restoration_work_owned)
+        restoration.deadline.hold_resource("sponsor_restoration", restoration)
         try:
             self.__background_runner(
                 lambda: self.__restore_sponsor_operability(restoration),
                 "kronos-browser-restoration",
             )
         except Exception:
-            self.__finish_sponsor_restoration(restoration, failed=True)
+            if self.__release_sponsor_restoration_work(restoration):
+                self.__finish_sponsor_restoration(restoration, failed=True)
+
+    def __release_sponsor_restoration_work(
+        self, restoration: _SponsorRestorationGeneration
+    ) -> bool:
+        with self.__lock:
+            identity = id(restoration)
+            if identity not in self.__restoration_work_owned:
+                return False
+            self.__restoration_work_owned.remove(identity)
+            self.__restoration_workers = len(self.__restoration_work_owned)
+        restoration.deadline._resolve_pending_resource(restoration)
+        return True
 
     def __restore_sponsor_operability(
         self, restoration: _SponsorRestorationGeneration
     ) -> None:
         with self.__lock:
-            if (
-                not self.__restoration_current_locked(restoration)
-                or self.__sponsor_restoration_state != "PENDING"
-            ):
+            if id(restoration) not in self.__restoration_work_owned:
                 return
-            self.__sponsor_restoration_state = "RUNNING"
+            current = (
+                self.__restoration_current_locked(restoration)
+                and self.__sponsor_restoration_state == "PENDING"
+            )
+            if current:
+                self.__sponsor_restoration_state = "RUNNING"
+        try:
+            if current:
+                self.__run_sponsor_restoration(restoration)
+        finally:
+            self.__release_sponsor_restoration_work(restoration)
 
+    def __run_sponsor_restoration(self, restoration):
         failed = False
         if not self.__restoration_capability_current(restoration):
             self.__finish_sponsor_restoration(restoration, failed=True)
@@ -1782,7 +1932,9 @@ class SwingOpportunitiesApplication:
                 try:
                     workflow.close_monitoring()
                 except Exception:
-                    pass
+                    restoration.deadline.hold_resource(
+                        "sponsor_restoration_cleanup", workflow
+                    )
 
         restorer = restoration.restorer
         if restorer is not None:

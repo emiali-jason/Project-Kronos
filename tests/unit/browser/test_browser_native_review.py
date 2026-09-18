@@ -1251,3 +1251,285 @@ def test_review_shows_minimum_visual_v2_diagnostics(tmp_path: Path) -> None:
     assert request.chart_revision_sha256 in html
     assert "Evidence integrity" in html
     assert response.evidence_sha256 in html
+
+
+# The fixture remains owned by the authorized intake test module.
+import pytest
+from tests.unit.browser.test_swing_review_intake_binding import (
+    native_intake, _page_load_population, _page_load_server, _page_load_counts,
+)
+
+
+@pytest.mark.parametrize("native_intake", ["NSE"], indirect=True)
+def test_opportunities_does_not_construct_undisplayed_history(native_intake, tmp_path, monkeypatch):
+    import json
+    from tests.unit.swing.v1.test_kr370_step31_handoff import _completed
+    state, stores, paths = _page_load_population(native_intake, tmp_path)
+    server = _page_load_server(native_intake, state)
+    historical = _completed(tmp_path / "historical")
+    assert historical.requirement.native_run_identity != state["native"].run_identity
+    server.trade_window.restore((historical,))
+    server.visual_v3.restore_completed(historical)
+    counts = _page_load_counts(monkeypatch, stores, paths)
+    projections = []
+    original = server.trade_window._project_completed
+    def counted(completed):
+        if completed is not None:
+            projections.append((completed.requirement.native_run_identity,
+                                completed.requirement.canonical_instrument))
+        return original(completed)
+    monkeypatch.setattr(server.trade_window, "_project_completed", counted)
+    thread = Thread(target=server.serve_forever, daemon=True); thread.start()
+    try:
+        status, _, body = _request(server, "GET", "/swing/opportunities")
+        print("C1_HISTORY_COUNTS " + json.dumps(dict(counts=dict(counts),
+            historical_projections=len(projections)), sort_keys=True))
+        assert status == 200
+        assert "DRREDDY" in body and "CRUDEOIL" in body
+        assert projections == []
+    finally:
+        server.shutdown(); thread.join(5); server.server_close()
+
+
+@pytest.mark.parametrize("native_intake", ["NSE"], indirect=True)
+@pytest.mark.parametrize("route", ["/swing/opportunities", "/swing/v1-review"])
+def test_page_routes_repeat_pure_bounded_reads(native_intake, tmp_path, monkeypatch, route):
+    import json
+    from tests.unit.swing.v1.test_mcx_supporting_context import _inventory
+    state, stores, paths = _page_load_population(native_intake, tmp_path)
+    server = _page_load_server(native_intake, state)
+    counts = _page_load_counts(monkeypatch, stores, paths)
+    thread = Thread(target=server.serve_forever, daemon=True); thread.start()
+    try:
+        for attempt in range(3):
+            before = _inventory(tmp_path)
+            counts.clear()
+            status, _, body = _request(server, "GET", route)
+            measured = dict(counts)
+            print("C1_ROUTE_COUNTS " + json.dumps(dict(route=route, attempt=attempt, counts=measured), sort_keys=True))
+            assert status == 200
+            assert all(name in body for name in ("TMPV", "ADANIGREEN", "BAJFINANCE", "GOLDM", "CRUDEOIL"))
+            if route == "/swing/v1-review":
+                # This fixture supplies Review continuity warnings, not a
+                # fabricated CommittedContinuity for Opportunities. The latter
+                # renderer's exact continuity contract has its own owning suite.
+                assert "ANALYTICAL ROOT UNCERTAIN" in body
+            assert counts["native_typed_loads"] == counts["mtf_typed_loads"] == 0
+            assert counts["native_file_reads"] == counts["mtf_file_reads"] == 2
+            assert _inventory(tmp_path) == before
+    finally:
+        server.shutdown(); thread.join(5); server.server_close()
+
+
+@pytest.mark.parametrize("native_intake", ["NSE"], indirect=True)
+@pytest.mark.parametrize("failure", ["missing", "corrupt"])
+def test_compact_page_preparation_failure_is_truthful(native_intake, tmp_path, failure):
+    from dataclasses import replace
+    state, _, _ = _page_load_population(native_intake, tmp_path)
+    server = _page_load_server(native_intake, state)
+    with native_intake._page_state_lock:
+        if failure == "missing":
+            native_intake._page_state = None
+            native_intake._page_state_failure = "SWING_PAGE_PREPARATION_MISSING"
+        else:
+            native_intake._page_state = replace(
+                native_intake._page_state, identity="0" * 64
+            )
+    serving = Thread(target=server.serve_forever, daemon=True); serving.start()
+    try:
+        status, _, body = _request(server, "GET", "/swing/opportunities")
+        assert status == 409
+        assert ("SWING_PAGE_PREPARATION_MISSING" if failure == "missing"
+                else "SWING_PAGE_PREPARATION_CORRUPT") in body
+        assert "<form" not in body and "mutation_identity" not in body
+    finally:
+        server.shutdown(); serving.join(5); server.server_close()
+
+
+@pytest.mark.parametrize("native_intake", ["NSE"], indirect=True)
+def test_compact_pages_share_one_generation_under_concurrent_gets(
+    native_intake, tmp_path, monkeypatch
+):
+    from concurrent.futures import ThreadPoolExecutor
+    from tests.unit.swing.v1.test_mcx_supporting_context import _inventory
+    state, stores, paths = _page_load_population(native_intake, tmp_path)
+    server = _page_load_server(native_intake, state)
+    counts = _page_load_counts(monkeypatch, stores, paths)
+    before = _inventory(tmp_path)
+    counts.clear()
+    serving = Thread(target=server.serve_forever, daemon=True); serving.start()
+    try:
+        routes = ("/swing/opportunities", "/swing/v1-review") * 6
+        with ThreadPoolExecutor(max_workers=6) as pool:
+            responses = tuple(pool.map(lambda path: _request(server, "GET", path), routes))
+        assert all(status == 200 for status, _, _ in responses)
+        assert counts["native_typed_loads"] == counts["mtf_typed_loads"] == 0
+        assert counts["native_file_reads"] == counts["mtf_file_reads"] == len(routes) * 2
+        assert native_intake.page_state_status()["retained_generations"] == 1
+        assert _inventory(tmp_path) == before
+    finally:
+        server.shutdown(); serving.join(5); server.server_close()
+
+
+@pytest.mark.parametrize("native_intake", ["NSE"], indirect=True)
+def test_compact_large_bundle_reduces_peak_and_releases_request_temporaries(
+    native_intake, tmp_path
+):
+    import gc
+    import json
+    import tracemalloc
+    state, _, _ = _page_load_population(native_intake, tmp_path)
+    server = _page_load_server(native_intake, state)
+
+    def measured(operation):
+        gc.collect()
+        tracemalloc.start()
+        baseline = tracemalloc.get_traced_memory()[0]
+        operation()
+        current, peak = tracemalloc.get_traced_memory()
+        tracemalloc.stop()
+        gc.collect()
+        return peak - baseline, current - baseline
+
+    rebuilt_peak, rebuilt_retained = measured(native_intake.snapshot)
+    serving = Thread(target=server.serve_forever, daemon=True); serving.start()
+    try:
+        compact_peak, compact_retained = measured(
+            lambda: _request(server, "GET", "/swing/opportunities")
+        )
+    finally:
+        server.shutdown(); serving.join(5); server.server_close()
+    print("PF03_MEMORY " + json.dumps({
+        "rebuilt_peak": rebuilt_peak,
+        "rebuilt_retained": rebuilt_retained,
+        "compact_peak": compact_peak,
+        "compact_retained": compact_retained,
+        "page_state": native_intake.page_state_status(),
+    }, sort_keys=True))
+    assert compact_peak < rebuilt_peak // 2
+    assert compact_retained < 2 * 1024 * 1024
+    assert native_intake.page_state_status()["retained_generations"] == 1
+
+
+@pytest.mark.parametrize("native_intake", ["NSE"], indirect=True)
+@pytest.mark.parametrize("route", ["/swing/opportunities", "/swing/v1-review"])
+def test_page_projection_io_does_not_block_status(native_intake, tmp_path, monkeypatch, route):
+    from threading import Event
+    from kronos.swing.v1.review_evidence_store import PreparedReadFence
+    state, stores, _ = _page_load_population(native_intake, tmp_path)
+    server = _page_load_server(native_intake, state)
+    entered, release = Event(), Event()
+    component_fence = native_intake._page_state.component_fence
+    original = PreparedReadFence.check
+    def blocked(fence):
+        if fence is component_fence:
+            entered.set()
+            assert release.wait(10)
+        return original(fence)
+    monkeypatch.setattr(PreparedReadFence, "check", blocked)
+    serving = Thread(target=server.serve_forever, daemon=True); serving.start()
+    result, failure = [], []
+    def request_page():
+        try: result.append(_request(server, "GET", route))
+        except Exception as error: failure.append(error)
+    page = Thread(target=request_page); page.start()
+    try:
+        assert entered.wait(5)
+        for path in ("/status", "/runtime/status"):
+            assert _request(server, "GET", path)[0] == 200
+        assert not release.is_set() and page.is_alive()
+    finally:
+        release.set(); page.join(10)
+        server.shutdown(); serving.join(5); server.server_close()
+    assert not failure and result[0][0] == 200
+
+
+@pytest.mark.parametrize("native_intake", ["NSE"], indirect=True)
+@pytest.mark.parametrize("route,renderer", [("/swing/opportunities", "render_opportunities"),
+                                            ("/swing/v1-review", "render_v1_review")])
+def test_page_final_publication_fence_suppresses_obsolete_controls(native_intake, tmp_path, monkeypatch, route, renderer):
+    from kronos.browser import server as browser
+    state, _, _ = _page_load_population(native_intake, tmp_path)
+    server = _page_load_server(native_intake, state)
+    original = getattr(browser, renderer)
+    def raced(*args, **kwargs):
+        body = original(*args, **kwargs)
+        state["control"]["current_manifest"]["sha256"] = "b" * 64
+        return body
+    monkeypatch.setattr(browser, renderer, raced)
+    serving = Thread(target=server.serve_forever, daemon=True); serving.start()
+    try:
+        status, _, body = _request(server, "GET", route)
+        assert status == 409 and "REVIEW_BINDING_STALE" in body
+        assert "mutation_identity" not in body and "<form" not in body
+    finally:
+        server.shutdown(); serving.join(5); server.server_close()
+
+
+def test_visual_cache_cannot_authorize_trade_window_selection(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    from kronos.browser.server import KronosBrowserServer
+    from tests.unit.browser.test_browser_native_trade_window import _selected_window
+    owner, completed, key = _selected_window(tmp_path)
+    # A valid displayed identity and sibling absence must not hide a different
+    # assessment in the actual Trade Window owner.
+    discovery = SimpleNamespace(run_identity=key[0], assessments=(SimpleNamespace(
+        status=SimpleNamespace(value="PROBABLE"), canonical_instrument=key[1], result_sha256="0" * 64),))
+    adapter = SimpleNamespace(visual_v3=SimpleNamespace(completed_for=lambda *a: None),
+                              trade_window=owner, native_intake=None)
+    monkeypatch.setattr(owner, "_project_completed", lambda *a: pytest.fail("wrong owner record projected"))
+    with pytest.raises(ValueError, match="SELECTION_STALE"):
+        KronosBrowserServer.selected_opportunity_presentations(adapter, discovery)
+
+
+@pytest.mark.parametrize("native_intake", ["NSE"], indirect=True)
+@pytest.mark.parametrize("route", ["/swing/opportunities", "/swing/v1-review"])
+def test_invalid_component_keeps_unavailable_page_without_history(native_intake, tmp_path, monkeypatch, route):
+    from tests.unit.swing.v1.test_mcx_supporting_context import _inventory
+    state, _, paths = _page_load_population(native_intake, tmp_path)
+    server = _page_load_server(native_intake, state)
+    paths[0].write_bytes(b"SYNTHETIC INVALID COMPONENT")
+    monkeypatch.setattr(server.trade_window, "project_selected",
+                        lambda *a, **k: pytest.fail("invalid evidence projected history"))
+    before = _inventory(tmp_path)
+    serving = Thread(target=server.serve_forever, daemon=True); serving.start()
+    try:
+        status, _, body = _request(server, "GET", route)
+        assert status == 200 and "Review workspace unavailable" in body
+        assert 'href="/swing/v1-review">Open Native Review' not in body
+        assert 'name="mutation_identity"' not in body
+        assert _inventory(tmp_path) == before
+    finally:
+        server.shutdown(); serving.join(5); server.server_close()
+
+
+def test_matching_visual_cache_cannot_authorize_different_owner_assessment(tmp_path, monkeypatch):
+    from dataclasses import replace
+    from types import SimpleNamespace
+    from kronos.browser.server import KronosBrowserServer
+    from kronos.swing.v1 import native_discovery as native
+    from kronos.swing.v1.native_review import build_native_review_requirements
+    from tests.unit.browser.test_browser_native_trade_window import _selected_window
+    from tests.unit.swing.v1 import test_analytical_promotion as promotion_fixture
+    from tests.unit.swing.v1.test_kr370_step31_handoff import _completed
+    from tests.unit.swing.v1.test_native_review import _evidence_run
+    owner, displayed, key = _selected_window(tmp_path)
+    facts, run, _ = _evidence_run()
+    original = next(item for item in run.assessments if item.canonical_instrument == key[1])
+    changed = replace(original, weekly_state=native.Native1WState.NEUTRAL)
+    changed = replace(changed, result_sha256=native._assessment_digest(changed))
+    run = replace(run, assessments=tuple(changed if item is original else item for item in run.assessments))
+    requirement = next(item for item in build_native_review_requirements(run, facts)
+                       if item.canonical_instrument == key[1])
+    with monkeypatch.context() as patch:
+        patch.setattr(promotion_fixture, "_context", lambda: (facts, requirement))
+        other = _completed(tmp_path / "other", weekly=native.Native1WState.NEUTRAL)
+    assert other.requirement.thesis.native_assessment_sha256 != key[2]
+    owner.restore((other,))
+    discovery = SimpleNamespace(run_identity=key[0], assessments=(SimpleNamespace(
+        status=SimpleNamespace(value="PROBABLE"), canonical_instrument=key[1], result_sha256=key[2]),))
+    adapter = SimpleNamespace(visual_v3=SimpleNamespace(completed_for=lambda *a: displayed),
+                              trade_window=owner, native_intake=None)
+    monkeypatch.setattr(owner, "_project_completed", lambda *a: pytest.fail("wrong owner record projected"))
+    with pytest.raises(ValueError, match="SELECTION_STALE"):
+        KronosBrowserServer.selected_opportunity_presentations(adapter, discovery)

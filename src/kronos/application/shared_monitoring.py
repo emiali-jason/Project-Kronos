@@ -34,9 +34,13 @@ class SharedSwingMonitoringHub:
         self._ownership_generation = 0
         self._session_generation = None
         self._subscribed: set[InstrumentRecord] = set()
+        self._retired_session = None
+        self._transport_cleanup_state = "COMPLETE"
+        self._transport_cleanup_failure = ""
+        self._cleanup_instruments: set[InstrumentRecord] = set()
         self._release_counts = dict(shared_subscription_retained=0,
             final_owner_subscription_releases=0, already_detached=0,
-            stale_callbacks_rejected=0)
+            stale_callbacks_rejected=0, cleanup_failures=0)
 
     def set_connection_listener(
         self, listener: Callable[[MonitoringConnectionState], None]
@@ -131,18 +135,42 @@ class SharedSwingMonitoringHub:
                         "session_continuous": tick.session_continuous,
                         "previous_interval_available": tick.previous_interval_available,
                         "ordering_deterministic": tick.ordering_deterministic, "recovered": tick.recovered}})
+                transport_active = (
+                    registration._connected
+                    and self._session is not None
+                    and self._capability is registration._capability
+                    and bool(registration._instruments)
+                    and registration._instruments.issubset(self._subscribed)
+                    and all(
+                        id(registration) in self._by_instrument.get(item, ())
+                        for item in registration._instruments
+                    )
+                )
                 owners.append({"owner_identity": registration.owner_identity,
-                    "registered": True, "subscribed": registration._connected, "instruments": scopes})
+                    "registered": True, "subscribed": registration._connected,
+                    "transport_active": transport_active, "instruments": scopes})
+            cleanup_instruments = tuple(sorted(
+                self._cleanup_instruments,
+                key=lambda i: (i.exchange, i.segment, i.trading_symbol),
+            ))
             return {"schema": "KRONOS-SHARED-MONITORING-STATUS/1.0.0",
                 "hub_state": "REGISTERED" if owners else "IDLE",
                 "transport_state": (self._connection_state.value if self._connection_state is not None
                                     else "CONNECTING" if self._session is not None else "IDLE"),
-                "session_count": int(self._session is not None),
+                "session_count": int(self._session is not None) + int(self._retired_session is not None),
+                "active_session_count": int(self._session is not None),
                 "owner_count": len(owners), "subscription_count": len(self._by_instrument),
                 "subscriptions": [instrument(i) for i in sorted(self._by_instrument,
                     key=lambda i: (i.exchange, i.segment, i.trading_symbol))],
                 "owners": owners, "last_interruption": self._last_interruption,
                 "release_counts": dict(self._release_counts),
+                "transport_cleanup": {
+                    "state": self._transport_cleanup_state,
+                    "retired_session_owned": self._retired_session is not None,
+                    "subscription_count": len(cleanup_instruments),
+                    "subscriptions": [instrument(i) for i in cleanup_instruments],
+                    "failure": self._transport_cleanup_failure,
+                },
                 "continuity_authority": "PER_OWNER_LIFECYCLE_EVIDENCE_NOT_RECONSTRUCTED"}
 
     def release_status(self):
@@ -178,6 +206,8 @@ class SharedSwingMonitoringHub:
                 raise ValueError("SHARED_MONITORING_REGISTRATION_CLOSED")
             if registration._connected:
                 return
+            if self._transport_cleanup_state == "FAILED":
+                raise ValueError("SHARED_MONITORING_CLEANUP_UNRESOLVED")
             if any(owner._connected and owner._capability is not registration._capability
                    for owner in self._registrations.values()):
                 raise ValueError("SHARED_MONITORING_CAPABILITY_MISMATCH")
@@ -201,9 +231,13 @@ class SharedSwingMonitoringHub:
         with self._lock:
             if not self._transport_lock.acquire(blocking=False):
                 return
+        deferred_error = None
         try:
             while True:
                 with self._lock:
+                    if self._transport_cleanup_state == "FAILED":
+                        self._transport_lock.release()
+                        return
                     generation = self._ownership_generation
                     desired = set(self._by_instrument)
                     capability = next((r._capability for r in self._registrations.values()
@@ -216,18 +250,43 @@ class SharedSwingMonitoringHub:
                         self._capability = None
                         self._session_generation = None
                         self._subscribed.clear()
+                        self._retired_session = session
+                        self._transport_cleanup_state = "RUNNING"
+                        self._transport_cleanup_failure = ""
+                        self._cleanup_instruments = set(subscribed)
                         self._connection_state = MonitoringConnectionState.DISCONNECTED
                         self._last_interruption = MonitoringConnectionState.DISCONNECTED.value
+                    unsubscribe_error = None
                     try:
                         if subscribed:
                             session.unsubscribe(tuple(subscribed))
-                            with self._lock:
-                                self._count_release('final_owner_subscription_releases', len(subscribed))
-                    finally:
-                        # A failed unsubscribe must not strand the retired
-                        # transport. Its callbacks are already generation-fenced.
+                    except BaseException as error:
+                        unsubscribe_error = error
+                    disconnect_error = None
+                    try:
                         with expected_transport_close(self.maintenance_governance):
                             session.disconnect()
+                    except BaseException as error:
+                        disconnect_error = error
+                    with self._lock:
+                        if disconnect_error is None:
+                            self._retired_session = None
+                            self._transport_cleanup_state = "COMPLETE"
+                            self._transport_cleanup_failure = ""
+                            self._cleanup_instruments.clear()
+                            self._count_release(
+                                'final_owner_subscription_releases', len(subscribed)
+                            )
+                        else:
+                            self._transport_cleanup_state = "FAILED"
+                            self._transport_cleanup_failure = (
+                                "SHARED_MONITORING_TRANSPORT_CLEANUP_FAILED"
+                            )
+                            self._count_release('cleanup_failures')
+                    if disconnect_error is not None:
+                        raise disconnect_error
+                    if unsubscribe_error is not None:
+                        deferred_error = unsubscribe_error
                     session = None
                 if desired and session is None:
                     token = object()
@@ -235,16 +294,72 @@ class SharedSwingMonitoringHub:
                     with self._lock:
                         self._session, self._capability = session, capability
                         self._session_generation = token
-                    session.subscribe(tuple(desired))
-                    with self._lock:
-                        self._subscribed = set(desired)
-                    session.connect()
+                        self._connection_state = None
+                    try:
+                        session.subscribe(tuple(desired))
+                        with self._lock:
+                            self._subscribed = set(desired)
+                        session.connect()
+                    except BaseException as activation_error:
+                        with self._lock:
+                            self._session = None
+                            self._capability = None
+                            self._session_generation = None
+                            self._subscribed.clear()
+                            self._retired_session = session
+                            self._transport_cleanup_state = "RUNNING"
+                            self._transport_cleanup_failure = ""
+                            self._cleanup_instruments = set(desired)
+                            self._connection_state = (
+                                MonitoringConnectionState.DISCONNECTED
+                            )
+                            self._last_interruption = (
+                                MonitoringConnectionState.DISCONNECTED.value
+                            )
+                        try:
+                            session.unsubscribe(tuple(desired))
+                        except BaseException:
+                            pass
+                        try:
+                            with expected_transport_close(
+                                self.maintenance_governance
+                            ):
+                                session.disconnect()
+                        except BaseException:
+                            with self._lock:
+                                self._transport_cleanup_state = "FAILED"
+                                self._transport_cleanup_failure = (
+                                    "SHARED_MONITORING_TRANSPORT_CLEANUP_FAILED"
+                                )
+                                self._count_release('cleanup_failures')
+                        else:
+                            with self._lock:
+                                self._retired_session = None
+                                self._transport_cleanup_state = "COMPLETE"
+                                self._transport_cleanup_failure = ""
+                                self._cleanup_instruments.clear()
+                        raise activation_error
                 elif session is not None:
                     removals, additions = subscribed - desired, desired - subscribed
                     if removals:
-                        session.unsubscribe(tuple(removals))
+                        with self._lock:
+                            self._transport_cleanup_state = "RUNNING"
+                            self._transport_cleanup_failure = ""
+                            self._cleanup_instruments = set(removals)
+                        try:
+                            session.unsubscribe(tuple(removals))
+                        except BaseException:
+                            with self._lock:
+                                self._transport_cleanup_state = "FAILED"
+                                self._transport_cleanup_failure = (
+                                    "SHARED_MONITORING_SUBSCRIPTION_CLEANUP_FAILED"
+                                )
+                                self._count_release('cleanup_failures')
+                            raise
                         with self._lock:
                             self._subscribed.difference_update(removals)
+                            self._transport_cleanup_state = "COMPLETE"
+                            self._cleanup_instruments.clear()
                             self._count_release('final_owner_subscription_releases', len(removals))
                     if additions:
                         session.subscribe(tuple(additions))
@@ -252,6 +367,8 @@ class SharedSwingMonitoringHub:
                             self._subscribed.update(additions)
                 with self._lock:
                     if generation == self._ownership_generation:
+                        if deferred_error is not None:
+                            raise deferred_error
                         self._transport_lock.release()
                         return
         except BaseException:
@@ -366,6 +483,7 @@ class _SharedRegistration:
                 and self._hub._capability is self._capability
                 and self._capability is capability
                 and bool(self._instruments)
+                and self._instruments.issubset(self._hub._subscribed)
                 and all(
                     id(self) in self._hub._by_instrument.get(instrument, ())
                     for instrument in self._instruments

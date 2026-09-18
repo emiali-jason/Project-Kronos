@@ -237,6 +237,16 @@ class ProviderAuthenticationAdapter(Protocol):
     ) -> ProviderCandidateContext:
         """Perform one bounded session exchange."""
 
+    def dispose_local(self) -> None:
+        """Invalidate this owner and close only resources it still owns locally.
+
+        Successful transfer leaves the candidate's resources untouched. Return
+        only after local cleanup completes; pending or failed cleanup raises a
+        sanitized error while retaining ownership. A failed external close must
+        not be automatically retried or silently reported as successful.
+        This never performs logout, token revocation or another Provider call.
+        """
+
 
 class PrincipalBindingVerifier(Protocol):
     """Fail-closed principal-binding boundary."""

@@ -1,4 +1,5 @@
 import json
+from contextlib import nullcontext
 import os
 from pathlib import Path
 import stat
@@ -267,6 +268,7 @@ def load_provider_authentication_configuration(
     application_config_path: Path | None = None,
     environment: Mapping[str, str] | None = None,
     api_key_source: SecureCredentialSource | None = None,
+    deadline: object | None = None,
 ) -> ProviderAuthenticationConfiguration:
     """Load app configuration while keeping credentials in protected custody."""
 
@@ -302,7 +304,13 @@ def load_provider_authentication_configuration(
     protected_source = api_key_source or AppleKeychainApiKeySource(
         provider=provider,
         runner=run_security_framework_subprocess,
+        deadline=deadline,
     )
+    if deadline is not None:
+        deadline.require()
+        bind = getattr(protected_source, "bind_attempt", None)
+        if callable(bind):
+            bind(deadline)
     try:
         lease = protected_source.acquire(registration_ref)
     except Exception:
@@ -311,12 +319,13 @@ def load_provider_authentication_configuration(
         ) from None
     try:
         try:
-            return lease.reveal_for_call(
-                lambda api_key: _provider_authentication_configuration(
-                    source,
-                    api_key,
+            with (deadline.guard() if deadline is not None else nullcontext()):
+                return lease.reveal_for_call(
+                    lambda api_key: _provider_authentication_configuration(
+                        source,
+                        api_key,
+                    )
                 )
-            )
         except ConfigurationError:
             raise
         except Exception:

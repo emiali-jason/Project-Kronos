@@ -14,7 +14,6 @@ import time
 import tkinter as tk
 from tkinter import ttk
 from zoneinfo import ZoneInfo
-import webbrowser
 
 from kronos.configuration.apple_keychain import (
     AppleKeychainCredentialSource,
@@ -54,6 +53,7 @@ from kronos.provider.kite.marketdata.kite_market_data_provider import (
 )
 from kronos.provider.models.authentication import AuthenticationAttemptState
 from kronos.provider.services.provider_authentication import (
+    current_connection_deadline,
     ProviderAuthenticationService,
 )
 from kronos.swing.daily_data import (
@@ -1238,7 +1238,15 @@ def execute_mcx_batch_proof(
 
 
 def _build_provider() -> KiteProvider:
-    configuration = load_provider_authentication_configuration()
+    deadline = current_connection_deadline()
+    if deadline is not None:
+        deadline.require()
+    configuration = (
+        load_provider_authentication_configuration(deadline=deadline)
+        if deadline is not None else load_provider_authentication_configuration()
+    )
+    if deadline is not None:
+        deadline.require()
     clock = lambda: datetime.now(UTC)
     service = ProviderAuthenticationService(
         configuration,
@@ -1250,14 +1258,15 @@ def _build_provider() -> KiteProvider:
             provider=configuration.provider,
             runner=run_security_framework_subprocess,
         ),
-        adapter_factory=create_kite_authentication_adapter,
+        adapter_factory=lambda api_key: create_kite_authentication_adapter(api_key, use_sdk_worker=True),
         listener_factory=lambda: LoopbackAuthenticationCallbackListener(
             server_factory=create_standard_library_server,
             clock=clock,
         ),
-        navigator=KiteLoginNavigator(opener=webbrowser.open_new_tab),
+        navigator=KiteLoginNavigator(),
         clock=clock,
         identity_factory=lambda: f"v2-proof-{secrets.token_hex(16)}",
+        ordinary_deadline=deadline,
     )
     return KiteProvider(KiteAuthentication(service))
 

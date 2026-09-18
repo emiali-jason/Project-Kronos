@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from threading import RLock
 from collections.abc import Callable, Mapping
 from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
@@ -29,6 +30,7 @@ from kronos.provider.adapters.kite.client import (
     _KiteAuthenticationClientHandle,
     _KiteCandidateClientHandle,
     _KiteCleanupError,
+    _KiteCleanupPending,
     _KiteClientClosedError,
     _KiteExchangeAlreadyAttempted,
     _KiteSessionInvalidated,
@@ -157,6 +159,9 @@ class _KiteCandidateContext:
         "__budget",
         "__capability_issued",
         "__disposed",
+        "__cleanup_state",
+        "__cleanup_in_progress",
+        "__lock",
         "__handle",
         "__instrument_tokens",
         "__principal_requested",
@@ -174,6 +179,9 @@ class _KiteCandidateContext:
         self.__record = operation_recorder
         self.__budget = remaining_budget
         self.__disposed = False
+        self.__cleanup_state = "OPEN"
+        self.__cleanup_in_progress = False
+        self.__lock = RLock()
         self.__principal_requested = False
         self.__capability_issued = False
         self.__instrument_tokens: dict[InstrumentRecord, int] = {}
@@ -220,6 +228,13 @@ class _KiteCandidateContext:
         self.__capability_issued = True
         return _KiteReadOnlyProviderCapability(self)
 
+    def retain_session(self) -> None:
+        """Service-only successful publication; no SDK work or IPC here."""
+        handle = self._active_handle()
+        retain = getattr(handle, "retain_session", None)
+        if callable(retain):
+            retain()
+
     def verify_provider_availability(self) -> KiteContextEvidence:
         """Run one separate, explicitly initiated profile verification."""
 
@@ -241,34 +256,54 @@ class _KiteCandidateContext:
             return KiteContextEvidence.UNAVAILABLE
         raise ProviderConnectivityError(code) from None
 
-    def dispose_local(self) -> None:
-        """Release only local SDK/session state; never mutate Provider state."""
+    @property
+    def local_cleanup_state(self) -> str:
+        """Physical cleanup disposition, separate from local usability."""
+        with self.__lock:
+            return self.__cleanup_state
 
-        if self.__disposed:
-            return
-        self.__disposed = True
-        self.__instrument_tokens.clear()
-        handle = self.__handle
-        self.__handle = None
-        if handle is None:
-            return
+    def dispose_local(self) -> None:
+        """Dispose locally once; retain pending/failed ownership without retry."""
+        with self.__lock:
+            self.__disposed = True
+            self.__instrument_tokens.clear()
+            if self.__cleanup_state == "COMPLETE":
+                return
+            if self.__cleanup_state == "FAILED" or self.__cleanup_in_progress:
+                raise ProviderConnectivityError(ProviderErrorCode.INTERNAL_ADAPTER_DEFECT)
+            handle = self.__handle
+            if handle is None:
+                self.__cleanup_state = "COMPLETE"
+                return
+            self.__cleanup_in_progress = True
+            self.__cleanup_state = "PENDING"
+        state = "COMPLETE"
         try:
             handle.close_local()
-        except Exception as error:
-            code = _map_authentication_error_code(error)
-        else:
-            return
-        raise ProviderConnectivityError(code)
+        except _KiteCleanupPending:
+            state = "PENDING"
+        except Exception:
+            state = "FAILED"
+        with self.__lock:
+            self.__cleanup_in_progress = False
+            self.__cleanup_state = state
+            if state == "COMPLETE":
+                self.__handle = None
+        if state != "COMPLETE":
+            # Raise outside the exception handler: no raw SDK exception chain.
+            raise ProviderConnectivityError(ProviderErrorCode.INTERNAL_ADAPTER_DEFECT)
 
     def _active_handle(self) -> _KiteCandidateClientHandle:
-        handle = self.__handle
-        if self.__disposed or handle is None:
-            raise ProviderConnectivityError(ProviderErrorCode.INTERNAL_ADAPTER_DEFECT)
-        return handle
+        with self.__lock:
+            handle = self.__handle
+            if self.__disposed or handle is None:
+                raise ProviderConnectivityError(ProviderErrorCode.INTERNAL_ADAPTER_DEFECT)
+            return handle
 
     def _read_only_capability_active(self) -> bool:
-        handle = self.__handle
-        return not self.__disposed and handle is not None and handle.active
+        with self.__lock:
+            handle = self.__handle
+            return not self.__disposed and handle is not None and handle.active
 
     def _instrument_records(self, exchange: str) -> tuple[InstrumentRecord, ...]:
         if not _canonical_exchange(exchange):
@@ -1039,14 +1074,12 @@ def _volume(value: object) -> int:
 
 
 class KiteAuthenticationAdapter:
-    """Contain SDK and credential mechanics behind the Kite boundary."""
+    """Contain SDK credentials and explicit local cleanup custody."""
 
     __slots__ = (
-        "__api_secret",
-        "__budget",
-        "__client",
-        "__legacy_candidate",
-        "__record",
+        "__api_secret", "__budget", "__client", "__legacy_candidate", "__record",
+        "__lock", "__disposed", "__cleanup_state", "__cleanup_in_progress",
+        "__exchange_in_progress", "__pending_handle",
     )
 
     def __init__(
@@ -1059,48 +1092,49 @@ class KiteAuthenticationAdapter:
     ) -> None:
         self.__api_secret = api_secret
         self.__client: _KiteAuthenticationClientHandle | None = client
+        self.__pending_handle: _KiteCandidateClientHandle | None = None
         self.__legacy_candidate: _KiteCandidateContext | None = None
         self.__record = operation_recorder
         self.__budget = remaining_budget
+        self.__lock = RLock()
+        self.__disposed = False
+        self.__cleanup_state = "OPEN"
+        self.__cleanup_in_progress = False
+        self.__exchange_in_progress = False
 
     def login_url(self, redirect_uri: str | None = None) -> str:
         self.__before(GovernedAuthenticationOperation.LOGIN_URL_GENERATION)
         if redirect_uri is not None and not redirect_uri:
-            raise ProviderConnectivityError(
-                ProviderErrorCode.INTERNAL_ADAPTER_DEFECT
-            )
-        client = self.__client
-        if client is None:
-            raise ProviderConnectivityError(
-                ProviderErrorCode.INTERNAL_ADAPTER_DEFECT
-            )
+            raise ProviderConnectivityError(ProviderErrorCode.INTERNAL_ADAPTER_DEFECT)
+        with self.__lock:
+            client = self.__client
+            if self.__disposed or client is None:
+                raise ProviderConnectivityError(ProviderErrorCode.INTERNAL_ADAPTER_DEFECT)
         try:
-            return client.login_url()
+            result = client.login_url()
         except Exception as error:
             code = _map_authentication_error_code(error)
+        else:
+            with self.__lock:
+                if not self.__disposed:
+                    return result
+            code = ProviderErrorCode.INTERNAL_ADAPTER_DEFECT
         raise ProviderConnectivityError(code)
 
     def exchange_once(
-        self,
-        request_token: OneUseRequestToken,
-        api_secret: SecretLease,
+        self, request_token: OneUseRequestToken, api_secret: SecretLease,
     ) -> _KiteCandidateContext:
-        """Consume one token and secret and return one unpublished candidate."""
-
-        timeout_seconds = self.__before(
-            GovernedAuthenticationOperation.SESSION_EXCHANGE
-        )
-        self.__api_secret = None
+        """Consume once; retain every handle until a successful handoff."""
+        timeout_seconds = self.__before(GovernedAuthenticationOperation.SESSION_EXCHANGE)
+        with self.__lock:
+            self.__api_secret = None
+            if self.__disposed:
+                raise ProviderConnectivityError(ProviderErrorCode.INTERNAL_ADAPTER_DEFECT)
 
         def exchange_token(raw_token: str) -> _KiteCandidateContext:
             return api_secret.reveal_for_call(
                 lambda raw_secret: self.__exchange_values(
-                    raw_token,
-                    raw_secret,
-                    timeout_seconds=timeout_seconds,
-                )
-            )
-
+                    raw_token, raw_secret, timeout_seconds=timeout_seconds))
         try:
             candidate = request_token.consume_for_call(exchange_token)
         except ProviderConnectivityError:
@@ -1109,74 +1143,121 @@ class KiteAuthenticationAdapter:
             code = _map_authentication_error_code(error)
         else:
             if not isinstance(candidate, _KiteCandidateContext):
-                raise ProviderConnectivityError(
-                    ProviderErrorCode.INTERNAL_ADAPTER_DEFECT
-                )
+                raise ProviderConnectivityError(ProviderErrorCode.INTERNAL_ADAPTER_DEFECT)
             return candidate
         raise ProviderConnectivityError(code)
 
     def exchange(self, request_token: str) -> _KiteCandidateContext:
         """Compatibility bridge retained until the Stage 4 caller migration."""
-
-        api_secret = self.__api_secret
-        self.__api_secret = None
-        if api_secret is None:
-            raise ProviderConnectivityError(
-                ProviderErrorCode.INTERNAL_ADAPTER_DEFECT
-            )
+        with self.__lock:
+            api_secret = self.__api_secret
+            self.__api_secret = None
+            if self.__disposed or api_secret is None:
+                raise ProviderConnectivityError(ProviderErrorCode.INTERNAL_ADAPTER_DEFECT)
         try:
-            candidate = self.__exchange_values(request_token, api_secret)
+            return self.__exchange_values(request_token, api_secret, legacy=True)
         finally:
             del api_secret
-        self.__legacy_candidate = candidate
-        return candidate
 
     def context_evidence(self) -> KiteContextEvidence:
-        """Compatibility bridge to separately invoked availability verification."""
-
-        candidate = self.__legacy_candidate
-        if candidate is None:
-            raise ProviderConnectivityError(
-                ProviderErrorCode.INTERNAL_ADAPTER_DEFECT
-            )
+        """Compatibility bridge to explicitly initiated availability verification."""
+        with self.__lock:
+            candidate = self.__legacy_candidate
+            if self.__disposed or candidate is None:
+                raise ProviderConnectivityError(ProviderErrorCode.INTERNAL_ADAPTER_DEFECT)
         return candidate.verify_provider_availability()
 
-    def terminate(self) -> None:
-        """Compatibility bridge that performs local disposal only."""
+    @property
+    def local_cleanup_state(self) -> str:
+        """Only this adapter's retained resources; excludes transferred contexts."""
+        with self.__lock:
+            return self.__cleanup_state
 
-        candidate = self.__legacy_candidate
-        self.__legacy_candidate = None
+    def dispose_local(self) -> None:
+        """Make this owner unusable; never close a successfully transferred client."""
+        with self.__lock:
+            self.__disposed = True
+            self.__api_secret = None
+            if self.__cleanup_state == "COMPLETE":
+                return
+            if self.__cleanup_state == "FAILED" or self.__cleanup_in_progress:
+                raise ProviderConnectivityError(ProviderErrorCode.INTERNAL_ADAPTER_DEFECT)
+            self.__cleanup_state = "PENDING"
+            if self.__exchange_in_progress:
+                # The SDK or candidate constructor still owns executing work.
+                # A later explicit cleanup after its return may close locally.
+                raise ProviderConnectivityError(ProviderErrorCode.INTERNAL_ADAPTER_DEFECT)
+            owners = tuple(owner for owner in (self.__pending_handle, self.__client)
+                           if owner is not None)
+            self.__cleanup_in_progress = True
+        state = "COMPLETE"
+        for owner in owners:
+            try:
+                owner.close_local()
+            except _KiteCleanupPending:
+                if state != "FAILED":
+                    state = "PENDING"
+            except Exception:
+                state = "FAILED"
+        with self.__lock:
+            self.__cleanup_in_progress = False
+            self.__cleanup_state = state
+            if state == "COMPLETE":
+                self.__pending_handle = None
+                self.__client = None
+        if state != "COMPLETE":
+            raise ProviderConnectivityError(ProviderErrorCode.INTERNAL_ADAPTER_DEFECT)
+
+    def terminate(self) -> None:
+        """Legacy explicit context termination, always local and failure-sticky."""
+        self.dispose_local()
+        with self.__lock:
+            candidate = self.__legacy_candidate
         if candidate is not None:
             candidate.dispose_local()
+            with self.__lock:
+                if self.__legacy_candidate is candidate:
+                    self.__legacy_candidate = None
 
     def __exchange_values(
-        self,
-        request_token: str,
-        api_secret: str,
-        *,
-        timeout_seconds: float | None = None,
+        self, request_token: str, api_secret: str, *,
+        timeout_seconds: float | None = None, legacy: bool = False,
     ) -> _KiteCandidateContext:
-        client = self.__client
-        if client is None:
-            raise ProviderConnectivityError(
-                ProviderErrorCode.INTERNAL_ADAPTER_DEFECT
-            )
+        with self.__lock:
+            client = self.__client
+            if (self.__disposed or client is None or self.__exchange_in_progress
+                    or self.__pending_handle is not None):
+                raise ProviderConnectivityError(ProviderErrorCode.INTERNAL_ADAPTER_DEFECT)
+            self.__exchange_in_progress = True
+        candidate = None
+        code = None
         try:
-            handle = client.exchange_once(
-                request_token,
-                api_secret,
-                timeout_seconds=timeout_seconds,
-            )
+            handle = client.exchange_once(request_token, api_secret,
+                                          timeout_seconds=timeout_seconds)
+            with self.__lock:
+                # Retain the transferred handle BEFORE candidate construction.
+                self.__pending_handle = handle
+                if self.__disposed:
+                    raise _KiteClientClosedError
+            candidate = _KiteCandidateContext(handle,
+                operation_recorder=self.__record, remaining_budget=self.__budget)
+            with self.__lock:
+                if self.__disposed:
+                    raise _KiteClientClosedError
+                # Only a fully constructed context receives ownership. Disposal
+                # of this former owner can no longer reach the candidate's SDK.
+                self.__pending_handle = None
+                self.__client = None
+                if legacy:
+                    self.__legacy_candidate = candidate
         except Exception as error:
             code = _map_authentication_error_code(error)
-        else:
-            self.__client = None
-            return _KiteCandidateContext(
-                handle,
-                operation_recorder=self.__record,
-                remaining_budget=self.__budget,
-            )
-        raise ProviderConnectivityError(code)
+        finally:
+            with self.__lock:
+                self.__exchange_in_progress = False
+        if code is not None:
+            raise ProviderConnectivityError(code)
+        return candidate
 
     def __before(
         self,
@@ -1213,9 +1294,18 @@ def create_kite_authentication_adapter(
     *,
     operation_recorder: Callable[[GovernedAuthenticationOperation], None] | None = None,
     remaining_budget: Callable[[], RemainingBudget] | None = None,
+    use_sdk_worker: bool = False,
 ) -> KiteAuthenticationAdapter:
     try:
-        client = _create_kite_authentication_client(api_key)
+        if use_sdk_worker:
+            from kronos.provider.adapters.kite.sdk_worker import create_worker_authentication_handle
+            from kronos.provider.services.provider_authentication import current_connection_deadline
+            deadline = current_connection_deadline()
+            if deadline is None:
+                raise _KiteClientClosedError
+            client = create_worker_authentication_handle(api_key, deadline)
+        else:
+            client = _create_kite_authentication_client(api_key)
     except Exception as error:
         code = _map_authentication_error_code(error)
     else:

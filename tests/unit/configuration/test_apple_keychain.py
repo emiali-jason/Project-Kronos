@@ -739,3 +739,244 @@ def test_intended_principal_operation_failure_closes_lease_and_is_sanitized() ->
     assert "raw" not in repr(result)
     PresenceSubprocessRequest,
     ProvisioningSubprocessRequest,
+
+# Spawn imports this function in the child. Only its synthetic retrieval runs.
+def _pf02d_keychain_worker(sender, service, account, *, entered, release, mode):
+    import os
+    from kronos.configuration import apple_keychain as module
+    if mode == "resist":
+        import signal
+        signal.signal(signal.SIGTERM, signal.SIG_IGN)
+    selected = mode.startswith("production-") and account.startswith(mode.removeprefix("production-").encode() + b':')
+    if not mode.startswith("production-") or selected:
+        entered.set()
+    if mode in {"partial", "oversized", "malformed", "exit", "trickle"}:
+        if mode == "partial":
+            os.write(sender.fileno(), (12).to_bytes(4, 'big') + b'\x00')
+            release.wait(5)
+        elif mode == "trickle":
+            os.write(sender.fileno(), (100).to_bytes(4, 'big'))
+            while not release.wait(0.02):
+                os.write(sender.fileno(), b'x')
+        elif mode == "oversized":
+            os.write(sender.fileno(), (500000).to_bytes(4, 'big'))
+        elif mode == "malformed":
+            sender.send_bytes(b'x')
+        sender.close()
+        return
+    def retrieve(_service, _account):
+        if mode in {"blocked", "late", "resist"} or selected:
+            release.wait(5)
+        if mode == "failure":
+            raise RuntimeError("synthetic-private-keychain-detail")
+        if mode == "missing":
+            return -25300, b''
+        if mode.startswith("production-"):
+            value = (b'service-api-key' if account.startswith(b'api-key:') else
+                     b'service-api-secret' if account.startswith(b'api-secret:') else b'PRINCIPAL123')
+            return 0, value + b'\n'
+        return 0, b'synthetic-value\n'
+    module._security_framework_retrieve = retrieve
+    module._security_framework_retrieval_worker(sender, service, account)
+    if mode == "lingering":
+        release.wait(5)
+
+
+def _pf02d_request(timeout=2.0):
+    return SubprocessRequest(argv=(
+        '/usr/bin/security', 'find-generic-password', '-w', '-s',
+        'com.project-kronos.provider-authentication.kite', '-a', 'api-secret:test'),
+        timeout_seconds=timeout)
+
+
+@pytest.mark.parametrize('mode,success', [
+    ('opened', True), ('missing', True), ('failure', False),
+    ('oversized', False), ('malformed', False), ('exit', False), ('lingering', False),
+])
+def test_pf02d_spawn_keychain_result_requires_child_exit(monkeypatch, mode, success):
+    from tests.unit.provider.test_kite_login_navigator import (
+        _pf02d_process_fixture, _pf02d_assert_processes_released, _pf02d_finish)
+    case = _pf02d_process_fixture(monkeypatch, keychain=True, mode=mode)
+    try:
+        if success:
+            result = run_security_framework_subprocess(_pf02d_request(), deadline=case.deadline)
+            assert result.returncode == (-25300 if mode == 'missing' else 0)
+            assert result._take_output() == ((b'' if mode == 'missing' else b'synthetic-value\n'), b'')
+        else:
+            with pytest.raises(AppleKeychainCredentialError):
+                run_security_framework_subprocess(_pf02d_request(), deadline=case.deadline)
+        assert case.entered.is_set() and len(case.records) == 1
+        _pf02d_assert_processes_released(case)
+    finally:
+        _pf02d_finish(case)
+
+
+@pytest.mark.parametrize('mode', ['blocked', 'partial', 'trickle', 'resist'])
+@pytest.mark.parametrize('terminal', ['cancel', 'deadline'])
+def test_pf02d_spawn_keychain_stall_is_terminated(monkeypatch, mode, terminal):
+    from tests.unit.provider.test_kite_login_navigator import (
+        _pf02d_process_fixture, _pf02d_assert_processes_released, _pf02d_finish)
+    case = _pf02d_process_fixture(monkeypatch, keychain=True, mode=mode)
+    errors = []
+    def retrieve():
+        try:
+            run_security_framework_subprocess(_pf02d_request(), deadline=case.deadline)
+        except BaseException as error:
+            errors.append(type(error))
+    thread = case.threading.Thread(target=retrieve)
+    try:
+        thread.start()
+        assert case.entered.wait(2)
+        started = time.perf_counter()
+        if terminal == 'cancel':
+            case.deadline.cancel()
+        else:
+            case.deadline.shorten(0.08)
+        thread.join(1.5)
+        elapsed = time.perf_counter() - started
+        assert not thread.is_alive() and errors == [TimeoutError]
+        _pf02d_assert_processes_released(case)
+        if mode == "resist":
+            import signal
+            assert case.records[0].exited[1] == -signal.SIGKILL
+        print('PF02D_KEYCHAIN_STOP', mode, terminal, round(elapsed, 4))
+    finally:
+        _pf02d_finish(case)
+        thread.join(2)
+
+
+def test_pf02d_keychain_late_result_cannot_create_secret_lease(monkeypatch):
+    from tests.unit.provider.test_kite_login_navigator import (
+        _pf02d_process_fixture, _pf02d_assert_processes_released, _pf02d_finish)
+    case = _pf02d_process_fixture(monkeypatch, keychain=True, mode='late')
+    source = AppleKeychainCredentialSource(provider='KITE', runner=run_security_framework_subprocess, deadline=case.deadline)
+    leases, errors = [], []
+    def acquire():
+        try:
+            leases.append(source.acquire('test'))
+        except AppleKeychainCredentialError as error:
+            errors.append(error.outcome)
+    thread = case.threading.Thread(target=acquire)
+    try:
+        thread.start()
+        assert case.entered.wait(2)
+        case.deadline.cancel()
+        case.release.set()
+        thread.join(1.5)
+        assert not thread.is_alive() and leases == []
+        assert errors == [CredentialRetrievalOutcome.TIMED_OUT]
+        _pf02d_assert_processes_released(case)
+    finally:
+        _pf02d_finish(case)
+        thread.join(2)
+
+
+def test_pf02d_keychain_failed_cleanup_retains_actual_child_and_fence(monkeypatch):
+    from kronos.configuration import apple_keychain as module
+    from tests.unit.provider.test_kite_login_navigator import _pf02d_process_fixture, _pf02d_finish
+    case = _pf02d_process_fixture(monkeypatch, keychain=True, mode='blocked')
+    errors = []
+    def retrieve():
+        try:
+            run_security_framework_subprocess(_pf02d_request(), deadline=case.deadline)
+        except BaseException as error:
+            errors.append(type(error))
+    thread = case.threading.Thread(target=retrieve)
+    owner = None
+    try:
+        thread.start()
+        assert case.entered.wait(2)
+        process = case.records[0].process
+        terminate, kill = process.terminate, process.kill
+        process.terminate = process.kill = lambda: None
+        case.deadline.cancel()
+        thread.join(1.5)
+        assert not thread.is_alive() and process.is_alive()
+        owner = module._retrieval_owners[0]
+        assert owner.process is process and owner.local_cleanup_state == 'FAILED'
+        case.deadline.worker_finished()
+        assert not case.deadline.retry_ready
+        with pytest.raises(AppleKeychainCredentialError):
+            run_security_framework_subprocess(_pf02d_request())
+        assert len(case.records) == 1
+        process.terminate, process.kill = terminate, kill
+        case.release.set(); process.join(1)
+        assert not process.is_alive()
+        assert owner.local_cleanup_state == 'FAILED' and not case.deadline.retry_ready
+    finally:
+        if case.records and "terminate" in locals():
+            case.records[0].process.terminate, case.records[0].process.kill = terminate, kill
+        _pf02d_finish(case)
+        thread.join(2)
+        # Test-only release of the injected failure; production has no recovery.
+        if owner in module._retrieval_owners:
+            module._retrieval_owners.remove(owner)
+
+
+def test_pf02d_keychain_repeated_spawn_cycles_release_handles(monkeypatch):
+    import os
+    from tests.unit.provider.test_kite_login_navigator import (
+        _pf02d_process_fixture, _pf02d_assert_processes_released, _pf02d_finish)
+    case = _pf02d_process_fixture(monkeypatch, keychain=True, timeout=10)
+    children = {p.pid for p in multiprocessing.active_children()}
+    try:
+        for index in range(7):
+            result = run_security_framework_subprocess(_pf02d_request(), deadline=case.deadline)
+            assert result._take_output() == (b'synthetic-value\n', b'')
+            if index == 0:
+                descriptors = len(os.listdir('/dev/fd'))
+        assert len(os.listdir('/dev/fd')) <= descriptors
+        assert {p.pid for p in multiprocessing.active_children()} == children
+        _pf02d_assert_processes_released(case)
+    finally:
+        _pf02d_finish(case)
+
+
+def test_pf02d_all_three_retrievals_use_same_remaining_attempt_budget():
+    from kronos.provider.services.provider_authentication import ConnectionAttemptDeadline
+    now = [0.0]
+    deadline = ConnectionAttemptDeadline(1, timeout_seconds=6, monotonic_clock=lambda: now[0])
+    requests = []
+    def runner(request):
+        requests.append(request)
+        now[0] += 2
+        return SubprocessResult(0, b'AB1234\n', b'')
+    key = AppleKeychainApiKeySource(provider='KITE', runner=runner, deadline=deadline)
+    secret = AppleKeychainCredentialSource(provider='KITE', runner=runner, deadline=deadline)
+    principal = AppleKeychainIntendedPrincipalResolver(provider='KITE', runner=runner, deadline=deadline)
+    key.acquire('test').close()
+    secret.acquire('test').close()
+    outcomes = []
+    result = principal.use_resolved_once('test', lambda lease: outcomes.append(lease))
+    assert [r.timeout_seconds for r in requests] == [5.0, 4.0, 2.0]
+    assert [r.argv[-1].split(':')[0] for r in requests] == ['api-key', 'api-secret', 'intended-principal']
+    assert outcomes == [] and result.outcome is not IntendedPrincipalResolutionOutcome.RESOLVED
+
+
+@pytest.mark.parametrize('configured', [0.05, 5.0, 10.0])
+def test_pf02d_configured_stricter_retrieval_timeout_preserved(configured):
+    from kronos.provider.services.provider_authentication import ConnectionAttemptDeadline
+    deadline = ConnectionAttemptDeadline(1, timeout_seconds=20)
+    runner = _FakeRunner(SubprocessResult(0, b'unit-value\n', b''))
+    source = AppleKeychainCredentialSource(provider='KITE', runner=runner, deadline=deadline, timeout_seconds=configured)
+    source.acquire('test').close()
+    assert runner.requests[0].timeout_seconds == configured
+    with pytest.raises(AppleKeychainCredentialError):
+        AppleKeychainCredentialSource(provider='KITE', runner=runner, timeout_seconds=10.01)
+
+
+def test_pf02d_spawn_configured_timeout_includes_startup_and_receipt(monkeypatch):
+    from tests.unit.provider.test_kite_login_navigator import (
+        _pf02d_process_fixture, _pf02d_assert_processes_released, _pf02d_finish)
+    case = _pf02d_process_fixture(monkeypatch, keychain=True, mode='blocked')
+    try:
+        start = time.perf_counter()
+        with pytest.raises(TimeoutError):
+            run_security_framework_subprocess(_pf02d_request(0.3))
+        elapsed = time.perf_counter() - start
+        assert case.entered.is_set()
+        assert 0.3 <= elapsed < 1.05
+        _pf02d_assert_processes_released(case)
+        print('PF02D_KEYCHAIN_CONFIGURED_TIMEOUT', round(elapsed, 4))
+    finally:
+        _pf02d_finish(case)

@@ -4,11 +4,15 @@ from __future__ import annotations
 
 import ctypes
 import multiprocessing
+import os
+import selectors
+import threading
 import re
 import subprocess
 import time
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from contextlib import nullcontext
+from dataclasses import dataclass, replace
 from multiprocessing.connection import Connection
 
 from kronos.configuration.credentials import (
@@ -153,7 +157,7 @@ class AppleKeychainCredentialError(RuntimeError):
 class AppleKeychainCredentialSource:
     """Retrieve one API secret through an explicitly supplied runner."""
 
-    __slots__ = ("_provider", "_runner", "_timeout_seconds")
+    __slots__ = ("_provider", "_runner", "_timeout_seconds", "_deadline")
 
     def __init__(
         self,
@@ -161,6 +165,7 @@ class AppleKeychainCredentialSource:
         provider: str,
         runner: SubprocessRunner,
         timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
+        deadline: object | None = None,
     ) -> None:
         if not _valid_reference(provider):
             raise AppleKeychainCredentialError(
@@ -173,6 +178,10 @@ class AppleKeychainCredentialSource:
         self._provider = provider.lower()
         self._runner = runner
         self._timeout_seconds = timeout_seconds
+        self._deadline = deadline
+
+    def bind_attempt(self, deadline: object) -> None:
+        self._deadline = deadline
 
     def acquire(self, credential_ref: str) -> SecretLease:
         """Acquire one redacted lease or raise one sanitized category."""
@@ -192,12 +201,12 @@ class AppleKeychainCredentialSource:
                 "-a",
                 f"{_API_SECRET_PURPOSE}{credential_ref}",
             ),
-            timeout_seconds=self._timeout_seconds,
+            timeout_seconds=_retrieval_timeout(self._timeout_seconds, self._deadline),
         )
 
-        stdout = _retrieve_once(self._runner, request)
-        secret = _decode_secret(stdout)
-        return OneUseSecretLease(secret)
+        stdout = _retrieve_once(self._runner, request, deadline=self._deadline)
+        with _retrieval_guard(self._deadline):
+            return OneUseSecretLease(_decode_secret(stdout))
 
     def __repr__(self) -> str:
         return "<AppleKeychainCredentialSource redacted>"
@@ -212,7 +221,7 @@ class AppleKeychainCredentialSource:
 class AppleKeychainApiKeySource:
     """Retrieve one protected API key for an application-registration reference."""
 
-    __slots__ = ("_provider", "_runner", "_timeout_seconds")
+    __slots__ = ("_provider", "_runner", "_timeout_seconds", "_deadline")
 
     def __init__(
         self,
@@ -220,6 +229,7 @@ class AppleKeychainApiKeySource:
         provider: str,
         runner: SubprocessRunner,
         timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
+        deadline: object | None = None,
     ) -> None:
         if not _valid_reference(provider) or not (
             0 < timeout_seconds <= MAX_TIMEOUT_SECONDS
@@ -230,6 +240,10 @@ class AppleKeychainApiKeySource:
         self._provider = provider.lower()
         self._runner = runner
         self._timeout_seconds = timeout_seconds
+        self._deadline = deadline
+
+    def bind_attempt(self, deadline: object) -> None:
+        self._deadline = deadline
 
     def acquire(self, application_registration_ref: str) -> SecretLease:
         """Acquire one API-key lease without exposing its value."""
@@ -248,11 +262,11 @@ class AppleKeychainApiKeySource:
                 "-a",
                 f"{_API_KEY_PURPOSE}{application_registration_ref}",
             ),
-            timeout_seconds=self._timeout_seconds,
+            timeout_seconds=_retrieval_timeout(self._timeout_seconds, self._deadline),
         )
-        stdout = _retrieve_once(self._runner, request)
-        api_key = _decode_secret(stdout)
-        return OneUseSecretLease(api_key)
+        stdout = _retrieve_once(self._runner, request, deadline=self._deadline)
+        with _retrieval_guard(self._deadline):
+            return OneUseSecretLease(_decode_secret(stdout))
 
     def __repr__(self) -> str:
         return "<AppleKeychainApiKeySource redacted>"
@@ -518,7 +532,7 @@ class AppleKeychainCredentialRemover:
 class AppleKeychainIntendedPrincipalResolver:
     """Resolve one intended principal through retrieval-only Keychain custody."""
 
-    __slots__ = ("_provider", "_runner", "_timeout_seconds")
+    __slots__ = ("_provider", "_runner", "_timeout_seconds", "_deadline")
 
     def __init__(
         self,
@@ -526,6 +540,7 @@ class AppleKeychainIntendedPrincipalResolver:
         provider: str,
         runner: SubprocessRunner,
         timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
+        deadline: object | None = None,
     ) -> None:
         if not _valid_reference(provider) or not (
             0 < timeout_seconds <= MAX_TIMEOUT_SECONDS
@@ -536,6 +551,10 @@ class AppleKeychainIntendedPrincipalResolver:
         self._provider = provider.lower()
         self._runner = runner
         self._timeout_seconds = timeout_seconds
+        self._deadline = deadline
+
+    def bind_attempt(self, deadline: object) -> None:
+        self._deadline = deadline
 
     def use_resolved_once(
         self,
@@ -559,18 +578,19 @@ class AppleKeychainIntendedPrincipalResolver:
                 "-a",
                 f"{_INTENDED_PRINCIPAL_PURPOSE}{registration_ref}",
             ),
-            timeout_seconds=self._timeout_seconds,
+            timeout_seconds=_retrieval_timeout(self._timeout_seconds, self._deadline),
         )
         try:
-            stdout = _retrieve_once(self._runner, request)
+            stdout = _retrieve_once(self._runner, request, deadline=self._deadline)
         except AppleKeychainCredentialError as error:
             return IntendedPrincipalResolutionResult(
                 _principal_outcome(error.outcome)
             )
 
         try:
-            expected_principal = _decode_principal(stdout)
-            lease = OneUseIntendedPrincipalLease(expected_principal)
+            with _retrieval_guard(self._deadline):
+                expected_principal = _decode_principal(stdout)
+                lease = OneUseIntendedPrincipalLease(expected_principal)
         except Exception:
             return IntendedPrincipalResolutionResult(
                 IntendedPrincipalResolutionOutcome.SANITIZED_FAILURE
@@ -633,6 +653,8 @@ def run_security_subprocess(request: SubprocessRequest) -> SubprocessResult:
 
 def run_security_framework_subprocess(
     request: SubprocessRequest,
+    *,
+    deadline: object | None = None,
 ) -> SubprocessResult:
     """Retrieve through an isolated, bounded Security.framework helper."""
 
@@ -641,10 +663,9 @@ def run_security_framework_subprocess(
     service = request.argv[4].encode("utf-8")
     account = request.argv[6].encode("utf-8")
     try:
+        arguments = {} if deadline is None else {"attempt_deadline": deadline}
         status, value = _bounded_security_framework_retrieve(
-            service,
-            account,
-            request.timeout_seconds,
+            service, account, request.timeout_seconds, **arguments,
         )
     except TimeoutError:
         raise
@@ -655,47 +676,134 @@ def run_security_framework_subprocess(
     return SubprocessResult(status, value, b"")
 
 
+_retrieval_owners_lock = threading.Lock()
+_retrieval_owners: list[object] = []
+_HELPER_POLL_SECONDS = 0.02
+
+
 def _bounded_security_framework_retrieve(
     service: bytes,
     account: bytes,
     timeout_seconds: float,
+    *,
+    attempt_deadline: object | None = None,
 ) -> tuple[int, bytes]:
-    """Run the non-interruptible Security.framework call in one killable process."""
+    owner = _SecurityFrameworkRetrieval(attempt_deadline, timeout_seconds)
+    # Failed owners remain quarantined even for callers without a lifetime.
+    with _retrieval_owners_lock:
+        if _retrieval_owners:
+            raise AppleKeychainCredentialError(CredentialRetrievalOutcome.BACKEND_UNAVAILABLE)
+        _retrieval_owners.append(owner)
+    return owner.retrieve(service, account)
 
-    deadline = time.monotonic() + timeout_seconds
-    context = _security_framework_process_context()
-    receiver, sender = context.Pipe(duplex=False)
-    process = context.Process(
-        target=_security_framework_retrieval_worker,
-        args=(sender, service, account),
-        daemon=True,
-    )
-    started = False
-    timed_out = False
-    payload = b""
-    try:
-        process.start()
-        started = True
-        sender.close()
-        remaining = max(0.0, deadline - time.monotonic())
-        if not receiver.poll(remaining):
-            timed_out = True
+
+class _SecurityFrameworkRetrieval:
+    """One retrieval worker and its private IPC, retained until verified release."""
+
+    def __init__(self, deadline, timeout_seconds: float) -> None:
+        self.deadline = deadline
+        self.expires_at = time.monotonic() + timeout_seconds
+        self.cancelled = threading.Event()
+        self.process = None
+        self.receiver = None
+        self.sender = None
+        self.local_cleanup_state = "PENDING"
+        self.exitcode = None
+        self.start_attempted = False
+        self.start_returned = False
+
+    def _remaining(self) -> float:
+        remaining = self.expires_at - time.monotonic()
+        if self.deadline is not None:
+            self.deadline.require()
+            remaining = min(remaining, self.deadline.remaining_seconds())
+        if remaining <= 0 or self.cancelled.is_set():
             raise TimeoutError
-        payload = receiver.recv_bytes(_FRAMEWORK_RESULT_MAX_BYTES)
-        if len(payload) < 4:
-            raise AppleKeychainCredentialError(
-                CredentialRetrievalOutcome.BACKEND_UNAVAILABLE
+        return remaining
+
+    def retrieve(self, service: bytes, account: bytes) -> tuple[int, bytes]:
+        if self.deadline is not None:
+            self.deadline.hold_resource("KEYCHAIN_RETRIEVAL_HELPER", self)
+            self.deadline.add_terminal_callback(self.cancelled.set)
+        payload = b""
+        received = False
+        try:
+            self._remaining()
+            context = _security_framework_process_context()
+            self.receiver, self.sender = context.Pipe(duplex=False)
+            self.process = context.Process(
+                target=_security_framework_retrieval_worker,
+                args=(self.sender, service, account), daemon=True,
             )
-        status = int.from_bytes(payload[:4], "big", signed=True)
-        value = payload[4:]
-        payload = b""
-        return status, value
-    finally:
-        payload = b""
-        receiver.close()
-        sender.close()
-        if started:
-            _stop_security_framework_process(process, force=timed_out)
+            self._remaining()
+            self.start_attempted = True
+            self.process.start()
+            self.start_returned = True
+            self.sender.close()
+            # poll/recv_bytes is unsafe for partial frames. Read only currently
+            # available bytes and bound the complete header+body by one deadline.
+            os.set_blocking(self.receiver.fileno(), False)
+            expected = None
+            with selectors.DefaultSelector() as selector:
+                selector.register(self.receiver.fileno(), selectors.EVENT_READ)
+                while expected is None or len(payload) < expected:
+                    if not selector.select(min(_HELPER_POLL_SECONDS, self._remaining())):
+                        continue
+                    try:
+                        chunk = os.read(self.receiver.fileno(), _FRAMEWORK_RESULT_MAX_BYTES + 5 - len(payload))
+                    except BlockingIOError:
+                        continue
+                    if not chunk:
+                        raise ValueError("KEYCHAIN_HELPER_RESULT_INVALID")
+                    payload += chunk
+                    if expected is None and len(payload) >= 4:
+                        size = int.from_bytes(payload[:4], "big", signed=True)
+                        if not 4 <= size <= _FRAMEWORK_RESULT_MAX_BYTES:
+                            raise ValueError("KEYCHAIN_HELPER_RESULT_INVALID")
+                        expected = 4 + size
+                    if expected is not None and len(payload) > expected:
+                        raise ValueError("KEYCHAIN_HELPER_RESULT_INVALID")
+            self._remaining()
+            received = True
+        except BaseException:
+            payload = b""
+            raise
+        finally:
+            self._cleanup(force=not received or self.cancelled.is_set())
+        try:
+            self._remaining()
+            if self.local_cleanup_state != "COMPLETE" or self.exitcode != 0:
+                raise ValueError("KEYCHAIN_HELPER_CLEANUP_FAILED")
+            with _retrieval_guard(self.deadline):
+                return int.from_bytes(payload[4:8], "big", signed=True), payload[8:]
+        finally:
+            payload = b""
+
+    def _cleanup(self, *, force: bool) -> None:
+        if self.local_cleanup_state != "PENDING":
+            return
+        # No child handle after a start exception is uncertainty, not exit proof.
+        failed = self.start_attempted and not self.start_returned and self.process.pid is None
+        try:
+            if self.process is not None:
+                self.exitcode = _stop_security_framework_process(self.process, force=force)
+        except Exception:
+            failed = True
+        for connection in (self.receiver, self.sender):
+            try:
+                if connection is not None:
+                    connection.close()
+            except Exception:
+                failed = True
+        self.local_cleanup_state = "FAILED" if failed else "COMPLETE"
+        if not failed:
+            with _retrieval_owners_lock:
+                _retrieval_owners.remove(self)
+            if self.deadline is not None:
+                self.deadline._resolve_pending_resource(self)
+
+    def __repr__(self) -> str:
+        return "<SecurityFrameworkRetrieval redacted>"
 
 
 def _security_framework_process_context():  # type: ignore[no-untyped-def]
@@ -728,28 +836,24 @@ def _security_framework_retrieval_worker(
         connection.close()
 
 
-def _stop_security_framework_process(process: object, *, force: bool) -> None:
-    """Bound helper cleanup even when Security.framework never returns."""
+def _stop_security_framework_process(process: object, *, force: bool) -> int | None:
+    """Only the owned child is signalled; success requires actual exit+close."""
 
-    join = getattr(process, "join", None)
-    alive = getattr(process, "is_alive", None)
-    if not callable(join) or not callable(alive):
-        return
-    if not force:
-        join(_PROCESS_STOP_GRACE_SECONDS)
-    if alive():
-        terminate = getattr(process, "terminate", None)
-        if callable(terminate):
-            terminate()
-        join(_PROCESS_STOP_GRACE_SECONDS)
-    if alive():
-        kill = getattr(process, "kill", None)
-        if callable(kill):
-            kill()
-        join(_PROCESS_STOP_GRACE_SECONDS)
-    close = getattr(process, "close", None)
-    if not alive() and callable(close):
-        close()
+    exitcode = None
+    if process.pid is not None:
+        if not force:
+            process.join(_PROCESS_STOP_GRACE_SECONDS)
+        if process.is_alive():
+            process.terminate()
+            process.join(_PROCESS_STOP_GRACE_SECONDS)
+        if process.is_alive():
+            process.kill()
+            process.join(_PROCESS_STOP_GRACE_SECONDS)
+        if process.is_alive():
+            raise RuntimeError("KEYCHAIN_HELPER_STILL_RUNNING")
+        exitcode = process.exitcode
+    process.close()
+    return exitcode
 
 
 def run_security_provisioning_subprocess(
@@ -1160,13 +1264,39 @@ def _outcome_for_returncode(returncode: int) -> CredentialRetrievalOutcome:
     return CredentialRetrievalOutcome.BACKEND_UNAVAILABLE
 
 
+def _retrieval_guard(deadline):
+    return nullcontext() if deadline is None else deadline.guard()
+
+
+def _retrieval_timeout(configured: float, deadline) -> float:
+    if deadline is None:
+        return configured
+    deadline.require()
+    remaining = min(configured, deadline.remaining_seconds())
+    if remaining <= 0:
+        raise AppleKeychainCredentialError(CredentialRetrievalOutcome.TIMED_OUT)
+    return remaining
+
+
 def _retrieve_once(
     runner: SubprocessRunner,
     request: SubprocessRequest,
+    *,
+    deadline: object | None = None,
 ) -> bytes:
+    result = None
     try:
-        result = runner(request)
+        request = replace(request, timeout_seconds=_retrieval_timeout(request.timeout_seconds, deadline))
+        result = (
+            runner(request, deadline=deadline)
+            if runner is run_security_framework_subprocess and deadline is not None
+            else runner(request)
+        )
+        if deadline is not None:
+            deadline.require()
     except TimeoutError:
+        if isinstance(result, SubprocessResult):
+            result._take_output()
         raise AppleKeychainCredentialError(
             CredentialRetrievalOutcome.TIMED_OUT
         ) from None

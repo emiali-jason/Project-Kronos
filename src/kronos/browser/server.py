@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from contextlib import nullcontext
+from copy import deepcopy
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from http import HTTPStatus
@@ -56,7 +58,7 @@ from kronos.application.swing_native_review import (
     NativeReviewWorkflow,
     project_native_analysis_details,
 )
-from kronos.application.swing_visual_v3 import SwingVisualV3ReviewCycle
+from kronos.application.swing_visual_v3 import CompletedVisualV3Review, SwingVisualV3ReviewCycle
 from kronos.application.swing_visual_v3_live import SwingVisualV3LiveWorkflow, NativeReviewIntakeWorkflow
 from kronos.application.swing_mcx_supporting_context import (
     McxSupportingContextWorkflow,
@@ -624,6 +626,8 @@ class KronosBrowserServer(ThreadingHTTPServer):
         self._swing_projection_revision_value = (
             self._derive_swing_projection_revision()
         )
+        if self.native_intake is not None:
+            self.native_intake.prepare_page_state()
         self.application.register_analysis_reconciliation(self.reconcile_swing)
         super().__init__(address, _BrowserHandler)
 
@@ -669,6 +673,8 @@ class KronosBrowserServer(ThreadingHTTPServer):
         self.native_review.journal_snapshot()
         self.reconcile_progression()
         self.refresh_swing_projection_revision()
+        if self.native_intake is not None:
+            self.native_intake.prepare_page_state()
 
     def swing_notification_status(self):
         """Read-only Swing polling; never projects/retains Intraday sources."""
@@ -834,6 +840,40 @@ class KronosBrowserServer(ThreadingHTTPServer):
             for item in self.visual_v3.completed_snapshot()
             if self.native_intake is None or self.native_intake.downstream_applicable(item)
         )
+
+    def selected_opportunity_presentations(self, discovery, *, prepared=None,
+                                           authority_is_current=lambda: True):
+        """Select exact displayed identities before any historical projection."""
+        visual, windows = [], []
+        if discovery is None:
+            return (), ()
+        for assessment in discovery.assessments:
+            if assessment.status.value != "PROBABLE":
+                continue
+            key = (discovery.run_identity, assessment.canonical_instrument)
+            completed = self.visual_v3.completed_for(*key)
+            if completed is not None:
+                try:
+                    if type(completed) is not CompletedVisualV3Review:
+                        raise ValueError
+                    completed.__post_init__()
+                    requirement = completed.requirement
+                    if (requirement.native_run_identity, requirement.canonical_instrument) != key:
+                        raise ValueError
+                except (AttributeError, KeyError, TypeError, ValueError) as error:
+                    raise ValueError("SWING_TRADE_WINDOW_SELECTION_CORRUPT") from error
+                if requirement.thesis.native_assessment_sha256 != assessment.result_sha256:
+                    raise ValueError("SWING_TRADE_WINDOW_SELECTION_STALE")
+                if self.native_intake is None or self.native_intake.downstream_applicable(
+                        completed, _response=prepared):
+                    visual.append(present_visual_v3_review(completed))
+            # The Trade Window owner selects independently. The Visual V3 cache
+            # above cannot authorize or select its retained completion record.
+            window = self.trade_window.project_selected(*key, assessment.result_sha256,
+                authority_is_current=authority_is_current)
+            if window is not None:
+                windows.append(window)
+        return tuple(visual), tuple(windows)
 
     def swing_projection_revision(self) -> str:
         """Return the last atomically published Swing presentation revision."""
@@ -1401,27 +1441,28 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             })
             return
         if path == "/swing/opportunities":
-            snapshot, discovery, continuity, publication = (
-                self.server.application.opportunities_bundle_projection()
-            )
-            review = self.server.native_review.snapshot()
-            progression = self.server.progression_snapshot()
-            visual_v3 = self.server.visual_v3_presentations()
-            trade_windows = self.server.trade_window.projections()
-            refresh_reminders = self.server.refresh_reminders.snapshot()
-            self._html(render_opportunities(
-                snapshot,
-                discovery,
-                review,
-                progression,
-                visual_v3,
-                trade_windows,
-                refresh_reminders,
-                self.server.swing_projection_revision(),
-                continuity,
-                publication,
-                None if self.server.native_intake is None else self.server.native_intake.snapshot(),
-            ))
+            intake = self.server.native_intake
+            try:
+                with intake.page_response() if intake is not None else nullcontext() as prepared:
+                    snapshot, discovery, continuity, publication = (
+                        self.server.application.opportunities_bundle_projection())
+                    publication = deepcopy(publication)
+                    def current():
+                        _, native, bound_continuity, status = self.server.application.opportunities_bundle_projection()
+                        return native is discovery and bound_continuity is continuity and status == publication
+                    visual_v3, trade_windows = self.server.selected_opportunity_presentations(
+                        discovery, prepared=prepared, authority_is_current=current)
+                    body = render_opportunities(
+                        snapshot, discovery, self.server.native_review.snapshot(),
+                        self.server.progression_snapshot(), visual_v3, trade_windows,
+                        self.server.refresh_reminders.snapshot(), self.server.swing_projection_revision(),
+                        continuity, publication,
+                        None if intake is None else intake.snapshot(_response=prepared))
+                    if not current():
+                        raise ValueError("REVIEW_BINDING_STALE")
+                self._html(body)
+            except (OSError, ValueError) as error:
+                self._swing_page_unavailable(error)
             return
         if path in {"/notifications", "/notifications/swing", "/notifications/intraday"}:
             selected = {
@@ -1536,24 +1577,21 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             self._html(render_legacy_opportunities(snapshot))
             return
         if path == "/swing/v1-review":
-            review = self.server.native_review.snapshot()
-            self._html(render_v1_review(
-                snapshot,
-                self.server.v1_review.snapshot(),
-                review,
-                (
-                    self.server.visual_v3_live.snapshot(
-                        review.native_run_identity
-                    )
-                    if self.server.native_review_version() == "V3"
-                    else None
-                ),
-                self.server.mcx_supporting_context.snapshot(),
-                self.server.relative_context_for_run(
-                    review.native_run_identity
-                ) if review.native_run_identity is not None else None,
-                None if self.server.native_intake is None else self.server.native_intake.snapshot(),
-            ))
+            intake = self.server.native_intake
+            try:
+                with intake.page_response() if intake is not None else nullcontext() as prepared:
+                    review = self.server.native_review.snapshot()
+                    body = render_v1_review(
+                        snapshot, self.server.v1_review.snapshot(), review,
+                        (self.server.visual_v3_live.snapshot(review.native_run_identity)
+                         if intake is None and self.server.native_review_version() == "V3" else None),
+                        self.server.mcx_supporting_context.snapshot(),
+                        self.server.relative_context_for_run(review.native_run_identity)
+                        if intake is None and review.native_run_identity is not None else None,
+                        None if intake is None else intake.snapshot(_response=prepared))
+                self._html(body)
+            except (OSError, ValueError) as error:
+                self._swing_page_unavailable(error)
             return
         if path == "/swing/mtf-diagnostics":
             self._html(render_mtf_fact_diagnostics(
@@ -3738,15 +3776,19 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             if workflow is not None and market in {"NSE", "MCX"} and type(expected) is dict:
                 for instrument in expected:
                     workflow.errors[(market, instrument)] = error.code
+                workflow.prepare_page_state()
             self._text(HTTPStatus.CONFLICT,
                 "Review intake did not complete. Check the exact current Review workspace and its required chart/Answer package. "
                 "Retained evidence has not been rebound.\nReason: " + error.code)
             return
         except (OSError, ValueError, TypeError, KeyError):
+            if workflow is not None:
+                workflow.prepare_page_state()
             self._text(HTTPStatus.BAD_REQUEST,
                 "Review intake is unavailable for this request. Return to the current Review workspace before retrying.\n"
                 "Reason: REVIEW_INTAKE_UNAVAILABLE")
             return
+        workflow.prepare_page_state()
         self._redirect("/swing/v1-review")
 
     def _native_intake_preview(self):
@@ -4270,6 +4312,26 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             return fields["action_reference"][0]
         except (UnicodeError, ValueError):
             return None
+
+    def _swing_page_unavailable(self, error):
+        reason = NativeReviewIntakeWorkflow._reason(error, "REVIEW_BINDING_UNAVAILABLE")
+        intake = self.server.native_intake
+        if intake is not None and reason == "SWING_PUBLICATION_BUNDLE_INVALID":
+            # Preserve the existing unavailable-workspace presentation. No
+            # selected evidence, historical projection or intake control is used.
+            snapshot, native, _, publication = self.server.application.opportunities_bundle_projection()
+            publication = deepcopy(publication)
+            unavailable = intake.unavailable(error)
+            if urlsplit(self.path).path == "/swing/opportunities" and native is not None:
+                body = render_opportunities(snapshot, native, native_intake=unavailable)
+            else:
+                body = render_v1_review(snapshot, self.server.v1_review.snapshot(), native_intake=unavailable)
+            _, current, _, status = self.server.application.opportunities_bundle_projection()
+            if current is native and status == publication:
+                self._html(body)
+                return
+            reason = "REVIEW_BINDING_STALE"
+        self._text(HTTPStatus.CONFLICT, "Swing page unavailable. Reason: " + reason)
 
     def _html(self, body: str) -> None:
         self._respond(HTTPStatus.OK, body.encode("utf-8"), "text/html; charset=utf-8")

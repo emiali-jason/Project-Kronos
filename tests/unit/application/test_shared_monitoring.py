@@ -108,6 +108,150 @@ def test_concurrent_detach_is_one_release_and_retired_session_callbacks_are_iner
     assert current.ticks==[] and current.states==[] and hub.latest_market_ticks==()
 
 
+def test_blocked_transport_cleanup_remains_owned_until_current_generation_starts():
+    entered, release = Event(), Event()
+
+    class BlockingSession(Session):
+        def disconnect(self):
+            entered.set()
+            assert release.wait(5)
+            super().disconnect()
+
+    class BlockingCapability(Capability):
+        def open_monitoring_session(self, consumer):
+            value = BlockingSession(consumer)
+            self.sessions.append(value)
+            return value
+
+    hub, capability = SharedSwingMonitoringHub(), BlockingCapability()
+    old = hub.open(capability, Consumer())
+    old.subscribe((ONE,)); old.connect()
+    worker = Thread(target=old.disconnect)
+    worker.start()
+    try:
+        assert entered.wait(2)
+        cleanup = hub.status_document()["transport_cleanup"]
+        assert cleanup == {
+            "state": "RUNNING",
+            "retired_session_owned": True,
+            "subscription_count": 1,
+            "subscriptions": [{
+                "exchange": "NSE", "segment": "NSE", "trading_symbol": "ONE",
+            }],
+            "failure": "",
+        }
+        assert hub.status_document()["session_count"] == 1
+        current = hub.open(capability, Consumer())
+        current.subscribe((ONE,)); current.connect()
+        assert not current.active
+    finally:
+        release.set(); worker.join(5)
+    assert not worker.is_alive()
+    assert current.active
+    assert len(capability.sessions) == 2
+    assert hub.status_document()["transport_cleanup"]["state"] == "COMPLETE"
+    assert hub.status_document()["session_count"] == 1
+
+
+def test_failed_transport_cleanup_is_retained_and_fences_retry():
+    class FailedSession(Session):
+        def disconnect(self):
+            self.disconnections += 1
+            raise OSError("PRIVATE-TRANSPORT-FAILURE")
+
+    class FailedCapability(Capability):
+        def open_monitoring_session(self, consumer):
+            value = FailedSession(consumer)
+            self.sessions.append(value)
+            return value
+
+    hub, capability = SharedSwingMonitoringHub(), FailedCapability()
+    old = hub.open(capability, Consumer())
+    old.subscribe((ONE,)); old.connect()
+    callbacks = capability.sessions[0].consumer
+    with pytest.raises(OSError, match="PRIVATE-TRANSPORT-FAILURE"):
+        old.disconnect()
+
+    status = hub.status_document()
+    assert status["session_count"] == 1
+    assert status["active_session_count"] == 0
+    assert status["transport_cleanup"] == {
+        "state": "FAILED",
+        "retired_session_owned": True,
+        "subscription_count": 1,
+        "subscriptions": [{
+            "exchange": "NSE", "segment": "NSE", "trading_symbol": "ONE",
+        }],
+        "failure": "SHARED_MONITORING_TRANSPORT_CLEANUP_FAILED",
+    }
+    current = hub.open(capability, Consumer())
+    current.subscribe((ONE,))
+    with pytest.raises(ValueError, match="SHARED_MONITORING_CLEANUP_UNRESOLVED"):
+        current.connect()
+    callbacks.on_market_tick(tick(ONE))
+    assert current._consumer.ticks == []
+    assert len(capability.sessions) == 1
+
+
+def test_failed_connect_cleanup_retains_the_unclosed_transport():
+    class FailedActivationSession(Session):
+        def connect(self):
+            self.connections += 1
+            raise RuntimeError("INJECTED-CONNECT-FAILURE")
+
+        def disconnect(self):
+            self.disconnections += 1
+            raise RuntimeError("INJECTED-DISCONNECT-FAILURE")
+
+    class FailedActivationCapability(Capability):
+        def open_monitoring_session(self, consumer):
+            value = FailedActivationSession(consumer)
+            self.sessions.append(value)
+            return value
+
+    hub, capability = SharedSwingMonitoringHub(), FailedActivationCapability()
+    owner = hub.open(capability, Consumer())
+    owner.subscribe((ONE,))
+    with pytest.raises(RuntimeError, match="INJECTED-CONNECT-FAILURE"):
+        owner.connect()
+    status = hub.status_document()
+    assert status["transport_cleanup"]["state"] == "FAILED"
+    assert status["transport_cleanup"]["retired_session_owned"]
+    assert status["session_count"] == 1
+    capability.sessions[0].consumer.on_market_tick(tick(ONE))
+    assert owner._consumer.ticks == []
+
+
+def test_repeated_transport_cycles_leave_no_retired_owner():
+    hub, capability = SharedSwingMonitoringHub(), Capability()
+    for _ in range(25):
+        owner = hub.open(capability, Consumer())
+        owner.subscribe((ONE,)); owner.connect(); owner.disconnect()
+        status = hub.status_document()
+        assert status["session_count"] == 0
+        assert status["transport_cleanup"]["state"] == "COMPLETE"
+        assert not status["transport_cleanup"]["retired_session_owned"]
+    assert len(capability.sessions) == 25
+    assert all(session.disconnections == 1 for session in capability.sessions)
+
+
+def test_status_transport_ownership_is_local_and_never_reads_capability_state():
+    class InertStatusCapability(Capability):
+        inspect_forbidden = False
+
+        @property
+        def active(self):
+            if self.inspect_forbidden:
+                raise AssertionError("status must not inspect Provider capability")
+            return True
+
+    hub, capability = SharedSwingMonitoringHub(), InertStatusCapability()
+    registration = hub.open(capability, Consumer())
+    registration.subscribe((ONE,)); registration.connect()
+    capability.inspect_forbidden = True
+    assert hub.status_document()["owners"][0]["transport_active"] is True
+
+
 @pytest.mark.parametrize('product', ['SWING', 'INTRADAY'])
 def test_slice8_failed_final_unsubscribe_still_closes_retired_transport(monkeypatch, product):
     hub, capability = SharedSwingMonitoringHub(), Capability()

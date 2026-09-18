@@ -12,7 +12,9 @@ from dataclasses import asdict, dataclass
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from enum import StrEnum
+from functools import wraps
 from hashlib import sha256
+from threading import RLock
 import json
 import os
 from pathlib import Path
@@ -572,6 +574,22 @@ class NativeTradeWindowProjection:
             raise ValueError("NATIVE_TRADE_WINDOW_PROJECTION_INVALID")
 
 
+def _projection_change(operation):
+    """Fence readers without holding an owner lock over I/O or reconstruction."""
+    @wraps(operation)
+    def guarded(self, *args, **kwargs):
+        with self._projection_lock:
+            self._projection_generation += 1
+            self._projection_changes += 1
+        try:
+            return operation(self, *args, **kwargs)
+        finally:
+            with self._projection_lock:
+                self._projection_generation += 1
+                self._projection_changes -= 1
+    return guarded
+
+
 class SwingTradeWindowWorkflow:
     """Coordinate exact handoff and versioned Step-31 evidence only."""
 
@@ -682,6 +700,9 @@ class SwingTradeWindowWorkflow:
         self._shared_monitoring_hub: SharedSwingMonitoringHub | None = None
         self._monitoring_registrations: dict[str, object] = {}
         self._monitoring_consumers: dict[str, _Kr380SharedMonitoringConsumer] = {}
+        self._projection_lock = RLock()
+        self._projection_generation = 0
+        self._projection_changes = 0
         self._completed: dict[tuple[str, str], CompletedVisualV3Review] = {}
         self._handoffs: dict[tuple[str, str], Kr370Step31EligibilityHandoff] = {}
         self._plans: dict[tuple[str, str], TradePlanRecord] = {}
@@ -811,6 +832,7 @@ class SwingTradeWindowWorkflow:
             registration.disconnect()
         self._paper_observation_tracking.close()
 
+    @_projection_change
     def publish_portfolio_state(
         self,
         *,
@@ -841,6 +863,7 @@ class SwingTradeWindowWorkflow:
         self._portfolio_state = record
         return record
 
+    @_projection_change
     def publish_current_portfolio_state(
         self,
         review: NativeReviewWorkflowSnapshot,
@@ -917,6 +940,7 @@ class SwingTradeWindowWorkflow:
             ),
         )
 
+    @_projection_change
     def evaluate_current_risk(
         self,
         run_identity: str,
@@ -993,11 +1017,13 @@ class SwingTradeWindowWorkflow:
                 values.append((plan, risk))
         return tuple(values)
 
+    @_projection_change
     def mark_sponsor_controls_available(self, trade_plan_id: str) -> None:
         if trade_plan_id not in {item.trade_plan_id for item in self._plans.values()}:
             raise ValueError("SPONSOR_CONTROL_PLAN_UNAVAILABLE")
         self._sponsor_controls_ready.add(trade_plan_id)
 
+    @_projection_change
     def synchronize_sponsor_monitoring(
         self, active_position_ids: tuple[str, ...]
     ) -> None:
@@ -1055,6 +1081,7 @@ class SwingTradeWindowWorkflow:
             restored.append(plan.trade_plan_id)
         return tuple(restored)
 
+    @_projection_change
     def evaluate_current_entry_timing(
         self,
         run_identity: str,
@@ -1190,6 +1217,7 @@ class SwingTradeWindowWorkflow:
         self._kr380.update(self._production_kr380)
         self._models.update(self._production_models)
 
+    @_projection_change
     def restore(self, completed: tuple[CompletedVisualV3Review, ...]) -> None:
         """Restore only exact persisted V3.1/KR-370 lineage and ready plans."""
 
@@ -1197,10 +1225,11 @@ class SwingTradeWindowWorkflow:
             type(item) is not CompletedVisualV3Review for item in completed
         ):
             raise TypeError("SWING_TRADE_WINDOW_RESTORE_INVALID")
-        self._completed = {
-            (item.requirement.native_run_identity, item.requirement.canonical_instrument): item
-            for item in completed
-        }
+        keys = tuple((item.requirement.native_run_identity, item.requirement.canonical_instrument)
+                     for item in completed)
+        if len(set(keys)) != len(keys):
+            raise ValueError("SWING_TRADE_WINDOW_SELECTION_AMBIGUOUS")
+        self._completed = dict(zip(keys, completed))
         self._handoffs.clear()
         self._plans.clear()
         self._observations.clear()
@@ -1305,6 +1334,7 @@ class SwingTradeWindowWorkflow:
         self._merge_production_records()
         self._observation_research_v2.synchronize()
 
+    @_projection_change
     def synchronize_downstream(
         self,
         review: NativeReviewWorkflowSnapshot,
@@ -1469,6 +1499,7 @@ class SwingTradeWindowWorkflow:
                     sponsor_position_identity=closure.position_id,
                 )
 
+    @_projection_change
     def construct(
         self,
         completed: CompletedVisualV3Review,
@@ -1553,6 +1584,7 @@ class SwingTradeWindowWorkflow:
         self._observations[key] = observation
         return self.project(*key)
 
+    @_projection_change
     def retain_construction_attempt(
         self,
         *,
@@ -1608,8 +1640,59 @@ class SwingTradeWindowWorkflow:
         self, run_identity: str, canonical_instrument: str
     ) -> NativeTradeWindowProjection | None:
         completed = self._completed.get((run_identity, canonical_instrument))
+        return self._project_completed(completed)
+
+    def project_selected(self, run_identity, canonical_instrument, assessment_identity,
+                         *, authority_is_current=lambda: True):
+        """Project only one exact owner-selected immutable completion.
+
+        Absence is None; incompatible identity, active replacement and corrupt
+        authority are explicit failures. Publication checks run outside our lock.
+        Existing historical project() remains an independent full reader.
+        """
+        if (not is_swing_analysis_run_id(run_identity) or not isinstance(canonical_instrument, str)
+                or not isinstance(assessment_identity, str)
+                or re.fullmatch(r"[a-f0-9]{64}", assessment_identity) is None
+                or not callable(authority_is_current)):
+            raise ValueError("SWING_TRADE_WINDOW_SELECTION_INVALID")
+        key = (run_identity, canonical_instrument)
+        with self._projection_lock:
+            if self._projection_changes:
+                raise ValueError("SWING_TRADE_WINDOW_SELECTION_STALE")
+            if type(self._completed) is not dict:
+                raise ValueError("SWING_TRADE_WINDOW_SELECTION_CORRUPT")
+            generation = self._projection_generation
+            completed = self._completed.get(key)
+            if completed is None and key in self._completed:
+                raise ValueError("SWING_TRADE_WINDOW_SELECTION_CORRUPT")
+        if completed is not None:
+            try:
+                if type(completed) is not CompletedVisualV3Review:
+                    raise ValueError
+                completed.__post_init__()
+                requirement = completed.requirement
+                if (requirement.native_run_identity, requirement.canonical_instrument) != key:
+                    raise ValueError
+            except (AttributeError, TypeError, ValueError, KeyError) as error:
+                raise ValueError("SWING_TRADE_WINDOW_SELECTION_CORRUPT") from error
+            if requirement.thesis.native_assessment_sha256 != assessment_identity:
+                raise ValueError("SWING_TRADE_WINDOW_SELECTION_STALE")
+        if authority_is_current() is not True:
+            raise ValueError("SWING_TRADE_WINDOW_SELECTION_STALE")
+        # Never select again via project(run, instrument).
+        result = None if completed is None else self._project_completed(completed)
+        with self._projection_lock:
+            current = (not self._projection_changes and generation == self._projection_generation
+                       and type(self._completed) is dict and self._completed.get(key) is completed)
+        if not current or authority_is_current() is not True:
+            raise ValueError("SWING_TRADE_WINDOW_SELECTION_STALE")
+        return result
+
+    def _project_completed(self, completed):
         if completed is None or completed.promotion is None:
             return None
+        run_identity = completed.requirement.native_run_identity
+        canonical_instrument = completed.requirement.canonical_instrument
         promotion = completed.promotion
         base = dict(
             native_run_identity=run_identity,
@@ -1689,6 +1772,7 @@ class SwingTradeWindowWorkflow:
             ),
         )
 
+    @_projection_change
     def record_sponsor_observation_choice(
         self,
         run_identity: str,
@@ -1781,6 +1865,7 @@ class SwingTradeWindowWorkflow:
             for key in sorted(self._observation_decisions)
         )
 
+    @_projection_change
     def finalize_sponsor_observation_activation(
         self,
         run_identity: str,

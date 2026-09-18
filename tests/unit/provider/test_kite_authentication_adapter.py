@@ -1082,8 +1082,16 @@ def test_local_cleanup_failure_is_sanitized_and_remains_locally_terminal() -> No
     assert captured.value.__context__ is None
     assert client.reqsession.close_count == 1
     assert client.invalidate_count == 0
-    candidate.dispose_local()
+    with pytest.raises(ProviderConnectivityError) as repeated:
+        candidate.dispose_local()
+    assert repeated.value.code is ProviderErrorCode.INTERNAL_ADAPTER_DEFECT
+    assert repeated.value.__cause__ is None
+    assert repeated.value.__context__ is None
+    assert "raw local session detail" not in str(repeated.value)
+    assert candidate.local_cleanup_state == "FAILED"
     assert client.reqsession.close_count == 1
+    with pytest.raises(ProviderConnectivityError):
+        candidate.principal_evidence()
 
 
 def test_legacy_bridge_preserves_current_caller_without_remote_invalidation() -> None:
@@ -1210,3 +1218,437 @@ def test_governed_candidate_blocks_withheld_availability_before_profile() -> Non
         GovernedAuthenticationOperation.PROVIDER_AVAILABILITY_VERIFICATION
     ) == 0
     candidate.dispose_local()
+
+
+def test_pf02b_pre_exchange_adapter_disposes_local_owner() -> None:
+    adapter = create_kite_authentication_adapter(_API_KEY, _API_SECRET)
+    client = _FakeKiteClient.instances[0]
+
+    adapter.dispose_local()
+    adapter.dispose_local()
+
+    assert client.reqsession.close_count == 1
+    assert client.exchange_count == 0
+    assert client.invalidate_count == 0
+    assert client.api_key is None
+    assert client.access_token is None
+    with pytest.raises(ProviderConnectivityError):
+        adapter.login_url()
+    with pytest.raises(ProviderConnectivityError):
+        adapter.exchange(_REQUEST_TOKEN)
+    assert client.login_count == 0
+    assert client.exchange_count == 0
+
+
+def test_pf02b_candidate_cleanup_failure_remains_failed_without_retry() -> None:
+    _FakeKiteClient.close_effect = RuntimeError(
+        f"raw disposal:{_API_SECRET}:{_ACCESS_TOKEN}"
+    )
+    _, candidate, _, _, client = _candidate()
+    for _ in range(2):
+        with pytest.raises(ProviderConnectivityError) as captured:
+            candidate.dispose_local()
+        assert captured.value.code is ProviderErrorCode.INTERNAL_ADAPTER_DEFECT
+        assert _API_SECRET not in str(captured.value)
+        assert _ACCESS_TOKEN not in str(captured.value)
+        assert captured.value.__cause__ is None
+        assert captured.value.__context__ is None
+    assert client.reqsession.close_count == 1
+    assert client.invalidate_count == 0
+    with pytest.raises(ProviderConnectivityError):
+        candidate.principal_evidence()
+
+
+def test_pf02b_candidate_context_construction_failure_keeps_cleanup_owner(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import weakref
+
+    def fail_construction(self: object, *args: object, **kwargs: object) -> None:
+        raise RuntimeError(f"raw constructor:{_ACCESS_TOKEN}")
+
+    monkeypatch.setattr(
+        adapter_module._KiteCandidateContext, "__init__", fail_construction
+    )
+    adapter = create_kite_authentication_adapter(_API_KEY)
+    client = _FakeKiteClient.instances[0]
+    session = client.reqsession
+    reference = weakref.ref(client)
+    with pytest.raises(ProviderConnectivityError) as captured:
+        adapter.exchange_once(_FakeRequestToken(), OneUseSecretLease(_API_SECRET))
+    assert _ACCESS_TOKEN not in str(captured.value)
+    captured.value.__traceback__ = None
+    del captured
+    assert client.exchange_count == 1
+    _FakeKiteClient.instances.clear()
+    del client
+    gc.collect()
+
+    # Dropping the transferred handle without a completed close is an orphan.
+    assert reference() is not None or session.close_count == 1
+    adapter.dispose_local()
+    assert session.close_count == 1
+
+
+@pytest.mark.parametrize("response", [RuntimeError("raw exchange"), None, {}, []])
+def test_pf02b_failed_exchange_retains_client_until_local_disposal(
+    response: object,
+) -> None:
+    _FakeKiteClient.exchange_effect = response
+    adapter = create_kite_authentication_adapter(_API_KEY)
+    client = _FakeKiteClient.instances[0]
+    with pytest.raises(ProviderConnectivityError):
+        adapter.exchange_once(_FakeRequestToken(), OneUseSecretLease(_API_SECRET))
+    with pytest.raises(ProviderConnectivityError):
+        adapter.exchange_once(_FakeRequestToken(), OneUseSecretLease(_API_SECRET))
+    assert client.exchange_count == 1
+
+    adapter.dispose_local()
+    adapter.dispose_local()
+    assert adapter.local_cleanup_state == "COMPLETE"
+    assert client.reqsession.close_count == 1
+    assert client.invalidate_count == 0
+    assert client.api_key is None
+    assert client.access_token is None
+
+
+def test_pf02b_former_owner_disposal_preserves_transferred_capability() -> None:
+    adapter, candidate, _, _, client = _candidate()
+    evidence = candidate.principal_evidence()
+    assert evidence.compare_expected(_PRINCIPAL) is PrincipalBindingResult.MATCHED
+    capability = candidate.issue_read_only_capability()
+
+    adapter.dispose_local()
+    adapter.dispose_local()
+    assert adapter.local_cleanup_state == "COMPLETE"
+    assert client.reqsession.close_count == 0
+    assert client.access_token == _ACCESS_TOKEN
+    assert capability.active is True
+    with pytest.raises(ProviderConnectivityError):
+        adapter.login_url()
+
+    candidate.dispose_local()
+    candidate.dispose_local()
+    assert candidate.local_cleanup_state == "COMPLETE"
+    assert capability.active is False
+    assert client.reqsession.close_count == 1
+    assert client.access_token is None
+    assert client.invalidate_count == 0
+
+
+@pytest.mark.parametrize("owner_kind", ["adapter", "candidate"])
+def test_pf02b_concurrent_disposal_reports_pending_then_completes_once(
+    owner_kind: str,
+) -> None:
+    from threading import Event, Thread
+
+    if owner_kind == "adapter":
+        owner = create_kite_authentication_adapter(_API_KEY)
+        client = _FakeKiteClient.instances[0]
+    else:
+        _, owner, _, _, client = _candidate()
+    entered, release = Event(), Event()
+    errors: list[BaseException] = []
+    original_close = client.reqsession.close
+
+    def controlled_close() -> None:
+        entered.set()
+        assert release.wait(5), "controlled close was not released"
+        original_close()
+
+    client.reqsession.close = controlled_close
+
+    def first_disposal() -> None:
+        try:
+            owner.dispose_local()
+        except BaseException as error:
+            errors.append(error)
+
+    pending_done = Event()
+    pending_errors: list[BaseException] = []
+
+    def concurrent_disposal() -> None:
+        try:
+            owner.dispose_local()
+        except BaseException as error:
+            pending_errors.append(error)
+        finally:
+            pending_done.set()
+
+    thread = Thread(target=first_disposal)
+    second = Thread(target=concurrent_disposal)
+    thread.start()
+    try:
+        assert entered.wait(5)
+        assert thread.is_alive()
+        second.start()
+        assert pending_done.wait(5), "concurrent disposal blocked behind close"
+        assert len(pending_errors) == 1
+        assert isinstance(pending_errors[0], ProviderConnectivityError)
+        assert pending_errors[0].code is ProviderErrorCode.INTERNAL_ADAPTER_DEFECT
+        assert owner.local_cleanup_state == "PENDING"
+        assert client.reqsession.close_count == 0
+    finally:
+        release.set()
+        thread.join(5)
+        if second.ident is not None:
+            second.join(5)
+    assert not thread.is_alive()
+    assert not second.is_alive()
+    assert not errors
+    assert owner.local_cleanup_state == "COMPLETE"
+    owner.dispose_local()
+    assert client.reqsession.close_count == 1
+    assert client.invalidate_count == 0
+
+
+@pytest.mark.parametrize("owner_kind", ["adapter", "candidate"])
+def test_pf02b_failed_close_strongly_retains_unusable_owner(
+    owner_kind: str,
+) -> None:
+    import weakref
+
+    raw = f"local close:{_API_SECRET}:{_ACCESS_TOKEN}"
+    _FakeKiteClient.close_effect = RuntimeError(raw)
+    if owner_kind == "adapter":
+        owner = create_kite_authentication_adapter(_API_KEY, _API_SECRET)
+        client = _FakeKiteClient.instances[0]
+    else:
+        _, owner, _, _, client = _candidate()
+    session = client.reqsession
+    reference = weakref.ref(client)
+    with pytest.raises(ProviderConnectivityError) as captured:
+        owner.dispose_local()
+    assert captured.value.code is ProviderErrorCode.INTERNAL_ADAPTER_DEFECT
+    assert raw not in str(captured.value)
+    assert captured.value.__cause__ is None
+    assert captured.value.__context__ is None
+    captured.value.__traceback__ = None
+    del captured
+    # Remove the fake's error traceback and registry, so retained test machinery
+    # cannot conceal the loss of the actual production owner.
+    assert session.close_effect is not None
+    session.close_effect.__traceback__ = None
+    _FakeKiteClient.close_effect = None
+    _FakeKiteClient.instances.clear()
+    del client
+    gc.collect()
+
+    assert reference() is not None
+    assert owner.local_cleanup_state == "FAILED"
+    assert session.close_count == 1
+    with pytest.raises(ProviderConnectivityError):
+        owner.dispose_local()
+    assert session.close_count == 1
+    assert owner.local_cleanup_state == "FAILED"
+    retained_client = reference()
+    assert retained_client is not None
+    assert retained_client.api_key is None
+    assert retained_client.access_token is None
+    assert retained_client.invalidate_count == 0
+    if owner_kind == "adapter":
+        with pytest.raises(ProviderConnectivityError):
+            owner.login_url()
+        with pytest.raises(ProviderConnectivityError):
+            owner.exchange(_REQUEST_TOKEN)
+    else:
+        with pytest.raises(ProviderConnectivityError):
+            owner.principal_evidence()
+        with pytest.raises(ProviderConnectivityError):
+            owner.issue_read_only_capability()
+
+
+def test_pf02b_candidate_client_constructor_failure_preserves_cleanup_owner(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import weakref
+
+    def fail_construction(self: object, *args: object, **kwargs: object) -> None:
+        raise RuntimeError(f"raw client constructor:{_ACCESS_TOKEN}")
+
+    monkeypatch.setattr(
+        client_module._KiteCandidateClientHandle, "__init__", fail_construction
+    )
+    adapter = create_kite_authentication_adapter(_API_KEY)
+    client = _FakeKiteClient.instances[0]
+    session = client.reqsession
+    reference = weakref.ref(client)
+    with pytest.raises(ProviderConnectivityError) as captured:
+        adapter.exchange_once(_FakeRequestToken(), OneUseSecretLease(_API_SECRET))
+    assert _ACCESS_TOKEN not in str(captured.value)
+    captured.value.__traceback__ = None
+    del captured
+    assert client.exchange_count == 1
+    _FakeKiteClient.instances.clear()
+    del client
+    gc.collect()
+    assert reference() is not None or session.close_count == 1
+
+    adapter.dispose_local()
+    assert adapter.local_cleanup_state == "COMPLETE"
+    assert session.close_count == 1
+
+
+def test_pf02b_candidate_construction_and_cleanup_failure_keep_failed_owner(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail_construction(self: object, *args: object, **kwargs: object) -> None:
+        raise RuntimeError(f"raw context constructor:{_ACCESS_TOKEN}")
+
+    monkeypatch.setattr(
+        adapter_module._KiteCandidateContext, "__init__", fail_construction
+    )
+    _FakeKiteClient.close_effect = RuntimeError("raw close after construction")
+    adapter = create_kite_authentication_adapter(_API_KEY)
+    client = _FakeKiteClient.instances[0]
+    with pytest.raises(ProviderConnectivityError):
+        adapter.exchange_once(_FakeRequestToken(), OneUseSecretLease(_API_SECRET))
+    for _ in range(2):
+        with pytest.raises(ProviderConnectivityError):
+            adapter.dispose_local()
+        assert adapter.local_cleanup_state == "FAILED"
+    assert client.exchange_count == 1
+    assert client.reqsession.close_count == 1
+    assert client.invalidate_count == 0
+
+
+def test_pf02b_close_request_during_exchange_preserves_actual_worker_ownership(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from threading import Event, Thread
+
+    entered, release = Event(), Event()
+    original_exchange = _FakeKiteClient.generate_session
+    results: list[object] = []
+    errors: list[BaseException] = []
+
+    def controlled_exchange(
+        self: _FakeKiteClient, request_token: str, api_secret: str
+    ) -> object:
+        entered.set()
+        assert release.wait(5), "controlled exchange was not released"
+        return original_exchange(self, request_token, api_secret)
+
+    monkeypatch.setattr(_FakeKiteClient, "generate_session", controlled_exchange)
+    adapter = create_kite_authentication_adapter(_API_KEY)
+    client = _FakeKiteClient.instances[0]
+
+    def exchange() -> None:
+        try:
+            results.append(
+                adapter.exchange_once(
+                    _FakeRequestToken(), OneUseSecretLease(_API_SECRET)
+                )
+            )
+        except BaseException as error:
+            errors.append(error)
+
+    dispose_done = Event()
+    dispose_errors: list[BaseException] = []
+
+    def dispose() -> None:
+        try:
+            adapter.dispose_local()
+        except BaseException as error:
+            dispose_errors.append(error)
+        finally:
+            dispose_done.set()
+
+    thread = Thread(target=exchange)
+    disposer = Thread(target=dispose)
+    thread.start()
+    try:
+        assert entered.wait(5)
+        disposer.start()
+        assert dispose_done.wait(5), "disposal waited for the SDK worker"
+        assert len(dispose_errors) == 1
+        assert isinstance(dispose_errors[0], ProviderConnectivityError)
+        assert thread.is_alive()
+        assert adapter.local_cleanup_state == "PENDING"
+        assert client.reqsession.close_count == 0
+        with pytest.raises(ProviderConnectivityError):
+            adapter.exchange_once(_FakeRequestToken(), OneUseSecretLease(_API_SECRET))
+        assert client.exchange_count == 0
+    finally:
+        release.set()
+        thread.join(5)
+        if disposer.ident is not None:
+            disposer.join(5)
+    assert not thread.is_alive()
+    assert not disposer.is_alive()
+    assert not results
+    assert len(errors) == 1
+    assert isinstance(errors[0], ProviderConnectivityError)
+    assert client.exchange_count == 1
+    adapter.dispose_local()
+    assert adapter.local_cleanup_state == "COMPLETE"
+    assert client.reqsession.close_count == 1
+    assert client.api_key is None
+    assert client.access_token is None
+    assert client.invalidate_count == 0
+
+
+@pytest.mark.parametrize("close_fails", [False, True])
+def test_pf02b_hook_setup_failure_retains_disposable_unusable_sdk_owner(
+    close_fails: bool, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import weakref
+
+    raw = f"hook setup:{_API_SECRET}:{_ACCESS_TOKEN}"
+
+    def fail_hook(self: _FakeKiteClient, hook: object) -> None:
+        raise RuntimeError(raw)
+
+    monkeypatch.setattr(_FakeKiteClient, "set_session_expiry_hook", fail_hook)
+    if close_fails:
+        _FakeKiteClient.close_effect = RuntimeError(f"close setup:{_ACCESS_TOKEN}")
+    adapter = create_kite_authentication_adapter(_API_KEY, _API_SECRET)
+    client = _FakeKiteClient.instances[0]
+    session = client.reqsession
+    reference = weakref.ref(client)
+    for operation in (
+        adapter.login_url,
+        lambda: adapter.exchange_once(
+            _FakeRequestToken(), OneUseSecretLease(_API_SECRET)
+        ),
+    ):
+        with pytest.raises(ProviderConnectivityError) as captured:
+            operation()
+        assert captured.value.code is ProviderErrorCode.INTERNAL_ADAPTER_DEFECT
+        assert _API_SECRET not in str(captured.value)
+        assert _ACCESS_TOKEN not in str(captured.value)
+        assert captured.value.__cause__ is None
+        assert captured.value.__context__ is None
+        captured.value.__traceback__ = None
+        del captured
+    assert client.login_count == 0
+    assert client.exchange_count == 0
+    assert client.invalidate_count == 0
+
+    if close_fails:
+        with pytest.raises(ProviderConnectivityError) as captured:
+            adapter.dispose_local()
+        assert captured.value.code is ProviderErrorCode.INTERNAL_ADAPTER_DEFECT
+        assert _ACCESS_TOKEN not in str(captured.value)
+        assert captured.value.__cause__ is None
+        assert captured.value.__context__ is None
+        captured.value.__traceback__ = None
+        del captured
+        assert adapter.local_cleanup_state == "FAILED"
+        assert session.close_effect is not None
+        session.close_effect.__traceback__ = None
+        _FakeKiteClient.close_effect = None
+        _FakeKiteClient.instances.clear()
+        del client
+        gc.collect()
+        assert reference() is not None
+        with pytest.raises(ProviderConnectivityError):
+            adapter.dispose_local()
+        assert adapter.local_cleanup_state == "FAILED"
+    else:
+        adapter.dispose_local()
+        adapter.dispose_local()
+        assert adapter.local_cleanup_state == "COMPLETE"
+        assert client.api_key is None
+        assert client.access_token is None
+    assert session.close_count == 1

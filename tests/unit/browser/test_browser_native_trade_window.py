@@ -838,3 +838,99 @@ def test_live_and_ignore_presentations_never_offer_paper_observation_track(
             ),
         )
         assert "START PAPER OBSERVATION" not in html
+
+
+# C1 selection is owned here; a sibling Visual V3 cache cannot authorize it.
+def _selected_window(tmp_path):
+    completed = _completed(tmp_path)
+    owner = SwingTradeWindowWorkflow(LocalKr370Step31HandoffStore(tmp_path / "handoffs"),
+                                    LocalTradePlanStore(tmp_path / "plans"))
+    owner.restore((completed,))
+    key = (completed.requirement.native_run_identity, completed.requirement.canonical_instrument,
+           completed.requirement.thesis.native_assessment_sha256)
+    return owner, completed, key
+
+
+def test_selected_window_exact_capture_and_existing_project_compatibility(tmp_path, monkeypatch):
+    owner, completed, key = _selected_window(tmp_path)
+    expected = owner.project(*key[:2])
+    seen = []
+    original = owner._project_completed
+    def project(record):
+        seen.append(record)
+        return original(record)
+    monkeypatch.setattr(owner, "_project_completed", project)
+    monkeypatch.setattr(owner, "project", lambda *a: pytest.fail("second selection"))
+    assert owner.project_selected(*key) == expected
+    assert len(seen) == 1 and seen[0] is completed
+
+
+def test_selected_window_wrong_assessment_does_no_reconstruction(tmp_path, monkeypatch):
+    owner, _, key = _selected_window(tmp_path)
+    monkeypatch.setattr(owner, "_project_completed", lambda *a: pytest.fail("undisplayed history"))
+    with pytest.raises(ValueError, match="SELECTION_STALE"):
+        owner.project_selected(*key[:2], "0" * 64)
+    assert owner.project_selected("SWING-RUN-" + "F" * 32, key[1], key[2]) is None
+
+
+@pytest.mark.parametrize("corruption", ["wrong_type", "null", "wrong_key", "binding"])
+def test_selected_window_corrupt_authority_is_not_absence(tmp_path, monkeypatch, corruption):
+    owner, completed, key = _selected_window(tmp_path)
+    if corruption == "wrong_type":
+        owner._completed[key[:2]] = object()
+    elif corruption == "null":
+        owner._completed[key[:2]] = None
+    elif corruption == "wrong_key":
+        key = ("SWING-RUN-" + "A" * 32, key[1], key[2])
+        owner._completed[key[:2]] = completed
+    else:
+        object.__setattr__(completed, "responses", ())
+    monkeypatch.setattr(owner, "_project_completed", lambda *a: pytest.fail("corrupt reconstruction"))
+    with pytest.raises(ValueError, match="SELECTION_CORRUPT"):
+        owner.project_selected(*key)
+
+
+def test_selected_window_duplicate_authority_is_rejected(tmp_path):
+    owner, completed, _ = _selected_window(tmp_path)
+    with pytest.raises(ValueError, match="SELECTION_AMBIGUOUS"):
+        owner.restore((completed, completed))
+
+
+@pytest.mark.parametrize("change", ["completion", "publication"])
+def test_selected_window_race_fences_and_releases_owner_lock(tmp_path, monkeypatch, change):
+    from threading import Event, Thread
+    owner, completed, key = _selected_window(tmp_path)
+    entered, release, lock_available = Event(), Event(), Event()
+    authority = [True]
+    results, failures = [], []
+    original = owner._project_completed
+    def blocked(record):
+        assert record is completed
+        entered.set()
+        assert release.wait(10)
+        return original(record)
+    monkeypatch.setattr(owner, "_project_completed", blocked)
+    def read():
+        try:
+            results.append(owner.project_selected(*key, authority_is_current=lambda: authority[0]))
+        except Exception as error:
+            failures.append(error)
+    reader = Thread(target=read); reader.start()
+    def status():
+        with owner._projection_lock:
+            owner.paper_observation_compact_status()
+            lock_available.set()
+    probe = Thread(target=status)
+    try:
+        assert entered.wait(5)
+        probe.start()
+        assert lock_available.wait(2), "projection retained the owner lock"
+        if change == "completion":
+            owner.restore(())
+        else:
+            authority[0] = False
+    finally:
+        release.set(); reader.join(10)
+        if probe.ident is not None: probe.join(5)
+    assert not reader.is_alive() and not results
+    assert len(failures) == 1 and str(failures[0]) == "SWING_TRADE_WINDOW_SELECTION_STALE"

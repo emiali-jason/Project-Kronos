@@ -273,6 +273,9 @@ def test_restoration_failure_is_bounded_and_does_not_reauthenticate():
         'state': 'FAILED',
         'connection_generation': 1,
         'failure': 'SPONSOR_OPERABILITY_RESTORATION_FAILED',
+        'work_owned': False,
+        'owned_work_count': 0,
+        'cleanup_state': 'COMPLETE',
     }
     assert not app.connect_provider()
     factory.assert_called_once_with()
@@ -455,11 +458,14 @@ def test_obsolete_inflight_completion_cannot_overwrite_new_attempt():
     try:
         assert entered.wait(5)
         app.close()
-        app.connect_provider()
+        assert not app.connect_provider()
     finally:
         release.set(); thread.join(5)
     assert not thread.is_alive()
     assert first.ended and not restored
+    assert app.snapshot().provider_state is ProviderConnectionState.DISCONNECTED
+    assert queue == []
+    assert app.connect_provider()
     assert app.snapshot().provider_state is ProviderConnectionState.CONNECTING
     _drain(queue)
     assert restored == [second.capability]
@@ -474,11 +480,157 @@ def test_disconnect_reconnect_uses_new_capability_only():
     app.connect_provider(); queue.pop(0)()
     old_restoration = queue.pop(0)
     assert app.disconnect_provider()
-    app.connect_provider(); queue.pop(0)()
+    assert app.sponsor_operability_restoration_status()['work_owned']
+    assert not app.connect_provider()
+    old_restoration()
+    assert not app.sponsor_operability_restoration_status()['work_owned']
+    assert app.connect_provider(); queue.pop(0)()
     new_restoration = queue.pop(0)
     old_restoration(); new_restoration()
     assert restored == [second.capability]
     assert not first.capability.active and second.capability.active
+
+
+def test_failed_monitoring_close_retains_owner_and_still_disposes_provider():
+    queue = []
+    provider = _Provider()
+    workflow = Mock()
+    workflow.close_monitoring.side_effect = RuntimeError('PRIVATE-CLOSE-FAILURE')
+    app = SwingOpportunitiesApplication(
+        lambda: provider,
+        background_runner=lambda operation, name: queue.append(operation),
+    )
+    app.register_progression_watch_workflow(workflow)
+    assert app.connect_provider()
+    queue.pop(0)()
+    queue.pop(0)()
+    assert app.disconnect_provider()
+    status = app.connection_attempt_status()
+    assert status['cleanup_state'] == 'PENDING'
+    assert status['resources_pending']
+    assert 'progression_monitoring' in status['unresolved_resources']
+    assert provider.ended
+    assert not app.connect_provider()
+
+
+def test_failed_restoration_cleanup_survives_worker_completion():
+    queue = []
+    provider = _Provider()
+    workflow = Mock()
+    workflow.restore_active.side_effect = RuntimeError('INJECTED-RESTORE-FAILURE')
+    workflow.close_monitoring.side_effect = RuntimeError('INJECTED-CLOSE-FAILURE')
+    app = SwingOpportunitiesApplication(
+        lambda: provider,
+        background_runner=lambda operation, name: queue.append(operation),
+    )
+    app.register_progression_watch_workflow(workflow)
+    assert app.connect_provider(); queue.pop(0)(); queue.pop(0)()
+    status = app.connection_attempt_status()
+    assert status['cleanup_state'] == 'PENDING'
+    assert 'sponsor_restoration_cleanup' in status['unresolved_resources']
+    assert not status['worker_active']
+    assert app.sponsor_operability_restoration_status()['state'] == 'FAILED'
+    assert not app.sponsor_operability_restoration_status()['work_owned']
+    assert app.disconnect_provider()
+    assert not app.connect_provider()
+
+
+def test_queued_restoration_ownership_is_exactly_once_and_stale_publication_is_inert():
+    queue, restored = [], []
+    first, second = _Provider(), _Provider()
+    providers = iter((first, second))
+    app = SwingOpportunitiesApplication(
+        lambda: next(providers),
+        background_runner=lambda operation, name: queue.append(operation),
+    )
+    app.register_sponsor_operability_restorer(restored.append)
+    assert app.connect_provider(); queue.pop(0)()
+    stale = queue.pop(0)
+    status = app.sponsor_operability_restoration_status()
+    assert status['state'] == 'PENDING'
+    assert status['owned_work_count'] == 1
+    assert app.disconnect_provider()
+    stale(); stale()
+    assert restored == []
+    assert app.sponsor_operability_restoration_status()['owned_work_count'] == 0
+    assert app.connect_provider(); queue.pop(0)(); queue.pop(0)()
+    assert restored == [second.capability]
+
+
+def test_durable_completion_failure_is_attempted_once_owned_and_never_restores(
+    tmp_path, monkeypatch
+):
+    jobs, restored, completion_attempts = [], [], []
+    provider = _Provider()
+    connection_governance = governance(tmp_path)
+    original_result = connection_governance.store.result
+
+    def fail_completion(request, phase, state, at):
+        if phase == "completion":
+            completion_attempts.append(state)
+            raise OSError("INJECTED-DURABLE-COMPLETION-FAILURE")
+        return original_result(request, phase, state, at)
+
+    monkeypatch.setattr(connection_governance.store, "result", fail_completion)
+    app = SwingOpportunitiesApplication(
+        lambda: provider,
+        connection_governance=connection_governance,
+        background_runner=lambda operation, name: jobs.append((name, operation)),
+    )
+    app.register_sponsor_operability_restorer(restored.append)
+    assert app.connect_provider()
+    jobs.pop(0)[1]()
+
+    status = app.connection_attempt_status()
+    assert completion_attempts == ["SUCCESS"]
+    assert status["durable_completion"] == {
+        "state": "FAILED", "disposition": "SUCCESS", "generation": 1,
+    }
+    assert status["cleanup_state"] == "PENDING"
+    assert "connection_completion" in status["unresolved_resources"]
+    assert status["restoration_readiness"]["state"] == "STALE"
+    assert not status["restoration_readiness"]["ready"]
+    assert app.snapshot().provider_state is ProviderConnectionState.ERROR
+    assert provider.ended and restored == [] and jobs == []
+    assert "completion" not in connection_governance.store.read(
+        status["request_identity"]
+    )
+    for _ in range(3):
+        assert not app.connect_provider()
+    assert completion_attempts == ["SUCCESS"]
+
+
+def test_confirmed_failure_cleanup_allows_fresh_success_and_restoration(tmp_path):
+    class FailedProvider(_Provider):
+        def complete_callback(self, attempt):
+            raise RuntimeError("INJECTED-AUTHENTICATION-FAILURE")
+
+    first, second = FailedProvider(), _Provider()
+    providers = iter((first, second))
+    jobs, restored = [], []
+    connection_governance = governance(tmp_path)
+    app = SwingOpportunitiesApplication(
+        lambda: next(providers),
+        connection_governance=connection_governance,
+        background_runner=lambda operation, name: jobs.append((name, operation)),
+    )
+    app.register_sponsor_operability_restorer(restored.append)
+
+    assert app.connect_provider(); jobs.pop(0)[1]()
+    failed = app.connection_attempt_status()
+    assert failed["durable_completion"]["state"] == "PERSISTED"
+    assert failed["durable_completion"]["disposition"] == "FAILURE"
+    assert failed["cleanup_state"] == "COMPLETE"
+    assert app.connect_provider(); jobs.pop(0)[1]()
+    authenticated = app.connection_attempt_status()
+    assert authenticated["durable_completion"]["disposition"] == "SUCCESS"
+    assert authenticated["restoration_readiness"]["state"] == "PENDING"
+    assert not authenticated["restoration_readiness"]["ready"]
+    jobs.pop(0)[1]()
+    ready = app.connection_attempt_status()
+    assert ready["restoration_readiness"]["state"] == "SUCCEEDED"
+    assert ready["restoration_readiness"]["ready"]
+    assert restored == [second.capability]
 
 
 @pytest.mark.parametrize('error,expected', [
@@ -630,3 +782,39 @@ def test_existing_registration_cannot_claim_a_different_instrument_binding(tmp_p
     assert result.monitoring_reason == 'GOVERNED_INSTRUMENT_BINDING_INVALID'
     assert c.cap.sessions[0].subscribed == [(c.instrument,)]
     assert c.hub.subscription_count == 1
+
+
+def test_disconnect_during_blocked_restoration_denies_retry_until_worker_returns():
+    entered, release = Event(), Event()
+    jobs, restored = [], []
+    first, second = _Provider(), _Provider()
+    providers = iter((first, second))
+    app = SwingOpportunitiesApplication(lambda: next(providers),
+        background_runner=lambda operation, name: jobs.append((name, operation)))
+    def restore(capability):
+        entered.set()
+        assert release.wait(5)
+        restored.append(capability)
+    app.register_sponsor_operability_restorer(restore)
+    assert app.connect_provider()
+    jobs.pop(0)[1]()
+    thread = Thread(target=jobs.pop(0)[1])
+    thread.start()
+    try:
+        assert entered.wait(2)
+        assert app.connection_attempt_status()["state"] == "SUCCEEDED"
+        assert app.connection_attempt_status()["restoration_worker_active"]
+        assert app.disconnect_provider()
+        for _ in range(3):
+            assert not app.connect_provider()
+        assert jobs == []
+        assert app.connection_attempt_status()["cleanup_state"] == "PENDING"
+    finally:
+        release.set()
+        thread.join(2)
+    assert not thread.is_alive()
+    assert not app.connection_attempt_status()["restoration_worker_active"]
+    assert app.connect_provider()
+    jobs.pop(0)[1]()
+    assert app.authenticated_read_only_capability() is second.capability
+    app.close()

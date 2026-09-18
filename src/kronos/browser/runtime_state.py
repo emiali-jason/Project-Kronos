@@ -53,6 +53,20 @@ def status_document(server):
     provider_runtime = getattr(server, "provider_runtime", None)
     provider_status = ({"capability_state": "NOT_EXPOSED", "operation_authority": "NONE"}
                        if provider_runtime is None else provider_runtime.read_only_status())
+    connection_attempt = getattr(server.application, "connection_attempt_status", None)
+    restoration_status = getattr(
+        server.application, "sponsor_operability_restoration_status", None
+    )
+    restoration = (
+        dict(restoration_status()) if callable(restoration_status) else {
+            "state": "NOT_EXPOSED",
+            "connection_generation": None,
+            "failure": "",
+            "work_owned": False,
+            "owned_work_count": 0,
+            "cleanup_state": "COMPLETE",
+        }
+    )
     return {"schema": SCHEMA, "policy": POLICY, "policy_checksum": POLICY_CHECKSUM,
         "process": None if governance is None else {
             "pid": governance.process.pid,
@@ -60,8 +74,17 @@ def status_document(server):
             "source_state": governance.process.source_state},
         "maintenance": None if governance is None else governance.maintenance_status(),
         "rest_authentication": server.application.snapshot().provider_state.value,
+        "connection_attempt": connection_attempt() if callable(connection_attempt) else None,
         "rest_capability": provider_status["capability_state"],
         "provider_runtime": provider_status,
+        "restoration_readiness": {
+            "state": restoration["state"],
+            "ready": restoration["state"] == "SUCCEEDED",
+            "connection_generation": restoration["connection_generation"],
+            "failure": restoration["failure"],
+            "work_owned": restoration["work_owned"],
+            "cleanup_state": restoration["cleanup_state"],
+        },
         "monitoring": server.swing_monitoring_hub.status_document(),
         "owner_restoration": getattr(server, "monitoring_restoration_state", "NOT_ASSESSED"),
         "startup_retained_owner_evidence": getattr(server, "startup_monitoring_owners", []),
