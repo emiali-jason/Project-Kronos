@@ -8,6 +8,7 @@ import json
 from pathlib import Path
 from threading import RLock
 from uuid import uuid4
+from weakref import WeakValueDictionary
 
 from kronos.intraday.refresh_v2 import (
     REFRESH_V2_PROVENANCE_VERSION,
@@ -18,12 +19,28 @@ from kronos.intraday.refresh_v2 import (
 )
 
 
+# One bounded derived selection per live owner root, never a durable current pointer.
+_LATEST = WeakValueDictionary()
+_LATEST_GUARD = RLock()
+_MAX_LATEST_BYTES = 256 * 1024
+
+
+class _Latest:
+    def __init__(self):
+        self.lock = RLock()
+        self.selected = None
+        self.failure = None
+
+
 class RefreshV2ProvenanceStore:
     def __init__(self, root: Path) -> None:
         if not isinstance(root, Path) or not root.is_absolute() or root == Path("/"):
             raise ValueError("INTRADAY_PROBABLES_V2_PROVENANCE_ROOT_INVALID")
         self._root = root / "refresh-v2" / "request-provenance"
-        self._lock = RLock()
+        with _LATEST_GUARD:
+            self._latest = _LATEST.setdefault(self._root.resolve(), _Latest())
+        self._lock = self._latest.lock
+        self.restore_latest()
 
     @property
     def root(self) -> Path:
@@ -35,10 +52,16 @@ class RefreshV2ProvenanceStore:
         path = self._path(record.provenance_identity)
         encoded = _encoded(record)
         with self._lock:
-            _retain_immutable(path, encoded)
-            if primary:
-                index = self._request_index(record.request_identity)
-                _retain_immutable(index, encoded)
+            try:
+                _retain_immutable(path, encoded)
+                if primary:
+                    index = self._request_index(record.request_identity)
+                    _retain_immutable(index, encoded)
+                self._select_latest(record, encoded)
+            except Exception:
+                self._latest.selected = None
+                self._latest.failure = "INTRADAY_PROBABLES_V2_PROVENANCE_PREPARATION_FAILED"
+                raise
         return path
 
     def load_for_request(self, request_identity: str) -> RefreshV2ProvenanceRecord | None:
@@ -57,16 +80,57 @@ class RefreshV2ProvenanceStore:
         values = (self.load(path.stem) for path in sorted(records.glob("*.json")))
         return tuple(value for value in values if value.resulting_probables_identity == run_identity)
 
+    def _select_latest(self, record, payload):
+        if self._latest.failure is not None:
+            return
+        previous = self._latest.selected
+        key = lambda item: (item.operation_completed_at, item.provenance_identity)
+        if previous is None or key(record) >= key(previous[0]):
+            if len(payload) > _MAX_LATEST_BYTES:
+                self._latest.selected = None
+                self._latest.failure = "INTRADAY_PROBABLES_V2_PROVENANCE_CAPACITY"
+            else:
+                self._latest.selected = (record, payload)
+
+    def restore_latest(self):
+        """Explicit restoration boundary: stream history once, retain one result."""
+        with self._lock:
+            self._latest.selected = None
+            self._latest.failure = None
+            try:
+                for path in (self._root / "records").glob("*.json"):
+                    with path.open("rb") as handle:
+                        payload = handle.read(_MAX_LATEST_BYTES + 1)
+                    if len(payload) > _MAX_LATEST_BYTES:
+                        raise ValueError("INTRADAY_PROBABLES_V2_PROVENANCE_CAPACITY")
+                    record = _decoded(payload)
+                    self._select_latest(record, payload)
+            except Exception:
+                self._latest.selected = None
+                self._latest.failure = "INTRADAY_PROBABLES_V2_PROVENANCE_PREPARATION_FAILED"
+                raise
+
     def latest(self) -> RefreshV2ProvenanceRecord | None:
-        records = self._root / "records"
-        if not records.exists():
-            return None
-        values = tuple(_decoded(path.read_bytes()) for path in records.glob("*.json"))
-        return max(
-            values,
-            key=lambda item: (item.operation_completed_at, item.provenance_identity),
-            default=None,
-        )
+        """Observe the prepared latest record; never recover or scan history."""
+        with self._lock:
+            if self._latest.failure is not None:
+                raise ValueError(self._latest.failure)
+            selected = self._latest.selected
+            if selected is None:
+                return None
+            record, expected = selected
+            try:
+                with self._path(record.provenance_identity).open("rb") as handle:
+                    actual = handle.read(_MAX_LATEST_BYTES + 1)
+                if actual != expected:
+                    # Preserve the owner's precise codec failure on corrupt bytes.
+                    _decoded(actual)
+                    raise ValueError("INTRADAY_PROBABLES_V2_PROVENANCE_CHANGED")
+            except Exception:
+                self._latest.selected = None
+                self._latest.failure = "INTRADAY_PROBABLES_V2_PROVENANCE_PREPARATION_FAILED"
+                raise
+            return record
 
     def _path(self, identity: str) -> Path:
         _component(identity)

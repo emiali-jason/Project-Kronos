@@ -79,11 +79,20 @@ class IntradayReviewV2OperationalControl:
         return self._application
 
     def status_document(self, *, snapshot=None) -> dict[str, object]:
+        with self._application.page_read_scope():
+            return self._status_document(snapshot=snapshot)
+
+    def _status_document(self, *, snapshot=None) -> dict[str, object]:
         if snapshot is not None and type(snapshot) is not IntradayReviewV2Snapshot:
             raise ValueError("INTRADAY_REVIEW_V2_STATUS_SNAPSHOT_INVALID")
         with self._state_lock:
             active = self._active_operation_identity
-        latest = self._store.latest()
+        try:
+            latest = self._store.latest()
+            preparation_failure = None
+        except (ValueError, OSError):
+            latest = None
+            preparation_failure = "INTRADAY_REVIEW_V2_PROVENANCE_UNAVAILABLE"
         try:
             snapshot = self._application.snapshot() if snapshot is None else snapshot
             currentness = self._application.currentness()
@@ -96,6 +105,7 @@ class IntradayReviewV2OperationalControl:
             currentness = None
             currentness_failure = error.failure.value
         state = (
+            "LAST_FAILURE" if preparation_failure is not None else
             "RUNNING"
             if active is not None
             else "NOT_YET_RUN"
@@ -111,6 +121,7 @@ class IntradayReviewV2OperationalControl:
             "request_contract_identity": REVIEW_V2_CREATE_REQUEST_IDENTITY,
             "request_contract_version": REVIEW_V2_CREATE_REQUEST_VERSION,
             "state": state,
+            "preparation_failure": preparation_failure,
             "active_operation_identity": active,
             "source_probables_run_identity": snapshot.probables_run_identity,
             "cycle_count": len(snapshot.candidates),

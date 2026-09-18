@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
+from contextvars import ContextVar
+from functools import wraps
 from pathlib import Path
 from threading import RLock
 from uuid import uuid4
@@ -24,6 +27,36 @@ class VisualReconciliationPersistenceError(ValueError):
     pass
 
 
+_PAGE_READ = ContextVar(__name__ + ".page_read", default=None)
+
+
+def _page_bytes(path):
+    scope = _PAGE_READ.get()
+    return path.read_bytes() if scope is None else scope.read(path)
+
+
+def _page_exists(path):
+    scope = _PAGE_READ.get()
+    return path.exists() if scope is None else scope.exists(path)
+
+
+def _page_changed():
+    scope = _PAGE_READ.get()
+    if scope is not None:
+        scope.invalidate()
+
+
+def _page_once(method):
+    @wraps(method)
+    def selected(self, *args, **kwargs):
+        scope = _PAGE_READ.get()
+        if scope is None:
+            return method(self, *args, **kwargs)
+        return scope.memo((method, self, args, tuple(kwargs.items())),
+                          lambda: method(self, *args, **kwargs))
+    return selected
+
+
 class VisualReconciliationStore:
     """Retain immutable records and explicit per-cycle current pointers."""
 
@@ -33,6 +66,16 @@ class VisualReconciliationStore:
         self._root = root
         with _STORE_LOCKS_LOCK:
             self._lock = _STORE_LOCKS.setdefault(root.resolve(), RLock())
+
+    @contextmanager
+    def page_read_scope(self, scope):
+        """Caller-owned byte reuse; no authority, publication or rebuilding."""
+        with self._lock:
+            token = _PAGE_READ.set(scope)
+            try:
+                yield
+            finally:
+                _PAGE_READ.reset(token)
 
     @property
     def root(self) -> Path:
@@ -68,6 +111,7 @@ class VisualReconciliationStore:
             self._replace(pointer_path, artifact_bytes(pointer))
             return record, "RECONCILED"
 
+    @_page_once
     def load(self, identity: str) -> VisualReconciliationRecord:
         try:
             value = record_from_bytes(self._read(self._record_path(identity)))
@@ -79,11 +123,12 @@ class VisualReconciliationStore:
             raise VisualReconciliationPersistenceError("WO07F_RECORD_INTEGRITY_INVALID")
         return value
 
+    @_page_once
     def load_current(
         self, review_cycle_identity: str
     ) -> CurrentReconciliationPointer | None:
         path = self._pointer_path(review_cycle_identity)
-        if not path.exists():
+        if not _page_exists(path):
             return None
         try:
             pointer = pointer_from_bytes(self._read(path))
@@ -101,6 +146,7 @@ class VisualReconciliationStore:
             raise VisualReconciliationPersistenceError("WO07F_POINTER_INVALID")
         return pointer
 
+    @_page_once
     def restore_current(
         self, review_cycle_identity: str
     ) -> VisualReconciliationRecord | None:
@@ -129,7 +175,7 @@ class VisualReconciliationStore:
     @staticmethod
     def _read(path: Path) -> bytes:
         try:
-            return path.read_bytes()
+            return _page_bytes(path)
         except OSError as error:
             raise VisualReconciliationPersistenceError(
                 "WO07F_ARTIFACT_UNAVAILABLE"
@@ -137,8 +183,8 @@ class VisualReconciliationStore:
 
     @staticmethod
     def _retain_immutable(path: Path, payload: bytes) -> None:
-        if path.exists():
-            if path.read_bytes() != payload:
+        if _page_exists(path):
+            if _page_bytes(path) != payload:
                 raise VisualReconciliationPersistenceError(
                     "WO07F_PERSISTENCE_CONFLICT"
                 )
@@ -147,6 +193,7 @@ class VisualReconciliationStore:
 
     @staticmethod
     def _replace(path: Path, payload: bytes) -> None:
+        _page_changed()
         path.parent.mkdir(parents=True, exist_ok=True)
         temporary = path.with_name(f".{path.name}.{uuid4().hex}.tmp")
         try:

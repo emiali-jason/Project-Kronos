@@ -117,3 +117,139 @@ def test_runtime_never_falls_back_to_v1_and_corrupt_v2_pointer_fails_closed(
     assert corrupt_provider.capability.calls == 0
     assert corrupt_provider.begin_count == 0
     assert corrupt_factory_calls == []
+
+
+def _pf10_corrupt_same_size_and_mtime(path):
+    import os
+    before = path.stat()
+    payload = path.read_bytes()
+    path.write_bytes(bytes([payload[0] ^ 1]) + payload[1:])
+    os.utime(path, ns=(before.st_atime_ns, before.st_mtime_ns))
+    assert path.stat().st_size == before.st_size
+    assert path.stat().st_mtime_ns == before.st_mtime_ns
+
+
+@pytest.mark.parametrize("owner", ("ordered", "paired", "binding", "reconciliation"))
+def test_pf10_exact_owner_corruption_after_warming(owner, tmp_path, monkeypatch):
+    from kronos.application.intraday_review_ordered_batch import load
+    from tests.unit.browser.test_intraday_compact_serving import _pf10_populated_pages
+    from tests.unit.browser.test_product_route_isolation import _snapshot
+    from kronos.browser.product_routes import BrowserGetRequest
+    from tests.unit.intraday.test_review_v2_paired_intake import paired_fixture
+    from tests.unit.intraday.test_review import _png
+    if owner in {"paired", "binding"}:
+        app, cycle, metadata = paired_fixture(tmp_path)
+        chart = app.upload_chart(cycle.cycle_identity, media_type="image/png",
+                                 payload=_png(37), paired_metadata=metadata)
+        read = app.snapshot
+        path = (app._paired.store._path("paired-bundles", chart.paired_bundle_identity)
+                if owner == "paired" else
+                app._paired.bindings.path_for(metadata["native_binding_identity"]))
+        expected = "INTRADAY_REVIEW_INTEGRITY_INVALID"
+    else:
+        runtime, routes = _pf10_populated_pages(tmp_path, monkeypatch)
+        app = runtime.review_v2_application
+        if owner == "ordered":
+            pointer = app.review_store.load_current()
+            _, _, folder = load(app, pointer)
+            path = folder / "question.pdf"
+            read = app.snapshot
+            expected = "INTRADAY_REVIEW_INTEGRITY_INVALID"
+        else:
+            read = runtime.visual_reconciliation_v2_application.status
+            cycle = app.snapshot().candidates[0].cycle_identity
+            record = runtime.visual_reconciliation_v2_store.restore_current(cycle)
+            path = runtime.visual_reconciliation_v2_store._record_path(record.reconciliation_identity)
+            expected = "WO07F_RECORD_INTEGRITY_INVALID"
+    with app.page_read_scope():
+        first = read()
+        assert read() == first
+    pointer = app.review_store.load_current()
+    _pf10_corrupt_same_size_and_mtime(path)
+    with pytest.raises((ReviewError, ValueError), match=expected):
+        with app.page_read_scope():
+            read()
+    assert app.review_store.load_current() == pointer
+    if owner in {"ordered", "reconciliation"}:
+        response = routes.handle_get(BrowserGetRequest("/intraday/review", {}), _snapshot)
+        assert response.status == 503 and expected in response.body
+
+
+@pytest.mark.parametrize("owner", ("review", "ordered", "paired", "binding", "reconciliation"))
+def test_pf10_owner_mutation_fences_captured_generation(owner, tmp_path, monkeypatch):
+    from datetime import timedelta
+    from kronos.application.intraday_review_v2 import IntradayPageUnavailable
+    from kronos.intraday.visual_reconciliation_v2 import create_reconciliation_record
+    from tests.unit.browser.test_intraday_compact_serving import _pf10_populated_pages
+    from tests.unit.intraday.test_review_v2_paired_intake import paired_fixture
+    from tests.unit.intraday.test_review import _png
+    if owner in {"paired", "binding"}:
+        app, cycle, metadata = paired_fixture(tmp_path)
+        chart = app.upload_chart(cycle.cycle_identity, media_type="image/png",
+                                 payload=_png(37), paired_metadata=metadata)
+        if owner == "binding":
+            value = app._paired.bindings.load(binding_identity=metadata["native_binding_identity"])
+            mutate = lambda: app._paired.bindings.retain(value)
+        else:
+            value = app._paired.store.load_bundle(chart.paired_bundle_identity)
+            from kronos.intraday.review_mcx_paired import create_paired_review_pack
+            pack = create_paired_review_pack(value, created_at=app._clock()+timedelta(seconds=2))
+            mutate = lambda: app._paired.store.retain_pack(pack)
+    else:
+        runtime, _ = _pf10_populated_pages(tmp_path, monkeypatch)
+        app = runtime.review_v2_application
+        if owner == "review":
+            pointer = app.review_store.load_current()
+            mutate = lambda: app.review_store.save_current(pointer)
+        elif owner == "ordered":
+            mutate = app.create_all_question_transports
+        else:
+            candidate = app.snapshot().candidates[0]
+            value = runtime.visual_reconciliation_v2_application._input(candidate.cycle_identity)
+            # Remove the temporary fixture pointer before entering the request:
+            # publishing a retained record must restore it or reject its conflict.
+            record = create_reconciliation_record(value, created_at=app._clock()+timedelta(seconds=2))
+            runtime.visual_reconciliation_v2_store._pointer_path(candidate.cycle_identity).unlink()
+            mutate = lambda: runtime.visual_reconciliation_v2_store.retain(record)
+    with pytest.raises(IntradayPageUnavailable, match="SOURCE_CHANGED"):
+        with app.page_read_scope():
+            app.snapshot()
+            mutate()
+            app.snapshot()
+
+
+@pytest.mark.parametrize("owner", ("paired", "binding"))
+def test_pf10_separate_owner_instances_share_publication_exclusion(owner, tmp_path):
+    from concurrent.futures import ThreadPoolExecutor
+    from datetime import timedelta
+    from threading import Event
+    from tests.unit.intraday.test_review_v2_paired_intake import paired_fixture
+    from tests.unit.intraday.test_review import _png
+    from kronos.intraday.review_mcx_paired import create_paired_review_pack
+    app, cycle, metadata = paired_fixture(tmp_path)
+    chart = app.upload_chart(cycle.cycle_identity, media_type="image/png",
+                             payload=_png(37), paired_metadata=metadata)
+    if owner == "binding":
+        first = app._paired.bindings
+        value = first.load(binding_identity=metadata["native_binding_identity"])
+        second = type(first)(first._root)
+        write = lambda: second.retain(value)
+    else:
+        first = app._paired.store
+        bundle = first.load_bundle(chart.paired_bundle_identity)
+        pack = create_paired_review_pack(bundle, created_at=app._clock()+timedelta(seconds=2))
+        second = type(first)(first.root)
+        write = lambda: second.retain_pack(pack)
+    started, finished = Event(), Event()
+    def publish():
+        started.set()
+        write()
+        finished.set()
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        with app.page_read_scope():
+            snapshot = app.snapshot()
+            task = pool.submit(publish)
+            assert started.wait(1) and not finished.wait(.05)
+            assert app.snapshot() is snapshot
+        task.result(timeout=2)
+    assert finished.is_set()

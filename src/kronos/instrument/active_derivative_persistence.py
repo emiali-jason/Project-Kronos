@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
+from contextvars import ContextVar
+from functools import wraps
 from pathlib import Path
 from threading import RLock
+from weakref import WeakValueDictionary
 from uuid import uuid4
 
 from kronos.instrument.active_derivative import (
@@ -26,6 +30,40 @@ DEFAULT_ACTIVE_DERIVATIVE_BINDING_ROOT = (
 )
 
 
+_PAGE_LOCKS = WeakValueDictionary()
+_PAGE_LOCKS_GUARD = RLock()
+
+
+_PAGE_READ = ContextVar(__name__ + ".page_read", default=None)
+
+
+def _page_bytes(path):
+    scope = _PAGE_READ.get()
+    return path.read_bytes() if scope is None else scope.read(path)
+
+
+def _page_exists(path):
+    scope = _PAGE_READ.get()
+    return path.exists() if scope is None else scope.exists(path)
+
+
+def _page_changed():
+    scope = _PAGE_READ.get()
+    if scope is not None:
+        scope.invalidate()
+
+
+def _page_once(method):
+    @wraps(method)
+    def selected(self, *args, **kwargs):
+        scope = _PAGE_READ.get()
+        if scope is None:
+            return method(self, *args, **kwargs)
+        return scope.memo((method, self, args, tuple(kwargs.items())),
+                          lambda: method(self, *args, **kwargs))
+    return selected
+
+
 class ActiveDerivativeBindingStore:
     """Retain immutable bindings and one integrity-bound operational pointer."""
 
@@ -33,7 +71,18 @@ class ActiveDerivativeBindingStore:
         if not isinstance(root, Path) or not root.is_absolute():
             raise ValueError("ACTIVE_DERIVATIVE_BINDING_ROOT_INVALID")
         self._root = root
-        self._lock = RLock()
+        with _PAGE_LOCKS_GUARD:
+            self._lock = _PAGE_LOCKS.setdefault(root.resolve(), RLock())
+
+    @contextmanager
+    def page_read_scope(self, scope):
+        """Caller-owned byte reuse; no authority, publication or rebuilding."""
+        with self._lock:
+            token = _PAGE_READ.set(scope)
+            try:
+                yield
+            finally:
+                _PAGE_READ.reset(token)
 
     def retain(self, value: ActiveDerivativeBindingArtifact) -> Path:
         if type(value) is not ActiveDerivativeBindingArtifact:
@@ -43,14 +92,16 @@ class ActiveDerivativeBindingStore:
         encoded = active_derivative_binding_bytes(value)
         target = self.path_for(value.binding_identity)
         with self._lock:
+            _page_changed()
             self._retain_immutable(target, encoded)
             self._write_current_pointer(value)
         return target
 
+    @_page_once
     def load(self, *, binding_identity: str) -> ActiveDerivativeBindingArtifact:
         target = self.path_for(binding_identity)
         try:
-            return parse_active_derivative_binding(target.read_bytes())
+            return parse_active_derivative_binding(_page_bytes(target))
         except ActiveDerivativeSelectionError:
             raise
         except OSError as error:
@@ -58,6 +109,7 @@ class ActiveDerivativeBindingStore:
                 ActiveDerivativeSelectionFailure.ACTIVE_BINDING_UNAVAILABLE
             ) from error
 
+    @_page_once
     def load_current(
         self,
         *,
@@ -68,10 +120,10 @@ class ActiveDerivativeBindingStore:
                 ActiveDerivativeSelectionFailure.INTEGRITY_INVALID
             )
         pointer = self._root / "current" / f"{canonical_subject_id}.json"
-        if not pointer.exists():
+        if not _page_exists(pointer):
             return None
         try:
-            raw = pointer.read_bytes()
+            raw = _page_bytes(pointer)
             import json
 
             document = json.loads(raw)
@@ -118,11 +170,11 @@ class ActiveDerivativeBindingStore:
             try:
                 target.hardlink_to(temporary)
             except FileExistsError:
-                if target.read_bytes() != encoded:
+                if _page_bytes(target) != encoded:
                     raise ActiveDerivativeSelectionError(
                         ActiveDerivativeSelectionFailure.INTEGRITY_INVALID
                     )
-                parse_active_derivative_binding(target.read_bytes())
+                parse_active_derivative_binding(_page_bytes(target))
         finally:
             temporary.unlink(missing_ok=True)
 

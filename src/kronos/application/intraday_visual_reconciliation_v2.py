@@ -101,16 +101,17 @@ class IntradayVisualReconciliationV2Application:
         self._store = store
         self._clock = clock
         self._lock = review_store.workspace_lock
+        review.bind_page_reconciliation(store)
 
     @property
     def store(self) -> VisualReconciliationStore:
         return self._store
 
-    def status(self) -> CurrentReconciliationStatus:
+    def status(self, *, snapshot=None) -> CurrentReconciliationStatus:
         """Restore exact current results without evaluating or writing."""
 
         with self._lock:
-            snapshot = self._review.snapshot()
+            snapshot = self._review.snapshot() if snapshot is None else snapshot
             candidates = []
             eligible = 0
             reconciled = 0

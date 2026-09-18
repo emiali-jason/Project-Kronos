@@ -9,6 +9,8 @@ from decimal import Decimal
 from enum import StrEnum
 from hashlib import sha256
 import json
+from contextvars import ContextVar
+from functools import wraps
 from pathlib import Path
 from threading import RLock
 from typing import Mapping
@@ -197,6 +199,36 @@ _PRODUCER_LOCKS: dict[Path, object] = {}
 _PRODUCER_LOCKS_LOCK = RLock()
 
 
+_PAGE_READ = ContextVar(__name__ + ".page_read", default=None)
+
+
+def _page_bytes(path):
+    scope = _PAGE_READ.get()
+    return path.read_bytes() if scope is None else scope.read(path)
+
+
+def _page_exists(path):
+    scope = _PAGE_READ.get()
+    return path.exists() if scope is None else scope.exists(path)
+
+
+def _page_changed():
+    scope = _PAGE_READ.get()
+    if scope is not None:
+        scope.invalidate()
+
+
+def _page_once(method):
+    @wraps(method)
+    def selected(self, *args, **kwargs):
+        scope = _PAGE_READ.get()
+        if scope is None:
+            return method(self, *args, **kwargs)
+        return scope.memo((method, self, args, tuple(kwargs.items())),
+                          lambda: method(self, *args, **kwargs))
+    return selected
+
+
 class ProbablesV2Store:
     """Append-only V2 artifacts plus one integrity-bound explicit pointer."""
 
@@ -207,6 +239,16 @@ class ProbablesV2Store:
         self._validated = ValidatedBytesReuse(max_entries=4096)
         with _PRODUCER_LOCKS_LOCK:
             self._lock = _PRODUCER_LOCKS.setdefault(root.resolve(), RLock())
+
+    @contextmanager
+    def page_read_scope(self, scope):
+        """Caller-owned byte reuse; no authority, publication or rebuilding."""
+        with self._lock:
+            token = _PAGE_READ.set(scope)
+            try:
+                yield
+            finally:
+                _PAGE_READ.reset(token)
 
     @property
     def root(self) -> Path:
@@ -288,7 +330,7 @@ class ProbablesV2Store:
                 self.retain_result(item)
             self.retain_diagnostics(run.diagnostics)
             # A companion is prospective only: never backfill an existing run.
-            if not self._path("runs", run.run_identity).exists():
+            if not _page_exists(self._path("runs", run.run_identity)):
                 assessment = assessment_observations or create_missing_assessment_observations(run)
                 validate_assessment_run(assessment, run)
                 self._retain_typed("assessments", run.run_identity, assessment)
@@ -310,18 +352,19 @@ class ProbablesV2Store:
         return path
 
     def has_run(self, run_identity: str) -> bool:
-        return self._path("runs", run_identity).exists()
+        return _page_exists(self._path("runs", run_identity))
 
     def pending_assessment_observations(self, run: ProbablesRunV2) -> ProbablesAssessmentObservations | None:
-        if not self._path("assessments", run.run_identity).exists():
+        if not _page_exists(self._path("assessments", run.run_identity)):
             return None
         value = self._load_typed("assessments", run.run_identity, ProbablesAssessmentObservations, "run_identity")
         validate_assessment_run(value, run)
         return value
 
+    @_page_once
     def load_assessment_observations(self, run_identity: str) -> ProbablesAssessmentObservations | None:
         """Absent historical companion is truthful missing provenance, never a write."""
-        if not self._path("assessments", run_identity).exists():
+        if not _page_exists(self._path("assessments", run_identity)):
             return None
         value = self._load_typed("assessments", run_identity, ProbablesAssessmentObservations, "run_identity")
         validate_assessment_run(value, self.load_run(run_identity))
@@ -332,7 +375,7 @@ class ProbablesV2Store:
 
     def load_selection(self, identity: str) -> CompletedEvidenceSelection:
         v2_path = self._path("completed-evidence-v2", identity)
-        if v2_path.exists():
+        if _page_exists(v2_path):
             return self._load_typed(
                 "completed-evidence-v2",
                 identity,
@@ -396,9 +439,10 @@ class ProbablesV2Store:
             _replace_atomic(path, _artifact_bytes(value))
         return path
 
+    @_page_once
     def load_current(self) -> CurrentProbablesV2Pointer | None:
         path = self._root / "refresh-v2" / "CURRENT-PROBABLES-V2.json"
-        if not path.exists():
+        if not _page_exists(path):
             return None
         value = _artifact_from_bytes(_read(path))
         if type(value) not in (CurrentProbablesV2Pointer, AssessmentBoundProbablesV2Pointer):
@@ -417,6 +461,7 @@ class ProbablesV2Store:
             raise ProbablesV2Error("PROBABLES_V2_POINTER_BINDING_INVALID")
         return value
 
+    @_page_once
     def load_current_run(self) -> ProbablesRunV2 | None:
         pointer = self.load_current()
         if pointer is None:
@@ -762,10 +807,11 @@ def _from_wire(value: object) -> object:
 
 
 def _retain_immutable(path: Path, encoded: bytes) -> None:
-    if path.exists():
+    if _page_exists(path):
         if _read(path) != encoded:
             raise ProbablesV2Error("PROBABLES_V2_PERSISTENCE_CONFLICT")
         return
+    _page_changed()
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(f".{path.name}.{uuid4().hex}.tmp")
     try:
@@ -776,6 +822,7 @@ def _retain_immutable(path: Path, encoded: bytes) -> None:
 
 
 def _replace_atomic(path: Path, encoded: bytes) -> None:
+    _page_changed()
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(f".{path.name}.{uuid4().hex}.tmp")
     try:
@@ -787,7 +834,7 @@ def _replace_atomic(path: Path, encoded: bytes) -> None:
 
 def _read(path: Path) -> bytes:
     try:
-        return path.read_bytes()
+        return _page_bytes(path)
     except OSError as error:
         raise ProbablesV2Error("PROBABLES_V2_ARTIFACT_UNAVAILABLE") from error
 

@@ -4,7 +4,12 @@ from __future__ import annotations
 
 from kronos.intraday import visual_contract_v2 as visual_v2
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, replace, fields, is_dataclass
+from contextlib import contextmanager, ExitStack
+from contextvars import ContextVar
+from functools import wraps
+from threading import BoundedSemaphore
+import sys
 from datetime import datetime, timezone
 from hashlib import sha256
 import json
@@ -52,6 +57,128 @@ from kronos.intraday.review_v2_transport import (
 from kronos.instrument.visual_identity import VisualIdentityResolver
 from kronos.application.intraday_chart_input import IntradayChartInputGate
 from kronos.application.intraday_review_v2_paired import IntradayReviewV2PairedAdapter
+
+
+class IntradayPageUnavailable(RuntimeError):
+    """Bounded request preparation failed; no cached success may escape."""
+
+
+_CURRENT_PAGE = ContextVar("intraday_review_page", default=None)
+
+
+class _CurrentPageRead:
+    MAX_FILES = 4096
+    MAX_BYTES = 64 * 1024 * 1024
+    MAX_VALUES = 8192
+    MAX_VALUE_BYTES = 64 * 1024 * 1024
+    MAX_OBJECTS = 250000
+
+    def __init__(self):
+        self.payloads = {}
+        self.values = {}
+        self.byte_count = 0
+        self.value_bytes = 0
+        self.objects = set()
+        self.failure = None
+
+    def require(self):
+        if self.failure is not None:
+            raise IntradayPageUnavailable(self.failure)
+
+    def invalidate(self):
+        self.failure = "INTRADAY_PAGE_SOURCE_CHANGED"
+        self.payloads.clear()
+        self.values.clear()
+        self.objects.clear()
+
+    def read(self, path, loader=None):
+        self.require()
+        if path not in self.payloads:
+            if len(self.payloads) >= self.MAX_FILES:
+                self.failure = "INTRADAY_PAGE_CAPACITY"
+                self.require()
+            try:
+                if loader is None:
+                    with path.open("rb") as handle:
+                        # Avoid allocating the entire remaining budget for each
+                        # small artifact. Read to EOF within the exact byte cap;
+                        # metadata is never a substitute for content validation.
+                        remaining = self.MAX_BYTES - self.byte_count + 1
+                        chunks = []
+                        while remaining:
+                            chunk = handle.read(min(64 * 1024, remaining))
+                            if not chunk:
+                                break
+                            chunks.append(chunk)
+                            remaining -= len(chunk)
+                        value = b"".join(chunks)
+                else:
+                    value = loader()
+            except FileNotFoundError:
+                self.payloads[path] = None
+            else:
+                if len(value) + self.byte_count > self.MAX_BYTES:
+                    self.failure = "INTRADAY_PAGE_CAPACITY"
+                    self.require()
+                self.payloads[path] = value
+                self.byte_count += len(value)
+        value = self.payloads[path]
+        if value is None:
+            raise FileNotFoundError(str(path))
+        return value
+
+    def exists(self, path):
+        try:
+            self.read(path)
+            return True
+        except FileNotFoundError:
+            return False
+
+    def memo(self, key, compute):
+        self.require()
+        if key not in self.values:
+            if len(self.values) >= self.MAX_VALUES:
+                self.failure = "INTRADAY_PAGE_CAPACITY"
+                self.require()
+            value = compute()
+            self.require()
+            pending = [value]
+            while pending:
+                item = pending.pop()
+                if id(item) in self.objects:
+                    continue
+                self.objects.add(id(item))
+                self.value_bytes += sys.getsizeof(item)
+                if (len(self.objects) > self.MAX_OBJECTS
+                        or self.value_bytes > self.MAX_VALUE_BYTES):
+                    self.failure = "INTRADAY_PAGE_CAPACITY"
+                    self.require()
+                if is_dataclass(item) and not isinstance(item, type):
+                    pending.extend(getattr(item, field.name) for field in fields(item))
+                elif isinstance(item, (tuple, list, set, frozenset)):
+                    pending.extend(item)
+                elif isinstance(item, dict):
+                    pending.extend(item.keys())
+                    pending.extend(item.values())
+            self.values[key] = value
+        return self.values[key]
+
+    def close(self):
+        self.payloads.clear()
+        self.values.clear()
+        self.objects.clear()
+        self.byte_count = self.value_bytes = 0
+
+
+def _page_once(method):
+    @wraps(method)
+    def selected(self, *args, **kwargs):
+        active = _CURRENT_PAGE.get()
+        if active is None or active[0] is not self:
+            return method(self, *args, **kwargs)
+        return active[1].memo((method, args, tuple(kwargs.items())),
+                              lambda: method(self, *args, **kwargs))
+    return selected
 
 
 @dataclass(frozen=True, slots=True)
@@ -245,10 +372,44 @@ class IntradayReviewV2Application:
         self._visual_identity_resolver = visual_identity_resolver
         self._clock = clock
         self._lock = review_store.workspace_lock
+        self._page_slots = BoundedSemaphore(4)
+        self._page_reconciliation_store = None
         self._chart_input = IntradayChartInputGate(review_store, probables_store, visual_identity_resolver, clock=lambda: self._clock())
         from kronos.instrument.visual_identity import uses_family_visual_authority
         self._paired = IntradayReviewV2PairedAdapter(review_store, self._transport, chart_input=self._chart_input,
             native_resolver=visual_identity_resolver if uses_family_visual_authority(visual_identity_resolver) else None)
+
+    def bind_page_reconciliation(self, store):
+        """Composition-only owner registration; it neither restores nor evaluates."""
+        self._page_reconciliation_store = store
+
+    @contextmanager
+    def page_read_scope(self):
+        active = _CURRENT_PAGE.get()
+        if active is not None and active[0] is self:
+            yield active[1]
+            return
+        if not self._page_slots.acquire(blocking=False):
+            raise IntradayPageUnavailable("INTRADAY_PAGE_CAPACITY")
+        scope = _CurrentPageRead()
+        token = _CURRENT_PAGE.set((self, scope))
+        try:
+            # Preserve Review -> producer order. No mutation hook rebuilds here.
+            with ExitStack() as stack:
+                stack.enter_context(self._review.page_read_scope(scope))
+                stack.enter_context(self._probables.page_read_scope(scope))
+                stack.enter_context(self._paired.store.page_read_scope(scope))
+                stack.enter_context(self._paired.bindings.page_read_scope(scope))
+                if self._page_reconciliation_store is not None:
+                    stack.enter_context(self._page_reconciliation_store.page_read_scope(scope))
+                from kronos.application.intraday_review_ordered_batch import page_read_scope
+                stack.enter_context(page_read_scope(scope))
+                yield scope
+                scope.require()
+        finally:
+            _CURRENT_PAGE.reset(token)
+            scope.close()
+            self._page_slots.release()
 
     @property
     def review_store(self) -> IntradayReviewV2Store:
@@ -258,6 +419,7 @@ class IntradayReviewV2Application:
     def probables_store(self) -> ProbablesV2Store:
         return self._probables
 
+    @_page_once
     def current_reconciliation(self):
         """Read-only exact-pointer contract adaptation; never invokes WO-10."""
         from kronos.application.intraday_review_wo10 import select_current_review
@@ -372,6 +534,7 @@ class IntradayReviewV2Application:
         with self._lock, self._probables.current_generation_guard():
             return self._currentness_locked()
 
+    @_page_once
     def _currentness_locked(self) -> IntradayReviewV2Currentness:
         probables_pointer, run = self._load_current_probables()
         review_pointer = self._review.load_current()
@@ -514,6 +677,7 @@ class IntradayReviewV2Application:
             self._publish_current_review(run, cycles)
             return IntradayReviewV2Currentization(cycles, False)
 
+    @_page_once
     def snapshot(self) -> IntradayReviewV2Snapshot:
         """Project persisted Phase-A facts without creating or advancing Review."""
 
@@ -1560,6 +1724,7 @@ class IntradayReviewV2Application:
             if self._review.load_current() != pointer:
                 raise ReviewError(ReviewFailure.INTEGRITY_INVALID)
 
+    @_page_once
     def _load_current_probables(self):  # type: ignore[no-untyped-def]
         try:
             pointer = self._probables.load_current()

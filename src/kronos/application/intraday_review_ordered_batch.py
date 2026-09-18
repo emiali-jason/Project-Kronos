@@ -2,6 +2,8 @@
 from dataclasses import dataclass, replace
 from hashlib import sha256
 import json
+from contextlib import contextmanager
+from contextvars import ContextVar
 from pathlib import Path
 
 from kronos.intraday.review import ReviewError, ReviewFailure
@@ -89,10 +91,10 @@ def load(app, pointer, *, require_current=True):
     if not path.exists():
         return None
     try:
-        identity = decode(path.read_bytes())["identity"]
+        identity = decode(_page_bytes(path))["identity"]
         transport = _transport(identity)
         folder = _root(app) / identity
-        manifest = decode((folder / "manifest.json").read_bytes())
+        manifest = decode(_page_bytes(folder / "manifest.json"))
         if _identity(manifest["core"]) != identity:
             raise ValueError
         core = manifest["core"]
@@ -108,7 +110,7 @@ def load(app, pointer, *, require_current=True):
                 if active is None or active.chart_revision_identity != bound["chart_revision_identity"]:
                     raise ReviewError(ReviewFailure.NOT_CURRENT)
         for name in ("question.pdf", "template.json"):
-            if sha256((folder / name).read_bytes()).hexdigest() != manifest[name]:
+            if sha256(_page_bytes(folder / name)).hexdigest() != manifest[name]:
                 raise ValueError
         return manifest, transport, folder
     except (OSError, KeyError, TypeError, ValueError) as error:
@@ -116,6 +118,7 @@ def load(app, pointer, *, require_current=True):
 
 
 def create(app):
+    _page_changed()
     with app._lock, app._probables.current_generation_guard():
         pointer = app._require_current_workspace()
         if pointer is None or not pointer.cycles:
@@ -157,7 +160,7 @@ def create(app):
             candidates=documents))
         manifest_path = folder / "manifest.json"
         if manifest_path.exists():
-            manifest = decode(manifest_path.read_bytes())
+            manifest = decode(_page_bytes(manifest_path))
             pdf = (folder / "question.pdf").read_bytes()
             if (manifest["core"] != core or (folder / "template.json").read_bytes() != template
                 or manifest["question.pdf"] != sha256(pdf).hexdigest()
@@ -223,6 +226,7 @@ def _global(member):
 
 
 def import_expected(app, pointer):
+    _page_changed()
     from kronos.application.intraday_review_v2 import IntradayReviewV2InboxImportResult, IntradayReviewV2InboxMemberResult
     retained = load(app, pointer, require_current=False)
     if retained is None:
@@ -273,3 +277,31 @@ def import_expected(app, pointer):
         not_found_count=sum(r.state == "NOT_FOUND" for r in results),
         rejected_count=sum(r.state == "REJECTED" for r in results), members=tuple(results),
         producer_advanced=not app.currentness().is_review_current)
+
+
+_PAGE_READ = ContextVar(__name__ + ".page_read", default=None)
+
+
+def _page_bytes(path):
+    scope = _PAGE_READ.get()
+    return path.read_bytes() if scope is None else scope.read(path)
+
+
+def _page_exists(path):
+    scope = _PAGE_READ.get()
+    return path.exists() if scope is None else scope.exists(path)
+
+
+def _page_changed():
+    scope = _PAGE_READ.get()
+    if scope is not None:
+        scope.invalidate()
+
+
+@contextmanager
+def page_read_scope(scope):
+    token = _PAGE_READ.set(scope)
+    try:
+        yield
+    finally:
+        _PAGE_READ.reset(token)

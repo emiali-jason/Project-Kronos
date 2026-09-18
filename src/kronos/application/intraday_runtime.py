@@ -379,6 +379,7 @@ def create_intraday_runtime(
         store=visual_reconciliation_v2_store,
         clock=clock,
     )
+    review_v2.bind_page_reconciliation(visual_reconciliation_v2_store)
     wo09_store = Wo09Store(Path(evidence_root) / "wo09-promotion-readiness-v1")
     wo09_application = IntradayWo09Application(wo09_store)
     from kronos.intraday.native_structural_selection import NativeStructuralLoader, NativeStructuralStore

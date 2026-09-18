@@ -258,3 +258,243 @@ def test_wo11_corrupt_preparation_is_visible_and_fail_closed(
         "last_failure": "WO11_RESTORATION_FAILED",
         "live": "LIVE_POSITION_NOT_COMMISSIONED_V1",
     }
+
+# PF-10: populate the canonical controls omitted by the earlier compact fixture.
+def _pf10_populated_pages(tmp_path, monkeypatch, subjects=("NTPC", "TITAN"), *, large=False):
+    from datetime import timedelta
+    from kronos.application.intraday_runtime import create_intraday_runtime
+    from kronos.browser.intraday_probables_v2_control import IntradayProbablesV2OperationalControl
+    from kronos.browser.intraday_review_v2_control import IntradayReviewV2OperationalControl
+    from kronos.browser.intraday_visual_reconciliation_v2_control import IntradayVisualReconciliationV2OperationalControl
+    from kronos.intraday.probables_v2 import create_probables_v2_methodology
+    from kronos.intraday.review_v2_transport import IntradayReviewV2Transport
+    from tests.unit.intraday.test_review_v2_individual_inbox import _fixture, _completed
+    from tests.unit.intraday.test_opening_admission_correction import opening_mapping
+    from tests.unit.intraday.chart_input_fixtures import configure_fixture_calendar, observe_fixture_uploads
+    from tests.unit.provider.test_shared_provider_runtime import _shared
+    from tests.unit.browser.test_intraday_review_v2_control import _payload
+    from tests.unit.intraday.test_review import _png
+    _, seed = _fixture(tmp_path / "fixture-authority", subjects)
+    monkeypatch.setattr("kronos.application.intraday_runtime.load_visual_identity_resolver",
+                        lambda **kw: seed._visual_identity_resolver)
+    methodology = create_probables_v2_methodology()
+    mappings = tuple(opening_mapping(methodology, subject="NSE-EQ-" + name)
+                     for name in subjects)
+    boundary = mappings[0].analysis_boundary
+    shared, provider, factory = _shared()
+    runtime = create_intraday_runtime(shared, evidence_root=(tmp_path / "runtime").resolve(),
+                                     clock=lambda: boundary)
+    run = runtime.probables_v2_application.refresh_analysis(
+        source_discovery_run_identity=SOURCE_RUN,
+        universe_identity="KRONOS-INTRADAY-NATIVE-UNIVERSE-V1", universe_version="1.0.0",
+        reconciliation_identity="KRONOS-INTRADAY-RECONCILIATION-V1", reconciliation_version="1.0.0",
+        market_session_identity=mappings[0].market_session_identity,
+        analysis_boundary=boundary, member_evidence=mappings, unavailable_members=(), provenance=PROVENANCE)
+    app = runtime.review_v2_application
+    app._clock = lambda: boundary + timedelta(minutes=1)
+    app._transport = IntradayReviewV2Transport(question_outbox=(tmp_path / "questions").resolve(),
+                                              answer_inbox=(tmp_path / "answers").resolve())
+    app._paired.transport = app._transport
+    configure_fixture_calendar(app)
+    observe_fixture_uploads(app)
+    control = IntradayReviewV2OperationalControl(app, runtime.review_v2_operation_store,
+        clock=lambda: boundary, process_identity=lambda: "PF10-ISOLATED-PID")
+    assert control.execute_document(_payload(run))["outcome"] == "COMPLETE"
+    for i, candidate in enumerate(app.snapshot().candidates):
+        payload = _pf10_large_png(i) if large else _png(i + 35)
+        app.upload_chart(candidate.cycle_identity, media_type="image/png", payload=payload)
+        question = app.create_individual_question_transport(candidate.cycle_identity)
+        imported = app.import_combined_answer(_completed(question.answer_template_path))
+        assert imported.imported_count == 1
+    app.create_all_question_transports()
+    reconciliation = runtime.visual_reconciliation_v2_application.reconcile_all_ready()
+    assert reconciliation["success_count"] == len(subjects), reconciliation
+    probables = IntradayProbablesV2OperationalControl(runtime.discovery_v2_operation,
+        runtime.probables_v2_application, runtime.refresh_v2_provenance_store,
+        clock=lambda: boundary, process_identity=lambda: "PF10-ISOLATED-PID")
+    routes = IntradayBrowserRoutes(runtime.workstation, probables_v2_control=probables,
+        review_v2_control=control,
+        visual_reconciliation_v2_control=IntradayVisualReconciliationV2OperationalControl(
+            runtime.visual_reconciliation_v2_application))
+    assert provider.begin_count == 0 and factory == []
+    return runtime, routes
+
+
+def _pf10_large_png(seed):
+    import random, struct, zlib
+    random = random.Random(seed)
+    raw = b"".join(b"\0" + random.randbytes(512 * 3) for _ in range(256))
+    def chunk(kind, data):
+        return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data) & 0xffffffff)
+    return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", 512, 256, 8, 2, 0, 0, 0))
+            + chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b""))
+
+
+def test_pf10_populated_canonical_page_captures_each_byte_source_once(tmp_path, monkeypatch):
+    from collections import Counter
+    runtime, routes = _pf10_populated_pages(tmp_path, monkeypatch)
+    app = runtime.review_v2_application
+    before = _fingerprint(tmp_path)
+    monkeypatch.setattr(routes._review, "snapshot", lambda: (_ for _ in ()).throw(AssertionError("unused legacy")))
+    monkeypatch.setattr(routes._reconciliation, "snapshot", lambda: (_ for _ in ()).throw(AssertionError("unused legacy")))
+    original = Path.open
+    reads = Counter()
+    def opening(path, mode="r", *a, **kw):
+        assert not any(flag in mode for flag in "wax+"), "GET attempted a write"
+        if path.is_relative_to(tmp_path) and mode == "rb":
+            reads[path] += 1
+        return original(path, mode, *a, **kw)
+    monkeypatch.setattr(Path, "open", opening)
+    for path in ("/intraday", "/intraday/review"):
+        reads.clear()
+        result = routes.handle_get(BrowserGetRequest(path, {}), _snapshot)
+        assert result.status == 200
+        assert reads and max(reads.values()) == 1, reads
+        assert not any("fixture-authority" in str(p) for p in reads)
+    monkeypatch.setattr(Path, "open", original)
+    assert _fingerprint(tmp_path) == before
+    assert runtime.visual_reconciliation_v2_application.status().reconciled_count == 2
+
+
+def test_pf10_page_scope_releases_objects_and_rejects_capacity(tmp_path, monkeypatch):
+    import weakref
+    from kronos.application.intraday_review_v2 import IntradayPageUnavailable, _CurrentPageRead
+    runtime, routes = _pf10_populated_pages(tmp_path, monkeypatch)
+    app = runtime.review_v2_application
+    with app.page_read_scope() as capture:
+        app.snapshot()
+        reference = weakref.ref(capture)
+        assert capture.byte_count > 0 and capture.values
+    assert not capture.payloads and not capture.values and capture.byte_count == capture.value_bytes == 0
+    del capture
+    assert reference() is None
+    for _ in range(4): assert app._page_slots.acquire(blocking=False)
+    try:
+        response = routes.handle_get(BrowserGetRequest("/intraday/review", {}), _snapshot)
+        assert response.status == 503 and "CAPACITY" in response.body
+    finally:
+        for _ in range(4): app._page_slots.release()
+    monkeypatch.setattr(_CurrentPageRead, "MAX_BYTES", 128)
+    response = routes.handle_get(BrowserGetRequest("/intraday/review", {}), _snapshot)
+    assert response.status == 503 and "CAPACITY" in response.body
+
+
+def test_pf10_reentrant_publication_cannot_escape_as_prepared_success(tmp_path, monkeypatch):
+    import pytest
+    from kronos.application.intraday_review_v2 import IntradayPageUnavailable
+    runtime, _ = _pf10_populated_pages(tmp_path, monkeypatch)
+    app = runtime.review_v2_application
+    pointer = app.probables_store.load_current()
+    with pytest.raises(IntradayPageUnavailable, match="SOURCE_CHANGED"):
+        with app.page_read_scope():
+            before = app.snapshot()
+            app.probables_store.save_current(pointer)
+            app.snapshot()
+    with app.page_read_scope():
+        assert app.snapshot() == before
+
+
+def test_pf10_concurrent_publication_serializes_without_rebuilding_hooks(tmp_path, monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    runtime, routes = _pf10_populated_pages(tmp_path, monkeypatch)
+    app = runtime.review_v2_application
+    started, finished = Event(), Event()
+    pointer = app.probables_store.load_current()
+    def publish():
+        started.set()
+        app.probables_store.save_current(pointer)
+        finished.set()
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        with app.page_read_scope():
+            snapshot = app.snapshot()
+            future = pool.submit(publish)
+            assert started.wait(1)
+            assert not finished.wait(.05)
+            assert app.snapshot() is snapshot
+        future.result(timeout=2)
+    assert finished.is_set()
+    assert routes.handle_get(BrowserGetRequest("/intraday/review", {}), _snapshot).status == 200
+
+
+def test_pf10_opportunities_rejects_cross_publication_page(tmp_path, monkeypatch):
+    from tests.unit.intraday.test_review_v2 import _retain_later_current_run
+    runtime, routes = _pf10_populated_pages(tmp_path, monkeypatch)
+    original = routes._workstation.snapshot
+    def raced(*args, **kwargs):
+        result = original(*args, **kwargs)
+        _retain_later_current_run(runtime.review_v2_application)
+        return result
+    monkeypatch.setattr(routes._workstation, "snapshot", raced)
+    response = routes.handle_get(BrowserGetRequest("/intraday", {}), _snapshot)
+    assert response.status == 503 and "SOURCE_CHANGED" in response.body
+
+
+def test_pf10_blocked_capture_leaves_shared_status_and_swing_responsive(tmp_path, monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    from time import perf_counter
+    from kronos.application.swing_opportunities import SwingOpportunitiesApplication
+    from kronos.browser.views import render_opportunities
+    from tests.unit.application.test_swing_opportunities import _Provider
+    from kronos.application.intraday_review_v2 import _CurrentPageRead
+    runtime, routes = _pf10_populated_pages(tmp_path, monkeypatch)
+    swing = SwingOpportunitiesApplication(_Provider)
+    entered, release = Event(), Event()
+    original = _CurrentPageRead.read
+    def blocked(self, path, loader=None):
+        if not entered.is_set():
+            entered.set()
+            assert release.wait(5)
+        return original(self, path, loader)
+    monkeypatch.setattr(_CurrentPageRead, "read", blocked)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        future = pool.submit(routes.handle_get, BrowserGetRequest("/intraday/review", {}), _snapshot)
+        try:
+            assert entered.wait(2)
+            def independent():
+                start = perf_counter()
+                state = swing.snapshot()
+                page = render_opportunities(state)
+                assert page and state is not None
+                return perf_counter()-start
+            assert pool.submit(independent).result(timeout=1) < 1
+        finally:
+            release.set()
+        assert future.result(timeout=3).status == 200
+
+
+def test_pf10_concurrent_readers_release_every_capture_and_preserve_files(tmp_path, monkeypatch):
+    import weakref
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+    from kronos.application.intraday_review_v2 import _CurrentPageRead
+    runtime, routes = _pf10_populated_pages(tmp_path, monkeypatch)
+    before = _fingerprint(tmp_path)
+    references = []
+    original = _CurrentPageRead.__init__
+    def initialized(self):
+        original(self)
+        references.append(weakref.ref(self))
+    monkeypatch.setattr(_CurrentPageRead, "__init__", initialized)
+    barrier = Barrier(4)
+    def client(index):
+        for _ in range(12):
+            barrier.wait(timeout=3)
+            response = routes.handle_get(BrowserGetRequest(("/intraday", "/intraday/review")[index%2], {}), _snapshot)
+            assert response.status == 200
+            barrier.wait(timeout=3)
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        list(pool.map(client, range(4)))
+    assert len(references) == 48
+    assert all(reference() is None for reference in references)
+    assert _fingerprint(tmp_path) == before
+
+
+def test_pf10_all_page_capacity_dimensions_are_fail_closed(tmp_path, monkeypatch):
+    from kronos.application.intraday_review_v2 import _CurrentPageRead
+    runtime, routes = _pf10_populated_pages(tmp_path, monkeypatch)
+    for name in ("MAX_FILES", "MAX_VALUES", "MAX_VALUE_BYTES", "MAX_OBJECTS"):
+        with monkeypatch.context() as patch:
+            patch.setattr(_CurrentPageRead, name, 1)
+            response = routes.handle_get(BrowserGetRequest("/intraday/review", {}), _snapshot)
+            assert response.status == 503 and "CAPACITY" in response.body
+        assert routes.handle_get(BrowserGetRequest("/intraday/review", {}), _snapshot).status == 200

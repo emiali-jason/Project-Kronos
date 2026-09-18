@@ -550,3 +550,107 @@ def test_browser_imports_one_exact_v2_batch_and_projects_visual_readiness(
         _snapshot,
     )
     assert rejected is not None and rejected.status.value == 400
+
+
+@pytest.mark.parametrize("owner", ("review", "refresh"))
+def test_pf10_latest_provenance_prepares_history_only_at_explicit_boundaries(owner, tmp_path, monkeypatch):
+    from collections import Counter
+    from dataclasses import asdict
+    from kronos.intraday.review_v2_operation import create_review_v2_provenance
+    from kronos.intraday.refresh_v2 import create_refresh_v2_provenance
+    if owner == "review":
+        run, app, control = _control(tmp_path)
+        control.execute_document(_payload(run))
+        store = control._store
+        create = create_review_v2_provenance
+        record_path = store._record_path
+    else:
+        from tests.unit.intraday.test_probables_v2_refresh_control import _control as refresh_control
+        _, runtime, control, _, _ = refresh_control(tmp_path, authenticated=False)
+        control.execute_document({})  # Sanitized rejected provenance, no provider call.
+        store = runtime.refresh_v2_provenance_store
+        create = create_refresh_v2_provenance
+        record_path = store._path
+    seed = store.latest()
+    core = asdict(seed)
+    for field in ("provenance_identity", "integrity_identity", "contract_identity", "contract_version"):
+        core.pop(field)
+    for index in range(300):
+        latest = create(**{**core, "request_identity": "PF10-HISTORY-"+str(index),
+                          "operation_completed_at": seed.operation_completed_at+timedelta(seconds=index+1)})
+        store.retain(latest)
+    assert store.latest() == latest
+    original_open = Path.open
+    reads = Counter()
+    def opening(path, mode="r", *args, **kwargs):
+        if path.is_relative_to(store.root) and mode == "rb":
+            reads[path] += 1
+        return original_open(path, mode, *args, **kwargs)
+    monkeypatch.setattr(Path, "open", opening)
+    store.restore_latest()
+    assert sum(reads.values()) == 301
+    assert store._latest.selected[0] == latest
+    assert len(store._latest.selected[1]) < 256*1024
+    reads.clear()
+    monkeypatch.setattr(Path, "glob", lambda *a, **k: (_ for _ in ()).throw(AssertionError("GET scanned history")))
+    for _ in range(5):
+        assert store.latest() is store._latest.selected[0]
+    assert reads == {record_path(latest.provenance_identity): 5}
+    # Ordinary retention advances selection without scanning; a second owner sees it.
+    newer = create(**{**core, "request_identity": "PF10-NEW-LATEST",
+                     "operation_completed_at": latest.operation_completed_at+timedelta(seconds=1)})
+    store.retain(newer)
+    assert store.latest() == newer
+    before = _pf10_provenance_fingerprint(store.root)
+    from tests.unit.intraday.test_review_v2_runtime import _pf10_corrupt_same_size_and_mtime
+    _pf10_corrupt_same_size_and_mtime(record_path(newer.provenance_identity))
+    with pytest.raises(ValueError, match="INVALID"):
+        store.latest()
+    assert store._latest.selected is None
+    with pytest.raises(ValueError, match="PREPARATION_FAILED"):
+        store.latest()
+    if owner == "review":
+        status = control.status_document()
+        assert status["state"] == "LAST_FAILURE"
+        assert status["preparation_failure"] == "INTRADAY_REVIEW_V2_PROVENANCE_UNAVAILABLE"
+    after = _pf10_provenance_fingerprint(store.root)
+    assert before.keys() == after.keys()
+    assert [path for path in before if before[path] != after[path]] == [str(record_path(newer.provenance_identity))]
+
+
+def _pf10_provenance_fingerprint(root):
+    from hashlib import sha256
+    import os
+    return {str(Path(folder)/name): sha256((Path(folder)/name).read_bytes()).hexdigest()
+            for folder, _, names in os.walk(root) for name in names}
+
+
+@pytest.mark.parametrize("owner", ("review", "refresh"))
+def test_pf10_failed_provenance_retention_stays_fenced_until_explicit_restore(owner, tmp_path):
+    from dataclasses import asdict
+    from kronos.intraday.review_v2_operation import create_review_v2_provenance
+    from kronos.intraday.refresh_v2 import create_refresh_v2_provenance
+    if owner == "review":
+        run, _, control = _control(tmp_path)
+        control.execute_document(_payload(run))
+        store, create = control._store, create_review_v2_provenance
+    else:
+        from tests.unit.intraday.test_probables_v2_refresh_control import _control as refresh_control
+        _, runtime, control, _, _ = refresh_control(tmp_path, authenticated=False)
+        control.execute_document({})
+        store, create = runtime.refresh_v2_provenance_store, create_refresh_v2_provenance
+    record = store.latest()
+    store.retain(record)  # Ensure the primary index exists for rejected Refresh provenance too.
+    core = asdict(record)
+    for field in ("provenance_identity", "integrity_identity", "contract_identity", "contract_version"):
+        core.pop(field)
+    conflicting = create(**{**core, "operation_completed_at": record.operation_completed_at+timedelta(seconds=1)})
+    with pytest.raises(ValueError, match="CONFLICT"):
+        store.retain(conflicting)
+    assert store._latest.selected is None
+    store.retain(record)
+    with pytest.raises(ValueError, match="PREPARATION_FAILED"):
+        store.latest()
+    store.restore_latest()
+    # The immutable record survived; failure of its request index was not success.
+    assert store.latest() == conflicting

@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
+from contextvars import ContextVar
+from functools import wraps
 from pathlib import Path
 from threading import RLock
 from uuid import uuid4
@@ -46,6 +49,36 @@ _WORKSPACE_LOCKS: dict[Path, object] = {}
 _WORKSPACE_LOCKS_LOCK = RLock()
 
 
+_PAGE_READ = ContextVar(__name__ + ".page_read", default=None)
+
+
+def _page_bytes(path):
+    scope = _PAGE_READ.get()
+    return path.read_bytes() if scope is None else scope.read(path)
+
+
+def _page_exists(path):
+    scope = _PAGE_READ.get()
+    return path.exists() if scope is None else scope.exists(path)
+
+
+def _page_changed():
+    scope = _PAGE_READ.get()
+    if scope is not None:
+        scope.invalidate()
+
+
+def _page_once(method):
+    @wraps(method)
+    def selected(self, *args, **kwargs):
+        scope = _PAGE_READ.get()
+        if scope is None:
+            return method(self, *args, **kwargs)
+        return scope.memo((method, self, args, tuple(kwargs.items())),
+                          lambda: method(self, *args, **kwargs))
+    return selected
+
+
 class IntradayReviewV2Store:
     """Explicit-identity V2 store; it never reads or writes review-v1."""
 
@@ -55,6 +88,16 @@ class IntradayReviewV2Store:
         self._root = root
         with _WORKSPACE_LOCKS_LOCK:
             self._lock = _WORKSPACE_LOCKS.setdefault(root.resolve(), RLock())
+
+    @contextmanager
+    def page_read_scope(self, scope):
+        """Caller-owned byte reuse; no authority, publication or rebuilding."""
+        with self._lock:
+            token = _PAGE_READ.set(scope)
+            try:
+                yield
+            finally:
+                _PAGE_READ.reset(token)
 
     @property
     def workspace_lock(self):
@@ -123,6 +166,7 @@ class IntradayReviewV2Store:
         family = self.root / 'chart-input-observations'
         try:
             with self._lock, _trusted_answer_directory(self.root) as root:
+                _page_changed()
                 try:
                     os.mkdir('chart-input-observations', mode=0o700, dir_fd=root)
                 except FileExistsError:
@@ -149,6 +193,7 @@ class IntradayReviewV2Store:
             raise ReviewError(ReviewFailure.INTEGRITY_INVALID) from error
         return value.identity
 
+    @_page_once
     def load_chart_input(self, chart):
         import os
         import stat
@@ -255,7 +300,7 @@ class IntradayReviewV2Store:
             raise ReviewError(ReviewFailure.INPUT_INVALID)
         path = self._path("current-visual-evidence", value.review_pack_identity)
         with self._lock:
-            if path.exists():
+            if _page_exists(path):
                 existing = artifact_from_bytes_v2(self._read(path))
                 if existing != value:
                     raise ReviewError(ReviewFailure.ANSWER_CONFLICT)
@@ -289,6 +334,7 @@ class IntradayReviewV2Store:
             "question-batches", identity, ReviewQuestionBatchV2, "batch_identity"
         )
 
+    @_page_once
     def load_transport(self, identity: str) -> ReviewBatchTransportV2:
         value = transport_from_bytes_v2(
             self._read(self._path("question-transports", identity))
@@ -329,11 +375,12 @@ class IntradayReviewV2Store:
             "visual_evidence_identity",
         )
 
+    @_page_once
     def load_visual_evidence_for_pack(
         self, review_pack_identity: str,
     ) -> ImportedVisualEvidenceV2 | None:
         path = self._path("current-visual-evidence", review_pack_identity)
-        if not path.exists():
+        if not _page_exists(path):
             return None
         pointer = artifact_from_bytes_v2(self._read(path))
         if (
@@ -366,6 +413,7 @@ class IntradayReviewV2Store:
                             imported_at=evidence.imported_at)
         return evidence
 
+    @_page_once
     def load_chart_bytes(self, value: ChartRevisionV2) -> bytes:
         if type(value) is not ChartRevisionV2:
             raise ReviewError(ReviewFailure.INPUT_INVALID)
@@ -393,9 +441,9 @@ class IntradayReviewV2Store:
         self, cycle_identity: str,
     ) -> CurrentChartPointerV2 | None:
         path = self._path("current-charts", cycle_identity)
-        if not path.exists():
+        if not _page_exists(path):
             return None
-        value = artifact_from_bytes_v2(self._read(path))
+        value = _page_decode(path, self._read(path))
         if (
             type(value) is not CurrentChartPointerV2
             or value.review_cycle_identity != cycle_identity
@@ -435,11 +483,12 @@ class IntradayReviewV2Store:
             self._replace(path, artifact_bytes_v2(value))
         return path
 
+    @_page_once
     def load_current(self) -> CurrentReviewPointerV2 | None:
         path = self._root / "current" / "CURRENT-REVIEW-V2-POINTER.json"
-        if not path.exists():
+        if not _page_exists(path):
             return None
-        value = artifact_from_bytes_v2(self._read(path))
+        value = _page_decode(path, self._read(path))
         if type(value) is not CurrentReviewPointerV2:
             raise ReviewError(ReviewFailure.INTEGRITY_INVALID)
         for pointer in value.cycles:
@@ -473,10 +522,11 @@ class IntradayReviewV2Store:
         path = self._path(family, identity)
         payload = artifact_bytes_v2(value)
         with self._lock:
-            if path.exists():
+            if _page_exists(path):
                 if self._read(path) != payload:
                     raise ReviewError(ReviewFailure.PERSISTENCE_CONFLICT)
                 return path
+            _page_changed()
             path.parent.mkdir(parents=True, exist_ok=True)
             temporary = path.with_name(f".{path.name}.{uuid4().hex}.tmp")
             try:
@@ -487,10 +537,11 @@ class IntradayReviewV2Store:
         return path
 
     def _retain(self, path: Path, payload: bytes) -> None:
-        if path.exists():
+        if _page_exists(path):
             if self._read(path) != payload:
                 raise ReviewError(ReviewFailure.PERSISTENCE_CONFLICT)
             return
+        _page_changed()
         path.parent.mkdir(parents=True, exist_ok=True)
         temporary = path.with_name(f".{path.name}.{uuid4().hex}.tmp")
         try:
@@ -499,6 +550,7 @@ class IntradayReviewV2Store:
         finally:
             temporary.unlink(missing_ok=True)
 
+    @_page_once
     def _load_typed(
         self, family: str, identity: str, expected: type, identity_name: str,
     ):  # type: ignore[no-untyped-def]
@@ -514,6 +566,7 @@ class IntradayReviewV2Store:
 
     @staticmethod
     def _replace(path: Path, payload: bytes) -> None:
+        _page_changed()
         path.parent.mkdir(parents=True, exist_ok=True)
         temporary = path.with_name(f".{path.name}.{uuid4().hex}.tmp")
         try:
@@ -525,7 +578,7 @@ class IntradayReviewV2Store:
     @staticmethod
     def _read(path: Path) -> bytes:
         try:
-            return path.read_bytes()
+            return _page_bytes(path)
         except OSError as error:
             raise ReviewError(ReviewFailure.ARTIFACT_UNAVAILABLE) from error
 
@@ -538,3 +591,9 @@ def _component(value: object) -> bool:
 
 
 __all__ = ["DEFAULT_INTRADAY_REVIEW_V2_ROOT", "IntradayReviewV2Store"]
+
+
+def _page_decode(path, encoded):
+    scope = _PAGE_READ.get()
+    return (artifact_from_bytes_v2(encoded) if scope is None else
+            scope.memo((artifact_from_bytes_v2, path), lambda: artifact_from_bytes_v2(encoded)))

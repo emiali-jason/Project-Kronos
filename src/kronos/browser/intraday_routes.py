@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from functools import wraps
+
 from kronos.browser.intraday_chart_preview import CHART_PREVIEW_ROUTE, current_chart_preview
 
 from http import HTTPStatus
@@ -10,7 +12,7 @@ import json
 from kronos.application.intraday_native_visual_reconciliation import (
     IntradayNativeVisualReconciliationApplication,
 )
-from kronos.application.intraday_review import IntradayReviewApplication
+from kronos.application.intraday_review import IntradayReviewApplication, IntradayReviewSnapshot
 from kronos.application.intraday_statistics import (
     IntradayStatisticsApplication,
     IntradayStatisticsError,
@@ -143,6 +145,19 @@ from kronos.intraday.native_visual_reconciliation_persistence import (
 from kronos.instrument.visual_identity_persistence import (
     load_default_visual_identity_resolver,
 )
+
+
+def _page_boundary(method):
+    """Keep public route ownership/introspection while exposing capture refusal."""
+    @wraps(method)
+    def response(self, request, snapshot_provider):
+        from kronos.application.intraday_review_v2 import IntradayPageUnavailable
+        try:
+            return method(self, request, snapshot_provider)
+        except IntradayPageUnavailable as error:
+            return BrowserRouteResponse(str(error), status=HTTPStatus.SERVICE_UNAVAILABLE,
+                                        content_type="text/plain; charset=utf-8")
+    return response
 
 
 class IntradayBrowserRoutes:
@@ -293,16 +308,25 @@ class IntradayBrowserRoutes:
         except ReviewError:
             return None
 
-    def _opportunity_review_snapshot(self):  # type: ignore[no-untyped-def]
+    def _opportunity_review_snapshot(self, *, expected_run=None, check_run=False):  # type: ignore[no-untyped-def]
         """Read only the exact current Review population, without WO-B composition."""
         if self._review_v2_control is None:
             return None
         application = self._review_v2_control.application
         try:
-            snapshot = application.snapshot()
-            return snapshot if snapshot.probables_run_identity is not None else None
-        except ReviewError:
-            return None
+            with application.page_read_scope():
+                if check_run:
+                    from kronos.application.intraday_review_v2 import IntradayPageUnavailable
+                    run = application.current_probables_run()
+                    if (None if run is None else run.run_identity) != expected_run:
+                        raise IntradayPageUnavailable("INTRADAY_PAGE_SOURCE_CHANGED")
+                snapshot = application.snapshot()
+                return snapshot if snapshot.probables_run_identity is not None else None
+        except ReviewError as error:
+            if error.failure is ReviewFailure.NOT_CURRENT:
+                return None
+            from kronos.application.intraday_review_v2 import IntradayPageUnavailable
+            raise IntradayPageUnavailable(error.failure.value) from error
 
     def _review_v2_snapshot(self):
         if self._review_v2_control is None:
@@ -331,18 +355,37 @@ class IntradayBrowserRoutes:
                     self._review_v2_control.application.current_reconciliation()
                 )
                 status["reconciliation"] = selected.status_document()
-        except (ReviewError, OSError, ValueError):
-            status["reconciliation"] = {
-                "eligible_count": 0,
-                "reconciled_count": 0,
-                "candidates": (),
-            }
+        except (ReviewError, OSError, ValueError) as error:
+            from kronos.application.intraday_review_v2 import IntradayPageUnavailable
+            from kronos.intraday.visual_reconciliation_v2_persistence import VisualReconciliationPersistenceError
+            if isinstance(error, ReviewError) and error.failure in {
+                ReviewFailure.NOT_CURRENT, ReviewFailure.ARTIFACT_UNAVAILABLE,
+            }:
+                status["reconciliation"] = {
+                    "eligible_count": 0, "reconciled_count": 0, "candidates": (),
+                    "failure_reason": error.failure.value,
+                }
+            else:
+                reason = (error.failure.value if isinstance(error, ReviewError) else
+                          str(error) if isinstance(error, VisualReconciliationPersistenceError) else
+                          "INTRADAY_RECONCILIATION_UNAVAILABLE")
+                raise IntradayPageUnavailable(reason) from error
         status["reconciliation_control_available"] = (
             self._visual_reconciliation_v2_control is not None
             or self._wo10_control is not None
         )
         return status
 
+    def _prepared_review_page(self):
+        if self._review_v2_control is None:
+            return None, None, None
+        with self._review_v2_control.application.page_read_scope():
+            snapshot = self._review_v2_snapshot()
+            run = self._current_probables_v2()
+            status = self._review_v2_status(snapshot)
+            return snapshot, run, status
+
+    @_page_boundary
     def handle_get(
         self,
         request: BrowserGetRequest,
@@ -405,25 +448,31 @@ class IntradayBrowserRoutes:
         if request.path == "/intraday":
             selected = request.query.get("instrument", [None])[0]
             control = self._probables_v2_control
-            latest_evaluable = (
-                None if control is None else control.latest_evaluable_run()
-            )
+            latest_evaluable = None if control is None else control.latest_evaluable_run()
+            # Application snapshots precede Review -> producer locks. Validate
+            # their identities inside the captured generation, never nest the
+            # application lock beneath producer and risk reversing publication.
+            workstation = self._workstation.snapshot(selected)
+            try:
+                status = None if control is None else control.status_document(
+                    latest_evaluable_run=latest_evaluable)
+            except (ValueError, OSError) as error:
+                from kronos.application.intraday_review_v2 import IntradayPageUnavailable
+                raise IntradayPageUnavailable("INTRADAY_PROVENANCE_UNAVAILABLE") from error
+            prepared = getattr(workstation, "probables_v2", None)
+            run = None if prepared is None else prepared.run
+            identity = None if run is None else run.run_identity
+            if status is not None and status.get("current_analysis_identity") != identity:
+                from kronos.application.intraday_review_v2 import IntradayPageUnavailable
+                raise IntradayPageUnavailable("INTRADAY_PAGE_SOURCE_CHANGED")
+            review = self._opportunity_review_snapshot(
+                expected_run=identity, check_run=control is not None)
             return BrowserRouteResponse(
                 render_intraday_workstation(
-                    snapshot_provider(),
-                    self._workstation.snapshot(selected),
-                    market_availability=(
-                        () if control is None else control.market_availability()
-                    ),
-                    refresh_status=(
-                        None
-                        if control is None
-                        else control.status_document(
-                            latest_evaluable_run=latest_evaluable
-                        )
-                    ),
-                    latest_evaluable_run=latest_evaluable,
-                    review_v2=self._opportunity_review_snapshot(),
+                    snapshot_provider(), workstation,
+                    market_availability=() if control is None else control.market_availability(),
+                    refresh_status=status, latest_evaluable_run=latest_evaluable,
+                    review_v2=review,
                     readiness_status=None if self._wo09_projection is None else self._wo09_projection.status_document(),
                 )
             )
@@ -431,15 +480,15 @@ class IntradayBrowserRoutes:
             selected = request.path.removeprefix(detail_prefix)
             renderer = render_intraday_detail
         elif request.path == "/intraday/review":
-            review_snapshot = self._review_v2_snapshot()
+            review_snapshot, current_run, current_status = self._prepared_review_page()
             return BrowserRouteResponse(
                 render_intraday_review(
                     snapshot_provider(),
-                    self._review.snapshot(),
-                    self._reconciliation.snapshot(),
+                    IntradayReviewSnapshot(None, (), "", "") if review_snapshot is not None else self._review.snapshot(),
+                    None if review_snapshot is not None else self._reconciliation.snapshot(),
                     review_v2=review_snapshot,
-                    available_probables_v2_run=self._current_probables_v2(),
-                    review_v2_status=self._review_v2_status(review_snapshot),
+                    available_probables_v2_run=current_run,
+                    review_v2_status=current_status,
                     focused_candidate=request.query.get("candidate", [None])[0],
                 )
             )
