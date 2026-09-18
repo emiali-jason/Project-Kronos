@@ -3,6 +3,8 @@ from datetime import timedelta
 from types import SimpleNamespace
 from decimal import Decimal as D
 from dataclasses import replace
+from threading import Event, Thread
+from time import monotonic, sleep
 import pytest
 import tests.unit.intraday.test_native_pullback_decision as native_test
 from tests.unit.intraday.test_native_pullback_decision import source_fixture,NativeStructuralStore
@@ -117,13 +119,14 @@ class Capability:
     def disconnect(self):self.consumer.on_connection_state(MonitoringConnectionState.DISCONNECTED)
 
 
-def fixture(tmp_path,monkeypatch,direction='LONG'):
+def fixture(tmp_path,monkeypatch,direction='LONG',background_runner=None):
     monkeypatch.setattr(native_test,'BOUNDARY',BOUNDARY)
     futures,h,f,provider=selected_fixture(tmp_path,monkeypatch,direction)
     clock=[BOUNDARY]
     app=IntradayLifecycleApplication(futures=futures,store=LifecycleStore(tmp_path/'wo11'),clock=lambda:clock[0],
         session_source=lambda subject,now:session(now),
-        timing_source=lambda current:qualify_timing(current,later_facts(f,clock[0],direction),acquired_at=clock[0]),operational_guard=lambda:True)
+        timing_source=lambda current:qualify_timing(current,later_facts(f,clock[0],direction),acquired_at=clock[0]),operational_guard=lambda:True,
+        background_runner=(background_runner or (lambda operation,_name:operation())))
     cap=Capability();hub=SharedSwingMonitoringHub();app.bind_monitoring(hub,lambda:cap)
     return app,h,f,provider,clock,cap,hub
 
@@ -133,6 +136,8 @@ def emit(app,cap,clock,current,price,*,lag=0,sequence=None):
         'KITE_CONNECT_WEBSOCKET','session-test',sequence,True,True,True)
     clock[0]=t.received_at
     cap.consumer.on_market_tick(t)
+    if app.work_status()['owned_workers']:
+        _wait_for_work(app,'IDLE')
     return app.store.restore()[0]
 
 
@@ -242,3 +247,114 @@ def test_policy_publication_checksums_are_independent():
     assert (publication['policy_identity'],publication['policy_version'])==(POLICY,VERSION)
     assert publication['rules']==RULES and publication['checksum']==CHECKSUM==digest(publication['rules'])
     assert publication['latency_rules']==LATENESS_RULES and publication['latency_checksum']==LATENESS_CHECKSUM
+
+
+def _wait_for_work(app, state, timeout=5):
+    deadline = monotonic() + timeout
+    while monotonic() < deadline:
+        status = app.work_status()
+        if status['state'] == state:
+            return status
+        sleep(.01)
+    raise AssertionError(app.work_status())
+
+
+def test_blocked_wo11_worker_does_not_block_shared_swing_dispatch_and_cancellation(
+    tmp_path, monkeypatch
+):
+    app,h,_,_,clock,_,hub=fixture(
+        tmp_path,monkeypatch,
+        background_runner=lambda operation,name:Thread(
+            target=operation,name=name,daemon=True
+        ).start())
+    current=app.action(handoff_identity=h.identity,action='OBSERVE',action_identity='ARM')
+    _wait_for_work(app,'IDLE')
+    entered,release,swing_seen=Event(),Event(),Event()
+    original=app._tick
+    def blocked(track,tick):
+        entered.set();assert release.wait(5);return original(track,tick)
+    monkeypatch.setattr(app,'_tick',blocked)
+    class SwingConsumer:
+        owner_identity='PF06-SWING-CONSUMER'
+        def on_market_tick(self,tick):swing_seen.set()
+        def on_order_update(self,update):pass
+        def on_connection_state(self,state):pass
+    registration=hub.open(app._capability(),SwingConsumer())
+    registration.subscribe((instrument_record(current.data['intake']['future']),))
+    registration.connect()
+    tick=ProviderMarketTick(instrument_record(current.data['intake']['future']),D('100'),
+        clock[0],clock[0],'KITE_CONNECT_WEBSOCKET','PF06-BLOCKED',1,True,True,True)
+    dispatched=Thread(target=lambda:hub.on_market_tick(tick));dispatched.start()
+    try:
+        assert entered.wait(5) and swing_seen.wait(1)
+        dispatched.join(1);assert not dispatched.is_alive()
+        status=app.work_status()
+        assert status['state']=='RUNNING' and status['owned_workers']==1
+        app.shutdown();app.shutdown()
+        status=app.work_status()
+        assert status['state']=='CANCELLATION_REQUESTED' and status['owned_workers']==1
+        assert app.request_pulse() is False
+        assert hub.subscription_owner_identities(tick.instrument)==(
+            'PF06-SWING-CONSUMER',)
+    finally:
+        release.set();dispatched.join(5)
+    status=_wait_for_work(app,'TERMINATED')
+    assert status['owned_workers']==0 and status['queued_items']==0
+
+
+def test_wo11_queue_coalesces_bounds_and_retains_saturation_gap(tmp_path,monkeypatch):
+    runners=[]
+    app,h,_,_,clock,_,_=fixture(
+        tmp_path,monkeypatch,background_runner=lambda operation,_name:runners.append(operation))
+    current=app.action(handoff_identity=h.identity,action='OBSERVE',action_identity='ARM')
+    runners.pop(0)()
+    monkeypatch.setattr(app,'_tick',lambda track,tick:None)
+    instrument=instrument_record(current.data['intake']['future'])
+    def item(sequence):
+        return ProviderMarketTick(instrument,D('100'),clock[0],clock[0],
+            'KITE_CONNECT_WEBSOCKET','PF06-QUEUE',sequence,True,True,True)
+    assert app.request_market_tick(current.data['track_identity'],item(0))
+    assert app.request_market_tick(current.data['track_identity'],item(0))
+    assert app.work_status()['coalesced_work']==1
+    sequence=1
+    while sequence < 100 and app.request_market_tick(
+        current.data['track_identity'],item(sequence)
+    ):
+        sequence+=1
+    assert sequence < 100
+    saturated=app.work_status()
+    assert 0<saturated['queued_items']<=saturated['maximum_queued_items']==64
+    assert saturated['queued_bytes']<=saturated['maximum_queued_bytes']
+    assert saturated['continuity']=='GAP_PENDING'
+    runners.pop(0)()
+    complete=app.work_status()
+    assert complete['queued_items']==0 and complete['continuity']=='GAP_RETAINED'
+    assert complete['retained_work_generations']==0
+    for sequence in range(100,120):
+        assert app.request_market_tick(current.data['track_identity'],item(sequence))
+        runners.pop(0)()
+    assert len(app._pending_work)==0 and app.work_status()['owned_workers']==0
+
+
+def test_shutdown_disposes_registration_that_finishes_attaching_late(
+    tmp_path,monkeypatch
+):
+    app,h,_,_,_,cap,hub=fixture(tmp_path,monkeypatch)
+    entered,release=Event(),Event()
+    original=cap.connect
+    def blocked_connect():
+        entered.set();assert release.wait(5);return original()
+    cap.connect=blocked_connect
+    result=[]
+    worker=Thread(target=lambda:result.append(app.action(
+        handoff_identity=h.identity,action='OBSERVE',action_identity='PF06-LATE-ATTACH')))
+    worker.start()
+    try:
+        assert entered.wait(5)
+        app.shutdown()
+        assert app.work_status()['state']=='TERMINATED'
+    finally:
+        release.set();worker.join(5)
+    assert not worker.is_alive() and len(result)==1
+    assert app._registrations=={}
+    assert hub.subscription_count==0 and hub.active_session_count==0

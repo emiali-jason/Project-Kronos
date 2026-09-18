@@ -7,6 +7,7 @@ import json
 import pytest
 
 from kronos.browser.runtime_state import complete_startup, decorate_html, status_document
+from kronos.browser.server import KronosBrowserServer
 from kronos.application.shared_monitoring import SharedSwingMonitoringHub
 from kronos.application.swing_opportunities import ProviderConnectionState
 from kronos.provider.contracts.monitoring import MonitoringConnectionState
@@ -99,6 +100,83 @@ def test_browser_status_is_inert_and_cross_product_truth_consistent(running):
             assert d['rest_capability']=='NOT_EXPOSED' and d['monitoring']['transport_state']=='IDLE'  # legacy fixture lacks the pure Provider projection
     assert p.begin_count==0 and calls==[]
     assert inventory(root)==before
+
+
+def test_service_loop_admits_intraday_pulse_without_executing_it_inline():
+    server=object.__new__(KronosBrowserServer)
+    lifecycle=SimpleNamespace(
+        request_pulse=Mock(return_value=True),
+        pulse=Mock(side_effect=AssertionError('service loop executed Intraday work')),
+        last_failure=None,
+    )
+    server.intraday_lifecycle=lifecycle
+    server.service_actions()
+    lifecycle.request_pulse.assert_called_once_with()
+    lifecycle.pulse.assert_not_called()
+
+
+def test_status_surfaces_bounded_intraday_owners_without_writes(running):
+    server,_,provider,calls,root=running
+    wo11_status={'state':'RUNNING','owned_workers':1,'queued_items':2}
+    wo17_status={'state':'FAILED','owned_workers':0,'queued_items':0,
+                 'failure':'WO17_MONITORING_STORE_FAILED'}
+    server.intraday_lifecycle=SimpleNamespace(
+        request_pulse=lambda:True,work_status=lambda:dict(wo11_status),
+        shutdown=lambda:None,last_failure=None)
+    server.intraday_wo17_monitoring=SimpleNamespace(
+        work_status=lambda:dict(wo17_status),shutdown=lambda:None)
+    before=inventory(root)
+    for route in ('/status','/runtime/status'):
+        code,body=request(server,route)
+        assert code==200
+        document=json.loads(body)
+        assert document['intraday_wo11_work']==wo11_status
+        assert document['intraday_wo17_work']==wo17_status
+    assert inventory(root)==before
+    assert provider.begin_count==0 and calls==[]
+
+
+def test_swing_gets_remain_responsive_during_actual_blocked_intraday_worker(
+    running,tmp_path,monkeypatch
+):
+    from decimal import Decimal
+    from tests.unit.intraday.test_wo11_lifecycle_application import (
+        fixture as wo11_fixture,_wait_for_work,
+    )
+    from kronos.application.intraday_lifecycle_intake import instrument_record
+    from kronos.provider.contracts.monitoring import ProviderMarketTick
+    server,governance,provider,calls,root=running
+    assert governance.exit_maintenance(
+        governance.action_reference('MAINTENANCE_EXIT')
+    )
+    app,h,_,_,clock,cap,_=wo11_fixture(
+        tmp_path/'wo11',monkeypatch,
+        background_runner=lambda operation,name:Thread(
+            target=operation,name=name,daemon=True
+        ).start())
+    app.bind_monitoring(server.swing_monitoring_hub,lambda:cap)
+    current=app.action(handoff_identity=h.identity,action='OBSERVE',action_identity='PF06-HTTP')
+    _wait_for_work(app,'IDLE')
+    server.intraday_lifecycle=app
+    entered,release=Event(),Event()
+    original=app._tick
+    def blocked(track,tick):
+        entered.set();assert release.wait(10);return original(track,tick)
+    monkeypatch.setattr(app,'_tick',blocked)
+    fact=ProviderMarketTick(instrument_record(current.data['intake']['future']),Decimal('100'),
+        clock[0],clock[0],'KITE_CONNECT_WEBSOCKET','PF06-HTTP',1,True,True,True)
+    server.swing_monitoring_hub.on_market_tick(fact)
+    try:
+        assert entered.wait(5)
+        before=inventory(root)
+        for route in ('/status','/runtime/status','/swing/opportunities','/intraday'):
+            assert request(server,route)[0]==200
+        assert inventory(root)==before
+        assert app.work_status()['owned_workers']==1
+        assert provider.begin_count==0 and calls==[]
+    finally:
+        release.set()
+    _wait_for_work(app,'IDLE')
 
 
 def test_rest_connected_does_not_imply_websocket_live(tmp_path):

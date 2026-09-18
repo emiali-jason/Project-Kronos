@@ -1,13 +1,26 @@
 """Prospective lifecycle owner. Construction and GET projections are inert."""
-from threading import RLock
+from collections import deque
+from threading import RLock, Thread
 from datetime import timedelta
+from typing import Callable
 from kronos.intraday.wo11_lifecycle_contract import record, require, instant, digest, websocket_observation
 from kronos.intraday.wo11_lifecycle import arm, observe, timing, gap, boundary, request_close, research_handoff, terminal_at, TERMINAL
 from kronos.application.intraday_lifecycle_intake import load_intake, instrument_record
+from kronos.provider.contracts.monitoring import MonitoringConnectionState
+
+
+_MAX_QUEUED_WORK = 64
+_MAX_QUEUED_BYTES = 32 * 1024
+def _start_thread(operation, name):
+    Thread(target=operation, name=name, daemon=True).start()
 
 
 class IntradayLifecycleApplication:
-    def __init__(self, *, futures, store, clock, session_source, timing_source, operational_guard, contract_source=None):
+    def __init__(self, *, futures, store, clock, session_source, timing_source,
+                 operational_guard, contract_source=None,
+                 background_runner: Callable[[Callable[[], None], str], object] = _start_thread):
+        if not callable(background_runner):
+            raise ValueError("WO11_BACKGROUND_RUNNER_INVALID")
         self.futures, self.store, self.clock = futures, store, clock
         self.session_source, self.timing_source = session_source, timing_source
         self.operational_guard = operational_guard
@@ -21,6 +34,24 @@ class IntradayLifecycleApplication:
         self._attached_track_identities = frozenset()
         self._timing_boundaries = {}
         self.last_failure = None
+        self._background_runner = background_runner
+        self._work_lock = RLock()
+        self._work_queue = deque()
+        self._pending_work = set()
+        self._work_queued_bytes = 0
+        self._work_generation = 0
+        self._work_active = False
+        self._work_state = "IDLE"
+        self._work_failure = None
+        self._work_cancel_requested = False
+        self._pulse_pending = False
+        self._continuity_gap_required = False
+        self._continuity_state = "COMPLETE"
+        self._coalesced_pulses = 0
+        self._coalesced_work = 0
+        self._saturation_count = 0
+        self._rejected_work = 0
+        self._completed_work = 0
         try:
             for current in self.store.restore():
                 self._prepare_current(current)
@@ -30,7 +61,172 @@ class IntradayLifecycleApplication:
     def bind_monitoring(self, hub, capability):
         self._hub, self._capability = hub, capability
 
+    def work_status(self):
+        """Return bounded worker facts without entering lifecycle/store locks."""
+
+        with self._work_lock:
+            return {
+                "state": self._work_state,
+                "generation": self._work_generation if self._work_active else None,
+                "owned_workers": int(self._work_active),
+                "maximum_workers": 1,
+                "queued_items": len(self._work_queue),
+                "maximum_queued_items": _MAX_QUEUED_WORK,
+                "queued_bytes": self._work_queued_bytes,
+                "maximum_queued_bytes": _MAX_QUEUED_BYTES,
+                "maximum_live_items": _MAX_QUEUED_WORK + 1,
+                "retained_work_generations": 0,
+                "maximum_retained_work_generations": 0,
+                "coalesced_pulses": self._coalesced_pulses,
+                "coalesced_work": self._coalesced_work,
+                "saturation_count": self._saturation_count,
+                "rejected_work": self._rejected_work,
+                "completed_work": self._completed_work,
+                "continuity": self._continuity_state,
+                "failure": self._work_failure,
+            }
+
+    def request_pulse(self) -> bool:
+        """Coalesce one runtime pulse behind the Intraday-owned worker."""
+
+        return self._admit_work("PULSE", None, None, 0)
+
+    def request_market_tick(self, track_identity, tick) -> bool:
+        return self._admit_work("TICK", track_identity, tick, _work_size(tick))
+
+    def request_connection_state(self, track_identity, state) -> bool:
+        return self._admit_work(
+            "CONNECTION", track_identity, state, _work_size(state)
+        )
+
+    def _admit_work(self, kind, track_identity, value, accounted_bytes):
+        dispatch = None
+        key = _work_key(kind, track_identity, value)
+        with self._work_lock:
+            if self._work_cancel_requested or self._work_state == "FAILED":
+                self._rejected_work += 1
+                return False
+            if key in self._pending_work:
+                self._coalesced_work += 1
+                if kind == "PULSE":
+                    self._coalesced_pulses += 1
+                return True
+            if (
+                len(self._work_queue) >= _MAX_QUEUED_WORK
+                or self._work_queued_bytes + accounted_bytes > _MAX_QUEUED_BYTES
+            ):
+                self._saturation_count += 1
+                self._rejected_work += 1
+                self._continuity_gap_required = True
+                self._continuity_state = "GAP_PENDING"
+                self._work_failure = "WO11_WORK_QUEUE_SATURATED"
+                self.last_failure = self._work_failure
+                return False
+            self._work_queue.append(
+                (kind, track_identity, value, accounted_bytes, key)
+            )
+            self._pending_work.add(key)
+            self._work_queued_bytes += accounted_bytes
+            if kind == "PULSE":
+                self._pulse_pending = True
+            if not self._work_active:
+                self._work_generation += 1
+                generation = self._work_generation
+                self._work_active = True
+                self._work_state = "RUNNING"
+                dispatch = lambda: self._drain_work(generation)
+        if dispatch is not None:
+            try:
+                self._background_runner(dispatch, "kronos-intraday-wo11")
+            except Exception:
+                with self._work_lock:
+                    self._work_queue.clear()
+                    self._pending_work.clear()
+                    self._work_queued_bytes = 0
+                    self._pulse_pending = False
+                    self._work_active = False
+                    self._work_state = "FAILED"
+                    self._work_failure = "WO11_WORKER_DISPATCH_FAILED"
+                    self._continuity_state = "INCOMPLETE"
+                    self.last_failure = self._work_failure
+                return False
+        return True
+
+    def _drain_work(self, generation):
+        try:
+            while True:
+                with self._work_lock:
+                    if generation != self._work_generation:
+                        self._rejected_work += len(self._work_queue)
+                        self._work_queue.clear()
+                        self._pending_work.clear()
+                        self._work_queued_bytes = 0
+                        self._pulse_pending = False
+                        return
+                    if self._work_cancel_requested:
+                        self._rejected_work += len(self._work_queue)
+                        self._work_queue.clear()
+                        self._pending_work.clear()
+                        self._work_queued_bytes = 0
+                        self._pulse_pending = False
+                        self._work_state = "CANCELLATION_REQUESTED"
+                        break
+                    if self._work_queue:
+                        kind, track_identity, value, accounted_bytes, key = (
+                            self._work_queue.popleft()
+                        )
+                        self._work_queued_bytes -= accounted_bytes
+                    elif self._continuity_gap_required:
+                        self._continuity_gap_required = False
+                        kind, track_identity, value, key = "GAP", None, None, None
+                    else:
+                        self._work_active = False
+                        self._work_state = "IDLE"
+                        return
+                if kind == "PULSE":
+                    self.pulse()
+                elif kind == "TICK":
+                    self._tick(track_identity, value)
+                elif kind == "CONNECTION":
+                    self._connection(track_identity, value)
+                else:
+                    self._retain_queue_gap()
+                with self._work_lock:
+                    if key is not None:
+                        self._pending_work.discard(key)
+                    if kind == "PULSE":
+                        self._pulse_pending = False
+                    if kind == "GAP":
+                        self._continuity_state = "GAP_RETAINED"
+                    self._completed_work += 1
+        except BaseException:
+            with self._work_lock:
+                self._rejected_work += len(self._work_queue)
+                self._work_queue.clear()
+                self._pending_work.clear()
+                self._work_queued_bytes = 0
+                self._pulse_pending = False
+                self._work_active = False
+                self._work_state = "FAILED"
+                self._work_failure = "WO11_WORKER_FAILED"
+                self._continuity_state = "INCOMPLETE"
+                self.last_failure = self._work_failure
+            return
+        with self._work_lock:
+            self._work_active = False
+            self._work_state = "TERMINATED"
+
+    def _retain_queue_gap(self):
+        with self._lock:
+            tracks = tuple(self._registrations)
+        for track_identity in tracks:
+            self._connection(
+                track_identity, MonitoringConnectionState.CONTEXT_INCOMPLETE
+            )
+
     def _guard(self):
+        if self._work_cancelled():
+            raise ValueError("WO11_LIFECYCLE_TERMINATED")
         if self.operational_guard() is not True:
             raise ValueError("WO11_OPERATIONAL_AUTHORITY_UNAVAILABLE")
 
@@ -95,7 +291,11 @@ class IntradayLifecycleApplication:
         return self.store.current(auth.data["claim"])
 
     def _attach(self, current, *, restored):
-        if current.data["state"] in TERMINAL or current.data["track_identity"] in self._registrations:
+        if (
+            self._work_cancelled()
+            or current.data["state"] in TERMINAL
+            or current.data["track_identity"] in self._registrations
+        ):
             return
         capability = self._capability()
         if self._hub is None or capability is None or getattr(capability,"active",False) is not True:
@@ -106,6 +306,10 @@ class IntradayLifecycleApplication:
         self._registrations[consumer.track_identity] = (registration, capability)
         self._attached_track_identities = frozenset(self._registrations)
         try:
+            if self._dispose_cancelled_registration(
+                consumer.track_identity, registration
+            ):
+                return
             if restored:
                 with self.store.transaction():
                     current = self._commit(current, gap(current, at=self.clock(), reason="PROCESS_RESTORATION"))
@@ -115,11 +319,28 @@ class IntradayLifecycleApplication:
                     truth_class=current.data["truth_class"], state="ATTACHING", at=self.clock(),
                     capability_identity=getattr(capability,"capability_identity",None), owner_identity=consumer.owner_identity))
             registration.connect()
+            self._dispose_cancelled_registration(
+                consumer.track_identity, registration
+            )
         except Exception:
             self._registrations.pop(consumer.track_identity,None)
             self._attached_track_identities = frozenset(self._registrations)
             registration.disconnect()
             raise
+
+    def _work_cancelled(self):
+        with self._work_lock:
+            return self._work_cancel_requested
+
+    def _dispose_cancelled_registration(self, track_identity, registration):
+        if not self._work_cancelled():
+            return False
+        attached = self._registrations.get(track_identity)
+        if attached is not None and attached[0] is registration:
+            self._registrations.pop(track_identity, None)
+            self._attached_track_identities = frozenset(self._registrations)
+        registration.disconnect()
+        return True
 
     def _authority_failure(self, current, error, now):
         code = str(error) if isinstance(error, ValueError) and str(error).startswith("WO11_") else "WO11_SOURCE_UNAVAILABLE"
@@ -338,10 +559,22 @@ class IntradayLifecycleApplication:
         return "IDLE" if getattr(capability, "active", False) else "INTERRUPTED"
 
     def shutdown(self):
-        for registration,_ in tuple(self._registrations.values()):
-            registration.disconnect()
-        self._registrations.clear()
+        with self._work_lock:
+            self._work_cancel_requested = True
+            if self._work_active:
+                self._work_state = "CANCELLATION_REQUESTED"
+            else:
+                self._rejected_work += len(self._work_queue)
+                self._work_queue.clear()
+                self._pending_work.clear()
+                self._work_queued_bytes = 0
+                self._pulse_pending = False
+                self._work_state = "TERMINATED"
+        registrations = self._registrations
+        self._registrations = {}
         self._attached_track_identities = frozenset()
+        for registration,_ in tuple(registrations.values()):
+            registration.disconnect()
 
 
 class _Consumer:
@@ -349,8 +582,29 @@ class _Consumer:
         self.application,self.track_identity=application,track_identity
         self.owner_identity="INTRADAY-WO11-LIFECYCLE:"+track_identity
     def on_market_tick(self,tick):
-        self.application._tick(self.track_identity,tick)
+        self.application.request_market_tick(self.track_identity,tick)
     def on_order_update(self,update):
         pass  # Orders are not model prices or broker-verified lifecycle facts.
     def on_connection_state(self,state):
-        self.application._connection(self.track_identity,state)
+        self.application.request_connection_state(self.track_identity,state)
+
+
+def _work_size(value):
+    """Bound the retained representation of a small callback fact."""
+
+    return len(repr(value).encode("utf-8"))
+
+
+def _work_key(kind, track_identity, value):
+    if kind == "PULSE":
+        return (kind,)
+    if kind == "CONNECTION":
+        return (kind, track_identity, getattr(value, "value", value))
+    return (
+        kind,
+        track_identity,
+        getattr(value, "connection_id", None),
+        getattr(value, "source_sequence", None),
+        getattr(value, "observed_at", None),
+        getattr(value, "last_price", None),
+    )

@@ -283,6 +283,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         intraday_runtime.lifecycle_application.bind_monitoring(server.swing_monitoring_hub, application.authenticated_read_only_capability)
         server.intraday_lifecycle = intraday_runtime.lifecycle_application
+        server.intraday_wo17_monitoring = intraday_runtime.wo17_monitoring
         server.intraday_journal = intraday_runtime.journal_application
         from kronos.application.intraday_notifications import IntradayNotifications
         server.intraday_notifications = IntradayNotifications(

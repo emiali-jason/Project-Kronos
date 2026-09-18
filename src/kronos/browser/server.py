@@ -635,7 +635,7 @@ class KronosBrowserServer(ThreadingHTTPServer):
         lifecycle = getattr(self, "intraday_lifecycle", None)
         if lifecycle is not None:
             try:
-                lifecycle.pulse()
+                lifecycle.request_pulse()
             except (ValueError, OSError, TypeError, KeyError, RuntimeError):
                 lifecycle.last_failure = "WO11_RUNTIME_SERVICE_UNAVAILABLE"
         super().service_actions()
@@ -647,6 +647,9 @@ class KronosBrowserServer(ThreadingHTTPServer):
         lifecycle = getattr(self, "intraday_lifecycle", None)
         if lifecycle is not None:
             lifecycle.shutdown()
+        wo17_monitoring = getattr(self, "intraday_wo17_monitoring", None)
+        if wo17_monitoring is not None:
+            wo17_monitoring.shutdown()
         # Invalidate pending authentication before disposing its restoration owners.
         self.application.close()
         self.refresh_reminders.close()
@@ -1968,6 +1971,12 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             from kronos.browser.runtime_state import status_document
             payload = status_document(self.server)
             payload["paper_observation_compact"] = self.server.trade_window.paper_observation_compact_status()
+            lifecycle = getattr(self.server, "intraday_lifecycle", None)
+            if lifecycle is not None:
+                payload["intraday_wo11_work"] = lifecycle.work_status()
+            wo17 = getattr(self.server, "intraday_wo17_monitoring", None)
+            if wo17 is not None:
+                payload["intraday_wo17_work"] = wo17.work_status()
             self._json(payload)
             return
         if path == "/status":
@@ -1988,6 +1997,12 @@ class _BrowserHandler(BaseHTTPRequestHandler):
                 "live_monitoring": live_monitoring.state.value,
             }
             payload["paper_observation_compact"] = self.server.trade_window.paper_observation_compact_status()
+            lifecycle = getattr(self.server, "intraday_lifecycle", None)
+            if lifecycle is not None:
+                payload["intraday_wo11_work"] = lifecycle.work_status()
+            wo17 = getattr(self.server, "intraday_wo17_monitoring", None)
+            if wo17 is not None:
+                payload["intraday_wo17_work"] = wo17.work_status()
             publication = self.server.application.publication_status()
             if publication["control"] is not None:
                 payload["swing_publication"] = publication

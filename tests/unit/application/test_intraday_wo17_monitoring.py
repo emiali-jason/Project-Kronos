@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from datetime import timedelta
 from decimal import Decimal
+from threading import Event, Thread
+from time import monotonic, sleep
 
 from kronos.application.intraday_wo17 import (
     IntradayWo17Application,
@@ -68,7 +70,7 @@ class _ExistingConsumer:
         del state
 
 
-def _coordinator(tmp_path, *, mcx=False):  # type: ignore[no-untyped-def]
+def _coordinator(tmp_path, *, mcx=False, background_runner=None):  # type: ignore[no-untyped-def]
     snapshot, position = _active(tmp_path / "facts", mcx=mcx)
     store = Wo17Store((tmp_path / "wo17").resolve())
     application = IntradayWo17Application(store=store)
@@ -83,6 +85,7 @@ def _coordinator(tmp_path, *, mcx=False):  # type: ignore[no-untyped-def]
         IntradayWo17RestorationService(store=store),
         lambda: capability,  # type: ignore[arg-type]
         clock=lambda: position.last_transition_at + timedelta(minutes=5),
+        background_runner=(background_runner or (lambda operation, _name: operation())),
     )
     hub = SharedSwingMonitoringHub()
     coordinator.set_shared_monitoring_hub(hub)
@@ -235,3 +238,144 @@ def test_connection_interruption_preserves_position_and_recovery_resets_baseline
         is Wo17MonitoringAvailability.RECOVERING
     )
     assert recovered.lifecycle.baseline is None
+
+
+def _wait_for_work(coordinator, state, timeout=5):  # type: ignore[no-untyped-def]
+    deadline = monotonic() + timeout
+    while monotonic() < deadline:
+        status = coordinator.work_status()
+        if status['state'] == state:
+            return status
+        sleep(.01)
+    raise AssertionError(coordinator.work_status())
+
+
+def _monitoring_tick(binding, position, sequence):  # type: ignore[no-untyped-def]
+    at = position.last_transition_at + timedelta(seconds=10 + sequence)
+    return ProviderMarketTick(
+        binding.provider_instrument,
+        position.upstream_snapshot.lineage.entry_reference,
+        at,at,'KITE_CONNECT_WEBSOCKET','PF06-WO17',sequence,
+        True,True,True,
+    )
+
+
+def test_blocked_wo17_worker_preserves_swing_dispatch_and_owned_cancellation(
+    tmp_path, monkeypatch
+) -> None:
+    coordinator,hub,capability,_,binding,position=_coordinator(
+        tmp_path,background_runner=lambda operation,name:Thread(
+            target=operation,name=name,daemon=True
+        ).start())
+    coordinator.attach(binding,attached_at=position.last_transition_at+timedelta(seconds=2))
+    _wait_for_work(coordinator,'IDLE')
+    entered,release,swing_seen=Event(),Event(),Event()
+    def blocked(attached,tick):
+        entered.set();assert release.wait(5)
+    monkeypatch.setattr(coordinator,'_apply_tick',blocked)
+    class SwingConsumer:
+        owner_identity='PF06-SWING-CONSUMER'
+        def on_market_tick(self,tick):swing_seen.set()
+        def on_order_update(self,update):pass
+        def on_connection_state(self,state):pass
+    swing=hub.open(capability,SwingConsumer())
+    swing.subscribe((binding.provider_instrument,));swing.connect()
+    dispatched=Thread(target=lambda:hub.on_market_tick(
+        _monitoring_tick(binding,position,1)))
+    dispatched.start()
+    try:
+        assert entered.wait(5) and swing_seen.wait(1)
+        dispatched.join(1);assert not dispatched.is_alive()
+        assert coordinator.status_document()['work']['owned_workers']==1
+        coordinator.shutdown();coordinator.shutdown()
+        status=coordinator.work_status()
+        assert status['state']=='CANCELLATION_REQUESTED' and status['owned_workers']==1
+        assert hub.subscription_owner_identities(binding.provider_instrument)==(
+            'PF06-SWING-CONSUMER',)
+    finally:
+        release.set();dispatched.join(5)
+    status=_wait_for_work(coordinator,'TERMINATED')
+    assert status['owned_workers']==0 and status['queued_items']==0
+
+
+def test_wo17_worker_failure_preserves_prior_view_and_rejects_retry(
+    tmp_path,monkeypatch
+) -> None:
+    coordinator,hub,_,store,binding,position=_coordinator(
+        tmp_path,background_runner=lambda operation,name:Thread(
+            target=operation,name=name,daemon=True
+        ).start())
+    coordinator.attach(binding,attached_at=position.last_transition_at+timedelta(seconds=2))
+    _wait_for_work(coordinator,'IDLE')
+    before=store.restore_current(binding.canonical_subject_identity)
+    monkeypatch.setattr(coordinator,'_apply_tick',lambda *_:(_ for _ in ()).throw(
+        ValueError('WO17_MONITORING_STORE_FAILED')))
+    hub.on_market_tick(_monitoring_tick(binding,position,2))
+    failed=_wait_for_work(coordinator,'FAILED')
+    assert failed['failure']=='WO17_MONITORING_STORE_FAILED'
+    assert failed['continuity']=='INCOMPLETE'
+    assert store.restore_current(binding.canonical_subject_identity)==before
+    rejected=failed['rejected_work']
+    hub.on_market_tick(_monitoring_tick(binding,position,3))
+    assert coordinator.work_status()['rejected_work']==rejected+1
+
+
+def test_wo17_queue_is_bounded_coalesced_and_retains_gap(tmp_path,monkeypatch) -> None:
+    runners=[]
+    coordinator,hub,_,_,binding,position=_coordinator(
+        tmp_path,background_runner=lambda operation,_name:runners.append(operation))
+    coordinator.attach(binding,attached_at=position.last_transition_at+timedelta(seconds=2))
+    runners.pop(0)()
+    monkeypatch.setattr(coordinator,'_apply_tick',lambda attached,tick:None)
+    first=_monitoring_tick(binding,position,10)
+    hub.on_market_tick(first);hub.on_market_tick(first)
+    assert coordinator.work_status()['coalesced_work']==1
+    sequence=11
+    while sequence<200 and coordinator.work_status()['saturation_count']==0:
+        hub.on_market_tick(_monitoring_tick(binding,position,sequence));sequence+=1
+    saturated=coordinator.work_status()
+    assert saturated['saturation_count']==1
+    assert saturated['queued_items']<=saturated['maximum_queued_items']==64
+    assert saturated['queued_bytes']<=saturated['maximum_queued_bytes']
+    assert saturated['continuity']=='GAP_PENDING'
+    runners.pop(0)()
+    complete=coordinator.work_status()
+    assert complete['queued_items']==0 and complete['continuity']=='GAP_RETAINED'
+    for sequence in range(200,220):
+        hub.on_market_tick(_monitoring_tick(binding,position,sequence))
+        runners.pop(0)()
+    assert len(coordinator._pending_work)==0
+    assert coordinator.work_status()['retained_work_generations']==0
+
+
+def test_wo17_shutdown_disposes_attachment_that_connects_late(
+    tmp_path,monkeypatch
+) -> None:
+    coordinator,hub,_,_,binding,position=_coordinator(tmp_path)
+    entered,release=Event(),Event()
+    original=_Session.connect
+    def blocked_connect(session):
+        entered.set();assert release.wait(5);return original(session)
+    monkeypatch.setattr(_Session,'connect',blocked_connect)
+    errors=[]
+    worker=Thread(target=lambda:_capture_error(
+        errors,lambda:coordinator.attach(
+            binding,attached_at=position.last_transition_at+timedelta(seconds=2))))
+    worker.start()
+    try:
+        assert entered.wait(5)
+        coordinator.shutdown()
+        assert coordinator.work_status()['state']=='TERMINATED'
+    finally:
+        release.set();worker.join(5)
+    assert not worker.is_alive()
+    assert len(errors)==1 and str(errors[0])=='WO17_MONITORING_CANCELLED'
+    assert coordinator.status_document()['bindings']==[]
+    assert hub.subscription_count==0 and hub.active_session_count==0
+
+
+def _capture_error(errors, operation):  # type: ignore[no-untyped-def]
+    try:
+        operation()
+    except Exception as error:
+        errors.append(error)

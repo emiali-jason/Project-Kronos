@@ -16,6 +16,7 @@ from kronos.browser.reports import (INTRADAY_FIELDS, project_intraday_reports, R
 from kronos.swing.v1.models import V1Direction
 from kronos.browser.views import render_portfolio, render_reports
 from kronos.intraday.wo11_lifecycle_contract import digest
+from kronos.intraday.wo11_lifecycle_store import LifecycleStore
 from tests.unit.intraday.test_wo14_journal import build, Fact, Facts
 from tests.unit.intraday.test_wo11_lifecycle import tick, NOW
 from tests.unit.application.test_swing_opportunities import _ready
@@ -215,13 +216,13 @@ def test_wo16_compact_allowlist_no_paths_payloads_or_research(tmp_path):
 
 
 @pytest.mark.parametrize("state",["IDLE","INTERRUPTED","UNAVAILABLE","LIVE"])
-def test_wo15_real_owner_read_ignores_rest_connected(state):
+def test_wo15_real_owner_read_ignores_rest_connected(state,tmp_path):
     t=tick()
     from dataclasses import asdict
     from kronos.provider.contracts.monitoring import MonitoringConnectionState
     retained=dict(last_price=str(t.last_price),last_observed_at=t.observed_at.isoformat(),last_sequence=t.source_sequence,
         last_connection=t.connection_id,last_fact_identity='WO11_SOURCE_FACT-'+digest(asdict(t)),baseline_required=False,monitoring='AVAILABLE')
-    app=IntradayLifecycleApplication(futures=None,store=None,clock=lambda:NOW,session_source=None,timing_source=None,operational_guard=None)
+    app=IntradayLifecycleApplication(futures=None,store=LifecycleStore(tmp_path/'wo11'),clock=lambda:NOW,session_source=None,timing_source=None,operational_guard=None)
     app._hub=SimpleNamespace(latest_market_ticks=(t,),subscription_owner_identities=lambda instrument:('INTRADAY-WO11-LIFECYCLE:AUTH',)) if state!='UNAVAILABLE' else None
     if state in {'LIVE','INTERRUPTED'}:
         app._registrations['AUTH']=(SimpleNamespace(active=True,connection_state=MonitoringConnectionState.CONNECTED if state=='LIVE' else MonitoringConnectionState.DISCONNECTED),SimpleNamespace(active=True))
@@ -230,7 +231,7 @@ def test_wo15_real_owner_read_ignores_rest_connected(state):
 
 
 @pytest.mark.parametrize("change",['newer','late','recovered','gap','other_owner','fact_mismatch'])
-def test_wo15_no_stale_cached_or_unowned_price(change):
+def test_wo15_no_stale_cached_or_unowned_price(change,tmp_path):
     from dataclasses import asdict
     from kronos.provider.contracts.monitoring import MonitoringConnectionState
     t=tick();retained=dict(last_price=str(t.last_price),last_observed_at=t.observed_at.isoformat(),last_sequence=t.source_sequence,
@@ -240,7 +241,7 @@ def test_wo15_no_stale_cached_or_unowned_price(change):
     if change=='recovered':t=tick(recovered=True)
     if change=='gap':retained['baseline_required']=True
     if change=='fact_mismatch':retained['last_fact_identity']='WRONG'
-    app=IntradayLifecycleApplication(futures=None,store=None,clock=lambda:NOW,session_source=None,timing_source=None,operational_guard=None)
+    app=IntradayLifecycleApplication(futures=None,store=LifecycleStore(tmp_path/'wo11'),clock=lambda:NOW,session_source=None,timing_source=None,operational_guard=None)
     app._hub=SimpleNamespace(latest_market_ticks=(t,),subscription_owner_identities=lambda instrument:() if change=='other_owner' else ('INTRADAY-WO11-LIFECYCLE:AUTH',))
     app._registrations['AUTH']=(SimpleNamespace(active=True,connection_state=MonitoringConnectionState.CONNECTED),SimpleNamespace(active=True))
     assert app.portfolio_observation('AUTH',retained)['price'] is None
