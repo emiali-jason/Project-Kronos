@@ -4504,7 +4504,14 @@ class _BrowserHandler(BaseHTTPRequestHandler):
 
     def _security_headers(self) -> None:
         self.send_header("Cache-Control", "no-store")
-        self.send_header("Content-Security-Policy", "default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none'; form-action 'self'")
+        self.send_header(
+            "Content-Security-Policy",
+            "default-src 'self'; style-src 'unsafe-inline'; "
+            "script-src 'unsafe-inline'; img-src 'self' data:; "
+            "frame-ancestors 'none'; form-action 'self' "
+            "https://kite.zerodha.com/connect/login "
+            "http://127.0.0.1:8765/kite/callback",
+        )
         self.send_header("Referrer-Policy", "same-origin")
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("X-Frame-Options", "DENY")

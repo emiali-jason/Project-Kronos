@@ -278,7 +278,21 @@ def test_root_redirects_and_opportunities_route_renders(tmp_path) -> None:
         assert "HDFCBANK" not in body
         assert headers["Cache-Control"] == "no-store"
         assert headers["Referrer-Policy"] == "same-origin"
-        assert "frame-ancestors 'none'" in headers["Content-Security-Policy"]
+        policy = headers["Content-Security-Policy"]
+        for directive in (
+            "default-src 'self'",
+            "style-src 'unsafe-inline'",
+            "script-src 'unsafe-inline'",
+            "img-src 'self' data:",
+            "frame-ancestors 'none'",
+        ):
+            assert directive in policy
+        assert (
+            "form-action 'self' https://kite.zerodha.com/connect/login "
+            "http://127.0.0.1:8765/kite/callback"
+        ) in policy
+        assert "*" not in policy
+        assert "evil.invalid" not in policy
         status, _, body = _request(server, "GET", "/swing/layer1-history")
         assert status == 200
         assert "Layer-1 History" in body
@@ -752,6 +766,10 @@ def test_connect_redirects_admitting_browser_before_callback_authentication(
         assert headers["Location"] == (
             "https://kite.zerodha.com/connect/login?v=3&api_key=redacted"
         )
+        assert (
+            "form-action 'self' https://kite.zerodha.com/connect/login "
+            "http://127.0.0.1:8765/kite/callback"
+        ) in headers["Content-Security-Policy"]
         assert body == ""
         assert case.app.snapshot().provider_state is ProviderConnectionState.CONNECTING
         assert case.harness.adapter.exchange_count == 0
