@@ -1083,6 +1083,251 @@ def _page_load_server(workflow, state):
     return server
 
 
+def test_compact_routes_keep_committed_generation_while_analysis_is_blocked(
+    checkpoint, tmp_path, monkeypatch
+):
+    """Operational attempt state cannot invalidate unchanged page authority."""
+
+    from dataclasses import replace
+    from types import SimpleNamespace
+    from threading import Event
+    from kronos.application import swing_opportunities as swing
+    from kronos.swing.v1 import opportunity_continuity as continuity
+    from kronos.swing.v1.relative_context import build_relative_context_run
+    from kronos.swing.universe import SWING_PHASE1_UNIVERSE
+    from tests.unit.swing.test_run_publication import later, provenance
+    from tests.unit.browser.test_swing_visual_v3_live import _live
+
+    publication, current_facts, bindings, committed = checkpoint
+    successor_facts = later(current_facts, 2)
+    successor_continuity = continuity.prepare_continuity(
+        successor_facts,
+        bindings,
+        adopted_predecessor=committed,
+    )
+    started, release = Event(), Event()
+    workers = []
+    provider = _Provider()
+
+    def build(*_args, **_kwargs):
+        started.set()
+        assert release.wait(30)
+        return SimpleNamespace(
+            workspace=replace(
+                application.snapshot(),
+                analysis_state=swing.AnalysisState.READY,
+                analysis_failure="",
+                swing_analysis_run_identity=successor_facts.run_identity,
+            ),
+            evidence=SimpleNamespace(
+                observation_boundary=successor_facts.observed_at,
+                market_data_snapshot_identity=(
+                    provenance(successor_facts).market_data_snapshot_identity
+                ),
+            ),
+            continuity_contribution=successor_continuity,
+            mtf_fact_snapshot=successor_facts,
+            native_discovery_run=successor_continuity.native_run,
+            relative_context_run=build_relative_context_run(
+                successor_facts, SWING_PHASE1_UNIVERSE
+            ),
+        )
+
+    def runner(operation, name):
+        worker = Thread(target=operation, name=name)
+        workers.append(worker)
+        worker.start()
+
+    monkeypatch.setattr(swing, "build_completed_swing_analysis", build)
+    application = SwingOpportunitiesApplication(
+        lambda: provider,
+        clock=lambda: successor_facts.observed_at,
+        background_runner=runner,
+        swing_run_identity_factory=lambda: successor_facts.run_identity,
+        run_publication=publication,
+        mtf_fact_evidence_store=publication.mtf_store,
+        native_discovery_evidence_store=publication.native_store,
+        relative_context_evidence_store=publication.relative_store,
+    )
+    application._SwingOpportunitiesApplication__provider = provider
+    application._SwingOpportunitiesApplication__snapshot = replace(
+        application.snapshot(), provider_state=swing.ProviderConnectionState.CONNECTED
+    )
+    historical, _, live = _live(tmp_path / "retained-review")
+    server = create_browser_server(
+        application,
+        port=0,
+        native_review=historical,
+        visual_v3_live=live,
+    )
+    serving = Thread(target=server.serve_forever, daemon=True)
+    serving.start()
+    routes = ("/swing/opportunities", "/swing/v1-review")
+    committed_run_identity = committed.native.run_identity
+    try:
+        before_status = application.publication_status()
+        for route in routes:
+            status, _, body = _request(server, "GET", route)
+            assert status == 200
+            assert committed_run_identity in body and "BINDING CURRENT" in body
+
+        assert application.run_analysis() and started.wait(5)
+        running_status = application.publication_status()
+        assert running_status["request_result"] == "RUNNING"
+        assert running_status["control"]["latest_attempt"]["state"] == "RUNNING"
+        assert (
+            running_status["control"]["current_manifest"]
+            == before_status["control"]["current_manifest"]
+        )
+        during_inventory = _inventory(tmp_path)
+        for route in routes:
+            status, _, body = _request(server, "GET", route)
+            assert status == 200
+            assert committed_run_identity in body and "BINDING CURRENT" in body
+            assert successor_facts.run_identity not in body
+            if route == "/swing/opportunities":
+                assert "Analysis running" in body
+        assert _inventory(tmp_path) == during_inventory
+
+        assert not application.run_analysis()
+        assert application.publication_status()["request_result"] == "DUPLICATE_RUNNING"
+        for route in routes:
+            status, _, body = _request(server, "GET", route)
+            assert status == 200
+            assert committed_run_identity in body and successor_facts.run_identity not in body
+            if route == "/swing/opportunities":
+                assert "Duplicate request rejected" in body
+
+        from concurrent.futures import ThreadPoolExecutor
+        requested = routes * 20
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            concurrent = tuple(
+                pool.map(lambda route: _request(server, "GET", route), requested)
+            )
+        assert len(concurrent) == 40
+        assert all(status == 200 for status, _, _ in concurrent)
+        assert all(
+            committed_run_identity in body
+            and successor_facts.run_identity not in body
+            for _, _, body in concurrent
+        )
+
+        release.set()
+        for worker in workers:
+            worker.join(10)
+        assert not any(worker.is_alive() for worker in workers)
+        assert application.analysis_work_status()["state"] == "IDLE"
+        final_status = application.publication_status()
+        assert final_status["request_result"] == "SUCCEEDED"
+        assert final_status["control"]["current_manifest"] != before_status["control"]["current_manifest"]
+        for route in routes:
+            status, _, body = _request(server, "GET", route)
+            assert status == 200
+            assert successor_facts.run_identity in body and "BINDING CURRENT" in body
+    finally:
+        release.set()
+        for worker in workers:
+            worker.join(10)
+        server.shutdown()
+        server.server_close()
+        serving.join(5)
+
+
+@pytest.mark.parametrize("terminal", ("failure", "cancellation"))
+def test_compact_routes_retain_committed_generation_after_unsuccessful_analysis(
+    checkpoint, tmp_path, monkeypatch, terminal
+):
+    """An unsuccessful attempt changes telemetry, not the current manifest."""
+
+    from dataclasses import replace
+    from threading import Event
+    from kronos.application import swing_opportunities as swing
+    from tests.unit.swing.test_run_publication import later
+    from tests.unit.browser.test_swing_visual_v3_live import _live
+
+    publication, current_facts, _, committed = checkpoint
+    successor_facts = later(current_facts, 2)
+    started, release = Event(), Event()
+    workers = []
+    provider = _Provider()
+
+    def build(*_args, **_kwargs):
+        started.set()
+        assert release.wait(10)
+        if terminal == "failure":
+            raise RuntimeError("controlled analysis failure")
+        return None
+
+    def runner(operation, name):
+        worker = Thread(target=operation, name=name)
+        workers.append(worker)
+        worker.start()
+
+    monkeypatch.setattr(swing, "build_completed_swing_analysis", build)
+    application = SwingOpportunitiesApplication(
+        lambda: provider,
+        clock=lambda: successor_facts.observed_at,
+        background_runner=runner,
+        swing_run_identity_factory=lambda: successor_facts.run_identity,
+        run_publication=publication,
+        mtf_fact_evidence_store=publication.mtf_store,
+        native_discovery_evidence_store=publication.native_store,
+        relative_context_evidence_store=publication.relative_store,
+    )
+    application._SwingOpportunitiesApplication__provider = provider
+    application._SwingOpportunitiesApplication__snapshot = replace(
+        application.snapshot(), provider_state=swing.ProviderConnectionState.CONNECTED
+    )
+    historical, _, live = _live(tmp_path / "retained-review")
+    server = create_browser_server(
+        application,
+        port=0,
+        native_review=historical,
+        visual_v3_live=live,
+    )
+    serving = Thread(target=server.serve_forever, daemon=True)
+    serving.start()
+    routes = ("/swing/opportunities", "/swing/v1-review")
+    current_manifest = application.publication_status()["control"]["current_manifest"]
+    current_run = committed.native.run_identity
+    try:
+        assert application.run_analysis() and started.wait(5)
+        for route in routes:
+            status, _, body = _request(server, "GET", route)
+            assert status == 200 and current_run in body
+        if terminal == "cancellation":
+            assert application.cancel_analysis()
+            assert application.publication_status()["request_result"] == "CANCELLATION_REQUESTED"
+            for route in routes:
+                status, _, body = _request(server, "GET", route)
+                assert status == 200 and current_run in body
+        release.set()
+        for worker in workers:
+            worker.join(10)
+        assert not any(worker.is_alive() for worker in workers)
+        final = application.publication_status()
+        assert final["control"]["current_manifest"] == current_manifest
+        assert final["control"]["latest_attempt"]["state"] == "FAILED"
+        assert final["control"]["latest_attempt"]["failure_reason"] == (
+            "SWING_ANALYSIS_FAILED"
+            if terminal == "failure"
+            else "SWING_ANALYSIS_INTERRUPTED"
+        )
+        for route in routes:
+            status, _, body = _request(server, "GET", route)
+            assert status == 200 and current_run in body
+            assert successor_facts.run_identity not in body
+            if route == "/swing/opportunities":
+                assert "Latest attempt failed" in body
+    finally:
+        release.set()
+        for worker in workers:
+            worker.join(10)
+        server.shutdown()
+        server.server_close()
+        serving.join(5)
+
+
 @pytest.mark.parametrize("native_intake", ["NSE"], indirect=True)
 @pytest.mark.parametrize("component", [0, 1])
 @pytest.mark.parametrize("fault", ["missing", "json", "schema", "mismatch"])

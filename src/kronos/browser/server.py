@@ -266,6 +266,7 @@ class KronosBrowserServer(ThreadingHTTPServer):
     connection_governance = None
     daemon_threads = True
     allow_reuse_address = True
+    request_queue_size = _MAX_ACTIVE_BROWSER_REQUESTS
 
     def __init__(
         self,

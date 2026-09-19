@@ -84,6 +84,7 @@ def _request_bytes(server, method: str, path: str):  # type: ignore[no-untyped-d
 
 
 def test_request_threads_are_bounded_and_capacity_refusal_is_immediate(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    assert KronosBrowserServer.request_queue_size == server_module._MAX_ACTIVE_BROWSER_REQUESTS
     entered, release = Event(), Event()
     active = set()
     active_lock = Lock()

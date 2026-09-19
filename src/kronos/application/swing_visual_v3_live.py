@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
-from copy import deepcopy
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from hashlib import sha256
@@ -740,7 +739,7 @@ class _NativeIntakeResponse:
     owner: object
     active: bool = True
     context: tuple | None = None
-    authority: tuple | None = None
+    authority: _NativePageAuthority | None = None
     values: dict = field(default_factory=dict)
 
     def read(self, key, load):
@@ -755,12 +754,22 @@ class _CompactNativePageState:
     """One validated current presentation generation; never mutation authority."""
 
     context: tuple
-    authority: tuple
+    authority: _NativePageAuthority
     projection: dict
     has_control: bool
     component_fence: PreparedReadFence
     current_fence: PreparedReadFence
     identity: str
+
+
+@dataclass(frozen=True, slots=True)
+class _NativePageAuthority:
+    """Stable selected evidence authority, excluding attempt/status telemetry."""
+
+    native: NativeDiscoveryRun
+    facts: SameRunMtfFactSnapshot
+    continuity: object
+    current_manifest: bytes
 
 
 class NativeReviewIntakeWorkflow:
@@ -926,7 +935,6 @@ class NativeReviewIntakeWorkflow:
         context, authority, projection, has_control, component_fence, current_fence
     ):
         manifest, facts, review = context
-        native, bound_facts, continuity, status = authority
         inputs = tuple(
             (
                 str(path),
@@ -941,10 +949,10 @@ class NativeReviewIntakeWorkflow:
             manifest,
             facts.run_identity,
             review.native_run_identity,
-            native.run_identity,
-            bound_facts.run_identity,
-            id(continuity),
-            status,
+            authority.native.run_identity,
+            authority.facts.run_identity,
+            id(authority.continuity),
+            authority.current_manifest,
             has_control,
             projection,
             inputs,
@@ -952,11 +960,47 @@ class NativeReviewIntakeWorkflow:
 
     def recheck_response(self, prepared):
         require(prepared.active and prepared.owner is self, "REVIEW_BINDING_STALE")
-        native, facts, continuity, status = prepared.authority
         _, current, current_continuity, current_status = self.application.opportunities_bundle_projection()
-        require(current is native and current_continuity is continuity
-                and self.application.mtf_fact_snapshot() is facts
-                and current_status == status, "REVIEW_BINDING_STALE")
+        try:
+            current_authority = self._page_authority(
+                current,
+                self.application.mtf_fact_snapshot(),
+                current_continuity,
+                current_status,
+            )
+        except ValueError:
+            require(False, "REVIEW_BINDING_STALE")
+        authority = prepared.authority
+        require(
+            current_authority.native is authority.native
+            and current_authority.facts is authority.facts
+            and current_authority.continuity is authority.continuity
+            and current_authority.current_manifest == authority.current_manifest,
+            "REVIEW_BINDING_STALE",
+        )
+
+    @staticmethod
+    def _page_authority(native, facts, continuity, status):
+        require(type(native) is NativeDiscoveryRun, "NATIVE_DISCOVERY_RUN_INVALID")
+        require(type(facts) is SameRunMtfFactSnapshot, "MTF_FACT_SNAPSHOT_INVALID")
+        require(type(status) is dict, "SWING_PUBLICATION_BUNDLE_INVALID")
+        control = status.get("control")
+        require(type(control) is dict, "SWING_PUBLICATION_CURRENT_UNAVAILABLE")
+        manifest = control.get("current_manifest")
+        require(type(manifest) is dict, "SWING_PUBLICATION_BUNDLE_INVALID")
+        digest = manifest.get("sha256")
+        require(
+            type(digest) is str
+            and len(digest) == 64
+            and all(character in "0123456789abcdef" for character in digest),
+            "SWING_PUBLICATION_BUNDLE_INVALID",
+        )
+        return _NativePageAuthority(
+            native,
+            facts,
+            continuity,
+            canonical(manifest),
+        )
 
     def _context(self, *, _response=None):
         if _response is not None:
@@ -978,7 +1022,9 @@ class NativeReviewIntakeWorkflow:
                 and native.provider_source_identity == facts.provider_source_identity,
                 "NATIVE_REVIEW_SAME_RUN_BINDING_INVALID")
         if _response is not None:
-            _response.authority = (native, facts, continuity, deepcopy(status))
+            _response.authority = self._page_authority(
+                native, facts, continuity, status
+            )
         # Use the existing exact-run store readers when supplied by production
         # composition. No latest selector, inferred root, recovery or lock file.
         for accessor, expected in (("native_discovery_evidence_store", native),
@@ -1004,8 +1050,11 @@ class NativeReviewIntakeWorkflow:
                 require(retained == expected, "SWING_PUBLICATION_BUNDLE_INVALID")
         # Re-read the publication projection after the separately locked factual
         # read. A concurrent publication is unavailable, never a mixed workspace.
-        _, current, _, current_status = self.application.opportunities_bundle_projection()
-        require(current == native and current_status == status, "REVIEW_BINDING_STALE")
+        if _response is not None:
+            self.recheck_response(_response)
+        else:
+            _, current, _, current_status = self.application.opportunities_bundle_projection()
+            require(current == native and current_status == status, "REVIEW_BINDING_STALE")
         cached = self._prospective_cache
         if (cached is not None and cached[0] is native and cached[1] is facts
                 and cached[2] is continuity and cached[3] == manifest["sha256"]):
