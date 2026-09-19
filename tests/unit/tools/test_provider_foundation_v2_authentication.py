@@ -563,6 +563,7 @@ def _ordinary_production_connection(
     opener_hook=lambda: None,
     application_arguments=None,
     monotonic_now=None,
+    navigator=None,
 ):
     from kronos.application import swing_opportunities as application_module
     from kronos.provider.contracts.provider_authentication import (
@@ -652,8 +653,13 @@ def _ordinary_production_connection(
     monkeypatch.setattr(proof, "KiteLoginNavigator", lambda: KiteLoginNavigator(opener=open_browser))
 
     assert kronos_browser._build_provider is proof._build_provider
+    provider_factory = (
+        kronos_browser._build_provider
+        if navigator is None
+        else lambda: kronos_browser._build_provider(navigator=navigator)
+    )
     shared = SharedAuthenticatedProviderRuntime(
-        kronos_browser._build_provider,
+        provider_factory,
         provider_identity="KITE",
         clock=lambda: wall_now[0],
         connection_governance=connection_governance,
@@ -784,6 +790,7 @@ def _timed_production_connection(
     timeout_seconds=10.0,
     configuration_hook=lambda: None,
     opener_hook=lambda: None,
+    navigator=None,
 ):
     now = [0.0]
     timers = []
@@ -799,6 +806,7 @@ def _timed_production_connection(
         configuration_hook=configuration_hook,
         opener_hook=opener_hook,
         monotonic_now=now,
+        navigator=navigator,
         application_arguments={
             "connection_timeout_seconds": timeout_seconds,
             "connection_monotonic_clock": lambda: now[0],

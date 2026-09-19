@@ -68,6 +68,7 @@ with StartupCapture(Path(__file__).resolve().parents[1], keep_sources_pinned=Tru
     from kronos.market.calendar import MarketCalendarPublisher
     from kronos.intraday.universe import load_intraday_universe_publication
     from kronos.provider.contracts.provider_authentication import ReadOnlyProviderOperation
+    from kronos.provider.adapters.kite.navigation import KiteBrowserRedirectNavigator
     from kronos.provider.instrument_master_persistence import (
         DEFAULT_PROVIDER_INSTRUMENT_SNAPSHOT_ROOT,
         ProviderInstrumentSnapshotStore,
@@ -146,8 +147,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     relative_context_store = RelativeContextEvidenceStore(
         DEFAULT_RELATIVE_CONTEXT_EVIDENCE_ROOT
     )
+    provider_login_navigation = KiteBrowserRedirectNavigator()
     shared_provider_runtime = SharedAuthenticatedProviderRuntime(
-        _build_provider,
+        lambda: _build_provider(navigator=provider_login_navigation),
         provider_identity="KITE",
         connection_governance=governance,
     )
@@ -306,6 +308,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             ),
             intraday_discovery_control=intraday_discovery_control,
             intraday_historical_control=intraday_historical_control,
+            provider_login_navigation=provider_login_navigation,
         )
         server.housekeeping = _compose_housekeeping(server, intraday_runtime)
         server.provider_runtime = shared_provider_runtime

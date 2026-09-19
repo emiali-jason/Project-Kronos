@@ -298,6 +298,7 @@ class KronosBrowserServer(ThreadingHTTPServer):
         intraday_wo09_notification_sources: (
             Callable[[], tuple[Wo09NotificationSource, ...]] | None
         ) = None,
+        provider_login_navigation: object | None = None,
     ) -> None:
         if (
             address[0] != _LOOPBACK_HOST
@@ -373,6 +374,12 @@ class KronosBrowserServer(ThreadingHTTPServer):
             or (
                 intraday_wo09_notification_sources is not None
                 and not callable(intraday_wo09_notification_sources)
+            )
+            or (
+                provider_login_navigation is not None
+                and not callable(
+                    getattr(provider_login_navigation, "take_redirect", None)
+                )
             )
         ):
             raise ValueError("BROWSER_SERVER_MUST_BIND_LOOPBACK")
@@ -555,6 +562,7 @@ class KronosBrowserServer(ThreadingHTTPServer):
             ),
         )
         self.telegram = telegram or _telegram_security()
+        self.provider_login_navigation = provider_login_navigation
         self.swing_monitoring_hub = SharedSwingMonitoringHub()
         self.swing_monitoring_hub.maintenance_governance = self.connection_governance
         self.swing_monitoring_hub.set_connection_listener(
@@ -2192,12 +2200,36 @@ class _BrowserHandler(BaseHTTPRequestHandler):
         if path == "/provider/connect":
             try:
                 if governance is None:
-                    self.server.application.connect_provider()
+                    admitted = self.server.application.connect_provider()
                 else:
-                    self.server.application.connect_provider(action_reference=self._connection_action_reference(),
+                    admitted = self.server.application.connect_provider(action_reference=self._connection_action_reference(),
                         request_route="/provider/connect", received_at=self._connection_received_at)
             except (OSError, ValueError):
                 self._text(HTTPStatus.SERVICE_UNAVAILABLE, "Provider connection not admitted.")
+                return
+            navigation = getattr(self.server, "provider_login_navigation", None)
+            if admitted and navigation is not None:
+                status = self.server.application.connection_attempt_status()
+                generation = None if status is None else status.get("generation")
+                remaining = (
+                    None if status is None else status.get("remaining_seconds")
+                )
+                try:
+                    location = navigation.take_redirect(
+                        generation, timeout_seconds=remaining
+                    )
+                except (RuntimeError, TypeError, ValueError):
+                    location = None
+                if location is None:
+                    self._text(
+                        HTTPStatus.SERVICE_UNAVAILABLE,
+                        "Provider login navigation unavailable.",
+                    )
+                    return
+                try:
+                    self._redirect(location)
+                finally:
+                    location = ""
                 return
             self._redirect("/swing/opportunities")
             return
@@ -4512,6 +4544,7 @@ def create_browser_server(
     intraday_wo09_notification_sources: (
         Callable[[], tuple[Wo09NotificationSource, ...]] | None
     ) = None,
+    provider_login_navigation: object | None = None,
 ) -> KronosBrowserServer:
     if type(port) is not int or not 0 <= port <= 65535:
         raise ValueError("BROWSER_SERVER_PORT_INVALID")
@@ -4539,6 +4572,7 @@ def create_browser_server(
         intraday_historical_control,
         mcx_supporting_context,
         intraday_wo09_notification_sources,
+        provider_login_navigation,
     )
 
 

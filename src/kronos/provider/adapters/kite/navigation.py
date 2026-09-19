@@ -7,6 +7,7 @@ import multiprocessing
 import selectors
 import socket
 import threading
+import time
 import webbrowser
 from collections.abc import Callable
 from urllib.parse import parse_qs, urlsplit
@@ -87,6 +88,124 @@ class KiteLoginNavigator:
 
     def __reduce_ex__(self, _protocol: int) -> object:
         raise TypeError("KITE_LOGIN_NAVIGATOR_SERIALIZATION_PROHIBITED")
+
+
+class KiteBrowserRedirectNavigator:
+    """Hand one validated login URL to the admitting browser request."""
+
+    __slots__ = ("_condition", "_deadline", "_pending")
+
+    def __init__(self) -> None:
+        self._condition = threading.Condition()
+        self._deadline = None
+        self._pending: tuple[int, str] | None = None
+
+    def bind_attempt(self, deadline: object) -> None:
+        generation = getattr(deadline, "generation", None)
+        if (
+            type(generation) is not int
+            or generation < 0
+            or not callable(getattr(deadline, "guard", None))
+            or not callable(getattr(deadline, "require", None))
+            or not callable(getattr(deadline, "remaining_seconds", None))
+            or not callable(getattr(deadline, "add_terminal_callback", None))
+        ):
+            raise TypeError("BROWSER_REDIRECT_DEADLINE_INVALID")
+        with self._condition:
+            if self._pending is not None:
+                raise RuntimeError("BROWSER_REDIRECT_PENDING")
+            self._deadline = deadline
+        try:
+            deadline.add_terminal_callback(
+                lambda: self._invalidate_attempt(deadline)
+            )
+        except BaseException:
+            self._invalidate_attempt(deadline)
+            raise
+
+    def _invalidate_attempt(self, deadline: object) -> None:
+        with self._condition:
+            if deadline is self._deadline:
+                self._pending = None
+                self._condition.notify_all()
+
+    def invalidate_pending(self) -> None:
+        """Fence unpublished or unconsumed navigation without external work."""
+
+        with self._condition:
+            self._pending = None
+            self._condition.notify_all()
+
+    def open_official_login(self, request: BrowserOpenRequest) -> BrowserOpenResult:
+        if not isinstance(request, BrowserOpenRequest):
+            return BrowserOpenResult(BrowserOpenCategory.FAILED)
+        login_url = request.official_login_url
+        if not _approved_kite_login_url(login_url):
+            return BrowserOpenResult(BrowserOpenCategory.FAILED)
+        with self._condition:
+            deadline = self._deadline
+        if deadline is None:
+            return BrowserOpenResult(BrowserOpenCategory.FAILED)
+        try:
+            with deadline.guard():
+                deadline.require()
+                with self._condition:
+                    if deadline is not self._deadline or self._pending is not None:
+                        return BrowserOpenResult(BrowserOpenCategory.FAILED)
+                    self._pending = (deadline.generation, login_url)
+                    self._condition.notify_all()
+        except (RuntimeError, TimeoutError):
+            return BrowserOpenResult(BrowserOpenCategory.FAILED)
+        finally:
+            login_url = ""
+        return BrowserOpenResult(BrowserOpenCategory.OPENED)
+
+    def take_redirect(
+        self, generation: int, *, timeout_seconds: float
+    ) -> str | None:
+        """Consume only the exact active generation, bounded by its deadline."""
+
+        if (
+            type(generation) is not int
+            or generation < 0
+            or isinstance(timeout_seconds, bool)
+            or not isinstance(timeout_seconds, (int, float))
+            or not 0 < timeout_seconds <= 330.0
+        ):
+            raise ValueError("BROWSER_REDIRECT_GENERATION_INVALID")
+        wait_expires_at = time.monotonic() + float(timeout_seconds)
+        while True:
+            with self._condition:
+                pending = self._pending
+                deadline = self._deadline
+                if pending is not None:
+                    if pending[0] != generation:
+                        return None
+                    self._pending = None
+                    return pending[1]
+                if deadline is None or deadline.generation != generation:
+                    wait_remaining = wait_expires_at - time.monotonic()
+                    if wait_remaining <= 0:
+                        return None
+                    self._condition.wait(min(0.05, wait_remaining))
+                    continue
+            try:
+                deadline.require()
+                remaining = deadline.remaining_seconds()
+            except (RuntimeError, TimeoutError):
+                return None
+            if remaining <= 0:
+                return None
+            with self._condition:
+                self._condition.wait(min(0.05, remaining))
+
+    def __repr__(self) -> str:
+        return "<KiteBrowserRedirectNavigator redacted>"
+
+    __str__ = __repr__
+
+    def __reduce_ex__(self, _protocol: int) -> object:
+        raise TypeError("KITE_BROWSER_REDIRECT_SERIALIZATION_PROHIBITED")
 
 
 _HELPER_STOP_GRACE_SECONDS = 0.25
@@ -262,4 +381,4 @@ def _approved_kite_login_url(candidate: object) -> bool:
     )
 
 
-__all__ = ["KiteLoginNavigator"]
+__all__ = ["KiteBrowserRedirectNavigator", "KiteLoginNavigator"]

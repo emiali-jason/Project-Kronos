@@ -2,7 +2,10 @@ import pickle
 
 import pytest
 
-from kronos.provider.adapters.kite.navigation import KiteLoginNavigator
+from kronos.provider.adapters.kite.navigation import (
+    KiteBrowserRedirectNavigator,
+    KiteLoginNavigator,
+)
 from kronos.provider.models.authentication import (
     BrowserOpenCategory,
     BrowserOpenRequest,
@@ -118,6 +121,88 @@ def test_navigator_representation_and_serialization_are_redacted() -> None:
     assert "api_key" not in repr(navigator)
     with pytest.raises((TypeError, pickle.PicklingError)):
         pickle.dumps(navigator)
+
+
+def test_browser_redirect_navigation_publishes_once_for_exact_generation(
+    monkeypatch,
+) -> None:
+    from kronos.provider.adapters.kite import navigation as module
+    from kronos.provider.services.provider_authentication import (
+        ConnectionAttemptDeadline,
+    )
+
+    monkeypatch.setattr(
+        module.webbrowser,
+        "open_new_tab",
+        lambda _url: (_ for _ in ()).throw(AssertionError("OS browser called")),
+    )
+    deadline = ConnectionAttemptDeadline(7, timeout_seconds=2)
+    navigator = KiteBrowserRedirectNavigator()
+    navigator.bind_attempt(deadline)
+
+    assert navigator.open_official_login(
+        BrowserOpenRequest(VALID_URL)
+    ).category is BrowserOpenCategory.OPENED
+    assert navigator.open_official_login(
+        BrowserOpenRequest(VALID_URL)
+    ).category is BrowserOpenCategory.FAILED
+    assert navigator.take_redirect(8, timeout_seconds=0.01) is None
+    assert navigator.take_redirect(7, timeout_seconds=1) == VALID_URL
+
+    deadline.cancel()
+    deadline.worker_finished()
+
+
+def test_browser_redirect_navigation_rejects_invalid_url_and_wakes_on_terminal() -> None:
+    from threading import Thread
+    from kronos.provider.services.provider_authentication import (
+        ConnectionAttemptDeadline,
+    )
+
+    deadline = ConnectionAttemptDeadline(9, timeout_seconds=2)
+    navigator = KiteBrowserRedirectNavigator()
+    navigator.bind_attempt(deadline)
+    invalid = VALID_URL.replace("kite.zerodha.com", "evil.example")
+    assert navigator.open_official_login(
+        BrowserOpenRequest(invalid)
+    ).category is BrowserOpenCategory.FAILED
+
+    results = []
+    waiter = Thread(
+        target=lambda: results.append(
+            navigator.take_redirect(9, timeout_seconds=1)
+        )
+    )
+    waiter.start()
+    deadline.cancel()
+    waiter.join(1)
+
+    assert not waiter.is_alive()
+    assert results == [None]
+    deadline.worker_finished()
+
+
+def test_late_browser_redirect_invalidation_cannot_clear_fresh_generation() -> None:
+    from kronos.provider.services.provider_authentication import (
+        ConnectionAttemptDeadline,
+    )
+
+    first = ConnectionAttemptDeadline(1, timeout_seconds=2)
+    second = ConnectionAttemptDeadline(2, timeout_seconds=2)
+    navigator = KiteBrowserRedirectNavigator()
+    navigator.bind_attempt(first)
+    first.cancel()
+    first.worker_finished()
+    navigator.bind_attempt(second)
+    assert navigator.open_official_login(
+        BrowserOpenRequest(VALID_URL)
+    ).category is BrowserOpenCategory.OPENED
+
+    navigator._invalidate_attempt(first)
+
+    assert navigator.take_redirect(2, timeout_seconds=1) == VALID_URL
+    second.cancel()
+    second.worker_finished()
 
 # PF-02D decisive process tests use production spawn and child-side dependencies.
 # These workers are importable by spawn; no real browser is ever called.

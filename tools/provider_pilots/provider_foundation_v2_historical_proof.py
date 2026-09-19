@@ -43,6 +43,7 @@ from kronos.provider.contracts.market_data import (
     HistoricalInterval,
     LiveSnapshotError,
 )
+from kronos.provider.contracts.provider_authentication import LoginNavigator
 from kronos.provider.kite.adapter.kite_provider import KiteProvider
 from kronos.provider.kite.auth.kite_authentication import KiteAuthentication
 from kronos.provider.kite.instruments.kite_instrument_provider import (
@@ -1237,7 +1238,7 @@ def execute_mcx_batch_proof(
     return tuple(proofs)
 
 
-def _build_provider() -> KiteProvider:
+def _build_provider(*, navigator: LoginNavigator | None = None) -> KiteProvider:
     deadline = current_connection_deadline()
     if deadline is not None:
         deadline.require()
@@ -1263,7 +1264,7 @@ def _build_provider() -> KiteProvider:
             server_factory=create_standard_library_server,
             clock=clock,
         ),
-        navigator=KiteLoginNavigator(),
+        navigator=KiteLoginNavigator() if navigator is None else navigator,
         clock=clock,
         identity_factory=lambda: f"v2-proof-{secrets.token_hex(16)}",
         ordinary_deadline=deadline,

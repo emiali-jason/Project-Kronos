@@ -9,9 +9,11 @@ import pytest
 
 from kronos.application.swing_opportunities import (
     MarketPanel,
+    ProviderConnectionState,
     SwingOpportunitiesApplication,
     V1ProbableSnapshot,
 )
+from kronos.provider.adapters.kite.navigation import KiteBrowserRedirectNavigator
 from kronos.application.swing_native_review import NativeReviewWorkflow
 from kronos.application.swing_v1_browser import (
     BrowserCandidateRecord,
@@ -665,6 +667,96 @@ def test_post_accepts_exact_running_loopback_origin(path: str, tmp_path) -> None
         assert headers["Location"] == "/swing/opportunities"
     finally:
         server.shutdown(); server.server_close(); thread.join()
+
+
+def test_connect_redirects_admitting_browser_before_callback_authentication(
+    tmp_path, monkeypatch
+) -> None:
+    import time
+    from tests.unit.tools.test_provider_foundation_v2_authentication import (
+        _timed_production_connection,
+    )
+
+    navigation = KiteBrowserRedirectNavigator()
+    case = _timed_production_connection(
+        tmp_path,
+        monkeypatch,
+        navigator=navigation,
+    )
+    callback_entered, release_callback = Event(), Event()
+
+    def receive_once(*, deadline):
+        case.listener_deadlines.append(deadline)
+        case.harness.listener.receive_count += 1
+        callback_entered.set()
+        assert release_callback.wait(3)
+        return case.harness.callback
+
+    case.harness.listener.receive_once = receive_once
+    server = create_browser_server(
+        case.app,
+        port=0,
+        provider_login_navigation=navigation,
+    )
+    serving = Thread(target=server.serve_forever, daemon=True)
+    serving.start()
+    authority = f"127.0.0.1:{server.server_port}"
+    reference = case.governance.action_reference("HEADER")
+    response = []
+    request_worker = Thread(
+        target=lambda: response.append(_request(
+            server,
+            "POST",
+            "/provider/connect",
+            headers={
+                "Host": authority,
+                "Origin": f"http://{authority}",
+                "Content-Type": "application/x-www-form-urlencoded",
+            },
+            body=f"action_reference={reference}",
+        )),
+    )
+    authentication_worker = None
+    try:
+        request_worker.start()
+        for _ in range(200):
+            if case.jobs:
+                break
+            time.sleep(0.005)
+        assert len(case.jobs) == 1
+        name, authenticate = case.jobs.pop(0)
+        assert name == "kronos-browser-auth"
+        authentication_worker = Thread(target=authenticate)
+        authentication_worker.start()
+
+        assert callback_entered.wait(2)
+        request_worker.join(1)
+        assert not request_worker.is_alive()
+        assert len(response) == 1
+        status, headers, body = response[0]
+        assert status == 303
+        assert headers["Location"] == (
+            "https://kite.zerodha.com/connect/login?v=3&api_key=redacted"
+        )
+        assert body == ""
+        assert case.app.snapshot().provider_state is ProviderConnectionState.CONNECTING
+        assert case.harness.adapter.exchange_count == 0
+
+        release_callback.set()
+        authentication_worker.join(2)
+        assert not authentication_worker.is_alive()
+        while case.jobs:
+            name, operation = case.jobs.pop(0)
+            assert name == "kronos-browser-restoration"
+            operation()
+        assert case.app.snapshot().provider_state is ProviderConnectionState.CONNECTED
+        assert case.app.connection_attempt_status()["state"] == "SUCCEEDED"
+    finally:
+        release_callback.set()
+        request_worker.join(2)
+        if authentication_worker is not None:
+            authentication_worker.join(2)
+        server.shutdown(); server.server_close(); serving.join(2)
 
 
 def test_live_monitoring_settings_control_invokes_current_process_capability(
