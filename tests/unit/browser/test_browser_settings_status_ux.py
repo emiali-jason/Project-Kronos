@@ -168,6 +168,27 @@ def test_attention_and_intentional_inactive_states_are_not_failures() -> None:
     assert _status("TESTING", "attention") in testing
 
 
+def test_header_and_settings_connect_controls_share_navigation_guard() -> None:
+    rendered = render_settings(
+        replace(_ready(), provider_state=ProviderConnectionState.DISCONNECTED),
+        ChartAnalystConnectionStatus.NOT_CONFIGURED,
+        ChartAnalystV2ActivationStatus.DISABLED,
+    )
+
+    assert rendered.count('<form method="post" action="/provider/connect"') == 2
+    assert 'data-provider-control="HEADER"' in rendered
+    assert 'data-provider-control="SETTINGS"' in rendered
+    assert rendered.count("kronosConnectNavigationPending=false") == 1
+    assert (
+        "s.live_monitoring!==liveInitial)"
+        "globalThis.kronosReloadWhenNavigationIdle()"
+    ) in rendered
+    assert (
+        "parts.join('|')!==initial)"
+        "globalThis.kronosReloadWhenNavigationIdle()"
+    ) in rendered
+
+
 def test_telegram_disconnected_is_negative_but_configuration_stays_positive() -> None:
     rendered = render_settings(
         _ready(),

@@ -5361,7 +5361,7 @@ def render_settings(
             + '</section>'
         )
     kite_controls = (
-        '<form method="post" action="/provider/connect" data-provider-control="SETTINGS"><button class="primary" type="submit">CONNECT</button></form>'
+        '<form method="post" action="/provider/connect" data-provider-navigation="KITE_LOGIN" data-provider-control="SETTINGS"><button class="primary" type="submit">CONNECT</button></form>'
         if snapshot.provider_state is not ProviderConnectionState.CONNECTED else (
             '<div class="safety-warning"><strong>LIVE MONITORING IS ACTIVE</strong>'
             'Disconnecting Kite will interrupt active watches and may create a monitoring gap requiring reconciliation.'
@@ -5435,7 +5435,7 @@ def render_settings(
         + '</div><script>const liveInitial=document.getElementById("kite-market-data").dataset.state;'
         'setInterval(async()=>{try{const r=await fetch("/status",{cache:"no-store"});'
         'if(!r.ok)return;const s=await r.json();if(s.live_monitoring!==liveInitial)'
-        'location.reload();}catch(_e){}},1000);</script>'
+        'globalThis.kronosReloadWhenNavigationIdle();}catch(_e){}},1000);</script>'
     )
     return _page(
         title="Settings",
@@ -5533,7 +5533,7 @@ def render_notifications(
     watch_refresh = (
         f'<script>const notificationRevision="{notifications.revision + (ux10.revision if ux10 else "")}";'
         'setInterval(async()=>{try{const r=await fetch("/notifications/status",{cache:"no-store"});'
-        'if(!r.ok)return;const s=await r.json();if(s.revision!==notificationRevision)location.reload();'
+        'if(!r.ok)return;const s=await r.json();if(s.revision!==notificationRevision)globalThis.kronosReloadWhenNavigationIdle();'
         '}catch(_e){}},1500);</script>'
     )
     return _page(
@@ -5626,7 +5626,7 @@ def _render_operational_notifications(
     polling = (
         '<script>const notificationRevision="' + centre.revision + '";'
         'setInterval(async()=>{try{const r=await fetch("/notifications/status",{cache:"no-store"});'
-        'if(!r.ok)return;const s=await r.json();if(s.revision!==notificationRevision)location.reload();'
+        'if(!r.ok)return;const s=await r.json();if(s.revision!==notificationRevision)globalThis.kronosReloadWhenNavigationIdle();'
         '}catch(_e){}},1500);</script>'
     )
     body = header + filters + search + message + listing + pagination + polling
@@ -5845,6 +5845,37 @@ def render_intraday_workstation(
     return render_product_workstation(snapshot, intraday)  # type: ignore[arg-type]
 
 
+def _connect_navigation_guard_script() -> str:
+    return """<script>
+(()=>{
+  const controls=Array.from(document.querySelectorAll('form[data-provider-navigation="KITE_LOGIN"]'))
+    .map(form=>{const button=form.querySelector('button[type="submit"],button:not([type])');
+      return {form,button,wasDisabled:button?button.disabled:false};});
+  let pending=false;
+  globalThis.kronosConnectNavigationPending=false;
+  globalThis.kronosReloadWhenNavigationIdle=()=>{
+    if(globalThis.kronosConnectNavigationPending===true)return false;
+    location.reload();return true;
+  };
+  const setPending=value=>{
+    pending=value;globalThis.kronosConnectNavigationPending=value;
+    for(const control of controls){if(control.button)control.button.disabled=value||control.wasDisabled;}
+  };
+  for(const control of controls){
+    control.form.addEventListener('submit',event=>{
+      if(event.defaultPrevented||!control.form.checkValidity())return;
+      if(pending){event.preventDefault();return;}
+      setPending(true);
+      queueMicrotask(()=>{if(event.defaultPrevented)setPending(false);});
+    });
+  }
+  window.addEventListener('pageshow',event=>{
+    if(event.persisted){setPending(false);globalThis.kronosReloadWhenNavigationIdle();}
+  });
+})();
+</script>"""
+
+
 def _page(
     *,
     title: str,
@@ -5901,7 +5932,8 @@ def _page(
 </aside><main class="main"><header class="topbar"><div class="title">{back_link}<h1>{escape(title)}</h1><p>{escape(subtitle)}</p></div>
 <div class="kite"><span class="dot {snapshot.provider_state.value}"></span><strong>Kite: {snapshot.provider_state.value}</strong>{_connect_form(snapshot)}</div></header>
 {tabs}<div class="content">{body}</div><div class="footer">KRONOS Browser V1 · Local Mode</div></main></div>
-<script>const initial=document.body.dataset.statusSignature;const swingRevision=document.body.dataset.swingProjectionRevision;setInterval(async()=>{{try{{const r=await fetch('/status',{{cache:'no-store'}});if(!r.ok)return;const s=await r.json();if(typeof window!=='undefined'&&window.applyKronosRuntimeState)window.applyKronosRuntimeState(s);const parts=[s.provider,s.analysis,s.completed_at||''];if(swingRevision!==undefined)parts.push(s.swing_projection_revision||'');if(parts.join('|')!==initial)location.reload();}}catch(_e){{}}}},1500);</script>
+{_connect_navigation_guard_script()}
+<script>const initial=document.body.dataset.statusSignature;const swingRevision=document.body.dataset.swingProjectionRevision;setInterval(async()=>{{try{{const r=await fetch('/status',{{cache:'no-store'}});if(!r.ok)return;const s=await r.json();if(typeof window!=='undefined'&&window.applyKronosRuntimeState)window.applyKronosRuntimeState(s);const parts=[s.provider,s.analysis,s.completed_at||''];if(swingRevision!==undefined)parts.push(s.swing_projection_revision||'');if(parts.join('|')!==initial)globalThis.kronosReloadWhenNavigationIdle();}}catch(_e){{}}}},1500);</script>
 </body></html>"""
 
 
@@ -5934,7 +5966,7 @@ def _connect_form(snapshot: BrowserWorkspaceSnapshot) -> str:
     if snapshot.provider_state is ProviderConnectionState.CONNECTED:
         return '<form method="post" action="/provider/disconnect"><button>Disconnect</button></form>'
     disabled = " disabled" if snapshot.provider_state is ProviderConnectionState.CONNECTING else ""
-    return f'<form method="post" action="/provider/connect" data-provider-control="HEADER"><button class="primary"{disabled}>Connect</button></form>'
+    return f'<form method="post" action="/provider/connect" data-provider-navigation="KITE_LOGIN" data-provider-control="HEADER"><button class="primary"{disabled}>Connect</button></form>'
 
 
 def _tab_link(name: str, href: str, active_tab: str) -> str:
@@ -6060,7 +6092,9 @@ async function refreshAnalysisStatus(){
     const state=await response.json();
     if(analysisBatch)analysisBatch.textContent=state.batch;
     for(const item of state.instruments)setInstrumentAnalysisStatus(item.instrument,item.status);
-    if(state.complete&&analysisPoll){clearInterval(analysisPoll);analysisPoll=null;location.reload();}
+    if(state.complete&&analysisPoll&&globalThis.kronosReloadWhenNavigationIdle()){
+      clearInterval(analysisPoll);analysisPoll=null;
+    }
   }catch(_error){}
 }
 if(analysisForm){

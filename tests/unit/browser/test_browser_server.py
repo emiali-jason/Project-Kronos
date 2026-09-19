@@ -702,6 +702,7 @@ def test_connect_redirects_admitting_browser_before_callback_authentication(
     serving.start()
     authority = f"127.0.0.1:{server.server_port}"
     reference = case.governance.action_reference("HEADER")
+    settings_reference = case.governance.action_reference("SETTINGS")
     response = []
     request_worker = Thread(
         target=lambda: response.append(_request(
@@ -718,6 +719,19 @@ def test_connect_redirects_admitting_browser_before_callback_authentication(
     )
     authentication_worker = None
     try:
+        header_page = _request(server, "GET", "/swing/opportunities")[2]
+        settings_page = _request(server, "GET", "/settings")[2]
+        assert (
+            'data-provider-control="HEADER"><input type="hidden" '
+            f'name="action_reference" value="{reference}">'
+        ) in header_page
+        assert (
+            'data-provider-control="SETTINGS"><input type="hidden" '
+            f'name="action_reference" value="{settings_reference}">'
+        ) in settings_page
+        assert "kronosConnectNavigationPending=false" in header_page
+        assert "kronosConnectNavigationPending=false" in settings_page
+
         request_worker.start()
         for _ in range(200):
             if case.jobs:

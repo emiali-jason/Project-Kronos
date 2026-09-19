@@ -56,7 +56,8 @@ const input = JSON.parse(process.argv[1]);
 const requests = [], intervals = [];
 let reloads = 0, parses = 0, next = 0;
 const context = {
-  document: {body: {dataset: input.dataset}},
+  document: {body: {dataset: input.dataset}, querySelectorAll: () => []},
+  window: {addEventListener: () => {}},
   location: {reload: () => {reloads++;}},
   setInterval: (callback, delay) => {intervals.push({callback, delay}); return 1;},
   // Supply only a mock fetch. The script has no real network/Provider interface.
@@ -74,6 +75,7 @@ const context = {
     };
   }
 };
+vm.runInNewContext(input.guard, context);
 vm.runInNewContext(input.script, context);
 assert.equal(requests.length, 0); // Merely rendering does not initiate a request.
 assert.equal(intervals.length, 1);
@@ -93,6 +95,76 @@ assert.equal(intervals[0].delay, 1500);
     assert.equal(Object.keys(request.options).join(','), 'cache');
   }
   process.stdout.write(JSON.stringify({reloads, parses, requests: requests.length}));
+})().catch(error => {console.error(error); process.exitCode = 1;});
+"""
+
+
+_CONNECT_GUARD_HARNESS = r"""
+const assert = require('node:assert/strict');
+const vm = require('node:vm');
+const input = JSON.parse(process.argv[1]);
+
+function fixture({cancel = false, delayedPoll = false} = {}) {
+  const submitListeners = [], pageListeners = [], intervals = [], microtasks = [];
+  let posts = 0, reloads = 0, resolveFetch;
+  const button = {disabled: false};
+  const form = {
+    checkValidity: () => true,
+    querySelector: () => button,
+    addEventListener: (name, listener) => {
+      assert.equal(name, 'submit'); submitListeners.push(listener);
+    },
+  };
+  const context = {
+    document: {body: {dataset: input.dataset}, querySelectorAll: () => [form]},
+    window: {addEventListener: (name, listener) => {
+      assert.equal(name, 'pageshow'); pageListeners.push(listener);
+    }},
+    location: {reload: () => {reloads++;}},
+    queueMicrotask: callback => {microtasks.push(callback);},
+    setInterval: (callback, delay) => {intervals.push({callback, delay}); return 1;},
+    fetch: () => delayedPoll ? new Promise(resolve => {resolveFetch = resolve;}) :
+      Promise.resolve({ok: true, json: async () => input.changedStatus}),
+  };
+  vm.runInNewContext(input.guard, context);
+  if (input.poll) vm.runInNewContext(input.poll, context);
+  if (cancel) form.addEventListener('submit', event => event.preventDefault());
+  async function submit() {
+    const event = {defaultPrevented: false, preventDefault() {this.defaultPrevented = true;}};
+    for (const listener of submitListeners) listener(event);
+    while (microtasks.length) microtasks.shift()();
+    if (!event.defaultPrevented) posts++;
+  }
+  return {context, button, intervals, pageListeners, submit,
+    resolveFetch: response => resolveFetch(response),
+    values: () => ({posts, reloads, pending: context.kronosConnectNavigationPending})};
+}
+
+(async () => {
+  const guarded = fixture();
+  await guarded.submit();
+  assert.deepEqual(guarded.values(), {posts: 1, reloads: 0, pending: true});
+  assert.equal(guarded.button.disabled, true);
+  await guarded.submit();
+  assert.deepEqual(guarded.values(), {posts: 1, reloads: 0, pending: true});
+  guarded.pageListeners[0]({persisted: true});
+  assert.deepEqual(guarded.values(), {posts: 1, reloads: 1, pending: false});
+  assert.equal(guarded.button.disabled, false);
+
+  const cancelled = fixture({cancel: true});
+  await cancelled.submit();
+  assert.deepEqual(cancelled.values(), {posts: 0, reloads: 0, pending: false});
+  assert.equal(cancelled.button.disabled, false);
+
+  const race = fixture({delayedPoll: true});
+  const polling = race.intervals[0].callback();
+  await race.submit();
+  race.resolveFetch({ok: true, json: async () => input.changedStatus});
+  await polling;
+  assert.deepEqual(race.values(), {posts: 1, reloads: 0, pending: true});
+
+  process.stdout.write(JSON.stringify({guarded: guarded.values(),
+    cancelled: cancelled.values(), race: race.values()}));
 })().catch(error => {console.error(error); process.exitCode = 1;});
 """
 
@@ -118,7 +190,12 @@ def test_rendered_polling_javascript(shell, case):
         script for script in re.findall(r"<script>(.*?)</script>", page, re.S)
         if "document.body.dataset.statusSignature" in script
     ]
+    guards = [
+        script for script in re.findall(r"<script>(.*?)</script>", page, re.S)
+        if "kronosConnectNavigationPending=false" in script
+    ]
     assert len(scripts) == 1
+    assert len(guards) == 1
     payload = {
         "provider": "CONNECTING", "analysis": "NOT RUN", "completed_at": None,
         "swing_projection_revision": "REVISION-1",
@@ -149,7 +226,8 @@ def test_rendered_polling_javascript(shell, case):
     responses = [{"mode": mode, "payload": payload} for mode in modes]
     result = subprocess.run(
         [node, "-e", _JAVASCRIPT_HARNESS, json.dumps({
-            "script": scripts[0], "dataset": dataset, "responses": responses,
+            "guard": guards[0], "script": scripts[0], "dataset": dataset,
+            "responses": responses,
             "expectedReloads": expected,
             "expectedParses": sum(mode in {"success", "malformed"} for mode in modes),
         })],
@@ -157,6 +235,41 @@ def test_rendered_polling_javascript(shell, case):
     )
     assert result.returncode == 0, result.stderr
     assert json.loads(result.stdout)["reloads"] == expected[-1]
+
+
+@pytest.mark.parametrize("shell", ["swing", "intraday", "history"])
+def test_connect_navigation_guard_fences_reload_duplicate_cancel_and_history(shell):
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("Node.js required for isolated JavaScript unit tests")
+    page = _page(shell)
+    parsed = _BodyAttributes()
+    parsed.feed(page)
+    scripts = re.findall(r"<script>(.*?)</script>", page, re.S)
+    guard = [script for script in scripts if "kronosConnectNavigationPending=false" in script]
+    poll = [script for script in scripts if "document.body.dataset.statusSignature" in script]
+    assert len(guard) == len(poll) == 1
+    result = subprocess.run(
+        [node, "-e", _CONNECT_GUARD_HARNESS, json.dumps({
+            "guard": guard[0],
+            "poll": poll[0],
+            "dataset": {
+                "statusSignature": parsed.attributes["data-status-signature"],
+                "swingProjectionRevision": parsed.attributes.get(
+                    "data-swing-projection-revision"
+                ),
+            },
+            "changedStatus": {
+                "provider": "CONNECTED", "analysis": "NOT RUN",
+                "completed_at": None, "swing_projection_revision": "REVISION-2",
+            },
+        })],
+        capture_output=True, text=True, timeout=10,
+    )
+    assert result.returncode == 0, result.stderr
+    evidence = json.loads(result.stdout)
+    assert evidence["race"] == {"posts": 1, "reloads": 0, "pending": True}
+    assert evidence["cancelled"] == {"posts": 0, "reloads": 0, "pending": False}
 
 
 @pytest.mark.parametrize("outcome", ["CONNECTED", "ERROR"])
