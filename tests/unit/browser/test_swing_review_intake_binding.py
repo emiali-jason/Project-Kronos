@@ -1083,8 +1083,9 @@ def _page_load_server(workflow, state):
     return server
 
 
+@pytest.mark.parametrize("successor_preparation", ("success", "failure"))
 def test_compact_routes_keep_committed_generation_while_analysis_is_blocked(
-    checkpoint, tmp_path, monkeypatch
+    checkpoint, tmp_path, monkeypatch, successor_preparation
 ):
     """Operational attempt state cannot invalidate unchanged page authority."""
 
@@ -1106,6 +1107,7 @@ def test_compact_routes_keep_committed_generation_while_analysis_is_blocked(
         adopted_predecessor=committed,
     )
     started, release = Event(), Event()
+    successor_prepare_started, release_successor_prepare = Event(), Event()
     workers = []
     provider = _Provider()
 
@@ -1160,6 +1162,27 @@ def test_compact_routes_keep_committed_generation_while_analysis_is_blocked(
         native_review=historical,
         visual_v3_live=live,
     )
+    prepare_page_state = server.native_intake.prepare_page_state
+    intake_snapshot = server.native_intake.snapshot
+
+    def blocked_successor_prepare():
+        successor_prepare_started.set()
+        assert release_successor_prepare.wait(30)
+        if successor_preparation == "success":
+            return prepare_page_state()
+
+        def fail_successor_snapshot(*_args, **_kwargs):
+            raise ValueError("CONTROLLED_SUCCESSOR_PREPARATION_FAILURE")
+
+        server.native_intake.snapshot = fail_successor_snapshot
+        try:
+            return prepare_page_state()
+        finally:
+            server.native_intake.snapshot = intake_snapshot
+
+    monkeypatch.setattr(
+        server.native_intake, "prepare_page_state", blocked_successor_prepare
+    )
     serving = Thread(target=server.serve_forever, daemon=True)
     serving.start()
     routes = ("/swing/opportunities", "/swing/v1-review")
@@ -1213,6 +1236,32 @@ def test_compact_routes_keep_committed_generation_while_analysis_is_blocked(
         )
 
         release.set()
+        assert successor_prepare_started.wait(10)
+        from concurrent.futures import TimeoutError
+        from threading import Barrier
+        transition_requests_started = Barrier(len(routes) + 1)
+
+        def request_during_transition(route):
+            transition_requests_started.wait()
+            return _request(server, "GET", route)
+
+        with ThreadPoolExecutor(max_workers=len(routes)) as pool:
+            transition_requests = tuple(
+                pool.submit(request_during_transition, route) for route in routes
+            )
+            transition_requests_started.wait()
+            early_dispositions = []
+            for request in transition_requests:
+                try:
+                    status, _, body = request.result(timeout=0.25)
+                except TimeoutError:
+                    continue
+                early_dispositions.append((status, body))
+            assert early_dispositions == []
+            release_successor_prepare.set()
+            transitioned = tuple(
+                request.result(timeout=10) for request in transition_requests
+            )
         for worker in workers:
             worker.join(10)
         assert not any(worker.is_alive() for worker in workers)
@@ -1220,12 +1269,35 @@ def test_compact_routes_keep_committed_generation_while_analysis_is_blocked(
         final_status = application.publication_status()
         assert final_status["request_result"] == "SUCCEEDED"
         assert final_status["control"]["current_manifest"] != before_status["control"]["current_manifest"]
+        if successor_preparation == "success":
+            assert not final_status["reconciliation_unavailable"]
+            assert all(status == 200 for status, _, _ in transitioned)
+            assert all(
+                successor_facts.run_identity in body and "BINDING CURRENT" in body
+                for _, _, body in transitioned
+            )
+        else:
+            assert final_status["reconciliation_unavailable"]
+            assert all(status == 409 for status, _, _ in transitioned)
+            assert all(
+                "SWING_PAGE_PREPARATION_UNAVAILABLE" in body
+                and committed_run_identity not in body
+                and successor_facts.run_identity not in body
+                for _, _, body in transitioned
+            )
         for route in routes:
             status, _, body = _request(server, "GET", route)
-            assert status == 200
-            assert successor_facts.run_identity in body and "BINDING CURRENT" in body
+            if successor_preparation == "success":
+                assert status == 200
+                assert successor_facts.run_identity in body and "BINDING CURRENT" in body
+            else:
+                assert status == 409
+                assert "SWING_PAGE_PREPARATION_UNAVAILABLE" in body
+                assert committed_run_identity not in body
+                assert successor_facts.run_identity not in body
     finally:
         release.set()
+        release_successor_prepare.set()
         for worker in workers:
             worker.join(10)
         server.shutdown()

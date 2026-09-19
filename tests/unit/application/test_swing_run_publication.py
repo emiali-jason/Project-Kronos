@@ -202,15 +202,30 @@ def test_reconciliation_never_holds_application_lock_or_blocks_disconnect(
     co, _, bindings, prior = checkpoint
     completed = _completed_successor(service, snapshot, bindings, prior)
     entered, release = Event(), Event()
+    transition_events = []
     monkeypatch.setattr(
         app, "build_completed_swing_analysis", lambda *_a, **_k: completed
     )
 
+    from contextlib import contextmanager
+
+    @contextmanager
+    def successor_transition():
+        assert co.current().reference == prior.reference
+        transition_events.append("ENTER")
+        try:
+            yield
+        finally:
+            transition_events.append(
+                ("EXIT", co.current().native.run_identity)
+            )
+
     def reconcile():
+        assert transition_events == ["ENTER"]
         entered.set()
         assert release.wait(5)
 
-    service.register_analysis_reconciliation(reconcile)
+    service.register_analysis_reconciliation(reconcile, successor_transition)
     assert service.run_analysis()
     worker = Thread(target=queued.pop())
     worker.start()
@@ -228,6 +243,47 @@ def test_reconciliation_never_holds_application_lock_or_blocks_disconnect(
     assert not worker.is_alive()
     assert service.analysis_work_status()["state"] == "IDLE"
     assert co.current().native.run_identity == snapshot.run_identity
+    assert transition_events == [
+        "ENTER",
+        ("EXIT", snapshot.run_identity),
+    ]
+
+
+def test_cancelled_successor_waiting_for_transition_cannot_publish(
+    checkpoint, monkeypatch
+):
+    service, queued, snapshot = service_for(checkpoint)
+    co, _, bindings, prior = checkpoint
+    completed = _completed_successor(service, snapshot, bindings, prior)
+    entered, release = Event(), Event()
+    monkeypatch.setattr(
+        app, "build_completed_swing_analysis", lambda *_a, **_k: completed
+    )
+
+    from contextlib import contextmanager
+
+    @contextmanager
+    def blocked_transition():
+        entered.set()
+        assert release.wait(5)
+        yield
+
+    service.register_analysis_reconciliation(lambda: None, blocked_transition)
+    assert service.run_analysis()
+    worker = Thread(target=queued.pop())
+    worker.start()
+    assert entered.wait(5)
+    assert co.current().reference == prior.reference
+    assert service.disconnect_provider()
+    release.set()
+    worker.join(5)
+
+    assert not worker.is_alive()
+    assert service.analysis_work_status()["state"] == "IDLE"
+    assert co.current().reference == prior.reference
+    attempt = co.status()["latest_attempt"]
+    assert attempt["state"] == "FAILED"
+    assert attempt["failure_reason"] == "SWING_ANALYSIS_INTERRUPTED"
 
 
 def test_durable_publication_never_holds_application_lock(

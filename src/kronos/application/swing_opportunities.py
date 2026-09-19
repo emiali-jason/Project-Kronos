@@ -819,6 +819,7 @@ class SwingOpportunitiesApplication:
         self.__publication_guard_active = False
         self.__committed_run = None
         self.__reconcile = None
+        self.__successor_publication_transition = None
         self.__reconciliation_failure = False
         self.__analysis_request_result = ""
         self.__live_monitoring_result = LiveMonitoringTestResult(
@@ -1051,10 +1052,29 @@ class SwingOpportunitiesApplication:
             },
         )
 
-    def register_analysis_reconciliation(self, reconcile):
-        if not callable(reconcile):
+    def register_analysis_reconciliation(
+        self, reconcile, successor_publication_transition=None
+    ):
+        if not callable(reconcile) or (
+            successor_publication_transition is not None
+            and not callable(successor_publication_transition)
+        ):
             raise TypeError("SWING_RECONCILIATION_INVALID")
-        self.__reconcile = reconcile
+        with self.__lock:
+            self.__reconcile = reconcile
+            self.__successor_publication_transition = (
+                successor_publication_transition
+            )
+
+    @contextmanager
+    def __successor_publication_scope(self):
+        with self.__lock:
+            transition = self.__successor_publication_transition
+        if transition is None:
+            yield
+            return
+        with transition():
+            yield
 
     def reconcile_committed_analysis(self):
         """Explicit mutation/startup callback; never called from GET/status."""
@@ -2216,23 +2236,30 @@ class SwingOpportunitiesApplication:
                     if not self.__analysis_work_current_locked(work):
                         return
                     work.phase = "PUBLISHING"
-                committed = self.__publication.publish(
-                    work.token, reference, successful_completed_at
-                )
-                if committed is None:
-                    return
-                with self.__lock:
-                    if self.__analysis_work is not work:
+                with self.__successor_publication_scope():
+                    if not self.__analysis_work_current(work):
                         return
-                    self.__snapshot = replace(published_workspace, provider_state=self.__snapshot.provider_state)
-                    self.__completed_analysis_evidence = completed.evidence
-                    self.__install_committed(committed)
-                    self.__analysis_diagnostic = None
-                    self.__analysis_request_result = "SUCCEEDED"
-                    work.phase = "RECONCILING"
-                # Downstream restoration/projection can be expensive. It must
-                # never inherit the application lock from the publication path.
-                self.reconcile_committed_analysis()
+                    committed = self.__publication.publish(
+                        work.token, reference, successful_completed_at
+                    )
+                    if committed is None:
+                        return
+                    with self.__lock:
+                        if self.__analysis_work is not work:
+                            return
+                        self.__snapshot = replace(
+                            published_workspace,
+                            provider_state=self.__snapshot.provider_state,
+                        )
+                        self.__completed_analysis_evidence = completed.evidence
+                        self.__install_committed(committed)
+                        self.__analysis_diagnostic = None
+                        self.__analysis_request_result = "SUCCEEDED"
+                        work.phase = "RECONCILING"
+                    # Downstream restoration/projection can be expensive. It
+                    # never inherits the application lock. Swing page readers
+                    # remain fenced until the coherent successor is prepared.
+                    self.reconcile_committed_analysis()
                 return
             if not self.__analysis_work_current(work):
                 return

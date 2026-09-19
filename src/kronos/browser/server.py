@@ -642,7 +642,14 @@ class KronosBrowserServer(ThreadingHTTPServer):
         )
         if self.native_intake is not None:
             self.native_intake.prepare_page_state()
-        self.application.register_analysis_reconciliation(self.reconcile_swing)
+        self.application.register_analysis_reconciliation(
+            self.reconcile_swing,
+            (
+                None
+                if self.native_intake is None
+                else self.native_intake.successor_page_transition
+            ),
+        )
         super().__init__(address, _BrowserHandler)
 
     def process_request(self, request, client_address) -> None:  # type: ignore[no-untyped-def]
@@ -753,8 +760,12 @@ class KronosBrowserServer(ThreadingHTTPServer):
         self.native_review.journal_snapshot()
         self.reconcile_progression()
         self.refresh_swing_projection_revision()
-        if self.native_intake is not None:
-            self.native_intake.prepare_page_state()
+        if (
+            self.native_intake is not None
+            and not self.native_intake.prepare_page_state()
+        ):
+            failure = self.native_intake.page_state_status()["failure"]
+            raise ValueError(failure or "SWING_PAGE_PREPARATION_UNAVAILABLE")
 
     def swing_notification_status(self):
         """Read-only Swing polling; never projects/retains Intraday sources."""

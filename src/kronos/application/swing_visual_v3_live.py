@@ -6,7 +6,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from hashlib import sha256
-from threading import Lock
+from threading import Condition, Lock
 
 from kronos.application.swing_native_review import NativeReviewWorkflowSnapshot
 from kronos.application.swing_visual_v3 import (
@@ -785,6 +785,9 @@ class NativeReviewIntakeWorkflow:
         self._prospective_cache = None
         self._page_prepare_lock = Lock()
         self._page_state_lock = Lock()
+        self._page_transition_condition = Condition(Lock())
+        self._page_transition_active = False
+        self._page_active_readers = 0
         self._page_state = None
         self._page_state_failure = "SWING_PAGE_PREPARATION_MISSING"
 
@@ -845,9 +848,48 @@ class NativeReviewIntakeWorkflow:
         return True
 
     @contextmanager
+    def successor_page_transition(self):
+        """Fence current publication through coherent successor preparation."""
+
+        with self._page_transition_condition:
+            require(
+                not self._page_transition_active,
+                "SWING_PAGE_TRANSITION_ALREADY_ACTIVE",
+            )
+            self._page_transition_active = True
+            while self._page_active_readers:
+                self._page_transition_condition.wait()
+        try:
+            yield
+        finally:
+            with self._page_transition_condition:
+                self._page_transition_active = False
+                self._page_transition_condition.notify_all()
+
+    @contextmanager
+    def _page_reader(self):
+        with self._page_transition_condition:
+            while self._page_transition_active:
+                self._page_transition_condition.wait()
+            self._page_active_readers += 1
+        try:
+            yield
+        finally:
+            with self._page_transition_condition:
+                self._page_active_readers -= 1
+                if self._page_active_readers == 0:
+                    self._page_transition_condition.notify_all()
+
+    @contextmanager
     def page_response(self):
         """Serve the retained generation without reconstruction or recovery."""
 
+        with self._page_reader():
+            with self._prepared_page_response() as prepared:
+                yield prepared
+
+    @contextmanager
+    def _prepared_page_response(self):
         with self._page_state_lock:
             state = self._page_state
             failure = self._page_state_failure
