@@ -58,7 +58,7 @@ def test_launcher_uses_loopback_server_and_opens_swing_workspace(monkeypatch) ->
         "create_browser_server",
         lambda app, port, restart_control, product_routes,
         provider_instrument_master_operation, intraday_discovery_control,
-        intraday_historical_control: (
+        intraday_historical_control, provider_login_navigation: (
             events.append((
                 app,
                 port,
@@ -67,6 +67,7 @@ def test_launcher_uses_loopback_server_and_opens_swing_workspace(monkeypatch) ->
                 provider_instrument_master_operation,
                 intraday_discovery_control,
                 intraday_historical_control,
+                provider_login_navigation,
             )) or server
         ),
     )
@@ -85,7 +86,7 @@ def test_launcher_uses_loopback_server_and_opens_swing_workspace(monkeypatch) ->
     assert "http://127.0.0.1:9123/swing/opportunities" in events
     assert "close" in events
     server_event = next(
-        item for item in events if isinstance(item, tuple) and len(item) == 7
+        item for item in events if isinstance(item, tuple) and len(item) == 8
     )
     operation = server_event[4]
     intraday_control = server_event[5]
@@ -113,6 +114,15 @@ def test_launcher_uses_loopback_server_and_opens_swing_workspace(monkeypatch) ->
     assert historical_control.operation_service.active_operation_identity is None
     assert server.housekeeping is housekeeping
     assert housekeeping.production_activation is True
+    provider_factory = (
+        server.provider_runtime
+        ._SharedAuthenticatedProviderRuntime__provider_factory
+    )
+    assert provider_factory.__closure__ is not None
+    assert "http://127.0.0.1:9123/swing/opportunities" in {
+        cell.cell_contents for cell in provider_factory.__closure__
+        if isinstance(cell.cell_contents, str)
+    }
     source = Path(kronos_browser.__file__).read_text(encoding="utf-8")
     assert source.count("SharedAuthenticatedProviderRuntime(") == 1
 
@@ -146,7 +156,7 @@ def test_developer_no_browser_mode_does_not_open_browser(monkeypatch) -> None:
         "create_browser_server",
         lambda _app, port, restart_control, product_routes,
         provider_instrument_master_operation, intraday_discovery_control,
-        intraday_historical_control: _Server(),
+        intraday_historical_control, provider_login_navigation: _Server(),
     )
     monkeypatch.setattr(
         kronos_browser,

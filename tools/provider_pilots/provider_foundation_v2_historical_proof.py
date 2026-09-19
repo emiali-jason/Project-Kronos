@@ -1238,7 +1238,11 @@ def execute_mcx_batch_proof(
     return tuple(proofs)
 
 
-def _build_provider(*, navigator: LoginNavigator | None = None) -> KiteProvider:
+def _build_provider(
+    *,
+    navigator: LoginNavigator | None = None,
+    callback_return_url: str = "http://127.0.0.1:8947/swing/opportunities",
+) -> KiteProvider:
     deadline = current_connection_deadline()
     if deadline is not None:
         deadline.require()
@@ -1263,6 +1267,7 @@ def _build_provider(*, navigator: LoginNavigator | None = None) -> KiteProvider:
         listener_factory=lambda: LoopbackAuthenticationCallbackListener(
             server_factory=create_standard_library_server,
             clock=clock,
+            return_url=callback_return_url,
         ),
         navigator=KiteLoginNavigator() if navigator is None else navigator,
         clock=clock,

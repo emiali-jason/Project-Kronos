@@ -6,6 +6,7 @@ import pytest
 
 from kronos.provider.callbacks.loopback import (
     CallbackCleanupCategory,
+    DEFAULT_CALLBACK_RETURN_URL,
     LOOPBACK_HOST_HEADER,
     LoopbackAuthenticationCallbackListener,
     LoopbackCallbackRequest,
@@ -124,6 +125,38 @@ def test_fixed_html_never_reflects_callback_material() -> None:
     assert status == 400
     assert body == b"<!doctype html><title>KRONOS</title>Callback rejected."
     assert b"sensitive" not in body
+
+
+def test_accepted_callback_redirects_to_clean_trusted_landing_with_protection() -> None:
+    destination = "http://127.0.0.1:9123/swing/opportunities"
+    result = LoopbackCallbackSession(return_url=destination).handle(_request())
+
+    assert result.fixed_http_response() == (303, b"")
+    assert dict(result.fixed_http_headers()) == {
+        "Location": destination,
+        "Cache-Control": "no-store",
+        "Referrer-Policy": "no-referrer",
+    }
+    assert "request_token" not in repr(result.fixed_http_headers())
+
+
+@pytest.mark.parametrize(
+    "destination",
+    [
+        "https://127.0.0.1:8947/swing/opportunities",
+        "http://localhost:8947/swing/opportunities",
+        "http://127.0.0.1:8947/dashboard",
+        "http://127.0.0.1:8947/swing/opportunities?request_token=forbidden",
+        "http://127.0.0.1:8947/swing/opportunities#fragment",
+        "http://user@127.0.0.1:8947/swing/opportunities",
+        "http://127.0.0.1/swing/opportunities",
+    ],
+)
+def test_callback_return_destination_rejects_noncanonical_values(
+    destination: str,
+) -> None:
+    with pytest.raises(ValueError, match="CALLBACK_RETURN_DESTINATION_INVALID"):
+        LoopbackCallbackSession(return_url=destination)
 
 
 def test_malformed_synthetic_request_is_sanitized_and_terminal(
@@ -482,7 +515,14 @@ def test_pf02c_real_validation_and_fixed_nonreflecting_response(monkeypatch, cap
         body = response.split(b"\r\n\r\n", 1)[1]
         assert body == result.fixed_http_response()[1]
         assert b"synthetic" not in response and b"pf02c-sensitive" not in response
+        assert b"Cache-Control: no-store\r\n" in response
+        assert b"Referrer-Policy: no-referrer\r\n" in response
         if expected is CallbackCategory.ACCEPTED:
+            assert response.startswith(b"HTTP/1.0 303 See Other\r\n")
+            assert (
+                f"Location: {DEFAULT_CALLBACK_RETURN_URL}\r\n".encode()
+                in response
+            )
             seen = []
             result.consume_request_token(lambda token: token.consume_for_call(lambda value: seen.append(value)))
             assert seen == ["pf02c-synthetic-token"]

@@ -564,6 +564,7 @@ def _ordinary_production_connection(
     application_arguments=None,
     monotonic_now=None,
     navigator=None,
+    callback_return_url="http://127.0.0.1:8947/swing/opportunities",
 ):
     from kronos.application import swing_opportunities as application_module
     from kronos.provider.contracts.provider_authentication import (
@@ -595,6 +596,7 @@ def _ordinary_production_connection(
     jobs = []
     events = []
     restored = []
+    listener_arguments = []
 
     class FixedWallClock(datetime):
         @classmethod
@@ -644,19 +646,18 @@ def _ordinary_production_connection(
         proof, "create_kite_authentication_adapter",
         lambda api_key, **_worker_options: harness.service_arguments["adapter_factory"](api_key)
     )
-    monkeypatch.setattr(
-        proof,
-        "LoopbackAuthenticationCallbackListener",
-        lambda **_arguments: harness.listener,
-    )
+    def listener(**arguments):
+        listener_arguments.append(arguments)
+        return harness.listener
+
+    monkeypatch.setattr(proof, "LoopbackAuthenticationCallbackListener", listener)
     from kronos.provider.adapters.kite.navigation import KiteLoginNavigator
     monkeypatch.setattr(proof, "KiteLoginNavigator", lambda: KiteLoginNavigator(opener=open_browser))
 
     assert kronos_browser._build_provider is proof._build_provider
-    provider_factory = (
-        kronos_browser._build_provider
-        if navigator is None
-        else lambda: kronos_browser._build_provider(navigator=navigator)
+    provider_factory = lambda: kronos_browser._build_provider(
+        navigator=navigator,
+        callback_return_url=callback_return_url,
     )
     shared = SharedAuthenticatedProviderRuntime(
         provider_factory,
@@ -686,6 +687,7 @@ def _ordinary_production_connection(
         events=events,
         restored=restored,
         records=read_records,
+        listener_arguments=listener_arguments,
     )
 
 
@@ -739,6 +741,23 @@ def test_ordinary_production_factory_cannot_publish_after_construction_uses_tota
         assert case.events[0] == "configuration"
         assert case.monotonic_now == [331.0]
         _assert_ordinary_expiration_rejects_publication(case)
+    finally:
+        case.app.close()
+
+
+def test_production_factory_passes_trusted_callback_return_destination(
+    tmp_path, monkeypatch
+):
+    destination = "http://127.0.0.1:9123/swing/opportunities"
+    case = _ordinary_production_connection(
+        tmp_path,
+        monkeypatch,
+        callback_return_url=destination,
+    )
+    try:
+        _run_ordinary_connection(case)
+        assert len(case.listener_arguments) == 1
+        assert case.listener_arguments[0]["return_url"] == destination
     finally:
         case.app.close()
 

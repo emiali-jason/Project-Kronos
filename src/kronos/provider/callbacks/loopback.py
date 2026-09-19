@@ -22,9 +22,9 @@ LOOPBACK_ADDRESS = "127.0.0.1"
 LOOPBACK_PORT = 8765
 LOOPBACK_HOST_HEADER = "127.0.0.1:8765"
 LOOPBACK_PATH = "/kite/callback"
+DEFAULT_CALLBACK_RETURN_URL = "http://127.0.0.1:8947/swing/opportunities"
 MAX_JOIN_SECONDS = 1.0
 
-_SUCCESS_HTML = b"<!doctype html><title>KRONOS</title>Callback accepted."
 _REJECTION_HTML = b"<!doctype html><title>KRONOS</title>Callback rejected."
 _EXPIRY_HTML = b"<!doctype html><title>KRONOS</title>Callback expired."
 _PROVIDER_ERROR_FIELDS = frozenset(
@@ -109,16 +109,19 @@ class _OneUseRequestToken:
 class LoopbackCallbackResult:
     """Sanitized terminal result with an optional one-use token carrier."""
 
-    __slots__ = ("_category", "_closed", "_token", "_lock")
+    __slots__ = ("_category", "_closed", "_return_url", "_token", "_lock")
 
     def __init__(
         self,
         category: CallbackCategory,
         token: _OneUseRequestToken | None = None,
+        *,
+        return_url: str | None = None,
     ) -> None:
         self._lock = threading.Lock()
         self._category = category
         self._token = token
+        self._return_url = return_url
         self._closed = False
 
     def category(self) -> CallbackCategory:
@@ -152,10 +155,21 @@ class LoopbackCallbackResult:
 
     def fixed_http_response(self) -> tuple[int, bytes]:
         if self._category is CallbackCategory.ACCEPTED:
-            return 200, _SUCCESS_HTML
+            return 303, b""
         if self._category is CallbackCategory.TIMED_OUT:
             return 408, _EXPIRY_HTML
         return 400, _REJECTION_HTML
+
+    def fixed_http_headers(self) -> tuple[tuple[str, str], ...]:
+        headers = (
+            ("Cache-Control", "no-store"),
+            ("Referrer-Policy", "no-referrer"),
+        )
+        if self._category is CallbackCategory.ACCEPTED:
+            if self._return_url is None:
+                raise RuntimeError("CALLBACK_RETURN_DESTINATION_UNAVAILABLE")
+            return (("Location", self._return_url),) + headers
+        return headers
 
     def __repr__(self) -> str:
         return f"<LoopbackCallbackResult {self._category.value}>"
@@ -169,12 +183,13 @@ class LoopbackCallbackResult:
 class LoopbackCallbackSession:
     """Atomic first-request classification with a terminal cancellation fence."""
 
-    __slots__ = ("_lock", "_terminal", "_cancelled")
+    __slots__ = ("_lock", "_terminal", "_cancelled", "_return_url")
 
-    def __init__(self) -> None:
+    def __init__(self, *, return_url: str = DEFAULT_CALLBACK_RETURN_URL) -> None:
         self._lock = threading.Lock()
         self._terminal = False
         self._cancelled = False
+        self._return_url = _validated_return_url(return_url)
 
     def handle(self, request: LoopbackCallbackRequest) -> LoopbackCallbackResult:
         with self._lock:
@@ -182,7 +197,7 @@ class LoopbackCallbackSession:
                 return LoopbackCallbackResult(CallbackCategory.DUPLICATE)
             self._terminal = True
         try:
-            result = _classify_first_request(request)
+            result = _classify_first_request(request, return_url=self._return_url)
         except Exception:
             result = LoopbackCallbackResult(CallbackCategory.TRANSPORT_FAILURE)
         with self._lock:
@@ -230,9 +245,10 @@ class LoopbackAuthenticationCallbackListener:
     )
 
     def __init__(self, *, server_factory: ServerFactory,
-                 clock: Callable[[], datetime]) -> None:
+                 clock: Callable[[], datetime],
+                 return_url: str = DEFAULT_CALLBACK_RETURN_URL) -> None:
         self._clock = clock
-        self._session = LoopbackCallbackSession()
+        self._session = LoopbackCallbackSession(return_url=return_url)
         self._server_factory = server_factory
         self._server: _TerminalServer | None = None
         self._readiness = CallbackReadiness.NOT_READY
@@ -591,6 +607,8 @@ class _CallbackRequestHandler(http.server.BaseHTTPRequestHandler):
         status, body = result.fixed_http_response()
         self.send_response(status)
         self.send_header("Content-Type", "text/html; charset=utf-8")
+        for name, value in result.fixed_http_headers():
+            self.send_header(name, value)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Connection", "close")
         self.end_headers()
@@ -620,6 +638,8 @@ class _CallbackRequestHandler(http.server.BaseHTTPRequestHandler):
         _ignored_status, body = result.fixed_http_response()
         self.send_response_only(400)
         self.send_header("Content-Type", "text/html; charset=utf-8")
+        for name, value in result.fixed_http_headers():
+            self.send_header(name, value)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Connection", "close")
         self.end_headers()
@@ -708,6 +728,8 @@ def create_standard_library_server(
 
 def _classify_first_request(
     request: LoopbackCallbackRequest,
+    *,
+    return_url: str,
 ) -> LoopbackCallbackResult:
     if request.method != "GET" or request.content_length != 0:
         return LoopbackCallbackResult(CallbackCategory.INVALID_METHOD)
@@ -739,7 +761,33 @@ def _classify_first_request(
     return LoopbackCallbackResult(
         CallbackCategory.ACCEPTED,
         _OneUseRequestToken(tokens[0]),
+        return_url=return_url,
     )
+
+
+def _validated_return_url(value: str) -> str:
+    if type(value) is not str:
+        raise ValueError("CALLBACK_RETURN_DESTINATION_INVALID")
+    try:
+        parsed = urlsplit(value)
+        port = parsed.port
+    except ValueError:
+        raise ValueError("CALLBACK_RETURN_DESTINATION_INVALID") from None
+    if (
+        parsed.scheme != "http"
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.hostname != LOOPBACK_ADDRESS
+        or port is None
+        or not 1 <= port <= 65535
+        or parsed.netloc != f"{LOOPBACK_ADDRESS}:{port}"
+        or parsed.path != "/swing/opportunities"
+        or parsed.query
+        or parsed.fragment
+        or value != f"http://{LOOPBACK_ADDRESS}:{port}/swing/opportunities"
+    ):
+        raise ValueError("CALLBACK_RETURN_DESTINATION_INVALID")
+    return value
 
 
 def _valid_host_headers(host_headers: Sequence[str]) -> bool:
@@ -781,6 +829,7 @@ __all__ = [
     "LOOPBACK_HOST_HEADER",
     "LOOPBACK_PATH",
     "LOOPBACK_PORT",
+    "DEFAULT_CALLBACK_RETURN_URL",
     "LoopbackAuthenticationCallbackListener",
     "LoopbackCallbackRequest",
     "LoopbackCallbackResult",

@@ -148,8 +148,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         DEFAULT_RELATIVE_CONTEXT_EVIDENCE_ROOT
     )
     provider_login_navigation = KiteBrowserRedirectNavigator()
+    callback_return_url = f"http://127.0.0.1:{args.port}/swing/opportunities"
     shared_provider_runtime = SharedAuthenticatedProviderRuntime(
-        lambda: _build_provider(navigator=provider_login_navigation),
+        lambda: _build_provider(
+            navigator=provider_login_navigation,
+            callback_return_url=callback_return_url,
+        ),
         provider_identity="KITE",
         connection_governance=governance,
     )
