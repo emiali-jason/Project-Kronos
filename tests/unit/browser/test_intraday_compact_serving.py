@@ -379,6 +379,92 @@ def test_pf10_page_scope_releases_objects_and_rejects_capacity(tmp_path, monkeyp
     assert response.status == 503 and "CAPACITY" in response.body
 
 
+def test_pf10_review_page_reuses_one_typed_read_per_candidate_and_releases_it(
+    tmp_path, monkeypatch
+):
+    import gc
+    import weakref
+    from collections import Counter
+
+    runtime, routes = _pf10_populated_pages(tmp_path, monkeypatch)
+    app = runtime.review_v2_application
+    counts = Counter()
+    references = []
+    original_chart = app.review_store.load_current_chart
+    original_pack = app._load_retained_current_pack
+    original_evidence = app.review_store.load_visual_evidence_for_pack
+    original_candidate = app._candidate_snapshot
+
+    def chart(identity):
+        counts["current_chart"] += 1
+        return original_chart(identity)
+
+    def pack(cycle, **kwargs):
+        counts["retained_pack"] += 1
+        return original_pack(cycle, **kwargs)
+
+    def evidence(identity):
+        counts["visual_evidence"] += 1
+        return original_evidence(identity)
+
+    def candidate(current):
+        references.append(weakref.ref(current))
+        return original_candidate(current)
+
+    monkeypatch.setattr(app.review_store, "load_current_chart", chart)
+    monkeypatch.setattr(app, "_load_retained_current_pack", pack)
+    monkeypatch.setattr(app.review_store, "load_visual_evidence_for_pack", evidence)
+    monkeypatch.setattr(app, "_candidate_snapshot", candidate)
+
+    response = routes.handle_get(BrowserGetRequest("/intraday/review", {}), _snapshot)
+
+    assert response.status == 200
+    assert counts == {
+        "current_chart": 2,
+        "retained_pack": 2,
+        "visual_evidence": 2,
+    }
+    gc.collect()
+    assert references and all(reference() is None for reference in references)
+
+
+def test_pf10_warm_review_page_revalidates_corrupt_typed_inputs(
+    tmp_path, monkeypatch
+):
+    runtime, routes = _pf10_populated_pages(tmp_path, monkeypatch)
+    app = runtime.review_v2_application
+    assert routes.handle_get(BrowserGetRequest("/intraday/review", {}), _snapshot).status == 200
+    pointer = app.review_store.load_current()
+    assert pointer is not None
+    cycle_identity = pointer.cycles[0].cycle_identity
+    cycle = app.review_store.load_cycle(cycle_identity)
+    active = app.review_store.load_current_chart(cycle_identity)
+    assert active is not None
+    pack = app._load_retained_current_pack(cycle)
+    assert pack is not None
+    root = app.review_store.root
+    paths = (
+        root / "current" / "CURRENT-REVIEW-V2-POINTER.json",
+        root / "current-charts" / f"{cycle_identity}.json",
+        root / "question-packs" / f"{pack.review_pack_identity}.json",
+        root / "current-visual-evidence" / f"{pack.review_pack_identity}.json",
+    )
+
+    for path in paths:
+        original = path.read_bytes()
+        path.write_bytes(b"{}")
+        try:
+            response = routes.handle_get(
+                BrowserGetRequest("/intraday/review", {}), _snapshot
+            )
+            assert response.status != 200, path
+        finally:
+            path.write_bytes(original)
+        assert routes.handle_get(
+            BrowserGetRequest("/intraday/review", {}), _snapshot
+        ).status == 200
+
+
 def test_pf10_reentrant_publication_cannot_escape_as_prepared_success(tmp_path, monkeypatch):
     import pytest
     from kronos.application.intraday_review_v2 import IntradayPageUnavailable

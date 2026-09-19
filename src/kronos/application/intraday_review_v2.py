@@ -32,6 +32,7 @@ from kronos.intraday.review_answer import (
 )
 from kronos.intraday.review_v2 import (
     ChartRevisionV2,
+    CurrentChartPointerV2,
     ImportedVisualEvidenceV2,
     ReviewCycleV2,
     ReviewHandoffV2,
@@ -343,6 +344,17 @@ class _PreparedV2Import:
     evidence: tuple[ImportedVisualEvidenceV2, ...]
     already_imported: tuple[bool, ...] = ()
     rejected: tuple[IntradayReviewV2InboxMemberResult, ...] = ()
+
+
+@dataclass(frozen=True)
+class _CurrentCandidateRead:
+    """One request's validated typed inputs for a current Review candidate."""
+
+    cycle: ReviewCycleV2
+    active_chart: CurrentChartPointerV2 | None
+    retained_pack: ReviewQuestionPackV2 | None
+    transport: ReviewBatchTransportV2 | None
+    evidence: ImportedVisualEvidenceV2 | None
 
 
 class IntradayReviewV2Application:
@@ -692,14 +704,21 @@ class IntradayReviewV2Application:
         # Display and batch transport share the governed retained Review order.
         cycles = tuple(self._review.load_cycle(item.cycle_identity) for item in pointer.cycles)
         packs: list[ReviewQuestionPackV2] = []
-        individual_transports: dict[str, ReviewBatchTransportV2] = {}
+        candidate_reads: list[_CurrentCandidateRead] = []
         for cycle in cycles:
-            retained = self._load_retained_current_pack(cycle)
+            active = self._review.load_current_chart(cycle.cycle_identity)
+            retained = self._load_retained_current_pack(cycle, active=active)
+            individual = None
+            evidence = None
             if retained is not None:
                 packs.append(retained)
                 individual = self._load_retained_transport((retained,))
-                if individual is not None:
-                    individual_transports[cycle.cycle_identity] = individual
+                evidence = self._review.load_visual_evidence_for_pack(
+                    retained.review_pack_identity
+                )
+            candidate_reads.append(
+                _CurrentCandidateRead(cycle, active, retained, individual, evidence)
+            )
         batch = None
         transport = None
         if packs and len(packs) == len(cycles):
@@ -712,17 +731,12 @@ class IntradayReviewV2Application:
         if ordered_batch is not None:
             _, transport, _ = ordered_batch
             batch = None
-        ready_pack_ids = {item.review_pack_identity for item in packs}
         return IntradayReviewV2Snapshot(
             probables_run_identity=pointer.probables_run_identity,
             current_pointer_identity=pointer.integrity_identity,
             candidates=tuple(
-                self._candidate_snapshot(
-                    cycle,
-                    ready_pack_ids,
-                    individual_transports.get(cycle.cycle_identity),
-                )
-                for cycle in cycles
+                self._candidate_snapshot(candidate_read)
+                for candidate_read in candidate_reads
             ),
             review_batch_identity=(transport.transport_identity if ordered_batch is not None
                                    else None if batch is None else batch.batch_identity),
@@ -737,16 +751,14 @@ class IntradayReviewV2Application:
 
     def _candidate_snapshot(
         self,
-        cycle: ReviewCycleV2,
-        ready_pack_ids: set[str] | None = None,
-        transport: ReviewBatchTransportV2 | None = None,
+        current: _CurrentCandidateRead,
     ) -> IntradayReviewV2CandidateSnapshot:
-        active = self._review.load_current_chart(cycle.cycle_identity)
-        pack_ready = False
-        retained_pack = self._load_retained_current_pack(cycle) if active is not None else None
-        if retained_pack is not None and ready_pack_ids is not None:
-            pack_ready = retained_pack.review_pack_identity in ready_pack_ids
-        evidence = self._review.load_visual_evidence_for_pack(retained_pack.review_pack_identity) if pack_ready else None
+        cycle = current.cycle
+        active = current.active_chart
+        retained_pack = current.retained_pack
+        transport = current.transport
+        evidence = current.evidence
+        pack_ready = retained_pack is not None
         candidate = IntradayReviewV2CandidateSnapshot(
             sponsor_label=_sponsor_label(cycle.canonical_subject_identity),
             canonical_subject_identity=cycle.canonical_subject_identity,
@@ -863,11 +875,15 @@ class IntradayReviewV2Application:
         return self._probables.load_selection(handoff.completed_evidence_selection_identity)
 
     def _load_retained_current_pack(
-        self, cycle: ReviewCycleV2,
+        self,
+        cycle: ReviewCycleV2,
+        *,
+        active: CurrentChartPointerV2 | None | object = ...,
     ) -> ReviewQuestionPackV2 | None:
         if cycle.canonical_subject_identity.startswith("MCX-SUBJECT-"):
             return None
-        active = self._review.load_current_chart(cycle.cycle_identity)
+        if active is ...:
+            active = self._review.load_current_chart(cycle.cycle_identity)
         if active is None:
             return None
         # Probe only the two exact governed identities for this current chart.
