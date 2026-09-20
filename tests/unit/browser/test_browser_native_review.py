@@ -35,6 +35,7 @@ def test_wo07_workspace_actions_are_bound_and_intake_only():
         assert 'Review workspace unavailable' in page and 'View Analysis Details' in page
         review = _receipt_native_review(projection)
         assert 'No current bound candidates.' in review  # empty MCX section
+        assert 'DIRECTION UNAVAILABLE' in review
         assert 'data-upload-url' not in review
         for control in ('RETRY DOWNSTREAM', 'RECONCILE', 'Readiness ·', 'KR-370 ·'):
             assert control not in review
@@ -43,7 +44,7 @@ def test_wo07_workspace_actions_are_bound_and_intake_only():
     assert 'REVIEW BINDING UNAVAILABLE' in page
     assert 'selected analysis changed' in page
     assert 'href="/swing/v1-review">Open Native Review' not in page
-    assert '@media(max-width:760px){.wo07-card-grid{grid-template-columns:1fr}}' in page
+    assert '@media(max-width:760px){.wo07-card-grid{grid-template-columns:minmax(0,1fr)}' in page
 
 from kronos.application.swing_native_review import (
     NativeReviewAnalysisOutcome,

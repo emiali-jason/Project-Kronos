@@ -85,6 +85,7 @@ def test_current_twelve_old_review_pure_exact_workspace(native_intake, tmp_path,
         for row in result['rows']:
             requirement = expected[row['instrument']]
             assert row['eligible'] and row['expected'] and row['evidence'] == 'MISSING'
+            assert row['direction'] == requirement.thesis.direction.value
             assert row['requirement_sha256'] == requirement.requirement_sha256
             assert row['assessment_sha256'] == requirement.thesis.native_assessment_sha256
             assert row['expected'][row['instrument']]['expected_run_identity'] == state['native'].run_identity
@@ -92,7 +93,7 @@ def test_current_twelve_old_review_pure_exact_workspace(native_intake, tmp_path,
                 assert row['continuity'].opportunity_id is None and row['continuity'].material_revision is None
         page = _receipt_native_review(result)
         for text in ('Current Review workspace', 'NSE REVIEW', 'MCX REVIEW', 'CHART MISSING',
-                     'ANSWER MISSING', 'ANALYTICAL ROOT UNCERTAIN', 'MANUAL REVIEW REQUIRED'):
+                     'ANALYTICAL ROOT UNCERTAIN', 'MANUAL REVIEW REQUIRED'):
             assert text in page
         assert page.count('aria-label="Paste MCX SIX-PANEL COMPOSITE"') == 2
         assert page.count('market=MCX&amp;instrument=GOLDM&amp;role=NATIVE_MCX') >= 1
@@ -101,9 +102,24 @@ def test_current_twelve_old_review_pure_exact_workspace(native_intake, tmp_path,
         assert 'COMEX Gold / COMEX:GC1!' in page
         assert 'SUPPORTING NYMEX: 1D / 4H / 1H' in page
         assert 'NYMEX Crude Oil / NYMEX:CL1!' in page
-        assert '@media(min-width:1500px){.wo07-card-grid{grid-template-columns:repeat(5' in page
-        assert '@media(max-width:1150px){.wo07-card-grid{grid-template-columns:repeat(2' in page
-        assert '<summary>Details</summary>' in page
+        assert '@media(min-width:1200px){.wo07-card-grid{grid-template-columns:repeat(3' in page
+        assert '@media(min-width:1480px){.wo07-card-grid{grid-template-columns:repeat(4' in page
+        assert '@media(max-width:760px){.wo07-card-grid{grid-template-columns:minmax(0,1fr)}' in page
+        assert '.wo07-chart-preview img{display:block;box-sizing:border-box;width:100%;height:auto;' in page
+        assert 'max-height:360px;object-fit:contain' in page
+        assert '.wo07-card .chart-paste-target>div>strong,.wo07-card .chart-paste-target>div>span{display:block}' in page
+        assert 'object-fit:contain' in page
+        assert page.count('wo07-direction direction-short') == 10
+        assert page.count('wo07-direction direction-long') == 2
+        assert 'Charts required for current NSE candidates.' in page
+        assert 'Charts required for current MCX candidates.' in page
+        assert 'QUESTION PACK NOT CURRENT' not in page
+        assert 'EVIDENCE · MISSING' not in page
+        assert 'MCX EVIDENCE MISSING' not in page
+        assert page.count('CHART MISSING') == 12
+        assert page.count('Questions · <strong>NOT READY</strong>') == 12
+        assert page.count('ANSWER MISSING') == 12
+        assert '<summary>Supporting evidence</summary>' in page
         for text in ('RETRY DOWNSTREAM', 'RECONCILE', 'Readiness ·', 'KR-370 ·'):
             assert text not in page
     assert workflow.native_review.snapshot() == old
@@ -709,10 +725,27 @@ def test_native_http_wiring_paste_generate_import_stale_and_observational_get(na
         assert 'Reason: REVIEW_BINDING_STALE' in explanation
         assert _inventory(tmp_path) == before
         page = _request(server, "GET", "/swing/v1-review")[2]
+        assert 'class="wo07-chart-preview"' in page
+        assert 'target="_blank" rel="noopener"' in page
+        assert 'loading="lazy"' in page
+        assert 'Paste the required current chart evidence before creating the question pack.' not in page
+        received_card = page.split('<h3>' + instrument + '</h3>', 1)[1].split('</article>', 1)[0]
+        assert 'Click and paste TradingView image with ⌘V' not in received_card
+        assert 'Replace' in received_card and 'Remove' in received_card and 'Choose File' in received_card
+        assert 'CHART READY' in received_card
+        assert 'Questions · <strong>NOT READY</strong>' in received_card
+        assert 'ANSWER MISSING' in received_card
+        assert 'TRADINGVIEW COMPOSITE · RECEIVED' in received_card
         form_url, form_body = _rendered_form(page, "native-review-pack")
         form_headers = dict(headers, **{"Content-Type": "application/x-www-form-urlencoded"})
         assert request("POST", form_url, headers=form_headers, body=form_body)[0] == 303
         publication = workflow._publication(market)
+        page = _request(server, "GET", "/swing/v1-review")[2]
+        ready_card = page.split('<h3>' + instrument + '</h3>', 1)[1].split('</article>', 1)[0]
+        assert 'ANSWER MISSING' in ready_card
+        assert 'QUESTION PACK NOT READY' not in ready_card
+        assert 'Questions · <strong>READY</strong>' in ready_card
+        assert 'EVIDENCE · MISSING' not in ready_card and 'MCX EVIDENCE MISSING' not in ready_card
         path = workflow.live.transport.configuration.answer_directory / workflow.filenames(workflow._mapping(publication, market))[1]
         _answer_pdf(path, _native_answer(workflow, market, publication))
         page = _request(server, "GET", "/swing/v1-review")[2]
@@ -725,7 +758,7 @@ def test_native_http_wiring_paste_generate_import_stale_and_observational_get(na
         assert _inventory(tmp_path) == before
         for _ in range(2):
             status, _, body = _request(server, "GET", "/swing/v1-review")
-            assert status == 200 and ("MCX EVIDENCE ACCEPTED" if market == "MCX" else "EVIDENCE · ACCEPTED") in body
+            assert status == 200 and "ANSWER IMPORTED" in body and "EVIDENCE ACCEPTED" in body
             assert "RETRY DOWNSTREAM" not in body and "Readiness ·" not in body
             assert workflow.snapshot()["rows"][0]["downstream"] == (
                 "UNSUPPORTED_CONTRACT" if market == "MCX" else "SUCCEEDED")
@@ -738,7 +771,22 @@ def test_native_http_wiring_paste_generate_import_stale_and_observational_get(na
         query = urlencode(dict(market=market, instrument=instrument, role=role,
             selection=row["selected"][role]["selection_sha256"]))
         assert _request_bytes(server, "GET", "/swing/v1/native-chart-preview?" + query)[2] == PNG
-        assert _inventory(tmp_path) == before
+        replacement = PNG + b"controlled replacement"
+        assert request("POST", url("native-chart", instrument=instrument, role=role),
+                       headers=headers, body=replacement)[0] == 303
+        replaced = workflow.snapshot()["rows"][0]
+        assert replaced["selected"][role]["selection_sha256"] != row["selected"][role]["selection_sha256"]
+        query = urlencode(dict(market=market, instrument=instrument, role=role,
+            selection=replaced["selected"][role]["selection_sha256"]))
+        assert _request_bytes(server, "GET", "/swing/v1/native-chart-preview?" + query)[2] == replacement
+        page = _request(server, "GET", "/swing/v1-review")[2]
+        remove_url, remove_body = _rendered_form(page, "native-chart/remove")
+        assert request("POST", remove_url, headers=form_headers, body=remove_body)[0] == 303
+        removed_page = _request(server, "GET", "/swing/v1-review")[2]
+        assert "CHART MISSING" in removed_page
+        assert "Paste the required current chart evidence before creating the question pack." in removed_page
+        assert workflow.store.native_chart_bytes(row["selected"][role]) == PNG
+        assert workflow.store.native_chart_bytes(replaced["selected"][role]) == replacement
     finally:
         server.shutdown()
         server.server_close()

@@ -1601,6 +1601,7 @@ class NativeReviewIntakeWorkflow:
                     rows.append(dict(instrument=instrument, market=market, selected=selected,
                         expected=self.expected(market, (instrument,), _response=_response), evidence=evidence, downstream=downstream,
                         receipt_id=receipt_id, replaced=predecessors, error=error, supported_result=supported_result,
+                        direction=requirement.thesis.direction.value,
                         reference=None if market == "NSE" else MCX_REFERENCE_MAPPINGS[instrument],
                         complete=all(value is not None and value["image"] is not None for value in selected.values())))
                     rows[-1].update(eligible=True, run_identity=facts.run_identity,
@@ -1621,11 +1622,13 @@ class NativeReviewIntakeWorkflow:
                 rows.extend(dict(instrument=item.canonical_instrument, market=market, selected={}, expected=None,
                     evidence="INVALID", downstream="UNAVAILABLE", receipt_id=None, replaced=(),
                     error=self._reason(error, "REVIEW_RESTORATION_UNAVAILABLE"), reference=None,
+                    direction=item.thesis.direction.value,
                     complete=False, supported_result=None, eligible=True, question_ready=False,
                     run_identity=facts.run_identity, assessment_sha256=item.thesis.native_assessment_sha256,
                     requirement_sha256=item.requirement_sha256) for item in requirements)
         rows.extend(dict(instrument=instrument, market=market, eligible=False, expected=None,
             evidence="MISSING", error=reason, selected={}, replaced=(), complete=False,
+            direction=None,
             question_ready=False, run_identity=facts.run_identity, assessment_sha256=None,
             requirement_sha256=None) for instrument, market, reason in review.excluded)
         continuity_rows = (() if review.continuity is None else review.continuity.contribution.rows)

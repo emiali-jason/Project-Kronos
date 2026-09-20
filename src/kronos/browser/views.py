@@ -3902,19 +3902,45 @@ def _intake_error(reason):
 def _intake_workspace_header(projection):
     workspace = projection.get("workspace")
     body = ('<style>.wo07-markets{display:grid;gap:14px;min-width:0}'
-        '.wo07-card-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px}'
-        '.wo07-card-grid>*{min-width:0;overflow-wrap:anywhere}.wo07-workspace{display:flex;align-items:center;'
+        '.wo07-market{min-width:0;overflow:hidden}.wo07-market-head{display:flex;align-items:flex-end;'
+        'justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:10px}.wo07-market-head h2,'
+        '.wo07-market-head p{margin:0}.wo07-card-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));'
+        'gap:10px;align-items:start}.wo07-card-grid>*{min-width:0;overflow-wrap:anywhere}.wo07-workspace{display:flex;align-items:center;'
         'justify-content:space-between;gap:12px;flex-wrap:wrap;overflow-wrap:anywhere;padding:8px 12px}'
         '.wo07-workspace h2,.wo07-workspace p{margin:0}.wo07-summary{display:flex;gap:10px;flex-wrap:wrap;align-items:center}'
-        '.wo07-chip{display:inline-block;border:1px solid #38536b;border-radius:999px;padding:2px 7px;font-size:10px}'
-        '.wo07-card{padding:9px}.wo07-card h3{margin:0}.wo07-card-status{display:flex;gap:5px;flex-wrap:wrap;margin:6px 0}'
-        '.wo07-card details{margin-top:7px}.wo07-card details summary{cursor:pointer;color:var(--muted);font-size:10px}'
-        '.wo07-card details code{display:block;white-space:normal;overflow-wrap:anywhere;user-select:text;margin-top:4px}'
-        '.wo07-continuity-warning{border-left:3px solid var(--amber);padding-left:7px;color:#f6d997;font-size:11px}'
-        '.wo07-markets .market-panel{min-height:0}.wo07-markets form{display:inline-block;margin:4px}'
-        '@media(min-width:1500px){.wo07-card-grid{grid-template-columns:repeat(5,minmax(0,1fr))}}'
-        '@media(max-width:1150px){.wo07-card-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}'
-        '@media(max-width:760px){.wo07-card-grid{grid-template-columns:1fr}}</style>'
+        '.wo07-card{align-self:start;border:1px solid var(--line);border-radius:8px;padding:12px;background:#071827;min-width:0;'
+        'overflow-wrap:anywhere}.wo07-card h3{margin:0;color:#dce8f0;font-size:17px;line-height:1.25;min-width:0;'
+        'overflow-wrap:break-word;word-break:normal}.wo07-card-head{display:flex;align-items:center;justify-content:space-between;gap:14px;min-width:0}'
+        '.wo07-direction{border:1px solid currentColor;border-radius:6px;padding:3px 8px;font-size:11px;font-weight:850;'
+        'white-space:nowrap}.wo07-direction.direction-long{color:var(--green)}.wo07-direction.direction-short{color:var(--red)}'
+        '.wo07-direction.direction-unavailable{color:var(--muted)}.wo07-phase-a{display:inline-block;margin:7px 0;color:#f6d997;'
+        'font-size:11px;font-weight:850}.wo07-card-state{display:flex;flex-wrap:wrap;gap:5px 12px;font-size:11px}'
+        '.wo07-card-state strong{color:var(--text)}.wo07-card-context{font-size:10px;color:var(--muted);margin:7px 0}'
+        '.wo07-card-warning{font-size:11px;color:var(--amber);border-left:3px solid var(--amber);padding-left:8px}'
+        '.wo07-card details{margin-top:10px;max-width:100%;font-size:10px;color:var(--muted);overflow-wrap:anywhere}'
+        '.wo07-card details summary{cursor:pointer;min-height:32px;align-content:center}.wo07-card details code{display:block;'
+        'max-width:100%;white-space:normal;overflow-wrap:anywhere;user-select:text;margin-top:4px}'
+        '.wo07-section-title{color:var(--muted);font-size:9px;font-weight:850;letter-spacing:.05em;margin:10px 0 6px}'
+        '.wo07-card .chart-slot{min-width:0}.wo07-card .chart-paste-target{box-sizing:border-box;width:100%;min-height:88px;'
+        'display:flex;justify-content:space-between;align-items:center;gap:10px;overflow:hidden;padding:12px;text-align:left}'
+        '.wo07-card .chart-paste-target>div>strong,.wo07-card .chart-paste-target>div>span{display:block}'
+        '.wo07-card .chart-paste-target>div>span{color:var(--muted);font-size:10px;margin-top:3px}'
+        '.wo07-card .chart-paste-target.received{min-height:0;padding:8px;border:1px solid var(--line);cursor:text}'
+        '.wo07-chart-preview{display:block;margin:10px 0 5px;color:var(--green);font-size:10px;overflow-wrap:anywhere}'
+        '.wo07-chart-preview img{display:block;box-sizing:border-box;width:100%;height:auto;max-height:360px;object-fit:contain;'
+        'border:1px solid var(--line);border-radius:5px;background:#020b14}.wo07-chart-preview span{display:block;padding:8px 0 2px}'
+        '.wo07-chart-received strong{display:block;color:var(--green)}.wo07-chart-received span{display:block;color:var(--muted);font-size:9px}'
+        '.wo07-card .chart-slot-actions,.wo07-toolbar{display:flex;align-items:center;gap:6px;flex-wrap:wrap}.wo07-card .chart-slot-actions button,'
+        '.wo07-card .chart-slot-actions .file-choice,.wo07-toolbar button,.wo07-pack-actions button,.wo07-answer-actions button{min-height:36px;box-sizing:border-box}'
+        '.wo07-markets form,.wo07-toolbar form,.wo07-pack-actions form,.wo07-answer-actions form{display:inline-block;margin:0}'
+        '.wo07-pack-actions,.wo07-answer-actions{display:block;margin-top:9px}.wo07-pack-actions strong,.wo07-answer-actions strong{display:block}'
+        '.wo07-pack-actions button,.wo07-answer-actions button{width:100%;margin-top:6px}.wo07-action-reason{display:block;'
+        'color:var(--muted);font-size:10px;line-height:1.35}.wo07-review-pack{overflow-wrap:break-word}.wo07-review-pack a{overflow-wrap:break-word}'
+        '@media(min-width:1200px){.wo07-card-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}'
+        '@media(min-width:1480px){.wo07-card-grid{grid-template-columns:repeat(4,minmax(0,1fr))}}'
+        '@media(max-width:760px){.wo07-card-grid{grid-template-columns:minmax(0,1fr)}.wo07-card{padding:10px}'
+        '.wo07-card .chart-slot-actions>*{flex:1 1 auto;text-align:center}.wo07-toolbar{align-items:stretch;flex-direction:column}'
+        '.wo07-toolbar button{width:100%}}</style>'
         '<section class="review-note wo07-workspace"><h2>Current Review workspace</h2>')
     if workspace is not None:
         when = workspace["analysis_time"].astimezone(ZoneInfo("Asia/Kolkata")).strftime("%d %b %Y %H:%M IST")
@@ -3945,18 +3971,28 @@ def _receipt_native_review(projection):
     body = ('<div class="review-note"><strong>NATIVE REVIEW · RECEIPT-BOUND EVIDENCE</strong>'
         '<p>Chart → Question Pack → Answer → immutable acceptance receipt. '
         'Evidence intake only; no trading or execution authority.</p></div>' + _intake_workspace_header(projection))
+    body += '<div class="review-note wo07-toolbar" aria-label="Current Review pack actions">'
     for market in ("NSE", "MCX"):
         ready = [row for row in projection["rows"] if row["market"] == market and row["complete"] and row["expected"]]
         if ready:
             batch = {key: value for row in ready for key, value in row["expected"].items()}
             body += action("native-review-pack", market, batch, "CREATE ALL " + market + " REVIEW PDF")
+        elif any(row["market"] == market for row in projection["rows"]):
+            body += ('<span><button disabled title="Complete the required current charts first">CREATE ALL '
+                + market + ' REVIEW PDF</button><small class="wo07-action-reason">Charts required for current '
+                + market + ' candidates.</small></span>')
+    body += '</div>'
     for package in projection["packages"]:
         query = urlencode(dict(market=package["market"], publication=package["identity"]))
-        body += ('<div class="review-note"><strong>' + escape(package["market"])
+        body += ('<div class="review-note wo07-review-pack"><strong>' + escape(package["market"])
             + (' CURRENT REVIEW PACK' if package["expected"] is not None else ' RETAINED REVIEW PACK · STALE') + '</strong><br>'
             '<a href="/swing/v1/native-request-pdf?' + escape(query) + '">'
             + escape(package["question_filename"]) + '</a><br>Answer filename: ' + escape(package["answer_filename"])
             + action("native-review-answer", package["market"], package["expected"], "UPLOAD ANSWER") + '</div>')
+    package_by_market = {package["market"]: package for package in projection["packages"]}
+    workspace = projection.get("workspace")
+    analysis_boundary = ("UNAVAILABLE" if workspace is None else
+        workspace["analysis_time"].astimezone(ZoneInfo("Asia/Kolkata")).strftime("%d %b %Y %H:%M IST"))
     body += '<div class="wo07-markets">'
     ordered = sorted(projection["rows"], key=lambda row: (row["market"] != "NSE", row["instrument"]))
     open_market = None
@@ -3967,31 +4003,65 @@ def _receipt_native_review(projection):
                 body += '</div></section>'
             open_market = market
             population = [item for item in ordered if item["market"] == market]
-            body += ('<section class="market-panel"><h2>' + escape(market) + ' REVIEW</h2><p>'
+            body += ('<section class="market-panel wo07-market"><div class="wo07-market-head"><h2>'
+                + escape(market) + ' REVIEW</h2><p>'
                 + str(len(population)) + ' candidates · Charts complete '
                 + str(sum(item["complete"] for item in population)) + ' · Question Pack ready '
                 + str(sum(item.get("question_ready", False) for item in population)) + ' · Evidence accepted '
                 + str(sum(item["evidence"] == "ACCEPTED" for item in population))
-                + '</p><div class="wo07-card-grid">')
-        body += '<section class="review-note wo07-card"><h3>' + escape(instrument) + '</h3>'
-        body += '<div class="wo07-card-status"><span class="wo07-chip">' + ('REVIEW ELIGIBLE' if row.get("eligible", True) else 'REVIEW INELIGIBLE') + '</span>'
-        body += '<span class="wo07-chip">' + ('BINDING CURRENT' if row["expected"] is not None else 'BINDING UNAVAILABLE') + '</span></div>'
+                + '</p></div><div class="wo07-card-grid">')
+        direction = row.get("direction")
+        direction_class = ("direction-long" if direction == "LONG" else
+            "direction-short" if direction == "SHORT" else "direction-unavailable")
+        body += ('<article class="wo07-card"><div class="wo07-card-head"><h3>'
+            + escape(instrument) + '</h3><span class="wo07-direction ' + direction_class + '">'
+            + escape(direction or "DIRECTION UNAVAILABLE") + '</span></div>')
+        chart_state = "CHART READY" if row["complete"] else "CHART MISSING"
+        question_state = "READY" if row.get("question_ready") else "NOT READY"
+        answer_state = ({"ACCEPTED": "IMPORTED", "STALE": "STALE"}.get(row["evidence"])
+            or ("REJECTED" if row["evidence"] == "INVALID" and row.get("receipt_id") else "MISSING"))
+        accepted_markup = ('<span class="wo07-phase-a">EVIDENCE ACCEPTED</span>'
+            if row["evidence"] == "ACCEPTED" else '')
+        governed_outcome = (" / ".join(row["supported_result"]) if row.get("supported_result") is not None
+            else "EVIDENCE ACCEPTED" if row["evidence"] == "ACCEPTED" else "NOT ESTABLISHED")
+        body += ('<span class="wo07-phase-a">' + chart_state + '</span>'
+            '<div class="wo07-card-state"><span>Questions · <strong>' + question_state
+            + '</strong></span><span>Answer · <strong>' + answer_state + '</strong></span></div>'
+            '<p class="wo07-card-context">CURRENT ANALYSIS · ' + escape(analysis_boundary) + '</p>'
+            '<div class="wo07-card-state"><span>Eligibility · <strong>'
+            + ('REVIEW ELIGIBLE' if row.get("eligible", True) else 'REVIEW INELIGIBLE')
+            + '</strong></span><span>Currentness · <strong>'
+            + ('BINDING CURRENT' if row["expected"] is not None else 'BINDING UNAVAILABLE')
+            + '</strong></span></div>' + accepted_markup
+            + '<div class="wo07-card-state"><span>Governed outcome · <strong>'
+            + escape(governed_outcome.replace("_", " ")) + '</strong></span><span>Downstream · <strong>'
+            + escape(row.get("downstream", "NOT_RUN").replace("_", " ")) + '</strong></span></div>')
         continuity = row.get("continuity")
         if (continuity is not None and continuity.opportunity_id is None
                 and continuity.qualification is not None):
-            body += ('<p class="wo07-continuity-warning">ANALYTICAL ROOT UNCERTAIN · '
+            body += ('<p class="wo07-card-warning">ANALYTICAL ROOT UNCERTAIN · '
                 + escape(continuity.disposition.value.replace("_", " ")) + '</p>')
-        body += '<div class="wo07-card-status"><span class="wo07-chip">' + ('CHART RECEIVED' if row["complete"] else 'CHART MISSING') + '</span>'
-        body += '<span class="wo07-chip">' + ('QUESTION PACK READY' if row.get("question_ready") else 'QUESTION PACK NOT CURRENT') + '</span>'
-        body += '<span class="wo07-chip">' + ('ANSWER ACCEPTED' if row["evidence"] == "ACCEPTED" else 'ANSWER MISSING') + '</span></div>'
-        body += '<strong>' + ("MCX EVIDENCE " if market == "MCX" else "EVIDENCE · ") + escape(row["evidence"]) + '</strong>'
         if market == "MCX":
             body += '<p>One physical composite · six separate logical panel bindings.</p>'
             reference = row["selected"].get("SUPPORTING_REFERENCE")
             if reference is None or reference["image"] is None:
-                body += '<p>REFERENCE EVIDENCE MISSING<br>Complete MCX evidence acceptance is unavailable.</p>'
+                body += '<p class="wo07-card-warning">REFERENCE EVIDENCE MISSING<br>Complete MCX evidence acceptance is unavailable.</p>'
         if row["error"]:
             body += _intake_error(row["error"])
+        detail_lines = ["Run · " + str(row.get("run_identity")),
+            "Assessment SHA-256 · " + str(row.get("assessment_sha256")),
+            "Requirement SHA-256 · " + str(row.get("requirement_sha256")),
+            "Acceptance receipt · " + str(row.get("receipt_id"))]
+        for role, selection in row["selected"].items():
+            if selection is not None:
+                detail_lines.append(role + " revision · " + selection["selection_sha256"])
+                if selection["image"] is not None:
+                    detail_lines.append(role + " image SHA-256 · " + selection["image"]["sha256"])
+        body += '<details><summary>Supporting evidence</summary>' + _swing_continuity_summary(continuity)
+        body += ''.join('<code>' + escape(value) + '</code>' for value in detail_lines)
+        if row["replaced"]:
+            body += '<p>Replaced accepted evidence</p>' + ''.join('<code>' + escape(value) + '</code>' for value in row["replaced"])
+        body += '</details>'
         visible_selections = (("NATIVE_MCX", row["selected"].get("NATIVE_MCX")),) if market == "MCX" else tuple(row["selected"].items())
         for offset, (role, selection) in enumerate(visible_selections):
             if row["expected"] is None or not row.get("eligible", True):
@@ -4009,38 +4079,45 @@ def _receipt_native_review(projection):
             received = selection is not None and selection["image"] is not None
             query = dict(market=market, instrument=instrument, role=role)
             upload = urlencode(dict(query, expected=canonical(row["expected"]).decode()))
-            content = '<strong>' + escape(label) + '</strong><span>' + frames + '</span><span>Click and paste TradingView image with ⌘V</span>'
+            content = ('<div><strong>PASTE TRADINGVIEW CHART</strong><span>' + escape(label) + '</span><span>'
+                + frames + '</span><span>Cmd+V / Ctrl+V · ONE COMPOSITE</span></div>')
+            preview_markup = ''
             if received:
                 preview = urlencode(dict(query, selection=selection["selection_sha256"]))
-                content = '<img src="/swing/v1/native-chart-preview?' + escape(preview) + '" alt="' + escape(label) + '"><strong>CHART RECEIVED</strong>' + content
-            body += ('<div class="chart-slot"><div id="' + target + '" class="chart-paste-target'
+                preview_url = '/swing/v1/native-chart-preview?' + escape(preview)
+                preview_markup = ('<a class="wo07-chart-preview" href="' + preview_url
+                    + '" target="_blank" rel="noopener" aria-label="Open full-resolution ' + escape(label)
+                    + '"><img loading="lazy" src="' + preview_url + '" alt="' + escape(label)
+                    + '"><span>Open original · revision ' + escape(selection["selection_sha256"])
+                    + '</span></a><small class="wo07-action-reason">Received chart bytes; receipt alone is not visual or temporal validation.</small>')
+                content = ('<div class="wo07-chart-received"><strong>TRADINGVIEW COMPOSITE · RECEIVED</strong><span>'
+                    + escape(label) + '</span><span>Chart revision · ' + escape(selection["selection_sha256"])
+                    + '</span></div>')
+            controls = ''
+            if received:
+                controls = ('<button class="replace-chart" type="button" data-target="' + target + '">Replace</button>'
+                    + action("native-chart/remove", market, row["expected"], "Remove", dict(instrument=instrument, role=role)))
+            body += (preview_markup + '<div class="wo07-section-title">TRADINGVIEW CHARTS</div><div class="chart-slot"><div id="' + target + '" class="chart-paste-target'
                 + (' received' if received else '') + '" role="button" tabindex="0" aria-label="Paste '
                 + escape(label) + '" data-upload-url="/swing/v1/native-chart?' + escape(upload) + '">' + content + '</div>'
-                '<div class="chart-slot-actions"><button class="replace-chart" type="button" data-target="' + target + '">Replace</button>'
-                + action("native-chart/remove", market, row["expected"], "Remove", dict(instrument=instrument, role=role))
+                '<div class="chart-slot-actions">' + controls
                 + '<label class="file-choice" for="' + target + '-file">Choose File</label><input id="' + target
                 + '-file" class="chart-file" type="file" accept="image/png,image/jpeg,image/webp" data-target="' + target + '"></div></div>')
-        body += action("native-review-pack", market, row["expected"] if row["complete"] else None, "CREATE PDF / SUCCESSOR")
-        detail_lines = ["Run · " + str(row.get("run_identity")),
-            "Assessment SHA-256 · " + str(row.get("assessment_sha256")),
-            "Requirement SHA-256 · " + str(row.get("requirement_sha256")),
-            "Acceptance receipt · " + str(row.get("receipt_id"))]
-        for role, selection in row["selected"].items():
-            if selection is not None:
-                detail_lines.append(role + " revision · " + selection["selection_sha256"])
-                if selection["image"] is not None:
-                    detail_lines.append(role + " image SHA-256 · " + selection["image"]["sha256"])
-        body += '<details><summary>Details</summary>' + _swing_continuity_summary(continuity)
-        body += ''.join('<code>' + escape(value) + '</code>' for value in detail_lines)
-        if row["replaced"]:
-            body += '<p>Replaced accepted evidence</p>' + ''.join('<code>' + escape(value) + '</code>' for value in row["replaced"])
-        body += '</details>'
-        body += '</section>'
+        body += '<div class="wo07-pack-actions"><strong>' + ("QUESTION PACK READY" if row.get("question_ready") else "QUESTION PACK NOT READY")
+        body += action("native-review-pack", market, row["expected"] if row["complete"] else None,
+            "CREATE SUCCESSOR PDF" if row.get("question_ready") else "CREATE REVIEW PDF") + '</div>'
+        if not row["complete"]:
+            body += '<small class="wo07-action-reason">Paste the required current chart evidence before creating the question pack.</small>'
+        package = package_by_market.get(market)
+        answer_expected = (None if package is None else package["expected"])
+        body += ('<div class="wo07-answer-actions"><strong>ANSWER ' + answer_state + '</strong>'
+            + action("native-review-answer", market, answer_expected, "UPLOAD ANSWER") + '</div></article>')
     if open_market is not None:
         body += '</div></section>'
     for market in ("NSE", "MCX"):
         if not any(row["market"] == market for row in ordered):
-            body += '<section class="market-panel"><h2>' + market + ' REVIEW</h2><p>No current bound candidates.</p></section>'
+            body += ('<section class="market-panel wo07-market"><div class="wo07-market-head"><h2>' + market
+                + ' REVIEW</h2><p>No current bound candidates.</p></div></section>')
     return body + '</div>'
 
 
