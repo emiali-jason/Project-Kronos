@@ -134,6 +134,35 @@ int main(int argc, char **argv) {
     return binary
 
 
+def compile_readiness_response_harness(tmp_path):
+    source = SOURCE.read_text().replace(
+        'int main(void) {',
+        'int unused_application_main(void) {',
+    )
+    source += r'''
+int main(void) {
+    char response[BACKEND_STATUS_RESPONSE_BYTES] = {0};
+    static const char prefix[] =
+        "HTTP/1.0 200 OK\r\nContent-Length: 5000\r\n\r\n"
+        "{\"service\":\"KRONOS_BROWSER_V1\",\"provider\":\"DISCONNECTED\","
+        "\"analysis\":\"READY\",\"padding\":\"";
+    size_t used = strlen(prefix);
+    (void)memcpy(response, prefix, used);
+    (void)memset(response + used, 'x', 4300);
+    used += 4300;
+    static const char suffix[] = "\",\"runtime_ready\":true}";
+    (void)memcpy(response + used, suffix, sizeof(suffix));
+    if (strstr(response, "\"runtime_ready\":true") - response <= 4095) return 2;
+    if (!response_is_ready(response)) return 3;
+    response[0] = 'X';
+    return response_is_ready(response) ? 4 : 0;
+}
+'''
+    binary = tmp_path / 'readiness-response'
+    compile_source(source, binary)
+    return binary
+
+
 @pytest.fixture
 def guarded_bundle(tmp_path):
     app = tmp_path / 'Applications/KRONOS.app'
@@ -271,6 +300,18 @@ def test_start_contract_uses_monotonic_120_second_deadline_and_exact_alerts():
         '"The previous backend stopped safely, but the replacement could not be started '
         'or monitored safely. Do not relaunch KRONOS. Contact Engineering."'
     ) in source
+
+
+def test_readiness_response_budget_covers_status_beyond_old_cutoff(tmp_path):
+    binary = compile_readiness_response_harness(tmp_path)
+    subprocess.run([str(binary)], check=True, capture_output=True, timeout=5)
+    source = SOURCE.read_text()
+    readiness = source.split('static int backend_is_ready(void) {', 1)[1].split(
+        'static int open_workspace(void) {', 1
+    )[0]
+    assert '#define BACKEND_STATUS_RESPONSE_BYTES (64 * 1024)' in source
+    assert 'char response[BACKEND_STATUS_RESPONSE_BYTES]' in readiness
+    assert 'char response[4096]' not in readiness
 
 
 def test_shutdown_rejection_and_start_results_route_without_retry_or_kill():

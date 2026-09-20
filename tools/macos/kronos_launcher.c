@@ -59,6 +59,7 @@ static int canonical_operational_image(void) {
 
 static const char *workspace_url = "http://127.0.0.1:8947/swing/opportunities";
 static const char *control_schema = "KRONOS_BROWSER_BACKEND_CONTROL_V1";
+#define BACKEND_STATUS_RESPONSE_BYTES (64 * 1024)
 
 static int directory_exists(const char *path) {
     struct stat metadata;
@@ -159,6 +160,16 @@ static int read_response(int socket_fd, char *response, size_t capacity) {
     return (int)used;
 }
 
+static int response_is_ready(const char *response) {
+    return (
+        strstr(response, "HTTP/1.0 200") != NULL &&
+        strstr(response, "\"service\":\"KRONOS_BROWSER_V1\"") != NULL &&
+        strstr(response, "\"provider\"") != NULL &&
+        strstr(response, "\"analysis\"") != NULL &&
+        strstr(response, "\"runtime_ready\":true") != NULL
+    );
+}
+
 static int backend_is_ready(void) {
     int socket_fd = connect_backend();
     if (socket_fd < 0) return 0;
@@ -168,16 +179,10 @@ static int backend_is_ready(void) {
         (void)close(socket_fd);
         return 0;
     }
-    char response[4096] = {0};
+    char response[BACKEND_STATUS_RESPONSE_BYTES] = {0};
     (void)read_response(socket_fd, response, sizeof(response));
     (void)close(socket_fd);
-    return (
-        strstr(response, "HTTP/1.0 200") != NULL &&
-        strstr(response, "\"service\":\"KRONOS_BROWSER_V1\"") != NULL &&
-        strstr(response, "\"provider\"") != NULL &&
-        strstr(response, "\"analysis\"") != NULL &&
-        strstr(response, "\"runtime_ready\":true") != NULL
-    );
+    return response_is_ready(response);
 }
 
 static int open_workspace(void) {
