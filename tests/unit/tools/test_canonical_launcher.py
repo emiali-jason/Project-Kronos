@@ -4,7 +4,9 @@ import os
 from pathlib import Path
 import plistlib
 import shutil
+import socket
 import subprocess
+from threading import Thread
 
 import pytest
 
@@ -163,6 +165,94 @@ int main(void) {
     return binary
 
 
+def compile_status_probe(tmp_path, port, probe):
+    source = SOURCE.read_text().replace(
+        'htons(8947)',
+        f'htons({port})',
+    ).replace(
+        'int main(void) {',
+        'int unused_application_main(void) {',
+    )
+    source += f'\nint main(void) {{ return {probe}() ? 0 : 1; }}\n'
+    binary = tmp_path / probe
+    compile_source(source, binary)
+    return binary
+
+
+def status_body(*, padding=0, maintenance=True, ready=True):
+    payload = {
+        'service': 'KRONOS_BROWSER_V1',
+        'provider': 'DISCONNECTED',
+        'analysis': 'READY',
+        'padding': 'x' * padding,
+    }
+    if maintenance:
+        payload['maintenance'] = {
+            'protocol': 'KRONOS_MAINTENANCE_HANDOFF_V1',
+            'state': 'INACTIVE',
+            'active': False,
+            'generation': None,
+            'startup': 'READY',
+            'failure': None,
+        }
+    payload['runtime_ready'] = ready
+    return json.dumps(payload, separators=(',', ':')).encode()
+
+
+def status_response(body, *, status='200 OK', content_length=None):
+    declared = len(body) if content_length is None else content_length
+    return (
+        f'HTTP/1.0 {status}\r\nContent-Type: application/json\r\n'
+        f'Content-Length: {declared}\r\n\r\n'.encode()
+        + body
+    )
+
+
+def run_status_probe(tmp_path, response, probe, *, fragmented=False):
+    listener = socket.socket()
+    listener.bind(('127.0.0.1', 0))
+    listener.listen(1)
+    listener.settimeout(5)
+    binary = compile_status_probe(tmp_path, listener.getsockname()[1], probe)
+    requests = []
+    errors = []
+
+    def peer():
+        try:
+            connection, _ = listener.accept()
+            with connection:
+                request = b''
+                while b'\r\n\r\n' not in request:
+                    request += connection.recv(256)
+                requests.append(request)
+                if fragmented:
+                    offset = 0
+                    widths = (1, 7, 31, 257)
+                    fragment = 0
+                    while offset < len(response):
+                        width = widths[fragment % len(widths)]
+                        connection.sendall(response[offset:offset + width])
+                        offset += width
+                        fragment += 1
+                else:
+                    connection.sendall(response)
+        except Exception as error:  # pragma: no cover - asserted below
+            errors.append(error)
+        finally:
+            listener.close()
+
+    thread = Thread(target=peer)
+    thread.start()
+    try:
+        completed = subprocess.run([str(binary)], capture_output=True, timeout=5)
+    finally:
+        thread.join(6)
+        listener.close()
+    assert not thread.is_alive() and not errors
+    assert len(requests) == 1 and requests[0].startswith(b'GET /status ')
+    return completed
+
+
 @pytest.fixture
 def guarded_bundle(tmp_path):
     app = tmp_path / 'Applications/KRONOS.app'
@@ -314,10 +404,72 @@ def test_readiness_response_budget_covers_status_beyond_old_cutoff(tmp_path):
     assert 'char response[4096]' not in readiness
 
 
+def test_short_status_response_passes_both_status_checks(tmp_path):
+    response = status_response(status_body())
+    for probe in ('backend_is_ready', 'backend_supports_maintenance'):
+        case = tmp_path / probe
+        case.mkdir()
+        assert run_status_probe(case, response, probe).returncode == 0
+
+
+def test_fragmented_large_status_passes_readiness_and_maintenance(tmp_path):
+    response = status_response(status_body(padding=4300))
+    protocol_offset = response.index(b'KRONOS_MAINTENANCE_HANDOFF_V1')
+    assert len(response) > 4280 and protocol_offset > 4095
+    for probe in ('backend_is_ready', 'backend_supports_maintenance'):
+        case = tmp_path / probe
+        case.mkdir()
+        assert run_status_probe(case, response, probe, fragmented=True).returncode == 0
+
+
+@pytest.mark.parametrize('failure', ['missing-protocol', 'truncated', 'incomplete'])
+def test_missing_or_incomplete_status_fails_closed(tmp_path, failure):
+    body = status_body(maintenance=failure != 'missing-protocol')
+    if failure == 'truncated':
+        marker = body.index(b'KRONOS_MAINTENANCE_HANDOFF_V1')
+        complete = body
+        body = body[:marker + 8]
+        response = status_response(body, content_length=len(complete))
+        probe = 'backend_supports_maintenance'
+    elif failure == 'incomplete':
+        response = status_response(body, content_length=len(body) + 20)
+        probe = 'backend_is_ready'
+    else:
+        response = status_response(body)
+        probe = 'backend_supports_maintenance'
+    assert run_status_probe(tmp_path, response, probe).returncode != 0
+
+
+def test_oversized_status_fails_closed(tmp_path):
+    oversized_bytes = 70 * 1024
+    body = status_body() + (b'x' * oversized_bytes)
+    assert len(body) > oversized_bytes
+    response = status_response(body)
+    assert run_status_probe(tmp_path, response, 'backend_is_ready').returncode != 0
+
+
+@pytest.mark.parametrize(
+    ('status', 'include_length'),
+    [('503 Service Unavailable', True), ('200 OK', False)],
+)
+def test_non_200_or_malformed_status_fails_closed(tmp_path, status, include_length):
+    body = status_body()
+    response = status_response(body, status=status)
+    if not include_length:
+        response = response.replace(
+            f'Content-Length: {len(body)}\r\n'.encode(),
+            b'',
+        )
+    assert run_status_probe(tmp_path, response, 'backend_is_ready').returncode != 0
+
+
 def test_shutdown_rejection_and_start_results_route_without_retry_or_kill():
     source = SOURCE.read_text()
     main = source.split('int main(void) {', 1)[1]
+    shutdown_call = main.index('request_graceful_shutdown(backend_pid, token, generation)')
+    stop_wait = main.index('wait_for_backend_stop(backend_pid)')
     start_call = main.index('BackendStartResult start_result = start_backend(')
+    assert shutdown_call < stop_wait < start_call
     assert main.index('return show_restart_blocked();') < start_call
     token_clear = main.index('(void)memset(token, 0, sizeof(token));', start_call)
     result_switch = main.index('switch (start_result)', start_call)
@@ -329,6 +481,9 @@ def test_shutdown_rejection_and_start_results_route_without_retry_or_kill():
     monitor = monitor.split('static BackendStartResult start_backend(', 1)[0]
     assert 'kill(' not in monitor
     assert 'fork(' not in monitor
+    stop = source.split('static int wait_for_backend_stop(', 1)[1]
+    stop = stop.split('static int qualify_source(', 1)[0]
+    assert 'process_gone && socket_fd < 0' in stop
 
 
 def test_historical_inode_acl_denies_execution_without_byte_or_mode_change(tmp_path):

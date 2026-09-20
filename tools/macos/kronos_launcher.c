@@ -150,19 +150,95 @@ static int connect_backend(void) {
 }
 
 static int read_response(int socket_fd, char *response, size_t capacity) {
+    if (capacity < 2) return -1;
     size_t used = 0;
+    int closed = 0;
     while (used < capacity - 1) {
         ssize_t received = recv(socket_fd, response + used, capacity - 1 - used, 0);
-        if (received <= 0) break;
+        if (received == 0) {
+            closed = 1;
+            break;
+        }
+        if (received < 0) {
+            if (errno == EINTR) continue;
+            response[0] = '\0';
+            return -1;
+        }
         used += (size_t)received;
     }
+    if (!closed) {
+        char extra = '\0';
+        for (;;) {
+            ssize_t received = recv(socket_fd, &extra, sizeof(extra), 0);
+            if (received == 0) break;
+            if (received > 0) {
+                response[0] = '\0';
+                return -1;
+            }
+            if (errno == EINTR) continue;
+            response[0] = '\0';
+            return -1;
+        }
+    }
     response[used] = '\0';
+    if (used == 0 || memchr(response, '\0', used) != NULL) {
+        response[0] = '\0';
+        return -1;
+    }
+    const char *header_end = strstr(response, "\r\n\r\n");
+    const char *line_end = strstr(response, "\r\n");
+    if (header_end == NULL || line_end == NULL || line_end >= header_end) {
+        response[0] = '\0';
+        return -1;
+    }
+    size_t header_bytes = (size_t)(header_end + 4 - response);
+    const char *line = line_end + 2;
+    int content_length_found = 0;
+    size_t content_length = 0;
+    while (line < header_end) {
+        line_end = strstr(line, "\r\n");
+        if (line_end == NULL || line_end > header_end) {
+            response[0] = '\0';
+            return -1;
+        }
+        if ((size_t)(line_end - line) >= 15 &&
+            strncmp(line, "Content-Length:", 15) == 0) {
+            if (content_length_found) {
+                response[0] = '\0';
+                return -1;
+            }
+            const char *value = line + 15;
+            while (value < line_end && (*value == ' ' || *value == '\t')) ++value;
+            const char *first_digit = value;
+            while (value < line_end && *value >= '0' && *value <= '9') {
+                size_t digit = (size_t)(*value - '0');
+                if (content_length > (((size_t)-1) - digit) / 10) {
+                    response[0] = '\0';
+                    return -1;
+                }
+                content_length = content_length * 10 + digit;
+                ++value;
+            }
+            while (value < line_end && (*value == ' ' || *value == '\t')) ++value;
+            if (value == first_digit || value != line_end) {
+                response[0] = '\0';
+                return -1;
+            }
+            content_length_found = 1;
+        }
+        line = line_end + 2;
+    }
+    if (!content_length_found || header_bytes > used ||
+        content_length != used - header_bytes) {
+        response[0] = '\0';
+        return -1;
+    }
     return (int)used;
 }
 
 static int response_is_ready(const char *response) {
     return (
-        strstr(response, "HTTP/1.0 200") != NULL &&
+        strncmp(response, "HTTP/1.0 200 ", 13) == 0 &&
         strstr(response, "\"service\":\"KRONOS_BROWSER_V1\"") != NULL &&
         strstr(response, "\"provider\"") != NULL &&
         strstr(response, "\"analysis\"") != NULL &&
@@ -180,9 +256,9 @@ static int backend_is_ready(void) {
         return 0;
     }
     char response[BACKEND_STATUS_RESPONSE_BYTES] = {0};
-    (void)read_response(socket_fd, response, sizeof(response));
+    int response_bytes = read_response(socket_fd, response, sizeof(response));
     (void)close(socket_fd);
-    return response_is_ready(response);
+    return response_bytes > 0 && response_is_ready(response);
 }
 
 static int open_workspace(void) {
@@ -318,10 +394,11 @@ static int backend_supports_maintenance(void) {
         (void)close(socket_fd);
         return 0;
     }
-    char response[4096] = {0};
-    (void)read_response(socket_fd, response, sizeof(response));
+    char response[BACKEND_STATUS_RESPONSE_BYTES] = {0};
+    int response_bytes = read_response(socket_fd, response, sizeof(response));
     (void)close(socket_fd);
-    return strstr(response, "HTTP/1.0 200") != NULL &&
+    return response_bytes > 0 &&
+        strncmp(response, "HTTP/1.0 200 ", 13) == 0 &&
         strstr(response, "\"protocol\":\"KRONOS_MAINTENANCE_HANDOFF_V1\"") != NULL;
 }
 
@@ -355,10 +432,11 @@ static int request_graceful_shutdown(pid_t backend_pid, const char *token, const
         return 0;
     }
     char response[2048] = {0};
-    (void)read_response(socket_fd, response, sizeof(response));
+    int response_bytes = read_response(socket_fd, response, sizeof(response));
     (void)close(socket_fd);
     return (
-        strstr(response, "HTTP/1.0 202") != NULL &&
+        response_bytes > 0 &&
+        strncmp(response, "HTTP/1.0 202 ", 13) == 0 &&
         strstr(response, "\"status\":\"STOPPING\"") != NULL
     );
 }
