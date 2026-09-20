@@ -23,6 +23,7 @@ with StartupCapture(Path(__file__).resolve().parents[1], keep_sources_pinned=Tru
         review_preparation_scope,
     )
     from kronos.application.swing_opportunities import SwingOpportunitiesApplication
+    from kronos.application.swing_analysis_process import SwingAnalysisProcessOwner
     from kronos.application.intraday_runtime import create_intraday_runtime
     from kronos.application.intraday_statistics import IntradayStatisticsApplication
     from kronos.browser.server import create_browser_server
@@ -299,6 +300,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         mtf_fact_evidence_store=mtf_fact_store,
         native_discovery_evidence_store=native_discovery_store,
         relative_context_evidence_store=relative_context_store,
+        analysis_process_owner=SwingAnalysisProcessOwner(),
     )
     restart_control = BrowserBackendRestartControl.create()
     try:

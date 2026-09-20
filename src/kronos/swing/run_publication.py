@@ -219,6 +219,19 @@ class SwingRunPublication:
         manifest = json.loads(raw)
         return self._validate(manifest, reference)
 
+    def _exact_commit_fence(self, bundle):
+        reference = bundle.reference
+        _require(
+            sha256(self._manifest_path(reference).read_bytes()).hexdigest()
+            == reference["sha256"]
+        )
+        for artifact in bundle.manifest["artifacts"].values():
+            if artifact is not None:
+                _require(
+                    sha256(Path(artifact["path"]).read_bytes()).hexdigest()
+                    == artifact["sha256"]
+                )
+
     def _validate(self, manifest, reference):
         try:
             _require(set(manifest) == {"schema_version", "generation", "run_id", "predecessor_manifest", "kind", "artifacts"})
@@ -364,7 +377,15 @@ class SwingRunPublication:
             "run_id": token.run_id, "predecessor_manifest": token.predecessor_manifest,
             "kind": "ANALYSIS", "artifacts": self._references(token.run_id, continuity=True)})
 
-    def publish(self, token, reference, now):
+    def publish(
+        self,
+        token,
+        reference,
+        now,
+        *,
+        before_commit=None,
+        commit_ready=None,
+    ):
         bundle = self._load(reference)
         if (bundle.manifest["generation"] != token.generation
                 or bundle.manifest["run_id"] != token.run_id
@@ -373,6 +394,15 @@ class SwingRunPublication:
         completed_at = _timestamp(now)
         if now != bundle.provenance.successful_completed_at:
             raise ValueError("SWING_PUBLICATION_COMPLETION_MISMATCH")
+        if before_commit is not None:
+            if not callable(before_commit) or before_commit(bundle) is not True:
+                raise ValueError("SWING_PUBLICATION_COMMIT_NOT_AUTHORIZED")
+        # A callback may wait while the validated predecessor remains current.
+        # Recheck the exact bytes immediately before the atomic control commit.
+        self._exact_commit_fence(bundle)
+        if commit_ready is not None:
+            if not callable(commit_ready) or commit_ready(bundle) is not True:
+                raise ValueError("SWING_PUBLICATION_COMMIT_NOT_AUTHORIZED")
         with self._lock():
             control = self._control()
             if not self._eligible(control, token):

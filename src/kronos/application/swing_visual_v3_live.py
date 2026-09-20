@@ -819,6 +819,14 @@ class NativeReviewIntakeWorkflow:
     def prepare_page_state(self) -> bool:
         """Prepare one current UI projection only at an explicit owner boundary."""
 
+        state = self.prepare_page_generation()
+        if state is None:
+            return False
+        return self.publish_page_generation(state)
+
+    def prepare_page_generation(self):
+        """Build one candidate without replacing the readable generation."""
+
         try:
             with self._page_prepare_lock:
                 with self._validated_response() as (prepared, reads):
@@ -835,6 +843,28 @@ class NativeReviewIntakeWorkflow:
                     context, authority, projection, has_control,
                     component_fence, current_fence, identity,
                 )
+        except (OSError, ValueError) as error:
+            with self._page_state_lock:
+                self._page_state = None
+                self._page_state_failure = self._reason(
+                    error, "SWING_PAGE_PREPARATION_UNAVAILABLE"
+                )
+            return None
+        return state
+
+    def prepared_page_projection(self, state):
+        """Reuse one candidate after exact-byte and authority revalidation."""
+
+        require(type(state) is _CompactNativePageState,
+                "SWING_PAGE_PREPARATION_INVALID")
+        with self._prepared_state_response(state) as prepared:
+            return self.snapshot(_response=prepared)
+
+    def publish_page_generation(self, state) -> bool:
+        """Install a revalidated candidate at its explicit owner boundary."""
+
+        try:
+            self.prepared_page_projection(state)
         except (OSError, ValueError) as error:
             with self._page_state_lock:
                 self._page_state = None
@@ -894,6 +924,11 @@ class NativeReviewIntakeWorkflow:
             state = self._page_state
             failure = self._page_state_failure
         require(state is not None, failure or "SWING_PAGE_PREPARATION_MISSING")
+        with self._prepared_state_response(state) as prepared:
+            yield prepared
+
+    @contextmanager
+    def _prepared_state_response(self, state):
         require(
             state.identity == self._compact_page_identity(
                 state.context,

@@ -46,6 +46,24 @@ def test_runtime_composes_valid_empty_v2_review_without_autonomous_work(
     assert shared.active_lease_count == 0
 
 
+def test_pf10_runtime_restoration_prepares_empty_generation_without_writes(
+    tmp_path: Path,
+) -> None:
+    shared, provider, factory_calls = _shared()
+    before = _fingerprints(tmp_path)
+
+    composition = create_intraday_runtime(shared, evidence_root=tmp_path.resolve())
+
+    generation = composition.review_v2_application._page_generation
+    assert generation is not None
+    assert generation.current_pointer_identity is None
+    with composition.review_v2_application.page_read_scope():
+        assert composition.review_v2_application.snapshot().candidates == ()
+    assert _fingerprints(tmp_path) == before
+    assert provider.begin_count == 0
+    assert factory_calls == []
+
+
 def test_runtime_restores_exact_v2_review_pointer_without_creating_review(
     tmp_path: Path,
 ) -> None:

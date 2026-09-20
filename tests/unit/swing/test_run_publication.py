@@ -308,6 +308,81 @@ def test_07_two_writers_only_latest_can_publish(checkpoint):
     assert co.current().native.run_identity == second.run_id
 
 
+def test_publish_validates_before_one_precommit_authority_gate(checkpoint):
+    co, snapshot, bindings, prior = checkpoint
+    token, values = prepared(co, snapshot, bindings, 2)
+    reference = co.prepare(token, **values)
+    events = []
+
+    def reject(bundle):
+        events.append((bundle.reference, co.current().reference))
+        return False
+
+    with pytest.raises(ValueError, match="SWING_PUBLICATION_COMMIT_NOT_AUTHORIZED"):
+        co.publish(
+            token,
+            reference,
+            values["mtf"].observed_at,
+            before_commit=reject,
+        )
+    assert events == [(reference, prior.reference)]
+    assert co.current().reference == prior.reference
+
+    native_path = co._paths(token.run_id)["native"]
+    native_bytes = native_path.read_bytes()
+
+    def corrupt_after_validation(bundle):
+        events.append((bundle.reference, co.current().reference))
+        native_path.write_bytes(native_bytes + b" ")
+        return True
+
+    with pytest.raises(ValueError, match="SWING_PUBLICATION_CONSTRAINT_INVALID"):
+        co.publish(
+            token,
+            reference,
+            values["mtf"].observed_at,
+            before_commit=corrupt_after_validation,
+        )
+    assert co.current().reference == prior.reference
+    native_path.write_bytes(native_bytes)
+
+    with pytest.raises(ValueError, match="SWING_PUBLICATION_COMMIT_NOT_AUTHORIZED"):
+        co.publish(
+            token,
+            reference,
+            values["mtf"].observed_at,
+            before_commit=lambda bundle: (
+                events.append((bundle.reference, co.current().reference)) or True
+            ),
+            commit_ready=lambda bundle: (
+                events.append((bundle.reference, co.current().reference)) or False
+            ),
+        )
+    assert co.current().reference == prior.reference
+
+    committed = co.publish(
+        token,
+        reference,
+        values["mtf"].observed_at,
+        before_commit=lambda bundle: (
+            events.append((bundle.reference, co.current().reference)) or True
+        ),
+        commit_ready=lambda bundle: (
+            events.append((bundle.reference, co.current().reference)) or True
+        ),
+    )
+    assert committed.reference == reference
+    assert events == [
+        (reference, prior.reference),
+        (reference, prior.reference),
+        (reference, prior.reference),
+        (reference, prior.reference),
+        (reference, prior.reference),
+        (reference, prior.reference),
+    ]
+    assert co.current().reference == reference
+
+
 def test_17_C01_to_C11_continuity_replayed_through_real_publication(tmp_path, scenario):
     """WO-04 transition assertions with actual five-artifact commits/recovery."""
     from tests.unit.swing.v1.test_native_discovery import _fact, FactualTimeframe as TF

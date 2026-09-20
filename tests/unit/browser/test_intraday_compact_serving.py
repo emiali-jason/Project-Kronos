@@ -416,14 +416,18 @@ def test_pf10_review_page_reuses_one_typed_read_per_candidate_and_releases_it(
     monkeypatch.setattr(app.review_store, "load_visual_evidence_for_pack", evidence)
     monkeypatch.setattr(app, "_candidate_snapshot", candidate)
 
-    response = routes.handle_get(BrowserGetRequest("/intraday/review", {}), _snapshot)
-
-    assert response.status == 200
+    app.prepare_page_generation()
     assert counts == {
         "current_chart": 2,
         "retained_pack": 2,
         "visual_evidence": 2,
     }
+    counts.clear()
+
+    response = routes.handle_get(BrowserGetRequest("/intraday/review", {}), _snapshot)
+
+    assert response.status == 200
+    assert counts == {}
     gc.collect()
     assert references and all(reference() is None for reference in references)
 
@@ -525,13 +529,13 @@ def test_pf10_blocked_capture_leaves_shared_status_and_swing_responsive(tmp_path
     runtime, routes = _pf10_populated_pages(tmp_path, monkeypatch)
     swing = SwingOpportunitiesApplication(_Provider)
     entered, release = Event(), Event()
-    original = _CurrentPageRead.read
-    def blocked(self, path, loader=None):
+    original = _CurrentPageRead.exact_bytes_match
+    def blocked(self):
         if not entered.is_set():
             entered.set()
             assert release.wait(5)
-        return original(self, path, loader)
-    monkeypatch.setattr(_CurrentPageRead, "read", blocked)
+        return original(self)
+    monkeypatch.setattr(_CurrentPageRead, "exact_bytes_match", blocked)
     with ThreadPoolExecutor(max_workers=2) as pool:
         future = pool.submit(routes.handle_get, BrowserGetRequest("/intraday/review", {}), _snapshot)
         try:
@@ -584,3 +588,134 @@ def test_pf10_all_page_capacity_dimensions_are_fail_closed(tmp_path, monkeypatch
             response = routes.handle_get(BrowserGetRequest("/intraday/review", {}), _snapshot)
             assert response.status == 503 and "CAPACITY" in response.body
         assert routes.handle_get(BrowserGetRequest("/intraday/review", {}), _snapshot).status == 200
+
+
+def test_pf10_failed_preparation_is_visible_and_cannot_serve_prior_generation(
+    tmp_path, monkeypatch
+):
+    from kronos.intraday.review import ReviewError, ReviewFailure
+
+    runtime, routes = _pf10_populated_pages(tmp_path, monkeypatch)
+    app = runtime.review_v2_application
+    original = app.snapshot
+
+    def failed():
+        raise ReviewError(ReviewFailure.INTEGRITY_INVALID)
+
+    monkeypatch.setattr(app, "snapshot", failed)
+    assert app.prepare_page_generation() is None
+    response = routes.handle_get(BrowserGetRequest("/intraday/review", {}), _snapshot)
+    assert response.status == 503
+    assert ReviewFailure.INTEGRITY_INVALID.value in response.body
+
+    monkeypatch.setattr(app, "snapshot", original)
+    assert app.prepare_page_generation() is not None
+    assert routes.handle_get(
+        BrowserGetRequest("/intraday/review", {}), _snapshot
+    ).status == 200
+
+
+def test_pf10_prepared_generation_replacement_is_single_and_releases_obsolete_state(
+    tmp_path, monkeypatch
+):
+    import gc
+    import weakref
+
+    runtime, routes = _pf10_populated_pages(tmp_path, monkeypatch)
+    app = runtime.review_v2_application
+    seen = []
+    for _ in range(8):
+        generation = app._page_generation
+        seen.append(weakref.ref(generation))
+        assert app.prepare_page_generation() is not generation
+        assert routes.handle_get(
+            BrowserGetRequest("/intraday/review", {}), _snapshot
+        ).status == 200
+        del generation
+    gc.collect()
+    assert all(reference() is None for reference in seen)
+
+
+def test_pf10_prepared_generation_retains_only_authority_bytes(
+    tmp_path, monkeypatch
+):
+    from kronos.application.intraday_review_v2 import _page_authority_path
+
+    runtime, routes = _pf10_populated_pages(
+        tmp_path, monkeypatch, large=True
+    )
+    app = runtime.review_v2_application
+    generation = app._page_generation
+    assert generation is not None
+    assert generation.payloads
+    assert all(_page_authority_path(path) for path, _ in generation.payloads)
+    assert any(
+        not _page_authority_path(path)
+        for path, expected in generation.payload_digests
+        if expected is not None
+    )
+    retained = sum(
+        0 if payload is None else len(payload)
+        for _, payload in generation.payloads
+    )
+    assert retained < generation.byte_count
+    assert routes.handle_get(
+        BrowserGetRequest("/intraday/review", {}), _snapshot
+    ).status == 200
+
+
+def test_pf10_reconciliation_mutation_boundary_refreshes_prepared_generation(
+    tmp_path, monkeypatch
+):
+    runtime, routes = _pf10_populated_pages(tmp_path, monkeypatch)
+    app = runtime.review_v2_application
+    before = app._page_generation
+
+    result = runtime.visual_reconciliation_v2_application.reconcile_all_ready()
+
+    assert result["success_count"] == 2
+    assert app._page_generation is not before
+    assert routes.handle_get(
+        BrowserGetRequest("/intraday/review", {}), _snapshot
+    ).status == 200
+
+
+def test_pf10_overlapping_readers_share_one_bounded_exact_validation_wave(
+    tmp_path, monkeypatch
+):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier, Lock
+    import kronos.application.intraday_review_v2 as owner
+
+    runtime, routes = _pf10_populated_pages(tmp_path, monkeypatch, large=True)
+    barrier = Barrier(4)
+    count_lock = Lock()
+    calls = 0
+    original = owner._page_digest_chunk_matches
+
+    def counted(items):
+        nonlocal calls
+        with count_lock:
+            calls += 1
+        return original(items)
+
+    validator = runtime.review_v2_application._page_generation.validator
+    original_validate = validator.validate
+
+    def aligned():
+        barrier.wait(timeout=3)
+        return original_validate()
+
+    monkeypatch.setattr(owner, "_page_digest_chunk_matches", counted)
+    monkeypatch.setattr(validator, "validate", aligned)
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        futures = [
+            pool.submit(
+                routes.handle_get,
+                BrowserGetRequest(("/intraday", "/intraday/review")[index % 2], {}),
+                _snapshot,
+            )
+            for index in range(4)
+        ]
+        assert [future.result(timeout=5).status for future in futures] == [200] * 4
+    assert calls == owner._PageExactValidator.MAX_WORKERS

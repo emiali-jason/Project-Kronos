@@ -759,13 +759,22 @@ class KronosBrowserServer(ThreadingHTTPServer):
         self._synchronize_trade_window()
         self.native_review.journal_snapshot()
         self.reconcile_progression()
-        self.refresh_swing_projection_revision()
-        if (
-            self.native_intake is not None
-            and not self.native_intake.prepare_page_state()
-        ):
+        if self.native_intake is None:
+            self.refresh_swing_projection_revision()
+            return
+        generation = self.native_intake.prepare_page_generation()
+        if generation is None:
             failure = self.native_intake.page_state_status()["failure"]
             raise ValueError(failure or "SWING_PAGE_PREPARATION_UNAVAILABLE")
+        projection = self.native_intake.prepared_page_projection(generation)
+        revision = self._derive_swing_projection_revision(
+            native_intake_projection=projection
+        )
+        if not self.native_intake.publish_page_generation(generation):
+            failure = self.native_intake.page_state_status()["failure"]
+            raise ValueError(failure or "SWING_PAGE_PREPARATION_UNAVAILABLE")
+        with self._swing_projection_lock:
+            self._swing_projection_revision_value = revision
 
     def swing_notification_status(self):
         """Read-only Swing polling; never projects/retains Intraday sources."""
@@ -980,7 +989,9 @@ class KronosBrowserServer(ThreadingHTTPServer):
             self._swing_projection_revision_value = revision
         return revision
 
-    def _derive_swing_projection_revision(self) -> str:
+    def _derive_swing_projection_revision(
+        self, *, native_intake_projection=None
+    ) -> str:
         """Derive deterministic presentation metadata from restored authority.
 
         The revision is derived only from immutable, restored V3/KR-370 records
@@ -1019,7 +1030,11 @@ class KronosBrowserServer(ThreadingHTTPServer):
             ],
         }
         if self.native_intake is not None:
-            intake = self.native_intake.snapshot()
+            intake = (
+                self.native_intake.snapshot()
+                if native_intake_projection is None
+                else native_intake_projection
+            )
             workspace = intake.get("workspace")
             payload["native_intake"] = {
                 **intake,

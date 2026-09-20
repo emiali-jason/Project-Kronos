@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from functools import wraps
 from typing import Callable
 
 from kronos.application.intraday_review_v2 import IntradayReviewV2Application
@@ -27,6 +28,17 @@ from kronos.intraday.visual_reconciliation_v2 import (
     evaluate_visual_reconciliation,
 )
 from kronos.intraday.visual_reconciliation_v2_persistence import VisualReconciliationStore
+
+
+def _prepares_review_page(method):
+    @wraps(method)
+    def selected(self, *args, **kwargs):
+        try:
+            return method(self, *args, **kwargs)
+        finally:
+            self._review.prepare_page_generation()
+
+    return selected
 
 
 @dataclass(frozen=True, slots=True)
@@ -191,6 +203,7 @@ class IntradayVisualReconciliationV2Application:
                 )
             return tuple(results)
 
+    @_prepares_review_page
     def reconcile_all_ready(self) -> dict[str, object]:
         """Explicit candidate-isolated batch; it never invokes WO-10."""
 

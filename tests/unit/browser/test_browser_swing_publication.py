@@ -1,8 +1,45 @@
 from unittest.mock import Mock
-from threading import Event
+from threading import Event, Lock
+
+import pytest
 
 from tests.unit.browser.test_browser_server import _running_server, _request
 from tests.unit.swing.test_run_publication import checkpoint, scenario
+
+
+def test_reconcile_swing_publishes_one_prepared_projection_and_revision():
+    from kronos.browser.server import KronosBrowserServer
+
+    server = object.__new__(KronosBrowserServer)
+    server.application = Mock()
+    server.application.native_discovery_run.return_value = None
+    server.application.mtf_fact_snapshot.return_value = None
+    server.native_review = Mock()
+    server.native_intake = Mock()
+    generation, projection = object(), {"rows": (), "workspace": None}
+    server.native_intake.prepare_page_generation.return_value = generation
+    server.native_intake.prepared_page_projection.return_value = projection
+    server.native_intake.publish_page_generation.return_value = True
+    server._synchronize_trade_window = Mock()
+    server.reconcile_progression = Mock()
+    server._derive_swing_projection_revision = Mock(return_value="revision")
+    server._swing_projection_lock = Lock()
+    server._swing_projection_revision_value = "predecessor"
+
+    server.reconcile_swing()
+
+    server.native_intake.prepared_page_projection.assert_called_once_with(generation)
+    server._derive_swing_projection_revision.assert_called_once_with(
+        native_intake_projection=projection
+    )
+    server.native_intake.publish_page_generation.assert_called_once_with(generation)
+    assert server._swing_projection_revision_value == "revision"
+
+    server.native_intake.publish_page_generation.return_value = False
+    server.native_intake.page_state_status.return_value = {"failure": "PREPARE_FAILED"}
+    with pytest.raises(ValueError, match="PREPARE_FAILED"):
+        server.reconcile_swing()
+    assert server._swing_projection_revision_value == "revision"
 
 
 def test_wo07_committed_successor_with_old_review_has_pure_current_gets(checkpoint, tmp_path, monkeypatch):

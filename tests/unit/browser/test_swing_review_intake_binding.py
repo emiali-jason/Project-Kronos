@@ -1162,26 +1162,28 @@ def test_compact_routes_keep_committed_generation_while_analysis_is_blocked(
         native_review=historical,
         visual_v3_live=live,
     )
-    prepare_page_state = server.native_intake.prepare_page_state
+    prepare_page_generation = server.native_intake.prepare_page_generation
     intake_snapshot = server.native_intake.snapshot
 
     def blocked_successor_prepare():
         successor_prepare_started.set()
         assert release_successor_prepare.wait(30)
         if successor_preparation == "success":
-            return prepare_page_state()
+            return prepare_page_generation()
 
         def fail_successor_snapshot(*_args, **_kwargs):
             raise ValueError("CONTROLLED_SUCCESSOR_PREPARATION_FAILURE")
 
         server.native_intake.snapshot = fail_successor_snapshot
         try:
-            return prepare_page_state()
+            return prepare_page_generation()
         finally:
             server.native_intake.snapshot = intake_snapshot
 
     monkeypatch.setattr(
-        server.native_intake, "prepare_page_state", blocked_successor_prepare
+        server.native_intake,
+        "prepare_page_generation",
+        blocked_successor_prepare,
     )
     serving = Thread(target=server.serve_forever, daemon=True)
     serving.start()
@@ -1515,17 +1517,20 @@ def test_compact_page_uses_prepared_actual_history_and_inert_status(
 ):
     market, instrument, _, _, _, _ = _accepted_native(native_intake, tmp_path)
     assert market == "NSE"
-    assert native_intake.prepare_page_state()
-    status = native_intake.page_state_status()
-    assert status["state"] == "READY"
-    assert status["retained_generations"] == 1
-    assert status["retained_input_count"] > 0
+    generation = native_intake.prepare_page_generation()
+    assert generation is not None
     monkeypatch.setattr(native_intake, "_history",
                         lambda *a, **k: pytest.fail("GET reconstructed history"))
     monkeypatch.setattr(native_intake, "_publication",
                         lambda *a, **k: pytest.fail("GET reconstructed publication"))
+    projection = native_intake.prepared_page_projection(generation)
+    assert native_intake.publish_page_generation(generation)
+    status = native_intake.page_state_status()
+    assert status["state"] == "READY"
+    assert status["retained_generations"] == 1
+    assert status["retained_input_count"] > 0
     with native_intake.page_response() as prepared:
-        projection = native_intake.snapshot(_response=prepared)
+        assert native_intake.snapshot(_response=prepared) is projection
         row = next(item for item in projection["rows"]
                    if item["instrument"] == instrument)
         assert row["evidence"] == "ACCEPTED"

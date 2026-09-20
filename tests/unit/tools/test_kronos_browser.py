@@ -100,6 +100,10 @@ def test_launcher_uses_loopback_server_and_opens_swing_workspace(monkeypatch) ->
         and isinstance(item[1], dict)
     )
     swing_factory = application_event[0]
+    assert isinstance(
+        application_event[1]["analysis_process_owner"],
+        kronos_browser.SwingAnalysisProcessOwner,
+    )
     assert swing_factory.__closure__ is not None
     assert any(
         cell.cell_contents is operation._runtime

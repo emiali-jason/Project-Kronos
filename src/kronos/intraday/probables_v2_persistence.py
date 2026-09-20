@@ -13,7 +13,7 @@ from contextvars import ContextVar
 from functools import wraps
 from pathlib import Path
 from threading import RLock
-from typing import Mapping
+from typing import Callable, Mapping
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
@@ -237,6 +237,7 @@ class ProbablesV2Store:
             raise ValueError("INTRADAY_PROBABLES_V2_STORE_ROOT_INVALID")
         self._root = root
         self._validated = ValidatedBytesReuse(max_entries=4096)
+        self._page_preparation: Callable[[], object] | None = None
         with _PRODUCER_LOCKS_LOCK:
             self._lock = _PRODUCER_LOCKS.setdefault(root.resolve(), RLock())
 
@@ -253,6 +254,17 @@ class ProbablesV2Store:
     @property
     def root(self) -> Path:
         return self._root
+
+    def bind_page_preparation(self, callback: Callable[[], object]) -> None:
+        """Hand preparation ownership to the current canonical application."""
+
+        if not callable(callback):
+            raise ValueError("INTRADAY_PROBABLES_V2_PAGE_PREPARATION_INVALID")
+        # Application reconstruction is the explicit owner handoff boundary.
+        # Replacement leaves exactly one callback and deliberately performs no
+        # preparation while the store lock is held.
+        with self._lock:
+            self._page_preparation = callback
 
     def retain_methodology(self, value: ProbablesMethodologyV2) -> Path:
         return self._retain_typed("methodologies", value.publication_identity, value)
@@ -340,6 +352,8 @@ class ProbablesV2Store:
             self.load_current()
             self.save_current(create_current_probables_v2_pointer(run) if assessment is None
                 else create_assessment_bound_pointer(run, assessment))
+        if self._page_preparation is not None:
+            self._page_preparation()
         from kronos.application.notifications import notify_persisted
         origin_listener = getattr(self, "opportunity_origin_listener", None)
         if origin_listener is not None:

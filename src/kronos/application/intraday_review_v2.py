@@ -5,14 +5,16 @@ from __future__ import annotations
 from kronos.intraday import visual_contract_v2 as visual_v2
 
 from dataclasses import dataclass, replace, fields, is_dataclass
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager, ExitStack
 from contextvars import ContextVar
 from functools import wraps
-from threading import BoundedSemaphore
+from threading import BoundedSemaphore, Condition, Lock
 import sys
 from datetime import datetime, timezone
 from hashlib import sha256
 import json
+from mmap import ACCESS_READ, mmap
 from pathlib import Path
 from typing import Callable
 
@@ -65,6 +67,7 @@ class IntradayPageUnavailable(RuntimeError):
 
 
 _CURRENT_PAGE = ContextVar("intraday_review_page", default=None)
+_PAGE_MUTATION = ContextVar("intraday_review_page_mutation", default=None)
 
 
 class _CurrentPageRead:
@@ -76,11 +79,34 @@ class _CurrentPageRead:
 
     def __init__(self):
         self.payloads = {}
+        self.payload_digests = {}
         self.values = {}
         self.byte_count = 0
         self.value_bytes = 0
         self.objects = set()
         self.failure = None
+        self.sealed = False
+        self.generation = None
+
+    @classmethod
+    def from_prepared(cls, prepared):
+        scope = cls()
+        scope.payloads = dict(prepared.payloads)
+        scope.payload_digests = dict(prepared.payload_digests)
+        scope.values = dict(prepared.values)
+        scope.byte_count = prepared.byte_count
+        scope.value_bytes = prepared.value_bytes
+        scope.sealed = True
+        scope.generation = prepared
+        if (
+            len(scope.payloads) > cls.MAX_FILES
+            or scope.byte_count > cls.MAX_BYTES
+            or len(scope.values) > cls.MAX_VALUES
+            or scope.value_bytes > cls.MAX_VALUE_BYTES
+            or prepared.object_count > cls.MAX_OBJECTS
+        ):
+            scope.failure = "INTRADAY_PAGE_CAPACITY"
+        return scope
 
     def require(self):
         if self.failure is not None:
@@ -95,6 +121,8 @@ class _CurrentPageRead:
     def read(self, path, loader=None):
         self.require()
         if path not in self.payloads:
+            if self.sealed:
+                self.failure = "INTRADAY_PAGE_PREPARATION_INCOMPLETE"
             if len(self.payloads) >= self.MAX_FILES:
                 self.failure = "INTRADAY_PAGE_CAPACITY"
                 self.require()
@@ -164,11 +192,42 @@ class _CurrentPageRead:
             self.values[key] = value
         return self.values[key]
 
+    def exact_bytes_match(self):
+        """Revalidate all captured content without serializing page readers."""
+
+        self.require()
+        if self.generation is not None:
+            return self.generation.validator.validate()
+        for path, expected in self.payload_digests.items():
+            if _page_authority_path(path):
+                continue
+            actual = _page_file_digest(path)
+            if actual != expected:
+                return False
+        return True
+
+    def authority_bytes_match(self):
+        """Recheck mutable authority after the established owner locks are held."""
+
+        self.require()
+        for path, expected in self.payloads.items():
+            if not _page_authority_path(path):
+                continue
+            try:
+                actual = path.read_bytes()
+            except FileNotFoundError:
+                actual = None
+            if actual != expected:
+                return False
+        return True
+
     def close(self):
         self.payloads.clear()
+        self.payload_digests.clear()
         self.values.clear()
         self.objects.clear()
         self.byte_count = self.value_bytes = 0
+        self.generation = None
 
 
 def _page_once(method):
@@ -180,6 +239,114 @@ def _page_once(method):
         return active[1].memo((method, args, tuple(kwargs.items())),
                               lambda: method(self, *args, **kwargs))
     return selected
+
+
+def _prepares_page_generation(method):
+    """Refresh derived page state once after the outer canonical mutation."""
+
+    @wraps(method)
+    def selected(self, *args, **kwargs):
+        active = _PAGE_MUTATION.get()
+        outer = active is None or active[0] is not self
+        token = _PAGE_MUTATION.set((self, 1 if outer else active[1] + 1))
+        try:
+            return method(self, *args, **kwargs)
+        finally:
+            _PAGE_MUTATION.reset(token)
+            if outer:
+                self.prepare_page_generation()
+
+    return selected
+
+
+@dataclass(frozen=True, slots=True, weakref_slot=True)
+class _PreparedPageGeneration:
+    payloads: tuple[tuple[Path, bytes | None], ...]
+    payload_digests: tuple[tuple[Path, tuple[int, bytes] | None], ...]
+    values: tuple[tuple[object, object], ...]
+    byte_count: int
+    value_bytes: int
+    object_count: int
+    current_pointer_identity: str | None
+    validator: object
+
+
+def _preparation_failure(error: BaseException) -> str:
+    if isinstance(error, IntradayPageUnavailable):
+        return str(error)
+    if isinstance(error, ReviewError):
+        return error.failure.value
+    return "INTRADAY_PAGE_PREPARATION_FAILED"
+
+
+def _page_authority_path(path: Path) -> bool:
+    return path.name.startswith("CURRENT-") or any(
+        part in {
+            "current",
+            "current-charts",
+            "current-imports",
+            "current-visual-evidence",
+        }
+        for part in path.parts
+    )
+
+
+def _page_file_digest(path: Path) -> tuple[int, bytes] | None:
+    try:
+        with path.open("rb") as handle:
+            handle.seek(0, 2)
+            size = handle.tell()
+            if not size:
+                return 0, sha256(b"").digest()
+            with mmap(handle.fileno(), 0, access=ACCESS_READ) as payload:
+                return size, sha256(payload).digest()
+    except FileNotFoundError:
+        return None
+
+
+class _PageExactValidator:
+    """Coalesce only overlapping requests; every wave hashes every source."""
+
+    MAX_WORKERS = 4
+
+    def __init__(self, payload_digests):
+        self._items = tuple(
+            (path, expected)
+            for path, expected in payload_digests
+            if not _page_authority_path(path)
+        )
+        self._condition = Condition()
+        self._running = False
+        self._last_result = False
+
+    def validate(self):
+        with self._condition:
+            if self._running:
+                while self._running:
+                    self._condition.wait()
+                return self._last_result
+            self._running = True
+        try:
+            workers = min(self.MAX_WORKERS, len(self._items))
+            if not workers:
+                result = True
+            else:
+                chunks = tuple(self._items[index::workers] for index in range(workers))
+                with ThreadPoolExecutor(
+                    max_workers=workers,
+                    thread_name_prefix="kronos-intraday-page-integrity",
+                ) as pool:
+                    result = all(pool.map(_page_digest_chunk_matches, chunks))
+        finally:
+            with self._condition:
+                self._last_result = locals().get("result", False)
+                self._running = False
+                self._condition.notify_all()
+        return result
+
+
+def _page_digest_chunk_matches(items):
+    return all(_page_file_digest(path) == expected for path, expected in items)
 
 
 @dataclass(frozen=True, slots=True)
@@ -385,15 +552,98 @@ class IntradayReviewV2Application:
         self._clock = clock
         self._lock = review_store.workspace_lock
         self._page_slots = BoundedSemaphore(4)
+        self._page_preparation_lock = Lock()
+        self._page_generation_lock = Lock()
+        self._page_generation = None
+        self._page_generation_failure = "INTRADAY_PAGE_NOT_PREPARED"
         self._page_reconciliation_store = None
         self._chart_input = IntradayChartInputGate(review_store, probables_store, visual_identity_resolver, clock=lambda: self._clock())
         from kronos.instrument.visual_identity import uses_family_visual_authority
         self._paired = IntradayReviewV2PairedAdapter(review_store, self._transport, chart_input=self._chart_input,
             native_resolver=visual_identity_resolver if uses_family_visual_authority(visual_identity_resolver) else None)
+        self._probables.bind_page_preparation(self.prepare_page_generation)
+        self.prepare_page_generation()
 
     def bind_page_reconciliation(self, store):
         """Composition-only owner registration; it neither restores nor evaluates."""
         self._page_reconciliation_store = store
+        self.prepare_page_generation()
+
+    @contextmanager
+    def _owner_page_scope(self, scope):
+        """Enter the established lock order for capture or exact revalidation."""
+
+        with ExitStack() as stack:
+            stack.enter_context(self._review.page_read_scope(scope))
+            stack.enter_context(self._probables.page_read_scope(scope))
+            stack.enter_context(self._paired.store.page_read_scope(scope))
+            stack.enter_context(self._paired.bindings.page_read_scope(scope))
+            if self._page_reconciliation_store is not None:
+                stack.enter_context(self._page_reconciliation_store.page_read_scope(scope))
+            from kronos.application.intraday_review_ordered_batch import page_read_scope
+            stack.enter_context(page_read_scope(scope))
+            yield
+
+    def prepare_page_generation(self):
+        """Prepare one bounded derived generation at an explicit owner boundary."""
+
+        with self._page_preparation_lock:
+            scope = _CurrentPageRead()
+            token = _CURRENT_PAGE.set((self, scope))
+            generation = None
+            failure = None
+            try:
+                with self._owner_page_scope(scope):
+                    snapshot = self.snapshot()
+                    self.currentness()
+                    self.current_probables_run()
+                    if snapshot.current_pointer_identity is not None:
+                        if self._page_reconciliation_store is None:
+                            self.current_reconciliation()
+                        else:
+                            for candidate in snapshot.candidates:
+                                self._page_reconciliation_store.restore_current(
+                                    candidate.cycle_identity
+                                )
+                    scope.require()
+                    payload_digests = tuple(
+                        (
+                            path,
+                            None
+                            if payload is None
+                            else (len(payload), sha256(payload).digest()),
+                        )
+                        for path, payload in scope.payloads.items()
+                    )
+                    # Typed page values and exact non-authority digests are the
+                    # retained generation.  Keep raw bytes only for mutable
+                    # authority records whose comparison must occur under the
+                    # existing owner guards; retaining every immutable source
+                    # duplicates the large current evidence in memory.
+                    authority_payloads = tuple(
+                        (path, payload)
+                        for path, payload in scope.payloads.items()
+                        if _page_authority_path(path)
+                    )
+                    generation = _PreparedPageGeneration(
+                        payloads=authority_payloads,
+                        payload_digests=payload_digests,
+                        values=tuple(scope.values.items()),
+                        byte_count=scope.byte_count,
+                        value_bytes=scope.value_bytes,
+                        object_count=len(scope.objects),
+                        current_pointer_identity=snapshot.current_pointer_identity,
+                        validator=_PageExactValidator(payload_digests),
+                    )
+            except (IntradayPageUnavailable, ReviewError, OSError, ValueError) as error:
+                failure = _preparation_failure(error)
+            finally:
+                _CURRENT_PAGE.reset(token)
+                scope.close()
+            with self._page_generation_lock:
+                self._page_generation = generation
+                self._page_generation_failure = failure
+            return generation
 
     @contextmanager
     def page_read_scope(self):
@@ -403,24 +653,47 @@ class IntradayReviewV2Application:
             return
         if not self._page_slots.acquire(blocking=False):
             raise IntradayPageUnavailable("INTRADAY_PAGE_CAPACITY")
-        scope = _CurrentPageRead()
-        token = _CURRENT_PAGE.set((self, scope))
+        with self._page_generation_lock:
+            prepared = self._page_generation
+            failure = self._page_generation_failure
+        if prepared is None:
+            self._page_slots.release()
+            raise IntradayPageUnavailable(
+                failure or "INTRADAY_PAGE_PREPARATION_FAILED"
+            )
         try:
-            # Preserve Review -> producer order. No mutation hook rebuilds here.
-            with ExitStack() as stack:
-                stack.enter_context(self._review.page_read_scope(scope))
-                stack.enter_context(self._probables.page_read_scope(scope))
-                stack.enter_context(self._paired.store.page_read_scope(scope))
-                stack.enter_context(self._paired.bindings.page_read_scope(scope))
-                if self._page_reconciliation_store is not None:
-                    stack.enter_context(self._page_reconciliation_store.page_read_scope(scope))
-                from kronos.application.intraday_review_ordered_batch import page_read_scope
-                stack.enter_context(page_read_scope(scope))
-                yield scope
-                scope.require()
+            scope = _CurrentPageRead.from_prepared(prepared)
+            token = _CURRENT_PAGE.set((self, scope))
+            matched = False
+            try:
+                matched = scope.exact_bytes_match()
+                if matched:
+                    with self._owner_page_scope(scope):
+                        matched = scope.authority_bytes_match()
+                        if not matched:
+                            pass
+                        else:
+                            yield scope
+                            scope.require()
+                            return
+            finally:
+                _CURRENT_PAGE.reset(token)
+                scope.close()
+
+            # A changed byte must still traverse the owning integrity validators
+            # so callers retain their precise corruption reason. Even a valid
+            # successor remains fenced because GET cannot prepare it.
+            scope = _CurrentPageRead()
+            token = _CURRENT_PAGE.set((self, scope))
+            try:
+                with self._owner_page_scope(scope):
+                    yield scope
+                    scope.require()
+                    raise IntradayPageUnavailable("INTRADAY_PAGE_SOURCE_CHANGED")
+            finally:
+                _CURRENT_PAGE.reset(token)
+                scope.close()
         finally:
-            _CURRENT_PAGE.reset(token)
-            scope.close()
             self._page_slots.release()
 
     @property
@@ -482,6 +755,7 @@ class IntradayReviewV2Application:
                 "results": outcomes,
             }
 
+    @_prepares_page_generation
     def maintain_current_review(self):
         """Explicit reference-safe maintenance after current Review restoration.
 
@@ -635,6 +909,7 @@ class IntradayReviewV2Application:
             raise ReviewError(ReviewFailure.NOT_CURRENT)
         return pointer
 
+    @_prepares_page_generation
     def currentize_eligible_cycles_for_run_identity(
         self,
         *,
@@ -931,6 +1206,7 @@ class IntradayReviewV2Application:
         with self._lock:
             return self._prepare_combined_answer(payload).validation
 
+    @_prepares_page_generation
     def import_combined_answer(
         self, payload: bytes,
     ) -> IntradayReviewV2BatchImportResult:
@@ -1015,6 +1291,7 @@ class IntradayReviewV2Application:
             rejected_count=sum(x.state == "REJECTED" for x in values),
             producer_advanced=not self.currentness().is_review_current)
 
+    @_prepares_page_generation
     def import_expected_answer(
         self, cycle_identity: str,
     ) -> IntradayReviewV2InboxImportResult:
@@ -1032,6 +1309,7 @@ class IntradayReviewV2Application:
                 raise ReviewError(ReviewFailure.ARTIFACT_UNAVAILABLE)
             return self._import_inbox_transport(transport, current_review_count=1)
 
+    @_prepares_page_generation
     def import_all_expected_answers(self) -> IntradayReviewV2InboxImportResult:
         """Import exact current Answers on Sponsor request; never poll the inbox."""
 
@@ -1502,6 +1780,7 @@ class IntradayReviewV2Application:
                                    for item in ordered),
         )
 
+    @_prepares_page_generation
     def upload_chart(
         self,
         cycle_identity: str,
@@ -1584,11 +1863,13 @@ class IntradayReviewV2Application:
             self._review.save_current_chart(current)
             return chart
 
+    @_prepares_page_generation
     def create_all_question_transports(self) -> tuple:
         """Compile one ordered mixed-family Sponsor PDF and one Answer binding."""
         from kronos.application.intraday_review_ordered_batch import create
         return (create(self),)
 
+    @_prepares_page_generation
     def create_combined_question_transport(self) -> IntradayReviewV2BatchResult:
         """Create exact V2 packs and one immutable combined Question transport."""
 
@@ -1613,6 +1894,7 @@ class IntradayReviewV2Application:
                 entries.append((pack, self._review.load_chart_bytes(chart)))
             return self._create_question_transport(tuple(entries)) if entries else paired_results[0]
 
+    @_prepares_page_generation
     def create_individual_question_transport(
         self, cycle_identity: str,
     ) -> IntradayReviewV2BatchResult:
@@ -1683,6 +1965,7 @@ class IntradayReviewV2Application:
             answer_template_path=answer_path,
         )
 
+    @_prepares_page_generation
     def create_eligible_cycles(self, run: ProbablesRunV2) -> tuple[ReviewCycleV2, ...]:
         """Retain cycles only after exact persisted V2 lineage has been proven."""
         with self._lock:

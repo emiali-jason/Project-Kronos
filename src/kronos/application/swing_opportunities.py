@@ -25,6 +25,11 @@ from kronos.application.live_monitoring_e2e import (
     governed_live_monitoring_instruments,
     run_live_monitoring_e2e,
 )
+from kronos.application.swing_analysis_process import (
+    SwingAnalysisProcessCleanupError,
+    SwingAnalysisProcessCompletionError,
+    SwingAnalysisProcessOwner,
+)
 
 from kronos.configuration.principals import PrincipalBindingResult
 from kronos.application.swing_mtf_facts import build_same_run_mtf_fact_snapshot
@@ -735,6 +740,7 @@ class SwingOpportunitiesApplication:
         connection_timeout_seconds: float = 330.0,
         connection_monotonic_clock=None,
         connection_timer_factory=None,
+        analysis_process_owner: SwingAnalysisProcessOwner | None = None,
     ) -> None:
         if not all(callable(item) for item in (
             provider_factory,
@@ -747,6 +753,11 @@ class SwingOpportunitiesApplication:
         if (
             run_provenance_store is not None
             and type(run_provenance_store) is not LocalSwingRunProvenanceStore
+        ):
+            raise TypeError("BROWSER_APPLICATION_DEPENDENCY_INVALID")
+        if (
+            analysis_process_owner is not None
+            and type(analysis_process_owner) is not SwingAnalysisProcessOwner
         ):
             raise TypeError("BROWSER_APPLICATION_DEPENDENCY_INVALID")
         if (
@@ -785,6 +796,7 @@ class SwingOpportunitiesApplication:
         self.__clock = clock
         self.__pace = pace
         self.__background_runner = background_runner
+        self.__analysis_process_owner = analysis_process_owner
         self.__swing_run_identity_factory = swing_run_identity_factory
         self.__run_provenance_store = run_provenance_store
         self.__market_calendar_publisher = market_calendar_publisher
@@ -963,7 +975,24 @@ class SwingOpportunitiesApplication:
     def publication_status(self):
         status = dict(self.__prepare_opportunities_projection()[3])
         status["analysis_work"] = dict(self.analysis_work_status())
+        status["analysis_execution"] = self.analysis_execution_status()
         return status
+
+    def analysis_execution_status(self):
+        """Observe bounded process ownership without waiting for cleanup."""
+
+        owner = self.__analysis_process_owner
+        return (
+            {
+                "state": "SAME_PROCESS",
+                "owned_workers": 0,
+                "maximum_owned_workers": 0,
+                "queued_jobs": 0,
+                "maximum_queued_jobs": 0,
+            }
+            if owner is None
+            else owner.status()
+        )
 
     def opportunities_bundle_projection(self):
         """Prepare one authority-bound projection without lock-held file reads."""
@@ -2192,6 +2221,14 @@ class SwingOpportunitiesApplication:
             if capability is None or getattr(capability, "active", False) is not True:
                 raise RuntimeError("READ_ONLY_CAPABILITY_UNAVAILABLE")
             progress = replace(progress, provider_capability_active=True)
+            if self.__analysis_process_owner is not None:
+                self.__complete_isolated_analysis(
+                    work,
+                    run_created_at,
+                    capability,
+                    observe,
+                )
+                return
             publication_inputs = {} if self.__publication is None else {
                 "committed_predecessor": work.predecessor,
                 "prepare_publication": True,
@@ -2297,6 +2334,20 @@ class SwingOpportunitiesApplication:
                     published_workspace,
                     provider_state=ProviderConnectionState.CONNECTED,
                 )
+        except (
+            SwingAnalysisProcessCleanupError,
+            SwingAnalysisProcessCompletionError,
+        ):
+            with self.__lock:
+                if self.__analysis_work is work:
+                    work.phase = "CLEANUP_FAILED"
+                    self.__analysis_request_result = "PUBLICATION_UNAVAILABLE"
+                    self.__snapshot = replace(
+                        self.__snapshot,
+                        analysis_state=AnalysisState.ERROR,
+                        analysis_failure="SWING_ANALYSIS_FAILED",
+                    )
+            return
         except Exception as error:
             with self.__lock:
                 current = self.__analysis_work_current_locked(work)
@@ -2336,7 +2387,74 @@ class SwingOpportunitiesApplication:
                 )
             return
         finally:
+            if self.__analysis_process_owner is not None:
+                self.__analysis_process_owner.release(work.generation)
             self.__finish_analysis_work(work)
+
+    def __complete_isolated_analysis(
+        self,
+        work: _AnalysisWorkGeneration,
+        run_created_at: datetime,
+        capability,
+        observe,
+    ) -> None:
+        """Install one worker-published result only while its generation is current."""
+
+        owner = self.__analysis_process_owner
+        publication = self.__publication
+        calendar = self.__market_calendar_publisher
+        if owner is None or publication is None or calendar is None:
+            raise RuntimeError("SWING_ANALYSIS_WORKER_UNAVAILABLE")
+
+        def current() -> bool:
+            return self.__analysis_work_current(work)
+
+        def authorize_commit(_reference, _completed_at) -> bool:
+            with self.__lock:
+                admitted = self.__analysis_work_current_locked(work)
+                if admitted:
+                    work.phase = "PUBLISHING"
+                return admitted
+
+        def install_result(result) -> bool:
+            completed = result.completed
+            committed = result.committed
+            with self.__lock:
+                # Commit authorization is the final cancellation fence. Once
+                # the canonical pointer advances, this generation must be
+                # installed even if disconnect is requested concurrently.
+                if self.__analysis_work is not work:
+                    return False
+                self.__snapshot = replace(
+                    completed.workspace,
+                    provider_state=self.__snapshot.provider_state,
+                )
+                self.__completed_analysis_evidence = completed.evidence
+                self.__install_committed(committed)
+                self.__analysis_diagnostic = None
+                self.__analysis_request_result = "SUCCEEDED"
+                work.phase = "RECONCILING"
+            self.reconcile_committed_analysis()
+            return True
+
+        owner.execute(
+            capability,
+            publication,
+            calendar,
+            work.token,
+            generation=work.generation,
+            analysis_run_identity=work.attempt_id,
+            swing_run_identity=work.run_identity,
+            run_created_at=run_created_at,
+            now=run_created_at,
+            pace=self.__pace,
+            progress_observer=observe,
+            completion_clock=self.__aware_now,
+            authorize_commit=authorize_commit,
+            is_current=current,
+            commit_scope=self.__successor_publication_scope,
+            install_result=install_result,
+        )
 
     def __aware_now(self) -> datetime:
         now = self.__clock()
