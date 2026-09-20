@@ -211,7 +211,7 @@ a{color:inherit;text-decoration:none}.app{display:grid;grid-template-columns:218
 .analysis-details{display:grid;gap:12px;max-width:1180px}.analysis-section{border:1px solid var(--line);background:rgba(6,23,37,.88);border-radius:10px;padding:16px}.analysis-section h2{margin:0 0 10px;color:var(--blue);font-size:15px}.analysis-facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.analysis-fact{border-left:2px solid #28506a;padding:5px 9px;font-size:11px}.analysis-fact span{display:block;color:var(--muted);font-size:9px;letter-spacing:.06em;text-transform:uppercase}.analysis-table{width:100%;border-collapse:collapse;font-size:11px}.analysis-table th,.analysis-table td{text-align:left;vertical-align:top;border-top:1px solid var(--line);padding:7px}.analysis-table th{color:var(--muted);font-size:9px;letter-spacing:.05em}.analysis-decision{font-size:18px;font-weight:800}.analysis-next{border-left:3px solid var(--amber)}
 .mcx-context-strip{display:flex;align-items:center;gap:10px;flex-wrap:wrap;border:1px solid var(--line);background:rgba(6,23,37,.88);border-radius:8px;padding:7px 10px;margin:8px 0;font-size:10px}.mcx-context-strip>strong{color:var(--blue);letter-spacing:.06em}.mcx-context-slot{display:flex;align-items:center;gap:7px;flex-wrap:wrap}.mcx-context-slot b{font-size:9px}.mcx-context-slot form{display:inline}.mcx-context-status{color:var(--muted)}.mcx-context-error{display:grid;gap:1px;border-left:2px solid var(--red);padding-left:7px;color:#ffb1b6}.mcx-context-error strong{font-size:9px}.mcx-context-error span{font-size:9px;color:#e8c2c4}.mcx-context-prep{position:relative}.mcx-context-prep>summary{color:var(--blue);cursor:pointer;font-weight:800}.mcx-context-targets{display:grid;grid-template-columns:repeat(2,minmax(180px,1fr));gap:8px;position:absolute;z-index:5;top:24px;left:0;width:min(440px,75vw);padding:9px;border:1px solid var(--line);border-radius:8px;background:#071827;box-shadow:0 10px 30px #010812}.mcx-context-targets h3{margin:0 0 5px;font-size:10px;color:#dce8f0}.mcx-context-targets .chart-paste-target{min-height:68px}.mcx-context-targets .chart-slot-actions{margin-top:4px}@media(max-width:700px){.mcx-context-targets{grid-template-columns:1fr;position:fixed;left:12px;right:12px;top:auto;width:auto}}
 .missing-evidence{display:block;color:var(--amber);font-size:10px;margin-top:5px}.missing-evidence strong{color:#ffd98c}.blocker-list{margin:8px 0 0;padding-left:18px;color:var(--muted);font-size:11px}
-.native-opportunity{padding:10px 11px;margin-top:7px}.native-opportunity .opp-head{gap:8px}.native-opportunity .opp-identity h3{font-size:18px;line-height:1.2}.native-opportunity .setup-family{font-size:11px;margin-top:0}.native-opportunity .direction{padding:2px 7px;font-size:11px}.native-opportunity .summary-reason{font-size:11px;line-height:1.35;margin:6px 0}.native-opportunity .summary-footer{align-items:flex-end;gap:7px;padding-top:7px}.native-opportunity .summary-rr{flex:1 1 220px;min-width:0;font-size:11px;line-height:1.35;overflow-wrap:anywhere}.native-opportunity .summary-rr>strong{font-size:12px}.native-opportunity .missing-evidence{font-size:9px;line-height:1.3;margin-top:3px}.native-opportunity-actions{display:flex;flex:0 1 auto;justify-content:flex-end;gap:5px;flex-wrap:wrap}.native-opportunity-actions .button{display:inline-flex;align-items:center;min-height:27px;padding:4px 8px;font-size:10px;line-height:1.15;white-space:nowrap}
+.swing-opportunities-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;align-items:start;min-width:0}.swing-market-group{min-width:0;min-height:0;overflow:hidden}.swing-market-group .panel-heading{gap:10px;flex-wrap:wrap}.swing-card-list{display:grid;gap:9px;min-width:0}.swing-card-list>.native-opportunity{min-width:0}.native-opportunity{padding:11px 12px;margin-top:0;min-width:0}.native-opportunity .opp-head{gap:8px}.native-opportunity .opp-identity h3{font-size:18px;line-height:1.2;overflow-wrap:anywhere}.native-opportunity .setup-family{font-size:11px;margin-top:0;overflow-wrap:anywhere}.native-opportunity .direction{padding:2px 7px;font-size:11px;white-space:nowrap;flex:0 0 auto}.swing-timeframe-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;margin:9px 0}.swing-timeframe-fact{min-width:0;border-left:2px solid #28506a;padding:4px 7px}.swing-timeframe-fact span{display:block;color:var(--muted);font-size:9px;letter-spacing:.06em}.swing-timeframe-fact strong{display:block;margin-top:2px;font-size:10px;line-height:1.25;overflow-wrap:anywhere}.swing-review-binding{margin:7px 0;color:#b9cddd;font-size:10px;line-height:1.35;overflow-wrap:anywhere}.native-opportunity .summary-reason{font-size:11px;line-height:1.35;margin:7px 0;overflow-wrap:anywhere}.native-opportunity .summary-footer{align-items:center;gap:9px;padding-top:8px;flex-wrap:wrap}.native-opportunity .summary-rr{flex:1 1 220px;min-width:0;font-size:11px;line-height:1.35;overflow-wrap:anywhere}.native-opportunity .summary-rr>strong{display:inline-flex;align-items:center;border:1px solid #31506a;border-radius:999px;padding:2px 7px;color:var(--green);font-size:10px;white-space:nowrap}.native-opportunity .summary-rr>strong .kr370-state{border:0;padding:0;background:transparent;box-shadow:none}.native-opportunity .missing-evidence{font-size:9px;line-height:1.3;margin-top:4px}.native-opportunity-actions{display:flex;flex:0 1 auto;justify-content:flex-end;gap:6px;flex-wrap:wrap;max-width:100%}.native-opportunity-actions .button{display:inline-flex;align-items:center;min-height:27px;padding:5px 9px;font-size:10px;line-height:1.15;white-space:nowrap}.swing-supporting-details{border-top:1px solid var(--line);margin-top:8px;padding-top:7px}.swing-supporting-details summary{cursor:pointer;color:var(--muted);font-size:10px;font-weight:750}.swing-supporting-details div{display:grid;gap:3px;margin-top:6px;color:var(--muted);font-size:9px}.swing-supporting-details code{white-space:normal;overflow-wrap:anywhere;user-select:text;color:#c9d8e3}
 .kr370-state{display:inline-flex;align-items:center;border:1px solid currentColor;border-radius:6px;padding:2px 7px;font-size:11px;font-weight:850;letter-spacing:.035em}.kr370-state-now{color:#d8ffea;border-color:#34dc88;background:#12623e;box-shadow:0 0 16px rgba(52,220,136,.18)}.kr370-state-ready{color:#77e6a9;border-color:#248a59;background:rgba(23,103,65,.16)}.kr370-state-potential{color:#ffd57a;border-color:#82631f;background:#2a210c}.kr370-state-no-setup{color:#ff9a9f;border-color:#793b40;background:#2c151c}.kr370-state-unavailable{color:#a9b8c3;border-color:#465866;background:#111d25}.kr370-card-line{display:block;color:var(--muted);font-size:9px;margin-top:4px;letter-spacing:.035em}.kr370-card-line strong{color:#dce8f0}.analysis-decision.kr370-state{font-size:18px;padding:4px 9px;margin-bottom:9px}
 .progression-summary{display:block;color:var(--muted);font-size:9px;margin-top:3px;text-transform:uppercase;letter-spacing:.04em}.progression-list{display:grid;gap:8px}.progression-row{display:grid;grid-template-columns:20px 1fr;gap:8px;border-top:1px solid var(--line);padding-top:8px}.progression-row:first-child{border-top:0;padding-top:0}.progression-marker{color:var(--blue);font-weight:800}.progression-state{display:block;color:var(--amber);font-size:9px;font-weight:800;letter-spacing:.06em;margin-top:2px}.progression-row small{display:block;color:var(--muted);font-size:10px;margin-top:4px}.progression-row form{margin-top:7px}.progression-row details{margin-top:7px}.progression-row details .analysis-fact{margin-top:5px}
 .notification-tabs{display:flex;gap:7px;margin-bottom:12px}.notification-tabs .button{padding:6px 11px;font-size:11px}.notification-tabs .active{background:#0c4f83;border-color:#2c9cff}.notification-action-centre{border:1px solid #8a4c26;background:#21170f;border-radius:9px;padding:11px 13px;margin-bottom:12px}.notification-action-centre h2{margin:0 0 5px;color:#ffd59c;font-size:13px}.notification-action-centre p{margin:0;color:var(--muted);font-size:11px}.notification-list{display:grid;gap:9px}.notification-row{border:1px solid var(--line);background:rgba(6,23,37,.88);border-radius:9px;padding:12px}.notification-head{display:flex;align-items:center;gap:9px}.notification-head h2{font-size:18px;margin:0}.notification-product{color:var(--blue);font-size:10px;font-weight:800}.notification-state{margin-left:auto;border:1px solid currentColor;border-radius:999px;padding:3px 8px;font-size:10px;font-weight:800}.notification-state.ACTIVE{color:var(--green)}.notification-state.TRIGGERED{color:var(--amber)}.notification-state.INACTIVE{color:var(--muted)}.notification-state.STALE{color:var(--red)}.notification-condition{margin:7px 0 4px;font-weight:750}.notification-trigger{border-left:2px solid var(--amber);padding:6px 9px;margin:8px 0;background:#211a0d}.notification-trigger strong,.notification-trigger span{display:block}.notification-trigger span{color:var(--amber);font-size:11px}.notification-trigger small{color:#ffd59c}.notification-meta{display:flex;gap:12px;flex-wrap:wrap;color:var(--muted);font-size:10px}.notification-actions{display:flex;align-items:flex-start;gap:6px;flex-wrap:wrap;margin-top:9px}.notification-actions form{display:inline}.notification-actions button,.notification-actions .button{padding:5px 8px;font-size:10px}.notification-confirm summary{list-style:none;border:1px solid #246295;background:#0b2b47;color:#e9f5ff;padding:5px 8px;border-radius:7px;font-size:10px;font-weight:650;cursor:pointer}.notification-confirm summary::-webkit-details-marker{display:none}.notification-confirm div{position:absolute;z-index:10;max-width:330px;border:1px solid var(--line);background:#071827;padding:10px;border-radius:8px;box-shadow:0 12px 30px rgba(0,0,0,.45)}.notification-confirm p{margin:0 0 7px;color:var(--muted);font-size:11px}.notification-history{margin-top:8px;border-top:1px solid var(--line);padding-top:7px}.notification-history summary{cursor:pointer;color:var(--muted);font-size:10px}.notification-history ul{margin:6px 0 0;padding-left:18px;color:var(--muted);font-size:10px}
@@ -219,9 +219,10 @@ a{color:inherit;text-decoration:none}.app{display:grid;grid-template-columns:218
 .ux10-row{border-color:#226da3;background:linear-gradient(100deg,rgba(8,42,69,.96),rgba(5,24,39,.96))}.ux10-row.priority-high{box-shadow:inset 3px 0 #47b7ff}.ux10-event{color:#8dd0ff;font-size:10px;font-weight:850;letter-spacing:.06em}.ux10-action{color:#c4e8ff;font-size:11px;margin-top:7px}.telegram-options{display:grid;gap:7px;margin:10px 0}.telegram-option{display:flex;align-items:center;gap:8px;border:1px solid var(--line);padding:8px;border-radius:7px}
 @media(min-width:761px) and (max-width:1200px){.topbar{height:auto;min-height:78px;padding-top:12px;padding-bottom:12px;gap:12px;flex-wrap:wrap}.topbar .title{flex:1 1 320px;min-width:0}.main .intraday-statistics-shell{grid-template-columns:minmax(0,1fr)}.main .intraday-statistics-actions{height:auto;min-height:61px;padding:8px 28px;flex-wrap:wrap}}
 @media(max-width:1200px){.strategy-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:1100px){.swing-opportunities-grid{grid-template-columns:1fr}}
 @media(max-width:1050px){.status-grid{grid-template-columns:repeat(3,1fr)}.strategy-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.panels,.workspace{grid-template-columns:1fr}.attention-grid{grid-template-columns:1fr}.step32-grid{grid-template-columns:1fr}.step32-block{border-left:0;border-top:1px solid var(--line);padding:10px 0 0}.step32-block:first-child{border-top:0;padding-top:0}.market-panel{min-height:260px}}
 @media(min-width:761px){.panels{grid-template-columns:repeat(2,minmax(0,1fr))}}
-@media(max-width:760px){.app{grid-template-columns:1fr}.sidebar{position:static;height:auto}.nav{grid-template-columns:repeat(2,1fr)}.system{display:none}.topbar{height:auto;padding:18px;align-items:flex-start;gap:14px}.tabs{overflow:auto;padding:0 18px}.content{padding:18px}.status-grid,.strategy-grid{grid-template-columns:1fr}.trade-grid,.plan-strip{grid-template-columns:1fr 1fr}.kite{flex-wrap:wrap;justify-content:flex-end}.chart-intake-list,.native-chart-grid{grid-template-columns:1fr}.dashboard-alert{grid-template-columns:1fr}.dashboard-alert-state{text-align:left}}
+@media(max-width:760px){.app{grid-template-columns:1fr}.sidebar{position:static;height:auto}.nav{grid-template-columns:repeat(2,1fr)}.system{display:none}.topbar{height:auto;padding:18px;align-items:flex-start;gap:14px}.tabs{overflow:auto;padding:0 18px}.content{padding:18px}.status-grid,.strategy-grid{grid-template-columns:1fr}.trade-grid,.plan-strip{grid-template-columns:1fr 1fr}.kite{flex-wrap:wrap;justify-content:flex-end}.chart-intake-list,.native-chart-grid{grid-template-columns:1fr}.dashboard-alert{grid-template-columns:1fr}.dashboard-alert-state{text-align:left}.swing-timeframe-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.native-opportunity .summary-footer{align-items:flex-start}.native-opportunity-actions{justify-content:flex-start}}
 """
 
 
@@ -466,7 +467,7 @@ def render_opportunities(
         )
         if native_intake is not None:
             body += _intake_workspace_header(native_intake)
-        body += '<div class="wo07-markets">' if native_intake is not None else '<div class="panels">'
+        body += '<div class="swing-opportunities-grid" data-layout="equities-left-mcx-right">'
         body += _native_opportunity_panel(
             "EQUITIES + INDICES", equities, review, progression, visual_v3,
             trade_windows, refresh_reminders, continuity_rows, native_intake,
@@ -553,9 +554,9 @@ def _native_opportunity_panel(
             '</div></div>'
         )
     return (
-        '<section class="market-panel"><div class="panel-heading">'
+        '<section class="market-panel swing-market-group"><div class="panel-heading">'
         f'<h2>{escape(title)}</h2><span>{len(probables)} Native Probables</span>'
-        '</div>' + (f'<div class="wo07-card-grid">{cards}</div>' if native_intake is not None else cards)
+        f'</div><div class="swing-card-list">{cards}</div>'
         + '</section>'
     )
 
@@ -644,12 +645,18 @@ def _native_opportunity_card(
         if package is not None and not package.missing_required_timeframes
         else "REVIEW REQUIRED"
     )
-    context = " · ".join((
-        f"1W {item.weekly_state.value}",
-        f"1D {item.daily_state.value}",
-        f"4H {item.four_hour_state.value}",
-        f"1H {item.one_hour_state.value}",
-    )).replace("_", " ")
+    timeframe_facts = "".join(
+        '<div class="swing-timeframe-fact" aria-label="' + label + ' '
+        + escape(value.value.replace("_", " "), quote=True) + '"><span>'
+        + label + '</span><strong>'
+        + escape(value.value.replace("_", " ")) + '</strong></div>'
+        for label, value in (
+            ("1W", item.weekly_state),
+            ("1D", item.daily_state),
+            ("4H", item.four_hour_state),
+            ("1H", item.one_hour_state),
+        )
+    )
     direction = item.direction.value
     missing = (
         '<small class="missing-evidence">Missing evidence: <strong>'
@@ -724,7 +731,7 @@ def _native_opportunity_card(
         current = eligible and row.get("expected") is not None and not native_intake["error"]
         label = ("REVIEW ELIGIBLE" if eligible else "REVIEW INELIGIBLE" if row is not None
                  else "REVIEW BINDING UNAVAILABLE")
-        intake_summary = '<p class="summary-reason">' + label + ' · ' + (
+        intake_summary = '<p class="swing-review-binding">' + label + ' · ' + (
             'BINDING CURRENT' if current else 'Review workspace unavailable') + '</p>'
         if not current:
             review_action = '<span class="button" aria-disabled="true">Review workspace unavailable</span>'
@@ -737,7 +744,7 @@ def _native_opportunity_card(
         f'<div class="opp-identity"><h3>{escape(item.canonical_instrument)}</h3>'
         f'<span class="setup-family">{escape(item.opportunity_identity.value.replace("_", " ") if item.opportunity_identity is not None else "ANALYTICAL CONTEXT UNAVAILABLE")}</span></div>'
         f'<span class="direction direction-{escape(direction.lower())}">{escape(direction)}</span>'
-        '</div><p class="summary-reason">' + escape(context) + '</p>'
+        '</div><div class="swing-timeframe-grid">' + timeframe_facts + '</div>'
         + _swing_continuity_summary(continuity)
         + intake_summary
         + '<div class="summary-footer"><span class="summary-rr">'
@@ -750,7 +757,12 @@ def _native_opportunity_card(
         f'<a class="button" href="/swing/analysis-details/{escape(item.run_identity)}/'
         f'{quote(item.canonical_instrument, safe="")}">View Analysis Details →</a>'
         + trade_window_action + '</span>'
-        '</div></article>'
+        '</div><details class="swing-supporting-details"><summary>Supporting details</summary>'
+        '<div><span>Run · <code>' + escape(item.run_identity) + '</code></span>'
+        '<span>Assessment · <code>' + escape(item.result_sha256) + '</code></span>'
+        '<span>Discovery evidence · <code>'
+        + escape(" · ".join(item.reason_codes).replace("_", " "))
+        + '</code></span></div></details></article>'
     )
 
 

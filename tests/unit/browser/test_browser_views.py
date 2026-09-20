@@ -437,6 +437,97 @@ def test_sponsor_header_uses_completion_even_when_legacy_run_time_is_missing() -
     assert "ANALYSIS BOUNDARY" not in rendered
 
 
+def test_native_opportunities_use_intraday_aligned_bounded_market_layout() -> None:
+    from kronos.swing.v1.native_discovery import (
+        Native1WState,
+        NativeDiscoveryStatus,
+        NativeProductPath,
+    )
+    from tests.unit.swing.v1.test_native_review import _evidence_run
+
+    _, base, probable = _evidence_run()
+    assessments = []
+    mcx_instrument = base.assessments[1].canonical_instrument
+    for index, item in enumerate(base.assessments):
+        if index == 0:
+            assessments.append(probable)
+        elif index == 1:
+            assessments.append(replace(
+                probable,
+                canonical_instrument=mcx_instrument,
+                product_path=NativeProductPath.MCX,
+                weekly_state=Native1WState.NOT_APPLICABLE,
+                result_sha256="c" * 64,
+            ))
+        else:
+            assessments.append(replace(
+                item,
+                status=NativeDiscoveryStatus.NO_CURRENT_OPPORTUNITY,
+                context_kind=None,
+                opportunity_identity=None,
+                operative_anchor=None,
+            ))
+    run = replace(base, assessments=tuple(assessments), result_sha256="d" * 64)
+    rows = tuple(
+        {
+            "instrument": item.canonical_instrument,
+            "run_identity": item.run_identity,
+            "eligible": True,
+            "assessment_sha256": item.result_sha256,
+            "expected": {"candidate": {}},
+            "error": None,
+        }
+        for item in (run.assessments[0], run.assessments[1])
+    )
+    intake = {
+        "rows": rows,
+        "packages": (),
+        "error": None,
+        "workspace": {
+            "run_identity": run.run_identity,
+            "manifest": "a" * 64,
+            "analysis_time": run.observed_at,
+            "state": "CURRENT",
+            "population": 2,
+            "eligible": 2,
+            "excluded": 0,
+            "nse": 1,
+            "mcx": 1,
+        },
+    }
+
+    rendered = render_opportunities(
+        replace(_ready(), swing_analysis_run_identity=run.run_identity),
+        run,
+        native_intake=intake,
+    )
+
+    assert 'class="swing-opportunities-grid"' in rendered
+    assert 'data-layout="equities-left-mcx-right"' in rendered
+    assert rendered.count('class="market-panel swing-market-group"') == 2
+    assert rendered.count('class="swing-card-list"') == 2
+    assert rendered.index("EQUITIES + INDICES") < rendered.index("COMMODITIES")
+    assert rendered.index(probable.canonical_instrument) < rendered.index(mcx_instrument)
+    for label, value in (
+        ("1W", "SUPPORTIVE"),
+        ("1D", "BULLISH SWING REGIME"),
+        ("4H", "STRUCTURAL HOLD"),
+        ("1H", "NEUTRAL"),
+    ):
+        assert f'aria-label="{label} {value}"' in rendered
+        assert f'<span>{label}</span><strong>{value}</strong>' in rendered
+    assert rendered.count("Supporting details") == 2
+    assert run.run_identity in rendered
+    assert probable.result_sha256 in rendered
+    assert "NATIVE TEST PROBABLE" in rendered
+    assert 'href="/swing/v1-review">Open Native Review' in rendered
+    assert "/swing/analysis-details/" in rendered
+    assert ".swing-opportunities-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))" in rendered
+    assert "@media(max-width:1100px){.swing-opportunities-grid{grid-template-columns:1fr}}" in rendered
+    assert ".native-opportunity .direction{padding:2px 7px;font-size:11px;white-space:nowrap" in rendered
+    assert ".swing-timeframe-grid{grid-template-columns:repeat(2,minmax(0,1fr))}" in rendered
+
+
 def test_v0_eligible_plans_are_absent_from_active_sponsor_page() -> None:
     first = _opportunity(1)
     second = replace(_opportunity(2), instrument="MARUTI", direction="LONG")
