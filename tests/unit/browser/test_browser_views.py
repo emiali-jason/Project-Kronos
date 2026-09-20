@@ -456,6 +456,7 @@ def test_native_opportunities_use_intraday_aligned_bounded_market_layout() -> No
                 probable,
                 canonical_instrument=mcx_instrument,
                 product_path=NativeProductPath.MCX,
+                direction=V1Direction.SHORT,
                 weekly_state=Native1WState.NOT_APPLICABLE,
                 result_sha256="c" * 64,
             ))
@@ -476,8 +477,13 @@ def test_native_opportunities_use_intraday_aligned_bounded_market_layout() -> No
             "assessment_sha256": item.result_sha256,
             "expected": {"candidate": {}},
             "error": None,
+            "complete": index == 0,
+            "question_ready": index == 0,
+            "evidence": "ACCEPTED" if index == 0 else "INVALID",
+            "receipt_id": "RECEIPT-1" if index == 1 else None,
+            "downstream": "SUCCEEDED" if index == 0 else "NOT_RUN",
         }
-        for item in (run.assessments[0], run.assessments[1])
+        for index, item in enumerate((run.assessments[0], run.assessments[1]))
     )
     intake = {
         "rows": rows,
@@ -505,9 +511,19 @@ def test_native_opportunities_use_intraday_aligned_bounded_market_layout() -> No
     assert 'class="swing-opportunities-grid"' in rendered
     assert 'data-layout="equities-left-mcx-right"' in rendered
     assert rendered.count('class="market-panel swing-market-group"') == 2
-    assert rendered.count('class="swing-card-list"') == 2
-    assert rendered.index("EQUITIES + INDICES") < rendered.index("COMMODITIES")
+    assert rendered.count('class="swing-card-list"') == 4
+    assert rendered.count('class="swing-direction-empty"') == 2
+    opportunities = rendered.split('data-layout="equities-left-mcx-right"', 1)[1]
+    assert opportunities.index("EQUITY / INDEX") < opportunities.index("MCX")
     assert rendered.index(probable.canonical_instrument) < rendered.index(mcx_instrument)
+    assert rendered.count("Current publication order") == 4
+    assert '<h3>LONG</h3>' in rendered and '<h3>SHORT</h3>' in rendered
+    for label, value in (
+        ("Methodology", probable.policy_version),
+        ("Phase", probable.context_kind.value.replace("_", " ")),
+        ("Currentness", "BINDING CURRENT"),
+    ):
+        assert f'<span>{label}</span><strong>{value}</strong>' in rendered
     for label, value in (
         ("1W", "SUPPORTIVE"),
         ("1D", "BULLISH SWING REGIME"),
@@ -520,12 +536,71 @@ def test_native_opportunities_use_intraday_aligned_bounded_market_layout() -> No
     assert run.run_identity in rendered
     assert probable.result_sha256 in rendered
     assert "NATIVE TEST PROBABLE" in rendered
+    for exact_state in (
+        "CHART READY", "QUESTION PACK READY", "ANSWER IMPORTED",
+        "CHART MISSING", "QUESTION PACK NOT READY", "ANSWER REJECTED",
+    ):
+        assert exact_state in rendered
     assert 'href="/swing/v1-review">Open Native Review' in rendered
+    assert f'aria-label="Open current Native Review for {probable.canonical_instrument}"' in rendered
     assert "/swing/analysis-details/" in rendered
     assert ".swing-opportunities-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))" in rendered
     assert "@media(max-width:1100px){.swing-opportunities-grid{grid-template-columns:1fr}}" in rendered
     assert ".native-opportunity .direction{padding:2px 7px;font-size:11px;white-space:nowrap" in rendered
-    assert ".swing-timeframe-grid{grid-template-columns:repeat(2,minmax(0,1fr))}" in rendered
+    assert ".swing-primary-facts,.swing-timeframe-grid{grid-template-columns:repeat(2,minmax(0,1fr))}" in rendered
+    assert '<details class="swing-supporting-details"><summary>Supporting details</summary>' in rendered
+    assert '<details class="swing-supporting-details" open>' not in rendered
+
+
+def test_native_opportunity_readiness_is_exact_and_unavailable_fails_closed() -> None:
+    from tests.unit.swing.v1.test_native_review import _evidence_run
+
+    _, base, probable = _evidence_run()
+    run = replace(base, assessments=(probable, *base.assessments[1:]), result_sha256="d" * 64)
+    workspace = {
+        "run_identity": run.run_identity,
+        "manifest": "a" * 64,
+        "analysis_time": run.observed_at,
+        "state": "CURRENT",
+        "population": 1,
+        "eligible": 1,
+        "excluded": 0,
+        "nse": 1,
+        "mcx": 0,
+    }
+    base_row = {
+        "instrument": probable.canonical_instrument,
+        "run_identity": run.run_identity,
+        "eligible": True,
+        "assessment_sha256": probable.result_sha256,
+        "expected": {"candidate": {}},
+        "error": None,
+        "complete": True,
+        "question_ready": True,
+        "receipt_id": "RECEIPT-1",
+        "downstream": "NOT_RUN",
+    }
+    snapshot = replace(_ready(), swing_analysis_run_identity=run.run_identity)
+    for evidence, answer in (("ACCEPTED", "ANSWER IMPORTED"),
+                             ("STALE", "ANSWER STALE"),
+                             ("INVALID", "ANSWER REJECTED"),
+                             ("MISSING", "ANSWER MISSING")):
+        page = render_opportunities(snapshot, run, native_intake={
+            "rows": ({**base_row, "evidence": evidence},),
+            "packages": (), "error": None, "workspace": workspace,
+        })
+        assert answer in page
+        assert "CHART READY" in page and "QUESTION PACK READY" in page
+        assert "Open current Native Review for " + probable.canonical_instrument in page
+
+    unavailable = render_opportunities(snapshot, run, native_intake={
+        "rows": (), "packages": (), "error": "REVIEW_BINDING_STALE", "workspace": None,
+    })
+    assert "CHART UNAVAILABLE" in unavailable
+    assert "QUESTION PACK UNAVAILABLE" in unavailable
+    assert "ANSWER UNAVAILABLE" in unavailable
+    assert 'href="/swing/v1-review">Open Native Review' not in unavailable
+    assert "Review workspace unavailable" in unavailable
 
 
 def test_v0_eligible_plans_are_absent_from_active_sponsor_page() -> None:
