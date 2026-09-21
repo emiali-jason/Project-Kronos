@@ -223,7 +223,15 @@ class SwingVisualV3LiveWorkflow:
                     for item in receipt.body["structured_evidence"]) ==
                     tuple(("NATIVE_NSE", tf.value) for tf in VisualTimeframe),
                     "REVIEW_CONTRACT_UNSUPPORTED")
-            responses = tuple(visual_evidence_v3_response_from_dict(strict_json(raw))
+            def typed_response(raw):
+                value = strict_json(raw)
+                if mapping["version"] == "2.0":
+                    require(value.pop("answer_pdf_sha256", None) == receipt.body["answer"]["pdf_sha256"],
+                            "REVIEW_ARTIFACT_DIGEST_MISMATCH")
+                    require(set(value) == set(VisualEvidenceV3Response.__dataclass_fields__),
+                            "REVIEW_CONTRACT_UNSUPPORTED")
+                return visual_evidence_v3_response_from_dict(value)
+            responses = tuple(typed_response(raw)
                 for raw in store.structured_evidence_for(commit_identity, receipt_identity))
             for request, response in zip(requests, responses, strict=True):
                 response.validate_binding(request)
@@ -233,7 +241,8 @@ class SwingVisualV3LiveWorkflow:
                 str(store.root / publication.value["question_pdf_artifact"]["relative_path"]),
                 mapping["review_pack_sha256"],
                 tuple((item.timeframe.value, item.chart_revision_sha256) for item in requests),
-                tuple((item.timeframe.value, item.machine_fact.integrity_sha256) for item in requests))
+                tuple((item.timeframe.value, item.machine_fact.integrity_sha256) for item in requests),
+                question_set_version=mapping["question_set_version"])
             return requirement, requests, responses, pack
 
         def identities(completed, responses):
@@ -297,13 +306,14 @@ class SwingVisualV3LiveWorkflow:
             # retries a consumer and never creates an attempt or receipt.
             exact_recheck(None, receipt)
             attempts = store.downstream_attempts(commit_identity, receipt_identity,
-                VISUAL_QUESTION_SET_V3_ID, VISUAL_QUESTION_SET_V3_VERSION)
+                VISUAL_QUESTION_SET_V3_ID, receipt.body["contracts"][0]["question_contract_version"])
             if attempts and attempts[0].value["state"] == "SUCCEEDED":
                 require(binding["market"] == "NSE" and restore(receipt) ==
                     tuple(attempts[0].value["output_identities"]), "REVIEW_ARTIFACT_DIGEST_MISMATCH")
             return None if not attempts else attempts[0]
         return store.handoff_committed(commit_identity, receipt_identity,
-            consumer_identity=VISUAL_QUESTION_SET_V3_ID, consumer_version=VISUAL_QUESTION_SET_V3_VERSION,
+            consumer_identity=VISUAL_QUESTION_SET_V3_ID,
+            consumer_version=receipt.body["contracts"][0]["question_contract_version"],
             clock=lambda: timestamp(self._now()), publication_guard=publication_guard,
             recheck=exact_recheck, restore=restore, consume=consume)
 
@@ -317,7 +327,7 @@ class SwingVisualV3LiveWorkflow:
         or changes historical visual/Readiness stores. Handoff is a separate
         explicit operation on the returned committed receipt.
         """
-        from kronos.swing.v1.mcx_native_visual_contract import mcx_structured_evidence
+        from kronos.swing.v1.mcx_native_visual_contract import mcx_structured_evidence, mcx_comparison_evidence
         require(type(store) is ReviewEvidenceStore and market in {"NSE", "MCX"}
                 and type(precondition) is ReviewMutationPrecondition
                 and all(callable(fn) for fn in (chart_reader, current_state, publication_guard)),
@@ -333,11 +343,15 @@ class SwingVisualV3LiveWorkflow:
         extracted = extract_successor_answer_pdf(answer_pdf)
         answer = strict_json(extracted)
         checksum = sha256(answer_pdf).hexdigest()
+        successor = mapping["version"] == "2.0"
+        require(not successor or len(extracted) <= 8 * 1024 * 1024, "REVIEW_ACCEPTANCE_INCOMPLETE")
         if market == "NSE":
             validated = validate_nse_successor_answer(extracted, publication.mapping)
-            structured = tuple(canonical(_primitive(response)) for candidate in validated for response in candidate)
+            structured = tuple(canonical({**_primitive(response), **({"answer_pdf_sha256": checksum} if successor else {})})
+                               for candidate in validated for response in candidate)
         else:
             structured = mcx_structured_evidence(extracted, publication.native, publication.reference, checksum)
+            comparisons = mcx_comparison_evidence(extracted, publication.native, publication.reference, checksum) if successor else ()
         requirements = {}
         for subject in mapping["subjects"]:
             instrument = subject["canonical_instrument"]
@@ -448,23 +462,45 @@ class SwingVisualV3LiveWorkflow:
                 path = "structured-evidence/" + sha + ".json"
                 artifacts[path] = raw
                 evidence.append(dict(role=role, subject_identity=identity, timeframe_or_family_identity=tf,
-                    schema=value["schema"], version="3.1" if market == "NSE" else value["version"],
+                    schema=value["schema"], version=("3.2" if successor else "3.1") if market == "NSE" else value["version"],
                     sha256=sha, retained_relative_path=path))
                 if not any(item["role"] == role for item in contracts):
                     provenance = mapping if market == "NSE" else value["provenance"]
                     contracts.append(dict(role=role,
                         question_contract_identity=provenance["question_set_identity"] if market == "NSE" else provenance["question_contract_identity"],
-                        question_contract_version="3.1" if market == "NSE" else provenance["question_contract_version"],
+                        question_contract_version=("3.2" if successor else "3.1") if market == "NSE" else provenance["question_contract_version"],
                         answer_contract_identity=provenance["answer_schema"] if market == "NSE" else provenance["answer_contract_identity"],
-                        answer_contract_version="1.0", structured_evidence_schema=value["schema"],
-                        structured_evidence_version="3.1" if market == "NSE" else value["version"]))
+                        answer_contract_version="2.0" if successor else "1.0", structured_evidence_schema=value["schema"],
+                        structured_evidence_version=("3.2" if successor else "3.1") if market == "NSE" else value["version"]))
             from kronos.swing.v1.review_evidence_binding import ReviewEvidenceBinding
             predecessor = prior.get(ReviewEvidenceBinding.create("NATIVE_REVIEW", binding).lineage_key)
-            receipts.append(ReviewAcceptanceReceipt.create(dict(scope="NATIVE_REVIEW", binding=binding,
+            body = dict(scope="NATIVE_REVIEW", binding=binding,
                 contracts=contracts, chart_revisions=charts, structured_evidence=evidence,
                 answer=dict(answer_identity=answer["answer_identity"], pdf_sha256=checksum,
                     byte_length=len(answer_pdf), retained_relative_path=answer_path), accepted_at=accepted_at,
-                predecessor_receipt_id=None if predecessor is None else predecessor.receipt_id)))
+                predecessor_receipt_id=None if predecessor is None else predecessor.receipt_id)
+            if successor:
+                body["comparison_evidence"] = None
+                if market == "MCX":
+                    from kronos.swing.v1 import mcx_native_visual_contract as mcx
+                    index = next(i for i, item in enumerate(mapping["subjects"])
+                                 if item["canonical_instrument"] == instrument)
+                    raw = comparisons[index]
+                    record = strict_json(raw)
+                    sha = sha256(raw).hexdigest()
+                    path = "comparison-evidence/" + sha + ".json"
+                    artifacts[path] = raw
+                    refs = record["request_references"]
+                    body["comparison_evidence"] = dict(schema=mcx.COMPARISON_EVIDENCE, version="1.0",
+                        native_candidate_reference=record["native_candidate_reference"],
+                        pair_binding_sha256=record["pair_binding_sha256"],
+                        native_request_identity=refs["native"]["request_identity"],
+                        native_request_sha256=refs["native"]["request_sha256"],
+                        reference_request_identity=refs["reference"]["request_identity"],
+                        reference_request_sha256=refs["reference"]["request_sha256"],
+                        answer_identity=record["answer_identity"], answer_pdf_sha256=checksum,
+                        sha256=sha, retained_relative_path=path)
+            receipts.append(ReviewAcceptanceReceipt.create(body))
         return store.publish_acceptance(tuple(receipts), artifacts, request_publication_identity=publication_identity,
             expected_predecessor=None if previous is None else previous.identity, committed_at=accepted_at,
             recheck=recheck, publication_guard=publication_guard, guarded_recheck=guarded_recheck)
@@ -1407,11 +1443,11 @@ class NativeReviewIntakeWorkflow:
         return self.live.cycle.prepare(requirement, facts,
             chart_inputs_from_requirement(requirement, chart_identity=instrument,
                 content_type=selected["image"]["content_type"], images=(image,) * 4),
-            request_timestamp=requested_at, question_set_version="3.1")
+            request_timestamp=requested_at, question_set_version="3.2")
 
     def generate(self, market, expected):
         from uuid import uuid4
-        from kronos.swing.v1.review_evidence_binding import NseReviewRequestMapping, NSE_REQUEST_SCHEMA, NSE_ANSWER_SCHEMA
+        from kronos.swing.v1.review_evidence_binding import NseReviewRequestMapping, NSE_REQUEST_SCHEMA_V2, NSE_ANSWER_SCHEMA_V2
         from kronos.swing.v1 import mcx_native_visual_contract as mcx
         from kronos.swing.v1.pdf_visual_review_v3_live import render_nse_successor_question_pdf, render_mcx_successor_question_pdf
         from kronos.swing.v1.native_review import MCX_REFERENCE_MAPPINGS
@@ -1438,9 +1474,9 @@ class NativeReviewIntakeWorkflow:
                     machine_fact_integrity_sha256=item.machine_fact.integrity_sha256,
                     observation_boundary=timestamp(item.observation_boundary), analysis_boundary=timestamp(item.analysis_boundary))
                     for item in requests]) for requests in prepared]
-            mapping = NseReviewRequestMapping.create(dict(**common, schema=NSE_REQUEST_SCHEMA, version="1.0",
-                question_set_identity=VISUAL_QUESTION_SET_V3_ID, question_set_version="3.1",
-                answer_schema=NSE_ANSWER_SCHEMA, answer_version="1.0", subjects=subjects))
+            mapping = NseReviewRequestMapping.create(dict(**common, schema=NSE_REQUEST_SCHEMA_V2, version="2.0",
+                question_set_identity=VISUAL_QUESTION_SET_V3_ID, question_set_version="3.2",
+                answer_schema=NSE_ANSWER_SCHEMA_V2, answer_version="2.0", subjects=subjects))
             mapping, pdf = render_nse_successor_question_pdf(mapping, prepared)
             return self.store.publish_nse_request(mapping, pdf, publication_timestamp=timestamp(now),
                 expected_predecessor=None if previous is None else previous.identity, recheck=lambda *_: recheck(),
@@ -1478,14 +1514,14 @@ class NativeReviewIntakeWorkflow:
                     reference_subjects.append(dict(**subject, native_canonical_instrument=instrument,
                         reference_subject_identity=reference_identity, reference_market=reference_market, reference_symbol=reference_symbol))
         native = mcx.McxNativeReviewRequestMapping.create(dict(**common,
-            schema="KRONOS-SWING-MCX-NATIVE-REVIEW-REQUEST-V1", version="1.0",
-            question_contract_identity=mcx.NATIVE_QUESTIONS, question_contract_version="1.0",
-            answer_contract_identity=mcx.NATIVE_ANSWER, answer_contract_version="1.0", subjects=native_subjects))
+            schema=mcx.NATIVE_REQUEST_SCHEMA_V2, version="2.0",
+            question_contract_identity=mcx.NATIVE_QUESTIONS_V2, question_contract_version="2.0",
+            answer_contract_identity=mcx.NATIVE_ANSWER_V2, answer_contract_version="2.0", subjects=native_subjects))
         reference = mcx.McxReferenceReviewRequestMapping.create(dict(common,
             request_identity="SWING-REVIEW-REQUEST-" + uuid4().hex.upper(),
-            schema="KRONOS-SWING-MCX-REFERENCE-REVIEW-REQUEST-V1", version="1.0",
-            question_contract_identity=mcx.REFERENCE_QUESTIONS, question_contract_version="1.0",
-            answer_contract_identity=mcx.REFERENCE_ANSWER, answer_contract_version="1.0", subjects=reference_subjects))
+            schema=mcx.REFERENCE_REQUEST_SCHEMA_V2, version="2.0",
+            question_contract_identity=mcx.REFERENCE_QUESTIONS_V2, question_contract_version="2.0",
+            answer_contract_identity=mcx.REFERENCE_ANSWER_V2, answer_contract_version="2.0", subjects=reference_subjects))
         native, reference, pdf = render_mcx_successor_question_pdf(native, reference, images)
         return self.store.publish_mcx_request(native, reference, pdf, publication_timestamp=timestamp(now),
             expected_predecessor=None if previous is None else previous.identity, recheck=lambda *_: recheck(),
@@ -1615,7 +1651,8 @@ class NativeReviewIntakeWorkflow:
                         except ReviewEvidenceError as error:
                             evidence = "STALE" if error.code in {"REVIEW_BINDING_STALE", "REVIEW_ACCEPTANCE_INCOMPLETE"} else "INVALID"
                         attempts = self.store.downstream_attempts(commit.identity, receipt_id,
-                            VISUAL_QUESTION_SET_V3_ID, VISUAL_QUESTION_SET_V3_VERSION)
+                            VISUAL_QUESTION_SET_V3_ID,
+                            receipt.body["contracts"][0]["question_contract_version"])
                         if attempts:
                             downstream = attempts[0].value["state"]
                             completed = self.live.cycle.completed_for(facts.run_identity, instrument) if market == "NSE" else None

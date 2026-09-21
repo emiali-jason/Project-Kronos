@@ -25,6 +25,7 @@ from kronos.swing.v1.visual_evidence_v3 import (
     VISUAL_QUESTION_SET_V3_ID,
     VISUAL_QUESTION_SET_V3_LEGACY_VERSION,
     VISUAL_QUESTION_SET_V3_VERSION,
+    VISUAL_QUESTION_SET_V3_SUCCESSOR_VERSION,
     VisualEvidenceV3Request,
 )
 
@@ -65,6 +66,7 @@ class VisualV3ReviewPackRecord:
             or self.question_set_version not in {
                 VISUAL_QUESTION_SET_V3_LEGACY_VERSION,
                 VISUAL_QUESTION_SET_V3_VERSION,
+                VISUAL_QUESTION_SET_V3_SUCCESSOR_VERSION,
             }
             or self.schema != VISUAL_V3_REVIEW_PACK_SCHEMA
             or self.analyst_authority != VISUAL_EVIDENCE_V3_AUTHORITY

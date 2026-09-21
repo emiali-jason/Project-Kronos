@@ -15,12 +15,17 @@ import re
 
 RECEIPT_SCHEMA = "KRONOS-SWING-REVIEW-EVIDENCE-RECEIPT-V1"
 RECEIPT_VERSION = "1.0"
+RECEIPT_SCHEMA_V2 = "KRONOS-SWING-REVIEW-EVIDENCE-RECEIPT-V2"
+RECEIPT_VERSION_V2 = "2.0"
 RECEIPT_PREFIX = "SWING-REVIEW-RECEIPT-"
 COMMIT_SCHEMA = "KRONOS-SWING-REVIEW-EVIDENCE-COMMIT-V1"
 PROJECTION_SCHEMA = "KRONOS-SWING-REVIEW-EVIDENCE-PROJECTION-V1"
 NSE_REQUEST_SCHEMA = "KRONOS-SWING-NSE-REVIEW-REQUEST-V1"
 NSE_ANSWER_SCHEMA = "KRONOS-SWING-NSE-REVIEW-ANSWER-V1"
 NSE_TRANSPORT_VERSION = "1.0"
+NSE_REQUEST_SCHEMA_V2 = "KRONOS-SWING-NSE-REVIEW-REQUEST-V2"
+NSE_ANSWER_SCHEMA_V2 = "KRONOS-SWING-NSE-REVIEW-ANSWER-V2"
+NSE_TRANSPORT_VERSION_V2 = "2.0"
 NSE_REQUEST_FIELDS = {
     "schema", "version", "request_identity", "request_sha256", "review_pack_identity",
     "review_pack_sha256", "native_run_identity", "committed_run_manifest_identity",
@@ -189,10 +194,13 @@ STRUCTURED_FIELDS = {"role", "subject_identity", "timeframe_or_family_identity",
                      "schema", "version", "sha256", "retained_relative_path"}
 BODY_FIELDS = {"scope", "binding", "contracts", "chart_revisions", "answer",
                "structured_evidence", "accepted_at", "predecessor_receipt_id"}
+COMPARISON_EVIDENCE_FIELDS = {"schema", "version", "native_candidate_reference", "pair_binding_sha256",
+    "native_request_identity", "native_request_sha256", "reference_request_identity", "reference_request_sha256",
+    "answer_identity", "answer_pdf_sha256", "sha256", "retained_relative_path"}
 
 
-def _validate_body(body: dict) -> ReviewEvidenceBinding:
-    closed(body, BODY_FIELDS)
+def _validate_body(body: dict, *, successor: bool = False) -> ReviewEvidenceBinding:
+    closed(body, BODY_FIELDS | ({"comparison_evidence"} if successor else set()))
     binding = ReviewEvidenceBinding.create(body["scope"], body["binding"])
     require(valid_timestamp(body["accepted_at"]), "REVIEW_TIMESTAMP_INVALID")
     previous = body["predecessor_receipt_id"]
@@ -223,7 +231,24 @@ def _validate_body(body: dict) -> ReviewEvidenceBinding:
     answer = closed(body["answer"], {"answer_identity", "pdf_sha256", "byte_length", "retained_relative_path"})
     require(text(answer["answer_identity"]) and digest(answer["pdf_sha256"])
             and type(answer["byte_length"]) is int and answer["byte_length"] > 8
+            and (not successor or answer["byte_length"] <= 128 * 1024 * 1024)
             and relative_path(answer["retained_relative_path"]), "REVIEW_ARTIFACT_REFERENCE_INVALID")
+    if successor:
+        comparison = body["comparison_evidence"]
+        if binding.scope == "NATIVE_REVIEW" and binding.value["market"] == "MCX":
+            closed(comparison, COMPARISON_EVIDENCE_FIELDS)
+            require(comparison["schema"] == "KRONOS-SWING-MCX-PAIR-COMPARISON-EVIDENCE-V1"
+                    and comparison["version"] == "1.0"
+                    and comparison["native_candidate_reference"] == binding.value["candidate_identity"]
+                    and all(text(comparison[key]) for key in ("native_request_identity", "reference_request_identity"))
+                    and all(digest(comparison[key]) for key in ("pair_binding_sha256", "native_request_sha256",
+                                                            "reference_request_sha256", "answer_pdf_sha256", "sha256"))
+                    and relative_path(comparison["retained_relative_path"])
+                    and comparison["answer_identity"] == answer["answer_identity"]
+                    and comparison["answer_pdf_sha256"] == answer["pdf_sha256"],
+                    "REVIEW_ARTIFACT_REFERENCE_INVALID")
+        else:
+            require(comparison is None, "REVIEW_ARTIFACT_REFERENCE_INVALID")
     return binding
 
 
@@ -235,9 +260,10 @@ class ReviewAcceptanceReceipt:
         require(type(self._payload) is bytes, "REVIEW_RECEIPT_INVALID")
         value = strict_json(self._payload)
         closed(value, {"schema", "version", "receipt_id", "body", "integrity_sha256"})
-        require(value["schema"] == RECEIPT_SCHEMA and type(value["version"]) is str
-                and value["version"] == RECEIPT_VERSION, "REVIEW_CONTRACT_UNSUPPORTED")
-        _validate_body(value["body"])
+        successor = (value["schema"], value["version"]) == (RECEIPT_SCHEMA_V2, RECEIPT_VERSION_V2)
+        require(successor or (value["schema"], value["version"]) ==
+                (RECEIPT_SCHEMA, RECEIPT_VERSION), "REVIEW_CONTRACT_UNSUPPORTED")
+        _validate_body(value["body"], successor=successor)
         require(value["receipt_id"] == RECEIPT_PREFIX + sha256(canonical(value["body"])).hexdigest(),
                 "REVIEW_RECEIPT_INTEGRITY_INVALID")
         unsigned = {key: item for key, item in value.items() if key != "integrity_sha256"}
@@ -246,8 +272,10 @@ class ReviewAcceptanceReceipt:
 
     @classmethod
     def create(cls, body: dict) -> ReviewAcceptanceReceipt:
-        _validate_body(body)
-        value = {"schema": RECEIPT_SCHEMA, "version": RECEIPT_VERSION,
+        successor = "comparison_evidence" in body
+        _validate_body(body, successor=successor)
+        value = {"schema": RECEIPT_SCHEMA_V2 if successor else RECEIPT_SCHEMA,
+                 "version": RECEIPT_VERSION_V2 if successor else RECEIPT_VERSION,
                  "receipt_id": RECEIPT_PREFIX + sha256(canonical(body)).hexdigest(), "body": body}
         value["integrity_sha256"] = sha256(canonical(value)).hexdigest()
         return cls(canonical(value))
@@ -337,10 +365,13 @@ class NseReviewRequestMapping:
     def __post_init__(self):
         require(type(self.payload) is bytes, "REVIEW_REQUEST_MISMATCH")
         value = closed(strict_json(self.payload), NSE_REQUEST_FIELDS)
-        require(value["schema"] == NSE_REQUEST_SCHEMA and value["version"] == NSE_TRANSPORT_VERSION
-                and value["answer_schema"] == NSE_ANSWER_SCHEMA and value["answer_version"] == NSE_TRANSPORT_VERSION
-                and value["question_set_identity"] == "SWING-V1-VISUAL-QUESTION-SET-V3"
-                and value["question_set_version"] == "3.1", "REVIEW_CONTRACT_UNSUPPORTED")
+        require(value["question_set_identity"] == "SWING-V1-VISUAL-QUESTION-SET-V3"
+                and (value["schema"], value["version"], value["answer_schema"],
+                     value["answer_version"], value["question_set_version"]) in {
+                    (NSE_REQUEST_SCHEMA, NSE_TRANSPORT_VERSION, NSE_ANSWER_SCHEMA, NSE_TRANSPORT_VERSION, "3.1"),
+                    (NSE_REQUEST_SCHEMA_V2, NSE_TRANSPORT_VERSION_V2, NSE_ANSWER_SCHEMA_V2,
+                     NSE_TRANSPORT_VERSION_V2, "3.2"),
+                }, "REVIEW_CONTRACT_UNSUPPORTED")
         for key in ("request_identity", "review_pack_identity", "native_run_identity", "committed_run_manifest_identity"):
             require(text(value[key]), "REVIEW_REQUEST_MISMATCH", "$." + key)
         require(valid_timestamp(value["request_timestamp"]), "REVIEW_TIMESTAMP_INVALID")

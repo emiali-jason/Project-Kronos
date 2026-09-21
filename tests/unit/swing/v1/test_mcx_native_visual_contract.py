@@ -47,6 +47,106 @@ def retained_mappings(families=("GOLDM",), bundle="BUNDLE-1"):
     return mcx.McxNativeReviewRequestMapping.create(values[0]), mcx.McxReferenceReviewRequestMapping.create(values[1])
 
 
+def successor_mappings(families=("GOLDM",)):
+    native, reference = retained_mappings(families)
+    values = []
+    for mapping, role in ((native, mcx.NATIVE_ROLE), (reference, mcx.REFERENCE_ROLE)):
+        value = mapping.value
+        value.update(schema=mcx.NATIVE_REQUEST_SCHEMA_V2 if role == mcx.NATIVE_ROLE else mcx.REFERENCE_REQUEST_SCHEMA_V2,
+                     version="2.0", question_contract_identity=mcx.NATIVE_QUESTIONS_V2 if role == mcx.NATIVE_ROLE else mcx.REFERENCE_QUESTIONS_V2,
+                     question_contract_version="2.0", answer_contract_identity=mcx.NATIVE_ANSWER_V2 if role == mcx.NATIVE_ROLE else mcx.REFERENCE_ANSWER_V2,
+                     answer_contract_version="2.0")
+        values.append(type(mapping).create(value))
+    return tuple(values)
+
+
+def successor_answer(native, reference):
+    request = mcx.mcx_question_pack_from_mappings(native, reference)
+    answer = answer_for(request)
+    answer["answer_identity"] = "ONE-ANSWER-IDENTITY"
+    for root, role in ((answer, mcx.NATIVE_ROLE), (answer["supporting_reference_answer"], mcx.REFERENCE_ROLE)):
+        root.update(schema=mcx.NATIVE_ANSWER_V2 if role == mcx.NATIVE_ROLE else mcx.REFERENCE_ANSWER_V2,
+                    version="2.0", answer_identity="ONE-ANSWER-IDENTITY")
+        for subject in root["subjects"]:
+            subject.pop("observed_chart_identity")
+            for response in subject["responses"]:
+                response["question_set_version"] = "2.0"
+                for i, obs in enumerate(response["observations"]):
+                    obs["question_id"] = mcx.QUESTION_IDS_V2[i]
+                response["observations"][0]["result"]["identity_correspondence"] = "MATCHED"
+    pack = request.value["comparison_pack"]
+    answer["comparison_answer"] = {"schema": mcx.COMPARISON_ANSWER, "version": "1.0",
+        "request_references": pack["request_references"], "answer_identity": answer["answer_identity"],
+        "subjects": [{**item, "observations": [
+            {"question_id": mcx.COMPARISON_IDS[0], "observation_status": "OBSERVED", "visible_basis": "Exact pair",
+             "confidence_in_extraction": "Readable", "ambiguity_reason": "",
+             "result": {"mapping_state": "MATCHED", "coverage_state": "SUFFICIENT", "finding": "Visible reference"}},
+            {"question_id": mcx.COMPARISON_IDS[1], "observation_status": "OBSERVED", "visible_basis": "Paired frames",
+             "confidence_in_extraction": "Readable", "ambiguity_reason": "",
+             "result": {"by_timeframe": [{"timeframe": tf, "relationship": "AGREES", "finding": "Visible structure"}
+                                         for tf in ("1D", "4H", "1H")]}},
+            {"question_id": mcx.COMPARISON_IDS[2], "observation_status": "OBSERVED", "visible_basis": "Paired frames",
+             "confidence_in_extraction": "Readable", "ambiguity_reason": "",
+             "result": {"relationship_to_native_direction": "NO_MATERIAL_DIVERGENCE",
+                        "affected_timeframes": [], "limitations": [], "finding": "No material limitation visible"}},
+        ]} for item in pack["subjects"]]}
+    return answer
+
+
+def test_mcx_v2_six_per_leg_and_separate_comparison_identity():
+    native, reference = successor_mappings()
+    answer = successor_answer(native, reference)
+    request = mcx.mcx_question_pack_from_mappings(native, reference)
+    assert mcx.validate_mcx_answer(canonical(answer), request) == answer
+    six = mcx.mcx_structured_evidence(canonical(answer), native, reference, "f" * 64)
+    comparison = mcx.mcx_comparison_evidence(canonical(answer), native, reference, "f" * 64)
+    assert len(six) == 6 and len(comparison) == 1
+    assert {json.loads(raw)["answer_identity"] for raw in (*six, *comparison)} == {"ONE-ANSWER-IDENTITY"}
+    assert json.loads(comparison[0])["pair_binding_sha256"] == mcx.mcx_pair_binding(native.value, reference.value, 0)
+    changed = deepcopy(answer)
+    changed["supporting_reference_answer"]["answer_identity"] = "ANOTHER"
+    with pytest.raises(ReviewEvidenceError):
+        mcx.validate_mcx_answer(canonical(changed), request)
+    changed = deepcopy(answer)
+    changed["subjects"][0]["observed_chart_identity"] = "GOLDM"
+    with pytest.raises(ReviewEvidenceError):
+        mcx.validate_mcx_answer(canonical(changed), request)
+    changed = deepcopy(answer)
+    changed["supporting_reference_answer"]["subjects"][0]["responses"][0]["observations"][0]["result"]["observed_identity"] = "COMEX:SI1!"
+    with pytest.raises(ReviewEvidenceError):
+        mcx.validate_mcx_answer(canonical(changed), request)
+
+
+def test_mcx_v2_reference_unavailable_keeps_native_facts_without_false_agreement():
+    native, reference = successor_mappings()
+    answer = successor_answer(native, reference)
+    q1 = answer["supporting_reference_answer"]["subjects"][0]["responses"][0]["observations"][0]
+    q1["result"].update(observed_identity=None, readability="UNREADABLE", identity_correspondence="UNDETERMINED")
+    q1.update(observation_status="UNAVAILABLE", ambiguity_reason="Reference label unreadable")
+    comparison = answer["comparison_answer"]["subjects"][0]["observations"]
+    comparison[0].update(observation_status="PARTIAL", ambiguity_reason="Reference label unreadable")
+    comparison[0]["result"].update(mapping_state="UNDETERMINED", coverage_state="PARTIAL")
+    comparison[1].update(observation_status="PARTIAL", ambiguity_reason="First reference label unreadable")
+    comparison[1]["result"]["by_timeframe"][0]["relationship"] = "NOT_COMPARABLE"
+    comparison[2]["result"]["relationship_to_native_direction"] = "NOT_ESTABLISHED"
+    assert mcx.validate_mcx_answer(canonical(answer), mcx.mcx_question_pack_from_mappings(native, reference)) == answer
+    wrong = deepcopy(answer)
+    wrong["comparison_answer"]["subjects"][0]["observations"][1]["result"]["by_timeframe"][0]["relationship"] = "AGREES"
+    with pytest.raises(ReviewEvidenceError):
+        mcx.validate_mcx_answer(canonical(wrong), mcx.mcx_question_pack_from_mappings(native, reference))
+    wrong = deepcopy(answer)
+    wrong["comparison_answer"]["subjects"][0]["observations"][0]["observation_status"] = "INVALID"
+    with pytest.raises(ReviewEvidenceError):
+        mcx.validate_mcx_answer(canonical(wrong), mcx.mcx_question_pack_from_mappings(native, reference))
+
+
+def test_mcx_v2_extracted_answer_size_is_bounded_before_json_parse():
+    native, reference = successor_mappings()
+    with pytest.raises(ReviewEvidenceError, match="MCX_ANSWER_SIZE_INVALID"):
+        mcx.validate_mcx_answer(b" " * (8 * 1024 * 1024 + 1),
+                                mcx.mcx_question_pack_from_mappings(native, reference))
+
+
 def test_retained_pair_independent_preimages_and_exact_projection():
     native, reference = retained_mappings(tuple(MCX_REFERENCE_MAPPINGS))
     mcx.validate_mcx_request_pair(native, reference)

@@ -846,6 +846,9 @@ class ReviewEvidenceStore:
         artifacts = [(body["answer"]["retained_relative_path"], body["answer"]["pdf_sha256"])]
         artifacts.extend((item["retained_relative_path"], item["sha256"])
                          for name in ("chart_revisions", "structured_evidence") for item in body[name])
+        if body.get("comparison_evidence") is not None:
+            item = body["comparison_evidence"]
+            artifacts.append((item["retained_relative_path"], item["sha256"]))
         return artifacts
 
     def _verify_complete_receipt(self, receipt, read=None):
@@ -865,6 +868,43 @@ class ReviewEvidenceStore:
                     and len(body["chart_revisions"]) == 2, "REVIEW_ACCEPTANCE_INCOMPLETE")
         for path, expected_hash in self._receipt_artifacts(receipt):
             require(_hash(read(path)) == expected_hash, "REVIEW_ARTIFACT_DIGEST_MISMATCH", path)
+        if receipt.value["version"] == "2.0" and binding["market"] == "NSE":
+            for item in body["structured_evidence"]:
+                value = strict_json(read(item["retained_relative_path"]))
+                require(value.get("answer_pdf_sha256") == body["answer"]["pdf_sha256"]
+                        and (value.get("schema"), value.get("question_set_version")) ==
+                        ("KRONOS-SWING-V1-VISUAL-EVIDENCE-V3.2", "3.2"),
+                        "REVIEW_ARTIFACT_DIGEST_MISMATCH", item["retained_relative_path"])
+        if body.get("comparison_evidence") is not None:
+            item = body["comparison_evidence"]
+            comparison = closed(strict_json(read(item["retained_relative_path"])),
+                {"schema", "version", "native_candidate_reference", "pair_binding_sha256",
+                 "request_references", "answer_identity", "answer_pdf_sha256", "observations",
+                 "integrity_sha256"})
+            require(comparison["schema"] == item["schema"] and comparison["version"] == item["version"]
+                    and comparison["native_candidate_reference"] == item["native_candidate_reference"]
+                    and comparison["pair_binding_sha256"] == item["pair_binding_sha256"]
+                    and comparison["answer_identity"] == item["answer_identity"]
+                    and comparison["answer_pdf_sha256"] == item["answer_pdf_sha256"]
+                    and comparison["request_references"] == {
+                        "native": {"request_identity": item["native_request_identity"],
+                                   "request_sha256": item["native_request_sha256"]},
+                        "reference": {"request_identity": item["reference_request_identity"],
+                                      "request_sha256": item["reference_request_sha256"]}}
+                    and comparison["integrity_sha256"] == _hash(canonical({key: value for key, value in comparison.items()
+                                                                                if key != "integrity_sha256"})),
+                    "REVIEW_ARTIFACT_DIGEST_MISMATCH", item["retained_relative_path"])
+        if receipt.value["version"] == "2.0" and binding["market"] == "MCX":
+            for item in body["structured_evidence"]:
+                record = closed(strict_json(read(item["retained_relative_path"])),
+                    {"schema", "version", "binding", "answer_identity", "answer_pdf_sha256",
+                     "response", "provenance", "integrity_sha256"})
+                require(record["schema"] == item["schema"] and record["version"] == item["version"]
+                        and record["answer_identity"] == body["answer"]["answer_identity"]
+                        and record["answer_pdf_sha256"] == body["answer"]["pdf_sha256"]
+                        and record["integrity_sha256"] == _hash(canonical({key: value for key, value in record.items()
+                                                                             if key != "integrity_sha256"})),
+                        "REVIEW_ARTIFACT_DIGEST_MISMATCH", item["retained_relative_path"])
         pdf = read(body["answer"]["retained_relative_path"])
         require(pdf.startswith(b"%PDF-") and len(pdf) == body["answer"]["byte_length"]
                 and len(pdf) <= 128 * 1024 * 1024, "REVIEW_ARTIFACT_DIGEST_MISMATCH")

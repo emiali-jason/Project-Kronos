@@ -28,6 +28,7 @@ from kronos.swing.v1.visual_evidence_v3 import (
     VISUAL_QUESTION_SET_V3_ID,
     VISUAL_QUESTION_SET_V3_LEGACY_VERSION,
     VISUAL_QUESTION_SET_V3_VERSION,
+    VISUAL_QUESTION_SET_V3_SUCCESSOR_VERSION,
     VisualClusteringState,
     VisualEvidenceV3Response,
     VisualQuestionV3,
@@ -115,6 +116,7 @@ def present_visual_v3_review(
         or readiness.question_set_version not in {
             VISUAL_QUESTION_SET_V3_LEGACY_VERSION,
             VISUAL_QUESTION_SET_V3_VERSION,
+            VISUAL_QUESTION_SET_V3_SUCCESSOR_VERSION,
         }
         or any(
             item.question_set_identity != VISUAL_QUESTION_SET_V3_ID

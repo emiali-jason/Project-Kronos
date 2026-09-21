@@ -56,6 +56,31 @@ def test_identical_receipt_replay_has_identical_bytes_and_identity():
     assert receipt.body["binding"]["canonical_instrument"] == "CANBK"
 
 
+def test_v2_receipt_keeps_comparison_separate_from_six_bindings():
+    body = receipt_body()
+    body["binding"].update(market="MCX", canonical_instrument="GOLDM", candidate_identity="CANDIDATE-GOLDM")
+    comparison = dict(schema="KRONOS-SWING-MCX-PAIR-COMPARISON-EVIDENCE-V1", version="1.0",
+        native_candidate_reference="CANDIDATE-GOLDM", pair_binding_sha256="f" * 64,
+        native_request_identity="NATIVE-REQUEST", native_request_sha256="a" * 64,
+        reference_request_identity="REFERENCE-REQUEST", reference_request_sha256="b" * 64,
+        answer_identity=body["answer"]["answer_identity"], answer_pdf_sha256=body["answer"]["pdf_sha256"],
+        sha256="e" * 64, retained_relative_path="comparison/e.json")
+    body["comparison_evidence"] = comparison
+    receipt = ReviewAcceptanceReceipt.create(body)
+    assert (receipt.value["schema"], receipt.value["version"]) == (
+        "KRONOS-SWING-REVIEW-EVIDENCE-RECEIPT-V2", "2.0")
+    assert len(receipt.body["chart_revisions"]) == len(body["chart_revisions"])
+    assert receipt == ReviewAcceptanceReceipt(receipt.payload)
+    changed = deepcopy(body)
+    changed["comparison_evidence"]["answer_identity"] = "DIFFERENT"
+    with pytest.raises(ReviewEvidenceError):
+        ReviewAcceptanceReceipt.create(changed)
+    changed = deepcopy(body)
+    changed["comparison_evidence"]["path_escape"] = "../../"
+    with pytest.raises(ReviewEvidenceError):
+        ReviewAcceptanceReceipt.create(changed)
+
+
 def test_identity_covers_every_body_field_and_detects_tampering():
     receipt = ReviewAcceptanceReceipt.create(receipt_body())
     value = receipt.value
@@ -230,6 +255,90 @@ def nse_answer(mapping):
     return {"schema": value["answer_schema"], "version": "1.0", "request_reference": mapping.request_reference,
         "answer_identity": "NSE-ANSWER-1", "subjects": [{"subject_reference": subject["subject_reference"],
             "canonical_instrument": subject["canonical_instrument"], "observed_chart_instrument": subject["canonical_instrument"], "responses": responses}]}
+
+
+def nse_v2_mapping(instrument="M&M"):
+    from kronos.swing.v1.review_evidence_binding import (
+        NseReviewRequestMapping, NSE_REQUEST_SCHEMA_V2, NSE_ANSWER_SCHEMA_V2,
+    )
+    value = nse_mapping(instrument).value
+    value.update(schema=NSE_REQUEST_SCHEMA_V2, version="2.0", question_set_version="3.2",
+                 answer_schema=NSE_ANSWER_SCHEMA_V2, answer_version="2.0")
+    return NseReviewRequestMapping.create(value)
+
+
+def nse_v2_answer(mapping):
+    answer = nse_answer(mapping)
+    answer["version"] = "2.0"
+    answer["subjects"][0].pop("observed_chart_instrument")
+    for response in answer["subjects"][0]["responses"]:
+        response["question_set_version"] = "3.2"
+        questions = response["observations"]
+        questions[0].update(observed_instrument="M and M Ltd", observed_market="NSE",
+                            observed_timeframe=response["timeframe"], readability="READABLE",
+                            identity_correspondence="MATCHED")
+        questions[2]["question_id"] = "VISIBLE_STRUCTURAL_SUPPORT_RESISTANCE"
+        questions[9]["question_id"] = "ADDITIONAL_MATERIAL_VISIBLE_FACT"
+        questions[7]["observation_status"] = "NOT_VISIBLE"
+    return answer
+
+
+def test_nse_v2_raw_visible_company_name_and_closed_identity():
+    from kronos.swing.v1.visual_evidence_v3 import validate_nse_successor_answer
+    mapping = nse_v2_mapping()
+    answer = nse_v2_answer(mapping)
+    responses = validate_nse_successor_answer(canonical(answer), mapping)[0]
+    assert len(responses) == 4 and all(item.question_set_version == "3.2" for item in responses)
+    assert responses[0].observations[0].observed_instrument == "M and M Ltd"
+    for field, replacement in (("identity_correspondence", "UNDETERMINED"),
+                               ("observed_market", "MCX"), ("observed_timeframe", "1D")):
+        changed = deepcopy(answer)
+        changed["subjects"][0]["responses"][0]["observations"][0][field] = replacement
+        with pytest.raises(ReviewEvidenceError):
+            validate_nse_successor_answer(canonical(changed), mapping)
+    changed = deepcopy(answer)
+    changed["subjects"][0]["responses"][0]["observations"][4]["observation_status"] = "INVALID"
+    with pytest.raises(ReviewEvidenceError):
+        validate_nse_successor_answer(canonical(changed), mapping)
+    assert nse_mapping().value["version"] == "1.0"
+
+
+def test_nse_v2_93_member_supported_population_fits_extracted_json_ceiling():
+    from kronos.swing.v1.review_evidence_binding import NseReviewRequestMapping
+    from kronos.swing.v1.visual_evidence_v3 import validate_nse_successor_answer
+    # The immutable Phase 1 universe has 91 equities and two indices; MCX's
+    # five members use their separate paired request/Answer contract.
+    mapping = nse_v2_mapping()
+    template = mapping.value["subjects"][0]
+    value = mapping.value
+    value["subjects"] = []
+    for index in range(93):
+        subject = deepcopy(template)
+        subject["subject_reference"] = f"SYNTHETIC-SUBJECT-{index:03d}"
+        subject["canonical_instrument"] = f"SYNTHETIC-{index:03d}"
+        for response in subject["responses"]:
+            response["expected_chart_identity"] = subject["canonical_instrument"]
+        value["subjects"].append(subject)
+    mapping = NseReviewRequestMapping.create(value)
+    answer = nse_v2_answer(mapping)
+    template_answer = answer["subjects"][0]
+    answer["subjects"] = []
+    for subject in mapping.value["subjects"]:
+        item = deepcopy(template_answer)
+        item["subject_reference"] = subject["subject_reference"]
+        item["canonical_instrument"] = subject["canonical_instrument"]
+        for response in item["responses"]:
+            response["chart_identity"] = subject["canonical_instrument"]
+            response["observations"][0]["observed_instrument"] = subject["canonical_instrument"]
+            for observation in response["observations"]:
+                observation["source_chart_identity"] = subject["canonical_instrument"]
+                observation["visible_basis"] = "X" * 512
+        answer["subjects"].append(item)
+    payload = canonical(answer)
+    assert len(payload) < 8 * 1024 * 1024
+    assert len(validate_nse_successor_answer(payload, mapping)) == 93
+    with pytest.raises(ReviewEvidenceError, match="REVIEW_ACCEPTANCE_INCOMPLETE"):
+        validate_nse_successor_answer(b" " * (8 * 1024 * 1024 + 1), mapping)
 
 
 def test_nse_pre_render_hash_excludes_exactly_two_fields():

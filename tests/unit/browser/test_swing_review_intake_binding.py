@@ -272,11 +272,10 @@ def _native_market(workflow):
 
 
 def _native_answer(workflow, market, publication):
-    from tests.unit.swing.v1.test_review_evidence_binding import nse_answer
-    from tests.unit.swing.v1.test_mcx_native_visual_contract import answer_for
-    from kronos.swing.v1.mcx_native_visual_contract import mcx_question_pack_from_mappings
+    from tests.unit.swing.v1.test_review_evidence_binding import nse_v2_answer
+    from tests.unit.swing.v1.test_mcx_native_visual_contract import successor_answer
     if market == "MCX":
-        answer = answer_for(mcx_question_pack_from_mappings(publication.native, publication.reference))
+        answer = successor_answer(publication.native, publication.reference)
         for response, requested in zip(answer["subjects"][0]["responses"], publication.native.value["subjects"][0]["responses"], strict=True):
             if requested["governed_reference_basis_availability"] == "UNAVAILABLE":
                 observation = response["observations"][3]
@@ -284,15 +283,16 @@ def _native_answer(workflow, market, publication):
                 observation["result"].update(presence="NOT_IDENTIFIABLE", relationship="NOT_OBSERVABLE", interaction="NOT_OBSERVABLE")
         return answer
     from types import SimpleNamespace
-    value = nse_answer(publication.mapping)
+    value = nse_v2_answer(publication.mapping)
     value["subjects"] = []
     for subject in publication.mapping.value["subjects"]:
-        candidate = nse_answer(SimpleNamespace(value=dict(publication.mapping.value, subjects=[subject]),
+        candidate = nse_v2_answer(SimpleNamespace(value=dict(publication.mapping.value, subjects=[subject]),
             request_reference=publication.mapping.request_reference))["subjects"][0]
         for response in candidate["responses"]:
             response["chart_revision_sha256"] = subject["chart_revision_sha256"]
             for observation in response["observations"]:
                 observation["source_chart_revision"] = subject["chart_revision_sha256"]
+            response["observations"][0]["observed_instrument"] = subject["canonical_instrument"]
         value["subjects"].append(candidate)
     return value
 
@@ -501,7 +501,24 @@ def _accepted_native(workflow, tmp_path):
     answer = _native_answer(workflow, market, publication)
     _answer_pdf(path, answer)
     commit = workflow.import_answer(market, workflow.expected(market, (instrument,)), path.read_bytes())
+    from kronos.swing.v1.review_evidence_binding import strict_json
+    receipt = commit.receipts[0]
+    if market == "NSE":
+        assert receipt.body["comparison_evidence"] is None
+        for item in receipt.body["structured_evidence"]:
+            value = strict_json((workflow.store.root / item["retained_relative_path"]).read_bytes())
+            assert value["answer_pdf_sha256"] == receipt.body["answer"]["pdf_sha256"]
+    else:
+        assert len(receipt.body["structured_evidence"]) == 6
+        assert receipt.body["comparison_evidence"]["answer_identity"] == answer["answer_identity"]
     return market, instrument, publication, path, answer, commit
+
+
+def _successor_identity(answer, suffix):
+    answer["answer_identity"] += suffix
+    if "supporting_reference_answer" in answer:
+        answer["supporting_reference_answer"]["answer_identity"] = answer["answer_identity"]
+        answer["comparison_answer"]["answer_identity"] = answer["answer_identity"]
 
 
 @pytest.mark.parametrize("native_intake", ["NSE", "GOLDM"], indirect=True)
@@ -516,7 +533,7 @@ def test_native_successor_replaced_stale_and_invalid_attempt_preserve_acceptance
         workflow.import_answer(market, workflow.expected(market, (instrument,)), b"invalid PDF")
     assert _inventory(tmp_path) == before
     assert workflow.snapshot()["rows"][0]["evidence"] == "ACCEPTED"
-    answer["answer_identity"] += "-CHANGED"
+    _successor_identity(answer, "-CHANGED")
     _answer_pdf(path, answer)
     before = _inventory(tmp_path)
     with pytest.raises(ReviewEvidenceError, match="REVIEW_PREDECESSOR_INVALID"):
@@ -530,7 +547,7 @@ def test_native_successor_replaced_stale_and_invalid_attempt_preserve_acceptance
         assert not workflow.downstream_applicable(workflow.live.cycle.completed_for(
             workflow._context()[1].run_identity, instrument))
     answer = _native_answer(workflow, market, successor)
-    answer["answer_identity"] += "-SUCCESSOR"
+    _successor_identity(answer, "-SUCCESSOR")
     _answer_pdf(path, answer)
     second = workflow.import_answer(market, workflow.expected(market, (instrument,)), path.read_bytes())
     assert second.receipts[0].body["predecessor_receipt_id"] == first.receipts[0].receipt_id
@@ -558,6 +575,23 @@ def test_native_corrupt_graph_never_restores_or_repairs(native_intake, tmp_path,
                   else publication.value["question_pdf_relative_path"]),
         pointer="acceptance-current/" + commit.value["package_key"] + ".json")
     (workflow.store.root / paths[artifact]).write_bytes(b"SYNTHETIC TAMPER")
+    monkeypatch.setattr(workflow, "handoff", lambda *_a, **_k: pytest.fail("Invalid graph reached handoff"))
+    before = _inventory(tmp_path)
+    workflow.restore()
+    assert workflow.errors[(market, None)] == "REVIEW_RESTORATION_UNAVAILABLE"
+    assert workflow.snapshot()["rows"][0]["evidence"] == "INVALID"
+    assert _inventory(tmp_path) == before
+
+
+@pytest.mark.parametrize("native_intake", ["GOLDM"], indirect=True)
+def test_mcx_comparison_sibling_corruption_fences_restore_and_get(native_intake, tmp_path, monkeypatch):
+    workflow = native_intake
+    market, instrument, _, _, _, commit = _accepted_native(workflow, tmp_path)
+    sibling = commit.receipts[0].body["comparison_evidence"]
+    assert sibling["answer_identity"] == commit.receipts[0].body["answer"]["answer_identity"]
+    assert len(commit.receipts[0].body["structured_evidence"]) == 6
+    path = workflow.store.root / sibling["retained_relative_path"]
+    path.write_bytes(b"SYNTHETIC TAMPER")
     monkeypatch.setattr(workflow, "handoff", lambda *_a, **_k: pytest.fail("Invalid graph reached handoff"))
     before = _inventory(tmp_path)
     workflow.restore()
@@ -664,7 +698,9 @@ def test_native_multi_candidate_batch_envelopes_and_atomic_receipts(native_intak
     from kronos.swing.v1.visual_evidence_v3 import validate_nse_successor_answer
     printed = strict_json(extract_successor_answer_pdf(workflow.question_bytes("NSE", publication.identity)))
     for subject in printed["subjects"]:
-        subject["observed_chart_instrument"] = subject["canonical_instrument"]
+        for response in subject["responses"]:
+            response["observations"][0].update(observed_instrument=subject["canonical_instrument"],
+                observed_market="NSE", observed_timeframe=response["timeframe"])
     printed["answer_identity"] = "CONTROLLED_PRINTED_EXAMPLE_ONLY"
     assert len(validate_nse_successor_answer(canonical(printed), publication.mapping)) == 2
     path = tmp_path / "CONTROLLED_BATCH_ANSWER.pdf"

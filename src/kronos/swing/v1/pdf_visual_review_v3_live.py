@@ -47,11 +47,16 @@ from kronos.swing.v1.pdf_visual_review_v3 import (
 )
 from kronos.swing.v1.visual_evidence_v3 import (
     FROZEN_VISUAL_QUESTION_SET_V3,
+    FROZEN_VISUAL_QUESTION_SET_V3_SUCCESSOR,
+    VISUAL_QUESTION_SEMANTICS_V3_SUCCESSOR,
+    VISUAL_QUESTION_SET_V3_SUCCESSOR_VERSION,
     VISUAL_EVIDENCE_V3_ANSWER_SCHEMA,
+    VISUAL_EVIDENCE_V3_SUCCESSOR_ANSWER_SCHEMA,
     VISUAL_EVIDENCE_V3_AUTHORITY,
     VISUAL_EVIDENCE_V3_LEGACY_ANSWER_SCHEMA,
     VISUAL_EVIDENCE_V3_LEGACY_SCHEMA,
     VISUAL_EVIDENCE_V3_SCHEMA,
+    VISUAL_EVIDENCE_V3_SUCCESSOR_SCHEMA,
     VISUAL_QUESTION_SET_V3_ID,
     VISUAL_QUESTION_SET_V3_LEGACY_VERSION,
     VISUAL_QUESTION_SET_V3_VERSION,
@@ -150,25 +155,52 @@ def render_mcx_successor_question_pdf(native, reference, charts: dict[str, bytes
                   "Answer identities are nonempty text up to 256 characters; versions are JSON strings.", styles["BodyText"])])
     # Full closed shapes and enums are derived from the same frozen validator;
     # no second question identity or alternative analytical rule is introduced.
+    successor = native.value["version"] == mcx_contract.SUCCESSOR_VERSION
     shape = {"root_fields": ["schema", "version", "request_reference", "answer_identity", "subjects"],
-        "native_root_additional_required_field": "supporting_reference_answer",
-        "native_answer_schema": mcx_contract.NATIVE_ANSWER, "reference_answer_schema": mcx_contract.REFERENCE_ANSWER,
-        "version": "1.0", "request_reference_fields": sorted(mcx_contract.REQUEST_REFERENCE_FIELDS),
-        "subject_fields": sorted(mcx_contract.ANSWER_SUBJECT_FIELDS), "response_fields": sorted(mcx_contract.RESPONSE_FIELDS),
+        "native_root_additional_required_fields": (["supporting_reference_answer", "comparison_answer"] if successor
+                                                    else ["supporting_reference_answer"]),
+        "native_answer_schema": mcx_contract.NATIVE_ANSWER_V2 if successor else mcx_contract.NATIVE_ANSWER,
+        "reference_answer_schema": mcx_contract.REFERENCE_ANSWER_V2 if successor else mcx_contract.REFERENCE_ANSWER,
+        "version": "2.0" if successor else "1.0", "request_reference_fields": sorted(mcx_contract.REQUEST_REFERENCE_FIELDS),
+        "subject_fields": sorted(mcx_contract.ANSWER_SUBJECT_FIELDS - {"observed_chart_identity"} if successor
+                                 else mcx_contract.ANSWER_SUBJECT_FIELDS), "response_fields": sorted(mcx_contract.RESPONSE_FIELDS),
         "observation_fields": sorted(mcx_contract.OBSERVATION_FIELDS),
-        "result_fields": {qid: sorted(fields) for qid, fields in zip(mcx_contract.QUESTION_IDS, mcx_contract.RESULT_FIELDS, strict=True)},
+        "result_fields": {qid: sorted(fields | ({"identity_correspondence"} if successor and i == 0 else set()))
+            for i, (qid, fields) in enumerate(zip(mcx_contract.QUESTION_IDS_V2 if successor else mcx_contract.QUESTION_IDS,
+                                                 mcx_contract.RESULT_FIELDS, strict=True))},
         "observation_status": list(mcx_contract.STATUSES), "presence": list(mcx_contract.PRESENCE),
         "price_relationship": list(mcx_contract.PRICE_RELATIONSHIP), "interaction": list(mcx_contract.INTERACTION),
         "reference_relationship": list(mcx_contract.REFERENCE_RELATIONSHIP), "setup_quality": list(mcx_contract.QUALITY),
         "clustering": list(mcx_contract.CLUSTERING), "native_components": list(mcx_contract.NATIVE_COMPONENTS),
         "reference_components": list(mcx_contract.REFERENCE_COMPONENTS)}
+    if successor:
+        shape["comparison_contract"] = dict(schema=mcx_contract.COMPARISON_ANSWER, version="1.0",
+            root_fields=["schema", "version", "request_references", "answer_identity", "subjects"],
+            subject_fields=["native_candidate_reference", "native_subject_reference",
+                            "reference_subject_reference", "pair_binding_sha256", "observations"],
+            questions=list(mcx_contract.COMPARISON_IDS),
+            result_fields={"M1": ["mapping_state", "coverage_state", "finding"],
+                           "M2": ["by_timeframe"],
+                           "M3": ["relationship_to_native_direction", "affected_timeframes", "limitations", "finding"]},
+            statuses=["OBSERVED", "PARTIAL", "UNAVAILABLE", "INVALID"],
+            mapping_state=["MATCHED", "MISMATCHED", "UNDETERMINED"],
+            coverage_state=["SUFFICIENT", "PARTIAL", "INSUFFICIENT"],
+            m2_timeframes=["1D", "4H", "1H"],
+            m2_relationship=["AGREES", "PARTLY_AGREES", "CONFLICTS", "NOT_COMPARABLE"],
+            m3_relationship=["SUPPORTS", "CHALLENGES", "MIXED", "NO_MATERIAL_DIVERGENCE", "NOT_ESTABLISHED"],
+            m3_limitations=["DIFFERENT_SESSIONS", "INCOMPLETE_BAR", "EXPIRY_OR_ROLL",
+                "CONTINUOUS_BACK_ADJUSTMENT_UNKNOWN", "CONTRACT_IDENTITY_UNCLEAR",
+                "CURRENCY_OR_BASIS_DIFFERENCE", "MISSING_EVIDENCE", "OTHER_VISIBLE_LIMITATION"])
     story.append(contract_block(json.dumps(shape, indent=2)))
     for paragraph in (
         "Echo each logical request reference from its own question contract. Preserve independently identified native and reference Answers. "
         "Preserve exact ordered subject references, candidate references, roles, subject identities, markets and reference symbols. "
         "Return exactly 1D, 4H, 1H per subject, and exactly Q1-Q10 in order per response. Native 1W is forbidden.",
-        "Read observed_chart_identity independently. Q1 result observed_identity, observed_market and observed_timeframe must be independently "
-        "read; readability is READABLE, PARTIAL or UNREADABLE. Unreadable/unknown identity cannot pass. "
+        ("Q1 alone retains observed_identity, observed_market and observed_timeframe as independently visible raw text. "
+         "Mark identity_correspondence MATCHED, CONTRADICTED or UNDETERMINED against trusted expected identity; "
+         "native MATCHED is required. A correctly mapped but visually unavailable reference may remain UNDETERMINED. "
+         if successor else "Read observed_chart_identity independently. Q1 result observed_identity, observed_market and observed_timeframe must be independently "
+         "read; readability is READABLE, PARTIAL or UNREADABLE. Unreadable/unknown identity cannot pass. ") +
         "chart_identity, source_chart_identity and revision echoes must remain exact; do not normalize.",
         "visible_basis and finding are nonempty text up to 512 characters; confidence_in_extraction is nonempty text up to 64. "
         "ambiguity_reason is text up to 512 characters and nonempty for PARTIAL, UNAVAILABLE or INVALID. "
@@ -191,6 +223,10 @@ def render_mcx_successor_question_pdf(native, reference, charts: dict[str, bytes
         "Reference components may not include native governed-reference levels or operative anchors.",
     ):
         story.append(Paragraph(escape(paragraph), styles["BodyText"]))
+    if successor:
+        story.append(Paragraph("All three Answer roots share one answer_identity. M1-M3 are candidate-level supporting "
+                               "comparison only; do not place them in the six chart responses. Wrong mapped reference "
+                               "identity or INVALID observation rejects the entire paired Answer.", styles["BodyText"]))
     document.build(story)
     pdf = buffer.getvalue()
     finalized = tuple(type(mapping).create({**mapping.value, "review_pack_sha256": sha256(pdf).hexdigest()})
@@ -199,7 +235,7 @@ def render_mcx_successor_question_pdf(native, reference, charts: dict[str, bytes
 
 
 def render_nse_successor_question_pdf(mapping, prepared):
-    """Self-contained successor envelope; the V3.1 question semantics stay exact."""
+    """Self-contained version-dispatched successor envelope."""
     from kronos.swing.v1.review_evidence_binding import NseReviewRequestMapping
     from kronos.swing.v1.visual_evidence_v3 import VISUAL_QUESTION_SEMANTICS_V3
     require(type(mapping) is NseReviewRequestMapping, "REVIEW_REQUEST_MISMATCH")
@@ -228,9 +264,12 @@ def render_nse_successor_question_pdf(mapping, prepared):
         # when extracted. This changes no frozen field, enum or validator.
         for example in examples:
             example["observations"][4]["finding"] = "ILLUSTRATIVE ONLY - replace with chart evidence"
-        envelope["subjects"].append(dict(subject_reference=subject["subject_reference"],
-            canonical_instrument=subject["canonical_instrument"], observed_chart_instrument="<READ FROM CHART>",
-            responses=examples))
+        successor = value["version"] == "2.0"
+        subject_answer = dict(subject_reference=subject["subject_reference"],
+                              canonical_instrument=subject["canonical_instrument"], responses=examples)
+        if not successor:
+            subject_answer["observed_chart_instrument"] = "<READ FROM CHART>"
+        envelope["subjects"].append(subject_answer)
         first = requests[0]
         image = Image(BytesIO(first.original_image))
         scale = min((A4[0]-2*PAGE_MARGIN-12)/image.imageWidth, (A4[1]-2*PAGE_MARGIN-150)/image.imageHeight)
@@ -244,16 +283,17 @@ def render_nse_successor_question_pdf(mapping, prepared):
         for request in requests:
             story.append(Paragraph("TIMEFRAME " + request.timeframe.value, styles["Heading2"]))
             for index, (question, routing) in enumerate(request.routing, 1):
-                story.append(Paragraph(escape(f"Q{index} [{routing.value}] {VISUAL_QUESTION_SEMANTICS_V3[question]}"), styles["BodyText"]))
+                semantics = VISUAL_QUESTION_SEMANTICS_V3_SUCCESSOR if successor else VISUAL_QUESTION_SEMANTICS_V3
+                story.append(Paragraph(escape(f"Q{index} [{routing.value}] {semantics[question]}"), styles["BodyText"]))
     story.extend([PageBreak(), Paragraph("Exact Answer contract", styles["Title"]),
         Paragraph("Return exactly one governed block. Every printed key is required; extra fields and duplicate JSON keys fail. "
             "Echo request_reference and subject_reference exactly. All examples are illustrative, not chart evidence. "
             "Replace findings with independent observations for each timeframe. Never return run, assessment, "
             "request timestamp, machine hashes or other KRONOS-owned provenance. Q1-Q9 require why_not_covered_elsewhere null; "
             "Q10 finding NONE requires null, otherwise a bounded nonempty explanation. Preserve exact canonical punctuation.", styles["BodyText"]),
-        Paragraph("Frozen V3.1 observation fields and rules follow. These describe each response, not a second "
+        Paragraph("Versioned observation fields and rules follow. These describe each response, not a second "
             "outer Answer envelope. Use only the successor envelope printed below.", styles["BodyText"]),
-        contract_block(json.dumps({key: item for key, item in visual_evidence_v3_answer_contract().items()
+        contract_block(json.dumps({key: item for key, item in visual_evidence_v3_answer_contract(value["question_set_version"]).items()
             if key not in {"schema", "authority"}}, indent=2)),
         contract_block(BEGIN_GOVERNED_ANSWER_DATA + "\n" + json.dumps(envelope, indent=2) + "\n" + END_GOVERNED_ANSWER_DATA)])
     document.build(story)
@@ -317,6 +357,7 @@ class VisualV3LiveReviewPack:
             or self.question_set_version not in {
                 VISUAL_QUESTION_SET_V3_LEGACY_VERSION,
                 VISUAL_QUESTION_SET_V3_VERSION,
+                VISUAL_QUESTION_SET_V3_SUCCESSOR_VERSION,
             }
             or self.answer_schema != _answer_schema(self.question_set_version)
             or self.transport_identity != VISUAL_V3_LIVE_TRANSPORT_ID
@@ -1079,11 +1120,16 @@ def _complete_response_example(
             "why_not_covered_elsewhere": None,
         }
 
-    questions = iter(FROZEN_VISUAL_QUESTION_SET_V3)
+    successor = request.question_set_version == VISUAL_QUESTION_SET_V3_SUCCESSOR_VERSION
+    questions = iter(FROZEN_VISUAL_QUESTION_SET_V3_SUCCESSOR if successor else FROZEN_VISUAL_QUESTION_SET_V3)
     observations = []
 
     item = common(next(questions).value)
     item["finding"] = "ILLUSTRATIVE VISIBLE CHART VALIDATION"
+    if successor:
+        item.update(observed_instrument="<READ VISIBLE INSTRUMENT>", observed_market="<READ VISIBLE MARKET>",
+                    observed_timeframe="<READ VISIBLE TIMEFRAME>", readability="READABLE",
+                    identity_correspondence="MATCHED")
     observations.append(item)
 
     item = common(next(questions).value)
@@ -1096,6 +1142,8 @@ def _complete_response_example(
 
     item = common(next(questions).value)
     item["finding"] = "NONE"
+    if successor:
+        item.update(point_price=None, zone_low=None, zone_high=None)
     observations.append(item)
 
     item = common(next(questions).value)
@@ -1124,7 +1172,7 @@ def _complete_response_example(
     item["finding"] = "ILLUSTRATIVE VISIBLE MATURITY DESCRIPTION"
     observations.append(item)
 
-    item = common(next(questions).value, status="NOT_APPLICABLE")
+    item = common(next(questions).value, status="NOT_VISIBLE" if successor else "NOT_APPLICABLE")
     item["finding"] = "NONE"
     observations.append(item)
 
@@ -1231,6 +1279,8 @@ def _answer_schema(question_set_version: str) -> str:
         return VISUAL_EVIDENCE_V3_LEGACY_ANSWER_SCHEMA
     if question_set_version == VISUAL_QUESTION_SET_V3_VERSION:
         return VISUAL_EVIDENCE_V3_ANSWER_SCHEMA
+    if question_set_version == VISUAL_QUESTION_SET_V3_SUCCESSOR_VERSION:
+        return VISUAL_EVIDENCE_V3_SUCCESSOR_ANSWER_SCHEMA
     raise ValueError("VISUAL_V3_ANSWER_VERSION_UNSUPPORTED")
 
 
@@ -1239,6 +1289,8 @@ def _evidence_schema(question_set_version: str) -> str:
         return VISUAL_EVIDENCE_V3_LEGACY_SCHEMA
     if question_set_version == VISUAL_QUESTION_SET_V3_VERSION:
         return VISUAL_EVIDENCE_V3_SCHEMA
+    if question_set_version == VISUAL_QUESTION_SET_V3_SUCCESSOR_VERSION:
+        return VISUAL_EVIDENCE_V3_SUCCESSOR_SCHEMA
     raise ValueError("VISUAL_V3_EVIDENCE_VERSION_UNSUPPORTED")
 
 

@@ -39,10 +39,13 @@ from kronos.swing.v1.visual_evidence_v2 import (
 VISUAL_QUESTION_SET_V3_ID = "SWING-V1-VISUAL-QUESTION-SET-V3"
 VISUAL_QUESTION_SET_V3_LEGACY_VERSION = "3.0"
 VISUAL_QUESTION_SET_V3_VERSION = "3.1"
+VISUAL_QUESTION_SET_V3_SUCCESSOR_VERSION = "3.2"
 VISUAL_EVIDENCE_V3_LEGACY_SCHEMA = "KRONOS-SWING-V1-VISUAL-EVIDENCE-V3"
 VISUAL_EVIDENCE_V3_SCHEMA = "KRONOS-SWING-V1-VISUAL-EVIDENCE-V3.1"
+VISUAL_EVIDENCE_V3_SUCCESSOR_SCHEMA = "KRONOS-SWING-V1-VISUAL-EVIDENCE-V3.2"
 VISUAL_EVIDENCE_V3_LEGACY_ANSWER_SCHEMA = "KRONOS-SWING-V1-VISUAL-ANSWER-V3"
 VISUAL_EVIDENCE_V3_ANSWER_SCHEMA = "KRONOS-SWING-V1-VISUAL-ANSWER-V3.1"
+VISUAL_EVIDENCE_V3_SUCCESSOR_ANSWER_SCHEMA = "KRONOS-SWING-V1-VISUAL-ANSWER-V3.2"
 VISUAL_EVIDENCE_V3_AUTHORITY = "INDEPENDENT_VISUAL_OBSERVATION_ONLY"
 MACHINE_FACT_AUTHORITY = "DETERMINISTIC_NUMERICAL_FACT_ONLY"
 DEFAULT_VISUAL_EVIDENCE_V3_ROOT = (
@@ -71,6 +74,20 @@ class VisualQuestionV3(StrEnum):
 
 FROZEN_VISUAL_QUESTION_SET_V3 = tuple(VisualQuestionV3)
 
+
+class VisualQuestionV3Successor(StrEnum):
+    VISIBLE_STRUCTURAL_SUPPORT_RESISTANCE = "VISIBLE_STRUCTURAL_SUPPORT_RESISTANCE"
+    ADDITIONAL_MATERIAL_VISIBLE_FACT = "ADDITIONAL_MATERIAL_VISIBLE_FACT"
+
+
+FROZEN_VISUAL_QUESTION_SET_V3_SUCCESSOR = tuple(
+    VisualQuestionV3Successor.VISIBLE_STRUCTURAL_SUPPORT_RESISTANCE
+    if item is VisualQuestionV3.VISUAL_SUPPORT_RESISTANCE_GAP else
+    VisualQuestionV3Successor.ADDITIONAL_MATERIAL_VISIBLE_FACT
+    if item is VisualQuestionV3.VISUAL_FACTS_NOT_CAPTURED_BY_KRONOS else item
+    for item in FROZEN_VISUAL_QUESTION_SET_V3
+)
+
 VISUAL_QUESTION_SEMANTICS_V3: dict[VisualQuestionV3, str] = {
     VisualQuestionV3.VISUAL_CHART_VALIDATION:
         "Validate visible chart identity, timeframe, readability, and revision.",
@@ -93,6 +110,16 @@ VISUAL_QUESTION_SEMANTICS_V3: dict[VisualQuestionV3, str] = {
     VisualQuestionV3.VISUAL_FACTS_NOT_CAPTURED_BY_KRONOS:
         "Strict escape hatch for clear material facts not covered by Q1-Q9; NONE is valid.",
 }
+VISUAL_QUESTION_SEMANTICS_V3_SUCCESSOR = {
+    **VISUAL_QUESTION_SEMANTICS_V3,
+    VisualQuestionV3Successor.VISIBLE_STRUCTURAL_SUPPORT_RESISTANCE:
+        "Identify visible structural support/resistance and its swing, base, range-edge or repeated-reaction basis; do not claim knowledge of an undisclosed machine inventory.",
+    VisualQuestionV3Successor.ADDITIONAL_MATERIAL_VISIBLE_FACT:
+        "Report only an additional material visible fact not covered by Q1-Q9, or NONE; explain a non-NONE fact without claiming unseen machine coverage.",
+}
+VISUAL_QUESTION_SEMANTICS_V3_SUCCESSOR[VisualQuestionV3.VISUAL_CHART_VALIDATION] = (
+    "Transcribe independently visible instrument/name, market and timeframe exactly; compare with the expected identity using MATCHED, CONTRADICTED or UNDETERMINED. A company name need not be rewritten as a ticker. Identify crop, date and forming-bar limitations."
+)
 
 
 VISUAL_TIMEFRAME_ROUTING_V3: dict[
@@ -191,7 +218,7 @@ VISUAL_SETUP_QUALITY_DEFINITIONS: dict[VisualSetupQuality, str] = {
 
 @dataclass(frozen=True, slots=True)
 class VisualV3BaseObservation:
-    question_id: VisualQuestionV3
+    question_id: VisualQuestionV3 | VisualQuestionV3Successor
     timeframe: VisualTimeframe
     observation_status: VisualObservationStatus
     visible_basis: str
@@ -202,7 +229,7 @@ class VisualV3BaseObservation:
 
     def __post_init__(self) -> None:
         if (
-            type(self.question_id) is not VisualQuestionV3
+            type(self.question_id) not in (VisualQuestionV3, VisualQuestionV3Successor)
             or type(self.timeframe) is not VisualTimeframe
             or type(self.observation_status) is not VisualObservationStatus
             or not _text(self.visible_basis, 512)
@@ -231,10 +258,8 @@ class VisualV3QualitativeObservation(VisualV3BaseObservation):
 
     def __post_init__(self) -> None:
         super(VisualV3QualitativeObservation, self).__post_init__()
-        q10 = (
-            self.question_id
-            is VisualQuestionV3.VISUAL_FACTS_NOT_CAPTURED_BY_KRONOS
-        )
+        q10 = self.question_id in (VisualQuestionV3.VISUAL_FACTS_NOT_CAPTURED_BY_KRONOS,
+                                   VisualQuestionV3Successor.ADDITIONAL_MATERIAL_VISIBLE_FACT)
         if (
             self.question_id
             in {
@@ -245,10 +270,13 @@ class VisualV3QualitativeObservation(VisualV3BaseObservation):
             or not _text(self.finding, 512)
             or (
                 q10
-                and self.finding != "NONE"
+                and self.finding not in ({"NONE", "UNAVAILABLE"} if
+                    self.question_id is VisualQuestionV3Successor.ADDITIONAL_MATERIAL_VISIBLE_FACT else {"NONE"})
                 and not _text(self.why_not_covered_elsewhere, 512)
             )
-            or (q10 and self.finding == "NONE" and self.why_not_covered_elsewhere is not None)
+            or (q10 and self.finding in ({"NONE", "UNAVAILABLE"} if
+                self.question_id is VisualQuestionV3Successor.ADDITIONAL_MATERIAL_VISIBLE_FACT else {"NONE"})
+                and self.why_not_covered_elsewhere is not None)
             or (not q10 and self.why_not_covered_elsewhere is not None)
         ):
             raise ValueError("VISUAL_V3_QUALITATIVE_OBSERVATION_INVALID")
@@ -270,6 +298,29 @@ class VisualV3SetupQualityObservation(VisualV3BaseObservation):
 
 
 @dataclass(frozen=True, slots=True)
+class VisualV3IdentityObservation(VisualV3BaseObservation):
+    finding: str
+    observed_instrument: str | None
+    observed_market: str | None
+    observed_timeframe: str | None
+    readability: str
+    identity_correspondence: str
+
+    def __post_init__(self) -> None:
+        super(VisualV3IdentityObservation, self).__post_init__()
+        values = (self.observed_instrument, self.observed_market, self.observed_timeframe)
+        if (self.question_id is not VisualQuestionV3.VISUAL_CHART_VALIDATION
+                or not _text(self.finding, 512)
+                or self.readability not in {"READABLE", "PARTIAL", "UNREADABLE"}
+                or self.identity_correspondence not in {"MATCHED", "CONTRADICTED", "UNDETERMINED"}
+                or any(value is not None and not _text(value, 256) for value in values)
+                or self.identity_correspondence != "MATCHED"
+                or any(value is None for value in values)
+                or self.observation_status not in {VisualObservationStatus.OBSERVED, VisualObservationStatus.PARTIAL}):
+            raise ValueError("VISUAL_V3_IDENTITY_INVALID")
+
+
+@dataclass(frozen=True, slots=True)
 class VisualV3LevelObservation(VisualV3BaseObservation):
     """A visible point or zone retained only for Q3/Q6 factual extraction."""
 
@@ -286,6 +337,7 @@ class VisualV3LevelObservation(VisualV3BaseObservation):
             self.question_id
             not in {
                 VisualQuestionV3.VISUAL_SUPPORT_RESISTANCE_GAP,
+                VisualQuestionV3Successor.VISIBLE_STRUCTURAL_SUPPORT_RESISTANCE,
                 VisualQuestionV3.VISUAL_OBSTACLE_EVIDENCE,
             }
             or not _text(self.finding, 512)
@@ -393,6 +445,7 @@ class VisualV3ClusteringObservation(VisualV3BaseObservation):
 
 VisualV3Observation = (
     VisualV3QualitativeObservation
+    | VisualV3IdentityObservation
     | VisualV3SetupQualityObservation
     | VisualV3LevelObservation
     | VisualV3CprObservation
@@ -449,7 +502,7 @@ class VisualEvidenceV3Request:
             != CPR_CALCULATION_POLICY_IDENTITY
             or self.machine_fact.calculation_policy_version
             != CPR_CALCULATION_POLICY_VERSION
-            or self.routing != visual_question_routing_v3(self.timeframe)
+            or self.routing != visual_question_routing_v3(self.timeframe, self.question_set_version)
             or self.question_set_identity != VISUAL_QUESTION_SET_V3_ID
             or self.question_set_version not in _SUPPORTED_VISUAL_V3_VERSIONS
         ):
@@ -474,7 +527,9 @@ class VisualEvidenceV3Request:
             "questions": [
                 {
                     "question_id": question.value,
-                    "semantics": VISUAL_QUESTION_SEMANTICS_V3[question],
+                    "semantics": (VISUAL_QUESTION_SEMANTICS_V3_SUCCESSOR if
+                        self.question_set_version == VISUAL_QUESTION_SET_V3_SUCCESSOR_VERSION else
+                        VISUAL_QUESTION_SEMANTICS_V3)[question],
                     "routing": routing.value,
                 }
                 for question, routing in self.routing
@@ -520,7 +575,9 @@ class VisualEvidenceV3Response:
             is None
             or type(self.observations) is not tuple
             or tuple(item.question_id for item in self.observations)
-            != FROZEN_VISUAL_QUESTION_SET_V3
+            != (FROZEN_VISUAL_QUESTION_SET_V3_SUCCESSOR if
+                self.question_set_version == VISUAL_QUESTION_SET_V3_SUCCESSOR_VERSION else
+                FROZEN_VISUAL_QUESTION_SET_V3)
             or any(item.timeframe is not self.timeframe for item in self.observations)
             or any(item.source_chart_identity != self.chart_identity for item in self.observations)
             or any(item.source_chart_revision != self.chart_revision_sha256 for item in self.observations)
@@ -561,13 +618,17 @@ class VisualEvidenceV3Response:
 
 def visual_question_routing_v3(
     timeframe: VisualTimeframe,
-) -> tuple[tuple[VisualQuestionV3, VisualQuestionRouting], ...]:
+    question_set_version: str = VISUAL_QUESTION_SET_V3_VERSION,
+) -> tuple[tuple[VisualQuestionV3 | VisualQuestionV3Successor, VisualQuestionRouting], ...]:
     if type(timeframe) is not VisualTimeframe:
         raise ValueError("VISUAL_V3_TIMEFRAME_INVALID")
-    return tuple(
-        (question, VISUAL_TIMEFRAME_ROUTING_V3[question][timeframe])
-        for question in VisualQuestionV3
-    )
+    questions = (FROZEN_VISUAL_QUESTION_SET_V3_SUCCESSOR if
+                 question_set_version == VISUAL_QUESTION_SET_V3_SUCCESSOR_VERSION else FROZEN_VISUAL_QUESTION_SET_V3)
+    return tuple((question, VISUAL_TIMEFRAME_ROUTING_V3[
+        VisualQuestionV3.VISUAL_SUPPORT_RESISTANCE_GAP if question is
+        VisualQuestionV3Successor.VISIBLE_STRUCTURAL_SUPPORT_RESISTANCE else
+        VisualQuestionV3.VISUAL_FACTS_NOT_CAPTURED_BY_KRONOS if question is
+        VisualQuestionV3Successor.ADDITIONAL_MATERIAL_VISIBLE_FACT else question][timeframe]) for question in questions)
 
 
 def build_visual_evidence_v3_request(
@@ -604,15 +665,17 @@ def build_visual_evidence_v3_request(
         original_image=original_image,
         request_timestamp=request_timestamp,
         machine_fact=machine_fact,
-        routing=visual_question_routing_v3(timeframe),
+        routing=visual_question_routing_v3(timeframe, question_set_version),
         question_set_version=question_set_version,
     )
 
 
-def visual_evidence_v3_answer_contract() -> dict[str, object]:
+def visual_evidence_v3_answer_contract(
+    question_set_version: str = VISUAL_QUESTION_SET_V3_VERSION,
+) -> dict[str, object]:
     """Return the governed versioned Answer contract without machine numbers."""
 
-    return {
+    contract = {
         "schema": VISUAL_EVIDENCE_V3_ANSWER_SCHEMA,
         "question_set_identity": VISUAL_QUESTION_SET_V3_ID,
         "question_set_version": VISUAL_QUESTION_SET_V3_VERSION,
@@ -744,6 +807,26 @@ def visual_evidence_v3_answer_contract() -> dict[str, object]:
             "confluence_zone_high",
         ],
     }
+    if question_set_version == VISUAL_QUESTION_SET_V3_SUCCESSOR_VERSION:
+        contract["schema"] = VISUAL_EVIDENCE_V3_SUCCESSOR_ANSWER_SCHEMA
+        contract["question_set_version"] = question_set_version
+        contract["questions"] = [item.value for item in FROZEN_VISUAL_QUESTION_SET_V3_SUCCESSOR]
+        contract["qualitative_questions"] = [
+            VisualQuestionV3Successor.VISIBLE_STRUCTURAL_SUPPORT_RESISTANCE.value if q ==
+            VisualQuestionV3.VISUAL_SUPPORT_RESISTANCE_GAP.value else
+            VisualQuestionV3Successor.ADDITIONAL_MATERIAL_VISIBLE_FACT.value if q ==
+            VisualQuestionV3.VISUAL_FACTS_NOT_CAPTURED_BY_KRONOS.value else q
+            for q in contract["qualitative_questions"]]
+        contract["level_observation"]["questions"][0] = VisualQuestionV3Successor.VISIBLE_STRUCTURAL_SUPPORT_RESISTANCE.value
+        contract["identity_observation"] = {
+            "question": VisualQuestionV3.VISUAL_CHART_VALIDATION.value,
+            "fields": ["finding", "observed_instrument", "observed_market", "observed_timeframe",
+                       "readability", "identity_correspondence"],
+            "readability": ["READABLE", "PARTIAL", "UNREADABLE"],
+            "identity_correspondence": ["MATCHED", "CONTRADICTED", "UNDETERMINED"],
+            "raw_identity_rule": "TRANSCRIBE_VISIBLE_TEXT_WITHOUT_CANONICAL_REWRITING",
+        }
+    return contract
 
 
 class LocalVisualEvidenceV3Store:
@@ -856,8 +939,12 @@ def _observation_from_dict(
     if type(value) is not dict:
         raise ValueError("VISUAL_V3_OBSERVATION_INVALID")
     try:
+        question_id = (VisualQuestionV3Successor(value["question_id"])
+            if question_set_version == VISUAL_QUESTION_SET_V3_SUCCESSOR_VERSION
+            and value["question_id"] in {item.value for item in VisualQuestionV3Successor}
+            else VisualQuestionV3(value["question_id"]))
         common = {
-            "question_id": VisualQuestionV3(value["question_id"]),
+            "question_id": question_id,
             "timeframe": VisualTimeframe(value["timeframe"]),
             "observation_status": VisualObservationStatus(
                 value["observation_status"]
@@ -869,9 +956,15 @@ def _observation_from_dict(
             "source_chart_revision": value["source_chart_revision"],
         }
         question = common["question_id"]
+        if (question is VisualQuestionV3.VISUAL_CHART_VALIDATION
+                and question_set_version == VISUAL_QUESTION_SET_V3_SUCCESSOR_VERSION):
+            return VisualV3IdentityObservation(**common, finding=value["finding"],
+                observed_instrument=value["observed_instrument"], observed_market=value["observed_market"],
+                observed_timeframe=value["observed_timeframe"], readability=value["readability"],
+                identity_correspondence=value["identity_correspondence"])
         if (
             question is VisualQuestionV3.PRICE_ACTION_QUALITY
-            and question_set_version == VISUAL_QUESTION_SET_V3_VERSION
+            and question_set_version in {VISUAL_QUESTION_SET_V3_VERSION, VISUAL_QUESTION_SET_V3_SUCCESSOR_VERSION}
         ):
             return VisualV3SetupQualityObservation(
                 **common,
@@ -904,6 +997,7 @@ def _observation_from_dict(
             )
         if question in {
             VisualQuestionV3.VISUAL_SUPPORT_RESISTANCE_GAP,
+            VisualQuestionV3Successor.VISIBLE_STRUCTURAL_SUPPORT_RESISTANCE,
             VisualQuestionV3.VISUAL_OBSTACLE_EVIDENCE,
         } and any(
             value.get(item) is not None
@@ -939,6 +1033,8 @@ def validate_nse_successor_answer(payload, mapping):
         ReviewEvidenceError, closed, require, strict_json, text,
     )
     require(type(mapping) is NseReviewRequestMapping, "REVIEW_REQUEST_MISMATCH")
+    if mapping.value["version"] == "2.0":
+        return _validate_nse_v2_answer(payload, mapping)
     answer = strict_json(payload)
     forbidden = {
         "provider_identity", "native_run_identity", "committed_run_manifest_identity",
@@ -1038,13 +1134,149 @@ def validate_nse_successor_answer(payload, mapping):
     return tuple(result)
 
 
+def _validate_nse_v2_answer(payload, mapping):
+    """Closed successor transport; the V1 reader above remains unchanged."""
+    from kronos.swing.v1.review_evidence_binding import (
+        NSE_ANSWER_SCHEMA_V2, NSE_TIMEFRAMES, ReviewEvidenceError, closed,
+        require, strict_json, text,
+    )
+    require(type(payload) is bytes and len(payload) <= 8 * 1024 * 1024,
+            "REVIEW_ACCEPTANCE_INCOMPLETE")
+    answer = closed(strict_json(payload), {"schema", "version", "request_reference", "answer_identity", "subjects"})
+    require((answer["schema"], answer["version"]) == (NSE_ANSWER_SCHEMA_V2, "2.0")
+            and answer["request_reference"] == mapping.request_reference
+            and text(answer["answer_identity"]), "REVIEW_CONTRACT_UNSUPPORTED")
+    closed(answer["request_reference"], {"request_identity", "request_sha256"})
+    trusted = mapping.value
+    subjects = answer["subjects"]
+    require(type(subjects) is list and len(subjects) == len(trusted["subjects"]), "REVIEW_ACCEPTANCE_INCOMPLETE")
+    common = {"question_id", "timeframe", "observation_status", "visible_basis", "confidence_in_extraction",
+              "ambiguity_reason", "source_chart_identity", "source_chart_revision", "why_not_covered_elsewhere"}
+    specific = {
+        VisualQuestionV3.VISUAL_CHART_VALIDATION.value: {"finding", "observed_instrument", "observed_market",
+            "observed_timeframe", "readability", "identity_correspondence"},
+        VisualQuestionV3.CPR_VISUAL_RELATIONSHIP.value: {"presence", "price_relationship", "interaction"},
+        VisualQuestionV3.GOVERNED_REFERENCE_VISUAL_CONTEXT.value: {"presence", "relationship", "interaction"},
+        VisualQuestionV3.PRICE_ACTION_QUALITY.value: {"setup_quality", "finding"},
+        VisualQuestionV3.VISUAL_COMPONENT_CLUSTERING.value: {"clustering", "components"},
+    }
+    level = {VisualQuestionV3Successor.VISIBLE_STRUCTURAL_SUPPORT_RESISTANCE.value,
+             VisualQuestionV3.VISUAL_OBSTACLE_EVIDENCE.value}
+    questions = tuple(item.value for item in FROZEN_VISUAL_QUESTION_SET_V3_SUCCESSOR)
+    result = []
+    for si, (subject, requested) in enumerate(zip(subjects, trusted["subjects"], strict=True)):
+        sp = f"$.subjects[{si}]"
+        closed(subject, {"subject_reference", "canonical_instrument", "responses"}, sp)
+        require(subject["subject_reference"] == requested["subject_reference"]
+                and subject["canonical_instrument"] == requested["canonical_instrument"],
+                "REVIEW_REQUEST_MISMATCH", sp)
+        responses = subject["responses"]
+        require(type(responses) is list and len(responses) == 4, "REVIEW_ACCEPTANCE_INCOMPLETE", sp)
+        candidate = []
+        for ri, (response, chart, tf) in enumerate(zip(responses, requested["responses"], NSE_TIMEFRAMES, strict=True)):
+            rp = f"{sp}.responses[{ri}]"
+            closed(response, {"model_identity", "timeframe", "chart_identity", "chart_revision_sha256",
+                              "question_set_identity", "question_set_version", "observations"}, rp)
+            require(response["timeframe"] == tf and response["chart_identity"] == chart["expected_chart_identity"]
+                    and response["chart_revision_sha256"] == chart["chart_revision_sha256"]
+                    and (response["question_set_identity"], response["question_set_version"]) ==
+                    (VISUAL_QUESTION_SET_V3_ID, VISUAL_QUESTION_SET_V3_SUCCESSOR_VERSION),
+                    "REVIEW_REQUEST_MISMATCH", rp)
+            observations = response["observations"]
+            require(type(observations) is list and len(observations) == 10, "REVIEW_QUESTION_COUNT_INVALID", rp)
+            for qi, (observation, question) in enumerate(zip(observations, questions, strict=True)):
+                op = f"{rp}.observations[{qi}]"
+                require(type(observation) is dict and observation.get("question_id") == question,
+                        "REVIEW_QUESTION_ORDER_INVALID", op)
+                fields = specific.get(question, {"finding"})
+                if question in level:
+                    fields = fields | (set(observation) & {"point_price", "zone_low", "zone_high"})
+                closed(observation, common | fields, op)
+                require(observation["timeframe"] == tf
+                        and observation["source_chart_identity"] == chart["expected_chart_identity"]
+                        and observation["source_chart_revision"] == chart["chart_revision_sha256"],
+                        "REVIEW_REQUEST_MISMATCH", op)
+                status = observation["observation_status"]
+                require(status in {"OBSERVED", "NOT_VISIBLE", "PARTIAL", "UNAVAILABLE"},
+                        "REVIEW_OBSERVATION_INVALID", op)
+                if status in {"PARTIAL", "UNAVAILABLE"}:
+                    require(text(observation["ambiguity_reason"], 512), "REVIEW_OBSERVATION_INVALID", op)
+                why = observation["why_not_covered_elsewhere"]
+                if question == VisualQuestionV3Successor.ADDITIONAL_MATERIAL_VISIBLE_FACT.value \
+                        and observation["finding"] not in {"NONE", "UNAVAILABLE"}:
+                    require(text(why, 512), "REVIEW_OBSERVATION_INVALID", op)
+                else:
+                    require(why is None, "REVIEW_OBSERVATION_INVALID", op)
+                if qi == 0:
+                    raw = tuple(observation[key] for key in ("observed_instrument", "observed_market", "observed_timeframe"))
+                    require(all(text(item) for item in raw) and observation["identity_correspondence"] == "MATCHED"
+                            and observation["readability"] in {"READABLE", "PARTIAL"}
+                            and status in {"OBSERVED", "PARTIAL"}, "CHART_IDENTITY_MISMATCH", op)
+                    # Chart Analyst correspondence is bounded by the exact request;
+                    # a visible company name is not rewritten to its ticker.
+                    require(_visible_nse_market(raw[1]) and _visible_timeframe(raw[2], tf),
+                            "CHART_IDENTITY_MISMATCH", op)
+                if status == "UNAVAILABLE" and question in level:
+                    require(all(observation.get(field) is None for field in ("point_price", "zone_low", "zone_high")),
+                            "REVIEW_OBSERVATION_INVALID", op)
+                if status == "UNAVAILABLE" and qi in (1, 3):
+                    relationship = "price_relationship" if qi == 1 else "relationship"
+                    require(observation["presence"] == "NOT_IDENTIFIABLE"
+                            and observation[relationship] == "NOT_OBSERVABLE"
+                            and observation["interaction"] == "NOT_OBSERVABLE",
+                            "REVIEW_OBSERVATION_INVALID", op)
+                if status == "UNAVAILABLE" and question == VisualQuestionV3.PRICE_ACTION_QUALITY.value:
+                    require(observation["setup_quality"] == "NOT_OBSERVABLE", "REVIEW_OBSERVATION_INVALID", op)
+                if status == "UNAVAILABLE" and qi in (6, 7):
+                    require(observation["finding"] == ("UNAVAILABLE" if qi == 6 else "NONE"),
+                            "REVIEW_OBSERVATION_INVALID", op)
+                if status == "UNAVAILABLE" and qi == 8:
+                    require(observation["clustering"] == "NOT_OBSERVABLE" and not observation["components"],
+                            "REVIEW_OBSERVATION_INVALID", op)
+                if question == VisualQuestionV3.PINE_VISIBLE_EVIDENCE.value and status == "NOT_VISIBLE":
+                    require(observation["finding"] == "NONE", "REVIEW_OBSERVATION_INVALID", op)
+                if question == VisualQuestionV3Successor.ADDITIONAL_MATERIAL_VISIBLE_FACT.value and status == "UNAVAILABLE":
+                    require(observation["finding"] == "UNAVAILABLE", "REVIEW_OBSERVATION_INVALID", op)
+                if question == VisualQuestionV3Successor.ADDITIONAL_MATERIAL_VISIBLE_FACT.value \
+                        and observation["finding"] == "UNAVAILABLE":
+                    require(status == "UNAVAILABLE", "REVIEW_OBSERVATION_INVALID", op)
+            bound = dict(response)
+            bound.update(provider_identity="SPONSOR_MEDIATED_PDF", request_timestamp=trusted["request_timestamp"],
+                native_run_identity=trusted["native_run_identity"], native_assessment_sha256=requested["native_assessment_sha256"],
+                native_canonical_instrument=requested["canonical_instrument"],
+                observation_boundary=chart["observation_boundary"], analysis_boundary=chart["analysis_boundary"],
+                machine_fact_integrity_sha256=chart["machine_fact_integrity_sha256"],
+                source_provenance=(NSE_ANSWER_SCHEMA_V2, trusted["review_pack_identity"], trusted["request_identity"]),
+                schema=VISUAL_EVIDENCE_V3_SUCCESSOR_SCHEMA, authority=VISUAL_EVIDENCE_V3_AUTHORITY)
+            try:
+                candidate.append(visual_evidence_v3_response_from_dict(bound))
+            except ValueError as error:
+                raise ReviewEvidenceError(str(error), rp) from error
+        result.append(tuple(candidate))
+    return tuple(result)
+
+
+def _visible_nse_market(value: str) -> bool:
+    return re.sub(r"[^A-Z]", "", value.upper()) in {"NSE", "NATIONALSTOCKEXCHANGE"}
+
+
+def _visible_timeframe(value: str, expected: str) -> bool:
+    normalized = re.sub(r"[^A-Z0-9]", "", value.upper())
+    return normalized in {"1W": {"1W", "W", "WEEKLY", "1WEEK"},
+                          "1D": {"1D", "D", "DAILY", "1DAY"},
+                          "4H": {"4H", "4HR", "4HOUR", "4HOURLY"},
+                          "1H": {"1H", "H", "1HR", "1HOUR", "HOURLY"}}[expected]
+
+
 _SUPPORTED_VISUAL_V3_VERSIONS = {
     VISUAL_QUESTION_SET_V3_LEGACY_VERSION,
     VISUAL_QUESTION_SET_V3_VERSION,
+    VISUAL_QUESTION_SET_V3_SUCCESSOR_VERSION,
 }
 _SUPPORTED_VISUAL_V3_EVIDENCE_SCHEMAS = {
     VISUAL_EVIDENCE_V3_LEGACY_SCHEMA,
     VISUAL_EVIDENCE_V3_SCHEMA,
+    VISUAL_EVIDENCE_V3_SUCCESSOR_SCHEMA,
 }
 
 
@@ -1065,6 +1297,10 @@ def _response_contract_matches(
             schema == VISUAL_EVIDENCE_V3_SCHEMA
             and type(q5) is VisualV3SetupQualityObservation
         )
+    if version == VISUAL_QUESTION_SET_V3_SUCCESSOR_VERSION:
+        return (schema == VISUAL_EVIDENCE_V3_SUCCESSOR_SCHEMA
+                and type(q5) is VisualV3SetupQualityObservation
+                and type(observations[0]) is VisualV3IdentityObservation)
     return False
 
 

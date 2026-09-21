@@ -56,8 +56,10 @@ from kronos.swing.v1.visual_evidence_v2 import (
 )
 from kronos.swing.v1.visual_evidence_v3 import (
     VISUAL_EVIDENCE_V3_SCHEMA,
+    VISUAL_EVIDENCE_V3_SUCCESSOR_SCHEMA,
     VISUAL_QUESTION_SET_V3_ID,
     VISUAL_QUESTION_SET_V3_VERSION,
+    VISUAL_QUESTION_SET_V3_SUCCESSOR_VERSION,
     VisualEvidenceV3Response,
     VisualQuestionV3,
     VisualSetupQuality,
@@ -213,7 +215,8 @@ class Kr370AnalyticalPromotionRecord:
             or not _digest(self.native_assessment_sha256)
             or not _digest(self.native_requirement_sha256)
             or self.visual_question_set_identity != VISUAL_QUESTION_SET_V3_ID
-            or self.visual_question_set_version != VISUAL_QUESTION_SET_V3_VERSION
+            or self.visual_question_set_version not in {VISUAL_QUESTION_SET_V3_VERSION,
+                                                        VISUAL_QUESTION_SET_V3_SUCCESSOR_VERSION}
             or tuple(item.identity for item in self.criteria) != tuple(Kr370CriterionIdentity)
             or tuple(item[0] for item in self.visual_evidence_bindings)
             != tuple(item.value for item in VisualTimeframe)
@@ -346,10 +349,11 @@ def evaluate_kr370_analytical_promotion(
         tuple(item.timeframe for item in visual) != tuple(VisualTimeframe)
         or any(
             item.question_set_identity != VISUAL_QUESTION_SET_V3_ID
-            or item.question_set_version != VISUAL_QUESTION_SET_V3_VERSION
-            or item.schema != VISUAL_EVIDENCE_V3_SCHEMA
+            or (item.question_set_version, item.schema) not in {
+                (VISUAL_QUESTION_SET_V3_VERSION, VISUAL_EVIDENCE_V3_SCHEMA),
+                (VISUAL_QUESTION_SET_V3_SUCCESSOR_VERSION, VISUAL_EVIDENCE_V3_SUCCESSOR_SCHEMA)}
             for item in visual
-        )
+        ) or len({item.question_set_version for item in visual}) != 1
     ):
         raise ValueError("KR370_V3_1_EVIDENCE_REQUIRED")
     instrument = facts.instrument(requirement.canonical_instrument)
@@ -411,8 +415,9 @@ def _binding_failure(
         return "VISUAL_TIMEFRAME_SET_INVALID"
     if any(
         item.question_set_identity != VISUAL_QUESTION_SET_V3_ID
-        or item.question_set_version != VISUAL_QUESTION_SET_V3_VERSION
-        or item.schema != VISUAL_EVIDENCE_V3_SCHEMA
+        or (item.question_set_version, item.schema) not in {
+            (VISUAL_QUESTION_SET_V3_VERSION, VISUAL_EVIDENCE_V3_SCHEMA),
+            (VISUAL_QUESTION_SET_V3_SUCCESSOR_VERSION, VISUAL_EVIDENCE_V3_SUCCESSOR_SCHEMA)}
         or item.native_run_identity != requirement.native_run_identity
         or item.native_canonical_instrument != requirement.canonical_instrument
         or item.native_assessment_sha256
@@ -697,7 +702,7 @@ def _record(
         "native_assessment_sha256": requirement.thesis.native_assessment_sha256,
         "native_requirement_sha256": requirement.requirement_sha256,
         "visual_question_set_identity": VISUAL_QUESTION_SET_V3_ID,
-        "visual_question_set_version": VISUAL_QUESTION_SET_V3_VERSION,
+        "visual_question_set_version": visual[0].question_set_version,
         "visual_evidence_bindings": tuple(
             (item.timeframe.value, item.evidence_sha256, item.chart_revision_sha256)
             for item in visual

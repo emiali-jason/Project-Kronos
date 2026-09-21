@@ -32,6 +32,7 @@ from kronos.swing.v1.native_review import NativeReviewRequirement
 from kronos.swing.v1.visual_evidence_v3 import (
     VISUAL_QUESTION_SET_V3_ID,
     VISUAL_QUESTION_SET_V3_VERSION,
+    VISUAL_QUESTION_SET_V3_SUCCESSOR_VERSION,
 )
 
 
@@ -97,7 +98,8 @@ class Kr370Step31EligibilityHandoff:
             or not _digest(self.native_requirement_sha256)
             or not self.review_pack_identity
             or self.visual_question_set_identity != VISUAL_QUESTION_SET_V3_ID
-            or self.visual_question_set_version != VISUAL_QUESTION_SET_V3_VERSION
+            or self.visual_question_set_version not in {VISUAL_QUESTION_SET_V3_VERSION,
+                                                        VISUAL_QUESTION_SET_V3_SUCCESSOR_VERSION}
             or len(self.visual_evidence_bindings) != 4
             or any(
                 len(item) != 3 or not _digest(item[1]) or not _digest(item[2])
@@ -184,9 +186,10 @@ def create_kr370_step31_handoff(
     if (
         requirement.thesis.direction is not promotion.direction
         or readiness.question_set_identity != VISUAL_QUESTION_SET_V3_ID
-        or readiness.question_set_version != VISUAL_QUESTION_SET_V3_VERSION
+        or readiness.question_set_version not in {VISUAL_QUESTION_SET_V3_VERSION,
+                                                  VISUAL_QUESTION_SET_V3_SUCCESSOR_VERSION}
         or promotion.visual_question_set_identity != VISUAL_QUESTION_SET_V3_ID
-        or promotion.visual_question_set_version != VISUAL_QUESTION_SET_V3_VERSION
+        or promotion.visual_question_set_version != readiness.question_set_version
     ):
         raise Kr370Step31HandoffRejected("KR370_STEP31_V3_1_BINDING_INVALID")
     readiness_visual = {

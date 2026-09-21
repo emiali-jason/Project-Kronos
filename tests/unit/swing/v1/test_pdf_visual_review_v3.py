@@ -22,6 +22,15 @@ from tests.unit.swing.v1.test_native_review import _evidence_run
 NOW = datetime(2026, 8, 19, 12, 0, tzinfo=UTC)
 
 
+def test_successor_pdf_strict_lower_and_upper_byte_bounds():
+    from kronos.swing.v1.pdf_visual_review_v3_live import extract_successor_answer_pdf
+    from kronos.swing.v1.review_evidence_binding import ReviewEvidenceError
+    with pytest.raises(ReviewEvidenceError, match="REVIEW_ACCEPTANCE_INCOMPLETE"):
+        extract_successor_answer_pdf(b"%PDF-12")  # fewer than nine bytes
+    with pytest.raises(ReviewEvidenceError, match="REVIEW_ACCEPTANCE_INCOMPLETE"):
+        extract_successor_answer_pdf(b"%PDF-" + b"x" * (128 * 1024 * 1024 - 4))
+
+
 def _image() -> bytes:
     value = BytesIO()
     Image.new("RGB", (1600, 900), "#071724").save(value, "PNG")

@@ -47,6 +47,7 @@ from kronos.swing.v1.visual_evidence_v3 import (
     VISUAL_QUESTION_SET_V3_ID,
     VISUAL_QUESTION_SET_V3_LEGACY_VERSION,
     VISUAL_QUESTION_SET_V3_VERSION,
+    VISUAL_QUESTION_SET_V3_SUCCESSOR_VERSION,
     VisualEvidenceV3Response,
     VisualQuestionV3,
     VisualTimeframe,
@@ -121,6 +122,7 @@ class NativeLayer2ReadinessRecordV3:
             or self.question_set_version not in {
                 VISUAL_QUESTION_SET_V3_LEGACY_VERSION,
                 VISUAL_QUESTION_SET_V3_VERSION,
+                VISUAL_QUESTION_SET_V3_SUCCESSOR_VERSION,
             }
             or self.binding_policy_identity != NATIVE_READINESS_V3_BINDING_POLICY_ID
             or self.binding_policy_version != NATIVE_READINESS_V3_BINDING_POLICY_VERSION
