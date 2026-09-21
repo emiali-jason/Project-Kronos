@@ -734,7 +734,7 @@ class ProspectiveNativeReview:
 
 @dataclass(slots=True)
 class _NativeIntakeResponse:
-    """One GET preparation only; never passed to mutation admission."""
+    """One bounded validation scope; never survives a mutation boundary."""
 
     owner: object
     active: bool = True
@@ -1308,19 +1308,44 @@ class NativeReviewIntakeWorkflow:
         return {instrument: {**self.current_state(market, instrument, _response=_response), "mutation_identity": "BROWSER-EXPLICIT-MUTATION"}
                 for instrument in instruments}
 
-    def _admit(self, market, expected):
+    def _admit(self, market, expected, *, _return_requirements=False):
         require(type(expected) is dict and bool(expected), "REVIEW_PRECONDITION_INVALID")
-        self._requirements(market, tuple(expected))
         envelopes = {instrument: ReviewMutationPrecondition.create(value) for instrument, value in expected.items()}
 
-        with capture_prepared_reads() as reads:
+        def validate(prepared):
+            requirements = self._requirements(market, tuple(expected), _response=prepared)
+            projection = self.snapshot(_response=prepared)
+            rows = {(row["market"], row["instrument"]): row
+                    for row in projection["rows"] if row["eligible"]}
             states = []
             for instrument, envelope in envelopes.items():
-                state = self.current_state(market, instrument)
+                row = rows.get((market, instrument))
+                require(row is not None and type(row["expected"]) is dict,
+                        "REVIEW_BINDING_STALE")
+                current = row["expected"].get(instrument)
+                require(type(current) is dict, "REVIEW_BINDING_STALE")
+                state = {key: value for key, value in current.items()
+                         if key != "mutation_identity"}
                 envelope.validate(state)
                 states.append((state["expected_committed_run_manifest"], state["expected_run_identity"]))
-        fence = PreparedReadFence(tuple(reads.items()))
-        expected_publications = tuple(states)
+            return requirements, tuple(states)
+
+        # A published compact generation already owns exact component/current
+        # byte fences and the complete mutation envelope. Reuse it when present;
+        # missing preparation retains the full typed fail-closed path.
+        with self._page_state_lock:
+            page_state = self._page_state
+        if page_state is None:
+            with self._validated_response() as (prepared, reads):
+                requirements, expected_publications = validate(prepared)
+                fence = PreparedReadFence(tuple(reads.items()))
+        else:
+            with self._page_reader():
+                with self._prepared_state_response(page_state) as prepared:
+                    requirements, expected_publications = validate(prepared)
+            fence = PreparedReadFence(
+                page_state.component_fence.entries + page_state.current_fence.entries
+            )
 
         def recheck(snapshot=None):
             fence.check()
@@ -1329,7 +1354,7 @@ class NativeReviewIntakeWorkflow:
                     require(snapshot.control["current_manifest"]["sha256"] == manifest
                             and snapshot.manifest["run_id"] == run, "REVIEW_BINDING_STALE")
         recheck()
-        return recheck
+        return (recheck, requirements) if _return_requirements else recheck
 
     def chart_reader(self, role, instrument, timeframe, *, _response=None):
         market = "NSE" if role == "NATIVE_NSE" else "MCX"
@@ -1346,8 +1371,15 @@ class NativeReviewIntakeWorkflow:
 
     def stage(self, market, instrument, role, expected, *, image=None, content_type=None):
         require(set(expected) == {instrument} and role in self._roles(market), "REVIEW_PRECONDITION_INVALID")
-        recheck = self._admit(market, expected)
-        requirement = self._requirements(market, (instrument,))[0]
+        if image is not None:
+            # Reject impossible payloads before reconstructing the large
+            # authority bundle. The store repeats its cheap canonical check at
+            # the write boundary; no validation or authority is bypassed.
+            self.store.validate_native_chart_payload(image, content_type)
+        recheck, requirements = self._admit(
+            market, expected, _return_requirements=True,
+        )
+        requirement = requirements[0]
         if market == "MCX":
             bindings = {logical_role: self._chart_binding(requirement, logical_role)
                         for logical_role in self._roles(market)}

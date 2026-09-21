@@ -351,6 +351,17 @@ class ReviewEvidenceStore:
         self.root = Path(evidence_root).absolute() / "review-evidence-v1"
         self._fault = fault or (lambda phase: None)
 
+    @staticmethod
+    def validate_native_chart_payload(image, content_type):
+        """Apply the canonical bounded chart-byte check before costly admission."""
+
+        from kronos.swing.v1.evidence_store import _CONTENT_TYPES, _MAX_CHART_BYTES
+        suffix, magic = _CONTENT_TYPES.get(content_type, (None, None))
+        require(type(image) is bytes and 0 < len(image) <= _MAX_CHART_BYTES
+                and suffix is not None and image.startswith(magic)
+                and (content_type != "image/webp" or image[8:12] == b"WEBP"),
+                "REVIEW_ACCEPTANCE_INCOMPLETE")
+
     def _path(self, relative: str) -> Path:
         require(relative_path(relative), "REVIEW_ARTIFACT_REFERENCE_INVALID")
         path = self.root / relative
@@ -558,12 +569,7 @@ class ReviewEvidenceStore:
                 "REVIEW_REQUEST_MISMATCH")
         require(valid_timestamp(selected_at), "REVIEW_TIMESTAMP_INVALID")
         if image is not None:
-            from kronos.swing.v1.evidence_store import _CONTENT_TYPES, _MAX_CHART_BYTES
-            suffix, magic = _CONTENT_TYPES.get(content_type, (None, None))
-            require(type(image) is bytes and 0 < len(image) <= _MAX_CHART_BYTES
-                    and suffix is not None and image.startswith(magic)
-                    and (content_type != "image/webp" or image[8:12] == b"WEBP"),
-                    "REVIEW_ACCEPTANCE_INCOMPLETE")
+            self.validate_native_chart_payload(image, content_type)
         with capture_prepared_reads() as reads:
             previous = {role: self.native_chart_selection(bindings[role]) for role in roles}
             require(all((None if previous[role] is None else previous[role]["selection_sha256"])
@@ -607,11 +613,7 @@ class ReviewEvidenceStore:
         """One explicit paste/replace/remove under WO05 -> WO07; no reads write."""
         require(valid_timestamp(selected_at), "REVIEW_TIMESTAMP_INVALID")
         if image is not None:
-            from kronos.swing.v1.evidence_store import _CONTENT_TYPES, _MAX_CHART_BYTES
-            suffix, magic = _CONTENT_TYPES.get(content_type, (None, None))
-            require(type(image) is bytes and 0 < len(image) <= _MAX_CHART_BYTES
-                    and suffix is not None and image.startswith(magic)
-                    and (content_type != "image/webp" or image[8:12] == b"WEBP"), "REVIEW_ACCEPTANCE_INCOMPLETE")
+            self.validate_native_chart_payload(image, content_type)
         with capture_prepared_reads() as reads:
             previous = self.native_chart_selection(binding)
             require((None if previous is None else previous["selection_sha256"]) == expected_selection,

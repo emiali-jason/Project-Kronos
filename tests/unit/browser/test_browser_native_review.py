@@ -1534,3 +1534,44 @@ def test_matching_visual_cache_cannot_authorize_different_owner_assessment(tmp_p
     monkeypatch.setattr(owner, "_project_completed", lambda *a: pytest.fail("wrong owner record projected"))
     with pytest.raises(ValueError, match="SELECTION_STALE"):
         KronosBrowserServer.selected_opportunity_presentations(adapter, discovery)
+
+
+
+def test_swing_chart_paste_javascript_bounds_duplicate_and_failed_intake():
+    import json
+    import shutil
+    import subprocess
+    import pytest
+    from kronos.browser.views import _chart_upload_script
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("Node.js required for isolated JavaScript unit tests")
+    script = _chart_upload_script().removeprefix("<script>").removesuffix("</script>")
+    harness = r"""
+const assert=require('node:assert/strict');const vm=require('node:vm');
+const test=process.argv[1],listeners={},requests=[],feedback={hidden:true,textContent:''};
+const target={id:'target',dataset:{uploadUrl:'/swing/v1/native-chart?expected=EXACT'},attrs:{},
+ addEventListener:(n,f)=>listeners[n]=f,focus:()=>{},getAttribute:n=>target.attrs[n],
+ setAttribute:(n,v)=>target.attrs[n]=v,removeAttribute:n=>delete target.attrs[n],classList:{add(){}}};
+const input={dataset:{target:'target'},files:[],addEventListener:(n,f)=>listeners['file-'+n]=f};
+const document={getElementById:id=>id==='target'?target:feedback,
+ querySelectorAll:s=>s==='.chart-paste-target'?[target]:s==='.replace-chart'?[]:
+  s==='.chart-file'?[input]:s.includes('aria-busy')?[]:[]};
+const file={type:'image/png',size:test==='oversized'?26214401:100};let reloads=0,resolver;
+const fetch=async(url,options)=>{requests.push({url,options});await new Promise(r=>resolver=r);
+ return {ok:test!=='failed',json:async()=>test==='failed'?{outcome:'REJECTED',reason:'REVIEW_BINDING_STALE'}:
+ {outcome:'CHART_RECEIVED',selection_identity:'a'.repeat(64),chart_sha256:'b'.repeat(64)}}};
+const context={document,Set,Array,fetch,location:{reload:()=>reloads++},addEventListener:()=>{}};
+vm.runInNewContext(SCRIPT,context);
+const event={preventDefault(){},clipboardData:{items:[{kind:'file',type:'image/png',getAsFile:()=>file}]}};
+listeners.paste(event);listeners.paste(event);
+setImmediate(()=>{
+ if(test==='oversized'){assert.equal(requests.length,0);assert.equal(target.attrs['aria-busy'],undefined);return;}
+ assert.equal(requests.length,1);assert.equal(requests[0].options.headers.Accept,'application/json');resolver();
+ setImmediate(()=>{assert.equal(reloads,test==='failed'?0:1);
+  assert.equal(feedback.hidden,false);if(test==='failed')assert.equal(feedback.textContent,'REVIEW_BINDING_STALE');});
+});
+""".replace("SCRIPT", json.dumps(script))
+    for case in ("success", "failed", "oversized"):
+        result = subprocess.run([node, "-e", harness, case], capture_output=True, text=True)
+        assert result.returncode == 0, result.stderr

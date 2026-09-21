@@ -794,6 +794,90 @@ def test_native_http_wiring_paste_generate_import_stale_and_observational_get(na
         assert not thread.is_alive()
 
 
+@pytest.mark.parametrize("native_intake", ["NSE"], indirect=True)
+def test_native_chart_json_intake_has_one_admission_and_exact_identity(
+    native_intake, monkeypatch,
+):
+    import json
+    from kronos.swing.v1.review_evidence_binding import canonical
+    workflow = native_intake
+    market = "NSE"
+    instrument = workflow._requirements(market)[0].canonical_instrument
+    server = create_browser_server(SwingOpportunitiesApplication(_Provider), port=0,
+        native_review=workflow.native_review, visual_v3_live=workflow.live)
+    server.native_intake = workflow
+    original = workflow._admit
+    admissions = []
+    def counted(*args, **kwargs):
+        admissions.append(args)
+        return original(*args, **kwargs)
+    monkeypatch.setattr(workflow, "_admit", counted)
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    authority = f"127.0.0.1:{server.server_port}"
+    expected = canonical(workflow.expected(market, (instrument,))).decode()
+    path = "/swing/v1/native-chart?" + urlencode(dict(
+        market=market, instrument=instrument, role="NATIVE_NSE", expected=expected))
+    try:
+        status, headers, body = _request(server, "POST", path, headers={
+            "Host": authority, "Origin": f"http://{authority}",
+            "Content-Type": "image/png", "Accept": "application/json",
+        }, body=PNG)
+        result = json.loads(body)
+        assert status == 200 and headers["Content-Type"] == "application/json; charset=utf-8"
+        assert result == {
+            "outcome": "CHART_RECEIVED", "market": market,
+            "instrument": instrument, "role": "NATIVE_NSE",
+            "selection_identity": workflow._selection(
+                workflow._requirements(market, (instrument,))[0], "NATIVE_NSE"
+            )["selection_sha256"],
+            "chart_sha256": __import__("hashlib").sha256(PNG).hexdigest(),
+        }
+        assert len(admissions) == 1
+    finally:
+        server.shutdown(); server.server_close(); thread.join(3)
+        assert not thread.is_alive()
+
+
+@pytest.mark.parametrize("native_intake", ["NSE"], indirect=True)
+def test_invalid_native_chart_json_preserves_prepared_page_without_rebuild(
+    native_intake, monkeypatch,
+):
+    import json
+    from kronos.swing.v1.review_evidence_binding import canonical
+    workflow = native_intake
+    market = "NSE"
+    instrument = workflow._requirements(market)[0].canonical_instrument
+    assert workflow.prepare_page_state()
+    server = create_browser_server(SwingOpportunitiesApplication(_Provider), port=0,
+        native_review=workflow.native_review, visual_v3_live=workflow.live)
+    server.native_intake = workflow
+    rebuilds = []
+    original = workflow.prepare_page_state
+    monkeypatch.setattr(workflow, "prepare_page_state",
+                        lambda: rebuilds.append(True) or original())
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    authority = f"127.0.0.1:{server.server_port}"
+    expected = canonical(workflow.expected(market, (instrument,))).decode()
+    path = "/swing/v1/native-chart?" + urlencode(dict(
+        market=market, instrument=instrument, role="NATIVE_NSE", expected=expected))
+    try:
+        status, _, body = _request(server, "POST", path, headers={
+            "Host": authority, "Origin": f"http://{authority}",
+            "Content-Type": "image/png", "Accept": "application/json",
+        }, body=b"not-an-image")
+        assert status == 409
+        assert json.loads(body) == {
+            "outcome": "REJECTED", "reason": "REVIEW_ACCEPTANCE_INCOMPLETE",
+        }
+        assert rebuilds == []
+        assert workflow.page_state_status()["state"] == "READY"
+    finally:
+        server.shutdown(); server.server_close(); thread.join(3)
+        assert not thread.is_alive()
+
+
 @pytest.fixture
 def intake_browser(tmp_path, checkpoint):
     application = SwingOpportunitiesApplication(_Provider, run_publication=checkpoint[0])
@@ -1110,6 +1194,56 @@ def test_page_intake_reconstructs_each_bundle_once(native_intake, tmp_path, monk
     assert counts["native_typed_loads"] == counts["mtf_typed_loads"] == 1
     assert counts["native_json_reconstructions"] == counts["mtf_json_reconstructions"] == 1
     assert counts["native_typed_reconstructions"] == counts["mtf_typed_reconstructions"] == 1
+
+
+@pytest.mark.parametrize("native_intake", ["NSE"], indirect=True)
+def test_mutation_admission_reuses_each_typed_current_component_once(
+    native_intake, tmp_path, monkeypatch,
+):
+    state, stores, paths = _page_load_population(native_intake, tmp_path, 12)
+    with native_intake._page_state_lock:
+        native_intake._page_state = None
+        native_intake._page_state_failure = "SWING_PAGE_PREPARATION_MISSING"
+    instrument = native_intake._requirements("NSE")[0].canonical_instrument
+    expected = native_intake.expected("NSE", (instrument,))
+    counts = _page_load_counts(monkeypatch, stores, paths)
+    result = native_intake.stage("NSE", instrument, "NATIVE_NSE", expected,
+                                 image=PNG, content_type="image/png")
+    assert result["image"]["sha256"] == __import__("hashlib").sha256(PNG).hexdigest()
+    assert counts["native_typed_loads"] == counts["mtf_typed_loads"] == 1
+    assert counts["native_json_reconstructions"] == counts["mtf_json_reconstructions"] == 1
+    assert counts["native_typed_reconstructions"] == counts["mtf_typed_reconstructions"] == 1
+
+
+@pytest.mark.parametrize("native_intake", ["NSE"], indirect=True)
+def test_mutation_admission_reuses_published_prepared_generation(
+    native_intake, tmp_path, monkeypatch,
+):
+    _, stores, paths = _page_load_population(native_intake, tmp_path, 12)
+    assert native_intake.prepare_page_state()
+    instrument = native_intake._requirements("NSE")[0].canonical_instrument
+    expected = native_intake.expected("NSE", (instrument,))
+    counts = _page_load_counts(monkeypatch, stores, paths)
+    result = native_intake.stage("NSE", instrument, "NATIVE_NSE", expected,
+                                 image=PNG, content_type="image/png")
+    assert result["image"]["sha256"] == __import__("hashlib").sha256(PNG).hexdigest()
+    assert counts["native_typed_loads"] == counts["mtf_typed_loads"] == 0
+    assert counts["native_typed_reconstructions"] == counts["mtf_typed_reconstructions"] == 0
+    assert counts["native_byte_fence_passes"] >= 3
+    assert counts["mtf_byte_fence_passes"] >= 3
+
+
+@pytest.mark.parametrize("native_intake", ["NSE"], indirect=True)
+def test_invalid_native_chart_fails_before_expensive_authority_admission(
+    native_intake, monkeypatch,
+):
+    instrument = native_intake._requirements("NSE")[0].canonical_instrument
+    expected = native_intake.expected("NSE", (instrument,))
+    monkeypatch.setattr(native_intake, "_admit",
+                        lambda *_args, **_kwargs: pytest.fail("invalid bytes reached admission"))
+    with pytest.raises(ValueError, match="REVIEW_ACCEPTANCE_INCOMPLETE"):
+        native_intake.stage("NSE", instrument, "NATIVE_NSE", expected,
+                            image=b"not-an-image", content_type="image/png")
 
 
 def _page_load_server(workflow, state):

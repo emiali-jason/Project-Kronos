@@ -4224,6 +4224,7 @@ def _receipt_native_review(projection):
             body += (preview_markup + '<div class="wo07-section-title">TRADINGVIEW CHARTS</div><div class="chart-slot"><div id="' + target + '" class="chart-paste-target'
                 + (' received' if received else '') + '" role="button" tabindex="0" aria-label="Paste '
                 + escape(label) + '" data-upload-url="/swing/v1/native-chart?' + escape(upload) + '">' + content + '</div>'
+                '<p id="' + target + '-feedback" class="wo07-action-reason" role="status" aria-live="polite" hidden></p>'
                 '<div class="chart-slot-actions">' + controls
                 + '<label class="file-choice" for="' + target + '-file">Choose File</label><input id="' + target
                 + '-file" class="chart-file" type="file" accept="image/png,image/jpeg,image/webp" data-target="' + target + '"></div></div>')
@@ -6253,20 +6254,40 @@ def _v1_run_control(
 
 def _chart_upload_script() -> str:
     return """<script>
+(()=>{
 const acceptedCharts=new Set(['image/png','image/jpeg','image/webp']);
+const maximumChartBytes=25*1024*1024;
+const reasons=new Set(['PROCESSING','NO_IMAGE_IN_CLIPBOARD','UNSUPPORTED_IMAGE_TYPE','IMAGE_TOO_LARGE',
+ 'REVIEW_BINDING_STALE','REVIEW_ACCEPTANCE_INCOMPLETE','REVIEW_REQUEST_MISMATCH',
+ 'REVIEW_INTAKE_UNAVAILABLE','CHART_RECEIVED_PAGE_UNAVAILABLE']);
+function report(target,reason){
+  const feedback=document.getElementById(target.id+'-feedback');
+  if(feedback){feedback.hidden=false;feedback.textContent=reasons.has(reason)?reason:'REVIEW_INTAKE_UNAVAILABLE';}
+}
 async function receiveChart(target,file){
-  if(!file||!acceptedCharts.has(file.type)){alert('Paste or choose a PNG, JPEG, or WebP image.');return;}
+  if(target.getAttribute('aria-busy')==='true')return;
+  if(!file||!acceptedCharts.has(file.type)){report(target,'UNSUPPORTED_IMAGE_TYPE');return;}
+  if(file.size>maximumChartBytes){report(target,'IMAGE_TOO_LARGE');return;}
   target.setAttribute('aria-busy','true');
-  try{const response=await fetch(target.dataset.uploadUrl,{method:'POST',headers:{'Content-Type':file.type},body:file});
-    if(!response.ok)throw new Error();location.reload();
-  }catch(_error){target.removeAttribute('aria-busy');alert('Chart could not be accepted.');}
+  report(target,'PROCESSING');
+  let navigating=false;
+  try{
+    const response=await fetch(target.dataset.uploadUrl,{method:'POST',
+      headers:{'Content-Type':file.type,'Accept':'application/json'},body:file});
+    const result=await response.json();
+    if(!response.ok||result.outcome!=='CHART_RECEIVED'||!result.selection_identity||!result.chart_sha256){
+      report(target,result.reason);return;
+    }
+    navigating=true;location.reload();
+  }catch(_error){report(target,'REVIEW_INTAKE_UNAVAILABLE');}
+  finally{if(!navigating)target.removeAttribute('aria-busy');}
 }
 for(const target of document.querySelectorAll('.chart-paste-target')){
   target.addEventListener('click',()=>target.focus());
   target.addEventListener('paste',event=>{
     const items=event.clipboardData&&Array.from(event.clipboardData.items||[]);
     const image=items&&items.find(item=>item.kind==='file'&&acceptedCharts.has(item.type));
-    if(!image){alert('No supported chart image was found on the clipboard.');return;}
+    if(!image){report(target,'NO_IMAGE_IN_CLIPBOARD');return;}
     event.preventDefault();receiveChart(target,image.getAsFile());
   });
 }
@@ -6282,6 +6303,11 @@ for(const input of document.querySelectorAll('.chart-file')){
     const file=input.files&&input.files[0];if(target&&file)receiveChart(target,file);
   });
 }
+addEventListener('pageshow',()=>document.querySelectorAll('.chart-paste-target[aria-busy="true"]').forEach(target=>{
+  target.removeAttribute('aria-busy');
+  const feedback=document.getElementById(target.id+'-feedback');if(feedback)feedback.hidden=true;
+}));
+})();
 </script>"""
 
 

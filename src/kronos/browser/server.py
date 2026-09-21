@@ -3890,11 +3890,10 @@ class _BrowserHandler(BaseHTTPRequestHandler):
                 else:
                     encoded = query["expected"][0]
             expected = strict_json(encoded)
-            workflow._admit(market, expected)
             if operation in {"STAGE", "REMOVE"}:
                 if not {"instrument", "role"}.issubset(query):
                     raise ValueError
-                workflow.stage(market, query["instrument"][0], query["role"][0], expected,
+                selection = workflow.stage(market, query["instrument"][0], query["role"][0], expected,
                     image=self.rfile.read(length) if operation == "STAGE" else None,
                     content_type=self.headers.get("Content-Type", "") if operation == "STAGE" else None)
             elif operation == "GENERATE":
@@ -3917,22 +3916,46 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             else:
                 raise ValueError
         except ReviewEvidenceError as error:
-            if workflow is not None and market in {"NSE", "MCX"} and type(expected) is dict:
+            inline_payload_rejection = (
+                operation == "STAGE"
+                and "application/json" in self.headers.get("Accept", "")
+                and error.code == "REVIEW_ACCEPTANCE_INCOMPLETE"
+            )
+            if (not inline_payload_rejection and workflow is not None
+                    and market in {"NSE", "MCX"} and type(expected) is dict):
                 for instrument in expected:
                     workflow.errors[(market, instrument)] = error.code
                 workflow.prepare_page_state()
-            self._text(HTTPStatus.CONFLICT,
-                "Review intake did not complete. Check the exact current Review workspace and its required chart/Answer package. "
-                "Retained evidence has not been rebound.\nReason: " + error.code)
+            if operation == "STAGE" and "application/json" in self.headers.get("Accept", ""):
+                self._json({"outcome": "REJECTED", "reason": error.code}, status=HTTPStatus.CONFLICT)
+            else:
+                self._text(HTTPStatus.CONFLICT,
+                    "Review intake did not complete. Check the exact current Review workspace and its required chart/Answer package. "
+                    "Retained evidence has not been rebound.\nReason: " + error.code)
             return
         except (OSError, ValueError, TypeError, KeyError):
             if workflow is not None:
                 workflow.prepare_page_state()
-            self._text(HTTPStatus.BAD_REQUEST,
-                "Review intake is unavailable for this request. Return to the current Review workspace before retrying.\n"
-                "Reason: REVIEW_INTAKE_UNAVAILABLE")
+            if operation == "STAGE" and "application/json" in self.headers.get("Accept", ""):
+                self._json({"outcome": "REJECTED", "reason": "REVIEW_INTAKE_UNAVAILABLE"},
+                           status=HTTPStatus.BAD_REQUEST)
+            else:
+                self._text(HTTPStatus.BAD_REQUEST,
+                    "Review intake is unavailable for this request. Return to the current Review workspace before retrying.\n"
+                    "Reason: REVIEW_INTAKE_UNAVAILABLE")
             return
-        workflow.prepare_page_state()
+        page_ready = workflow.prepare_page_state()
+        if operation == "STAGE" and "application/json" in self.headers.get("Accept", ""):
+            if not page_ready:
+                self._json({"outcome": "CHART_RECEIVED_PAGE_UNAVAILABLE",
+                            "reason": workflow.page_state_status()["failure"]},
+                           status=HTTPStatus.CONFLICT)
+                return
+            self._json({"outcome": "CHART_RECEIVED", "market": market,
+                        "instrument": query["instrument"][0], "role": query["role"][0],
+                        "selection_identity": selection["selection_sha256"],
+                        "chart_sha256": selection["image"]["sha256"]})
+            return
         self._redirect("/swing/v1-review")
 
     def _native_intake_preview(self):
@@ -4488,9 +4511,11 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             return
         self._respond(HTTPStatus.OK, payload, "image/png")
 
-    def _json(self, payload: dict[str, object]) -> None:
+    def _json(
+        self, payload: dict[str, object], *, status: HTTPStatus = HTTPStatus.OK,
+    ) -> None:
         self._respond(
-            HTTPStatus.OK,
+            status,
             json.dumps(payload, separators=(",", ":")).encode("utf-8"),
             "application/json; charset=utf-8",
         )

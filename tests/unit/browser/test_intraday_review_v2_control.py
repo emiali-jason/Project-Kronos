@@ -357,6 +357,7 @@ def test_v2_browser_chart_route_is_exact_cycle_bound_and_uses_proven_transport(
     assert "PASTE TRADINGVIEW CHART" in page.body
     assert "target.addEventListener('paste'" in page.body
     assert "fetch(target.dataset.uploadUrl" in page.body
+    assert "show(target,'PROCESSING')" in page.body
 
     uploaded = routes.handle_post(
         BrowserPostRequest(

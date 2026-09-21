@@ -2221,9 +2221,12 @@ def _review_v2_chart_script() -> str:
 const accepted=new Set(['image/png','image/jpeg']);
 const failures=new Set(['NO_IMAGE_IN_CLIPBOARD','UNSUPPORTED_IMAGE_TYPE','AMBIGUOUS_CLIPBOARD_IMAGES',
  'IMAGE_TOO_LARGE','INVALID_CANDIDATE_BINDING','STALE_REVIEW_CYCLE','INVALID_CHART_IMAGE','CHART_PERSISTENCE_FAILURE']);
-function report(target,reason){
+function show(target,message){
  const feedback=document.getElementById(target.id+'-feedback');
- if(feedback){feedback.hidden=false;feedback.textContent=failures.has(reason)?reason:'CHART_PERSISTENCE_FAILURE';}
+ if(feedback){feedback.hidden=false;feedback.textContent=message;}
+}
+function report(target,reason){
+ show(target,failures.has(reason)?reason:'CHART_PERSISTENCE_FAILURE');
 }
 async function receive(target,file){
  if(target.getAttribute('aria-busy')==='true')return;
@@ -2246,6 +2249,7 @@ async function receive(target,file){
   url.searchParams.set('reference_context_identity',reference.value);
  }
  target.setAttribute('aria-busy','true');
+ show(target,'PROCESSING');
  try{
   const response=await fetch(url.pathname+url.search,{method:'POST',headers:{'Content-Type':file.type},body:file});
   const result=await response.json();
