@@ -790,7 +790,15 @@ def test_native_http_wiring_paste_generate_import_stale_and_observational_get(na
         before = _inventory(tmp_path)
         # Another still-open tab holds the pre-acceptance envelope. Never
         # silently replay its upload against the newly selected receipt.
-        assert request("POST", form_url, headers=form_headers, body=form_body)[0] == 409
+        rejected, headers_after_rejection, _ = request("POST", form_url, headers=form_headers, body=form_body)
+        assert rejected == 303
+        notice_url = headers_after_rejection["Location"]
+        assert notice_url.startswith("/swing/v1-review?answer_notice=")
+        notice_page = _request(server, "GET", notice_url)[2]
+        assert "ANSWER IMPORT REJECTED" in notice_page
+        assert "REVIEW_BINDING_STALE" in notice_page
+        assert "Nothing was imported or changed." in notice_page
+        assert "ANSWER IMPORTED" in notice_page and "EVIDENCE ACCEPTED" in notice_page
         assert _inventory(tmp_path) == before
         for _ in range(2):
             status, _, body = _request(server, "GET", "/swing/v1-review")
@@ -1768,3 +1776,143 @@ def test_compact_page_current_pointer_change_is_stale_without_recovery(
     with pytest.raises(ValueError, match="REVIEW_BINDING_STALE"):
         with native_intake.page_response() as prepared:
             assert native_intake.snapshot(_response=prepared)["rows"]
+
+
+@pytest.mark.parametrize("native_intake", ["NSE"], indirect=True)
+@pytest.mark.parametrize("reason", [
+    "REVIEW_REQUEST_MISMATCH", "REVIEW_BINDING_STALE", "ANSWER_PACK_NOT_FOUND",
+    "REVIEW_ACCEPTANCE_INCOMPLETE", "ANSWER_FORMAT_INVALID", "REVIEW_JSON_INVALID",
+    "REVIEW_CONTRACT_UNSUPPORTED", "REVIEW_UNKNOWN_FIELD", "REVIEW_REQUIRED_FIELD_MISSING",
+    "CHART_IDENTITY_MISMATCH", "REVIEW_ARTIFACT_DIGEST_MISMATCH",
+    "REVIEW_ANSWER_IDENTITY_CONFLICT", "ANSWER_REPLAY_CONFLICT", "MCX_UNKNOWN_FIELD",
+])
+def test_swing_answer_rejection_redirect_keeps_current_review_shell(
+    native_intake, tmp_path, monkeypatch, reason
+):
+    from kronos.swing.v1.review_evidence_binding import ReviewEvidenceError
+    workflow = native_intake
+    market = "NSE"
+    instrument = workflow._requirements(market)[0].canonical_instrument
+    _stage_native(workflow, market, instrument)
+    workflow.generate(market, workflow.expected(market, (instrument,)))
+    server = create_browser_server(SwingOpportunitiesApplication(_Provider), port=0,
+        native_review=workflow.native_review, visual_v3_live=workflow.live)
+    server.native_intake = workflow
+    assert workflow.prepare_page_state()
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    authority = f"127.0.0.1:{server.server_port}"
+    headers = {"Host": authority, "Origin": f"http://{authority}",
+               "Content-Type": "application/x-www-form-urlencoded"}
+    calls = []
+    def reject(*_args):
+        calls.append(reason)
+        raise ReviewEvidenceError(reason, "/private/not-for-display")
+    monkeypatch.setattr(workflow, "import_from_directory", reject)
+    try:
+        initial = _request(server, "GET", "/swing/v1-review")[2]
+        form_url, form_body = _rendered_form(initial, "native-review-answer")
+        before = _inventory(tmp_path)
+        status, response_headers, body = _request(server, "POST", form_url,
+                                                   headers=headers, body=form_body)
+        assert status == 303 and not body
+        notice_url = response_headers["Location"]
+        assert notice_url.startswith("/swing/v1-review?answer_notice=")
+        for _ in range(2):
+            status, response_headers, rendered = _request(server, "GET", notice_url)
+            assert status == 200 and response_headers["Content-Type"].startswith("text/html")
+            assert 'class="sidebar"' in rendered and 'class="wo07-card-grid"' in rendered
+            assert '<h3>' + instrument + '</h3>' in rendered
+            assert 'role="alert"' in rendered and "ANSWER IMPORT REJECTED" in rendered
+            assert "Reason: <code>" + reason + "</code>" in rendered
+            assert "Nothing was imported or changed." in rendered
+            assert 'href="/swing/v1-review">Current Review</a>' in rendered
+            assert 'href="/swing/v1-review#current-question-pack">Question Pack</a>' in rendered
+            assert "/private/not-for-display" not in rendered
+            assert "Traceback" not in rendered and "PROCESSING" not in rendered.split('answer-rejection-banner', 1)[1].split('</section>', 1)[0]
+        assert calls == [reason]
+        assert _inventory(tmp_path) == before
+        assert _request(server, "GET", "/intraday")[0] == 200
+        assert _request(server, "GET", "/status")[0] == 200
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=3)
+
+
+@pytest.mark.parametrize("native_intake", ["NSE"], indirect=True)
+def test_swing_answer_unknown_failure_is_bounded_and_page_level(
+    native_intake, tmp_path, monkeypatch
+):
+    workflow = native_intake
+    server = create_browser_server(SwingOpportunitiesApplication(_Provider), port=0,
+        native_review=workflow.native_review, visual_v3_live=workflow.live)
+    server.native_intake = workflow
+    assert workflow.prepare_page_state()
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    authority = f"127.0.0.1:{server.server_port}"
+    headers = {"Host": authority, "Origin": f"http://{authority}"}
+    def fail(*_args):
+        raise RuntimeError("secret=/private/answers/token-cookie")
+    monkeypatch.setattr(workflow, "import_from_directory", fail)
+    try:
+        before = _inventory(tmp_path)
+        status, response_headers, _ = _request(server, "POST",
+            "/swing/v1/native-review-answer?market=NSE&expected=%7B%7D", headers=headers)
+        assert status == 303
+        rendered = _request(server, "GET", response_headers["Location"])[2]
+        assert "ANSWER IMPORT COULD NOT BE CONFIRMED" in rendered
+        assert "REVIEW_INTAKE_UNAVAILABLE" in rendered
+        assert "Diagnostic ID: <code>D-" in rendered
+        assert "Affected candidate: current Review workspace." in rendered
+        assert "Nothing was imported or changed." not in rendered
+        assert "secret=" not in rendered and "/private/" not in rendered
+        assert "Traceback" not in rendered and "token-cookie" not in rendered
+        assert _inventory(tmp_path) == before
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=3)
+
+
+@pytest.mark.parametrize("native_intake", ["NSE"], indirect=True)
+def test_swing_answer_rejection_does_not_claim_no_change_after_pointer_transition(
+    native_intake, monkeypatch
+):
+    from kronos.browser.server import _BrowserHandler
+    from kronos.swing.v1.review_evidence_binding import ReviewEvidenceError
+    workflow = native_intake
+    instrument = workflow._requirements("NSE")[0].canonical_instrument
+    _stage_native(workflow, "NSE", instrument)
+    workflow.generate("NSE", workflow.expected("NSE", (instrument,)))
+    server = create_browser_server(SwingOpportunitiesApplication(_Provider), port=0,
+        native_review=workflow.native_review, visual_v3_live=workflow.live)
+    server.native_intake = workflow
+    assert workflow.prepare_page_state()
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    authority = f"127.0.0.1:{server.server_port}"
+    headers = {"Host": authority, "Origin": f"http://{authority}",
+               "Content-Type": "application/x-www-form-urlencoded"}
+    markers = iter((b"before", b"after"))
+    monkeypatch.setattr(_BrowserHandler, "_answer_acceptance_marker",
+                        staticmethod(lambda *_args: next(markers)))
+    def reject(*_args):
+        raise ReviewEvidenceError("REVIEW_BINDING_STALE")
+    monkeypatch.setattr(workflow, "import_from_directory", reject)
+    try:
+        form_url, form_body = _rendered_form(_request(server, "GET", "/swing/v1-review")[2],
+                                             "native-review-answer")
+        status, response_headers, _ = _request(server, "POST", form_url,
+                                                headers=headers, body=form_body)
+        assert status == 303
+        rendered = _request(server, "GET", response_headers["Location"])[2]
+        assert "ANSWER IMPORT COULD NOT BE CONFIRMED" in rendered
+        assert "REVIEW_INTAKE_UNAVAILABLE" in rendered
+        assert "Nothing was imported or changed." not in rendered
+        assert "Diagnostic ID: <code>D-" in rendered
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=3)

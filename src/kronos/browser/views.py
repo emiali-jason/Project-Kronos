@@ -3833,9 +3833,11 @@ def render_v1_review(
     mcx_context: McxSupportingContextSnapshot | None = None,
     relative_context: RelativeContextRun | None = None,
     native_intake: dict | None = None,
+    answer_notice: dict | None = None,
 ) -> str:
     if native_intake is not None:
-        body = _analysis_run_strip(snapshot) + _receipt_native_review(native_intake)
+        body = (_analysis_run_strip(snapshot) + _answer_rejection_banner(answer_notice, native_intake)
+                + _receipt_native_review(native_intake))
     elif (
         native_review is not None
         and native_review.state is NativeReviewRunState.REVIEW_REQUIRED
@@ -3999,7 +4001,9 @@ def render_v1_review(
             'Create a new Review Pack from the current valid charts to continue.'
             '</div>' + body
         )
-    body += _chart_upload_script()
+    if native_intake is None:
+        body = _answer_rejection_banner(answer_notice, None) + body
+    body += _chart_upload_script() + _answer_upload_script()
     return _page(
         title="Review",
         subtitle="Copy a chart image, click its target, and paste with ⌘V.",
@@ -4008,6 +4012,92 @@ def render_v1_review(
         active_tab="Review",
         body=body,
     )
+
+
+ANSWER_REJECTION_EXPLANATIONS = {
+    "REVIEW_REQUEST_MISMATCH": "This Answer does not match the current Review request or Question Pack.",
+    "REVIEW_BINDING_STALE": "The Review request or chart binding changed. Open Current Review before trying again.",
+    "ANSWER_PACK_NOT_FOUND": "The expected Answer PDF was not found. Check the current Question Pack filename.",
+    "REVIEW_ACCEPTANCE_INCOMPLETE": "The required Answer PDF or its complete evidence is unavailable.",
+    "ANSWER_FORMAT_INVALID": "The Answer PDF could not be read in the required format.",
+    "ANSWER_INCOMPLETE": "The Answer PDF is missing required content.",
+    "ANSWER_PACK_INCOMPLETE": "The Answer package is incomplete.",
+    "REVIEW_JSON_INVALID": "The Answer contains malformed governed data.",
+    "REVIEW_DUPLICATE_KEY": "The Answer contains a duplicate governed field.",
+    "REVIEW_CONTRACT_UNSUPPORTED": "The Answer schema or version is not supported for this request.",
+    "REVIEW_FIELD_TYPE_INVALID": "An Answer field has an invalid type.",
+    "REVIEW_UNKNOWN_FIELD": "The Answer contains a field outside the closed schema.",
+    "REVIEW_REQUIRED_FIELD_MISSING": "A required Answer field is missing.",
+    "REVIEW_QUESTION_ORDER_INVALID": "The Answer questions are not in the required order.",
+    "REVIEW_QUESTION_COUNT_INVALID": "The Answer does not contain every required question.",
+    "REVIEW_OBSERVATION_INVALID": "An Answer observation violates the current question contract.",
+    "CHART_IDENTITY_MISMATCH": "A chart identity does not match the governed request.",
+    "REVIEW_ARTIFACT_DIGEST_MISMATCH": "An Answer or chart revision does not match the governed bytes.",
+    "ANSWER_FILENAME_MISMATCH": "The Answer filename does not match the current Question Pack.",
+    "REVIEW_PACK_ID_MISMATCH": "The Answer references a different Question Pack.",
+    "ANSWER_VERSION_MISMATCH": "The Answer version does not match the current Question Pack.",
+    "ANSWER_REPLAY_CONFLICT": "This Answer conflicts with an already accepted delivery.",
+    "REVIEW_PACK_REPLAY_CONFLICT": "This Question Pack has a conflicting prior delivery.",
+    "REVIEW_DUPLICATE_ARTIFACT": "The Answer duplicates an already retained artifact.",
+    "REVIEW_ANSWER_IDENTITY_CONFLICT": "This Answer identity conflicts with accepted evidence.",
+    "ANSWER_IMPORT_FAILED": "The Answer PDF could not be imported.",
+    "ANSWER_PACK_REJECTED": "The Answer package failed governed validation.",
+    "REVIEW_PRECONDITION_INVALID": "The submitted Review binding is invalid for this workspace.",
+    "REVIEW_BINDING_INVALID": "The Answer binding is invalid for this request.",
+    "REVIEW_ARTIFACT_UNAVAILABLE": "Required Review evidence is unavailable.",
+    "REVIEW_ARTIFACT_REFERENCE_INVALID": "A Review evidence reference is invalid.",
+    "REVIEW_RECEIPT_INVALID": "The Answer receipt does not satisfy the current contract.",
+    "REVIEW_RECEIPT_INTEGRITY_INVALID": "The Answer receipt failed integrity validation.",
+    "REVIEW_PACK_PUBLICATION_CONFLICT": "The Question Pack conflicts with its published identity.",
+    "REVIEW_PUBLICATION_CONFLICT": "The Answer conflicts with governed publication evidence.",
+}
+
+for _mcx_answer_code in (
+    "MCX_ANSWER_IDENTITY_MISMATCH", "MCX_ANSWER_SIZE_INVALID", "MCX_AUTHORITY_FIELD_FORBIDDEN",
+    "MCX_AVAILABILITY_INVALID", "MCX_CHART_REVISION_MISMATCH", "MCX_COMPONENT_ROLE_INVALID",
+    "MCX_CONTRACT_MISMATCH", "MCX_DUPLICATE_KEY", "MCX_ENUM_INVALID", "MCX_FIELD_TYPE_INVALID",
+    "MCX_IDENTITY_MISMATCH", "MCX_IDENTITY_UNAVAILABLE", "MCX_JSON_INVALID", "MCX_LEVEL_INVALID",
+    "MCX_MACHINE_COVERAGE_INVALID", "MCX_NOT_APPLICABLE_INVALID", "MCX_POPULATION_MISMATCH",
+    "MCX_PROVENANCE_FORBIDDEN", "MCX_Q10_INVALID", "MCX_Q2_INVALID", "MCX_Q9_INVALID",
+    "MCX_QUESTION_COUNT_INVALID", "MCX_QUESTION_ORDER_INVALID", "MCX_REFERENCE_BASIS_INVALID",
+    "MCX_REFERENCE_MARKET_MISMATCH", "MCX_REFERENCE_REQUIRED", "MCX_REFERENCE_SYMBOL_MISMATCH",
+    "MCX_REQUEST_MISMATCH", "MCX_REQUIRED_FIELD_MISSING", "MCX_ROLE_MISMATCH",
+    "MCX_TIMEFRAME_MISMATCH", "MCX_UNKNOWN_FIELD",
+):
+    ANSWER_REJECTION_EXPLANATIONS[_mcx_answer_code] = "The paired MCX Answer failed governed identity or schema validation."
+
+
+def _answer_rejection_banner(notice: dict | None, projection: dict | None) -> str:
+    if notice is None:
+        return ""
+    code = notice["code"]
+    safe = code in ANSWER_REJECTION_EXPLANATIONS and notice["confirmed_no_import"]
+    reason = code if safe else "REVIEW_INTAKE_UNAVAILABLE"
+    explanation = (ANSWER_REJECTION_EXPLANATIONS[reason] if safe else
+                   "The import outcome could not be confirmed. Do not submit the Answer again until Current Review is checked.")
+    instrument = notice.get("instrument")
+    market = notice.get("market")
+    if projection is None or not any(row["market"] == market and row["instrument"] == instrument
+                                     for row in projection["rows"]):
+        instrument = None
+    affected = ("<p>Affected candidate: <strong>" + escape(instrument) + "</strong></p>"
+                if instrument is not None else "<p>Affected candidate: current Review workspace.</p>")
+    diagnostic = ("<p>Diagnostic ID: <code>" + escape(notice["diagnostic_id"]) + "</code></p>"
+                  if notice.get("diagnostic_id") else "")
+    outcome = ("<p><strong>Nothing was imported or changed.</strong></p>" if safe else
+               "<p>The import outcome is unconfirmed; do not retry automatically.</p>")
+    heading = "ANSWER IMPORT REJECTED" if safe else "ANSWER IMPORT COULD NOT BE CONFIRMED"
+    return ('<section class="review-note answer-rejection-banner" role="alert" aria-live="assertive">'
+            '<strong>' + heading + '</strong>' + affected + '<p>Reason: <code>' + escape(reason)
+            + '</code></p><p>' + escape(explanation) + '</p>' + outcome + diagnostic
+            + '<div class="answer-rejection-actions"><a href="/swing/v1-review">Current Review</a>'
+            '<a href="/swing/v1-review#current-question-pack">Question Pack</a></div></section>'
+            '<style>.answer-rejection-banner{border:2px solid var(--red);background:#30171c;min-width:0;'
+            'overflow-wrap:break-word;word-break:normal}.answer-rejection-banner p{margin:7px 0}'
+            '.answer-rejection-banner code{white-space:normal;overflow-wrap:anywhere}'
+            '.answer-rejection-actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:10px}'
+            '.answer-rejection-actions a{display:inline-flex;align-items:center;min-height:36px;padding:5px 10px;'
+            'border:1px solid var(--line);border-radius:6px;max-width:100%}</style>')
 
 
 def _intake_error(reason):
@@ -4088,14 +4178,15 @@ def _receipt_native_review(projection):
         if expected is None:
             return '<button disabled>' + escape(label) + '</button>'
         query = urlencode(dict(market=market, **(extra or {})))
+        marker = ' data-swing-answer-upload' if endpoint == 'native-review-answer' else ''
         return ('<form method="post" action="/swing/v1/' + endpoint + '?' + escape(query) + '">'
             '<input type="hidden" name="expected" value="' + escape(canonical(expected).decode()) + '">'
-            '<button type="submit">' + escape(label) + '</button></form>')
+            '<button type="submit"' + marker + '>' + escape(label) + '</button></form>')
 
     body = ('<div class="review-note"><strong>NATIVE REVIEW · RECEIPT-BOUND EVIDENCE</strong>'
         '<p>Chart → Question Pack → Answer → immutable acceptance receipt. '
         'Evidence intake only; no trading or execution authority.</p></div>' + _intake_workspace_header(projection))
-    body += '<div class="review-note wo07-toolbar" aria-label="Current Review pack actions">'
+    body += '<div id="current-question-pack" class="review-note wo07-toolbar" aria-label="Current Review pack actions">'
     for market in ("NSE", "MCX"):
         ready = [row for row in projection["rows"] if row["market"] == market and row["complete"] and row["expected"]]
         if ready:
@@ -4320,7 +4411,7 @@ def _native_review_requirements(
                 + '<br>SCOPE: ' + escape(scope)
                 + '<br>STATUS: ' + escape(status) + '</span></div>'
                 '<form method="post" action="/swing/v1/native-review-answer">'
-                '<button class="primary" type="submit">UPLOAD ANSWER</button>'
+                '<button class="primary" type="submit" data-swing-answer-upload>UPLOAD ANSWER</button>'
                 '</form></div>'
             )
             if v3_pack.skipped:
@@ -4373,7 +4464,7 @@ def _native_review_requirements(
                 + '<br>SCOPE: ' + escape(scope)
                 + '<br>STATUS: ' + escape(answer_status) + '</span></div>'
                 '<form method="post" action="/swing/v1/native-review-answer">'
-                '<button class="primary" type="submit"'
+                '<button class="primary" type="submit" data-swing-answer-upload'
                 + (' disabled title="Create a current Review Pack first"' if review.review_pack_superseded else '')
                 + '>UPLOAD ANSWER</button></form></div>'
             )
@@ -6068,7 +6159,7 @@ def _connect_navigation_guard_script() -> str:
   let pending=false;
   globalThis.kronosConnectNavigationPending=false;
   globalThis.kronosReloadWhenNavigationIdle=()=>{
-    if(globalThis.kronosConnectNavigationPending===true)return false;
+    if(globalThis.kronosConnectNavigationPending===true||globalThis.kronosReviewAnswerNavigationPending===true)return false;
     location.reload();return true;
   };
   const setPending=value=>{
@@ -6307,6 +6398,33 @@ addEventListener('pageshow',()=>document.querySelectorAll('.chart-paste-target[a
   target.removeAttribute('aria-busy');
   const feedback=document.getElementById(target.id+'-feedback');if(feedback)feedback.hidden=true;
 }));
+})();
+</script>"""
+
+
+def _answer_upload_script() -> str:
+    return """<script>
+(()=>{
+  const controls=Array.from(document.querySelectorAll('button[data-swing-answer-upload]'));
+  const reset=()=>{
+    globalThis.kronosReviewAnswerNavigationPending=false;
+    for(const button of controls){
+      const form=button.closest('form');if(form)form.dataset.pending='';
+      if(button.dataset.originalLabel){button.textContent=button.dataset.originalLabel;button.removeAttribute('aria-busy');}
+    }
+  };
+  reset();
+  for(const button of controls){
+    const form=button.closest('form');if(!form)continue;
+    form.addEventListener('submit',event=>{
+      if(form.dataset.pending==='true'){event.preventDefault();return;}
+      form.dataset.pending='true';globalThis.kronosReviewAnswerNavigationPending=true;
+      button.dataset.originalLabel=button.textContent;button.textContent='PROCESSING';
+      button.setAttribute('aria-busy','true');
+      setTimeout(()=>{if(event.defaultPrevented)reset();},0);
+    });
+  }
+  addEventListener('pageshow',reset);
 })();
 </script>"""
 

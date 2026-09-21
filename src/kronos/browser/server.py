@@ -15,6 +15,7 @@ import logging
 from pathlib import Path
 import re
 from threading import BoundedSemaphore, Lock, RLock, Thread
+from time import monotonic
 from urllib.parse import parse_qs, quote, unquote, urlencode, urlsplit
 from uuid import uuid4
 
@@ -118,6 +119,7 @@ from kronos.integrations.openai_chart_analyst import (
     UrllibOpenAIResponsesTransport,
 )
 from kronos.browser.views import (
+    ANSWER_REJECTION_EXPLANATIONS,
     render_active_candidates,
     render_candidate_workspace,
     render_closed_candidates,
@@ -185,7 +187,7 @@ from kronos.instrument.facts import publish_instrument_context
 from kronos.swing.universe import enabled_swing_phase1_universe
 from kronos.swing.v1.native_active_trade_lifecycle import TradeExitReason
 from kronos.swing.v1.native_review import NativeReviewEvidenceStore
-from kronos.swing.v1.review_evidence_binding import ReviewMutationPrecondition, ReviewEvidenceError, strict_json
+from kronos.swing.v1.review_evidence_binding import ReviewMutationPrecondition, ReviewEvidenceError, canonical, strict_json
 from kronos.swing.v1.review_evidence_store import ReviewEvidenceStore
 from kronos.swing.v1.visual_evidence_v2 import (
     LocalVisualEvidenceV2DiagnosticStore,
@@ -402,6 +404,8 @@ class KronosBrowserServer(ThreadingHTTPServer):
         self.intraday_historical_control = intraday_historical_control
         self._shutdown_lock = Lock()
         self._swing_projection_lock = Lock()
+        self._answer_notice_lock = Lock()
+        self._answer_notices = {}
         self._sponsor_restoration_lock = RLock()
         self._shutdown_started = False
         self._active_sponsor_work = 0
@@ -651,6 +655,34 @@ class KronosBrowserServer(ThreadingHTTPServer):
             ),
         )
         super().__init__(address, _BrowserHandler)
+
+    def retain_answer_notice(self, code, market=None, instrument=None, *, confirmed_no_import=True):
+        """Bounded, short-lived browser presentation only; no evidence persistence."""
+        known = type(code) is str and code in ANSWER_REJECTION_EXPLANATIONS
+        reason = code if known else "REVIEW_INTAKE_UNAVAILABLE"
+        confirmed = bool(known and confirmed_no_import)
+        identifier = uuid4().hex
+        diagnostic = None if confirmed else "D-" + uuid4().hex[:12]
+        with self._answer_notice_lock:
+            now = monotonic()
+            self._answer_notices = {key: value for key, value in self._answer_notices.items()
+                                    if now - value[0] <= 600}
+            while len(self._answer_notices) >= 64:
+                self._answer_notices.pop(next(iter(self._answer_notices)))
+            self._answer_notices[identifier] = (now, dict(code=reason,
+                market=market if market in {"NSE", "MCX"} else None,
+                instrument=instrument if type(instrument) is str and len(instrument) <= 64
+                    and instrument.isascii() and all(char.isalnum() or char in "&._- " for char in instrument)
+                    else None,
+                confirmed_no_import=confirmed, diagnostic_id=diagnostic))
+        return identifier
+
+    def answer_notice(self, identifier):
+        if type(identifier) is not str or re.fullmatch(r"[0-9a-f]{32}", identifier) is None:
+            return None
+        with self._answer_notice_lock:
+            retained = self._answer_notices.get(identifier)
+            return None if retained is None or monotonic() - retained[0] > 600 else retained[1]
 
     def process_request(self, request, client_address) -> None:  # type: ignore[no-untyped-def]
         """Admit a bounded number of request owners before creating threads."""
@@ -1680,6 +1712,10 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             return
         if path == "/swing/v1-review":
             intake = self.server.native_intake
+            notice_query = parse_qs(urlsplit(self.path).query, keep_blank_values=True)
+            notice = (self.server.answer_notice(notice_query["answer_notice"][0])
+                      if set(notice_query) == {"answer_notice"}
+                      and len(notice_query["answer_notice"]) == 1 else None)
             try:
                 with intake.page_response() if intake is not None else nullcontext() as prepared:
                     review = self.server.native_review.snapshot()
@@ -1690,7 +1726,8 @@ class _BrowserHandler(BaseHTTPRequestHandler):
                         self.server.mcx_supporting_context.snapshot(),
                         self.server.relative_context_for_run(review.native_run_identity)
                         if intake is None and review.native_run_identity is not None else None,
-                        None if intake is None else intake.snapshot(_response=prepared))
+                        None if intake is None else intake.snapshot(_response=prepared),
+                        answer_notice=notice)
                 self._html(body)
             except (OSError, ValueError) as error:
                 self._swing_page_unavailable(error)
@@ -3866,6 +3903,8 @@ class _BrowserHandler(BaseHTTPRequestHandler):
     def _native_intake_mutation(self, operation):
         workflow = self.server.native_intake
         market, expected = None, None
+        import_committed = False
+        acceptance_marker = None
         try:
             if workflow is None:
                 raise ReviewEvidenceError("REVIEW_CONTRACT_UNSUPPORTED")
@@ -3900,7 +3939,9 @@ class _BrowserHandler(BaseHTTPRequestHandler):
                 publication = workflow.generate(market, expected)
                 workflow.export_question(market, publication)
             elif operation == "IMPORT":
+                acceptance_marker = self._answer_acceptance_marker(workflow, market, expected)
                 workflow.import_from_directory(market, expected)
+                import_committed = True
                 self.server.trade_window.restore(self.server.visual_v3.completed_snapshot())
                 self.server.refresh_swing_projection_revision()
             elif operation == "HANDOFF":
@@ -3916,6 +3957,11 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             else:
                 raise ValueError
         except ReviewEvidenceError as error:
+            unchanged_acceptance = (acceptance_marker is not None and
+                acceptance_marker == self._answer_acceptance_marker(workflow, market, expected))
+            if operation == "IMPORT" and import_committed:
+                self._redirect_answer_rejection(None, market, expected, confirmed_no_import=False)
+                return
             inline_payload_rejection = (
                 operation == "STAGE"
                 and "application/json" in self.headers.get("Accept", "")
@@ -3925,26 +3971,48 @@ class _BrowserHandler(BaseHTTPRequestHandler):
                     and market in {"NSE", "MCX"} and type(expected) is dict):
                 for instrument in expected:
                     workflow.errors[(market, instrument)] = error.code
-                workflow.prepare_page_state()
+                try:
+                    workflow.prepare_page_state()
+                except (OSError, ValueError):
+                    if operation == "IMPORT":
+                        self._redirect_answer_rejection(None, market, expected, confirmed_no_import=False)
+                        return
+                    raise
             if operation == "STAGE" and "application/json" in self.headers.get("Accept", ""):
                 self._json({"outcome": "REJECTED", "reason": error.code}, status=HTTPStatus.CONFLICT)
+            elif operation == "IMPORT":
+                self._redirect_answer_rejection(error.code, market, expected,
+                                                confirmed_no_import=unchanged_acceptance)
             else:
                 self._text(HTTPStatus.CONFLICT,
                     "Review intake did not complete. Check the exact current Review workspace and its required chart/Answer package. "
                     "Retained evidence has not been rebound.\nReason: " + error.code)
             return
         except (OSError, ValueError, TypeError, KeyError):
-            if workflow is not None:
+            if workflow is not None and operation != "IMPORT":
                 workflow.prepare_page_state()
             if operation == "STAGE" and "application/json" in self.headers.get("Accept", ""):
                 self._json({"outcome": "REJECTED", "reason": "REVIEW_INTAKE_UNAVAILABLE"},
                            status=HTTPStatus.BAD_REQUEST)
+            elif operation == "IMPORT":
+                self._redirect_answer_rejection(None, market, expected, confirmed_no_import=False)
             else:
                 self._text(HTTPStatus.BAD_REQUEST,
                     "Review intake is unavailable for this request. Return to the current Review workspace before retrying.\n"
                     "Reason: REVIEW_INTAKE_UNAVAILABLE")
             return
-        page_ready = workflow.prepare_page_state()
+        except Exception:
+            if operation != "IMPORT":
+                raise
+            self._redirect_answer_rejection(None, market, expected, confirmed_no_import=False)
+            return
+        try:
+            page_ready = workflow.prepare_page_state()
+        except (OSError, ValueError):
+            if operation != "IMPORT":
+                raise
+            self._redirect_answer_rejection(None, market, expected, confirmed_no_import=False)
+            return
         if operation == "STAGE" and "application/json" in self.headers.get("Accept", ""):
             if not page_ready:
                 self._json({"outcome": "CHART_RECEIVED_PAGE_UNAVAILABLE",
@@ -3957,6 +4025,35 @@ class _BrowserHandler(BaseHTTPRequestHandler):
                         "chart_sha256": selection["image"]["sha256"]})
             return
         self._redirect("/swing/v1-review")
+
+    def _redirect_answer_rejection(self, code, market=None, expected=None, *, confirmed_no_import=True):
+        instrument = next(iter(expected)) if type(expected) is dict and len(expected) == 1 else None
+        notice = self.server.retain_answer_notice(code, market, instrument,
+                                                  confirmed_no_import=confirmed_no_import)
+        self._swing_post_failed = True
+        self._redirect("/swing/v1-review?answer_notice=" + notice)
+
+    @staticmethod
+    def _answer_acceptance_marker(workflow, market, expected):
+        """Observe the exact acceptance pointer around an Answer POST, without recovery."""
+        if workflow is None or market not in {"NSE", "MCX"} or type(expected) is not dict or not expected:
+            return None
+        first = next(iter(expected.values()))
+        run = first.get("expected_run_identity") if type(first) is dict else None
+        if type(run) is not str or not run:
+            return None
+        key = sha256(canonical(["NATIVE_REVIEW", market, run])).hexdigest()
+        path = workflow.store.root / "acceptance-current" / (key + ".json")
+        try:
+            if path.is_symlink():
+                return None
+            with path.open("rb") as stream:
+                payload = stream.read(4097)
+            return payload if len(payload) <= 4096 else None
+        except FileNotFoundError:
+            return b""
+        except OSError:
+            return None
 
     def _native_intake_preview(self):
         try:
@@ -4326,7 +4423,7 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             self._native_intake_mutation("IMPORT")
             return
         if urlsplit(self.path).query:
-            self._text(HTTPStatus.BAD_REQUEST, "Answer Pack request rejected.")
+            self._redirect_answer_rejection(None, confirmed_no_import=False)
             return
         try:
             if self.server.native_review_version() == "V3":
@@ -4353,8 +4450,8 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             OSError,
             TypeError,
             ValueError,
-        ):
-            self._redirect("/swing/v1-review")
+        ) as error:
+            self._redirect_answer_rejection(str(error))
             return
         self._redirect("/swing/v1-review")
 
