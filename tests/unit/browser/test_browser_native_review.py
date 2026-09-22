@@ -1314,27 +1314,51 @@ def test_current_completed_review_requires_exact_promotion_presentation_binding(
     if binding == "historical_v1":
         monkeypatch.setattr(server.trade_window, "project",
                             lambda *a: pytest.fail("historical V1 projected trade window"))
+    # Production successor publication does not retain a legacy Native Review
+    # requirements file. The generated card must still open against the exact
+    # prepared successor authority, without preparing that historical owner.
+    unprepared = NativeReviewWorkflow(NativeReviewEvidenceStore(tmp_path / "unprepared")).snapshot()
+    assert unprepared.native_run_identity is None
+    monkeypatch.setattr(server.native_review, "snapshot", lambda: unprepared)
+    def metadata():
+        return {str(path.relative_to(tmp_path)): (path.stat().st_mode,
+            path.stat().st_size, path.stat().st_mtime_ns, path.stat().st_ctime_ns)
+            for path in tmp_path.rglob("*")}
     before = _inventory(tmp_path)
+    before_metadata = metadata()
     serving = Thread(target=server.serve_forever, daemon=True)
     serving.start()
     try:
         status, _, body = _request(server, "GET", "/swing/opportunities")
         assert status == expected_status
+        detail_route = f"/swing/analysis-details/{run.run_identity}/{probable.canonical_instrument}"
         if expected_status == 200:
             assert probable.canonical_instrument in body
+            assert f'href="{detail_route}"' in body
             if binding == "historical_v1":
                 assert "KR-370 ·" in body and "KR-370 V2" not in body
                 assert "v2-card-detail" not in body and "Open Trade Window" not in body
             else:
                 assert "KR-370 V2" in body and "v2-card-detail" in body
+            for _ in range(2):
+                detail_status, _, detail_body = _request(server, "GET", detail_route)
+                assert detail_status == 200
+                assert probable.canonical_instrument + " Analysis Details" in detail_body
+                assert "Open Trade Window" not in detail_body
+                if binding == "matching_v2":
+                    assert "KR-370 V2 ANALYTICAL PROMOTION" in detail_body
+                    assert "Evaluation disposition" in detail_body
+                    assert all(f"K{number}" in detail_body for number in range(1, 6))
+                    assert "CONFIRMATION ESTABLISHED" in detail_body
+                    assert "NIFTY CONFIRMATION" in detail_body
+                    assert "1D · SUPPORTIVE CONTEXT" in detail_body
+                    assert "4H · SUPPORTIVE CONTEXT" in detail_body
+                else:
+                    assert "KR-370 V2 ANALYTICAL PROMOTION" not in detail_body
             if binding == "historical_v1":
                 for _ in range(2):
                     repeated_status, _, repeated_body = _request(server, "GET", "/swing/opportunities")
                     assert repeated_status == 200 and "KR-370 V2" not in repeated_body
-                detail_status, _, detail_body = _request(server, "GET",
-                    f"/swing/analysis-details/{run.run_identity}/{probable.canonical_instrument}")
-                assert detail_status == 200
-                assert "Open Trade Window" not in detail_body
         else:
             if binding == "invalid_current_v2":
                 assert "SWING_TRADE_WINDOW_SELECTION_CORRUPT" in body
@@ -1343,6 +1367,116 @@ def test_current_completed_review_requires_exact_promotion_presentation_binding(
             else:
                 assert "V2_PROMOTION_PRESENTATION_BINDING_INVALID" in body
             assert "<form" not in body and "Open Trade Window" not in body
+            detail_status, _, detail_body = _request(server, "GET", detail_route)
+            assert detail_status == 409
+            assert "Swing page unavailable" in detail_body
+            assert "Analysis Details not found" not in detail_body
+            assert ("V2_PROMOTION_CURRENT_BINDING_INVALID" if binding == "stale_v2"
+                    else "V2_PROMOTION_PRESENTATION_BINDING_INVALID") in detail_body
+        assert _request(server, "GET", detail_route.replace(run.run_identity,
+            "SWING-RUN-" + "F" * 32))[0] == 404
+        assert _request(server, "GET", detail_route.rsplit("/", 1)[0] + "/UNKNOWN")[0] == 404
+        assert _inventory(tmp_path) == before
+        assert metadata() == before_metadata
+    finally:
+        server.shutdown(); serving.join(5); server.server_close()
+
+
+@pytest.mark.parametrize("native_intake", ["NSE"], indirect=True)
+def test_analysis_details_rejects_excluded_current_requirement_without_legacy_fallback(
+    native_intake, tmp_path,
+):
+    from tests.unit.browser.test_swing_review_intake_binding import _current_twelve
+    from tests.unit.swing.v1.test_mcx_supporting_context import _inventory
+
+    state, _ = _current_twelve(native_intake)
+    state["native"] = replace(state["native"], assessments=tuple(
+        replace(assessment, operative_anchor=None)
+        if assessment.canonical_instrument == "TMPV" else assessment
+        for assessment in state["native"].assessments))
+    server = _page_load_server(native_intake, state)
+    before = _inventory(tmp_path)
+    serving = Thread(target=server.serve_forever, daemon=True)
+    serving.start()
+    try:
+        route = f'/swing/analysis-details/{state["native"].run_identity}/TMPV'
+        status, _, body = _request(server, "GET", route)
+        assert status == 409 and "REVIEW_BINDING_STALE" in body
+        assert "Analysis Details not found" not in body
+        assert _inventory(tmp_path) == before
+    finally:
+        server.shutdown(); serving.join(5); server.server_close()
+
+
+@pytest.mark.parametrize("native_intake", ["NSE"], indirect=True)
+def test_analysis_details_current_v2_retains_unacknowledged_continuity_warning(
+    native_intake, tmp_path, monkeypatch,
+):
+    from types import SimpleNamespace
+    from tests.unit.swing.v1.test_kr370_step31_handoff import _v2_completed
+    from tests.unit.swing.v1.test_mcx_supporting_context import _inventory
+
+    facts, run, probable = _evidence_run()
+    state = {"native": run, "facts": facts,
+             "control": {"current_manifest": {"sha256": "a" * 64},
+                         "latest_attempt": {"state": "SUCCEEDED"}}}
+    server = _page_load_server(native_intake, state)
+    completed = _v2_completed(tmp_path / "completed")
+    server.visual_v3.restore_completed(completed)
+    monkeypatch.setattr(native_intake, "downstream_applicable", lambda *a, **k: True)
+    monkeypatch.setattr(native_intake, "v2_for", lambda *a: completed.promotion_v2)
+    warning = SimpleNamespace(canonical_instrument=probable.canonical_instrument,
+        disposition=SimpleNamespace(value="MANUAL_REVIEW_REQUIRED"),
+        reason="UNRESOLVED_CONTINUITY_BREAK", qualification=None)
+    continuity = SimpleNamespace(contribution=SimpleNamespace(native_run=run,
+        rows=(warning,), validate=lambda: None))
+    status = dict(control=state["control"], reconciliation_unavailable=False)
+    native_intake.application.opportunities_bundle_projection = lambda: (None, run, continuity, status)
+    server.application.opportunities_bundle_projection = lambda: (
+        server.application.snapshot(), run, continuity, status)
+    assert native_intake.prepare_page_state()
+    before = _inventory(tmp_path)
+    serving = Thread(target=server.serve_forever, daemon=True)
+    serving.start()
+    try:
+        route = f"/swing/analysis-details/{run.run_identity}/{probable.canonical_instrument}"
+        code, _, body = _request(server, "GET", route)
+        assert code == 200
+        assert "MANUAL REVIEW REQUIRED · UNRESOLVED CONTINUITY BREAK" in body
+        assert "KR-370 V2 ANALYTICAL PROMOTION" in body
+        assert "ACKNOWLEDGE" not in body
+        assert _inventory(tmp_path) == before
+    finally:
+        server.shutdown(); serving.join(5); server.server_close()
+
+
+@pytest.mark.parametrize("native_intake", ["NSE"], indirect=True)
+def test_analysis_details_publication_change_during_projection_fails_closed(
+    native_intake, tmp_path, monkeypatch,
+):
+    from tests.unit.swing.v1.test_mcx_supporting_context import _inventory
+
+    facts, run, probable = _evidence_run()
+    state = {"native": run, "facts": facts,
+             "control": {"current_manifest": {"sha256": "a" * 64},
+                         "latest_attempt": {"state": "SUCCEEDED"}}}
+    native_intake.application.opportunities_bundle_projection = lambda: (
+        None, run, None, dict(control=state["control"], reconciliation_unavailable=False))
+    server = _page_load_server(native_intake, state)
+    original = server.mcx_supporting_context.context_for
+    def advancing_context(*args, **kwargs):
+        state["control"] = {"current_manifest": {"sha256": "b" * 64},
+                            "latest_attempt": {"state": "SUCCEEDED"}}
+        return original(*args, **kwargs)
+    monkeypatch.setattr(server.mcx_supporting_context, "context_for", advancing_context)
+    before = _inventory(tmp_path)
+    serving = Thread(target=server.serve_forever, daemon=True)
+    serving.start()
+    try:
+        route = f"/swing/analysis-details/{run.run_identity}/{probable.canonical_instrument}"
+        status, _, body = _request(server, "GET", route)
+        assert status == 409 and "REVIEW_BINDING_STALE" in body
+        assert "Analysis Details not found" not in body
         assert _inventory(tmp_path) == before
     finally:
         server.shutdown(); serving.join(5); server.server_close()

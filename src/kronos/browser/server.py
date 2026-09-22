@@ -56,6 +56,7 @@ from kronos.application.swing_v1_review import (
     V1BatchPreflightFailure,
 )
 from kronos.application.swing_native_review import (
+    NativeAnalysisDetailsProjection,
     NativeReviewWorkflow,
     project_native_analysis_details,
 )
@@ -1759,54 +1760,112 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             return
         details_match = _ANALYSIS_DETAILS_ROUTE.fullmatch(path)
         if details_match:
-            snapshot, discovery = self.server.application.opportunities_projection()
-            details = (
-                None
-                if discovery is None
-                else project_native_analysis_details(
-                    discovery,
-                    self.server.native_review.snapshot(),
-                    details_match.group(1),
-                    unquote(details_match.group(2)),
-                )
-            )
-            if details is None:
-                self._text(HTTPStatus.NOT_FOUND, "Analysis Details not found.")
-                return
+            run_identity = details_match.group(1)
+            instrument = unquote(details_match.group(2))
+            intake = self.server.native_intake
             try:
-                promotions_v2 = self.server.current_v2_promotions(discovery)
-                selected_v2 = next((item for item in promotions_v2
-                    if item.value["source"]["canonical_instrument"]
-                    == details.assessment.canonical_instrument
-                    and item.value["source"]["native_assessment_sha256"]
-                    == details.assessment.result_sha256), None)
-                v3 = next((value for value in self.server.visual_v3_presentations()
-                    if value.run_identity == details.assessment.run_identity
-                    and value.canonical_instrument == details.assessment.canonical_instrument
-                    and value.native_assessment_sha256 == details.assessment.result_sha256), None)
-                if (selected_v2 is not None and selected_v2.value["source"]["market"] == "NSE"
-                        and v3 is None):
-                    raise ValueError("V2_PROMOTION_PRESENTATION_BINDING_INVALID")
-                relative_run = self.server.relative_context_for_run(
-                    details.assessment.run_identity)
-                body = render_native_analysis_details(
-                    snapshot, details, self.server.progression_snapshot(), v3,
-                    (None if v3 is not None and v3.kr370 is not None
-                     and v3.kr370_v2 is None else self.server.trade_window.project(
-                        details.assessment.run_identity,
-                        details.assessment.canonical_instrument)),
-                    self.server.mcx_supporting_context.context_for(
-                        details.assessment.canonical_instrument,
-                        assessment_boundary=discovery.observed_at),
-                    None if relative_run is None else relative_run.record(
-                        details.assessment.canonical_instrument),
-                    promotion_v2=selected_v2)
-                _, latest = self.server.application.opportunities_projection()
-                if (latest is not discovery or promotions_v2 !=
-                        self.server.current_v2_promotions(discovery)):
-                    raise ValueError("V2_PROMOTION_PRESENTATION_STALE")
-                self._html(body)
-            except (OSError, ValueError) as error:
+                with intake.page_response() if intake is not None else nullcontext() as prepared:
+                    snapshot, discovery, continuity, publication = (
+                        self.server.application.opportunities_bundle_projection())
+                    publication = deepcopy(publication)
+                    if discovery is None or discovery.run_identity != run_identity:
+                        details = None
+                    else:
+                        assessments = tuple(item for item in discovery.assessments
+                            if item.canonical_instrument == instrument
+                            and item.status.value == "PROBABLE")
+                        if len(assessments) > 1:
+                            raise ValueError("REVIEW_BINDING_STALE")
+                        if not assessments:
+                            details = None
+                        elif intake is None:
+                            details = project_native_analysis_details(
+                                discovery, self.server.native_review.snapshot(),
+                                run_identity, instrument)
+                            if details is None:
+                                raise ValueError("REVIEW_BINDING_STALE")
+                        else:
+                            # The retained successor generation owns this run's
+                            # requirements. The historical mutable Review is not
+                            # prepared by an observational GET.
+                            authority = prepared.authority
+                            context = prepared.context
+                            if (authority is None or authority.native is not discovery
+                                    or context is None or context[2].native_run_identity != run_identity):
+                                raise ValueError("REVIEW_BINDING_STALE")
+                            requirements = tuple(item for item in context[2].requirements
+                                if item.native_run_identity == run_identity
+                                and item.canonical_instrument == instrument)
+                            if (len(requirements) != 1 or requirements[0].thesis.native_assessment_sha256
+                                    != assessments[0].result_sha256):
+                                raise ValueError("REVIEW_BINDING_STALE")
+                            details = NativeAnalysisDetailsProjection(
+                                assessments[0], requirements[0], (), None, None, (), None)
+                    if details is None:
+                        body = None
+                    else:
+                        def current():
+                            _, native, bound_continuity, status = (
+                                self.server.application.opportunities_bundle_projection())
+                            return (native is discovery and bound_continuity is continuity
+                                    and status == publication)
+
+                        if intake is not None and not current():
+                            raise ValueError("REVIEW_BINDING_STALE")
+                        continuity_row = None
+                        if continuity is not None:
+                            contribution = continuity.contribution
+                            contribution.validate()
+                            if contribution.native_run != discovery:
+                                raise ValueError("REVIEW_BINDING_STALE")
+                            matches = tuple(item for item in contribution.rows
+                                if item.canonical_instrument == instrument)
+                            if len(matches) > 1:
+                                raise ValueError("REVIEW_BINDING_STALE")
+                            continuity_row = matches[0] if matches else None
+                        promotions_v2 = self.server.current_v2_promotions(discovery)
+                        selected_v2 = next((item for item in promotions_v2
+                            if item.value["source"]["canonical_instrument"] == instrument
+                            and item.value["source"]["native_assessment_sha256"]
+                            == details.assessment.result_sha256), None)
+                        if intake is None:
+                            presentations = self.server.visual_v3_presentations()
+                            windows = ()
+                        else:
+                            presentations, windows = self.server.selected_opportunity_presentations(
+                                discovery, prepared=prepared, authority_is_current=current)
+                        v3 = next((value for value in presentations
+                            if value.run_identity == run_identity
+                            and value.canonical_instrument == instrument
+                            and value.native_assessment_sha256 == details.assessment.result_sha256), None)
+                        if (selected_v2 is not None and selected_v2.value["source"]["market"] == "NSE"
+                                and v3 is None):
+                            raise ValueError("V2_PROMOTION_PRESENTATION_BINDING_INVALID")
+                        relative_run = self.server.relative_context_for_run(run_identity)
+                        if intake is None:
+                            window = (None if v3 is not None and v3.kr370 is not None
+                                and v3.kr370_v2 is None else
+                                self.server.trade_window.project(run_identity, instrument))
+                        else:
+                            window = next((item for item in windows
+                                if item.native_run_identity == run_identity
+                                and item.canonical_instrument == instrument
+                                and item.native_assessment_sha256 == details.assessment.result_sha256), None)
+                        body = render_native_analysis_details(
+                            snapshot, details, self.server.progression_snapshot(), v3,
+                            window, self.server.mcx_supporting_context.context_for(
+                                instrument, assessment_boundary=discovery.observed_at),
+                            None if relative_run is None else relative_run.record(instrument),
+                            promotion_v2=selected_v2, continuity=continuity_row)
+                        if not current():
+                            raise ValueError("REVIEW_BINDING_STALE")
+                        if promotions_v2 != self.server.current_v2_promotions(discovery):
+                            raise ValueError("V2_PROMOTION_PRESENTATION_BINDING_INVALID")
+                if body is None:
+                    self._text(HTTPStatus.NOT_FOUND, "Analysis Details not found.")
+                else:
+                    self._html(body)
+            except (AttributeError, KeyError, OSError, TypeError, ValueError) as error:
                 self._swing_page_unavailable(error)
             return
         trade_window_match = _TRADE_WINDOW_ROUTE.fullmatch(path)

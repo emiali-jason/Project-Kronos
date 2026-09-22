@@ -1247,6 +1247,7 @@ def render_native_analysis_details(
     relative_context: RelativeContextRecord | None = None,
     *,
     promotion_v2: V2PromotionRecord | None = None,
+    continuity=None,
 ) -> str:
     """Render governed evidence without recalculation or authority."""
 
@@ -1280,7 +1281,7 @@ def render_native_analysis_details(
             raise ValueError("NATIVE_ANALYSIS_DETAILS_V2_BINDING_INVALID")
         return _render_native_analysis_details_v3(
             snapshot, details, progression, visual_v3, trade_window, mcx_context,
-            relative_context,
+            relative_context, continuity,
         )
 
     item = details.assessment
@@ -1375,6 +1376,7 @@ def render_native_analysis_details(
     body = (
         '<p><a class="button" href="/swing/opportunities">← Back to Opportunities</a></p>'
         '<div class="analysis-details">'
+        + _swing_continuity_warning(continuity)
         + ('' if promotion_v2 is None else _v2_promotion_detail(present_v2_promotion(promotion_v2)))
         + _analysis_disclosure("A. WHAT KITE / NATIVE DISCOVERY SAYS", native_facts)
         + ('' if promotion_v2 is not None else _relative_context_details(relative_context, item.direction.value))
@@ -1416,6 +1418,7 @@ def _render_native_analysis_details_v3(
     trade_window: NativeTradeWindowProjection | None,
     mcx_context: McxSupportingContextRecord | None,
     relative_context: RelativeContextRecord | None,
+    continuity=None,
 ) -> str:
     item = details.assessment
     thesis = details.requirement.thesis
@@ -1525,6 +1528,7 @@ def _render_native_analysis_details_v3(
     body = (
         '<p><a class="button" href="/swing/opportunities">← Back to Opportunities</a></p>'
         '<div class="analysis-details">'
+        + _swing_continuity_warning(continuity)
         + kr370_summary
         + trade_window_summary
         + _analysis_disclosure("A. WHAT KITE / NATIVE DISCOVERY SAYS", native_facts)
