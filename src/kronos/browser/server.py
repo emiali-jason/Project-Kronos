@@ -60,6 +60,7 @@ from kronos.application.swing_native_review import (
     project_native_analysis_details,
 )
 from kronos.application.swing_visual_v3 import CompletedVisualV3Review, SwingVisualV3ReviewCycle
+from kronos.swing.v1.analytical_promotion import Kr370AnalyticalPromotionRecord
 from kronos.swing.v1.analytical_promotion_v2 import V2PromotionRecord
 from kronos.application.swing_visual_v3_live import SwingVisualV3LiveWorkflow, NativeReviewIntakeWorkflow
 from kronos.application.swing_mcx_supporting_context import (
@@ -984,6 +985,28 @@ class KronosBrowserServer(ThreadingHTTPServer):
             + self.trade_window.active_monitoring_count
         )
 
+    @staticmethod
+    def _presentation_promotion_binding(completed, current):  # type: ignore[no-untyped-def]
+        """Return true only for a validated pre-V2 review with no V2 authority."""
+
+        if current is None and completed.promotion_v2 is None:
+            try:
+                if type(completed.promotion) is not Kr370AnalyticalPromotionRecord:
+                    raise ValueError
+                completed.promotion.__post_init__()
+                completed.__post_init__()
+            except (AttributeError, KeyError, TypeError, ValueError) as error:
+                raise ValueError("V2_PROMOTION_PRESENTATION_BINDING_INVALID") from error
+            return True
+        if type(current) is not V2PromotionRecord or completed.promotion_v2 != current:
+            raise ValueError("V2_PROMOTION_PRESENTATION_BINDING_INVALID")
+        try:
+            current.__post_init__()
+            completed.__post_init__()
+        except (AttributeError, KeyError, TypeError, ValueError) as error:
+            raise ValueError("V2_PROMOTION_PRESENTATION_BINDING_INVALID") from error
+        return False
+
     def visual_v3_presentations(self):  # type: ignore[no-untyped-def]
         _, current_run = self.application.opportunities_projection()
         result = []
@@ -995,8 +1018,7 @@ class KronosBrowserServer(ThreadingHTTPServer):
                     continue
                 current = self.native_intake.v2_for(
                     item.requirement.native_run_identity, item.requirement.canonical_instrument)
-                if current is None or item.promotion_v2 != current:
-                    raise ValueError("V2_PROMOTION_PRESENTATION_BINDING_INVALID")
+                self._presentation_promotion_binding(item, current)
             result.append(present_visual_v3_review(item))
         return tuple(result)
 
@@ -1018,6 +1040,10 @@ class KronosBrowserServer(ThreadingHTTPServer):
                 continue
             if type(record) is not V2PromotionRecord:
                 raise ValueError("V2_PROMOTION_PRESENTATION_VERSION_INVALID")
+            try:
+                record.__post_init__()
+            except (AttributeError, KeyError, TypeError, ValueError) as error:
+                raise ValueError("V2_PROMOTION_PRESENTATION_BINDING_INVALID") from error
             source = record.value["source"]
             if (source["native_run_identity"] != discovery.run_identity
                     or source["canonical_instrument"] != assessment.canonical_instrument
@@ -1044,6 +1070,7 @@ class KronosBrowserServer(ThreadingHTTPServer):
                 continue
             key = (discovery.run_identity, assessment.canonical_instrument)
             completed = self.visual_v3.completed_for(*key)
+            legacy_v1_only = False
             if completed is not None:
                 try:
                     if type(completed) is not CompletedVisualV3Review:
@@ -1060,13 +1087,14 @@ class KronosBrowserServer(ThreadingHTTPServer):
                         completed, _response=prepared):
                     if self.native_intake is not None:
                         selected = self.native_intake.v2_for(*key)
-                        if selected is None or completed.promotion_v2 != selected:
-                            raise ValueError("V2_PROMOTION_PRESENTATION_BINDING_INVALID")
+                        legacy_v1_only = self._presentation_promotion_binding(
+                            completed, selected)
                     visual.append(present_visual_v3_review(completed))
             # The Trade Window owner selects independently. The Visual V3 cache
             # above cannot authorize or select its retained completion record.
-            window = self.trade_window.project_selected(*key, assessment.result_sha256,
-                authority_is_current=authority_is_current)
+            window = (None if legacy_v1_only else self.trade_window.project_selected(
+                *key, assessment.result_sha256,
+                authority_is_current=authority_is_current))
             if window is not None:
                 windows.append(window)
         return tuple(visual), tuple(windows)
@@ -1763,9 +1791,10 @@ class _BrowserHandler(BaseHTTPRequestHandler):
                     details.assessment.run_identity)
                 body = render_native_analysis_details(
                     snapshot, details, self.server.progression_snapshot(), v3,
-                    self.server.trade_window.project(
+                    (None if v3 is not None and v3.kr370 is not None
+                     and v3.kr370_v2 is None else self.server.trade_window.project(
                         details.assessment.run_identity,
-                        details.assessment.canonical_instrument),
+                        details.assessment.canonical_instrument)),
                     self.server.mcx_supporting_context.context_for(
                         details.assessment.canonical_instrument,
                         assessment_boundary=discovery.observed_at),

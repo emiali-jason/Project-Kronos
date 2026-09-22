@@ -1262,6 +1262,93 @@ from tests.unit.browser.test_swing_review_intake_binding import (
 
 
 @pytest.mark.parametrize("native_intake", ["NSE"], indirect=True)
+@pytest.mark.parametrize("binding,expected_status", (
+    ("historical_v1", 200), ("matching_v2", 200),
+    ("attached_only", 409), ("current_only", 409),
+    ("mismatched_v2", 409), ("stale_v2", 409),
+    ("invalid_current_v2", 409), ("missing_v1", 409),
+    ("corrupt_v1", 409),
+))
+def test_current_completed_review_requires_exact_promotion_presentation_binding(
+    native_intake, tmp_path, monkeypatch, binding, expected_status
+):
+    """An accepted pre-V2 completion can display V1, never borrow V2 authority."""
+    from tests.unit.swing.v1.test_kr370_step31_handoff import _completed, _v2_completed
+    from tests.unit.swing.v1.test_mcx_supporting_context import _inventory
+
+    facts, run, probable = _evidence_run()
+    state = {"native": run, "facts": facts,
+             "control": {"current_manifest": {"sha256": "a" * 64},
+                         "latest_attempt": {"state": "SUCCEEDED"}}}
+    native_intake.application.opportunities_bundle_projection = lambda: (
+        None, run, None, dict(control=state["control"], reconciliation_unavailable=False))
+    server = _page_load_server(native_intake, state)
+    historical = _completed(tmp_path / "historical")
+    current = _v2_completed(tmp_path / "current")
+    assert (historical.requirement.native_run_identity,
+            historical.requirement.canonical_instrument,
+            historical.requirement.thesis.native_assessment_sha256) == (
+                run.run_identity, probable.canonical_instrument, probable.result_sha256)
+    completed = current if binding in {"matching_v2", "attached_only", "mismatched_v2",
+                               "stale_v2", "invalid_current_v2"} else historical
+    if binding == "missing_v1":
+        completed = replace(historical, promotion=None)
+    elif binding == "corrupt_v1":
+        object.__setattr__(historical.promotion, "integrity_sha256", "0" * 64)
+    server.visual_v3.restore_completed(completed)
+    monkeypatch.setattr(native_intake, "downstream_applicable", lambda *a, **k: True)
+    selected = (None if binding in {"historical_v1", "attached_only", "missing_v1"}
+                or binding == "corrupt_v1"
+                else _v2_completed(tmp_path / "different", confirmation=False).promotion_v2
+                if binding == "mismatched_v2" else current.promotion_v2)
+    if binding == "invalid_current_v2":
+        object.__setattr__(selected, "payload", b"{}")
+    if binding == "stale_v2":
+        monkeypatch.setattr(native_intake, "v2_for", lambda *a: (_ for _ in ()).throw(
+            ValueError("V2_PROMOTION_CURRENT_BINDING_INVALID")))
+    else:
+        monkeypatch.setattr(native_intake, "v2_for", lambda *a: selected)
+    monkeypatch.setattr(server.trade_window, "project_selected",
+                        lambda *a, **k: pytest.fail("historical V1 projected trade window")
+                        if binding in {"historical_v1", "missing_v1", "corrupt_v1"} else None)
+    if binding == "historical_v1":
+        monkeypatch.setattr(server.trade_window, "project",
+                            lambda *a: pytest.fail("historical V1 projected trade window"))
+    before = _inventory(tmp_path)
+    serving = Thread(target=server.serve_forever, daemon=True)
+    serving.start()
+    try:
+        status, _, body = _request(server, "GET", "/swing/opportunities")
+        assert status == expected_status
+        if expected_status == 200:
+            assert probable.canonical_instrument in body
+            if binding == "historical_v1":
+                assert "KR-370 ·" in body and "KR-370 V2" not in body
+                assert "v2-card-detail" not in body and "Open Trade Window" not in body
+            else:
+                assert "KR-370 V2" in body and "v2-card-detail" in body
+            if binding == "historical_v1":
+                for _ in range(2):
+                    repeated_status, _, repeated_body = _request(server, "GET", "/swing/opportunities")
+                    assert repeated_status == 200 and "KR-370 V2" not in repeated_body
+                detail_status, _, detail_body = _request(server, "GET",
+                    f"/swing/analysis-details/{run.run_identity}/{probable.canonical_instrument}")
+                assert detail_status == 200
+                assert "Open Trade Window" not in detail_body
+        else:
+            if binding == "invalid_current_v2":
+                assert "SWING_TRADE_WINDOW_SELECTION_CORRUPT" in body
+            elif binding == "stale_v2":
+                assert "Swing page unavailable" in body
+            else:
+                assert "V2_PROMOTION_PRESENTATION_BINDING_INVALID" in body
+            assert "<form" not in body and "Open Trade Window" not in body
+        assert _inventory(tmp_path) == before
+    finally:
+        server.shutdown(); serving.join(5); server.server_close()
+
+
+@pytest.mark.parametrize("native_intake", ["NSE"], indirect=True)
 def test_opportunities_does_not_construct_undisplayed_history(native_intake, tmp_path, monkeypatch):
     import json
     from tests.unit.swing.v1.test_kr370_step31_handoff import _completed

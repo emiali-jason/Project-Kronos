@@ -1223,7 +1223,7 @@ class NativeReviewIntakeWorkflow:
             "REVIEW_FIELD_TYPE_INVALID", "REVIEW_UNKNOWN_FIELD", "REVIEW_REQUIRED_FIELD_MISSING",
             "REVIEW_DUPLICATE_KEY", "REVIEW_JSON_INVALID", "REVIEW_TIMESTAMP_INVALID",
             "SWING_PAGE_PREPARATION_MISSING", "SWING_PAGE_PREPARATION_UNAVAILABLE",
-            "SWING_PAGE_PREPARATION_CORRUPT"}
+            "SWING_PAGE_PREPARATION_CORRUPT", "V2_PROMOTION_PRESENTATION_BINDING_INVALID"}
         return str(error) if str(error) in allowed else fallback
 
     def _requirements(self, market, instruments=None, *, _response=None):
