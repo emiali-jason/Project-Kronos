@@ -16,6 +16,11 @@ from tests.unit.swing.v1.test_mcx_supporting_context import (
     DAY, PNG, _transport, _answer, _payload, _inventory,
 )
 
+SPONSOR_EIGHT = (
+    "ADANIENT", "ADANIPORTS", "AXISBANK", "BAJFINANCE",
+    "COALINDIA", "HCLTECH", "INFY", "RBLBANK",
+)
+
 
 def test_workspace_diagnostics_preserve_bounded_reason_not_exception_payload():
     from kronos.application.swing_visual_v3_live import NativeReviewIntakeWorkflow
@@ -25,7 +30,7 @@ def test_workspace_diagnostics_preserve_bounded_reason_not_exception_payload():
     assert reason(ValueError('SYNTHETIC private path /not-for-display'), 'REVIEW_RESTORATION_UNAVAILABLE') == 'REVIEW_RESTORATION_UNAVAILABLE'
 
 
-def _current_twelve(workflow):
+def _current_twelve(workflow, candidate_names=None):
     """Synthetic exact production-shaped population; never read live evidence."""
     from dataclasses import replace
     from types import SimpleNamespace
@@ -34,8 +39,8 @@ def _current_twelve(workflow):
     from kronos.swing.v1.models import V1Direction
     from tests.unit.swing.v1.test_native_review import _evidence_run
     facts, base, probable = _evidence_run()
-    names = ('DRREDDY', 'TCS', 'ASIANPAINT', 'TMPV', 'ADANIGREEN', 'ADANIENT',
-             'RELIANCE', 'BAJFINANCE', 'UPL', 'VBL', 'GOLDM', 'CRUDEOIL')
+    names = candidate_names or ('DRREDDY', 'TCS', 'ASIANPAINT', 'TMPV', 'ADANIGREEN', 'ADANIENT',
+                                'RELIANCE', 'BAJFINANCE', 'UPL', 'VBL', 'GOLDM', 'CRUDEOIL')
     run_id = 'SWING-RUN-' + 'D' * 32
     facts = replace(facts, run_identity=run_id, instruments=tuple(
         replace(item, reference_facts=(), one_hour_atr=None) for item in facts.instruments))
@@ -1153,11 +1158,11 @@ def test_context_browser_corrupt_selection_is_bounded_invalid_and_read_only(inta
 
 
 # STAGE 10B-C1: real isolated component readers, not in-memory loader substitutes.
-def _page_load_population(workflow, tmp_path, population=12):
+def _page_load_population(workflow, tmp_path, population=12, candidate_names=None):
     from dataclasses import replace
     from kronos.swing.v1 import native_discovery as native
     from kronos.swing.v1.mtf_facts import MtfFactEvidenceStore
-    state, names = _current_twelve(workflow)
+    state, names = _current_twelve(workflow, candidate_names)
     state["control"]["latest_attempt"] = {"state": "SUCCEEDED"}
     run = state["native"]
     members = set(names[:population])
@@ -1275,6 +1280,175 @@ def test_mutation_admission_reuses_published_prepared_generation(
     assert counts["native_typed_reconstructions"] == counts["mtf_typed_reconstructions"] == 0
     assert counts["native_byte_fence_passes"] >= 3
     assert counts["mtf_byte_fence_passes"] >= 3
+
+
+@pytest.mark.parametrize("native_intake", ["NSE"], indirect=True)
+def test_eight_current_candidates_accept_independent_chart_pastes_before_page_rerender(
+    native_intake, tmp_path,
+):
+    """A sibling's successful chart must not stale another current card."""
+    _page_load_population(native_intake, tmp_path, 8, SPONSOR_EIGHT)
+    assert native_intake.prepare_page_state()
+    rows = [row for row in native_intake.snapshot()["rows"] if row["market"] == "NSE"]
+    assert len(rows) == 8
+    for row in rows:
+        instrument = row["instrument"]
+        selected = native_intake.stage(
+            "NSE", instrument, "NATIVE_NSE", row["expected"],
+            image=PNG, content_type="image/png",
+        )
+        assert selected["binding"]["instrument"] == instrument
+        assert selected["binding"]["candidate_identity"] == row["requirement_sha256"]
+
+
+@pytest.mark.parametrize("native_intake", ["NSE"], indirect=True)
+def test_eight_generated_review_cards_accept_serial_chart_posts_and_rerender(
+    native_intake, tmp_path,
+):
+    import html
+    import json
+    import re
+    from urllib.parse import parse_qs, urlsplit
+
+    state, _, _ = _page_load_population(native_intake, tmp_path, 8, SPONSOR_EIGHT)
+    server = _page_load_server(native_intake, state)
+    serving = Thread(target=server.serve_forever, daemon=True)
+    serving.start()
+    authority = f"127.0.0.1:{server.server_port}"
+    headers = {"Host": authority, "Origin": f"http://{authority}",
+               "Content-Type": "image/png", "Accept": "application/json"}
+
+    def card(page, instrument):
+        return page.split("<h3>" + instrument + "</h3>", 1)[1].split("</article>", 1)[0]
+
+    def card_url(page, instrument):
+        match = re.search(r'data-upload-url="([^"]+)"', card(page, instrument))
+        assert match is not None
+        return html.unescape(match.group(1))
+
+    try:
+        status, _, page = _request(server, "GET", "/swing/v1-review")
+        assert status == 200
+        rows = [row for row in native_intake.snapshot()["rows"] if row["market"] == "NSE"]
+        assert len(rows) == 8
+        assert '<span data-chart-complete-count>0</span>' in page
+        initial_urls = {row["instrument"]: card_url(page, row["instrument"]) for row in rows}
+        first_selection = None
+        for count, row in enumerate(rows, 1):
+            instrument = row["instrument"]
+            url = card_url(page, instrument)
+            query = parse_qs(urlsplit(url).query)
+            assert query["market"] == ["NSE"]
+            assert query["instrument"] == [instrument]
+            assert query["role"] == ["NATIVE_NSE"]
+            expected = json.loads(query["expected"][0])[instrument]
+            assert expected["expected_run_identity"] == state["native"].run_identity
+            assert expected["expected_candidate_identity"] == row["requirement_sha256"]
+            status, _, payload = _request(server, "POST", url, headers=headers, body=PNG)
+            assert status == 200, payload
+            result = json.loads(payload)
+            assert result["outcome"] == "CHART_RECEIVED"
+            assert result["instrument"] == instrument
+            assert result["selection_identity"]
+            before_get = _inventory(tmp_path)
+            status, _, page = _request(server, "GET", "/swing/v1-review")
+            assert status == 200
+            assert f'<span data-chart-complete-count>{count}</span>' in page
+            assert "BINDING CURRENT" in card(page, instrument)
+            assert "CHART READY" in card(page, instrument)
+            assert _inventory(tmp_path) == before_get
+            if count == 1:
+                first_selection = native_intake._selection(
+                    native_intake._requirements("NSE", (instrument,))[0], "NATIVE_NSE")
+        assert first_selection is not None
+        first_requirement = native_intake._requirements("NSE", (rows[0]["instrument"],))[0]
+        assert native_intake._selection(first_requirement, "NATIVE_NSE") == first_selection
+        last = rows[-1]["instrument"]
+        before_rejection = _inventory(tmp_path)
+        stale, _, body = _request(server, "POST", initial_urls[last], headers=headers, body=PNG)
+        assert stale == 409 and json.loads(body)["reason"] == "REVIEW_BINDING_STALE"
+        duplicate, _, body = _request(server, "POST", card_url(page, last), headers=headers, body=PNG)
+        assert duplicate == 409 and json.loads(body)["reason"] == "REVIEW_CHART_ALREADY_CURRENT"
+        assert _inventory(tmp_path) == before_rejection
+        status, _, refreshed = _request(server, "GET", "/swing/v1-review")
+        assert status == 200
+        assert "BINDING CURRENT" in card(refreshed, last)
+        assert "REVIEW_BINDING_STALE" not in card(refreshed, last)
+        assert _inventory(tmp_path) == before_rejection
+    finally:
+        server.shutdown(); serving.join(5); server.server_close()
+
+
+@pytest.mark.parametrize("native_intake", ["NSE"], indirect=True)
+def test_stale_candidate_projection_never_claims_binding_current(native_intake):
+    from kronos.browser.views import _receipt_native_review
+
+    projection = native_intake.snapshot()
+    row = projection["rows"][0]
+    row["error"] = "REVIEW_BINDING_STALE"
+    page = _receipt_native_review(projection)
+    card = page.split("<h3>" + row["instrument"] + "</h3>", 1)[1].split("</article>", 1)[0]
+    assert "REVIEW_BINDING_STALE" in card
+    assert "BINDING STALE" in card
+    assert "BINDING CURRENT" not in card
+
+
+@pytest.mark.parametrize("native_intake", ["NSE"], indirect=True)
+def test_overlapping_candidate_chart_posts_are_serialized_without_cross_binding(
+    native_intake, tmp_path, monkeypatch,
+):
+    import json
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event
+    from time import monotonic
+    from kronos.swing.v1.review_evidence_binding import canonical
+
+    state, _, _ = _page_load_population(native_intake, tmp_path, 2, SPONSOR_EIGHT)
+    server = _page_load_server(native_intake, state)
+    serving = Thread(target=server.serve_forever, daemon=True)
+    serving.start()
+    authority = f"127.0.0.1:{server.server_port}"
+    headers = {"Host": authority, "Origin": f"http://{authority}",
+               "Content-Type": "image/png", "Accept": "application/json"}
+    instruments = tuple(row["instrument"] for row in native_intake.snapshot()["rows"]
+                        if row["market"] == "NSE")
+    assert len(instruments) == 2
+    urls = ["/swing/v1/native-chart?" + urlencode(dict(market="NSE", instrument=name,
+            role="NATIVE_NSE", expected=canonical(native_intake.expected(
+                "NSE", (name,))).decode())) for name in instruments]
+    entered, release = Event(), Event()
+    calls = []
+    original = native_intake.stage
+
+    def blocked_stage(*args, **kwargs):
+        calls.append(args[1])
+        if len(calls) == 1:
+            entered.set()
+            assert release.wait(10)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(native_intake, "stage", blocked_stage)
+    try:
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            first = pool.submit(_request, server, "POST", urls[0], headers=headers, body=PNG)
+            assert entered.wait(10)
+            second = pool.submit(_request, server, "POST", urls[1], headers=headers, body=PNG)
+            deadline = monotonic() + 10
+            while server.request_capacity_status()["active"] < 2 and monotonic() < deadline:
+                release.wait(0.01)
+            assert server.request_capacity_status()["active"] == 2
+            assert calls == [instruments[0]]
+            release.set()
+            responses = [first.result(20), second.result(20)]
+        assert calls == list(instruments)
+        assert all(status == 200 and json.loads(body)["outcome"] == "CHART_RECEIVED"
+                   for status, _, body in responses)
+        selected = {row["instrument"]: row["selected"]["NATIVE_NSE"]
+                    for row in native_intake.snapshot()["rows"]}
+        assert all(selected[name]["binding"]["instrument"] == name for name in instruments)
+    finally:
+        release.set()
+        server.shutdown(); serving.join(5); server.server_close()
 
 
 @pytest.mark.parametrize("native_intake", ["NSE"], indirect=True)

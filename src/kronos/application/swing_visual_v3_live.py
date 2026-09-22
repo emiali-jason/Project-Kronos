@@ -35,7 +35,8 @@ from kronos.swing.v1.native_review import (
 from kronos.swing.v1.pdf_visual_review import PdfReviewTransportError
 from kronos.swing.v1.pdf_visual_review_v3 import VisualV3ReviewPackRecord
 from kronos.swing.v1.review_evidence_binding import (
-    ReviewAcceptanceReceipt, ReviewMutationPrecondition, canonical, require, strict_json, timestamp,
+    ReviewAcceptanceReceipt, ReviewEvidenceError, ReviewMutationPrecondition,
+    canonical, require, strict_json, timestamp,
 )
 from kronos.swing.v1.review_evidence_store import (
     ReviewEvidenceStore, PreparedReadFence, capture_prepared_reads, record_prepared_read,
@@ -1226,6 +1227,7 @@ class NativeReviewIntakeWorkflow:
             "SWING_PAGE_PREPARATION_CORRUPT", "V2_PROMOTION_PRESENTATION_BINDING_INVALID",
             "V2_PROMOTION_CURRENT_BINDING_INVALID", "NATIVE_ANALYSIS_DETAILS_V2_BINDING_INVALID",
             "NATIVE_ANALYSIS_DETAILS_V3_BINDING_INVALID"}
+        allowed.add("REVIEW_CHART_ALREADY_CURRENT")
         return str(error) if str(error) in allowed else fallback
 
     def _requirements(self, market, instruments=None, *, _response=None):
@@ -1354,21 +1356,30 @@ class NativeReviewIntakeWorkflow:
         return {instrument: {**self.current_state(market, instrument, _response=_response), "mutation_identity": "BROWSER-EXPLICIT-MUTATION"}
                 for instrument in instruments}
 
-    def _admit(self, market, expected, *, _return_requirements=False):
+    def _admit(self, market, expected, *, _return_requirements=False,
+               _chart_only=False):
         require(type(expected) is dict and bool(expected), "REVIEW_PRECONDITION_INVALID")
         envelopes = {instrument: ReviewMutationPrecondition.create(value) for instrument, value in expected.items()}
 
         def validate(prepared):
             requirements = self._requirements(market, tuple(expected), _response=prepared)
-            projection = self.snapshot(_response=prepared)
-            rows = {(row["market"], row["instrument"]): row
-                    for row in projection["rows"] if row["eligible"]}
+            if not _chart_only:
+                projection = self.snapshot(_response=prepared)
+                rows = {(row["market"], row["instrument"]): row
+                        for row in projection["rows"] if row["eligible"]}
             states = []
             for instrument, envelope in envelopes.items():
-                row = rows.get((market, instrument))
-                require(row is not None and type(row["expected"]) is dict,
-                        "REVIEW_BINDING_STALE")
-                current = row["expected"].get(instrument)
+                if _chart_only:
+                    # A chart belongs to one exact candidate. Another card's
+                    # pointer can advance while this POST is queued, so the
+                    # retained whole-page snapshot is not mutation authority.
+                    current = self.current_state(market, instrument,
+                        _response=prepared)
+                else:
+                    row = rows.get((market, instrument))
+                    require(row is not None and type(row["expected"]) is dict,
+                            "REVIEW_BINDING_STALE")
+                    current = row["expected"].get(instrument)
                 require(type(current) is dict, "REVIEW_BINDING_STALE")
                 state = {key: value for key, value in current.items()
                          if key != "mutation_identity"}
@@ -1385,6 +1396,30 @@ class NativeReviewIntakeWorkflow:
             with self._validated_response() as (prepared, reads):
                 requirements, expected_publications = validate(prepared)
                 fence = PreparedReadFence(tuple(reads.items()))
+        elif _chart_only:
+            with self._page_reader():
+                # Reuse the immutable Native/MTF context, but read and fence
+                # only this candidate's mutable selection and request state.
+                require(page_state.identity == self._compact_page_identity(
+                    page_state.context, page_state.authority,
+                    page_state.projection, page_state.has_control,
+                    page_state.component_fence, page_state.current_fence,
+                ), "SWING_PAGE_PREPARATION_CORRUPT")
+                page_state.component_fence.check()
+                with capture_prepared_reads() as reads:
+                    prepared = _NativeIntakeResponse(self,
+                        context=page_state.context, authority=page_state.authority)
+                    try:
+                        self.recheck_response(prepared)
+                        requirements, expected_publications = validate(prepared)
+                        fence = PreparedReadFence(
+                            page_state.component_fence.entries + tuple(reads.items()))
+                        fence.check()
+                        self.recheck_response(prepared)
+                    finally:
+                        prepared.active = False
+                        prepared.context = prepared.authority = None
+                        prepared.values.clear()
         else:
             with self._page_reader():
                 with self._prepared_state_response(page_state) as prepared:
@@ -1415,7 +1450,8 @@ class NativeReviewIntakeWorkflow:
                                 lambda: self.store.native_chart_bytes(selected)))
         return selected["selection_sha256"], image
 
-    def stage(self, market, instrument, role, expected, *, image=None, content_type=None):
+    def stage(self, market, instrument, role, expected, *, image=None,
+              content_type=None, reject_exact_replay=False):
         require(set(expected) == {instrument} and role in self._roles(market), "REVIEW_PRECONDITION_INVALID")
         if image is not None:
             # Reject impossible payloads before reconstructing the large
@@ -1423,9 +1459,15 @@ class NativeReviewIntakeWorkflow:
             # the write boundary; no validation or authority is bypassed.
             self.store.validate_native_chart_payload(image, content_type)
         recheck, requirements = self._admit(
-            market, expected, _return_requirements=True,
+            market, expected, _return_requirements=True, _chart_only=True,
         )
         requirement = requirements[0]
+        if reject_exact_replay and image is not None:
+            current = self._selection(requirement, role)
+            if (current is not None and current["image"] == {
+                    "sha256": sha256(image).hexdigest(), "content_type": content_type}):
+                recheck()
+                raise ReviewEvidenceError("REVIEW_CHART_ALREADY_CURRENT")
         if market == "MCX":
             bindings = {logical_role: self._chart_binding(requirement, logical_role)
                         for logical_role in self._roles(market)}

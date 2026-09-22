@@ -409,6 +409,7 @@ class KronosBrowserServer(ThreadingHTTPServer):
         self._shutdown_lock = Lock()
         self._swing_projection_lock = Lock()
         self._answer_notice_lock = Lock()
+        self._native_chart_stage_lock = Lock()
         self._answer_notices = {}
         self._sponsor_restoration_lock = RLock()
         self._shutdown_started = False
@@ -4095,6 +4096,14 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             raise ValueError("NATIVE_CHART_SUBJECT_INVALID") from error
 
     def _native_intake_mutation(self, operation):
+        if operation == "STAGE":
+            # The chart write and successor-page publication form one Browser
+            # operation. A second candidate waits for the new page generation.
+            with self.server._native_chart_stage_lock:
+                return self._native_intake_mutation_inner(operation)
+        return self._native_intake_mutation_inner(operation)
+
+    def _native_intake_mutation_inner(self, operation):
         workflow = self.server.native_intake
         market, expected = None, None
         import_committed = False
@@ -4128,7 +4137,8 @@ class _BrowserHandler(BaseHTTPRequestHandler):
                     raise ValueError
                 selection = workflow.stage(market, query["instrument"][0], query["role"][0], expected,
                     image=self.rfile.read(length) if operation == "STAGE" else None,
-                    content_type=self.headers.get("Content-Type", "") if operation == "STAGE" else None)
+                    content_type=self.headers.get("Content-Type", "") if operation == "STAGE" else None,
+                    reject_exact_replay=operation == "STAGE" and market == "NSE")
             elif operation == "GENERATE":
                 publication = workflow.generate(market, expected)
                 workflow.export_question(market, publication)
@@ -4159,19 +4169,21 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             inline_payload_rejection = (
                 operation == "STAGE"
                 and "application/json" in self.headers.get("Accept", "")
-                and error.code == "REVIEW_ACCEPTANCE_INCOMPLETE"
             )
-            if (not inline_payload_rejection and workflow is not None
-                    and market in {"NSE", "MCX"} and type(expected) is dict):
-                for instrument in expected:
-                    workflow.errors[(market, instrument)] = error.code
-                try:
-                    workflow.prepare_page_state()
-                except (OSError, ValueError):
-                    if operation == "IMPORT":
-                        self._redirect_answer_rejection(None, market, expected, confirmed_no_import=False)
-                        return
-                    raise
+            if (workflow is not None and market in {"NSE", "MCX"}
+                    and type(expected) is dict):
+                if not inline_payload_rejection:
+                    for instrument in expected:
+                        workflow.errors[(market, instrument)] = error.code
+                if not (inline_payload_rejection and error.code in {
+                        "REVIEW_ACCEPTANCE_INCOMPLETE", "REVIEW_CHART_ALREADY_CURRENT"}):
+                    try:
+                        workflow.prepare_page_state()
+                    except (OSError, ValueError):
+                        if operation == "IMPORT":
+                            self._redirect_answer_rejection(None, market, expected, confirmed_no_import=False)
+                            return
+                        raise
             if operation == "STAGE" and "application/json" in self.headers.get("Accept", ""):
                 self._json({"outcome": "REJECTED", "reason": error.code}, status=HTTPStatus.CONFLICT)
             elif operation == "IMPORT":

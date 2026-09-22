@@ -1778,21 +1778,88 @@ const input={dataset:{target:'target'},files:[],addEventListener:(n,f)=>listener
 const document={getElementById:id=>id==='target'?target:feedback,
  querySelectorAll:s=>s==='.chart-paste-target'?[target]:s==='.replace-chart'?[]:
   s==='.chart-file'?[input]:s.includes('aria-busy')?[]:[]};
-const file={type:'image/png',size:test==='oversized'?26214401:100};let reloads=0,resolver;
+const file={type:'image/png',size:test==='oversized'?26214401:100};let reloads=0,resolver,timers=[];
 const fetch=async(url,options)=>{requests.push({url,options});await new Promise(r=>resolver=r);
  return {ok:test!=='failed',json:async()=>test==='failed'?{outcome:'REJECTED',reason:'REVIEW_BINDING_STALE'}:
  {outcome:'CHART_RECEIVED',selection_identity:'a'.repeat(64),chart_sha256:'b'.repeat(64)}}};
-const context={document,Set,Array,fetch,location:{reload:()=>reloads++},addEventListener:()=>{}};
+const context={document,Set,Array,Promise,fetch,location:{reload:()=>reloads++},
+ setTimeout:f=>{timers.push(f);return timers.length},clearTimeout:()=>{},addEventListener:()=>{}};
 vm.runInNewContext(SCRIPT,context);
 const event={preventDefault(){},clipboardData:{items:[{kind:'file',type:'image/png',getAsFile:()=>file}]}};
-listeners.paste(event);listeners.paste(event);
+listeners.paste(event);if(test!=='single')listeners.paste(event);
 setImmediate(()=>{
  if(test==='oversized'){assert.equal(requests.length,0);assert.equal(target.attrs['aria-busy'],undefined);return;}
  assert.equal(requests.length,1);assert.equal(requests[0].options.headers.Accept,'application/json');resolver();
- setImmediate(()=>{assert.equal(reloads,test==='failed'?0:1);
-  assert.equal(feedback.hidden,false);if(test==='failed')assert.equal(feedback.textContent,'REVIEW_BINDING_STALE');});
+ setImmediate(()=>{assert.equal(reloads,0);assert.equal(feedback.hidden,false);
+  if(test==='failed')assert.match(feedback.textContent,/REVIEW_BINDING_STALE.*Refresh Current Review/);
+  else if(test==='single'){
+   assert.equal(feedback.textContent,'CHART_RECEIVED');assert.equal(timers.length,1);timers[0]();assert.equal(reloads,1);
+  }else {assert.equal(feedback.textContent,'UPLOAD_ALREADY_PENDING · CHART_RECEIVED');assert.equal(timers.length,0);}});
 });
 """.replace("SCRIPT", json.dumps(script))
-    for case in ("success", "failed", "oversized"):
+    for case in ("single", "success", "failed", "oversized"):
+        result = subprocess.run([node, "-e", harness, case], capture_output=True, text=True)
+        assert result.returncode == 0, result.stderr
+
+
+def test_swing_chart_paste_serializes_eight_targets_and_reports_each_result():
+    import json
+    import shutil
+    import subprocess
+    from kronos.browser.views import _chart_upload_script
+
+    node = shutil.which("node")
+    assert node is not None, "Node.js is required for Browser paste-event qualification"
+    script = _chart_upload_script().removeprefix("<script>").removesuffix("</script>")
+    harness = r"""
+const assert=require('node:assert/strict'),vm=require('node:vm');
+const names=['ADANIENT','ADANIPORTS','AXISBANK','BAJFINANCE','COALINDIA','HCLTECH','INFY','RBLBANK'];
+const failed=process.argv[1]==='stale',count={textContent:'0'},requests=[],resolvers=[],timers=[];
+let reloads=0,focused=-1;
+const targets=names.map((name,i)=>{
+ const feedback={hidden:true,textContent:''},state={textContent:'CHART MISSING'},currentness={textContent:'BINDING CURRENT'};
+ const card={querySelector:s=>s==='[data-chart-state]'?state:s==='[data-review-currentness]'?currentness:null};
+ const market={querySelector:s=>s==='[data-chart-complete-count]'?count:null};
+ const target={id:'target-'+i,dataset:{uploadUrl:'/swing/v1/native-chart?instrument='+name+'&assessment='+i},attrs:{},listeners:{},
+  addEventListener(n,f){this.listeners[n]=f},focus(){focused=i},closest:s=>s==='.wo07-card'?card:market,
+  getAttribute:n=>target.attrs[n],setAttribute:(n,v)=>target.attrs[n]=v,
+  removeAttribute:n=>delete target.attrs[n]};
+ target.feedback=feedback;target.state=state;target.currentness=currentness;return target;
+});
+const byId=Object.fromEntries(targets.flatMap(t=>[[t.id,t],[t.id+'-feedback',t.feedback]]));
+const document={querySelectorAll:s=>s==='.chart-paste-target'?targets:[],getElementById:id=>byId[id]};
+const fetch=(url,options)=>{requests.push({url,options});return new Promise(resolve=>resolvers.push(()=>
+ resolve({ok:!(failed&&url.includes('AXISBANK')),json:async()=>failed&&url.includes('AXISBANK')
+  ?{outcome:'REJECTED',reason:'REVIEW_BINDING_STALE'}
+  :{outcome:'CHART_RECEIVED',selection_identity:'a'.repeat(64),chart_sha256:'b'.repeat(64)}})));};
+vm.runInNewContext(SCRIPT,{document,Set,Array,Promise,String,Number,fetch,
+ location:{reload:()=>reloads++},setTimeout:f=>{timers.push(f);return timers.length},
+ clearTimeout:()=>{},addEventListener:()=>{}});
+const file={type:'image/png',size:100};
+function paste(i){targets[i].listeners.paste({preventDefault(){},clipboardData:{items:[
+ {kind:'file',type:'image/png',getAsFile:()=>file}]}});}
+(async()=>{
+ targets[5].listeners.click();assert.equal(focused,5);
+ const order=[5,0,1,2,3,4,6,7];for(const i of order)paste(i);
+ paste(5);assert.equal(targets[5].feedback.textContent,'UPLOAD_ALREADY_PENDING');
+ await new Promise(setImmediate);assert.equal(requests.length,1);
+ for(let n=0;n<8;n++){
+  assert.equal(requests[n].url,targets[order[n]].dataset.uploadUrl);
+  assert.equal(requests[n].options.headers.Accept,'application/json');
+  resolvers[n]();await new Promise(setImmediate);
+  assert.equal(requests.length,Math.min(n+2,8));
+  const target=targets[order[n]];
+ if(failed&&order[n]===2){
+   assert.match(target.feedback.textContent,/REVIEW_BINDING_STALE.*Refresh Current Review/);
+   assert.equal(target.currentness.textContent,'BINDING STALE');
+  }else if(order[n]===5)assert.equal(target.feedback.textContent,'UPLOAD_ALREADY_PENDING · CHART_RECEIVED');
+  else assert.equal(target.feedback.textContent,'CHART_RECEIVED');
+  assert.equal(Number(count.textContent),n+1-(failed&&n>=3?1:0));
+ }
+ paste(5);assert.equal(targets[5].feedback.textContent,'REVIEW_CHART_ALREADY_CURRENT');
+ assert.equal(requests.length,8);assert.equal(timers.length,0);assert.equal(reloads,0);
+})().catch(error=>{console.error(error);process.exitCode=1});
+""".replace("SCRIPT", json.dumps(script))
+    for case in ("success", "stale"):
         result = subprocess.run([node, "-e", harness, case], capture_output=True, text=True)
         assert result.returncode == 0, result.stderr

@@ -4380,8 +4380,8 @@ def _receipt_native_review(projection, promotions_v2=()):
             population = [item for item in ordered if item["market"] == market]
             body += ('<section class="market-panel wo07-market"><div class="wo07-market-head"><h2>'
                 + escape(market) + ' REVIEW</h2><p>'
-                + str(len(population)) + ' candidates · Charts complete '
-                + str(sum(item["complete"] for item in population)) + ' · Question Pack ready '
+                + str(len(population)) + ' candidates · Charts complete <span data-chart-complete-count>'
+                + str(sum(item["complete"] for item in population)) + '</span> · Question Pack ready '
                 + str(sum(item.get("question_ready", False) for item in population)) + ' · Evidence accepted '
                 + str(sum(item["evidence"] == "ACCEPTED" for item in population))
                 + '</p></div><div class="wo07-card-grid">')
@@ -4399,14 +4399,15 @@ def _receipt_native_review(projection, promotions_v2=()):
             if row["evidence"] == "ACCEPTED" else '')
         governed_outcome = (" / ".join(row["supported_result"]) if row.get("supported_result") is not None
             else "EVIDENCE ACCEPTED" if row["evidence"] == "ACCEPTED" else "NOT ESTABLISHED")
-        body += ('<span class="wo07-phase-a">' + chart_state + '</span>'
+        body += ('<span class="wo07-phase-a" data-chart-state>' + chart_state + '</span>'
             '<div class="wo07-card-state"><span>Questions · <strong>' + question_state
             + '</strong></span><span>Answer · <strong>' + answer_state + '</strong></span></div>'
             '<p class="wo07-card-context">CURRENT ANALYSIS · ' + escape(analysis_boundary) + '</p>'
             '<div class="wo07-card-state"><span>Eligibility · <strong>'
             + ('REVIEW ELIGIBLE' if row.get("eligible", True) else 'REVIEW INELIGIBLE')
-            + '</strong></span><span>Currentness · <strong>'
-            + ('BINDING CURRENT' if row["expected"] is not None else 'BINDING UNAVAILABLE')
+            + '</strong></span><span>Currentness · <strong data-review-currentness>'
+            + ('BINDING STALE' if row["error"] == 'REVIEW_BINDING_STALE' else
+               'BINDING CURRENT' if row["expected"] is not None else 'BINDING UNAVAILABLE')
             + '</strong></span></div>' + accepted_markup
             + '<div class="wo07-card-state"><span>Governed outcome · <strong>'
             + escape(governed_outcome.replace("_", " ")) + '</strong></span><span>Downstream · <strong>'
@@ -6522,28 +6523,63 @@ const acceptedCharts=new Set(['image/png','image/jpeg','image/webp']);
 const maximumChartBytes=25*1024*1024;
 const reasons=new Set(['PROCESSING','NO_IMAGE_IN_CLIPBOARD','UNSUPPORTED_IMAGE_TYPE','IMAGE_TOO_LARGE',
  'REVIEW_BINDING_STALE','REVIEW_ACCEPTANCE_INCOMPLETE','REVIEW_REQUEST_MISMATCH',
- 'REVIEW_INTAKE_UNAVAILABLE','CHART_RECEIVED_PAGE_UNAVAILABLE']);
+ 'REVIEW_INTAKE_UNAVAILABLE','CHART_RECEIVED_PAGE_UNAVAILABLE','CHART_RECEIVED',
+ 'UPLOAD_ALREADY_PENDING','REVIEW_CHART_ALREADY_CURRENT']);
+let queue=Promise.resolve(),pending=0,accepted=0,hadFailure=false,reloadTimer=null;
 function report(target,reason){
   const feedback=document.getElementById(target.id+'-feedback');
-  if(feedback){feedback.hidden=false;feedback.textContent=reasons.has(reason)?reason:'REVIEW_INTAKE_UNAVAILABLE';}
+  const safe=reasons.has(reason)?reason:'REVIEW_INTAKE_UNAVAILABLE';
+  if(safe!=='PROCESSING'&&safe!=='CHART_RECEIVED')hadFailure=true;
+  if(feedback){
+    const prior=feedback.textContent;
+    feedback.hidden=false;
+    feedback.textContent=safe==='REVIEW_BINDING_STALE'
+      ?'REVIEW_BINDING_STALE · Refresh Current Review before retrying.'
+      :safe==='CHART_RECEIVED'&&prior==='UPLOAD_ALREADY_PENDING'
+      ?'UPLOAD_ALREADY_PENDING · CHART_RECEIVED':safe;
+  }
+  if(safe==='REVIEW_BINDING_STALE'&&typeof target.closest==='function'){
+    const card=target.closest('.wo07-card');
+    const currentness=card&&card.querySelector('[data-review-currentness]');
+    if(currentness)currentness.textContent='BINDING STALE';
+  }
+}
+function markAccepted(target){
+  target.dataset.chartAccepted='true';
+  if(typeof target.closest!=='function')return;
+  const card=target.closest('.wo07-card');
+  const state=card&&card.querySelector('[data-chart-state]');
+  if(state&&state.textContent==='CHART MISSING'){
+    state.textContent='CHART READY';
+    const market=target.closest('.wo07-market');
+    const count=market&&market.querySelector('[data-chart-complete-count]');
+    if(count)count.textContent=String(Number(count.textContent)+1);
+  }
 }
 async function receiveChart(target,file){
-  if(target.getAttribute('aria-busy')==='true')return;
+  if(target.getAttribute('aria-busy')==='true'){report(target,'UPLOAD_ALREADY_PENDING');return;}
+  if(target.dataset.chartAccepted==='true'){report(target,'REVIEW_CHART_ALREADY_CURRENT');return;}
   if(!file||!acceptedCharts.has(file.type)){report(target,'UNSUPPORTED_IMAGE_TYPE');return;}
   if(file.size>maximumChartBytes){report(target,'IMAGE_TOO_LARGE');return;}
   target.setAttribute('aria-busy','true');
   report(target,'PROCESSING');
-  let navigating=false;
-  try{
-    const response=await fetch(target.dataset.uploadUrl,{method:'POST',
-      headers:{'Content-Type':file.type,'Accept':'application/json'},body:file});
-    const result=await response.json();
-    if(!response.ok||result.outcome!=='CHART_RECEIVED'||!result.selection_identity||!result.chart_sha256){
-      report(target,result.reason);return;
+  pending++;
+  if(reloadTimer!==null){clearTimeout(reloadTimer);reloadTimer=null;}
+  queue=queue.then(async()=>{
+    try{
+      const response=await fetch(target.dataset.uploadUrl,{method:'POST',
+        headers:{'Content-Type':file.type,'Accept':'application/json'},body:file});
+      const result=await response.json();
+      if(!response.ok||result.outcome!=='CHART_RECEIVED'||!result.selection_identity||!result.chart_sha256){
+        report(target,result.reason);return;
+      }
+      accepted++;markAccepted(target);report(target,'CHART_RECEIVED');
+    }catch(_error){report(target,'REVIEW_INTAKE_UNAVAILABLE');}
+    finally{
+      target.removeAttribute('aria-busy');pending--;
+      if(pending===0&&accepted>0&&!hadFailure)reloadTimer=setTimeout(()=>location.reload(),900);
     }
-    navigating=true;location.reload();
-  }catch(_error){report(target,'REVIEW_INTAKE_UNAVAILABLE');}
-  finally{if(!navigating)target.removeAttribute('aria-busy');}
+  });
 }
 for(const target of document.querySelectorAll('.chart-paste-target')){
   target.addEventListener('click',()=>target.focus());
