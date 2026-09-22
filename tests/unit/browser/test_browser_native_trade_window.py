@@ -40,8 +40,61 @@ from tests.unit.swing.v1.test_kr370_step31_handoff import (
     _context,
     _evidence,
     _price,
+    _v2_completed,
 )
 from tests.unit.swing.v1.test_native_review import _evidence_run
+
+
+def test_v2_ready_cannot_expose_existing_step31_construct_control(tmp_path) -> None:
+    ready = _v2_completed(tmp_path, confirmation=False)
+    now = _v2_completed(tmp_path / "now")
+    for completed, permitted in ((ready, False), (now, True)):
+        workflow = SwingTradeWindowWorkflow(
+            LocalKr370Step31HandoffStore(tmp_path / ("now-handoffs" if permitted else "ready-handoffs")),
+            LocalTradePlanStore(tmp_path / ("now-plans" if permitted else "ready-plans")),
+        )
+        workflow.restore((completed,))
+        projection = workflow.project(
+            completed.requirement.native_run_identity,
+            completed.requirement.canonical_instrument)
+        html = render_native_trade_window(_ready(), projection)
+        assert ('action="/swing/trade-window/construct"' in html) is permitted
+
+
+def test_v2_sponsor_choice_restores_with_exact_promotion_lineage(tmp_path) -> None:
+    completed = _v2_completed(tmp_path)
+    handoffs = LocalKr370Step31HandoffStore(tmp_path / "handoffs")
+    plans = LocalTradePlanStore(tmp_path / "plans")
+    decisions = LocalSponsorObservationDecisionStore(tmp_path / "decisions")
+    workflow = SwingTradeWindowWorkflow(
+        handoffs, plans, sponsor_observation_store=decisions)
+    projection = workflow.construct(
+        completed, _evidence(completed),
+        _context(completed.requirement.canonical_instrument),
+        current_run_identity=completed.requirement.native_run_identity,
+        current_analysis_boundary=completed.readiness.analysis_boundary,
+        created_at=NOW,
+    )
+    observation = projection.step31_observation
+    assert observation is not None
+    decision = workflow.record_sponsor_observation_choice(
+        projection.native_run_identity, projection.canonical_instrument,
+        projection.native_assessment_sha256, observation.observation_evidence_id,
+        SponsorTradeChoice.PAPER,
+        SponsorActivationDisposition.BLOCKED_RISK_UNAVAILABLE,
+        current_run_identity=projection.native_run_identity,
+        decided_at=NOW, warning_acknowledged=False,
+        risk_state="RISK_UNAVAILABLE",
+    )
+    assert decision.snapshot.kr370_identity == completed.promotion_v2.identity
+    assert decision.decision.kr370_record_identity == completed.promotion_v2.identity
+    cold = SwingTradeWindowWorkflow(
+        handoffs, plans, sponsor_observation_store=decisions)
+    cold.restore((completed,))
+    restored = cold.project(projection.native_run_identity,
+                            projection.canonical_instrument)
+    assert restored.sponsor_observation_decision_id == decision.decision.decision_identity
+    assert restored.activation_disposition == "BLOCKED_RISK_UNAVAILABLE"
 
 
 def test_now_card_exposes_trade_window_and_window_uses_persisted_geometry(tmp_path) -> None:

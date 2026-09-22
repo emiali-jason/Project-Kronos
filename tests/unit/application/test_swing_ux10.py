@@ -25,6 +25,10 @@ from kronos.swing.v1.analytical_promotion import (
     Kr370AnalyticalPromotionRecord,
     kr370_promotion_integrity_sha256,
 )
+from kronos.swing.v1.analytical_promotion_v2 import create_record
+from tests.unit.swing.v1.test_analytical_promotion_v2 import (
+    source as v2_source, criteria as v2_criteria, nse as v2_nse,
+)
 from kronos.swing.v1.native_active_trade_lifecycle import ActiveTradeLifecycleEngine
 from kronos.swing.v1.native_sponsor_decision import SponsorTradeChoice
 from tests.unit.browser.test_browser_notifications import _triggered
@@ -35,6 +39,31 @@ from tests.unit.swing.v1.test_native_active_trade_lifecycle import _observation,
 NOW = datetime(2026, 8, 21, 8, 0, tzinfo=UTC)
 RUN_1 = "SWING-RUN-11111111111111111111111111111111"
 RUN_2 = "SWING-RUN-22222222222222222222222222222222"
+
+
+def test_v2_exact_ready_to_now_notification_preserves_promotion_identity(tmp_path) -> None:
+    def confirmation_for(run):
+        confirmation = v2_nse()
+        confirmation["nse_binding"]["payload"]["run_identity"] = run
+        return confirmation
+
+    first_source = v2_source()
+    first_source["native_run_identity"] = RUN_1
+    ready = create_record(
+        source=first_source, criteria=v2_criteria(4),
+        confirmation=confirmation_for(RUN_1), created_at=NOW)
+    second_source = v2_source()
+    second_source["native_run_identity"] = RUN_2
+    now = create_record(
+        source=second_source, criteria=v2_criteria(),
+        confirmation=confirmation_for(RUN_2), created_at=NOW)
+    service = ux10(tmp_path)
+    assert service.observe_promotions((ready,)) == ()
+    created = service.observe_promotions((now,))
+    assert len(created) == 1
+    assert created[0].notification_type is Ux10NotificationType.ANALYTICAL_NOW_CONFIRMED
+    assert created[0].source_event_identity == now.value["integrity_sha256"]
+    assert service.observe_promotions((now,)) == ()
 
 
 class Telegram:

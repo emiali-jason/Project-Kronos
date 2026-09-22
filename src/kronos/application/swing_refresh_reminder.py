@@ -26,6 +26,7 @@ from kronos.swing.v1.analytical_promotion import (
     Kr370AnalyticalPromotionRecord,
     Kr370CriterionIdentity,
 )
+from kronos.swing.v1.analytical_promotion_v2 import V2PromotionRecord
 from kronos.swing.v1.mtf_facts import FactualTimeframe
 
 
@@ -214,31 +215,30 @@ class SwingK5RefreshReminderWorkflow:
     def synchronize(
         self,
         current_run_identity: str | None,
-        promotions: tuple[Kr370AnalyticalPromotionRecord, ...],
+        promotions: tuple[Kr370AnalyticalPromotionRecord | V2PromotionRecord, ...],
         exchange_by_instrument: dict[str, str],
     ) -> K5RefreshReminderSnapshot:
         if current_run_identity is not None and not is_swing_analysis_run_id(current_run_identity):
             raise ValueError("K5_REFRESH_REMINDER_RUN_INVALID")
         if type(promotions) is not tuple or any(
-            type(item) is not Kr370AnalyticalPromotionRecord for item in promotions
+            type(item) not in {Kr370AnalyticalPromotionRecord, V2PromotionRecord}
+            for item in promotions
         ):
             raise TypeError("K5_REFRESH_REMINDER_PROMOTIONS_INVALID")
         now = self._clock()
         eligible = tuple(
-            item for item in promotions
-            if item.run_identity == current_run_identity
-            and item.classification in {
-                Kr370AnalyticalClassification.BUY_READY,
-                Kr370AnalyticalClassification.SELL_READY,
-            }
-            and item.sole_missing_criterion is Kr370CriterionIdentity.K5_NON_EXTENSION
+            fields for item in promotions
+            if (fields := _promotion_reminder_fields(item)) is not None
+            and fields[0] == current_run_identity
+            and fields[3] in {"BUY_READY", "SELL_READY"}
+            and fields[4] == Kr370CriterionIdentity.K5_NON_EXTENSION.value
         )
-        grouped: dict[datetime, list[tuple[Kr370AnalyticalPromotionRecord, str]]] = {}
+        grouped: dict[datetime, list[tuple[tuple, str]]] = {}
         for item in eligible:
-            exchange = exchange_by_instrument.get(item.canonical_instrument)
+            exchange = exchange_by_instrument.get(item[1])
             if exchange not in {"NSE", "MCX"}:
                 raise ValueError("K5_REFRESH_REMINDER_EXCHANGE_UNAVAILABLE")
-            source = dict(item.observation_boundaries)[FactualTimeframe.ONE_HOUR.value]
+            source = item[5]
             due = next_completed_one_hour_boundary(
                 self._calendar, exchange, source, observed_at=now
             )
@@ -248,17 +248,16 @@ class SwingK5RefreshReminderWorkflow:
         for due, values in grouped.items():
             bindings = tuple(sorted(
                 (
-                    item.canonical_instrument,
-                    item.native_assessment_sha256,
-                    item.classification.value,
+                    item[1],
+                    item[2],
+                    item[3],
                     exchange,
                 )
                 for item, exchange in values
             ))
             sources = tuple(
-                (item.canonical_instrument,
-                 dict(item.observation_boundaries)[FactualTimeframe.ONE_HOUR.value])
-                for item, _ in sorted(values, key=lambda value: value[0].canonical_instrument)
+                (item[1], item[5])
+                for item, _ in sorted(values, key=lambda value: value[0][1])
             )
             calendars = tuple(sorted({
                 (
@@ -403,6 +402,28 @@ def next_completed_one_hour_boundary(
                     return boundary
                 cursor = boundary
     raise ValueError("K5_REFRESH_NEXT_COMPLETED_1H_BOUNDARY_UNAVAILABLE")
+
+
+def _promotion_reminder_fields(
+    record: Kr370AnalyticalPromotionRecord | V2PromotionRecord,
+) -> tuple[str, str, str, str, str | None, datetime] | None:
+    """Select the existing K5-only reminder condition from either exact version."""
+    if type(record) is V2PromotionRecord:
+        value = record.value
+        source = value["source"]
+        boundary = next(item["boundary"] for item in source["observation_boundaries"]
+                        if item["timeframe"] == "1H")
+        return (source["native_run_identity"], source["canonical_instrument"],
+                source["native_assessment_sha256"],
+                value["promotion_state"] or value["evaluation_disposition"],
+                value["sole_missing_criterion"], datetime.fromisoformat(boundary))
+    if type(record) is Kr370AnalyticalPromotionRecord:
+        return (record.run_identity, record.canonical_instrument,
+                record.native_assessment_sha256, record.classification.value,
+                None if record.sole_missing_criterion is None else
+                record.sole_missing_criterion.value,
+                dict(record.observation_boundaries)[FactualTimeframe.ONE_HOUR.value])
+    raise TypeError("K5_REFRESH_REMINDER_PROMOTIONS_INVALID")
 
 
 def _reminder_identity(

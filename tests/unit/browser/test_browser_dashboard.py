@@ -41,6 +41,7 @@ from kronos.application.swing_v1_review import SwingV1ReviewWorkflow
 from tests.unit.application.test_swing_opportunities import _Provider, _ready
 from tests.unit.browser.test_browser_server import _request
 from tests.unit.swing.v1.test_kr370_step31_handoff import _completed
+from tests.unit.swing.v1.test_kr370_step31_handoff import _v2_completed
 from tests.unit.swing.v1.test_native_review import _evidence_run
 
 
@@ -341,3 +342,65 @@ def test_dashboard_route_restores_current_sources_and_is_read_only(
     assert project_swing_notification_workspace(
         SwingProgressionWatchSnapshot(run.run_identity, (), ())
     ).records == ()
+
+
+def test_dashboard_route_selects_exact_current_v2_without_v1_fallback(tmp_path: Path) -> None:
+    completed = _v2_completed(tmp_path)
+    assert completed.promotion_v2 is not None
+    facts, run, _ = _evidence_run()
+    application = SwingOpportunitiesApplication(
+        _Provider,
+        initial_snapshot=replace(_ready(), swing_analysis_run_identity=run.run_identity),
+    )
+    application.restore_mtf_fact_snapshot(facts)
+    application.restore_native_discovery_run(run)
+    cycle = SwingVisualV3ReviewCycle(
+        LocalVisualEvidenceV3Store(tmp_path / "visual-v3"),
+        NativeLayer2ReadinessV3Store(tmp_path / "readiness-v3"),
+    )
+    cycle.restore_completed(completed)
+    server = create_browser_server(application, port=0,
+        v1_review=SwingV1ReviewWorkflow(LocalTradingViewEvidenceStore(tmp_path / "legacy")),
+        native_review=NativeReviewWorkflow(NativeReviewEvidenceStore(tmp_path / "native")),
+        progression_watches=SwingProgressionWatchWorkflow(ProgressionWatchStore(tmp_path / "watches")),
+        visual_v3=cycle)
+
+    class Owner:
+        def __init__(self):
+            self.result = completed.promotion_v2
+            self.calls = 0
+
+        def v2_for(self, run_identity, instrument):
+            self.calls += 1
+            return self.result if instrument == completed.requirement.canonical_instrument else None
+
+    owner = Owner()
+    server.native_intake = owner
+    before = tuple(sorted((str(path.relative_to(tmp_path)), sha256(path.read_bytes()).hexdigest())
+                          for path in tmp_path.rglob("*") if path.is_file()))
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        status, _, html = _request(server, "GET", "/dashboard")
+        assert status == 200
+        assert "BUY NOW" in html and "V2 · ESTABLISHED" in html
+        assert completed.requirement.canonical_instrument in html
+        assert owner.calls >= 2  # selection and the pre-response currentness recheck
+        owner.result = None
+        status, _, unavailable = _request(server, "GET", "/dashboard")
+        assert status == 409
+        assert "Swing page unavailable" in unavailable
+        assert "BUY NOW" not in unavailable
+        owner.result = completed.promotion_v2
+        owner.v2_for = lambda _run, _instrument: (_ for _ in ()).throw(
+            ValueError("V2_PROMOTION_CURRENT_BINDING_INVALID"))
+        status, _, stale = _request(server, "GET", "/dashboard")
+        assert status == 409
+        assert "BUY NOW" not in stale
+    finally:
+        server.shutdown()
+        thread.join(timeout=2)
+        server.server_close()
+    after = tuple(sorted((str(path.relative_to(tmp_path)), sha256(path.read_bytes()).hexdigest())
+                         for path in tmp_path.rglob("*") if path.is_file()))
+    assert after == before

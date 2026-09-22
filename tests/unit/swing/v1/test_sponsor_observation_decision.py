@@ -5,6 +5,8 @@ import pytest
 
 from kronos.swing.v1.native_sponsor_decision import SponsorTradeChoice
 from kronos.swing.v1.native_trade_construction import construct_trade_plan
+from kronos.swing.v1.kr370_step31_handoff import create_kr370_step31_handoff_v2
+from kronos.swing.v1.models import V1Direction
 from kronos.swing.v1.sponsor_observation_decision import (
     LocalSponsorObservationDecisionStore,
     SPONSOR_DECISION_SNAPSHOT_CONTRACT_ID,
@@ -27,6 +29,7 @@ from tests.unit.swing.v1.test_kr370_step31_handoff import (
     _evidence,
     _handoff,
     _price,
+    _v2_completed,
 )
 from tests.unit.swing.v1.test_step31_observation import _observe, _package
 
@@ -48,6 +51,65 @@ def _green(tmp_path):  # type: ignore[no-untyped-def]
         conventional_plan=plan,
     )
     return completed, observation
+
+
+def test_v2_sponsor_decision_binds_exact_promotion_and_restores_separately(tmp_path) -> None:
+    completed = _v2_completed(tmp_path)
+    promotion = completed.promotion_v2
+    eligibility = create_kr370_step31_handoff_v2(
+        completed.requirement, completed.readiness, promotion,
+        current_run_identity=completed.requirement.native_run_identity,
+        current_analysis_boundary=completed.readiness.analysis_boundary,
+        created_at=NOW,
+    )
+    evidence = _evidence(completed)
+    context = _context(completed.requirement.canonical_instrument)
+    plan = construct_trade_plan(completed.requirement, eligibility, evidence, context,
+                                created_at=NOW)
+    observation = construct_step31_observation(
+        completed.requirement, eligibility, evidence, context,
+        created_at=NOW, conventional_plan=plan)
+    sponsor_handoff = create_sponsor_observation_handoff(
+        observation, risk_state="RISK_UNAVAILABLE", risk_evidence_identity=None)
+    result = record_sponsor_observation_decision(
+        promotion, observation, sponsor_handoff, SponsorTradeChoice.PAPER,
+        SponsorActivationDisposition.BLOCKED_RISK_UNAVAILABLE,
+        current_run_identity=completed.requirement.native_run_identity,
+        decided_at=NOW, warning_acknowledged=False,
+        eligibility_handoff=eligibility)
+    assert result.snapshot.kr370_identity == promotion.identity
+    assert result.decision.kr370_record_identity == promotion.identity
+    assert result.decision.eligibility_handoff_identity == eligibility.handoff_identity
+    store = LocalSponsorObservationDecisionStore(tmp_path / "sponsor")
+    assert store.retain(result) == result
+    assert store.load_all() == (result,)
+    assert store._path(completed.requirement.native_run_identity,
+                       completed.requirement.canonical_instrument, version="2").name == "decision-v2.json"
+    v1_completed, v1_observation = _green(tmp_path)
+    historical_v1 = _record(
+        v1_completed, v1_observation, SponsorTradeChoice.PAPER,
+        SponsorActivationDisposition.BLOCKED_RISK_UNAVAILABLE)
+    store.retain(historical_v1)
+    key = (completed.requirement.native_run_identity,
+           completed.requirement.canonical_instrument)
+    assert store.for_current_observations(
+        (observation,), promotion_versions={key: 2}) == (result,)
+    assert historical_v1 in store.load_all()
+    other = _v2_completed(tmp_path, direction=V1Direction.SHORT)
+    foreign = create_kr370_step31_handoff_v2(
+        other.requirement, other.readiness, other.promotion_v2,
+        current_run_identity=other.requirement.native_run_identity,
+        current_analysis_boundary=other.readiness.analysis_boundary,
+        created_at=NOW,
+    )
+    with pytest.raises(ValueError, match="V2_TRUST_BINDING_INVALID"):
+        record_sponsor_observation_decision(
+            promotion, observation, sponsor_handoff, SponsorTradeChoice.PAPER,
+            SponsorActivationDisposition.BLOCKED_RISK_UNAVAILABLE,
+            current_run_identity=completed.requirement.native_run_identity,
+            decided_at=NOW, warning_acknowledged=False,
+            eligibility_handoff=foreign,
+        )
 
 
 def _red(tmp_path):  # type: ignore[no-untyped-def]

@@ -24,9 +24,9 @@ from kronos.integrations.telegram import (
 )
 from kronos.provider.contracts.monitoring import MonitoringConnectionState
 from kronos.swing.v1.analytical_promotion import (
-    Kr370AnalyticalClassification,
     Kr370AnalyticalPromotionRecord,
 )
+from kronos.swing.v1.analytical_promotion_v2 import V2PromotionRecord
 from kronos.swing.v1.native_active_trade_lifecycle import (
     ActiveLifecyclePosition,
     LifecycleEventType,
@@ -299,32 +299,45 @@ class SwingUx10NotificationService:
         )
 
     def observe_promotions(
-        self, records: tuple[Kr370AnalyticalPromotionRecord, ...]
+        self, records: tuple[Kr370AnalyticalPromotionRecord | V2PromotionRecord, ...]
     ) -> tuple[Ux10NotificationRecord, ...]:
         created = []
         for record in records:
-            key = (record.canonical_instrument, record.direction.value)
+            if type(record) is V2PromotionRecord:
+                value = record.value
+                source = value["source"]
+                instrument = source["canonical_instrument"]
+                direction = source["direction"]
+                run_identity = source["native_run_identity"]
+                classification = value["promotion_state"] or value["evaluation_disposition"]
+                source_identity = value["integrity_sha256"]
+            elif type(record) is Kr370AnalyticalPromotionRecord:
+                instrument = record.canonical_instrument
+                direction = record.direction.value
+                run_identity = record.run_identity
+                classification = record.classification.value
+                source_identity = record.integrity_sha256
+            else:
+                raise TypeError("UX10_PROMOTION_VERSION_UNSUPPORTED")
+            key = (instrument, direction)
             previous = self._promotion_state.get(key)
-            current = (record.run_identity, record.classification.value)
-            if previous is not None and previous[0] != record.run_identity:
+            current = (run_identity, classification)
+            if previous is not None and previous[0] != run_identity:
                 if (
                     previous[1] in {"BUY_READY", "SELL_READY"}
-                    and record.classification in {
-                        Kr370AnalyticalClassification.BUY_NOW,
-                        Kr370AnalyticalClassification.SELL_NOW,
-                    }
+                    and classification in {"BUY_NOW", "SELL_NOW"}
                 ):
                     value = self._create(
                         family=Ux10NotificationFamily.PROMOTION_WATCH,
                         notification_type=Ux10NotificationType.ANALYTICAL_NOW_CONFIRMED,
                         priority=Ux10Priority.HIGH,
-                        instrument=record.canonical_instrument,
-                        direction=record.direction.value,
-                        run_identity=record.run_identity,
-                        source_event_identity=record.integrity_sha256,
+                        instrument=instrument,
+                        direction=direction,
+                        run_identity=run_identity,
+                        source_event_identity=source_identity,
                         summary=(
-                            f"{record.canonical_instrument} is now "
-                            f"{record.classification.value.replace('_', ' ')} under KR-370."
+                            f"{instrument} is now "
+                            f"{classification.replace('_', ' ')} under KR-370."
                         ),
                         action="REVIEW CURRENT ANALYSIS — NO ENTRY OR EXECUTION AUTHORITY",
                     )

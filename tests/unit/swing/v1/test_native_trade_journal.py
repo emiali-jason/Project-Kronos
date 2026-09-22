@@ -19,6 +19,9 @@ from kronos.swing.v1.native_sponsor_decision import (
     record_trade_plan_risk_result,
 )
 from kronos.swing.v1.native_trade_construction import construct_trade_plan
+from kronos.application.swing_trade_window import SwingTradeWindowWorkflow
+from kronos.swing.v1.kr370_step31_handoff import LocalKr370Step31HandoffStore
+from kronos.swing.v1.native_trade_construction import LocalTradePlanStore
 from kronos.swing.v1.native_trade_journal import (
     FactualOutcome,
     JournalRecordType,
@@ -38,6 +41,47 @@ from tests.unit.swing.v1.test_native_trade_construction import (
     _package,
     _ready,
 )
+from tests.unit.swing.v1.test_kr370_step31_handoff import (
+    NOW as V2_NOW, _v2_completed, _evidence as _v2_evidence,
+    _context as _v2_context,
+)
+
+
+def test_v2_v3_readiness_restores_ignored_journal_without_changing_accounting(tmp_path) -> None:
+    completed = _v2_completed(tmp_path)
+    context = _v2_context(completed.requirement.canonical_instrument)
+    projection = SwingTradeWindowWorkflow(
+        LocalKr370Step31HandoffStore(tmp_path / "v2-handoffs"),
+        LocalTradePlanStore(tmp_path / "v2-plans"),
+    ).construct(
+        completed, _v2_evidence(completed), context,
+        current_run_identity=completed.requirement.native_run_identity,
+        current_analysis_boundary=completed.readiness.analysis_boundary,
+        created_at=V2_NOW,
+    )
+    plan = projection.trade_plan
+    assert plan is not None
+    judgment = create_trade_plan_business_judgment(
+        plan, validation_identity=plan.readiness_record_identity, created_at=V2_NOW)
+    risk = record_trade_plan_risk_result(
+        plan, judgment, RiskState.APPROVED, reason="APPROVED", evaluated_at=V2_NOW)
+    decision = initiate_sponsor_decision(
+        plan, judgment, risk, context, SponsorTradeChoice.IGNORE,
+        current_trade_plan_id=plan.trade_plan_id, decided_at=V2_NOW)
+    lifecycle = ActiveTradeLifecycleService(
+        LocalActiveTradeLifecycleStore((tmp_path / "v2-lifecycle").resolve()))
+    service = TradeJournalService(LocalTradeJournalStore((tmp_path / "v2-journal").resolve()))
+    snapshot = service.reconcile(
+        (plan,), (), (decision,), lifecycle.snapshot(),
+        v3_readiness=(completed.readiness,))
+    assert len(snapshot.records) == 1
+    assert snapshot.records[0].readiness_record_identity == plan.readiness_record_identity
+    assert snapshot.records[0].record_type is JournalRecordType.IGNORED_OPPORTUNITY
+    assert snapshot.records[0].accounting_basis == "NO_POSITION_NO_PNL"
+    assert TradeJournalService(LocalTradeJournalStore(
+        (tmp_path / "v2-journal").resolve())).snapshot().records == snapshot.records
+    with pytest.raises(ValueError, match="READINESS_BINDING_INVALID"):
+        service.reconcile((plan,), (), (decision,), lifecycle.snapshot(), v3_readiness=())
 
 
 def _observation(position, number, price, *, continuous=True):  # type: ignore[no-untyped-def]

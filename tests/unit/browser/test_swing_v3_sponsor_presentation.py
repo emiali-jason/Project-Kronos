@@ -19,10 +19,24 @@ from kronos.application.swing_visual_v3 import (
 )
 from kronos.browser.server import create_browser_server
 from kronos.browser.swing_v3_presentation import (
+    Kr370V2SponsorPromotionPresentation,
     Kr370SponsorPromotionPresentation,
+    present_v2_promotion,
     present_visual_v3_review,
 )
-from kronos.browser.views import render_native_analysis_details, render_opportunities
+from kronos.browser.views import (
+    _v2_promotion_detail,
+    _v2_state_class,
+    _v2_state_label,
+    render_native_analysis_details,
+    render_opportunities,
+)
+from kronos.swing.v1.analytical_promotion_v2 import create_record
+from tests.unit.swing.v1.test_analytical_promotion_v2 import (
+    source as v2_source, criteria as v2_criteria, nse as v2_nse,
+    index as v2_index, mcx as v2_mcx,
+)
+from tests.unit.swing.v1.test_kr370_step31_handoff import _v2_completed
 from kronos.swing.v1.mtf_facts import FactualTimeframe
 from kronos.swing.v1.native_readiness import (
     ConditionEvidence,
@@ -224,6 +238,104 @@ def _opportunity_with_promotion(
         kr370=promotion,
     )
     return render_opportunities(_ready(), run, visual_v3=(presentation,))
+
+
+@pytest.mark.parametrize("state", (
+    "NO_FOCUS", "NEAR_READY", "BUY_READY", "SELL_READY", "BUY_NOW", "SELL_NOW",
+))
+def test_v2_state_labels_are_distinct_from_disposition(state: str) -> None:
+    record = create_record(source=v2_source(), criteria=v2_criteria(),
+                           confirmation=v2_nse(), created_at=NOW)
+    view = replace(present_v2_promotion(record), classification=state)
+    assert _v2_state_label(view) == state.replace("_", " ")
+    assert _v2_state_class(view) in {
+        "kr370-state-now", "kr370-state-ready", "kr370-state-potential",
+        "kr370-state-no-setup",
+    }
+    assert f'data-v2-state="{state}"' in _v2_promotion_detail(view)
+
+
+def test_v2_nse_confirmation_and_dispositions_show_facts_without_hashes() -> None:
+    for states, expected in (
+        (("OUTPERFORMING", "OUTPERFORMING"), "ESTABLISHED"),
+        (("EQUAL", "OUTPERFORMING"), "PENDING"),
+        (("UNDERPERFORMING", "OUTPERFORMING"), "PENDING"),
+        (("UNAVAILABLE", "OUTPERFORMING"), "UNAVAILABLE"),
+    ):
+        record = create_record(source=v2_source(), criteria=v2_criteria(),
+                               confirmation=v2_nse(states=states), created_at=NOW)
+        view = present_v2_promotion(record)
+        html = _v2_promotion_detail(view)
+        assert view.confirmation == expected
+        assert "NIFTY CONFIRMATION" in html
+        assert "1D ·" in html and "4H ·" in html
+        assert "K1" in html and "K5" in html and "5/5" in html
+        assert record.value["integrity_sha256"] not in html
+        if expected != "ESTABLISHED":
+            assert "CONFIRMATION PENDING" in html
+
+    unavailable = create_record(source=v2_source(), criteria=v2_criteria(unavailable=1),
+                                confirmation=v2_nse(), created_at=NOW)
+    hard = create_record(source=v2_source(), criteria=v2_criteria(3),
+                         confirmation=v2_nse(), created_at=NOW)
+    for record, disposition in ((unavailable, "NOT_EVALUABLE"), (hard, "HARD_GATED")):
+        view = present_v2_promotion(record)
+        html = _v2_promotion_detail(view)
+        assert view.classification is None
+        assert view.disposition == disposition
+        assert disposition.replace("_", " ") in html
+        assert "NOT EVALUATED" in html and "Evaluation reasons" in html
+        assert "BUY NOW" not in html and "BUY READY" not in html
+
+
+def test_v2_index_and_mcx_reference_are_separate_from_nifty() -> None:
+    index_record = create_record(source=v2_source(asset_class="NSE_INDEX", instrument="NIFTY"),
+                                 criteria=v2_criteria(), confirmation=v2_index(), created_at=NOW)
+    index_html = _v2_promotion_detail(present_v2_promotion(index_record))
+    assert "NIFTY CONFIRMATION — NOT REQUIRED BY ASSET CLASS" in index_html
+    assert "SUPPORTIVE" not in index_html
+
+    mcx_record = create_record(source=v2_source(market="MCX"), criteria=v2_criteria(),
+                               confirmation=v2_mcx(limits=("DIFFERENT_SESSIONS",)),
+                               created_at=NOW)
+    mcx_html = _v2_promotion_detail(present_v2_promotion(mcx_record))
+    for label in ("REGISTERED GLOBAL REFERENCE", "COMEX Gold", "M1 mapping / coverage",
+                  "M2 structural agreement", "M3 divergence", "DIFFERENT SESSIONS",
+                  "CONFIRMATION ESTABLISHED", "DOWNSTREAM — MCX STEP-31 NOT COMMISSIONED"):
+        assert label in mcx_html
+    assert "NIFTY CONFIRMATION" not in mcx_html
+    assert mcx_record.value["integrity_sha256"] not in mcx_html
+
+
+def test_v2_completed_visual_presentation_does_not_relabel_v1(tmp_path: Path) -> None:
+    completed = _v2_completed(tmp_path)
+    presented = present_visual_v3_review(completed)
+    assert presented.kr370 is None and presented.kr370_v2 is not None
+    assert presented.sponsor_status == "BUY NOW"
+    assert "KR-370 V2" in _v2_promotion_detail(presented.kr370_v2)
+    historical = present_visual_v3_review(replace(completed, promotion_v2=None))
+    assert historical.kr370 is not None and historical.kr370_v2 is None
+
+
+def test_current_v2_opportunity_and_detail_are_sponsor_safe(tmp_path: Path) -> None:
+    completed = _v2_completed(tmp_path)
+    assert completed.promotion_v2 is not None
+    _, run, probable = _evidence_run()
+    presented = present_visual_v3_review(completed)
+    opportunities = render_opportunities(
+        _ready(), run, visual_v3=(presented,), promotions_v2=(completed.promotion_v2,))
+    details = NativeAnalysisDetailsProjection(
+        probable, completed.requirement, (), None, None, (), None)
+    detailed = render_native_analysis_details(
+        _ready(), details, visual_v3=presented, promotion_v2=completed.promotion_v2)
+    for html in (opportunities, detailed):
+        assert "KR-370 V2" in html and "BUY NOW" in html
+        assert "NIFTY CONFIRMATION" in html and "1D ·" in html and "4H ·" in html
+        assert "K1" in html and "K5" in html
+        assert completed.promotion_v2.value["integrity_sha256"] not in html
+    assert "G. TECHNICAL EVIDENCE" not in detailed
+    assert "SUPPORTING CONTEXT ONLY · NON-VETO" not in detailed
+    assert "@media(max-width:760px){.v2-promotion-grid,.v2-criterion-list" in detailed
 
 
 @pytest.mark.parametrize("timeframe", ("1W", "1D", "4H", "1H"))

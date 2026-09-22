@@ -22,6 +22,7 @@ from kronos.swing.v1.analytical_promotion import (
     Kr370AnalyticalPromotionRecord,
     Kr370CriterionState,
 )
+from kronos.swing.v1.analytical_promotion_v2 import V2PromotionRecord
 from kronos.swing.v1.mtf_facts import FactualTimeframe
 from kronos.swing.v1.native_readiness import (
     LevelAvailability,
@@ -480,6 +481,53 @@ def derive_kr370_progression_requirements(
     return tuple(result)
 
 
+def derive_kr370_v2_progression_requirements(
+    record: V2PromotionRecord,
+) -> tuple[ProgressionRequirement, ...]:
+    """Project sealed V2 criteria without re-evaluating or converting V1."""
+
+    if type(record) is not V2PromotionRecord:
+        raise TypeError("KR370_V2_PROGRESSION_REQUIREMENTS_INVALID")
+    value = record.value
+    source = value["source"]
+    boundary = next(item["boundary"] for item in source["observation_boundaries"]
+                    if item["timeframe"] == "1H")
+    common = dict(
+        canonical_instrument=source["canonical_instrument"],
+        direction=V1Direction(source["direction"]),
+        native_run_identity=source["native_run_identity"],
+        native_assessment_sha256=source["native_assessment_sha256"],
+        source_analytical_state=(value["promotion_state"] or value["evaluation_disposition"]),
+        observation_boundary=datetime.fromisoformat(boundary),
+        provenance=(value["contract_identity"], value["policy_identity"],
+                    value["integrity_sha256"]),
+    )
+    result = []
+    for criterion in value["criteria"]:
+        condition = value["promotion_condition"]
+        if condition is not None and condition["criterion_identity"] != criterion["identity"]:
+            condition = None
+        state = (ProgressionRequirementState.SATISFIED
+                 if criterion["state"] == "SATISFIED" else
+                 ProgressionRequirementState.EVIDENCE_REQUIRED
+                 if criterion["state"] == "UNAVAILABLE" else
+                 ProgressionRequirementState.WATCH_AVAILABLE
+                 if condition is not None else ProgressionRequirementState.NOT_WATCHABLE)
+        result.append(_requirement(
+            **common,
+            condition_identity=criterion["identity"],
+            summary=(condition["summary"] if condition is not None else
+                     criterion["reason_code"].replace("_", " ").title()),
+            state=state,
+            timeframe=None if condition is None else FactualTimeframe(condition["timeframe"]),
+            comparator=None if condition is None else ProgressionComparator(condition["comparator"]),
+            price=None if condition is None else condition["price"],
+            source_evidence_ids=tuple(criterion["evidence_sha256"] or
+                                      (value["integrity_sha256"],)),
+        ))
+    return tuple(result)
+
+
 def activate_watch(requirement: ProgressionRequirement, *, activated_at: datetime) -> ProgressionWatch:
     if requirement.state is not ProgressionRequirementState.WATCH_AVAILABLE or not _aware(activated_at):
         raise ValueError("PROGRESSION_WATCH_ACTIVATION_NOT_PERMITTED")
@@ -881,6 +929,7 @@ __all__ = [
     "ProgressionWatchStore", "activate_watch", "derive_progression_requirements",
     "derive_v3_progression_requirements",
     "derive_kr370_progression_requirements",
+    "derive_kr370_v2_progression_requirements",
     "deactivate_watch", "hide_watch", "mark_watch_stale", "observe_completed_bar",
     "reactivate_watch", "tradingview_instruction",
 ]

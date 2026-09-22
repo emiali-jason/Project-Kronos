@@ -60,6 +60,7 @@ from kronos.application.swing_native_review import (
     project_native_analysis_details,
 )
 from kronos.application.swing_visual_v3 import CompletedVisualV3Review, SwingVisualV3ReviewCycle
+from kronos.swing.v1.analytical_promotion_v2 import V2PromotionRecord
 from kronos.application.swing_visual_v3_live import SwingVisualV3LiveWorkflow, NativeReviewIntakeWorkflow
 from kronos.application.swing_mcx_supporting_context import (
     McxSupportingContextWorkflow,
@@ -226,6 +227,7 @@ from kronos.swing.v1.models import V1Direction
 from kronos.swing.v1.step31_observation import Step31WarningSeverity
 from kronos.swing.v1.progression_watch import (
     derive_kr370_progression_requirements,
+    derive_kr370_v2_progression_requirements,
     derive_progression_requirements,
     derive_v3_progression_requirements,
 )
@@ -627,6 +629,8 @@ class KronosBrowserServer(ThreadingHTTPServer):
                 # Versioned V3 restoration is fail-closed. Historical V2 remains
                 # independently restorable and is never converted as recovery.
                 pass
+        self.native_review.bind_restored_v3_readiness(
+            tuple(item.readiness for item in self.visual_v3.completed_snapshot()))
         self.trade_window.restore(self.visual_v3.completed_snapshot())
         self.native_review.journal_snapshot()
         self.trade_window.synchronize_downstream(self.native_review.snapshot())
@@ -845,6 +849,20 @@ class KronosBrowserServer(ThreadingHTTPServer):
                 )
             )
             if completed_v3 is not None:
+                if completed_v3.promotion_v2 is not None:
+                    if self.native_intake is None or (
+                        self.native_intake.v2_for(
+                            run.run_identity, assessment.canonical_instrument
+                        ) != completed_v3.promotion_v2
+                    ):
+                        raise ValueError("KR370_V2_PROGRESSION_CURRENTNESS_INVALID")
+                    promotions.append(completed_v3.promotion_v2)
+                    requirements.extend(
+                        derive_kr370_v2_progression_requirements(
+                            completed_v3.promotion_v2
+                        )
+                    )
+                    continue
                 if completed_v3.promotion is not None:
                     promotions.append(completed_v3.promotion)
                     requirements.extend(
@@ -967,11 +985,53 @@ class KronosBrowserServer(ThreadingHTTPServer):
         )
 
     def visual_v3_presentations(self):  # type: ignore[no-untyped-def]
-        return tuple(
-            present_visual_v3_review(item)
-            for item in self.visual_v3.completed_snapshot()
-            if self.native_intake is None or self.native_intake.downstream_applicable(item)
-        )
+        _, current_run = self.application.opportunities_projection()
+        result = []
+        for item in self.visual_v3.completed_snapshot():
+            is_current_v2 = (self.native_intake is not None and current_run is not None
+                             and item.requirement.native_run_identity == current_run.run_identity)
+            if is_current_v2:
+                if not self.native_intake.downstream_applicable(item):
+                    continue
+                current = self.native_intake.v2_for(
+                    item.requirement.native_run_identity, item.requirement.canonical_instrument)
+                if current is None or item.promotion_v2 != current:
+                    raise ValueError("V2_PROMOTION_PRESENTATION_BINDING_INVALID")
+            result.append(present_visual_v3_review(item))
+        return tuple(result)
+
+    def current_v2_promotions(self, discovery):  # type: ignore[no-untyped-def]
+        """Read exact current owner decisions without evaluating or restoring them."""
+        if self.native_intake is None or discovery is None:
+            return ()
+        records = []
+        for assessment in discovery.assessments:
+            if assessment.status.value != "PROBABLE":
+                continue
+            record = self.native_intake.v2_for(
+                discovery.run_identity, assessment.canonical_instrument)
+            if record is None:
+                completed = self.visual_v3.completed_for(
+                    discovery.run_identity, assessment.canonical_instrument)
+                if completed is not None and completed.promotion_v2 is not None:
+                    raise ValueError("V2_PROMOTION_PRESENTATION_BINDING_INVALID")
+                continue
+            if type(record) is not V2PromotionRecord:
+                raise ValueError("V2_PROMOTION_PRESENTATION_VERSION_INVALID")
+            source = record.value["source"]
+            if (source["native_run_identity"] != discovery.run_identity
+                    or source["canonical_instrument"] != assessment.canonical_instrument
+                    or source["native_assessment_sha256"] != assessment.result_sha256):
+                raise ValueError("V2_PROMOTION_PRESENTATION_BINDING_INVALID")
+            completed = self.visual_v3.completed_for(
+                discovery.run_identity, assessment.canonical_instrument)
+            if source["market"] == "NSE" and (
+                    completed is None or completed.promotion_v2 != record):
+                raise ValueError("V2_PROMOTION_PRESENTATION_BINDING_INVALID")
+            records.append(record)
+        if len({item.value["source"]["canonical_instrument"] for item in records}) != len(records):
+            raise ValueError("V2_PROMOTION_PRESENTATION_AMBIGUOUS")
+        return tuple(records)
 
     def selected_opportunity_presentations(self, discovery, *, prepared=None,
                                            authority_is_current=lambda: True):
@@ -998,6 +1058,10 @@ class KronosBrowserServer(ThreadingHTTPServer):
                     raise ValueError("SWING_TRADE_WINDOW_SELECTION_STALE")
                 if self.native_intake is None or self.native_intake.downstream_applicable(
                         completed, _response=prepared):
+                    if self.native_intake is not None:
+                        selected = self.native_intake.v2_for(*key)
+                        if selected is None or completed.promotion_v2 != selected:
+                            raise ValueError("V2_PROMOTION_PRESENTATION_BINDING_INVALID")
                     visual.append(present_visual_v3_review(completed))
             # The Trade Window owner selects independently. The Visual V3 cache
             # above cannot authorize or select its retained completion record.
@@ -1168,12 +1232,17 @@ class KronosBrowserServer(ThreadingHTTPServer):
             if (
                 assessment is None
                 or completed is None
-                or completed.promotion is None
+                or (self.native_intake is None and completed.promotion is None)
+                or (self.native_intake is not None and completed.promotion_v2 is None)
                 or completed.requirement.thesis.native_assessment_sha256
                 != native_assessment_sha256
                 or (self.native_intake is not None and not self.native_intake.downstream_applicable(completed))
             ):
                 raise ValueError("CURRENT_NATIVE_ASSESSMENT_MISMATCH")
+            if self.native_intake is not None:
+                current_v2 = self.native_intake.v2_for(run_identity, canonical_instrument)
+                if current_v2 is None or current_v2 != completed.promotion_v2:
+                    raise ValueError("CURRENT_V2_PROMOTION_STALE")
 
             stage = TradePlanConstructionStage.PROVIDER_CAPABILITY
             capability = self._provider_capability()
@@ -1190,12 +1259,16 @@ class KronosBrowserServer(ThreadingHTTPServer):
                     nonlocal stage
                     stage = value
 
+                if self.native_intake is not None and self.native_intake.v2_for(
+                    run_identity, canonical_instrument
+                ) != completed.promotion_v2:
+                    raise ValueError("CURRENT_V2_PROMOTION_STALE")
                 projection = self.trade_window.construct(
                     completed,
                     evidence,
                     context,
                     current_run_identity=run_identity,
-                    current_analysis_boundary=completed.promotion.analysis_boundary,
+                    current_analysis_boundary=completed.readiness.analysis_boundary,
                     created_at=attempt_timestamp,
                     stage_listener=retain_stage,
                 )
@@ -1238,7 +1311,8 @@ class KronosBrowserServer(ThreadingHTTPServer):
             )
             if risk.permits_entry:
                 stage = TradePlanConstructionStage.ECPC_KR380
-                self.native_review.bind_operability_inputs(plan, risk, context)
+                self.native_review.bind_operability_inputs(
+                    plan, risk, context, v3_readiness=completed.readiness)
                 self.trade_window.mark_sponsor_controls_available(plan.trade_plan_id)
                 one_hour = completed.mtf_snapshot.instrument(
                     canonical_instrument
@@ -1549,22 +1623,25 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             )
             return
         if path == "/dashboard":
-            snapshot, discovery = self.server.application.opportunities_projection()
-            notifications = project_swing_notification_workspace(
-                self.server.progression_snapshot()
-            )
-            promotions = tuple(
-                item.promotion
-                for item in self.server.visual_v3.completed_snapshot()
-                if item.promotion is not None
-            )
-            self._html(render_dashboard(
-                snapshot,
-                project_sponsor_dashboard(
+            try:
+                snapshot, discovery = self.server.application.opportunities_projection()
+                notifications = project_swing_notification_workspace(
+                    self.server.progression_snapshot())
+                promotions_v2 = self.server.current_v2_promotions(discovery)
+                promotions = (() if self.server.native_intake is not None else tuple(
+                    item.promotion for item in self.server.visual_v3.completed_snapshot()
+                    if item.promotion is not None))
+                body = render_dashboard(snapshot, project_sponsor_dashboard(
                     snapshot, discovery, promotions, notifications,
                     self.server.ux10_notifications.snapshot(),
-                ),
-            ))
+                    promotions_v2=promotions_v2))
+                _, latest = self.server.application.opportunities_projection()
+                if (latest is not discovery or
+                        promotions_v2 != self.server.current_v2_promotions(discovery)):
+                    raise ValueError("V2_PROMOTION_PRESENTATION_STALE")
+                self._html(body)
+            except (OSError, ValueError) as error:
+                self._swing_page_unavailable(error)
             return
         if path == "/notifications/status":
             product = parse_qs(urlsplit(self.path).query).get("product", ["SWING"])[0]
@@ -1590,13 +1667,16 @@ class _BrowserHandler(BaseHTTPRequestHandler):
                         return native is discovery and bound_continuity is continuity and status == publication
                     visual_v3, trade_windows = self.server.selected_opportunity_presentations(
                         discovery, prepared=prepared, authority_is_current=current)
+                    promotions_v2 = self.server.current_v2_promotions(discovery)
                     body = render_opportunities(
                         snapshot, discovery, self.server.native_review.snapshot(),
                         self.server.progression_snapshot(), visual_v3, trade_windows,
                         self.server.refresh_reminders.snapshot(), self.server.swing_projection_revision(),
                         continuity, publication,
-                        None if intake is None else intake.snapshot(_response=prepared))
-                    if not current():
+                        None if intake is None else intake.snapshot(_response=prepared),
+                        promotions_v2=promotions_v2)
+                    if (not current() or promotions_v2 !=
+                            self.server.current_v2_promotions(discovery)):
                         raise ValueError("REVIEW_BINDING_STALE")
                 self._html(body)
             except (OSError, ValueError) as error:
@@ -1665,34 +1745,40 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             if details is None:
                 self._text(HTTPStatus.NOT_FOUND, "Analysis Details not found.")
                 return
-            v3 = next((
-                value for value in self.server.visual_v3_presentations()
-                if value.run_identity == details.assessment.run_identity
-                and value.canonical_instrument
-                == details.assessment.canonical_instrument
-                and value.native_assessment_sha256
-                == details.assessment.result_sha256
-            ), None)
-            relative_run = self.server.relative_context_for_run(
-                details.assessment.run_identity
-            )
-            self._html(render_native_analysis_details(
-                snapshot,
-                details,
-                self.server.progression_snapshot(),
-                v3,
-                self.server.trade_window.project(
-                    details.assessment.run_identity,
-                    details.assessment.canonical_instrument,
-                ),
-                self.server.mcx_supporting_context.context_for(
-                    details.assessment.canonical_instrument,
-                    assessment_boundary=discovery.observed_at,
-                ),
-                None if relative_run is None else relative_run.record(
-                    details.assessment.canonical_instrument
-                ),
-            ))
+            try:
+                promotions_v2 = self.server.current_v2_promotions(discovery)
+                selected_v2 = next((item for item in promotions_v2
+                    if item.value["source"]["canonical_instrument"]
+                    == details.assessment.canonical_instrument
+                    and item.value["source"]["native_assessment_sha256"]
+                    == details.assessment.result_sha256), None)
+                v3 = next((value for value in self.server.visual_v3_presentations()
+                    if value.run_identity == details.assessment.run_identity
+                    and value.canonical_instrument == details.assessment.canonical_instrument
+                    and value.native_assessment_sha256 == details.assessment.result_sha256), None)
+                if (selected_v2 is not None and selected_v2.value["source"]["market"] == "NSE"
+                        and v3 is None):
+                    raise ValueError("V2_PROMOTION_PRESENTATION_BINDING_INVALID")
+                relative_run = self.server.relative_context_for_run(
+                    details.assessment.run_identity)
+                body = render_native_analysis_details(
+                    snapshot, details, self.server.progression_snapshot(), v3,
+                    self.server.trade_window.project(
+                        details.assessment.run_identity,
+                        details.assessment.canonical_instrument),
+                    self.server.mcx_supporting_context.context_for(
+                        details.assessment.canonical_instrument,
+                        assessment_boundary=discovery.observed_at),
+                    None if relative_run is None else relative_run.record(
+                        details.assessment.canonical_instrument),
+                    promotion_v2=selected_v2)
+                _, latest = self.server.application.opportunities_projection()
+                if (latest is not discovery or promotions_v2 !=
+                        self.server.current_v2_promotions(discovery)):
+                    raise ValueError("V2_PROMOTION_PRESENTATION_STALE")
+                self._html(body)
+            except (OSError, ValueError) as error:
+                self._swing_page_unavailable(error)
             return
         trade_window_match = _TRADE_WINDOW_ROUTE.fullmatch(path)
         if trade_window_match:
@@ -1719,6 +1805,8 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             try:
                 with intake.page_response() if intake is not None else nullcontext() as prepared:
                     review = self.server.native_review.snapshot()
+                    _, discovery = self.server.application.opportunities_projection()
+                    promotions_v2 = self.server.current_v2_promotions(discovery)
                     body = render_v1_review(
                         snapshot, self.server.v1_review.snapshot(), review,
                         (self.server.visual_v3_live.snapshot(review.native_run_identity)
@@ -1727,7 +1815,11 @@ class _BrowserHandler(BaseHTTPRequestHandler):
                         self.server.relative_context_for_run(review.native_run_identity)
                         if intake is None and review.native_run_identity is not None else None,
                         None if intake is None else intake.snapshot(_response=prepared),
-                        answer_notice=notice)
+                        answer_notice=notice, promotions_v2=promotions_v2)
+                    _, latest = self.server.application.opportunities_projection()
+                    if (latest is not discovery or promotions_v2 !=
+                            self.server.current_v2_promotions(discovery)):
+                        raise ValueError("V2_PROMOTION_PRESENTATION_STALE")
                 self._html(body)
             except (OSError, ValueError) as error:
                 self._swing_page_unavailable(error)
@@ -3068,6 +3160,13 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             acknowledged = fields.get("warning_acknowledged", [""])[0] == "YES"
             reason_text = fields.get("reason", [""])[0]
             reason = None if not reason_text else SponsorObservationReason(reason_text)
+            if self.server.native_intake is not None:
+                completed = self.server.visual_v3.completed_for(run_identity, instrument)
+                current_v2 = self.server.native_intake.v2_for(run_identity, instrument)
+                if (completed is None or current_v2 is None
+                        or completed.promotion_v2 != current_v2
+                        or current_v2.value["promotion_state"] not in {"BUY_NOW", "SELL_NOW"}):
+                    raise ValueError("SPONSOR_OBSERVATION_V2_CURRENT_BINDING_INVALID")
             projection = self.server.trade_window.project(run_identity, instrument)
             _, current = self.server.application.opportunities_projection()
             if (
@@ -3172,6 +3271,13 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             assessment = fields["native_assessment_sha256"][0]
             decision_identity = fields["decision_identity"][0]
             choice = SponsorTradeChoice(fields["mode"][0])
+            if self.server.native_intake is not None:
+                completed = self.server.visual_v3.completed_for(run_identity, instrument)
+                current_v2 = self.server.native_intake.v2_for(run_identity, instrument)
+                if (completed is None or current_v2 is None
+                        or completed.promotion_v2 != current_v2
+                        or current_v2.value["promotion_state"] not in {"BUY_NOW", "SELL_NOW"}):
+                    raise ValueError("SPONSOR_ENTRY_V2_CURRENT_BINDING_INVALID")
             projection = self.server.trade_window.project(run_identity, instrument)
             _, current = self.server.application.opportunities_projection()
             if (

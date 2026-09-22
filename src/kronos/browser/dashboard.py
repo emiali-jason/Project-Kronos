@@ -19,6 +19,7 @@ from kronos.swing.v1.analytical_promotion import (
     Kr370AnalyticalClassification,
     Kr370AnalyticalPromotionRecord,
 )
+from kronos.swing.v1.analytical_promotion_v2 import V2PromotionRecord
 from kronos.swing.v1.native_discovery import (
     NativeDiscoveryRun,
     NativeDiscoveryStatus,
@@ -36,9 +37,12 @@ _DASHBOARD_SWING_STATES = {
 @dataclass(frozen=True, slots=True)
 class DashboardSwingOpportunity:
     instrument: str
-    classification: Kr370AnalyticalClassification
+    classification: Kr370AnalyticalClassification | str | None
     run_identity: str
     native_assessment_sha256: str
+    contract_version: int = 1
+    disposition: str | None = None
+    confirmation: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -74,6 +78,7 @@ class SponsorDashboardProjection:
             item.classification in {
                 Kr370AnalyticalClassification.BUY_NOW,
                 Kr370AnalyticalClassification.SELL_NOW,
+                "BUY_NOW", "SELL_NOW",
             }
             for item in self.swing_opportunities
         )
@@ -84,6 +89,7 @@ class SponsorDashboardProjection:
             item.classification in {
                 Kr370AnalyticalClassification.BUY_READY,
                 Kr370AnalyticalClassification.SELL_READY,
+                "BUY_READY", "SELL_READY",
             }
             for item in self.swing_opportunities
         )
@@ -95,6 +101,8 @@ def project_sponsor_dashboard(
     promotions: tuple[Kr370AnalyticalPromotionRecord, ...],
     notifications: NotificationWorkspaceSnapshot,
     ux10: Ux10NotificationSnapshot | None = None,
+    *,
+    promotions_v2: tuple[V2PromotionRecord, ...] = (),
 ) -> SponsorDashboardProjection:
     """Project current facts without evaluating or mutating any source authority."""
 
@@ -103,6 +111,8 @@ def project_sponsor_dashboard(
         or (discovery is not None and type(discovery) is not NativeDiscoveryRun)
         or type(promotions) is not tuple
         or any(type(item) is not Kr370AnalyticalPromotionRecord for item in promotions)
+        or type(promotions_v2) is not tuple
+        or any(type(item) is not V2PromotionRecord for item in promotions_v2)
         or type(notifications) is not NotificationWorkspaceSnapshot
         or (ux10 is not None and type(ux10) is not Ux10NotificationSnapshot)
     ):
@@ -117,6 +127,7 @@ def project_sponsor_dashboard(
         current = None
 
     current_records: tuple[Kr370AnalyticalPromotionRecord, ...] = ()
+    current_v2: tuple[V2PromotionRecord, ...] = ()
     if current is not None:
         assessments = {
             (item.canonical_instrument, item.result_sha256)
@@ -132,6 +143,16 @@ def project_sponsor_dashboard(
         identities = tuple(item.canonical_instrument for item in candidates)
         if len(set(identities)) == len(identities):
             current_records = candidates
+        selected = tuple(item for item in promotions_v2
+                         if item.value["source"]["native_run_identity"] == current.run_identity
+                         and (item.value["source"]["canonical_instrument"],
+                              item.value["source"]["native_assessment_sha256"]) in assessments)
+        selected_ids = tuple(item.value["source"]["canonical_instrument"] for item in selected)
+        if len(set(selected_ids)) != len(selected_ids):
+            raise ValueError("SPONSOR_DASHBOARD_V2_AMBIGUOUS")
+        if set(identities) & set(selected_ids):
+            raise ValueError("SPONSOR_DASHBOARD_VERSION_MIXED")
+        current_v2 = selected
 
     classification_order = {
         Kr370AnalyticalClassification.BUY_NOW: 0,
@@ -139,7 +160,7 @@ def project_sponsor_dashboard(
         Kr370AnalyticalClassification.BUY_READY: 2,
         Kr370AnalyticalClassification.SELL_READY: 3,
     }
-    swing = tuple(
+    swing_v1 = tuple(
         DashboardSwingOpportunity(
             item.canonical_instrument,
             item.classification,
@@ -154,6 +175,19 @@ def project_sponsor_dashboard(
             ),
         )
     )
+    v2_order = {state: offset for offset, state in enumerate(
+        ("BUY_NOW", "SELL_NOW", "BUY_READY", "SELL_READY", "NEAR_READY", "NO_FOCUS"))}
+    swing_v2 = tuple(DashboardSwingOpportunity(
+        item.value["source"]["canonical_instrument"], item.value["promotion_state"],
+        item.value["source"]["native_run_identity"],
+        item.value["source"]["native_assessment_sha256"],
+        contract_version=2,
+        disposition=item.value["evaluation_disposition"],
+        confirmation=item.value["confirmation"]["state"],
+    ) for item in sorted(current_v2, key=lambda item: (
+        v2_order.get(item.value["promotion_state"], 99),
+        item.value["source"]["canonical_instrument"])))
+    swing = swing_v1 + swing_v2
 
     alerts = ()
     if current is not None:
@@ -192,7 +226,7 @@ def project_sponsor_dashboard(
 
     return SponsorDashboardProjection(
         current_run_identity=None if current is None else current.run_identity,
-        swing_summary_available=bool(current_records),
+        swing_summary_available=bool(current_records or current_v2),
         swing_opportunities=swing,
         active_alerts=alerts,
         issues=tuple(issues),

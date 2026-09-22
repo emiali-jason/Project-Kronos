@@ -17,6 +17,9 @@ from kronos.swing.v1.extension import (
     evaluate_completed_one_hour_extension,
     extension_native_condition_inputs,
 )
+from kronos.swing.v1.analytical_promotion_v2 import (
+    LocalV2PromotionStore, V2PromotionRecord, evaluate_governed, _nse_confirmation,
+)
 from kronos.swing.v1.path_clearance import evaluate_one_hour_path_clearance
 from kronos.swing.v1.mtf_facts import FactualTimeframe, SameRunMtfFactSnapshot
 from kronos.swing.v1.native_discovery import (
@@ -815,8 +818,13 @@ class NativeReviewIntakeWorkflow:
     aggregate candidate identity replaces the existing requirement identities.
     """
 
-    def __init__(self, application, native_review, live, store):
+    def __init__(self, application, native_review, live, store, *, v2_store=None):
         self.application, self.native_review, self.live, self.store = application, native_review, live, store
+        if v2_store is not None and type(v2_store) is not LocalV2PromotionStore:
+            raise TypeError("V2_PROMOTION_STORE_INVALID")
+        self._v2_store = v2_store or LocalV2PromotionStore(
+            self.store.root.parent.parent / "kr370-analytical-promotion-v2")
+        self._v2_promotions: dict[tuple[str, str], V2PromotionRecord] = {}
         self.errors = {}
         self._prospective_cache = None
         self._page_prepare_lock = Lock()
@@ -1793,9 +1801,113 @@ class NativeReviewIntakeWorkflow:
             if snapshot is not None:
                 require(snapshot.control["current_manifest"]["sha256"] == accepted.binding.value["committed_run_manifest_identity"],
                         "REVIEW_BINDING_STALE")
-        return self.live.handoff_accepted_receipt(self.store, commit.identity, receipt.receipt_id,
+        result = self.live.handoff_accepted_receipt(self.store, commit.identity, receipt.receipt_id,
             review=review, facts=facts, chart_bytes=None, prepared_requests=self._prepared,
             publication_guard=self.application.publication_mutation_guard, recheck=recheck, restore_only=restore_only)
+        if restore_only:
+            self._restore_v2_for_receipt(receipt)
+        elif receipt.binding.value["market"] == "MCX" or (
+            result is not None and result.value["state"] == "SUCCEEDED"
+        ):
+            self._publish_v2_for_receipt(commit, receipt, facts)
+        return result
+
+    def _v2_current(self, source):
+        try:
+            manifest, facts, _ = self._context()
+            accepted = source["acceptance"]
+            receipt = self.store.resolve_committed_receipt(
+                accepted["commit_identity"], accepted["receipt_identity"], current=True)
+            return bool(
+                manifest == source["committed_run_manifest_identity"]
+                and facts.run_identity == source["native_run_identity"]
+                and receipt.value["integrity_sha256"] == accepted["receipt_integrity_sha256"]
+                and receipt.binding.value["canonical_instrument"] == source["canonical_instrument"]
+                and receipt.binding.value["native_assessment_sha256"] == source["native_assessment_sha256"]
+            )
+        except (KeyError, OSError, ValueError):
+            return False
+
+    def v2_for(self, run_identity: str, canonical_instrument: str) -> V2PromotionRecord | None:
+        record = self._v2_promotions.get((run_identity, canonical_instrument))
+        if record is None:
+            return None
+        if (self._v2_current(record.value["source"]) is not True
+                or not self._v2_confirmation_current(record)):
+            raise ValueError("V2_PROMOTION_CURRENT_BINDING_INVALID")
+        return record
+
+    def _v2_confirmation_current(self, record: V2PromotionRecord) -> bool:
+        value = record.value
+        source = value["source"]
+        if source["market"] != "NSE":
+            return True
+        reader = getattr(self.application, "relative_context_run", None)
+        try:
+            current = reader() if callable(reader) else None
+            return _nse_confirmation(source, current) == value["confirmation"]
+        except (KeyError, TypeError, ValueError):
+            return False
+
+    def _restore_v2_for_receipt(self, receipt) -> None:
+        binding = receipt.binding.value
+        root = self._v2_store.root / binding["analytical_run_identity"]
+        if not root.exists():
+            return
+        matches = []
+        for path in sorted(root.glob("*.json")):
+            candidate = V2PromotionRecord(self._v2_store._read(path))
+            source = candidate.value["source"]
+            if (source["acceptance"]["receipt_identity"] == receipt.receipt_id
+                    and source["canonical_instrument"] == binding["canonical_instrument"]
+                    and source["native_assessment_sha256"] == binding["native_assessment_sha256"]):
+                loaded = self._v2_store.load_exact(
+                    source, candidate.value["input_sha256"], current=self._v2_current)
+                if loaded is not None:
+                    matches.append(loaded)
+        require(len(matches) <= 1, "V2_OUTPUT_AMBIGUOUS")
+        if matches:
+            record = matches[0]
+            require(self._v2_confirmation_current(record), "V2_SOURCE_STALE")
+            self._v2_promotions[(binding["analytical_run_identity"],
+                                 binding["canonical_instrument"])] = record
+            if binding["market"] == "NSE":
+                self.live.cycle.attach_v2(record)
+
+    def _publish_v2_for_receipt(self, commit, receipt, facts) -> None:
+        binding = receipt.binding.value
+        market = binding["market"]
+        requirement = self._requirements(market, (binding["canonical_instrument"],))[0]
+        path_clearance = evaluate_one_hour_path_clearance(
+            run_identity=requirement.native_run_identity,
+            instrument=facts.instrument(requirement.canonical_instrument),
+            direction=requirement.thesis.direction)
+        extension = evaluate_completed_one_hour_extension(requirement, facts)
+        completed = (self.live.cycle.completed_for(
+            requirement.native_run_identity, requirement.canonical_instrument)
+            if market == "NSE" else None)
+        if market == "NSE" and completed is None:
+            raise ValueError("V2_COMPLETED_REVIEW_MISSING")
+        request = (self.store.load_request(
+            commit.value["request_publication_identity"]).mapping
+            if market == "NSE" else None)
+        context_reader = getattr(self.application, "relative_context_run", None)
+        record = evaluate_governed(
+            requirement=requirement, facts=facts, path_clearance=path_clearance,
+            extension=extension, store=self.store, commit_identity=commit.identity,
+            receipt_identity=receipt.receipt_id,
+            current_manifest=lambda: self._context()[0],
+            created_at=datetime.fromisoformat(receipt.body["accepted_at"]),
+            visual=None if completed is None else completed.responses,
+            relative_context=(context_reader() if market == "NSE" and callable(context_reader)
+                              else None),
+            nse_request=request)
+        self._v2_store.retain(record, current=self._v2_current)
+        require(self._v2_confirmation_current(record), "V2_PUBLICATION_CHANGED")
+        self._v2_promotions[(requirement.native_run_identity,
+                             requirement.canonical_instrument)] = record
+        if market == "NSE":
+            self.live.cycle.attach_v2(record)
 
     def restore(self):
         # Read/verify the whole committed graph first, before any memory projection.

@@ -14,7 +14,9 @@ import re
 from threading import RLock
 
 from kronos.instrument.facts import CanonicalInstrumentContext, InstrumentContextStatus
-from kronos.swing.v1.kr370_step31_handoff import Kr370Step31EligibilityHandoff
+from kronos.swing.v1.kr370_step31_handoff import (
+    Kr370Step31EligibilityHandoff, Kr370Step31EligibilityHandoffV2,
+)
 from kronos.swing.v1.models import V1Direction
 from kronos.swing.v1.native_discovery import NativeOpportunityIdentity
 from kronos.swing.v1.native_review import NativeReviewRequirement
@@ -370,7 +372,7 @@ class LocalStep31ObservationStore:
 
 def construct_step31_observation(
     requirement: NativeReviewRequirement,
-    handoff: Kr370Step31EligibilityHandoff,
+    handoff: Kr370Step31EligibilityHandoff | Kr370Step31EligibilityHandoffV2,
     evidence: TradeConstructionEvidencePackage,
     execution_context: CanonicalInstrumentContext,
     *,
@@ -677,7 +679,8 @@ def create_sponsor_observation_handoff(
 
 
 def _validate_hard_inputs(requirement, handoff, evidence, context, created_at):  # type: ignore[no-untyped-def]
-    if type(requirement) is not NativeReviewRequirement or type(handoff) is not Kr370Step31EligibilityHandoff:
+    if (type(requirement) is not NativeReviewRequirement or
+            type(handoff) not in {Kr370Step31EligibilityHandoff, Kr370Step31EligibilityHandoffV2}):
         raise Step31ObservationHardFailure("STEP31_OBSERVATION_INPUT_INVALID")
     thesis = requirement.thesis
     if (

@@ -287,9 +287,17 @@ class TradeJournalService:
         readiness: tuple[NativeLayer2ReadinessRecord, ...],
         initiations: tuple[SponsorInitiationResult, ...],
         lifecycle: ActiveTradeLifecycleSnapshot,
+        *,
+        v3_readiness: tuple[NativeLayer2ReadinessRecordV3, ...] = (),
     ) -> TradeJournalSnapshot:
         plan_by_id = {item.trade_plan_id: item for item in plans}
-        readiness_by_id = {item.result_sha256: item for item in readiness}
+        if (type(v3_readiness) is not tuple
+                or any(type(item) is not NativeLayer2ReadinessRecordV3 for item in v3_readiness)):
+            raise ValueError("JOURNAL_UNAVAILABLE:READINESS_VERSION_UNSUPPORTED")
+        all_readiness = (*readiness, *v3_readiness)
+        readiness_by_id = {item.result_sha256: item for item in all_readiness}
+        if len(readiness_by_id) != len(all_readiness):
+            raise ValueError("JOURNAL_UNAVAILABLE:READINESS_VERSION_MIXED")
         events = {item.event_id: item for item in lifecycle.events}
         positions = {item.position_id: item for item in lifecycle.positions}
         decisions = {

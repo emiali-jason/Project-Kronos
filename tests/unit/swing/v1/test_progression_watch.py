@@ -23,16 +23,38 @@ from kronos.swing.v1.progression_watch import (
     activate_watch,
     deactivate_watch,
     derive_progression_requirements,
+    derive_kr370_v2_progression_requirements,
     hide_watch,
     mark_watch_stale,
     observe_completed_bar,
     reactivate_watch,
     tradingview_instruction,
 )
+from kronos.swing.v1.analytical_promotion_v2 import create_record
+from tests.unit.swing.v1.test_analytical_promotion_v2 import (
+    source as v2_source, criteria as v2_criteria, nse as v2_nse,
+)
 
 
 NOW = datetime(2026, 8, 19, 8, 0, tzinfo=UTC)
 RUN = "SWING-RUN-0123456789ABCDEF0123456789ABCDEF"
+
+
+def test_v2_progression_uses_sealed_criteria_without_v1_conversion() -> None:
+    promotion = create_record(
+        source=v2_source(), criteria=v2_criteria(4), confirmation=v2_nse(),
+        created_at=NOW)
+    result = derive_kr370_v2_progression_requirements(promotion)
+    assert len(result) == 5
+    assert [item.state for item in result] == [
+        ProgressionRequirementState.SATISFIED,
+        ProgressionRequirementState.SATISFIED,
+        ProgressionRequirementState.SATISFIED,
+        ProgressionRequirementState.SATISFIED,
+        ProgressionRequirementState.NOT_WATCHABLE,
+    ]
+    assert all(item.source_analytical_state == "BUY_READY" for item in result)
+    assert all(promotion.value["integrity_sha256"] in item.provenance for item in result)
 
 
 def _watchable_requirement() -> ProgressionRequirement:

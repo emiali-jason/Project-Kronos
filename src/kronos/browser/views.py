@@ -85,8 +85,13 @@ from kronos.browser.v1_analysis_status import (
 from kronos.browser.swing_readiness_presentation import (
     present_native_readiness,
 )
-from kronos.browser.swing_v3_presentation import V3SponsorEvidencePresentation
+from kronos.browser.swing_v3_presentation import (
+    Kr370V2SponsorPromotionPresentation,
+    V3SponsorEvidencePresentation,
+    present_v2_promotion,
+)
 from kronos.browser.dashboard import SponsorDashboardProjection
+from kronos.swing.v1.analytical_promotion_v2 import V2PromotionRecord
 from kronos.browser.reports import (
     HistoricalReportRecord,
     HistoricalReportsProjection,
@@ -223,6 +228,7 @@ a{color:inherit;text-decoration:none}.app{display:grid;grid-template-columns:218
 @media(max-width:1050px){.status-grid{grid-template-columns:repeat(3,1fr)}.strategy-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.panels,.workspace{grid-template-columns:1fr}.attention-grid{grid-template-columns:1fr}.step32-grid{grid-template-columns:1fr}.step32-block{border-left:0;border-top:1px solid var(--line);padding:10px 0 0}.step32-block:first-child{border-top:0;padding-top:0}.market-panel{min-height:260px}}
 @media(min-width:761px){.panels{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:760px){.app{grid-template-columns:1fr}.sidebar{position:static;height:auto}.nav{grid-template-columns:repeat(2,1fr)}.system{display:none}.topbar{height:auto;padding:18px;align-items:flex-start;gap:14px}.tabs{overflow:auto;padding:0 18px}.content{padding:18px}.status-grid,.strategy-grid{grid-template-columns:1fr}.trade-grid,.plan-strip{grid-template-columns:1fr 1fr}.kite{flex-wrap:wrap;justify-content:flex-end}.chart-intake-list,.native-chart-grid{grid-template-columns:1fr}.dashboard-alert{grid-template-columns:1fr}.dashboard-alert-state{text-align:left}.swing-primary-facts,.swing-timeframe-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.swing-result-row{align-items:flex-start;flex-direction:column}.swing-result-row span:last-child{text-align:left}.swing-review-readiness{align-items:flex-start;flex-direction:column}.native-opportunity .summary-footer{align-items:flex-start}.native-opportunity-actions{justify-content:flex-start}}
+.v2-promotion{min-width:0;max-width:100%;border:1px solid #31506a;border-radius:9px;background:#0b2030;padding:10px;margin:9px 0;overflow-wrap:anywhere}.v2-promotion h3{font-size:12px;margin:0 0 7px;color:#a5d9ff}.v2-promotion p{margin:5px 0;font-size:11px}.v2-promotion-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}.v2-promotion-grid>div{min-width:0;border:1px solid #27445d;border-radius:6px;padding:6px}.v2-promotion-grid span{display:block;color:var(--muted);font-size:9px}.v2-promotion-grid strong{display:block;font-size:11px;overflow-wrap:anywhere}.v2-criterion-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px;list-style:none;padding:0;margin:8px 0}.v2-criterion-list li{min-width:0;border:1px solid #27445d;border-radius:6px;padding:6px;font-size:10px;overflow-wrap:anywhere}.v2-confirmation{color:#9fd2ff}.v2-downstream{color:#ffd57a;font-weight:800}.v2-card-summary{display:block;font-size:10px;color:#b9d9ef;overflow-wrap:anywhere}.strategy-group small{display:block;color:#b9d9ef;font-size:9px;overflow-wrap:anywhere}@media(max-width:760px){.v2-promotion-grid,.v2-criterion-list{grid-template-columns:minmax(0,1fr)}}
 """
 
 
@@ -319,19 +325,32 @@ def _dashboard_swing_card(dashboard: SponsorDashboardProjection) -> str:
     for state, label in classifications:
         values = tuple(
             item for item in dashboard.swing_opportunities
-            if item.classification is state
+            if item.classification is state or item.classification == state.value
         )
         if not values:
             continue
         instruments = "".join(
             '<a href="/swing/analysis-details/' + escape(item.run_identity) + '/'
             + quote(item.instrument, safe="") + '">' + escape(item.instrument) + '</a>'
+            + ('<small>V2 · ' + escape((item.confirmation or "UNAVAILABLE").replace("_", " "))
+               + '</small>' if item.contract_version == 2 else '')
             for item in values
         )
         groups.append(
             '<div class="strategy-group"><span>' + label
             + '</span><div class="strategy-instruments">' + instruments + '</div></div>'
         )
+    other_v2 = tuple(item for item in dashboard.swing_opportunities
+                     if item.contract_version == 2 and item.classification not in
+                     {"BUY_NOW", "SELL_NOW", "BUY_READY", "SELL_READY"})
+    if other_v2:
+        groups.append('<div class="strategy-group"><span>OTHER CURRENT EVALUATIONS</span>'
+                      '<div class="strategy-instruments">' + ''.join(
+                          '<a href="/swing/analysis-details/' + escape(item.run_identity) + '/'
+                          + quote(item.instrument, safe="") + '">'
+                          + escape(item.instrument) + '<small>'
+                          + escape((item.classification or item.disposition or "UNAVAILABLE").replace("_", " "))
+                          + '</small></a>' for item in other_v2) + '</div></div>')
     if not dashboard.swing_summary_available:
         content = '<div class="strategy-empty">CURRENT SWING RESULTS UNAVAILABLE</div>'
     elif not groups:
@@ -380,6 +399,8 @@ def render_opportunities(
     committed_continuity=None,
     publication_status=None,
     native_intake=None,
+    *,
+    promotions_v2: tuple[V2PromotionRecord, ...] = (),
 ) -> str:
     """Render the current successful Native Discovery opportunity population."""
 
@@ -402,6 +423,10 @@ def render_opportunities(
         type(item) is not V3SponsorEvidencePresentation for item in visual_v3
     ):
         raise TypeError("NATIVE_OPPORTUNITIES_V3_PRESENTATION_INVALID")
+    if type(promotions_v2) is not tuple or any(
+        type(item) is not V2PromotionRecord for item in promotions_v2
+    ):
+        raise TypeError("NATIVE_OPPORTUNITIES_V2_PRESENTATION_INVALID")
     if type(trade_windows) is not tuple or any(
         type(item) is not NativeTradeWindowProjection for item in trade_windows
     ):
@@ -466,15 +491,17 @@ def render_opportunities(
             item for item in probables if item.product_path is NativeProductPath.MCX
         )
         if native_intake is not None:
-            body += _intake_workspace_header(native_intake)
+            body += _intake_workspace_header(native_intake, show_internal=not promotions_v2)
         body += '<div class="swing-opportunities-grid" data-layout="equities-left-mcx-right">'
         body += _native_opportunity_panel(
             "EQUITY / INDEX", equities, review, progression, visual_v3,
             trade_windows, refresh_reminders, continuity_rows, native_intake,
+            promotions_v2,
         )
         body += _native_opportunity_panel(
             "MCX", commodities, review, progression, visual_v3,
             trade_windows, refresh_reminders, continuity_rows, native_intake,
+            promotions_v2,
         )
         body += "</div>"
     return _page(
@@ -537,7 +564,7 @@ def _native_opportunity_metrics(counts: dict[NativeDiscoveryStatus, int]) -> str
 
 def _native_opportunity_panel(
     title, probables, review, progression=None, visual_v3=(), trade_windows=(),
-    refresh_reminders=None, continuity_rows=None, native_intake=None,
+    refresh_reminders=None, continuity_rows=None, native_intake=None, promotions_v2=(),
 ) -> str:  # type: ignore[no-untyped-def]
     groups = "".join(
         _native_opportunity_direction_group(
@@ -550,6 +577,7 @@ def _native_opportunity_panel(
             refresh_reminders,
             continuity_rows,
             native_intake,
+            promotions_v2,
         )
         for direction in ("LONG", "SHORT")
     )
@@ -567,13 +595,14 @@ def _native_opportunity_panel(
 
 def _native_opportunity_direction_group(
     direction, probables, review, progression, visual_v3, trade_windows,
-    refresh_reminders, continuity_rows, native_intake,
+    refresh_reminders, continuity_rows, native_intake, promotions_v2,
 ) -> str:  # type: ignore[no-untyped-def]
     cards = "".join(
         _native_opportunity_card(
             item, review, progression, visual_v3, trade_windows, refresh_reminders,
             None if continuity_rows is None else continuity_rows.get(item.canonical_instrument),
             native_intake,
+            promotions_v2,
         )
         for item in probables
     )
@@ -661,6 +690,7 @@ def _native_opportunity_card(
     refresh_reminders=None,
     continuity=None,
     native_intake=None,
+    promotions_v2=(),
 ) -> str:  # type: ignore[no-untyped-def]
     review_run_identity = None if review is None else review.native_run_identity
     readiness_records = () if review is None else review.readiness_records
@@ -718,6 +748,16 @@ def _native_opportunity_card(
         and value.canonical_instrument == item.canonical_instrument
         and value.native_assessment_sha256 == item.result_sha256
     ), None)
+    v2_matches = tuple(value for value in promotions_v2
+                       if value.value["source"]["native_run_identity"] == item.run_identity
+                       and value.value["source"]["canonical_instrument"] == item.canonical_instrument
+                       and value.value["source"]["native_assessment_sha256"] == item.result_sha256)
+    if len(v2_matches) > 1:
+        raise ValueError("NATIVE_OPPORTUNITY_V2_AMBIGUOUS")
+    v2 = (present_v2_promotion(v2_matches[0]) if v2_matches else
+          None if v3 is None else v3.kr370_v2)
+    if v3 is not None and v3.kr370_v2 is not None and v2 is not None and v3.kr370_v2 != v2:
+        raise ValueError("NATIVE_OPPORTUNITY_V2_BINDING_INVALID")
     trade_window = next((
         value for value in trade_windows
         if value.native_run_identity == item.run_identity
@@ -787,6 +827,7 @@ def _native_opportunity_card(
         if value.state is ProgressionRequirementState.WATCH_ACTIVE
     )
     kr370_summary = (
+        _v2_card_summary(v2) if v2 is not None else
         "" if v3 is None or v3.kr370 is None
         else _kr370_opportunity_summary(
             v3.kr370,
@@ -797,6 +838,8 @@ def _native_opportunity_card(
     )
     kr370_state = None if v3 is None else v3.kr370
     state_value = (
+        '<span class="kr370-state ' + _v2_state_class(v2) + '">'
+        + escape(_v2_state_label(v2)) + '</span>' if v2 is not None else
         escape(review_status)
         if kr370_state is None else
         '<span class="kr370-state '
@@ -828,7 +871,7 @@ def _native_opportunity_card(
                  else "REVIEW BINDING UNAVAILABLE")
         if not intake_current:
             review_action = '<span class="button" aria-disabled="true">Review workspace unavailable</span>'
-        if v3 is None and sponsor_readiness is None:
+        if v2 is None and v3 is None and sponsor_readiness is None:
             state_value = escape(label if intake_current or not eligible else 'REVIEW ELIGIBLE · REVIEW BINDING UNAVAILABLE')
         if intake_row is not None and intake_row.get("error"):
             intake_summary += _intake_error(intake_row["error"])
@@ -851,6 +894,7 @@ def _native_opportunity_card(
         else item.opportunity_identity.value.replace("_", " ")
     )
     status_label = (
+        "KR-370 V2" if v2 is not None else
         "KR-370" if v3 is not None and v3.kr370 is not None
         else "Chart / reference status" if v3 is not None
         else "Review"
@@ -872,12 +916,16 @@ def _native_opportunity_card(
         '<div class="swing-result-row"><span>' + status_label + ' · <strong>' + state_value
         + '</strong></span><span>' + missing + progression_summary
         + active_watch_summary + kr370_summary + '</span></div>'
-        '<div class="swing-review-readiness"><div class="swing-readiness-states">'
+        + ('<p class="v2-downstream">DOWNSTREAM — MCX STEP-31 NOT COMMISSIONED</p>'
+           if item.product_path is NativeProductPath.MCX and v2 is None else '')
+        + ('<details class="v2-card-detail"><summary>K1–K5 and confirmation details</summary>'
+           + _v2_promotion_detail(v2) + '</details>' if v2 is not None else '')
+        + '<div class="swing-review-readiness"><div class="swing-readiness-states">'
         + readiness_markup + '</div><span class="native-opportunity-actions">' + review_action +
         f'<a class="button" href="/swing/analysis-details/{escape(item.run_identity)}/'
         f'{quote(item.canonical_instrument, safe="")}">View Analysis Details →</a>'
         + trade_window_action + '</span>'
-        '</div><details class="swing-supporting-details"><summary>Supporting details</summary>'
+        '</div>' + ('<details class="swing-supporting-details"><summary>Supporting details</summary>'
         + _swing_continuity_summary(continuity)
         + '<div><span>Run · <code>' + escape(item.run_identity) + '</code></span>'
         '<span>Assessment · <code>' + escape(item.result_sha256) + '</code></span>'
@@ -886,7 +934,7 @@ def _native_opportunity_card(
         + escape(item.policy_version) + '</code></span>'
         '<span>Discovery evidence · <code>'
         + escape(" · ".join(item.reason_codes).replace("_", " "))
-        + '</code></span></div></details></article>'
+        + '</code></span></div></details>' if v2 is None and not promotions_v2 else '') + '</article>'
     )
 
 
@@ -985,6 +1033,90 @@ def _kr370_opportunity_summary(value, reminder=None) -> str:  # type: ignore[no-
         count + '<small class="kr370-card-line">' + escape(waiting) + '</small>'
         + condition + alert + reminder_state
     )
+
+
+def _v2_label(value: str) -> str:
+    return value.replace("_", " ")
+
+
+def _v2_state_label(value: Kr370V2SponsorPromotionPresentation) -> str:
+    return _v2_label(value.classification or value.disposition)
+
+
+def _v2_state_class(value: Kr370V2SponsorPromotionPresentation) -> str:
+    if value.disposition != "EVALUATED":
+        return "kr370-state-unavailable"
+    if value.classification in {"BUY_NOW", "SELL_NOW"}:
+        return "kr370-state-now"
+    if value.classification in {"BUY_READY", "SELL_READY"}:
+        return "kr370-state-ready"
+    if value.classification == "NEAR_READY":
+        return "kr370-state-potential"
+    return "kr370-state-no-setup"
+
+
+def _v2_card_summary(value: Kr370V2SponsorPromotionPresentation) -> str:
+    detail = ("CONFIRMATION PENDING" if value.confirmation_pending else
+              "CONFIRMATION " + value.confirmation)
+    if value.disposition != "EVALUATED":
+        detail = " · ".join(_v2_label(item) for item in value.reasons)
+    return ('<small class="v2-card-summary"><strong>' + escape(value.score)
+            + ' K1–K5 SATISFIED</strong> · ' + escape(_v2_label(value.disposition))
+            + '<br>' + escape(detail) + '</small>'
+            + ('<small class="v2-card-summary v2-downstream">'
+               'DOWNSTREAM — MCX STEP-31 NOT COMMISSIONED</small>'
+               if value.market == "MCX" else ''))
+
+
+def _v2_promotion_detail(value: Kr370V2SponsorPromotionPresentation) -> str:
+    """Sponsor-facing V2 facts only; identities and digests stay off the page."""
+    facts = (
+        '<div class="v2-promotion-grid"><div><span>Criteria satisfied</span><strong>'
+        + escape(value.score) + '</strong></div><div><span>Evaluation disposition</span><strong>'
+        + escape(_v2_label(value.disposition)) + '</strong></div><div><span>Confirmation</span><strong>'
+        + escape(value.confirmation) + '</strong></div><div><span>Direction</span><strong>'
+        + escape(value.direction) + '</strong></div></div>'
+    )
+    criteria = '<ul class="v2-criterion-list">' + ''.join(
+        '<li><strong>' + escape(item) + '</strong><br>' + escape(_v2_label(state))
+        + ' · ' + escape(_v2_label(reason)) + '</li>'
+        for item, state, reason in value.criteria) + '</ul>'
+    reasons = ('<p>Evaluation reasons · ' + escape(' · '.join(
+        _v2_label(reason) for reason in value.reasons)) + '</p>' if value.reasons else '')
+    pending = ('<p class="v2-confirmation">CONFIRMATION PENDING · 0 criteria missing</p>'
+               if value.confirmation_pending else '')
+    confirmation_reasons = ('<p>Confirmation reasons · ' + escape(' · '.join(
+        _v2_label(reason) for reason in value.confirmation_reasons)) + '</p>'
+                            if value.confirmation_reasons else '')
+    if value.market == "MCX":
+        reference = ('<h3>REGISTERED GLOBAL REFERENCE</h3><p>'
+                     + escape(value.mcx_reference or "UNAVAILABLE") + '</p>')
+        m1 = ('<p>M1 mapping / coverage · ' + escape(_v2_label(value.mcx_mapping or "UNAVAILABLE"))
+              + ' / ' + escape(_v2_label(value.mcx_coverage or "UNAVAILABLE")) + '</p>')
+        m2 = '<p>M2 structural agreement · ' + escape(' · '.join(
+            timeframe + ' ' + _v2_label(state) for timeframe, state in value.mcx_agreement)
+            or 'UNAVAILABLE') + '</p>'
+        m3 = ('<p>M3 divergence · ' + escape(_v2_label(value.mcx_divergence or "UNAVAILABLE"))
+              + '</p><p>M3 limitations · ' + escape(' · '.join(
+                  _v2_label(item) for item in value.mcx_limitations) or "NONE") + '</p>')
+        context = reference + m1 + m2 + m3 + (
+            '<p class="v2-downstream">DOWNSTREAM — MCX STEP-31 NOT COMMISSIONED</p>')
+    elif value.confirmation == "NOT REQUIRED BY ASSET CLASS":
+        context = '<p class="v2-confirmation">NIFTY CONFIRMATION — NOT REQUIRED BY ASSET CLASS</p>'
+    else:
+        context = ('<h3>NIFTY CONFIRMATION</h3><p>1D · '
+                   + escape(_v2_label(next((state for tf, state in value.nse_horizons if tf == "1D"),
+                                           "UNAVAILABLE"))) + '<br>4H · '
+                   + escape(_v2_label(next((state for tf, state in value.nse_horizons if tf == "4H"),
+                                           "UNAVAILABLE"))) + '</p>')
+    return ('<section class="v2-promotion" data-v2-state="'
+            + escape(value.classification or "NONE", quote=True)
+            + '" data-v2-disposition="' + escape(value.disposition, quote=True)
+            + '"><h3>KR-370 V2 ANALYTICAL PROMOTION</h3>'
+            '<div class="analysis-decision kr370-state ' + _v2_state_class(value) + '">'
+            + escape(_v2_state_label(value)) + '</div>' + facts + criteria + reasons
+            + pending + '<p class="v2-confirmation">CONFIRMATION ' + escape(value.confirmation)
+            + '</p>' + confirmation_reasons + context + '</section>')
 
 
 def _kr370_state_label(value) -> str:  # type: ignore[no-untyped-def]
@@ -1113,6 +1245,8 @@ def render_native_analysis_details(
     trade_window: NativeTradeWindowProjection | None = None,
     mcx_context: McxSupportingContextRecord | None = None,
     relative_context: RelativeContextRecord | None = None,
+    *,
+    promotion_v2: V2PromotionRecord | None = None,
 ) -> str:
     """Render governed evidence without recalculation or authority."""
 
@@ -1123,6 +1257,14 @@ def render_native_analysis_details(
         != details.assessment.canonical_instrument
     ):
         raise ValueError("NATIVE_ANALYSIS_DETAILS_RELATIVE_CONTEXT_BINDING_INVALID")
+    if promotion_v2 is not None:
+        if type(promotion_v2) is not V2PromotionRecord:
+            raise TypeError("NATIVE_ANALYSIS_DETAILS_V2_INVALID")
+        source = promotion_v2.value["source"]
+        if (source["native_run_identity"] != details.assessment.run_identity
+                or source["canonical_instrument"] != details.assessment.canonical_instrument
+                or source["native_assessment_sha256"] != details.assessment.result_sha256):
+            raise ValueError("NATIVE_ANALYSIS_DETAILS_V2_BINDING_INVALID")
 
     if visual_v3 is not None:
         if (
@@ -1134,6 +1276,8 @@ def render_native_analysis_details(
             != details.assessment.result_sha256
         ):
             raise ValueError("NATIVE_ANALYSIS_DETAILS_V3_BINDING_INVALID")
+        if promotion_v2 is not None and visual_v3.kr370_v2 != present_v2_promotion(promotion_v2):
+            raise ValueError("NATIVE_ANALYSIS_DETAILS_V2_BINDING_INVALID")
         return _render_native_analysis_details_v3(
             snapshot, details, progression, visual_v3, trade_window, mcx_context,
             relative_context,
@@ -1231,8 +1375,9 @@ def render_native_analysis_details(
     body = (
         '<p><a class="button" href="/swing/opportunities">← Back to Opportunities</a></p>'
         '<div class="analysis-details">'
+        + ('' if promotion_v2 is None else _v2_promotion_detail(present_v2_promotion(promotion_v2)))
         + _analysis_disclosure("A. WHAT KITE / NATIVE DISCOVERY SAYS", native_facts)
-        + _relative_context_details(relative_context, item.direction.value)
+        + ('' if promotion_v2 is not None else _relative_context_details(relative_context, item.direction.value))
         + '<details class="analysis-section"><summary>B. WHAT THE TRADINGVIEW CHART / CHART ANALYST SAYS</summary>'
         '<table class="analysis-table"><thead><tr><th>Timeframe</th><th>Question</th><th>Status</th><th>Observation</th><th>Level</th></tr></thead><tbody>'
         + visual_rows + '</tbody></table></details>'
@@ -1249,8 +1394,9 @@ def render_native_analysis_details(
         + _progression_requirements_section(item.canonical_instrument, progression)
         + '<section class="analysis-section analysis-next"><h2>F. WHAT HAPPENS NEXT</h2><p>' + escape(next_step) + '</p></section>'
         + _mcx_context_details(item.canonical_instrument, mcx_context)
-        + '<details class="analysis-section"><summary>G. TECHNICAL EVIDENCE</summary><div class="analysis-facts">'
-        + _analysis_fact_rows(technical) + '</div></details></div>'
+        + ('<details class="analysis-section"><summary>G. TECHNICAL EVIDENCE</summary><div class="analysis-facts">'
+           + _analysis_fact_rows(technical) + '</div></details>' if promotion_v2 is None else '')
+        + '</div>'
     )
     return _page(
         title=f"{item.canonical_instrument} Analysis Details",
@@ -1316,7 +1462,8 @@ def _render_native_analysis_details_v3(
         ("Watch identities", _watch_identities(item.canonical_instrument, progression)),
     ]
     promotion = visual_v3.kr370
-    kr370_summary = ""
+    kr370_summary = ('' if visual_v3.kr370_v2 is None
+                     else _v2_promotion_detail(visual_v3.kr370_v2))
     kr370_audit = ""
     if promotion is not None:
         summary = [
@@ -1381,7 +1528,8 @@ def _render_native_analysis_details_v3(
         + kr370_summary
         + trade_window_summary
         + _analysis_disclosure("A. WHAT KITE / NATIVE DISCOVERY SAYS", native_facts)
-        + _relative_context_details(relative_context, item.direction.value)
+        + ('' if visual_v3.kr370_v2 is not None else
+           _relative_context_details(relative_context, item.direction.value))
         + '<details class="analysis-section"><summary>B. WHAT THE TRADINGVIEW CHART / CHART ANALYST SAYS</summary>'
         '<p class="technical">Independent chart observations; KRONOS numerical facts are shown separately.</p>'
         '<table class="analysis-table"><thead><tr><th>Timeframe</th><th>Observation</th><th>Chart Analyst evidence</th></tr></thead><tbody>'
@@ -1403,9 +1551,10 @@ def _render_native_analysis_details_v3(
         + escape(_v3_next_step(item.canonical_instrument, progression, visual_v3.next_step))
         + '</p></section>'
         + _mcx_context_details(item.canonical_instrument, mcx_context)
-        + '<details class="analysis-section"><summary>G. TECHNICAL EVIDENCE</summary><div class="analysis-facts">'
-        + _analysis_fact_rows(technical) + '</div>' + kr370_audit
-        + '</details></div>'
+        + ('<details class="analysis-section"><summary>G. TECHNICAL EVIDENCE</summary><div class="analysis-facts">'
+           + _analysis_fact_rows(technical) + '</div>' + kr370_audit + '</details>'
+           if visual_v3.kr370_v2 is None else '')
+        + '</div>'
     )
     return _page(
         title=f"{item.canonical_instrument} Analysis Details",
@@ -3834,10 +3983,15 @@ def render_v1_review(
     relative_context: RelativeContextRun | None = None,
     native_intake: dict | None = None,
     answer_notice: dict | None = None,
+    *,
+    promotions_v2: tuple[V2PromotionRecord, ...] = (),
 ) -> str:
+    if type(promotions_v2) is not tuple or any(type(item) is not V2PromotionRecord
+                                               for item in promotions_v2):
+        raise TypeError("REVIEW_V2_PRESENTATION_INVALID")
     if native_intake is not None:
         body = (_analysis_run_strip(snapshot) + _answer_rejection_banner(answer_notice, native_intake)
-                + _receipt_native_review(native_intake))
+                + _receipt_native_review(native_intake, promotions_v2))
     elif (
         native_review is not None
         and native_review.state is NativeReviewRunState.REVIEW_REQUIRED
@@ -4113,7 +4267,7 @@ def _intake_error(reason):
         + '<br><code>' + escape(reason) + '</code></p>')
 
 
-def _intake_workspace_header(projection):
+def _intake_workspace_header(projection, *, show_internal=True):
     workspace = projection.get("workspace")
     body = ('<style>.wo07-markets{display:grid;gap:14px;min-width:0}'
         '.wo07-market{min-width:0;overflow:hidden}.wo07-market-head{display:flex;align-items:flex-end;'
@@ -4160,8 +4314,9 @@ def _intake_workspace_header(projection):
         when = workspace["analysis_time"].astimezone(ZoneInfo("Asia/Kolkata")).strftime("%d %b %Y %H:%M IST")
         body += ('<div class="wo07-summary"><strong>BINDING ' + escape(workspace["state"]) + '</strong>'
             '<span>' + str(workspace["eligible"]) + ' eligible / ' + str(workspace["population"]) + ' current</span>'
-            '<span>NSE ' + str(workspace["nse"]) + ' · MCX ' + str(workspace["mcx"]) + '</span></div>'
-            '<details><summary>Workspace details</summary><p>Owning successful analysis · ' + escape(when)
+            '<span>NSE ' + str(workspace["nse"]) + ' · MCX ' + str(workspace["mcx"]) + '</span></div>')
+        if show_internal:
+            body += ('<details><summary>Workspace details</summary><p>Owning successful analysis · ' + escape(when)
             + '<br>Run · <code>' + escape(workspace["run_identity"]) + '</code>'
             + '<br>Committed manifest · <code>' + escape(workspace["manifest"]) + '</code>'
             + '<br>Ineligible · ' + str(workspace["excluded"]) + '</p></details>')
@@ -4170,7 +4325,7 @@ def _intake_workspace_header(projection):
     return body + '</section>'
 
 
-def _receipt_native_review(projection):
+def _receipt_native_review(projection, promotions_v2=()):
     """Render immutable receipt applicability separately from consumer state."""
     from kronos.swing.v1.review_evidence_binding import canonical
 
@@ -4185,7 +4340,8 @@ def _receipt_native_review(projection):
 
     body = ('<div class="review-note"><strong>NATIVE REVIEW · RECEIPT-BOUND EVIDENCE</strong>'
         '<p>Chart → Question Pack → Answer → immutable acceptance receipt. '
-        'Evidence intake only; no trading or execution authority.</p></div>' + _intake_workspace_header(projection))
+        'Evidence intake only; no trading or execution authority.</p></div>'
+        + _intake_workspace_header(projection, show_internal=not promotions_v2))
     body += '<div id="current-question-pack" class="review-note wo07-toolbar" aria-label="Current Review pack actions">'
     for market in ("NSE", "MCX"):
         ready = [row for row in projection["rows"] if row["market"] == market and row["complete"] and row["expected"]]
@@ -4251,32 +4407,43 @@ def _receipt_native_review(projection):
             + '<div class="wo07-card-state"><span>Governed outcome · <strong>'
             + escape(governed_outcome.replace("_", " ")) + '</strong></span><span>Downstream · <strong>'
             + escape(row.get("downstream", "NOT_RUN").replace("_", " ")) + '</strong></span></div>')
+        matched_v2 = tuple(item for item in promotions_v2
+            if item.value["source"]["native_run_identity"] == row.get("run_identity")
+            and item.value["source"]["canonical_instrument"] == instrument
+            and item.value["source"]["native_assessment_sha256"] == row.get("assessment_sha256"))
+        if len(matched_v2) > 1:
+            raise ValueError("REVIEW_V2_PROMOTION_AMBIGUOUS")
+        if matched_v2:
+            body += _v2_promotion_detail(present_v2_promotion(matched_v2[0]))
         continuity = row.get("continuity")
         if (continuity is not None and continuity.opportunity_id is None
                 and continuity.qualification is not None):
             body += ('<p class="wo07-card-warning">ANALYTICAL ROOT UNCERTAIN · '
                 + escape(continuity.disposition.value.replace("_", " ")) + '</p>')
         if market == "MCX":
+            if not matched_v2:
+                body += '<p class="v2-downstream">DOWNSTREAM — MCX STEP-31 NOT COMMISSIONED</p>'
             body += '<p>One physical composite · six separate logical panel bindings.</p>'
             reference = row["selected"].get("SUPPORTING_REFERENCE")
             if reference is None or reference["image"] is None:
                 body += '<p class="wo07-card-warning">REFERENCE EVIDENCE MISSING<br>Complete MCX evidence acceptance is unavailable.</p>'
         if row["error"]:
             body += _intake_error(row["error"])
-        detail_lines = ["Run · " + str(row.get("run_identity")),
-            "Assessment SHA-256 · " + str(row.get("assessment_sha256")),
-            "Requirement SHA-256 · " + str(row.get("requirement_sha256")),
-            "Acceptance receipt · " + str(row.get("receipt_id"))]
-        for role, selection in row["selected"].items():
-            if selection is not None:
-                detail_lines.append(role + " revision · " + selection["selection_sha256"])
-                if selection["image"] is not None:
-                    detail_lines.append(role + " image SHA-256 · " + selection["image"]["sha256"])
-        body += '<details><summary>Supporting evidence</summary>' + _swing_continuity_summary(continuity)
-        body += ''.join('<code>' + escape(value) + '</code>' for value in detail_lines)
-        if row["replaced"]:
-            body += '<p>Replaced accepted evidence</p>' + ''.join('<code>' + escape(value) + '</code>' for value in row["replaced"])
-        body += '</details>'
+        if not promotions_v2:
+            detail_lines = ["Run · " + str(row.get("run_identity")),
+                "Assessment SHA-256 · " + str(row.get("assessment_sha256")),
+                "Requirement SHA-256 · " + str(row.get("requirement_sha256")),
+                "Acceptance receipt · " + str(row.get("receipt_id"))]
+            for role, selection in row["selected"].items():
+                if selection is not None:
+                    detail_lines.append(role + " revision · " + selection["selection_sha256"])
+                    if selection["image"] is not None:
+                        detail_lines.append(role + " image SHA-256 · " + selection["image"]["sha256"])
+            body += '<details><summary>Supporting evidence</summary>' + _swing_continuity_summary(continuity)
+            body += ''.join('<code>' + escape(value) + '</code>' for value in detail_lines)
+            if row["replaced"]:
+                body += '<p>Replaced accepted evidence</p>' + ''.join('<code>' + escape(value) + '</code>' for value in row["replaced"])
+            body += '</details>'
         visible_selections = (("NATIVE_MCX", row["selected"].get("NATIVE_MCX")),) if market == "MCX" else tuple(row["selected"].items())
         for offset, (role, selection) in enumerate(visible_selections):
             if row["expected"] is None or not row.get("eligible", True):
@@ -4303,11 +4470,12 @@ def _receipt_native_review(projection):
                 preview_markup = ('<a class="wo07-chart-preview" href="' + preview_url
                     + '" target="_blank" rel="noopener" aria-label="Open full-resolution ' + escape(label)
                     + '"><img loading="lazy" src="' + preview_url + '" alt="' + escape(label)
-                    + '"><span>Open original · revision ' + escape(selection["selection_sha256"])
+                    + '"><span>Open original' + ('' if promotions_v2 else ' · revision ' + escape(selection["selection_sha256"]))
                     + '</span></a><small class="wo07-action-reason">Received chart bytes; receipt alone is not visual or temporal validation.</small>')
                 content = ('<div class="wo07-chart-received"><strong>TRADINGVIEW COMPOSITE · RECEIVED</strong><span>'
-                    + escape(label) + '</span><span>Chart revision · ' + escape(selection["selection_sha256"])
-                    + '</span></div>')
+                    + escape(label) + '</span>'
+                    + ('' if promotions_v2 else '<span>Chart revision · ' + escape(selection["selection_sha256"]) + '</span>')
+                    + '</div>')
             controls = ''
             if received:
                 controls = ('<button class="replace-chart" type="button" data-target="' + target + '">Replace</button>'

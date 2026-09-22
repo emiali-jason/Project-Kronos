@@ -25,6 +25,8 @@ from kronos.swing.v1.analytical_promotion import (
     Kr370AnalyticalPromotionRecord,
     kr370_promotion_integrity_sha256,
 )
+from kronos.swing.v1.analytical_promotion_v2 import V2PromotionRecord
+from kronos.swing.universe import SWING_PHASE1_UNIVERSE
 from kronos.swing.v1.models import V1Direction
 from kronos.swing.v1.native_discovery import NativeOpportunityIdentity
 from kronos.swing.v1.native_readiness_v3 import NativeLayer2ReadinessRecordV3
@@ -40,6 +42,12 @@ KR370_STEP31_HANDOFF_CONTRACT_ID = "KRONOS-SWING-V1-KR370-STEP31-HANDOFF-V1"
 KR370_STEP31_HANDOFF_CONTRACT_VERSION = "1"
 KR370_STEP31_HANDOFF_SCHEMA = "KRONOS-SWING-V1-KR370-STEP31-HANDOFF-STORE-V1"
 KR370_STEP31_HANDOFF_AUTHORITY = "ELIGIBILITY_HANDOFF_ONLY"
+
+# The successor handoff has a separate identity so a V2 promotion cannot be
+# restored or presented as a historical KR-370 V1 input.
+KR370_STEP31_HANDOFF_V2_CONTRACT_ID = "KRONOS-SWING-KR370-STEP31-HANDOFF-V2"
+KR370_STEP31_HANDOFF_V2_CONTRACT_VERSION = "2"
+KR370_STEP31_HANDOFF_V2_SCHEMA = "KRONOS-SWING-KR370-STEP31-HANDOFF-STORE-V2"
 
 
 class Kr370Step31HandoffRejected(ValueError):
@@ -134,6 +142,187 @@ class Kr370Step31EligibilityHandoff:
             or self.broker_authority
         ):
             raise ValueError("KR370_STEP31_HANDOFF_INVALID")
+
+
+@dataclass(frozen=True, slots=True)
+class Kr370Step31EligibilityHandoffV2:
+    """NSE-only successor eligibility; never a V1 promotion or handoff."""
+
+    handoff_identity: str
+    native_run_identity: str
+    canonical_instrument: str
+    native_opportunity_identity: NativeOpportunityIdentity
+    direction: V1Direction
+    native_assessment_sha256: str
+    native_requirement_sha256: str
+    review_pack_identity: str
+    visual_question_set_identity: str
+    visual_question_set_version: str
+    visual_evidence_bindings: tuple[tuple[str, str, str], ...]
+    v3_readiness_identity: str
+    v3_readiness_sha256: str
+    kr370_record_identity: str
+    kr370_record_integrity_sha256: str
+    kr370_classification: str
+    confirmation_state: str
+    confirmation_integrity_sha256: str
+    analysis_boundary: datetime
+    observation_boundaries: tuple[tuple[str, datetime], ...]
+    created_at: datetime
+    provenance: tuple[str, ...]
+    integrity_sha256: str
+    contract_identity: str = KR370_STEP31_HANDOFF_V2_CONTRACT_ID
+    contract_version: str = KR370_STEP31_HANDOFF_V2_CONTRACT_VERSION
+    authority: str = KR370_STEP31_HANDOFF_AUTHORITY
+    freshness: str = "EXACT_CURRENT_SAME_RUN"
+    geometry_authority: bool = False
+    risk_authority: bool = False
+    sponsor_decision_authority: bool = False
+    entry_timing_authority: bool = False
+    position_authority: bool = False
+    alert_authority: bool = False
+    execution_authority: bool = False
+    broker_authority: bool = False
+
+    def __post_init__(self) -> None:
+        expected_direction = V1Direction.LONG if self.kr370_classification == "BUY_NOW" else V1Direction.SHORT
+        if (
+            not _identity(self.handoff_identity)
+            or not is_swing_analysis_run_id(self.native_run_identity)
+            or not self.canonical_instrument
+            or type(self.native_opportunity_identity) is not NativeOpportunityIdentity
+            or self.kr370_classification not in {"BUY_NOW", "SELL_NOW"}
+            or self.direction is not expected_direction
+            or not _digest(self.native_assessment_sha256)
+            or not _digest(self.native_requirement_sha256)
+            or not self.review_pack_identity
+            or self.visual_question_set_identity != VISUAL_QUESTION_SET_V3_ID
+            or self.visual_question_set_version not in {VISUAL_QUESTION_SET_V3_VERSION,
+                                                        VISUAL_QUESTION_SET_V3_SUCCESSOR_VERSION}
+            or len(self.visual_evidence_bindings) != 4
+            or any(len(item) != 3 or not _digest(item[1]) or not _digest(item[2])
+                   for item in self.visual_evidence_bindings)
+            or not _identity(self.v3_readiness_identity)
+            or not _digest(self.v3_readiness_sha256)
+            or not self.kr370_record_identity.startswith(
+                "KRONOS-KR-370-SWING-ANALYTICAL-PROMOTION-V2:2:"
+            )
+            or not _digest(self.kr370_record_integrity_sha256)
+            or self.kr370_record_identity.rsplit(":", 1)[-1] != self.kr370_record_integrity_sha256
+            or self.confirmation_state not in {"ESTABLISHED", "NOT_REQUIRED_BY_ASSET_CLASS"}
+            or not _digest(self.confirmation_integrity_sha256)
+            or not _aware(self.analysis_boundary)
+            or len(self.observation_boundaries) != 4
+            or any(not name or not _aware(boundary) for name, boundary in self.observation_boundaries)
+            or not _aware(self.created_at)
+            or not self.provenance
+            or self.integrity_sha256 != kr370_step31_handoff_v2_integrity_sha256(self)
+            or (self.contract_identity, self.contract_version) != (
+                KR370_STEP31_HANDOFF_V2_CONTRACT_ID, KR370_STEP31_HANDOFF_V2_CONTRACT_VERSION)
+            or self.authority != KR370_STEP31_HANDOFF_AUTHORITY
+            or self.freshness != "EXACT_CURRENT_SAME_RUN"
+            or any((self.geometry_authority, self.risk_authority, self.sponsor_decision_authority,
+                    self.entry_timing_authority, self.position_authority, self.alert_authority,
+                    self.execution_authority, self.broker_authority))
+        ):
+            raise ValueError("KR370_STEP31_HANDOFF_V2_INVALID")
+
+
+def kr370_step31_handoff_v2_integrity_sha256(value: Kr370Step31EligibilityHandoffV2 | dict[str, object]) -> str:
+    material = asdict(value) if type(value) is Kr370Step31EligibilityHandoffV2 else dict(value)
+    material.pop("integrity_sha256", None)
+    material.setdefault("contract_identity", KR370_STEP31_HANDOFF_V2_CONTRACT_ID)
+    material.setdefault("contract_version", KR370_STEP31_HANDOFF_V2_CONTRACT_VERSION)
+    material.setdefault("authority", KR370_STEP31_HANDOFF_AUTHORITY)
+    material.setdefault("freshness", "EXACT_CURRENT_SAME_RUN")
+    for field in ("geometry_authority", "risk_authority", "sponsor_decision_authority",
+                  "entry_timing_authority", "position_authority", "alert_authority",
+                  "execution_authority", "broker_authority"):
+        material.setdefault(field, False)
+    return sha256(_canonical(_primitive(material))).hexdigest()
+
+
+def create_kr370_step31_handoff_v2(
+    requirement: NativeReviewRequirement,
+    readiness: NativeLayer2ReadinessRecordV3,
+    promotion: V2PromotionRecord,
+    *, current_run_identity: str, current_analysis_boundary: datetime,
+    created_at: datetime,
+) -> Kr370Step31EligibilityHandoffV2:
+    if (type(requirement) is not NativeReviewRequirement
+            or type(readiness) is not NativeLayer2ReadinessRecordV3
+            or type(promotion) is not V2PromotionRecord
+            or not _aware(current_analysis_boundary) or not _aware(created_at)):
+        raise Kr370Step31HandoffRejected("KR370_STEP31_V2_INPUT_INVALID")
+    value = promotion.value  # Parsing revalidates the complete sealed V2 record.
+    source, confirmation = value["source"], value["confirmation"]
+    if (source["market"] != "NSE" or source["asset_class"] not in {"NSE_EQUITY", "NSE_INDEX"}):
+        raise Kr370Step31HandoffRejected("MCX_STEP31_NOT_COMMISSIONED")
+    member = next((item for item in SWING_PHASE1_UNIVERSE
+                   if item.canonical_identity == source["canonical_instrument"]), None)
+    if member is None or member.asset_class.value != source["asset_class"]:
+        raise Kr370Step31HandoffRejected("KR370_STEP31_V2_ASSET_CLASS_MISMATCH")
+    if (value["evaluation_disposition"] != "EVALUATED"
+            or value["promotion_state"] not in {"BUY_NOW", "SELL_NOW"}
+            or value["satisfied_count"] != 5 or value["missing_count"] != 0
+            or value["confirmation_pending"] is not False
+            or confirmation["state"] not in {"ESTABLISHED", "NOT_REQUIRED_BY_ASSET_CLASS"}):
+        raise Kr370Step31HandoffRejected("KR370_STEP31_V2_NOT_CONFIRMED_NOW")
+    if (source["native_run_identity"] != current_run_identity
+            or requirement.native_run_identity != current_run_identity
+            or readiness.run_identity != current_run_identity
+            or source["canonical_instrument"] != requirement.canonical_instrument
+            or readiness.canonical_instrument != requirement.canonical_instrument
+            or source["native_assessment_sha256"] != requirement.thesis.native_assessment_sha256
+            or readiness.native_assessment_sha256 != requirement.thesis.native_assessment_sha256
+            or source["native_requirement_sha256"] != requirement.requirement_sha256
+            or source["native_opportunity_identity"] != requirement.thesis.opportunity_identity.value
+            or source["direction"] != requirement.thesis.direction.value):
+        raise Kr370Step31HandoffRejected("KR370_STEP31_V2_SOURCE_MISMATCH")
+    boundary = datetime.fromisoformat(source["analysis_boundary"])
+    if boundary != current_analysis_boundary or boundary != readiness.analysis_boundary:
+        raise Kr370Step31HandoffRejected("KR370_STEP31_V2_STALE")
+    evidence = {item["timeframe"]: item for item in source["acceptance"]["visual_bindings"]
+                if item["role"] == "NATIVE_NSE"}
+    expected = {timeframe: (revision, integrity)
+                for timeframe, revision, integrity in readiness.visual_bindings}
+    if (len(evidence) != 4 or set(evidence) != set(expected)
+            or any((item["chart_sha256"], item["evidence_integrity_sha256"]) != expected[tf]
+                   for tf, item in evidence.items())
+            or readiness.question_set_identity != VISUAL_QUESTION_SET_V3_ID):
+        raise Kr370Step31HandoffRejected("KR370_STEP31_V2_VISUAL_MISMATCH")
+    observations = tuple((item["timeframe"], datetime.fromisoformat(item["boundary"]))
+                         for item in source["observation_boundaries"])
+    if observations != tuple((item.timeframe.value, item.observation_boundary)
+                             for item in requirement.thesis.timeframe_facts):
+        raise Kr370Step31HandoffRejected("KR370_STEP31_V2_BOUNDARY_MISMATCH")
+    fields = dict(native_run_identity=current_run_identity,
+        canonical_instrument=requirement.canonical_instrument,
+        native_opportunity_identity=requirement.thesis.opportunity_identity,
+        direction=requirement.thesis.direction,
+        native_assessment_sha256=requirement.thesis.native_assessment_sha256,
+        native_requirement_sha256=requirement.requirement_sha256,
+        review_pack_identity=source["acceptance"]["review_pack_identity"],
+        visual_question_set_identity=VISUAL_QUESTION_SET_V3_ID,
+        visual_question_set_version=readiness.question_set_version,
+        visual_evidence_bindings=tuple((tf, item["evidence_integrity_sha256"],
+                                        item["chart_sha256"]) for tf, item in evidence.items()),
+        v3_readiness_identity=f"NATIVE-V3-READINESS-{readiness.result_sha256}",
+        v3_readiness_sha256=readiness.result_sha256,
+        kr370_record_identity=promotion.identity,
+        kr370_record_integrity_sha256=value["integrity_sha256"],
+        kr370_classification=value["promotion_state"],
+        confirmation_state=confirmation["state"],
+        confirmation_integrity_sha256=sha256(_canonical(confirmation)).hexdigest(),
+        analysis_boundary=boundary, observation_boundaries=observations,
+        created_at=created_at,
+        provenance=(promotion.identity, value["integrity_sha256"],
+                    source["acceptance"]["receipt_identity"]),
+    )
+    identity = "KR370-STEP31-HANDOFF-V2-" + sha256(_canonical(_primitive(fields))).hexdigest()
+    material = {**fields, "handoff_identity": identity}
+    return Kr370Step31EligibilityHandoffV2(
+        **material, integrity_sha256=kr370_step31_handoff_v2_integrity_sha256(material))
 
 
 def create_kr370_step31_handoff(
@@ -263,11 +452,13 @@ class LocalKr370Step31HandoffStore:
             raise ValueError("KR370_STEP31_HANDOFF_STORE_INVALID")
         self._lock = RLock()
 
-    def retain(self, record: Kr370Step31EligibilityHandoff) -> Path:
-        if type(record) is not Kr370Step31EligibilityHandoff:
+    def retain(self, record: Kr370Step31EligibilityHandoff | Kr370Step31EligibilityHandoffV2) -> Path:
+        if type(record) not in {Kr370Step31EligibilityHandoff, Kr370Step31EligibilityHandoffV2}:
             raise TypeError("KR370_STEP31_HANDOFF_INVALID")
         path = self.root / record.native_run_identity / record.canonical_instrument / f"{record.integrity_sha256}.json"
-        payload = {"schema": KR370_STEP31_HANDOFF_SCHEMA, "record": _primitive(record)}
+        schema = (KR370_STEP31_HANDOFF_V2_SCHEMA if type(record) is Kr370Step31EligibilityHandoffV2
+                  else KR370_STEP31_HANDOFF_SCHEMA)
+        payload = {"schema": schema, "record": _primitive(record)}
         with self._lock:
             if path.exists():
                 if _read(path) != payload:
@@ -282,16 +473,18 @@ class LocalKr370Step31HandoffStore:
         canonical_instrument: str,
         native_assessment_sha256: str,
         kr370_integrity_sha256: str,
-    ) -> Kr370Step31EligibilityHandoff | None:
+    ) -> Kr370Step31EligibilityHandoff | Kr370Step31EligibilityHandoffV2 | None:
         root = self.root / run_identity / canonical_instrument
         if not root.exists():
             return None
         matches = []
         for path in sorted(root.glob("*.json")):
             payload = _read(path)
-            if payload.get("schema") != KR370_STEP31_HANDOFF_SCHEMA:
+            if payload.get("schema") not in {KR370_STEP31_HANDOFF_SCHEMA, KR370_STEP31_HANDOFF_V2_SCHEMA}:
                 raise ValueError("KR370_STEP31_HANDOFF_RESTORE_SCHEMA_INVALID")
-            record = _record_from_dict(payload.get("record"))
+            record = (_record_v2_from_dict(payload.get("record"))
+                      if payload["schema"] == KR370_STEP31_HANDOFF_V2_SCHEMA
+                      else _record_from_dict(payload.get("record")))
             if (
                 record.native_assessment_sha256 == native_assessment_sha256
                 and record.kr370_record_integrity_sha256 == kr370_integrity_sha256
@@ -339,6 +532,24 @@ def _record_from_dict(value: object) -> Kr370Step31EligibilityHandoff:
         return Kr370Step31EligibilityHandoff(**data)
     except (KeyError, TypeError, ValueError) as error:
         raise ValueError("KR370_STEP31_HANDOFF_STORED_RECORD_INVALID") from error
+
+
+def _record_v2_from_dict(value: object) -> Kr370Step31EligibilityHandoffV2:
+    if type(value) is not dict:
+        raise ValueError("KR370_STEP31_HANDOFF_V2_STORED_RECORD_INVALID")
+    try:
+        data = dict(value)
+        data["native_opportunity_identity"] = NativeOpportunityIdentity(data["native_opportunity_identity"])
+        data["direction"] = V1Direction(data["direction"])
+        data["visual_evidence_bindings"] = tuple(tuple(item) for item in data["visual_evidence_bindings"])
+        data["observation_boundaries"] = tuple(
+            (name, datetime.fromisoformat(boundary)) for name, boundary in data["observation_boundaries"])
+        data["analysis_boundary"] = datetime.fromisoformat(data["analysis_boundary"])
+        data["created_at"] = datetime.fromisoformat(data["created_at"])
+        data["provenance"] = tuple(data["provenance"])
+        return Kr370Step31EligibilityHandoffV2(**data)
+    except (KeyError, TypeError, ValueError) as error:
+        raise ValueError("KR370_STEP31_HANDOFF_V2_STORED_RECORD_INVALID") from error
 
 
 def _read(path: Path) -> dict[str, object]:
@@ -396,8 +607,11 @@ __all__ = [
     "KR370_STEP31_HANDOFF_CONTRACT_ID",
     "KR370_STEP31_HANDOFF_CONTRACT_VERSION",
     "Kr370Step31EligibilityHandoff",
+    "Kr370Step31EligibilityHandoffV2",
     "Kr370Step31HandoffRejected",
     "LocalKr370Step31HandoffStore",
     "create_kr370_step31_handoff",
+    "create_kr370_step31_handoff_v2",
     "kr370_step31_handoff_integrity_sha256",
+    "kr370_step31_handoff_v2_integrity_sha256",
 ]

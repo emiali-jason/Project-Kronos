@@ -7,7 +7,7 @@ it to the same immutable Native run and MTF machine-fact snapshot.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 
 from kronos.swing.v1.mtf_facts import FactualTimeframe, SameRunMtfFactSnapshot
@@ -16,6 +16,7 @@ from kronos.swing.v1.analytical_promotion import (
     LocalKr370AnalyticalPromotionStore,
     evaluate_kr370_analytical_promotion,
 )
+from kronos.swing.v1.analytical_promotion_v2 import V2PromotionRecord
 from kronos.swing.v1.extension import CompletedOneHourExtensionFact
 from kronos.swing.v1.path_clearance import OneHourPathClearanceFact
 from kronos.swing.v1.native_readiness import NativeConditionInputs
@@ -70,6 +71,7 @@ class CompletedVisualV3Review:
     readiness: NativeLayer2ReadinessRecordV3
     review_pack: VisualV3ReviewPackRecord | None = None
     promotion: Kr370AnalyticalPromotionRecord | None = None
+    promotion_v2: V2PromotionRecord | None = None
 
     def __post_init__(self) -> None:
         instrument = self.requirement.canonical_instrument
@@ -115,6 +117,29 @@ class CompletedVisualV3Review:
                     != tuple(
                         item[1] for item in self.promotion.visual_evidence_bindings
                     )
+                )
+            )
+            or (
+                self.promotion_v2 is not None
+                and (
+                    type(self.promotion_v2) is not V2PromotionRecord
+                    or self.promotion_v2.value["source"]["market"] != "NSE"
+                    or self.promotion_v2.value["source"]["native_run_identity"] != run_identity
+                    or self.promotion_v2.value["source"]["canonical_instrument"] != instrument
+                    or self.promotion_v2.value["source"]["native_assessment_sha256"]
+                    != self.requirement.thesis.native_assessment_sha256
+                    or self.promotion_v2.value["source"]["native_requirement_sha256"]
+                    != self.requirement.requirement_sha256
+                    or self.promotion_v2.value["source"]["acceptance"]["review_pack_identity"]
+                    != (None if self.review_pack is None else self.review_pack.review_pack_id)
+                    or {
+                        (item["timeframe"], item["evidence_integrity_sha256"], item["chart_sha256"])
+                        for item in self.promotion_v2.value["source"]["acceptance"]["visual_bindings"]
+                        if item["role"] == "NATIVE_NSE"
+                    } != {
+                        (item.timeframe.value, item.evidence_sha256, item.chart_revision_sha256)
+                        for item in self.responses
+                    }
                 )
             )
             or (
@@ -246,6 +271,19 @@ class SwingVisualV3ReviewCycle:
             review.readiness.run_identity,
             review.readiness.canonical_instrument,
         )] = review
+
+    def attach_v2(self, promotion: V2PromotionRecord) -> CompletedVisualV3Review:
+        """Bind a separately retained V2 decision to its exact completed NSE cycle."""
+        if type(promotion) is not V2PromotionRecord:
+            raise TypeError("V2_PROMOTION_INVALID")
+        source = promotion.value["source"]
+        key = (source["native_run_identity"], source["canonical_instrument"])
+        completed = self._completed.get(key)
+        if completed is None:
+            raise ValueError("V2_COMPLETED_REVIEW_MISSING")
+        updated = replace(completed, promotion_v2=promotion)
+        self._completed[key] = updated
+        return updated
 
     def restore_persisted(
         self,

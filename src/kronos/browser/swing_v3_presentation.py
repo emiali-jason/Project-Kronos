@@ -14,6 +14,7 @@ from kronos.swing.v1.analytical_promotion import (
     Kr370AnalyticalClassification,
     Kr370AnalyticalPromotionRecord,
 )
+from kronos.swing.v1.analytical_promotion_v2 import V2PromotionRecord
 from kronos.swing.v1.native_readiness import (
     EvidenceCompleteness,
     NativeReadinessState,
@@ -80,6 +81,27 @@ class Kr370SponsorPromotionPresentation:
 
 
 @dataclass(frozen=True, slots=True)
+class Kr370V2SponsorPromotionPresentation:
+    classification: str | None
+    disposition: str
+    direction: str
+    score: str
+    criteria: tuple[tuple[str, str, str], ...]
+    reasons: tuple[str, ...]
+    confirmation: str
+    confirmation_reasons: tuple[str, ...]
+    confirmation_pending: bool
+    nse_horizons: tuple[tuple[str, str], ...]
+    mcx_reference: str | None
+    mcx_mapping: str | None
+    mcx_coverage: str | None
+    mcx_agreement: tuple[tuple[str, str], ...]
+    mcx_divergence: str | None
+    mcx_limitations: tuple[str, ...]
+    market: str
+
+
+@dataclass(frozen=True, slots=True)
 class V3SponsorEvidencePresentation:
     run_identity: str
     canonical_instrument: str
@@ -95,6 +117,7 @@ class V3SponsorEvidencePresentation:
     readiness_identity: str
     review_pack_identity: str | None
     kr370: Kr370SponsorPromotionPresentation | None = None
+    kr370_v2: Kr370V2SponsorPromotionPresentation | None = None
 
     def machine_for(self, timeframe: str) -> V3MachineFactPresentation:
         return next(item for item in self.machine_facts if item.timeframe == timeframe)
@@ -128,9 +151,10 @@ def present_visual_v3_review(
     machine = review.mtf_snapshot.instrument(
         review.requirement.canonical_instrument
     ).reference_facts
-    promotion = (
-        None if review.promotion is None else _promotion(review.promotion)
-    )
+    promotion_v2 = (None if review.promotion_v2 is None
+                    else present_v2_promotion(review.promotion_v2))
+    promotion = (None if review.promotion is None or promotion_v2 is not None
+                 else _promotion(review.promotion))
     return V3SponsorEvidencePresentation(
         run_identity=readiness.run_identity,
         canonical_instrument=readiness.canonical_instrument,
@@ -140,19 +164,74 @@ def present_visual_v3_review(
         machine_facts=tuple(_machine(item) for item in machine),
         visual_facts=tuple(_visual(item) for item in review.responses),
         sponsor_status=(
+            (promotion_v2.classification or promotion_v2.disposition).replace("_", " ")
+            if promotion_v2 is not None else
             promotion.classification if promotion is not None else _status(review)
         ),
         readiness=readiness.readiness.value,
         readiness_reason=_plain(readiness.primary_reason),
         next_step=(
-            _promotion_next_step(review.promotion)
-            if review.promotion is not None else _next_step(review)
+            ("Analytical promotion only. Step-31, Risk, Sponsor decision and entry timing "
+             "remain separate governed authorities."
+             if promotion_v2 is not None and promotion_v2.market == "NSE" else
+             _promotion_next_step(review.promotion)
+             if promotion is not None else _next_step(review))
         ),
         readiness_identity=readiness.result_sha256,
         review_pack_identity=(
             review.review_pack.review_pack_id if review.review_pack is not None else None
         ),
         kr370=promotion,
+        kr370_v2=promotion_v2,
+    )
+
+
+def present_v2_promotion(record: V2PromotionRecord) -> Kr370V2SponsorPromotionPresentation:
+    """Format a validated V2 record; never evaluate promotion or expose digests."""
+    if type(record) is not V2PromotionRecord:
+        raise TypeError("KR370_V2_SPONSOR_PRESENTATION_INVALID")
+    value = record.value
+    source = value["source"]
+    confirmation = value["confirmation"]
+    binding = confirmation["nse_binding"] or confirmation["mcx_binding"]
+    payload = None if binding is None else binding["payload"]
+    horizons = (() if source["asset_class"] != "NSE_EQUITY" or payload is None
+                else tuple((item["timeframe"], item["directional_context"])
+                           for item in payload["horizons"]))
+    mapping = None if source["market"] != "MCX" or payload is None else payload["registered_mapping"]
+    mcx_rows = (() if mapping is None else tuple(
+        (item["timeframe"], item["relationship"])
+        for item in payload["m2"]["by_timeframe"]))
+    unavailable = (binding is not None and binding["validation_state"] != "VALID") or any(
+        state == "UNAVAILABLE" for _, state in horizons) or (
+        mapping is not None and any(payload[key]["observation_status"] == "UNAVAILABLE"
+                                for key in ("m1", "m2", "m3")))
+    state = confirmation["state"]
+    confirmation_label = ("NOT REQUIRED BY ASSET CLASS" if state == "NOT_REQUIRED_BY_ASSET_CLASS"
+                          else "ESTABLISHED" if state == "ESTABLISHED"
+                          else "UNAVAILABLE" if unavailable else "PENDING")
+    return Kr370V2SponsorPromotionPresentation(
+        classification=value["promotion_state"],
+        disposition=value["evaluation_disposition"],
+        direction=source["direction"],
+        score=("NOT EVALUATED" if value["satisfied_count"] is None
+               else f'{value["satisfied_count"]}/5'),
+        criteria=tuple((item["identity"], item["state"], item["reason_code"])
+                       for item in value["criteria"]),
+        reasons=tuple(value["reason_codes"]),
+        confirmation=confirmation_label,
+        confirmation_reasons=tuple(confirmation["reason_codes"]),
+        confirmation_pending=value["confirmation_pending"],
+        nse_horizons=horizons,
+        mcx_reference=(None if mapping is None else
+                       f'{mapping["reference_name"]} ({mapping["reference_market"]}: '
+                       f'{mapping["reference_symbol"]})'),
+        mcx_mapping=None if mapping is None else payload["m1"]["mapping_state"],
+        mcx_coverage=None if mapping is None else payload["m1"]["coverage_state"],
+        mcx_agreement=mcx_rows,
+        mcx_divergence=None if mapping is None else payload["m3"]["relationship_to_native_direction"],
+        mcx_limitations=() if mapping is None else tuple(payload["m3"]["limitations"]),
+        market=source["market"],
     )
 
 

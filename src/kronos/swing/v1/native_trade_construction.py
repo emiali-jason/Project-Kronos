@@ -15,7 +15,9 @@ from threading import RLock
 
 from kronos.instrument.facts import CanonicalInstrumentContext, InstrumentContextStatus
 from kronos.swing.v1.models import V1Direction
-from kronos.swing.v1.kr370_step31_handoff import Kr370Step31EligibilityHandoff
+from kronos.swing.v1.kr370_step31_handoff import (
+    Kr370Step31EligibilityHandoff, Kr370Step31EligibilityHandoffV2,
+)
 from kronos.swing.v1.native_discovery import NativeOpportunityIdentity
 from kronos.swing.v1.native_readiness import NativeLayer2ReadinessRecord, NativeReadinessState
 from kronos.swing.v1.native_review import NativeReviewRequirement
@@ -458,7 +460,7 @@ def create_trade_construction_evidence_package(
 
 def construct_trade_plan(
     requirement: NativeReviewRequirement,
-    readiness: NativeLayer2ReadinessRecord | Kr370Step31EligibilityHandoff,
+    readiness: NativeLayer2ReadinessRecord | Kr370Step31EligibilityHandoff | Kr370Step31EligibilityHandoffV2,
     evidence: TradeConstructionEvidencePackage,
     execution_context: CanonicalInstrumentContext,
     *,
@@ -469,6 +471,7 @@ def construct_trade_plan(
     if type(requirement) is not NativeReviewRequirement or type(readiness) not in {
         NativeLayer2ReadinessRecord,
         Kr370Step31EligibilityHandoff,
+        Kr370Step31EligibilityHandoffV2,
     }:
         raise TradeConstructionInputRejected("STEP31_INPUT_INVALID")
     if (
@@ -655,10 +658,10 @@ def step32_handoff(record: TradePlanRecord) -> TradePlanRecord:
 
 def _hard_binding_valid(
     requirement: NativeReviewRequirement,
-    readiness: NativeLayer2ReadinessRecord | Kr370Step31EligibilityHandoff,
+    readiness: NativeLayer2ReadinessRecord | Kr370Step31EligibilityHandoff | Kr370Step31EligibilityHandoffV2,
 ) -> bool:
     thesis = requirement.thesis
-    if type(readiness) is Kr370Step31EligibilityHandoff:
+    if type(readiness) in {Kr370Step31EligibilityHandoff, Kr370Step31EligibilityHandoffV2}:
         return (
             readiness.native_run_identity == requirement.native_run_identity
             and readiness.canonical_instrument == requirement.canonical_instrument
@@ -698,7 +701,7 @@ def _base_fields(requirement, readiness, evidence, context, created_at):  # type
         "readiness_record_sha256": readiness_sha256,
         "eligibility_integrity_sha256": (
             readiness.integrity_sha256
-            if type(readiness) is Kr370Step31EligibilityHandoff
+            if type(readiness) in {Kr370Step31EligibilityHandoff, Kr370Step31EligibilityHandoffV2}
             else readiness_sha256
         ),
         "evidence_package_sha256": evidence.package_sha256,
@@ -738,7 +741,7 @@ def _base_fields(requirement, readiness, evidence, context, created_at):  # type
                     readiness.handoff_identity,
                     readiness.integrity_sha256,
                 )
-                if type(readiness) is Kr370Step31EligibilityHandoff else ()
+                if type(readiness) in {Kr370Step31EligibilityHandoff, Kr370Step31EligibilityHandoffV2} else ()
             ),
             "DOMAIN-001",
             "DOMAIN-008",
@@ -750,19 +753,19 @@ def _base_fields(requirement, readiness, evidence, context, created_at):  # type
 
 
 def _readiness_lineage(
-    value: NativeLayer2ReadinessRecord | Kr370Step31EligibilityHandoff,
+    value: NativeLayer2ReadinessRecord | Kr370Step31EligibilityHandoff | Kr370Step31EligibilityHandoffV2,
 ) -> tuple[str, str]:
-    if type(value) is Kr370Step31EligibilityHandoff:
+    if type(value) in {Kr370Step31EligibilityHandoff, Kr370Step31EligibilityHandoffV2}:
         return value.v3_readiness_identity, value.v3_readiness_sha256
     return f"NATIVE-READINESS-{value.result_sha256}", value.result_sha256
 
 
 def _eligibility_boundary(
-    value: NativeLayer2ReadinessRecord | Kr370Step31EligibilityHandoff,
+    value: NativeLayer2ReadinessRecord | Kr370Step31EligibilityHandoff | Kr370Step31EligibilityHandoffV2,
 ) -> datetime:
     return (
         value.analysis_boundary
-        if type(value) is Kr370Step31EligibilityHandoff
+        if type(value) in {Kr370Step31EligibilityHandoff, Kr370Step31EligibilityHandoffV2}
         else value.observation_boundary
     )
 
@@ -796,7 +799,7 @@ def _unavailable(requirement, readiness, evidence, context, created_at, reason):
 def _target_rejected(
     *,
     requirement: NativeReviewRequirement,
-    readiness: NativeLayer2ReadinessRecord | Kr370Step31EligibilityHandoff,
+    readiness: NativeLayer2ReadinessRecord | Kr370Step31EligibilityHandoff | Kr370Step31EligibilityHandoffV2,
     evidence: TradeConstructionEvidencePackage,
     context: CanonicalInstrumentContext,
     created_at: datetime,

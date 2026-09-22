@@ -5,6 +5,41 @@ import pytest
 
 from tests.unit.browser.test_browser_server import _running_server, _request
 from tests.unit.swing.test_run_publication import checkpoint, scenario
+from tests.unit.browser.test_swing_review_intake_binding import (
+    native_intake, _accepted_native,
+)
+from tests.unit.swing.v1.test_mcx_supporting_context import _inventory
+
+
+@pytest.mark.parametrize("native_intake", ["NSE", "GOLDM"], indirect=True)
+def test_accepted_current_receipt_publishes_distinct_v2_without_get_writes(
+    native_intake, tmp_path, monkeypatch,
+):
+    market, instrument, _, _, _, commit = _accepted_native(native_intake, tmp_path)
+    run_identity = native_intake._context()[1].run_identity
+    promotion = native_intake.v2_for(run_identity, instrument)
+    assert promotion is not None
+    value = promotion.value
+    assert value["contract_version"] == "2"
+    assert value["source"]["acceptance"]["receipt_identity"] == commit.receipts[0].receipt_id
+    assert value["source"]["market"] == market
+    assert native_intake._v2_store.load_exact(
+        value["source"], value["input_sha256"],
+        current=native_intake._v2_current) == promotion
+    if market == "MCX":
+        assert native_intake.snapshot()["rows"][0]["downstream"] == "UNSUPPORTED_CONTRACT"
+    else:
+        assert value["confirmation"]["state"] == "WITHHELD"
+        assert value["confirmation_pending"] is (value["satisfied_count"] == 5)
+    before = _inventory(tmp_path)
+    for _ in range(3):
+        native_intake.snapshot()
+    assert _inventory(tmp_path) == before
+    if market == "NSE":
+        monkeypatch.setattr(native_intake.application, "relative_context_run",
+                            lambda: object(), raising=False)
+        with pytest.raises(ValueError, match="V2_PROMOTION_CURRENT_BINDING_INVALID"):
+            native_intake.v2_for(run_identity, instrument)
 
 
 def test_reconcile_swing_publishes_one_prepared_projection_and_revision():

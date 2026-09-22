@@ -38,8 +38,10 @@ from kronos.swing.v1.analytical_promotion import (
 )
 from kronos.swing.v1.kr370_step31_handoff import (
     Kr370Step31EligibilityHandoff,
+    Kr370Step31EligibilityHandoffV2,
     LocalKr370Step31HandoffStore,
     create_kr370_step31_handoff,
+    create_kr370_step31_handoff_v2,
 )
 from kronos.swing.v1.native_trade_construction import (
     AuthoritativePriceEvidence,
@@ -401,7 +403,7 @@ class NativeTradeWindowProjection:
     direction: str
     state: TradeWindowState
     reason: str
-    handoff: Kr370Step31EligibilityHandoff | None
+    handoff: Kr370Step31EligibilityHandoff | Kr370Step31EligibilityHandoffV2 | None
     trade_plan: TradePlanRecord | None
     step31_observation: Step31ObservationEvidence | None = None
     risk_state: str = "RISK_UNAVAILABLE"
@@ -459,7 +461,8 @@ class NativeTradeWindowProjection:
             or self.direction not in {"LONG", "SHORT"}
             or type(self.state) is not TradeWindowState
             or not self.reason
-            or (self.handoff is not None and type(self.handoff) is not Kr370Step31EligibilityHandoff)
+            or (self.handoff is not None and type(self.handoff) not in {
+                Kr370Step31EligibilityHandoff, Kr370Step31EligibilityHandoffV2})
             or (self.trade_plan is not None and type(self.trade_plan) is not TradePlanRecord)
             or (
                 self.step31_observation is not None
@@ -704,7 +707,8 @@ class SwingTradeWindowWorkflow:
         self._projection_generation = 0
         self._projection_changes = 0
         self._completed: dict[tuple[str, str], CompletedVisualV3Review] = {}
-        self._handoffs: dict[tuple[str, str], Kr370Step31EligibilityHandoff] = {}
+        self._handoffs: dict[tuple[str, str],
+                             Kr370Step31EligibilityHandoff | Kr370Step31EligibilityHandoffV2] = {}
         self._plans: dict[tuple[str, str], TradePlanRecord] = {}
         self._observations: dict[tuple[str, str], Step31ObservationEvidence] = {}
         self._observation_decisions: dict[
@@ -777,7 +781,7 @@ class SwingTradeWindowWorkflow:
         plan = self._plans.get(key)
         if (
             completed is None
-            or completed.promotion is None
+            or _selected_promotion(completed) is None
             or handoff is None
             or plan is None
             or type(instrument) is not InstrumentRecord
@@ -961,11 +965,12 @@ class SwingTradeWindowWorkflow:
     def _evaluate_current_risk(
         self,
         plan: TradePlanRecord,
-        handoff: Kr370Step31EligibilityHandoff,
+        handoff: Kr370Step31EligibilityHandoff | Kr370Step31EligibilityHandoffV2,
         completed: CompletedVisualV3Review,
         evaluated_at: datetime,
     ) -> RiskPermissionV1:
-        if completed.promotion is None or self._risk_store is None:
+        promotion = _selected_promotion(completed)
+        if promotion is None or self._risk_store is None:
             raise ValueError("CURRENT_RISK_PRODUCER_UNAVAILABLE")
         portfolio = self._portfolio_state
         current = self._production_risks.get(plan.trade_plan_id)
@@ -973,7 +978,7 @@ class SwingTradeWindowWorkflow:
             current is not None
             and current.trade_plan_sha256 == plan.integrity_hash
             and current.handoff_identity == handoff.handoff_identity
-            and current.kr370_source_identity == completed.promotion.integrity_sha256
+            and current.kr370_source_identity == promotion.integrity_sha256
             and current.portfolio_state_identity
             == (None if portfolio is None else portfolio.portfolio_state_identity)
             and current.current
@@ -982,8 +987,8 @@ class SwingTradeWindowWorkflow:
         risk = evaluate_risk_permission_v1(
             plan,
             handoff,
-            kr370_source_identity=completed.promotion.integrity_sha256,
-            kr370_source_sha256=completed.promotion.integrity_sha256,
+            kr370_source_identity=promotion.integrity_sha256,
+            kr370_source_sha256=promotion.integrity_sha256,
             portfolio_state=portfolio,
             current_trade_plan_id=plan.trade_plan_id,
             current_portfolio_cycle_identity=(
@@ -1103,11 +1108,11 @@ class SwingTradeWindowWorkflow:
         completed = self._completed.get(key)
         handoff = self._handoffs.get(key)
         plan = self._plans.get(key)
-        if completed is None or completed.promotion is None or handoff is None or plan is None:
+        promotion = _selected_promotion(completed)
+        if promotion is None or handoff is None or plan is None:
             raise ValueError("CURRENT_NATIVE_ENTRY_TIMING_INPUT_UNAVAILABLE")
         if self._risk_store is None or self._kr380_store is None:
             raise ValueError("CURRENT_NATIVE_ENTRY_TIMING_STORE_UNAVAILABLE")
-        promotion = completed.promotion
         risk = self._evaluate_current_risk(plan, handoff, completed, evaluated_at)
         context: NativeEcpcV2Context | None = None
         if risk.permits_entry:
@@ -1248,7 +1253,7 @@ class SwingTradeWindowWorkflow:
         stored_plans = self._trade_plan_store.load_for_requirements(requirements)
         stored_observations = self._observation_store.load_for_requirements(requirements)
         for review in completed:
-            promotion = review.promotion
+            promotion = _selected_promotion(review)
             if promotion is None:
                 continue
             key = (promotion.run_identity, promotion.canonical_instrument)
@@ -1325,7 +1330,11 @@ class SwingTradeWindowWorkflow:
                     raise ValueError("SWING_TRADE_WINDOW_OBSERVATION_PLAN_BINDING_INVALID")
                 self._observations[key] = observation
         restored_decisions = self._sponsor_observation_store.for_current_observations(
-            tuple(self._observations.values())
+            tuple(self._observations.values()),
+            promotion_versions={
+                key: _selected_promotion(self._completed[key]).version
+                for key in self._observations
+            },
         )
         self._observation_decisions = {
             (item.snapshot.native_run_identity, item.snapshot.canonical_instrument): item
@@ -1513,22 +1522,32 @@ class SwingTradeWindowWorkflow:
     ) -> NativeTradeWindowProjection:
         """Publish strict plan and advisory evidence after exact eligibility."""
 
-        promotion = completed.promotion
+        promotion = _selected_promotion(completed)
         if promotion is None:
             raise ValueError("KR370_PROMOTION_UNAVAILABLE")
+        if promotion.version == 2 and promotion.classification not in {"BUY_NOW", "SELL_NOW"}:
+            raise ValueError("KR370_STEP31_V2_NOT_CONFIRMED_NOW")
         if stage_listener is not None:
             stage_listener(TradePlanConstructionStage.UX05_HANDOFF)
         key = (promotion.run_identity, promotion.canonical_instrument)
         handoff = self._handoffs.get(key)
         if handoff is None:
-            handoff = create_kr370_step31_handoff(
-                completed.requirement,
-                completed.readiness,
-                promotion,
-                current_run_identity=current_run_identity,
-                current_analysis_boundary=current_analysis_boundary,
-                created_at=created_at,
-            )
+            if promotion.version == 2:
+                assert completed.promotion_v2 is not None
+                handoff = create_kr370_step31_handoff_v2(
+                    completed.requirement, completed.readiness,
+                    completed.promotion_v2,
+                    current_run_identity=current_run_identity,
+                    current_analysis_boundary=current_analysis_boundary,
+                    created_at=created_at)
+            else:
+                assert completed.promotion is not None
+                handoff = create_kr370_step31_handoff(
+                    completed.requirement, completed.readiness,
+                    completed.promotion,
+                    current_run_identity=current_run_identity,
+                    current_analysis_boundary=current_analysis_boundary,
+                    created_at=created_at)
             self._handoff_store.retain(handoff)
         elif not _exact_binding(completed, handoff):
             raise ValueError("SWING_TRADE_WINDOW_HANDOFF_BINDING_INVALID")
@@ -1689,22 +1708,22 @@ class SwingTradeWindowWorkflow:
         return result
 
     def _project_completed(self, completed):
-        if completed is None or completed.promotion is None:
+        promotion = _selected_promotion(completed)
+        if promotion is None:
             return None
         run_identity = completed.requirement.native_run_identity
         canonical_instrument = completed.requirement.canonical_instrument
-        promotion = completed.promotion
         base = dict(
             native_run_identity=run_identity,
             canonical_instrument=canonical_instrument,
             native_assessment_sha256=promotion.native_assessment_sha256,
-            kr370_classification=promotion.classification.value,
-            direction=promotion.direction.value,
+            kr370_classification=promotion.classification,
+            direction=promotion.direction,
             latest_construction_attempt=self.latest_construction_attempt(
                 run_identity, canonical_instrument, promotion.native_assessment_sha256
             ),
         )
-        if promotion.not_evaluable_reason is not None:
+        if promotion.not_evaluable:
             return NativeTradeWindowProjection(
                 **base,
                 state=TradeWindowState.TRADE_CONSTRUCTION_NOT_ELIGIBLE,
@@ -1712,10 +1731,7 @@ class SwingTradeWindowWorkflow:
                 handoff=None,
                 trade_plan=None,
             )
-        if promotion.classification not in {
-            Kr370AnalyticalClassification.BUY_NOW,
-            Kr370AnalyticalClassification.SELL_NOW,
-        }:
+        if promotion.classification not in {"BUY_NOW", "SELL_NOW"}:
             return NativeTradeWindowProjection(
                 **base,
                 state=TradeWindowState.TRADE_CONSTRUCTION_NOT_ELIGIBLE,
@@ -1832,8 +1848,11 @@ class SwingTradeWindowWorkflow:
             risk_state=risk_state,
             risk_evidence_identity=risk_identity,
         )
+        selected_handoff = self._handoffs.get(key)
+        promotion_record = (completed.promotion_v2 if completed.promotion_v2 is not None
+                            else completed.promotion)
         result = record_sponsor_observation_decision(
-            completed.promotion,
+            promotion_record,
             observation,
             handoff,
             choice,
@@ -1848,6 +1867,8 @@ class SwingTradeWindowWorkflow:
             sponsor_position_identity=sponsor_position_identity,
             mcx_supporting_context_identity=mcx_supporting_context_identity,
             mcx_supporting_context_sha256=mcx_supporting_context_sha256,
+            eligibility_handoff=(selected_handoff
+                if type(selected_handoff) is Kr370Step31EligibilityHandoffV2 else None),
         )
         retained = self._sponsor_observation_store.retain(result)
         self._observation_research.retain_observation(retained)
@@ -2373,7 +2394,10 @@ def build_current_trade_construction_evidence(
 ) -> TradeConstructionEvidencePackage:
     """Compose Step-31 inputs from immutable governed facts; derive no geometry."""
 
-    if type(completed) is not CompletedVisualV3Review or completed.promotion is None:
+    if type(completed) is not CompletedVisualV3Review:
+        raise ValueError("CURRENT_TRADE_CONSTRUCTION_SOURCE_INVALID")
+    promotion = _selected_promotion(completed)
+    if promotion is None or promotion.classification not in {"BUY_NOW", "SELL_NOW"}:
         raise ValueError("CURRENT_TRADE_CONSTRUCTION_SOURCE_INVALID")
     thesis = completed.requirement.thesis
     facts = completed.mtf_snapshot.instrument(thesis.canonical_instrument)
@@ -2440,7 +2464,7 @@ def build_current_trade_construction_evidence(
     package_identity = "STEP31-CURRENT-PACKAGE-" + digest(
         thesis.native_run_identity,
         thesis.native_assessment_sha256,
-        completed.promotion.integrity_sha256,
+        promotion.integrity_sha256,
     )
     return create_trade_construction_evidence_package(
         package_identity=package_identity,
@@ -2448,11 +2472,11 @@ def build_current_trade_construction_evidence(
         canonical_instrument=thesis.canonical_instrument,
         native_assessment_sha256=thesis.native_assessment_sha256,
         setup_identity=TradeSetupIdentity.PULLBACK_CONTINUATION,
-        observation_boundary=completed.promotion.analysis_boundary,
+        observation_boundary=promotion.analysis_boundary,
         provenance=tuple(dict.fromkeys((
             *thesis.provider_provenance,
             *thesis.calendar_provenance,
-            completed.promotion.integrity_sha256,
+            promotion.integrity_sha256,
             "SWING-V1-TRADE-CONSTRUCTION-V1",
         ))),
         qualification_candle=qualification,
@@ -2571,13 +2595,52 @@ class _Kr380SharedMonitoringConsumer:
         self._state = state
 
 
+@dataclass(frozen=True, slots=True)
+class _SelectedPromotion:
+    version: int
+    run_identity: str
+    canonical_instrument: str
+    native_assessment_sha256: str
+    integrity_sha256: str
+    classification: str
+    direction: str
+    analysis_boundary: datetime
+    review_pack_identity: str
+    not_evaluable: bool
+
+
+def _selected_promotion(completed: CompletedVisualV3Review | None) -> _SelectedPromotion | None:
+    if completed is None:
+        return None
+    if completed.promotion_v2 is not None:
+        value = completed.promotion_v2.value
+        source = value["source"]
+        return _SelectedPromotion(
+            2, source["native_run_identity"], source["canonical_instrument"],
+            source["native_assessment_sha256"], value["integrity_sha256"],
+            value["promotion_state"] or "", source["direction"],
+            datetime.fromisoformat(source["analysis_boundary"]),
+            source["acceptance"]["review_pack_identity"],
+            value["evaluation_disposition"] != "EVALUATED")
+    promotion = completed.promotion
+    if promotion is None:
+        return None
+    return _SelectedPromotion(
+        1, promotion.run_identity, promotion.canonical_instrument,
+        promotion.native_assessment_sha256, promotion.integrity_sha256,
+        promotion.classification.value, promotion.direction.value,
+        promotion.analysis_boundary, promotion.review_pack_identity,
+        promotion.not_evaluable_reason is not None)
+
+
 def _exact_binding(
     completed: CompletedVisualV3Review,
-    handoff: Kr370Step31EligibilityHandoff,
+    handoff: Kr370Step31EligibilityHandoff | Kr370Step31EligibilityHandoffV2,
 ) -> bool:
-    promotion = completed.promotion
+    promotion = _selected_promotion(completed)
     return (
         promotion is not None
+        and (type(handoff) is Kr370Step31EligibilityHandoffV2) == (promotion.version == 2)
         and handoff.native_run_identity == completed.requirement.native_run_identity
         and handoff.canonical_instrument == completed.requirement.canonical_instrument
         and handoff.native_assessment_sha256
@@ -2586,6 +2649,7 @@ def _exact_binding(
         and handoff.v3_readiness_sha256 == completed.readiness.result_sha256
         and handoff.review_pack_identity == promotion.review_pack_identity
         and handoff.kr370_record_integrity_sha256 == promotion.integrity_sha256
+        and (promotion.version == 1 or handoff.kr370_record_identity == completed.promotion_v2.identity)
         and handoff.analysis_boundary == promotion.analysis_boundary
     )
 

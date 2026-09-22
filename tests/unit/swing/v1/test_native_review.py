@@ -33,6 +33,34 @@ from kronos.swing.v1.native_review import (
 from tests.unit.application.test_swing_mtf_facts import _build as _mtf_build
 
 
+def test_v2_trade_plan_requires_exact_v3_readiness_identity(tmp_path) -> None:
+    from kronos.application.swing_native_review import _v3_plan_binding
+    from kronos.application.swing_trade_window import SwingTradeWindowWorkflow
+    from kronos.swing.v1.kr370_step31_handoff import LocalKr370Step31HandoffStore
+    from kronos.swing.v1.native_trade_construction import LocalTradePlanStore
+    from kronos.swing.v1.visual_evidence_v3 import VisualSetupQuality
+    from tests.unit.swing.v1.test_kr370_step31_handoff import (
+        NOW, _completed, _v2_completed, _evidence, _context,
+    )
+
+    completed = _v2_completed(tmp_path)
+    projection = SwingTradeWindowWorkflow(
+        LocalKr370Step31HandoffStore(tmp_path / "handoffs"),
+        LocalTradePlanStore(tmp_path / "plans"),
+    ).construct(
+        completed, _evidence(completed),
+        _context(completed.requirement.canonical_instrument),
+        current_run_identity=completed.requirement.native_run_identity,
+        current_analysis_boundary=completed.readiness.analysis_boundary,
+        created_at=NOW,
+    )
+    plan = projection.trade_plan
+    assert plan is not None
+    assert _v3_plan_binding(plan, completed.readiness)
+    foreign = _completed(tmp_path, quality=VisualSetupQuality.HEALTHY_CONSOLIDATION).readiness
+    assert not _v3_plan_binding(plan, foreign)
+
+
 @lru_cache(maxsize=1)
 def _evidence_run():  # type: ignore[no-untyped-def]
     facts, _ = _mtf_build()

@@ -56,6 +56,7 @@ from kronos.swing.v1.native_readiness import (
     NativeLayer2ReadinessStore,
     create_native_readiness_record,
 )
+from kronos.swing.v1.native_readiness_v3 import NativeLayer2ReadinessRecordV3
 from kronos.swing.v1.native_trade_construction import (
     LocalTradePlanStore,
     TradeConstructionEvidencePackage,
@@ -519,6 +520,7 @@ class NativeReviewWorkflow:
         self._reference: dict[str, McxReferenceResult] = {}
         self._visual_v2: dict[tuple[str, str, str], VisualEvidenceV2Response] = {}
         self._readiness: dict[str, NativeLayer2ReadinessRecord] = {}
+        self._v3_readiness: dict[str, NativeLayer2ReadinessRecordV3] = {}
         self._trade_plans: dict[str, TradePlanRecord] = {}
         self._sponsor_initiations: dict[str, SponsorInitiationResult] = {}
         self._step32_inputs: dict[str, tuple[BusinessJudgment, RiskApproval, CanonicalInstrumentContext]] = {}
@@ -617,6 +619,7 @@ class NativeReviewWorkflow:
                     ),
                 )
             }
+            self._v3_readiness.clear()
             self._trade_plans = {
                 item.trade_plan_id: item
                 for item in self._trade_plan_store.load_for_requirements(requirements)
@@ -670,6 +673,7 @@ class NativeReviewWorkflow:
                     ),
                 )
             }
+            self._v3_readiness.clear()
             self._trade_plans = {
                 item.trade_plan_id: item
                 for item in self._trade_plan_store.load_for_requirements(requirements)
@@ -679,7 +683,8 @@ class NativeReviewWorkflow:
             self._analysis.clear()
             self._refresh_status = "CURRENT REVIEW RESTORED"
             # Canonical restoration owns reconciliation; snapshot/GET does not.
-            self._reconcile_journal_unlocked()
+            if not self._v3_decision_needs_readiness_unlocked():
+                self._reconcile_journal_unlocked()
             return self._snapshot_unlocked()
 
     def ingest_layer2(
@@ -760,6 +765,8 @@ class NativeReviewWorkflow:
         plan: TradePlanRecord,
         risk_permission: RiskPermissionV1,
         execution_context: CanonicalInstrumentContext,
+        *,
+        v3_readiness: NativeLayer2ReadinessRecordV3 | None = None,
     ) -> tuple[BusinessJudgment, RiskApproval]:
         """Adapt current commissioned Risk truth to the existing Sponsor boundary."""
 
@@ -776,6 +783,15 @@ class NativeReviewWorkflow:
                 or not risk_permission.current
             ):
                 raise ValueError("OPERABILITY_STEP32_BINDING_INVALID")
+            if plan.readiness_record_identity.startswith("NATIVE-V3-READINESS-"):
+                if (
+                    type(v3_readiness) is not NativeLayer2ReadinessRecordV3
+                    or not _v3_plan_binding(plan, v3_readiness)
+                ):
+                    raise ValueError("OPERABILITY_V3_READINESS_BINDING_INVALID")
+                self._v3_readiness[v3_readiness.result_sha256] = v3_readiness
+            elif v3_readiness is not None:
+                raise ValueError("OPERABILITY_READINESS_VERSION_MIXED")
             if risk_permission.state.value == "RISK_CONSTRAINED":
                 # V1 constraints are reason identities, not enforceable quantities.
                 raise ValueError("RISK_CONSTRAINT_EXECUTION_DETAIL_UNAVAILABLE")
@@ -805,6 +821,38 @@ class NativeReviewWorkflow:
                 judgment, risk, execution_context
             )
             return judgment, risk
+
+    def bind_restored_v3_readiness(
+        self, readiness: tuple[NativeLayer2ReadinessRecordV3, ...]
+    ) -> None:
+        """Complete exact V3 Journal restoration after the V3 owner has restored."""
+        if type(readiness) is not tuple or any(
+            type(item) is not NativeLayer2ReadinessRecordV3 for item in readiness
+        ):
+            raise ValueError("OPERABILITY_V3_READINESS_BINDING_INVALID")
+        with self._lock:
+            selected = {item.result_sha256: item for item in readiness}
+            if len(selected) != len(readiness):
+                raise ValueError("OPERABILITY_V3_READINESS_AMBIGUOUS")
+            for plan in self._trade_plans.values():
+                if not plan.readiness_record_identity.startswith("NATIVE-V3-READINESS-"):
+                    continue
+                if any(item.decision is not None and item.decision.trade_plan_id == plan.trade_plan_id
+                       for item in self._sponsor_initiations.values()):
+                    record = selected.get(plan.readiness_record_sha256)
+                    if record is None or not _v3_plan_binding(plan, record):
+                        raise ValueError("OPERABILITY_V3_READINESS_RESTORE_INVALID")
+            self._v3_readiness = selected
+            self._reconcile_journal_unlocked()
+
+    def _v3_decision_needs_readiness_unlocked(self) -> bool:
+        return any(
+            plan.readiness_record_identity.startswith("NATIVE-V3-READINESS-")
+            and plan.readiness_record_sha256 not in self._v3_readiness
+            and any(item.decision is not None and item.decision.trade_plan_id == plan.trade_plan_id
+                    for item in self._sponsor_initiations.values())
+            for plan in self._trade_plans.values()
+        )
 
     def initiate_sponsor_decision(
         self,
@@ -922,11 +970,14 @@ class NativeReviewWorkflow:
             return self._trade_journal.snapshot()
 
     def _reconcile_journal_unlocked(self) -> TradeJournalSnapshot:
+        if self._v3_decision_needs_readiness_unlocked():
+            raise ValueError("JOURNAL_UNAVAILABLE:V3_READINESS_NOT_RESTORED")
         return self._trade_journal.reconcile(
             tuple(self._trade_plans.values()),
             tuple(self._readiness.values()),
             tuple(self._sponsor_initiations.values()),
             self._active_lifecycle.snapshot(),
+            v3_readiness=tuple(self._v3_readiness.values()),
         )
 
     def _restore_sponsor_decisions_unlocked(self) -> None:
@@ -1991,6 +2042,21 @@ def _visual_layer2_evidence(
                 )
             )
         ),
+    )
+
+
+def _v3_plan_binding(
+    plan: TradePlanRecord, readiness: NativeLayer2ReadinessRecordV3
+) -> bool:
+    return (
+        type(plan) is TradePlanRecord
+        and type(readiness) is NativeLayer2ReadinessRecordV3
+        and plan.readiness_record_identity == f"NATIVE-V3-READINESS-{readiness.result_sha256}"
+        and plan.readiness_record_sha256 == readiness.result_sha256
+        and plan.native_run_identity == readiness.run_identity
+        and plan.canonical_instrument == readiness.canonical_instrument
+        and plan.native_assessment_sha256 == readiness.native_assessment_sha256
+        and plan.observation_boundary == readiness.analysis_boundary
     )
 
 

@@ -552,6 +552,83 @@ def test_native_opportunities_use_intraday_aligned_bounded_market_layout() -> No
     assert '<details class="swing-supporting-details" open>' not in rendered
 
 
+def test_mcx_v2_opportunity_shows_reference_and_downstream_boundary() -> None:
+    from kronos.swing.v1.analytical_promotion_v2 import create_record
+    from kronos.swing.v1.native_discovery import Native1WState, NativeDiscoveryStatus, NativeProductPath
+    from tests.unit.swing.v1.test_analytical_promotion_v2 import (
+        source as v2_source, criteria as v2_criteria, mcx as v2_mcx,
+    )
+    from tests.unit.swing.v1.test_native_review import _evidence_run
+
+    _, base, probable = _evidence_run()
+    gold = replace(probable, canonical_instrument="GOLDM",
+                   product_path=NativeProductPath.MCX,
+                   weekly_state=Native1WState.NOT_APPLICABLE,
+                   result_sha256="a" * 64)
+    run = replace(base, assessments=tuple(
+        gold if item.canonical_instrument == "GOLDM" else replace(item,
+            status=NativeDiscoveryStatus.NO_CURRENT_OPPORTUNITY,
+            context_kind=None, opportunity_identity=None, operative_anchor=None)
+        for item in base.assessments), result_sha256="d" * 64)
+    source = v2_source(market="MCX")
+    source["native_run_identity"] = run.run_identity
+    source["native_assessment_sha256"] = gold.result_sha256
+    promotion = create_record(source=source, criteria=v2_criteria(),
+                              confirmation=v2_mcx(), created_at=NOW)
+    rendered = render_opportunities(
+        replace(_ready(), swing_analysis_run_identity=run.run_identity),
+        run, promotions_v2=(promotion,))
+    assert "GOLDM" in rendered and "KR-370 V2" in rendered
+    assert "REGISTERED GLOBAL REFERENCE" in rendered
+    assert "M1 mapping / coverage" in rendered and "M2 structural agreement" in rendered
+    assert "M3 divergence" in rendered
+    assert "DOWNSTREAM — MCX STEP-31 NOT COMMISSIONED" in rendered
+    assert "NIFTY CONFIRMATION" not in rendered
+    assert promotion.value["integrity_sha256"] not in rendered
+    assert '.v2-promotion-grid,.v2-criterion-list{grid-template-columns:minmax(0,1fr)}' in rendered
+    unavailable_intake = dict(rows=(dict(instrument="GOLDM", run_identity=run.run_identity,
+        assessment_sha256=gold.result_sha256, eligible=True, expected=None,
+        complete=False, question_ready=False, evidence="MISSING"),),
+        workspace=None, error=None)
+    with_intake = render_opportunities(
+        replace(_ready(), swing_analysis_run_identity=run.run_identity),
+        run, native_intake=unavailable_intake, promotions_v2=(promotion,))
+    assert 'data-v2-state="BUY_NOW"' in with_intake
+    assert '<span class="kr370-state kr370-state-now">BUY NOW</span>' in with_intake
+    assert 'REVIEW ELIGIBLE · REVIEW BINDING UNAVAILABLE</strong>' not in with_intake
+
+
+def test_mcx_v2_review_card_shows_confirmation_without_nifty() -> None:
+    from kronos.browser.views import _receipt_native_review
+    from kronos.swing.v1.analytical_promotion_v2 import create_record
+    from tests.unit.swing.v1.test_analytical_promotion_v2 import (
+        source as v2_source, criteria as v2_criteria, mcx as v2_mcx,
+    )
+
+    record = create_record(source=v2_source(market="MCX"), criteria=v2_criteria(),
+                           confirmation=v2_mcx(m2=("AGREES", "PARTLY_AGREES", "AGREES")),
+                           created_at=NOW)
+    source = record.value["source"]
+    row = dict(market="MCX", instrument="GOLDM", direction="LONG",
+               run_identity=source["native_run_identity"],
+               assessment_sha256=source["native_assessment_sha256"],
+               requirement_sha256=source["native_requirement_sha256"],
+               eligible=True, complete=False, question_ready=False,
+               evidence="ACCEPTED", receipt_id="receipt", expected=None,
+               supported_result=None, downstream="UNSUPPORTED_CONTRACT",
+               error=None, selected={"NATIVE_MCX": None, "SUPPORTING_REFERENCE": None},
+               replaced=())
+    page = _receipt_native_review(dict(rows=(row,), packages=(), error=None,
+                                      workspace=None), (record,))
+    for expected in ("MCX REVIEW", "GOLDM", "M1 mapping / coverage",
+                     "M2 structural agreement", "4H PARTLY AGREES",
+                     "M3 divergence", "CONFIRMATION PENDING",
+                     "DOWNSTREAM — MCX STEP-31 NOT COMMISSIONED"):
+        assert expected in page
+    assert "NIFTY CONFIRMATION" not in page
+    assert record.value["integrity_sha256"] not in page
+
+
 def test_native_opportunity_readiness_is_exact_and_unavailable_fails_closed() -> None:
     from tests.unit.swing.v1.test_native_review import _evidence_run
 

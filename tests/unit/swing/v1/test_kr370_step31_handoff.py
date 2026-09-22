@@ -1,4 +1,5 @@
 import copy
+from dataclasses import replace
 from datetime import UTC, datetime
 from decimal import Decimal
 from hashlib import sha256
@@ -24,7 +25,10 @@ from kronos.swing.v1.kr370_step31_handoff import (
     Kr370Step31HandoffRejected,
     LocalKr370Step31HandoffStore,
     create_kr370_step31_handoff,
+    create_kr370_step31_handoff_v2,
+    Kr370Step31EligibilityHandoffV2,
 )
+from kronos.swing.v1.analytical_promotion_v2 import create_record, _time
 from kronos.swing.v1.models import V1Direction
 from kronos.swing.v1.native_discovery import Native1HState
 from kronos.swing.v1.native_readiness_v3 import create_native_readiness_record_v3
@@ -39,6 +43,9 @@ from kronos.swing.v1.native_trade_construction import (
 )
 from kronos.swing.v1.pdf_visual_review_v3 import VisualV3ReviewPackRecord
 from tests.unit.swing.v1.test_analytical_promotion import _scenario
+from tests.unit.swing.v1.test_analytical_promotion_v2 import (
+    source as v2_source, criteria as v2_criteria, nse as v2_nse, mcx as v2_mcx,
+)
 from tests.unit.swing.v1.test_native_review import _layer2
 
 
@@ -92,6 +99,38 @@ def _handoff(completed):  # type: ignore[no-untyped-def]
         current_analysis_boundary=completed.promotion.analysis_boundary,
         created_at=NOW,
     )
+
+
+def _v2_completed(tmp_path, *, direction=V1Direction.LONG, confirmation=True):
+    completed = _completed(tmp_path, direction=direction)
+    source = v2_source(direction=direction.value)
+    source.update(
+        native_run_identity=completed.requirement.native_run_identity,
+        canonical_instrument=completed.requirement.canonical_instrument,
+        native_opportunity_identity=completed.requirement.thesis.opportunity_identity.value,
+        native_assessment_sha256=completed.requirement.thesis.native_assessment_sha256,
+        native_requirement_sha256=completed.requirement.requirement_sha256,
+        analysis_boundary=_time(completed.readiness.analysis_boundary),
+        observation_boundaries=[
+            dict(timeframe=item.timeframe.value, boundary=_time(item.observation_boundary))
+            for item in completed.requirement.thesis.timeframe_facts
+        ],
+    )
+    source["acceptance"]["review_pack_identity"] = completed.review_pack.review_pack_id
+    for item in source["acceptance"]["visual_bindings"]:
+        response = next(x for x in completed.responses if x.timeframe.value == item["timeframe"])
+        item["chart_sha256"] = response.chart_revision_sha256
+        item["evidence_integrity_sha256"] = response.evidence_sha256
+    relative = v2_nse(
+        direction=direction.value,
+        states=(("OUTPERFORMING", "OUTPERFORMING") if direction is V1Direction.LONG
+                else ("UNDERPERFORMING", "UNDERPERFORMING"))
+        if confirmation else ("EQUAL", "EQUAL"),
+    )
+    promotion = create_record(
+        source=source, criteria=v2_criteria(), confirmation=relative, created_at=NOW
+    )
+    return replace(completed, promotion_v2=promotion)
 
 
 def _price(identity: str, value: str, boundary: datetime) -> AuthoritativePriceEvidence:
@@ -280,6 +319,94 @@ def test_existing_step31_constructs_and_restores_exact_long_geometry(tmp_path) -
         completed.requirement.native_run_identity,
         completed.requirement.canonical_instrument,
     ) == projection
+
+
+@pytest.mark.parametrize("direction", (V1Direction.LONG, V1Direction.SHORT))
+def test_v2_exact_now_handoff_keeps_step31_geometry_and_restores_distinct_version(
+    tmp_path, direction,
+) -> None:
+    completed = _v2_completed(tmp_path, direction=direction)
+    workflow = SwingTradeWindowWorkflow(
+        LocalKr370Step31HandoffStore(tmp_path / "handoffs"),
+        LocalTradePlanStore(tmp_path / "plans"),
+    )
+    projection = workflow.construct(
+        completed, _evidence(completed),
+        _context(completed.requirement.canonical_instrument),
+        current_run_identity=completed.requirement.native_run_identity,
+        current_analysis_boundary=completed.readiness.analysis_boundary,
+        created_at=NOW,
+    )
+    assert type(projection.handoff) is Kr370Step31EligibilityHandoffV2
+    assert projection.handoff.kr370_record_identity == completed.promotion_v2.identity
+    assert projection.trade_plan is not None
+    original = _completed(tmp_path, direction=direction)
+    v1 = SwingTradeWindowWorkflow(
+        LocalKr370Step31HandoffStore(tmp_path / "v1-handoffs"),
+        LocalTradePlanStore(tmp_path / "v1-plans"),
+    ).construct(
+        original, _evidence(original),
+        _context(original.requirement.canonical_instrument),
+        current_run_identity=original.requirement.native_run_identity,
+        current_analysis_boundary=original.readiness.analysis_boundary,
+        created_at=NOW,
+    )
+    assert v1.trade_plan is not None
+    assert (projection.trade_plan.entry, projection.trade_plan.stop,
+            projection.trade_plan.canonical_target, projection.trade_plan.risk_reward_ratio) == (
+        v1.trade_plan.entry, v1.trade_plan.stop,
+        v1.trade_plan.canonical_target, v1.trade_plan.risk_reward_ratio)
+    restored = SwingTradeWindowWorkflow(
+        LocalKr370Step31HandoffStore(tmp_path / "handoffs"),
+        LocalTradePlanStore(tmp_path / "plans"),
+    )
+    restored.restore((completed,))
+    assert restored.project(completed.requirement.native_run_identity,
+                            completed.requirement.canonical_instrument) == projection
+
+
+def test_v2_ready_cannot_publish_step31_handoff(tmp_path) -> None:
+    completed = _v2_completed(tmp_path, confirmation=False)
+    assert completed.promotion_v2.value["promotion_state"] == "BUY_READY"
+    with pytest.raises(Kr370Step31HandoffRejected, match="NOT_CONFIRMED_NOW"):
+        create_kr370_step31_handoff_v2(
+            completed.requirement, completed.readiness, completed.promotion_v2,
+            current_run_identity=completed.requirement.native_run_identity,
+            current_analysis_boundary=completed.readiness.analysis_boundary,
+            created_at=NOW,
+        )
+
+
+def test_mcx_v2_now_is_analytical_only_and_step31_not_commissioned(tmp_path) -> None:
+    completed = _completed(tmp_path)
+    mcx = create_record(
+        source=v2_source(market="MCX"), criteria=v2_criteria(),
+        confirmation=v2_mcx(), created_at=NOW)
+    assert mcx.value["promotion_state"] == "BUY_NOW"
+    with pytest.raises(Kr370Step31HandoffRejected, match="MCX_STEP31_NOT_COMMISSIONED"):
+        create_kr370_step31_handoff_v2(
+            completed.requirement, completed.readiness, mcx,
+            current_run_identity=completed.requirement.native_run_identity,
+            current_analysis_boundary=completed.readiness.analysis_boundary,
+            created_at=NOW,
+        )
+
+
+def test_equity_cannot_claim_index_self_comparison_exemption(tmp_path) -> None:
+    from tests.unit.swing.v1.test_analytical_promotion_v2 import index as v2_index
+
+    completed = _completed(tmp_path)
+    source = v2_source(asset_class="NSE_INDEX",
+                       instrument=completed.requirement.canonical_instrument)
+    record = create_record(source=source, criteria=v2_criteria(),
+                           confirmation=v2_index(), created_at=NOW)
+    with pytest.raises(Kr370Step31HandoffRejected, match="ASSET_CLASS_MISMATCH"):
+        create_kr370_step31_handoff_v2(
+            completed.requirement, completed.readiness, record,
+            current_run_identity=completed.requirement.native_run_identity,
+            current_analysis_boundary=completed.readiness.analysis_boundary,
+            created_at=NOW,
+        )
 
 
 def test_existing_step31_constructs_exact_short_geometry(tmp_path) -> None:  # type: ignore[no-untyped-def]

@@ -20,6 +20,10 @@ from kronos.swing.v1.analytical_promotion import (
     Kr370AnalyticalPromotionRecord,
     kr370_promotion_integrity_sha256,
 )
+from kronos.swing.v1.analytical_promotion_v2 import create_record
+from tests.unit.swing.v1.test_analytical_promotion_v2 import (
+    source as v2_source, criteria as v2_criteria, nse as v2_nse,
+)
 from tests.unit.swing.v1.test_kr370_step31_handoff import _completed
 from tests.unit.application.test_swing_ux10 import Telegram, ux10
 
@@ -44,6 +48,29 @@ class Handle:
 
     def cancel(self) -> None:
         self.cancelled = True
+
+
+def test_v2_k5_ready_receives_existing_bounded_reminder_without_v1_conversion(tmp_path) -> None:
+    promotion = create_record(
+        source=v2_source(), criteria=v2_criteria(4), confirmation=v2_nse(),
+        created_at=datetime(2026, 9, 21, 9, 0, tzinfo=ZoneInfo("UTC")))
+    scheduler = Scheduler()
+    workflow = SwingK5RefreshReminderWorkflow(
+        K5RefreshReminderStore(tmp_path / "v2-reminders"),
+        clock=lambda: datetime(2026, 9, 21, 14, 30, tzinfo=IST),
+        scheduler=scheduler,
+    )
+    source = promotion.value["source"]
+    snapshot = workflow.synchronize(
+        source["native_run_identity"], (promotion,),
+        {source["canonical_instrument"]: "NSE"},
+    )
+    assert len(snapshot.records) == 1
+    record = snapshot.records[0]
+    assert record.instrument_bindings == ((source["canonical_instrument"],
+                                           source["native_assessment_sha256"],
+                                           "BUY_READY", "NSE"),)
+    assert len(scheduler.calls) == 1
 
 
 def _ready(tmp_path: Path) -> Kr370AnalyticalPromotionRecord:
