@@ -253,7 +253,10 @@ class SwingRunPublication:
                 _require(set(ref) == {"path", "sha256"} and ref["path"] == str(path))
                 _require(sha256(path.read_bytes()).hexdigest() == ref["sha256"])
                 if kind == "native":
-                    _require(json.loads(path.read_bytes()).get("schema") == native_discovery.NATIVE_DISCOVERY_SCHEMA)
+                    _require(json.loads(path.read_bytes()).get("schema") in {
+                        native_discovery.NATIVE_DISCOVERY_SCHEMA,
+                        "KRONOS-NATIVE-MTF-DISCOVERY-RUN-V1",
+                    })
             rid = manifest["run_id"]
             m = self.mtf_store.load(rid)
             n = self.native_store.load(rid)

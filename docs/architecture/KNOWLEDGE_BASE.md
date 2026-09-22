@@ -1,5 +1,8 @@
 # KRONOS Architecture Knowledge Base
 
+Swing Phase C Native Discovery successor: [ADR-0057](adr/ADR-0057-SWING-NATIVE-AVAILABILITY-SEMANTICS-V2.md)
+and [availability V2 contract](interfaces/KRONOS-SWING-NATIVE-DISCOVERY-AVAILABILITY-V2.md).
+
 **Status:** Draft
 **Owner:** Architecture Librarian
 **Approved By:** Not approved

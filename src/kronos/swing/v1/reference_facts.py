@@ -438,7 +438,10 @@ def _previous_month_source(
                 profile = calendar_publisher.instrument_session_profile(
                     exchange,
                     cursor,
-                    canonical_instrument_id=canonical_instrument,
+                    canonical_instrument_id=(
+                        "BANKNIFTY" if exchange == "NSE" and canonical_instrument == "BANK NIFTY"
+                        else canonical_instrument
+                    ),
                     observed_at=observed_at,
                 )
             except ValueError:

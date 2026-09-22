@@ -3,6 +3,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
+import json
 
 import pytest
 
@@ -371,7 +372,10 @@ def test_one_hour_progression_states() -> None:
     (
         ("NSE", Native1WState.SUPPORTIVE, Native4HState.STRUCTURAL_HOLD, Native1HState.PROGRESSING, NativeDiscoveryStatus.PROBABLE),
         ("NSE", Native1WState.NEUTRAL, Native4HState.DEVELOPING_PULLBACK, Native1HState.NEUTRAL, NativeDiscoveryStatus.FORMING_WATCH),
-        ("NSE", Native1WState.OPPOSING, Native4HState.STRUCTURAL_HOLD, Native1HState.PROGRESSING, NativeDiscoveryStatus.UNAVAILABLE),
+        ("NSE", Native1WState.OPPOSING, Native4HState.STRUCTURAL_HOLD, Native1HState.PROGRESSING, NativeDiscoveryStatus.NO_CURRENT_OPPORTUNITY),
+        ("NSE", Native1WState.OPPOSING, Native4HState.UNAVAILABLE, Native1HState.UNAVAILABLE, NativeDiscoveryStatus.UNAVAILABLE),
+        ("NSE", Native1WState.OPPOSING, Native4HState.STRUCTURAL_HOLD, Native1HState.UNAVAILABLE, NativeDiscoveryStatus.UNAVAILABLE),
+        ("MCX", Native1WState.NOT_APPLICABLE, Native4HState.FAILED, Native1HState.UNAVAILABLE, NativeDiscoveryStatus.NO_CURRENT_OPPORTUNITY),
         ("NSE", Native1WState.UNAVAILABLE, Native4HState.STRUCTURAL_HOLD, Native1HState.PROGRESSING, NativeDiscoveryStatus.UNAVAILABLE),
         ("NSE", Native1WState.SUPPORTIVE, Native4HState.DETERIORATING, Native1HState.NEUTRAL, NativeDiscoveryStatus.NO_CURRENT_OPPORTUNITY),
         ("NSE", Native1WState.SUPPORTIVE, Native4HState.STRUCTURAL_HOLD, Native1HState.DETERIORATING, NativeDiscoveryStatus.NO_CURRENT_OPPORTUNITY),
@@ -443,6 +447,38 @@ def test_native_persistence_restores_exact_levels_and_run_binding(tmp_path: Path
     assert restored.assessments[0].factual_levels == native_run.assessments[0].factual_levels
     with pytest.raises(ValueError, match="IMMUTABLE"):
         store.retain(replace(native_run, result_sha256="f" * 64))
+
+
+def test_historical_native_run_bytes_and_version_dispatch_remain_exact(tmp_path: Path, native_run) -> None:  # type: ignore[no-untyped-def]
+    historical = tuple(replace(
+        item, policy_identity="SWING-V1-KRONOS-NATIVE-MTF-DISCOVERY-V0",
+        policy_version="0",
+    ) for item in native_run.assessments)
+    old = replace(
+        native_run,
+        assessments=historical,
+        policy_identity="SWING-V1-KRONOS-NATIVE-MTF-DISCOVERY-V0",
+        policy_version="0",
+        schema="KRONOS-NATIVE-MTF-DISCOVERY-RUN-V1",
+        result_sha256=native._digest({
+            "run_identity": native_run.run_identity,
+            "provider_source_identity": native_run.provider_source_identity,
+            "observed_at": native_run.observed_at,
+            "assessments": historical,
+        }),
+    )
+    store = NativeDiscoveryEvidenceStore(tmp_path)
+    path = store.retain(old)
+    original = path.read_bytes()
+    assert store.load(old.run_identity) == old
+    assert path.read_bytes() == original
+    with pytest.raises(ValueError, match="NATIVE_DISCOVERY_RUN_INVALID"):
+        replace(old, assessments=native_run.assessments)
+    payload = json.loads(original)
+    payload["schema"] = native.NATIVE_DISCOVERY_SCHEMA
+    path.write_text(json.dumps(payload))
+    with pytest.raises(ValueError, match="NATIVE_DISCOVERY_RUN_INVALID"):
+        store.load(old.run_identity)
 
 
 def test_browser_compares_daily_control_with_native_mtf(native_run) -> None:  # type: ignore[no-untyped-def]

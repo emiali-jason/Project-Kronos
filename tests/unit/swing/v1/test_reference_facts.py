@@ -91,6 +91,26 @@ def _facts(
     )
 
 
+def test_bank_nifty_reference_uses_exact_calendar_subject_without_identity_rewrite() -> None:
+    observed_at = datetime(2026, 8, 14, 23, 59, tzinfo=IST)
+    publisher, daily, weekly = _histories("NSE", observed_at)
+    latest_week, week_identity = weekly[-1]
+    facts = build_reference_machine_facts(
+        run_identity=RUN_ID, canonical_instrument="BANK NIFTY", exchange="NSE",
+        completed_daily=daily, completed_week=latest_week,
+        completed_week_identity=week_identity, calendar_publisher=publisher,
+        observed_at=observed_at, analysis_boundary=observed_at - timedelta(minutes=1),
+        provider_source_identity=REFERENCE_SOURCE,
+    )
+    assert [item.chart_timeframe for item in facts] == list(SwingReferenceChartTimeframe)
+    assert all(item.canonical_instrument == "BANK NIFTY" for item in facts)
+    assert all(item.availability is SwingReferenceAvailability.AVAILABLE for item in facts)
+    assert publisher.instrument_session_profile(
+        "NSE", observed_at.date(), canonical_instrument_id="BANKNIFTY",
+        observed_at=observed_at,
+    ) is not None
+
+
 @pytest.mark.parametrize(
     ("timeframe", "period"),
     (

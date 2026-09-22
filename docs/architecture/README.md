@@ -1,5 +1,10 @@
 # KRONOS Architecture Repository
 
+Swing Phase C prospective Native availability semantics are governed by
+[ADR-0057](adr/ADR-0057-SWING-NATIVE-AVAILABILITY-SEMANTICS-V2.md) and the
+[V2 contract](interfaces/KRONOS-SWING-NATIVE-DISCOVERY-AVAILABILITY-V2.md);
+historical Native run semantics remain preserved.
+
 **Status:** Draft  
 **Owner:** Architecture Librarian  
 **Approved By:** Not approved

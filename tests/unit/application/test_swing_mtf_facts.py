@@ -81,6 +81,24 @@ def _candle(timestamp: datetime, offset: int) -> HistoricalCandle:
     )
 
 
+def test_daily_and_four_hour_pivots_use_fixed_completed_sixty_bar_window() -> None:
+    candles = tuple(HistoricalCandle(
+        NOW - timedelta(days=60-index), 100.0,
+        110.0 if index in {7, 20, 41} else 101.0 + index / 1000,
+        90.0 if index in {10, 23, 44} else 99.0 - index / 1000,
+        100.0, 100,
+    ) for index in range(60))
+    for timeframe in (FactualTimeframe.DAILY, FactualTimeframe.FOUR_HOUR):
+        radius_two = swing_mtf_facts._structural_measurements(candles, timeframe)[1]
+        assert len(radius_two.swing_highs) >= 2
+        assert len(radius_two.swing_lows) >= 2
+        assert all(item.timestamp <= NOW for item in (*radius_two.swing_highs, *radius_two.swing_lows))
+    for timeframe in (FactualTimeframe.WEEKLY, FactualTimeframe.ONE_HOUR):
+        radius_two = swing_mtf_facts._structural_measurements(candles, timeframe)[1]
+        assert len(radius_two.swing_highs) < 2
+        assert len(radius_two.swing_lows) < 2
+
+
 def _trading_dates(
     publisher: MarketCalendarPublisher,
     exchange: str,

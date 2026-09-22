@@ -35,10 +35,17 @@ from kronos.swing.v1.weekly_facts import (
 )
 
 
-NATIVE_DISCOVERY_POLICY_ID = "SWING-V1-KRONOS-NATIVE-MTF-DISCOVERY-V0"
-NATIVE_DISCOVERY_POLICY_VERSION = "0"
+_HISTORICAL_POLICY_ID = "SWING-V1-KRONOS-NATIVE-MTF-DISCOVERY-V0"
+_HISTORICAL_POLICY_VERSION = "0"
+_HISTORICAL_SCHEMA = "KRONOS-NATIVE-MTF-DISCOVERY-RUN-V1"
+NATIVE_DISCOVERY_POLICY_ID = "SWING-V1-KRONOS-NATIVE-MTF-DISCOVERY-V1"
+NATIVE_DISCOVERY_POLICY_VERSION = "1"
 NATIVE_DISCOVERY_AUTHORITY = "DISCOVERY_ONLY_NO_READINESS_OR_EXECUTION_AUTHORITY"
-NATIVE_DISCOVERY_SCHEMA = "KRONOS-NATIVE-MTF-DISCOVERY-RUN-V1"
+NATIVE_DISCOVERY_SCHEMA = "KRONOS-NATIVE-MTF-DISCOVERY-RUN-V2"
+_POLICIES = {
+    (NATIVE_DISCOVERY_POLICY_ID, NATIVE_DISCOVERY_POLICY_VERSION, NATIVE_DISCOVERY_SCHEMA),
+    (_HISTORICAL_POLICY_ID, _HISTORICAL_POLICY_VERSION, _HISTORICAL_SCHEMA),
+}
 DEFAULT_NATIVE_DISCOVERY_EVIDENCE_ROOT = (
     Path.home() / "Library" / "Application Support" / "KRONOS" / "evidence"
     / "swing-v1" / "native-discovery"
@@ -189,8 +196,9 @@ class NativeInstrumentDiscovery:
             or any(not item for item in self.daily_control_probable_identities)
             or (self.predecessor_result_sha256 is not None and len(self.predecessor_result_sha256) != 64)
             or len(self.result_sha256) != 64
-            or self.policy_identity != NATIVE_DISCOVERY_POLICY_ID
-            or self.policy_version != NATIVE_DISCOVERY_POLICY_VERSION
+            or (self.policy_identity, self.policy_version) not in {
+                (policy, version) for policy, version, _ in _POLICIES
+            }
             or self.authority != NATIVE_DISCOVERY_AUTHORITY
             or (self.product_path is NativeProductPath.MCX and self.weekly_state is not Native1WState.NOT_APPLICABLE)
             or (self.status in {NativeDiscoveryStatus.PROBABLE, NativeDiscoveryStatus.FORMING_WATCH} and not directional)
@@ -221,10 +229,11 @@ class NativeDiscoveryRun:
             or len({item.canonical_instrument for item in self.assessments}) != 98
             or any(item.run_identity != self.run_identity for item in self.assessments)
             or len(self.result_sha256) != 64
-            or self.policy_identity != NATIVE_DISCOVERY_POLICY_ID
-            or self.policy_version != NATIVE_DISCOVERY_POLICY_VERSION
+            or (self.policy_identity, self.policy_version, self.schema) not in _POLICIES
+            or any((item.policy_identity, item.policy_version)
+                   != (self.policy_identity, self.policy_version)
+                   for item in self.assessments)
             or self.authority != NATIVE_DISCOVERY_AUTHORITY
-            or self.schema != NATIVE_DISCOVERY_SCHEMA
         ):
             raise ValueError("NATIVE_DISCOVERY_RUN_INVALID")
 
@@ -318,6 +327,17 @@ def _discover_instrument(
             )
             if value is not None
         ))
+        if weekly.availability is WeeklyFactAvailability.UNAVAILABLE:
+            levels = (*levels,
+                      ("1W_COMPLETED_GOVERNED_WEEKS", float(len(weekly.completed_weekly_bars))),
+                      ("1W_REQUIRED_GOVERNED_WEEKS", 205.0))
+    for label, fact in (("1D", daily), ("4H", four)):
+        radius_two = _pivot_series(fact, 2)
+        if not _complete_pivots(radius_two):
+            levels = (*levels,
+                      (f"{label}_R2_CONFIRMED_HIGHS", float(len(radius_two.swing_highs))),
+                      (f"{label}_R2_CONFIRMED_LOWS", float(len(radius_two.swing_lows))),
+                      (f"{label}_R2_REQUIRED_EACH", 2.0))
     boundaries = tuple(
         (item.timeframe.value, item.observation_boundary)
         for item in instrument.timeframes
@@ -334,7 +354,26 @@ def _discover_instrument(
         f"{item.timeframe.value}:{item.calendar_identity}:{item.calendar_version}:{item.session_identity}"
         for item in instrument.timeframes
     ))
-    reasons = (*weekly_reasons, *daily_reasons, *four_reasons, *one_reasons, *composition_reasons)
+    foundation_reasons = (
+        ("NOT_ELIGIBLE_INSUFFICIENT_WEEKLY_HISTORY",)
+        if instrument.nse_weekly_foundation is not None
+        and instrument.nse_weekly_foundation.unavailable_reason
+            in {"INSUFFICIENT_COMPLETED_GOVERNED_WEEKS", "INSUFFICIENT_PROVIDER_HISTORY"}
+        else ()
+    )
+    if status is NativeDiscoveryStatus.UNAVAILABLE:
+        if foundation_reasons and weekly_state is Native1WState.UNAVAILABLE:
+            composition_reasons = foundation_reasons
+        elif daily_state is Native1DState.UNAVAILABLE:
+            composition_reasons = daily_reasons
+        elif weekly_state is Native1WState.UNAVAILABLE:
+            composition_reasons = weekly_reasons
+        elif four_state is Native4HState.UNAVAILABLE:
+            composition_reasons = four_reasons
+        elif one_state is Native1HState.UNAVAILABLE:
+            composition_reasons = one_reasons
+    reasons = (*weekly_reasons, *foundation_reasons, *daily_reasons,
+               *four_reasons, *one_reasons, *composition_reasons)
     predecessor_hash = None if predecessor is None else predecessor.result_sha256
     common = {
         "run_identity": snapshot.run_identity,
@@ -542,15 +581,21 @@ def _compose(
         if daily in {Native1DState.BULLISH_REVERSAL_DEVELOPING, Native1DState.BEARISH_REVERSAL_DEVELOPING}
         else NativeContextKind.ESTABLISHED_TREND if valid_daily else None
     )
+    if daily is Native1DState.UNAVAILABLE or (exchange == "NSE" and weekly is Native1WState.UNAVAILABLE):
+        return NativeDiscoveryStatus.UNAVAILABLE, context, None, ("REQUIRED_DAILY_OR_WEEKLY_EVIDENCE_UNAVAILABLE",)
     if not valid_daily or direction is V1Direction.NONE:
-        status = NativeDiscoveryStatus.UNAVAILABLE if daily is Native1DState.UNAVAILABLE else NativeDiscoveryStatus.NO_CURRENT_OPPORTUNITY
+        status = NativeDiscoveryStatus.NO_CURRENT_OPPORTUNITY
         return status, context, None, ("DIRECTIONAL_DAILY_CONTEXT_NOT_AVAILABLE",)
-    if exchange == "NSE" and weekly in {Native1WState.OPPOSING, Native1WState.UNAVAILABLE}:
-        return NativeDiscoveryStatus.UNAVAILABLE, context, None, (f"NSE_WEEKLY_{weekly.value}_BLOCKS_FRESH_PROBABLE",)
+    if four is Native4HState.UNAVAILABLE:
+        return NativeDiscoveryStatus.UNAVAILABLE, context, None, ("REQUIRED_FOUR_HOUR_EVIDENCE_UNAVAILABLE",)
+    if four is not Native4HState.FAILED and hour is Native1HState.UNAVAILABLE:
+        return NativeDiscoveryStatus.UNAVAILABLE, context, None, ("REQUIRED_ONE_HOUR_EVIDENCE_UNAVAILABLE",)
+    if exchange == "NSE" and weekly is Native1WState.OPPOSING:
+        return NativeDiscoveryStatus.NO_CURRENT_OPPORTUNITY, context, None, ("NSE_WEEKLY_OPPOSING_BLOCKS_FRESH_PROBABLE",)
+    if four is Native4HState.FAILED:
+        return NativeDiscoveryStatus.NO_CURRENT_OPPORTUNITY, context, None, ("FOUR_HOUR_CLOSE_THROUGH_RADIUS2_BASIS",)
     if four is Native4HState.DEVELOPING_PULLBACK:
         return NativeDiscoveryStatus.FORMING_WATCH, context, None, ("DEVELOPING_PULLBACK_REMAINS_FORMING_WATCH",)
-    if four in {Native4HState.UNAVAILABLE, Native4HState.FAILED} or hour is Native1HState.UNAVAILABLE:
-        return NativeDiscoveryStatus.UNAVAILABLE, context, None, ("REQUIRED_OPPORTUNITY_OR_PROGRESSION_EVIDENCE_UNAVAILABLE",)
     qualifying = four in {
         Native4HState.STRUCTURAL_HOLD,
         Native4HState.RESUMPTION_DEVELOPING,
@@ -727,7 +772,7 @@ class NativeDiscoveryEvidenceStore:
         if type(run) is not NativeDiscoveryRun:
             raise ValueError("NATIVE_DISCOVERY_RUN_INVALID")
         path = self._root / "complete-runs" / f"{run.run_identity}.json"
-        payload = {"schema": NATIVE_DISCOVERY_SCHEMA, "run": _json_value(asdict(run))}
+        payload = {"schema": run.schema, "run": _json_value(asdict(run))}
         with self._lock:
             if path.exists():
                 if _read(path) != payload:
@@ -738,7 +783,10 @@ class NativeDiscoveryEvidenceStore:
 
     def load(self, run_identity: str) -> NativeDiscoveryRun:
         payload = _read(self._root / "complete-runs" / f"{run_identity}.json")
-        return _run(payload.get("run"))
+        run = _run(payload.get("run"))
+        if payload["schema"] != run.schema:
+            raise ValueError("NATIVE_DISCOVERY_RUN_INVALID")
+        return run
 
     def latest(self) -> NativeDiscoveryRun | None:
         directory = self._root / "complete-runs"
@@ -747,7 +795,11 @@ class NativeDiscoveryEvidenceStore:
         runs = []
         for path in directory.glob("SWING-RUN-*.json"):
             try:
-                runs.append(_run(_read(path).get("run")))
+                payload = _read(path)
+                run = _run(payload.get("run"))
+                if payload["schema"] != run.schema:
+                    raise ValueError("NATIVE_DISCOVERY_RUN_INVALID")
+                runs.append(run)
             except ValueError:
                 continue
         return max(runs, key=lambda item: item.observed_at, default=None)
@@ -835,7 +887,7 @@ def _read(path: Path) -> dict[str, object]:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as error:
         raise ValueError("NATIVE_DISCOVERY_RUN_UNAVAILABLE") from error
-    if type(payload) is not dict or set(payload) != {"schema", "run"} or payload["schema"] != NATIVE_DISCOVERY_SCHEMA:
+    if type(payload) is not dict or set(payload) != {"schema", "run"} or payload["schema"] not in {NATIVE_DISCOVERY_SCHEMA, _HISTORICAL_SCHEMA}:
         raise ValueError("NATIVE_DISCOVERY_RUN_INVALID")
     return payload
 

@@ -48,6 +48,7 @@ from kronos.swing.v1.weekly_facts import NseWeeklyFactualFoundation
 
 _INTRADAY_HISTORY_DAYS = 60
 _FACT_SERIES_DEPTH = 30
+_STRUCTURAL_DAILY_FOUR_HOUR_DEPTH = 60
 _PROVIDER_SOURCE = "KITE_NORMALIZED_HISTORICAL"
 
 
@@ -409,7 +410,7 @@ def _source_fact(
         source_provider_identity=_PROVIDER_SOURCE,
         source_market_data_boundary=series[-1].timestamp,
         provenance=tuple(getattr(schedule, "provenance")),
-        structural_measurements=_structural_measurements(series),
+        structural_measurements=_structural_measurements(series, timeframe),
         moving_averages=_moving_average_facts(series),
         volume_facts=_volume_facts(series),
     )
@@ -492,7 +493,7 @@ def _derived_fact(
         source_provider_identity=evidence.source_provider_identity,
         source_market_data_boundary=evidence.source_market_data_boundary,
         provenance=evidence.provenance,
-        structural_measurements=_structural_measurements(series),
+        structural_measurements=_structural_measurements(series, timeframe),
         moving_averages=_moving_average_facts(series),
         volume_facts=_volume_facts(series),
         bucket_class=(
@@ -504,8 +505,14 @@ def _derived_fact(
 
 def _structural_measurements(
     candles: tuple[HistoricalCandle, ...],
+    timeframe: FactualTimeframe,
 ) -> tuple[FactualPivotSeries, ...]:
-    selected = candles[-_FACT_SERIES_DEPTH:]
+    depth = (
+        _STRUCTURAL_DAILY_FOUR_HOUR_DEPTH
+        if timeframe in {FactualTimeframe.DAILY, FactualTimeframe.FOUR_HOUR}
+        else _FACT_SERIES_DEPTH
+    )
+    selected = candles[-depth:]
     result = []
     for radius in (1, 2):
         highs, lows = factual_pivot_candidates(selected, radius)
