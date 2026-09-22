@@ -1,8 +1,19 @@
 from datetime import timedelta
 from dataclasses import replace
 from decimal import Decimal
+from hashlib import sha256
+from multiprocessing import get_context
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from unittest.mock import patch
+import gc
 import json
+import math
+import os
+import sys
+import time
 import tracemalloc
+import traceback
 
 import pytest
 
@@ -345,38 +356,205 @@ def test_consolidation_preserves_factual_events_separately_from_applicability(tm
     assert store.projection(track.track_identity) == before
 
 
-def test_consolidation_large_stream_uses_bounded_memory_and_full_history_still_validates(tmp_path, monkeypatch):
+def _consolidation_memory_case(count, sender):
+    """Measure one completed fixture in a fresh spawned interpreter."""
     from kronos.swing.v1 import paper_observation_track as module
-    peaks = []
+    result = {"count": count, "environment": {
+        "python": sys.version, "pytest": pytest.__version__,
+        "pid": os.getpid(), "gc_enabled": gc.isenabled(),
+        "gc_threshold": gc.get_threshold(),
+        "tracemalloc_active_before": tracemalloc.is_tracing(),
+        "process_start_method": get_context().get_start_method(),
+    }}
+    try:
+        assert count in (256, 4096)
+        assert not tracemalloc.is_tracing()
+        with TemporaryDirectory(prefix=f"wo11-consolidation-{count}-") as directory:
+            store, track = _consolidation_history(Path(directory), count)
+            original_sort = module._consolidation_sorted
+            original_fact = module._fact_from_bytes
+            original_read = Path.read_bytes
+            original_open = Path.open
+            phases = []
+            fact_decodes = 0
+            fact_reads = 0
+            scratch_open = scratch_max = 0
+            max_batch = max_levels = 0
+
+            def counted_fact(encoded):
+                nonlocal fact_decodes
+                fact_decodes += 1
+                return original_fact(encoded)
+
+            def counted_read(path):
+                nonlocal fact_reads
+                if path.parent.name == "facts" and path.suffix == ".json":
+                    fact_reads += 1
+                return original_read(path)
+
+            def measured_sort(rows):
+                phase = {"index": len(phases), "rows": 0}
+                phases.append(phase)
+                phase["current_before"], phase["peak_before"] = tracemalloc.get_traced_memory()
+                started = time.monotonic_ns()
+                try:
+                    for row in original_sort(rows):
+                        phase["rows"] += 1
+                        yield row
+                finally:
+                    phase["elapsed_ns"] = time.monotonic_ns() - started
+                    phase["current_after"], phase["peak_after"] = tracemalloc.get_traced_memory()
+
+            class CountedOpen:
+                def __init__(self, handle):
+                    self.handle = handle
+
+                def __enter__(self):
+                    nonlocal scratch_open, scratch_max
+                    entered = self.handle.__enter__()
+                    scratch_open += 1
+                    scratch_max = max(scratch_max, scratch_open)
+                    return entered
+
+                def __exit__(self, *args):
+                    nonlocal scratch_open
+                    try:
+                        return self.handle.__exit__(*args)
+                    finally:
+                        scratch_open -= 1
+
+            def counted_open(path, *args, **kwargs):
+                handle = original_open(path, *args, **kwargs)
+                if (sys._getframe(1).f_code.co_name == "merge"
+                        and any(part.startswith("kronos-consolidation-") for part in path.parts)):
+                    return CountedOpen(handle)
+                return handle
+
+            def trace_sort(frame, event, arg):
+                nonlocal max_batch, max_levels
+                if (frame.f_code.co_name == "_consolidation_sorted"
+                        and frame.f_code.co_filename == module.__file__ and event == "line"):
+                    batch = frame.f_locals.get("batch")
+                    levels = frame.f_locals.get("levels")
+                    if isinstance(batch, list):
+                        max_batch = max(max_batch, len(batch))
+                    if isinstance(levels, list):
+                        max_levels = max(max_levels, len(levels))
+                return trace_sort if frame.f_code.co_filename == module.__file__ else None
+
+            def forbidden(*_args, **_kwargs):
+                pytest.fail("consolidation called a full-history helper")
+
+            with (patch.object(store, "facts", forbidden),
+                  patch.object(store, "_load_fact", forbidden),
+                  patch.object(store, "projection", forbidden),
+                  patch.object(module, "_fact_from_bytes", counted_fact),
+                  patch.object(Path, "read_bytes", counted_read)):
+                gc.collect()
+                assert not tracemalloc.is_tracing()
+                tracemalloc.start()
+                try:
+                    with patch.object(module, "_consolidation_sorted", measured_sort):
+                        tracemalloc.reset_peak()
+                        candidate = _consolidate(store, track)
+                        data = json.loads(candidate.canonical_bytes)
+                    current, peak = tracemalloc.get_traced_memory()
+                    snapshot = tracemalloc.take_snapshot()
+                    result.update(current=current, peak=peak, phases=phases,
+                        retained_tracebacks=[{
+                            "size": stat.size, "count": stat.count,
+                            "traceback": stat.traceback.format(),
+                        } for stat in snapshot.statistics("traceback")[:8]])
+                finally:
+                    tracemalloc.stop()
+                assert data["fact_count"] == count
+                assert data["observed_low"] == "100" and data["observed_high"] == "110"
+                result["measured_fact_decodes"] = fact_decodes
+                result["measured_fact_reads"] = fact_reads
+                assert fact_decodes == count
+                assert fact_reads == count * 2  # primary validation and stable-inventory validation
+                assert [phase["rows"] for phase in phases] == [count, count + 1, count + 1]
+                first_bytes = candidate.canonical_bytes
+                first_identity = candidate.identity
+                fact_decodes = fact_reads = 0
+                with (patch.object(Path, "open", counted_open),
+                      patch.object(module, "_consolidation_sorted", original_sort)):
+                    sys.settrace(trace_sort)
+                    try:
+                        replay = _consolidate(store, track)
+                    finally:
+                        sys.settrace(None)
+                assert replay.canonical_bytes == first_bytes
+                assert replay.identity == first_identity
+                result.update(replay_fact_decodes=fact_decodes, replay_fact_reads=fact_reads,
+                    observed_max_batch=max_batch, observed_max_levels=max_levels,
+                    observed_max_scratch_files=scratch_max, open_scratch_files=scratch_open)
+                assert fact_decodes == count and fact_reads == count * 2
+                assert max_batch == 128
+                assert max_levels <= math.ceil(math.log2(math.ceil((count + 1) / 128))) + 1
+                assert scratch_max <= 3 and scratch_open == 0
+                result.update(canonical_sha256=sha256(first_bytes).hexdigest(),
+                    primary_validated_facts=count, verification_validated_facts=count,
+                    structural_replay_validated_facts=count,
+                    max_batch=max_batch, max_merge_levels=max_levels,
+                    max_simultaneous_merge_files=scratch_max,
+                    deterministic_canonical_bytes=True)
+
+            if count == 4096:
+                loaded = 0
+
+                def count_projection(encoded):
+                    nonlocal loaded
+                    loaded += 1
+                    return original_fact(encoded)
+
+                with patch.object(module, "_fact_from_bytes", count_projection):
+                    store.projection(track.track_identity)
+                assert loaded == 4096
+                path = next((store.root / track.track_identity / "facts").iterdir())
+                payload = json.loads(path.read_bytes())
+                payload["fact"]["last_price"] = "999"
+                path.write_text(json.dumps(payload))
+                with pytest.raises(ValueError):
+                    store.projection(track.track_identity)
+                result.update(full_projection_validated_facts=loaded,
+                    corrupt_full_projection_rejected=True)
+        result["environment"]["tracemalloc_active_after"] = tracemalloc.is_tracing()
+        sender.send(result)
+    except BaseException as exc:
+        result["error"] = f"{type(exc).__name__}: {exc}"
+        result["traceback"] = traceback.format_exc()
+        sender.send(result)
+    finally:
+        sender.close()
+
+
+def test_consolidation_large_stream_uses_bounded_memory_and_full_history_still_validates():
+    context = get_context("spawn")
+    results = []
     for count in (256, 4096):
-        store, track = _consolidation_history(tmp_path / str(count), count)
-        with monkeypatch.context() as patch:
-            patch.setattr(store, "facts", lambda *_: pytest.fail("full history loaded"))
-            patch.setattr(store, "_load_fact", lambda *_: pytest.fail("fact cache used"))
-            patch.setattr(store, "projection", lambda *_: pytest.fail("full projection loaded"))
-            tracemalloc.start()
-            data = json.loads(_consolidate(store, track).canonical_bytes)
-            peaks.append(tracemalloc.get_traced_memory()[1])
-            tracemalloc.stop()
-        assert data["fact_count"] == count
-        assert data["observed_low"] == "100" and data["observed_high"] == "110"
+        receiver, sender = context.Pipe(duplex=False)
+        child = context.Process(target=_consolidation_memory_case, args=(count, sender))
+        child.start()
+        sender.close()
+        try:
+            assert receiver.poll(120), f"{count}-fact consolidation child did not return within 120 seconds"
+            result = receiver.recv()
+            child.join(10)
+            assert child.exitcode == 0, f"{count}-fact child exited {child.exitcode}: {result}"
+            results.append(result)
+            assert "error" not in result, json.dumps(result, indent=2)
+        finally:
+            if child.is_alive():
+                child.terminate()
+                child.join(5)
+            receiver.close()
+    ratio = results[1]["peak"] / results[0]["peak"]
+    diagnostics = json.dumps({"ratio": ratio, "children": results}, indent=2)
+    if path := os.environ.get("WO11_MEMORY_RESULTS_PATH"):
+        Path(path).write_text(diagnostics + "\n")
     # 16x the evidence must not produce a proportional retained object population.
-    assert peaks[1] < peaks[0] * 3
-    loaded = 0
-    original = module._fact_from_bytes
-    def count_read(encoded):
-        nonlocal loaded
-        loaded += 1
-        return original(encoded)
-    monkeypatch.setattr(module, "_fact_from_bytes", count_read)
-    store.projection(track.track_identity)
-    assert loaded == 4096
-    path = next((store.root / track.track_identity / "facts").iterdir())
-    payload = json.loads(path.read_bytes())
-    payload["fact"]["last_price"] = "999"
-    path.write_text(json.dumps(payload))
-    with pytest.raises(ValueError):
-        store.projection(track.track_identity)
+    assert results[1]["peak"] < results[0]["peak"] * 3, diagnostics
 
 
 def test_consolidation_rejects_prospective_state_without_overwriting_it(tmp_path):
