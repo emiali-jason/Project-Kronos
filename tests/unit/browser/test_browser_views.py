@@ -70,6 +70,40 @@ def test_bulk_import_progress_is_retained_per_candidate_and_refresh_safe():
     assert "answer_sha256" not in html and "expected_run_identity" not in html
 
 
+def test_selected_answer_validation_banner_is_distinct_and_escapes_filename():
+    from kronos.browser.views import _answer_rejection_banner
+
+    projection = {"rows": []}
+    rejected = _answer_rejection_banner({
+        "code": "REVIEW_REQUEST_MISMATCH",
+        "market": "NSE",
+        "instrument": None,
+        "confirmed_no_import": True,
+        "diagnostic_id": None,
+        "validation_only": True,
+        "validation_passed": False,
+        "selected_filename": 'OLD_<ANSWER>_ANSWERS.pdf',
+    }, projection)
+    assert "SELECTED ANSWER REJECTED" in rejected
+    assert "ANSWER IMPORT REJECTED" not in rejected
+    assert "OLD_&lt;ANSWER&gt;_ANSWERS.pdf" in rejected
+    assert "selected file was checked only. Nothing was imported or changed" in rejected
+
+    passed = _answer_rejection_banner({
+        "code": "ANSWER_BINDING_CURRENT",
+        "market": "NSE",
+        "instrument": None,
+        "confirmed_no_import": True,
+        "diagnostic_id": None,
+        "validation_only": True,
+        "validation_passed": True,
+        "selected_filename": "CURRENT_ANSWERS.pdf",
+    }, projection)
+    assert "SELECTED ANSWER MATCHES CURRENT REVIEW" in passed
+    assert "ANSWER_BINDING_CURRENT" in passed
+    assert "CURRENT_ANSWERS.pdf" in passed
+
+
 def _v1_probable(
     instrument: str = "HDFCBANK",
     *,

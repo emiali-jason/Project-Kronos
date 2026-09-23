@@ -724,6 +724,21 @@ def _rendered_form(body, endpoint):
     return unescape(match[1]), urlencode({"expected": unescape(match[2])})
 
 
+def _selected_answer_multipart(expected, filename, pdf):
+    from kronos.swing.v1.review_evidence_binding import canonical
+    boundary = "KRONOS-SELECTED-ANSWER-BOUNDARY"
+    body = (
+        b"--" + boundary.encode() + b"\r\n"
+        b'Content-Disposition: form-data; name="expected"\r\n\r\n'
+        + canonical(expected) + b"\r\n--" + boundary.encode() + b"\r\n"
+        + ('Content-Disposition: form-data; name="answer_pdf"; filename="'
+           + filename + '"\r\n').encode()
+        + b"Content-Type: application/pdf\r\n\r\n" + pdf
+        + b"\r\n--" + boundary.encode() + b"--\r\n"
+    )
+    return body, "multipart/form-data; boundary=" + boundary
+
+
 def _bulk_identity(location):
     from urllib.parse import parse_qs, urlsplit
     query = parse_qs(urlsplit(location).query, strict_parsing=True)
@@ -2077,6 +2092,128 @@ def test_swing_answer_rejection_redirect_keeps_current_review_shell(
         assert _inventory(tmp_path) == before
         assert _request(server, "GET", "/intraday")[0] == 200
         assert _request(server, "GET", "/status")[0] == 200
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=3)
+
+
+@pytest.mark.parametrize("native_intake", ["NSE"], indirect=True)
+def test_selected_answer_validation_uses_selected_bytes_and_never_admits(
+    native_intake, tmp_path, monkeypatch
+):
+    from copy import deepcopy
+    from hashlib import sha256
+    from kronos.swing.v1.review_evidence_binding import ReviewEvidenceError
+    from tests.unit.browser.test_swing_visual_v3_live import _answer_pdf
+
+    workflow = native_intake
+    market = "NSE"
+    instrument = workflow._requirements(market)[0].canonical_instrument
+    _stage_native(workflow, market, instrument)
+    publication = workflow.generate(market, workflow.expected(market, (instrument,)))
+    current_answer = _native_answer(workflow, market, publication)
+    current_pdf_path = tmp_path / "CURRENT_ANSWERS.pdf"
+    _answer_pdf(current_pdf_path, current_answer)
+    current_pdf = current_pdf_path.read_bytes()
+    expected = workflow.expected(market, (instrument,))
+
+    before = _inventory(tmp_path)
+    identity = workflow.validate_selected_answer(market, expected, current_pdf)
+    assert identity == {
+        "request_identity": publication.mapping.value["request_identity"],
+        "review_pack_identity": publication.mapping.value["review_pack_identity"],
+        "publication_identity": publication.identity,
+    }
+    assert _inventory(tmp_path) == before
+
+    historical = deepcopy(current_answer)
+    historical["request_reference"]["request_identity"] = "SWING-REVIEW-REQUEST-" + "E" * 32
+    historical_path = tmp_path / "KRONOS-V3-REVIEW-HISTORICAL_ANSWERS.pdf"
+    _answer_pdf(historical_path, historical)
+    historical_pdf = historical_path.read_bytes()
+    assert sha256(historical_pdf).hexdigest() != sha256(current_pdf).hexdigest()
+    before = _inventory(tmp_path)
+    with pytest.raises(ReviewEvidenceError, match="REVIEW_CONTRACT_UNSUPPORTED"):
+        workflow.validate_selected_answer(market, expected, historical_pdf)
+    assert _inventory(tmp_path) == before
+
+    server = create_browser_server(SwingOpportunitiesApplication(_Provider), port=0,
+        native_review=workflow.native_review, visual_v3_live=workflow.live)
+    _bind_durable_bulk_import(server, workflow, tmp_path)
+    monkeypatch.setattr(server.bulk_import, "admit", lambda *_args, **_kwargs:
+                        pytest.fail("selected-file validation admitted a durable batch"))
+    monkeypatch.setattr(server.bulk_import, "admit_from_directory", lambda *_args, **_kwargs:
+                        pytest.fail("selected-file validation substituted request-owned Answer"))
+    assert workflow.prepare_page_state()
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    authority = f"127.0.0.1:{server.server_port}"
+    selected_name = "KRONOS-V3-REVIEW-1045E654540E465196DA7DAFD3FCDAAB_ANSWERS.pdf"
+    body, content_type = _selected_answer_multipart(expected, selected_name, historical_pdf)
+    headers = {"Host": authority, "Origin": f"http://{authority}",
+               "Content-Type": content_type}
+    try:
+        rendered = _request(server, "GET", "/swing/v1-review")[2]
+        assert 'action="/swing/v1/native-review-answer/validate?market=NSE"' in rendered
+        assert 'name="answer_pdf"' in rendered
+        before = _inventory(tmp_path)
+        status, response_headers, response = _request(
+            server, "POST", "/swing/v1/native-review-answer/validate?market=NSE",
+            headers=headers, body=body,
+        )
+        assert status == 303 and not response
+        notice = _request(server, "GET", response_headers["Location"])[2]
+        assert "SELECTED ANSWER REJECTED" in notice
+        assert "REVIEW_CONTRACT_UNSUPPORTED" in notice
+        assert "Selected file: <strong>" + selected_name + "</strong>" in notice
+        assert "selected file was checked only. Nothing was imported or changed" in notice
+        assert "ANSWER IMPORT REJECTED" not in notice
+        assert _inventory(tmp_path) == before
+        assert not tuple((tmp_path / "runtime" / "swing-bulk-import-v1").glob("batches/*.json"))
+        assert not tuple((tmp_path / "runtime" / "swing-bulk-import-v1").glob("answers/*.pdf"))
+        assert not tuple((tmp_path / "runtime" / "swing-bulk-import-v1").glob("current/*.json"))
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=3)
+
+
+@pytest.mark.parametrize("native_intake", ["NSE"], indirect=True)
+def test_selected_answer_validation_success_is_visible_and_non_admitting(
+    native_intake, tmp_path
+):
+    from tests.unit.browser.test_swing_visual_v3_live import _answer_pdf
+
+    workflow = native_intake
+    instrument = workflow._requirements("NSE")[0].canonical_instrument
+    _stage_native(workflow, "NSE", instrument)
+    publication = workflow.generate("NSE", workflow.expected("NSE", (instrument,)))
+    path = tmp_path / "CURRENT_SELECTED_ANSWERS.pdf"
+    _answer_pdf(path, _native_answer(workflow, "NSE", publication))
+    expected = workflow.expected("NSE", (instrument,))
+    server = create_browser_server(SwingOpportunitiesApplication(_Provider), port=0,
+        native_review=workflow.native_review, visual_v3_live=workflow.live)
+    _bind_durable_bulk_import(server, workflow, tmp_path)
+    assert workflow.prepare_page_state()
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    authority = f"127.0.0.1:{server.server_port}"
+    body, content_type = _selected_answer_multipart(expected, path.name, path.read_bytes())
+    try:
+        before = _inventory(tmp_path)
+        status, headers, _ = _request(server, "POST",
+            "/swing/v1/native-review-answer/validate?market=NSE",
+            headers={"Host": authority, "Origin": f"http://{authority}",
+                     "Content-Type": content_type}, body=body)
+        assert status == 303
+        notice = _request(server, "GET", headers["Location"])[2]
+        assert "SELECTED ANSWER MATCHES CURRENT REVIEW" in notice
+        assert "ANSWER_BINDING_CURRENT" in notice
+        assert path.name in notice
+        assert "This does not import the Answer." in notice
+        assert _inventory(tmp_path) == before
+        assert not tuple((tmp_path / "runtime" / "swing-bulk-import-v1").glob("batches/*.json"))
     finally:
         server.shutdown()
         server.server_close()

@@ -4176,6 +4176,7 @@ def render_v1_review(
 
 
 ANSWER_REJECTION_EXPLANATIONS = {
+    "ANSWER_BINDING_CURRENT": "The selected Answer matches the exact current Review request and Question Pack.",
     "REVIEW_REQUEST_MISMATCH": "This Answer does not match the current Review request or Question Pack.",
     "REVIEW_BINDING_STALE": "The Review request or chart binding changed. Open Current Review before trying again.",
     "ANSWER_PACK_NOT_FOUND": "The expected Answer PDF was not found. Check the current Question Pack filename.",
@@ -4245,11 +4246,18 @@ def _answer_rejection_banner(notice: dict | None, projection: dict | None) -> st
                 if instrument is not None else "<p>Affected candidate: current Review workspace.</p>")
     diagnostic = ("<p>Diagnostic ID: <code>" + escape(notice["diagnostic_id"]) + "</code></p>"
                   if notice.get("diagnostic_id") else "")
-    outcome = ("<p><strong>Nothing was imported or changed.</strong></p>" if safe else
+    validation_only = bool(notice.get("validation_only"))
+    selected = ("<p>Selected file: <strong>" + escape(notice["selected_filename"]) + "</strong></p>"
+                if validation_only and notice.get("selected_filename") else "")
+    outcome = ("<p><strong>The selected file was checked only. Nothing was imported or changed.</strong></p>"
+               if safe and validation_only else
+               "<p><strong>Nothing was imported or changed.</strong></p>" if safe else
                "<p>The import outcome is unconfirmed; do not retry automatically.</p>")
-    heading = "ANSWER IMPORT REJECTED" if safe else "ANSWER IMPORT COULD NOT BE CONFIRMED"
+    heading = (("SELECTED ANSWER MATCHES CURRENT REVIEW" if notice.get("validation_passed")
+                else "SELECTED ANSWER REJECTED") if validation_only else
+               "ANSWER IMPORT REJECTED" if safe else "ANSWER IMPORT COULD NOT BE CONFIRMED")
     return ('<section class="review-note answer-rejection-banner" role="alert" aria-live="assertive">'
-            '<strong>' + heading + '</strong>' + affected + '<p>Reason: <code>' + escape(reason)
+            '<strong>' + heading + '</strong>' + affected + selected + '<p>Reason: <code>' + escape(reason)
             + '</code></p><p>' + escape(explanation) + '</p>' + outcome + diagnostic
             + '<div class="answer-rejection-actions"><a href="/swing/v1-review">Current Review</a>'
             '<a href="/swing/v1-review#current-question-pack">Question Pack</a></div></section>'
@@ -4377,6 +4385,16 @@ def _receipt_native_review(projection, promotions_v2=(), bulk_import=None):
             '<input type="hidden" name="expected" value="' + escape(canonical(expected).decode()) + '">'
             '<button type="submit"' + marker + '>' + escape(label) + '</button></form>')
 
+    def selected_answer_validation(market, expected):
+        if expected is None:
+            return ""
+        return ('<form class="selected-answer-validation" method="post" enctype="multipart/form-data" '
+            'action="/swing/v1/native-review-answer/validate?' + escape(urlencode({"market": market})) + '">'
+            '<input type="hidden" name="expected" value="' + escape(canonical(expected).decode()) + '">'
+            '<label>Check selected Answer PDF<input type="file" name="answer_pdf" accept="application/pdf" required></label>'
+            '<button type="submit">VALIDATE SELECTED ANSWER</button>'
+            '<small>Checks these selected bytes against Current Review. This does not import the Answer.</small></form>')
+
     body = (_bulk_import_panel(bulk_import)
         + '<div class="review-note"><strong>NATIVE REVIEW · RECEIPT-BOUND EVIDENCE</strong>'
         '<p>Chart → Question Pack → Answer → immutable acceptance receipt. '
@@ -4399,6 +4417,7 @@ def _receipt_native_review(projection, promotions_v2=(), bulk_import=None):
             + (' CURRENT REVIEW PACK' if package["expected"] is not None else ' RETAINED REVIEW PACK · STALE') + '</strong><br>'
             '<a href="/swing/v1/native-request-pdf?' + escape(query) + '">'
             + escape(package["question_filename"]) + '</a><br>Answer filename: ' + escape(package["answer_filename"])
+            + selected_answer_validation(package["market"], package["expected"])
             + action("native-review-answer", package["market"], package["expected"], "UPLOAD ANSWER") + '</div>')
     package_by_market = {package["market"]: package for package in projection["packages"]}
     workspace = projection.get("workspace")

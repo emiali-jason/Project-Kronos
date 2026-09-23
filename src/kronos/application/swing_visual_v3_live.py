@@ -1621,6 +1621,35 @@ class NativeReviewIntakeWorkflow:
             "publication_identity": publication.identity,
         }
 
+    def validate_selected_answer(self, market, expected, pdf):
+        """Validate selected bytes against current authority without admitting them.
+
+        This is an observational preflight, not the ADR-0058 upload action. It
+        creates no batch, Answer copy, receipt, acceptance, or downstream work.
+        The exact current publication is fenced on both sides of PDF extraction
+        and closed-contract validation so a result can never mix generations.
+        """
+        recheck = self._admit(market, expected)
+        publication = self._publication(market)
+        require(publication is not None, "REVIEW_REQUEST_MISMATCH")
+        mapping = self._mapping(publication, market)
+        require(set(expected) == {item["canonical_instrument"]
+                                  for item in mapping["subjects"]},
+                "REVIEW_PRECONDITION_INVALID")
+        extracted = self.extract_answer(pdf)
+        if market == "NSE":
+            validate_nse_successor_answer(extracted, publication.mapping)
+        else:
+            self.store.validate_mcx_answer_for_publication(
+                extracted, publication.identity
+            )
+        recheck()
+        return {
+            "request_identity": mapping["request_identity"],
+            "review_pack_identity": mapping["review_pack_identity"],
+            "publication_identity": publication.identity,
+        }
+
     def accept_answer(self, market, expected, pdf, *, extracted_answer=None,
                       phase_observer=None):
         recheck = self._admit(market, expected)

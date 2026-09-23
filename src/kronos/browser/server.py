@@ -7,6 +7,8 @@ from contextlib import nullcontext
 from copy import deepcopy
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
+from email.parser import BytesParser
+from email.policy import default as email_policy
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from hashlib import sha256
@@ -682,11 +684,18 @@ class KronosBrowserServer(ThreadingHTTPServer):
         if self.bulk_import is not None:
             self.bulk_import.start()
 
-    def retain_answer_notice(self, code, market=None, instrument=None, *, confirmed_no_import=True):
+    def retain_answer_notice(self, code, market=None, instrument=None, *, confirmed_no_import=True,
+                             validation_only=False, validation_passed=False,
+                             selected_filename=None):
         """Bounded, short-lived browser presentation only; no evidence persistence."""
-        known = type(code) is str and code in ANSWER_REJECTION_EXPLANATIONS
+        known = type(code) is str and (code in ANSWER_REJECTION_EXPLANATIONS
+                                      or code == "ANSWER_BINDING_CURRENT")
         reason = code if known else "REVIEW_INTAKE_UNAVAILABLE"
         confirmed = bool(known and confirmed_no_import)
+        filename = (selected_filename if type(selected_filename) is str
+                    and 0 < len(selected_filename) <= 255
+                    and not any(ord(char) < 32 for char in selected_filename)
+                    else None)
         identifier = uuid4().hex
         diagnostic = None if confirmed else "D-" + uuid4().hex[:12]
         with self._answer_notice_lock:
@@ -700,7 +709,10 @@ class KronosBrowserServer(ThreadingHTTPServer):
                 instrument=instrument if type(instrument) is str and len(instrument) <= 64
                     and instrument.isascii() and all(char.isalnum() or char in "&._- " for char in instrument)
                     else None,
-                confirmed_no_import=confirmed, diagnostic_id=diagnostic))
+                confirmed_no_import=confirmed, diagnostic_id=diagnostic,
+                validation_only=bool(validation_only),
+                validation_passed=bool(validation_only and validation_passed),
+                selected_filename=filename))
         return identifier
 
     def answer_notice(self, identifier):
@@ -2677,6 +2689,9 @@ class _BrowserHandler(BaseHTTPRequestHandler):
         if path == "/swing/v1/native-review-answer":
             self._upload_native_review_answer()
             return
+        if path == "/swing/v1/native-review-answer/validate":
+            self._validate_selected_native_review_answer()
+            return
         if path == "/swing/v1/native-review-handoff":
             self._native_intake_mutation("HANDOFF")
             return
@@ -4312,6 +4327,80 @@ class _BrowserHandler(BaseHTTPRequestHandler):
         instrument = next(iter(expected)) if type(expected) is dict and len(expected) == 1 else None
         notice = self.server.retain_answer_notice(code, market, instrument,
                                                   confirmed_no_import=confirmed_no_import)
+        self._swing_post_failed = True
+        self._redirect("/swing/v1-review?answer_notice=" + notice)
+
+    def _selected_answer_form(self):
+        """Read one bounded multipart PDF and its exact mutation envelope."""
+        length = int(self.headers.get("Content-Length", "0"))
+        if not 0 < length <= 128 * 1024 * 1024 + 512 * 1024:
+            raise ValueError("SELECTED_ANSWER_REQUEST_INVALID")
+        content_type = self.headers.get("Content-Type", "")
+        if not content_type.lower().startswith("multipart/form-data;"):
+            raise ValueError("SELECTED_ANSWER_REQUEST_INVALID")
+        header = content_type.encode("ascii", "strict")
+        message = BytesParser(policy=email_policy).parsebytes(
+            b"Content-Type: " + header + b"\r\nMIME-Version: 1.0\r\n\r\n"
+            + self.rfile.read(length)
+        )
+        if not message.is_multipart():
+            raise ValueError("SELECTED_ANSWER_REQUEST_INVALID")
+        fields = {}
+        for part in message.iter_parts():
+            if part.get_content_disposition() != "form-data":
+                raise ValueError("SELECTED_ANSWER_REQUEST_INVALID")
+            name = part.get_param("name", header="content-disposition")
+            if name not in {"expected", "answer_pdf"} or name in fields:
+                raise ValueError("SELECTED_ANSWER_REQUEST_INVALID")
+            payload = part.get_payload(decode=True)
+            if type(payload) is not bytes:
+                raise ValueError("SELECTED_ANSWER_REQUEST_INVALID")
+            fields[name] = (part.get_filename(), part.get_content_type(), payload)
+        if set(fields) != {"expected", "answer_pdf"}:
+            raise ValueError("SELECTED_ANSWER_REQUEST_INVALID")
+        expected_name, _, expected_bytes = fields["expected"]
+        filename, pdf_type, pdf = fields["answer_pdf"]
+        if expected_name is not None or len(expected_bytes) > 256 * 1024:
+            raise ValueError("SELECTED_ANSWER_REQUEST_INVALID")
+        if (type(filename) is not str or not filename or len(filename) > 255
+                or filename in {".", ".."} or Path(filename).name != filename
+                or "/" in filename or "\\" in filename
+                or any(ord(char) < 32 for char in filename)
+                or pdf_type != "application/pdf"):
+            raise ValueError("SELECTED_ANSWER_REQUEST_INVALID")
+        return strict_json(expected_bytes.decode("utf-8", "strict")), filename, pdf
+
+    def _validate_selected_native_review_answer(self) -> None:
+        """Present a non-admitting exact-current check of the selected bytes."""
+        workflow = self.server.native_intake
+        market = None
+        filename = None
+        try:
+            query = parse_qs(urlsplit(self.path).query, strict_parsing=True)
+            if set(query) != {"market"} or len(query["market"]) != 1:
+                raise ValueError("SELECTED_ANSWER_REQUEST_INVALID")
+            market = query["market"][0]
+            expected, filename, pdf = self._selected_answer_form()
+            if workflow is None:
+                raise ReviewEvidenceError("REVIEW_CONTRACT_UNSUPPORTED")
+            workflow.validate_selected_answer(market, expected, pdf)
+        except ReviewEvidenceError as error:
+            notice = self.server.retain_answer_notice(
+                error.code, market, validation_only=True,
+                selected_filename=filename,
+            )
+        except (OSError, UnicodeError, ValueError):
+            notice = self.server.retain_answer_notice(
+                "REVIEW_INTAKE_UNAVAILABLE", market,
+                confirmed_no_import=False, validation_only=True,
+                selected_filename=filename,
+            )
+        else:
+            notice = self.server.retain_answer_notice(
+                "ANSWER_BINDING_CURRENT", market,
+                validation_only=True, validation_passed=True,
+                selected_filename=filename,
+            )
         self._swing_post_failed = True
         self._redirect("/swing/v1-review?answer_notice=" + notice)
 
