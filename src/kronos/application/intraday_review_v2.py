@@ -664,13 +664,13 @@ class IntradayReviewV2Application:
         try:
             scope = _CurrentPageRead.from_prepared(prepared)
             token = _CURRENT_PAGE.set((self, scope))
-            matched = False
+            content_matched = False
             try:
-                matched = scope.exact_bytes_match()
-                if matched:
+                content_matched = scope.exact_bytes_match()
+                if content_matched:
                     with self._owner_page_scope(scope):
-                        matched = scope.authority_bytes_match()
-                        if not matched:
+                        authority_matched = scope.authority_bytes_match()
+                        if not authority_matched:
                             pass
                         else:
                             yield scope
@@ -689,6 +689,31 @@ class IntradayReviewV2Application:
                 with self._owner_page_scope(scope):
                     yield scope
                     scope.require()
+                    if content_matched:
+                        changed_authority = []
+                        for path, expected in prepared.payloads:
+                            try:
+                                actual = path.read_bytes()
+                            except FileNotFoundError:
+                                actual = None
+                            if actual != expected:
+                                changed_authority.append(path)
+                        review_pointer_path = (
+                            self._review.root
+                            / "current"
+                            / "CURRENT-REVIEW-V2-POINTER.json"
+                        )
+                        if changed_authority == [review_pointer_path]:
+                            try:
+                                currentness = self.currentness()
+                            except ReviewError:
+                                return
+                            else:
+                                if (
+                                    prepared.current_pointer_identity is not None
+                                    and not currentness.is_review_current
+                                ):
+                                    return
                     raise IntradayPageUnavailable("INTRADAY_PAGE_SOURCE_CHANGED")
             finally:
                 _CURRENT_PAGE.reset(token)
