@@ -3,6 +3,12 @@
 Swing Phase C Native Discovery successor: [ADR-0057](adr/ADR-0057-SWING-NATIVE-AVAILABILITY-SEMANTICS-V2.md)
 and [availability V2 contract](interfaces/KRONOS-SWING-NATIVE-DISCOVERY-AVAILABILITY-V2.md).
 
+Swing V3 durable bulk Answer admission and restart-aware progress are owned by
+[ADR-0058](adr/ADR-0058-SWING-V3-DURABLE-BULK-ANSWER-IMPORT.md). Runtime-control
+state remains separate from immutable Review acceptance evidence and Review Pack
+copies; Browser routes acknowledge durable admission and render retained
+candidate progress without owning worker execution.
+
 **Status:** Draft
 **Owner:** Architecture Librarian
 **Approved By:** Not approved

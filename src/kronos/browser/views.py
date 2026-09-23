@@ -1604,7 +1604,9 @@ def render_native_trade_window(
     observation = projection.step31_observation
     attempt = projection.latest_construction_attempt
     attempt_failed = attempt is not None and attempt.result.value == "FAILED"
-    heading = projection.kr370_classification.replace("_", " ")
+    promotion_label = (projection.kr370_classification or
+                       projection.reason.removeprefix("KR370_")).replace("_", " ")
+    heading = promotion_label
     notice = (
         "Analytical promotion is complete. This is not an entry trigger or an order instruction."
         if projection.kr370_classification in {"BUY_NOW", "SELL_NOW"}
@@ -2023,7 +2025,7 @@ def render_native_trade_window(
             for label, value in (
                 ("Run", projection.native_run_identity[-12:]),
                 ("Review", "CURRENT NATIVE REVIEW"),
-                ("KR-370", projection.kr370_classification),
+                ("KR-370", promotion_label),
                 ("Instrument", projection.canonical_instrument),
                 ("Direction", projection.direction),
                 ("Last Updated", updated),
@@ -2045,7 +2047,7 @@ def render_native_trade_window(
         '<div class="analysis-facts">' + _analysis_fact_rows([
             ("Native run", projection.native_run_identity),
             ("Native assessment", projection.native_assessment_sha256),
-            ("KR-370 state", projection.kr370_classification),
+            ("KR-370 state", promotion_label),
             ("Step-31 plan", plan.trade_plan_id if plan is not None else "NOT AVAILABLE"),
             ("Step-31 observation", observation.observation_evidence_id if observation is not None else "NOT AVAILABLE"),
             ("Risk result", projection.risk_result_id or "NOT AVAILABLE"),
@@ -3987,6 +3989,7 @@ def render_v1_review(
     relative_context: RelativeContextRun | None = None,
     native_intake: dict | None = None,
     answer_notice: dict | None = None,
+    bulk_import: dict | None = None,
     *,
     promotions_v2: tuple[V2PromotionRecord, ...] = (),
 ) -> str:
@@ -3995,7 +3998,7 @@ def render_v1_review(
         raise TypeError("REVIEW_V2_PRESENTATION_INVALID")
     if native_intake is not None:
         body = (_analysis_run_strip(snapshot) + _answer_rejection_banner(answer_notice, native_intake)
-                + _receipt_native_review(native_intake, promotions_v2))
+                + _receipt_native_review(native_intake, promotions_v2, bulk_import))
     elif (
         native_review is not None
         and native_review.state is NativeReviewRunState.REVIEW_REQUIRED
@@ -4161,7 +4164,7 @@ def render_v1_review(
         )
     if native_intake is None:
         body = _answer_rejection_banner(answer_notice, None) + body
-    body += _chart_upload_script() + _answer_upload_script()
+    body += _chart_upload_script() + _answer_upload_script() + _bulk_import_status_script()
     return _page(
         title="Review",
         subtitle="Copy a chart image, click its target, and paste with ⌘V.",
@@ -4329,7 +4332,39 @@ def _intake_workspace_header(projection, *, show_internal=True):
     return body + '</section>'
 
 
-def _receipt_native_review(projection, promotions_v2=()):
+def _bulk_import_panel(value):
+    if value is None:
+        return ""
+    terminal = value["state"] in {
+        "VALIDATION_FAILED", "COMPLETED", "COMPLETED_WITH_FAILURE", "FAILED",
+    }
+    candidates = "".join(
+        '<li data-bulk-candidate="' + escape(item["canonical_instrument"])
+        + '"><strong>' + escape(item["canonical_instrument"])
+        + '</strong><span>' + escape(item["state"].replace("_", " "))
+        + ("" if item.get("downstream_state") is None else
+           " · " + escape(item["downstream_state"].replace("_", " ")))
+        + ("" if item.get("failure") is None else
+           " · " + escape(item["failure"].replace("_", " ")))
+        + '</span></li>' for item in value["candidates"]
+    )
+    return (
+        '<section class="review-note bulk-import-progress" data-bulk-import '
+        'data-status-url="' + escape(value["status_location"]) + '" '
+        'data-terminal="' + str(terminal).lower() + '">'
+        '<strong>BULK ANSWER IMPORT · <span data-bulk-state>'
+        + escape(value["state"].replace("_", " ")) + '</span></strong>'
+        '<p>Durable batch · <code>' + escape(value["batch_identity"]) + '</code><br>'
+        'Review Pack · ' + escape(value["review_pack_identity"]) + '</p>'
+        + ("" if value.get("failure") is None else
+           '<p role="alert">' + escape(value["failure"].replace("_", " ")) + '</p>')
+        + '<ul data-bulk-candidates>' + candidates + '</ul>'
+        '<small>Progress is retained and remains available after refresh.</small>'
+        '</section>'
+    )
+
+
+def _receipt_native_review(projection, promotions_v2=(), bulk_import=None):
     """Render immutable receipt applicability separately from consumer state."""
     from kronos.swing.v1.review_evidence_binding import canonical
 
@@ -4342,7 +4377,8 @@ def _receipt_native_review(projection, promotions_v2=()):
             '<input type="hidden" name="expected" value="' + escape(canonical(expected).decode()) + '">'
             '<button type="submit"' + marker + '>' + escape(label) + '</button></form>')
 
-    body = ('<div class="review-note"><strong>NATIVE REVIEW · RECEIPT-BOUND EVIDENCE</strong>'
+    body = (_bulk_import_panel(bulk_import)
+        + '<div class="review-note"><strong>NATIVE REVIEW · RECEIPT-BOUND EVIDENCE</strong>'
         '<p>Chart → Question Pack → Answer → immutable acceptance receipt. '
         'Evidence intake only; no trading or execution authority.</p></div>'
         + _intake_workspace_header(projection, show_internal=not promotions_v2))
@@ -6335,9 +6371,9 @@ def _connect_navigation_guard_script() -> str:
     if(globalThis.kronosConnectNavigationPending===true||globalThis.kronosReviewAnswerNavigationPending===true)return false;
     location.reload();return true;
   };
-  const setPending=value=>{
-    pending=value;globalThis.kronosConnectNavigationPending=value;
-    for(const control of controls){if(control.button)control.button.disabled=value||control.wasDisabled;}
+  const setPending=nextPending=>{
+    pending=nextPending;globalThis.kronosConnectNavigationPending=nextPending;
+    for(const control of controls){if(control.button)control.button.disabled=nextPending||control.wasDisabled;}
   };
   for(const control of controls){
     control.form.addEventListener('submit',event=>{
@@ -6633,6 +6669,39 @@ def _answer_upload_script() -> str:
     });
   }
   addEventListener('pageshow',reset);
+})();
+</script>"""
+
+
+def _bulk_import_status_script() -> str:
+    return """<script>
+(()=>{
+  const panel=document.querySelector('[data-bulk-import]');
+  if(!panel||panel.dataset.terminal==='true')return;
+  const terminal=new Set(['VALIDATION_FAILED','COMPLETED','COMPLETED_WITH_FAILURE','FAILED']);
+  const state=panel.querySelector('[data-bulk-state]');
+  const list=panel.querySelector('[data-bulk-candidates]');
+  const render=progress=>{
+    state.textContent=progress.state.replaceAll('_',' ');
+    list.replaceChildren(...progress.candidates.map(item=>{
+      const row=document.createElement('li');row.dataset.bulkCandidate=item.canonical_instrument;
+      const name=document.createElement('strong');name.textContent=item.canonical_instrument;
+      const status=document.createElement('span');
+      status.textContent=item.state.replaceAll('_',' ')
+        +(item.downstream_state?' · '+item.downstream_state.replaceAll('_',' '):'')
+        +(item.failure?' · '+item.failure.replaceAll('_',' '):'');
+      row.append(name,status);return row;
+    }));
+    if(terminal.has(progress.state)){panel.dataset.terminal='true';return true;}return false;
+  };
+  const poll=async()=>{
+    try{
+      const response=await fetch(panel.dataset.statusUrl,{cache:'no-store'});
+      if(response.ok&&render(await response.json()))return;
+    }catch(_error){}
+    setTimeout(poll,1000);
+  };
+  setTimeout(poll,250);
 })();
 </script>"""
 

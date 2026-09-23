@@ -122,6 +122,100 @@ from tests.unit.swing.v1.test_visual_evidence_v2 import _observation as _visual_
 from tests.unit.swing.v1.test_native_review_chart_intake import _VisualV2Provider
 
 
+def test_bulk_answer_post_acknowledges_durable_batch_without_waiting_for_downstream(
+    tmp_path: Path,
+) -> None:
+    from json import dumps
+    from types import SimpleNamespace
+    from urllib.parse import quote
+    from tests.unit.browser.test_browser_server import _running_server
+
+    server, serving = _running_server()
+    expected = {"RBLBANK": {
+        "expected_run_identity": "SWING-RUN-" + "A" * 32,
+    }}
+    called = []
+    batch = "SWING-BULK-ANSWER-" + "B" * 64
+
+    class Owner:
+        def admit_from_directory(self, market, received):
+            called.append((market, received))
+            return {"batch_identity": batch}, True
+
+        def close(self):
+            return None
+
+        def work_status(self):
+            return {"state": "RUNNING", "owned_workers": 1,
+                    "latest_batch_identity": batch,
+                    "latest_batch_state": "ADMITTED"}
+
+    server.native_intake = SimpleNamespace(store=SimpleNamespace(root=tmp_path))
+    server.bulk_import = Owner()
+    body = "expected=" + quote(dumps(expected, separators=(",", ":")))
+    try:
+        status, headers, response = _request(
+            server,
+            "POST",
+            "/swing/v1/native-review-answer?market=NSE",
+            headers={**_origin_headers(server),
+                     "Content-Type": "application/x-www-form-urlencoded"},
+            body=body,
+        )
+    finally:
+        server.shutdown()
+        server.server_close()
+        serving.join(timeout=2)
+
+    assert status == 303 and response == ""
+    assert headers["Location"] == "/swing/v1-review?bulk_import=" + batch
+    assert called == [("NSE", expected)]
+
+
+def test_bulk_import_status_route_returns_only_bounded_presentation(tmp_path: Path) -> None:
+    from json import loads
+    from tests.unit.browser.test_browser_server import _running_server
+
+    server, serving = _running_server()
+    batch = "SWING-BULK-ANSWER-" + "C" * 64
+    presentation = {
+        "batch_identity": batch,
+        "request_identity": "REQUEST",
+        "review_pack_identity": "PACK",
+        "received_at": "2026-09-22T10:00:00+00:00",
+        "state": "ACCEPTED",
+        "failure": None,
+        "timings": {},
+        "candidates": [],
+        "status_location": "/swing/v1/bulk-import-status?batch=" + batch,
+    }
+
+    class Owner:
+        def presentation(self, identity=None):
+            return presentation if identity == batch else None
+
+        def close(self):
+            return None
+
+        def work_status(self):
+            return {"state": "RUNNING", "owned_workers": 1,
+                    "latest_batch_identity": batch,
+                    "latest_batch_state": "ACCEPTED"}
+
+    server.bulk_import = Owner()
+    try:
+        status, _headers, body = _request(
+            server, "GET", "/swing/v1/bulk-import-status?batch=" + batch
+        )
+    finally:
+        server.shutdown()
+        server.server_close()
+        serving.join(timeout=2)
+
+    assert status == 200 and loads(body) == presentation
+    assert "answer_sha256" not in body and "expected_run_identity" not in body
+
+
 def _v2_review_pack(
     probable,
     *,
@@ -1259,6 +1353,50 @@ import pytest
 from tests.unit.browser.test_swing_review_intake_binding import (
     native_intake, _page_load_population, _page_load_server, _page_load_counts,
 )
+
+
+@pytest.mark.parametrize("native_intake", ["NSE"], indirect=True)
+def test_current_hard_gated_v2_opportunities_render_without_trade_authority(
+    native_intake, tmp_path, monkeypatch,
+):
+    from kronos.swing.v1.analytical_promotion_v2 import create_record
+    from tests.unit.swing.v1.test_analytical_promotion_v2 import criteria, nse
+    from tests.unit.swing.v1.test_kr370_step31_handoff import NOW, _v2_completed
+    from tests.unit.swing.v1.test_mcx_supporting_context import _inventory
+
+    facts, run, probable = _evidence_run()
+    state = {"native": run, "facts": facts,
+             "control": {"current_manifest": {"sha256": "a" * 64},
+                         "latest_attempt": {"state": "SUCCEEDED"}}}
+    native_intake.application.opportunities_bundle_projection = lambda: (
+        None, run, None, dict(control=state["control"], reconciliation_unavailable=False))
+    server = _page_load_server(native_intake, state)
+    completed = _v2_completed(tmp_path / "completed")
+    hard_gate = create_record(
+        source=completed.promotion_v2.value["source"], criteria=criteria(3),
+        confirmation=nse(), created_at=NOW,
+    )
+    completed = replace(completed, promotion_v2=hard_gate)
+    assert (completed.requirement.native_run_identity,
+            completed.requirement.canonical_instrument,
+            completed.requirement.thesis.native_assessment_sha256) == (
+                run.run_identity, probable.canonical_instrument, probable.result_sha256)
+    server.visual_v3.restore_completed(completed)
+    server.trade_window.restore((completed,))
+    monkeypatch.setattr(native_intake, "downstream_applicable", lambda *a, **k: True)
+    monkeypatch.setattr(native_intake, "v2_for", lambda *a: hard_gate)
+    before = _inventory(tmp_path)
+    serving = Thread(target=server.serve_forever, daemon=True)
+    serving.start()
+    try:
+        for _ in range(2):
+            status, _, body = _request(server, "GET", "/swing/opportunities")
+            assert status == 200
+            assert "HARD GATED" in body
+            assert "Open Trade Window" not in body
+        assert _inventory(tmp_path) == before
+    finally:
+        server.shutdown(); serving.join(5); server.server_close()
 
 
 @pytest.mark.parametrize("native_intake", ["NSE"], indirect=True)

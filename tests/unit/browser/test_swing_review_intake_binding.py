@@ -724,6 +724,54 @@ def _rendered_form(body, endpoint):
     return unescape(match[1]), urlencode({"expected": unescape(match[2])})
 
 
+def _bulk_identity(location):
+    from urllib.parse import parse_qs, urlsplit
+    query = parse_qs(urlsplit(location).query, strict_parsing=True)
+    assert set(query) == {"bulk_import"} and len(query["bulk_import"]) == 1
+    return query["bulk_import"][0]
+
+
+def _wait_for_bulk_import(server, identity):
+    import json
+    from threading import Event
+    from time import monotonic
+    terminal = {"VALIDATION_FAILED", "COMPLETED", "COMPLETED_WITH_FAILURE", "FAILED"}
+    deadline = monotonic() + 30
+    observed = []
+    while monotonic() < deadline:
+        status, headers, body = _request(
+            server, "GET", "/swing/v1/bulk-import-status?batch=" + identity
+        )
+        assert status == 200
+        assert headers["Cache-Control"] == "no-store"
+        retained = json.loads(body)
+        observed.append(retained["state"])
+        if (retained["state"] in terminal
+                and not server.bulk_import.work_status()["batch_active"]):
+            assert retained["batch_identity"] == identity
+            assert retained["status_location"].endswith(identity)
+            return retained, tuple(observed)
+        Event().wait(0.01)
+    pytest.fail("Durable bulk import did not reach a terminal retained state: "
+                + ",".join(observed))
+
+
+def _bind_durable_bulk_import(server, workflow, root):
+    """Attach the real isolated ADR-0058 owner after a test swaps intake authority."""
+    from kronos.application.swing_bulk_import import (
+        SwingBulkImportOwner,
+        SwingBulkImportStore,
+    )
+    assert server.bulk_import is None
+    server.native_intake = workflow
+    server.bulk_import = SwingBulkImportOwner(
+        SwingBulkImportStore(root / "runtime" / "swing-bulk-import-v1"),
+        workflow,
+        completion=workflow.prepare_page_state,
+    )
+    server.bulk_import.start()
+
+
 def test_native_http_wiring_paste_generate_import_stale_and_observational_get(native_intake, tmp_path):
     from kronos.swing.v1.review_evidence_binding import canonical
     from tests.unit.browser.test_swing_visual_v3_live import _answer_pdf
@@ -733,7 +781,7 @@ def test_native_http_wiring_paste_generate_import_stale_and_observational_get(na
     instrument = workflow._requirements(market)[0].canonical_instrument
     server = create_browser_server(SwingOpportunitiesApplication(_Provider), port=0,
         native_review=workflow.native_review, visual_v3_live=workflow.live)
-    server.native_intake = workflow
+    _bind_durable_bulk_import(server, workflow, tmp_path)
     thread = Thread(target=server.serve_forever, daemon=True)
     thread.start()
     authority = f"127.0.0.1:{server.server_port}"
@@ -791,19 +839,40 @@ def test_native_http_wiring_paste_generate_import_stale_and_observational_get(na
         _answer_pdf(path, _native_answer(workflow, market, publication))
         page = _request(server, "GET", "/swing/v1-review")[2]
         form_url, form_body = _rendered_form(page, "native-review-answer")
-        assert request("POST", form_url, headers=form_headers, body=form_body)[0] == 303
+        admitted, admitted_headers, admitted_body = request(
+            "POST", form_url, headers=form_headers, body=form_body
+        )
+        assert admitted == 303 and admitted_body == ""
+        batch_identity = _bulk_identity(admitted_headers["Location"])
+        retained, observed = _wait_for_bulk_import(server, batch_identity)
+        assert retained["state"] == "COMPLETED"
+        assert retained["candidates"] == [{
+            "canonical_instrument": instrument,
+            "state": "SUCCEEDED",
+            "downstream_state": (
+                "UNSUPPORTED_CONTRACT" if market == "MCX" else "SUCCEEDED"
+            ),
+            "failure": None,
+            "transitions": retained["candidates"][0]["transitions"],
+        }]
+        assert retained["candidates"][0]["transitions"][0]["state"] == "QUEUED"
+        assert retained["candidates"][0]["transitions"][-1]["state"] == "SUCCEEDED"
+        assert observed
+        completed_page = _request(server, "GET", admitted_headers["Location"])[2]
+        assert "BULK ANSWER IMPORT" in completed_page and "COMPLETED" in completed_page
+        assert "ANSWER IMPORTED" in completed_page and "EVIDENCE ACCEPTED" in completed_page
         before = _inventory(tmp_path)
-        # Another still-open tab holds the pre-acceptance envelope. Never
-        # silently replay its upload against the newly selected receipt.
-        rejected, headers_after_rejection, _ = request("POST", form_url, headers=form_headers, body=form_body)
-        assert rejected == 303
-        notice_url = headers_after_rejection["Location"]
-        assert notice_url.startswith("/swing/v1-review?answer_notice=")
-        notice_page = _request(server, "GET", notice_url)[2]
-        assert "ANSWER IMPORT REJECTED" in notice_page
-        assert "REVIEW_BINDING_STALE" in notice_page
-        assert "Nothing was imported or changed." in notice_page
-        assert "ANSWER IMPORTED" in notice_page and "EVIDENCE ACCEPTED" in notice_page
+        # The exact same retained Answer and request resolve the durable batch;
+        # they cannot create a second acceptance or downstream execution.
+        replayed, replay_headers, replay_body = request(
+            "POST", form_url, headers=form_headers, body=form_body
+        )
+        assert replayed == 303 and replay_body == ""
+        assert _bulk_identity(replay_headers["Location"]) == batch_identity
+        replay_status = _request(
+            server, "GET", "/swing/v1/bulk-import-status?batch=" + batch_identity
+        )
+        assert replay_status[0] == 200
         assert _inventory(tmp_path) == before
         for _ in range(2):
             status, _, body = _request(server, "GET", "/swing/v1-review")
@@ -1971,7 +2040,7 @@ def test_swing_answer_rejection_redirect_keeps_current_review_shell(
     workflow.generate(market, workflow.expected(market, (instrument,)))
     server = create_browser_server(SwingOpportunitiesApplication(_Provider), port=0,
         native_review=workflow.native_review, visual_v3_live=workflow.live)
-    server.native_intake = workflow
+    _bind_durable_bulk_import(server, workflow, tmp_path)
     assert workflow.prepare_page_state()
     thread = Thread(target=server.serve_forever, daemon=True)
     thread.start()
@@ -1982,7 +2051,7 @@ def test_swing_answer_rejection_redirect_keeps_current_review_shell(
     def reject(*_args):
         calls.append(reason)
         raise ReviewEvidenceError(reason, "/private/not-for-display")
-    monkeypatch.setattr(workflow, "import_from_directory", reject)
+    monkeypatch.setattr(server.bulk_import, "admit_from_directory", reject)
     try:
         initial = _request(server, "GET", "/swing/v1-review")[2]
         form_url, form_body = _rendered_form(initial, "native-review-answer")
@@ -2021,7 +2090,7 @@ def test_swing_answer_unknown_failure_is_bounded_and_page_level(
     workflow = native_intake
     server = create_browser_server(SwingOpportunitiesApplication(_Provider), port=0,
         native_review=workflow.native_review, visual_v3_live=workflow.live)
-    server.native_intake = workflow
+    _bind_durable_bulk_import(server, workflow, tmp_path)
     assert workflow.prepare_page_state()
     thread = Thread(target=server.serve_forever, daemon=True)
     thread.start()
@@ -2029,7 +2098,7 @@ def test_swing_answer_unknown_failure_is_bounded_and_page_level(
     headers = {"Host": authority, "Origin": f"http://{authority}"}
     def fail(*_args):
         raise RuntimeError("secret=/private/answers/token-cookie")
-    monkeypatch.setattr(workflow, "import_from_directory", fail)
+    monkeypatch.setattr(server.bulk_import, "admit_from_directory", fail)
     try:
         before = _inventory(tmp_path)
         status, response_headers, _ = _request(server, "POST",
@@ -2052,7 +2121,7 @@ def test_swing_answer_unknown_failure_is_bounded_and_page_level(
 
 @pytest.mark.parametrize("native_intake", ["NSE"], indirect=True)
 def test_swing_answer_rejection_does_not_claim_no_change_after_pointer_transition(
-    native_intake, monkeypatch
+    native_intake, tmp_path, monkeypatch
 ):
     from kronos.browser.server import _BrowserHandler
     from kronos.swing.v1.review_evidence_binding import ReviewEvidenceError
@@ -2062,7 +2131,7 @@ def test_swing_answer_rejection_does_not_claim_no_change_after_pointer_transitio
     workflow.generate("NSE", workflow.expected("NSE", (instrument,)))
     server = create_browser_server(SwingOpportunitiesApplication(_Provider), port=0,
         native_review=workflow.native_review, visual_v3_live=workflow.live)
-    server.native_intake = workflow
+    _bind_durable_bulk_import(server, workflow, tmp_path)
     assert workflow.prepare_page_state()
     thread = Thread(target=server.serve_forever, daemon=True)
     thread.start()
@@ -2074,7 +2143,7 @@ def test_swing_answer_rejection_does_not_claim_no_change_after_pointer_transitio
                         staticmethod(lambda *_args: next(markers)))
     def reject(*_args):
         raise ReviewEvidenceError("REVIEW_BINDING_STALE")
-    monkeypatch.setattr(workflow, "import_from_directory", reject)
+    monkeypatch.setattr(server.bulk_import, "admit_from_directory", reject)
     try:
         form_url, form_body = _rendered_form(_request(server, "GET", "/swing/v1-review")[2],
                                              "native-review-answer")

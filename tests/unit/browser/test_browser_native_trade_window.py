@@ -61,6 +61,44 @@ def test_v2_ready_cannot_expose_existing_step31_construct_control(tmp_path) -> N
         assert ('action="/swing/trade-window/construct"' in html) is permitted
 
 
+@pytest.mark.parametrize("criteria_kwargs,disposition", (
+    ({"n": 3}, "HARD_GATED"),
+    ({"unavailable": 1}, "NOT_EVALUABLE"),
+))
+def test_v2_non_evaluated_keeps_null_promotion_state_and_no_trade_action(
+    tmp_path, criteria_kwargs, disposition,
+) -> None:
+    from kronos.swing.v1.analytical_promotion_v2 import create_record
+    from tests.unit.swing.v1.test_analytical_promotion_v2 import criteria, nse
+
+    completed = _v2_completed(tmp_path)
+    blocked = create_record(
+        source=completed.promotion_v2.value["source"],
+        criteria=criteria(**criteria_kwargs),
+        confirmation=nse(), created_at=NOW,
+    )
+    assert blocked.value["evaluation_disposition"] == disposition
+    assert blocked.value["promotion_state"] is None
+    completed = replace(completed, promotion_v2=blocked)
+    workflow = SwingTradeWindowWorkflow(
+        LocalKr370Step31HandoffStore(tmp_path / "handoffs"),
+        LocalTradePlanStore(tmp_path / "plans"),
+    )
+    workflow.restore((completed,))
+    projection = workflow.project(
+        completed.requirement.native_run_identity,
+        completed.requirement.canonical_instrument,
+    )
+    assert projection.kr370_classification is None
+    assert projection.reason == "KR370_" + disposition
+    assert projection.handoff is None and projection.trade_plan is None
+    html = render_native_trade_window(_ready(), projection)
+    assert disposition.replace("_", " ") in html
+    assert 'action="/swing/trade-window/construct"' not in html
+    with pytest.raises(ValueError, match="NATIVE_TRADE_WINDOW_PROJECTION_INVALID"):
+        replace(projection, sponsor_controls_available=True)
+
+
 def test_v2_sponsor_choice_restores_with_exact_promotion_lineage(tmp_path) -> None:
     completed = _v2_completed(tmp_path)
     handoffs = LocalKr370Step31HandoffStore(tmp_path / "handoffs")

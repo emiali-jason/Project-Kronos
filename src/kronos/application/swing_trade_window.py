@@ -399,7 +399,7 @@ class NativeTradeWindowProjection:
     native_run_identity: str
     canonical_instrument: str
     native_assessment_sha256: str
-    kr370_classification: str
+    kr370_classification: str | None
     direction: str
     state: TradeWindowState
     reason: str
@@ -457,7 +457,18 @@ class NativeTradeWindowProjection:
             not self.native_run_identity
             or not self.canonical_instrument
             or len(self.native_assessment_sha256) != 64
-            or not self.kr370_classification
+            or (
+                self.kr370_classification is None
+                and (self.state is not TradeWindowState.TRADE_CONSTRUCTION_NOT_ELIGIBLE
+                     or self.reason not in {"KR370_HARD_GATED", "KR370_NOT_EVALUABLE"}
+                     or self.handoff is not None or self.trade_plan is not None
+                     or self.step31_observation is not None
+                     or self.sponsor_controls_available
+                     or self.sponsor_observation_controls_available)
+            )
+            or (self.kr370_classification is not None
+                and (type(self.kr370_classification) is not str
+                     or not self.kr370_classification))
             or self.direction not in {"LONG", "SHORT"}
             or type(self.state) is not TradeWindowState
             or not self.reason
@@ -1727,7 +1738,8 @@ class SwingTradeWindowWorkflow:
             return NativeTradeWindowProjection(
                 **base,
                 state=TradeWindowState.TRADE_CONSTRUCTION_NOT_ELIGIBLE,
-                reason="KR370_NOT_EVALUABLE",
+                reason=("KR370_HARD_GATED" if promotion.disposition == "HARD_GATED"
+                        else "KR370_NOT_EVALUABLE"),
                 handoff=None,
                 trade_plan=None,
             )
@@ -2602,11 +2614,12 @@ class _SelectedPromotion:
     canonical_instrument: str
     native_assessment_sha256: str
     integrity_sha256: str
-    classification: str
+    classification: str | None
     direction: str
     analysis_boundary: datetime
     review_pack_identity: str
     not_evaluable: bool
+    disposition: str | None = None
 
 
 def _selected_promotion(completed: CompletedVisualV3Review | None) -> _SelectedPromotion | None:
@@ -2618,10 +2631,11 @@ def _selected_promotion(completed: CompletedVisualV3Review | None) -> _SelectedP
         return _SelectedPromotion(
             2, source["native_run_identity"], source["canonical_instrument"],
             source["native_assessment_sha256"], value["integrity_sha256"],
-            value["promotion_state"] or "", source["direction"],
+            value["promotion_state"], source["direction"],
             datetime.fromisoformat(source["analysis_boundary"]),
             source["acceptance"]["review_pack_identity"],
-            value["evaluation_disposition"] != "EVALUATED")
+            value["evaluation_disposition"] != "EVALUATED",
+            value["evaluation_disposition"])
     promotion = completed.promotion
     if promotion is None:
         return None

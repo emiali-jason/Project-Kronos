@@ -64,6 +64,11 @@ from kronos.application.swing_visual_v3 import CompletedVisualV3Review, SwingVis
 from kronos.swing.v1.analytical_promotion import Kr370AnalyticalPromotionRecord
 from kronos.swing.v1.analytical_promotion_v2 import V2PromotionRecord
 from kronos.application.swing_visual_v3_live import SwingVisualV3LiveWorkflow, NativeReviewIntakeWorkflow
+from kronos.application.swing_bulk_import import (
+    DEFAULT_BULK_IMPORT_ROOT,
+    SwingBulkImportOwner,
+    SwingBulkImportStore,
+)
 from kronos.application.swing_mcx_supporting_context import (
     McxSupportingContextWorkflow,
 )
@@ -306,6 +311,7 @@ class KronosBrowserServer(ThreadingHTTPServer):
             Callable[[], tuple[Wo09NotificationSource, ...]] | None
         ) = None,
         provider_login_navigation: object | None = None,
+        bulk_import_root: Path | None = None,
     ) -> None:
         if (
             address[0] != _LOOPBACK_HOST
@@ -388,6 +394,7 @@ class KronosBrowserServer(ThreadingHTTPServer):
                     getattr(provider_login_navigation, "take_redirect", None)
                 )
             )
+            or (bulk_import_root is not None and type(bulk_import_root) is not Path)
         ):
             raise ValueError("BROWSER_SERVER_MUST_BIND_LOOPBACK")
         config = OpenAIChartAnalystV2Config.from_environment()
@@ -546,6 +553,7 @@ class KronosBrowserServer(ThreadingHTTPServer):
             )
         self.native_intake = (NativeReviewIntakeWorkflow(self.application, self.native_review,
             self.visual_v3_live, ReviewEvidenceStore(governed_review_root)) if receipt_intake_enabled else None)
+        self.bulk_import = None
         self.trade_window = trade_window or SwingTradeWindowWorkflow(
             LocalKr370Step31HandoffStore(
                 governed_review_root / "kr370-step31-handoff-v1"
@@ -661,7 +669,18 @@ class KronosBrowserServer(ThreadingHTTPServer):
                 else self.native_intake.successor_page_transition
             ),
         )
+        if self.native_intake is not None:
+            runtime_root = bulk_import_root
+            if runtime_root is None:
+                runtime_root = (DEFAULT_BULK_IMPORT_ROOT if native_review is None else
+                    governed_review_root.parent / "runtime" / "swing-bulk-import-v1")
+            self.bulk_import = SwingBulkImportOwner(
+                SwingBulkImportStore(runtime_root), self.native_intake,
+                completion=self._complete_bulk_import,
+            )
         super().__init__(address, _BrowserHandler)
+        if self.bulk_import is not None:
+            self.bulk_import.start()
 
     def retain_answer_notice(self, code, market=None, instrument=None, *, confirmed_no_import=True):
         """Bounded, short-lived browser presentation only; no evidence persistence."""
@@ -764,6 +783,9 @@ class KronosBrowserServer(ThreadingHTTPServer):
         housekeeping = getattr(self, "housekeeping", None)
         if housekeeping is not None:
             housekeeping.shutdown()
+        bulk_import = getattr(self, "bulk_import", None)
+        if bulk_import is not None:
+            bulk_import.close()
         notifications = getattr(self, "intraday_notifications", None)
         if notifications is not None:
             notifications.close()
@@ -784,6 +806,16 @@ class KronosBrowserServer(ThreadingHTTPServer):
         if self.restart_control is not None:
             self.restart_control.remove()
         super().server_close()
+
+    def _complete_bulk_import(self) -> None:
+        """Publish projections only after the durable application work completes."""
+        try:
+            self.trade_window.restore(self.visual_v3.completed_snapshot())
+            if self.native_intake is not None:
+                self.native_intake.prepare_page_state()
+            self.refresh_swing_projection_revision()
+        except (OSError, TypeError, ValueError):
+            _LOG.warning("swing_bulk_import projection_refresh_unavailable")
 
     def progression_snapshot(self) -> SwingProgressionWatchSnapshot:
         """Observational access: no retention, notifications or monitoring."""
@@ -1595,6 +1627,10 @@ class KronosBrowserServer(ThreadingHTTPServer):
                 )
             ):
                 return "SPONSOR_WORK_IN_PROGRESS"
+            bulk_import = getattr(self, "bulk_import", None)
+            if (bulk_import is not None
+                    and bulk_import.work_status().get("batch_active")):
+                return "SPONSOR_WORK_IN_PROGRESS"
             if self.connection_governance is not None:
                 try:
                     self.application.enter_controlled_maintenance(sha256(uuid4().bytes).hexdigest())
@@ -1632,6 +1668,22 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             return
         if path == "/control/intraday-historical-qualification/status":
             self._intraday_historical_status()
+            return
+        if path == "/swing/v1/bulk-import-status":
+            owner = self.server.bulk_import
+            query = parse_qs(urlsplit(self.path).query, strict_parsing=True)
+            if (owner is None or set(query) != {"batch"}
+                    or len(query["batch"]) != 1):
+                self._text(HTTPStatus.NOT_FOUND, "Bulk import status not found.")
+                return
+            try:
+                status = owner.presentation(query["batch"][0])
+            except (OSError, ValueError):
+                status = None
+            if status is None:
+                self._text(HTTPStatus.NOT_FOUND, "Bulk import status not found.")
+            else:
+                self._json(status)
             return
         product_response = self.server.product_routes.dispatch_get(
             BrowserGetRequest(
@@ -1889,8 +1941,18 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             intake = self.server.native_intake
             notice_query = parse_qs(urlsplit(self.path).query, keep_blank_values=True)
             notice = (self.server.answer_notice(notice_query["answer_notice"][0])
-                      if set(notice_query) == {"answer_notice"}
+                      if set(notice_query).issubset({"answer_notice", "bulk_import"})
+                      and "answer_notice" in notice_query
                       and len(notice_query["answer_notice"]) == 1 else None)
+            bulk_identity = (notice_query["bulk_import"][0]
+                if set(notice_query).issubset({"answer_notice", "bulk_import"})
+                and "bulk_import" in notice_query
+                and len(notice_query["bulk_import"]) == 1 else None)
+            try:
+                bulk_status = (None if self.server.bulk_import is None else
+                    self.server.bulk_import.presentation(bulk_identity))
+            except (OSError, ValueError):
+                bulk_status = None
             try:
                 with intake.page_response() if intake is not None else nullcontext() as prepared:
                     review = self.server.native_review.snapshot()
@@ -1904,7 +1966,8 @@ class _BrowserHandler(BaseHTTPRequestHandler):
                         self.server.relative_context_for_run(review.native_run_identity)
                         if intake is None and review.native_run_identity is not None else None,
                         None if intake is None else intake.snapshot(_response=prepared),
-                        answer_notice=notice, promotions_v2=promotions_v2)
+                        answer_notice=notice, bulk_import=bulk_status,
+                        promotions_v2=promotions_v2)
                     _, latest = self.server.application.opportunities_projection()
                     if (latest is not discovery or promotions_v2 !=
                             self.server.current_v2_promotions(discovery)):
@@ -2301,6 +2364,9 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             housekeeping = getattr(self.server, "housekeeping", None)
             if housekeeping is not None:
                 payload["housekeeping"] = housekeeping.status_document()
+            bulk_import = getattr(self.server, "bulk_import", None)
+            if bulk_import is not None:
+                payload["swing_bulk_import"] = bulk_import.work_status()
             self._json(payload)
             return
         if path == "/status":
@@ -2330,6 +2396,9 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             housekeeping = getattr(self.server, "housekeeping", None)
             if housekeeping is not None:
                 payload["housekeeping"] = housekeeping.status_document()
+            bulk_import = getattr(self.server, "bulk_import", None)
+            if bulk_import is not None:
+                payload["swing_bulk_import"] = bulk_import.work_status()
             publication = self.server.application.publication_status()
             if publication["control"] is not None:
                 payload["swing_publication"] = publication
@@ -4108,6 +4177,7 @@ class _BrowserHandler(BaseHTTPRequestHandler):
         market, expected = None, None
         import_committed = False
         acceptance_marker = None
+        bulk_identity = None
         try:
             if workflow is None:
                 raise ReviewEvidenceError("REVIEW_CONTRACT_UNSUPPORTED")
@@ -4144,10 +4214,11 @@ class _BrowserHandler(BaseHTTPRequestHandler):
                 workflow.export_question(market, publication)
             elif operation == "IMPORT":
                 acceptance_marker = self._answer_acceptance_marker(workflow, market, expected)
-                workflow.import_from_directory(market, expected)
-                import_committed = True
-                self.server.trade_window.restore(self.server.visual_v3.completed_snapshot())
-                self.server.refresh_swing_projection_revision()
+                if self.server.bulk_import is None:
+                    raise ReviewEvidenceError("REVIEW_CONTRACT_UNSUPPORTED")
+                admitted, _created = self.server.bulk_import.admit_from_directory(
+                    market, expected)
+                bulk_identity = admitted["batch_identity"]
             elif operation == "HANDOFF":
                 _, facts, _ = workflow._context()
                 history = workflow.store.native_acceptance_history(market, facts.run_identity)
@@ -4211,6 +4282,11 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             if operation != "IMPORT":
                 raise
             self._redirect_answer_rejection(None, market, expected, confirmed_no_import=False)
+            return
+        if operation == "IMPORT":
+            self._redirect("/swing/v1-review?" + urlencode({
+                "bulk_import": bulk_identity,
+            }))
             return
         try:
             page_ready = workflow.prepare_page_state()
@@ -4907,6 +4983,7 @@ def create_browser_server(
         Callable[[], tuple[Wo09NotificationSource, ...]] | None
     ) = None,
     provider_login_navigation: object | None = None,
+    bulk_import_root: Path | None = None,
 ) -> KronosBrowserServer:
     if type(port) is not int or not 0 <= port <= 65535:
         raise ValueError("BROWSER_SERVER_PORT_INVALID")
@@ -4935,6 +5012,7 @@ def create_browser_server(
         mcx_supporting_context,
         intraday_wo09_notification_sources,
         provider_login_navigation,
+        bulk_import_root,
     )
 
 

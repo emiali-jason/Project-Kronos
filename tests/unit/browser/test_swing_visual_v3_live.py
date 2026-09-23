@@ -143,6 +143,129 @@ def _primitive(value: object) -> object:
     return value
 
 
+def test_durable_bulk_owner_extracts_once_and_accepts_eight_subjects_atomically(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    from contextlib import contextmanager
+    from dataclasses import replace
+    from time import monotonic, sleep
+    from types import SimpleNamespace
+
+    from kronos.application.swing_bulk_import import (
+        SwingBulkImportOwner,
+        SwingBulkImportStore,
+    )
+    from kronos.application.swing_visual_v3_live import NativeReviewIntakeWorkflow
+    from kronos.swing.v1.review_evidence_store import ReviewEvidenceStore
+    from tests.unit.browser.test_swing_review_intake_binding import (
+        _native_answer,
+        _stage_native,
+    )
+    from tests.unit.swing.v1.test_native_review import _evidence_run
+    from tests.unit.swing.v1.test_pdf_visual_review import _workflow
+    from kronos.application import swing_visual_v3_live as live_module
+
+    _, facts, live = _live(tmp_path)
+    native, _ = _workflow(tmp_path / "batch-native", candidate_count=8)
+    run = _evidence_run()[1]
+    probable = run.assessments[0]
+    run = replace(
+        run,
+        assessments=tuple(
+            replace(
+                item,
+                direction=probable.direction,
+                weekly_state=probable.weekly_state,
+                daily_state=probable.daily_state,
+                four_hour_state=probable.four_hour_state,
+                one_hour_state=probable.one_hour_state,
+                status=probable.status,
+                context_kind=probable.context_kind,
+                opportunity_identity=probable.opportunity_identity,
+                operative_anchor=probable.operative_anchor,
+                reason_codes=("DURABLE_BULK_IMPORT_TEST",),
+                result_sha256=f"{index:064x}",
+            ) if index <= 8 else item
+            for index, item in enumerate(run.assessments, 1)
+        ),
+        result_sha256="c" * 64,
+    )
+    manifest = "a" * 64
+
+    @contextmanager
+    def guard():
+        yield SimpleNamespace(
+            control={"current_manifest": {"sha256": manifest}},
+            manifest={"run_id": facts.run_identity},
+        )
+
+    application = SimpleNamespace(
+        opportunities_bundle_projection=lambda: (
+            None,
+            run,
+            None,
+            {"control": {"current_manifest": {"sha256": manifest}},
+             "reconciliation_unavailable": False},
+        ),
+        mtf_fact_snapshot=lambda: facts,
+        publication_mutation_guard=guard,
+    )
+    workflow = NativeReviewIntakeWorkflow(
+        application, native, live, ReviewEvidenceStore(tmp_path / "intake")
+    )
+    instruments = tuple(item.canonical_instrument
+                        for item in workflow._requirements("NSE"))
+    assert len(instruments) == 8
+    for instrument in instruments:
+        _stage_native(workflow, "NSE", instrument)
+    expected = workflow.expected("NSE", instruments)
+    publication = workflow.generate("NSE", expected)
+    answer_path = tmp_path / "eight-subject-answer.pdf"
+    _answer_pdf(answer_path, _native_answer(workflow, "NSE", publication))
+
+    original_extract = live_module.extract_successor_answer_pdf
+    extraction_count = [0]
+
+    def counted_extract(payload):
+        extraction_count[0] += 1
+        return original_extract(payload)
+
+    monkeypatch.setattr(live_module, "extract_successor_answer_pdf", counted_extract)
+    owner = SwingBulkImportOwner(
+        SwingBulkImportStore((tmp_path / "runtime-control").resolve()), workflow
+    )
+    owner.start()
+    try:
+        admitted, created = owner.admit(
+            "NSE", workflow.expected("NSE", instruments), answer_path.read_bytes()
+        )
+        deadline = monotonic() + 30
+        while monotonic() < deadline:
+            completed = owner.status(admitted["batch_identity"])
+            if completed["state"] in {
+                "COMPLETED", "COMPLETED_WITH_FAILURE", "VALIDATION_FAILED", "FAILED",
+            }:
+                break
+            sleep(0.02)
+        else:
+            raise AssertionError(owner.status(admitted["batch_identity"]))
+    finally:
+        owner.close()
+
+    assert created and completed["state"] == "COMPLETED"
+    assert extraction_count == [1]
+    history = workflow.store.native_acceptance_history("NSE", facts.run_identity)
+    assert len(history) == 1 and len(history[0].receipts) == 8
+    assert {item["canonical_instrument"] for item in completed["candidates"]} == set(instruments)
+    assert all(item["state"] == "SUCCEEDED" for item in completed["candidates"])
+    assert sum(len(workflow.store.downstream_attempts(
+        history[0].identity, receipt.receipt_id, VISUAL_QUESTION_SET_V3_ID,
+        receipt.body["contracts"][0]["question_contract_version"],
+    )) for receipt in history[0].receipts) == 16
+    promotion_files = tuple((workflow._v2_store.root / facts.run_identity).glob("*.json"))
+    assert len(promotion_files) == 8
+
+
 def test_new_live_cycle_generates_only_v3_pack_with_exact_machine_bindings(
     tmp_path: Path,
 ) -> None:

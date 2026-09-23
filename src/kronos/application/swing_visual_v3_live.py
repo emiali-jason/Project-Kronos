@@ -322,7 +322,9 @@ class SwingVisualV3LiveWorkflow:
             recheck=exact_recheck, restore=restore, consume=consume)
 
     def accept_successor_answer(self, store, publication_identity, answer_pdf, *, market,
-                                review, facts, chart_reader, precondition, current_state, publication_guard):
+                                review, facts, chart_reader, precondition, current_state,
+                                publication_guard, extracted_answer=None,
+                                phase_observer=None):
         """Prepare the complete native package, then publish acceptance only.
 
         The Browser/application owner supplies its exact-state resolver and
@@ -337,6 +339,7 @@ class SwingVisualV3LiveWorkflow:
                 and all(callable(fn) for fn in (chart_reader, current_state, publication_guard)),
                 "REVIEW_PRECONDITION_INVALID")
         precondition.validate(current_state())
+        observe = phase_observer if callable(phase_observer) else lambda _phase: None
         load = store.load_current_request if market == "NSE" else store.load_current_mcx_request
         publication = load()
         require(publication is not None and publication.identity == publication_identity,
@@ -344,7 +347,15 @@ class SwingVisualV3LiveWorkflow:
         mapping = publication.mapping.value if market == "NSE" else publication.native.value
         require(review.native_run_identity == facts.run_identity == mapping["native_run_identity"],
                 "REVIEW_BINDING_STALE")
-        extracted = extract_successor_answer_pdf(answer_pdf)
+        if extracted_answer is None:
+            observe("extraction_started_at")
+            extracted = extract_successor_answer_pdf(answer_pdf)
+            observe("extraction_completed_at")
+        else:
+            require(type(extracted_answer) is bytes and bool(extracted_answer),
+                    "REVIEW_ACCEPTANCE_INCOMPLETE")
+            extracted = extracted_answer
+        observe("validation_started_at")
         answer = strict_json(extracted)
         checksum = sha256(answer_pdf).hexdigest()
         successor = mapping["version"] == "2.0"
@@ -418,8 +429,11 @@ class SwingVisualV3LiveWorkflow:
                         require(captured_charts[key][0] == chart["revision_identity"]
                                 and sha256(captured_charts[key][1]).hexdigest() == chart["sha256"], "REVIEW_BINDING_STALE")
                 recheck()
+                observe("validation_completed_at")
+                observe("acceptance_started_at")
                 with store.publication_commit_guard(publication_guard, guarded_recheck):
                     prepared_fence.check()
+                observe("acceptance_committed_at")
                 return previous
         if previous is not None:
             require(previous.value["request_publication_identity"] != publication_identity,
@@ -505,9 +519,13 @@ class SwingVisualV3LiveWorkflow:
                         answer_identity=record["answer_identity"], answer_pdf_sha256=checksum,
                         sha256=sha, retained_relative_path=path)
             receipts.append(ReviewAcceptanceReceipt.create(body))
-        return store.publish_acceptance(tuple(receipts), artifacts, request_publication_identity=publication_identity,
+        observe("validation_completed_at")
+        observe("acceptance_started_at")
+        commit = store.publish_acceptance(tuple(receipts), artifacts, request_publication_identity=publication_identity,
             expected_predecessor=None if previous is None else previous.identity, committed_at=accepted_at,
             recheck=recheck, publication_guard=publication_guard, guarded_recheck=guarded_recheck)
+        observe("acceptance_committed_at")
+        return commit
 
     def _upload(self, review, facts, chart_bytes):  # type: ignore[no-untyped-def]
         record = self._require_current(review.native_run_identity)
@@ -1579,7 +1597,32 @@ class NativeReviewIntakeWorkflow:
             expected_predecessor=None if previous is None else previous.identity, recheck=lambda *_: recheck(),
             publication_guard=self.application.publication_mutation_guard, guarded_recheck=recheck)
 
-    def import_answer(self, market, expected, pdf):
+    @staticmethod
+    def extract_answer(pdf):
+        """Extract one staged PDF exactly once at the durable owner boundary."""
+        require(type(pdf) is bytes and pdf.startswith(b"%PDF-")
+                and len(pdf) <= 128 * 1024 * 1024,
+                "REVIEW_ACCEPTANCE_INCOMPLETE")
+        return extract_successor_answer_pdf(pdf)
+
+    def bulk_admission(self, market, expected):
+        """Capture the exact current request/Pack fence before durable staging."""
+        recheck = self._admit(market, expected)
+        publication = self._publication(market)
+        require(publication is not None, "REVIEW_REQUEST_MISMATCH")
+        mapping = self._mapping(publication, market)
+        require(set(expected) == {item["canonical_instrument"]
+                                  for item in mapping["subjects"]},
+                "REVIEW_PRECONDITION_INVALID")
+        recheck()
+        return {
+            "request_identity": mapping["request_identity"],
+            "review_pack_identity": mapping["review_pack_identity"],
+            "publication_identity": publication.identity,
+        }
+
+    def accept_answer(self, market, expected, pdf, *, extracted_answer=None,
+                      phase_observer=None):
         recheck = self._admit(market, expected)
         publication = self._publication(market)
         require(publication is not None, "REVIEW_REQUEST_MISMATCH")
@@ -1594,7 +1637,12 @@ class NativeReviewIntakeWorkflow:
         commit = self.live.accept_successor_answer(self.store, publication.identity, pdf, market=market,
             review=review, facts=facts, chart_reader=self.chart_reader,
             precondition=ReviewMutationPrecondition.create(expected[first]), current_state=state,
-            publication_guard=self.application.publication_mutation_guard)
+            publication_guard=self.application.publication_mutation_guard,
+            extracted_answer=extracted_answer, phase_observer=phase_observer)
+        return commit
+
+    def import_answer(self, market, expected, pdf):
+        commit = self.accept_answer(market, expected, pdf)
         for receipt in commit.receipts:
             self.handoff(commit, receipt)
             self.errors.pop((market, receipt.binding.value["canonical_instrument"]), None)
@@ -1646,8 +1694,8 @@ class NativeReviewIntakeWorkflow:
             pending.unlink(missing_ok=True)
         return path
 
-    def import_from_directory(self, market, expected):
-        self._admit(market, expected)
+    def answer_bytes_from_directory(self, market, expected):
+        self.bulk_admission(market, expected)
         publication = self._publication(market)
         require(publication is not None, "REVIEW_REQUEST_MISMATCH")
         directory = self.live.transport.configuration.answer_directory
@@ -1656,7 +1704,33 @@ class NativeReviewIntakeWorkflow:
         require(not directory.is_symlink() and path.is_file() and not path.is_symlink(), "REVIEW_ACCEPTANCE_INCOMPLETE")
         with path.open("rb") as stream:
             pdf = stream.read(128 * 1024 * 1024 + 1)
-        return self.import_answer(market, expected, pdf)
+        require(len(pdf) <= 128 * 1024 * 1024, "REVIEW_ACCEPTANCE_INCOMPLETE")
+        return pdf
+
+    def answer_bytes_for_review_pack(self, review_pack_identity):
+        """Read one exact retained Answer filename without rebinding current authority."""
+        from re import fullmatch
+        require(
+            type(review_pack_identity) is str
+            and fullmatch(r"KRONOS-V3-REVIEW-[A-F0-9]{32}", review_pack_identity)
+            is not None,
+            "REVIEW_REQUEST_MISMATCH",
+        )
+        directory = self.live.transport.configuration.answer_directory
+        path = directory / (review_pack_identity + "_ANSWERS.pdf")
+        require(
+            not directory.is_symlink() and path.is_file() and not path.is_symlink(),
+            "REVIEW_ACCEPTANCE_INCOMPLETE",
+        )
+        with path.open("rb") as stream:
+            pdf = stream.read(128 * 1024 * 1024 + 1)
+        require(len(pdf) <= 128 * 1024 * 1024,
+                "REVIEW_ACCEPTANCE_INCOMPLETE")
+        return pdf
+
+    def import_from_directory(self, market, expected):
+        return self.import_answer(market, expected,
+                                  self.answer_bytes_from_directory(market, expected))
 
     def snapshot(self, *, _response=None):
         """Observational projection; invalid selected graphs do not fall back."""

@@ -39,6 +39,37 @@ from kronos.swing.v1 import (
 )
 
 
+def test_bulk_import_progress_is_retained_per_candidate_and_refresh_safe():
+    from kronos.browser.views import _bulk_import_panel, _bulk_import_status_script
+
+    value = {
+        "batch_identity": "SWING-BULK-ANSWER-" + "A" * 64,
+        "request_identity": "REQUEST-ONE",
+        "review_pack_identity": "KRONOS-V3-REVIEW-" + "B" * 32,
+        "received_at": "2026-09-22T10:00:00+00:00",
+        "state": "DOWNSTREAM_RUNNING",
+        "failure": None,
+        "timings": {},
+        "status_location": "/swing/v1/bulk-import-status?batch=SWING-BULK-ANSWER-" + "A" * 64,
+        "candidates": [
+            {"canonical_instrument": "RBLBANK", "state": "SUCCEEDED",
+             "downstream_state": "SUCCEEDED", "failure": None},
+            {"canonical_instrument": "ADANIENT", "state": "RUNNING",
+             "downstream_state": None, "failure": None},
+        ],
+    }
+    html = _bulk_import_panel(value) + _bulk_import_status_script()
+
+    assert "BULK ANSWER IMPORT · <span data-bulk-state>DOWNSTREAM RUNNING" in html
+    assert value["batch_identity"] in html
+    assert "RBLBANK</strong><span>SUCCEEDED · SUCCEEDED" in html
+    assert "ADANIENT</strong><span>RUNNING" in html
+    assert "Progress is retained and remains available after refresh." in html
+    assert "fetch(panel.dataset.statusUrl,{cache:'no-store'})" in html
+    assert "replaceChildren" in html
+    assert "answer_sha256" not in html and "expected_run_identity" not in html
+
+
 def _v1_probable(
     instrument: str = "HDFCBANK",
     *,

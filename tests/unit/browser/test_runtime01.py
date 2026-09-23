@@ -137,6 +137,7 @@ def test_server_close_shuts_housekeeping_before_other_owned_lifecycles(monkeypat
     server=object.__new__(KronosBrowserServer)
     events=[]
     server.housekeeping=SimpleNamespace(shutdown=lambda:events.append("housekeeping"))
+    server.bulk_import=SimpleNamespace(close=lambda:events.append("bulk-import"))
     server.intraday_notifications=SimpleNamespace(close=lambda:events.append("notifications"))
     server.intraday_lifecycle=SimpleNamespace(shutdown=lambda:events.append("intraday"))
     server.intraday_wo17_monitoring=SimpleNamespace(shutdown=lambda:events.append("wo17"))
@@ -156,7 +157,22 @@ def test_server_close_shuts_housekeeping_before_other_owned_lifecycles(monkeypat
     server.server_close()
 
     assert events[0] == "housekeeping"
+    assert events[1] == "bulk-import"
     assert events[-1] == "socket"
+
+
+def test_status_surfaces_tracked_bulk_worker_without_waiting_for_application_work(running):
+    server,_,provider,calls,root=running
+    bulk={"state":"RUNNING","owned_workers":1,
+          "latest_batch_identity":"SWING-BULK-ANSWER-"+"A"*64,
+          "latest_batch_state":"DOWNSTREAM_RUNNING"}
+    server.bulk_import=SimpleNamespace(work_status=lambda:dict(bulk),close=lambda:None)
+    before=inventory(root)
+    for route in ("/status","/runtime/status"):
+        code,body=request(server,route)
+        assert code==200
+        assert json.loads(body)["swing_bulk_import"]==bulk
+    assert inventory(root)==before and provider.begin_count==0 and calls==[]
 
 
 def test_housekeeping_status_remains_responsive_during_blocked_cleanup(running):
