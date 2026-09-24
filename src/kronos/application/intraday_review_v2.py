@@ -714,6 +714,25 @@ class IntradayReviewV2Application:
                                     and not currentness.is_review_current
                                 ):
                                     return
+                        probables_pointer_path = (
+                            self._probables.root
+                            / "refresh-v2"
+                            / "CURRENT-PROBABLES-V2.json"
+                        )
+                        if changed_authority == [probables_pointer_path]:
+                            try:
+                                currentness = self.currentness()
+                            except ReviewError:
+                                return
+                            else:
+                                if (
+                                    currentness.state == "NO_CURRENT_PROBABLES"
+                                    and currentness.current_probables_run_identity
+                                    is None
+                                    and currentness.current_probables_pointer_integrity
+                                    is None
+                                ):
+                                    return
                     raise IntradayPageUnavailable("INTRADAY_PAGE_SOURCE_CHANGED")
             finally:
                 _CURRENT_PAGE.reset(token)
