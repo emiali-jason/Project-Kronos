@@ -183,11 +183,14 @@ def test_domain_008_excludes_same_day_before_close_and_includes_it_after_close()
         and record.observation_boundary.astimezone(_KOLKATA).date() < trading_date
         for record in before_dataset.records
     )
-    assert all(
-        record.observation_boundary is not None
-        and record.observation_boundary.astimezone(_KOLKATA).date() == trading_date
-        for record in after_dataset.records
-    )
+    for record in after_dataset.records:
+        assert record.observation_boundary is not None
+        expected = (
+            trading_date - timedelta(days=1)
+            if record.asset_class is SwingUniverseAssetClass.NSE_EQUITY
+            else trading_date
+        )
+        assert record.observation_boundary.astimezone(_KOLKATA).date() == expected
 
 
 def test_17_august_daily_completion_uses_each_authoritative_exchange_close() -> None:
@@ -226,15 +229,21 @@ def test_17_august_daily_completion_uses_each_authoritative_exchange_close() -> 
         assert record.observation_boundary is not None
         expected = (
             date(2026, 8, 14)
-            if record.asset_class is SwingUniverseAssetClass.MCX_COMMODITY
+            if record.asset_class in {
+                SwingUniverseAssetClass.NSE_EQUITY,
+                SwingUniverseAssetClass.MCX_COMMODITY,
+            }
             else trading_date
         )
         assert record.observation_boundary.astimezone(_KOLKATA).date() == expected
-    assert all(
-        record.observation_boundary is not None
-        and record.observation_boundary.astimezone(_KOLKATA).date() == trading_date
-        for record in after_mcx.records
-    )
+    for record in after_mcx.records:
+        assert record.observation_boundary is not None
+        expected = (
+            date(2026, 8, 14)
+            if record.asset_class is SwingUniverseAssetClass.NSE_EQUITY
+            else trading_date
+        )
+        assert record.observation_boundary.astimezone(_KOLKATA).date() == expected
 
 
 @pytest.mark.parametrize("mode", ("duplicate", "non_monotonic"))
@@ -383,3 +392,28 @@ def test_every_historical_request_is_daily_and_uses_one_fixed_window() -> None:
     assert {request.interval for request in requests} == {HistoricalInterval.DAY}
     assert len({(request.start, request.end) for request in requests}) == 1
     assert requests[0].end - requests[0].start == timedelta(days=120)
+
+
+def test_declared_analysis_date_caps_daily_acquisition_and_admission() -> None:
+    requests = []
+    boundary = datetime(2026, 8, 7, 0, 0, tzinfo=_KOLKATA)
+    supplied = _candles(40)
+
+    dataset = build_swing_daily_dataset(
+        enabled_swing_phase1_universe(),
+        resolve_instrument=lambda member: _instrument(member.canonical_identity),
+        historical_candles=lambda request: requests.append(request) or supplied,
+        now=_NOW,
+        analysis_boundary=boundary,
+    )
+
+    assert len(requests) == 98
+    assert all(
+        request.end.astimezone(_KOLKATA).date() == boundary.date()
+        for request in requests
+    )
+    assert all(
+        record.observation_boundary is not None
+        and record.observation_boundary.astimezone(_KOLKATA).date() <= boundary.date()
+        for record in dataset.records
+    )

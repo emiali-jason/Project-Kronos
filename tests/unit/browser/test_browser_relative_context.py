@@ -30,7 +30,7 @@ from tests.unit.swing.v1.test_native_review import _evidence_run
 def test_native_review_projects_compact_non_veto_nifty_relative_context(
     tmp_path: Path,
 ) -> None:
-    facts, run, probable = _evidence_run()
+    facts, run, probable = _evidence_run(retain_completed_series=True)
     relative = build_relative_context_run(facts)
     workflow = NativeReviewWorkflow(NativeReviewEvidenceStore(tmp_path / "native"))
     prepared = workflow.prepare(run, facts)

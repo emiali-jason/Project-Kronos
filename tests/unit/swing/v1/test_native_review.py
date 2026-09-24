@@ -62,8 +62,10 @@ def test_v2_trade_plan_requires_exact_v3_readiness_identity(tmp_path) -> None:
 
 
 @lru_cache(maxsize=1)
-def _evidence_run():  # type: ignore[no-untyped-def]
-    facts, _ = _mtf_build()
+def _evidence_run(  # type: ignore[no-untyped-def]
+    retain_completed_series: bool = False,
+):
+    facts, _ = _mtf_build(retain_completed_series=retain_completed_series)
     base = discover_native_mtf(facts)
     source = base.assessments[0]
     boundary = facts.instrument(source.canonical_instrument).fact(

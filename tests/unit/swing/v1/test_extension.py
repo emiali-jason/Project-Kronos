@@ -174,10 +174,7 @@ def test_e03_uses_governed_completed_1h_boundary_not_midnight_atr_boundary() -> 
     instrument = facts.instrument(requirement.canonical_instrument)
     hour = instrument.fact(FactualTimeframe.ONE_HOUR)
     assert instrument.one_hour_atr is not None
-    completed_1515 = replace(
-        hour,
-        observation_boundary=hour.source_timestamp,
-    )
+    completed_1515 = hour
     midnight = completed_1515.observation_boundary.replace(
         hour=0, minute=0, second=0, microsecond=0
     )

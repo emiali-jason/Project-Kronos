@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from enum import StrEnum
 from zoneinfo import ZoneInfo
 
@@ -26,6 +26,12 @@ MINIMUM_COMPLETED_DAILY_CANDLES = 25
 OPERATIONAL_DAILY_HISTORY_DEPTH = 30
 _REQUEST_CALENDAR_DAYS = 120
 _KOLKATA = ZoneInfo("Asia/Kolkata")
+
+
+def _session_subject_identity(canonical_instrument: str) -> str:
+    """Return the existing DOMAIN-008 subject identity for one Swing label."""
+
+    return "BANKNIFTY" if canonical_instrument == "BANK NIFTY" else canonical_instrument
 
 
 class SwingDailyStatus(StrEnum):
@@ -118,6 +124,7 @@ def build_swing_daily_dataset(
         [HistoricalCandleRequest], Sequence[HistoricalCandle]
     ],
     now: datetime,
+    analysis_boundary: datetime | None = None,
     market_calendar_publisher: MarketCalendarPublisher | None = None,
 ) -> SwingDailyDataset:
     """Build one complete per-member result without hiding isolated failures."""
@@ -130,6 +137,7 @@ def build_swing_daily_dataset(
         or not callable(resolve_instrument)
         or not callable(historical_candles)
         or not _aware(now)
+        or (analysis_boundary is not None and not _aware(analysis_boundary))
         or (
             market_calendar_publisher is not None
             and type(market_calendar_publisher) is not MarketCalendarPublisher
@@ -138,6 +146,13 @@ def build_swing_daily_dataset(
         raise ValueError("SWING_DAILY_DATASET_REQUEST_INVALID")
 
     end = now.astimezone(UTC)
+    if analysis_boundary is not None:
+        boundary_end = datetime.combine(
+            analysis_boundary.astimezone(_KOLKATA).date(),
+            time.max,
+            tzinfo=_KOLKATA,
+        ).astimezone(UTC)
+        end = min(end, boundary_end)
     start = end - timedelta(days=_REQUEST_CALENDAR_DAYS)
     records = tuple(
         _build_series(
@@ -147,6 +162,7 @@ def build_swing_daily_dataset(
             start=start,
             end=end,
             observed_at=now,
+            analysis_boundary=analysis_boundary,
             market_calendar_publisher=market_calendar_publisher,
         )
         for member in universe
@@ -164,6 +180,7 @@ def _build_series(
     start: datetime,
     end: datetime,
     observed_at: datetime,
+    analysis_boundary: datetime | None,
     market_calendar_publisher: MarketCalendarPublisher | None,
 ) -> SwingDailySeries:
     try:
@@ -207,6 +224,7 @@ def _build_series(
             member,
             candle,
             observed_at,
+            analysis_boundary,
             market_calendar_publisher,
         )
     )
@@ -231,12 +249,20 @@ def _daily_candle_completed(
     member: SwingUniverseMember,
     candle: HistoricalCandle,
     observed_at: datetime,
+    analysis_boundary: datetime | None,
     publisher: MarketCalendarPublisher | None,
 ) -> bool:
     """Use DOMAIN-008 for same-session completion; never admit a future bar."""
 
     candle_date = candle.timestamp.astimezone(_KOLKATA).date()
     observed_date = observed_at.astimezone(_KOLKATA).date()
+    boundary_date = (
+        observed_date
+        if analysis_boundary is None
+        else analysis_boundary.astimezone(_KOLKATA).date()
+    )
+    if candle_date > boundary_date:
+        return False
     if candle_date < observed_date:
         return True
     if candle_date > observed_date or publisher is None:
@@ -247,7 +273,24 @@ def _daily_candle_completed(
         else "NSE"
     )
     try:
-        schedule = publisher.schedule(exchange, candle_date, observed_at=observed_at)
+        if exchange == "NSE":
+            profile = publisher.instrument_session_profile(
+                exchange,
+                candle_date,
+                canonical_instrument_id=_session_subject_identity(
+                    member.canonical_identity
+                ),
+                observed_at=observed_at,
+            )
+            if profile is None:
+                return False
+            if profile.closing_auction_session is not None:
+                # HistoricalCandle has no finality marker. The discovery pass
+                # therefore never promotes a same-date CAS payload to final.
+                return candle_date < observed_date
+            schedule = profile.continuous_trading
+        else:
+            schedule = publisher.schedule(exchange, candle_date, observed_at=observed_at)
     except ValueError:
         return False
     return (

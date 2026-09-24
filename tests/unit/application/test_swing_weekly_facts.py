@@ -76,6 +76,7 @@ def _build(
         historical_candles=retrieve,
         calendar_publisher=MarketCalendarPublisher(),
         observed_at=observed_at,
+        cas_daily_finality=lambda _candle: True,
         predecessor=predecessor,
     )
     return foundation, acquired, requests
@@ -144,7 +145,68 @@ def test_provider_day_result_outside_bounded_window_fails_closed() -> None:
             historical_candles=lambda _request: (outside,),
             calendar_publisher=MarketCalendarPublisher(),
             observed_at=NOW,
+            cas_daily_finality=lambda _candle: True,
         )
+
+
+def test_current_cas_daily_requires_explicit_provider_finality() -> None:
+    history = _history()
+    current = next(
+        item for item in history
+        if item.timestamp.astimezone(IST).date() == NOW.date()
+    )
+
+    # The owning fixture supplies positive finality by default. Exercise the
+    # exact lower-level contract with a verifier that withholds the current day.
+    def retrieve(request):  # type: ignore[no-untyped-def]
+        return tuple(
+            item for item in history
+            if request.start <= item.timestamp.astimezone(request.start.tzinfo) <= request.end
+        )
+
+    held, _ = acquire_nse_weekly_factual_foundation(
+        run_identity=RUN_ID,
+        canonical_instrument="RELIANCE",
+        provider_instrument=_instrument(),
+        historical_candles=retrieve,
+        calendar_publisher=MarketCalendarPublisher(),
+        observed_at=NOW,
+        cas_daily_finality=lambda candle: candle.timestamp != current.timestamp,
+    )
+    admitted, _ = acquire_nse_weekly_factual_foundation(
+        run_identity=RUN_ID,
+        canonical_instrument="RELIANCE",
+        provider_instrument=_instrument(),
+        historical_candles=retrieve,
+        calendar_publisher=MarketCalendarPublisher(),
+        observed_at=NOW,
+        cas_daily_finality=lambda _candle: True,
+    )
+    held_after_midnight, _ = acquire_nse_weekly_factual_foundation(
+        run_identity=RUN_ID,
+        canonical_instrument="RELIANCE",
+        provider_instrument=_instrument(),
+        historical_candles=retrieve,
+        calendar_publisher=MarketCalendarPublisher(),
+        observed_at=NOW + timedelta(days=3),
+        analysis_boundary=NOW.replace(hour=0, minute=0),
+        cas_daily_finality=lambda _candle: False,
+    )
+
+    assert all(
+        item.observation_boundary.astimezone(IST).date() < NOW.date()
+        for item in held.completed_weekly_bars
+    )
+    assert any(
+        NOW.date().isoformat() in identity
+        for item in admitted.completed_weekly_bars
+        for identity in item.constituent_identities
+    )
+    assert all(
+        NOW.date().isoformat() not in identity
+        for item in held_after_midnight.completed_weekly_bars
+        for identity in item.constituent_identities
+    )
 
 
 def test_holiday_shortened_and_multi_window_weeks_are_factual_complete() -> None:

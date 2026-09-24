@@ -389,6 +389,7 @@ def next_completed_one_hour_boundary(
         raise ValueError("K5_REFRESH_BOUNDARY_REQUEST_INVALID")
     publication = calendar.publication(exchange)
     zone_source = source_boundary.astimezone(ZoneInfo(publication.timezone))
+    after = max(source_boundary, observed_at)
     for offset in range((publication.coverage_end - zone_source.date()).days + 1):
         day = zone_source.date() + timedelta(days=offset)
         schedule = calendar.schedule(exchange, day, observed_at=observed_at)
@@ -398,7 +399,7 @@ def next_completed_one_hour_boundary(
             cursor = window.window_open
             while cursor < window.window_close:
                 boundary = min(cursor + timedelta(hours=1), window.window_close)
-                if boundary > source_boundary:
+                if boundary > after:
                     return boundary
                 cursor = boundary
     raise ValueError("K5_REFRESH_NEXT_COMPLETED_1H_BOUNDARY_UNAVAILABLE")

@@ -17,6 +17,7 @@ from kronos.application.swing_weekly_facts import (
 from kronos.market.derived_timeframes import (
     DerivedBarEvidence,
     DerivedBarStatus,
+    DerivedBucketClass,
     derive_session_four_hour_bars,
     derive_weekly_bar,
 )
@@ -52,6 +53,12 @@ _STRUCTURAL_DAILY_FOUR_HOUR_DEPTH = 60
 _PROVIDER_SOURCE = "KITE_NORMALIZED_HISTORICAL"
 
 
+def _session_subject_identity(canonical_instrument: str) -> str:
+    """Return the existing DOMAIN-008 subject identity for one Swing label."""
+
+    return "BANKNIFTY" if canonical_instrument == "BANK NIFTY" else canonical_instrument
+
+
 def build_same_run_mtf_fact_snapshot(
     *,
     run_identity: str,
@@ -79,6 +86,7 @@ def build_same_run_mtf_fact_snapshot(
     ):
         raise ValueError("MTF_FACT_PRODUCTION_REQUEST_INVALID")
 
+    acquisition_boundary = analysis_boundary or observed_at
     instruments = []
     source_material = []
     for record in daily_dataset.records:
@@ -91,6 +99,27 @@ def build_same_run_mtf_fact_snapshot(
         )
         publication = calendar_publisher.publication(exchange)
         timezone = ZoneInfo(publication.timezone)
+        acquisition_end = min(
+            observed_at.astimezone(timezone),
+            datetime.combine(
+                acquisition_boundary.astimezone(timezone).date(),
+                time.max,
+                tzinfo=timezone,
+            ),
+        )
+        hourly = _validated_series(historical_candles(HistoricalCandleRequest(
+            instrument=record._analysis_instrument,
+            start=acquisition_end.astimezone(UTC) - timedelta(days=_INTRADAY_HISTORY_DAYS),
+            end=acquisition_end.astimezone(UTC),
+            interval=HistoricalInterval.SIXTY_MINUTE,
+        )), "MTF_FACT_60MINUTE_SERIES_INVALID")
+        cas_finality = lambda candle: _cas_daily_finality_verified(
+            record.canonical_identity,
+            candle,
+            hourly,
+            calendar_publisher,
+            observed_at,
+        )
         weekly_foundation: NseWeeklyFactualFoundation | None = None
         if exchange == "NSE":
             predecessor = _predecessor_weekly_foundation(
@@ -103,41 +132,49 @@ def build_same_run_mtf_fact_snapshot(
                 historical_candles=historical_candles,
                 calendar_publisher=calendar_publisher,
                 observed_at=observed_at,
+                analysis_boundary=acquisition_boundary,
+                cas_daily_finality=cas_finality,
                 predecessor=predecessor,
             )
         else:
             daily = _validated_series(historical_candles(HistoricalCandleRequest(
                 instrument=record._analysis_instrument,
                 start=datetime.combine(publication.coverage_start, time.min, tzinfo=timezone).astimezone(UTC),
-                end=observed_at.astimezone(UTC),
+                end=acquisition_end.astimezone(UTC),
                 interval=HistoricalInterval.DAY,
             )), "MTF_FACT_DAY_SERIES_INVALID")
-        hourly = _validated_series(historical_candles(HistoricalCandleRequest(
-            instrument=record._analysis_instrument,
-            start=observed_at.astimezone(UTC) - timedelta(days=_INTRADAY_HISTORY_DAYS),
-            end=observed_at.astimezone(UTC),
-            interval=HistoricalInterval.SIXTY_MINUTE,
-        )), "MTF_FACT_60MINUTE_SERIES_INVALID")
 
         completed_daily = _completed_daily(
-            exchange, daily, calendar_publisher, observed_at
+            exchange,
+            daily,
+            calendar_publisher,
+            observed_at,
+            canonical_instrument=record.canonical_identity,
+            hourly=hourly,
+            analysis_boundary=acquisition_boundary,
         )
         completed_hourly = _completed_hourly(
-            exchange, hourly, calendar_publisher, observed_at
+            exchange,
+            hourly,
+            calendar_publisher,
+            observed_at,
+            canonical_instrument=record.canonical_identity,
+            analysis_boundary=acquisition_boundary,
         )
         weekly = _completed_weekly(
             exchange, record.canonical_identity, completed_daily,
-            calendar_publisher, observed_at,
+            calendar_publisher, acquisition_end,
         )
         four_hour = _completed_four_hour(
             exchange, record.canonical_identity,
             tuple(item[0] for item in completed_hourly),
             calendar_publisher, observed_at,
+            analysis_boundary=acquisition_boundary,
         )
         if not completed_daily or not completed_hourly or not weekly or not four_hour:
             raise ValueError("MTF_FACT_COMPLETED_EVIDENCE_UNAVAILABLE")
 
-        latest_daily, daily_schedule = completed_daily[-1]
+        latest_daily, daily_schedule, daily_boundary = completed_daily[-1]
         latest_hour, hour_schedule, hour_boundary = completed_hourly[-1]
         latest_week, week_identity = weekly[-1]
         latest_four = four_hour[-1]
@@ -157,7 +194,7 @@ def build_same_run_mtf_fact_snapshot(
             ),
             _source_fact(
                 FactualTimeframe.DAILY, latest_daily, daily_schedule,
-                daily_schedule.windows[-1].window_close, daily_candles, "DAY",
+                daily_boundary, daily_candles, "DAY",
             ),
             _derived_fact(
                 FactualTimeframe.FOUR_HOUR, latest_four,
@@ -179,9 +216,9 @@ def build_same_run_mtf_fact_snapshot(
             *(
                 _retained_source_bar(
                     FactualTimeframe.DAILY, bar, schedule,
-                    schedule.windows[-1].window_close, daily_candles[-1].timestamp, "DAY",
+                    boundary, daily_candles[-1].timestamp, "DAY",
                 )
-                for bar, schedule in completed_daily
+                for bar, schedule, boundary in completed_daily
             ),
             *(
                 _retained_derived_bar(
@@ -281,22 +318,74 @@ def _completed_daily(
     candles: tuple[HistoricalCandle, ...],
     publisher: MarketCalendarPublisher,
     observed_at: datetime,
-) -> tuple[tuple[HistoricalCandle, object], ...]:
+    *,
+    canonical_instrument: str | None = None,
+    hourly: tuple[HistoricalCandle, ...] = (),
+    analysis_boundary: datetime | None = None,
+) -> tuple[tuple[HistoricalCandle, object, datetime], ...]:
     result = []
     timezone = ZoneInfo(publisher.publication(exchange).timezone)
+    boundary_date = (
+        observed_at if analysis_boundary is None else analysis_boundary
+    ).astimezone(timezone).date()
+    admissible_days = tuple(
+        candle.timestamp.astimezone(timezone).date()
+        for candle in candles
+        if candle.timestamp.astimezone(timezone).date() <= boundary_date
+    )
+    latest_admissible_day = max(admissible_days, default=None)
     for candle in candles:
         day = candle.timestamp.astimezone(timezone).date()
+        if day > boundary_date:
+            continue
         try:
-            schedule = publisher.schedule(exchange, day, observed_at=observed_at)
+            if exchange == "NSE" and canonical_instrument is not None:
+                profile = publisher.instrument_session_profile(
+                    exchange,
+                    day,
+                    canonical_instrument_id=_session_subject_identity(
+                        canonical_instrument
+                    ),
+                    observed_at=observed_at,
+                )
+                if profile is None:
+                    continue
+                finality_schedule = (
+                    profile.closing_auction_session
+                    if profile.closing_auction_session is not None
+                    else profile.continuous_trading
+                )
+                if (
+                    profile.closing_auction_session is not None
+                    and day == latest_admissible_day
+                    and not _cas_daily_finality_verified(
+                        canonical_instrument,
+                        candle,
+                        hourly,
+                        publisher,
+                        observed_at,
+                    )
+                ):
+                    continue
+                # The retained DAY boundary remains the governed NSE daily
+                # analytical boundary. CAS authority controls admission and
+                # availability; it does not create a second daily horizon.
+                schedule = publisher.schedule(
+                    exchange, day, observed_at=observed_at
+                )
+            else:
+                schedule = publisher.schedule(exchange, day, observed_at=observed_at)
+                finality_schedule = schedule
         except ValueError as error:
             if str(error) == "MARKET_CALENDAR_DATE_OUTSIDE_PUBLICATION":
                 continue
             raise
         if (
             schedule is not None
-            and schedule.trading_date_completed(observed_at)
+            and finality_schedule is not None
+            and finality_schedule.trading_date_completed(observed_at)
         ):
-            result.append((candle, schedule))
+            result.append((candle, schedule, schedule.windows[-1].window_close))
     return tuple(result)
 
 
@@ -305,13 +394,40 @@ def _completed_hourly(
     candles: tuple[HistoricalCandle, ...],
     publisher: MarketCalendarPublisher,
     observed_at: datetime,
+    *,
+    canonical_instrument: str | None = None,
+    analysis_boundary: datetime | None = None,
 ) -> tuple[tuple[HistoricalCandle, object, datetime], ...]:
     result = []
     timezone = ZoneInfo(publisher.publication(exchange).timezone)
+    boundary_date = (
+        None
+        if analysis_boundary is None
+        else analysis_boundary.astimezone(timezone).date()
+    )
     for candle in candles:
         day = candle.timestamp.astimezone(timezone).date()
+        if boundary_date is not None and day > boundary_date:
+            continue
         try:
-            schedule = publisher.schedule(exchange, day, observed_at=observed_at)
+            if exchange == "NSE" and canonical_instrument is not None:
+                profile = publisher.instrument_session_profile(
+                    exchange,
+                    day,
+                    canonical_instrument_id=_session_subject_identity(
+                        canonical_instrument
+                    ),
+                    observed_at=observed_at,
+                )
+                authority_schedule = (
+                    None if profile is None else profile.continuous_trading
+                )
+                schedule = publisher.schedule(
+                    exchange, day, observed_at=observed_at
+                )
+            else:
+                authority_schedule = None
+                schedule = publisher.schedule(exchange, day, observed_at=observed_at)
         except ValueError as error:
             if str(error) == "MARKET_CALENDAR_DATE_OUTSIDE_PUBLICATION":
                 continue
@@ -319,25 +435,106 @@ def _completed_hourly(
         if schedule is None:
             continue
         timestamp = candle.timestamp.astimezone(timezone)
+        if (
+            authority_schedule is not None
+            and timestamp >= authority_schedule.windows[-1].window_close
+        ):
+            continue
         window = schedule.window_at(timestamp)
         if window is None:
             continue
-        boundary = min(timestamp + timedelta(hours=1), window.window_close)
+        boundary = min(
+            timestamp + timedelta(hours=1),
+            window.window_close,
+            *(
+                ()
+                if authority_schedule is None
+                else (authority_schedule.windows[-1].window_close,)
+            ),
+        )
         if boundary <= observed_at:
             result.append((candle, schedule, boundary))
     return tuple(result)
 
 
+def _cas_daily_finality_verified(
+    canonical_instrument: str,
+    daily: HistoricalCandle,
+    hourly: tuple[HistoricalCandle, ...],
+    publisher: MarketCalendarPublisher,
+    observed_at: datetime,
+) -> bool:
+    """Prove the DAY payload contains evidence beyond the 15:15 close."""
+
+    timezone = ZoneInfo(publisher.publication("NSE").timezone)
+    day = daily.timestamp.astimezone(timezone).date()
+    profile = publisher.instrument_session_profile(
+        "NSE",
+        day,
+        canonical_instrument_id=_session_subject_identity(canonical_instrument),
+        observed_at=observed_at,
+    )
+    if profile is None or profile.closing_auction_session is None:
+        return True
+    auction = profile.closing_auction_session
+    if not auction.trading_date_completed(observed_at):
+        return False
+    completed = _completed_hourly(
+        "NSE",
+        hourly,
+        publisher,
+        observed_at,
+        canonical_instrument=canonical_instrument,
+        analysis_boundary=daily.timestamp,
+    )
+    same_day = tuple(
+        candle
+        for candle, _schedule, _boundary in completed
+        if candle.timestamp.astimezone(timezone).date() == day
+    )
+    if not same_day:
+        return False
+    continuous_schedule = profile.continuous_trading
+    expected_timestamps = []
+    cursor = continuous_schedule.windows[0].window_open
+    while cursor < continuous_schedule.windows[-1].window_close:
+        expected_timestamps.append(cursor)
+        cursor += timedelta(hours=1)
+    if tuple(item.timestamp.astimezone(timezone) for item in same_day) != tuple(
+        expected_timestamps
+    ):
+        return False
+    continuous = HistoricalCandle(
+        timestamp=daily.timestamp,
+        open=same_day[0].open,
+        high=max(item.high for item in same_day),
+        low=min(item.low for item in same_day),
+        close=same_day[-1].close,
+        volume=sum(item.volume for item in same_day),
+    )
+    contains_continuous = (
+        daily.open == continuous.open
+        and daily.high >= continuous.high
+        and daily.low <= continuous.low
+        and daily.volume >= continuous.volume
+    )
+    # Price at the official daily close is the Provider evidence unavailable
+    # in a pure 15:15 continuous aggregate. Volume alone is insufficient: a
+    # DAY payload can also include pre-open volume.
+    has_post_continuous_evidence = daily.close != continuous.close
+    return contains_continuous and has_post_continuous_evidence
+
+
 def _completed_weekly(
     exchange: str,
     canonical_identity: str,
-    daily: tuple[tuple[HistoricalCandle, object], ...],
+    daily: tuple[tuple[HistoricalCandle, object, datetime], ...],
     publisher: MarketCalendarPublisher,
     observed_at: datetime,
 ) -> tuple[tuple[DerivedBarEvidence, str], ...]:
     by_week: dict[date, list[HistoricalCandle]] = defaultdict(list)
     timezone = ZoneInfo(publisher.publication(exchange).timezone)
-    for candle, _schedule in daily:
+    for candle, _schedule, _boundary in daily:
         day = candle.timestamp.astimezone(timezone).date()
         by_week[day - timedelta(days=day.weekday())].append(candle)
     result = []
@@ -362,6 +559,8 @@ def _completed_four_hour(
     hourly: tuple[HistoricalCandle, ...],
     publisher: MarketCalendarPublisher,
     observed_at: datetime,
+    *,
+    analysis_boundary: datetime | None = None,
 ) -> tuple[DerivedBarEvidence, ...]:
     by_date: dict[date, list[HistoricalCandle]] = defaultdict(list)
     timezone = ZoneInfo(publisher.publication(exchange).timezone)
@@ -369,20 +568,69 @@ def _completed_four_hour(
         by_date[candle.timestamp.astimezone(timezone).date()].append(candle)
     result = []
     for day, candles in sorted(by_date.items()):
-        schedule = publisher.schedule(exchange, day, observed_at=observed_at)
+        if (
+            analysis_boundary is not None
+            and day > analysis_boundary.astimezone(timezone).date()
+        ):
+            continue
+        if exchange == "NSE":
+            profile = publisher.instrument_session_profile(
+                exchange,
+                day,
+                canonical_instrument_id=_session_subject_identity(
+                    canonical_identity
+                ),
+                observed_at=observed_at,
+            )
+            if profile is None:
+                schedule = None
+                remainder_schedule = None
+            else:
+                continuous_close = profile.continuous_trading.windows[-1].window_close
+                candles = [
+                    candle for candle in candles
+                    if candle.timestamp.astimezone(timezone) < continuous_close
+                ]
+                schedule = publisher.schedule(
+                    exchange, day, observed_at=observed_at
+                )
+                remainder_schedule = profile.continuous_trading
+        else:
+            schedule = publisher.schedule(exchange, day, observed_at=observed_at)
+            remainder_schedule = None
         if schedule is None:
             continue
-        result.extend(
-            item for item in derive_session_four_hour_bars(
+        generic = derive_session_four_hour_bars(
+            canonical_instrument=canonical_identity,
+            schedule=schedule,
+            sixty_minute_candles=tuple(candles),
+            source_provider_identity=_PROVIDER_SOURCE,
+            source_market_data_boundary=hourly[-1].timestamp,
+            observed_at=observed_at,
+        )
+        generic_complete = tuple(
+            item for item in generic
+            if item.status is DerivedBarStatus.COMPLETE
+        )
+        result.extend(generic_complete)
+        if remainder_schedule is not None:
+            subject = derive_session_four_hour_bars(
                 canonical_instrument=canonical_identity,
-                schedule=schedule,
+                schedule=remainder_schedule,
                 sixty_minute_candles=tuple(candles),
                 source_provider_identity=_PROVIDER_SOURCE,
                 source_market_data_boundary=hourly[-1].timestamp,
                 observed_at=observed_at,
             )
-            if item.status is DerivedBarStatus.COMPLETE
-        )
+            result.extend(
+                item for item in subject
+                if item.status is DerivedBarStatus.COMPLETE
+                and item.bucket_class is DerivedBucketClass.SESSION_REMAINDER
+                and (item.derived_end, item.derived_start) not in {
+                    (existing.derived_end, existing.derived_start)
+                    for existing in generic_complete
+                }
+            )
     return tuple(result)
 
 

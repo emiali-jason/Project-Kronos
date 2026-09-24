@@ -10,6 +10,7 @@ import pytest
 from kronos.application import swing_mtf_facts
 from kronos.application.swing_opportunities import SwingOpportunitiesApplication
 from kronos.application.swing_mtf_facts import (
+    _cas_daily_finality_verified,
     _completed_arithmetic_atr14,
     _completed_hourly,
     build_same_run_mtf_fact_snapshot,
@@ -172,17 +173,34 @@ def _dataset(publisher: MarketCalendarPublisher) -> SwingDailyDataset:
 def _build(
     short_nse_identity: str | None = None, *, without_nse_remainder: bool = False,
     retain_completed_series: bool = False,
+    analysis_boundary: datetime | None = None,
 ):  # type: ignore[no-untyped-def]
     publisher = MarketCalendarPublisher()
     dataset = _dataset(publisher)
-    daily = {
-        exchange: _daily_history(publisher, exchange)
-        for exchange in ("NSE", "MCX")
-    }
     hourly = {
         exchange: _hourly_history(publisher, exchange)
         for exchange in ("NSE", "MCX")
     }
+    daily = {
+        exchange: _daily_history(publisher, exchange)
+        for exchange in ("NSE", "MCX")
+    }
+    nse_current_hourly = tuple(
+        item for item in hourly["NSE"]
+        if item.timestamp.astimezone(IST).date() == NOW.date()
+        and item.timestamp.astimezone(IST).time()
+        < datetime(2026, 8, 14, 15, 15, tzinfo=IST).time()
+    )
+    assert len(nse_current_hourly) == 6
+    current_daily = daily["NSE"][-1]
+    daily["NSE"] = (*daily["NSE"][:-1], HistoricalCandle(
+        current_daily.timestamp,
+        nse_current_hourly[0].open,
+        max(item.high for item in nse_current_hourly),
+        min(item.low for item in nse_current_hourly),
+        nse_current_hourly[-1].close + 0.5,
+        sum(item.volume for item in nse_current_hourly),
+    ))
     requests = []
 
     def retrieve(request):  # type: ignore[no-untyped-def]
@@ -208,7 +226,11 @@ def _build(
             and request.interval is HistoricalInterval.DAY
         ):
             return result[-100:]
-        return result
+        return tuple(
+            item for item in result
+            if request.start <= item.timestamp.astimezone(request.start.tzinfo)
+            <= request.end
+        )
 
     snapshot = build_same_run_mtf_fact_snapshot(
         run_identity=RUN_ID,
@@ -216,6 +238,7 @@ def _build(
         historical_candles=retrieve,
         calendar_publisher=publisher,
         observed_at=NOW,
+        analysis_boundary=analysis_boundary,
     )
     if not retain_completed_series:
         # Legacy analytical fixtures intentionally replace latest OHLC/pivots.
@@ -227,6 +250,135 @@ def _build(
     return snapshot, requests
 
 
+def _cas_day_evidence(
+    publisher: MarketCalendarPublisher,
+    canonical_instrument: str,
+    trading_date: date,
+) -> tuple[HistoricalCandle, HistoricalCandle, tuple[HistoricalCandle, ...]]:
+    profile = publisher.instrument_session_profile(
+        "NSE",
+        trading_date,
+        canonical_instrument_id=canonical_instrument,
+        observed_at=NOW,
+    )
+    assert profile is not None and profile.closing_auction_session is not None
+    cursor = profile.continuous_trading.windows[0].window_open
+    hourly = []
+    while cursor < profile.continuous_trading.windows[-1].window_close:
+        hourly.append(_candle(cursor, len(hourly)))
+        cursor += timedelta(hours=1)
+    interim = HistoricalCandle(
+        datetime.combine(trading_date, datetime.min.time(), tzinfo=IST),
+        hourly[0].open,
+        max(item.high for item in hourly),
+        min(item.low for item in hourly),
+        hourly[-1].close,
+        sum(item.volume for item in hourly),
+    )
+    official = replace(interim, close=interim.close + 0.5, volume=interim.volume + 1)
+    return interim, official, tuple(hourly)
+
+
+@pytest.mark.parametrize(
+    "canonical_instrument",
+    ("AXISBANK", "HAL", "HCLTECH", "LT", "LUPIN", "MCX", "TITAN"),
+)
+def test_retained_seven_interim_daily_values_are_not_final_but_official_cas_is(
+    canonical_instrument: str,
+) -> None:
+    publisher = MarketCalendarPublisher()
+    interim, official, hourly = _cas_day_evidence(
+        publisher, canonical_instrument, NOW.date()
+    )
+
+    assert not _cas_daily_finality_verified(
+        canonical_instrument, interim, hourly, publisher, NOW
+    )
+    assert _cas_daily_finality_verified(
+        canonical_instrument, official, hourly, publisher, NOW
+    )
+
+
+def test_all_91_governed_nse_equities_use_cas_finality_without_special_cases() -> None:
+    publisher = MarketCalendarPublisher()
+    equities = tuple(
+        member.canonical_identity for member in enabled_swing_phase1_universe()
+        if member.asset_class is SwingUniverseAssetClass.NSE_EQUITY
+    )
+    assert len(equities) == 91
+
+    results = []
+    for canonical_instrument in equities:
+        interim, official, hourly = _cas_day_evidence(
+            publisher, canonical_instrument, NOW.date()
+        )
+        results.append((
+            canonical_instrument,
+            _cas_daily_finality_verified(
+                canonical_instrument, interim, hourly, publisher, NOW
+            ),
+            _cas_daily_finality_verified(
+                canonical_instrument, official, hourly, publisher, NOW
+            ),
+        ))
+
+    assert all(not interim and official for _name, interim, official in results)
+
+
+def test_analysis_boundary_caps_acquisition_and_every_retained_timeframe() -> None:
+    publisher = MarketCalendarPublisher()
+    boundary_date = max(
+        day for day in publisher.publication("NSE").trading_dates
+        if day < NOW.date()
+    )
+    boundary = datetime.combine(boundary_date, datetime.min.time(), tzinfo=IST)
+
+    snapshot, requests = _build(
+        retain_completed_series=True,
+        analysis_boundary=boundary,
+    )
+
+    assert all(
+        request.end.astimezone(IST).date() <= boundary_date
+        for request in requests
+    )
+    for instrument in snapshot.instruments:
+        assert all(
+            fact.source_timestamp.astimezone(IST).date() <= boundary_date
+            and fact.observation_boundary.astimezone(IST).date() <= boundary_date
+            for fact in instrument.timeframes
+        )
+        assert all(
+            fact.source_timestamp.astimezone(IST).date() <= boundary_date
+            and fact.observation_boundary.astimezone(IST).date() <= boundary_date
+            for fact in instrument.completed_series
+        )
+
+
+def test_indices_and_mcx_preserve_their_own_non_cas_completion_semantics() -> None:
+    publisher = MarketCalendarPublisher()
+    for identity in ("NIFTY", "BANKNIFTY"):
+        profile = publisher.instrument_session_profile(
+            "NSE", NOW.date(), canonical_instrument_id=identity, observed_at=NOW
+        )
+        assert profile is not None
+        assert profile.closing_auction_session is None
+        assert profile.continuous_trading.session_close == datetime(
+            2026, 8, 14, 15, 30, tzinfo=IST
+        )
+    for identity in ("GOLDM", "SILVERM", "COPPER", "CRUDEOIL", "NATURALGAS"):
+        assert publisher.schedule("MCX", NOW.date(), observed_at=NOW) is not None
+
+    snapshot, _ = _build()
+
+    assert all(
+        snapshot.instrument(identity).exchange == "MCX"
+        and snapshot.instrument(identity).fact(FactualTimeframe.DAILY).observation_boundary
+        == publisher.schedule("MCX", NOW.date(), observed_at=NOW).session_close
+        for identity in ("GOLDM", "SILVERM", "COPPER", "CRUDEOIL", "NATURALGAS")
+    )
+
+
 def test_rs_uses_retained_production_series_without_changing_native_inputs(tmp_path):
     from kronos.swing.v1.native_discovery import discover_native_mtf
     from kronos.swing.v1.relative_context import build_relative_context_run, RelativeContextState
@@ -236,7 +388,7 @@ def test_rs_uses_retained_production_series_without_changing_native_inputs(tmp_p
     nifty = snapshot.instrument("NIFTY")
     assert stock.fact(FactualTimeframe.ONE_HOUR).source_timestamp.hour == 14
     assert nifty.fact(FactualTimeframe.ONE_HOUR).source_timestamp.hour == 15
-    assert stock.fact(FactualTimeframe.FOUR_HOUR).source_timestamp.hour == 9
+    assert stock.fact(FactualTimeframe.FOUR_HOUR).source_timestamp.hour == 13
     assert nifty.fact(FactualTimeframe.FOUR_HOUR).source_timestamp.hour == 13
     assert all(bar.observation_boundary <= NOW
                for instrument in snapshot.instruments for bar in instrument.completed_series)

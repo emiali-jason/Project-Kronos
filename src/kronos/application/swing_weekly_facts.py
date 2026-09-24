@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import Callable
 from datetime import UTC, date, datetime, time, timedelta
 import math
 from zoneinfo import ZoneInfo
@@ -42,6 +43,12 @@ _INCREMENTAL_CONTEXT_DAYS = 320
 _PROVIDER_SOURCE = "KITE_NORMALIZED_HISTORICAL"
 
 
+def _session_subject_identity(canonical_instrument: str) -> str:
+    """Return the existing DOMAIN-008 subject identity for one Swing label."""
+
+    return "BANKNIFTY" if canonical_instrument == "BANK NIFTY" else canonical_instrument
+
+
 def acquire_nse_weekly_factual_foundation(
     *,
     run_identity: str,
@@ -50,6 +57,8 @@ def acquire_nse_weekly_factual_foundation(
     historical_candles: object,
     calendar_publisher: MarketCalendarPublisher,
     observed_at: datetime,
+    analysis_boundary: datetime | None = None,
+    cas_daily_finality: Callable[[HistoricalCandle], bool] | None = None,
     predecessor: NseWeeklyFactualFoundation | None = None,
 ) -> tuple[NseWeeklyFactualFoundation, tuple[HistoricalCandle, ...]]:
     """Acquire one deterministic DAY window and build independent NSE facts."""
@@ -62,6 +71,8 @@ def acquire_nse_weekly_factual_foundation(
         or not callable(historical_candles)
         or type(calendar_publisher) is not MarketCalendarPublisher
         or not _aware(observed_at)
+        or (analysis_boundary is not None and not _aware(analysis_boundary))
+        or (cas_daily_finality is not None and not callable(cas_daily_finality))
         or (
             predecessor is not None
             and type(predecessor) is not NseWeeklyFactualFoundation
@@ -76,6 +87,12 @@ def acquire_nse_weekly_factual_foundation(
         publication.calendar_identity, publication.calendar_version,
     )
     local_observed = observed_at.astimezone(timezone)
+    boundary = analysis_boundary or observed_at
+    local_boundary = boundary.astimezone(timezone)
+    acquisition_end = min(
+        local_observed,
+        datetime.combine(local_boundary.date(), time.max, tzinfo=timezone),
+    )
     acquisition_start = publication.coverage_start
     if reusable is not None:
         recent = max(
@@ -87,7 +104,7 @@ def acquire_nse_weekly_factual_foundation(
             recent - timedelta(days=recent.weekday()),
         )
     windows = bounded_day_request_windows(
-        acquisition_start, local_observed, timezone
+        acquisition_start, acquisition_end, timezone
     )
     acquired = []
     window_facts = []
@@ -108,10 +125,15 @@ def acquire_nse_weekly_factual_foundation(
         window_facts.append(HistoricalDayRequestWindowFact(start, end, len(candles)))
     acquired_series = _merge_candles(tuple(acquired))
     completed_daily = _completed_daily(
-        acquired_series, calendar_publisher, observed_at
+        canonical_instrument,
+        acquired_series,
+        calendar_publisher,
+        observed_at,
+        boundary,
+        cas_daily_finality,
     )
     new_complete, new_incomplete = _derive_weekly(
-        canonical_instrument, completed_daily, calendar_publisher, observed_at
+        canonical_instrument, completed_daily, calendar_publisher, acquisition_end
     )
 
     previous_bars = () if reusable is None else reusable.completed_weekly_bars
@@ -123,7 +145,7 @@ def acquire_nse_weekly_factual_foundation(
     bars = tuple(sorted(merged.values(), key=lambda item: item.observation_boundary))
     bars = bars[-NSE_WEEKLY_REQUIRED_COUNT:]
     expected_latest_week = _latest_completed_week_identity(
-        calendar_publisher, observed_at
+        calendar_publisher, acquisition_end
     )
     reason = _unavailable_reason(
         bars=bars,
@@ -275,22 +297,57 @@ def _reusable_predecessor(
 
 
 def _completed_daily(
+    canonical_instrument: str,
     candles: tuple[HistoricalCandle, ...],
     publisher: MarketCalendarPublisher,
     observed_at: datetime,
+    analysis_boundary: datetime,
+    cas_daily_finality: Callable[[HistoricalCandle], bool] | None,
 ) -> tuple[HistoricalCandle, ...]:
     timezone = ZoneInfo(publisher.publication("NSE").timezone)
+    boundary_date = analysis_boundary.astimezone(timezone).date()
+    admissible_days = tuple(
+        candle.timestamp.astimezone(timezone).date()
+        for candle in candles
+        if candle.timestamp.astimezone(timezone).date() <= boundary_date
+    )
+    latest_admissible_day = max(admissible_days, default=None)
     result = []
     for candle in candles:
         day = candle.timestamp.astimezone(timezone).date()
+        if day > boundary_date:
+            continue
         try:
-            schedule = publisher.schedule("NSE", day, observed_at=observed_at)
+            profile = publisher.instrument_session_profile(
+                "NSE",
+                day,
+                canonical_instrument_id=_session_subject_identity(
+                    canonical_instrument
+                ),
+                observed_at=observed_at,
+            )
         except ValueError as error:
             if str(error) == "MARKET_CALENDAR_DATE_OUTSIDE_PUBLICATION":
                 continue
             raise
-        if schedule is not None and schedule.trading_date_completed(observed_at):
-            result.append(candle)
+        if profile is None:
+            continue
+        auction = profile.closing_auction_session
+        if auction is not None:
+            if (
+                not auction.trading_date_completed(observed_at)
+                or (
+                    day == latest_admissible_day
+                    and (
+                        cas_daily_finality is None
+                        or not cas_daily_finality(candle)
+                    )
+                )
+            ):
+                continue
+        elif not profile.continuous_trading.trading_date_completed(observed_at):
+            continue
+        result.append(candle)
     return tuple(result)
 
 
