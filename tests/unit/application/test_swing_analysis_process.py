@@ -1,9 +1,22 @@
 from contextlib import nullcontext
+from datetime import UTC, datetime
+from decimal import Decimal
 from types import SimpleNamespace
 
 import pytest
 
 from kronos.application import swing_analysis_process as process
+from kronos.provider.contracts.instrument import InstrumentRecord
+from kronos.provider.contracts.market_data import (
+    HistoricalCandleRequest,
+    HistoricalDataError,
+    HistoricalDataFailure,
+    HistoricalInterval,
+)
+from kronos.provider.exceptions.connectivity import (
+    ProviderConnectivityError,
+    ProviderErrorCode,
+)
 
 
 def _execute(owner, **overrides):
@@ -76,6 +89,18 @@ def test_unproved_cleanup_remains_owned_and_refuses_retry(monkeypatch) -> None:
     status = owner.status()
     assert status["state"] == "CLEANUP_FAILED"
     assert status["failure"] == "SWING_ANALYSIS_WORKER_CLEANUP_FAILED"
+    assert status["failure_diagnostic"] == {
+        "operation": "UNKNOWN",
+        "exchange": "UNKNOWN",
+        "instrument": "UNKNOWN",
+        "provider_failure_code": "UNKNOWN",
+        "exception_class": "SwingAnalysisProcessCleanupError",
+        "worker_pid": "UNKNOWN",
+        "worker_exit_classification": "CLEANUP_FAILURE",
+        "worker_exit_code": "UNKNOWN",
+        "provider_call_count": 0,
+        "provider_response_bytes": 0,
+    }
     assert status["owned_workers"] == 1
     with pytest.raises(process.SwingAnalysisProcessError, match="CAPACITY"):
         _execute(owner, generation=8)
@@ -99,6 +124,119 @@ def test_completion_failure_is_visible_after_proved_worker_exit(monkeypatch) -> 
     assert status["state"] == "COMPLETION_FAILED"
     assert status["owned_workers"] == 0
     assert status["failure"] == "SWING_ANALYSIS_WORKER_RESULT_INVALID"
+    assert status["failure_diagnostic"]["worker_exit_classification"] == (
+        "COMPLETION_FAILURE"
+    )
+
+
+def test_parent_provider_failures_retain_only_enumerated_bounded_context() -> None:
+    instrument_failure = process._failure_envelope(
+        ProviderConnectivityError(ProviderErrorCode.NETWORK_TIMEOUT),
+        operation="INSTRUMENTS",
+        value="NSE",
+        worker_pid=43210,
+        worker_exit_classification="PARENT_PROVIDER_FAILURE",
+        provider_call_count=1,
+        provider_response_bytes=0,
+    )
+    assert instrument_failure.projection() == {
+        "operation": "INSTRUMENTS",
+        "exchange": "NSE",
+        "instrument": "UNKNOWN",
+        "provider_failure_code": "NETWORK_TIMEOUT",
+        "exception_class": "ProviderConnectivityError",
+        "worker_pid": 43210,
+        "worker_exit_classification": "PARENT_PROVIDER_FAILURE",
+        "worker_exit_code": "UNKNOWN",
+        "provider_call_count": 1,
+        "provider_response_bytes": 0,
+    }
+
+    request = HistoricalCandleRequest(
+        instrument=InstrumentRecord(
+            provider="KITE",
+            exchange="NSE",
+            segment="NSE",
+            trading_symbol="RELIANCE",
+            name="RELIANCE",
+            instrument_type="EQ",
+            expiry=None,
+            tick_size=Decimal("0.05"),
+            lot_size=1,
+        ),
+        start=datetime(2026, 9, 1, tzinfo=UTC),
+        end=datetime(2026, 9, 2, tzinfo=UTC),
+        interval=HistoricalInterval.DAY,
+    )
+    historical_failure = process._failure_envelope(
+        HistoricalDataError(HistoricalDataFailure.PROVIDER_FAILURE),
+        operation="HISTORICAL",
+        value=request,
+        worker_pid=43211,
+        worker_exit_classification="PARENT_PROVIDER_FAILURE",
+        provider_call_count=2,
+        provider_response_bytes=128,
+    )
+    assert historical_failure.exchange == "NSE"
+    assert historical_failure.instrument == "RELIANCE"
+    assert historical_failure.provider_failure_code == "PROVIDER_FAILURE"
+    assert historical_failure.provider_call_count == 2
+    assert historical_failure.provider_response_bytes == 128
+
+
+def test_owner_retains_worker_envelope_and_failure_metrics_after_release(
+    monkeypatch,
+) -> None:
+    owner = process.SwingAnalysisProcessOwner()
+    diagnostic = process.SwingAnalysisFailureEnvelope(
+        operation="HISTORICAL",
+        exchange="NSE",
+        instrument="RELIANCE",
+        provider_failure_code="NETWORK_TIMEOUT",
+        exception_class="ProviderConnectivityError",
+        worker_pid=44123,
+        worker_exit_classification="WORKER_REPORTED_FAILURE",
+        worker_exit_code=1,
+        provider_call_count=17,
+        provider_response_bytes=8192,
+    )
+    monkeypatch.setattr(
+        process,
+        "_run_worker",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            process.SwingAnalysisProcessError(
+                "SWING_ANALYSIS_WORKER_FAILED", diagnostic=diagnostic
+            )
+        ),
+    )
+
+    with pytest.raises(process.SwingAnalysisProcessError) as failure:
+        _execute(owner)
+    assert failure.value.diagnostic == diagnostic
+    owner.release(7)
+    status = owner.status()
+    assert status["state"] == "FAILED"
+    assert status["owned_workers"] == 0
+    assert status["pid"] is None
+    assert status["last_provider_calls"] == 17
+    assert status["last_provider_response_bytes"] == 8192
+    assert status["failure_diagnostic"] == diagnostic.projection()
+
+
+def test_unknown_failure_details_are_explicit_and_secret_text_is_not_retained() -> None:
+    error = RuntimeError("access_token=forbidden raw provider payload")
+    diagnostic = process._failure_envelope(
+        error,
+        operation="WORKER",
+        worker_exit_classification="WORKER_REPORTED_FAILURE",
+    )
+    assert diagnostic.exchange == "UNKNOWN"
+    assert diagnostic.instrument == "UNKNOWN"
+    assert diagnostic.provider_failure_code == "UNKNOWN"
+    assert diagnostic.worker_pid == "UNKNOWN"
+    assert diagnostic.worker_exit_code == "UNKNOWN"
+    assert "forbidden" not in repr(diagnostic).lower()
+    assert "access_token" not in repr(diagnostic).lower()
 
 
 def test_transfer_and_result_writers_enforce_byte_limits(tmp_path) -> None:

@@ -8,6 +8,7 @@ from datetime import datetime
 import gzip
 from hashlib import sha256
 import multiprocessing
+import os
 from pathlib import Path
 import pickle
 import re
@@ -24,10 +25,34 @@ MAX_DECODED_RESULT_BYTES = 512 * 1024 * 1024
 MAX_PROVIDER_CALLS = 512
 WORKER_TIMEOUT_SECONDS = 240.0
 TERMINATION_SECONDS = 5.0
+UNKNOWN = "UNKNOWN"
+_SAFE_TEXT = re.compile(r"[A-Z0-9&._ -]{1,96}")
+_SAFE_CLASS = re.compile(r"[A-Za-z_][A-Za-z0-9_]{0,79}")
+_FAILURE_OPERATIONS = frozenset(
+    {UNKNOWN, "WORKER", "INSTRUMENTS", "HISTORICAL", "PROGRESS", "CLOCK",
+     "PREPARED", "COMMIT_READY", "DONE"}
+)
+_EXIT_CLASSIFICATIONS = frozenset(
+    {
+        UNKNOWN,
+        "WORKER_REPORTED_FAILURE",
+        "PARENT_PROVIDER_FAILURE",
+        "PARENT_FAILURE",
+        "ABNORMAL_EXIT",
+        "TIMEOUT",
+        "STALE",
+        "COMPLETION_FAILURE",
+        "CLEANUP_FAILURE",
+    }
+)
 
 
 class SwingAnalysisProcessError(RuntimeError):
     """A bounded worker failed before durable completion."""
+
+    def __init__(self, failure, *, diagnostic=None) -> None:
+        super().__init__(failure)
+        self.diagnostic = diagnostic
 
 
 class SwingAnalysisProcessCleanupError(SwingAnalysisProcessError):
@@ -36,6 +61,59 @@ class SwingAnalysisProcessCleanupError(SwingAnalysisProcessError):
 
 class SwingAnalysisProcessCompletionError(SwingAnalysisProcessError):
     """Publication completed but its result could not be installed safely."""
+
+
+@dataclass(frozen=True, slots=True)
+class SwingAnalysisFailureEnvelope:
+    """Sanitized current-process failure evidence; never durable publication data."""
+
+    operation: str = UNKNOWN
+    exchange: str = UNKNOWN
+    instrument: str = UNKNOWN
+    provider_failure_code: str = UNKNOWN
+    exception_class: str = UNKNOWN
+    worker_pid: int | str = UNKNOWN
+    worker_exit_classification: str = UNKNOWN
+    worker_exit_code: int | str = UNKNOWN
+    provider_call_count: int = 0
+    provider_response_bytes: int = 0
+
+    def __post_init__(self) -> None:
+        if (
+            self.operation not in _FAILURE_OPERATIONS
+            or not _safe_evidence_text(self.exchange)
+            or not _safe_evidence_text(self.instrument)
+            or not _safe_evidence_text(self.provider_failure_code)
+            or not _SAFE_CLASS.fullmatch(self.exception_class)
+            or (
+                self.worker_pid != UNKNOWN
+                and (type(self.worker_pid) is not int or self.worker_pid <= 0)
+            )
+            or self.worker_exit_classification not in _EXIT_CLASSIFICATIONS
+            or (
+                self.worker_exit_code != UNKNOWN
+                and type(self.worker_exit_code) is not int
+            )
+            or type(self.provider_call_count) is not int
+            or self.provider_call_count < 0
+            or type(self.provider_response_bytes) is not int
+            or self.provider_response_bytes < 0
+        ):
+            raise ValueError("SWING_ANALYSIS_FAILURE_ENVELOPE_INVALID")
+
+    def projection(self) -> dict[str, int | str]:
+        return {
+            "operation": self.operation,
+            "exchange": self.exchange,
+            "instrument": self.instrument,
+            "provider_failure_code": self.provider_failure_code,
+            "exception_class": self.exception_class,
+            "worker_pid": self.worker_pid,
+            "worker_exit_classification": self.worker_exit_classification,
+            "worker_exit_code": self.worker_exit_code,
+            "provider_call_count": self.provider_call_count,
+            "provider_response_bytes": self.provider_response_bytes,
+        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -82,6 +160,107 @@ def _safe_failure(error):
     if re.fullmatch(r"[A-Z][A-Z0-9_]{0,95}", value or ""):
         return value
     return "SWING_ANALYSIS_WORKER_FAILED"
+
+
+def _safe_evidence_text(value):
+    return isinstance(value, str) and (
+        value == UNKNOWN or _SAFE_TEXT.fullmatch(value) is not None
+    )
+
+
+def _safe_exception_class(error):
+    value = type(error).__name__
+    return value if _SAFE_CLASS.fullmatch(value) else UNKNOWN
+
+
+def _safe_provider_failure_code(error):
+    from kronos.provider.contracts.instrument import InstrumentResolutionError
+    from kronos.provider.contracts.market_data import HistoricalDataError
+    from kronos.provider.exceptions.connectivity import ProviderConnectivityError
+
+    if isinstance(error, ProviderConnectivityError):
+        candidate = error.code.value
+    elif isinstance(error, (InstrumentResolutionError, HistoricalDataError)):
+        candidate = error.failure.value
+    else:
+        return UNKNOWN
+    return candidate if _safe_evidence_text(candidate) else UNKNOWN
+
+
+def _operation_context(operation, value):
+    from kronos.provider.contracts.market_data import HistoricalCandleRequest
+
+    exchange = UNKNOWN
+    instrument = UNKNOWN
+    if operation == "INSTRUMENTS" and isinstance(value, str):
+        exchange = value if _safe_evidence_text(value) else UNKNOWN
+    elif operation == "HISTORICAL" and type(value) is HistoricalCandleRequest:
+        candidate_exchange = value.instrument.exchange
+        candidate_instrument = value.instrument.name or value.instrument.trading_symbol
+        exchange = (
+            candidate_exchange
+            if _safe_evidence_text(candidate_exchange)
+            else UNKNOWN
+        )
+        instrument = (
+            candidate_instrument
+            if _safe_evidence_text(candidate_instrument)
+            else UNKNOWN
+        )
+    return exchange, instrument
+
+
+def _failure_envelope(
+    error,
+    *,
+    operation=UNKNOWN,
+    value=None,
+    worker_pid=UNKNOWN,
+    worker_exit_classification=UNKNOWN,
+    worker_exit_code=UNKNOWN,
+    provider_call_count=0,
+    provider_response_bytes=0,
+):
+    exchange, instrument = _operation_context(operation, value)
+    return SwingAnalysisFailureEnvelope(
+        operation=operation if operation in _FAILURE_OPERATIONS else UNKNOWN,
+        exchange=exchange,
+        instrument=instrument,
+        provider_failure_code=_safe_provider_failure_code(error),
+        exception_class=_safe_exception_class(error),
+        worker_pid=worker_pid if type(worker_pid) is int and worker_pid > 0 else UNKNOWN,
+        worker_exit_classification=worker_exit_classification,
+        worker_exit_code=(
+            worker_exit_code if type(worker_exit_code) is int else UNKNOWN
+        ),
+        provider_call_count=provider_call_count,
+        provider_response_bytes=provider_response_bytes,
+    )
+
+
+def _merge_failure_envelope(
+    envelope,
+    *,
+    worker_pid,
+    worker_exit_classification,
+    worker_exit_code=UNKNOWN,
+    provider_call_count,
+    provider_response_bytes,
+):
+    if type(envelope) is not SwingAnalysisFailureEnvelope:
+        envelope = SwingAnalysisFailureEnvelope()
+    return replace(
+        envelope,
+        worker_pid=(
+            worker_pid if type(worker_pid) is int and worker_pid > 0 else UNKNOWN
+        ),
+        worker_exit_classification=worker_exit_classification,
+        worker_exit_code=(
+            worker_exit_code if type(worker_exit_code) is int else UNKNOWN
+        ),
+        provider_call_count=provider_call_count,
+        provider_response_bytes=provider_response_bytes,
+    )
 
 
 def _digest_file(path):
@@ -178,8 +357,12 @@ class _ProviderProxy:
             }
         )
         self._connection = connection
+        self.last_operation = UNKNOWN
+        self.last_value = None
 
     def _call(self, operation, value):
+        self.last_operation = operation
+        self.last_value = value
         _send(self._connection, (operation, value), MAX_REQUEST_BYTES)
         response, _ = _receive(self._connection, MAX_RESPONSE_BYTES)
         if response[0] != "OK":
@@ -219,6 +402,7 @@ def _worker(
     now,
     result_path,
 ):
+    proxy = None
     try:
         import resource
         from kronos.application.swing_opportunities import build_completed_swing_analysis
@@ -374,7 +558,18 @@ def _worker(
         )
     except BaseException as error:
         try:
-            _send(connection, ("ERROR", type(error).__name__, _safe_failure(error)), MAX_REQUEST_BYTES)
+            envelope = _failure_envelope(
+                error,
+                operation=(UNKNOWN if proxy is None else proxy.last_operation),
+                value=(None if proxy is None else proxy.last_value),
+                worker_pid=os.getpid(),
+                worker_exit_classification="WORKER_REPORTED_FAILURE",
+            )
+            _send(
+                connection,
+                ("ERROR", _safe_failure(error), envelope),
+                MAX_REQUEST_BYTES,
+            )
         except BaseException:
             pass
         raise
@@ -439,6 +634,8 @@ def _run_worker(
         commit_authorized = False
         prepared_reference = None
         prepared_result = None
+        last_operation = UNKNOWN
+        last_value = None
         try:
             with ExitStack() as publication_transition:
                 while time.monotonic() < deadline:
@@ -450,13 +647,67 @@ def _run_worker(
                         continue
                     message, _ = _receive(parent, MAX_REQUEST_BYTES)
                     operation = message[0]
+                    last_operation = (
+                        operation if operation in _FAILURE_OPERATIONS else UNKNOWN
+                    )
+                    last_value = message[1] if len(message) > 1 else None
+                    provider_call = operation in {"INSTRUMENTS", "HISTORICAL"}
+                    if provider_call:
+                        provider_calls += 1
+                        if provider_calls > MAX_PROVIDER_CALLS:
+                            raise SwingAnalysisProcessError(
+                                "SWING_ANALYSIS_WORKER_PROVIDER_CAPACITY",
+                                diagnostic=_failure_envelope(
+                                    RuntimeError(
+                                        "SWING_ANALYSIS_WORKER_PROVIDER_CAPACITY"
+                                    ),
+                                    operation=operation,
+                                    value=last_value,
+                                    worker_pid=process.pid,
+                                    worker_exit_classification="PARENT_FAILURE",
+                                    provider_call_count=provider_calls,
+                                    provider_response_bytes=provider_bytes,
+                                ),
+                            )
                     if operation == "INSTRUMENTS":
-                        value = capability.instrument_records(message[1])
+                        try:
+                            value = capability.instrument_records(message[1])
+                        except BaseException as error:
+                            raise SwingAnalysisProcessError(
+                                _safe_failure(error),
+                                diagnostic=_failure_envelope(
+                                    error,
+                                    operation=operation,
+                                    value=message[1],
+                                    worker_pid=process.pid,
+                                    worker_exit_classification=(
+                                        "PARENT_PROVIDER_FAILURE"
+                                    ),
+                                    provider_call_count=provider_calls,
+                                    provider_response_bytes=provider_bytes,
+                                ),
+                            ) from error
                     elif operation == "HISTORICAL":
                         if historical_calls:
                             pace()
                         historical_calls += 1
-                        value = capability.historical_candles(message[1])
+                        try:
+                            value = capability.historical_candles(message[1])
+                        except BaseException as error:
+                            raise SwingAnalysisProcessError(
+                                _safe_failure(error),
+                                diagnostic=_failure_envelope(
+                                    error,
+                                    operation=operation,
+                                    value=message[1],
+                                    worker_pid=process.pid,
+                                    worker_exit_classification=(
+                                        "PARENT_PROVIDER_FAILURE"
+                                    ),
+                                    provider_call_count=provider_calls,
+                                    provider_response_bytes=provider_bytes,
+                                ),
+                            ) from error
                     elif operation == "PROGRESS":
                         progress_observer(message[1])
                         value = None
@@ -538,20 +789,24 @@ def _run_worker(
                         done = message
                         break
                     elif operation == "ERROR":
+                        envelope = _merge_failure_envelope(
+                            message[2],
+                            worker_pid=process.pid,
+                            worker_exit_classification="WORKER_REPORTED_FAILURE",
+                            worker_exit_code=process.exitcode,
+                            provider_call_count=provider_calls,
+                            provider_response_bytes=provider_bytes,
+                        )
                         if commit_authorized:
                             raise SwingAnalysisProcessCompletionError(
-                                message[2]
+                                message[1], diagnostic=envelope
                             )
-                        raise RuntimeError(message[2])
+                        raise SwingAnalysisProcessError(
+                            message[1], diagnostic=envelope
+                        )
                     else:
                         raise RuntimeError(
                             "SWING_ANALYSIS_WORKER_PROTOCOL_INVALID"
-                        )
-                    provider_call = operation in {"INSTRUMENTS", "HISTORICAL"}
-                    provider_calls += provider_call
-                    if provider_calls > MAX_PROVIDER_CALLS:
-                        raise RuntimeError(
-                            "SWING_ANALYSIS_WORKER_PROVIDER_CAPACITY"
                         )
                     payload = _payload(("OK", value), MAX_RESPONSE_BYTES)
                     if (
@@ -566,14 +821,32 @@ def _run_worker(
                     if provider_call:
                         provider_bytes += len(payload)
                 if done is None:
-                    failure = (
-                        "SWING_ANALYSIS_WORKER_TIMEOUT"
-                        if time.monotonic() >= deadline
-                        else "SWING_ANALYSIS_WORKER_STALE"
+                    if time.monotonic() >= deadline:
+                        failure = "SWING_ANALYSIS_WORKER_TIMEOUT"
+                        classification = "TIMEOUT"
+                    elif not process.is_alive():
+                        failure = "SWING_ANALYSIS_WORKER_FAILED"
+                        classification = "ABNORMAL_EXIT"
+                    else:
+                        failure = "SWING_ANALYSIS_WORKER_STALE"
+                        classification = "STALE"
+                    envelope = _failure_envelope(
+                        RuntimeError(failure),
+                        operation=last_operation,
+                        value=last_value,
+                        worker_pid=process.pid,
+                        worker_exit_classification=classification,
+                        worker_exit_code=process.exitcode,
+                        provider_call_count=provider_calls,
+                        provider_response_bytes=provider_bytes,
                     )
                     if commit_authorized:
-                        raise SwingAnalysisProcessCompletionError(failure)
-                    raise RuntimeError(failure)
+                        raise SwingAnalysisProcessCompletionError(
+                            failure, diagnostic=envelope
+                        )
+                    raise SwingAnalysisProcessError(
+                        failure, diagnostic=envelope
+                    )
                 _, size, decoded_size, digest, peak = done
                 if (
                     prepared_result is None
@@ -587,7 +860,16 @@ def _run_worker(
                     or prepared_result.worker_peak_rss_bytes > peak
                 ):
                     raise SwingAnalysisProcessCompletionError(
-                        "SWING_ANALYSIS_WORKER_RESULT_INVALID"
+                        "SWING_ANALYSIS_WORKER_RESULT_INVALID",
+                        diagnostic=_failure_envelope(
+                            RuntimeError("SWING_ANALYSIS_WORKER_RESULT_INVALID"),
+                            operation="DONE",
+                            worker_pid=process.pid,
+                            worker_exit_classification="COMPLETION_FAILURE",
+                            worker_exit_code=process.exitcode,
+                            provider_call_count=provider_calls,
+                            provider_response_bytes=provider_bytes,
+                        ),
                     )
                 result = replace(
                     prepared_result,
@@ -595,15 +877,59 @@ def _run_worker(
                 )
                 if install_result(result) is not True:
                     raise SwingAnalysisProcessCompletionError(
-                        "SWING_ANALYSIS_WORKER_RESULT_NOT_INSTALLED"
+                        "SWING_ANALYSIS_WORKER_RESULT_NOT_INSTALLED",
+                        diagnostic=_failure_envelope(
+                            RuntimeError(
+                                "SWING_ANALYSIS_WORKER_RESULT_NOT_INSTALLED"
+                            ),
+                            operation="DONE",
+                            worker_pid=process.pid,
+                            worker_exit_classification="COMPLETION_FAILURE",
+                            worker_exit_code=process.exitcode,
+                            provider_call_count=provider_calls,
+                            provider_response_bytes=provider_bytes,
+                        ),
                     )
                 publication_transition.close()
                 process.join(TERMINATION_SECONDS)
                 if process.is_alive() or process.exitcode != 0:
                     raise SwingAnalysisProcessCleanupError(
-                        "SWING_ANALYSIS_WORKER_CLEANUP_FAILED"
+                        "SWING_ANALYSIS_WORKER_CLEANUP_FAILED",
+                        diagnostic=_failure_envelope(
+                            RuntimeError("SWING_ANALYSIS_WORKER_CLEANUP_FAILED"),
+                            operation="DONE",
+                            worker_pid=process.pid,
+                            worker_exit_classification="CLEANUP_FAILURE",
+                            worker_exit_code=process.exitcode,
+                            provider_call_count=provider_calls,
+                            provider_response_bytes=provider_bytes,
+                        ),
                     )
                 return result
+        except SwingAnalysisProcessError:
+            raise
+        except BaseException as error:
+            classification = (
+                "COMPLETION_FAILURE" if commit_authorized else "PARENT_FAILURE"
+            )
+            envelope = _failure_envelope(
+                error,
+                operation=last_operation,
+                value=last_value,
+                worker_pid=process.pid,
+                worker_exit_classification=classification,
+                worker_exit_code=process.exitcode,
+                provider_call_count=provider_calls,
+                provider_response_bytes=provider_bytes,
+            )
+            failure = _safe_failure(error)
+            if commit_authorized:
+                raise SwingAnalysisProcessCompletionError(
+                    failure, diagnostic=envelope
+                ) from error
+            raise SwingAnalysisProcessError(
+                failure, diagnostic=envelope
+            ) from error
         finally:
             parent.close()
             if process.is_alive():
@@ -611,7 +937,17 @@ def _run_worker(
                 process.join(TERMINATION_SECONDS)
             if process.is_alive():
                 raise SwingAnalysisProcessCleanupError(
-                    "SWING_ANALYSIS_WORKER_CLEANUP_FAILED"
+                    "SWING_ANALYSIS_WORKER_CLEANUP_FAILED",
+                    diagnostic=_failure_envelope(
+                        RuntimeError("SWING_ANALYSIS_WORKER_CLEANUP_FAILED"),
+                        operation=last_operation,
+                        value=last_value,
+                        worker_pid=process.pid,
+                        worker_exit_classification="CLEANUP_FAILURE",
+                        worker_exit_code=process.exitcode,
+                        provider_call_count=provider_calls,
+                        provider_response_bytes=provider_bytes,
+                    ),
                 )
 
 
@@ -632,6 +968,7 @@ class SwingAnalysisProcessOwner:
         self._pid = None
         self._generation = None
         self._failure = None
+        self._failure_diagnostic = None
         self._last_provider_calls = 0
         self._last_provider_bytes = 0
         self._last_result_bytes = 0
@@ -647,6 +984,11 @@ class SwingAnalysisProcessOwner:
                 "pid": self._pid,
                 "generation": self._generation,
                 "failure": self._failure,
+                "failure_diagnostic": (
+                    None
+                    if self._failure_diagnostic is None
+                    else self._failure_diagnostic.projection()
+                ),
                 "owned_workers": int(self._active),
                 "maximum_owned_workers": 1,
                 "queued_jobs": 0,
@@ -693,6 +1035,7 @@ class SwingAnalysisProcessOwner:
             self._pid = None
             self._generation = generation
             self._failure = None
+            self._failure_diagnostic = None
 
         def update(state, pid, failure):
             with self._lock:
@@ -700,6 +1043,23 @@ class SwingAnalysisProcessOwner:
                     self._state = state
                     self._pid = pid
                     self._failure = failure
+
+        def retain_failure(state, pid, failure, error, classification):
+            diagnostic = getattr(error, "diagnostic", None)
+            if type(diagnostic) is not SwingAnalysisFailureEnvelope:
+                diagnostic = _failure_envelope(
+                    error,
+                    worker_pid=self._pid,
+                    worker_exit_classification=classification,
+                )
+            with self._lock:
+                if self._generation == generation:
+                    self._state = state
+                    self._pid = pid
+                    self._failure = failure
+                    self._failure_diagnostic = diagnostic
+                    self._last_provider_calls = diagnostic.provider_call_count
+                    self._last_provider_bytes = diagnostic.provider_response_bytes
 
         try:
             result = _run_worker(
@@ -721,20 +1081,36 @@ class SwingAnalysisProcessOwner:
                 timeout_seconds=self._timeout_seconds,
                 status_update=update,
             )
-        except SwingAnalysisProcessCleanupError:
-            update("CLEANUP_FAILED", self._pid, "SWING_ANALYSIS_WORKER_CLEANUP_FAILED")
+        except SwingAnalysisProcessCleanupError as error:
+            retain_failure(
+                "CLEANUP_FAILED",
+                self._pid,
+                "SWING_ANALYSIS_WORKER_CLEANUP_FAILED",
+                error,
+                "CLEANUP_FAILURE",
+            )
             raise
-        except SwingAnalysisProcessCompletionError:
-            update("COMPLETION_FAILED", None, "SWING_ANALYSIS_WORKER_RESULT_INVALID")
+        except SwingAnalysisProcessCompletionError as error:
+            retain_failure(
+                "COMPLETION_FAILED",
+                None,
+                "SWING_ANALYSIS_WORKER_RESULT_INVALID",
+                error,
+                "COMPLETION_FAILURE",
+            )
             raise
         except BaseException as error:
             failure = _safe_failure(error)
-            update("FAILED", None, failure)
-            raise SwingAnalysisProcessError(failure) from error
+            retain_failure("FAILED", None, failure, error, "PARENT_FAILURE")
+            raise SwingAnalysisProcessError(
+                failure,
+                diagnostic=self._failure_diagnostic,
+            ) from error
         with self._lock:
             self._state = "COMPLETED"
             self._pid = None
             self._failure = None
+            self._failure_diagnostic = None
             self._last_provider_calls = result.provider_call_count
             self._last_provider_bytes = result.provider_response_bytes
             self._last_result_bytes = result.result_bytes

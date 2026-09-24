@@ -8,6 +8,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from kronos.application import swing_analysis_process as analysis_process
 from kronos.application import swing_opportunities as app
 from kronos.configuration.principals import PrincipalBindingResult
 from kronos.market.calendar import MarketCalendarPublisher
@@ -36,6 +37,7 @@ from tests.unit.swing.test_swing_candidate_validation import (
     _instrument as _stage4_instrument,
 )
 from tests.unit.swing.test_swing_top_opportunity import _selection
+from tests.unit.swing.test_run_publication import checkpoint, later, scenario
 
 
 NOW = datetime(2026, 8, 11, 4, 30, tzinfo=UTC)
@@ -531,7 +533,19 @@ def test_each_analysis_stage_retains_only_sanitized_failure_context(
     assert diagnostic.failing_stage is stage
     assert diagnostic.exception_class == "ProviderPayloadFailure"
     assert diagnostic.sanitized_summary == "SANITIZED_FAILURE"
+    assert diagnostic.provider_operation == "UNKNOWN"
+    assert diagnostic.provider_exchange == "UNKNOWN"
+    assert diagnostic.provider_instrument == "UNKNOWN"
+    assert diagnostic.provider_failure_code == "UNKNOWN"
+    assert diagnostic.worker_pid == "UNKNOWN"
+    assert diagnostic.worker_exit_classification == "UNKNOWN"
+    assert diagnostic.worker_exit_code == "UNKNOWN"
+    assert diagnostic.provider_call_count == 0
+    assert diagnostic.provider_response_bytes == 0
     assert "forbidden" not in repr(diagnostic).lower()
+    assert service.publication_status()["request_result"] == "FAILED"
+    assert service.analysis_work_status()["state"] == "IDLE"
+    assert service.analysis_work_status()["owned_work_count"] == 0
     assert service.snapshot().analysis_state is app.AnalysisState.ERROR
     assert service.snapshot().analysis_failure == "SWING_ANALYSIS_FAILED"
     assert service.snapshot().opportunities == previous.opportunities
@@ -564,6 +578,90 @@ def test_successful_analysis_clears_stale_diagnostic(monkeypatch) -> None:
     assert service.run_analysis()
     assert service.analysis_diagnostic() is None
     assert service.snapshot() == completed
+
+
+def test_worker_failure_envelope_reaches_application_failure_projection(
+    monkeypatch,
+) -> None:
+    provider = _Provider()
+    service = app.SwingOpportunitiesApplication(
+        lambda: provider,
+        clock=lambda: NOW,
+        background_runner=_immediate,
+        initial_snapshot=_ready(_opportunity()),
+    )
+    service._SwingOpportunitiesApplication__provider = provider
+    envelope = analysis_process.SwingAnalysisFailureEnvelope(
+        operation="INSTRUMENTS",
+        exchange="MCX",
+        instrument="UNKNOWN",
+        provider_failure_code="CONNECTION_FAILURE",
+        exception_class="ProviderConnectivityError",
+        worker_pid=55221,
+        worker_exit_classification="PARENT_PROVIDER_FAILURE",
+        worker_exit_code="UNKNOWN",
+        provider_call_count=2,
+        provider_response_bytes=4096,
+    )
+    monkeypatch.setattr(
+        app,
+        "build_completed_swing_analysis",
+        lambda *_a, **_k: (_ for _ in ()).throw(
+            analysis_process.SwingAnalysisProcessError(
+                "SWING_ANALYSIS_WORKER_FAILED", diagnostic=envelope
+            )
+        ),
+    )
+
+    assert service.run_analysis()
+    diagnostic = service.analysis_diagnostic()
+    assert diagnostic is not None
+    assert diagnostic.exception_class == "ProviderConnectivityError"
+    assert diagnostic.provider_operation == "INSTRUMENTS"
+    assert diagnostic.provider_exchange == "MCX"
+    assert diagnostic.provider_instrument == "UNKNOWN"
+    assert diagnostic.provider_failure_code == "CONNECTION_FAILURE"
+    assert diagnostic.worker_pid == 55221
+    assert diagnostic.worker_exit_classification == "PARENT_PROVIDER_FAILURE"
+    assert diagnostic.worker_exit_code == "UNKNOWN"
+    assert diagnostic.provider_call_count == 2
+    assert diagnostic.provider_response_bytes == 4096
+    status = service.publication_status()
+    assert status["request_result"] == "FAILED"
+    assert status["analysis_work"]["state"] == "IDLE"
+    assert status["analysis_work"]["owned_work_count"] == 0
+
+
+def test_failed_request_result_agrees_with_durable_failed_attempt(
+    checkpoint,
+    monkeypatch,
+) -> None:
+    publication, prior, _bindings, _committed = checkpoint
+    successor = later(prior)
+    service = app.SwingOpportunitiesApplication(
+        _Provider,
+        clock=lambda: successor.observed_at,
+        background_runner=_immediate,
+        swing_run_identity_factory=lambda: successor.run_identity,
+        run_publication=publication,
+    )
+    assert service.connect_provider()
+    monkeypatch.setattr(
+        app,
+        "build_completed_swing_analysis",
+        lambda *_a, **_k: (_ for _ in ()).throw(
+            RuntimeError("BOUNDED_FAILURE")
+        ),
+    )
+
+    assert service.run_analysis()
+    status = service.publication_status()
+    assert status["control"]["latest_attempt"]["state"] == "FAILED"
+    assert status["control"]["latest_attempt"]["run_id"] == successor.run_identity
+    assert status["request_result"] == "FAILED"
+    assert status["analysis_work"]["state"] == "IDLE"
+    assert status["analysis_work"]["owned_work_count"] == 0
+    assert publication.current().reference == _committed.reference
 
 
 def test_successful_analysis_atomically_retains_same_run_mtf_facts(

@@ -26,6 +26,8 @@ from kronos.application.live_monitoring_e2e import (
     run_live_monitoring_e2e,
 )
 from kronos.application.swing_analysis_process import (
+    UNKNOWN,
+    SwingAnalysisFailureEnvelope,
     SwingAnalysisProcessCleanupError,
     SwingAnalysisProcessCompletionError,
     SwingAnalysisProcessOwner,
@@ -208,6 +210,15 @@ class AnalysisFailureDiagnostic:
     completed_instrument_count: int | None
     observation_boundary: datetime | None
     provider_capability_active: bool | None
+    provider_operation: str
+    provider_exchange: str
+    provider_instrument: str
+    provider_failure_code: str
+    worker_pid: int | str
+    worker_exit_classification: str
+    worker_exit_code: int | str
+    provider_call_count: int
+    provider_response_bytes: int
 
     def __post_init__(self) -> None:
         if (
@@ -233,6 +244,41 @@ class AnalysisFailureDiagnostic:
                 )
             )
             or self.provider_capability_active not in (True, False, None)
+            or self.provider_operation not in {
+                UNKNOWN, "WORKER", "INSTRUMENTS", "HISTORICAL", "PROGRESS",
+                "CLOCK", "PREPARED", "COMMIT_READY", "DONE"
+            }
+            or any(
+                re.fullmatch(r"[A-Z0-9&._ -]{1,96}", value) is None
+                for value in (
+                    self.provider_exchange,
+                    self.provider_instrument,
+                    self.provider_failure_code,
+                )
+            )
+            or (
+                self.worker_pid != UNKNOWN
+                and (type(self.worker_pid) is not int or self.worker_pid <= 0)
+            )
+            or self.worker_exit_classification not in {
+                UNKNOWN,
+                "WORKER_REPORTED_FAILURE",
+                "PARENT_PROVIDER_FAILURE",
+                "PARENT_FAILURE",
+                "ABNORMAL_EXIT",
+                "TIMEOUT",
+                "STALE",
+                "COMPLETION_FAILURE",
+                "CLEANUP_FAILURE",
+            }
+            or (
+                self.worker_exit_code != UNKNOWN
+                and type(self.worker_exit_code) is not int
+            )
+            or type(self.provider_call_count) is not int
+            or self.provider_call_count < 0
+            or type(self.provider_response_bytes) is not int
+            or self.provider_response_bytes < 0
         ):
             raise ValueError("ANALYSIS_FAILURE_DIAGNOSTIC_INVALID")
 
@@ -2365,21 +2411,44 @@ class SwingOpportunitiesApplication:
                             work.phase = "CLEANUP_FAILED"
                             self.__analysis_request_result = "PUBLICATION_UNAVAILABLE"
                     return
+            process_diagnostic = getattr(error, "diagnostic", None)
+            if type(process_diagnostic) is not SwingAnalysisFailureEnvelope:
+                process_diagnostic = SwingAnalysisFailureEnvelope(
+                    exception_class=_safe_exception_class(error)
+                )
             diagnostic = AnalysisFailureDiagnostic(
                 attempt_id=work.attempt_id,
                 timestamp=_diagnostic_timestamp(self.__clock),
                 failing_stage=progress.stage,
-                exception_class=_safe_exception_class(error),
+                exception_class=(
+                    process_diagnostic.exception_class
+                    if process_diagnostic.exception_class != UNKNOWN
+                    else _safe_exception_class(error)
+                ),
                 sanitized_summary=_safe_exception_summary(error),
                 canonical_instrument=progress.canonical_instrument,
                 completed_instrument_count=progress.completed_instrument_count,
                 observation_boundary=progress.observation_boundary,
                 provider_capability_active=progress.provider_capability_active,
+                provider_operation=process_diagnostic.operation,
+                provider_exchange=process_diagnostic.exchange,
+                provider_instrument=process_diagnostic.instrument,
+                provider_failure_code=process_diagnostic.provider_failure_code,
+                worker_pid=process_diagnostic.worker_pid,
+                worker_exit_classification=(
+                    process_diagnostic.worker_exit_classification
+                ),
+                worker_exit_code=process_diagnostic.worker_exit_code,
+                provider_call_count=process_diagnostic.provider_call_count,
+                provider_response_bytes=(
+                    process_diagnostic.provider_response_bytes
+                ),
             )
             with self.__lock:
                 if not self.__analysis_work_current_locked(work):
                     return
                 self.__analysis_diagnostic = diagnostic
+                self.__analysis_request_result = "FAILED"
                 self.__snapshot = replace(
                     self.__snapshot,
                     analysis_state=AnalysisState.ERROR,
