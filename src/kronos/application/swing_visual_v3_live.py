@@ -1689,8 +1689,12 @@ class NativeReviewIntakeWorkflow:
         return result
 
     def _prepared(self, instrument, requested_at):
-        _, facts, _ = self._context()
-        requirement = self._requirements("NSE", (instrument,))[0]
+        _, facts, review = self._context()
+        matches = tuple(item for item in review.requirements
+            if item.thesis.product_path is NativeProductPath.NSE
+            and item.canonical_instrument == instrument)
+        require(len(matches) == 1, "REVIEW_REQUEST_MISMATCH")
+        requirement = matches[0]
         selected = self._selection(requirement, "NATIVE_NSE")
         image = self.store.native_chart_bytes(selected)
         return self.live.cycle.prepare(requirement, facts,
@@ -2103,9 +2107,14 @@ class NativeReviewIntakeWorkflow:
 
     def _verify_receipt_current(self, receipt, *, _response=None):
         value = receipt.binding.value
-        manifest, facts, _ = self._context(_response=_response)
+        manifest, facts, review = self._context(_response=_response)
         market, instrument = value["market"], value["canonical_instrument"]
-        requirement = self._requirements(market, (instrument,), _response=_response)[0]
+        product = NativeProductPath.NSE if market == "NSE" else NativeProductPath.MCX
+        matches = tuple(item for item in review.requirements
+            if item.thesis.product_path is product
+            and item.canonical_instrument == instrument)
+        require(len(matches) == 1, "REVIEW_REQUEST_MISMATCH")
+        requirement = matches[0]
         require(value["committed_run_manifest_identity"] == manifest
             and value["analytical_run_identity"] == facts.run_identity
             and value["candidate_identity"] == requirement.requirement_sha256
@@ -2119,9 +2128,26 @@ class NativeReviewIntakeWorkflow:
             and value["review_pack_sha256"] == mapping["review_pack_sha256"]
             and value["review_cycle_identity"] == mapping.get("review_cycle_identity", mapping["review_pack_identity"]),
             "REVIEW_BINDING_STALE")
+        # One governed composite selection supplies every timeframe for a role.
+        # Validate every retained chart row, while reading and hashing that
+        # immutable composite only once.  Startup performs this validation both
+        # before projection and again at the guarded handoff boundary; repeated
+        # multi-megabyte reads are not an additional integrity check.
+        composites = {}
         for chart in receipt.body["chart_revisions"]:
-            revision, image = self.chart_reader(chart["role"], instrument, chart["timeframe_or_panel_identity"], _response=_response)
-            require(revision == chart["revision_identity"] and sha256(image).hexdigest() == chart["sha256"],
+            role = chart["role"]
+            if role not in composites:
+                require(role in self._roles(market), "REVIEW_CONTRACT_UNSUPPORTED")
+                selected = self._selection(requirement, role, _response=_response)
+                require(selected is not None and selected["image"] is not None,
+                        "REVIEW_ACCEPTANCE_INCOMPLETE")
+                image = (self.store.native_chart_bytes(selected) if _response is None else
+                    _response.read(("chart", selected["selection_sha256"]),
+                        lambda: self.store.native_chart_bytes(selected)))
+                revision = selected["selection_sha256"]
+                composites[role] = revision, sha256(image).hexdigest()
+            revision, image_sha256 = composites[role]
+            require(revision == chart["revision_identity"] and image_sha256 == chart["sha256"],
                     "REVIEW_BINDING_STALE")
 
     def handoff(self, commit, receipt, *, restore_only=False, expected=None):
@@ -2245,15 +2271,21 @@ class NativeReviewIntakeWorkflow:
 
     def restore(self):
         # Read/verify the whole committed graph first, before any memory projection.
-        _, facts, _ = self._context()
         for market in ("NSE", "MCX"):
             try:
-                history = self._history(market, facts.run_identity)
-                if not history:
-                    continue
-                commit = history[0]
-                for receipt in commit.receipts:
-                    self._verify_receipt_current(receipt)
+                # One bounded read scope preserves exact typed validation and
+                # byte fencing while reusing common context and composite bytes
+                # across the complete market graph. It closes before any
+                # in-memory downstream restoration begins.
+                with self.response() as prepared:
+                    facts = prepared.context[1]
+                    history = self._history(
+                        market, facts.run_identity, _response=prepared)
+                    if not history:
+                        continue
+                    commit = history[0]
+                    for receipt in commit.receipts:
+                        self._verify_receipt_current(receipt, _response=prepared)
                 for receipt in commit.receipts:
                     self.handoff(commit, receipt, restore_only=True)
             except (OSError, ValueError):

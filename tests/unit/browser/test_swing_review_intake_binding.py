@@ -717,6 +717,76 @@ def test_native_multi_candidate_batch_envelopes_and_atomic_receipts(native_intak
     assert all(item["evidence"] == "ACCEPTED" and item["downstream"] == "SUCCEEDED" for item in workflow.snapshot()["rows"])
 
 
+@pytest.mark.parametrize("native_intake", ["NSE", "GOLDM"], indirect=True)
+def test_receipt_currentness_reads_one_composite_per_role_and_checks_every_row(
+        native_intake, tmp_path, monkeypatch):
+    from copy import deepcopy
+    from kronos.swing.v1.review_evidence_binding import (
+        ReviewAcceptanceReceipt,
+        ReviewEvidenceError,
+    )
+    workflow = native_intake
+    market, _, _, _, _, commit = _accepted_native(workflow, tmp_path)
+    receipt = commit.receipts[0]
+    reads = []
+    original = workflow.store.native_chart_bytes
+
+    def counted(selection):
+        reads.append(selection["selection_sha256"])
+        return original(selection)
+
+    monkeypatch.setattr(workflow.store, "native_chart_bytes", counted)
+    workflow._verify_receipt_current(receipt)
+    assert len(reads) == len(workflow._roles(market))
+
+    # Every timeframe row still compares its retained digest against the one
+    # validated immutable composite. Deduplicating the read is not deduplicating
+    # or weakening the receipt checks.
+    changed = deepcopy(receipt.body)
+    changed["chart_revisions"][-1]["sha256"] = "f" * 64
+    corrupt = ReviewAcceptanceReceipt.create(changed)
+    reads.clear()
+    with pytest.raises(ReviewEvidenceError, match="REVIEW_BINDING_STALE"):
+        workflow._verify_receipt_current(corrupt)
+    assert len(reads) == len(workflow._roles(market))
+
+
+@pytest.mark.parametrize("native_intake", ["NSE-BATCH"], indirect=True)
+def test_startup_restore_reuses_preprojection_composites_and_rechecks_handoffs(
+        native_intake, tmp_path, monkeypatch):
+    from tests.unit.browser.test_swing_visual_v3_live import _answer_pdf
+    workflow = native_intake
+    instruments = tuple(item.canonical_instrument
+        for item in workflow._requirements("NSE"))
+    assert len(instruments) == 2
+    for instrument in instruments:
+        _stage_native(workflow, "NSE", instrument)
+    publication = workflow.generate("NSE", workflow.expected("NSE", instruments))
+    path = tmp_path / "CONTROLLED_RESTORE_ANSWER.pdf"
+    _answer_pdf(path, _native_answer(workflow, "NSE", publication))
+    workflow.import_answer(
+        "NSE", workflow.expected("NSE", instruments), path.read_bytes())
+
+    reads = []
+    original = workflow.store.native_chart_bytes
+
+    def counted(selection):
+        reads.append(selection["selection_sha256"])
+        return original(selection)
+
+    monkeypatch.setattr(workflow.store, "native_chart_bytes", counted)
+    before = _inventory(tmp_path)
+    workflow.restore()
+    assert _inventory(tmp_path) == before
+    # Per candidate: one full-graph read, one handoff recheck, and one prepared
+    # downstream projection read. The former implementation read each of four
+    # timeframe rows during both validation phases (nine reads per candidate).
+    assert len(reads) == len(instruments) * 3
+    assert all(item["evidence"] == "ACCEPTED"
+               and item["downstream"] == "SUCCEEDED"
+               for item in workflow.snapshot()["rows"])
+
+
 def _rendered_form(body, endpoint):
     import re
     from html import unescape
