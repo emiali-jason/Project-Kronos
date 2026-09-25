@@ -29,8 +29,11 @@ from kronos.swing.v1.analytical_promotion import (
     _binding_failure, _hard_gate, _k1, _k2, _k3, _k4, _k5,
     _k2_condition, _native_requirement_sha256,
 )
-from kronos.swing.v1.extension import CompletedOneHourExtensionFact, extension_integrity_sha256
-from kronos.swing.v1.extension import EXTENSION_POLICY_IDENTITY, EXTENSION_POLICY_VERSION
+from kronos.swing.v1.extension import (
+    CompletedOneHourExtensionFact, EXTENSION_POLICY_IDENTITY,
+    EXTENSION_POLICY_VERSION, EXTENSION_THRESHOLD_ATR,
+    evaluate_completed_one_hour_extension, extension_integrity_sha256,
+)
 from kronos.swing.v1.mcx_native_visual_contract import (
     COMPARISON_EVIDENCE, MCX_REFERENCE_MAPPINGS, NATIVE_EVIDENCE_V2,
     NATIVE_TIMEFRAMES, REFERENCE_EVIDENCE_V2, SUCCESSOR_VERSION,
@@ -44,7 +47,8 @@ from kronos.swing.v1.native_discovery import NativeProductPath
 from kronos.swing.v1.native_review import NativeReviewRequirement
 from kronos.swing.v1.path_clearance import (
     OneHourPathClearanceFact, path_clearance_integrity_sha256,
-    PATH_CLEARANCE_POLICY_IDENTITY, PATH_CLEARANCE_POLICY_VERSION,
+    PATH_CLEARANCE_NEAR_ATR_MULTIPLE, PATH_CLEARANCE_POLICY_IDENTITY,
+    PATH_CLEARANCE_POLICY_VERSION, evaluate_one_hour_path_clearance,
 )
 from kronos.swing.v1.reference_facts import SwingReferenceChartTimeframe, machine_fact_integrity_sha256
 from kronos.swing.v1.review_evidence_store import ReviewAcceptanceCommit
@@ -155,6 +159,50 @@ class ConfirmationState(StrEnum):
     ESTABLISHED = "ESTABLISHED"
     WITHHELD = "WITHHELD"
     NOT_REQUIRED_BY_ASSET_CLASS = "NOT_REQUIRED_BY_ASSET_CLASS"
+
+
+@dataclass(frozen=True, slots=True)
+class V2CriterionExplanation:
+    """Read-only projection of the exact inputs used by one K criterion."""
+
+    identity: str
+    state: str
+    reason_code: str
+    observed_state: str
+    required_condition: str
+    metrics: tuple[tuple[str, float, str], ...]
+    timeframe: str
+    observation_boundary: datetime | None
+    next_valid_check: str
+
+
+@dataclass(frozen=True, slots=True)
+class V2ConfirmationHorizonExplanation:
+    """Exact-current Nifty comparison retained for one confirmation horizon."""
+
+    timeframe: str
+    directional_context: str
+    stock_return_pct: float | None
+    benchmark_return_pct: float | None
+    relative_return_pct: float | None
+    required_condition: str
+    numeric_gap_pct: float | None
+    observation_boundary: datetime | None
+    next_valid_check: str
+
+
+@dataclass(frozen=True, slots=True)
+class V2ReadinessExplanation:
+    """Bound explanation only; it owns no promotion or downstream authority."""
+
+    run_identity: str
+    canonical_instrument: str
+    native_assessment_sha256: str
+    promotion_state: str | None
+    evaluation_disposition: str
+    criteria: tuple[V2CriterionExplanation, ...]
+    confirmation_state: str
+    confirmation_horizons: tuple[V2ConfirmationHorizonExplanation, ...]
 
 GATE_REASONS = frozenset({
     "NATIVE_THESIS_INVALIDATED_OR_STRUCTURAL_FAILURE", "NSE_WEEKLY_OPPOSING",
@@ -698,6 +746,187 @@ def create_record(*, source: dict, criteria: tuple[Kr370CriterionResult, ...],
     return V2PromotionRecord(canonical(value))
 
 
+def explain_nse_readiness(
+    *,
+    record: V2PromotionRecord,
+    requirement: NativeReviewRequirement,
+    facts: SameRunMtfFactSnapshot,
+    visual: tuple[VisualEvidenceV3Response, ...],
+    relative_context: RelativeContextRun,
+) -> V2ReadinessExplanation:
+    """Explain one retained NSE V2 result from its exact evaluator inputs.
+
+    This function deliberately reuses the authoritative K1-K5 fact evaluators
+    and compares their outputs with the immutable V2 record.  It never creates
+    or changes a promotion result.  Any stale or mixed read set fails closed.
+    """
+
+    _require(type(record) is V2PromotionRecord and
+             type(requirement) is NativeReviewRequirement and
+             type(facts) is SameRunMtfFactSnapshot and
+             type(visual) is tuple and
+             all(type(item) is VisualEvidenceV3Response for item in visual) and
+             type(relative_context) is RelativeContextRun,
+             "V2_EXPLANATION_INPUT_INVALID")
+    value = record.value
+    source = value["source"]
+    _require(source["market"] == "NSE" and source["asset_class"] == "NSE_EQUITY",
+             "V2_EXPLANATION_NOT_APPLICABLE")
+    _require((requirement.native_run_identity,
+              requirement.canonical_instrument,
+              requirement.thesis.native_assessment_sha256,
+              requirement.requirement_sha256) ==
+             (source["native_run_identity"], source["canonical_instrument"],
+              source["native_assessment_sha256"],
+              source["native_requirement_sha256"]),
+             "V2_EXPLANATION_BINDING_INVALID")
+    _require(facts.run_identity == source["native_run_identity"] and
+             facts.provider_source_identity == source["machine_snapshot_identity"],
+             "V2_EXPLANATION_BINDING_INVALID")
+    instrument = facts.instrument(requirement.canonical_instrument)
+    expected_machine = [dict(
+        timeframe=item.chart_timeframe.value,
+        integrity_sha256=item.integrity_sha256,
+    ) for item in instrument.reference_facts]
+    expected_boundaries = [dict(
+        timeframe=item.timeframe.value,
+        boundary=_time(item.observation_boundary),
+    ) for item in instrument.timeframes]
+    _require(source["machine_fact_bindings"] == expected_machine and
+             source["observation_boundaries"] == expected_boundaries,
+             "V2_EXPLANATION_BINDING_INVALID")
+
+    path = evaluate_one_hour_path_clearance(
+        run_identity=facts.run_identity,
+        instrument=instrument,
+        direction=requirement.thesis.direction,
+    )
+    extension = evaluate_completed_one_hour_extension(requirement, facts)
+    k1, _ = _k1(requirement)
+    k4, _ = _k4(visual)
+    evaluated = (k1, _k2(requirement, instrument), _k3(path), k4, _k5(extension))
+    serialized = [dict(
+        identity=item.identity.value,
+        state=item.state.value,
+        reason_code=_criterion_reason(item),
+        evidence_sha256=sorted(set(item.evidence_identities)),
+    ) for item in evaluated]
+    _require(serialized == value["criteria"] and
+             source["e01_fact_integrity_sha256"] == path.integrity_sha256 and
+             source["e03_fact_integrity_sha256"] == extension.integrity_sha256,
+             "V2_EXPLANATION_RESULT_MISMATCH")
+
+    expected_confirmation = _nse_confirmation(source, relative_context)
+    _require(expected_confirmation == value["confirmation"],
+             "V2_EXPLANATION_CONFIRMATION_MISMATCH")
+    hour = instrument.fact(FactualTimeframe.ONE_HOUR)
+    reference = instrument.reference_fact(SwingReferenceChartTimeframe.ONE_HOUR)
+    level = (reference.tc if requirement.thesis.direction is V1Direction.LONG
+             else reference.bc)
+    _require(level is not None, "V2_EXPLANATION_INPUT_INVALID")
+    k2_gap = (max(0.0, level - hour.close)
+              if requirement.thesis.direction is V1Direction.LONG
+              else max(0.0, hour.close - level))
+    k2_condition = (f"completed 1H close > TC {level:g}"
+                    if requirement.thesis.direction is V1Direction.LONG
+                    else f"completed 1H close < BC {level:g}")
+    nearest = min(path.blocking_obstacles,
+                  key=lambda item: item.distance_atr14, default=None)
+    path_metrics = (
+        (("Completed close", path.completed_price, "PRICE"),
+         ("ATR14", path.atr14, "PRICE"),
+         ("Nearest obstacle", nearest.level, "PRICE"),
+         ("Obstacle distance", nearest.distance_atr14, "ATR14"),
+         ("Gap beyond blocking band",
+          max(0.0, PATH_CLEARANCE_NEAR_ATR_MULTIPLE - nearest.distance_atr14),
+          "ATR14"))
+        if nearest is not None and path.atr14 is not None else
+        (("Completed close", path.completed_price, "PRICE"),)
+    )
+    extension_metrics = (
+        (("Completed close", extension.completed_close, "PRICE"),
+         ("Structural anchor", extension.anchor_price, "PRICE"),
+         ("ATR14", extension.atr14, "PRICE"),
+         ("Directional distance", extension.directional_distance, "PRICE"),
+         ("Structural extension", extension.extension_atr, "ATR14"),
+         ("Excess over limit", max(0.0, extension.extension_atr -
+                                   EXTENSION_THRESHOLD_ATR), "ATR14"))
+        if extension.extension_atr is not None and
+        extension.anchor_price is not None and extension.atr14 is not None and
+        extension.directional_distance is not None else
+        (("Completed close", extension.completed_close, "PRICE"),)
+    )
+    criteria = (
+        V2CriterionExplanation(
+            evaluated[0].identity.value, evaluated[0].state.value,
+            _criterion_reason(evaluated[0]), requirement.thesis.one_hour_state.value,
+            "completed 1H structural state = PROGRESSING", (), "1H",
+            hour.observation_boundary, "next governed completed 1H assessment",
+        ),
+        V2CriterionExplanation(
+            evaluated[1].identity.value, evaluated[1].state.value,
+            _criterion_reason(evaluated[1]), f"completed close {hour.close:g}",
+            k2_condition,
+            (("Completed close", hour.close, "PRICE"),
+             ("CPR threshold", level, "PRICE"),
+             ("Gap to condition", k2_gap, "PRICE")),
+            "1H", hour.observation_boundary,
+            "next governed completed 1H observation",
+        ),
+        V2CriterionExplanation(
+            evaluated[2].identity.value, evaluated[2].state.value,
+            _criterion_reason(evaluated[2]),
+            ("path clear" if path.path_clear else "immediate obstacle inside blocking band"
+             if path.path_clear is False else path.unavailable_reason or "unavailable"),
+            f"every adverse governed obstacle > {PATH_CLEARANCE_NEAR_ATR_MULTIPLE:g} ATR14 away",
+            path_metrics, "1H", path.observation_boundary,
+            "next governed completed 1H observation",
+        ),
+        V2CriterionExplanation(
+            evaluated[3].identity.value, evaluated[3].state.value,
+            _criterion_reason(evaluated[3]), _criterion_reason(evaluated[3]),
+            "accepted 1H setup quality is clean or orderly", (), "1H",
+            hour.observation_boundary, "next accepted governed Review evidence cycle",
+        ),
+        V2CriterionExplanation(
+            evaluated[4].identity.value, evaluated[4].state.value,
+            _criterion_reason(evaluated[4]),
+            ("unavailable" if extension.extension_atr is None else
+             f"{extension.extension_atr:g} ATR14 structural extension"),
+            f"completed 1H structural extension <= {EXTENSION_THRESHOLD_ATR:g} ATR14",
+            extension_metrics, "1H", extension.observation_boundary,
+            "next governed completed 1H observation",
+        ),
+    )
+    relative = relative_context.record(requirement.canonical_instrument)
+    horizon_explanations = []
+    payload = value["confirmation"]["nse_binding"]["payload"]
+    for timeframe in (FactualTimeframe.DAILY, FactualTimeframe.FOUR_HOUR):
+        retained = relative.horizon(timeframe)
+        bound = next(item for item in payload["horizons"]
+                     if item["timeframe"] == timeframe.value)
+        required = ("stock return − Nifty return > 0%"
+                    if requirement.thesis.direction is V1Direction.LONG else
+                    "stock return − Nifty return < 0%")
+        gap = (None if retained.relative_return_pct is None else
+               max(0.0, -retained.relative_return_pct)
+               if requirement.thesis.direction is V1Direction.LONG else
+               max(0.0, retained.relative_return_pct))
+        horizon_explanations.append(V2ConfirmationHorizonExplanation(
+            timeframe.value, bound["directional_context"],
+            retained.stock_return_pct, retained.benchmark_return_pct,
+            retained.relative_return_pct, required, gap,
+            retained.stock_end_boundary,
+            f"next completed {timeframe.value} relative-context observation",
+        ))
+    return V2ReadinessExplanation(
+        source["native_run_identity"], source["canonical_instrument"],
+        source["native_assessment_sha256"], value["promotion_state"],
+        value["evaluation_disposition"], criteria,
+        value["confirmation"]["state"], tuple(horizon_explanations),
+    )
+
+
 def _criterion_reason(x: Kr370CriterionResult) -> str:
     reason = x.reason
     if reason in K_REASON:
@@ -1147,4 +1376,6 @@ class LocalV2PromotionStore:
 
 __all__ = ["CONTRACT", "VERSION", "POLICY", "SCHEMA", "SCHEMA_SEAL_SHA256",
            "Disposition", "Promotion", "ConfirmationState", "V2PromotionRecord",
-           "LocalV2PromotionStore", "classify", "create_record", "evaluate_governed"]
+           "V2CriterionExplanation", "V2ConfirmationHorizonExplanation",
+           "V2ReadinessExplanation", "LocalV2PromotionStore", "classify",
+           "create_record", "evaluate_governed", "explain_nse_readiness"]

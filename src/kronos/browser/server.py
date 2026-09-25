@@ -1083,7 +1083,12 @@ class KronosBrowserServer(ThreadingHTTPServer):
                 current = self.native_intake.v2_for(
                     item.requirement.native_run_identity, item.requirement.canonical_instrument)
                 self._presentation_promotion_binding(item, current)
-            result.append(present_visual_v3_review(item))
+            relative = None
+            if is_current_v2 and item.promotion_v2 is not None and (
+                    item.promotion_v2.value["source"]["asset_class"] == "NSE_EQUITY"):
+                relative = self.relative_context_for_run(item.requirement.native_run_identity)
+            result.append(present_visual_v3_review(
+                item, relative_context=relative))
         return tuple(result)
 
     def current_v2_promotions(self, discovery):  # type: ignore[no-untyped-def]
@@ -1129,12 +1134,16 @@ class KronosBrowserServer(ThreadingHTTPServer):
         visual, windows = [], []
         if discovery is None:
             return (), ()
+        relative_loader = getattr(self, "relative_context_for_run", None)
+        relative_run = (relative_loader(discovery.run_identity)
+                        if callable(relative_loader) else None)
         for assessment in discovery.assessments:
             if assessment.status.value != "PROBABLE":
                 continue
             key = (discovery.run_identity, assessment.canonical_instrument)
             completed = self.visual_v3.completed_for(*key)
             legacy_v1_only = False
+            selected_v2 = None
             if completed is not None:
                 try:
                     if type(completed) is not CompletedVisualV3Review:
@@ -1153,7 +1162,16 @@ class KronosBrowserServer(ThreadingHTTPServer):
                         selected = self.native_intake.v2_for(*key)
                         legacy_v1_only = self._presentation_promotion_binding(
                             completed, selected)
-                    visual.append(present_visual_v3_review(completed))
+                        selected_v2 = None if legacy_v1_only else selected
+                    visual.append(present_visual_v3_review(
+                        completed,
+                        relative_context=(
+                            relative_run
+                            if selected_v2 is not None and selected_v2.value["source"][
+                                "asset_class"] == "NSE_EQUITY"
+                            else None
+                        ),
+                    ))
             # The Trade Window owner selects independently. The Visual V3 cache
             # above cannot authorize or select its retained completion record.
             window = (None if legacy_v1_only else self.trade_window.project_selected(

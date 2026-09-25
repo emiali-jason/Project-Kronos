@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date
 from decimal import Decimal
 from html import escape
@@ -228,7 +228,7 @@ a{color:inherit;text-decoration:none}.app{display:grid;grid-template-columns:218
 @media(max-width:1050px){.status-grid{grid-template-columns:repeat(3,1fr)}.strategy-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.panels,.workspace{grid-template-columns:1fr}.attention-grid{grid-template-columns:1fr}.step32-grid{grid-template-columns:1fr}.step32-block{border-left:0;border-top:1px solid var(--line);padding:10px 0 0}.step32-block:first-child{border-top:0;padding-top:0}.market-panel{min-height:260px}}
 @media(min-width:761px){.panels{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:760px){.app{grid-template-columns:1fr}.sidebar{position:static;height:auto}.nav{grid-template-columns:repeat(2,1fr)}.system{display:none}.topbar{height:auto;padding:18px;align-items:flex-start;gap:14px}.tabs{overflow:auto;padding:0 18px}.content{padding:18px}.status-grid,.strategy-grid{grid-template-columns:1fr}.trade-grid,.plan-strip{grid-template-columns:1fr 1fr}.kite{flex-wrap:wrap;justify-content:flex-end}.chart-intake-list,.native-chart-grid{grid-template-columns:1fr}.dashboard-alert{grid-template-columns:1fr}.dashboard-alert-state{text-align:left}.swing-primary-facts,.swing-timeframe-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.swing-result-row{align-items:flex-start;flex-direction:column}.swing-result-row span:last-child{text-align:left}.swing-review-readiness{align-items:flex-start;flex-direction:column}.native-opportunity .summary-footer{align-items:flex-start}.native-opportunity-actions{justify-content:flex-start}}
-.v2-promotion{min-width:0;max-width:100%;border:1px solid #31506a;border-radius:9px;background:#0b2030;padding:10px;margin:9px 0;overflow-wrap:anywhere}.v2-promotion h3{font-size:12px;margin:0 0 7px;color:#a5d9ff}.v2-promotion p{margin:5px 0;font-size:11px}.v2-promotion-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}.v2-promotion-grid>div{min-width:0;border:1px solid #27445d;border-radius:6px;padding:6px}.v2-promotion-grid span{display:block;color:var(--muted);font-size:9px}.v2-promotion-grid strong{display:block;font-size:11px;overflow-wrap:anywhere}.v2-criterion-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px;list-style:none;padding:0;margin:8px 0}.v2-criterion-list li{min-width:0;border:1px solid #27445d;border-radius:6px;padding:6px;font-size:10px;overflow-wrap:anywhere}.v2-confirmation{color:#9fd2ff}.v2-downstream{color:#ffd57a;font-weight:800}.v2-card-summary{display:block;font-size:10px;color:#b9d9ef;overflow-wrap:anywhere}.strategy-group small{display:block;color:#b9d9ef;font-size:9px;overflow-wrap:anywhere}@media(max-width:760px){.v2-promotion-grid,.v2-criterion-list{grid-template-columns:minmax(0,1fr)}}
+.v2-promotion{min-width:0;max-width:100%;border:1px solid #31506a;border-radius:9px;background:#0b2030;padding:10px;margin:9px 0;overflow-wrap:anywhere}.v2-promotion h3{font-size:12px;margin:0 0 7px;color:#a5d9ff}.v2-promotion p{margin:5px 0;font-size:11px}.v2-promotion-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}.v2-promotion-grid>div{min-width:0;border:1px solid #27445d;border-radius:6px;padding:6px}.v2-promotion-grid span{display:block;color:var(--muted);font-size:9px}.v2-promotion-grid strong{display:block;font-size:11px;overflow-wrap:anywhere}.v2-criterion-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px;list-style:none;padding:0;margin:8px 0}.v2-criterion-list li{min-width:0;border:1px solid #27445d;border-radius:6px;padding:6px;font-size:10px;overflow-wrap:anywhere}.v2-readiness-explanation{border-top:1px solid #27445d;margin-top:5px;padding-top:5px}.v2-readiness-explanation span{display:block;margin-top:2px}.v2-confirmation-explanation p{border:1px solid #27445d;border-radius:6px;padding:6px}.v2-confirmation{color:#9fd2ff}.v2-downstream{color:#ffd57a;font-weight:800}.v2-card-summary{display:block;font-size:10px;color:#b9d9ef;overflow-wrap:anywhere}.strategy-group small{display:block;color:#b9d9ef;font-size:9px;overflow-wrap:anywhere}@media(max-width:760px){.v2-promotion-grid,.v2-criterion-list{grid-template-columns:minmax(0,1fr)}}
 """
 
 
@@ -756,8 +756,11 @@ def _native_opportunity_card(
         raise ValueError("NATIVE_OPPORTUNITY_V2_AMBIGUOUS")
     v2 = (present_v2_promotion(v2_matches[0]) if v2_matches else
           None if v3 is None else v3.kr370_v2)
-    if v3 is not None and v3.kr370_v2 is not None and v2 is not None and v3.kr370_v2 != v2:
-        raise ValueError("NATIVE_OPPORTUNITY_V2_BINDING_INVALID")
+    if v3 is not None and v3.kr370_v2 is not None and v2 is not None:
+        if replace(v3.kr370_v2, readiness_explanation=None) != replace(
+                v2, readiness_explanation=None):
+            raise ValueError("NATIVE_OPPORTUNITY_V2_BINDING_INVALID")
+        v2 = v3.kr370_v2
     trade_window = next((
         value for value in trade_windows
         if value.native_run_identity == item.run_identity
@@ -1060,9 +1063,12 @@ def _v2_card_summary(value: Kr370V2SponsorPromotionPresentation) -> str:
               "CONFIRMATION " + value.confirmation)
     if value.disposition != "EVALUATED":
         detail = " · ".join(_v2_label(item) for item in value.reasons)
+    advance = _v2_advance_summary(value)
     return ('<small class="v2-card-summary"><strong>' + escape(value.score)
             + ' K1–K5 SATISFIED</strong> · ' + escape(_v2_label(value.disposition))
-            + '<br>' + escape(detail) + '</small>'
+            + '<br>' + escape(detail)
+            + ('' if advance is None else '<br><strong>WHAT MUST CHANGE</strong> · '
+               + escape(advance)) + '</small>'
             + ('<small class="v2-card-summary v2-downstream">'
                'DOWNSTREAM — MCX STEP-31 NOT COMMISSIONED</small>'
                if value.market == "MCX" else ''))
@@ -1077,9 +1083,12 @@ def _v2_promotion_detail(value: Kr370V2SponsorPromotionPresentation) -> str:
         + escape(value.confirmation) + '</strong></div><div><span>Direction</span><strong>'
         + escape(value.direction) + '</strong></div></div>'
     )
+    explanations = ({item.identity: item for item in value.readiness_explanation.criteria}
+                    if value.readiness_explanation is not None else {})
     criteria = '<ul class="v2-criterion-list">' + ''.join(
         '<li><strong>' + escape(item) + '</strong><br>' + escape(_v2_label(state))
-        + ' · ' + escape(_v2_label(reason)) + '</li>'
+        + ' · ' + escape(_v2_label(reason))
+        + _v2_criterion_explanation(explanations.get(item)) + '</li>'
         for item, state, reason in value.criteria) + '</ul>'
     reasons = ('<p>Evaluation reasons · ' + escape(' · '.join(
         _v2_label(reason) for reason in value.reasons)) + '</p>' if value.reasons else '')
@@ -1108,7 +1117,8 @@ def _v2_promotion_detail(value: Kr370V2SponsorPromotionPresentation) -> str:
                    + escape(_v2_label(next((state for tf, state in value.nse_horizons if tf == "1D"),
                                            "UNAVAILABLE"))) + '<br>4H · '
                    + escape(_v2_label(next((state for tf, state in value.nse_horizons if tf == "4H"),
-                                           "UNAVAILABLE"))) + '</p>')
+                                           "UNAVAILABLE"))) + '</p>'
+                   + _v2_confirmation_explanation(value))
     return ('<section class="v2-promotion" data-v2-state="'
             + escape(value.classification or "NONE", quote=True)
             + '" data-v2-disposition="' + escape(value.disposition, quote=True)
@@ -1117,6 +1127,98 @@ def _v2_promotion_detail(value: Kr370V2SponsorPromotionPresentation) -> str:
             + escape(_v2_state_label(value)) + '</div>' + facts + criteria + reasons
             + pending + '<p class="v2-confirmation">CONFIRMATION ' + escape(value.confirmation)
             + '</p>' + confirmation_reasons + context + '</section>')
+
+
+def _v2_number(value: float, unit: str) -> str:
+    suffix = "%" if unit == "PERCENT" else " ATR14" if unit == "ATR14" else ""
+    return f"{value:.4f}".rstrip("0").rstrip(".") + suffix
+
+
+def _v2_boundary(value) -> str:  # type: ignore[no-untyped-def]
+    return value.astimezone(ZoneInfo("Asia/Kolkata")).strftime("%d %b %Y %H:%M IST")
+
+
+def _v2_metric(item, label: str):  # type: ignore[no-untyped-def]
+    return next(((value, unit) for name, value, unit in item.metrics if name == label), None)
+
+
+def _v2_advance_summary(value: Kr370V2SponsorPromotionPresentation) -> str | None:
+    explanation = value.readiness_explanation
+    if explanation is None:
+        return ("exact numeric explanation unavailable from the current bound inputs"
+                if value.market == "NSE" and
+                value.confirmation != "NOT REQUIRED BY ASSET CLASS" else None)
+    parts = []
+    for item in explanation.criteria:
+        if item.state == "SATISFIED":
+            continue
+        gap = (_v2_metric(item, "Excess over limit") or
+               _v2_metric(item, "Gap to condition") or
+               _v2_metric(item, "Gap beyond blocking band"))
+        text = item.identity.split()[0] + " · " + item.observed_state + " → " + item.required_condition
+        if gap is not None and gap[0] > 0.0:
+            text += " · numeric gap " + _v2_number(*gap)
+        elif not item.metrics:
+            text += " · numeric threshold unavailable by policy"
+        parts.append(text)
+    if explanation.confirmation_state != "ESTABLISHED":
+        withheld = [item for item in explanation.confirmation_horizons
+                    if item.directional_context != "SUPPORTIVE_CONTEXT"]
+        parts.extend(
+            "Nifty " + item.timeframe + " · "
+            + ("numeric input unavailable"
+               if item.relative_return_pct is None or item.numeric_gap_pct is None else
+               "relative " + _v2_number(item.relative_return_pct, "PERCENT") + " → "
+               + item.required_condition + " · numeric gap "
+               + _v2_number(item.numeric_gap_pct, "PERCENT"))
+            for item in withheld
+        )
+    return " · ".join(parts) or "No K1–K5 or confirmation change remains"
+
+
+def _v2_criterion_explanation(item) -> str:  # type: ignore[no-untyped-def]
+    if item is None:
+        return ""
+    metrics = " · ".join(
+        escape(label) + " " + escape(_v2_number(number, unit))
+        for label, number, unit in item.metrics
+    )
+    numeric = ("Numeric threshold unavailable by policy"
+               if not item.metrics else metrics)
+    return (
+        '<div class="v2-readiness-explanation"><span>Observed · '
+        + escape(item.observed_state) + '</span><span>Required · '
+        + escape(item.required_condition) + '</span><span>' + numeric
+        + '</span><span>' + escape(item.timeframe) + ' · '
+        + ("Observation time unavailable" if item.observation_boundary is None
+           else escape(_v2_boundary(item.observation_boundary)))
+        + '</span><span>Next valid check · ' + escape(item.next_valid_check)
+        + '</span></div>'
+    )
+
+
+def _v2_confirmation_explanation(value: Kr370V2SponsorPromotionPresentation) -> str:
+    explanation = value.readiness_explanation
+    if explanation is None:
+        return ""
+    return '<div class="v2-confirmation-explanation">' + ''.join(
+        '<p><strong>' + escape(item.timeframe) + ' · '
+        + escape(_v2_label(item.directional_context)) + '</strong><br>'
+        + ("Numeric input unavailable from governed evidence"
+           if item.stock_return_pct is None or item.benchmark_return_pct is None
+           or item.relative_return_pct is None else
+           'Candidate return ' + escape(_v2_number(item.stock_return_pct, "PERCENT"))
+           + ' · Nifty return ' + escape(_v2_number(item.benchmark_return_pct, "PERCENT"))
+           + ' · Relative ' + escape(_v2_number(item.relative_return_pct, "PERCENT")))
+        + '<br>Required · ' + escape(item.required_condition)
+        + ('' if item.numeric_gap_pct is None else
+           ' · Numeric gap ' + escape(_v2_number(item.numeric_gap_pct, "PERCENT"))
+           if item.numeric_gap_pct > 0.0 else ' · Condition met')
+        + '<br>' + ("Observation time unavailable" if item.observation_boundary is None
+                    else escape(_v2_boundary(item.observation_boundary)))
+        + ' · Next valid check · ' + escape(item.next_valid_check) + '</p>'
+        for item in explanation.confirmation_horizons
+    ) + '</div>'
 
 
 def _kr370_state_label(value) -> str:  # type: ignore[no-untyped-def]
@@ -1277,7 +1379,10 @@ def render_native_analysis_details(
             != details.assessment.result_sha256
         ):
             raise ValueError("NATIVE_ANALYSIS_DETAILS_V3_BINDING_INVALID")
-        if promotion_v2 is not None and visual_v3.kr370_v2 != present_v2_promotion(promotion_v2):
+        if promotion_v2 is not None and (
+                visual_v3.kr370_v2 is None or
+                replace(visual_v3.kr370_v2, readiness_explanation=None)
+                != present_v2_promotion(promotion_v2)):
             raise ValueError("NATIVE_ANALYSIS_DETAILS_V2_BINDING_INVALID")
         return _render_native_analysis_details_v3(
             snapshot, details, progression, visual_v3, trade_window, mcx_context,

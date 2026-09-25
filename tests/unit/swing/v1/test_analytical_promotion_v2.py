@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from dataclasses import replace
 from itertools import product
 from datetime import UTC, datetime
 from hashlib import sha256
@@ -13,9 +14,13 @@ from kronos.swing.v1.analytical_promotion import Kr370CriterionIdentity, Kr370Cr
 from kronos.swing.v1.analytical_promotion_v2 import (
     CONTRACT, SCHEMA, SCHEMA_SEAL, SCHEMA_SEAL_SHA256, V2PromotionRecord,
     LocalV2PromotionStore, _validate_confirmation, _validate_mcx,
-    _state, create_record,
+    _state, create_record, evaluate_governed, explain_nse_readiness,
 )
+from kronos.swing.v1.extension import evaluate_completed_one_hour_extension
+from kronos.swing.v1.path_clearance import evaluate_one_hour_path_clearance
+from kronos.swing.v1.relative_context import build_relative_context_run
 from kronos.swing.v1.models import V1Direction
+from kronos.swing.v1.mtf_facts import FactualTimeframe
 from kronos.validation.kr370 import Kr370CriterionState
 from kronos.swing.v1.review_evidence_binding import canonical
 from tests.unit.swing.v1.test_analytical_promotion import _scenario
@@ -308,6 +313,123 @@ def test_governed_inputs_bind_current_receipt_without_downstream_publication(nat
     assert result.value["source"]["market"]==market
     assert result.value["source"]["acceptance"]["receipt_identity"]==commit.receipts[0].receipt_id
     assert result.value["authority_flags"]["execution"] is False
+
+
+@pytest.mark.parametrize("native_intake", ["NSE"], indirect=True)
+def test_numeric_explanation_reuses_exact_evaluator_inputs_without_changing_v2(
+    native_intake, tmp_path,
+):
+    workflow = native_intake
+    market, instrument, publication, _, _, commit = _accepted_native(workflow, tmp_path)
+    requirement = workflow._requirements(market, (instrument,))[0]
+    _, facts, _ = workflow._context()
+    completed = workflow.live.cycle.completed_for(facts.run_identity, instrument)
+    assert completed is not None
+    path = evaluate_one_hour_path_clearance(
+        run_identity=facts.run_identity,
+        instrument=facts.instrument(instrument),
+        direction=requirement.thesis.direction,
+    )
+    extension = evaluate_completed_one_hour_extension(requirement, facts)
+    relative = build_relative_context_run(facts)
+    record = evaluate_governed(
+        requirement=requirement,
+        facts=facts,
+        path_clearance=path,
+        extension=extension,
+        store=workflow.store,
+        commit_identity=commit.identity,
+        receipt_identity=commit.receipts[0].receipt_id,
+        current_manifest=lambda: "a" * 64,
+        created_at=NOW,
+        visual=completed.responses,
+        relative_context=relative,
+        nse_request=publication.mapping,
+    )
+    before = record.payload
+
+    explanation = explain_nse_readiness(
+        record=record,
+        requirement=requirement,
+        facts=facts,
+        visual=completed.responses,
+        relative_context=relative,
+    )
+
+    assert record.payload == before
+    assert tuple(item.state for item in explanation.criteria) == tuple(
+        item["state"] for item in record.value["criteria"]
+    )
+    k2 = explanation.criteria[1]
+    assert dict((label, value) for label, value, _ in k2.metrics)[
+        "Completed close"
+    ] == facts.instrument(instrument).fact(FactualTimeframe.ONE_HOUR).close
+    k5 = explanation.criteria[4]
+    if extension.extension_atr is not None:
+        assert dict((label, value) for label, value, _ in k5.metrics)[
+            "Structural extension"
+        ] == extension.extension_atr
+    assert tuple(item.directional_context for item in explanation.confirmation_horizons) == tuple(
+        item["directional_context"]
+        for item in record.value["confirmation"]["nse_binding"]["payload"]["horizons"]
+    )
+    assert record.value["authority_flags"] == {
+        key: False for key in record.value["authority_flags"]
+    }
+
+
+@pytest.mark.parametrize("native_intake", ["NSE"], indirect=True)
+def test_numeric_explanation_fails_closed_when_machine_read_set_changes(
+    native_intake, tmp_path,
+):
+    workflow = native_intake
+    market, instrument, publication, _, _, commit = _accepted_native(workflow, tmp_path)
+    requirement = workflow._requirements(market, (instrument,))[0]
+    _, facts, _ = workflow._context()
+    completed = workflow.live.cycle.completed_for(facts.run_identity, instrument)
+    assert completed is not None
+    relative = build_relative_context_run(facts)
+    record = evaluate_governed(
+        requirement=requirement, facts=facts,
+        path_clearance=evaluate_one_hour_path_clearance(
+            run_identity=facts.run_identity,
+            instrument=facts.instrument(instrument),
+            direction=requirement.thesis.direction),
+        extension=evaluate_completed_one_hour_extension(requirement, facts),
+        store=workflow.store, commit_identity=commit.identity,
+        receipt_identity=commit.receipts[0].receipt_id,
+        current_manifest=lambda: "a" * 64, created_at=NOW,
+        visual=completed.responses, relative_context=relative,
+        nse_request=publication.mapping,
+    )
+    stale = replace(facts, provider_source_identity="KITE-MTF-FACTS-" + "f" * 64)
+    with pytest.raises(ValueError, match="V2_EXPLANATION_BINDING_INVALID"):
+        explain_nse_readiness(
+            record=record, requirement=requirement, facts=stale,
+            visual=completed.responses, relative_context=relative)
+
+    original = facts.instrument(instrument)
+    hour = original.fact(FactualTimeframe.ONE_HOUR)
+    changed_hour = replace(hour, close=float((hour.high + hour.low) / 2.0))
+    assert changed_hour.close != hour.close
+    changed_instrument = replace(
+        original,
+        timeframes=tuple(
+            changed_hour if item.timeframe is FactualTimeframe.ONE_HOUR else item
+            for item in original.timeframes
+        ),
+    )
+    changed_observation = replace(
+        facts,
+        instruments=tuple(
+            changed_instrument if item.canonical_instrument == instrument else item
+            for item in facts.instruments
+        ),
+    )
+    with pytest.raises(ValueError):
+        explain_nse_readiness(
+            record=record, requirement=requirement, facts=changed_observation,
+            visual=completed.responses, relative_context=relative)
 
 
 @pytest.mark.parametrize("relationships",list(product(

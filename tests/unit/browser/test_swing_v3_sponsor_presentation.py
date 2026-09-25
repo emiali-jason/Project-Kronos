@@ -25,6 +25,7 @@ from kronos.browser.swing_v3_presentation import (
     present_visual_v3_review,
 )
 from kronos.browser.views import (
+    _v2_card_summary,
     _v2_promotion_detail,
     _v2_state_class,
     _v2_state_label,
@@ -32,6 +33,11 @@ from kronos.browser.views import (
     render_opportunities,
 )
 from kronos.swing.v1.analytical_promotion_v2 import create_record
+from kronos.swing.v1.analytical_promotion_v2 import (
+    V2ConfirmationHorizonExplanation,
+    V2CriterionExplanation,
+    V2ReadinessExplanation,
+)
 from tests.unit.swing.v1.test_analytical_promotion_v2 import (
     source as v2_source, criteria as v2_criteria, nse as v2_nse,
     index as v2_index, mcx as v2_mcx,
@@ -286,6 +292,109 @@ def test_v2_nse_confirmation_and_dispositions_show_facts_without_hashes() -> Non
         assert disposition.replace("_", " ") in html
         assert "NOT EVALUATED" in html and "Evaluation reasons" in html
         assert "BUY NOW" not in html and "BUY READY" not in html
+
+
+@pytest.mark.parametrize(
+    ("instrument", "pattern", "states", "extension_atr", "expected"),
+    (
+        ("ADANIENT", "YYYYN", ("UNDERPERFORMING", "UNDERPERFORMING"), 5.9298, "SELL_READY"),
+        ("ADANIGREEN", "YYYYN", ("UNDERPERFORMING", "OUTPERFORMING"), 2.6968, "SELL_READY"),
+        ("AXISBANK", "NYNNN", ("UNDERPERFORMING", "UNDERPERFORMING"), 5.3867, None),
+        ("INFY", "NYNYY", ("OUTPERFORMING", "UNDERPERFORMING"), 0.7826, "NEAR_READY"),
+        ("RELIANCE", "YYYYN", ("UNDERPERFORMING", "UNDERPERFORMING"), 5.5478, "SELL_READY"),
+        ("RVNL", "YNYYN", ("UNDERPERFORMING", "UNDERPERFORMING"), 5.0523, "NEAR_READY"),
+        ("TMPV", "YYYYN", ("UNDERPERFORMING", "UNDERPERFORMING"), 3.1175, "SELL_READY"),
+        ("UPL", "YYYYN", ("OUTPERFORMING", "OUTPERFORMING"), 4.6163, "SELL_READY"),
+    ),
+)
+def test_current_eight_patterns_show_evaluator_values_without_changing_outcome(
+    instrument, pattern, states, extension_atr, expected,
+) -> None:
+    from kronos.swing.v1.analytical_promotion_v2 import create_record
+    from kronos.swing.v1.analytical_promotion import (
+        Kr370CriterionIdentity, Kr370CriterionResult,
+    )
+    from kronos.validation.kr370 import Kr370CriterionState
+
+    reasons_y = (
+        "NATIVE_1H_DIRECTIONALLY_PROGRESSING",
+        "COMPLETED_1H_CLOSE_ACCEPTED_BEYOND_CPR",
+        "E01_PATH_CLEAR", "CLEAN_DIRECTIONAL", "E03_NOT_MATERIALLY_EXTENDED",
+    )
+    reasons_n = (
+        "NATIVE_1H_STALLING", "COMPLETED_1H_CLOSE_NOT_ACCEPTED_BEYOND_CPR",
+        "E01_IMMEDIATE_PATH_BLOCKED", "MESSY_CHOPPY", "E03_MATERIALLY_EXTENDED",
+    )
+    criterion_values = tuple(
+        Kr370CriterionResult(identity,
+            Kr370CriterionState.SATISFIED if state == "Y" else Kr370CriterionState.UNSATISFIED,
+            reasons_y[index] if state == "Y" else reasons_n[index], ("a" * 64,))
+        for index, (identity, state) in enumerate(zip(Kr370CriterionIdentity, pattern, strict=True))
+    )
+    source = v2_source(direction="SHORT", instrument=instrument)
+    confirmation = v2_nse(direction="SHORT", states=states)
+    confirmation["nse_binding"]["payload"]["canonical_instrument"] = instrument
+    confirmation["state"], confirmation["reason_codes"] = __import__(
+        "kronos.swing.v1.analytical_promotion_v2", fromlist=["_validate_nse"]
+    )._validate_nse(confirmation["nse_binding"], source)
+    record = create_record(source=source, criteria=criterion_values,
+                           confirmation=confirmation, created_at=NOW)
+    explanations = tuple(
+        V2CriterionExplanation(
+            item.identity.value, item.state.value, item.reason,
+            (f"{extension_atr:g} ATR14 structural extension" if index == 4 else item.reason),
+            ("completed 1H structural extension <= 2 ATR14" if index == 4
+             else "governed condition"),
+            ((("Structural extension", extension_atr, "ATR14"),
+              ("Excess over limit", max(0.0, extension_atr - 2.0), "ATR14"))
+             if index == 4 else ()),
+            "1H", NOW, "next governed completed 1H observation",
+        ) for index, item in enumerate(criterion_values)
+    )
+    contexts = tuple(
+        "SUPPORTIVE_CONTEXT" if state == "UNDERPERFORMING" else "CONTRADICTORY_CONTEXT"
+        for state in states
+    )
+    horizons = tuple(
+        V2ConfirmationHorizonExplanation(
+            timeframe, context, -1.0 if state == "UNDERPERFORMING" else 1.0,
+            0.0, -1.0 if state == "UNDERPERFORMING" else 1.0,
+            "stock return − Nifty return < 0%",
+            0.0 if state == "UNDERPERFORMING" else 1.0,
+            NOW, f"next completed {timeframe} relative-context observation",
+        )
+        for timeframe, state, context in zip(("1D", "4H"), states, contexts, strict=True)
+    )
+    explanation = V2ReadinessExplanation(
+        source["native_run_identity"], instrument, source["native_assessment_sha256"],
+        record.value["promotion_state"], record.value["evaluation_disposition"],
+        explanations, record.value["confirmation"]["state"], horizons,
+    )
+    before = record.payload
+    view = present_v2_promotion(record, explanation=explanation)
+    html = _v2_promotion_detail(view)
+    card = _v2_card_summary(view)
+
+    with pytest.raises(ValueError, match="KR370_V2_EXPLANATION_BINDING_INVALID"):
+        present_v2_promotion(
+            record,
+            explanation=replace(
+                explanation,
+                run_identity="SWING-RUN-" + "F" * 32,
+            ),
+        )
+
+    assert record.payload == before
+    assert view.classification == expected
+    assert "WHAT MUST CHANGE" not in html  # the compact card owns this heading
+    assert "WHAT MUST CHANGE" in card
+    assert f"{extension_atr:g} ATR14" in html
+    assert "Next valid check" in html
+    assert "Numeric threshold unavailable by policy" in html
+    if record.value["confirmation"]["state"] == "WITHHELD":
+        assert "CONTRADICTORY CONTEXT" in html and "Numeric gap 1%" in html
+    else:
+        assert "CONFIRMATION ESTABLISHED" in html
 
 
 def test_v2_index_and_mcx_reference_are_separate_from_nifty() -> None:
