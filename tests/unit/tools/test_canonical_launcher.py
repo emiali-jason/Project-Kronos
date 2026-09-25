@@ -3,6 +3,7 @@ import json
 import os
 from pathlib import Path
 import plistlib
+import selectors
 import shutil
 import socket
 import subprocess
@@ -175,6 +176,38 @@ def compile_status_probe(tmp_path, port, probe):
     )
     source += f'\nint main(void) {{ return {probe}() ? 0 : 1; }}\n'
     binary = tmp_path / probe
+    compile_source(source, binary)
+    return binary
+
+
+def compile_launcher_lock_harness(tmp_path):
+    source = SOURCE.read_text().replace(
+        'int main(void) {',
+        'int unused_application_main(void) {',
+    )
+    source += r'''
+int main(int argc, char **argv) {
+    if (argc != 3) return 90;
+    int descriptor = acquire_launcher_lock(argv[2]);
+    if (descriptor < 0) return 91;
+    puts("LOCKED");
+    fflush(stdout);
+    if (strcmp(argv[1], "hold") == 0 && getchar() == EOF) return 92;
+    return close(descriptor) == 0 ? 0 : 93;
+}
+'''
+    binary = tmp_path / 'launcher-lock'
+    compile_source(source, binary)
+    return binary
+
+
+def compile_workspace_script_harness(tmp_path):
+    source = SOURCE.read_text().replace(
+        'int main(void) {',
+        'int unused_application_main(void) {',
+    )
+    source += '\nint main(void) { puts(workspace_script); return 0; }\n'
+    binary = tmp_path / 'workspace-script'
     compile_source(source, binary)
     return binary
 
@@ -475,8 +508,8 @@ def test_shutdown_rejection_and_start_results_route_without_retry_or_kill():
     result_switch = main.index('switch (start_result)', start_call)
     assert start_call < token_clear < result_switch
     assert main.count('start_backend(') == 1
-    assert main.count('open_workspace()') == 1
-    assert main.index('case BACKEND_START_READY:') < main.index('open_workspace()')
+    assert main.count('open_workspace()') == 2
+    assert main.index('case BACKEND_START_READY:') < main.rindex('open_workspace()')
     monitor = source.split('static BackendStartResult monitor_backend_start(', 1)[1]
     monitor = monitor.split('static BackendStartResult start_backend(', 1)[0]
     assert 'kill(' not in monitor
@@ -484,6 +517,90 @@ def test_shutdown_rejection_and_start_results_route_without_retry_or_kill():
     stop = source.split('static int wait_for_backend_stop(', 1)[1]
     stop = stop.split('static int qualify_source(', 1)[0]
     assert 'process_gone && socket_fd < 0' in stop
+
+
+def test_ready_runtime_is_reused_before_any_transition_or_start() -> None:
+    source = SOURCE.read_text()
+    main = source.split('int main(void) {', 1)[1]
+    qualification = main.index('qualify_source(repository, python)')
+    lock = main.index('acquire_launcher_lock(repository)')
+    reuse = main.index(
+        'if (!bootstrap && backend_is_reusable(control_path)) return open_workspace();'
+    )
+    listener = main.index('int socket_connected = connect_backend();')
+    start = main.index('BackendStartResult start_result = start_backend(')
+    assert qualification < lock < reuse < listener < start
+    assert 'if (!bootstrap) return show_existing_backend_unhealthy();' in main
+    assert main.count('start_backend(') == 1
+    reusable = source.split('static int backend_is_reusable(', 1)[1].split(
+        'static int backend_supports_maintenance(', 1
+    )[0]
+    assert 'backend_is_ready()' in reusable
+    assert 'read_control_record(control_path' in reusable
+    assert 'kill(backend_pid, 0) == 0' in reusable
+
+
+def test_workspace_focuses_existing_kronos_tab_and_refreshes_only_canonical_stale_tab(
+    tmp_path,
+) -> None:
+    source = SOURCE.read_text()
+    workspace = source.split('static int open_workspace(void) {', 1)[1].split(
+        'static int acquire_launcher_lock(', 1
+    )[0]
+    assert 'tell application \\"Google Chrome\\"' in source
+    assert 'URL of browserTab starts with \\"http://127.0.0.1:8947/\\"' in source
+    assert 'set active tab index of browserWindow to tabNumber' in source
+    assert 'set index of browserWindow to 1' in source
+    assert ('if URL of browserTab is \\"http://127.0.0.1:8947/swing/opportunities\\" then '
+            '"') in source
+    assert 'open location \\"http://127.0.0.1:8947/swing/opportunities\\"' in source
+    assert '"/usr/bin/open"' not in workspace
+    script = subprocess.run(
+        [str(compile_workspace_script_harness(tmp_path))],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    compiled = tmp_path / 'workspace.scpt'
+    subprocess.run(
+        ['/usr/bin/osacompile', '-e', script, '-o', str(compiled)],
+        check=True,
+        capture_output=True,
+    )
+    assert compiled.is_file()
+
+
+def test_launcher_lock_serializes_concurrent_cold_clicks_without_creating_a_lock_file(
+    tmp_path,
+) -> None:
+    binary = compile_launcher_lock_harness(tmp_path)
+    repository = tmp_path / 'repository'
+    repository.mkdir()
+    before = tuple(repository.iterdir())
+    holder = subprocess.Popen(
+        [str(binary), 'hold', str(repository)],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        text=True,
+    )
+    assert holder.stdout is not None and holder.stdout.readline() == 'LOCKED\n'
+    waiter = subprocess.Popen(
+        [str(binary), 'acquire', str(repository)],
+        stdout=subprocess.PIPE,
+        text=True,
+    )
+    assert waiter.stdout is not None
+    selector = selectors.DefaultSelector()
+    selector.register(waiter.stdout, selectors.EVENT_READ)
+    assert selector.select(timeout=0.2) == []
+    assert holder.stdin is not None
+    holder.stdin.write('x')
+    holder.stdin.flush()
+    holder.stdin.close()
+    assert holder.wait(timeout=5) == 0
+    assert waiter.stdout.readline() == 'LOCKED\n'
+    assert waiter.wait(timeout=5) == 0
+    assert tuple(repository.iterdir()) == before
 
 
 def test_historical_inode_acl_denies_execution_without_byte_or_mode_change(tmp_path):

@@ -10,6 +10,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
+#include <sys/file.h>
 #include <sys/stat.h>
 #include <sys/time.h>
 #include <sys/types.h>
@@ -57,7 +58,25 @@ static int canonical_operational_image(void) {
         canonical_image_path(image) && canonical_signature_valid();
 }
 
-static const char *workspace_url = "http://127.0.0.1:8947/swing/opportunities";
+static const char *workspace_script =
+    "tell application \"Google Chrome\"\n"
+    "repeat with browserWindow in windows\n"
+    "set tabNumber to 0\n"
+    "repeat with browserTab in tabs of browserWindow\n"
+    "set tabNumber to tabNumber + 1\n"
+    "if URL of browserTab starts with \"http://127.0.0.1:8947/\" then\n"
+    "set active tab index of browserWindow to tabNumber\n"
+    "set index of browserWindow to 1\n"
+    "activate\n"
+    "if URL of browserTab is \"http://127.0.0.1:8947/swing/opportunities\" then "
+    "set URL of browserTab to \"http://127.0.0.1:8947/swing/opportunities\"\n"
+    "return\n"
+    "end if\n"
+    "end repeat\n"
+    "end repeat\n"
+    "open location \"http://127.0.0.1:8947/swing/opportunities\"\n"
+    "activate\n"
+    "end tell";
 static const char *control_schema = "KRONOS_BROWSER_BACKEND_CONTROL_V1";
 #define BACKEND_STATUS_RESPONSE_BYTES (64 * 1024)
 
@@ -263,14 +282,25 @@ static int backend_is_ready(void) {
 
 static int open_workspace(void) {
     execl(
-        "/usr/bin/open",
-        "open",
-        "-a",
-        "Google Chrome",
-        workspace_url,
+        "/usr/bin/osascript",
+        "osascript",
+        "-e",
+        workspace_script,
         (char *)NULL
     );
     return 1;
+}
+
+static int acquire_launcher_lock(const char *repository) {
+    int descriptor = open(repository, O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+    if (descriptor < 0) return -1;
+    for (;;) {
+        if (flock(descriptor, LOCK_EX) == 0) return descriptor;
+        if (errno != EINTR) {
+            (void)close(descriptor);
+            return -1;
+        }
+    }
 }
 
 static int show_alert(const char *title, const char *message) {
@@ -301,6 +331,13 @@ static int show_restart_blocked(void) {
     return show_alert(
         "KRONOS restart blocked",
         "The existing KRONOS backend could not be stopped through the authenticated maintenance handoff. No replacement was started. Contact Engineering."
+    );
+}
+
+static int show_existing_backend_unhealthy(void) {
+    return show_alert(
+        "KRONOS is not ready",
+        "A KRONOS backend already owns the local Browser address but is not ready. It was not restarted. Contact Engineering."
     );
 }
 
@@ -383,6 +420,18 @@ static int read_control_record(
     *backend_pid = (pid_t)parsed_pid;
     (void)memcpy(token, token_line, 65);
     return 1;
+}
+
+static int backend_is_reusable(const char *control_path) {
+    if (!backend_is_ready()) return 0;
+    pid_t backend_pid = 0;
+    char token[65] = {0};
+    int reusable = (
+        read_control_record(control_path, &backend_pid, token) &&
+        kill(backend_pid, 0) == 0
+    );
+    (void)memset(token, 0, sizeof(token));
+    return reusable;
 }
 
 static int backend_supports_maintenance(void) {
@@ -672,11 +721,21 @@ int main(void) {
         return show_not_ready();
     }
 
-    /* Fail before touching the old runtime or publishing a handoff. */
+    /* The read-only source gate precedes every probe or runtime transition. */
     if (!qualify_source(repository, python)) return show_alert(
         "KRONOS source qualification failed",
         "A clean published develop revision and verified source proof are required. No runtime transition was started. Contact Engineering."
     );
+
+    /* Serialize the probe/start decision without creating or rewriting a file. */
+    int launcher_lock = acquire_launcher_lock(repository);
+    if (launcher_lock < 0) return show_alert(
+        "KRONOS launch blocked",
+        "The launcher could not establish single-flight ownership. No runtime transition was started. Contact Engineering."
+    );
+
+    /* An ordinary Dock click is inert access to one already-ready shared runtime. */
+    if (!bootstrap && backend_is_reusable(control_path)) return open_workspace();
 
     pid_t backend_pid = 0;
     char token[65] = {0};
@@ -688,7 +747,7 @@ int main(void) {
     int socket_connected = connect_backend();
     if (socket_connected >= 0) {
         (void)close(socket_connected);
-        if (bootstrap) return 1; /* Coordinator alone may stop legacy. */
+        if (!bootstrap) return show_existing_backend_unhealthy();
         if (
             !read_control_record(control_path, &backend_pid, token) ||
             !request_graceful_shutdown(backend_pid, token, generation) ||

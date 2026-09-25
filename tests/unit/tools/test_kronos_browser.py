@@ -244,13 +244,17 @@ def test_macos_launcher_is_minimal_double_click_app_without_credentials() -> Non
     assert "POST /control/shutdown HTTP/1.0" in source
     assert "request_graceful_shutdown" in source
     assert "wait_for_backend_stop" in source
-    assert "if (backend_is_ready()) return open_workspace();" not in source
+    assert "if (!bootstrap && backend_is_reusable(control_path)) return open_workspace();" in source
+    assert "show_existing_backend_unhealthy" in source
+    assert "acquire_launcher_lock(repository)" in source
     assert "It was not reused" not in source
     assert "KRONOS restart blocked" in source
     assert "KRONOS is still starting" in source
     assert "http://127.0.0.1:8947/swing/opportunities" in source
-    assert '"/usr/bin/open"' in source
-    assert '"Google Chrome"' in source
+    assert '"/usr/bin/osascript"' in source
+    assert "set active tab index of browserWindow to tabNumber" in source
+    assert "open location" in source
+    assert 'Google Chrome' in source
     assert "setsid()" in source
     assert "Terminal" not in source
     assert "api_key" not in source.lower()
