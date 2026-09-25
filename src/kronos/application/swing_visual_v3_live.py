@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
-from dataclasses import dataclass, field
+from contextvars import ContextVar
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from hashlib import sha256
 from threading import Condition, Lock
@@ -818,6 +819,29 @@ class _CompactNativePageState:
     component_fence: PreparedReadFence
     current_fence: PreparedReadFence
     identity: str
+    ticket: _ReviewPreparationTicket
+    read_set: tuple
+    revision: str
+
+
+@dataclass(frozen=True, slots=True)
+class _ReviewPreparationTicket:
+    owner: object
+    publication: tuple
+    epoch: int
+    attempt: int
+    origin: str
+
+
+@dataclass(frozen=True, slots=True)
+class _ReviewPublication:
+    """Single volatile publication; no analytical or mutation authority."""
+
+    page: _CompactNativePageState | None = None
+    revision: str = ""
+    ticket: _ReviewPreparationTicket | None = None
+    failure: str = "SWING_PAGE_PREPARATION_MISSING"
+    reconciliation_failure: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -851,8 +875,147 @@ class NativeReviewIntakeWorkflow:
         self._page_transition_condition = Condition(Lock())
         self._page_transition_active = False
         self._page_active_readers = 0
-        self._page_state = None
-        self._page_state_failure = "SWING_PAGE_PREPARATION_MISSING"
+        self._page_publication = _ReviewPublication()
+        self._page_epoch = 0
+        self._page_attempt = 0
+        self._page_writers = 0
+        self._page_scope = ContextVar("review_preparation", default=None)
+        self._page_revision_builder = None
+
+    # Compatibility accessors for existing compact-page inspection tests.
+    # Production publication below replaces _page_publication exactly once.
+    # As before, callers of these private accessors must own _page_state_lock.
+    @property
+    def _page_state(self):
+        return self._page_publication.page
+
+    @_page_state.setter
+    def _page_state(self, value):
+        self._page_publication = replace(self._page_publication, page=value)
+
+    @property
+    def _page_state_failure(self):
+        return self._page_publication.failure
+
+    @_page_state_failure.setter
+    def _page_state_failure(self, value):
+        self._page_publication = replace(self._page_publication, failure=value)
+
+    def configure_page_revision(self, builder):
+        """Composition-time registration, before requests/workers are started."""
+        require(callable(builder), "SWING_PAGE_PREPARATION_INVALID")
+        require(self._page_revision_builder is None,
+                "SWING_PAGE_PREPARATION_INVALID")
+        self._page_revision_builder = builder
+
+    def reconciliation_snapshot(self):
+        with self._page_state_lock:
+            return self._page_publication
+
+    def page_revision(self):
+        return self.reconciliation_snapshot().revision
+
+    def _preparation_publication(self):
+        # Outside G. Production captures registration + immutable owner objects
+        # under the application lock. Standalone workflow compositions retain
+        # exact Native/MTF/continuity/manifest binding through the existing owner.
+        capture = getattr(self.application, "review_reconciliation_identity", None)
+        if callable(capture):
+            return capture()
+        _, native, continuity, status = self.application.opportunities_bundle_projection()
+        facts = self.application.mtf_fact_snapshot()
+        control = status["control"]
+        manifest = None if control is None else control.get("current_manifest")
+        return (id(native), id(facts), id(continuity), canonical(manifest))
+
+    def _new_preparation_ticket(self, origin):
+        publication = self._preparation_publication()
+        with self._page_state_lock:
+            self._page_attempt += 1
+            ticket = _ReviewPreparationTicket(
+                self, publication, self._page_epoch, self._page_attempt, origin)
+        return ticket
+
+    def _ticket_matches_locked(self, ticket):
+        # Pure primitive comparisons only. G remains a leaf lock.
+        return (ticket.owner is self and ticket.epoch == self._page_epoch
+                and ticket.attempt == self._page_attempt
+                and self._page_writers == 0)
+
+    def _finish_page_failure(self, ticket, error, *, reconciliation=False):
+        # Never invoke an owner, filesystem operation or callback while holding G.
+        publication = self._preparation_publication()
+        reason = self._reason(error, "SWING_PAGE_PREPARATION_UNAVAILABLE")
+        with self._page_state_lock:
+            if (not self._ticket_matches_locked(ticket)
+                    or ticket.publication != publication):
+                return False
+            previous = self._page_publication
+            self._page_publication = _ReviewPublication(
+                revision=previous.revision, ticket=ticket, failure=reason,
+                reconciliation_failure=(previous.reconciliation_failure or reconciliation))
+        return True
+
+    @contextmanager
+    def reconciliation_scope(self):
+        """Allocate before the ENTIRE callback, not when it reaches preparation."""
+        inherited = self._page_scope.get()
+        if inherited is not None:
+            yield inherited
+            return
+        ticket = self._new_preparation_ticket("RECONCILIATION")
+        token = self._page_scope.set(ticket)
+        try:
+            yield ticket
+        except Exception as error:
+            self._finish_page_failure(ticket, error, reconciliation=True)
+            raise
+        finally:
+            self._page_scope.reset(token)
+
+    @contextmanager
+    def _page_input_write(self):
+        """Invalidate BEFORE entering application -> WO-05 -> WO-07 owners."""
+        with self._page_state_lock:
+            self._page_epoch += 1
+            self._page_writers += 1
+            previous = self._page_publication
+        try:
+            yield
+        finally:
+            with self._page_state_lock:
+                self._page_writers -= 1
+                epoch = self._page_epoch
+                idle = self._page_writers == 0
+            # A rejected/no-op write need not invalidate an unchanged readable
+            # page. Certify exact bytes only here, never from a GET. Do not clear
+            # failure state or authorize any operation with this certification.
+            if idle and previous.page is not None:
+                try:
+                    with self._prepared_state_response(previous.page):
+                        pass
+                    publication = self._preparation_publication()
+                except (OSError, ValueError):
+                    pass
+                else:
+                    ticket = previous.ticket
+                    if ticket is not None and ticket.publication == publication:
+                        certified = replace(previous, ticket=replace(ticket, epoch=epoch))
+                        with self._page_state_lock:
+                            if (self._page_publication is previous
+                                    and self._page_epoch == epoch and self._page_writers == 0):
+                                self._page_publication = certified
+
+    @staticmethod
+    def _page_read_set(component_fence, current_fence):
+        # Explicit absent/present identity; byte fences remain authoritative.
+        return tuple(sorted(
+            (role, str(path), "ABSENT" if payload is None else "PRESENT",
+             None if payload is None else len(payload),
+             None if payload is None else sha256(payload).hexdigest())
+            for role, fence in (("COMPONENT", component_fence), ("CURRENT", current_fence))
+            for path, payload in fence.entries
+        ))
 
     @contextmanager
     def _validated_response(self):
@@ -889,29 +1052,27 @@ class NativeReviewIntakeWorkflow:
 
     def prepare_page_generation(self):
         """Build one candidate without replacing the readable generation."""
-
+        ticket = self._page_scope.get() or self._new_preparation_ticket("PAGE")
         try:
             with self._page_prepare_lock:
                 with self._validated_response() as (prepared, reads):
                     projection = self.snapshot(_response=prepared)
-                    context = prepared.context
-                    authority = prepared.authority
+                    context, authority = prepared.context, prepared.authority
                     has_control = self.has_control(_response=prepared)
+                    # Revision calculation can read owners, so it runs outside G
+                    # and inside the same captured-read/final-validation interval.
+                    revision = ("" if self._page_revision_builder is None else
+                        self._page_revision_builder(projection))
                     component_fence, current_fence = self._compact_page_fences(reads)
+                    read_set = self._page_read_set(component_fence, current_fence)
                     identity = self._compact_page_identity(
                         context, authority, projection, has_control,
-                        component_fence, current_fence,
-                    )
+                        component_fence, current_fence)
                 state = _CompactNativePageState(
                     context, authority, projection, has_control,
-                    component_fence, current_fence, identity,
-                )
+                    component_fence, current_fence, identity, ticket, read_set, revision)
         except (OSError, ValueError) as error:
-            with self._page_state_lock:
-                self._page_state = None
-                self._page_state_failure = self._reason(
-                    error, "SWING_PAGE_PREPARATION_UNAVAILABLE"
-                )
+            self._finish_page_failure(ticket, error)
             return None
         return state
 
@@ -924,20 +1085,29 @@ class NativeReviewIntakeWorkflow:
             return self.snapshot(_response=prepared)
 
     def publish_page_generation(self, state) -> bool:
-        """Install a revalidated candidate at its explicit owner boundary."""
-
+        """Validate outside G; CAS page/revision/outcome with one assignment."""
+        require(type(state) is _CompactNativePageState,
+                "SWING_PAGE_PREPARATION_INVALID")
+        ticket = state.ticket
         try:
             self.prepared_page_projection(state)
+            require(state.read_set == self._page_read_set(
+                state.component_fence, state.current_fence), "SWING_PAGE_PREPARATION_CORRUPT")
+            publication = self._preparation_publication()
         except (OSError, ValueError) as error:
-            with self._page_state_lock:
-                self._page_state = None
-                self._page_state_failure = self._reason(
-                    error, "SWING_PAGE_PREPARATION_UNAVAILABLE"
-                )
+            self._finish_page_failure(ticket, error)
             return False
         with self._page_state_lock:
-            self._page_state = state
-            self._page_state_failure = ""
+            if (not self._ticket_matches_locked(ticket)
+                    or ticket.publication != publication):
+                return False
+            previous = self._page_publication
+            # Local chart preparation cannot clear an unrelated broad failure.
+            blocker = (previous.reconciliation_failure
+                       and ticket.origin != "RECONCILIATION")
+            self._page_publication = _ReviewPublication(
+                page=state, revision=state.revision, ticket=ticket, failure="",
+                reconciliation_failure=blocker)
         return True
 
     @contextmanager
@@ -952,6 +1122,10 @@ class NativeReviewIntakeWorkflow:
             self._page_transition_active = True
             while self._page_active_readers:
                 self._page_transition_condition.wait()
+        # The condition is released before acquiring G. Reader draining remains
+        # unchanged; preparation for this successor may occur inside the scope.
+        with self._page_state_lock:
+            self._page_epoch += 1
         try:
             yield
         finally:
@@ -984,11 +1158,18 @@ class NativeReviewIntakeWorkflow:
     @contextmanager
     def _prepared_page_response(self):
         with self._page_state_lock:
-            state = self._page_state
-            failure = self._page_state_failure
-        require(state is not None, failure or "SWING_PAGE_PREPARATION_MISSING")
-        with self._prepared_state_response(state) as prepared:
+            slot = self._page_publication
+            epoch = self._page_epoch
+            writers = self._page_writers
+        require(slot.page is not None, slot.failure or "SWING_PAGE_PREPARATION_MISSING")
+        require(not writers and slot.ticket is not None and slot.ticket.epoch == epoch
+                and not slot.reconciliation_failure, "REVIEW_BINDING_STALE")
+        with self._prepared_state_response(slot.page) as prepared:
             yield prepared
+        with self._page_state_lock:
+            current = (self._page_publication is slot and self._page_epoch == epoch
+                       and self._page_writers == 0)
+        require(current, "REVIEW_BINDING_STALE")
 
     @contextmanager
     def _prepared_state_response(self, state):
@@ -1491,17 +1672,19 @@ class NativeReviewIntakeWorkflow:
                         for logical_role in self._roles(market)}
             previous = {logical_role: self._selection(requirement, logical_role)
                         for logical_role in self._roles(market)}
-            results = self.store.select_mcx_composite(bindings, image, content_type,
-                selected_at=timestamp(self.live._now()),
-                expected_selections={logical_role: None if previous[logical_role] is None
-                    else previous[logical_role]["selection_sha256"] for logical_role in self._roles(market)},
-                publication_guard=self.application.publication_mutation_guard, recheck=recheck)
+            with self._page_input_write():
+                results = self.store.select_mcx_composite(bindings, image, content_type,
+                    selected_at=timestamp(self.live._now()),
+                    expected_selections={logical_role: None if previous[logical_role] is None
+                        else previous[logical_role]["selection_sha256"] for logical_role in self._roles(market)},
+                    publication_guard=self.application.publication_mutation_guard, recheck=recheck)
             self.errors.pop((market, instrument), None)
             return results[role]
         previous = self._selection(requirement, role)
-        result = self.store.select_native_chart(self._chart_binding(requirement, role), image, content_type,
-            selected_at=timestamp(self.live._now()), expected_selection=None if previous is None else previous["selection_sha256"],
-            publication_guard=self.application.publication_mutation_guard, recheck=recheck)
+        with self._page_input_write():
+            result = self.store.select_native_chart(self._chart_binding(requirement, role), image, content_type,
+                selected_at=timestamp(self.live._now()), expected_selection=None if previous is None else previous["selection_sha256"],
+                publication_guard=self.application.publication_mutation_guard, recheck=recheck)
         self.errors.pop((market, instrument), None)
         return result
 
@@ -1548,9 +1731,10 @@ class NativeReviewIntakeWorkflow:
                 question_set_identity=VISUAL_QUESTION_SET_V3_ID, question_set_version="3.2",
                 answer_schema=NSE_ANSWER_SCHEMA_V2, answer_version="2.0", subjects=subjects))
             mapping, pdf = render_nse_successor_question_pdf(mapping, prepared)
-            return self.store.publish_nse_request(mapping, pdf, publication_timestamp=timestamp(now),
-                expected_predecessor=None if previous is None else previous.identity, recheck=lambda *_: recheck(),
-                publication_guard=self.application.publication_mutation_guard, guarded_recheck=recheck)
+            with self._page_input_write():
+                return self.store.publish_nse_request(mapping, pdf, publication_timestamp=timestamp(now),
+                    expected_predecessor=None if previous is None else previous.identity, recheck=lambda *_: recheck(),
+                    publication_guard=self.application.publication_mutation_guard, guarded_recheck=recheck)
         common.update(request_bundle_identity="SWING-REVIEW-BUNDLE-" + uuid4().hex.upper(),
                       review_cycle_identity=pack_id)
         native_subjects, reference_subjects, images = [], [], {}
@@ -1593,9 +1777,10 @@ class NativeReviewIntakeWorkflow:
             question_contract_identity=mcx.REFERENCE_QUESTIONS_V2, question_contract_version="2.0",
             answer_contract_identity=mcx.REFERENCE_ANSWER_V2, answer_contract_version="2.0", subjects=reference_subjects))
         native, reference, pdf = render_mcx_successor_question_pdf(native, reference, images)
-        return self.store.publish_mcx_request(native, reference, pdf, publication_timestamp=timestamp(now),
-            expected_predecessor=None if previous is None else previous.identity, recheck=lambda *_: recheck(),
-            publication_guard=self.application.publication_mutation_guard, guarded_recheck=recheck)
+        with self._page_input_write():
+            return self.store.publish_mcx_request(native, reference, pdf, publication_timestamp=timestamp(now),
+                expected_predecessor=None if previous is None else previous.identity, recheck=lambda *_: recheck(),
+                publication_guard=self.application.publication_mutation_guard, guarded_recheck=recheck)
 
     @staticmethod
     def extract_answer(pdf):
@@ -1663,11 +1848,12 @@ class NativeReviewIntakeWorkflow:
         def state():
             recheck()
             return self.current_state(market, first)
-        commit = self.live.accept_successor_answer(self.store, publication.identity, pdf, market=market,
-            review=review, facts=facts, chart_reader=self.chart_reader,
-            precondition=ReviewMutationPrecondition.create(expected[first]), current_state=state,
-            publication_guard=self.application.publication_mutation_guard,
-            extracted_answer=extracted_answer, phase_observer=phase_observer)
+        with self._page_input_write():
+            commit = self.live.accept_successor_answer(self.store, publication.identity, pdf, market=market,
+                review=review, facts=facts, chart_reader=self.chart_reader,
+                precondition=ReviewMutationPrecondition.create(expected[first]), current_state=state,
+                publication_guard=self.application.publication_mutation_guard,
+                extracted_answer=extracted_answer, phase_observer=phase_observer)
         return commit
 
     def import_answer(self, market, expected, pdf):
@@ -1948,15 +2134,16 @@ class NativeReviewIntakeWorkflow:
             if snapshot is not None:
                 require(snapshot.control["current_manifest"]["sha256"] == accepted.binding.value["committed_run_manifest_identity"],
                         "REVIEW_BINDING_STALE")
-        result = self.live.handoff_accepted_receipt(self.store, commit.identity, receipt.receipt_id,
-            review=review, facts=facts, chart_bytes=None, prepared_requests=self._prepared,
-            publication_guard=self.application.publication_mutation_guard, recheck=recheck, restore_only=restore_only)
-        if restore_only:
-            self._restore_v2_for_receipt(receipt)
-        elif receipt.binding.value["market"] == "MCX" or (
-            result is not None and result.value["state"] == "SUCCEEDED"
-        ):
-            self._publish_v2_for_receipt(commit, receipt, facts)
+        with self._page_input_write():
+            result = self.live.handoff_accepted_receipt(self.store, commit.identity, receipt.receipt_id,
+                review=review, facts=facts, chart_bytes=None, prepared_requests=self._prepared,
+                publication_guard=self.application.publication_mutation_guard, recheck=recheck, restore_only=restore_only)
+            if restore_only:
+                self._restore_v2_for_receipt(receipt)
+            elif receipt.binding.value["market"] == "MCX" or (
+                result is not None and result.value["state"] == "SUCCEEDED"
+            ):
+                self._publish_v2_for_receipt(commit, receipt, facts)
         return result
 
     def _v2_current(self, source):

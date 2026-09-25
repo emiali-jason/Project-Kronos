@@ -24,7 +24,7 @@ from kronos.swing.v1.mcx_supporting_context import (
     _primitive,
 )
 from kronos.swing.v1.review_evidence_binding import (
-    ReviewAcceptanceReceipt, ReviewMutationPrecondition, canonical,
+    ReviewAcceptanceReceipt, ReviewEvidenceError, ReviewMutationPrecondition, canonical,
     require, timestamp,
 )
 from kronos.swing.v1.review_evidence_store import (
@@ -97,10 +97,13 @@ class McxSupportingContextWorkflow:
     def current_intake_state(self, slot):
         require(self.intake_store is not None and self.publication_source is not None,
                 "REVIEW_PRECONDITION_INVALID")
-        _, native, _, publication = self.publication_source.opportunities_bundle_projection()
-        control = publication["control"]
-        require(native is not None and control is not None
-                and not publication["reconciliation_unavailable"], "REVIEW_BINDING_STALE")
+        authority = getattr(self.publication_source, "current_run_control_authority", None)
+        require(callable(authority), "REVIEW_PRECONDITION_INVALID")
+        try:
+            native, control = authority()
+        except (OSError, ValueError) as error:
+            raise ReviewEvidenceError("REVIEW_BINDING_STALE") from error
+        require(control is not None, "REVIEW_BINDING_STALE")
         day, _ = self.governed_trading_date()
         pack = self.transport.store.current(day, slot)
         require(pack is None or (pack.trading_date == day and pack.slot == slot),

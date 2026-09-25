@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime
 from enum import StrEnum
@@ -499,6 +499,7 @@ class _OpportunitiesProjectionAuthority:
     committed_run: object | None
     request_result: str
     reconciliation_unavailable: bool
+    reconciliation_owner: object | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -879,6 +880,8 @@ class SwingOpportunitiesApplication:
         self.__reconcile = None
         self.__successor_publication_transition = None
         self.__reconciliation_failure = False
+        self.__reconciliation_attempt = 0
+        self.__reconciliation_owner = None
         self.__analysis_request_result = ""
         self.__live_monitoring_result = LiveMonitoringTestResult(
             LiveMonitoringTestState.NOT_TESTED
@@ -1045,6 +1048,43 @@ class SwingOpportunitiesApplication:
 
         return self.__prepare_opportunities_projection()
 
+    def current_run_control_authority(self):
+        """Return exact run/control authority without presentation freshness.
+
+        Review generation attempts are presentation state. They cannot make an
+        unchanged committed run/control pair stale for an MCX mutation. This
+        capture still fails closed if the real application or publication
+        authority changes while its control is being validated.
+        """
+        authority = self.__capture_opportunities_projection()
+        control = None
+        unavailable = False
+        if authority.publication is not None:
+            try:
+                control = authority.publication.status()
+                if (
+                    authority.committed_run is not None
+                    and control["current_manifest"]
+                    != authority.committed_run.reference
+                ):
+                    unavailable = True
+            except (OSError, ValueError):
+                unavailable = True
+                control = None
+        with self.__lock:
+            current = self.__projection_authority_current_locked(authority)
+        if (
+            unavailable
+            or not current
+            or authority.native is None
+            or (
+                authority.reconciliation_owner is None
+                and authority.reconciliation_unavailable
+            )
+        ):
+            raise ValueError("SWING_PUBLICATION_CURRENT_UNAVAILABLE")
+        return authority.native, control
+
     def __capture_opportunities_projection(self) -> _OpportunitiesProjectionAuthority:
         with self.__lock:
             snapshot = self.__snapshot
@@ -1069,6 +1109,7 @@ class SwingOpportunitiesApplication:
                 committed_run=committed_run,
                 request_result=self.__analysis_request_result,
                 reconciliation_unavailable=self.__reconciliation_failure,
+                reconciliation_owner=self.__reconciliation_owner,
             )
 
     def __projection_authority_current_locked(
@@ -1082,10 +1123,14 @@ class SwingOpportunitiesApplication:
             and self.__analysis_request_result == authority.request_result
             and self.__reconciliation_failure
             is authority.reconciliation_unavailable
+            and self.__reconciliation_owner is authority.reconciliation_owner
         )
 
     def __prepare_opportunities_projection(self):
         authority = self.__capture_opportunities_projection()
+        owner = authority.reconciliation_owner
+        # Application lock is released before taking the owner's leaf lock.
+        outcome = None if owner is None else owner.reconciliation_snapshot()
         control = None
         unavailable = False
         if authority.publication is not None:
@@ -1103,7 +1148,8 @@ class SwingOpportunitiesApplication:
 
         with self.__lock:
             current = self.__projection_authority_current_locked(authority)
-        if unavailable or not current:
+        outcome_current = (owner is None or owner.reconciliation_snapshot() is outcome)
+        if unavailable or not current or not outcome_current:
             return (
                 authority.snapshot,
                 None,
@@ -1123,23 +1169,37 @@ class SwingOpportunitiesApplication:
                 "request_result": authority.request_result,
                 "reconciliation_unavailable": (
                     authority.reconciliation_unavailable
+                    or (outcome is not None and outcome.reconciliation_failure)
                 ),
             },
         )
 
     def register_analysis_reconciliation(
-        self, reconcile, successor_publication_transition=None
+        self, reconcile, successor_publication_transition=None, *, review_owner=None
     ):
         if not callable(reconcile) or (
             successor_publication_transition is not None
             and not callable(successor_publication_transition)
         ):
             raise TypeError("SWING_RECONCILIATION_INVALID")
+        if review_owner is not None and not all(callable(getattr(review_owner, name, None))
+                for name in ("reconciliation_scope", "reconciliation_snapshot")):
+            raise TypeError("SWING_RECONCILIATION_INVALID")
         with self.__lock:
+            self.__reconciliation_attempt += 1
             self.__reconcile = reconcile
+            self.__reconciliation_owner = review_owner
             self.__successor_publication_transition = (
                 successor_publication_transition
             )
+
+    def review_reconciliation_identity(self):
+        """Immutable process identity only; no Review access or filesystem I/O."""
+        with self.__lock:
+            return (id(self.__reconcile), id(self.__reconciliation_owner),
+                    id(self.__publication), id(self.__committed_run),
+                    id(self.__completed_native_discovery_run),
+                    id(self.__completed_mtf_fact_snapshot))
 
     @contextmanager
     def __successor_publication_scope(self):
@@ -1156,18 +1216,35 @@ class SwingOpportunitiesApplication:
         with self.__lock:
             reconcile = self.__reconcile
             publication = self.__publication
+            committed = self.__committed_run
+            native = self.__completed_native_discovery_run
+            facts = self.__completed_mtf_fact_snapshot
+            owner = self.__reconciliation_owner
+            self.__reconciliation_attempt += 1
+            attempt = self.__reconciliation_attempt
         if reconcile is None:
             return
         try:
-            if publication is not None and self.opportunities_projection()[1] is None:
-                raise ValueError("SWING_PUBLICATION_CURRENT_UNAVAILABLE")
-            reconcile()
+            # Scope creation and entry are OUTSIDE the main application lock.
+            with (nullcontext() if owner is None else owner.reconciliation_scope()):
+                if publication is not None and self.opportunities_projection()[1] is None:
+                    raise ValueError("SWING_PUBLICATION_CURRENT_UNAVAILABLE")
+                reconcile()
         except Exception:
             failure = True
         else:
             failure = False
+        if owner is not None:
+            # The registered capsule owns Review completion. Never mirror an
+            # obsolete callback's boolean into a second unversioned authority.
+            return
         with self.__lock:
-            if self.__reconcile is reconcile and self.__publication is publication:
+            if (self.__reconcile is reconcile and self.__publication is publication
+                    and self.__committed_run is committed
+                    and self.__completed_native_discovery_run is native
+                    and self.__completed_mtf_fact_snapshot is facts
+                    and self.__reconciliation_owner is None
+                    and self.__reconciliation_attempt == attempt):
                 self.__reconciliation_failure = failure
 
     def __install_committed(self, bundle):

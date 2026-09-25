@@ -1,3 +1,4 @@
+from contextlib import nullcontext
 from unittest.mock import Mock
 from threading import Event, Lock
 
@@ -51,6 +52,7 @@ def test_reconcile_swing_publishes_one_prepared_projection_and_revision():
     server.application.mtf_fact_snapshot.return_value = None
     server.native_review = Mock()
     server.native_intake = Mock()
+    server.native_intake.reconciliation_scope.side_effect = nullcontext
     generation, projection = object(), {"rows": (), "workspace": None}
     server.native_intake.prepare_page_generation.return_value = generation
     server.native_intake.prepared_page_projection.return_value = projection
@@ -68,12 +70,14 @@ def test_reconcile_swing_publishes_one_prepared_projection_and_revision():
         native_intake_projection=projection
     )
     server.native_intake.publish_page_generation.assert_called_once_with(generation)
+    server.native_intake.reconciliation_scope.assert_called_once_with()
     assert server._swing_projection_revision_value == "revision"
 
     server.native_intake.publish_page_generation.return_value = False
     server.native_intake.page_state_status.return_value = {"failure": "PREPARE_FAILED"}
     with pytest.raises(ValueError, match="PREPARE_FAILED"):
         server.reconcile_swing()
+    assert server.native_intake.reconciliation_scope.call_count == 2
     assert server._swing_projection_revision_value == "revision"
 
 
@@ -180,6 +184,35 @@ def test_14_get_and_status_do_not_call_mutation_owners(monkeypatch):
             assert _request(server,'GET',f'/swing/analysis-details/{run}/RELIANCE')[0]==404
             assert _request(server,'GET',f'/swing/trade-window/{run}/RELIANCE')[0]==404
         assert not denied
+    finally:
+        server.shutdown();server.server_close();thread.join(timeout=5)
+
+
+def test_sponsor_notifications_use_run_control_not_review_attempt_freshness(monkeypatch):
+    server, thread = _running_server()
+    try:
+        run_identity = "SWING-RUN-" + "C" * 32
+        run = Mock(run_identity=run_identity)
+        monkeypatch.setattr(
+            server.application, "current_run_control_authority",
+            Mock(return_value=(run, {"current_manifest": {"sha256": "a" * 64}})),
+        )
+        monkeypatch.setattr(
+            server.application, "opportunities_projection",
+            Mock(side_effect=AssertionError("review-attempt projection consulted")),
+        )
+        synchronize = server.notification_centre.synchronize
+        observed = []
+
+        def capture(*args, **kwargs):
+            observed.append(kwargs["current_run_identity"])
+            return synchronize(*args, **kwargs)
+
+        monkeypatch.setattr(server.notification_centre, "synchronize", capture)
+
+        server.sponsor_notification_snapshot()
+
+        assert observed == [run_identity]
     finally:
         server.shutdown();server.server_close();thread.join(timeout=5)
 

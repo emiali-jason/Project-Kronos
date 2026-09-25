@@ -1,4 +1,6 @@
 """WO-07 real route dispatch against isolated stores; no production operations."""
+from dataclasses import replace
+import json
 from threading import Thread
 from urllib.parse import urlencode
 
@@ -6,12 +8,12 @@ import pytest
 
 from kronos.application.swing_opportunities import SwingOpportunitiesApplication
 from kronos.browser.server import create_browser_server
-from kronos.swing.v1.mcx_supporting_context import McxContextSlot
+from kronos.swing.v1.mcx_supporting_context import McxContextFamily, McxContextSlot
 from kronos.swing.v1.review_evidence_store import ReviewEvidenceStore
 from kronos.swing.v1.review_evidence_binding import ReviewMutationPrecondition
 from tests.unit.application.test_swing_opportunities import _Provider
 from tests.unit.browser.test_browser_server import _request
-from tests.unit.swing.test_run_publication import checkpoint, scenario
+from tests.unit.swing.test_run_publication import checkpoint, prepared, scenario
 from tests.unit.swing.v1.test_mcx_supporting_context import (
     DAY, PNG, _transport, _answer, _payload, _inventory,
 )
@@ -1182,6 +1184,172 @@ def test_context_browser_successor_and_evening_are_separate(intake_browser, tmp_
     assert historical.records() == ()
 
 
+def test_mcx_answer_authority_survives_review_only_reconciliation_advance(
+    intake_browser, tmp_path, monkeypatch,
+):
+    """Review presentation attempts never participate in MCX mutation authority."""
+    from threading import Event, Thread
+
+    server, workflow, transport, _, headers = intake_browser
+    empty = dict(headers, **{"Content-Type": "application/x-www-form-urlencoded"})
+    slot = McxContextSlot.MORNING
+    for family in ("METALS", "ENERGY"):
+        status = next(item for item in workflow.snapshot().slots if item.slot == slot)
+        assert status.intake_precondition is not None
+        precondition = ReviewMutationPrecondition.create(
+            json.loads(status.intake_precondition)
+        )
+        workflow.mutate_intake(
+            slot, "STAGE", precondition, family=McxContextFamily(family),
+            content_type="image/png", payload=PNG,
+        )
+    status = next(item for item in workflow.snapshot().slots if item.slot == slot)
+    workflow.mutate_intake(
+        slot, "GENERATE",
+        ReviewMutationPrecondition.create(json.loads(status.intake_precondition)),
+    )
+    pack = transport.store.current(DAY, slot)
+    payload = _payload(pack)
+    payload["manifest"]["answer_pack_identity"] = "ANSWER-RACE"
+    _answer(transport.configuration.answer_directory / pack.expected_answer_filename, payload)
+
+    # Force the exact observed edge: the authority reader captures the current
+    # Review slot, then a post-response reconciliation publishes a newer slot
+    # while the run, manifest, MCX pointers and request remain unchanged.
+    captured, release = Event(), Event()
+    review_published, finish_reconciliation = Event(), Event()
+    original = server.application.current_run_control_authority
+    publish = server.native_intake.publish_page_generation
+    calls = []
+
+    def paused_authority_read():
+        value = original()
+        if not calls:
+            calls.append(value)
+            captured.set()
+            assert release.wait(10)
+        return value
+
+    monkeypatch.setattr(
+        server.application, "current_run_control_authority", paused_authority_read,
+    )
+
+    def publish_then_pause(generation):
+        result = publish(generation)
+        review_published.set()
+        assert finish_reconciliation.wait(10)
+        return result
+
+    monkeypatch.setattr(
+        server.native_intake, "publish_page_generation", publish_then_pause,
+    )
+    result = {}
+
+    def take_snapshot():
+        result["snapshot"] = workflow.snapshot()
+
+    reader = Thread(target=take_snapshot)
+    reader.start()
+    assert captured.wait(10)
+    old_review = server.native_intake.reconciliation_snapshot()
+    reconciler = Thread(target=server.application.reconcile_committed_analysis)
+    reconciler.start()
+    assert review_published.wait(10)
+    new_review = server.native_intake.reconciliation_snapshot()
+    assert new_review is not old_review
+    assert calls[0][0].run_identity == original()[0].run_identity
+    assert calls[0][1]["current_manifest"] == original()[1]["current_manifest"]
+    release.set()
+    reader.join(10)
+    assert not reader.is_alive()
+    current = next(item for item in result["snapshot"].slots if item.slot == slot)
+    assert current.intake_precondition is not None
+    assert current.evidence_state == "MISSING"
+    finish_reconciliation.set()
+    reconciler.join(10)
+    assert not reconciler.is_alive()
+
+    query = urlencode({"slot": slot.value, "expected": current.intake_precondition})
+    status, _, body = _request(
+        server, "POST", "/swing/mcx-context/answer?" + query,
+        headers=empty,
+    )
+    assert status == 303, body
+    history = workflow.intake_store.context_acceptance_history(DAY, slot)
+    assert len(history) == 1
+    assert len(history[0].receipts) == 1
+
+    replay = next(item for item in workflow.snapshot().slots if item.slot == slot)
+    assert replay.intake_precondition is not None
+    replay_query = urlencode({"slot": slot.value, "expected": replay.intake_precondition})
+    status, _, body = _request(
+        server, "POST", "/swing/mcx-context/answer?" + replay_query,
+        headers=empty,
+    )
+    assert status == 303, body
+    replay_history = workflow.intake_store.context_acceptance_history(DAY, slot)
+    assert replay_history == history
+    assert len(replay_history[0].receipts) == 1
+
+
+@pytest.mark.parametrize("changed_authority", ("run", "manifest", "pointer", "request"))
+def test_mcx_answer_rejects_real_authority_change(
+    intake_browser, checkpoint, changed_authority,
+):
+    server, workflow, transport, _, headers = intake_browser
+    empty = dict(headers, **{"Content-Type": "application/x-www-form-urlencoded"})
+    slot = McxContextSlot.MORNING
+    for family in McxContextFamily:
+        current = next(item for item in workflow.snapshot().slots if item.slot == slot)
+        workflow.mutate_intake(
+            slot, "STAGE",
+            ReviewMutationPrecondition.create(json.loads(current.intake_precondition)),
+            family=family, content_type="image/png", payload=PNG,
+        )
+    current = next(item for item in workflow.snapshot().slots if item.slot == slot)
+    workflow.mutate_intake(
+        slot, "GENERATE",
+        ReviewMutationPrecondition.create(json.loads(current.intake_precondition)),
+    )
+    stale = next(item for item in workflow.snapshot().slots if item.slot == slot)
+    assert stale.intake_precondition is not None
+
+    if changed_authority == "run":
+        publication, predecessor, bindings, _ = checkpoint
+        token, values = prepared(publication, predecessor, bindings, 2)
+        bundle = publication.publish(
+            token, publication.prepare(token, **values),
+            values["mtf"].observed_at,
+        )
+        assert bundle is not None
+        server.application._SwingOpportunitiesApplication__install_committed(bundle)
+    elif changed_authority == "manifest":
+        publication = checkpoint[0]
+        manifest = publication.current().reference
+        path = publication.root / manifest["path"]
+        path.write_bytes(path.read_bytes() + b"\n")
+    else:
+        current = next(item for item in workflow.snapshot().slots if item.slot == slot)
+        operation = "STAGE" if changed_authority == "pointer" else "GENERATE"
+        values = ({"family": McxContextFamily.METALS,
+                   "content_type": "image/png", "payload": PNG + b"\n"}
+                  if operation == "STAGE" else {})
+        workflow.mutate_intake(
+            slot, operation,
+            ReviewMutationPrecondition.create(json.loads(current.intake_precondition)),
+            **values,
+        )
+
+    query = urlencode({"slot": slot.value, "expected": stale.intake_precondition})
+    status, _, body = _request(
+        server, "POST", "/swing/mcx-context/answer?" + query,
+        headers=empty,
+    )
+    assert status == 409
+    assert body == "REVIEW_BINDING_STALE"
+    assert workflow.intake_store.context_acceptance_history(DAY, slot) == ()
+
+
 def test_configured_context_cannot_use_unguarded_historical_mutation_entrypoints(intake_browser, tmp_path):
     from kronos.swing.v1.mcx_supporting_context import McxContextFamily
     from kronos.swing.v1.review_evidence_binding import ReviewEvidenceError
@@ -1558,6 +1726,10 @@ def _page_load_server(workflow, state):
     server = create_browser_server(application, port=0, native_review=workflow.native_review,
                                    visual_v3_live=workflow.live)
     server.native_intake = workflow
+    workflow.configure_page_revision(lambda projection:
+        server._derive_swing_projection_revision(native_intake_projection=projection))
+    application.register_analysis_reconciliation(server.reconcile_swing,
+        workflow.successor_page_transition, review_owner=workflow)
     original = workflow.application.opportunities_bundle_projection
     def projection():
         _, native, continuity, status = original()
@@ -1565,6 +1737,137 @@ def _page_load_server(workflow, state):
     application.opportunities_bundle_projection = projection
     assert workflow.prepare_page_state()
     return server
+
+
+def _review_content_metadata(root):
+    from hashlib import sha256
+    return {str(path.relative_to(root)): (
+        path.stat().st_mode, path.stat().st_ino,
+        path.stat().st_mtime_ns, path.stat().st_ctime_ns,
+        sha256(path.read_bytes()).hexdigest() if path.is_file() else None,
+    ) for path in (root, *root.rglob("*"))}
+
+
+@pytest.mark.parametrize("native_intake", ["NSE"], indirect=True)
+@pytest.mark.parametrize("release_during_stage", (True, False))
+def test_fresh_review_after_nse_mcx_pastes_fences_older_reconciliation(
+    native_intake, tmp_path, monkeypatch, release_during_stage,
+):
+    import html
+    import json
+    import re
+    from threading import Event
+
+    workflow = native_intake
+    state, _, _ = _page_load_population(workflow, tmp_path, 12)
+    server = _page_load_server(workflow, state)
+    application = server.application
+    original_bundle = workflow.application.opportunities_bundle_projection
+
+    def bundle():
+        snapshot, native, continuity, status = original_bundle()
+        status["reconciliation_unavailable"] = (
+            application._SwingOpportunitiesApplication__reconciliation_failure
+            or workflow.reconciliation_snapshot().reconciliation_failure)
+        return snapshot, native, continuity, status
+
+    monkeypatch.setattr(workflow.application, "opportunities_bundle_projection", bundle)
+    entered, release = Event(), Event()
+    projection = workflow.prepared_page_projection
+    paused = []
+
+    def pause_older(generation):
+        if not paused:
+            paused.append(generation)
+            entered.set()
+            assert release.wait(20)
+        return projection(generation)
+
+    monkeypatch.setattr(workflow, "prepared_page_projection", pause_older)
+    older = Thread(target=application.reconcile_committed_analysis)
+    serving = Thread(target=server.serve_forever, daemon=True)
+    serving.start()
+    older.start()
+    authority = f"127.0.0.1:{server.server_port}"
+    headers = {"Host": authority, "Origin": "http://" + authority,
+               "Content-Type": "image/png", "Accept": "application/json"}
+    stage = workflow.stage
+
+    def stage_then_finish_older(*args, **kwargs):
+        result = stage(*args, **kwargs)
+        if release_during_stage:
+            release.set()
+            older.join(10)
+            assert not older.is_alive()
+        return result
+
+    monkeypatch.setattr(workflow, "stage", stage_then_finish_older)
+    try:
+        assert entered.wait(20)
+        rows = workflow.snapshot()["rows"]
+        # MCX first exercises both pointers in the atomic six-panel selection.
+        names = sorted(rows, key=lambda row: (row["market"] != "MCX", row["instrument"]))
+        for count, row in enumerate(names, 1):
+            status, _, page = _request(server, "GET", "/swing/v1-review")
+            assert status == 200
+            card = page.split("<h3>" + row["instrument"] + "</h3>", 1)[1].split("</article>", 1)[0]
+            url = html.unescape(re.search(r'data-upload-url="([^"]+)"', card).group(1))
+            status, _, body = _request(server, "POST", url, headers=headers, body=PNG)
+            assert status == 200, body
+            assert json.loads(body)["outcome"] == "CHART_RECEIVED"
+            release.set()
+            older.join(10)
+            assert not older.is_alive()
+            assert not application._SwingOpportunitiesApplication__reconciliation_failure
+            assert not workflow.reconciliation_snapshot().reconciliation_failure
+            assert server.swing_projection_revision() == workflow.reconciliation_snapshot().revision
+            # Subsequent explicit preparation must not consume an old failure latch.
+            assert workflow.prepare_page_state()
+            before = _review_content_metadata(tmp_path)
+            for _ in range(2):
+                status, _, page = _request(server, "GET", "/swing/v1-review")
+                assert status == 200, page
+                market_counts = re.findall(
+                    r'<h2>(NSE|MCX) REVIEW</h2><p>[^<]*Charts complete '
+                    r'<span data-chart-complete-count>(\d+)</span>',
+                    page,
+                )
+                assert market_counts == [
+                    (market, str(sum(item["market"] == market for item in names[:count])))
+                    for market in ("NSE", "MCX")
+                ]
+                rendered_page = re.sub(r"(?is)<script\b[^>]*>.*?</script\s*>", "", page)
+                assert "REVIEW_BINDING_STALE" not in rendered_page
+                assert _request(server, "GET", "/status")[0] == 200
+                assert _request(server, "GET", "/runtime/status")[0] == 200
+            assert _review_content_metadata(tmp_path) == before
+            # The pre-paste envelope must remain stale; no second chart is admitted.
+            status, _, body = _request(server, "POST", url, headers=headers, body=PNG)
+            assert status == 409 and json.loads(body)["reason"] == "REVIEW_BINDING_STALE"
+            assert _review_content_metadata(tmp_path) == before
+    finally:
+        release.set()
+        older.join(20)
+        server.shutdown()
+        serving.join(5)
+        server.server_close()
+    assert not older.is_alive() and not serving.is_alive()
+
+
+@pytest.mark.parametrize("native_intake", ["NSE"], indirect=True)
+def test_late_prepared_page_cannot_erase_newer_chart_generation(native_intake):
+    workflow = native_intake
+    older = workflow.prepare_page_generation()
+    instrument = workflow._requirements("NSE")[0].canonical_instrument
+    workflow.stage("NSE", instrument, "NATIVE_NSE", workflow.expected("NSE", (instrument,)),
+                   image=PNG, content_type="image/png")
+    assert workflow.prepare_page_state()
+    assert not workflow.publish_page_generation(older)
+    assert workflow.page_state_status()["state"] == "READY"
+    with workflow.page_response() as prepared:
+        row = next(row for row in workflow.snapshot(_response=prepared)["rows"]
+                   if row["instrument"] == instrument)
+        assert row["selected"]["NATIVE_NSE"] is not None
 
 
 @pytest.mark.parametrize("successor_preparation", ("success", "failure"))
@@ -2296,3 +2599,77 @@ def test_swing_answer_rejection_does_not_claim_no_change_after_pointer_transitio
         server.shutdown()
         server.server_close()
         thread.join(timeout=3)
+
+
+@pytest.mark.parametrize("native_intake", ["NSE"], indirect=True)
+def test_review_slot_keeps_current_failure_and_get_does_not_repair(native_intake, tmp_path):
+    workflow = native_intake
+    assert workflow.prepare_page_state()
+    with pytest.raises(ValueError, match="REVIEW_BINDING_STALE"):
+        with workflow.reconciliation_scope():
+            raise ValueError("REVIEW_BINDING_STALE")
+    failed = workflow.reconciliation_snapshot()
+    assert failed.reconciliation_failure and failed.page is None
+    before = _review_content_metadata(tmp_path)
+    with pytest.raises(ValueError):
+        with workflow.page_response():
+            pytest.fail("a failed current scope must not render")
+    assert workflow.reconciliation_snapshot() is failed
+    assert _review_content_metadata(tmp_path) == before
+    # Allocating a new local preparation must not erase a broad failure.
+    workflow.prepare_page_state()
+    assert workflow.reconciliation_snapshot().reconciliation_failure
+
+
+@pytest.mark.parametrize("native_intake", ["NSE"], indirect=True)
+def test_review_publication_lock_is_leaf_during_prepare_and_mutation(native_intake, monkeypatch):
+    from contextlib import contextmanager
+    workflow = native_intake
+    original_bundle = workflow.application.opportunities_bundle_projection
+    original_guard = workflow.application.publication_mutation_guard
+    checked = []
+
+    def assert_leaf():
+        assert workflow._page_state_lock.acquire(blocking=False)
+        workflow._page_state_lock.release()
+        checked.append(True)
+
+    def bundle():
+        assert_leaf()
+        return original_bundle()
+
+    @contextmanager
+    def guard():
+        assert_leaf()
+        with original_guard() as snapshot:
+            yield snapshot
+
+    monkeypatch.setattr(workflow.application, "opportunities_bundle_projection", bundle)
+    monkeypatch.setattr(workflow.application, "publication_mutation_guard", guard)
+    workflow.configure_page_revision(lambda _projection: (assert_leaf() or "revision"))
+    assert workflow.prepare_page_state()
+    name = workflow._requirements("NSE")[0].canonical_instrument
+    workflow.stage("NSE", name, "NATIVE_NSE", workflow.expected("NSE", (name,)),
+                   image=PNG, content_type="image/png")
+    assert workflow.prepare_page_state()
+    assert workflow.page_revision() == "revision"
+    assert checked
+
+
+@pytest.mark.parametrize("native_intake", ["NSE"], indirect=True)
+def test_review_writer_invalidates_before_commit_and_preserves_rejected_bytes(native_intake):
+    workflow = native_intake
+    assert workflow.prepare_page_state()
+    old = workflow.prepare_page_generation()
+    slot = workflow.reconciliation_snapshot()
+    # A write reservation itself conveys no authority and writes no evidence.
+    with workflow._page_input_write():
+        assert not workflow.publish_page_generation(old)
+        with pytest.raises(ValueError, match="REVIEW_BINDING_STALE"):
+            with workflow.page_response():
+                pytest.fail("in-flight pointers cannot be rendered")
+    current = workflow.reconciliation_snapshot()
+    assert current.page is slot.page and current.failure == slot.failure
+    with workflow.page_response():
+        pass
+    assert not workflow.publish_page_generation(old)

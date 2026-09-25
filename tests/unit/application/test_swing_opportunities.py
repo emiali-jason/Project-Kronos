@@ -43,6 +43,39 @@ from tests.unit.swing.test_run_publication import checkpoint, later, scenario
 NOW = datetime(2026, 8, 11, 4, 30, tzinfo=UTC)
 
 
+@pytest.mark.parametrize("older_fails", (True, False))
+def test_reconciliation_completion_cannot_replace_newer_result(older_fails):
+    application = app.SwingOpportunitiesApplication(_Provider)
+    entered, release = Event(), Event()
+    calls = []
+
+    def reconcile():
+        calls.append(len(calls))
+        older = len(calls) == 1
+        if older:
+            entered.set()
+            assert release.wait(10)
+        if older == older_fails:
+            raise ValueError("REVIEW_BINDING_STALE")
+
+    application.register_analysis_reconciliation(reconcile)
+    worker = Thread(target=application.reconcile_committed_analysis)
+    worker.start()
+    try:
+        assert entered.wait(10)
+        # Status does not wait on either reconciliation's work.
+        application.snapshot()
+        application.reconcile_committed_analysis()
+        expected_failure = not older_fails
+        assert application.opportunities_bundle_projection()[3]["reconciliation_unavailable"] is expected_failure
+    finally:
+        release.set()
+        worker.join(10)
+        application.close()
+    assert not worker.is_alive()
+    assert application.opportunities_bundle_projection()[3]["reconciliation_unavailable"] is expected_failure
+
+
 def test_operational_book_date_is_derived_from_domain_008() -> None:
     observed = datetime(2026, 8, 25, 5, 0, tzinfo=UTC)
     application = app.SwingOpportunitiesApplication(
@@ -1322,3 +1355,44 @@ def test_eligible_projection_uses_existing_same_instrument_grouping_reason() -> 
         "Attention eligible; not selected because its canonical instrument is already "
         "represented by a higher-ranked eligible plan."
     )
+
+
+
+def test_review_owner_access_is_outside_application_lock():
+    from contextlib import contextmanager
+    from types import SimpleNamespace
+    application = app.SwingOpportunitiesApplication(_Provider)
+    outcome = SimpleNamespace(reconciliation_failure=False)
+    observations = []
+
+    def check_owner_access():
+        acquired = Event()
+        def read_status():
+            application.snapshot()
+            acquired.set()
+        worker = Thread(target=read_status)
+        worker.start()
+        try:
+            assert acquired.wait(2), "application lock held across Review owner call"
+        finally:
+            worker.join(2)
+        assert not worker.is_alive()
+        observations.append(True)
+
+    @contextmanager
+    def scope():
+        check_owner_access()
+        yield
+
+    def snapshot():
+        check_owner_access()
+        return outcome
+
+    owner = SimpleNamespace(reconciliation_scope=scope, reconciliation_snapshot=snapshot)
+    application.register_analysis_reconciliation(lambda: None, review_owner=owner)
+    try:
+        application.reconcile_committed_analysis()
+        assert not application.opportunities_bundle_projection()[3]["reconciliation_unavailable"]
+        assert observations
+    finally:
+        application.close()

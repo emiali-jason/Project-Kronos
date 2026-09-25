@@ -662,7 +662,9 @@ class KronosBrowserServer(ThreadingHTTPServer):
             self._derive_swing_projection_revision()
         )
         if self.native_intake is not None:
-            self.native_intake.prepare_page_state()
+            self.native_intake.configure_page_revision(
+                lambda projection: self._derive_swing_projection_revision(
+                    native_intake_projection=projection))
         self.application.register_analysis_reconciliation(
             self.reconcile_swing,
             (
@@ -670,7 +672,10 @@ class KronosBrowserServer(ThreadingHTTPServer):
                 if self.native_intake is None
                 else self.native_intake.successor_page_transition
             ),
+            review_owner=self.native_intake,
         )
+        if self.native_intake is not None:
+            self.native_intake.prepare_page_state()
         if self.native_intake is not None:
             runtime_root = bulk_import_root
             if runtime_root is None:
@@ -822,10 +827,11 @@ class KronosBrowserServer(ThreadingHTTPServer):
     def _complete_bulk_import(self) -> None:
         """Publish projections only after the durable application work completes."""
         try:
-            self.trade_window.restore(self.visual_v3.completed_snapshot())
-            if self.native_intake is not None:
-                self.native_intake.prepare_page_state()
-            self.refresh_swing_projection_revision()
+            scope = (nullcontext() if self.native_intake is None else
+                     self.native_intake.reconciliation_scope())
+            with scope:
+                self.trade_window.restore(self.visual_v3.completed_snapshot())
+                self.refresh_swing_projection_revision()
         except (OSError, TypeError, ValueError):
             _LOG.warning("swing_bulk_import projection_refresh_unavailable")
 
@@ -834,6 +840,13 @@ class KronosBrowserServer(ThreadingHTTPServer):
         return self.progression_watches.snapshot()
 
     def reconcile_swing(self):
+        """Fence the entire reconciliation, including work before preparation."""
+        scope = (nullcontext() if self.native_intake is None else
+                 self.native_intake.reconciliation_scope())
+        with scope:
+            self._reconcile_swing_prepared()
+
+    def _reconcile_swing_prepared(self):
         """Explicit committed-analysis or authorized downstream mutation boundary."""
         run = self.application.native_discovery_run()
         facts = self.application.mtf_fact_snapshot()
@@ -856,6 +869,8 @@ class KronosBrowserServer(ThreadingHTTPServer):
         if not self.native_intake.publish_page_generation(generation):
             failure = self.native_intake.page_state_status()["failure"]
             raise ValueError(failure or "SWING_PAGE_PREPARATION_UNAVAILABLE")
+        # Legacy field is retained for compositions without an intake owner.
+        # Configured Review readers use the capsule, not this independent field.
         with self._swing_projection_lock:
             self._swing_projection_revision_value = revision
 
@@ -1004,7 +1019,10 @@ class KronosBrowserServer(ThreadingHTTPServer):
         """Compose current sources with durable Sponsor lifecycle and actual WS."""
 
         watches = project_swing_notification_workspace(self.progression_snapshot())
-        _, run = self.application.opportunities_projection()
+        try:
+            run, _ = self.application.current_run_control_authority()
+        except (OSError, ValueError):
+            run = None
         websocket = websocket_presentation_state(
             monitoring_required=self.swing_monitoring_hub.subscription_count > 0,
             connection_state=self.swing_monitoring_hub.connection_state,
@@ -1148,12 +1166,19 @@ class KronosBrowserServer(ThreadingHTTPServer):
     def swing_projection_revision(self) -> str:
         """Return the last atomically published Swing presentation revision."""
 
+        if self.native_intake is not None:
+            return self.native_intake.page_revision()
         with self._swing_projection_lock:
             return self._swing_projection_revision_value
 
     def refresh_swing_projection_revision(self) -> str:
         """Publish a revision only after a governed state-changing route succeeds."""
 
+        if self.native_intake is not None:
+            if not self.native_intake.prepare_page_state():
+                raise ValueError(self.native_intake.page_state_status()["failure"]
+                                 or "SWING_PAGE_PREPARATION_UNAVAILABLE")
+            return self.native_intake.page_revision()
         revision = self._derive_swing_projection_revision()
         with self._swing_projection_lock:
             self._swing_projection_revision_value = revision
@@ -2465,7 +2490,9 @@ class _BrowserHandler(BaseHTTPRequestHandler):
         try:
             self._swing_post_failed = False
             self._dispatch_post(path)
-            if (path.startswith("/swing/") and path not in {"/swing/analysis", "/swing/reconcile"}
+            if (path.startswith("/swing/") and path not in {
+                    "/swing/analysis", "/swing/reconcile",
+                    "/swing/v1/native-chart", "/swing/v1/native-chart/remove"}
                     and not self._swing_post_failed):
                 # Read requests never enter this explicit mutation boundary.
                 self.server.application.reconcile_committed_analysis()
@@ -4180,7 +4207,7 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             raise ValueError("NATIVE_CHART_SUBJECT_INVALID") from error
 
     def _native_intake_mutation(self, operation):
-        if operation == "STAGE":
+        if operation in {"STAGE", "REMOVE"}:
             # The chart write and successor-page publication form one Browser
             # operation. A second candidate waits for the new page generation.
             with self.server._native_chart_stage_lock:
