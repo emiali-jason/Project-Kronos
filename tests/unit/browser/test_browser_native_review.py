@@ -1580,7 +1580,7 @@ def test_analysis_details_current_v2_retains_unacknowledged_continuity_warning(
         route = f"/swing/analysis-details/{run.run_identity}/{probable.canonical_instrument}"
         code, _, body = _request(server, "GET", route)
         assert code == 200
-        assert "MANUAL REVIEW REQUIRED · UNRESOLVED CONTINUITY BREAK" in body
+        assert "Manual review required — unresolved continuity break" in body
         assert "KR-370 V2 ANALYTICAL PROMOTION" in body
         assert "ACKNOWLEDGE" not in body
         assert _inventory(tmp_path) == before

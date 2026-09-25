@@ -2,6 +2,7 @@ import copy
 from dataclasses import replace
 from pathlib import Path
 from threading import Thread
+from types import SimpleNamespace
 
 import pytest
 
@@ -25,6 +26,7 @@ from kronos.browser.swing_v3_presentation import (
     present_visual_v3_review,
 )
 from kronos.browser.views import (
+    _swing_continuity_warning,
     _v2_card_summary,
     _v2_promotion_detail,
     _v2_state_class,
@@ -339,18 +341,28 @@ def test_current_eight_patterns_show_evaluator_values_without_changing_outcome(
     )._validate_nse(confirmation["nse_binding"], source)
     record = create_record(source=source, criteria=criterion_values,
                            confirmation=confirmation, created_at=NOW)
-    explanations = tuple(
-        V2CriterionExplanation(
-            item.identity.value, item.state.value, item.reason,
-            (f"{extension_atr:g} ATR14 structural extension" if index == 4 else item.reason),
-            ("completed 1H structural extension <= 2 ATR14" if index == 4
-             else "governed condition"),
-            ((("Structural extension", extension_atr, "ATR14"),
-              ("Excess over limit", max(0.0, extension_atr - 2.0), "ATR14"))
-             if index == 4 else ()),
-            "1H", NOW, "next governed completed 1H observation",
-        ) for index, item in enumerate(criterion_values)
-    )
+    explanations = []
+    for index, item in enumerate(criterion_values):
+        observed, required, metrics = item.reason, "governed condition", ()
+        if index == 1:
+            observed = "completed close 206"
+            required = "completed 1H close < BC 204.72"
+            metrics = (
+                ("Completed close", 206.0, "PRICE"),
+                ("CPR threshold", 204.72, "PRICE"),
+                ("Gap to condition", 1.28, "PRICE"),
+            )
+        elif index == 4:
+            observed = f"{extension_atr:g} ATR14 structural extension"
+            required = "completed 1H structural extension <= 2 ATR14"
+            metrics = (
+                ("Structural extension", extension_atr, "ATR14"),
+                ("Excess over limit", max(0.0, extension_atr - 2.0), "ATR14"),
+            )
+        explanations.append(V2CriterionExplanation(
+            item.identity.value, item.state.value, item.reason, observed, required,
+            metrics, "1H", NOW, "next governed completed 1H observation",
+        ))
     contexts = tuple(
         "SUPPORTIVE_CONTEXT" if state == "UNDERPERFORMING" else "CONTRADICTORY_CONTEXT"
         for state in states
@@ -368,7 +380,7 @@ def test_current_eight_patterns_show_evaluator_values_without_changing_outcome(
     explanation = V2ReadinessExplanation(
         source["native_run_identity"], instrument, source["native_assessment_sha256"],
         record.value["promotion_state"], record.value["evaluation_disposition"],
-        explanations, record.value["confirmation"]["state"], horizons,
+        tuple(explanations), record.value["confirmation"]["state"], horizons,
     )
     before = record.payload
     view = present_v2_promotion(record, explanation=explanation)
@@ -386,15 +398,37 @@ def test_current_eight_patterns_show_evaluator_values_without_changing_outcome(
 
     assert record.payload == before
     assert view.classification == expected
-    assert "WHAT MUST CHANGE" not in html  # the compact card owns this heading
-    assert "WHAT MUST CHANGE" in card
+    assert "WHAT MUST CHANGE" not in html and "WHAT MUST CHANGE" not in card
+    assert "v2-readiness-lines" in card
+    assert "K5_NON_EXTENSION" not in card
+    assert NOW.isoformat() not in card
     assert f"{extension_atr:g} ATR14" in html
     assert "Next valid check" in html
     assert "Numeric threshold unavailable by policy" in html
+    if instrument == "ADANIENT":
+        assert ("1H structural extension must be ≤2.00 ATR. Current 5.93 ATR — "
+                "3.93 ATR over.") in card
+    if instrument == "RVNL":
+        assert ("Need a completed 1H close below ₹204.72. Last close ₹206.00 — "
+                "₹1.28 above.") in card
     if record.value["confirmation"]["state"] == "WITHHELD":
         assert "CONTRADICTORY CONTEXT" in html and "Numeric gap 1%" in html
+        assert "v2-confirmation-line" in card
+        assert "confirmation is contradictory context" in card
     else:
         assert "CONFIRMATION ESTABLISHED" in html
+
+
+def test_continuity_hold_is_a_separate_plain_language_warning() -> None:
+    warning = _swing_continuity_warning(SimpleNamespace(
+        reason="UNRESOLVED_CONTINUITY_BREAK",
+        qualification=None,
+        disposition=SimpleNamespace(value="MANUAL_REVIEW_REQUIRED"),
+    ))
+    assert warning == (
+        '<p class="swing-card-warning">Manual review required — '
+        'unresolved continuity break</p>'
+    )
 
 
 def test_v2_index_and_mcx_reference_are_separate_from_nifty() -> None:

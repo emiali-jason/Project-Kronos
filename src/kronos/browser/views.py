@@ -228,7 +228,7 @@ a{color:inherit;text-decoration:none}.app{display:grid;grid-template-columns:218
 @media(max-width:1050px){.status-grid{grid-template-columns:repeat(3,1fr)}.strategy-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.panels,.workspace{grid-template-columns:1fr}.attention-grid{grid-template-columns:1fr}.step32-grid{grid-template-columns:1fr}.step32-block{border-left:0;border-top:1px solid var(--line);padding:10px 0 0}.step32-block:first-child{border-top:0;padding-top:0}.market-panel{min-height:260px}}
 @media(min-width:761px){.panels{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:760px){.app{grid-template-columns:1fr}.sidebar{position:static;height:auto}.nav{grid-template-columns:repeat(2,1fr)}.system{display:none}.topbar{height:auto;padding:18px;align-items:flex-start;gap:14px}.tabs{overflow:auto;padding:0 18px}.content{padding:18px}.status-grid,.strategy-grid{grid-template-columns:1fr}.trade-grid,.plan-strip{grid-template-columns:1fr 1fr}.kite{flex-wrap:wrap;justify-content:flex-end}.chart-intake-list,.native-chart-grid{grid-template-columns:1fr}.dashboard-alert{grid-template-columns:1fr}.dashboard-alert-state{text-align:left}.swing-primary-facts,.swing-timeframe-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.swing-result-row{align-items:flex-start;flex-direction:column}.swing-result-row span:last-child{text-align:left}.swing-review-readiness{align-items:flex-start;flex-direction:column}.native-opportunity .summary-footer{align-items:flex-start}.native-opportunity-actions{justify-content:flex-start}}
-.v2-promotion{min-width:0;max-width:100%;border:1px solid #31506a;border-radius:9px;background:#0b2030;padding:10px;margin:9px 0;overflow-wrap:anywhere}.v2-promotion h3{font-size:12px;margin:0 0 7px;color:#a5d9ff}.v2-promotion p{margin:5px 0;font-size:11px}.v2-promotion-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}.v2-promotion-grid>div{min-width:0;border:1px solid #27445d;border-radius:6px;padding:6px}.v2-promotion-grid span{display:block;color:var(--muted);font-size:9px}.v2-promotion-grid strong{display:block;font-size:11px;overflow-wrap:anywhere}.v2-criterion-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px;list-style:none;padding:0;margin:8px 0}.v2-criterion-list li{min-width:0;border:1px solid #27445d;border-radius:6px;padding:6px;font-size:10px;overflow-wrap:anywhere}.v2-readiness-explanation{border-top:1px solid #27445d;margin-top:5px;padding-top:5px}.v2-readiness-explanation span{display:block;margin-top:2px}.v2-confirmation-explanation p{border:1px solid #27445d;border-radius:6px;padding:6px}.v2-confirmation{color:#9fd2ff}.v2-downstream{color:#ffd57a;font-weight:800}.v2-card-summary{display:block;font-size:10px;color:#b9d9ef;overflow-wrap:anywhere}.strategy-group small{display:block;color:#b9d9ef;font-size:9px;overflow-wrap:anywhere}@media(max-width:760px){.v2-promotion-grid,.v2-criterion-list{grid-template-columns:minmax(0,1fr)}}
+.v2-promotion{min-width:0;max-width:100%;border:1px solid #31506a;border-radius:9px;background:#0b2030;padding:10px;margin:9px 0;overflow-wrap:anywhere}.v2-promotion h3{font-size:12px;margin:0 0 7px;color:#a5d9ff}.v2-promotion p{margin:5px 0;font-size:11px}.v2-promotion-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}.v2-promotion-grid>div{min-width:0;border:1px solid #27445d;border-radius:6px;padding:6px}.v2-promotion-grid span{display:block;color:var(--muted);font-size:9px}.v2-promotion-grid strong{display:block;font-size:11px;overflow-wrap:anywhere}.v2-criterion-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px;list-style:none;padding:0;margin:8px 0}.v2-criterion-list li{min-width:0;border:1px solid #27445d;border-radius:6px;padding:6px;font-size:10px;overflow-wrap:anywhere}.v2-readiness-explanation{border-top:1px solid #27445d;margin-top:5px;padding-top:5px}.v2-readiness-explanation span{display:block;margin-top:2px}.v2-confirmation-explanation p{border:1px solid #27445d;border-radius:6px;padding:6px}.v2-confirmation{color:#9fd2ff}.v2-downstream{color:#ffd57a;font-weight:800}.v2-card-summary{display:block;font-size:10px;line-height:1.45;color:#b9d9ef;overflow-wrap:anywhere}.v2-readiness-lines{display:grid;gap:5px;margin-top:7px;min-width:0}.v2-readiness-lines p{margin:0;border-left:2px solid #31506a;padding-left:7px;font-size:11px;line-height:1.45;color:#d5e7f3;overflow-wrap:anywhere}.v2-readiness-lines .v2-confirmation-line{border-left-color:var(--amber);color:#ffdca0}.strategy-group small{display:block;color:#b9d9ef;font-size:9px;overflow-wrap:anywhere}@media(max-width:760px){.v2-promotion-grid,.v2-criterion-list{grid-template-columns:minmax(0,1fr)}}
 """
 
 
@@ -674,10 +674,15 @@ def _swing_continuity_warning(row) -> str:  # type: ignore[no-untyped-def]
     disposition = getattr(row, "disposition", None)
     disposition_value = "" if disposition is None else disposition.value
     if disposition_value == "MANUAL_REVIEW_REQUIRED" or reason:
-        message = disposition_value or "CONTINUITY WARNING"
-        if reason:
-            message += " · " + reason
-        return '<p class="swing-card-warning">' + escape(message.replace("_", " ")) + '</p>'
+        if disposition_value == "MANUAL_REVIEW_REQUIRED":
+            message = "Manual review required"
+            if reason:
+                message += " — " + reason.replace("_", " ").lower()
+        else:
+            message = "Continuity warning"
+            if reason:
+                message += " — " + reason.replace("_", " ").lower()
+        return '<p class="swing-card-warning">' + escape(message) + '</p>'
     return ""
 
 
@@ -1063,12 +1068,16 @@ def _v2_card_summary(value: Kr370V2SponsorPromotionPresentation) -> str:
               "CONFIRMATION " + value.confirmation)
     if value.disposition != "EVALUATED":
         detail = " · ".join(_v2_label(item) for item in value.reasons)
-    advance = _v2_advance_summary(value)
+    advance = _v2_advance_lines(value)
     return ('<small class="v2-card-summary"><strong>' + escape(value.score)
             + ' K1–K5 SATISFIED</strong> · ' + escape(_v2_label(value.disposition))
             + '<br>' + escape(detail)
-            + ('' if advance is None else '<br><strong>WHAT MUST CHANGE</strong> · '
-               + escape(advance)) + '</small>'
+            + '</small>'
+            + ('' if not advance else '<div class="v2-readiness-lines">'
+               + ''.join('<p class="' + ('v2-confirmation-line' if confirmation else
+                                          'v2-criterion-line') + '">'
+                         + escape(line) + '</p>' for line, confirmation in advance)
+               + '</div>')
             + ('<small class="v2-card-summary v2-downstream">'
                'DOWNSTREAM — MCX STEP-31 NOT COMMISSIONED</small>'
                if value.market == "MCX" else ''))
@@ -1142,38 +1151,85 @@ def _v2_metric(item, label: str):  # type: ignore[no-untyped-def]
     return next(((value, unit) for name, value, unit in item.metrics if name == label), None)
 
 
-def _v2_advance_summary(value: Kr370V2SponsorPromotionPresentation) -> str | None:
+def _v2_plain_number(value: float, unit: str) -> str:
+    if unit == "PRICE":
+        return f"₹{value:,.2f}"
+    if unit == "ATR14":
+        return f"{value:.2f} ATR"
+    if unit == "PERCENT":
+        return f"{value:+.2f}%"
+    return f"{value:.2f}"
+
+
+def _v2_criterion_plain_line(item, direction: str) -> str:  # type: ignore[no-untyped-def]
+    if item.identity == "K1_1H_DIRECTIONAL_PROGRESSION":
+        return ("Need completed 1H structure to be progressing. Current: "
+                + _v2_label(item.observed_state).lower() + ".")
+    if item.identity == "K2_1H_CPR_ACCEPTANCE":
+        close = _v2_metric(item, "Completed close")
+        threshold = _v2_metric(item, "CPR threshold")
+        gap = _v2_metric(item, "Gap to condition")
+        if close is not None and threshold is not None and gap is not None:
+            comparison = "above" if direction == "LONG" else "below"
+            location = "below" if direction == "LONG" else "above"
+            return ("Need a completed 1H close " + comparison + " "
+                    + _v2_plain_number(*threshold) + ". Last close "
+                    + _v2_plain_number(*close) + " — " + _v2_plain_number(*gap)
+                    + " " + location + ".")
+        return "Need a completed 1H close beyond the governed CPR boundary. Numeric input unavailable."
+    if item.identity == "K3_IMMEDIATE_PATH_CLEARANCE":
+        distance = _v2_metric(item, "Obstacle distance")
+        gap = _v2_metric(item, "Gap beyond blocking band")
+        if distance is not None and gap is not None:
+            threshold = distance[0] + gap[0]
+            return ("Nearest adverse obstacle must be more than " + f"{threshold:.2f} ATR away. "
+                    + "Current " + _v2_plain_number(*distance) + " — "
+                    + _v2_plain_number(*gap) + " short.")
+        return "Need the immediate 1H path to be clear. Exact numeric distance is unavailable."
+    if item.identity == "K4_SETUP_QUALITY":
+        return ("Need clean or orderly 1H setup quality. Current: "
+                + _v2_label(item.observed_state).lower() + ".")
+    if item.identity == "K5_NON_EXTENSION":
+        current = _v2_metric(item, "Structural extension")
+        excess = _v2_metric(item, "Excess over limit")
+        if current is not None and excess is not None:
+            return ("1H structural extension must be ≤2.00 ATR. Current "
+                    + _v2_plain_number(*current) + " — "
+                    + _v2_plain_number(*excess) + " over.")
+        return "Need 1H structural extension at or below 2.00 ATR. Numeric input unavailable."
+    return "Required readiness condition is not yet satisfied. Numeric input unavailable."
+
+
+def _v2_advance_lines(
+    value: Kr370V2SponsorPromotionPresentation,
+) -> tuple[tuple[str, bool], ...]:
     explanation = value.readiness_explanation
     if explanation is None:
-        return ("exact numeric explanation unavailable from the current bound inputs"
-                if value.market == "NSE" and
-                value.confirmation != "NOT REQUIRED BY ASSET CLASS" else None)
-    parts = []
+        return (("Exact numeric explanation is unavailable from the current bound inputs.", False),
+                ) if value.market == "NSE" and value.confirmation != (
+                    "NOT REQUIRED BY ASSET CLASS") else ()
+    parts: list[tuple[str, bool]] = []
     for item in explanation.criteria:
         if item.state == "SATISFIED":
             continue
-        gap = (_v2_metric(item, "Excess over limit") or
-               _v2_metric(item, "Gap to condition") or
-               _v2_metric(item, "Gap beyond blocking band"))
-        text = item.identity.split()[0] + " · " + item.observed_state + " → " + item.required_condition
-        if gap is not None and gap[0] > 0.0:
-            text += " · numeric gap " + _v2_number(*gap)
-        elif not item.metrics:
-            text += " · numeric threshold unavailable by policy"
-        parts.append(text)
+        parts.append((_v2_criterion_plain_line(item, value.direction), False))
     if explanation.confirmation_state != "ESTABLISHED":
         withheld = [item for item in explanation.confirmation_horizons
                     if item.directional_context != "SUPPORTIVE_CONTEXT"]
-        parts.extend(
-            "Nifty " + item.timeframe + " · "
-            + ("numeric input unavailable"
-               if item.relative_return_pct is None or item.numeric_gap_pct is None else
-               "relative " + _v2_number(item.relative_return_pct, "PERCENT") + " → "
-               + item.required_condition + " · numeric gap "
-               + _v2_number(item.numeric_gap_pct, "PERCENT"))
-            for item in withheld
-        )
-    return " · ".join(parts) or "No K1–K5 or confirmation change remains"
+        for item in withheld:
+            context = _v2_label(item.directional_context).lower()
+            if item.relative_return_pct is None or item.numeric_gap_pct is None:
+                parts.append(("Nifty " + item.timeframe + " confirmation is " + context
+                              + "; current numeric input is unavailable.", True))
+                continue
+            required_side = "above" if value.direction == "LONG" else "below"
+            gap_side = "short" if value.direction == "LONG" else "over"
+            parts.append(("Nifty " + item.timeframe + " confirmation is " + context
+                          + ". Relative performance "
+                          + _v2_plain_number(item.relative_return_pct, "PERCENT")
+                          + " must be " + required_side + " 0.00% — "
+                          + f"{item.numeric_gap_pct:.2f} percentage points " + gap_side + ".", True))
+    return tuple(parts)
 
 
 def _v2_criterion_explanation(item) -> str:  # type: ignore[no-untyped-def]
