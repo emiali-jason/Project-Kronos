@@ -1675,6 +1675,74 @@ class KronosBrowserServer(ThreadingHTTPServer):
         with self._shutdown_lock:
             self._active_sponsor_work -= 1
 
+    @staticmethod
+    def _work_owner_idle(status: dict[str, object] | None) -> bool:
+        if status is None:
+            return True
+        return (
+            status.get("state") in {"IDLE", "SAME_PROCESS"}
+            and not status.get("generation")
+            and int(status.get("owned_workers", status.get("owned_work_count", 0))) == 0
+            and int(status.get("queued_items", status.get("queued_jobs", 0))) == 0
+        )
+
+    def maintenance_replacement_idle(self) -> bool:
+        """Recheck every shared work owner immediately before a handoff."""
+
+        try:
+            snapshot = self.application.snapshot()
+            if (
+                self._active_sponsor_work
+                or snapshot.provider_state.value == "CONNECTING"
+                or snapshot.analysis_state.value == "RUNNING"
+                or self.application.live_monitoring_result().state.value == "TESTING"
+                or any(
+                    outcome.state.value == "ANALYZING"
+                    for outcome in self.native_review.snapshot().analysis_outcomes
+                )
+                or not self._work_owner_idle(self.application.analysis_work_status())
+                or not self._work_owner_idle(self.application.analysis_execution_status())
+            ):
+                return False
+            connection = self.application.connection_attempt_status()
+            if connection is not None and (
+                connection.get("worker_active")
+                or connection.get("resources_pending")
+                or connection.get("restoration_worker_active")
+            ):
+                return False
+            monitoring = self.swing_monitoring_hub.status_document()
+            if any(
+                int(monitoring.get(field, 0))
+                for field in (
+                    "session_count", "active_session_count", "owner_count",
+                    "subscription_count",
+                )
+            ):
+                return False
+            lifecycle = getattr(self, "intraday_lifecycle", None)
+            if lifecycle is not None and not self._work_owner_idle(lifecycle.work_status()):
+                return False
+            wo17 = getattr(self, "intraday_wo17_monitoring", None)
+            if wo17 is not None and not self._work_owner_idle(wo17.work_status()):
+                return False
+            housekeeping = getattr(self, "housekeeping", None)
+            if housekeeping is not None:
+                house = housekeeping.status_document()
+                if (
+                    house.get("lifecycle_state") != "IDLE"
+                    or house.get("shutdown_requested")
+                    or house.get("pass_active")
+                    or int(house.get("owned_workers", 0))
+                ):
+                    return False
+            bulk_import = getattr(self, "bulk_import", None)
+            if bulk_import is not None and bulk_import.work_status().get("batch_active"):
+                return False
+        except (AttributeError, KeyError, TypeError, ValueError):
+            return False
+        return True
+
     def begin_sponsor_shutdown(self) -> str:
         """Claim one bounded shutdown after proving this process owns the runtime."""
 
@@ -3892,11 +3960,7 @@ class _BrowserHandler(BaseHTTPRequestHandler):
                 return
             try:
                 with self.server._shutdown_lock:
-                    snapshot = self.server.application.snapshot()
-                    if (self.server._active_sponsor_work
-                        or snapshot.provider_state.value == "CONNECTING"
-                        or snapshot.analysis_state.value == "RUNNING"
-                        or self.server.application.live_monitoring_result().state.value == "TESTING"):
+                    if not self.server.maintenance_replacement_idle():
                         raise ValueError("MAINTENANCE_WORK_IN_PROGRESS")
                     if self.server._shutdown_started:
                         raise ValueError("MAINTENANCE_ALREADY_SHUTTING_DOWN")

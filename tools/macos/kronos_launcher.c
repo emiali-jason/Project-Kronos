@@ -373,6 +373,64 @@ static int valid_token(const char *token) {
     return 1;
 }
 
+static int valid_revision(const char *revision) {
+    if (revision == NULL || strlen(revision) != 40) return 0;
+    for (size_t index = 0; index < 40; ++index) {
+        char value = revision[index];
+        if (!((value >= '0' && value <= '9') || (value >= 'a' && value <= 'f'))) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static int repository_revision_matches(const char *repository, const char *expected) {
+    if (!valid_revision(expected)) return 0;
+    int output[2];
+    if (pipe(output) != 0) return 0;
+    pid_t child = fork();
+    if (child < 0) {
+        (void)close(output[0]);
+        (void)close(output[1]);
+        return 0;
+    }
+    if (child == 0) {
+        int devnull = open("/dev/null", O_WRONLY);
+        if (
+            chdir(repository) != 0 ||
+            dup2(output[1], STDOUT_FILENO) < 0 ||
+            (devnull >= 0 && dup2(devnull, STDERR_FILENO) < 0)
+        ) {
+            _exit(1);
+        }
+        (void)close(output[0]);
+        (void)close(output[1]);
+        if (devnull > STDERR_FILENO) (void)close(devnull);
+        execl("/usr/bin/git", "git", "rev-parse", "HEAD", (char *)NULL);
+        _exit(1);
+    }
+    (void)close(output[1]);
+    char revision[42] = {0};
+    size_t used = 0;
+    while (used < sizeof(revision)) {
+        ssize_t count = read(output[0], revision + used, sizeof(revision) - used);
+        if (count == 0) break;
+        if (count < 0) {
+            if (errno == EINTR) continue;
+            used = 0;
+            break;
+        }
+        used += (size_t)count;
+    }
+    (void)close(output[0]);
+    int status = 0;
+    while (waitpid(child, &status, 0) < 0) {
+        if (errno != EINTR) return 0;
+    }
+    return WIFEXITED(status) && WEXITSTATUS(status) == 0 && used == 41 &&
+        revision[40] == '\n' && memcmp(revision, expected, 40) == 0;
+}
+
 static int read_control_record(
     const char *control_path,
     pid_t *backend_pid,
@@ -432,6 +490,85 @@ static int backend_is_reusable(const char *control_path) {
     );
     (void)memset(token, 0, sizeof(token));
     return reusable;
+}
+
+typedef enum ReplacementReadiness {
+    REPLACEMENT_NOT_READY,
+    REPLACEMENT_REQUIRED,
+    REPLACEMENT_ALREADY_LOADED,
+} ReplacementReadiness;
+
+static ReplacementReadiness backend_replacement_readiness(
+    pid_t backend_pid,
+    const char *target_revision
+) {
+    if (backend_pid < 2 || !valid_revision(target_revision) || kill(backend_pid, 0) != 0) {
+        return REPLACEMENT_NOT_READY;
+    }
+    int socket_fd = connect_backend();
+    if (socket_fd < 0) return REPLACEMENT_NOT_READY;
+    static const char request[] =
+        "GET /runtime/status HTTP/1.0\r\nHost: 127.0.0.1:8947\r\nConnection: close\r\n\r\n";
+    if (send(socket_fd, request, sizeof(request) - 1, 0) != (ssize_t)(sizeof(request) - 1)) {
+        (void)close(socket_fd);
+        return REPLACEMENT_NOT_READY;
+    }
+    char response[BACKEND_STATUS_RESPONSE_BYTES] = {0};
+    int response_bytes = read_response(socket_fd, response, sizeof(response));
+    (void)close(socket_fd);
+    if (response_bytes <= 0 || strncmp(response, "HTTP/1.0 200 ", 13) != 0) {
+        return REPLACEMENT_NOT_READY;
+    }
+    char process_marker[96];
+    int marker_bytes = snprintf(
+        process_marker,
+        sizeof(process_marker),
+        "\"process\":{\"pid\":%ld,\"revision\":\"",
+        (long)backend_pid
+    );
+    if (marker_bytes < 1 || (size_t)marker_bytes >= sizeof(process_marker)) {
+        return REPLACEMENT_NOT_READY;
+    }
+    const char *loaded = strstr(response, process_marker);
+    if (loaded == NULL) return REPLACEMENT_NOT_READY;
+    loaded += (size_t)marker_bytes;
+    if (strlen(loaded) < 41) return REPLACEMENT_NOT_READY;
+    char loaded_revision[41] = {0};
+    (void)memcpy(loaded_revision, loaded, 40);
+    if (!valid_revision(loaded_revision) || loaded[40] != '"') {
+        return REPLACEMENT_NOT_READY;
+    }
+    if (strcmp(loaded_revision, target_revision) == 0) {
+        return REPLACEMENT_ALREADY_LOADED;
+    }
+    static const char *required[] = {
+        "\"maintenance\":{\"protocol\":\"KRONOS_MAINTENANCE_HANDOFF_V1\",\"state\":\"INACTIVE\",\"active\":false",
+        "\"startup\":\"READY\",\"failure\":null",
+        "\"monitoring\":{\"schema\":\"KRONOS-SHARED-MONITORING-STATUS/1.0.0\",\"hub_state\":\"IDLE\",\"transport_state\":\"IDLE\",\"session_count\":0,\"active_session_count\":0,\"owner_count\":0,\"subscription_count\":0",
+        "\"intraday_wo11_work\":{\"state\":\"IDLE\",\"generation\":null,\"owned_workers\":0",
+        "\"intraday_wo17_work\":{\"state\":\"IDLE\",\"generation\":null,\"owned_workers\":0",
+        "\"lifecycle_state\":\"IDLE\",\"shutdown_requested\":false,\"owned_workers\":0,\"worker_generation\":null,\"pass_active\":false",
+        "\"swing_bulk_import\":{\"state\":\"IDLE\"",
+        "\"batch_active\":false",
+        "\"analysis_work\":{\"state\":\"IDLE\",\"generation\":null,\"run_identity\":null,\"owned_work_count\":0",
+        "\"analysis_execution\":{\"state\":\"IDLE\",\"pid\":null,\"generation\":null,\"failure\":null,\"failure_diagnostic\":null,\"owned_workers\":0",
+    };
+    for (size_t index = 0; index < sizeof(required) / sizeof(required[0]); ++index) {
+        if (strstr(response, required[index]) == NULL) return REPLACEMENT_NOT_READY;
+    }
+    int connected = strstr(response, "\"rest_authentication\":\"CONNECTED\"") != NULL;
+    int disconnected = strstr(response, "\"rest_authentication\":\"DISCONNECTED\"") != NULL;
+    if ((!connected && !disconnected) || (connected && disconnected)) {
+        return REPLACEMENT_NOT_READY;
+    }
+    if (connected && (
+        strstr(response, "\"worker_active\":false,\"resources_pending\":false,\"cleanup_state\":\"COMPLETE\"") == NULL ||
+        strstr(response, "\"restoration_worker_active\":false") == NULL
+    )) return REPLACEMENT_NOT_READY;
+    if (disconnected && strstr(response, "\"connection_attempt\":null") == NULL) {
+        return REPLACEMENT_NOT_READY;
+    }
+    return REPLACEMENT_REQUIRED;
 }
 
 static int backend_supports_maintenance(void) {
@@ -665,6 +802,12 @@ static BackendStartResult start_backend(
             (void)unsetenv("KRONOS_MAINTENANCE_PARENT");
             (void)unsetenv("KRONOS_MAINTENANCE_PROOF");
         }
+        const char *launch_mode = getenv("KRONOS_LAUNCH_MODE");
+        if (
+            launch_mode != NULL && strcmp(launch_mode, "GOVERNED_REPLACEMENT") == 0 &&
+            (unsetenv("KRONOS_LAUNCH_MODE") != 0 ||
+             unsetenv("KRONOS_REPLACEMENT_REVISION") != 0)
+        ) _exit(1);
         execl(python, python, "-B", browser_entry, "--no-browser", (char *)NULL);
         _exit(1);
     }
@@ -684,9 +827,11 @@ int main(void) {
     }
     if (!canonical_operational_image()) return 1;
     int bootstrap = mode != NULL && strcmp(mode, "LEGACY_BOOTSTRAP") == 0;
+    int replacement = mode != NULL && strcmp(mode, "GOVERNED_REPLACEMENT") == 0;
+    const char *target_revision = getenv("KRONOS_REPLACEMENT_REVISION");
     const char *migration = getenv("KRONOS_LEGACY_BOOTSTRAP_ID");
     const char *migration_proof = getenv("KRONOS_LEGACY_BOOTSTRAP_PROOF");
-    if ((mode != NULL && !bootstrap) ||
+    if ((mode != NULL && !bootstrap && !replacement) ||
         (!bootstrap && (migration != NULL || migration_proof != NULL))) return 1;
     if (bootstrap && (migration == NULL || migration_proof == NULL ||
         strlen(migration) != 64 || strlen(migration_proof) != 64 ||
@@ -695,6 +840,16 @@ int main(void) {
         getenv("KRONOS_MAINTENANCE_GENERATION") != NULL ||
         getenv("KRONOS_MAINTENANCE_PARENT") != NULL ||
         getenv("KRONOS_MAINTENANCE_PROOF") != NULL)) return 1;
+    if (
+        (replacement && (
+            !valid_revision(target_revision) ||
+            migration != NULL || migration_proof != NULL ||
+            getenv("KRONOS_MAINTENANCE_GENERATION") != NULL ||
+            getenv("KRONOS_MAINTENANCE_PARENT") != NULL ||
+            getenv("KRONOS_MAINTENANCE_PROOF") != NULL
+        )) ||
+        (!replacement && target_revision != NULL)
+    ) return 1;
     const char *home = getenv("HOME");
     if (home == NULL || home[0] == '\0') return show_not_ready();
 
@@ -726,6 +881,12 @@ int main(void) {
         "KRONOS source qualification failed",
         "A clean published develop revision and verified source proof are required. No runtime transition was started. Contact Engineering."
     );
+    if (replacement && !repository_revision_matches(repository, target_revision)) {
+        return show_alert(
+            "KRONOS replacement blocked",
+            "The requested replacement revision is not the exact clean published source. No runtime transition was started. Contact Engineering."
+        );
+    }
 
     /* Serialize the probe/start decision without creating or rewriting a file. */
     int launcher_lock = acquire_launcher_lock(repository);
@@ -735,10 +896,28 @@ int main(void) {
     );
 
     /* An ordinary Dock click is inert access to one already-ready shared runtime. */
-    if (!bootstrap && backend_is_reusable(control_path)) return open_workspace();
+    if (!bootstrap && !replacement && backend_is_reusable(control_path)) return open_workspace();
 
     pid_t backend_pid = 0;
     char token[65] = {0};
+    if (replacement) {
+        if (!read_control_record(control_path, &backend_pid, token)) {
+            (void)memset(token, 0, sizeof(token));
+            return show_restart_blocked();
+        }
+        ReplacementReadiness readiness = backend_replacement_readiness(
+            backend_pid,
+            target_revision
+        );
+        if (readiness == REPLACEMENT_ALREADY_LOADED) {
+            (void)memset(token, 0, sizeof(token));
+            return open_workspace();
+        }
+        if (readiness != REPLACEMENT_REQUIRED) {
+            (void)memset(token, 0, sizeof(token));
+            return show_restart_blocked();
+        }
+    }
     char generation[65] = {0};
     unsigned char random_bytes[32];
     arc4random_buf(random_bytes, sizeof(random_bytes));
@@ -747,15 +926,18 @@ int main(void) {
     int socket_connected = connect_backend();
     if (socket_connected >= 0) {
         (void)close(socket_connected);
-        if (!bootstrap) return show_existing_backend_unhealthy();
+        if (!bootstrap && !replacement) return show_existing_backend_unhealthy();
         if (
-            !read_control_record(control_path, &backend_pid, token) ||
+            (!replacement && !read_control_record(control_path, &backend_pid, token)) ||
             !request_graceful_shutdown(backend_pid, token, generation) ||
             !wait_for_backend_stop(backend_pid)
         ) {
             (void)memset(token, 0, sizeof(token));
             return show_restart_blocked();
         }
+    } else if (replacement) {
+        (void)memset(token, 0, sizeof(token));
+        return show_restart_blocked();
     }
 
     BackendStartResult start_result = start_backend(

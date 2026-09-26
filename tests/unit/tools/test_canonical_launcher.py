@@ -286,6 +286,92 @@ def run_status_probe(tmp_path, response, probe, *, fragmented=False):
     return completed
 
 
+def run_replacement_probe(tmp_path, payload, *, target, expected):
+    listener = socket.socket()
+    listener.bind(('127.0.0.1', 0))
+    listener.listen(1)
+    listener.settimeout(5)
+    port = listener.getsockname()[1]
+    source = SOURCE.read_text().replace('htons(8947)', f'htons({port})').replace(
+        'int main(void) {', 'int unused_application_main(void) {',
+    )
+    source += f'''\nint main(void) {{
+        return backend_replacement_readiness({os.getpid()}, "{target}") == {expected}
+            ? 0 : 1;
+    }}\n'''
+    binary = tmp_path / 'replacement-probe'
+    compile_source(source, binary)
+    response = status_response(json.dumps(payload, separators=(',', ':')).encode())
+    requests = []
+
+    def peer():
+        connection, _ = listener.accept()
+        with connection:
+            request = b''
+            while b'\r\n\r\n' not in request:
+                request += connection.recv(256)
+            requests.append(request)
+            connection.sendall(response)
+        listener.close()
+
+    thread = Thread(target=peer)
+    thread.start()
+    completed = subprocess.run([str(binary)], capture_output=True, timeout=5)
+    thread.join(6)
+    assert not thread.is_alive()
+    assert requests == [
+        b'GET /runtime/status HTTP/1.0\r\nHost: 127.0.0.1:8947\r\nConnection: close\r\n\r\n'
+    ]
+    assert completed.returncode == 0
+
+
+def replacement_payload(*, revision='a' * 40, worker=False, owners=0):
+    return {
+        'schema': 'KRONOS-RUNTIME-STATE/1.0.0',
+        'process': {'pid': os.getpid(), 'revision': revision, 'source_state': 'CLEAN_COMMIT'},
+        'maintenance': {
+            'protocol': 'KRONOS_MAINTENANCE_HANDOFF_V1', 'state': 'INACTIVE',
+            'active': False, 'generation': 'f' * 64, 'startup': 'READY', 'failure': None,
+        },
+        'rest_authentication': 'CONNECTED',
+        'connection_attempt': {
+            'state': 'SUCCEEDED', 'remaining_seconds': 0.0, 'generation': 1,
+            'request_identity': 'request', 'worker_active': False,
+            'resources_pending': False, 'cleanup_state': 'COMPLETE',
+            'unresolved_resources': [], 'restoration_worker_active': False,
+        },
+        'monitoring': {
+            'schema': 'KRONOS-SHARED-MONITORING-STATUS/1.0.0', 'hub_state': 'IDLE',
+            'transport_state': 'IDLE', 'session_count': 0, 'active_session_count': 0,
+            'owner_count': owners, 'subscription_count': 0, 'subscriptions': [], 'owners': [],
+        },
+        'intraday_wo11_work': {
+            'state': 'RUNNING' if worker else 'IDLE',
+            'generation': 1 if worker else None, 'owned_workers': int(worker),
+            'queued_items': 0,
+        },
+        'intraday_wo17_work': {
+            'state': 'IDLE', 'generation': None, 'owned_workers': 0, 'queued_items': 0,
+        },
+        'housekeeping': {
+            'production_activation': True, 'interval_seconds': 21600,
+            'lifecycle_state': 'IDLE', 'shutdown_requested': False,
+            'owned_workers': 0, 'worker_generation': None, 'pass_active': False,
+        },
+        'swing_bulk_import': {'state': 'IDLE', 'owned_workers': 1, 'batch_active': False},
+        'swing_publication': {
+            'analysis_work': {
+                'state': 'IDLE', 'generation': None, 'run_identity': None,
+                'owned_work_count': 0, 'queued_jobs': 0,
+            },
+            'analysis_execution': {
+                'state': 'IDLE', 'pid': None, 'generation': None, 'failure': None,
+                'failure_diagnostic': None, 'owned_workers': 0, 'queued_jobs': 0,
+            },
+        },
+    }
+
+
 @pytest.fixture
 def guarded_bundle(tmp_path):
     app = tmp_path / 'Applications/KRONOS.app'
@@ -481,6 +567,74 @@ def test_oversized_status_fails_closed(tmp_path):
     assert run_status_probe(tmp_path, response, 'backend_is_ready').returncode != 0
 
 
+def test_revision_mismatch_is_an_explicit_idle_governed_replacement(tmp_path):
+    run_replacement_probe(
+        tmp_path,
+        replacement_payload(revision='a' * 40),
+        target='b' * 40,
+        expected='REPLACEMENT_REQUIRED',
+    )
+
+
+def test_exact_loaded_revision_is_reused_without_a_replacement(tmp_path):
+    run_replacement_probe(
+        tmp_path,
+        replacement_payload(revision='b' * 40),
+        target='b' * 40,
+        expected='REPLACEMENT_ALREADY_LOADED',
+    )
+
+
+@pytest.mark.parametrize(
+    'payload',
+    [replacement_payload(worker=True), replacement_payload(owners=1)],
+)
+def test_revision_replacement_rejects_active_shared_work(tmp_path, payload):
+    run_replacement_probe(
+        tmp_path,
+        payload,
+        target='b' * 40,
+        expected='REPLACEMENT_NOT_READY',
+    )
+
+
+def test_revision_replacement_mode_preserves_ordinary_dock_reuse_contract():
+    source = SOURCE.read_text()
+    main = source.split('int main(void) {', 1)[1]
+    assert 'strcmp(mode, "GOVERNED_REPLACEMENT") == 0' in main
+    assert 'KRONOS_REPLACEMENT_REVISION' in main
+    assert (
+        'if (!bootstrap && !replacement && backend_is_reusable(control_path)) '
+        'return open_workspace();'
+    ) in main
+    readiness = main.index('backend_replacement_readiness(')
+    shutdown = main.index('request_graceful_shutdown(backend_pid, token, generation)')
+    start = main.index('BackendStartResult start_result = start_backend(')
+    assert readiness < shutdown < start
+    assert main.count('request_graceful_shutdown(') == 1
+    assert main.count('start_backend(') == 1
+
+
+def test_revision_replacement_requires_exact_clean_published_target():
+    source = SOURCE.read_text()
+    main = source.split('int main(void) {', 1)[1]
+    qualification = main.index('qualify_source(repository, python)')
+    target = main.index('repository_revision_matches(repository, target_revision)')
+    lock = main.index('acquire_launcher_lock(repository)')
+    readiness = main.index('backend_replacement_readiness(')
+    assert qualification < target < lock < readiness
+    assert 'valid_revision(target_revision)' in main
+    assert '/usr/bin/git", "git", "rev-parse", "HEAD"' in source
+    child = source.split('static BackendStartResult start_backend(', 1)[1].split(
+        'int main(void) {', 1
+    )[0]
+    assert 'unsetenv("KRONOS_LAUNCH_MODE")' in child
+    assert 'unsetenv("KRONOS_REPLACEMENT_REVISION")' in child
+    assert child.index('unsetenv("KRONOS_REPLACEMENT_REVISION")') < child.index(
+        'execl(python, python, "-B", browser_entry, "--no-browser"'
+    )
+
+
 @pytest.mark.parametrize(
     ('status', 'include_length'),
     [('503 Service Unavailable', True), ('200 OK', False)],
@@ -508,7 +662,7 @@ def test_shutdown_rejection_and_start_results_route_without_retry_or_kill():
     result_switch = main.index('switch (start_result)', start_call)
     assert start_call < token_clear < result_switch
     assert main.count('start_backend(') == 1
-    assert main.count('open_workspace()') == 2
+    assert main.count('open_workspace()') == 3
     assert main.index('case BACKEND_START_READY:') < main.rindex('open_workspace()')
     monitor = source.split('static BackendStartResult monitor_backend_start(', 1)[1]
     monitor = monitor.split('static BackendStartResult start_backend(', 1)[0]
@@ -525,12 +679,16 @@ def test_ready_runtime_is_reused_before_any_transition_or_start() -> None:
     qualification = main.index('qualify_source(repository, python)')
     lock = main.index('acquire_launcher_lock(repository)')
     reuse = main.index(
-        'if (!bootstrap && backend_is_reusable(control_path)) return open_workspace();'
+        'if (!bootstrap && !replacement && backend_is_reusable(control_path)) '
+        'return open_workspace();'
     )
     listener = main.index('int socket_connected = connect_backend();')
     start = main.index('BackendStartResult start_result = start_backend(')
     assert qualification < lock < reuse < listener < start
-    assert 'if (!bootstrap) return show_existing_backend_unhealthy();' in main
+    assert (
+        'if (!bootstrap && !replacement) return show_existing_backend_unhealthy();'
+        in main
+    )
     assert main.count('start_backend(') == 1
     reusable = source.split('static int backend_is_reusable(', 1)[1].split(
         'static int backend_supports_maintenance(', 1

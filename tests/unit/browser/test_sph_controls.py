@@ -124,6 +124,54 @@ def test_restart_rejects_an_inflight_authentication_without_handoff(running):
     assert not (tmp/'runtime'/'maintenance').exists()
 
 
+def test_restart_rechecks_intraday_and_monitoring_ownership_before_handoff(
+    running, monkeypatch,
+):
+    server, g, _provider, _calls, tmp = running
+
+    class WorkOwner:
+        active = True
+
+        def work_status(self):
+            return {
+                'state': 'RUNNING' if self.active else 'IDLE',
+                'generation': 1 if self.active else None,
+                'owned_workers': int(self.active),
+                'queued_items': 0,
+            }
+
+        def shutdown(self):
+            self.active = False
+
+        def request_pulse(self):
+            return False
+
+    owner = WorkOwner()
+    server.intraday_lifecycle = owner
+    control = server.restart_control
+    host = f'127.0.0.1:{server.server_port}'
+    headers = {
+        'Host': host,
+        'X-Kronos-Backend-Pid': str(os.getpid()),
+        'X-Kronos-Restart-Token': control._token,
+        'X-Kronos-Maintenance-Generation': 'f' * 64,
+    }
+    assert request(server, '/control/shutdown', method='POST', headers=headers)[0] == 409
+    assert not g.shutting_down
+    assert not (tmp / 'runtime' / 'maintenance').exists()
+
+    owner.active = False
+    current = server.swing_monitoring_hub.status_document()
+    monkeypatch.setattr(
+        server.swing_monitoring_hub,
+        'status_document',
+        lambda: {**current, 'hub_state': 'REGISTERED', 'owner_count': 1},
+    )
+    assert request(server, '/control/shutdown', method='POST', headers=headers)[0] == 409
+    assert not g.shutting_down
+    assert not (tmp / 'runtime' / 'maintenance').exists()
+
+
 def test_explicit_sponsor_exit_establishes_local_maintenance_cause(running):
     server,g,p,calls,tmp=running
     assert request(server,'/control/exit',method='POST')[0]==202

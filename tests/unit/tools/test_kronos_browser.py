@@ -244,7 +244,12 @@ def test_macos_launcher_is_minimal_double_click_app_without_credentials() -> Non
     assert "POST /control/shutdown HTTP/1.0" in source
     assert "request_graceful_shutdown" in source
     assert "wait_for_backend_stop" in source
-    assert "if (!bootstrap && backend_is_reusable(control_path)) return open_workspace();" in source
+    assert (
+        "if (!bootstrap && !replacement && backend_is_reusable(control_path)) "
+        "return open_workspace();"
+    ) in source
+    assert 'strcmp(mode, "GOVERNED_REPLACEMENT") == 0' in source
+    assert 'getenv("KRONOS_REPLACEMENT_REVISION")' in source
     assert "show_existing_backend_unhealthy" in source
     assert "acquire_launcher_lock(repository)" in source
     assert "It was not reused" not in source
