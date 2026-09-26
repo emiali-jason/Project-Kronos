@@ -359,15 +359,13 @@ def replacement_payload(*, revision='a' * 40, worker=False, owners=0):
             'owned_workers': 0, 'worker_generation': None, 'pass_active': False,
         },
         'swing_bulk_import': {'state': 'IDLE', 'owned_workers': 1, 'batch_active': False},
-        'swing_publication': {
-            'analysis_work': {
-                'state': 'IDLE', 'generation': None, 'run_identity': None,
-                'owned_work_count': 0, 'queued_jobs': 0,
-            },
-            'analysis_execution': {
-                'state': 'IDLE', 'pid': None, 'generation': None, 'failure': None,
-                'failure_diagnostic': None, 'owned_workers': 0, 'queued_jobs': 0,
-            },
+        'analysis_work': {
+            'state': 'IDLE', 'generation': None, 'run_identity': None,
+            'owned_work_count': 0, 'queued_jobs': 0,
+        },
+        'analysis_execution': {
+            'state': 'IDLE', 'pid': None, 'generation': None, 'failure': None,
+            'failure_diagnostic': None, 'owned_workers': 0, 'queued_jobs': 0,
         },
     }
 

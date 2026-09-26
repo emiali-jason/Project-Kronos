@@ -2507,6 +2507,12 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             bulk_import = getattr(self.server, "bulk_import", None)
             if bulk_import is not None:
                 payload["swing_bulk_import"] = bulk_import.work_status()
+            payload["analysis_work"] = dict(
+                self.server.application.analysis_work_status()
+            )
+            payload["analysis_execution"] = dict(
+                self.server.application.analysis_execution_status()
+            )
             self._json(payload)
             return
         if path == "/status":

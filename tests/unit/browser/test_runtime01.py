@@ -227,6 +227,9 @@ def test_status_surfaces_bounded_intraday_owners_without_writes(running):
         document=json.loads(body)
         assert document['intraday_wo11_work']==wo11_status
         assert document['intraday_wo17_work']==wo17_status
+        if route == '/runtime/status':
+            assert document['analysis_work'] == server.application.analysis_work_status()
+            assert document['analysis_execution'] == server.application.analysis_execution_status()
     assert inventory(root)==before
     assert provider.begin_count==0 and calls==[]
 
