@@ -6546,25 +6546,52 @@ def _connect_navigation_guard_script() -> str:
     .map(form=>{const button=form.querySelector('button[type="submit"],button:not([type])');
       return {form,button,wasDisabled:button?button.disabled:false};});
   let pending=false;
+  let terminalObserved=false;
+  let activeObserved=false;
+  let navigationGeneration=0;
+  let latestAppliedStatusTicket=0;
   globalThis.kronosConnectNavigationPending=false;
+  globalThis.kronosConnectNavigationGeneration=0;
   globalThis.kronosReloadWhenNavigationIdle=()=>{
-    if(globalThis.kronosConnectNavigationPending===true||globalThis.kronosReviewAnswerNavigationPending===true)return false;
+    if((globalThis.kronosConnectNavigationPending===true&&!terminalObserved)||
+       globalThis.kronosReviewAnswerNavigationPending===true)return false;
     location.reload();return true;
   };
   const setPending=nextPending=>{
     pending=nextPending;globalThis.kronosConnectNavigationPending=nextPending;
     for(const control of controls){if(control.button)control.button.disabled=nextPending||control.wasDisabled;}
   };
+  globalThis.kronosAcceptStatusPoll=(status,ticket,generation,initialProvider)=>{
+    if(!status||typeof status.provider!=='string'||!Number.isSafeInteger(ticket)||
+       generation!==navigationGeneration||ticket<=latestAppliedStatusTicket)return false;
+    latestAppliedStatusTicket=ticket;
+    if(status.provider==='CONNECTING')activeObserved=true;
+    if(pending&&(status.provider==='CONNECTED'||status.provider==='ERROR')&&
+       (status.provider!==initialProvider||activeObserved)){
+      terminalObserved=true;
+    }
+    return true;
+  };
   for(const control of controls){
     control.form.addEventListener('submit',event=>{
       if(event.defaultPrevented||!control.form.checkValidity())return;
       if(pending){event.preventDefault();return;}
+      terminalObserved=false;
+      activeObserved=false;
+      navigationGeneration+=1;
+      globalThis.kronosConnectNavigationGeneration=navigationGeneration;
       setPending(true);
       queueMicrotask(()=>{if(event.defaultPrevented)setPending(false);});
     });
   }
   window.addEventListener('pageshow',event=>{
-    if(event.persisted){setPending(false);globalThis.kronosReloadWhenNavigationIdle();}
+    if(event.persisted){
+      terminalObserved=false;
+      activeObserved=false;
+      navigationGeneration+=1;
+      globalThis.kronosConnectNavigationGeneration=navigationGeneration;
+      setPending(false);globalThis.kronosReloadWhenNavigationIdle();
+    }
   });
 })();
 </script>"""
@@ -6627,7 +6654,7 @@ def _page(
 <div class="kite"><span class="dot {snapshot.provider_state.value}"></span><strong>Kite: {snapshot.provider_state.value}</strong>{_connect_form(snapshot)}</div></header>
 {tabs}<div class="content">{body}</div><div class="footer">KRONOS Browser V1 · Local Mode</div></main></div>
 {_connect_navigation_guard_script()}
-<script>const initial=document.body.dataset.statusSignature;const swingRevision=document.body.dataset.swingProjectionRevision;setInterval(async()=>{{try{{const r=await fetch('/status',{{cache:'no-store'}});if(!r.ok)return;const s=await r.json();if(typeof window!=='undefined'&&window.applyKronosRuntimeState)window.applyKronosRuntimeState(s);const parts=[s.provider,s.analysis,s.completed_at||''];if(swingRevision!==undefined)parts.push(s.swing_projection_revision||'');if(parts.join('|')!==initial)globalThis.kronosReloadWhenNavigationIdle();}}catch(_e){{}}}},1500);</script>
+<script>const initial=document.body.dataset.statusSignature;const initialProvider=initial.split('|')[0];const swingRevision=document.body.dataset.swingProjectionRevision;let statusPollTicket=0;setInterval(async()=>{{const ticket=++statusPollTicket;const navigationGeneration=globalThis.kronosConnectNavigationGeneration;try{{const r=await fetch('/status',{{cache:'no-store'}});if(!r.ok)return;const s=await r.json();if(typeof globalThis.kronosAcceptStatusPoll==='function'&&!globalThis.kronosAcceptStatusPoll(s,ticket,navigationGeneration,initialProvider))return;if(typeof window!=='undefined'&&window.applyKronosRuntimeState)window.applyKronosRuntimeState(s);const parts=[s.provider,s.analysis,s.completed_at||''];if(swingRevision!==undefined)parts.push(s.swing_projection_revision||'');if(parts.join('|')!==initial)globalThis.kronosReloadWhenNavigationIdle();}}catch(_e){{}}}},1500);</script>
 </body></html>"""
 
 

@@ -35,9 +35,9 @@ class _BodyAttributes(HTMLParser):
             self.attributes = dict(attrs)
 
 
-def _page(shell):
+def _page(shell, provider_state=ProviderConnectionState.CONNECTING):
     snapshot = BrowserWorkspaceSnapshot(
-        ProviderConnectionState.CONNECTING, AnalysisState.NOT_RUN, 98
+        provider_state, AnalysisState.NOT_RUN, 98
     )
     if shell == "swing":
         return render_opportunities(snapshot, projection_revision="REVISION-1")
@@ -104,9 +104,10 @@ const assert = require('node:assert/strict');
 const vm = require('node:vm');
 const input = JSON.parse(process.argv[1]);
 
-function fixture({cancel = false, delayedPoll = false} = {}) {
+function fixture({cancel = false, delayedPoll = false, status = input.changedStatus} = {}) {
   const submitListeners = [], pageListeners = [], intervals = [], microtasks = [];
-  let posts = 0, reloads = 0, resolveFetch;
+  const fetchResolvers = [];
+  let posts = 0, reloads = 0;
   const button = {disabled: false};
   const form = {
     checkValidity: () => true,
@@ -123,8 +124,8 @@ function fixture({cancel = false, delayedPoll = false} = {}) {
     location: {reload: () => {reloads++;}},
     queueMicrotask: callback => {microtasks.push(callback);},
     setInterval: (callback, delay) => {intervals.push({callback, delay}); return 1;},
-    fetch: () => delayedPoll ? new Promise(resolve => {resolveFetch = resolve;}) :
-      Promise.resolve({ok: true, json: async () => input.changedStatus}),
+    fetch: () => delayedPoll ? new Promise(resolve => {fetchResolvers.push(resolve);}) :
+      Promise.resolve({ok: true, json: async () => status}),
   };
   vm.runInNewContext(input.guard, context);
   if (input.poll) vm.runInNewContext(input.poll, context);
@@ -136,7 +137,7 @@ function fixture({cancel = false, delayedPoll = false} = {}) {
     if (!event.defaultPrevented) posts++;
   }
   return {context, button, intervals, pageListeners, submit,
-    resolveFetch: response => resolveFetch(response),
+    resolveFetch: (response, index = 0) => fetchResolvers[index](response),
     values: () => ({posts, reloads, pending: context.kronosConnectNavigationPending})};
 }
 
@@ -163,8 +164,49 @@ function fixture({cancel = false, delayedPoll = false} = {}) {
   await polling;
   assert.deepEqual(race.values(), {posts: 1, reloads: 0, pending: true});
 
+  const delayedSuccess = fixture({delayedPoll: true});
+  await delayedSuccess.submit();
+  const delayedSuccessPoll = delayedSuccess.intervals[0].callback();
+  delayedSuccess.resolveFetch({ok: true, json: async () => input.changedStatus});
+  await delayedSuccessPoll;
+  await delayedSuccess.submit();
+  assert.deepEqual(delayedSuccess.values(), {posts: 1, reloads: 1, pending: true});
+
+  const outOfOrder = fixture({delayedPoll: true});
+  await outOfOrder.submit();
+  const olderPoll = outOfOrder.intervals[0].callback();
+  const newerPoll = outOfOrder.intervals[0].callback();
+  outOfOrder.resolveFetch({ok: true, json: async () => input.changedStatus}, 1);
+  await newerPoll;
+  outOfOrder.resolveFetch({ok: true, json: async () => input.activeStatus}, 0);
+  await olderPoll;
+  assert.deepEqual(outOfOrder.values(), {posts: 1, reloads: 1, pending: true});
+
+  // A terminal Provider transition observed by a poll that started after the
+  // accepted submit must refresh this page while retaining the duplicate guard
+  // until navigation completes.
+  const completed = fixture();
+  await completed.submit();
+  await completed.intervals[0].callback();
+  await completed.submit();
+  assert.deepEqual(completed.values(), {posts: 1, reloads: 1, pending: true});
+
+  const failed = fixture({status: input.failedStatus});
+  await failed.submit();
+  await failed.intervals[0].callback();
+  await failed.submit();
+  assert.deepEqual(failed.values(), {posts: 1, reloads: 1, pending: true});
+
+  const active = fixture({status: input.activeStatus});
+  await active.submit();
+  await active.intervals[0].callback();
+  await active.submit();
+  assert.deepEqual(active.values(), {posts: 1, reloads: 0, pending: true});
+
   process.stdout.write(JSON.stringify({guarded: guarded.values(),
-    cancelled: cancelled.values(), race: race.values()}));
+    cancelled: cancelled.values(), race: race.values(), delayedSuccess: delayedSuccess.values(),
+    outOfOrder: outOfOrder.values(), completed: completed.values(),
+    failed: failed.values(), active: active.values()}));
 })().catch(error => {console.error(error); process.exitCode = 1;});
 """
 
@@ -242,7 +284,7 @@ def test_connect_navigation_guard_fences_reload_duplicate_cancel_and_history(she
     node = shutil.which("node")
     if node is None:
         pytest.skip("Node.js required for isolated JavaScript unit tests")
-    page = _page(shell)
+    page = _page(shell, ProviderConnectionState.DISCONNECTED)
     parsed = _BodyAttributes()
     parsed.feed(page)
     scripts = re.findall(r"<script>(.*?)</script>", page, re.S)
@@ -263,11 +305,34 @@ def test_connect_navigation_guard_fences_reload_duplicate_cancel_and_history(she
                 "provider": "CONNECTED", "analysis": "NOT RUN",
                 "completed_at": None, "swing_projection_revision": "REVISION-2",
             },
+            "failedStatus": {
+                "provider": "ERROR", "analysis": "NOT RUN",
+                "completed_at": None, "swing_projection_revision": "REVISION-2",
+            },
+            "activeStatus": {
+                "provider": "CONNECTING", "analysis": "NOT RUN",
+                "completed_at": None, "swing_projection_revision": "REVISION-2",
+            },
         })],
         capture_output=True, text=True, timeout=10,
     )
     assert result.returncode == 0, result.stderr
     evidence = json.loads(result.stdout)
+    assert evidence["completed"] == {
+        "posts": 1, "reloads": 1, "pending": True,
+    }
+    assert evidence["delayedSuccess"] == {
+        "posts": 1, "reloads": 1, "pending": True,
+    }
+    assert evidence["outOfOrder"] == {
+        "posts": 1, "reloads": 1, "pending": True,
+    }
+    assert evidence["failed"] == {
+        "posts": 1, "reloads": 1, "pending": True,
+    }
+    assert evidence["active"] == {
+        "posts": 1, "reloads": 0, "pending": True,
+    }
     assert evidence["race"] == {"posts": 1, "reloads": 0, "pending": True}
     assert evidence["cancelled"] == {"posts": 0, "reloads": 0, "pending": False}
 
