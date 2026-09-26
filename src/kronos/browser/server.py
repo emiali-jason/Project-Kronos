@@ -1130,7 +1130,24 @@ class KronosBrowserServer(ThreadingHTTPServer):
 
     def selected_opportunity_presentations(self, discovery, *, prepared=None,
                                            authority_is_current=lambda: True):
-        """Select exact displayed identities before any historical projection."""
+        """Select exact displayed identities after a coherent restoration boundary."""
+
+        # Authentication completion deliberately precedes Sponsor restoration.
+        # The terminal Provider-state refresh can therefore request this page
+        # while restoration is publishing downstream Trade Window state.  Wait
+        # at the restoration boundary; never reinterpret that bounded interval
+        # as a stale selected contract.
+        with self._sponsor_restoration_lock:
+            return KronosBrowserServer._selected_opportunity_presentations(
+                self,
+                discovery,
+                prepared=prepared,
+                authority_is_current=authority_is_current,
+            )
+
+    def _selected_opportunity_presentations(self, discovery, *, prepared=None,
+                                            authority_is_current=lambda: True):
+        """Project one exact publication; identity changes still fail closed."""
         visual, windows = [], []
         if discovery is None:
             return (), ()

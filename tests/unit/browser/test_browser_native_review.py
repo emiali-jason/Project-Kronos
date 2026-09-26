@@ -1,7 +1,7 @@
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from threading import Thread
+from threading import Event, RLock, Thread
 from zoneinfo import ZoneInfo
 from urllib.parse import quote
 
@@ -1835,11 +1835,99 @@ def test_visual_cache_cannot_authorize_trade_window_selection(tmp_path, monkeypa
     # assessment in the actual Trade Window owner.
     discovery = SimpleNamespace(run_identity=key[0], assessments=(SimpleNamespace(
         status=SimpleNamespace(value="PROBABLE"), canonical_instrument=key[1], result_sha256="0" * 64),))
-    adapter = SimpleNamespace(visual_v3=SimpleNamespace(completed_for=lambda *a: None),
-                              trade_window=owner, native_intake=None)
+    adapter = SimpleNamespace(
+        _sponsor_restoration_lock=RLock(),
+        visual_v3=SimpleNamespace(completed_for=lambda *a: None),
+        trade_window=owner,
+        native_intake=None,
+    )
     monkeypatch.setattr(owner, "_project_completed", lambda *a: pytest.fail("wrong owner record projected"))
     with pytest.raises(ValueError, match="SELECTION_STALE"):
         KronosBrowserServer.selected_opportunity_presentations(adapter, discovery)
+
+
+def test_connected_restoration_does_not_surface_unchanged_trade_window_as_stale(
+    tmp_path, monkeypatch
+):
+    """A current page waits for the connection restorer's coherent publication."""
+
+    from types import SimpleNamespace
+    from kronos.browser.server import KronosBrowserServer
+    from tests.unit.browser.test_browser_native_trade_window import _selected_window
+
+    owner, completed, key = _selected_window(tmp_path)
+    discovery = SimpleNamespace(
+        run_identity=key[0],
+        assessments=(SimpleNamespace(
+            status=SimpleNamespace(value="PROBABLE"),
+            canonical_instrument=key[1],
+            result_sha256=key[2],
+        ),),
+    )
+    restoration_lock = RLock()
+    adapter = SimpleNamespace(
+        _sponsor_restoration_lock=restoration_lock,
+        visual_v3=SimpleNamespace(completed_for=lambda *args: completed),
+        trade_window=owner,
+        native_intake=None,
+        relative_context_for_run=lambda _run: None,
+    )
+    entered, release = Event(), Event()
+    original_load = owner._trade_plan_store.load_for_requirements
+
+    def blocked_load(requirements):
+        entered.set()
+        assert release.wait(5)
+        return original_load(requirements)
+
+    monkeypatch.setattr(owner._trade_plan_store, "load_for_requirements", blocked_load)
+    restored, presented, failures = [], [], []
+
+    def restore():
+        with restoration_lock:
+            owner.restore((completed,))
+            restored.append(True)
+
+    def present():
+        try:
+            presented.append(
+                KronosBrowserServer.selected_opportunity_presentations(
+                    adapter, discovery
+                )
+            )
+        except Exception as error:
+            failures.append(error)
+
+    restoration = Thread(target=restore)
+    reader = Thread(target=present)
+    restoration.start()
+    try:
+        assert entered.wait(2)
+        reader.start()
+        reader.join(0.1)
+        assert reader.is_alive(), "page did not wait for coherent Sponsor restoration"
+    finally:
+        release.set()
+        restoration.join(5)
+        reader.join(5)
+
+    assert restored == [True]
+    assert failures == []
+    assert len(presented) == 1
+    visual, windows = presented[0]
+    assert len(visual) == 1 and visual[0].canonical_instrument == key[1]
+    assert len(windows) == 1 and windows[0].native_assessment_sha256 == key[2]
+
+    changed = SimpleNamespace(
+        run_identity=key[0],
+        assessments=(SimpleNamespace(
+            status=SimpleNamespace(value="PROBABLE"),
+            canonical_instrument=key[1],
+            result_sha256="0" * 64,
+        ),),
+    )
+    with pytest.raises(ValueError, match="SWING_TRADE_WINDOW_SELECTION_STALE"):
+        KronosBrowserServer.selected_opportunity_presentations(adapter, changed)
 
 
 @pytest.mark.parametrize("native_intake", ["NSE"], indirect=True)
@@ -1888,8 +1976,12 @@ def test_matching_visual_cache_cannot_authorize_different_owner_assessment(tmp_p
     owner.restore((other,))
     discovery = SimpleNamespace(run_identity=key[0], assessments=(SimpleNamespace(
         status=SimpleNamespace(value="PROBABLE"), canonical_instrument=key[1], result_sha256=key[2]),))
-    adapter = SimpleNamespace(visual_v3=SimpleNamespace(completed_for=lambda *a: displayed),
-                              trade_window=owner, native_intake=None)
+    adapter = SimpleNamespace(
+        _sponsor_restoration_lock=RLock(),
+        visual_v3=SimpleNamespace(completed_for=lambda *a: displayed),
+        trade_window=owner,
+        native_intake=None,
+    )
     monkeypatch.setattr(owner, "_project_completed", lambda *a: pytest.fail("wrong owner record projected"))
     with pytest.raises(ValueError, match="SELECTION_STALE"):
         KronosBrowserServer.selected_opportunity_presentations(adapter, discovery)
