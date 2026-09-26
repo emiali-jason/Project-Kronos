@@ -495,8 +495,139 @@ static int backend_is_reusable(const char *control_path) {
 typedef enum ReplacementReadiness {
     REPLACEMENT_NOT_READY,
     REPLACEMENT_REQUIRED,
+    REPLACEMENT_REQUIRED_OLD_CF55,
     REPLACEMENT_ALREADY_LOADED,
 } ReplacementReadiness;
+
+static const char *old_runtime_compatibility_revision =
+    "cf55fa827b33d27ec44efb8988d413b1088ae07d";
+
+static int read_backend_route(
+    const char *path,
+    char response[BACKEND_STATUS_RESPONSE_BYTES]
+) {
+    int socket_fd = connect_backend();
+    if (socket_fd < 0) return 0;
+    char request[160];
+    int request_bytes = snprintf(
+        request,
+        sizeof(request),
+        "GET %s HTTP/1.0\r\nHost: 127.0.0.1:8947\r\nConnection: close\r\n\r\n",
+        path
+    );
+    if (
+        request_bytes < 1 ||
+        (size_t)request_bytes >= sizeof(request) ||
+        send(socket_fd, request, (size_t)request_bytes, 0) != request_bytes
+    ) {
+        (void)close(socket_fd);
+        return 0;
+    }
+    int response_bytes = read_response(
+        socket_fd,
+        response,
+        BACKEND_STATUS_RESPONSE_BYTES
+    );
+    (void)close(socket_fd);
+    return response_bytes > 0 && strncmp(response, "HTTP/1.0 200 ", 13) == 0;
+}
+
+static int response_has_all(
+    const char *response,
+    const char *const required[],
+    size_t count
+) {
+    for (size_t index = 0; index < count; ++index) {
+        if (strstr(response, required[index]) == NULL) return 0;
+    }
+    return 1;
+}
+
+static int runtime_process_revision(
+    const char *response,
+    pid_t backend_pid,
+    char revision[41]
+) {
+    char process_marker[96];
+    int marker_bytes = snprintf(
+        process_marker,
+        sizeof(process_marker),
+        "\"process\":{\"pid\":%ld,\"revision\":\"",
+        (long)backend_pid
+    );
+    if (marker_bytes < 1 || (size_t)marker_bytes >= sizeof(process_marker)) return 0;
+    const char *loaded = strstr(response, process_marker);
+    if (loaded == NULL) return 0;
+    loaded += (size_t)marker_bytes;
+    if (strlen(loaded) < 41) return 0;
+    (void)memcpy(revision, loaded, 40);
+    revision[40] = '\0';
+    return valid_revision(revision) && loaded[40] == '"';
+}
+
+static int maintenance_generation(const char *response, char generation[65]) {
+    static const char marker[] =
+        "\"maintenance\":{\"protocol\":\"KRONOS_MAINTENANCE_HANDOFF_V1\","
+        "\"state\":\"INACTIVE\",\"active\":false,\"generation\":\"";
+    const char *value = strstr(response, marker);
+    if (value == NULL) return 0;
+    value += sizeof(marker) - 1;
+    if (strlen(value) < 65) return 0;
+    (void)memcpy(generation, value, 64);
+    generation[64] = '\0';
+    return valid_token(generation) && value[64] == '"';
+}
+
+static int connection_is_quiescent(const char *response) {
+    int connected = strstr(response, "\"rest_authentication\":\"CONNECTED\"") != NULL;
+    int disconnected = strstr(response, "\"rest_authentication\":\"DISCONNECTED\"") != NULL;
+    if ((!connected && !disconnected) || (connected && disconnected)) return 0;
+    if (connected) {
+        return
+            strstr(response, "\"worker_active\":false,\"resources_pending\":false,\"cleanup_state\":\"COMPLETE\"") != NULL &&
+            strstr(response, "\"restoration_worker_active\":false") != NULL;
+    }
+    return strstr(response, "\"connection_attempt\":null") != NULL;
+}
+
+static int runtime_shared_work_is_idle(const char *response) {
+    static const char *required[] = {
+        "\"startup\":\"READY\",\"failure\":null",
+        "\"monitoring\":{\"schema\":\"KRONOS-SHARED-MONITORING-STATUS/1.0.0\",\"hub_state\":\"IDLE\",\"transport_state\":\"IDLE\",\"session_count\":0,\"active_session_count\":0,\"owner_count\":0,\"subscription_count\":0",
+        "\"intraday_wo11_work\":{\"state\":\"IDLE\",\"generation\":null,\"owned_workers\":0",
+        "\"intraday_wo17_work\":{\"state\":\"IDLE\",\"generation\":null,\"owned_workers\":0",
+        "\"lifecycle_state\":\"IDLE\",\"shutdown_requested\":false,\"owned_workers\":0,\"worker_generation\":null,\"pass_active\":false",
+        "\"swing_bulk_import\":{\"state\":\"IDLE\"",
+        "\"batch_active\":false",
+    };
+    return response_has_all(response, required, sizeof(required) / sizeof(required[0])) &&
+        connection_is_quiescent(response);
+}
+
+static int new_runtime_analysis_is_idle(const char *response) {
+    static const char *required[] = {
+        "\"analysis_work\":{\"state\":\"IDLE\",\"generation\":null,\"run_identity\":null,\"owned_work_count\":0",
+        "\"analysis_execution\":{\"state\":\"IDLE\",\"pid\":null,\"generation\":null,\"failure\":null,\"failure_diagnostic\":null,\"owned_workers\":0",
+    };
+    return response_has_all(response, required, sizeof(required) / sizeof(required[0]));
+}
+
+static int old_status_analysis_is_idle(const char *response) {
+    static const char *required[] = {
+        "\"service\":\"KRONOS_BROWSER_V1\"",
+        "\"analysis\":\"READY\"",
+        "\"swing_publication\":{\"control\":" ,
+        "\"analysis_work\":{\"state\":\"IDLE\",\"generation\":null,\"run_identity\":null,\"owned_work_count\":0",
+        "\"analysis_execution\":{\"state\":\"IDLE\",\"pid\":null,\"generation\":null,\"failure\":null,\"failure_diagnostic\":null,\"owned_workers\":0",
+        "\"runtime_ready\":true",
+        "\"intraday_wo11_work\":{\"state\":\"IDLE\",\"generation\":null,\"owned_workers\":0",
+        "\"intraday_wo17_work\":{\"state\":\"IDLE\",\"generation\":null,\"owned_workers\":0",
+        "\"lifecycle_state\":\"IDLE\",\"shutdown_requested\":false,\"owned_workers\":0,\"worker_generation\":null,\"pass_active\":false",
+        "\"swing_bulk_import\":{\"state\":\"IDLE\"",
+        "\"batch_active\":false",
+    };
+    return response_has_all(response, required, sizeof(required) / sizeof(required[0]));
+}
 
 static ReplacementReadiness backend_replacement_readiness(
     pid_t backend_pid,
@@ -505,70 +636,51 @@ static ReplacementReadiness backend_replacement_readiness(
     if (backend_pid < 2 || !valid_revision(target_revision) || kill(backend_pid, 0) != 0) {
         return REPLACEMENT_NOT_READY;
     }
-    int socket_fd = connect_backend();
-    if (socket_fd < 0) return REPLACEMENT_NOT_READY;
-    static const char request[] =
-        "GET /runtime/status HTTP/1.0\r\nHost: 127.0.0.1:8947\r\nConnection: close\r\n\r\n";
-    if (send(socket_fd, request, sizeof(request) - 1, 0) != (ssize_t)(sizeof(request) - 1)) {
-        (void)close(socket_fd);
-        return REPLACEMENT_NOT_READY;
-    }
     char response[BACKEND_STATUS_RESPONSE_BYTES] = {0};
-    int response_bytes = read_response(socket_fd, response, sizeof(response));
-    (void)close(socket_fd);
-    if (response_bytes <= 0 || strncmp(response, "HTTP/1.0 200 ", 13) != 0) {
-        return REPLACEMENT_NOT_READY;
-    }
-    char process_marker[96];
-    int marker_bytes = snprintf(
-        process_marker,
-        sizeof(process_marker),
-        "\"process\":{\"pid\":%ld,\"revision\":\"",
-        (long)backend_pid
-    );
-    if (marker_bytes < 1 || (size_t)marker_bytes >= sizeof(process_marker)) {
-        return REPLACEMENT_NOT_READY;
-    }
-    const char *loaded = strstr(response, process_marker);
-    if (loaded == NULL) return REPLACEMENT_NOT_READY;
-    loaded += (size_t)marker_bytes;
-    if (strlen(loaded) < 41) return REPLACEMENT_NOT_READY;
     char loaded_revision[41] = {0};
-    (void)memcpy(loaded_revision, loaded, 40);
-    if (!valid_revision(loaded_revision) || loaded[40] != '"') {
+    if (
+        !read_backend_route("/runtime/status", response) ||
+        !runtime_process_revision(response, backend_pid, loaded_revision)
+    ) {
         return REPLACEMENT_NOT_READY;
     }
     if (strcmp(loaded_revision, target_revision) == 0) {
         return REPLACEMENT_ALREADY_LOADED;
     }
-    static const char *required[] = {
-        "\"maintenance\":{\"protocol\":\"KRONOS_MAINTENANCE_HANDOFF_V1\",\"state\":\"INACTIVE\",\"active\":false",
-        "\"startup\":\"READY\",\"failure\":null",
-        "\"monitoring\":{\"schema\":\"KRONOS-SHARED-MONITORING-STATUS/1.0.0\",\"hub_state\":\"IDLE\",\"transport_state\":\"IDLE\",\"session_count\":0,\"active_session_count\":0,\"owner_count\":0,\"subscription_count\":0",
-        "\"intraday_wo11_work\":{\"state\":\"IDLE\",\"generation\":null,\"owned_workers\":0",
-        "\"intraday_wo17_work\":{\"state\":\"IDLE\",\"generation\":null,\"owned_workers\":0",
-        "\"lifecycle_state\":\"IDLE\",\"shutdown_requested\":false,\"owned_workers\":0,\"worker_generation\":null,\"pass_active\":false",
-        "\"swing_bulk_import\":{\"state\":\"IDLE\"",
-        "\"batch_active\":false",
-        "\"analysis_work\":{\"state\":\"IDLE\",\"generation\":null,\"run_identity\":null,\"owned_work_count\":0",
-        "\"analysis_execution\":{\"state\":\"IDLE\",\"pid\":null,\"generation\":null,\"failure\":null,\"failure_diagnostic\":null,\"owned_workers\":0",
-    };
-    for (size_t index = 0; index < sizeof(required) / sizeof(required[0]); ++index) {
-        if (strstr(response, required[index]) == NULL) return REPLACEMENT_NOT_READY;
-    }
-    int connected = strstr(response, "\"rest_authentication\":\"CONNECTED\"") != NULL;
-    int disconnected = strstr(response, "\"rest_authentication\":\"DISCONNECTED\"") != NULL;
-    if ((!connected && !disconnected) || (connected && disconnected)) {
+    if (!runtime_shared_work_is_idle(response)) return REPLACEMENT_NOT_READY;
+    if (new_runtime_analysis_is_idle(response)) return REPLACEMENT_REQUIRED;
+    if (strcmp(loaded_revision, old_runtime_compatibility_revision) != 0) {
         return REPLACEMENT_NOT_READY;
     }
-    if (connected && (
-        strstr(response, "\"worker_active\":false,\"resources_pending\":false,\"cleanup_state\":\"COMPLETE\"") == NULL ||
-        strstr(response, "\"restoration_worker_active\":false") == NULL
-    )) return REPLACEMENT_NOT_READY;
-    if (disconnected && strstr(response, "\"connection_attempt\":null") == NULL) {
+
+    char first_generation[65] = {0};
+    if (!maintenance_generation(response, first_generation)) return REPLACEMENT_NOT_READY;
+    char status_response[BACKEND_STATUS_RESPONSE_BYTES] = {0};
+    char status_generation[65] = {0};
+    if (
+        !read_backend_route("/status", status_response) ||
+        !old_status_analysis_is_idle(status_response) ||
+        !maintenance_generation(status_response, status_generation) ||
+        strcmp(first_generation, status_generation) != 0
+    ) {
         return REPLACEMENT_NOT_READY;
     }
-    return REPLACEMENT_REQUIRED;
+
+    char recheck[BACKEND_STATUS_RESPONSE_BYTES] = {0};
+    char recheck_revision[41] = {0};
+    char recheck_generation[65] = {0};
+    if (
+        !read_backend_route("/runtime/status", recheck) ||
+        !runtime_process_revision(recheck, backend_pid, recheck_revision) ||
+        strcmp(recheck_revision, loaded_revision) != 0 ||
+        !runtime_shared_work_is_idle(recheck) ||
+        new_runtime_analysis_is_idle(recheck) ||
+        !maintenance_generation(recheck, recheck_generation) ||
+        strcmp(first_generation, recheck_generation) != 0
+    ) {
+        return REPLACEMENT_NOT_READY;
+    }
+    return REPLACEMENT_REQUIRED_OLD_CF55;
 }
 
 static int backend_supports_maintenance(void) {
@@ -913,10 +1025,19 @@ int main(void) {
             (void)memset(token, 0, sizeof(token));
             return open_workspace();
         }
-        if (readiness != REPLACEMENT_REQUIRED) {
+        if (
+            readiness != REPLACEMENT_REQUIRED &&
+            readiness != REPLACEMENT_REQUIRED_OLD_CF55
+        ) {
             (void)memset(token, 0, sizeof(token));
             return show_restart_blocked();
         }
+        puts(
+            readiness == REPLACEMENT_REQUIRED_OLD_CF55
+                ? "KRONOS_REPLACEMENT_PREDICATE=OLD_RUNTIME_CF55_STATUS_PAIR"
+                : "KRONOS_REPLACEMENT_PREDICATE=CURRENT_RUNTIME_STATUS"
+        );
+        (void)fflush(stdout);
     }
     char generation[65] = {0};
     unsigned char random_bytes[32];

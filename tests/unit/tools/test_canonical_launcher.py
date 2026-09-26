@@ -325,6 +325,87 @@ def run_replacement_probe(tmp_path, payload, *, target, expected):
     assert completed.returncode == 0
 
 
+OLD_RUNTIME_REVISION = 'cf55fa827b33d27ec44efb8988d413b1088ae07d'
+
+
+def old_runtime_payload():
+    payload = replacement_payload(revision=OLD_RUNTIME_REVISION)
+    payload.pop('analysis_work')
+    payload.pop('analysis_execution')
+    return payload
+
+
+def old_status_payload():
+    runtime = replacement_payload(revision=OLD_RUNTIME_REVISION)
+    return {
+        'service': 'KRONOS_BROWSER_V1',
+        'provider': 'CONNECTED',
+        'analysis': 'READY',
+        'intraday_wo11_work': dict(runtime['intraday_wo11_work']),
+        'intraday_wo17_work': dict(runtime['intraday_wo17_work']),
+        'housekeeping': dict(runtime['housekeeping']),
+        'swing_bulk_import': dict(runtime['swing_bulk_import']),
+        'swing_publication': {
+            'control': {'schema_version': 'KRONOS-SWING-RUN-PUBLICATION-V1'},
+            'request_result': '',
+            'reconciliation_unavailable': False,
+            'analysis_work': dict(runtime['analysis_work']),
+            'analysis_execution': dict(runtime['analysis_execution']),
+        },
+        'maintenance': dict(runtime['maintenance']),
+        'runtime_ready': True,
+    }
+
+
+def run_old_replacement_probe(tmp_path, payloads, *, expected, expected_requests):
+    listener = socket.socket()
+    listener.bind(('127.0.0.1', 0))
+    listener.listen(3)
+    listener.settimeout(1)
+    port = listener.getsockname()[1]
+    source = SOURCE.read_text().replace('htons(8947)', f'htons({port})').replace(
+        'int main(void) {', 'int unused_application_main(void) {',
+    )
+    source += f'''\nint main(void) {{
+        return backend_replacement_readiness({os.getpid()}, "{'b' * 40}") == {expected}
+            ? 0 : 1;
+    }}\n'''
+    binary = tmp_path / 'old-replacement-probe'
+    compile_source(source, binary)
+    responses = [
+        status_response(json.dumps(value, separators=(',', ':')).encode())
+        for value in payloads
+    ]
+    requests = []
+    errors = []
+
+    def peer():
+        try:
+            for response in responses:
+                try:
+                    connection, _ = listener.accept()
+                except socket.timeout:
+                    break
+                with connection:
+                    request = b''
+                    while b'\r\n\r\n' not in request:
+                        request += connection.recv(256)
+                    requests.append(request)
+                    connection.sendall(response)
+        except Exception as error:  # pragma: no cover - asserted below
+            errors.append(error)
+        finally:
+            listener.close()
+
+    thread = Thread(target=peer)
+    thread.start()
+    completed = subprocess.run([str(binary)], capture_output=True, timeout=5)
+    thread.join(6)
+    assert not thread.is_alive() and not errors
+    assert requests == expected_requests
+    assert completed.returncode == 0, completed.stderr.decode()
+
+
 def replacement_payload(*, revision='a' * 40, worker=False, owners=0):
     return {
         'schema': 'KRONOS-RUNTIME-STATE/1.0.0',
@@ -581,6 +662,97 @@ def test_exact_loaded_revision_is_reused_without_a_replacement(tmp_path):
         target='b' * 40,
         expected='REPLACEMENT_ALREADY_LOADED',
     )
+
+
+def test_exact_cf55_old_schema_pair_authorizes_one_compatibility_handoff(tmp_path):
+    runtime = old_runtime_payload()
+    status = old_status_payload()
+    run_old_replacement_probe(
+        tmp_path,
+        [runtime, status, runtime],
+        expected='REPLACEMENT_REQUIRED_OLD_CF55',
+        expected_requests=[
+            b'GET /runtime/status HTTP/1.0\r\nHost: 127.0.0.1:8947\r\nConnection: close\r\n\r\n',
+            b'GET /status HTTP/1.0\r\nHost: 127.0.0.1:8947\r\nConnection: close\r\n\r\n',
+            b'GET /runtime/status HTTP/1.0\r\nHost: 127.0.0.1:8947\r\nConnection: close\r\n\r\n',
+        ],
+    )
+
+
+@pytest.mark.parametrize(
+    ('case', 'expected_count'),
+    [
+        ('runtime-intraday-busy', 1),
+        ('runtime-monitoring-owner', 1),
+        ('status-analysis-missing', 2),
+        ('status-analysis-busy', 2),
+        ('status-generation-conflict', 2),
+        ('status-not-ready', 2),
+        ('recheck-intraday-busy', 3),
+        ('recheck-generation-conflict', 3),
+        ('recheck-revision-conflict', 3),
+    ],
+)
+def test_cf55_compatibility_rejects_missing_busy_conflicting_or_changing_facts(
+    tmp_path, case, expected_count,
+):
+    first = old_runtime_payload()
+    status = old_status_payload()
+    recheck = old_runtime_payload()
+    if case == 'runtime-intraday-busy':
+        first['intraday_wo11_work'].update(state='RUNNING', generation=1, owned_workers=1)
+    elif case == 'runtime-monitoring-owner':
+        first['monitoring']['owner_count'] = 1
+    elif case == 'status-analysis-missing':
+        status['swing_publication'].pop('analysis_work')
+    elif case == 'status-analysis-busy':
+        status['swing_publication']['analysis_work'].update(
+            state='RUNNING', generation=1, run_identity='run', owned_work_count=1,
+        )
+    elif case == 'status-generation-conflict':
+        status['maintenance']['generation'] = 'e' * 64
+    elif case == 'status-not-ready':
+        status['runtime_ready'] = False
+    elif case == 'recheck-intraday-busy':
+        recheck['intraday_wo11_work'].update(state='RUNNING', generation=2, owned_workers=1)
+    elif case == 'recheck-generation-conflict':
+        recheck['maintenance']['generation'] = 'e' * 64
+    elif case == 'recheck-revision-conflict':
+        recheck['process']['revision'] = 'c' * 40
+    payloads = [first, status, recheck]
+    requests = [
+        b'GET /runtime/status HTTP/1.0\r\nHost: 127.0.0.1:8947\r\nConnection: close\r\n\r\n',
+        b'GET /status HTTP/1.0\r\nHost: 127.0.0.1:8947\r\nConnection: close\r\n\r\n',
+        b'GET /runtime/status HTTP/1.0\r\nHost: 127.0.0.1:8947\r\nConnection: close\r\n\r\n',
+    ][:expected_count]
+    run_old_replacement_probe(
+        tmp_path,
+        payloads,
+        expected='REPLACEMENT_NOT_READY',
+        expected_requests=requests,
+    )
+
+
+def test_old_schema_compatibility_is_revision_scoped(tmp_path):
+    runtime = old_runtime_payload()
+    runtime['process']['revision'] = 'd' * 40
+    run_old_replacement_probe(
+        tmp_path,
+        [runtime],
+        expected='REPLACEMENT_NOT_READY',
+        expected_requests=[
+            b'GET /runtime/status HTTP/1.0\r\nHost: 127.0.0.1:8947\r\nConnection: close\r\n\r\n',
+        ],
+    )
+
+
+def test_replacement_records_the_authorizing_predicate_before_handoff():
+    source = SOURCE.read_text()
+    main = source.split('int main(void) {', 1)[1]
+    predicate = main.index('KRONOS_REPLACEMENT_PREDICATE=OLD_RUNTIME_CF55_STATUS_PAIR')
+    shutdown = main.index('request_graceful_shutdown(backend_pid, token, generation)')
+    assert predicate < shutdown
+    assert 'KRONOS_REPLACEMENT_PREDICATE=CURRENT_RUNTIME_STATUS' in main
 
 
 @pytest.mark.parametrize(
