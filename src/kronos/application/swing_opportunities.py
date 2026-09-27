@@ -765,6 +765,15 @@ class SwingPublicationMutationSnapshot:
 class SwingOpportunitiesApplication:
     """Own Provider capability and Swing analysis inside one browser process."""
 
+    def bind_maintenance_admission(self, admission) -> None:
+        if getattr(self, "_maintenance_admission", None) is not None:
+            raise ValueError("SWING_MAINTENANCE_BINDING_CONFLICT")
+        self._maintenance_admission = admission
+
+    def _maintenance_ticket(self, kind):
+        admission = getattr(self, "_maintenance_admission", None)
+        return None if admission is None else admission.admit(kind)
+
     def __init__(
         self,
         provider_factory: Callable[[], _ProviderRuntime],
@@ -1459,6 +1468,18 @@ class SwingOpportunitiesApplication:
     def test_live_monitoring(self, canonical_instrument: str) -> bool:
         """Start one bounded Sponsor E2E and reject invalid/concurrent attempts."""
 
+        ticket = self._maintenance_ticket("MONITORING_CALLBACK")
+        if getattr(self, "_maintenance_admission", None) is not None and ticket is None:
+            return False
+        try:
+            return self._test_live_monitoring_admitted(canonical_instrument, ticket)
+        finally:
+            if ticket is not None:
+                ticket.release()
+
+    def _test_live_monitoring_admitted(self, canonical_instrument: str,
+                                      parent_ticket=None) -> bool:
+
         if canonical_instrument not in governed_live_monitoring_instruments():
             with self.__lock:
                 self.__live_monitoring_result = LiveMonitoringTestResult(
@@ -1480,10 +1501,26 @@ class SwingOpportunitiesApplication:
                 LiveMonitoringTestState.TESTING,
                 canonical_instrument,
             )
-        self.__background_runner(
-            lambda: self.__complete_live_monitoring_test(canonical_instrument),
-            "kronos-live-monitoring-e2e",
-        )
+        worker_ticket = (None if parent_ticket is None else
+                         parent_ticket.fork("MONITORING_CALLBACK"))
+        def run_test() -> None:
+            try:
+                with (nullcontext() if worker_ticket is None else worker_ticket.activate()):
+                    self.__complete_live_monitoring_test(canonical_instrument)
+            finally:
+                if worker_ticket is not None:
+                    worker_ticket.release()
+        try:
+            self.__background_runner(run_test, "kronos-live-monitoring-e2e")
+        except Exception:
+            if worker_ticket is not None and not worker_ticket._released:
+                worker_ticket.release()
+            with self.__lock:
+                self.__live_monitoring_result = LiveMonitoringTestResult(
+                    LiveMonitoringTestState.FAIL, canonical_instrument,
+                    safe_reason="MONITORING_DISPATCH_FAILED",
+                )
+            return False
         return True
 
     def restore_v1_review_projection(
@@ -1554,6 +1591,21 @@ class SwingOpportunitiesApplication:
     def connect_provider(self, *, action_reference: str | None = None,
                          request_route: str = "SHARED_PROVIDER_API", received_at: str | None = None) -> bool:
         """Admit one explicit request, including ownership of its blocked work."""
+        ticket = self._maintenance_ticket("PROVIDER_CONNECTION")
+        if getattr(self, "_maintenance_admission", None) is not None and ticket is None:
+            return False
+        try:
+            return self._connect_provider_admitted(
+                action_reference=action_reference, request_route=request_route,
+                received_at=received_at, parent_ticket=ticket,
+            )
+        finally:
+            if ticket is not None:
+                ticket.release()
+
+    def _connect_provider_admitted(self, *, action_reference=None,
+                                   request_route="SHARED_PROVIDER_API",
+                                   received_at=None, parent_ticket=None) -> bool:
         governance = self.connection_governance
         with self.__connection_transition_lock:
             request = governance.request(reference=action_reference, route=request_route, received_at=received_at) if governance else None
@@ -1601,19 +1653,46 @@ class SwingOpportunitiesApplication:
                 self.__sponsor_restoration_state = "NOT_REQUESTED"
                 self.__sponsor_restoration_status_generation = generation
                 self.__sponsor_restoration_failure = ""
+            worker_ticket = (None if parent_ticket is None else
+                             parent_ticket.fork("PROVIDER_CONNECTION"))
+            callback_ticket = (None if parent_ticket is None else
+                               parent_ticket.fork("PROVIDER_CALLBACK"))
+            callback_release_lock = RLock()
+
+            def release_callback() -> None:
+                with callback_release_lock:
+                    if callback_ticket is not None and not callback_ticket._released:
+                        callback_ticket.release()
+
+            def terminal() -> None:
+                try:
+                    with (nullcontext() if callback_ticket is None else
+                          callback_ticket.activate()):
+                        self.__connection_terminal(deadline, completion)
+                finally:
+                    release_callback()
+
+            def worker() -> None:
+                try:
+                    with (nullcontext() if worker_ticket is None else
+                          worker_ticket.activate()):
+                        self.__complete_connection(
+                            generation, deadline, request, completion, worker_ticket
+                        )
+                finally:
+                    if deadline.snapshot()["state"] == "SUCCEEDED":
+                        release_callback()  # commit cancelled the terminal callback
+                    if worker_ticket is not None:
+                        worker_ticket.release()
             try:
-                deadline.arm(
-                    lambda: self.__connection_terminal(deadline, completion)
-                )
-                self.__background_runner(
-                    lambda: self.__complete_connection(
-                        generation, deadline, request, completion
-                    ),
-                    "kronos-browser-auth",
-                )
+                deadline.arm(terminal)
+                self.__background_runner(worker, "kronos-browser-auth")
             except Exception:
                 deadline.finish()
                 deadline.worker_finished()
+                release_callback()
+                if worker_ticket is not None and not worker_ticket._released:
+                    worker_ticket.release()
                 raise
         return True
 
@@ -1796,6 +1875,20 @@ class SwingOpportunitiesApplication:
     def run_analysis(self) -> bool:
         """Admit one owned Stage 1-9 job with a zero-capacity queue."""
 
+        ticket = self._maintenance_ticket("SWING_ANALYSIS")
+        if getattr(self, "_maintenance_admission", None) is not None and ticket is None:
+            return False
+        try:
+            if ticket is None:
+                return self._run_analysis_admitted()
+            with ticket.activate():
+                return self._run_analysis_admitted()
+        finally:
+            if ticket is not None:
+                ticket.release()
+
+    def _run_analysis_admitted(self) -> bool:
+
         with self.__lock:
             if self.__analysis_work is not None:
                 self.__analysis_request_result = (
@@ -1863,12 +1956,29 @@ class SwingOpportunitiesApplication:
         if not current:
             self.__finish_analysis_work(work)
             return False
+        worker_ticket = self._maintenance_ticket("SWING_ANALYSIS")
+        if getattr(self, "_maintenance_admission", None) is not None and worker_ticket is None:
+            self.__finish_analysis_dispatch_failure(work)
+            return False
+
+        def complete_owned() -> None:
+            try:
+                if worker_ticket is None:
+                    self.__complete_analysis(work, run_created_at)
+                else:
+                    with worker_ticket.activate():
+                        self.__complete_analysis(work, run_created_at)
+            finally:
+                if worker_ticket is not None:
+                    worker_ticket.release()
         try:
             self.__background_runner(
-                lambda: self.__complete_analysis(work, run_created_at),
+                complete_owned,
                 "kronos-browser-swing",
             )
         except Exception:
+            if worker_ticket is not None and not worker_ticket._released:
+                worker_ticket.release()
             self.__finish_analysis_dispatch_failure(work)
             return False
         return True
@@ -2023,10 +2133,11 @@ class SwingOpportunitiesApplication:
             self.__dispose_connection_candidate(provider, deadline)
 
     def __complete_connection(
-        self, generation, deadline, request, completion
+        self, generation, deadline, request, completion, worker_ticket=None
     ) -> None:
         # A generation keeps ownership through external return and cleanup.
         restoration = None
+        restoration_ticket = None
         with self.__authentication_lock, connection_deadline_scope(deadline):
             try:
                 with self.__lock:
@@ -2051,6 +2162,10 @@ class SwingOpportunitiesApplication:
                         raise RuntimeError("CONNECTION_COMPLETION_NOT_PERSISTED")
                 if not success:
                     deadline.finish()
+                elif restoration is not None and worker_ticket is not None:
+                    # Reserve continuation ownership before the authentication
+                    # worker can return, even if a maintenance claim races here.
+                    restoration_ticket = worker_ticket.fork("SPONSOR_RESTORATION")
             except Exception:
                 restoration = None
                 deadline.finish()
@@ -2072,7 +2187,7 @@ class SwingOpportunitiesApplication:
                 deadline.worker_finished()
         # Authentication and governance have completed before restoration runs.
         if restoration is not None:
-            self.__dispatch_sponsor_restoration(restoration)
+            self.__dispatch_sponsor_restoration(restoration, restoration_ticket)
 
     @staticmethod
     def __dispose_connection_candidate(provider, deadline):
@@ -2194,21 +2309,34 @@ class SwingOpportunitiesApplication:
             )
 
     def __dispatch_sponsor_restoration(
-        self, restoration: _SponsorRestorationGeneration
+        self, restoration: _SponsorRestorationGeneration, ticket=None
     ) -> None:
         identity = id(restoration)
         with self.__lock:
-            if not self.__restoration_current_locked(restoration):
-                return
-            self.__restoration_work_owned.add(identity)
-            self.__restoration_workers = len(self.__restoration_work_owned)
+            current = self.__restoration_current_locked(restoration)
+            if current:
+                self.__restoration_work_owned.add(identity)
+                self.__restoration_workers = len(self.__restoration_work_owned)
+        if not current:
+            if ticket is not None:
+                ticket.release()
+            return
         restoration.deadline.hold_resource("sponsor_restoration", restoration)
+        def run_restoration() -> None:
+            try:
+                with (nullcontext() if ticket is None else ticket.activate()):
+                    self.__restore_sponsor_operability(restoration)
+            finally:
+                if ticket is not None:
+                    ticket.release()
         try:
             self.__background_runner(
-                lambda: self.__restore_sponsor_operability(restoration),
+                run_restoration,
                 "kronos-browser-restoration",
             )
         except Exception:
+            if ticket is not None and not ticket._released:
+                ticket.release()
             if self.__release_sponsor_restoration_work(restoration):
                 self.__finish_sponsor_restoration(restoration, failed=True)
 

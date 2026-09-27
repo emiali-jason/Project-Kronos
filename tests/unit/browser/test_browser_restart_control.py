@@ -1,5 +1,6 @@
 from pathlib import Path
 import os
+import json
 
 import pytest
 
@@ -48,6 +49,33 @@ def test_control_record_is_private_process_bound_and_removable(tmp_path) -> None
 
     control.remove()
     assert not path.exists()
+
+
+def test_v2_drain_handoff_requires_current_process_control_and_zero_proof(tmp_path) -> None:
+    control = BrowserBackendRestartControl.create(
+        tmp_path / "runtime" / "browser.control",
+        process_id=os.getpid(), token="a" * 64,
+    )
+    drain = {name: 0 for name in (
+        "coordinator_owners", "wo11_owned", "wo11_queued", "wo17_owned",
+        "wo17_queued", "housekeeping_owned", "bulk_owned",
+        "notification_scheduled", "monitoring_sessions", "provider_owned",
+        "provider_leases",
+    )}
+    drain["notification_checkpoint"] = {"state": "EMPTY", "pending_count": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"}
+    generation = "b" * 64
+    control.maintenance_drain_handoff(
+        generation, "c" * 64, "d" * 40, drain
+    )
+    source = control.path.parent / "maintenance" / f"{generation}.json"
+    document = json.loads(source.read_text())
+    assert document["record"]["schema"] == "KRONOS_MAINTENANCE_HANDOFF_V2"
+    assert document["record"]["drain"] == drain
+    control.path.write_text("incompatible control", encoding="ascii")
+    with pytest.raises(ValueError, match="MAINTENANCE_FOREIGN_PROCESS"):
+        control.maintenance_drain_handoff("e" * 64, "c" * 64, "d" * 40, drain)
+    assert not (control.path.parent / "maintenance" / f"{'e' * 64}.json").exists()
 
 
 @pytest.mark.parametrize(

@@ -66,6 +66,7 @@ with StartupCapture(Path(__file__).resolve().parents[1], keep_sources_pinned=Tru
     from kronos.browser.restart_control import BrowserBackendRestartControl, DEFAULT_BACKEND_CONTROL_PATH
     from kronos.common.connection_governance import ConnectionProcess, ConnectionAuditStore, ConnectionGovernance
     from kronos.common.legacy_bootstrap import consume_startup_context
+    from kronos.common.maintenance import DrainStartupContext
     from kronos.market.calendar import MarketCalendarPublisher
     from kronos.intraday.universe import load_intraday_universe_publication
     from kronos.provider.contracts.provider_authentication import ReadOnlyProviderOperation
@@ -136,11 +137,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         revision=_STARTUP_EVIDENCE.source_revision, source_state=_STARTUP_EVIDENCE.source_state,
         repository=Path(__file__).resolve().parents[1],
         runtime_identity=process_identity, now=datetime.now(UTC))
+    maintenance_identity = (maintenance.generation if isinstance(
+        maintenance, DrainStartupContext) else maintenance)
+    expected_notification_checkpoint = (maintenance.notification_checkpoint()
+        if isinstance(maintenance, DrainStartupContext) else None)
     governance = ConnectionGovernance(ConnectionProcess(
         _STARTUP_EVIDENCE.process_id, _STARTUP_EVIDENCE.startup_boundary_at.isoformat(),
         process_identity, _STARTUP_EVIDENCE.source_revision, _STARTUP_EVIDENCE.source_state),
         ConnectionAuditStore(Path.home() / "Library/Application Support/KRONOS/evidence/shared/provider-connection-v1"),
-        maintenance_identity=maintenance or process_identity)
+        maintenance_identity=maintenance_identity or process_identity)
     mtf_fact_store = MtfFactEvidenceStore(DEFAULT_MTF_FACT_EVIDENCE_ROOT)
     native_discovery_store = NativeDiscoveryEvidenceStore(
         DEFAULT_NATIVE_DISCOVERY_EVIDENCE_ROOT
@@ -317,19 +322,30 @@ def main(argv: Sequence[str] | None = None) -> int:
             provider_login_navigation=provider_login_navigation,
         )
         server.housekeeping = _compose_housekeeping(server, intraday_runtime)
+        server.housekeeping.bind_maintenance_admission(server.maintenance_admission)
         server.provider_runtime = shared_provider_runtime
         server.intraday_wo09_notification_sources = (
             intraday_runtime.wo09_store.load_notifications
         )
         intraday_runtime.lifecycle_application.bind_monitoring(server.swing_monitoring_hub, application.authenticated_read_only_capability)
+        intraday_runtime.lifecycle_application.bind_maintenance_admission(
+            server.maintenance_admission
+        )
         server.intraday_lifecycle = intraday_runtime.lifecycle_application
+        intraday_runtime.wo17_monitoring.bind_maintenance_admission(
+            server.maintenance_admission
+        )
         server.intraday_wo17_monitoring = intraday_runtime.wo17_monitoring
         server.intraday_journal = intraday_runtime.journal_application
         from kronos.application.intraday_notifications import IntradayNotifications
         server.intraday_notifications = IntradayNotifications(
             centre=server.notification_centre, research=intraday_runtime.research_application,
             wo09=intraday_runtime.wo09_store, futures=intraday_runtime.futures_application.store,
-            lifecycle=intraday_runtime.lifecycle_application.store, telegram=server.telegram)
+            lifecycle=intraday_runtime.lifecycle_application.store, telegram=server.telegram,
+            expected_checkpoint=expected_notification_checkpoint)
+        server.intraday_notifications.bind_maintenance_admission(
+            server.maintenance_admission
+        )
         server.intraday_notifications.bind(intraday_runtime.probables_v2_store)
         intraday_runtime.journal_application.bind()
         from kronos.application.intraday_books import IntradayBooks

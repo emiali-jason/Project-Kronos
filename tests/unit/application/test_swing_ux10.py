@@ -13,6 +13,7 @@ from kronos.application.swing_ux10 import (
     Ux10NotificationType,
     Ux10Priority,
 )
+from kronos.common.maintenance_admission import MaintenanceAdmissionCoordinator
 from kronos.integrations.telegram import (
     TelegramConfigurationState,
     TelegramConfigurationStatus,
@@ -313,6 +314,45 @@ def test_retryable_delivery_is_persisted_and_bounded(tmp_path: Path) -> None:
     assert record.delivery_attempts == 1
     assert record.next_retry_at == NOW + timedelta(seconds=1)
     assert record.last_safe_failure == "TELEGRAM_RATE_LIMITED"
+
+
+def test_maintenance_cancels_retry_timer_without_losing_durable_retry(tmp_path: Path) -> None:
+    scheduled = []
+
+    class TimerHandle:
+        cancelled = False
+
+        def cancel(self) -> None:
+            self.cancelled = True
+
+    handle = TimerHandle()
+
+    def schedule(_delay, operation):  # type: ignore[no-untyped-def]
+        scheduled.append(operation)
+        return handle
+
+    admission = MaintenanceAdmissionCoordinator()
+    telegram = Telegram((TelegramDeliveryResult(
+        TelegramDeliveryState.FAILED_RETRYABLE, "TELEGRAM_RATE_LIMITED", 1
+    ),))
+    service = SwingUx10NotificationService(
+        Ux10NotificationStore(tmp_path), telegram=telegram,
+        clock=lambda: NOW, background_runner=immediate,
+        retry_scheduler=schedule, maintenance_admission=admission,
+    )
+    service.observe_progression_watch(_triggered("CANBK"))
+    assert service.maintenance_status() == {"closed": False, "retry_callbacks": 1}
+    assert len(scheduled) == 1
+    generation = "d" * 64
+    assert admission.claim(generation)
+    admission.draining(generation)
+    service.close()
+    assert handle.cancelled
+    scheduled[0]()  # A racing callback after close cannot send or rewrite.
+    assert len(telegram.messages) == 1
+    assert service.maintenance_status() == {"closed": True, "retry_callbacks": 0}
+    assert Ux10NotificationStore(tmp_path).load()[0].next_retry_at is not None
+    assert admission.wait_for_zero(generation, 0)
 
 
 def test_telegram_message_has_product_identity_and_no_trading_command(tmp_path: Path) -> None:

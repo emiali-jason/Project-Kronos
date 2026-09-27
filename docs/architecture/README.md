@@ -1,5 +1,9 @@
 # KRONOS Architecture Repository
 
+[ADR-0059](adr/ADR-0059-GENERATION-BOUND-MAINTENANCE-ADMISSION-AND-V2-DRAIN-HANDOFF.md)
+records the approved shared maintenance V2 drain contract. Its qualified R2
+source is published separately from launcher installation and runtime acceptance.
+
 Swing Phase C prospective Native availability semantics are governed by
 [ADR-0057](adr/ADR-0057-SWING-NATIVE-AVAILABILITY-SEMANTICS-V2.md) and the
 [V2 contract](interfaces/KRONOS-SWING-NATIVE-DISCOVERY-AVAILABILITY-V2.md);

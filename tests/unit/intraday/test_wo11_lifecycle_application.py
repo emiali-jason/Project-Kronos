@@ -12,6 +12,7 @@ from tests.unit.intraday.test_native_pullback_policy import START,SUBJECT
 from tests.unit.intraday.test_wo10_futures import session
 from kronos.intraday.wo11_lifecycle_store import LifecycleStore
 from kronos.application.intraday_lifecycle import IntradayLifecycleApplication
+from kronos.common.maintenance_admission import MaintenanceAdmissionCoordinator
 from kronos.application.intraday_lifecycle_intake import load_intake,instrument_record
 from kronos.application.intraday_lifecycle_timing import qualify_timing
 from kronos.application.shared_monitoring import SharedSwingMonitoringHub
@@ -358,3 +359,26 @@ def test_shutdown_disposes_registration_that_finishes_attaching_late(
     assert not worker.is_alive() and len(result)==1
     assert app._registrations=={}
     assert hub.subscription_count==0 and hub.active_session_count==0
+
+
+def test_maintenance_claim_drains_admitted_wo11_pulse_and_rejects_late_pulse(
+    tmp_path, monkeypatch
+):
+    runners=[]
+    app,_,_,_,_,_,_=fixture(
+        tmp_path,monkeypatch,background_runner=lambda operation,_name:runners.append(operation))
+    admission=MaintenanceAdmissionCoordinator()
+    app.bind_maintenance_admission(admission)
+    assert app.request_pulse()
+    assert admission.snapshot()['owners']=={'WO11':1}
+    generation='a'*64
+    assert admission.claim(generation)
+    admission.draining(generation)
+    assert not app.request_pulse()
+    assert app.work_status()['queued_items']==1
+    assert len(runners)==1
+    runners[0]()
+    assert admission.wait_for_zero(generation,0)
+    assert app.work_status()['completed_work']==1
+    admission.finalizer(generation).release()
+    admission.ready(generation)

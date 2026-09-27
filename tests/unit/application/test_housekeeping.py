@@ -16,6 +16,7 @@ from kronos.application.housekeeping import (
     intraday_research_staging_scope,
     review_preparation_scope,
 )
+from kronos.common.maintenance_admission import MaintenanceAdmissionCoordinator
 from kronos.intraday.wo12_research_contract import digest, record
 from kronos.swing.v1.review_evidence_store import ReviewEvidenceStore
 from tests.unit.application.test_intraday_research import _application
@@ -402,6 +403,28 @@ def test_shutdown_retains_queued_owner_until_fenced_callback_finishes(tmp_path) 
     assert final["lifecycle_state"] == "STOPPED"
     assert final["owned_workers"] == 0
     assert cleaned == []
+
+
+def test_maintenance_fence_preserves_queued_housekeeping_owner(tmp_path) -> None:
+    queued=[]
+    cleaned=[]
+    class Scope:
+        def clean(self, _owner, _budget):
+            cleaned.append(True)
+    worker=_housekeeper(Scope(),production_activation=True,
+                        interval_seconds=10,clock=lambda:0.0,
+                        background_runner=queued.append)
+    admission=MaintenanceAdmissionCoordinator()
+    worker.bind_maintenance_admission(admission)
+    assert worker.trigger_periodic(now=10)=="SCHEDULED"
+    assert admission.snapshot()["owners"]=={"HOUSEKEEPING":1}
+    generation="c"*64
+    assert admission.claim(generation)
+    admission.draining(generation)
+    assert worker.trigger_periodic(now=100)=="SHUTDOWN"
+    queued.pop()()
+    assert admission.wait_for_zero(generation,0)
+    assert cleaned==[True]
 
 
 def test_shutdown_is_bounded_while_uninterruptible_pass_remains_owned(tmp_path) -> None:

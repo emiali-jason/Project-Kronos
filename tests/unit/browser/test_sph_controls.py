@@ -1,5 +1,7 @@
 from http.client import HTTPConnection
 from threading import Thread
+from threading import Event
+from time import monotonic
 from pathlib import Path
 import json
 import os
@@ -97,16 +99,21 @@ def test_settings_reference_is_distinct_and_no_header_origin_spoofing(running):
     assert p.begin_count==0
 
 
-def test_validated_shutdown_creates_handoff_before_stopping(running):
+def test_shutdown_without_full_owner_proof_never_publishes_handoff(running):
     server,g,p,calls,tmp=running
     control=server.restart_control
     host=f'127.0.0.1:{server.server_port}'
     headers={'Host':host,'X-Kronos-Backend-Pid':str(os.getpid()),
         'X-Kronos-Restart-Token':control._token,'X-Kronos-Maintenance-Generation':'f'*64}
-    assert request(server,'/control/shutdown',method='POST',headers=headers)[0]==202
+    status, body = request(server,'/control/shutdown',method='POST',headers=headers)
+    assert status == 202 and json.loads(body) == {'status': 'DRAINING'}
     assert g.shutting_down and g.maintenance_identity=='f'*64
     handoff=tmp/'runtime'/'maintenance'/f'{"f"*64}.json'
-    assert handoff.exists() and json.loads(handoff.read_bytes())['record']['parent_pid']==os.getpid()
+    until=monotonic()+2
+    while server.maintenance_admission.snapshot()['state'] != 'FAILED_FENCED' and monotonic() < until:
+        Event().wait(0.01)
+    assert server.maintenance_admission.snapshot()['state']=='FAILED_FENCED'
+    assert not handoff.exists()
     assert p.begin_count==0 and calls==[]
 
 
@@ -167,8 +174,12 @@ def test_restart_rechecks_intraday_and_monitoring_ownership_before_handoff(
         'status_document',
         lambda: {**current, 'hub_state': 'REGISTERED', 'owner_count': 1},
     )
-    assert request(server, '/control/shutdown', method='POST', headers=headers)[0] == 409
-    assert not g.shutting_down
+    status, body = request(server, '/control/shutdown', method='POST', headers=headers)
+    assert status == 202 and json.loads(body) == {'status': 'DRAINING'}
+    until=monotonic()+2
+    while server.maintenance_admission.snapshot()['state'] != 'FAILED_FENCED' and monotonic() < until:
+        Event().wait(0.01)
+    assert server.maintenance_admission.snapshot()['state']=='FAILED_FENCED'
     assert not (tmp / 'runtime' / 'maintenance').exists()
 
 

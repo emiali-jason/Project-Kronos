@@ -10,6 +10,7 @@ import pytest
 
 from kronos.application import swing_analysis_process as analysis_process
 from kronos.application import swing_opportunities as app
+from kronos.common.maintenance_admission import MaintenanceAdmissionCoordinator
 from kronos.configuration.principals import PrincipalBindingResult
 from kronos.market.calendar import MarketCalendarPublisher
 from kronos.provider.contracts.provider_authentication import ReadOnlyProviderOperation
@@ -422,6 +423,125 @@ def test_concurrent_analysis_is_rejected_and_publication_is_atomic(monkeypatch) 
     queued.pop(0)()
     assert service.snapshot() == completed
     assert service.analysis_work_status()["state"] == "IDLE"
+
+
+def test_maintenance_retains_analysis_owner_through_background_publication(monkeypatch) -> None:
+    queued: list[callable] = []
+    service = app.SwingOpportunitiesApplication(
+        lambda: _Provider(), clock=lambda: NOW,
+        background_runner=lambda operation, _name: queued.append(operation),
+    )
+    admission = MaintenanceAdmissionCoordinator()
+    service.bind_maintenance_admission(admission)
+    assert service.connect_provider()
+    queued.pop(0)()
+    completed = _ready(_opportunity())
+    monkeypatch.setattr(app, "build_completed_swing_analysis",
+                        lambda *_a, **_k: _completed(completed))
+    assert service.run_analysis()
+    generation = "c" * 64
+    assert admission.claim(generation)
+    admission.draining(generation)
+    assert admission.snapshot()["owners"] == {"SWING_ANALYSIS": 1}
+    assert not service.run_analysis()
+    queued.pop(0)()
+    assert service.snapshot() == completed
+    assert admission.wait_for_zero(generation, 0)
+    admission.finalizer(generation).release()
+    admission.ready(generation)
+
+
+def test_connection_transfers_counted_owner_to_restoration_before_worker_returns() -> None:
+    queued = []
+    entered, release = Event(), Event()
+    def restorer(_capability):
+        entered.set()
+        assert release.wait(5)
+    service = app.SwingOpportunitiesApplication(
+        _Provider, background_runner=lambda operation, name: queued.append((name, operation)),
+    )
+    service.register_sponsor_operability_restorer(restorer)
+    admission = MaintenanceAdmissionCoordinator()
+    service.bind_maintenance_admission(admission)
+    assert service.connect_provider()
+    assert queued[0][0] == "kronos-browser-auth"
+    assert admission.snapshot()["owners"] == {
+        "PROVIDER_CONNECTION": 1, "PROVIDER_CALLBACK": 1,
+    }
+    generation = "a" * 64
+    assert admission.claim(generation)
+    admission.draining(generation)
+    queued.pop(0)[1]()
+    assert service.sponsor_operability_restoration_status()["state"] == "PENDING"
+    assert admission.snapshot()["owners"] == {"SPONSOR_RESTORATION": 1}
+    name, restore = queued.pop(0)
+    assert name == "kronos-browser-restoration"
+    # The queued continuation remains owned until its final status write.
+    worker = Thread(target=restore)
+    worker.start()
+    try:
+        assert entered.wait(5)
+        assert service.sponsor_operability_restoration_status()["state"] == "RUNNING"
+        assert admission.snapshot()["owners"] == {"SPONSOR_RESTORATION": 1}
+    finally:
+        release.set()
+        worker.join(5)
+    assert not worker.is_alive()
+    assert service.sponsor_operability_restoration_status()["state"] == "SUCCEEDED"
+    assert admission.wait_for_zero(generation, 0)
+
+
+def test_live_monitoring_child_is_owned_before_dispatch_and_drains_after_claim(monkeypatch) -> None:
+    queued = []
+    service = app.SwingOpportunitiesApplication(
+        _Provider, background_runner=lambda operation, name: queued.append((name, operation)),
+    )
+    admission = MaintenanceAdmissionCoordinator()
+    service.bind_maintenance_admission(admission)
+    assert service.connect_provider()
+    queued.pop(0)[1]()
+    monkeypatch.setattr(app, "run_live_monitoring_e2e", lambda *_a, **_k:
+        app.LiveMonitoringTestResult(app.LiveMonitoringTestState.CONNECTED_NO_DATA,
+            "RELIANCE", safe_reason="NO_LIVE_MARKET_DATA"))
+    assert service.test_live_monitoring("RELIANCE")
+    assert queued[0][0] == "kronos-live-monitoring-e2e"
+    assert admission.snapshot()["owners"] == {"MONITORING_CALLBACK": 1}
+    generation = "b" * 64
+    assert admission.claim(generation)
+    admission.draining(generation)
+    assert admission.snapshot()["owners"] == {"MONITORING_CALLBACK": 1}
+    queued.pop(0)[1]()
+    assert admission.wait_for_zero(generation, 0)
+
+
+def test_connection_dispatch_failure_releases_all_reserved_owners() -> None:
+    def failed_dispatch(_operation, _name):
+        raise RuntimeError("isolated dispatch failure")
+    service = app.SwingOpportunitiesApplication(
+        _Provider, background_runner=failed_dispatch,
+    )
+    admission = MaintenanceAdmissionCoordinator()
+    service.bind_maintenance_admission(admission)
+    with pytest.raises(RuntimeError, match="dispatch failure"):
+        service.connect_provider()
+    assert admission.snapshot()["owners"] == {}
+    assert service.snapshot().provider_state is not app.ProviderConnectionState.CONNECTED
+
+
+def test_monitoring_dispatch_failure_releases_child_owner() -> None:
+    queued = []
+    def runner(operation, name):
+        if name == "kronos-live-monitoring-e2e":
+            raise RuntimeError("isolated monitoring dispatch failure")
+        queued.append(operation)
+    service = app.SwingOpportunitiesApplication(_Provider, background_runner=runner)
+    admission = MaintenanceAdmissionCoordinator()
+    service.bind_maintenance_admission(admission)
+    assert service.connect_provider()
+    queued.pop(0)()
+    assert not service.test_live_monitoring("RELIANCE")
+    assert service.live_monitoring_result().safe_reason == "MONITORING_DISPATCH_FAILED"
+    assert admission.snapshot()["owners"] == {}
 
 
 def test_blocked_analysis_is_owned_cancelled_and_cannot_delay_lifecycle(

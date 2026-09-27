@@ -11,6 +11,7 @@ from kronos.application.swing_bulk_import import (
     SwingBulkImportOwner,
     SwingBulkImportStore,
 )
+from kronos.common.maintenance_admission import MaintenanceAdmissionCoordinator
 from kronos.swing.v1.review_evidence_binding import ReviewEvidenceError
 
 
@@ -103,6 +104,31 @@ def _owner(tmp_path: Path, intake=None):
     intake = intake or _Intake()
     store = SwingBulkImportStore((tmp_path / "runtime-control").resolve())
     return SwingBulkImportOwner(store, intake), intake, store
+
+
+def test_maintenance_fence_holds_bulk_owner_through_final_downstream_write(tmp_path):
+    owner,intake,_store=_owner(tmp_path)
+    admission=MaintenanceAdmissionCoordinator()
+    owner.bind_maintenance_admission(admission)
+    intake.block_handoff=True
+    owner.admit("NSE",EXPECTED,PDF)
+    owner.start()
+    try:
+        assert intake.entered.wait(5)
+        generation="d"*64
+        assert admission.claim(generation)
+        admission.draining(generation)
+        with pytest.raises(ValueError,match="MAINTENANCE_FENCED"):
+            owner.admit("NSE",EXPECTED,PDF)
+        assert admission.snapshot()["owners"]=={"BULK_IMPORT":1}
+        intake.release.set()
+        assert _wait(owner,"COMPLETED")["state"]=="COMPLETED"
+        assert admission.wait_for_zero(generation,1)
+        admission.finalizer(generation).release()
+        admission.ready(generation)
+    finally:
+        intake.release.set()
+        owner.close()
 
 
 def test_admission_identity_repeat_and_conflicting_bytes_are_fail_closed(tmp_path):

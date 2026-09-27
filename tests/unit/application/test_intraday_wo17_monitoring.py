@@ -14,6 +14,7 @@ from kronos.application.intraday_wo17_monitoring import (
     IntradayWo17MonitoringCoordinator,
     Wo17MonitoringBinding,
 )
+from kronos.common.maintenance_admission import MaintenanceAdmissionCoordinator
 from kronos.application.shared_monitoring import SharedSwingMonitoringHub
 from kronos.intraday.wo17_lifecycle import Wo17MonitoringAvailability
 from kronos.intraday.wo17_persistence import Wo17Store
@@ -379,3 +380,25 @@ def _capture_error(errors, operation):  # type: ignore[no-untyped-def]
         operation()
     except Exception as error:
         errors.append(error)
+
+
+def test_maintenance_claim_drains_admitted_wo17_and_rejects_late_tick(tmp_path):
+    runners=[]
+    coordinator,hub,_,_,binding,position=_coordinator(
+        tmp_path,background_runner=lambda operation,_name:runners.append(operation))
+    admission=MaintenanceAdmissionCoordinator()
+    coordinator.bind_maintenance_admission(admission)
+    coordinator.attach(binding,attached_at=position.last_transition_at+timedelta(seconds=2))
+    assert admission.snapshot()['owners']=={'WO17':1}
+    generation='b'*64
+    assert admission.claim(generation)
+    admission.draining(generation)
+    before=coordinator.work_status()['rejected_work']
+    hub.on_market_tick(_monitoring_tick(binding,position,10))
+    assert coordinator.work_status()['rejected_work']==before+1
+    assert len(runners)==1
+    runners[0]()
+    assert admission.wait_for_zero(generation,0)
+    assert coordinator.work_status()['completed_work']==1
+    admission.finalizer(generation).release()
+    admission.ready(generation)

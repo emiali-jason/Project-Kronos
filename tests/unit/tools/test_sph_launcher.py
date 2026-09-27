@@ -32,7 +32,7 @@ def test_launcher_protocol_preflight_never_stops_a_legacy_backend(tmp_path,suppo
     source=(root/'tools/macos/kronos_launcher.c').read_text()
     # Redirect the compiled function's socket exclusively to this fake peer.
     source=source.replace('htons(8947)',f'htons({port})').replace('int main(void) {','int unused_application_main(void) {')
-    source+=f'\nint main(void) {{ return request_graceful_shutdown({os.getpid()}, "'+('a'*64)+'", "'+('b'*64)+f'") == {1 if supported else 0} ? 0 : 1; }}\n'
+    source+=f'\nint main(void) {{ return request_graceful_shutdown({os.getpid()}, "'+('a'*64)+'", "'+('b'*64)+f'", 0) == {1 if supported else 0} ? 0 : 1; }}\n'
     unit=tmp_path/'launcher-test.c';unit.write_text(source);binary=tmp_path/'launcher-test'
     subprocess.run(['clang','-Wall','-Wextra','-Werror',str(unit),'-o',str(binary)],check=True,capture_output=True)
     thread=Thread(target=peer);thread.start()

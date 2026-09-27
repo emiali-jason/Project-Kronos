@@ -7,6 +7,7 @@ from kronos.intraday.wo11_lifecycle_contract import record, require, instant, di
 from kronos.intraday.wo11_lifecycle import arm, observe, timing, gap, boundary, request_close, research_handoff, terminal_at, TERMINAL
 from kronos.application.intraday_lifecycle_intake import load_intake, instrument_record
 from kronos.provider.contracts.monitoring import MonitoringConnectionState
+from kronos.common.maintenance_admission import MaintenanceAdmissionCoordinator
 
 
 _MAX_QUEUED_WORK = 64
@@ -52,6 +53,8 @@ class IntradayLifecycleApplication:
         self._saturation_count = 0
         self._rejected_work = 0
         self._completed_work = 0
+        self._maintenance_admission: MaintenanceAdmissionCoordinator | None = None
+        self._maintenance_ticket = None
         try:
             for current in self.store.restore():
                 self._prepare_current(current)
@@ -60,6 +63,12 @@ class IntradayLifecycleApplication:
 
     def bind_monitoring(self, hub, capability):
         self._hub, self._capability = hub, capability
+
+    def bind_maintenance_admission(self, admission: MaintenanceAdmissionCoordinator) -> None:
+        with self._work_lock:
+            if self._work_active or self._work_queue or self._maintenance_admission is not None:
+                raise ValueError("WO11_MAINTENANCE_BINDING_CONFLICT")
+            self._maintenance_admission = admission
 
     def work_status(self):
         """Return bounded worker facts without entering lifecycle/store locks."""
@@ -100,6 +109,22 @@ class IntradayLifecycleApplication:
         )
 
     def _admit_work(self, kind, track_identity, value, accounted_bytes):
+        admission = self._maintenance_admission
+        ticket = None if admission is None else admission.admit("WO11")
+        if admission is not None and ticket is None:
+            with self._work_lock:
+                self._rejected_work += 1
+            return False
+        retained = [False]
+        try:
+            return self._admit_work_owned(kind, track_identity, value,
+                                          accounted_bytes, ticket, retained)
+        finally:
+            if ticket is not None and not retained[0] and not ticket._released:
+                ticket.release()
+
+    def _admit_work_owned(self, kind, track_identity, value, accounted_bytes, ticket,
+                          retained):
         dispatch = None
         key = _work_key(kind, track_identity, value)
         with self._work_lock:
@@ -134,7 +159,9 @@ class IntradayLifecycleApplication:
                 generation = self._work_generation
                 self._work_active = True
                 self._work_state = "RUNNING"
-                dispatch = lambda: self._drain_work(generation)
+                self._maintenance_ticket = ticket
+                retained[0] = ticket is not None
+                dispatch = lambda: self._drain_work(generation, ticket)
         if dispatch is not None:
             try:
                 self._background_runner(dispatch, "kronos-intraday-wo11")
@@ -149,14 +176,24 @@ class IntradayLifecycleApplication:
                     self._work_failure = "WO11_WORKER_DISPATCH_FAILED"
                     self._continuity_state = "INCOMPLETE"
                     self.last_failure = self._work_failure
+                    self._maintenance_ticket = None
+                    retained[0] = False
                 return False
         return True
 
-    def _drain_work(self, generation):
+    def _drain_work(self, generation, ticket=None):
+        if ticket is not None:
+            with ticket.activate():
+                return self._drain_work_owned(generation, ticket)
+        return self._drain_work_owned(generation, ticket)
+
+    def _drain_work_owned(self, generation, ticket):
         try:
             while True:
                 with self._work_lock:
                     if generation != self._work_generation:
+                        if self._work_queue:
+                            self._continuity_state = "INCOMPLETE"
                         self._rejected_work += len(self._work_queue)
                         self._work_queue.clear()
                         self._pending_work.clear()
@@ -164,6 +201,8 @@ class IntradayLifecycleApplication:
                         self._pulse_pending = False
                         return
                     if self._work_cancel_requested:
+                        if self._work_queue:
+                            self._continuity_state = "INCOMPLETE"
                         self._rejected_work += len(self._work_queue)
                         self._work_queue.clear()
                         self._pending_work.clear()
@@ -212,9 +251,16 @@ class IntradayLifecycleApplication:
                 self._continuity_state = "INCOMPLETE"
                 self.last_failure = self._work_failure
             return
-        with self._work_lock:
-            self._work_active = False
-            self._work_state = "TERMINATED"
+        finally:
+            with self._work_lock:
+                if self._work_active:
+                    self._work_active = False
+                    self._work_state = "TERMINATED"
+            if ticket is not None:
+                ticket.release()
+                with self._work_lock:
+                    if self._maintenance_ticket is ticket:
+                        self._maintenance_ticket = None
 
     def _retain_queue_gap(self):
         with self._lock:
@@ -564,6 +610,8 @@ class IntradayLifecycleApplication:
             if self._work_active:
                 self._work_state = "CANCELLATION_REQUESTED"
             else:
+                if self._work_queue:
+                    self._continuity_state = "INCOMPLETE"
                 self._rejected_work += len(self._work_queue)
                 self._work_queue.clear()
                 self._pending_work.clear()

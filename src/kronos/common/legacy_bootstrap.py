@@ -283,16 +283,32 @@ def consume_bootstrap(root: Path, environment, *, revision, source_state, reposi
 def consume_startup_context(root: Path, environment, *, revision, source_state,
                             repository, runtime_identity, now, **bootstrap_checks):
     """Only one authority protocol can enter composition; never fall back."""
-    from kronos.common.maintenance import consume_handoff, _ENV
+    from kronos.common.maintenance import consume_drain_handoff, consume_handoff, _ENV
     legacy = any(k in environment for k in (ENV_ID, ENV_PROOF))
     mode = environment.pop('KRONOS_LAUNCH_MODE', None)
+    handoff_protocol = environment.pop('KRONOS_MAINTENANCE_PROTOCOL', None)
+    predecessor_revision = environment.pop('KRONOS_MAINTENANCE_REVISION', None)
     if mode not in (None, 'LEGACY_BOOTSTRAP') or (mode == 'LEGACY_BOOTSTRAP' and not legacy):
         raise BootstrapError('BOOTSTRAP_MODE_CONTEXT_MISSING')
+    if legacy and (handoff_protocol is not None or predecessor_revision is not None):
+        raise BootstrapError('BOOTSTRAP_MIXED_PROTOCOLS')
+    if (handoff_protocol is None) != (predecessor_revision is None):
+        raise BootstrapError('BOOTSTRAP_MIXED_PROTOCOLS')
     if legacy and any(k in environment for k in _ENV):
         raise BootstrapError('BOOTSTRAP_MIXED_PROTOCOLS')
     if legacy:
         return consume_bootstrap(root / 'legacy-bootstrap-v1', environment,
             revision=revision, source_state=source_state, repository=repository,
             runtime_identity=runtime_identity, now=now, **bootstrap_checks)
+    if handoff_protocol is not None:
+        if handoff_protocol != 'V2' or source_state != 'CLEAN_COMMIT':
+            raise BootstrapError('BOOTSTRAP_MIXED_PROTOCOLS')
+        return consume_drain_handoff(root / 'maintenance', environment,
+            runtime_identity=runtime_identity, now=now,
+            loaded_revision=predecessor_revision, **{
+                name: bootstrap_checks[name] for name in
+                ('process_id', 'predecessor_gone', 'port_free')
+                if name in bootstrap_checks
+            })
     return consume_handoff(root / 'maintenance', environment,
         runtime_identity=runtime_identity, now=now)

@@ -3,6 +3,8 @@ from types import SimpleNamespace
 import shutil
 
 from kronos.application.shared_monitoring import SharedSwingMonitoringHub
+from kronos.common.maintenance_admission import MaintenanceAdmissionCoordinator
+from kronos.common.maintenance import DrainStartupContext
 from tools import kronos_browser
 import pytest
 
@@ -15,6 +17,8 @@ def isolated_composition_authority(monkeypatch):
     class _IntradayNotifications:
         def __init__(self, **_kwargs):
             pass
+        def bind_maintenance_admission(self, admission):
+            self.maintenance_admission = admission
         def bind(self, _probables):
             pass
     monkeypatch.setattr(
@@ -26,12 +30,35 @@ def isolated_composition_authority(monkeypatch):
 def test_launcher_uses_loopback_server_and_opens_swing_workspace(monkeypatch) -> None:
     events: list[object] = []
     control = object()
+    checkpoint = DrainStartupContext("a" * 64, "EMPTY", 0, "b" * 64)
+    monkeypatch.setattr(kronos_browser, "consume_startup_context", lambda *_args, **_kwargs: checkpoint)
+
+    class _Notifications:
+        def __init__(self, **kwargs):
+            assert kwargs["expected_checkpoint"] == checkpoint.notification_checkpoint()
+            events.append("checkpoint-bound")
+
+        def bind_maintenance_admission(self, admission):
+            self.maintenance_admission = admission
+
+        def bind(self, _probables):
+            events.append("notification-bind")
+
+    monkeypatch.setattr(
+        "kronos.application.intraday_notifications.IntradayNotifications",
+        _Notifications,
+    )
+    monkeypatch.setattr(
+        "kronos.browser.runtime_state.complete_startup",
+        lambda *_args: events.append("ready"),
+    )
 
     class _Server:
         server_port = 9123
         swing_monitoring_hub = SharedSwingMonitoringHub()
         notification_centre = object()
         telegram = None
+        maintenance_admission = MaintenanceAdmissionCoordinator()
         def serve_forever(self, **kwargs):  # type: ignore[no-untyped-def]
             events.append(("serve", kwargs))
         def server_close(self):
@@ -71,7 +98,11 @@ def test_launcher_uses_loopback_server_and_opens_swing_workspace(monkeypatch) ->
             )) or server
         ),
     )
-    housekeeping = SimpleNamespace(production_activation=True)
+    housekeeping = SimpleNamespace(
+        production_activation=True,
+        bind_maintenance_admission=lambda admission: events.append(
+            ("housekeeping-admission", admission)),
+    )
     monkeypatch.setattr(
         kronos_browser,
         "_compose_housekeeping",
@@ -83,6 +114,7 @@ def test_launcher_uses_loopback_server_and_opens_swing_workspace(monkeypatch) ->
         lambda url: events.append(url) or True,
     )
     assert kronos_browser.main(["--port", "9123"]) == 0
+    assert events.index("checkpoint-bound") < events.index("notification-bind") < events.index("ready")
     assert "http://127.0.0.1:9123/swing/opportunities" in events
     assert "close" in events
     server_event = next(
@@ -118,6 +150,10 @@ def test_launcher_uses_loopback_server_and_opens_swing_workspace(monkeypatch) ->
     assert historical_control.operation_service.active_operation_identity is None
     assert server.housekeeping is housekeeping
     assert housekeeping.production_activation is True
+    assert ("housekeeping-admission", server.maintenance_admission) in events
+    assert server.intraday_lifecycle._maintenance_admission is server.maintenance_admission
+    assert server.intraday_wo17_monitoring._maintenance_admission is server.maintenance_admission
+    assert server.intraday_notifications.maintenance_admission is server.maintenance_admission
     provider_factory = (
         server.provider_runtime
         ._SharedAuthenticatedProviderRuntime__provider_factory
@@ -138,6 +174,7 @@ def test_developer_no_browser_mode_does_not_open_browser(monkeypatch) -> None:
         swing_monitoring_hub = SharedSwingMonitoringHub()
         notification_centre = object()
         telegram = None
+        maintenance_admission = MaintenanceAdmissionCoordinator()
         def serve_forever(self, **_kwargs): pass  # type: ignore[no-untyped-def]
         def server_close(self): pass
 
@@ -165,7 +202,10 @@ def test_developer_no_browser_mode_does_not_open_browser(monkeypatch) -> None:
     monkeypatch.setattr(
         kronos_browser,
         "_compose_housekeeping",
-        lambda _server, _runtime: SimpleNamespace(production_activation=True),
+        lambda _server, _runtime: SimpleNamespace(
+            production_activation=True,
+            bind_maintenance_admission=lambda _admission: None,
+        ),
     )
     monkeypatch.setattr(
         kronos_browser.webbrowser,

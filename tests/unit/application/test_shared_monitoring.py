@@ -6,6 +6,7 @@ import pytest
 from threading import Event, Thread
 
 from kronos.application.shared_monitoring import SharedSwingMonitoringHub
+from kronos.common.maintenance_admission import MaintenanceAdmissionCoordinator
 from kronos.application import shared_monitoring as monitoring_module
 from kronos.provider.contracts.instrument import InstrumentRecord
 from kronos.provider.contracts.monitoring import (
@@ -338,6 +339,45 @@ def test_multiple_consumers_share_exactly_one_provider_session() -> None:
     assert hub.active_session_count == 1
     assert hub.subscription_count == 2
     assert capability.sessions[0].connections == 1
+
+
+def test_maintenance_counts_inflight_callback_and_fences_late_transport_events() -> None:
+    entered, release, drained = Event(), Event(), Event()
+
+    class BlockingConsumer(Consumer):
+        def on_market_tick(self, value):  # type: ignore[no-untyped-def]
+            entered.set()
+            assert release.wait(2)
+            super().on_market_tick(value)
+
+    admission = MaintenanceAdmissionCoordinator()
+    hub, capability, consumer = SharedSwingMonitoringHub(), Capability(), BlockingConsumer()
+    hub.bind_maintenance_admission(admission)
+    registration = hub.open(capability, consumer)
+    registration.subscribe((ONE,))
+    registration.connect()
+    worker = Thread(target=lambda: hub.on_market_tick(tick(ONE)))
+    worker.start()
+    assert entered.wait(2)
+    generation = "b" * 64
+    assert admission.claim(generation)
+    admission.draining(generation)
+
+    waiter = Thread(target=lambda: (admission.wait_for_zero(generation, 2), drained.set()))
+    waiter.start()
+    assert not drained.wait(0.01)
+    hub.on_order_update(object())
+    hub.on_connection_state(MonitoringConnectionState.RECONNECTING)
+    assert consumer.orders == [] and consumer.states == []
+    release.set()
+    worker.join(2)
+    waiter.join(2)
+    assert not worker.is_alive() and drained.is_set()
+    assert len(consumer.ticks) == 1
+    hub.on_market_tick(tick(ONE))
+    assert len(consumer.ticks) == 1
+    admission.finalizer(generation).release()
+    admission.ready(generation)
 
 
 def test_ticks_route_only_to_exact_instrument_consumers() -> None:

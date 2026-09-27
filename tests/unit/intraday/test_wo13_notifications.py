@@ -349,6 +349,146 @@ def test_incremental_source_queue_restores_and_marks_exact_reference_done(tmp_pa
     assert shared.snapshot(product="INTRADAY").records == ()
 
 
+def test_pending_reference_checkpoint_is_valid_for_restart_and_not_an_empty_queue(tmp_path, monkeypatch):
+    shared = centre(tmp_path)
+    research = _ResearchOriginSource()
+    wo09, futures, lifecycle, probables = (_NotificationSourceStore() for _ in range(4))
+    service = IntradayNotifications(centre=shared, research=research, wo09=wo09,
+        futures=futures, lifecycle=lifecycle, background=False)
+    service.bind(probables)
+    fsynced = []
+    original_fsync = service._fsync_directory
+    def record_fsync(path):
+        original_fsync(path)
+        fsynced.append(path)
+    monkeypatch.setattr(service, "_fsync_directory", record_fsync)
+    service.enqueue("PROBABLES", "RUN-1")
+    assert fsynced == [service.root.parent, service.root, service.root]
+    checkpoint = service.checkpoint()
+    assert checkpoint["state"] == "VALID_PENDING"
+    assert checkpoint["pending_count"] == 1
+    assert service.maintenance_status()["scheduled"] is False
+    restored = IntradayNotifications(centre=shared, research=research, wo09=wo09,
+        futures=futures, lifecycle=lifecycle, background=False,
+        expected_checkpoint=checkpoint)
+    restored.bind(probables)
+    assert restored.checkpoint() == checkpoint
+    restored.drain()
+    assert restored.checkpoint()["pending_count"] == 0
+
+
+def test_valid_but_different_signed_reference_set_blocks_before_replay(tmp_path, monkeypatch):
+    shared = centre(tmp_path)
+    research = _ResearchOriginSource()
+    wo09, futures, lifecycle, probables = (_NotificationSourceStore() for _ in range(4))
+    service = IntradayNotifications(centre=shared, research=research, wo09=wo09,
+        futures=futures, lifecycle=lifecycle, background=False)
+    service.bind(probables)
+    service.enqueue("PROBABLES", "RUN-ONE")
+    signed = service.checkpoint()
+    service.drain()
+    # A second valid reference set has the same count but a different digest.
+    other = IntradayNotifications(centre=centre(tmp_path / "other"),
+        research=_ResearchOriginSource(), wo09=_NotificationSourceStore(),
+        futures=_NotificationSourceStore(), lifecycle=_NotificationSourceStore(),
+        background=False)
+    other.bind(_NotificationSourceStore())
+    other.enqueue("PROBABLES", "RUN-TWO")
+    assert other.checkpoint()["pending_count"] == signed["pending_count"]
+    assert other.checkpoint()["sha256"] != signed["sha256"]
+    unbound = _NotificationSourceStore()
+    restarted = IntradayNotifications(centre=other.centre,
+        research=other.research, wo09=other.wo09,
+        futures=other.futures, lifecycle=other.lifecycle,
+        background=False, expected_checkpoint=signed)
+    monkeypatch.setattr(restarted, "_schedule", lambda: pytest.fail("replay started"))
+    with pytest.raises(ValueError, match="CHECKPOINT_MISMATCH"):
+        restarted.bind(unbound)
+    assert unbound.notification_listener is None
+    assert not hasattr(unbound, "opportunity_origin_listener")
+
+
+def test_legacy_direct_pending_reference_receives_explicit_directory_certification(
+    tmp_path, monkeypatch,
+):
+    shared = centre(tmp_path)
+    service = IntradayNotifications(centre=shared, research=_ResearchOriginSource(),
+        wo09=_NotificationSourceStore(), futures=_NotificationSourceStore(),
+        lifecycle=_NotificationSourceStore(), background=False)
+    service.root.mkdir(parents=True)
+    kind, identity = "PROBABLES", "LEGACY-RUN"
+    from hashlib import sha256
+    key = sha256(f"{kind}:{identity}".encode()).hexdigest()
+    path = service.root / f"{key}.pending"
+    path.write_text(json.dumps({"kind": kind, "identity": identity,
+        "received_at": NOW.isoformat()}, sort_keys=True))
+    synced = []
+    original = service._fsync_directory
+    def record(path):
+        original(path)
+        synced.append(path)
+    monkeypatch.setattr(service, "_fsync_directory", record)
+    checkpoint = service.checkpoint(certify_durable=True)
+    assert checkpoint["state"] == "VALID_PENDING"
+    assert checkpoint["pending_count"] == 1
+    assert synced == [service.root, service.root.parent]
+
+
+def test_failed_directory_sync_after_done_rename_withholds_final_proof(tmp_path, monkeypatch):
+    shared = centre(tmp_path)
+    research = _ResearchOriginSource()
+    wo09, futures, lifecycle, probables = (_NotificationSourceStore() for _ in range(4))
+    service = IntradayNotifications(centre=shared, research=research, wo09=wo09,
+        futures=futures, lifecycle=lifecycle, background=False)
+    service.bind(probables)
+    service.enqueue("PROBABLES", "RUN-ONE")
+    def failed_sync(_path):
+        raise OSError("isolated directory sync failure")
+    monkeypatch.setattr(service, "_fsync_directory", failed_sync)
+    service.drain()
+    assert service.checkpoint()["pending_count"] == 0
+    assert service.maintenance_status()["pending_reference_count"] == 1
+    with pytest.raises(ValueError, match="DURABILITY_UNPROVEN"):
+        service.checkpoint(certify_durable=True)
+
+
+def test_interrupted_or_corrupt_pending_reference_withholds_checkpoint(tmp_path):
+    shared = centre(tmp_path)
+    research = _ResearchOriginSource()
+    wo09, futures, lifecycle, probables = (_NotificationSourceStore() for _ in range(4))
+    service = IntradayNotifications(centre=shared, research=research, wo09=wo09,
+        futures=futures, lifecycle=lifecycle, background=False)
+    service.bind(probables)
+    service.enqueue("PROBABLES", "RUN-1")
+    pending, = service.root.glob("*.pending")
+    pending.write_bytes(b'{"incomplete":true}')
+    with pytest.raises(ValueError, match="CHECKPOINT_INVALID"):
+        service.checkpoint()
+    with pytest.raises(ValueError, match="CHECKPOINT_INVALID"):
+        IntradayNotifications(centre=shared, research=research, wo09=wo09,
+            futures=futures, lifecycle=lifecycle, background=False).bind(probables)
+
+
+def test_interrupted_directory_publication_never_qualifies_as_checkpoint(tmp_path, monkeypatch):
+    shared = centre(tmp_path)
+    research = _ResearchOriginSource()
+    wo09, futures, lifecycle, probables = (_NotificationSourceStore() for _ in range(4))
+    service = IntradayNotifications(centre=shared, research=research, wo09=wo09,
+        futures=futures, lifecycle=lifecycle, background=False)
+    service.bind(probables)
+    original = service._fsync_directory
+    def interrupt(path):
+        if path == service.root:
+            raise OSError("isolated directory sync failure")
+        original(path)
+    monkeypatch.setattr(service, "_fsync_directory", interrupt)
+    with pytest.raises(OSError, match="directory sync failure"):
+        service.enqueue("PROBABLES", "RUN-1")
+    assert len(tuple(service.root.glob("*.staged"))) == 1
+    with pytest.raises(ValueError, match="CHECKPOINT_INVALID"):
+        service.checkpoint()
+
+
 def test_telegram_failure_is_retained_without_replaying_or_invalidating_event(tmp_path):
     class _Telegram:
         attempts = 0

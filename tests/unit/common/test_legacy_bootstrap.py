@@ -181,6 +181,48 @@ def test_empty_context_normal_start_and_mixed_context_fail_closed(tmp_path):
             repository='/governed/repository',runtime_identity='f'*64,now=NOW)
 
 
+def test_v2_startup_context_is_version_distinct_and_one_use(tmp_path):
+    from kronos.common.maintenance import publish_drain_handoff
+    from kronos.common.connection_governance import ConnectionGovernanceError
+    root = tmp_path / 'maintenance'
+    generation = 'a' * 64
+    drain = {name: 0 for name in (
+        'coordinator_owners', 'wo11_owned', 'wo11_queued', 'wo17_owned',
+        'wo17_queued', 'housekeeping_owned', 'bulk_owned',
+        'notification_scheduled', 'monitoring_sessions', 'provider_owned',
+        'provider_leases',
+    )}
+    drain['notification_checkpoint'] = {'state': 'EMPTY', 'pending_count': 0,
+        'sha256': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'}
+    publish_drain_handoff(root, generation=generation, parent_pid=os.getpid(),
+        proof='d' * 64, runtime_identity='e' * 64,
+        loaded_revision='f' * 40, drain=drain, now=NOW)
+    context = {'KRONOS_MAINTENANCE_PROTOCOL': 'V2',
+        'KRONOS_MAINTENANCE_REVISION': 'f' * 40,
+        'KRONOS_MAINTENANCE_GENERATION': generation,
+        'KRONOS_MAINTENANCE_PARENT': str(os.getpid()),
+        'KRONOS_MAINTENANCE_PROOF': 'd' * 64}
+    with pytest.raises(ConnectionGovernanceError, match='DRAIN_HANDOFF_REJECTED'):
+        b.consume_startup_context(tmp_path, dict(context), revision='c' * 40,
+            source_state='CLEAN_COMMIT', repository='/governed/repository',
+            runtime_identity='f' * 64, now=NOW)
+    # The running pytest process is the signer, so a test-only distinct PID
+    # proves the successor's one-use claim without launching a backend.
+    from kronos.common.maintenance import consume_drain_handoff
+    admitted = b.consume_startup_context(tmp_path, dict(context),
+        revision='c' * 40, source_state='CLEAN_COMMIT',
+        repository='/governed/repository', runtime_identity='f' * 64,
+        now=NOW, process_id=os.getpid() + 1,
+        predecessor_gone=lambda _pid: True, port_free=lambda: True)
+    assert admitted.generation == generation
+    assert admitted.notification_checkpoint() == drain['notification_checkpoint']
+    with pytest.raises(ConnectionGovernanceError, match='DRAIN_HANDOFF_REJECTED'):
+        consume_drain_handoff(root, dict(context), runtime_identity='f' * 64,
+            now=NOW, process_id=os.getpid() + 2,
+            loaded_revision='f' * 40,
+            predecessor_gone=lambda _pid: True, port_free=lambda: True)
+
+
 def test_consumed_context_composes_existing_guard_without_provider_restoration(tmp_path):
     from tests.unit.application.test_sph_maintenance import composed
     from kronos.application.swing_opportunities import ProviderConnectionState

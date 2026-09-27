@@ -14,6 +14,7 @@ import os
 from pathlib import Path
 import re
 from threading import Event, RLock, Thread
+from kronos.common.maintenance_admission import MaintenanceAdmissionCoordinator
 import tempfile
 from typing import Callable
 
@@ -460,6 +461,12 @@ class SwingBulkImportOwner:
         self._thread: Thread | None = None
         self._status_lock = RLock()
         self._active_identity: str | None = None
+        self._maintenance_admission: MaintenanceAdmissionCoordinator | None = None
+
+    def bind_maintenance_admission(self, admission: MaintenanceAdmissionCoordinator) -> None:
+        if self._maintenance_admission is not None:
+            raise ValueError("SWING_BULK_IMPORT_MAINTENANCE_BINDING_CONFLICT")
+        self._maintenance_admission = admission
 
     def start(self) -> None:
         if self._thread is not None:
@@ -469,16 +476,27 @@ class SwingBulkImportOwner:
         self._thread.start()
         self._wake.set()
 
-    def close(self) -> None:
+    def close(self, *, timeout_seconds: float = 30) -> None:
         self._stop.set()
         self._wake.set()
         thread = self._thread
         if thread is not None:
-            thread.join(timeout=30)
+            thread.join(timeout=timeout_seconds)
             if thread.is_alive():
                 raise RuntimeError("SWING_BULK_IMPORT_WORKER_DID_NOT_STOP")
 
     def admit(self, market: str, expected: dict, answer: bytes) -> tuple[dict, bool]:
+        admission = self._maintenance_admission
+        ticket = None if admission is None else admission.admit("BULK_IMPORT")
+        if admission is not None and ticket is None:
+            raise ValueError("SWING_BULK_IMPORT_MAINTENANCE_FENCED")
+        try:
+            return self._admit_owned(market, expected, answer)
+        finally:
+            if ticket is not None:
+                ticket.release()
+
+    def _admit_owned(self, market: str, expected: dict, answer: bytes) -> tuple[dict, bool]:
         existing = self.store.exact_existing(market, expected, answer)
         if existing is not None:
             return existing, False
@@ -533,6 +551,17 @@ class SwingBulkImportOwner:
 
     def retry_candidate(self, identity: str, canonical_instrument: str) -> dict:
         """Explicit governed retry; never invoked by refresh or startup."""
+        admission = self._maintenance_admission
+        ticket = None if admission is None else admission.admit("BULK_IMPORT")
+        if admission is not None and ticket is None:
+            raise ValueError("SWING_BULK_IMPORT_MAINTENANCE_FENCED")
+        try:
+            return self._retry_candidate_owned(identity, canonical_instrument)
+        finally:
+            if ticket is not None:
+                ticket.release()
+
+    def _retry_candidate_owned(self, identity: str, canonical_instrument: str) -> dict:
         def mutate(value):
             if value["state"] != "COMPLETED_WITH_FAILURE":
                 raise ValueError("SWING_BULK_IMPORT_RETRY_NOT_AVAILABLE")
@@ -582,8 +611,16 @@ class SwingBulkImportOwner:
             for identity in identities:
                 if self._stop.is_set():
                     break
+                admission = self._maintenance_admission
+                ticket = None if admission is None else admission.admit("BULK_IMPORT")
+                if admission is not None and ticket is None:
+                    break
                 try:
-                    self._process(identity)
+                    if ticket is None:
+                        self._process(identity)
+                    else:
+                        with ticket.activate():
+                            self._process(identity)
                 except (OSError, TypeError, ValueError) as error:
                     try:
                         current = self.store.load(identity)
@@ -593,6 +630,9 @@ class SwingBulkImportOwner:
                                 timings={"failed_at": self._clock()})
                     except (OSError, TypeError, ValueError):
                         pass
+                finally:
+                    if ticket is not None:
+                        ticket.release()
 
     def _phase(self, identity: str, name: str) -> None:
         at = self._clock()

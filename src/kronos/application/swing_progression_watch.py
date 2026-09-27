@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path
 from threading import RLock, Thread
+from kronos.common.maintenance_admission import MaintenanceAdmissionCoordinator
 from zoneinfo import ZoneInfo
 
 from kronos.application.live_monitoring_e2e import (
@@ -305,6 +306,25 @@ class SwingProgressionWatchWorkflow:
             return len(self._consumers)
 
     def observe_bar(self, watch_id: str, bar: GovernedCompletedBar) -> ProgressionWatch:
+        admission = getattr(self, "_maintenance_admission", None)
+        ticket = None if admission is None else admission.admit("PROGRESSION")
+        if admission is not None and ticket is None:
+            raise ValueError("PROGRESSION_MAINTENANCE_FENCED")
+        try:
+            if ticket is None:
+                return self._observe_bar_owned(watch_id, bar)
+            with ticket.activate():
+                return self._observe_bar_owned(watch_id, bar)
+        finally:
+            if ticket is not None:
+                ticket.release()
+
+    def bind_maintenance_admission(self, admission: MaintenanceAdmissionCoordinator) -> None:
+        if getattr(self, "_maintenance_admission", None) is not None:
+            raise ValueError("PROGRESSION_MAINTENANCE_BINDING_CONFLICT")
+        self._maintenance_admission = admission
+
+    def _observe_bar_owned(self, watch_id: str, bar: GovernedCompletedBar) -> ProgressionWatch:
         with self._lock:
             watch = self._watches.get(watch_id)
         if watch is None:
@@ -366,7 +386,22 @@ class SwingProgressionWatchWorkflow:
         if consumer is None:
             return
         if asynchronous:
-            Thread(target=consumer.close, name="swing-progression-watch-close", daemon=True).start()
+            admission = getattr(self, "_maintenance_admission", None)
+            ticket = None if admission is None else admission.admit("PROGRESSION")
+            if admission is not None and ticket is None:
+                raise ValueError("PROGRESSION_MAINTENANCE_FENCED")
+            def close_owned():
+                try:
+                    consumer.close()
+                finally:
+                    if ticket is not None:
+                        ticket.release()
+            try:
+                Thread(target=close_owned, name="swing-progression-watch-close", daemon=True).start()
+            except BaseException:
+                if ticket is not None:
+                    ticket.release()
+                raise
         else:
             consumer.close()
 

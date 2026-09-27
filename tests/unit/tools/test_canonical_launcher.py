@@ -7,9 +7,13 @@ import selectors
 import shutil
 import socket
 import subprocess
+import sys
+from datetime import UTC, datetime, timedelta
 from threading import Thread
 
 import pytest
+
+from kronos.common.maintenance import publish_drain_handoff
 
 ROOT = Path(__file__).resolve().parents[3]
 SOURCE = ROOT / 'tools/macos/kronos_launcher.c'
@@ -212,6 +216,91 @@ def compile_workspace_script_harness(tmp_path):
     return binary
 
 
+def compile_v2_handoff_probe(tmp_path):
+    source = SOURCE.read_text().replace('int main(void) {',
+        'int unused_application_main(void) {')
+    source += r'''
+int main(int argc, char **argv) {
+    if (argc != 8) return 90;
+    return verify_v2_handoff(argv[1], argv[2], argv[3], argv[4],
+        argv[5], (pid_t)atoi(argv[6]), argv[7],
+        "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd")
+        ? 0 : 1;
+}
+'''
+    binary = tmp_path / 'v2-handoff-probe'
+    compile_source(source, binary)
+    return binary
+
+
+def compile_cold_absence_probe(tmp_path):
+    source = SOURCE.read_text().replace('int main(void) {',
+        'int unused_application_main(void) {')
+    source += r'''
+int main(int argc, char **argv) {
+    return argc == 2 && cold_start_has_no_control_or_live_handoff(argv[1]) ? 0 : 1;
+}
+'''
+    binary = tmp_path / 'cold-absence-probe'
+    compile_source(source, binary)
+    return binary
+
+
+def compile_isolated_transition_probe(tmp_path, port):
+    source = SOURCE.read_text().replace('htons(8947)', f'htons({port})').replace(
+        'int main(void) {', 'int unused_application_main(void) {')
+    source += r'''
+int main(int argc, char **argv) {
+    if (argc != 8) return 90;
+    pid_t pid = (pid_t)atoi(argv[5]);
+    if (!request_graceful_shutdown(pid,
+        "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        argv[6], 1)) return 91;
+    if (!wait_for_backend_stop(pid)) return 92;
+    if (!verify_v2_handoff(argv[1], argv[2], argv[3], argv[4],
+        argv[6], pid, argv[7],
+        "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"))
+        return 93;
+    return 0;
+}
+'''
+    binary = tmp_path / 'isolated-transition-probe'
+    compile_source(source, binary)
+    return binary
+
+
+def compile_isolated_cold_start_probe(tmp_path, port):
+    source = SOURCE.read_text().replace('htons(8947)', f'htons({port})').replace(
+        'int main(void) {', 'int unused_application_main(void) {')
+    source += r'''
+int main(int argc, char **argv) {
+    if (argc != 5 || !cold_start_has_no_control_or_live_handoff(argv[4])) return 90;
+    return start_backend(argv[1], argv[2], argv[3], argv[1], 0, "", "", "")
+        == BACKEND_START_READY ? 0 : 91;
+}
+'''
+    binary = tmp_path / 'isolated-cold-start-probe'
+    compile_source(source, binary)
+    return binary
+
+
+def compile_isolated_successor_probe(tmp_path, port):
+    source = SOURCE.read_text().replace('htons(8947)', f'htons({port})').replace(
+        'int main(void) {', 'int unused_application_main(void) {')
+    source += r'''
+int main(int argc, char **argv) {
+    if (argc != 8) return 90;
+    return start_backend(argv[1], argv[2], argv[3], argv[4],
+        (pid_t)atoi(argv[5]),
+        "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        argv[6], argv[7]) == BACKEND_START_READY ? 0 : 91;
+}
+'''
+    binary = tmp_path / 'isolated-successor-probe'
+    compile_source(source, binary)
+    return binary
+
+
 def status_body(*, padding=0, maintenance=True, ready=True):
     payload = {
         'service': 'KRONOS_BROWSER_V1',
@@ -332,6 +421,7 @@ def old_runtime_payload():
     payload = replacement_payload(revision=OLD_RUNTIME_REVISION)
     payload.pop('analysis_work')
     payload.pop('analysis_execution')
+    payload.pop('maintenance_drain')
     return payload
 
 
@@ -414,6 +504,10 @@ def replacement_payload(*, revision='a' * 40, worker=False, owners=0):
             'protocol': 'KRONOS_MAINTENANCE_HANDOFF_V1', 'state': 'INACTIVE',
             'active': False, 'generation': 'f' * 64, 'startup': 'READY', 'failure': None,
         },
+        'maintenance_drain': {
+            'state': 'OPEN', 'generation': None, 'owners': {}, 'failure': None,
+        },
+        'maintenance_claim': 'DRAINABLE' if not worker and not owners else 'BLOCKED',
         'rest_authentication': 'CONNECTED',
         'connection_attempt': {
             'state': 'SUCCEEDED', 'remaining_seconds': 0.0, 'generation': 1,
@@ -750,7 +844,7 @@ def test_replacement_records_the_authorizing_predicate_before_handoff():
     source = SOURCE.read_text()
     main = source.split('int main(void) {', 1)[1]
     predicate = main.index('KRONOS_REPLACEMENT_PREDICATE=OLD_RUNTIME_CF55_STATUS_PAIR')
-    shutdown = main.index('request_graceful_shutdown(backend_pid, token, generation)')
+    shutdown = main.index('request_graceful_shutdown(backend_pid, token, generation, replacement)')
     assert predicate < shutdown
     assert 'KRONOS_REPLACEMENT_PREDICATE=CURRENT_RUNTIME_STATUS' in main
 
@@ -768,6 +862,28 @@ def test_revision_replacement_rejects_active_shared_work(tmp_path, payload):
     )
 
 
+def test_corrected_predecessor_allows_only_counted_drainable_work(tmp_path):
+    payload = replacement_payload(worker=True)
+    payload['maintenance_drain']['owners'] = {'WO11': 1}
+    payload['maintenance_claim'] = 'DRAINABLE'
+    run_replacement_probe(tmp_path, payload, target='b' * 40,
+        expected='REPLACEMENT_REQUIRED')
+
+
+def test_unknown_work_cannot_borrow_a_drainable_marker(tmp_path):
+    payload = replacement_payload(worker=True)
+    payload['maintenance_drain']['owners'] = {'UNKNOWN': 1}
+    run_replacement_probe(tmp_path, payload, target='b' * 40,
+        expected='REPLACEMENT_NOT_READY')
+
+
+def test_legacy_idle_status_without_v2_drain_marker_cannot_enter_corrected_replacement(tmp_path):
+    payload = replacement_payload(revision='a' * 40)
+    payload.pop('maintenance_drain')
+    run_replacement_probe(tmp_path, payload, target='b' * 40,
+        expected='REPLACEMENT_NOT_READY')
+
+
 def test_revision_replacement_mode_preserves_ordinary_dock_reuse_contract():
     source = SOURCE.read_text()
     main = source.split('int main(void) {', 1)[1]
@@ -778,7 +894,7 @@ def test_revision_replacement_mode_preserves_ordinary_dock_reuse_contract():
         'return open_workspace();'
     ) in main
     readiness = main.index('backend_replacement_readiness(')
-    shutdown = main.index('request_graceful_shutdown(backend_pid, token, generation)')
+    shutdown = main.index('request_graceful_shutdown(backend_pid, token, generation, replacement)')
     start = main.index('BackendStartResult start_result = start_backend(')
     assert readiness < shutdown < start
     assert main.count('request_graceful_shutdown(') == 1
@@ -823,7 +939,7 @@ def test_non_200_or_malformed_status_fails_closed(tmp_path, status, include_leng
 def test_shutdown_rejection_and_start_results_route_without_retry_or_kill():
     source = SOURCE.read_text()
     main = source.split('int main(void) {', 1)[1]
-    shutdown_call = main.index('request_graceful_shutdown(backend_pid, token, generation)')
+    shutdown_call = main.index('request_graceful_shutdown(backend_pid, token, generation, replacement)')
     stop_wait = main.index('wait_for_backend_stop(backend_pid)')
     start_call = main.index('BackendStartResult start_result = start_backend(')
     assert shutdown_call < stop_wait < start_call
@@ -841,6 +957,230 @@ def test_shutdown_rejection_and_start_results_route_without_retry_or_kill():
     stop = source.split('static int wait_for_backend_stop(', 1)[1]
     stop = stop.split('static int qualify_source(', 1)[0]
     assert 'process_gone && socket_fd < 0' in stop
+
+
+def test_corrected_predecessor_requires_signed_zero_handoff_before_start(tmp_path):
+    control = tmp_path / 'runtime' / 'browser-backend-v1.control'
+    maintenance = control.parent / 'maintenance'
+    generation = 'a' * 64
+    revision = 'f' * 40
+    drain = {name: 0 for name in (
+        'coordinator_owners', 'wo11_owned', 'wo11_queued', 'wo17_owned',
+        'wo17_queued', 'housekeeping_owned', 'bulk_owned',
+        'notification_scheduled', 'monitoring_sessions', 'provider_owned',
+        'provider_leases',
+    )}
+    drain['notification_checkpoint'] = {'state': 'EMPTY', 'pending_count': 0,
+        'sha256': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'}
+    publish_drain_handoff(maintenance, generation=generation,
+        parent_pid=os.getpid(), proof='d' * 64,
+        runtime_identity='e' * 64, loaded_revision=revision,
+        drain=drain, now=datetime.now(UTC))
+    binary = compile_v2_handoff_probe(tmp_path)
+    args = [str(binary), str(ROOT), sys.executable,
+        f'{ROOT / "src"}:{ROOT}', str(control), generation,
+        str(os.getpid()), revision]
+    before = {p.name: p.read_bytes() for p in maintenance.iterdir()}
+    assert subprocess.run(args, capture_output=True).returncode == 0
+    assert {p.name: p.read_bytes() for p in maintenance.iterdir()} == before
+    assert subprocess.run([*args[:-1], 'b' * 40], capture_output=True).returncode != 0
+    assert subprocess.run([*args[:6], str(os.getpid() + 1), revision],
+        capture_output=True).returncode != 0
+    original = maintenance / f'{generation}.json'
+    original.write_bytes(original.read_bytes().replace(b'"wo11_owned":0', b'"wo11_owned":1'))
+    assert subprocess.run(args, capture_output=True).returncode != 0
+
+
+def test_cold_branch_rejects_control_or_live_unconsumed_handoff(tmp_path):
+    control = tmp_path / 'runtime' / 'browser-backend-v1.control'
+    control.parent.mkdir()
+    binary = compile_cold_absence_probe(tmp_path)
+    run = lambda: subprocess.run([str(binary), str(control)], capture_output=True).returncode
+    assert run() == 0
+    control.write_text('stale')
+    assert run() != 0
+    control.unlink()
+    maintenance = control.parent / 'maintenance'
+    maintenance.mkdir(mode=0o700)
+    maintenance.chmod(0o700)
+    generation = 'a' * 64
+    handoff = maintenance / f'{generation}.json'
+    handoff.write_text('{}')
+    assert run() != 0
+    (maintenance / f'{generation}.consumed.json').write_text('{}')
+    assert run() == 0
+
+
+def test_no_predecessor_rehearses_one_canonical_fake_start(tmp_path):
+    reservation = socket.socket()
+    reservation.bind(('127.0.0.1', 0))
+    port = reservation.getsockname()[1]
+    reservation.close()
+    repository = tmp_path / 'repository'
+    repository.mkdir()
+    control = tmp_path / 'runtime' / 'browser-backend-v1.control'
+    control.parent.mkdir()
+    marker = tmp_path / 'starts.txt'
+    fake = tmp_path / 'fake-browser.py'
+    fake.write_text('''
+import socket
+from pathlib import Path
+from sys import argv
+Path(%r).open('a').write('START\\n')
+listener = socket.socket()
+listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+listener.bind(('127.0.0.1', %d))
+listener.listen(4)
+while True:
+    peer, _ = listener.accept()
+    with peer:
+        request = b''
+        while b'\\r\\n\\r\\n' not in request:
+            request += peer.recv(1024)
+        body = b'{"service":"KRONOS_BROWSER_V1","provider":"DISCONNECTED","analysis":"READY","runtime_ready":true}'
+        peer.sendall(b'HTTP/1.0 200 OK\\r\\nContent-Length: ' + str(len(body)).encode() + b'\\r\\n\\r\\n' + body)
+        if request.startswith(b'GET /stop '):
+            break
+listener.close()
+''' % (str(marker), port))
+    binary = compile_isolated_cold_start_probe(tmp_path, port)
+    started = subprocess.run([str(binary), str(repository), sys.executable,
+        str(fake), str(control)], capture_output=True, timeout=8)
+    try:
+        assert started.returncode == 0, started.stderr
+        assert marker.read_text().splitlines() == ['START']
+    finally:
+        with socket.create_connection(('127.0.0.1', port), timeout=2) as peer:
+            peer.sendall(b'GET /stop HTTP/1.0\r\nHost: 127.0.0.1\r\n\r\n')
+            assert b'200 OK' in peer.recv(1024)
+
+
+def test_v2_replacement_keeps_legacy_branch_separate_and_deadline_unchanged():
+    source = SOURCE.read_text()
+    main = source.split('int main(void) {', 1)[1]
+    assert main.index('readiness == REPLACEMENT_REQUIRED_OLD_CF55') < main.index(
+        'request_graceful_shutdown(backend_pid, token, generation, replacement)')
+    assert main.index('wait_for_backend_stop(backend_pid)') < main.index(
+        'verify_v2_handoff(repository, python, python_path,') < main.index(
+        'BackendStartResult start_result = start_backend(')
+    assert 'BACKEND_START_READY_TIMEOUT_SECONDS 120' in source
+    assert main.count('start_backend(') == 1
+
+
+def test_corrected_predecessor_isolated_drain_exit_and_signed_rehearsal(tmp_path):
+    generation = 'a' * 64
+    revision = 'f' * 40
+    control = tmp_path / 'runtime' / 'browser-backend-v1.control'
+    control.parent.mkdir()
+    script = r'''
+import os, socket, sys
+from datetime import UTC, datetime
+from pathlib import Path
+from kronos.common.maintenance import publish_drain_handoff
+listener = socket.socket()
+listener.bind(('127.0.0.1', 0))
+listener.listen(2)
+print(listener.getsockname()[1], flush=True)
+for index in range(2):
+    peer, _ = listener.accept()
+    with peer:
+        request = b''
+        while b'\r\n\r\n' not in request:
+            request += peer.recv(2048)
+        body = (b'{"protocol":"KRONOS_MAINTENANCE_HANDOFF_V1"}' if index == 0
+                else b'{"status":"DRAINING"}')
+        code = b'200 OK' if index == 0 else b'202 Accepted'
+        peer.sendall(b'HTTP/1.0 ' + code + b'\r\nContent-Length: ' +
+                     str(len(body)).encode() + b'\r\n\r\n' + body)
+drain = {name: 0 for name in (
+    'coordinator_owners', 'wo11_owned', 'wo11_queued', 'wo17_owned',
+    'wo17_queued', 'housekeeping_owned', 'bulk_owned',
+    'notification_scheduled', 'monitoring_sessions', 'provider_owned',
+    'provider_leases')}
+drain['notification_checkpoint'] = {'state': 'EMPTY', 'pending_count': 0,
+    'sha256': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'}
+publish_drain_handoff(Path(sys.argv[1]) / 'maintenance',
+    generation=sys.argv[2], parent_pid=os.getpid(), proof='d'*64,
+    runtime_identity='e'*64, loaded_revision=sys.argv[3],
+    drain=drain, now=datetime.now(UTC))
+listener.close()
+'''
+    environment = dict(os.environ, PYTHONPATH=f'{ROOT / "src"}:{ROOT}')
+    predecessor = subprocess.Popen([sys.executable, '-B', '-c', script,
+        str(control.parent), generation, revision], env=environment,
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    try:
+        assert predecessor.stdout is not None
+        port = int(predecessor.stdout.readline().strip())
+        binary = compile_isolated_transition_probe(tmp_path, port)
+        args = [str(binary), str(ROOT), sys.executable,
+            f'{ROOT / "src"}:{ROOT}', str(control),
+            str(predecessor.pid), generation, revision]
+        probe = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        predecessor.wait(timeout=10)
+        stdout, stderr = probe.communicate(timeout=17)
+        assert predecessor.returncode == 0, predecessor.stderr.read()
+        assert probe.returncode == 0, (probe.returncode, stdout, stderr)
+        assert (control.parent / 'maintenance' / f'{generation}.json').is_file()
+        assert not (control.parent / 'maintenance' / f'{generation}.consumed.json').exists()
+        fake = tmp_path / 'fake-successor.py'
+        marker = tmp_path / 'successor-starts.txt'
+        fake.write_text(r'''
+import os, socket
+from datetime import UTC, datetime
+from pathlib import Path
+from kronos.common.legacy_bootstrap import consume_startup_context
+from sys import argv
+def port_free():
+    with socket.socket() as probe:
+        probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        probe.bind(('127.0.0.1', %d))
+    return True
+try:
+    identity = consume_startup_context(Path(%r), os.environ,
+        revision='b'*40, source_state='CLEAN_COMMIT', repository=Path(%r),
+        runtime_identity='c'*64, now=datetime.now(UTC), port_free=port_free)
+except Exception as error:
+    Path(%r).write_text(type(error).__name__ + ':' + str(error))
+    raise
+assert identity.generation == %r
+assert identity.notification_checkpoint()['state'] == 'EMPTY'
+Path(%r).open('a').write('START\n')
+listener = socket.socket()
+listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+listener.bind(('127.0.0.1', %d))
+listener.listen(4)
+while True:
+    peer, _ = listener.accept()
+    with peer:
+        request = b''
+        while b'\r\n\r\n' not in request:
+            request += peer.recv(1024)
+        body = b'{"service":"KRONOS_BROWSER_V1","provider":"DISCONNECTED","analysis":"READY","runtime_ready":true}'
+        peer.sendall(b'HTTP/1.0 200 OK\r\nContent-Length: ' + str(len(body)).encode() + b'\r\n\r\n' + body)
+        if request.startswith(b'GET /stop '):
+            break
+listener.close()
+''' % (port, str(control.parent), str(ROOT), str(tmp_path / 'successor-error.txt'),
+       generation, str(marker), port))
+        successor = compile_isolated_successor_probe(tmp_path, port)
+        started = subprocess.run([str(successor), str(ROOT), sys.executable,
+            str(fake), f'{ROOT / "src"}:{ROOT}', str(predecessor.pid),
+            generation, revision],
+            capture_output=True, timeout=8)
+        assert started.returncode == 0, (
+            started.stderr,
+            (tmp_path / 'successor-error.txt').read_text()
+            if (tmp_path / 'successor-error.txt').exists() else 'no child error')
+        assert marker.read_text().splitlines() == ['START']
+        assert (control.parent / 'maintenance' / f'{generation}.consumed.json').is_file()
+        with socket.create_connection(('127.0.0.1', port), timeout=2) as peer:
+            peer.sendall(b'GET /stop HTTP/1.0\r\nHost: 127.0.0.1\r\n\r\n')
+            assert b'200 OK' in peer.recv(1024)
+    finally:
+        if predecessor.poll() is None:
+            predecessor.terminate()
+            predecessor.wait(timeout=3)
 
 
 def test_ready_runtime_is_reused_before_any_transition_or_start() -> None:

@@ -79,6 +79,7 @@ static const char *workspace_script =
     "end tell";
 static const char *control_schema = "KRONOS_BROWSER_BACKEND_CONTROL_V1";
 #define BACKEND_STATUS_RESPONSE_BYTES (64 * 1024)
+#define HANDOFF_SECONDS 45
 
 static int directory_exists(const char *path) {
     struct stat metadata;
@@ -604,10 +605,11 @@ static int runtime_shared_work_is_idle(const char *response) {
         connection_is_quiescent(response);
 }
 
-static int new_runtime_analysis_is_idle(const char *response) {
+static int new_runtime_is_drainable(const char *response) {
     static const char *required[] = {
-        "\"analysis_work\":{\"state\":\"IDLE\",\"generation\":null,\"run_identity\":null,\"owned_work_count\":0",
-        "\"analysis_execution\":{\"state\":\"IDLE\",\"pid\":null,\"generation\":null,\"failure\":null,\"failure_diagnostic\":null,\"owned_workers\":0",
+        "\"maintenance_drain\":{\"state\":\"OPEN\",\"generation\":null,\"owners\":",
+        "\"maintenance_claim\":\"DRAINABLE\"",
+        "\"startup\":\"READY\",\"failure\":null",
     };
     return response_has_all(response, required, sizeof(required) / sizeof(required[0]));
 }
@@ -647,8 +649,8 @@ static ReplacementReadiness backend_replacement_readiness(
     if (strcmp(loaded_revision, target_revision) == 0) {
         return REPLACEMENT_ALREADY_LOADED;
     }
+    if (new_runtime_is_drainable(response)) return REPLACEMENT_REQUIRED;
     if (!runtime_shared_work_is_idle(response)) return REPLACEMENT_NOT_READY;
-    if (new_runtime_analysis_is_idle(response)) return REPLACEMENT_REQUIRED;
     if (strcmp(loaded_revision, old_runtime_compatibility_revision) != 0) {
         return REPLACEMENT_NOT_READY;
     }
@@ -674,7 +676,7 @@ static ReplacementReadiness backend_replacement_readiness(
         !runtime_process_revision(recheck, backend_pid, recheck_revision) ||
         strcmp(recheck_revision, loaded_revision) != 0 ||
         !runtime_shared_work_is_idle(recheck) ||
-        new_runtime_analysis_is_idle(recheck) ||
+        new_runtime_is_drainable(recheck) ||
         !maintenance_generation(recheck, recheck_generation) ||
         strcmp(first_generation, recheck_generation) != 0
     ) {
@@ -700,7 +702,8 @@ static int backend_supports_maintenance(void) {
         strstr(response, "\"protocol\":\"KRONOS_MAINTENANCE_HANDOFF_V1\"") != NULL;
 }
 
-static int request_graceful_shutdown(pid_t backend_pid, const char *token, const char *generation) {
+static int request_graceful_shutdown(pid_t backend_pid, const char *token,
+                                     const char *generation, int require_v2) {
     /* Never stop a legacy backend that cannot mint the required handoff. */
     if (!backend_supports_maintenance()) return 0;
     if (kill(backend_pid, 0) != 0) return 0;
@@ -735,7 +738,8 @@ static int request_graceful_shutdown(pid_t backend_pid, const char *token, const
     return (
         response_bytes > 0 &&
         strncmp(response, "HTTP/1.0 202 ", 13) == 0 &&
-        strstr(response, "\"status\":\"STOPPING\"") != NULL
+        strstr(response, require_v2 ? "\"status\":\"DRAINING\"" :
+               "\"status\":\"STOPPING\"") != NULL
     );
 }
 
@@ -748,6 +752,109 @@ static int wait_for_backend_stop(pid_t backend_pid) {
         usleep(100000);
     }
     return 0;
+}
+
+static int cold_start_has_no_control_or_live_handoff(const char *control_path) {
+    struct stat metadata;
+    if (lstat(control_path, &metadata) == 0 || errno != ENOENT) return 0;
+    char directory_path[PATH_MAX];
+    int length = snprintf(directory_path, sizeof(directory_path), "%s", control_path);
+    if (length < 1 || (size_t)length >= sizeof(directory_path)) return 0;
+    char *separator = strrchr(directory_path, '/');
+    if (separator == NULL) return 0;
+    (void)strcpy(separator + 1, "maintenance");
+    if (lstat(directory_path, &metadata) != 0) return errno == ENOENT;
+    if (!S_ISDIR(metadata.st_mode) || metadata.st_uid != getuid() ||
+        (metadata.st_mode & 077) != 0) return 0;
+    DIR *directory = opendir(directory_path);
+    if (directory == NULL) return 0;
+    time_t now = time(NULL);
+    int safe = now != (time_t)-1;
+    struct dirent *entry;
+    while (safe && (entry = readdir(directory)) != NULL) {
+        if (strlen(entry->d_name) != 69 ||
+            strcmp(entry->d_name + 64, ".json") != 0) continue;
+        char generation[65];
+        (void)memcpy(generation, entry->d_name, 64);
+        generation[64] = '\0';
+        if (!valid_token(generation)) continue;
+        char source[PATH_MAX];
+        char consumed[PATH_MAX];
+        if (snprintf(source, sizeof(source), "%s/%s", directory_path, entry->d_name) < 1 ||
+            snprintf(consumed, sizeof(consumed), "%s/%s.consumed.json", directory_path,
+                     generation) < 1 || lstat(source, &metadata) != 0 ||
+            !S_ISREG(metadata.st_mode)) { safe = 0; break; }
+        if (metadata.st_mtime > now || now - metadata.st_mtime <= HANDOFF_SECONDS) {
+            if (lstat(consumed, &metadata) != 0 || !S_ISREG(metadata.st_mode)) {
+                safe = 0;
+                break;
+            }
+        }
+    }
+    (void)closedir(directory);
+    return safe;
+}
+
+static int verify_v2_handoff(
+    const char *repository, const char *python, const char *python_path,
+    const char *control_path, const char *generation, pid_t parent_pid,
+    const char *parent_revision, const char *proof
+) {
+    char maintenance_path[PATH_MAX];
+    char parent[32];
+    int length = snprintf(maintenance_path, sizeof(maintenance_path),
+                          "%s", control_path);
+    if (length < 1 || (size_t)length >= sizeof(maintenance_path)) return 0;
+    /* control_path names a file; use its parent, not a child of the file. */
+    char *separator = strrchr(maintenance_path, '/');
+    if (separator == NULL) return 0;
+    (void)strcpy(separator + 1, "maintenance");
+    if (snprintf(parent, sizeof(parent), "%ld", (long)parent_pid) < 1) return 0;
+    int input[2];
+    if (pipe(input) != 0) return 0;
+    pid_t child = fork();
+    if (child < 0) {
+        (void)close(input[0]);
+        (void)close(input[1]);
+        return 0;
+    }
+    if (child == 0) {
+        int devnull = open("/dev/null", O_WRONLY);
+        if (chdir(repository) != 0 || setenv("PYTHONPATH", python_path, 1) != 0 ||
+            dup2(input[0], STDIN_FILENO) < 0 ||
+            (devnull >= 0 && dup2(devnull, STDOUT_FILENO) < 0) ||
+            (devnull >= 0 && dup2(devnull, STDERR_FILENO) < 0)) _exit(1);
+        (void)close(input[0]);
+        (void)close(input[1]);
+        if (devnull > STDERR_FILENO) (void)close(devnull);
+        execl(python, python, "-B", "-m", "kronos.common.maintenance",
+              "verify-v2", maintenance_path, generation, parent,
+              parent_revision, (char *)NULL);
+        _exit(1);
+    }
+    (void)close(input[0]);
+    struct sigaction ignore_pipe = {0};
+    struct sigaction previous_pipe = {0};
+    ignore_pipe.sa_handler = SIG_IGN;
+    if (sigaction(SIGPIPE, &ignore_pipe, &previous_pipe) != 0) {
+        (void)close(input[1]);
+        (void)waitpid(child, NULL, 0);
+        return 0;
+    }
+    size_t remaining = strlen(proof);
+    while (remaining) {
+        ssize_t written = write(input[1], proof + 64 - remaining, remaining);
+        if (written < 0 && errno == EINTR) continue;
+        if (written <= 0) break;
+        remaining -= (size_t)written;
+    }
+    (void)close(input[1]);
+    (void)sigaction(SIGPIPE, &previous_pipe, NULL);
+    int status = 0;
+    while (waitpid(child, &status, 0) < 0) {
+        if (errno != EINTR) return 0;
+    }
+    return remaining == 0 && WIFEXITED(status) && WEXITSTATUS(status) == 0;
 }
 
 static int qualify_source(const char *repository, const char *python) {
@@ -885,7 +992,8 @@ static BackendStartResult start_backend(
     const char *python_path,
     pid_t previous_pid,
     const char *previous_token,
-    const char *generation
+    const char *generation,
+    const char *previous_revision
 ) {
     pid_t child = fork();
     if (child < 0) return BACKEND_START_INTERNAL_FAILURE;
@@ -909,10 +1017,17 @@ static BackendStartResult start_backend(
             if (setenv("KRONOS_MAINTENANCE_GENERATION", generation, 1) != 0 ||
                 setenv("KRONOS_MAINTENANCE_PARENT", parent, 1) != 0 ||
                 setenv("KRONOS_MAINTENANCE_PROOF", previous_token, 1) != 0) _exit(1);
+            if (previous_revision != NULL && previous_revision[0] != '\0') {
+                if (setenv("KRONOS_MAINTENANCE_PROTOCOL", "V2", 1) != 0 ||
+                    setenv("KRONOS_MAINTENANCE_REVISION", previous_revision, 1) != 0) _exit(1);
+            } else if (unsetenv("KRONOS_MAINTENANCE_PROTOCOL") != 0 ||
+                       unsetenv("KRONOS_MAINTENANCE_REVISION") != 0) _exit(1);
         } else {
             (void)unsetenv("KRONOS_MAINTENANCE_GENERATION");
             (void)unsetenv("KRONOS_MAINTENANCE_PARENT");
             (void)unsetenv("KRONOS_MAINTENANCE_PROOF");
+            (void)unsetenv("KRONOS_MAINTENANCE_PROTOCOL");
+            (void)unsetenv("KRONOS_MAINTENANCE_REVISION");
         }
         const char *launch_mode = getenv("KRONOS_LAUNCH_MODE");
         if (
@@ -951,7 +1066,9 @@ int main(void) {
         strspn(migration_proof, "0123456789abcdef") != 64 ||
         getenv("KRONOS_MAINTENANCE_GENERATION") != NULL ||
         getenv("KRONOS_MAINTENANCE_PARENT") != NULL ||
-        getenv("KRONOS_MAINTENANCE_PROOF") != NULL)) return 1;
+        getenv("KRONOS_MAINTENANCE_PROOF") != NULL ||
+        getenv("KRONOS_MAINTENANCE_PROTOCOL") != NULL ||
+        getenv("KRONOS_MAINTENANCE_REVISION") != NULL)) return 1;
     if (
         (replacement && (
             !valid_revision(target_revision) ||
@@ -959,6 +1076,8 @@ int main(void) {
             getenv("KRONOS_MAINTENANCE_GENERATION") != NULL ||
             getenv("KRONOS_MAINTENANCE_PARENT") != NULL ||
             getenv("KRONOS_MAINTENANCE_PROOF") != NULL
+            || getenv("KRONOS_MAINTENANCE_PROTOCOL") != NULL
+            || getenv("KRONOS_MAINTENANCE_REVISION") != NULL
         )) ||
         (!replacement && target_revision != NULL)
     ) return 1;
@@ -1011,13 +1130,14 @@ int main(void) {
     if (!bootstrap && !replacement && backend_is_reusable(control_path)) return open_workspace();
 
     pid_t backend_pid = 0;
+    ReplacementReadiness readiness = REPLACEMENT_NOT_READY;
     char token[65] = {0};
     if (replacement) {
         if (!read_control_record(control_path, &backend_pid, token)) {
             (void)memset(token, 0, sizeof(token));
             return show_restart_blocked();
         }
-        ReplacementReadiness readiness = backend_replacement_readiness(
+        readiness = backend_replacement_readiness(
             backend_pid,
             target_revision
         );
@@ -1040,6 +1160,17 @@ int main(void) {
         (void)fflush(stdout);
     }
     char generation[65] = {0};
+    char predecessor_revision[41] = {0};
+    if (replacement && readiness == REPLACEMENT_REQUIRED) {
+        char response[BACKEND_STATUS_RESPONSE_BYTES] = {0};
+        if (!read_backend_route("/runtime/status", response) ||
+            !runtime_process_revision(response, backend_pid, predecessor_revision) ||
+            strcmp(predecessor_revision, target_revision) == 0 ||
+            !new_runtime_is_drainable(response)) {
+            (void)memset(token, 0, sizeof(token));
+            return show_restart_blocked();
+        }
+    }
     unsigned char random_bytes[32];
     arc4random_buf(random_bytes, sizeof(random_bytes));
     for (size_t i = 0; i < sizeof(random_bytes); ++i)
@@ -1048,17 +1179,28 @@ int main(void) {
     if (socket_connected >= 0) {
         (void)close(socket_connected);
         if (!bootstrap && !replacement) return show_existing_backend_unhealthy();
+        if (replacement && readiness == REPLACEMENT_REQUIRED_OLD_CF55) {
+            (void)memset(token, 0, sizeof(token));
+            return show_restart_blocked();
+        }
         if (
             (!replacement && !read_control_record(control_path, &backend_pid, token)) ||
-            !request_graceful_shutdown(backend_pid, token, generation) ||
+            !request_graceful_shutdown(backend_pid, token, generation, replacement) ||
             !wait_for_backend_stop(backend_pid)
         ) {
+            (void)memset(token, 0, sizeof(token));
+            return show_restart_blocked();
+        }
+        if (replacement && !verify_v2_handoff(repository, python, python_path,
+                control_path, generation, backend_pid, predecessor_revision, token)) {
             (void)memset(token, 0, sizeof(token));
             return show_restart_blocked();
         }
     } else if (replacement) {
         (void)memset(token, 0, sizeof(token));
         return show_restart_blocked();
+    } else if (!bootstrap && !cold_start_has_no_control_or_live_handoff(control_path)) {
+        return show_existing_backend_unhealthy();
     }
 
     BackendStartResult start_result = start_backend(
@@ -1068,7 +1210,8 @@ int main(void) {
         python_path,
         backend_pid,
         token,
-        generation
+        generation,
+        predecessor_revision
     );
     (void)memset(token, 0, sizeof(token));
     switch (start_result) {

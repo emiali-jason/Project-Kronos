@@ -9,6 +9,7 @@ import pytest
 
 from kronos.browser.runtime_state import complete_startup, decorate_html, status_document
 from kronos.browser.server import KronosBrowserServer
+from kronos.common.maintenance_admission import MaintenanceAdmissionCoordinator
 from kronos.application.shared_monitoring import SharedSwingMonitoringHub
 from kronos.application.housekeeping import BoundedHousekeeping, HousekeepingLimits
 from kronos.application.swing_opportunities import ProviderConnectionState
@@ -101,6 +102,9 @@ def test_browser_status_is_inert_and_cross_product_truth_consistent(running):
         if path=='/runtime/status':
             assert code==200
             d=json.loads(body)
+            assert d['maintenance_drain'] == {
+                'state': 'OPEN', 'generation': None, 'owners': {}, 'failure': None,
+            }
             assert d['maintenance']['active'] and d['rest_authentication']=='DISCONNECTED'
             assert d['rest_capability']=='NOT_EXPOSED' and d['monitoring']['transport_state']=='IDLE'  # legacy fixture lacks the pure Provider projection
             assert d['browser_requests']['maximum']==32
@@ -110,6 +114,8 @@ def test_browser_status_is_inert_and_cross_product_truth_consistent(running):
 
 def test_service_loop_admits_intraday_pulse_without_executing_it_inline():
     server=object.__new__(KronosBrowserServer)
+    server.maintenance_admission=MaintenanceAdmissionCoordinator()
+    server._next_lifecycle_pulse=0.0
     lifecycle=SimpleNamespace(
         request_pulse=Mock(return_value=True),
         pulse=Mock(side_effect=AssertionError('service loop executed Intraday work')),
@@ -121,8 +127,22 @@ def test_service_loop_admits_intraday_pulse_without_executing_it_inline():
     lifecycle.pulse.assert_not_called()
 
 
+def test_repeated_service_iterations_do_not_add_extra_intraday_pulses():
+    server=object.__new__(KronosBrowserServer)
+    server.maintenance_admission=MaintenanceAdmissionCoordinator()
+    server._next_lifecycle_pulse=0.0
+    server.intraday_lifecycle=SimpleNamespace(
+        request_pulse=Mock(return_value=True),last_failure=None)
+    for _ in range(5):
+        server.service_actions()
+    server.intraday_lifecycle.request_pulse.assert_called_once_with()
+    assert server.maintenance_admission.snapshot()['owners']=={}
+
+
 def test_service_loop_only_triggers_owned_housekeeping_boundary():
     server=object.__new__(KronosBrowserServer)
+    server.maintenance_admission=MaintenanceAdmissionCoordinator()
+    server._next_lifecycle_pulse=0.0
     housekeeping=SimpleNamespace(
         trigger_periodic=Mock(return_value="DISABLED"),
         record_trigger_failure=Mock(),
@@ -135,6 +155,12 @@ def test_service_loop_only_triggers_owned_housekeeping_boundary():
 
 def test_server_close_shuts_housekeeping_before_other_owned_lifecycles(monkeypatch):
     server=object.__new__(KronosBrowserServer)
+    from threading import Lock
+    server._domain_close_lock=Lock()
+    server._domain_closed=False
+    server._monitoring_quiesced=False
+    from kronos.common.maintenance_admission import MaintenanceAdmissionCoordinator
+    server.maintenance_admission=MaintenanceAdmissionCoordinator()
     events=[]
     server.housekeeping=SimpleNamespace(shutdown=lambda:events.append("housekeeping"))
     server.bulk_import=SimpleNamespace(close=lambda:events.append("bulk-import"))
@@ -143,6 +169,7 @@ def test_server_close_shuts_housekeeping_before_other_owned_lifecycles(monkeypat
     server.intraday_wo17_monitoring=SimpleNamespace(shutdown=lambda:events.append("wo17"))
     server.application=SimpleNamespace(close=lambda:events.append("application"))
     server.refresh_reminders=SimpleNamespace(close=lambda:events.append("reminders"))
+    server.ux10_notifications=SimpleNamespace(close=lambda:events.append("ux10"))
     server.progression_watches=SimpleNamespace(close_monitoring=lambda:events.append("progression"))
     server.native_review=SimpleNamespace(close=lambda:events.append("native"))
     server.trade_window=SimpleNamespace(close_monitoring=lambda:events.append("trade"))

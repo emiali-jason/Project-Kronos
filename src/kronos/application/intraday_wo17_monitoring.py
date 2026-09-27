@@ -46,6 +46,7 @@ from kronos.provider.contracts.monitoring import (
     ProviderMarketTick,
     ProviderOrderUpdateEvidence,
 )
+from kronos.common.maintenance_admission import MaintenanceAdmissionCoordinator
 
 
 _MAX_QUEUED_WORK = 64
@@ -134,6 +135,14 @@ class IntradayWo17MonitoringCoordinator:
         self._saturation_count = 0
         self._rejected_work = 0
         self._completed_work = 0
+        self._maintenance_admission: MaintenanceAdmissionCoordinator | None = None
+        self._maintenance_ticket = None
+
+    def bind_maintenance_admission(self, admission: MaintenanceAdmissionCoordinator) -> None:
+        with self._work_lock:
+            if self._work_active or self._work_queue or self._maintenance_admission is not None:
+                raise ValueError("WO17_MAINTENANCE_BINDING_CONFLICT")
+            self._maintenance_admission = admission
 
     def set_shared_monitoring_hub(self, hub: SharedSwingMonitoringHub) -> None:
         if type(hub) is not SharedSwingMonitoringHub:
@@ -370,6 +379,22 @@ class IntradayWo17MonitoringCoordinator:
         return True
 
     def _admit_work(self, kind, value, accounted_bytes, key) -> bool:
+        admission = self._maintenance_admission
+        ticket = None if admission is None else admission.admit("WO17")
+        if admission is not None and ticket is None:
+            with self._work_lock:
+                self._rejected_work += 1
+            return False
+        retained = [False]
+        try:
+            return self._admit_work_owned(kind, value, accounted_bytes, key,
+                                           ticket, retained)
+        finally:
+            if ticket is not None and not retained[0] and not ticket._released:
+                ticket.release()
+
+    def _admit_work_owned(self, kind, value, accounted_bytes, key, ticket,
+                          retained) -> bool:
         dispatch = None
         with self._work_lock:
             if self._work_cancel_requested or self._work_state == "FAILED":
@@ -397,16 +422,26 @@ class IntradayWo17MonitoringCoordinator:
                 generation = self._work_generation
                 self._work_active = True
                 self._work_state = "RUNNING"
-                dispatch = lambda: self._drain_work(generation)
+                self._maintenance_ticket = ticket
+                retained[0] = ticket is not None
+                dispatch = lambda: self._drain_work(generation, ticket)
         if dispatch is not None:
             try:
                 self._background_runner(dispatch, "kronos-intraday-wo17")
             except Exception:
                 self._worker_failed("WO17_MONITORING_WORKER_DISPATCH_FAILED")
+                self._maintenance_ticket = None
+                retained[0] = False
                 return False
         return True
 
-    def _drain_work(self, generation: int) -> None:
+    def _drain_work(self, generation: int, ticket=None) -> None:
+        if ticket is not None:
+            with ticket.activate():
+                return self._drain_work_owned(generation, ticket)
+        return self._drain_work_owned(generation, ticket)
+
+    def _drain_work_owned(self, generation: int, ticket) -> None:
         try:
             while True:
                 with self._work_lock:
@@ -474,11 +509,20 @@ class IntradayWo17MonitoringCoordinator:
             )
             self._worker_failed(code)
             return
-        with self._work_lock:
-            self._work_active = False
-            self._work_state = "TERMINATED"
+        finally:
+            with self._work_lock:
+                if self._work_active:
+                    self._work_active = False
+                    self._work_state = "TERMINATED"
+            if ticket is not None:
+                ticket.release()
+                with self._work_lock:
+                    if self._maintenance_ticket is ticket:
+                        self._maintenance_ticket = None
 
     def _discard_queued_locked(self) -> None:
+        if self._work_queue:
+            self._continuity_state = "INCOMPLETE"
         self._rejected_work += len(self._work_queue)
         self._work_queue.clear()
         self._pending_work.clear()

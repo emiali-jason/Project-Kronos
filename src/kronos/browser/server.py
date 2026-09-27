@@ -16,13 +16,14 @@ import json
 import logging
 from pathlib import Path
 import re
-from threading import BoundedSemaphore, Lock, RLock, Thread
+from threading import BoundedSemaphore, Lock, RLock, Thread, local
 from time import monotonic
 from urllib.parse import parse_qs, quote, unquote, urlencode, urlsplit
 from uuid import uuid4
 
 from kronos.application.paper_observation_tracking import paper_monitoring_failure_reason
 from kronos.application.swing_opportunities import SwingOpportunitiesApplication
+from kronos.common.maintenance_admission import MaintenanceAdmissionCoordinator
 from kronos.application.provider_instrument_master_operation import (
     ProviderInstrumentMasterOperationalComposition,
     p1_operational_result_document,
@@ -416,6 +417,12 @@ class KronosBrowserServer(ThreadingHTTPServer):
         self.intraday_discovery_control = intraday_discovery_control
         self.intraday_historical_control = intraday_historical_control
         self._shutdown_lock = Lock()
+        self._domain_close_lock = Lock()
+        self._domain_closed = False
+        self._monitoring_quiesced = False
+        self.maintenance_admission = MaintenanceAdmissionCoordinator()
+        self.application.bind_maintenance_admission(self.maintenance_admission)
+        self._sponsor_tickets = local()
         self._swing_projection_lock = Lock()
         self._answer_notice_lock = Lock()
         self._native_chart_stage_lock = Lock()
@@ -423,6 +430,7 @@ class KronosBrowserServer(ThreadingHTTPServer):
         self._sponsor_restoration_lock = RLock()
         self._shutdown_started = False
         self._active_sponsor_work = 0
+        self._next_lifecycle_pulse = 0.0
         self.product_routes = (
             product_routes
             if product_routes is not None
@@ -434,6 +442,7 @@ class KronosBrowserServer(ThreadingHTTPServer):
             step32_workflow or SwingV1BrowserOperationalization()
         )
         self.progression_watches = progression_watches or SwingProgressionWatchWorkflow()
+        self.progression_watches.bind_maintenance_admission(self.maintenance_admission)
         self.application.register_progression_watch_workflow(self.progression_watches)
         if v1_review is not None:
             self.v1_review = v1_review
@@ -584,6 +593,7 @@ class KronosBrowserServer(ThreadingHTTPServer):
         self.telegram = telegram or _telegram_security()
         self.provider_login_navigation = provider_login_navigation
         self.swing_monitoring_hub = SharedSwingMonitoringHub()
+        self.swing_monitoring_hub.bind_maintenance_admission(self.maintenance_admission)
         self.swing_monitoring_hub.maintenance_governance = self.connection_governance
         self.swing_monitoring_hub.set_connection_listener(
             lambda state: self.ux10_notifications.observe_connection_state(
@@ -596,6 +606,7 @@ class KronosBrowserServer(ThreadingHTTPServer):
         self.ux10_notifications = ux10_notifications or SwingUx10NotificationService(
             Ux10NotificationStore(governed_review_root / "ux10-notifications-v1"),
             telegram=self.telegram,
+            maintenance_admission=self.maintenance_admission,
         )
         self.refresh_reminders = refresh_reminders or SwingK5RefreshReminderWorkflow(
             K5RefreshReminderStore(
@@ -606,6 +617,7 @@ class KronosBrowserServer(ThreadingHTTPServer):
                     reminder
                 ).notification_id
             ),
+            maintenance_admission=self.maintenance_admission,
         )
         self.notification_centre = notification_centre or SponsorNotificationCentre(
             SponsorNotificationLifecycleStore(
@@ -685,6 +697,7 @@ class KronosBrowserServer(ThreadingHTTPServer):
                 SwingBulkImportStore(runtime_root), self.native_intake,
                 completion=self._complete_bulk_import,
             )
+            self.bulk_import.bind_maintenance_admission(self.maintenance_admission)
         super().__init__(address, _BrowserHandler)
         if self.bulk_import is not None:
             self.bulk_import.start()
@@ -782,6 +795,17 @@ class KronosBrowserServer(ThreadingHTTPServer):
             }
 
     def service_actions(self) -> None:
+        ticket = self.maintenance_admission.admit("SERVER_PULSE")
+        if ticket is None:
+            super().service_actions()
+            return
+        try:
+            self._service_actions_admitted()
+        finally:
+            ticket.release()
+        super().service_actions()
+
+    def _service_actions_admitted(self) -> None:
         housekeeping = getattr(self, "housekeeping", None)
         if housekeeping is not None:
             try:
@@ -789,40 +813,85 @@ class KronosBrowserServer(ThreadingHTTPServer):
             except (ValueError, OSError, TypeError, RuntimeError):
                 housekeeping.record_trigger_failure()
         lifecycle = getattr(self, "intraday_lifecycle", None)
-        if lifecycle is not None:
+        observed = monotonic()
+        if lifecycle is not None and observed >= self._next_lifecycle_pulse:
+            self._next_lifecycle_pulse = observed + 0.5
             try:
                 lifecycle.request_pulse()
             except (ValueError, OSError, TypeError, KeyError, RuntimeError):
                 lifecycle.last_failure = "WO11_RUNTIME_SERVICE_UNAVAILABLE"
-        super().service_actions()
 
     def server_close(self) -> None:
+        self._close_domain_owners()
+        if self.restart_control is not None:
+            self.restart_control.remove()
+        super().server_close()
+        drain = self.maintenance_admission.snapshot()
+        if drain["state"] == "STOPPING":
+            self.maintenance_admission.closed(drain["generation"])
+
+    def _close_domain_owners(self, *, bulk_timeout_seconds: float = 30,
+                             require_proof: bool = False) -> None:
+        """Complete domain cleanup before a successful maintenance handoff."""
+        with self._domain_close_lock:
+            if self._domain_closed:
+                return
+            self._close_domain_owners_once(bulk_timeout_seconds, require_proof)
+            self._domain_closed = True
+
+    def _quiesce_monitoring_producers(self) -> None:
+        """Detach producers while accepted callbacks can still finish."""
+        with self._domain_close_lock:
+            if self._monitoring_quiesced:
+                return
+            self.progression_watches.close_monitoring()
+            self.native_review.close()
+            self.trade_window.close_monitoring()
+            self.swing_monitoring_hub.close()
+            self.application.close()
+            self._monitoring_quiesced = True
+
+    def _close_domain_owners_once(self, bulk_timeout_seconds: float,
+                                  require_proof: bool) -> None:
         housekeeping = getattr(self, "housekeeping", None)
         if housekeeping is not None:
-            housekeeping.shutdown()
+            result = (housekeeping.shutdown(timeout_seconds=bulk_timeout_seconds)
+                      if require_proof else housekeeping.shutdown())
+            if require_proof and (not isinstance(result, dict)
+                                  or result.get("lifecycle_state") != "STOPPED"):
+                raise RuntimeError("MAINTENANCE_HOUSEKEEPING_NOT_DRAINED")
         bulk_import = getattr(self, "bulk_import", None)
         if bulk_import is not None:
-            bulk_import.close()
+            if require_proof:
+                bulk_import.close(timeout_seconds=bulk_timeout_seconds)
+            else:
+                bulk_import.close()
         notifications = getattr(self, "intraday_notifications", None)
         if notifications is not None:
-            notifications.close()
+            if require_proof:
+                notifications.close(wait=False)
+            else:
+                notifications.close()
         lifecycle = getattr(self, "intraday_lifecycle", None)
         if lifecycle is not None:
             lifecycle.shutdown()
         wo17_monitoring = getattr(self, "intraday_wo17_monitoring", None)
         if wo17_monitoring is not None:
             wo17_monitoring.shutdown()
-        # Invalidate pending authentication before disposing its restoration owners.
-        self.application.close()
+        # Governed maintenance quiesces these producers before its final drain.
+        if not self._monitoring_quiesced:
+            self.application.close()
         self.refresh_reminders.close()
-        self.progression_watches.close_monitoring()
-        self.native_review.close()
-        self.trade_window.close_monitoring()
-        self.swing_monitoring_hub.close()
+        self.ux10_notifications.close()
+        if not self._monitoring_quiesced:
+            self.progression_watches.close_monitoring()
+            self.native_review.close()
+            self.trade_window.close_monitoring()
+            self.swing_monitoring_hub.close()
         self.step32_workflow.close()
-        if self.restart_control is not None:
-            self.restart_control.remove()
-        super().server_close()
+        provider_runtime = getattr(self, "provider_runtime", None)
+        if require_proof and provider_runtime is not None:
+            provider_runtime.end_kronos_session()
 
     def _complete_bulk_import(self) -> None:
         """Publish projections only after the durable application work completes."""
@@ -1665,20 +1734,33 @@ class KronosBrowserServer(ThreadingHTTPServer):
     def admit_sponsor_work(self) -> bool:
         """Atomically reject new state-changing work after exit begins."""
 
+        ticket = self.maintenance_admission.admit("BROWSER_POST")
+        if ticket is None:
+            return False
         with self._shutdown_lock:
             if self._shutdown_started:
-                return False
-            self._active_sponsor_work += 1
-            return True
+                accepted = False
+            else:
+                self._active_sponsor_work += 1
+                self._sponsor_tickets.current = ticket
+                accepted = True
+        if not accepted:
+            ticket.release()
+        return accepted
 
     def finish_sponsor_work(self) -> None:
         with self._shutdown_lock:
             self._active_sponsor_work -= 1
+        ticket = getattr(self._sponsor_tickets, "current", None)
+        self._sponsor_tickets.current = None
+        if ticket is None:
+            raise ValueError("MAINTENANCE_BROWSER_OWNER_MISSING")
+        ticket.release()
 
     @staticmethod
     def _work_owner_idle(status: dict[str, object] | None) -> bool:
         if status is None:
-            return True
+            return False
         return (
             status.get("state") in {"IDLE", "SAME_PROCESS"}
             and not status.get("generation")
@@ -1686,33 +1768,57 @@ class KronosBrowserServer(ThreadingHTTPServer):
             and int(status.get("queued_items", status.get("queued_jobs", 0))) == 0
         )
 
-    def maintenance_replacement_idle(self) -> bool:
+    def maintenance_replacement_idle(self, *, allow_drainable: bool = False) -> bool:
         """Recheck every shared work owner immediately before a handoff."""
 
         try:
             snapshot = self.application.snapshot()
+            counted = (self.maintenance_admission.snapshot()["owners"]
+                       if allow_drainable else {})
+            def owned(kind: str) -> bool:
+                return allow_drainable and int(counted.get(kind, 0)) > 0
+
+            analysis_owned = owned("SWING_ANALYSIS")
+            connection_owned = (owned("PROVIDER_CONNECTION")
+                or owned("SPONSOR_RESTORATION") or owned("PROVIDER_CALLBACK"))
             if (
-                self._active_sponsor_work
-                or snapshot.provider_state.value == "CONNECTING"
-                or snapshot.analysis_state.value == "RUNNING"
-                or self.application.live_monitoring_result().state.value == "TESTING"
+                (self._active_sponsor_work and not allow_drainable)
+                or (allow_drainable and self._active_sponsor_work
+                    and counted.get("BROWSER_POST", 0) < self._active_sponsor_work)
+                or (snapshot.provider_state.value == "CONNECTING"
+                    and not connection_owned)
+                or (snapshot.analysis_state.value == "RUNNING"
+                    and not analysis_owned)
+                or (self.application.live_monitoring_result().state.value == "TESTING"
+                    and not owned("MONITORING_CALLBACK"))
                 or any(
-                    outcome.state.value == "ANALYZING"
+                    outcome.state.value == "ANALYZING" and not analysis_owned
                     for outcome in self.native_review.snapshot().analysis_outcomes
                 )
-                or not self._work_owner_idle(self.application.analysis_work_status())
-                or not self._work_owner_idle(self.application.analysis_execution_status())
             ):
                 return False
+            for status in (self.application.analysis_work_status(),
+                           self.application.analysis_execution_status()):
+                if not self._work_owner_idle(status):
+                    if (not analysis_owned or status is None
+                            or status.get("state") in {"FAILED", "CLEANUP_FAILED"}
+                            or not int(status.get("owned_workers",
+                                                  status.get("owned_work_count", 0)))):
+                        return False
             connection = self.application.connection_attempt_status()
             if connection is not None and (
                 connection.get("worker_active")
                 or connection.get("resources_pending")
                 or connection.get("restoration_worker_active")
-            ):
+                or connection.get("cleanup_state") != "COMPLETE"
+            ) and not connection_owned:
+                return False
+            restoration = self.application.sponsor_operability_restoration_status()
+            if (restoration.get("state") in {"PENDING", "RUNNING"}
+                    and not owned("SPONSOR_RESTORATION")):
                 return False
             monitoring = self.swing_monitoring_hub.status_document()
-            if any(
+            if not allow_drainable and any(
                 int(monitoring.get(field, 0))
                 for field in (
                     "session_count", "active_session_count", "owner_count",
@@ -1721,27 +1827,200 @@ class KronosBrowserServer(ThreadingHTTPServer):
             ):
                 return False
             lifecycle = getattr(self, "intraday_lifecycle", None)
-            if lifecycle is not None and not self._work_owner_idle(lifecycle.work_status()):
-                return False
+            if lifecycle is not None:
+                status = lifecycle.work_status()
+                if not self._work_owner_idle(status) and (
+                    not allow_drainable or status.get("continuity") == "INCOMPLETE"
+                    or status.get("state") == "FAILED"
+                    or counted.get("WO11", 0) == 0
+                ):
+                    return False
             wo17 = getattr(self, "intraday_wo17_monitoring", None)
-            if wo17 is not None and not self._work_owner_idle(wo17.work_status()):
-                return False
+            if wo17 is not None:
+                status = wo17.work_status()
+                if not self._work_owner_idle(status) and (
+                    not allow_drainable or status.get("continuity") == "INCOMPLETE"
+                    or status.get("state") == "FAILED"
+                    or counted.get("WO17", 0) == 0
+                ):
+                    return False
             housekeeping = getattr(self, "housekeeping", None)
             if housekeeping is not None:
                 house = housekeeping.status_document()
-                if (
+                busy = (
                     house.get("lifecycle_state") != "IDLE"
                     or house.get("shutdown_requested")
                     or house.get("pass_active")
                     or int(house.get("owned_workers", 0))
-                ):
+                )
+                if busy and (not allow_drainable
+                             or counted.get("HOUSEKEEPING", 0) == 0):
                     return False
             bulk_import = getattr(self, "bulk_import", None)
             if bulk_import is not None and bulk_import.work_status().get("batch_active"):
-                return False
+                if not allow_drainable or counted.get("BULK_IMPORT", 0) == 0:
+                    return False
         except (AttributeError, KeyError, TypeError, ValueError):
             return False
         return True
+
+    def _maintenance_final_owner_proof(self) -> bool:
+        """Fail closed on missing or incomplete final cleanup facts."""
+        try:
+            if self.maintenance_admission.snapshot()["owners"]:
+                return False
+            if self._active_sponsor_work or not self._domain_closed:
+                return False
+            lifecycle = self.intraday_lifecycle.work_status()
+            wo17 = self.intraday_wo17_monitoring.work_status()
+            if any(int(status[field]) for status in (lifecycle, wo17)
+                   for field in ("owned_workers", "queued_items")):
+                return False
+            if any(status["state"] == "FAILED" for status in (lifecycle, wo17)):
+                return False
+            if any(status["continuity"] == "INCOMPLETE" for status in
+                   (lifecycle, wo17)):
+                return False
+            house = self.housekeeping.status_document()
+            if (house["lifecycle_state"] != "STOPPED"
+                or int(house["owned_workers"]) or house["pass_active"]):
+                return False
+            bulk = self.bulk_import.work_status() if self.bulk_import is not None else None
+            if (bulk is not None and (bulk["state"] != "STOPPED"
+                                      or bulk["batch_active"]
+                                      or self.bulk_import.store.list_incomplete())):
+                return False
+            notifications = self.intraday_notifications.maintenance_status()
+            if not notifications["closed"] or notifications["scheduled"]:
+                return False
+            ux10 = self.ux10_notifications.maintenance_status()
+            if not ux10["closed"] or int(ux10["retry_callbacks"]):
+                return False
+            monitoring = self.swing_monitoring_hub.status_document()
+            if (any(int(monitoring[field]) for field in
+                    ("session_count", "owner_count", "subscription_count"))
+                or monitoring["transport_cleanup"]["state"] != "COMPLETE"):
+                return False
+            provider = self.provider_runtime.read_only_status()
+            if (provider["cleanup_state"] != "COMPLETE"
+                or int(provider["owned_work_count"])
+                or int(provider["retained_lease_count"])
+                or int(provider["unresolved_cleanup_count"])):
+                return False
+            connection = self.application.connection_attempt_status()
+            if connection is not None and any(connection.get(field) for field in
+                                              ("worker_active", "resources_pending",
+                                               "restoration_worker_active")):
+                return False
+            restoration = self.application.sponsor_operability_restoration_status()
+            if restoration.get("state") in {"PENDING", "RUNNING"}:
+                return False
+            self._maintenance_notification_checkpoint = (
+                self.intraday_notifications.checkpoint(certify_durable=True)
+            )
+            if not self._work_owner_idle(self.application.analysis_work_status()):
+                return False
+            if not self._work_owner_idle(self.application.analysis_execution_status()):
+                return False
+        except (AttributeError, KeyError, TypeError, ValueError, OSError):
+            return False
+        return True
+
+    def _maintenance_drain_attestation(self) -> dict[str, object]:
+        """Capture only bounded zero-owner facts for the signed handoff."""
+        lifecycle = self.intraday_lifecycle.work_status()
+        wo17 = self.intraday_wo17_monitoring.work_status()
+        house = self.housekeeping.status_document()
+        bulk = self.bulk_import.work_status() if self.bulk_import is not None else None
+        notifications = self.intraday_notifications.maintenance_status()
+        monitoring = self.swing_monitoring_hub.status_document()
+        provider = self.provider_runtime.read_only_status()
+        counts = {
+            "coordinator_owners": sum(self.maintenance_admission.snapshot()["owners"].values()),
+            "wo11_owned": int(lifecycle["owned_workers"]),
+            "wo11_queued": int(lifecycle["queued_items"]),
+            "wo17_owned": int(wo17["owned_workers"]),
+            "wo17_queued": int(wo17["queued_items"]),
+            "housekeeping_owned": int(house["owned_workers"]),
+            "bulk_owned": int(bulk["batch_active"]) if bulk is not None else 0,
+            "notification_scheduled": int(notifications["scheduled"]),
+            "monitoring_sessions": int(monitoring["session_count"]),
+            "provider_owned": int(provider["owned_work_count"]),
+            "provider_leases": int(provider["retained_lease_count"]),
+        }
+        if any(value != 0 for value in counts.values()):
+            raise ValueError("MAINTENANCE_DRAIN_ATTESTATION_NOT_ZERO")
+        checkpoint = self.intraday_notifications.checkpoint()
+        if checkpoint != getattr(self, "_maintenance_notification_checkpoint", None):
+            raise ValueError("MAINTENANCE_NOTIFICATION_CHECKPOINT_CHANGED")
+        counts["notification_checkpoint"] = checkpoint
+        return counts
+
+    def _complete_governed_shutdown(self, generation: str,
+                                    runtime_identity: str,
+                                    drain_seconds: float = 10.0) -> None:
+        """Drain without holding the coordinator or Browser shutdown lock."""
+        admission = self.maintenance_admission
+        deadline = monotonic() + drain_seconds
+        try:
+            state = admission.snapshot()["state"]
+            if state == "FENCED":
+                admission.draining(generation)
+            elif state != "DRAINING":
+                raise ValueError("MAINTENANCE_STATE_CONFLICT")
+            if not admission.wait_for_zero(generation, max(0.0, deadline - monotonic())):
+                return
+            if not self.maintenance_replacement_idle(allow_drainable=True):
+                admission.fail(generation, "OWNER_PROOF_UNAVAILABLE")
+                return
+            finalizer = admission.finalizer(generation)
+            try:
+                with finalizer.activate():
+                    self._quiesce_monitoring_producers()
+            finally:
+                finalizer.release()
+            if not admission.wait_for_zero(generation, max(0.0, deadline - monotonic())):
+                return
+            finalizer = admission.finalizer(generation)
+            try:
+                with finalizer.activate():
+                    self._close_domain_owners(
+                        bulk_timeout_seconds=max(0.0, deadline - monotonic()),
+                        require_proof=True,
+                    )
+            finally:
+                finalizer.release()
+            if not admission.wait_for_zero(generation, max(0.0, deadline - monotonic())):
+                return
+            if monotonic() >= deadline or not self._maintenance_final_owner_proof():
+                admission.fail(generation, "CLEANUP_UNRESOLVED")
+                return
+            control = self.restart_control
+            if control is None or not control.owns_current_process():
+                admission.fail(generation, "OWNER_PROOF_UNAVAILABLE")
+                return
+            governance = self.connection_governance
+            loaded_revision = None if governance is None else governance.process.loaded_revision
+            if (not callable(getattr(control, "maintenance_drain_handoff", None))
+                    or type(loaded_revision) is not str
+                    or re.fullmatch(r"[a-f0-9]{40}", loaded_revision) is None):
+                admission.fail(generation, "HANDOFF_FAILED")
+                return
+            drain = self._maintenance_drain_attestation()
+            admission.ready(generation)
+            try:
+                control.maintenance_drain_handoff(
+                    generation, runtime_identity, loaded_revision, drain
+                )
+            except (OSError, RuntimeError, TypeError, ValueError):
+                admission.fail(generation, "HANDOFF_FAILED")
+                return
+            admission.stopping(generation)
+        except (OSError, RuntimeError, TypeError, ValueError):
+            if admission.snapshot()["state"] != "FAILED_FENCED":
+                admission.fail(generation, "CLEANUP_UNRESOLVED")
+            return
+        self.shutdown()
 
     def begin_sponsor_shutdown(self) -> str:
         """Claim one bounded shutdown after proving this process owns the runtime."""
@@ -2494,6 +2773,13 @@ class _BrowserHandler(BaseHTTPRequestHandler):
         if path == "/runtime/status":
             from kronos.browser.runtime_state import status_document
             payload = status_document(self.server)
+            # This observational marker distinguishes a fenced-drain-capable
+            # predecessor from older binaries before the launcher can stop it.
+            payload["maintenance_drain"] = self.server.maintenance_admission.snapshot()
+            payload["maintenance_claim"] = (
+                "DRAINABLE" if self.server.maintenance_replacement_idle(
+                    allow_drainable=True) else "BLOCKED"
+            )
             payload["paper_observation_compact"] = self.server.trade_window.paper_observation_compact_status()
             lifecycle = getattr(self.server, "intraday_lifecycle", None)
             if lifecycle is not None:
@@ -2532,6 +2818,9 @@ class _BrowserHandler(BaseHTTPRequestHandler):
                 "analysis_diagnostic": None,
                 "live_monitoring": live_monitoring.state.value,
             }
+            maintenance_drain = self.server.maintenance_admission.snapshot()
+            if maintenance_drain["state"] != "OPEN":
+                payload["maintenance_drain"] = maintenance_drain
             payload["paper_observation_compact"] = self.server.trade_window.paper_observation_compact_status()
             lifecycle = getattr(self.server, "intraday_lifecycle", None)
             if lifecycle is not None:
@@ -2597,14 +2886,15 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             self._text(HTTPStatus.SERVICE_UNAVAILABLE, "KRONOS is shutting down.")
             return
         try:
-            self._swing_post_failed = False
-            self._dispatch_post(path)
-            if (path.startswith("/swing/") and path not in {
-                    "/swing/analysis", "/swing/reconcile",
-                    "/swing/v1/native-chart", "/swing/v1/native-chart/remove"}
-                    and not self._swing_post_failed):
-                # Read requests never enter this explicit mutation boundary.
-                self.server.application.reconcile_committed_analysis()
+            with self.server._sponsor_tickets.current.activate():
+                self._swing_post_failed = False
+                self._dispatch_post(path)
+                if (path.startswith("/swing/") and path not in {
+                        "/swing/analysis", "/swing/reconcile",
+                        "/swing/v1/native-chart", "/swing/v1/native-chart/remove"}
+                        and not self._swing_post_failed):
+                    # Read requests never enter this explicit mutation boundary.
+                    self.server.application.reconcile_committed_analysis()
         finally:
             self.server.finish_sponsor_work()
 
@@ -3964,29 +4254,43 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             if generation is None:
                 self._text(HTTPStatus.CONFLICT, "Governed maintenance launcher required.")
                 return
+            claimed = False
             try:
+                if (not control.owns_current_process()
+                        or not self.server.maintenance_replacement_idle(
+                            allow_drainable=True)):
+                    raise ValueError("MAINTENANCE_WORK_IN_PROGRESS")
+                if not self.server.maintenance_admission.claim(generation):
+                    raise ValueError("MAINTENANCE_GENERATION_CONFLICT")
+                claimed = True
                 with self.server._shutdown_lock:
-                    if not self.server.maintenance_replacement_idle():
-                        raise ValueError("MAINTENANCE_WORK_IN_PROGRESS")
                     if self.server._shutdown_started:
                         raise ValueError("MAINTENANCE_ALREADY_SHUTTING_DOWN")
-                    control.maintenance_handoff(generation, governance.process.runtime_identity)
-                    self.server.application.enter_controlled_maintenance(generation)
                     self.server._shutdown_started = True
+                self.server.application.enter_controlled_maintenance(generation)
+                self.server.maintenance_admission.draining(generation)
             except (OSError, ValueError):
+                if claimed:
+                    self.server.maintenance_admission.fail(
+                        generation, "OWNER_PROOF_UNAVAILABLE"
+                    )
                 self._text(HTTPStatus.CONFLICT, "Maintenance validation failed.")
                 return
         self.send_response(HTTPStatus.ACCEPTED)
         self._security_headers()
-        body = b'{"status":"STOPPING"}'
+        body = (b'{"status":"DRAINING"}' if governance is not None
+                else b'{"status":"STOPPING"}')
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
         self.wfile.flush()
         Thread(
-            target=self.server.shutdown,
-            name="kronos-browser-shutdown",
+            target=(self.server.shutdown if governance is None else
+                    lambda: self.server._complete_governed_shutdown(
+                        generation, governance.process.runtime_identity
+                    )),
+            name="kronos-browser-maintenance-drain",
             daemon=True,
         ).start()
 
@@ -5056,14 +5360,22 @@ class _BrowserHandler(BaseHTTPRequestHandler):
         )
 
     def _audit_rejected_connection(self) -> bool:
+        # Even a rejected Provider request has a durable audit final write.
+        # It must either own a ticket or leave no governed record after fence.
+        ticket = self.server.maintenance_admission.admit("PROVIDER_CALLBACK")
+        if ticket is None:
+            self._text(HTTPStatus.SERVICE_UNAVAILABLE, "Provider connection not admitted.")
+            return False
         governance = self.server.connection_governance
-        if governance is not None:
-            try:
+        try:
+            if governance is not None:
                 request = governance.request(received_at=self._connection_received_at)
                 governance.result(request, "admission", "REJECTED")
-            except (OSError, ValueError):
-                self._text(HTTPStatus.SERVICE_UNAVAILABLE, "Provider connection not admitted.")
-                return False
+        except (OSError, ValueError):
+            self._text(HTTPStatus.SERVICE_UNAVAILABLE, "Provider connection not admitted.")
+            return False
+        finally:
+            ticket.release()
         return True
 
     def _connection_action_reference(self) -> str | None:

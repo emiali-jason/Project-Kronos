@@ -16,6 +16,7 @@ import json
 import os
 from pathlib import Path
 from threading import RLock, Timer
+from kronos.common.maintenance_admission import MaintenanceAdmissionCoordinator
 from typing import Callable
 from zoneinfo import ZoneInfo
 
@@ -168,6 +169,7 @@ class SwingK5RefreshReminderWorkflow:
         notification_listener: Callable[[K5RefreshReminderRecord], str] | None = None,
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
         scheduler: Callable[[float, Callable[[], None]], object] | None = None,
+        maintenance_admission: MaintenanceAdmissionCoordinator | None = None,
     ) -> None:
         self._store = store or K5RefreshReminderStore()
         self._calendar = calendar or MarketCalendarPublisher()
@@ -179,6 +181,7 @@ class SwingK5RefreshReminderWorkflow:
             item.reminder_identity: item for item in self._store.load_current()
         }
         self._timers: dict[str, object] = {}
+        self._maintenance_admission = maintenance_admission
         for record in tuple(self._records.values()):
             if record.state is RefreshReminderState.PENDING:
                 self._schedule(record)
@@ -217,6 +220,24 @@ class SwingK5RefreshReminderWorkflow:
         current_run_identity: str | None,
         promotions: tuple[Kr370AnalyticalPromotionRecord | V2PromotionRecord, ...],
         exchange_by_instrument: dict[str, str],
+    ) -> K5RefreshReminderSnapshot:
+        admission = self._maintenance_admission
+        ticket = None if admission is None else admission.admit("REMINDER")
+        if admission is not None and ticket is None:
+            raise ValueError("K5_REFRESH_REMINDER_MAINTENANCE_FENCED")
+        try:
+            if ticket is None:
+                return self._synchronize_owned(current_run_identity, promotions,
+                                                exchange_by_instrument)
+            with ticket.activate():
+                return self._synchronize_owned(current_run_identity, promotions,
+                                                exchange_by_instrument)
+        finally:
+            if ticket is not None:
+                ticket.release()
+
+    def _synchronize_owned(
+        self, current_run_identity, promotions, exchange_by_instrument
     ) -> K5RefreshReminderSnapshot:
         if current_run_identity is not None and not is_swing_analysis_run_id(current_run_identity):
             raise ValueError("K5_REFRESH_REMINDER_RUN_INVALID")
@@ -321,6 +342,21 @@ class SwingK5RefreshReminderWorkflow:
             self._timers[record.reminder_identity] = timer
 
     def _fire(self, reminder_identity: str) -> None:
+        admission = self._maintenance_admission
+        ticket = None if admission is None else admission.admit("REMINDER")
+        if admission is not None and ticket is None:
+            return
+        try:
+            if ticket is None:
+                self._fire_owned(reminder_identity)
+            else:
+                with ticket.activate():
+                    self._fire_owned(reminder_identity)
+        finally:
+            if ticket is not None:
+                ticket.release()
+
+    def _fire_owned(self, reminder_identity: str) -> None:
         with self._lock:
             record = self._records.get(reminder_identity)
         if (

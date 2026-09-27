@@ -16,6 +16,7 @@ import json
 import os
 from pathlib import Path
 from threading import RLock, Thread, Timer
+from kronos.common.maintenance_admission import MaintenanceAdmissionCoordinator
 from typing import Callable
 
 from kronos.integrations.telegram import (
@@ -210,16 +211,35 @@ class SwingUx10NotificationService:
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
         background_runner: Callable[[Callable[[], None], str], object] | None = None,
         retry_scheduler: Callable[[float, Callable[[], None]], object] | None = None,
+        maintenance_admission: MaintenanceAdmissionCoordinator | None = None,
     ) -> None:
         self._store = store or Ux10NotificationStore()
         self._telegram = telegram
         self._clock = clock
         self._background = background_runner or _thread_runner
         self._retry_scheduler = retry_scheduler or _timer_scheduler
+        self._maintenance_admission = maintenance_admission
         self._lock = RLock()
+        self._closed = False
+        self._retry_handles: dict[str, object | None] = {}
         self._records = {item.deduplication_key: item for item in self._store.load()}
         self._promotion_state: dict[tuple[str, str], tuple[str, str]] = {}
         self._connection_state: dict[str, tuple[MonitoringConnectionState, datetime]] = {}
+
+    def close(self) -> None:
+        with self._lock:
+            self._closed = True
+            handles = tuple(self._retry_handles.values())
+            self._retry_handles.clear()
+        for handle in handles:
+            cancel = getattr(handle, "cancel", None)
+            if callable(cancel):
+                cancel()
+
+    def maintenance_status(self) -> dict[str, object]:
+        with self._lock:
+            return {"closed": self._closed,
+                    "retry_callbacks": len(self._retry_handles)}
 
     def snapshot(self) -> Ux10NotificationSnapshot:
         with self._lock:
@@ -487,7 +507,21 @@ class SwingUx10NotificationService:
         for record in pending:
             self._schedule_delivery(record.deduplication_key)
 
-    def _create(
+    def _create(self, **kwargs) -> Ux10NotificationRecord | None:
+        admission = self._maintenance_admission
+        ticket = None if admission is None else admission.admit("NOTIFICATION")
+        if admission is not None and ticket is None:
+            return None
+        try:
+            if ticket is None:
+                return self._create_owned(**kwargs)
+            with ticket.activate():
+                return self._create_owned(**kwargs)
+        finally:
+            if ticket is not None:
+                ticket.release()
+
+    def _create_owned(
         self,
         *,
         family: Ux10NotificationFamily,
@@ -547,7 +581,36 @@ class SwingUx10NotificationService:
         return record
 
     def _schedule_delivery(self, dedup: str) -> None:
-        self._background(lambda: self._deliver(dedup), "kronos-ux10-telegram")
+        admission = self._maintenance_admission
+        ticket = None if admission is None else admission.admit("NOTIFICATION")
+        if admission is not None and ticket is None:
+            return
+        with self._lock:
+            closed = self._closed
+        if closed:
+            if ticket is not None:
+                ticket.release()
+            return
+        try:
+            self._background(
+                lambda: self._deliver_owned(dedup, ticket),
+                "kronos-ux10-telegram",
+            )
+        except BaseException:
+            if ticket is not None and not ticket._released:
+                ticket.release()
+            raise
+
+    def _deliver_owned(self, dedup: str, ticket) -> None:
+        try:
+            if ticket is None:
+                self._deliver(dedup)
+            else:
+                with ticket.activate():
+                    self._deliver(dedup)
+        finally:
+            if ticket is not None:
+                ticket.release()
 
     def _deliver(self, dedup: str) -> None:
         with self._lock:
@@ -585,7 +648,40 @@ class SwingUx10NotificationService:
             self._records[dedup] = updated
         if state is Ux10DeliveryState.FAILED_RETRYABLE and retry_at is not None:
             delay = max(0.0, (retry_at - self._clock()).total_seconds())
-            self._retry_scheduler(delay, lambda: self._schedule_delivery(dedup))
+            self._schedule_retry(dedup, delay)
+
+    def _schedule_retry(self, dedup: str, delay: float) -> None:
+        with self._lock:
+            if self._closed:
+                return  # The retained retry remains available after restoration.
+            previous = self._retry_handles.get(dedup)
+            self._retry_handles[dedup] = None
+        cancel = getattr(previous, "cancel", None)
+        if callable(cancel):
+            cancel()
+        try:
+            handle = self._retry_scheduler(
+                delay, lambda: self._retry_due(dedup)
+            )
+        except BaseException:
+            with self._lock:
+                self._retry_handles.pop(dedup, None)
+            raise
+        with self._lock:
+            if self._closed or dedup not in self._retry_handles:
+                cancel = getattr(handle, "cancel", None)
+            else:
+                self._retry_handles[dedup] = handle
+                cancel = None
+        if callable(cancel):
+            cancel()
+
+    def _retry_due(self, dedup: str) -> None:
+        with self._lock:
+            self._retry_handles.pop(dedup, None)
+            if self._closed:
+                return
+        self._schedule_delivery(dedup)
 
 
 def _telegram_message(record: Ux10NotificationRecord) -> str:

@@ -1,5 +1,10 @@
 # KRONOS Architecture Knowledge Base
 
+Generation-bound shared maintenance admission and the authenticated V2 drain
+handoff are governed by [approved ADR-0059](adr/ADR-0059-GENERATION-BOUND-MAINTENANCE-ADMISSION-AND-V2-DRAIN-HANDOFF.md).
+The exact R2 source/test candidate passed 11,039 protected tests; launcher
+installation, runtime load and live acceptance remain separate gates.
+
 Swing Phase C Native Discovery successor: [ADR-0057](adr/ADR-0057-SWING-NATIVE-AVAILABILITY-SEMANTICS-V2.md)
 and [availability V2 contract](interfaces/KRONOS-SWING-NATIVE-DISCOVERY-AVAILABILITY-V2.md).
 

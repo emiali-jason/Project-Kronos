@@ -5,6 +5,7 @@ from __future__ import annotations
 from kronos.common.maintenance import expected_transport_close
 
 from collections import defaultdict
+from kronos.common.maintenance_admission import MaintenanceAdmissionCoordinator
 from threading import Lock, RLock
 from typing import Callable
 
@@ -65,6 +66,7 @@ class SharedSwingMonitoringHub:
         self._registrations: dict[int, _SharedRegistration] = {}
         self._by_instrument: dict[InstrumentRecord, set[int]] = defaultdict(set)
         self.maintenance_governance = None
+        self._maintenance_admission: MaintenanceAdmissionCoordinator | None = None
         self._connection_listener: Callable[[MonitoringConnectionState], None] | None = None
         self._connection_state: MonitoringConnectionState | None = None
         self._latest_ticks: dict[InstrumentRecord, ProviderMarketTick] = {}
@@ -82,6 +84,19 @@ class SharedSwingMonitoringHub:
             final_owner_subscription_releases=0, already_detached=0,
             stale_callbacks_rejected=0, cleanup_failures=0,
             capacity_refusals=0)
+
+    def bind_maintenance_admission(self, admission: MaintenanceAdmissionCoordinator) -> None:
+        with self._lock:
+            if self._maintenance_admission is not None or self._registrations:
+                raise ValueError("SHARED_MONITORING_MAINTENANCE_BINDING_CONFLICT")
+            self._maintenance_admission = admission
+
+    def _callback_ticket(self):
+        admission = self._maintenance_admission
+        if admission is None:
+            return True, None
+        ticket = admission.admit("MONITORING_CALLBACK")
+        return ticket is not None, ticket
 
     def set_connection_listener(
         self, listener: Callable[[MonitoringConnectionState], None]
@@ -518,6 +533,20 @@ class SharedSwingMonitoringHub:
         return registration._detached_result
 
     def on_market_tick(self, tick: ProviderMarketTick, *, _generation=None) -> None:
+        accepted, ticket = self._callback_ticket()
+        if not accepted:
+            return
+        try:
+            if ticket is None:
+                self._on_market_tick(tick, _generation=_generation)
+            else:
+                with ticket.activate():
+                    self._on_market_tick(tick, _generation=_generation)
+        finally:
+            if ticket is not None:
+                ticket.release()
+
+    def _on_market_tick(self, tick: ProviderMarketTick, *, _generation=None) -> None:
         if self.maintenance_governance is not None and self.maintenance_governance.maintenance_active:
             return
         with self._lock:
@@ -548,6 +577,20 @@ class SharedSwingMonitoringHub:
             consumer.on_market_tick(tick)
 
     def on_order_update(self, update: ProviderOrderUpdateEvidence, *, _generation=None) -> None:
+        accepted, ticket = self._callback_ticket()
+        if not accepted:
+            return
+        try:
+            if ticket is None:
+                self._on_order_update(update, _generation=_generation)
+            else:
+                with ticket.activate():
+                    self._on_order_update(update, _generation=_generation)
+        finally:
+            if ticket is not None:
+                ticket.release()
+
+    def _on_order_update(self, update: ProviderOrderUpdateEvidence, *, _generation=None) -> None:
         with self._lock:
             if _generation is not None and self._session_generation is not _generation:
                 self._count_release('stale_callbacks_rejected')
@@ -560,6 +603,20 @@ class SharedSwingMonitoringHub:
             consumer.on_order_update(update)
 
     def on_connection_state(self, state: MonitoringConnectionState, *, _generation=None) -> None:
+        accepted, ticket = self._callback_ticket()
+        if not accepted:
+            return
+        try:
+            if ticket is None:
+                self._on_connection_state(state, _generation=_generation)
+            else:
+                with ticket.activate():
+                    self._on_connection_state(state, _generation=_generation)
+        finally:
+            if ticket is not None:
+                ticket.release()
+
+    def _on_connection_state(self, state: MonitoringConnectionState, *, _generation=None) -> None:
         if type(state) is not MonitoringConnectionState:
             raise TypeError("SHARED_MONITORING_CONNECTION_STATE_INVALID")
         with self._lock:

@@ -15,6 +15,7 @@ import os
 from pathlib import Path
 import stat
 from threading import Event, Lock, Thread
+from kronos.common.maintenance_admission import MaintenanceAdmissionCoordinator
 import time
 from typing import Callable, Iterable
 
@@ -613,6 +614,13 @@ class BoundedHousekeeping:
         self._worker_done.set()
         self._pass_done = Event()
         self._pass_done.set()
+        self._maintenance_admission: MaintenanceAdmissionCoordinator | None = None
+
+    def bind_maintenance_admission(self, admission: MaintenanceAdmissionCoordinator) -> None:
+        with self._state_lock:
+            if self._owned_workers or self._maintenance_admission is not None:
+                raise ValueError("HOUSEKEEPING_MAINTENANCE_BINDING_CONFLICT")
+            self._maintenance_admission = admission
 
     @staticmethod
     def _thread_runner(callback: Callable[[], None]) -> None:
@@ -643,6 +651,19 @@ class BoundedHousekeeping:
             self._pass_done.set()
 
     def trigger_periodic(self, *, now: float | None = None) -> str:
+        admission = self._maintenance_admission
+        ticket = None if admission is None else admission.admit("HOUSEKEEPING")
+        if admission is not None and ticket is None:
+            return "SHUTDOWN"
+        result = "FAILED"
+        try:
+            result = self._trigger_periodic_owned(now=now, ticket=ticket)
+            return result
+        finally:
+            if ticket is not None and result != "SCHEDULED" and not ticket._released:
+                ticket.release()
+
+    def _trigger_periodic_owned(self, *, now: float | None, ticket) -> str:
         observed = self._clock() if now is None else now
         with self._state_lock:
             if self._shutdown_requested:
@@ -668,7 +689,7 @@ class BoundedHousekeeping:
             scheduled = observed
         try:
             self._background_runner(
-                lambda: self._periodic_run(scheduled, generation)
+                lambda: self._periodic_run(scheduled, generation, ticket)
             )
         except Exception:
             with self._state_lock:
@@ -686,7 +707,18 @@ class BoundedHousekeeping:
             return "FAILED"
         return "SCHEDULED"
 
-    def _periodic_run(self, scheduled: float, generation: int) -> None:
+    def _periodic_run(self, scheduled: float, generation: int, ticket=None) -> None:
+        try:
+            if ticket is None:
+                self._periodic_run_owned(scheduled, generation)
+            else:
+                with ticket.activate():
+                    self._periodic_run_owned(scheduled, generation)
+        finally:
+            if ticket is not None:
+                ticket.release()
+
+    def _periodic_run_owned(self, scheduled: float, generation: int) -> None:
         with self._state_lock:
             if self._active_worker_generation != generation:
                 return

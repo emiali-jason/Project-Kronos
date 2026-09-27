@@ -10,7 +10,7 @@ import re
 import secrets
 from uuid import uuid4
 from datetime import UTC, datetime
-from kronos.common.maintenance import publish_handoff
+from kronos.common.maintenance import publish_drain_handoff, publish_handoff
 
 
 BACKEND_CONTROL_SCHEMA = "KRONOS_BROWSER_BACKEND_CONTROL_V1"
@@ -84,6 +84,18 @@ class BrowserBackendRestartControl:
         publish_handoff(self.path.parent / "maintenance", generation=generation,
             parent_pid=self.process_id, proof=self._token,
             runtime_identity=runtime_identity, now=datetime.now(UTC))
+
+    def maintenance_drain_handoff(self, generation: str, runtime_identity: str,
+                                  loaded_revision: str,
+                                  drain: dict[str, int]) -> None:
+        if not self.owns_current_process():
+            raise ValueError("MAINTENANCE_FOREIGN_PROCESS")
+        publish_drain_handoff(
+            self.path.parent / "maintenance", generation=generation,
+            parent_pid=self.process_id, proof=self._token,
+            runtime_identity=runtime_identity, loaded_revision=loaded_revision,
+            drain=drain, now=datetime.now(UTC),
+        )
 
     def remove(self) -> None:
         """Remove only this process's still-matching control record."""

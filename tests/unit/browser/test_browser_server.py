@@ -1,6 +1,7 @@
 from dataclasses import replace
 from http.client import HTTPConnection
 from threading import Event, Lock, Thread, get_ident
+from types import SimpleNamespace
 import json
 import os
 import socket
@@ -23,6 +24,7 @@ from kronos.application.swing_v1_review import SwingV1ReviewWorkflow
 from kronos.browser.server import KronosBrowserServer, create_browser_server
 from kronos.browser import server as server_module
 from kronos.browser.restart_control import BrowserBackendRestartControl
+from kronos.common.maintenance_admission import MaintenanceAdmissionCoordinator
 from kronos.browser.product_routes import BrowserRouteResponse, ProductBrowserRoutes
 from kronos.swing.v1 import (
     LocalTradingViewEvidenceStore,
@@ -81,6 +83,184 @@ def _request_bytes(server, method: str, path: str):  # type: ignore[no-untyped-d
     body = response.read()
     connection.close()
     return response.status, dict(response.headers), body
+
+
+def test_governed_handoff_waits_for_accepted_worker_and_final_cleanup() -> None:
+    admission = MaintenanceAdmissionCoordinator()
+    worker = admission.admit("WO11")
+    assert worker is not None
+    generation = "a" * 64
+    assert admission.claim(generation)
+    events = []
+    fake = SimpleNamespace(
+        maintenance_admission=admission,
+        connection_governance=SimpleNamespace(process=SimpleNamespace(loaded_revision="e" * 40)),
+        maintenance_replacement_idle=lambda **_kwargs: True,
+        _quiesce_monitoring_producers=lambda: events.append("quiesce"),
+        _close_domain_owners=lambda **_kwargs: events.append("cleanup"),
+        _maintenance_final_owner_proof=lambda: True,
+        _maintenance_drain_attestation=lambda: {"coordinator_owners": 0},
+        restart_control=SimpleNamespace(
+            owns_current_process=lambda: True,
+            maintenance_drain_handoff=lambda *_args: events.append("handoff"),
+        ),
+        shutdown=lambda: events.append("shutdown"),
+    )
+    thread = Thread(target=lambda: KronosBrowserServer._complete_governed_shutdown(
+        fake, generation, "runtime", 1
+    ))
+    thread.start()
+    assert not events
+    worker.release()
+    thread.join(1)
+    assert not thread.is_alive()
+    assert events == ["quiesce", "cleanup", "handoff", "shutdown"]
+
+
+def test_governed_timeout_or_cleanup_failure_never_publishes_handoff() -> None:
+    for blocked_worker, cleanup_fails in ((True, False), (False, True)):
+        admission = MaintenanceAdmissionCoordinator()
+        worker = admission.admit("WO17") if blocked_worker else None
+        generation = "b" * 64
+        assert admission.claim(generation)
+        published = []
+
+        def cleanup(**_kwargs):
+            if cleanup_fails:
+                raise RuntimeError("isolated cleanup failed")
+
+        fake = SimpleNamespace(
+            maintenance_admission=admission,
+            connection_governance=SimpleNamespace(process=SimpleNamespace(loaded_revision="e" * 40)),
+            maintenance_replacement_idle=lambda **_kwargs: True,
+            _quiesce_monitoring_producers=lambda: None,
+            _close_domain_owners=cleanup,
+            _maintenance_final_owner_proof=lambda: True,
+            _maintenance_drain_attestation=lambda: {"coordinator_owners": 0},
+            restart_control=SimpleNamespace(
+                owns_current_process=lambda: True,
+                maintenance_drain_handoff=lambda *_args: published.append("handoff"),
+            ),
+            shutdown=lambda: published.append("shutdown"),
+        )
+        KronosBrowserServer._complete_governed_shutdown(fake, generation,
+                                                        "runtime", 0.01)
+        assert not published
+        assert admission.snapshot()["state"] == "FAILED_FENCED"
+        if worker is not None:
+            worker.release()
+
+
+def test_rejected_provider_audit_is_counted_before_fence_and_write_free_after() -> None:
+    server, serving = _running_server()
+    calls = []
+    server.connection_governance = SimpleNamespace(
+        request=lambda **_kwargs: calls.append("request") or object(),
+        result=lambda *_args: calls.append("result"),
+    )
+    try:
+        first, _, _ = _request(server, "POST", "/provider/connect")
+        assert first == 403 and calls == ["request", "result"]
+        assert server.maintenance_admission.snapshot()["owners"] == {}
+        assert server.maintenance_admission.claim("e" * 64)
+        second, _, body = _request(server, "POST", "/provider/connect")
+        assert second == 503 and "not admitted" in body
+        assert calls == ["request", "result"]
+    finally:
+        server.shutdown(); server.server_close(); serving.join(3)
+
+
+def test_failed_signed_handoff_stays_fenced_without_stopping_listener() -> None:
+    admission = MaintenanceAdmissionCoordinator()
+    generation = "f" * 64
+    assert admission.claim(generation)
+    stopped = []
+
+    def reject_handoff(*_args):
+        raise ValueError("isolated immutable handoff conflict")
+
+    fake = SimpleNamespace(
+        maintenance_admission=admission,
+        connection_governance=SimpleNamespace(process=SimpleNamespace(loaded_revision="e" * 40)),
+        maintenance_replacement_idle=lambda **_kwargs: True,
+        _quiesce_monitoring_producers=lambda: None,
+        _close_domain_owners=lambda **_kwargs: None,
+        _maintenance_final_owner_proof=lambda: True,
+        _maintenance_drain_attestation=lambda: {"coordinator_owners": 0},
+        restart_control=SimpleNamespace(
+            owns_current_process=lambda: True,
+            maintenance_drain_handoff=reject_handoff,
+        ),
+        shutdown=lambda: stopped.append(True),
+    )
+    KronosBrowserServer._complete_governed_shutdown(fake, generation, "runtime", 1)
+    assert admission.snapshot()["state"] == "FAILED_FENCED"
+    assert admission.snapshot()["failure"] == "HANDOFF_FAILED"
+    assert stopped == []
+
+
+def test_final_attestation_signs_same_valid_notification_checkpoint() -> None:
+    checkpoint = {"state": "VALID_PENDING", "pending_count": 1,
+                  "sha256": "a" * 64}
+    observed = dict(checkpoint)
+    zero_status = lambda: {"owned_workers": 0, "queued_items": 0}
+    server = SimpleNamespace(
+        maintenance_admission=MaintenanceAdmissionCoordinator(),
+        intraday_lifecycle=SimpleNamespace(work_status=zero_status),
+        intraday_wo17_monitoring=SimpleNamespace(work_status=zero_status),
+        housekeeping=SimpleNamespace(status_document=lambda: {"owned_workers": 0}),
+        bulk_import=None,
+        intraday_notifications=SimpleNamespace(
+            maintenance_status=lambda: {"scheduled": False},
+            checkpoint=lambda: dict(observed)),
+        swing_monitoring_hub=SimpleNamespace(status_document=lambda: {"session_count": 0}),
+        provider_runtime=SimpleNamespace(read_only_status=lambda: {
+            "owned_work_count": 0, "retained_lease_count": 0}),
+        _maintenance_notification_checkpoint=checkpoint,
+    )
+    drain = KronosBrowserServer._maintenance_drain_attestation(server)
+    assert drain["notification_checkpoint"] == checkpoint
+    observed["sha256"] = "b" * 64
+    with pytest.raises(ValueError, match="CHECKPOINT_CHANGED"):
+        KronosBrowserServer._maintenance_drain_attestation(server)
+
+
+def test_final_owner_proof_rejects_uncertified_notification_directory() -> None:
+    zero = lambda: {"owned_workers": 0, "queued_items": 0,
+                    "state": "IDLE", "continuity": "COMPLETE"}
+
+    def failed_certification(**kwargs):
+        assert kwargs == {"certify_durable": True}
+        raise OSError("directory sync failed")
+
+    server = SimpleNamespace(
+        maintenance_admission=MaintenanceAdmissionCoordinator(),
+        _active_sponsor_work=0, _domain_closed=True,
+        intraday_lifecycle=SimpleNamespace(work_status=zero),
+        intraday_wo17_monitoring=SimpleNamespace(work_status=zero),
+        housekeeping=SimpleNamespace(status_document=lambda: {
+            "lifecycle_state": "STOPPED", "owned_workers": 0,
+            "pass_active": False}),
+        bulk_import=None,
+        intraday_notifications=SimpleNamespace(
+            maintenance_status=lambda: {"closed": True, "scheduled": False},
+            checkpoint=failed_certification),
+        ux10_notifications=SimpleNamespace(maintenance_status=lambda: {
+            "closed": True, "retry_callbacks": 0}),
+        swing_monitoring_hub=SimpleNamespace(status_document=lambda: {
+            "session_count": 0, "owner_count": 0, "subscription_count": 0,
+            "transport_cleanup": {"state": "COMPLETE"}}),
+        provider_runtime=SimpleNamespace(read_only_status=lambda: {
+            "cleanup_state": "COMPLETE", "owned_work_count": 0,
+            "retained_lease_count": 0, "unresolved_cleanup_count": 0}),
+        application=SimpleNamespace(
+            connection_attempt_status=lambda: None,
+            sponsor_operability_restoration_status=lambda: {"state": "NOT_REQUESTED"},
+            analysis_work_status=zero, analysis_execution_status=zero),
+        _work_owner_idle=lambda status: status["owned_workers"] == 0
+        and status["queued_items"] == 0,
+    )
+    assert KronosBrowserServer._maintenance_final_owner_proof(server) is False
 
 
 def test_request_threads_are_bounded_and_capacity_refusal_is_immediate(monkeypatch) -> None:  # type: ignore[no-untyped-def]
