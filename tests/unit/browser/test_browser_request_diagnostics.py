@@ -72,6 +72,63 @@ def test_success_stages_response_id_and_governed_get_preservation(running):
     assert calls == [] and provider.begin_count == 0
 
 
+def test_completed_opportunity_is_retrievable_after_status_churn_and_gets_write_nothing(running):
+    server, _, provider, calls, root = running
+    before = inventory(root)
+    before_metadata = metadata(root)
+    code, headers, _ = _request(server, "GET", "/swing/opportunities")
+    assert code == 200
+    identity = headers["X-Kronos-Request-ID"]
+    for _ in range(70):
+        assert _request(server, "GET", "/status")[0] == 200
+    code, _, body = _request(server, "GET", "/runtime/request-diagnostics")
+    assert code == 200
+    result = json.loads(body)
+    assert result["evicted"] > 0
+    assert not any(row["id"] == identity for row in result["events"])
+    summary = result["completed_opportunities"][identity]
+    assert summary["complete"] is True
+    assert summary["route"] == "/swing/opportunities"
+    assert summary["status"] == 200 and summary["outcome"] == "RETURNED"
+    assert any(row["stage"] == "RESTORATION_LOCK" and row["mode"] == "WAIT"
+               for row in summary["stages"])
+    assert len(body.encode()) < 1024*1024
+    assert inventory(root) == before and metadata(root) == before_metadata
+    assert calls == [] and provider.begin_count == 0
+
+
+def test_concurrent_opportunities_keep_distinct_completed_summaries(observed, monkeypatch):
+    server, idle = observed
+    entered = Barrier(5)
+    release = Event()
+    def blocked(handler):
+        entered.wait(5)
+        assert release.wait(5)
+        handler.send_response(200)
+        handler.send_header("Content-Length", "0")
+        handler.end_headers()
+    monkeypatch.setattr(browser._BrowserHandler, "do_GET", blocked)
+    results = []
+    clients = [Thread(target=lambda: results.append(_request(server, "GET", "/swing/opportunities")))
+               for _ in range(4)]
+    try:
+        for thread in clients:
+            thread.start()
+        entered.wait(5)
+        assert server.request_capacity_status()["active"] == 4
+    finally:
+        release.set()
+        for thread in clients:
+            thread.join(5)
+    assert idle.wait(5) and len(results) == 4
+    ids = {headers["X-Kronos-Request-ID"] for code, headers, _ in results if code == 200}
+    assert len(ids) == 4
+    completed = server.request_diagnostics.snapshot()["completed_opportunities"]
+    assert ids <= set(completed)
+    assert all(completed[identity]["complete"] is True for identity in ids)
+    assert server.request_capacity_status()["active"] == 0
+
+
 def test_concurrent_requests_keep_distinct_identity_and_release(observed, monkeypatch):
     server, idle = observed
     entered = Barrier(5)

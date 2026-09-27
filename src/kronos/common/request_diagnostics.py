@@ -6,7 +6,7 @@ Snapshots are bounded and observational. They are not durable audit evidence.
 """
 from __future__ import annotations
 
-from collections import deque
+from collections import OrderedDict, deque
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
@@ -22,6 +22,9 @@ MAX_EVENT_BYTES = 512
 MAX_ACTIVE = 40  # 32 HTTP owners plus bounded restoration diagnostics
 MAX_DEPTH = 16
 RETENTION_NS = 900 * 1_000_000_000
+MAX_COMPLETED_OPPORTUNITIES = 32
+MAX_COMPLETED_SUMMARY_BYTES = 4096
+COMPLETED_RETENTION_NS = 120 * 1_000_000_000
 ROUTES = frozenset({"/status", "/runtime/status", "/dashboard",
     "/runtime/request-diagnostics", "/notifications/status", "/swing/v1/status",
     "/swing/v1/bulk-import-status", "/control/provider-instrument-master/status",
@@ -72,12 +75,29 @@ class Trace:
     outcome: str = "UNKNOWN"
     finished: bool = False
     stages: list = field(default_factory=list)
+    stage_totals: dict = field(default_factory=dict)
+    stage_starts: int = 0
+    stage_ends: int = 0
+    stage_truncated: bool = False
+    evidence_lost: bool = False
 
     def emit(self, event, *, stage="UNKNOWN", mode="UNKNOWN", duration=None):
         try:
-            self.recorder.emit(self, event, stage=stage, mode=mode, duration=duration)
+            if self.recorder.emit(self, event, stage=stage, mode=mode, duration=duration) is not True:
+                self.evidence_lost = True
         except Exception:
-            self.recorder._drop()
+            self.evidence_lost = True
+            safe_call(self.recorder._drop)
+
+    def measured_stage(self, name, mode, duration):
+        """Keep fixed-shape timings even when unrelated ring events are evicted."""
+        self.stage_ends += 1
+        key = (name, mode)
+        if key not in self.stage_totals and len(self.stage_totals) >= 2 * len(STAGES):
+            self.stage_truncated = True
+            return
+        count, total, maximum = self.stage_totals.get(key, (0, 0, 0))
+        self.stage_totals[key] = (count + 1, total + duration, max(maximum, duration))
 
     def parsed(self, method, target):
         # Never store an arbitrary path, query, fragment, header or body.
@@ -107,6 +127,9 @@ class RequestDiagnostics:
     def __init__(self):
         self._lock = Lock()
         self._events = deque(maxlen=MAX_EVENTS)
+        self._completed_opportunities = OrderedDict()
+        self._completed_evicted = 0
+        self._completed_dropped = 0
         self._active = {}
         self._dropped = 0
         self._evicted = 0
@@ -120,6 +143,7 @@ class RequestDiagnostics:
                       kind if kind in {"REQUEST", "SPONSOR_RESTORATION"} else "UNKNOWN")
         if not self._lock.acquire(blocking=False):
             self._drop()
+            trace.evidence_lost = True
             return trace
         try:
             self._active = {k: v for k, v in self._active.items() if not v.finished}
@@ -127,6 +151,7 @@ class RequestDiagnostics:
                 self._active[trace.identity] = trace
             else:
                 self._drop()
+                trace.evidence_lost = True
         finally:
             self._lock.release()
         return trace
@@ -137,7 +162,9 @@ class RequestDiagnostics:
     def emit(self, trace, event, *, stage="UNKNOWN", mode="UNKNOWN", duration=None):
         if not self._lock.acquire(blocking=False):
             self._drop()
-            return
+            if trace.finished and trace.route == "/swing/opportunities":
+                self._completed_dropped += 1
+            return False
         try:
             now = monotonic_ns()
             self._sequence += 1
@@ -156,12 +183,50 @@ class RequestDiagnostics:
                 if len(self._events) == MAX_EVENTS:
                     self._evicted = min(2**31-1, self._evicted+1)
                 self._events.append((now, raw))
+                recorded = True
             else:
                 self._drop()
+                recorded = False
+            if trace.finished and event == "CLEANUP" and trace.route == "/swing/opportunities":
+                try:
+                    self._retain_completed(trace, now, recorded)
+                except Exception:
+                    self._completed_dropped += 1
+                    recorded = False
+            return recorded
+        finally:
             if trace.finished:
                 self._active.pop(trace.identity, None)
-        finally:
             self._lock.release()
+
+    def _retain_completed(self, trace, now, cleanup_recorded):
+        for identity, (at, _) in tuple(self._completed_opportunities.items()):
+            if now - at > COMPLETED_RETENTION_NS:
+                del self._completed_opportunities[identity]
+                self._completed_evicted += 1
+        stages = [dict(stage=name, mode=mode, count=count, total_ns=total,
+                       maximum_ns=maximum)
+                  for (name, mode), (count, total, maximum) in sorted(trace.stage_totals.items())]
+        lost = trace.evidence_lost or not cleanup_recorded
+        truncated = trace.stage_truncated or len(trace.stages) != 0 or trace.stage_starts != trace.stage_ends
+        summary = dict(id=trace.identity, route=trace.route, method=trace.method,
+                       status=trace.status, outcome=trace.outcome,
+                       completed_at_ns=now-self._epoch_ns,
+                       elapsed_ns=now-trace.started, stages=stages,
+                       stage_starts=trace.stage_starts, stage_ends=trace.stage_ends,
+                       evidence_lost=lost, truncated=truncated,
+                       complete=not lost and not truncated and trace.outcome != "UNKNOWN")
+        raw = json.dumps(summary, separators=(",", ":")).encode("ascii")
+        if len(raw) > MAX_COMPLETED_SUMMARY_BYTES:
+            summary.update(stages=[], truncated=True, complete=False)
+            raw = json.dumps(summary, separators=(",", ":")).encode("ascii")
+        if len(raw) > MAX_COMPLETED_SUMMARY_BYTES:
+            self._completed_dropped += 1
+            return
+        if len(self._completed_opportunities) == MAX_COMPLETED_OPPORTUNITIES:
+            self._completed_opportunities.popitem(last=False)
+            self._completed_evicted += 1
+        self._completed_opportunities[trace.identity] = (now, raw)
 
     def snapshot(self):
         if not self._lock.acquire(blocking=False):
@@ -175,16 +240,26 @@ class RequestDiagnostics:
                       for t in self._active.values() if not t.finished]
             dropped = self._dropped
             evicted = self._evicted
+            completed = tuple((identity, raw) for identity, (at, raw) in
+                              self._completed_opportunities.items()
+                              if now-at <= COMPLETED_RETENTION_NS)
+            completed_evicted = self._completed_evicted
+            completed_dropped = self._completed_dropped
         finally:
             self._lock.release()
         return dict(schema="KRONOS_REQUEST_DIAGNOSTICS_V1", state="AVAILABLE",
                     instance=self._instance, pid=os.getpid(), epoch_utc_ns=self._utc_ns,
                     epoch_monotonic_ns=self._epoch_ns, observed_ns=now-self._epoch_ns,
                     limits=dict(events=MAX_EVENTS, event_bytes=MAX_EVENT_BYTES,
-                                active=MAX_ACTIVE, stage_depth=MAX_DEPTH,
-                                retention_seconds=900, disk_bytes=0),
-                    dropped=dropped, evicted=evicted, active=active,
-                    events=[json.loads(raw) for raw in retained])
+                    active=MAX_ACTIVE, stage_depth=MAX_DEPTH,
+                    retention_seconds=900, disk_bytes=0,
+                    completed_opportunities=MAX_COMPLETED_OPPORTUNITIES,
+                    completed_summary_bytes=MAX_COMPLETED_SUMMARY_BYTES,
+                    completed_retention_seconds=COMPLETED_RETENTION_NS // 1_000_000_000),
+            dropped=dropped, evicted=evicted, active=active,
+            events=[json.loads(raw) for raw in retained],
+            completed_opportunities={identity: json.loads(raw) for identity, raw in completed},
+            completed_evicted=completed_evicted, completed_dropped=completed_dropped)
 
 
 @contextmanager
@@ -211,15 +286,23 @@ def diagnostic_stage(name, mode="PROCESS"):
     started = monotonic_ns()
     entry = (name, mode, started - trace.recorder._epoch_ns)
     tracked = len(trace.stages) < MAX_DEPTH
+    trace.stage_starts += 1
     if tracked:
         trace.stages.append(entry)
+    else:
+        trace.stage_truncated = True
     trace.emit("STAGE_START", stage=name, mode=mode)
     try:
         yield
     finally:
         if tracked:
             trace.stages.pop()
-        trace.emit("STAGE_END", stage=name, mode=mode, duration=monotonic_ns()-started)
+        duration = monotonic_ns()-started
+        try:
+            trace.measured_stage(name, mode, duration)
+        except Exception:
+            trace.stage_truncated = True
+        trace.emit("STAGE_END", stage=name, mode=mode, duration=duration)
 
 
 @contextmanager
