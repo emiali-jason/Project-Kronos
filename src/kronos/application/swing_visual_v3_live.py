@@ -8,6 +8,7 @@ from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from hashlib import sha256
 from threading import Condition, Lock
+from kronos.common.request_diagnostics import diagnostic_context, diagnostic_lock, diagnostic_stage
 
 from kronos.application.swing_native_review import NativeReviewWorkflowSnapshot
 from kronos.application.swing_visual_v3 import (
@@ -1135,14 +1136,15 @@ class NativeReviewIntakeWorkflow:
 
     @contextmanager
     def _page_reader(self):
-        with self._page_transition_condition:
+        with diagnostic_lock(self._page_transition_condition, "INTAKE_READER_LOCK"):
             while self._page_transition_active:
-                self._page_transition_condition.wait()
+                with diagnostic_stage("INTAKE_TRANSITION", "WAIT"):
+                    self._page_transition_condition.wait()
             self._page_active_readers += 1
         try:
             yield
         finally:
-            with self._page_transition_condition:
+            with diagnostic_lock(self._page_transition_condition, "INTAKE_READER_LOCK"):
                 self._page_active_readers -= 1
                 if self._page_active_readers == 0:
                     self._page_transition_condition.notify_all()
@@ -1152,12 +1154,13 @@ class NativeReviewIntakeWorkflow:
         """Serve the retained generation without reconstruction or recovery."""
 
         with self._page_reader():
-            with self._prepared_page_response() as prepared:
+            with diagnostic_context(self._prepared_page_response(),
+                                    "INTAKE_VALIDATE", "INTAKE_REVALIDATE") as prepared:
                 yield prepared
 
     @contextmanager
     def _prepared_page_response(self):
-        with self._page_state_lock:
+        with diagnostic_lock(self._page_state_lock, "INTAKE_STATE_LOCK"):
             slot = self._page_publication
             epoch = self._page_epoch
             writers = self._page_writers
@@ -1166,7 +1169,7 @@ class NativeReviewIntakeWorkflow:
                 and not slot.reconciliation_failure, "REVIEW_BINDING_STALE")
         with self._prepared_state_response(slot.page) as prepared:
             yield prepared
-        with self._page_state_lock:
+        with diagnostic_lock(self._page_state_lock, "INTAKE_STATE_LOCK"):
             current = (self._page_publication is slot and self._page_epoch == epoch
                        and self._page_writers == 0)
         require(current, "REVIEW_BINDING_STALE")

@@ -20,6 +20,7 @@ import os
 from pathlib import Path
 import re
 from typing import Callable
+from kronos.common.request_diagnostics import diagnostic_lock, diagnostic_stage
 
 from kronos.instrument.facts import CanonicalInstrumentContext
 from kronos.swing.run_identity import is_swing_analysis_run_id
@@ -1686,7 +1687,7 @@ class SwingTradeWindowWorkflow:
                 or not callable(authority_is_current)):
             raise ValueError("SWING_TRADE_WINDOW_SELECTION_INVALID")
         key = (run_identity, canonical_instrument)
-        with self._projection_lock:
+        with diagnostic_lock(self._projection_lock, "TRADE_WINDOW_LOCK"):
             if self._projection_changes:
                 raise ValueError("SWING_TRADE_WINDOW_SELECTION_STALE")
             if type(self._completed) is not dict:
@@ -1710,8 +1711,9 @@ class SwingTradeWindowWorkflow:
         if authority_is_current() is not True:
             raise ValueError("SWING_TRADE_WINDOW_SELECTION_STALE")
         # Never select again via project(run, instrument).
-        result = None if completed is None else self._project_completed(completed)
-        with self._projection_lock:
+        with diagnostic_stage("TRADE_WINDOW_RECONSTRUCT"):
+            result = None if completed is None else self._project_completed(completed)
+        with diagnostic_lock(self._projection_lock, "TRADE_WINDOW_LOCK"):
             current = (not self._projection_changes and generation == self._projection_generation
                        and type(self._completed) is dict and self._completed.get(key) is completed)
         if not current or authority_is_current() is not True:

@@ -24,6 +24,10 @@ from uuid import uuid4
 from kronos.application.paper_observation_tracking import paper_monitoring_failure_reason
 from kronos.application.swing_opportunities import SwingOpportunitiesApplication
 from kronos.common.maintenance_admission import MaintenanceAdmissionCoordinator
+from kronos.common.request_diagnostics import (
+    RequestDiagnostics, bind_trace, current_trace, diagnostic_context, diagnostic_lock,
+    diagnostic_operation, diagnostic_stage, safe_call, start_trace,
+)
 from kronos.application.provider_instrument_master_operation import (
     ProviderInstrumentMasterOperationalComposition,
     p1_operational_result_document,
@@ -664,6 +668,8 @@ class KronosBrowserServer(ThreadingHTTPServer):
         self._request_capacity_lock = Lock()
         self._active_request_count = 0
         self._request_capacity_refusals = 0
+        self.request_diagnostics = RequestDiagnostics()
+        self._diagnostic_requests = {}
         self.application.register_sponsor_operability_restorer(
             self.restore_sponsor_operability
         )
@@ -743,7 +749,11 @@ class KronosBrowserServer(ThreadingHTTPServer):
     def process_request(self, request, client_address) -> None:  # type: ignore[no-untyped-def]
         """Admit a bounded number of request owners before creating threads."""
 
+        trace = start_trace(self.request_diagnostics)
         if not self._request_slots.acquire(blocking=False):
+            if trace is not None:
+                trace.outcome = "CAPACITY_REFUSED"
+                trace.emit("REFUSED")  # request line has not been parsed: UNKNOWN
             with self._request_capacity_lock:
                 self._request_capacity_refusals += 1
             body = b'{"failure":"BROWSER_REQUEST_CAPACITY_UNAVAILABLE"}'
@@ -752,32 +762,67 @@ class KronosBrowserServer(ThreadingHTTPServer):
                 b"Content-Type: application/json; charset=utf-8\r\n"
                 b"Cache-Control: no-store\r\n"
                 b"Connection: close\r\n"
+                + (b"" if trace is None else f"X-Kronos-Request-ID: {trace.identity}\r\n".encode("ascii"))
                 + f"Content-Length: {len(body)}\r\n\r\n".encode("ascii")
                 + body
             )
             try:
                 request.sendall(response)
+                if trace is not None:
+                    trace.response(503)
+            except BaseException as error:
+                if trace is not None:
+                    trace.failure(error)
+                raise
             finally:
-                self.shutdown_request(request)
+                try:
+                    self.shutdown_request(request)
+                finally:
+                    if trace is not None:
+                        trace.finish()
             return
         with self._request_capacity_lock:
             self._active_request_count += 1
+            self._diagnostic_requests[id(request)] = trace
+        if trace is not None:
+            trace.emit("ADMITTED")
         try:
             super().process_request(request, client_address)
-        except BaseException:
-            self._finish_request_owner()
+        except BaseException as error:
+            if trace is not None:
+                trace.failure(error)
+            self._finish_request_owner(request)
             raise
 
     def process_request_thread(self, request, client_address) -> None:  # type: ignore[no-untyped-def]
+        with self._request_capacity_lock:
+            trace = self._diagnostic_requests.get(id(request))
         try:
-            super().process_request_thread(request, client_address)
+            with bind_trace(trace):
+                if trace is not None:
+                    trace.emit("THREAD_STARTED")
+                super().process_request_thread(request, client_address)
         finally:
-            self._finish_request_owner()
+            self._finish_request_owner(request)
 
-    def _finish_request_owner(self) -> None:
+    def finish_request(self, request, client_address) -> None:  # type: ignore[no-untyped-def]
+        trace = current_trace()
+        try:
+            super().finish_request(request, client_address)
+            if trace is not None:
+                trace.emit("HANDLER_RETURNED")
+        except BaseException as error:
+            if trace is not None:
+                trace.failure(error)
+            raise
+
+    def _finish_request_owner(self, request) -> None:
         with self._request_capacity_lock:
             self._active_request_count -= 1
+            trace = self._diagnostic_requests.pop(id(request), None)
         self._request_slots.release()
+        if trace is not None:
+            trace.finish()  # ownership released before best-effort diagnostics
 
     def request_capacity_status(self) -> dict[str, int | str]:
         """Return local admission facts without waiting on application work."""
@@ -1206,13 +1251,14 @@ class KronosBrowserServer(ThreadingHTTPServer):
         # while restoration is publishing downstream Trade Window state.  Wait
         # at the restoration boundary; never reinterpret that bounded interval
         # as a stale selected contract.
-        with self._sponsor_restoration_lock:
-            return KronosBrowserServer._selected_opportunity_presentations(
-                self,
-                discovery,
-                prepared=prepared,
-                authority_is_current=authority_is_current,
-            )
+        with diagnostic_lock(self._sponsor_restoration_lock, "RESTORATION_LOCK"):
+            with diagnostic_stage("SELECTED_PRESENTATIONS"):
+                return KronosBrowserServer._selected_opportunity_presentations(
+                    self,
+                    discovery,
+                    prepared=prepared,
+                    authority_is_current=authority_is_current,
+                )
 
     def _selected_opportunity_presentations(self, discovery, *, prepared=None,
                                             authority_is_current=lambda: True):
@@ -1260,9 +1306,10 @@ class KronosBrowserServer(ThreadingHTTPServer):
                     ))
             # The Trade Window owner selects independently. The Visual V3 cache
             # above cannot authorize or select its retained completion record.
-            window = (None if legacy_v1_only else self.trade_window.project_selected(
-                *key, assessment.result_sha256,
-                authority_is_current=authority_is_current))
+            with diagnostic_stage("TRADE_WINDOW"):
+                window = (None if legacy_v1_only else self.trade_window.project_selected(
+                    *key, assessment.result_sha256,
+                    authority_is_current=authority_is_current))
             if window is not None:
                 windows.append(window)
         return tuple(visual), tuple(windows)
@@ -1602,10 +1649,12 @@ class KronosBrowserServer(ThreadingHTTPServer):
     def restore_sponsor_operability(self, completed_capability: object | None = None) -> None:
         """Restore persisted controls and shared monitoring without creating analysis."""
 
-        with self._sponsor_restoration_lock:
-            if self.connection_governance and self.connection_governance.maintenance_active:
-                return
-            self._restore_sponsor_operability(completed_capability)
+        with diagnostic_operation(self):
+            with diagnostic_lock(self._sponsor_restoration_lock, "RESTORATION_LOCK"):
+                if self.connection_governance and self.connection_governance.maintenance_active:
+                    return
+                with diagnostic_stage("SPONSOR_RESTORATION"):
+                    self._restore_sponsor_operability(completed_capability)
 
     def _restore_sponsor_operability(self, completed_capability: object | None) -> None:
         capability_getter = getattr(
@@ -2062,8 +2111,53 @@ class KronosBrowserServer(ThreadingHTTPServer):
 class _BrowserHandler(BaseHTTPRequestHandler):
     server: KronosBrowserServer
 
+    def setup(self) -> None:
+        super().setup()
+        # Delegate the original stream operations and HTTP parser unchanged;
+        # measure buffered/socket header reads without retaining their bytes.
+        original = self.rfile
+        class TimedReader:
+            def readline(wrapper, *args, **kwargs):
+                with diagnostic_stage("REQUEST_HEADERS", "WAIT"):
+                    try:
+                        value = original.readline(*args, **kwargs)
+                    except BaseException as error:
+                        trace = current_trace()
+                        if trace is not None:
+                            trace.failure(error)
+                        raise
+                    if not value and current_trace() is not None:
+                        current_trace().emit("EOF")
+                    return value
+
+            def __getattr__(wrapper, name):
+                return getattr(original, name)
+        self.rfile = TimedReader()
+
+    def parse_request(self) -> bool:
+        result = super().parse_request()
+        trace = current_trace()
+        if trace is not None:
+            safe_call(trace.parsed, getattr(self, "command", "UNKNOWN"), getattr(self, "path", ""))
+        return result
+
+    def send_response(self, code, message=None) -> None:
+        trace = current_trace()
+        if trace is not None:
+            trace.response(code)
+        super().send_response(code, message)
+        if trace is not None:
+            self.send_header("X-Kronos-Request-ID", trace.identity)
+
     def do_GET(self) -> None:  # noqa: N802
         path = urlsplit(self.path).path
+        if path == "/runtime/request-diagnostics":
+            # Keep the bounded operational ring out of the launcher's 64 KiB
+            # status contract, and do not acquire any application owner lock.
+            self._json(safe_call(self.server.request_diagnostics.snapshot) or {
+                "schema": "KRONOS_REQUEST_DIAGNOSTICS_V1", "state": "UNAVAILABLE",
+            })
+            return
         if path == "/assets/brand/kronos-brand-mark.png":
             self._png_asset(_BRAND_MARK_ASSET)
             return
@@ -2159,27 +2253,35 @@ class _BrowserHandler(BaseHTTPRequestHandler):
         if path == "/swing/opportunities":
             intake = self.server.native_intake
             try:
-                with intake.page_response() if intake is not None else nullcontext() as prepared:
-                    snapshot, discovery, continuity, publication = (
-                        self.server.application.opportunities_bundle_projection())
-                    publication = deepcopy(publication)
+                response = intake.page_response() if intake is not None else nullcontext()
+                with diagnostic_context(response, "INTAKE_ENTER", "INTAKE_EXIT") as prepared:
+                    with diagnostic_stage("PUBLICATION"):
+                        snapshot, discovery, continuity, publication = (
+                            self.server.application.opportunities_bundle_projection())
+                        publication = deepcopy(publication)
                     def current():
-                        _, native, bound_continuity, status = self.server.application.opportunities_bundle_projection()
-                        return native is discovery and bound_continuity is continuity and status == publication
+                        with diagnostic_stage("CURRENTNESS"):
+                            _, native, bound_continuity, status = self.server.application.opportunities_bundle_projection()
+                            return native is discovery and bound_continuity is continuity and status == publication
                     visual_v3, trade_windows = self.server.selected_opportunity_presentations(
                         discovery, prepared=prepared, authority_is_current=current)
-                    promotions_v2 = self.server.current_v2_promotions(discovery)
-                    body = render_opportunities(
-                        snapshot, discovery, self.server.native_review.snapshot(),
-                        self.server.progression_snapshot(), visual_v3, trade_windows,
-                        self.server.refresh_reminders.snapshot(), self.server.swing_projection_revision(),
-                        continuity, publication,
-                        None if intake is None else intake.snapshot(_response=prepared),
-                        promotions_v2=promotions_v2)
-                    if (not current() or promotions_v2 !=
-                            self.server.current_v2_promotions(discovery)):
-                        raise ValueError("REVIEW_BINDING_STALE")
-                self._html(body)
+                    with diagnostic_stage("V2_SELECTION"):
+                        promotions_v2 = self.server.current_v2_promotions(discovery)
+                    with diagnostic_stage("RENDER_INPUTS"):
+                        inputs = (
+                            snapshot, discovery, self.server.native_review.snapshot(),
+                            self.server.progression_snapshot(), visual_v3, trade_windows,
+                            self.server.refresh_reminders.snapshot(), self.server.swing_projection_revision(),
+                            continuity, publication,
+                            None if intake is None else intake.snapshot(_response=prepared))
+                    with diagnostic_stage("RENDER"):
+                        body = render_opportunities(*inputs, promotions_v2=promotions_v2)
+                    with diagnostic_stage("CURRENTNESS"):
+                        if (not current() or promotions_v2 !=
+                                self.server.current_v2_promotions(discovery)):
+                            raise ValueError("REVIEW_BINDING_STALE")
+                with diagnostic_stage("RESPONSE_WRITE"):
+                    self._html(body)
             except (OSError, ValueError) as error:
                 self._swing_page_unavailable(error)
             return
