@@ -43,6 +43,257 @@ def test_accepted_current_receipt_publishes_distinct_v2_without_get_writes(
             native_intake.v2_for(run_identity, instrument)
 
 
+@pytest.mark.parametrize("native_intake", ["NSE", "GOLDM"], indirect=True)
+def test_page_v2_selection_reuses_exact_context_but_validates_each_receipt(
+    native_intake, tmp_path, monkeypatch,
+):
+    from kronos.browser.server import KronosBrowserServer
+    from kronos.application import swing_visual_v3_live as intake_module
+    from tests.unit.swing.v1.test_mcx_supporting_context import _inventory
+
+    market, instrument, _, _, _, _ = _accepted_native(native_intake, tmp_path)
+    assert native_intake.prepare_page_state()
+    discovery = native_intake.application.opportunities_bundle_projection()[1]
+    server = object.__new__(KronosBrowserServer)
+    server.native_intake = native_intake
+    server.visual_v3 = native_intake.live.cycle
+    original_context = native_intake._context
+    original_resolve = native_intake.store.resolve_committed_receipt
+    calls = {"uncached_context": 0, "receipt": 0}
+
+    def context(*, _response=None):
+        if _response is None:
+            calls["uncached_context"] += 1
+        return original_context(_response=_response)
+
+    def resolve(*args, **kwargs):
+        calls["receipt"] += 1
+        return original_resolve(*args, **kwargs)
+
+    monkeypatch.setattr(native_intake, "_context", context)
+    monkeypatch.setattr(native_intake.store, "resolve_committed_receipt", resolve)
+    before = _inventory(tmp_path)
+    with native_intake.page_response() as prepared:
+        first = KronosBrowserServer.current_v2_promotions(
+            server, discovery, prepared=prepared)
+        second = KronosBrowserServer.current_v2_promotions(
+            server, discovery, prepared=prepared)
+        assert first == second and len(first) == 1
+        assert first[0] == native_intake.v2_for(
+            discovery.run_identity, instrument, _response=prepared)
+        assert calls == {"uncached_context": 0, "receipt": 3}
+        assert first[0].value["source"]["market"] == market
+        foreign = intake_module._NativeIntakeResponse(object())
+        with pytest.raises(ValueError, match="REVIEW_BINDING_STALE"):
+            native_intake.v2_for(discovery.run_identity, instrument, _response=foreign)
+    with pytest.raises(ValueError, match="REVIEW_BINDING_STALE"):
+        native_intake.v2_for(discovery.run_identity, instrument, _response=prepared)
+    assert _inventory(tmp_path) == before
+    assert native_intake.v2_for(discovery.run_identity, instrument) == first[0]
+    assert calls["uncached_context"] == 1
+
+
+@pytest.mark.parametrize("native_intake", ["NSE"], indirect=True)
+@pytest.mark.parametrize("changed", ["run", "pointer", "receipt", "promotion", "confirmation"])
+def test_page_v2_selection_fails_closed_on_mid_response_change(
+    native_intake, tmp_path, monkeypatch, changed,
+):
+    from kronos.browser.server import KronosBrowserServer
+    from tests.unit.swing.v1.test_mcx_supporting_context import _inventory
+
+    _, instrument, _, _, _, commit = _accepted_native(native_intake, tmp_path)
+    assert native_intake.prepare_page_state()
+    discovery = native_intake.application.opportunities_bundle_projection()[1]
+    server = object.__new__(KronosBrowserServer)
+    server.native_intake = native_intake
+    server.visual_v3 = native_intake.live.cycle
+    initial = native_intake.v2_for(discovery.run_identity, instrument)
+    assert initial is not None
+    if changed in {"pointer", "receipt"}:
+        # These are isolated temporary stores; their expected corruption is
+        # checked by the retained byte fence or the exact receipt reader.
+        if changed == "pointer":
+            path = native_intake.store.root / "current-request.json"
+        else:
+            path = native_intake.store.root / "receipts" / (
+                commit.receipts[0].receipt_id + ".json")
+        assert path.is_file()
+    before = _inventory(tmp_path)
+    with pytest.raises(ValueError):
+        with native_intake.page_response() as prepared:
+            selected = KronosBrowserServer.current_v2_promotions(
+                server, discovery, prepared=prepared)
+            assert selected == (initial,)
+            if changed == "run":
+                from dataclasses import replace
+                from kronos.swing.v1 import native_discovery as native
+                successor_identity = "SWING-RUN-" + "F" * 32
+                assessments = tuple(replace(item, run_identity=successor_identity)
+                                    for item in discovery.assessments)
+                assessments = tuple(replace(item, result_sha256=native._assessment_digest(item))
+                                    for item in assessments)
+                successor = replace(discovery, run_identity=successor_identity,
+                                    assessments=assessments,
+                                    result_sha256=native._digest(dict(
+                                        run_identity=successor_identity,
+                                        provider_source_identity=discovery.provider_source_identity,
+                                        observed_at=discovery.observed_at,
+                                        assessments=assessments)))
+                original = native_intake.application.opportunities_bundle_projection
+                def newer():
+                    workspace, _, continuity, status = original()
+                    return workspace, successor, continuity, status
+                monkeypatch.setattr(native_intake.application,
+                                    "opportunities_bundle_projection", newer)
+            elif changed in {"pointer", "receipt"}:
+                path.write_bytes(path.read_bytes() + b" ")
+            elif changed == "promotion":
+                native_intake._v2_promotions.pop((discovery.run_identity, instrument))
+            else:
+                monkeypatch.setattr(native_intake.application, "relative_context_run",
+                                    lambda: object(), raising=False)
+            if changed == "pointer":
+                # A byte-only pointer rewrite can remain logically current;
+                # the response-exit fence must still reject those bytes.
+                assert selected == KronosBrowserServer.current_v2_promotions(
+                    server, discovery, prepared=prepared)
+            else:
+                assert selected != KronosBrowserServer.current_v2_promotions(
+                    server, discovery, prepared=prepared)
+    if changed in {"run", "promotion", "confirmation"}:
+        assert _inventory(tmp_path) == before
+
+
+@pytest.mark.parametrize("native_intake", ["NSE"], indirect=True)
+def test_page_v2_scopes_are_request_local_and_cleanup_after_failure(
+    native_intake, tmp_path,
+):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+    from tests.unit.swing.v1.test_mcx_supporting_context import _inventory
+
+    _, instrument, _, _, _, _ = _accepted_native(native_intake, tmp_path)
+    assert native_intake.prepare_page_state()
+    run = native_intake.application.opportunities_bundle_projection()[1].run_identity
+    before = _inventory(tmp_path)
+    barrier = Barrier(2)
+
+    def read_one():
+        with native_intake.page_response() as prepared:
+            barrier.wait(timeout=5)
+            record = native_intake.v2_for(run, instrument, _response=prepared)
+            assert record is not None
+            return prepared, record
+
+    with ThreadPoolExecutor(max_workers=2) as workers:
+        first, second = tuple(workers.map(lambda _: read_one(), range(2)))
+    assert first[0] is not second[0] and first[1] == second[1]
+    assert not first[0].active and not second[0].active
+    with pytest.raises(RuntimeError, match="controlled abort"):
+        with native_intake.page_response() as aborted:
+            assert native_intake.v2_for(run, instrument, _response=aborted) == first[1]
+            raise RuntimeError("controlled abort")
+    assert not aborted.active and native_intake._page_active_readers == 0
+    with pytest.raises(ValueError, match="REVIEW_BINDING_STALE"):
+        native_intake.v2_for(run, instrument, _response=aborted)
+    assert _inventory(tmp_path) == before
+
+
+@pytest.mark.parametrize("native_intake", ["NSE"], indirect=True)
+def test_page_v2_replay_preserves_records_without_candidate_mtf_reloads(
+    native_intake, tmp_path, monkeypatch,
+):
+    import json
+    import os
+    import tracemalloc
+    from collections import Counter
+    from time import perf_counter_ns
+    from kronos.browser.server import KronosBrowserServer
+    from kronos.swing.v1.mtf_facts import MtfFactEvidenceStore
+    from tests.unit.swing.v1.test_mcx_supporting_context import _inventory
+
+    _, instrument, _, _, _, _ = _accepted_native(native_intake, tmp_path)
+    discovery = native_intake.application.opportunities_bundle_projection()[1]
+    facts = native_intake.application.mtf_fact_snapshot()
+    mtf_store = MtfFactEvidenceStore(tmp_path / "exact-mtf")
+    mtf_path = mtf_store.retain(facts)
+    native_intake.application.mtf_fact_evidence_store = lambda: mtf_store
+    assert native_intake.prepare_page_state()
+    server = object.__new__(KronosBrowserServer)
+    server.native_intake = native_intake
+    server.visual_v3 = native_intake.live.cycle
+    before = _inventory(tmp_path)
+    count = Counter()
+    original_load = mtf_store.load
+    original_read_bytes = type(mtf_path).read_bytes
+    original_read_text = type(mtf_path).read_text
+    original_open = os.open
+
+    def measured_load(*args, **kwargs):
+        count["mtf_typed_loads"] += 1
+        return original_load(*args, **kwargs)
+
+    def measured_read_bytes(path):
+        result = original_read_bytes(path)
+        if path == mtf_path:
+            count["mtf_logical_bytes"] += len(result)
+            count["mtf_file_reads"] += 1
+        return result
+
+    def measured_read_text(path, *args, **kwargs):
+        result = original_read_text(path, *args, **kwargs)
+        if path == mtf_path:
+            count["mtf_logical_bytes"] += len(result.encode("utf-8"))
+            count["mtf_file_reads"] += 1
+        return result
+
+    def measured_open(path, flags, *args, **kwargs):
+        if type(path) in (str, type(mtf_path)) and type(mtf_path)(path) == mtf_path and not flags & (os.O_WRONLY | os.O_RDWR):
+            count["mtf_logical_bytes"] += mtf_path.stat().st_size
+            count["mtf_file_reads"] += 1
+        return original_open(path, flags, *args, **kwargs)
+
+    monkeypatch.setattr(mtf_store, "load", measured_load)
+    monkeypatch.setattr(type(mtf_path), "read_bytes", measured_read_bytes)
+    monkeypatch.setattr(type(mtf_path), "read_text", measured_read_text)
+    monkeypatch.setattr(os, "open", measured_open)
+
+    def measure(operation):
+        count.clear()
+        tracemalloc.start()
+        try:
+            tracemalloc.reset_peak()
+            start = perf_counter_ns()
+            records = operation()
+            elapsed = perf_counter_ns() - start
+            current, peak = tracemalloc.get_traced_memory()
+        finally:
+            tracemalloc.stop()
+        return records, {**count, "elapsed_ns": elapsed,
+                         "traced_current_bytes": current, "traced_peak_bytes": peak}
+
+    def select(prepared=None):
+        selected = native_intake.v2_for(
+            discovery.run_identity, instrument, **({} if prepared is None else {"_response": prepared}))
+        first = KronosBrowserServer.current_v2_promotions(
+            server, discovery, prepared=prepared)
+        final = KronosBrowserServer.current_v2_promotions(
+            server, discovery, prepared=prepared)
+        return selected, first, final
+
+    baseline, old = measure(lambda: select())
+    def response_selection():
+        with native_intake.page_response() as prepared:
+            return select(prepared)
+    candidate, new = measure(response_selection)
+    assert baseline == candidate
+    assert baseline[0] is not None and baseline[1] == baseline[2] == (baseline[0],)
+    assert old["mtf_typed_loads"] == 3 and new.get("mtf_typed_loads", 0) == 0
+    assert new.get("mtf_logical_bytes", 0) <= old["mtf_logical_bytes"]
+    assert _inventory(tmp_path) == before
+    print("V2_CONTEXT_REPLAY " + json.dumps({"baseline": old, "candidate": new}, sort_keys=True))
+
+
 def test_reconcile_swing_publishes_one_prepared_projection_and_revision():
     from kronos.browser.server import KronosBrowserServer
 

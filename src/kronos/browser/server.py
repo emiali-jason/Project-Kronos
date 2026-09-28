@@ -1205,7 +1205,7 @@ class KronosBrowserServer(ThreadingHTTPServer):
                 item, relative_context=relative))
         return tuple(result)
 
-    def current_v2_promotions(self, discovery):  # type: ignore[no-untyped-def]
+    def current_v2_promotions(self, discovery, *, prepared=None):  # type: ignore[no-untyped-def]
         """Read exact current owner decisions without evaluating or restoring them."""
         if self.native_intake is None or discovery is None:
             return ()
@@ -1213,8 +1213,13 @@ class KronosBrowserServer(ThreadingHTTPServer):
         for assessment in discovery.assessments:
             if assessment.status.value != "PROBABLE":
                 continue
-            record = self.native_intake.v2_for(
-                discovery.run_identity, assessment.canonical_instrument)
+            if prepared is None:
+                record = self.native_intake.v2_for(
+                    discovery.run_identity, assessment.canonical_instrument)
+            else:
+                record = self.native_intake.v2_for(
+                    discovery.run_identity, assessment.canonical_instrument,
+                    _response=prepared)
             if record is None:
                 completed = self.visual_v3.completed_for(
                     discovery.run_identity, assessment.canonical_instrument)
@@ -1291,7 +1296,8 @@ class KronosBrowserServer(ThreadingHTTPServer):
                 if self.native_intake is None or self.native_intake.downstream_applicable(
                         completed, _response=prepared):
                     if self.native_intake is not None:
-                        selected = self.native_intake.v2_for(*key)
+                        selected = (self.native_intake.v2_for(*key) if prepared is None
+                                    else self.native_intake.v2_for(*key, _response=prepared))
                         legacy_v1_only = self._presentation_promotion_binding(
                             completed, selected)
                         selected_v2 = None if legacy_v1_only else selected
@@ -2266,7 +2272,8 @@ class _BrowserHandler(BaseHTTPRequestHandler):
                     visual_v3, trade_windows = self.server.selected_opportunity_presentations(
                         discovery, prepared=prepared, authority_is_current=current)
                     with diagnostic_stage("V2_SELECTION"):
-                        promotions_v2 = self.server.current_v2_promotions(discovery)
+                        promotions_v2 = self.server.current_v2_promotions(
+                            discovery, prepared=prepared)
                     with diagnostic_stage("RENDER_INPUTS"):
                         inputs = (
                             snapshot, discovery, self.server.native_review.snapshot(),
@@ -2278,7 +2285,7 @@ class _BrowserHandler(BaseHTTPRequestHandler):
                         body = render_opportunities(*inputs, promotions_v2=promotions_v2)
                     with diagnostic_stage("CURRENTNESS"):
                         if (not current() or promotions_v2 !=
-                                self.server.current_v2_promotions(discovery)):
+                                self.server.current_v2_promotions(discovery, prepared=prepared)):
                             raise ValueError("REVIEW_BINDING_STALE")
                 with diagnostic_stage("RESPONSE_WRITE"):
                     self._html(body)

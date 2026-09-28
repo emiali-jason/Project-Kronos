@@ -1384,7 +1384,7 @@ def test_current_hard_gated_v2_opportunities_render_without_trade_authority(
     server.visual_v3.restore_completed(completed)
     server.trade_window.restore((completed,))
     monkeypatch.setattr(native_intake, "downstream_applicable", lambda *a, **k: True)
-    monkeypatch.setattr(native_intake, "v2_for", lambda *a: hard_gate)
+    monkeypatch.setattr(native_intake, "v2_for", lambda *a, **k: hard_gate)
     before = _inventory(tmp_path)
     serving = Thread(target=server.serve_forever, daemon=True)
     serving.start()
@@ -1442,10 +1442,10 @@ def test_current_completed_review_requires_exact_promotion_presentation_binding(
     if binding == "invalid_current_v2":
         object.__setattr__(selected, "payload", b"{}")
     if binding == "stale_v2":
-        monkeypatch.setattr(native_intake, "v2_for", lambda *a: (_ for _ in ()).throw(
+        monkeypatch.setattr(native_intake, "v2_for", lambda *a, **k: (_ for _ in ()).throw(
             ValueError("V2_PROMOTION_CURRENT_BINDING_INVALID")))
     else:
-        monkeypatch.setattr(native_intake, "v2_for", lambda *a: selected)
+        monkeypatch.setattr(native_intake, "v2_for", lambda *a, **k: selected)
     monkeypatch.setattr(server.trade_window, "project_selected",
                         lambda *a, **k: pytest.fail("historical V1 projected trade window")
                         if binding in {"historical_v1", "missing_v1", "corrupt_v1"} else None)
@@ -1562,7 +1562,7 @@ def test_analysis_details_current_v2_retains_unacknowledged_continuity_warning(
     completed = _v2_completed(tmp_path / "completed")
     server.visual_v3.restore_completed(completed)
     monkeypatch.setattr(native_intake, "downstream_applicable", lambda *a, **k: True)
-    monkeypatch.setattr(native_intake, "v2_for", lambda *a: completed.promotion_v2)
+    monkeypatch.setattr(native_intake, "v2_for", lambda *a, **k: completed.promotion_v2)
     warning = SimpleNamespace(canonical_instrument=probable.canonical_instrument,
         disposition=SimpleNamespace(value="MANUAL_REVIEW_REQUIRED"),
         reason="UNRESOLVED_CONTINUITY_BREAK", qualification=None)

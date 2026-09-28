@@ -2175,9 +2175,9 @@ class NativeReviewIntakeWorkflow:
                 self._publish_v2_for_receipt(commit, receipt, facts)
         return result
 
-    def _v2_current(self, source):
+    def _v2_current(self, source, *, _response=None):
         try:
-            manifest, facts, _ = self._context()
+            manifest, facts, _ = self._context(_response=_response)
             accepted = source["acceptance"]
             receipt = self.store.resolve_committed_receipt(
                 accepted["commit_identity"], accepted["receipt_identity"], current=True)
@@ -2191,11 +2191,16 @@ class NativeReviewIntakeWorkflow:
         except (KeyError, OSError, ValueError):
             return False
 
-    def v2_for(self, run_identity: str, canonical_instrument: str) -> V2PromotionRecord | None:
+    def v2_for(self, run_identity: str, canonical_instrument: str, *,
+               _response=None) -> V2PromotionRecord | None:
+        if _response is not None:
+            require(type(_response) is _NativeIntakeResponse and _response.active
+                    and _response.owner is self, "REVIEW_BINDING_STALE")
+            self.recheck_response(_response)
         record = self._v2_promotions.get((run_identity, canonical_instrument))
         if record is None:
             return None
-        if (self._v2_current(record.value["source"]) is not True
+        if (self._v2_current(record.value["source"], _response=_response) is not True
                 or not self._v2_confirmation_current(record)):
             raise ValueError("V2_PROMOTION_CURRENT_BINDING_INVALID")
         return record
