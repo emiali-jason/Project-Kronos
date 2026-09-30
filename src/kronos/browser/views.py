@@ -9,6 +9,84 @@ from html import escape
 from urllib.parse import quote, urlencode
 from zoneinfo import ZoneInfo
 
+
+def render_mcx_v1_workspace(projection, snapshots) -> str:
+    """Escaped advisory/manual record forms; never an order-execution UI."""
+    def hidden(values):
+        return ''.join(f'<input type="hidden" name="{escape(key)}" value="{escape(str(value), quote=True)}">'
+                       for key, value in values.items())
+
+    def form(action, values, label, extra=''):
+        return (f'<form method="post" action="{action}">{hidden(values)}{extra}'
+                f'<button type="submit">{escape(label)}</button></form>')
+
+    def fill(contract, expiry, lots=None):
+        return (hidden(dict(contract=contract, expiry=expiry))
+                + (f'<input type="hidden" name="lots" value="{lots}">' if lots is not None else
+                   '<label>Actual whole lots <input name="lots" type="number" min="1" step="1" required></label>')
+                + '<label>Actual fill price <input name="fill_price" required></label>'
+                '<label>Actual fill time (ISO timestamp with timezone) <input name="fill_at" required></label>'
+                '<label>Broker evidence identity <input name="broker_evidence_id" required></label>'
+                '<label>Evidence SHA-256 <input name="broker_evidence_sha256" required></label>'
+                '<label>Evidence bytes (base64) <textarea name="broker_evidence_b64" required></textarea></label>')
+
+    parts = ['<!doctype html><html><head><title>Swing MCX V1</title></head><body>',
+             '<h1>Swing MCX V1 — advisory and manual records</h1>',
+             '<p>No broker orders. Intrabar trade continuity UNVERIFIED. Monetary values, costs, net P&amp;L and broker restrictions UNKNOWN unless separately verified.</p>',
+             '<p>Verify broker restrictions before manual execution. PAPER is one lot; fills use a fresh observed exact-contract CMP, never the earlier Entry threshold.</p>',
+             '<a href="/swing/opportunities">Opportunities</a> · <a href="/swing/v1-review">Current Review</a>',
+             '<p>Current workflow: ' + escape(projection['run'] or 'UNAVAILABLE') + '</p>']
+    if projection['error']:
+        parts.append('<p role="alert">' + escape(projection['error']) + '</p>')
+    if projection['publication_sha256'] and not projection['reserved']:
+        for identity, acquired_at, digest in snapshots:
+            parts.append('<p>Retained master ' + escape(identity) + '; acquired ' + escape(acquired_at)
+                         + '. Historical listing is not a current quote or monetary authority.</p>')
+            parts.append(form('/swing/mcx-v1/reserve', dict(snapshot=identity,
+                master_sha256=digest, publication_sha256=projection['publication_sha256']),
+                'Reserve selection workflow from this master'))
+    if projection['current']:
+        for family in ('GOLDM', 'SILVERM', 'COPPER', 'CRUDEOIL', 'NATURALGAS'):
+            action = 'choose one exact future' if projection['reserved'] else 'retained exact-future selection'
+            parts.append(f'<p><a href="/swing/mcx-contract-offer?family={family}">{family}: {action}</a></p>')
+        if projection['capability_active']:
+            for family, digest in projection['preparations']:
+                parts.append(form('/swing/mcx-v1/plan', dict(run=projection['run'],
+                    family=family, handoff_sha256=digest), 'Prepare ' + family + ' exact-current price advice'))
+    for plan, eligible in projection['plans']:
+        parts.append('<section><h2>' + escape(plan.contract_symbol) + ' (' + escape(plan.expiry) + ')</h2>'
+            + '<p>Entry ' + escape(str(plan.entry)) + ' · Stop ' + escape(str(plan.stop))
+            + ' · Target ' + escape(str(plan.canonical_target)) + ' · Price distance '
+            + escape(str(abs(plan.entry - plan.stop))) + '</p><p>Session '
+            + escape(plan.expiry_session_identity) + '; rupee risk UNKNOWN.</p>')
+        if eligible and projection['capability_active']:
+            values = dict(run=plan.native_run_identity, family=plan.family.value,
+                          plan=plan.trade_plan_id, plan_sha256=plan.integrity_hash)
+            parts.append(form('/swing/mcx-v1/paper', values, 'Arm one-lot PAPER simulation'))
+            parts.append(form('/swing/mcx-v1/live', values, 'Record Sponsor-attested manual LIVE entry',
+                              fill(plan.contract_symbol, plan.expiry)))
+        else:
+            parts.append('<p>New admission unavailable: current evidence and active capability required.</p>')
+        parts.append('</section>')
+    for position, binding in projection['positions']:
+        parts.append('<section><h2>Historical position ' + escape(position.position_id)
+                     + '</h2><p>' + escape(position.mcx_v1_contract_symbol) + ' · '
+                     + escape(position.state.value) + '</p>')
+        if position.mode.value == 'LIVE' and position.mcx_activation_outcome_sha256 is None:
+            parts.append('<p>SPONSOR-DIRECTED / OUTSIDE MODEL. Actual fills are Sponsor-attested, not inferred from a signal or CMP.</p>')
+        if position.state.value != 'CLOSED':
+            values = dict(position=position.position_id, position_sha256=position.integrity_hash)
+            if position.mode.value == 'PAPER' and position.state.value == 'PAPER_ACTIVE':
+                parts.append(form('/swing/mcx-v1/paper-exit', values, 'Record factual PAPER exit'))
+            elif position.mode.value == 'LIVE':
+                parts.append(form('/swing/mcx-v1/live-exit', values, 'Record actual manual LIVE exit',
+                    fill(binding.instrument.trading_symbol, binding.instrument.expiry.isoformat(), position.lots)
+                    + '<input type="hidden" name="reason" value="SPONSOR_MANUAL_EXIT">'))
+            else:
+                parts.append('<p>PAPER waiting for admissible post-advisory/recovery CMP. No entry or exit price inferred.</p>')
+        parts.append('</section>')
+    return ''.join(parts) + '</body></html>'
+
 from kronos.application.swing_opportunities import (
     AnalysisState,
     BrowserWorkspaceSnapshot,
@@ -3725,14 +3803,20 @@ def _native_active_lifecycle(
         }.get(position.state, position.state.value.replace("_", " "))
         current = "—" if position.last_observed_price is None else "₹" + _number(position.last_observed_price)
         actual = "—" if position.actual_entry is None else "₹" + _number(position.actual_entry)
-        pnl = "—"
+        pnl = "UNKNOWN" if position.mcx_v1_contract_symbol is not None else "—"
         if position.actual_entry is not None and position.last_observed_price is not None:
             move = (
                 position.last_observed_price - position.actual_entry
                 if position.direction.value == "LONG"
                 else position.actual_entry - position.last_observed_price
             )
-            pnl = "₹" + _number(move * position.underlying_quantity)
+            multiplier = (
+                position.mcx_quantity.price_to_rupee_multiplier
+                if position.mcx_quantity is not None
+                else position.underlying_quantity
+            )
+            if position.mcx_v1_contract_symbol is None:
+                pnl = "₹" + _number(move * multiplier)
         alerts = "".join(
             '<div class="action-required">' + escape(notifications[item].message) + '</div>'
             for item in position.outstanding_notification_ids if item in notifications
@@ -3748,7 +3832,11 @@ def _native_active_lifecycle(
             )
         )
         controls = ""
-        if position.state is ActiveLifecycleState.PAPER_ACTIVE:
+        if position.mcx_v1_contract_symbol is not None:
+            # MCX V1 uses contract-bound factual CMP or Sponsor-attested exit.
+            # The generic Native exit forms cannot supply those bindings.
+            controls = ''
+        elif position.state is ActiveLifecycleState.PAPER_ACTIVE:
             controls = (
                 '<form method="post" action="/swing/v1/native-lifecycle/paper-exit?position='
                 + escape(position.position_id) + '"><button type="submit">EXIT</button></form>'
@@ -3773,6 +3861,12 @@ def _native_active_lifecycle(
         cards.append(
             '<section class="native-trade-plan"><h3>' + escape(label) + '</h3>'
             '<div class="native-trade-plan-grid">' + values + '</div>'
+            + ('<p class="why">Intrabar trade continuity: UNVERIFIED. '
+               'Physical quantity, rupee multiplier, costs and net P&amp;L: UNKNOWN. '
+               'Verify broker restrictions before manual execution.</p>'
+               if position.mcx_v1_contract_symbol is not None else '')
+            + ('<p class="why">SPONSOR-DIRECTED / OUTSIDE MODEL</p>'
+               if "SPONSOR-DIRECTED / OUTSIDE MODEL" in position.provenance else '')
             + monitoring + alerts + controls + '</section>'
         )
     return "".join(cards)
@@ -3793,7 +3887,8 @@ def _native_closed_lifecycle(snapshot: ActiveTradeLifecycleSnapshot | None) -> s
                 ("Actual Exit", "₹" + _number(item.actual_exit)),
                 ("Stop", "₹" + _number(item.stop)), ("Target", "₹" + _number(item.target)),
                 ("Exit reason", item.exit_reason.value.replace("_", " ")),
-                ("P&L", "₹" + _number(item.gross_pnl)),
+                ("P&L", "UNKNOWN" if item.gross_pnl is None
+                 else "₹" + _number(item.gross_pnl)),
                 ("Result", _number(item.percentage_result) + "%"),
                 ("Realised R", _number(item.realised_r) + "R"),
                 ("Model R:R", "1 : " + _number(item.model_risk_reward)),
@@ -6624,6 +6719,7 @@ def _page(
                 ("Trade Candidates", "/swing/trade-candidates"),
                 ("Active", "/swing/active"),
                 ("Closed", "/swing/closed"),
+                ("MCX V1", "/swing/mcx-v1"),
             )
         )
         if active_tab not in {"Layer-1 History", "Control vs Native", "MTF Data"}:
@@ -6695,7 +6791,7 @@ def _tab_link(name: str, href: str, active_tab: str) -> str:
     badge = (
         ""
         if name in {
-            "Opportunities", "Review", "Trade Candidates", "Active", "Closed",
+            "Opportunities", "Review", "Trade Candidates", "Active", "Closed", "MCX V1",
         }
         else '<span class="badge">Placeholder</span>'
     )

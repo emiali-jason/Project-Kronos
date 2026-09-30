@@ -2413,8 +2413,39 @@ def build_current_trade_construction_evidence(
     promotion = _selected_promotion(completed)
     if promotion is None or promotion.classification not in {"BUY_NOW", "SELL_NOW"}:
         raise ValueError("CURRENT_TRADE_CONSTRUCTION_SOURCE_INVALID")
-    thesis = completed.requirement.thesis
-    facts = completed.mtf_snapshot.instrument(thesis.canonical_instrument)
+    return _build_trade_construction_evidence(
+        completed.requirement, completed.mtf_snapshot, promotion)
+
+
+def build_mcx_v1_trade_construction_evidence(requirement, mtf_snapshot, promotion_v2):
+    """MCX price advice uses the same Step-31 evidence owner, not NSE admission.
+
+    The caller obtains these exact inputs from its validated MCX response and
+    rechecks its prepared byte fence at retention. This pure builder neither
+    grants eligibility nor creates a Trade Window or execution outcome.
+    """
+    value = promotion_v2.value
+    source = value["source"]
+    if (source["market"] != "MCX"
+            or source["native_run_identity"] != requirement.native_run_identity
+            or mtf_snapshot.run_identity != requirement.native_run_identity
+            or source["canonical_instrument"] != requirement.canonical_instrument
+            or source["native_assessment_sha256"] != requirement.thesis.native_assessment_sha256
+            or source["native_requirement_sha256"] != requirement.requirement_sha256
+            or value["promotion_state"] not in {"BUY_NOW", "SELL_NOW"}
+            or value["evaluation_disposition"] != "EVALUATED"):
+        raise ValueError("MCX_V1_TRADE_CONSTRUCTION_SOURCE_INVALID")
+    promotion = _SelectedPromotion(2, source["native_run_identity"],
+        source["canonical_instrument"], source["native_assessment_sha256"],
+        value["integrity_sha256"], value["promotion_state"], source["direction"],
+        datetime.fromisoformat(source["analysis_boundary"]),
+        source["acceptance"]["review_pack_identity"], False, value["evaluation_disposition"])
+    return _build_trade_construction_evidence(requirement, mtf_snapshot, promotion)
+
+
+def _build_trade_construction_evidence(requirement, mtf_snapshot, promotion):
+    thesis = requirement.thesis
+    facts = mtf_snapshot.instrument(thesis.canonical_instrument)
     four_hour = facts.fact(FactualTimeframe.FOUR_HOUR)
     radius_two = next(
         item for item in four_hour.structural_measurements if item.radius == 2

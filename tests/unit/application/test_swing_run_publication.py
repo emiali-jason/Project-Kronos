@@ -388,10 +388,19 @@ def test_01_two_explicit_factual_builds_each_retrieve_same_98():
     first, first_requests = _build()
     second, second_requests = _build()
     expected = {i.canonical_identity for i in SWING_PHASE1_UNIVERSE}
+    mcx_families = {"GOLDM", "SILVERM", "COPPER", "CRUDEOIL", "NATURALGAS"}
     for snapshot, requests in ((first, first_requests), (second, second_requests)):
         hours = [r for r in requests if r.interval is HistoricalInterval.SIXTY_MINUTE]
         assert len(hours) == 98
-        assert {r.instrument.trading_symbol for r in hours} == expected
+        assert {r.instrument.name for r in hours} == expected
+        assert {r.instrument.trading_symbol for r in hours
+                if r.instrument.exchange == "NSE"} == expected - mcx_families
+        assert {(r.instrument.name, r.instrument.trading_symbol,
+                 r.instrument.segment, r.instrument.expiry.isoformat())
+                for r in hours if r.instrument.exchange == "MCX"} == {
+                    (family, f"{family}26AUGFUT", "MCX-FUT", "2026-08-28")
+                    for family in mcx_families
+                }
         assert {i.canonical_instrument for i in snapshot.instruments} == expected
     assert first_requests is not second_requests
     assert len(first_requests) == len(second_requests)

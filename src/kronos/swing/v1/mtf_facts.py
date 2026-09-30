@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, fields
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from enum import StrEnum
 from hashlib import sha256
 import json
@@ -14,6 +14,10 @@ import re
 from threading import RLock
 
 from kronos.swing.run_identity import is_swing_analysis_run_id
+from kronos.swing.v1.mcx_contract_profile import (
+    McxRequestBoundCandleLineage,
+    mcx_lineage_from_dict,
+)
 from kronos.swing.v1.models import PivotCandidate, PivotKind
 from kronos.swing.v1.reference_facts import (
     SwingReferenceChartTimeframe,
@@ -367,6 +371,7 @@ class InstrumentMtfFactSnapshot:
     reference_facts: tuple[SwingReferenceCprMachineFact, ...] = ()
     one_hour_atr: CompletedOneHourAtrFact | None = None
     completed_series: tuple[CompletedTimeframeBar, ...] = ()
+    mcx_request_lineage: McxRequestBoundCandleLineage | None = None
 
     def __post_init__(self) -> None:
         if (
@@ -385,6 +390,14 @@ class InstrumentMtfFactSnapshot:
                 != self.canonical_instrument
             )
             or type(self.reference_facts) is not tuple
+            or (
+                self.mcx_request_lineage is not None
+                and (
+                    self.exchange != "MCX"
+                    or type(self.mcx_request_lineage) is not McxRequestBoundCandleLineage
+                    or self.mcx_request_lineage.family.value != self.canonical_instrument
+                )
+            )
             or (
                 self.reference_facts
                 and tuple(item.chart_timeframe for item in self.reference_facts)
@@ -474,6 +487,11 @@ class SameRunMtfFactSnapshot:
                 for fact in instrument.reference_facts
             )
             or any(
+                instrument.mcx_request_lineage is not None
+                and instrument.mcx_request_lineage.run_identity != self.run_identity
+                for instrument in self.instruments
+            )
+            or any(
                 instrument.one_hour_atr is not None
                 and instrument.one_hour_atr.run_identity != self.run_identity
                 for instrument in self.instruments
@@ -519,6 +537,8 @@ class MtfFactEvidenceStore:
         for instrument in payload["snapshot"]["instruments"]:
             if not instrument["completed_series"]:
                 del instrument["completed_series"]
+            if instrument["mcx_request_lineage"] is None:
+                del instrument["mcx_request_lineage"]
         with self._lock:
             if path.exists():
                 if _read(path) != payload:
@@ -598,6 +618,11 @@ def _instrument(value: object) -> InstrumentMtfFactSnapshot:
             else _one_hour_atr(value["one_hour_atr"])
         ),
         tuple(_completed_bar(item) for item in value.get("completed_series", ())),
+        (
+            None
+            if value.get("mcx_request_lineage") is None
+            else mcx_lineage_from_dict(value["mcx_request_lineage"])
+        ),
     )
 
 
@@ -830,7 +855,7 @@ def _pivot(value: object) -> PivotCandidate:
 
 
 def _json_value(value: object) -> object:
-    if isinstance(value, datetime):
+    if isinstance(value, (date, datetime)):
         return value.isoformat()
     if isinstance(value, StrEnum):
         return value.value

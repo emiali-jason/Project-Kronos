@@ -81,6 +81,7 @@ from kronos.swing.v1.native_active_trade_lifecycle import (
     TradeClosureRecord,
     TradeExitReason,
 )
+from kronos.swing.v1.mcx_contract_lifecycle import LocalMcxHistoricalContractStore
 from kronos.swing.v1.native_trade_journal import (
     LocalTradeJournalStore,
     JournalValidationAnalytics,
@@ -433,6 +434,7 @@ class NativeReviewWorkflow:
         sponsor_decision_store: LocalSponsorDecisionStore | None = None,
         active_lifecycle_service: ActiveTradeLifecycleService | None = None,
         active_lifecycle_monitoring: ActiveLifecycleMonitoringCoordinator | None = None,
+        mcx_historical_contract_store: LocalMcxHistoricalContractStore | None = None,
         trade_journal_service: TradeJournalService | None = None,
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
     ) -> None:
@@ -473,6 +475,10 @@ class NativeReviewWorkflow:
                 and type(active_lifecycle_monitoring) is not ActiveLifecycleMonitoringCoordinator
             )
             or (
+                mcx_historical_contract_store is not None
+                and type(mcx_historical_contract_store) is not LocalMcxHistoricalContractStore
+            )
+            or (
                 trade_journal_service is not None
                 and type(trade_journal_service) is not TradeJournalService
             )
@@ -509,6 +515,13 @@ class NativeReviewWorkflow:
             or ActiveLifecycleMonitoringCoordinator(
                 self._active_lifecycle, MarketCalendarPublisher(), clock=self._clock,
             )
+        )
+        self._mcx_historical_contract_store = (
+            mcx_historical_contract_store
+            or LocalMcxHistoricalContractStore(store.root / "mcx-historical-contract-v1")
+        )
+        self._active_lifecycle_monitoring.set_mcx_historical_contracts(
+            self._mcx_historical_contract_store
         )
         self._trade_journal = trade_journal_service or TradeJournalService(
             LocalTradeJournalStore(store.root / "trade-journal-v0")
@@ -905,6 +918,13 @@ class NativeReviewWorkflow:
         instrument: InstrumentRecord,
     ) -> None:
         self._active_lifecycle_monitoring.attach(position_id, capability, instrument)
+
+    def bind_mcx_v1_tick_owner(self, owner) -> None:  # type: ignore[no-untyped-def]
+        """Bind the completed-hour owner before restoring MCX subscriptions."""
+        self._active_lifecycle_monitoring.set_mcx_v1_tick_owner(owner)
+
+    def latest_mcx_observation(self, position_id: str):
+        return self._active_lifecycle_monitoring.latest_mcx_observation(position_id)
 
     def detach_lifecycle_monitoring(self, position_id: str) -> None:
         self._active_lifecycle_monitoring.detach(position_id)

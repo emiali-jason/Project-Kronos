@@ -177,6 +177,24 @@ def test_16_adoption_exact_no_backfill(checkpoint):
     assert co.current().reference == p.reference
 
 
+def test_expected_control_admission_rejects_late_or_busy_owner_without_write(checkpoint):
+    co, snapshot, bindings, current = checkpoint
+    expected = co.status()
+    first = later(snapshot, 2)
+    token, _ = co.admit(first.run_identity, first.observed_at,
+                        expected_control=expected, require_idle=True)
+    before = {str(path): path.read_bytes() for path in co.root.rglob('*') if path.is_file()}
+    with pytest.raises(ValueError, match='ADMISSION_CHANGED'):
+        co.admit(later(snapshot, 3).run_identity, first.observed_at,
+                 expected_control=expected, require_idle=True)
+    with pytest.raises(ValueError, match='ADMISSION_BUSY'):
+        co.admit(later(snapshot, 3).run_identity, first.observed_at,
+                 expected_control=co.status(), require_idle=True)
+    assert co.status()['latest_attempt']['run_id'] == token.run_id
+    assert co.current().reference == current.reference
+    assert {str(path): path.read_bytes() for path in co.root.rglob('*') if path.is_file()} == before
+
+
 def test_17_18_19_continuity_through_committed_bundle(checkpoint):
     co, snapshot, bindings, p = checkpoint
     a, av = prepared(co,snapshot,bindings,2)

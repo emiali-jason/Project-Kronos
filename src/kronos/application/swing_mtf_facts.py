@@ -43,6 +43,10 @@ from kronos.swing.v1.mtf_facts import (
     SameRunMtfFactSnapshot,
     one_hour_atr_integrity_sha256,
 )
+from kronos.swing.v1.mcx_contract_profile import (
+    McxFamily,
+    capture_mcx_request_bound_lineage,
+)
 from kronos.swing.v1.reference_facts import build_reference_machine_facts
 from kronos.swing.v1.weekly_facts import NseWeeklyFactualFoundation
 
@@ -107,12 +111,15 @@ def build_same_run_mtf_fact_snapshot(
                 tzinfo=timezone,
             ),
         )
-        hourly = _validated_series(historical_candles(HistoricalCandleRequest(
+        hourly_request = HistoricalCandleRequest(
             instrument=record._analysis_instrument,
             start=acquisition_end.astimezone(UTC) - timedelta(days=_INTRADAY_HISTORY_DAYS),
             end=acquisition_end.astimezone(UTC),
             interval=HistoricalInterval.SIXTY_MINUTE,
-        )), "MTF_FACT_60MINUTE_SERIES_INVALID")
+        )
+        hourly = _validated_series(
+            historical_candles(hourly_request), "MTF_FACT_60MINUTE_SERIES_INVALID"
+        )
         cas_finality = lambda candle: _cas_daily_finality_verified(
             record.canonical_identity,
             candle,
@@ -137,12 +144,15 @@ def build_same_run_mtf_fact_snapshot(
                 predecessor=predecessor,
             )
         else:
-            daily = _validated_series(historical_candles(HistoricalCandleRequest(
+            daily_request = HistoricalCandleRequest(
                 instrument=record._analysis_instrument,
                 start=datetime.combine(publication.coverage_start, time.min, tzinfo=timezone).astimezone(UTC),
                 end=acquisition_end.astimezone(UTC),
                 interval=HistoricalInterval.DAY,
-            )), "MTF_FACT_DAY_SERIES_INVALID")
+            )
+            daily = _validated_series(
+                historical_candles(daily_request), "MTF_FACT_DAY_SERIES_INVALID"
+            )
 
         completed_daily = _completed_daily(
             exchange,
@@ -258,6 +268,21 @@ def build_same_run_mtf_fact_snapshot(
             analysis_boundary=effective_analysis_boundary,
             provider_source_identity=_PROVIDER_SOURCE,
         )
+        mcx_request_lineage = (
+            capture_mcx_request_bound_lineage(
+                run_identity=run_identity,
+                family=McxFamily(record.canonical_identity),
+                instrument=record._analysis_instrument,
+                daily_request=daily_request,
+                hourly_request=hourly_request,
+                daily_source=daily,
+                hourly_source=hourly,
+                retained_daily=record.candles,
+                completed_facts=(facts[1], facts[2], facts[3]),
+                completed_series=completed_series,
+            )
+            if exchange == "MCX" else None
+        )
         instruments.append(InstrumentMtfFactSnapshot(
             record.canonical_identity,
             exchange,
@@ -266,6 +291,7 @@ def build_same_run_mtf_fact_snapshot(
             reference_facts,
             one_hour_atr,
             completed_series,
+            mcx_request_lineage,
         ))
         source_material.append({
             "instrument": record.canonical_identity,
@@ -292,6 +318,19 @@ def build_same_run_mtf_fact_snapshot(
             ],
             "one_hour_atr_integrity_sha256": one_hour_atr.integrity_sha256,
         })
+        if mcx_request_lineage is not None:
+            source_material[-1]["mcx_request_lineage"] = [
+                mcx_request_lineage.normalized_instrument_sha256,
+                mcx_request_lineage.daily_request_sha256,
+                mcx_request_lineage.hourly_request_sha256,
+                mcx_request_lineage.daily_source_sha256,
+                mcx_request_lineage.hourly_source_sha256,
+                mcx_request_lineage.retained_daily_sha256,
+                mcx_request_lineage.completed_1d_sha256,
+                mcx_request_lineage.completed_4h_sha256,
+                mcx_request_lineage.completed_1h_sha256,
+                mcx_request_lineage.completed_series_sha256,
+            ]
 
     identity = "KITE-MTF-FACTS-" + sha256(
         json.dumps(source_material, sort_keys=True, separators=(",", ":")).encode()

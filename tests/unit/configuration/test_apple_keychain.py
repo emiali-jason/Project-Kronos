@@ -965,18 +965,51 @@ def test_pf02d_configured_stricter_retrieval_timeout_preserved(configured):
         AppleKeychainCredentialSource(provider='KITE', runner=runner, timeout_seconds=10.01)
 
 
-def test_pf02d_spawn_configured_timeout_includes_startup_and_receipt(monkeypatch):
+@pytest.mark.parametrize('exhausted_during', ['startup', 'receipt'])
+def test_pf02d_spawn_configured_timeout_includes_startup_and_receipt(monkeypatch, exhausted_during):
+    from types import SimpleNamespace
+    from kronos.configuration import apple_keychain as module
     from tests.unit.provider.test_kite_login_navigator import (
         _pf02d_process_fixture, _pf02d_assert_processes_released, _pf02d_finish)
     case = _pf02d_process_fixture(monkeypatch, keychain=True, mode='blocked')
+    now = [0.0]
+    monkeypatch.setattr(module, 'time', SimpleNamespace(monotonic=lambda: now[0]))
+    original_start = multiprocessing.process.BaseProcess.start
+    starts, waits = [], []
+
+    def start(process):
+        original_start(process)
+        # Synchronize real child ownership; host spawn latency is not a product
+        # promise. The injected clock then exercises the exact configured budget.
+        assert case.entered.wait(2)
+        starts.append(process.pid)
+        now[0] = 0.31 if exhausted_during == 'startup' else 0.29
+
+    original_selector = module.selectors.DefaultSelector
+
+    class Selector:
+        def __enter__(self):
+            self.actual = original_selector()
+            return self
+        def __exit__(self, *_args):
+            self.actual.close()
+        def register(self, *args):
+            return self.actual.register(*args)
+        def select(self, timeout):
+            waits.append(timeout)
+            now[0] = 0.31
+            return []
+
+    monkeypatch.setattr(multiprocessing.process.BaseProcess, 'start', start)
+    monkeypatch.setattr(module.selectors, 'DefaultSelector', Selector)
     try:
-        start = time.perf_counter()
         with pytest.raises(TimeoutError):
             run_security_framework_subprocess(_pf02d_request(0.3))
-        elapsed = time.perf_counter() - start
         assert case.entered.is_set()
-        assert 0.3 <= elapsed < 1.05
+        assert len(starts) == 1
+        assert waits == ([] if exhausted_during == 'startup' else [pytest.approx(0.01)])
+        assert now[0] == 0.31
         _pf02d_assert_processes_released(case)
-        print('PF02D_KEYCHAIN_CONFIGURED_TIMEOUT', round(elapsed, 4))
+        print('PF02D_KEYCHAIN_CONFIGURED_TIMEOUT', exhausted_during, now[0])
     finally:
         _pf02d_finish(case)

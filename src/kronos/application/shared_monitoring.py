@@ -683,6 +683,15 @@ class _SharedRegistration:
     def owner_identity(self) -> str:
         return self._owner_identity
 
+    def observation_context(self, instrument: InstrumentRecord):
+        """Project only this live owner's exact applied transport subscription."""
+        with self._hub._lock:
+            if not self.active or instrument not in self._instruments:
+                return None
+            session = self._hub._session
+            read = getattr(session, "observation_context", None)
+            return read(instrument) if callable(read) else None
+
     def subscribe(self, instruments: tuple[InstrumentRecord, ...]) -> None:
         self._hub._subscribe(self, instruments)
 

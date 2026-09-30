@@ -196,6 +196,26 @@ def test_store_is_idempotent_rejects_mode_conversion_and_restores(tmp_path) -> N
         store.retain(live)
 
 
+def test_store_recovers_only_exact_decision_after_interrupted_position_write(tmp_path) -> None:
+    paper, plan, judgment, risk, context = _go(SponsorTradeChoice.PAPER)
+    store = LocalSponsorDecisionStore(tmp_path.resolve())
+    store.retain(paper)
+    position_path = tmp_path / plan.native_run_identity / plan.trade_plan_id / "position.json"
+    position_path.unlink()  # Isolated simulation of an interrupted two-record commit.
+    with pytest.raises(ValueError, match="SPONSOR_DECISION_PARTIAL"):
+        store.load_plan(plan.native_run_identity, plan.trade_plan_id)
+    live = initiate_sponsor_decision(
+        plan, judgment, risk, context, SponsorTradeChoice.LIVE,
+        current_trade_plan_id=plan.trade_plan_id, decided_at=NOW,
+        actual_live_entry=Decimal("101"), live_lots=1,
+    )
+    with pytest.raises(ValueError, match="SPONSOR_DECISION_ALREADY_FINAL"):
+        store.retain(live)
+    assert not position_path.exists()
+    assert store.retain(paper) == paper
+    assert store.load_plan(plan.native_run_identity, plan.trade_plan_id) == paper
+
+
 def test_new_trade_plan_identity_requires_new_decision() -> None:
     first, first_plan, *_ = _go(SponsorTradeChoice.IGNORE)
     readiness, requirement = _ready()

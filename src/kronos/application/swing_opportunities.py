@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime
@@ -86,6 +86,12 @@ from kronos.swing.run_provenance import (
     market_data_snapshot_identity,
 )
 from kronos.swing.v1.layer1 import analyze_v1_layer1
+from kronos.swing.v1.mcx_contract_profile import McxFamily
+from kronos.swing.v1.mcx_contract_selection import (
+    LocalMcxSponsorSelectionStore,
+    McxContractOffer,
+    selected_mcx_instrument_before_acquisition,
+)
 from kronos.swing.v1.models import (
     ProbableClassification,
     V1Direction,
@@ -475,6 +481,7 @@ class _AnalysisWorkGeneration:
     provider: object
     token: object | None
     predecessor: object | None
+    mcx_handoff: object | None = None
     phase: str = "RUNNING"
     cancellation_requested: bool = False
 
@@ -1872,7 +1879,9 @@ class SwingOpportunitiesApplication:
             return False
         return True
 
-    def run_analysis(self) -> bool:
+    def run_analysis(
+        self, mcx_workflow: SwingMcxIntegratedWorkflow | None = None,
+    ) -> bool:
         """Admit one owned Stage 1-9 job with a zero-capacity queue."""
 
         ticket = self._maintenance_ticket("SWING_ANALYSIS")
@@ -1880,14 +1889,32 @@ class SwingOpportunitiesApplication:
             return False
         try:
             if ticket is None:
-                return self._run_analysis_admitted()
+                return self._run_analysis_admitted(mcx_workflow)
             with ticket.activate():
-                return self._run_analysis_admitted()
+                return self._run_analysis_admitted(mcx_workflow)
         finally:
+            # A refused replay has not acquired the reservation. Only the
+            # claimed _AnalysisWorkGeneration may fail its publication token.
             if ticket is not None:
                 ticket.release()
 
-    def _run_analysis_admitted(self) -> bool:
+    def _run_analysis_admitted(
+        self, mcx_workflow: SwingMcxIntegratedWorkflow | None = None,
+    ) -> bool:
+
+        mcx_handoff = None
+        if mcx_workflow is not None:
+            from kronos.application.swing_mcx_integrated import SwingMcxIntegratedWorkflow
+            if (type(mcx_workflow) is not SwingMcxIntegratedWorkflow
+                    or mcx_workflow.publication is not self.__publication
+                    or self.__analysis_process_owner is None
+                    or mcx_workflow.reservation_token is None
+                    or mcx_workflow.predecessor is None
+                    or mcx_workflow.reserved_at is None):
+                raise ValueError("MCX_ANALYSIS_RESERVATION_INVALID")
+            # Every family must have a durable, exact choice before a Provider
+            # candle request or worker dispatch. The child rechecks the bytes.
+            mcx_handoff = mcx_workflow.process_handoff()
 
         with self.__lock:
             if self.__analysis_work is not None:
@@ -1905,10 +1932,16 @@ class SwingOpportunitiesApplication:
                 return False
             self.__analysis_attempt_count += 1
             attempt_id = f"ANALYSIS-{self.__analysis_attempt_count:06d}"
-            swing_run_identity = self.__swing_run_identity_factory()
+            swing_run_identity = (
+                self.__swing_run_identity_factory()
+                if mcx_workflow is None else mcx_workflow.run_identity
+            )
             if not is_swing_analysis_run_id(swing_run_identity):
                 raise ValueError("SWING_ANALYSIS_RUN_IDENTITY_INVALID")
-            run_created_at = self.__aware_now()
+            run_created_at = (
+                self.__aware_now() if mcx_workflow is None
+                else mcx_workflow.reserved_at
+            )
             provider = self.__provider
             if provider is None:
                 self.__analysis_request_result = "PROVIDER_UNAVAILABLE"
@@ -1921,10 +1954,21 @@ class SwingOpportunitiesApplication:
                 provider,
                 None,
                 None,
+                mcx_handoff=mcx_handoff,
                 phase="ADMITTING",
             )
             self.__analysis_work = work
-        if self.__publication is not None:
+        if mcx_workflow is not None:
+            with self.__lock:
+                if self.__analysis_work is work:
+                    work.token = mcx_workflow.reservation_token
+                    work.predecessor = mcx_workflow.predecessor
+            try:
+                mcx_workflow._reserved()
+            except (OSError, ValueError):
+                self.__finish_analysis_dispatch_failure(work)
+                return False
+        elif self.__publication is not None:
             try:
                 token, predecessor = self.__publication.admit(
                     swing_run_identity, run_created_at
@@ -2720,7 +2764,7 @@ class SwingOpportunitiesApplication:
             analysis_run_identity=work.attempt_id,
             swing_run_identity=work.run_identity,
             run_created_at=run_created_at,
-            now=run_created_at,
+            now=(run_created_at if work.mcx_handoff is None else self.__aware_now()),
             pace=self.__pace,
             progress_observer=observe,
             completion_clock=self.__aware_now,
@@ -2728,6 +2772,8 @@ class SwingOpportunitiesApplication:
             is_current=current,
             commit_scope=self.__successor_publication_scope,
             install_result=install_result,
+            **({} if work.mcx_handoff is None
+               else {"mcx_handoff": work.mcx_handoff}),
         )
 
     def __aware_now(self) -> datetime:
@@ -2776,6 +2822,9 @@ def build_completed_swing_analysis(
     committed_predecessor=None,
     prepare_publication=False,
     completion_clock=None,
+    mcx_contract_choices: Mapping[
+        McxFamily, tuple[McxContractOffer, LocalMcxSponsorSelectionStore]
+    ] | None = None,
 ) -> CompletedSwingAnalysis:
     """Run Stage 1-9 once and retain evidence beside the compact projection."""
 
@@ -2831,6 +2880,21 @@ def build_completed_swing_analysis(
         "NSE": instruments.retrieve("NSE"),
         "MCX": instruments.retrieve("MCX"),
     }
+    # A preselected MCX run validates all five durable Sponsor choices before
+    # the daily builder can request any contract-bound candle. The default
+    # legacy analysis route remains unchanged until a governed admission owner
+    # supplies authenticated offer facts and recorded choices.
+    selected_mcx = {}
+    if mcx_contract_choices is not None:
+        if set(mcx_contract_choices) != set(McxFamily):
+            raise ValueError("MCX_ANALYSIS_CONTRACT_SELECTION_INCOMPLETE")
+        for family in McxFamily:
+            offer, store = mcx_contract_choices[family]
+            if offer.run_identity != swing_analysis_run_identity or offer.family is not family:
+                raise ValueError("MCX_ANALYSIS_CONTRACT_SELECTION_STALE")
+            selected_mcx[family.value] = selected_mcx_instrument_before_acquisition(
+                store, offer, masters["MCX"], acquired_at=now,
+            )
 
     def resolve(member: SwingUniverseMember):  # type: ignore[no-untyped-def]
         if member.asset_class is SwingUniverseAssetClass.NSE_EQUITY:
@@ -2842,6 +2906,11 @@ def build_completed_swing_analysis(
         else:
             kind = InstrumentKind.MCX_FUTURE
             master = masters["MCX"]
+            if mcx_contract_choices is not None:
+                try:
+                    return selected_mcx[member.canonical_identity]
+                except KeyError as error:
+                    raise ValueError("MCX_ANALYSIS_CONTRACT_SELECTION_INCOMPLETE") from error
         return instruments.resolve_from_records(
             master,
             InstrumentResolutionRequest(

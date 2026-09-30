@@ -15,6 +15,7 @@ from threading import RLock
 
 from kronos.instrument.facts import CanonicalInstrumentContext, InstrumentContextStatus
 from kronos.swing.v1.models import V1Direction
+from kronos.swing.v1.mcx_quantity import McxTypedQuantity, quantity_from_dict
 from kronos.swing.v1.trade_construction import TradeCandidateIntegrity
 from kronos.swing.v1.native_trade_construction import TradePlanRecord, TradePlanStatus
 from kronos.swing.v1.step32 import (
@@ -141,6 +142,8 @@ class SponsorPositionRecord:
     contract_identity: str = SPONSOR_POSITION_CONTRACT_ID
     contract_version: str = "0"
     authority: str = "SPONSOR_TRACKING_ONLY_NO_BROKER_OR_EXIT_AUTHORITY"
+    mcx_quantity: McxTypedQuantity | None = None
+    mcx_v1_contract_symbol: str | None = None
 
     def __post_init__(self) -> None:
         paper = self.mode is SponsorTradeChoice.PAPER
@@ -152,6 +155,18 @@ class SponsorPositionRecord:
             or type(self.lots) is not int or self.lots <= 0
             or type(self.lot_size) is not int or self.lot_size <= 0
             or self.underlying_quantity != self.lots * self.lot_size
+            or (self.mcx_quantity is not None and (
+                type(self.mcx_quantity) is not McxTypedQuantity
+                or self.mcx_quantity.lots != self.lots
+                or self.lot_size != 1
+                or self.underlying_quantity != self.lots
+            ))
+            or (self.mcx_v1_contract_symbol is not None and (
+                self.mcx_quantity is not None
+                or not self.mcx_v1_contract_symbol
+                or self.lot_size != 1
+                or self.underlying_quantity != self.lots
+            ))
             or (self.actual_entry is not None and not _positive_decimal(self.actual_entry))
             or (self.entry_timestamp is not None and not _aware(self.entry_timestamp))
             or any(not _positive_decimal(value) for value in (self.model_entry, self.stop, self.invalidation, self.target))
@@ -335,10 +350,20 @@ class LocalSponsorDecisionStore:
         }
         with self._lock:
             if decision_path.exists():
+                # A process may have stopped between the immutable decision and
+                # its position write.  Complete only the exact same decision;
+                # a different Sponsor choice must never repair that interval.
+                existing = _decision_from_dict(_read(decision_path).get("record"))
+                if existing != result.decision:
+                    raise ValueError("SPONSOR_DECISION_ALREADY_FINAL")
+                if position_payload is not None and not position_path.exists():
+                    _atomic(position_path, position_payload)
                 restored = self.load_plan(result.decision.native_run_identity, result.decision.trade_plan_id)
                 if restored != result:
                     raise ValueError("SPONSOR_DECISION_ALREADY_FINAL")
                 return restored
+            if position_path.exists():
+                raise ValueError("SPONSOR_DECISION_PARTIAL")
             _atomic(decision_path, payload)
             if position_payload is not None:
                 _atomic(position_path, position_payload)
@@ -351,6 +376,8 @@ class LocalSponsorDecisionStore:
         position = None
         if (root / "position.json").exists():
             position = _position_from_dict(_read(root / "position.json").get("record"))
+        if (decision.decision is SponsorTradeChoice.IGNORE) != (position is None):
+            raise ValueError("SPONSOR_DECISION_PARTIAL")
         state = SponsorInitiationState.IGNORED if position is None else position.state
         reason = "SPONSOR_IGNORED_EXACT_TRADE_PLAN" if position is None else (
             "WAITING_FOR_ENTRY" if state is SponsorInitiationState.PAPER_ARMED else "SPONSOR_ATTESTED_LIVE_POSITION_REGISTERED"
@@ -485,7 +512,9 @@ def _primitive(value: object) -> object:
     if isinstance(value, Decimal): return str(value)
     if isinstance(value, datetime): return value.isoformat()
     if hasattr(value, "__dataclass_fields__"):
-        return {key: _primitive(item) for key, item in asdict(value).items()}
+        return {key: _primitive(item) for key, item in asdict(value).items()
+                if key not in {"mcx_quantity", "mcx_v1_contract_symbol"}
+                or item is not None}
     if isinstance(value, dict): return {str(key): _primitive(item) for key, item in value.items()}
     if isinstance(value, (tuple, list)): return [_primitive(item) for item in value]
     return value
@@ -515,6 +544,8 @@ def _position_from_dict(value):  # type: ignore[no-untyped-def]
         for name in ("entry_timestamp", "created_at"):
             data[name] = None if data[name] is None else datetime.fromisoformat(data[name])
         data["provenance"] = tuple(data["provenance"])
+        if data.get("mcx_quantity") is not None:
+            data["mcx_quantity"] = quantity_from_dict(data["mcx_quantity"])
         return SponsorPositionRecord(**data)
     except Exception as error: raise ValueError("SPONSOR_POSITION_STORED_RECORD_INVALID") from error
 

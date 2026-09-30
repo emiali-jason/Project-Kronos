@@ -41,6 +41,37 @@ class MonitoringError(RuntimeError):
 
 
 @dataclass(frozen=True, slots=True)
+class MonitoringSubscriptionEvidence:
+    """Applied subscription in one physical connection; not gap recovery.
+
+    A successful subscribe/set-mode dispatch plus a matching subsequent quote
+    establishes observation authority only. It cannot establish trade continuity.
+    """
+
+    instrument: InstrumentRecord
+    connection_id: str
+    subscribed_at: datetime
+    state: MonitoringConnectionState
+
+    def __post_init__(self) -> None:
+        if (type(self.instrument) is not InstrumentRecord
+                or not _identity(self.connection_id)
+                or not _aware(self.subscribed_at)
+                or type(self.state) is not MonitoringConnectionState
+                or self.state not in {MonitoringConnectionState.CONNECTED,
+                                      MonitoringConnectionState.CONTEXT_INCOMPLETE}):
+            raise ValueError("MONITORING_SUBSCRIPTION_EVIDENCE_INVALID")
+
+    def admits(self, tick: ProviderMarketTick) -> bool:
+        return (type(tick) is ProviderMarketTick
+                and tick.instrument == self.instrument
+                and tick.connection_id == self.connection_id
+                and not tick.recovered
+                and tick.observed_at > self.subscribed_at
+                and tick.received_at >= tick.observed_at)
+
+
+@dataclass(frozen=True, slots=True)
 class ProviderMarketTick:
     """One normalized factual Kite market observation."""
 
@@ -188,6 +219,10 @@ class MonitoringConsumer(Protocol):
 
 
 class ReadOnlyMonitoringSession(Protocol):
+    def observation_context(self, instrument: InstrumentRecord) -> MonitoringSubscriptionEvidence | None:
+        """Applied exact subscription only; no recovered-interval authority."""
+        ...
+
     @property
     def state(self) -> MonitoringConnectionState: ...
 
@@ -236,6 +271,7 @@ __all__ = [
     "MonitoringDisconnect",
     "MonitoringError",
     "MonitoringFailure",
+    "MonitoringSubscriptionEvidence",
     "ProviderMarketTick",
     "ProviderOrderUpdateEvidence",
     "ReadOnlyMonitoringSession",

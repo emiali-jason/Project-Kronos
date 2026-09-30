@@ -1,7 +1,13 @@
 from dataclasses import replace
+from http import HTTPStatus
 from hashlib import sha256
+from io import BytesIO
+from types import SimpleNamespace
+from urllib.parse import urlencode
 
 import pytest
+
+from kronos.browser.server import KronosBrowserServer, _BrowserHandler
 
 from kronos.application.swing_trade_window import (
     LocalTradePlanConstructionDiagnosticStore,
@@ -43,6 +49,226 @@ from tests.unit.swing.v1.test_kr370_step31_handoff import (
     _v2_completed,
 )
 from tests.unit.swing.v1.test_native_review import _evidence_run
+
+
+@pytest.mark.parametrize("instrument", (
+    "GOLDM", "SILVERM", "COPPER", "CRUDEOIL", "NATURALGAS",
+))
+def test_direct_stale_and_replayed_mcx_construct_posts_reject_without_side_effects(
+    instrument,
+) -> None:
+    calls = []
+    for run_identity in (
+        "SWING-RUN-0123456789ABCDEF0123456789ABCDEF",
+        "SWING-RUN-FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF",
+    ):
+        body = urlencode({
+            "run_identity": run_identity,
+            "canonical_instrument": instrument,
+            "native_assessment_sha256": "a" * 64,
+        }).encode()
+        for _ in range(2):
+            handler = object.__new__(_BrowserHandler)
+            handler.headers = {
+                "Content-Type": "application/x-www-form-urlencoded",
+                "Content-Length": str(len(body)),
+            }
+            handler.rfile = BytesIO(body)
+            handler.server = SimpleNamespace(
+                construct_current_trade_plan=lambda *args: calls.append(args)
+            )
+            handler._text = lambda status, message: calls.append((status, message))
+            handler._redirect = lambda *args: pytest.fail("MCX request redirected")
+            handler._construct_native_trade_plan()
+    assert calls == [
+        (HTTPStatus.CONFLICT, "MCX_STEP31_NOT_COMMISSIONED")
+    ] * 4
+
+
+@pytest.mark.parametrize("instrument", (
+    "GOLDM", "SILVERM", "COPPER", "CRUDEOIL", "NATURALGAS",
+))
+def test_mcx_application_construction_and_follow_on_mutations_are_held_before_side_effects(
+    instrument,
+) -> None:
+    with pytest.raises(ValueError, match="MCX_STEP31_NOT_COMMISSIONED"):
+        KronosBrowserServer.construct_current_trade_plan(
+            SimpleNamespace(), "SWING-RUN-" + "A" * 32, instrument, "b" * 64,
+        )
+
+    def invoke(method, fields, *, query=""):
+        calls = []
+        body = urlencode(fields).encode()
+        handler = object.__new__(_BrowserHandler)
+        handler.path = "/swing/v1/native-trade-decision" + query
+        handler.headers = {
+            "Content-Type": "application/x-www-form-urlencoded",
+            "Content-Length": str(len(body)),
+        }
+        handler.rfile = BytesIO(body)
+        candidate = SimpleNamespace(candidate=SimpleNamespace(canonical_instrument=instrument))
+        plan = SimpleNamespace(trade_plan_id="plan-1", canonical_instrument=instrument)
+        handler.server = SimpleNamespace(
+            step32_workflow=SimpleNamespace(
+                snapshot=lambda: SimpleNamespace(record_for_browser_key=lambda _: candidate),
+                record_sponsor_choice=lambda *args: calls.append("step32"),
+            ),
+            native_review=SimpleNamespace(
+                snapshot=lambda: SimpleNamespace(trade_plans=(plan,)),
+                initiate_sponsor_decision=lambda *args, **kwargs: calls.append("sponsor"),
+            ),
+            visual_v3=SimpleNamespace(completed_for=lambda *args: calls.append("completed")),
+            trade_window=SimpleNamespace(project=lambda *args: calls.append("projection")),
+            application=SimpleNamespace(opportunities_projection=lambda: calls.append("publication")),
+        )
+        handler._text = lambda status, message: calls.append((status, message))
+        handler._redirect = lambda *args: calls.append("redirect")
+        getattr(handler, method)()
+        assert calls == [(HTTPStatus.CONFLICT, "MCX_STEP31_NOT_COMMISSIONED")]
+
+    base = {
+        "run_identity": "SWING-RUN-" + "A" * 32,
+        "canonical_instrument": instrument,
+        "native_assessment_sha256": "b" * 64,
+    }
+    invoke("_record_native_sponsor_decision", {"mode": "PAPER"}, query="?plan=plan-1")
+    invoke("_record_sponsor_observation_decision", {
+        **base, "observation_evidence_id": "observation", "mode": "PAPER",
+    })
+    invoke("_activate_sponsor_observation_entry", {
+        **base, "decision_identity": "decision", "mode": "PAPER",
+    })
+    invoke("_start_paper_observation_track", {
+        **base, "decision_identity": "decision", "track_confirmed": "YES",
+    })
+
+    calls = []
+    body = b"mode=PAPER"
+    handler = object.__new__(_BrowserHandler)
+    handler.headers = {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Content-Length": str(len(body)),
+    }
+    handler.rfile = BytesIO(body)
+    handler.server = SimpleNamespace(step32_workflow=SimpleNamespace(
+        snapshot=lambda: SimpleNamespace(record_for_browser_key=lambda _: SimpleNamespace(
+            candidate=SimpleNamespace(canonical_instrument=instrument))),
+        record_sponsor_choice=lambda *args: calls.append("record"),
+    ))
+    handler._text = lambda status, message: calls.append((status, message))
+    handler._redirect = lambda *args: calls.append("redirect")
+    handler._record_sponsor_decision("candidate")
+    assert calls == [(HTTPStatus.CONFLICT, "MCX_STEP31_NOT_COMMISSIONED")]
+
+
+def test_stale_sponsor_identifiers_fail_before_workflow_mutation() -> None:
+    def handler_for(body):
+        calls = []
+        handler = object.__new__(_BrowserHandler)
+        handler.path = "/swing/v1/native-trade-decision?plan=old-plan"
+        handler.headers = {
+            "Content-Type": "application/x-www-form-urlencoded",
+            "Content-Length": str(len(body)),
+        }
+        handler.rfile = BytesIO(body)
+        handler.server = SimpleNamespace(
+            step32_workflow=SimpleNamespace(
+                snapshot=lambda: SimpleNamespace(record_for_browser_key=lambda _: None),
+                record_sponsor_choice=lambda *args: calls.append("step32"),
+            ),
+            native_review=SimpleNamespace(
+                snapshot=lambda: SimpleNamespace(trade_plans=()),
+                initiate_sponsor_decision=lambda *args, **kwargs: calls.append("sponsor"),
+            ),
+        )
+        handler._text = lambda status, message: calls.append((status, message))
+        handler._redirect = lambda *args: calls.append("redirect")
+        return handler, calls
+
+    handler, calls = handler_for(b"mode=PAPER")
+    handler._record_sponsor_decision("old-candidate")
+    assert calls == [(HTTPStatus.CONFLICT, "Sponsor decision is not available.")]
+    handler, calls = handler_for(b"mode=PAPER")
+    handler._record_native_sponsor_decision()
+    assert calls == [(HTTPStatus.CONFLICT, "Sponsor decision is not available.")]
+
+
+@pytest.mark.parametrize("malformation", (
+    "&unexpected=value",
+    "&unexpected=",
+    "&run_identity=SWING-RUN-FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF",
+    "&canonical_instrument=RBLBANK",
+    "&native_assessment_sha256=" + "b" * 64,
+))
+@pytest.mark.parametrize("instrument", (
+    "GOLDM", "SILVERM", "COPPER", "CRUDEOIL", "NATURALGAS",
+))
+def test_malformed_mcx_construct_form_rejects_before_any_attempt(
+    malformation, instrument,
+) -> None:
+    calls = []
+    body = (
+        urlencode({
+            "run_identity": "SWING-RUN-0123456789ABCDEF0123456789ABCDEF",
+            "canonical_instrument": instrument,
+            "native_assessment_sha256": "a" * 64,
+        }) + malformation
+    ).encode()
+    handler = object.__new__(_BrowserHandler)
+    handler.headers = {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Content-Length": str(len(body)),
+    }
+    handler.rfile = BytesIO(body)
+    handler.server = SimpleNamespace(
+        construct_current_trade_plan=lambda *args: calls.append(("construction", args)),
+        _retain_trade_plan_attempt=lambda *args: calls.append(("durable-attempt", args)),
+        provider=lambda *args: calls.append(("provider", args)),
+    )
+    handler._text = lambda status, message: calls.append(("response", status, message))
+    handler._redirect = lambda *args: calls.append(("redirect", args))
+
+    handler._construct_native_trade_plan()
+
+    assert calls == [("response", HTTPStatus.BAD_REQUEST, "Request rejected.")]
+
+
+def test_malformed_nse_construct_form_keeps_existing_diagnostic_attempt() -> None:
+    calls = []
+    run_identity = "SWING-RUN-0123456789ABCDEF0123456789ABCDEF"
+    assessment = "a" * 64
+    body = (
+        urlencode({
+            "run_identity": run_identity,
+            "canonical_instrument": "RBLBANK",
+            "native_assessment_sha256": assessment,
+        }) + "&unexpected=value"
+    ).encode()
+    handler = object.__new__(_BrowserHandler)
+    handler.headers = {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Content-Length": str(len(body)),
+    }
+    handler.rfile = BytesIO(body)
+    handler.server = SimpleNamespace(
+        construct_current_trade_plan=lambda *args: pytest.fail("invalid NSE form constructed"),
+        _retain_trade_plan_attempt=lambda *args: calls.append(("durable-attempt", args)),
+    )
+    handler._text = lambda *args: pytest.fail("invalid NSE form returned direct text")
+    handler._redirect = lambda location: calls.append(("redirect", location))
+
+    handler._construct_native_trade_plan()
+
+    assert len(calls) == 2
+    assert calls[0][0] == "durable-attempt"
+    assert calls[0][1][1:4] == (run_identity, "RBLBANK", assessment)
+    assert calls[0][1][5:] == (
+        TradePlanConstructionStage.REQUEST_PARSE,
+        "TRADE_PLAN_REQUEST_INVALID",
+    )
+    assert calls[1] == (
+        "redirect", f"/swing/trade-window/{run_identity}/RBLBANK",
+    )
 
 
 def test_v2_ready_cannot_expose_existing_step31_construct_control(tmp_path) -> None:

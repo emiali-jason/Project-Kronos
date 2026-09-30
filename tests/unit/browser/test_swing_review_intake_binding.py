@@ -212,7 +212,10 @@ def native_intake(tmp_path, request):
         from kronos.swing.v1.native_review import NativeReviewEvidenceStore
         from kronos.swing.v1.evidence_store import LocalTradingViewEvidenceStore
         from tests.unit.swing.v1.test_native_review_mcx_reference import _run_with_probables
-        facts, run = _run_with_probables(request.param)
+        family = request.param.removesuffix("-LINEAGE")
+        facts, run = _run_with_probables(
+            family, retain_mcx_lineage=family != request.param,
+        )
         native = NativeReviewWorkflow(NativeReviewEvidenceStore(tmp_path / "mcx-native"),
             chart_store=LocalTradingViewEvidenceStore(tmp_path / "mcx-charts"))
         native.prepare(run, facts)

@@ -17,6 +17,8 @@ import tempfile
 from threading import Lock
 import time
 
+from kronos.swing.v1.mcx_contract_selection import McxAnalysisProcessHandoff
+
 MAX_REQUEST_BYTES = 1024 * 1024
 MAX_RESPONSE_BYTES = 64 * 1024 * 1024
 MAX_TOTAL_PROVIDER_BYTES = 768 * 1024 * 1024
@@ -401,6 +403,7 @@ def _worker(
     run_created_at,
     now,
     result_path,
+    mcx_handoff=None,
 ):
     proxy = None
     try:
@@ -426,6 +429,9 @@ def _worker(
                 raise RuntimeError(response[1])
             return response[1]
 
+        mcx_choices = (
+            None if mcx_handoff is None else mcx_handoff.analysis_choices()
+        )
         completed = build_completed_swing_analysis(
             proxy,
             analysis_run_identity=analysis_run_identity,
@@ -438,6 +444,7 @@ def _worker(
             committed_predecessor=predecessor,
             prepare_publication=True,
             completion_clock=completion_clock,
+            **({} if mcx_choices is None else {"mcx_contract_choices": mcx_choices}),
         )
         del predecessor
         contribution = completed.continuity_contribution
@@ -596,6 +603,7 @@ def _run_worker(
     install_result,
     timeout_seconds,
     status_update,
+    mcx_handoff=None,
 ):
     spec = _PublicationSpec(
         publication.root,
@@ -624,6 +632,7 @@ def _run_worker(
                 run_created_at,
                 now,
                 result_path,
+                mcx_handoff,
             ),
         )
         process.start()
@@ -1024,8 +1033,16 @@ class SwingAnalysisProcessOwner:
         is_current,
         commit_scope,
         install_result,
+        mcx_handoff: McxAnalysisProcessHandoff | None = None,
     ) -> SwingAnalysisProcessResult:
         """Run one generation; the parent retains Provider and commit authority."""
+
+        if mcx_handoff is not None:
+            if (type(mcx_handoff) is not McxAnalysisProcessHandoff
+                    or mcx_handoff.run_identity != swing_run_identity
+                    or mcx_handoff.generation != token.generation):
+                raise SwingAnalysisProcessError("MCX_PROCESS_HANDOFF_STALE")
+            mcx_handoff.analysis_choices()
 
         with self._lock:
             if self._active:
@@ -1080,6 +1097,7 @@ class SwingAnalysisProcessOwner:
                 install_result=install_result,
                 timeout_seconds=self._timeout_seconds,
                 status_update=update,
+                **({} if mcx_handoff is None else {"mcx_handoff": mcx_handoff}),
             )
         except SwingAnalysisProcessCleanupError as error:
             retain_failure(

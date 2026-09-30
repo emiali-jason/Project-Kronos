@@ -7,6 +7,7 @@ from dataclasses import replace
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
+from threading import RLock
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
@@ -19,6 +20,7 @@ from kronos.provider.contracts.monitoring import (
     MonitoringDisconnect,
     MonitoringError,
     MonitoringFailure,
+    MonitoringSubscriptionEvidence,
     ProviderMarketTick,
     ProviderOrderUpdateEvidence,
     RecoveredMarketInterval,
@@ -46,6 +48,8 @@ class KiteReadOnlyMonitoringSession:
         "__state",
         "__token_resolver",
         "__token_to_record",
+        "__applied_subscriptions",
+        "__evidence_lock",
     )
 
     def __init__(
@@ -74,7 +78,21 @@ class KiteReadOnlyMonitoringSession:
         self.__last_disconnect: MonitoringDisconnect | None = None
         self.__local_close_requested = False
         self.__ever_connected = False
+        self.__applied_subscriptions: dict[InstrumentRecord, datetime] = {}
+        self.__evidence_lock = RLock()
         self.__wire_callbacks()
+
+    def observation_context(self, instrument: InstrumentRecord):
+        """Read-only proof of applied subscription, never a continuity claim."""
+        with self.__evidence_lock:
+            stamp = self.__applied_subscriptions.get(instrument)
+            if stamp is None or self.__state not in {
+                MonitoringConnectionState.CONNECTED,
+                MonitoringConnectionState.CONTEXT_INCOMPLETE,
+            }:
+                return None
+            return MonitoringSubscriptionEvidence(
+                instrument, self.__connection_id, stamp, self.__state)
 
     @property
     def state(self) -> MonitoringConnectionState:
@@ -127,6 +145,8 @@ class KiteReadOnlyMonitoringSession:
         removals: list[int] = []
         for instrument in instruments:
             token = self.__record_to_token.pop(instrument, None)
+            with self.__evidence_lock:
+                self.__applied_subscriptions.pop(instrument, None)
             self.__gap_instruments.discard(instrument)
             if token is not None:
                 self.__token_to_record.pop(token, None)
@@ -188,6 +208,9 @@ class KiteReadOnlyMonitoringSession:
             setattr(self.__socket, name, callback)
 
     def __on_connect(self, _socket: object, _response: object) -> None:
+        with self.__evidence_lock:
+            self.__applied_subscriptions.clear()
+            self.__connection_id = f"KITE-WS-{uuid4().hex}"
         reconnect = self.__ever_connected
         self.__ever_connected = True
         if reconnect:
@@ -230,9 +253,13 @@ class KiteReadOnlyMonitoringSession:
         self.__set_state(MonitoringConnectionState.RECONNECTING)
 
     def __on_no_reconnect(self, _socket: object) -> None:
+        with self.__evidence_lock:
+            self.__applied_subscriptions.clear()
         self.__set_state(MonitoringConnectionState.CONTEXT_INCOMPLETE)
 
     def __record_disconnect(self) -> None:
+        with self.__evidence_lock:
+            self.__applied_subscriptions.clear()
         disconnected = self.__clock()
         affected = self.subscriptions
         self.__gap_instruments.update(affected)
@@ -312,6 +339,8 @@ class KiteReadOnlyMonitoringSession:
             raise MonitoringError(MonitoringFailure.MALFORMED_PROVIDER_DATA) from None
 
     def __subscribe_tokens(self, tokens: tuple[int, ...]) -> None:
+        with self.__evidence_lock:
+            connection_id = self.__connection_id
         subscribe = getattr(self.__socket, "subscribe", None)
         set_mode = getattr(self.__socket, "set_mode", None)
         mode_full = getattr(self.__socket, "MODE_FULL", "full")
@@ -322,9 +351,22 @@ class KiteReadOnlyMonitoringSession:
             set_mode(mode_full, list(tokens))
         except Exception:
             raise MonitoringError(MonitoringFailure.PROVIDER_FAILURE) from None
+        with self.__evidence_lock:
+            if (connection_id == self.__connection_id and self.__state in {
+                    MonitoringConnectionState.CONNECTED,
+                    MonitoringConnectionState.CONTEXT_INCOMPLETE}):
+                stamp = self.__clock()
+                for token in tokens:
+                    record = self.__token_to_record.get(token)
+                    if record is not None:
+                        self.__applied_subscriptions[record] = stamp
 
     def __set_state(self, state: MonitoringConnectionState) -> None:
-        self.__state = state
+        with self.__evidence_lock:
+            if state in {MonitoringConnectionState.DISCONNECTED,
+                         MonitoringConnectionState.RECONNECTING}:
+                self.__applied_subscriptions.clear()
+            self.__state = state
         self.__consumer.on_connection_state(state)
 
     def __repr__(self) -> str:

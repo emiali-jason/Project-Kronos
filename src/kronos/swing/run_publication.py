@@ -333,7 +333,7 @@ class SwingRunPublication:
             raise ValueError("SWING_PUBLICATION_CURRENT_CHANGED")
         return bundle
 
-    def admit(self, run_id, now):
+    def admit(self, run_id, now, *, expected_control=None, require_idle=False):
         if not is_swing_analysis_run_id(run_id):
             raise ValueError("SWING_ANALYSIS_RUN_IDENTITY_INVALID")
         accepted_at = _timestamp(now)
@@ -341,6 +341,10 @@ class SwingRunPublication:
             raise ValueError("SWING_PUBLICATION_RUN_REUSED")
         with self._lock():
             control = self._control()
+            if expected_control is not None and control != expected_control:
+                raise ValueError("SWING_PUBLICATION_ADMISSION_CHANGED")
+            if require_idle and control["latest_attempt"]["state"] == "RUNNING":
+                raise ValueError("SWING_PUBLICATION_ADMISSION_BUSY")
             if control["latest_attempt"]["run_id"] == run_id:
                 raise ValueError("SWING_PUBLICATION_RUN_REUSED")
             token = OperationToken(control["admission_generation"] + 1, run_id, control["current_manifest"])

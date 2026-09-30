@@ -147,6 +147,69 @@ def test_disconnect_reconnect_first_tick_preserves_gap_and_requires_reconciliati
     assert first.ordering_deterministic is False
 
 
+def test_observation_context_requires_applied_subscription_and_new_connection():
+    session, socket, consumer = _session((_MCX,))
+    assert session.observation_context(_MCX) is None
+    session.connect()
+    initial = session.observation_context(_MCX)
+    assert initial.instrument == _MCX
+    assert initial.state is MonitoringConnectionState.CONNECTED
+    socket.on_close(socket, 1006, "fixture")
+    assert session.observation_context(_MCX) is None
+    socket.on_connect(socket, {})
+    recovered = session.observation_context(_MCX)
+    assert recovered.connection_id != initial.connection_id
+    assert recovered.state is MonitoringConnectionState.CONTEXT_INCOMPLETE
+    assert session.observation_context(_NSE) is None
+    assert socket.subscribed == [[202], [202]]
+    socket.on_noreconnect(socket)
+    assert session.observation_context(_MCX) is None
+    assert consumer.states[-1] is MonitoringConnectionState.CONTEXT_INCOMPLETE
+
+
+def test_failed_resubscription_cannot_certify_observation_context():
+    session, socket, _ = _session((_MCX,))
+    session.connect()
+    socket.on_close(socket, 1006, "fixture")
+    def failed_mode(*_args):
+        raise RuntimeError("isolated subscription failure")
+    socket.set_mode = failed_mode
+    with pytest.raises(MonitoringError):
+        socket.on_connect(socket, {})
+    assert session.state is MonitoringConnectionState.CONTEXT_INCOMPLETE
+    assert session.observation_context(_MCX) is None
+
+
+def test_interrupted_subscription_completion_cannot_restore_stale_proof():
+    from threading import Event, Thread
+    session, socket, _ = _session((_MCX,))
+    session.connect()
+    socket.on_close(socket, 1006, "fixture")
+    entered, release = Event(), Event()
+    errors = []
+    def paused_mode(*_args):
+        entered.set()
+        assert release.wait(2)
+    socket.set_mode = paused_mode
+    def reconnect():
+        try:
+            socket.on_connect(socket, {})
+        except BaseException as error:
+            errors.append(error)
+    thread = Thread(target=reconnect)
+    thread.start()
+    try:
+        assert entered.wait(2)
+        assert session.observation_context(_MCX) is None
+        socket.on_close(socket, 1006, "second interruption")
+    finally:
+        release.set()
+        thread.join(2)
+    assert not thread.is_alive() and not errors
+    assert session.state is MonitoringConnectionState.RECONNECTING
+    assert session.observation_context(_MCX) is None
+
+
 def test_authoritative_recovery_clears_gap_and_irrecoverable_interval_fails_closed() -> None:
     session, socket, consumer = _session((_NSE,))
     session.connect()

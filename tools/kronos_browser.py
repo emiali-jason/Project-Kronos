@@ -68,6 +68,7 @@ with StartupCapture(Path(__file__).resolve().parents[1], keep_sources_pinned=Tru
     from kronos.common.legacy_bootstrap import consume_startup_context
     from kronos.common.maintenance import DrainStartupContext
     from kronos.market.calendar import MarketCalendarPublisher
+    from kronos.application.swing_mcx_v1_composition import install_canonical_mcx_v1
     from kronos.intraday.universe import load_intraday_universe_publication
     from kronos.provider.contracts.provider_authentication import ReadOnlyProviderOperation
     from kronos.provider.adapters.kite.navigation import KiteBrowserRedirectNavigator
@@ -320,6 +321,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             intraday_discovery_control=intraday_discovery_control,
             intraday_historical_control=intraday_historical_control,
             provider_login_navigation=provider_login_navigation,
+            mcx_v1_composition_factory=lambda owner: install_canonical_mcx_v1(
+                owner, master=ProviderInstrumentSnapshotStore(
+                    DEFAULT_PROVIDER_INSTRUMENT_SNAPSHOT_ROOT),
+                calendar=MarketCalendarPublisher()),
         )
         server.housekeeping = _compose_housekeeping(server, intraday_runtime)
         server.housekeeping.bind_maintenance_admission(server.maintenance_admission)

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+import base64
+import binascii
 from contextlib import nullcontext
 from copy import deepcopy
 from datetime import UTC, date, datetime, timedelta
@@ -12,6 +14,7 @@ from email.policy import default as email_policy
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from hashlib import sha256
+from html import escape
 import json
 import logging
 from pathlib import Path
@@ -79,6 +82,10 @@ from kronos.application.swing_bulk_import import (
 from kronos.application.swing_mcx_supporting_context import (
     McxSupportingContextWorkflow,
 )
+from kronos.application.swing_mcx_integrated import SwingMcxIntegratedWorkflow
+from kronos.application.swing_mcx_v1_operations import SwingMcxV1OperationalControl
+from kronos.swing.v1.mcx_contract_profile import McxFamily
+from kronos.swing.v1.mcx_contract_selection import McxSelectionRole
 from kronos.application.swing_trade_window import (
     LocalTradePlanConstructionDiagnosticStore,
     SwingTradeWindowWorkflow,
@@ -198,6 +205,7 @@ from kronos.swing.v1.native_entry_timing import (
     LocalRiskPermissionV1Store,
 )
 from kronos.swing.v1.mtf_facts import FactualTimeframe
+from kronos.swing.v1.mcx_contract_profile import MCX_SWING_FAMILIES
 from kronos.instrument.facts import publish_instrument_context
 from kronos.swing.universe import enabled_swing_phase1_universe
 from kronos.swing.v1.native_active_trade_lifecycle import TradeExitReason
@@ -319,6 +327,10 @@ class KronosBrowserServer(ThreadingHTTPServer):
         ) = None,
         provider_login_navigation: object | None = None,
         bulk_import_root: Path | None = None,
+        mcx_slice3: SwingMcxIntegratedWorkflow | None = None,
+        mcx_v1_control: SwingMcxV1OperationalControl | None = None,
+        native_intake: NativeReviewIntakeWorkflow | None = None,
+        mcx_v1_composition_factory: Callable | None = None,
     ) -> None:
         if (
             address[0] != _LOOPBACK_HOST
@@ -402,11 +414,20 @@ class KronosBrowserServer(ThreadingHTTPServer):
                 )
             )
             or (bulk_import_root is not None and type(bulk_import_root) is not Path)
+            or (mcx_slice3 is not None and type(mcx_slice3) is not SwingMcxIntegratedWorkflow)
+            or (mcx_v1_control is not None
+                and type(mcx_v1_control) is not SwingMcxV1OperationalControl)
+            or (native_intake is not None
+                and type(native_intake) is not NativeReviewIntakeWorkflow)
         ):
             raise ValueError("BROWSER_SERVER_MUST_BIND_LOOPBACK")
         config = OpenAIChartAnalystV2Config.from_environment()
         transport, default_credentials = _openai_chart_analyst_security(config)
         self.application = application
+        # Fixture-injected isolated integration only. Production composition
+        # supplies no owner and both routes fail closed.
+        self.mcx_slice3 = mcx_slice3
+        self.mcx_v1_control = mcx_v1_control
         self.chart_analyst_credentials = (
             chart_analyst_credentials or default_credentials
         )
@@ -426,6 +447,9 @@ class KronosBrowserServer(ThreadingHTTPServer):
         self._monitoring_quiesced = False
         self.maintenance_admission = MaintenanceAdmissionCoordinator()
         self.application.bind_maintenance_admission(self.maintenance_admission)
+        if self.mcx_v1_control is not None:
+            self.mcx_v1_control.bind_maintenance_admission(
+                self.maintenance_admission)
         self._sponsor_tickets = local()
         self._swing_projection_lock = Lock()
         self._answer_notice_lock = Lock()
@@ -566,8 +590,22 @@ class KronosBrowserServer(ThreadingHTTPServer):
                 ),
                 recover_historical=not receipt_intake_enabled,
             )
-        self.native_intake = (NativeReviewIntakeWorkflow(self.application, self.native_review,
-            self.visual_v3_live, ReviewEvidenceStore(governed_review_root)) if receipt_intake_enabled else None)
+        if (native_intake is not None
+                and (not receipt_intake_enabled
+                     or native_intake.application is not self.application
+                     or native_intake.native_review is not self.native_review
+                     or native_intake.live is not self.visual_v3_live
+                     or native_intake.store.root != governed_review_root)):
+            raise ValueError("MCX_V1_NATIVE_INTAKE_MISMATCH")
+        self.native_intake = (native_intake or NativeReviewIntakeWorkflow(
+            self.application, self.native_review, self.visual_v3_live,
+            ReviewEvidenceStore(governed_review_root))
+            if receipt_intake_enabled or mcx_v1_composition_factory is not None else None)
+        if (self.mcx_v1_control is not None
+                and (self.mcx_slice3 is not self.mcx_v1_control.workflow
+                     or self.native_review is not self.mcx_v1_control.native_review
+                     or self.native_intake is not self.mcx_v1_control.review_owner)):
+            raise ValueError("MCX_V1_BROWSER_OWNER_MISMATCH")
         self.bulk_import = None
         self.trade_window = trade_window or SwingTradeWindowWorkflow(
             LocalKr370Step31HandoffStore(
@@ -639,6 +677,16 @@ class KronosBrowserServer(ThreadingHTTPServer):
         self.native_review.set_ux10_lifecycle_event_listener(
             self.ux10_notifications.observe_lifecycle_event
         )
+        self.mcx_v1_composition = None
+        if mcx_v1_composition_factory is not None:
+            if self.mcx_v1_control is not None or self.mcx_slice3 is not None:
+                raise ValueError("MCX_V1_COMPOSITION_CONFLICT")
+            from kronos.application.swing_mcx_v1_composition import SwingMcxV1Composition
+            composition = mcx_v1_composition_factory(self)
+            if type(composition) is not SwingMcxV1Composition:
+                raise ValueError("MCX_V1_COMPOSITION_INVALID")
+            self.mcx_v1_composition = composition
+            self.mcx_v1_control = composition.control
         native_run = self.application.native_discovery_run()
         mtf_facts = self.application.mtf_fact_snapshot()
         self.native_review_run = native_run
@@ -934,6 +982,9 @@ class KronosBrowserServer(ThreadingHTTPServer):
             self.trade_window.close_monitoring()
             self.swing_monitoring_hub.close()
         self.step32_workflow.close()
+        mcx_control = getattr(self, "mcx_v1_control", None)
+        if mcx_control is not None:
+            mcx_control.close()
         provider_runtime = getattr(self, "provider_runtime", None)
         if require_proof and provider_runtime is not None:
             provider_runtime.end_kronos_session()
@@ -1465,6 +1516,10 @@ class KronosBrowserServer(ThreadingHTTPServer):
         native_assessment_sha256: str,
     ):
         """Perform the bounded production composition behind the Sponsor action."""
+        # The HTTP form is not the only possible caller. No MCX attempt,
+        # Provider lookup or durable Step-31 record may precede commissioning.
+        if canonical_instrument in MCX_SWING_FAMILIES:
+            raise ValueError("MCX_STEP31_NOT_COMMISSIONED")
         attempt_timestamp = datetime.now(UTC)
         attempt_identity = sha256(
             (
@@ -1873,6 +1928,14 @@ class KronosBrowserServer(ThreadingHTTPServer):
                     and not owned("SPONSOR_RESTORATION")):
                 return False
             monitoring = self.swing_monitoring_hub.status_document()
+            mcx_control = getattr(self, "mcx_v1_control", None)
+            mcx_worker = (None if mcx_control is None else
+                          mcx_control.worker_status())
+            if (mcx_worker is not None and int(mcx_worker["pending"])
+                    and (not allow_drainable
+                         or counted.get("MONITORING_CALLBACK", 0)
+                            < int(mcx_worker["pending"]))):
+                return False
             if not allow_drainable and any(
                 int(monitoring.get(field, 0))
                 for field in (
@@ -1956,6 +2019,10 @@ class KronosBrowserServer(ThreadingHTTPServer):
                     ("session_count", "owner_count", "subscription_count"))
                 or monitoring["transport_cleanup"]["state"] != "COMPLETE"):
                 return False
+            mcx_control = getattr(self, "mcx_v1_control", None)
+            if (mcx_control is not None
+                    and int(mcx_control.worker_status()["pending"])):
+                return False
             provider = self.provider_runtime.read_only_status()
             if (provider["cleanup_state"] != "COMPLETE"
                 or int(provider["owned_work_count"])
@@ -1990,6 +2057,9 @@ class KronosBrowserServer(ThreadingHTTPServer):
         notifications = self.intraday_notifications.maintenance_status()
         monitoring = self.swing_monitoring_hub.status_document()
         provider = self.provider_runtime.read_only_status()
+        mcx_control = getattr(self, "mcx_v1_control", None)
+        mcx_worker = (None if mcx_control is None else
+                      mcx_control.worker_status())
         counts = {
             "coordinator_owners": sum(self.maintenance_admission.snapshot()["owners"].values()),
             "wo11_owned": int(lifecycle["owned_workers"]),
@@ -2002,6 +2072,8 @@ class KronosBrowserServer(ThreadingHTTPServer):
             "monitoring_sessions": int(monitoring["session_count"]),
             "provider_owned": int(provider["owned_work_count"]),
             "provider_leases": int(provider["retained_lease_count"]),
+            "mcx_advisory_pending": (
+                0 if mcx_worker is None else int(mcx_worker["pending"])),
         }
         if any(value != 0 for value in counts.values()):
             raise ValueError("MAINTENANCE_DRAIN_ATTESTATION_NOT_ZERO")
@@ -2157,6 +2229,12 @@ class _BrowserHandler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:  # noqa: N802
         path = urlsplit(self.path).path
+        if path == "/swing/mcx-contract-offer":
+            self._mcx_contract_offer()
+            return
+        if path == "/swing/mcx-v1":
+            self._mcx_v1_workspace()
+            return
         if path == "/runtime/request-diagnostics":
             # Keep the bounded operational ring out of the launcher's 64 KiB
             # status contract, and do not acquire any application owner lock.
@@ -3000,7 +3078,11 @@ class _BrowserHandler(BaseHTTPRequestHandler):
                 self._dispatch_post(path)
                 if (path.startswith("/swing/") and path not in {
                         "/swing/analysis", "/swing/reconcile",
-                        "/swing/v1/native-chart", "/swing/v1/native-chart/remove"}
+                        "/swing/v1/native-chart", "/swing/v1/native-chart/remove",
+                        "/swing/mcx-contract-choice", "/swing/mcx-reserved-analysis",
+                        "/swing/mcx-v1/reserve", "/swing/mcx-v1/plan",
+                        "/swing/mcx-v1/paper", "/swing/mcx-v1/live",
+                        "/swing/mcx-v1/paper-exit", "/swing/mcx-v1/live-exit"}
                         and not self._swing_post_failed):
                     # Read requests never enter this explicit mutation boundary.
                     self.server.application.reconcile_committed_analysis()
@@ -3008,6 +3090,19 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             self.server.finish_sponsor_work()
 
     def _dispatch_post(self, path: str) -> None:
+        if path in {"/swing/mcx-v1/reserve", "/swing/mcx-v1/plan"}:
+            self._mcx_v1_composition_action(path)
+            return
+        if path in {"/swing/mcx-v1/paper", "/swing/mcx-v1/live",
+                    "/swing/mcx-v1/paper-exit", "/swing/mcx-v1/live-exit"}:
+            self._mcx_v1_record_action(path)
+            return
+        if path == "/swing/mcx-contract-choice":
+            self._mcx_contract_choice()
+            return
+        if path == "/swing/mcx-reserved-analysis":
+            self._mcx_reserved_analysis()
+            return
         governance = self.server.connection_governance
         if path == "/control/maintenance/exit":
             reference = self._connection_action_reference()
@@ -3747,6 +3842,12 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             if set(fields) != {"mode"} or len(modes) != 1:
                 raise ValueError
             mode = SponsorDecisionMode(modes[0])
+            candidate = self.server.step32_workflow.snapshot().record_for_browser_key(candidate_id)
+            if candidate is None:
+                raise ValueError("SPONSOR_CANDIDATE_NOT_CURRENT")
+            if candidate.candidate.canonical_instrument in MCX_SWING_FAMILIES:
+                self._text(HTTPStatus.CONFLICT, "MCX_STEP31_NOT_COMMISSIONED")
+                return
             self.server.step32_workflow.record_sponsor_choice(
                 candidate_id,
                 mode,
@@ -3793,6 +3894,13 @@ class _BrowserHandler(BaseHTTPRequestHandler):
                 if set(fields) != {"mode"}:
                     raise ValueError
                 actual_entry, lots = None, None
+            plan = next((item for item in self.server.native_review.snapshot().trade_plans
+                         if item.trade_plan_id == plans[0]), None)
+            if plan is None:
+                raise ValueError("SPONSOR_PLAN_NOT_CURRENT")
+            if plan.canonical_instrument in MCX_SWING_FAMILIES:
+                self._text(HTTPStatus.CONFLICT, "MCX_STEP31_NOT_COMMISSIONED")
+                return
             result = self.server.native_review.initiate_sponsor_decision(
                 plans[0], mode, actual_live_entry=actual_entry, live_lots=lots,
             )
@@ -3865,6 +3973,9 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             assessment = fields["native_assessment_sha256"][0]
             observation_id = fields["observation_evidence_id"][0]
             choice = SponsorTradeChoice(fields["mode"][0])
+            if instrument in MCX_SWING_FAMILIES:
+                self._text(HTTPStatus.CONFLICT, "MCX_STEP31_NOT_COMMISSIONED")
+                return
             acknowledged = fields.get("warning_acknowledged", [""])[0] == "YES"
             reason_text = fields.get("reason", [""])[0]
             reason = None if not reason_text else SponsorObservationReason(reason_text)
@@ -3979,6 +4090,9 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             assessment = fields["native_assessment_sha256"][0]
             decision_identity = fields["decision_identity"][0]
             choice = SponsorTradeChoice(fields["mode"][0])
+            if instrument in MCX_SWING_FAMILIES:
+                self._text(HTTPStatus.CONFLICT, "MCX_STEP31_NOT_COMMISSIONED")
+                return
             if self.server.native_intake is not None:
                 completed = self.server.visual_v3.completed_for(run_identity, instrument)
                 current_v2 = self.server.native_intake.v2_for(run_identity, instrument)
@@ -4104,6 +4218,9 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             instrument = fields["canonical_instrument"][0]
             assessment = fields["native_assessment_sha256"][0]
             decision_identity = fields["decision_identity"][0]
+            if instrument in MCX_SWING_FAMILIES:
+                self._text(HTTPStatus.CONFLICT, "MCX_STEP31_NOT_COMMISSIONED")
+                return
             if fields["track_confirmed"][0] != "YES":
                 raise ValueError("PAPER_OBSERVATION_START_CONFIRMATION_REQUIRED")
             projection = self.server.trade_window.project(run_identity, instrument)
@@ -4243,10 +4360,8 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             return
         run_identity = instrument = assessment = None
         try:
-            fields = parse_qs(
-                self.rfile.read(content_length).decode("utf-8"),
-                strict_parsing=True,
-            )
+            body = self.rfile.read(content_length).decode("utf-8")
+            fields = parse_qs(body, strict_parsing=True)
             candidates = {
                 key: value[0]
                 for key, value in fields.items()
@@ -4266,10 +4381,25 @@ class _BrowserHandler(BaseHTTPRequestHandler):
                 or re.fullmatch(r"[0-9a-f]{64}", assessment) is None
             ):
                 raise ValueError
+            # Direct, stale and replayed MCX forms all fail before Provider
+            # work or a durable construction attempt while Step-31 is held.
+            if instrument in MCX_SWING_FAMILIES:
+                mcx_fields = parse_qs(
+                    body, strict_parsing=True, keep_blank_values=True,
+                )
+                if set(mcx_fields) != set(fields) or any(
+                    len(values) != 1 for values in mcx_fields.values()
+                ):
+                    raise ValueError
+                self._text(HTTPStatus.CONFLICT, "MCX_STEP31_NOT_COMMISSIONED")
+                return
             self.server.construct_current_trade_plan(
                 run_identity, instrument, assessment
             )
         except (UnicodeDecodeError, ValueError):
+            if instrument in MCX_SWING_FAMILIES:
+                self._text(HTTPStatus.BAD_REQUEST, "Request rejected.")
+                return
             if (
                 isinstance(run_identity, str)
                 and isinstance(instrument, str)
@@ -5456,6 +5586,269 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             return V1BatchPreflightFailure.RUN_BINDING_INVALID
         return None
 
+    def _mcx_v1_workspace(self) -> None:
+        composition = getattr(self.server, "mcx_v1_composition", None)
+        if composition is None:
+            self._text(HTTPStatus.CONFLICT, "MCX_STEP31_NOT_COMMISSIONED")
+            return
+        try:
+            from kronos.browser.views import render_mcx_v1_workspace
+            if urlsplit(self.path).query:
+                raise ValueError("MCX_V1_QUERY_INVALID")
+            projection = composition.projection()
+            snapshots = composition.retained_snapshots()
+            self._html(render_mcx_v1_workspace(projection, snapshots))
+        except (OSError, ValueError):
+            self._text(HTTPStatus.CONFLICT, "MCX V1 workspace unavailable.")
+
+    def _mcx_v1_composition_action(self, path: str) -> None:
+        composition = getattr(self.server, "mcx_v1_composition", None)
+        if composition is None:
+            self._text(HTTPStatus.CONFLICT, "MCX_STEP31_NOT_COMMISSIONED")
+            return
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+            if (urlsplit(self.path).query or not 0 < length <= 1024
+                    or self.headers.get("Content-Type") != "application/x-www-form-urlencoded"):
+                raise ValueError("MCX_V1_FORM_INVALID")
+            fields = parse_qs(self.rfile.read(length).decode("ascii"),
+                              strict_parsing=True, keep_blank_values=True)
+            expected = ({"snapshot", "master_sha256", "publication_sha256"}
+                        if path.endswith("/reserve") else {"run", "family", "handoff_sha256"})
+            if set(fields) != expected or any(len(values) != 1 or not values[0]
+                                             for values in fields.values()):
+                raise ValueError("MCX_V1_FORM_INVALID")
+            value = {key: values[0] for key, values in fields.items()}
+            if path.endswith("/reserve"):
+                composition.reserve(value["snapshot"], value["master_sha256"],
+                                    value["publication_sha256"])
+            else:
+                composition.prepare_plan(value["run"], McxFamily(value["family"]),
+                                         value["handoff_sha256"])
+        except (OSError, UnicodeError, ValueError, KeyError, TypeError):
+            self._text(HTTPStatus.CONFLICT, "MCX V1 operation rejected.")
+            return
+        self._redirect("/swing/mcx-v1")
+
+    def _mcx_v1_record_action(self, path: str) -> None:
+        """Strict loopback Sponsor record routes; no broker order operation."""
+        governance = getattr(self.server, "connection_governance", None)
+        if governance is not None and governance.maintenance_active:
+            self._text(HTTPStatus.SERVICE_UNAVAILABLE, "Controlled maintenance is active.")
+            return
+        control = getattr(self.server, "mcx_v1_control", None)
+        if control is None:
+            self._text(HTTPStatus.CONFLICT, "MCX_STEP31_NOT_COMMISSIONED")
+            return
+        if urlsplit(self.path).query:
+            self._text(HTTPStatus.BAD_REQUEST, "MCX V1 request rejected.")
+            return
+        try:
+            length = int(self.headers.get("Content-Length", ""))
+            if (self.headers.get("Content-Type", "").split(";", 1)[0].lower()
+                    != "application/x-www-form-urlencoded"
+                    or not 0 < length <= 1_500_000):
+                raise ValueError("MCX_V1_FORM_INVALID")
+            fields = parse_qs(self.rfile.read(length).decode("utf-8"),
+                              keep_blank_values=True, strict_parsing=True)
+            common = {"run", "family", "plan", "plan_sha256"}
+            exit_common = {"position", "position_sha256"}
+            fill = {"contract", "expiry", "lots", "fill_price", "fill_at",
+                    "broker_evidence_id", "broker_evidence_sha256",
+                    "broker_evidence_b64"}
+            expected = {
+                "/swing/mcx-v1/paper": common,
+                "/swing/mcx-v1/live": common | fill,
+                "/swing/mcx-v1/paper-exit": exit_common,
+                "/swing/mcx-v1/live-exit": exit_common | fill | {"reason"},
+            }[path]
+            if set(fields) != expected or any(
+                    len(values) != 1 or not values[0] for values in fields.values()):
+                raise ValueError("MCX_V1_FORM_INVALID")
+            value = {name: values[0] for name, values in fields.items()}
+            if "lots" in value and re.fullmatch(r"[1-9][0-9]*", value["lots"]) is None:
+                raise ValueError("MCX_V1_LOTS_INVALID")
+            if "broker_evidence_b64" in value and len(value["broker_evidence_b64"]) > 1_400_000:
+                raise ValueError("MCX_V1_EVIDENCE_TOO_LARGE")
+            now = datetime.now(UTC)
+            if path in {"/swing/mcx-v1/paper", "/swing/mcx-v1/live"}:
+                family = McxFamily(value["family"])
+                if path == "/swing/mcx-v1/paper":
+                    control.admit_paper(
+                        run=value["run"], family=family,
+                        plan_id=value["plan"],
+                        plan_sha256=value["plan_sha256"], decided_at=now)
+                else:
+                    evidence = base64.b64decode(
+                        value["broker_evidence_b64"], validate=True)
+                    control.record_manual_live_entry(
+                        run=value["run"], family=family,
+                        plan_id=value["plan"],
+                        plan_sha256=value["plan_sha256"],
+                        contract=value["contract"], expiry=value["expiry"],
+                        lots=int(value["lots"]),
+                        fill_price=Decimal(value["fill_price"]),
+                        fill_at=datetime.fromisoformat(value["fill_at"]),
+                        evidence_id=value["broker_evidence_id"],
+                        evidence_sha256=value["broker_evidence_sha256"],
+                        evidence_bytes=evidence, attested_at=now)
+            elif path == "/swing/mcx-v1/paper-exit":
+                control.paper_exit(value["position"], value["position_sha256"])
+            else:
+                evidence = base64.b64decode(
+                    value["broker_evidence_b64"], validate=True)
+                control.record_manual_live_exit(
+                    position_id=value["position"],
+                    expected_hash=value["position_sha256"],
+                    contract=value["contract"], expiry=value["expiry"],
+                    lots=int(value["lots"]),
+                    fill_price=Decimal(value["fill_price"]),
+                    fill_at=datetime.fromisoformat(value["fill_at"]),
+                    evidence_id=value["broker_evidence_id"],
+                    evidence_sha256=value["broker_evidence_sha256"],
+                    evidence_bytes=evidence,
+                    reason=TradeExitReason(value["reason"]), attested_at=now)
+        except (UnicodeDecodeError, ValueError, TypeError, OverflowError,
+                InvalidOperation,
+                binascii.Error, KeyError):
+            self._text(HTTPStatus.CONFLICT, "MCX V1 request rejected.")
+            return
+        self._redirect("/swing/mcx-v1" if getattr(self.server, "mcx_v1_composition", None)
+                       is not None else "/swing/opportunities")
+
+    def _mcx_contract_offer(self) -> None:
+        workflow = self.server.mcx_slice3
+        if workflow is None:
+            self._text(HTTPStatus.CONFLICT, "MCX_STEP31_NOT_COMMISSIONED")
+            return
+        try:
+            query = parse_qs(urlsplit(self.path).query, strict_parsing=True)
+            if set(query) != {"family"} or len(query["family"]) != 1:
+                raise ValueError("MCX_OFFER_QUERY_INVALID")
+            family = McxFamily(query["family"][0])
+            reserved = True
+            if getattr(self.server, 'mcx_v1_composition', None) is not None:
+                workflow._current()
+                reserved = workflow.publication.status()['latest_attempt']['state'] == 'RUNNING'
+                offer = workflow.offers[family]
+            else:
+                offer = workflow.offer(family)
+        except (OSError, ValueError, KeyError):
+            self._text(HTTPStatus.CONFLICT, "MCX_CONTRACT_OFFER_UNAVAILABLE")
+            return
+        forms = []
+        if offer.selection_policy == "MCX_V1_ADVISORY_SELECTION":
+            # Display both listed futures even when a known factual restriction
+            # prevents selecting one. GET never writes or repairs authority.
+            for role, fact in ((McxSelectionRole.NEAR, offer.near),
+                               (McxSelectionRole.NEXT_ELIGIBLE,
+                                offer.next_eligible)):
+                if fact is None:
+                    continue
+                reasons = fact.v1_reasons(offer.observed_at)
+                forms.append(
+                    f'<p>{escape(role.value)}: '
+                    f'{escape(fact.instrument.trading_symbol)} '
+                    f'({fact.instrument.expiry.isoformat()}); '
+                    f'authenticated master acquired '
+                    f'{escape(fact.snapshot_acquired_at.isoformat() if fact.snapshot_acquired_at else "UNKNOWN")}; '
+                    f'snapshot {escape(fact.provider_snapshot_identity or "UNKNOWN")}; '
+                    f'{escape(", ".join(reasons) if reasons else "listed; broker restrictions UNKNOWN")}'
+                    '</p>')
+        for role in offer.selectable() if reserved else ():
+            chosen = offer.near if role is McxSelectionRole.NEAR else offer.next_eligible
+            if chosen is None:
+                continue
+            forms.append(
+                '<form method="post" action="/swing/mcx-contract-choice">'
+                f'<input type="hidden" name="run" value="{escape(offer.run_identity)}">'
+                f'<input type="hidden" name="family" value="{escape(family.value)}">'
+                f'<input type="hidden" name="role" value="{escape(role.value)}">'
+                f'<input type="hidden" name="offer_sha256" value="{offer.offer_sha256}">'
+                f'<button type="submit">Select {escape(role.value)} '
+                f'{escape(chosen.instrument.trading_symbol)} '
+                f'({chosen.instrument.expiry.isoformat()})</button></form>'
+            )
+        # Only an isolated composition installs this owner. The production
+        # default remains the server-side commissioning hold.
+        try:
+            handoff = workflow.process_handoff() if reserved else None
+        except (OSError, ValueError, KeyError):
+            handoff = None
+        if handoff is not None:
+            forms.append(
+                '<form method="post" action="/swing/mcx-reserved-analysis">'
+                f'<input type="hidden" name="run" value="{escape(offer.run_identity)}">'
+                f'<input type="hidden" name="handoff_sha256" value="{handoff.integrity_sha256}">'
+                '<button type="submit">Start reserved analysis</button></form>'
+            )
+        self._html(
+            '<!doctype html><html><head><title>MCX contract choice</title></head><body>'
+            f'<h1>{escape(family.value)} contract choice</h1>'
+            f'<p>{"Reserved" if reserved else "Published"} run {escape(offer.run_identity)}; '
+            f'{offer.days_to_verified_expiry} calendar days to '
+            f'{"listed Provider" if offer.selection_policy == "MCX_V1_ADVISORY_SELECTION" else "verified"} near expiry.</p>'
+            + "".join(forms) +
+            '<p>Choice precedes contract-specific candles and Review. '
+            'MCX Step-31 remains uncommissioned.</p></body></html>'
+        )
+
+    def _mcx_contract_choice(self) -> None:
+        workflow = self.server.mcx_slice3
+        if workflow is None:
+            self._text(HTTPStatus.CONFLICT, "MCX_STEP31_NOT_COMMISSIONED")
+            return
+        try:
+            if self.headers.get("Content-Type") != "application/x-www-form-urlencoded":
+                raise ValueError("MCX_CHOICE_CONTENT_TYPE_INVALID")
+            size = int(self.headers.get("Content-Length", "0"))
+            if not 0 < size <= 1024:
+                raise ValueError("MCX_CHOICE_BODY_INVALID")
+            fields = parse_qs(self.rfile.read(size).decode("ascii"),
+                              strict_parsing=True, keep_blank_values=True)
+            if set(fields) != {"run", "family", "role", "offer_sha256"} or any(
+                len(values) != 1 for values in fields.values()
+            ):
+                raise ValueError("MCX_CHOICE_FORM_INVALID")
+            if fields["run"][0] != workflow.run_identity:
+                raise ValueError("MCX_CHOICE_RUN_STALE")
+            family = McxFamily(fields["family"][0])
+            role = McxSelectionRole(fields["role"][0])
+            workflow.choose(family, role, fields["offer_sha256"][0],
+                            recorded_at=workflow.clock())
+        except (OSError, UnicodeError, ValueError, KeyError):
+            self._text(HTTPStatus.CONFLICT, "MCX_CONTRACT_CHOICE_REJECTED")
+            return
+        self._redirect("/swing/mcx-contract-offer?" + urlencode({"family": family.value}))
+
+    def _mcx_reserved_analysis(self) -> None:
+        workflow = self.server.mcx_slice3
+        if workflow is None:
+            self._text(HTTPStatus.CONFLICT, "MCX_STEP31_NOT_COMMISSIONED")
+            return
+        try:
+            if self.headers.get("Content-Type") != "application/x-www-form-urlencoded":
+                raise ValueError("MCX_ANALYSIS_CONTENT_TYPE_INVALID")
+            size = int(self.headers.get("Content-Length", "0"))
+            if not 0 < size <= 512:
+                raise ValueError("MCX_ANALYSIS_BODY_INVALID")
+            fields = parse_qs(self.rfile.read(size).decode("ascii"),
+                              strict_parsing=True, keep_blank_values=True)
+            if set(fields) != {"run", "handoff_sha256"} or any(
+                len(values) != 1 for values in fields.values()
+            ):
+                raise ValueError("MCX_ANALYSIS_FORM_INVALID")
+            handoff = workflow.process_handoff()
+            if (fields["run"][0] != workflow.run_identity
+                    or fields["handoff_sha256"][0] != handoff.integrity_sha256):
+                raise ValueError("MCX_ANALYSIS_HANDOFF_STALE")
+            if not self.server.application.run_analysis(workflow):
+                raise ValueError("MCX_ANALYSIS_ADMISSION_UNAVAILABLE")
+        except (OSError, UnicodeError, ValueError, KeyError):
+            self._text(HTTPStatus.CONFLICT, "MCX_RESERVED_ANALYSIS_REJECTED")
+            return
+        self._redirect("/swing/opportunities")
+
     def _same_origin(self) -> bool:
         if not self._exact_loopback_host():
             return False
@@ -5626,6 +6019,10 @@ def create_browser_server(
     ) = None,
     provider_login_navigation: object | None = None,
     bulk_import_root: Path | None = None,
+    mcx_slice3: SwingMcxIntegratedWorkflow | None = None,
+    mcx_v1_control: SwingMcxV1OperationalControl | None = None,
+    native_intake: NativeReviewIntakeWorkflow | None = None,
+    mcx_v1_composition_factory: Callable | None = None,
 ) -> KronosBrowserServer:
     if type(port) is not int or not 0 <= port <= 65535:
         raise ValueError("BROWSER_SERVER_PORT_INVALID")
@@ -5655,6 +6052,10 @@ def create_browser_server(
         intraday_wo09_notification_sources,
         provider_login_navigation,
         bulk_import_root,
+        mcx_slice3,
+        mcx_v1_control,
+        native_intake,
+        mcx_v1_composition_factory,
     )
 
 

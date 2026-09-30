@@ -274,7 +274,8 @@ def test_current_ltp_distance_is_projection_only_and_touch_state_wins(tmp_path) 
     assert handoff.distance_to_stop == Decimal("105") - result.snapshot.stop
     assert handoff.monetary_pnl_state == "UNAVAILABLE"
     assert handoff.operational_route is ObservationOperationalRoute.ACTIVE
-    assert "105" not in service.export_json()
+    assert handoff.current_ltp == Decimal("105")
+    assert all("current_ltp" not in row for row in service.export_structured())
 
     paper.append_event(make_event(
         track,

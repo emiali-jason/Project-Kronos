@@ -21,6 +21,8 @@ def isolated_composition_authority(monkeypatch):
             self.maintenance_admission = admission
         def bind(self, _probables):
             pass
+        def close(self, **_kwargs):
+            pass
     monkeypatch.setattr(
         "kronos.application.intraday_notifications.IntradayNotifications",
         _IntradayNotifications,
@@ -85,7 +87,8 @@ def test_launcher_uses_loopback_server_and_opens_swing_workspace(monkeypatch) ->
         "create_browser_server",
         lambda app, port, restart_control, product_routes,
         provider_instrument_master_operation, intraday_discovery_control,
-        intraday_historical_control, provider_login_navigation: (
+        intraday_historical_control, provider_login_navigation,
+        mcx_v1_composition_factory: (
             events.append((
                 app,
                 port,
@@ -95,6 +98,7 @@ def test_launcher_uses_loopback_server_and_opens_swing_workspace(monkeypatch) ->
                 intraday_discovery_control,
                 intraday_historical_control,
                 provider_login_navigation,
+                mcx_v1_composition_factory,
             )) or server
         ),
     )
@@ -118,11 +122,12 @@ def test_launcher_uses_loopback_server_and_opens_swing_workspace(monkeypatch) ->
     assert "http://127.0.0.1:9123/swing/opportunities" in events
     assert "close" in events
     server_event = next(
-        item for item in events if isinstance(item, tuple) and len(item) == 8
+        item for item in events if isinstance(item, tuple) and len(item) == 9
     )
     operation = server_event[4]
     intraday_control = server_event[5]
     historical_control = server_event[6]
+    assert callable(server_event[8])
     application_event = next(
         item
         for item in events
@@ -197,7 +202,8 @@ def test_developer_no_browser_mode_does_not_open_browser(monkeypatch) -> None:
         "create_browser_server",
         lambda _app, port, restart_control, product_routes,
         provider_instrument_master_operation, intraday_discovery_control,
-        intraday_historical_control, provider_login_navigation: _Server(),
+        intraday_historical_control, provider_login_navigation,
+        mcx_v1_composition_factory: _Server(),
     )
     monkeypatch.setattr(
         kronos_browser,
@@ -213,6 +219,51 @@ def test_developer_no_browser_mode_does_not_open_browser(monkeypatch) -> None:
         lambda _url: (_ for _ in ()).throw(AssertionError),
     )
     assert kronos_browser.main(["--no-browser"]) == 0
+
+
+def test_canonical_main_installs_real_mcx_owner_before_ready_without_acquisition(tmp_path, monkeypatch):
+    """Run main's actual server/factory path in the governed isolated home.
+
+    The startup source gate is the module's explicit test fixture. READY and
+    the serving loop are observed here; no production process is launched.
+    """
+    from kronos.application.swing_opportunities import SwingOpportunitiesApplication
+    from kronos.application.swing_mcx_v1_composition import SwingMcxV1Composition
+    from kronos.swing.v1.mtf_facts import MtfFactEvidenceStore
+    from kronos.browser.server import KronosBrowserServer
+
+    app = SwingOpportunitiesApplication(
+        lambda: pytest.fail('canonical composition attempted Provider acquisition'),
+        mtf_fact_evidence_store=MtfFactEvidenceStore(tmp_path / 'facts'))
+    monkeypatch.setattr(kronos_browser, 'SwingOpportunitiesApplication', lambda *_args, **_kwargs: app)
+    events = []
+
+    def ready(_root, _revision):
+        assert events == ['owners-installed']
+        events.append('ready')
+
+    original = kronos_browser.create_browser_server
+
+    def composed(*args, **kwargs):
+        server = original(*args, **kwargs)
+        assert type(server.mcx_v1_composition) is SwingMcxV1Composition
+        assert server.mcx_v1_control._maintenance_admission is server.maintenance_admission
+        assert server.mcx_v1_control.native_review is server.native_review
+        assert server.mcx_v1_control.workflow is None
+        assert server.mcx_v1_control.worker_status()['pending'] == 0
+        events.append('owners-installed')
+        return server
+
+    def serve(server, **_kwargs):
+        assert events == ['owners-installed', 'ready']
+        assert server.mcx_v1_control._maintenance_admission is server.maintenance_admission
+        events.append('serve')
+
+    monkeypatch.setattr(kronos_browser, 'create_browser_server', composed)
+    monkeypatch.setattr('kronos.browser.runtime_state.complete_startup', ready)
+    monkeypatch.setattr(KronosBrowserServer, 'serve_forever', serve)
+    assert kronos_browser.main(['--port', '0', '--no-browser']) == 0
+    assert events == ['owners-installed', 'ready', 'serve']
 
 
 def test_canonical_housekeeping_composes_enabled_actual_owned_stores(

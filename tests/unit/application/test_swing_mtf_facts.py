@@ -65,8 +65,8 @@ def _instrument(identity: str, exchange: str) -> InstrumentRecord:
     return InstrumentRecord(
         provider="KITE",
         exchange=exchange,
-        segment="MCX" if exchange == "MCX" else "NSE",
-        trading_symbol=identity,
+        segment="MCX-FUT" if exchange == "MCX" else "NSE",
+        trading_symbol=f"{identity}26AUGFUT" if exchange == "MCX" else identity,
         name=identity,
         instrument_type="FUT" if exchange == "MCX" else "EQ",
         expiry=date(2026, 8, 28) if exchange == "MCX" else None,
@@ -173,6 +173,7 @@ def _dataset(publisher: MarketCalendarPublisher) -> SwingDailyDataset:
 def _build(
     short_nse_identity: str | None = None, *, without_nse_remainder: bool = False,
     retain_completed_series: bool = False,
+    retain_mcx_lineage: bool = False,
     analysis_boundary: datetime | None = None,
 ):  # type: ignore[no-untyped-def]
     publisher = MarketCalendarPublisher()
@@ -246,6 +247,13 @@ def _build(
         # original history. The producer/RS proof below tests full retention.
         snapshot = replace(snapshot, instruments=tuple(
             replace(instrument, completed_series=()) for instrument in snapshot.instruments
+        ))
+    if not retain_mcx_lineage:
+        # Older synthetic fixtures rewrite facts or run IDs. They cannot carry
+        # the producer's exact request-bound lineage into those inventions.
+        snapshot = replace(snapshot, instruments=tuple(
+            replace(instrument, mcx_request_lineage=None)
+            for instrument in snapshot.instruments
         ))
     return snapshot, requests
 

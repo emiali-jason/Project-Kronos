@@ -21,12 +21,13 @@ from zoneinfo import ZoneInfo
 from kronos.market.schedule import MarketSchedule
 from kronos.market.calendar import MarketCalendarPublisher
 from kronos.provider.contracts.instrument import InstrumentRecord
-from kronos.provider.contracts.monitoring import ProviderMarketTick
+from kronos.provider.contracts.monitoring import ProviderMarketTick, MonitoringSubscriptionEvidence
 from kronos.provider.contracts.monitoring import (
     MonitoringConnectionState,
     ProviderOrderUpdateEvidence,
 )
 from kronos.swing.v1.models import V1Direction
+from kronos.swing.v1.mcx_quantity import McxTypedQuantity, quantity_from_dict
 from kronos.swing.v1.native_sponsor_decision import (
     SponsorInitiationResult,
     SponsorInitiationState,
@@ -183,6 +184,9 @@ class ActiveLifecyclePosition:
     policy_version: str = ACTIVE_TRADE_LIFECYCLE_POLICY_VERSION
     policy_status: str = ACTIVE_TRADE_LIFECYCLE_POLICY_STATUS
     authority: str = LIFECYCLE_AUTHORITY
+    mcx_quantity: McxTypedQuantity | None = None
+    mcx_activation_outcome_sha256: str | None = None
+    mcx_v1_contract_symbol: str | None = None
 
     def __post_init__(self) -> None:
         for name in ("model_entry", "stop", "invalidation", "target", "model_risk_reward"):
@@ -201,6 +205,20 @@ class ActiveLifecyclePosition:
             or (self.entry_timestamp is not None and not _aware(self.entry_timestamp))
             or type(self.lots) is not int or self.lots <= 0
             or type(self.underlying_quantity) is not int or self.underlying_quantity <= 0
+            or (self.mcx_quantity is not None and (
+                type(self.mcx_quantity) is not McxTypedQuantity
+                or self.mcx_quantity.lots != self.lots
+                or self.underlying_quantity != self.lots
+            ))
+            or (self.mcx_activation_outcome_sha256 is not None and (
+                self.mcx_quantity is None and self.mcx_v1_contract_symbol is None
+                or not _digest(self.mcx_activation_outcome_sha256)
+            ))
+            or (self.mcx_v1_contract_symbol is not None and (
+                not self.mcx_v1_contract_symbol
+                or self.mcx_quantity is not None
+                or self.underlying_quantity != self.lots
+            ))
             or (self.last_observation_id is None) != (self.last_observed_price is None)
             or (self.last_observation_id is None) != (self.last_observed_at is None)
             or (self.last_observation_id is not None and not _identity(self.last_observation_id))
@@ -301,7 +319,7 @@ class TradeClosureRecord:
     observed_invalidation_event: bool
     lots: int
     underlying_quantity: int
-    gross_pnl: Decimal
+    gross_pnl: Decimal | None
     percentage_result: Decimal
     realised_r: Decimal
     holding_duration_seconds: int
@@ -314,12 +332,15 @@ class TradeClosureRecord:
     contract_identity: str = TRADE_CLOSURE_CONTRACT_ID
     contract_version: str = "1"
     cost_model: str = "NOT_INCLUDED_V0"
+    mcx_quantity: McxTypedQuantity | None = None
+    mcx_v1_contract_symbol: str | None = None
 
     def __post_init__(self) -> None:
         for name in ("model_entry", "actual_entry", "stop", "invalidation", "target", "actual_exit", "model_risk_reward"):
             object.__setattr__(self, name, _positive(getattr(self, name)))
         for name in ("gross_pnl", "percentage_result", "realised_r"):
-            object.__setattr__(self, name, _decimal(getattr(self, name)))
+            if getattr(self, name) is not None:
+                object.__setattr__(self, name, _decimal(getattr(self, name)))
         if (
             self.contract_identity != TRADE_CLOSURE_CONTRACT_ID or self.contract_version != "1"
             or not all(_identity(value) for value in (self.closure_id, self.position_id, self.decision_id, self.trade_plan_id))
@@ -329,6 +350,16 @@ class TradeClosureRecord:
             or type(self.holding_duration_seconds) is not int or self.holding_duration_seconds < 0
             or not self.lifecycle_event_ids or not self.event_provenance or not self.commentary
             or not _aware(self.created_at) or self.cost_model != "NOT_INCLUDED_V0"
+            or (self.mcx_quantity is not None and (
+                type(self.mcx_quantity) is not McxTypedQuantity
+                or self.mcx_quantity.lots != self.lots
+                or self.underlying_quantity != self.lots
+            ))
+            or (self.mcx_v1_contract_symbol is not None and (
+                not self.mcx_v1_contract_symbol or self.mcx_quantity is not None
+                or self.underlying_quantity != self.lots
+            ))
+            or (self.gross_pnl is None) != (self.mcx_v1_contract_symbol is not None)
             or not _digest(self.integrity_hash) or self.integrity_hash != _digest_record(self)
         ):
             raise ValueError("TRADE_CLOSURE_RECORD_INVALID")
@@ -408,6 +439,10 @@ def create_active_lifecycle(
         invalidation_condition=plan.invalidation_condition,
         actual_entry=position.actual_entry, entry_timestamp=position.entry_timestamp,
         lots=position.lots, underlying_quantity=position.underlying_quantity,
+        **({"mcx_quantity": position.mcx_quantity}
+           if position.mcx_quantity is not None else {}),
+        **({"mcx_v1_contract_symbol": position.mcx_v1_contract_symbol}
+           if position.mcx_v1_contract_symbol is not None else {}),
         model_risk_reward=decision.model_risk_reward,
         domain001_identity=plan.execution_context_identity,
         domain008_calendar_identity=None, domain008_calendar_version=None,
@@ -416,7 +451,10 @@ def create_active_lifecycle(
         outstanding_notification_ids=(), lifecycle_event_ids=(),
         observed_event_types=(),
         created_at=position.created_at, updated_at=position.created_at,
-        provenance=(position.position_id, decision.decision_id, plan.trade_plan_id, "DOMAIN-001", "DOMAIN-008"),
+        provenance=(position.position_id, decision.decision_id, plan.trade_plan_id, "DOMAIN-001", "DOMAIN-008")
+                   + tuple(label for label in ("ADVISORY CONFIRMED", "SPONSOR-DIRECTED / OUTSIDE MODEL")
+                           if position.mcx_v1_contract_symbol is not None
+                           and label in position.provenance),
     )
     return _position(values)
 
@@ -430,6 +468,12 @@ class ActiveTradeLifecycleEngine:
         observation: GovernedLifecycleObservation,
     ) -> tuple[ActiveLifecyclePosition, tuple[TradeLifecycleEvent, ...], tuple[LifecycleNotification, ...], TradeClosureRecord | None]:
         _require_observation_binding(position, observation)
+        if (position.mcx_quantity is not None or position.mcx_v1_contract_symbol is not None) and (
+            position.state is ActiveLifecycleState.PAPER_ARMED
+            or (position.state is ActiveLifecycleState.MONITORING_UNAVAILABLE
+                and position.prior_state is ActiveLifecycleState.PAPER_ARMED)
+        ):
+            raise ValueError("MCX_CONFIRMED_1H_ENTRY_REQUIRED")
         if position.state is ActiveLifecycleState.CLOSED:
             return position, (), (), None
         if observation.observation_id == position.last_observation_id:
@@ -528,7 +572,14 @@ class ActiveTradeLifecycleEngine:
 
     @staticmethod
     def record_live_exit(position: ActiveLifecyclePosition, *, actual_exit: Decimal | None, exit_timestamp: datetime, reason: TradeExitReason) -> tuple[ActiveLifecyclePosition, TradeLifecycleEvent | None, TradeClosureRecord | None]:
-        if position.state is not ActiveLifecycleState.LIVE_ACTIVE:
+        mcx_attested_outage = (
+            position.mcx_v1_contract_symbol is not None
+            and position.mode is SponsorTradeChoice.LIVE
+            and (position.state is ActiveLifecycleState.EVENT_UNRESOLVED
+                 or (position.state is ActiveLifecycleState.MONITORING_UNAVAILABLE
+                     and position.prior_state in {ActiveLifecycleState.LIVE_ACTIVE,
+                                                  ActiveLifecycleState.EVENT_UNRESOLVED})))
+        if position.state is not ActiveLifecycleState.LIVE_ACTIVE and not mcx_attested_outage:
             raise ValueError("LIVE_EXIT_NOT_APPLICABLE")
         if actual_exit is None:
             return position, None, None
@@ -543,7 +594,9 @@ class ActiveTradeLifecycleEngine:
         event = _event_for_live_exit(position, actual_exit, exit_timestamp, reason)
         updated = _append_events(position, (event,))
         closure = _closure(updated, actual_exit, exit_timestamp, reason, (event,), ("SPONSOR_ATTESTED_ACTUAL_BROKER_EXECUTION",))
-        return _update(updated, state=ActiveLifecycleState.CLOSED, outstanding_notification_ids=()), event, closure
+        return _update(updated, state=ActiveLifecycleState.CLOSED,
+                       outstanding_notification_ids=(), prior_state=None,
+                       monitoring_outage_started_at=None), event, closure
 
 
 class LocalActiveTradeLifecycleStore:
@@ -646,6 +699,97 @@ class ActiveTradeLifecycleService:
     def observe_tick(self, position_id: str, tick: ProviderMarketTick, schedule: MarketSchedule) -> ActiveLifecyclePosition:
         return self.observe(position_id, admit_kite_lifecycle_observation(self._require(position_id), tick, schedule))
 
+    def _activate_mcx_confirmed(
+        self, position_id: str, *, expected_position_hash: str,
+        outcome_id: str, outcome_sha256: str, entry_price: Decimal,
+        entry_at: datetime, completed_boundary: datetime,
+        completed_one_hour_sha256: str, source_observation_ids: tuple[str, ...],
+    ) -> ActiveLifecyclePosition:
+        """Persist one MCX entry only after its owner rechecks current authority.
+
+        The caller holds the Review owner guard through this commit. The
+        lifecycle lock never calls back into Review or currentness stores.
+        No Provider tick can call this transition implicitly.
+        """
+
+        with self._lock:
+            current = self._require(position_id)
+            if (current.mcx_quantity is None and current.mcx_v1_contract_symbol is None
+                    or current.mode is not SponsorTradeChoice.PAPER):
+                raise ValueError("MCX_ENTRY_POSITION_INVALID")
+            if current.mcx_activation_outcome_sha256 is not None:
+                if current.mcx_activation_outcome_sha256 == outcome_sha256:
+                    return current
+                raise ValueError("MCX_ENTRY_REPLAY_MISMATCH")
+            if (current.state is not ActiveLifecycleState.PAPER_ARMED
+                    and not (current.state is ActiveLifecycleState.MONITORING_UNAVAILABLE
+                             and current.prior_state is ActiveLifecycleState.PAPER_ARMED
+                             and current.monitoring_outage_started_at is not None
+                             and entry_at > current.monitoring_outage_started_at)
+                    or current.integrity_hash != expected_position_hash
+                    or not _identity(outcome_id) or not _digest(outcome_sha256)
+                    or not _digest(completed_one_hour_sha256)
+                    or not source_observation_ids
+                    or any(not _identity(value) for value in source_observation_ids)
+                    or not _aware(entry_at) or not _aware(completed_boundary)
+                    or entry_at < completed_boundary
+                    or entry_at < current.created_at
+                    or type(entry_price) is not Decimal
+                    or not entry_price.is_finite() or entry_price <= 0):
+                raise ValueError("MCX_ENTRY_OUTCOME_INVALID")
+            resumed = ()
+            authority_label = ("MCX_V1_ADVISORY_INTRABAR_UNVERIFIED"
+                               if current.mcx_v1_contract_symbol is not None
+                               else "KR-380")
+            if current.state is ActiveLifecycleState.MONITORING_UNAVAILABLE:
+                resumed = (_lifecycle_event(dict(
+                    event_id=_id("LIFECYCLE-EVENT", position_id,
+                                 LifecycleEventType.MONITORING_RESUMED.value, outcome_id),
+                    position_id=position_id, decision_id=current.decision_id,
+                    trade_plan_id=current.trade_plan_id,
+                    trade_plan_hash=current.trade_plan_hash, mode=current.mode,
+                    instrument=current.canonical_instrument,
+                    direction=current.direction,
+                    event_type=LifecycleEventType.MONITORING_RESUMED,
+                    observed_price=entry_price, event_timestamp=entry_at,
+                    observation_boundary=completed_boundary,
+                    model_entry=current.model_entry, stop=current.stop,
+                    invalidation=current.invalidation, target=current.target,
+                    actual_entry=None,
+                    provider_provenance=(authority_label, outcome_id, outcome_sha256,
+                                         *source_observation_ids),
+                    domain008_context=("MCX_COMPLETED_1H", completed_boundary.isoformat()),
+                    ordering_status=LifecycleOrderingStatus.ESTABLISHED,
+                    evidence_reference=outcome_id, created_at=entry_at,
+                )),)
+            events = resumed + tuple(_lifecycle_event(dict(
+                event_id=_id("LIFECYCLE-EVENT", position_id, kind.value, outcome_id),
+                position_id=position_id, decision_id=current.decision_id,
+                trade_plan_id=current.trade_plan_id,
+                trade_plan_hash=current.trade_plan_hash, mode=current.mode,
+                instrument=current.canonical_instrument, direction=current.direction,
+                event_type=kind, observed_price=entry_price,
+                event_timestamp=entry_at, observation_boundary=completed_boundary,
+                model_entry=current.model_entry, stop=current.stop,
+                invalidation=current.invalidation, target=current.target,
+                actual_entry=entry_price,
+                provider_provenance=(authority_label, outcome_id, outcome_sha256,
+                                     completed_one_hour_sha256, *source_observation_ids),
+                domain008_context=("MCX_COMPLETED_1H", completed_boundary.isoformat()),
+                ordering_status=LifecycleOrderingStatus.ESTABLISHED,
+                evidence_reference=outcome_id, created_at=entry_at,
+            )) for kind in (LifecycleEventType.ENTRY_TRIGGERED,
+                            LifecycleEventType.PAPER_ENTRY_CAPTURED))
+            active = _append_events(_update(
+                current, state=ActiveLifecycleState.PAPER_ACTIVE,
+                actual_entry=entry_price, entry_timestamp=entry_at,
+                updated_at=entry_at, prior_state=None,
+                monitoring_outage_started_at=None,
+                mcx_activation_outcome_sha256=outcome_sha256,
+            ), events)
+            self._persist(active, events, (), None)
+            return active
+
     def observe_invalidation(self, position_id: str, evidence: AnalyticalInvalidationEvidence) -> ActiveLifecyclePosition:
         with self._lock:
             current = self._require(position_id)
@@ -739,7 +883,28 @@ class ActiveLifecycleMonitoringCoordinator:
         self._clock = clock
         self._consumers: dict[str, _LifecycleMonitoringConsumer] = {}
         self._monitoring_hub = None
+        self._mcx_historical_contracts = None
+        self._mcx_v1_tick_owner = None
         self._lock = RLock()
+
+    def set_mcx_v1_tick_owner(self, owner: Callable[[str, ProviderMarketTick,
+                                                    MonitoringConnectionState], object]) -> None:
+        """Install an exact-contract completed-hour owner before subscriptions."""
+        if not callable(owner):
+            raise TypeError("MCX_V1_TICK_OWNER_INVALID")
+        with self._lock:
+            if self._consumers:
+                raise ValueError("MCX_V1_TICK_OWNER_REQUIRES_IDLE")
+            self._mcx_v1_tick_owner = owner
+
+    def set_mcx_historical_contracts(self, store: object) -> None:
+        """Resolve MCX monitoring from each position's retained future."""
+        if not callable(getattr(store, "load", None)):
+            raise TypeError("MCX_HISTORICAL_CONTRACT_STORE_INVALID")
+        with self._lock:
+            if self._consumers:
+                raise ValueError("MCX_HISTORICAL_CONTRACT_STORE_REQUIRES_IDLE")
+            self._mcx_historical_contracts = store
 
     def set_shared_monitoring_hub(self, hub: object) -> None:
         if not callable(getattr(hub, "open", None)):
@@ -751,19 +916,33 @@ class ActiveLifecycleMonitoringCoordinator:
 
     def attach(self, position_id: str, capability: object, instrument: InstrumentRecord) -> None:
         position = self._service._require(position_id)
+        if position.mcx_v1_contract_symbol is not None or position.mcx_quantity is not None:
+            store = self._mcx_historical_contracts
+            if store is None or store.load(position_id).instrument != instrument:
+                raise ValueError("MCX_HISTORICAL_CONTRACT_MONITORING_MISMATCH")
         if (
             getattr(capability, "active", False) is not True
             or type(instrument) is not InstrumentRecord
             or _canonical_provider_identity(instrument) != position.canonical_instrument
+            or (position.mcx_v1_contract_symbol is not None
+                and instrument.trading_symbol != position.mcx_v1_contract_symbol)
             or position.state is ActiveLifecycleState.CLOSED
         ):
             raise ValueError("ACTIVE_LIFECYCLE_MONITORING_NOT_PERMITTED")
+        if (position.mcx_v1_contract_symbol is not None
+                and (position.state is ActiveLifecycleState.PAPER_ARMED
+                     or (position.state is ActiveLifecycleState.MONITORING_UNAVAILABLE
+                         and position.prior_state is ActiveLifecycleState.PAPER_ARMED))):
+            if self._mcx_v1_tick_owner is None:
+                raise ValueError("MCX_V1_COMPLETED_1H_MONITOR_NOT_COMMISSIONED")
         with self._lock:
             if position_id in self._consumers:
                 raise ValueError("ACTIVE_LIFECYCLE_MONITORING_ALREADY_ACTIVE")
             consumer = _LifecycleMonitoringConsumer(
                 position_id, instrument, self._service, self._calendar,
                 self._clock, lambda: self.detach(position_id),
+                mcx_historical=self._mcx_historical_contracts,
+                mcx_v1_tick_owner=self._mcx_v1_tick_owner,
             )
             session = (
                 capability.open_monitoring_session(consumer)
@@ -815,11 +994,14 @@ class ActiveLifecycleMonitoringCoordinator:
             if position.position_id in self.active_position_ids:
                 restored.append(position.position_id)
                 continue
-            self.attach(
-                position.position_id,
-                capability,
-                instrument_resolver(position.canonical_instrument),
-            )
+            if position.mcx_v1_contract_symbol is not None or position.mcx_quantity is not None:
+                store = self._mcx_historical_contracts
+                if store is None:
+                    raise ValueError("MCX_HISTORICAL_CONTRACT_MONITORING_UNAVAILABLE")
+                instrument = store.load(position.position_id).instrument
+            else:
+                instrument = instrument_resolver(position.canonical_instrument)
+            self.attach(position.position_id, capability, instrument)
             restored.append(position.position_id)
         return tuple(restored)
 
@@ -828,9 +1010,18 @@ class ActiveLifecycleMonitoringCoordinator:
         with self._lock:
             return tuple(sorted(self._consumers))
 
+    def latest_mcx_observation(self, position_id: str):
+        """Return only a live subscription's received exact-contract CMP."""
+        with self._lock:
+            consumer = self._consumers.get(position_id)
+        if consumer is None or consumer.mcx_historical is None:
+            return None
+        return consumer.latest_observation()
+
 
 class _LifecycleMonitoringConsumer:
-    def __init__(self, position_id, instrument, service, calendar, clock, on_closed):  # type: ignore[no-untyped-def]
+    def __init__(self, position_id, instrument, service, calendar, clock, on_closed,
+                 *, mcx_historical=None, mcx_v1_tick_owner=None):  # type: ignore[no-untyped-def]
         self.position_id = position_id
         self.instrument = instrument
         self.service = service
@@ -839,11 +1030,38 @@ class _LifecycleMonitoringConsumer:
         self.on_closed = on_closed
         self.session = None
         self.closed = False
+        self.mcx_historical = mcx_historical
+        self.mcx_v1_tick_owner = mcx_v1_tick_owner
+        self.connection_state = MonitoringConnectionState.DISCONNECTED
+        self._received_connection_state = False
+        self.latest_mcx_tick = None
+        self._observation_context = None
+        self._latest_publication = None
+        self._lock = RLock()
 
     def bind(self, session) -> None:  # type: ignore[no-untyped-def]
         self.session = session
 
     def on_market_tick(self, tick: ProviderMarketTick) -> None:
+        with self._lock:
+            self._on_market_tick(tick)
+
+    def _current_subscription(self):
+        read = getattr(self.session, "observation_context", None)
+        return read(self.instrument) if callable(read) and not self.closed else None
+
+    def latest_observation(self):
+        # Do not acquire the callback lock from the application lock. Capture
+        # one immutable publication and recheck it after reading transport facts.
+        publication = self._latest_publication
+        if self.closed or publication is None:
+            return None
+        tick, state, context = publication
+        if context is not None and self._current_subscription() != context:
+            return None
+        return (tick, state) if publication is self._latest_publication else None
+
+    def _on_market_tick(self, tick: ProviderMarketTick) -> None:
         if self.closed:
             return
         if tick.instrument != self.instrument:
@@ -855,7 +1073,55 @@ class _LifecycleMonitoringConsumer:
         )
         if schedule is None:
             raise ValueError("ACTIVE_LIFECYCLE_NOT_TRADING_TIME")
-        position = self.service.observe_tick(self.position_id, tick, schedule)
+        before = self.service._require(self.position_id)
+        context = None
+        if before.mcx_v1_contract_symbol is not None:
+            if self.mcx_historical.load(self.position_id).instrument != tick.instrument:
+                raise ValueError("MCX_HISTORICAL_CONTRACT_MONITORING_MISMATCH")
+            context = self._current_subscription()
+            if context is not None:
+                if (type(context) is MonitoringSubscriptionEvidence
+                        and context.admits(tick)
+                        and not self._received_connection_state):
+                    # Joining an already-open shared session need not produce
+                    # another connect callback. Use that owner's actual applied
+                    # subscription/state evidence, never a manufactured state.
+                    self._on_connection_state(context.state)
+                if (type(context) is not MonitoringSubscriptionEvidence
+                        or context.state is not self.connection_state
+                        or not context.admits(tick)):
+                    return
+            elif (self.connection_state is not MonitoringConnectionState.CONNECTED
+                  or callable(getattr(self.session, "observation_context", None))):
+                # Legacy mocks may attest CONNECTED; real transports must prove
+                # their applied exact subscription, including after reconnect.
+                return
+        if before.mcx_v1_contract_symbol is not None and (
+                before.state is ActiveLifecycleState.PAPER_ARMED or
+                (before.state is ActiveLifecycleState.MONITORING_UNAVAILABLE and
+                 before.prior_state is ActiveLifecycleState.PAPER_ARMED)):
+            if self.mcx_v1_tick_owner is None:
+                raise ValueError("MCX_V1_COMPLETED_1H_MONITOR_NOT_COMMISSIONED")
+            arguments = {} if context is None else dict(
+                subscription_evidence=context,
+                current_subscription=self._current_subscription)
+            position = self.mcx_v1_tick_owner(
+                self.position_id, tick, self.connection_state, **arguments)
+            if position is None:
+                return
+        elif before.mcx_v1_contract_symbol is not None or before.mcx_quantity is not None:
+            if self.mcx_historical is None:
+                raise ValueError("MCX_HISTORICAL_CONTRACT_MONITORING_UNAVAILABLE")
+            from kronos.swing.v1.mcx_contract_lifecycle import McxContractBoundLifecycle
+            position = McxContractBoundLifecycle(
+                self.service, self.mcx_historical).observe_tick(
+                    self.position_id, tick, schedule)
+        else:
+            position = self.service.observe_tick(self.position_id, tick, schedule)
+        if before.mcx_v1_contract_symbol is not None or before.mcx_quantity is not None:
+            self.latest_mcx_tick = (tick, self.connection_state)
+            self._observation_context = context
+            self._latest_publication = (tick, self.connection_state, context)
         if position.state is ActiveLifecycleState.CLOSED:
             self.on_closed()
 
@@ -864,8 +1130,18 @@ class _LifecycleMonitoringConsumer:
         return None
 
     def on_connection_state(self, state: MonitoringConnectionState) -> None:
+        with self._lock:
+            self._on_connection_state(state)
+
+    def _on_connection_state(self, state: MonitoringConnectionState) -> None:
         if self.closed:
             return
+        self._received_connection_state = True
+        self.connection_state = state
+        if state is not MonitoringConnectionState.CONNECTED:
+            self.latest_mcx_tick = None
+            self._observation_context = None
+            self._latest_publication = None
         if state in {MonitoringConnectionState.DISCONNECTED, MonitoringConnectionState.CONTEXT_INCOMPLETE}:
             position = self.service._require(self.position_id)
             if position.state not in {ActiveLifecycleState.CLOSED, ActiveLifecycleState.MONITORING_UNAVAILABLE}:
@@ -874,8 +1150,12 @@ class _LifecycleMonitoringConsumer:
                 )
 
     def close(self) -> None:
-        self.closed = True
-        session, self.session = self.session, None
+        with self._lock:
+            self.closed = True
+            self.latest_mcx_tick = None
+            self._observation_context = None
+            self._latest_publication = None
+            session, self.session = self.session, None
         if session is None:
             return
         try:
@@ -986,7 +1266,10 @@ def _closure(position, exit_price, exit_time, reason, new_events, provenance):  
     if position.actual_entry is None or position.entry_timestamp is None:
         raise ValueError("ACTUAL_ENTRY_UNAVAILABLE")
     move = exit_price - position.actual_entry if position.direction is V1Direction.LONG else position.actual_entry - exit_price
-    pnl = move * Decimal(position.underlying_quantity)
+    pnl = (None if position.mcx_v1_contract_symbol is not None else
+           move * (Decimal(position.underlying_quantity)
+                   if position.mcx_quantity is None
+                   else position.mcx_quantity.price_to_rupee_multiplier))
     percentage = (move / position.actual_entry) * Decimal("100")
     risk_distance = abs(position.actual_entry - position.stop)
     if risk_distance == 0:
@@ -1005,6 +1288,10 @@ def _closure(position, exit_price, exit_time, reason, new_events, provenance):  
         observed_target_event=LifecycleEventType.TARGET_HIT in position.observed_event_types,
         observed_invalidation_event=LifecycleEventType.INVALIDATION_OBSERVED in position.observed_event_types,
         lots=position.lots, underlying_quantity=position.underlying_quantity,
+        **({"mcx_quantity": position.mcx_quantity}
+           if position.mcx_quantity is not None else {}),
+        **({"mcx_v1_contract_symbol": position.mcx_v1_contract_symbol}
+           if position.mcx_v1_contract_symbol is not None else {}),
         gross_pnl=pnl, percentage_result=percentage, realised_r=realised_r,
         holding_duration_seconds=int((exit_time - position.entry_timestamp).total_seconds()),
         model_risk_reward=position.model_risk_reward,
@@ -1097,6 +1384,8 @@ def _closure_record(values: dict[str, object]) -> TradeClosureRecord:
 def _update(position: ActiveLifecyclePosition, **changes: object) -> ActiveLifecyclePosition:
     values = asdict(position)
     values.update(changes)
+    if isinstance(values.get("mcx_quantity"), dict):
+        values["mcx_quantity"] = quantity_from_dict(values["mcx_quantity"])
     for name in ("mode", "state", "direction", "prior_state"):
         if name in values and isinstance(values[name], str):
             enum = {"mode": SponsorTradeChoice, "state": ActiveLifecycleState, "direction": V1Direction, "prior_state": ActiveLifecycleState}[name]
@@ -1140,7 +1429,10 @@ def _digest_payload(value: dict[str, object]) -> str:
 
 def _primitive(value):  # type: ignore[no-untyped-def]
     if hasattr(value, "__dataclass_fields__"):
-        return {name: _primitive(getattr(value, name)) for name in value.__dataclass_fields__}
+        return {name: _primitive(getattr(value, name)) for name in value.__dataclass_fields__
+                if name not in {"mcx_quantity", "mcx_activation_outcome_sha256",
+                                "mcx_v1_contract_symbol"}
+                or getattr(value, name) is not None}
     if isinstance(value, StrEnum):
         return value.value
     if isinstance(value, Decimal):
@@ -1150,7 +1442,10 @@ def _primitive(value):  # type: ignore[no-untyped-def]
     if isinstance(value, tuple):
         return [_primitive(item) for item in value]
     if isinstance(value, dict):
-        return {str(key): _primitive(item) for key, item in value.items()}
+        return {str(key): _primitive(item) for key, item in value.items()
+                if key not in {"mcx_quantity", "mcx_activation_outcome_sha256",
+                               "mcx_v1_contract_symbol"}
+                or item is not None}
     return value
 
 
@@ -1163,6 +1458,8 @@ def _read(path: Path) -> dict[str, object]:
 
 def _position_from_dict(value):  # type: ignore[no-untyped-def]
     data = dict(value)
+    if data.get("mcx_quantity") is not None:
+        data["mcx_quantity"] = quantity_from_dict(data["mcx_quantity"])
     for name in ("mode", "state", "direction"):
         data[name] = {"mode": SponsorTradeChoice, "state": ActiveLifecycleState, "direction": V1Direction}[name](data[name])
     if data.get("prior_state") is not None:
@@ -1205,11 +1502,13 @@ def _notification_from_dict(value):  # type: ignore[no-untyped-def]
 
 def _closure_from_dict(value):  # type: ignore[no-untyped-def]
     data = dict(value)
+    if data.get("mcx_quantity") is not None:
+        data["mcx_quantity"] = quantity_from_dict(data["mcx_quantity"])
     data["mode"] = SponsorTradeChoice(data["mode"])
     data["direction"] = V1Direction(data["direction"])
     data["exit_reason"] = TradeExitReason(data["exit_reason"])
     for name in ("model_entry", "actual_entry", "stop", "invalidation", "target", "actual_exit", "gross_pnl", "percentage_result", "realised_r", "model_risk_reward"):
-        data[name] = Decimal(data[name])
+        data[name] = None if data[name] is None else Decimal(data[name])
     for name in ("exit_timestamp", "created_at"):
         data[name] = datetime.fromisoformat(data[name])
     data["lifecycle_event_ids"] = tuple(data["lifecycle_event_ids"])

@@ -35,8 +35,13 @@ from tests.unit.application.test_swing_mtf_facts import _build as _mtf_build
 from tests.unit.swing.v1.test_native_review import _layer2
 
 
-def _run_with_probables(*instruments: str):  # type: ignore[no-untyped-def]
-    facts, _ = _mtf_build()
+def _run_with_probables(
+    *instruments: str, retain_mcx_lineage: bool = False,
+):  # type: ignore[no-untyped-def]
+    facts, _ = _mtf_build(
+        retain_completed_series=retain_mcx_lineage,
+        retain_mcx_lineage=retain_mcx_lineage,
+    )
     base = discover_native_mtf(facts)
     selected = set(instruments)
     assessments = []

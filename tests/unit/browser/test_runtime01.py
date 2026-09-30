@@ -102,9 +102,12 @@ def test_browser_status_is_inert_and_cross_product_truth_consistent(running):
         if path=='/runtime/status':
             assert code==200
             d=json.loads(body)
-            assert d['maintenance_drain'] == {
-                'state': 'OPEN', 'generation': None, 'owners': {}, 'failure': None,
-            }
+            drain=d['maintenance_drain']
+            assert drain['state']=='OPEN' and drain['generation'] is None
+            assert drain['failure'] is None
+            # The separately admitted server pulse may overlap this status GET.
+            # No other domain owner may be admitted by the observational read.
+            assert drain['owners'] in ({}, {'SERVER_PULSE': 1})
             assert d['maintenance']['active'] and d['rest_authentication']=='DISCONNECTED'
             assert d['rest_capability']=='NOT_EXPOSED' and d['monitoring']['transport_state']=='IDLE'  # legacy fixture lacks the pure Provider projection
             assert d['browser_requests']['maximum']==32
@@ -116,6 +119,7 @@ def test_service_loop_admits_intraday_pulse_without_executing_it_inline():
     server=object.__new__(KronosBrowserServer)
     server.maintenance_admission=MaintenanceAdmissionCoordinator()
     server._next_lifecycle_pulse=0.0
+    server._next_swing_journal_reconciliation=float('inf')
     lifecycle=SimpleNamespace(
         request_pulse=Mock(return_value=True),
         pulse=Mock(side_effect=AssertionError('service loop executed Intraday work')),
@@ -131,6 +135,7 @@ def test_repeated_service_iterations_do_not_add_extra_intraday_pulses():
     server=object.__new__(KronosBrowserServer)
     server.maintenance_admission=MaintenanceAdmissionCoordinator()
     server._next_lifecycle_pulse=0.0
+    server._next_swing_journal_reconciliation=float('inf')
     server.intraday_lifecycle=SimpleNamespace(
         request_pulse=Mock(return_value=True),last_failure=None)
     for _ in range(5):
@@ -143,6 +148,7 @@ def test_service_loop_only_triggers_owned_housekeeping_boundary():
     server=object.__new__(KronosBrowserServer)
     server.maintenance_admission=MaintenanceAdmissionCoordinator()
     server._next_lifecycle_pulse=0.0
+    server._next_swing_journal_reconciliation=float('inf')
     housekeeping=SimpleNamespace(
         trigger_periodic=Mock(return_value="DISABLED"),
         record_trigger_failure=Mock(),
