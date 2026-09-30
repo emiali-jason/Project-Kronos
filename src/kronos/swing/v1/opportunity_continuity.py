@@ -36,6 +36,14 @@ class ContinuityDisposition(StrEnum):
 
 
 def _json(value):
+    if type(value) is SameRunMtfFactSnapshot:
+        material = asdict(value)
+        # The optional MCX extension must not change historical MTF digests.
+        # Present lineage remains part of the exact committed binding.
+        for instrument in material["instruments"]:
+            if instrument["mcx_request_lineage"] is None:
+                del instrument["mcx_request_lineage"]
+        return _json(material)
     if hasattr(value, "__dataclass_fields__"):
         return _json(asdict(value))
     if isinstance(value, datetime):

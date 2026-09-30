@@ -46,6 +46,37 @@ def commit(bundle, snapshot):
         provenance=provenance, committed_contribution_sha256=bundle.integrity_sha256)
 
 
+def test_absent_mcx_extension_preserves_predecessor_mtf_digest(scenario):
+    snapshot, bindings = scenario
+    predecessor_material = asdict(snapshot)
+    for instrument in predecessor_material["instruments"]:
+        assert instrument.pop("mcx_request_lineage") is None
+    expected = c._digest(predecessor_material)
+    bundle = c.prepare_continuity(snapshot, bindings)
+    assert bundle.mtf_sha256 == expected
+    assert commit(bundle, snapshot).contribution == bundle
+
+
+@pytest.mark.parametrize("family", ("GOLDM", "SILVERM", "COPPER", "CRUDEOIL", "NATURALGAS"))
+def test_present_mcx_lineage_remains_exact_committed_material(family):
+    snapshot, _ = _build(retain_completed_series=True, retain_mcx_lineage=True)
+    bindings = tuple(c.SourceBinding.from_instrument(
+        item.canonical_instrument, _instrument(item.canonical_instrument, item.exchange)
+    ) for item in snapshot.instruments)
+    bundle = c.prepare_continuity(snapshot, bindings)
+    assert commit(bundle, snapshot).contribution == bundle
+    instrument = snapshot.instrument(family)
+    assert instrument.mcx_request_lineage is not None
+    changed_instrument = replace(instrument, mcx_request_lineage=replace(
+        instrument.mcx_request_lineage, hourly_source_sha256="f" * 64))
+    changed = replace(snapshot, instruments=tuple(
+        changed_instrument if item.canonical_instrument == family else item
+        for item in snapshot.instruments))
+    assert c._digest(changed) != bundle.mtf_sha256
+    with pytest.raises(ValueError, match="SWING_CONTINUITY_COMMITTED_BINDING_INVALID"):
+        commit(bundle, changed)
+
+
 def later(snapshot, number=2, *, changes=None):
     gold = snapshot.instrument("GOLDM")
     if changes:

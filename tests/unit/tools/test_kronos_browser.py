@@ -5,6 +5,8 @@ import shutil
 from kronos.application.shared_monitoring import SharedSwingMonitoringHub
 from kronos.common.maintenance_admission import MaintenanceAdmissionCoordinator
 from kronos.common.maintenance import DrainStartupContext
+from kronos.application.intraday_notifications import IntradayNotifications
+from kronos.browser.runtime_state import complete_startup
 from tools import kronos_browser
 import pytest
 
@@ -264,6 +266,99 @@ def test_canonical_main_installs_real_mcx_owner_before_ready_without_acquisition
     monkeypatch.setattr(KronosBrowserServer, 'serve_forever', serve)
     assert kronos_browser.main(['--port', '0', '--no-browser']) == 0
     assert events == ['owners-installed', 'ready', 'serve']
+
+
+@pytest.mark.parametrize("checkpoint_matches", (True, False))
+def test_canonical_startup_restores_pre_mcx_continuity_without_rewriting_it(
+    tmp_path, monkeypatch, checkpoint_matches,
+):
+    """Real constructors/checkpoint/READY; only launch authority and roots are fixtures."""
+    from dataclasses import asdict
+    from hashlib import sha256
+    from kronos.browser.server import KronosBrowserServer
+    from kronos.swing.v1.mtf_facts import SameRunMtfFactSnapshot
+    from kronos.swing.v1 import opportunity_continuity as continuity
+    from kronos.swing import run_publication as publication_module
+    from tests.unit.swing.v1.test_opportunity_continuity import scenario
+    from tests.unit.swing.test_run_publication import make_checkpoint, prepared
+
+    snapshot, bindings = scenario.__wrapped__()
+    original_json = continuity._json
+
+    def predecessor_json(value):
+        if type(value) is SameRunMtfFactSnapshot:
+            value = asdict(value)
+            for instrument in value["instruments"]:
+                assert instrument.pop("mcx_request_lineage") is None
+        return original_json(value)
+
+    with monkeypatch.context() as predecessor:
+        predecessor.setattr(continuity, "_json", predecessor_json)
+        coordinator = publication_module.SwingRunPublication
+        predecessor.setattr(publication_module, "SwingRunPublication",
+                            lambda root, **kwargs: coordinator(
+                                Path(root).parent / "run-publication-v1", **kwargs))
+        publication, snapshot, bindings, _ = make_checkpoint(
+            tmp_path / "historical", snapshot, bindings)
+        token, values = prepared(publication, snapshot, bindings, 2)
+        reference = publication.prepare(token, **values)
+        assert publication.publish(token, reference,
+                                   values["provenance"].successful_completed_at)
+    before = {str(path): (path.read_bytes(), path.stat().st_mtime_ns,
+                         path.stat().st_ctime_ns)
+              for path in (tmp_path / "historical").rglob("*") if path.is_file()}
+    for name, store in (
+        ("MtfFactEvidenceStore", publication.mtf_store),
+        ("NativeDiscoveryEvidenceStore", publication.native_store),
+        ("RelativeContextEvidenceStore", publication.relative_store),
+        ("LocalSwingRunProvenanceStore", publication.provenance_store),
+    ):
+        monkeypatch.setattr(kronos_browser, name,
+                            lambda *_args, _store=store, **_kwargs: _store)
+    digest = sha256(b"").hexdigest() if checkpoint_matches else "f" * 64
+    checkpoint = DrainStartupContext("a" * 64, "EMPTY", 0, digest)
+    monkeypatch.setattr(kronos_browser, "consume_startup_context",
+                        lambda *_args, **_kwargs: checkpoint)
+    # Restore the actual shared owners hidden by the fake-server unit fixture.
+    monkeypatch.setattr("kronos.application.intraday_notifications.IntradayNotifications",
+                        IntradayNotifications)
+    monkeypatch.setattr("kronos.browser.runtime_state.complete_startup", complete_startup)
+    monkeypatch.setattr(kronos_browser, "_build_provider",
+                        lambda **_kwargs: pytest.fail("startup acquired Provider data"))
+    servers, served = [], []
+    create = kronos_browser.create_browser_server
+
+    def capture(*args, **kwargs):
+        server = create(*args, **kwargs)
+        servers.append(server)
+        return server
+
+    def serve(server, **_kwargs):
+        assert server.connection_governance.startup_state == "READY"
+        assert server.connection_governance.maintenance_active is False
+        assert server.provider_runtime.read_only_status()["capability_state"] == "ABSENT"
+        assert server.mcx_v1_composition.control is server.mcx_v1_control
+        assert server.mcx_v1_control.worker_status()["pending"] == 0
+        assert server.maintenance_admission.snapshot()["owners"] == {}
+        served.append(server)
+
+    monkeypatch.setattr(kronos_browser, "create_browser_server", capture)
+    monkeypatch.setattr(KronosBrowserServer, "serve_forever", serve)
+    try:
+        if checkpoint_matches:
+            assert kronos_browser.main(["--port", "0", "--no-browser"]) == 0
+            assert served == servers and len(served) == 1
+        else:
+            with pytest.raises(ValueError, match="WO13_NOTIFICATION_CHECKPOINT_MISMATCH"):
+                kronos_browser.main(["--port", "0", "--no-browser"])
+            assert not served
+    finally:
+        for server in servers:
+            server.server_close()
+    after = {str(path): (path.read_bytes(), path.stat().st_mtime_ns,
+                        path.stat().st_ctime_ns)
+             for path in (tmp_path / "historical").rglob("*") if path.is_file()}
+    assert after == before
 
 
 def test_canonical_housekeeping_composes_enabled_actual_owned_stores(
