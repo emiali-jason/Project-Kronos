@@ -2060,6 +2060,9 @@ class KronosBrowserServer(ThreadingHTTPServer):
         mcx_control = getattr(self, "mcx_v1_control", None)
         mcx_worker = (None if mcx_control is None else
                       mcx_control.worker_status())
+        # MCX is a local zero-work precondition, not a V2 wire-schema extension.
+        if mcx_worker is not None and int(mcx_worker["pending"]) != 0:
+            raise ValueError("MAINTENANCE_DRAIN_ATTESTATION_NOT_ZERO")
         counts = {
             "coordinator_owners": sum(self.maintenance_admission.snapshot()["owners"].values()),
             "wo11_owned": int(lifecycle["owned_workers"]),
@@ -2072,8 +2075,6 @@ class KronosBrowserServer(ThreadingHTTPServer):
             "monitoring_sessions": int(monitoring["session_count"]),
             "provider_owned": int(provider["owned_work_count"]),
             "provider_leases": int(provider["retained_lease_count"]),
-            "mcx_advisory_pending": (
-                0 if mcx_worker is None else int(mcx_worker["pending"])),
         }
         if any(value != 0 for value in counts.values()):
             raise ValueError("MAINTENANCE_DRAIN_ATTESTATION_NOT_ZERO")

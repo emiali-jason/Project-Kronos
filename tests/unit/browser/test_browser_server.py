@@ -1,8 +1,11 @@
 from dataclasses import replace
+from datetime import UTC, datetime
+from hashlib import sha256
 from http.client import HTTPConnection
 from threading import Event, Lock, Thread, get_ident
-from types import SimpleNamespace
+from types import MethodType, SimpleNamespace
 import json
+import hmac
 import os
 import socket
 
@@ -25,6 +28,8 @@ from kronos.browser.server import KronosBrowserServer, create_browser_server
 from kronos.browser import server as server_module
 from kronos.browser.restart_control import BrowserBackendRestartControl
 from kronos.common.maintenance_admission import MaintenanceAdmissionCoordinator
+from kronos.common.connection_governance import ConnectionGovernanceError
+from kronos.common.maintenance import consume_drain_handoff, verify_drain_handoff
 from kronos.browser.product_routes import BrowserRouteResponse, ProductBrowserRoutes
 from kronos.swing.v1 import (
     LocalTradingViewEvidenceStore,
@@ -261,6 +266,210 @@ def test_final_owner_proof_rejects_uncertified_notification_directory() -> None:
         and status["queued_items"] == 0,
     )
     assert KronosBrowserServer._maintenance_final_owner_proof(server) is False
+
+
+def _mcx_drain_server(tmp_path, *, worker=None):
+    """Real attestation/control/notification owners; inert other domain states."""
+    from kronos.application.intraday_notifications import IntradayNotifications
+    from tests.unit.intraday.test_wo13_notifications import (
+        _NotificationSourceStore, _ResearchOriginSource, centre,
+    )
+    notifications = IntradayNotifications(centre=centre(tmp_path),
+        research=_ResearchOriginSource(), wo09=_NotificationSourceStore(),
+        futures=_NotificationSourceStore(), lifecycle=_NotificationSourceStore(),
+        background=False)
+    notifications.bind(_NotificationSourceStore())
+    notifications.close()
+    zero = lambda: {"state": "TERMINATED", "continuity": "COMPLETE",
+                    "owned_workers": 0, "queued_items": 0}
+    app_zero = lambda: {"state": "IDLE", "owned_workers": 0, "queued_items": 0}
+    admission = MaintenanceAdmissionCoordinator()
+    control = BrowserBackendRestartControl.create(tmp_path / "runtime/browser.control",
+        process_id=os.getpid(), token="a" * 64)
+    server = SimpleNamespace(
+        maintenance_admission=admission, _active_sponsor_work=0, _domain_closed=True,
+        intraday_lifecycle=SimpleNamespace(work_status=zero),
+        intraday_wo17_monitoring=SimpleNamespace(work_status=zero),
+        housekeeping=SimpleNamespace(status_document=lambda: {
+            "lifecycle_state": "STOPPED", "owned_workers": 0, "pass_active": False}),
+        bulk_import=None, intraday_notifications=notifications,
+        ux10_notifications=SimpleNamespace(maintenance_status=lambda: {
+            "closed": True, "retry_callbacks": 0}),
+        swing_monitoring_hub=SimpleNamespace(status_document=lambda: {
+            "session_count": 0, "owner_count": 0, "subscription_count": 0,
+            "transport_cleanup": {"state": "COMPLETE"}}),
+        provider_runtime=SimpleNamespace(read_only_status=lambda: {
+            "cleanup_state": "COMPLETE", "owned_work_count": 0,
+            "retained_lease_count": 0, "unresolved_cleanup_count": 0}),
+        application=SimpleNamespace(connection_attempt_status=lambda: None,
+            sponsor_operability_restoration_status=lambda: {"state": "NOT_REQUESTED"},
+            analysis_work_status=app_zero, analysis_execution_status=app_zero),
+        connection_governance=SimpleNamespace(process=SimpleNamespace(loaded_revision="c" * 40)),
+        restart_control=control,
+        mcx_v1_control=SimpleNamespace(worker_status=(worker.status if worker else
+            lambda: {"state": "CLOSED", "pending": 0})),
+    )
+    for name in ("_work_owner_idle", "_maintenance_final_owner_proof", "_maintenance_drain_attestation"):
+        method = getattr(KronosBrowserServer, name)
+        setattr(server, name, method if name == "_work_owner_idle" else MethodType(method, server))
+    return server
+
+
+def _publish_mcx_drain(server, generation="d" * 64):
+    assert server._maintenance_final_owner_proof()
+    drain = server._maintenance_drain_attestation()
+    server.restart_control.maintenance_drain_handoff(
+        generation, "b" * 64, "c" * 40, drain)
+    return drain
+
+
+def _consume_mcx_drain(server, generation="d" * 64):
+    return consume_drain_handoff(server.restart_control.path.parent / "maintenance", {
+        "KRONOS_MAINTENANCE_GENERATION": generation,
+        "KRONOS_MAINTENANCE_PARENT": str(os.getpid()),
+        "KRONOS_MAINTENANCE_PROOF": "a" * 64,
+    }, runtime_identity="e" * 64, now=datetime.now(UTC),
+        process_id=os.getpid() + 1, loaded_revision="c" * 40,
+        predecessor_gone=lambda _pid: True, port_free=lambda: True)
+
+
+def test_mcx_drain_real_producer_publisher_validator_and_consumption(tmp_path):
+    server = _mcx_drain_server(tmp_path)
+    drain = _publish_mcx_drain(server)
+    assert set(drain) == {"coordinator_owners", "wo11_owned", "wo11_queued",
+        "wo17_owned", "wo17_queued", "housekeeping_owned", "bulk_owned",
+        "notification_scheduled", "monitoring_sessions", "provider_owned",
+        "provider_leases", "notification_checkpoint"}
+    root = server.restart_control.path.parent / "maintenance"
+    verified = verify_drain_handoff(root, generation="d" * 64,
+        parent_pid=os.getpid(), proof="a" * 64, loaded_revision="c" * 40,
+        now=datetime.now(UTC))
+    assert verified["drain"] == drain
+    context = _consume_mcx_drain(server)
+    assert context.notification_checkpoint() == drain["notification_checkpoint"]
+    assert len(tuple(root.glob("*.consumed.json"))) == 1
+    before = {p.name: p.read_bytes() for p in root.iterdir()}
+    with pytest.raises(ConnectionGovernanceError, match="MAINTENANCE_DRAIN_HANDOFF_REJECTED"):
+        _consume_mcx_drain(server)
+    assert {p.name: p.read_bytes() for p in root.iterdir()} == before
+
+
+def test_mcx_pending_independently_blocks_wire_attestation(tmp_path):
+    server = _mcx_drain_server(tmp_path)
+    server.mcx_v1_control.worker_status = lambda: {"state": "AVAILABLE", "pending": 1}
+    assert not server._maintenance_final_owner_proof()
+    with pytest.raises(ValueError, match="MAINTENANCE_DRAIN_ATTESTATION_NOT_ZERO"):
+        server._maintenance_drain_attestation()
+    assert not (server.restart_control.path.parent / "maintenance").exists()
+
+
+@pytest.mark.parametrize("bad", ("signature", "checkpoint", "extra_field"))
+def test_mcx_handoff_preserves_strict_signature_checkpoint_and_schema(tmp_path, bad):
+    server = _mcx_drain_server(tmp_path)
+    _publish_mcx_drain(server)
+    root = server.restart_control.path.parent / "maintenance"
+    path = root / ("d" * 64 + ".json")
+    item = json.loads(path.read_bytes())
+    if bad == "signature":
+        item["proof"] = "0" * 64
+    elif bad == "checkpoint":
+        item["record"]["drain"]["notification_checkpoint"]["pending_count"] = 1
+    else:
+        item["record"]["drain"]["mcx_advisory_pending"] = 0
+    if bad != "signature":
+        item["proof"] = hmac.new(bytes.fromhex("a" * 64),
+            json.dumps(item["record"], sort_keys=True, separators=(",", ":")).encode(),
+            sha256).hexdigest()
+    path.write_bytes(json.dumps(item, sort_keys=True, separators=(",", ":")).encode())
+    with pytest.raises(ConnectionGovernanceError, match="MAINTENANCE_DRAIN_HANDOFF_REJECTED"):
+        _consume_mcx_drain(server)
+    assert not tuple(root.glob("*.consumed.json"))
+
+
+def test_mcx_handoff_changed_successor_checkpoint_rejects_before_replay(tmp_path, monkeypatch):
+    from kronos.application.intraday_notifications import IntradayNotifications
+    from tests.unit.intraday.test_wo13_notifications import (
+        _NotificationSourceStore, _ResearchOriginSource, centre,
+    )
+    server = _mcx_drain_server(tmp_path / "predecessor")
+    _publish_mcx_drain(server)
+    context = _consume_mcx_drain(server)
+    other = IntradayNotifications(centre=centre(tmp_path / "successor"),
+        research=_ResearchOriginSource(), wo09=_NotificationSourceStore(),
+        futures=_NotificationSourceStore(), lifecycle=_NotificationSourceStore(), background=False)
+    other.bind(_NotificationSourceStore())
+    other.enqueue("PROBABLES", "DIFFERENT-VALID-REFERENCE")
+    restored = IntradayNotifications(centre=other.centre, research=other.research,
+        wo09=other.wo09, futures=other.futures, lifecycle=other.lifecycle,
+        background=False, expected_checkpoint=context.notification_checkpoint())
+    probables = _NotificationSourceStore()
+    monkeypatch.setattr(restored, "_schedule", lambda: pytest.fail("replay before verification"))
+    with pytest.raises(ValueError, match="WO13_NOTIFICATION_CHECKPOINT_MISMATCH"):
+        restored.bind(probables)
+    assert probables.notification_listener is None
+
+
+def test_mcx_final_bookkeeping_and_worker_close_precede_real_signed_handoff(tmp_path, monkeypatch):
+    from kronos.application.swing_mcx_v1_operations import _BoundedMcxAdvisoryWorker
+    worker = _BoundedMcxAdvisoryWorker()
+    server = _mcx_drain_server(tmp_path, worker=worker)
+    admission = server.maintenance_admission
+    started, finish, releasing, release_ticket = Event(), Event(), Event(), Event()
+    original_release = admission._release
+    final_observations = []
+
+    def counted_release(ticket):
+        if ticket.kind == "MONITORING_CALLBACK":
+            final_observations.append(worker.status()["pending"])
+            releasing.set()
+            assert release_ticket.wait(5)
+        original_release(ticket)
+
+    monkeypatch.setattr(admission, "_release", counted_release)
+    ticket = admission.admit("MONITORING_CALLBACK")
+
+    def work():
+        started.set()
+        assert finish.wait(5)
+
+    generation = "d" * 64
+    events = []
+    server.maintenance_replacement_idle = lambda **_kwargs: True
+    server._quiesce_monitoring_producers = lambda: events.append("quiesce")
+
+    def close(**_kwargs):
+        assert worker.status()["pending"] == 0
+        worker.close()
+        events.append("worker_closed")
+
+    server._close_domain_owners = close
+    server.shutdown = lambda: events.append("shutdown")
+    thread = Thread(target=lambda: KronosBrowserServer._complete_governed_shutdown(
+        server, generation, "b" * 64, 5))
+    try:
+        assert worker.submit("exact-position", "completed-hour", work, ticket)
+        assert started.wait(5)
+        assert admission.claim(generation)
+        thread.start()
+        finish.set()
+        assert releasing.wait(5)
+        assert final_observations == [0]
+        assert admission.snapshot()["owners"] == {"MONITORING_CALLBACK": 1}
+        assert not (server.restart_control.path.parent / "maintenance").exists()
+        release_ticket.set()
+        thread.join(5)
+        assert not thread.is_alive()
+        assert events == ["quiesce", "worker_closed", "shutdown"]
+        assert worker.status()["state"] == "CLOSED"
+        assert admission.snapshot()["state"] == "STOPPING"
+        assert admission.snapshot()["owners"] == {}
+        context = _consume_mcx_drain(server)
+        assert context.notification_state == "EMPTY"
+    finally:
+        finish.set(); release_ticket.set()
+        if thread.ident is not None:
+            thread.join(5)
+        worker.close()
 
 
 def test_request_threads_are_bounded_and_capacity_refusal_is_immediate(monkeypatch) -> None:  # type: ignore[no-untyped-def]
